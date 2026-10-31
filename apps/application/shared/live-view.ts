@@ -30,8 +30,8 @@ export interface LiveWorkerState {
  */
 export interface LiveViewRunState {
   keyed: boolean;
-  /** The project's setting now; omitted by instances that do not report readiness. */
-  enabled?: boolean;
+  /** Whether the project's live view is on now: off, the run page says so whatever the run holds. */
+  enabled: boolean;
 }
 
 /** How the run page names a worker: its index, and its shard in a sharded run. */

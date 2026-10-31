@@ -76,8 +76,11 @@ const liveResources = ref<RunResourceTimelinePart[]>([]);
 const liveWorkers = ref<Record<string, LiveWorkerState>>({});
 // Whether the run holds a live view key, from the stream's `live-view` events: its project's live view applies to it.
 const liveViewKeyed = ref(false);
+// The stream's last `live-view` state, and whether the stream is open: the toolbar's status reads both.
 const liveViewState = ref<LiveViewRunState | null>(null);
 const liveViewConnected = ref(false);
+// The run finished on the stream: its status leaves the toolbar before the refetched run says so.
+const liveRunEnded = ref(false);
 // What the running rows say where Watch would be, while no worker is in the run's view: a run outside CI that holds a
 // key is not shared, and says how to share it (a CI run's workers join at once); in the desktop app, which hands out
 // no key, where the tests' pages show.
@@ -403,6 +406,7 @@ function flushPendingEvents() {
       isFinalizing.value = true;
     } else if (parsed.type === 'run-finished') {
       isFinalizing.value = false;
+      liveRunEnded.value = true;
       liveSteps.value = {};
       liveWorkers.value = {};
       liveViewKeyed.value = false;
@@ -1021,14 +1025,13 @@ const moreMenuItems = computed(() => {
           >
             <template #toolbar-extra>
               <RunLiveViewStatus
-                v-if="testRun?.status === 'running' && !isFinalizing"
+                v-if="testRun?.status === 'running' && !isFinalizing && !liveRunEnded"
                 :project-id="testRun.projectId"
                 :readiness="{
                   desktop: isDesktop,
                   demo: isDemoMode,
                   connected: liveViewConnected,
                   state: liveViewState,
-                  enabled: testRun.project?.liveView === true,
                   ci: !!testRun.metadata?.ci,
                   workers: Object.keys(liveWorkers).length,
                 }"

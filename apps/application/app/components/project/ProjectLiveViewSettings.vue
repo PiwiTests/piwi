@@ -69,7 +69,7 @@ async function submit() {
           <USwitch
             v-model="state.liveView"
             label="Let people who may open a run watch its workers live"
-            description="Applies to new runs registered by the reporter's global setup. Restart a run started while this was off to watch it. A local run sends nothing unless its developer chooses Share live."
+            description="Each CI run of this project the reporter's global setup registers from now on, while it runs: a run already going stays without it. Turning it off ends every view at once. A run on a developer's machine sends nothing unless its developer shares it (Share live)."
           />
         </UFormField>
         <UFormField

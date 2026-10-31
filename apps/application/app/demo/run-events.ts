@@ -24,7 +24,6 @@ export interface DemoRunEvent {
     | 'run-progress'
     | 'run-finalizing'
     | 'run-finished'
-    | 'live-view'
     | 'resources';
   data: Record<string, unknown>;
 }

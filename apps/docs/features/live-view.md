@@ -8,11 +8,10 @@ lang: en-US
 
 <Needs reporter fixtures />
 
-While a run executes, its run page shows the step each worker is on. In a project that turns the live view on, a
-running test of a CI run, or of a run a developer [shares from their machine](#share-a-run-from-your-machine), also
-gets **Watch**: it opens the page that worker is on, a few images a second, each with the call it was taken at. It is
-for watching a CI run that seems stuck, or a teammate's paused test, without waiting for the trace. Nothing you do in
-the view reaches the test.
+In a project that turns the live view on, a running test of a CI run, or of a run a developer
+[shares from their machine](#share-a-run-from-your-machine), gets **Watch** on its run page: it opens the page that
+worker is on, a few images a second, each with the call it was taken at. It is for watching a CI run that seems stuck,
+or a teammate's paused test, without waiting for the trace. Nothing you do in the view reaches the test.
 
 ## Where to watch a run
 
@@ -27,47 +26,41 @@ app hands out no live view key.
 
 ## Turn it on
 
-The live view is off in every project. A Project admin turns it on in **Project → Settings → Live view**, which says
-what goes out, to whom, and what is kept. It applies to the project's CI runs from their next start: each run in a CI
-job that the reporter's global setup registers, which [`wrapConfig`](/guide/reporter) adds. A CI job is told by a
-CI provider's own variable (`GITHUB_ACTIONS`, `GITLAB_CI`, …) or by `CI` set to anything but `false` or `0`. At the start of such a run the reporter prints:
+The live view is off in every project. A Project admin turns it on in **Project → Settings → Live view**. It applies to
+each CI run that starts after, as the reporter's global setup registers it: [`wrapConfig`](/guide/reporter) adds that
+setup. A CI job is told by its provider's variable (`GITHUB_ACTIONS`, `GITLAB_CI`, …) or by `CI` set to anything but
+`false` or `0`. Such a run's log then says:
 
 ```text
 [Piwi Dashboard] Live view on: people who may open this run can watch its tests' pages on the dashboard while it runs. Nothing is stored.
 ```
 
-Turning it off ends every view immediately. Turning it on, including after disabling it, needs a new run. The run
-page's **Tests** tab shows a compact status beside search. Its help icon opens setup guidance and, for a Project admin,
-a link to enable live view.
+Turning it off ends every view of the project's runs at once. A run that started while it was off stays without a view
+when it is turned on again.
 
 ## Check availability
 
-Live result counts do not by themselves mean a browser can be watched. The run page explains the missing step:
+Beside its search, a running run's **Tests** tab says **Live view available**, or what is missing; its help gives the
+step:
 
-| State | What to do |
+| It says | Why, and what to do |
 |---|---|
-| Live view is off | A Project admin enables it, then starts a new run. |
-| Unavailable for this run | Check `wrapConfig` registered the run at startup and result streaming is enabled, then start a new run. Enabling the setting after startup, or an instance restart, can also cause this. |
-| Waiting for workers | Allow startup or reconnection to finish. If tests already run, check their specs import `test` from the capture fixtures. Creating the fixtures file alone does not activate them. |
-| Local run not connected | Its developer chooses **Share live**; if already sharing, check its worker connection and fixture imports. |
-| Checking availability | Wait for the run's connection to return. |
-
-The desktop app shows where to open a local preview at a pause. The browser demo simulates progress and has no real
-test browser to watch. Local previews do not require the project's setting.
+| **Live view off** | A Project admin turns it on; the next run gets it. |
+| **Live view unavailable** | The run has no key: it started before the setting was on, without `wrapConfig`'s global setup, with `streaming` off, or before the instance restarted. Start a new run. |
+| **Live view waiting** | No worker is connected yet: they are starting, or the specs do not import `test` from the [capture fixtures](/guide/capture-fixtures). |
+| **Not shared live** | The run is on a developer's machine: they [share it](#share-a-run-from-your-machine). |
 
 ## Watch a worker
 
-On the run page's **Tests** tab, a running test shows the step its worker is on. With the live view on, **Watch** beside
-it opens that worker's view: the test's page as the browser paints it, headless or not, and under it the call the image
-was taken at (`Click getByRole('button', { name: 'Pay' }) · checkout.spec.ts:30`). A still page sends no new image.
+On the run page's **Tests** tab, **Watch** beside a running test opens its worker's view: the test's page as the
+browser paints it, headless or not, and under it the call the image was taken at (`Click getByRole('button', { name: 'Pay' }) · checkout.spec.ts:30`). A still page sends no new image.
 
 In a CI run, the view also follows that call: how long it has run, Playwright's log of it as a failed call's error
 prints it, and while it waits, what its locator matches (no element yet, several, or one not enabled), outlined on the
 image, with the point a click acts on. A shared run shows the call alone.
 
-A view belongs to the test on whose row you opened it. Opened while the worker runs no test (a `beforeAll`, between
-two tests), it says so, and shows the next test's page. It ends as its test ends, the worker leaves, the run
-ends or the project turns the live view off, and when you close it.
+A view belongs to the test whose row opened it. Opened between two tests or in a `beforeAll`, it says so and shows the
+next test's page. It ends with its test, its worker or the run, when the live view is turned off, or when you close it.
 
 A CI run never stops at a breakpoint or a `page.pause()`; a shared run does, and its row then says **Paused** at the
 stopped call, which opens in your editor.
@@ -87,14 +80,13 @@ whose project enables live view, and connect to an editor or the desktop app for
 The first share in a window asks for confirmation. The shared run shows its destination, viewer count and a link to copy.
 
 Until then, its workers send nothing, and its running tests say **Not shared live** where **Watch** would be. Once
-shared, each worker sends what a CI run's do: its stops, which everyone with the run's page open sees (the call, its
-file and line, and the test's title), even while nobody watches; and images while someone does. **Stop sharing** closes
-the connections within seconds: each view ends saying so, and **Paused** leaves the rows.
-Closing the editor or the desktop app stops it too.
+shared, its stops (the call, its file and line, the test's title) reach everyone with the run's page open, and images
+only those watching. **Stop sharing** closes the views within seconds and clears **Paused** from the rows. Closing the
+editor or the desktop app stops it too.
 
 A run that cannot be shared says why: it reports to no instance or to the desktop app, its project has the live view
-off, or the reporter's global setup did not register it. A sharing that stops on its own says why, and **Share live** shows again: the project's
-live view turned off, the instance restarted, or it stopped answering.
+off, or the reporter's global setup did not register it. A sharing that stops on its own says why (the live view turned
+off, the instance restarted or stopped answering), and **Share live** shows again.
 
 ## What is sent, to whom, and what is kept
 
@@ -125,8 +117,6 @@ environment of the tests, their hooks or their fixtures, so a process they start
 - **Watch only.** No input and no controls: a test is stepped from the [editor](./editor-run-control) or the
   [Runs window](./runs-window).
 - **The test's `page`.** The view shows the page of Playwright's `page` fixture; a popup or a second page is not shown.
-- **A run the global setup registered.** With the reporter entry alone, which has no global setup, the workers start
-  before the run is registered and get no key.
 - **Sixteen views of a run at a time**, four of them one person's with authentication on: a fifth closes that
   person's oldest.
 - **One dashboard server.** The view is relayed in the memory of one server, as the run's live events are, so it needs

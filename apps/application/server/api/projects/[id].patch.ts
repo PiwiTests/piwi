@@ -20,6 +20,7 @@ import { runEventBus } from '../../utils/run-events';
 import type { LiveViewRunState } from '#shared/live-view';
 import { and, eq, inArray } from 'drizzle-orm';
 import { testRuns } from '../../database/schema';
+import { UNFINISHED_RUN_STATUSES } from '#shared/run-eligibility';
 import { parseLiveMasks } from '@piwitests/core/live-view';
 
 defineRouteMeta({
@@ -190,12 +191,14 @@ export default eventHandler(async (event) => {
       tagIds,
     }).then(async (project) => {
       if (coverageScope !== undefined || coverageAreas !== undefined) await recountProjectCoverage(db, id);
+      // The pages of the project's unfinished runs hear the setting; off, the views open now end and the runs' keys open
+      // nothing more.
       if (liveView !== undefined) {
         if (!liveView) liveViewRelay.endProject(id);
         const activeRuns = await db
           .select({ id: testRuns.id })
           .from(testRuns)
-          .where(and(eq(testRuns.projectId, id), inArray(testRuns.status, ['initializing', 'running', 'finalizing'])));
+          .where(and(eq(testRuns.projectId, id), inArray(testRuns.status, [...UNFINISHED_RUN_STATUSES])));
         for (const run of activeRuns) {
           const view: LiveViewRunState = { enabled: liveView, keyed: liveViewRelay.holdsKey(run.id) };
           runEventBus.publish(run.id, { type: 'live-view', data: view });

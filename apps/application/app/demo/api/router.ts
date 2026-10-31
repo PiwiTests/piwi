@@ -69,7 +69,7 @@ import {
 } from '#shared/handlers/project-access';
 import { requestedInstanceRole } from '#shared/project-access';
 import { getDemoDb } from '../db.client';
-import { publishDemoNotificationEvent, publishDemoRunEvent } from '../run-events';
+import { publishDemoNotificationEvent } from '../run-events';
 import { getCodeIndex, getCodeReachForFile } from '~~/server/utils/code-reach';
 import {
   getExecutionCoverage,
@@ -851,18 +851,6 @@ const routes: RouteEntry[] = [
       try {
         const update = body as Parameters<typeof updateProject>[2];
         const project = await updateProject(await getDemoDb(), +m[1]!, update);
-        if (update?.liveView !== undefined) {
-          const db = await getDemoDb();
-          const activeRuns = await db
-            .select({ id: testRuns.id })
-            .from(testRuns)
-            .where(
-              and(eq(testRuns.projectId, +m[1]!), inArray(testRuns.status, ['initializing', 'running', 'finalizing'])),
-            );
-          for (const run of activeRuns) {
-            publishDemoRunEvent(run.id, { type: 'live-view', data: { enabled: update.liveView, keyed: false } });
-          }
-        }
         if (update?.coverageScope !== undefined || update?.coverageAreas !== undefined) {
           await recountProjectCoverage(await getDemoDb(), +m[1]!);
         }

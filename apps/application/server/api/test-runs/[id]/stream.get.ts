@@ -85,8 +85,8 @@ export default eventHandler(async (event) => {
       const resourcesEvent = { type: 'resources', data: liveResourcesSnapshot(part), seq: 0, timestamp: Date.now() };
       controller.enqueue(encoder.encode(`data: ${JSON.stringify(resourcesEvent)}\n\n`));
     }
-    // Whether the run holds a live view key, then the workers in its view now and their stops: the live events that
-    // follow change them.
+    // Whether the project's live view is on and the run holds a key, then the workers in its view now and their stops:
+    // the live events that follow change them.
     const viewState: LiveViewRunState = { keyed: liveViewRelay.holdsKey(id), enabled: project?.liveView === true };
     const viewEvent = { type: 'live-view', data: viewState, seq: 0, timestamp: Date.now() };
     controller.enqueue(encoder.encode(`data: ${JSON.stringify(viewEvent)}\n\n`));

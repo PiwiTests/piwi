@@ -6,7 +6,6 @@ const run = (over: Partial<RunLiveViewReadiness> = {}): RunLiveViewReadiness => 
   demo: false,
   connected: true,
   state: { enabled: true, keyed: true },
-  enabled: true,
   ci: true,
   workers: 0,
   ...over,
@@ -23,25 +22,21 @@ describe('live-view readiness', () => {
     expect(runLiveViewStatus(run({ state: null, workers: 2 })).kind).toBe('checking');
   });
 
-  test('the current setting takes precedence over the page’s initial setting', () => {
+  test('the project’s setting turned off wins over connected workers', () => {
     expect(runLiveViewStatus(run({ state: { enabled: false, keyed: true }, workers: 2 })).kind).toBe('disabled');
-    expect(runLiveViewStatus(run({ enabled: false })).kind).toBe('waiting');
   });
 
-  test('an instance omitting the setting uses the project from the run details', () => {
-    expect(runLiveViewStatus(run({ state: { keyed: true }, enabled: false })).kind).toBe('disabled');
-    expect(runLiveViewStatus(run({ state: { keyed: true } })).kind).toBe('waiting');
+  test('enabling a project does not claim an existing run registered without a key', () => {
+    expect(runLiveViewStatus(run({ state: { enabled: true, keyed: false } })).kind).toBe('unavailable');
   });
 
-  test('enabling a project does not claim an existing run registered for live view', () => {
-    const status = runLiveViewStatus(run({ state: { enabled: true, keyed: false } }));
-    expect(status.kind).toBe('unavailable');
+  test('a connected worker makes the run watchable whatever the key last said', () => {
+    expect(runLiveViewStatus(run({ state: { enabled: true, keyed: false }, workers: 1 })).kind).toBe('available');
   });
 
   test('a key without workers explains CI startup and local sharing separately', () => {
     expect(runLiveViewStatus(run()).kind).toBe('waiting');
-    const status = runLiveViewStatus(run({ ci: false }));
-    expect(status.kind).toBe('unshared');
+    expect(runLiveViewStatus(run({ ci: false })).kind).toBe('unshared');
   });
 
   test('a connected worker makes both a CI run and a shared local run available', () => {

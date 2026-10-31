@@ -559,8 +559,6 @@ export interface TestRunDetails {
   project?: {
     id: number;
     name: string;
-    /** Whether new runs of this project may offer a live browser view. */
-    liveView?: boolean;
     label?: string | null;
     latestRunId?: number | null;
     latestRunStatus?: string | null;
