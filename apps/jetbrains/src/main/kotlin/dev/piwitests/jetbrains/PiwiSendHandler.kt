@@ -374,7 +374,7 @@ class PiwiSendHandler : HttpRequestHandler() {
 }
 
 /**
- * Piwi: Pair with Piwi Picker — copies the address Piwi Picker's options take, and names the ports a JetBrains Gateway
+ * Piwi: Pair with Piwi Picker — copies the address Piwi Picker's settings take, and names the ports a JetBrains Gateway
  * backend's person forwards, the IDE's and the run hubs' read from the discovery files.
  */
 class PairPickerAction : AnAction(), DumbAware {
@@ -396,7 +396,7 @@ class PairPickerAction : AnAction(), DumbAware {
                 if (project != null) {
                     PiwiCommands.notify(
                         project,
-                        "The pairing address is on the clipboard. Paste it in Piwi Picker's options, under Send to editor. " +
+                        "The pairing address is on the clipboard. Paste it in Piwi Picker's settings, under Send to editor. " +
                             Glue.forwardingHint(port, hubs),
                     )
                 }

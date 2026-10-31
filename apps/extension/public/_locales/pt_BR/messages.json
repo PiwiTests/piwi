@@ -3845,10 +3845,10 @@
     "message": "Executar com o Playwright no aplicativo de desktop"
   },
   "replay_desktopNotPaired": {
-    "message": "Primeiro pareie o aplicativo de desktop, nas opções do Piwi Picker em Aplicativo de desktop."
+    "message": "Primeiro pareie o aplicativo de desktop, nas configurações do Piwi Picker em Aplicativo de desktop."
   },
   "replay_desktopOpenOptions": {
-    "message": "Abrir as opções"
+    "message": "Abrir as configurações"
   },
   "replay_desktopPreview": {
     "message": "Envia ao aplicativo de desktop em $url$: o título e estas etapas, com os valores digitados nelas. Nenhuma captura de tela, entrada do console ou requisição. Nada é executado até você iniciar na janela do aplicativo.",
@@ -6512,7 +6512,7 @@
     "message": "Concluir"
   },
   "runs_finishTitle": {
-    "message": "Continuar o teste sem parar de novo em pontos de interrupção"
+    "message": "Continuar o teste sem parar de novo em pontos de interrupção nesta tentativa"
   },
   "runs_end": {
     "message": "Encerrar o teste"

@@ -3845,10 +3845,10 @@
     "message": "Ejecutar con Playwright en la aplicación de escritorio"
   },
   "replay_desktopNotPaired": {
-    "message": "Primero vincula la aplicación de escritorio, en las opciones de Piwi Picker, en Aplicación de escritorio."
+    "message": "Primero vincula la aplicación de escritorio, en la configuración de Piwi Picker, en Aplicación de escritorio."
   },
   "replay_desktopOpenOptions": {
-    "message": "Abrir las opciones"
+    "message": "Abrir la configuración"
   },
   "replay_desktopPreview": {
     "message": "Envía a la aplicación de escritorio en $url$: el título y estos pasos, con los valores escritos en ellos. Ninguna captura, entrada de consola ni solicitud. Nada se ejecuta hasta que lo inicies en la ventana de la aplicación.",
@@ -6512,7 +6512,7 @@
     "message": "Terminar"
   },
   "runs_finishTitle": {
-    "message": "Continuar el test sin volver a detenerse en un punto de interrupción"
+    "message": "Continuar el test sin volver a detenerse en un punto de interrupción en este intento"
   },
   "runs_end": {
     "message": "Terminar el test"

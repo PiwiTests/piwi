@@ -4574,12 +4574,12 @@
     "description": "Run with Playwright dialog: its title."
   },
   "replay_desktopNotPaired": {
-    "message": "Pair the desktop app first, in Piwi Picker’s options under Desktop app.",
-    "description": "Run with Playwright dialog: no desktop app is paired in the options."
+    "message": "Pair the desktop app first, in Piwi Picker’s settings under Desktop app.",
+    "description": "Run with Playwright dialog: no desktop app is paired in the settings."
   },
   "replay_desktopOpenOptions": {
-    "message": "Open the options",
-    "description": "Run with Playwright dialog: button opening the options page."
+    "message": "Open the settings",
+    "description": "Run with Playwright dialog: button opening the settings page."
   },
   "replay_desktopPreview": {
     "message": "Sends to the desktop app at $url$: the title and these steps, with the values typed in them. No screenshot, console entry or request. Nothing runs until you start it in the app’s window.",
@@ -7726,8 +7726,8 @@
     "description": "Runs window, button on a stopped test: it runs on without stopping at a breakpoint again."
   },
   "runs_finishTitle": {
-    "message": "Run the test on without stopping at a breakpoint again",
-    "description": "Runs window, the Finish button’s tooltip."
+    "message": "Run the test on without stopping at a breakpoint again in this attempt",
+    "description": "Runs window, button on a stopped test: it runs on without stopping at a breakpoint again in this attempt."
   },
   "runs_end": {
     "message": "End the test",

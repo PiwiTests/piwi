@@ -3845,10 +3845,10 @@
     "message": "Mit Playwright in der Desktop-App ausführen"
   },
   "replay_desktopNotPaired": {
-    "message": "Koppeln Sie zuerst die Desktop-App, in den Optionen von Piwi Picker unter Desktop-App."
+    "message": "Koppeln Sie zuerst die Desktop-App, in den Einstellungen von Piwi Picker unter Desktop-App."
   },
   "replay_desktopOpenOptions": {
-    "message": "Optionen öffnen"
+    "message": "Einstellungen öffnen"
   },
   "replay_desktopPreview": {
     "message": "Sendet an die Desktop-App unter $url$: den Titel und diese Schritte, mit den darin eingegebenen Werten. Keine Bildschirmfotos, Konsoleneinträge oder Anfragen. Nichts läuft, bevor Sie es im Fenster der App starten.",
@@ -6512,7 +6512,7 @@
     "message": "Beenden"
   },
   "runs_finishTitle": {
-    "message": "Den Test weiterlaufen lassen, ohne erneut an einem Haltepunkt anzuhalten"
+    "message": "Den Test weiterlaufen lassen, ohne erneut an einem Haltepunkt anzuhalten in diesem Versuch"
   },
   "runs_end": {
     "message": "Test beenden"

@@ -1429,7 +1429,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     vscode.commands.registerCommand('piwi.pairPicker', async () => {
       await vscode.env.clipboard.writeText(await pickerPairing());
       void vscode.window.showInformationMessage(
-        "Piwi: the pairing address is on the clipboard. Paste it in Piwi Picker's options, under Send to editor.",
+        "Piwi: the pairing address is on the clipboard. Paste it in Piwi Picker's settings, under Send to editor.",
       );
     }),
     { dispose: () => void sendListener?.close() },

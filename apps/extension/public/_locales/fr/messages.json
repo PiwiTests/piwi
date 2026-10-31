@@ -3848,7 +3848,7 @@
     "message": "Associez d’abord l’application de bureau, dans les réglages de Piwi Picker sous Application de bureau."
   },
   "replay_desktopOpenOptions": {
-    "message": "Ouvrir les options"
+    "message": "Ouvrir les réglages"
   },
   "replay_desktopPreview": {
     "message": "Envoie à l’application de bureau à $url$ : le titre et ces étapes, avec les valeurs saisies. Aucune capture, entrée de console ou requête. Rien ne se lance avant que vous le démarriez dans la fenêtre de l’application.",
@@ -6512,7 +6512,7 @@
     "message": "Terminer"
   },
   "runs_finishTitle": {
-    "message": "Continuer le test sans plus s’arrêter aux points d’arrêt"
+    "message": "Continuer le test sans plus s’arrêter aux points d’arrêt dans cette tentative"
   },
   "runs_end": {
     "message": "Terminer le test"

@@ -117,7 +117,14 @@ export function showPauseBar(arg: PauseBarArg): void {
       : []),
     ...(arg.failure
       ? []
-      : [['Finish', 'finish', 'Run on and pause no more in this test', false] as [string, string, string, boolean]]),
+      : [
+          ['Finish', 'finish', 'Run the test on without stopping at a breakpoint again in this attempt', false] as [
+            string,
+            string,
+            string,
+            boolean,
+          ],
+        ]),
     ...(arg.end && !arg.failure
       ? [
           ['End the test', 'end', 'Skip the rest of this test: it is reported as skipped', false] as [
