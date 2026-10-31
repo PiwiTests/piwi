@@ -46,7 +46,7 @@ async function submit() {
   state.value.masks = written;
   if (!switched && !masksChanged) return;
   let message = 'Live view settings saved';
-  if (!masksChanged) message = on ? 'Live view turned on' : 'Live view turned off';
+  if (!masksChanged) message = on ? 'Live view enabled for new runs' : 'Live view turned off';
   const saved = await save(
     { ...(switched ? { liveView: on } : {}), ...(masksChanged ? { liveViewMasks: masks.value } : {}) },
     message,
@@ -69,7 +69,7 @@ async function submit() {
           <USwitch
             v-model="state.liveView"
             label="Let people who may open a run watch its workers live"
-            description="Each CI run of this project the reporter's global setup registers, while it runs. A run on a developer's machine sends nothing unless its developer shares it (Share live)."
+            description="Each CI run of this project the reporter's global setup registers from now on, while it runs: a run already going stays without it. Turning it off ends every view at once. A run on a developer's machine sends nothing unless its developer shares it (Share live)."
           />
         </UFormField>
         <UFormField

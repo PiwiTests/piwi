@@ -158,6 +158,7 @@ import { expectModuleOf, importInsertion } from './recorder/imports.js';
 import { RecordChannel, type Handoff } from './recorder/handoff.js';
 import { RunLines, type DiskFile } from './run-lines.js';
 import { RunSessions } from './run-sessions.js';
+import { ClientPageView } from './client-page-view.js';
 import { RunHub } from './run-hub.js';
 import { StopActions } from './stop-actions.js';
 import { AgentServer } from './agent-server.js';
@@ -213,6 +214,9 @@ import {
   TEST_AT_REQUEST,
   TEST_ITEMS_REQUEST,
   PAUSED_PAGE_REQUEST,
+  PAGE_VIEW_REQUEST,
+  PAGE_INPUT_REQUEST,
+  PAGE_FRAME_NOTIFICATION,
   PICK_AT_REQUEST,
   HUB_REQUEST,
   AGENTS_REQUEST,
@@ -256,6 +260,8 @@ import {
   type McpServersResult,
   type Notice,
   type PausedPageParams,
+  type PageViewParams,
+  type PageInputParams,
   type PausedPageResult,
   type PickAtParams,
   type PickAtResult,
@@ -1721,8 +1727,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       return disk && disk.text !== document.getText() ? [lineKey(file)] : [];
     });
   /** The runs the service built, as their workers tell them on the run channel. */
+  let clientPageView: ClientPageView | null = null;
   const runSessions = new RunSessions({
     notify: (session) => {
+      clientPageView?.changed();
       void connection.sendNotification(RUN_SESSION_NOTIFICATION, session);
       runHub?.push(session);
     },
@@ -1750,6 +1758,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       debugRuns.heard(ref, worker, what, root);
     },
   });
+  clientPageView = new ClientPageView(runSessions, (frame) =>
+    connection.sendNotification(PAGE_FRAME_NOTIFICATION, frame),
+  );
   /** The runs that debug a failure: the line each stops at once, and the suggested locator outlined there. */
   const debugRuns = new DebugRuns({
     sessions: runSessions,
@@ -3574,6 +3585,15 @@ export function startServer(connection: Connection, options: ServerOptions = {})
 
   connection.onRequest(PICK_AT_REQUEST, (params: PickAtParams): Promise<PickAtResult> => runSessions.pickAt(params));
 
+  connection.onRequest(PAGE_VIEW_REQUEST, (params: PageViewParams): Promise<RunControlResult> =>
+    answersStops
+      ? clientPageView!.watch(params)
+      : Promise.resolve({ ok: false, message: 'This client does not show stopped pages.' }),
+  );
+  connection.onRequest(PAGE_INPUT_REQUEST, (params: PageInputParams): Promise<RunControlResult> =>
+    clientPageView!.input(params),
+  );
+
   connection.onRequest(HUB_REQUEST, (params: HubParams | null): HubResult => {
     if (params?.forwarded !== undefined) hubForwarded = forwardedPorts(params.forwarded);
     return { url: runHub?.url ?? null, forwarded: hubForwarded };
@@ -3725,6 +3745,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   const closeRecordChannel = () => {
     const open = !!recordChannel || !!runHub;
     shutDown = true;
+    clientPageView?.dispose();
     recordChannel?.close();
     recordChannel = null;
     runHub?.close();

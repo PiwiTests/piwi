@@ -181,7 +181,7 @@ All under `src/main/kotlin/dev/piwitests/jetbrains/` unless noted.
 - `src/main/java/…/PiwiCredentials.java`: credential attributes built from Java. `src/main/resources/`: `plugin.xml`,
   color schemes, icons.
 - `src/test/kotlin/…`: the unit tests (`GlueTest`, `OpenOriginsTest`, `Lsp4jAccessTest`) and the platform tests
-  (`PiwiPluginTest`, `PiwiRecordingTest`, `PiwiOpenHandlerTest`, `PiwiRunControlTest`).
+  (`PiwiPluginTest`, `PiwiRecordingTest`, `PiwiOpenHandlerTest`, `PiwiRunControlTest`, `PausedPagePanelTest`).
 - `scripts/`: the screenshots script and `xinput.py`.
 
 ## ARCHITECTURE.md sections

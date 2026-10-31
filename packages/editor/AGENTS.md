@@ -142,8 +142,9 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
 - **What the hub sends must read with `parseHubMessage`, which Piwi Picker uses.** The hub cuts the command line, the
   project and client names and the folders to its limits (`MAX_HUB_COMMAND`, `MAX_HUB_ROOTS`, …). Checked by
   `tests/run-hub.test.ts` ("what the hub sends"). ([ARCHITECTURE.md](ARCHITECTURE.md#the-hub))
-- **A live view's frames go only to the hub connections that watch that stop, and never outlive it.** No frame goes to
-  the client, an instance or a file, none of a stop that ended, and the hub keeps none: a viewer that comes to a view on
+- **A live view's frames go only to viewers of that stop, and never outlive it.** The editor client opts in through
+  `ClientPageView`; hub connections opt in through `RunHub`. No frame goes to an instance or a file, none of a stop
+  that ended, and neither transport keeps a history: a viewer that comes to a view on
   has the worker send its latest frame again (`RunSessions.watch`, `RunHub.frame`). Checked by `tests/run-view.test.ts`.
   ([ARCHITECTURE.md](ARCHITECTURE.md#the-live-view))
 - **At a stop no pause bar shows, input and the actions in the test's window come only from a connection watching its
