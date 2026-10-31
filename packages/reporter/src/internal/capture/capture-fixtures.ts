@@ -69,6 +69,8 @@ import {
   recordProbeOutcome,
   outcomeFromStatus,
   classifyProbeHandled,
+  faultIsTheError,
+  probeConsoleErrors,
 } from '../probe/mode.js';
 import { installProbeInterception, type ProbeInterception } from '../probe/interception.js';
 import type { ProbePlanItem } from '../probe/plan.js';
@@ -3905,9 +3907,10 @@ export const piwiFixtures: Fixtures<
           const handled =
             level === 'server' && applied
               ? classifyProbeHandled({
-                  consoleErrors: sink.consoleEntries.filter((e) => e.type === 'error').length,
+                  consoleErrors: probeConsoleErrors(sink.consoleEntries),
                   dialogs: sink.dialogs.length,
                   backendError: sink.probeInterception?.serverError() ?? false,
+                  faultIsTheError: faultIsTheError(sink.probeItem.fault),
                   pageErrors: sink.probePageErrors,
                   blankPage: sink.probeBlankPage,
                 })

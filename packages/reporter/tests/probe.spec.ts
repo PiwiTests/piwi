@@ -11,7 +11,12 @@ import {
   shouldAct,
   type ProbePlan,
 } from '../src/internal/probe/plan.js';
-import { classifyProbeHandled, outcomeFromStatus } from '../src/internal/probe/mode.js';
+import {
+  classifyProbeHandled,
+  faultIsTheError,
+  outcomeFromStatus,
+  probeConsoleErrors,
+} from '../src/internal/probe/mode.js';
 
 describe('computeFault (fault application)', () => {
   const input = { status: 200, body: '{"total":42,"currency":"USD"}', contentType: 'application/json' };
@@ -94,6 +99,9 @@ describe('probe run stamp', () => {
     // An unapplied fault is inconclusive regardless of status.
     expect(outcomeFromStatus('passed', false)).toBe('inconclusive');
     expect(outcomeFromStatus('failed', false)).toBe('inconclusive');
+    // A skipped test and an interrupted run say nothing about the fault.
+    expect(outcomeFromStatus('skipped', true)).toBe('inconclusive');
+    expect(outcomeFromStatus('interrupted', true)).toBe('inconclusive');
   });
 });
 
@@ -176,6 +184,30 @@ describe('classifyProbeHandled (server-fault resilience)', () => {
       'unhandled',
     );
   });
+
+  it('reads the error a thrown or error-status fault injects as the fault, not as a degradation', () => {
+    expect(faultIsTheError('throw')).toBe(true);
+    expect(faultIsTheError('status')).toBe(true);
+    expect(faultIsTheError('dependency')).toBe(false);
+    const injected = { consoleErrors: 0, dialogs: 0, backendError: true, faultIsTheError: true };
+    expect(classifyProbeHandled(injected)).toBe('graceful');
+    // The page still has to cope: blank after the injected error is unhandled.
+    expect(classifyProbeHandled({ ...injected, blankPage: true })).toBe('unhandled');
+    // A dependency failure the handler turned into a 5xx is the application's error.
+    expect(classifyProbeHandled({ consoleErrors: 0, dialogs: 0, backendError: true, faultIsTheError: false })).toBe(
+      'degraded',
+    );
+  });
+
+  it("leaves the browser's failed-resource lines out of the console errors", () => {
+    expect(
+      probeConsoleErrors([
+        { type: 'error', text: 'Failed to load resource: the server responded with a status of 500 ()' },
+        { type: 'warning', text: 'slow' },
+        { type: 'error', text: 'TypeError: orders is undefined' },
+      ]),
+    ).toBe(1);
+  });
 });
 
 describe('isFaultAllowed (reporter-side allow-list)', () => {
@@ -198,8 +230,24 @@ describe('matchProbeItem', () => {
   const plan: ProbePlan = {
     budget: 50,
     items: [
-      { testCaseId: 1, testTitle: 'checkout › happy path', filePath: 'tests/checkout.spec.ts', suitePath: [], routeKey: 'POST /api/orders', fault: 'status-500', nth: 1 },
-      { testCaseId: 2, testTitle: 'cart › coupon', filePath: 'tests/cart.spec.ts', suitePath: [], routeKey: 'POST /api/coupons', fault: 'empty-body', nth: 1 },
+      {
+        testCaseId: 1,
+        testTitle: 'checkout › happy path',
+        filePath: 'tests/checkout.spec.ts',
+        suitePath: [],
+        routeKey: 'POST /api/orders',
+        fault: 'status-500',
+        nth: 1,
+      },
+      {
+        testCaseId: 2,
+        testTitle: 'cart › coupon',
+        filePath: 'tests/cart.spec.ts',
+        suitePath: [],
+        routeKey: 'POST /api/coupons',
+        fault: 'empty-body',
+        nth: 1,
+      },
     ],
   };
 
@@ -213,8 +261,24 @@ describe('matchProbeItem', () => {
     const shared: ProbePlan = {
       budget: 50,
       items: [
-        { testCaseId: 10, testTitle: 'loads', filePath: 'tests/orders.spec.ts', suitePath: [], routeKey: 'GET /api/orders', fault: 'status-500', nth: 1 },
-        { testCaseId: 20, testTitle: 'loads', filePath: 'tests/invoices.spec.ts', suitePath: [], routeKey: 'GET /api/invoices', fault: 'status-500', nth: 1 },
+        {
+          testCaseId: 10,
+          testTitle: 'loads',
+          filePath: 'tests/orders.spec.ts',
+          suitePath: [],
+          routeKey: 'GET /api/orders',
+          fault: 'status-500',
+          nth: 1,
+        },
+        {
+          testCaseId: 20,
+          testTitle: 'loads',
+          filePath: 'tests/invoices.spec.ts',
+          suitePath: [],
+          routeKey: 'GET /api/invoices',
+          fault: 'status-500',
+          nth: 1,
+        },
       ],
     };
     expect(matchProbeItem(shared, { title: 'loads', filePath: 'tests/orders.spec.ts' })?.testCaseId).toBe(10);
@@ -227,11 +291,29 @@ describe('matchProbeItem', () => {
     const tie: ProbePlan = {
       budget: 50,
       items: [
-        { testCaseId: 30, testTitle: 'saves', filePath: 'tests/app.spec.ts', suitePath: ['Orders'], routeKey: 'POST /api/orders', fault: 'status-500', nth: 1 },
-        { testCaseId: 40, testTitle: 'saves', filePath: 'tests/app.spec.ts', suitePath: ['Invoices'], routeKey: 'POST /api/invoices', fault: 'status-500', nth: 1 },
+        {
+          testCaseId: 30,
+          testTitle: 'saves',
+          filePath: 'tests/app.spec.ts',
+          suitePath: ['Orders'],
+          routeKey: 'POST /api/orders',
+          fault: 'status-500',
+          nth: 1,
+        },
+        {
+          testCaseId: 40,
+          testTitle: 'saves',
+          filePath: 'tests/app.spec.ts',
+          suitePath: ['Invoices'],
+          routeKey: 'POST /api/invoices',
+          fault: 'status-500',
+          nth: 1,
+        },
       ],
     };
-    expect(matchProbeItem(tie, { title: 'saves', filePath: 'tests/app.spec.ts', suitePath: ['Invoices'] })?.testCaseId).toBe(40);
+    expect(
+      matchProbeItem(tie, { title: 'saves', filePath: 'tests/app.spec.ts', suitePath: ['Invoices'] })?.testCaseId,
+    ).toBe(40);
   });
 
   it('returns null when nothing matches', () => {
