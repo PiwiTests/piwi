@@ -28,7 +28,7 @@ import {
 const props = defineProps<{ projectId: number }>();
 
 const toast = useToast();
-const { refreshDemoAccess } = useAuth();
+const { can, refreshDemoAccess } = useAuth();
 const response = ref<ProjectMembersResponse | null>(null);
 const loadError = ref<unknown>(null);
 const loading = ref(true);
@@ -135,6 +135,20 @@ async function loadPickers() {
   groups.value = sortProjectAccessGroups(groupList?.groups ?? []);
 }
 
+/**
+ * A project admin's list holds the users who share a project with them; anyone
+ * else is found by their whole username, looked up as it is typed.
+ * Administrators already list everyone.
+ */
+const lookUpUsername = useDebounceFn(async (term: string) => {
+  const username = term.trim().toLowerCase();
+  if (!username || can('users:manage') || users.value.some((user) => user.username.toLowerCase() === username)) return;
+  const found = await $fetch<UsersListResponse>('/api/users', { query: { lookup: term.trim() } }).catch(() => null);
+  const listed = new Set(users.value.map((user) => user.id));
+  const added: UserSummary[] = [...(found?.items ?? [])].filter((user) => !listed.has(user.id));
+  if (added.length > 0) users.value = sortProjectAccessUsers([...users.value, ...added]);
+}, 300);
+
 watch(() => props.projectId, load, { immediate: true });
 
 // ── Saving: every change replaces the direct roles at once ─────────────────
@@ -192,6 +206,7 @@ const addItems = computed(() => {
       label: projectAccessUserName(user),
       value: `user:${user.id}`,
       description: user.name ? `@${user.username}` : undefined,
+      username: user.username,
     }))
     .filter((item) => !unavailable.value.has(item.value));
   // Groups first, then users, apart.
@@ -237,12 +252,21 @@ function add() {
         <USelectMenu
           v-model="addKey"
           :items="addItems"
+          :filter-fields="['label', 'username']"
           value-key="value"
           placeholder="Add a user or a group…"
-          :search-input="{ placeholder: 'Filter users and groups…' }"
+          :search-input="{ placeholder: 'Filter, or type a whole username…' }"
           aria-label="User or group to add"
           class="w-full sm:w-72"
-        />
+          @update:search-term="lookUpUsername"
+        >
+          <template #empty="{ searchTerm }">
+            <template v-if="searchTerm">
+              No match. Someone who shares no project with you is found by their whole username.
+            </template>
+            <template v-else>Nobody to add.</template>
+          </template>
+        </USelectMenu>
         <USelect v-model="addRole" :items="roleItems" aria-label="Role to give" class="w-full sm:w-44" />
         <UButton label="Add" icon="i-lucide-plus" :disabled="!addKey || saving" @click="add" />
       </div>

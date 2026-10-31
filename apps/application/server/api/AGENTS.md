@@ -115,6 +115,8 @@ The early check only proves the user holds the permission _somewhere_. The proje
 - **The last administrator can be neither demoted nor deleted.**
 - **A Project admin edits role bindings only on projects where they hold `project:members`**, never on all projects
   (that takes `users:manage`, an administrator's).
+- **A Project admin's user list holds only the users who can open a project they can open** (`listUserSummaries`):
+  anyone else is found by their whole username (`lookup`), never listed. `tests/unit/access-management-routes.test.ts`.
 - **Changing a user's instance role, or signing out, bumps `sessionEpoch`** and so ends their sessions. Project role
   and group changes need no such step: access is loaded on every request.
 

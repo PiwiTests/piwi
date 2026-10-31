@@ -473,7 +473,7 @@ export const HELP_TOPICS = {
   },
   'project.members': {
     title: 'Project members',
-    text: 'The users and groups holding a role on this project, granted here or on All projects. A Project admin can grant any project role here; administrators can do everything on every project.',
+    text: 'The users and groups holding a role on this project, granted here or on All projects.\n\n- **Who grants** — a Project admin grants any project role here; administrators can do everything on every project\n- **Adding someone** — pick a group, or a user who shares a project with you; anyone else is found by typing their whole username',
     doc: 'operate/project-access#who-manages-access',
   },
   'project.ai-instructions': {

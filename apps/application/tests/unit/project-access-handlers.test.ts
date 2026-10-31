@@ -335,8 +335,14 @@ describe("a user's own project roles", () => {
 });
 
 describe('users', () => {
-  test('administrators see instance roles and groups; others only ids and names, by the name shown', async () => {
+  const AVERY = { id: 1, username: 'avery', name: 'Avery' };
+  const QUINN = { id: 2, username: 'quinn', name: 'Quinn' };
+  const SAM = { id: 3, username: 'sam', name: 'Sam' };
+  const NOAH = { id: 4, username: 'noah', name: null };
+
+  test('administrators see every user with instance roles and groups', async () => {
     const items = await listUserItems(db);
+    expect(items.map((u) => u.id).sort()).toEqual([1, 2, 3, 4]);
     expect(items.find((u) => u.id === 2)).toMatchObject({
       username: 'quinn',
       role: 'member',
@@ -344,12 +350,29 @@ describe('users', () => {
       groupIds: [100],
     });
     expect(items.find((u) => u.id === 1)?.instanceRole).toBe(InstanceRole.ADMINISTRATOR);
-    expect(await listUserSummaries(db)).toEqual([
-      { id: 1, username: 'avery', name: 'Avery' },
-      { id: 4, username: 'noah', name: null },
-      { id: 2, username: 'quinn', name: 'Quinn' },
-      { id: 3, username: 'sam', name: 'Sam' },
-    ]);
+  });
+
+  test('a project admin lists, by the name shown, the users who can open one of their projects', async () => {
+    // quinn: Project admin of web. sam: Viewer of api through Product owners. noah: no role.
+    await bind({ userId: 2, projectId: 10, role: 'project_admin' });
+    await bind({ groupId: 101, projectId: 11, role: 'viewer' });
+    expect(await listUserSummaries(db, new Set([10]))).toEqual([AVERY, QUINN]);
+    expect(await listUserSummaries(db, new Set([10, 11]))).toEqual([AVERY, QUINN, SAM]);
+    expect(await listUserSummaries(db, 'all')).toEqual([AVERY, QUINN, SAM]);
+    expect(await listUserSummaries(db, new Set())).toEqual([]);
+
+    // A role on all projects shares every project.
+    await bind({ userId: 4, projectId: null, role: 'viewer' });
+    expect(await listUserSummaries(db, new Set([10]))).toEqual([AVERY, NOAH, QUINN]);
+  });
+
+  test('anyone else is found only by their whole username, ignoring letter case', async () => {
+    await bind({ userId: 2, projectId: 10, role: 'project_admin' });
+    expect(await listUserSummaries(db, new Set([10]), 'NOAH')).toEqual([AVERY, NOAH, QUINN]);
+    expect(await listUserSummaries(db, new Set([10]), ' noah ')).toEqual([AVERY, NOAH, QUINN]);
+    expect(await listUserSummaries(db, new Set([10]), 'noa')).toEqual([AVERY, QUINN]);
+    expect(await listUserSummaries(db, new Set([10]), 'quinn')).toEqual([AVERY, QUINN]);
+    expect(await listUserSummaries(db, new Set(), 'sam')).toEqual([SAM]);
   });
 
   test('a new user joins their groups; a taken username or email is a 409, an unknown group a 400 that creates nobody', async () => {
@@ -382,7 +405,7 @@ describe('users', () => {
         createUserAccount(db, { username: 'kim', password: 'x', role: InstanceRole.MEMBER, groupIds: [7] }, 1),
       ),
     ).toEqual({ statusCode: 400, message: 'Group(s) not found: 7' });
-    expect((await listUserSummaries(db)).some((u) => u.username === 'kim')).toBe(false);
+    expect((await listUserItems(db)).some((u) => u.username === 'kim')).toBe(false);
   });
 
   describe('updateUserAccount', () => {

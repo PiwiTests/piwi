@@ -35,12 +35,14 @@ vi.mock('../../server/utils/project-access', async (importOriginal) =>
 interface FakeEvent {
   body?: unknown;
   params?: Record<string, string>;
+  query?: Record<string, string>;
 }
 
 vi.stubGlobal('defineRouteMeta', (meta: { openAPI?: Record<string, unknown> }) => recordRouteMeta(state, meta));
 vi.stubGlobal('eventHandler', (handler: unknown) => handler);
 vi.stubGlobal('readBody', async (event: FakeEvent) => event.body);
 vi.stubGlobal('getRouterParam', (event: FakeEvent, name: string) => event.params?.[name]);
+vi.stubGlobal('getQuery', (event: FakeEvent) => event.query ?? {});
 vi.stubGlobal('apiError', apiError);
 
 type Handler = (event: FakeEvent) => Promise<any>;
@@ -108,25 +110,60 @@ async function status(promise: Promise<unknown>): Promise<number> {
 }
 
 describe('GET /api/users', () => {
-  test('an administrator gets every field, a Project admin only ids and names, anyone else nothing', async () => {
+  const AVERY = { id: 1, username: 'avery', name: 'Avery' };
+  const QUINN = { id: 2, username: 'quinn', name: 'Quinn' };
+  const SAM = { id: 3, username: 'sam', name: 'Sam' };
+  const NOAH = { id: 4, username: 'noah@example.com', name: null };
+  const KIM = { id: 5, username: 'kim', name: 'Kim' };
+  // Pat: Project admin of web only.
+  const pat = caller(6, InstanceRole.MEMBER, { projectId: 10, role: ProjectRole.PROJECT_ADMIN });
+
+  beforeEach(async () => {
+    // Sam reads web, Kim reads api only, Noah holds no role yet.
+    await db.insert(schema.users).values([
+      { id: 4, username: 'noah@example.com', password: '', role: 'member', email: 'noah@example.com' },
+      { id: 5, username: 'kim', password: '', role: 'member', name: 'Kim' },
+      { id: 6, username: 'pat', password: '', role: 'member', name: 'Pat' },
+    ]);
+    await db.insert(schema.roleBindings).values([
+      { userId: 3, projectId: 10, role: 'viewer' },
+      { userId: 5, projectId: 11, role: 'viewer' },
+      { userId: 6, projectId: 10, role: 'project_admin' },
+    ]);
+  });
+
+  const usersOf = async (query: Record<string, string> = {}) => (await listUsers({ query })).items;
+
+  test('an administrator gets every user with every field; a member without project:members nothing', async () => {
     state.caller = avery;
-    const full = await listUsers({});
-    expect(full.items.find((u: { id: number }) => u.id === 1)).toMatchObject({
-      email: 'avery@example.com',
-      instanceRole: InstanceRole.ADMINISTRATOR,
+    const full = await usersOf();
+    expect(full.map((u: { id: number }) => u.id).sort()).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(full.find((u: { id: number }) => u.id === 4)).toMatchObject({
+      email: 'noah@example.com',
+      instanceRole: InstanceRole.MEMBER,
       groupIds: [],
     });
 
-    state.caller = quinn;
-    const summaries = await listUsers({});
-    expect(summaries.items).toEqual([
-      { id: 1, username: 'avery', name: 'Avery' },
-      { id: 2, username: 'quinn', name: 'Quinn' },
-      { id: 3, username: 'sam', name: 'Sam' },
-    ]);
-
     state.caller = sam;
     expect(await status(listUsers({}))).toBe(403);
+  });
+
+  test('a Project admin gets the ids and names of the users who can open a project they can open, nobody else', async () => {
+    const PAT = { id: 6, username: 'pat', name: 'Pat' };
+    state.caller = pat;
+    expect(await usersOf()).toEqual([AVERY, PAT, QUINN, SAM]);
+    // A role on all projects shares every project: Kim, who reads api, is listed too.
+    state.caller = quinn;
+    expect(await usersOf()).toEqual([AVERY, KIM, PAT, QUINN, SAM]);
+  });
+
+  test('a Project admin finds anyone else only by their whole username, ignoring letter case', async () => {
+    state.caller = pat;
+    const PAT = { id: 6, username: 'pat', name: 'Pat' };
+    expect(await usersOf({ lookup: 'NOAH@example.com' })).toEqual([AVERY, NOAH, PAT, QUINN, SAM]);
+    expect(await usersOf({ lookup: 'Kim' })).toEqual([AVERY, KIM, PAT, QUINN, SAM]);
+    expect(await usersOf({ lookup: 'noah' })).toEqual([AVERY, PAT, QUINN, SAM]);
+    expect(await usersOf({ lookup: 'example.com' })).toEqual([AVERY, PAT, QUINN, SAM]);
   });
 });
 

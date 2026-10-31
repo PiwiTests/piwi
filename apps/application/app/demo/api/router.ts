@@ -3124,10 +3124,12 @@ const routes: RouteEntry[] = [
     method: 'GET',
     pattern: /^\/api\/users$/,
     permission: ['users:manage', 'project:members'],
-    handler: async (_m, _b, _q, ctx) => {
+    handler: async (_m, _b, query, ctx) => {
       const db = await getDemoDb();
       // The early check let in an administrator or someone holding project:members on a project.
-      const items = demoCan(ctx, 'users:manage') ? await listUserItems(db) : await listUserSummaries(db);
+      const items = demoCan(ctx, 'users:manage')
+        ? await listUserItems(db)
+        : await listUserSummaries(db, demoScope(ctx), query?.get('lookup'));
       return { items, authEnabled: true };
     },
   },

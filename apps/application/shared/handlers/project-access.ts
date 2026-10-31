@@ -5,9 +5,9 @@
  * which turn an `AccessError` (or a `GroupError`) into an HTTP error with its
  * status. The shapes are in `#shared/project-access`.
  */
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
-import { groups, projects, users } from '../../server/database/schema';
+import { groupMembers, groups, projects, roleBindings, users } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 import {
   can,
@@ -15,6 +15,7 @@ import {
   InstanceRole,
   isAdministrator,
   PROJECT_ROLE_LABELS,
+  PROJECT_ROLES,
   ProjectRole,
   projectRolesOf,
   type AccessSummary,
@@ -215,9 +216,59 @@ export async function listUserItems(db: DrizzleDB): Promise<UserListItem[]> {
   return rows.map((row) => toUserListItem(row, groupIdsByUser.get(row.id) ?? []));
 }
 
-/** Every user's id and names: what a project admin needs to add someone to their project. */
-export async function listUserSummaries(db: DrizzleDB): Promise<UserSummary[]> {
-  const rows = await db.select({ id: users.id, username: users.username, name: users.name }).from(users);
+type ProjectScope = 'all' | Set<number>;
+
+/** Account identifiers are compared ignoring ASCII letter case only. */
+const asciiLowerCase = (value: string) => value.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
+
+/**
+ * The users who can open at least one project of `scope`: the administrators,
+ * and every user holding a project role on one of them or on all projects,
+ * directly or through a group. Undefined for an empty scope.
+ */
+function opensProjectIn(db: DrizzleDB, scope: ProjectScope): SQL | undefined {
+  if (scope !== 'all' && scope.size === 0) return undefined;
+  const binding = and(
+    inArray(roleBindings.role, [...PROJECT_ROLES]),
+    scope === 'all' ? undefined : or(isNull(roleBindings.projectId), inArray(roleBindings.projectId, [...scope])),
+  );
+  const direct = db
+    .select({ id: roleBindings.userId })
+    .from(roleBindings)
+    .where(and(isNotNull(roleBindings.userId), binding));
+  const throughGroups = db
+    .select({ id: groupMembers.userId })
+    .from(groupMembers)
+    .innerJoin(roleBindings, eq(roleBindings.groupId, groupMembers.groupId))
+    .where(binding);
+  return or(eq(users.role, InstanceRole.ADMINISTRATOR), inArray(users.id, direct), inArray(users.id, throughGroups));
+}
+
+/**
+ * The users a project admin may pick to add to their project: those who can
+ * open a project the admin can open (`scope`, their `project:read` scope),
+ * and the user whose username is `lookup` ignoring letter case, so someone who
+ * holds no role yet can be added. Nobody else is listed.
+ */
+export async function listUserSummaries(
+  db: DrizzleDB,
+  scope: ProjectScope,
+  lookup?: string | null,
+): Promise<UserSummary[]> {
+  const columns = { id: users.id, username: users.username, name: users.name };
+  const sharing = opensProjectIn(db, scope);
+  const rows = sharing ? await db.select(columns).from(users).where(sharing) : [];
+  const term = lookup?.trim();
+  if (term) {
+    const found = await db
+      .select(columns)
+      .from(users)
+      .where(sql`lower(${users.username}) = lower(${term})`);
+    for (const row of found) {
+      if (asciiLowerCase(row.username) !== asciiLowerCase(term) || rows.some((r) => r.id === row.id)) continue;
+      rows.push(row);
+    }
+  }
   return sortProjectAccessUsers(rows);
 }
 
