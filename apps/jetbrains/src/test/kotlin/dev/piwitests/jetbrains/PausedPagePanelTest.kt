@@ -4,6 +4,7 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import java.awt.Component
 import java.awt.Container
 import java.awt.event.InputEvent
+import java.awt.event.KeyEvent
 import java.awt.event.MouseEvent
 import java.awt.image.BufferedImage
 import javax.swing.ImageIcon
@@ -65,6 +66,30 @@ class PausedPagePanelTest : BasePlatformTestCase() {
         panel.watching(false)
         assertFalse(interact.isSelected)
         assertFalse(interact.isEnabled)
+    }
+
+    fun testASecondButtonLetsGoOfTheFirstAndAPrintableCharacterIsPressed() {
+        val panel = PausedPagePanel()
+        panel.configureLive(true, true, false) {}
+        val sent = mutableListOf<PageInput>()
+        panel.input = { sent += it }
+        panel.show("Paused", BufferedImage(800, 600, BufferedImage.TYPE_INT_RGB))
+        panel.viewport = PausedImage("image/jpeg", null, 800, 600)
+        panel.watching(true)
+        descendants(panel).filterIsInstance<JCheckBox>().single { it.text == "Interact" }.doClick()
+        val picture = descendants(panel).filterIsInstance<JLabel>().single { it.icon is ImageIcon }
+        fun press(button: Int) = MouseEvent(picture, MouseEvent.MOUSE_PRESSED, 1L, 0, 10, 20, 1, false, button)
+        picture.mouseListeners.forEach { it.mousePressed(press(MouseEvent.BUTTON1)) }
+        picture.mouseListeners.forEach { it.mousePressed(press(MouseEvent.BUTTON3)) }
+        assertEquals(listOf(
+            PageInput("mouse", "down", 10.0, 20.0, "left"),
+            PageInput("mouse", "up", 10.0, 20.0, "left"),
+            PageInput("mouse", "down", 10.0, 20.0, "right"),
+        ), sent)
+        sent.clear()
+        picture.keyListeners.forEach { it.keyTyped(KeyEvent(picture, KeyEvent.KEY_TYPED, 1L, 0, KeyEvent.VK_UNDEFINED, ' ')) }
+        picture.keyListeners.forEach { it.keyTyped(KeyEvent(picture, KeyEvent.KEY_TYPED, 1L, 0, KeyEvent.VK_UNDEFINED, 'é')) }
+        assertEquals(listOf(PageInput("key", "press", key = " "), PageInput("text", text = "é")), sent)
     }
 
     private fun descendants(container: Container): List<Component> = container.components.flatMap {
