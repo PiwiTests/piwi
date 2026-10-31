@@ -302,16 +302,16 @@ export function testImportOf(text: string, bindings = importBindings(text)): str
 }
 
 /**
- * The module `expect` is imported from when a block checks something: the module the file's `test` comes from, when
- * it is `@playwright/test` or when the file or a spec beside it (`siblings`, read when needed) imports `expect` from
- * it; else `@playwright/test`.
+ * The module `expect` is imported from when a block checks something: the module the file's `test` comes from (or
+ * `testModule`, the one a recording imports it from into a file that takes none), when it is `@playwright/test` or
+ * when the file or a spec beside it (`siblings`, read when needed) imports `expect` from it; else `@playwright/test`.
  */
 export function expectModuleOf(
   text: string,
-  options: { siblings?: () => readonly string[]; bindings?: ImportBindings } = {},
+  options: { siblings?: () => readonly string[]; bindings?: ImportBindings; testModule?: string | null } = {},
 ): string {
   const bindings = options.bindings ?? importBindings(text);
-  const module = testImportOf(text, bindings);
+  const module = testImportOf(text, bindings) ?? options.testModule ?? null;
   if (!module || module === PLAYWRIGHT_TEST) return PLAYWRIGHT_TEST;
   if (moduleOf(bindings, 'expect') === module) return module;
   const siblings = options.siblings?.() ?? [];

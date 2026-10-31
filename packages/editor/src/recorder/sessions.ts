@@ -39,6 +39,7 @@ import type {
 import { recorderBrowser, type RecorderBrowser } from './context-options.js';
 import type { LaunchRequest, LauncherToService, ServiceToLauncher } from './ipc.js';
 import {
+  PLAYWRIGHT_TEST,
   expectModuleOf,
   importBindings,
   importInsertion,
@@ -193,6 +194,8 @@ interface Session {
   codegen: CodegenOptions;
   /** The module `expect` is imported from when the block checks something, decided when the recording starts. */
   expectModule: string;
+  /** The module a new test imports `test` from into a file that takes none; null when the file takes it already. */
+  testModule: string | null;
   /** The origin of the project's `baseURL`: a recording on it writes paths. */
   baseOrigin: string | null;
   cwd: string;
@@ -283,6 +286,21 @@ export function startUrl(
   }
 }
 
+/** The title a recorded test takes when none is given. */
+const RECORDED_TITLE = 'recorded flow';
+
+/**
+ * A title for a recorded test that no test of `text` has: `recorded flow`, else `recorded flow 2`, and so on, since
+ * Playwright refuses a file in which two tests share a title.
+ */
+export function freeTestTitle(text: string): string {
+  const titles = new Set([...text.matchAll(/(['"`])(recorded flow(?: \d+)?)\1/g)].map((match) => match[2]));
+  for (let n = 1; ; n++) {
+    const title = n === 1 ? RECORDED_TITLE : `${RECORDED_TITLE} ${n}`;
+    if (!titles.has(title)) return title;
+  }
+}
+
 /** The texts of the spec files beside `file`, the first ones by name. */
 export function siblingSpecs(file: string): string[] {
   const dir = path.dirname(file);
@@ -355,6 +373,8 @@ export function blockCode(code: string, into: RecordInto): string {
 export interface BlockImportsOptions {
   /** The module `expect` is imported from; what `expectModuleOf` reads from the text alone by default. */
   expectModule?: string;
+  /** The module a block that is a new test imports `test` from when the file binds none; none by default. */
+  testModule?: string | null;
   /** The file's module statements and bindings, when read already; those of `text` by default. */
   bindings?: ImportBindings;
 }
@@ -370,9 +390,18 @@ export function blockImports(
   options: BlockImportsOptions = {},
 ): string[] {
   const bindings = options.bindings ?? importBindings(text);
-  const needsExpect = /(?<![\w$.])expect\(/.test(result.code);
-  const expectLine = `import { expect } from '${options.expectModule ?? expectModuleOf(text, { bindings })}';`;
-  return missingImports(text, needsExpect ? [expectLine, ...result.imports] : result.imports, bindings);
+  const needsExpect = /(?<![\w$.])expect\(/.test(result.code) && !bindings.names.has('expect');
+  const testModule =
+    options.testModule && !bindings.names.has('test') && !bindings.declared.has('test') ? options.testModule : null;
+  const expectModule = options.expectModule ?? expectModuleOf(text, { bindings, testModule });
+  const lines =
+    testModule && needsExpect && expectModule === testModule
+      ? [`import { test, expect } from '${testModule}';`]
+      : [
+          ...(testModule ? [`import { test } from '${testModule}';`] : []),
+          ...(needsExpect ? [`import { expect } from '${expectModule}';`] : []),
+        ];
+  return missingImports(text, [...lines, ...result.imports], bindings);
 }
 
 /**
@@ -505,13 +534,25 @@ export class RecordingSessions {
     const start = startUrl(params.startUrl, baseURL);
     if ('error' in start) return { ok: false, message: start.error };
 
-    const title = params.title?.trim();
+    const title = params.title?.trim() || (into === 'steps' ? '' : freeTestTitle(target.text));
     const fromConfig = codegenConfigOf(options.piwi);
     const siblings = into === 'file' ? siblingTestSetup(target.file) : null;
+    const readSiblings = () => siblingSpecs(target.file);
+    // A new test in a file that takes no `test` imports it as the specs beside it do.
+    const fileBindings = importBindings(target.text);
+    const testModule =
+      into === 'test' && !testImportOf(target.text, fileBindings) && !fileBindings.declared.has('test')
+        ? (siblingTestSetup(target.file).testImport ?? PLAYWRIGHT_TEST)
+        : null;
+    const fileTestImport = siblings ? (testImportOf(target.text) ?? siblings.testImport ?? undefined) : undefined;
     const codegen: CodegenOptions = {
       format: into === 'steps' ? 'body' : into,
       ...(siblings
-        ? { testImport: testImportOf(target.text) ?? siblings.testImport ?? undefined, fixtures: siblings.fixtures }
+        ? {
+            testImport: fileTestImport,
+            expectImport: expectModuleOf('', { siblings: readSiblings, testModule: fileTestImport ?? null }),
+            fixtures: siblings.fixtures,
+          }
         : {}),
       ...(into === 'test' ? { fixtures: fileFixtures(target.text) } : {}),
       ...(into !== 'file' ? { bodyImports: 'none' as const, declaredNames: declaredNamesAt(target.text, line) } : {}),
@@ -536,7 +577,8 @@ export class RecordingSessions {
       events: [],
       startedAt: Date.now(),
       codegen,
-      expectModule: expectModuleOf(target.text, { siblings: () => siblingSpecs(target.file) }),
+      expectModule: expectModuleOf(target.text, { siblings: readSiblings, bindings: fileBindings, testModule }),
+      testModule,
       baseOrigin: originOf(baseURL),
       cwd,
       browser,
@@ -648,6 +690,7 @@ export class RecordingSessions {
       startedAt: Date.now(),
       codegen,
       expectModule: expectModuleOf(target.text, { siblings: () => siblingSpecs(target.file) }),
+      testModule: null,
       baseOrigin: originOf(handoff.baseURL),
       cwd,
       browser: null,
@@ -923,7 +966,11 @@ export class RecordingSessions {
     if (session.into === 'file' || !rendered) return null;
     const text = this.currentText(session);
     const bindings = importBindings(text);
-    const lines = blockImports(text, rendered, { expectModule: session.expectModule, bindings });
+    const lines = blockImports(text, rendered, {
+      expectModule: session.expectModule,
+      testModule: session.testModule,
+      bindings,
+    });
     return importInsertion(text, lines, bindings);
   }
 

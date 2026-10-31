@@ -44,6 +44,8 @@ export interface CodegenOptions {
   catalog?: TestFunctionEntry[];
   /** Module `test` and `expect` are imported from — a project's own fixtures file, for instance. `@playwright/test` by default. */
   testImport?: string;
+  /** Module `expect` is imported from when it is not `testImport`'s, as a fixtures file that exports `test` alone. */
+  expectImport?: string;
   /** `absolute` (default) keeps recorded URLs; `relative` writes URLs on the recorded origin as paths, so the project's `baseURL` applies. */
   urls?: 'absolute' | 'relative';
   /** `first` (default) takes each target's best-ranked alternative; `stable` takes the first one `assessLocatorChain` rates stable, when there is one. */
@@ -1008,18 +1010,16 @@ export function renderSpec(session: RecordedSession, options: CodegenOptions = {
     return result([...needs, ...testOpening, ...testBody, `});`, ``], needs.length + testOpening.length);
   }
 
-  const lines = [
-    // Package name interpolated rather than adjoining the preceding keyword
-    // directly, so this generated-code line does not itself look like a real
-    // import to the boundary test in tests/boundary.test.ts.
-    `import { test, expect } from ${quote(options.testImport?.trim() || '@playwright/test')};`,
-    ...importLines,
-    ``,
-    ...testOpening,
-    ...testBody,
-    `});`,
-    ``,
-  ];
+  // Package names interpolated rather than adjoining the preceding keyword
+  // directly, so these generated-code lines do not themselves look like real
+  // imports to the boundary test in tests/boundary.test.ts.
+  const testModule = options.testImport?.trim() || '@playwright/test';
+  const expectModule = options.expectImport?.trim() || testModule;
+  const testImports =
+    expectModule === testModule
+      ? [`import { test, expect } from ${quote(testModule)};`]
+      : [`import { test } from ${quote(testModule)};`, `import { expect } from ${quote(expectModule)};`];
+  const lines = [...testImports, ...importLines, ``, ...testOpening, ...testBody, `});`, ``];
 
-  return result(lines, 1 + importLines.length + 1 + testOpening.length);
+  return result(lines, testImports.length + importLines.length + 1 + testOpening.length);
 }

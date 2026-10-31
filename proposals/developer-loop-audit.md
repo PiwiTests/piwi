@@ -10,8 +10,11 @@ to what the VS Code extension does. Test coverage and the Test Map's gaps are le
 [the plan](#11-the-plan), the failing line kept (F1, F2), wrapped statements that stop (D1), a browser headed as the
 test's fixtures make it, with no Inspector switch left to the projects that depend on a worker's (D2, D8), and a spec
 without the capture fixtures named in a run that can stop, the editor's answer naming that cause (S1; `init` still
-leaves the imports to the person). The rest is proposed. A pull request that builds part of the plan updates this
-paragraph.
+leaves the imports to the person). Quick win 5 is built in part: a new test in a spec that takes no `test` imports it
+as the specs beside it do (W1), each recorded test gets a title no test of its file has (W2; asking the person for one
+needs both clients), and a new file takes `expect` from a module that exports it (W3). Left from it: catalog imports
+relative to the spec (W4), since a catalog entry's module names no folder it is relative to. The rest is proposed. A
+pull request that builds part of the plan updates this paragraph.
 
 **Summary.** Every step of the loop exists, most of them in several tools, and most of it works as documented: a
 breakpoint stops a headed run under the pause bar, Step and Resume answer, a picked locator lands on its line, a

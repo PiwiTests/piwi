@@ -20,7 +20,9 @@ repository.
   followed by a wait for it, except next to a call to your own code, which waits for its pages itself.
 - **Imports**: a call to your own code, and `expect` when a step checks something, are imported at the top of the file
   when it lacks them: `expect` from `@playwright/test`, or from your fixtures module when the file or a spec beside it
-  imports `expect` from there. A spec that loads `test` with `require` gets `require` lines after its last one.
+  imports `expect` from there. A new test in a file that imports no `test` imports it as the specs beside it do. A spec
+  that loads `test` with `require` gets `require` lines after its last one.
+- **Titles**: a new test is titled `recorded flow`, numbered (`recorded flow 2`) when the file has one already.
 - **Your own code**: when the editor is connected to an instance or the [desktop app](./desktop), steps that match one
   of your [test functions](./test-functions) become a call to it, as soon as the last of those steps is recorded.
 - **Passwords** are never recorded: the code reads them from an environment variable named after the field, such as

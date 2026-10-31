@@ -603,6 +603,20 @@ describe('renderSpec — options', () => {
     expect(code).not.toContain('@playwright/test');
   });
 
+  test('expectImport takes expect from another module than test, as a fixtures file that exports test alone', () => {
+    const plain = renderSpec(buildSession([step()], 0), { testImport: '../fixtures' });
+    const { code, stepLines } = renderSpec(buildSession([step()], 0), {
+      testImport: '../fixtures',
+      expectImport: '@playwright/test',
+    });
+    expect(code.split('\n').slice(0, 2)).toEqual([
+      `import { test } from '../fixtures';`,
+      `import { expect } from '@playwright/test';`,
+    ]);
+    // Each step is one line further down, under the second import.
+    expect(stepLines).toEqual(plain.stepLines.map((line) => line + 1));
+  });
+
   test('relative urls write the recorded origin as paths and leave other origins alone', () => {
     const session = buildSession(
       [
