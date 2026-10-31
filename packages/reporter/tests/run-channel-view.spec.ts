@@ -676,6 +676,12 @@ const PICKED_AT = PICKS_AT
   ? { ok: true, message: `${GO} went to the editor, in place of the locator on the stopped line.`, locator: GO }
   : { ok: false, message: PICK_AT_NEEDS, locator: null };
 
+/** What Pick on the image sends where a pick goes, at the stop of the headless test `title`. */
+function pickSent(title: string) {
+  const at = { file: 'tests/headless.spec.cjs', line: breakpointOf(HEADLESS_SPEC(server.url), title) };
+  return { authorization: `Bearer ${SEND_TOKEN}`, body: { kind: 'locator', text: GO, at } };
+}
+
 describe('the live view of a stopped page', () => {
   it('lets every test pass, and says it takes the view, its input and a pick on the image as it attaches', () => {
     expect(exitCode, output).toBe(0);
@@ -747,16 +753,17 @@ describe('the live view of a stopped page', () => {
     expect(said['held past its timeout while watched']).toEqual([ON, OFF]);
   });
 
-  it('names the locator of the element under a point of the page, sent where a pick goes', () => {
-    const where = {
-      file: 'tests/headless.spec.cjs',
-      line: breakpointOf(HEADLESS_SPEC(server.url), 'clicked through the view'),
-    };
-    const sent = { authorization: `Bearer ${SEND_TOKEN}`, body: { kind: 'locator', text: GO, at: where } };
-    if (PICKS_AT) expect(picks).toContainEqual(sent);
-    else expect(picks).not.toContainEqual(sent);
-    // The image names the page's viewport in CSS pixels, which a point on it is mapped to.
+  it('sends an image that names the page’s viewport in CSS pixels, which a point on it is mapped to', () => {
     expect(images['clicked through the view']).toMatchObject({ width: 1000, height: 640 });
+  });
+
+  it.runIf(PICKS_AT)('names the locator of the element under a point of the page, sent where a pick goes', () => {
+    expect(picks).toContainEqual(pickSent('clicked through the view'));
+  });
+
+  it.runIf(!PICKS_AT)('refuses Pick on the image without the snapshot’s boxes, and sends no pick', () => {
+    expect(said['picked on a sharper image']).toEqual([PICKED_AT, ON]);
+    expect(picks).not.toContainEqual(pickSent('clicked through the view'));
   });
 
   it('picks headless through the view, the anchors step and the choice included, leaving nothing behind', () => {
@@ -847,14 +854,17 @@ describe('the live view of a stopped page', () => {
     expect(jpegSize(seen.lastJpeg!)).toEqual({ width: 800, height: 512 });
   });
 
-  it('maps a point of an image in device pixels to the page through the viewport the image names', () => {
+  it('sends an image in device pixels that names the viewport in CSS pixels', () => {
     // Twice the viewport's CSS pixels: the device scale factor.
     expect(sharp.natural).toEqual({ width: 2000, height: 1280 });
-    expect(sharp.clicked!.x).toBeCloseTo(sharp.sent!.x * 2);
-    expect(said['picked on a sharper image']).toEqual([PICKED_AT, ON]);
     // The view names the same viewport, whatever its frames' own size.
     const seen = watched['picked on a sharper image']!;
     expect(seen.firstJpeg && jpegSize(seen.firstJpeg)).toEqual({ width: 1000, height: 640 });
+  });
+
+  it.runIf(PICKS_AT)('maps a point of such an image to the page through the viewport it names', () => {
+    expect(sharp.clicked!.x).toBeCloseTo(sharp.sent!.x * 2);
+    expect(said['picked on a sharper image']).toEqual([PICKED_AT, ON]);
   });
 
   it('shows a lighter image of a page whose frames are too long, and says once why none goes when it is too', () => {
