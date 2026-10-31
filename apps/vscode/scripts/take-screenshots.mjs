@@ -239,18 +239,17 @@ const SCENES = {
       .locator('span', { hasText: 'btn-primary' })
       .first();
     const hover = page.locator('.monaco-hover:not(.hidden)').first();
-    // The first hover starts the screenshot's download; the second shows it.
-    await token.hover();
-    await hover.waitFor({ state: 'visible', timeout: 10_000 });
-    await settle(page, 2500);
-    await page.mouse.move(10, 400);
-    await hover.waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => {});
-    await token.hover();
-    await hover.waitFor({ state: 'visible', timeout: 10_000 });
-    await hover
-      .locator('img')
-      .waitFor({ state: 'visible', timeout: 10_000 })
-      .catch(() => {});
+    const image = hover.locator('img');
+    // The first hover starts the screenshot's download; a later one shows it.
+    for (let tries = 0; ; tries++) {
+      await token.hover();
+      await hover.waitFor({ state: 'visible', timeout: 10_000 });
+      await settle(page, 2500);
+      if (await image.isVisible()) break;
+      if (tries >= 5) throw new Error('the hover never showed the failure screenshot');
+      await page.mouse.move(10, 400);
+      await hover.waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => {});
+    }
     await settle(page, 1500);
     await shoot(page, 'hover');
   },
