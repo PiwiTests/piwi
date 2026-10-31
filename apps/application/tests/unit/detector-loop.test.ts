@@ -189,6 +189,35 @@ describe('loadDetectorPrecision (DB)', () => {
     expect(s.against).toBe(1);
     expect(s.verdicts).toBe(2); // not-worth-testing is neutral
   });
+
+  test('a gap covered elsewhere was no missing test, and a reasonless dismissal says nothing', async () => {
+    const gap = (key: string, dismissReason: string | null, kind = 'gap') => ({
+      projectId: 1,
+      detector: 'declared-never-hit',
+      kind,
+      class: 'blind-spot',
+      key,
+      title: 't',
+      status: 'dismissed',
+      dismissReason,
+    });
+    await db
+      .insert(schema.scenarioGaps)
+      .values([gap('a', 'covered-elsewhere'), gap('b', null), gap('c', 'covered-elsewhere', 'finding')]);
+    const [s] = await loadDetectorPrecisionFor(db);
+    expect(s).toMatchObject({ detector: 'declared-never-hit', for: 0, against: 1, verdicts: 1 });
+  });
+
+  test('a dismissal without a reason records none', async () => {
+    const { triageGap } = await import('../../shared/handlers/scenario-gaps');
+    const [row] = await db
+      .insert(schema.scenarioGaps)
+      .values({ projectId: 1, detector: 'success-only', class: 'blind-spot', key: 'GET /a', title: 't' })
+      .returning({ id: schema.scenarioGaps.id });
+    await triageGap(db, 1, row!.id, { verb: 'dismiss' });
+    const [after] = await db.select().from(schema.scenarioGaps);
+    expect(after).toMatchObject({ status: 'dismissed', dismissReason: null });
+  });
 });
 
 // Import lazily so the DB env delete above applies first.

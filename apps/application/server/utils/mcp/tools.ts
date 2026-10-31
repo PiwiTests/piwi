@@ -156,6 +156,7 @@ import { readProjectRepositoryUrl } from '../scm/project-repository';
 import { readChangeCoverage } from '../scm/change-coverage';
 import { isValidGitRef } from '../scm/refs';
 import { listScenarioGaps, issueScenarioDraft, gapTriageSchema, triageGap } from '#shared/handlers/scenario-gaps';
+import { loadMutedDetectors } from '#shared/handlers/detector-precision';
 import { addQuarantine, dismissQuarantineProposal, releaseQuarantine } from '#shared/handlers/quarantine';
 import { isQuarantineProposal, normalizeDismissReason } from '#shared/quarantine-proposals';
 import { getFeatureGraph } from '../feature-graph';
@@ -3033,16 +3034,18 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const pr = params.pr != null ? numericParam(params.pr, 'pr') : undefined;
     const limit = params.limit != null ? clampPageSize(params.limit) : 20;
 
-    let gaps = await listScenarioGaps(db, projectId, {
-      class: gapClass,
-      minScore,
-      prNumber: pr,
-      limit: feature ? 200 : limit,
-    });
+    let gaps = await listScenarioGaps(db, projectId, { class: gapClass, minScore, prNumber: pr, limit: 200 });
 
     // Feature filter: the gaps the list files under the feature (a hub's gaps
     // belong to no one feature).
-    if (feature) gaps = gaps.filter((g) => g.feature === feature).slice(0, limit);
+    if (feature) gaps = gaps.filter((g) => g.feature === feature);
+
+    // A muted detector's gaps come after every other, as on the Gaps tab.
+    const muted = await loadMutedDetectors(db, projectId);
+    gaps = [...gaps.filter((g) => !muted.has(g.detector)), ...gaps.filter((g) => muted.has(g.detector))].slice(
+      0,
+      limit,
+    );
 
     return {
       items: gaps.map((g) =>
@@ -3057,6 +3060,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
           ticket: g.ticket,
           prNumber: g.prNumber,
           testCaseId: g.testCaseId,
+          muted: muted.has(g.detector) ? true : null,
         }),
       ),
     };

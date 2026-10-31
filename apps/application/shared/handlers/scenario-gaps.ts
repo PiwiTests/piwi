@@ -3921,7 +3921,7 @@ export async function triageGap(
     }
   } else if (input.verb === 'dismiss') {
     set.status = 'dismissed';
-    set.dismissReason = input.reason ?? 'wrong';
+    set.dismissReason = input.reason ?? null;
     if (input.reason === 'covered-elsewhere' && input.coveringTestCaseId != null) {
       await writeManualReachesEdge(db, projectId, subject, input.coveringTestCaseId);
     }

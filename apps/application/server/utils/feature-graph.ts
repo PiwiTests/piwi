@@ -24,6 +24,7 @@ import {
 } from '#shared/handlers/scenario-gaps';
 import { filePageTarget, fileRouteTarget, pageKeyMatchesTarget, routeKeyMatchesTarget } from '#shared/graph';
 import { gapClassSeverity, worstGapClass } from '#shared/gap-classes';
+import { loadMutedDetectors } from '#shared/handlers/detector-precision';
 import type { DrizzleDB } from '#shared/handlers/db';
 
 /** The maximum traversal depth the endpoint and tool allow. */
@@ -288,11 +289,15 @@ export async function getFeatureMap(db: DrizzleDB, projectId: number): Promise<F
 
   // Open gaps, each folded onto the one feature the gap list files it under — or
   // onto the feature itself for a gap keyed on the feature node — else onto
-  // "ungrouped", or "shared" for a hub.
-  const gapRows = await db
-    .select({ key: scenarioGaps.key, class: scenarioGaps.class })
-    .from(scenarioGaps)
-    .where(and(eq(scenarioGaps.projectId, projectId), eq(scenarioGaps.status, 'open')));
+  // "ungrouped", or "shared" for a hub. A muted detector's gaps sit apart on the
+  // Gaps tab, so they neither count nor color a feature.
+  const muted = await loadMutedDetectors(db, projectId);
+  const gapRows = (
+    await db
+      .select({ key: scenarioGaps.key, class: scenarioGaps.class, detector: scenarioGaps.detector })
+      .from(scenarioGaps)
+      .where(and(eq(scenarioGaps.projectId, projectId), eq(scenarioGaps.status, 'open')))
+  ).filter((g) => !muted.has(g.detector));
   const ownerOf = await loadGapFeatureOwners(
     db,
     projectId,

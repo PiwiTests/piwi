@@ -508,6 +508,25 @@ describe('getFeatureMap', () => {
     expect(checkout.gaps).toEqual({});
   });
 
+  test('a muted detector neither counts nor colors a feature', async () => {
+    // Twenty gaps dismissed as wrong mute success-only on the project.
+    await db.insert(schema.scenarioGaps).values(
+      Array.from({ length: 20 }, (_, i) => ({
+        projectId: 1,
+        detector: 'success-only',
+        class: 'blind-spot',
+        key: `GET /api/noise-${i}`,
+        title: 't',
+        status: 'dismissed',
+        dismissReason: 'wrong',
+      })),
+    );
+    const map = await getFeatureMap(db, 1);
+    const catalog = map.features.find((f) => f.key === 'Catalog')!;
+    expect(catalog.gaps).toEqual({});
+    expect(catalog.worstClass).toBeNull();
+  });
+
   test('an empty project maps to no features', async () => {
     await db.insert(schema.projects).values({ id: 2, name: 'empty' });
     expect(await getFeatureMap(db, 2)).toEqual({

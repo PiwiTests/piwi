@@ -101,10 +101,11 @@ closed gap that comes back reopens, unless it was closed with **Covered by**. Ho
   <img src="/diagrams/scenario-gaps-loop.svg" alt="Sources feed the Test Map, detectors, ranking and delivery; triage flows back">
 </figure>
 
-Every verdict is also a labeled example: accepted and covered-by count *for* a detector, dismissed as *wrong* counts
-*against* it. A detector below 60% precision on a project with twenty or more verdicts **mutes itself** there: its
-rows leave the pull-request comment and the Gaps digest, its gaps sort last in the Gaps tab, and the Gaps tab and
-**Settings → About** say so.
+Every verdict is also a labeled example: accepted and covered-by count *for* a detector, a gap dismissed as *wrong*
+or as *covered elsewhere* (no test was missing) counts *against* it, and a dismissal with no reason or as *not worth
+testing* counts for neither. A detector below 60% precision on a project with twenty or more verdicts **mutes itself**
+there: its rows leave the pull-request comment, the Gaps digest and the feature map, its gaps sort last in the Gaps tab
+and in the MCP tools, and the Gaps tab and **Settings → About** say so.
 
 The top new gaps of each project are the **Gaps digest**
 [quality report](/features/quality-reports#what-a-report-contains); [schedule it](/features/quality-reports#report-schedules)

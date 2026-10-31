@@ -1271,7 +1271,8 @@ export const MCP_TOOL_DEFS = [
         reason: {
           type: 'string',
           enum: ['not-worth-testing', 'covered-elsewhere', 'wrong'],
-          description: 'With dismiss: why (default wrong)',
+          description:
+            'With dismiss: why. `wrong` and `covered-elsewhere` count against the detector; with no reason the dismissal counts for nothing',
         },
         coveringTestCaseId: {
           type: 'number',
@@ -1869,6 +1870,7 @@ export const MCP_TOOL_DEFS = [
     description: md(
       'List a project’s scenario gaps, ranked: the tests that do not exist yet, each with its class, evidence lines and exposure score.',
       'Every evidence line is observed reach, never instrumented coverage. `draft_scenario` turns a gap into a test skeleton.',
+      'The gaps of a detector muted on the project, for its low precision, come last, marked `muted`.',
     ),
     inputSchema: {
       type: 'object',
