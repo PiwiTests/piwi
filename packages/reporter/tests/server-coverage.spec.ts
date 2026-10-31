@@ -85,8 +85,9 @@ async function backend(
 }
 
 /**
- * Take a backend down: it drops every new connection unanswered. Its port stays
- * bound until `close`, so no other server can listen there and answer.
+ * Take a backend down: it closes every new connection at once, before reading a
+ * request. Its port stays bound until `close`, so no other server can listen
+ * there and answer.
  */
 function takeDown(server: FakeServer): void {
   server.server.maxConnections = 0;
@@ -271,6 +272,7 @@ describe('ServerCoverageCollector', () => {
     takeDown(server);
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     expect(await collector([server.url]).collect({ [server.url]: ['p.1'] })).toEqual({ files: [], incomplete: true });
+    expect(server.requests).toEqual([]);
   });
 
   it('marks the tests incomplete when a call times out', async () => {
@@ -540,6 +542,7 @@ describe('ServerCoverageCollector restart detection', () => {
 
     expect(run.gap).toEqual({ origin: server.url, reason: 'unreachable' });
     expect(run.files).toEqual(HELD_BY[FIRST.id]![`${FIRST.id}.1`]);
+    expect(server.requests.map((req) => req.method)).toEqual(['POST']);
     expect(warn.mock.calls.map((call) => String(call[0])).join('\n')).toContain(
       `Could not fetch the run's server coverage from ${server.url}`,
     );
