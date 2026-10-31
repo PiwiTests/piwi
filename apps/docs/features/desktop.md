@@ -9,8 +9,7 @@ lang: en-US
 <Needs desktop />
 
 The desktop app runs the **entire dashboard on your machine**, with no Docker, no `npx` and no server to set up. It
-bundles the same server as the Docker image in a native window, keeps your data in a local folder, and adds what only
-a local app can do.
+bundles the Docker image's server in a native window and adds what only a local app can do.
 
 ## What it does
 
@@ -32,18 +31,21 @@ Download the installer from the [latest release](https://github.com/PiwiTests/pi
 | **macOS** 13.5+ (Apple silicon) | `.dmg` |
 | **Linux** (x86-64) | `.AppImage`, `.deb` or `.rpm`, each needing a system WebKitGTK (`webkit2gtk-4.1`) |
 
-The installers are **unsigned**: on macOS, open the app once, then **Open Anyway** in the **Privacy & Security**
-settings; on Windows, **More info** then **Run anyway** in SmartScreen. Linux shows no prompt.
+The installers are **unsigned**: on macOS, open the app once, then **Open Anyway** in **Privacy & Security**; on
+Windows, **More info** then **Run anyway** in SmartScreen.
 
-Data lives in the OS app-data folder (`%APPDATA%\io.piwitests.dashboard\.data` on Windows,
+Data lives in the app-data folder (`%APPDATA%\io.piwitests.dashboard\.data` on Windows,
 `~/Library/Application Support/io.piwitests.dashboard/.data` on macOS, `~/.local/share/io.piwitests.dashboard/.data`
 on Linux): `piwi.db` (SQLite) and `storage/`. **Settings → Storage → Data location** and the tray's **Open data
 folder** show it. Back up the parent folder while the app is closed; its `secret.key` decrypts stored AI keys and SCM
 tokens.
 
-Closing the window quits the app unless you turn on **Run in background** in the tray menu; **Start on login** launches
+Closing the window quits the app unless **Run in background** is on in the tray menu; **Start on login** launches
 it hidden into the tray. In the background, [notifications](/features/notifications#browser) arrive as OS notifications,
 with no setup, and an unread count on the dock icon or the tray tooltip.
+
+It listens on port 3000, or the one set in the `.exe` installer or on **Setup → Desktop app** (`serverPort` in
+`settings.json`), a free one when taken.
 
 ## Sending results to it
 
@@ -55,7 +57,7 @@ its local runs here with
 **Setup** carry once you turn on **CI reports to a team server**.
 
 When the tests run as another user or in a container, **Setup → Send results to this app** gives the
-address (port 3000 unless taken) and the token to configure by hand. Keep the token in `PIWI_API_KEY`, not the
+address and the token to configure by hand. Keep the token in `PIWI_API_KEY`, not the
 config.
 
 A dashboard link opened in your browser opens in the app; a tab opened for it closes.
@@ -96,7 +98,7 @@ linked folder, **without touching your checkout**:
   [`git worktree`](https://git-scm.com/docs/git-worktree), installs its dependencies (reusing your `node_modules`
   when the lockfile is unchanged) and the browser if missing, and runs the failing test with that commit's own
   Playwright.
-- **Find the breaking commit here** bisects step by step between the last green commit and the failing one, with live
+- **Find the breaking commit here** bisects between the last green commit and the failing one, with live
   progress and a **Stop** that kills the test and what it started, resets the bisect and removes the worktree. The
   first bad commit is linked to your SCM host and recorded on the failure cluster.
 
@@ -136,7 +138,7 @@ The app serves the [MCP server](/features/mcp) with local tools a hosted instanc
 [run tools](./desktop-runs#for-agents) for the runs it starts. It registers as `piwi-desktop`, beside a hosted Piwi.
 
 The **MCP server** page detects Claude Code, Claude Desktop, Cursor, Opencode, VS Code, Windsurf and Gemini CLI, and
-connects each in one click, writing a `piwi-desktop` entry with the address and token into its config file.
+connects each in one click, writing a `piwi-desktop` entry with the address and token into its config.
 It keeps a backup and rewrites only that entry, again when the port changes. Claude Desktop, which takes only
 local commands, is pointed at the app's built-in bridge (`piwi-desktop mcp-stdio`), so no token is copied; the app must
 run. Restart the client after connecting. The page also installs the

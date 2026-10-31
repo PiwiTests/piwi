@@ -79,6 +79,7 @@
       "resources/app-server"
     ],
     "category": "DeveloperTool",
+    "copyright": "Copyright © 2025-present Fabien Ménager",
     "shortDescription": "A permanent home for your Playwright test results.",
     "longDescription": "Piwi Dashboard keeps every Playwright run — traces, reports, flaky-test scoring, failure clustering, and locator healing — in a local dashboard that runs entirely on your machine. No server to set up, no data leaving your computer.",
     "macOS": {
@@ -88,11 +89,18 @@
     },
     "windows": {
       "wix": {
-        "language": "en-US"
+        "language": "en-US",
+        "bannerPath": "windows/msi-banner.bmp",
+        "dialogImagePath": "windows/msi-dialog.bmp"
       },
       "nsis": {
         "installMode": "currentUser",
-        "installerHooks": "windows/installer-hooks.nsh"
+        "installerHooks": "windows/installer-hooks.nsh",
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico",
+        "headerImage": "windows/installer-header.bmp",
+        "uninstallerHeaderImage": "windows/installer-header.bmp",
+        "sidebarImage": "windows/installer-sidebar.bmp"
       }
     }
   }

@@ -85,6 +85,13 @@ shell and are feature-equivalent.
   `latest.json`; the NSIS `.exe` installs per user (`installMode: currentUser`, no admin) and reads `latest-nsis.json`.
   The two `tauri.updater*.conf.json` overlays and `reusable-publish-desktop.yml` keep them apart, so a per-user install
   never updates into the per-machine one.
+- **The `.exe` installer and the shell share the port setting.** Its welcome page writes a changed port to
+  `installer.json` in the app data folder (the `identifier` of `tauri.conf.json`), which `adopt_installer_choices` in
+  `lib.rs` moves into `settings.json` (`serverPort`); the Rust test `the_windows_installer_writes_where_the_shell_reads`
+  keeps the names, the default and the range of `windows/installer-hooks.nsh` and `lib.rs` together.
+- **The installer art is rendered, never edited by hand**: `npm run installer-art` (`scripts/installer-art.mjs`) draws
+  `src-tauri/windows/*.bmp` from the logos in `apps/application/public/`, as the 24-bit BMPs of fixed sizes that NSIS
+  and WiX take.
 - **Front-end code that behaves differently inside the shell** uses `useIsDesktop` and the helpers of
   `app/composables/useTauri.ts` (`tauriCore`, `tauriEvent`), and the `app/components/desktop/` cards: do not sniff
   user agents.
@@ -104,6 +111,7 @@ npm run fetch-node   # download the Node sidecar binary for this platform
 npm run stage        # stage the built server (npm run app:build in apps/application first) into src-tauri/resources
 npm run dev          # tauri dev — run the shell against a staged server
 npm run build        # produce the platform installer
+npm run installer-art # render the Windows installers' artwork (needs the root's npm ci)
 npm run e2e          # Playwright smoke test of the shell integration
 cargo test --manifest-path src-tauri/Cargo.toml   # the shell's Rust unit tests
 ```

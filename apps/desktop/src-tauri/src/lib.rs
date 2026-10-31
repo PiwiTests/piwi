@@ -84,9 +84,19 @@ const RESTART_BACKOFFS_SECS: [u64; 4] = [1, 2, 4, 8];
 /// `RESTART_WINDOW_SECS` — a tight crash-loop is a real fault, not a transient one.
 const MAX_RESTARTS_IN_WINDOW: u32 = 5;
 const RESTART_WINDOW_SECS: u64 = 60;
-/// Preferred loopback port — stable so the reporter can target it; falls back to
-/// a free port if it's already in use (see `pick_port`).
-const PREFERRED_PORT: u16 = 3000;
+/// The loopback port the server takes unless the settings name another
+/// (`SERVER_PORT_KEY`). Either way, a port already in use makes the server fall
+/// back to a free one (see `pick_port`). The Windows installer offers the same
+/// default (`windows/installer-hooks.nsh`).
+const DEFAULT_PORT: u16 = 3000;
+/// The lowest port a user may choose: below it, Linux and macOS let only root bind.
+const MIN_PORT: u16 = 1024;
+/// Settings key: the port the server listens on from the next start.
+const SERVER_PORT_KEY: &str = "serverPort";
+/// File the Windows installer leaves in the app data folder when the user picks
+/// a port on its welcome page (`{ "serverPort": <port> }`); the next start moves
+/// it into the settings (`adopt_installer_choices`).
+const INSTALLER_CHOICES_FILE: &str = "installer.json";
 /// Home-relative location of the file the Playwright reporter — and this app's
 /// own MCP stdio bridge — read to find this app: `~/.piwi/desktop.json` (see
 /// `write_discovery_file`).
@@ -393,13 +403,58 @@ pub(crate) fn random_hex_32() -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// Prefer a stable port (so the address is bookmarkable and the reporter can
-/// target it) and fall back to any free loopback port if it's taken. A small
+/// A port a user may choose (`MIN_PORT` to 65535), read from a settings value.
+fn valid_port(value: &serde_json::Value) -> Option<u16> {
+    value
+        .as_u64()
+        .and_then(|port| u16::try_from(port).ok())
+        .filter(|port| *port >= MIN_PORT)
+}
+
+/// The port the server listens on from the next start: the settings', or the default.
+fn configured_port(app: &AppHandle) -> u16 {
+    app.store(STORE_FILE)
+        .ok()
+        .and_then(|s| s.get(SERVER_PORT_KEY))
+        .and_then(|v| valid_port(&v))
+        .unwrap_or(DEFAULT_PORT)
+}
+
+/// The port an installer choices file names, when it names a valid one.
+fn read_installer_port(path: &Path) -> Option<u16> {
+    let text = std::fs::read_to_string(path).ok()?;
+    let choices: serde_json::Value = serde_json::from_str(&text).ok()?;
+    valid_port(&choices[SERVER_PORT_KEY])
+}
+
+/// Move the port the Windows installer left in `INSTALLER_CHOICES_FILE` into
+/// the settings, then delete the file. A file naming no valid port is deleted
+/// too; one whose port could not be saved stays for the next start.
+fn adopt_installer_choices(app: &AppHandle, app_data_dir: &Path, log_path: &Path) {
+    let path = app_data_dir.join(INSTALLER_CHOICES_FILE);
+    if !path.exists() {
+        return;
+    }
+    if let Some(port) = read_installer_port(&path) {
+        let Ok(store) = app.store(STORE_FILE) else {
+            return;
+        };
+        store.set(SERVER_PORT_KEY, json!(port));
+        if store.save().is_err() {
+            return;
+        }
+        append_log(log_path, &format!("server port {port}, chosen in the installer"));
+    }
+    let _ = std::fs::remove_file(&path);
+}
+
+/// Take `preferred` (so the address is bookmarkable and stays the same across
+/// launches) and fall back to any free loopback port if it's taken. A small
 /// TOCTOU window remains between picking and the server binding; if the port is
 /// lost in between the server fails to boot, surfacing as a readiness timeout.
-fn pick_port() -> u16 {
-    if std::net::TcpListener::bind(("127.0.0.1", PREFERRED_PORT)).is_ok() {
-        return PREFERRED_PORT;
+fn pick_port(preferred: u16) -> u16 {
+    if std::net::TcpListener::bind(("127.0.0.1", preferred)).is_ok() {
+        return preferred;
     }
     std::net::TcpListener::bind("127.0.0.1:0")
         .and_then(|l| l.local_addr())
@@ -542,10 +597,11 @@ fn load_or_create_token(app_data_dir: &PathBuf) -> String {
 /// outside CI. The app's pid lets a reader tell a file left by a crash from a
 /// running app.
 ///
-/// Written on every launch because the port is not guaranteed (`pick_port` falls
-/// back when 3000 is taken) and removed on quit, so the file's presence means
-/// "this app is up at this address". Mode 0600: the token is a full-access local
-/// credential, and `$HOME` itself is world-readable on most systems.
+/// Written on every launch because the port is not guaranteed (the settings may
+/// name another, and `pick_port` falls back when it is taken) and removed on
+/// quit, so the file's presence means "this app is up at this address". Mode
+/// 0600: the token is a full-access local credential, and `$HOME` itself is
+/// world-readable on most systems.
 fn write_discovery_file(
     home: &Path,
     port: u16,
@@ -916,16 +972,21 @@ fn kill_server(child: CommandChild, wait: Option<Duration>) {
 
 // ── Desktop service settings, exposed to the in-app Settings UI over IPC ───────
 // The bundled dashboard webview drives the same "run in background" and "start on
-// login" options as the tray. window.__TAURI__ is injected into the desktop
-// webview (withGlobalTauri) and reachable only there — a plain browser at the
-// same loopback URL has no native IPC bridge — and the `remote` capability grants
-// the loopback origin access. The webview feature-detects the bridge and falls
-// back to pointing at the tray when it is absent.
+// login" options as the tray, and the server's port. window.__TAURI__ is injected
+// into the desktop webview (withGlobalTauri) and reachable only there — a plain
+// browser at the same loopback URL has no native IPC bridge — and the `remote`
+// capability grants the loopback origin access. The webview feature-detects the
+// bridge and falls back to pointing at the tray when it is absent.
 
 #[derive(serde::Serialize)]
 struct ServiceSettings {
     run_in_background: bool,
     start_on_login: bool,
+    /// The port the server listens on from the next start.
+    server_port: u16,
+    /// The port it listens on now: another one when `server_port` was taken at
+    /// startup or changed since.
+    active_port: u16,
 }
 
 #[tauri::command]
@@ -938,7 +999,20 @@ fn desktop_get_service_settings(app: tauri::AppHandle) -> ServiceSettings {
     ServiceSettings {
         run_in_background,
         start_on_login,
+        server_port: configured_port(&app),
+        active_port: app.state::<mcp_clients::ServerInfo>().port,
     }
+}
+
+/// Set the port the server listens on from the next start.
+#[tauri::command]
+fn desktop_set_server_port(app: tauri::AppHandle, port: u16) -> Result<(), String> {
+    if port < MIN_PORT {
+        return Err(format!("The port must be between {MIN_PORT} and 65535."));
+    }
+    let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
+    store.set(SERVER_PORT_KEY, json!(port));
+    store.save().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1581,6 +1655,7 @@ pub fn run() {
             desktop_get_service_settings,
             desktop_set_run_in_background,
             desktop_set_start_on_login,
+            desktop_set_server_port,
             desktop_open_external,
             desktop_open_in_ide,
             desktop_open_window,
@@ -1656,7 +1731,12 @@ pub fn run() {
 
             let secret = load_or_create_secret(&app_data_dir);
             let token = load_or_create_token(&app_data_dir);
-            let port = pick_port();
+            adopt_installer_choices(app.handle(), &app_data_dir, &log_path);
+            let preferred_port = configured_port(app.handle());
+            let port = pick_port(preferred_port);
+            if port != preferred_port {
+                append_log(&log_path, &format!("port {preferred_port} is in use, listening on {port}"));
+            }
             let launch_nonce = random_hex_32();
 
             // The dashboard's IPC grants, for this sidecar's exact origin only.
@@ -1999,9 +2079,10 @@ mod tests {
         clamp_log_line, collect_open_args, compose_tooltip, debug_mode_requested, discovery_body,
         health_ok, health_response_proves, ide_launcher_args, is_known_launcher,
         is_output_window_name, is_sidecar_url, is_truthy_flag, main_window_may_navigate,
-        output_window_name, prepare_compile_cache, progress_bar_status, remote_capability,
-        remove_other_versions, render_status_dot, splash_status_script, status_dot_color,
-        write_new_download,
+        output_window_name, prepare_compile_cache, progress_bar_status, read_installer_port,
+        remote_capability, remove_other_versions, render_status_dot, splash_status_script,
+        status_dot_color, valid_port, write_new_download, DEFAULT_PORT, INSTALLER_CHOICES_FILE,
+        MIN_PORT, SERVER_PORT_KEY, STORE_FILE,
     };
     use std::fs;
     use tauri::window::ProgressBarStatus;
@@ -2022,6 +2103,61 @@ mod tests {
                 "projects": [{ "id": 3, "path": "/work/admin" }, { "id": 12, "path": "/work/shop" }],
             })
         );
+    }
+
+    #[test]
+    fn a_chosen_port_is_an_unprivileged_one() {
+        for port in [1024, 3000, 65535] {
+            assert_eq!(valid_port(&serde_json::json!(port)), Some(port as u16));
+        }
+        for value in [
+            serde_json::json!(0),
+            serde_json::json!(80),
+            serde_json::json!(1023),
+            serde_json::json!(65536),
+            serde_json::json!(-3000),
+            serde_json::json!(3000.5),
+            serde_json::json!("3000"),
+            serde_json::Value::Null,
+        ] {
+            assert_eq!(valid_port(&value), None, "{value}");
+        }
+    }
+
+    #[test]
+    fn the_installer_choices_file_names_the_port() {
+        let dir = std::env::temp_dir().join(format!("piwi-installer-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let file = dir.join(INSTALLER_CHOICES_FILE);
+        assert_eq!(read_installer_port(&file), None);
+        // As the NSIS installer writes it.
+        fs::write(&file, "{ \"serverPort\": 4100 }\r\n").unwrap();
+        assert_eq!(read_installer_port(&file), Some(4100));
+        fs::write(&file, "{ \"serverPort\": 80 }").unwrap();
+        assert_eq!(read_installer_port(&file), None);
+        fs::write(&file, "{ \"serverPort\": ").unwrap();
+        assert_eq!(read_installer_port(&file), None);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_windows_installer_writes_where_the_shell_reads() {
+        let hooks = include_str!("../windows/installer-hooks.nsh");
+        let config: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let identifier = config["identifier"].as_str().unwrap();
+        for expected in [
+            format!("!define PIWI_APP_DATA \"$APPDATA\\{identifier}\""),
+            format!("!define PIWI_DEFAULT_PORT {DEFAULT_PORT}"),
+            format!("!define PIWI_MIN_PORT {MIN_PORT}"),
+            "!define PIWI_MAX_PORT 65535".to_string(),
+            format!("\\{INSTALLER_CHOICES_FILE}\""),
+            format!("'{{ \"{SERVER_PORT_KEY}\": $PiwiPort }}"),
+            format!(").{SERVER_PORT_KEY};"),
+            format!("${{PIWI_APP_DATA}}\\{STORE_FILE}\""),
+        ] {
+            assert!(hooks.contains(&expected), "installer-hooks.nsh should contain {expected}");
+        }
     }
 
     #[test]

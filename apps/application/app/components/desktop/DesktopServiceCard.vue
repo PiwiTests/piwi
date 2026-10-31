@@ -1,21 +1,35 @@
 <script setup lang="ts">
 /**
  * Desktop build only: drive the native "Run in background" and "Start on login"
- * options from the app UI.
+ * options, and the port the bundled server listens on, from the app UI.
  *
  * These are OS/tray-level controls, so the card talks to the Tauri shell over
  * the IPC bridge (window.__TAURI__, injected into the desktop webview). When the
  * bridge is absent — the same URL opened in a normal browser, or an older shell
  * that predates it — it degrades to tray instructions rather than showing dead
- * switches.
+ * switches. A shell that predates the port setting reports no port, and the
+ * port row stays hidden.
  */
 const toast = useToast();
+
+const MIN_PORT = 1024;
+const MAX_PORT = 65535;
 
 const loading = ref(true);
 const available = ref(false);
 const busy = ref(false);
 const runInBackground = ref(false);
 const startOnLogin = ref(false);
+/** The port the server listens on from the next start. */
+const serverPort = ref<number | null>(null);
+/** The port it listens on now. */
+const activePort = ref<number | null>(null);
+const portInput = ref<number | undefined>();
+
+const portValid = computed(
+  () => Number.isInteger(portInput.value) && portInput.value! >= MIN_PORT && portInput.value! <= MAX_PORT,
+);
+const portChanged = computed(() => portInput.value !== serverPort.value);
 
 async function refresh() {
   const core = tauriCore();
@@ -25,11 +39,17 @@ async function refresh() {
     return;
   }
   try {
-    const s = await core.invoke<{ run_in_background: boolean; start_on_login: boolean }>(
-      'desktop_get_service_settings',
-    );
+    const s = await core.invoke<{
+      run_in_background: boolean;
+      start_on_login: boolean;
+      server_port?: number;
+      active_port?: number;
+    }>('desktop_get_service_settings');
     runInBackground.value = !!s.run_in_background;
     startOnLogin.value = !!s.start_on_login;
+    serverPort.value = s.server_port ?? null;
+    activePort.value = s.active_port ?? null;
+    portInput.value = s.server_port;
     available.value = true;
   } catch {
     available.value = false;
@@ -67,11 +87,34 @@ async function setStartOnLogin(value: boolean) {
     busy.value = false;
   }
 }
+
+async function savePort() {
+  const core = tauriCore();
+  if (!core || !portValid.value) return;
+  busy.value = true;
+  try {
+    await core.invoke('desktop_set_server_port', { port: portInput.value });
+    serverPort.value = portInput.value!;
+  } catch {
+    toast.add({ title: 'Could not change the server port', color: 'error' });
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function restart() {
+  // The shell asks first when local test runs would stop, then relaunches.
+  await tauriCore()
+    ?.invoke('desktop_restart_app')
+    .catch(() => toast.add({ title: 'Could not restart Piwi', color: 'error' }));
+}
 </script>
 
 <template>
-  <SectionCard icon="i-lucide-monitor-cog" title="Desktop app">
-    <template #subtitle> Keep Piwi running in the background and start it automatically when you log in. </template>
+  <SectionCard icon="i-lucide-monitor-cog" title="Desktop app" data-shot="desktop-service">
+    <template #subtitle>
+      Keep Piwi running in the background, start it automatically when you log in, and choose its port.
+    </template>
 
     <div v-if="loading" class="flex items-center gap-2 text-sm text-muted">
       <UIcon name="i-lucide-loader-2" class="size-4 animate-spin" /> Checking…
@@ -93,6 +136,54 @@ async function setStartOnLogin(value: boolean) {
           </p>
         </div>
         <USwitch :model-value="startOnLogin" :disabled="busy" @update:model-value="setStartOnLogin" />
+      </div>
+      <div
+        v-if="serverPort !== null"
+        class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
+      >
+        <div class="space-y-0.5 min-w-0">
+          <p class="text-sm font-medium">Server port</p>
+          <p class="text-xs text-muted">
+            The port the dashboard listens on, on 127.0.0.1 only. The reporter and the AI assistants connected from the
+            MCP page follow a change; pair Piwi Picker again after one.
+          </p>
+          <p v-if="activePort !== null && activePort !== serverPort" class="text-xs text-muted">
+            Piwi listens on port {{ activePort }} now. It takes port {{ serverPort }} the next time it starts, when that
+            port is free.
+          </p>
+        </div>
+        <div class="flex shrink-0 items-center gap-2">
+          <UInput
+            v-model.number="portInput"
+            type="number"
+            :min="MIN_PORT"
+            :max="MAX_PORT"
+            size="sm"
+            class="w-24"
+            aria-label="Server port"
+            :disabled="busy"
+            @keydown.enter="portChanged && savePort()"
+          />
+          <UButton
+            size="sm"
+            color="neutral"
+            variant="outline"
+            :disabled="busy || !portChanged || !portValid"
+            @click="savePort"
+          >
+            Save
+          </UButton>
+          <UButton
+            v-if="activePort !== null && activePort !== serverPort"
+            size="sm"
+            color="neutral"
+            variant="outline"
+            :disabled="busy"
+            @click="restart"
+          >
+            Restart now
+          </UButton>
+        </div>
       </div>
     </div>
 

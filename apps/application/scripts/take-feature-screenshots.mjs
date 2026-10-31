@@ -5860,6 +5860,27 @@ const SCENES = [
     },
   },
   {
+    name: 'desktop-service-card',
+    description:
+      'Setup → Desktop app (desktop app): run in background, start on login and the server port, then the port saved while the server still listens on another',
+    tags: ['desktop'],
+    mode: 'desktop',
+    serverPort: 4100,
+    activePort: 51234,
+    route: '/setup',
+    viewport: { width: 1280, height: 2400 },
+    async run({ page, settle, shoot }) {
+      const card = '[data-shot="desktop-service"]';
+      await page.locator(card).waitFor({ timeout: 60_000 });
+      await page.locator(card).scrollIntoViewIfNeeded();
+      await settle();
+      await shoot('', { of: card, pad: 12 });
+      await page.getByRole('spinbutton', { name: 'Server port' }).fill('4200');
+      await settle();
+      await shoot('editing', { of: card, pad: 12 });
+    },
+  },
+  {
     name: 'desktop-settings-notifications',
     description:
       'Settings → Notifications (desktop app): the built-in desktop notifications with their test button, no SMTP card, and the Settings nav without the pull-request pages',
