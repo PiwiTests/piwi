@@ -12,14 +12,10 @@ test*. This page defines the words the rest of the documentation and the UI use.
 
 ## The object model
 
-```
-Project                      one test suite you submit results for
-└── Test run                 one `npx playwright test` (all shards merged)
-    └── Execution            one attempt of one test, on one browser
-        └── belongs to a Test case   the test's identity across all runs
-             │
-             └── Failure cluster     executions that failed the same way
-```
+<figure>
+  <img src="/diagrams/data-model-grid.svg" alt="A project as a grid: test runs are columns, test cases are rows, and each cell holds that test case's executions in that run; one failure cluster spans failed executions of two test cases across two runs">
+  <figcaption>A project holds one suite's results. A failure cluster groups executions, not test cases: it can span several of each.</figcaption>
+</figure>
 
 Read it in two directions:
 
