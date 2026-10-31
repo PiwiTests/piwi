@@ -133,6 +133,10 @@ responsibilities.
   streaming routes build their own run bodies: `/setup` in `public/global-setup.ts`, `/finish` in
   `internal/submit/run-submitter.ts`, `/start` and `/begin` in `internal/streaming/stream-manager.ts`, so a run-level
   field the server reads while streaming is added there too.
+- **Playwright from the floor up.** The lower bound of the peer range on `@playwright/test` is the oldest Playwright
+  the reporter supports: an API added after it is feature-checked, and a spec that needs it skips itself below that
+  version (`playwrightAtLeast`, `tests/_helpers.ts`). CI's `reporter-floor` job runs the suite on the floor
+  (`scripts/playwright-floor.mjs`), and `docs-drift.test.ts` holds the docs' stated minimum to it.
 
 ## Workflow
 

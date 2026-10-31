@@ -1,4 +1,5 @@
 ﻿import * as http from 'node:http';
+import { createRequire } from 'node:module';
 
 export interface RecordedReq {
   method: string;
@@ -208,4 +209,19 @@ export function fakeConfig(
     globalTimeout: undefined,
     fullyParallel: false,
   };
+}
+
+/** The `@playwright/test` version the suite runs on. */
+export const PLAYWRIGHT_VERSION: string = (
+  createRequire(__filename)('@playwright/test/package.json') as { version: string }
+).version;
+
+/**
+ * Whether the suite runs on Playwright `minimum` (`major.minor`) or later. A spec that needs a Playwright newer than
+ * the reporter's floor (the lower bound of its peer range) skips itself below that version.
+ */
+export function playwrightAtLeast(minimum: string): boolean {
+  const [major = 0, minor = 0] = PLAYWRIGHT_VERSION.split('.').map(Number);
+  const [wantMajor = 0, wantMinor = 0] = minimum.split('.').map(Number);
+  return major > wantMajor || (major === wantMajor && minor >= wantMinor);
 }
