@@ -972,6 +972,8 @@ const REPRO_SCENE_STEPS = (() => {
  *   inspection  — desktop mode: mocked `desktop_inspect_folder` answer (default READY_INSPECTION)
  *   importableRuns — desktop mode: archives `desktop_find_importable_runs` reports (default [])
  *   pickedFiles — desktop mode: archives the native import picker returns (default [])
+ *   localRunId  — desktop mode: the shell's id of the local run `desktop_run_local_tests` starts (default none)
+ *   serverPort, activePort — desktop mode: the port the settings name and the one the server listens on (default 3000)
  *   pickerHint  — show the hint to install Piwi Picker (`PickerInstallHint`); every
  *                 other scene captures as if Don't show again had been chosen,
  *                 so the hint never lands in an illustration by chance
@@ -5862,7 +5864,7 @@ const SCENES = [
   {
     name: 'desktop-service-card',
     description:
-      'Setup → Desktop app (desktop app): run in background, start on login and the server port, then the port saved while the server still listens on another',
+      'Setup → Desktop app (desktop app): run in background, start on login and the server port, saved while the server still listens on another, then a new port being typed',
     tags: ['desktop'],
     mode: 'desktop',
     serverPort: 4100,

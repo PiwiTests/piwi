@@ -153,11 +153,12 @@ logo changes; it needs the repository root's `npm ci`). Both installers carry
 the app icon.
 
 The `.exe`'s welcome page asks for the port the dashboard listens on
-(`src-tauri/windows/installer-hooks.nsh`), filled with the one the app is set to.
-A changed port goes to `installer.json` in the app data folder, which the app
-moves into `settings.json` on its next start. Silent and passive installs, the
-updater's among them, skip the page and keep the setting. Everywhere else,
-the Setup page's **Desktop app** card changes the port.
+(`src-tauri/windows/installer-hooks.nsh`), filled with the one the app will use.
+The confirmed port goes to `installer.json` in the app data folder, which the
+app moves into `settings.json` on its next start. Silent and passive installs,
+the updater's among them, skip the page and keep the setting. Everywhere else,
+the Setup page's **Desktop app** card changes the port. Ports below 1024 and the
+ones browsers refuse (6000, 10080…) are not accepted.
 
 ## Signing
 

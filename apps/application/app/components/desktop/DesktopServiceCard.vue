@@ -30,6 +30,16 @@ const portValid = computed(
   () => Number.isInteger(portInput.value) && portInput.value! >= MIN_PORT && portInput.value! <= MAX_PORT,
 );
 const portChanged = computed(() => portInput.value !== serverPort.value);
+/** Why the shell refused the last port saved (a port browsers refuse). */
+const saveRefusal = ref<string | null>(null);
+const portError = computed(() => {
+  if (portInput.value === undefined || (portInput.value as unknown) === '') return null;
+  if (!portValid.value) return `Choose a port between ${MIN_PORT} and ${MAX_PORT}.`;
+  return saveRefusal.value;
+});
+watch(portInput, () => {
+  saveRefusal.value = null;
+});
 
 async function refresh() {
   const core = tauriCore();
@@ -95,8 +105,10 @@ async function savePort() {
   try {
     await core.invoke('desktop_set_server_port', { port: portInput.value });
     serverPort.value = portInput.value!;
-  } catch {
-    toast.add({ title: 'Could not change the server port', color: 'error' });
+  } catch (error) {
+    // The shell refuses a port with the reason as its error.
+    if (typeof error === 'string') saveRefusal.value = error;
+    else toast.add({ title: 'Could not change the server port', color: 'error' });
   } finally {
     busy.value = false;
   }
@@ -144,9 +156,11 @@ async function restart() {
         <div class="space-y-0.5 min-w-0">
           <p class="text-sm font-medium">Server port</p>
           <p class="text-xs text-muted">
-            The port the dashboard listens on, on 127.0.0.1 only. The reporter and the AI assistants connected from the
-            MCP page follow a change; pair Piwi Picker again after one.
+            The port the dashboard listens on, on 127.0.0.1 only. A change reaches the reporter when it finds the app by
+            itself, and the AI assistants connected from the MCP page. An address given by hand needs updating, Piwi
+            Picker pairing again, and this window's own preferences (local run options, editor, date format) start over.
           </p>
+          <p v-if="portError" class="text-xs text-error">{{ portError }}</p>
           <p v-if="activePort !== null && activePort !== serverPort" class="text-xs text-muted">
             Piwi listens on port {{ activePort }} now. It takes port {{ serverPort }} the next time it starts, when that
             port is free.

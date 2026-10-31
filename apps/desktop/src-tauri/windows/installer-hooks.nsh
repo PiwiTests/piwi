@@ -7,12 +7,14 @@
 ; inside the install and uninstall sections.
 
 ; The app's data folder: Tauri's app_data_dir() for the `identifier` in
-; tauri.conf.json. The port range and default match `valid_port` and
-; `DEFAULT_PORT` in src/lib.rs.
+; tauri.conf.json. The default port, the range and the ports browsers refuse
+; (space-delimited) match `DEFAULT_PORT`, `MIN_PORT` and `BAD_PORTS` in
+; src/lib.rs.
 !define PIWI_APP_DATA "$APPDATA\io.piwitests.dashboard"
 !define PIWI_DEFAULT_PORT 3000
 !define PIWI_MIN_PORT 1024
 !define PIWI_MAX_PORT 65535
+!define PIWI_BAD_PORTS " 1719 1720 1723 2049 3659 4045 4190 5060 5061 6000 6566 6665 6666 6667 6668 6669 6679 6697 10080 "
 
 ; ---------------------------------------------------------------------------
 ; Look and words of the pages.
@@ -37,34 +39,57 @@
 ; ---------------------------------------------------------------------------
 ; The port the bundled server listens on.
 ;
-; The welcome page shows the port the app is set to (`serverPort` in its
-; settings.json), or the default. When the user picks another one, the install
-; writes it to installer.json in the app's data folder; the app moves it into
-; settings.json on its next start (`adopt_installer_choices` in src/lib.rs).
-; Silent and passive installs, the updater's included, skip the welcome page
-; and leave the setting alone.
+; The welcome page shows the port the app will use: the one the installer
+; recorded and the app has not taken yet (installer.json), else the one in its
+; settings (`serverPort` in settings.json), else the default. The install
+; records the port confirmed there in installer.json, in the app's data folder,
+; and the app moves it into settings.json on its next start
+; (`adopt_installer_choices` in src/lib.rs). When those files could not be
+; read, the page shows the default, and only another port is recorded. Silent
+; and passive installs, the updater's included, skip the welcome page and
+; record nothing.
 
-Var PiwiSavedPort
+Var PiwiSavedPort ; the port the app will use, or empty when it could not be read
 Var PiwiPort
 Var PiwiPortField
+Var PiwiPortConfirmed
 
-; Before the window shows: the port in the app's settings, when there is a valid one.
+; Pops a port and pushes 1 when a user may choose it, else 0.
+Function PiwiUsablePort
+  Exch $0
+  Push $1
+  ${StrLoc} $1 "${PIWI_BAD_PORTS}" " $0 " ">"
+  ${If} $0 < ${PIWI_MIN_PORT}
+  ${OrIf} $0 > ${PIWI_MAX_PORT}
+  ${OrIf} $1 != ""
+    StrCpy $0 0
+  ${Else}
+    StrCpy $0 1
+  ${EndIf}
+  Pop $1
+  Exch $0
+FunctionEnd
+
+; Before the window shows: the port the app will use.
 Function PiwiReadSavedPort
   Push $0
   Push $1
-  StrCpy $PiwiSavedPort ${PIWI_DEFAULT_PORT}
+  System::Call 'kernel32::SetEnvironmentVariable(t "PIWI_CHOICES", t "${PIWI_APP_DATA}\installer.json")'
   System::Call 'kernel32::SetEnvironmentVariable(t "PIWI_SETTINGS", t "${PIWI_APP_DATA}\settings.json")'
-  nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$$p = (Get-Content -Raw -Encoding UTF8 -LiteralPath $$env:PIWI_SETTINGS -ErrorAction Stop | ConvertFrom-Json).serverPort; if ($$p -is [int] -or $$p -is [long]) { $$p }"`
-  Pop $0 ; exit code
+  nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$$f = @($$env:PIWI_CHOICES, $$env:PIWI_SETTINGS) | Where-Object { Test-Path -LiteralPath $$_ } | Select-Object -First 1; if ($$f) { $$p = (Get-Content -Raw -Encoding UTF8 -LiteralPath $$f -ErrorAction Stop | ConvertFrom-Json).serverPort; if ($$p -is [int] -or $$p -is [long]) { $$p } }"`
+  Pop $0 ; exit code: 0 once the files are read, or absent
   Pop $1 ; output: the port and a line break, or nothing
+  StrCpy $PiwiSavedPort ""
   ${If} $0 == 0
+    StrCpy $PiwiSavedPort ${PIWI_DEFAULT_PORT}
     IntOp $1 $1 + 0
-    ${If} $1 >= ${PIWI_MIN_PORT}
-    ${AndIf} $1 <= ${PIWI_MAX_PORT}
-      StrCpy $PiwiSavedPort $1
-    ${EndIf}
+    Push $1
+    Call PiwiUsablePort
+    Pop $0
+    ${IfThen} $0 == 1 ${|} StrCpy $PiwiSavedPort $1 ${|}
   ${EndIf}
   StrCpy $PiwiPort $PiwiSavedPort
+  ${IfThen} $PiwiPort == "" ${|} StrCpy $PiwiPort ${PIWI_DEFAULT_PORT} ${|}
   Pop $1
   Pop $0
 FunctionEnd
@@ -110,8 +135,9 @@ Function PiwiWelcomeShow
   Pop $0
 FunctionEnd
 
-; Keeps the page until the field holds a valid port. IntOp reads a leading 0 as
-; octal, and no valid port starts with one, so such an entry is refused.
+; Keeps the page until the field holds a port a user may choose. IntOp reads a
+; leading 0 as octal, and no valid port starts with one, so such an entry is
+; refused.
 Function PiwiWelcomeLeave
   Push $0
   Push $1
@@ -123,7 +149,19 @@ Function PiwiWelcomeLeave
   ${OrIf} $2 == "0"
   ${OrIf} $1 < ${PIWI_MIN_PORT}
   ${OrIf} $1 > ${PIWI_MAX_PORT}
-    MessageBox MB_ICONEXCLAMATION|MB_OK "Choose a port between ${PIWI_MIN_PORT} and ${PIWI_MAX_PORT}."
+    StrCpy $2 "Choose a port between ${PIWI_MIN_PORT} and ${PIWI_MAX_PORT}."
+  ${Else}
+    Push $1
+    Call PiwiUsablePort
+    Pop $2
+    ${If} $2 == 1
+      StrCpy $2 ""
+    ${Else}
+      StrCpy $2 "Browsers refuse port $1: choose another."
+    ${EndIf}
+  ${EndIf}
+  ${If} $2 != ""
+    MessageBox MB_ICONEXCLAMATION|MB_OK "$2"
     ${NSD_SetFocus} $PiwiPortField
     Pop $2
     Pop $1
@@ -131,24 +169,27 @@ Function PiwiWelcomeLeave
     Abort
   ${EndIf}
   StrCpy $PiwiPort $1
+  StrCpy $PiwiPortConfirmed 1
   Pop $2
   Pop $1
   Pop $0
 FunctionEnd
 
 !macro PIWI_SAVE_PORT
-  ${If} $PiwiPort != ""
-  ${AndIf} $PiwiPort != $PiwiSavedPort
-    Push $0
-    CreateDirectory "${PIWI_APP_DATA}"
-    ClearErrors
-    FileOpen $0 "${PIWI_APP_DATA}\installer.json" w
-    ${IfNot} ${Errors}
-      FileWrite $0 '{ "serverPort": $PiwiPort }$\r$\n'
-      FileClose $0
-      DetailPrint "Piwi Dashboard will listen on port $PiwiPort."
+  ${If} $PiwiPortConfirmed == 1
+    ${If} $PiwiSavedPort != ""
+    ${OrIf} $PiwiPort != ${PIWI_DEFAULT_PORT}
+      Push $0
+      CreateDirectory "${PIWI_APP_DATA}"
+      ClearErrors
+      FileOpen $0 "${PIWI_APP_DATA}\installer.json" w
+      ${IfNot} ${Errors}
+        FileWrite $0 '{ "serverPort": $PiwiPort }$\r$\n'
+        FileClose $0
+        DetailPrint "Piwi Dashboard will listen on port $PiwiPort."
+      ${EndIf}
+      Pop $0
     ${EndIf}
-    Pop $0
   ${EndIf}
 !macroend
 

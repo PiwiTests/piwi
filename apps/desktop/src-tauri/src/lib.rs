@@ -89,13 +89,20 @@ const RESTART_WINDOW_SECS: u64 = 60;
 /// back to a free one (see `pick_port`). The Windows installer offers the same
 /// default (`windows/installer-hooks.nsh`).
 const DEFAULT_PORT: u16 = 3000;
-/// The lowest port a user may choose: below it, Linux and macOS let only root bind.
+/// The lowest port a user may choose: the ones below are privileged on Linux.
 const MIN_PORT: u16 = 1024;
+/// The ports from `MIN_PORT` up that browsers and Node's `fetch` refuse to
+/// connect to (the Fetch standard's bad ports): the window could not load the
+/// dashboard there, nor the reporter send to it.
+const BAD_PORTS: [u16; 19] = [
+    1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6679, 6697,
+    10080,
+];
 /// Settings key: the port the server listens on from the next start.
 const SERVER_PORT_KEY: &str = "serverPort";
-/// File the Windows installer leaves in the app data folder when the user picks
-/// a port on its welcome page (`{ "serverPort": <port> }`); the next start moves
-/// it into the settings (`adopt_installer_choices`).
+/// File the Windows installer leaves in the app data folder with the port the
+/// user confirmed on its welcome page (`{ "serverPort": <port> }`); the next
+/// start moves it into the settings (`adopt_installer_choices`).
 const INSTALLER_CHOICES_FILE: &str = "installer.json";
 /// Home-relative location of the file the Playwright reporter — and this app's
 /// own MCP stdio bridge — read to find this app: `~/.piwi/desktop.json` (see
@@ -403,12 +410,24 @@ pub(crate) fn random_hex_32() -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// A port a user may choose (`MIN_PORT` to 65535), read from a settings value.
+/// Why a user may not choose `port`, or `None` when they may: from `MIN_PORT`
+/// to 65535, and not one of the `BAD_PORTS`.
+fn port_refusal(port: u16) -> Option<String> {
+    if port < MIN_PORT {
+        Some(format!("Choose a port between {MIN_PORT} and 65535."))
+    } else if BAD_PORTS.contains(&port) {
+        Some(format!("Browsers refuse port {port}: choose another."))
+    } else {
+        None
+    }
+}
+
+/// A port a user may choose, read from a settings value.
 fn valid_port(value: &serde_json::Value) -> Option<u16> {
     value
         .as_u64()
         .and_then(|port| u16::try_from(port).ok())
-        .filter(|port| *port >= MIN_PORT)
+        .filter(|port| port_refusal(*port).is_none())
 }
 
 /// The port the server listens on from the next start: the settings', or the default.
@@ -1007,8 +1026,8 @@ fn desktop_get_service_settings(app: tauri::AppHandle) -> ServiceSettings {
 /// Set the port the server listens on from the next start.
 #[tauri::command]
 fn desktop_set_server_port(app: tauri::AppHandle, port: u16) -> Result<(), String> {
-    if port < MIN_PORT {
-        return Err(format!("The port must be between {MIN_PORT} and 65535."));
+    if let Some(refusal) = port_refusal(port) {
+        return Err(refusal);
     }
     let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
     store.set(SERVER_PORT_KEY, json!(port));
@@ -2079,10 +2098,10 @@ mod tests {
         clamp_log_line, collect_open_args, compose_tooltip, debug_mode_requested, discovery_body,
         health_ok, health_response_proves, ide_launcher_args, is_known_launcher,
         is_output_window_name, is_sidecar_url, is_truthy_flag, main_window_may_navigate,
-        output_window_name, prepare_compile_cache, progress_bar_status, read_installer_port,
+        output_window_name, port_refusal, prepare_compile_cache, progress_bar_status, read_installer_port,
         remote_capability, remove_other_versions, render_status_dot, splash_status_script,
-        status_dot_color, valid_port, write_new_download, DEFAULT_PORT, INSTALLER_CHOICES_FILE,
-        MIN_PORT, SERVER_PORT_KEY, STORE_FILE,
+        status_dot_color, valid_port, write_new_download, BAD_PORTS, DEFAULT_PORT,
+        INSTALLER_CHOICES_FILE, MIN_PORT, SERVER_PORT_KEY, STORE_FILE,
     };
     use std::fs;
     use tauri::window::ProgressBarStatus;
@@ -2106,14 +2125,16 @@ mod tests {
     }
 
     #[test]
-    fn a_chosen_port_is_an_unprivileged_one() {
-        for port in [1024, 3000, 65535] {
+    fn a_chosen_port_is_an_unprivileged_one_browsers_accept() {
+        for port in [1024, 3000, 6001, 65535] {
             assert_eq!(valid_port(&serde_json::json!(port)), Some(port as u16));
         }
         for value in [
             serde_json::json!(0),
             serde_json::json!(80),
             serde_json::json!(1023),
+            serde_json::json!(6000),
+            serde_json::json!(10080),
             serde_json::json!(65536),
             serde_json::json!(-3000),
             serde_json::json!(3000.5),
@@ -2122,6 +2143,9 @@ mod tests {
         ] {
             assert_eq!(valid_port(&value), None, "{value}");
         }
+        assert_eq!(port_refusal(80).as_deref(), Some("Choose a port between 1024 and 65535."));
+        assert_eq!(port_refusal(6000).as_deref(), Some("Browsers refuse port 6000: choose another."));
+        assert_eq!(port_refusal(4100), None);
     }
 
     #[test]
@@ -2152,6 +2176,10 @@ mod tests {
             format!("!define PIWI_MIN_PORT {MIN_PORT}"),
             "!define PIWI_MAX_PORT 65535".to_string(),
             format!("\\{INSTALLER_CHOICES_FILE}\""),
+            format!(
+                "!define PIWI_BAD_PORTS \" {} \"",
+                BAD_PORTS.map(|port| port.to_string()).join(" ")
+            ),
             format!("'{{ \"{SERVER_PORT_KEY}\": $PiwiPort }}"),
             format!(").{SERVER_PORT_KEY};"),
             format!("${{PIWI_APP_DATA}}\\{STORE_FILE}\""),

@@ -85,13 +85,13 @@ shell and are feature-equivalent.
   `latest.json`; the NSIS `.exe` installs per user (`installMode: currentUser`, no admin) and reads `latest-nsis.json`.
   The two `tauri.updater*.conf.json` overlays and `reusable-publish-desktop.yml` keep them apart, so a per-user install
   never updates into the per-machine one.
-- **The `.exe` installer and the shell share the port setting.** Its welcome page writes a changed port to
+- **The `.exe` installer and the shell share the port setting.** Its welcome page records the confirmed port in
   `installer.json` in the app data folder (the `identifier` of `tauri.conf.json`), which `adopt_installer_choices` in
   `lib.rs` moves into `settings.json` (`serverPort`); the Rust test `the_windows_installer_writes_where_the_shell_reads`
-  keeps the names, the default and the range of `windows/installer-hooks.nsh` and `lib.rs` together.
+  keeps the names, the default, the range and the refused ports of `windows/installer-hooks.nsh` and `lib.rs` together.
 - **The installer art is rendered, never edited by hand**: `npm run installer-art` (`scripts/installer-art.mjs`) draws
-  `src-tauri/windows/*.bmp` from the logos in `apps/application/public/`, as the 24-bit BMPs of fixed sizes that NSIS
-  and WiX take.
+  `src-tauri/windows/*.bmp` from the logos in `apps/application/public/`, as BMPs at the sizes the NSIS and WiX pages
+  show them.
 - **Front-end code that behaves differently inside the shell** uses `useIsDesktop` and the helpers of
   `app/composables/useTauri.ts` (`tauriCore`, `tauriEvent`), and the `app/components/desktop/` cards: do not sniff
   user agents.

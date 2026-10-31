@@ -5,9 +5,9 @@
 //   msi-dialog.bmp         493 x 312  WiX welcome and exit dialogs (bundle > windows > wix > dialogImagePath)
 //   msi-banner.bmp         493 x  58  WiX dialog banner (bannerPath)
 //
-// NSIS and WiX read only uncompressed bitmaps at these sizes, so the script writes 24-bit BMPs. They are committed:
-// run it again after a logo changes, from apps/desktop/, once `npm ci` has run at the repository root (it renders with
-// the root's sharp):
+// NSIS and WiX take bitmaps, which they stretch to fit: the script writes 24-bit BMPs at the sizes their pages show
+// them. They are committed: run it again after a logo changes, from apps/desktop/, once `npm ci` has run at the
+// repository root (it renders with the root's sharp):
 //
 //   npm run installer-art
 
