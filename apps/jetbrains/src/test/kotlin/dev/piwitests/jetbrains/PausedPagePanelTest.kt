@@ -69,8 +69,45 @@ class PausedPagePanelTest : BasePlatformTestCase() {
     }
 
     fun testASecondButtonLetsGoOfTheFirstAndAPrintableCharacterIsPressed() {
+        val (panel, picture, sent) = interacting(clickCounts = true)
+        picture.mouseListeners.forEach { it.mousePressed(press(picture, MouseEvent.MOUSE_PRESSED, MouseEvent.BUTTON1)) }
+        picture.mouseListeners.forEach { it.mousePressed(press(picture, MouseEvent.MOUSE_PRESSED, MouseEvent.BUTTON3)) }
+        assertEquals(listOf(
+            PageInput("mouse", "down", 10.0, 20.0, "left", 1),
+            PageInput("mouse", "up", 10.0, 20.0, "left", 1),
+            PageInput("mouse", "down", 10.0, 20.0, "right", 1),
+        ), sent)
+        sent.clear()
+        picture.keyListeners.forEach { it.keyTyped(KeyEvent(picture, KeyEvent.KEY_TYPED, 1L, 0, KeyEvent.VK_UNDEFINED, ' ')) }
+        picture.keyListeners.forEach { it.keyTyped(KeyEvent(picture, KeyEvent.KEY_TYPED, 1L, 0, KeyEvent.VK_UNDEFINED, 'é')) }
+        assertEquals(listOf(PageInput("key", "press", key = " "), PageInput("text", text = "é")), sent)
+        panel.watching(false)
+    }
+
+    fun testAStopWithoutClickCountsGetsOneClickWithItsCountAndADragAsButtonsHeld() {
+        val (panel, picture, sent) = interacting(clickCounts = false)
+        repeat(2) {
+            picture.mouseListeners.forEach { it.mousePressed(press(picture, MouseEvent.MOUSE_PRESSED, MouseEvent.BUTTON1)) }
+            picture.mouseListeners.forEach { it.mouseReleased(press(picture, MouseEvent.MOUSE_RELEASED, MouseEvent.BUTTON1)) }
+        }
+        assertEmpty(sent)
+        picture.keyListeners.forEach { it.keyTyped(KeyEvent(picture, KeyEvent.KEY_TYPED, 1L, 0, KeyEvent.VK_UNDEFINED, 'x')) }
+        assertEquals(listOf(PageInput("mouse", "click", 10.0, 20.0, "left", 2), PageInput("key", "press", key = "x")), sent)
+        sent.clear()
+        picture.mouseListeners.forEach { it.mousePressed(press(picture, MouseEvent.MOUSE_PRESSED, MouseEvent.BUTTON1)) }
+        picture.mouseMotionListeners.forEach { it.mouseDragged(press(picture, MouseEvent.MOUSE_DRAGGED, MouseEvent.BUTTON1, x = 60)) }
+        picture.mouseListeners.forEach { it.mouseReleased(press(picture, MouseEvent.MOUSE_RELEASED, MouseEvent.BUTTON1, x = 60)) }
+        assertEquals(listOf(
+            PageInput("mouse", "down", 10.0, 20.0, "left"),
+            PageInput("mouse", "move", 60.0, 20.0),
+            PageInput("mouse", "up", 60.0, 20.0, "left"),
+        ), sent)
+        panel.watching(false)
+    }
+
+    private fun interacting(clickCounts: Boolean): Triple<PausedPagePanel, JLabel, MutableList<PageInput>> {
         val panel = PausedPagePanel()
-        panel.configureLive(true, true, false) {}
+        panel.configureLive(true, true, clickCounts) {}
         val sent = mutableListOf<PageInput>()
         panel.input = { sent += it }
         panel.show("Paused", BufferedImage(800, 600, BufferedImage.TYPE_INT_RGB))
@@ -78,19 +115,10 @@ class PausedPagePanelTest : BasePlatformTestCase() {
         panel.watching(true)
         descendants(panel).filterIsInstance<JCheckBox>().single { it.text == "Interact" }.doClick()
         val picture = descendants(panel).filterIsInstance<JLabel>().single { it.icon is ImageIcon }
-        fun press(button: Int) = MouseEvent(picture, MouseEvent.MOUSE_PRESSED, 1L, 0, 10, 20, 1, false, button)
-        picture.mouseListeners.forEach { it.mousePressed(press(MouseEvent.BUTTON1)) }
-        picture.mouseListeners.forEach { it.mousePressed(press(MouseEvent.BUTTON3)) }
-        assertEquals(listOf(
-            PageInput("mouse", "down", 10.0, 20.0, "left"),
-            PageInput("mouse", "up", 10.0, 20.0, "left"),
-            PageInput("mouse", "down", 10.0, 20.0, "right"),
-        ), sent)
-        sent.clear()
-        picture.keyListeners.forEach { it.keyTyped(KeyEvent(picture, KeyEvent.KEY_TYPED, 1L, 0, KeyEvent.VK_UNDEFINED, ' ')) }
-        picture.keyListeners.forEach { it.keyTyped(KeyEvent(picture, KeyEvent.KEY_TYPED, 1L, 0, KeyEvent.VK_UNDEFINED, 'é')) }
-        assertEquals(listOf(PageInput("key", "press", key = " "), PageInput("text", text = "é")), sent)
+        return Triple(panel, picture, sent)
     }
+
+    private fun press(source: JLabel, id: Int, button: Int, x: Int = 10) = MouseEvent(source, id, 1L, 0, x, 20, 1, false, button)
 
     private fun descendants(container: Container): List<Component> = container.components.flatMap {
         listOf(it) + if (it is Container) descendants(it) else emptyList()

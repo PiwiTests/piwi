@@ -20,6 +20,7 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
+import com.intellij.openapi.actionSystem.CustomShortcutSet
 import com.intellij.openapi.actionSystem.DataContext
 import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.application.ApplicationManager
@@ -98,6 +99,7 @@ import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
 import java.awt.event.FocusAdapter
 import java.awt.event.FocusEvent
+import java.awt.event.InputEvent
 import java.awt.image.BufferedImage
 import java.io.ByteArrayInputStream
 import java.net.URI
@@ -117,6 +119,7 @@ import javax.swing.ImageIcon
 import javax.swing.JList
 import javax.swing.JPanel
 import javax.swing.JCheckBox
+import javax.swing.KeyStroke
 import javax.swing.SwingConstants
 import javax.swing.SwingUtilities
 
@@ -625,7 +628,6 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         panel.input = { events -> pageInput(stop, events) }
         panel.releaseInput = {
             if (pageStop == key && watchingPage != null) {
-                pageInputs.clear()
                 pageRelease = true
                 pageInput(stop, emptyList())
             }
@@ -753,7 +755,12 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         if (pageStop != Glue.stopKey(stop) || own.since != stop.stop.since) return
         for (event in events) {
             if (event.type == "mouse" && event.action == "move" && pageInputs.lastOrNull()?.let { it.type == "mouse" && it.action == "move" } == true) pageInputs.removeLast()
-            if (pageInputs.size >= 50) { pageInputs.clear(); pageRelease = true; break }
+            if (pageInputs.size >= 50) {
+                pageInputs.clear()
+                pageRelease = true
+                (livePage()?.component as? PausedPagePanel)?.note("Too much input at once: the keys and buttons held were let go.")
+                break
+            }
             pageInputs.addLast(event)
         }
         if (pageInputBusy) return
@@ -762,10 +769,11 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             if (watchingPage !== own) return@addRequest
             val batch = pageInputs.toList()
             pageInputs.clear()
-            val release = pageRelease
-            pageRelease = false
+            // The input queued before a release goes first, and the release with the next request.
+            val release = batch.isEmpty() && pageRelease
+            if (release) pageRelease = false
             ApplicationManager.getApplication().executeOnPooledThread {
-                val result = runCatching { remote.pageInput(PageInputParams(own.ref, own.worker, own.since, if (release) emptyList() else batch, release)) }.getOrNull()
+                val result = runCatching { remote.pageInput(PageInputParams(own.ref, own.worker, own.since, batch, release)) }.getOrNull()
                 ApplicationManager.getApplication().invokeLater({
                     if (watchingPage !== own) return@invokeLater
                     pageInputBusy = false
@@ -1230,6 +1238,10 @@ internal interface RunRemote {
     fun commandEnded(params: CommandEndedParams)
 }
 
+/** How long a left click waits for a second one before it goes alone, and how far apart two clicks of one may be. */
+private const val DOUBLE_CLICK_MILLIS = 250
+private const val CLICK_SLOP = 4.0
+
 /**
  * The page of a stopped test, under what it is about to run: the Paused Page tab of the Piwi tool window. Where a click
  * on the image picks, a hint says so above it and the cursor is a crosshair over it; what the pick came to shows
@@ -1256,6 +1268,71 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
     private var modifiers = emptyList<String>()
     private fun active() = isWatching && interact.isSelected
 
+    /** A press nothing was sent for yet, at a stop that plays no click count: it ends as a click or starts a drag. */
+    private class Press(val button: String, val at: Pair<Double, Double>, val keys: List<String>)
+    private class WaitingClick(val button: String, val at: Pair<Double, Double>, val count: Int)
+    private var pressed: Press? = null
+    /** A left click held back for a second or a third, sent as one click with its count, as the Runs window does. */
+    private var clickWaiting: WaitingClick? = null
+    private val clickTimer = javax.swing.Timer(DOUBLE_CLICK_MILLIS) { flushClick() }.apply { isRepeats = false }
+
+    private fun far(a: Pair<Double, Double>, b: Pair<Double, Double>) =
+        kotlin.math.abs(a.first - b.first) > CLICK_SLOP || kotlin.math.abs(a.second - b.second) > CLICK_SLOP
+
+    /** The click held back goes now, before anything that follows it. */
+    private fun flushClick() {
+        clickTimer.stop()
+        val waiting = clickWaiting ?: return
+        clickWaiting = null
+        input?.invoke(listOf(PageInput("mouse", "click", waiting.at.first, waiting.at.second, waiting.button, waiting.count)))
+    }
+
+    /** A press that did not become a drag came up: a click, held back while a second one may follow. */
+    private fun endClick(press: Press) {
+        if (press.keys.isNotEmpty()) {
+            flushClick()
+            input?.invoke(
+                press.keys.map { PageInput("key", "down", key = it) } +
+                    PageInput("mouse", "click", press.at.first, press.at.second, press.button, 1) +
+                    press.keys.reversed().map { PageInput("key", "up", key = it) },
+            )
+            return
+        }
+        val waiting = clickWaiting
+        val count = if (waiting != null && waiting.button == press.button && !far(waiting.at, press.at)) waiting.count + 1 else 1
+        if (count == 1) flushClick()
+        clickTimer.stop()
+        clickWaiting = null
+        if (press.button == "left" && count < 3) {
+            clickWaiting = WaitingClick(press.button, press.at, count)
+            clickTimer.restart()
+        } else {
+            input?.invoke(listOf(PageInput("mouse", "click", press.at.first, press.at.second, press.button, count)))
+        }
+    }
+
+    /** The key a press sends the page, as Playwright names it, or null for a key the IDE keeps. */
+    private fun pageKey(e: KeyEvent): String? {
+        val mac = com.intellij.openapi.util.SystemInfo.isMac
+        val primary = if (mac) e.isMetaDown else e.isControlDown
+        if ((mac && e.isControlDown) || (!mac && e.isMetaDown) || (primary && e.isAltDown)) return null
+        val named = when (e.keyCode) {
+            KeyEvent.VK_ENTER -> "Enter"; KeyEvent.VK_TAB -> "Tab"; KeyEvent.VK_BACK_SPACE -> "Backspace"; KeyEvent.VK_DELETE -> "Delete"
+            KeyEvent.VK_LEFT -> "ArrowLeft"; KeyEvent.VK_RIGHT -> "ArrowRight"; KeyEvent.VK_UP -> "ArrowUp"; KeyEvent.VK_DOWN -> "ArrowDown"
+            KeyEvent.VK_HOME -> "Home"; KeyEvent.VK_END -> "End"; KeyEvent.VK_PAGE_UP -> "PageUp"; KeyEvent.VK_PAGE_DOWN -> "PageDown"
+            KeyEvent.VK_A -> "a".takeIf { primary }; KeyEvent.VK_Y -> "y".takeIf { primary }; KeyEvent.VK_Z -> "z".takeIf { primary }
+            else -> null
+        } ?: return null
+        if (e.isAltDown && !mac) return null
+        if (primary && named in listOf("Tab", "PageUp", "PageDown")) return null
+        return (if (primary) "ControlOrMeta+" else if (e.isAltDown) "Alt+" else "") + (if (e.isShiftDown) "Shift+" else "") + named
+    }
+
+    private fun pressOnPage(key: String) {
+        flushClick()
+        input?.invoke(listOf(PageInput("key", "press", key = key)))
+    }
+
     fun configureLive(available: Boolean, acceptsInput: Boolean, acceptsClickCounts: Boolean, changed: (Boolean) -> Unit) {
         live.isVisible = available
         interact.isVisible = available && acceptsInput
@@ -1268,7 +1345,10 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
     fun watching(on: Boolean) {
         isWatching = on
         interact.isEnabled = on
-        if (!on) { interact.isSelected = false; captured = false; held = null; modifiers = emptyList() }
+        if (!on) {
+            interact.isSelected = false; captured = false; held = null; modifiers = emptyList()
+            pressed = null; clickWaiting = null; clickTimer.stop()
+        }
         hint.isVisible = picks && !active()
         picture.cursor = if (picks && !active()) Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR) else Cursor.getDefaultCursor()
     }
@@ -1298,6 +1378,8 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
     }
 
     private fun release(releaseFocus: Boolean = true) {
+        flushClick()
+        pressed = null
         val button = held
         val events = mutableListOf<PageInput>()
         if (button != null) events += PageInput("mouse", "up", button.second.first, button.second.second, button.first, heldCount)
@@ -1359,21 +1441,47 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
                 val at = point(e.x, e.y) ?: return
                 // One button held at a time: a second press lets go of the first.
                 if (held != null) release(false)
+                pressed?.let { pressed = null; endClick(it) }
                 picture.requestFocusInWindow()
                 captured = true
-                val button = if (e.button == MouseEvent.BUTTON3) "right" else "left"
-                held = button to at
-                heldCount = e.clickCount.coerceIn(1, 3).takeIf { clickCounts }
-                modifiers = listOfNotNull("Control".takeIf { e.isControlDown }, "Alt".takeIf { e.isAltDown }, "Meta".takeIf { e.isMetaDown })
-                input?.invoke(modifiers.map { PageInput("key", "down", key = it) } + PageInput("mouse", "down", at.first, at.second, button, heldCount))
                 e.consume()
+                val button = if (e.button == MouseEvent.BUTTON3) "right" else "left"
+                val keys = listOfNotNull("Control".takeIf { e.isControlDown }, "Alt".takeIf { e.isAltDown }, "Meta".takeIf { e.isMetaDown })
+                if (!clickCounts) {
+                    // Nothing goes yet: the press ends as a click, or starts a drag once the pointer moves away.
+                    clickWaiting?.let { if (it.button != button || far(it.at, at) || keys.isNotEmpty()) flushClick() }
+                    pressed = Press(button, at, keys)
+                    return
+                }
+                held = button to at
+                heldCount = e.clickCount.coerceIn(1, 3)
+                modifiers = keys
+                input?.invoke(modifiers.map { PageInput("key", "down", key = it) } + PageInput("mouse", "down", at.first, at.second, button, heldCount))
             }
             override fun mouseReleased(e: MouseEvent) {
+                val press = pressed
+                if (press != null) { pressed = null; endClick(press); e.consume(); return }
                 if (held != null) { point(e.x, e.y)?.let { held = held!!.first to it }; release(false); e.consume() }
             }
         })
         picture.addMouseMotionListener(object : MouseMotionAdapter() {
-            override fun mouseMoved(e: MouseEvent) { if (active()) point(e.x, e.y)?.let { input?.invoke(listOf(PageInput("mouse", "move", it.first, it.second))) } }
+            override fun mouseMoved(e: MouseEvent) {
+                if (!active()) return
+                val at = point(e.x, e.y) ?: return
+                clickWaiting?.let { if (far(it.at, at)) flushClick() }
+                val press = pressed
+                if (press != null) {
+                    if (!far(press.at, at)) return
+                    // A drag: the button goes down where it was pressed, then follows the pointer.
+                    pressed = null
+                    flushClick()
+                    held = press.button to press.at
+                    heldCount = null
+                    modifiers = press.keys
+                    input?.invoke(modifiers.map { PageInput("key", "down", key = it) } + PageInput("mouse", "down", press.at.first, press.at.second, press.button))
+                }
+                input?.invoke(listOf(PageInput("mouse", "move", at.first, at.second)))
+            }
             override fun mouseDragged(e: MouseEvent) = mouseMoved(e)
         })
         // The wheel scrolls the page while interacting, and the image otherwise: a listener here takes it from the pane.
@@ -1382,6 +1490,7 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
             if (at == null) scroll.dispatchEvent(SwingUtilities.convertMouseEvent(picture, e, scroll))
             else {
                 val delta = (e.preciseWheelRotation * 40).coerceIn(-10000.0, 10000.0)
+                flushClick()
                 input?.invoke(listOf(PageInput("wheel", x = at.first, y = at.second, deltaX = if (e.isShiftDown) delta else 0.0, deltaY = if (e.isShiftDown) 0.0 else delta)))
                 e.consume()
             }
@@ -1400,6 +1509,7 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
                 if (active() && (altGraph || plain) && !Character.isISOControl(char) && char != KeyEvent.CHAR_UNDEFINED) {
                     // A printable ASCII character is pressed, so the page hears its keydown and keyup.
                     val event = if (char in ' '..'~') PageInput("key", "press", key = char.toString()) else PageInput("text", text = char.toString())
+                    flushClick()
                     input?.invoke(listOf(event)); e.consume()
                 }
             }
@@ -1407,27 +1517,39 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
                 if (e.keyCode == KeyEvent.VK_TAB && (!active() || !captured)) { if (e.isShiftDown) picture.transferFocusBackward() else picture.transferFocus(); e.consume(); return }
                 if (!active()) return
                 if (e.keyCode == KeyEvent.VK_ESCAPE) { release(); live.requestFocusInWindow(); e.consume(); return }
-                val primary = if (com.intellij.openapi.util.SystemInfo.isMac) e.isMetaDown else e.isControlDown
-                if ((com.intellij.openapi.util.SystemInfo.isMac && e.isControlDown) || (!com.intellij.openapi.util.SystemInfo.isMac && e.isMetaDown) || (primary && e.isAltDown)) return
-                if (primary && e.keyCode == KeyEvent.VK_V) {
+                val mac = com.intellij.openapi.util.SystemInfo.isMac
+                val primary = if (mac) e.isMetaDown else e.isControlDown
+                if (primary && !e.isAltDown && e.keyCode == KeyEvent.VK_V && !(mac && e.isControlDown) && !(!mac && e.isMetaDown)) {
                     val text = CopyPasteManager.getInstance().getContents<String>(java.awt.datatransfer.DataFlavor.stringFlavor).orEmpty()
                     val events = text.replace("\r\n", "\n").filter { !it.isISOControl() || it == '\n' || it == '\t' }.chunked(1000).take(50).map { PageInput("text", text = it) }
-                    if (events.isNotEmpty()) input?.invoke(events)
+                    if (events.isNotEmpty()) { flushClick(); input?.invoke(events) }
                     e.consume(); return
                 }
-                val named = when (e.keyCode) {
-                    KeyEvent.VK_ENTER -> "Enter"; KeyEvent.VK_TAB -> "Tab"; KeyEvent.VK_BACK_SPACE -> "Backspace"; KeyEvent.VK_DELETE -> "Delete"
-                    KeyEvent.VK_LEFT -> "ArrowLeft"; KeyEvent.VK_RIGHT -> "ArrowRight"; KeyEvent.VK_UP -> "ArrowUp"; KeyEvent.VK_DOWN -> "ArrowDown"
-                    KeyEvent.VK_HOME -> "Home"; KeyEvent.VK_END -> "End"; KeyEvent.VK_PAGE_UP -> "PageUp"; KeyEvent.VK_PAGE_DOWN -> "PageDown"
-                    KeyEvent.VK_A -> "a".takeIf { primary }; KeyEvent.VK_Y -> "y".takeIf { primary }; KeyEvent.VK_Z -> "z".takeIf { primary }
-                    else -> null
-                } ?: return
-                if (e.isAltDown && !com.intellij.openapi.util.SystemInfo.isMac) return
-                if (primary && named in listOf("Tab", "PageUp", "PageDown")) return
-                val key = (if (primary) "ControlOrMeta+" else if (e.isAltDown) "Alt+" else "") + (if (e.isShiftDown) "Shift+" else "") + named
-                input?.invoke(listOf(PageInput("key", "press", key = key))); e.consume()
+                pageKey(e)?.let { pressOnPage(it); e.consume() }
             }
         })
+        // The IDE runs its own shortcuts on these keys (Undo, Redo, Select All) before a key listener hears them: while
+        // interacting, the image takes them for the page, and otherwise leaves them to the IDE.
+        val primaryMask = if (com.intellij.openapi.util.SystemInfo.isMac) InputEvent.META_DOWN_MASK else InputEvent.CTRL_DOWN_MASK
+        object : AnAction() {
+            override fun getActionUpdateThread() = ActionUpdateThread.EDT
+
+            override fun update(e: AnActionEvent) {
+                e.presentation.isEnabled = active()
+            }
+
+            override fun actionPerformed(e: AnActionEvent) {
+                (e.inputEvent as? KeyEvent)?.let { pageKey(it) }?.let { pressOnPage(it) }
+            }
+        }.registerCustomShortcutSet(
+            CustomShortcutSet(
+                KeyStroke.getKeyStroke(KeyEvent.VK_Z, primaryMask),
+                KeyStroke.getKeyStroke(KeyEvent.VK_Z, primaryMask or InputEvent.SHIFT_DOWN_MASK),
+                KeyStroke.getKeyStroke(KeyEvent.VK_Y, primaryMask),
+                KeyStroke.getKeyStroke(KeyEvent.VK_A, primaryMask),
+            ),
+            picture,
+        )
     }
 
     fun show(caption: String, image: BufferedImage?, pick: ((Int, Int) -> Unit)? = null, preserveWatching: Boolean = false) {

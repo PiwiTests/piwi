@@ -451,7 +451,11 @@ CSS pixels by `Glue.pagePoint`), its locator going where a pick goes, the answer
 For a stop taking `view`, **Watch live** subscribes through `piwi/pageView` on the existing LSP connection. Frames
 (`piwi/pageFrame`) decode off the event thread, with one decode in flight and only the latest waiting frame. Native
 checkboxes keep **Interact** off until chosen; input goes through `piwi/pageInput`, at most one batch in flight, with
-coalesced pointer moves. Escape releases held input; Shift+click picks. Hiding, closing or resuming ends the watch.
+coalesced pointer moves, and a release only after the input queued before it. A stop without `input-clicks` gets a
+click with its count, a left click waiting 250 ms for a second one, and a drag once the pointer moves 4 pixels, as the
+Runs window's `ViewInputBatcher` sends them. While interacting, the image takes the Undo, Redo and Select All
+shortcuts for the page (a shortcut set registered on it, which the IDE runs before its keymap). Escape releases held
+input; Shift+click picks. Hiding, closing or resuming ends the watch.
 Watch live is remembered within the tab, while each watch resets Interact. No Picker pairing or port forwarding is
 needed for the panel, and older reporters keep the still image.
 
