@@ -167,7 +167,7 @@ const missingNames = computed(() => joinFieldNames(missingFields.value.map((f) =
 
 // Why Create is disabled, named in the footer next to the fields Jira still needs.
 const blockedReason = computed(() => {
-  if (draft.value && !draft.value.connectionId) return 'Bind this project to a Jira connection to create the issue.';
+  if (draft.value && !draft.value.connectionId) return 'This project has no Jira connection to file through.';
   const need = [
     !title.value.trim() ? 'a title' : null,
     !projectKey.value ? 'a Jira project' : null,
@@ -472,15 +472,16 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
         </UAlert>
 
         <template v-if="!existing.length || showAllCreate">
-          <!-- No connection: a project's issues go only through the one it is bound to. -->
+          <!-- No connection: a project's issues go only through the one it is bound to, with credentials. -->
           <p v-if="!draft.connectionId" class="text-xs text-muted" data-testid="create-issue-no-connection">
-            This project is not bound to a Jira connection yet, and its issues are filed only through that binding.
+            This project has no Jira connection to file through: its issues go only through the connection its settings
+            name, once that connection has credentials.
             <NuxtLink
               v-if="canBind"
               :to="`/projects/${draft.projectId}?tab=settings&section=issue-tracker`"
               :class="SENTENCE_LINK_CLASS"
-              >Bind it</NuxtLink
-            ><template v-else> A project admin can bind it in the project settings.</template>
+              >Open the issue tracker settings</NuxtLink
+            ><template v-else> A project admin sets it in the project settings.</template>
           </p>
           <!-- No default Jira project for this Piwi project: say so, and where to set one. -->
           <p v-else-if="!draft.projectBound" class="text-xs text-muted" data-testid="create-issue-unbound">
@@ -496,7 +497,8 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
             <UInput v-model="title" class="w-full" />
           </UFormField>
 
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <!-- The pickers read the project's connection: none to read without one. -->
+          <div v-if="draft.connectionId" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <UFormField label="Jira project">
               <USelectMenu
                 v-model="projectKey"
@@ -562,7 +564,7 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
             />
           </template>
 
-          <UFormField label="Assignee">
+          <UFormField v-if="draft.connectionId" label="Assignee">
             <USelectMenu
               v-model="assignee"
               :items="assigneeItems"

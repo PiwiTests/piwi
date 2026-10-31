@@ -1229,6 +1229,12 @@ test.describe.serial('Reporter with authentication enabled', () => {
     const connectionId = ((await connection.json()) as { connection: { id: number } }).connection.id;
 
     try {
+      // A project's issues are drafted and filed through the connection it is bound to.
+      const bound = await request.put(`${AUTH_SERVER_URL}/api/projects/${membersProjectId}/integrations`, {
+        data: { connectionId },
+      });
+      expect(bound.ok()).toBeTruthy();
+
       await loginAs(request, 'ci-contributor', 'contributorpassword123');
       const draft = await request.get(
         `${AUTH_SERVER_URL}/api/integrations/issue-draft?entityType=failure_cluster&entityId=${roleChecksClusterId}`,

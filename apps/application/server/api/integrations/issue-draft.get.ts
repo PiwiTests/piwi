@@ -11,7 +11,7 @@ defineRouteMeta({
     tags: ['Integrations'],
     summary: 'Prefilled create-issue draft',
     description:
-      'The prefilled draft for a failure — title, fields, body preview — plus any issue that already tracks it. `connectionId` is the connection the project is bound to, the only one its issues are filed through, and null when the project is bound to none. The preview never creates a share link: with `includeShareLink`, it shows where the link goes, and the link is created when the issue is filed. A caller without `share:create` on the project gets no share link. Requires `issue:create` (Contributor and above on the project).',
+      'The prefilled draft for a failure — title, fields, body preview — plus any issue that already tracks it. `connectionId` is the connection the project is bound to, the only one its issues are filed through, and null when the project is bound to none, or to one without credentials. The preview never creates a share link: with `includeShareLink`, it shows where the link goes, and the link is created when the issue is filed. A caller without `share:create` on the project gets no share link. Requires `issue:create` (Contributor and above on the project).',
     'x-required-permission': 'issue:create',
   },
 });
