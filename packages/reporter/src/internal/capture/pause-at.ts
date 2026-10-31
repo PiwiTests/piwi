@@ -740,12 +740,16 @@ function holdsElement(tag: string): boolean {
 
 /**
  * Whether a frame of `page` shows Playwright's highlight layer: a highlight or a screencast overlay of the test's own.
- * Read as a stop begins, before Piwi highlights anything; true when a frame does not answer. The caller makes the call
- * internal.
+ * Read as a stop begins, before Piwi highlights anything; true when a frame, or the page, does not answer. The caller
+ * makes the call internal.
  */
 export async function showsHighlightLayer(page: Page): Promise<boolean> {
-  const frames = page.frames().map((frame) => frame.evaluate(holdsElement, HIGHLIGHT_LAYER).catch(() => true));
-  return (await within(Promise.all(frames), HIGHLIGHT_MS))?.some(Boolean) ?? true;
+  try {
+    const frames = page.frames().map((frame) => frame.evaluate(holdsElement, HIGHLIGHT_LAYER).catch(() => true));
+    return (await within(Promise.all(frames), HIGHLIGHT_MS))?.some(Boolean) ?? true;
+  } catch {
+    return true;
+  }
 }
 
 /**
