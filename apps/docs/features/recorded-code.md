@@ -32,8 +32,8 @@ repository.
 ## Code options in the Playwright config
 
 How the recorded code looks is set for the whole repository in `playwright.config.ts`, under the `'@piwi'` key at the
-top level, next to `testDir` and `use`. Everyone who records in the repository gets the same code, with or without an
-instance:
+top level, next to `testDir` and `use`. Everyone who records in the repository from the editor gets the same code,
+with or without an instance; [`piwi codegen`](/reference/cli#codegen) reads its own flags instead:
 
 ```ts
 import { defineConfig } from '@playwright/test';

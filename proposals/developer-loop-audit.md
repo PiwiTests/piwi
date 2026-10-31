@@ -33,8 +33,8 @@ variables (R10, R11, R12), leaving when the machine summary prints and one prefi
 `page.pause()` in a run that follows the editor, JetBrains' **Stop the Run** and the commands its IDEs lack, and the
 Runs tile shown for the desktop app too (DOC2), leaving `globalTimeout` and the hooks in the Breakpoints page's
 limits and the bundled Node on the desktop page (both pages at their word budget), the new-file and last-answers
-sentences of the recording page (each client to check first), and the sentences S7, D11 and W13 make wrong, left to
-their fixes. From the medium items, built in part: 8, a test whose title is computed found by what its `${…}` parts
+sentences of the recording page (each client to check first), and the sentences S7 and D11 make wrong, left to
+their fixes; the recording page says `piwi codegen` reads its own flags, not the config's section (W13's docs half). From the medium items, built in part: 8, a test whose title is computed found by what its `${…}` parts
 stand for, its run narrowed by `--grep` to the run's title when that is plain words (D6), leaving VS Code's Debug in
 my editor from the desktop app (F8); 12, a text check written with a locator that does not find its element by the
 text it checks while one is not brittle (W12), and a verification that reached no instance saying no run failed
