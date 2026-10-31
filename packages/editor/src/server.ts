@@ -143,13 +143,15 @@ import {
 import { DesktopJobs } from './desktop-jobs.js';
 import { RunWatch, exitVerdict, newRunRef } from './run-watch.js';
 import { specPattern } from '@piwitests/core/spec-filter';
-import { breakpointLines, declaredNamesAt, pageCandidates } from './recorder/page-candidates.js';
+import { breakpointLines, declaredNamesAt, fileFixtures, pageCandidates } from './recorder/page-candidates.js';
 import { readProjectOptions, type ProjectOptions } from './recorder/project-options.js';
 import { canonicalPath } from './recorder/playwright.js';
 import {
   RecordingSessions,
   blockImports,
+  freeTestTitle,
   indentBlock,
+  newTestModule,
   originOf,
   repositoryCodegen,
   siblingSpecs,
@@ -3507,12 +3509,16 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           () => null,
         )
       : null;
+    // At a caret outside any test, class or function, the steps go in a new test, as Record here writes one there.
+    const newTest = !!file && candidates?.context === 'file';
+    const testModule = newTest ? newTestModule(file!, text) : null;
     const result = renderSpec(sessionFromSteps(parsed.steps), {
-      format: 'body',
+      format: newTest ? 'test' : 'body',
+      ...(newTest ? { title: parsed.steps.title?.trim() || freeTestTitle(text), fixtures: fileFixtures(text) } : {}),
       urls: context ? await stepUrls(context, parsed.steps.origin) : 'relative',
       locators: 'stable',
       urlChecks: true,
-      ...repositoryCodegen(codegenConfigOf(piwi).options, 'steps', candidates?.context ?? 'file'),
+      ...repositoryCodegen(codegenConfigOf(piwi).options, newTest ? 'test' : 'steps', candidates?.context ?? 'file'),
       catalog: context ? await context.functionCatalog() : [],
       preferLocators: suiteLocators(context),
       ...(page ? { page } : {}),
@@ -3526,7 +3532,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           ? result.code
           : indentBlock(result.code, caretLine.slice(0, caretLine.length - caretLine.trimStart().length)),
       warnings: result.warnings.map((w) => w.message),
-      ...(separate ? { importEdit: importInsertion(text, blockImports(text, result)) } : {}),
+      ...(separate
+        ? { importEdit: importInsertion(text, blockImports(text, result, testModule ? { testModule } : {})) }
+        : {}),
     };
   });
 

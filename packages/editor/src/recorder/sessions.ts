@@ -301,6 +301,16 @@ export function freeTestTitle(text: string): string {
   }
 }
 
+/**
+ * The module a new test in `file` (its text `text`) imports `test` from: as the specs beside it do, else
+ * `@playwright/test`; null when the file already imports or declares `test`.
+ */
+export function newTestModule(file: string, text: string): string | null {
+  const bindings = importBindings(text);
+  if (testImportOf(text, bindings) || bindings.declared.has('test')) return null;
+  return siblingTestSetup(file).testImport ?? PLAYWRIGHT_TEST;
+}
+
 /** The texts of the spec files beside `file`, the first ones by name. */
 export function siblingSpecs(file: string): string[] {
   const dir = path.dirname(file);
@@ -538,12 +548,7 @@ export class RecordingSessions {
     const fromConfig = codegenConfigOf(options.piwi);
     const siblings = into === 'file' ? siblingTestSetup(target.file) : null;
     const readSiblings = () => siblingSpecs(target.file);
-    // A new test in a file that takes no `test` imports it as the specs beside it do.
-    const fileBindings = importBindings(target.text);
-    const testModule =
-      into === 'test' && !testImportOf(target.text, fileBindings) && !fileBindings.declared.has('test')
-        ? (siblingTestSetup(target.file).testImport ?? PLAYWRIGHT_TEST)
-        : null;
+    const testModule = into === 'test' ? newTestModule(target.file, target.text) : null;
     const fileTestImport = siblings ? (testImportOf(target.text) ?? siblings.testImport ?? undefined) : undefined;
     const codegen: CodegenOptions = {
       format: into === 'steps' ? 'body' : into,
@@ -577,7 +582,7 @@ export class RecordingSessions {
       events: [],
       startedAt: Date.now(),
       codegen,
-      expectModule: expectModuleOf(target.text, { siblings: readSiblings, bindings: fileBindings, testModule }),
+      expectModule: expectModuleOf(target.text, { siblings: readSiblings, testModule }),
       testModule,
       baseOrigin: originOf(baseURL),
       cwd,

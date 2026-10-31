@@ -4092,6 +4092,37 @@ describe('recording from the editor', () => {
     expect(comments.importEdit).toBeUndefined();
   });
 
+  test('renders steps sent outside any test as a new test, with the test import a file without one needs', async () => {
+    const steps = toStepsDocument(buildSession([goto('https://shop.test/checkout'), payNow], 1));
+    await openHere(
+      'tests/between.spec.ts',
+      ["import { test } from '@playwright/test';", '', "test('recorded flow', async ({ page }) => {});", '', ''].join(
+        '\n',
+      ),
+    );
+    const between = (await recorder.sendRequest('piwi/renderSteps', {
+      uri: uri('tests/between.spec.ts'),
+      steps,
+      line: 3,
+      character: 0,
+      imports: 'separate',
+    })) as RenderStepsResult;
+    expect(between.code.split('\n')[0]).toBe("test('recorded flow 2', async ({ page }) => {");
+    expect(between.code).toContain("  await page.getByRole('button', { name: 'Pay now' }).click();");
+    expect(between.importEdit).toBeNull();
+
+    await openHere('tests/empty.spec.ts', '');
+    const empty = (await recorder.sendRequest('piwi/renderSteps', {
+      uri: uri('tests/empty.spec.ts'),
+      steps,
+      line: 0,
+      character: 0,
+      imports: 'separate',
+    })) as RenderStepsResult;
+    expect(empty.code.split('\n')[0]).toBe("test('recorded flow', async ({ page }) => {");
+    expect(empty.importEdit?.newText).toContain("import { test } from '@playwright/test';");
+  });
+
   test('renders steps without the imports the open file has, nor a page object the test declares already', async () => {
     const text = [
       "import { test } from '@playwright/test';",

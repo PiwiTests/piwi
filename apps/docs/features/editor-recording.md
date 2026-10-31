@@ -100,7 +100,7 @@ recorded, lands at the editor's cursor too:
 3. A picked locator's row, the top locator of the [Elements sidebar](./devtools#the-elements-sidebar), the
    [Locators console](./devtools#the-piwi-panel) in DevTools and the recording review then show **Send to editor**. A
    locator is inserted in the copy form you chose; a recording is rendered as the body of a test, like
-   [`piwi codegen --body`](/reference/cli#codegen).
+   [`piwi codegen --body`](/reference/cli#codegen), or as a new test outside one.
 
 The editor listens on the loopback interface only, answers only a request addressed to `127.0.0.1` or `localhost` at
 its port, and accepts one only with the token. Before Piwi Picker sends the token, the editor proves it holds it, so
