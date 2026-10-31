@@ -310,6 +310,16 @@ export const RUNS_ANCHORS = [
 export const RUNS_EXEMPTIONS = [
   {
     rule: 'help',
+    key: 'run.live-view-setup',
+    reason: 'Live-view readiness shows only while a run is reporting, and the seed has no run in progress.',
+  },
+  {
+    rule: 'help',
+    key: 'run.live-view-demo',
+    reason: 'Simulated progress shows only during a demo run, and the seed has no run in progress.',
+  },
+  {
+    rule: 'help',
     key: 'run.live',
     reason:
       'The Tests tab’s live counter shows only while a run is still reporting, and the seed has no run in progress.',

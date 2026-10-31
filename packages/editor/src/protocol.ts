@@ -5,6 +5,7 @@
  * goes through these requests, and each client draws them natively: CodeLens
  * in VS Code, Code Vision in the JetBrains IDEs.
  */
+import type { ViewInput } from '@piwitests/core/run-view';
 
 /** A command a summary line runs when clicked. Clients implement each `command` id. */
 export interface PiwiCommand {
@@ -1642,6 +1643,28 @@ export interface PausedPageResult {
 }
 
 export const PAUSED_PAGE_REQUEST = 'piwi/pausedPage';
+
+/** The editor watches one stopped page through its existing language-service connection. */
+export interface PageViewParams {
+  ref: string;
+  worker: number;
+  since: string;
+  on: boolean;
+}
+
+/** Input is accepted only from the editor while it watches this exact stop. */
+export interface PageInputParams extends Omit<PageViewParams, 'on'> {
+  events: ViewInput[];
+  release?: boolean;
+}
+
+/** A transient JPEG of the stop the editor watches, or why its page has no frame. */
+export type PageFrame = Omit<PageViewParams, 'on'> &
+  ({ data: string; width: number; height: number } | { refused: string });
+
+export const PAGE_VIEW_REQUEST = 'piwi/pageView';
+export const PAGE_INPUT_REQUEST = 'piwi/pageInput';
+export const PAGE_FRAME_NOTIFICATION = 'piwi/pageFrame';
 
 /**
  * `piwi/pickAt`: Pick on the image, at the stop `since` names, of the run's one stopped worker or `worker`: the element

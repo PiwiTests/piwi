@@ -31,6 +31,7 @@ import {
   PICK_HINT,
   pagePoint,
   pausedPageHtml,
+  pausedPageViewChange,
   picksOnImage,
   pausedText,
   remember,
@@ -598,6 +599,16 @@ describe('the breakpoints sent to a run', () => {
 });
 
 describe('the paused page view', () => {
+  test('ends its watch as it hides and starts it again as it shows, and a focus change does neither', () => {
+    // A focus change fires the view state change with the panel visible before and after.
+    expect(pausedPageViewChange(true, true, true)).toBe('none');
+    expect(pausedPageViewChange(false, false, true)).toBe('none');
+    expect(pausedPageViewChange(true, false, true)).toBe('end');
+    expect(pausedPageViewChange(true, false, false)).toBe('end');
+    expect(pausedPageViewChange(false, true, true)).toBe('watch');
+    expect(pausedPageViewChange(false, true, false)).toBe('none');
+  });
+
   test('shows the JPEG under its caption, with no script and data images only', () => {
     const html = pausedPageHtml({ image: { mime: 'image/jpeg', data: '/9j/4AAQ+w==' }, caption: 'Click <b>' }, 'n0nce');
     expect(html).toContain(
@@ -607,6 +618,28 @@ describe('the paused page view', () => {
     expect(html).toContain('<p>Click &#60;b&#62;</p>');
     expect(html).toContain('<img src="data:image/jpeg;base64,/9j/4AAQ+w==" alt="The page of the paused test">');
     expect(html).not.toContain('<script');
+  });
+
+  test('offers live watching only for a capable stop, with interaction disabled and help collapsed', () => {
+    const html = pausedPageHtml(
+      {
+        image: null,
+        caption: '<test>',
+        live: { shown: 7, on: false, input: true, interacting: false, clickCounts: true },
+      },
+      'secure',
+      'https://webview/paused-page.js?a=1&b=2',
+    );
+    expect(html).toContain("script-src 'nonce-secure'");
+    expect(html).toContain('src="https://webview/paused-page.js?a=1&#38;b=2"');
+    expect(html).toContain('data-shown="7"');
+    expect(html).toContain('id="interact" type="checkbox" disabled');
+    expect(html).toContain('<details><summary>');
+    expect(html).not.toContain('<details open');
+    expect(html).not.toContain('<test>');
+    expect(
+      pausedPageHtml({ image: null, caption: 'Still image' }, 'n', 'https://webview/paused-page.js'),
+    ).not.toContain('Watch live');
   });
 
   test('runs one script, by the style’s nonce, only where a click on the image picks', () => {

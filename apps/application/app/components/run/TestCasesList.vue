@@ -814,6 +814,8 @@ defineExpose({ scrollToCase });
         class="flex-[1_1_15rem]"
       />
 
+      <slot name="toolbar-extra" />
+
       <div v-if="!isLive" class="flex flex-wrap items-center gap-1">
         <StatusFilterChip
           status="failed"

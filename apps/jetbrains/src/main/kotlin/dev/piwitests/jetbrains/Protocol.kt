@@ -797,6 +797,25 @@ data class PausedImage(val mime: String? = null, val data: String? = null, val w
 /** The image; null when the worker is not stopped, has no page, or did not answer within 10 seconds. */
 data class PausedPageResult(val image: PausedImage? = null)
 
+data class PageViewParams(val ref: String, val worker: Int, val since: String, val on: Boolean)
+
+data class PageInput(
+    val type: String,
+    val action: String? = null,
+    val x: Double? = null,
+    val y: Double? = null,
+    val button: String? = null,
+    val clickCount: Int? = null,
+    val key: String? = null,
+    val text: String? = null,
+    val deltaX: Double? = null,
+    val deltaY: Double? = null,
+)
+
+data class PageInputParams(val ref: String, val worker: Int, val since: String, val events: List<PageInput>, val release: Boolean = false)
+
+data class PageFrame(val ref: String, val worker: Int, val since: String, val data: String? = null, val width: Int? = null, val height: Int? = null, val refused: String? = null)
+
 /**
  * `piwi/pickAt`: the element under the point `x`, `y` of the page stopped at `since` (CSS pixels of its viewport: a
  * point of the image is `x * width / naturalWidth`), of the run's one stopped worker or `worker`, its locator sent
@@ -995,6 +1014,12 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/pausedPage")
     fun pausedPage(params: PausedPageParams): CompletableFuture<PausedPageResult?>
+
+    @JsonRequest("piwi/pageView")
+    fun pageView(params: PageViewParams): CompletableFuture<RunControlResult?>
+
+    @JsonRequest("piwi/pageInput")
+    fun pageInput(params: PageInputParams): CompletableFuture<RunControlResult?>
 
     @JsonRequest("piwi/pickAt")
     fun pickAt(params: PickAtParams): CompletableFuture<PickAtResult?>
