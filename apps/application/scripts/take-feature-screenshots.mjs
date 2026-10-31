@@ -974,6 +974,8 @@ const REPRO_SCENE_STEPS = (() => {
  *   inspection  — desktop mode: mocked `desktop_inspect_folder` answer (default READY_INSPECTION)
  *   importableRuns — desktop mode: archives `desktop_find_importable_runs` reports (default [])
  *   pickedFiles — desktop mode: archives the native import picker returns (default [])
+ *   localRunId  — desktop mode: the shell's id of the local run `desktop_run_local_tests` starts (default none)
+ *   serverPort, activePort — desktop mode: the port the settings name and the one the server listens on (default 3000)
  *   pickerHint  — show the hint to install Piwi Picker (`PickerInstallHint`); every
  *                 other scene captures as if Don't show again had been chosen,
  *                 so the hint never lands in an illustration by chance
@@ -6038,6 +6040,27 @@ const SCENES = [
       await page.getByRole('textbox', { name: 'Team server URL' }).fill('https://piwi.acme.dev');
       await settle();
       await shoot('team-server', { of: wizard, pad: 12 });
+    },
+  },
+  {
+    name: 'desktop-service-card',
+    description:
+      'Setup → Desktop app (desktop app): run in background, start on login and the server port, saved while the server still listens on another, then a new port being typed',
+    tags: ['desktop'],
+    mode: 'desktop',
+    serverPort: 4100,
+    activePort: 51234,
+    route: '/setup',
+    viewport: { width: 1280, height: 2400 },
+    async run({ page, settle, shoot }) {
+      const card = '[data-shot="desktop-service"]';
+      await page.locator(card).waitFor({ timeout: 60_000 });
+      await page.locator(card).scrollIntoViewIfNeeded();
+      await settle();
+      await shoot('', { of: card, pad: 12 });
+      await page.getByRole('spinbutton', { name: 'Server port' }).fill('4200');
+      await settle();
+      await shoot('editing', { of: card, pad: 12 });
     },
   },
   {

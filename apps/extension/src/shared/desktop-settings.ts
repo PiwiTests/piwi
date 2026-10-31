@@ -18,9 +18,10 @@ export interface DesktopSettings {
 const DESKTOP_KEY = 'piwiDesktop';
 
 /**
- * The address the desktop app takes when it is free (`PREFERRED_PORT` in
- * `apps/desktop/src-tauri/src/lib.rs`); another program on that port moves the
- * app to one its Setup page shows.
+ * The address the desktop app takes by default (`DEFAULT_PORT` in
+ * `apps/desktop/src-tauri/src/lib.rs`); a port chosen in its installer or on its
+ * Setup page, or another program on that port, moves the app to one its Setup
+ * page shows.
  */
 export const DESKTOP_DEFAULT_URL = 'http://127.0.0.1:3000';
 

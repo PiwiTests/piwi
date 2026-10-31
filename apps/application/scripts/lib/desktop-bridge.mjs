@@ -24,11 +24,13 @@ export const READY_INSPECTION = {
  * answers: `link` (`desktop_get_project_link`, else no linked folder),
  * `inspection` (`desktop_inspect_folder`, else `READY_INSPECTION`),
  * `importableRuns` and `pickedFiles` (the archives the folder holds and the
- * native import picker returns, else none), and `localRunId` (the shell's id
- * of a local run `desktop_run_local_tests` starts, which then goes on until
- * the scene ends; else none starts). `window.__emitTauri(name, payload)` plays
- * an event of the shell, such as a `piwi:local-run` output line, and
- * `window.__outputWindowName` is the name of the last run output window opened.
+ * native import picker returns, else none), `localRunId` (the shell's id of a
+ * local run `desktop_run_local_tests` starts, which then goes on until the
+ * scene ends; else none starts), and `serverPort` and `activePort` (the port
+ * the settings name and the one the server listens on, else both 3000).
+ * `window.__emitTauri(name, payload)` plays an event of the shell, such as a
+ * `piwi:local-run` output line, and `window.__outputWindowName` is the name of
+ * the last run output window opened.
  */
 export function bridgeScript(shape = {}) {
   const inspection = shape.inspection ?? READY_INSPECTION;
@@ -36,6 +38,8 @@ export function bridgeScript(shape = {}) {
   const importableRuns = shape.importableRuns ?? [];
   const pickedFiles = shape.pickedFiles ?? [];
   const localRunId = shape.localRunId ?? null;
+  const serverPort = shape.serverPort ?? 3000;
+  const activePort = shape.activePort ?? serverPort;
   return `
     window.__mockLink = ${JSON.stringify(link)};
     const listeners = {};
@@ -64,7 +68,14 @@ export function bridgeScript(shape = {}) {
             case 'desktop_save_download':
               return Promise.resolve('~/Downloads/' + (args?.filename ?? 'download'));
             case 'desktop_get_service_settings':
-              return Promise.resolve({ run_in_background: false, start_on_login: false });
+              return Promise.resolve({
+                run_in_background: false,
+                start_on_login: false,
+                server_port: ${serverPort},
+                active_port: ${activePort},
+              });
+            case 'desktop_set_server_port':
+              return Promise.resolve(null);
             case 'desktop_check_update':
               return Promise.resolve({ state: 'unsupported' });
             case 'desktop_mcp_clients':

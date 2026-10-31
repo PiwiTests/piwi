@@ -7,6 +7,7 @@
   "scripts": {
     "fetch-node": "node scripts/fetch-node.mjs",
     "stage": "node scripts/stage-server.mjs",
+    "installer-art": "node scripts/installer-art.mjs",
     "tauri": "tauri",
     "dev": "tauri dev",
     "build": "tauri build",

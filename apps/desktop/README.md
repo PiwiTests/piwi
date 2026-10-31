@@ -14,7 +14,9 @@ channel, so a per-user install pulls a per-user update.
 
 ## How it works
 
-1. On launch the Rust shell picks a free loopback port, resolves a per-user data
+1. On launch the Rust shell takes the loopback port its settings name
+   (`serverPort` in the app's `settings.json`, 3000 by default; a free port
+   when that one is taken), resolves a per-user data
    dir (`app_data_dir()/.data`), and spawns the bundled server as a **Node
    sidecar** (`src-tauri/binaries/node-<triple>` running
    `src-tauri/resources/app-server/.output/server/index.mjs`), with Node's
@@ -141,6 +143,22 @@ desktop app instead — the same server, driven through its loopback origin —
 launch the app and run `npm run app:test:desktop` from `apps/application/`
 (`PIWI_DESKTOP_E2E=1`); it adopts the app's URL + token from `~/.piwi/desktop.json`.
 See [`apps/application/tests/README.md`](../application/tests/README.md#against-the-running-desktop-app).
+
+## The Windows installers
+
+The `.exe` (NSIS) and the `.msi` (WiX) show the Piwi artwork:
+`src-tauri/windows/*.bmp`, rendered from the logos in
+`apps/application/public/` by `npm run installer-art` (run it again after a
+logo changes; it needs the repository root's `npm ci`). Both installers carry
+the app icon.
+
+The `.exe`'s welcome page asks for the port the dashboard listens on
+(`src-tauri/windows/installer-hooks.nsh`), filled with the one the app will use.
+The confirmed port goes to `installer.json` in the app data folder, which the
+app moves into `settings.json` on its next start. Silent and passive installs,
+the updater's among them, skip the page and keep the setting. Everywhere else,
+the Setup page's **Desktop app** card changes the port. Ports below 1024 and the
+ones browsers refuse (6000, 10080…) are not accepted.
 
 ## Signing
 
