@@ -16,6 +16,11 @@ Every section reads the **same baseline**, so the "new failures" count is comput
 
 By default the baseline is the last passing full run chosen by the [baseline rule](/guide/concepts#baseline-last-green-run): same environment first, then same branch, base branch, any branch. The line under the selector spells out the rung that applied, for example _"No passing staging run exists on feature/x; the last passing run on the default branch main in staging."_
 
+<figure>
+  <img src="/diagrams/baseline-ladder.svg" alt="The baseline ladder: same branch, base branch, then any branch, first within the run's environment and then in any environment; with no passing run, the same rungs for the last failed run">
+  <figcaption>Six rungs, tried in order: the first with an earlier passing run gives the baseline.</figcaption>
+</figure>
+
 ### When no earlier run passed
 
 A project that has never had a green run still gets a comparison. When no earlier full run passed, the tab walks the same ladder again for the **last failed run** and says so: _"No earlier full run passed; the last failed run on feature/x in staging."_ The sections read the same way against it: **New failures** are the tests that passed in that run and fail here, **Still failing** the ones that failed in both. Timed-out and interrupted runs stopped before the suite ended, so they are never picked automatically.
