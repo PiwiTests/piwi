@@ -71,6 +71,11 @@ From your Playwright project, one command installs the reporter, wraps your `pla
 npx @piwitests/reporter init --server-url http://localhost:3000 --project my-project
 ```
 
+It prints one line per step, `+` for a file it created, `~` for one it changed, `=` for one already set, `!` for a
+step left to you:
+
+<<< @/snippets/init-output.txt
+
 Every step is idempotent, so it is safe to re-run. When `init` finds a config shape it will not rewrite, or a fixtures
 file that already exists, it reports that step as `manual` with the exact change to make instead of touching the file.
 Pass `--dry-run` to preview, or `--json` for a machine-readable plan that a coding agent can follow to finish the manual
@@ -109,6 +114,14 @@ While it runs, the wizard's status line changes from *Waiting for the first run*
   <img src="/screenshots/home-empty-connect-reporting.png" alt="The wizard's status line: a run of checkout is reporting now, with a Watch it link">
   <figcaption>The checkpoint: your first run is reporting.</figcaption>
 </figure>
+
+If nothing shows up, read the first lines the reporter prints. This one means it found no server to report to:
+
+<<< @/snippets/reporter-not-enabled.txt
+
+Set `PIWI_DASHBOARD_URL`, in the environment or the `.env` next to your Playwright config, or rerun `init` with
+`--server-url`. From WSL, a dev container or another machine, the URL is the dashboard's address as that machine
+reaches it, not `localhost`.
 
 The home page and a project's page leave out partial runs (a run of a few files) until you change their **Filters**,
 and a project's page leaves out branches other than the default one too. The **Filters** block counts the runs it

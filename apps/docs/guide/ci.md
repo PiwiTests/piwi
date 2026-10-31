@@ -215,16 +215,14 @@ the run history, so the dashboard evaluates it.
 
 The command reads the run id from `PIWI_OUTPUT_FILE` (or `--run-id`, or `./piwi-run.json`) and prints each violation.
 
-| Rule | Fails the build when |
-|---|---|
-| `--require-tag <tags>` | Any test carrying one of these tags failed |
-| `--max-failed <n>` | More than `n` tests failed |
-| `--max-new-regressions <n>` | More than `n` tests newly started failing versus the last green run |
-| `--max-new-flaky <n>` | More than `n` tests newly started passing only on retry |
-| `--max-quarantined <n>` | More than `n` tests are [quarantined](/features/flaky-tests#quarantine-with-a-way-out) — a ceiling on quarantine debt |
-| `--fail-on-new-cluster` | This run introduced a failure cluster never seen before |
-| `--fail-on-flaky` | Any test passed only after a retry, newly flaky or not |
-| `--max-leaks <n>`, `--max-new-leaks <n>` | More than `n` [leaks](/features/resource-leaks#in-ci), or new leaks |
+A failed gate exits 1 and prints:
+
+<<< @/snippets/gate-output.txt
+
+Its rules bound the failing tests, the new regressions and newly flaky tests, the tests a tag or a
+[selection](/features/test-selection) requires, the [quarantine](/features/flaky-tests#quarantine-with-a-way-out)
+debt, new clusters and [leaks](/features/resource-leaks#in-ci): every flag is in the
+[CLI reference](/reference/cli#gate).
 
 At least one rule is required, or a [warn-only flag](/features/uncovered-changes#the-gate-flags). Exit codes are part
 of the contract:

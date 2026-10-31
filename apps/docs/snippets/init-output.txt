@@ -1,0 +1,18 @@
+Piwi setup for "my-project":
+
+  ~ [updated] dependency — Installed @piwitests/reporter
+  ~ [updated] config playwright.config.ts — Wrapped defineConfig(...) with wrapConfig(...) and added the import
+  + [created] fixtures tests/fixtures.ts — Created capture fixtures — import `test` from here in your specs
+  ~ [updated] env .env.example — Recorded PIWI_DASHBOARD_URL, PIWI_API_KEY
+  + [created] skill:investigate-failure .claude/skills/investigate-failure/SKILL.md — installed skill
+  + [created] skill:apply-locator-healing .claude/skills/apply-locator-healing/SKILL.md — installed skill
+  + [created] skill:stabilize-flaky-tests .claude/skills/stabilize-flaky-tests/SKILL.md — installed skill
+  + [created] skill:run-the-right-tests .claude/skills/run-the-right-tests/SKILL.md — installed skill
+  + [created] skill:write-the-missing-test .claude/skills/write-the-missing-test/SKILL.md — installed skill
+  + [created] skill:fix-a-reported-bug .claude/skills/fix-a-reported-bug/SKILL.md — installed skill
+
+Next:
+  • If your dashboard has authentication on, create an API key (Settings → Account → API keys) and put it in .env as PIWI_API_KEY: the reporter reads it from the .env next to your Playwright config. Keep .env out of git; in CI, set PIWI_API_KEY as a secret.
+  • In your specs, import `test` (and `expect`) from your fixtures file instead of `@playwright/test`.
+  • Run `npx playwright test` — the run should appear at http://localhost:3000.
+  • For a machine-readable check, set PIWI_OUTPUT_FILE=piwi-run.json and read runUrl from that file after the run.
