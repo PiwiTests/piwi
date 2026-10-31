@@ -250,7 +250,8 @@ export interface UploadSummary {
   supersededBy?: string | null;
 }
 
-function formatSummary(summary: UploadSummary, dryRun: boolean): string {
+/** The lines `coverage upload` prints once the report is sent, or would be with `--dry-run`. */
+export function formatSummary(summary: UploadSummary, dryRun: boolean): string {
   const lines = [
     `${dryRun ? 'Would upload' : 'Uploaded'} ${summary.suite} for ${summary.commit.slice(0, 7)}${
       summary.branch ? ` (${summary.branch})` : ''

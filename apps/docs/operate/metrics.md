@@ -25,6 +25,10 @@ telemetry" promise.
   change that, with the scope keys of the analytics page.
 - Answers are cached for 60 seconds, so a scrape interval under a minute reads the same numbers.
 
+An answer, cut to three metrics and two projects:
+
+<<< @/snippets/metrics-output.txt
+
 With [authentication](./authentication) on, the scraper sends an [API key](./api-keys), and the
 samples cover the projects that key's user can open; a browser session is refused. Create a key for a Member
 with the Viewer role on the projects you want to chart. A Prometheus scrape job:
