@@ -1416,6 +1416,18 @@ async function prepareTeamSlackChannel({ base, request }) {
   });
 }
 
+/**
+ * The server the harness boots runs as a configured instance: a public address,
+ * so no screen shows the missing-PIWI_SITE_URL warnings (the caller's own value
+ * wins), and never the caller's own Jira: the scenes connect their own.
+ */
+const SCENE_SERVER_ENV = {
+  PIWI_SITE_URL: process.env.PIWI_SITE_URL ?? 'https://piwi.example.com',
+  PIWI_JIRA_BASE_URL: '',
+  PIWI_JIRA_EMAIL: '',
+  PIWI_JIRA_API_TOKEN: '',
+};
+
 /** The db-managed connection the required-fields scenes bind; its dead port means no Jira is contacted. */
 let jiraSceneConnectionId = 0;
 
@@ -3336,13 +3348,42 @@ const SCENES = [
     description: 'Settings → Integrations: the Jira card with a connected system and a test button',
     tags: ['docs'],
     out: 'docs',
-    // Run with the server's Jira env vars set (PIWI_JIRA_BASE_URL / PIWI_JIRA_EMAIL
-    // / PIWI_JIRA_API_TOKEN) so the environment-managed Jira connection appears;
-    // no network call is made just to render the page.
-    route: '/settings/integrations',
+    // The scene connection reads as a checked Jira Cloud site; its real base URL is a dead port.
+    prepare: prepareJiraSceneConnection,
+    route: '/settings',
     viewport: { width: 1280, height: 1000 },
     of: '[data-shot="integrations-settings"]',
     pad: 12,
+    async run({ page, goto, shoot, settle }) {
+      await page.route('**/api/integrations/connections', async (route) => {
+        if (route.request().method() !== 'GET') return route.continue();
+        const list = await (await route.fetch()).json();
+        await route.fulfill({
+          json: {
+            ...list,
+            connections: list.connections.map((c) =>
+              c.id === jiraSceneConnectionId
+                ? {
+                    ...c,
+                    baseUrl: 'https://acme.atlassian.net',
+                    config: { flavor: 'cloud' },
+                    status: 'ok',
+                    lastCheckedAt: new Date().toISOString(),
+                    credentialValues: { email: 'piwi-bot@acme.example' },
+                  }
+                : c,
+            ),
+          },
+        });
+      });
+      // A client-side navigation, so the route above answers the page's fetch, not the server render.
+      await goto('/settings');
+      await page.locator('a[href="/settings/integrations"]').first().click();
+      await page.locator('[data-shot="integrations-settings"]').waitFor({ timeout: 20000 });
+      await page.getByText('acme.atlassian.net').first().waitFor({ timeout: 20000 });
+      await settle();
+      await shoot();
+    },
   },
   {
     name: 'integrations-webhook-actions',
@@ -3424,23 +3465,30 @@ const SCENES = [
     out: 'docs',
     // A db-managed Jira connection makes the entry points appear; its base URL
     // points at a dead local port so the dedupe search fails fast (no real Jira).
-    async prepare({ base, request }) {
-      const list = await (await request.get(`${base}/api/integrations/connections`)).json();
-      if (!list.connections?.some((c) => c.provider === 'jira')) {
-        await request.post(`${base}/api/integrations/connections`, {
-          data: {
-            provider: 'jira',
-            name: 'Jira',
-            baseUrl: 'http://127.0.0.1:9',
-            credentials: { email: 'you@example.com', apiToken: 'screenshot-token' },
-          },
-        });
-      }
-    },
+    prepare: prepareJiraSceneConnection,
     // A cluster no scene links an issue to, so its Issue line keeps Create issue.
+    // The draft is answered as for a project bound to CHK / Bug whose required
+    // fields have defaults; the pickers and the create screen come from routeJiraScreen.
     route: '/failure-clusters/4',
     viewport: { width: 1280, height: 1100 },
     async run({ page, shoot, settle }) {
+      await routeJiraScreen(page);
+      await page.route('**/api/integrations/connections/*/projects/*/issue-types/*/fields', (route) =>
+        route.fulfill({ json: { fields: JIRA_SCREEN_FIELDS.filter((field) => field.id !== 'customfield_10001') } }),
+      );
+      await page.route('**/api/integrations/issue-draft*', async (route) => {
+        const draft = await (await route.fetch()).json();
+        await route.fulfill({
+          json: {
+            ...draft,
+            connectionId: jiraSceneConnectionId,
+            projectKey: 'CHK',
+            issueType: '10004',
+            projectBound: true,
+            fieldValues: { ...JIRA_FIELD_DEFAULTS, customfield_10080: { value: { id: '10401' }, label: 'Staging' } },
+          },
+        });
+      });
       await page.locator('[data-shot="issue-line-create"]').first().click();
       await page.getByRole('dialog').waitFor();
       // The preview renders once the draft resolves.
@@ -3486,24 +3534,45 @@ const SCENES = [
     tags: ['docs'],
     out: 'docs',
     // A db-managed Jira connection makes the binding form appear; its base URL
-    // points at a dead local port so no real Jira is contacted.
-    async prepare({ base, request }) {
-      const list = await (await request.get(`${base}/api/integrations/connections`)).json();
-      if (!list.connections?.some((c) => c.provider === 'jira')) {
-        await request.post(`${base}/api/integrations/connections`, {
-          data: {
-            provider: 'jira',
-            name: 'Jira',
-            baseUrl: 'http://127.0.0.1:9',
-            credentials: { email: 'you@example.com', apiToken: 'screenshot-token' },
-          },
-        });
-      }
-    },
+    // points at a dead local port so no real Jira is contacted. The binding is
+    // answered as bound to CHK / Bug, with its sync policies and an owner route.
+    prepare: prepareJiraSceneConnection,
     route: '/projects/2?tab=settings&section=issue-tracker',
-    viewport: { width: 1280, height: 2000 },
+    viewport: { width: 1280, height: 2300 },
     of: '[data-shot="project-integration-binding"]',
     pad: 12,
+    async run({ page, goto, shoot, settle }) {
+      await routeJiraScreen(page);
+      await page.route('**/api/projects/2/integrations', async (route) => {
+        if (route.request().method() !== 'GET') return route.continue();
+        const binding = await (await route.fetch()).json();
+        await route.fulfill({
+          json: {
+            ...binding,
+            connectionId: jiraSceneConnectionId,
+            projectKey: 'CHK',
+            issueType: '10004',
+            labels: ['piwi', 'e2e'],
+            fieldDefaults: JIRA_FIELD_DEFAULTS,
+            policies: {
+              ...binding.policies,
+              scope: { ...binding.policies.scope, defaultBranch: true },
+              commentOnFix: true,
+              commentOnRegression: true,
+              commentOnNewOccurrences: true,
+              resolveOnClose: true,
+            },
+            ownerRoutes: [
+              { owner: '@acme/checkout', projectKey: 'CHK', componentId: '10200', assigneeAccountId: 'acct-1' },
+            ],
+          },
+        });
+      });
+      await goto('/projects/2?tab=settings&section=issue-tracker');
+      await page.locator('[data-shot="project-integration-binding"]').waitFor({ timeout: 20000 });
+      await settle();
+      await shoot();
+    },
   },
   {
     name: 'project-integration-auto-create',
@@ -3587,6 +3656,7 @@ const SCENES = [
             connectionId: jiraSceneConnectionId,
             projectKey: 'CHK',
             issueType: '10004',
+            projectBound: true,
             fieldValues: JIRA_FIELD_DEFAULTS,
           },
         });
@@ -8076,7 +8146,7 @@ async function main() {
         ? { base: flags.url, stop: () => {} }
         : mode === 'demo'
           ? await startBuiltDemo()
-          : await startServer({ mode });
+          : await startServer({ mode, env: SCENE_SERVER_ENV });
       try {
         for (const scene of group) {
           try {

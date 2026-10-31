@@ -14,7 +14,7 @@ the branches and environments that matter, and keeps the issue's comments and de
 evolves. Everything is **off by default** and set per project, under **Project → Settings → Issue tracker**.
 
 <figure>
-  <img src="/screenshots/project-integration-auto-create.png" alt="The Automatic creation block of a project's issue tracker settings: two rules, one for release branches at the first occurrence and one for the default branch in staging after three occurrences in two runs over a day, the guards, and a preview listing one open failure filed at its next occurrence and one waiting on a threshold">
+  <img src="/screenshots/project-integration-auto-create.png" alt="The Automatic creation block of a project's issue tracker settings: two rules, one for release branches at the first occurrence and one for the default branch in staging after three occurrences in two runs over a day, the guards, and a preview listing the open failure the second rule files at its next occurrence">
   <figcaption>Automatic creation: the rules, the guards, and a preview of what they would file.</figcaption>
 </figure>
 
