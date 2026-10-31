@@ -117,14 +117,16 @@ refusal naming the field, which the modal then asks for.
 ## Requirements
 
 - A connected **Jira Cloud** site — see [Operate → Integrations](/operate/integrations#connecting-jira-cloud).
+- A [project binding](#the-project-binding) naming the connection: a project's issues are filed through that one
+  connection, never through another.
 - **`PIWI_SITE_URL`** set, so the issue body's links resolve back to the dashboard.
 - The **Contributor** [role](/operate/project-access#what-each-role-can-do) or above to create or link an issue; anyone
   who reads the project sees the key and status.
 
 ## Enable it
 
-The modal prefills its fields from the [project binding](#the-project-binding), else offers pickers over the
-connected site; toggles choose what the body carries (diagnosis and patch on, [share link](/features/share-links) off).
+The modal files through the connection of the [project binding](#the-project-binding) and prefills its fields from
+the binding, else offers pickers over the bound site; toggles choose what the body carries (diagnosis and patch on, [share link](/features/share-links) off).
 A share link needs the **Maintainer** role and is created when the issue is filed.
 From an AI agent, the [`create_issue` MCP tool](/reference/mcp-tools#create_issue) files the same ticket once the
 binding names a Jira project and issue type.

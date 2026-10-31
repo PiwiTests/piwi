@@ -117,6 +117,8 @@ The early check only proves the user holds the permission _somewhere_. The proje
   (that takes `users:manage`, an administrator's).
 - **A Project admin's user list holds only the users who can open a project they can open** (`listUserSummaries`):
   anyone else is found by their whole username (`lookup`), never listed. `tests/unit/access-management-routes.test.ts`.
+- **A project's issues are filed only through the connection its binding names**: `POST /api/integrations/issues`
+  refuses any other before building anything, and the draft proposes no other. `tests/unit/issue-create-routes.test.ts`.
 - **Changing a user's instance role, or signing out, bumps `sessionEpoch`** and so ends their sessions. Project role
   and group changes need no such step: access is loaded on every request.
 

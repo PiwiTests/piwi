@@ -188,6 +188,11 @@ test.describe.serial('Integrations — create an issue', () => {
     const failing = cases.find((c) => c.failureClusterId)!;
     clusterId = failing.failureClusterId!;
     executionId = failing.executionId;
+
+    // A project's issues are filed through the connection it is bound to.
+    const projectId = (await (await request.get(`/api/failure-clusters/${clusterId}`)).json()).project.id;
+    const bound = await request.put(`/api/projects/${projectId}/integrations`, { data: { connectionId } });
+    expect(bound.ok()).toBeTruthy();
   });
 
   test.afterAll(async ({ request }) => {
@@ -202,9 +207,7 @@ test.describe.serial('Integrations — create an issue', () => {
   });
 
   test('the draft prefills the body and finds no existing issue yet', async ({ request }) => {
-    const res = await request.get(
-      `/api/integrations/issue-draft?entityType=failure_cluster&entityId=${clusterId}&connectionId=${connectionId}`,
-    );
+    const res = await request.get(`/api/integrations/issue-draft?entityType=failure_cluster&entityId=${clusterId}`);
     expect(res.ok()).toBeTruthy();
     const draft = (await res.json()) as DraftResponse;
     expect(draft.connectionId).toBe(connectionId);
@@ -282,9 +285,7 @@ test.describe.serial('Integrations — create an issue', () => {
   });
 
   test('the draft now suggests the existing issue', async ({ request }) => {
-    const res = await request.get(
-      `/api/integrations/issue-draft?entityType=failure_cluster&entityId=${clusterId}&connectionId=${connectionId}`,
-    );
+    const res = await request.get(`/api/integrations/issue-draft?entityType=failure_cluster&entityId=${clusterId}`);
     const draft = (await res.json()) as DraftResponse;
     expect(draft.existing.some((e) => e.key === createdKey)).toBe(true);
   });
