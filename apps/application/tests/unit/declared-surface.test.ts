@@ -255,6 +255,22 @@ describe('parseOpenApiSpec', () => {
     const manifest = parseOpenApiSpec({ paths });
     expect(manifest.routes).toHaveLength(MAX_OPENAPI_ROUTES);
   });
+
+  test('declares each path under the document’s base path', () => {
+    const paths = { '/orders/{id}': { get: { responses: { '200': {} } } } };
+    const patterns = (spec: object) => parseOpenApiSpec({ ...spec, paths }).routes.map((r) => r.pattern);
+    expect(patterns({ servers: [{ url: 'https://api.example.com/api/v1/' }] })).toEqual(['/api/v1/orders/{id}']);
+    expect(patterns({ servers: [{ url: '/api/v1' }] })).toEqual(['/api/v1/orders/{id}']);
+    expect(
+      patterns({
+        servers: [{ url: 'https://{region}.example.com/{version}', variables: { version: { default: 'v2' } } }],
+      }),
+    ).toEqual(['/v2/orders/{id}']);
+    expect(patterns({ basePath: '/api' })).toEqual(['/api/orders/{id}']);
+    // A server at the root, or a variable with no default, adds nothing.
+    expect(patterns({ servers: [{ url: 'https://api.example.com' }] })).toEqual(['/orders/{id}']);
+    expect(patterns({ servers: [{ url: '/{tenant}/api' }] })).toEqual(['/orders/{id}']);
+  });
 });
 
 describe('extractImports / buildImportEdges', () => {
