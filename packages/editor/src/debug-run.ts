@@ -66,25 +66,55 @@ export function checkedDebugRun(value: unknown): DebugRun | string {
 /**
  * The test of a spec's `text` that `title` names: the one whose describe blocks' titles and its own, joined by
  * {@link TITLE_SEPARATOR}, are `title`, else the only one whose own title it is (a dashboard that knows no describe
- * block). Why not otherwise, naming the spec (`spec`).
+ * block). A title written with `${…}` parts, in a template literal, names the tests whose title it gives with any text
+ * in their place, when no title is `title` as written. Why not otherwise, naming the spec (`spec`).
  */
 export function debugTest(text: string, spec: string, title: string): TestCall | string {
   const calls = testCalls(text.split(/\r?\n/));
-  const named = calls.filter((c) => [...c.suite, c.title].join(TITLE_SEPARATOR) === title);
-  const own = named.length ? named : calls.filter((c) => c.title === title);
+  const exact = testsTitled(calls, (written) => written === title);
+  const own = exact.length ? exact : testsTitled(calls, (written) => computedTitleGives(written, title));
   if (own.length === 1) return own[0]!;
-  return own.length
-    ? `${own.length} tests of ${spec} are titled “${title}”, so Piwi runs none of them: run the one to debug yourself.`
+  if (own.length) {
+    return `${own.length} tests of ${spec} are titled “${title}”, so Piwi runs none of them: run the one to debug yourself.`;
+  }
+  const computed = calls.some((c) => [...c.suite, c.title].some((written) => written.includes('${')));
+  return computed
+    ? `No test of ${spec} is titled “${title}” as it is saved, so Piwi runs nothing: the test may have been renamed or moved since the run, or its title is computed from more than its \`\${…}\` parts.`
     : `No test of ${spec} is titled “${title}” as it is saved, so Piwi runs nothing: the test may have been renamed or moved since the run.`;
+}
+
+/** The tests whose describe blocks' titles and own, joined, `match`; else those whose own title does. */
+function testsTitled(calls: TestCall[], match: (written: string) => boolean): TestCall[] {
+  const named = calls.filter((c) => match([...c.suite, c.title].join(TITLE_SEPARATOR)));
+  return named.length ? named : calls.filter((c) => match(c.title));
+}
+
+/** Whether a title written with `${…}` parts gives `title`, each part standing for any text. */
+function computedTitleGives(written: string, title: string): boolean {
+  if (!written.includes('${')) return false;
+  const fixed = written.split(/\$\{[^}]*\}/).map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  return new RegExp(`^${fixed.join('[\\s\\S]*?')}$`).test(title);
 }
 
 /**
  * The arguments that debug the test at `location` (`tests/cart.spec.ts:3`): it alone, in the Playwright project it
- * failed in when one is named, with one worker.
+ * failed in when one is named, with one worker. A test whose title is computed (`test` written with `${…}`) can stand
+ * for several at its line: `title`, the run's title of the one that failed, then narrows the run to the tests whose
+ * title holds it, when it holds no character a pattern or a shell reads.
  */
-export function debugArgs(location: string, project: string | null | undefined): string[] {
-  return [location, ...(project ? [`--project=${project}`] : []), '--workers=1'];
+export function debugArgs(
+  location: string,
+  project: string | null | undefined,
+  test?: Pick<TestCall, 'title'>,
+  title?: string,
+): string[] {
+  const own = title?.split(TITLE_SEPARATOR).pop()?.trim() ?? '';
+  const grep = test?.title.includes('${') && PLAIN_GREP.test(own) ? [`--grep=${own}`] : [];
+  return [location, ...(project ? [`--project=${project}`] : []), ...grep, '--workers=1'];
 }
+
+/** A title that reads as itself in a `--grep` pattern and in a quoted shell word. */
+const PLAIN_GREP = /^[\p{L}\p{N} _,:;'@#/=<>~&-]+$/u;
 
 /** What the sessions do for a debug run: replace its breakpoints, and count a locator on a stopped page. */
 export interface DebugRunsOptions {

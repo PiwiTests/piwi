@@ -66,6 +66,25 @@ describe('the debug run’s pure half', () => {
     expect(debugTest(twice, 'tests/cart.spec.ts', 'basket › adds a mug')).toMatchObject({ line: 16 });
   });
 
+  test('finds a test whose title is computed by the text its `${…}` parts stand for', () => {
+    const cards = [
+      "test.describe('checkout', () => {",
+      "  for (const card of ['visa', 'amex']) {",
+      '    test(`pays with ${card}`, async ({ page }) => {});',
+      '  }',
+      "  test('pays with visa', async ({ page }) => {});",
+      '});',
+      '',
+    ].join('\n');
+    expect(debugTest(cards, 'tests/pay.spec.ts', 'checkout › pays with amex')).toMatchObject({ line: 2 });
+    expect(debugTest(cards, 'tests/pay.spec.ts', 'pays with amex')).toMatchObject({ line: 2 });
+    // A title written as the run reported it is that test, before any computed one.
+    expect(debugTest(cards, 'tests/pay.spec.ts', 'checkout › pays with visa')).toMatchObject({ line: 4 });
+    expect(debugTest(cards, 'tests/pay.spec.ts', 'checkout › refunds')).toBe(
+      'No test of tests/pay.spec.ts is titled “checkout › refunds” as it is saved, so Piwi runs nothing: the test may have been renamed or moved since the run, or its title is computed from more than its `${…}` parts.',
+    );
+  });
+
   test('runs the test alone, in its project when one is named, with one worker', () => {
     expect(debugArgs('tests/cart.spec.ts:5', 'chromium')).toEqual([
       'tests/cart.spec.ts:5',
@@ -73,6 +92,21 @@ describe('the debug run’s pure half', () => {
       '--workers=1',
     ]);
     expect(debugArgs('tests/cart.spec.ts:5', null)).toEqual(['tests/cart.spec.ts:5', '--workers=1']);
+    // A computed title stands for each test its line declares: the run's title narrows them, when a pattern reads it as itself.
+    const computed = { title: 'pays with ${card}' };
+    expect(debugArgs('tests/pay.spec.ts:3', null, computed, 'checkout › pays with amex')).toEqual([
+      'tests/pay.spec.ts:3',
+      '--grep=pays with amex',
+      '--workers=1',
+    ]);
+    expect(debugArgs('tests/pay.spec.ts:3', null, computed, 'checkout › pays with (amex)')).toEqual([
+      'tests/pay.spec.ts:3',
+      '--workers=1',
+    ]);
+    expect(debugArgs('tests/pay.spec.ts:3', null, { title: 'pays with amex' }, 'pays with amex')).toEqual([
+      'tests/pay.spec.ts:3',
+      '--workers=1',
+    ]);
   });
 
   test('checks each field a client sends, and refuses text a message could read as markup', () => {

@@ -34,7 +34,9 @@ variables (R10, R11, R12), leaving when the machine summary prints and one prefi
 Runs tile shown for the desktop app too (DOC2), leaving `globalTimeout` and the hooks in the Breakpoints page's
 limits and the bundled Node on the desktop page (both pages at their word budget), the new-file and last-answers
 sentences of the recording page (each client to check first), and the sentences S7, D11 and W13 make wrong, left to
-their fixes. The medium and the larger items are proposed. A pull request that builds part of the plan updates
+their fixes. From the medium items, built in part: 8, a test whose title is computed found by what its `${…}` parts
+stand for, its run narrowed by `--grep` to the run's title when that is plain words (D6), leaving VS Code's Debug in
+my editor from the desktop app (F8). The other medium items and the larger ones are proposed. A pull request that builds part of the plan updates
 this paragraph.
 
 **Summary.** Every step of the loop exists, most of them in several tools, and most of it works as documented: a
