@@ -144,7 +144,7 @@ PIWI_SMTP_FROM=noreply@example.com
 PIWI_SMTP_FROM_NAME=Piwi Dashboard   # optional display name
 PIWI_SMTP_USER=apikey         # only when the server requires authentication
 PIWI_SMTP_PASS=••••••••        # only when the server requires authentication; never returned by the API
-PIWI_SMTP_SECURE=false        # true for port 465 (implicit TLS)
+PIWI_SMTP_SECURE=false        # implicit TLS, default on for 465
 PIWI_SITE_URL=https://piwi.example.com   # base URL used in email links
 ```
 

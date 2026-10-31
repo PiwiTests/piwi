@@ -21,9 +21,9 @@ lists its locators, ranked and checked against the page as it is, the same list 
 shows:
 
 ```
-getByRole('button', { name: 'Apply coupon' })     ✓ unique · stable
-getByTestId('apply-coupon')                        ✓ unique · stable
-locator('.btn').nth(2)                             ⚠ unique by position · brittle: position, CSS class
+getByTestId('cart-button')                        ✓ unique · stable
+getByRole('button', { name: 'Cart, 2 items' })    ✓ unique · could break: number in text
+getByText('🛒 2')                                 ✓ unique · stable
 ```
 
 <figure>

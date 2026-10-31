@@ -93,6 +93,10 @@ npx playwright test
 
 The run streams into the dashboard while it executes, and the reporter prints a `View run:` link at the end. Open it.
 
+The home page and a project's page leave out partial runs (a run of a few files) until you change their **Filters**,
+and a project's page leaves out branches other than the default one too. The **Filters** block counts the runs it
+hides, with **Include partial runs** and **Show all branches** to bring them back.
+
 In CI nothing Piwi-specific is needed: the same reporter runs inside `npx playwright test`, pointed at your instance
 with `PIWI_DASHBOARD_URL` and `PIWI_API_KEY`. [CI & sharding](./ci) has the pipeline examples.
 

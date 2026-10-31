@@ -40,14 +40,16 @@ jobs:
           PIWI_API_KEY: ${{ secrets.PIWI_API_KEY }}
 ```
 
-The shallow clone `actions/checkout` makes is fine: Piwi reads diffs from your Git host's API
-([Source control](./source-control)), not from the checkout.
+The shallow clone `actions/checkout` makes is enough for the reporter: Piwi reads diffs from your Git host's API
+([Source control](./source-control)). [`run impact --base`](/reference/cli#select-run) and
+[`preflight --base`](/reference/cli#preflight) diff the checkout itself and need the base commit: set
+`fetch-depth: 0` on `actions/checkout`.
 
 ## GitLab CI
 
 ```yaml
 e2e:
-  image: mcr.microsoft.com/playwright:v1.61.1-noble   # at or above the reporter's peer range
+  image: mcr.microsoft.com/playwright:v1.64.1-noble   # the version of your @playwright/test
   script:
     - npm ci
     - npx playwright test
@@ -102,7 +104,7 @@ How the merge works:
 4. Counters accumulate across shards. The run is `failed` if any shard reported a failure, and the run page shows a
    shard progress badge (`2/3`) while shards are arriving.
 
-**All shards must use the same `projectName`.** That's the one requirement.
+**All shards must use the same `projectName`.**
 
 Jobs sharded with `piwi run --shard` merge the same way ([details](/features/test-selection#print-shard-and-reorder)).
 
@@ -134,8 +136,8 @@ ends ([Live streaming](./reporter#live-streaming)).
 
 ## Getting the run URL back out of CI
 
-Later pipeline steps can pick up the run URL. Every channel is best-effort: a failure is logged and never fails
-your run.
+Later pipeline steps can pick up the run URL. Every channel is best-effort: a failure is logged, never
+fatal.
 
 **Always** — one line per failed test, printed the moment its final attempt fails, then a
 `View run: <url>` line once the run lands:
@@ -221,7 +223,7 @@ The command reads the run id from `PIWI_OUTPUT_FILE` (or `--run-id`, or `./piwi-
 | `--max-new-flaky <n>` | More than `n` tests newly started passing only on retry |
 | `--max-quarantined <n>` | More than `n` tests are [quarantined](/features/flaky-tests#quarantine-with-a-way-out) — a ceiling on quarantine debt |
 | `--fail-on-new-cluster` | This run introduced a failure cluster never seen before |
-| `--fail-on-flaky` | Any test passed only after a retry — stricter than `--max-new-flaky`, which counts tests *newly* flaky |
+| `--fail-on-flaky` | Any test passed only after a retry, newly flaky or not |
 | `--max-leaks <n>`, `--max-new-leaks <n>` | More than `n` [leaks](/features/resource-leaks#in-ci), or new leaks |
 
 At least one rule is required, or a [warn-only flag](/features/uncovered-changes#the-gate-flags). Exit codes are part
@@ -234,7 +236,7 @@ Worth knowing:
 - **A quarantined test does not count** toward `--max-failed`, `--max-new-regressions`, `--max-new-flaky`,
   `--require-tag` or `--require-selection`, and the gate reports how many failures it excluded.
 
-- **A test that passed on retry satisfies `--require-tag`.** `--max-new-flaky` covers flakiness.
+- **A test that passed on retry satisfies `--require-tag`.**
 - **A required tag that matches no test is a violation**, so a typo cannot pass.
 - **The CI key's evaluations are stored**, so [merges overriding a failed gate](/features/pr-feedback#the-gate-verdict)
   are counted; a read-only key gets the verdict only.
@@ -243,8 +245,8 @@ Worth knowing:
 
 ## Notifying people instead
 
-To tell the team when main goes red, use a [notification subscription](/features/notifications): the rules live
-in one place, not in every pipeline.
+To tell the team when main goes red, use a [notification subscription](/features/notifications), whose rules
+live in one place.
 
 ## Troubleshooting
 

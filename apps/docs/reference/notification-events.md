@@ -162,9 +162,27 @@ A `cluster.*` event also carries `knownIssue` (`{ key, url }`) when the cluster 
 
 ## Verifying a webhook
 
-Each request is signed with an HMAC-SHA256 `X-Piwi-Signature` header derived from the channel's secret, so you can
-verify that Piwi sent it. To check the HMAC, sign the exact bytes you received, never a re-serialized payload. Webhook
-secrets are encrypted at rest.
+When the channel has a secret, each request carries an `X-Piwi-Signature` header, so you can verify that Piwi sent
+it. Its value is `sha256=` followed by the hex HMAC-SHA256 of the raw request body, keyed with the secret:
+
+```
+X-Piwi-Signature: sha256=5d41402abc4b2a76b9719d911017c592...
+```
+
+To check it, compute the HMAC over the exact bytes you received, never a re-serialized payload, and compare the two in
+constant time. In Node.js:
+
+```typescript
+import { createHmac, timingSafeEqual } from 'node:crypto'
+
+function isFromPiwi(rawBody: Buffer, header: string | undefined, secret: string): boolean {
+  const expected = Buffer.from(`sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`)
+  const received = Buffer.from(header ?? '')
+  return received.length === expected.length && timingSafeEqual(received, expected)
+}
+```
+
+A channel with no secret sends no header. Webhook secrets are encrypted at rest.
 
 ## Related
 
