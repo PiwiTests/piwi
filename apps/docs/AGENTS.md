@@ -18,7 +18,7 @@ by `docs:dev` and `docs:build`:
 
 | Page | Source | Script |
 |---|---|---|
-| `reference/configuration.md` | the env-var registry, `apps/application/shared/piwi-env-vars.ts` | `scripts/generate-configuration.mjs` |
+| `reference/configuration.md` | the env-var registry, `apps/application/shared/piwi-env-vars.ts`, and the Settings pages whose fields name each variable, `apps/application/shared/settings-metadata.ts` | `scripts/generate-configuration.mjs` |
 | `reference/features.md` (All features) | the feature catalog, `apps/application/shared/piwi-features.ts`; its "The pieces" and "Choosing a setup" sections from `apps/application/shared/piwi-ecosystem.ts` | `scripts/generate-features.mjs` |
 | `reference/reporter-options.md` | the reporter's options type, `packages/reporter/src/public/options.ts`, and `PIWI_ENV_KEYS` in `packages/reporter/src/internal/config/env.ts` | `scripts/generate-reporter-options.mjs` |
 | `reference/whats-new.md` | `CHANGELOG.md`, read by `apps/application/shared/changelog.ts` (the MCP `get_release_notes` parser) | `scripts/generate-whats-new.mjs` |
@@ -140,8 +140,10 @@ which the drift test also reads.
 
 ### Page types and word budgets
 
-Every page is one type, with one word budget and no allowlist. A page over its budget is cut, or split into two pages;
-it is never excused. The budget counts the page body without its front matter, code blocks included.
+Every page is one type, with one word budget and no allowlist. The budget counts the page's prose, figure captions
+included; it leaves out the front matter, fenced code blocks and an image's markup and alt text. A page over it is
+split into two pages, or moves a section to the page it belongs on; it is never excused, nor trimmed of true facts
+sentence by sentence.
 
 | Type | Answers | Pages | Budget |
 |---|---|---|---:|
@@ -162,6 +164,8 @@ flags, events): link the reference page instead of copying it.
   social card text. The home page is the exception: it uses the site description in `config.mts`.
 - Its H1 equals its sidebar label. Recipes are the exception: their H1 is the reader's question.
 - One footer heading, `## Related`.
+- An image goes in a `<figure>` with a `<figcaption>`: `custom.css` frames it and `theme/image-zoom.ts` opens it at
+  its native size on a click. The drift test refuses a Markdown image and a `doc-screenshot` wrapper.
 - A new term goes into `concepts.md` in the change that introduces it.
 - The page describes what a default install does today. Planned work belongs in `ROADMAP.md`; an experimental
   feature gets one short section marked **Experimental**, with a link to its proposal. No "planned for", "not yet
@@ -235,6 +239,9 @@ its heading text or update every link the test names.
 - **`snippets/` holds the code blocks several surfaces share.** A page includes one with `<<< @/snippets/…`; a surface
   that cannot include a file (`README.md`, `DOCKER_HUB.md`, a package README) carries a byte-for-byte copy, which the
   drift test compares (`SNIPPET_COPIES`).
+- **What Piwi prints is quoted from the code.** A command's output or a served sample shown on a page (`init`, the
+  reporter's lines, the gate, a metrics scrape) is a `snippets/*.txt` that
+  `apps/application/tests/unit/docs-checkpoints.test.ts` renders with the code that prints it: change both together.
 - American English, sentence-case headings, and the [cross-platform shell commands](#cross-platform-shell-commands) rule.
 - Diagrams are theme-aware SVG assets under `apps/docs/public/` — commit the asset rather than embedding a large inline
   `<svg>` in prose.
@@ -293,8 +300,7 @@ options (`split`, `deviceScaleFactor`, `outputWidth`, …) are listed in the scr
 - **The docs gallery's hero** (`home`) is a light/dark diagonal split, `split: true`, so it recaptures with one command
   like any other image: `npm run app:screens -- home`. It is captured at `deviceScaleFactor: 2` and written at
   `outputWidth` 1152, the width of the featured tile: anything wider is bytes the reader never sees.
-- **The other gallery images** (`projects.png`, `flaky-tests.png`, `failure-clusters-tab.png`) are whole screens at
-  **1280×720**.
+- **The other gallery images** (`flaky-tests.png`, `failure-clusters-tab.png`) are whole screens at **1280×720**.
 - **The README's quick tour** is six scenes tagged `readme` (`tour-*.png`): whole screens at one size and in one theme,
   so the two-column grid lines up. Recapture them together (`npm run app:screens -- --tag readme`), with the server
   started with an AI provider so the diagnosis panel shows its configured state (`PIWI_AI_PROVIDER=anthropic` and any
@@ -303,7 +309,8 @@ options (`split`, `deviceScaleFactor`, `outputWidth`, …) are listed in the scr
   the harness renders icons from the bundled collection and runs offline, so the image stays reproducible as the UI
   moves.
 - **Run `npm run app:screens:check` after adding or deleting an image**: it fails on an image with no scene and on a
-  scene whose image is missing.
+  scene whose image is missing. An image no page, README or extension README shows is deleted with its scene: the
+  drift test fails on it.
 
 Images from other pipelines, which the harness's `--check` leaves alone (`EXTERNAL_DOCS_IMAGES` and the `picker-`,
 `vscode-` and `jetbrains-` prefixes):
@@ -313,11 +320,14 @@ Images from other pipelines, which the harness's `--check` leaves alone (`EXTERN
   local demo build (`npm run app:generate:demo`), and needs an ffmpeg with libx264 (`--ffmpeg <path>` or `FFMPEG`);
 - the browser extension's: `picker-*.png` at 1280 × 800, the size the stores take, except the DevTools pane, and
   `tested-elements-overlay.png` at 1400 × 900, by `PIWI_DOCS_SHOTS=1 npm run extension:test:e2e -- docs-screenshots`
-  from `apps/extension/`;
+  from `apps/extension/`, which also writes the loops of `public/videos/` (`picker-*-loop.mp4`: a tool in use, muted,
+  with an ffmpeg that has libx264, `FFMPEG` or on the PATH). A loop goes in a `<figure>` as a `<video>` with
+  `autoplay loop muted playsinline controls` and an `aria-label` saying what it shows;
 - the editor extensions' (`vscode-*.png`, `jetbrains-*.png`), by `apps/vscode/scripts/take-screenshots.mjs` and
   `apps/jetbrains/scripts/take-screenshots.mjs`. They open one fixture project
   (`apps/vscode/scripts/lib/editor-fixture.mjs`) against a stub instance in the real editor, under Xvfb; each script's
-  header says how to run it. [`proposals/real-editor-checks.md`](../../proposals/real-editor-checks.md) records what was
+  header says how to run it. `apps/vscode/scripts/record-loop.mjs` films `editor-recording-loop.mp4` the same way, the
+  recording's browser beside the editor on one screen ffmpeg captures. [`proposals/real-editor-checks.md`](../../proposals/real-editor-checks.md) records what was
   found about each product while the three pipelines were built. The README's *In your browser and your editor* row
   and the Marketplace READMEs show the same images.
 

@@ -39,7 +39,7 @@ brings that into VS Code, Cursor and VSCodium.
 
 ![The Failures view: the latest run's failures as a tree, with a local run laid over them, and the spec's tests marked in the gutter](https://piwitests.dev/screenshots/vscode-failures.png)
 
-![The hover on a failing line: the error, its call log and the chain of calls that reached it](https://piwitests.dev/screenshots/vscode-hover.png)
+![The hover on a failing line: the error, its call log, the chain of calls that reached it and the failure screenshot](https://piwitests.dev/screenshots/vscode-hover.png)
 
 ## Connect
 

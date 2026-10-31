@@ -133,3 +133,9 @@ the panel's **Refresh** downloads it now.
 
 A green box says a test reached the element, not that the test checks what matters about it. Use
 it to find what nothing reaches, and to see which tests to read before changing an element.
+
+## Related
+
+- [Who uses a locator](./locator-usage): the same index, read from a locator rather than a page
+- [Browser extension](./extension): install Piwi Picker and connect it
+- [Locator stability rules](/reference/locator-stability): what makes a locator brittle

@@ -1,65 +1,109 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 320" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 322" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <style>
+  .bg{fill:#fcfcfd;stroke:#e4e7ec}
+  .t{fill:#101828;font-weight:700;font-size:19px}
+  .s{fill:#475467;font-size:14px}
+  .h{fill:#667085;font-size:12.5px;font-weight:700;letter-spacing:.05em}
+  .lb{fill:#344054;font-size:15px;font-weight:600}
+  .l{fill:#475467;font-size:13.5px}
+  .m{fill:#667085;font-size:12.5px}
+  .b{font-weight:600}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;white-space:pre}
+  .ink{fill:#344054} .numw{fill:#ffffff}
+  .box{fill:#ffffff;stroke:#d0d5dd}
+  .chip{fill:#f9fafb;stroke:#d0d5dd}
+  .hd{fill:#f2f4f7}
+  .cap{fill:#f2f4f7;stroke:#d0d5dd}
+  .rule{fill:none;stroke:#e4e7ec}
+  .edge{fill:none;stroke:#667085;stroke-width:1.4}
+  .dash{fill:none;stroke:#98a2b3;stroke-width:1.3;stroke-dasharray:5 4}
+  .acc{fill:none;stroke:#4353ff;stroke-width:1.6}
+  .accd{fill:none;stroke:#4353ff;stroke-width:1.4;stroke-dasharray:5 4}
+  .acct{fill:#4353ff;font-size:13px} .ac{fill:#4353ff}
+  .et{fill:#475467;font-size:13px}
+  .arr{fill:#667085} .arrd{fill:#98a2b3} .arra{fill:#4353ff}
+  .ab{fill:#eef1ff;stroke:#c7ceff} .abt{fill:#2a3aa8} .abl{fill:#3f4b9e} .abo{fill:none;stroke:#4353ff;stroke-width:1.5}
+  .ok{fill:#ecfdf3;stroke:#75e0a7} .okt{fill:#067647} .okd{fill:#12b76a}
+  .bs{fill:#fffaeb;stroke:#fec84b} .bst{fill:#b54708}
+  .fc{fill:#fef3f2;stroke:#fda29b} .fct{fill:#b42318} .fcd{fill:#f04438}
+  .fr{fill:#fff6ed;stroke:#fd853a} .frt{fill:#c4320a}
+  .mu{fill:#f2f4f7;stroke:#d0d5dd} .mud{fill:#d0d5dd}
+  .dbx{fill:none;stroke:#d0d5dd;stroke-dasharray:5 4}
+  .clu{fill:#4353ff;fill-opacity:.06;stroke:#4353ff;stroke-width:1.8;stroke-dasharray:6 4;stroke-linejoin:round}
+  @media (prefers-color-scheme: dark){
+    .bg{fill:#161b26;stroke:#333741}
+    .t{fill:#f5f5f6} .s{fill:#94969c} .h{fill:#85888e}
+    .lb{fill:#ececed} .l{fill:#cecfd2} .m{fill:#94969c} .ink{fill:#ececed} .numw{fill:#161b26}
+    .box{fill:#1f242f;stroke:#333741} .chip{fill:#262b36;stroke:#333741} .hd{fill:#262b36}
+    .cap{fill:#262b36;stroke:#4a4f5a}
+    .rule{stroke:#333741}
+    .edge{stroke:#94969c} .arr{fill:#94969c}
+    .dash{stroke:#61646c} .arrd{fill:#61646c}
+    .acc,.accd{stroke:#8098f9} .acct,.ac{fill:#8098f9} .arra{fill:#8098f9}
+    .et{fill:#94969c}
+    .ab{fill:#1c2142;stroke:#3b4699} .abt{fill:#c7d0ff} .abl{fill:#a4b0f0} .abo{stroke:#8098f9}
+    .ok{fill:#0b2418;stroke:#079455} .okt{fill:#75e0a7} .okd{fill:#17b26a}
+    .bs{fill:#2b1d07;stroke:#ca8504} .bst{fill:#fec84b}
+    .fc{fill:#2d1210;stroke:#d92d20} .fct{fill:#fda29b} .fcd{fill:#f04438}
+    .fr{fill:#2b170c;stroke:#e04f16} .frt{fill:#f7b27a}
+    .mu{fill:#262b36;stroke:#333741} .mud{fill:#61646c}
+    .dbx{stroke:#61646c}
+    .clu{fill:#8098f9;fill-opacity:.1;stroke:#8098f9}
+  }
+</style>
   <defs>
-    <marker id="flArr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M 0 1 L 9 5 L 0 9 z" fill="#667085"/>
-    </marker>
-    <marker id="flArrAccent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M 0 1 L 9 5 L 0 9 z" fill="#4353ff"/>
-    </marker>
+    <marker id="fln" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arr" d="M 0 1 L 9 5 L 0 9 z"/></marker>
+    <marker id="fld" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrd" d="M 0 1 L 9 5 L 0 9 z"/></marker>
+    <marker id="fla" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arra" d="M 0 1 L 9 5 L 0 9 z"/></marker>
   </defs>
+  <rect class="bg" x="0.5" y="0.5" width="919" height="321" rx="12"/>
+  <text class="t" x="24" y="38">Explaining a failure</text>
+  <text class="s" x="24" y="62">Three stages, then the fix. The next green run closes the loop.</text>
 
-  <rect x="0" y="0" width="920" height="320" rx="12" fill="#fcfcfd" stroke="#e4e7ec"/>
-  <text x="24" y="36" font-size="16" font-weight="700" fill="#101828">Explaining a failure</text>
-  <text x="24" y="56" font-size="12.5" fill="#475467">Three stages, then the fix. The next green run closes the loop.</text>
+  <!-- 1 · Evidence -->
+  <rect class="box" x="22" y="88" width="180" height="124" rx="8"/>
+  <path class="hd" d="M 22.5 120 L 22.5 96 Q 22.5 88.5 30 88.5 L 194 88.5 Q 201.5 88.5 201.5 96 L 201.5 120 Z"/>
+  <text class="lb" x="38" y="109">1 · Evidence</text>
+  <text class="l" x="38" y="144">error, trace, console,</text>
+  <text class="l" x="38" y="163">network, DOM, diffs</text>
+  <text class="m" x="38" y="188">captured by the</text>
+  <text class="m" x="38" y="205">capture fixtures</text>
+  <path class="acc" d="M 202 164 L 252 164" marker-end="url(#fla)"/>
+  <text class="acct" x="228" y="154" text-anchor="middle">group</text>
 
-  <!-- 1 Evidence -->
-  <rect x="24" y="84" width="182" height="120" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
-  <rect x="24" y="84" width="182" height="30" rx="8" fill="#f2f4f7"/>
-  <rect x="24" y="106" width="182" height="8" fill="#f2f4f7"/>
-  <text x="40" y="104" font-size="13" font-weight="600" fill="#344054">1 · Evidence</text>
-  <text x="40" y="138" font-size="12" fill="#475467">error, trace, console,</text>
-  <text x="40" y="154" font-size="12" fill="#475467">network, DOM, diffs</text>
-  <text x="40" y="188" font-size="11" fill="#667085">captured by the fixtures</text>
+  <!-- 2 · Cluster -->
+  <rect class="box" x="254" y="88" width="180" height="124" rx="8"/>
+  <path class="hd" d="M 254.5 120 L 254.5 96 Q 254.5 88.5 262 88.5 L 426 88.5 Q 433.5 88.5 433.5 96 L 433.5 120 Z"/>
+  <text class="lb" x="270" y="109">2 · Cluster</text>
+  <text class="l" x="270" y="144">one fingerprint,</text>
+  <text class="l" x="270" y="163">one root cause</text>
+  <text class="m" x="270" y="188">forty failures,</text>
+  <text class="m" x="270" y="205">three causes</text>
+  <path class="acc" d="M 434 164 L 484 164" marker-end="url(#fla)"/>
+  <text class="acct" x="460" y="154" text-anchor="middle">explain</text>
 
-  <line x1="206" y1="150" x2="250" y2="150" stroke="#4353ff" stroke-width="1.6" marker-end="url(#flArrAccent)"/>
-  <text x="229" y="140" font-size="11" fill="#4353ff" text-anchor="middle">group</text>
+  <!-- 3 · Diagnosis -->
+  <rect class="box" x="486" y="88" width="180" height="124" rx="8"/>
+  <path class="hd" d="M 486.5 120 L 486.5 96 Q 486.5 88.5 494 88.5 L 658 88.5 Q 665.5 88.5 665.5 96 L 665.5 120 Z"/>
+  <text class="lb" x="502" y="109">3 · Diagnosis</text>
+  <text class="l" x="502" y="144">grounded in the diff</text>
+  <text class="l" x="502" y="163">since the last green run</text>
+  <text class="m" x="502" y="188">patch checked</text>
+  <text class="m" x="502" y="205">by the server</text>
+  <path class="acc" d="M 666 164 L 716 164" marker-end="url(#fla)"/>
+  <text class="acct" x="692" y="154" text-anchor="middle">suggest</text>
 
-  <!-- 2 Cluster -->
-  <rect x="252" y="84" width="182" height="120" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
-  <rect x="252" y="84" width="182" height="30" rx="8" fill="#f2f4f7"/>
-  <rect x="252" y="106" width="182" height="8" fill="#f2f4f7"/>
-  <text x="268" y="104" font-size="13" font-weight="600" fill="#344054">2 · Cluster</text>
-  <text x="268" y="138" font-size="12" fill="#475467">one fingerprint,</text>
-  <text x="268" y="154" font-size="12" fill="#475467">one root cause</text>
-  <text x="268" y="188" font-size="11" fill="#667085">forty failures, three causes</text>
+  <!-- 4 · Fix -->
+  <rect class="box" x="718" y="88" width="180" height="124" rx="8"/>
+  <path class="hd" d="M 718.5 120 L 718.5 96 Q 718.5 88.5 726 88.5 L 890 88.5 Q 897.5 88.5 897.5 96 L 897.5 120 Z"/>
+  <text class="lb" x="734" y="109">4 · Fix</text>
+  <text class="l" x="734" y="144">ranked locator, draft</text>
+  <text class="l" x="734" y="163">PR, fix plan for agents</text>
+  <text class="m" x="734" y="188">you apply</text>
+  <text class="m" x="734" y="205">and merge</text>
 
-  <line x1="434" y1="150" x2="478" y2="150" stroke="#4353ff" stroke-width="1.6" marker-end="url(#flArrAccent)"/>
-  <text x="457" y="140" font-size="11" fill="#4353ff" text-anchor="middle">explain</text>
-
-  <!-- 3 Diagnosis -->
-  <rect x="480" y="84" width="182" height="120" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
-  <rect x="480" y="84" width="182" height="30" rx="8" fill="#f2f4f7"/>
-  <rect x="480" y="106" width="182" height="8" fill="#f2f4f7"/>
-  <text x="496" y="104" font-size="13" font-weight="600" fill="#344054">3 · Diagnosis</text>
-  <text x="496" y="138" font-size="12" fill="#475467">grounded in the diff</text>
-  <text x="496" y="154" font-size="12" fill="#475467">since the last green run</text>
-  <text x="496" y="188" font-size="11" fill="#667085">patch checked server-side</text>
-
-  <line x1="662" y1="150" x2="706" y2="150" stroke="#4353ff" stroke-width="1.6" marker-end="url(#flArrAccent)"/>
-  <text x="685" y="140" font-size="11" fill="#4353ff" text-anchor="middle">suggest</text>
-
-  <!-- 4 Fix -->
-  <rect x="708" y="84" width="182" height="120" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
-  <rect x="708" y="84" width="182" height="30" rx="8" fill="#f2f4f7"/>
-  <rect x="708" y="106" width="182" height="8" fill="#f2f4f7"/>
-  <text x="724" y="104" font-size="13" font-weight="600" fill="#344054">4 · Fix</text>
-  <text x="724" y="138" font-size="12" fill="#475467">ranked locator, draft PR,</text>
-  <text x="724" y="154" font-size="12" fill="#475467">fix plan for agents</text>
-  <text x="724" y="188" font-size="11" fill="#667085">you apply and merge</text>
-
-  <!-- Verification loop back -->
-  <path d="M 799 204 L 799 250 L 115 250 L 115 210" fill="none" stroke="#667085" stroke-width="1.4" marker-end="url(#flArr)"/>
-  <text x="457" y="242" font-size="11" fill="#475467" text-anchor="middle">fix verification: recorded when every affected test passes again, with the run and the commit</text>
-
-  <text x="460" y="296" font-size="12" fill="#475467" text-anchor="middle">Nothing is applied or merged automatically: the tool proposes, you decide.</text>
+  <!-- The verification loop back to the start -->
+  <path class="edge" d="M 808 212 L 808 264 L 112 264 L 112 218" marker-end="url(#fln)"/>
+  <text class="et" x="460" y="256" text-anchor="middle">fix verification: recorded when every affected test passes again, with its run and commit</text>
+  <text class="l" x="460" y="300" text-anchor="middle">Nothing is applied or merged automatically: the tool proposes, you decide.</text>
 </svg>

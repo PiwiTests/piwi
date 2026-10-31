@@ -16,24 +16,24 @@ The Test Map is recomputed after every run, nightly, and on demand. Every detect
 [capture fixtures](/guide/capture-fixtures) record; **Needs** names what else it reads, and a detector stays silent
 without it.
 
-| Detector | Class | Finds | Needs | Example evidence |
-|---|---|---|---|---|
-| **Success only** | blind-spot | a route observed at least five times, always with a 2xx or 3xx status: its error paths never ran | nothing more | `Observed 412 times over the last 30 runs, always 200` |
-| **Declared, never hit** | blind-spot | a route or page the application declares that no test reaches | a [declared surface](/features/scenario-gaps#declared-surface) | `Declared in OpenAPI · 0 tests in 30 runs · documents 200, 404` |
-| **Surface drift** | blind-spot | a route, page, control, link, handler or dependency first seen in the latest run that no test reaches; never a feature, and nothing in the run that built the graph first | nothing more | `Appeared in run #830; no test reaches it yet` |
-| **Control nobody exercises** | blind-spot | a control on a page that no test's locator targets | the page inventory and the [locator index](/features/locator-usage) | `On 12 page(s) · no locator targets it` |
-| **Reachable, unvisited** | blind-spot | a page other pages link to that no test navigates to | the page inventory | `Linked from 7 page(s) · never navigated to` |
-| **Escaped defect** | blind-spot | a page with [bug reports](/features/bug-reports) no test names yet, one gap per page | Piwi Picker sending reports | `Bug report #37: Coupon not applied to the total — no test names it yet` |
-| **Changed, unreached** | blind-spot | an [uncovered change](/features/uncovered-changes#one-rule-for-every-changed-file), at pull-request time: a changed file Piwi can observe that no test reached, in the run or the last 30, and no suite ran a changed line of | an SCM token | `+41 −3 · no test in run #812 or in the last 30 runs` |
-| **Single covering test** | fragile | a node exactly one trusted test reaches, or that only untrusted tests reach | nothing more | `Only checkout › coupon reaches this`; `Only toggles dark mode (flaky) reaches this` |
-| **Orphan test** | fragile | a test whose every reached node disappeared from the last 30 runs | nothing more | `All 3 node(s) it reaches disappeared from recent runs` |
-| **Fix did not hold** | fragile | a failure cluster whose fix later regressed | nothing more | `Fixed in a1b2c3d · regressed 6 days later` |
-| **Not noticed** | false-comfort | a route a probe broke while no test noticed | [probes](/features/probes) | `A probe (status-500) on POST /api/orders did not make checkout › pay fail` |
-| **Passed with errors** | false-comfort | a test whose newest execution in the default branch's last 30 runs passed while the application reported an error: a 5xx from one of its routes, a backend log at error level, or a console error from its own origin | nothing more; backend logs need the [instrumentation](/guide/backend-logs) | `Passed · run #73 · the backend logged an error on PATCH /api/orgs/current` |
-| **Assertion-light** | false-comfort | a page some test asserts on, every check there only that an element is visible, hidden, attached or in the viewport | the locator index | `2 tests assert on this page, only that elements are present` |
-| **Catalog method, no test calls** | blind-spot | a page-object method or helper on a reached page that no test runs | the [test functions catalog](/features/test-functions) | `./pages/UsersPage · goToNextPage · page reached by 3, called by 0` |
-| **Unprobed dependency** | false-comfort | a dependency a route's handler calls that no probe has failed | server spans | `Called by 4 route(s) · no probe has checked what happens when it fails` |
-| **Not handled** | unhandled, degraded | the application did not cope with a server probe's fault; a finding, not a gap | [server probes](/features/probes#server-probes) | `A server probe made POST /api/orders fail; the application did not handle it` |
+| Detector | Class | Finds | Needs | Confidence | Example evidence |
+|---|---|---|---|---|---|
+| **Success only**<br>`success-only` | blind-spot | a route observed at least five times, always with a 2xx or 3xx status: its error paths never ran | nothing more | observations ÷ 20, plus 0.3 when the route documents an error status; at most 1 | `Observed 412 times over the last 30 runs, always 200` |
+| **Declared, never hit**<br>`declared-never-hit` | blind-spot | a route or page the application declares that no test reaches | a [declared surface](/features/scenario-gaps#declared-surface) | 0.7 | `Declared in OpenAPI · 0 tests in 30 runs · documents 200, 404` |
+| **Surface drift**<br>`surface-drift` | blind-spot | a route, page, control, link, handler or dependency first seen in the latest run that no test reaches; never a feature, and nothing in the run that built the graph first | nothing more | 0.4 | `Appeared in run #830; no test reaches it yet` |
+| **Control nobody exercises**<br>`control-nobody-exercises` | blind-spot | a control on a page that no test's locator targets | the page inventory and the [locator index](/features/locator-usage) | 0.3 plus 0.1 per page, at most 0.8 | `On 12 page(s) · no locator targets it` |
+| **Reachable, unvisited**<br>`reachable-unvisited` | blind-spot | a page other pages link to that no test navigates to | the page inventory | 0.4 plus 0.1 per linking page, at most 0.8 | `Linked from 7 page(s) · never navigated to` |
+| **Escaped defect**<br>`escaped-defect` | blind-spot | a page with [bug reports](/features/bug-reports) no test names yet, one gap per page | Piwi Picker sending reports | 0.6 plus 0.1 per further report, at most 1 | `Bug report #37: Coupon not applied to the total — no test names it yet` |
+| **Changed, unreached**<br>`changed-unreached` | blind-spot | an [uncovered change](/features/uncovered-changes#one-rule-for-every-changed-file), at pull-request time: a changed file Piwi can observe that no test reached, in the run or the last 30, and no suite ran a changed line of | an SCM token | 0.9 | `+41 −3 · no test in run #812 or in the last 30 runs` |
+| **Single covering test**<br>`single-covering-test` | fragile | a node exactly one trusted test reaches, or that only untrusted tests reach | nothing more | 0.5; 0.6 when only untrusted tests reach it | `Only checkout › coupon reaches this`; `Only toggles dark mode (flaky) reaches this` |
+| **Orphan test**<br>`orphan-test` | fragile | a test whose every reached node disappeared from the last 30 runs | nothing more | 0.4 | `All 3 node(s) it reaches disappeared from recent runs` |
+| **Fix did not hold**<br>`fix-did-not-hold` | fragile | a failure cluster whose fix later regressed | nothing more | 0.6 | `Fixed in a1b2c3d · regressed 6 days later` |
+| **Not noticed**<br>`not-noticed` | false-comfort | a route a probe broke while no test noticed | [probes](/features/probes) | 0.8 | `A probe (status-500) on POST /api/orders did not make checkout › pay fail` |
+| **Passed with errors**<br>`passed-with-errors` | false-comfort | a test whose newest execution in the default branch's last 30 runs passed while the application reported an error: a 5xx from one of its routes, a backend log at error level, or a console error from its own origin | nothing more; backend logs need the [instrumentation](/guide/backend-logs) | 0.6 | `Passed · run #73 · the backend logged an error on PATCH /api/orgs/current` |
+| **Assertion-light**<br>`assertion-light` | false-comfort | a page some test asserts on, every check there only that an element is visible, hidden, attached or in the viewport | the locator index | 0.4 | `2 tests assert on this page, only that elements are present` |
+| **Catalog method, no test calls**<br>`catalog-method-no-test-calls` | blind-spot | a page-object method or helper on a reached page that no test runs | the [test functions catalog](/features/test-functions) | 0.5 | `./pages/UsersPage · goToNextPage · page reached by 3, called by 0` |
+| **Unprobed dependency**<br>`unprobed-dependency` | false-comfort | a dependency a route's handler calls that no probe has failed | server spans | 0.3 plus 0.1 per calling route, at most 0.7 | `Called by 4 route(s) · no probe has checked what happens when it fails` |
+| **Not handled**<br>`not-handled` | unhandled, degraded | the application did not cope with a server probe's fault; a finding, not a gap | [server probes](/features/probes#server-probes) | 1 unhandled, 0.5 degraded | `A server probe made POST /api/orders fail; the application did not handle it` |
 
 *Passed with errors* leaves out a console line from another origin's script and the browser's own *Failed to load
 resource* line. A response no server sent, such as one the test's route handler fulfilled, is no 5xx of the
@@ -63,7 +63,7 @@ covering test* raises those controls.
 
 ## Exposure
 
-A gap's score is its detector's confidence times its **exposure**, the geometric mean of four factors. Each factor is
+A gap's score is its detector's confidence (the table above) times its **exposure**, the geometric mean of four factors. Each factor is
 kept between 0.1 and 1, so a missing input lowers the score without zeroing it.
 
 | Factor | From | Reaches 1 at |

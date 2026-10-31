@@ -16,7 +16,7 @@ opens the fix as a pull request.
 ## What it does
 
 While tests run, the [capture fixtures](/guide/capture-fixtures) record a [locator snapshot](/guide/concepts#locator-snapshot)
-after each successful action **or passing web-first assertion** (a passing `expect(locator).toBeVisible()` proves the
+for each successful action **or passing web-first assertion** (a passing `expect(locator).toBeVisible()` proves the
 element resolved just as a click does): the target element's attributes, plus alternative locators ranked by a
 stability score (`data-testid` = 100, role + accessible name ≈ 90, semantic CSS ≈ 35–40, hash-suffixed ≈ 10). Capture
 also generates **rename-proof** alternatives: locators scoped to a stable ancestor
@@ -50,7 +50,7 @@ stored ones (an **element match**), matched by role, heading level and, on a tot
 elements of the same role.
 
 <figure>
-  <img src="/diagrams/locator-healing-resolution.svg" alt="Diagram of the healing resolution flow: the failing error is parsed into a locator signature and call site, matched through the stored history, checked against the failing page's ARIA snapshot, and shown in the Locator fix panel">
+  <img src="/diagrams/locator-healing-resolution.svg" alt="Diagram of the healing resolution flow: the failing error is parsed into a locator signature and call site; a rename in the run's diff is rewritten at once, otherwise a stored capture is matched and checked against the failing page's ARIA snapshot; the result shows in the Locator fix panel">
   <figcaption>Every stored match is checked against the failing page before anything is recommended.</figcaption>
 </figure>
 
@@ -143,13 +143,16 @@ CI, like the options above. The editor extensions set both from your [breakpoint
 - Healing runs only when the locator **never resolved**, matched nothing, or matched several elements. When it resolved
   and the step failed afterwards (`element is not enabled`, a wrong count, a hidden element) or the page failed to
   load, the panel says *The locator resolved; this is not a locator problem* (for a page that failed to load, *The page
-  failed to navigate before any locator ran*), because rewriting a locator that found its element would be a harmful
-  edit.
-- Suggestions need a passing run captured with the fixtures in place; until then only the ARIA fallback applies.
-- Capture costs one DOM read per call site, at most once per call site per test. Negated assertions, absence checks
-  (`toBeHidden`, `toBeDetached`) and multi-element checks (`toHaveCount`) are never probed. Turn it off with
-  `captureLocators: false` or `PIWI_CAPTURE_LOCATORS=false`; it is also off whenever `collectPerformanceMetrics` is
-  `false`.
+  failed to navigate before any locator ran*), because a locator that found its element needs no rewrite.
+- Suggestions need a passing run captured with the fixtures; until then only the ARIA fallback applies. An Enter that
+  submits at once can leave its field unread.
+- Capture reads each call site once per test, rarely twice. Negated assertions, absence checks (`toBeHidden`,
+  `toBeDetached`) and multi-element checks (`toHaveCount`) are never probed. Turn it off with `captureLocators: false`
+  or `PIWI_CAPTURE_LOCATORS=false`; it is also off whenever `collectPerformanceMetrics` is `false`.
+
+## Try it in the demo
+
+<DemoExamples />
 
 ## Related
 

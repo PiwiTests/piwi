@@ -534,7 +534,7 @@ export const HELP_TOPICS = {
       '- **Masked** — before an image leaves the worker: password fields, fields whose `autocomplete` asks for a one-time code or a card’s number or security code, and the **Masked elements** listed here (Playwright locators), by `@piwitests/reporter` 0.64.0 or later: an older one masks nothing. A secret in the page’s own text is not masked.',
       '- **Kept** — nothing: relayed and dropped, never in the database, the logs or an export.',
       '',
-      'Only a CI run the reporter’s global setup (`wrapConfig`) registers sends it: a run on a developer’s machine sends nothing unless its developer shares it from the editor, Piwi Picker or the desktop app. Turning it off ends every view at once.',
+      'Enable it before starting the run. The reporter’s global setup (`wrapConfig`) must register it, streaming must be on, and its specs must import `test` from the capture fixtures. A local run sends nothing unless its developer chooses Share live. Turning it off ends every view at once; turning it back on needs a new run.',
     ].join('\n'),
     doc: 'features/live-view',
   },
@@ -567,6 +567,24 @@ export const HELP_TOPICS = {
     title: 'Live run',
     text: 'This run is still streaming results in real time. Results and counts update as each test finishes.',
     doc: 'guide/reporter#live-streaming',
+  },
+  'run.live-view-setup': {
+    title: 'Live view prerequisites',
+    text: [
+      'Live result counts do not by themselves mean a browser can be watched. The status beside the search field reports what this instance can establish.',
+      '',
+      '- **Project setting** — a Project admin enables Live view before the run starts. Enabling it later, or restarting the instance, needs a new run.',
+      '- **Run setup** — register the run at startup with `wrapConfig` and keep result streaming enabled.',
+      '- **Capture fixtures** — import `test` from your capture fixtures in the specs you run; creating the fixtures file alone does not activate them.',
+      '- **Worker connection** — waiting can mean startup, reconnection or missing fixtures. Once available, choose **Watch** beside a running test. Images go only to viewers; the view is read-only.',
+      '- **Local runs** — the developer chooses **Share live** before anyone can watch on the team instance.',
+    ].join('\n'),
+    doc: 'features/live-view#check-availability',
+  },
+  'run.live-view-demo': {
+    title: 'Simulated run results',
+    text: 'This run simulates test results. Watching a browser needs a real run connected to your Piwi instance.',
+    doc: 'features/live-view#turn-it-on',
   },
   'run.live-unshared': {
     title: 'Not shared live',

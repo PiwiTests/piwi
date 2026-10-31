@@ -246,11 +246,11 @@ function flakyBadges(test: FlakyTest) {
         <template #metrics>
           <span
             class="inline-flex items-center gap-1 tabular-nums"
-            :title="`${Math.round(test.wastedCiMinutes)} CI minutes wasted`"
+            :title="`${formatWastedMinutes(test.wastedCiMinutes)} of CI time wasted`"
             data-tour-part="wasted"
           >
             <span class="inline-block size-2 rounded-full shrink-0" :class="impactDotClass(test.wastedCiMinutes)" />
-            {{ Math.round(test.wastedCiMinutes) }} min
+            {{ formatWastedMinutes(test.wastedCiMinutes) }}
           </span>
           <UBadge :color="scoreColor(test.score)" variant="subtle" size="xs" title="Flaky score" data-tour-part="score">
             {{ test.score }}

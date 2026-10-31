@@ -1288,11 +1288,11 @@ export const PIWI_ENV_VARS = {
     relevantWhen: { PIWI_SMTP_HOST: '*' },
   },
   PIWI_SMTP_SECURE: {
-    description: 'Set to "true" for implicit TLS on port 465 (default false → STARTTLS/plain).',
+    description: 'Set to "true" for implicit TLS (port 465), "false" for STARTTLS or plain SMTP.',
     category: 'smtp',
     type: 'boolean',
     relevantWhen: { PIWI_SMTP_HOST: '*' },
-    notes: 'Defaults to on when the port is 465, off otherwise.',
+    notes: 'Unset, it is on when PIWI_SMTP_PORT is 465 and off otherwise.',
   },
 
   // ── Integrations ─────────────────────────────────────────────────────────

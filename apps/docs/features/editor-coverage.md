@@ -17,7 +17,7 @@ a line lists them.
 
 The marks show what the reporter records, per test:
 
-- **Server code**: an ASP.NET Core backend built for coverage, with the reporter's `coverage.server` set to `lines`, or
+- **Server code**: an ASP.NET Core or Nitro backend built for coverage, with the reporter's `coverage.server` set to `lines`, or
   `PIWI_COVERAGE_SERVER=lines`: [Server coverage](./server-coverage) has the steps. With `functions`,
   every line of a function that ran is marked run, and no line is marked as not run.
 - **Browser code**: recorded per file ([code reach](./code-reach#turn-it-on)), so such a file lists its tests in its

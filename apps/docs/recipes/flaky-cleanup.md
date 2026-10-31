@@ -58,7 +58,7 @@ is excluded from the [CI gate](/guide/ci#blocking-a-merge)'s verdict and the run
 
 - Passing runs accumulate as a **streak**; one failure resets it.
 - After five consecutive passes the test is flagged **ready to release** — you're told, not asked.
-- **Candidates** (over the API) are flaky tests wasting 2+ CI minutes with a score of 40+, ranked by impact.
+- **Candidates** (**Proposed for quarantine** in the Flaky view) are flaky tests wasting 2+ CI minutes with a score of 40+, ranked by impact.
 - **Debt** is reported in aggregate: how many are in, how many are ready to leave, how long the oldest
   has been there.
 

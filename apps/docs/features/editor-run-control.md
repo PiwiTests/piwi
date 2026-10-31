@@ -1,6 +1,6 @@
 ---
 title: Pause and step from the editor
-description: "Pause a test run Piwi started from VS Code or a JetBrains IDE, or one you started yourself, in a terminal or with a JetBrains IDE's own Run, step it call by call, run it to the cursor, resume, finish or end it, with the paused line marked in the editor, your breakpoints applied as you change them, and a headless test's page shown as an image you pick a locator on."
+description: "Pause and step a Playwright run from VS Code or a JetBrains IDE, follow its stopped line and watch or interact with its headless page in the editor."
 lang: en-US
 ---
 
@@ -59,7 +59,7 @@ the arrow's click lists the controls, and the color is **Settings → Editor →
 stopped at**. The mark goes when the test goes on (from the editor or the bar), ends, or closes its page.
 
 <figure>
-  <img src="/screenshots/vscode-run-control.png" alt="VS Code: a test paused at a page object's line, the controls above it and in the status bar">
+  <img src="/screenshots/vscode-run-control-hover.png" alt="VS Code: a test paused at a page object's line, its hover naming the call that runs next with Resume, Step, Run to cursor and Finish, the same controls above the line and in the status bar">
   <figcaption>A run paused before it types the coupon.</figcaption>
 </figure>
 
@@ -73,15 +73,23 @@ has none.
 
 ## A headless run
 
-A run Piwi starts with breakpoints is headed, so the pause bar answers its stops too. One started without runs as its
-config says, headless by default: when you pause it, or it reaches a breakpoint set since, no bar shows, and the editor
-shows an image of the page at the stop: in VS Code in a **Piwi: paused page** tab beside the editor, in a JetBrains IDE
-in the Piwi tool window's **Paused Page** tab. **Piwi: Show the paused page** (**Tools → Piwi → Show the Paused Page**)
-asks for it at any stop.
+A run Piwi starts with breakpoints is headed, with a pause bar. Without breakpoints it follows your config, headless
+by default. A headless stop opens **Piwi: paused page** beside VS Code's editor, or **Paused Page** in the JetBrains
+Piwi tool window. **Piwi: Show the paused page** (**Tools → Piwi → Show the Paused Page**) opens it at any stop.
 
-With a reporter newer than 0.61.0, the image says **Click the image to pick a locator**. A click picks the element
-under it, as the bar's **Pick a locator** does, without touching the page: its locator replaces the one on the stopped
-line, and the tab says so, or why not. In VS Code, a script in the tab sends the editor the click's position alone.
+<figure>
+  <img src="/screenshots/vscode-run-control-paused-page.png" alt="VS Code: a headless test paused before it clicks Apply, and beside the editor the Piwi: paused page tab showing the cart page with the coupon typed in">
+  <figcaption>A headless run paused before it clicks Apply: the page at the stop, beside the editor.</figcaption>
+</figure>
+
+Clicking the image picks a locator when the reporter supports it: the locator replaces the one on the stopped line,
+and the tab shows the result or refusal.
+
+**Watch live** updates the paused page in the same tab. Choose **Interact** separately to click, scroll or type on
+the page; **Escape** releases the keyboard, and **Shift+click** picks a locator. Watching stops when you hide or close
+the tab, resume the test or switch stops. Interact starts off at each stop. No Picker installation, pairing, project
+live-view setting or extra port forwarding is needed: the preview uses the editor's existing connection. Reporters
+without live-view support keep the still image.
 
 ## Breakpoints while the run goes on
 
@@ -117,7 +125,6 @@ answers. Closing the IDE closes the connections: a stop with no pause bar then g
   any other and does nothing.
 - **Playwright calls, not JavaScript.** **Step** goes from one Playwright call to the next; stepping through the
   test's own code stays with the IDE's debugger.
-- **A still image.** It does not follow the page: the [Runs window](./runs-window#watch-live) shows it live.
 - **No image when the page is unknown.** A stop at a call other than a locator's (a navigation, a key press) in a
   browser context with several pages has no image, and refuses Piwi Picker's **Pick** and **Record**: the worker
   cannot tell its page. Any page of that context closing ends it.

@@ -13,7 +13,10 @@ resolving, the browser crashes on a starved runner. None of those failures says 
 Piwi recognizes such a run as an **environment incident**, says so on the run page, and keeps it out of every verdict
 that compares runs.
 
-![A run flagged as an environment incident: the reason, the rule that decided, and the action to clear the flag](/screenshots/environment-incident.png)
+<figure>
+  <img src="/screenshots/environment-incident.png" alt="A run flagged as an environment incident: the reason, the rule that decided, and the action to clear the flag">
+  <figcaption>A run flagged as an environment incident, with the rule that decided.</figcaption>
+</figure>
 
 ## How a run is recognized
 

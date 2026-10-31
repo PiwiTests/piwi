@@ -1,111 +1,139 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 600" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 666" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <style>
+  .bg{fill:#fcfcfd;stroke:#e4e7ec}
+  .t{fill:#101828;font-weight:700;font-size:19px}
+  .s{fill:#475467;font-size:14px}
+  .h{fill:#667085;font-size:12.5px;font-weight:700;letter-spacing:.05em}
+  .lb{fill:#344054;font-size:15px;font-weight:600}
+  .l{fill:#475467;font-size:13.5px}
+  .m{fill:#667085;font-size:12.5px}
+  .b{font-weight:600}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;white-space:pre}
+  .ink{fill:#344054} .numw{fill:#ffffff}
+  .box{fill:#ffffff;stroke:#d0d5dd}
+  .chip{fill:#f9fafb;stroke:#d0d5dd}
+  .hd{fill:#f2f4f7}
+  .cap{fill:#f2f4f7;stroke:#d0d5dd}
+  .rule{fill:none;stroke:#e4e7ec}
+  .edge{fill:none;stroke:#667085;stroke-width:1.4}
+  .dash{fill:none;stroke:#98a2b3;stroke-width:1.3;stroke-dasharray:5 4}
+  .acc{fill:none;stroke:#4353ff;stroke-width:1.6}
+  .accd{fill:none;stroke:#4353ff;stroke-width:1.4;stroke-dasharray:5 4}
+  .acct{fill:#4353ff;font-size:13px} .ac{fill:#4353ff}
+  .et{fill:#475467;font-size:13px}
+  .arr{fill:#667085} .arrd{fill:#98a2b3} .arra{fill:#4353ff}
+  .ab{fill:#eef1ff;stroke:#c7ceff} .abt{fill:#2a3aa8} .abl{fill:#3f4b9e} .abo{fill:none;stroke:#4353ff;stroke-width:1.5}
+  .ok{fill:#ecfdf3;stroke:#75e0a7} .okt{fill:#067647} .okd{fill:#12b76a}
+  .bs{fill:#fffaeb;stroke:#fec84b} .bst{fill:#b54708}
+  .fc{fill:#fef3f2;stroke:#fda29b} .fct{fill:#b42318} .fcd{fill:#f04438}
+  .fr{fill:#fff6ed;stroke:#fd853a} .frt{fill:#c4320a}
+  .mu{fill:#f2f4f7;stroke:#d0d5dd} .mud{fill:#d0d5dd}
+  .dbx{fill:none;stroke:#d0d5dd;stroke-dasharray:5 4}
+  .clu{fill:#4353ff;fill-opacity:.06;stroke:#4353ff;stroke-width:1.8;stroke-dasharray:6 4;stroke-linejoin:round}
+  @media (prefers-color-scheme: dark){
+    .bg{fill:#161b26;stroke:#333741}
+    .t{fill:#f5f5f6} .s{fill:#94969c} .h{fill:#85888e}
+    .lb{fill:#ececed} .l{fill:#cecfd2} .m{fill:#94969c} .ink{fill:#ececed} .numw{fill:#161b26}
+    .box{fill:#1f242f;stroke:#333741} .chip{fill:#262b36;stroke:#333741} .hd{fill:#262b36}
+    .cap{fill:#262b36;stroke:#4a4f5a}
+    .rule{stroke:#333741}
+    .edge{stroke:#94969c} .arr{fill:#94969c}
+    .dash{stroke:#61646c} .arrd{fill:#61646c}
+    .acc,.accd{stroke:#8098f9} .acct,.ac{fill:#8098f9} .arra{fill:#8098f9}
+    .et{fill:#94969c}
+    .ab{fill:#1c2142;stroke:#3b4699} .abt{fill:#c7d0ff} .abl{fill:#a4b0f0} .abo{stroke:#8098f9}
+    .ok{fill:#0b2418;stroke:#079455} .okt{fill:#75e0a7} .okd{fill:#17b26a}
+    .bs{fill:#2b1d07;stroke:#ca8504} .bst{fill:#fec84b}
+    .fc{fill:#2d1210;stroke:#d92d20} .fct{fill:#fda29b} .fcd{fill:#f04438}
+    .fr{fill:#2b170c;stroke:#e04f16} .frt{fill:#f7b27a}
+    .mu{fill:#262b36;stroke:#333741} .mud{fill:#61646c}
+    .dbx{stroke:#61646c}
+    .clu{fill:#8098f9;fill-opacity:.1;stroke:#8098f9}
+  }
+</style>
   <defs>
-    <marker id="ecArr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M 0 1 L 9 5 L 0 9 z" fill="#667085"/>
-    </marker>
-    <marker id="ecArrAccent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M 0 1 L 9 5 L 0 9 z" fill="#4353ff"/>
-    </marker>
+    <marker id="ecn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arr" d="M 0 1 L 9 5 L 0 9 z"/></marker>
+    <marker id="ecd" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrd" d="M 0 1 L 9 5 L 0 9 z"/></marker>
+    <marker id="eca" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arra" d="M 0 1 L 9 5 L 0 9 z"/></marker>
   </defs>
+  <rect class="bg" x="0.5" y="0.5" width="919" height="665" rx="12"/>
+  <text class="t" x="24" y="38">The pieces, and how they talk</text>
+  <text class="s" x="24" y="62">One server in two shapes; the reporter feeds it; people, agents and CI read it.</text>
+  <text class="h" x="22" y="90">WHERE TESTS RUN</text>
+  <text class="h" x="352" y="90">ONE SERVER, TWO SHAPES</text>
+  <text class="h" x="652" y="90">AROUND IT</text>
 
-  <rect x="0" y="0" width="920" height="600" rx="12" fill="#fcfcfd" stroke="#e4e7ec"/>
-  <text x="24" y="36" font-size="16" font-weight="700" fill="#101828">The pieces, and how they talk</text>
-  <text x="24" y="56" font-size="12.5" fill="#475467">One server in two shapes; the reporter feeds it; people, agents and CI read it.</text>
+  <!-- Where tests run -->
+  <rect class="box" x="22" y="104" width="256" height="150" rx="8"/>
+  <path class="hd" d="M 22.5 136 L 22.5 112 Q 22.5 104.5 30 104.5 L 270 104.5 Q 277.5 104.5 277.5 112 L 277.5 136 Z"/>
+  <text class="lb" x="38" y="125">Your Playwright run</text>
+  <text class="mono ink" x="38" y="160">@piwitests/reporter</text>
+  <text class="l" x="38" y="184">results, traces, live events,</text>
+  <text class="l" x="38" y="203">locator snapshots, web vitals</text>
+  <text class="m" x="38" y="236">in CI, or on your machine</text>
+  <rect class="box" x="22" y="316" width="256" height="124" rx="8"/>
+  <path class="hd" d="M 22.5 348 L 22.5 324 Q 22.5 316.5 30 316.5 L 270 316.5 Q 277.5 316.5 277.5 324 L 277.5 348 Z"/>
+  <text class="lb" x="38" y="337">Your app under test</text>
+  <text class="l" x="38" y="372">Nitro / ASP.NET Core</text>
+  <text class="l" x="38" y="391">instrumentation (optional)</text>
+  <text class="m" x="38" y="422">backend logs, tied to requests</text>
+  <path class="edge" d="M 150 316 L 150 258" marker-end="url(#ecn)"/>
+  <text class="et" x="158" y="292">backend logs</text>
 
-  <text x="24" y="82" font-size="10.5" font-weight="700" fill="#98a2b3" letter-spacing="0.6">WHERE TESTS RUN</text>
-  <text x="356" y="82" font-size="10.5" font-weight="700" fill="#98a2b3" letter-spacing="0.6">ONE SERVER, TWO SHAPES</text>
-  <text x="660" y="82" font-size="10.5" font-weight="700" fill="#98a2b3" letter-spacing="0.6">AROUND IT</text>
+  <!-- One server, two shapes -->
+  <rect class="box" x="352" y="104" width="244" height="150" rx="8"/>
+  <path class="hd" d="M 352.5 136 L 352.5 112 Q 352.5 104.5 360 104.5 L 588 104.5 Q 595.5 104.5 595.5 112 L 595.5 136 Z"/>
+  <text class="lb" x="368" y="125">Piwi server</text>
+  <text class="l" x="368" y="160">dashboard · API · MCP</text>
+  <text class="l" x="368" y="179">SQLite or Postgres,</text>
+  <text class="l" x="368" y="198">local or S3 storage</text>
+  <text class="m" x="368" y="236">Docker, or npx @piwitests/server</text>
+  <path class="acc" d="M 278 164 L 350 164" marker-end="url(#eca)"/>
+  <text class="acct" x="315" y="154" text-anchor="middle">uploads</text>
+  <rect class="box" x="352" y="316" width="244" height="124" rx="8"/>
+  <path class="hd" d="M 352.5 348 L 352.5 324 Q 352.5 316.5 360 316.5 L 588 316.5 Q 595.5 316.5 595.5 324 L 595.5 348 Z"/>
+  <text class="lb" x="368" y="337">Desktop app</text>
+  <text class="l" x="368" y="372">the same server, bundled</text>
+  <text class="l" x="368" y="391">in a Tauri shell</text>
+  <text class="m" x="368" y="422">local only, 127.0.0.1</text>
+  <path class="dash" d="M 474 254 L 474 316"/>
+  <text class="m" x="484" y="280">one codebase,</text>
+  <text class="m" x="484" y="296">two shapes</text>
+  <path class="accd" d="M 278 226 L 324 226 L 324 380 L 350 380" marker-end="url(#eca)"/>
+  <text class="acct" x="332" y="278">zero-config</text>
+  <text class="acct" x="332" y="294">discovery</text>
 
-  <!-- Playwright run -->
-  <rect x="24" y="96" width="240" height="140" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
-  <rect x="24" y="96" width="240" height="30" rx="8" fill="#f2f4f7"/>
-  <rect x="24" y="118" width="240" height="8" fill="#f2f4f7"/>
-  <text x="40" y="116" font-size="13" font-weight="600" fill="#344054">Your Playwright run</text>
-  <text x="40" y="148" font-size="11.5" font-family="ui-monospace, monospace" fill="#344054">@piwitests/reporter</text>
-  <text x="40" y="170" font-size="12" fill="#475467">results, traces, live events,</text>
-  <text x="40" y="186" font-size="12" fill="#475467">locator snapshots, web vitals</text>
-  <text x="40" y="210" font-size="11" fill="#667085">in CI, or on your machine</text>
-
-  <!-- App under test -->
-  <rect x="24" y="286" width="240" height="110" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
-  <rect x="24" y="286" width="240" height="30" rx="8" fill="#f2f4f7"/>
-  <rect x="24" y="308" width="240" height="8" fill="#f2f4f7"/>
-  <text x="40" y="306" font-size="13" font-weight="600" fill="#344054">Your app under test</text>
-  <text x="40" y="338" font-size="12" fill="#475467">Nitro / ASP.NET Core</text>
-  <text x="40" y="354" font-size="12" fill="#475467">instrumentation (optional)</text>
-  <text x="40" y="376" font-size="11" fill="#667085">backend logs, tied to requests</text>
-
-  <line x1="144" y1="286" x2="144" y2="240" stroke="#667085" stroke-width="1.4" marker-end="url(#ecArr)"/>
-  <text x="152" y="266" font-size="11" fill="#475467">backend logs</text>
-
-  <!-- Piwi server -->
-  <rect x="356" y="96" width="220" height="140" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
-  <rect x="356" y="96" width="220" height="30" rx="8" fill="#f2f4f7"/>
-  <rect x="356" y="118" width="220" height="8" fill="#f2f4f7"/>
-  <text x="372" y="116" font-size="13" font-weight="600" fill="#344054">Piwi server</text>
-  <text x="372" y="148" font-size="12" fill="#475467">dashboard · API · MCP</text>
-  <text x="372" y="166" font-size="12" fill="#475467">SQLite or Postgres,</text>
-  <text x="372" y="182" font-size="12" fill="#475467">local or S3 storage</text>
-  <text x="372" y="208" font-size="11" fill="#667085">Docker, or npx @piwitests/server</text>
-
-  <line x1="264" y1="150" x2="352" y2="150" stroke="#4353ff" stroke-width="1.6" marker-end="url(#ecArrAccent)"/>
-  <text x="308" y="140" font-size="11" fill="#4353ff" text-anchor="middle">uploads</text>
-
-  <!-- Desktop app -->
-  <rect x="356" y="286" width="220" height="110" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
-  <rect x="356" y="286" width="220" height="30" rx="8" fill="#f2f4f7"/>
-  <rect x="356" y="308" width="220" height="8" fill="#f2f4f7"/>
-  <text x="372" y="306" font-size="13" font-weight="600" fill="#344054">Desktop app</text>
-  <text x="372" y="338" font-size="12" fill="#475467">the same server, bundled</text>
-  <text x="372" y="354" font-size="12" fill="#475467">in a Tauri shell</text>
-  <text x="372" y="376" font-size="11" fill="#667085">local only, 127.0.0.1</text>
-
-  <line x1="466" y1="236" x2="466" y2="286" stroke="#98a2b3" stroke-width="1.2" stroke-dasharray="4 4"/>
-  <text x="474" y="264" font-size="10.5" fill="#667085">one codebase, two shapes</text>
-
-  <path d="M 264 216 L 310 216 L 310 330 L 352 330" fill="none" stroke="#4353ff" stroke-width="1.4" stroke-dasharray="4 4" marker-end="url(#ecArrAccent)"/>
-  <text x="318" y="260" font-size="10.5" fill="#4353ff">zero-config</text>
-  <text x="318" y="274" font-size="10.5" fill="#4353ff">discovery</text>
-
-  <!-- Right column -->
-  <rect x="660" y="96" width="236" height="76" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
-  <text x="676" y="120" font-size="13" font-weight="600" fill="#344054">Piwi Picker extension</text>
-  <text x="676" y="140" font-size="11.5" fill="#475467">stable locators from any page</text>
-  <text x="676" y="158" font-size="11" fill="#667085">server connection optional</text>
-
-  <rect x="660" y="190" width="236" height="76" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
-  <text x="676" y="214" font-size="13" font-weight="600" fill="#344054">Coding agents</text>
-  <text x="676" y="234" font-size="11.5" fill="#475467">Claude Code, Cursor, VS Code…</text>
-  <text x="676" y="252" font-size="11" fill="#667085">MCP server, fix plans</text>
-
-  <rect x="660" y="284" width="236" height="76" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
-  <text x="676" y="308" font-size="13" font-weight="600" fill="#344054">GitHub · GitLab · Bitbucket</text>
-  <text x="676" y="328" font-size="11.5" fill="#475467">diffs read for diagnosis</text>
-  <text x="676" y="346" font-size="11" fill="#667085">PR feedback, auto-heal draft PRs</text>
-
-  <rect x="660" y="378" width="236" height="76" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
-  <text x="676" y="402" font-size="13" font-weight="600" fill="#344054">Notifications</text>
-  <text x="676" y="422" font-size="11.5" fill="#475467">email, Slack, webhook, browser</text>
-  <text x="676" y="440" font-size="11" fill="#667085">per-project subscriptions</text>
-
-  <!-- Fan lines -->
-  <line x1="660" y1="134" x2="580" y2="110" stroke="#667085" stroke-width="1.2" marker-end="url(#ecArr)"/>
-  <line x1="660" y1="228" x2="580" y2="170" stroke="#667085" stroke-width="1.2" marker-end="url(#ecArr)"/>
-  <line x1="580" y1="210" x2="656" y2="322" stroke="#667085" stroke-width="1.2" marker-start="url(#ecArr)" marker-end="url(#ecArr)"/>
-  <line x1="580" y1="232" x2="656" y2="416" stroke="#667085" stroke-width="1.2" marker-end="url(#ecArr)"/>
+  <!-- Around it -->
+  <rect class="box" x="652" y="104" width="246" height="84" rx="8"/>
+  <text class="lb" x="668" y="128">Piwi Picker extension</text>
+  <text class="l" x="668" y="151">stable locators from any page</text>
+  <text class="m" x="668" y="172">server connection optional</text>
+  <rect class="box" x="652" y="202" width="246" height="84" rx="8"/>
+  <text class="lb" x="668" y="226">Coding agents</text>
+  <text class="l" x="668" y="249">Claude Code, Cursor, VS Code…</text>
+  <text class="m" x="668" y="270">MCP server, fix plans</text>
+  <rect class="box" x="652" y="300" width="246" height="84" rx="8"/>
+  <text class="lb" x="668" y="324">GitHub · GitLab · Bitbucket</text>
+  <text class="l" x="668" y="347">diffs read for diagnosis</text>
+  <text class="m" x="668" y="368">PR feedback, auto-heal draft PRs</text>
+  <rect class="box" x="652" y="398" width="246" height="84" rx="8"/>
+  <text class="lb" x="668" y="422">Notifications</text>
+  <text class="l" x="668" y="445">email, Slack, webhook, browser</text>
+  <text class="m" x="668" y="466">per-project subscriptions</text>
+  <path class="edge" d="M 652 146 L 598 122" marker-end="url(#ecn)"/>
+  <path class="edge" d="M 652 244 L 598 184" marker-end="url(#ecn)"/>
+  <path class="edge" d="M 598 220 L 650 342" marker-start="url(#ecn)" marker-end="url(#ecn)"/>
+  <path class="edge" d="M 598 240 L 650 440" marker-end="url(#ecn)"/>
 
   <!-- Your editor, and the run channel: a run it starts can be paused, stepped and resumed from it and from Piwi Picker. -->
-  <rect x="24" y="440" width="552" height="84" rx="8" fill="#ffffff" stroke="#d0d5dd"/>
-  <text x="40" y="464" font-size="13" font-weight="600" fill="#344054">Your editor: VS Code, JetBrains IDEs</text>
-  <text x="40" y="484" font-size="12" fill="#475467">the editor service runs, pauses, steps and resumes your tests</text>
-  <text x="40" y="508" font-size="11" fill="#667085">on 127.0.0.1, for the editor and Piwi Picker’s Runs window</text>
-
-  <path d="M 264 228 L 290 228 L 290 436" fill="none" stroke="#4353ff" stroke-width="1.4" marker-start="url(#ecArrAccent)" marker-end="url(#ecArrAccent)"/>
-  <text x="298" y="424" font-size="10.5" fill="#4353ff">run channel</text>
-
-  <path d="M 898 134 L 908 134 L 908 482 L 580 482" fill="none" stroke="#4353ff" stroke-width="1.4" marker-end="url(#ecArrAccent)"/>
-  <text x="896" y="474" font-size="10.5" fill="#4353ff" text-anchor="end">Runs window, global shortcut</text>
-
-  <text x="24" y="562" font-size="12" fill="#475467">The live demo is the middle column, compiled into your browser.</text>
-  <text x="24" y="580" font-size="12" fill="#475467">AI, when enabled, is called only by the server, with the model you configured, cloud or local.</text>
+  <rect class="box" x="22" y="490" width="574" height="92" rx="8"/>
+  <text class="lb" x="38" y="514">Your editor: VS Code, JetBrains IDEs</text>
+  <text class="l" x="38" y="538">the editor service runs, pauses, steps and resumes your tests</text>
+  <text class="m" x="38" y="562">on 127.0.0.1, for the editor and Piwi Picker’s Runs window</text>
+  <path class="acc" d="M 278 240 L 302 240 L 302 486" marker-start="url(#eca)" marker-end="url(#eca)"/>
+  <text class="acct" x="310" y="478">run channel</text>
+  <path class="acc" d="M 898 146 L 908 146 L 908 536 L 600 536" marker-end="url(#eca)"/>
+  <text class="acct" x="898" y="526" text-anchor="end">Runs window, global shortcut</text>
+  <text class="l" x="22" y="626">The live demo is the middle column, compiled into your browser.</text>
+  <text class="l" x="22" y="646">AI, when enabled, is called only by the server, with the model you configured, cloud or local.</text>
 </svg>

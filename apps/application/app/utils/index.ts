@@ -169,6 +169,11 @@ export function formatRelativeTime(date: string | Date | number | null | undefin
   return formatDistanceToNow(new Date(date), { addSuffix: true, locale: activeLocalePrefs().dateFnsLocale });
 }
 
+/** CI time a flaky test wasted, in minutes: seconds under a minute, so a small cost never reads as zero. */
+export function formatWastedMinutes(minutes: number): string {
+  return minutes < 1 ? `${Math.round(minutes * 60)} s` : `${Math.round(minutes)} min`;
+}
+
 export function formatDuration(ms?: number | null) {
   if (ms === null || ms === undefined) return 'N/A';
   // Round to whole milliseconds so fractional inputs (SQL averages) never

@@ -361,6 +361,14 @@ size the image is shown at, with which image it was on (`imageClickOf`); the ext
 (`pagePoint`) and asks `piwi/pickAt`, the locator going where a pick goes and the answer said under the caption. A
 click on an image the view no longer shows picks nothing.
 
+When the stop takes `view`, the compact **Watch live** checkbox starts `piwi/pageView`; the service delivers
+`piwi/pageFrame` through the existing language-client connection. `paused-page-client.ts` is bundled into
+`dist/paused-page.js`, loaded by nonce from the panel's only local resource root. State updates use messages without
+replacing the document, preserving focus. **Interact** is a separate opt-in for `piwi/pageInput`: clicks, scrolling
+and typing, batched through the Runs window's input helper. Escape releases held input and focuses Watch live;
+Shift+click still picks. Help is collapsed. Hiding, closing, switching stops or resuming ends the watch. The panel
+remembers Watch live until closed, but each watch starts with Interact off.
+
 **Breakpoints during a run.** The breakpoints `breakpointsForRun` gives go to each live run as they change
 (`vscode.debug.onDidChangeBreakpoints`, the `piwi.breakpoints` setting) with `piwi/setRunBreakpoints`, as lines of the
 run's code (`runPlaces`). A breakpoint the run was given, known by `vscode.Breakpoint.id`, keeps its line while it only
@@ -734,6 +742,12 @@ every code action (`RUN_TAKES`), answers a count at the cursor with one match an
 `run-control-code` shows in Mock a request's list. The paused page is the fixture shop's page, rendered by Playwright's
 Chromium. The window keeps its secrets in a file (`--password-store=basic`): without an OS keyring, `SecretStorage`
 never answers and no run starts.
+
+`scripts/record-loop.mjs` films the docs' loop of a recording, `apps/docs/public/videos/editor-recording-loop.mp4`, on
+the same fixture: VS Code and the browser the fixture's own Playwright opens (this repository's, copied into its
+`node_modules`) side by side on one Xvfb screen, which ffmpeg captures. The browser takes its place from the loop's
+Playwright config (`--window-position`, `--window-size`), and the script drives it over its debugging port, as a
+person's trusted input. The stub instance lists the page object method the coupon's steps fold into.
 
 The JetBrains plugin's script reuses the fixture, so a change to the fixture means recapturing both sets. What was found
 about driving VS Code this way is recorded in

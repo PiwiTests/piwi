@@ -168,14 +168,14 @@ export function isEmptyPolicy(policy: GatePolicy): boolean {
 
 function overLimit(
   rule: GateViolation['rule'],
-  label: string,
+  [one, many]: [string, string],
   actual: number,
   limit: number | undefined,
 ): GateViolation | null {
   if (limit == null || actual <= limit) return null;
   return {
     rule,
-    message: `${actual} ${label} (limit ${limit})`,
+    message: `${actual} ${actual === 1 ? one : many} (limit ${limit})`,
     actual,
     limit,
   };
@@ -213,15 +213,20 @@ export function evaluateGatePolicy(facts: GateFacts, policy: GatePolicy): GateRe
   }
 
   const thresholds = [
-    overLimit('max-failed', 'failing tests', facts.failedTests, policy.maxFailed),
-    overLimit('max-new-regressions', 'new regressions', facts.newRegressions, policy.maxNewRegressions),
-    overLimit('max-new-flaky', 'newly flaky tests', facts.newFlaky, policy.maxNewFlaky),
+    overLimit('max-failed', ['failing test', 'failing tests'], facts.failedTests, policy.maxFailed),
+    overLimit(
+      'max-new-regressions',
+      ['new regression', 'new regressions'],
+      facts.newRegressions,
+      policy.maxNewRegressions,
+    ),
+    overLimit('max-new-flaky', ['newly flaky test', 'newly flaky tests'], facts.newFlaky, policy.maxNewFlaky),
   ];
   for (const violation of thresholds) if (violation) violations.push(violation);
 
   const quarantineViolation = overLimit(
     'max-quarantined',
-    'quarantined tests',
+    ['quarantined test', 'quarantined tests'],
     facts.quarantinedTotal,
     policy.maxQuarantined,
   );

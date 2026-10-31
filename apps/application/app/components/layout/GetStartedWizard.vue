@@ -280,8 +280,8 @@ const showCapabilities = computed(() => canSeeAdmin.value && props.showCapabilit
                 <CodeBlock :code="snippets.reporterEntryConfig" lang="typescript" filename="playwright.config.ts" />
                 <p class="text-xs text-muted">
                   Results, traces and clustering work the same. The run no longer shows while your
-                  <code>globalSetup</code> runs, and the trace keeps no aria tree per action: set the screenshot and
-                  trace yourself, as here.
+                  <code>globalSetup</code> runs, its browser cannot be watched live on the dashboard, and the trace
+                  keeps no aria tree per action: set the screenshot and trace yourself, as here.
                 </p>
               </div>
             </div>

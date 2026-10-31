@@ -56,16 +56,20 @@ its local runs here with
 [`desktopApp: 'prefer'`](/guide/reporter#local-runs-to-the-desktop-app-ci-to-a-team-server), which the snippets on
 **Setup** carry once you turn on **CI reports to a team server**.
 
-When the tests run as another user or in a container, **Setup → Send results to this app** gives the
-address and the token to configure by hand. Keep the token in `PIWI_API_KEY`, not the
-config.
+<figure>
+  <img src="/screenshots/setup-connect-desktop.png" alt="The connect wizard in the desktop app: the one init command with no server URL, the fixtures import and the test command, and the CI reports to a team server switch, off">
+  <figcaption>The desktop app's connect wizard: no URL to set.</figcaption>
+</figure>
 
-A dashboard link opened in your browser opens in the app; a tab opened for it closes.
+When the tests run as another user or in a container, **Setup → Send results to this app** gives the
+address and the token to configure by hand. Keep the token in `PIWI_API_KEY`.
+
+A dashboard link opened in your browser opens in the app, and its tab closes.
 
 ## Projects from local folders
 
-**Projects → New project → Choose folder…** creates a project from a checkout on this machine. The app detects the
-name it would report under and checks the setup (a Playwright config, Playwright, the reporter):
+**Projects → New project → Choose folder…** creates a project from a checkout on this machine, named as it would report, and
+checks the setup (a Playwright config, Playwright, the reporter):
 `npx @piwitests/reporter init` in the folder fixes what is missing. The link to the folder
 stays on this machine, under **project page → Settings → Local folder**, with the same checks and **Change** and
 **Unlink**. Linking a folder offers to import the runs already in its `blob-report/` and `test-results/` folders;

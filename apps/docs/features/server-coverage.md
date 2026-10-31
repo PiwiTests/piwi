@@ -103,7 +103,7 @@ answers it is the one that served the run's first requests.
 
 - **The server's own code only:** the files the build bundles, under the repository, outside `node_modules`. A
   dependency Nitro keeps external is not covered. A Nuxt application's `server/` code is; its pages and components
-  rendered on the server are not yet.
+  rendered on the server are not.
 - **Lines are the statements' first lines**, as Istanbul and Vitest count them: a statement spanning several lines
   counts its first one. A class field's initializer is not instrumented.
 - **Callbacks that lose the request's async context**, such as those a library queues without `AsyncResource`, count

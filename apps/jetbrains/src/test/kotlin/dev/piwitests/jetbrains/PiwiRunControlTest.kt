@@ -94,6 +94,10 @@ class PiwiRunControlTest : BasePlatformTestCase() {
                 return PausedPageResult(image)
             }
 
+            override fun pageView(params: PageViewParams) = RunControlResult(true, "Watching.")
+
+            override fun pageInput(params: PageInputParams) = RunControlResult(true, "Played.")
+
             override fun pickAt(params: PickAtParams): PickAtResult {
                 picks += params
                 return picked

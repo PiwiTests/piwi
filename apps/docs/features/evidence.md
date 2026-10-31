@@ -21,16 +21,16 @@ A failing execution reads top to bottom in one column. It opens on the **situati
 cause, next step, cluster), described on [Your first failure, explained](/guide/first-failure).
 
 <figure>
-  <img src="/screenshots/gather-evidence.png" alt="A failing execution: one situation block, then one evidence card whose tabs (Timeline, Screen, Source, Network, Console, State, Performance) hold the captured evidence">
-  <figcaption>A failing execution: the situation block, then one evidence card whose tabs hold everything captured.</figcaption>
+  <img src="/screenshots/evidence-card.png" alt="The evidence card of a failing execution on its Timeline tab: calls, steps, network, console and dialogs on one axis, then each step with its offset and duration, the failing click with the page at the failure">
+  <figcaption>The evidence card on its Timeline tab: every step, request, console entry and dialog on one axis, the failure marked.</figcaption>
 </figure>
 
 Below the block, one **evidence card** holds tabs, a count on those that list items, empty ones dimmed. It opens on **Source** or
 **Performance** when a strong or medium leading clue cites it, else on **Timeline** when it can place two or more items,
 else on the cited tab, else on **Screen** when a screenshot or video exists, else on **Source**; never on **State**.
 
-- **Timeline**: one time axis for the steps, console entries, requests, their backend logs and (Playwright 1.63+)
-  browser dialogs, with the failure marked, over a table giving each step's and request's offset (`t-1.1s`) and
+- **Timeline**: one time axis for the steps, console entries, requests, their backend logs and browser
+  dialogs, with the failure marked, over a table giving each step's and request's offset (`t-1.1s`) and
   duration, colored only when it lasts at least 1 s and a third of the test, or twice its time in recent passing
   runs and 1 s more. **Around the failure** / **Whole test** and one chip per item type filter both. Hooks and fixtures fold into
   **Setup** and **Teardown** rows, open when the failure is there; a `test.step` holds its steps; the failing step
@@ -38,13 +38,14 @@ else on the cited tab, else on **Screen** when a screenshot or video exists, els
   [breakpoint](./editor-breakpoints)'s stop is a **Paused** band.
 - **Attempts**: shown when a test ran more than once, see [below](#attempts).
 - **Screen**: the page at the failure as views (**Screenshot**, **DOM**, **Accessibility tree**, **Visual diff**,
-  [**Page diff**](#page-diff), **Video**) over the trace and attachments. **DOM** renders it as recorded: field values
-  (passwords masked), scroll, open dialogs, shadow DOM, the action's target outlined, the mouse and what it hovers,
-  the focus. **Open in picker** finds a
+  [**Page diff**](#page-diff), **Video**) over the trace and attachments. **DOM** renders it as recorded (field values
+  with passwords masked, scroll, dialogs, shadow DOM, focus, the mouse), with the action's target outlined. **Open in picker** finds a
   locator on that DOM.
 - **Source**: the test source as a call stack (the line that threw, with [Debug in my editor](./debug-in-editor), plus its callers), deepened
   [with a trace](#trace-powered-deep-views), then, with [coverage](./code-reach#on-the-execution-page), what the test
   ran.
+- **Locators**: each locator the test used, in step order, with how many tests share it
+  ([Locator usage](./locator-usage#the-locators-tab)).
 - **Network**: the requests, API calls through Playwright's `request` fixture included, with inline
   [backend logs](/guide/backend-logs); one with no response shows the browser's error (`net::ERR_CONNECTION_RESET`). **Console**: the console output.
   **State**: the app state at test end and the environment diff against the last green run. **Performance**:
@@ -62,12 +63,11 @@ A **clue** is a one-line finding a deterministic rule draws from the evidence al
 involved. Each carries a **strength** (strong, medium or weak) and a **citation** that opens and marks the evidence it
 came from; the **Most likely** line leads with their strong or medium story, else a completed diagnosis, else a weak
 story or the strongest one, and marks the rows and tabs it cites. The AI diagnosis receives the clues as evidence.
-Every rule, and when it fires, is listed on [Clue rules](/reference/clues).
+Every rule is on [Clue rules](/reference/clues).
 
 ### Attempts
 
-When a test passed on retry, the **Attempts** tab lists every attempt (status and duration, the one you
-opened marked), then **what differed** between the failing attempt and the passing one, most diagnostic first:
+When a test passed on retry, the **Attempts** tab lists every attempt (status and duration), then **what differed** between the failing attempt and the passing one, most diagnostic first:
 
 - the **error** present on the failing attempt and gone on the pass;
 - a **request**, keyed by route (`GET /api/cart/:id`), that failed (5xx or no response) on one attempt only, or took
@@ -79,6 +79,11 @@ opened marked), then **what differed** between the failing attempt and the passi
 
 Each difference links to its evidence tab, a request that is one of the test's [suspects](./flaky-tests#suspects) to
 it. The comparison feeds the [root-cause classifier](./flaky-tests#root-cause-classification).
+
+<figure>
+  <img src="/screenshots/attempt-diff.png" alt="An execution's Attempts tab: the failed and the passed attempt, then what differed between them: an error only on the failing attempt, a request taking 1.8 s on the failing attempt against 97 ms on the passing one, a step that errored only there">
+  <figcaption>What differed between a failing attempt and the passing retry.</figcaption>
+</figure>
 
 ## Page diff
 
@@ -97,6 +102,11 @@ view says why (*not captured*, *no green sample yet* or *not applicable*). The p
 When the trace carries [aria snapshots](#aria-and-screen-snapshots), the view adds an **in-execution** page diff
 that needs no green baseline: the structure at the failure against the last different page before the failing action.
 
+<figure>
+  <img src="/screenshots/page-diff.png" alt="The Screen tab in its Page diff view: against the last green run, the Pay button of the Checkout form was renamed Pay now and became disabled, and the failing locator points there">
+  <figcaption>Page diff: the failing page against the last green run, one changed button.</figcaption>
+</figure>
+
 ## Trace-powered deep views
 
 ::: tip Where screenshots come from
@@ -112,7 +122,7 @@ With an uploaded trace (`trace: 'retain-on-failure'` or `'on-first-retry'`), two
 
 ### Aria and screen snapshots
 
-A Playwright 1.63 trace can record the page's **aria tree** and a **screenshot** before and after every action
+A Playwright trace can record the page's **aria tree** and a **screenshot** before and after every action
 (`trace: { snapshots: { dom, aria, screen } }`; [`wrapConfig`](/guide/reporter#installing-via-wrapconfig) turns `aria`
 on, `screen` stays [opt-in](/operate/storage#trace-snapshots)). Then the Screenshot view sets the page **before the
 failing action** beside the one at the failure, and the Timeline tab adds a **filmstrip** of the page before each
@@ -145,9 +155,13 @@ and last run, a duration trend, a status-history strip, and the recent execution
 A flaky test adds a **Flakiness** tab with its [suspects](./flaky-tests#suspects).
 
 <figure>
-  <img src="/screenshots/test-case-detail.png" alt="Test case page: run stats, a duration trend, a status strip and recent executions">
-  <figcaption>The test case page: stats, a duration trend and every recent execution.</figcaption>
+  <img src="/screenshots/tour-test-history.png" alt="A test case page: run stats, the duration trend with a status strip under it, and the recent executions">
+  <figcaption>The test case page: stats, a duration trend over the status strip, and every recent execution.</figcaption>
 </figure>
+
+## Try it in the demo
+
+<DemoExamples />
 
 ## Related
 

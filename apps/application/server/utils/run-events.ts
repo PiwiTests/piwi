@@ -31,7 +31,7 @@ export interface RunEvent {
     | 'resources'
     /** A worker of the run's live view connected, stopped, went on or left (`LiveWorkerState`, `#shared/live-view`). */
     | 'live-worker'
-    /** Whether the run holds a live view key (`LiveViewRunState`, `#shared/live-view`). */
+    /** Whether the project's live view is on, and the run holds a key (`LiveViewRunState`, `#shared/live-view`). */
     | 'live-view';
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data: Record<string, any>;

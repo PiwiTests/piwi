@@ -26,6 +26,11 @@ TypeScript** for a runnable spec that waits for each page it opens,
 `autocomplete` names it: the spec reads them from `process.env`.
 
 <figure>
+  <video src="/videos/picker-record-loop.mp4" autoplay loop muted playsinline controls aria-label="Recording on a shop page: a search typed, a mug added to the cart, a coupon applied, each counted on the bar as a step, then Stop opens the review with the seven steps"></video>
+  <figcaption>Each action becomes a step on the bar; Stop opens the review.</figcaption>
+</figure>
+
+<figure>
   <img src="/screenshots/picker-record.png" alt="The review panel after a recording: seven steps, Copy as TypeScript">
   <figcaption>The review after Stop: every step, the spec one click away.</figcaption>
 </figure>

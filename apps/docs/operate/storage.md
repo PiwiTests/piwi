@@ -111,8 +111,13 @@ PIWI_S3_SECRET_ACCESS_KEY=your-r2-secret-key
 
 The **Settings › Storage** page (`/settings/storage`) provides administrators with:
 
-- **Storage analysis** — total storage used and file count, the projects that consume the most space, a breakdown by file kind (traces, screenshots, videos, reports, attachments, visual diffs), storage growth over time, and the actual on-disk storage size (local only) — which also surfaces any untracked files lingering on disk.
+- **Storage analysis** — total storage and file count, the projects that take the most, a breakdown by file kind, growth over time, and the on-disk size (local only), which also surfaces untracked files left on disk.
 - **Cleanup** — permanently delete all test runs older than a configurable number of days (7, 14, 30, 60, 90, 180, or 365 days). [Kept runs](#keeping-runs-forever) are skipped, and so are each project's newest runs when `PIWI_RETENTION_MIN_RUNS` is set. A confirmation dialog is shown before any data is deleted, and the result says how many runs were skipped.
+
+<figure>
+  <img src="/screenshots/storage-analysis.png" alt="Settings, Storage: the total storage and its growth, storage over time, the space taken by each file kind, and the projects that take the most">
+  <figcaption>Settings → Storage: how much is stored, how it grows, and where it goes.</figcaption>
+</figure>
 
 Project admins can also delete runs by hand:
 
@@ -124,6 +129,7 @@ The dialog lists each run as it is deleted. **Stop**, or leaving the page, ends 
 a run that could not be deleted stays listed with its error.
 
 A kept run cannot be deleted until it is released; a selection skips kept runs.
+
 
 ### Data retention
 
