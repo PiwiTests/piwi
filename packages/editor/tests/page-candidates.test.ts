@@ -861,6 +861,30 @@ describe('the lines a breakpoint stops at', () => {
     expect(breakpointLines(spec, 99)).toEqual([99]);
   });
 
+  test('a line of a statement that makes a call of its own keeps it, and a trailing comment ends no statement', () => {
+    const calls = file(
+      "test('pays', async ({ page }) => {",
+      '  await Promise.all([',
+      "    page.waitForURL('**/done'),",
+      "    page.getByRole('button', { name: 'Pay' }).click(),",
+      '  ]);',
+      '  expect(',
+      "    await page.locator('.row').count(),",
+      '  ).toBe(3);',
+      "  await page.goto('/'); // why so slow?",
+      "  await page.click('#e');",
+      '});',
+    );
+    expect(breakpointLines(calls, 1)).toEqual([1, 2, 3, 4]);
+    expect(breakpointLines(calls, 2)).toEqual([2]);
+    expect(breakpointLines(calls, 3)).toEqual([3]);
+    expect(runToLine(calls, 2)).toBe(2);
+    expect(runToLine(calls, 3)).toBe(3);
+    expect(runToLine(calls, 6)).toBe(6);
+    expect(breakpointLines(calls, 9)).toEqual([9]);
+    expect(runToLine(calls, 8)).toBe(8);
+  });
+
   test('Run to cursor runs to the line of the statement’s call', () => {
     expect(runToLine(spec, 2)).toBe(4);
     expect(runToLine(spec, 3)).toBe(4);

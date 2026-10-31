@@ -4120,6 +4120,20 @@ describe('recording from the editor', () => {
       imports: 'separate',
     })) as RenderStepsResult;
     expect(empty.code.split('\n')[0]).toBe("test('recorded flow', async ({ page }) => {");
+    // A recording's own title the file holds already takes a number.
+    const titled = toStepsDocument(buildSession([goto('https://shop.test/checkout'), payNow], 1), { title: 'pays' });
+    await openHere(
+      'tests/titled.spec.ts',
+      "import { test } from '@playwright/test';\n\ntest('pays', async () => {});\n\n",
+    );
+    const again = (await recorder.sendRequest('piwi/renderSteps', {
+      uri: uri('tests/titled.spec.ts'),
+      steps: titled,
+      line: 3,
+      character: 0,
+      imports: 'separate',
+    })) as RenderStepsResult;
+    expect(again.code.split('\n')[0]).toBe("test('pays 2', async ({ page }) => {");
     expect(empty.importEdit?.newText).toContain("import { test } from '@playwright/test';");
   });
 

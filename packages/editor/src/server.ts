@@ -3514,7 +3514,9 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const testModule = newTest ? newTestModule(file!, text) : null;
     const result = renderSpec(sessionFromSteps(parsed.steps), {
       format: newTest ? 'test' : 'body',
-      ...(newTest ? { title: parsed.steps.title?.trim() || freeTestTitle(text), fixtures: fileFixtures(text) } : {}),
+      ...(newTest
+        ? { title: freeTestTitle(text, parsed.steps.title?.trim() || undefined), fixtures: fileFixtures(text) }
+        : {}),
       urls: context ? await stepUrls(context, parsed.steps.origin) : 'relative',
       locators: 'stable',
       urlChecks: true,
@@ -3533,7 +3535,17 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           : indentBlock(result.code, caretLine.slice(0, caretLine.length - caretLine.trimStart().length)),
       warnings: result.warnings.map((w) => w.message),
       ...(separate
-        ? { importEdit: importInsertion(text, blockImports(text, result, testModule ? { testModule } : {})) }
+        ? {
+            importEdit: importInsertion(
+              text,
+              blockImports(text, result, {
+                ...(testModule ? { testModule } : {}),
+                ...(file
+                  ? { expectModule: expectModuleOf(text, { siblings: () => siblingSpecs(file), testModule }) }
+                  : {}),
+              }),
+            ),
+          }
         : {}),
     };
   });

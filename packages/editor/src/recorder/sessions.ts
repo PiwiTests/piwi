@@ -290,13 +290,15 @@ export function startUrl(
 const RECORDED_TITLE = 'recorded flow';
 
 /**
- * A title for a recorded test that no test of `text` has: `recorded flow`, else `recorded flow 2`, and so on, since
- * Playwright refuses a file in which two tests share a title.
+ * A title for a recorded test that no test of `text` has: `base` (`recorded flow` by default), else `base 2`, and so
+ * on, since Playwright refuses a file in which two tests share a title.
  */
-export function freeTestTitle(text: string): string {
-  const titles = new Set([...text.matchAll(/(['"`])(recorded flow(?: \d+)?)\1/g)].map((match) => match[2]));
+export function freeTestTitle(text: string, base: string = RECORDED_TITLE): string {
+  const escaped = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const quoted = new RegExp(`(['"\`])(${escaped}(?: \\d+)?)\\1`, 'g');
+  const titles = new Set([...text.matchAll(quoted)].map((match) => match[2]));
   for (let n = 1; ; n++) {
-    const title = n === 1 ? RECORDED_TITLE : `${RECORDED_TITLE} ${n}`;
+    const title = n === 1 ? base : `${base} ${n}`;
     if (!titles.has(title)) return title;
   }
 }

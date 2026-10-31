@@ -80,6 +80,10 @@ describe('the debug run’s pure half', () => {
     expect(debugTest(cards, 'tests/pay.spec.ts', 'pays with amex')).toMatchObject({ line: 2 });
     // A title written as the run reported it is that test, before any computed one.
     expect(debugTest(cards, 'tests/pay.spec.ts', 'checkout › pays with visa')).toMatchObject({ line: 4 });
+    // A title of computed parts alone stands for no title in particular.
+    expect(debugTest('test(`${tc.name}`, async () => {});\n', 'tests/data.spec.ts', 'refunds')).toBe(
+      'No test of tests/data.spec.ts is titled “refunds” as it is saved, so Piwi runs nothing: the test may have been renamed or moved since the run, or its title is computed from more than its `${…}` parts.',
+    );
     expect(debugTest(cards, 'tests/pay.spec.ts', 'checkout › refunds')).toBe(
       'No test of tests/pay.spec.ts is titled “checkout › refunds” as it is saved, so Piwi runs nothing: the test may have been renamed or moved since the run, or its title is computed from more than its `${…}` parts.',
     );
@@ -92,18 +96,24 @@ describe('the debug run’s pure half', () => {
       '--workers=1',
     ]);
     expect(debugArgs('tests/cart.spec.ts:5', null)).toEqual(['tests/cart.spec.ts:5', '--workers=1']);
-    // A computed title stands for each test its line declares: the run's title narrows them, when a pattern reads it as itself.
-    const computed = { title: 'pays with ${card}' };
+    // A computed title stands for each test its line declares: the run's title narrows them, its characters a
+    // pattern or a shell reads standing as `.`.
+    const computed = { title: 'pays with ${card}', suite: ['checkout'] };
     expect(debugArgs('tests/pay.spec.ts:3', null, computed, 'checkout › pays with amex')).toEqual([
       'tests/pay.spec.ts:3',
       '--grep=pays with amex',
       '--workers=1',
     ]);
-    expect(debugArgs('tests/pay.spec.ts:3', null, computed, 'checkout › pays with (amex)')).toEqual([
+    expect(debugArgs('tests/pay.spec.ts:3', null, computed, 'pays with (amex) $5.50')).toEqual([
       'tests/pay.spec.ts:3',
+      '--grep=pays with .amex. .5.50',
       '--workers=1',
     ]);
-    expect(debugArgs('tests/pay.spec.ts:3', null, { title: 'pays with amex' }, 'pays with amex')).toEqual([
+    // A computed describe block's title narrows them when the run named it.
+    expect(debugArgs('tests/pay.spec.ts:3', null, { title: 'pays', suite: ['as ${user}'] }, 'as alice › pays')).toEqual(
+      ['tests/pay.spec.ts:3', '--grep=as alice', '--workers=1'],
+    );
+    expect(debugArgs('tests/pay.spec.ts:3', null, { title: 'pays with amex', suite: [] }, 'pays with amex')).toEqual([
       'tests/pay.spec.ts:3',
       '--workers=1',
     ]);

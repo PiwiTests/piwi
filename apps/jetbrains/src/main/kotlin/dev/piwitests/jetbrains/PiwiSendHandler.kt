@@ -180,7 +180,9 @@ class PiwiSendHandler : HttpRequestHandler() {
                     PiwiCommands.notify(project, "Piwi: ${e.message}", NotificationType.WARNING)
                     throw e
                 }
-                PiwiCommands.notify(project, Glue.pickNotice(at, Glue.PickOutcome.REPLACED))
+                // The line the locator landed on, which edits made since the run may have moved from the run's.
+                val landed = edit.range?.start?.line?.let { at.copy(line = it + 1) } ?: at
+                PiwiCommands.notify(project, Glue.pickNotice(landed, Glue.PickOutcome.REPLACED))
                 return file
             }
             outcome = when {

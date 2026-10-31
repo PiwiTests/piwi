@@ -51,8 +51,8 @@ Open in IDE.
 
 - **The test as your spec has it.** The title must name one test of the spec as saved: a test renamed since the run is
   not found, and two of that title in describe blocks the dashboard does not name are refused. A title written with
-  `${…}` parts matches with any text in their place; when the run's title is plain words, Piwi passes it as `--grep`
-  too, so only that one of the tests the line declares runs.
+  `${…}` parts matches with any text in their place, but one made of such parts alone matches nothing; Piwi passes the
+  run's title as `--grep` too, so of the tests the line declares, only those whose title holds it run.
 - **The line as your file has it.** The failing line is the run's: when the file changed since, the run stops at that
   line's number, or not at all when nothing there stops; a failure before it holds the test, as in any run with
   breakpoints.

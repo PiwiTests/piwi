@@ -5,6 +5,7 @@
  * and comments are skipped and brackets matched; no TypeScript parser.
  */
 import { isPageExpression } from '@piwitests/core/codegen';
+import { isLocatorChainMethod } from '@piwitests/core/locator-chain';
 import type { PageCandidate, PageCandidatesResult, RecordInto, RecordingPlacement } from '../protocol.js';
 
 type CursorContext = PageCandidatesResult['context'];
@@ -1107,7 +1108,7 @@ function statementStart(model: FileModel, line: number): number {
     let above = at - 1;
     while (above >= 0 && !model.lines[above]!.trim()) above--;
     if (above < 0) break;
-    const before = model.lines[above]!.trim();
+    const before = codeOfLine(model, above);
     const comment = /^(?:\/\/|\/\*|\*)/.test(before);
     const continues = CONTINUES.test(here.trim());
     const label = /^(?:case\b.*|default\s*):$/.test(before);
@@ -1115,6 +1116,46 @@ function statementStart(model: FileModel, line: number): number {
     at = above;
   }
   return at;
+}
+
+/**
+ * The code of the 0-based `line`, trimmed: up to the end of its last token, so a trailing comment (`// why so slow?`)
+ * is left out; the whole line when it holds no token, as a comment line does.
+ */
+function codeOfLine(model: FileModel, line: number): string {
+  const from = model.starts[line]!;
+  const to = from + model.lines[line]!.length;
+  let low = 0;
+  let high = model.tokens.length;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (model.tokens[mid]!.start < to) low = mid + 1;
+    else high = mid;
+  }
+  const last = model.tokens[low - 1];
+  if (!last || last.start < from) return model.lines[line]!.trim();
+  return model.text.slice(from, Math.min(to, last.start + last.text.length)).trim();
+}
+
+/** Names before `(` that make no call a breakpoint stops at: the keywords, and `expect`, whose matcher is the call. */
+const NOT_A_STOP = new Set(['if', 'for', 'while', 'switch', 'catch', 'function', 'async', 'await', 'return', 'expect']);
+
+/**
+ * Whether the 0-based `line` makes a call of its own a breakpoint can stop at: a call other than a link of a locator
+ * chain (`page.waitForURL(…)`, `….click()`), so a breakpoint there means that call alone.
+ */
+function callsOnItsOwn(model: FileModel, line: number): boolean {
+  const from = model.starts[line]!;
+  const to = from + model.lines[line]!.length;
+  for (let i = 1; i < model.tokens.length; i++) {
+    const token = model.tokens[i]!;
+    if (token.start >= to) break;
+    if (token.start < from || token.kind !== 'punct' || token.text !== '(') continue;
+    const name = model.tokens[i - 1]!;
+    if (name.kind === 'name' && name.start >= from && !NOT_A_STOP.has(name.text) && !isLocatorChainMethod(name.text))
+      return true;
+  }
+  return false;
 }
 
 /** At most how many lines past the line it starts on a statement's lines reach. */
@@ -1136,25 +1177,29 @@ function linesOfStatement(model: FileModel, line: number): number[] {
  * The lines a breakpoint on the 0-based `line` stops at: every line of the statement holding it, but the lines of a
  * function body it holds. Playwright stops at a call on the line of the call's name, which in a statement broken over
  * lines is rarely the line a breakpoint is set on (`await expect(\n  page.getByRole(…),\n).toBeVisible();` stops on its
- * third line). `line` alone when no statement broken over lines holds it.
+ * third line). `line` alone when no statement broken over lines holds it, and when it is not the statement's first line
+ * and makes a call of its own (`page.waitForURL(…),` in a `Promise.all`).
  */
 export function breakpointLines(text: string, line: number): number[] {
   const model = new FileModel(text);
   if (!Number.isInteger(line) || line < 0 || line >= model.lines.length) return [line];
   const lines = linesOfStatement(model, line);
-  return lines.includes(line) ? lines : [line];
+  if (!lines.includes(line)) return [line];
+  return line === lines[0] || !callsOnItsOwn(model, line) ? lines : [line];
 }
 
 /**
  * The line Run to cursor runs to for the 0-based `line`: the line of the last call the statement holding it makes at
  * its own level, where Playwright stops (`toBeVisible` in `await expect(\n  …,\n).toBeVisible();`, `fill` in
- * `await page.fill(\n  '#email',\n  'x',\n);`). `line` when the statement is on one line or makes no such call.
+ * `await page.fill(\n  '#email',\n  'x',\n);`). `line` when the statement is on one line or makes no such call, and
+ * when `line` is not the statement's first line and makes a call of its own.
  */
 export function runToLine(text: string, line: number): number {
   const model = new FileModel(text);
   if (!Number.isInteger(line) || line < 0 || line >= model.lines.length) return line;
   const lines = linesOfStatement(model, line);
   if (lines.length === 1 || !lines.includes(line)) return line;
+  if (line !== lines[0] && callsOnItsOwn(model, line)) return line;
   const last = lines[lines.length - 1]!;
   const from = model.starts[lines[0]!]!;
   const to = model.starts[last]! + model.lines[last]!.length;

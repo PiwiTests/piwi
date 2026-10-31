@@ -464,11 +464,15 @@ export class RunSessions {
    * Why a run has no worker to answer: none has started a test yet, or its tests run without the capture fixtures,
    * whose worker fixture opens the run's connection.
    */
-  private get noWorker(): string {
-    return (
-      `No worker of this run is connected to ${this.host}: none has started a test yet, or its tests import ` +
-      "`test` from '@playwright/test' rather than from the file that extends Piwi's capture fixtures."
-    );
+  /**
+   * Why a control reaches no worker of a run: none ever connected (`session` unknown), which a spec whose tests take
+   * `test` from Playwright explains, or those that did are gone.
+   */
+  private noWorker(session: Session | undefined): string {
+    return session
+      ? `No worker of this run is connected to ${this.host} now: the run ended, or Playwright is starting another worker.`
+      : `No worker of this run is connected to ${this.host}: none has started a test yet, or its tests import ` +
+          "`test` from '@playwright/test' rather than from the file that extends Piwi's capture fixtures.";
   }
 
   /**
@@ -587,12 +591,12 @@ export class RunSessions {
     const refuse = (message: string): RunControlResult => ({ ok: false, message });
     if (typeof params?.on !== 'boolean') return refuse('Share live needs on: true to share the run, false to stop.');
     const session = typeof params.ref === 'string' ? this.sessions.get(params.ref) : undefined;
-    if (!session) return refuse(this.noWorker);
+    if (!session) return refuse(this.noWorker(session));
     const live = this.liveOf(session);
     const instance = live?.page ? instanceOf(live.page) : 'the instance';
     const workers = [...session.workers.values()].filter((w) => w.takes.has('share'));
     if (params.on) {
-      if (!session.workers.size) return refuse(this.noWorker);
+      if (!session.workers.size) return refuse(this.noWorker(session));
       if (!workers.length) {
         const reporter = [...session.workers.values()][0]!.reporter;
         return refuse(`@piwitests/reporter ${reporter}`.trimEnd() + ' cannot share a run live: update it.');
@@ -642,7 +646,7 @@ export class RunSessions {
   control(params: RunControlParams, by: 'agent' | null = null): RunControlResult {
     const refuse = (message: string): RunControlResult => ({ ok: false, message });
     const session = typeof params?.ref === 'string' ? this.sessions.get(params.ref) : undefined;
-    if (!session?.workers.size) return refuse(this.noWorker);
+    if (!session?.workers.size) return refuse(this.noWorker(session));
     const named = typeof params.worker === 'number' ? (session.workers.get(params.worker) ?? null) : null;
     if (typeof params.worker === 'number' && !named) {
       return refuse(`Worker ${params.worker} of this run is not connected to ${this.host}.`);
@@ -745,7 +749,7 @@ export class RunSessions {
   private stopped(params: StopParams): { session: Session; worker: Worker } | RunControlResult {
     const refuse = (message: string): RunControlResult => ({ ok: false, message });
     const session = typeof params?.ref === 'string' ? this.sessions.get(params.ref) : undefined;
-    if (!session?.workers.size) return refuse(this.noWorker);
+    if (!session?.workers.size) return refuse(this.noWorker(session));
     const named = typeof params.worker === 'number' ? (session.workers.get(params.worker) ?? null) : null;
     if (typeof params.worker === 'number' && !named) {
       return refuse(`Worker ${params.worker} of this run is not connected to ${this.host}.`);

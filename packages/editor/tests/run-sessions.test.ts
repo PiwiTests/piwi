@@ -256,6 +256,19 @@ describe('a run’s session, with a client that answers stops', () => {
     }
   });
 
+  test('says a run’s workers are gone, rather than blame its imports, once those that connected left', async () => {
+    const { ref, channel } = await svc.command();
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0);
+    await waitFor(() => (svc.latest(ref)?.workers.length === 1 ? true : undefined));
+    worker.socket.destroy();
+    await waitFor(() => (svc.latest(ref)?.workers.length === 0 ? true : undefined));
+    expect(await control({ ref, action: 'pause' })).toEqual({
+      ok: false,
+      message:
+        'No worker of this run is connected to the editor now: the run ended, or Playwright is starting another worker.',
+    });
+  });
+
   test('answers each control: a pause to the running workers, the others to the one stopped, and why not', async () => {
     const { ref, channel } = await svc.command();
     const first = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0);

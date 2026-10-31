@@ -89,32 +89,43 @@ function testsTitled(calls: TestCall[], match: (written: string) => boolean): Te
   return named.length ? named : calls.filter((c) => match(c.title));
 }
 
-/** Whether a title written with `${…}` parts gives `title`, each part standing for any text. */
+/**
+ * Whether a title written with `${…}` parts gives `title`, each part standing for any text. A title written of such
+ * parts alone (`${tc.name}`) gives none: it would stand for every title.
+ */
 function computedTitleGives(written: string, title: string): boolean {
   if (!written.includes('${')) return false;
-  const fixed = written.split(/\$\{[^}]*\}/).map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const parts = written.split(/\$\{[^}]*\}/);
+  if (!parts.join('').replace(/\s/g, '').replace(new RegExp(TITLE_SEPARATOR, 'g'), '')) return false;
+  const fixed = parts.map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   return new RegExp(`^${fixed.join('[\\s\\S]*?')}$`).test(title);
 }
 
 /**
  * The arguments that debug the test at `location` (`tests/cart.spec.ts:3`): it alone, in the Playwright project it
- * failed in when one is named, with one worker. A test whose title is computed (`test` written with `${…}`) can stand
- * for several at its line: `title`, the run's title of the one that failed, then narrows the run to the tests whose
- * title holds it, when it holds no character a pattern or a shell reads.
+ * failed in when one is named, with one worker. A test whose title or a describe block's is computed (written with
+ * `${…}`) can stand for several at its line: the last computed title of `title`, the run's title path of the one that
+ * failed, then narrows the run to the tests whose titles hold it (`--grep`), each character a pattern or a shell reads
+ * standing as `.`.
  */
 export function debugArgs(
   location: string,
   project: string | null | undefined,
-  test?: Pick<TestCall, 'title'>,
+  test?: Pick<TestCall, 'title' | 'suite'>,
   title?: string,
 ): string[] {
-  const own = title?.split(TITLE_SEPARATOR).pop()?.trim() ?? '';
-  const grep = test?.title.includes('${') && PLAIN_GREP.test(own) ? [`--grep=${own}`] : [];
+  const written = test ? [...test.suite, test.title] : [];
+  const ran = title ? title.split(TITLE_SEPARATOR) : [];
+  // The run's titles stand beside the written ones when the run named every describe block, else its own alone.
+  const pairs: Array<[string, string]> =
+    ran.length === written.length
+      ? written.map((w, i) => [w, ran[i]!])
+      : [[test?.title ?? '', ran[ran.length - 1] ?? '']];
+  const narrowing = pairs.filter(([w, r]) => w.includes('${') && r.trim());
+  const computed = narrowing.length ? narrowing[narrowing.length - 1]![1].trim() : null;
+  const grep = computed ? [`--grep=${computed.replace(/[^\p{L}\p{N} _,:;'@#/=<>~&-]/gu, '.')}`] : [];
   return [location, ...(project ? [`--project=${project}`] : []), ...grep, '--workers=1'];
 }
-
-/** A title that reads as itself in a `--grep` pattern and in a quoted shell word. */
-const PLAIN_GREP = /^[\p{L}\p{N} _,:;'@#/=<>~&-]+$/u;
 
 /** What the sessions do for a debug run: replace its breakpoints, and count a locator on a stopped page. */
 export interface DebugRunsOptions {
