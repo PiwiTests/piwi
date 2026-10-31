@@ -22,7 +22,8 @@ or pick a better locator, which lands back on that line in the editor. The stop 
 2. Run the test from Piwi: **Run this test**, or any command of [Runs from the editor](./editor-runs#run-tests).
 3. The run opens a headed browser. Before the call on your line runs, the pause bar appears with the call as
    Playwright names it, `Paused at login.spec.ts:42 · Click getByText('Pay now')`, and a locator call's element is
-   highlighted, unless, on Playwright 1.59, the page shows a highlight or a screencast overlay of the test's own.
+   highlighted, unless, on Playwright 1.59, the page has shown a highlight or a screencast overlay of the test's own
+   since it loaded.
 
 | Button | What it does |
 |---|---|

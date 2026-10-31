@@ -1,5 +1,5 @@
 import * as path from 'node:path';
-import type { BrowserContext, Page, TestInfo } from '@playwright/test';
+import type { BrowserContext, Frame, Locator, Page, TestInfo } from '@playwright/test';
 import { isInsidePath, parsePairing, type EditorSendPayload } from '@piwitests/core/editor-send';
 import type { Place, RunIntent, StopReason } from '@piwitests/core/run-channel';
 import { pauseAnswered, showPauseBar, takePauseState, type PauseBarArg, type PauseChoice } from '@piwitests/picker-dom';
@@ -728,28 +728,69 @@ const NO_ELEMENT = '#__piwi_no_element';
 /** The element Playwright draws its highlights in, in each frame: the test's own and its screencast overlays too. */
 const HIGHLIGHT_LAYER = 'x-pw-glass';
 
-/** Whether Playwright gives each highlight its own take-down: a disposable highlight and `page.hideHighlight` (1.60). */
+/** How long reading a page's highlight layer may take: a page that does not answer shows one. */
+const LAYER_READ_MS = 500;
+
+/** Playwright's switch for an image that does not wait for the page's fonts, read as each image begins (1.59). */
+const NO_FONTS_WAIT_ENV = 'PW_TEST_SCREENSHOT_NO_FONTS_READY';
+
+/** The pages Piwi highlighted something in at the stop that holds them, until that stop ends (`takeLayerDown`). */
+const highlightedPages = new WeakSet<Page>();
+
+/** Whether Playwright gives each highlight its own take-down: a disposable highlight, `page.hideHighlight` (1.60). */
 function disposesHighlights(page: Page): boolean {
   return typeof (page as unknown as { hideHighlight?: unknown }).hideHighlight === 'function';
 }
 
-/** Whether the frame's document holds an element of `tag`: run in the page. */
-function holdsElement(tag: string): boolean {
-  return !!(globalThis as unknown as { document: { querySelector(tag: string): unknown } }).document.querySelector(tag);
+/**
+ * Whether Playwright `version` (`testInfo.config.version`) holds a page's highlights and draws them into each new
+ * document within a second (1.63): hiding a highlight it does not hold draws them at once.
+ */
+function holdsHighlights(version: string | undefined): boolean {
+  return playwrightVersionAtLeast(version, '1.63');
+}
+
+/** The frames of `page` that hold a document: one not loaded yet (a lazy frame, an awaited response) answers none. */
+function loadedFrames(page: Page): Frame[] {
+  return page.frames().filter((frame) => frame.url() !== '');
+}
+
+/** Remove the frame's elements of `tag`: run in the page. */
+function removeElements(tag: string): void {
+  const { document } = globalThis as unknown as {
+    document: { querySelectorAll(tag: string): Iterable<{ remove(): void }> };
+  };
+  for (const element of document.querySelectorAll(tag)) element.remove();
 }
 
 /**
- * Whether a frame of `page` shows Playwright's highlight layer: a highlight or a screencast overlay of the test's own.
- * Read as a stop begins, before Piwi highlights anything; true when a frame, or the page, does not answer. The caller
- * makes the call internal.
+ * Whether a frame of `page` shows Playwright's highlight layer: one a highlight or a screencast overlay of the test's
+ * own drew since the frame loaded. Read as a stop begins, before Piwi highlights anything, once Playwright drew what it
+ * holds (`holdsHighlights`), in Playwright's own world, where the overlays it draws again in a new document come
+ * first. A frame with no document yet holds none (`loadedFrames`), nor does one detached meanwhile. True when a frame,
+ * or the page, does not answer within `LAYER_READ_MS`. The caller makes the call internal.
  */
-export async function showsHighlightLayer(page: Page): Promise<boolean> {
-  try {
-    const frames = page.frames().map((frame) => frame.evaluate(holdsElement, HIGHLIGHT_LAYER).catch(() => true));
-    return (await within(Promise.all(frames), HIGHLIGHT_MS))?.some(Boolean) ?? true;
-  } catch {
-    return true;
-  }
+export async function showsHighlightLayer(page: Page, version: string | undefined): Promise<boolean> {
+  const read = async (): Promise<boolean> => {
+    if (holdsHighlights(version)) {
+      const none = page.locator(NO_ELEMENT) as unknown as { hideHighlight?: () => Promise<void> };
+      await none.hideHighlight?.();
+    }
+    const shows = await Promise.all(
+      loadedFrames(page).map((frame) =>
+        frame
+          .locator(HIGHLIGHT_LAYER)
+          .count()
+          .then(
+            (count) => count > 0,
+            () => !frame.isDetached(),
+          ),
+      ),
+    );
+    return shows.some(Boolean);
+  };
+  const reading = read().catch(() => true);
+  return (await within(reading, LAYER_READ_MS)) ?? true;
 }
 
 /**
@@ -761,28 +802,61 @@ export function mayHighlight(page: Page, layerBefore: boolean): boolean {
 }
 
 /**
- * Take down the highlight layer Piwi's highlights left on a page that showed none as the stop began: a disposed
- * highlight keeps the layer, empty (1.60). Before 1.60 each highlight took the whole layer down already. The caller
- * makes the call internal.
+ * Highlight `locator`'s matches in `page` at a stop, as `what` (the stopped call's element, a count's matches), in
+ * `style` when given. Playwright keeps one highlight per frame and selector (1.60): Piwi's is drawn under a selector of
+ * its own (`describe`), so the test's own highlight of the same locator stays, and the bar's and a count's stay apart.
+ * Its label names the locator, as the test's does. The caller makes the call internal.
  */
-export async function takeLayerDown(page: Page): Promise<void> {
-  const hide = (page as unknown as { hideHighlight?: () => Promise<void> }).hideHighlight;
-  if (typeof hide === 'function') await within(hide.call(page), TAKE_DOWN_MS);
+export function highlightAtStop(
+  page: Page,
+  locator: Locator,
+  what: 'call' | 'count',
+  style?: string,
+): Promise<unknown> {
+  highlightedPages.add(page);
+  const own = locator.describe(`piwi ${what}`) as unknown as {
+    highlight(options?: { style: string }): Promise<unknown>;
+  };
+  return own.highlight(style === undefined ? undefined : { style });
 }
 
 /**
- * Take down what `locator.highlight()` drew in `page`: through the highlight it returned (`shown`, disposable from
+ * Take down what `highlightAtStop` drew in `page`: through the highlight it returned (`shown`, disposable from
  * Playwright 1.60), else, before 1.60, through an image of the page with a mask in each of its frames, whose end
- * takes each frame's highlight layer down whole (`mayHighlight`). The image leaves the page's fields as they are
- * (`caret: 'initial'`). The caller makes the call internal.
+ * takes each frame's highlight layer in Playwright's own world down whole (`mayHighlight`). The image leaves the page's
+ * fields as they are (`caret: 'initial'`), and does not wait for the page's fonts, which lasts until it loaded: the
+ * switch is set while it is taken, the test held meanwhile, and only when unset. The caller makes the call internal.
  */
 export async function takeHighlightDown(page: Page, shown: unknown): Promise<void> {
   const dispose = (shown as { dispose?: () => Promise<void> } | null)?.dispose;
   if (typeof dispose === 'function') await dispose.call(shown);
   else if (!disposesHighlights(page)) {
-    const mask = page.frames().map((frame) => frame.locator(NO_ELEMENT));
-    await page.screenshot({ mask, caret: 'initial', timeout: TAKE_DOWN_MS });
+    const mask = loadedFrames(page).map((frame) => frame.locator(NO_ELEMENT));
+    const setHere = process.env[NO_FONTS_WAIT_ENV] === undefined;
+    if (setHere) process.env[NO_FONTS_WAIT_ENV] = '1';
+    try {
+      await page.screenshot({ mask, caret: 'initial', timeout: TAKE_DOWN_MS });
+    } finally {
+      if (setHere) delete process.env[NO_FONTS_WAIT_ENV];
+    }
   }
+}
+
+/**
+ * Take down, as a stop ends, the highlight layer Piwi's highlights at it left (`highlightAtStop`), on a page that
+ * showed none as it began (`layerBefore`): from 1.60 a disposed highlight keeps the layer, empty, which
+ * `page.hideHighlight` takes down; before 1.60 each highlight's take-down reaches Playwright's own world alone, and a
+ * locator resolved in the page's (a selector engine registered without its content script, `_react`, `_vue`) leaves
+ * its layer there, removed here. The caller makes the call internal.
+ */
+export async function takeLayerDown(page: Page, layerBefore: boolean): Promise<void> {
+  if (!highlightedPages.delete(page) || layerBefore) return;
+  const hide = (page as unknown as { hideHighlight?: () => Promise<void> }).hideHighlight;
+  const removed = (): Promise<unknown> =>
+    Promise.all(
+      loadedFrames(page).map((frame) => frame.evaluate(removeElements, HIGHLIGHT_LAYER).catch(() => undefined)),
+    );
+  await within(typeof hide === 'function' ? hide.call(page) : removed(), TAKE_DOWN_MS);
 }
 
 /**
@@ -887,8 +961,8 @@ export async function pauseHere(
       try {
         // A bar the stop ended under without its answer is taken down here.
         if (ended?.aborted) await page.evaluate(takePauseState);
-        // The bar's own highlight, one that came late included.
-        if (highlighted) await takeHighlightDown(page, shown ?? (await within(highlighted, TAKE_DOWN_MS)) ?? null);
+        // The bar's own highlight, however late it comes: past `TAKE_DOWN_MS`, it is taken down once it came.
+        if (highlighted) await takeHighlightDown(page, shown ?? (await highlighted) ?? null);
       } catch {
         // The page may be gone.
       }

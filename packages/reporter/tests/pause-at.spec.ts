@@ -16,6 +16,7 @@ import {
   callSitePlace,
   currentPauseSet,
   goOn,
+  highlightAtStop,
   inFlightCallSite,
   markPausesWrapped,
   parsePauseAt,
@@ -32,7 +33,9 @@ import {
   resetInspectorSwitch,
   resetPauseLogs,
   restoreTestTime,
+  showsHighlightLayer,
   stopCallSite,
+  takeLayerDown,
   testTimeSlot,
   watchStops,
   withEndSignal,
@@ -516,8 +519,7 @@ function fakePausePage(
         return takes < answers.length ? answers[takes++] : 'resume';
       } else if (fn === installPickerOverlay) {
         if (!opts.hangPick) g.__piwiPickState = opts.pick ? 'picked' : 'skipped';
-      }
-      else if (fn === showPickerChoices) g.__piwiPickChoice = 0;
+      } else if (fn === showPickerChoices) g.__piwiPickChoice = 0;
       else if (typeof fn === 'function' && String(fn).includes('__piwi')) return (fn as (a: unknown) => unknown)(arg);
       return null;
     }),
@@ -698,6 +700,72 @@ describe('pauseHere', () => {
     stopped.abort('closed');
     expect(await recorded).toBe('resume');
     expect(record).not.toHaveBeenCalled();
+  });
+});
+
+describe('the highlight layer of a stop', () => {
+  /** A frame of a page whose layer count settles as `count` does. */
+  const frame = (count: () => Promise<number>, { url = 'http://x/', detached = false } = {}) => ({
+    url: () => url,
+    isDetached: () => detached,
+    locator: () => ({ count }),
+  });
+  /** A page of `frames`, whose `hideHighlight` of a locator runs `drawn`. */
+  const pageOf = (frames: unknown[], drawn: () => void = () => {}) => ({
+    frames: () => frames,
+    locator: () => ({ hideHighlight: async () => drawn() }),
+  });
+  const never = () => new Promise<number>(() => {});
+
+  it('reads none where no frame holds one, a frame detached under the read and one with no document included', async () => {
+    const detached = frame(() => Promise.reject(new Error('Frame was detached')), { detached: true });
+    const unloaded = frame(never, { url: '' });
+    expect(await showsHighlightLayer(pageOf([frame(async () => 0), detached, unloaded]) as never, '1.64.1')).toBe(
+      false,
+    );
+  });
+
+  it('reads one where a frame holds one, or a frame that is there does not answer', async () => {
+    expect(await showsHighlightLayer(pageOf([frame(async () => 0), frame(async () => 1)]) as never, '1.64.1')).toBe(
+      true,
+    );
+    const broken = frame(() => Promise.reject(new Error('busy')));
+    expect(await showsHighlightLayer(pageOf([broken]) as never, '1.64.1')).toBe(true);
+    expect(await showsHighlightLayer(pageOf([frame(never)]) as never, '1.64.1')).toBe(true);
+    expect(await showsHighlightLayer({} as never, '1.64.1')).toBe(true);
+  });
+
+  it('reads once Playwright drew the highlights it holds, from 1.63', async () => {
+    const order: string[] = [];
+    const read = frame(async () => (order.push('read'), 0));
+    await showsHighlightLayer(pageOf([read], () => order.push('drawn')) as never, '1.63.0');
+    await showsHighlightLayer(pageOf([read], () => order.push('drawn')) as never, '1.62.0');
+    expect(order).toEqual(['drawn', 'read', 'read']);
+  });
+
+  it('highlights under a selector of its own, and takes the layer down once a stop that highlighted ends', async () => {
+    const described: string[] = [];
+    const options: unknown[] = [];
+    const locator = {
+      describe: (text: string) => {
+        described.push(text);
+        return { highlight: async (o: unknown) => void options.push(o) };
+      },
+    };
+    let hidden = 0;
+    const page = { frames: () => [], hideHighlight: async () => void hidden++ };
+    await takeLayerDown(page as never, false);
+    expect(hidden).toBe(0);
+    await highlightAtStop(page as never, locator as never, 'call');
+    // On a page that showed a layer of its own as the stop began, the layer stays.
+    await takeLayerDown(page as never, true);
+    expect(hidden).toBe(0);
+    await highlightAtStop(page as never, locator as never, 'count', 'outline: 1px solid');
+    await takeLayerDown(page as never, false);
+    await takeLayerDown(page as never, false);
+    expect(hidden).toBe(1);
+    expect(described).toEqual(['piwi call', 'piwi count']);
+    expect(options).toEqual([undefined, { style: 'outline: 1px solid' }]);
   });
 });
 

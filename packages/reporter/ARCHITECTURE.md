@@ -188,14 +188,22 @@ What the package does to a user's run, process by process.
 - `locator` counts a chain (`chain-locator.ts`, built through the chain grammar's calls
   alone) on the stopped page, one count after the other, and, where the bar shows,
   outlines its matches with Playwright's highlight, the one before taken down first and
-  the last before the stop ends. A highlight comes down through its own `dispose`
-  (1.60), and before 1.60 through an image of the page with a mask in each frame, whose
-  end takes the frame's whole highlight layer down (`takeHighlightDown` in
-  `pause-at.ts`, for the pause bar's highlight too). A disposed highlight leaves the
-  layer, an empty `x-pw-glass`: as the stop begins, `showStop` reads whether the page
-  shows one of its own, takes the layer down as the stop ends only where it showed none
-  (`takeLayerDown`), and on 1.59 highlights nothing where it showed one
-  (`mayHighlight`), so the test's own highlights and screencast overlays stay.
+  the last before the stop ends. This outline and the pause bar's highlight are drawn
+  under selectors of Piwi's own (`highlightAtStop` in `pause-at.ts`, through
+  `describe`): Playwright keeps one highlight per frame and selector (1.60), so the
+  test's own highlight of the same locator stays, and the two stay apart. A highlight
+  comes down through its own `dispose` (1.60), and before 1.60 through an image of the
+  page with a mask in each frame, which takes the frame's layer in Playwright's own
+  world down whole and skips the wait for the page's fonts (`takeHighlightDown`). A
+  disposed highlight leaves the layer, an empty `x-pw-glass`: as the stop begins,
+  `showStop` reads whether a frame with a document holds one (`showsHighlightLayer`,
+  in Playwright's own world, once 1.63 drew the highlights it holds into a new
+  document), and as a stop that highlighted ends, takes the layer down where none
+  showed (`takeLayerDown`: `page.hideHighlight`, and before 1.60 the layer a locator
+  resolved in the page's own world left there). On 1.59, whose take-down removes the
+  whole layer, a page that showed one gets no highlight (`mayHighlight`), so the test's
+  own highlights and screencast overlays stay; a highlight of the test's in a frame
+  not attached yet (1.63) is the one the take-down drops.
 - **The live view**, for a viewer outside the page (Piwi Picker, through the editor's
   hub). `view` shows the stopped page live: its screencast (`page.screencast.start`
   through an internal call, at its viewport scaled to fit 1280 by 800, JPEG quality 60,

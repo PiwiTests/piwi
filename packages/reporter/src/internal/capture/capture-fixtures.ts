@@ -108,6 +108,7 @@ import {
   contextDebugger,
   currentPauseSet,
   goOn,
+  highlightAtStop,
   inFlightCallSite,
   logPauseSkipOnce,
   markPausesWrapped,
@@ -1819,9 +1820,11 @@ async function showStop(
   const place = runChannelOpen() ? callSitePlace(location) : null;
   if (!bar && !place) return undefined;
   // Piwi highlights only where it can take its highlights down leaving the page's own (`mayHighlight`), and takes the
-  // highlight layer they leave down as the stop ends on a page that showed none as it began.
-  const layerBefore = page && bar ? await internalCall(page, () => showsHighlightLayer(page)) : true;
+  // highlight layer they leave down as the stop ends on a page that showed none as it began (`takeLayerDown`).
+  const layerBefore =
+    page && bar ? await internalCall(page, () => showsHighlightLayer(page, testInfo.config?.version)) : true;
   const highlights = !!page && bar && mayHighlight(page, layerBefore);
+  const stoppedOn = call?.page === page && highlights ? call.target : null;
   const failing = failure?.failed ?? null;
   /** A pick, folded into the snapshots, printed and posted to the editor: whether the editor took it. */
   const pickTaken = async (picked: PickedLocator): Promise<boolean> => {
@@ -1969,7 +1972,7 @@ async function showStop(
           location,
           call: title,
           attempt: testInfo.retry > 0 ? testInfo.retry + 1 : null,
-          target: call?.page === page && highlights ? call.target : null,
+          target: stoppedOn ? { highlight: () => highlightAtStop(page, stoppedOn, 'call') } : null,
           ...(failure ? { failure: true } : sink.functionEnded ? {} : { end: true }),
         },
         probe,
@@ -1987,7 +1990,7 @@ async function showStop(
     sink.shownStops.delete(end);
     goneOn();
     await held?.release();
-    if (page && !layerBefore) await internalCall(page, () => takeLayerDown(page)).catch(() => undefined);
+    if (page) await internalCall(page, () => takeLayerDown(page, layerBefore)).catch(() => undefined);
   });
   const heldAt = testTimeSlot(testInfo)?.elapsed ?? null;
   const stop: ShownStop = { page, guessed, context, record, done: shown.catch(() => undefined), heldAt, after: null };

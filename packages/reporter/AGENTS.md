@@ -36,9 +36,11 @@ responsibilities.
      bar, `PW_CODEGEN_NO_INSPECTOR`, the wrapped `Page.prototype.pause`, the runner internals it reads
      (`_onDidFinishTestFunctionCallbacks`, `_timeoutManager.defaultSlot()`, both feature-checked), the `piwi-pauses`
      attachment and the locator posted to `PIWI_EDITOR_SEND` (`@piwitests/core/editor-send`); and a stop's highlights,
-     which leave the test's own highlights and screencast overlays as they were: Playwright's highlight layer
-     (`x-pw-glass`) is taken down as the stop ends only on a page that showed none as it began (`takeLayerDown`), and on
-     Playwright 1.59, whose take-down removes the whole layer, a page that shows one gets no highlight (`mayHighlight`);
+     under selectors of Piwi's own (`highlightAtStop`), which leave the test's own highlights and screencast overlays
+     as they were: Playwright's highlight layer (`x-pw-glass`) is taken down as a stop that highlighted ends only on a
+     page that showed none as it began (`takeLayerDown`), and on Playwright 1.59, whose take-down removes the whole
+     layer, with `PW_TEST_SCREENSHOT_NO_FONTS_READY` set while it runs, a page that showed one gets no highlight
+     (`mayHighlight`);
    - with `PIWI_RECORD_CHANNEL`, **Record here** handing the page to the editor's recorder
      (`internal/capture/record-handoff.ts`, framed as `@piwitests/core/ide-recorder`): this package carries the relay
      alone, the recorder's host stays in the editor service;

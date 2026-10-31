@@ -7,12 +7,12 @@ import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { formatRecordChannel, lineReader, parseHandoffToEditor } from '@piwitests/core/ide-recorder';
 import { parseRunToHub, type HubToRun, type RunToHub } from '@piwitests/core/run-channel';
-import { jsonRes, startServer, type FakeServer } from './_helpers.js';
+import { jsonRes, playwrightAtLeast, startServer, type FakeServer } from './_helpers.js';
 
 /**
  * Code from a stop, the worker's part, in real Playwright runs through the built package under a fake editor service:
  * the text bodies an interactive run keeps and the one handed over to mock, a locator counted and outlined on the
- * stopped page, a region picked with its ARIA snapshot (its `toMatchAriaSnapshot` run against the page) or refused,
+ * stopped page, the highlights of a stop taken down and the test's own left as they were, a region picked with its ARIA snapshot (its `toMatchAriaSnapshot` run against the page) or refused,
  * a check handed to the editor's check panel, and a failure held at its line, headed and headless, once the test and
  * its hooks are done, where Pick replaces the failing locator and Resume lets the test end as it failed, the evidence
  * being what the test left at the failure, its error's credentials hidden. Under CI, without a run connection, and
@@ -142,13 +142,27 @@ test('takes every outline down', async ({ page }) => {
 });
 test('keeps the test’s own highlight', async ({ page }) => {
   await page.goto('${base}/a');
-  await page.locator('section h2').highlight();
+  await page.getByTestId('go').highlight();
   await painted(page);
   const before = await page.screenshot({ caret: 'initial' });
   await page.keyboard.press('Shift'); // bp
   await expect(page.getByTestId('go')).toBeVisible(); // bp
   const after = await page.screenshot({ caret: 'initial' });
   test.info().annotations.push({ type: 'same', description: String(before.equals(after)) });
+  test.info().annotations.push({ type: 'glass', description: String(await glassIn(page)) });
+});
+test('keeps the test’s own highlight through a new document', async ({ page }) => {
+  await page.goto('${base}/a');
+  await page.locator('section h2').highlight();
+  await page.goto('${base}/a?again');
+  await expect(page.getByTestId('go')).toBeVisible(); // bp
+  // Playwright 1.63 draws the highlights it holds into a new document within a second.
+  await page.waitForTimeout(1500);
+  test.info().annotations.push({ type: 'glass', description: String(await glassIn(page)) });
+});
+test('takes the layer down on a page with a frame not loaded yet', async ({ page }) => {
+  await page.goto('${base}/lazy');
+  await expect(page.getByTestId('go')).toBeVisible(); // bp
   test.info().annotations.push({ type: 'glass', description: String(await glassIn(page)) });
 });
 test('fails headed', async ({ page }) => {
@@ -175,7 +189,11 @@ test('fails at an address with a credential', async ({ page }) => {
 `;
 
 /** The check Assert a region writes, run against the page the region was picked on. */
-const CHECK_SPEC = (base: string, locator: string, snapshot: string) => `const { test, expect } = require('../fixture.cjs');
+const CHECK_SPEC = (
+  base: string,
+  locator: string,
+  snapshot: string,
+) => `const { test, expect } = require('../fixture.cjs');
 test('matches the region', async ({ page }) => {
   await page.goto('${base}/r');
   await expect(page.${locator}).toMatchAriaSnapshot(${JSON.stringify(snapshot)});
@@ -461,6 +479,10 @@ beforeAll(async () => {
       case '/api/during-hold':
         actedDuringHold = true;
         return jsonRes(res, 200, { during: 'hold' });
+      case '/lazy':
+        // A frame far below the window, which Chromium does not load.
+        res.writeHead(200, { 'content-type': 'text/html' });
+        return res.end(`${PAGE}<div style="height: 12000px"></div><iframe loading="lazy" src="/b"></iframe>`);
     }
     res.writeHead(200, { 'content-type': 'text/html' });
     res.end(PAGE);
@@ -540,7 +562,10 @@ describe('code from a stop, the worker’s part', () => {
     expect(exitCode, output).toBe(1);
     // Each test's errors, which say why a test that should pass did not.
     const errors = tests.flatMap((t) => t.errors.map((error) => `${t.title}: ${error}`)).join('\n');
-    expect(tests.map((t) => [t.title, t.status]), errors).toEqual([
+    expect(
+      tests.map((t) => [t.title, t.status]),
+      errors,
+    ).toEqual([
       ['keeps the text bodies', 'passed'],
       ['keeps nothing of the test before', 'passed'],
       ['asserts a region', 'passed'],
@@ -548,6 +573,8 @@ describe('code from a stop, the worker’s part', () => {
       ['checks an element', 'passed'],
       ['takes every outline down', 'passed'],
       ['keeps the test’s own highlight', 'passed'],
+      ['keeps the test’s own highlight through a new document', 'passed'],
+      ['takes the layer down on a page with a frame not loaded yet', 'passed'],
       ['fails headed', 'failed'],
       ['fails headless', 'failed'],
       ['fails, its page acting during the hold', 'failed'],
@@ -555,7 +582,24 @@ describe('code from a stop, the worker’s part', () => {
     ]);
     expect(connections[0]!.heard[0]).toMatchObject({
       type: 'run-attach',
-      takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator', 'view', 'input', 'input-clicks', 'pick-at', 'agent', 'events', 'bind', 'end', 'share'],
+      takes: [
+        'pick',
+        'record',
+        'assert',
+        'assert-region',
+        'requests',
+        'mock',
+        'locator',
+        'view',
+        'input',
+        'input-clicks',
+        'pick-at',
+        'agent',
+        'events',
+        'bind',
+        'end',
+        'share',
+      ],
       holds: ['failure'],
     });
   });
@@ -655,7 +699,7 @@ describe('code from a stop, the worker’s part', () => {
     expect(result.annotations.find((a) => a.type === 'glass')?.description).toBe('0');
   });
 
-  it('leaves the test’s own highlight as it was, through a stop at a key press and one at a locator call', () => {
+  it('leaves the test’s own highlight of the locator the stop acts on and the editor counts as it was', () => {
     expect(stops['keeps the test’s own highlight']?.map((s) => [s.reason, !!s.locator])).toEqual([
       ['breakpoint', false],
       ['breakpoint', true],
@@ -664,6 +708,18 @@ describe('code from a stop, the worker’s part', () => {
     const result = tests.find((t) => t.title === 'keeps the test’s own highlight')!;
     expect(result.annotations.find((a) => a.type === 'same')?.description).toBe('true');
     expect(result.annotations.find((a) => a.type === 'glass')?.description).toBe('1');
+  });
+
+  it('keeps the test’s own highlight that Playwright draws again in a new document, through a stop just after it', () => {
+    const result = tests.find((t) => t.title === 'keeps the test’s own highlight through a new document')!;
+    // Playwright 1.63 holds the test's highlights through a navigation; an older one leaves them with the document.
+    expect(result.annotations.find((a) => a.type === 'glass')?.description).toBe(playwrightAtLeast('1.63') ? '1' : '0');
+  });
+
+  it('highlights on a page with a frame not loaded yet, and takes the layer down', () => {
+    expect(outlined).toContain('/lazy');
+    const result = tests.find((t) => t.title === 'takes the layer down on a page with a frame not loaded yet')!;
+    expect(result.annotations.find((a) => a.type === 'glass')?.description).toBe('0');
   });
 
   it('picks a region in the test’s window and sends its ARIA snapshot', () => {
@@ -695,7 +751,10 @@ describe('code from a stop, the worker’s part', () => {
     const { locator, snapshot } = region as { locator: string; snapshot: string };
     write('tests/check.spec.cjs', CHECK_SPEC(server.url, locator, snapshot));
     const checked = await run(baseEnv, ['--project=check'], 60_000);
-    expect(checked.tests.map((t) => [t.title, t.status]), checked.output).toEqual([['matches the region', 'passed']]);
+    expect(
+      checked.tests.map((t) => [t.title, t.status]),
+      checked.output,
+    ).toEqual([['matches the region', 'passed']]);
   }, 90_000);
 
   it('says why a region picked brings no snapshot, at its stop', () => {
@@ -704,7 +763,8 @@ describe('code from a stop, the worker’s part', () => {
     expect(region).toEqual({
       type: 'region',
       stop: stops['asserts a region too long']![0]!.stop,
-      refused: "The ARIA snapshot of getByRole('region', { name: 'Order summary' }) is longer than 1048576 characters: pick a smaller region.",
+      refused:
+        "The ARIA snapshot of getByRole('region', { name: 'Order summary' }) is longer than 1048576 characters: pick a smaller region.",
     });
   });
 
@@ -830,11 +890,9 @@ describe('code from a stop, the worker’s part', () => {
 
   it('shows none of its own calls among the test’s steps', () => {
     for (const result of tests) {
-      // The tests that compare the page before and after their stops take their own two screenshots; one highlights
-      // an element of its own.
+      // The tests that compare the page before and after their stops take their own two screenshots.
       const own = ['takes every outline down', 'keeps the test’s own highlight'].includes(result.title) ? 2 : 0;
       const titles = allSteps(result.steps).map((s) => s.title);
-      if (result.title === 'keeps the test’s own highlight') titles.splice(titles.findIndex((t) => /^Highlight/.test(t)), 1);
       expect(
         titles.filter((t) => /Screenshot/i.test(t)),
         result.title,
