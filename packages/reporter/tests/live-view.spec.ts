@@ -557,6 +557,8 @@ describe('the live view of a run on the instance', () => {
     expect(off.heard.setups[0]).toMatchObject({ liveView: true });
     expect(off.heard.liveRequests).toBe(0);
     expect(off.output).not.toContain('Live view on');
+    // The CI run says why nobody can watch it, and what turns the view on.
+    expect(off.output).toContain('Live view off: nobody can watch this run');
   });
 
   it('sends nothing from a run outside CI nobody shares, in a project with the live view on, its key held', () => {
@@ -567,6 +569,7 @@ describe('the live view of a run on the instance', () => {
     expect(local.heard.setups[0]).toMatchObject({ liveView: true });
     expect(local.heard.liveRequests).toBe(0);
     expect(local.output).not.toContain('Live view on');
+    expect(local.output).not.toContain('Live view off');
     // No editor follows the run: nobody can share it, and the reporter says nothing of it.
     expect(local.output).not.toContain('Live view ready');
   });

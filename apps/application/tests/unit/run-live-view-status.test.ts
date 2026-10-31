@@ -8,6 +8,7 @@ const run = (over: Partial<RunLiveViewReadiness> = {}): RunLiveViewReadiness => 
   state: { enabled: true, keyed: true },
   ci: true,
   workers: 0,
+  testsWithoutWorkers: false,
   ...over,
 });
 
@@ -37,6 +38,14 @@ describe('live-view readiness', () => {
   test('a key without workers explains CI startup and local sharing separately', () => {
     expect(runLiveViewStatus(run()).kind).toBe('waiting');
     expect(runLiveViewStatus(run({ ci: false })).kind).toBe('unshared');
+  });
+
+  test('a CI run whose tests run without any worker says none connected, and a local one that it is not shared', () => {
+    expect(runLiveViewStatus(run({ testsWithoutWorkers: true })).kind).toBe('no-workers');
+    expect(runLiveViewStatus(run({ testsWithoutWorkers: true, ci: false })).kind).toBe('unshared');
+    expect(runLiveViewStatus(run({ testsWithoutWorkers: true, state: { enabled: true, keyed: false } })).kind).toBe(
+      'unavailable',
+    );
   });
 
   test('a connected worker makes both a CI run and a shared local run available', () => {

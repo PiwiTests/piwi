@@ -21,6 +21,7 @@ const status = computed(() => runLiveViewStatus(props.readiness));
     <HelpHint v-if="status.kind === 'desktop'" topic="run.live-desktop" />
     <HelpHint v-else-if="status.kind === 'demo'" topic="run.live-view-demo" />
     <HelpHint v-else-if="status.kind === 'unshared'" topic="run.live-unshared" />
+    <HelpHint v-else-if="status.kind === 'no-workers'" topic="run.live-no-workers" />
     <HelpHint v-else topic="run.live-view-setup">
       <template #actions>
         <UButton

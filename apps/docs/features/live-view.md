@@ -10,8 +10,8 @@ lang: en-US
 
 In a project that turns the live view on, a running test of a CI run, or of a run a developer
 [shares from their machine](#share-a-run-from-your-machine), gets **Watch** on its run page: it opens the page that
-worker is on, a few images a second, each with the call it was taken at. It is for watching a CI run that seems stuck,
-or a teammate's paused test, without waiting for the trace. Nothing you do in the view reaches the test.
+worker is on, a few images a second, each with the call it was taken at. It is for a CI run that seems stuck, or a
+teammate's paused test, without waiting for the trace. Nothing you do in the view reaches the test.
 
 ## Where to watch a run
 
@@ -35,19 +35,20 @@ setup. A CI job is told by its provider's variable (`GITHUB_ACTIONS`, `GITLAB_CI
 [Piwi Dashboard] Live view on: people who may open this run can watch its tests' pages on the dashboard while it runs. Nothing is stored.
 ```
 
-Turning it off ends every view of the project's runs at once. A run that started while it was off stays without a view
-when it is turned on again.
+A CI run without a view logs why instead.
+
+Turning it off ends every view at once; a run that started while it was off stays without one.
 
 ## Check availability
 
-Beside its search, a running run's **Tests** tab says **Live view available**, or what is missing; its help gives the
-step:
+A running run's **Tests** tab says **Live view available**, or what is missing, its help giving the step:
 
 | It says | Why, and what to do |
 |---|---|
-| **Live view off** | A Project admin turns it on; the next run gets it. |
+| **Live view off** | A Project admin turns it on for the next runs. |
 | **Live view unavailable** | The run has no key: it started before the setting was on, without `wrapConfig`'s global setup, with `streaming` off, or before the instance restarted. Start a new run. |
-| **Live view waiting** | No worker is connected yet: they are starting, or the specs do not import `test` from the [capture fixtures](/guide/capture-fixtures). |
+| **Live view waiting** | No worker is connected yet: they are starting. |
+| **No worker connected** | Tests run without one: the specs import `test` from `@playwright/test`, not the [capture fixtures](/guide/capture-fixtures). |
 | **Not shared live** | The run is on a developer's machine: they [share it](#share-a-run-from-your-machine). |
 
 ## Watch a worker
