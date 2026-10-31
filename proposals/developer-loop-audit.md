@@ -29,8 +29,12 @@ the editor, nothing answers there or the browser took back the access, **Open th
 unproven state, and a failed Send to editor's reason in a status line under its button (S6, F7), leaving the popup's
 muted Runs tile, the endless retry of an unproven pairing and a 404 read as an outdated editor; 12, the plumbing lines at
 `PIWI_VERBOSE` only, one line for an upload that falls back, and the usual spellings of the reporter's boolean
-variables (R10, R11, R12), leaving when the machine summary prints and one prefix for the workers' lines (R13). Quick
-win 13, the medium and the larger items are proposed. A pull request that builds part of the plan updates
+variables (R10, R11, R12), leaving when the machine summary prints and one prefix for the workers' lines (R13); 13,
+`page.pause()` in a run that follows the editor, JetBrains' **Stop the Run** and the commands its IDEs lack, and the
+Runs tile shown for the desktop app too (DOC2), leaving `globalTimeout` and the hooks in the Breakpoints page's
+limits and the bundled Node on the desktop page (both pages at their word budget), the new-file and last-answers
+sentences of the recording page (each client to check first), and the sentences S7, D11 and W13 make wrong, left to
+their fixes. The medium and the larger items are proposed. A pull request that builds part of the plan updates
 this paragraph.
 
 **Summary.** Every step of the loop exists, most of them in several tools, and most of it works as documented: a

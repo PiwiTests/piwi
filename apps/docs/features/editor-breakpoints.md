@@ -71,11 +71,12 @@ starts recording. Pause and Stop are in the recorder's bar in the page and in th
 comes back, and **Resume** runs the rest of the test from the page as you left it, which checks that the new steps fit
 what follows.
 
-`await page.pause()` in a test does the same without a breakpoint: in a run Piwi starts, or any headed run with
-breakpoints, it shows Piwi's pause bar there in place of Playwright's Inspector, with **Record here** among its
+`await page.pause()` in a test does the same without a breakpoint: in a run Piwi starts or
+[that follows your editor](./terminal-runs), or any headed run with breakpoints, it stops there under Piwi's pause bar
+in place of Playwright's Inspector (headless, in the editor), with **Record here** among its
 buttons in a run Piwi starts, and Piwi adds `--headed` to a run whose spec holds a `page.pause()` call. The
-`page.pause()` line stays, so the next run can record from there again; remove it when the test is done. In a run
-without breakpoints Piwi did not start, outside a test (a `beforeAll` or `afterAll`) and on a page of a browser the
+`page.pause()` line stays, so the next run can record from there again; remove it when the test is done. In any other
+run, outside a test (a `beforeAll` or `afterAll`) and on a page of a browser the
 test launched itself, `page.pause()` is Playwright's own, with its Inspector; in a headless browser it returns at
 once.
 **Record here** records http(s) pages: on a page the test made with `setContent`, or a `file:` page, the editor says
