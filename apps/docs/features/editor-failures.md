@@ -40,6 +40,11 @@ On a failure, the quick fixes are:
 Hover for the error message, its call chain, the failure screenshot, and the tickets linked to its cluster or
 test. Without one, **File an issue** opens the cluster in the dashboard.
 
+<figure>
+  <img src="/screenshots/vscode-hover.png" alt="VS Code: the hover on a failing line, dragged taller: the CI failure with its error, its call log and the chain of calls that reached the line, then the failure screenshot of the checkout page">
+  <figcaption>The hover on a failing line: the error, how the test got there, and the page at the failure.</figcaption>
+</figure>
+
 A failure of a run on the checked-out branch is an error; one from another branch, such as the default branch's while
 yours has no run yet, is a warning; one whose line you changed since the run is an information (a weak warning in a
 JetBrains IDE). The `piwi.failureSeverity` setting (**Settings → Tools → Piwi → Runs** in a JetBrains IDE) chooses

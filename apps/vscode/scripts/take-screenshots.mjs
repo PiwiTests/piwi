@@ -225,8 +225,12 @@ const SCENES = {
     await shoot(page, 'failures');
   },
 
-  /** The hover on the failing line: the error, its call chain and the failure screenshot. */
-  async hover(page) {
+  /** The hover on the failing line, dragged taller: the error, its call chain and the failure screenshot. */
+  async hover(page, workspace) {
+    // The hover below its line, where the window leaves room to drag it taller.
+    const settingsFile = path.join(workspace, '.vscode', 'settings.json');
+    const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
+    fs.writeFileSync(settingsFile, JSON.stringify({ ...settings, 'editor.hover.above': false }, null, 2));
     await openFile(page, PAGE_OBJECT_FILE);
     await clearNotifications(page);
     await showPanel(page, false);
@@ -250,8 +254,25 @@ const SCENES = {
       await page.mouse.move(10, 400);
       await hover.waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => {});
     }
+    // A hover opens at most 250 px tall: drag its bottom edge down, as a reader can, so the screenshot shows under the error.
+    const sashes = await page.locator('.monaco-resizable-hover .monaco-sash.horizontal').all();
+    const boxes = (await Promise.all(sashes.map((sash) => sash.boundingBox()))).filter(Boolean);
+    const bottom = boxes.sort((a, b) => b.y - a.y)[0];
+    const editor = await page.locator('.monaco-editor').first().boundingBox();
+    if (bottom && editor) {
+      const x = bottom.x + bottom.width / 2;
+      const y = bottom.y + bottom.height / 2;
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.mouse.move(x, editor.y + editor.height - 12, { steps: 12 });
+      await page.mouse.up();
+      // Off the edge, into the hover, so the edge's highlight goes.
+      await page.mouse.move(x, y - 120, { steps: 6 });
+    }
     await settle(page, 1500);
     await shoot(page, 'hover');
+    await page.mouse.move(10, 400);
+    fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2));
   },
 
   /** The Testing view: the spec's tests with the latest run's results, and a failure's message at its line. */
