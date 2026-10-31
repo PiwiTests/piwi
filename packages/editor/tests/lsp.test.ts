@@ -2730,7 +2730,7 @@ describe('runs as they happen', () => {
         severity: 'warning',
         message: `The run ended (exit code 0) but did not reach ${url}: is the Piwi reporter in the Playwright config?`,
       },
-      { root: dir, severity: 'information', message: 'Passed 3 of 3: tests/checkout.spec.ts:3' },
+      { root: dir, severity: 'information', message: 'None of 3 runs failed: tests/checkout.spec.ts:3' },
     ]);
   });
 
