@@ -97,7 +97,8 @@ A breakpoint you add, remove or toggle applies to the run from its next call, in
 included. One that only moves because you edited the lines above it keeps the line the run has, and one you set in an
 edited file applies to that line of the run's code. The breakpoints that count are those a run's start reads: line
 breakpoints in script files under a Playwright config's folder, while `piwi.breakpoints` (**Pause the runs Piwi starts
-at the editor's breakpoints** in a JetBrains IDE) is on.
+at the editor's breakpoints** in a JetBrains IDE) is on. A logpoint, or a breakpoint that does not suspend, never stops
+the test; a condition is not read, so a conditional breakpoint stops at each pass.
 
 ## Share live
 
