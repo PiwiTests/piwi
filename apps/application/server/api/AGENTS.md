@@ -120,6 +120,9 @@ The early check only proves the user holds the permission _somewhere_. The proje
   (`replaceProjectMembers`). `tests/unit/access-management-routes.test.ts`.
 - **A project's issues are filed only through the connection its binding names**: `POST /api/integrations/issues`
   refuses any other before building anything, and the draft proposes no other. `tests/unit/issue-create-routes.test.ts`.
+- **A route reading a tracker through the connection its URL names calls `requireConnectionAccess` before its cache
+  and the tracker**: `issue:create` on a project bound to it, `project:manage` anywhere or `connections:manage`, else
+  the 404 of a missing connection. `tests/unit/connection-read-routes.test.ts`.
 - **A notification addressed to one user (`targetUserId`) still needs their access to every project it is about**:
   `notifyFixAuthor` checks it before the email (`tests/unit/fix-author.test.ts`), the stream before delivering
   (`tests/unit/notification-stream.test.ts`).

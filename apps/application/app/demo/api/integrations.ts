@@ -26,7 +26,7 @@ import { resolveProjectIntegration, type ResolvedProjectIntegration } from '#sha
 import { previewAutoCreate, type AutoCreatePreview } from '#shared/handlers/tracker-automation';
 import { projectDefaultBranch } from '~~/server/utils/scm/stored-default-branch';
 import { buildClusterIssue, buildExecutionIssue } from '~~/server/utils/integrations/documents';
-import { entityLinks, testRunsCases } from '~~/server/database/schema';
+import { entityLinks, projects, testRunsCases } from '~~/server/database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
 
 /**
@@ -442,6 +442,16 @@ export function demoIssuePicker(query: string): { issues: TrackerIssueOption[] }
   return {
     issues: DEMO_PICKER_ISSUES.filter((i) => !q || foldText(`${i.key} ${i.summary}`).includes(q)),
   };
+}
+
+/**
+ * The projects a demo connection is bound to: every project for the canned
+ * connection, whose binding each of them shows, and null for an id that names
+ * no connection.
+ */
+export async function demoConnectionBoundProjects(db: DrizzleDB, connectionId: number): Promise<number[] | null> {
+  if (connectionId !== DEMO_CONNECTION.id) return null;
+  return (await db.select({ id: projects.id }).from(projects)).map((p) => p.id);
 }
 
 /** The project binding the demo shows — a canned Jira binding on the demo connection. */

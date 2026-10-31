@@ -28,18 +28,6 @@ const NO_PROJECT_IN_REQUEST: Record<string, string> = {
     'The reporter resolves an AI step from a template and an ARIA snapshot; no project is involved.',
   'server/api/dashboards/[id]/share-links.post.ts':
     'A dashboard spans projects; its live link renders only the projects its minter may share (`share:create`), checked at every view.',
-  'server/api/integrations/connections/[id]/assignable.get.ts':
-    'Reads tracker metadata through a connection for the create-issue dialog; no Piwi project in the request.',
-  'server/api/integrations/connections/[id]/icon.get.ts':
-    'Serves a tracker icon through a connection for the create-issue dialog; no Piwi project in the request.',
-  'server/api/integrations/connections/[id]/issue-picker.get.ts':
-    'Searches tracker issues through a connection for a create-issue field; no Piwi project in the request.',
-  'server/api/integrations/connections/[id]/projects.get.ts':
-    'Reads tracker metadata through a connection for the create-issue dialog; no Piwi project in the request.',
-  'server/api/integrations/connections/[id]/projects/[key]/issue-types.get.ts':
-    'Reads tracker metadata through a connection for the create-issue dialog; no Piwi project in the request.',
-  'server/api/integrations/connections/[id]/projects/[key]/issue-types/[type]/fields.get.ts':
-    'Reads tracker metadata through a connection for the create-issue dialog and the binding form; no Piwi project in the request.',
   'server/api/integrations/connections/[id]/projects/[key]/transitions.get.ts':
     'A Project admin binds their project to the tracker and picks the transitions; the answer holds no secret (an issue key, its status and the transitions).',
   'server/api/reports/schedules/[id].get.ts':
@@ -50,9 +38,12 @@ const NO_PROJECT_IN_REQUEST: Record<string, string> = {
     'A schedule spans projects; the handler lets only its owner (or an administrator) run it, collected with the owner’s project access.',
 };
 
-/** The calls that check a permission on one project, or narrow to the projects where it is held. */
+/**
+ * The calls that check a permission on one project, narrow to the projects where it is held, or check it on the
+ * projects bound to the connection a route reads through.
+ */
 const PROJECT_CHECK =
-  /\b(requireProjectAccess|requireResolvedProjectAccess|requireProjectPermission|getProjectScope|canAccessProject|scopeAllows|can)\(/;
+  /\b(requireProjectAccess|requireResolvedProjectAccess|requireProjectPermission|getProjectScope|canAccessProject|scopeAllows|can|requireConnectionAccess)\(/;
 
 /** Scope helpers and the position of their permission argument (1-based). */
 const SCOPE_HELPERS = { getProjectScope: 3, canAccessProject: 4 } as const;
