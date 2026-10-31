@@ -326,7 +326,8 @@ Images from other pipelines, which the harness's `--check` leaves alone (`EXTERN
 - the editor extensions' (`vscode-*.png`, `jetbrains-*.png`), by `apps/vscode/scripts/take-screenshots.mjs` and
   `apps/jetbrains/scripts/take-screenshots.mjs`. They open one fixture project
   (`apps/vscode/scripts/lib/editor-fixture.mjs`) against a stub instance in the real editor, under Xvfb; each script's
-  header says how to run it. [`proposals/real-editor-checks.md`](../../proposals/real-editor-checks.md) records what was
+  header says how to run it. `apps/vscode/scripts/record-loop.mjs` films `editor-recording-loop.mp4` the same way, the
+  recording's browser beside the editor on one screen ffmpeg captures. [`proposals/real-editor-checks.md`](../../proposals/real-editor-checks.md) records what was
   found about each product while the three pipelines were built. The README's *In your browser and your editor* row
   and the Marketplace READMEs show the same images.
 

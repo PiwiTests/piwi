@@ -11,6 +11,11 @@ as you do it: steps inside a test, a page object's method or a helper function, 
 works in VS Code (and Cursor, VSCodium) and in the JetBrains IDEs with the
 [Piwi plugin](./jetbrains), and needs no instance, no desktop app and no browser extension.
 
+<figure>
+  <video src="/videos/editor-recording-loop.mp4" autoplay loop muted playsinline controls aria-label="VS Code beside the browser the project's Playwright opened: Piwi: Record here at a blank line of a test, then a coupon typed and applied and the total checked in the browser, each step written in the test as it is made, the coupon's two steps becoming a call to the page object's applyCoupon, and Stop ending the recording with Run and Verify ×3 offered"></video>
+  <figcaption>Record here: the steps written as you go, folded into your page object's method.</figcaption>
+</figure>
+
 ## Start a recording
 
 | Editor | Record at the cursor | Record a new test file |
