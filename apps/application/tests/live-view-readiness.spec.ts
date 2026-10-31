@@ -87,3 +87,29 @@ test('explains each readiness gate and updates when the project changes', async 
     await setting(false);
   }
 });
+
+test('opens the run stream again after an error answer closed it', async ({ page, request }) => {
+  test.skip(resolveE2ETarget().desktop, 'Dashboard live view is served by a team instance.');
+  test.setTimeout(60_000);
+  const started = await request.post('/api/test-runs/start', {
+    data: { projectName: PROJECT.LIVE_VIEW_STREAM, startTime: new Date().toISOString() },
+  });
+  expect(started.ok()).toBeTruthy();
+  const run = await started.json();
+  let refused = 0;
+  // The first stream answers as a proxy does while the instance restarts: the browser does not reconnect by itself.
+  await page.route(`**/api/test-runs/${run.runId}/stream`, async (route) => {
+    if (refused++ === 0) await route.fulfill({ status: 502, body: 'Bad gateway' });
+    else await route.continue();
+  });
+  try {
+    await page.goto(`/test-runs/${run.runId}`);
+    const readiness = page.getByTestId('live-view-readiness');
+    await expect(readiness).toHaveAttribute('data-state', 'disabled', { timeout: 20_000 });
+    expect(refused).toBeGreaterThanOrEqual(2);
+  } finally {
+    await request.post(`/api/test-runs/${run.runId}/finish`, {
+      data: { streamToken: run.streamToken, status: 'passed', totalTests: 0 },
+    });
+  }
+});

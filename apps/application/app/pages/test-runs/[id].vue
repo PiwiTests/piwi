@@ -482,14 +482,16 @@ function connectToStream() {
     seedLiveFromPersisted(testRun.value.testCases);
   }
 
-  eventSource = new EventSource(`${baseURL}/api/test-runs/${runId}/stream`);
+  const source = new EventSource(`${baseURL}/api/test-runs/${runId}/stream`);
+  eventSource = source;
 
-  eventSource.onopen = () => {
+  source.onopen = () => {
     liveViewConnected.value = true;
     liveViewState.value = null;
+    reopenDelay = STREAM_REOPEN_MIN_MS;
   };
 
-  eventSource.onmessage = (event) => {
+  source.onmessage = (event) => {
     try {
       enqueueEvent(JSON.parse(event.data) as Record<string, unknown>);
     } catch {
@@ -497,14 +499,36 @@ function connectToStream() {
     }
   };
 
-  eventSource.onerror = () => {
+  source.onerror = () => {
     liveViewConnected.value = false;
-    // EventSource will auto-reconnect
+    // EventSource reconnects by itself, unless an error answer closed it for good.
+    if (source.readyState === EventSource.CLOSED && eventSource === source) reopenStream();
   };
+}
+
+// The browser gives up on a stream whose reconnection gets an error answer (a proxy's 502 while the instance restarts,
+// an expired session): the page refetches the run and opens the stream again, waiting longer each time.
+const STREAM_REOPEN_MIN_MS = 2_000;
+const STREAM_REOPEN_MAX_MS = 30_000;
+let reopenDelay = STREAM_REOPEN_MIN_MS;
+let reopenTimer: ReturnType<typeof setTimeout> | null = null;
+
+function reopenStream() {
+  eventSource?.close();
+  eventSource = null;
+  if (reopenTimer) return;
+  reopenTimer = setTimeout(async () => {
+    reopenTimer = null;
+    await refresh();
+    if (shouldStream.value) connectToStream();
+  }, reopenDelay);
+  reopenDelay = Math.min(reopenDelay * 2, STREAM_REOPEN_MAX_MS);
 }
 
 function disconnectStream() {
   liveViewConnected.value = false;
+  if (reopenTimer) clearTimeout(reopenTimer);
+  reopenTimer = null;
   if (eventSource) {
     eventSource.close();
     eventSource = null;
