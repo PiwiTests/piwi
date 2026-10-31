@@ -1,3 +1,6 @@
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
@@ -9,6 +12,10 @@ import { DIST, SHOP_ORIGIN, injectCoverage, openShop, stubCoverageChrome } from 
 import { openDevtoolsPage, selectElement } from './devtools-stub.js';
 import { stubChromeI18n } from './i18n-stub.js';
 import { stubChromeStorage } from './recording-stub.js';
+import { openShadowRoots } from './shadow.js';
+import { routeShop, SHOP_ORIGIN as BUG_SHOP_ORIGIN } from './bug-shop.js';
+import { stubChrome as stubReplayChrome } from './replay-stub.js';
+import type { PiwiSteps } from '@piwitests/core/steps';
 import {
   answerNext,
   pairedExtension,
@@ -33,11 +40,21 @@ import {
  * live. The harness in
  * `apps/application/scripts/take-feature-screenshots.mjs` lists them all as
  * external so `--check` leaves them alone.
+ *
+ * The loops (`public/videos/picker-*.mp4`) are short muted videos of a tool in use: the page recorded by Playwright,
+ * a pointer drawn on it (a recorded video leaves the mouse out), the opening trimmed, then encoded with an ffmpeg that
+ * has libx264 (`FFMPEG`, else `ffmpeg` on the PATH; Playwright's own has VP8 alone).
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SCREENSHOTS = path.join(here, '..', '..', '..', 'docs', 'public', 'screenshots');
 const VIEWPORT = { width: 1280, height: 800 };
+/** A one-pixel PNG: the screenshot a stubbed capture answers with. */
+const ONE_PIXEL_PNG =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+const VIDEOS = path.join(here, '..', '..', '..', 'docs', 'public', 'videos');
+/** A loop's page: narrower than a screenshot's, so the tool stays legible in the docs column. */
+const LOOP_VIEWPORT = { width: 1024, height: 640 };
 
 /** The browser renders at 2×, so the text stays crisp once an image is shown at its CSS width. */
 const test = base.extend<{ context: BrowserContext }>({
@@ -460,4 +477,361 @@ test('picker-devtools', async ({ context, extensionId }) => {
   await expect(sidebar.getByRole('heading', { name: 'button · Cart, 2 items' })).toBeVisible();
   await sidebar.waitForTimeout(500);
   await shoot(sidebar, 'picker-devtools', 880);
+});
+
+/** A page recorded as a video, with the time its recording started. */
+interface LoopPage {
+  context: BrowserContext;
+  page: Page;
+  startedAt: number;
+  dir: string;
+}
+
+/**
+ * Opens a page (the shop unless `open` says otherwise) in a context that records its pages, with a pointer drawn
+ * where the mouse is; `storage` stubs the extension's storage, `init` prepares the context before the page opens.
+ */
+async function loopPage(
+  options: {
+    storage?: Parameters<typeof stubChromeStorage>[1];
+    init?: (context: BrowserContext) => Promise<void>;
+    open?: (page: Page) => Promise<void>;
+  } = {},
+): Promise<LoopPage> {
+  const dir = mkdtempSync(path.join(tmpdir(), 'piwi-docs-loop-'));
+  const context = await launchWithExtension(undefined, { recordVideo: { dir, size: LOOP_VIEWPORT } });
+  await stubChromeI18n(context);
+  // The script drives the tools' own buttons, behind shadow roots closed by design.
+  await openShadowRoots(context);
+  if (options.storage) await stubChromeStorage(context, options.storage);
+  await options.init?.(context);
+  const page = await context.newPage();
+  const startedAt = Date.now();
+  page.setDefaultTimeout(15_000);
+  await page.setViewportSize(LOOP_VIEWPORT);
+  // Kept the last element of the document, so it stays above the hosts the tools add at the same z-index.
+  await page.addInitScript(() => {
+    window.addEventListener(
+      'mousemove',
+      (event) => {
+        let pointer = document.getElementById('piwi-docs-pointer');
+        if (!pointer) {
+          pointer = document.createElement('div');
+          pointer.id = 'piwi-docs-pointer';
+          pointer.style.cssText =
+            'position:fixed;z-index:2147483647;pointer-events:none;width:16px;height:16px;margin:-8px 0 0 -8px;' +
+            'border-radius:50%;background:rgba(124,58,237,0.3);border:2px solid #7c3aed;box-sizing:border-box';
+        }
+        if (pointer !== document.documentElement.lastElementChild) document.documentElement.append(pointer);
+        pointer.style.left = `${event.clientX}px`;
+        pointer.style.top = `${event.clientY}px`;
+      },
+      true,
+    );
+  });
+  await (options.open ?? ((shop: Page) => openShop(shop, '?nodialog')))(page);
+  return { context, page, startedAt, dir };
+}
+
+/** The bug shop is bare HTML: a light stylesheet on each of its pages, for the camera alone. */
+async function styleBugShop(context: BrowserContext): Promise<void> {
+  await context.addInitScript(() => {
+    document.addEventListener('DOMContentLoaded', () => {
+      const style = document.createElement('style');
+      style.textContent =
+        'body{font:15px/1.5 system-ui,sans-serif;color:#1f2937;margin:0;padding:24px 40px;background:#f8fafc}' +
+        'main{max-width:520px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:8px 24px 20px}' +
+        'h1{font-size:24px;margin:12px 0}input{padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;margin:0 8px}' +
+        'button{padding:6px 14px;border:0;border-radius:6px;background:#4f46e5;color:#fff;font-weight:600}' +
+        '#total{font-size:18px;font-weight:600}a{color:#4f46e5}';
+      document.head.append(style);
+    });
+  });
+}
+
+/** Moves the mouse to `target`'s center in steps, as a hand does, then rests on it. */
+async function glide(page: Page, target: ReturnType<Page['locator']>, restMs = 700): Promise<void> {
+  const box = (await target.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 24 });
+  await page.waitForTimeout(restMs);
+}
+
+/** Closes the loop's context and writes its video from `fromMs` after the page opened, muted and H.264. */
+async function writeLoop(loop: LoopPage, fromMs: number, name: string): Promise<void> {
+  const video = loop.page.video()!;
+  await loop.context.close();
+  const recorded = await video.path();
+  mkdirSync(VIDEOS, { recursive: true });
+  execFileSync(process.env.FFMPEG || 'ffmpeg', [
+    '-y',
+    '-loglevel',
+    'error',
+    '-ss',
+    (fromMs / 1000).toFixed(2),
+    '-i',
+    recorded,
+    '-vf',
+    `fps=25,scale=${LOOP_VIEWPORT.width}:${LOOP_VIEWPORT.height}`,
+    '-c:v',
+    'libx264',
+    '-preset',
+    'slow',
+    '-crf',
+    '28',
+    '-pix_fmt',
+    'yuv420p',
+    '-movflags',
+    '+faststart',
+    '-an',
+    path.join(VIDEOS, `${name}.mp4`),
+  ]);
+  rmSync(loop.dir, { recursive: true, force: true });
+}
+
+test('picker-pick-loop', async () => {
+  test.setTimeout(180_000);
+  const loop = await loopPage();
+  const { page } = loop;
+  await page.addScriptTag({ path: path.join(DIST, 'pick.js') });
+  await expect(page.getByText('click any element to generate locators')).toBeVisible();
+  await page.mouse.move(LOOP_VIEWPORT.width / 2, 60);
+  const from = Date.now() - loop.startedAt;
+  await page.waitForTimeout(600);
+
+  // Hover snaps the outline to each element; the arrows walk up to its parents and back.
+  const card = page.getByTestId('product-card').first();
+  await glide(page, card.getByRole('heading').first(), 900);
+  await glide(page, card.getByRole('button', { name: 'Add to cart' }), 900);
+  await page.keyboard.press('ArrowUp');
+  await page.waitForTimeout(800);
+  await page.keyboard.press('ArrowUp');
+  await page.waitForTimeout(800);
+  await page.keyboard.press('ArrowDown');
+  await page.waitForTimeout(500);
+  await page.keyboard.press('ArrowDown');
+  await page.waitForTimeout(600);
+
+  // A click picks it: the ranked locators open, the unique one first.
+  const checkout = page.getByRole('button', { name: 'Checkout' });
+  await glide(page, checkout, 700);
+  await page.mouse.down();
+  await page.mouse.up();
+  const skip = page.getByRole('button', { name: 'Skip (Esc)' });
+  const results = () => page.evaluate(() => !!document.getElementById('piwi-picker-results-host'));
+  await expect.poll(async () => (await results()) || (await skip.isVisible())).toBe(true);
+  if (await skip.isVisible()) {
+    await page.waitForTimeout(1200);
+    await glide(page, skip, 400);
+    await skip.click();
+  }
+  await expect.poll(results).toBe(true);
+  await page.waitForTimeout(3500);
+  await writeLoop(loop, from, 'picker-pick-loop');
+});
+
+test('picker-record-loop', async () => {
+  test.setTimeout(180_000);
+  const loop = await loopPage({
+    storage: {
+      session: {
+        piwiRecording: { active: true, events: [], startedAt: Date.now(), grantedOriginPattern: `${SHOP_ORIGIN}/*` },
+      },
+    },
+  });
+  const { page } = loop;
+  await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+  await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-hud-host'))).toBe(true);
+  await page.mouse.move(LOOP_VIEWPORT.width / 2, 300);
+  const from = Date.now() - loop.startedAt;
+  await page.waitForTimeout(600);
+
+  // Each action becomes a step on the bar as it is made.
+  const search = page.getByRole('searchbox', { name: 'Search products' });
+  await glide(page, search, 300);
+  await search.click();
+  await page.keyboard.type('mug', { delay: 140 });
+  await page.waitForTimeout(500);
+  const addBlueMug = page.getByTestId('product-card').first().getByRole('button', { name: 'Add to cart' });
+  await glide(page, addBlueMug, 300);
+  await addBlueMug.click();
+  await page.waitForTimeout(700);
+  const coupon = page.getByRole('textbox', { name: 'Coupon code' });
+  await glide(page, coupon, 300);
+  await coupon.click();
+  await page.keyboard.type('MORNING10', { delay: 110 });
+  const apply = page.getByRole('button', { name: 'Apply' });
+  await glide(page, apply, 300);
+  await apply.click();
+  await page.waitForTimeout(1200);
+
+  // Stopping opens the review: the steps, ready to export as a test.
+  const stop = page.locator('#piwi-record-hud-host').getByRole('button', { name: 'Stop' });
+  await glide(page, stop, 500);
+  await stop.click();
+  await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-review-host'))).toBe(true);
+  await page.waitForTimeout(3500);
+  await writeLoop(loop, from, 'picker-record-loop');
+});
+
+test('picker-report-loop', async () => {
+  test.setTimeout(180_000);
+  const loop = await loopPage({
+    storage: {
+      session: {
+        piwiRecording: {
+          active: true,
+          events: [],
+          startedAt: Date.now(),
+          grantedOriginPattern: `${BUG_SHOP_ORIGIN}/*`,
+          mode: 'bug',
+          bugToken: 'a'.repeat(32),
+        },
+      },
+      responses: { 'piwi-bug-screenshot': { ok: true, dataUrl: ONE_PIXEL_PNG } },
+    },
+    init: async (context) => {
+      await routeShop(context, { fixed: false });
+      await styleBugShop(context);
+      await context.addInitScript({ path: path.join(DIST, 'bug-evidence-main.js') });
+    },
+    open: async (page) => {
+      await page.goto(`${BUG_SHOP_ORIGIN}/cart`);
+    },
+  });
+  const { page } = loop;
+  await page.addScriptTag({ path: path.join(DIST, 'record-panel.js') });
+  await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-hud-host'))).toBe(true);
+  await page.mouse.move(LOOP_VIEWPORT.width / 2, 300);
+  const from = Date.now() - loop.startedAt;
+  await page.waitForTimeout(600);
+
+  // The flow that shows the bug: the coupon is applied, the total stays.
+  const coupon = page.getByRole('textbox', { name: 'Coupon' });
+  await glide(page, coupon, 300);
+  await coupon.click();
+  await page.keyboard.type('SPRING10', { delay: 110 });
+  const apply = page.getByRole('button', { name: 'Apply' });
+  await glide(page, apply, 300);
+  await apply.click();
+  await page.waitForTimeout(1000);
+
+  // Mark what's wrong: pick the total, say what it should read.
+  const hud = page.locator('#piwi-record-hud-host').getByRole('button');
+  await glide(page, hud.nth(0), 500);
+  await hud.nth(0).click();
+  await expect(page.getByText('click any element to generate locators')).toBeVisible();
+  const total = page.getByTestId('cart-total');
+  await glide(page, total, 700);
+  await total.click();
+  await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-bug-dialog-host'))).toBe(true);
+  await page.waitForTimeout(500);
+  await page.keyboard.type('Total: 45', { delay: 90 });
+  await page.keyboard.press('Tab');
+  await page.keyboard.type('The coupon is ignored', { delay: 60 });
+  await page.waitForTimeout(500);
+  await page.keyboard.press('Enter');
+  await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-bug-dialog-host'))).toBe(false);
+  await page.waitForTimeout(1000);
+
+  // Finish: the report, with the steps, the evidence and a failing test to copy.
+  await glide(page, hud.nth(3), 500);
+  await hud.nth(3).click();
+  await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-review-host'))).toBe(true);
+  await page.waitForTimeout(4000);
+  await writeLoop(loop, from, 'picker-report-loop');
+});
+
+/** The coupon report the report loop records, as Replay reads it from its `.piwibug`. */
+const COUPON_REPORT: PiwiSteps = {
+  v: 1,
+  title: 'Coupon not applied to the total',
+  origin: 'https://staging.acme.test',
+  recordedAt: 0,
+  note: null,
+  steps: [
+    { action: 'goto', target: null, value: '/cart', redacted: false, pageUrl: '/cart', timestamp: 0 },
+    {
+      action: 'fill',
+      target: {
+        tagName: 'input',
+        role: 'textbox',
+        accessibleName: 'Coupon',
+        testId: null,
+        text: null,
+        alternatives: [{ locator: "getByRole('textbox', { name: 'Coupon' })", method: 'getByRole', score: 96 }],
+      },
+      value: 'SPRING10',
+      redacted: false,
+      pageUrl: '/cart',
+      timestamp: 1,
+    },
+    {
+      action: 'click',
+      target: {
+        tagName: 'button',
+        role: 'button',
+        accessibleName: 'Apply',
+        testId: null,
+        text: 'Apply',
+        alternatives: [{ locator: "getByRole('button', { name: 'Apply' })", method: 'getByRole', score: 96 }],
+      },
+      value: null,
+      redacted: false,
+      pageUrl: '/cart',
+      timestamp: 2,
+    },
+    {
+      action: 'assert',
+      target: {
+        tagName: 'p',
+        role: null,
+        accessibleName: null,
+        testId: 'cart-total',
+        text: 'Total: 50',
+        alternatives: [{ locator: "getByTestId('cart-total')", method: 'getByTestId', score: 100 }],
+      },
+      value: null,
+      redacted: false,
+      pageUrl: '/cart',
+      timestamp: 3,
+      assertion: { matcher: 'toHaveText', expected: 'Total: 45', actual: 'Total: 50', negated: false, note: null },
+    },
+  ],
+};
+
+test('picker-replay-loop', async () => {
+  test.setTimeout(180_000);
+  const loop = await loopPage({
+    init: async (context) => {
+      await routeShop(context, { fixed: false });
+      await styleBugShop(context);
+      await stubReplayChrome(context, {
+        piwiReplay: {
+          id: 'docs-loop',
+          steps: COUPON_REPORT,
+          origin: BUG_SHOP_ORIGIN,
+          position: 0,
+          results: [],
+          status: 'running',
+          stepMode: false,
+          cursor: null,
+          startedAt: 0,
+          startPage: null,
+        },
+      });
+    },
+    open: async (page) => {
+      await page.goto(`${BUG_SHOP_ORIGIN}/cart`);
+    },
+  });
+  const { page } = loop;
+  // The replay plays from the report's first page: the loop starts as that page loads.
+  await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-replay-hud-host'))).toBe(true);
+  const from = Date.now() - loop.startedAt;
+  // It moves its own cursor to each step, plays it, then says whether the bug still shows.
+  await expect
+    .poll(() => page.evaluate(() => JSON.parse(window.name).session.piwiReplay.status), { timeout: 60_000 })
+    .toBe('done');
+  await page.waitForTimeout(4000);
+  await writeLoop(loop, from, 'picker-replay-loop');
 });

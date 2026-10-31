@@ -79,6 +79,11 @@ needs `PIWI_SECRET_KEY`. A refusal names Slack's error code (`not_in_channel`, `
 
 Through either, a delivery Slack rate-limits retries after its `Retry-After`, up to an hour.
 
+<figure>
+  <img src="/screenshots/channel-form-slack.png" alt="The new channel form for Slack: incoming webhook or bot token, the three steps to create the Slack app, a pasted webhook URL recognized as a Slack incoming webhook, Send test and Save channel">
+  <figcaption>Adding a Slack channel: the URL is recognized before you save it.</figcaption>
+</figure>
+
 ### Microsoft Teams
 
 In the Teams channel's **⋯** menu, open **Workflows**, pick the template *Send webhook alerts to a channel*, choose the
@@ -144,7 +149,7 @@ PIWI_SMTP_FROM=noreply@example.com
 PIWI_SMTP_FROM_NAME=Piwi Dashboard   # optional display name
 PIWI_SMTP_USER=apikey         # only when the server requires authentication
 PIWI_SMTP_PASS=••••••••        # only when the server requires authentication; never returned by the API
-PIWI_SMTP_SECURE=false        # true for port 465 (implicit TLS)
+PIWI_SMTP_SECURE=false        # implicit TLS, default on for 465
 PIWI_SITE_URL=https://piwi.example.com   # base URL used in email links
 ```
 

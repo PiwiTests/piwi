@@ -70,6 +70,11 @@ your file:
 Each code shows the line it goes above, and its import lines apart, each with **Copy**. The code is made from the file
 as it is on disk, in the folder linked to the project.
 
+<figure>
+  <img src="/screenshots/desktop-run-live-code.png" alt="Code from the runs in the desktop app's tray: a mocked request, the page.route call to write above tests/checkout.spec.ts:18, with Copy">
+  <figcaption>A mocked request, as code to copy above the stopped line.</figcaption>
+</figure>
+
 ## Share live
 
 A run that reports to your team's Piwi instance, as a **Re-run** in a folder whose `.env` or Playwright config

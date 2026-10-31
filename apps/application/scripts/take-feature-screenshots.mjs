@@ -952,7 +952,9 @@ const REPRO_SCENE_STEPS = (() => {
  *   out         — 'screens' (default) or 'docs'
  *   file        — output basename, default `<name>.png`
  *   outputs     — every file the scene writes; defaults to `file` plus the
- *                 `-annotated` variant when the scene annotates. --check reads it
+ *                 `-annotated` variant when the scene annotates. --check reads it.
+ *                 A docs scene writes a shot it does not list to .screens/, so
+ *                 it can publish one shot of several
  *   route       — initial path (default '/')
  *   prepare     — ({ base, request }) => put the server in the state the shot
  *                 needs, before the page loads; `request` is Playwright's API
@@ -1413,6 +1415,18 @@ async function prepareTeamSlackChannel({ base, request }) {
     data: { channelId: ch.channel.id, projectId: 1, events: ['run.failed', 'cluster.new'] },
   });
 }
+
+/**
+ * The server the harness boots runs as a configured instance: a public address,
+ * so no screen shows the missing-PIWI_SITE_URL warnings (the caller's own value
+ * wins), and never the caller's own Jira: the scenes connect their own.
+ */
+const SCENE_SERVER_ENV = {
+  PIWI_SITE_URL: process.env.PIWI_SITE_URL ?? 'https://piwi.example.com',
+  PIWI_JIRA_BASE_URL: '',
+  PIWI_JIRA_EMAIL: '',
+  PIWI_JIRA_API_TOKEN: '',
+};
 
 /** The db-managed connection the required-fields scenes bind; its dead port means no Jira is contacted. */
 let jiraSceneConnectionId = 0;
@@ -2189,6 +2203,8 @@ const SCENES = [
     name: 'assistant-proposal',
     description:
       'A change the assistant proposes, in the panel on the fixed answer: the card with Apply and Dismiss, then the same card applied, at 1280 and 390 px',
+    tags: ['docs'],
+    out: 'docs',
     route: '/',
     viewport: { width: 1280, height: 860 },
     async run({ page, shoot, settle, goto }) {
@@ -2210,12 +2226,7 @@ const SCENES = [
       await showCard(1280);
       await shoot('wide-applied', { of: '[data-shot="assistant-panel"]' });
     },
-    outputs: [
-      'assistant-proposal-wide.png',
-      'assistant-proposal-phone.png',
-      'assistant-proposal-phone-applied.png',
-      'assistant-proposal-wide-applied.png',
-    ],
+    outputs: ['assistant-proposal-wide.png', 'assistant-proposal-wide-applied.png'],
   },
   {
     name: 'assistant-nudges',
@@ -2269,6 +2280,8 @@ const SCENES = [
     name: 'guides',
     description:
       "The command palette's Guides group, then the first stop of the Flake Lab guide started from it, at 1280 and 390 px",
+    tags: ['docs'],
+    out: 'docs',
     route: '/',
     viewport: { width: 1280, height: 860 },
     async run({ page, shoot, settle }) {
@@ -2302,7 +2315,7 @@ const SCENES = [
       await startFlakeLab();
       await shoot('stop-phone');
     },
-    outputs: ['guides-palette.png', 'guides-stop.png', 'guides-palette-phone.png', 'guides-stop-phone.png'],
+    outputs: ['guides-stop.png'],
   },
   {
     name: 'user-menu-piwi-tools',
@@ -2375,6 +2388,8 @@ const SCENES = [
     name: 'analytics-scope-bar',
     description:
       'The Filters block on Analytics: Period, Runs and Tests groups, the period picker open with comparison and buckets',
+    tags: ['docs'],
+    out: 'docs',
     route: '/analytics?period=last-90d',
     viewport: { width: 1280, height: 1000 },
     async run({ page, shoot, settle }) {
@@ -2543,10 +2558,11 @@ const SCENES = [
     },
   })),
   ...[
-    { name: 'report-snapshot', width: 1280, height: 1600 },
+    { name: 'report-snapshot', width: 1280, height: 1600, docs: true },
     { name: 'report-snapshot-mobile', width: 375, height: 1600 },
-  ].map(({ name, width, height }) => ({
+  ].map(({ name, width, height, docs }) => ({
     name,
+    ...(docs ? { tags: ['docs'], out: 'docs' } : {}),
     description: `A report snapshot on /reports/:id, at ${width} px`,
     prepare: prepareReportSchedule,
     route: '/reports',
@@ -2705,10 +2721,11 @@ const SCENES = [
     },
   })),
   ...[
-    { name: 'chart-export-menu', width: 1280 },
+    { name: 'chart-export-menu', width: 1280, docs: true },
     { name: 'chart-export-menu-mobile', width: 375 },
-  ].map(({ name, width }) => ({
+  ].map(({ name, width, docs }) => ({
     name,
+    ...(docs ? { tags: ['docs'], out: 'docs' } : {}),
     description: `The export menu of a chart (copy as PNG, download Excel), at ${width} px`,
     route: '/analytics?projects=1',
     viewport: { width, height: 900 },
@@ -2723,10 +2740,11 @@ const SCENES = [
     },
   })),
   ...[
-    { name: 'execution-replay-export', width: 1280 },
+    { name: 'execution-replay-export', width: 1280, docs: true },
     { name: 'execution-replay-export-mobile', width: 375 },
-  ].map(({ name, width }) => ({
+  ].map(({ name, width, docs }) => ({
     name,
+    ...(docs ? { tags: ['docs'], out: 'docs' } : {}),
     description: `A failed execution's Export menu: the .piwibug bug report for Piwi Picker's Replay, with how many steps are done by hand and not replayed, and Copy steps, at ${width} px`,
     route: '/test-run-cases/37',
     viewport: { width, height: 900 },
@@ -2870,10 +2888,11 @@ const SCENES = [
   })),
   // *Preview* in the schedule form, sending to the email channel `prepare` makes.
   ...[
-    { name: 'report-schedule-preview', width: 1280, height: 1400 },
+    { name: 'report-schedule-preview', width: 1280, height: 1400, docs: true },
     { name: 'report-schedule-preview-mobile', width: 375, height: 1000 },
-  ].map(({ name, width, height }) => ({
+  ].map(({ name, width, height, docs }) => ({
     name,
+    ...(docs ? { tags: ['docs'], out: 'docs' } : {}),
     description: `Schedule… then Preview: the email the schedule would send now, at ${width} px`,
     prepare: prepareReportSchedule,
     route: '/analytics',
@@ -3024,6 +3043,8 @@ const SCENES = [
   {
     name: 'storage-analysis',
     description: 'Settings → Storage: usage KPIs, storage over time, by file kind and top projects',
+    tags: ['docs'],
+    out: 'docs',
     route: '/settings/storage',
     viewport: { width: 1280, height: 1700 },
     async run({ page, shoot, settle }) {
@@ -3058,6 +3079,8 @@ const SCENES = [
   {
     name: 'user-api-keys',
     description: 'The API keys manager (shared ApiKeysManager) — here in the Users admin modal',
+    tags: ['docs'],
+    out: 'docs',
     route: '/settings/users',
     viewport: { width: 1100, height: 1000 },
     async run({ page, shoot, settle }) {
@@ -3065,7 +3088,17 @@ const SCENES = [
       // manageable; open the first user's modal. The same component backs the
       // Account page (Settings → Account → API keys), which needs auth enabled.
       await page.getByRole('button', { name: 'Manage API keys' }).first().click();
-      await page.getByRole('dialog').waitFor();
+      const dialog = page.getByRole('dialog');
+      await dialog.waitFor();
+      await settle();
+      // A key to show in the list: the first capture on a database creates it.
+      if (!(await dialog.getByText('GitHub Actions CI').count())) {
+        await dialog.getByRole('button', { name: 'Create API key' }).click();
+        await dialog.getByPlaceholder('e.g. GitHub Actions CI').fill('GitHub Actions CI');
+        await dialog.getByRole('button', { name: 'Generate key' }).click();
+        await dialog.getByRole('button', { name: 'Done' }).click();
+      }
+      await dialog.getByText('GitHub Actions CI').waitFor();
       await settle();
       await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
     },
@@ -3315,13 +3348,42 @@ const SCENES = [
     description: 'Settings → Integrations: the Jira card with a connected system and a test button',
     tags: ['docs'],
     out: 'docs',
-    // Run with the server's Jira env vars set (PIWI_JIRA_BASE_URL / PIWI_JIRA_EMAIL
-    // / PIWI_JIRA_API_TOKEN) so the environment-managed Jira connection appears;
-    // no network call is made just to render the page.
-    route: '/settings/integrations',
+    // The scene connection reads as a checked Jira Cloud site; its real base URL is a dead port.
+    prepare: prepareJiraSceneConnection,
+    route: '/settings',
     viewport: { width: 1280, height: 1000 },
     of: '[data-shot="integrations-settings"]',
     pad: 12,
+    async run({ page, goto, shoot, settle }) {
+      await page.route('**/api/integrations/connections', async (route) => {
+        if (route.request().method() !== 'GET') return route.continue();
+        const list = await (await route.fetch()).json();
+        await route.fulfill({
+          json: {
+            ...list,
+            connections: list.connections.map((c) =>
+              c.id === jiraSceneConnectionId
+                ? {
+                    ...c,
+                    baseUrl: 'https://acme.atlassian.net',
+                    config: { flavor: 'cloud' },
+                    status: 'ok',
+                    lastCheckedAt: new Date().toISOString(),
+                    credentialValues: { email: 'piwi-bot@acme.example' },
+                  }
+                : c,
+            ),
+          },
+        });
+      });
+      // A client-side navigation, so the route above answers the page's fetch, not the server render.
+      await goto('/settings');
+      await page.locator('a[href="/settings/integrations"]').first().click();
+      await page.locator('[data-shot="integrations-settings"]').waitFor({ timeout: 20000 });
+      await page.getByText('acme.atlassian.net').first().waitFor({ timeout: 20000 });
+      await settle();
+      await shoot();
+    },
   },
   {
     name: 'integrations-webhook-actions',
@@ -3403,23 +3465,30 @@ const SCENES = [
     out: 'docs',
     // A db-managed Jira connection makes the entry points appear; its base URL
     // points at a dead local port so the dedupe search fails fast (no real Jira).
-    async prepare({ base, request }) {
-      const list = await (await request.get(`${base}/api/integrations/connections`)).json();
-      if (!list.connections?.some((c) => c.provider === 'jira')) {
-        await request.post(`${base}/api/integrations/connections`, {
-          data: {
-            provider: 'jira',
-            name: 'Jira',
-            baseUrl: 'http://127.0.0.1:9',
-            credentials: { email: 'you@example.com', apiToken: 'screenshot-token' },
-          },
-        });
-      }
-    },
+    prepare: prepareJiraSceneConnection,
     // A cluster no scene links an issue to, so its Issue line keeps Create issue.
+    // The draft is answered as for a project bound to CHK / Bug whose required
+    // fields have defaults; the pickers and the create screen come from routeJiraScreen.
     route: '/failure-clusters/4',
     viewport: { width: 1280, height: 1100 },
     async run({ page, shoot, settle }) {
+      await routeJiraScreen(page);
+      await page.route('**/api/integrations/connections/*/projects/*/issue-types/*/fields', (route) =>
+        route.fulfill({ json: { fields: JIRA_SCREEN_FIELDS.filter((field) => field.id !== 'customfield_10001') } }),
+      );
+      await page.route('**/api/integrations/issue-draft*', async (route) => {
+        const draft = await (await route.fetch()).json();
+        await route.fulfill({
+          json: {
+            ...draft,
+            connectionId: jiraSceneConnectionId,
+            projectKey: 'CHK',
+            issueType: '10004',
+            projectBound: true,
+            fieldValues: { ...JIRA_FIELD_DEFAULTS, customfield_10080: { value: { id: '10401' }, label: 'Staging' } },
+          },
+        });
+      });
       await page.locator('[data-shot="issue-line-create"]').first().click();
       await page.getByRole('dialog').waitFor();
       // The preview renders once the draft resolves.
@@ -3465,24 +3534,45 @@ const SCENES = [
     tags: ['docs'],
     out: 'docs',
     // A db-managed Jira connection makes the binding form appear; its base URL
-    // points at a dead local port so no real Jira is contacted.
-    async prepare({ base, request }) {
-      const list = await (await request.get(`${base}/api/integrations/connections`)).json();
-      if (!list.connections?.some((c) => c.provider === 'jira')) {
-        await request.post(`${base}/api/integrations/connections`, {
-          data: {
-            provider: 'jira',
-            name: 'Jira',
-            baseUrl: 'http://127.0.0.1:9',
-            credentials: { email: 'you@example.com', apiToken: 'screenshot-token' },
-          },
-        });
-      }
-    },
+    // points at a dead local port so no real Jira is contacted. The binding is
+    // answered as bound to CHK / Bug, with its sync policies and an owner route.
+    prepare: prepareJiraSceneConnection,
     route: '/projects/2?tab=settings&section=issue-tracker',
-    viewport: { width: 1280, height: 2000 },
+    viewport: { width: 1280, height: 2300 },
     of: '[data-shot="project-integration-binding"]',
     pad: 12,
+    async run({ page, goto, shoot, settle }) {
+      await routeJiraScreen(page);
+      await page.route('**/api/projects/2/integrations', async (route) => {
+        if (route.request().method() !== 'GET') return route.continue();
+        const binding = await (await route.fetch()).json();
+        await route.fulfill({
+          json: {
+            ...binding,
+            connectionId: jiraSceneConnectionId,
+            projectKey: 'CHK',
+            issueType: '10004',
+            labels: ['piwi', 'e2e'],
+            fieldDefaults: JIRA_FIELD_DEFAULTS,
+            policies: {
+              ...binding.policies,
+              scope: { ...binding.policies.scope, defaultBranch: true },
+              commentOnFix: true,
+              commentOnRegression: true,
+              commentOnNewOccurrences: true,
+              resolveOnClose: true,
+            },
+            ownerRoutes: [
+              { owner: '@acme/checkout', projectKey: 'CHK', componentId: '10200', assigneeAccountId: 'acct-1' },
+            ],
+          },
+        });
+      });
+      await goto('/projects/2?tab=settings&section=issue-tracker');
+      await page.locator('[data-shot="project-integration-binding"]').waitFor({ timeout: 20000 });
+      await settle();
+      await shoot();
+    },
   },
   {
     name: 'project-integration-auto-create',
@@ -3566,6 +3656,7 @@ const SCENES = [
             connectionId: jiraSceneConnectionId,
             projectKey: 'CHK',
             issueType: '10004',
+            projectBound: true,
             fieldValues: JIRA_FIELD_DEFAULTS,
           },
         });
@@ -3714,7 +3805,7 @@ const SCENES = [
   },
   {
     name: 'gather-evidence',
-    description: 'Failing execution: the header, the headline and the evidence tabs on one screen (dark)',
+    description: 'Failing execution: the situation block and the evidence card on one screen',
     tags: ['docs'],
     out: 'docs',
     // Execution 37 carries an attachment, a trace and a visual diff, so the
@@ -3722,7 +3813,20 @@ const SCENES = [
     // failing step's page views at the foot of the steps table.
     route: '/test-run-cases/37',
     viewport: { width: 1560, height: 1800 },
-    colorScheme: 'dark',
+  },
+  {
+    name: 'evidence-card',
+    description: 'Failing execution: the evidence card alone, its tabs over the captured evidence',
+    tags: ['docs'],
+    out: 'docs',
+    // Execution 37 carries an attachment, a trace and a visual diff, so the
+    // evidence tabs are populated rather than empty.
+    route: '/test-run-cases/37',
+    viewport: { width: 1280, height: 1500 },
+    of: '[data-shot="evidence-card"]',
+    pad: 12,
+    deviceScaleFactor: 2,
+    outputWidth: 1376,
   },
   {
     name: 'run-timeline',
@@ -3808,6 +3912,8 @@ const SCENES = [
     name: 'run-timeline-resources',
     description:
       "The leaky run's workers timeline with the CPU, memory and open-pages tracks above the rows: hovered, with memory turned off, with each worker's open pages and each test's CPU under its row, then at phone width",
+    tags: ['docs'],
+    out: 'docs',
     // Web Dashboard's newest run is the seed's leaky one: its pages pile up test after test.
     route: '/test-runs/62?tab=workers',
     viewport: { width: 1280, height: 900 },
@@ -3844,13 +3950,7 @@ const SCENES = [
       await settle();
       await shoot('narrow');
     },
-    outputs: [
-      'run-timeline-resources-hover.png',
-      'run-timeline-resources-toggled.png',
-      'run-timeline-resources-worker-pages.png',
-      'run-timeline-resources-worker-cpu.png',
-      'run-timeline-resources-narrow.png',
-    ],
+    outputs: ['run-timeline-resources-hover.png'],
   },
   {
     name: 'run-timeline-resources-live',
@@ -4014,17 +4114,6 @@ const SCENES = [
     pad: 12,
   },
   {
-    name: 'test-case-detail',
-    description: 'Test history: facts line, duration trend with the execution strip, recent executions',
-    tags: ['docs'],
-    out: 'docs',
-    route: '/test-cases/1',
-    viewport: { width: 1280, height: 1600 },
-    charts: true,
-    of: '[data-shot="test-case-detail"]',
-    pad: 8,
-  },
-  {
     name: 'home',
     description: 'Home overview, light/dark diagonal split (docs gallery hero)',
     tags: ['docs'],
@@ -4049,32 +4138,6 @@ const SCENES = [
     },
   },
   {
-    name: 'project-detail',
-    description: 'Project detail: run trend bars over the filtered run history (docs gallery)',
-    tags: ['docs'],
-    out: 'docs',
-    route: '/projects/1',
-    viewport: { width: 1280, height: 720 },
-    charts: true,
-  },
-  {
-    name: 'performance',
-    description: 'Performance tab: per-run duration trend over the slowest tests (docs gallery)',
-    tags: ['docs'],
-    out: 'docs',
-    route: '/projects/1?tab=performance',
-    viewport: { width: 1280, height: 720 },
-    charts: true,
-  },
-  {
-    name: 'projects',
-    description: 'Projects list: every project with its latest run, status bar and tags (docs gallery)',
-    tags: ['docs'],
-    out: 'docs',
-    route: '/projects',
-    viewport: { width: 1280, height: 720 },
-  },
-  {
     name: 'failure-clusters-tab',
     description:
       'Failures tab: the failure inbox, one row per cluster of tests that failed for the same reason (docs gallery)',
@@ -4092,14 +4155,6 @@ const SCENES = [
     route: '/projects/1?tab=flaky-tests',
     viewport: { width: 1280, height: 720 },
     prepare: classifyFlakyTests,
-  },
-  {
-    name: 'flake-lab',
-    description: "Flake Lab tab: the project's experiments, each with its test, conditions and verdict",
-    tags: ['docs'],
-    out: 'docs',
-    route: '/projects/1?tab=flake-lab',
-    viewport: { width: 1280, height: 800 },
   },
   {
     name: 'bug-report',
@@ -4421,6 +4476,8 @@ const SCENES = [
   {
     name: 'attempt-diff',
     description: 'Attempts tab: every attempt, and what differed between the failing and passing attempt',
+    tags: ['docs'],
+    out: 'docs',
     // Execution 21 is a flaky test that passed on retry, so the Attempts tab holds a diff.
     route: '/test-run-cases/21',
     viewport: { width: 1280, height: 1000 },
@@ -4452,7 +4509,8 @@ const SCENES = [
     name: 'run-trend-marker-tooltip',
     description:
       'Run trend: hovering a timeline marker line shows its category, label, date, environment and description',
-    tags: ['desktop'],
+    tags: ['docs', 'desktop'],
+    out: 'docs',
     route: '/projects/1',
     viewport: { width: 1400, height: 900 },
     charts: true,
@@ -5125,6 +5183,8 @@ const SCENES = [
   {
     name: 'page-diff',
     description: 'Screen tab: the Page diff view, the structural diff of the failing page',
+    tags: ['docs'],
+    out: 'docs',
     // Execution 37 (checkout) has a green ARIA sample and a failing one that
     // renames the "Pay" button and disables it — a legible one-line diff.
     route: '/test-run-cases/37',
@@ -5595,6 +5655,34 @@ const SCENES = [
       await shoot(undefined, { of: '[data-shot="pr-comment"]', pad: 12 });
     },
   },
+  // The whole pull-request comment and an auto-heal pull request's body,
+  // rendered from their builders and laid out like a code host's comment.
+  ...[
+    {
+      name: 'pr-comment',
+      markdown: prSummaryMarkdown,
+      description:
+        'The pull-request comment of a run: a new regression with its suggested locator, a failure that predates the change, a flake that is flaky on main too, and a cluster the change fixed',
+    },
+    {
+      name: 'heal-pr',
+      markdown: healPrMarkdown,
+      description:
+        'The body of an auto-heal pull request: one row per replaced locator with where it came from, the owners, the clusters and the command that verifies it',
+    },
+  ].map(({ name, markdown, description }) => ({
+    name,
+    description,
+    tags: ['docs'],
+    out: 'docs',
+    route: '/',
+    viewport: { width: 900, height: 1600 },
+    async run({ page, settle, shoot }) {
+      await page.setContent(await prCommentPage(await markdown()));
+      await settle();
+      await shoot(undefined, { of: '[data-shot="pr-comment"]', pad: 12 });
+    },
+  })),
   // The Coverage trend widget of the Engineering dashboard on the web
   // dashboard alone: the thirty seeded days of combined coverage, each suite
   // as a dashed line.
@@ -5875,7 +5963,9 @@ const SCENES = [
     name: 'home-empty-connect',
     description:
       'Home on an instance with no project yet: the connect wizard waiting for the first run, then the run reporting',
-    tags: ['desktop'],
+    tags: ['docs', 'desktop'],
+    out: 'docs',
+    outputs: ['home-empty-connect-waiting.png', 'home-empty-connect-reporting.png'],
     route: '/settings',
     viewport: { width: 1280, height: 2000 },
     async run({ page, settle, shoot }) {
@@ -5916,7 +6006,9 @@ const SCENES = [
     name: 'setup-connect-desktop',
     description:
       'Connect wizard (desktop app): the one command with no URL, then with CI reporting to a team server and local runs kept in the app',
-    tags: ['desktop'],
+    tags: ['docs', 'desktop'],
+    out: 'docs',
+    outputs: ['setup-connect-desktop.png'],
     mode: 'desktop',
     route: '/setup',
     viewport: { width: 1280, height: 2400 },
@@ -6084,6 +6176,8 @@ const SCENES = [
   {
     name: 'mcp-tool-details',
     description: 'MCP page: one tool opened, its Markdown description and parameters',
+    tags: ['docs'],
+    out: 'docs',
     route: '/mcp',
     viewport: { width: 1280, height: 2400 },
     of: '[data-shot="mcp-tool-get_fix_plan"]',
@@ -6099,6 +6193,8 @@ const SCENES = [
   {
     name: 'mcp-agent-skills',
     description: 'MCP page: the agent-skills section with the install command',
+    tags: ['docs'],
+    out: 'docs',
     route: '/mcp',
     viewport: { width: 1280, height: 2400 },
     of: '[data-shot="mcp-agent-skills"]',
@@ -6131,7 +6227,8 @@ const SCENES = [
     name: 'flakiness-tab',
     description:
       'A flaky test’s Flakiness tab: suspects with their counts, conditions and lab results, context and experiments',
-    tags: ['desktop'],
+    tags: ['docs', 'desktop'],
+    out: 'docs',
     route: '/test-cases/9?tab=flakiness',
     viewport: { width: 1280, height: 1400 },
     of: '[data-shot="flakiness-tab"]',
@@ -6159,7 +6256,8 @@ const SCENES = [
   {
     name: 'flake-lab-tab',
     description: 'A project’s Flake Lab tab: each flaky test’s lab state and next command, and the newest experiments',
-    tags: ['desktop'],
+    tags: ['docs', 'desktop'],
+    out: 'docs',
     route: '/projects/3?tab=flake-lab',
     viewport: { width: 1280, height: 1400 },
     of: '[data-shot="flake-lab"]',
@@ -6220,7 +6318,8 @@ const SCENES = [
   {
     name: 'run-resources',
     description: 'Run Resources tab: findings, the open-pages pointer, the machine and the costliest tests',
-    tags: ['desktop'],
+    tags: ['docs', 'desktop'],
+    out: 'docs',
     route: '/test-runs/62?tab=resources',
     viewport: { width: 1280, height: 2900 },
     charts: true,
@@ -6263,7 +6362,8 @@ const SCENES = [
   {
     name: 'bug-report-spec',
     description: 'A bug report’s Spec tab: the failing test to commit, rendered with the project’s settings',
-    tags: ['desktop'],
+    tags: ['docs', 'desktop'],
+    out: 'docs',
     route: '/bug-reports/1?tab=spec',
     viewport: { width: 1280, height: 1100 },
     of: '[data-shot="bug-report-spec"]',
@@ -6382,7 +6482,10 @@ const SCENES = [
     name: 'failure-headline',
     description:
       'Failing execution: the situation block, the headline and the line under it (since when, not the latest), most likely, next step and the cluster',
-    tags: ['desktop'],
+    tags: ['docs', 'desktop'],
+    out: 'docs',
+    deviceScaleFactor: 2,
+    outputWidth: 1376,
     // Execution 37 is a new regression clustered with a sibling in its run, and
     // its test failed again in later runs: the line under the headline says so,
     // and the Cluster line names the sibling.
@@ -6957,9 +7060,11 @@ const SCENES = [
     name: 'channel-form',
     description:
       'Notifications → Add channel: the Slack app steps with a checked URL, then that URL under Teams, then Slack with a bot token',
+    tags: ['docs'],
+    out: 'docs',
     route: '/settings/notifications',
     viewport: { width: 1280, height: 1100 },
-    outputs: ['channel-form-slack.png', 'channel-form-teams.png', 'channel-form-slack-api.png'],
+    outputs: ['channel-form-slack.png'],
     async run({ page, shoot, settle }) {
       await page.getByRole('button', { name: 'Add channel' }).click();
       const form = page.locator('[data-shot="channel-form"]');
@@ -6989,6 +7094,9 @@ const SCENES = [
   {
     name: 'setup-ladder-declined',
     description: 'Setup ladder grouped by state, with a declined capability folded under Declined',
+    tags: ['docs'],
+    out: 'docs',
+    outputs: ['setup-ladder-declined-wide.png'],
     // Decline one instance capability so the folded Declined group appears.
     async prepare({ base, request }) {
       await request.patch(`${base}/api/capabilities`, { data: { decisions: { notifications: 'declined' } } });
@@ -7075,6 +7183,9 @@ const SCENES = [
   {
     name: 'evidence-fixtures-footer',
     description: 'Execution page evidence card for a project with no captured fixtures: the footer names them',
+    tags: ['docs'],
+    out: 'docs',
+    outputs: ['evidence-fixtures-footer-wide.png'],
     // Seed a fixtures-free failing run so the footer (undecided) shows.
     async prepare({ base, request }) {
       await request.post(`${base}/api/test-runs/submit`, {
@@ -7434,6 +7545,120 @@ async function uncoveredChangesMarkdown() {
   });
 }
 
+/** The pull-request comment of a run with a new regression, a failure that predates the change, a flake and a fix. */
+async function prSummaryMarkdown() {
+  const { buildPrComment } = await import('../shared/pr-feedback.ts');
+  const site = 'https://piwi.example.com';
+  return buildPrComment({
+    runId: 412,
+    runUrl: `${site}/test-runs/412`,
+    projectName: 'checkout',
+    status: 'failed',
+    totalTests: 248,
+    passedTests: 245,
+    failedTests: 2,
+    flakyTests: 1,
+    durationMs: 6 * 60_000 + 12_000,
+    newRegressions: [
+      {
+        title: 'pays by card',
+        filePath: 'tests/checkout.spec.ts',
+        headline: "Test timed out after 30 s while clicking getByRole('button', { name: 'Pay' })",
+        errorExcerpt: null,
+        executionId: 9031,
+        clusterId: 12,
+        clusterSignature: 'checkout Pay click times out',
+        suggestedLocator: "getByRole('button', { name: 'Pay now' })",
+        owner: '@checkout-team',
+      },
+    ],
+    preExisting: [
+      {
+        title: 'exports the monthly report as CSV',
+        filePath: 'tests/admin/reports.spec.ts',
+        headline: "expect(locator).toHaveText(expected) failed on getByTestId('row-count')",
+        errorExcerpt: null,
+        executionId: 9044,
+        clusterId: 9,
+        issue: { key: 'DEMO-42', url: 'https://acme.atlassian.net/browse/DEMO-42' },
+      },
+    ],
+    flaky: [
+      {
+        title: 'applies a discount code',
+        filePath: 'tests/cart.spec.ts',
+        errorExcerpt: 'Timeout 5000ms exceeded waiting for getByTestId("cart-total")',
+        executionId: 9050,
+        flakyOnDefaultBranch: { branch: 'main', flakinessRate: 0.2 },
+      },
+    ],
+    newClusters: [{ id: 12, signature: 'checkout Pay click times out', caseCount: 1 }],
+    fixedClusters: [
+      {
+        id: 7,
+        label: 'Users table shows 50 rows instead of 25',
+        testCount: 2,
+        verification: 'diagnosis-verified',
+        timeToResolutionMs: 26 * 3_600_000,
+      },
+    ],
+    wastedMinutes: 4.5,
+    hasBaseline: true,
+  });
+}
+
+/** The body of an auto-heal pull request replacing two broken locators. */
+async function healPrMarkdown() {
+  const { buildHealPrBody } = await import('../shared/heal-pr.ts');
+  const edit = {
+    filePath: 'tests/checkout.spec.ts',
+    line: 42,
+    oldLine: "  await page.getByRole('button', { name: 'Pay' }).click();",
+    newLine: "  await page.getByRole('button', { name: 'Pay now' }).click();",
+    failingLocator: "getByRole('button', { name: 'Pay' })",
+    suggestedLocator: "getByRole('button', { name: 'Pay now' })",
+    score: 95,
+    source: 'diff-rename',
+    pickedByUser: false,
+    clusterId: 12,
+    executionId: 9031,
+    testTitle: 'pays by card',
+    owner: '@checkout-team',
+  };
+  return buildHealPrBody(
+    {
+      repositoryUrl: 'https://github.com/acme/shop',
+      provider: 'github',
+      baseBranch: 'main',
+      baseSha: 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678',
+      branch: 'piwi/heal/12-5f3a9c1e',
+      commitMessage: 'test: heal broken locators',
+      title: 'test: heal broken locators',
+      draft: true,
+      verifyCommand: 'npx playwright test "tests/checkout.spec.ts" "tests/account.spec.ts"',
+      edits: [
+        edit,
+        {
+          ...edit,
+          filePath: 'tests/account.spec.ts',
+          line: 18,
+          oldLine: "  await page.getByLabel('E-mail').fill(user.email);",
+          newLine: "  await page.getByTestId('email-input').fill(user.email);",
+          failingLocator: "getByLabel('E-mail')",
+          suggestedLocator: "getByTestId('email-input')",
+          score: 100,
+          source: 'prior-run',
+          clusterId: 13,
+          executionId: 9060,
+          testTitle: 'updates the email address',
+          owner: '@accounts',
+        },
+      ],
+    },
+    'https://piwi.example.com',
+  );
+}
+
 /**
  * A comment's Markdown as a code host shows it: rendered with `marked`, a
  * line break kept as one, in a bordered card under its author line, in the
@@ -7466,6 +7691,15 @@ async function prCommentPage(markdown) {
   li + li { margin-top: 4px; }
   code { padding: 0.2em 0.4em; border-radius: 6px; background: rgba(129, 139, 152, 0.12); font-size: 85%;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', monospace; }
+  h3 { margin: 0 0 16px; font-size: 1.15em; font-weight: 600; }
+  table { margin: 0 0 16px; border-collapse: collapse; }
+  th, td { padding: 6px 13px; border: 1px solid #d1d9e0; text-align: left; }
+  th { font-weight: 600; }
+  details { margin: 0 0 16px; }
+  summary { cursor: pointer; }
+  pre { margin: 0 0 16px; padding: 16px; border-radius: 6px; background: #f6f8fa; overflow: auto; }
+  pre code { padding: 0; background: none; }
+  a { color: #0969da; text-decoration: none; }
   .emoji { display: inline-block; width: 1em; height: 1em; border-radius: 50%; background: #a371f7;
     vertical-align: -0.125em; }
 </style></head><body>
@@ -7893,7 +8127,10 @@ async function captureScene(browser, scene, { base, outDir, freezeNow }) {
   let written = 0;
   const shoot = async (label, opts = {}) => {
     const stem = sceneFile(scene).replace(/\.png$/, '');
-    const file = join(outDir, `${stem}${label ? `-${label}` : ''}.png`);
+    const name = `${stem}${label ? `-${label}` : ''}.png`;
+    // A docs scene publishes only the shots its `outputs` lists; the others are report material.
+    const published = scene.out !== 'docs' || !scene.outputs || scene.outputs.includes(name);
+    const file = join(published ? outDir : OUT_TARGETS.screens, name);
 
     let image;
     if (scene.split) {
@@ -7961,6 +8198,7 @@ async function main() {
   }
 
   for (const scene of scenes) mkdirSync(outDirFor(scene, flags.out), { recursive: true });
+  mkdirSync(OUT_TARGETS.screens, { recursive: true });
   const browser = await chromium.launch({
     executablePath: resolveChromium(),
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
@@ -7980,7 +8218,7 @@ async function main() {
         ? { base: flags.url, stop: () => {} }
         : mode === 'demo'
           ? await startBuiltDemo()
-          : await startServer({ mode });
+          : await startServer({ mode, env: SCENE_SERVER_ENV });
       try {
         for (const scene of group) {
           try {

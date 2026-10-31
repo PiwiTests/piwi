@@ -32,6 +32,10 @@ This reads the per-test timeout the [reporter captures](/reference/test-metadata
 
 Both require the [capture fixtures](/guide/capture-fixtures) in your test setup — without them the reporter has no network timings or Web Vitals to aggregate.
 
+## Try it in the demo
+
+<DemoExamples />
+
 ## Related
 
 - [Cut the time it costs](/recipes/faster-suite): the slowest tests and wasted time, cut in order of cost

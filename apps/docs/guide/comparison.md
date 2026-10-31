@@ -80,6 +80,12 @@ Modest; see [resource requirements](/operate/deployment#resource-requirements). 
 
 [GitHub Discussions](https://github.com/PiwiTests/piwi/discussions) for questions and ideas, [issues](https://github.com/PiwiTests/piwi/issues) for bugs, and [ROADMAP.md](https://github.com/PiwiTests/piwi/blob/main/ROADMAP.md) for direction.
 
+## Related
+
+- [What Piwi does](./what-piwi-does): the jobs it does, and the pieces that do them
+- [All features](/reference/features): everything Piwi does, and what each feature needs
+- [Getting started](./getting-started): your first run reported to Piwi
+
 ---
 
 <sub>Product names are used for identification only. Piwi Dashboard is an independent project, not affiliated with, endorsed by, or connected to Microsoft Corporation (Playwright), Qameta Software (Allure), EPAM Systems (ReportPortal), Currents Software, or Fault0. Details about third-party products reflect their publicly documented open-source/free tiers and may change — corrections welcome.</sub>

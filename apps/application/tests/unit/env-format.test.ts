@@ -15,6 +15,7 @@ import {
   emitRenderBlueprint,
   emitShellExports,
   emitSystemd,
+  imageForVersion,
   quoteDotenvValue,
   quotePowershellValue,
   quoteShellValue,
@@ -131,6 +132,13 @@ describe('docker run emitters', () => {
 
   test('honors a custom image', () => {
     expect(emitDockerRunBash(entries, { image: 'piwi-dashboard:local' })).toContain('piwi-dashboard:local');
+  });
+
+  test('pins the default image to a release', () => {
+    expect(imageForVersion('0.61.0')).toBe('phenx/piwitests-server:0.61.0');
+    expect(emitDockerRunBash(entries, { image: imageForVersion('0.61.0') }).trimEnd()).toMatch(
+      /phenx\/piwitests-server:0\.61\.0$/,
+    );
   });
 });
 

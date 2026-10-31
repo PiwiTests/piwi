@@ -15,12 +15,17 @@ For the same signals aggregated across every project, see [Analytics](./analytic
 
 ## Flaky test detection
 
-A test is flaky when its result isn't deterministic. Piwi computes a **flakiness score** (0–100) per test from two signals, weighted 60/40:
+A test is flaky when its result isn't deterministic. Piwi computes a **flakiness score** (1–100) per test from two signals, weighted 60/40:
 
 - **Retry passes** — failed, then passed on retry (each `--repeat-each` repetition on its own).
 - **Status alternation** — flips between pass and fail across runs.
 
 The **failure rate** is shown but not scored.
+
+<figure>
+  <img src="/diagrams/flakiness-score.svg" alt="A test's last 10 runs with 2 retry passes and 4 flips give a score of 30; its impact is 0.7 times 3 wasted CI minutes plus 0.3 times a fixed weight of 30 times 2 retry passes, 20">
+  <figcaption>The score and the impact ranking, computed for one test.</figcaption>
+</figure>
 
 The project's **Failures** tab has a **Flaky** view with a **configurable lookback window**. Each flaky test links to its history and carries a **Quarantine** action.
 
@@ -28,7 +33,7 @@ The project's **Failures** tab has a **Flaky** view with a **configurable lookba
 
 <figure>
   <img src="/screenshots/flaky-detection.png" alt="Flaky tests tab listing tests with composite score, failure rate, retry passes, and flip counts">
-  <figcaption>The Flaky view of a project's Failures tab — each intermittent test scored, ranked by impact, filterable by root-cause category, with its top suspect.</figcaption>
+  <figcaption>The Flaky view: each intermittent test scored and ranked by impact, with its top suspect.</figcaption>
 </figure>
 
 ### Root-cause classification
@@ -72,6 +77,11 @@ without a condition. Nothing is stored.
 The flaky list names each test's top suspect (a reproduced one first), the [Attempts](./evidence#attempts) tab links
 requests to suspects, the clue `known-flake-suspect` marks failures showing one, and MCP's `get_flake_profile`
 returns it. The [Flake Lab](./flake-lab) tests each suspect against a control run.
+
+<figure>
+  <img src="/screenshots/flakiness-tab.png" alt="A flaky test's Flakiness tab: two suspects with their counts among failures and passes, the lab condition and result of each, the context a lab cannot apply, and the experiment that reproduced the flake">
+  <figcaption>A flaky test's suspects, and the experiments run on them.</figcaption>
+</figure>
 
 ### Verified fixed
 
@@ -146,6 +156,10 @@ The project's **Tests** tab has a **Group by File** view that groups tests by th
 ## Across every project
 
 Everything above is scoped to one project; [Analytics](./analytics) lifts the same signals across every project.
+
+## Try it in the demo
+
+<DemoExamples />
 
 ## Related
 - [Regression or flake?](/recipes/regression-or-flaky): is one red test flaky?

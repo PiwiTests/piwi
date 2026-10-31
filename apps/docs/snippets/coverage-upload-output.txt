@@ -1,0 +1,2 @@
+Uploaded unit-front for a1b2c3d (main): 214 files from 1 report, 388 tracked files in scope.
+12 files are outside the project's coverage scope.

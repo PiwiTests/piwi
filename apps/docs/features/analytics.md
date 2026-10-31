@@ -49,6 +49,11 @@ nothing.
 **Buckets** decide how the trends and the heatmap cut the period: automatic (about 31 buckets), daily,
 weekly or monthly. Buckets start at UTC midnight, so a heatmap cell is one UTC day.
 
+<figure>
+  <img src="/screenshots/analytics-scope-bar.png" alt="The Analytics page's Filters block with the period picker open: rolling, calendar and release periods, a custom range, since a marker, a sprint, then the comparison and the buckets">
+  <figcaption>The scope of the Analytics page, its period picker open.</figcaption>
+</figure>
+
 ### Branch policy
 
 By default only runs on each project's **default branch** count, so a broken feature branch does not
@@ -109,7 +114,10 @@ the period, one line per kind:
 - **Flaky tests**: fixes a [Flake Lab](./flake-lab) verify run proved, and those that flaked again.
 - **Fix attempts**: fixes a person or an agent reported, and what the runs made of them.
 
-![Hand-back outcomes: locator heals, AI diagnoses, the CI gate and a verified flaky test](/screenshots/analytics-handbacks.png)
+<figure>
+  <img src="/screenshots/analytics-handbacks.png" alt="Hand-back outcomes: locator heals, AI diagnoses, the CI gate and a verified flaky test">
+  <figcaption>Hand-back outcomes: what became of each fix Piwi handed back.</figcaption>
+</figure>
 
 A rate needs 10 ratings, pull requests or fixes; below that the line says the sample is too small. The counts
 survive retention, and are kept per project and day, so branch and environment filters do not narrow them. A
@@ -129,6 +137,11 @@ as an image, ready to paste into a slide; a browser that cannot copy images down
 **Download Excel** saves the numbers behind the chart as an .xlsx workbook, one row per bucket or group:
 numbers and dates are real cells, and a test title is never run as a formula. To send a whole
 dashboard, export it as a [quality report](./quality-reports) instead.
+
+<figure>
+  <img src="/screenshots/chart-export-menu.png" alt="A chart's export menu open on the Analytics page: copy the chart as an image, or download its data as Excel">
+  <figcaption>A chart's export menu.</figcaption>
+</figure>
 
 ## Targets
 

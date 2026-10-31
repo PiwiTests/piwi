@@ -108,8 +108,8 @@ still fails, or too few runs passed to say) · `2` error.
   arms to run; the `stabilize-flaky-tests` [agent skill](/features/agent-skills) follows this loop.
 
 <figure>
-  <img src="/screenshots/flake-lab.png" alt="The Flake Lab tab: counts by stage over each test and its next command">
-  <figcaption>The Flake Lab tab.</figcaption>
+  <img src="/screenshots/flake-lab-tab.png" alt="A project's Flake Lab tab: counts of flaky, untested, to-verify and verified-fixed tests, each test with its lab state and the command to run next, then the newest experiments with their verdicts">
+  <figcaption>The Flake Lab tab: each flaky test's lab state and next command, then the newest experiments.</figcaption>
 </figure>
 
 The lab's own runs are stamped as flake-lab runs, kept out of the flaky score, clusters, notifications, quarantine

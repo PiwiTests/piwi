@@ -13,6 +13,11 @@ caption saying what it does, then says whether the bug shows there. It suits the
 open the app on your own dev server, and the steps run there, with your session and your browser's developer tools at
 hand.
 
+<figure>
+  <video src="/videos/picker-replay-loop.mp4" autoplay loop muted playsinline controls aria-label="Replaying a bug report on a cart page: the cursor fills the coupon, clicks Apply and checks the total, and the verdict says the bug shows here, the total reading 50 instead of 45"></video>
+  <figcaption>The report's four steps played again, then the verdict: reproduced.</figcaption>
+</figure>
+
 ## Choosing a report
 
 - From the finished report, **Replay** plays it at once on the same site. The review of a
@@ -34,9 +39,9 @@ one finds nothing for two seconds, finds several elements, or finds one the othe
 most of them agree on is used, and the step says which locator found it: a label that changed or an id made up on each load does not stop
 the replay. The element is then waited for as Playwright waits: visible, enabled and still, for as long as Playwright
 waits or, when you waited longer for it while recording (a reply that takes the server fifteen seconds), that long and
-a few seconds more, up to a minute. The replay ends with one of three answers:
+a few seconds more, up to a minute. The replay ends with one of four answers:
 
-- **Reproduced**: an expected result does not hold, such as a total that still reads "Total: 50", and the panel says
+- **Reproduced**: an expected result does not hold, such as a total that still reads "Total: 40.00", and the panel says
   whether that is the value reported.
 - **Not reproduced**: every expected result holds here.
 - **Could not reach the bug**: a step could not be played (it found no element, several, or a disabled one, or the
@@ -87,6 +92,11 @@ never in the report: the step asks for it.
 A test run does not keep the page each step happened on once a click may have opened another, so Replay does not
 follow such a step into a new tab: it stays in the tab it started in, and a step the test played in a popup is handed
 to you.
+
+<figure>
+  <img src="/screenshots/execution-replay-export.png" alt="A failed execution's Export menu: downloads as HTML, ZIP, PDF, Markdown or JSON, the bug report to replay in a browser with its 6 steps, a Perfetto trace, and the report or the steps to copy">
+  <figcaption>The Export menu of a failed execution: its steps as a bug report to replay.</figcaption>
+</figure>
 
 ## Trusted input
 
