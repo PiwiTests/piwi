@@ -109,28 +109,41 @@ async function status(promise: Promise<unknown>): Promise<number> {
   }
 }
 
+async function refusal(promise: Promise<unknown>): Promise<{ statusCode: number; message: string }> {
+  try {
+    await promise;
+  } catch (error) {
+    const { statusCode, message } = error as { statusCode: number; message: string };
+    return { statusCode, message };
+  }
+  throw new Error('expected a refusal');
+}
+
+// Pat: Project admin of web only.
+const pat = caller(6, InstanceRole.MEMBER, { projectId: 10, role: ProjectRole.PROJECT_ADMIN });
+
+/** Sam reads web, Kim reads api only, Pat administers web, and Noah holds no role yet. */
+async function addPeopleOutsideWeb() {
+  await db.insert(schema.users).values([
+    { id: 4, username: 'noah@example.com', password: '', role: 'member', email: 'noah@example.com' },
+    { id: 5, username: 'kim', password: '', role: 'member', name: 'Kim' },
+    { id: 6, username: 'pat', password: '', role: 'member', name: 'Pat' },
+  ]);
+  await db.insert(schema.roleBindings).values([
+    { userId: 3, projectId: 10, role: 'viewer' },
+    { userId: 5, projectId: 11, role: 'viewer' },
+    { userId: 6, projectId: 10, role: 'project_admin' },
+  ]);
+}
+
 describe('GET /api/users', () => {
   const AVERY = { id: 1, username: 'avery', name: 'Avery' };
   const QUINN = { id: 2, username: 'quinn', name: 'Quinn' };
   const SAM = { id: 3, username: 'sam', name: 'Sam' };
   const NOAH = { id: 4, username: 'noah@example.com', name: null };
   const KIM = { id: 5, username: 'kim', name: 'Kim' };
-  // Pat: Project admin of web only.
-  const pat = caller(6, InstanceRole.MEMBER, { projectId: 10, role: ProjectRole.PROJECT_ADMIN });
 
-  beforeEach(async () => {
-    // Sam reads web, Kim reads api only, Noah holds no role yet.
-    await db.insert(schema.users).values([
-      { id: 4, username: 'noah@example.com', password: '', role: 'member', email: 'noah@example.com' },
-      { id: 5, username: 'kim', password: '', role: 'member', name: 'Kim' },
-      { id: 6, username: 'pat', password: '', role: 'member', name: 'Pat' },
-    ]);
-    await db.insert(schema.roleBindings).values([
-      { userId: 3, projectId: 10, role: 'viewer' },
-      { userId: 5, projectId: 11, role: 'viewer' },
-      { userId: 6, projectId: 10, role: 'project_admin' },
-    ]);
-  });
+  beforeEach(addPeopleOutsideWeb);
 
   const usersOf = async (query: Record<string, string> = {}) => (await listUsers({ query })).items;
 
@@ -188,6 +201,37 @@ describe('project members', () => {
     const after = await putMembers({ params: { id: '10' }, body: { entries } });
     expect(after.success).toBe(true);
     expect(after.members.filter((m: { source: string }) => m.source === 'direct')).toHaveLength(2);
+  });
+
+  test('a Project admin names a user their list leaves out only by their whole username', async () => {
+    await addPeopleOutsideWeb();
+    state.caller = pat;
+    const pats = { subject: { type: 'user', id: 6 }, role: 'project_admin' };
+    const add = (subject: Record<string, unknown>) =>
+      putMembers({ params: { id: '10' }, body: { entries: [pats, { subject, role: 'viewer' }] } });
+
+    // Sam reads web, so his id is enough.
+    expect((await add({ type: 'user', id: 3 })).success).toBe(true);
+    // Noah holds no role and Kim reads api only: named by id alone, each is answered like an unknown user.
+    for (const id of [4, 5, 99]) {
+      expect(await refusal(add({ type: 'user', id }))).toEqual({
+        statusCode: 400,
+        message: `User(s) not found: ${id}`,
+      });
+    }
+    expect(await refusal(add({ type: 'user', id: 4, username: 'kim' }))).toEqual({
+      statusCode: 400,
+      message: 'User(s) not found: 4',
+    });
+    expect((await db.select().from(schema.roleBindings)).filter((b) => b.userId === 4)).toEqual([]);
+
+    const after = await add({ type: 'user', id: 4, username: ' NOAH@example.com' });
+    expect(after.members).toContainEqual(
+      expect.objectContaining({ username: 'noah@example.com', role: 'viewer', source: 'direct' }),
+    );
+    // An administrator names anyone by id.
+    state.caller = avery;
+    expect((await add({ type: 'user', id: 5 })).success).toBe(true);
   });
 
   test('nobody edits the members of a project they do not administer', async () => {

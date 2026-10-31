@@ -155,6 +155,15 @@ describe('the demo router holds each route to its permission', () => {
 
     const users = await as(QUINN).get('/api/users');
     expect(Object.keys(users.items[0]).sort()).toEqual(['id', 'name', 'username']);
+    // Noah holds no role yet: Quinn finds him by his whole username only, and cannot name him by id alone.
+    const listsNoah = (list: { items: { id: number }[] }) => list.items.some((u) => u.id === NOAH);
+    expect(listsNoah(users)).toBe(false);
+    expect(listsNoah(await as(QUINN).get('/api/users', 'lookup=NOAH-Newcomer'))).toBe(true);
+    const noahByIdOnly = { entries: [{ subject: { type: 'user', id: NOAH }, role: ProjectRole.VIEWER }] };
+    expect(await refusal(as(QUINN).put('/api/projects/1/members', noahByIdOnly))).toEqual({
+      statusCode: 400,
+      message: `User(s) not found: ${NOAH}`,
+    });
     expect((await as(QUINN).get('/api/groups')).groups.map((g: { name: string }) => g.name)).toEqual([
       'Product owners',
       'QA',

@@ -380,8 +380,13 @@ export interface ProjectMembersResponse {
 }
 
 /** `PUT /api/projects/{id}/members`: the project's direct bindings, replacing the current ones. */
+/** A member to set: a user may carry the whole username a project admin found them by. */
+export interface ProjectMemberSubject extends AccessSubject {
+  username?: string;
+}
+
 export interface ProjectMembersUpdate {
-  entries: { subject: AccessSubject; role: ProjectRole }[];
+  entries: { subject: ProjectMemberSubject; role: ProjectRole }[];
 }
 
 /** `PUT /api/projects/{id}/members`: the members after the change. */

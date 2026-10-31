@@ -253,6 +253,7 @@ describe('project members', () => {
     ]);
 
     // A Maintainer of the project holds no role they could grant.
+    await bind({ userId: 3, projectId: 10, role: 'maintainer' });
     const maintainer = member({ projectId: 10, role: ProjectRole.MAINTAINER });
     const refused = await refusal(
       replaceProjectMembers(db, 10, [{ subject: { type: 'user', id: 3 }, role: ProjectRole.VIEWER }], {

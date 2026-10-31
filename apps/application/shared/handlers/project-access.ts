@@ -18,6 +18,7 @@ import {
   PROJECT_ROLES,
   ProjectRole,
   projectRolesOf,
+  projectScopeFor,
   type AccessSummary,
 } from '#shared/permissions';
 import {
@@ -96,8 +97,11 @@ export const projectAccessUpdateSchema = z.object({
   role: projectRoleSchema.nullable(),
 });
 
+/** A member to set: a user may carry the whole username they were found by. */
+const memberSubjectSchema = subjectSchema.extend({ username: z.string().max(200).optional() });
+
 export const projectMembersUpdateSchema = z.object({
-  entries: z.array(z.object({ subject: subjectSchema, role: projectRoleSchema })),
+  entries: z.array(z.object({ subject: memberSubjectSchema, role: projectRoleSchema })),
 });
 
 export const userProjectRolesSchema = z.object({
@@ -242,6 +246,18 @@ function opensProjectIn(db: DrizzleDB, scope: ProjectScope): SQL | undefined {
     .innerJoin(roleBindings, eq(roleBindings.groupId, groupMembers.groupId))
     .where(binding);
   return or(eq(users.role, InstanceRole.ADMINISTRATOR), inArray(users.id, direct), inArray(users.id, throughGroups));
+}
+
+/** Of `userIds`, the users `access` may name without their username: everyone for an administrator. */
+async function listableUserIds(db: DrizzleDB, userIds: number[], access: AccessSummary): Promise<Set<number> | 'all'> {
+  if (isAdministrator(access)) return 'all';
+  const sharing = opensProjectIn(db, projectScopeFor(access, 'project:read'));
+  if (!sharing) return new Set();
+  const rows = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(inArray(users.id, userIds), sharing));
+  return new Set(rows.map((row) => row.id));
 }
 
 /**
@@ -566,8 +582,9 @@ export async function getProjectMembersResponse(
  * `entries`; a subject listed twice keeps its last role. An administrator may
  * set any; anyone else only grants, changes and removes the roles
  * `canGrantRole` lets them grant with the roles they hold on this project
- * (403 otherwise). 404 for an unknown project, 400 for an unknown user or
- * group, or for an administrator, who needs no binding.
+ * (403 otherwise), and names only the users `listUserSummaries` lists them,
+ * or others by their whole username. 404 for an unknown project, 400 for an
+ * unknown user or group, or for an administrator, who needs no binding.
  */
 export async function replaceProjectMembers(
   db: DrizzleDB,
@@ -579,11 +596,25 @@ export async function replaceProjectMembers(
   const bySubject = new Map(entries.map((entry) => [accessSubjectKey(entry.subject), entry]));
   const wanted = [...bySubject.values()];
 
-  const userIds = wanted.filter((e) => e.subject.type === 'user').map((e) => e.subject.id);
-  if (userIds.length > 0) {
-    const found = await db.select({ id: users.id, role: users.role }).from(users).where(inArray(users.id, userIds));
-    const foundIds = new Set(found.map((row) => row.id));
-    const missing = userIds.filter((id) => !foundIds.has(id));
+  const userSubjects = wanted.filter((e) => e.subject.type === 'user').map((e) => e.subject);
+  if (userSubjects.length > 0) {
+    const userIds = userSubjects.map((subject) => subject.id);
+    const found = await db
+      .select({ id: users.id, role: users.role, username: users.username })
+      .from(users)
+      .where(inArray(users.id, userIds));
+    // A project admin names a user they may list, or anyone else with their
+    // whole username: any other id is answered like an unknown one.
+    const listable = await listableUserIds(db, userIds, granter.access);
+    const byId = new Map(found.map((row) => [row.id, row]));
+    const missing = userSubjects
+      .filter((subject) => {
+        const row = byId.get(subject.id);
+        if (!row) return true;
+        if (listable === 'all' || listable.has(row.id)) return false;
+        return asciiLowerCase(subject.username?.trim() ?? '') !== asciiLowerCase(row.username);
+      })
+      .map((subject) => subject.id);
     if (missing.length > 0) throw new AccessError(400, `User(s) not found: ${missing.join(', ')}`);
     if (found.some((row) => row.role === InstanceRole.ADMINISTRATOR)) {
       throw new AccessError(400, ADMINISTRATOR_OPENS_EVERYTHING);
