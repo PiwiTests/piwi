@@ -1043,7 +1043,7 @@ function stepOf(
       return safe ? [safe.text] : [];
     }),
   );
-  const written = step.target ? stepLocator(step.target, { locators: 'stable', preferLocators }) : null;
+  const written = step.target ? stepLocator(step.target, { locators: 'stable', preferLocators }, step) : null;
   const chosen = written === null ? -1 : locators.indexOf(written);
   const span = result.matchedSpans.find((s) => index >= s.startStep && index <= s.endStep);
   return {

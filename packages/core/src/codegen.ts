@@ -203,18 +203,55 @@ interface ChosenLocator {
   level: LocatorStabilityLevel;
 }
 
+/** The step of a check, as the locator choice reads it. */
+type CheckOf = Pick<RecordedStep, 'action' | 'assertion'>;
+
+/** The checks that read an element's text, whose locator should not find it by that text. */
+const TEXT_CHECKS: ReadonlySet<string> = new Set(['toHaveText', 'toContainText']);
+
+/** The text a step checks its element holds (`toHaveText`, `toContainText`, negated too); null for any other step. */
+function checkedText(step: CheckOf | null | undefined): string | null {
+  const assertion = step?.action === 'assert' ? step.assertion : null;
+  if (!assertion || !TEXT_CHECKS.has(assertion.matcher)) return null;
+  const text = assertion.expected?.replace(/\s+/g, ' ').trim();
+  return text ? text : null;
+}
+
+/**
+ * Whether `chain` finds its element by a text that holds `text`: a `getByText` argument, a role's `name` or a
+ * `hasText` option. Such a locator finds the element only when the check would pass.
+ */
+function findsByText(chain: LocatorChain, text: string): boolean {
+  const holds = (arg: LocatorArg | undefined): boolean =>
+    arg?.type === 'string' && arg.value.replace(/\s+/g, ' ').trim().includes(text);
+  const option = (arg: LocatorArg | undefined, key: string): LocatorArg | undefined =>
+    arg?.type === 'object' ? arg.entries.find(([name]) => name === key)?.[1] : undefined;
+  return chain.calls.some(
+    (call) =>
+      (call.method === 'getByText' && holds(call.args[0])) ||
+      (call.method === 'getByRole' && holds(option(call.args[1], 'name'))) ||
+      call.args.some((arg) => holds(option(arg, 'hasText'))),
+  );
+}
+
 /**
  * The locator a step's target is written with. Alternatives come ranked best
  * first; a chain the suite already uses wins when it is not brittle, then, with
- * `locators: 'stable'`, the first chain rated stable, then the first chain.
+ * `locators: 'stable'`, the first chain rated stable, then the first chain. For a
+ * check of the element's text (`check`), the chains that find it by that text
+ * are left out while one that does not, and is not brittle, remains.
  */
-function chooseLocator(target: RecordedTarget | null, options: CodegenOptions): ChosenLocator | null {
+function chooseLocator(
+  target: RecordedTarget | null,
+  options: CodegenOptions,
+  check?: CheckOf | null,
+): ChosenLocator | null {
   if (!target) return null;
-  const candidates = target.alternatives.flatMap((alt) => {
+  const recorded = target.alternatives.flatMap((alt) => {
     const safe = safeLocator(alt.locator);
     return safe ? [safe] : [];
   });
-  if (candidates.length === 0) return null;
+  if (recorded.length === 0) return null;
   const levels = new Map<string, LocatorStabilityLevel>();
   const levelOf = (c: { chain: LocatorChain; text: string }): LocatorStabilityLevel => {
     let level = levels.get(c.text);
@@ -224,6 +261,9 @@ function chooseLocator(target: RecordedTarget | null, options: CodegenOptions): 
     }
     return level;
   };
+  const text = checkedText(check);
+  const apart = text ? recorded.filter((c) => !findsByText(c.chain, text)) : recorded;
+  const candidates = apart.some((c) => levelOf(c) !== 'brittle') ? apart : recorded;
   const prefer = options.preferLocators;
   if (prefer && prefer.size > 0) {
     const known = candidates.find((c) => prefer.has(c.text) && levelOf(c) !== 'brittle');
@@ -239,14 +279,16 @@ function chooseLocator(target: RecordedTarget | null, options: CodegenOptions): 
 
 /**
  * The locator a spec writes for a step's target, as `renderSpec` chooses it
- * with the same options; null when no alternative can be written. A replay
- * uses it to act on the element the spec would.
+ * with the same options and, for a check, the step (`check`); null when no
+ * alternative can be written. A replay uses it to act on the element the spec
+ * would.
  */
 export function stepLocator(
   target: RecordedTarget | null,
   options: Pick<CodegenOptions, 'locators' | 'preferLocators'> = {},
+  check?: CheckOf | null,
 ): string | null {
-  return chooseLocator(target, options)?.text ?? null;
+  return chooseLocator(target, options, check)?.text ?? null;
 }
 
 function originOf(url: string): string | null {
@@ -377,7 +419,7 @@ function urlForCode(url: string, ctx: RenderContext): string {
 }
 
 function locatorForStep(step: RecordedStep, index: number, ctx: RenderContext): string {
-  const chosen = chooseLocator(step.target, ctx.options);
+  const chosen = chooseLocator(step.target, ctx.options, step);
   if (!chosen) {
     ctx.warnings.push({ step: index, code: 'no-locator', message: 'No locator was captured for this element.' });
     return `${ctx.page}.locator(${quote('/* no locator captured */')})`;

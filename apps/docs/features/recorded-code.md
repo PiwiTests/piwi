@@ -15,7 +15,8 @@ repository.
 
 - **Locators** come from the same converter as Piwi Picker's recordings and [`piwi codegen`](/reference/cli#codegen):
   each is verified to find the element alone on the page, the stable ones first and those your tests already use
-  preferred. A `getByTestId` uses the attribute your config sets.
+  preferred. A check of the element's text takes a locator that does not find it by that text, when one is not
+  brittle. A `getByTestId` uses the attribute your config sets.
 - **Pages**: an address on the project's `baseURL` is written as a path, and the step that leads to another page is
   followed by a wait for it, except next to a call to your own code, which waits for its pages itself.
 - **Imports**: a call to your own code, and `expect` when a step checks something, are imported at the top of the file
