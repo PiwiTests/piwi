@@ -157,7 +157,7 @@ import {
 } from './recorder/sessions.js';
 import { expectModuleOf, importInsertion } from './recorder/imports.js';
 import { RecordChannel, type Handoff } from './recorder/handoff.js';
-import { RunLines, type DiskFile } from './run-lines.js';
+import { RunLines, type DiskFile, type LineNow } from './run-lines.js';
 import { RunSessions } from './run-sessions.js';
 import { ClientPageView } from './client-page-view.js';
 import { RunHub } from './run-hub.js';
@@ -1789,7 +1789,14 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       recordChannel?.refuse(handoff.id, `no Playwright config of this editor's workspace holds ${handoff.file}.`);
       return;
     }
+    // The steps go above the paused call where it stands now, which an earlier recording at this stop moved down.
+    const now = stopLineNow(file, handoff.line - 1);
+    if ('refusal' in now) {
+      recordChannel?.refuse(handoff.id, now.refusal);
+      return;
+    }
     handoff.file = file;
+    handoff.line = now.line + 1;
     void connection.sendNotification(RECORD_REQUESTED_NOTIFICATION, {
       handoff: handoff.id,
       uri: pathToFileURL(handoff.file).href,
@@ -3375,16 +3382,37 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         : null;
     if (!file) return { uri: null, edit: null };
     const uri = openDocument(file)?.uri ?? pathToFileURL(file).href;
-    const lineText = readText(file)?.split(/\r?\n/)[params.line];
+    const now = stopLineNow(file, params.line);
+    const line = 'line' in now ? now.line : null;
+    const lineText = line === null ? undefined : readText(file)?.split(/\r?\n/)[line];
     const edit = lineText === undefined || !params.locator ? null : pickEditOnLine(lineText, params.locator);
     return {
       uri,
       edit: edit && {
-        range: { start: { line: params.line, character: edit.start }, end: { line: params.line, character: edit.end } },
+        range: { start: { line: line!, character: edit.start }, end: { line: line!, character: edit.end } },
         newText: edit.newText,
       },
     };
   });
+
+  /**
+   * Where the run's 0-based `line` of `file`, which a pick or a recording at a stop names, stands now: mapped through
+   * the edits made since the run of a worker stopped there started (`RunLines`), as the code from a stop is, so it
+   * lands on the paused call after a recording wrote above it; why not when that line was removed or cannot be
+   * followed. The line as it is when no worker is stopped there.
+   */
+  const stopLineNow = (file: string, line: number): LineNow => {
+    const key = lineKey(file);
+    const stopped = runSessions.current().find((session) =>
+      session.workers.some((w) => {
+        const at = w.stop ? uriToPath(w.stop.uri) : null;
+        return !!at && lineKey(at) === key && w.stop!.line === line;
+      }),
+    );
+    if (!stopped) return { line };
+    const open = !!openDocument(file);
+    return runLines.lineNow(stopped.ref, key, line, open, open ? null : diskFile(file));
+  };
 
   connection.onRequest(FAILURES_REQUEST, (params: FailuresParams | null): FailuresResult => {
     failuresGrouping = parseFailuresGrouping(params?.grouping) ?? failuresGrouping;
