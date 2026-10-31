@@ -230,6 +230,24 @@ export function readBool(val: string | undefined): boolean | undefined {
   return ['true', '1', 'yes', 'on'].includes(val.trim().toLowerCase());
 }
 
+/**
+ * Write each boolean `PIWI_*` variable set in `env` as `true` or `false`, as `readBool` reads it, so the workers, which
+ * read a few of them from the environment as they are (`PIWI_CAPTURE_PAGE_INVENTORY === 'true'`), read the value the
+ * reporter does: `1`, `yes` and `on` too.
+ */
+export function normalizeBoolEnv(env: NodeJS.ProcessEnv = process.env): void {
+  const keys = [
+    ...ENV_FALLBACK_SPECS.filter((spec) => spec.kind === 'bool').map((spec) => spec.env),
+    PIWI_ENV_KEYS.verbose,
+    PIWI_ENV_KEYS.aiScreenshotFallback,
+    'PIWI_AI_UPDATE',
+  ];
+  for (const key of keys) {
+    const value = env[key];
+    if (value !== undefined) env[key] = readBool(value) ? 'true' : 'false';
+  }
+}
+
 /** How an env var's string value coerces into its option value. */
 type EnvKind = 'string' | 'number' | 'bool';
 

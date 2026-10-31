@@ -470,8 +470,8 @@ let clearsAtStop = false;
 
 /**
  * Clear the switch as the worker stops, before Playwright compares the worker's environment (its `__stop__` message)
- * with the one it started with: Playwright hands what changed to the projects that depend on this worker's, where a
- * `page.pause()` left to Playwright would then stop with no Inspector to end it.
+ * with the one it started with: what changed there reaches the projects that depend on this worker's, and the switch
+ * is this worker's alone.
  */
 function clearSwitchAtStop(): void {
   if (clearsAtStop) return;

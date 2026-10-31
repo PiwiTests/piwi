@@ -66,6 +66,7 @@ test.describe('showPauseBar', () => {
     await page.setContent(
       '<!doctype html><html><body><input aria-label="Coupon">' +
         '<input role="combobox" aria-label="Country" aria-expanded="true">' +
+        '<button aria-expanded="true" aria-controls="faq">Details</button><div id="faq">Answer</div>' +
         '<div role="dialog" aria-label="Cart"><button>Close</button></div>' +
         '<dialog id="modal"><button>OK</button></dialog></body></html>',
     );
@@ -74,11 +75,18 @@ test.describe('showPauseBar', () => {
     await page.getByRole('dialog', { name: 'Cart' }).getByRole('button', { name: 'Close' }).press('Escape');
     expect(await page.evaluate(pauseAnswered)).toBe(false);
     // A modal dialog the page shows takes Escape, wherever the focus is: it closes, and the test stays paused.
-    await page.evaluate(() => (document.getElementById('modal') as HTMLDialogElement).showModal());
+    await page.evaluate(() => {
+      (document.getElementById('modal') as HTMLDialogElement).showModal();
+      (document.activeElement as HTMLElement | null)?.blur();
+    });
     await page.keyboard.press('Escape');
     await expect(page.locator('#modal')).not.toHaveAttribute('open');
     expect(await page.evaluate(pauseAnswered)).toBe(false);
-    // In a field the test left the focus in, Escape resumes.
+    // On an open disclosure, which has no popup to close, Escape resumes.
+    await page.getByRole('button', { name: 'Details' }).press('Escape');
+    expect(await page.evaluate(takePauseState)).toBe('resume');
+    // So it does in a field the test left the focus in.
+    await page.evaluate(showPauseBar, ARG);
     await page.getByLabel('Coupon').press('Escape');
     expect(await page.evaluate(takePauseState)).toBe('resume');
   });

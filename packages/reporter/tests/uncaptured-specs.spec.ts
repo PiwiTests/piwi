@@ -62,6 +62,22 @@ describe('a spec that runs without the capture fixtures in a run that can stop',
     ]);
   });
 
+  it('names the other specs in one line as the run ends, and reads no call of a hook that ran before the fixtures', async () => {
+    process.env.PIWI_PAUSE_AT = 'tests/plain.spec.ts:4';
+    const lines = await warnings((file) =>
+      file.endsWith('captured.spec.ts') ? calls : [step('hook', 'Before Hooks', [step('fixture', 'Fixture "page"')]), ...calls],
+    );
+    expect(lines).toEqual([
+      "[Piwi Dashboard] tests/plain.spec.ts ran without Piwi's capture fixtures, so its tests never stop at a " +
+        "breakpoint or at Pause: import `test` from your fixtures file (the one that extends piwiFixtures) instead of '@playwright/test'.",
+      "[Piwi Dashboard] 1 more spec file ran without Piwi's capture fixtures, so their tests never stop at a breakpoint " +
+        'or at Pause either: tests/captured.spec.ts.',
+    ]);
+    // A beforeAll that called the page and failed: its test's own fixtures never ran.
+    const failedHook = [step('hook', 'Before Hooks', [step('hook', 'beforeAll hook', [step('pw:api', 'GET "/health"')])])];
+    expect(await warnings(() => failedHook)).toEqual([]);
+  });
+
   it('says nothing in a run that cannot stop, or of a test that made no Playwright call', async () => {
     delete process.env.PIWI_PAUSE_AT;
     delete process.env.PIWI_RUN_CHANNEL;

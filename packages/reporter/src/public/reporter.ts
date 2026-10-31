@@ -6,6 +6,7 @@ import {
   resolveOptions,
   usedDesktopDiscovery,
   desktopReplacedServer,
+  normalizeBoolEnv,
   usedDotEnv,
   PIWI_DEFAULTED_CAPTURE_ENV,
   PIWI_ENV_KEYS,
@@ -118,18 +119,25 @@ function testFile(test: TestCase, base: string): string {
 }
 
 /**
- * Whether an attempt made Playwright calls with no capture fixtures set up: its steps hold a `pw:api` call and no step
- * of the `piwiCapture` fixture, which every test that imports `test` from a file extending `piwiFixtures` sets up.
+ * Whether an attempt made Playwright calls with no capture fixtures set up: its steps hold a `pw:api` call outside its
+ * hooks and no step of the `piwiCapture` fixture, which every test that imports `test` from a file extending
+ * `piwiFixtures` sets up. A `beforeAll` runs before the test's own fixtures: its calls say nothing of them.
  */
 function uncapturedCalls(steps: readonly TestStep[]): boolean {
   let calls = false;
-  const captured = (list: readonly TestStep[]): boolean =>
+  const captured = (list: readonly TestStep[], inHook: boolean): boolean =>
     list.some((step) => {
-      if (step.category === 'pw:api') calls = true;
-      return (step.category === 'fixture' && /\bpiwiCapture\b/.test(step.title)) || captured(step.steps);
+      if (step.category === 'pw:api' && !inHook) calls = true;
+      return (
+        (step.category === 'fixture' && /\bpiwiCapture\b/.test(step.title)) ||
+        captured(step.steps, inHook || step.category === 'hook')
+      );
     });
-  return !captured(steps) && calls;
+  return !captured(steps, false) && calls;
 }
+
+/** How many of the other spec files that ran without the capture fixtures the run's last line names. */
+const MAX_UNCAPTURED_NAMED = 5;
 
 /**
  * Piwi Dashboard Playwright reporter.
@@ -290,6 +298,8 @@ export class PiwiDashboardReporter {
       this.logger.debug('List mode (--list) detected — no run registered or report uploaded.');
       return;
     }
+    // The workers, which start after this hook, read the boolean variables as the reporter does.
+    normalizeBoolEnv(process.env);
     // A run started in a terminal follows the editor whose workspace holds it: its workers, which start after this
     // hook, inherit the editor's run channel.
     const followed = followEditor([configDirFromConfig(config), process.cwd()], {
@@ -595,9 +605,10 @@ export class PiwiDashboardReporter {
   }
 
   /**
-   * In a run that can stop (breakpoints, or a run channel to an editor or the desktop app), say once per spec file that
-   * a test made Playwright calls without the capture fixtures, where the stops happen: it never stops at a breakpoint
-   * nor at Pause, and nothing else says why.
+   * In a run that can stop (breakpoints, or a run channel to an editor or the desktop app), say of the first spec file
+   * whose test made Playwright calls without the capture fixtures, where the stops happen, that it never stops at a
+   * breakpoint nor at Pause, which nothing else says; the others are named in one line as the run ends
+   * (`noteOtherUncaptured`).
    */
   private noteUncaptured(test: TestCase, result: TestResult): void {
     if (!process.env.PIWI_PAUSE_AT && !process.env[RUN_CHANNEL_ENV]) return;
@@ -605,9 +616,22 @@ export class PiwiDashboardReporter {
     const file = testFile(test, this.testPathBase);
     if (this.uncapturedSpecs.has(file)) return;
     this.uncapturedSpecs.add(file);
+    if (this.uncapturedSpecs.size > 1) return;
     this.logger.warn(
       `${file} ran without Piwi's capture fixtures, so its tests never stop at a breakpoint or at Pause: ` +
         "import `test` from your fixtures file (the one that extends piwiFixtures) instead of '@playwright/test'.",
+    );
+  }
+
+  /** The spec files past the first that ran without the capture fixtures, in one line (`noteUncaptured`). */
+  private noteOtherUncaptured(): void {
+    const others = [...this.uncapturedSpecs].slice(1);
+    if (!others.length) return;
+    const named = others.slice(0, MAX_UNCAPTURED_NAMED).join(', ');
+    const more = others.length > MAX_UNCAPTURED_NAMED ? `, and ${others.length - MAX_UNCAPTURED_NAMED} more` : '';
+    this.logger.warn(
+      `${others.length} more spec file${others.length === 1 ? '' : 's'} ran without Piwi's capture fixtures, ` +
+        `so their tests never stop at a breakpoint or at Pause either: ${named}${more}.`,
     );
   }
 
@@ -675,6 +699,9 @@ export class PiwiDashboardReporter {
   /** Playwright reporter hook: called when an individual test finishes */
   onTestEnd(test: TestCase, result: TestResult): void {
     this.totalTests++;
+    // A worker runs one test at a time: a step of its still open once the test ended (a worker that crashed) never ends.
+    const worker = workerIndexOf(result);
+    for (const [step, event] of this.openSteps) if (event.workerIndex === worker) this.openSteps.delete(step);
 
     this.reportedTestIds.add(test.id);
     this.noteUncaptured(test, result);
@@ -1008,6 +1035,7 @@ export class PiwiDashboardReporter {
    * ID and `externalId.onDuplicate` is `'fail'`.
    */
   async onEnd(result: FullResult): Promise<{ status?: FullResult['status'] } | void> {
+    this.noteOtherUncaptured();
     const duplicates = this.externalIds?.duplicates.length ?? 0;
     const failsOnDuplicates =
       duplicates > 0 && resolveOnDuplicate(this.options.externalId?.onDuplicate).onDuplicate === 'fail';
