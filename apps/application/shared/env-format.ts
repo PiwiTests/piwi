@@ -33,6 +33,7 @@ import { emitRailwayTemplate } from '#shared/deploy/railway';
 import { emitRenderBlueprint } from '#shared/deploy/render';
 
 export {
+  imageForVersion,
   quoteDotenvValue,
   quotePowershellValue,
   quoteShellValue,

@@ -1,6 +1,7 @@
 /**
  * Generates apps/docs/configuration.md — the configuration reference page — from
- * the typed env-var registry (apps/application/shared/piwi-env-vars.ts).
+ * the typed env-var registry (apps/application/shared/piwi-env-vars.ts), with
+ * the Settings fields each variable overrides (shared/settings-metadata.ts).
  *
  * The page is a build artifact (gitignored): `docs:dev` and `docs:build` run
  * this first, so the reference and the interactive generator can never drift
@@ -18,6 +19,7 @@ const jiti = createJiti(import.meta.url);
 
 const registry = await jiti.import(join(repoRoot, 'application/shared/piwi-env-vars.ts'));
 const { PIWI_ENV_VARS, PIWI_ENV_CATEGORIES } = registry;
+const { SETTINGS_PAGES, fieldEnvVars } = await jiti.import(join(repoRoot, 'application/shared/settings-metadata.ts'));
 const require = createRequire(import.meta.url);
 const appVersion = require(join(repoRoot, 'application/package.json')).version;
 
@@ -55,6 +57,42 @@ const codeifyBareLinks = (text) =>
     })
     .join('`');
 
+/** The Settings pages with a field each variable overrides, keyed by variable. */
+const settingsPagesOf = new Map();
+for (const page of SETTINGS_PAGES) {
+  for (const field of page.fields) {
+    if (field.envOnly) continue;
+    for (const name of fieldEnvVars(field)) {
+      const labels = settingsPagesOf.get(name) ?? [];
+      if (!labels.includes(page.label)) labels.push(page.label);
+      settingsPagesOf.set(name, labels);
+    }
+  }
+}
+
+/** A `relevantWhen` / `requiredWhen` condition in words: `'*'` is any value, `''` unset. */
+const conditionText = (condition) =>
+  Object.entries(condition)
+    .map(([name, value]) =>
+      value === '*' ? `\`${name}\` is set` : value === '' ? `\`${name}\` is unset` : `\`${name}\` is \`${value}\``,
+    )
+    .join(' and ');
+
+/** The registry's metadata a reader needs besides the description: values, range, conditions, secrecy. */
+function metaNotes(meta, name) {
+  const notes = [];
+  if (meta.enum?.length) notes.push(`Values: ${meta.enum.map((value) => `\`${value}\``).join(', ')}.`);
+  if (meta.min !== undefined && meta.max !== undefined) notes.push(`Range: ${meta.min} to ${meta.max}.`);
+  else if (meta.min !== undefined) notes.push(`Minimum: ${meta.min}.`);
+  else if (meta.max !== undefined) notes.push(`Maximum: ${meta.max}.`);
+  if (meta.requiredWhen) notes.push(`Required when ${conditionText(meta.requiredWhen)}.`);
+  if (meta.relevantWhen) notes.push(`Used only when ${conditionText(meta.relevantWhen)}.`);
+  if (meta.secret) notes.push('Secret: never logged nor returned by the API.');
+  const pages = settingsPagesOf.get(name);
+  if (pages) notes.push(`Overrides the field of ${pages.map((label) => `**Settings → ${label}**`).join(', ')}.`);
+  return notes;
+}
+
 const cell = (text) => codeifyBareLinks(text).replace(/\|/g, '\\|').replace(/\n/g, ' ');
 const anchorId = (name) => name.toLowerCase().replace(/_/g, '-');
 
@@ -64,6 +102,7 @@ function varRow(name) {
   const def = meta.default !== undefined ? `\`${meta.default}\`` : '—';
   const parts = [meta.description];
   if (meta.notes) parts.push(meta.notes);
+  parts.push(...metaNotes(meta, name));
   if (meta.since) parts.push(`*Added in ${meta.since}.*`);
   if (meta.until) parts.push(`*Removed in ${meta.until}.*`);
   if (meta.docs) parts.push(`See [details](/${meta.docs}).`);

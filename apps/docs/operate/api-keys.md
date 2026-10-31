@@ -55,16 +55,19 @@ Click the trash icon next to the key, in the same place you created it. The key 
 
 ## Using the API key in the reporter
 
+The reporter reads the key from `PIWI_API_KEY`, in the environment or in the `.env` beside the Playwright config (the
+one `init` writes), so the config needs no change: store the key as a CI secret under that name. To read it from
+another variable, pass it in the [`wrapConfig`](/guide/reporter#installing-via-wrapconfig) options:
+
 ```typescript
 // playwright.config.ts
-export default defineConfig({
-  reporter: [
-    ['@piwitests/reporter', {
-      serverUrl: 'https://your-dashboard.example.com',
-      projectName: 'my-project',
-      apiKey: process.env.PIWI_API_KEY,
-    }],
-  ],
+import { defineConfig } from '@playwright/test'
+import { wrapConfig } from '@piwitests/reporter'
+
+export default wrapConfig(defineConfig({ testDir: './tests' }), {
+  serverUrl: 'https://your-dashboard.example.com',
+  projectName: 'my-project',
+  apiKey: process.env.MY_DASHBOARD_KEY,
 })
 ```
 
@@ -74,16 +77,10 @@ export default defineConfig({
 
 ```bash [Linux / macOS]
 # Authorization: Bearer header (recommended)
-curl -X POST https://your-dashboard.example.com/api/test-runs/submit \
-  -H "Authorization: Bearer pd_<your-key>" \
-  -H "Content-Type: application/json" \
-  -d '{ ... }'
+curl -X POST https://your-dashboard.example.com/api/test-runs/submit -H "Authorization: Bearer pd_<your-key>" -H "Content-Type: application/json" -d '{ ... }'
 
 # X-API-Key header (alternative)
-curl -X POST https://your-dashboard.example.com/api/test-runs/submit \
-  -H "X-API-Key: pd_<your-key>" \
-  -H "Content-Type: application/json" \
-  -d '{ ... }'
+curl -X POST https://your-dashboard.example.com/api/test-runs/submit -H "X-API-Key: pd_<your-key>" -H "Content-Type: application/json" -d '{ ... }'
 ```
 
 ```powershell [Windows (PowerShell)]
@@ -103,25 +100,10 @@ Invoke-RestMethod -Method Post -Uri https://your-dashboard.example.com/api/test-
 ## Using the reporter with a username and password
 
 As an alternative to API keys, give the reporter the credentials of a dedicated Member with the **Uploader** role,
-created in **Settings → Users**:
-
-```typescript
-// playwright.config.ts
-export default defineConfig({
-  reporter: [
-    ['@piwitests/reporter', {
-      serverUrl: 'https://your-dashboard.example.com',
-      projectName: 'my-project',
-      username: process.env.PIWI_USERNAME,
-      password: process.env.PIWI_PASSWORD,
-    }],
-  ],
-})
-```
-
-Add `PIWI_USERNAME` and `PIWI_PASSWORD` as secrets in your CI provider. The reporter signs in before each upload and
-uses the resulting session for the requests that follow. API keys are still preferred for CI: they need no sign-in
-round-trip, and each one can be revoked on its own.
+created in **Settings → Users**: set `PIWI_USERNAME` and `PIWI_PASSWORD` as secrets in your CI provider (or the
+`username` and `password` options). The reporter signs in before each upload and uses the resulting session for the
+requests that follow. API keys are still preferred for CI: they need no sign-in round-trip, and each one can be revoked
+on its own.
 
 ## Related
 

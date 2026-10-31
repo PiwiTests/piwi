@@ -63,6 +63,19 @@ describe('buildHealPrBody', () => {
     expect(body).not.toContain('failure-clusters');
   });
 
+  test('names each source in plain words, never its raw value', () => {
+    const sources = {
+      fingerprint: 'prior run (line shifted)',
+      'cross-test': 'another test',
+      'diff-rename': 'rename in the change',
+    };
+    for (const [source, label] of Object.entries(sources)) {
+      const body = buildHealPrBody(payload([edit({ source })]), null);
+      expect(body).toContain(label);
+      expect(body).not.toContain(`| ${source} |`);
+    }
+  });
+
   test('collapses a long edit list', () => {
     const edits = Array.from({ length: 25 }, (_, i) => edit({ line: i + 1, executionId: i + 1 }));
     const body = buildHealPrBody(payload(edits), null);

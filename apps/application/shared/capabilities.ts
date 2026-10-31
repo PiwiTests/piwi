@@ -264,7 +264,7 @@ export const CAPABILITIES: CapabilityDef[] = [
     detection: 'flake-lab',
     passiveData: true,
     since: '0.41.0',
-    doc: 'features/flaky-tests',
+    doc: 'features/flake-lab',
   },
   {
     id: 'resources',

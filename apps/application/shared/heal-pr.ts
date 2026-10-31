@@ -21,6 +21,8 @@ function sourceLabel(edit: HealEditPayload): string {
       return 'prior run (line shifted)';
     case 'cross-test':
       return 'another test';
+    case 'diff-rename':
+      return 'rename in the change';
     default:
       return edit.source;
   }

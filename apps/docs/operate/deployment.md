@@ -82,7 +82,7 @@ The server reads three process-level variables directly:
 | `HOST` | `0.0.0.0` | Listen on all interfaces. The Docker image sets `NITRO_HOST=0.0.0.0`, which takes precedence — override the bind address there with `NITRO_HOST`. `npx @piwitests/server` defaults to `127.0.0.1` |
 | `PORT` | `3000` | Application port |
 
-Everything else is a `PIWI_*` variable, listed with its default and whether the Settings UI can override it in the generated [configuration reference](/reference/configuration). The [configuration generator](/reference/configuration/generator) turns your choices into a ready-to-paste block from the same registry.
+Everything else is a `PIWI_*` variable, listed with its default and the Settings page field it overrides in the generated [configuration reference](/reference/configuration). The [configuration generator](/reference/configuration/generator) turns your choices into a ready-to-paste block from the same registry.
 
 ## One-click deploy
 
@@ -151,7 +151,8 @@ docker compose up -d
 
 ## Kubernetes
 
-Example deployment manifest:
+Example deployment manifest. It reads its variables from the `piwi-config` ConfigMap and the `piwi-secrets` Secret
+that the [configuration generator](/reference/configuration/generator)'s Kubernetes output creates: apply that first.
 
 ```yaml
 apiVersion: apps/v1
@@ -170,11 +171,18 @@ spec:
       labels:
         app: piwi-dashboard
     spec:
+      securityContext:
+        fsGroup: 1001   # the image's non-root user, so it can write the volume
       containers:
       - name: piwi-dashboard
-        image: phenx/piwitests-server:latest
+        image: phenx/piwitests-server:0.63.0   # an exact release: see Available tags
         ports:
         - containerPort: 3000
+        envFrom:
+        - configMapRef:
+            name: piwi-config
+        - secretRef:
+            name: piwi-secrets
         readinessProbe:
           httpGet:
             path: /api/health
@@ -216,8 +224,11 @@ spec:
   ports:
   - port: 80
     targetPort: 3000
-  type: LoadBalancer
+  type: ClusterIP
 ```
+
+The Service stays inside the cluster: publish it through your Ingress with TLS, as in
+[Reverse proxy (HTTPS)](#reverse-proxy-https), rather than as a plain-HTTP `LoadBalancer`.
 
 ## npm / npx (quick local run)
 
@@ -248,8 +259,9 @@ $env:PORT='8080'; npx @piwitests/server
 :::
 
 It listens on `127.0.0.1` only, so other machines cannot reach it: with authentication off, the default, anyone who
-reaches the port is an administrator. To serve other machines, turn [authentication](./authentication) on and set
-`HOST=0.0.0.0`.
+reaches the port is an administrator. To serve other machines, turn [authentication](./authentication) on, set
+`HOST=0.0.0.0` and put [HTTPS](#reverse-proxy-https) in front: the session cookie is `Secure`, so sign-in over plain
+`http://` works only on `localhost`.
 
 Docker remains the recommended path for production: it ships a pinned Node runtime, runs as a non-root user and
 isolates the environment.

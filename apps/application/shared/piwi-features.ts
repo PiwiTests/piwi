@@ -234,7 +234,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'Questions about your runs, failures and setup answered by your AI model from the read tools agents use, with your access; a change it proposes runs only when you click Apply.',
         needs: ['llm'],
-        where: 'API reference → Assistant',
+        where: 'Sidebar → Ask Piwi; Ctrl+I; command palette',
         doc: 'features/assistant',
       },
       {

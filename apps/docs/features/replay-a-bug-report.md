@@ -34,9 +34,9 @@ one finds nothing for two seconds, finds several elements, or finds one the othe
 most of them agree on is used, and the step says which locator found it: a label that changed or an id made up on each load does not stop
 the replay. The element is then waited for as Playwright waits: visible, enabled and still, for as long as Playwright
 waits or, when you waited longer for it while recording (a reply that takes the server fifteen seconds), that long and
-a few seconds more, up to a minute. The replay ends with one of three answers:
+a few seconds more, up to a minute. The replay ends with one of four answers:
 
-- **Reproduced**: an expected result does not hold, such as a total that still reads "Total: 50", and the panel says
+- **Reproduced**: an expected result does not hold, such as a total that still reads "Total: 40.00", and the panel says
   whether that is the value reported.
 - **Not reproduced**: every expected result holds here.
 - **Could not reach the bug**: a step could not be played (it found no element, several, or a disabled one, or the

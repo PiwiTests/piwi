@@ -1,6 +1,6 @@
 ---
 title: Piwi CLI
-description: "Every command and flag of the piwi CLI that ships with @piwitests/reporter: init, skills, gate, report, select, run, probe, flake, ai, codegen, preflight and bug."
+description: "Every command and flag of the piwi CLI that ships with @piwitests/reporter: init, skills, gate, report, coverage, select, run, probe, flake, ai, codegen, preflight and bug."
 lang: en-US
 ---
 
@@ -24,6 +24,7 @@ npx @piwitests/reporter <command> [options]
 | [`skills`](#skills) | Install the Piwi agent skills into this project |
 | [`gate`](#gate) | Fail a CI job on the dashboard's analysis of a run |
 | [`report`](#report) | Print a [quality report](/features/quality-reports) as Markdown, PDF, HTML, CSV or JSON |
+| [`coverage`](#coverage) | Upload another tool's coverage report of a commit, for [combined coverage](/features/combined-coverage) |
 | [`select`](#select-run) | Print the Playwright args for a saved test selection |
 | [`run`](#select-run) | Run a saved test selection with `playwright test` |
 | [`probe`](#probe) | Run the dashboard's probe plan and record what the suite noticed |
@@ -55,7 +56,7 @@ npx @piwitests/reporter init --server-url http://localhost:3000 --project my-pro
 | `--desktop-app <mode>` | Write [`desktopApp`](/guide/reporter#local-runs-to-the-desktop-app-ci-to-a-team-server) into the config: `prefer` sends local runs to the desktop app while it runs, and CI runs to `--server-url`; `fallback` or `off` |
 | `--api-key <key>` | API key to write into `.env` (env `PIWI_API_KEY`), where the reporter reads it. Omit to leave a `.env.example` placeholder you fill in yourself |
 | `--cwd <path>` | Project root to operate on (default: current directory) |
-| `--skills <list>` | Comma-separated skills to install, or `all` / `none` (default: the four workflow skills) |
+| `--skills <list>` | Comma-separated skills to install, or `all` / `none` (default: the six workflow skills) |
 | `--skills-dir <path>` | Directory to install skills into (default: `.claude/skills`) |
 | `--skills-only` | Only install skills; do not touch the config or env |
 | `--no-skills` | Configure the project but install no skills |

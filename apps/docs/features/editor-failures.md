@@ -107,8 +107,9 @@ By default, failures are read against the checked-out branch's latest complete r
 Compare with…** (**Tools → Piwi → Compare With…** in a JetBrains IDE, and the failures view's title bar) chooses another
 run to compare with: a branch's latest complete run, a run by its id, or **My local runs only**, your runs from this
 machine, the desktop app or an editor, without CI. Your runs since are laid over each. The status bar tooltip and the
-failures view name it (`Baseline: CI run #120 on feature/x`), ending with `(no run)` when it found none. The choice is
-kept on this machine, per Playwright config.
+failures view name it (`Baseline: CI run #120 on feature/x`), ending with `(no run)` when it found none. That run need
+not have passed: it is not the dashboard's [baseline](/guide/concepts#baseline-last-green-run), the last passing run.
+The choice is kept on this machine, per Playwright config.
 
 ## Related
 

@@ -17,7 +17,7 @@ into something you can send.
 
 A report renders a **dashboard**, an arrangement of analytics widgets in bands, over a **scope**: the
 projects, branches, environments, test filter and period of the analytics **Filters** block. Any
-[saved dashboard](./dashboards) can be exported and scheduled; two built-in dashboards exist for
+[saved dashboard](./dashboards) can be exported and scheduled; four built-in dashboards exist for
 reports:
 
 - **Executive**, for stakeholders, in plain words with no locators and no stack traces: a verdict,
@@ -28,7 +28,6 @@ reports:
 - **Engineering**, for the team that owns the suite: the executive report, then the flakiest tests,
   the failure clusters, wasted CI time, regressions, CI time, the [combined coverage](./combined-coverage) trend
   (left out when no project in scope has coverage), the browser matrix and slow endpoints.
-
 - **Team**, the engineering report for the tests one owner holds (`piwi:owner` or CODEOWNERS), offered
   when a test in scope has an owner.
 - **Gaps digest**, the [Test Map](./scenario-gaps)'s weekly digest: the top five new gaps of each

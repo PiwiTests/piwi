@@ -76,8 +76,8 @@ test('bug: coupon not applied to the total', {
   test.fail(); // passes while the bug exists; remove this line with the fix
   await page.goto('/cart');
   await page.getByLabel('Coupon').fill('SPRING10');
-  await page.getByRole('button', { name: 'Apply' }).click();
-  await expect(page.getByTestId('cart-total')).toHaveText('Total: 42'); // recorded: 'Total: 40'
+  await page.getByRole('button', { name: 'Apply coupon' }).click();
+  await expect(page.getByTestId('cart-total')).toHaveText('Total: 36.00'); // recorded: 'Total: 40.00'
 });
 ```
 

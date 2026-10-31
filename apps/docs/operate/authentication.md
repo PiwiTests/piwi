@@ -17,7 +17,7 @@ Every account holds one **instance role**:
 | **Administrator** | Everything, on every project: users, groups, instance settings, AI providers, Jira connections, storage, tags, creating and deleting projects. Never restricted by project roles. |
 | **Member** | Signs in and manages their own profile, API keys, dashboards, notification channels and subscriptions. Everything else comes from their project roles. |
 
-What a Member can do inside a project comes from the **project roles** (Viewer, Contributor, Maintainer, Project admin, Uploader) granted to them or to one of their groups, on that project or on all projects: see [Access, roles and groups](./project-access). The Administrator role is granted to a user, never to a group.
+What a Member can do inside a project comes from the **project roles** granted to them or to their groups: see [Access, roles and groups](./project-access). The Administrator role is granted to a user, never to a group.
 
 ## Enabling authentication
 
@@ -66,7 +66,8 @@ Sign in at `/login`. A session is an encrypted cookie that lasts 7 days. It is m
 
 ## OAuth (Google, GitHub)
 
-Users can sign in with Google or GitHub instead of a username and password.
+Users can sign in with Google or GitHub instead of a username and password. These are the two providers: there is no
+generic OpenID Connect or SAML sign-in.
 
 ### Configuring OAuth
 
@@ -89,17 +90,15 @@ Users can sign in with Google or GitHub instead of a username and password.
    PIWI_OAUTH_GITHUB_CLIENT_SECRET=your-github-client-secret
    ```
 
-   Only configure the providers you actually want to use. OAuth buttons appear automatically on the login page when both a provider's `CLIENT_ID` and `CLIENT_SECRET` are set.
+3. **Restart the server.** The login page shows a **Sign in with …** button, above the password form, for each provider whose `CLIENT_ID` and `CLIENT_SECRET` are both set.
 
-3. **Restart the server.** The login page now shows **Sign in with Google** and/or **Sign in with GitHub** buttons above the password form.
-
-> **Behind a reverse proxy:** set `PIWI_SITE_URL` to your public URL (e.g. `https://piwi.example.com`). The OAuth `redirect_uri` is built from it, so it stays consistent with the value you registered even when the proxy rewrites the request host. Without it the redirect URI is inferred from the incoming request.
+> **Behind a reverse proxy:** set `PIWI_SITE_URL` to your public URL (e.g. `https://piwi.example.com`): the OAuth `redirect_uri` is built from it, else from the request's host, which a proxy may rewrite.
 
 ### Restricting who can sign in (allowlists)
 
 By default any account at a configured provider can sign in (and a new **Member** account with no access is created). To restrict access:
 
-- **`PIWI_OAUTH_ALLOWED_DOMAINS`** — comma-separated email domains (e.g. `example.com,acme.org`). Only **verified** provider emails in these domains may sign in. Applies to all providers — ideal for limiting Google Workspace sign-in to your company domain.
+- **`PIWI_OAUTH_ALLOWED_DOMAINS`** — comma-separated email domains (e.g. `example.com,acme.org`). Only **verified** provider emails in these domains may sign in. Applies to all providers.
 - **`PIWI_OAUTH_GITHUB_ALLOWED_ORGS`** — comma-separated GitHub org logins. The user must be a member of at least one. Enabling this requests the `read:org` scope so membership (including private) can be checked.
 
 Rejected sign-ins are returned to the login page with an explanatory message.
@@ -108,12 +107,12 @@ Rejected sign-ins are returned to the login page with an explanatory message.
 
 A first sign-in with a provider either links an existing account or creates a new one. Email addresses are compared ignoring case, so `Bob@corp.com` and `bob@corp.com` are the same address, and an address belongs to at most one account.
 
-- If a user with the same **verified** email exists (and isn't already linked to a *different* provider), the existing account is linked to the provider. Linking needs proof on both sides: the provider must assert the email is verified, **and** the local account must have verified it too (through the verification link, an accepted invite, or an earlier provider sign-in). This stops an attacker-controlled public email, or an address someone typed into their own profile, from capturing another person's sign-in.
+- If a user with the same **verified** email exists (and isn't already linked to a *different* provider), the existing account is linked to the provider. Linking needs proof on both sides: the provider must assert the email is verified, **and** the local account must have verified it too (through the verification link, an accepted invite, or an earlier provider sign-in). This stops an address someone typed into their own profile from capturing another person's sign-in.
 - If the matching account has **not** verified the address, the sign-in is refused with an explanatory message instead of being linked. The account's owner signs in with its password (or accepts their invite first) and connects the provider from **Settings → Account**.
 - If the matching account is **already linked to a different provider**, the sign-in is refused: one provider is linked per account, so sign in with the original method instead.
 - Otherwise, a new user is created as a **Member** with no project role and no password, so it always signs in through its provider and sees nothing until it is [granted a role](./project-access#default-is-no-access). An email the provider has not verified never links an account, so GitHub accounts with no verified primary email always get a new account.
 
-The new account stores the provider's email, unverified unless the provider verified it, or **no email** when another account already uses that address. Its username is its email, else the GitHub login, else `<provider>-<id>`; a taken one gets the first free number appended (`octocat-2`, `octocat-3`, …).
+The new account stores the provider's email, unverified unless the provider verified it, or **no email** when another account already uses that address. Its username is its email, else the GitHub login, else `<provider>-<id>`; a taken one gets a number appended (`octocat-2`).
 
 Each later sign-in updates the account's name, avatar and email from the provider. The email stays as it is when the provider sends none, or one another account already uses.
 
@@ -124,12 +123,13 @@ The dashboard does not keep the provider's tokens: the access token is used once
 Signed-in users can link a provider explicitly from **Settings → Account → Connected accounts**:
 
 - **Connect** starts the OAuth flow in "link" mode and attaches the provider identity to the current account (rather than creating a new one). A provider identity already linked to another account is refused. An account without an email address takes the provider's, unless another account already uses it.
-- **Disconnect** removes the link. It's only allowed when the account also has a password set, so a provider-only user can't lock themselves out — set a password first.
+- **Disconnect** removes the link. It's only allowed when the account also has a password set, so a provider-only user can't lock themselves out.
 
 ## User management
 
 Administrators manage accounts under **Settings → Users** (`/settings/users`). **Add user** creates one with a
-username, password, instance role and optional display name and email. Each row shows the user's instance role and the
+username, an instance role, an optional display name and email, and a password. Without one, the row's **Send invite email**
+button mails the user a link to set their own. Each row shows the user's instance role and the
 [groups](./project-access#groups) they belong to.
 
 An email address belongs to one account, ignoring letter case: creating or editing an account with an address another
@@ -141,11 +141,19 @@ A link Piwi emails, to verify an address, accept an invite or reset a password, 
 holds the address it was sent to. Once the address changes, by its owner, an administrator or a provider sign-in, the
 links already sent are refused: send a new one to the new address.
 
+### Email and account recovery
+
+Invitations, address verification and **Forgot password?** send email, so they need
+[SMTP](/features/notifications#smtp-configuration). Without it, invites and verification links are refused, and
+**Forgot password?** says a link was sent but sends nothing.
+
+No administrator can set another account's password: a locked-out account recovers through **Forgot password?**, which
+needs SMTP and an email address on the account. Give every administrator an email address, or keep two, so one can
+set the other's address to one that receives mail.
+
 ### Changing a role
 
-Each row's **Role** column is an inline selector for the instance role: pick **Administrator** or **Member** to change it immediately (the user's active sessions are revoked so the change takes effect at once). This is the only way to make an account an administrator, including accounts created through [OAuth](#oauth-google-github), which always start as a **Member** with no access. The **last remaining administrator cannot be demoted**, so an instance can never be left without one.
-
-What a Member can do in each project is set by [project roles](./project-access), and the keys that let CI and scripts sign in are [API keys](./api-keys).
+Each row's **Role** column is an inline selector for the instance role: pick **Administrator** or **Member** to change it immediately, revoking the user's sessions. This is the only way to make an account an administrator, including accounts created through [OAuth](#oauth-google-github), which always start as a **Member** with no access. The **last remaining administrator cannot be demoted**, so an instance can never be left without one.
 
 ## Disabling authentication
 

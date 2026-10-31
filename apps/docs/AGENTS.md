@@ -18,7 +18,7 @@ by `docs:dev` and `docs:build`:
 
 | Page | Source | Script |
 |---|---|---|
-| `reference/configuration.md` | the env-var registry, `apps/application/shared/piwi-env-vars.ts` | `scripts/generate-configuration.mjs` |
+| `reference/configuration.md` | the env-var registry, `apps/application/shared/piwi-env-vars.ts`, and the Settings fields each variable overrides, `apps/application/shared/settings-metadata.ts` | `scripts/generate-configuration.mjs` |
 | `reference/features.md` (All features) | the feature catalog, `apps/application/shared/piwi-features.ts`; its "The pieces" and "Choosing a setup" sections from `apps/application/shared/piwi-ecosystem.ts` | `scripts/generate-features.mjs` |
 | `reference/reporter-options.md` | the reporter's options type, `packages/reporter/src/public/options.ts`, and `PIWI_ENV_KEYS` in `packages/reporter/src/internal/config/env.ts` | `scripts/generate-reporter-options.mjs` |
 | `reference/whats-new.md` | `CHANGELOG.md`, read by `apps/application/shared/changelog.ts` (the MCP `get_release_notes` parser) | `scripts/generate-whats-new.mjs` |
