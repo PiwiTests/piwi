@@ -728,14 +728,19 @@ const NO_ELEMENT = '#__piwi_no_element';
 /**
  * Take down what `locator.highlight()` drew in `page`: through the highlight it returned (`shown`, disposable from
  * Playwright 1.60), else `page.hideHighlight` (1.60), else through an image of the page with a mask in each of its
- * frames, whose end takes that frame's highlight down. The caller makes the call internal.
+ * frames, whose end takes that frame's highlight layer down, the test's own screencast overlays with it, as any masked
+ * screenshot does there. The image leaves the page's fields as they are (`caret: 'initial'`). The caller makes the
+ * call internal.
  */
 export async function takeHighlightDown(page: Page, shown: unknown): Promise<void> {
   const dispose = (shown as { dispose?: () => Promise<void> } | null)?.dispose;
   const hide = (page as unknown as { hideHighlight?: () => Promise<void> }).hideHighlight;
   if (typeof dispose === 'function') await dispose.call(shown);
   else if (typeof hide === 'function') await hide.call(page);
-  else await page.screenshot({ mask: page.frames().map((frame) => frame.locator(NO_ELEMENT)), timeout: 5000 });
+  else {
+    const mask = page.frames().map((frame) => frame.locator(NO_ELEMENT));
+    await page.screenshot({ mask, caret: 'initial', timeout: TAKE_DOWN_MS });
+  }
 }
 
 /**
