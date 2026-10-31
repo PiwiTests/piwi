@@ -38,7 +38,9 @@ their fixes. From the medium items, built in part: 8, a test whose title is comp
 stand for, its run narrowed by `--grep` to the run's title when that is plain words (D6), leaving VS Code's Debug in
 my editor from the desktop app (F8); 12, a text check written with a locator that does not find its element by the
 text it checks while one is not brittle (W12), and a verification that reached no instance saying no run failed
-rather than that all passed (R9). The other medium items and the larger ones are proposed. A pull request that builds part of the plan updates
+rather than that all passed (R9); 11, a grant that the instance or a pairing lets go of kept while another of them, a
+recording or a replay holds it, the editor's Unpair included, which Firefox's portless loopback pattern made take the
+desktop app's access (S8). The other medium items and the larger ones are proposed. A pull request that builds part of the plan updates
 this paragraph.
 
 **Summary.** Every step of the loop exists, most of them in several tools, and most of it works as documented: a

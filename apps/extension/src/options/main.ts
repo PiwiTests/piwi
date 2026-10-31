@@ -1090,11 +1090,17 @@ saveBtn.addEventListener('click', () => {
  */
 async function revokeInstanceHostPermission(instanceUrl: string): Promise<void> {
   const pattern = originPattern(instanceUrl);
-  if (!pattern) return;
-  // The desktop app paired at the same address keeps it for Run with Playwright; Unpair gives it back.
-  const desktop = await getDesktopSettings().catch(() => null);
-  if (desktop && hostPattern(desktop.url) === pattern) return;
-  await chrome.permissions.remove({ origins: [pattern] }).catch(() => undefined);
+  if (pattern) await releaseGrant(pattern);
+}
+
+/**
+ * Gives back the grant of `pattern` that the instance or a pairing let go of, unless another of them, a recording or a
+ * replay still holds it: in Firefox, a pattern names no port, so every address on 127.0.0.1 shares one.
+ */
+async function releaseGrant(pattern: string): Promise<void> {
+  const [grant] = siteGrants([pattern], await grantHolders());
+  if (grant && !canRevoke(grant)) return;
+  await chrome.permissions.remove({ origins: [pattern] }).catch(() => false);
 }
 
 disconnectBtn.addEventListener('click', () => {
@@ -1260,7 +1266,7 @@ editorUnpairBtn.addEventListener('click', () => {
   void (async () => {
     const pairing = await getEditorPairing();
     await setEditorPairing(null);
-    if (pairing) await chrome.permissions.remove({ origins: [editorOriginPattern(pairing)] }).catch(() => false);
+    if (pairing) await releaseGrant(editorOriginPattern(pairing));
     await renderEditorPairing();
   })();
 });
@@ -1417,10 +1423,7 @@ desktopForgetBtn.addEventListener('click', () => {
     if (desktop) await markDesktopApiKey(desktop).catch(() => undefined);
     await clearDesktopSettings();
     // The instance kept at the app's address goes on using it; Disconnect gives it back.
-    const pattern = desktop ? hostPattern(desktop.url) : null;
-    if (pattern && pattern !== originPattern(stored.instanceUrl)) {
-      await chrome.permissions.remove({ origins: [pattern] }).catch(() => false);
-    }
+    if (desktop) await releaseGrant(hostPattern(desktop.url));
     desktopTokenEl.value = '';
     setDesktopStatus(t('options_desktopForgotten'), 'ok');
     await renderDesktopState();
