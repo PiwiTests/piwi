@@ -150,6 +150,22 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/evidence',
       },
       {
+        title: 'Live view of a run',
+        summary:
+          'Watch the page each worker of a running CI run, or of a run a developer shares (Share live), is on, beside its step: a few images a second, only while someone watches, to who may open the run, never stored.',
+        needs: ['fixtures'],
+        where: 'Test run → Tests → Watch; Project → Settings → Live view',
+        doc: 'features/live-view',
+      },
+      {
+        title: 'Stuck tests',
+        summary:
+          'A running test that has run far longer than its passing runs took is marked Stuck? on its run page, and a test.stuck notification goes out once per attempt, whoever watches.',
+        needs: [],
+        where: 'Test run → Tests; Notifications → test.stuck',
+        doc: 'features/stuck-tests',
+      },
+      {
         title: 'Failure clusters & the inbox',
         summary:
           'Failures sharing an error fingerprint collapsed into one cluster, triaged once with an owner and known-issue link.',
@@ -474,6 +490,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/desktop',
       },
       {
+        title: 'Desktop app runs',
+        summary:
+          "The tests the desktop app runs, paused, stepped and watched live from its window, with a pick on the stopped page's image and the code a stop makes, to copy.",
+        needs: ['desktop', 'fixtures'],
+        where: 'Desktop app → Local runs',
+        doc: 'features/desktop-runs',
+      },
+      {
         title: 'Browser extension',
         summary: 'Record actions, build and lint locators, and copy context for an agent, straight from the page.',
         needs: ['extension'],
@@ -560,6 +584,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/mock-requests',
       },
       {
+        title: 'Runs window',
+        summary:
+          "A window beside the test's browser that pauses, steps and resumes the tests your editor runs, writes code from a stop through the editor, and shows a headless test's page live, to click, type and pick a locator on.",
+        needs: ['fixtures', 'extension'],
+        where: 'Browser extension → More tools → Runs',
+        doc: 'features/runs-window',
+      },
+      {
         title: 'Test functions catalog',
         summary: 'The reusable helpers and page-object methods your suite calls, catalogued with their parameters.',
         needs: [],
@@ -631,6 +663,24 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/editor-run-control',
       },
       {
+        title: 'End the test',
+        summary:
+          'End a stopped test where it stands, from the editor, the pause bar, Piwi Picker, the desktop app or an agent: the call it stopped before never runs, and Playwright reports the test as skipped.',
+        needs: ['fixtures'],
+        where:
+          "End test on the stopped line's CodeLens, Piwi: End the test here; Tools → Piwi → End the Test in a JetBrains IDE",
+        doc: 'features/end-the-test',
+      },
+      {
+        title: 'Runs started outside Piwi',
+        summary:
+          "A Playwright run you start yourself, in a terminal or with a JetBrains IDE's own Run, in a folder of your editor's workspace, follows that editor window: it stops at its breakpoints and takes its controls, as a run Piwi started does.",
+        needs: ['fixtures'],
+        where:
+          "npx playwright test in a terminal of the workspace, or a JetBrains IDE's gutter Run and Playwright run configurations; PIWI_EDITOR=off runs it alone",
+        doc: 'features/terminal-runs',
+      },
+      {
         title: 'Code from a pause',
         summary:
           "At a test paused or failed in a run Piwi started, an assertion, a region's ARIA snapshot or a mock of a request the page made written above the stopped line, a locator picked or steps recorded there, and the count of the locator at the cursor on the stopped page.",
@@ -638,6 +688,23 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         where:
           "The paused line's CodeLens in VS Code, Piwi: Write code at the stop…; its inlay and Tools → Piwi in a JetBrains IDE",
         doc: 'features/editor-stop-code',
+      },
+      {
+        title: 'Debug in my editor',
+        summary:
+          "From a failure's page, the failing line opened in VS Code or a JetBrains IDE and, once you say yes there, the test run headed with one worker to stop at that line, the locator healing's suggestion outlined on the page.",
+        needs: ['fixtures'],
+        where: "Execution → Source, beside the failing line's frame",
+        doc: 'features/debug-in-editor',
+      },
+      {
+        title: 'Run control for agents',
+        summary:
+          'The test runs your editor or the desktop app starts, served to a coding agent on your machine as MCP tools: it follows a run, stops it, reads the stopped page as its ARIA snapshot, acts on it by ref and has Piwi write the code there, through the editor, or make it to copy in the desktop app.',
+        needs: ['fixtures'],
+        where:
+          'The Piwi runs MCP server, listed in VS Code; Tools → Piwi in a JetBrains IDE; the desktop app’s MCP server',
+        doc: 'features/agent-run-control',
       },
       {
         title: 'Record tests from the editor',

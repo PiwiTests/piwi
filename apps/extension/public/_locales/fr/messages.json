@@ -6352,6 +6352,60 @@
   "runs_statusNoRuns": {
     "message": "Aucune exécution pour l’instant. Lancez un test depuis l’éditeur : il apparaît ici."
   },
+  "runs_desktopApp": {
+    "message": "Application de bureau"
+  },
+  "runs_terminal": {
+    "message": "Terminal"
+  },
+  "runs_runner": {
+    "message": "Lanceur de tests"
+  },
+  "runs_desktopName": {
+    "message": "l’application de bureau"
+  },
+  "runs_followingDesktop": {
+    "message": "Application de bureau suivie"
+  },
+  "runs_followingWithDesktop_one": {
+    "message": "$count$ fenêtre d’éditeur et l’application de bureau suivies",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_followingWithDesktop_other": {
+    "message": "$count$ fenêtres d’éditeur et l’application de bureau suivies",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_statusDesktopSearching": {
+    "message": "Recherche des exécutions de l’application de bureau…"
+  },
+  "runs_statusDesktopNoAccess": {
+    "message": "Piwi Picker ne peut plus joindre l’adresse de l’application de bureau : associez-la à nouveau dans les réglages."
+  },
+  "runs_statusDesktopRefused": {
+    "message": "L’application de bureau a refusé l’association : associez à nouveau Piwi Picker dans les réglages."
+  },
+  "runs_statusDesktopUnreachable": {
+    "message": "L’application de bureau ne répond pas : ouvrez-la pour suivre les exécutions qu’elle lance."
+  },
+  "runs_statusDesktopOutdated": {
+    "message": "Cette application de bureau ne peut pas partager ses exécutions : mettez-la à jour."
+  },
+  "runs_statusDesktopUnproven": {
+    "message": "Le programme à l’adresse de l’application de bureau n’est pas l’application associée : Piwi Picker ne lui a rien envoyé, et redemande dans un instant."
+  },
+  "runs_statusDesktopNoRuns": {
+    "message": "Aucune exécution pour l’instant. Lancez un test depuis l’application de bureau : il apparaît ici."
+  },
   "runs_ended": {
     "message": "L’exécution est terminée."
   },
@@ -6432,6 +6486,12 @@
   },
   "runs_finishTitle": {
     "message": "Continuer le test sans plus s’arrêter aux points d’arrêt"
+  },
+  "runs_end": {
+    "message": "Terminer le test"
+  },
+  "runs_endTitle": {
+    "message": "Terminer le test ici : la suite est ignorée"
   },
   "runs_pick": {
     "message": "Choisir"
@@ -6571,5 +6631,119 @@
   },
   "runs_requestNoSize": {
     "message": "taille inconnue"
+  },
+  "runs_live": {
+    "message": "Voir en direct"
+  },
+  "runs_liveTitle": {
+    "message": "Afficher la page du test telle qu’elle se dessine, à la place de son image : vos clics et vos touches y vont"
+  },
+  "runs_liveBadge": {
+    "message": "En direct"
+  },
+  "runs_liveAlt": {
+    "message": "Vue en direct de la page du test"
+  },
+  "runs_liveAltInput": {
+    "message": "Vue en direct de la page du test : les touches et les clics vont à la page"
+  },
+  "runs_liveStarting": {
+    "message": "Démarrage de la vue en direct…"
+  },
+  "runs_liveLost": {
+    "message": "La vue en direct s’est arrêtée : la connexion à l’éditeur a été perdue. Activez de nouveau Voir en direct une fois la connexion revenue."
+  },
+  "runs_liveHint": {
+    "message": "Vos clics, la molette et vos touches sur la vue vont à la page du test. Échap rend les touches à cette fenêtre ; Maj+clic choisit un locator."
+  },
+  "runs_pickAt": {
+    "message": "Choisir sur l’image"
+  },
+  "runs_pickAtTitle": {
+    "message": "Cliquer sur un élément de l’image pour choisir son locator sans toucher à la page : il remplace celui de cette ligne. Maj+clic le choisit aussi"
+  },
+  "runs_pickAtOn": {
+    "message": "Cliquez sur l’élément de l’image pour choisir son locator. Échap arrête."
+  },
+  "runs_failUnwatched": {
+    "message": "Regardez d’abord la page en direct : les touches et les clics n’y vont qu’alors."
+  },
+  "runs_shareLive": {
+    "message": "Partager en direct"
+  },
+  "runs_shareLiveTitle": {
+    "message": "Permettre à quiconque peut ouvrir cette exécution sur l’instance Piwi de votre équipe de regarder les pages de ses tests depuis la page de l’exécution"
+  },
+  "runs_shareWarning": {
+    "message": "Tant que cette exécution est partagée sur $instance$, quiconque y a sa page ouverte voit chaque arrêt de ses tests : l’appel, son fichier et sa ligne, et le titre du test, même quand personne ne regarde. Tant que quelqu’un regarde un worker, des images de la page de son test y partent aussi, chacune avec son appel et le titre du test. Quiconque peut y ouvrir l’exécution peut la regarder, et sur une instance sans authentification, quiconque peut l’atteindre. Rien n’est conservé, et Arrêter le partage y met fin en quelques secondes.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runs_shareInstance": {
+    "message": "l’instance Piwi à laquelle elle rend compte"
+  },
+  "runs_sharedLive": {
+    "message": "Partagée en direct sur $instance$",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runs_sharedNobody": {
+    "message": "personne ne regarde encore"
+  },
+  "runs_sharedViews_one": {
+    "message": "$count$ vue ouverte",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_sharedViews_other": {
+    "message": "$count$ vues ouvertes",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_stopSharing": {
+    "message": "Arrêter le partage"
+  },
+  "runs_stopSharingTitle": {
+    "message": "Mettre fin aux vues de cette exécution sur l’instance : plus rien n’y est envoyé"
+  },
+  "runs_copyRunPage": {
+    "message": "Copier le lien de la page de l’exécution"
+  },
+  "runs_pageAtStop": {
+    "message": "La page d’un test s’affiche ici quand il s’arrête : à un point d’arrêt, à page.pause(), ou une fois que vous le mettez en pause. Activez alors Voir en direct pour la suivre telle qu’elle se dessine."
+  },
+  "runs_pageAtStopDesktop": {
+    "message": "La page d’un test s’affiche ici quand il s’arrête : à page.pause(), ou une fois que vous le mettez en pause. Activez alors Voir en direct pour la suivre telle qu’elle se dessine."
+  },
+  "runs_shareRefusedLocal": {
+    "message": "Cette exécution ne peut pas être partagée en direct : elle rend compte à l’application de bureau Piwi de cet ordinateur, que vos collègues ne peuvent pas joindre. Indiquez l’instance de votre équipe dans PIWI_DASHBOARD_URL pour y partager une exécution."
+  },
+  "runs_shareRefusedOff": {
+    "message": "Cette exécution ne peut pas être partagée en direct : la vue en direct de son projet est désactivée sur l’instance. Un Project admin l’active dans Project → Settings → Live view."
+  },
+  "runs_shareRefusedUnregistered": {
+    "message": "Cette exécution ne peut pas être partagée en direct : le global setup du reporter ne l’a pas enregistrée auprès de l’instance à son démarrage (wrapConfig l’ajoute)."
+  },
+  "runs_shareRefusedNoInstance": {
+    "message": "Cette exécution ne peut pas être partagée en direct : elle ne rend compte à aucune instance Piwi. Indiquez l’instance de votre équipe dans PIWI_DASHBOARD_URL."
+  },
+  "runs_shareRefusedUnknown": {
+    "message": "Cette exécution ne peut pas être partagée en direct : le reporter Piwi n’a donné à ses workers aucune clé de vue en direct."
   }
 }

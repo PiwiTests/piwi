@@ -8,3 +8,7 @@ tests/integration/ai/.ai-e2e-artifacts/
 tests/.flake-run-*/
 # Transient Playwright project written by tests/flake-cli-run.spec.ts
 tests/.flake-cli-run-*/
+# Transient Playwright projects written by tests/live-view.spec.ts
+tests/.live-view-*/
+# Transient Playwright project written by tests/esm-call-sites-run.spec.ts
+tests/.esm-call-sites-run */

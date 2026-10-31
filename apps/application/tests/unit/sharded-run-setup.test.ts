@@ -1,12 +1,11 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { apiError } from '../../server/utils/api-error';
 import { durationStats } from '#shared/utils/stats';
+import { migrateToLatest } from './temp-db';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the route modules (which import the barrel) load.
@@ -55,7 +54,7 @@ const METADATA = { scm: { branch: 'feature/pay', commit: 'abc123' } };
 
 beforeEach(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   state.db = db;
   const [project] = await db.insert(schema.projects).values({ name: PROJECT }).returning();
   testCaseCache.invalidate(project!.id);
@@ -404,5 +403,21 @@ describe('a batch delivery repeated under its delivery key', () => {
     await submit({ body: delivery('second-delivery-key-0002') });
     await submit({ body: delivery('short') });
     expect(await db.select().from(schema.testRuns)).toHaveLength(3);
+  });
+});
+
+describe("a run's live view key", () => {
+  test('goes to a run of a project with the live view on, asked for, and never from the desktop app, which says why', async () => {
+    await db.update(schema.projects).set({ liveView: true }).where(eq(schema.projects.name, PROJECT));
+    const asked = await setup({ body: { projectName: PROJECT, instanceId: 'dev-1', liveView: true } });
+    expect(asked.liveView?.key).toMatch(/^pdl_/);
+    expect((await setup({ body: { projectName: PROJECT, instanceId: 'dev-2' } })).liveView).toBeUndefined();
+    vi.stubEnv('PIWI_DESKTOP_TOKEN', ['pd', 'desktop'].join('_'));
+    try {
+      const local = await setup({ body: { projectName: PROJECT, instanceId: 'dev-3', liveView: true } });
+      expect(local.liveView).toEqual({ refused: 'local' });
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

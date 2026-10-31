@@ -99,6 +99,9 @@ the offline export are written once in `shared/` and differ only in the port eac
   and responsive rules of [`app/AGENTS.md`](app/AGENTS.md).
 - **Unit test**: `tests/unit/*.test.ts` (Vitest). One that needs a PostgreSQL server is named `*-pg.test.ts`, reads its
   URL from `PIWI_POSTGRES_TEST_URL` and skips without it; CI runs them once, in the E2E job's `s3 + postgres` cell.
+  One that needs a migrated SQLite database gets it from `migrateToLatest` or `openTempDb` (`tests/unit/temp-db.ts`),
+  which replay the schema `tests/unit/global-setup.ts` migrates once per run: Drizzle's `migrate` is for the tests of
+  the migrations themselves.
 - **E2E test**: `tests/*.spec.ts` (Playwright), with any project name registered in `shared/test-project-names.ts`.
 - **A test that needs an AI model** runs against a mock OpenAI-compatible server, as `tests/ai-diagnosis.spec.ts` does,
   so the main suite spends no tokens. Only `tests/live/` talks to a real service: `playwright.config.ts` ignores it, and
@@ -121,7 +124,7 @@ From `apps/application/`:
 | `npm run app:seed:demo` / `app:seed:dev`                       | Regenerate the demo seed / load it into the local dev database                   |
 | `npm run app:generate:demo` + `app:check:demo:runtime`         | Build the demo SPA, then drive it from its real `/demo/` sub-path                |
 | `npm run app:screens -- <scene>` or `-- --route <path>`        | Screenshot a scene or any page (boots and seeds its own server)                  |
-| `npm run app:dev:bg`                                           | Dev server on port 3000 in the background (`node scripts/dev-server.mjs --stop`) |
+| `npm run app:dev:bg`                                           | Dev server on port 7494 in the background (`node scripts/dev-server.mjs --stop`) |
 | `node scripts/db-query.mjs "<sql>" [--json]`                   | Query the local SQLite database                                                  |
 
 - **To see a change working**, follow the `run-app` skill (`.claude/skills/run-app/SKILL.md`): the seeded routes, the
@@ -137,10 +140,11 @@ From `apps/application/`:
 - **Typecheck out of memory?** `npm run app:typecheck` gives the checker a 4 GB heap. It needs about 3 GB, because the
   app's program also type-checks the server code that the demo and the typed API responses import. Running
   `nuxt typecheck` or `vue-tsc` yourself needs the same `NODE_OPTIONS=--max-old-space-size=4096`.
-- **Port 3000 in use?** `PORT=3001 npm run app:dev` (Linux/macOS) or `$env:PORT=3001; npm run app:dev` (PowerShell).
-- **E2E tests failing on every page?** Outside CI, the Playwright config reuses a server already listening on port 3000.
-  A server started with other settings (the desktop app, authentication on, another branch's build) makes the specs
-  fail: stop it, or start the one you want with `npm run app:dev:bg`.
+- **Port 7494 in use?** `PORT=7495 npm run app:dev` (Linux/macOS) or `$env:PORT=7495; npm run app:dev` (PowerShell).
+  The dev server's port is `DEV_SERVER_PORT` (`shared/dev-server-port.mjs`), off the desktop app's 3000.
+- **E2E tests failing on every page?** Outside CI, the Playwright config reuses a server already listening on port 7494.
+  A server started with other settings (authentication on, another branch's build) makes the specs fail: stop it, or
+  start the one you want with `npm run app:dev:bg`.
 - **Migration not applying?** It was probably written by hand: the migrator applies only what `_journal.json` lists.
   Delete it, revert any journal edit and run `npm run db:generate` (or `db:generate:pg`); the rules:
   [`server/database/AGENTS.md`](server/database/AGENTS.md).

@@ -130,6 +130,24 @@ describe('the line a run stopped at, where it stands now', () => {
     expect(map.lineNow('ed-1', FILE, 3, true, null)).toMatchObject({ refusal: expect.stringMatching(/not saved/) });
   });
 
+  test('starts a run started in a terminal from the files as they stand as its first worker attaches', () => {
+    let now = 500;
+    const map = new RunLines(() => now);
+    map.opened(FILE, TEXT, DISK);
+    // Edits before the run attached are its code already.
+    map.changed(FILE, TEXT, [at([0, 0], [0, 0], '// one\n')]);
+    now = 1000;
+    map.started('terminal-41-1', () => [], true);
+    now = 2000;
+    expect(map.lineNow('terminal-41-1', FILE, 4, true, null)).toEqual({ line: 4 });
+    map.changed(FILE, null, [at([0, 0], [0, 0], '// two\n')]);
+    expect(map.lineNow('terminal-41-1', FILE, 4, true, null)).toEqual({ line: 5 });
+    // A later worker of the same run keeps that start.
+    now = 3000;
+    map.started('terminal-41-1', () => [FILE], true);
+    expect(map.lineNow('terminal-41-1', FILE, 4, true, null)).toEqual({ line: 5 });
+  });
+
   test('refuses a file edited more times since the run started than it keeps', () => {
     const { map, line } = lines();
     for (let i = 0; i < 2001; i++) map.changed(FILE, null, [at([0, 0], [0, 1], 'i')]);

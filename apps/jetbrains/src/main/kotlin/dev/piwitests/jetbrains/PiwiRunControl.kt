@@ -61,6 +61,7 @@ import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.MessageDialogBuilder
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.util.Condition
 import com.intellij.openapi.util.Disposer
@@ -80,6 +81,7 @@ import com.intellij.ui.content.ContentFactory
 import com.intellij.util.Alarm
 import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.util.ui.JBUI
+import com.intellij.util.ui.UIUtil
 import com.intellij.xdebugger.XDebuggerManager
 import com.intellij.xdebugger.breakpoints.XBreakpoint
 import com.intellij.xdebugger.breakpoints.XBreakpointListener
@@ -89,6 +91,7 @@ import java.awt.Cursor
 import java.awt.Graphics
 import java.awt.Rectangle
 import java.awt.datatransfer.StringSelection
+import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import java.awt.image.BufferedImage
 import java.io.ByteArrayInputStream
@@ -102,6 +105,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.imageio.ImageIO
 import javax.imageio.ImageReader
+import javax.swing.BoxLayout
 import javax.swing.ImageIcon
 import javax.swing.JList
 import javax.swing.JPanel
@@ -115,14 +119,17 @@ import javax.swing.SwingConstants
  * saying what is about to run, or how the test failed, and offering **Resume**, **Step**, **Run to Caret** and
  * **Finish**, then the code actions its worker takes there (`piwi/stopAction`: **Pick a Locator**, **Record Here**,
  * **Assert**, **Assert a Region**, **Mock a Request**); a stop no pause bar shows (a headless run's) shows an image of
- * its page in the Piwi tool window's **Paused Page** tab. The code a stop makes (`piwi/stopCode`) is written in one
+ * its page in the Piwi tool window's **Paused Page** tab, where a click picks the element under it (`piwi/pickAt`)
+ * when its worker takes it. The code a stop makes (`piwi/stopCode`) is written in one
  * command in its document, in an editor, so the service hears it; while a test is stopped, the end of the caret's line
  * in its file says how many elements the locator there matches on the stopped page (`piwi/locatorAtCaret`). The IDE's
  * breakpoints go to each live run as they change (`XBreakpointListener`, `piwi/setRunBreakpoints`), filtered as a
  * run's start filters them. A run's lines are those of the documents as they stood when it started: the edits since
  * (`Glue.EditLog`) bring a stop to the line it stands on now, and a breakpoint or the caret's line back to the run's.
  * **Stop** ends the process of the run, which Piwi started, in the console or the IDE's Playwright runner, whose reruns
- * and debug runs it follows too. The pure half is `Glue.withSession`, `Glue.runControls` and their kin.
+ * and debug runs it follows too. **Share the Run Live** shares a run on the team instance its reporter reports to
+ * (`piwi/shareRun`), after a warning the first time in the project, and **Stop Sharing the Run Live** ends it;
+ * the status bar says how a shared run stands. The pure half is `Glue.withSession`, `Glue.runControls` and their kin.
  */
 @Service(Service.Level.PROJECT)
 class PiwiRunSessions(private val project: Project) : Disposable {
@@ -167,6 +174,9 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 
     private val breakpointsQueued = AtomicBoolean()
 
+    /** The IDE's breakpoints as the service last heard them (`piwi/setBreakpoints`), as text; under [lock]. */
+    private var editorBreakpointsSent = ""
+
     @Volatile private var disposed = false
 
     private val gone = Condition<Any?> { disposed || project.isDisposed }
@@ -177,11 +187,17 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 
         override fun control(params: RunControlParams) = server()?.runControl(params)?.orNull()
 
+        override fun shareRun(params: ShareRunParams) = server()?.shareRun(params)?.orNull()
+
         override fun pausedPage(params: PausedPageParams) = server()?.pausedPage(params)?.orNull()
+
+        override fun pickAt(params: PickAtParams) = server()?.pickAt(params)?.orNull()
 
         override fun action(params: StopActionParams) = server()?.stopAction(params)?.orNull()
 
         override fun requests(params: StopRequestsParams) = server()?.stopRequests(params)?.orNull()
+
+        override fun bind(params: StopBindParams) = server()?.stopBind(params)?.orNull()
 
         override fun locatorAtCaret(params: LocatorAtCaretParams) = server()?.locatorAtCaret(params)?.orNull()
 
@@ -193,11 +209,20 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             server()?.setRunBreakpoints(params)
         }
 
+        override fun setEditorBreakpoints(params: SetBreakpointsParams): Boolean {
+            val server = server() ?: return false
+            server.setBreakpoints(params)
+            return true
+        }
+
         override fun commandEnded(params: CommandEndedParams) {
             // The run may end after the plugin was unloaded: its service is then gone.
             if (!project.isDisposed) project.getServiceIfCreated(PiwiProjectService::class.java)?.server()?.commandEnded(params)
         }
     }
+
+    /** Share live said what it sends in this project since it opened: it asks no more. */
+    @Volatile internal var liveWarned = false
 
     /** How Mock a Request has the response to mock chosen among those a stop lists: a popup, which the tests replace. */
     internal var chooseRequest: (List<StopRequest>, (StopRequest) -> Unit) -> Unit = { requests, chosen ->
@@ -410,6 +435,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                 override fun processTerminated(event: ProcessEvent) {
                     synchronized(lock) {
                         sessions = emptyMap()
+                        // A service started again holds none of the IDE's breakpoints.
+                        editorBreakpointsSent = ""
                         forgetEdits()
                     }
                     changed()
@@ -427,16 +454,27 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         }, gone)
     }
 
-    /** The IDE's breakpoints to each live run whose breakpoints differ, off the event thread, once for a burst. */
+    /**
+     * The IDE's breakpoints to each live run whose breakpoints differ, and to the service as they stand, for a run a
+     * terminal starts (`piwi/setBreakpoints`), off the event thread, once for a burst.
+     */
     fun breakpointsChanged() {
-        if (sessions.isEmpty() || !breakpointsQueued.compareAndSet(false, true)) return
+        if (!breakpointsQueued.compareAndSet(false, true)) return
         AppExecutorUtil.getAppScheduledExecutorService().schedule(
             {
                 breakpointsQueued.set(false)
                 if (gone.value(null)) return@schedule
                 val breakpoints = project.service<PiwiProjectService>().breakpoints()
-                val updates = synchronized(lock) { Glue.breakpointUpdates(sessions, breakpoints, runs, edits) }
+                val places = breakpoints.map { it.place }
+                val text = places.joinToString("\n") { "${it.uri} ${it.line}" }
+                val (updates, fresh) = synchronized(lock) {
+                    Glue.breakpointUpdates(sessions, breakpoints, runs, edits) to (text != editorBreakpointsSent)
+                }
                 updates.forEach { remote.setBreakpoints(it) }
+                // Kept as sent only once a service heard them: one that starts later hears them then.
+                if (fresh && remote.setEditorBreakpoints(SetBreakpointsParams(places))) {
+                    synchronized(lock) { editorBreakpointsSent = text }
+                }
             },
             BREAKPOINTS_WAIT_MILLIS,
             TimeUnit.MILLISECONDS,
@@ -518,6 +556,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             panel?.caption,
             panel?.image,
             (caretInlay?.takeIf { it.isValid }?.renderer as? CaretCountInlay)?.text,
+            panel?.picks == true,
+            panel?.note,
         )
     }
 
@@ -527,7 +567,16 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         val pageCaption: String?,
         val pageImage: BufferedImage?,
         val caretCount: String? = null,
+        /** A click on the image picks there, as the hint above it says. */
+        val pagePicks: Boolean = false,
+        /** What the last pick on the image came to. */
+        val pageNote: String? = null,
     )
+
+    /** A click at `x`, `y` of the Paused Page tab's image, as a person's click reaches it, which the tests send. */
+    internal fun clickPage(x: Int, y: Int) {
+        (livePage()?.component as? PausedPagePanel)?.click(x, y)
+    }
 
     /** The page of a stop in the Paused Page tab of the Piwi tool window, asked of its worker. On the event thread. */
     fun showPage(stop: Glue.ShownStop) {
@@ -544,13 +593,34 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         window.contentManager.setSelectedContent(content)
         window.show(null)
         val panel = content.component as PausedPagePanel
-        val caption = "${Glue.pausedText(stop.stop, stop.test)} · ${Glue.stopPlace(stop.stop)}"
+        val caption = "${Glue.pausedText(stop.stop, stop.test, stop.terminal, stop.runner)} · ${Glue.stopPlace(stop.stop)}"
         panel.show("$caption · asking the test for its page…", null)
         ApplicationManager.getApplication().executeOnPooledThread {
             val image = remote.pausedPage(PausedPageParams(stop.ref, stop.worker))?.image
             val picture = Glue.pausedImageBytes(image)?.let(::decode)
             ApplicationManager.getApplication().invokeLater({
-                if (pageStop == key) panel.show(if (picture != null) caption else "$caption · the test sent no image of its page", picture)
+                if (pageStop != key) return@invokeLater
+                if (picture == null) return@invokeLater panel.show("$caption · the test sent no image of its page", null)
+                val pick = image?.takeIf { Glue.picksOnImage(stop.takes, it) }
+                    ?.let { shown -> { x: Int, y: Int -> pickOnImage(stop, shown, panel, picture, x, y) } }
+                panel.show(caption, picture, pick)
+            }, gone)
+        }
+    }
+
+    /**
+     * A click at `x`, `y` of a stop's image in the Paused Page tab: the element under it picked on the stopped page
+     * (`piwi/pickAt`, in CSS pixels of its viewport) off the event thread, its locator going to the editor in place of
+     * the one on the stopped line as the pause bar's pick does; the answer said under the caption while the tab shows
+     * the same image. On the event thread.
+     */
+    private fun pickOnImage(stop: Glue.ShownStop, image: PausedImage, panel: PausedPagePanel, picture: BufferedImage, x: Int, y: Int) {
+        val (pageX, pageY) = Glue.pagePoint(x, y, picture.width, picture.height, image) ?: return
+        panel.note("Picking the element under the click…")
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val answer = remote.pickAt(PickAtParams(stop.ref, stop.worker, stop.stop.since ?: "", pageX, pageY))
+            ApplicationManager.getApplication().invokeLater({
+                if (panel.image === picture) panel.note(answer?.message ?: "The editor service did not answer.")
             }, gone)
         }
     }
@@ -574,6 +644,59 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             when {
                 result == null -> PiwiCommands.notify(project, "The editor service did not answer.", NotificationType.WARNING)
                 !result.ok -> PiwiCommands.notify(project, result.message ?: "The run did not take it.")
+            }
+        }
+    }
+
+    /**
+     * Share a run live on the team instance (`on`), or stop sharing it: the run `ref` names, else the only one it fits,
+     * else the one chosen. The first share in this project since it opened says what goes out and to whom, and waits
+     * for a yes, unless the run is known to be one that cannot be shared: it is asked anyway, and the service says why.
+     * Shared, the answer offers the run page's link and Stop Sharing. On the event thread.
+     */
+    fun shareLive(on: Boolean, ref: String? = null) {
+        when (val target = if (ref != null) Glue.LiveTarget.One(ref) else Glue.liveTarget(sessions, on)) {
+            is Glue.LiveTarget.None -> PiwiCommands.notify(project, target.why)
+            is Glue.LiveTarget.One -> shareLiveRun(target.ref, on)
+            is Glue.LiveTarget.Choose -> JBPopupFactory.getInstance()
+                .createPopupChooserBuilder(target.refs)
+                .setRenderer(
+                    object : SimpleListCellRenderer<String>() {
+                        override fun customize(list: JList<out String>, value: String?, index: Int, selected: Boolean, hasFocus: Boolean) {
+                            text = value?.let { sessions[it]?.root ?: it }.orEmpty()
+                        }
+                    },
+                )
+                .setTitle(if (on) "Share Which Run Live?" else "Stop Sharing Which Run?")
+                .setItemChosenCallback { shareLiveRun(it, on) }
+                .createPopup()
+                .showCenteredInCurrentWindow(project)
+        }
+    }
+
+    private fun shareLiveRun(ref: String, on: Boolean) {
+        val live = sessions[ref]?.live
+        if (on && live?.refused == null && !liveWarned) {
+            val yes = MessageDialogBuilder.yesNo("Share the Run Live?", Glue.shareLiveWarning(live?.page))
+                .yesText("Share Live")
+                .noText("Cancel")
+                .ask(project)
+            if (!yes) return
+            liveWarned = true
+        }
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val answer = remote.shareRun(ShareRunParams(ref, on))
+            val page = live?.page
+            when {
+                answer == null -> PiwiCommands.notify(project, "The editor service did not answer.", NotificationType.WARNING)
+                !answer.ok || !on || page == null -> PiwiCommands.notify(project, answer.message.orEmpty())
+                else -> NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
+                    .createNotification(answer.message.orEmpty(), NotificationType.INFORMATION)
+                    .addAction(NotificationAction.createSimpleExpiring("Copy the Run Page's Link") {
+                        CopyPasteManager.getInstance().setContents(StringSelection(page))
+                    })
+                    .addAction(NotificationAction.createSimpleExpiring("Stop Sharing") { shareLive(false, ref) })
+                    .notify(project)
             }
         }
     }
@@ -619,7 +742,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 
     /** The actions offered at a stop, which act on it: its controls, the paused page, then its code actions. */
     fun stopActions(stop: Glue.ShownStop): ActionGroup = DefaultActionGroup().apply {
-        for (control in Glue.stopControls(stop.stop)) {
+        for (control in Glue.stopControls(stop)) {
             add(
                 object : DumbAwareAction(control.label, null, CONTROL_ICONS[control]) {
                     override fun getActionUpdateThread() = ActionUpdateThread.BGT
@@ -645,6 +768,47 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                     override fun actionPerformed(e: AnActionEvent) = start(stop, action)
                 },
             )
+        }
+        if (Glue.canShare(stop)) {
+            addSeparator()
+            add(
+                object : DumbAwareAction(SHARE_WITH_PLAYWRIGHT) {
+                    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+                    override fun actionPerformed(e: AnActionEvent) = share(stop)
+                },
+            )
+        }
+    }
+
+    /**
+     * Share a stop's browser with Playwright's own tools until its test ends, once the person said yes to the warning,
+     * on the event thread: the answer names the command that joins it, to copy, and offers to stop sharing.
+     */
+    fun share(stop: Glue.ShownStop) {
+        val since = stop.stop.since ?: return PiwiCommands.notify(project, "The test went on.")
+        val yes = MessageDialogBuilder.yesNo("Share the Stopped Browser with Playwright Tools?", Glue.SHARE_WARNING)
+            .yesText("Share")
+            .noText("Cancel")
+            .ask(project)
+        if (!yes) return
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val shared = remote.bind(StopBindParams(stop.ref, stop.worker, since, true))
+            val command = shared?.command
+            if (shared == null) return@executeOnPooledThread PiwiCommands.notify(project, "The editor service did not answer.", NotificationType.WARNING)
+            if (!shared.ok || command == null) return@executeOnPooledThread PiwiCommands.notify(project, shared.message.orEmpty())
+            NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
+                .createNotification(Glue.sharedText(shared), NotificationType.WARNING)
+                .addAction(NotificationAction.createSimpleExpiring("Copy the Command") {
+                    CopyPasteManager.getInstance().setContents(java.awt.datatransfer.StringSelection(command))
+                })
+                .addAction(NotificationAction.createSimpleExpiring("Stop Sharing") {
+                    ApplicationManager.getApplication().executeOnPooledThread {
+                        val stopped = remote.bind(StopBindParams(stop.ref, stop.worker, since, false))
+                        PiwiCommands.notify(project, stopped?.message ?: "The editor service did not answer.")
+                    }
+                })
+                .notify(project)
         }
     }
 
@@ -828,6 +992,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 
         const val PAUSED_PAGE = "Paused Page"
         const val SHOW_PAUSED_PAGE = "Show the Paused Page"
+        const val SHARE_WITH_PLAYWRIGHT = "Share with Playwright Tools"
 
         /** The pause after a breakpoint changes before the runs are sent them: a burst of changes is sent once. */
         private const val BREAKPOINTS_WAIT_MILLIS = 100L
@@ -864,6 +1029,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             Glue.StopControl.STEP to AllIcons.Actions.TraceOver,
             Glue.StopControl.RUN_TO_CARET to AllIcons.Actions.RunToCursor,
             Glue.StopControl.FINISH to AllIcons.Actions.StepOut,
+            Glue.StopControl.END to AllIcons.RunConfigurations.TestIgnored,
         )
 
         fun fileUri(file: VirtualFile): String? =
@@ -875,11 +1041,17 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 internal interface RunRemote {
     fun control(params: RunControlParams): RunControlResult?
 
+    fun shareRun(params: ShareRunParams): RunControlResult?
+
     fun pausedPage(params: PausedPageParams): PausedPageResult?
+
+    fun pickAt(params: PickAtParams): PickAtResult?
 
     fun action(params: StopActionParams): RunControlResult?
 
     fun requests(params: StopRequestsParams): StopRequestsResult?
+
+    fun bind(params: StopBindParams): StopBindResult?
 
     fun locatorAtCaret(params: LocatorAtCaretParams): LocatorAtCaretResult?
 
@@ -888,12 +1060,28 @@ internal interface RunRemote {
 
     fun setBreakpoints(params: SetRunBreakpointsParams)
 
+    /** The IDE's breakpoints to the service as they stand: false when no service runs to hear them. */
+    fun setEditorBreakpoints(params: SetBreakpointsParams): Boolean
+
     fun commandEnded(params: CommandEndedParams)
 }
 
-/** The page of a stopped test, under what it is about to run: the Paused Page tab of the Piwi tool window. */
+/**
+ * The page of a stopped test, under what it is about to run: the Paused Page tab of the Piwi tool window. Where a click
+ * on the image picks, a hint says so above it and the cursor is a crosshair over it; what the pick came to shows
+ * under the caption.
+ */
 private class PausedPagePanel : JPanel(BorderLayout()) {
-    private val label = JBLabel().apply { border = JBUI.Borders.empty(4, 8) }
+    private val label = JBLabel().apply { border = JBUI.Borders.empty(4, 8, 0, 8) }
+    private val hint = JBLabel(Glue.PICK_HINT).apply {
+        border = JBUI.Borders.empty(2, 8, 0, 8)
+        foreground = UIUtil.getContextHelpForeground()
+        isVisible = false
+    }
+    private val noteLabel = JBLabel().apply {
+        border = JBUI.Borders.empty(2, 8, 0, 8)
+        isVisible = false
+    }
     private val picture = JBLabel().apply {
         horizontalAlignment = SwingConstants.LEFT
         verticalAlignment = SwingConstants.TOP
@@ -903,17 +1091,53 @@ private class PausedPagePanel : JPanel(BorderLayout()) {
         private set
     var image: BufferedImage? = null
         private set
+    var note: String? = null
+        private set
+
+    /** What a click at a point of the image, in its own pixels, does; null where a click picks nothing. */
+    private var pick: ((Int, Int) -> Unit)? = null
+
+    val picks: Boolean get() = pick != null
 
     init {
-        add(label, BorderLayout.NORTH)
+        val header = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            border = JBUI.Borders.emptyBottom(4)
+            add(label)
+            add(hint)
+            add(noteLabel)
+        }
+        add(header, BorderLayout.NORTH)
         add(JBScrollPane(picture), BorderLayout.CENTER)
+        picture.addMouseListener(object : MouseAdapter() {
+            override fun mouseClicked(e: MouseEvent) {
+                if (e.button == MouseEvent.BUTTON1) click(e.x, e.y)
+            }
+        })
     }
 
-    fun show(caption: String, image: BufferedImage?) {
+    fun show(caption: String, image: BufferedImage?, pick: ((Int, Int) -> Unit)? = null) {
         this.caption = caption
         this.image = image
+        this.pick = pick.takeIf { image != null }
         label.text = caption
         picture.icon = image?.let { ImageIcon(it) }
+        hint.isVisible = picks
+        picture.cursor = if (picks) Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR) else Cursor.getDefaultCursor()
+        note(null)
+    }
+
+    fun note(text: String?) {
+        note = text
+        noteLabel.text = text.orEmpty()
+        noteLabel.isVisible = text != null
+    }
+
+    /** A click at `x`, `y` of the label, whose icon is drawn at its top left: a point of the image picks there. */
+    fun click(x: Int, y: Int) {
+        val shown = image ?: return
+        if (x < 0 || y < 0 || x >= shown.width || y >= shown.height) return
+        pick?.invoke(x, y)
     }
 }
 
@@ -921,14 +1145,14 @@ private class PausedPagePanel : JPanel(BorderLayout()) {
 private class ExecutionPointGutter(private val sessions: PiwiRunSessions, private val stop: Glue.ShownStop) : GutterIconRenderer(), DumbAware {
     override fun getIcon() = if (Glue.isFailure(stop.stop)) AllIcons.RunConfigurations.TestError else AllIcons.Debugger.NextStatement
 
-    override fun getTooltipText(): String = Glue.htmlTooltip(Glue.pausedText(stop.stop, stop.test))
+    override fun getTooltipText(): String = Glue.htmlTooltip(Glue.pausedText(stop.stop, stop.test, stop.terminal, stop.runner))
 
     override fun getPopupMenuActions(): ActionGroup = sessions.stopActions(stop)
 
     override fun getClickAction(): AnAction = object : AnAction() {
         override fun actionPerformed(e: AnActionEvent) {
             val popup = JBPopupFactory.getInstance().createActionGroupPopup(
-                Glue.pausedText(stop.stop, stop.test),
+                Glue.pausedText(stop.stop, stop.test, stop.terminal, stop.runner),
                 sessions.stopActions(stop),
                 e.dataContext,
                 JBPopupFactory.ActionSelectionAid.SPEEDSEARCH,
@@ -949,10 +1173,10 @@ private class ExecutionPointGutter(private val sessions: PiwiRunSessions, privat
  * Caret** and **Finish**; **Resume** alone at a failure) and its code actions as links, which [StopInlayMouse] clicks.
  */
 internal class StopInlay(val stop: Glue.ShownStop) : EditorCustomElementRenderer {
-    val text = Glue.pausedText(stop.stop, stop.test)
+    val text = Glue.pausedText(stop.stop, stop.test, stop.terminal, stop.runner)
 
     /** The links after the text, in order. */
-    val links: List<Glue.StopLink> = Glue.stopControls(stop.stop) + Glue.stopActions(stop)
+    val links: List<Glue.StopLink> = Glue.stopControls(stop) + Glue.stopActions(stop)
 
     /** A piece of the line, from `x` in the editor's content: the text, or a link. */
     private data class Piece(val x: Int, val width: Int, val text: String, val control: Glue.StopLink?)
@@ -1110,9 +1334,12 @@ class PauseRunAction : RunControlAction() {
     }
 }
 
-/** **Stop the Run**: ends the process of the run started here, the only one or the one chosen. */
+/**
+ * **Stop the Run**: ends the process of the run started here, the only one or the one chosen; a run started in a
+ * terminal is the terminal's to stop.
+ */
 class StopRunAction : RunControlAction() {
-    override fun applies(controls: Glue.RunControls, e: AnActionEvent) = controls.active
+    override fun applies(controls: Glue.RunControls, e: AnActionEvent) = controls.stoppable
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
@@ -1120,7 +1347,7 @@ class StopRunAction : RunControlAction() {
         val stop = { ref: String ->
             if (!sessions.stopRun(ref)) PiwiCommands.notify(project, "The run was not started from this IDE: stop it where it runs.")
         }
-        val live = sessions.sessions.values.toList()
+        val live = sessions.sessions.values.filter { !it.terminal }
         if (live.size < 2) return live.firstOrNull()?.ref?.let(stop) ?: Unit
         JBPopupFactory.getInstance()
             .createPopupChooserBuilder(live)
@@ -1147,7 +1374,7 @@ abstract class StopControlAction(private val control: Glue.StopControl) : RunCon
     override fun actionPerformed(e: AnActionEvent) {
         val editor = e.getData(CommonDataKeys.EDITOR)
         val sessions = sessions(e) ?: return
-        sessions.atCaret(editor) { sessions.perform(it, control, editor) }
+        sessions.atCaret(editor, { control in Glue.stopControls(it) }) { sessions.perform(it, control, editor) }
     }
 }
 
@@ -1162,6 +1389,14 @@ class RunToCaretAction : StopControlAction(Glue.StopControl.RUN_TO_CARET)
 
 /** **Finish**: the stopped test runs on without stopping at a breakpoint again in this attempt. */
 class FinishRunAction : StopControlAction(Glue.StopControl.FINISH)
+
+/**
+ * **End the Test**: the stopped test ends there, reported as skipped, its stopped call never run where Piwi holds it;
+ * with no shortcut.
+ */
+class EndTestAction : StopControlAction(Glue.StopControl.END) {
+    override fun applies(controls: Glue.RunControls, e: AnActionEvent) = controls.endable
+}
 
 /** **Show the Paused Page**: the page of the stopped test, in the Piwi tool window. */
 class ShowPausedPageAction : RunControlAction() {
@@ -1197,4 +1432,39 @@ class AssertRegionAtStopAction : StopCodeAction(Glue.StopAction.ASSERT_REGION)
 
 /** **Mock a Request**: a response the test kept, chosen in a list, answered by a route written above the stopped line. */
 class MockAtStopAction : StopCodeAction(Glue.StopAction.MOCK)
+
+/**
+ * **Share the Run Live**: the run on the team instance its reporter reports to, for anyone who can open it there, once
+ * the person said yes to what it sends (the first time in the project since it opened); a run that cannot be shared
+ * says why.
+ */
+class ShareRunLiveAction : RunControlAction() {
+    override fun applies(controls: Glue.RunControls, e: AnActionEvent) = controls.active
+
+    override fun actionPerformed(e: AnActionEvent) {
+        sessions(e)?.shareLive(true)
+    }
+}
+
+/** **Stop Sharing the Run Live**: the views of the run on the team instance end, and nothing more goes there. */
+class StopSharingRunAction : RunControlAction() {
+    override fun applies(controls: Glue.RunControls, e: AnActionEvent) = controls.liveShared
+
+    override fun actionPerformed(e: AnActionEvent) {
+        sessions(e)?.shareLive(false)
+    }
+}
+
+/**
+ * **Share the Stopped Browser with Playwright Tools**: the stop at the caret's line among those whose reporter takes it,
+ * else the only one, else the one chosen, shared once the person said yes to the warning, until its test ends.
+ */
+class ShareWithPlaywrightAction : RunControlAction() {
+    override fun applies(controls: Glue.RunControls, e: AnActionEvent) = controls.shareable
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val sessions = sessions(e) ?: return
+        sessions.atCaret(e.getData(CommonDataKeys.EDITOR), Glue::canShare) { sessions.share(it) }
+    }
+}
 

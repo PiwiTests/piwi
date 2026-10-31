@@ -301,6 +301,31 @@ export interface RunTestsArgs {
    * did not reach an instance, a `piwi/notice` from its exit code.
    */
   repeat?: number;
+  /**
+   * Debug one test from a failure (**Debug in my editor**, the dashboard's open link with `debug=1`): the test of the
+   * spec at `uri` that `DebugRun.title` names, in place of `testIds` and `locations`, headed, with one worker, stopping
+   * once at `DebugRun.stop`. Refused, with a `piwi/notice` saying why, when the spec holds no such test.
+   */
+  debug?: DebugRun;
+}
+
+/** What a run that debugs one test from a failure stops at, runs and shows there (`RunTestsArgs.debug`). */
+export interface DebugRun {
+  /**
+   * The failing line, in the spec or a page object under the Playwright config's folder: the run stops there once. It
+   * is a breakpoint of this run alone, kept through `piwi/setRunBreakpoints` until a worker stops there, and never one
+   * of the editor's.
+   */
+  stop: EditorBreakpoint;
+  /** The test's title after its describe blocks' (`cart › adds a mug`), as the dashboard joins them; or its own alone. */
+  title: string;
+  /** The Playwright project it failed in, run alone (`--project`); absent or null runs every project of the config. */
+  project?: string | null;
+  /**
+   * The failed execution on the instance: at the stop, its locator healing's recommended locator is counted on the
+   * stopped page, outlined there and said (a `piwi/notice`, and the stopped line's `piwi/locatorAtCaret`).
+   */
+  execution?: number | null;
 }
 
 export interface RunCommand {
@@ -479,6 +504,13 @@ export interface InitializationOptions {
    * are refused, from the client and from Piwi Picker alike.
    */
   stopCode?: boolean;
+  /**
+   * The service's MCP server for agents: turned on as the service starts (`enabled`, as `piwi/agents` turns it on
+   * later); the loopback port to listen on, else a free one when it is taken; and the token an agent sends (32 to 256
+   * characters of base64url), else a new random one. The client keeps the port and the token, so an agent's
+   * configuration copied once still connects after a restart.
+   */
+  agents?: { enabled?: boolean; port?: number | null; token?: string | null };
 }
 
 /**
@@ -1332,10 +1364,34 @@ export type RunStopReason = 'breakpoint' | 'step' | 'pause' | 'run-to' | 'page-p
 
 /**
  * What a worker's reporter takes at a stop, as its run connection lists it: the intents `pick`, `record`, `assert` and
- * `assert-region` (`piwi/stopAction`), and the queries `requests` (`piwi/stopRequests`), `mock` and `locator`
- * (`piwi/locatorAtCaret`). An older reporter lists fewer, or none: the service refuses what it does not take.
+ * `assert-region` (`piwi/stopAction`), the queries `requests` (`piwi/stopRequests`), `mock` and `locator`
+ * (`piwi/locatorAtCaret`), and, for a viewer outside the page, the stopped page's live view (`view`), the input played
+ * on it (`input`, with the click count of a button's `down` and `up`: `input-clicks`) and the element under a point of
+ * an image of it (`pick-at`, `piwi/pickAt`); for an agent, the stopped page read and acted on (`agent`: its ARIA
+ * snapshot, an action by an element's ref and that element's ranked locators) and the running tests' events
+ * (`events`); its browser shared with Playwright's own tools (`bind`, `piwi/stopBind`); End the test at a stop
+ * (`end`, `piwi/runControl`); and the run shared live on the team instance (`share`, `piwi/shareRun`). A worker lists
+ * Pick a locator only where its run names the client's Send to editor
+ * pairing, and Record here and Assert only where it names the record channel, which a run started in a terminal names
+ * neither of. An older reporter lists fewer, or none: the service refuses what it does not take.
  */
-export type RunTake = 'pick' | 'record' | 'assert' | 'assert-region' | 'requests' | 'mock' | 'locator';
+export type RunTake =
+  | 'pick'
+  | 'record'
+  | 'assert'
+  | 'assert-region'
+  | 'requests'
+  | 'mock'
+  | 'locator'
+  | 'view'
+  | 'input'
+  | 'input-clicks'
+  | 'pick-at'
+  | 'agent'
+  | 'events'
+  | 'bind'
+  | 'end'
+  | 'share';
 
 /** Where a worker stands stopped: before a call, which runs as soon as the stop is answered. */
 export interface RunStop {
@@ -1362,6 +1418,11 @@ export interface RunStop {
    * reporter that predates it, whose `title` (`Failed: ` and the error's first line) alone says how the test failed.
    */
   error?: string;
+  /**
+   * Who asked for the stop: `agent`, an agent through the service's MCP server (its Pause, Step or Run to), which the
+   * client shows beside the stop. Absent for a stop a person or a breakpoint made.
+   */
+  by?: 'agent';
 }
 
 /** A test a worker runs. */
@@ -1414,7 +1475,10 @@ export interface RunWorker {
  * keeps the latest of each `ref`.
  */
 export interface RunSession {
-  /** The ref of the command that started it (`RunCommand.ref`), or of the terminal it ran in (`terminalRef`). */
+  /**
+   * The ref of the command that started it (`RunCommand.ref`), of the terminal it ran in (`terminalRef`), or one of
+   * its own for a run started in a terminal (`terminal`).
+   */
   ref: string;
   /** The folder of the Playwright config it runs in, as `piwi/status` names it; null when no context holds it. */
   root: string | null;
@@ -1426,6 +1490,44 @@ export interface RunSession {
    * session.
    */
   ended: boolean;
+  /**
+   * The run was started in a terminal, not by the client: it found this service through its discovery file and runs
+   * under a ref of its own (`terminal-<pid>-<time>`), with the editor's breakpoints (`piwi/setBreakpoints`) as it
+   * started. Its process is the terminal's, which the client cannot stop. Absent for a run the service built.
+   */
+  terminal?: boolean;
+  /**
+   * Of the runs `terminal` names, one the editor's own test runner started (a JetBrains IDE's Playwright run
+   * configuration, its gutter's Run included), as its workers said (`run-attach`'s `runner`): its process is that
+   * runner's, which stops it. Absent otherwise, and from a reporter that predates it.
+   */
+  runner?: boolean;
+  /**
+   * **Share live**: how the run stands on the team instance its reporter reports to, for a run whose workers take
+   * `share`; absent for one whose reporter predates it.
+   */
+  live?: RunLive;
+}
+
+/**
+ * A run on the team instance's live view (**Share live**): shared from the editor's surfaces as a person asks
+ * (`piwi/shareRun`), its workers then stream their pages there, while someone watches, to whoever may open the run on
+ * that instance; a CI run's stream from the start.
+ */
+export interface RunLive {
+  /** The run is shared now, as its workers say: they hold their streams to the instance, or open them. */
+  shared: boolean;
+  /** Why the run cannot be shared, in one sentence; null when it can be. */
+  refused: string | null;
+  /**
+   * Why its sharing stopped though nobody asked (the instance stopped answering, the setting turned off), in one
+   * sentence, until a person shares it again or stops it; null otherwise.
+   */
+  stopped: string | null;
+  /** The run's page on the instance (`https://piwi.example.com/test-runs/42`), for a teammate; null without a key. */
+  page: string | null;
+  /** How many people watch its workers on the instance now: 0 unless shared. */
+  viewers: number;
 }
 
 export const RUN_SESSION_NOTIFICATION = 'piwi/runSessionChanged';
@@ -1434,9 +1536,12 @@ export const RUN_SESSION_NOTIFICATION = 'piwi/runSessionChanged';
  * What `piwi/runControl` asks: `pause` stops before the next call (of every running worker without `worker`); the
  * others answer a stop: `step` goes on and stops before the next call, `resume` goes on to the next breakpoint,
  * `finish` goes on with no breakpoint more in this attempt, `run-to` goes on and stops at the first call on `place`'s
- * line (or at a breakpoint before it).
+ * line (or at a breakpoint before it), `end` ends the test there, reported as skipped (for a worker that takes `end`):
+ * the stopped call never runs where the worker holds it (a locator call, a `page.pause()`), else it runs first and the
+ * test ends before its next locator call. At a failure, or once the test function ended (an `afterEach` hook), `end`
+ * lets the test end as Resume does, its result kept.
  */
-export type RunControlAction = 'pause' | 'step' | 'resume' | 'finish' | 'run-to';
+export type RunControlAction = 'pause' | 'step' | 'resume' | 'finish' | 'run-to' | 'end';
 
 /**
  * `piwi/runControl`: steer a run the editor started. Without `worker`, `pause` goes to every worker that runs or is
@@ -1470,6 +1575,20 @@ export interface RunControlResult {
 export const RUN_CONTROL_REQUEST = 'piwi/runControl';
 
 /**
+ * `piwi/shareRun`: **Share live**, a person's own choice, asked after the client's warning: share the run of `ref` on
+ * the team instance its reporter reports to (`on`), so whoever may open the run there watches its pages from the run
+ * page while it runs, and sees when a test is paused; or stop sharing it (`on: false`), which ends the views there. A
+ * worker that connects later follows the choice. Answered with `RunControlResult`: refused, with why, for a run whose
+ * reporter predates it or that cannot be shared (no instance, the project's live view off). No agent asks it.
+ */
+export interface ShareRunParams {
+  ref: string;
+  on: boolean;
+}
+
+export const SHARE_RUN_REQUEST = 'piwi/shareRun';
+
+/**
  * `piwi/setRunBreakpoints` (notification, client to server): the editor's line breakpoints changed while the run of
  * `ref` runs: its workers stop at `places` from now on, in place of the ones the command started with
  * (`PIWI_PAUSE_AT`) and of those sent before, a worker that starts later included. A place outside the run's folder
@@ -1483,6 +1602,18 @@ export interface SetRunBreakpointsParams {
 
 export const SET_RUN_BREAKPOINTS_NOTIFICATION = 'piwi/setRunBreakpoints';
 
+/**
+ * `piwi/setBreakpoints` (notification, client to server): the editor's line breakpoints as the editor holds them now,
+ * sent as the client starts and whenever they change. A run started in a terminal (`RunSession.terminal`) starts with
+ * them: its code is the files as they stand as it attaches. After that, the client sends it `piwi/setRunBreakpoints`
+ * as for its own runs.
+ */
+export interface SetBreakpointsParams {
+  places: RunPlace[];
+}
+
+export const SET_BREAKPOINTS_NOTIFICATION = 'piwi/setBreakpoints';
+
 /** `piwi/pausedPage`: what the page of a stopped worker shows: an image of it (`what: 'image'`). */
 export interface PausedPageParams {
   ref: string;
@@ -1490,10 +1621,16 @@ export interface PausedPageParams {
   what: 'image';
 }
 
-/** An image of a stopped page, without the pause bar: a JPEG, base64. */
+/**
+ * An image of a stopped page, without the pause bar: a JPEG, base64, and the page's viewport in CSS pixels (`width`,
+ * `height`), which `piwi/pickAt` names a point in: a point of the image a client shows is `x * width / naturalWidth`,
+ * whatever the image's own size and the page's device scale factor. A reporter that predates them names neither.
+ */
 export interface PausedImage {
   mime: 'image/jpeg';
   data: string;
+  width?: number;
+  height?: number;
 }
 
 /**
@@ -1505,6 +1642,56 @@ export interface PausedPageResult {
 }
 
 export const PAUSED_PAGE_REQUEST = 'piwi/pausedPage';
+
+/**
+ * `piwi/pickAt`: Pick on the image, at the stop `since` names, of the run's one stopped worker or `worker`: the element
+ * under the point `x`, `y` of the stopped page, in CSS pixels of its viewport (a point of the image `piwi/pausedPage`
+ * gave is `x * image.width / naturalWidth`, `y * image.height / naturalHeight`). The worker reads the page's ARIA
+ * snapshot with its boxes and takes, of the elements under the point, the innermost that is or holds the element a
+ * click there lands on (the page's hit test, in paint order: a dialog or a fixed banner over another element is the
+ * one taken; Piwi's own overlays left out), ranks it as the pause bar's Pick a locator does, and sends the first
+ * locator that finds it alone where the bar's pick goes: the client's Send to editor listener, then `piwi/applyPick`,
+ * in place of the locator on the stopped line.
+ */
+export interface PickAtParams {
+  ref: string;
+  worker?: number | null;
+  since: string;
+  x: number;
+  y: number;
+}
+
+/**
+ * The locator sent, with `ok`; null with why otherwise: no element there (the page's background), an iframe, a stop
+ * the test went on from, a Playwright older than 1.64 or a reporter that does not take it.
+ */
+export interface PickAtResult {
+  ok: boolean;
+  message: string;
+  locator: string | null;
+}
+
+export const PICK_AT_REQUEST = 'piwi/pickAt';
+
+/**
+ * `piwi/hub`: the address of the service's hub, Piwi Picker's WebSocket, and, with `forwarded`, the loopback ports of
+ * the browser's machine that the client forwards to it, in place of those it named before (a remote window: VS Code's
+ * `asExternalUri`). The hub then takes a handshake whose `Host` is `127.0.0.1` or `localhost` at one of those ports,
+ * beside its own; the extension's `Origin` and the token are required all the same. Ports that are not ports are left
+ * out, and 8 are kept at most. Answered once the hub takes them, so a client lists a forwarded address only after.
+ */
+export interface HubParams {
+  forwarded?: number[];
+}
+
+export interface HubResult {
+  /** `ws://127.0.0.1:<port>/piwi/hub`; null while the hub does not listen. */
+  url: string | null;
+  /** The forwarded ports the hub takes now. */
+  forwarded: number[];
+}
+
+export const HUB_REQUEST = 'piwi/hub';
 
 /**
  * What a client starts at a stop (`piwi/stopAction`): `pick` and `record` start the pause bar's Pick a locator and
@@ -1582,7 +1769,9 @@ export const STOP_REQUESTS_REQUEST = 'piwi/stopRequests';
  * `adminPage`), and be the page the test stopped on: the expression the code written at the stop runs on, in the
  * stopped file; another (`adminPage` at a stop on `page`), or a chain in another file, is refused. Where the pause bar
  * shows, the worker outlines the matches until the test goes on or the next `piwi/locatorAtCaret`; a `uri` or `line`
- * of null, or a line without a locator, takes the outline down. `since` names the stop, as for `piwi/stopAction`.
+ * of null, or a line without a locator, takes the outline down. `since` names the stop, as for `piwi/stopAction`. At
+ * the stop of a run that debugs a failure (`RunTestsArgs.debug`), while the failure's suggested locator is outlined,
+ * the stopped line is answered with that locator and no count, and the outline stays.
  */
 export interface LocatorAtCaretParams {
   ref: string;
@@ -1620,7 +1809,11 @@ export interface StopCode {
   worker: number;
   /** The stop the code was made at (`RunStop.since`). */
   since: string;
-  action: 'assert' | 'assert-region' | 'mock';
+  /**
+   * What made it: a check, a region's snapshot or a mock, of a person or an agent; or an agent's own: the steps it took
+   * on the stopped page (`steps`) and a locator it picked (`locator`), whose edit replaces the stopped line's locator.
+   */
+  action: 'assert' | 'assert-region' | 'mock' | 'steps' | 'locator';
   uri: string;
   /** The document's version the edits are placed in; null when the file is not open. */
   version: number | null;
@@ -1636,3 +1829,60 @@ export interface StopCode {
 }
 
 export const STOP_CODE_NOTIFICATION = 'piwi/stopCode';
+
+/**
+ * `piwi/agents`: turn the service's MCP server for agents on (`enabled`) or off. It serves the runs the service
+ * started to the agents of this machine (Claude Code, Copilot, Cursor): on `127.0.0.1` alone, its `Host` its own, no
+ * browser's `Origin`, the token as a bearer `Authorization`, the tools a closed set acting only at a stop of a run of
+ * this editor window, the code written through the client (`piwi/stopCode`).
+ */
+export interface AgentsParams {
+  enabled: boolean;
+  /**
+   * Give the server a new token (the client's Reset the token), the one before refused from then on: one a
+   * configuration copied out of the editor may have taken.
+   */
+  newToken?: boolean;
+}
+
+export interface AgentsResult {
+  /** The streamable HTTP endpoint, `http://127.0.0.1:<port>/mcp`; null while it is off or could not listen. */
+  url: string | null;
+  /** The bearer token an agent sends: null while it is off. */
+  token: string | null;
+  /** One sentence: that it serves, or why not. */
+  message: string;
+}
+
+export const AGENTS_REQUEST = 'piwi/agents';
+
+/**
+ * `piwi/agentsChanged`: the address or the token of the MCP server for agents changed without the client asking (it
+ * listened as the service started, or found the port the client kept taken and took another with a new token): the
+ * client keeps them for the next start, as it keeps `piwi/agents`'s answer, and its own agent's entry follows.
+ */
+export const AGENTS_CHANGED_NOTIFICATION = 'piwi/agentsChanged';
+
+/**
+ * `piwi/stopBind`: at the stop `since` names, of the run's one stopped worker or `worker`, share its browser with
+ * Playwright's own tools (`on`: `browser.bind('piwi-<ref>-w<worker>', { workspaceDir })`), until the test ends, or stop
+ * sharing it. A bound browser is open to any process of this user: off until asked, every time.
+ */
+export interface StopBindParams {
+  ref: string;
+  worker?: number | null;
+  since: string;
+  on: boolean;
+}
+
+export interface StopBindResult {
+  ok: boolean;
+  /** One sentence: what was shared and until when, its risk, or why not. */
+  message: string;
+  /** The name `playwright-cli attach` takes; null once unshared or refused. */
+  name: string | null;
+  /** The command that joins it, `npx playwright cli attach <name>`; null once unshared or refused. */
+  command: string | null;
+}
+
+export const STOP_BIND_REQUEST = 'piwi/stopBind';

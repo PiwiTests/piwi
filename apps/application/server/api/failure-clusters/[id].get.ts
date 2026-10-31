@@ -1,5 +1,10 @@
 import { eq } from 'drizzle-orm';
-import { requireResolvedProjectAccess, requireRouteId, resolveClusterProjectId } from '../../utils/project-access';
+import {
+  holdsProjectPermission,
+  requireResolvedProjectAccess,
+  requireRouteId,
+  resolveClusterProjectId,
+} from '../../utils/project-access';
 import { getFailureCluster } from '#shared/handlers/failure-clusters';
 import { failureClusters } from '../../database/schema';
 import { resolveOwners } from '../../utils/scm/ownership';
@@ -22,20 +27,26 @@ export default eventHandler(async (event) => {
   const { db, projectId } = await requireResolvedProjectAccess(event, id, resolveClusterProjectId, 'Failure cluster');
 
   // The next-step policy needs to know whether AI diagnosis and a CI re-run are
-  // configured — signals only the server can resolve.
+  // configured — signals only the server can resolve. A CI run is offered only to
+  // a viewer who may start one.
+  const mayDispatch = await holdsProjectPermission(event, projectId, ['run:control']);
   const [clusterRow] = await db
     .select({ lastSeenRunId: failureClusters.lastSeenRunId })
     .from(failureClusters)
     .where(eq(failureClusters.id, id));
   const [aiConfig, ciRerun] = await Promise.all([
     resolveAiConfig(db).catch(() => null),
-    clusterRow ? ciRerunAvailability(db, projectId, clusterRow.lastSeenRunId).catch(() => null) : Promise.resolve(null),
+    clusterRow && mayDispatch
+      ? ciRerunAvailability(db, projectId, clusterRow.lastSeenRunId).catch(() => null)
+      : Promise.resolve(null),
   ]);
 
   const result = (await getFailureCluster(db, id, {
     aiConfigured: aiConfig != null,
     ciRerunAvailable: ciRerun?.available ?? false,
-    flakeLabCiAvailable: async (testCaseId) => (await flakeLabCiAvailability(db, projectId, testCaseId)).available,
+    flakeLabCiAvailable: mayDispatch
+      ? async (testCaseId) => (await flakeLabCiAvailability(db, projectId, testCaseId)).available
+      : undefined,
   })) as Awaited<ReturnType<typeof getFailureCluster>> & {
     owner: { name: string; source: 'annotation' | 'codeowners' } | null;
   };

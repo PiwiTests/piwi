@@ -15,18 +15,30 @@ import {
   EditLog,
   MAX_IMAGE_DATA,
   breakpointUpdates,
+  canEnd,
+  canShare,
   caretText,
   controlItems,
   controlState,
   heardSession,
+  imageClickOf,
   lineEditOf,
   linesAbove,
+  liveInstance,
+  liveItem,
+  liveTarget,
+  liveText,
+  PICK_HINT,
+  pagePoint,
   pausedPageHtml,
+  picksOnImage,
   pausedText,
   remember,
   requestPicks,
   runStarted,
   runTargetArg,
+  shareLiveWarning,
+  sharedText,
   sizeText,
   spelledSession,
   stopActions,
@@ -144,25 +156,69 @@ describe('what the controls offer', () => {
   test('nothing without a run', () => {
     expect(controlState(new Map())).toEqual({
       active: false,
+      stoppable: false,
       pausable: false,
       pausing: false,
       stopped: false,
+      endable: false,
       actions: [],
+      shareable: false,
+      liveShared: false,
     });
     expect(controlItems(controlState(new Map()))).toEqual([]);
+    expect(liveItem(new Map())).toBeNull();
+  });
+
+  test('sharing with Playwright tools at a stop whose reporter takes it alone', () => {
+    const at = (takes: RunTake[]) =>
+      sessionsOf(session('ed-1', [worker(0, 'stopped', { stop: stopAt(spec, 5), takes })]));
+    expect(controlState(at(['bind'])).shareable).toBe(true);
+    expect(controlState(at(['pick'])).shareable).toBe(false);
+    expect(canShare(stopsOf(at(['bind']))[0]!)).toBe(true);
+    expect(
+      sharedText({
+        ok: true,
+        message: 'Shared.',
+        name: 'piwi-ed-1-w0',
+        command: 'npx playwright cli attach piwi-ed-1-w0',
+      }),
+    ).toBe('Shared. Join it with: npx playwright cli attach piwi-ed-1-w0');
+    expect(sharedText({ ok: false, message: 'The test went on.', name: null, command: null })).toBe(
+      'The test went on.',
+    );
   });
 
   test('Pause and Stop while a test runs or a worker is between tests', () => {
     for (const state of ['running', 'between'] as const) {
       const shown = controlState(sessionsOf(session('ed-1', [worker(0, state)])));
-      expect(shown).toEqual({ active: true, pausable: true, pausing: false, stopped: false, actions: [] });
+      expect(shown).toEqual({
+        active: true,
+        stoppable: true,
+        pausable: true,
+        pausing: false,
+        stopped: false,
+        endable: false,
+        actions: [],
+        shareable: false,
+        liveShared: false,
+      });
       expect(controlItems(shown).map((i) => i.command)).toEqual(['piwi.pauseRun', 'piwi.stopRun']);
     }
   });
 
   test('Pausing… once a Pause reached the worker, and Stop alone while its test cannot stop', () => {
     const pausing = controlState(sessionsOf(session('ed-1', [worker(0, 'running', { pausing: true })])));
-    expect(pausing).toEqual({ active: true, pausable: false, pausing: true, stopped: false, actions: [] });
+    expect(pausing).toEqual({
+      active: true,
+      stoppable: true,
+      pausable: false,
+      pausing: true,
+      stopped: false,
+      endable: false,
+      actions: [],
+      shareable: false,
+      liveShared: false,
+    });
     expect(controlItems(pausing).map((i) => [i.text, i.command])).toEqual([
       ['$(loading~spin) Pausing…', null],
       ['$(debug-stop)', 'piwi.stopRun'],
@@ -178,13 +234,142 @@ describe('what the controls offer', () => {
     const shown = controlState(
       sessionsOf(session('ed-1', [worker(0, 'stopped', { stop: stopAt(spec, 5) }), worker(1, 'running')])),
     );
-    expect(shown).toEqual({ active: true, pausable: true, pausing: false, stopped: true, actions: [] });
+    expect(shown).toEqual({
+      active: true,
+      stoppable: true,
+      pausable: true,
+      pausing: false,
+      stopped: true,
+      endable: false,
+      actions: [],
+      shareable: false,
+      liveShared: false,
+    });
     expect(controlItems(shown).map((i) => [i.command, i.tooltip])).toEqual([
       ['piwi.resumeRun', 'Piwi: Resume (F5)'],
       ['piwi.stepRun', 'Piwi: Step to the next call (F10)'],
       ['piwi.finishRun', 'Piwi: Finish the test without stopping again (Shift+F11)'],
       ['piwi.stopRun', 'Piwi: Stop the run (Shift+F5)'],
     ]);
+  });
+
+  test('End the test at a stop whose reporter takes it, never at a failure, with no key', () => {
+    const at = (stop: RunStop, takes: RunTake[] = ['end']) =>
+      sessionsOf(session('ed-1', [worker(0, 'stopped', { stop, takes })]));
+    const ending = controlState(at(stopAt(spec, 5)));
+    expect(ending.endable).toBe(true);
+    expect(controlItems(ending).map((i) => [i.command, i.tooltip])).toContainEqual([
+      'piwi.endTest',
+      'Piwi: End the test here: the rest of it is skipped',
+    ]);
+    const [stop] = stopsOf(at(stopAt(spec, 5)));
+    expect(canEnd(stop!)).toBe(true);
+    expect(stopControls(stop!).map((c) => c.title)).toEqual(['Resume', 'Step', 'Run to cursor', 'Finish', 'End test']);
+    expect(controlState(at(stopAt(spec, 5), [])).endable).toBe(false);
+    expect(controlState(at({ ...stopAt(spec, 5), reason: 'failure' })).endable).toBe(false);
+  });
+
+  test('no Stop for a run started in a terminal, which says so where it stops', () => {
+    const terminal = { ...session('terminal-41-1', [worker(0, 'stopped', { stop: stopAt(spec, 5) })]), terminal: true };
+    const state = controlState(sessionsOf(terminal));
+    expect(state.stoppable).toBe(false);
+    expect(controlItems(state).map((i) => i.command)).not.toContain('piwi.stopRun');
+    const [stop] = stopsOf(sessionsOf(terminal));
+    expect(stop!.terminal).toBe(true);
+    expect(pausedText(stop!.stop, stop!.test, stop!.terminal)).toBe(
+      'Paused · Fill "WELCOME10" getByLabel(\'Coupon\') · run in a terminal',
+    );
+    expect(stopPick(stop!).label).toContain('· run in a terminal');
+    // A run of this window's beside it can be stopped.
+    const both = controlState(sessionsOf(terminal, session('ed-1', [worker(0, 'running')])));
+    expect(controlItems(both).map((i) => i.command)).toContain('piwi.stopRun');
+  });
+
+  test('no Stop for a run the editor’s own test runner started, which says so where it stops', () => {
+    const stopped = [worker(0, 'stopped', { stop: stopAt(spec, 5) })];
+    const runner = { ...session('terminal-42-1', stopped), terminal: true, runner: true };
+    expect(controlState(sessionsOf(runner)).stoppable).toBe(false);
+    const [stop] = stopsOf(sessionsOf(runner));
+    expect(stop).toMatchObject({ terminal: true, runner: true });
+    expect(pausedText(stop!.stop, stop!.test, stop!.terminal, stop!.runner)).toBe(
+      "Paused · Fill \"WELCOME10\" getByLabel('Coupon') · run by the editor's test runner",
+    );
+    expect(stopPick(stop!).label).toContain("· run by the editor's test runner");
+    // Said of a run the editor started, it says nothing.
+    const [own] = stopsOf(sessionsOf({ ...session('ed-1', stopped), runner: true }));
+    expect(own).not.toHaveProperty('runner');
+  });
+});
+
+describe('Share live', () => {
+  const page = 'https://piwi.example.com/test-runs/42';
+  const live = (ref: string, extra: Partial<NonNullable<RunSession['live']>> = {}): RunSession => ({
+    ...session(ref, [worker(0, 'running', { takes: ['share'] })]),
+    live: { shared: false, refused: null, stopped: null, page, viewers: 0, ...extra },
+  });
+
+  test('says what it sends and to whom before the first share, naming the instance', () => {
+    expect(liveInstance({ page })).toBe('piwi.example.com');
+    expect(liveInstance({ page: null })).toBeNull();
+    const warning = shareLiveWarning({ page });
+    expect(warning).toMatch(/^Share this run live on piwi\.example\.com\? /);
+    // Its stops show to whoever has the run page open, watched or not; the images only while someone watches.
+    expect(warning).toContain("each stop of its tests: the call, its file and line, and the test's title, even while");
+    expect(warning).toContain("images of its test's page go there too, each with its call and the test's title");
+    expect(warning).toContain('on an instance with authentication off, anyone who can reach it');
+    expect(warning).toMatch(/Stop sharing ends it within seconds\.$/);
+    expect(shareLiveWarning({ page: null })).toContain('the Piwi instance it reports to');
+    // A run whose workers have not said yet how it stands is warned of too.
+    expect(shareLiveWarning(undefined)).toBe(shareLiveWarning({ page: null }));
+  });
+
+  test('offers a run that can be shared in the status bar, and none that cannot, whose command says why', () => {
+    expect(liveItem(sessionsOf(live('ed-1')))).toEqual({
+      text: '$(broadcast)',
+      tooltip: 'Piwi: Share the run live on piwi.example.com, for a teammate to watch from its page',
+      command: 'piwi.shareRunLive',
+    });
+    const refused = live('ed-2', { refused: "This run cannot be shared live: its project's live view is off." });
+    expect(liveItem(sessionsOf(refused))).toBeNull();
+    expect(liveItem(sessionsOf(session('ed-3', [worker(0, 'running')])))).toBeNull();
+    // The command asks the service anyway, which says why.
+    expect(liveTarget(sessionsOf(refused), true)).toEqual({ ref: 'ed-2' });
+    expect(liveTarget(new Map(), true)).toEqual({ none: 'no run started from the editor is running.' });
+    // A run whose sharing stopped though nobody asked is offered again, saying why it stopped.
+    const lost = 'Sharing stopped: the instance did not answer. Share the run again to try once more.';
+    expect(liveItem(sessionsOf(live('ed-1', { stopped: lost })))).toEqual({
+      text: '$(broadcast)',
+      tooltip: `Piwi: ${lost} Share the run live on piwi.example.com, for a teammate to watch from its page.`,
+      command: 'piwi.shareRunLive',
+    });
+  });
+
+  test('says how a shared run stands, and stops sharing it from the status bar', () => {
+    const shared = sessionsOf(live('ed-1', { shared: true, viewers: 2 }));
+    expect(controlState(shared).liveShared).toBe(true);
+    expect(liveItem(shared)).toEqual({
+      text: '$(broadcast) Live · 2 views',
+      tooltip: 'Piwi: Shared live on piwi.example.com: 2 views open. Click to stop sharing the run.',
+      command: 'piwi.stopSharingRun',
+    });
+    // Two runs shared: the views open of both, as JetBrains counts them.
+    expect(
+      liveItem(sessionsOf(live('ed-1', { shared: true, viewers: 2 }), live('ed-2', { shared: true, viewers: 1 }))),
+    ).toEqual({
+      text: '$(broadcast) Live · 3 views',
+      tooltip: 'Piwi: 2 runs shared live: 3 views open. Click to stop sharing one.',
+      command: 'piwi.stopSharingRun',
+    });
+    expect(liveText({ shared: true, refused: null, stopped: null, page, viewers: 0 })).toBe(
+      'Shared live on piwi.example.com: nobody watches yet',
+    );
+    expect(liveText({ shared: true, refused: null, stopped: null, page: null, viewers: 1 })).toBe(
+      'Shared live: 1 view open',
+    );
+    expect(liveTarget(shared, false)).toEqual({ ref: 'ed-1' });
+    expect(liveTarget(sessionsOf(live('ed-1')), false)).toEqual({ none: 'no run is shared live.' });
+    // Two runs that can be shared: the person chooses.
+    expect(liveTarget(sessionsOf(live('ed-1'), live('ed-2')), true)).toEqual({ candidates: ['ed-1', 'ed-2'] });
   });
 });
 
@@ -195,6 +380,10 @@ describe('a stop', () => {
       'Paused · Fill "WELCOME10" getByLabel(\'Coupon\') · attempt 2',
     );
     expect(pausedText(stopAt(spec, 5), null)).toBe('Paused · Fill "WELCOME10" getByLabel(\'Coupon\')');
+    // A stop an agent asked for says so.
+    expect(pausedText({ ...stopAt(spec, 5), by: 'agent' }, null)).toBe(
+      'Paused by the agent · Fill "WELCOME10" getByLabel(\'Coupon\')',
+    );
   });
 
   test('is each stopped worker of each run, told apart by its run, worker and time', () => {
@@ -420,6 +609,73 @@ describe('the paused page view', () => {
     expect(html).not.toContain('<script');
   });
 
+  test('runs one script, by the style’s nonce, only where a click on the image picks', () => {
+    const image = { mime: 'image/jpeg' as const, data: '/9j/4AAQ+w==', width: 1280, height: 800 };
+    const html = pausedPageHtml({ image, caption: 'Paused', pick: { shown: 3 }, note: 'Picked <x>.' }, 'n0nce');
+    expect(html).toContain(
+      `content="default-src 'none'; img-src data:; style-src 'nonce-n0nce'; script-src 'nonce-n0nce'"`,
+    );
+    expect(html).toContain(`<p class="hint">${PICK_HINT}</p>`);
+    expect(html).toContain('<p class="note" role="status">Picked &#60;x&#62;.</p>');
+    expect(html).toContain('<img class="pick" id="page" src="data:image/jpeg;base64,/9j/4AAQ+w=="');
+    expect(html).toContain('img.pick{cursor:crosshair}');
+    const scripts = html.match(/<script[^>]*>/g) ?? [];
+    expect(scripts).toEqual(['<script nonce="n0nce">']);
+    expect(html).toContain("vscode.postMessage({type:'pick',shown:3,x:e.offsetX,y:e.offsetY,");
+    // Without the pick, or without an image, no script and no hint.
+    for (const view of [
+      { image, caption: 'Paused', pick: null },
+      { image: null, caption: 'The test went on.', pick: { shown: 3 } },
+    ]) {
+      const plain = pausedPageHtml(view, 'n');
+      expect(plain).not.toContain('<script');
+      expect(plain).not.toContain('script-src');
+      expect(plain).not.toContain(PICK_HINT);
+    }
+  });
+
+  test('picks on an image whose worker takes it and that names its viewport', () => {
+    const image = { mime: 'image/jpeg' as const, data: 'AAAA', width: 1280, height: 800 };
+    expect(picksOnImage(['pick', 'pick-at'], image)).toBe(true);
+    expect(picksOnImage(['pick', 'view'], image)).toBe(false);
+    expect(picksOnImage(['pick-at'], { mime: 'image/jpeg', data: 'AAAA' })).toBe(false);
+    expect(picksOnImage(['pick-at'], null)).toBe(false);
+  });
+
+  test('maps a click on the image as shown to CSS pixels of the page, whatever size it is shown at', () => {
+    const image = { mime: 'image/jpeg' as const, data: 'AAAA', width: 1280, height: 800 };
+    const click = (x: number, y: number, width = 640, height = 400) => ({ shown: 1, x, y, width, height });
+    expect(pagePoint(click(320, 100), image)).toEqual({ x: 640, y: 200 });
+    // Shown larger than the viewport (an image taken at a device scale factor of 2, shown whole).
+    expect(pagePoint(click(1001, 3, 2560, 1600), image)).toEqual({ x: 501, y: 2 });
+    expect(pagePoint(click(640, 400), image)).toEqual({ x: 1279, y: 799 });
+    expect(pagePoint(click(0, 0), image)).toEqual({ x: 0, y: 0 });
+    for (const outside of [click(-1, 5), click(5, 401), click(5, 5, 0, 400)]) {
+      expect(pagePoint(outside, image)).toBeNull();
+    }
+    expect(pagePoint(click(5, 5), { mime: 'image/jpeg', data: 'AAAA' })).toBeNull();
+  });
+
+  test('reads the script’s message field by field', () => {
+    expect(imageClickOf({ type: 'pick', shown: 2, x: 1.5, y: 3, width: 640, height: 400 })).toEqual({
+      shown: 2,
+      x: 1.5,
+      y: 3,
+      width: 640,
+      height: 400,
+    });
+    for (const message of [
+      null,
+      'pick',
+      { type: 'other', shown: 2, x: 1, y: 3, width: 640, height: 400 },
+      { type: 'pick', shown: 2, x: '1', y: 3, width: 640, height: 400 },
+      { type: 'pick', shown: 2, x: Number.NaN, y: 3, width: 640, height: 400 },
+      { type: 'pick', x: 1, y: 3, width: 640, height: 400 },
+    ]) {
+      expect(imageClickOf(message), JSON.stringify(message)).toBeNull();
+    }
+  });
+
   test('shows no image for anything but a JPEG in base64', () => {
     const quote = pausedPageHtml({ image: { mime: 'image/jpeg', data: 'AA"onerror="x' }, caption: 'c' }, 'n');
     expect(quote).not.toContain('<img');
@@ -455,8 +711,13 @@ describe('a failure held for the editor', () => {
     expect(pausedText(failed, runTest(1))).toBe('Failed · Timed out 5000ms waiting for click · attempt 2');
     expect(stopIcon(failed)).toBe('$(error)');
     expect(stopIcon(stopAt(spec, 5))).toBe('$(debug-pause)');
-    expect(stopControls(failed).map((c) => c.title)).toEqual(['Resume']);
-    expect(stopControls(stopAt(spec, 5)).map((c) => c.title)).toEqual(['Resume', 'Step', 'Run to cursor', 'Finish']);
+    expect(stopControls(shown(failed)).map((c) => c.title)).toEqual(['Resume']);
+    expect(stopControls(shown(stopAt(spec, 5))).map((c) => c.title)).toEqual([
+      'Resume',
+      'Step',
+      'Run to cursor',
+      'Finish',
+    ]);
     expect(stopPick(shown(failed)).label).toBe('$(error) Failed · Timed out 5000ms waiting for click');
   });
 

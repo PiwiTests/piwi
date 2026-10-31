@@ -1,8 +1,6 @@
 import { describe, test, expect, beforeEach } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { sanitizeExecutionResources, sanitizeResourceReport } from '../../shared/resource-report';
@@ -11,6 +9,7 @@ import { resourceFingerprint } from '../../shared/resource-fingerprint.mjs';
 import type { WireResourceFinding } from '../../shared/types';
 import { findingView } from '../../shared/resource-copy';
 import { machineFacts, resourceTotals } from '../../app/utils/resources';
+import { migrateToLatest } from './temp-db';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set.
 delete process.env.PIWI_DATABASE_URL;
@@ -27,9 +26,7 @@ let db: Db;
 
 beforeEach(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, {
-    migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-  });
+  await migrateToLatest(db);
 });
 
 const report = (shardIndex: number | null, leaky = true) =>

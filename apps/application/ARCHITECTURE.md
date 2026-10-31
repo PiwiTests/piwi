@@ -178,6 +178,12 @@ Each entry names folders under `server/api/`.
   - The streaming protocol: `setup`, `start`, `[id]/begin`, `[id]/events`, `[id]/heartbeat`, `[id]/case-files`,
     `[id]/finish`, and `[id]/live-resources`: a watched run's CPU, memory and open pages, held in memory by
     `server/utils/run-events.ts` until the run ends and merged by `shared/live-resources.ts`.
+  - The run page's live view of a CI run, or of a run a developer shares (Share live), for a project with
+    `projects.live_view` on: `[id]/live-view` (a test worker's event stream, `GET`, and its frames, stops and the end of
+    its sharing, `POST`, on the run's live view key, `@piwitests/core/live-view`), `[id]/live-view/watch` (one worker's
+    view, to a person who may open the run) and `[id]/live-view/workers`. All of it is relayed in memory by
+    `server/utils/live-view.ts`, written straight to the response by `server/utils/event-stream.ts` so a slow reader
+    gets the latest frame alone; `setup` mints the key.
   - Run detail: `[id]` (read, update, delete), `recent`, the SSE `[id]/stream`, network requests, failure groups,
     `[id]/insights` (the comparison with a baseline that the Changes tab shows), coverage, the Perfetto export.
   - `[id]/resources`: the report each reporter sent (one `test_run_resource_reports` row per shard, rebuilt on ingest
@@ -249,7 +255,15 @@ Each entry names folders under `server/api/`.
     `server/utils/selection-impact.ts` (its pure line-level rules in `shared/line-impact.ts`), the definition's shape,
     validation and materialization in `shared/selection/`.
 - **`desktop/`**: routes the desktop app calls: its event stream, local imports, Piwi Picker pairing, reproduction
-  requests, reporter configuration.
+  requests, reporter configuration, and the hub of the runs its shell starts (`run-channel`, `live`, `runs/`; the hub
+  is `server/utils/desktop-runs.ts`, on the editor service's run control). The window's side is the Local runs tray
+  (`DesktopLocalRunsTray`): `useDesktopRunHub` holds the hub's stream and commands, `DesktopRunSession`,
+  `DesktopRunWorker` and `DesktopRunStopPage` show each worker, its stop, its page and its live view (with the Runs
+  window's input, `apps/extension/src/shared/view-input.ts`), `DesktopRunShare` a run's Share live, and
+  `DesktopRunCopyList` the code to copy, and `DesktopLocalRunConsole` a run's output in its ANSI colors, in the tray
+  or in a window of its own (`DesktopRunOutputWindow` feeds `pages/desktop/run-output.vue` over a `BroadcastChannel`,
+  `app/utils/run-output-channel.ts`); the pure half is `app/utils/desktop-run-view.ts`. Agents reach the same runs
+  through `/mcp` (the run tools, below).
 - **`flake-lab/inbox`, `gaps/`**: cross-project inboxes of the Flake Lab and the scenario gaps.
 - **`health`, `version`, `capabilities`, `setup-status`, `metrics`, `rollups`, `stream`, `agent-skills`**: the
   readiness probe (200 or 503, with a database check), build info, the instance capabilities, the setup status,
@@ -258,9 +272,12 @@ Each entry names folders under `server/api/`.
 ### Other routes
 
 - **`server/routes/mcp.post.ts`**: the MCP server endpoint. Tool definitions in `shared/mcp-tools.ts`, handlers in
-  `server/utils/mcp/`. `describe_piwi` and `get_release_notes` live in `server/utils/mcp/about-piwi.ts`: they read the
-  docs and the CHANGELOG bundled as Nitro server assets, parsed by `shared/docs-corpus.ts` and `shared/changelog.ts`,
-  with the pieces and setup decisions in `shared/piwi-ecosystem.ts`.
+  `server/utils/mcp/`. In the desktop build it also serves the tools for the runs the shell starts
+  (`server/utils/mcp/run-tools.ts`): the editor service's `RunAgent` on the hub of those runs (`DesktopRuns.agent`),
+  its answers passed on as they are, the code it makes sent to the window to copy. `describe_piwi` and
+  `get_release_notes` live in `server/utils/mcp/about-piwi.ts`: they read the docs and the CHANGELOG bundled as Nitro
+  server assets, parsed by `shared/docs-corpus.ts` and `shared/changelog.ts`, with the pieces and setup decisions in
+  `shared/piwi-ecosystem.ts`.
 - **`server/routes/oauth/`, `server/routes/.well-known/`**: the OAuth authorization server MCP clients sign in
   through: discovery metadata (RFC 9728, RFC 8414), dynamic client registration, `authorize` (stores the request and
   redirects to the `/oauth/consent` page, backed by `api/oauth/authorizations/[id]`), `token` (code with PKCE, refresh
@@ -474,9 +491,10 @@ On the execution page:
 
 **Under the block.**
 
-- The execution page shows `EvidenceTabs` (opening on the tab `useEvidenceHint` picks from the leading clue), the
-  `Toolbox` (More ways to fix: one folded section per way to fix, the one the next step points at open) and the
-  history (`HistoryStrip`).
+- The execution page shows `EvidenceTabs` (opening on the tab `useEvidenceHint` picks from the leading clue; its
+  Source tab's frame where the failure enters the test's code, `failurePlace`, offers Debug in my editor,
+  `DebugInEditorButton`), the `Toolbox` (More ways to fix: one folded section per way to fix, the one the next step
+  points at open) and the history (`HistoryStrip`).
 - The cluster page shows, in order:
   - the section the next step points at, as a card of its own (`Toolbox` with `lead`; the sections, their order and
     the step each serves are in `app/utils/fix-sections.ts`);
@@ -625,7 +643,7 @@ rule):
 - **Analytics scope**: `useAnalyticsScope`.
 - **The run page's retry command**: `useRunRetryCommand` (one failing set and one shared mode for every copy button on
   the page).
-- **IDE preferences**: `useOpenInIde`.
+- **IDE preferences**: `useOpenInIde`, and Debug in my editor through Piwi's own IDE clients (`debugInIde`).
 - **Guides**: `useGuide` (the engine that walks a guide's stops, with a driver.js popover on each stop's guide
   anchor), `useDemoTour` (the demo tour's prompt and language, on top of it) and `useAuthoredGuides` (the authored
   guides the command palette and the assistant panel list).
@@ -676,10 +694,12 @@ How the guide engine plays a guide (`app/composables/useGuide.ts`):
 - **Re-export shims.** `help-content.ts`, `settings-metadata.ts`, `retry-command.ts` and `locator-edit.ts` re-export
   shared modules, so they stay auto-imported in the app while the server and the demo import the same code:
   - `shared/retry-command.ts`: `buildRetryCommand` (`file-line` / `grep` / `file` modes, shell-escaped, capped at 4096
-    chars) and `buildTitleGrepFlag` (the regex-escaped, shell-quoted `-g` flag the fix plan and auto-heal verify
-    commands add);
+    chars), `buildRetryArgs` (the `file:line` and `--project` arguments a CI re-run is handed), `buildRerunCommand`
+    (the one command, by file and title, of the fix plan's verify step and its bisect) and `buildTitleGrepFlag` (the
+    regex-escaped, shell-quoted `-g` flag it and the auto-heal verify command add). A cluster's re-run names the tests
+    `shared/handlers/cluster-rerun-cases.ts` chooses, for CI, the fix plan and the desktop app alike;
   - `shared/locator-edit.ts`, itself a re-export of `@piwitests/core/locator-edit`: `buildLocatorEdit` (rewrites the
-    failing locator call on a source line). The fix plan builds the same verify command and edits.
+    failing locator call on a source line), which the fix plan's edits use too.
 - Locator-line edits become a unified diff `git apply` accepts through `shared/heal-edit.ts` (`buildHealEdit` /
   `buildUnifiedLineDiff`), and `shared/callsite-location.ts` (`parseCallsiteLocation`) parses a captured
   `file:line:col` (safe with Windows drive letters).

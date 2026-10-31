@@ -9,8 +9,10 @@
  * (see app/demo/run-events.ts).
  */
 
+import { resolveBrowserName } from '#shared/browser-name';
 import { eq, and, or, sql } from 'drizzle-orm';
 import { getDemoDb } from '../db.client';
+import { checkDemoStuckTests, forgetDemoRun, noteDemoBegin, noteDemoComplete } from './stuck-tests';
 import { publishDemoGlobalEvent, publishDemoRunEvent } from '../run-events';
 import {
   projects,
@@ -54,6 +56,7 @@ import {
   type TestCoverageCase,
 } from '~~/server/utils/coverage';
 import { sanitizeCoverage, type CoverageCapture } from '@piwitests/core/coverage';
+import { hideTypedText } from '@piwitests/core/mask';
 import { upsertCasePayloads } from '~~/server/utils/case-payloads';
 import { resolveRunBranch } from '~~/server/utils/run-branch';
 import { runCommit, runOrigin } from '#shared/run-eligibility';
@@ -66,6 +69,7 @@ import {
   countDroppedConsoleEntries,
   capConsoleLogs,
   capErrorText,
+  hiddenErrorText,
   capSourceFrames,
   capText,
   sanitizeAiUsage,
@@ -214,6 +218,7 @@ async function cancelInstanceRuns(
   const cancelledRuns = await sharedCancelInstanceRuns(db, projectId, instanceId, excludeRunId, isShardedRun);
   for (const run of cancelledRuns) {
     publishDemoGlobalEvent({ type: 'run-cancelled', runId: run.id, projectId: run.projectId, status: 'cancelled' });
+    forgetDemoRun(run.id);
   }
 }
 
@@ -525,16 +530,6 @@ export interface RunCaseInput {
   blockedBy?: string | null;
 }
 
-/** Browser identity for the unique (run, case, repeat, retries, browser) key. */
-function resolveBrowserName(browser: unknown): string | null {
-  if (typeof browser === 'string') return browser;
-  if (browser && typeof browser === 'object') {
-    const b = browser as Record<string, unknown>;
-    if (typeof b.projectName === 'string') return b.projectName;
-  }
-  return null;
-}
-
 /**
  * Resolve (upsert) all unique suite paths from the batch into `test_suites`,
  * mirroring the server's `resolveSuites` (without its project cache — the demo
@@ -654,6 +649,8 @@ export async function persistRunCases(
 
   for (let i = 0; i < cases.length; i++) {
     const c = cases[i]!;
+    // Hidden once for all it is kept as; its fingerprint reads the error as it came.
+    const error = hiddenErrorText(c.error);
     const caseId = resolved.caseIds[i];
     if (caseId === undefined) continue;
     await db.update(testCases).set({ updatedAt: new Date() }).where(eq(testCases.id, caseId));
@@ -683,10 +680,10 @@ export async function persistRunCases(
       if (pending) {
         pending.count++;
       } else {
-        // The fingerprint is computed from the raw error above; only storage is capped.
+        // The fingerprint was computed from the error as it came; its secrets hidden leave it the same.
         pendingClusters.set(fingerprint.fingerprint, {
           fp: fingerprint,
-          sampleError: capText(c.error, DEFAULT_INGEST_LIMITS.sampleErrorChars)!,
+          sampleError: capText(error, DEFAULT_INGEST_LIMITS.sampleErrorChars)!,
           count: 1,
         });
       }
@@ -728,7 +725,7 @@ export async function persistRunCases(
       testCaseId: caseId,
       status: c.status,
       duration: c.duration ?? null,
-      error: capErrorText(c.error, DEFAULT_INGEST_LIMITS.errorChars),
+      error: capErrorText(error, DEFAULT_INGEST_LIMITS.errorChars),
       retries: c.retries ?? 0,
       repeatEachIndex: resolveRepeatEachIndex(c.repeatEachIndex),
       attempts: capArray(c.attempts, 30),
@@ -736,7 +733,7 @@ export async function persistRunCases(
       column: c.column,
       steps: cappedSteps,
       stepEvents: capArray(c.stepEvents, DEFAULT_INGEST_LIMITS.stepEvents),
-      slowestStep: c.slowestStep ?? null,
+      slowestStep: typeof c.slowestStep === 'string' ? hideTypedText(c.slowestStep) : null,
       slowestStepDuration: c.slowestStepDuration ?? null,
       webVitals: sanitizeWebVitals(c.webVitals as Record<string, unknown> | null | undefined) ?? null,
       pageState: sanitizePageState(c.pageState),
@@ -881,27 +878,30 @@ export async function apiPostRunEvents(
   for (const tc of beginEvents) {
     const loc = tc.location ? parseLocation(tc.location) : { filePath: 'unknown', line: null, column: null };
     const filePath = loc.filePath;
-    publishDemoRunEvent(id, {
-      type: 'test-begin',
-      data: {
-        title: tc.title,
-        filePath,
-        suitePath: (tc as { suitePath?: string[] | null }).suitePath ?? null,
-        location: tc.location,
-        workerIndex: tc.workerIndex ?? null,
-        shardIndex: tc.shardIndex ?? null,
-        startedAt: tc.startedAt ?? null,
-        browser: tc.browser ?? null,
-        repeatEachIndex: resolveRepeatEachIndex(tc.repeatEachIndex),
-      },
-    });
+    const beginData = {
+      title: tc.title,
+      filePath,
+      suitePath: (tc as { suitePath?: string[] | null }).suitePath ?? null,
+      location: tc.location,
+      workerIndex: tc.workerIndex ?? null,
+      shardIndex: tc.shardIndex ?? null,
+      startedAt: typeof tc.startedAt === 'number' ? tc.startedAt : Date.now(),
+      browser: tc.browser ?? null,
+      repeatEachIndex: resolveRepeatEachIndex(tc.repeatEachIndex),
+    };
+    publishDemoRunEvent(id, { type: 'test-begin', data: beginData });
+    noteDemoBegin(id, beginData);
   }
+  for (const tc of completeEvents) noteDemoComplete(id, tc);
 
   // Step events publish in batch order through the helper the server's events
   // handler (server/api/test-runs/[id]/events.post.ts) uses.
   for (const stepEvent of stepRunEvents) {
     publishDemoRunEvent(id, stepEvent);
   }
+
+  // Mirrors the server's stuck check, on the time the run's events reached (`./stuck-tests`).
+  await checkDemoStuckTests(db, testRun, validEvents);
 
   if (completeEvents.length === 0) {
     return { success: true, processed: beginEvents.length + stepRunEvents.length, watched: DEMO_RUN_WATCHED };
@@ -959,7 +959,7 @@ export async function apiPostRunEvents(
         status: tc.status,
         duration: tc.duration,
         location: tc.location,
-        error: tc.error ?? null,
+        error: hiddenErrorText(tc.error),
         stepEvents: tc.stepEvents ?? null,
         wastedTimeMs: tc.wastedTimeMs ?? null,
         workerIndex: tc.workerIndex ?? null,
@@ -991,7 +991,7 @@ export async function apiPostRunEvents(
 }
 
 /** POST /api/test-runs/:id/heartbeat */
-export async function apiHeartbeatTestRun(id: number, body: { streamToken?: string }) {
+export async function apiHeartbeatTestRun(id: number, body: { streamToken?: string; at?: number }) {
   const db = await getDemoDb();
 
   const testRunResults = await db.select().from(testRuns).where(eq(testRuns.id, id));
@@ -1003,6 +1003,8 @@ export async function apiHeartbeatTestRun(id: number, body: { streamToken?: stri
   await validateAndReviveDemoRun(db, testRun, body.streamToken, !!isValidShardToken);
 
   await db.update(testRuns).set({ updatedAt: new Date() }).where(eq(testRuns.id, id));
+  // The simulator's heartbeat carries the virtual time a hanging test reached: the stuck check runs at it.
+  if (typeof body.at === 'number') await checkDemoStuckTests(db, testRun, [{ startedAt: body.at }]);
 
   return { success: true, watched: DEMO_RUN_WATCHED };
 }
@@ -1165,6 +1167,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       });
 
       publishDemoGlobalEvent({ type: 'run-finished', runId: id, projectId: testRun.projectId, status: finalStatus });
+      forgetDemoRun(id);
 
       await recordRunHealth(db, id).catch(() => {});
       await syncAutoMarkersForRun(db, id).catch(() => {});
@@ -1260,6 +1263,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
   });
 
   publishDemoGlobalEvent({ type: 'run-finished', runId: id, projectId: testRun.projectId, status });
+  forgetDemoRun(id);
 
   await recordRunHealth(db, id).catch(() => {});
   await syncAutoMarkersForRun(db, id).catch(() => {});
@@ -1295,6 +1299,7 @@ export async function apiCancelStaleSimulatorRuns(body: { instanceId?: string })
 
   for (const run of cancelledRuns) {
     publishDemoGlobalEvent({ type: 'run-cancelled', runId: run.id, projectId: run.projectId, status: 'cancelled' });
+    forgetDemoRun(run.id);
   }
 
   return { success: true, cancelled: cancelledRuns.length };

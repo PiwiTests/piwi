@@ -33,8 +33,11 @@ const emit = defineEmits<{ saved: []; cancel: [] }>();
 const toast = useToast();
 const { copy, copied } = useCopy();
 
+/** The desktop build offers an email channel only once SMTP is set. */
+const offersEmail = !useIsDesktop() || props.smtpConfigured;
+
 const form = reactive({
-  type: 'email' as ChannelType,
+  type: (offersEmail ? 'email' : 'slack') as ChannelType,
   name: '',
   address: '',
   webhookUrl: '',
@@ -49,7 +52,7 @@ const form = reactive({
 // Browser channels pair with per-user subscriptions; without auth the project
 // bell's per-browser preferences cover that role instead.
 const typeItems = computed(() => [
-  { label: 'Email', value: 'email' },
+  ...(offersEmail ? [{ label: 'Email', value: 'email' }] : []),
   { label: 'Slack', value: 'slack' },
   { label: 'Microsoft Teams webhook', value: 'teams' },
   { label: 'Webhook', value: 'webhook' },
@@ -180,7 +183,7 @@ async function requestPermission() {
 
     <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <UFormField label="Type">
-        <USelect v-model="form.type" :items="typeItems" value-key="value" class="w-full" />
+        <USelect v-model="form.type" :items="typeItems" value-key="value" class="w-full" data-testid="channel-type" />
       </UFormField>
       <UFormField label="Name">
         <UInput v-model="form.name" :placeholder="suggestedName" class="w-full" data-testid="channel-name" />

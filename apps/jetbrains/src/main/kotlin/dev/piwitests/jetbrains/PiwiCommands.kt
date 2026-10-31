@@ -26,6 +26,7 @@ import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.SystemInfo
+import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.wm.ToolWindowManager
 import org.jetbrains.ide.BuiltInServerManager
@@ -162,15 +163,18 @@ object PiwiCommands {
         notification.notify(project)
     }
 
-    /** Run tests in the Run tool window, pausing at the IDE's breakpoints as **Settings → Tools → Piwi** allows. */
-    fun runTests(project: Project, args: RunTestsArgs) {
+    /**
+     * Run tests in the Run tool window, pausing at the IDE's breakpoints as **Settings → Tools → Piwi** allows. With
+     * `quiet`, a command the service does not build is not said: the service says why it builds no debug run.
+     */
+    fun runTests(project: Project, args: RunTestsArgs, quiet: Boolean = false) {
         background(project, "Piwi: resolving the tests") {
             val service = project.service<PiwiProjectService>()
             val breakpoints = service.breakpoints()
             val withBreakpoints = if (breakpoints.isEmpty()) args else args.copy(breakpoints = breakpoints.map { it.place })
             val command = service.server()?.runArgs(withBreakpoints)?.orNull()
             if (command?.command.isNullOrBlank() || command?.cwd == null) {
-                notify(project, "No command to run these tests (not connected?).", NotificationType.WARNING)
+                if (!quiet) notify(project, "No command to run these tests (not connected?).", NotificationType.WARNING)
             } else {
                 startRun(project, command, breakpoints)
             }
@@ -344,8 +348,13 @@ object PiwiCommands {
         }
     }
 
+    /**
+     * Show `message`, plain text, in a balloon. A notification's text is HTML, and a message may quote what a link or a
+     * tested page wrote (a refused path, a debug run's suggested locator): it is escaped, so it shows as text alone.
+     */
     fun notify(project: Project, message: String, type: NotificationType = NotificationType.INFORMATION) {
-        NotificationGroupManager.getInstance().getNotificationGroup("Piwi").createNotification(message, type).notify(project)
+        NotificationGroupManager.getInstance().getNotificationGroup("Piwi")
+            .createNotification(StringUtil.escapeXmlEntities(message), type).notify(project)
     }
 
     private fun background(project: Project, title: String, body: () -> Unit) {

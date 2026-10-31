@@ -93,8 +93,9 @@ export interface RunUseRule {
  * (`CI_RUN_ORIGINS`), the runs the editor overlays on that run are the finished
  * runs of its branch started after it, and the bug-report lifecycle reads the
  * default branch. The `notifications` use decides a finished run's outbound
- * effects alone: never for a run from an editor, and for a run from a
- * developer's machine or the desktop app only when it ran the whole suite
+ * effects alone: never for a run from an editor, a bisect step or a
+ * reproduction, and for a run from a developer's machine or the desktop app
+ * only when it ran the whole suite
  * (`completeOnlyFor`); the analysis behind them follows its own uses.
  */
 export const RUN_USES: Record<RunUse, RunUseRule> = {
@@ -173,12 +174,13 @@ export const RUN_USES: Record<RunUse, RunUseRule> = {
   },
   /**
    * A finished run's outbound effects: notifications, the pull-request comment
-   * and commit status, AI diagnosis and auto-heal. An environment incident
-   * sends one `environment.incident` event instead, and the gate reads it as
+   * and commit status, AI diagnosis and auto-heal. Never a run at a commit
+   * chosen to investigate a failure. An environment incident sends one
+   * `environment.incident` event instead, and the gate reads it as
    * inconclusive.
    */
   notifications: {
-    excludes: [...LAB_RUN_ORIGINS, 'editor'],
+    excludes: [...LAB_AND_INVESTIGATION, 'editor'],
     excludesIncidents: true,
     completeOnly: false,
     completeOnlyFor: ['local', 'desktop'],
@@ -187,8 +189,7 @@ export const RUN_USES: Record<RunUse, RunUseRule> = {
   /**
    * The writes Piwi makes to an issue tracker on its own: automatic creation,
    * and the comments, transitions and description updates a run's verdicts
-   * trigger. The outbound rule of `notifications`, and never a run at a commit
-   * chosen to investigate a failure.
+   * trigger. The rule of `notifications`.
    */
   tracker: {
     excludes: [...LAB_AND_INVESTIGATION, 'editor'],

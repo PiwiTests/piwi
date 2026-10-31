@@ -1,28 +1,54 @@
 import * as net from 'node:net';
-import type { Page, WorkerInfo } from '@playwright/test';
-import { lineReader, parseRecordChannel } from '@piwitests/core/ide-recorder';
+import type { Browser, Page, WorkerInfo } from '@playwright/test';
+import { RECORD_CHANNEL_ENV, lineReader, parseRecordChannel } from '@piwitests/core/ide-recorder';
+import { hideSecretsInText } from '@piwitests/core/mask';
 import {
+  MAX_RUN_EVENT_RATE,
   RUN_CHANNEL_ENV,
   RUN_HOLDS,
   RUN_INTENT_NAMES,
+  RUN_REF_ENV,
   RUN_TAKES,
+  TERMINAL_REF_PREFIX,
   parseHubToRun,
+  type ActAnswer,
+  type BindAnswer,
   type HubToRun,
   type IntentAnswer,
   type LocatorAnswer,
   type PausedImage,
+  type PickAtAnswer,
   type Place,
+  type RefLocatorAnswer,
+  type RunActAction,
+  type RunEvent,
   type RunHold,
   type RunIntent,
+  type RunTake,
   type RunToHub,
+  type SnapshotAnswer,
   type StopReason,
   type UnknownMessage,
 } from '@piwitests/core/run-channel';
+import {
+  MAX_VIEW_EVENT_RATE,
+  MAX_VIEW_FPS,
+  MAX_VIEW_FRAME,
+  RateWindow,
+  VIEW_QUALITY,
+  viewSize,
+  type ViewButton,
+  type ViewInput,
+} from '@piwitests/core/run-view';
+import { startedByTestRunner } from '../config/editors.js';
 import { PIWI_LOCAL_DEBUG_ENV, PIWI_ORIGIN_ENV } from '../config/env.js';
 import { errorMessage } from '../support/errors.js';
 import { getReporterVersion } from '../support/reporter-version.js';
+import { bindBrowser } from './agent-page.js';
 import { locatorOn } from './chain-locator.js';
 import { keptRequests, keptResponse } from './kept-responses.js';
+import { liveViewState, onLiveViewChange, shareLiveView } from './live-view.js';
+import { openPageView, viewportOf } from './page-view.js';
 import type { PauseAnswer } from './pause-at.js';
 import { internalCall } from './quiet-capture.js';
 
@@ -35,9 +61,23 @@ import { internalCall } from './quiet-capture.js';
  * outside the page, asks for the responses the test kept (`kept-responses.ts`) and the one to mock, and counts a
  * locator on the stopped page, outlining its matches where the bar shows until the test goes on (`takes` in its
  * attach). Its attach also lists the stops it holds only once the editor says it shows them (`holds`: a failure), which
- * the editor answers with `attached`; an editor that predates it says nothing, and no failure is held for it. A test
- * never waits on it but while stopped, and a connection that does not open, or closes, leaves the run as without it:
- * a stop no pause bar can answer then goes on at once.
+ * the editor answers with `attached`, naming the service when it is not the editor (`host`: the desktop app, which the
+ * worker's lines name then, `runHost`); an editor that predates it says nothing, and no failure is held for it. For a
+ * viewer outside the page, it shows the stopped page's live view (`view`: the page's screencast, its frames sent at
+ * most `MAX_VIEW_FPS` a second, the latest one when the connection is backed up, the latest sent kept in memory for a
+ * viewer that comes later until the view ends, never stored), plays the viewer's input
+ * on it as trusted input (`input`: `page.mouse`, `page.keyboard`, at most `MAX_VIEW_EVENT_RATE` events a second, what
+ * it holds down let go before the test goes on), and sends the locator of the element under a point of an image of
+ * the page where a pick goes (`pick-at`, `pick-at.ts`). The view ends with its stop, before the test goes on, and as
+ * its page or the connection closes. For an agent (the editor's MCP server), it reads the stopped page's ARIA snapshot
+ * in AI mode (`snapshot`), acts on one of its elements by its ref as trusted input (`act`) and ranks that element's
+ * locators (`ref-locator`, `agent-page.ts`), one at a time, at the stop held alone; it tells what the running test does
+ * (`events`, `run-events.ts`) while the editor asks, at most `MAX_RUN_EVENT_RATE` a second; and it binds its browser for
+ * Playwright's own tools at a stop on request (`bind`), until the test ends. For the team instance, it shares the run's
+ * live view as a person asks (`share`, `live-view.ts`), and says how that stands (`live`) after its attach and as it
+ * changes; a run this connection shared stops being shared as the connection closes. A test never waits on it but
+ * while stopped, and a connection that does not open, or closes, leaves the run as without it: a stop no pause bar can
+ * answer then goes on at once.
  */
 
 /** How long a worker waits for its run connection to open before its first test runs without it. */
@@ -51,6 +91,32 @@ const OUTLINE_STYLE = 'outline: 2px dashed #a78bfa; outline-offset: 2px; backgro
 
 /** Why a request naming a stop that ended is refused. */
 const WENT_ON = 'The test went on.';
+
+/** How many bytes of frames may wait in the run connection: the next frame waits until fewer do, the latest one alone. */
+const MAX_FRAME_BACKLOG = 1024 * 1024;
+/** How often a view that cannot use the page's screencast takes an image of the page instead. */
+const SHOT_MS = 500;
+/** The JPEG quality of the image a view sends in place of a frame longer than `MAX_VIEW_FRAME`, `SHOT_MS` apart. */
+const LIGHT_QUALITY = 30;
+/** Why a view sends no frame: each image of the page is too long, the lighter one included. */
+const TOO_HEAVY =
+  `This page is too heavy for the live view: each image of it is over ${MAX_VIEW_FRAME / 1024} KB, a lighter one ` +
+  'included. The image of the stop still shows it.';
+/** How long ending a view, and the input it plays, may take before its stop ends without waiting for them. */
+const VIEW_END_MS = 1000;
+/** How long starting a view, and a pick on an image, may take before the editor hears that the page did not answer. */
+const PAGE_ANSWER_MS = 10_000;
+/** Why a view or a pick on an image is refused when the page does not answer. */
+const NO_ANSWER = 'The page did not answer in time.';
+/** What an agent's action the page did not answer in time is answered with: it may still be played. */
+const LATE_ACT = 'The page did not answer in time: the action may still take effect, and is told when it does.';
+/** The most input messages a stop holds waiting to be played: one more is refused. */
+const MAX_INPUT_WAITING = 4;
+/** Why the input of a stop nobody watches is refused. */
+const NEEDS_VIEW = 'The input needs the live view of this stop: watch it first.';
+/** Why a stop whose page is not known has no view. */
+const NO_PAGE =
+  "This stop has no page to show: its call does not name one among its context's pages. Use the pause bar in the test's window.";
 
 /** What the editor asks that the capture fixtures apply to the running test's stops. */
 export interface RunControl {
@@ -72,6 +138,16 @@ interface HeldStop {
   bar: boolean;
   answer(choice: PauseAnswer): void;
   intent(what: RunIntent): IntentAnswer;
+  pickAt?(x: number, y: number): Promise<PickAtAnswer>;
+  agent?: StopAgent;
+  browser: Browser | null;
+}
+
+/** What an agent does at a stop whose page is known, each call internal. */
+export interface StopAgent {
+  snapshot(depth: number | null, image: boolean): Promise<SnapshotAnswer>;
+  refLocator(ref: string): Promise<RefLocatorAnswer>;
+  act(act: { ref: string; action: RunActAction; value: string | null }): Promise<ActAnswer>;
 }
 
 /** A stop as the editor hears it. */
@@ -86,14 +162,25 @@ export interface StopToHold {
   error?: string;
   /** The page an image of the stop is taken of: none when the stop's page is not known. */
   page: Page | null;
-  /** Start the bar's Pick a locator or Record here from outside the page; refused without it. */
+  /**
+   * Start the bar's Pick a locator or Record here from outside the page, at a stop no bar shows only while its live
+   * view is watched; refused without it.
+   */
   intent?(what: RunIntent): IntentAnswer;
+  /** The element under a point of the stopped page, its locator sent where a pick goes; refused without it. */
+  pickAt?(x: number, y: number): Promise<PickAtAnswer>;
+  /** What an agent reads and does on the stopped page; refused without it. */
+  agent?: StopAgent;
+  /** The browser of the stopped context, which `bind` shares with Playwright's own tools. */
+  browser?: Browser | null;
 }
 
 let socket: net.Socket | null = null;
 let control: RunControl | null = null;
 /** The stops the editor said it shows, of those this worker holds only then (`attached`). */
 let shown = new Set<RunHold>();
+/** What the service the run connection reaches calls itself (`attached`), when it is not the editor. */
+let host: string | null = null;
 let stops = 0;
 let held: HeldStop | null = null;
 /** The outline of a locator's matches in a stopped page, and the stop it belongs to. */
@@ -104,9 +191,83 @@ let outline: { stop: number; remove(): Promise<void> } | null = null;
  */
 let counting: Promise<unknown> = Promise.resolve();
 
+/** The live view of the stop held, while the editor's viewers watch it: whether it is the page's screencast. */
+interface View {
+  stop: number;
+  screencast: boolean;
+  /** Send the latest frame sent again, or why none goes, for a viewer that came since: a still page paints no other. */
+  resend(): void;
+  close(): Promise<void>;
+}
+
+let view: View | null = null;
+/** A view on its way, for the stop it is of. */
+let viewStarting: { stop: number; started: Promise<IntentAnswer> } | null = null;
+/** The editor's requests to start and stop a view, one after the other, in the order they came. */
+let viewTurn: Promise<unknown> = Promise.resolve();
+/** What ends with the view of the stop held: a pick or a recording driven through it. */
+const viewEnds = new Set<() => void>();
+
+/** The input of the stop held: its pace, the message playing, how many wait, and what it holds down. */
+interface InputState {
+  rate: RateWindow;
+  playing: Promise<unknown>;
+  waiting: number;
+  buttons: Set<ViewButton>;
+  keys: Set<string>;
+}
+
+function freshInput(): InputState {
+  return {
+    rate: new RateWindow(MAX_VIEW_EVENT_RATE),
+    playing: Promise.resolve(),
+    waiting: 0,
+    buttons: new Set(),
+    keys: new Set(),
+  };
+}
+
+let input = freshInput();
+/** A pick on an image runs: the next one waits for its answer. */
+let pickingAt = false;
+
+/** The run's ref and the worker's index, as its attach named them: a bound browser is named after them. */
+let runName = '';
+/** The editor asked for the running tests' events (`events`), and a test runs. */
+let eventsOn = false;
+let testRunning = false;
+/** The pace of the events, and how many it did not send since the last one sent. */
+let eventRate = new RateWindow(MAX_RUN_EVENT_RATE);
+let droppedEvents = 0;
+/** The agent's requests at a stop, one after the other, in the order they came. */
+let agentTurn: Promise<unknown> = Promise.resolve();
+/** The browser shared with Playwright's own tools, until the test ends, and its endpoint. */
+let bound: { browser: Browser; endpoint: string | null } | null = null;
+/** The run was shared through this connection: it stops being shared as the connection closes. */
+let sharedHere = false;
+/** The run's live view as the editor last heard it, as text; and what stops hearing its changes. */
+let liveSaid = '';
+let unhearLive: (() => void) | null = null;
+/** Why an agent's request at a stop whose page is not known is refused. */
+const NO_AGENT_PAGE = "This stop has no page an agent can read: its call does not name one among its context's pages.";
+
 /**
- * Open the worker's run connection when the run names a channel and a ref, with `handlers` for what the editor asks.
- * Resolves with whether it opened, once it did, failed or took too long. Never throws.
+ * What a worker takes, of `RUN_TAKES`: Pick a locator only where the run names a pairing its locators go to
+ * (`PIWI_EDITOR_SEND`), Record here and Assert only where it names a record channel (`PIWI_RECORD_CHANNEL`), neither of
+ * which a run started in a terminal carries.
+ */
+export function workerTakes(env: NodeJS.ProcessEnv = process.env): RunTake[] {
+  const pairing = !!env[PIWI_LOCAL_DEBUG_ENV.editorSend];
+  const recorder = parseRecordChannel(env[RECORD_CHANNEL_ENV]) !== null;
+  return RUN_TAKES.filter((take) =>
+    take === 'pick' ? pairing : take === 'record' || take === 'assert' ? recorder : true,
+  );
+}
+
+/**
+ * Open the worker's run connection when the run names a channel and a ref (`PIWI_RUN_REF`, else `PIWI_ORIGIN_REF`),
+ * with `handlers` for what the editor asks. Resolves with whether it opened, once it did, failed or took too long.
+ * Never throws.
  */
 export async function openRunChannel(
   worker: Pick<WorkerInfo, 'workerIndex' | 'parallelIndex' | 'config'>,
@@ -114,7 +275,7 @@ export async function openRunChannel(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<boolean> {
   const channel = parseRecordChannel(env[RUN_CHANNEL_ENV]);
-  const ref = env[PIWI_ORIGIN_ENV.ref];
+  const ref = env[RUN_REF_ENV] ?? env[PIWI_ORIGIN_ENV.ref];
   if (socket || !channel || !ref || !/^[\w-]{1,64}$/.test(ref)) return false;
   const opening = net.connect(channel.path);
   opening.setEncoding('utf8');
@@ -136,6 +297,9 @@ export async function openRunChannel(
   socket = opening;
   control = handlers;
   shown = new Set();
+  runName = `piwi-${ref}-w${worker.workerIndex}`;
+  eventsOn = false;
+  host = null;
   opening.unref();
   opening.on(
     'data',
@@ -147,9 +311,16 @@ export async function openRunChannel(
   opening.on('error', () => opening.destroy());
   opening.on('close', () => {
     if (socket === opening) socket = null;
+    unhearLive?.();
+    unhearLive = null;
+    // Nobody can stop the sharing any more: it stops.
+    if (sharedHere) void shareLiveView(false);
+    sharedHere = false;
+    // Nobody hears the view any more.
+    if (view) void stopView();
     if (!held || held.bar) return;
     // A stop no bar can answer goes on: nobody else can.
-    console.log('[piwi] The connection to the editor closed: the test goes on.');
+    console.log(`[piwi] The connection to ${runHost()} closed: the test goes on.`);
     held.answer('resume');
   });
   tellHub({
@@ -162,10 +333,26 @@ export async function openRunChannel(
     pid: process.pid,
     playwright: worker.config.version,
     reporter: getReporterVersion(),
-    takes: [...RUN_TAKES],
+    takes: workerTakes(env),
     holds: [...RUN_HOLDS],
+    // A run the reporter follows from outside the editor, which its own test runner started.
+    ...(ref.startsWith(TERMINAL_REF_PREFIX) && startedByTestRunner(env) ? { runner: true as const } : {}),
   });
+  liveSaid = '';
+  tellLive();
+  unhearLive?.();
+  unhearLive = onLiveViewChange(tellLive);
   return true;
+}
+
+/** Tell the editor how the run stands on the instance's live view, when that changed since it last heard. */
+function tellLive(): void {
+  if (!runChannelOpen()) return;
+  const state = liveViewState();
+  const said = JSON.stringify(state);
+  if (said === liveSaid) return;
+  liveSaid = said;
+  tellHub({ type: 'live', ...state });
 }
 
 /**
@@ -174,6 +361,14 @@ export async function openRunChannel(
  */
 export function editorShows(what: RunHold): boolean {
   return runChannelOpen() && shown.has(what);
+}
+
+/**
+ * What the worker's lines call the service its run connection reaches, as it named itself (`attached`): `the editor`
+ * unless it said otherwise (`the desktop app`).
+ */
+export function runHost(): string {
+  return host ?? 'the editor';
 }
 
 /** What a test runs without: the run's channel, and the editor's Send to editor pairing with its token. */
@@ -188,6 +383,7 @@ let hiddenEditorSend: string | undefined;
  * returns what puts them back once the test ended. The test's picks still go to the pairing (`editorSendAddress`).
  * Playwright compares a worker's environment as it stops with the one it started with, and hands what changed to the
  * projects that depend on its own: between tests, both are there. `PIWI_RECORD_CHANNEL` stays, for **Record here**.
+ * The live view's key is out for the worker's whole life (`live-view.ts`).
  */
 export function hideRunChannel(env: NodeJS.ProcessEnv = process.env): () => void {
   const hidden = HIDDEN_ENV.flatMap((name) => {
@@ -219,9 +415,43 @@ export function runChannelOpen(): boolean {
   return !!socket && !socket.destroyed;
 }
 
-/** Send the editor a message, when the run connection is open. */
+/** Send the editor a message, when the run connection is open. A test's end lets go of the browser it shared. */
 export function tellHub(message: RunToHub): void {
+  if (message.type === 'test-begin') testRunning = true;
+  if (message.type === 'test-end') {
+    testRunning = false;
+    void unbind();
+  }
   if (socket && !socket.destroyed) socket.write(`${JSON.stringify(message)}\n`);
+}
+
+/** Whether the editor wants the running test's events now: it asked for them, and a test runs. */
+export function runEventsWanted(): boolean {
+  return eventsOn && testRunning && runChannelOpen();
+}
+
+/** Tell the editor something the running test did, at most `MAX_RUN_EVENT_RATE` a second, saying how many it dropped. */
+export function tellEvent(event: RunEvent): void {
+  if (!runEventsWanted()) return;
+  if (!eventRate.take(droppedEvents ? 2 : 1)) {
+    droppedEvents++;
+    return;
+  }
+  if (droppedEvents) tellHub({ type: 'event', event: { kind: 'dropped', count: droppedEvents } });
+  droppedEvents = 0;
+  tellHub({ type: 'event', event });
+}
+
+/** The browser shared with Playwright's own tools is no longer: the test ended. */
+async function unbind(): Promise<void> {
+  const shared = bound?.browser;
+  bound = null;
+  if (shared?.isConnected()) {
+    await within(
+      internalCall(shared, () => bindBrowser(shared, runName, process.cwd(), false)),
+      VIEW_END_MS,
+    );
+  }
 }
 
 /**
@@ -235,6 +465,10 @@ export function holdStop(
 ): { stop: number; release(): Promise<void> } {
   const id = ++stops;
   let answered = false;
+  const needsBar = (what: RunIntent): IntentAnswer => ({
+    ok: false,
+    message: `${RUN_INTENT_NAMES[what]} needs the pause bar in the test's window, and this stop shows none: run the test headed.`,
+  });
   const holding: HeldStop = {
     stop: id,
     page: stop.page,
@@ -247,10 +481,13 @@ export function holdStop(
     intent: (what) =>
       answered
         ? { ok: false, message: WENT_ON }
-        : (stop.intent?.(what) ?? {
-            ok: false,
-            message: `${RUN_INTENT_NAMES[what]} needs the pause bar in the test's window, and this stop shows none: run the test headed.`,
-          }),
+        : // A stop no bar shows takes an intent only while its live view is watched, which drives it.
+          !stop.bar && view?.stop !== id
+          ? needsBar(what)
+          : (stop.intent?.(what) ?? needsBar(what)),
+    ...(stop.pickAt ? { pickAt: stop.pickAt } : {}),
+    ...(stop.agent ? { agent: stop.agent } : {}),
+    browser: stop.browser ?? null,
   };
   held = holding;
   tellHub({
@@ -271,9 +508,239 @@ export function holdStop(
       if (held === holding) held = null;
       await counting;
       if (outline?.stop === id) await removeOutline();
+      await endView(id, stop.page);
       tellHub({ type: 'running', stop: id });
     },
   };
+}
+
+/** A signal that aborts once the live view of the stop `stop` ends; aborted already when it is not watched. */
+export function viewEnded(stop: number): AbortSignal {
+  const ended = new AbortController();
+  if (view?.stop !== stop) ended.abort();
+  else viewEnds.add(() => ended.abort());
+  return ended.signal;
+}
+
+/** `run`, for `ms` at most: settles once it did or they passed, never throwing. */
+async function within(run: Promise<unknown>, ms: number): Promise<void> {
+  await answerWithin(run, ms, undefined);
+}
+
+/** What `run` resolves with, or `late` once `ms` passed (or it failed), `run` left to settle on its own. */
+async function answerWithin<T, L>(run: Promise<T>, ms: number, late: L): Promise<T | L> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      run.catch(() => late),
+      new Promise<L>((resolve) => (timer = setTimeout(() => resolve(late), ms))),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * The stop `stop` ends: its view stops, the input playing is waited for, and what it holds down (a mouse button, a
+ * key) is let go, each `VIEW_END_MS` at most, before the test goes on.
+ */
+async function endView(stop: number, page: Page | null): Promise<void> {
+  if (viewStarting?.stop === stop) await within(viewStarting.started, VIEW_END_MS);
+  if (view?.stop === stop) await stopView();
+  const own = input;
+  input = freshInput();
+  await within(own.playing, VIEW_END_MS);
+  if (page && !page.isClosed() && (own.buttons.size || own.keys.size)) {
+    await within(
+      internalCall(page, async () => {
+        for (const button of own.buttons) await page.mouse.up({ button });
+        for (const key of own.keys) await page.keyboard.up(key);
+      }),
+      VIEW_END_MS,
+    );
+  }
+}
+
+/** Stop the live view, and end what was driven through it. */
+async function stopView(): Promise<void> {
+  const shown = view;
+  view = null;
+  for (const end of viewEnds) end();
+  viewEnds.clear();
+  if (shown) await within(shown.close(), VIEW_END_MS);
+}
+
+/**
+ * Start the live view of a stop the editor asked for, or say why there is none; for a view on already, asked again for
+ * a viewer that came since, send its latest frame again.
+ */
+function startView(holding: HeldStop): Promise<IntentAnswer> {
+  if (view?.stop === holding.stop) {
+    view.resend();
+    return Promise.resolve({ ok: true, message: 'The live view is on.' });
+  }
+  if (viewStarting?.stop === holding.stop) return viewStarting.started;
+  const page = holding.page;
+  if (!page || page.isClosed()) return Promise.resolve({ ok: false, message: NO_PAGE });
+  const started = (async (): Promise<IntentAnswer> => {
+    if (view) await stopView();
+    const opening = openView(page, holding.stop);
+    const opened = await answerWithin(opening, PAGE_ANSWER_MS, 'late' as const);
+    if (opened === 'late') {
+      // One that opens after all is closed at once: nobody waits for it.
+      void opening.then((late) => late?.close());
+      return { ok: false, message: NO_ANSWER };
+    }
+    if (!opened) return { ok: false, message: 'The page could not be shown: it closed, or does not answer.' };
+    if (held !== holding || page.isClosed()) {
+      await within(opened.close(), VIEW_END_MS);
+      return { ok: false, message: WENT_ON };
+    }
+    view = opened;
+    return {
+      ok: true,
+      message: opened.screencast
+        ? 'The live view is on.'
+        : "The live view is on, as images of the page twice a second: the page's screencast is in use.",
+    };
+  })().finally(() => {
+    if (viewStarting?.started === started) viewStarting = null;
+  });
+  viewStarting = { stop: holding.stop, started };
+  return started;
+}
+
+/**
+ * Open the live view of a page at the stop `stop` (`openPageView`): at the size of its viewport scaled down to fit
+ * `MAX_VIEW_WIDTH` by `MAX_VIEW_HEIGHT` and `VIEW_QUALITY`, `MAX_VIEW_FPS` frames a second at most, each frame going
+ * to the editor as `frame` with the viewport in CSS pixels, one longer than `MAX_VIEW_FRAME` replaced by an image of
+ * the page at `LIGHT_QUALITY`, and when that one is too long as well, `frame` with `refused` once, until a frame goes
+ * again. The latest alone waits while the connection is backed up; none goes once its stop began to end. The view
+ * stops as its page closes. Null when the page cannot be read.
+ */
+async function openView(page: Page, stop: number): Promise<View | null> {
+  const opened = await openPageView(page, {
+    size: viewSize,
+    quality: VIEW_QUALITY,
+    fps: MAX_VIEW_FPS,
+    maxFrameBytes: MAX_VIEW_FRAME,
+    lightQuality: LIGHT_QUALITY,
+    shotMs: SHOT_MS,
+    busy: () => !!socket && socket.writableLength > MAX_FRAME_BACKLOG,
+    // Once its stop began to end, no frame of it goes.
+    live: () => held?.stop === stop,
+    send: (frame) =>
+      tellHub({ type: 'frame', stop, width: frame.width, height: frame.height, data: frame.data.toString('base64') }),
+    refuse: () => tellHub({ type: 'frame', stop, refused: TOO_HEAVY }),
+  });
+  if (!opened) return null;
+  const onClose = () => {
+    if (view?.stop === stop) void stopView();
+  };
+  page.once('close', onClose);
+  return {
+    stop,
+    screencast: opened.screencast,
+    resend: opened.resend,
+    close: async () => {
+      page.off('close', onClose);
+      await opened.close();
+    },
+  };
+}
+
+/** Stop the live view of a stop the editor no longer watches. */
+async function stopViewOf(holding: HeldStop): Promise<IntentAnswer> {
+  if (viewStarting?.stop === holding.stop) await within(viewStarting.started, VIEW_END_MS);
+  if (view?.stop === holding.stop) await stopView();
+  return { ok: true, message: 'The live view is off.' };
+}
+
+/**
+ * Play a viewer's input at the stop held, in order, after the input sent before it: refused while the stop's view is
+ * not watched, past `MAX_VIEW_EVENT_RATE` events a second and with `MAX_INPUT_WAITING` messages waiting. The events
+ * of a stop that ends meanwhile are not played.
+ */
+function playInput(holding: HeldStop, events: ViewInput[]): Promise<IntentAnswer> {
+  const page = holding.page;
+  if (!page || view?.stop !== holding.stop) return Promise.resolve({ ok: false, message: NEEDS_VIEW });
+  const own = input;
+  if (own.waiting >= MAX_INPUT_WAITING) {
+    return Promise.resolve({ ok: false, message: 'The page still plays the input sent before: send less at once.' });
+  }
+  if (!own.rate.take(events.length)) {
+    return Promise.resolve({ ok: false, message: `Too much input: ${MAX_VIEW_EVENT_RATE} events a second at most.` });
+  }
+  own.waiting++;
+  const played = own.playing
+    .then(async (): Promise<IntentAnswer> => {
+      for (const [i, event] of events.entries()) {
+        if (held !== holding || input !== own || view?.stop !== holding.stop || page.isClosed()) {
+          return { ok: false, message: i ? `The stop ended after ${i} of the events.` : WENT_ON };
+        }
+        try {
+          await internalCall(page, () => playEvent(page, event, own));
+        } catch (error) {
+          // A page's error may name the address it was at: its credentials stay in the worker.
+          return {
+            ok: false,
+            message: hideSecretsInText(`Event ${i + 1} could not be played: ${errorMessage(error)}`),
+          };
+        }
+      }
+      return { ok: true, message: events.length === 1 ? 'Played 1 event.' : `Played ${events.length} events.` };
+    })
+    .finally(() => own.waiting--);
+  own.playing = played.catch(() => undefined);
+  return played;
+}
+
+/** Play one event on the page as trusted input, keeping what it holds down. */
+async function playEvent(page: Page, event: ViewInput, own: InputState): Promise<void> {
+  switch (event.type) {
+    case 'mouse':
+      if (event.action === 'move') return page.mouse.move(event.x, event.y);
+      if (event.action === 'click') {
+        return page.mouse.click(event.x, event.y, { button: event.button, clickCount: event.clickCount });
+      }
+      await page.mouse.move(event.x, event.y);
+      // The click count a viewer's browser counted, so a second down and up there is a double click.
+      const pressed = {
+        button: event.button,
+        ...(event.clickCount === undefined ? {} : { clickCount: event.clickCount }),
+      };
+      if (event.action === 'down') {
+        own.buttons.add(event.button);
+        return page.mouse.down(pressed);
+      }
+      own.buttons.delete(event.button);
+      return page.mouse.up(pressed);
+    case 'wheel':
+      await page.mouse.move(event.x, event.y);
+      return page.mouse.wheel(event.deltaX, event.deltaY);
+    case 'key':
+      if (event.action === 'press') return page.keyboard.press(event.key);
+      if (event.action === 'down') {
+        own.keys.add(event.key);
+        return page.keyboard.down(event.key);
+      }
+      own.keys.delete(event.key);
+      return page.keyboard.up(event.key);
+    case 'text':
+      return page.keyboard.insertText(event.text);
+  }
+}
+
+/** The element under a point of the stopped page, one pick at a time. */
+async function pickAtStop(holding: HeldStop, x: number, y: number): Promise<PickAtAnswer> {
+  if (!holding.pickAt) return { ok: false, message: NO_PAGE, locator: null };
+  if (pickingAt) return { ok: false, message: 'A pick on the image runs: wait for its answer.', locator: null };
+  pickingAt = true;
+  try {
+    return await answerWithin(holding.pickAt(x, y), PAGE_ANSWER_MS, { ok: false, message: NO_ANSWER, locator: null });
+  } finally {
+    pickingAt = false;
+  }
 }
 
 /** Take the outline of a locator's matches down, before the test goes on. */
@@ -320,6 +787,17 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
   switch (message.type) {
     case 'attached':
       shown = new Set(message.holds);
+      host = message.host ?? null;
+      return;
+    case 'events':
+      eventsOn = message.on;
+      eventRate = new RateWindow(MAX_RUN_EVENT_RATE);
+      droppedEvents = 0;
+      return;
+    case 'share':
+      sharedHere = message.on;
+      // A worker without a key, or one the instance refused, stays as it was: its `live` says why.
+      void shareLiveView(message.on).then(tellLive);
       return;
     case 'breakpoints':
       control?.breakpoints(message.places);
@@ -372,6 +850,62 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
           void counted.then((value) => tellHub({ type: 'answer', request, what: 'locator', value }));
           return;
         }
+        case 'view': {
+          const on = message.on;
+          const answered = viewTurn.then((): Promise<IntentAnswer> =>
+            !at ? Promise.resolve({ ok: false, message: WENT_ON }) : on ? startView(at) : stopViewOf(at),
+          );
+          viewTurn = answered.catch(() => undefined);
+          void answered.then((value) => tellHub({ type: 'answer', request, what: 'view', value }));
+          return;
+        }
+        case 'input': {
+          const played = at ? playInput(at, message.events) : Promise.resolve({ ok: false, message: WENT_ON });
+          void played.then((value) => tellHub({ type: 'answer', request, what: 'input', value }));
+          return;
+        }
+        case 'pick-at': {
+          const picked = at
+            ? pickAtStop(at, message.x, message.y)
+            : Promise.resolve({ ok: false, message: WENT_ON, locator: null });
+          void picked.then((value) => tellHub({ type: 'answer', request, what: 'pick-at', value }));
+          return;
+        }
+        case 'snapshot': {
+          const { depth, image } = message;
+          const none = { url: '', title: '', snapshot: null, cut: false, image: null };
+          void agentAt(
+            at,
+            (agent) => agent.snapshot(depth, image),
+            (refused) => ({ ...refused, ...none }),
+          ).then((value) => tellHub({ type: 'answer', request, what: 'snapshot', value }));
+          return;
+        }
+        case 'ref-locator': {
+          const { ref } = message;
+          void agentAt(
+            at,
+            (agent) => agent.refLocator(ref),
+            (refused) => ({ ...refused, element: null, locators: [] }),
+          ).then((value) => tellHub({ type: 'answer', request, what: 'ref-locator', value }));
+          return;
+        }
+        case 'act': {
+          const { ref, action, value: given } = message;
+          const answer = (value: ActAnswer) => tellHub({ type: 'answer', request, what: 'act', value });
+          // An action the page did not answer in time may still be played: once it is, the editor hears it again.
+          void agentAt(
+            at,
+            (agent) => agent.act({ ref, action, value: given }),
+            (refused) => ({ ...refused, element: null, locators: [] }),
+            { answer: { ok: false, message: LATE_ACT, element: null, locators: [], late: true }, again: answer },
+          ).then(answer);
+          return;
+        }
+        case 'bind': {
+          void bindAt(at, message.on).then((value) => tellHub({ type: 'answer', request, what: 'bind', value }));
+          return;
+        }
         default: {
           const value = at ? at.intent(message.what) : { ok: false, message: WENT_ON };
           tellHub({ type: 'answer', request, what: message.what, value });
@@ -387,14 +921,75 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
   }
 }
 
-/** An image of a stopped page, without the pause bar; null when there is no page or it cannot be taken. */
+/**
+ * Run an agent's request at the stop held, after the one before it, `PAGE_ANSWER_MS` at most: refused at a stop that
+ * ended or whose page is not known (`refuse` shapes the answer). With `late`, a request the page did not answer in
+ * time is answered `late.answer`, and, once it was played after all, `late.again` with what it did.
+ */
+function agentAt<T extends IntentAnswer>(
+  at: HeldStop | null,
+  run: (agent: StopAgent) => Promise<T>,
+  refuse: (refused: IntentAnswer) => T,
+  late?: { answer: T; again(value: T): void },
+): Promise<T> {
+  if (!at) return Promise.resolve(refuse({ ok: false, message: WENT_ON }));
+  const agent = at.agent;
+  if (!agent) return Promise.resolve(refuse({ ok: false, message: NO_AGENT_PAGE }));
+  const answered = agentTurn.then(async () => {
+    if (held !== at) return refuse({ ok: false, message: WENT_ON });
+    const running = run(agent);
+    const settled = running.then(
+      (value) => ({ value }),
+      () => ({ value: refuse({ ok: false, message: NO_ANSWER }) }),
+    );
+    const said = await answerWithin(settled, PAGE_ANSWER_MS, null);
+    if (said) return said.value;
+    if (!late) return refuse({ ok: false, message: NO_ANSWER });
+    void running.then((value) => value.ok && held === at && late.again(value)).catch(() => undefined);
+    return late.answer;
+  });
+  agentTurn = answered.catch(() => undefined);
+  return answered;
+}
+
+/**
+ * Share the stopped context's browser with Playwright's own tools, as `piwi-<ref>-w<worker>`, until the test ends; or
+ * stop sharing it. Refused at a stop that ended.
+ */
+async function bindAt(at: HeldStop | null, on: boolean): Promise<BindAnswer> {
+  if (!at) return { ok: false, message: WENT_ON, name: null, endpoint: null };
+  const browser = at.browser;
+  if (!on) {
+    await unbind();
+    return { ok: true, message: 'The browser is no longer shared with Playwright tools.', name: null, endpoint: null };
+  }
+  if (!browser) return { ok: false, message: NO_AGENT_PAGE, name: null, endpoint: null };
+  if (bound?.browser === browser) {
+    return {
+      ok: true,
+      message: `The browser is shared with Playwright tools as ${runName} until the test ends: any process of yours can drive it.`,
+      name: runName,
+      endpoint: bound.endpoint,
+    };
+  }
+  if (bound) await unbind();
+  const answer = await internalCall(browser, () => bindBrowser(browser, runName, process.cwd(), true));
+  if (answer.ok) bound = { browser, endpoint: answer.endpoint };
+  return answer;
+}
+
+/**
+ * An image of a stopped page, without the pause bar, with its viewport in CSS pixels (which `pick-at` names a point
+ * in, whatever the image's size); null when there is no page or it cannot be taken.
+ */
 async function imageOf(page: Page | null): Promise<PausedImage | null> {
   if (!page || page.isClosed()) return null;
   try {
     const shot = await internalCall(page, () =>
       page.screenshot({ type: 'jpeg', quality: 60, style: BAR_HIDDEN, timeout: 5000 }),
     );
-    return { mime: 'image/jpeg', data: shot.toString('base64') };
+    const viewport = await viewportOf(page);
+    return { mime: 'image/jpeg', data: shot.toString('base64'), ...viewport };
   } catch {
     return null;
   }

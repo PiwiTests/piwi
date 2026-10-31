@@ -36,6 +36,10 @@ import {
   recordInto,
   mcpAuthorizationNote,
   mcpConfiguration,
+  RUNS_MCP_FORMATS,
+  agentsTokenKey,
+  runsMcpConfiguration,
+  runsMcpHeaders,
   newTestFileName,
   openLink,
   openLinkMissing,
@@ -411,6 +415,32 @@ describe('relativeTime', () => {
     expect(ago(2 * 3_600_000)).toBe('2 h ago');
     expect(ago(3 * 86_400_000 + 5)).toBe('3 d ago');
     expect(relativeTime('not a time', 0)).toBe('just now');
+  });
+});
+
+describe('the runs’ MCP server', () => {
+  test('is a VS Code mcp.json naming the window’s server with its token as a bearer header', () => {
+    expect(runsMcpHeaders('t0ken')).toEqual({ Authorization: 'Bearer t0ken' });
+    expect(JSON.parse(runsMcpConfiguration('http://127.0.0.1:41234/mcp', 't0ken'))).toEqual({
+      servers: {
+        'piwi-runs': { type: 'http', url: 'http://127.0.0.1:41234/mcp', headers: { Authorization: 'Bearer t0ken' } },
+      },
+    });
+  });
+
+  test('is the mcpServers entry of type http Claude Code and Cursor read', () => {
+    expect(JSON.parse(runsMcpConfiguration('http://127.0.0.1:41234/mcp', 't0ken', 'mcpServers'))).toEqual({
+      mcpServers: {
+        'piwi-runs': { type: 'http', url: 'http://127.0.0.1:41234/mcp', headers: { Authorization: 'Bearer t0ken' } },
+      },
+    });
+    expect(RUNS_MCP_FORMATS.map((f) => f.format)).toEqual(['mcpServers', 'vscode']);
+  });
+
+  test('keeps a token per workspace', () => {
+    expect(agentsTokenKey('file:///work/shop')).toBe('piwi.agentsToken file:///work/shop');
+    expect(agentsTokenKey('file:///work/shop')).not.toBe(agentsTokenKey('file:///work/blog'));
+    expect(agentsTokenKey(null)).toBe('piwi.agentsToken');
   });
 });
 

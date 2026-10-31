@@ -116,7 +116,7 @@ export const HELP_TOPICS = {
   },
   'cluster.scm-fetch-failed': {
     title: 'Changes not read',
-    text: 'Piwi knows the range, but the host did not return its commits: a private repository needs an SCM token (**Settings → AI → Repository access**, or the project’s **Source control** settings). On the desktop app, run `git fetch` in the linked folder.',
+    text: 'Piwi knows the range, but the host did not return its commits: a private repository needs an SCM token (**Settings → AI → What the model receives → Repository access token**, or the project’s **Source control** settings). On the desktop app, run `git fetch` in the linked folder.',
     doc: 'guide/source-control#troubleshooting',
   },
   'cluster.scm-host-error': {
@@ -501,6 +501,17 @@ export const HELP_TOPICS = {
     text: 'Goals this project is checked against over the period a dashboard or a quality report shows: a pass rate to reach, and limits on flaky tests, wasted CI minutes per week, the age of the oldest open failure cause and the median time to fix. Each is optional; a met or missed target shows on the headline tiles, in the portfolio, in the insights and in the report.',
     doc: 'features/analytics#targets',
   },
+  'project.status-filter': {
+    title: 'Status filter',
+    text: [
+      'The runs that set this project’s status: the badge beside it in the sidebar, and its latest run in the Projects list and for agents.',
+      '',
+      '- **Off** — the latest run of any environment and branch sets the status.',
+      '- **On** — only the runs the filter keeps, read like the project page’s Filters: environments, branches (with none picked, the default branch and the runs that report none) and full runs only.',
+      '- **Lab runs** — Flake Lab and probe runs never set a status.',
+    ].join('\n'),
+    doc: 'features/branches#the-project-status',
+  },
   'project.url-patterns': {
     title: 'Browser extension URLs',
     text: [
@@ -513,10 +524,24 @@ export const HELP_TOPICS = {
     ].join('\n'),
     doc: 'features/extension-connection#url-patterns',
   },
+  'project.live-view': {
+    title: 'Live view',
+    text: [
+      'Lets the people who may open a CI run of this project, or a run a developer shares from their machine (Share live), watch from the run page the page each of its workers is on while it runs, and see when its test is paused.',
+      '',
+      '- **Sent** — small JPEG images of the test’s page, a few a second, with the call each was taken at. Only while someone watches that worker.',
+      '- **To** — the people who may open the run, over this instance. The images show what the page shows, the secret fields painted over.',
+      '- **Masked** — before an image leaves the worker: password fields, fields whose `autocomplete` asks for a one-time code or a card’s number or security code, and the **Masked elements** listed here (Playwright locators), by `@piwitests/reporter` 0.64.0 or later: an older one masks nothing. A secret in the page’s own text is not masked.',
+      '- **Kept** — nothing: relayed and dropped, never in the database, the logs or an export.',
+      '',
+      'Only a CI run the reporter’s global setup (`wrapConfig`) registers sends it: a run on a developer’s machine sends nothing unless its developer shares it from the editor, Piwi Picker or the desktop app. Turning it off ends every view at once.',
+    ].join('\n'),
+    doc: 'features/live-view',
+  },
   'project.ci-rerun': {
     title: 'CI re-run',
     text: [
-      'Lets a Maintainer or Project admin re-run a cluster’s affected tests in CI straight from its page, on the branch of the cluster’s latest run, passing each affected test’s file and line through the input/variable you name:',
+      'Lets a Maintainer, Project admin or administrator re-run a cluster’s affected tests in CI straight from its page, on the branch of the cluster’s latest run, passing each affected test’s file and line through the input/variable you name:',
       '',
       '- **GitHub** — a `workflow_dispatch`; the run is recognized by the optional dispatch id input.',
       '- **GitLab** — a pipeline, recognized by its pipeline id.',
@@ -528,7 +553,7 @@ export const HELP_TOPICS = {
   },
   'project.local-folder': {
     title: 'Linked local folder',
-    text: 'The checkout on this machine that produces this project’s runs. Linking it enables running tests from the app and opening files in your IDE. The link is stored on this machine only — never on the server.',
+    text: 'The checkout on this machine that produces this project’s runs. Linking it enables running tests from the app and opening files in your IDE. Its default run options are what each Re-run button of the project starts from. Both stay on this machine, never on the server.',
     doc: 'features/desktop#running-tests-from-the-app',
   },
 
@@ -542,6 +567,31 @@ export const HELP_TOPICS = {
     title: 'Live run',
     text: 'This run is still streaming results in real time. Results and counts update as each test finishes.',
     doc: 'guide/reporter#live-streaming',
+  },
+  'run.live-unshared': {
+    title: 'Not shared live',
+    text: [
+      'This run is on a developer’s machine: its workers send nothing until the developer shares it, and its running tests then offer **Watch**. Sharing is theirs to start:',
+      '',
+      '- **VS Code** — `Piwi: Share the run live on the team instance`, or the status bar’s broadcast icon.',
+      '- **JetBrains IDEs** — **Tools → Piwi → Share the Run Live**.',
+      '- **Piwi Picker** — **Share live** under the run’s name, in the Runs window.',
+      '- **Desktop app** — **Share live** above the run’s workers, in the Local runs tray.',
+    ].join('\n'),
+    doc: 'features/live-view#share-a-run-from-your-machine',
+  },
+  'run.live-desktop': {
+    title: 'Live view of a local run',
+    text: [
+      'The desktop app shows each test’s steps as it runs. Its page shows where the run is steered, once the test stops at a breakpoint, a `page.pause()` or **Pause**:',
+      '',
+      '- **Piwi Picker** — the Runs window, where **Watch live** follows it, for a run your editor or this app started.',
+      '- **VS Code or a JetBrains IDE** — the paused page, for a run it started.',
+      '- **Local runs** — this app’s tray, with **Watch live**, for a run it started.',
+      '',
+      'To watch a test without stopping it, run it headed, or report the run to your team’s instance, in a project with its live view on, and share it there.',
+    ].join('\n'),
+    doc: 'features/live-view#where-to-watch-a-run',
   },
   'run.reports': {
     title: 'Storage & reports',
@@ -813,7 +863,7 @@ export const HELP_TOPICS = {
     // Deliberately avoids the word "Export": the hint sits beside a button with
     // that label, and a substring role query would match both.
     title: 'Reading this offline',
-    text: 'Takes this investigation out of the dashboard as a file that needs no network and no Piwi server. HTML is one self-contained page with screenshots and video embedded; ZIP adds the raw artifacts — trace archives, full-size video, logs — plus a machine-readable data.json; PDF is a formatted document with screenshots embedded, generated directly with no browser print. Evidence past the size budget is listed in the report as omitted rather than dropped quietly.',
+    text: 'Takes this investigation out of the dashboard as a file that needs no network and no Piwi server. A run’s export holds its summary, its failures grouped by root cause, every test, and its failing tests in detail. HTML is one self-contained page with screenshots and video embedded; ZIP adds the raw artifacts — trace archives, full-size video, logs — plus a machine-readable data.json; PDF is a formatted document with screenshots embedded, generated directly with no browser print. Evidence past the size budget is listed in the report as omitted rather than dropped quietly.',
     doc: 'features/offline-export',
     envVars: ['PIWI_EXPORT_MAX_INLINE_BYTES', 'PIWI_EXPORT_MAX_BYTES', 'PIWI_EXPORT_MAX_CASES'],
   },
@@ -1016,7 +1066,7 @@ export const HELP_TOPICS = {
   },
   'settings.ai-provider': {
     title: 'AI provider',
-    text: 'Configure the model providers behind the four AI roles — diagnosis, research, embedding and assistant. Each role has its own provider config, or reuses another role’s provider and credentials. Keys are stored encrypted and never returned by the API.',
+    text: 'The service the AI runs on: a cloud API (with an API key), a self-hosted OpenAI-compatible server such as Ollama, or a command-line tool installed where Piwi runs (Claude Code, Codex, DeepSeek Harness). Each feature uses it unless you give it another. Keys are stored encrypted and never returned by the API.',
     doc: 'guide/ai-provider',
     envVars: ['PIWI_AI_PROVIDER', 'PIWI_AI_MODEL', 'PIWI_AI_API_KEY', 'PIWI_AI_BASE_URL', 'PIWI_AI_TEMPERATURE'],
   },
@@ -1026,8 +1076,8 @@ export const HELP_TOPICS = {
     doc: 'features/ai-diagnosis#custom-instructions',
   },
   'settings.ai-research': {
-    title: 'Research model',
-    text: 'An optional cheaper/faster model that pre-analyzes the failure (on a lean view) before the main model writes the final diagnosis. It can use its own provider, and the costly SCM diff is only fetched when it flags a likely regression. It also handles cluster naming and merge adjudication, so configuring a cheap research model routes those utility calls away from the expensive diagnosis model.',
+    title: 'Two-stage diagnosis',
+    text: 'A cheaper, faster model pre-analyzes the failure (on a lean view) before the diagnosis model writes the answer, on the same provider or another. The costly SCM diff is only fetched when it flags a likely regression. It also names and merges clusters, so those calls leave the expensive diagnosis model.',
     doc: 'guide/ai-provider#model-roles',
     envVars: [
       'PIWI_AI_RESEARCH_PROVIDER',
@@ -1039,7 +1089,7 @@ export const HELP_TOPICS = {
   },
   'settings.ai-assistant': {
     title: 'Assistant model',
-    text: 'The model the in-app assistant answers questions with. Unset, it uses the diagnosis model; set it to point the assistant at a faster, cheaper model while diagnosis keeps the strong one. Like research, it can reuse another role’s provider and key with a model of its own.',
+    text: 'The model the in-app assistant answers questions with. Unset, it uses the diagnosis model; set it to point the assistant at a faster, cheaper model while diagnosis keeps the strong one, on the same provider or another.',
     doc: 'features/assistant#the-model',
     envVars: [
       'PIWI_AI_ASSISTANT_PROVIDER',
@@ -1051,7 +1101,7 @@ export const HELP_TOPICS = {
   },
   'settings.ai-limits': {
     title: 'Diagnosis context limits',
-    text: 'Caps on how much evidence (and how many tokens) go into each diagnosis. Higher limits give the model more to work with but cost more. Each field can be pinned individually by its env var.',
+    text: 'Caps on how much evidence (and how many tokens) goes into each diagnosis, one group per kind of evidence. Higher limits give the model more to work with but cost more. Each field can be pinned individually by its env var.',
     doc: 'guide/ai-provider#context-limits-and-token-cost',
     envVars: [
       'PIWI_AI_MAX_SAMPLE_ERROR_CHARS',
@@ -1165,7 +1215,7 @@ export const HELP_TOPICS = {
   },
   'settings.auto-diagnose': {
     title: 'Auto-diagnose',
-    text: 'When a run finishes, up to 3 new failure clusters are diagnosed automatically — each diagnosis is one research call (when a research model is configured) plus one diagnosis call — and new clusters get human-readable titles in one batched call. Requires the diagnosis model to be configured.',
+    text: 'When a run finishes, up to 3 new failure clusters are diagnosed automatically — each diagnosis is one research call (with two-stage diagnosis on) plus one diagnosis call — and new clusters get human-readable titles in one batched call. Requires a provider.',
     doc: 'guide/ai-provider#enabling-ai-diagnosis',
     envVars: ['PIWI_AI_AUTO_DIAGNOSE'],
   },
@@ -1174,8 +1224,8 @@ export const HELP_TOPICS = {
     text: 'Show a browser notification when a diagnosis finishes. This is a per-browser preference stored on this device only — it is not shared with other users or saved on the server, and it needs the browser’s notification permission.',
   },
   'settings.embedding-model': {
-    title: 'Embedding model',
-    text: 'Embeds failures so semantically-similar errors group together (used by failure clustering). Can reuse another role’s provider or configure its own.',
+    title: 'Semantic clustering',
+    text: 'An embeddings model groups failures whose errors mean the same thing into one cluster. It needs an OpenAI-compatible provider with an embeddings API: the diagnosis provider when it has one, otherwise a provider of its own, such as Ollama.',
     doc: 'guide/ai-provider#model-roles',
     envVars: [
       'PIWI_AI_EMBEDDING_PROVIDER',
@@ -1185,8 +1235,8 @@ export const HELP_TOPICS = {
     ],
   },
   'settings.privacy': {
-    title: 'Privacy notice',
-    text: 'What data is sent to the configured LLM provider when diagnosing a failure, and how secrets are stored. API keys are encrypted at rest; env vars keep them out of the DB entirely.',
+    title: 'What the model receives',
+    text: 'Where the evidence of a diagnosis goes, and what it holds, grouped by kind with its limits. API keys are encrypted at rest; env vars keep them out of the database entirely.',
     doc: 'features/ai-diagnosis#what-a-diagnosis-contains',
   },
   'settings.storage-backend': {

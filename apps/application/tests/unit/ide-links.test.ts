@@ -5,7 +5,9 @@ import {
   buildPiwiPluginOpenUrl,
   buildVscodeExtensionUrl,
   buildVscodeUrl,
+  debugTargetOf,
   encodePathForUrl,
+  failurePlace,
   isJetbrainsProduct,
   jetbrainsPorts,
   joinWorkspacePath,
@@ -227,5 +229,113 @@ describe('parseLocation (re-exported)', () => {
       line: 10,
       column: 5,
     });
+  });
+});
+
+describe('Debug in my editor', () => {
+  /** A failed execution as the execution page reads it: failing in a page object called from the test. */
+  const failed = {
+    id: 37,
+    title: 'pays with a coupon',
+    filePath: 'tests/checkout.spec.ts',
+    line: 12,
+    suitePath: ['checkout', 'coupons'],
+    testSourceFrames: [
+      { file: 'tests/pages/checkout.page.ts', line: 30 },
+      { file: 'tests/checkout.spec.ts', line: 15 },
+    ],
+    browser: { projectName: 'Mobile Chrome' },
+  };
+
+  test('the failing line is where the failure enters the test’s code, not the test’s own line', () => {
+    expect(failurePlace(failed)).toEqual({ filePath: 'tests/pages/checkout.page.ts', line: 30 });
+    // A stack that names only the test's declaration (a test timeout) has no place.
+    expect(failurePlace({ ...failed, testSourceFrames: [{ file: 'tests/checkout.spec.ts', line: 12 }] })).toBeNull();
+    expect(
+      failurePlace({
+        ...failed,
+        testSourceFrames: [
+          { file: 'tests/checkout.spec.ts', line: 12 },
+          { file: 'tests/checkout.spec.ts', line: 18 },
+        ],
+      }),
+    ).toEqual({ filePath: 'tests/checkout.spec.ts', line: 18 });
+    expect(failurePlace({ ...failed, testSourceFrames: null })).toBeNull();
+    expect(
+      failurePlace({
+        ...failed,
+        testSourceFrames: [
+          { file: '', line: 3 },
+          { file: 'a.ts', line: 0 },
+        ],
+      }),
+    ).toBeNull();
+    expect(failurePlace(null)).toBeNull();
+  });
+
+  test('shows only for a failure with a place in the test’s code, and names the test, its project and the execution', () => {
+    expect(debugTargetOf(failed)).toEqual({
+      filePath: 'tests/pages/checkout.page.ts',
+      line: 30,
+      debug: {
+        spec: 'tests/checkout.spec.ts',
+        title: 'checkout › coupons › pays with a coupon',
+        project: 'Mobile Chrome',
+        execution: 37,
+      },
+    });
+    expect(debugTargetOf({ ...failed, testSourceFrames: [] })).toBeNull();
+    expect(debugTargetOf({ ...failed, filePath: null })).toBeNull();
+    expect(debugTargetOf({ ...failed, title: '' })).toBeNull();
+    expect(debugTargetOf({ ...failed, suitePath: null, browser: null, id: null })?.debug).toEqual({
+      spec: 'tests/checkout.spec.ts',
+      title: 'pays with a coupon',
+      project: null,
+      execution: null,
+    });
+  });
+
+  const debug = {
+    spec: 'tests\\checkout.spec.ts',
+    title: 'pays & saves 10% › “twice”?',
+    project: 'Mobile Chrome',
+    execution: 37,
+  };
+
+  test('the Piwi extension’s link gains debug=1 and the test, each value encoded whole', () => {
+    const url = buildVscodeExtensionUrl({ scheme: 'vscode', path: 'tests/pages/checkout.page.ts', line: 30, debug });
+    expect(url).toBe(
+      'vscode://piwitests.piwi/open?file=tests%2Fpages%2Fcheckout.page.ts&line=30&debug=1' +
+        '&spec=tests%2Fcheckout.spec.ts&test=pays%20%26%20saves%2010%25%20%E2%80%BA%20%E2%80%9Ctwice%E2%80%9D%3F' +
+        '&playwrightProject=Mobile%20Chrome&execution=37',
+    );
+    // What the extension reads back: `vscode.Uri.query`, decoded.
+    const query = decodeURIComponent(new URL(url).search.slice(1));
+    expect(query).toContain('&test=pays & saves 10% › “twice”?&playwrightProject=Mobile Chrome&');
+    // No project and no execution leave their fields out; with no line there is nothing to stop at.
+    expect(
+      buildVscodeExtensionUrl({ scheme: 'cursor', path: 'a.ts', line: 2, debug: { spec: 'a.spec.ts', title: 'pays' } }),
+    ).toBe('cursor://piwitests.piwi/open?file=a.ts&line=2&debug=1&spec=a.spec.ts&test=pays');
+    expect(buildVscodeExtensionUrl({ scheme: 'vscode', path: 'a.ts', debug })).toBe(
+      'vscode://piwitests.piwi/open?file=a.ts',
+    );
+  });
+
+  test('the Piwi plugin’s open request gains debug=1 and the test, never on a check', () => {
+    const url = new URL(
+      buildPiwiPluginOpenUrl({ port: 63342, path: 'tests/pages/checkout.page.ts', line: 30, project: 'shop', debug }),
+    );
+    expect([...url.searchParams]).toEqual([
+      ['file', 'tests/pages/checkout.page.ts'],
+      ['line', '30'],
+      ['project', 'shop'],
+      ['debug', '1'],
+      ['spec', 'tests/checkout.spec.ts'],
+      ['test', 'pays & saves 10% › “twice”?'],
+      ['playwrightProject', 'Mobile Chrome'],
+      ['execution', '37'],
+    ]);
+    const check = new URL(buildPiwiPluginOpenUrl({ port: 63342, path: 'a.ts', line: 3, check: true, debug }));
+    expect([...check.searchParams.keys()]).toEqual(['file', 'line', 'check']);
   });
 });

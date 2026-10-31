@@ -18,6 +18,10 @@
  * needs no setting. Every JetBrains method asks it first. The URL schemes are
  * fire-and-forget, and the IDE Remote Control endpoint can only be reached, not
  * read, so neither can report success.
+ *
+ * Debug in my editor (`debugInIde`) reaches the two IDE clients of Piwi's own,
+ * the JetBrains plugin and the VS Code extension, with `debug=1`: the IDE opens
+ * the failing line and asks before it runs the test.
  */
 import {
   buildJetbrainsHttpUrl,
@@ -29,6 +33,7 @@ import {
   joinWorkspacePath,
   pickPiwiPluginAnswer,
   VSCODE_CLI_COMMANDS,
+  type DebugTarget,
   type IdeFamily,
   type PiwiPluginAnswer,
   type VscodeScheme,
@@ -67,6 +72,17 @@ export interface OpenTarget {
   projectName?: string | null;
   /** Per-call method override from the chooser; omit to use the stored default. */
   method?: IdeMethod;
+}
+
+/** A failing line to debug in the IDE, and the test to run there (`debugTargetOf`). */
+export interface DebugInIdeTarget {
+  filePath: string;
+  line: number;
+  debug: DebugTarget;
+  /** Piwi project id — selects the per-project root override. */
+  projectKey?: string | number | null;
+  /** Piwi project name — the hint for the JetBrains project that holds the file. */
+  projectName?: string | null;
 }
 
 export interface IdeSettingsContext {
@@ -274,9 +290,12 @@ export function useOpenInIde() {
     line: number | null;
     column: number | null;
     project: string | null;
+    /** Debug in my editor: sent with the open alone, never with a check. */
+    debug?: DebugTarget | null;
   }): Promise<PiwiPluginResult> {
+    const { debug: _debug, ...asked } = o;
     const check = (ports: number[]) =>
-      Promise.all(ports.map(async (port) => ({ port, answer: await askPiwiPlugin(port, { ...o, check: true }) })));
+      Promise.all(ports.map(async (port) => ({ port, answer: await askPiwiPlugin(port, { ...asked, check: true }) })));
     let answers = lastPiwiPluginPort != null ? await check([lastPiwiPluginPort]) : [];
     if (!answers.some((a) => a.answer?.found)) {
       const others = jetbrainsPorts(prefs.value.jetbrainsPort).filter((p) => p !== lastPiwiPluginPort);
@@ -540,10 +559,91 @@ export function useOpenInIde() {
     });
   }
 
+  /**
+   * Debug in my editor: have the IDE the visitor picked open the failing line
+   * and offer to run the test there, headed, one worker, stopping at that line.
+   * Only Piwi's own IDE clients take it: the JetBrains plugin, for every method
+   * but VS Code (Auto asks it first, as an open does), and the Piwi extension's
+   * link for VS Code and its forks. The IDE asks before it runs anything.
+   */
+  async function debugInIde(target: DebugInIdeTarget) {
+    if (!import.meta.client) return;
+    const method = prefs.value.method;
+    const root = resolveRoot(target.projectKey) || null;
+    const ctx: IdeSettingsContext = {
+      projectKey: projectKeyOf(target.projectKey),
+      projectName: target.projectName ?? null,
+    };
+    const configureAction = { label: 'Configure', color: 'info' as const, onClick: () => openSettings(ctx) };
+
+    if (method !== 'vscode') {
+      const plugin = await openViaPiwiPlugin({
+        path: target.filePath,
+        root,
+        line: target.line,
+        column: null,
+        project: target.projectName ?? null,
+        debug: target.debug,
+      });
+      if (plugin.status === 'opened') {
+        const ide = plugin.answer.ide ?? 'JetBrains';
+        toast.add(
+          plugin.answer.opened === false
+            ? {
+                title: `${ide} refused to debug the test`,
+                description: plugin.answer.error,
+                color: 'error',
+                icon: 'i-lucide-triangle-alert',
+              }
+            : {
+                title: `Asked ${ide} to debug the test`,
+                description: 'It opened the failing line, and asks before it runs the test there.',
+                color: 'success',
+                icon: 'i-lucide-check',
+              },
+        );
+        return;
+      }
+      if (plugin.status === 'not-found' || method !== 'auto') {
+        const ide = plugin.status === 'not-found' ? (plugin.answer.ide ?? 'JetBrains') : 'JetBrains';
+        toast.add({
+          title: plugin.status === 'not-found' ? `Not found in ${ide}` : 'No JetBrains IDE with the Piwi plugin',
+          description:
+            plugin.status === 'not-found'
+              ? `No project open in ${ide} holds ${target.filePath}. Open the project that contains it.`
+              : 'Debug in my editor needs the Piwi plugin in your JetBrains IDE, running with the project open.',
+          color: 'warning',
+          icon: 'i-lucide-file-question',
+          actions: [configureAction],
+        });
+        return;
+      }
+    }
+
+    const editor = VSCODE_SCHEME_LABELS[prefs.value.vscodeScheme];
+    launchScheme(
+      buildVscodeExtensionUrl({
+        scheme: prefs.value.vscodeScheme,
+        path: target.filePath,
+        line: target.line,
+        root,
+        debug: target.debug,
+      }),
+    );
+    toast.add({
+      title: `Asked the Piwi extension in ${editor} to debug the test`,
+      description: `The ${editor} window focused last opens the failing line and asks before it runs the test there. If nothing opens, install the Piwi extension in ${editor}.`,
+      color: 'neutral',
+      icon: 'i-lucide-external-link',
+      actions: [configureAction],
+    });
+  }
+
   return {
     prefs,
     isConfigured,
     openInIde,
+    debugInIde,
     openInVscode: (t: Omit<OpenTarget, 'method'>) => openInIde({ ...t, method: 'vscode' }),
     openViaJetbrainsUrl: (t: Omit<OpenTarget, 'method'>) => openInIde({ ...t, method: 'jetbrains-url' }),
     openViaJetbrainsHttp: (t: Omit<OpenTarget, 'method'>) => openInIde({ ...t, method: 'jetbrains-http' }),

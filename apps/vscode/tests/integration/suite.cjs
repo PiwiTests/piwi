@@ -610,6 +610,8 @@ const tests = {
       });
       const shown = await waitFor(() => (api.pausedPage()?.image ? api.pausedPage() : null), 'the paused page');
       assert.equal(shown.image.data, '/9j/4AAQ');
+      // A reporter that does not take `pick-at` offers no pick on its image.
+      assert.equal(shown.pick, null);
       // The stop's line in the spec as it stands, two lines below the run's.
       assert.equal(shown.caption, 'Paused · Fill "one" locator(\'input\') · attempt 2 · checkout.spec.ts:5');
       assert.deepEqual(api.executionPoints(spec.toString()), [4]);
@@ -629,6 +631,82 @@ const tests = {
     assert.deepEqual(api.executionPoints(spec.toString()), []);
     assert.equal(api.pausedPage()?.caption, 'The run ended.');
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+  },
+
+  async 'a run started in a terminal follows the window with its breakpoints, and ends there at End the test'() {
+    const api = vscode.extensions.getExtension('piwitests.piwi').exports;
+    const channel = api.lastRun().env.PIWI_RUN_CHANNEL;
+    const spec = vscode.Uri.file(path.join(workspace, 'tests', 'checkout.spec.ts'));
+    const breakpoint = new vscode.SourceBreakpoint(new vscode.Location(spec, new vscode.Position(2, 0)));
+    vscode.debug.addBreakpoints([breakpoint]);
+    // The run a terminal started names itself, on the channel of the window's discovery file.
+    const ref = 'terminal-4242-1730000000000';
+    // Once the service heard the breakpoint.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const { socket, send, heardOne } = runWorker(channel, ref, ['end']);
+    const sessionOf = () => api.runSessions().find((s) => s.ref === ref);
+    try {
+      // It starts with the editor's breakpoints, as lines of the files as they stand.
+      await heardOne(
+        'the editor’s breakpoints',
+        (m) => m.type === 'breakpoints' && m.places.some((p) => p.file === 'tests/checkout.spec.ts' && p.line === 3),
+      );
+      assert.equal((await waitFor(() => sessionOf(), 'the terminal’s run')).terminal, true);
+      send({
+        type: 'test-begin',
+        testId: 't1',
+        title: ['pays'],
+        file: 'tests/checkout.spec.ts',
+        line: 3,
+        project: 'chromium',
+        retry: 0,
+        cannotPause: null,
+      });
+      send({
+        type: 'stopped',
+        stop: 1,
+        reason: 'breakpoint',
+        title: 'Fill "one" locator(\'input\')',
+        place: { file: 'tests/checkout.spec.ts', line: 3 },
+        locator: "locator('input')",
+        bar: true,
+      });
+      const lenses = await waitFor(async () => {
+        const titles = await stopLenses(spec, '$(debug-pause) Paused · ');
+        return titles.length ? titles : null;
+      }, 'the terminal run’s lenses');
+      const title = '$(debug-pause) Paused · Fill "one" locator(\'input\') · run in a terminal';
+      assert.ok(lenses.includes(title), lenses.join(' | '));
+      assert.ok(lenses.includes('End test'), lenses.join(' | '));
+      await vscode.commands.executeCommand('piwi.endTest');
+      await heardOne('End the test', (m) => m.type === 'control' && m.action === 'end' && m.stop === 1);
+    } finally {
+      vscode.debug.removeBreakpoints([breakpoint]);
+      socket.destroy();
+    }
+    await waitFor(() => !sessionOf(), 'the end of the terminal’s run');
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+  },
+
+  async 'a run shared live on the team instance stops being shared from the palette'() {
+    const api = vscode.extensions.getExtension('piwitests.piwi').exports;
+    const ref = 'ed-5a1e0001';
+    const page = 'https://piwi.example.com/test-runs/42';
+    const { socket, send, heardOne } = runWorker(api.lastRun().env.PIWI_RUN_CHANNEL, ref, ['share']);
+    const sessionOf = () => api.runSessions().find((s) => s.ref === ref);
+    try {
+      // A worker that streams from the start, as a CI run's does: the run reads as shared, with who watches it.
+      send({ type: 'live', can: true, on: true, viewers: 2, page, why: null });
+      await waitFor(() => sessionOf()?.live?.shared, 'the shared run');
+      assert.deepEqual(sessionOf().live, { shared: true, refused: null, stopped: null, page, viewers: 2 });
+      const commands = await vscode.commands.getCommands(true);
+      assert.ok(commands.includes('piwi.stopSharingRun'));
+      await vscode.commands.executeCommand('piwi.stopSharingRun');
+      await heardOne('the end of the sharing', (m) => m.type === 'share' && m.on === false);
+    } finally {
+      socket.destroy();
+    }
+    await waitFor(() => !sessionOf(), 'the end of the shared run');
   },
 
   async 'code from a stop: Assert and Mock write above the stopped line, the cursor’s locator is counted, and a failure stops'() {
@@ -835,6 +913,85 @@ const tests = {
     await waitFor(() => !api.runSessions().some((s) => s.ref === ref), 'the end of the run');
   },
 
+  async 'a click on a headless stop’s image picks the element under it, and its locator replaces the stopped line’s'() {
+    const api = vscode.extensions.getExtension('piwitests.piwi').exports;
+    const run = api.lastRun();
+    const ref = 'ed-0000c0d4';
+    const spec = vscode.Uri.file(path.join(workspace, 'tests', 'coupon.spec.ts'));
+    const worker = runWorker(run.env.PIWI_RUN_CHANNEL, ref, ['pick', 'record', 'locator', 'view', 'input', 'pick-at']);
+    const { send, heardOne } = worker;
+    send({
+      type: 'test-begin',
+      testId: 't3',
+      title: ['applies a coupon'],
+      file: 'tests/coupon.spec.ts',
+      line: 3,
+      project: 'chromium',
+      retry: 0,
+      cannotPause: null,
+    });
+    send({
+      type: 'stopped',
+      stop: 1,
+      reason: 'pause',
+      title: 'Fill "MORNING10" getByLabel(\'Coupon code\')',
+      place: { file: 'tests/coupon.spec.ts', line: 5, column: 34 },
+      locator: "getByLabel('Coupon code')",
+      bar: false,
+    });
+    try {
+      // The image names the page's viewport, 1280 by 800 CSS pixels.
+      const asked = await heardOne('the image asked', (m) => m.type === 'request' && m.what === 'image');
+      send({
+        type: 'answer',
+        request: asked.request,
+        what: 'image',
+        value: { mime: 'image/jpeg', data: '/9j/4AAQ', width: 1280, height: 800 },
+      });
+      const shown = await waitFor(() => api.pausedPage()?.pick, 'the image a click picks on');
+      // A click on an image the view no longer shows picks nothing.
+      await api.pickOnPage({ type: 'pick', shown: shown.shown - 1, x: 10, y: 10, width: 640, height: 400 });
+      // The image shown at 640 by 400: a click at 320, 100 of it is the page's 640, 200.
+      const picking = api.pickOnPage({ type: 'pick', shown: shown.shown, x: 320, y: 100, width: 640, height: 400 });
+      const pick = await heardOne('the pick on the image', (m) => m.type === 'request' && m.what === 'pick-at');
+      assert.deepEqual([pick.stop, pick.x, pick.y], [1, 640, 200]);
+      assert.equal(worker.heard.filter((m) => m.what === 'pick-at').length, 1);
+      // The worker sends the locator where the bar's pick goes, then answers.
+      const [url, token] = run.env.PIWI_EDITOR_SEND.split('#');
+      const posted = await fetch(url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          kind: 'locator',
+          text: "getByRole('textbox', { name: 'Coupon code' })",
+          at: { file: 'tests/coupon.spec.ts', line: 5 },
+        }),
+      });
+      assert.equal(posted.status, 200, await posted.clone().text());
+      const message =
+        "getByRole('textbox', { name: 'Coupon code' }) went to the editor, in place of the locator on the stopped line.";
+      send({
+        type: 'answer',
+        request: pick.request,
+        what: 'pick-at',
+        value: { ok: true, message, locator: "getByRole('textbox', { name: 'Coupon code' })" },
+      });
+      await picking;
+      assert.equal(api.pausedPage().note, message);
+      const document = await vscode.workspace.openTextDocument(spec);
+      assert.equal(
+        document.lineAt(4).text,
+        "  await page.getByRole('textbox', { name: 'Coupon code' }).fill('MORNING10');",
+      );
+    } finally {
+      worker.socket.destroy();
+      await vscode.window.showTextDocument(spec);
+      await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+    }
+    await waitFor(() => !api.runSessions().some((s) => s.ref === ref), 'the end of the run');
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+  },
+
   async 'a C# file shows the lines its tests ran, its functions’ tests, and the marks hide and show again'() {
     const api = vscode.extensions.getExtension('piwitests.piwi').exports;
     const basket = vscode.Uri.file(path.join(workspace, 'src', 'Web', 'Services', 'BasketService.cs'));
@@ -927,6 +1084,7 @@ const tests = {
       'piwi.stepRun',
       'piwi.runToCursor',
       'piwi.finishRun',
+      'piwi.endTest',
       'piwi.showPausedPage',
       'piwi.pickAtStop',
       'piwi.recordAtStop',
@@ -934,11 +1092,152 @@ const tests = {
       'piwi.assertRegionAtStop',
       'piwi.mockAtStop',
       'piwi.codeAtStop',
+      'piwi.shareWithPlaywright',
+      'piwi.shareRunLive',
+      'piwi.stopSharingRun',
+      'piwi.copyRunsMcpConfiguration',
     ]) {
       assert.ok(commands.includes(id), id);
     }
     await vscode.commands.executeCommand('piwi.refresh');
     await vscode.commands.executeCommand('piwi.refreshRun');
+  },
+
+  async 'the runs are served to agents behind the window’s token, and stop with the setting'() {
+    const api = vscode.extensions.getExtension('piwitests.piwi').exports;
+    const served = await waitFor(() => api.agents(), 'the runs’ MCP server');
+    assert.match(served.url, /^http:\/\/127\.0\.0\.1:\d+\/mcp$/);
+    const ask = (token, body = { jsonrpc: '2.0', id: 1, method: 'tools/list' }) =>
+      fetch(served.url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+    const listed = await (
+      await ask(served.token).catch((e) => {
+        throw new Error(`${served.url}: ${e.cause?.message ?? e.cause ?? e}`);
+      })
+    ).json();
+    assert.deepEqual(
+      listed.result.tools.map((t) => t.name),
+      ['run_list', 'run_follow', 'run_control', 'page_snapshot', 'page_act', 'page_locator', 'code_write'],
+    );
+    assert.equal((await ask('x'.repeat(43))).status, 401);
+    await vscode.commands.executeCommand('piwi.copyRunsMcpConfiguration', 'vscode');
+    const copied = JSON.parse(await vscode.env.clipboard.readText());
+    const entry = { type: 'http', url: served.url, headers: { Authorization: `Bearer ${served.token}` } };
+    assert.deepEqual(copied.servers['piwi-runs'], entry);
+    await vscode.commands.executeCommand('piwi.copyRunsMcpConfiguration', 'mcpServers');
+    assert.deepEqual(JSON.parse(await vscode.env.clipboard.readText()).mcpServers['piwi-runs'], entry);
+    const settings = vscode.workspace.getConfiguration('piwi');
+    await settings.update('serveRunsToAgents', false, vscode.ConfigurationTarget.Workspace);
+    try {
+      await waitFor(() => api.agents() === null, 'the runs’ MCP server to stop');
+      await assert.rejects(ask(served.token));
+    } finally {
+      await settings.update('serveRunsToAgents', undefined, vscode.ConfigurationTarget.Workspace);
+    }
+    const again = await waitFor(() => api.agents(), 'the runs’ MCP server again');
+    assert.equal(again.token, served.token);
+    assert.equal((await ask(again.token)).status, 200);
+    // Reset the token: a new one, served at once, the one before refused.
+    await vscode.commands.executeCommand('piwi.resetRunsMcpToken', true);
+    const reset = await waitFor(() => (api.agents()?.token !== served.token ? api.agents() : null), 'a new token');
+    assert.equal(reset.url, served.url);
+    assert.equal((await ask(served.token)).status, 401);
+    assert.equal((await ask(reset.token)).status, 200);
+  },
+
+  async 'Debug in my editor: the link opens the failing line, asks, and stops the test there with the suggested locator outlined'() {
+    const api = vscode.extensions.getExtension('piwitests.piwi').exports;
+    const before = api.lastRun();
+    const breakpoints = vscode.debug.breakpoints.length;
+    const link = [
+      'file=/ci/work/tests/pages/checkout.page.ts',
+      'line=5',
+      'column=21',
+      'debug=1',
+      'spec=tests/checkout.spec.ts',
+      'test=pays',
+      'playwrightProject=chromium',
+      'execution=900',
+    ].join('&');
+    // A link refused (no line 0) opens and asks nothing.
+    const prompts = [];
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+    await api.openDebugLink(link.replace('line=5', 'line=0'), (prompt) => {
+      prompts.push(prompt);
+      return Promise.resolve('Debug');
+    });
+    assert.deepEqual(prompts, []);
+    assert.equal(vscode.window.activeTextEditor, undefined);
+    // The prompt left: the failing line is open, and nothing runs.
+    await api.openDebugLink(link, (prompt) => {
+      prompts.push(prompt);
+      return Promise.resolve(undefined);
+    });
+    assert.deepEqual(prompts, [
+      'Piwi: Debug this test here? Piwi runs “pays” in the Playwright project “chromium”, headed, one worker, and ' +
+        'stops at line 5.',
+    ]);
+    assert.equal(vscode.window.activeTextEditor?.document.uri.toString(), pageObject.toString());
+    assert.equal(vscode.window.activeTextEditor.selection.active.line, 4);
+    assert.equal(api.lastRun(), before);
+
+    // A yes: the test runs headed, with one worker, and its run alone stops at the failing line.
+    await api.openDebugLink(link, (_prompt, answer) => Promise.resolve(answer));
+    const run = await waitFor(() => (api.lastRun() !== before ? api.lastRun() : null), 'the debug run');
+    assert.equal(run.command, 'npx playwright test tests/checkout.spec.ts:3 --project=chromium --workers=1 --headed');
+    assert.ok(run.env.PIWI_PAUSE_AT.split(';').includes('tests/pages/checkout.page.ts:5'), run.env.PIWI_PAUSE_AT);
+    assert.equal(vscode.debug.breakpoints.length, breakpoints, 'no breakpoint added to the editor’s');
+    const { socket, heard, send, heardOne, answers } = runWorker(run.env.PIWI_RUN_CHANNEL, run.ref, [
+      'pick',
+      'record',
+      'locator',
+    ]);
+    answers.locator = { ok: true, message: '1 element matches.', count: 1 };
+    try {
+      send({
+        type: 'test-begin',
+        testId: 't-debug',
+        title: ['pays'],
+        file: 'tests/checkout.spec.ts',
+        line: 3,
+        project: 'chromium',
+        retry: 0,
+        cannotPause: null,
+      });
+      send({
+        type: 'stopped',
+        stop: 1,
+        reason: 'breakpoint',
+        title: "Click locator('.cart-row').nth(2)",
+        place: { file: 'tests/pages/checkout.page.ts', line: 5, column: 21 },
+        locator: "locator('.cart-row').nth(2)",
+        bar: true,
+      });
+      // Stopped once: the run's breakpoints lose the failing line, and the instance's suggested locator is outlined.
+      await heardOne(
+        'the breakpoints without the failing line',
+        (m) => m.type === 'breakpoints' && !m.places.some((p) => p.file === 'tests/pages/checkout.page.ts'),
+      );
+      const asked = await heardOne('the suggested locator', (m) => m.type === 'request' && m.what === 'locator');
+      assert.equal(asked.locator, "getByRole('row', { name: /Mug/ })");
+      await waitFor(() => api.executionPoints(pageObject.toString()).includes(4), 'the execution point');
+      // The cursor on the stopped line says what is outlined, and the outline stays.
+      const count = await waitFor(() => api.caretCount(), 'what the stopped line says');
+      assert.deepEqual(count, {
+        uri: pageObject.toString(),
+        line: 4,
+        text: "suggested locator getByRole('row', { name: /Mug/ }) (outlined on the page)",
+        brief: true,
+      });
+      assert.equal(heard.filter((m) => m.type === 'request').length, 1);
+    } finally {
+      socket.destroy();
+      await vscode.commands.executeCommand('piwi.stopRun', { ref: run.ref });
+      await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+    }
   },
 };
 

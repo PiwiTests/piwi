@@ -43,7 +43,8 @@ vi.stubGlobal('getRequestHeader', (event: FakeEvent, name: string) => event.head
 vi.stubGlobal('useRuntimeConfig', () => ({ authEnabled: false }));
 
 const { generateApiKey, getRequestAccess, requireAuth } = await import('../../server/utils/auth');
-const { getProjectScope, requireProjectAccess } = await import('../../server/utils/project-access');
+const { getProjectScope, requireProjectAccess, requireResolvedProjectAccess } =
+  await import('../../server/utils/project-access');
 
 let db: TempDb;
 let close: () => Promise<void>;
@@ -181,6 +182,62 @@ describe('requireProjectAccess', () => {
     state.route = ['project:read'];
     expect(await statusOf(requireProjectAccess(event(as(2)), 11, 'triage:write'))).toEqual(insufficient);
     expect(await statusOf(requireProjectAccess(event(as(2)), 10, 'triage:write'))).toBe('ok');
+  });
+});
+
+describe('requireResolvedProjectAccess', () => {
+  // Entity 7 belongs to project 12; no other entity exists.
+  const resolved: number[] = [];
+  const resolve = async (_db: unknown, id: number) => {
+    resolved.push(id);
+    return id === 7 ? 12 : null;
+  };
+  const access = (e: FakeEvent, id: number) => requireResolvedProjectAccess(event(e), id, resolve, 'Thing');
+  const anonymous = (): FakeEvent => ({ headers: {}, context: {} });
+  const unauthenticated = { statusCode: 401, message: 'Authentication required' };
+
+  beforeEach(() => {
+    resolved.length = 0;
+  });
+
+  test('answers 401 to a caller without credentials, whether the entity exists or not', async () => {
+    expect(await statusOf(access(anonymous(), 7))).toEqual(unauthenticated);
+    expect(await statusOf(access(anonymous(), 8))).toEqual(unauthenticated);
+    expect(resolved).toEqual([]);
+  });
+
+  test('answers 401 to an unknown key, whether the entity exists or not', async () => {
+    const badKey = (): FakeEvent => ({ headers: { authorization: 'Bearer pd_nope' }, context: {} });
+    const invalidKey = { statusCode: 401, message: 'Invalid or expired API key' };
+    expect(await statusOf(access(badKey(), 7))).toEqual(invalidKey);
+    expect(await statusOf(access(badKey(), 8))).toEqual(invalidKey);
+    expect(resolved).toEqual([]);
+  });
+
+  test('answers 403 from the early check before resolving the entity', async () => {
+    state.route = ['run:delete'];
+    expect(await statusOf(access(as(2), 7))).toEqual(insufficient);
+    expect(await statusOf(access(as(2), 8))).toEqual(insufficient);
+    expect(resolved).toEqual([]);
+  });
+
+  test('answers 404 for a missing entity to a signed-in caller', async () => {
+    expect(await statusOf(access(as(2), 8))).toEqual({ statusCode: 404, message: 'Thing not found' });
+  });
+
+  test("decides on the entity's project", async () => {
+    expect(await statusOf(access(as(2), 7))).toEqual(noAccess);
+    state.route = ['run:delete'];
+    const { projectId, user } = await access(as(1), 7);
+    expect({ projectId, userId: user.id }).toEqual({ projectId: 12, userId: 1 });
+  });
+
+  test('lets any caller through when authentication is off', async () => {
+    delete process.env.PIWI_AUTH_ENABLED;
+    state.route = ['run:delete'];
+    const { projectId, user } = await access(anonymous(), 7);
+    expect({ projectId, role: user.role }).toEqual({ projectId: 12, role: InstanceRole.ADMINISTRATOR });
+    expect(await statusOf(access(anonymous(), 8))).toEqual({ statusCode: 404, message: 'Thing not found' });
   });
 });
 

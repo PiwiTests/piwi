@@ -156,7 +156,7 @@ export const MCP_TOOL_DEFS = [
     module: 'core',
     description: md(
       'List the projects you can read, with their run and test-case counts and their latest run.',
-      'Start here: most tools take a project’s `id` as `projectId`.',
+      'Start here: most tools take a project’s `id` as `projectId`. A project with a `statusFilter` reports the latest run that filter keeps.',
     ),
     inputSchema: { type: 'object', properties: {} },
   },
@@ -326,7 +326,7 @@ export const MCP_TOOL_DEFS = [
         'ranked locator replacements, each with its file and line and a ready-to-apply `edit`: the rewritten line plus a unified diff `git apply` accepts',
         'the failing tests and the owning team',
         '`suspectLines`: the top five changed lines since the last green run that the failing tests executed, with their files, line ranges and scores, so you know where to look first (`available: false` with a `reason` when the tests recorded no coverage or the diff could not be read)',
-        '`verify`: the `command` that runs exactly the failing tests, the `expectation` (what the dashboard records once they pass, so you can confirm the fix landed) and the `commitTrailer` to put in your commit message',
+        '`verify`: the `command` that runs the failing tests by file and title (so it still matches once your fix moves lines), the `cases` it names (each test at the line and in the project of its latest failure, the tests a CI re-run runs), the `expectation` (what the dashboard records once they pass, so you can confirm the fix landed) and the `commitTrailer` to put in your commit message',
         '`reproduce`: checkout, pinned install, browser install and the exact test command, as `{ bash, powershell }` steps',
         '`bisect`: a `git bisect` script between the last green and the failing commit (`available: false` with a `reason` when there is none)',
         '`story`, `situation` (since when, whether a newer execution failed again or passed, the cluster and its owner) and the computed `nextStep`',

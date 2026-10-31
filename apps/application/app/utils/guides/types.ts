@@ -30,6 +30,8 @@ export interface AuthoredGuideStop {
   /** Where the popover sits against the anchor from `sm` up. */
   side?: 'top' | 'right' | 'bottom' | 'left';
   align?: 'start' | 'center' | 'end';
+  /** The desktop build leaves the stop out: its anchor does not render there. */
+  hiddenOnDesktop?: boolean;
 }
 
 /** A guide written for a task people ask about often, run by the guide engine on any instance. */

@@ -15,7 +15,8 @@ each rule below ends with the section to read there.
   editor's run hubs in `run-hubs.ts` and `hub-connection.ts`).
 - `src/content/`: content scripts injected on demand, the in-page engine (`engine-*.ts`, `locator-engine.ts`).
 - `src/popup/`, `src/options/`, `src/login/` (Save login for tests), `src/devtools/` (Elements pane, Piwi panel).
-- `src/runs/` and `runs.html`: the Runs window, which follows and steers the paired editor's runs.
+- `src/runs/` and `runs.html`: the Runs window, which follows and steers the paired editor's runs and the paired
+  desktop app's, and shows a stop's live view.
 - `src/ide/`: the recorder built for the editor service (`record-ide.js`). The extension never loads it.
 - `src/shared/`: storage, translations, the instance client, buttons and icons, used by all of the above.
 - `public/_locales/`: the catalogs; `i18n/`: the translation rules and glossaries. `store/`: the Firefox listing.
@@ -95,6 +96,9 @@ each rule below ends with the section to read there.
 - **The worker never takes a project id from a page:** for a content script it resolves the project from the sending
   tab's URL (`bug-reports.ts`, `project-refresh.ts`), and records a verdict only on the stored replay's report or one
   sent to the desktop app. (see "The requests and who makes them")
+- **A replay a content script starts plays on its own page's origin alone:** `piwi-start-replay` from a page names
+  the origin of its frame and tab, an extension page names any (`mayNameOrigin`, `src/background/senders.ts`,
+  `senders.test.ts`). (see "A replay belongs to one tab")
 - **A message only the extension's own pages send is refused from anything else:** starting a recording, the viewport,
   request-condition and language messages, and the popup's Runs messages (`piwi-runs-summary`, `piwi-open-runs`),
   listed in `EXTENSION_PAGE_MESSAGES` (`src/background/index.ts`, `fromExtensionPage`). (see "What each folder holds")
@@ -123,8 +127,9 @@ each rule below ends with the section to read there.
 - **The Runs window talks only to the worker, through the port `RUNS_PORT`:** the worker takes the port from
   `runs.html` alone (`fromRunsPage`) and reads its messages with `parseRunsRequest`. The state the worker posts
   (`RunsState`) carries no token. (see "The Runs window")
-- **Every Runs window control but Pause names the stop shown (`since`),** so a click made twice never answers the next
-  stop; `parseRunsRequest` refuses one without it (`runs.test.ts`). (see "The Runs window")
+- **Every Runs window control but Pause and Share live names the stop shown (`since`),** so a click made twice never
+  answers the next stop; `parseRunsRequest` refuses one without it, and Share live with one (`runs.test.ts`). Share
+  live asks first, the first time in a window (`runs.spec.ts`). (see "The Runs window")
 - **What a hub sends is shown as text (a call's title through `richText`), and its image only as a `data:` JPEG whose
   base64 is checked again.** (see "The Runs window")
 - **The Runs window draws a part again only when what it shows changes (`part`, `place`); a button waiting for its
@@ -133,8 +138,19 @@ each rule below ends with the section to read there.
 - **A paired Piwi Picker holds a failure no pause bar shows only while a Runs window is open:** `RunHubs.listen` sends
   `follow` with `on: true` on each hub connection as the first window's port connects and on each one that opens
   meanwhile, and `on: false` as the last leaves (`run-hubs.test.ts`, `runs.spec.ts`). (see "A connection per hub")
-- **No code from a stop comes to the Runs window:** it goes to the editor, which writes it, and the window shows the
-  hub's sentence that it was sent (`.note.sent`), never that it was written. (see "The Runs window")
+- **A stop's buttons follow what it takes from this window (`stopIntents`: `stop.intents`, else, from an older service,
+  the worker's where the bar shows and no live view); a frame is kept in memory, the latest one alone, never stored;
+  input goes to the hub only for a stop the window watches itself** (`RunHubs.view`, `stateForViewer`,
+  `run-hubs.test.ts`, `runs.spec.ts`). (see "The Runs window" and "A connection per hub")
+- **Escape, the function keys and the browser's shortcuts never reach a stopped page through the live view, and Tab
+  leaves it unless a click took the keyboard** (`keyOnView`, `view-input.test.ts`). (see "The Runs window")
+- **No code from a stop comes to the Runs window:** it goes to the editor, which writes it, or to the desktop app's
+  window, which offers it to copy, and the window shows the hub's sentence that it was sent (`.note.sent`), never that
+  it was written. (see "The Runs window")
+- **The desktop app's hub is asked of the paired app alone, after its proof** (`fetchDesktopHubs` in `piwi-client.ts`,
+  `GET /api/desktop/live` with the app's token), connected with that token in `hello` and never kept under `hubs`; a
+  hub the app names with another token is left out (`piwi-client.test.ts`, `run-hubs.test.ts`, `runs.spec.ts`). (see
+  "Finding the hubs")
 - **The hub's keepalive (`HUB_KEEPALIVE_MS`, `@piwitests/core/run-hub`) and the Runs window's ping (`RUNS_PING_MS`)
   stay within the 30 s an MV3 worker lives after a message;** that holds for a WebSocket from Chrome 116, under
   `minimum_chrome_version` 118. (see "A connection per hub")

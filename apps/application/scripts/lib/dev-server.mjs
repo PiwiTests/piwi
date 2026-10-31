@@ -7,7 +7,7 @@
  */
 import { spawn, execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs';
 import { connect } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -18,7 +18,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 /** The application workspace root (`scripts/lib/` sits two levels below it). */
 export const APP_DIR = join(__dirname, '..', '..');
 
-/** Default port for a booted throwaway server — off 3000 so a dev server can stay up. */
+/** Default port for a booted throwaway server — off the dev server's and the desktop app's, so both can stay up. */
 export const DEFAULT_PORT = 3050;
 
 export function resolveChromium() {
@@ -137,11 +137,11 @@ export async function waitForHealth(base, timeoutMs = 120_000) {
 
 /**
  * Whether something already listens on `port` on this machine, HTTP or not:
- * a TCP connection to `localhost` that opens.
+ * a TCP connection to `host` (`localhost` unless given) that opens.
  */
-export function portInUse(port) {
+export function portInUse(port, host = 'localhost') {
   return new Promise((resolve) => {
-    const socket = connect({ port, host: 'localhost' });
+    const socket = connect({ port, host });
     const done = (inUse) => {
       socket.destroy();
       resolve(inUse);
@@ -185,27 +185,41 @@ const SERVER_MODES = {
  * returns { base, stop }. `env` is added to the server's environment; when it
  * names its own database (`PIWI_DATABASE_PATH`, as `seedThrowawayDb` returns)
  * the dev database is left alone, otherwise a missing one is created and
- * seeded first.
+ * seeded first. With `logFile`, the server's output is written there. A
+ * Ctrl+C stops the server and exits; with `exitOnSignal: false`, SIGINT,
+ * SIGTERM and SIGHUP stop the server and leave the exit to the caller, which
+ * handles them. With `host`, it listens on that address alone and `base` names
+ * it; without, on `localhost`, which a machine with IPv6 (GitHub's runners)
+ * resolves to `::1` first, so a client that asks `127.0.0.1` is refused.
  *
  * It refuses a port something already listens on: `nuxt dev` would quietly bind
  * another port, and the health check would then pass against the server that
  * was already there, so the run would drive that server's code and data.
  */
-export async function startServer({ mode = 'web', port = DEFAULT_PORT, env = {} } = {}) {
+export async function startServer({
+  mode = 'web',
+  port = DEFAULT_PORT,
+  host = null,
+  env = {},
+  logFile = null,
+  exitOnSignal = true,
+} = {}) {
   const serverMode = SERVER_MODES[mode];
   if (!serverMode) throw new Error(`unknown server mode "${mode}" — use ${Object.keys(SERVER_MODES).join(', ')}`);
-  if (await portInUse(port)) throw new Error(`port ${port} is already in use; stop the server on it first`);
+  if (await portInUse(port, host ?? undefined)) {
+    throw new Error(`port ${port} is already in use; stop the server on it first`);
+  }
   if (!env.PIWI_DATABASE_PATH) ensureDevDb();
-  const child = spawn('npx', ['nuxt', 'dev', '--port', String(port)], {
+  const child = spawn('npx', ['nuxt', 'dev', '--port', String(port), ...(host ? ['--host', host] : [])], {
     cwd: APP_DIR,
     env: { ...process.env, NUXT_IGNORE_LOCK: '1', ...serverMode.env, ...env },
-    stdio: 'ignore',
+    stdio: logFile ? ['ignore', openSync(logFile, 'a'), openSync(logFile, 'a')] : 'ignore',
     // Detached puts nuxt in its own process group so stop() can kill the whole
     // tree; on Windows npx needs a shell and group-kill is unsupported anyway.
     detached: process.platform !== 'win32',
     shell: process.platform === 'win32',
   });
-  return superviseServer(child, port, `dev server${serverMode.label}`);
+  return superviseServer(child, port, `dev server${serverMode.label}`, exitOnSignal, host ?? undefined);
 }
 
 /**
@@ -244,11 +258,11 @@ export async function startBuiltServer({ outputDir, port = DEFAULT_PORT, env = {
 }
 
 /**
- * Wait for a server process to answer its health check on `port`; returns
+ * Wait for a server process to answer its health check on `port` of `host`; returns
  * { base, stop }. It is stopped when the check times out or the script is
- * interrupted.
+ * interrupted (and the script exits then, unless `exitOnSignal` is false).
  */
-async function superviseServer(child, port, name) {
+async function superviseServer(child, port, name, exitOnSignal = true, host = 'localhost') {
   const stop = () => {
     // Negative pid kills the whole process group where supported. On Windows
     // child.kill() only terminates the cmd wrapper — the nuxt node process
@@ -263,11 +277,15 @@ async function superviseServer(child, port, name) {
       // already gone
     }
   };
-  process.on('SIGINT', () => {
-    stop();
-    process.exit(130);
-  });
-  const base = `http://localhost:${port}`;
+  if (exitOnSignal) {
+    process.on('SIGINT', () => {
+      stop();
+      process.exit(130);
+    });
+  } else {
+    for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(signal, stop);
+  }
+  const base = `http://${host}:${port}`;
   console.error(`Starting ${name} at ${base}…`);
   try {
     await waitForHealth(base);

@@ -62,6 +62,11 @@ export interface RecordChannelOptions {
   onRun?(socket: net.Socket, attach: Extract<RunToHub, { type: 'run-attach' }>): (line: string) => void;
   /** How long a hand-off waits for the editor; {@link HANDOFF_WAIT_MS} by default. */
   waitMs?: number;
+  /**
+   * What the name of the socket's folder starts with, in the temporary directory: `piwi-record-` by default. A host
+   * whose own name it is finds the folders its earlier processes left behind (the desktop app's server).
+   */
+  folderPrefix?: string;
 }
 
 /** The test's half of a refused or ended hand-off. */
@@ -101,7 +106,9 @@ export class RecordChannel {
       socketPath = `\\\\.\\pipe\\piwi-record-${randomBytes(12).toString('hex')}`;
     } else {
       // A folder only this user can read: no other user reaches the socket.
-      folder = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'piwi-record-')).catch(() => null);
+      folder = await fs.promises
+        .mkdtemp(path.join(os.tmpdir(), options.folderPrefix ?? 'piwi-record-'))
+        .catch(() => null);
       if (!folder) return null;
       socketPath = path.join(folder, 'channel.sock');
     }

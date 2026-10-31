@@ -1,8 +1,8 @@
 /**
- * The worker's side of the Runs window: the one `RunHubs` of the worker, wired to the paired editor, the secret area
- * and the browser's WebSocket; the window's port (`RUNS_PORT`, taken from `runs.html` alone), which gets the state at
- * each change and what each code written at a stop came to, and passes the window's commands on; the popup's Runs
- * tile; and the global shortcut.
+ * The worker's side of the Runs window: the one `RunHubs` of the worker, wired to the paired editor, the paired
+ * desktop app, the secret area and the browser's WebSocket; the window's port (`RUNS_PORT`, taken from `runs.html` alone), which gets the state at
+ * each change, what each code written at a stop came to and the frames of the live views it watches, and passes the
+ * window's commands on, its views stopped as it closes; the popup's Runs tile; and the global shortcut.
  */
 import { parseLiveAnswer } from '@piwitests/core/run-hub';
 import {
@@ -11,10 +11,13 @@ import {
   getEditorPairing,
   parseEditorPairing,
 } from '../shared/editor-pairing.js';
+import { DESKTOP_PAIRED_AT_KEY, getDesktopSettings } from '../shared/desktop-settings.js';
+import { fetchDesktopHubs } from '../shared/piwi-client.js';
 import { secretArea } from '../shared/secret-store.js';
+import { hostPattern } from '../shared/web-origin.js';
 import { RUNS_PAGE, RUNS_PORT, liveRuns, parseRunsRequest, type RunsEvent } from '../shared/runs.js';
 import { browserSocket } from './hub-connection.js';
-import { RunHubs } from './run-hubs.js';
+import { RunHubs, type RunsViewer } from './run-hubs.js';
 
 /** The Runs window's size: beside the test's window, the width of a phone. */
 const RUNS_WINDOW = { width: 440, height: 720 };
@@ -32,6 +35,15 @@ export const runHubs = new RunHubs({
   writeHubs: async (hubs) => {
     if (hubs.length > 0) await secretArea().set('hubs', hubs);
     else await secretArea().remove('hubs');
+  },
+  desktopHubs: async () => {
+    const desktop = await getDesktopSettings();
+    if (!desktop) return { discovery: 'unpaired', hubs: [] };
+    if (!(await chrome.permissions.contains({ origins: [hostPattern(desktop.url)] }))) {
+      return { discovery: 'no-access', hubs: [] };
+    }
+    const answer = await fetchDesktopHubs(desktop);
+    return 'hubs' in answer ? { discovery: 'found', hubs: answer.hubs } : { discovery: answer.failure, hubs: [] };
   },
 });
 
@@ -53,11 +65,16 @@ function serveRunsPort(port: chrome.runtime.Port): void {
       // The window closed meanwhile.
     }
   };
+  // The window as a viewer of the live views it watches: their frames, and the word that one ended.
+  const viewer: RunsViewer = {
+    frame: (frame) => post({ type: 'frame', ...frame }),
+    ended: (view) => post({ type: 'view-ended', ...view }),
+  };
   const unlisten = runHubs.listen(
-    () => post({ type: 'state', state: runHubs.state() }),
+    () => post({ type: 'state', state: runHubs.state(viewer) }),
     (code) => post({ type: 'code', ...code }),
   );
-  post({ type: 'state', state: runHubs.state() });
+  post({ type: 'state', state: runHubs.state(viewer) });
   if (!runHubs.connected()) void runHubs.find();
   port.onMessage.addListener((raw: unknown) => {
     const request = parseRunsRequest(raw);
@@ -66,11 +83,12 @@ function serveRunsPort(port: chrome.runtime.Port): void {
     else if (request.type === 'find') void runHubs.find();
     else if (request.type === 'command') {
       const { id, ...command } = request;
-      void runHubs.command(command).then((answer) => post({ type: 'answer', id, ...answer }));
+      void runHubs.command(command, viewer).then((answer) => post({ type: 'answer', id, ...answer }));
     }
   });
   port.onDisconnect.addListener(() => {
     unlisten();
+    runHubs.unwatchAll(viewer);
     runsWindows.delete(port);
   });
 }
@@ -116,11 +134,11 @@ export async function runsSummary(): Promise<{ connected: boolean; runs: number 
   return { connected: runHubs.connected(), runs: liveRuns(runHubs.state()).length };
 }
 
-/** Starts finding the hubs, and follows the pairing and the editor's grant. */
+/** Starts finding the hubs, and follows the pairings and their grants. */
 export function startRunHubs(): void {
   void runHubs.find();
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && EDITOR_PAIRING_KEY in changes) void runHubs.find();
+    if (area === 'local' && (EDITOR_PAIRING_KEY in changes || DESKTOP_PAIRED_AT_KEY in changes)) void runHubs.find();
   });
   chrome.permissions.onRemoved.addListener(() => void runHubs.find());
   chrome.permissions.onAdded.addListener(() => {

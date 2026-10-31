@@ -37,7 +37,8 @@ are created automatically the first time results are submitted under a new `proj
 have to pre-register one.
 
 A project carries its own tags, [role grants](#role-and-group), SCM connection, default branch, capability
-decisions, and AI-diagnosis instructions. Retention is instance-wide.
+decisions, and AI-diagnosis instructions. Retention is instance-wide. Its **status** is the outcome of its latest run,
+or of the latest run in its [status filter](/features/branches#the-project-status) when it has one.
 
 ### Test run
 

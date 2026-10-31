@@ -8,12 +8,16 @@
  * message is a command with an `id`, answered once with that `id` (`HubAnswer`); `subscribe` has the hub push each run
  * as it changes (`HubSessionMessage`), and what each action that writes code at a stop came to, whichever surface
  * started it (`HubCodeMessage`: its sentence, never the code); `follow` says whether a person watches the runs there
- * (a Runs window is open), which holds a failure no pause bar shows. The hub sends `keepalive` every `HUB_KEEPALIVE_MS`,
- * and a frame longer than `MAX_HUB_FRAME` closes the connection. Messages are text frames of JSON, checked field by
- * field on both sides. Nothing a command asks evaluates code, reads a file or reaches an instance.
+ * (a Runs window is open), which holds a failure no pause bar shows; `view` has it push the frames of a stopped page's
+ * live view to that connection alone (`HubFrameMessage`), and `input` plays the connection's input on the page it
+ * views; `share` shares a run live on the team instance its reporter reports to (**Share live**), or stops, as a person
+ * asks. The hub sends `keepalive` every `HUB_KEEPALIVE_MS`, and a frame longer than `MAX_HUB_FRAME` closes the
+ * connection. Messages are text frames of JSON, checked field by field on both sides. Nothing a command asks evaluates
+ * code, reads a file or reaches an instance.
  */
 import type { EditorDiscovery, HubAddress } from './editor-discovery';
 import { MAX_STOP_ERROR, type KeptRequest } from './run-channel';
+import { isViewFrameData, isViewPoint, isViewSize, readViewInput, type ViewInput } from './run-view';
 
 /** The WebSocket's path. */
 export const HUB_PATH = '/piwi/hub';
@@ -76,10 +80,20 @@ export interface HubStop {
   /** Names the stop: a control passes it back as `since`, and one that no worker stands at any more is refused. */
   since: string;
   /**
+   * What this stop takes now from the connection that hears it, of its worker's `intents`: the input on the view only
+   * while this connection watches the stop's live view (`view`); at a stop the pause bar shows, all the others; at one
+   * it does not (a headless run), Pick, Record, Assert and Assert a region only while it watches too, driven through
+   * that view. Following the runs (`follow`) grants none of them. Absent from a service that predates it, where those
+   * need the bar.
+   */
+  intents?: HubAction[];
+  /**
    * A failure's error: the failing error's first lines as plain text, at most `MAX_STOP_ERROR` characters. Absent for
    * another stop, and from a service or a reporter that predates it, whose `title` alone says how the test failed.
    */
   error?: string;
+  /** `agent` for a stop an agent asked for through a host's MCP tools (its Pause, Step or Run to); absent otherwise. */
+  by?: 'agent';
 }
 
 /** A test a worker runs. */
@@ -108,18 +122,44 @@ export type HubIntent = 'pick' | 'record';
  */
 export type HubCodeIntent = 'assert' | 'assert-region';
 
-/** What a stop can take from the Runs page: the intents, and Mock a request (`mock`, with the `requests` it lists). */
-export type HubAction = HubIntent | HubCodeIntent | 'mock';
+/**
+ * What a stop can do for a viewer outside the page: show its live view (`view`), play the viewer's input on it
+ * (`input`), the click count of a button's `down` and `up` included (`input-clicks`: a double click goes as the
+ * browser counted it, at once, where a stop without it takes a held `click` of `clickCount` 2), and send the locator of
+ * the element under a point of an image of it where a pick goes (`pick-at`).
+ */
+export type HubViewAction = 'view' | 'input' | 'input-clicks' | 'pick-at';
 
-/** The actions that write code at a stop, in the editor. */
-export type HubCodeAction = HubCodeIntent | 'mock';
+/**
+ * What a stop can take from the Runs page: the intents, Mock a request (`mock`, with the `requests` it lists), the
+ * live view's actions, and End the test (`end`, the `runControl` that skips the rest of the test), which a stop at a
+ * failure leaves out: Resume ends it as it failed.
+ */
+export type HubAction = HubIntent | HubCodeIntent | 'mock' | HubViewAction | 'end';
 
-const HUB_CODE_ACTIONS: readonly string[] = ['assert', 'assert-region', 'mock'];
+/**
+ * The actions that write code at a stop, in the editor: the intents', Mock a request, and an agent's (the editor's MCP
+ * server): the steps it took on the stopped page (`steps`) and a locator in place of the stopped line's (`locator`).
+ */
+export type HubCodeAction = HubCodeIntent | 'mock' | 'steps' | 'locator';
+
+const HUB_CODE_ACTIONS: readonly string[] = ['assert', 'assert-region', 'mock', 'steps', 'locator'];
 
 const HUB_INTENTS: readonly string[] = ['pick', 'record', 'assert', 'assert-region'];
 
 /** The actions this version knows, in the order a worker's `intents` lists them. */
-export const HUB_ACTIONS: readonly HubAction[] = ['pick', 'record', 'assert', 'assert-region', 'mock'];
+export const HUB_ACTIONS: readonly HubAction[] = [
+  'pick',
+  'record',
+  'assert',
+  'assert-region',
+  'mock',
+  'view',
+  'input',
+  'input-clicks',
+  'pick-at',
+  'end',
+];
 
 /**
  * A response the stopped test's pages received for a fetch or an XHR request, whose text body the worker keeps for
@@ -137,8 +177,27 @@ export interface HubWorker {
   stop: HubStop | null;
   /** A Pause reached it and it has not stopped yet. */
   pausing: boolean;
-  /** The actions its reporter takes: none for one that predates them, whose stops every action is refused at. */
+  /**
+   * The actions its reporter takes, Assert, Assert a region and Mock a request only while the editor writes the code
+   * from a stop: none for a reporter that predates them, whose stops every action is refused at.
+   */
   intents: HubAction[];
+}
+
+/**
+ * How a run stands on the team instance's live view (**Share live**): whether it is shared now, why it cannot be, why
+ * its sharing stopped though nobody asked, its page on the instance for a teammate to open, and how many views of its
+ * workers are open there.
+ */
+export interface HubLive {
+  shared: boolean;
+  /** One sentence; null when the run can be shared. At most `MAX_HUB_MESSAGE` characters. */
+  refused: string | null;
+  /** One sentence, until a person shares the run again or stops it; null otherwise (and from an older hub). */
+  stopped: string | null;
+  /** The run's page on the instance (`<instance>/test-runs/<id>`); null when the run holds no key. */
+  page: string | null;
+  viewers: number;
 }
 
 /** A run the editor started, with its workers. */
@@ -157,16 +216,40 @@ export interface HubSession {
   workers: HubWorker[];
   /** The run ended: its last message. A later run of the same ref is a new session. */
   ended: boolean;
+  /**
+   * The run was started in a terminal, not by the editor: it found the editor through its discovery file, and its
+   * `command` is null. Absent from a service that predates it, and for a run the editor started.
+   */
+  terminal?: boolean;
+  /**
+   * Of the runs `terminal` names, one the editor's own test runner started (a JetBrains IDE's Playwright run
+   * configuration, its gutter's Run included) rather than a terminal. Absent otherwise, and from a service or a
+   * reporter that predates it.
+   */
+  runner?: boolean;
+  /**
+   * How the run stands on the team instance's live view, for a run whose reporter shares it: absent from a service
+   * or a reporter that predates **Share live**.
+   */
+  live?: HubLive;
 }
 
-/** An image of a stopped page: a JPEG, base64. */
+/**
+ * An image of a stopped page: a JPEG, base64, and the page's viewport in CSS pixels (`width`, `height`), which
+ * `pick-at` names its point in; absent from a reporter that predates them.
+ */
 export interface HubImage {
   mime: 'image/jpeg';
   data: string;
+  width?: number;
+  height?: number;
 }
 
-/** The controls the extension sends; Run to a line stays in the editor, which has the file. */
-export type HubControlAction = 'pause' | 'step' | 'resume' | 'finish';
+/**
+ * The controls the extension sends; Run to a line stays in the editor, which has the file. `end` ends the test at the
+ * stop, for a worker whose `intents` list it.
+ */
+export type HubControlAction = 'pause' | 'step' | 'resume' | 'finish' | 'end';
 
 /** The first message: the token of the hub's discovery file. */
 export interface HubHello {
@@ -185,9 +268,9 @@ export type HubCommand =
   | { type: 'follow'; id: number; on: boolean }
   /**
    * Steer a run, as `piwi/runControl` does: `pause` every running worker (or `worker`), or answer the stop of the one
-   * stopped (`worker`, needed when several are): `step`, `resume`, `finish`. `since` names the stop the extension
-   * showed, and these three need it: one that went on is refused (`The test went on.`), so a click twice does not skip
-   * the next stop. `pause` takes none.
+   * stopped (`worker`, needed when several are): `step`, `resume`, `finish`, `end`. `since` names the stop the
+   * extension showed, and these need it: one that went on is refused (`The test went on.`), so a click twice does not
+   * skip the next stop. `pause` takes none.
    */
   | {
       type: 'runControl';
@@ -214,7 +297,30 @@ export type HubCommand =
    * At the stop `since` names, Mock a request: the kept response `request` (a `HubKeptRequest`'s `id`) becomes
    * `await page.route(…)` written by the editor above the stopped line; the code never comes here.
    */
-  | { type: 'mock'; id: number; ref: string; worker: number | null; since: string; request: number };
+  | { type: 'mock'; id: number; ref: string; worker: number | null; since: string; request: number }
+  /**
+   * At the stop `since` names, start (`on`) or stop watching its page's live view: the frames come to this connection
+   * alone (`HubFrameMessage`) until it stops watching, the stop ends or the connection closes. Several connections
+   * may watch one stop.
+   */
+  | { type: 'view'; id: number; ref: string; worker: number | null; since: string; on: boolean }
+  /**
+   * At the stop `since` names, while this connection watches its live view: play the events on its page, in order, as
+   * a person's input, at most `MAX_VIEW_EVENTS` a message and `MAX_VIEW_EVENT_RATE` a second.
+   */
+  | { type: 'input'; id: number; ref: string; worker: number | null; since: string; events: ViewInput[] }
+  /**
+   * At the stop `since` names: the element under the point `x`, `y` of any image of its page (CSS pixels of its
+   * viewport, as the image's `width` and `height` name it), its locator sent to the editor where a pick goes, in
+   * place of the locator on the stopped line; the answer's `locator`.
+   */
+  | { type: 'pick-at'; id: number; ref: string; worker: number | null; since: string; x: number; y: number }
+  /**
+   * Share the run live on the team instance its reporter reports to (`on`), for whoever may open it there, or stop
+   * sharing it: a person's own choice, asked after the surface's warning. Refused, with why, for a run that cannot be
+   * shared.
+   */
+  | { type: 'share'; id: number; ref: string; on: boolean };
 
 /** What `parseHubCommand` reads: a command, or one answered as refused. */
 export type ParsedHubCommand =
@@ -234,6 +340,8 @@ export interface HubAnswer {
   image?: HubImage | null;
   /** For `requests`: the responses the test kept, oldest first; empty when it was refused. */
   requests?: HubKeptRequest[];
+  /** For `pick-at`: the locator sent to the editor, null when none was found. */
+  locator?: string | null;
 }
 
 /** Sent once `hello` was accepted: the service the connection reached. */
@@ -273,8 +381,44 @@ export interface HubCodeMessage {
   warnings?: string[];
 }
 
+/**
+ * A frame of the live view of the stop `since` names, of the worker `worker`, sent only to a connection that watches
+ * it (`view`): a JPEG as the page painted it, base64, and the page's viewport in CSS pixels (`width`, `height`), which
+ * `input` and `pick-at` name their points in. At most `MAX_VIEW_FPS` a second; a connection whose socket is backed up
+ * gets the latest frame once it is not, the others dropped. The hub keeps none.
+ */
+export interface HubFrameMessage {
+  type: 'frame';
+  ref: string;
+  worker: number;
+  since: string;
+  width: number;
+  height: number;
+  data: string;
+}
+
+/**
+ * The live view of the stop `since` names, of the worker `worker`, sends no frame now, and why (`refused`, at most
+ * `MAX_HUB_MESSAGE` characters): each image of the page is too long, a lighter one included. It goes as a frame does,
+ * to a connection that watches the stop, once until a frame comes again; a side that predates it reads none.
+ */
+export interface HubFrameRefusal {
+  type: 'frame';
+  ref: string;
+  worker: number;
+  since: string;
+  refused: string;
+}
+
 /** What the hub sends. */
-export type HubMessage = HubWelcome | HubAnswer | HubSessionMessage | HubCodeMessage | { type: 'keepalive' };
+export type HubMessage =
+  | HubWelcome
+  | HubAnswer
+  | HubSessionMessage
+  | HubCodeMessage
+  | HubFrameMessage
+  | HubFrameRefusal
+  | { type: 'keepalive' };
 
 /** A live hub, as the Send to editor endpoint's `GET …/live` lists it. */
 export interface LiveHub extends HubAddress {
@@ -314,6 +458,9 @@ export function liveUrlOf(sendUrl: string): string | null {
   return sendUrl.endsWith('/send') ? `${sendUrl.slice(0, -'/send'.length)}/live` : null;
 }
 
+/** A hub's address as `GET …/live` lists it: a loopback name, the port, the path. */
+const HUB_URL = /^ws:\/\/(?:127\.0\.0\.1|localhost):(\d{1,5})(\/[\w/-]{0,64})$/;
+
 const CHROME_EXTENSION = /^chrome-extension:\/\/[a-p]{32}$/;
 const FIREFOX_EXTENSION = /^moz-extension:\/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -322,11 +469,35 @@ export function isExtensionOrigin(origin: string | null | undefined): boolean {
   return typeof origin === 'string' && (CHROME_EXTENSION.test(origin) || FIREFOX_EXTENSION.test(origin));
 }
 
-/** Whether a handshake's `Host` names the hub itself, listening on `port`: a page under another name is refused. */
-export function isHubHost(host: string | null | undefined, port: number): boolean {
-  if (typeof host !== 'string') return false;
-  const lower = host.toLowerCase();
-  return lower === `127.0.0.1:${port}` || lower === `localhost:${port}`;
+/** The most ports an editor names as forwarded to one listener: a remote window forwards it once. */
+export const MAX_FORWARDED_PORTS = 8;
+
+/**
+ * The port a request's `Host` names the listener at: `127.0.0.1` or `localhost` with the port it listens on, or with
+ * one of the ports the editor forwards to it (`forwarded`: a remote window's, where the browser's machine reaches it);
+ * null for any other name, a page under another name (DNS rebinding) included.
+ */
+export function hubHostPort(
+  host: string | null | undefined,
+  port: number,
+  forwarded: readonly number[] = [],
+): number | null {
+  if (typeof host !== 'string') return null;
+  const match = /^(?:127\.0\.0\.1|localhost):([1-9]\d{0,4})$/.exec(host.toLowerCase());
+  const named = match ? Number(match[1]) : null;
+  return named !== null && (named === port || forwarded.includes(named)) ? named : null;
+}
+
+/** Whether a handshake's `Host` names the hub itself, at its port or one forwarded to it (`hubHostPort`). */
+export function isHubHost(host: string | null | undefined, port: number, forwarded: readonly number[] = []): boolean {
+  return hubHostPort(host, port, forwarded) !== null;
+}
+
+/** The ports a client names as forwarded to a listener, those that are ports, at most `MAX_FORWARDED_PORTS`. */
+export function forwardedPorts(ports: unknown): number[] {
+  if (!Array.isArray(ports)) return [];
+  const valid = ports.filter((p): p is number => isInt(p, 1, 65_535));
+  return [...new Set(valid)].slice(0, MAX_FORWARDED_PORTS);
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -347,7 +518,7 @@ function isInt(value: unknown, min: number, max = 2_147_483_647): value is numbe
 }
 
 const REF = /^[\w-]{1,64}$/;
-const ACTIONS: readonly string[] = ['pause', 'step', 'resume', 'finish'];
+const ACTIONS: readonly string[] = ['pause', 'step', 'resume', 'finish', 'end'];
 /** Why a command that answers a stop and names none is refused. */
 const NEEDS_STOP = 'The command needs the stop it answers.';
 
@@ -368,7 +539,15 @@ export function parseHubCommand(text: string): ParsedHubCommand | null {
   if (value.type === 'follow') {
     return typeof value.on === 'boolean' ? { type: 'follow', id, on: value.on } : invalid('on must be true or false.');
   }
-  if (!['runControl', 'pausedPage', 'requests', 'mock', ...HUB_INTENTS].includes(value.type)) {
+  if (value.type === 'share') {
+    if (typeof value.ref !== 'string' || !REF.test(value.ref)) return invalid('The command needs the ref of a run.');
+    return typeof value.on === 'boolean'
+      ? { type: 'share', id, ref: value.ref, on: value.on }
+      : invalid('share needs on: true to share the run live, false to stop.');
+  }
+  if (
+    !['runControl', 'pausedPage', 'requests', 'mock', 'view', 'input', 'pick-at', ...HUB_INTENTS].includes(value.type)
+  ) {
     return { type: 'unknown', id, what: value.type.slice(0, 64) };
   }
   if (typeof value.ref !== 'string' || !REF.test(value.ref)) return invalid('The command needs the ref of a run.');
@@ -384,7 +563,7 @@ export function parseHubCommand(text: string): ParsedHubCommand | null {
       const { action } = value;
       if (action === 'run-to') return invalid('Run to a line stays in the editor: use Run to Cursor there.');
       if (typeof action !== 'string' || !ACTIONS.includes(action)) {
-        return invalid('action must be pause, step, resume or finish.');
+        return invalid('action must be pause, step, resume, finish or end.');
       }
       if (action !== 'pause' && since === null) return invalid(NEEDS_STOP);
       return { type: 'runControl', id, ref, worker, action: action as HubControlAction, since };
@@ -400,6 +579,23 @@ export function parseHubCommand(text: string): ParsedHubCommand | null {
     }
     case 'requests':
       return since === null ? invalid(NEEDS_STOP) : { type: 'requests', id, ref, worker, since };
+    case 'view':
+      if (since === null) return invalid(NEEDS_STOP);
+      return typeof value.on === 'boolean'
+        ? { type: 'view', id, ref, worker, since, on: value.on }
+        : invalid('view needs on: true to watch the stop, false to stop watching it.');
+    case 'input': {
+      if (since === null) return invalid(NEEDS_STOP);
+      const events = readViewInput(value.events);
+      return typeof events === 'string' ? invalid(events) : { type: 'input', id, ref, worker, since, events };
+    }
+    case 'pick-at': {
+      if (since === null) return invalid(NEEDS_STOP);
+      const { x, y } = value;
+      return isViewPoint(x, y)
+        ? { type: 'pick-at', id, ref, worker, since, x: x as number, y: y as number }
+        : invalid('pick-at needs x and y, the point in CSS pixels of the page.');
+    }
     default:
       return since === null
         ? invalid(NEEDS_STOP)
@@ -432,9 +628,36 @@ function readKeptRequest(value: unknown): HubKeptRequest | null {
 function readImage(value: unknown): HubImage | null | undefined {
   if (value === null) return null;
   if (!isObject(value) || value.mime !== 'image/jpeg') return undefined;
-  return typeof value.data === 'string' && value.data && BASE64.test(value.data)
-    ? { mime: 'image/jpeg', data: value.data }
-    : undefined;
+  if (typeof value.data !== 'string' || !value.data || !BASE64.test(value.data)) return undefined;
+  return isViewSize(value.width, value.height)
+    ? { mime: 'image/jpeg', data: value.data, width: value.width as number, height: value.height as number }
+    : { mime: 'image/jpeg', data: value.data };
+}
+
+/** A frame of a live view, or why none comes, field by field; null when it is neither. */
+function readFrame(value: Record<string, unknown>): HubFrameMessage | HubFrameRefusal | null {
+  const { ref, worker, since, width, height, data, refused } = value;
+  if (typeof ref !== 'string' || !REF.test(ref) || !isInt(worker, 0) || str(since, 64) === null || !since) return null;
+  if (refused !== undefined) {
+    return typeof refused === 'string' && refused.trim() && refused.length <= MAX_HUB_MESSAGE
+      ? { type: 'frame', ref, worker, since: since as string, refused }
+      : null;
+  }
+  if (!isViewSize(width, height) || !isViewFrameData(data)) return null;
+  return {
+    type: 'frame',
+    ref,
+    worker,
+    since: since as string,
+    width: width as number,
+    height: height as number,
+    data,
+  };
+}
+
+/** The actions of a list, those this version knows, in their order; none for anything but a list. */
+function readActions(value: unknown): HubAction[] {
+  return Array.isArray(value) ? HUB_ACTIONS.filter((action) => value.includes(action)) : [];
 }
 
 function readStop(value: unknown): HubStop | null | undefined {
@@ -456,6 +679,8 @@ function readStop(value: unknown): HubStop | null | undefined {
     bar,
     since: since as string,
     ...(error === undefined ? {} : { error: error as string }),
+    ...(value.intents === undefined ? {} : { intents: readActions(value.intents) }),
+    ...(value.by === 'agent' ? { by: 'agent' as const } : {}),
   };
 }
 
@@ -508,10 +733,7 @@ function readWorker(value: unknown): HubWorker | null {
   const test = readTest(value.test);
   const stop = readStop(value.stop);
   if (test === undefined || stop === undefined) return null;
-  const intents = Array.isArray(value.intents)
-    ? HUB_ACTIONS.filter((action) => (value.intents as unknown[]).includes(action))
-    : [];
-  return { worker, parallelIndex, state, test, stop, pausing, intents };
+  return { worker, parallelIndex, state, test, stop, pausing, intents: readActions(value.intents) };
 }
 
 function readSession(value: unknown): HubSession | null {
@@ -526,7 +748,29 @@ function readSession(value: unknown): HubSession | null {
   if (!Array.isArray(value.workers) || value.workers.length > 1000) return null;
   const workers = value.workers.map(readWorker);
   if (!workers.every((w): w is HubWorker => w !== null)) return null;
-  return { ref: value.ref, root, label, command, project, workers, ended: value.ended };
+  const session: HubSession = { ref: value.ref, root, label, command, project, workers, ended: value.ended };
+  if (value.terminal === true) session.terminal = true;
+  if (value.terminal === true && value.runner === true) session.runner = true;
+  if (value.live === undefined) return session;
+  const live = readLive(value.live);
+  return live ? { ...session, live } : null;
+}
+
+/** A run's live view on the team instance, field by field; null when it is not one. */
+function readLive(value: unknown): HubLive | null {
+  if (!isObject(value)) return null;
+  const { shared, refused, stopped = null, page, viewers } = value;
+  if (typeof shared !== 'boolean' || !isInt(viewers, 0, 1_000_000)) return null;
+  if (refused !== null && str(refused, MAX_HUB_MESSAGE) === null) return null;
+  if (stopped !== null && str(stopped, MAX_HUB_MESSAGE) === null) return null;
+  if (page !== null && (str(page, 2048) === null || !/^https?:\/\//.test(page as string))) return null;
+  return {
+    shared,
+    refused: refused as string | null,
+    stopped: stopped as string | null,
+    page: page as string | null,
+    viewers,
+  };
 }
 
 /** A message from the hub, checked field by field; null when it is not one, or of a type this version does not know. */
@@ -560,10 +804,16 @@ export function parseHubMessage(text: string): HubMessage | null {
         if (!requests.every((r): r is HubKeptRequest => r !== null)) return null;
         answer.requests = requests;
       }
+      if (value.locator !== undefined) {
+        if (value.locator !== null && str(value.locator, 1000) === null) return null;
+        answer.locator = value.locator as string | null;
+      }
       if (value.image === undefined) return answer;
       const image = readImage(value.image);
       return image === undefined ? null : { ...answer, image };
     }
+    case 'frame':
+      return readFrame(value);
     case 'session': {
       const session = readSession(value.session);
       return session ? { type: 'session', session } : null;
@@ -577,13 +827,19 @@ export function parseHubMessage(text: string): HubMessage | null {
   }
 }
 
-/** The hubs of a `GET …/live` answer, checked field by field: an entry it cannot read is left out; null for no answer. */
+/**
+ * The hubs of a `GET …/live` answer, checked field by field: an entry it cannot read is left out; null for no answer.
+ * Every hub is on `127.0.0.1`, as a service listens: one named under `localhost` is read there, since `localhost` may
+ * resolve to `[::1]`, where another program could listen on the same port and take the token `hello` sends.
+ */
 export function parseLiveAnswer(body: unknown): LiveHub[] | null {
   if (!isObject(body) || !Array.isArray(body.hubs)) return null;
   return body.hubs.flatMap((hub): LiveHub[] => {
     if (!isObject(hub)) return [];
-    const { url, token, pid, version, client, roots, startedAt } = hub;
-    if (typeof url !== 'string' || !/^ws:\/\/(127\.0\.0\.1|localhost):\d{1,5}\/[\w/-]{0,64}$/.test(url)) return [];
+    const { token, pid, version, client, roots, startedAt } = hub;
+    const named = typeof hub.url === 'string' ? HUB_URL.exec(hub.url) : null;
+    if (!named) return [];
+    const url = `ws://127.0.0.1:${named[1]}${named[2]}`;
     if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{16,256}$/.test(token) || !isInt(pid, 1)) return [];
     if (str(version, 64) === null || str(startedAt, 64) === null) return [];
     if (client !== null && str(client, 200) === null) return [];

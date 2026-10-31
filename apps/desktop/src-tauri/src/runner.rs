@@ -33,6 +33,13 @@ const PROJECT_LINKS_KEY: &str = "projectLinks";
 /// the webview can tell concurrent runs apart.
 pub(crate) const RUN_EVENT: &str = "piwi:local-run";
 
+/// The color settings of every process whose output goes to the window's run
+/// console, which renders ANSI colors: colors on, as Playwright sets them in
+/// its workers and its web server, and `NO_COLOR` empty, which every tool
+/// reads as unset, over one inherited from the user's environment: Node prints
+/// a warning in each process that has both set.
+pub(crate) const COLOR_ENV: [(&str, &str); 2] = [("FORCE_COLOR", "1"), ("NO_COLOR", "")];
+
 /// How many ancestors of the linked folder to search for a `node_modules`
 /// containing Playwright — covers monorepos with hoisted installs.
 const MAX_NODE_MODULES_WALK: usize = 12;
@@ -610,6 +617,56 @@ impl RunEventPayload {
     }
 }
 
+/// The bundled server's run channel, and the address its runs' picks go to,
+/// asked of `GET /api/desktop/run-channel` with the desktop token, once the
+/// server at the port proved it is the one this launch started (the readiness
+/// nonce), so the token never goes to another process that took the port. None
+/// when it does not answer a channel.
+fn bundled_run_channel(port: u16, token: String, nonce: &str) -> Option<(String, Option<String>)> {
+    if !crate::health_ok(port, nonce) {
+        return None;
+    }
+    let server = crate::mcp_clients::ServerInfo { port, token };
+    let body = crate::repro::local_get_json(&server, "/api/desktop/run-channel").ok()?;
+    let channel = body.get("runChannel")?.as_str()?.to_string();
+    let picks = body
+        .get("picks")
+        .and_then(|value| value.as_str())
+        .map(str::to_string);
+    Some((channel, picks))
+}
+
+/// The environment naming the bundled server as run `id`'s hub, and as where
+/// its tests' picks go ([`crate::hub_env::hub_env`]), read from the server as
+/// the run starts. `attended`: whether a person attends the run, whose
+/// failures the server may then hold for them.
+pub(crate) async fn bundled_hub_env(
+    app: &AppHandle,
+    id: u32,
+    attended: bool,
+) -> Vec<(&'static str, String)> {
+    let (port, token, nonce) = {
+        let (Some(server), Some(nonce)) = (
+            app.try_state::<crate::mcp_clients::ServerInfo>(),
+            app.try_state::<crate::LaunchNonce>(),
+        ) else {
+            return Vec::new();
+        };
+        (server.port, server.token.clone(), nonce.0.clone())
+    };
+    let found =
+        tauri::async_runtime::spawn_blocking(move || bundled_run_channel(port, token, &nonce))
+            .await
+            .ok()
+            .flatten();
+    match found {
+        Some((channel, picks)) => {
+            crate::hub_env::hub_env(Some(channel.as_str()), picks.as_deref(), id, attended)
+        }
+        None => Vec::new(),
+    }
+}
+
 /// Run `playwright test <args>` for `project_id` in its linked folder, using the
 /// bundled Node sidecar and the folder's own Playwright package. Returns a run
 /// id; progress arrives as `piwi:local-run` events carrying that id.
@@ -637,24 +694,25 @@ pub async fn desktop_run_local_tests(
         "no Playwright installation found in the linked folder (or its parents) — run your package manager's install first",
     )?;
 
+    let attended = crate::hub_env::attended_args(&args);
     let mut cmd_args: Vec<String> = vec![node_path(&cli), "test".into()];
     cmd_args.extend(args);
 
+    let id = app.state::<LocalRuns>().allocate_id();
+    let hub = bundled_hub_env(&app, id, attended).await;
     let command = app
         .shell()
         .sidecar("node")
         .map_err(|e| e.to_string())?
         .args(cmd_args)
         .current_dir(folder)
-        // Plain text for the in-app output pane.
-        .env("NO_COLOR", "1")
-        .env("FORCE_COLOR", "0")
-        .envs(origin);
+        .envs(COLOR_ENV)
+        .envs(origin)
+        .envs(hub);
 
     let (mut rx, child) = command.spawn().map_err(|e| e.to_string())?;
 
     let state = app.state::<LocalRuns>();
-    let id = state.allocate_id();
     state.children.lock().unwrap().insert(id, child);
 
     let emit_app = app.clone();

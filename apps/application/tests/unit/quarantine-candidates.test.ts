@@ -1,10 +1,9 @@
 import { describe, test, expect, beforeEach, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import type { DbClient } from '../../server/database';
+import { migrateToLatest } from './temp-db';
 
 /**
  * Quarantine candidates: the flaky analysis proposes the expensive tests, and
@@ -49,9 +48,7 @@ async function diagnose(clusterId: number, values: Partial<typeof schema.failure
 
 beforeEach(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(db, {
-    migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-  });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values({ id: 1, name: 'shop' });
   await db.insert(schema.testRuns).values({ id: 1, projectId: 1, status: 'failed', startTime: new Date() });
   const cluster = { projectId: 1, errorType: 'assertion', firstSeenRunId: 1, lastSeenRunId: 1 };

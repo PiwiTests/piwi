@@ -134,7 +134,9 @@ data class EditorBreakpoint(val uri: String, val line: Int)
  * run record the backend's coverage by line; `browser`, set by a browser file's, the browser's coverage by function.
  * `locations` names tests by where their `test(…)` call starts (`TestAtResult.location`), in place of `testIds`: a
  * test the instance does not know yet runs too, without an instance. `repeat` runs each test that many times without
- * retries (`--repeat-each=3 --retries=0`), headless, and the run's end says how many of those runs passed.
+ * retries (`--repeat-each=3 --retries=0`), headless, and the run's end says how many of those runs passed. `debug`
+ * debugs one test from a failure (**Debug in my editor**): the test of the spec at `uri` its title names, headed, with
+ * one worker, stopping once at the failing line; refused with a `piwi/notice` when the spec holds no such test.
  */
 data class RunTestsArgs(
     val uri: String,
@@ -144,6 +146,20 @@ data class RunTestsArgs(
     val coverage: String? = null,
     val locations: List<String>? = null,
     val repeat: Int? = null,
+    val debug: DebugRun? = null,
+)
+
+/**
+ * What a run that debugs one test from a failure stops at, runs and shows there (`RunTestsArgs.debug`): the failing
+ * line it stops at once (`stop`, a breakpoint of that run alone, never one of the IDE's), the test's title after its
+ * describe blocks' joined by ` › `, the Playwright project it failed in, and the failed execution whose locator
+ * healing's recommended locator is outlined at the stop.
+ */
+data class DebugRun(
+    val stop: EditorBreakpoint,
+    val title: String,
+    val project: String? = null,
+    val execution: Int? = null,
 )
 
 data class RunCommandArgs(val cwd: String, val command: String, val env: Map<String, String>? = null)
@@ -659,7 +675,8 @@ data class ShareDesktopJobResult(val ok: Boolean = false, val message: String? =
  * `pause`, `run-to`, `page-pause`, `failure`, `other`), the call about to run as Playwright titles it (at a failure, how
  * the test failed: `Failed: …`, its page held until any answer lets it end as it failed), its file's URI and 0-based
  * line and character, the locator it acts on, whether Piwi's pause bar shows in the page (`bar`, false in a headless
- * run), and when it stopped.
+ * run), when it stopped, and who asked for it (`by`: `agent` for an agent's Pause, Step or Run to through the
+ * service's MCP server; null for a person's or a breakpoint's).
  */
 data class RunStop(
     val reason: String? = null,
@@ -670,6 +687,7 @@ data class RunStop(
     val locator: String? = null,
     val bar: Boolean = false,
     val since: String? = null,
+    val by: String? = null,
 )
 
 /**
@@ -689,7 +707,9 @@ data class RunTest(
 /**
  * A worker of a run, by Playwright's worker index: `running` a test, `stopped` before one of its calls, or `between`
  * tests; `pausing` once a Pause reached it until it stops; what its reporter takes at a stop (`takes`: the intents
- * `pick`, `record`, `assert`, `assert-region` and the queries `requests`, `mock`, `locator`), none for an older one.
+ * `pick`, `record`, `assert`, `assert-region`, the queries `requests`, `mock`, `locator`, for a viewer outside the
+ * page `view`, `input`, `input-clicks` and `pick-at`, `piwi/pickAt`, for an agent `agent` and `events`, `bind`,
+ * `piwi/stopBind`, `end`, and `share`, `piwi/shareRun`), none for an older one.
  */
 data class RunWorker(
     val worker: Int = 0,
@@ -704,19 +724,44 @@ data class RunWorker(
 /**
  * `piwi/runSessionChanged`: a run the IDE started, by the ref of its command, with the folder of its Playwright config
  * and its workers connected now; the last one has `ended`, and a later worker of the ref starts a new session.
+ * `terminal` marks a run started in a terminal, which found the service through its discovery file. `live` says how
+ * the run stands on the team instance's live view (Share live), for a run whose reporter shares it.
  */
 data class RunSession(
     val ref: String? = null,
     val root: String? = null,
     val workers: List<RunWorker>? = null,
     val ended: Boolean = false,
+    val terminal: Boolean = false,
+    val runner: Boolean = false,
+    val live: RunLive? = null,
 )
 
 /**
- * `piwi/runControl`: `pause` (every running worker without `worker`), `step`, `resume`, `finish`, or `run-to` with
- * `place`, a line of the run's code (the stopped worker, which `worker` names when several are). `since` names the
- * stop it answers (`RunStop.since`): a worker past it is not asked, `The test went on.` Answered with what was asked
- * or why not.
+ * Share live: the run shared on the team instance its reporter reports to, as its workers say (`shared`), why it
+ * cannot be (`refused`, null when it can be), its page there (`page`, for a teammate), how many views of its workers
+ * are open there now (`viewers`), and why its sharing stopped though nobody asked (`stopped`, until it is shared
+ * again).
+ */
+data class RunLive(
+    val shared: Boolean = false,
+    val refused: String? = null,
+    val page: String? = null,
+    val viewers: Int = 0,
+    val stopped: String? = null,
+)
+
+/**
+ * `piwi/shareRun`: Share live, the person's own choice after the plugin's warning: share the run of `ref` on the team
+ * instance (`on`), or stop sharing it. Answered with what was done or why not.
+ */
+data class ShareRunParams(val ref: String, val on: Boolean)
+
+/**
+ * `piwi/runControl`: `pause` (every running worker without `worker`), `step`, `resume`, `finish`, `end` (the test
+ * ends there, skipped, for a worker that takes it), or `run-to` with `place`, a line of the run's code (the stopped
+ * worker, which `worker` names when several are). `since` names the stop it answers (`RunStop.since`): a worker past
+ * it is not asked, `The test went on.` Answered with what was asked or why not.
  */
 data class RunControlParams(
     val ref: String,
@@ -734,14 +779,42 @@ data class RunControlResult(val ok: Boolean = false, val message: String? = null
  */
 data class SetRunBreakpointsParams(val ref: String, val places: List<EditorBreakpoint>)
 
+/**
+ * `piwi/setBreakpoints`: the IDE's line breakpoints as it holds them now, sent as the service starts and as they
+ * change: a run started in a terminal starts with them.
+ */
+data class SetBreakpointsParams(val places: List<EditorBreakpoint>)
+
 /** `piwi/pausedPage`: an image of the page of a stopped worker (`what` is `image`). */
 data class PausedPageParams(val ref: String, val worker: Int, val what: String = "image")
 
-/** A JPEG of a stopped page, in base64, without the pause bar. */
-data class PausedImage(val mime: String? = null, val data: String? = null)
+/**
+ * A JPEG of a stopped page, in base64, without the pause bar, and the page's viewport in CSS pixels (`width`,
+ * `height`), which `piwi/pickAt` names a point in; an older reporter names neither.
+ */
+data class PausedImage(val mime: String? = null, val data: String? = null, val width: Int? = null, val height: Int? = null)
 
 /** The image; null when the worker is not stopped, has no page, or did not answer within 10 seconds. */
 data class PausedPageResult(val image: PausedImage? = null)
+
+/**
+ * `piwi/pickAt`: the element under the point `x`, `y` of the page stopped at `since` (CSS pixels of its viewport: a
+ * point of the image is `x * width / naturalWidth`), of the run's one stopped worker or `worker`, its locator sent
+ * where the pause bar's pick goes (the Send to editor endpoint, then `piwi/applyPick`).
+ */
+data class PickAtParams(val ref: String, val worker: Int? = null, val since: String, val x: Int, val y: Int)
+
+/** The locator sent, with `ok`; null with why otherwise (no element there, an iframe, a stop the test went on from). */
+data class PickAtResult(val ok: Boolean = false, val message: String? = null, val locator: String? = null)
+
+/**
+ * `piwi/hub`: the address of the service's hub, and, with `forwarded`, the loopback ports of the browser's machine a
+ * client forwards to it, which it then takes in `Host` beside its own. The plugin names none: the platform has no
+ * public API for Gateway's port forwarding.
+ */
+data class HubParams(val forwarded: List<Int>? = null)
+
+data class HubResult(val url: String? = null, val forwarded: List<Int>? = null)
 
 /**
  * `piwi/stopAction`: start an action at the stop `since` names (`RunStop.since`), of the run's one stopped worker or
@@ -774,7 +847,9 @@ data class StopRequestsResult(val ok: Boolean = false, val message: String? = nu
 
 /**
  * `piwi/locatorAtCaret`: count on the page of the stop `since` names the locator at the caret's 0-based `line` of the
- * file at `uri`, outlined there where the pause bar shows; a null `uri` or `line` takes the outline down.
+ * file at `uri`, outlined there where the pause bar shows; a null `uri` or `line` takes the outline down. At the stop
+ * of a run that debugs a failure, while the failure's suggested locator is outlined, the stopped line is answered with
+ * that locator and no count, and the outline stays.
  */
 data class LocatorAtCaretParams(val ref: String, val worker: Int? = null, val since: String, val uri: String?, val line: Int?)
 
@@ -785,8 +860,8 @@ data class LocatorAtCaretParams(val ref: String, val worker: Int? = null, val si
 data class LocatorAtCaretResult(val ok: Boolean = false, val message: String? = null, val locator: String? = null, val count: Int? = null)
 
 /**
- * `piwi/stopCode`: code made at a stop (`assert`, `assert-region`, `mock`), from the IDE or Piwi Picker, for the IDE
- * to write: `edits`, the import lines it needs then the block on a new line above the stopped statement, placed in the
+ * `piwi/stopCode`: code made at a stop (`assert`, `assert-region`, `mock`, and an agent's `steps` and `locator`, whose
+ * edit replaces the stopped line's locator), from the IDE, Piwi Picker or an agent, for the IDE to write: `edits`, the import lines it needs then the block on a new line above the stopped statement, placed in the
  * file's text at `version` (null for the file as saved), made together as one edit; the block as written (`code`),
  * the 0-based line it goes on, the sentence to show and what its reader should check (`warnings`).
  */
@@ -802,6 +877,31 @@ data class StopCode(
     val edits: List<FileEdit>? = null,
     val message: String? = null,
     val warnings: List<String>? = null,
+)
+
+/**
+ * `piwi/agents`: turn the service's MCP server for the agents of this machine on (`enabled`) or off; it answers its
+ * streamable HTTP endpoint (`http://127.0.0.1:<port>/mcp`) and the bearer token an agent sends, null while it is off.
+ */
+data class AgentsParams(
+    val enabled: Boolean,
+    /** A new token (Reset the Runs' MCP Server Token), the one before refused from then on. */
+    val newToken: Boolean? = null,
+)
+
+data class AgentsResult(val url: String? = null, val token: String? = null, val message: String? = null)
+
+/**
+ * `piwi/stopBind`: at the stop `since` names, share the stopped worker's browser with Playwright's own tools until its
+ * test ends (`on`), or stop sharing it; the answer names it and the command that joins it.
+ */
+data class StopBindParams(val ref: String, val worker: Int? = null, val since: String, val on: Boolean)
+
+data class StopBindResult(
+    val ok: Boolean = false,
+    val message: String? = null,
+    val name: String? = null,
+    val command: String? = null,
 )
 
 /** The service's custom requests beside the language server protocol. */
@@ -890,8 +990,17 @@ interface PiwiLanguageServer : LanguageServer {
     @JsonRequest("piwi/runControl")
     fun runControl(params: RunControlParams): CompletableFuture<RunControlResult?>
 
+    @JsonRequest("piwi/shareRun")
+    fun shareRun(params: ShareRunParams): CompletableFuture<RunControlResult?>
+
     @JsonRequest("piwi/pausedPage")
     fun pausedPage(params: PausedPageParams): CompletableFuture<PausedPageResult?>
+
+    @JsonRequest("piwi/pickAt")
+    fun pickAt(params: PickAtParams): CompletableFuture<PickAtResult?>
+
+    @JsonRequest("piwi/hub")
+    fun hub(params: HubParams): CompletableFuture<HubResult?>
 
     @JsonRequest("piwi/stopAction")
     fun stopAction(params: StopActionParams): CompletableFuture<RunControlResult?>
@@ -901,6 +1010,12 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/locatorAtCaret")
     fun locatorAtCaret(params: LocatorAtCaretParams): CompletableFuture<LocatorAtCaretResult?>
+
+    @JsonRequest("piwi/agents")
+    fun agents(params: AgentsParams): CompletableFuture<AgentsResult?>
+
+    @JsonRequest("piwi/stopBind")
+    fun stopBind(params: StopBindParams): CompletableFuture<StopBindResult?>
 
     @JsonNotification("piwi/setCredentials")
     fun setCredentials(params: EditorCredentials)
@@ -919,4 +1034,7 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonNotification("piwi/setRunBreakpoints")
     fun setRunBreakpoints(params: SetRunBreakpointsParams)
+
+    @JsonNotification("piwi/setBreakpoints")
+    fun setBreakpoints(params: SetBreakpointsParams)
 }

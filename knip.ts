@@ -14,15 +14,19 @@ delete process.env.CI;
 const config: KnipConfig = {
   // Report exports nothing imports; an export used only inside its own module is not flagged.
   ignoreExportsUsedInFile: true,
-  // System commands the scripts run: Windows' `tasklist`, and ImageMagick's `import` and `Xvfb` for the JetBrains
-  // screenshots.
-  ignoreBinaries: ['tasklist', 'import', 'Xvfb'],
+  // System commands the scripts run: Windows' `tasklist`, ImageMagick's `import` and `Xvfb` for the JetBrains
+  // screenshots, `ffprobe`, which the reporter's live view spec reads a video's length with where it is installed, and
+  // the showcase's `ffmpeg` (its take's capture, its cut's encodes) and fontconfig's `fc-match` (the stage's fonts).
+  ignoreBinaries: ['tasklist', 'import', 'Xvfb', 'ffprobe', 'ffmpeg', 'fc-match'],
   workspaces: {
     '.': {
-      // The JetBrains plugin is not a workspace: its screenshot script is read from the root.
-      entry: ['scripts/*.mjs', 'apps/jetbrains/scripts/*.mjs'],
+      // The JetBrains plugin and the showcase are not workspaces: their scripts are read from the root. The showcase's
+      // stage page loads its own script.
+      entry: ['scripts/*.mjs', 'apps/jetbrains/scripts/*.mjs', 'apps/showcase/*.mts', 'apps/showcase/stage/*.js'],
       // Not workspaces: built on their own toolchains (Tauri, VitePress) or resolved from the npm registry.
       ignore: ['apps/desktop/**', 'apps/docs/**', 'examples/sample-app/**'],
+      // The showcase runs Playwright from the workspaces' install.
+      ignoreDependencies: ['playwright'],
     },
     'apps/application': {
       entry: [

@@ -1,7 +1,8 @@
 import { eq } from 'drizzle-orm';
 import { getDatabase } from '../../../database';
 import { failureClusters } from '../../../database/schema';
-import { requireProjectAccess, requireRouteId } from '../../../utils/project-access';
+import { requireAuth } from '../../../utils/auth';
+import { requireProjectPermission, requireRouteId } from '../../../utils/project-access';
 import { findFixedBefore } from '../../../utils/cluster-memory';
 
 defineRouteMeta({
@@ -17,12 +18,13 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const clusterId = requireRouteId(event, 'id', 'cluster ID');
+  await requireAuth(event);
   const db = await getDatabase();
 
   const [cluster] = await db.select().from(failureClusters).where(eq(failureClusters.id, clusterId));
   if (!cluster) throw apiError({ statusCode: 404, message: 'Failure cluster not found' });
 
-  await requireProjectAccess(event, cluster.projectId);
+  await requireProjectPermission(event, cluster.projectId);
 
   return { items: await findFixedBefore(db, cluster) };
 });

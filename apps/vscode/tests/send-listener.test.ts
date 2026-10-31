@@ -17,6 +17,8 @@ import { liveUrlOf } from '@piwitests/core/run-hub';
 import { readLiveHubs } from '@piwitests/editor/discovery';
 import {
   liveHubsHere,
+  loopbackPort,
+  onLoopback,
   sendPairing,
   startSendListener,
   type PairingStore,
@@ -192,6 +194,50 @@ describe('the send listener', () => {
     }
   });
 
+  test('takes the port a remote window forwards to it, proving the token for that port', async () => {
+    const forwarded = [55_017];
+    const remote = await startSendListener({
+      port: 0,
+      token: () => TOKEN,
+      onPayload: async () => ({ inserted: true, file: null }),
+      live: () => [],
+      forwarded: () => forwarded,
+    });
+    try {
+      const challenge = 'cd'.repeat(32);
+      const asHost = (host: string) =>
+        new Promise<{ status: number; proof: string | undefined }>((resolve, reject) => {
+          // As VS Code's tunnel hands it over: the browser named the local end of the forward.
+          const req = http.request(liveUrlOf(remote.url)!, {
+            headers: { Host: host, Authorization: `Bearer ${TOKEN}`, [EDITOR_CHALLENGE_HEADER]: challenge },
+          });
+          req.on('response', (res) => {
+            res.resume();
+            resolve({ status: res.statusCode ?? 0, proof: res.headers[EDITOR_PROOF_HEADER] as string | undefined });
+          });
+          req.on('error', reject);
+          req.end();
+        });
+      const through = await asHost('127.0.0.1:55017');
+      expect(through.status).toBe(200);
+      expect(through.proof).toBe(await editorTokenProof(TOKEN, 55_017, challenge));
+      expect((await asHost('localhost:55017')).status).toBe(200);
+      const own = await asHost(`127.0.0.1:${remote.port}`);
+      expect(own.proof).toBe(await editorTokenProof(TOKEN, remote.port, challenge));
+      // Another port, or another name at the forwarded one, is refused, with the proof of the port reached.
+      for (const host of ['127.0.0.1:55018', 'evil.test:55017']) {
+        const refused = await asHost(host);
+        expect(refused.status, host).toBe(403);
+        expect(refused.proof, host).toBe(await editorTokenProof(TOKEN, remote.port, challenge));
+      }
+      // A forward forgotten is refused again.
+      forwarded.length = 0;
+      expect((await asHost('127.0.0.1:55017')).status).toBe(403);
+    } finally {
+      await remote.close();
+    }
+  });
+
   test('a taken port is refused rather than replaced', async () => {
     await expect(
       startSendListener({
@@ -270,18 +316,87 @@ describe('the window’s pairing', () => {
       await close();
     }
   });
+});
 
-  test('lists no hub in a remote window, whose services listen on the remote machine', () => {
-    const hub = {
-      url: 'ws://127.0.0.1:1/piwi/hub',
-      token: 't'.repeat(32),
-      pid: 1,
-      version: '',
-      client: null,
-      roots: [],
-      startedAt: '',
+describe('the live hubs of a window', () => {
+  const hubAt = (port: number, pid: number) => ({
+    url: `ws://127.0.0.1:${port}/piwi/hub`,
+    token: `hub-token-${port}-0123456789`,
+    pid,
+    version: '0.61.0',
+    client: 'Visual Studio Code',
+    roots: [`/work/shop-${port}`],
+    startedAt: '2026-10-27T10:00:00.000Z',
+  });
+  const own = hubAt(43_200, 11);
+  const other = hubAt(43_201, 12);
+
+  /** A remote window's side, VS Code's forwarding mocked: what it asked, and the ports its service was given. */
+  function remote(forwardTo: (address: string) => string, ownUrl: string | null = own.url) {
+    const asked: string[] = [];
+    const forwarded: number[] = [];
+    return {
+      asked,
+      forwarded,
+      hub: {
+        own: async () => ownUrl,
+        external: async (address: string) => {
+          asked.push(address);
+          return forwardTo(address);
+        },
+        forward: async (port: number) => void forwarded.push(port),
+      },
     };
-    expect(liveHubsHere(undefined, () => [hub])).toEqual([hub]);
-    expect(liveHubsHere('ssh-remote', () => [hub])).toEqual([]);
+  }
+
+  test('lists every service’s hub in a local window, forwarding none', async () => {
+    const side = remote(() => 'http://127.0.0.1:1/');
+    expect(await liveHubsHere(undefined, () => [own, other], side.hub)).toEqual([own, other]);
+    expect(side.asked).toEqual([]);
+  });
+
+  test('lists a remote window’s own hub at the local port VS Code forwards, once its service takes it', async () => {
+    for (const remoteName of ['ssh-remote', 'wsl', 'dev-container', 'codespaces']) {
+      const side = remote((address) => address.replace(':43200/', ':55002/'));
+      const hubs = await liveHubsHere(remoteName, () => [own, other], side.hub);
+      expect(hubs, remoteName).toEqual([{ ...own, url: 'ws://127.0.0.1:55002/piwi/hub' }]);
+      expect(side.asked).toEqual(['http://127.0.0.1:43200/piwi/hub']);
+      expect(side.forwarded).toEqual([55_002]);
+    }
+    // The same port when it was free on the browser's machine, on 127.0.0.1 when VS Code names it `localhost`, which
+    // may resolve to [::1], where another program could take the token `hello` sends.
+    const same = remote((address) => address.replace('127.0.0.1', 'localhost'));
+    expect((await liveHubsHere('ssh-remote', () => [own], same.hub))[0]?.url).toBe('ws://127.0.0.1:43200/piwi/hub');
+  });
+
+  test('lists none in a remote window whose forward is not a loopback address, or whose service has no hub', async () => {
+    // Codespaces in the browser forwards to GitHub's `https` address.
+    const web = remote(() => 'https://shop-43200.app.github.dev/piwi/hub');
+    expect(await liveHubsHere('codespaces', () => [own], web.hub)).toEqual([]);
+    expect(web.forwarded).toEqual([]);
+    expect(await liveHubsHere('ssh-remote', () => [own], remote(() => 'http://10.0.0.5:55002/').hub)).toEqual([]);
+    expect(await liveHubsHere('ssh-remote', () => [other], remote((a) => a).hub)).toEqual([]);
+    expect(await liveHubsHere('ssh-remote', () => [own], remote((a) => a, null).hub)).toEqual([]);
+  });
+
+  test('puts a loopback http address on 127.0.0.1, whatever name VS Code gave it, and leaves any other one', () => {
+    expect(onLoopback('http://localhost:55002/piwi/send')).toBe('http://127.0.0.1:55002/piwi/send');
+    expect(onLoopback('http://127.0.0.1:55002/piwi/send')).toBe('http://127.0.0.1:55002/piwi/send');
+    expect(onLoopback('https://shop-1.app.github.dev/piwi/send')).toBe('https://shop-1.app.github.dev/piwi/send');
+    expect(onLoopback('http://10.0.0.5:1/')).toBe('http://10.0.0.5:1/');
+  });
+
+  test('reads the port of a loopback http address alone', () => {
+    expect(loopbackPort('http://127.0.0.1:55002/piwi/send')).toBe(55_002);
+    expect(loopbackPort('http://localhost:55002/')).toBe(55_002);
+    for (const address of [
+      'https://127.0.0.1:55002/',
+      'http://127.0.0.1/',
+      'http://10.0.0.5:1/',
+      'ws://127.0.0.1:1/',
+      'nope',
+    ]) {
+      expect(loopbackPort(address), address).toBeNull();
+    }
   });
 });

@@ -95,8 +95,13 @@ writes their entry in one click instead.
 
 ### Claude Desktop
 
-Add to `claude_desktop_config.json` (`~/Library/Application Support/Claude/` on macOS, `%APPDATA%\Claude\` on
-Windows), then restart Claude Desktop:
+Add to `claude_desktop_config.json`, then restart Claude Desktop. On macOS it is in
+`~/Library/Application Support/Claude/`, on Linux (beta) in `~/.config/Claude/`. On Windows, recent versions keep it in
+`%LOCALAPPDATA%\Claude-Data\claude_pzs8sxrjxfjjc\`. An older install keeps it in one of these folders; a
+`.user-data-left.*` file there means it moved to `Claude-Data`:
+
+- `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\`, an MSIX install (Microsoft Store, WinGet)
+- `%APPDATA%\Claude\`, the classic installer
 
 ```json
 {
@@ -105,7 +110,7 @@ Windows), then restart Claude Desktop:
       "command": "npx",
       "args": [
         "-y",
-        "mcp-remote",
+        "mcp-remote@0.14.3",
         "<your-piwi-url>/mcp",
         "--transport",
         "http-only",
@@ -122,16 +127,19 @@ Windows), then restart Claude Desktop:
 
 Claude Desktop only starts local commands from this file and ignores an entry with a `url`, so
 [`mcp-remote`](https://www.npmjs.com/package/mcp-remote), a small Node bridge, carries the HTTP connection; `npx`
-needs Node on your PATH. The header goes through `env` because Claude Desktop mishandles arguments with spaces. Plans
+needs Node on your PATH. Keep its version in the entry: `npx` without one runs whatever release npm serves that day,
+with your key in its environment, and a release before 0.1.16 runs a command a hostile server hides in its sign-in
+address ([CVE-2025-6514](https://nvd.nist.gov/vuln/detail/CVE-2025-6514)). The header goes through `env` because Claude Desktop mishandles arguments with spaces. Plans
 that offer **Settings → Connectors → Add custom connector** take the `/mcp` URL directly.
 
 ### Claude Code (CLI)
 
 ```bash
-claude mcp add --transport http piwi <your-piwi-url>/mcp --header "Authorization: Bearer pd_YOUR_API_KEY"
+claude mcp add --transport http --scope user piwi <your-piwi-url>/mcp --header "Authorization: Bearer pd_YOUR_API_KEY"
 ```
 
-Restart Claude Code, then check with `/mcp` that **piwi** is listed.
+`--scope user` makes the server available in every folder; without it, Claude Code keeps it for the folder the command
+ran in. Restart Claude Code, then check with `/mcp` that **piwi** is listed.
 
 ### Cursor
 
@@ -207,5 +215,6 @@ The six workflow [agent skills](/features/agent-skills) are prompts too (`invest
 ## Related
 
 - [MCP tools](/reference/mcp-tools): every tool, by module and capability
+- [Run control for agents](/features/agent-run-control): the runs an editor or the desktop app starts, as tools
 - [Agent skills](/features/agent-skills): workflows that tell an agent what to do with these tools
 - [Desktop app](/features/desktop#connecting-ai-assistants): one-click client setup

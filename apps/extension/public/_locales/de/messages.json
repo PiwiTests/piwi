@@ -6352,6 +6352,60 @@
   "runs_statusNoRuns": {
     "message": "Gerade kein Lauf. Starten Sie einen Test im Editor: Er erscheint hier."
   },
+  "runs_desktopApp": {
+    "message": "Desktop-App"
+  },
+  "runs_terminal": {
+    "message": "Terminal"
+  },
+  "runs_runner": {
+    "message": "Test-Runner"
+  },
+  "runs_desktopName": {
+    "message": "der Desktop-App"
+  },
+  "runs_followingDesktop": {
+    "message": "Mit der Desktop-App verbunden"
+  },
+  "runs_followingWithDesktop_one": {
+    "message": "$count$ Editorfenster und die Desktop-App verbunden",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_followingWithDesktop_other": {
+    "message": "$count$ Editorfenster und die Desktop-App verbunden",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_statusDesktopSearching": {
+    "message": "Läufe der Desktop-App werden gesucht…"
+  },
+  "runs_statusDesktopNoAccess": {
+    "message": "Piwi Picker darf die Adresse der Desktop-App nicht mehr erreichen: Koppeln Sie sie in den Einstellungen erneut."
+  },
+  "runs_statusDesktopRefused": {
+    "message": "Die Desktop-App hat die Kopplung abgelehnt: Koppeln Sie Piwi Picker in den Einstellungen erneut."
+  },
+  "runs_statusDesktopUnreachable": {
+    "message": "Die Desktop-App antwortet nicht: Öffnen Sie sie, um die Läufe zu verfolgen, die sie startet."
+  },
+  "runs_statusDesktopOutdated": {
+    "message": "Diese Desktop-App kann ihre Läufe nicht teilen: Aktualisieren Sie sie."
+  },
+  "runs_statusDesktopUnproven": {
+    "message": "Das Programm an der Adresse der Desktop-App ist nicht die gekoppelte App: Piwi Picker hat ihm nichts gesendet und fragt gleich erneut."
+  },
+  "runs_statusDesktopNoRuns": {
+    "message": "Gerade kein Lauf. Starten Sie einen Test in der Desktop-App: Er erscheint hier."
+  },
   "runs_ended": {
     "message": "Der Lauf ist beendet."
   },
@@ -6432,6 +6486,12 @@
   },
   "runs_finishTitle": {
     "message": "Den Test weiterlaufen lassen, ohne erneut an einem Haltepunkt anzuhalten"
+  },
+  "runs_end": {
+    "message": "Test beenden"
+  },
+  "runs_endTitle": {
+    "message": "Den Test hier beenden: der Rest wird übersprungen"
   },
   "runs_pick": {
     "message": "Wählen"
@@ -6571,5 +6631,119 @@
   },
   "runs_requestNoSize": {
     "message": "Größe unbekannt"
+  },
+  "runs_live": {
+    "message": "Live ansehen"
+  },
+  "runs_liveTitle": {
+    "message": "Die Seite des Tests so zeigen, wie sie gezeichnet wird, statt ihres Bildes: Ihre Klicks und Tasten darauf gehen an die Seite"
+  },
+  "runs_liveBadge": {
+    "message": "Live"
+  },
+  "runs_liveAlt": {
+    "message": "Live-Ansicht der Seite des Tests"
+  },
+  "runs_liveAltInput": {
+    "message": "Live-Ansicht der Seite des Tests: Tasten und Klicks gehen an die Seite"
+  },
+  "runs_liveStarting": {
+    "message": "Die Live-Ansicht startet…"
+  },
+  "runs_liveLost": {
+    "message": "Die Live-Ansicht ist beendet: Die Verbindung zum Editor ging verloren. Wählen Sie wieder „Live ansehen“, sobald sie zurück ist."
+  },
+  "runs_liveHint": {
+    "message": "Ihre Klicks, das Mausrad und Ihre Tasten auf der Ansicht gehen an die Seite des Tests. Esc gibt die Tasten diesem Fenster zurück; Umschalt+Klick wählt einen Locator."
+  },
+  "runs_pickAt": {
+    "message": "Im Bild wählen"
+  },
+  "runs_pickAtTitle": {
+    "message": "Ein Element im Bild anklicken, um seinen Locator zu wählen, ohne die Seite zu berühren: Er ersetzt den in dieser Zeile. Umschalt+Klick wählt ebenfalls"
+  },
+  "runs_pickAtOn": {
+    "message": "Klicken Sie im Bild auf das Element, um seinen Locator zu wählen. Esc bricht ab."
+  },
+  "runs_failUnwatched": {
+    "message": "Sehen Sie die Seite zuerst live an: Erst dann gehen Tasten und Klicks an sie."
+  },
+  "runs_shareLive": {
+    "message": "Live teilen"
+  },
+  "runs_shareLiveTitle": {
+    "message": "Allen, die diesen Lauf auf der Piwi-Instanz Ihres Teams öffnen dürfen, die Seiten seiner Tests auf der Seite des Laufs zeigen"
+  },
+  "runs_shareWarning": {
+    "message": "Solange dieser Lauf auf $instance$ geteilt ist, sieht dort jeder, der seine Seite geöffnet hat, jeden Halt seiner Tests: den Aufruf, seine Datei und Zeile und den Titel des Tests, auch wenn niemand zusieht. Solange jemand einem Worker zusieht, gehen auch Bilder der Seite seines Tests dorthin, jedes mit seinem Aufruf und dem Titel des Tests. Alle, die den Lauf dort öffnen dürfen, können zusehen, und auf einer Instanz ohne Anmeldung alle, die sie erreichen. Nichts wird gespeichert, und Teilen beenden beendet es binnen Sekunden.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runs_shareInstance": {
+    "message": "der Piwi-Instanz, an die er berichtet"
+  },
+  "runs_sharedLive": {
+    "message": "Live geteilt auf $instance$",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runs_sharedNobody": {
+    "message": "noch sieht niemand zu"
+  },
+  "runs_sharedViews_one": {
+    "message": "$count$ Ansicht offen",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_sharedViews_other": {
+    "message": "$count$ Ansichten offen",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_stopSharing": {
+    "message": "Teilen beenden"
+  },
+  "runs_stopSharingTitle": {
+    "message": "Die Ansichten dieses Laufs auf der Instanz beenden: Nichts geht mehr dorthin"
+  },
+  "runs_copyRunPage": {
+    "message": "Link zur Seite des Laufs kopieren"
+  },
+  "runs_pageAtStop": {
+    "message": "Die Seite eines Tests erscheint hier, wenn er anhält: an einem Haltepunkt, bei page.pause() oder sobald Sie ihn anhalten. „Live ansehen“ zeigt sie dann, wie sie gezeichnet wird."
+  },
+  "runs_pageAtStopDesktop": {
+    "message": "Die Seite eines Tests erscheint hier, wenn er anhält: bei page.pause() oder sobald Sie ihn anhalten. „Live ansehen“ zeigt sie dann, wie sie gezeichnet wird."
+  },
+  "runs_shareRefusedLocal": {
+    "message": "Dieser Lauf kann nicht live geteilt werden: Er berichtet an die Piwi-Desktop-App auf diesem Rechner, die kein Teammitglied erreicht. Tragen Sie die Instanz Ihres Teams in PIWI_DASHBOARD_URL ein, um einen Lauf dort zu teilen."
+  },
+  "runs_shareRefusedOff": {
+    "message": "Dieser Lauf kann nicht live geteilt werden: Die Live-Ansicht seines Projekts ist auf der Instanz ausgeschaltet. Ein Project admin schaltet sie unter Project → Settings → Live view ein."
+  },
+  "runs_shareRefusedUnregistered": {
+    "message": "Dieser Lauf kann nicht live geteilt werden: Das globale Setup des Reporters hat ihn beim Start nicht bei der Instanz angemeldet (wrapConfig fügt es hinzu)."
+  },
+  "runs_shareRefusedNoInstance": {
+    "message": "Dieser Lauf kann nicht live geteilt werden: Er berichtet an keine Piwi-Instanz. Tragen Sie die Instanz Ihres Teams in PIWI_DASHBOARD_URL ein."
+  },
+  "runs_shareRefusedUnknown": {
+    "message": "Dieser Lauf kann nicht live geteilt werden: Der Piwi-Reporter hat seinen Workern keinen Schlüssel für die Live-Ansicht gegeben."
   }
 }

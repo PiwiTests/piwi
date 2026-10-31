@@ -28,6 +28,7 @@ import {
   DESKTOP_JOB_NOTIFICATION,
   DESKTOP_JOB_REQUEST,
   FAILURES_NOTIFICATION,
+  HUB_REQUEST,
   NOTICE_NOTIFICATION,
   PAGE_CANDIDATES_REQUEST,
   RUN_ENDED_NOTIFICATION,
@@ -47,6 +48,8 @@ import {
   type DesktopJobUpdate,
   type FailuresResult,
   type FileEdit,
+  type HubParams,
+  type HubResult,
   type InitializationOptions,
   type Notice,
   type PageCandidatesParams,
@@ -60,6 +63,8 @@ import {
 import {
   FILE_SUMMARY_REQUEST,
   MCP_REQUEST,
+  AGENTS_REQUEST,
+  AGENTS_CHANGED_NOTIFICATION,
   REFRESH_REQUEST,
   REFRESH_RUN_REQUEST,
   RENDER_STEPS_REQUEST,
@@ -88,6 +93,8 @@ import {
   type SetBaselineParams,
   type FileSummary,
   type McpServersResult,
+  type AgentsParams,
+  type AgentsResult,
   type RenderStepsResult,
   type RunCommand,
   type RunCommandArgs,
@@ -135,6 +142,12 @@ import {
   MCP_SIGN_IN,
   mcpAuthorizationNote,
   mcpConfiguration,
+  RUNS_MCP_FORMATS,
+  RUNS_MCP_LABEL,
+  agentsTokenKey,
+  runsMcpConfiguration,
+  type RunsMcpFormat,
+  runsMcpHeaders,
   ownLiveRun,
   refreshingText,
   failingRuns,
@@ -155,17 +168,22 @@ import {
   openLink,
   openLinkMissing,
   resolveOpenFile,
+  inertLinks,
   runTaskName,
   type FailureNode,
   type ProxySettings,
 } from './glue';
 import { isUnder, placesOf, runBreakpoints } from './breakpoints';
+import { openDebugLink, type DebugAsk } from './debug-from-link';
+import { isDebugLink } from './debug-link';
 import { FailuresView } from './failures-view';
 import { registerRecording, type Recording } from './recording';
 import type { CaretShown, PausedPageView, RunBreakpoint } from './run-control';
 import { registerRunControl } from './run-view';
 import {
   liveHubsHere,
+  loopbackPort,
+  onLoopback,
   sendPairing,
   startSendListener,
   type PairingStore,
@@ -194,6 +212,12 @@ const RUN_TASK_TYPE = 'piwi';
 const SHARED_SECRET_KEY = 'piwi.apiKey';
 const SHARED_KEY_FORGOTTEN = 'piwi.sharedKeyForgotten';
 const MCP_OFFERED = 'piwi.mcpOffered';
+/**
+ * The port of the MCP server the service serves the runs of this window's workspace to agents with (`workspaceState`),
+ * beside its token (`SecretStorage`, `agentsTokenKey`): an agent's configuration copied once still connects after a
+ * restart.
+ */
+const AGENTS_PORT = 'piwi.agentsPort';
 const WALKTHROUGH_OPENED = 'piwi.walkthroughOpened';
 const SEND_TOKEN = 'piwi.sendToken';
 const SEND_PORT = 'piwi.sendPort';
@@ -247,8 +271,17 @@ export interface PiwiApi {
   executionPoints(uri: string): number[];
   /** What the paused page view shows; null while it is closed. */
   pausedPage(): PausedPageView | null;
+  /** A click on the paused page's image, as the view's script posts it: the pick there, once answered. */
+  pickOnPage(message: unknown): Promise<void>;
   /** What the end of the cursor's line says of the locator there while a test is stopped; null while it says nothing. */
   caretCount(): CaretShown | null;
+  /** The MCP server the runs are served to agents at, as the service last answered; null while it is off. */
+  agents(): AgentsResult | null;
+  /**
+   * A debug link's query (`vscode://piwitests.piwi/open?…&debug=1`), as the URI handler takes it, its prompt answered
+   * by `ask` in place of a notification.
+   */
+  openDebugLink(query: string, ask: DebugAsk): Promise<void>;
 }
 
 /** A failures view node, or what a command names it by. */
@@ -342,6 +375,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   });
   const serverOptions = { run: service(), debug: service() } satisfies ServerOptions;
   handed = await credentials(context);
+  const agentsKey = agentsTokenKey(
+    vscode.workspace.workspaceFile?.toString() ?? vscode.workspace.workspaceFolders?.[0]?.uri.toString() ?? null,
+  );
+  // The token the next start of the service is given: a new one replaces it as the service answers or tells one.
+  let agentsToken = await keptAgentsToken(context, agentsKey);
   let credentialsTimer: ReturnType<typeof setTimeout> | null = null;
   const credentialsChanged = () => {
     if (credentialsTimer) clearTimeout(credentialsTimer);
@@ -378,6 +416,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       credentials: handed ?? undefined,
       runControl: true,
       stopCode: true,
+      // The runs' MCP server for agents listens at the port and with the token this window keeps.
+      agents: {
+        enabled: vscode.workspace.getConfiguration('piwi').get<boolean>('serveRunsToAgents') ?? true,
+        port: context.workspaceState.get<number>(AGENTS_PORT) ?? null,
+        token: agentsToken,
+      },
     }),
   };
   const lc = new LanguageClient('piwi', 'Piwi', serverOptions, clientOptions);
@@ -749,12 +793,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     }),
   );
 
+  // Debug in my editor: an open link with `debug=1` opens the failing line, and runs the test to stop there only once
+  // the person said yes.
+  const debugFromLink = (query: string, ask?: DebugAsk) =>
+    openDebugLink(
+      query,
+      { configRoots: () => status?.contexts.map((c) => c.root) ?? [], runTests: (args) => runTests(args, true) },
+      ask,
+    );
+
   // The dashboard's Open in IDE: `vscode://piwitests.piwi/open?file=…&line=…&column=…&root=…` opens the file the run
   // reported, found under the link's root, the Playwright configs' folders and the workspace folders, and never
   // outside the workspace folders. VS Code hands the link to the window focused last.
   context.subscriptions.push(
     vscode.window.registerUriHandler({
       handleUri: async (uri) => {
+        if (uri.path === '/open' && isDebugLink(uri.query)) return debugFromLink(uri.query);
         const link = uri.path === '/open' ? openLink(uri.query) : null;
         if (!link) return;
         const isFile = (file: string) => {
@@ -790,18 +844,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     saveToken: (token) => context.secrets.store(SEND_TOKEN, token),
     savePort: (port) => context.globalState.update(SEND_PORT, port),
   };
+  /** The address the browser's machine reaches an address of this one at: a remote window forwards a loopback port. */
+  const external = async (address: string) =>
+    (await vscode.env.asExternalUri(vscode.Uri.parse(address))).toString(true);
+  /** The port of the browser's machine a remote window forwards to the listener, which it then takes in `Host`. */
+  let pairingForwarded: number[] = [];
+  const forwardListener = async (url: string) => {
+    const address = onLoopback(await external(url));
+    const port = loopbackPort(address);
+    pairingForwarded = port !== null && port !== loopbackPort(url) ? [port] : [];
+    return address;
+  };
+  const hubOf = (params: HubParams) => lc.sendRequest<HubResult>(HUB_REQUEST, params);
   const listen = async (port: number) => {
     sendListener = await startSendListener({
       port,
       token: () => sendStore.token,
       onPayload: (payload) => insertFromPicker(lc, payload),
-      // A remote window's services listen on the remote machine's loopback interface.
-      live: () => liveHubsHere(vscode.env.remoteName, () => readLiveHubs(editorsDir())),
+      // A remote window's services listen on the remote machine's loopback interface: its own hub is forwarded.
+      live: () =>
+        liveHubsHere(vscode.env.remoteName, () => readLiveHubs(editorsDir()), {
+          own: async () => (await hubOf({})).url,
+          external,
+          forward: async (forwarded) => void (await hubOf({ forwarded: [forwarded] })),
+        }),
+      forwarded: () => pairingForwarded,
     });
     return sendListener;
   };
-  // Another window may hold the port: that window keeps the pairing.
-  if (sendStore.port && sendStore.token) await listen(sendStore.port).catch(() => null);
+  // Another window may hold the port: that window keeps the pairing. A remote window forwards it again, as it was.
+  if (sendStore.port && sendStore.token) {
+    const started = await listen(sendStore.port).catch(() => null);
+    if (started && vscode.env.remoteName) void forwardListener(started.url).catch(() => undefined);
+  }
   const pairing = sendPairing({
     store: sendStore,
     listener: () => sendListener,
@@ -810,12 +885,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   });
   /**
    * The pairing address Piwi Picker pastes: the listener's address as the browser's machine reaches it, which a
-   * remote window (SSH, WSL, a dev container) forwards to the local machine. Its port is saved for the next start.
+   * remote window (SSH, WSL, a dev container) forwards to the local machine, on `127.0.0.1`. Its port is saved for the
+   * next start.
    */
   const pickerPairing = async (): Promise<string> => {
     const { url, token } = await pairing(true);
-    const external = await vscode.env.asExternalUri(vscode.Uri.parse(url));
-    return formatPairing({ url: external.toString(true), token });
+    return formatPairing({ url: await forwardListener(url), token });
   };
   /**
    * The pairing address a run's reporter posts a pick to: the loopback address of the machine the run is on, on a
@@ -868,15 +943,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     }
   };
 
-  /** Run tests as the service's command for them says; the command started, or null when there is none. */
-  const runTests = async (args: RunTestsArgs): Promise<RunCommand | null> => {
+  /**
+   * Run tests as the service's command for them says; the command started, or null when there is none, said unless
+   * `quiet`.
+   */
+  const runTests = async (args: RunTestsArgs, quiet = false): Promise<RunCommand | null> => {
     const breakpoints = breakpointsForRun();
     const command = await lc.sendRequest<RunCommand | null>(
       RUN_ARGS_REQUEST,
       breakpoints.length ? { ...args, breakpoints: placesOf(breakpoints) } : args,
     );
     if (!command) {
-      void vscode.window.showWarningMessage('Piwi: no command to run these tests (not connected?).');
+      if (!quiet) void vscode.window.showWarningMessage('Piwi: no command to run these tests (not connected?).');
       return null;
     }
     await startRun(command, breakpoints);
@@ -1232,7 +1310,108 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   const lm = (vscode as unknown as { lm?: Partial<McpApi> }).lm;
   const McpHttpServerDefinition = (vscode as unknown as { McpHttpServerDefinition?: McpHttpServerDefinitionClass })
     .McpHttpServerDefinition;
+  /**
+   * The runs this window starts, served to the agents of this machine (`piwi/agents`), unless `piwi.serveRunsToAgents`
+   * is off: asked as the service starts, again after each of its restarts and as the setting changes. The port it
+   * listens at is kept for the next start.
+   */
+  let agents: AgentsResult | null = null;
+  const runsMcpChanged = new vscode.EventEmitter<void>();
+  context.subscriptions.push(runsMcpChanged);
+  /**
+   * What the service says of the server, asked or not (`piwi/agentsChanged`): kept, its port and its token for the
+   * next start (a new token when the kept port was taken, or reset), and the provider's entry follows.
+   */
+  const agentsHeard = async (answer: AgentsResult | null) => {
+    const before = JSON.stringify(agents);
+    agents = answer?.url ? answer : null;
+    if (agents?.url) await context.workspaceState.update(AGENTS_PORT, Number(new URL(agents.url).port));
+    if (agents?.token && agents.token !== agentsToken) {
+      agentsToken = agents.token;
+      await context.secrets.store(agentsKey, agents.token);
+    }
+    if (JSON.stringify(agents) !== before) runsMcpChanged.fire();
+  };
+  const agentsChanged = async (newToken = false) => {
+    const enabled = vscode.workspace.getConfiguration('piwi').get<boolean>('serveRunsToAgents') ?? true;
+    const answer = await lc
+      .sendRequest<AgentsResult>(AGENTS_REQUEST, { enabled, ...(newToken ? { newToken } : {}) } satisfies AgentsParams)
+      .catch(() => null);
+    await agentsHeard(answer);
+    return answer;
+  };
+  context.subscriptions.push(
+    lc.onDidChangeState((e) => {
+      if (e.newState === State.Running) void agentsChanged();
+      if (e.newState === State.Stopped && agents) {
+        agents = null;
+        runsMcpChanged.fire();
+      }
+    }),
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('piwi.serveRunsToAgents')) void agentsChanged();
+    }),
+    lc.onNotification(AGENTS_CHANGED_NOTIFICATION, (told: AgentsResult) => void agentsHeard(told)),
+    // The format the configuration is copied in: chosen, or named by the command's argument.
+    vscode.commands.registerCommand('piwi.copyRunsMcpConfiguration', async (asked?: unknown) => {
+      if (!agents?.url || !agents.token) {
+        void vscode.window.showWarningMessage(
+          "Piwi: this window does not serve its runs to agents: turn on Piwi's Serve Runs To Agents setting.",
+        );
+        return;
+      }
+      const format: RunsMcpFormat | undefined = RUNS_MCP_FORMATS.some((f) => f.format === asked)
+        ? (asked as RunsMcpFormat)
+        : (
+            await vscode.window.showQuickPick(
+              RUNS_MCP_FORMATS.map((f) => ({ label: f.label, detail: f.detail, format: f.format })),
+              { title: "Piwi: copy the runs' MCP server configuration for" },
+            )
+          )?.format;
+      if (!format || !agents?.url || !agents.token) return;
+      await vscode.env.clipboard.writeText(runsMcpConfiguration(agents.url, agents.token, format));
+      void vscode.window.showInformationMessage(
+        "Piwi: the runs' MCP configuration is on the clipboard. It holds this window's token: paste it in your agent's user settings, never in a file of the repository such as a project's .mcp.json. It serves while this window is open.",
+      );
+    }),
+    // A token copied where it should not be: a new one, the one before refused from then on.
+    vscode.commands.registerCommand('piwi.resetRunsMcpToken', async (confirmed?: unknown) => {
+      const reset = 'Reset the token';
+      if (
+        confirmed !== true &&
+        (await vscode.window.showWarningMessage(
+          "Piwi: give the runs' MCP server a new token? Every agent you copied its configuration to is refused until you copy it again; the editor's own agent follows.",
+          { modal: true },
+          reset,
+        )) !== reset
+      ) {
+        return;
+      }
+      const answer = await agentsChanged(true);
+      // Served or not, the token kept for the next start is a new one.
+      if (!answer?.token) {
+        agentsToken = randomBytes(32).toString('base64url');
+        await context.secrets.store(agentsKey, agentsToken);
+      }
+      void vscode.window.showInformationMessage(
+        answer?.token
+          ? "Piwi: the runs' MCP server has a new token. The editor's agent uses it already; copy the runs' MCP server configuration again for any other agent."
+          : "Piwi: the runs' MCP server takes a new token from its next start.",
+      );
+    }),
+  );
+
   if (lm?.registerMcpServerDefinitionProvider && McpHttpServerDefinition) {
+    context.subscriptions.push(
+      lm.registerMcpServerDefinitionProvider('piwi.runs', {
+        onDidChangeMcpServerDefinitions: runsMcpChanged.event,
+        async provideMcpServerDefinitions() {
+          return agents?.url && agents.token
+            ? [new McpHttpServerDefinition(RUNS_MCP_LABEL, vscode.Uri.parse(agents.url), runsMcpHeaders(agents.token))]
+            : [];
+        },
+      }),
+    );
     context.subscriptions.push(
       lm.registerMcpServerDefinitionProvider('piwi.mcp', {
         onDidChangeMcpServerDefinitions: mcpChanged.event,
@@ -1258,7 +1437,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
 
   context.subscriptions.push(
     lc.onNotification(RUN_STATUS_NOTIFICATION, (next: RunStatusResult) => void updateStatus(next)),
-    lc.onNotification(STATUS_NOTIFICATION, () => void updateStatus()),
+    // The Playwright configs the breakpoints are read under may change with the status.
+    lc.onNotification(STATUS_NOTIFICATION, () => void updateStatus().then(() => runControl.breakpointsChanged())),
     // A failure moved with an edit, or its line changed since the run: the lenses, the decorations and the view again.
     lc.onNotification(FAILURES_NOTIFICATION, (failures: FailuresResult) => {
       filesChanged();
@@ -1289,9 +1469,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     // A service that stops closes its runs' connections: their sessions end with it.
     lc.onDidChangeState((e) => {
       if (e.newState === State.Stopped) runControl.clear();
+      // A service started again hears the editor's breakpoints, for a run a terminal starts.
+      else if (e.newState === State.Running) runControl.breakpointsChanged();
     }),
     lc.onNotification(NOTICE_NOTIFICATION, (notice: Notice) => {
-      const text = `Piwi: ${notice.message}`;
+      // A notice may quote what a tested page wrote (a debug run's suggested locator): it shows as text alone.
+      const text = inertLinks(`Piwi: ${notice.message}`);
       void (notice.severity === 'warning'
         ? vscode.window.showWarningMessage(text)
         : vscode.window.showInformationMessage(text));
@@ -1303,6 +1486,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   await lc.start();
   showTestExplorer();
   await updateStatus();
+  runControl.breakpointsChanged();
   const tick = setInterval(render, STATUS_TICK_MS);
   context.subscriptions.push({ dispose: () => clearInterval(tick) });
   return {
@@ -1321,8 +1505,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     runSessions: () => runControl.sessions(),
     executionPoints: (uri) => runControl.executionPoints(uri),
     pausedPage: () => runControl.pausedPage(),
+    pickOnPage: (message) => runControl.pickOnPage(message),
     caretCount: () => runControl.caretCount(),
+    agents: () => agents,
+    openDebugLink: (query, ask) => debugFromLink(query, ask),
   };
+}
+
+/** The token the runs' MCP server takes from agents, kept in `SecretStorage` under `key`: a new one the first time. */
+async function keptAgentsToken(context: vscode.ExtensionContext, key: string): Promise<string> {
+  const kept = await context.secrets.get(key);
+  if (kept && /^[A-Za-z0-9_-]{32,256}$/.test(kept)) return kept;
+  const token = randomBytes(32).toString('base64url');
+  await context.secrets.store(key, token);
+  return token;
 }
 
 /**

@@ -1,14 +1,23 @@
 import { describe, expect, test } from 'vitest';
 import { RECORD_CHANNEL_ENV } from '../src/ide-recorder';
+import { MAX_VIEW_EVENTS, MAX_VIEW_FRAME_BASE64 } from '../src/run-view';
 import {
   MAX_KEPT_BODY,
   MAX_KEPT_RESPONSES,
+  MAX_LIVE_WHY,
   MAX_REGION_SNAPSHOT,
+  MAX_ACT_VALUE,
+  MAX_AGENT_SNAPSHOT,
+  MAX_ELEMENT_TEXT,
+  MAX_RUN_EVENT_TEXT,
+  MAX_SNAPSHOT_DEPTH,
   MAX_STOP_ERROR,
+  RUN_ACT_ACTIONS,
   RUN_CHANNEL_ENV,
   RUN_HOLDS,
   RUN_TAKES,
   parseHubToRun,
+  isSnapshotRef,
   parseRunToHub,
   type HubToRun,
   type KeptRequest,
@@ -35,7 +44,24 @@ describe('the run channel', () => {
       pid: 4242,
       playwright: '1.64.1',
       reporter: '0.60.0',
-      takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator'],
+      takes: [
+        'pick',
+        'record',
+        'assert',
+        'assert-region',
+        'requests',
+        'mock',
+        'locator',
+        'view',
+        'input',
+        'input-clicks',
+        'pick-at',
+        'agent',
+        'events',
+        'bind',
+        'end',
+        'share',
+      ],
       holds: ['failure'],
     } satisfies RunToHub;
 
@@ -51,13 +77,24 @@ describe('the run channel', () => {
       expect(parseRunToHub(line({ ...attach, takes: ['dance', 'record'] }))).toMatchObject({ takes: ['record'] });
       expect(parseRunToHub(line({ ...attach, takes: ['mock', 'pick'] }))).toMatchObject({ takes: ['pick', 'mock'] });
       expect(RUN_TAKES).toEqual(attach.takes);
+      // An editor service released before `agent` reads a list of more than 16 as none: the list stays within it.
+      expect(RUN_TAKES.length).toBeLessThanOrEqual(16);
       expect(parseRunToHub(line({ ...attach, takes: 'pick' }))).toMatchObject({ takes: [] });
+      // A longer list a newer reporter sends is read for the names this side knows, up to 64 of them.
+      const longer = [...RUN_TAKES, ...Array.from({ length: 40 }, (_, i) => `later-${i}`)];
+      expect(parseRunToHub(line({ ...attach, takes: longer }))).toMatchObject({ takes: RUN_TAKES });
+      expect(parseRunToHub(line({ ...attach, takes: [...longer, ...longer] }))).toMatchObject({ takes: [] });
       // The stops it holds once the service says it shows them: none named by a reporter that predates them.
       expect(parseRunToHub(line({ ...attach, holds: undefined }))).not.toHaveProperty('holds');
       expect(parseRunToHub(line({ ...attach, holds: 'failure' }))).not.toHaveProperty('holds');
       expect(parseRunToHub(line({ ...attach, holds: ['dance', 'failure'] }))).toMatchObject({ holds: ['failure'] });
       expect(parseRunToHub(line({ ...attach, holds: [] }))).toMatchObject({ holds: [] });
       expect(RUN_HOLDS).toEqual(attach.holds);
+      // An editor's own test runner started the run: said by `true` alone, absent otherwise.
+      expect(parseRunToHub(line({ ...attach, runner: true }))).toEqual({ ...attach, runner: true });
+      for (const runner of [false, 'true', 1, null]) {
+        expect(parseRunToHub(line({ ...attach, runner })), String(runner)).not.toHaveProperty('runner');
+      }
       for (const broken of [
         { ...attach, ref: '' },
         { ...attach, ref: 'ed 1' },
@@ -322,6 +359,7 @@ describe('the run channel', () => {
       expect(parseRunToHub(line({ type: 'notice' }))).toBeNull();
       expect(parseRunToHub(line({ type: 'attach', token: 'x' }))).toBeNull();
       expect(parseRunToHub(line({ type: 'frame' }))).toBeNull();
+      expect(parseRunToHub(line({ type: 'view', stop: 1 }))).toBeNull();
       expect(parseRunToHub('not json')).toBeNull();
       expect(parseRunToHub('[]')).toBeNull();
     });
@@ -342,6 +380,17 @@ describe('the run channel', () => {
       expect(parseHubToRun(line({ type: 'attached', holds: 'failure' }))).toBeNull();
     });
 
+    test('reads what the worker’s lines call the service, leaving out a name it could not print', () => {
+      expect(parseHubToRun(line({ type: 'attached', holds: ['failure'], host: 'the desktop app' }))).toEqual({
+        type: 'attached',
+        holds: ['failure'],
+        host: 'the desktop app',
+      });
+      for (const host of ['', 7, 'the\neditor', '\u001b[31mred', 'a'.repeat(65), ' leading space']) {
+        expect(parseHubToRun(line({ type: 'attached', holds: [], host }))).toEqual({ type: 'attached', holds: [] });
+      }
+    });
+
     test('reads the breakpoints, all of them or none', () => {
       const breakpoints = {
         type: 'breakpoints',
@@ -360,7 +409,7 @@ describe('the run channel', () => {
 
     test('reads the controls, each answering a stop but Pause', () => {
       expect(parseHubToRun(line({ type: 'control', action: 'pause' }))).toEqual({ type: 'control', action: 'pause' });
-      for (const action of ['step', 'resume', 'finish'] as const) {
+      for (const action of ['step', 'resume', 'finish', 'end'] as const) {
         expect(parseHubToRun(line({ type: 'control', action, stop: 2 }))).toEqual({ type: 'control', action, stop: 2 });
         expect(parseHubToRun(line({ type: 'control', action }))).toBeNull();
       }
@@ -411,9 +460,9 @@ describe('the run channel', () => {
     });
 
     test('names what a newer service sends that this version does not know, and refuses what is malformed', () => {
-      expect(parseHubToRun(line({ type: 'control', action: 'end', stop: 2 }))).toEqual({
+      expect(parseHubToRun(line({ type: 'control', action: 'stop', stop: 2 }))).toEqual({
         type: 'unknown',
-        what: 'control end',
+        what: 'control stop',
       });
       expect(parseHubToRun(line({ type: 'request', request: 5, what: 'aria' }))).toEqual({
         type: 'unknown',
@@ -423,6 +472,457 @@ describe('the run channel', () => {
       expect(parseHubToRun(line({ type: '' }))).toBeNull();
       expect(parseHubToRun(line({ kind: 'control' }))).toBeNull();
       expect(parseHubToRun('{')).toBeNull();
+    });
+  });
+
+  describe('what an agent asks of a stopped page', () => {
+    test('takes a snapshot to a depth, with or without its image, and refuses a depth out of range', () => {
+      const asked = {
+        type: 'request',
+        request: 7,
+        what: 'snapshot',
+        stop: 2,
+        depth: 3,
+        image: true,
+      } satisfies HubToRun;
+      expect(parseHubToRun(line(asked))).toEqual(asked);
+      expect(parseHubToRun(line({ ...asked, depth: null, image: false }))).toEqual({
+        ...asked,
+        depth: null,
+        image: false,
+      });
+      for (const broken of [
+        { ...asked, depth: 0 },
+        { ...asked, depth: MAX_SNAPSHOT_DEPTH + 1 },
+        { ...asked, depth: 2.5 },
+        { ...asked, depth: undefined },
+        { ...asked, image: 'yes' },
+        { ...asked, stop: 0 },
+      ]) {
+        expect(parseHubToRun(line(broken)), JSON.stringify(broken)).toBeNull();
+      }
+    });
+
+    test('reads a snapshot answered, the page’s address, title, snapshot and image, and refuses one too long', () => {
+      const answer = {
+        type: 'answer',
+        request: 7,
+        what: 'snapshot',
+        value: {
+          ok: true,
+          message: 'The stopped page.',
+          url: 'http://shop.test/cart',
+          title: 'Cart',
+          snapshot: '- button "Pay" [ref=e5]',
+          cut: false,
+          image: { mime: 'image/jpeg', data: '/9j/', width: 800, height: 600 },
+        },
+      } satisfies RunToHub;
+      expect(parseRunToHub(line(answer))).toEqual(answer);
+      const none = { ...answer, value: { ...answer.value, ok: false, snapshot: null, image: null } };
+      expect(parseRunToHub(line(none))).toEqual(none);
+      expect(parseRunToHub(line({ ...answer, value: { ...answer.value, title: 'x'.repeat(2000) } }))).toMatchObject({
+        value: { title: 'x'.repeat(1000) },
+      });
+      for (const value of [
+        { ...answer.value, snapshot: 'x'.repeat(MAX_AGENT_SNAPSHOT + 1) },
+        { ...answer.value, url: 'http://a\nb' },
+        { ...answer.value, cut: 'no' },
+        { ...answer.value, image: { mime: 'image/png', data: '/9j/' } },
+        { ...answer.value, image: undefined },
+        { ...answer.value, message: undefined },
+      ]) {
+        expect(parseRunToHub(line({ ...answer, value })), JSON.stringify(value).slice(0, 80)).toBeNull();
+      }
+    });
+
+    test('acts by a ref with a value only where the action takes one, and refuses any other action or key', () => {
+      const act = (action: string, value: unknown) =>
+        parseHubToRun(line({ type: 'request', request: 8, what: 'act', stop: 2, ref: 'e5', action, value }));
+      expect(act('click', null)).toEqual({
+        type: 'request',
+        request: 8,
+        what: 'act',
+        stop: 2,
+        ref: 'e5',
+        action: 'click',
+        value: null,
+      });
+      expect(act('fill', 'dev@example.com')).toMatchObject({ action: 'fill', value: 'dev@example.com' });
+      expect(act('fill', '')).toMatchObject({ action: 'fill', value: '' });
+      expect(act('press', 'Shift+Tab')).toMatchObject({ action: 'press', value: 'Shift+Tab' });
+      expect(act('select', 'France')).toMatchObject({ action: 'select', value: 'France' });
+      const values: Record<string, string | null> = { fill: 'x', press: 'Enter', select: 'x' };
+      for (const action of RUN_ACT_ACTIONS) expect(act(action, values[action] ?? null), action).not.toBeNull();
+      for (const [action, value] of [
+        ['click', 'x'],
+        ['check', 'x'],
+        ['fill', 'x'.repeat(MAX_ACT_VALUE + 1)],
+        ['fill', null],
+        ['press', 'Hyper+Q'],
+        ['press', 'Enter; rm -rf'],
+        ['select', 'a\nb'],
+        ['evaluate', '1'],
+        ['dblclick', null],
+      ] as const) {
+        expect(act(action, value), `${action} ${String(value).slice(0, 20)}`).toBeNull();
+      }
+      for (const ref of ['', 'e', '5', 'e5 ', 'f1', 'f1e2x', 'button', 'e1234567890']) {
+        expect(isSnapshotRef(ref), ref).toBe(false);
+      }
+      expect(isSnapshotRef('f12e340')).toBe(true);
+    });
+
+    test('reads an element’s ranked locators, and never a password field’s value', () => {
+      const element = {
+        tagName: 'button',
+        role: 'button',
+        name: 'Pay',
+        testId: 'pay',
+        text: 'Pay',
+        textCut: false,
+        value: null,
+        valueCut: false,
+        checked: null,
+        secret: false,
+      };
+      const answer = {
+        type: 'answer',
+        request: 9,
+        what: 'ref-locator',
+        value: {
+          ok: true,
+          message: '2 locators.',
+          element,
+          locators: [
+            { locator: "getByTestId('pay')", method: 'getByTestId', score: 100, unique: true },
+            { locator: "getByRole('button', { name: 'Pay' })", method: 'getByRole', score: 90, unique: false },
+          ],
+        },
+      } satisfies RunToHub;
+      expect(parseRunToHub(line(answer))).toEqual(answer);
+      expect(parseRunToHub(line({ ...answer, what: 'act' }))).toEqual({ ...answer, what: 'act' });
+      // An action the page did not answer in time may still be played: said so, on a refusal alone.
+      const late = { ok: false, message: 'Late.', element: null, locators: [], late: true };
+      expect(parseRunToHub(line({ ...answer, what: 'act', value: late }))).toMatchObject({ value: { late: true } });
+      expect(parseRunToHub(line({ ...answer, what: 'act', value: { ...answer.value, late: true } }))).toEqual({
+        ...answer,
+        what: 'act',
+      });
+      expect(parseRunToHub(line({ ...answer, value: late }))).not.toHaveProperty('value.late');
+      const secret = { ...element, tagName: 'input', role: 'textbox', value: 'hunter2', secret: true };
+      expect(parseRunToHub(line({ ...answer, value: { ...answer.value, element: secret } }))).toMatchObject({
+        value: { element: { value: null, valueCut: false, secret: true } },
+      });
+      // A text or a value longer than this side reads is cut, and says so; one the worker cut says so too.
+      const long = { ...element, text: 'a'.repeat(MAX_ELEMENT_TEXT + 5), value: 'b'.repeat(MAX_ACT_VALUE + 5) };
+      expect(parseRunToHub(line({ ...answer, value: { ...answer.value, element: long } }))).toMatchObject({
+        value: {
+          element: {
+            text: 'a'.repeat(MAX_ELEMENT_TEXT),
+            textCut: true,
+            value: 'b'.repeat(MAX_ACT_VALUE),
+            valueCut: true,
+          },
+        },
+      });
+      const cut = { ...element, textCut: true };
+      expect(parseRunToHub(line({ ...answer, value: { ...answer.value, element: cut } }))).toMatchObject({
+        value: { element: { textCut: true } },
+      });
+      for (const value of [
+        { ...answer.value, element: { ...element, tagName: 'a b' } },
+        { ...answer.value, element: { ...element, checked: 'yes' } },
+        { ...answer.value, element: { ...element, secret: undefined } },
+        { ...answer.value, locators: [{ locator: 'a\nb', method: 'locator', score: 1, unique: true }] },
+        { ...answer.value, locators: Array(17).fill(answer.value.locators[0]) },
+        { ...answer.value, locators: undefined },
+      ]) {
+        expect(parseRunToHub(line({ ...answer, value })), JSON.stringify(value).slice(0, 80)).toBeNull();
+      }
+    });
+
+    test('binds and unbinds the browser at a stop, and reads the name and endpoint it was bound under', () => {
+      const asked = { type: 'request', request: 10, what: 'bind', stop: 2, on: true } satisfies HubToRun;
+      expect(parseHubToRun(line(asked))).toEqual(asked);
+      expect(parseHubToRun(line({ ...asked, on: 'yes' }))).toBeNull();
+      const bound = {
+        type: 'answer',
+        request: 10,
+        what: 'bind',
+        value: { ok: true, message: 'Bound.', name: 'piwi-ed-1-w0', endpoint: '/tmp/pw/browser.sock' },
+      } satisfies RunToHub;
+      expect(parseRunToHub(line(bound))).toEqual(bound);
+      const unbound = { ...bound, value: { ok: true, message: 'Unbound.', name: null, endpoint: null } };
+      expect(parseRunToHub(line(unbound))).toEqual(unbound);
+      expect(parseRunToHub(line({ ...bound, value: { ...bound.value, name: 'a b' } }))).toBeNull();
+    });
+
+    test('turns the events on and off, and reads each event, its texts cut short', () => {
+      expect(parseHubToRun(line({ type: 'events', on: true }))).toEqual({ type: 'events', on: true });
+      expect(parseHubToRun(line({ type: 'events', on: 1 }))).toBeNull();
+      const event = (e: unknown) => parseRunToHub(line({ type: 'event', event: e }));
+      const call = {
+        kind: 'call',
+        title: 'locator.click',
+        place: { file: 'tests/cart.spec.ts', line: 4, column: 9 },
+        ok: false,
+        error: 'Timeout 5000ms exceeded.',
+        ms: 5003.4,
+      };
+      expect(event(call)).toEqual({ type: 'event', event: { ...call, ms: 5003 } });
+      expect(event({ ...call, place: null, error: null })).toMatchObject({ event: { place: null, error: null } });
+      expect(event({ kind: 'navigation', url: 'http://shop.test/' })).toEqual({
+        type: 'event',
+        event: { kind: 'navigation', url: 'http://shop.test/' },
+      });
+      expect(event({ kind: 'console', level: 'error', text: 'x'.repeat(5000) })).toMatchObject({
+        event: { text: 'x'.repeat(MAX_RUN_EVENT_TEXT) },
+      });
+      expect(event({ kind: 'page-error', text: 'boom' })).toMatchObject({ event: { kind: 'page-error' } });
+      expect(
+        event({ kind: 'request-failed', method: 'get', url: 'http://shop.test/api', status: 500, failure: null }),
+      ).toMatchObject({ event: { method: 'GET', status: 500 } });
+      expect(event({ kind: 'dropped', count: 3 })).toMatchObject({ event: { count: 3 } });
+      for (const broken of [
+        { ...call, title: '' },
+        { ...call, ms: -1 },
+        { ...call, place: { file: '', line: 1 } },
+        { kind: 'console', level: 'info', text: 'x' },
+        { kind: 'navigation', url: 'a\nb' },
+        { kind: 'request-failed', method: 'GET', url: 'http://a', status: 99, failure: null },
+        { kind: 'dropped', count: 0 },
+        { kind: 'evaluate', code: '1' },
+      ]) {
+        expect(event(broken), JSON.stringify(broken)).toBeNull();
+      }
+    });
+  });
+
+  describe('Share live', () => {
+    test('turns the sharing on and off', () => {
+      expect(parseHubToRun(line({ type: 'share', on: true }))).toEqual({ type: 'share', on: true });
+      expect(parseHubToRun(line({ type: 'share', on: false }))).toEqual({ type: 'share', on: false });
+      expect(parseHubToRun(line({ type: 'share', on: 'yes' }))).toBeNull();
+      expect(parseHubToRun(line({ type: 'share' }))).toBeNull();
+    });
+
+    test('reads how a worker stands, its sentence cut short, and refuses a page that is no web address', () => {
+      const live = {
+        type: 'live',
+        can: true,
+        on: true,
+        viewers: 2,
+        page: 'https://piwi.example.com/test-runs/42',
+        why: null,
+      } satisfies RunToHub;
+      expect(parseRunToHub(line(live))).toEqual(live);
+      expect(parseRunToHub(line({ ...live, can: false, on: false, page: null, why: 'x'.repeat(900) }))).toEqual({
+        ...live,
+        can: false,
+        on: false,
+        page: null,
+        why: 'x'.repeat(MAX_LIVE_WHY),
+      });
+      expect(parseRunToHub(line({ ...live, why: '  ' }))).toMatchObject({ why: null });
+      for (const broken of [
+        { ...live, can: 1 },
+        { ...live, on: undefined },
+        { ...live, viewers: -1 },
+        { ...live, viewers: 1.5 },
+        { ...live, page: 'javascript:alert(1)' },
+        { ...live, page: 'https://user:pass@piwi.example.com/test-runs/42' },
+        { ...live, page: undefined },
+        { ...live, why: 3 },
+      ]) {
+        expect(parseRunToHub(line(broken)), JSON.stringify(broken)).toBeNull();
+      }
+    });
+  });
+
+  describe('the live view of a stopped page', () => {
+    test('reads a frame of a stop, its viewport and its data, and refuses one too long or not base64', () => {
+      const frame = { type: 'frame', stop: 2, width: 1280, height: 720, data: '/9j/4AAQ' } satisfies RunToHub;
+      expect(parseRunToHub(line(frame))).toEqual(frame);
+      expect(parseRunToHub(line({ ...frame, extra: 'x' }))).toEqual(frame);
+      expect(parseRunToHub(line({ ...frame, data: 'A'.repeat(MAX_VIEW_FRAME_BASE64) }))).toMatchObject({ stop: 2 });
+      for (const broken of [
+        { ...frame, stop: 0 },
+        { ...frame, width: 0 },
+        { ...frame, height: 720.5 },
+        { ...frame, width: '1280' },
+        { ...frame, data: '' },
+        { ...frame, data: 'not base64' },
+        { ...frame, data: 'A'.repeat(MAX_VIEW_FRAME_BASE64 + 4) },
+        { ...frame, data: undefined },
+      ]) {
+        expect(parseRunToHub(line(broken)), JSON.stringify(broken).slice(0, 80)).toBeNull();
+      }
+    });
+
+    test('reads why a view sends no frame of a stop, its sentence cut short', () => {
+      const refused = {
+        type: 'frame',
+        stop: 2,
+        refused: 'This page is too heavy for the live view.',
+      } satisfies RunToHub;
+      expect(parseRunToHub(line(refused))).toEqual(refused);
+      expect(parseRunToHub(line({ ...refused, refused: 'x'.repeat(600) }))).toEqual({
+        ...refused,
+        refused: 'x'.repeat(500),
+      });
+      for (const broken of [
+        { ...refused, stop: 0 },
+        { ...refused, refused: ' ' },
+        { ...refused, refused: 4 },
+      ]) {
+        expect(parseRunToHub(line(broken)), JSON.stringify(broken)).toBeNull();
+      }
+    });
+
+    test('reads the answers to a view, an input and a pick on an image', () => {
+      for (const what of ['view', 'input'] as const) {
+        const answer = { type: 'answer', request: 3, what, value: { ok: true, message: 'The live view is on.' } };
+        expect(parseRunToHub(line(answer))).toEqual(answer);
+        expect(parseRunToHub(line({ ...answer, value: { ok: true } }))).toBeNull();
+      }
+      const picked = {
+        type: 'answer',
+        request: 4,
+        what: 'pick-at',
+        value: { ok: true, message: 'sent', locator: "getByRole('button', { name: 'Go' })" },
+      } satisfies RunToHub;
+      expect(parseRunToHub(line(picked))).toEqual(picked);
+      const none = { ...picked, value: { ok: false, message: 'No element there.', locator: null } };
+      expect(parseRunToHub(line(none))).toEqual(none);
+      for (const locator of [undefined, '', 'a\nb', 'x'.repeat(1001), 5]) {
+        expect(parseRunToHub(line({ ...picked, value: { ...picked.value, locator } })), String(locator)).toBeNull();
+      }
+    });
+
+    test('reads the viewport of an image when it names both of it, and an image without one', () => {
+      const image = {
+        type: 'answer',
+        request: 5,
+        what: 'image',
+        value: { mime: 'image/jpeg', data: '/9j/', width: 800, height: 600 },
+      };
+      expect(parseRunToHub(line(image))).toEqual(image);
+      expect(parseRunToHub(line({ ...image, value: { mime: 'image/jpeg', data: '/9j/', width: 800 } }))).toEqual({
+        ...image,
+        value: { mime: 'image/jpeg', data: '/9j/' },
+      });
+      expect(
+        parseRunToHub(line({ ...image, value: { mime: 'image/jpeg', data: '/9j/', width: -1, height: 2 } })),
+      ).toEqual({
+        ...image,
+        value: { mime: 'image/jpeg', data: '/9j/' },
+      });
+    });
+
+    test('reads a request to start or stop a view, to play input and to pick at a point, each naming its stop', () => {
+      expect(parseHubToRun(line({ type: 'request', request: 9, what: 'view', stop: 2, on: true }))).toEqual({
+        type: 'request',
+        request: 9,
+        what: 'view',
+        stop: 2,
+        on: true,
+      });
+      expect(parseHubToRun(line({ type: 'request', request: 9, what: 'view', stop: 2, on: 'yes' }))).toBeNull();
+      expect(parseHubToRun(line({ type: 'request', request: 9, what: 'view', on: false }))).toBeNull();
+      const events = [
+        { type: 'mouse', action: 'click', x: 4, y: 5, button: 'left', clickCount: 1 },
+        { type: 'key', action: 'press', key: 'Enter' },
+      ];
+      expect(parseHubToRun(line({ type: 'request', request: 10, what: 'input', stop: 2, events }))).toEqual({
+        type: 'request',
+        request: 10,
+        what: 'input',
+        stop: 2,
+        events,
+      });
+      const move = { type: 'mouse', action: 'move', x: 1, y: 1 };
+      for (const broken of [
+        [],
+        Array.from({ length: MAX_VIEW_EVENTS + 1 }, () => move),
+        [{ type: 'key', action: 'press', key: 'NotAKey' }],
+        [{ type: 'evaluate', code: '1' }],
+      ]) {
+        expect(
+          parseHubToRun(line({ type: 'request', request: 10, what: 'input', stop: 2, events: broken })),
+        ).toBeNull();
+      }
+      expect(parseHubToRun(line({ type: 'request', request: 11, what: 'pick-at', stop: 2, x: 20, y: 90.5 }))).toEqual({
+        type: 'request',
+        request: 11,
+        what: 'pick-at',
+        stop: 2,
+        x: 20,
+        y: 90.5,
+      });
+      for (const [x, y] of [
+        [-1, 0],
+        [0, 10_001],
+        ['1', 1],
+        [null, 1],
+      ]) {
+        expect(parseHubToRun(line({ type: 'request', request: 11, what: 'pick-at', stop: 2, x, y }))).toBeNull();
+      }
+    });
+
+    test('reads any line without throwing, every message it takes within its bounds', () => {
+      let state = 11;
+      const next = () => {
+        state = (state * 1664525 + 1013904223) % 4294967296;
+        return state / 4294967296;
+      };
+      const odd = [
+        null,
+        undefined,
+        0,
+        -1,
+        1,
+        2.5,
+        1e9,
+        '',
+        'x',
+        '/9j/',
+        'a\0',
+        [],
+        {},
+        true,
+        [{ type: 'text', text: 'a' }],
+      ];
+      const types = ['frame', 'answer', 'request', 'stopped', 'running', 'view'];
+      const whats = ['view', 'input', 'pick-at', 'image', 'locator', 'pick'];
+      const pick = () => odd[Math.floor(next() * odd.length)];
+      for (let i = 0; i < 20_000; i++) {
+        const message = {
+          type: types[i % types.length],
+          what: whats[Math.floor(next() * whats.length)],
+          request: pick(),
+          stop: next() < 0.5 ? 2 : pick(),
+          on: pick(),
+          events: pick(),
+          x: pick(),
+          y: pick(),
+          width: next() < 0.5 ? 640 : pick(),
+          height: next() < 0.5 ? 480 : pick(),
+          data: pick(),
+          value:
+            next() < 0.5 ? { ok: pick(), message: pick(), locator: pick(), mime: 'image/jpeg', data: pick() } : pick(),
+        };
+        const toHub = parseRunToHub(line(message));
+        if (toHub?.type === 'frame') {
+          if ('data' in toHub) expect(toHub.data.length).toBeLessThanOrEqual(MAX_VIEW_FRAME_BASE64);
+          else expect(toHub.refused.length).toBeLessThanOrEqual(500);
+        }
+        const toRun = parseHubToRun(line(message));
+        if (toRun?.type === 'request' && toRun.what === 'input') {
+          expect(toRun.events.length).toBeGreaterThan(0);
+          expect(toRun.events.length).toBeLessThanOrEqual(MAX_VIEW_EVENTS);
+        }
+      }
     });
   });
 });

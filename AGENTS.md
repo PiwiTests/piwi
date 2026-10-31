@@ -18,6 +18,7 @@ file outside its directory to another guide: read that one yourself, whatever th
 | `apps/vscode/`: the VS Code extension                            | [`apps/vscode/AGENTS.md`](apps/vscode/AGENTS.md)             |
 | `apps/jetbrains/`: the JetBrains plugin (Gradle, Kotlin)         | [`apps/jetbrains/AGENTS.md`](apps/jetbrains/AGENTS.md)       |
 | `apps/docs/`: the VitePress documentation site                   | [`apps/docs/AGENTS.md`](apps/docs/AGENTS.md)                 |
+| `apps/showcase/`: the showcase's story, played on every tool     | [`apps/showcase/AGENTS.md`](apps/showcase/AGENTS.md)         |
 | `.github/`: the CI workflows and the actions they share          | [`.github/AGENTS.md`](.github/AGENTS.md)                     |
 | `proposals/`: design records for work proposed or being built    | [`proposals/AGENTS.md`](proposals/AGENTS.md)                 |
 | `adr/`: architecture decision records for shipped work           | [`adr/AGENTS.md`](adr/AGENTS.md)                             |
@@ -41,6 +42,7 @@ apps/extension/       Piwi Picker, the browser extension (Manifest V3), standalo
 apps/vscode/          VS Code extension, a thin client of packages/editor (scope `ide`)
 apps/jetbrains/       JetBrains plugin, the same client in Kotlin and Gradle (scope `ide`)
 apps/docs/            VitePress documentation site, published to GitHub Pages
+apps/showcase/        The showcase: one story on every tool together, checked nightly and filmed (not a workspace)
 packages/core/        @piwitests/core: private, zero-dependency logic shared by the app and the reporter
 packages/picker-dom/  @piwitests/picker-dom: the DOM picker overlay (reporter, dashboard, extension)
 packages/reporter/    @piwitests/reporter: the Playwright reporter (bundled with tsup)
@@ -55,7 +57,8 @@ plans/                The maintainer's local planning folder: gitignored, absent
 - **A new workspace goes where its kind is**: `apps/*` for a deployable surface, `packages/*` for a package consumed by
   name (published, or imported or bundled by another workspace), `integrations/*` for a framework adapter. Every JS
   workspace is listed in the root `package.json` `workspaces`. `apps/desktop`, `apps/docs` and `examples/sample-app`
-  are **intentionally not workspaces** (own toolchains; the example must resolve `@piwitests/*` from npm).
+  are **intentionally not workspaces** (own toolchains; the example must resolve `@piwitests/*` from npm), and
+  `apps/showcase` is scripts run on the root's `node_modules`, read by knip from the root.
 - **Adding a workspace takes two entries in [`release-please-config.json`](release-please-config.json)**: its
   `package.json` `$.version`, _and_ its `package-lock.json` `$.packages['<dir>'].version`. release-please bumps only
   the root package natively; a missing lockfile entry leaves the workspace a release behind and makes `npm install`
@@ -68,11 +71,12 @@ plans/                The maintainer's local planning folder: gitignored, absent
 
 Prerequisites: **Node.js 24+**, npm, Git. `npm ci` at the repository root installs every workspace (a Claude Code web
 session runs it, builds the reporter and installs Chromium in `.claude/hooks/session-start.sh`). Each area guide lists
-its own commands; the dashboard's run from `apps/application/` (`npm run app:dev`, http://localhost:3000, with no
+its own commands; the dashboard's run from `apps/application/` (`npm run app:dev`, http://localhost:7494, with no
 configuration: the SQLite database and `.data/` are created on the first API call).
 
 - `npm run knip` (root) lists unused files, exports, types and dependencies, and undeclared imports, across every JS
-  workspace. A standalone entry point it cannot infer goes in [`knip.ts`](knip.ts). CI's checks job fails on a finding.
+  workspace. A standalone entry point it cannot infer goes in [`knip.ts`](knip.ts). CI's `Format, lint and typecheck`
+  job fails on a finding.
 - `node scripts/package-smoke.mjs <dir>` installs the packed `@piwitests/server` and `@piwitests/reporter` tarballs into
   a new project and reports a run through them (the script header shows how to pack them); CI's `package-smoke` job.
 - From `integrations/aspnetcore/`: `dotnet test PiwiTests.Instrumentation.slnx` (needs the .NET 10 SDK).

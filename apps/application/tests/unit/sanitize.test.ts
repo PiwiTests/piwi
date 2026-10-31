@@ -10,6 +10,7 @@ import {
   sanitizeDialogs,
   capSteps,
   DROPPED_STEPS_CATEGORY,
+  hiddenErrorText,
 } from '../../server/utils/sanitize';
 import { DEFAULT_INGEST_LIMITS } from '#shared/ingest-limits';
 
@@ -177,6 +178,25 @@ describe('sanitizeAiUsage', () => {
   });
 });
 
+describe('hiddenErrorText', () => {
+  test('hides what may be a secret in a case’s error, whatever reporter sent it', () => {
+    const error = [
+      'Error: expect(locator).toHaveValue(expected) failed',
+      "Locator:  getByLabel('Password')",
+      'Received: "S3cr3t!Passw0rd"',
+      'Call log:',
+      "  - waiting for getByLabel('Password')",
+      '  - fill("S3cr3t!Passw0rd")',
+    ].join('\n');
+    const hidden = hiddenErrorText(error)!;
+    expect(hidden).not.toContain('S3cr3t');
+    expect(hidden).toContain('Received: "<hidden>"');
+    expect(hidden).toContain('Error: expect(locator).toHaveValue(expected) failed');
+    expect(hiddenErrorText(undefined)).toBeNull();
+    expect(hiddenErrorText({ message: 'x' })).toBeNull();
+  });
+});
+
 describe('capSteps', () => {
   test('caps the step count to the limit', () => {
     const steps = Array.from({ length: DEFAULT_INGEST_LIMITS.steps + 5 }, (_, i) => ({ title: `s${i}`, duration: 1 }));
@@ -195,6 +215,34 @@ describe('capSteps', () => {
     const out = capSteps(steps, limits) as Array<{ title: string; category: string; depth?: number }>;
     expect(out.map((s) => s.title)).toEqual(['click 0', 'click 1', '7 steps not stored', 'checkout', 'click pay']);
     expect(out[2]).toMatchObject({ category: DROPPED_STEPS_CATEGORY, depth: 0 });
+  });
+
+  test('hides the text a fill typed into a secret field, from a reporter that predates hiding it', () => {
+    const out = capSteps(
+      [
+        {
+          title: 'Fill "S3cr3t!Passw0rd"',
+          subtitle: "getByLabel('Password')",
+          category: 'pw:api',
+          duration: 3,
+          params: { locator: "getByLabel('Password')", value: 'S3cr3t!Passw0rd' },
+          failed: true,
+          error: { message: 'locator.fill: Timeout 1500ms exceeded.\nCall log:\n  - fill("S3cr3t!Passw0rd")' },
+        },
+        {
+          title: 'Fill "WELCOME10"',
+          subtitle: "getByLabel('Coupon')",
+          category: 'pw:api',
+          duration: 3,
+          params: { locator: "getByLabel('Coupon')", value: 'WELCOME10' },
+        },
+      ],
+      DEFAULT_INGEST_LIMITS,
+    ) as Array<Record<string, any>>;
+    expect(JSON.stringify(out)).not.toContain('S3cr3t');
+    expect(out[0]).toMatchObject({ title: 'Fill "<hidden>"', params: { value: '<hidden>' } });
+    expect(out[0]!.error.message).toContain('fill("<hidden>")');
+    expect(out[1]).toMatchObject({ title: 'Fill "WELCOME10"', params: { value: 'WELCOME10' } });
   });
 
   test('re-caps params keys and value length, never trusting the reporter', () => {

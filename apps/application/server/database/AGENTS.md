@@ -62,6 +62,11 @@ merge keeps the branch's history as stable as it can:
   reads a run's origin from the column (`notLabRun(testRuns.origin)`, `runOriginIn(testRuns.origin, …)`,
   `eligibleRunSql`), never from the metadata text. `tests/unit/run-origin-column.test.ts` fails on a write that leaves
   either out.
+- **A SQLite statement whose result rows have no columns runs through `db.$client.executeMultiple`**, never
+  `db.run`: libSQL's `execute` steps such a statement once and leaves it open. `PRAGMA incremental_vacuum` is one:
+  stepped once, it frees a single page and holds the write lock until the statement is garbage-collected, and every
+  write on another connection fails with `SQLITE_BUSY` meanwhile (`reclaimSpace`, `server/utils/retention.ts`).
+  `executeMultiple` waits for an open transaction, as writes do (`server/database/sqlite-connections.ts`).
 - **Dates are Unix timestamps in SQLite**, in seconds (`mode: 'timestamp'`) or in milliseconds
   (`mode: 'timestamp_ms'`) depending on the column: check its mode before comparing it in raw SQL.
 - **Large per-case text goes through `case_payloads`** (content-addressed, deduplicated per project), never a new

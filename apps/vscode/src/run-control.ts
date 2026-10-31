@@ -4,7 +4,8 @@
  * each stopped worker stands, what the controls and the code actions offer in each state, the line shown above a
  * stop, the stop a control acts on, the breakpoints sent to each run as they change, the page a stop shows as an
  * image, the responses Mock a request lists, the count of the locator at the cursor, the code a stop sends to write,
- * and the edits of the documents since a run started, which map a line of the run's code to the document as it stands
+ * a run shared live on the team instance (Share live: what it sends, how it stands), and the edits of the documents
+ * since a run started, which map a line of the run's code to the document as it stands
  * and back.
  */
 import type {
@@ -12,12 +13,14 @@ import type {
   LocatorAtCaretParams,
   LocatorAtCaretResult,
   PausedImage,
+  RunLive,
   RunSession,
   RunStop,
   RunTake,
   RunTest,
   SetRunBreakpointsParams,
   StopActionKind,
+  StopBindResult,
   StopCode,
   StopRequest,
 } from '@piwitests/editor/protocol';
@@ -183,20 +186,38 @@ export function spelledSession(session: RunSession, spell: (uri: string) => stri
   };
 }
 
-/** A worker stopped: its run, the worker, where it stands, the test it runs and what its reporter takes there. */
+/**
+ * A worker stopped: its run, the worker, where it stands, the test it runs, what its reporter takes there, and whether
+ * its run was started in a terminal (`RunSession.terminal`), and of those by the editor's own test runner
+ * (`RunSession.runner`).
+ */
 export interface ShownStop {
   ref: string;
   worker: number;
   stop: RunStop;
   test: RunTest | null;
   takes: readonly RunTake[];
+  terminal?: boolean;
+  runner?: boolean;
 }
 
 /** Every stopped worker of the sessions, in their order. */
 export function stopsOf(sessions: Sessions): ShownStop[] {
   return [...sessions.values()].flatMap((s) =>
     s.workers.flatMap((w) =>
-      w.stop ? [{ ref: s.ref, worker: w.worker, stop: w.stop, test: w.test, takes: w.takes ?? [] }] : [],
+      w.stop
+        ? [
+            {
+              ref: s.ref,
+              worker: w.worker,
+              stop: w.stop,
+              test: w.test,
+              takes: w.takes ?? [],
+              ...(s.terminal ? { terminal: true } : {}),
+              ...(s.terminal && s.runner ? { runner: true } : {}),
+            },
+          ]
+        : [],
     ),
   );
 }
@@ -211,10 +232,28 @@ export function stopKey(stop: ShownStop): string {
  * at a failure, how the test failed, `Failed · Timed out 5000ms waiting for getByRole('button') · attempt 2`, in plain
  * text. The lens and the choice among several draw the stop's icon before it (`stopIcon`).
  */
-export function pausedText(stop: RunStop, test: RunTest | null): string {
+export function pausedText(stop: RunStop, test: RunTest | null, terminal = false, runner = false): string {
   const attempt = test && test.retry > 0 ? ` · attempt ${test.retry + 1}` : '';
-  if (stop.reason === 'failure') return `Failed · ${stop.title.replace(/^Failed:\s*/, '')}${attempt}`;
-  return `Paused · ${stop.title}${attempt}`;
+  // A run started in a terminal, or by the editor's own test runner, says so: its process is theirs.
+  const where = !terminal ? '' : runner ? " · run by the editor's test runner" : ' · run in a terminal';
+  if (stop.reason === 'failure') return `Failed · ${stop.title.replace(/^Failed:\s*/, '')}${attempt}${where}`;
+  // A stop an agent asked for (its Pause, Step or Run to) says so, for the person watching.
+  return `Paused${stop.by === 'agent' ? ' by the agent' : ''} · ${stop.title}${attempt}${where}`;
+}
+
+/** Whether a stop's browser can be shared with Playwright's own tools: its reporter takes `bind`. */
+export function canShare(stop: ShownStop): boolean {
+  return stop.takes.includes('bind');
+}
+
+/** What sharing a stopped browser with Playwright's own tools risks, asked before it is shared. */
+export const SHARE_WARNING =
+  "Share the stopped test's browser with Playwright tools? Until the test ends, any process of yours can then drive it, read its pages and run code in them (playwright-cli attach, Playwright's dashboard).";
+
+/** What a shared browser's answer says, with the command that joins it. */
+export function sharedText(result: StopBindResult): string {
+  if (!result.ok || !result.name) return result.message;
+  return `${result.message} Join it with: ${result.command}`;
 }
 
 /** The icon before a stop's line: a failure's, else the pause's. */
@@ -230,6 +269,7 @@ export const RUN_COMMANDS = {
   step: 'piwi.stepRun',
   runTo: 'piwi.runToCursor',
   finish: 'piwi.finishRun',
+  end: 'piwi.endTest',
   showPage: 'piwi.showPausedPage',
   pick: 'piwi.pickAtStop',
   record: 'piwi.recordAtStop',
@@ -237,7 +277,103 @@ export const RUN_COMMANDS = {
   assertRegion: 'piwi.assertRegionAtStop',
   mock: 'piwi.mockAtStop',
   code: 'piwi.codeAtStop',
+  share: 'piwi.shareWithPlaywright',
+  shareLive: 'piwi.shareRunLive',
+  stopSharing: 'piwi.stopSharingRun',
 } as const;
+
+/** A run of the sessions that its reporter can share live on the team instance, and how it stands there. */
+export interface LiveRun {
+  ref: string;
+  live: RunLive;
+}
+
+/** The runs of the sessions whose reporter shares them live, in their order. */
+export function liveRunsOf(sessions: Sessions): LiveRun[] {
+  return [...sessions.values()].flatMap((s) => (s.live ? [{ ref: s.ref, live: s.live }] : []));
+}
+
+/** The instance a run's page is on, as a sentence names it (its host); null without a page. */
+export function liveInstance(live: Pick<RunLive, 'page'>): string | null {
+  if (!live.page) return null;
+  try {
+    return new URL(live.page).host || null;
+  } catch {
+    return null;
+  }
+}
+
+/** What Share live sends, and who sees it, asked before the window shares a run for the first time. */
+export function shareLiveWarning(live: Pick<RunLive, 'page'> | null | undefined): string {
+  const instance = (live && liveInstance(live)) ?? 'the Piwi instance it reports to';
+  return (
+    `Share this run live on ${instance}? While it is shared, anyone with its page open there sees each stop of its ` +
+    "tests: the call, its file and line, and the test's title, even while nobody watches. While someone watches a " +
+    "worker, images of its test's page go there too, each with its call and the test's title. Anyone who can open " +
+    'the run there can watch, and on an instance with authentication off, anyone who can reach it. Nothing is ' +
+    'stored, and Stop sharing ends it within seconds.'
+  );
+}
+
+/** How many views are open, counted as views: one person may hold several. */
+export function viewsText(count: number): string {
+  return count === 1 ? '1 view' : `${count} views`;
+}
+
+/** How a run shared live stands, as the status bar and the answers say it: where, and how many views are open. */
+export function liveText(live: RunLive): string {
+  const instance = liveInstance(live);
+  const where = instance ? `Shared live on ${instance}` : 'Shared live';
+  return live.viewers === 0 ? `${where}: nobody watches yet` : `${where}: ${viewsText(live.viewers)} open`;
+}
+
+/**
+ * The status bar item of Share live while a run is live: the shared runs say where and the views open of them all,
+ * and stop being shared on a click; else a run that can be shared offers it, saying why its sharing stopped when it
+ * stopped though nobody asked. None while no run can be shared: the command says why.
+ */
+export function liveItem(sessions: Sessions): ControlItem | null {
+  const runs = liveRunsOf(sessions);
+  const shared = runs.filter((r) => r.live.shared);
+  if (shared.length) {
+    const viewers = shared.reduce((sum, r) => sum + r.live.viewers, 0);
+    const what =
+      shared.length === 1
+        ? liveText(shared[0]!.live)
+        : `${shared.length} runs shared live: ${viewers ? `${viewsText(viewers)} open` : 'nobody watches yet'}`;
+    return {
+      text: viewers > 0 ? `$(broadcast) Live · ${viewsText(viewers)}` : '$(broadcast) Live',
+      tooltip: `Piwi: ${what}. Click to stop sharing ${shared.length === 1 ? 'the run' : 'one'}.`,
+      command: RUN_COMMANDS.stopSharing,
+    };
+  }
+  const shareable = runs.find((r) => !r.live.refused);
+  if (!shareable) return null;
+  const instance = liveInstance(shareable.live);
+  const offer = `Share the run live${instance ? ` on ${instance}` : ''}, for a teammate to watch from its page`;
+  return {
+    text: '$(broadcast)',
+    tooltip: `Piwi: ${shareable.live.stopped ? `${shareable.live.stopped} ${offer}.` : offer}`,
+    command: RUN_COMMANDS.shareLive,
+  };
+}
+
+/**
+ * The run a Share live command acts on: the one it names, else the only one it can act on, else null to choose among
+ * `candidates` (more than one); `none` says why there is nothing to act on.
+ */
+export function liveTarget(
+  sessions: Sessions,
+  on: boolean,
+): { ref: string } | { candidates: string[] } | { none: string } {
+  if (!sessions.size) return { none: 'no run started from the editor is running.' };
+  const runs = liveRunsOf(sessions);
+  const fit = on ? runs.filter((r) => !r.live.shared && !r.live.refused) : runs.filter((r) => r.live.shared);
+  if (!on && !fit.length) return { none: 'no run is shared live.' };
+  // None can be shared: the service says why, for the first run.
+  const candidates = (fit.length ? fit.map((r) => r.ref) : [...sessions.keys()]).slice(0, fit.length ? undefined : 1);
+  return candidates.length === 1 ? { ref: candidates[0]! } : { candidates };
+}
 
 /** A control or a code action offered at a stop: its title above the stopped line, and its command. */
 export interface StopControl {
@@ -246,18 +382,28 @@ export interface StopControl {
 }
 
 /**
- * The controls offered at a stop, as its lens and its hover name them: Resume, Step, Run to cursor and Finish; at a
- * failure, Resume alone, which lets the test end as it failed (Step and Finish do the same).
+ * The controls offered at a stop, as its lens and its hover name them: Resume, Step, Run to cursor, Finish, and End
+ * test where its reporter takes it; at a failure, Resume alone, which lets the test end as it failed (Step, Finish and
+ * End do the same).
  */
-export function stopControls(stop: RunStop): StopControl[] {
+export function stopControls(stop: ShownStop): StopControl[] {
   const resume = { title: 'Resume', command: RUN_COMMANDS.resume };
-  if (stop.reason === 'failure') return [resume];
+  if (stop.stop.reason === 'failure') return [resume];
   return [
     resume,
     { title: 'Step', command: RUN_COMMANDS.step },
     { title: 'Run to cursor', command: RUN_COMMANDS.runTo },
     { title: 'Finish', command: RUN_COMMANDS.finish },
+    ...(canEnd(stop) ? [{ title: 'End test', command: RUN_COMMANDS.end }] : []),
   ];
+}
+
+/**
+ * Whether a stop can end its test (End the test, `end`): its reporter takes it, and it is no failure, which Resume ends
+ * as it failed.
+ */
+export function canEnd(stop: ShownStop): boolean {
+  return stop.stop.reason !== 'failure' && stop.takes.includes('end');
 }
 
 /**
@@ -339,16 +485,24 @@ export function stopActions(stop: ShownStop): StopAction[] {
 
 /** What the controls offer: Stop while a run is live, Pause while a worker runs, the others while one is stopped. */
 export interface ControlState {
-  /** A run is live: Stop. */
+  /** A run is live. */
   active: boolean;
+  /** A run this window started is live: Stop. A run started in a terminal is the terminal's to stop. */
+  stoppable: boolean;
   /** A worker runs a test or is between tests, no Pause reached it, and its test can stop: Pause. */
   pausable: boolean;
   /** A Pause reached a worker that has not stopped yet. */
   pausing: boolean;
   /** A worker is stopped: Resume, Step, Run to cursor, Finish. */
   stopped: boolean;
+  /** A stopped worker can end its test: End the test. */
+  endable: boolean;
   /** The code actions a stop offers, any stop. */
   actions: StopActionKind[];
+  /** A stop's browser can be shared with Playwright's own tools. */
+  shareable: boolean;
+  /** A run is shared live on the team instance: Stop sharing. */
+  liveShared: boolean;
 }
 
 export function controlState(sessions: Sessions): ControlState {
@@ -356,10 +510,14 @@ export function controlState(sessions: Sessions): ControlState {
   const offered = new Set(stopsOf(sessions).flatMap((s) => stopActions(s).map((a) => a.action)));
   return {
     active: sessions.size > 0,
+    stoppable: [...sessions.values()].some((s) => !s.terminal),
     pausable: workers.some((w) => w.state !== 'stopped' && !w.pausing && !w.test?.cannotPause),
     pausing: workers.some((w) => w.pausing),
     stopped: workers.some((w) => w.state === 'stopped'),
+    endable: stopsOf(sessions).some(canEnd),
     actions: STOP_ACTIONS.filter((a) => offered.has(a.action)).map((a) => a.action),
+    shareable: stopsOf(sessions).some(canShare),
+    liveShared: liveRunsOf(sessions).some((r) => r.live.shared),
   };
 }
 
@@ -371,13 +529,15 @@ export interface ControlItem {
 }
 
 /**
- * The status bar items beside the run's progress: Resume, Step and Finish while a worker is stopped, with the code
- * actions' menu while a stop offers one, else Pause, or `Pausing…` once asked; and Stop while a run is live. None
- * without one.
+ * The status bar items beside the run's progress: Resume, Step, Finish and End the test while a worker is stopped,
+ * with the code actions' menu while a stop offers one, else Pause, or `Pausing…` once asked; and Stop while a run this
+ * window started is live. None without one.
  */
 export function controlItems(state: ControlState): ControlItem[] {
   if (!state.active) return [];
-  const stop = { text: '$(debug-stop)', tooltip: 'Piwi: Stop the run (Shift+F5)', command: RUN_COMMANDS.stop };
+  const stop = state.stoppable
+    ? [{ text: '$(debug-stop)', tooltip: 'Piwi: Stop the run (Shift+F5)', command: RUN_COMMANDS.stop }]
+    : [];
   if (state.stopped) {
     const titles = STOP_ACTIONS.filter((a) => state.actions.includes(a.action)).map((a) => a.title);
     return [
@@ -388,6 +548,15 @@ export function controlItems(state: ControlState): ControlItem[] {
         tooltip: 'Piwi: Finish the test without stopping again (Shift+F11)',
         command: RUN_COMMANDS.finish,
       },
+      ...(state.endable
+        ? [
+            {
+              text: '$(circle-slash)',
+              tooltip: 'Piwi: End the test here: the rest of it is skipped',
+              command: RUN_COMMANDS.end,
+            },
+          ]
+        : []),
       ...(titles.length
         ? [
             {
@@ -397,19 +566,22 @@ export function controlItems(state: ControlState): ControlItem[] {
             },
           ]
         : []),
-      stop,
+      ...stop,
     ];
   }
   if (state.pausable) {
     return [
       { text: '$(debug-pause)', tooltip: 'Piwi: Pause the run at its next call', command: RUN_COMMANDS.pause },
-      stop,
+      ...stop,
     ];
   }
   if (state.pausing) {
-    return [{ text: '$(loading~spin) Pausing…', tooltip: 'Piwi: the run stops at its next call', command: null }, stop];
+    return [
+      { text: '$(loading~spin) Pausing…', tooltip: 'Piwi: the run stops at its next call', command: null },
+      ...stop,
+    ];
   }
-  return [stop];
+  return stop;
 }
 
 /** What a control names: a run, one of its workers, and the stop it was shown at (`RunStop.since`). */
@@ -457,7 +629,7 @@ export function stopPick(stop: ShownStop): { label: string; description: string 
   const file = stop.stop.uri.slice(stop.stop.uri.lastIndexOf('/') + 1);
   const test = stop.test ? `${stop.test.title.join(' › ')} · ` : '';
   return {
-    label: `${stopIcon(stop.stop)} ${pausedText(stop.stop, stop.test)}`,
+    label: `${stopIcon(stop.stop)} ${pausedText(stop.stop, stop.test, stop.terminal, stop.runner)}`,
     description: `${test}${decodeURIComponent(file)}:${stop.stop.line + 1} · worker ${stop.worker}`,
   };
 }
@@ -718,6 +890,54 @@ export function remember<T>(runs: Map<string, T>, ref: string, value: T): void {
 export interface PausedPageView {
   image: PausedImage | null;
   caption: string;
+  /**
+   * A click on the image picks the element under it (`piwi/pickAt`): its worker takes `pick-at` and the image names
+   * the viewport its points are in. The image a click was on (`shown`, counted as the view shows each) tells a click
+   * on an image the view no longer shows apart.
+   */
+  pick?: { shown: number } | null;
+  /** What the last pick on the image came to: the locator sent to the editor, or why there is none. */
+  note?: string | null;
+}
+
+/** Whether a click on an image of a stop picks there: its worker takes `pick-at`, and the image names its viewport. */
+export function picksOnImage(takes: readonly string[], image: PausedImage | null): boolean {
+  return takes.includes('pick-at') && !!image?.width && !!image.height;
+}
+
+/** A click on the paused page's image, as the view's script posts it: its offset and the size the image is shown at. */
+export interface ImageClick {
+  shown: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** A message of the view's script, read field by field; null for anything else. */
+export function imageClickOf(message: unknown): ImageClick | null {
+  const m = message as Record<string, unknown> | null;
+  if (!m || typeof m !== 'object' || m.type !== 'pick') return null;
+  const values = [m.shown, m.x, m.y, m.width, m.height];
+  if (!values.every((v) => typeof v === 'number' && Number.isFinite(v))) return null;
+  const [shown, x, y, width, height] = values as number[];
+  return { shown: shown!, x: x!, y: y!, width: width!, height: height! };
+}
+
+/**
+ * The point of the stopped page under a click on its image, in CSS pixels of its viewport (`piwi/pickAt`): the click's
+ * offset in the image as shown, scaled by the viewport over the size it is shown at (`x * width / naturalWidth` of the
+ * image's own pixels, whatever its size and the page's device scale factor); null for a click outside the image or an
+ * image that does not name its viewport.
+ */
+export function pagePoint(click: ImageClick, image: PausedImage | null): { x: number; y: number } | null {
+  const { width, height } = image ?? {};
+  if (!width || !height || click.width <= 0 || click.height <= 0) return null;
+  if (click.x < 0 || click.y < 0 || click.x > click.width || click.y > click.height) return null;
+  return {
+    x: Math.min(width - 1, Math.round((click.x * width) / click.width)),
+    y: Math.min(height - 1, Math.round((click.y * height) / click.height)),
+  };
 }
 
 function escapeHtml(text: string): string {
@@ -733,24 +953,35 @@ function imageSource(image: PausedImage | null): string | null {
   return /^[A-Za-z0-9+/]+={0,2}$/.test(image.data) ? `data:image/jpeg;base64,${image.data}` : null;
 }
 
+/** The hint above an image a click picks on. */
+export const PICK_HINT = 'Click the image to pick a locator: it replaces the one on the stopped line.';
+
 /**
- * The paused page view's document: no script, images from `data:` only and its one style by `nonce`, the caption
- * above the image.
+ * The paused page view's document: images from `data:` only, its one style by `nonce`, the caption above the image.
+ * No script, but where a click on the image picks (`view.pick`): then one script, by the same `nonce`, which posts a
+ * click's offset in the image and the size it is shown at, and which image it was on, to the extension; it reaches
+ * nothing else (`default-src 'none'`).
  */
 export function pausedPageHtml(view: PausedPageView, nonce: string): string {
   const src = imageSource(view.image);
-  const csp = `default-src 'none'; img-src data:; style-src 'nonce-${nonce}'`;
+  const pick = src && view.pick ? view.pick : null;
+  const csp = `default-src 'none'; img-src data:; style-src 'nonce-${nonce}'${pick ? `; script-src 'nonce-${nonce}'` : ''}`;
   return [
     '<!DOCTYPE html>',
     '<html lang="en">',
     '<head>',
     '<meta charset="UTF-8">',
     `<meta http-equiv="Content-Security-Policy" content="${csp}">`,
-    `<style nonce="${nonce}">body{margin:0;padding:8px 12px;font:13px var(--vscode-font-family);color:var(--vscode-foreground)}p{margin:0 0 8px}img{max-width:100%;border:1px solid var(--vscode-panel-border)}</style>`,
+    `<style nonce="${nonce}">body{margin:0;padding:8px 12px;font:13px var(--vscode-font-family);color:var(--vscode-foreground)}p{margin:0 0 8px}.hint,.note{color:var(--vscode-descriptionForeground)}img{max-width:100%;border:1px solid var(--vscode-panel-border)}img.pick{cursor:crosshair}</style>`,
     '</head>',
     '<body>',
     `<p>${escapeHtml(view.caption)}</p>`,
-    src ? `<img src="${src}" alt="The page of the paused test">` : '',
+    pick ? `<p class="hint">${escapeHtml(PICK_HINT)}</p>` : '',
+    view.note ? `<p class="note" role="status">${escapeHtml(view.note)}</p>` : '',
+    src ? `<img${pick ? ' class="pick" id="page"' : ''} src="${src}" alt="The page of the paused test">` : '',
+    pick
+      ? `<script nonce="${nonce}">const vscode=acquireVsCodeApi();const page=document.getElementById('page');page.addEventListener('click',(e)=>vscode.postMessage({type:'pick',shown:${pick.shown},x:e.offsetX,y:e.offsetY,width:page.clientWidth,height:page.clientHeight}));</script>`
+      : '',
     '</body>',
     '</html>',
   ].join('\n');

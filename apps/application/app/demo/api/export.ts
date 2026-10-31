@@ -7,7 +7,7 @@
  * a storage backend.
  */
 import { buildExport } from '#shared/export/build';
-import { collectClusterBundle, collectExecutionBundle } from '#shared/export/collect';
+import { collectClusterBundle, collectExecutionBundle, collectRunBundle } from '#shared/export/collect';
 import {
   DEFAULT_EXPORT_MAX_BYTES,
   DEFAULT_EXPORT_MAX_CASES,
@@ -85,13 +85,21 @@ export async function apiExportTestRunCase(id: number, query?: URLSearchParams):
 
 export async function apiExportFailureCluster(id: number, query?: URLSearchParams): Promise<Response> {
   const db = await getDemoDb();
-  const requested = query?.get('cases');
-  const maxCases =
-    requested === 'all' || !requested
-      ? DEFAULT_EXPORT_MAX_CASES
-      : Math.min(DEFAULT_EXPORT_MAX_CASES, Math.max(1, Number(requested) || DEFAULT_EXPORT_MAX_CASES));
+  const bundle = await collectClusterBundle(db, id, { maxCases: requestedCases(query), piwiVersion: 'demo' });
+  return respond(bundle, parseFormat(query), id);
+}
 
-  const bundle = await collectClusterBundle(db, id, { maxCases, piwiVersion: 'demo' });
+/** The number of failing executions a run or cluster export carries in detail, from its `cases` query. */
+function requestedCases(query?: URLSearchParams): number {
+  const requested = query?.get('cases');
+  return requested === 'all' || !requested
+    ? DEFAULT_EXPORT_MAX_CASES
+    : Math.min(DEFAULT_EXPORT_MAX_CASES, Math.max(1, Number(requested) || DEFAULT_EXPORT_MAX_CASES));
+}
+
+export async function apiExportTestRun(id: number, query?: URLSearchParams): Promise<Response> {
+  const db = await getDemoDb();
+  const bundle = await collectRunBundle(db, id, { maxCases: requestedCases(query), piwiVersion: 'demo' });
   return respond(bundle, parseFormat(query), id);
 }
 

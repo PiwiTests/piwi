@@ -31,8 +31,15 @@ import type {
 import type { Handoff } from './recorder/handoff.js';
 import type { RecordingSessions } from './recorder/sessions.js';
 import type { LineNow } from './run-lines.js';
-import { NO_CODE, type RunSessions, type StopRef } from './run-sessions.js';
-import { caretLocator, renderStopCode, stopCodeRefusal, stopPage, type StopCodeInput } from './stop-code.js';
+import { NO_CODE, type RunSessions, type StopRef, type Viewer } from './run-sessions.js';
+import {
+  caretLocator,
+  renderStopCode,
+  renderStopLocator,
+  stopCodeRefusal,
+  stopPage,
+  type StopCodeInput,
+} from './stop-code.js';
 
 /** What the code of a file is written from: its text as the editor holds it, and what its rendering reads. */
 export interface StopTarget {
@@ -61,9 +68,23 @@ export interface StopOutcome {
   warnings: string[];
 }
 
+/**
+ * What a host's sentences say of the code it made at a stop: `what` (`the check`) goes `at` a place (`above
+ * checkout.spec.ts:5`, or for a locator `in place of the one on checkout.spec.ts:5`).
+ */
+export interface StopCodeWords {
+  /** The code's own sentence (`StopCode.message`), which the surface that writes it shows once it did. */
+  wrote(what: string, at: string): string;
+  /** What every other surface hears (`StopOutcome.message`): where the code went. */
+  sent(what: string, at: string): string;
+  /** Why no code is written in a file this host does not write code into (`target` gave none). */
+  outside(uri: string): string;
+}
+
 export interface StopActionsOptions {
   sessions: RunSessions;
-  recordings: RecordingSessions;
+  /** The recorder whose check panel Assert runs; without one, a check is refused. */
+  recordings?: Pick<RecordingSessions, 'check'>;
   /** Whether the client writes the code (`InitializationOptions.stopCode`). */
   writesCode(): boolean;
   /** Sends the client the code to write. */
@@ -80,6 +101,8 @@ export interface StopActionsOptions {
   language(): string | null;
   /** The editor's name, as `initialize` gives it (`Visual Studio Code`); null when it gave none. */
   editor?(): string | null;
+  /** The host's sentences, when it is not the editor service: the desktop app keeps the code for its window to copy. */
+  words?: StopCodeWords;
 }
 
 /** What each action writes, as a sentence names it. */
@@ -87,7 +110,24 @@ const WRITTEN: Record<StopCode['action'], string> = {
   assert: 'the check',
   'assert-region': "the region's ARIA snapshot",
   mock: 'the mock',
+  steps: 'the steps',
+  locator: 'the locator',
 };
+
+/** What each action an agent started writes, as a sentence names it: the person watching reads who made it. */
+const AGENT_WROTE: Record<StopCode['action'], string> = {
+  assert: 'the check the agent made',
+  'assert-region': "the region's ARIA snapshot the agent read",
+  mock: 'the mock the agent made',
+  steps: 'the steps the agent took',
+  locator: 'the locator the agent picked',
+};
+
+/** What an agent writes at a stop: what a person's actions write, or a locator in place of the stopped line's. */
+export type AgentCodeInput = StopCodeInput | { action: 'locator'; locator: string };
+
+/** Whether a code was made at a stop, why not, and the code sent to the client to write. */
+export type StopCodeResult = RunControlResult & { code?: StopCode };
 
 function uriToPath(uri: string): string | null {
   try {
@@ -113,15 +153,18 @@ export class StopActions {
 
   constructor(private readonly options: StopActionsOptions) {}
 
-  /** `piwi/stopAction`, and the hub's intents and `mock`. */
-  async action(params: StopActionParams): Promise<StopActionResult> {
+  /**
+   * `piwi/stopAction`, and the hub's intents and `mock`, the hub's with the `viewer` that asks: at a stop no pause bar
+   * shows, an intent starts only for a viewer of its live view.
+   */
+  async action(params: StopActionParams, viewer: Viewer | null = null): Promise<StopActionResult> {
     const { sessions } = this.options;
     if (typeof params?.since !== 'string' || !params.since) return refuse(NEEDS_STOP);
     const stop = { ref: params.ref, worker: params.worker ?? null, since: params.since };
     switch (params.action) {
       case 'pick':
       case 'record':
-        return sessions.intent({ ...stop, what: params.action });
+        return sessions.intent({ ...stop, what: params.action, viewer });
       case 'assert':
       case 'assert-region': {
         // Nothing starts in the test's window when its code could not be written.
@@ -132,7 +175,7 @@ export class StopActions {
         if ('refusal' in place) return refuse(place.refusal);
         const cannot = stopCodeRefusal(place.target.text, place.line, at.character);
         if (cannot) return refuse(cannot);
-        return sessions.intent({ ...stop, what: params.action });
+        return sessions.intent({ ...stop, what: params.action, viewer });
       }
       case 'mock': {
         if (!this.options.writesCode()) return refuse(NO_CODE);
@@ -143,7 +186,9 @@ export class StopActions {
         const asked = await sessions.mock(stop, id);
         if ('message' in asked) return asked;
         if (!asked.answer.ok || !asked.answer.response) return refuse(asked.answer.message);
-        return this.write(asked.stop, { action: 'mock', response: asked.answer.response });
+        // The client hears the code in `piwi/stopCode`: its answer says where it went.
+        const { ok, message } = this.write(asked.stop, { action: 'mock', response: asked.answer.response });
+        return { ok, message };
       }
       default:
         return refuse(`Piwi does not know the action ${JSON.stringify((params as { action?: unknown }).action)}.`);
@@ -221,6 +266,16 @@ export class StopActions {
     return { ok: answer.ok, message: answer.message, locator: found.locator, count: answer.count };
   }
 
+  /**
+   * For an agent (the service's MCP server): render what it made at a stop, its steps, a check, a region's snapshot or
+   * a locator in place of the stopped line's, and send it to the client to write, the sentences saying the agent made
+   * it, the code sent in the answer (`code`) for a host whose agent reads it there; why not otherwise, a client that
+   * writes no code included.
+   */
+  agentCode(stop: StopRef, input: AgentCodeInput): StopCodeResult {
+    return this.write(stop, input, true);
+  }
+
   /** A worker sent the region picked at its stop: its `toMatchAriaSnapshot` goes to the client. */
   region(stop: StopRef, locator: string, snapshot: string): void {
     const written = this.write(stop, { action: 'assert-region', locator, snapshot });
@@ -255,8 +310,10 @@ export class StopActions {
     if ('refusal' in place) return refused(place.refusal);
     const cannot = stopCodeRefusal(place.target.text, place.line, stop.character);
     if (cannot) return refused(cannot);
+    const { recordings } = this.options;
+    if (!recordings) return refused('this app takes no check.');
     const startedAt = Date.now();
-    const missing = this.options.recordings.check(handoff, {
+    const missing = recordings.check(handoff, {
       file: place.file,
       language: this.options.language(),
       onCheck: (event: RawCaptureEvent) => {
@@ -286,22 +343,29 @@ export class StopActions {
   private place(stop: StopRef): { file: string; target: StopTarget; line: number } | { refusal: string } {
     const file = uriToPath(stop.uri);
     const target = file ? this.options.target(file) : null;
-    if (!file || !target) return { refusal: `No Playwright config of this workspace holds ${stop.uri}.` };
+    if (!file || !target) {
+      return {
+        refusal: this.options.words?.outside(stop.uri) ?? `No Playwright config of this workspace holds ${stop.uri}.`,
+      };
+    }
     const now = this.options.lineNow(stop, target);
     return 'refusal' in now ? now : { file, target, line: now.line };
   }
 
-  /** Render the code for a stop and send it to the client; why not otherwise. */
-  private write(stop: StopRef, input: StopCodeInput): RunControlResult {
+  /** Render the code for a stop and send it to the client, saying an agent made it (`agent`); why not otherwise. */
+  private write(stop: StopRef, input: AgentCodeInput, agent = false): StopCodeResult {
     if (!this.options.writesCode()) return refuse(NO_CODE);
     const place = this.place(stop);
     if ('refusal' in place) return refuse(place.refusal);
     const { file, target } = place;
-    const rendered = renderStopCode(target.text, place.line, input, {
-      preferLocators: target.preferLocators,
-      expectModule: target.expectModule,
-      character: stop.character,
-    });
+    const rendered =
+      input.action === 'locator'
+        ? renderStopLocator(target.text, place.line, input.locator)
+        : renderStopCode(target.text, place.line, input, {
+            preferLocators: target.preferLocators,
+            expectModule: target.expectModule,
+            character: stop.character,
+          });
     if ('refusal' in rendered) return refuse(rendered.refusal);
     const action = input.action;
     const first = !this.told.has(stop.ref);
@@ -310,10 +374,14 @@ export class StopActions {
     const where = `${path.basename(file)}:${rendered.line + 1}`;
     const goesOn = first ? ' The stopped test goes on with the code it started with: the new lines run next time.' : '';
     // The client says it wrote the code once it did; anyone else hears it was sent, the client still able to refuse it.
-    const wrote = `Piwi wrote ${WRITTEN[action]} above ${where}.${goesOn}`;
+    const { words } = this.options;
     const editor = this.options.editor?.() || 'the editor';
-    const sent = `Piwi sent ${WRITTEN[action]} to ${editor} to write above ${where}.${goesOn}`;
-    this.options.notify({
+    const what = (agent ? AGENT_WROTE : WRITTEN)[action];
+    // A locator takes the place of the stopped line's; any other code goes above it.
+    const at = action === 'locator' ? `in place of the one on ${where}` : `above ${where}`;
+    const wrote = `${words?.wrote(what, at) ?? `Piwi wrote ${what} ${at}.`}${goesOn}`;
+    const sent = `${words?.sent(what, at) ?? `Piwi sent ${what} to ${editor} to write ${at}.`}${goesOn}`;
+    const code: StopCode = {
       ref: stop.ref,
       worker: stop.worker,
       since: stop.since,
@@ -325,7 +393,8 @@ export class StopActions {
       edits: rendered.edits,
       message: wrote,
       warnings: rendered.warnings,
-    });
+    };
+    this.options.notify(code);
     this.options.outcome?.({
       ref: stop.ref,
       worker: stop.worker,
@@ -335,6 +404,6 @@ export class StopActions {
       message: sent,
       warnings: rendered.warnings,
     });
-    return { ok: true, message: sent };
+    return { ok: true, message: sent, code };
   }
 }

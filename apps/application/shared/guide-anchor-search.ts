@@ -7,7 +7,7 @@
  */
 import { GUIDE_ANCHORS, type GuideAnchor } from '#shared/guide-anchors/index.mjs';
 import type { AssistantPageContext } from '#shared/assistant';
-import type { CapabilityId, CapabilityState } from '#shared/capabilities';
+import { DESKTOP_HIDDEN_CAPABILITIES, type CapabilityId, type CapabilityState } from '#shared/capabilities';
 import { can, holdsAnywhere, type AccessSummary } from '#shared/permissions';
 import { isFixedPage, routeOnPage } from '#shared/guide-stops';
 
@@ -57,6 +57,9 @@ export function anchorUnavailable(anchor: GuideAnchor, facts: AnchorFacts, proje
   if (requires.demo) return 'it shows in the live demo only';
   if (requires.desktop && !facts.desktop) return 'it shows in the desktop app only';
   if (requires.capability) {
+    if (facts.desktop && DESKTOP_HIDDEN_CAPABILITIES.has(requires.capability)) {
+      return `it needs the ${requires.capability} capability, which the desktop app does not offer`;
+    }
     const hidden = (state: CapabilityState) => state === 'declined' || state === 'not-applicable';
     const project = projectStatesFor(anchor, facts, projectId);
     const state = (project ?? facts.states)[requires.capability];

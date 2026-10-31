@@ -75,6 +75,57 @@ describe('a run’s session, with a client that answers stops', () => {
     }
   });
 
+  test('takes a run started in a terminal on the channel its discovery file names, with the editor’s breakpoints', async () => {
+    const discovery = await waitFor(() => last(svc.published) ?? undefined);
+    const channel = discovery.runChannel!;
+    await svc.client.sendNotification('piwi/setBreakpoints', { places: [{ uri: uri('tests/cart.spec.ts'), line: 2 }] });
+    // Once the service read it.
+    await control({ ref: 'none', action: 'pause' });
+    const ref = 'terminal-4242-1730000000000';
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0, [...RUN_TAKES]);
+    try {
+      expect(await worker.next('breakpoints')).toEqual({
+        type: 'breakpoints',
+        places: [{ file: 'tests/cart.spec.ts', line: 3 }],
+      });
+      // Nobody follows the runs in Piwi Picker: it holds no failure.
+      expect(worker.heard[0]).toEqual({ type: 'attached', holds: [] });
+      expect(await waitFor(() => svc.latest(ref))).toMatchObject({ ref, root: dir, terminal: true });
+      worker.begin();
+      worker.stopAt(1, 3);
+      await waitFor(() => svc.latest(ref)?.workers[0]?.stop ?? undefined);
+      expect(await control({ ref, action: 'end' })).toEqual({
+        ok: true,
+        message: 'Ending the test: it is reported as skipped.',
+      });
+      expect(await worker.next('control')).toEqual({ type: 'control', action: 'end', stop: 1 });
+    } finally {
+      worker.socket.destroy();
+    }
+    // A run the editor built is none, whatever its ref.
+    const own = await svc.command();
+    const ownWorker = new FakeWorker(own.channel.path, dir).attach(own.channel.token, own.ref, 0);
+    try {
+      expect((await waitFor(() => svc.latest(own.ref))).terminal).toBeUndefined();
+    } finally {
+      ownWorker.socket.destroy();
+    }
+  });
+
+  test('shares a run live through piwi/shareRun, the client hearing how it stands', async () => {
+    const { ref, channel } = await svc.command();
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0, [...RUN_TAKES]);
+    const page = 'http://127.0.0.1:7494/test-runs/5';
+    worker.send({ type: 'live', can: true, on: false, viewers: 0, page, why: null });
+    await waitFor(() => svc.latest(ref)?.live);
+    const shared = (await svc.client.sendRequest('piwi/shareRun', { ref, on: true })) as RunControlResult;
+    expect(shared).toMatchObject({ ok: true, message: expect.stringContaining('127.0.0.1:7494') });
+    expect(await worker.next('share')).toEqual({ type: 'share', on: true });
+    worker.send({ type: 'live', can: true, on: true, viewers: 0, page, why: null });
+    await waitFor(() => (svc.latest(ref)?.live?.shared ? true : undefined));
+    worker.socket.destroy();
+  });
+
   test('names the run channel beside the record channel, the same socket', async () => {
     const { command } = await svc.command();
     expect(command.env?.PIWI_RUN_CHANNEL).toBeTruthy();
@@ -787,13 +838,293 @@ describe('RunSessions', () => {
     sessions.dispose();
   });
 
+  test('holds no failure in a run its host says holds none, whoever watches it, and tells its workers so', () => {
+    const { sessions, attach } = harness({
+      watched: () => true,
+      followed: () => true,
+      holdsFailures: (ref) => ref !== 'lab-1',
+      host: 'the desktop app',
+    });
+    const lines = (socket: ReturnType<typeof fakeSocket>) => socket.written.map((line) => JSON.parse(line));
+    const controls = (socket: ReturnType<typeof fakeSocket>) => lines(socket).filter((m) => m.type === 'control');
+    const lab = attach(0, { ref: 'lab-1', holds: ['failure'] });
+    const plain = attach(0, { ref: 'ed-1', holds: ['failure'] });
+    // Each worker hears what it holds, and what the host is called.
+    expect(lines(lab.socket)).toEqual([{ type: 'attached', holds: [], host: 'the desktop app' }]);
+    expect(lines(plain.socket)).toEqual([{ type: 'attached', holds: ['failure'], host: 'the desktop app' }]);
+    const failure: RunToHub = {
+      type: 'stopped',
+      stop: 1,
+      reason: 'failure',
+      title: 'Failed: Timed out',
+      place: { file: 'tests/a.spec.ts', line: 4, column: 5 },
+      locator: null,
+      bar: false,
+    };
+    // A failure that stops the lab's worker anyway goes on at once; the watched run's waits, and keeps waiting.
+    lab.read(failure);
+    plain.read(failure);
+    expect(controls(lab.socket)).toEqual([{ type: 'control', action: 'resume', stop: 1 }]);
+    sessions.surfacesChanged();
+    expect(controls(plain.socket)).toEqual([]);
+    sessions.dispose();
+  });
+
   test('offers Piwi Picker the actions that write code only while the client writes it', () => {
     let writes = false;
     const { sessions } = harness({ writesCode: () => writes });
     takingWorker(sessions);
-    expect(sessions.intentsOf('ed-1', 0)).toEqual(['pick', 'record']);
+    expect(sessions.intentsOf('ed-1', 0)).toEqual([
+      'pick',
+      'record',
+      'view',
+      'input',
+      'input-clicks',
+      'pick-at',
+      'end',
+    ]);
     writes = true;
-    expect(sessions.intentsOf('ed-1', 0)).toEqual(['pick', 'record', 'assert', 'assert-region', 'mock']);
+    expect(sessions.intentsOf('ed-1', 0)).toEqual([
+      'pick',
+      'record',
+      'assert',
+      'assert-region',
+      'mock',
+      'view',
+      'input',
+      'input-clicks',
+      'pick-at',
+      'end',
+    ]);
+    sessions.dispose();
+  });
+
+  test('ends the test at a stop for a worker that takes it, saying what comes of a failure, and offers it so', () => {
+    const { sessions, attach } = harness();
+    const controls = (socket: ReturnType<typeof fakeSocket>) =>
+      socket.written.map((line) => JSON.parse(line)).filter((m) => m.type === 'control');
+    const stopped = (reason: 'breakpoint' | 'failure', stop: number): RunToHub => ({
+      type: 'stopped',
+      stop,
+      reason,
+      title: reason === 'failure' ? 'Failed: Timed out' : "Click getByText('Add')",
+      place: { file: 'tests/a.spec.ts', line: 4, column: 5 },
+      locator: null,
+      bar: true,
+    });
+    const worker = attach(0, { takes: [...RUN_TAKES] });
+    worker.read(stopped('breakpoint', 1));
+    expect(sessions.stopIntentsOf('ed-1', 0, null)).toContain('end');
+    expect(sessions.control({ ref: 'ed-1', action: 'end' })).toEqual({
+      ok: true,
+      message: 'Ending the test: it is reported as skipped.',
+    });
+    worker.read({ type: 'running', stop: 1 });
+    worker.read(stopped('failure', 2));
+    // At a failure, Resume ends it as it failed: no End is offered, and one sent ends it so.
+    expect(sessions.stopIntentsOf('ed-1', 0, null)).not.toContain('end');
+    expect(sessions.control({ ref: 'ed-1', action: 'end' })).toEqual({
+      ok: true,
+      message: 'The test failed already: it ends as it failed.',
+    });
+    expect(controls(worker.socket)).toEqual([
+      { type: 'control', action: 'end', stop: 1 },
+      { type: 'control', action: 'end', stop: 2 },
+    ]);
+    // A reporter that predates it is asked nothing.
+    const older = attach(1, { ref: 'ed-2', takes: RUN_TAKES.filter((take) => take !== 'end') });
+    older.read(stopped('breakpoint', 1));
+    expect(sessions.intentsOf('ed-2', 1)).not.toContain('end');
+    expect(sessions.control({ ref: 'ed-2', action: 'end' })).toEqual({
+      ok: false,
+      message: '@piwitests/reporter cannot end a test: update it.',
+    });
+    expect(controls(older.socket)).toEqual([]);
+    sessions.dispose();
+  });
+
+  test('shares a run live as a person asks, a worker that connects later following, and says why one cannot be', async () => {
+    const notices: string[] = [];
+    const { sessions, attach } = harness({ notice: (_root, _severity, message) => void notices.push(message) });
+    const shares = (socket: ReturnType<typeof fakeSocket>) =>
+      socket.written.map((line) => JSON.parse(line)).filter((m) => m.type === 'share');
+    const page = 'https://piwi.example.com/test-runs/42';
+    const ready = { type: 'live', can: true, on: false, viewers: 0, page, why: null } as const;
+    const first = attach(0, { takes: [...RUN_TAKES] });
+    expect(sessions.share({ ref: 'ed-1', on: true })).toEqual({
+      ok: false,
+      message: "The run's workers have not said yet whether it can be shared live: try again in a moment.",
+    });
+    first.read(ready);
+    const live = () => sessions.current().find((s) => s.ref === 'ed-1')?.live;
+    await waitFor(() => (live() ? true : undefined));
+    expect(live()).toEqual({ shared: false, refused: null, stopped: null, page, viewers: 0 });
+
+    expect(sessions.share({ ref: 'ed-1', on: true })).toEqual({
+      ok: true,
+      message:
+        "Sharing the run live on piwi.example.com: whoever may open it there can watch its tests' pages while someone does.",
+    });
+    expect(shares(first.socket)).toEqual([{ type: 'share', on: true }]);
+    first.read({ ...ready, on: true, viewers: 2 });
+    // A worker Playwright starts later shares too, and the viewers of both are counted.
+    const second = attach(1, { takes: [...RUN_TAKES] });
+    expect(shares(second.socket)).toEqual([{ type: 'share', on: true }]);
+    second.read({ ...ready, on: true, viewers: 1 });
+    await waitFor(() => (live()?.viewers === 3 ? true : undefined));
+    expect(live()).toEqual({ shared: true, refused: null, stopped: null, page, viewers: 3 });
+
+    // A stream the instance stopped answering stops that worker's sharing: the run stays shared while another streams,
+    // and stops with the last, said once, Share live offered again.
+    const lost = 'Sharing stopped: the instance did not answer.';
+    second.read({ ...ready, why: lost });
+    await waitFor(() => (live()?.viewers === 2 ? true : undefined));
+    expect(live()).toMatchObject({ shared: true, stopped: null });
+    first.read({ ...ready, why: lost });
+    second.read({ ...ready, why: lost });
+    await waitFor(() => (live()?.shared === false ? true : undefined));
+    expect(live()).toEqual({ shared: false, refused: null, stopped: lost, page, viewers: 0 });
+    expect(notices).toEqual([lost]);
+    expect(sessions.share({ ref: 'ed-1', on: true })).toMatchObject({ ok: true });
+    first.read({ ...ready, on: true });
+    await waitFor(() => (live()?.shared ? true : undefined));
+    expect(live()).toMatchObject({ shared: true, stopped: null });
+
+    expect(sessions.share({ ref: 'ed-1', on: false })).toEqual({
+      ok: true,
+      message: 'Stopped sharing the run: nothing more goes to piwi.example.com.',
+    });
+    first.read(ready);
+    await waitFor(() => (live()?.shared === false ? true : undefined));
+    expect(shares(first.socket)).toEqual([
+      { type: 'share', on: true },
+      { type: 'share', on: true },
+      { type: 'share', on: false },
+    ]);
+    const third = attach(2, { takes: [...RUN_TAKES] });
+    expect(shares(third.socket)).toEqual([{ type: 'share', on: false }]);
+
+    // A run whose workers hold no key says why, and is not shared.
+    const unshareable = attach(0, { ref: 'ed-2', takes: [...RUN_TAKES] });
+    const why = "This run cannot be shared live: its project's live view is off on the instance.";
+    unshareable.read({ type: 'live', can: false, on: false, viewers: 0, page: null, why });
+    expect(sessions.share({ ref: 'ed-2', on: true })).toEqual({ ok: false, message: why });
+    expect(shares(unshareable.socket)).toEqual([]);
+    await waitFor(() => (sessions.current().find((s) => s.ref === 'ed-2')?.live ? true : undefined));
+    expect(sessions.current().find((s) => s.ref === 'ed-2')?.live).toEqual({
+      shared: false,
+      refused: why,
+      stopped: null,
+      page: null,
+      viewers: 0,
+    });
+
+    // A reporter that predates it says nothing of it, and is asked nothing.
+    const older = attach(0, { ref: 'ed-3', takes: RUN_TAKES.filter((take) => take !== 'share') });
+    expect(sessions.share({ ref: 'ed-3', on: true })).toEqual({
+      ok: false,
+      message: '@piwitests/reporter cannot share a run live: update it.',
+    });
+    expect(shares(older.socket)).toEqual([]);
+    expect(sessions.share({ ref: 'ed-9', on: true })).toMatchObject({ ok: false });
+    sessions.dispose();
+  });
+
+  test('stops sharing a run while no worker of it is connected, and the next worker hears it', async () => {
+    const { sessions, attach } = harness();
+    const shares = (socket: ReturnType<typeof fakeSocket>) =>
+      socket.written.map((line) => JSON.parse(line)).filter((m) => m.type === 'share');
+    const page = 'https://piwi.example.com/test-runs/7';
+    const ready = { type: 'live', can: true, on: false, viewers: 0, page, why: null } as const;
+    const live = () => sessions.current().find((s) => s.ref === 'ed-1')?.live;
+    const first = attach(0, { takes: [...RUN_TAKES] });
+    first.read(ready);
+    expect(sessions.share({ ref: 'ed-1', on: true })).toMatchObject({ ok: true });
+    first.read({ ...ready, on: true });
+    await waitFor(() => (live()?.shared ? true : undefined));
+    // Its test failed: Playwright ends the worker and starts another, which has not connected yet.
+    first.socket.destroy();
+    await waitFor(() => (sessions.current().find((s) => s.ref === 'ed-1')?.workers.length === 0 ? true : undefined));
+    expect(sessions.share({ ref: 'ed-1', on: false })).toEqual({
+      ok: true,
+      message: 'Stopped sharing the run: nothing more goes to piwi.example.com.',
+    });
+    await waitFor(() => (live()?.shared === false ? true : undefined));
+    // Sharing again waits for a worker; the one that connects next does not share.
+    expect(sessions.share({ ref: 'ed-1', on: true })).toMatchObject({ ok: false });
+    const second = attach(1, { takes: [...RUN_TAKES] });
+    expect(shares(second.socket)).toEqual([{ type: 'share', on: false }]);
+    sessions.dispose();
+  });
+
+  test('says once a run, not once a worker, that its sharing stopped though nobody asked', async () => {
+    const notices: string[] = [];
+    const { sessions, attach } = harness({ notice: (_root, _severity, message) => void notices.push(message) });
+    const page = 'https://piwi.example.com/test-runs/7';
+    const ready = { type: 'live', can: true, on: false, viewers: 0, page, why: null } as const;
+    const workers = [0, 1, 2].map((index) => attach(index, { takes: [...RUN_TAKES] }));
+    for (const worker of workers) worker.read(ready);
+    expect(sessions.share({ ref: 'ed-1', on: true })).toMatchObject({ ok: true });
+    for (const worker of workers) worker.read({ ...ready, on: true });
+    // The instance started again: none of the workers' streams is taken any more.
+    const why = "Sharing stopped: the instance no longer takes this run's live view key.";
+    for (const worker of workers) worker.read({ type: 'live', can: false, on: false, viewers: 0, page, why });
+    expect(notices).toEqual([why]);
+    const live = () => sessions.current().find((s) => s.ref === 'ed-1')?.live;
+    await waitFor(() => (live()?.stopped ? true : undefined));
+    expect(live()).toEqual({ shared: false, refused: why, stopped: why, page, viewers: 0 });
+    sessions.dispose();
+  });
+
+  test('takes a run started in a terminal, with the editor’s breakpoints as it starts and no failure held unfollowed', async () => {
+    let followed = false;
+    const { sessions, sent, attach } = harness({
+      terminal: (ref) => ref.startsWith('terminal-'),
+      followed: () => followed,
+      lingerMs: 20,
+    });
+    const lines = (socket: ReturnType<typeof fakeSocket>) => socket.written.map((line) => JSON.parse(line));
+    sessions.setEditorBreakpoints({
+      places: [
+        { uri: pathToFileURL('/work/shop/tests/a.spec.ts').href, line: 3 },
+        { uri: pathToFileURL('/elsewhere/b.spec.ts').href, line: 1 },
+      ],
+    });
+    const first = attach(0, { ref: 'terminal-41-1', holds: ['failure'] });
+    expect(lines(first.socket)).toEqual([
+      { type: 'attached', holds: [] },
+      { type: 'breakpoints', places: [{ file: 'tests/a.spec.ts', line: 4 }] },
+    ]);
+    const shown = await waitFor(() => sent.find((s) => s.ref === 'terminal-41-1'));
+    expect(shown).toMatchObject({ ref: 'terminal-41-1', terminal: true });
+    // The run's lines are the files as it started: later breakpoints of the editor reach the runs that start later.
+    sessions.setEditorBreakpoints({ places: [{ uri: pathToFileURL('/work/shop/tests/a.spec.ts').href, line: 9 }] });
+    followed = true;
+    const second = attach(1, { ref: 'terminal-41-1', holds: ['failure'] });
+    expect(lines(second.socket)).toEqual([
+      { type: 'attached', holds: ['failure'] },
+      { type: 'breakpoints', places: [{ file: 'tests/a.spec.ts', line: 4 }] },
+    ]);
+    // A terminal's run is no test runner's.
+    expect(shown).not.toHaveProperty('runner');
+    // A run the editor's own test runner started is one too, which its workers say.
+    attach(0, { ref: 'terminal-42-1', runner: true });
+    expect(await waitFor(() => sent.find((s) => s.ref === 'terminal-42-1'))).toMatchObject({
+      terminal: true,
+      runner: true,
+    });
+    // A run the editor started is none, whatever its workers say of a test runner.
+    attach(0, { ref: 'ed-1', runner: true });
+    const own = await waitFor(() => sent.find((s) => s.ref === 'ed-1'));
+    expect(own.terminal).toBeUndefined();
+    expect(own).not.toHaveProperty('runner');
+    // It ends a while after its last worker left: no command of the editor's ends it.
+    first.socket.destroy();
+    second.socket.destroy();
+    expect(await waitFor(() => sent.find((s) => s.ref === 'terminal-41-1' && s.ended))).toMatchObject({
+      terminal: true,
+      ended: true,
+    });
     sessions.dispose();
   });
 });

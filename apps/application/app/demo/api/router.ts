@@ -129,6 +129,7 @@ import {
   apiExecutionBugReport,
   apiExecutionReplaySteps,
   apiExportTestRunCase,
+  apiExportTestRun,
   apiExportFailureCluster,
 } from './export';
 import {
@@ -178,6 +179,7 @@ import {
   getProjectTimeoutOpportunities,
   getProjectFailureClusters,
   INVALID_COVERAGE_AREAS,
+  INVALID_LIVE_VIEW_MASKS,
   INVALID_REPOSITORY_URL,
   INVALID_COVERAGE_SCOPE,
   updateProject,
@@ -858,6 +860,7 @@ const routes: RouteEntry[] = [
           e instanceof Error &&
           (e.message === INVALID_COVERAGE_SCOPE ||
             e.message === INVALID_COVERAGE_AREAS ||
+            e.message === INVALID_LIVE_VIEW_MASKS ||
             e.message === INVALID_REPOSITORY_URL)
         )
           throw demoHttpError(400, e.message);
@@ -2024,6 +2027,14 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'GET',
+    pattern: /^\/api\/test-runs\/(\d+)\/export$/,
+    handler: async (m, _, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      return apiExportTestRun(+m[1]!, q as URLSearchParams | undefined);
+    },
+  },
+  {
+    method: 'GET',
     pattern: /^\/api\/test-run-cases\/(\d+)\/export$/,
     handler: async (m, _, q, ctx) => {
       await assertDemoEntityScope(ctx, 'execution', +m[1]!);
@@ -2230,6 +2241,32 @@ const routes: RouteEntry[] = [
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'execution', +m[1]!);
       return buildExecutionReproduce(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
+    method: 'GET',
+    // CI re-run of one execution's test — always off in the browser demo, like a cluster's.
+    pattern: /^\/api\/test-run-cases\/(\d+)\/rerun$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
+      return {
+        available: false,
+        reason: 'CI re-run is not available in the demo.',
+        provider: null,
+        enabled: false,
+        hasToken: false,
+        lastDispatch: null,
+      };
+    },
+  },
+  {
+    method: 'POST',
+    // No-op dispatch: the demo has no CI to trigger.
+    pattern: /^\/api\/test-run-cases\/(\d+)\/rerun$/,
+    permission: 'run:control',
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
+      return { ok: false, demo: true, message: 'CI re-run is not available in the demo.' };
     },
   },
   {
@@ -3710,6 +3747,8 @@ const routes: RouteEntry[] = [
         buildSha: null,
         buildTime: null,
         node: 'N/A (browser demo)',
+        platform: 'N/A (browser demo)',
+        arch: null,
         dbBackend: 'sql.js (in-browser)',
       }),
   },

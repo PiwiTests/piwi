@@ -33,7 +33,12 @@ run control, coverage, the recorder, the build, and the reads and the connection
   - [Controls, breakpoints and the paused page](#controls-breakpoints-and-the-paused-page)
   - [Stops no pause bar shows](#stops-no-pause-bar-shows)
   - [The hub](#the-hub)
+  - [The live view](#the-live-view)
+  - [Share live](#share-live)
   - [Code from a stop](#code-from-a-stop)
+  - [A run that debugs a failure](#a-run-that-debugs-a-failure)
+  - [Agents](#agents)
+  - [Another host](#another-host)
   - [The discovery file](#the-discovery-file)
 - [Coverage](#coverage)
   - [Coverage marks](#coverage-marks)
@@ -103,6 +108,8 @@ own requests and notifications (`piwi/…`) for what each editor draws natively.
 - **Pause bar**: Piwi's bar in the page of a stopped test. A headed run shows it, a headless run does not
   (`RunStop.bar`).
 - **Hub**: the WebSocket through which Piwi Picker follows and steers the runs the service built.
+- **Agent**: a coding agent of this machine (Claude Code, Copilot, Cursor) that follows and steers the same runs
+  through the service's MCP server ([Agents](#agents)).
 - **Code from a stop**: the code an action at a stop writes above the stopped line (Assert, Assert a region, Mock a
   request), which the client writes.
 - **Push**: a notification the service sends unasked, carrying a whole answer: `piwi/failuresChanged` carries what
@@ -129,6 +136,11 @@ own requests and notifications (`piwi/…`) for what each editor draws natively.
 - `src/stop-actions.ts`, `src/stop-code.ts`, `src/run-lines.ts`: the code from a stop, rendered, and placed where the
   stopped statement stands now.
 - `src/discovery.ts`: the discovery file, `~/.piwi/editors/<pid>.json`, written and read.
+- `src/debug-run.ts`: a run that debugs a failure (**Debug in my editor**): its test, its one-shot stop and the
+  suggested locator outlined there.
+- `src/agent-server.ts`, `src/run-agent.ts`: the MCP server for the agents of this machine, and its tools.
+- `src/mcp-protocol.ts`: MCP's JSON-RPC pieces, shared with the instance's MCP server.
+- `src/run-host.ts`: the run control another host builds on, the desktop app's server.
 - `src/recorder/`: recording from the editor: the project's options, the launcher, the sessions, page candidates,
   imports and the record channel, whose socket also takes the workers' run connections.
 - `build.mjs`: writes the five files of `dist/`.
@@ -178,20 +190,22 @@ the custom messages of `src/protocol.ts`:
 - **Requests**, from the client:
   - files and tests: `piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/testItems`, `piwi/coverage`;
   - runs: `piwi/runArgs`, `piwi/runSelection`, `piwi/selections`, `piwi/runStatus`, `piwi/refreshRun`, `piwi/runId`;
-  - run control: `piwi/runControl`, `piwi/pausedPage`, `piwi/stopAction`, `piwi/stopRequests`, `piwi/locatorAtCaret`;
+  - run control: `piwi/runControl`, `piwi/pausedPage`, `piwi/pickAt`, `piwi/stopAction`, `piwi/stopRequests`,
+    `piwi/locatorAtCaret`, `piwi/hub`, `piwi/stopBind`, `piwi/shareRun`, `piwi/agents`;
   - failures: `piwi/failures`, `piwi/agentContext`, `piwi/trace`, `piwi/screenshot`, `piwi/applyPick`;
   - connection: `piwi/status`, `piwi/refresh`, `piwi/desktop`, `piwi/mcp`;
   - desktop jobs: `piwi/desktopJob`, `piwi/shareDesktopJob`;
   - recorder: `piwi/record`, `piwi/stopRecording`, `piwi/recordingCommand`, `piwi/pageCandidates`, `piwi/renderSteps`.
 - **Notifications from the client**: `piwi/setCredentials`, `piwi/setBaseline`, `piwi/commandStarted`,
-  `piwi/commandEnded`, `piwi/declineRecord`, `piwi/setRunBreakpoints`.
+  `piwi/commandEnded`, `piwi/declineRecord`, `piwi/setRunBreakpoints`, `piwi/setBreakpoints`.
 - **Notifications from the service**: `piwi/statusChanged`, `piwi/runStatusChanged`, `piwi/failuresChanged`,
   `piwi/coverageChanged`, `piwi/runEnded`, `piwi/notice`, `piwi/desktopJobChanged`, `piwi/recordingChanged`,
   `piwi/recordRequested`, `piwi/runSessionChanged`, `piwi/stopCode`.
 
 The initialization options (`InitializationOptions`) carry the credentials, `runControl` when the client shows and
 answers the stops of the runs it starts ([Stops no pause bar shows](#stops-no-pause-bar-shows)), and `stopCode` when it
-writes the code from a stop ([Code from a stop](#code-from-a-stop)), as both clients do.
+writes the code from a stop ([Code from a stop](#code-from-a-stop)), as both clients do, and `agents` for the agents'
+MCP server ([Agents](#agents)).
 
 A summary line or a quick fix names a client command to run. The summary lines use those of `PiwiCommand.command`
 (`piwi.openInDashboard`, `piwi.runTests`, `piwi.openTrace`, `piwi.openScreenshot`, `piwi.runCommand`, `piwi.copyText`,
@@ -358,11 +372,14 @@ On a spec, `piwi/fileSummary` gives each test's line:
 
 `piwi/testAt` answers, for a position of a spec:
 
-- where the `test(…)` call spanning the position's line starts (`testCallAt`: `TEST_CALL`, `callEndLine`), as
-  Playwright's location filter takes it: `location`, such as `tests/checkout.spec.ts:42`, relative to the config's
-  folder, in the text as it stands;
-- the catalog's test of that title, matched by its title alone (the summary also matches the titles of the
-  `test.describe(…)` blocks around it);
+- where the `test(…)` call spanning the position's line starts (`testCallAt`, over `testCalls`), as Playwright's
+  location filter takes it: `location`, such as `tests/checkout.spec.ts:42`, relative to the config's folder, in the
+  text as it stands;
+- the catalog's test of that call (`caseOfCallOrTitle`): the case of its title in the same `test.describe(…)` blocks
+  (`caseOfCall`), else, when a block around it is titled by a template literal holding `${` or by a variable or an
+  expression (`suiteUnread`), the only case of its title in the spec; with two or more of that title, none. A test
+  whose blocks all read literally and that has no case of its own (a new test) gets none. The `timeout` diagnostics
+  match their test the same way;
 - the spec's tests (`casesOf`).
 
 **Run the test at the cursor**, **Verify the test at the cursor ×3** and **Run this spec** run them. A file that is not
@@ -378,10 +395,11 @@ lists:
   is (`resolveReportedFile`), under the context whose folder holds it.
 - the specs `uris` names (`casesOf`), known to the catalog or not.
 
-Each test is given as the spec stands (`testCalls` in `src/analysis.ts`: each `test(…)` call, with the titled
-`test.describe(…)` blocks around it). It comes with the catalog's case of its title in those blocks (`caseOfCall`), its
-location, its latest result and its failure, as `piwi/fileSummary` gives them: both read them from `specTests` in
-`src/server.ts`.
+Each test is given as the spec stands (`testCalls` in `src/analysis.ts`: each `test(…)` call, one a line, a line
+starting with `//` read as blank, with the titled `test.describe(…)` blocks around it, a test on the line opening its
+block included). It comes
+with the catalog's case of its title in those blocks (`caseOfCall`), its location, its latest result and its failure,
+as `piwi/fileSummary` gives them: both read them from `specTests` in `src/server.ts`.
 
 ### Failure lines and Flake Lab lines
 
@@ -462,6 +480,8 @@ and the fix plan's verification carry `PIWI_ORIGIN=editor` alone.
 - by id, with the instance's arguments;
 - by location (`RunTestsArgs.locations`): a spec under the context's folder and the line of its `test(…)` call
   (`isTestLocation`, `specLocation`). This needs no instance, so it runs a test just recorded.
+- to debug a failure (`RunTestsArgs.debug`): the test of a spec its title names, headed with one worker, stopping once
+  at the failing line ([A run that debugs a failure](#a-run-that-debugs-a-failure)).
 
 With `repeat`, it runs each test that many times without retries (`repeatArgs`: `--repeat-each=3 --retries=0`, for
 **Verify ×3**), headless: neither the breakpoints nor the record and run channels are passed. A repeated command's
@@ -531,6 +551,17 @@ worker of a run tells the service over the run channel what it runs and where it
 
 `src/run-sessions.ts` (`RunSessions`) keeps one session per run, by the ref of its command (`PIWI_ORIGIN_REF`).
 
+A run started in a terminal attaches the same way, its reporter having read the run channel from the discovery file
+([The discovery file](#the-discovery-file)), under a ref of its own (`terminal-<pid>-<time>`, `TERMINAL_REF_PREFIX`)
+that no command of the service's names (`terminal` in `RunSessionsOptions`; the server's test is the prefix and a ref
+it never built). Its session says so (`RunSession.terminal`, the hub's `HubSession.terminal`), so the clients show it
+as one and offer no Stop, the terminal's to give. A run an editor's own test runner started (a JetBrains IDE's
+Playwright run configuration) is one too, its first worker's `run-attach` saying so (`runner`, kept as
+`RunSession.runner` and `HubSession.runner`): the clients name the runner in place of the terminal. It starts with the editor's breakpoints as the client last sent them
+(`piwi/setBreakpoints`, kept as `setEditorBreakpoints`), as lines of its code: the files as they stand when its first
+worker connects. A worker of it holds a failure only while a Runs window of Piwi Picker follows the runs as it attaches
+(`followed`): nobody may be there to answer it otherwise. It ends 5 s after its last worker left, having no command.
+
 Each worker of a run keeps a connection to the record channel's socket for its whole life (`run-attach`,
 `@piwitests/core/run-channel`), opened with the channel's token, compared in constant time (`sameToken`). The session
 files it by Playwright's worker index, with:
@@ -563,18 +594,30 @@ the run's stop before it, so it names that stop alone.
 
 - `pause` goes to the workers that run a test or are between tests. Each stops at its next call, or at the next test's
   first.
-- `step`, `resume`, `finish` and `run-to` go to the one stopped worker, naming its stop, which a worker past it
+- `step`, `resume`, `finish`, `run-to` and `end` go to the one stopped worker, naming its stop, which a worker past it
   ignores. With `since` (the stop the client showed), they go only to the worker stopped there, else the answer is
   `The test went on.`
+- `end` (End the test) is refused for a worker whose `run-attach` does not take it. Its worker ends the test there,
+  skipped, or, at a failure or once the test function ended, lets it end as it is; the answer says which
+  (`Ending the test: it is reported as skipped.`, `The test failed already: it ends as it failed.`). The stop's
+  `intents` list `end` but at a failure, for every viewer (`stopIntentsOf`).
 
 A worker's stop ends with its `running`, whoever ended it: the pause bar, the editor, or the test ending under it or
 closing its page, which the worker sends unanswered. A control naming that stop afterwards is refused the same way.
 
 `piwi/setRunBreakpoints` replaces the run's breakpoints in each of its workers, and in each one that connects later.
-The service keeps the breakpoints of the 50 latest runs.
+The service keeps the breakpoints of the 50 latest runs. `piwi/setBreakpoints { places }` is the editor's breakpoints as
+they stand, sent as the service starts and as they change (only when they differ): a run started in a terminal starts
+with them.
 
 `piwi/pausedPage` asks a stopped worker for a JPEG of its page. The answer is null after 10 s (`PAUSED_PAGE_WAIT_MS`),
-when the worker leaves, or when it is not stopped.
+when the worker leaves, or when it is not stopped. From a reporter that names it, the image carries the page's viewport
+in CSS pixels (`width`, `height`).
+
+`piwi/pickAt { ref, worker?, since, x, y }` (`RunSessions.pickAt`, the hub's `pick-at` too) has the stopped worker pick
+the element under a point of its page, in those CSS pixels (a point of the image is `x * width / naturalWidth`,
+whatever the device scale factor), and send its locator where a pick goes. It answers `{ ok, message, locator }`, and
+is refused without `since`, for a point outside 0 to 10,000 and for a reporter that does not take `pick-at`.
 
 **Places.** A place a client sends (`run-to`, the breakpoints) is a line of the run's code: the client maps a line of a
 document edited since the run started back to it. A worker names a place relative to the run's working directory
@@ -627,10 +670,12 @@ free port: `ws://127.0.0.1:<port>/piwi/hub` (`HUB_PATH`).
 **The handshake.**
 
 - Any other path is a 404, and a plain HTTP request a 426.
-- A handshake whose `Host` is not `127.0.0.1:<port>` or `localhost:<port>` (`isHubHost`: a page reached under another
-  name, DNS rebinding) is refused with a 403 before any WebSocket opens. So is one whose `Origin` is not a browser
-  extension's (`isExtensionOrigin`: `chrome-extension://` and 32 letters `a` to `p`, `moz-extension://` and a UUID;
-  never `http(s)`, `null`, `file` or none).
+- A handshake whose `Host` is not `127.0.0.1` or `localhost` at its port, or at one the client forwards to it from the
+  browser's machine (`piwi/hub` with `forwarded`, a remote window's; 8 at most, `forwardedPorts`), is refused with a
+  403 before any WebSocket opens (`isHubHost`: a page reached under another name, DNS rebinding). So is one whose
+  `Origin` is not a browser extension's (`isExtensionOrigin`: `chrome-extension://` and 32 letters `a` to `p`,
+  `moz-extension://` and a UUID; never `http(s)`, `null`, `file` or none). `piwi/hub` answers the hub's address and
+  the forwarded ports it takes, once it takes them, so a client lists a forwarded address only after.
 - Past 16 open connections, or 8 open that did not say hello, a handshake gets a 503.
 - A handshake's headers must arrive within 5 s and fit in 8 KiB.
 
@@ -653,13 +698,14 @@ not a boundary.
   (Run to a line stays in the editor);
 - `pausedPage`;
 - the intents `pick`, `record`, `assert` and `assert-region` (`RunSessions.intent`), with `since` too;
-- `requests` and `mock` (`request`, a kept response's id), with `since` too.
+- `requests` and `mock` (`request`, a kept response's id), with `since` too;
+- `view` (`on`), `input` (`events`) and `pick-at` (`x`, `y`), with `since` too ([The live view](#the-live-view)).
 
 The intents, `requests` and `mock` go through the same `StopActions` as the client's `piwi/stopAction`
 ([Code from a stop](#code-from-a-stop)); the code goes to the client alone.
 
-Each command is answered once (`{ type: 'answer', id, ok, message }`, with `image` too for `pausedPage` and `requests`
-for `requests`, the sentence cut at `MAX_HUB_MESSAGE` with the cut marked). A command of
+Each command is answered once (`{ type: 'answer', id, ok, message }`, with `image` too for `pausedPage`, `requests`
+for `requests` and `locator` for `pick-at`, the sentence cut at `MAX_HUB_MESSAGE` with the cut marked). A command of
 another type, with a field it cannot take, or answering a stop without naming it
 (`The command needs the stop it answers.`) is answered `ok: false` with why. A connection has at most 16 commands
 waiting. A message that is no command (not JSON, no `id`) closes the connection (4003), as do a binary frame (1003) and
@@ -667,7 +713,9 @@ a frame over 64 KiB (`MAX_HUB_FRAME`, 1009). Nothing a command asks evaluates co
 instance.
 
 **Intents.** An intent is asked of the one stopped worker (or the one named), at the stop `since` names. It is refused
-at a stop no pause bar shows (`bar: false`), and for a reporter whose `run-attach` does not list it in `takes`.
+at a stop no pause bar shows (`bar: false`) unless the connection watches that stop's live view, which drives it
+there (`IntentParams.viewer`, `StopActions.action`'s `viewer`), and for a reporter whose `run-attach` does not list it
+in `takes`.
 Otherwise it goes to the worker as a `request` naming the stop, and the worker's answer is passed on (10 s at most).
 The worker refuses one at a stop that is ending, or whose page it cannot tell; such a stop has no image either.
 
@@ -678,7 +726,10 @@ client hears, so both show the same. Each run goes as a `session` with:
 - the run's command line, kept by ref for the 50 latest commands the service built, cut at `MAX_HUB_COMMAND` with the
   cut marked;
 - its folder's label and its Piwi project;
-- each worker's `intents` (`RunSessions.intentsOf`).
+- each worker's `intents` (`RunSessions.intentsOf`): Assert, Assert a region and Mock a request only while the
+  client writes the code from a stop;
+- each stop's `intents`, what it takes from that connection now (`RunSessions.stopIntentsOf`): `input` only while it
+  watches the stop's live view; Pick, Record, Assert and Assert a region where the bar shows or while it watches.
 
 What the hub sends fits what `parseHubMessage` reads.
 
@@ -698,7 +749,44 @@ ping is dropped, as is one with 32 MB unread.
 not answered the close. A connection being closed holds none of the places counted above.
 
 A subscribed connection is a surface that answers stops, and one that said `follow` holds failures
-([Stops no pause bar shows](#stops-no-pause-bar-shows)).
+([Stops no pause bar shows](#stops-no-pause-bar-shows)). Watching a stop's live view and following the runs are apart:
+`follow` says a Runs window is open, `view` names one stop.
+
+### The live view
+
+A hub connection watches a stop's live view (`view`, with `since` and `on`; `RunSessions.watch`, the connection being a
+`Viewer`). The worker starts the view as the stop's first viewer comes and stops it as the last goes (a viewer whose
+connection closes goes, `unwatchAll`); a reporter that does not take `view` is refused. A viewer that comes once the
+view is on asks the worker again, which sends the frame it sent last again: a still page paints no other.
+
+- **Frames.** Each `frame` of the stop the worker stands at goes to that stop's viewers alone, none of an older stop:
+  a view ends as its stop does. The hub sends a connection ten a second at most for each worker
+  (`MAX_VIEW_FPS`), the latest one waiting while its socket holds more than 1 MB unread (`LatestPacer`), and none of a
+  stop it no longer watches (`RunSessions.viewing`). It keeps none. Why a view sends no frame (`frame` with
+  `refused`: each image of the page is over 384 KB) goes the same way, as a frame does.
+- **Input.** `input` plays the connection's events (`@piwitests/core/run-view`: mouse, wheel, key and text, checked
+  field by field, Playwright's key names alone) on the page of the stop it watches, 200 events a second at most for
+  each connection (`MAX_VIEW_EVENT_RATE`), and is refused to any other.
+- **Intents.** At a stop no pause bar shows, Pick, Record, Assert and Assert a region start for a connection that
+  watches its view alone, which drives them through it. A connection that starts or stops watching hears the run
+  again, with what its stops take now.
+
+The frames carry whatever the page shows: they reach only the paired, authenticated connections that asked for them,
+never the client, an instance or a file.
+
+### Share live
+
+A person shares a run on the team instance its reporter reports to, for a teammate to watch from the run page there
+(`piwi/shareRun` from a client, `share` from a hub connection, the desktop app's window included; `RunSessions.share`).
+That stream is the reporter's own, from each worker to the instance (`@piwitests/core/live-view`): the service only
+tells each worker that takes `share` to open or close it, and a worker that connects later follows the run's choice
+(`Session.share`). Stopping is never refused, not even while no worker is connected: the next one hears it. Each worker
+says how it stands (`live`: whether it holds a key, whether it streams, the views open of it, the run's page, why not),
+which the session sums up for the client and the hub (`RunSession.live`, `HubSession.live`): shared while a worker
+streams or opens its stream, why it cannot be when no worker can, the views of every worker. A sharing that stops
+though nobody asked (the instance stopped answering, refused the key) ends with the run's last streaming worker: said
+once a run, as a notice, kept as `stopped` until a person shares it again, and a worker that connects later no longer
+shares. Nothing of the stream passes through the service, and no agent's tool shares a run.
 
 ### Code from a stop
 
@@ -775,6 +863,153 @@ it on the stopped page and outlines its matches where the bar shows; a line with
 
 A failure held at its line ([Stops no pause bar shows](#stops-no-pause-bar-shows)) takes the same actions.
 
+### A run that debugs a failure
+
+**Debug in my editor** on the dashboard's failure page opens the failing line through a client's open link with
+`debug=1`; once the person said yes, the client asks `piwi/runArgs` with `RunTestsArgs.debug` (`src/debug-run.ts`,
+`DebugRuns`):
+
+- **The command.** The fields are checked one by one (`checkedDebugRun`: a line, a title and a project of plain
+  text, an execution id), the spec and the failing line's file must be under the context's folder, and the test is
+  the one of the spec as saved whose describe blocks' titles and its own, joined by ` › `, are the title, else the
+  only one of its own title (`debugTest`). It runs alone (its location), in its Playwright project, with
+  `--workers=1`, and headed with the editor's breakpoints and the failing line in `PIWI_PAUSE_AT`, as a run started to
+  be watched (`withBreakpoints`). Anything refused answers null, with a `piwi/notice` saying why.
+- **The one-shot stop.** The failing line is a breakpoint of that run alone: `piwi/setRunBreakpoints` for the run
+  carries it beside the client's places until a worker stops there (heard through `RunSessions`' `heard`), and then
+  the run's breakpoints become the client's own, for its workers and those that connect later. The client never
+  holds it, so the editor's breakpoint list is left as it is.
+- **The suggested locator.** With `execution`, the instance's locator healing of that execution is asked as the
+  command is built (`PiwiContext.healing`), and again at the stop. Its recommended locator is counted on the stopped
+  page through `RunSessions.locator`, outlined where the bar shows, and said in a `piwi/notice`. While it stands,
+  `piwi/locatorAtCaret` on the stopped line answers it with no count, asking the worker nothing, so the caret's own
+  count does not take the outline down; anywhere else the caret's count goes on as at any stop. No instance, no
+  healing or no recommendation: the run only stops.
+
+### Agents
+
+`src/agent-server.ts` (`AgentServer`) serves the runs the service built to the agents of this machine as an MCP
+server of its own, over MCP's streamable HTTP transport (one POST per request, answered with JSON; a notification
+alone with a 202), its JSON-RPC pieces those of the instance's server (`src/mcp-protocol.ts`). It listens only once the
+client turns it on, as the service starts (`InitializationOptions.agents.enabled`) or later (`piwi/agents { enabled }`,
+answered with its address and token), and closes as the client turns it off or the service stops.
+
+**Who reaches it.**
+
+- `127.0.0.1` alone, at the port the client keeps (`InitializationOptions.agents.port`) when it is free, else a free
+  one; the token the client keeps (`agents.token`, 32 to 256 characters of base64url), else a random one. Both clients
+  keep them, so an agent's configuration copied once still connects after a restart. When another program holds the
+  kept port, the server takes a free one with a new token (`AgentServer.moved`): an agent's copied entry sends the
+  old token to that program, which must not open this server with it. The service then sends a `piwi/notice` asking
+  to copy the configuration again, and `piwi/agentsChanged` with the new address and token, which the clients keep
+  as they keep `piwi/agents`'s answer; it is sent only when they differ from what the client holds. `piwi/agents`
+  with `newToken` (the clients' Reset the token) gives the server a new token (`AgentServer.newToken`), the one
+  before refused from the next request on.
+- A request whose `Host` is not `127.0.0.1` or `localhost` at its port is a 403 (`isHubHost`: DNS rebinding), and so is
+  one that carries an `Origin`: a browser sends one with every POST, MCP clients are native. Another path is a 404,
+  another method a 405, a body that is not JSON a 415, and a missing or wrong `Authorization: Bearer` a 401, the token
+  compared in constant time (`sameToken`).
+- A body is 256 KiB at most (`MAX_AGENT_BODY`, a 413), a batch 8 requests (`MAX_AGENT_BATCH`), and 8 requests run at
+  once (`MAX_AGENT_REQUESTS`, a 503 with `Retry-After`). A long poll lets go of its slot as soon as nobody waits for
+  it: its client closes the connection (the response's `close`), or cancels it (`notifications/cancelled` naming its
+  JSON-RPC id), and the wait (`RunAgent.waitFor`) ends on the call's `AbortSignal`.
+
+As for the hub, this user's own processes are not a boundary: the token reaches the agent through the client's
+registration of the server (VS Code's provider) or a configuration the developer copies.
+
+**The tools** (`src/run-agent.ts`, `RunAgent`): `run_list`, `run_follow`, `run_control`, `page_snapshot`, `page_act`,
+`page_locator` and `code_write`, each with a closed set of arguments read one by one (`Args`, an unknown one refused)
+and a JSON schema that names them (`AGENT_TOOLS`, `additionalProperties: false`).
+
+- **Following a run.** `RunSessions` tells the agent what each worker says (`heard`): its connection, each test's
+  start and end, each stop and its end, and, once an agent follows the run (`followRun`, sent as `events` to each of
+  its workers whose reporter takes it, a later worker too), each call of the test as it ends, with its place, and each
+  page's navigations, console errors and warnings, uncaught errors and failed requests. A rerun of a run's command
+  (the same ref) numbers its events on from the run's before it, so a cursor of that run reads them. A follow lasts
+  while the agent calls a tool on the run, and ends `FOLLOW_IDLE_S` (120 seconds) after its last call, or as agents
+  are turned off (`RunAgent.off`): `unfollowRun` sends `events { on: false }`, a later worker hears nothing, and what
+  the pages said in the events kept goes (`page: "dropped"` in `run_follow`), the snapshots read too when agents are
+  turned off. Each run keeps its last 2,000 events, numbered (`seq`), and the 20 latest ended runs theirs. `run_follow
+  { run, after?, wait? }` answers the events after the cursor, 200 at most (`more`), waiting up to `wait` seconds (25
+  at most, `MAX_FOLLOW_WAIT_S`) for a stop or the run's end, and at once while the run is stopped or ended.
+- **Controlling it.** `run_control { run, worker?, action, stop?, place?, wait? }` is `piwi/runControl` with
+  `by: 'agent'` (`pause`, and `step`, `run-to`, `resume`, `finish`, `end` naming the stop they answer), then waits up
+  to `wait` seconds (30 at most) for the run's next stop or its end, and after `end` for the end of the test it ended
+  too (`The test ended: skipped.`). The stop a Pause, a Step or a Run to the agent asked for carries
+  `RunStop.by: 'agent'`, which the clients show. A `place` is a line of the run's code, relative to the run's folder.
+- **Reading the page.** The answer to a stop, `page_snapshot { run, worker?, image?, depth? }` and `page_act` read
+  the page's ARIA snapshot in AI mode through the worker (`RunSessions.snapshot`). The service keeps the last snapshot
+  read of each worker (32 at most) and answers with its change since (a line diff, `snapshotChange`) when it is
+  smaller than the snapshot and read to the same depth, else with the whole snapshot, 100,000 characters at most.
+- **Acting on it.** `page_act { run, worker?, stop, target, action, value? }` has the worker play a click, a fill, a key
+  press, a check, an uncheck or a select on the element of the ref (`RunSessions.act`, checked by `readAct`), and keeps
+  it as the step a person's would be: the element ranked, a secret field's value never kept (`redacted`). The first
+  action at a stop is a `piwi/notice` for the person watching. An action the page did not answer in time (the worker's
+  10 seconds, answered `late`, or the service's) may still be played: the answer says so, and the request is heard a
+  minute more (`hearLate`, `LATE_ANSWER_MS`), the worker answering it again once it was played, which keeps the step
+  and adds an `act-played` event to the run's.
+- **Locators.** `page_locator { run, worker?, target }` ranks the element as Pick does (`RunSessions.refLocator`): those
+  that find it alone first, the suite's own locators first among them (`preferLocators`).
+- **Code.** `code_write { run, worker?, stop, kind, target?, assertion? }` renders and sends to the client
+  (`StopActions.agentCode`, `piwi/stopCode`): the steps taken at the stop (`steps`, then forgotten), the best locator
+  of `target` in place of the stopped line's (`locator`, `renderStopLocator`), or an assertion on it (`assertion`:
+  visible, hidden, enabled, disabled, checked, unchecked, text, value). Its sentences say the agent made it
+  (`AGENT_WROTE`), to the client and, as a `code`, to Piwi Picker. A text assertion expects the element's whole text,
+  which the worker reads up to `MAX_ELEMENT_TEXT` (1,000 characters, `textCut` past it), or, cut, that the element
+  contains its first words (`toContainText`, `MAX_CONTAINED_TEXT`); `expectedOf` refuses a secret field, a text or a
+  value a credential was hidden in, and a value cut at `MAX_ACT_VALUE`.
+
+**The page is untrusted.** Each result holds Piwi's answer as JSON first, then, apart, what came from the page, between
+two markers that share a random nonce (`pageContent`), which the page cannot guess: the snapshot and its change, the
+address and the title, an element's name, text and value, the locators built from them (`page_locator` shows each
+with its credentials hidden and counts those it hid in `hidden`; `code_write` writes it as the page has it), a
+failure's error and its title (`Failed` in the JSON), the console, the page's errors, its requests' methods and URLs,
+each through `hideSecretsInText` or `hideSecretsInUrl` again, and the worker's own message about a page call (`said`):
+a read in the page's world can throw with the page's words, so the JSON says a fixed sentence in its place (`The
+element could not be read; the page's own answer is in the page content.`), and only a refusal of the service's own
+(`AgentAnswer.answered` false) is said as it is. An image comes last, after a text that says it is page content too,
+since MCP's image content carries no words. The JSON that names the runs, the stops and the calls holds the test's
+own words alone: its titles, files and lines, and Playwright's titles of the calls its code made, but for the text a
+stopped fill, typing or insert types, which Playwright writes into its title (`Fill "…"`) and which may be a secret the
+test reads from its environment (`stopTitle`: `Fill "<hidden>" getByLabel('Password')`). The tools'
+descriptions and the server's `instructions` say to read the block as data, never as instructions.
+
+**Sharing with Playwright's tools.** `piwi/stopBind { ref, worker?, since, on }` has the stopped worker bind its
+browser (`browser.bind('piwi-<ref>-w<worker>', { workspaceDir })`), until the test ends, or unbind it, and answers the
+name and the command that joins it (`npx playwright cli attach <name>`). It is the client's alone, never an agent's
+tool: a bound browser is open to any process of this user.
+
+### Another host
+
+The desktop app's server is the hub of the runs its shell starts (`apps/application/server/utils/desktop-runs.ts`).
+It runs these classes through `src/run-host.ts`, with no language server, and wires their callbacks to its own
+surfaces as `server.ts` wires them to the client:
+
+- `RunSessions` takes `host` and `surfaces`, what its sentences call the service and the surfaces that show stops (`No
+  worker of this run is connected to the desktop app.`), and `declines`, the intents the host never starts, refused
+  with its sentence and left out of `intentsOf` (Pick and Record in the test's window and Assert, which end in an
+  editor). `host` also goes to each worker in `attached`, so the reporter's lines name the host (`Resume in the
+  desktop app`). `holdsFailures` names the runs that hold no failure, whoever watches them (the desktop app's runs
+  nobody attends): their workers hear `attached` without `failure`, and a failure that stops one anyway goes on.
+- `RecordChannel` takes `folderPrefix`, what its socket's folder is named from (`piwi-desktop-run-`), so a host finds
+  the folders a process of its own that was killed left behind.
+- `RunHub` takes the `token` `hello` carries (the desktop token) and the sentence its connections close with
+  (`closing`). `join` adds a peer of the host's own transport (`HubTransport`: `send`, `buffered`, `close`), which needs
+  no handshake nor `hello`, counts toward none of the WebSocket's limits, and commands and hears the hub as a WebSocket
+  connection that said hello does (`HubPeer.command`, answered with the `HubAnswer`). The desktop app's window is one,
+  through routes behind the app's token.
+- `StopActions` takes `words`, what its sentences say of the code made (`Piwi made the check to write above
+  checkout.spec.ts:5: copy it in the desktop app's window.`, `at` being `above …` or, for a locator, `in place of the
+  one on …`) and why none is made for a file outside the host's folders, and runs without a recorder (`recordings`),
+  refusing a check then. `agentCode` answers with the `StopCode` it made, which the editor's tools leave out.
+- `RunAgent` takes `words` (`AgentWords`): whose runs its tools serve, where the developer watches them, `code_write`'s
+  description and the server's instructions, from which `agentTools` builds the definitions (the editor's are
+  `EDITOR_AGENT_WORDS`, `AGENT_TOOLS`). `refuses` names the runs it does not serve (the desktop app's runs nobody
+  attends): `run_list` leaves them out and says why, every tool refuses them, and their events are never kept. A
+  `writeCode` that answers with the code has `code_write` give it back, between the page-content markers, where it goes
+  and its import lines apart (`madeCode`). The desktop app's `/mcp` serves these tools
+  (`apps/application/server/utils/mcp/run-tools.ts`).
+
 ### The discovery file
 
 `src/discovery.ts` writes and reads `~/.piwi/editors/<pid>.json` (`@piwitests/core/editor-discovery`;
@@ -787,7 +1022,8 @@ could), `startServer` hands `publish` what the file says:
 - its version (written in by `build.mjs`, `0.0.0-dev` unbundled) and its client (`initialize`'s `clientInfo`);
 - `startedAt` and the workspace's folders (`roots`);
 - the hub's address and token;
-- the run channel's socket and token, for a run started in a terminal;
+- the run channel's socket and token, for a run started in a terminal (the reporter's `internal/config/editors.ts`
+  follows the service one of whose `roots` holds the run, `editorForRun`);
 - the recorder bundle's path.
 
 It hands `publish` null as it stops (`shutdown`, `exit`, the function `startServer` returns).
@@ -1299,7 +1535,10 @@ connection without a key gets `authorization: 'none'`. `piwi/mcp` gives one defi
 
 `npm run editor:test` runs the Vitest suites of `tests/`. `tests/lsp.test.ts` drives the server in-process, as a client
 does, against a fixture repository and a stub instance. `tests/run-sessions.test.ts`, `tests/run-hub.test.ts` and
-`tests/discovery.test.ts` cover the run sessions, the hub and the discovery file.
+`tests/discovery.test.ts` cover the run sessions, the hub and the discovery file, and `tests/run-host.test.ts` the run
+control as another host builds it. `tests/agent-server.test.ts` and `tests/run-agent.test.ts` cover the agents' MCP
+server and its tools, and `tests/agent-run.test.ts` an agent on a real Playwright run, through the reporter's build
+(`npm run reporter:build`) and Chromium: it skips without them.
 
 These tests use the build in `dist/`, so run `npm run editor:build` first:
 

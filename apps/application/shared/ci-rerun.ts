@@ -176,6 +176,8 @@ export interface ClusterRerunDispatch {
   ref?: string | null;
   /** The spec files the arguments name, POSIX separators, without lines. */
   files?: string[];
+  /** How many tests the arguments name. */
+  tests?: number;
   /** GitLab's id of the pipeline it created. */
   pipelineId?: string | null;
   /** Bitbucket's build number of the pipeline it created. */

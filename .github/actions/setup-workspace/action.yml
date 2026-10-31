@@ -24,7 +24,8 @@ inputs:
     description: >-
       Chromium build to install: none, shell (the headless shell the suites run on) or full (the build that loads
       extensions). The headless shell is cached by Playwright version; the full build is installed on every run, as
-      the workflows that use it run on pull requests only, where a cache serves its own pull request alone.
+      the workflows that use it run on pull requests, where a cache serves its own pull request alone, or once a
+      night (the showcase's), where a cache would rarely outlive the night.
     default: none
 
 runs:
@@ -66,7 +67,7 @@ runs:
       run: npx playwright install chromium --with-deps ${{ inputs.playwright == 'shell' && '--only-shell' || '' }}
 
     # Saved as soon as the shell is installed, so the cache holds the shell alone, whatever a later step of the job adds
-    # to the folder (the checks job's full build).
+    # to the folder (the full build the test jobs of ci.yml's checks install).
     - name: Save Playwright browsers
       if: inputs.playwright == 'shell' && steps.playwright-cache.outputs.cache-hit != 'true'
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

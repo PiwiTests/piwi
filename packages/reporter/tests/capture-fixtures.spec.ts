@@ -10,9 +10,11 @@ import {
   probeElementAttrs,
   CAPTURED_ATTRS_ARG,
   configuredCodeReachRoots,
+  errorPlace,
   failureError,
 } from '../src/internal/capture/capture-fixtures.js';
 import {
+  ARIA_SNAPSHOT_CONTENT_TYPE,
   ATTACHMENT_NAMES,
   FAILURE_SCREENSHOT_ATTACHMENT,
   LOCATOR_SUGGESTION_ANNOTATION,
@@ -308,14 +310,15 @@ describe('per-call-site capture dedupe', () => {
     const emit = (event: string) => (listeners.get(event) ?? []).forEach((handler) => handler());
 
     const attached: LocatorSnapshot[] = [];
-    const ariaAttachments: string[] = [];
+    const ariaAttachments: Array<{ body: string; contentType?: string }> = [];
     const testInfo = {
       status: infoOverrides.status ?? 'passed',
       file: infoOverrides.file,
       title: infoOverrides.title,
-      attach: vi.fn(async (name: string, body: { body: Buffer | string }) => {
+      attach: vi.fn(async (name: string, body: { body: Buffer | string; contentType?: string }) => {
         if (name === ATTACHMENT_NAMES.locators) attached.push(...JSON.parse(String(body.body)));
-        if (name === ATTACHMENT_NAMES.ariaSnapshot) ariaAttachments.push(String(body.body));
+        if (name === ATTACHMENT_NAMES.ariaSnapshot)
+          ariaAttachments.push({ body: String(body.body), contentType: body.contentType });
       }),
       annotations: [],
     };
@@ -426,6 +429,7 @@ describe('per-call-site capture dedupe', () => {
         { status: 'passed', file: FILE, title: TITLE },
       );
       expect(ariaAttachments).toHaveLength(1);
+      expect(ariaAttachments[0]!.contentType).toBe(ARIA_SNAPSHOT_CONTENT_TYPE);
     });
 
     it('does not sample a passing test outside the due set (rate limit)', async () => {
@@ -1976,5 +1980,56 @@ describe('failureError', () => {
     expect(failureError(`Error: ${'x'.repeat(5000)}`)).toHaveLength(1000);
     expect(failureError('Test timeout of 5000ms exceeded.')).toBe('Test timeout of 5000ms exceeded.');
     for (const none of [undefined, '', '  \n ', 'Error: ']) expect(failureError(none)).toBeNull();
+  });
+});
+
+describe('errorPlace', () => {
+  const thrown = (...frames: string[]) => ({ stack: ['Error: the cart is empty', ...frames].join('\n') });
+
+  it('takes the place the runner gives', () => {
+    expect(errorPlace({ location: { file: '/work/app/tests/cart.spec.ts', line: 12 } }, false)).toEqual({
+      file: '/work/app/tests/cart.spec.ts',
+      line: 12,
+      column: 0,
+    });
+  });
+
+  it('reads a POSIX file URL as an absolute path', () => {
+    const error = thrown('    at Context.<anonymous> (file:///work/app/tests/cart.spec.ts:12:7)');
+    expect(errorPlace(error, false)).toEqual({ file: '/work/app/tests/cart.spec.ts', line: 12, column: 7 });
+  });
+
+  it('reads a Windows file URL as a Windows path', () => {
+    const error = thrown('    at Context.<anonymous> (file:///C:/work/app/tests/cart.spec.ts:12:7)');
+    expect(errorPlace(error, true)).toEqual({ file: 'C:\\work\\app\\tests\\cart.spec.ts', line: 12, column: 7 });
+  });
+
+  it('decodes a percent-encoded file URL', () => {
+    const error = thrown('    at file:///work/my%20app/tests/caf%C3%A9.spec.ts:3:1');
+    expect(errorPlace(error, false)).toEqual({ file: '/work/my app/tests/café.spec.ts', line: 3, column: 1 });
+  });
+
+  it('reads a plain path', () => {
+    expect(errorPlace(thrown('    at Context.<anonymous> (/work/app/tests/cart.spec.ts:12:7)'), false)).toEqual({
+      file: '/work/app/tests/cart.spec.ts',
+      line: 12,
+      column: 7,
+    });
+    expect(errorPlace(thrown('    at Context.<anonymous> (C:\\work\\app\\tests\\cart.spec.ts:12:7)'), true)).toEqual({
+      file: 'C:\\work\\app\\tests\\cart.spec.ts',
+      line: 12,
+      column: 7,
+    });
+  });
+
+  it("skips Node's frames, a package's and this package's", () => {
+    const error = thrown(
+      '    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)',
+      '    at Object.click (file:///work/app/node_modules/playwright-core/lib/client/locator.js:40:3)',
+      `    at holdFailure (${path.resolve('src/internal/capture/capture-fixtures.ts')}:2140:5)`,
+      '    at async Context.<anonymous> (file:///work/app/tests/cart.spec.ts:18:21)',
+    );
+    expect(errorPlace(error, false)).toEqual({ file: '/work/app/tests/cart.spec.ts', line: 18, column: 21 });
+    expect(errorPlace(thrown('    at listOnTimeout (node:internal/timers:485:7)'), false)).toBeNull();
   });
 });

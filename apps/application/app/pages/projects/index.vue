@@ -6,6 +6,7 @@ import type { SortingState } from '@tanstack/vue-table';
 import type { ProjectWithStats, TagInfo, TagsResponse } from '~~/types/api';
 import type { DesktopFolderInspection } from '~/composables/useDesktopFolderInspect';
 import { foldText } from '#shared/utils/fold-text';
+import { describeProjectRunScope } from '#shared/project-run-scope';
 
 useHead({ title: 'Projects — Piwi Dashboard' });
 
@@ -221,6 +222,11 @@ const columns: TableColumn<ProjectWithStats>[] = [
     header: 'Project actions',
   },
 ];
+
+/** A project's status filter in words, for the row that has no run in it. */
+function statusFilterText(project: ProjectWithStats): string {
+  return project.statusFilter ? describeProjectRunScope(project.statusFilter, project.statusDefaultBranch) : '';
+}
 </script>
 
 <template>
@@ -327,6 +333,13 @@ const columns: TableColumn<ProjectWithStats>[] = [
               :date="row.original.latestRun.startTime"
               class="text-xs text-gray-600"
             />
+            <span
+              v-else-if="row.original.statusFilter && row.original.totalRuns > 0"
+              class="text-xs text-muted"
+              :title="`Status filter: ${statusFilterText(row.original)}`"
+            >
+              No run in the status filter
+            </span>
             <span v-else class="text-xs text-gray-600 italic">No data</span>
           </template>
           <template #branch-cell="{ row }">

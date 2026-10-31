@@ -14,6 +14,7 @@ import type {
   WireExecutionResources,
 } from '#shared/types';
 import type { ScmProviderName } from '#shared/scm-urls';
+import type { StuckAttempt } from '#shared/stuck-tests';
 import type { PageDiffSummary, PageDiffHunk } from '#shared/page-diff';
 import type { ClusterState } from '#shared/cluster-state';
 import type { NextStep } from '#shared/next-step';
@@ -262,7 +263,13 @@ export interface ProjectWithStats {
   tags?: TagInfo[];
   createdAt: Date;
   updatedAt: Date;
+  defaultBranch?: string | null;
+  /** The runs that set the project's status, `latestRun`; null for every run. */
+  statusFilter?: import('#shared/project-run-scope').ProjectRunScope | null;
+  /** The default branch the status filter reads, resolved; null when it reads none. */
+  statusDefaultBranch?: string | null;
   // Statistics added by API
+  /** The latest run in the status filter, lab runs left out. */
   latestRun?: {
     id: number;
     status: string;
@@ -282,6 +289,8 @@ export interface ProjectWithStats {
     metadata: TestRunMetadata;
   } | null;
   totalRuns: number;
+  /** When the latest run of any kind started, whatever the status filter. */
+  lastRunAt?: string | Date | null;
   totalTestCases: number;
 }
 
@@ -411,10 +420,16 @@ export interface ProjectWithTestRuns {
   quarantineFailsStatus?: boolean;
   /** True: each gate evaluation also posts the `<statusContext>/gate` commit status. */
   gateStatus?: boolean;
+  /** Whether people who may open a live run of the project can watch its workers' pages from the run page. */
+  liveView?: boolean;
+  /** Playwright locators of the elements the live view paints over in each image, beside the secret fields. */
+  liveViewMasks?: string[] | null;
   /** Test import and bugs folder for specs rendered from bug reports. */
   generatedSpecs?: { testImport?: string | null; bugsFolder?: string | null } | null;
   /** Per-project targets on catalog metrics. */
   targets?: import('#shared/analytics/targets').ProjectTargets | null;
+  /** The runs that set the project's status (its latest run in the project list); null for every run. */
+  statusFilter?: import('#shared/project-run-scope').ProjectRunScope | null;
   /** The files coverage totals count; null for the default excludes. */
   coverageScope?: import('@piwitests/core/coverage-scope').CoverageScope | null;
   coverageAreas?: import('@piwitests/core/coverage-scope').CoverageArea[] | null;
@@ -441,6 +456,10 @@ export interface ProjectDetails {
   quarantineFailsStatus?: boolean;
   /** True: each gate evaluation also posts the `<statusContext>/gate` commit status. */
   gateStatus?: boolean;
+  /** Whether people who may open a live run of the project can watch its workers' pages from the run page. */
+  liveView?: boolean;
+  /** Playwright locators of the elements the live view paints over in each image, beside the secret fields. */
+  liveViewMasks?: string[] | null;
   /** Test import and bugs folder for specs rendered from bug reports. */
   generatedSpecs?: { testImport?: string | null; bugsFolder?: string | null } | null;
   /** Per-project targets on catalog metrics. */
@@ -1003,6 +1022,8 @@ export interface TestCaseResult {
   expectedStatus?: string | null;
   /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
   blockedBy?: string | null;
+  /** A running test that has run far longer than it usually does (`#shared/stuck-tests`). */
+  stuck?: StuckAttempt | null;
 }
 
 /** Why a `didnotrun` case never executed — mirrors the reporter's taxonomy. */

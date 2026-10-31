@@ -49,6 +49,11 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'POST /api/desktop/picker-pairings', // desktop build only; Piwi Picker asks to pair with the app, 404 everywhere else
   'GET /api/desktop/picker-pairings/:id', // desktop build only; Piwi Picker polls for the answer
   'PATCH /api/desktop/picker-pairings/:id', // desktop build only; the window allows or denies a pairing
+  'GET /api/desktop/run-channel', // desktop build only; the shell reads the run channel it names in each run it starts
+  'GET /api/desktop/live', // desktop build only; Piwi Picker reads the hub of the desktop app's runs
+  'GET /api/desktop/runs/events', // desktop build only; the window's stream of the runs the shell starts
+  'POST /api/desktop/runs/commands', // desktop build only; the window's commands to those runs
+  'POST /api/desktop/runs/picks', // desktop build only; the locators those runs' tests pick, for the window to copy
   'POST /api/projects/:id/test-functions/extract', // AI code-to-pattern extraction — unlike diagnosis (a fixed, curated set of seeded clusters a scripted response can convincingly cover), this takes arbitrary pasted code with no server or real LLM to analyze it against in the demo; the "Paste from code (AI)" section is hidden client-side in demo mode instead of faking an understanding of whatever the visitor pastes
   'POST /api/ai/step-resolution', // AI-step authoring — resolves an arbitrary page snapshot against a natural-language prompt; no server or real LLM in the demo, and the reporter only calls it in resolve/heal mode (never a normal run), so there is nothing to script
   // Share links: capability tokens for anonymous viewers. The demo has no
@@ -72,6 +77,12 @@ const INTENTIONALLY_EXCLUDED = new Set([
   // OpenMetrics for an operator's Prometheus or Grafana to pull: there is no
   // server in the browser demo for a scraper to reach.
   'GET /api/metrics',
+  // The run page's live view: a live run's test workers hold its streams and post its frames, and someone watches
+  // them; the demo runs no test worker, so its simulated runs have no worker in the live view to watch.
+  'GET /api/test-runs/:id/live-view',
+  'POST /api/test-runs/:id/live-view',
+  'GET /api/test-runs/:id/live-view/watch',
+  'GET /api/test-runs/:id/live-view/workers',
   // Inbound Jira webhook: a public receiver an external Jira posts to. There is
   // no server in the browser demo, and it only ever refreshes a link.
   'POST /api/integrations/jira/webhook/:token',

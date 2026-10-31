@@ -52,8 +52,9 @@ function withoutIncidentFlag(metadata: unknown): unknown {
  * outcomes once its change coverage is stored. Only the outbound effects
  * follow the `notifications` use, which reads the run's origin from its
  * metadata as the incident check read it, its final `status` and `isFullRun`:
- * never for a run from an editor, and for a run from a developer's machine or
- * the desktop app only when it ran the whole suite. A run the use leaves out
+ * never for a run from an editor, a bisect step or a reproduction, and for a
+ * run from a developer's machine or the desktop app only when it ran the whole
+ * suite. A run the use leaves out
  * sends no incident event either: the use reads a flagged run as if it carried
  * no flag.
  *

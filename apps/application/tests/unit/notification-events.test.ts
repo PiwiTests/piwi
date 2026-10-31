@@ -5,6 +5,7 @@ import {
   notificationTargetPath,
   buildNotificationDedupeKey,
   buildTopFailures,
+  cutSourceSnippet,
   truncateExcerpt,
   errorExcerpt,
   failureTargetPath,
@@ -268,5 +269,58 @@ describe('buildTopFailures', () => {
   test('respects a custom limit', () => {
     const rows = [{ title: 'a' }, { title: 'b' }];
     expect(buildTopFailures(rows, 1)).toHaveLength(1);
+  });
+
+  test('splits the describe blocks, keeps the location, owner and history, and cuts the source', () => {
+    const snippet = Array.from({ length: 13 }, (_, i) => {
+      const line = 30 + i;
+      return `${line === 36 ? '>' : ' '} ${String(line).padStart(3)} | code ${line}`;
+    }).join('\n');
+    const [failure] = buildTopFailures([
+      {
+        title: 'pays',
+        suitePath: 'Checkout\x1fPayment',
+        line: 12,
+        browserName: 'chromium',
+        owner: '@team/pay',
+        source: { file: 'tests/pay.spec.ts', line: 36, snippet },
+        history: ['passed', null, 'failed'],
+      },
+    ]);
+    expect(failure).toMatchObject({
+      suitePath: ['Checkout', 'Payment'],
+      line: 12,
+      browserName: 'chromium',
+      owner: '@team/pay',
+      history: ['passed', null, 'failed'],
+    });
+    expect(failure!.source!.file).toBe('tests/pay.spec.ts');
+    expect(failure!.source!.snippet.split('\n').map((row) => row.trim().split(' ').pop())).toEqual([
+      '32',
+      '33',
+      '34',
+      '35',
+      '36',
+      '37',
+      '38',
+    ]);
+  });
+
+  test('leaves the source out when no line of it is marked as failing', () => {
+    const [failure] = buildTopFailures([
+      { title: 'a', source: { file: 'a.spec.ts', line: 3, snippet: '   3 | x()\n   4 | y()' } },
+    ]);
+    expect(failure!.source).toBeUndefined();
+  });
+});
+
+describe('cutSourceSnippet', () => {
+  test('keeps the caret row under a kept line', () => {
+    const snippet = ['  10 | a()', '> 11 | b()', '     |   ^', '  12 | c()'].join('\n');
+    expect(cutSourceSnippet(snippet)).toBe(snippet);
+  });
+
+  test('returns null for a snippet with no failing line', () => {
+    expect(cutSourceSnippet('  10 | a()')).toBeNull();
   });
 });

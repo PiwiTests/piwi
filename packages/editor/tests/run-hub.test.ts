@@ -20,6 +20,7 @@ import {
   type HubMessage,
   type HubSession,
 } from '@piwitests/core/run-hub';
+import { RUN_TAKES } from '@piwitests/core/run-channel';
 import type { RunSession } from '../src/protocol';
 import { RunHub } from '../src/run-hub';
 import type { RunSessions } from '../src/run-sessions';
@@ -150,6 +151,36 @@ describe('the handshake', () => {
     expect(await open({ url: hub.url.replace('/piwi/hub', '/other') })).toBe(404);
     const plain = await fetch(`http://127.0.0.1:${hub.port}/piwi/hub`);
     expect(plain.status).toBe(426);
+  });
+
+  test('takes a loopback Host at a port the client forwards to it only once named, the origin and token still needed', async () => {
+    const forwarded = hub.port === 65_535 ? hub.port - 1 : hub.port + 1;
+    expect(await open({ host: `127.0.0.1:${forwarded}` })).toBe(403);
+    expect(await svc.client.sendRequest('piwi/hub', { forwarded: [forwarded, 0, 70_000] })).toEqual({
+      url: hub.url,
+      forwarded: [forwarded],
+    });
+    try {
+      const client = (await open({ host: `localhost:${forwarded}` })) as Client;
+      client.send({ type: 'hello', token: 'x'.repeat(32) });
+      expect(await client.closed).toMatchObject({ code: 4001 });
+      const welcomed = (await open({ host: `127.0.0.1:${forwarded}` })) as Client;
+      welcomed.send({ type: 'hello', token: hub.token });
+      expect(await waitFor(() => welcomed.messages[0])).toMatchObject({ type: 'welcome' });
+      welcomed.socket.close();
+      expect(await open({ host: `evil.test:${forwarded}`, origin: ORIGIN })).toBe(403);
+      expect(await open({ host: `127.0.0.1:${forwarded}`, origin: `http://127.0.0.1:${forwarded}` })).toBe(403);
+      expect(await open({ host: `127.0.0.1:${forwarded + 1}` })).toBe(403);
+      // Asking the address alone changes nothing.
+      expect(await svc.client.sendRequest('piwi/hub', {})).toEqual({ url: hub.url, forwarded: [forwarded] });
+    } finally {
+      await svc.client.sendRequest('piwi/hub', { forwarded: [] });
+    }
+    // Forgotten, the port is refused again; the hub's own still opens.
+    expect(await open({ host: `127.0.0.1:${forwarded}` })).toBe(403);
+    const own = await open();
+    expect(typeof own).toBe('object');
+    (own as Client).socket.close();
   });
 
   test('closes a connection whose first message is not hello with the token, or that says nothing in time', async () => {
@@ -363,6 +394,104 @@ describe('the commands', () => {
     }
   });
 
+  test('end the test at its stop, never at a failure, and name a run started in a terminal', async () => {
+    const client = await paired();
+    client.send({ type: 'subscribe', id: 1 });
+    await client.answer(1);
+    const channel = (await waitFor(() => svc.published[0] ?? undefined)).runChannel!;
+    const ref = 'terminal-4242-1730000000001';
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0, [...RUN_TAKES]);
+    try {
+      expect(await waitFor(() => client.session(ref))).toMatchObject({ ref, command: null, terminal: true });
+      expect(client.session(ref)!.workers[0]!.intents).toContain('end');
+      worker.begin();
+      worker.stopAt(1, 30, true);
+      const stop = await waitFor(() => client.session(ref)?.workers[0]?.stop ?? undefined);
+      expect(stop.intents).toContain('end');
+      client.send({ type: 'runControl', id: 2, ref, action: 'end', since: stop.since });
+      expect(await client.answer(2)).toMatchObject({
+        ok: true,
+        message: 'Ending the test: it is reported as skipped.',
+      });
+      expect(await worker.next('control')).toEqual({ type: 'control', action: 'end', stop: 1 });
+      worker.send({ type: 'running', stop: 1 });
+      worker.send({
+        type: 'stopped',
+        stop: 2,
+        reason: 'failure',
+        title: 'Failed: Timed out',
+        place: { file: 'tests/cart.spec.ts', line: 3, column: 1 },
+        locator: null,
+        bar: true,
+      });
+      const failed = await waitFor(() => {
+        const next = client.session(ref)?.workers[0]?.stop;
+        return next?.reason === 'failure' ? next : undefined;
+      });
+      expect(failed.intents).not.toContain('end');
+    } finally {
+      worker.socket.destroy();
+      client.socket.close();
+    }
+  });
+
+  test('name a run the editor’s own test runner started, as its workers say', async () => {
+    const client = await paired();
+    client.send({ type: 'subscribe', id: 1 });
+    await client.answer(1);
+    const channel = (await waitFor(() => svc.published[0] ?? undefined)).runChannel!;
+    const ref = 'terminal-4243-1730000000002';
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0, [...RUN_TAKES], ['failure'], true);
+    try {
+      expect(await waitFor(() => client.session(ref))).toMatchObject({
+        ref,
+        command: null,
+        terminal: true,
+        runner: true,
+      });
+    } finally {
+      worker.socket.destroy();
+      client.socket.close();
+    }
+  });
+
+  test('share a run live as the window asks, every connection hearing how it stands on the instance', async () => {
+    const client = await paired();
+    const other = await paired();
+    client.send({ type: 'subscribe', id: 1 });
+    other.send({ type: 'subscribe', id: 1 });
+    await client.answer(1);
+    await other.answer(1);
+    const { ref, channel } = await svc.command();
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0, [...RUN_TAKES]);
+    const page = 'https://piwi.example.com/test-runs/42';
+    try {
+      worker.send({ type: 'live', can: true, on: false, viewers: 0, page, why: null });
+      expect(await waitFor(() => other.session(ref)?.live)).toEqual({
+        shared: false,
+        refused: null,
+        stopped: null,
+        page,
+        viewers: 0,
+      });
+      client.send({ type: 'share', id: 2, ref, on: true });
+      expect(await client.answer(2)).toMatchObject({
+        ok: true,
+        message: expect.stringMatching(/^Sharing the run live/),
+      });
+      expect(await worker.next('share')).toEqual({ type: 'share', on: true });
+      worker.send({ type: 'live', can: true, on: true, viewers: 1, page, why: null });
+      await waitFor(() => (other.session(ref)?.live?.viewers === 1 ? true : undefined));
+      expect(other.session(ref)?.live).toEqual({ shared: true, refused: null, stopped: null, page, viewers: 1 });
+      client.send({ type: 'share', id: 3, ref });
+      expect(await client.answer(3)).toMatchObject({ ok: false, message: expect.stringMatching(/^share needs on/) });
+    } finally {
+      worker.socket.destroy();
+      client.socket.close();
+      other.socket.close();
+    }
+  });
+
   test('end a stop the worker ended unanswered, refusing what names it, and say why a stop has no image', async () => {
     const client = await paired();
     client.send({ type: 'subscribe', id: 1 });
@@ -465,7 +594,12 @@ function ownHub(
   refusal = 'No action here.',
 ): Promise<RunHub | null> {
   const session: RunSession = { ref: 'ed-1', root: '/work/shop', workers: [], ended: false };
-  const sessions = { current: () => [session], intentsOf: () => [] } as unknown as RunSessions;
+  const sessions = {
+    current: () => [session],
+    intentsOf: () => [],
+    stopIntentsOf: () => [],
+    unwatchAll: () => {},
+  } as unknown as RunSessions;
   return RunHub.open({
     sessions,
     actions: {
@@ -555,7 +689,10 @@ describe('a failure held at its line', () => {
         const stop = svc.latest(ref)?.workers[0]?.stop;
         return stop?.since === since ? stop : undefined;
       };
-      expect(await waitFor(() => stopOf(heard.since))).toEqual(heard);
+      // Piwi Picker hears what the stop takes from it, the client what its worker takes.
+      const { intents, ...asTheClientHears } = heard;
+      expect(intents).toEqual(['pick', 'record']);
+      expect(await waitFor(() => stopOf(heard.since))).toEqual(asTheClientHears);
       worker.send({ type: 'running', stop: 1 });
       await waitFor(() => (client.session(ref)?.workers[0]?.stop ? undefined : true));
       failed(2, undefined);

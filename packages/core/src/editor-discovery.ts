@@ -7,7 +7,8 @@
  * only a file this user owns that reads as a service's file of this machine naming the process its name names, and
  * deletes such a file when its process is gone (a service that was killed); it neither reads nor deletes another
  * user's file, and skips, never deleting, any other file and another machine's (a home folder several machines share).
- * Readers ignore fields they do not know. Pure: the reader takes the folder's operations from its caller.
+ * A test run started in a terminal attaches to the service whose workspace holds it (`editorForRun`). Readers ignore
+ * fields they do not know. Pure: the reader takes the folder's operations from its caller.
  */
 
 /** The environment variable naming another folder than `~/.piwi/editors`. */
@@ -157,4 +158,48 @@ export function readLiveEditors(folder: DiscoveryFolder): EditorDiscovery[] {
     else folder.remove(name);
   }
   return found.sort((a, b) => a.startedAt.localeCompare(b.startedAt) || a.pid - b.pid);
+}
+
+/** A folder as `editorForRun` compares them: forward slashes and lower case on Windows, no trailing slash. */
+function comparable(folder: string, win32: boolean): string {
+  const slashed = win32 ? folder.replace(/\\/g, '/').toLowerCase() : folder;
+  return slashed.length > 1 ? slashed.replace(/\/+$/, '') : slashed;
+}
+
+/** Whether `dir` is `root` or inside it, both as `comparable` spells them. */
+function holdsFolder(root: string, dir: string): boolean {
+  return dir === root || dir.startsWith(root.endsWith('/') ? root : `${root}/`);
+}
+
+/**
+ * The service a test run started outside an editor (in a terminal) attaches to: of the live services that name a run
+ * channel, the one whose workspace holds the run, its Playwright config's folder or its working directory (`dirs`).
+ * The most specific folder wins (the longest that holds one of `dirs`), then the service that started last. Every
+ * folder is compared by its real path (`real`: the spelling the file system gives once its links are followed; null
+ * for one that is gone, which holds nothing), case-insensitively on Windows (`win32`). Null when none holds the run.
+ */
+export function editorForRun(
+  editors: readonly EditorDiscovery[],
+  dirs: readonly string[],
+  real: (folder: string) => string | null,
+  win32: boolean,
+): EditorDiscovery | null {
+  const runDirs = dirs.flatMap((dir) => {
+    const found = real(dir);
+    return found ? [comparable(found, win32)] : [];
+  });
+  let best: { editor: EditorDiscovery; depth: number } | null = null;
+  for (const editor of editors) {
+    if (!editor.runChannel) continue;
+    for (const root of editor.roots) {
+      const found = real(root);
+      if (!found) continue;
+      const folder = comparable(found, win32);
+      if (!runDirs.some((dir) => holdsFolder(folder, dir))) continue;
+      const depth = folder.length;
+      const later = !!best && depth === best.depth && editor.startedAt.localeCompare(best.editor.startedAt) > 0;
+      if (!best || depth > best.depth || later) best = { editor, depth };
+    }
+  }
+  return best?.editor ?? null;
 }

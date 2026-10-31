@@ -16,7 +16,7 @@ entry shape and the meaning of each field are documented in `index.d.mts`.
 - **One element per anchor.** Its `data-tour` value is static, kebab-case and names the content. It is set on exactly
   one element in one component: a template's `data-tour="…"`, or a static `'data-tour': '…'` key the component hands
   on (an item of a Nuxt UI menu, a `NavbarActions` action's `attrs`, a static `attrs` map spread with `v-bind`, as
-  `settings/ai.vue`'s `ROLE_META` and `Toolbox.vue`'s `SECTION_ANCHORS`). Never a bound `:data-tour` or a computed
+  `Toolbox.vue`'s `SECTION_ANCHORS`). Never a bound `:data-tour` or a computed
   string: the source test reads literals. An element can carry both `data-tour` and the harness's `data-shot`.
 - **A demo-only anchor (`requires.demo`) is set in a component under `app/components/demo/`.**
 - **`pages` lists the patterns of `app/pages` it renders on, the main one first**, or `['*']` alone for the layout and
@@ -66,7 +66,7 @@ entry shape and the meaning of each field are documented in `index.d.mts`.
 ## Checking anchors in a browser
 
 - **Check new anchors on a running server**:
-  `node scripts/check-demo-runtime.mjs --url http://localhost:3000 --area <area>` (or `--anchors <id,id,…>`, or both)
+  `node scripts/check-demo-runtime.mjs --url http://localhost:7494 --area <area>` (or `--anchors <id,id,…>`, or both)
   opens each sample on the dev server instead of the built demo; `npm run app:seed:dev` gives that server the demo's
   seeded ids. It skips an anchor whose sample acts as a persona or needs the demo build, since authentication is off
   on a dev server. `--anchors-only` checks the same selection in the built demo without the tours and the other checks;

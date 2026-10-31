@@ -70,6 +70,16 @@ How the server merges shards:
   run's own token or any of its shard tokens, from the cache or the database (`validateAndReviveRun` with its
   `isShardToken` callback, which also revives an interrupted run). Never compare a token against the stored set
   directly: `matchesShardToken` and `matchesStreamToken` refuse a presented digest.
+- **The live view routes authenticate with the run's live view key, and nothing else does** (`liveViewRelay.authorize`,
+  `server/utils/live-view.ts`). `setup` mints one, for a project with `live_view` on and a reporter that asked
+  (`liveView: true`, any run's: outside CI its workers stream only once shared), and the desktop build none
+  (`liveView.refused: 'local'`: no teammate reaches it); it is held as its digest, in memory, opens that run's
+  `[id]/live-view` alone while the project's setting is on (rechecked on each stream), and ends with the run (its finish
+  or cancel; an interruption closes the streams and keeps it once it streamed) or the setting, a key that ended
+  answering 410 or 404 rather than 401 (`refuseLiveViewKey`; `tests/unit/live-view-routes.test.ts`). At their bounds
+  the keys that never opened a stream go first (`tests/unit/live-view-relay.test.ts`).
+- **A live view frame is relayed, never kept**: no frame reaches the database, a log line, an error message or an
+  export, and the relay holds one waiting frame per viewer at most (`tests/unit/live-view-relay.test.ts`).
 - **A run's shard tokens are merged, never replaced**, in the cache and in `metadata`. Every shard's setup token stays
   valid until that shard calls `/begin`, which swaps it for the shard's stream token: read the set with
   `knownShardTokens` (cache and metadata together) and write it back with `withShardTokens`.

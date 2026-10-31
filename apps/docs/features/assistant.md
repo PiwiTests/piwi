@@ -98,7 +98,7 @@ which are set, and its value, go only to those who can open its page, a secret o
 
 ## The model
 
-The assistant answers with the **Assistant model** role of Settings → AI ([model roles](/guide/ai-provider#model-roles)).
+The assistant answers with the model of **Features → Assistant** in Settings → AI ([model roles](/guide/ai-provider#model-roles)).
 Left unset, it uses the diagnosis model, so an instance with AI configured needs no further setup; set it to a faster,
 cheaper model while diagnosis keeps the strong one.
 The response language and the global and project instructions apply as they do to [AI diagnosis](./ai-diagnosis).

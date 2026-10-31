@@ -7,7 +7,7 @@ import {
 import type { EditorPairing, EditorSendPayload } from '@piwitests/core/editor-send';
 import type { TestFunctionEntry } from '@piwitests/core/function-match';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
-import { liveUrlOf } from '@piwitests/core/run-hub';
+import { liveUrlOf, parseLiveAnswer, type LiveHub } from '@piwitests/core/run-hub';
 import {
   getInstanceApiKey,
   isDesktopApiKey,
@@ -32,7 +32,8 @@ import { t } from './i18n.js';
  * the reporter has confirmed the preview, `piwi-list-bug-reports`,
  * `piwi-get-bug-report`, `piwi-replay-step-view` and `piwi-share-reproduction`,
  * and the desktop app's: `piwi-desktop-repro` once the developer confirmed its
- * preview, and `piwi-desktop-repro-status`) only,
+ * preview, `piwi-desktop-repro-status`, and the hub of its runs for the Runs
+ * window, `fetchDesktopHubs`) only,
  * never from a content script, so the API key is never reachable from a web
  * page's JS context (matches `extension/AGENTS.md`'s standalone stance:
  * connected mode is opt-in and clearly separated). The key is read here from
@@ -682,6 +683,13 @@ function desktopRefusal(res: Response): string {
  * another port, or another program that took this one, never receives it.
  */
 async function proveDesktop(desktop: DesktopSettings): Promise<void> {
+  const proof = await desktopProof(desktop);
+  if (proof === 'unreachable') throw new Error(t('common_desktopUnreachable'));
+  if (proof === 'unproven') throw new Error(t('common_desktopNotProven'));
+}
+
+/** Whether the program at the paired address proved it holds the paired token, did not, or did not answer. */
+async function desktopProof(desktop: DesktopSettings): Promise<'proven' | 'unproven' | 'unreachable'> {
   const challenge = newDesktopChallenge();
   let res: Response;
   try {
@@ -690,13 +698,37 @@ async function proveDesktop(desktop: DesktopSettings): Promise<void> {
       signal: timeout(),
     });
   } catch {
-    throw new Error(t('common_desktopUnreachable'));
+    return 'unreachable';
   }
   const proof = res.headers.get(DESKTOP_PROOF_HEADER);
   const port = Number(new URL(desktop.url).port || 80);
-  if (!proof || proof !== (await desktopTokenProof(desktop.token, port, challenge))) {
-    throw new Error(t('common_desktopNotProven'));
+  return proof && proof === (await desktopTokenProof(desktop.token, port, challenge)) ? 'proven' : 'unproven';
+}
+
+/** What the paired desktop app answered for the hub of the runs its shell starts, or why it gave none. */
+export type DesktopHubsAnswer = { hubs: LiveHub[] } | { failure: 'unreachable' | 'unproven' | 'refused' | 'outdated' };
+
+/**
+ * The hub of the runs the paired desktop app's shell starts, which its server is: `GET /api/desktop/live`, which
+ * answers in the shape of an editor's live endpoint, asked with the app's token once the app proved it holds it
+ * (`proveDesktop`). The app names its own token as the hub's, which goes in `hello`: a hub named with another token is
+ * left out, so the extension sends the app's token alone, and only to the app's own hub.
+ */
+export async function fetchDesktopHubs(desktop: DesktopSettings): Promise<DesktopHubsAnswer> {
+  const proof = await desktopProof(desktop);
+  if (proof !== 'proven') return { failure: proof };
+  let res: Response;
+  try {
+    res = await request(`${desktop.url}/api/desktop/live`, { headers: desktopHeaders(desktop), signal: timeout() });
+  } catch {
+    return { failure: 'unreachable' };
   }
+  if (res.status === 401 || res.status === 403) return { failure: 'refused' };
+  // An app that predates the hub of its runs.
+  if (res.status === 404) return { failure: 'outdated' };
+  const hubs = res.ok ? parseLiveAnswer(await res.json().catch(() => null)) : null;
+  if (!hubs) return { failure: 'unreachable' };
+  return { hubs: hubs.filter((hub) => hub.token === desktop.token) };
 }
 
 /**

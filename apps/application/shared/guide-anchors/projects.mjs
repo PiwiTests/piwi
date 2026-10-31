@@ -420,6 +420,18 @@ export const PROJECTS_ANCHORS = [
     sample: { route: '/projects/1?tab=settings&section=general', expect: PROJECT_1 },
   },
   {
+    id: 'project-settings-status',
+    kind: 'tab',
+    pages: ['/projects/[id]'],
+    reveal: [{ query: { tab: 'settings', section: 'status' } }],
+    describes:
+      'The Status section of the project’s Settings: the status filter, which picks the runs that set the project’s badge in the sidebar.',
+    requires: { permission: 'project:manage' },
+    help: 'project.status-filter',
+    doc: 'features/branches#the-project-status',
+    sample: { route: '/projects/1?tab=settings&section=status', expect: PROJECT_1 },
+  },
+  {
     id: 'project-settings-save',
     kind: 'action',
     pages: ['/projects/[id]'],
@@ -495,6 +507,18 @@ export const PROJECTS_ANCHORS = [
     help: 'project.ai-instructions',
     doc: 'features/ai-diagnosis#custom-instructions',
     sample: { route: '/projects/1?tab=settings&section=ai', expect: PROJECT_1 },
+  },
+  {
+    id: 'project-settings-live-view',
+    kind: 'tab',
+    pages: ['/projects/[id]'],
+    reveal: [{ query: { tab: 'settings', section: 'live-view' } }],
+    describes:
+      'The Live view section: whether people who may open a running run can watch each worker’s page, and the elements each image masks (Playwright locators).',
+    requires: { permission: 'project:manage' },
+    help: 'project.live-view',
+    doc: 'features/live-view',
+    sample: { route: '/projects/1?tab=settings&section=live-view', expect: PROJECT_1 },
   },
   {
     id: 'project-settings-capabilities',

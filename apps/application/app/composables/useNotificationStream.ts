@@ -1,3 +1,5 @@
+import { isDesktopAppRunEvent, notificationTargetPath, type TestStuckPayload } from '#shared/notification-events';
+import { durationShort } from '#shared/relative-time';
 import { subscribeDemoEvents } from '~/demo/run-events';
 import { useDiagnosisNotification } from './useDiagnosisNotification';
 import { useBrowserNotificationCookie } from './useBrowserNotificationCookie';
@@ -20,6 +22,7 @@ if (import.meta.client) {
   _windowFocused = document.hasFocus();
 }
 let _cookie: ReturnType<typeof useBrowserNotificationCookie> | null = null;
+let _desktop = false;
 
 interface NotificationEventData {
   type: string;
@@ -33,6 +36,7 @@ interface NotificationEventData {
   signature?: string;
   title?: string | null;
   verification?: string;
+  origin?: string;
   clusterId?: number;
   executionId?: number;
   summary?: string | null;
@@ -44,6 +48,9 @@ interface NotificationEventData {
   snapshotId?: number;
   tests?: { title: string }[];
   reason?: string;
+  testTitle?: string;
+  elapsedMs?: number;
+  usualMs?: number;
 }
 
 function renderBody(data: NotificationEventData): string {
@@ -95,6 +102,13 @@ function renderBody(data: NotificationEventData): string {
       lines.push(`${data.projectName ?? `Project #${data.projectId}`}: environment incident`);
       if (data.reason) lines.push(data.reason);
       break;
+    case 'test.stuck':
+      lines.push(`${data.projectName ?? `Project #${data.projectId}`}: a test may be stuck`);
+      if (data.testTitle) lines.push(data.testTitle);
+      if (data.elapsedMs != null && data.usualMs != null) {
+        lines.push(`Running for ${durationShort(data.elapsedMs)}, ${durationShort(data.usualMs)} at most usually`);
+      }
+      break;
     case 'report.ready':
       lines.push(`Your quality report is ready: ${data.title ?? 'open it in Piwi'}`);
       break;
@@ -109,6 +123,9 @@ function renderBody(data: NotificationEventData): string {
 
 function getLink(data: NotificationEventData): string | null {
   if (data.snapshotId) return `/reports/${data.snapshotId}`;
+  if (data.type === 'test.stuck' && data.runId && data.testTitle) {
+    return notificationTargetPath('test.stuck', data as unknown as TestStuckPayload);
+  }
   if (data.type === 'diagnosis.completed' && data.executionId) return `/test-run-cases/${data.executionId}`;
   if (data.clusterId) return `/failure-clusters/${data.clusterId}`;
   if (data.runId && data.projectId) return `/test-runs/${data.runId}`;
@@ -125,6 +142,8 @@ function handleEvent(data: NotificationEventData) {
     return;
   }
 
+  if (_desktop && isDesktopAppRunEvent(data.type, data.origin)) return;
+
   if (_cookie && data.projectId != null) {
     if (!_cookie.isEventSubscribed(data.projectId, data.type)) return;
   }
@@ -133,7 +152,11 @@ function handleEvent(data: NotificationEventData) {
   if (!body) return;
 
   // Use type + key id for dedup tag
-  const dedupKey = data.snapshotId ?? data.executionId ?? data.clusterId ?? data.runId ?? data.signature ?? data.type;
+  // A stuck test is one of several a run may have: each keeps its own notification.
+  const dedupKey =
+    data.type === 'test.stuck'
+      ? `${data.runId}-${data.testTitle}`
+      : (data.snapshotId ?? data.executionId ?? data.clusterId ?? data.runId ?? data.signature ?? data.type);
   const tag = `piwi-${data.type}-${dedupKey}`;
 
   const notification = new Notification('Piwi Dashboard', {
@@ -216,6 +239,7 @@ export function useNotificationStream() {
   const config = useRuntimeConfig();
   _router = useRouter();
   _baseURL = config.app.baseURL || '/';
+  _desktop = useIsDesktop();
 
   if (!config.public.authEnabled) {
     _cookie = useBrowserNotificationCookie();

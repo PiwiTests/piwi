@@ -55,7 +55,7 @@ import {
 } from './cdp-conditions.js';
 import { handleDesktopRepro, handleDesktopReproStatus, handleDesktopTarget } from './desktop-repro.js';
 import { handleRefreshCatalog, handleRefreshLocatorIndex } from './project-refresh.js';
-import { fromExtensionPage } from './senders.js';
+import { fromExtensionPage, mayNameOrigin } from './senders.js';
 import {
   handleReplayDriver,
   handleReplayInput,
@@ -739,7 +739,8 @@ let replayStartQueue: Promise<unknown> = Promise.resolve();
  * again here, the state goes to session storage, and the replay script is
  * registered for the origin so every page the replay reaches continues it.
  * It needs the origin's host permission, which Replay in the popup requests
- * and a bug recording on the same site already holds.
+ * and a bug recording on the same site already holds. A content script starts
+ * a replay only on its own tab's origin; an extension page names any.
  */
 function handleStartReplay(
   message: StartReplayMessage,
@@ -771,6 +772,7 @@ async function startReplayNow(
   const tab = sender.tab;
   const pattern = replayOriginPattern(message.origin);
   if (!pattern || tab?.id == null) return { ok: false, error: t('common_replayNeedsPage') };
+  if (!mayNameOrigin(sender, message.origin as string)) return { ok: false, error: t('common_replayNeedsPage') };
   const parsed = parseSteps(message.steps);
   if (!parsed.ok) return { ok: false, error: t('common_replayNotSteps', { error: parsed.errors[0] ?? '' }) };
   if (parsed.steps.steps.length === 0) return { ok: false, error: t('common_replayNoSteps') };

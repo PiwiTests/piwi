@@ -1,10 +1,9 @@
 import { describe, test, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import type { DbClient } from '../../server/database';
+import { migrateToLatest } from './temp-db';
 
 /**
  * With AI configured through env vars, the per-role settings saved in
@@ -28,9 +27,7 @@ let db: DbClient;
 
 beforeAll(async () => {
   const sqlite = drizzle(createClient({ url: ':memory:' }), { schema });
-  await migrate(sqlite, {
-    migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)),
-  });
+  await migrateToLatest(sqlite);
   db = sqlite as unknown as DbClient;
 });
 

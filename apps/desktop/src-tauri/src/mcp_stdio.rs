@@ -96,9 +96,12 @@ struct Endpoint {
 
 /// A failed POST. `retryable` separates "the app is not there yet" (worth
 /// waiting for) from "the app answered and said no" (not worth repeating).
+/// `sent` says the whole message went out before the reply was lost: the app
+/// may have acted on it.
 struct PostError {
     message: String,
     retryable: bool,
+    sent: bool,
 }
 
 /// Read one line of JSON-RPC, answer with at most one line back. `wait` is how
@@ -140,6 +143,9 @@ fn handle_message(discovery: &Path, wait: Duration, message: &str) -> Option<Str
 /// POST the message to the app, waiting out a dashboard that is not up yet.
 fn forward(discovery: &Path, wait: Duration, message: &str) -> Result<String, String> {
     let deadline = Instant::now() + wait;
+    // A tool call the app may have run is never sent again: a click on a
+    // stopped page played twice is not the click the agent asked for.
+    let replays = !is_tool_call(message);
     loop {
         let attempt = match read_endpoint(discovery) {
             Some(endpoint) => post(&endpoint, message),
@@ -147,16 +153,31 @@ fn forward(discovery: &Path, wait: Duration, message: &str) -> Result<String, St
                 message: "Piwi Dashboard is not running — start the app, then reconnect this server"
                     .into(),
                 retryable: true,
+                sent: false,
             }),
         };
         match attempt {
             Ok(body) => return Ok(body),
+            Err(err) if err.retryable && err.sent && !replays => {
+                return Err(format!(
+                    "{} — the tool call may have run, so the bridge does not send it again",
+                    err.message
+                ));
+            }
             Err(err) if err.retryable && Instant::now() + RETRY_DELAY < deadline => {
                 std::thread::sleep(RETRY_DELAY);
             }
             Err(err) => return Err(err.message),
         }
     }
+}
+
+/// Whether the message is a JSON-RPC `tools/call`, which may act on a run.
+fn is_tool_call(message: &str) -> bool {
+    serde_json::from_str::<Value>(message)
+        .ok()
+        .and_then(|parsed| parsed.get("method").and_then(Value::as_str).map(|m| m == "tools/call"))
+        .unwrap_or(false)
 }
 
 fn read_endpoint(discovery: &Path) -> Option<Endpoint> {
@@ -192,6 +213,7 @@ fn post(endpoint: &Endpoint, body: &str) -> Result<String, PostError> {
             endpoint.host, endpoint.port
         ),
         retryable: true,
+        sent: false,
     };
     let mut stream =
         TcpStream::connect((endpoint.host.as_str(), endpoint.port)).map_err(unreachable)?;
@@ -215,8 +237,13 @@ fn post(endpoint: &Endpoint, body: &str) -> Result<String, PostError> {
     stream.write_all(body.as_bytes()).map_err(unreachable)?;
     stream.flush().map_err(unreachable)?;
 
+    // From here the app has the whole message: a reply lost now may follow an
+    // action already taken.
     let mut raw = Vec::new();
-    stream.read_to_end(&mut raw).map_err(unreachable)?;
+    stream.read_to_end(&mut raw).map_err(|e| PostError {
+        sent: true,
+        ..unreachable(e)
+    })?;
     split_response(&raw)
 }
 
@@ -228,6 +255,7 @@ fn split_response(raw: &[u8]) -> Result<String, PostError> {
             message: "Piwi Dashboard sent a malformed HTTP response".into(),
             // An empty or truncated response means the connection died mid-flight.
             retryable: true,
+            sent: true,
         });
     };
     let status = head
@@ -239,14 +267,17 @@ fn split_response(raw: &[u8]) -> Result<String, PostError> {
         Some(401) | Some(403) => Err(PostError {
             message: "Piwi Dashboard rejected the bridge's access token — reconnect Claude Desktop from the app's MCP page".into(),
             retryable: false,
+            sent: true,
         }),
         Some(code) => Err(PostError {
             message: format!("Piwi Dashboard replied {code}"),
             retryable: false,
+            sent: true,
         }),
         None => Err(PostError {
             message: "Piwi Dashboard sent a malformed HTTP response".into(),
             retryable: true,
+            sent: true,
         }),
     }
 }
@@ -507,6 +538,35 @@ mod tests {
     }
 
     #[test]
+    fn a_tool_call_whose_reply_is_lost_is_not_sent_again() {
+        // The stub reads the call, then closes with no reply: the app may have
+        // run it. A retry would meet a closed listener and say it cannot reach
+        // the app; the reply proves the call went out once.
+        let (port, server) = stub_server("");
+        let discovery = discovery_for(port);
+
+        let out = run_pump(
+            &discovery.0,
+            "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"page_act\"}}\n",
+        );
+
+        let request = server.join().expect("stub server");
+        assert!(request.contains("page_act"));
+        let reply: Value = serde_json::from_str(out.trim()).expect("json reply");
+        assert_eq!(reply["id"], 4);
+        let message = reply["error"]["message"].as_str().expect("message");
+        assert!(message.contains("may have run"), "{reply}");
+        assert!(!message.contains("cannot reach"), "{reply}");
+    }
+
+    #[test]
+    fn only_a_tool_call_is_told_apart() {
+        assert!(is_tool_call("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\"}"));
+        assert!(!is_tool_call("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}"));
+        assert!(!is_tool_call("not json"));
+    }
+
+    #[test]
     fn blank_lines_and_unparsable_input_never_produce_a_reply() {
         assert_eq!(run_pump(&DiscoveryFile::missing(), "\n  \n"), "");
         assert_eq!(run_pump(&DiscoveryFile::missing(), "not json\n"), "");
@@ -532,5 +592,7 @@ mod tests {
         assert!(!err.retryable);
         let truncated = split_response(b"").err().expect("error");
         assert!(truncated.retryable);
+        // The app had the whole message: it may have acted on it.
+        assert!(truncated.sent);
     }
 }

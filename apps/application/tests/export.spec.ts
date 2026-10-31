@@ -1,5 +1,5 @@
 /**
- * Offline export of an execution and of a failure cluster.
+ * Offline export of an execution, of a failure cluster and of a whole run.
  *
  * The point of the feature is that the file keeps working once it leaves the
  * dashboard, so these assert the two things that would silently break that: the
@@ -167,6 +167,35 @@ test.describe('offline export', () => {
     for (const exportCase of data.cases) expect(report).toContain(exportCase.title);
   });
 
+  test('exports a whole run with every test and its failures in detail', async ({ request }) => {
+    const runId = await submitFailingRun(request);
+
+    const res = await request.get(`/api/test-runs/${runId}/export?format=zip`);
+    expect(res.status()).toBe(200);
+    expect(res.headers()['content-disposition']).toContain(`piwi-run-${runId}`);
+
+    const entries = parseZipSync(Buffer.from(await res.body()));
+    const data = JSON.parse(entries.find((e) => e.name === 'data.json')!.data.toString('utf8'));
+    expect(data.kind).toBe('run');
+    expect(data.run.tests.map((t: { title: string }) => t.title).sort()).toEqual([
+      'cart badge updates',
+      'checkout shows the total',
+    ]);
+    expect(data.cases).toHaveLength(2);
+
+    const report = entries.find((e) => e.name === 'report.html')!.data.toString('utf8');
+    expect(report).toContain('2 of 2 tests failed');
+    expect(report).toContain('Failures in detail');
+
+    const pdf = await request.get(`/api/test-runs/${runId}/export?format=pdf`);
+    expect(pdf.headers()['content-type']).toBe('application/pdf');
+    expect(
+      Buffer.from(await pdf.body())
+        .subarray(0, 5)
+        .toString('latin1'),
+    ).toBe('%PDF-');
+  });
+
   test('exports text formats without touching evidence', async ({ request }) => {
     const { executionId } = await firstExecutionAndCluster(request);
 
@@ -188,5 +217,6 @@ test.describe('offline export', () => {
 
     const missing = await request.get('/api/test-run-cases/99999999/export?format=json');
     expect(missing.status()).toBe(404);
+    expect((await request.get('/api/test-runs/99999999/export?format=json')).status()).toBe(404);
   });
 });

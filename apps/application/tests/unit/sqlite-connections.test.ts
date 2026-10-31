@@ -81,6 +81,20 @@ describe('SQLite connections', () => {
     expect(await projectNames()).toEqual(['first', 'inside', 'outside', 'second']);
   });
 
+  test('a script run with executeMultiple waits for an open transaction', async () => {
+    await db.run(sql`CREATE TABLE script_probe (v TEXT)`);
+    const transaction = await holdTransaction('before-script');
+    const script = track(db.$client.executeMultiple("INSERT INTO script_probe (v) VALUES ('script')"));
+    await pause(50);
+    expect(script.outcome).toEqual([]);
+
+    transaction.release();
+    await transaction.done;
+    await script.settled;
+    expect(script.outcome).toEqual(['done']);
+    expect(await db.all(sql`SELECT v FROM script_probe`)).toEqual([{ v: 'script' }]);
+  });
+
   test('a read runs beside an open transaction', async () => {
     const transaction = await holdTransaction('uncommitted');
     const read = track(db.select().from(schema.projects));

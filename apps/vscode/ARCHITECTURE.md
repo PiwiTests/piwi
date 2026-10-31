@@ -24,6 +24,7 @@ extension does with it. It is reference material: open the section for the area 
 - [Status bar](#status-bar)
   - [Compare with](#compare-with)
 - [Open in IDE](#open-in-ide)
+  - [Debug in my editor](#debug-in-my-editor)
 - [Send to editor](#send-to-editor)
 - [Recording](#recording)
   - [Recording a test](#recording-a-test)
@@ -98,6 +99,21 @@ the extension provides Piwi's MCP server through it. The API is looked up at run
 oldest version `vscode-languageclient` supports, for Cursor and VSCodium. Once per machine, a notification says where
 the server went, or, in an editor without that API, offers to copy its configuration (`offerMcp`).
 
+**The runs' MCP server.** The service serves the runs this window starts to the agents of this machine
+([Agents](../../packages/editor/ARCHITECTURE.md#agents)) while `piwi.serveRunsToAgents` says so: from the start (the
+initialization options' `agents.enabled`), and as the setting changes (`piwi/agents`, sent too after each start of the
+service for its address: `onDidChangeState`). The extension provides it beside Piwi's own, as the provider
+`piwi.runs` (**Piwi runs**), an HTTP definition with the token as a bearer `Authorization` header (`runsMcpHeaders`),
+changed as the service answers or tells (`piwi/agentsChanged`, `agentsHeard`). The token is the workspace's
+(`agentsTokenKey`: `piwi.agentsToken <workspace>` in `SecretStorage`, made once) and the port the last one the service
+listened at (`piwi.agentsPort`), both in the initialization options (`agents`), so **Piwi: Copy the runs' MCP server
+configuration for agents** (`piwi.copyRunsMcpConfiguration`, `runsMcpConfiguration`, as an `mcpServers` entry for
+Claude Code and Cursor or VS Code's `mcp.json`, `RUNS_MCP_FORMATS`) gives an agent outside the editor a configuration
+that still connects after a restart, while the port stays free. When another program holds that port, the service
+takes another with a new token and says so: the extension keeps both, and the provider's entry follows. **Piwi: Reset
+the runs' MCP server token** (`piwi.resetRunsMcpToken`, after a modal warning) has the service take a new token
+(`piwi/agents` with `newToken`), kept the same way.
+
 ### Proxy and the log
 
 The service's environment is the extension host's, with the editor's proxy settings on top (`serviceEnvironment` in
@@ -117,31 +133,35 @@ output channel, where `piwi.trace.server` writes the traffic with the service.
 
 The settings (`contributes.configuration` in `package.json`):
 
-| Setting                 | Values, default first                    | What it does                                                                                    |
-| ----------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `piwi.serverUrl`        | a URL                                    | The instance. Connect writes it in the workspace settings.                                      |
-| `piwi.project`          | a project name                           | The project. Connect writes it in the workspace settings.                                       |
-| `piwi.breakpoints`      | `true`, `false`                          | Test runs pass the editor's breakpoints ([Breakpoints](#breakpoints)).                          |
-| `piwi.runNotifications` | `always`, `failures`, `never`            | The notification at a run's end ([Runs](#runs)).                                                |
-| `piwi.failureSeverity`  | `error`, `warning`, `information`, `off` | The severity of a failure's diagnostic.                                                         |
-| `piwi.mcpAuthorization` | `key`, `sign-in`                         | How the agent signs in to Piwi's MCP server. Application scope: a workspace cannot override it. |
-| `piwi.testExplorer`     | `true`, `false`                          | Piwi's tests in the Testing view ([Testing view](#testing-view)).                               |
-| `piwi.trace.server`     | `off`, `messages`, `verbose`             | The traffic with the service in the log.                                                        |
+| Setting                  | Values, default first                    | What it does                                                                                    |
+| ------------------------ | ---------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `piwi.serverUrl`         | a URL                                    | The instance. Connect writes it in the workspace settings.                                      |
+| `piwi.project`           | a project name                           | The project. Connect writes it in the workspace settings.                                       |
+| `piwi.breakpoints`       | `true`, `false`                          | Test runs pass the editor's breakpoints ([Breakpoints](#breakpoints)).                          |
+| `piwi.runNotifications`  | `always`, `failures`, `never`            | The notification at a run's end ([Runs](#runs)).                                                |
+| `piwi.failureSeverity`   | `error`, `warning`, `information`, `off` | The severity of a failure's diagnostic.                                                         |
+| `piwi.mcpAuthorization`  | `key`, `sign-in`                         | How the agent signs in to Piwi's MCP server. Application scope: a workspace cannot override it. |
+| `piwi.serveRunsToAgents` | `true`, `false`                          | The runs this window starts served to agents (**Piwi runs**).                                   |
+| `piwi.testExplorer`      | `true`, `false`                          | Piwi's tests in the Testing view ([Testing view](#testing-view)).                               |
+| `piwi.trace.server`      | `off`, `messages`, `verbose`             | The traffic with the service in the log.                                                        |
 
 What the extension stores:
 
-- **`SecretStorage`**: the API key of each instance (`piwi.apiKey <url>`) and the Send to editor token
-  (`piwi.sendToken`). The old key slot shared by every instance (`piwi.apiKey`) is deleted once (`forgetSharedKey`).
+- **`SecretStorage`**: the API key of each instance (`piwi.apiKey <url>`), the Send to editor token
+  (`piwi.sendToken`) and the runs' MCP server's token of each workspace (`piwi.agentsToken <workspace>`). The old key
+  slot shared by every instance (`piwi.apiKey`) is deleted once (`forgetSharedKey`).
 - **Global state** (this machine): `piwi.walkthroughOpened`, `piwi.mcpOffered`, `piwi.sendPort`,
   `piwi.sharedKeyForgotten`.
 - **Workspace state** (this machine and this workspace, never a file the team shares): the desktop app chosen with
   Connect and its project (`piwi.desktop`, `piwi.desktopProject`, `piwi.desktopOffered`), the baselines
-  (`piwi.baseline`), `piwi.coverageShown`, `piwi.failuresGrouping`, `piwi.followEditor`, and a recording's choices
-  (`piwi.recordStartUrl`, `piwi.recordPage`, `piwi.recordProject`).
+  (`piwi.baseline`), `piwi.coverageShown`, `piwi.failuresGrouping`, `piwi.followEditor`, a recording's choices
+  (`piwi.recordStartUrl`, `piwi.recordPage`, `piwi.recordProject`), and the runs' MCP server's port
+  (`piwi.agentsPort`).
 
 The context keys the extension sets, which `package.json` reads in `when` clauses: `piwi.active`, `piwi.failuresView`,
 `piwi.followEditor`, `piwi.hasCoverage`, `piwi.recording`, `piwi.recordingPaused`, and the run control's
-`piwi.runActive`, `piwi.runPausable`, `piwi.runStopped` and `piwi.runResumed` ([Run control](#run-control)).
+`piwi.runActive`, `piwi.runPausable`, `piwi.runStopped`, `piwi.runResumed`, `piwi.runCanShare` and `piwi.runCanEnd`
+([Run control](#run-control)).
 
 ## Walkthrough
 
@@ -299,16 +319,19 @@ session. The initialization options say so (`runControl: true`). What the servic
 [Run control](../../packages/editor/ARCHITECTURE.md#run-control) in the editor service's reference.
 
 **Sessions.** The extension keeps the latest `piwi/runSessionChanged` of each ref until one says `ended`, or the service
-stops (`onDidChangeState`).
+stops (`onDidChangeState`). A run started in a terminal (`RunSession.terminal`) is one too: its stops say `run in a
+terminal` (`pausedText`), and it has no Stop, its process being the terminal's (`ControlState.stoppable`).
 
 **Commands.**
 
 - **Pause** (`piwi.pauseRun`: the running workers of every run of the window) and **Stop** (`piwi.stopRun`, which
   terminates the ref's task), while a run is live;
 - **Resume**, **Step**, **Run to the cursor** (`run-to` the caret's line) and **Finish** (`piwi.resumeRun`,
-  `piwi.stepRun`, `piwi.runToCursor`, `piwi.finishRun`), while a worker is stopped.
+  `piwi.stepRun`, `piwi.runToCursor`, `piwi.finishRun`), while a worker is stopped;
+- **End the test** (`piwi.endTest`, `end`), at a stop whose worker takes `end` and is no failure (`canEnd`, the
+  `piwi.runCanEnd` context key), with no key.
 
-All but Stop send `piwi/runControl`, the four that answer a stop naming it (`since`); an answer with `ok: false` shows
+All but Stop send `piwi/runControl`, those that answer a stop naming it (`since`); an answer with `ok: false` shows
 as an information message. The commands show in the status bar beside the run's progress (`controlItems`), and in the
 palette and on keys while they apply: the context keys `piwi.runActive`, `piwi.runPausable` and `piwi.runStopped`, and
 `piwi.runResumed` for two seconds after an answer (`RESUMED_KEY_MS`). The keys: [Keybindings](#keybindings).
@@ -316,11 +339,11 @@ palette and on keys while they apply: the context keys `piwi.runActive`, `piwi.r
 **A stop.** A stop opens its file at its line once (`stopKey`). It is drawn as the execution point:
 `media/execution-point.svg` in the gutter, and the line's background in `piwi.executionPointBackground` (the debugger's
 stack frame color by default), with a hover that holds the controls. A CodeLens above it reads `pausedText`
-(`Paused · <title> · attempt N`, the attempt on a retry only) after `$(debug-pause)`, then Resume, Step, Run to cursor
-and Finish, each naming its worker and its stop; one whose stop went on says `the test went on.` (`targetStop`). The
-choice among several stops shows the same text after `$(debug-pause)`; the hover and the paused page's caption show it
-as plain text. A key or a palette command acts on the stop at the caret's line, else the only one, else asks
-(`stopsFor`).
+(`Paused · <title> · attempt N`, the attempt on a retry only) after `$(debug-pause)`, then Resume, Step, Run to cursor,
+Finish and, where `canEnd`, End test, each naming its worker and its stop; one whose stop went on says `the test went
+on.` (`targetStop`). The choice among several stops shows the same text after `$(debug-pause)`; the hover and the paused
+page's caption show it as plain text. A key or a palette command acts on the stop at the caret's line, else the only
+one, else asks (`stopsFor`).
 
 **Edits since the run started.** A run's lines are the documents as they stood when it started (`started`, else when it
 is first heard, a rerun under the ref of a run that ended included: `heardSession`). `EditLog` keeps the edits that
@@ -331,17 +354,40 @@ read change by change in the document after them all (`linesAbove`), so the mark
 
 **The paused page.** A stop with no pause bar (`bar: false`) asks `piwi/pausedPage` and shows the JPEG in the
 **Piwi: paused page** webview beside the editor, again at each such stop and on **Piwi: Show the paused page**
-(`piwi.showPausedPage`). The webview runs no script: it takes images from `data:` only (`img-src data:`) and its one
-style by nonce (`pausedPageHtml`).
+(`piwi.showPausedPage`). The webview takes images from `data:` only (`img-src data:`) and its one style by nonce
+(`pausedPageHtml`). Where its worker takes `pick-at` and the image names its viewport (`picksOnImage`), a click on the
+image picks the element under it: a script by the same nonce, the webview's only one, posts the click's offset and the
+size the image is shown at, with which image it was on (`imageClickOf`); the extension maps it to the page's CSS pixels
+(`pagePoint`) and asks `piwi/pickAt`, the locator going where a pick goes and the answer said under the caption. A
+click on an image the view no longer shows picks nothing.
 
 **Breakpoints during a run.** The breakpoints `breakpointsForRun` gives go to each live run as they change
 (`vscode.debug.onDidChangeBreakpoints`, the `piwi.breakpoints` setting) with `piwi/setRunBreakpoints`, as lines of the
 run's code (`runPlaces`). A breakpoint the run was given, known by `vscode.Breakpoint.id`, keeps its line while it only
 moved with the edits; another is mapped back through them. They go only to a run whose places differ from those its
-command started with or was last sent (`breakpointUpdates`), and once to a run as its first worker connects.
+command started with or was last sent (`breakpointUpdates`), and once to a run as its first worker connects. The service
+hears them as they stand too (`piwi/setBreakpoints`, as the service starts, as the Playwright configs change and as they
+change, only when they differ): a run started in a terminal starts with them.
 
 **A held failure** (`reason: 'failure'`) is `Failed · <how it failed> · attempt N` after `$(error)`, with Resume alone
-among its controls.
+among its controls. A stop an agent asked for (`RunStop.by: 'agent'`) reads `Paused by the agent · <title>`.
+
+**Share with Playwright tools.** At a stop whose worker takes `bind` (`canShare`, the `piwi.runCanShare` context key),
+the hover and the palette offer **Piwi: Share the stopped test's browser with Playwright tools**
+(`piwi.shareWithPlaywright`). It warns first, in a modal, that any process of the user can then drive the browser
+(`SHARE_WARNING`), and only a yes sends `piwi/stopBind`; the answer names the command that joins it
+(`npx playwright cli attach piwi-<ref>-w<n>`), with **Copy the command** and **Stop sharing**. The browser is shared
+until the test ends, never by an agent.
+
+**Share live.** **Piwi: Share the run live on the team instance** (`piwi.shareRunLive`, while a run is live) shares a
+run on the team instance its reporter reports to (`piwi/shareRun`, `RunSession.live`), for a teammate to watch from
+the run page: the command's run, else the only one it fits, else the one chosen (`liveTarget`). The first share in the
+window warns, in a modal, what goes out and to whom (`shareLiveWarning`), and only a yes sends it, a run its workers
+have not said anything of yet included; a run known not to be shareable is asked without it, and the service says why.
+Shared, the answer offers **Copy the run page's link** and **Stop sharing**. The status bar's item (`liveItem`) offers
+Share live to a run that can be shared (`$(broadcast)`, with why its sharing stopped when it stopped unasked) and
+counts the views open of every shared run (`$(broadcast) Live · 3 views`), whose click stops sharing one
+(`piwi.stopSharingRun`, the `piwi.runSharedLive` context key).
 
 `src/run-control.ts` is the pure half, tested without an editor (`tests/run-control.test.ts`). The API `activate`
 returns gives the sessions (`runSessions`), the lines drawn as the execution point (`executionPoints`), what the
@@ -423,20 +469,41 @@ lies in a workspace folder, then under the Playwright configs' folders, then und
 returns a file outside the workspace folders. The file opens at the 1-based line and column. When this window holds no
 such file, a warning says so: VS Code hands the link to the window focused last.
 
+### Debug in my editor
+
+A link with `debug=1` (`isDebugLink`) also names the test's spec (`spec`), its title after its describe blocks'
+(`test`), its Playwright project (`playwrightProject`) and the failed execution (`execution`). `src/debug-link.ts`
+reads it field by field (`debugLink`): `debug` must be `1`, the line, column and execution positive whole numbers, the
+title and the project plain text (no control character, `[`, `]`, `<`, `>`, backtick or backslash; a project no shell
+expands), a path without `..` nor a network share, and no field twice. `debugFiles` finds both files as an open link's
+are, then follows every symbolic link: each must be in a workspace folder and under a Playwright config's folder, the
+failing one a script file, the test's a spec. A refusal is a warning, and nothing opens or runs.
+
+`src/debug-from-link.ts` opens the failing line, then asks in a notification (`debugPrompt`, never modal). Only
+**Debug** runs anything: the spec saved, `runTests` with `RunTestsArgs.debug` (the failing line, the title, the
+project, the execution), so the editor's breakpoints go with it as for every run; the service says why it builds
+none. The failing line is the run's own breakpoint, kept by the service until the stop
+([A run that debugs a failure](../../packages/editor/ARCHITECTURE.md#a-run-that-debugs-a-failure)), so nothing is
+added to `vscode.debug.breakpoints`. The API `activate` returns takes a debug link with its prompt answered
+(`openDebugLink`), for the integration suite.
+
 ## Send to editor
 
 `src/send-listener.ts` is the Send to editor endpoint: `POST /piwi/send` on `127.0.0.1`, on the port kept in global
 state (`piwi.sendPort`), with the token from `SecretStorage` (`piwi.sendToken`).
 
 - **Piwi: Pair with Piwi Picker** starts it and copies the pairing address as the browser's machine reaches it
-  (`pickerPairing`: `vscode.env.asExternalUri`, which a remote window forwards).
+  (`pickerPairing`: `vscode.env.asExternalUri`, which a remote window forwards), on `127.0.0.1` whatever name VS
+  Code gives it (`onLoopback`): `localhost` may resolve to `[::1]`, where another program could listen.
 - A run's `PIWI_EDITOR_SEND` keeps the loopback address (`runPairing`), since the reporter runs where the extension
   does. Which port it takes: [Breakpoints](#breakpoints).
 
-**Who gets an answer.** The listener answers only a request whose `Host` is `127.0.0.1:<port>` or `localhost:<port>`
-(a 403 otherwise: a page reached under another name). Every answer to a request carrying `x-piwi-editor-challenge`
-(`isEditorChallenge`), whatever its route and status, the 401, the 403, the preflight and a failure's 500 included,
-carries `x-piwi-editor-proof` (`editorTokenProof` of `@piwitests/core/editor-send`, for the port the request reached).
+**Who gets an answer.** The listener answers only a request whose `Host` is `127.0.0.1` or `localhost` at its port, or
+at the port of the browser's machine a remote window forwards to it (`forwarded`, set as the pairing address goes
+through `asExternalUri`; a 403 otherwise: a page reached under another name). Every answer to a request carrying
+`x-piwi-editor-challenge` (`isEditorChallenge`), whatever its route and status, the 401, the 403, the preflight and a
+failure's 500 included, carries `x-piwi-editor-proof` (`editorTokenProof` of `@piwitests/core/editor-send`, for the
+port the request named).
 So Piwi Picker sends the token only to a listener that holds it. The CORS headers allow the challenge header and expose
 the proof's.
 
@@ -445,8 +512,11 @@ the proof's.
 their discovery files (`readLiveHubs` of `@piwitests/editor/discovery`, in `PIWI_EDITORS_DIR` or `~/.piwi/editors`).
 Each hub carries the WebSocket's address and token, the pid, version, client, workspace folders and start, never a run
 channel's token. So the one pairing reaches the runs of every window, the other windows' included. A request without
-the token is a 401. The addresses are loopback ones, which a remote window does not forward: there, the listener
-answers no hubs (`liveHubsHere`, while `vscode.env.remoteName` is set). How the files are read:
+the token is a 401. The addresses are loopback ones: a remote window (`vscode.env.remoteName` set) lists its own
+service's hub alone (`piwi/hub` names its address), at the loopback port of the browser's machine `asExternalUri`
+forwards to it, on `127.0.0.1`, once `piwi/hub` with `forwarded` made the hub take that port in `Host` (`liveHubsHere`); none when
+the forward is not a loopback `http:` address (Codespaces in the browser) or the service does not answer, and the
+other windows' hubs never. How the files are read:
 [The discovery file](../../packages/editor/ARCHITECTURE.md#the-discovery-file) in the editor service's reference.
 
 What it inserts:
@@ -698,3 +768,4 @@ The integration suite (`tests/integration/`) starts a stub instance, writes a fi
   - `testExplorer`: the Testing view's tests, with the result last shown for each;
   - `runSessions`, `executionPoints`, `pausedPage` and `caretCount`: a run's stops, as a fake worker on the run
     channel plays them, and the code written there, a check's included, whose hand-off it plays too.
+  - `openDebugLink`: a debug link, its prompt answered, then its run's stop as a fake worker plays it.

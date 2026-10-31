@@ -15,6 +15,7 @@ import type { AuthoredGuide } from '~/utils/guides/types';
 export async function useAuthoredGuides() {
   const guide = useGuide();
   const { canAnywhere } = useAuth();
+  const isDesktop = useIsDesktop();
   const { isHidden } = await useInstanceCapabilities();
 
   const guides = computed(() =>
@@ -26,7 +27,7 @@ export async function useAuthoredGuides() {
     if (import.meta.server) return;
     const get: GuideApiGet = <T>(path: string, query?: Record<string, string | number>) => $fetch<T>(path, { query });
     const ids = await resolveGuideIds(guideResolvers(authored), get);
-    await guide.start(authoredGuideRun(authored, ids));
+    await guide.start(authoredGuideRun(authored, ids, isDesktop));
   }
 
   /** The command palette's Guides group, each item starting its guide; none when no guide is listed. */

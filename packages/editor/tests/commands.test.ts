@@ -22,6 +22,13 @@ describe('shellWord', () => {
       expect(shellWord(word), word).toBeNull();
     }
   });
+
+  test('refuses the typographic double quotes PowerShell reads as a quote', () => {
+    for (const quote of ['\u201C', '\u201D', '\u201E']) {
+      expect(shellWord(`--project=chromium${quote} ; calc.exe ; #`), quote).toBeNull();
+    }
+    expect(shellWord('--project=Chrome ‘mobile’')).toBe('"--project=Chrome ‘mobile’"');
+  });
 });
 
 describe('playwrightTestCommand', () => {

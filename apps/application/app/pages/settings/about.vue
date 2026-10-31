@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ApiResponse } from '~~/types/api';
+import { compareVersions } from '#shared/piwi-env-vars';
 const config = useRuntimeConfig();
 const isDesktop = useIsDesktop();
 
@@ -36,6 +37,37 @@ const nodeVersion = config.public.nodeVersion as string;
 const authEnabled = config.public.authEnabled as boolean;
 
 const shortSha = computed(() => (buildSha ? buildSha.slice(0, 7) : null));
+
+// The reporter and Playwright of the newest run that reported them: what a bug
+// report asks for beside the dashboard's version. Loaded after the page shows.
+const { data: recentRuns, status: recentRunsStatus } = useFetch<
+  ApiResponse<typeof import('~~/server/api/test-runs/recent.get').default>
+>('/api/test-runs/recent', { server: false, lazy: true });
+const runsLoaded = computed(() => recentRunsStatus.value === 'success');
+const reporterVersion = computed(
+  () => recentRuns.value?.items.find((run) => run.reporterVersion)?.reporterVersion ?? null,
+);
+const playwrightVersion = computed(
+  () => recentRuns.value?.items.find((run) => run.playwrightVersion)?.playwrightVersion ?? null,
+);
+
+/** Where a version tile's value comes from, and whether the reporter is behind this dashboard. */
+function runVersionHint(version: string | null, comparedToApp: boolean): string | undefined {
+  if (!runsLoaded.value) return undefined;
+  if (!version) return 'No run reported it yet';
+  return comparedToApp && compareVersions(version, appVersion) < 0
+    ? 'Latest run · older than this dashboard'
+    : 'Latest run';
+}
+
+const PLATFORM_LABELS: Record<string, string> = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' };
+
+const platformLabel = computed(() => {
+  const info = versionInfo.value;
+  if (!info?.platform) return null;
+  const name = PLATFORM_LABELS[info.platform] ?? info.platform;
+  return info.arch ? `${name} · ${info.arch}` : name;
+});
 
 const dbBackendLabel = computed(() => {
   const backend = versionInfo.value?.dbBackend;
@@ -74,7 +106,18 @@ const dbBackendLabel = computed(() => {
       <StatTileGrid>
         <StatTile label="Node.js" :value="nodeVersion" />
         <StatTile label="Database" :value="dbBackendLabel" />
-        <StatTile label="Authentication" :value="authEnabled ? 'Enabled' : 'Disabled'" />
+        <StatTile label="Platform" :value="platformLabel" />
+        <StatTile
+          label="Reporter"
+          :value="reporterVersion && `v${reporterVersion}`"
+          :hint="runVersionHint(reporterVersion, true)"
+        />
+        <StatTile
+          label="Playwright"
+          :value="playwrightVersion && `v${playwrightVersion}`"
+          :hint="runVersionHint(playwrightVersion, false)"
+        />
+        <StatTile v-if="!isDesktop" label="Authentication" :value="authEnabled ? 'Enabled' : 'Disabled'" />
       </StatTileGrid>
     </SectionCard>
 
@@ -85,7 +128,9 @@ const dbBackendLabel = computed(() => {
     >
       <p class="mb-3 text-sm text-muted">
         From triage verdicts: accepted and covered-by count for a detector, dismissed-as-wrong against. A detector below
-        60% over 20+ verdicts mutes itself on that project and drops out of the PR comment first.
+        60% over 20+ verdicts mutes itself on that project<template v-if="!instCapHidden('pr-feedback')">
+          and drops out of the PR comment first</template
+        >.
       </p>
       <div v-for="proj in precisionProjects" :key="proj.projectId" class="mb-4">
         <p class="text-xs font-medium text-muted">{{ proj.projectName }}</p>

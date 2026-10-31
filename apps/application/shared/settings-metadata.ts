@@ -263,16 +263,16 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     permission: 'settings:manage',
     capability: 'ai',
     fields: [
-      { id: 'ai.diagnosis', label: 'Diagnosis model', help: 'settings.ai-provider' },
-      { id: 'ai.research', label: 'Research model', help: 'settings.ai-research' },
-      { id: 'ai.embedding', label: 'Embedding model', help: 'settings.embedding-model' },
+      { id: 'ai.diagnosis', label: 'Provider', help: 'settings.ai-provider' },
+      { id: 'ai.research', label: 'Two-stage diagnosis', help: 'settings.ai-research' },
+      { id: 'ai.embedding', label: 'Semantic clustering', help: 'settings.embedding-model' },
       { id: 'ai.assistant', label: 'Assistant model', help: 'settings.ai-assistant' },
       { id: 'ai.auto-diagnose', label: 'Auto-diagnose', help: 'settings.auto-diagnose' },
       { id: 'ai.notifications', label: 'Diagnosis notifications', help: 'settings.ai-notifications' },
       { id: 'ai.context-limits', label: 'Diagnosis context limits', help: 'settings.ai-limits' },
       { id: 'ai.instructions', label: 'Global analysis instructions', help: 'settings.ai-instructions' },
       { id: 'ai.scm-token', label: 'Repository access token', help: 'project.scm-token' },
-      { id: 'ai.privacy', label: 'Privacy notice', help: 'settings.privacy' },
+      { id: 'ai.privacy', label: 'What the model receives', help: 'settings.privacy' },
     ],
   },
   {
@@ -344,7 +344,10 @@ export interface SettingsNavContext {
   isDesktop: boolean;
   /** Pages currently pinned by env, which get a trailing lock badge. */
   envManaged?: Partial<Record<SettingsPageId, boolean>>;
-  /** Capabilities declined at instance level; their pages drop out of the nav. */
+  /**
+   * Capabilities hidden at instance level (declined, or never offered by the
+   * desktop build); their pages drop out of the nav.
+   */
   declinedCapabilities?: Set<CapabilityId>;
 }
 

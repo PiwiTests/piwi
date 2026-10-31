@@ -9,6 +9,7 @@ import type { ProjectWithTestRuns } from '~~/types/api';
 
 const props = defineProps<{ project: ProjectWithTestRuns; showGeneratedSpecs: boolean }>();
 const emit = defineEmits<{ saved: [] }>();
+const isDesktop = useIsDesktop();
 
 const { state, dirty } = useStoredForm(() => {
   const ci = props.project.ciRerun;
@@ -137,7 +138,9 @@ async function removeToken() {
           <UInput v-model="state.defaultBranch" placeholder="e.g. main" class="w-full sm:max-w-xs font-mono" />
         </UFormField>
 
+        <!-- Both statuses are posted by pull-request feedback, which the desktop build does not offer. -->
         <UFormField
+          v-if="!isDesktop"
           label="Commit status"
           name="quarantineFailsStatus"
           description="The run's commit status stays green when only quarantined tests failed, and counts them. Turn this on to fail it on any failure."
@@ -146,6 +149,7 @@ async function removeToken() {
         </UFormField>
 
         <UFormField
+          v-if="!isDesktop"
           label="Gate status"
           name="gateStatus"
           description="Post each piwi gate verdict as its own commit status, beside the run's, so a branch rule can require it. Needs pull-request feedback with commit statuses on."
@@ -156,7 +160,7 @@ async function removeToken() {
         <UFormField
           name="ciRerun"
           data-tour="project-ci-rerun"
-          description="Let reporters and admins re-run a cluster's affected tests in CI from its page, using the SCM token above. Off by default; fill in the block for your provider."
+          description="Let Maintainers, Project admins and administrators re-run a cluster's affected tests, or one test, in CI from their pages, using the SCM token above. Off by default; fill in the block for your provider."
         >
           <template #label>
             <span class="inline-flex items-center gap-1">CI re-run <HelpHint topic="project.ci-rerun" /></span>

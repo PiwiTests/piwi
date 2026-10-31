@@ -14,6 +14,19 @@ export function resolveRepeatEachIndex(value: unknown): number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : 0;
 }
 
+/**
+ * Stable identity for a running test within a run, used to match a `begin` event to its later `complete`: its title,
+ * location, browser and repetition, as the run page keys its row (`liveCaseKey`). A retry has the same key.
+ */
+export function runningCaseKey(tc: {
+  title?: string;
+  location?: string | null;
+  browser?: unknown;
+  repeatEachIndex?: unknown;
+}): string {
+  return `${tc.title}\x1f${tc.location ?? ''}\x1f${JSON.stringify(tc.browser ?? null)}\x1f${resolveRepeatEachIndex(tc.repeatEachIndex)}`;
+}
+
 function keyOf(row: RunCaseKey): string {
   return `${row.testCaseId}\x00${row.repeatEachIndex ?? 0}\x00${row.retries ?? 0}\x00${row.browserName ?? ''}`;
 }

@@ -29,6 +29,7 @@ The release process, seen from a maintainer, is in [`CONTRIBUTING.md`](../CONTRI
 | `workflows/release-notes.yml`              | published releases, on demand                | tidies the release body from the version's `CHANGELOG.md` section (`scripts/release-notes.mjs`)              |
 | `workflows/live-jira.yml`                  | on demand                                    | the live Jira E2E, against a real Atlassian Cloud site                                                       |
 | `workflows/nightly-vscode.yml`             | every night, on demand                       | the VS Code extension in the real VS Code (`apps/vscode/tests/e2e`), at the pinned release                   |
+| `workflows/nightly-showcase.yml`           | every night, on demand                       | the showcase's story in check mode (`apps/showcase`); with `film`, filmed and cut, the cut uploaded          |
 | `actions/setup-workspace/action.yml`       | the workflows above                          | Node, the npm cache, `npm ci`, and Playwright's Chromium when asked                                          |
 | `actions/container-health/action.yml`      | `ci.yml`, `reusable-publish-container.yml`   | starts a server image on an empty data folder and waits for `/api/health`                                    |
 
@@ -36,10 +37,16 @@ The release process, seen from a maintainer, is in [`CONTRIBUTING.md`](../CONTRI
 
 - The `changes` job reads which areas a change touches (`dorny/paths-filter`), and each job runs for the areas it
   covers. A change to `.github/workflows/`, `.github/actions/` or `.node-version` runs them all.
-- The agent guides' test (`apps/application/tests/unit/agent-guides.test.ts`) runs in the checks job with every unit
-  test; a change that touches only guides (`AGENTS.md`, `ARCHITECTURE.md`, `CLAUDE.md`), `adr/`, `proposals/` or a file the
-  guides link to outside the checks job's paths (the root Markdown files, `release-please-config.json`,
-  `apps/desktop/README.md`) runs it alone in the `Agent guides` job.
+- A change to a JavaScript workspace (`js`) runs the four check jobs at once:
+  - `Format, lint and typecheck`: oxfmt, oxlint and the type check of every workspace, then knip;
+  - `Dashboard unit tests`, with the coverage comment;
+  - `Reporter tests`, under `xvfb-run`, then the AI steps' integration run, with the coverage comment;
+  - `Package tests`: core, picker-dom (unit and in a browser), the editor service, the VS Code and browser extensions'
+    unit tests, and the showcase's cut.
+- The agent guides' test (`apps/application/tests/unit/agent-guides.test.ts`) runs in `Dashboard unit tests` with
+  every unit test; a change that touches only guides (`AGENTS.md`, `ARCHITECTURE.md`, `CLAUDE.md`), `adr/`,
+  `proposals/` or a file the guides link to outside the `js` paths (the root Markdown files,
+  `release-please-config.json`, `apps/desktop/README.md`) runs it alone in the `Agent guides` job.
 - The release PR (a `release-please--` branch) runs the `Versions` job alone. The other jobs run on `main` once it
   merges.
 - `changes` also picks two matrices:

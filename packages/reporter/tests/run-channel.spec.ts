@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { formatRecordChannel, lineReader } from '@piwitests/core/ide-recorder';
-import { parseRunToHub, type HubToRun, type Place, type RunToHub } from '@piwitests/core/run-channel';
+import { RUN_TAKES, parseRunToHub, type HubToRun, type Place, type RunToHub } from '@piwitests/core/run-channel';
 import {
   closeRunChannel,
   editorSendAddress,
@@ -13,10 +13,14 @@ import {
   holdStop,
   openRunChannel,
   runChannelOpen,
+  runHost,
+  workerTakes,
   type RunControl,
   type StopToHold,
 } from '../src/internal/capture/run-channel.js';
 import { keepResponse, startKeeping, stopKeeping } from '../src/internal/capture/kept-responses.js';
+import { closeLiveView, openLiveView } from '../src/internal/capture/live-view.js';
+import { LIVE_SHARE_MISSING, LIVE_VIEW_ENV, formatLiveViewEnv, formatLiveViewMissing } from '@piwitests/core/live-view';
 
 /** A finished request of the page, as Playwright hands it. */
 function fakeRequest(resourceType: string, method: string, url: string) {
@@ -58,7 +62,12 @@ async function startHub() {
   await new Promise<void>((resolve) => server.listen(socketPath, resolve));
   return {
     heard,
-    env: { PIWI_RUN_CHANNEL: formatRecordChannel({ path: socketPath, token: TOKEN }), PIWI_ORIGIN_REF: 'ed-12345678' },
+    env: {
+      PIWI_RUN_CHANNEL: formatRecordChannel({ path: socketPath, token: TOKEN }),
+      PIWI_RECORD_CHANNEL: formatRecordChannel({ path: socketPath, token: TOKEN }),
+      PIWI_EDITOR_SEND: 'http://127.0.0.1:1/piwi/send#send-token-0123456789',
+      PIWI_ORIGIN_REF: 'ed-12345678',
+    },
     send: (message: HubToRun | { type: string; [key: string]: unknown }) =>
       worker!.write(`${JSON.stringify(message)}\n`),
     drop: () => worker?.destroy(),
@@ -120,6 +129,22 @@ describe('the worker’s run connection', () => {
     expect(runChannelOpen()).toBe(false);
   });
 
+  it('names the run by PIWI_RUN_REF when the launcher sets it, PIWI_ORIGIN_REF naming what it was launched for', async () => {
+    const hub = await startHub();
+    try {
+      const { control } = handlers();
+      expect(
+        await openRunChannel(WORKER, control, { ...hub.env, PIWI_ORIGIN_REF: '42', PIWI_RUN_REF: 'desktop-7' }),
+      ).toBe(true);
+      expect(await until(() => hub.heard[0])).toMatchObject({ type: 'run-attach', ref: 'desktop-7' });
+      closeRunChannel();
+      // A name the hub could not read opens nothing, whatever PIWI_ORIGIN_REF says.
+      expect(await openRunChannel(WORKER, control, { ...hub.env, PIWI_RUN_REF: 'job:ab12' })).toBe(false);
+    } finally {
+      await hub.close();
+    }
+  });
+
   it('takes the channel and the editor’s pairing out of the environment while a test runs, and puts them back after', () => {
     const pairing = 'http://127.0.0.1:47211/piwi/send#abcdefghijklmnop_1234';
     const env: NodeJS.ProcessEnv = { PIWI_RUN_CHANNEL: 'a#b', PIWI_RECORD_CHANNEL: 'a#b', PIWI_EDITOR_SEND: pairing };
@@ -157,6 +182,80 @@ describe('the worker’s run connection', () => {
     }
   });
 
+  it('names the service as it names itself in attached, the editor unless it says otherwise', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const hub = await startHub();
+    try {
+      const { control } = handlers();
+      expect(await openRunChannel(WORKER, control, hub.env)).toBe(true);
+      await until(() => hub.heard[0]);
+      expect(runHost()).toBe('the editor');
+      hub.send({ type: 'attached', holds: ['failure'], host: 'the desktop app' });
+      await until(() => (runHost() === 'the desktop app' ? true : undefined));
+      holdStop(STOP, () => {});
+      await until(() => hub.heard.find((m) => m.type === 'stopped'));
+      hub.drop();
+      await until(() => (runChannelOpen() ? undefined : true));
+      expect(log).toHaveBeenCalledWith('[piwi] The connection to the desktop app closed: the test goes on.');
+      // A connection opened again, to an editor that names itself nothing, names the editor.
+      expect(await openRunChannel(WORKER, control, hub.env)).toBe(true);
+      expect(runHost()).toBe('the editor');
+      hub.send({ type: 'attached', holds: ['failure'] });
+      await until(() => (editorShows('failure') ? true : undefined));
+      expect(runHost()).toBe('the editor');
+    } finally {
+      log.mockRestore();
+      await hub.close();
+    }
+  });
+
+  it('says after its attach how the run stands on the live view, and again as the editor shares it', async () => {
+    const hub = await startHub();
+    const key = `pdl_${'r'.repeat(43)}`;
+    try {
+      // A run outside CI whose project has the live view off: the worker says why it cannot be shared.
+      openLiveView(WORKER, { [LIVE_VIEW_ENV]: formatLiveViewMissing('off') }, false);
+      expect(await openRunChannel(WORKER, handlers().control, hub.env)).toBe(true);
+      expect(await until(() => hub.heard[1])).toEqual({
+        type: 'live',
+        can: false,
+        on: false,
+        viewers: 0,
+        page: null,
+        why: LIVE_SHARE_MISSING.off,
+      });
+      // Asked to share anyway, it shares nothing and says nothing new.
+      hub.send({ type: 'share', on: true });
+      await new Promise((r) => setTimeout(r, 100));
+      expect(hub.heard.filter((m) => m.type === 'live')).toHaveLength(1);
+      closeRunChannel();
+      closeLiveView();
+
+      // With a key (an instance that does not answer here), the run can be shared; shared, it says so.
+      const instance = 'http://127.0.0.1:9';
+      openLiveView(WORKER, { [LIVE_VIEW_ENV]: formatLiveViewEnv(instance, 7, key) }, false);
+      const before = hub.heard.length;
+      expect(await openRunChannel(WORKER, handlers().control, hub.env)).toBe(true);
+      expect(await until(() => hub.heard.slice(before).find((m) => m.type === 'live'))).toEqual({
+        type: 'live',
+        can: true,
+        on: false,
+        viewers: 0,
+        page: `${instance}/test-runs/7`,
+        why: null,
+      });
+      hub.send({ type: 'share', on: true });
+      expect(await until(() => hub.heard.slice(before).find((m) => m.type === 'live' && m.on))).toMatchObject({
+        can: true,
+        on: true,
+      });
+    } finally {
+      closeRunChannel();
+      closeLiveView();
+      await hub.close();
+    }
+  });
+
   it('attaches first, holds a stop until the editor answers it, once, and says when it ended', async () => {
     const hub = await startHub();
     try {
@@ -172,7 +271,7 @@ describe('the worker’s run connection', () => {
         pid: process.pid,
         playwright: '1.64.1',
         reporter: expect.any(String),
-        takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator'],
+        takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator', 'view', 'input', 'input-clicks', 'pick-at', 'agent', 'events', 'bind', 'end', 'share'],
         holds: ['failure'],
       });
       const answers: string[] = [];
@@ -204,6 +303,33 @@ describe('the worker’s run connection', () => {
       hub.send({ type: 'breakpoints', places: [{ file: 'tests/a.spec.ts', line: 3 }] });
       await until(() => (asked.length === 3 ? true : undefined));
       expect(asked.slice(1)).toEqual(['pause', 'breakpoints 3']);
+    } finally {
+      await hub.close();
+    }
+  });
+
+  it('takes Pick a locator only with a pairing, and Record here and Assert only with a record channel', () => {
+    const channel = formatRecordChannel({ path: '/tmp/channel.sock', token: TOKEN });
+    expect(workerTakes({ PIWI_RUN_CHANNEL: channel })).toEqual(
+      RUN_TAKES.filter((take) => take !== 'pick' && take !== 'record' && take !== 'assert'),
+    );
+    expect(workerTakes({ PIWI_RECORD_CHANNEL: channel, PIWI_EDITOR_SEND: 'http://127.0.0.1:1/piwi/send#t' })).toEqual(
+      RUN_TAKES,
+    );
+  });
+
+  it('hands End the test to the stop it names, and to no other', async () => {
+    const hub = await startHub();
+    try {
+      expect(await openRunChannel(WORKER, handlers().control, hub.env)).toBe(true);
+      const answers: string[] = [];
+      const held = holdStop({ ...STOP, bar: true }, (answer) => void answers.push(answer));
+      const { stop } = (await until(() => hub.heard.find((m) => m.type === 'stopped'))) as { stop: number };
+      hub.send({ type: 'control', action: 'end', stop: stop + 1 });
+      hub.send({ type: 'control', action: 'end', stop });
+      await until(() => answers[0]);
+      expect(answers).toEqual(['end']);
+      await held.release();
     } finally {
       await hub.close();
     }
@@ -329,11 +455,50 @@ describe('the worker’s run connection', () => {
         what: 'image',
         value: null,
       });
-      hub.send({ type: 'control', action: 'end', stop: 1 });
+      hub.send({ type: 'control', action: 'stop', stop: 1 });
       expect(await until(() => hub.heard.find((m) => m.type === 'notice'))).toEqual({
         type: 'notice',
-        message: expect.stringMatching(/^@piwitests\/reporter .* does not take the editor's control end: update it\.$/),
+        message: expect.stringMatching(/^@piwitests\/reporter .* does not take the editor's control stop: update it\.$/),
       });
+    } finally {
+      await hub.close();
+    }
+  });
+
+  it('says why a viewer’s input could not be played without the credentials of the address the page names', async () => {
+    const hub = await startHub();
+    try {
+      expect(await openRunChannel(WORKER, handlers().control, hub.env)).toBe(true);
+      const secret = ['s3cr3t', 'value', 'here'].join('-');
+      const page = {
+        viewportSize: () => ({ width: 800, height: 600 }),
+        once: () => {},
+        off: () => {},
+        isClosed: () => false,
+        screencast: { start: async () => ({ dispose: async () => {} }) },
+        mouse: {
+          click: async () => {
+            throw new Error(`Navigation to https://shop.test/cart?token=${secret} was interrupted`);
+          },
+        },
+      };
+      const held = holdStop({ ...STOP, page: page as never }, () => {});
+      const { stop } = (await until(() => hub.heard.find((m) => m.type === 'stopped'))) as { stop: number };
+      const answers = () => hub.heard.filter((m) => m.type === 'answer');
+      hub.send({ type: 'request', request: 1, what: 'view', stop, on: true });
+      expect(await until(() => answers()[0])).toMatchObject({ what: 'view', value: { ok: true } });
+      hub.send({
+        type: 'request',
+        request: 2,
+        what: 'input',
+        stop,
+        events: [{ type: 'mouse', action: 'click', x: 10, y: 20, button: 'left', clickCount: 1 }],
+      });
+      const played = (await until(() => answers()[1])) as { value: { ok: boolean; message: string } };
+      expect(played.value.ok).toBe(false);
+      expect(played.value.message).toMatch(/^Event 1 could not be played: .*https:\/\/shop\.test\/cart\?token=/);
+      expect(played.value.message).not.toContain(secret);
+      held.release();
     } finally {
       await hub.close();
     }

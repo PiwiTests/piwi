@@ -3,6 +3,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync } from 'fs';
 import { createRequire } from 'module';
 import { resolve, dirname, relative, sep } from 'path';
 import { fileURLToPath } from 'url';
+import { DEV_SERVER_PORT } from './shared/dev-server-port.mjs';
 import { GENERATED_DOCS_PAGES } from './shared/docs-generated-pages';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -116,16 +117,23 @@ export default defineNuxtConfig({
   },
 
   // @piwitests/core and @piwitests/picker-dom ship TypeScript source (shared
-  // with the reporter); Vite must transpile them since node_modules is not
-  // transpiled by default. Nuxt also passes this list to Nitro's
-  // externals.inline, so they are bundled into the server build instead of
-  // being copied as TypeScript into .output/server/node_modules.
+  // with the reporter), and so does @piwitests/editor, whose run control the
+  // desktop build's server hosts (server/utils/desktop-runs.ts); Vite must
+  // transpile them since node_modules is not transpiled by default. Nuxt also
+  // passes this list to Nitro's externals.inline, so they are bundled into the
+  // server build instead of being copied as TypeScript into
+  // .output/server/node_modules.
   build: {
-    transpile: ['@piwitests/core', '@piwitests/picker-dom'],
+    transpile: ['@piwitests/core', '@piwitests/picker-dom', '@piwitests/editor'],
   },
 
   devtools: {
     enabled: false,
+  },
+
+  // `nuxt dev` only, after `--port`, `NUXT_PORT`, `NITRO_PORT` and `PORT`. The built server listens on Nitro's 3000.
+  devServer: {
+    port: DEV_SERVER_PORT,
   },
 
   // Production builds emit no server source maps: through the Vite SSR build and

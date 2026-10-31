@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Piwi showcase stage</title>
+    <link rel="stylesheet" href="stage.css" />
+  </head>
+  <body>
+    <main id="stage">
+      <div id="backdrop"></div>
+      <div id="windows"></div>
+      <div id="rings"></div>
+      <svg id="pointer" viewBox="0 0 28 36" width="34" height="44" aria-hidden="true">
+        <path d="M3 2 L3 29 L10 22.5 L14.6 33 L19.4 31 L14.9 20.8 L24.5 20.8 Z" />
+      </svg>
+      <div id="chapter"><span class="number"></span><span class="title"></span></div>
+      <div id="fast"></div>
+      <div id="keys"></div>
+      <section id="card-title" class="card">
+        <img src="assets/logo-wide-dark.svg" alt="Piwi" />
+        <p class="line"></p>
+      </section>
+      <section id="card-end" class="card">
+        <img src="assets/logo-wide-dark.svg" alt="Piwi" />
+        <ul class="installs">
+          <li><span>The reporter</span><code>npx @piwitests/reporter init</code></li>
+          <li><span>Your editor</span><code>Piwi for VS Code · JetBrains</code></li>
+          <li><span>Your browser</span><code>Piwi Picker for Chrome · Firefox</code></li>
+        </ul>
+        <p class="site">piwitests.dev</p>
+      </section>
+      <div id="plate"></div>
+      <div id="sheet"></div>
+    </main>
+    <script src="stage.js"></script>
+  </body>
+</html>

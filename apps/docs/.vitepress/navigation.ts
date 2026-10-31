@@ -124,6 +124,7 @@ export const guideSidebar: SidebarGroup[] = [
       { text: 'DeepSeek CLI', link: '/guide/deepseek-cli' },
       { text: 'Backend instrumentation', link: '/guide/backend-logs' },
       { text: 'Import past runs', link: '/guide/importing-runs' },
+      { text: 'Remote development', link: '/guide/remote-development' },
     ],
   },
   {

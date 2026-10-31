@@ -19,6 +19,11 @@ shell and are feature-equivalent.
     echoed by `/api/health`) before it loads the session bootstrap.
   - The main window may only navigate to its bundled pages and the sidecar's exact origin
     (`main_window_may_navigate` in `src-tauri/src/lib.rs`).
+  - A run's output window (`desktop_open_output_window`, labeled `output-<name>_<n>`) shows the dashboard's
+    `/desktop/run-output` page, stays on the sidecar's origin and holds no IPC grant: the dashboard window feeds it
+    over a `BroadcastChannel` (`app/utils/run-output-channel.ts`). Never give it the opener link of `window.open()`:
+    on macOS the new web view then shares the main window's script handlers, and closing it drops the main window's
+    IPC.
   - The IPC capability (`src-tauri/runtime-capabilities/remote.json`) is added at startup for that origin only, never
     for a port wildcard, and no capability under `src-tauri/capabilities/` grants remote content.
   - A command that turns webview input into a path or a process takes only known values: digits-only project ids,
@@ -39,12 +44,28 @@ shell and are feature-equivalent.
   - Piwi Picker's pairing start, which answers only an extension's JSON request and keeps at most three waiting;
   - the pairing poll, which answers only with the secret the start gave. The token goes out once, after **Allow** in
     the window (`DesktopPickerPairingModal`), behind the guard.
-- **One route passes on another token.** An assistant answer's MCP endpoint
-  (`POST /api/assistant/conversations/:id/mcp`) is called by the Claude Code CLI the server starts, with the token
-  minted for that one answer (`presentsAssistantTurnToken` in `server/utils/assistant/turn-token.ts`). It opens that
-  conversation's endpoint only, only while the answer runs, and only for a loopback host, origin and peer; the CLI is
-  never given the desktop token. Anything else the CLI or a turn needs goes through that endpoint, never a new open
-  route.
+- **The bundled server is the hub of every Playwright run the shell starts.** Each spawn of a test (`runner.rs`,
+  `repro.rs`, and in `worktree.rs` the reproduce, bisect and `piwi flake` runs) adds `bundled_hub_env`: the server's
+  `PIWI_RUN_CHANNEL` and the address its picks go to (`PIWI_EDITOR_SEND`, the server's own route), read from
+  `GET /api/desktop/run-channel` only after `health_ok` proved the launch nonce, and `PIWI_RUN_REF` (`hub_env.rs`,
+  `desktop-<run id>`, which the window knows the run by). A run nobody attends (Flake Lab, a bisect, a lab job, one
+  with `--repeat-each` above 1 or `--ui`) ends its ref in `-unattended` (`attended_args`), and the server never holds
+  its failures. The hub's WebSocket takes the desktop token in `hello`; its code is
+  `apps/application/server/utils/desktop-runs.ts`. Agents steer those runs only through `/mcp`, behind the same token
+  (`server/utils/mcp/run-tools.ts`), and never a run nobody attends.
+- **Two routes pass on another token, each for that route alone, from a loopback host, origin and peer.**
+  - An assistant answer's MCP endpoint (`POST /api/assistant/conversations/:id/mcp`) is called by the Claude Code CLI
+    the server starts, with the token minted for that one answer (`presentsAssistantTurnToken` in
+    `server/utils/assistant/turn-token.ts`), only while the answer runs. Anything else the CLI or a turn needs goes
+    through that endpoint, never a new open route.
+  - The runs the shell starts post their picks (`POST /api/desktop/runs/picks`) with the token minted for that route
+    as the server starts (`desktopPicksToken`, `presentsDesktopPicksToken` in `server/utils/desktop-access.ts`), the
+    one `GET /api/desktop/run-channel` names in `PIWI_EDITOR_SEND`.
+
+  Neither the CLI nor a run's environment is ever given the desktop token (`tests/unit/assistant-claude-code.test.ts`,
+  `tests/unit/desktop-runs.test.ts`), but a reproduction, a bisect step and `piwi flake`, whose reporter may predate
+  `PIWI_DESKTOP_APP=prefer`: they carry the app's address and token, and `prefer` with the discovery file's path, so a
+  reporter that knows it takes both from the file before a server its config names (`flake_lab_env` in `worktree.rs`).
 - **The discovery file is a cross-package contract.** The shell publishes `{ url, token, pid, projects }` to
   `~/.piwi/desktop.json` while it runs, rewrites it when a folder link changes (`projects` is `[{ id, path }]`, the
   linked folders), and deletes it on quit. Its readers:

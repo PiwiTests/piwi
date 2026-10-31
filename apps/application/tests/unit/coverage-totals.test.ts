@@ -1,14 +1,13 @@
 import { afterAll, beforeEach, describe, expect, test, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { configureSqliteConnections, sqliteClientConfig } from '../../server/database/sqlite-connections';
 import { eq } from 'drizzle-orm';
+import { migrateToLatest } from './temp-db';
 
 vi.mock('../../server/storage', () => ({
   getStorage: () => ({
@@ -43,7 +42,7 @@ beforeEach(async () => {
   const client = createClient(sqliteClientConfig(`file:${join(tmpDir, `test-${++dbCount}.db`)}`));
   await configureSqliteConnections(client);
   db = drizzle(client, { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values({ id: 1, name: 'shop', defaultBranch: 'main' });
 });
 

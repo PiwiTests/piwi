@@ -5,6 +5,8 @@ import {
   CAPABILITY_MODULES,
   CAPABILITY_PRESETS,
   capabilitiesForModule,
+  capabilityHidden,
+  DESKTOP_HIDDEN_CAPABILITIES,
   resolveCapability,
   resolveCapabilities,
   parseInstanceDecisions,
@@ -219,5 +221,25 @@ describe('decision parsing and patching', () => {
   test('applyDecisionPatch drops enabled when it is not allowed', () => {
     const next = applyDecisionPatch({}, { fixtures: 'enabled', notifications: 'declined' }, false);
     expect(next).toEqual({ notifications: 'declined' });
+  });
+});
+
+describe('capabilityHidden', () => {
+  test('a declined or not-applicable capability is hidden on every build', () => {
+    for (const desktop of [false, true]) {
+      expect(capabilityHidden('notifications', 'declined', desktop)).toBe(true);
+      expect(capabilityHidden('backend-logs', 'not-applicable', desktop)).toBe(true);
+      expect(capabilityHidden('notifications', 'active', desktop)).toBe(false);
+    }
+  });
+
+  test('the desktop build hides pull-request feedback and auto-heal, whatever their state', () => {
+    expect([...DESKTOP_HIDDEN_CAPABILITIES].sort()).toEqual(['auto-heal', 'pr-feedback']);
+    for (const id of ['pr-feedback', 'auto-heal'] as const) {
+      for (const state of ['active', 'available', 'undecided'] as const) {
+        expect(capabilityHidden(id, state, true)).toBe(true);
+        expect(capabilityHidden(id, state, false)).toBe(false);
+      }
+    }
   });
 });

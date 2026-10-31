@@ -70,10 +70,11 @@ Piwi recognizes it, and an imported report as `import`. You rarely set them your
 What each origin feeds:
 
 - **Flake Lab and probe runs** feed nothing: they replay tests under conditions Piwi injected.
-- **Bisect steps and reproductions** run at a commit chosen to investigate a failure. They notify like any run, but
-  stay out of baselines, fix verification, flaky scores, selections, change coverage, the stored locators and test
-  metadata, auto-heal, the bug-report lifecycle and the [automatic writes to an issue
-  tracker](/features/issue-automation#the-runs-that-write).
+- **Bisect steps and reproductions** run at a commit chosen to investigate a failure. They stay out of baselines, fix
+  verification, flaky scores, selections, change coverage, the stored locators and test metadata, and the bug-report
+  lifecycle, and have no outbound effect: no [notification](/features/notifications#events), no
+  [pull-request comment or commit status](/features/pr-feedback), no automatic AI diagnosis or auto-heal, and no
+  [automatic write to an issue tracker](/features/issue-automation#the-runs-that-write).
 - **`piwi bug` runs** do not move the bug report they were written for.
 - **Local runs** (`local`, `desktop`, `editor`, `preflight`) count like CI runs, with two exceptions. An editor's CI
   failures come from the newest complete CI run on the branch, and a local run stands in only while the branch has

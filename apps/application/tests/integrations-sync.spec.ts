@@ -16,6 +16,7 @@ import { PROJECT } from '#shared/test-project-names';
 import { ProjectRole } from '#shared/permissions';
 import { createMember } from './utils/access';
 import { waitForHydration } from './utils';
+import { resolveE2ETarget } from './desktop-target';
 
 function getFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -371,7 +372,8 @@ test.describe.serial('Integrations — keep the ticket honest', () => {
       .getByRole('button', { name: 'Disable webhook' })
       .click();
     await expect(page.getByText('Webhook disabled', { exact: true })).toBeVisible();
-    await expect(card.getByRole('button', { name: 'Enable webhook' })).toBeVisible();
+    // The desktop app offers no webhook to turn back on.
+    await expect(card.getByRole('button', { name: 'Enable webhook' })).toHaveCount(resolveE2ETarget().desktop ? 0 : 1);
     await expect(card.getByRole('button', { name: 'Disable webhook' })).toHaveCount(0);
 
     const { connection } = await (await request.get(`/api/integrations/connections/${connectionId}`)).json();

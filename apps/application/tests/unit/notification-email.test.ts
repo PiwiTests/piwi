@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { renderNotificationEmail } from '../../server/utils/email';
-import type {
-  ClusterFixedPayload,
-  ClusterNewPayload,
-  ClusterRegressedPayload,
-  RunFinishedPayload,
+import { escapeHtml } from '#shared/email-layout';
+import {
+  NOTIFICATION_EVENTS,
+  renderEventSubject,
+  type ClusterFixedPayload,
+  type ClusterNewPayload,
+  type ClusterRegressedPayload,
+  type NotificationEvent,
+  type NotificationPayload,
 } from '#shared/notification-events';
 
 const SITE = 'https://piwi.example.com';
@@ -53,16 +57,18 @@ describe('cluster.fixed email', () => {
     expect(html).toContain('Pay button never enables');
     expect(html).toContain('TimeoutError: locator.click');
     expect(html).toContain(`href="${SITE}/failure-clusters/42"`);
-    expect(text).toContain('Cluster stopped failing in checkout');
-    expect(text).toContain('Pay button never enables\nTimeoutError: locator.click');
-    expect(text).toContain(`View: ${SITE}/failure-clusters/42`);
+    expect(text).toContain('Cluster stopped failing — checkout');
+    expect(occurrences(text, 'Pay button never enables')).toBe(1);
+    expect(text).toContain('TimeoutError: locator.click');
+    expect(text).toContain(`Open the cluster: ${SITE}/failure-clusters/42`);
   });
 
   test('names the known issue with a link when the payload has one', () => {
     const { html, text } = renderNotificationEmail('cluster.fixed', { ...fixed, knownIssue });
-    expect(html).toContain(`Tracked in <a href="${knownIssue.url}"`);
+    expect(html).toContain('>Tracked in</td>');
+    expect(html).toContain(`<a href="${knownIssue.url}"`);
     expect(html).toContain('>PAY-17</a>');
-    expect(text).toContain(`Tracked in PAY-17: ${knownIssue.url}`);
+    expect(text).toContain(`Tracked in: PAY-17 (${knownIssue.url})`);
   });
 
   test('omits the known-issue line when the payload has none', () => {
@@ -86,7 +92,7 @@ describe('cluster.fixed email', () => {
   test('shows the signature once when there is no title, or the title is the signature', () => {
     const noTitle = renderNotificationEmail('cluster.fixed', { ...fixed, title: null });
     expect(occurrences(noTitle.html, fixed.signature)).toBe(1);
-    expect(noTitle.text).toContain('checkout\n\nTimeoutError: locator.click\n\nView:');
+    expect(occurrences(noTitle.text, fixed.signature)).toBe(1);
     const same = renderNotificationEmail('cluster.fixed', { ...fixed, title: fixed.signature });
     expect(occurrences(same.html, fixed.signature)).toBe(1);
     expect(same.text).not.toContain(`${fixed.signature}\n${fixed.signature}`);
@@ -102,8 +108,8 @@ describe('cluster.regressed email', () => {
     expect(html).toContain('>PAY-17</a>');
     expect(html).toContain(`href="${SITE}/failure-clusters/42"`);
     expect(html).not.toContain('Triage status');
-    expect(text).toContain('Fix regressed in checkout');
-    expect(text).toContain(`Tracked in PAY-17: ${knownIssue.url}`);
+    expect(text).toContain('Fix regressed — checkout');
+    expect(text).toContain(`Tracked in: PAY-17 (${knownIssue.url})`);
   });
 
   test('says when the regression reopened the cluster', () => {
@@ -157,10 +163,69 @@ describe('notification email escaping', () => {
     expect(html).toContain(`<title>New failure cluster — ${escaped}</title>`);
   });
 
-  test('an event without a template escapes its subject line', () => {
-    const payload = { projectName: hostile, runId: 3 } as RunFinishedPayload;
-    const { html, text } = renderNotificationEmail('flakiness.spike', payload);
-    expect(html).toBe(`<p>Flakiness spike — ${escaped}</p>`);
-    expect(text).toBe(`Flakiness spike — ${hostile}`);
+  test('every event has its own email, which escapes the project in its banner and title', () => {
+    const run = {
+      runId: 3,
+      projectId: 1,
+      projectName: hostile,
+      status: 'failed',
+      totalTests: 4,
+      failedTests: 1,
+      passedTests: 3,
+      flakyTests: 1,
+    };
+    const payloads: Record<NotificationEvent, NotificationPayload> = {
+      'run.finished': run,
+      'run.failed': run,
+      'run.failed.default_branch': run,
+      'run.interrupted': { ...run, status: 'interrupted' },
+      'flakiness.spike': run,
+      'perf.regression': { ...run, durationMs: 9000, baselineDurationMs: 6000, regressionPct: 50 },
+      'cluster.new': { clusterId: 5, projectId: 1, projectName: hostile, signature: hostile, runId: 3 },
+      'cluster.fixed': { ...fixed, projectName: hostile },
+      'cluster.regressed': { ...regressed, projectName: hostile },
+      'diagnosis.completed': { clusterId: 5, projectId: 1, summary: hostile, rootCause: hostile },
+      'auto_heal.pr_opened': {
+        projectId: 1,
+        projectName: hostile,
+        runId: 3,
+        prNumber: 7,
+        prUrl: 'https://example.com/pr/7',
+        branch: hostile,
+        editCount: 2,
+      },
+      'bug.looks_fixed': {
+        projectId: 1,
+        projectName: hostile,
+        runId: 3,
+        tests: [{ title: hostile, filePath: hostile, executionId: 9, testCaseId: 4 }],
+      },
+      'environment.incident': {
+        ...run,
+        rule: 'host-unreachable',
+        reason: hostile,
+        host: hostile,
+        otherProjects: 0,
+        incidentKey: 'k',
+      },
+      'test.stuck': {
+        runId: 3,
+        projectId: 1,
+        projectName: hostile,
+        testTitle: hostile,
+        location: hostile,
+        browserName: hostile,
+        startedAt: 1_700_000_000_000,
+        elapsedMs: 300_000,
+        usualMs: 8000,
+      },
+    };
+    for (const event of NOTIFICATION_EVENTS) {
+      const { html, text } = renderNotificationEmail(event, payloads[event]);
+      expect(html, event).toMatch(/^<!DOCTYPE html>/);
+      expect(html, event).not.toContain('<img src=x');
+      expect(html, event).toContain(`<title>${escapeHtml(renderEventSubject(event, payloads[event]))}</title>`);
+      expect(text, event).toContain(renderEventSubject(event, payloads[event]).split(' — ')[0]);
+    }
   });
 });

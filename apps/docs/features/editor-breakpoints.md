@@ -31,6 +31,7 @@ or pick a better locator, which lands back on that line in the editor. The stop 
 | **Pick a locator** | Opens Piwi's [element picker](/features/locator-healing#pick-a-replacement-locator-on-the-failing-page-local-runs): pick the element, choose stable parents, confirm a ranked locator; the bar comes back after |
 | **Record here** | Records what you do in the page into the editor, above the paused line: [Record from a pause](#record-from-a-pause) |
 | **Finish** | Runs on without pausing again in this test |
+| **End the test** | [Skips the rest of the test](./end-the-test) |
 
 <figure>
   <img src="/screenshots/picker-pause.png" alt="A shop page in the browser, paused before a click on Checkout: the button highlighted, Piwi's pause bar at the top with Resume, Step, Pick a locator, Record here and Finish">
@@ -42,9 +43,8 @@ resume. The test timeout stops while the test is paused, and so does the paused 
 `expect.timeout` for an assertion on that line). A wait the test started before the stop keeps its own deadline:
 `expect.poll`, `toPass`, or a `waitForRequest`, `waitForResponse` or `waitForEvent` around the paused call can run out
 while you look and fail the test: the bar then goes away, before Playwright's failure screenshot and the `afterEach`
-hooks. The test's duration leaves the time paused out (a test that ended under the bar too, where Piwi can correct the
-runner's count), and every step keeps its clock time: the dashboard's timelines draw each stop as a **Paused** band,
-and its step statistics (slowest step, wasted time) leave it out.
+hooks. The test's duration leaves the time paused out, and every step keeps its clock time: the dashboard's timelines
+draw each stop as a **Paused** band, and its step statistics (slowest step, wasted time) leave it out.
 
 ## Where the pick lands
 
@@ -95,17 +95,17 @@ starts at the editor's breakpoints** under **Settings → Tools → Piwi** in a 
 - **`@piwitests/reporter` 0.48.0 or later**, with the [capture fixtures](/guide/capture-fixtures) in your tests: the
   pause runs in them. With an older one, the run starts anyway and the editor warns once. A reporter of 0.59.0 or
   older pauses before locator actions and assertions only.
-- **A run started from Piwi.** The editor passes the breakpoints under the Playwright config's folder to the run as
-  `PIWI_PAUSE_AT` (`tests/login.spec.ts:42;tests/pages/checkout.page.ts:9`, relative to that folder), with its pairing
-  address as `PIWI_EDITOR_SEND`, and adds `--headed` to the command unless it already has `--headed`, `--ui` or
-  `--debug`. Set `PIWI_PAUSE_AT` yourself to
+- **A run started from Piwi**, or [started outside Piwi](./terminal-runs). The editor passes the breakpoints under the
+  Playwright config's folder to the run as `PIWI_PAUSE_AT` (`tests/login.spec.ts:42;tests/pages/checkout.page.ts:9`,
+  relative to that folder), with its pairing address as `PIWI_EDITOR_SEND`, and adds `--headed` to the command unless it
+  already has `--headed`, `--ui` or `--debug`. Set `PIWI_PAUSE_AT` yourself to
   [pause a run you start](/features/locator-healing#pause-at-a-breakpoint-local-runs).
 
 ## Limits
 
 - **Headed and local only.** Under CI (`CI` set to anything but empty or `false`), or under Playwright's own debugger
   (`--debug`, `--debug=cli`, `PWDEBUG`), the run ignores the breakpoints and says why once; so does a headless run
-  you start yourself. One Piwi starts stops with no bar, and the editor shows its page
+  of yours with `PIWI_PAUSE_AT`. One Piwi starts stops with no bar, and the editor shows its page
   ([A headless run](./editor-run-control#a-headless-run)).
 - **Only the calls Playwright's debugger stops at pause**: navigations, actions, key presses and mouse moves,
   assertions, `evaluate`, `waitForFunction`, screenshots and an element's reads (`textContent`, `inputValue`,

@@ -1,22 +1,32 @@
 /**
  * The hub's WebSocket, for Piwi Picker (`@piwitests/core/run-hub`): the runs the editor started, as the run sessions
  * hold them (`run-sessions.ts`), followed and steered from the developer's own browser. It listens on `127.0.0.1`
- * alone, on a free port; a handshake is taken only on `HUB_PATH`, with the hub's own `Host` and a browser extension's
- * `Origin`, and refused with a status before any WebSocket opens. The first message must be `hello` with the token,
- * compared in constant time, within `HUB_HELLO_MS`. The token is in the service's discovery file, which only this user
- * reads, and the editor's Send to editor endpoint lists it to a request carrying the pairing's token: the paired Piwi
- * Picker, and any process of this user that holds that token (the runs the editor starts name it in
- * `PIWI_EDITOR_SEND`). Another user's processes and web pages are kept out; this user's own processes are not a
- * boundary. A command is one of a closed set, checked field by field and answered once; nothing it asks evaluates code,
- * reads a file or reaches an instance. A subscribed connection hears every run as the editor does, and counts as a
- * surface that answers stops: while one is, a stop no pause bar shows waits for it. One that says a person follows the
- * runs there (`follow`, a Runs window open) holds a failure no pause bar shows too, until it says otherwise or closes:
- * a connection that never says so, such as Piwi Picker's with no Runs window, does not. The code actions it starts at a
- * stop (Assert, Assert a region, Mock a request, `stop-actions.ts`) write their code in the editor, through its client:
- * the answer says whether they started, never the code, and each subscribed connection hears what each one came to,
- * whichever surface started it (`code`: that the code was sent to the client to write, with its warnings, or why it was
- * refused once it started). A connection the hub closes is cut a second later when the other side does not answer the
- * close, and only the open connections count toward its limits.
+ * alone, on a free port; a handshake is taken only on `HUB_PATH`, with the hub's own `Host` (its port, or one the
+ * editor forwards to it from the browser's machine: `forwarded`) and a browser extension's `Origin`, and refused with
+ * a status before any WebSocket opens. The first message must be `hello` with the token, compared in constant time,
+ * within `HUB_HELLO_MS`. The token is in the service's discovery file, which only this user reads, and the editor's
+ * Send to editor endpoint lists it to a request carrying the pairing's token: the paired Piwi Picker, and any process
+ * of this user that holds that token (the runs the editor starts name it in `PIWI_EDITOR_SEND`). Another user's
+ * processes and web pages are kept out; this user's own processes are not a boundary. A command is one of a closed
+ * set, checked field by field and answered once; nothing it asks evaluates code, reads a file or reaches an instance.
+ * A subscribed connection hears every run as the editor does, and counts as a surface that answers stops: while one
+ * is, a stop no pause bar shows waits for it. One that says a person follows the runs there (`follow`, a Runs window
+ * open) holds a failure no pause bar shows too, until it says otherwise or closes: a connection that never says so,
+ * such as Piwi Picker's with no Runs window, does not. The code actions it starts at a stop (Assert, Assert a region,
+ * Mock a request, `stop-actions.ts`) write their code in the editor, through its client: the answer says whether they
+ * started, never the code, and each subscribed connection hears what each one came to, whichever surface started it
+ * (`code`: that the code was sent to the client to write, with its warnings, or why it was refused once it started).
+ * A connection watches a stopped page's live view (`view`): its frames come to it alone, at most `MAX_VIEW_FPS` a
+ * second, the latest one once its socket is no longer backed up, none of a stop that ended or it stopped watching; it
+ * plays its input on the page it watches (`input`, at most `MAX_VIEW_EVENT_RATE` events a second), and starts there,
+ * at a stop no pause bar shows, the intents the bar's buttons start (`stop.intents` in each session it hears says
+ * which a stop takes from it). The hub keeps no frame. Any connection picks the element under a point of an image of a
+ * stopped page (`pick-at`). A person shares a run live on the team instance from a connection (`share`, after the
+ * window's warning), and every subscribed connection hears how the run stands there (`session.live`). A connection the
+ * hub closes is cut a second later when the other side does not answer the
+ * close, and only the open connections count toward its limits. A host may join a peer of its own transport (`join`:
+ * the desktop app's window, behind the app's own token), which hears and commands the hub as a WebSocket connection
+ * that said hello does, and counts toward none of the WebSocket's limits.
  */
 import { randomBytes } from 'node:crypto';
 import * as http from 'node:http';
@@ -40,24 +50,30 @@ import {
   isHubHost,
   parseHubCommand,
   parseHubHello,
+  type HubAnswer,
   type HubCodeIntent,
   type HubIntent,
   type HubMessage,
   type HubSession,
   type ParsedHubCommand,
 } from '@piwitests/core/run-hub';
+import { LatestPacer, MAX_VIEW_EVENT_RATE, MAX_VIEW_FPS, RateWindow } from '@piwitests/core/run-view';
 import type { RunControlResult, RunSession } from './protocol.js';
 import { sameToken } from './recorder/handoff.js';
-import type { RunSessions } from './run-sessions.js';
+import type { RunSessions, ViewFrame, Viewer } from './run-sessions.js';
 import type { StopActions, StopOutcome } from './stop-actions.js';
 
 /** The connections a hub holds at once, and those among them that did not say `hello` yet. */
 const MAX_CONNECTIONS = 16;
 const MAX_UNAUTHENTICATED = 8;
 /** What a connection may leave unread before it is dropped, in bytes. */
-const MAX_BUFFERED = 32 * 1024 * 1024;
+export const MAX_HUB_BUFFERED = 32 * 1024 * 1024;
 /** How long a connection the hub closes has to answer the close before it is cut. */
 const CLOSE_GRACE_MS = 1_000;
+/** What a connection may leave unread before a frame waits for it, in bytes: the latest frame alone waits. */
+const MAX_VIEW_BUFFERED = 1024 * 1024;
+/** The workers a connection keeps the pace of frames for: the oldest is forgotten past it. */
+const MAX_VIEW_PACERS = 32;
 
 /** What a run session's view lacks for the Runs page: the command, the folder's label and the project. */
 export interface HubRunInfo {
@@ -79,34 +95,94 @@ export interface RunHubOptions {
    * shows can be answered, or a failure is held, changed.
    */
   surfacesChanged(): void;
+  /** The loopback ports the client forwards to the hub (`piwi/hub`), read at each handshake. */
+  forwarded?(): readonly number[];
+  /** The token `hello` must carry: a new random one by default, the desktop app's own token in its server. */
+  token?: string;
+  /** Why the connections close as the hub does. */
+  closing?: string;
   keepaliveMs?: number;
   helloMs?: number;
 }
 
-interface Connection {
+/** How a peer the host joined hears the hub (`join`), whatever carries the messages. */
+export interface HubTransport {
+  /** Send one message, as the hub sends a WebSocket's. */
+  send(message: HubMessage): void;
+  /** What it holds unsent, in bytes: a frame waits while it holds more than 1 MB. */
+  buffered(): number;
+  /** The hub lets the peer go: it closes, or holds more than `MAX_HUB_BUFFERED` unsent. */
+  close(): void;
+}
+
+/** A peer the host joined to the hub: it commands the hub as a WebSocket connection does, until it leaves. */
+export interface HubPeer {
+  /** It, as a viewer of the live views it watches. */
+  readonly viewer: Viewer;
+  /**
+   * The hub's answer to a command, as a WebSocket connection hears it; what follows it (`subscribe`'s runs) goes to
+   * the transport.
+   */
+  command(command: ParsedHubCommand): Promise<HubAnswer>;
+  /** It left: it watches nothing, and answers no stop, any more. */
+  leave(): void;
+}
+
+/** A WebSocket connection's own state: whether it said hello, answered the last ping, and is being cut. */
+interface Socket {
   socket: WebSocket;
   authenticated: boolean;
-  subscribed: boolean;
-  /** A person follows the runs through it (`follow`): a Runs window is open. */
-  following: boolean;
-  pending: number;
   /** It answered the last ping. */
   alive: boolean;
   /** It is cut once `CLOSE_GRACE_MS` passed, unless it closed by then. */
   cutting: boolean;
 }
 
+interface Connection {
+  transport: HubTransport;
+  /** Its WebSocket, for a connection the handshake took; null for a peer the host joined. */
+  ws: Socket | null;
+  subscribed: boolean;
+  /** A person follows the runs through it (`follow`): a Runs window is open. */
+  following: boolean;
+  pending: number;
+  /** It, as a viewer of the live views it watches. */
+  viewer: Viewer;
+  /** The pace of the frames it is sent, by run and worker: the latest one waits, no other. */
+  frames: Map<string, LatestPacer<ViewFrame>>;
+  /** The input it sends, in events a second. */
+  input: RateWindow;
+  /** It left: its WebSocket closed, or the host let its peer go. */
+  left: boolean;
+}
+
 /** Cut a connection being closed once `CLOSE_GRACE_MS` passed, unless the other side closed it by then. */
-function cutSoon(connection: Connection): void {
-  if (connection.cutting) return;
-  connection.cutting = true;
-  setTimeout(() => connection.socket.terminate(), CLOSE_GRACE_MS).unref();
+function cutSoon(ws: Socket): void {
+  if (ws.cutting) return;
+  ws.cutting = true;
+  setTimeout(() => ws.socket.terminate(), CLOSE_GRACE_MS).unref();
 }
 
 /** Close a connection saying why, cut if the other side does not answer the close. */
-function closeWith(connection: Connection, code: number, reason: string): void {
-  connection.socket.close(code, reason);
-  cutSoon(connection);
+function closeWith(ws: Socket, code: number, reason: string): void {
+  ws.socket.close(code, reason);
+  cutSoon(ws);
+}
+
+/** A WebSocket as the hub sends on it: a socket that left more than `MAX_HUB_BUFFERED` unread is dropped. */
+function socketTransport(socket: WebSocket): HubTransport {
+  return {
+    send: (message) => {
+      if (socket.readyState !== socket.OPEN) return;
+      if (socket.bufferedAmount > MAX_HUB_BUFFERED) {
+        socket.terminate();
+        return;
+      }
+      socket.send(JSON.stringify(message));
+    },
+    buffered: () => socket.bufferedAmount,
+    close: () => socket.terminate(),
+  };
 }
 
 /** A handshake refused before any WebSocket opens: the status alone, and the socket closed once it is sent. */
@@ -176,7 +252,7 @@ export class RunHub {
     server.on('clientError', (_error, socket) => socket.destroy());
     server.unref();
     const port = (server.address() as AddressInfo).port;
-    const hub = new RunHub(server, sockets, port, randomBytes(24).toString('base64url'), options);
+    const hub = new RunHub(server, sockets, port, options.token ?? randomBytes(24).toString('base64url'), options);
     server.on('upgrade', (req, socket, head) => hub.upgrade(req, socket, head));
     return hub;
   }
@@ -193,14 +269,66 @@ export class RunHub {
     return false;
   }
 
-  /** A run changed: every subscribed connection hears it. */
+  /** A run changed: every subscribed connection hears it, with what each stop takes from it. */
   push(session: RunSession): void {
-    let message: HubMessage | null = null;
+    let view: HubSession | null = null;
     for (const connection of this.connections) {
       if (!connection.subscribed) continue;
-      message ??= { type: 'session', session: this.view(session) };
-      this.send(connection, message);
+      view ??= this.view(session);
+      this.send(connection, { type: 'session', session: this.forViewer(view, connection) });
     }
+  }
+
+  /** A session as one connection hears it: each stop with what it takes from that connection now. */
+  private forViewer(session: HubSession, connection: Connection): HubSession {
+    const { sessions } = this.options;
+    return {
+      ...session,
+      workers: session.workers.map((worker) =>
+        worker.stop
+          ? {
+              ...worker,
+              stop: { ...worker.stop, intents: sessions.stopIntentsOf(session.ref, worker.worker, connection.viewer) },
+            }
+          : worker,
+      ),
+    };
+  }
+
+  /** A connection started or stopped watching a stop of a run: it hears the run again, with what its stops take now. */
+  private resend(connection: Connection, ref: string): void {
+    if (!connection.subscribed) return;
+    const session = this.options.sessions.current().find((s) => s.ref === ref);
+    if (session) this.send(connection, { type: 'session', session: this.forViewer(this.view(session), connection) });
+  }
+
+  /**
+   * A frame of a live view a connection watches: sent at most `MAX_VIEW_FPS` a second for each worker, the latest one
+   * once the connection's socket left less than `MAX_VIEW_BUFFERED` unread, and only while the connection watches the
+   * stop it shows.
+   */
+  private frame(connection: Connection, frame: ViewFrame): void {
+    const key = `${frame.ref} ${frame.worker}`;
+    let pacer = connection.frames.get(key);
+    if (!pacer) {
+      pacer = new LatestPacer<ViewFrame>({
+        intervalMs: 1000 / MAX_VIEW_FPS,
+        busy: () => connection.transport.buffered() > MAX_VIEW_BUFFERED,
+        send: (latest) => {
+          // A frame of a stop that ended, or that the connection stopped watching, waits no more.
+          if (this.options.sessions.viewing(connection.viewer, latest.ref, latest.worker, latest.since)) {
+            this.send(connection, { type: 'frame', ...latest });
+          }
+        },
+      });
+      connection.frames.set(key, pacer);
+      for (const [oldest, old] of connection.frames) {
+        if (connection.frames.size <= MAX_VIEW_PACERS) break;
+        old.close();
+        connection.frames.delete(oldest);
+      }
+    }
+    pacer.offer(frame);
   }
 
   /** What an action that writes code came to: every subscribed connection hears its sentence, never its code. */
@@ -219,29 +347,87 @@ export class RunHub {
     for (const connection of this.connections) if (connection.subscribed) this.send(connection, message);
   }
 
-  /** The service stops: every connection is closed, saying so. */
+  /** The service stops: every connection is closed, saying so, and every peer the host joined let go. */
   close(): void {
     clearInterval(this.keepalive);
-    for (const connection of this.connections)
-      closeWith(connection, HUB_CLOSE.goingAway, 'The editor service stopped.');
+    for (const connection of this.connections) {
+      if (connection.ws) {
+        closeWith(connection.ws, HUB_CLOSE.goingAway, this.options.closing ?? 'The editor service stopped.');
+      } else {
+        connection.transport.close();
+        this.leave(connection);
+      }
+    }
     this.connections.clear();
     this.server.close();
     this.server.closeAllConnections();
+  }
+
+  /**
+   * A peer of the host's own transport, which needs no handshake nor `hello`: the host checked who it is. It hears
+   * nothing until it subscribes, commands the hub as a WebSocket connection does, and counts toward none of the
+   * WebSocket's limits.
+   */
+  join(transport: HubTransport): HubPeer {
+    const connection = this.connection(transport, null);
+    this.connections.add(connection);
+    return {
+      viewer: connection.viewer,
+      command: (command) =>
+        new Promise<HubAnswer>((resolve) => {
+          if (connection.left) {
+            return resolve({ type: 'answer', id: command.id, ok: false, message: 'The connection closed.' });
+          }
+          this.answer(connection, command, resolve).catch(() =>
+            resolve({ type: 'answer', id: command.id, ok: false, message: 'The command could not be answered.' }),
+          );
+        }),
+      leave: () => this.leave(connection),
+    };
+  }
+
+  private connection(transport: HubTransport, ws: Socket | null): Connection {
+    const connection: Connection = {
+      transport,
+      ws,
+      subscribed: false,
+      following: false,
+      pending: 0,
+      viewer: { frame: (frame) => this.frame(connection, frame) },
+      frames: new Map(),
+      input: new RateWindow(MAX_VIEW_EVENT_RATE),
+      left: false,
+    };
+    return connection;
+  }
+
+  /** A connection left: it watches nothing any more, and a subscribed one no longer answers stops. */
+  private leave(connection: Connection): void {
+    if (connection.left) return;
+    connection.left = true;
+    this.connections.delete(connection);
+    // The last viewer of a stop has its view stop.
+    this.options.sessions.unwatchAll(connection.viewer);
+    for (const pacer of connection.frames.values()) pacer.close();
+    connection.frames.clear();
+    if (connection.subscribed) this.options.surfacesChanged();
   }
 
   private upgrade(req: http.IncomingMessage, socket: Duplex, head: Buffer): void {
     socket.on('error', () => socket.destroy());
     if (req.url !== HUB_PATH) return refuse(socket, 404, 'Not Found');
     // Another name for this machine (a page's DNS rebinding) or a page's origin never opens a WebSocket.
-    if (!isHubHost(req.headers.host, this.port) || !isExtensionOrigin(req.headers.origin)) {
+    const forwarded = this.options.forwarded?.() ?? [];
+    if (!isHubHost(req.headers.host, this.port, forwarded) || !isExtensionOrigin(req.headers.origin)) {
       return refuse(socket, 403, 'Forbidden');
     }
     // A connection being closed, however its close began (the other side's, a frame the library refused), holds no
-    // place: it is cut within `CLOSE_GRACE_MS`.
-    const open = [...this.connections].filter((c) => {
-      if (c.socket.readyState === c.socket.OPEN) return true;
-      cutSoon(c);
-      return false;
+    // place: it is cut within `CLOSE_GRACE_MS`. A peer the host joined holds none either.
+    const open = [...this.connections].flatMap((c) => {
+      if (!c.ws) return [];
+      if (c.ws.socket.readyState === c.ws.socket.OPEN) return [c.ws];
+      cutSoon(c.ws);
+      return [];
     });
     const unauthenticated = open.filter((c) => !c.authenticated).length;
     if (open.length >= MAX_CONNECTIONS || unauthenticated >= MAX_UNAUTHENTICATED) {
@@ -251,33 +437,26 @@ export class RunHub {
   }
 
   private accept(socket: WebSocket): void {
-    const connection: Connection = {
-      socket,
-      authenticated: false,
-      subscribed: false,
-      following: false,
-      pending: 0,
-      alive: true,
-      cutting: false,
-    };
+    const ws: Socket = { socket, authenticated: false, alive: true, cutting: false };
+    const connection = this.connection(socketTransport(socket), ws);
     this.connections.add(connection);
     const hello = setTimeout(
-      () => closeWith(connection, HUB_CLOSE.helloTimeout, 'No hello in time.'),
+      () => closeWith(ws, HUB_CLOSE.helloTimeout, 'No hello in time.'),
       this.options.helloMs ?? HUB_HELLO_MS,
     );
     hello.unref();
     socket.on('message', (data: RawData, binary: boolean) => {
       // A connection being closed reads nothing more, the frames it sent with the one that closed it included.
       if (socket.readyState !== socket.OPEN) return;
-      if (binary) return closeWith(connection, HUB_CLOSE.unsupported, 'Text frames only.');
+      if (binary) return closeWith(ws, HUB_CLOSE.unsupported, 'Text frames only.');
       const text = textOf(data);
-      if (!connection.authenticated) {
+      if (!ws.authenticated) {
         const token = parseHubHello(text);
         if (token === null || !sameToken(token, this.token)) {
-          return closeWith(connection, HUB_CLOSE.unauthorized, 'Not paired.');
+          return closeWith(ws, HUB_CLOSE.unauthorized, 'Not paired.');
         }
         clearTimeout(hello);
-        connection.authenticated = true;
+        ws.authenticated = true;
         const { client, roots, ...service } = this.options.welcome();
         this.send(connection, {
           type: 'welcome',
@@ -289,24 +468,28 @@ export class RunHub {
         return;
       }
       const command = parseHubCommand(text);
-      if (!command) return closeWith(connection, HUB_CLOSE.malformed, 'Not a command.');
-      void this.answer(connection, command);
+      if (!command) return closeWith(ws, HUB_CLOSE.malformed, 'Not a command.');
+      void this.answer(connection, command, (answer) => this.send(connection, answer));
     });
     socket.on('pong', () => {
-      connection.alive = true;
+      ws.alive = true;
     });
     // A frame too long, or text that is not UTF-8: the library closes the connection with its code (1009, 1007).
-    socket.on('error', () => cutSoon(connection));
+    socket.on('error', () => cutSoon(ws));
     socket.on('close', () => {
       clearTimeout(hello);
-      this.connections.delete(connection);
-      if (connection.subscribed) this.options.surfacesChanged();
+      this.leave(connection);
     });
   }
 
-  private async answer(connection: Connection, command: ParsedHubCommand): Promise<void> {
-    const reply = (result: RunControlResult, extra: Record<string, unknown> = {}) =>
-      this.send(connection, {
+  /** Answer a command once, through `respond`, before anything it sends after (a `subscribe`'s runs). */
+  private async answer(
+    connection: Connection,
+    command: ParsedHubCommand,
+    respond: (answer: HubAnswer) => void,
+  ): Promise<void> {
+    const reply = (result: RunControlResult, extra: Partial<HubAnswer> = {}) =>
+      respond({
         type: 'answer',
         id: command.id,
         ok: result.ok,
@@ -329,7 +512,9 @@ export class RunHub {
           const first = !connection.subscribed;
           connection.subscribed = true;
           reply({ ok: true, message: live.length === 1 ? 'Following 1 run.' : `Following ${live.length} runs.` });
-          for (const session of live) this.send(connection, { type: 'session', session: this.view(session) });
+          for (const session of live) {
+            this.send(connection, { type: 'session', session: this.forViewer(this.view(session), connection) });
+          }
           if (first) this.options.surfacesChanged();
           return;
         }
@@ -388,14 +573,37 @@ export class RunHub {
               request: command.request,
             }),
           );
+        case 'view': {
+          const { ref, worker, since, on } = command;
+          const watched = await sessions.watch({ ref, worker, since, on }, connection.viewer);
+          reply(watched);
+          return this.resend(connection, ref);
+        }
+        case 'input': {
+          if (!connection.input.take(command.events.length)) {
+            return reply({ ok: false, message: `Too much input: ${MAX_VIEW_EVENT_RATE} events a second at most.` });
+          }
+          const { ref, worker, since } = command;
+          return reply(await sessions.input({ ref, worker, since }, connection.viewer, command.events));
+        }
+        case 'pick-at': {
+          const { ref, worker, since, x, y } = command;
+          const picked = await sessions.pickAt({ ref, worker, since, x, y });
+          return reply(picked, { locator: picked.locator });
+        }
+        case 'share':
+          return reply(sessions.share({ ref: command.ref, on: command.on }));
         default:
           return reply(
-            await this.options.actions.action({
-              ref: command.ref,
-              worker: command.worker,
-              since: command.since,
-              action: command.type as HubIntent | HubCodeIntent,
-            }),
+            await this.options.actions.action(
+              {
+                ref: command.ref,
+                worker: command.worker,
+                since: command.since,
+                action: command.type as HubIntent | HubCodeIntent,
+              },
+              connection.viewer,
+            ),
           );
       }
     } finally {
@@ -417,30 +625,36 @@ export class RunHub {
         intents: this.options.sessions.intentsOf(session.ref, worker.worker),
       })),
       ended: session.ended,
+      ...(session.terminal ? { terminal: true } : {}),
+      ...(session.runner ? { runner: true } : {}),
+      ...(session.live
+        ? {
+            live: {
+              ...session.live,
+              refused: cut(session.live.refused, MAX_HUB_MESSAGE),
+              stopped: cut(session.live.stopped, MAX_HUB_MESSAGE),
+            },
+          }
+        : {}),
     };
   }
 
-  /** Send a message; a connection that left more than `MAX_BUFFERED` unread is dropped. */
+  /** Send a message through the connection's transport, which drops one that left too much unsent. */
   private send(connection: Connection, message: HubMessage): void {
-    const { socket } = connection;
-    if (socket.readyState !== socket.OPEN) return;
-    if (socket.bufferedAmount > MAX_BUFFERED) {
-      socket.terminate();
-      return;
-    }
-    socket.send(JSON.stringify(message));
+    connection.transport.send(message);
   }
 
-  /** Each authenticated connection hears a keepalive; one that did not answer the last ping is dropped. */
+  /** Each WebSocket that said hello hears a keepalive; one that did not answer the last ping is dropped. */
   private beat(): void {
     for (const connection of this.connections) {
-      if (!connection.authenticated) continue;
-      if (!connection.alive) {
-        connection.socket.terminate();
+      const { ws } = connection;
+      if (!ws?.authenticated) continue;
+      if (!ws.alive) {
+        ws.socket.terminate();
         continue;
       }
-      connection.alive = false;
-      connection.socket.ping();
+      ws.alive = false;
+      ws.socket.ping();
       this.send(connection, { type: 'keepalive' });
     }
   }

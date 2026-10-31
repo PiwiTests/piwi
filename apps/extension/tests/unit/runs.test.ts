@@ -1,6 +1,22 @@
 import { describe, expect, it } from 'vitest';
+import { LIVE_SHARE_MISSING, LIVE_SHARE_UNKNOWN } from '@piwitests/core/live-view';
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
-import { parseRunsRequest, runFile, shortcutCommands, stopError, stopPlace, testName } from '../../src/shared/runs.js';
+import { MAX_VIEW_EVENTS } from '@piwitests/core/run-view';
+import {
+  pageHintOf,
+  pagePoint,
+  parseRunsRequest,
+  runFile,
+  shareRefusalOf,
+  shortcutCommands,
+  stateForViewer,
+  stopError,
+  stopIntents,
+  stopPlace,
+  testName,
+  viewKey,
+  type RunsState,
+} from '../../src/shared/runs.js';
 
 const worker = (over: Partial<HubWorker>): HubWorker => ({
   worker: 0,
@@ -33,6 +49,7 @@ describe('the Runs window’s requests, as the worker reads them', () => {
   it('takes a command with every field it needs', () => {
     const command = { type: 'command', id: 3, hub: 'ws://127.0.0.1:1/piwi/hub', ref: 'r-1', worker: 2, since: 's4' };
     expect(parseRunsRequest({ ...command, what: 'step' })).toEqual({ ...command, what: 'step' });
+    expect(parseRunsRequest({ ...command, what: 'end' })).toEqual({ ...command, what: 'end' });
     expect(parseRunsRequest({ ...command, worker: null, since: null, what: 'pause' })).toMatchObject({ worker: null });
     expect(parseRunsRequest({ type: 'window', windowId: 7 })).toEqual({ type: 'window', windowId: 7 });
     expect(parseRunsRequest({ type: 'find' })).toEqual({ type: 'find' });
@@ -54,6 +71,7 @@ describe('the Runs window’s requests, as the worker reads them', () => {
       { ...command, what: 'image', worker: null },
       // Every control but Pause names the stop it answers.
       { ...command, since: null, what: 'resume' },
+      { ...command, since: null, what: 'end' },
       { ...command, since: null, what: 'pick' },
       { ...command, since: null, what: 'assert' },
       { ...command, since: null, what: 'requests' },
@@ -148,5 +166,195 @@ describe('where a test stands, as text', () => {
     );
     expect(stopError({ title })).toBe('expect(locator).toBeVisible() failed');
     expect(stopError({ title: 'Failed: Test timeout of 5000ms exceeded.' })).toBe('Test timeout of 5000ms exceeded.');
+  });
+});
+
+describe('the live view’s commands, as the worker reads them', () => {
+  const command = { type: 'command', id: 5, hub: 'ws://127.0.0.1:1/piwi/hub', ref: 'r-1', worker: 0, since: 's3' };
+  const click = { type: 'mouse', action: 'click', x: 20, y: 90.5, button: 'right', clickCount: 2 };
+
+  it('takes a view on or off, input with its events and a pick on the image with its point', () => {
+    expect(parseRunsRequest({ ...command, what: 'view', on: true })).toEqual({ ...command, what: 'view', on: true });
+    expect(parseRunsRequest({ ...command, what: 'view', on: false })).toMatchObject({ on: false });
+    expect(parseRunsRequest({ ...command, what: 'input', events: [click, { type: 'text', text: 'é' }] })).toEqual({
+      ...command,
+      what: 'input',
+      events: [click, { type: 'text', text: 'é' }],
+    });
+    expect(parseRunsRequest({ ...command, what: 'pick-at', x: 0, y: 799.5 })).toEqual({
+      ...command,
+      what: 'pick-at',
+      x: 0,
+      y: 799.5,
+    });
+  });
+
+  it('refuses one without its worker, its stop or its own fields, or with another command’s', () => {
+    const many = Array.from({ length: MAX_VIEW_EVENTS + 1 }, () => ({ type: 'mouse', action: 'move', x: 1, y: 1 }));
+    for (const bad of [
+      { ...command, what: 'view' },
+      { ...command, what: 'view', on: 'yes' },
+      { ...command, what: 'view', on: true, worker: null },
+      { ...command, what: 'view', on: true, since: null },
+      { ...command, what: 'view', on: true, events: [click] },
+      { ...command, what: 'input' },
+      { ...command, what: 'input', events: [] },
+      { ...command, what: 'input', events: many },
+      { ...command, what: 'input', events: [{ ...click, x: -1 }] },
+      { ...command, what: 'input', events: [{ type: 'key', action: 'press', key: 'Alt+F4+x+y+z+w' }] },
+      { ...command, what: 'input', events: [{ type: 'eval', code: 'alert(1)' }] },
+      { ...command, what: 'input', events: [click], worker: null },
+      { ...command, what: 'pick-at', x: 1 },
+      { ...command, what: 'pick-at', x: 1, y: 10_001 },
+      { ...command, what: 'pick-at', x: Number.NaN, y: 1 },
+      { ...command, what: 'pick-at', x: 1, y: 1, on: true },
+      { ...command, what: 'step', on: true },
+      { ...command, what: 'mock', request: 2, x: 1, y: 1 },
+    ]) {
+      expect(parseRunsRequest(bad), JSON.stringify(bad)).toBeNull();
+    }
+  });
+});
+
+describe('Share live, as the worker reads it', () => {
+  const command = { type: 'command', id: 6, hub: 'ws://127.0.0.1:1/piwi/hub', ref: 'r-1', worker: null, since: null };
+
+  it('names the run alone, and whether to share it', () => {
+    expect(parseRunsRequest({ ...command, what: 'share', on: true })).toEqual({ ...command, what: 'share', on: true });
+    expect(parseRunsRequest({ ...command, what: 'share', on: false })).toMatchObject({ on: false });
+    for (const bad of [
+      { ...command, what: 'share' },
+      { ...command, what: 'share', on: 'yes' },
+      { ...command, what: 'share', on: true, worker: 0 },
+      { ...command, what: 'share', on: true, since: 's3' },
+      { ...command, what: 'share', on: true, request: 2 },
+    ]) {
+      expect(parseRunsRequest(bad), JSON.stringify(bad)).toBeNull();
+    }
+  });
+
+  it('reads why a run cannot be shared, as the reporter says it, and no other sentence', () => {
+    expect(shareRefusalOf(LIVE_SHARE_MISSING.local)).toBe('local');
+    expect(shareRefusalOf(LIVE_SHARE_MISSING.off)).toBe('off');
+    expect(shareRefusalOf(LIVE_SHARE_MISSING.unregistered)).toBe('unregistered');
+    expect(shareRefusalOf(LIVE_SHARE_MISSING['no-instance'])).toBe('no-instance');
+    expect(shareRefusalOf(LIVE_SHARE_UNKNOWN)).toBe('unknown');
+    expect(shareRefusalOf('Sharing stopped: the instance restarted.')).toBeNull();
+    expect(shareRefusalOf(`${LIVE_SHARE_MISSING.local} `)).toBeNull();
+  });
+});
+
+describe('where a run says its tests’ pages show', () => {
+  const editorHub = { desktop: false };
+  const viewing = { intents: ['view' as const] };
+
+  it('is said while the run goes on and no test of it stands stopped, by the hub that runs it', () => {
+    expect(pageHintOf(run('r1', [worker(viewing)]), editorHub)).toBe('editor');
+    expect(pageHintOf(run('r1', [worker({ ...viewing, state: 'between' })]), editorHub)).toBe('editor');
+    expect(pageHintOf(run('r1', [worker({ ...viewing, pausing: true })]), editorHub)).toBe('editor');
+    expect(pageHintOf(run('r1', [worker(viewing)]), { desktop: true })).toBe('desktop');
+    expect(pageHintOf(run('r1', [worker(viewing)]), undefined)).toBe('editor');
+  });
+
+  it('is not said once a test stops, the run ends, or nothing could show a stopped page live', () => {
+    const stopped = worker({ ...viewing, worker: 1, state: 'stopped', stop: stop('s1') });
+    expect(pageHintOf(run('r1', [worker(viewing), stopped]), editorHub)).toBeNull();
+    expect(pageHintOf(run('r1', [worker(viewing)], true), editorHub)).toBeNull();
+    expect(pageHintOf(run('r1', []), editorHub)).toBeNull();
+    // A reporter that predates the live view.
+    expect(pageHintOf(run('r1', [worker({ intents: ['pick', 'record'] })]), editorHub)).toBeNull();
+    // A test that never stops, under CI or Playwright's own debugger.
+    const test = {
+      id: 't1',
+      title: ['pays'],
+      uri: 'file:///x.ts',
+      line: 0,
+      project: 'chromium',
+      retry: 0,
+      cannotPause: 'it runs under CI',
+    };
+    expect(pageHintOf(run('r1', [worker({ ...viewing, test })]), editorHub)).toBeNull();
+    expect(pageHintOf(run('r1', [worker({ ...viewing, test }), worker(viewing)]), editorHub)).toBe('editor');
+  });
+});
+
+describe('what a stop takes from the window', () => {
+  const at = { ...stop('s1'), intents: undefined };
+
+  it('is what the hub says it takes from this connection, when it says it', () => {
+    expect(stopIntents(worker({ intents: ['pick', 'mock', 'view'] }), { ...at, intents: ['view', 'pick-at'] })).toEqual(
+      ['view', 'pick-at'],
+    );
+    expect(stopIntents(worker({ intents: ['pick'] }), { ...at, intents: [] })).toEqual([]);
+  });
+
+  it('is, from an older service, what the reporter takes where the pause bar shows, and Mock a request anywhere', () => {
+    const takes = worker({
+      intents: ['pick', 'record', 'assert', 'assert-region', 'mock', 'view', 'input', 'pick-at'],
+    });
+    expect(stopIntents(takes, { ...at, bar: true })).toEqual(['pick', 'record', 'assert', 'assert-region', 'mock']);
+    expect(stopIntents(takes, { ...at, bar: false })).toEqual(['mock']);
+  });
+
+  it('leaves a stop the window does not watch itself the input and, headless, the actions in the test’s window out', () => {
+    const hub = 'ws://127.0.0.1:1/piwi/hub';
+    const watched = [
+      'pick',
+      'record',
+      'assert',
+      'assert-region',
+      'mock',
+      'view',
+      'input',
+      'input-clicks',
+      'pick-at',
+    ] as const;
+    const state: RunsState = {
+      discovery: 'found',
+      desktop: 'unpaired',
+      hubs: [{ id: hub, connected: true, client: null, desktop: false }],
+      runs: [
+        {
+          hub,
+          session: {
+            ...run('r1', []).session,
+            workers: [
+              worker({ worker: 0, state: 'stopped', stop: { ...stop('s1'), intents: [...watched] } }),
+              worker({ worker: 1, state: 'stopped', stop: { ...stop('s2'), bar: true, intents: [...watched] } }),
+              worker({ worker: 2, state: 'stopped', stop: stop('s3') }),
+            ],
+          },
+        },
+      ],
+    };
+    const mine = viewKey({ hub, ref: 'r1', worker: 0, since: 's1' });
+    const shown = stateForViewer(state, (view) => viewKey(view) === mine);
+    const intents = shown.runs[0]!.session.workers.map((w) => w.stop?.intents);
+    expect(intents[0]).toEqual([...watched]);
+    expect(intents[1]).toEqual(['pick', 'record', 'assert', 'assert-region', 'mock', 'view', 'pick-at']);
+    expect(intents[2]).toBeUndefined();
+    const none = stateForViewer(state, () => false).runs[0]!.session.workers[0]!.stop?.intents;
+    expect(none).toEqual(['mock', 'view', 'pick-at']);
+  });
+});
+
+describe('a point on an image of a stopped page', () => {
+  it('maps to CSS pixels of the viewport the image names, whatever size it is shown at', () => {
+    expect(pagePoint({ x: 194, y: 60.625 }, { width: 388, height: 242.5 }, { width: 1280, height: 800 })).toEqual({
+      x: 640,
+      y: 200,
+    });
+    expect(pagePoint({ x: 10, y: 10 }, { width: 100, height: 50 }, { width: 400, height: 200 })).toEqual({
+      x: 40,
+      y: 40,
+    });
+  });
+
+  it('stays within the viewport, and maps nothing from an image shown at no size', () => {
+    expect(pagePoint({ x: -5, y: 900 }, { width: 100, height: 50 }, { width: 400, height: 200 })).toEqual({
+      x: 0,
+      y: 199.99,
+    });
+    expect(pagePoint({ x: 1, y: 1 }, { width: 0, height: 50 }, { width: 400, height: 200 })).toBeNull();
   });
 });

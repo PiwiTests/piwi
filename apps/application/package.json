@@ -1,6 +1,6 @@
 {
   "name": "@piwitests/dashboard",
-  "version": "0.61.0",
+  "version": "0.63.0",
   "private": true,
   "type": "module",
   "imports": {
@@ -14,7 +14,7 @@
     "app:seed:demo": "node scripts/generate-demo-seed.mjs",
     "app:seed:dev": "node scripts/seed-dev-from-demo.mjs",
     "app:build": "nuxt build",
-    "app:dev": "nuxt dev",
+    "app:dev": "nuxt dev --strictPort",
     "app:dev:bg": "node scripts/dev-server.mjs",
     "app:preview": "nuxt preview",
     "app:lint": "oxlint --config oxlint.config.ts .",
@@ -64,6 +64,7 @@
     "@opentelemetry/resources": "^2.11.0",
     "@opentelemetry/sdk-trace-node": "^2.12.0",
     "@piwitests/core": "*",
+    "@piwitests/editor": "*",
     "@piwitests/picker-dom": "*",
     "@tanstack/vue-table": "^8.21.3",
     "@vite-pwa/nuxt": "^1.1.1",
@@ -102,7 +103,8 @@
     "monocart-reporter": "^2.15.1",
     "playwright": "^1.63.0",
     "read-excel-file": "^9.3.12",
-    "vue-tsc": "3.3.11"
+    "vue-tsc": "3.3.11",
+    "ws": "^8.22.0"
   },
   "optionalDependencies": {
     "@libsql/linux-x64-musl": "^0.5.29"

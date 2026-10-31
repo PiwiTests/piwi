@@ -7529,6 +7529,74 @@
     "message": "No run right now. Start a test from the editor: it shows here.",
     "description": "Runs window, when the editor answers and runs nothing."
   },
+  "runs_desktopApp": {
+    "message": "Desktop app",
+    "description": "Runs window, beside a run’s name: the run was started by the Piwi desktop app rather than an editor. Short."
+  },
+  "runs_terminal": {
+    "message": "Terminal",
+    "description": "Runs window, beside a run’s name: the run was started in a terminal, and follows the editor whose workspace holds it. Short."
+  },
+  "runs_runner": {
+    "message": "Test runner",
+    "description": "Runs window, beside a run’s name: the editor’s own test runner started the run (a JetBrains IDE’s Playwright run configuration, its gutter’s Run included), and it follows the editor whose workspace holds it. Short."
+  },
+  "runs_desktopName": {
+    "message": "the desktop app",
+    "description": "Runs window, in runs_reconnecting for the Piwi desktop app’s hub. Lower case, inside a sentence."
+  },
+  "runs_followingDesktop": {
+    "message": "Following the desktop app",
+    "description": "Runs window, under the heading: the window follows the runs the Piwi desktop app starts, and no editor window."
+  },
+  "runs_followingWithDesktop_one": {
+    "message": "Following $count$ editor window and the desktop app",
+    "description": "Runs window, under the heading: how many windows of VS Code or a JetBrains IDE the window follows, beside the Piwi desktop app.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_followingWithDesktop_other": {
+    "message": "Following $count$ editor windows and the desktop app",
+    "description": "Runs window, under the heading: how many windows of VS Code or a JetBrains IDE the window follows, beside the Piwi desktop app.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_statusDesktopSearching": {
+    "message": "Looking for the desktop app’s runs…",
+    "description": "Runs window, while it asks the paired Piwi desktop app for its runs, and no editor is paired."
+  },
+  "runs_statusDesktopNoAccess": {
+    "message": "Piwi Picker may no longer reach the desktop app’s address: pair it again in the settings.",
+    "description": "Runs window, when the permission to reach the paired Piwi desktop app was taken back, and no editor is paired."
+  },
+  "runs_statusDesktopRefused": {
+    "message": "The desktop app refused the pairing: pair Piwi Picker with it again in the settings.",
+    "description": "Runs window, when the paired Piwi desktop app refuses the pairing’s token, and no editor is paired."
+  },
+  "runs_statusDesktopUnreachable": {
+    "message": "The desktop app does not answer: open it to follow the runs it starts.",
+    "description": "Runs window, when the paired Piwi desktop app does not answer, and no editor is paired."
+  },
+  "runs_statusDesktopOutdated": {
+    "message": "This desktop app cannot share its runs: update it.",
+    "description": "Runs window, when the paired Piwi desktop app is older than the runs it shares, and no editor is paired."
+  },
+  "runs_statusDesktopUnproven": {
+    "message": "The program at the desktop app’s address is not the paired app: Piwi Picker sent it nothing, and asks again in a moment.",
+    "description": "Runs window, when the program at the paired desktop app’s address does not prove it holds the pairing’s token: another program took the port. Nothing was sent to it."
+  },
+  "runs_statusDesktopNoRuns": {
+    "message": "No run right now. Run a test from the desktop app: it shows here.",
+    "description": "Runs window, when the paired Piwi desktop app answers and runs nothing, and no editor is paired."
+  },
   "runs_ended": {
     "message": "The run ended.",
     "description": "Runs window, on a run that ended. The editor does not say whether its tests passed."
@@ -7630,6 +7698,14 @@
   "runs_finishTitle": {
     "message": "Run the test on without stopping at a breakpoint again",
     "description": "Runs window, the Finish button’s tooltip."
+  },
+  "runs_end": {
+    "message": "End the test",
+    "description": "Runs window, button on a stopped test: it ends the test there, reported as skipped; the stopped call and the rest of the test never run. Short."
+  },
+  "runs_endTitle": {
+    "message": "End the test here: the rest of it is skipped",
+    "description": "Runs window, the End the test button’s tooltip."
   },
   "runs_pick": {
     "message": "Pick",
@@ -7800,5 +7876,149 @@
   "runs_requestNoSize": {
     "message": "size unknown",
     "description": "Runs window, in a request of the list, in place of its size when the response did not state one (its body came in chunks). Short."
+  },
+  "runs_live": {
+    "message": "Watch live",
+    "description": "Runs window, the toggle button over a stopped page’s image that shows the page’s live view in its place. A small button: keep it short."
+  },
+  "runs_liveTitle": {
+    "message": "Show the test’s page as it paints, in place of its image: your clicks and keys on it go to the page",
+    "description": "Runs window, the Watch live button’s tooltip."
+  },
+  "runs_liveBadge": {
+    "message": "Live",
+    "description": "Runs window, the badge on a live view, beside a dot. One short word."
+  },
+  "runs_liveAlt": {
+    "message": "Live view of the test’s page",
+    "description": "Runs window, the name of a stopped page’s live view, which shows the page as it paints."
+  },
+  "runs_liveAltInput": {
+    "message": "Live view of the test’s page: keys and clicks go to the page",
+    "description": "Runs window, the name of a stopped page’s live view while the clicks and keys on it go to the page."
+  },
+  "runs_liveStarting": {
+    "message": "Starting the live view…",
+    "description": "Runs window, under the image while the live view starts."
+  },
+  "runs_liveLost": {
+    "message": "The live view ended: the connection to the editor was lost. Watch live again once it is back.",
+    "description": "Runs window, under the image when the live view ended because the connection to the editor was lost. Watch live is the button’s name (runs_live)."
+  },
+  "runs_liveHint": {
+    "message": "Your clicks, the wheel and your keys on the view go to the test’s page. Esc gives the keys back to this window; Shift+click picks a locator.",
+    "description": "Runs window, a hint under the live view the first time the clicks and keys on it go to the page. Esc is the Escape key; Shift+click a click with Shift held."
+  },
+  "runs_pickAt": {
+    "message": "Pick on the image",
+    "description": "Runs window, the toggle button over a stopped page’s image: the next click on the image picks the element under it."
+  },
+  "runs_pickAtTitle": {
+    "message": "Click an element on the image to pick its locator without touching the page: it replaces the one on this line. Shift+click picks too",
+    "description": "Runs window, the Pick on the image button’s tooltip."
+  },
+  "runs_pickAtOn": {
+    "message": "Click the element on the image to pick its locator. Esc stops.",
+    "description": "Runs window, read by a screen reader when Pick on the image waits for a click. Esc is the Escape key."
+  },
+  "runs_failUnwatched": {
+    "message": "Watch the page live first: keys and clicks go to it only then.",
+    "description": "Runs window, why the input sent to a stopped page through its live view was refused: the window does not watch that stop."
+  },
+  "runs_shareLive": {
+    "message": "Share live",
+    "description": "Runs window, button on a run: shares it on the team’s Piwi instance it reports to, whose run page then shows its tests’ pages to whoever may open the run there, while someone watches. Short."
+  },
+  "runs_shareLiveTitle": {
+    "message": "Let anyone who can open this run on your team’s Piwi instance watch its tests’ pages from the run page",
+    "description": "Runs window, the Share live button’s tooltip."
+  },
+  "runs_shareWarning": {
+    "message": "While this run is shared on $instance$, anyone with its page open there sees each stop of its tests: the call, its file and line, and the test’s title, even while nobody watches. While someone watches a worker, images of its test’s page go there too, each with its call and the test’s title. Anyone who can open the run there can watch, and on an instance with authentication off, anyone who can reach it. Nothing is stored, and Stop sharing ends it within seconds.",
+    "description": "Runs window, asked the first time a run is shared live in this window: what goes out and who sees it. $instance$ is the host of the Piwi instance (piwi.example.com), or runs_shareInstance. Stop sharing is the button’s name (runs_stopSharing).",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runs_shareInstance": {
+    "message": "the Piwi instance it reports to",
+    "description": "Runs window, in runs_shareWarning and runs_sharedLive as $instance$ when the run names no instance."
+  },
+  "runs_sharedLive": {
+    "message": "Shared live on $instance$",
+    "description": "Runs window, under a run’s heading while it is shared live. $instance$ is the host of the Piwi instance (piwi.example.com).",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runs_sharedNobody": {
+    "message": "nobody watches yet",
+    "description": "Runs window, after runs_sharedLive: nobody watches the shared run on the instance now."
+  },
+  "runs_sharedViews_one": {
+    "message": "$count$ view open",
+    "description": "Runs window, after runs_sharedLive: how many views of the shared run are open on the instance (one person may hold several).",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_sharedViews_other": {
+    "message": "$count$ views open",
+    "description": "Runs window, after runs_sharedLive: how many views of the shared run are open on the instance (one person may hold several).",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_stopSharing": {
+    "message": "Stop sharing",
+    "description": "Runs window, button on a run shared live: the views of it on the instance end, and nothing more goes there. Short."
+  },
+  "runs_stopSharingTitle": {
+    "message": "End the views of this run on the instance: nothing more goes there",
+    "description": "Runs window, the Stop sharing button’s tooltip."
+  },
+  "runs_copyRunPage": {
+    "message": "Copy the run page’s link",
+    "description": "Runs window, button on a run shared live: copies the address of its page on the instance, for a teammate."
+  },
+  "runs_pageAtStop": {
+    "message": "A test’s page shows here when it stops: at a breakpoint, at page.pause(), or once you pause it. Watch live then shows it as it paints.",
+    "description": "Runs window, under a run the editor started, while it runs and none of its tests is stopped: where a test’s page shows, and how a test stops. Watch live is the button’s name (runs_live)."
+  },
+  "runs_pageAtStopDesktop": {
+    "message": "A test’s page shows here when it stops: at page.pause(), or once you pause it. Watch live then shows it as it paints.",
+    "description": "Runs window, under a run of the desktop app, while it runs and none of its tests is stopped: where a test’s page shows, and how a test stops (the desktop app sets no breakpoints). Watch live is the button’s name (runs_live)."
+  },
+  "runs_shareRefusedLocal": {
+    "message": "This run cannot be shared live: it reports to the Piwi desktop app on this machine, which no teammate reaches. Name your team’s instance in PIWI_DASHBOARD_URL to share a run there.",
+    "description": "Runs window, under a run’s heading in place of Share live: the run reports to the desktop app, which gives no live view key. PIWI_DASHBOARD_URL is a variable’s name: never translated."
+  },
+  "runs_shareRefusedOff": {
+    "message": "This run cannot be shared live: its project’s live view is off on the instance. A Project admin turns it on in Project → Settings → Live view.",
+    "description": "Runs window, under a run’s heading in place of Share live: the run’s project has its live view off on the Piwi instance. Project admin and Project → Settings → Live view are the dashboard’s English words: never translated."
+  },
+  "runs_shareRefusedUnregistered": {
+    "message": "This run cannot be shared live: the reporter’s global setup did not register it with the instance as it started (wrapConfig adds it).",
+    "description": "Runs window, under a run’s heading in place of Share live: the reporter’s global setup, which asks the instance for a live view key, did not register the run. wrapConfig is code: never translated."
+  },
+  "runs_shareRefusedNoInstance": {
+    "message": "This run cannot be shared live: it reports to no Piwi instance. Name your team’s instance in PIWI_DASHBOARD_URL.",
+    "description": "Runs window, under a run’s heading in place of Share live: the run reports to no Piwi instance. PIWI_DASHBOARD_URL is a variable’s name: never translated."
+  },
+  "runs_shareRefusedUnknown": {
+    "message": "This run cannot be shared live: the Piwi reporter gave its workers no live view key.",
+    "description": "Runs window, under a run’s heading in place of Share live: the reporter set nothing for its workers’ live view."
   }
 }

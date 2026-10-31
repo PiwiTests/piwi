@@ -1,5 +1,8 @@
 # Run control from Piwi Picker and the editor
 
+- Status: accepted
+- Date: 2026-10-28
+
 A plan to steer a running Playwright test from outside it: pause it now, step it, run it to a line, resume it, and
 write code from where it stands, from Piwi Picker (the browser extension), from the IDE, from the page itself and from
 the desktop app. The question was whether the browser extension could control a test run Playwright started, whether
@@ -11,11 +14,15 @@ paused a running test from an extension page in a second browser, held it for 4.
 stepped it and let it pass. The same session reaches the dashboard, as a live view to watch, and coding agents, as
 tools that follow the run, read the stopped page as its accessibility tree and act on it.
 
-**Status.** Proposed 2026-10-24. PR 1 of the [Delivery](#delivery) is built: the pause is Playwright's debugger
-(Part 1), in headed runs with `PIWI_PAUSE_AT`, with today's pause bar; PRs 2, 3 and 4 are built too (below), while PRs
-5 to 9 are not. PR 1 differs from the text in four ways. A headed
-browser opens Playwright's Inspector at every stop of
-`context.debugger`, so the worker sets `PW_CODEGEN_NO_INSPECTOR` except while a `page.pause()` it leaves to
+**Status.** Proposed 2026-10-24, shipped 2026-10-28: every PR of the [Delivery](#delivery) is on `main`, PR 1 as #896, PR 2 as #923, PR 3 as #929, PR 4 as #932, PR 5 as #938, PR 6 as #941, PR 7 as #943, PR 8 as #940, PR 9 as #942 with its desktop half as #944, and **Share live** as #946. Left out, and planned nowhere: the live view as a live trace (open question 7: frames shipped); Piwi Picker's Runs window saying a stop is an agent's, which the hub carries; sharing a run live from an agent's tools; a forwarded port JetBrains Gateway names itself; and a stdio bridge of the JetBrains plugin's own in place of `mcp-remote`. Known limits, said in the docs: on Windows a run started in a terminal cannot tell who serves a stale discovery file's named pipe, and **Debug in my editor** stops at the line the failed run recorded. PR 1 of the Delivery is built: the pause is Playwright's debugger
+(Part 1), in headed runs with `PIWI_PAUSE_AT`, with today's pause bar; PRs 2, 3 and 4 are built too (below; PR 4 is
+merged as #932), and so are PR 5's three halves, the service's, the IDE's with the forwarded addresses, and the Runs
+window's, and PR 6's two halves, the desktop app's server as the hub of its runs, then its window's controls, live
+view and Copy with Piwi Picker listing those runs, PR 9's tools for the runs an editor starts, then for the desktop
+app's own runs, PR 7's two halves, **End the test** with the runs started in a terminal, and **Debug in my
+editor**, and PR 8's team instance part (below; the desktop app's own runs are watched in PR 6's tray), **Share live**
+included (below). PR 1 differs from the text in four ways. A headed browser opens Playwright's Inspector at every stop
+of `context.debugger`, so the worker sets `PW_CODEGEN_NO_INSPECTOR` except while a `page.pause()` it leaves to
 Playwright runs (the switch is process-wide: a `page.pause()` of a second copy of Playwright in the worker, which Piwi
 does not see, then stops with neither bar nor Inspector until the test's timeout), and a run under Playwright's own
 debugger (`--debug`, `--debug=cli`, `PWDEBUG`) ignores the breakpoints. The runner suspends the test timeout only for
@@ -92,7 +99,7 @@ refused at a stop that ended or is ending, and at one whose page the worker cann
 page cannot see either. Both IDE clients name their pairing in `PIWI_EDITOR_SEND` for every run that names a run
 channel, since any such run can stop with the bar, Pause included, and the worker takes it out of its environment
 while a test runs, as it does `PIWI_RUN_CHANNEL`, its picks still posted to it.
-The live endpoint lists loopback addresses: a remote window forwards them with Part 6. PR 3's extension half is the
+The live endpoint lists loopback addresses, which a remote window forwards (Part 6). PR 3's extension half is the
 worker's hub connections, the Runs window, the popup's **Runs** tile and the run shortcut (Part 4.1 and 4.4). It differs
 from the text in five ways. The shortcut is assigned by the person, not at install, where the text gives it
 `Ctrl+Shift+5`: a global key is taken from every application on the computer, paired with an editor or not, and the only
@@ -170,14 +177,331 @@ caret settles, one request at a time, at the end of its line; a line holding no 
 answer tells apart from a refusal by naming the chain it read in a refusal too. A failure reads `Failed · <how it
 failed> · attempt N`, with Resume alone among its controls, and one the service lets go at once never reaches a
 client, so a plain Run's headless failure shows nothing.
-The spikes in the
+PR 5's first half is the worker's, the run channel's, the editor service's and the hub's side of the live view, the
+input on it, Pick on the image, and Pick and Record through the view on a headless page (Part 6), built in
+`@piwitests/core/run-view`, which the Runs window's half builds on (below). A viewer is a hub connection that
+sent `view { id, ref, worker, since, on }`, which is apart from PR 4's `follow`: watching a stop holds no failure, and
+following the runs watches no stop. The worker starts the stopped page's screencast through an internal call
+with the stop's first viewer and stops its own client with the last, as the stop ends (before its `running`), and as
+its page or the connection closes. Each frame (`frame { ref, worker, since, width, height, data }`: a JPEG in base64,
+the viewport scaled to fit 1280 by 800, quality 60, 384 KB at most, `width` and `height` the viewport in CSS pixels;
+in place of a longer one, an image of the page at quality 30, two a second at most, and when that is longer too, once
+until a frame goes again, `frame { ref, worker, since, refused }`, the sentence the Runs window shows in place of the
+view, as a page of noise at 1920 by 1080 with a video of that size gives)
+goes to that stop's viewers alone, ten a second at most at each step: the worker holds one frame's acknowledgment at
+a time, an interval at most, so Chromium and Firefox paint no more while the view is the page's one screencast client;
+a test's video or its trace's images acknowledge each frame at once, and the browser then paints at its own pace,
+up to 60 a second, the worker acknowledging at once each frame that comes while one is held, so it holds none it does
+not send (measured with `video: 'on'` and `trace: 'on'` on an animated page, the worker's `arrayBuffers` stays under
+25 MB in both browsers over 30 s; an acknowledgment for every frame, each an interval after the one before, would hold
+them all, 5 MB more each second). It drops a frame like the one before, keeps the latest alone while its connection holds 1 MB unsent,
+as the hub does for each WebSocket holding 1 MB unread, and sends none of a stop that began to end; nobody stores
+one, and the worker keeps the latest it sent in memory until the view ends, sent again as `view` asks again for a
+viewer that comes later (a still page paints no other), as the extension's worker keeps the latest of each view it
+relays for a second Runs window. A test's video, or its trace's images, starting first gives every later
+client of the page's one screencast its size and quality (800 by 512 at quality 90 for a 1000 by 640 viewport); the
+view stops its own client alone (the disposable `start()` returns), and a run with `video: 'on'` keeps a whole video
+through a watched stop, its duration checked with `ffprobe`. Where the screencast cannot start (the test runs its
+own), the view is an image of the page twice a second. `input { id, ref, worker, since, events }` plays `mouse`
+(`move`, `down`, `up`, `click` with `button` and a `clickCount` of 1 to 3, which `down` and `up` carry too for a worker
+that lists `input-clicks`, played by `page.mouse.down` and `up`), `wheel` and `key` events (`down`, `up`,
+`press`: Playwright's key names or a printable ASCII character, modifiers before a pressed key) and `text` (1,000
+characters, no control character but a tab and a line break), 50 a message and 200 a second, at points in CSS pixels, as trusted input through internal calls, only
+from a connection watching the stop, and lets go of what it holds down before the test goes on; it reaches Piwi's
+overlays as a person's input does, the picker, the recorder and a headed stop's pause bar included. At a headless
+stop, Pick a locator, Record here, Assert and Assert a region start for a connection watching its view, in the page
+as at a headed stop, driven through that input, and end with the view or the stop, leaving nothing in the page (the
+picker's choice list, which had no way out of the page unanswered, now has one); each session tells each connection
+what each stop takes from it (`stop.intents`: Assert, Assert a region and Mock a request still only while the IDE
+writes the code from a stop, as in PR 4). `pick-at { id, ref, worker, since, x, y }` and the IDE's
+`piwi/pickAt { ref, worker?, since, x, y }` read the ARIA snapshot in AI mode with its boxes, and take of the elements
+under the point the innermost that is or holds the element a click there lands on, rather than the smallest box (a
+field overflows its label's box; a dialog, a fixed banner or a sticky header covers what is under it): the page's hit
+test in paint order (`elementsFromPoint`, into open shadow roots), Piwi's overlays left out (each one's root an
+`__piwi` id) and an iframe refused; they rank it as the bar's pick does with `locator.normalize()`'s locator among
+the candidates, and send the
+first that finds it alone where a pick goes (`ok`, `message`, `locator`); an image names the viewport its points are
+in (`width`, `height`), so an image at a device scale factor of 2 maps through it. The worker's `takes` and its
+`intents` on the hub gain `view`, `input`, `input-clicks` and `pick-at`. Measured headless at 1280 by 720 on a page of text, whose
+frames are about 260 KB at quality 60 (a plain form's, about 10 KB): a still page sends one frame (Firefox paints
+about ten a second there, all alike, and sends one too), an animated one ten a second, 1.8 MB a second; the worker's
+CPU, 0.3 % while a stop waits unwatched, is 1.7 % watching the still page and 9 % the animated one in Chromium, 6.7 %
+and 8.7 % in Firefox (acknowledging every frame at once costs 31 % in Chromium); a view starts in 4 to 11 ms and stops
+in 2 to 5 ms, two input events play in 10 to 43 ms, and a pick on the image takes 150 to 260 ms.
+PR 5's IDE half is Pick on the image in both clients and the forwarded addresses of remote development; the IDE shows
+an image at each stop, with no live view, which stays the Runs window's. It differs from the text in five ways. A click
+on a headless stop's image picks only where its worker takes `pick-at` and the image names its viewport, with **Click
+the image to pick a locator** above it and a crosshair over it; the answer shows under the caption, and the locator
+comes back through Send to editor as the bar's pick does. VS Code's paused page view, script-free until then, runs one
+script by the style's nonce (`default-src 'none'`), only where a click picks, which posts the click's offset, the size
+the image is shown at and which image it was on: the image is scaled to fit, so its natural size alone does not map a
+click. A remote VS Code window (Remote SSH, WSL, Dev Containers, a codespace in VS Code desktop) lists its own
+service's hub alone, at the local port `asExternalUri` forwards to it, once the service takes that port in `Host`
+(`piwi/hub { forwarded }`, answered once it does, 8 ports at most, loopback names alone, the token and the extension's
+origin still required), on `127.0.0.1` as the pairing address is, whatever name VS Code gives the forward, and Piwi
+Picker reads any hub named under `localhost` on `127.0.0.1` too: `hello` sends the token before the hub proves
+anything, and `localhost` may resolve to `[::1]`, where another program could listen; the other windows' services on that machine take no port this window forwards, so one
+pairing reaches one remote window's runs. The Send to editor listener takes the port its own pairing is forwarded to
+too, and proves the token for the port the request named: VS Code forwards to another local port when the remote's is
+taken on the browser's machine, as it is while a local window holds the saved pairing port. A codespace in the browser
+forwards to an `https` address behind GitHub's sign-in, which Piwi Picker never pairs with, so it lists nothing there.
+The JetBrains platform has no public API to forward a port of a Gateway backend, nor to tell one from a local IDE:
+`GlobalPortForwardingManager` of the bundled Code With Me plugin is experimental in 2024.1 and 2026.2, with its
+parent's methods scheduled for removal in 2026.2, and `ClientSessionsManager` and `AppMode` are internal. **Pair with
+Piwi Picker** names the IDE's port and its runs' hub ports, to forward under **Ports** in the JetBrains Client at the
+same numbers, which the proof and the `Host` check take unchanged; a hub's port changes as its service starts again.
+PR 5's extension half is the Runs window's live view, the input on it, Pick on the image, and Pick, Record, Assert and
+Assert a region through the view at a headless stop, and differs from the text in six ways. The view is not shown
+whenever the window shows a stop: **Watch live**, a toggle above the image of a stop that takes `view`, asks for it,
+and it ends with the stop, as the window hides or closes, or when it is turned off; left on, it is asked again at the
+worker's next stop and as the window shows again, and a view whose hub connection was lost shows as ended, not asked
+again at that stop. Every button of a stop follows what it takes from this window (`stop.intents`), and a service that
+sends none gets the window as before, the actions in the test's window where the bar shows and no view. The
+background worker's one connection to a hub watches a stop while any window does: each window gets the frames of the
+stops it watches alone, ten a second at most, the latest one waiting, and the state narrowed to it, so a stop another
+window watches takes from it no input and, headless, none of those actions; input goes to the hub only for a stop the
+window watches itself. The input goes in batches about every 50 ms, the moves coalesced. Where the stop takes
+`input-clicks`, each button goes `down` and `up` as it does, with the browser's `detail` as its `clickCount`, so a
+double click is the one the system counts (a slow one at 320 ms included) and a single click waits for nothing;
+elsewhere, as for a worker before it, a drag goes as `down`, moves and `up`, and a click is held 250 ms so a second
+one at the same place makes one `click` of `clickCount` 2. The left and right buttons go to the page, the middle
+one, which opens a link in a new tab the view does not show, never. The keys go to the page
+while the view has the focus, as Playwright's names (Control or `⌘` as `ControlOrMeta`, with A, Y, Z, Enter and the
+editing keys alone), other characters and a paste as text; Escape gives the keyboard back to the window and never
+reaches the page, nor do the function keys and the browser's other shortcuts, and Tab moves the focus out unless a
+click into the view took the keyboard. Control, Alt and Meta held with a click go `key` `down` before it and `up`
+after it, with no change to the protocol, and Shift+click picks: **Pick on the image** is a toggle
+and a Shift+click on a stop's image, headed or not, or its view. The docs give the window a page of its own,
+[Runs window](../apps/docs/features/runs-window.md).
+PR 6's first half is the desktop app's server as the hub of the runs its shell starts (Part 7), the service's side
+alone: the window's controls and live view, Piwi Picker listing those runs, and Copy are its second half. It differs
+from the text in eight ways. The server runs the editor service's own run control, exported for another host
+(`@piwitests/editor/run-host`: the record channel's socket, `RunSessions`, `RunHub`, `StopActions`, `RunLines`), with
+options a host needs (`declines`, `host`, `token`, `words`) and a hub peer of the host's own transport (`RunHub.join`):
+the app's window is one, through a stream and commands behind the desktop token (`/api/desktop/runs/events`,
+`/api/desktop/runs/commands`), hearing what Piwi Picker hears. A run's name on the channel is `PIWI_RUN_REF`
+(`desktop-<the shell's run id>`), which the reporter reads before `PIWI_ORIGIN_REF`: a reproduction's
+`PIWI_ORIGIN_REF` names its failure cluster, which two runs may share, and the window's own refs (`desktop:…`,
+`job:…`) hold a `:` the channel does not take; an older reporter names its run by `PIWI_ORIGIN_REF` where that fits.
+The shell reads the channel (`PIWI_RUN_CHANNEL`) from a route behind the guard as each run starts, once the readiness
+probe proved the launch nonce, and the route answers no request a browser sends; Piwi Picker reads the hub's address
+from another (`/api/desktop/live`), in the shape of an editor's `…/live`, and its `hello` carries the desktop token it
+holds since **Allow**: the three open routes are unchanged. A failure no pause bar shows is held in a run the window
+shows live (`show { ref, on }`, the window's own command) or while a Runs window follows the runs, and never in a run
+nobody attends, as Part 5 holds a failure only in a run started to be watched: the shell ends the ref of a Flake Lab
+run, a bisect, a lab job and a run with `--repeat-each` above 1 or `--ui` in `-unattended`, and the server's sessions
+hold none of its failures whoever watches it (`holdsFailures`), its workers told so in `attached`, which also names the
+host for the reporter's lines (`Resume in the desktop app`). Code from a desktop
+run goes to the app's window alone, to copy (`stop-code` on its stream), Piwi Picker hearing only that it was made
+(`…: copy it in the desktop app's window.`): the desktop app holds no editor's pairing nor token, and Send to editor,
+the one way into an IDE that carries code, is Piwi Picker's; the code is made from the file as it is on disk, for a
+file of a linked folder alone (a reproduction's worktree is none), and refused once the file was written since the
+run's first worker connected. Pick a locator and Record here in the test's window, and Assert, end in an editor, and
+the server declines them; a pick on the image answers with its locator, Assert a region and Mock a request make code.
+A headed desktop run's `page.pause()` shows Piwi's pause bar where it showed Playwright's Inspector, as in a run the
+editor starts.
+PR 6's second half is the window's side and Piwi Picker's, and differs from the text in seven ways. The live run view
+is the Local runs tray, where each run shows its workers under its output, as the hub tells them: a running worker shows
+its test without its current call, which the session does not carry, and at a stop the place, the call about to run,
+the image, **Watch live** with the input on the view, **Pick on the image**, **Resume**, **Step**, **Finish** (Resume
+alone at a failure, its error shown), **Pause** while it runs, and **Assert a region** and **Mock a request** where
+the stop takes them; the input, the points on an image and what a stop takes are the Runs window's own code
+(`apps/extension/src/shared/view-input.ts`, `runs.ts`), which the app imports from the extension's sources, both under
+the same license, as the editor service bundles the extension's mock generator. The window holds the hub's stream only
+while a run of its tray runs or the hub still has a live run: while it does, every headless stop waits for it, so the
+tray opens on each stop it hears, once, and the system says so of a failure or a `page.pause()` with the window in the
+background; it says `show` only for the running runs whose **Hold failures** switch is on (off by default, on from
+the start for a reproduction, which runs to show its failure, and never offered for a run nobody attends), by each
+step's name as the step starts, and closing the stream lets every stop go on. The stream is written to the response itself, so the hub's 1 MB
+frame wait and 32 MB cut count what the window has not read. Code from a desktop run never goes to an
+editor, even a paired one: it comes to the tray under **Code from the runs**, the block apart from the import lines its
+edits add, each with **Copy** through the window's clipboard (`navigator.clipboard`, the app's loopback origin being a
+secure context, so no clipboard command of the shell's). The locators a desktop run picks come back too: the shell
+names the server's `POST /api/desktop/runs/picks` as the run's `PIWI_EDITOR_SEND`, read with the run channel, with a
+token the server mints for that route alone, never the desktop token, so the pause bar's **Pick a locator** and a pick
+on the image reach the window to
+copy (`pick`), and the hub answers a pick on the image `…: copy it in the desktop app's window.`; Pick in the test's
+window from the hub stays declined. Piwi Picker asks the paired desktop app for its hub beside the editor's
+(`fetchDesktopHubs`, `GET /api/desktop/live` once the app proved its token), connects it with the app's token in
+`hello`, leaves out a hub named with another token, and never keeps it in the secret area under `hubs`; a pairing
+changed writes its time to `piwiDesktopPairedAt`, so the worker asks again. The Runs window marks the app's runs
+**Desktop app**, follows the app alone when no editor is paired, saying then what the app answered, and offers its
+stops no Pick, Record or Assert, which the server declines. The app's tools for agents (Part 9.2) stay with PR 9.
+
+PR 9 is Part 9 for the runs an editor starts: the editor service's MCP server, its seven tools, both IDEs' side,
+and bind on request (9.3, listed in PR 7). It differs from the text in eight ways. The editor service serves it, for
+the runs its window built (`src/agent-server.ts`, `src/run-agent.ts`), not a hub of every run: the desktop app's tools
+for its own runs come after PR 6's second half, in the MCP server it serves already. It is MCP's streamable HTTP on
+`127.0.0.1` (a POST answered with JSON, no stream), at a port the IDE keeps, behind a bearer token the IDE keeps
+(VS Code's `SecretStorage`, the JetBrains `PasswordSafe`, one per workspace or project), a new one when another
+program holds the kept port or the person resets it; it answers only its own `Host` and no request that carries an
+`Origin`, bounds a body, a batch and the requests at once, and lets go of a long poll whose client left or cancelled
+it. VS Code lists it beside `piwi.mcp` as a second
+provider (`piwi.runs`); a JetBrains IDE has no public way for a plugin to add a server to the AI Assistant (the MCP
+Server plugin's `mcpServer.mcpToolset`, from 2025.2, adds tools to the IDE's own server), so the plugin copies an
+`mcpServers` entry through `mcp-remote`, at one exact release over HTTP alone, or the `type: "http"` entry Claude Code
+and Cursor read, as VS Code does too. A setting in each turns it off. The tools that act name the stop they answer
+(`stop`, as the IDE's controls do), and `worker` is optional where one worker is stopped; `run_control` has no **End
+the test** (Part 1.5, PR 7) and `code_write` takes `steps`, `locator` (in place of the stopped line's) or `assertion`.
+The run channel gains the takes `agent` (the requests `snapshot`, `act` and `ref-locator`), `events` and `bind`, so
+`takes` stays within the 16 entries an older editor service reads: the worker sends the run's events only
+while an agent follows it (`events { on }`, then `event` messages, at most 50 a second, the rest counted as
+`dropped`), each call heard through Playwright's instrumentation (feature-checked, so none of Piwi's own), and acts by
+`page.getByRef` (1.64), each action ranked and kept as a step in the service, rendered by the recorder's generator. An
+image comes only when the agent asks, without the snapshot's boxes, and none comes at a failure. What the page says
+(its snapshot, an element's text, the locators built from it, its console and errors, a worker's own words about a
+page call) comes back apart from Piwi's answer, between markers that share a random nonce, and a secret field's value
+(a password, a one-time code, a card's number or security code) is hidden in the snapshot and masked in the image, in
+every frame. A stop an agent asked for says so (`RunStop.by: 'agent'`, `Paused by the agent · …`), its first action
+at a stop is a notice, and the code it has written names it. Bind on request is the IDE's alone (`piwi/stopBind`,
+after a warning each time), never an agent's, and ends with the test.
+
+PR 7's first half is **End the test** (Part 1.5) and the runs started in a terminal (D5). End the test differs from
+the text in how the stopped call is given up: the race alone lets it run, since closing a context first lets the call
+its debugger holds go on (PR 2). So each locator call the proxy delegates while the test can stop carries an end
+signal of the attempt in Playwright's own `signal` option, beside a signal of the test's (`AbortSignal.any`), and End
+aborts it before the debugger lets the call go: Playwright gives the call up before it runs. The test is skipped by
+`testInfo.skip(true, 'Ended from Piwi')` as that call rejects, at its next locator call, as a `page.pause()` it stopped
+at goes on, or as its function ends (`_onDidFinishTestFunctionCallbacks`, feature-checked, only when it passed); a
+call the proxy does not delegate runs first, as the text says, and a `notice` says so. A failure keeps its result: End
+is not offered there, and one sent ends the test as it failed, as Resume does. A hook: in a `beforeEach` End skips the
+test; once the test function ended (an `afterEach`, a fixture's teardown) it goes on as Resume, the result kept; Piwi
+stops in no `beforeAll` nor `afterAll`, so End never applies there. Playwright retries no skipped test, and a failure
+let end runs the next attempt, which stops as the first did. End is the take `end` (the run channel's control,
+`piwi/runControl`, the hub's `runControl`, `run_control`'s `end`, which answers as the test ends), 15 takes within the
+16 an older service reads; a stop's `intents` list it but at a failure, and the pause bar, both IDEs (no default key),
+the Runs window and the desktop app's tray offer it. A run started in a terminal follows an editor when it names no
+`PIWI_RUN_CHANNEL` and no launcher started it, never under CI, `PWDEBUG`, `--debug` or UI mode (`--ui`, `--ui-host`,
+`--ui-port`), and only with its output on a terminal (else `PIWI_EDITOR=on`; `PIWI_EDITOR=off` runs it alone): the
+reporter's `onBegin` reads the discovery files of a folder only this user can enter, those this user owns, of this
+machine, whose process runs as this user, written since the machine started, and but on Windows whose run channel is
+this user's socket in such a folder, deleting none, and follows the service one of whose roots holds the config's folder or the working directory, real
+paths compared, the most specific root first, then the service started last. It hands the workers that service's run
+channel and a ref of the run's own (`terminal-<pid>-<time>`), with one line saying so. The service takes a ref it
+never built as a terminal's run (`RunSession.terminal`, `HubSession.terminal`): shown as one, with no Stop, starting
+with the editor's breakpoints, which the clients send as they stand (`piwi/setBreakpoints`), and holding a failure only
+while a Runs window follows the runs, so it never waits for nobody. Its workers take no Pick, Record or Assert, which
+need the pairing and the record channel only a command the editor builds carries.
+
+PR 7's second half, **Debug in my editor**, is Part 8.2's first bullet, and differs from the text in six ways. The button is on the
+execution page's **Source** tab, beside the open link of the frame where the failure enters the test's code (the
+first in-project frame other than the test's declaration, a page object's included), in the captured frames and in
+the trace's full stack, not in the situation block, whose controls are at their budget; it goes only through Piwi's
+own clients, the VS Code extension's link and the JetBrains plugin's route, as the visitor's Open in IDE method picks.
+The link names, beside the file and line, the test's spec, its title after its describe blocks' (joined by ` › `),
+its Playwright project and the execution, and the editor service finds the test in the spec as saved by that title
+(`RunTestsArgs.debug`), running it by its location with `--project`, `--workers=1` and `--headed`. The IDE asks in a
+notification, never a dialog, after the failing line opened, and a link with any field it does not take (a line that
+is not a positive whole number, a title that is not plain text, a project a shell expands, a file outside the window's
+folders once every symbolic link is followed or under no Playwright config, a field named twice) opens and runs
+nothing, and says why. The breakpoint is the run's alone: the service carries it in the run's breakpoints, through
+the client's `piwi/setRunBreakpoints`, until a worker stops there, then drops it, so the IDE's breakpoint list is left
+as it is and a retry does not stop there again. The candidate is the **Locator fix** panel's recommended locator,
+asked of the instance as the command is built and again at the stop, counted and outlined through the locator count
+of Part 5, and said in a notice; while it is outlined, the caret's count on the stopped line answers it without asking
+the worker, so it does not take the outline down. Below the tablet width the button is hidden, as the open link's
+chooser is.
+
+PR 9's desktop half is Part 9.2's last sentence: the desktop app adds the seven tools to the MCP server it serves
+already (`/mcp`, which `piwi-desktop mcp-stdio` bridges for Claude Desktop), for the runs its shell starts, and differs
+from the text in seven ways. The tools are the editor service's own (`RunAgent`, through `@piwitests/editor/run-host`),
+in the app's words (`AgentWords`, `agentTools`), on PR 6's hub (`DesktopRuns.agent`); `/mcp` lists and runs them in
+the desktop build alone, in the `agents` module, and passes their answers on as they are (Piwi's JSON, the
+page-content block, the image) rather than as a catalog tool's JSON. A wait ends as its client goes (the response's
+`close`), but `notifications/cancelled` is not read, and the stdio bridge passes one message at a time, so a wait there
+holds the next call. `code_write` writes no file: the code goes to the window under **Code from the runs**, as Assert
+a region's does, and back to the agent between the page-content markers, its import lines apart
+(`StopActions.agentCode` returns the `StopCode` it made; the editor's answer is as it was); a locator for the stopped
+line's is listed as a locator at that line, and its sentences say `in place of the one on …` (`StopCodeWords` takes
+the place, not only the line). A run nobody attends (`-unattended`) is not served: `run_list` leaves it out and says
+why, every tool refuses it, and none of its events is kept (`RunAgentOptions.refuses`). The tray says a stop is the
+agent's (`Paused by the agent`), which needed `HubStop.by` in `@piwitests/core/run-hub`: the editor's hub already sent
+it, and Piwi Picker now reads it, though its Runs window does not show it. The tools prefer none of the suite's own
+locators and name no command, as the window's code does not and the hub has none for the shell's runs. The app's
+**MCP server** page says it serves the runs, with a link to the docs, rather than listing the seven tools, whose
+descriptions are the editor's single paragraphs; `describe_piwi`'s `mcp` topic names them. A stop the agent asks for holds only
+where a person can see it: with no window of the app nor Piwi Picker to answer a headless stop, a pause, a step or a
+run to a line is refused (`RunAgentOptions.stopsGoOn`), and since the window hides in the tray with its stream open, a
+stop the agent asked for goes on as the agent stops following the run, `FOLLOW_IDLE_S` after its last call
+(`letsGoOnIdle`), so a run never waits for an agent that left. The bridge never sends a `tools/call` again once the
+app had it whole, since the call may have run.
+
+PR 8's team instance part is the run page's live view of a run and its word that a worker is paused (Part 8.1's team
+instance half, 8.2's second bullet), and differs from the text in these ways. The setting is a column of the project
+(`projects.live_view`, no settings document holds the project's switches), off by default, under **Project → Settings
+→ Live view** for `project:manage`, beside what it sends, to whom and that nothing is kept; turning it off ends every
+view of the project's runs at once. It covers each CI run of the project the reporter's global setup registers, a CI
+run told as the run's origin tells it (`detectCi`): that setup asks `/setup` for a key (`liveView: true`) in a CI run
+alone, given for a project with the setting on alone, and `onBegin` names it in `PIWI_LIVE_VIEW`
+(`<instance>/api/test-runs/<id>/live-view#<key>`, `@piwitests/core/live-view`); a run the reporter registers without
+the global setup does so after Playwright started its workers, and has none. A run on a developer's machine sends
+nothing: **Share live** is to share it, a run's own sharing, and with it the word that its test is **Paused**, since a
+CI run never stops. The key (`pdl_` and 32 random bytes) is held as its digest in the instance's memory, 500 a
+project and 5,000 in all at most (the expired first, then the oldest of the project that holds the most), opens that
+run's live view alone, ends with the run (its finish or cancel), with the setting or after a day, and is out of the
+worker's environment from its first fixture to its last, back only for Playwright's look at that environment as the
+worker stops; an interruption closes the run's streams and keeps its keys, so a run that goes on is watched again, and
+a worker's stream refused while its project's setting is off gives the key up. The connection is an event stream, as
+the run page's own (the server has no WebSocket): each worker holds `GET …/live-view?worker=&shard=`, on which it
+hears how many watch it (`viewers`), and posts `frame`, `stop` and `ended` to `POST …/live-view`, each checked field
+by field; it opens the stream again after 1 to 16 s, 20 times at most (an interrupted run's 409 included), and gives
+it up on a 401, 403, 404 or 410, never holding a test. The frames are the `page`
+fixture's screencast, through the helper the editor's view of a stop now shares (`page-view.ts`): at most 640 by 400
+at quality 50, four a second and about 256 KB a second, a heavier frame holding the next one back longer, so a page
+whose trace or video came first (800 wide at quality 90, which the trace `wrapConfig` sets makes the common case)
+sends fewer; measured on a canvas redrawn at every frame, 37 KB frames four a second on its own (148 KB a second) and
+131 KB frames two a second on video (261 to 264 KB a second), and a still page sends none. A page has one screencast
+client of its own: a test's own `page.screencast.start` or `stop` first ends the view's (the fixtures hand the test
+`page.screencast` behind a guard), and that view, as a second view of one page would, goes on with an image of it a
+second. Each frame carries the call the runner's steps say the test is on, its title through `hideSecretsInText`,
+and the test's title, so a view opened from one test's row ends at the next test's first frame; a viewer who comes
+while no test runs hears why no image shows. A stop is posted as it starts and ends with its test's title, so
+**Paused** lands on that test's row, not on the row of the test before, whose end streams later, and again on each
+stream the worker opens, as the instance keeps it only while a stream holds it. The instance relays each frame to
+that worker's viewers alone and keeps none (`server/utils/live-view.ts`), one waiting per viewer that reads slowly,
+written straight to the response to see its backlog; 64 workers and 16 viewers a run (4 of one signed-in person, a
+fifth replacing their oldest), 8 frames a second a worker and 192 KB a frame at most. The run page shows **Watch**
+beside the step of the test each worker runs now, and the view in a dialog with each image's call, ended with the
+test, the worker, the run or the setting, and the run page hears each worker leave, whatever ends it;
+`…/live-view/workers` lists the run's workers and counts what they sent, refused requests included, which shows that
+a project with the setting off sends nothing.
+The demo shows the setting, and no view: it runs no test worker. The paused calls keep counting as interactive as
+PR 1 made them: the stops still go to `piwi-pauses` and the step events alone.
+
+**Share live**, PR 8's last piece, shares a run on a developer's machine with the team instance, and differs from Part
+8.1's text in these ways. It is offered wherever a local run's stops show, not in the IDE and the Runs window alone: VS
+Code (**Piwi: Share the run live on the team instance**, and a status bar item that offers it and counts the views
+open), a JetBrains IDE (**Tools → Piwi → Share the Run Live**, its status bar item saying it), Piwi Picker's Runs window
+and the desktop app's Local runs tray; and at any time during a run, not only before it starts. Each asks once in its
+session (a VS Code window, the IDE's project, a Runs window, the app since it started) what goes out and to whom (the
+stops, to everyone with the run page open, even while nobody watches; the images while someone does; to anyone who can
+open the run, anyone who can reach an instance with authentication off), unless the run is known not to be shareable,
+the person alone shares (`piwi/shareRun`, the hub's `share`; no agent's tool does), and a shared run offers its page's
+link to copy. The key keeps PR 8's checked path: the global setup asks `/setup` for one in any run (`liveView: true`),
+and a project with the setting on answers with one, so every local run of such a project holds a key, within the same
+bounds and ending with the run. Outside CI the workers hold it and open no stream until the run channel says `share`
+with `on: true`, its sixteenth take, a worker that connects later following the run's choice (`Session.share`); `on:
+false`, never refused, not even while no worker is connected, closes the streams, each worker posting `unshared` first
+so every viewer hears why (`LiveViewEnd` `unshared`: **The developer stopped sharing this run from their machine.**). A
+run outside CI without a key names why in its place (`PIWI_LIVE_VIEW=none:<why>`: no instance, unregistered by the
+global setup, the setting off, the desktop app), and each worker tells the run channel how it stands (`live`: whether it
+holds a key, whether it streams, the views open of it, the run's page, why not), which the editor service sums up
+(`RunSession.live`, `HubSession.live`): shared while a worker streams, why a run cannot be shared, and why its sharing
+stopped though nobody asked (`stopped`). A sharing also stops as the run connection that asked for it closes (the editor
+or the desktop app quits), and as the instance refuses the key (the setting turned off, which a key that ended says with
+404, the instance restarted: the keys are in its memory), holds the run as interrupted, or does not answer after the
+retries: said once a run, as a notice, with Share live offered again. PR 8's promise is now "nothing from a run outside
+CI unless it is shared". The desktop app's own server hands out no key (`liveView.refused: 'local'`, `none:local`),
+since no teammate reaches it: its Local runs tray offers no Share live for a run that reports to it, and its project
+settings hide Live view; a run it starts that reports to a team instance shares there. At either bound of the keys,
+those that never opened a stream go first, and an interrupted run's end. The spikes in the
 [appendix](#appendix-the-spikes) are the evidence for the feasibility claims; they are not part of the repository.
 Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D60 of
-[`1.0-stabilization.md`](1.0-stabilization.md).
+[`1.0-stabilization.md`](../proposals/1.0-stabilization.md).
 
 **Summary.** Piwi already pauses a run the editor starts at the editor's breakpoints, with a bar in the page that picks
-a locator for that line or records the steps that come next ([`editor-local-runs.md`](../adr/editor-local-runs.md),
-[`record-from-the-ide.md`](record-from-the-ide.md)). That pause is set before the run, on locator actions only, in
+a locator for that line or records the steps that come next ([`editor-local-runs.md`](editor-local-runs.md),
+[`record-from-the-ide.md`](../proposals/record-from-the-ide.md)). That pause is set before the run, on locator actions only, in
 headed runs only, and only the page knows it is paused. This plan makes the pause a shared, live state every Piwi
 surface can see and change:
 
@@ -209,7 +533,7 @@ places Piwi's controls can live, and that one is the weakest:
 
 | Where the controls live | What it takes | Verdict |
 | --- | --- | --- |
-| **Piwi Picker inside the test's browser** (`--load-extension`) | Playwright's bundled Chromium only: Google Chrome and Microsoft Edge removed the flag ([from Chrome 137](https://groups.google.com/a/chromium.org/g/chromium-extensions/c/1-g8EFx2BBY)). A persistent context only (`launchPersistentContext`): one profile per worker or per test, no `storageState` option, so a suite that signs in through `use.storageState` loses its sign-in, and a context the test makes with `browser.newContext()` gets no extension. Firefox and WebKit cannot load it. | No. It changes how the suite runs to add controls Piwi already injects while paused. [`record-from-the-ide.md`](record-from-the-ide.md) D1 reached the same conclusion for recording. |
+| **Piwi Picker inside the test's browser** (`--load-extension`) | Playwright's bundled Chromium only: Google Chrome and Microsoft Edge removed the flag ([from Chrome 137](https://groups.google.com/a/chromium.org/g/chromium-extensions/c/1-g8EFx2BBY)). A persistent context only (`launchPersistentContext`): one profile per worker or per test, no `storageState` option, so a suite that signs in through `use.storageState` loses its sign-in, and a context the test makes with `browser.newContext()` gets no extension. Firefox and WebKit cannot load it. | No. It changes how the suite runs to add controls Piwi already injects while paused. [`record-from-the-ide.md`](../proposals/record-from-the-ide.md) D1 reached the same conclusion for recording. |
 | **Piwi Picker in the developer's own browser, as a remote control** | A local hub (the process that started the run) and a paired WebSocket. | Yes. One extension controls a run whatever browser it drives, headed or headless (Chromium in spike C, the pause itself in Firefox in spike A, WebKit unverified), and is never in the test's page, its screenshots or its accessibility tree. |
 | **In the page, while paused** (the pause bar, the picker, the recorder) | Scripts injected through Playwright while the test waits. | Yes, as today, and only while paused (D7). |
 
@@ -304,7 +628,7 @@ Resume in both IDEs, on top of today's pause bar.
 
 | Piece | Where | What it gives this plan |
 | --- | --- | --- |
-| Breakpoints in the browser | `packages/reporter/src/internal/capture/pause-at.ts`, `capture-fixtures.ts` (`pausesAt`, `pauseBefore`, `pauseInPlace`), [`editor-local-runs.md`](../adr/editor-local-runs.md) Part 4 | `PIWI_PAUSE_AT` lists lines; the locator proxy holds a locator action or assertion on one of them before it runs and lifts the test timeout. Headed runs only, never under CI. The lines are fixed when the run starts. |
+| Breakpoints in the browser | `packages/reporter/src/internal/capture/pause-at.ts`, `capture-fixtures.ts` (`pausesAt`, `pauseBefore`, `pauseInPlace`), [`editor-local-runs.md`](editor-local-runs.md) Part 4 | `PIWI_PAUSE_AT` lists lines; the locator proxy holds a locator action or assertion on one of them before it runs and lifts the test timeout. Headed runs only, never under CI. The lines are fixed when the run starts. |
 | The pause bar | `packages/picker-dom/src/overlay-pause.ts` (`showPauseBar`, `pauseAnswered`, `takePauseState`) | Resume, Step, Pick a locator, Record here, Finish. A plain element at the top of the page; the worker reads its answer from a page global, polled every 250 ms. Nothing outside the page knows the test is paused. |
 | The record channel | `packages/core/src/ide-recorder.ts`, `packages/editor/src/recorder/handoff.ts`, `packages/reporter/src/internal/capture/record-handoff.ts` | A socket the editor service listens on (a Unix socket in a user-only folder, a named pipe on Windows), named in every run it builds as `PIWI_RECORD_CHANNEL=<path>#<token>`; one JSON message per line, each checked field by field. A test connects to it only when **Record here** is clicked. |
 | A pick lands on its line | `postPickToEditor` (`PIWI_EDITOR_SEND`), `piwi/applyPick`, `replaceLocatorOnLine` | A locator confirmed at a pause replaces the locator chain on that line, in the file as it stands. |
@@ -340,14 +664,14 @@ its browser.
 | D2 | Playwright's debugger is the pause: `context.debugger`, in place of the hold the locator proxy does today. | Public since 1.59 and in every Piwi user's Playwright. It pauses before navigations, key presses, mouse calls and assertions as well as locator actions, headless runs too; the test timeout is suspended by the runner and per-call budgets are untouched (spike A and the timeouts check). Every client sees one paused state. |
 | D3 | Breakpoints, Step and Finish stay Piwi's, as a policy the worker applies over the debugger: while breakpoints are set, the worker keeps the debugger stopping before every call it can stop at and resumes at once unless the call is on a breakpoint line or a step was asked. | `runTo` takes one location; the IDE has several breakpoints and changes them during the run. Deciding in the worker costs no round trip per call: 120 calls took 2.16 s without the policy and 2.25 s with it, within the noise of the runs. |
 | D4 | One run connection per worker, for the worker's whole life, to the socket the editor service already listens on for **Record here**, named in the run's environment as `PIWI_RUN_CHANNEL`. A recording keeps its own connection to that socket, as today. | The editor service already opens a socket and names it in every run it builds; a connection to it held for the whole run gives every surface the run's live state, and a recording that ends closes only its own. A second Playwright client attached to the worker's bound browser can pause and step it too (spike B), but does not know which test, attempt or project a context belongs to, needs a Playwright client of the project's version inside the service, and would put every breakpoint decision a round trip away. |
-| D5 | The hub is on the side that started the run: the editor service for runs from the IDE; for the desktop app's runs, which its shell starts (`runner.rs`), the app's bundled server, which the shell names in the run's environment. A run started in a terminal finds an editor service of its workspace through the discovery files `~/.piwi/editors/<pid>.json`. | Whoever starts a run names its hub in the run's environment, so the run belongs to one hub from its first test; the editor service and the desktop app's server already hold the pairings and know the project's files. No new daemon. The files replace the single `~/.piwi/editor.json` that [`record-from-the-ide.md`](record-from-the-ide.md) Part 5 proposed and never built, with one per service, so every IDE window is found. |
-| D6 | Every surface is a view of one session. Code is rendered by the editor service and written by the IDE client alone; Piwi Picker and the page send intents (pick this element, record, assert this), never code. | One generator and one writer, with the catalog, the test id attribute, `this.page` and a single undo step, as [`record-from-the-ide.md`](record-from-the-ide.md) D3 and D4. |
+| D5 | The hub is on the side that started the run: the editor service for runs from the IDE; for the desktop app's runs, which its shell starts (`runner.rs`), the app's bundled server, which the shell names in the run's environment. A run started in a terminal finds an editor service of its workspace through the discovery files `~/.piwi/editors/<pid>.json`. | Whoever starts a run names its hub in the run's environment, so the run belongs to one hub from its first test; the editor service and the desktop app's server already hold the pairings and know the project's files. No new daemon. The files replace the single `~/.piwi/editor.json` that [`record-from-the-ide.md`](../proposals/record-from-the-ide.md) Part 5 proposed and never built, with one per service, so every IDE window is found. |
+| D6 | Every surface is a view of one session. Code is rendered by the editor service and written by the IDE client alone; Piwi Picker and the page send intents (pick this element, record, assert this), never code. | One generator and one writer, with the catalog, the test id attribute, `this.page` and a single undo step, as [`record-from-the-ide.md`](../proposals/record-from-the-ide.md) D3 and D4. |
 | D7 | Nothing of Piwi is in the page while the test acts. The pause bar, the picker and the recorder appear only while the test is paused, and are gone before it goes on; a view of the page is a screencast or a screenshot, not a script in it. | The pause bar is a plain element: the test's own locators would find its buttons, screenshots and visual comparisons would include it, and an action's hit test could land on it. |
 | D8 | Control is paired, typed and the developer's own. The hub listens on a user-only socket or the loopback interface, reached from another machine only through the address the developer's IDE forwards; every client is paired with a token; a WebSocket is accepted only from the extension's own origin; the commands are a closed set, with no way to evaluate code. The team instance never steers a run; it may show one (Part 8). | A page served from the machine itself reaches a loopback WebSocket (spike C). A paired client may pause a test and see the application's pages; it must not run code in them. Frames reach the instance only from a project that turned its live view on, while someone watches. |
 | D9 | Every call Piwi makes for control is an internal call. | Spike A: a public call made right after a step is taken as the test's next call and paused; debugger calls made publicly appear as steps of the test in its trace and in reports. |
-| D10 | A run in which a test paused is interactive: each paused test carries its pauses, and the server leaves those calls out of the timing figures. | The trace counts the paused time in the paused call's duration (a navigation of 5,132 ms in the spike), while the runner leaves it out of the test's duration. The results still count. An interactive run sends no notification and no pull-request feedback, whatever its origin: an editor run already sends none ([`editor-local-runs.md`](../adr/editor-local-runs.md) D11), and a desktop or terminal run that paused is no signal either. |
+| D10 | A run in which a test paused is interactive: each paused test carries its pauses, and the server leaves those calls out of the timing figures. | The trace counts the paused time in the paused call's duration (a navigation of 5,132 ms in the spike), while the runner leaves it out of the test's duration. The results still count. An interactive run sends no notification and no pull-request feedback, whatever its origin: an editor run already sends none ([`editor-local-runs.md`](editor-local-runs.md) D11), and a desktop or terminal run that paused is no signal either. |
 | D11 | Work with Playwright's own tools rather than rebuild them: a run Piwi controls can be bound on request for `playwright-cli attach` and Playwright's dashboard. | Playwright 1.59 ships a generic live view, input into it and agent attach. Piwi's surfaces carry what those lack: breakpoints from both IDEs, the project's generator and catalog, the suite's history at the paused line, and the extension in the developer's own browser. |
-| D12 | Licenses stay on their side. The run channel's messages live in `@piwitests/core` (MIT) beside the record channel's; the worker's half is the reporter's (MIT); the hub, the IDE clients and the extension are FSL. Bundles the worker injects (`record-ide.js`) are loaded by a path the hub gives. | The rule of the root guide, and of [`record-from-the-ide.md`](record-from-the-ide.md) D8. |
+| D12 | Licenses stay on their side. The run channel's messages live in `@piwitests/core` (MIT) beside the record channel's; the worker's half is the reporter's (MIT); the hub, the IDE clients and the extension are FSL. Bundles the worker injects (`record-ide.js`) are loaded by a path the hub gives. | The rule of the root guide, and of [`record-from-the-ide.md`](../proposals/record-from-the-ide.md) D8. |
 | D13 | An agent follows a run as its events and reads a stopped page as its ARIA snapshot in AI mode, with a ref per element: the page's or a region's, to a chosen depth, then its changes. It gets an image when it asks or at a failure, the DOM one element at a time, and no video. | On three public pages the snapshot was 1.9 to 8.9 times smaller than the HTML, and a region's to three levels deep was 769 characters (spike E). The tree names elements by role and name, the vocabulary of the locators Piwi writes, and its refs are what the agent acts on (`page.getByRef`). Video is for people. Playwright's own agent tools read a page the same way. |
 
 ## Part 1: The pause is Playwright's debugger (reporter)
@@ -426,7 +750,7 @@ with breakpoints that never stopped is not interactive.
 
 ### 1.5 End the test
 
-[`record-from-the-ide.md`](record-from-the-ide.md) Part 5 wanted **End the test**: skip the rest once the steps are
+[`record-from-the-ide.md`](../proposals/record-from-the-ide.md) Part 5 wanted **End the test**: skip the rest once the steps are
 recorded. With the debugger, a stop is inside the paused call, which runs as soon as the stop ends; and the worker's
 channel is outside the test's own flow, where `testInfo.skip()` must be thrown. The locator proxy is in that flow: it
 awaits the call it delegated. So the proxy races each delegated call against an end signal of the test's; **End the
@@ -557,7 +881,7 @@ Every protocol change lands with both clients, per the service's rule; the reque
   calls never stop (no Playwright call, or only a call without the pause flag, such as `waitForSelector`) is marked as
   never stopping.
 - **Run to Cursor** from the caret: `run-to` on the caret's line, in a spec or a page object.
-- **A run that is not stopped** keeps its live gutter ([`editor-local-runs.md`](../adr/editor-local-runs.md), Part 7).
+- **A run that is not stopped** keeps its live gutter ([`editor-local-runs.md`](editor-local-runs.md), Part 7).
 
 ## Part 4: Piwi Picker as the remote control
 
@@ -601,9 +925,10 @@ Every protocol change lands with both clients, per the service's rule; the reque
   case) naming the process its name names: another machine's file, in a home folder several machines share, and any
   other file are skipped and left. `GET …/live` answers `{ hubs: [{ url, token, pid, version, client, roots,
   startedAt }] }`, never the run channel's token, and a 401 without the pairing's token; the URL is the pairing's with
-  `send` replaced by `live` (`liveUrlOf`). Its addresses are loopback ones: a remote window forwards them with Part 6,
-  and until then a remote VS Code window lists none (`vscode.env.remoteName`), its services listening on the remote
-  machine; the JetBrains IDEs' public API does not tell a Gateway backend from a local IDE, and it lists them there.
+  `send` replaced by `live` (`liveUrlOf`). Its addresses are loopback ones: a remote VS Code window lists its own
+  service's hub at the local port VS Code forwards to it (Part 6), its services listening on the remote machine; the
+  JetBrains IDEs' public API does not tell a Gateway backend from a local IDE, and it lists them there, at the ports
+  the person forwards at the same numbers.
 
   Before Piwi Picker sends the pairing's token to either endpoint, the program there proves it holds it
   (`@piwitests/core/editor-send`, as the desktop app proves its own): a request with a challenge in
@@ -705,11 +1030,11 @@ place (D6). An action started where no IDE is paired (a desktop run with none) o
 | **Assert** | The checks the recorder's **Check an element** offers for the chosen element (`toHaveText`, `toBeVisible`, `toHaveValue`, `toBeChecked`, `toHaveCount`…), through `record-ide.js` | Above the paused line | New |
 | **Assert a region** | `toMatchAriaSnapshot` with the region's ARIA snapshot read from the paused page (53 ms in the spike); a new matcher in `renderSpec` | Above the paused line | New |
 | **Mock a request** | `await page.route(…)` that answers as the server answered a request the page made since the test began, written by the extension's `mockCode` (credentials hidden, no header written), bundled into the editor service as the recorder is. The capture fixtures record requests without their bodies; an interactive run also keeps the bodies of its fetch and XHR answers, text only, the last 50 at most and 256 KB each, in the worker's memory, and sends only the one chosen | Above the paused line | New |
-| **The locator at the caret** | Nothing: the locator's matches are outlined in the paused page, with their count in the editor | The caret's line, while a test is paused | New; [`record-from-the-ide.md`](record-from-the-ide.md) Part 4.3 for a recording browser |
+| **The locator at the caret** | Nothing: the locator's matches are outlined in the paused page, with their count in the editor | The caret's line, while a test is paused | New; [`record-from-the-ide.md`](../proposals/record-from-the-ide.md) Part 4.3 for a recording browser |
 
 - **The place is Playwright's**: `pausedDetails().location`, the line and column of the call in the user's code, in a
   spec or a page object; the service reads which page expression is in scope there (`this.page`, `adminPage`), as
-  [`record-from-the-ide.md`](record-from-the-ide.md) Part 8 does.
+  [`record-from-the-ide.md`](../proposals/record-from-the-ide.md) Part 8 does.
 - **The paused call still runs** when the test goes on, with the code it was started with: a pick changes the file,
   not the running test. The editor says so once.
 - **A failure** in a run started to be watched holds the failing page once the test and its hooks are done, before
@@ -735,7 +1060,7 @@ A stopped page nobody sees still gets the code actions:
   and **Pick** with its anchors step.
 - **Dev containers, Codespaces, WSL and JetBrains Gateway**: the editor service runs where the code is; the hub's
   address is forwarded by the IDE (`vscode.env.asExternalUri`, Gateway's port forwarding) and the token is still
-  required. This answers, for runs, the remote development risk [`record-from-the-ide.md`](record-from-the-ide.md)
+  required. This answers, for runs, the remote development risk [`record-from-the-ide.md`](../proposals/record-from-the-ide.md)
   lists for recording.
 
 Images and frames go from the worker to the hub to the Runs page, on the developer's machine or their forwarded port;
@@ -969,7 +1294,7 @@ becomes a diagram in the docs' own style, a theme-aware SVG under `apps/docs/pub
   browser. A separate design, if asked for.
 - **Code written by a model**: an agent acts on the page, and Piwi's generator writes the code from its recorded
   steps, as it does from a person's; the generator stays deterministic
-  ([`record-from-the-ide.md`](record-from-the-ide.md)). An agent can still edit files with its own tools, outside
+  ([`record-from-the-ide.md`](../proposals/record-from-the-ide.md)). An agent can still edit files with its own tools, outside
   these.
 - **Other languages' Playwright**.
 

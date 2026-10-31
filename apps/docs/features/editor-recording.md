@@ -102,7 +102,7 @@ its port, and accepts one only with the token. Before Piwi Picker sends the toke
 another program that took the port is sent nothing. With several VS Code windows open, the one that paired receives.
 With no editor open, a JetBrains IDE puts it in a new scratch file. In a remote window (Remote SSH, WSL, Dev
 Containers), the pairing address is the local end of a port VS Code forwards to the listener, listed in the Ports
-view; Piwi Picker's Runs window lists no run of a remote window yet.
+view, and Piwi Picker's Runs window lists that window's runs: [Remote development](/guide/remote-development).
 
 Every test run Piwi starts gets the pairing address and token as `PIWI_EDITOR_SEND`, so a locator picked at one of its
 stops reaches the editor: such a run starts the listener and creates the token if there is none. The capture fixtures

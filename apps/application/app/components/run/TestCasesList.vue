@@ -1,14 +1,17 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, watch, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, watch, ref } from 'vue';
 import type { CacheSnapshot } from 'vue-virtual-scroller';
 import type { RunClusterMeta, TestCaseResult } from '~~/types/api';
 import type { LiveStepInfo, LiveStepsByWorker } from '~/utils/live-steps';
 import { liveResourcesByWorker, liveResourcesForCase, type LiveWorkerResources } from '~/utils/live-worker-resources';
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
+import { liveWorkerKey, type LiveWorkerState } from '#shared/live-view';
+import type { LiveRowNote } from '~/utils/live-row-note';
 import { summarizeRunCases } from '#shared/utils/test-counts';
 import { isFixmeSkip } from '#shared/utils/skip-kind';
 import { stripAnsi } from '#shared/error-parse';
 import { parseLocation } from '#shared/parse-location';
+import { buildRetryCommand, retryCaseOf, type RetryCase } from '~/utils/retry-command';
 import {
   RUN_SEARCH_FIELDS,
   collectTestSearchValues,
@@ -40,15 +43,21 @@ const props = defineProps<{
   liveSteps?: LiveStepsByWorker | null;
   /** What the run's reporters measured so far; each running row shows its worker's last values. */
   liveResources?: RunResourceTimelinePart[] | null;
+  /** The workers in the run's live view, by `liveWorkerKey`: each running row of one offers Watch, and says Paused. */
+  liveWorkers?: Record<string, LiveWorkerState> | null;
+  /** What the run's running rows say where Watch would be: it is not shared live, or where its pages show. */
+  liveNote?: LiveRowNote | null;
   clusterMeta?: RunClusterMeta | null;
   /** Stable test-case ids currently quarantined — marks the matching rows. */
   quarantinedCaseIds?: Set<number> | null;
   /** Piwi project id + name, threaded so the IDE opener can resolve a workspace root. */
   projectKey?: string | number | null;
   projectName?: string | null;
+  /** The run the rows belong to: a desktop re-run of a selection is compared with it. */
+  runId?: number | null;
 }>();
 
-const emit = defineEmits<{ 'quarantine-changed': [] }>();
+const emit = defineEmits<{ 'quarantine-changed': []; watch: [worker: LiveWorkerState, testCase: TestCaseResult] }>();
 
 function isQuarantined(tc: TestCaseResult): boolean {
   return Boolean(props.quarantinedCaseIds?.has(tc.testCaseId));
@@ -64,6 +73,39 @@ function clusterIssue(id: number | null | undefined) {
 
 function liveStep(tc: TestCaseResult): LiveStepInfo | null {
   return liveStepForCase(props.liveSteps, tc);
+}
+
+/** A running row's worker, as the run's live view files it. */
+function workerKeyOf(tc: TestCaseResult): string | null {
+  if (tc.status !== 'running' || tc.workerIndex == null) return null;
+  return liveWorkerKey({ shard: tc.shardIndex ?? null, worker: tc.workerIndex });
+}
+
+/**
+ * The execution each worker in the live view runs now: its running row that began last. A row of the test before,
+ * whose end has not streamed in yet, is not it.
+ */
+const currentExecutionOf = computed(() => {
+  const current = new Map<string, TestCaseResult>();
+  if (!props.liveWorkers) return current;
+  for (const tc of props.testCases) {
+    const key = workerKeyOf(tc);
+    if (!key || !props.liveWorkers[key]) continue;
+    const seen = current.get(key);
+    if (!seen || (tc.startedAt ?? 0) >= (seen.startedAt ?? 0)) current.set(key, tc);
+  }
+  return current;
+});
+
+/**
+ * The row's worker in the run's live view, when the row is the test that worker runs now. A stop names its test: one
+ * of the worker's next test, whose begin has not streamed in yet, is not this row's.
+ */
+function liveWorkerOf(tc: TestCaseResult): LiveWorkerState | null {
+  const key = workerKeyOf(tc);
+  const worker = key ? props.liveWorkers?.[key] : null;
+  if (!key || !worker || currentExecutionOf.value.get(key)?.executionId !== tc.executionId) return null;
+  return worker.paused?.test && worker.paused.test !== tc.title ? { ...worker, paused: null } : worker;
 }
 
 const liveWorkerValues = computed(() => liveResourcesByWorker(props.liveResources));
@@ -527,7 +569,15 @@ const canTriage = computed(() => can('triage:write', props.projectKey));
 // records coverage: read once a test is selected, so the page's render reads nothing for it.
 const { active: coverageActive, resolve: resolveCoverageActive } = useLazyCoverageActive(() => props.projectKey);
 
-const selectionEnabled = computed(() => (canQuarantine.value || canTriage.value) && failedCount.value > 0);
+// The desktop app also re-runs a selection, so it can select without a triage permission.
+const desktopBridge = ref(false);
+onMounted(() => {
+  desktopBridge.value = !!tauriCore();
+});
+
+const selectionEnabled = computed(
+  () => (canQuarantine.value || canTriage.value || desktopBridge.value) && failedCount.value > 0,
+);
 const selectedIds = ref<Set<number>>(new Set());
 
 const selectableRows = computed(() => filteredTestCases.value.filter((tc) => isFailedStatus(tc.status)));
@@ -570,6 +620,23 @@ watch([selectableRows, selectionEnabled], () => {
 });
 
 const selectedTestCaseIds = computed(() => [...new Set(selectedRows.value.map((tc) => tc.testCaseId))]);
+/** The selection as the cases a re-run names, one per test and project (tests made in a loop share a line). */
+const selectedRetryCases = computed(() => {
+  const byKey = new Map<string, RetryCase>();
+  for (const tc of selectedRows.value) {
+    const c = retryCaseOf(tc);
+    byKey.set(`${c.filePath}:${c.line ?? ''}|${c.projectName ?? ''}|${c.title}`, c);
+  }
+  return [...byKey.values()];
+});
+const selectedTestsLabel = computed(
+  () => `${selectedRetryCases.value.length} selected test${selectedRetryCases.value.length === 1 ? '' : 's'}`,
+);
+const { copy: copySelection } = useCopy();
+function copySelectionCommand() {
+  const command = buildRetryCommand(selectedRetryCases.value);
+  if (command) copySelection(command, { toast: 'Retry command copied' });
+}
 const selectedClusterIds = computed(() => [
   ...new Set(selectedRows.value.map((tc) => tc.failureClusterId).filter((id): id is number => id != null)),
 ]);
@@ -772,6 +839,26 @@ defineExpose({ scrollToCase });
     >
       <span class="text-sm font-medium" aria-live="polite">{{ selectedCount }} selected</span>
       <div class="flex flex-wrap items-center gap-2 ml-auto">
+        <DesktopRunLocallyButton
+          v-if="desktopBridge"
+          :project-id="projectKey"
+          :project-label="projectName"
+          :cases="selectedRetryCases"
+          :label="`Re-run ${selectedTestsLabel}`"
+          :run-title="`${selectedTestsLabel} of run #${runId}`"
+          :source-run-id="runId"
+        />
+        <UButton
+          v-else
+          size="xs"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-clipboard"
+          :title="buildRetryCommand(selectedRetryCases)"
+          @click="copySelectionCommand"
+        >
+          Copy retry command
+        </UButton>
         <CoverageLossPopover
           v-if="canQuarantine"
           :project-id="projectKey ?? 0"
@@ -906,6 +993,9 @@ defineExpose({ scrollToCase });
                       item.tc.locks,
                       liveStep(item.tc)?.title,
                       liveResourcesOf(item.tc) !== null,
+                      liveWorkerOf(item.tc)?.paused?.call.title,
+                      liveWorkerOf(item.tc) !== null,
+                      item.tc.status === 'running' ? liveNote : null,
                       showSuitePath,
                       item.tc.suitePath,
                     ]
@@ -939,6 +1029,8 @@ defineExpose({ scrollToCase });
                 :selected="selectedIds.has(item.tc.executionId)"
                 :live-step="liveStep(item.tc)"
                 :live-resources="liveResourcesOf(item.tc)"
+                :live-worker="liveWorkerOf(item.tc)"
+                :live-note="item.tc.status === 'running' ? liveNote : null"
                 :highlighted="highlightedCaseId === item.tc.executionId"
                 :indent="(item.depth ?? 0) * 16"
                 :suite-path="showSuitePath ? item.tc.suitePath : null"
@@ -946,6 +1038,7 @@ defineExpose({ scrollToCase });
                 :project-key="projectKey"
                 :project-name="projectName"
                 @toggle="toggleRow(item.tc)"
+                @watch="emit('watch', liveWorkerOf(item.tc)!, item.tc)"
               />
             </DynamicScrollerItem>
           </template>

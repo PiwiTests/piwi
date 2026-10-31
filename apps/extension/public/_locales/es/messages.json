@@ -6352,6 +6352,60 @@
   "runs_statusNoRuns": {
     "message": "Ninguna ejecución por ahora. Inicia un test desde el editor: aparece aquí."
   },
+  "runs_desktopApp": {
+    "message": "Aplicación de escritorio"
+  },
+  "runs_terminal": {
+    "message": "Terminal"
+  },
+  "runs_runner": {
+    "message": "Ejecutor de tests"
+  },
+  "runs_desktopName": {
+    "message": "la aplicación de escritorio"
+  },
+  "runs_followingDesktop": {
+    "message": "Siguiendo la aplicación de escritorio"
+  },
+  "runs_followingWithDesktop_one": {
+    "message": "Siguiendo $count$ ventana del editor y la aplicación de escritorio",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_followingWithDesktop_other": {
+    "message": "Siguiendo $count$ ventanas del editor y la aplicación de escritorio",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_statusDesktopSearching": {
+    "message": "Buscando las ejecuciones de la aplicación de escritorio…"
+  },
+  "runs_statusDesktopNoAccess": {
+    "message": "Piwi Picker ya no puede acceder a la dirección de la aplicación de escritorio: vuelve a emparejarla en la configuración."
+  },
+  "runs_statusDesktopRefused": {
+    "message": "La aplicación de escritorio rechazó el emparejamiento: vuelve a emparejar Piwi Picker en la configuración."
+  },
+  "runs_statusDesktopUnreachable": {
+    "message": "La aplicación de escritorio no responde: ábrela para seguir las ejecuciones que inicia."
+  },
+  "runs_statusDesktopOutdated": {
+    "message": "Esta aplicación de escritorio no puede compartir sus ejecuciones: actualízala."
+  },
+  "runs_statusDesktopUnproven": {
+    "message": "El programa en la dirección de la aplicación de escritorio no es la aplicación emparejada: Piwi Picker no le envió nada y vuelve a preguntar en un momento."
+  },
+  "runs_statusDesktopNoRuns": {
+    "message": "Ninguna ejecución por ahora. Ejecuta un test desde la aplicación de escritorio: aparece aquí."
+  },
   "runs_ended": {
     "message": "La ejecución terminó."
   },
@@ -6432,6 +6486,12 @@
   },
   "runs_finishTitle": {
     "message": "Continuar el test sin volver a detenerse en un punto de interrupción"
+  },
+  "runs_end": {
+    "message": "Terminar el test"
+  },
+  "runs_endTitle": {
+    "message": "Terminar el test aquí: el resto se omite"
   },
   "runs_pick": {
     "message": "Elegir"
@@ -6571,5 +6631,119 @@
   },
   "runs_requestNoSize": {
     "message": "tamaño desconocido"
+  },
+  "runs_live": {
+    "message": "Ver en directo"
+  },
+  "runs_liveTitle": {
+    "message": "Mostrar la página del test tal como se dibuja, en lugar de su imagen: tus clics y teclas sobre ella van a la página"
+  },
+  "runs_liveBadge": {
+    "message": "En directo"
+  },
+  "runs_liveAlt": {
+    "message": "Vista en directo de la página del test"
+  },
+  "runs_liveAltInput": {
+    "message": "Vista en directo de la página del test: las teclas y los clics van a la página"
+  },
+  "runs_liveStarting": {
+    "message": "Iniciando la vista en directo…"
+  },
+  "runs_liveLost": {
+    "message": "La vista en directo terminó: se perdió la conexión con el editor. Vuelve a usar Ver en directo cuando regrese."
+  },
+  "runs_liveHint": {
+    "message": "Tus clics, la rueda y tus teclas sobre la vista van a la página del test. Esc devuelve las teclas a esta ventana; Mayús+clic elige un locator."
+  },
+  "runs_pickAt": {
+    "message": "Elegir en la imagen"
+  },
+  "runs_pickAtTitle": {
+    "message": "Haz clic en un elemento de la imagen para elegir su locator sin tocar la página: reemplaza el de esta línea. Mayús+clic también lo elige"
+  },
+  "runs_pickAtOn": {
+    "message": "Haz clic en el elemento de la imagen para elegir su locator. Esc lo cancela."
+  },
+  "runs_failUnwatched": {
+    "message": "Mira primero la página en directo: solo entonces las teclas y los clics van a ella."
+  },
+  "runs_shareLive": {
+    "message": "Compartir en directo"
+  },
+  "runs_shareLiveTitle": {
+    "message": "Dejar que quien pueda abrir esta ejecución en la instancia de Piwi de tu equipo vea las páginas de sus tests desde la página de la ejecución"
+  },
+  "runs_shareWarning": {
+    "message": "Mientras esta ejecución está compartida en $instance$, quien tenga su página abierta allí ve cada parada de sus tests: la llamada, su archivo y su línea, y el título del test, aunque nadie mire. Mientras alguien mira un worker, también se envían allí imágenes de la página de su test, cada una con su llamada y el título del test. Quien pueda abrir la ejecución allí puede mirarla y, en una instancia sin autenticación, cualquiera que pueda acceder a ella. No se guarda nada, y Dejar de compartir lo termina en segundos.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runs_shareInstance": {
+    "message": "la instancia de Piwi a la que informa"
+  },
+  "runs_sharedLive": {
+    "message": "Compartida en directo en $instance$",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runs_sharedNobody": {
+    "message": "nadie mira todavía"
+  },
+  "runs_sharedViews_one": {
+    "message": "$count$ vista abierta",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_sharedViews_other": {
+    "message": "$count$ vistas abiertas",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_stopSharing": {
+    "message": "Dejar de compartir"
+  },
+  "runs_stopSharingTitle": {
+    "message": "Terminar las vistas de esta ejecución en la instancia: no se envía nada más"
+  },
+  "runs_copyRunPage": {
+    "message": "Copiar el enlace de la página de la ejecución"
+  },
+  "runs_pageAtStop": {
+    "message": "La página de un test aparece aquí cuando se detiene: en un punto de interrupción, en page.pause() o cuando lo pausas. Ver en directo la muestra entonces tal como se dibuja."
+  },
+  "runs_pageAtStopDesktop": {
+    "message": "La página de un test aparece aquí cuando se detiene: en page.pause() o cuando lo pausas. Ver en directo la muestra entonces tal como se dibuja."
+  },
+  "runs_shareRefusedLocal": {
+    "message": "Esta ejecución no puede compartirse en directo: informa a la aplicación de escritorio de Piwi de esta máquina, a la que ningún compañero llega. Indica la instancia de tu equipo en PIWI_DASHBOARD_URL para compartir allí una ejecución."
+  },
+  "runs_shareRefusedOff": {
+    "message": "Esta ejecución no puede compartirse en directo: la vista en directo de su proyecto está desactivada en la instancia. Un Project admin la activa en Project → Settings → Live view."
+  },
+  "runs_shareRefusedUnregistered": {
+    "message": "Esta ejecución no puede compartirse en directo: el global setup del reporter no la registró en la instancia al empezar (wrapConfig lo añade)."
+  },
+  "runs_shareRefusedNoInstance": {
+    "message": "Esta ejecución no puede compartirse en directo: no informa a ninguna instancia de Piwi. Indica la instancia de tu equipo en PIWI_DASHBOARD_URL."
+  },
+  "runs_shareRefusedUnknown": {
+    "message": "Esta ejecución no puede compartirse en directo: el reporter de Piwi no dio a sus workers ninguna clave de vista en directo."
   }
 }

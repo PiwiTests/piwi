@@ -5,25 +5,27 @@
  * there (`this.page` in a page object), with the import lines it needs placed after the file's own. One generator for
  * each: `renderSpec` for the checks, the browser extension's `mockCode` for a mock (credentials hidden by name and by
  * shape, no header written, the body always inline, a warning for a body written as it came or one holding personal
- * data). And the locator at a caret, as `piwi/locatorAtCaret` counts it. Pure: the text of the file in, the code and
- * its edits out.
+ * data). An agent's steps on the stopped page are written as a recording's are (`steps`), and a locator it picked in
+ * place of the stopped line's (`renderStopLocator`). And the locator at a caret, as `piwi/locatorAtCaret` counts it.
+ * Pure: the text of the file in, the code and its edits out.
  */
 import { isPageExpression, renderSpec, safeLocator, type CodegenResult } from '@piwitests/core/codegen';
 import { parseLeafLocatorCall } from '@piwitests/core/locator-chain';
 import type { RecordedSession, RecordedStep } from '@piwitests/core/recording';
 import type { KeptResponse } from '@piwitests/core/run-channel';
 import { mockCode } from '../../../apps/extension/src/shared/mock-code.js';
-import { locatorChainOnLine } from './analysis.js';
+import { locatorChainOnLine, pickEditOnLine } from './analysis.js';
 import type { FileEdit } from './protocol.js';
 import { importBindings, importInsertion } from './recorder/imports.js';
 import { declaredNamesAt, pageCandidates, placementBefore, type BlockPlacement } from './recorder/page-candidates.js';
 import { blockCode, blockImports } from './recorder/sessions.js';
 
-/** What is written: the check's steps, a region and its snapshot, or the response to mock. */
+/** What is written: the check's steps, a region and its snapshot, the response to mock, or an agent's steps. */
 export type StopCodeInput =
   | { action: 'assert'; session: RecordedSession }
   | { action: 'assert-region'; locator: string; snapshot: string }
-  | { action: 'mock'; response: KeptResponse };
+  | { action: 'mock'; response: KeptResponse }
+  | { action: 'steps'; session: RecordedSession };
 
 export interface StopCodeOptions {
   /** The canonical locators the project's tests already use, preferred among a check's alternatives. */
@@ -154,8 +156,10 @@ export function renderStopCode(
     if (input.action === 'assert-region' && !safeLocator(input.locator)) {
       return { refusal: `The region's locator, ${input.locator}, is not one Piwi can write.` };
     }
-    const session = input.action === 'assert' ? input.session : regionSession(input.locator, input.snapshot);
-    if (!session.steps.some((step) => step.action === 'assert')) return { refusal: 'Nothing was checked.' };
+    const session = input.action === 'assert-region' ? regionSession(input.locator, input.snapshot) : input.session;
+    if (input.action === 'steps' ? !session.steps.length : !session.steps.some((step) => step.action === 'assert')) {
+      return { refusal: input.action === 'steps' ? 'No step was taken at this stop.' : 'Nothing was checked.' };
+    }
     const result = renderSpec(session, {
       format: 'body',
       continuePage: true,
@@ -183,6 +187,29 @@ export function renderStopCode(
     code,
     edits: [...(importEdit ? [importEdit] : []), { range: { start: at0, end: at0 }, newText: `${code}\n` }],
     warnings,
+  };
+}
+
+/**
+ * The edit that puts `locator` in place of the locator chain on the 0-based `line` (`pickEditOnLine`: its page and its
+ * action stay), or why none can: a locator Piwi cannot write, a line holding no locator. A refusal never quotes the
+ * locator, which an agent's page may have written.
+ */
+export function renderStopLocator(text: string, line: number, locator: string): RenderedStopCode | { refusal: string } {
+  if (!safeLocator(locator)) return { refusal: 'That locator is not one Piwi can write.' };
+  const lineText = text.split(/\r\n|\r|\n/)[line] ?? '';
+  const edit = pickEditOnLine(lineText, locator);
+  if (!edit)
+    return { refusal: 'The stopped line holds no locator to replace: write the steps or an assertion instead.' };
+  if (lineText.slice(edit.start, edit.end) === locator)
+    return { refusal: 'The stopped line already uses that locator.' };
+  return {
+    line,
+    code: locator,
+    edits: [
+      { range: { start: { line, character: edit.start }, end: { line, character: edit.end } }, newText: locator },
+    ],
+    warnings: [],
   };
 }
 

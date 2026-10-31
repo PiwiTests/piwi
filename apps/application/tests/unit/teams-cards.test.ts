@@ -52,8 +52,11 @@ describe('Microsoft Teams cards', () => {
         'https://piwi.example',
       ),
     );
-    expect(content.body[0].text).toBe('Piwi digest: 2 notifications');
-    expect(content.body[1].text.split('\n')).toHaveLength(2);
+    expect(content.body[0].items[0].text).toBe('Piwi digest: 2 notifications');
+    expect(content.body.slice(1).map((b: any) => b.text)).toEqual([
+      '🔴 [New failure cluster — a](https://piwi.example/failure-clusters/3)',
+      '🟢 [Cluster stopped failing — a](https://piwi.example/failure-clusters/4)',
+    ]);
   });
 
   it('a quality report: the verdict, the tiles as facts, the trend image through the share link', () => {

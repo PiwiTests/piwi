@@ -17,8 +17,12 @@ design record these rules follow, with its measurements: [`adr/ci-workflows.md`]
   `apps/desktop/scripts/node-version.mjs`). `npm ci` runs with `--prefer-offline --no-audit --fund=false`.
 - **Playwright's headless shell is cached by Playwright version** (`playwright: shell`), and saved as soon as it is
   installed, so the cache holds the shell alone. The full Chromium build (`playwright: full`) is installed on every run:
-  the workflows that use it run on pull requests only, where a cache serves its own pull request alone. The checks job
-  also installs the full build, after the shell's cache is saved, for the reporter's breakpoint run under `xvfb-run`.
+  the workflows that use it run on pull requests, where a cache serves its own pull request alone, or once a night
+  (`nightly-showcase.yml`), where a cache would rarely outlive the night.
+- **Every test job of the checks builds the reporter and installs the full Chromium build** (`app-unit`, `reporter`,
+  `packages` in `ci.yml`), after the shell's cache is saved. Two specs that drive a real run through the built reporter
+  skip without them rather than fail: the dashboard's `desktop-runs-run.test.ts` and the editor service's
+  `agent-run.test.ts`.
 - **Least privilege.** `permissions: contents: read` at the top of every workflow, anything more on the job that needs
   it. A job that calls a reusable workflow grants the permissions its jobs ask for: a called job asking for more fails
   the run. `id-token: write` only where a step uses it (npm provenance).
@@ -69,5 +73,5 @@ design record these rules follow, with its measurements: [`adr/ci-workflows.md`]
   exercises it. A change to `release.yml` or a `reusable-publish-*.yml` also runs `release.yml` on its pull request:
   every target builds and packs, and nothing is published.
 - **The other workflows never run on a pull request** (`docs.yml`, `edge.yml`, `release-please.yml`,
-  `release-notes.yml`, `live-jira.yml`, `nightly-vscode.yml`): actionlint is the only check a change to them gets
-  before it merges.
+  `release-notes.yml`, `live-jira.yml`, `nightly-vscode.yml`, `nightly-showcase.yml`): actionlint is the only check a
+  change to them gets before it merges.

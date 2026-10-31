@@ -28,7 +28,7 @@ npm run app:screens -- --route /test-run-cases/37 --expand --height 2400
 - `--height` is how you see more of a page: the dashboard scrolls inside a panel, so a full-page
   screenshot of the document only ever shows one viewport. Use 2000–3000 for a detail page.
 - `--width` sets the viewport width (default 1280; the height defaults to 860), `--name` the file stem.
-- Add `--url http://localhost:3000` to drive a server you already have running instead of booting one.
+- Add `--url http://localhost:7494` to drive a server you already have running instead of booting one.
 
 Then read the image (`.screens/route-<slug>.png`). A blank or half-loaded frame means the wait
 was cut short, not that the page is empty: retry once before concluding anything.
@@ -41,7 +41,7 @@ in `apps/application/app/AGENTS.md`).
 
 ```bash
 npm run app:seed:dev        # sample data into .data/piwi.db; creates and migrates the DB if needed
-npm run app:dev:bg          # dev server on http://localhost:3000, detached, waits until ready
+npm run app:dev:bg          # dev server on http://localhost:7494, detached, waits until ready
 ```
 
 - Nuxt HMR picks up edits; there is no need to restart per change. Compile errors show up in
@@ -54,9 +54,9 @@ npm run app:dev:bg          # dev server on http://localhost:3000, detached, wai
   (`public/demo/{screenshots,traces,videos}`) there, so the failure pages serve the real screenshot,
   trace and video instead of a broken image. Re-running it repairs a database whose media rows still
   point at `demo/…`, or a storage folder wiped since.
-- The Playwright E2E config reuses a server already on port 3000 (`npm run app:test -- <spec>`), so one
+- The Playwright E2E config reuses a server already on port 7494 (`npm run app:test -- <spec>`), so one
   background server serves both your screenshots and the specs.
-- Capture against it with `npm run app:screens -- --route <path> --url http://localhost:3000`.
+- Capture against it with `npm run app:screens -- --route <path> --url http://localhost:7494`.
 - Stop it with `node scripts/dev-server.mjs --stop` (also stops a stale one; the pid is recorded in
   `.data/dev-server.pid`). Seeding needs the server stopped: SQLite holds a lock.
 
@@ -66,21 +66,21 @@ Every seeded run carries its cases, and every seeded failure cluster has failing
 (`api-integration`) owns clusters 3 and 4. Query a real id rather than guessing one:
 
 ```bash
-curl -s localhost:3000/api/health
-curl -s "localhost:3000/api/test-run-cases/37" | head -c 800
+curl -s localhost:7494/api/health
+curl -s "localhost:7494/api/test-run-cases/37" | head -c 800
 node scripts/db-query.mjs "select id, status from test_runs_cases where status='failed' order by id desc limit 5" --json
 ```
 
 Authentication is off on a plain dev server, so no key is needed. To report a run by hand:
 
 ```bash
-curl -X POST http://localhost:3000/api/test-runs/submit -H "Content-Type: application/json" -d '{"projectName":"my-project","status":"passed","startTime":"2024-01-01T12:00:00Z","duration":120000,"totalTests":10,"passedTests":9,"failedTests":1,"skippedTests":0,"testCases":[{"title":"should login","status":"passed","duration":1500,"location":"tests/login.spec.ts:10:5"}]}'
+curl -X POST http://localhost:7494/api/test-runs/submit -H "Content-Type: application/json" -d '{"projectName":"my-project","status":"passed","startTime":"2024-01-01T12:00:00Z","duration":120000,"totalTests":10,"passedTests":9,"failedTests":1,"skippedTests":0,"testCases":[{"title":"should login","status":"passed","duration":1500,"location":"tests/login.spec.ts:10:5"}]}'
 ```
 
 ## Measure the failure pages' legibility
 
 ```bash
-npm run app:measure -- --url http://localhost:3000        # against a running server
+npm run app:measure -- --url http://localhost:7494        # against a running server
 npm run app:measure -- --check                            # seeds .data/measure/, boots a server, exits 1 on a breach
 npm run app:measure -- --build .output --check            # the same on a production build, as CI runs it
 npm run app:measure -- --json                             # one object per route, with its budgets

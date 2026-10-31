@@ -16,7 +16,7 @@ test('a Teams channel is created from the form and never echoes its webhook URL'
     await expect(page.getByText('New channel')).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 60_000 });
   await page.getByTestId('channel-name').fill(name);
-  await page.getByRole('combobox').filter({ hasText: 'Email' }).first().click();
+  await page.getByTestId('channel-type').click();
   await page.getByRole('option', { name: 'Microsoft Teams webhook' }).click();
   await page.getByTestId('teams-webhook-url').fill('https://example.webhook.office.com/webhookb2/abc');
   await page.getByRole('button', { name: 'Save channel' }).click();

@@ -1,14 +1,13 @@
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
-import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { drizzle } from 'drizzle-orm/libsql';
-import { migrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import { MAX_COVERAGE_RANGES } from '@piwitests/core/coverage';
 import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
 
 vi.mock('../../server/storage', () => ({
   getStorage: () => ({
@@ -59,7 +58,7 @@ const ids = new Map<string, number>();
 
 beforeAll(async () => {
   db = drizzle(createClient({ url: `file:${join(tmpDir, 'impact.db')}` }), { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../server/database/migrations', import.meta.url)) });
+  await migrateToLatest(db);
   await db.insert(schema.projects).values({ id: 1, name: 'shop', defaultBranch: 'main' });
   testCaseCache.invalidate(1);
   testSuiteCache.invalidate(1);

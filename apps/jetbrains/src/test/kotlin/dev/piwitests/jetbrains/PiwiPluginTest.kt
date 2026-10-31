@@ -3,6 +3,7 @@ package dev.piwitests.jetbrains
 import com.intellij.codeInsight.hints.codeVision.DaemonBoundCodeVisionProvider
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.components.service
+import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.io.FileUtil
 import com.intellij.openapi.wm.StatusBarWidgetFactory
 import com.intellij.platform.lsp.api.LspServerSupportProvider
@@ -159,6 +160,25 @@ class PiwiPluginTest : BasePlatformTestCase() {
             assertEquals(listOf("Acme Mugs"), PiwiInstance.projects(url, approved.apiKey).map { it.name })
         } finally {
             server.stop(0)
+        }
+    }
+
+    /** Connect's choice beside the desktop app: one radio button per connection, one of them selected at a time. */
+    fun testConnectOffersTheConnectionsAsOneGroupOfRadioButtons() {
+        val choices = listOf(
+            Glue.ConnectChoice(Glue.ConnectTarget.DESKTOP, "The Piwi desktop app", "Runs on this machine.", "http://127.0.0.1:7495", true),
+            Glue.ConnectChoice(Glue.ConnectTarget.INSTANCE, "https://a.example", "From the settings.", "https://a.example", false),
+            Glue.ConnectChoice(Glue.ConnectTarget.OTHER, "Another instance…", "A Piwi server, by its address.", null, false),
+        )
+        val dialog = PiwiConnectFlow.ChooseConnectionDialog(project, choices)
+        try {
+            assertEquals(listOf("The Piwi desktop app (in use)", "https://a.example", "Another instance…"), dialog.buttons.map { it.text })
+            assertEquals(Glue.ConnectTarget.INSTANCE, dialog.picked()?.target)
+            dialog.buttons[2].isSelected = true
+            assertEquals(listOf(false, false, true), dialog.buttons.map { it.isSelected })
+            assertEquals(Glue.ConnectTarget.OTHER, dialog.picked()?.target)
+        } finally {
+            Disposer.dispose(dialog.disposable)
         }
     }
 
@@ -1066,7 +1086,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
         }
         try {
             val cwd = com.google.gson.Gson().toJson(run.cwd)
-            val takes = """["pick","record","assert","assert-region","requests","mock","locator"]"""
+            val takes = """["pick","record","assert","assert-region","requests","mock","locator","pick-at"]"""
             send("""{"type":"run-attach","token":"$token","ref":"$ref","cwd":$cwd,"workerIndex":0,"parallelIndex":0,"pid":1,"playwright":"1.64.1","reporter":"0.60.0","takes":$takes}""")
             send("""{"type":"test-begin","testId":"t1","title":["removes a row"],"file":"tests/checkout.spec.ts","line":4,"project":"chromium","retry":1,"cannotPause":null}""")
             send("""{"type":"stopped","stop":1,"reason":"breakpoint","title":"Click locator('.cart-row').nth(2)","place":{"file":"tests/pages/checkout.page.ts","line":5,"column":21},"locator":"locator('.cart-row').nth(2)","bar":false}""")
@@ -1089,9 +1109,20 @@ class PiwiPluginTest : BasePlatformTestCase() {
 
             val page = server.pausedPage(PausedPageParams(ref, 0))
             val request = waitFor("the image asked") { heard.firstOrNull { it["type"].asString == "request" } }
-            send("""{"type":"answer","request":${request["request"].asInt},"what":"image","value":{"mime":"image/jpeg","data":"/9j/"}}""")
-            assertEquals(PausedImage("image/jpeg", "/9j/"), page.get(5, TimeUnit.SECONDS)?.image)
-            assertEquals(listOf("pick", "record", "assert", "assert-region", "requests", "mock", "locator"), worker.takes)
+            send("""{"type":"answer","request":${request["request"].asInt},"what":"image","value":{"mime":"image/jpeg","data":"/9j/","width":1280,"height":800}}""")
+            assertEquals(PausedImage("image/jpeg", "/9j/", 1280, 800), page.get(5, TimeUnit.SECONDS)?.image)
+            assertEquals(listOf("pick", "record", "assert", "assert-region", "requests", "mock", "locator", "pick-at"), worker.takes)
+
+            // Pick on the image: the point in CSS pixels of the page, the worker's answer read with the Kotlin classes.
+            val picking = server.pickAt(PickAtParams(ref, since = stop.since!!, x = 640, y = 200))
+            val pick = waitFor("the pick on the image") { heard.firstOrNull { it["type"].asString == "request" && it["what"].asString == "pick-at" } }
+            assertEquals(listOf(1, 640, 200), listOf(pick["stop"].asInt, pick["x"].asInt, pick["y"].asInt))
+            val picked = "getByRole('row', { name: /Mug/ }) went to the editor, in place of the locator on the stopped line."
+            send("""{"type":"answer","request":${pick["request"].asInt},"what":"pick-at","value":{"ok":true,"message":"$picked","locator":"getByRole('row', { name: /Mug/ })"}}""")
+            assertEquals(PickAtResult(true, picked, "getByRole('row', { name: /Mug/ })"), picking.get(5, TimeUnit.SECONDS))
+            // At a stop the test went on from: refused, with no locator.
+            val stale = server.pickAt(PickAtParams(ref, since = "2026-01-01T00:00:00.000Z", x = 640, y = 200)).get(5, TimeUnit.SECONDS)
+            assertEquals(PickAtResult(false, "The test went on.", null), stale)
 
             // Code from a stop in the spec: the responses the test kept, one mocked and sent to write, the caret's line.
             send("""{"type":"running","stop":1}""")

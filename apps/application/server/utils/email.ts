@@ -1,25 +1,15 @@
 import type { Transporter } from 'nodemailer';
-import { STATUS_COLORS } from '#shared/status-colors';
-import {
-  clusterOutcome,
-  renderEventSubject,
-  notificationTargetPath,
-  failureTargetPath,
-} from '#shared/notification-events';
-import type {
-  ClusterFixedPayload,
-  ClusterNewPayload,
-  ClusterRegressedPayload,
-  EnvironmentIncidentPayload,
-  NotificationEvent,
-  NotificationPayload,
-  RunFinishedPayload,
-  TopFailure,
-} from '#shared/notification-events';
 import type { ReportBundle } from '#shared/reports/types';
 import { renderReportEmail } from '#shared/reports/render-email';
 import { emailButton, emailLayout as layoutEmail, escapeHtml } from '#shared/email-layout';
 import { BRAND_MARK_CID, piwiMarkPng } from '#shared/brand';
+import type { NotificationEvent, NotificationPayload } from '#shared/notification-events';
+import {
+  renderDigestEmailAt,
+  renderNotificationEmailAt,
+  type DigestItem,
+  type RenderedEmail,
+} from '#shared/notifications/render-email';
 
 export interface SmtpConfig {
   host: string;
@@ -128,33 +118,11 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
 
 // ── Email templates ───────────────────────────────────────────────────────────
 
+/** The dashboard's public address, which every link in an email starts with. */
 const siteUrl = () => process.env.PIWI_SITE_URL?.replace(/\/$/, '') || 'http://localhost:3000';
 
-/** The failed text color: the dashboard's outcome color, as in the HTML export. */
-const FAILED_COLOR = STATUS_COLORS.failed.text;
-
-/** The colors an email marks an outcome with: the stripe atop its card, and a status pill's text on its tint. */
-const TONES = {
-  failed: { accent: STATUS_COLORS.failed.fill, text: STATUS_COLORS.failed.text, tint: '#fff1f2' },
-  passed: { accent: STATUS_COLORS.passed.fill, text: STATUS_COLORS.passed.text, tint: '#ecfdf5' },
-  warning: { accent: STATUS_COLORS.didnotrun.fill, text: STATUS_COLORS.didnotrun.text, tint: '#fffbeb' },
-} as const;
-type Tone = keyof typeof TONES;
-
-function emailLayout(title: string, body: string, tone?: Tone): { html: string; text: string } {
-  const frame = {
-    lang: 'en',
-    automatedMessage: 'This is an automated message from',
-    sentBy: 'Sent by Piwi',
-    accent: tone ? TONES[tone].accent : undefined,
-  };
-  return { html: layoutEmail(escapeHtml(title), body, siteUrl(), frame), text: title };
-}
-
-/** A status pill: `label` in the tone's color on its tint. */
-function statusPill(label: string, tone: Tone): string {
-  const t = TONES[tone];
-  return `<span style="display:inline-block;padding:2px 10px;border-radius:999px;background:${t.tint};color:${t.text};font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;">${escapeHtml(label)}</span>`;
+function emailLayout(title: string, body: string): { html: string; text: string } {
+  return { html: layoutEmail(escapeHtml(title), body, siteUrl()), text: title };
 }
 
 export function renderPasswordResetEmail(token: string): { html: string; text: string } {
@@ -207,271 +175,17 @@ export function renderTestEmail(to: string): { html: string; text: string } {
   return { html, text };
 }
 
-/** Where a failing test links to: its execution, else its history, else the run. */
-function failureUrl(failure: TopFailure, runUrl: string): string {
-  const path = failureTargetPath(failure);
-  return path ? `${siteUrl()}${path}` : runUrl;
+/** The email for one notification event, its links on this instance. */
+export function renderNotificationEmail(event: NotificationEvent, payload: NotificationPayload): RenderedEmail {
+  return renderNotificationEmailAt(event, payload, siteUrl());
 }
 
-export function renderRunNotificationEmail(opts: {
-  projectName: string;
-  runId: number;
-  status: string;
-  totalTests: number;
-  failedTests: number;
-  branch?: string;
-  topFailures?: TopFailure[];
-}): { html: string; text: string } {
-  const url = `${siteUrl()}/test-runs/${opts.runId}`;
-  const tone: Tone = opts.status === 'passed' ? 'passed' : 'failed';
-
-  const failures = opts.topFailures ?? [];
-  let failuresHtml = '';
-  let failuresText = '';
-  if (failures.length > 0) {
-    const rows = failures
-      .map((f) => {
-        const caseUrl = failureUrl(f, url);
-        const title = escapeHtml(f.title);
-        const titleHtml = `<a href="${caseUrl}" style="color:#18181b;font-size:14px;font-weight:600;text-decoration:none;">${title}</a>`;
-        const loc = f.filePath
-          ? `<div style="margin-top:2px;color:#71717a;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;">${escapeHtml(f.filePath)}</div>`
-          : '';
-        const headline = f.headline
-          ? `<div style="margin-top:6px;color:#3f3f46;font-size:13px;">${escapeHtml(f.headline)}</div>`
-          : '';
-        const excerpt = f.errorExcerpt
-          ? `<pre style="margin:8px 0 0;white-space:pre-wrap;word-break:break-word;font-size:12px;color:#52525b;background:#f4f4f5;padding:8px 10px;border-radius:4px;">${escapeHtml(f.errorExcerpt)}</pre>`
-          : '';
-        return `<tr><td style="padding:10px 0 10px 12px;border-left:3px solid ${FAILED_COLOR};">${titleHtml}${loc}${headline}${excerpt}</td></tr><tr><td height="10" style="height:10px;line-height:10px;font-size:1px;">&nbsp;</td></tr>`;
-      })
-      .join('');
-    failuresHtml = `<p style="margin:0 0 10px;font-size:12px;font-weight:600;color:#71717a;text-transform:uppercase;letter-spacing:.04em;">Failures</p>
-    <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 14px;">${rows}</table>`;
-    failuresText = failures
-      .map((f) => {
-        const caseUrl = failureUrl(f, url);
-        const loc = f.filePath ? ` (${f.filePath})` : '';
-        const headline = f.headline ? `\n  ${f.headline}` : '';
-        const excerpt = f.errorExcerpt ? `\n    ${f.errorExcerpt.replace(/\n/g, '\n    ')}` : '';
-        return `- ${f.title}${loc}${headline}\n  ${caseUrl}${excerpt}`;
-      })
-      .join('\n');
-  }
-
-  const body = `
-    <p style="margin:0 0 10px;">${statusPill(opts.status, tone)}</p>
-    <h2 style="margin:0 0 4px;font-size:20px;color:#18181b;">${escapeHtml(opts.projectName)}</h2>
-    <p style="margin:0 0 20px;color:#71717a;font-size:13px;">Run #${opts.runId}${opts.branch ? ` on <span style="font-family:ui-monospace,Menlo,Consolas,monospace;">${escapeHtml(opts.branch)}</span>` : ''}</p>
-    <p style="margin:0 0 22px;font-size:14px;color:#3f3f46;">
-      <strong style="color:#18181b;">${opts.totalTests}</strong> tests${opts.failedTests > 0 ? ` &nbsp;·&nbsp; <strong style="color:${FAILED_COLOR};">${opts.failedTests} failed</strong>` : ''}
-    </p>
-    ${failuresHtml}
-    ${emailButton(url, 'View run')}`;
-  const { html } = emailLayout(`Test run ${opts.status} — ${opts.projectName}`, body, tone);
-  const text = `Test run ${opts.status}: ${opts.projectName}${opts.branch ? ` (${opts.branch})` : ''}\n${opts.totalTests} tests${opts.failedTests > 0 ? `, ${opts.failedTests} failed` : ''}${failuresText ? `\n\n${failuresText}` : ''}\n\nView run: ${url}`;
-  return { html, text };
+/** One email for every notification a digest-mode subscription batched since the previous send. */
+export function renderDigestEmail(items: DigestItem[]): RenderedEmail & { subject: string } {
+  return renderDigestEmailAt(items, siteUrl());
 }
 
-/** A failure cluster's title (when it adds something) above its signature. */
-function clusterIdentityHtml(signature: string, title?: string | null): string {
-  const heading =
-    title && title !== signature
-      ? `<p style="margin:0 0 8px;font-size:15px;font-weight:600;color:#18181b;">${escapeHtml(title)}</p>`
-      : '';
-  return `${heading}<p style="margin:0 0 16px;font-family:monospace;font-size:13px;background:#f4f4f5;padding:12px;border-radius:6px;overflow:auto;">${escapeHtml(signature)}</p>`;
-}
-
-function clusterIdentityText(signature: string, title?: string | null): string {
-  return `${title && title !== signature ? `${title}\n` : ''}${signature}`;
-}
-
-/** The tracker issue a cluster is known by. */
-function trackedInHtml(knownIssue?: { key: string; url: string }): string {
-  return knownIssue
-    ? `<p style="margin:0 0 16px;color:#52525b;font-size:13px;">Tracked in <a href="${escapeHtml(knownIssue.url)}" style="color:#18181b;font-weight:600;">${escapeHtml(knownIssue.key)}</a></p>`
-    : '';
-}
-
-function trackedInText(knownIssue?: { key: string; url: string }): string {
-  return knownIssue ? `\n\nTracked in ${knownIssue.key}: ${knownIssue.url}` : '';
-}
-
-function viewClusterButton(url: string): string {
-  return emailButton(url, 'View cluster');
-}
-
-export function renderNewClusterEmail(opts: {
-  projectName: string;
-  clusterId: number;
-  signature: string;
-  /** Display name shown above the signature when it adds something. */
-  title?: string | null;
-  sampleErrorExcerpt?: string;
-  affectedCases?: number;
-  /** The tracker issue the cluster is known by, named when set. */
-  knownIssue?: { key: string; url: string };
-}): {
-  html: string;
-  text: string;
-} {
-  const url = `${siteUrl()}/failure-clusters/${opts.clusterId}`;
-  const affected =
-    opts.affectedCases && opts.affectedCases > 0
-      ? `<p style="margin:0 0 16px;color:#52525b;font-size:13px;">${opts.affectedCases} affected test${opts.affectedCases === 1 ? '' : 's'} in this run</p>`
-      : '';
-  const excerpt = opts.sampleErrorExcerpt
-    ? `<pre style="margin:0 0 24px;white-space:pre-wrap;word-break:break-word;font-size:12px;color:#52525b;background:#fafafa;padding:12px;border-radius:6px;">${escapeHtml(opts.sampleErrorExcerpt)}</pre>`
-    : '';
-  const body = `
-    <p style="margin:0 0 10px;">${statusPill('New failure cluster', 'failed')}</p>
-    <h2 style="margin:0 0 20px;font-size:20px;color:#18181b;">${escapeHtml(opts.projectName)}</h2>
-    ${clusterIdentityHtml(opts.signature, opts.title)}
-    ${affected}
-    ${excerpt}
-    ${trackedInHtml(opts.knownIssue)}
-    ${viewClusterButton(url)}`;
-  const { html } = emailLayout(`New failure cluster — ${opts.projectName}`, body, 'failed');
-  const text = `New failure cluster in ${opts.projectName}${opts.affectedCases ? ` (${opts.affectedCases} affected)` : ''}\n\n${clusterIdentityText(opts.signature, opts.title)}${opts.sampleErrorExcerpt ? `\n\n${opts.sampleErrorExcerpt}` : ''}${trackedInText(opts.knownIssue)}\n\nView: ${url}`;
-  return { html, text };
-}
-
-/** The email for a `cluster.fixed` or `cluster.regressed` verdict: the cluster, what changed in triage, its tracker issue and a link. */
-export function renderClusterOutcomeEmail(opts: {
-  /** The verdict's headline, as in the subject line. */
-  headline: string;
-  projectName: string;
-  clusterId: number;
-  signature: string;
-  title?: string | null;
-  /** The triage change the verdict made, named when set. */
-  triageNote?: string | null;
-  knownIssue?: { key: string; url: string };
-  /** `fixed` for a fix, `regressed` for a fix that did not hold. */
-  verdict: 'fixed' | 'regressed';
-}): { html: string; text: string } {
-  const tone: Tone = opts.verdict === 'fixed' ? 'passed' : 'failed';
-  const url = `${siteUrl()}/failure-clusters/${opts.clusterId}`;
-  const triage = opts.triageNote
-    ? `<p style="margin:0 0 16px;color:#52525b;font-size:13px;">${escapeHtml(opts.triageNote)}</p>`
-    : '';
-  const body = `
-    <p style="margin:0 0 10px;">${statusPill(opts.verdict === 'fixed' ? 'Fixed' : 'Regressed', tone)}</p>
-    <h2 style="margin:0 0 4px;font-size:20px;color:#18181b;">${escapeHtml(opts.headline)}</h2>
-    <p style="margin:0 0 20px;color:#71717a;font-size:13px;">${escapeHtml(opts.projectName)}</p>
-    ${clusterIdentityHtml(opts.signature, opts.title)}
-    ${triage}
-    ${trackedInHtml(opts.knownIssue)}
-    ${viewClusterButton(url)}`;
-  const { html } = emailLayout(`${opts.headline} — ${opts.projectName}`, body, tone);
-  const text = `${opts.headline} in ${opts.projectName}\n\n${clusterIdentityText(opts.signature, opts.title)}${opts.triageNote ? `\n\n${opts.triageNote}` : ''}${trackedInText(opts.knownIssue)}\n\nView: ${url}`;
-  return { html, text };
-}
-
-/** The email for one notification event: its own template where it has one, else the subject line. */
-export function renderNotificationEmail(
-  event: NotificationEvent,
-  payload: NotificationPayload,
-): { html: string; text: string } {
-  if (event.startsWith('run.')) {
-    const p = payload as RunFinishedPayload;
-    return renderRunNotificationEmail({
-      projectName: p.projectName,
-      runId: p.runId,
-      status: p.status,
-      totalTests: p.totalTests,
-      failedTests: p.failedTests,
-      branch: p.branch,
-      topFailures: p.topFailures,
-    });
-  }
-  if (event === 'cluster.new') {
-    const p = payload as ClusterNewPayload;
-    return renderNewClusterEmail({
-      projectName: p.projectName,
-      clusterId: p.clusterId,
-      signature: p.signature,
-      title: p.title,
-      sampleErrorExcerpt: p.sampleErrorExcerpt,
-      affectedCases: p.affectedCases,
-      knownIssue: p.knownIssue,
-    });
-  }
-  if (event === 'cluster.fixed' || event === 'cluster.regressed') {
-    const p = payload as ClusterFixedPayload | ClusterRegressedPayload;
-    const { headline, triageNote } = clusterOutcome(event, p);
-    return renderClusterOutcomeEmail({
-      headline,
-      projectName: p.projectName,
-      clusterId: p.clusterId,
-      signature: p.signature,
-      title: p.title,
-      triageNote,
-      knownIssue: p.knownIssue,
-      verdict: event === 'cluster.fixed' ? 'fixed' : 'regressed',
-    });
-  }
-  const subject = renderEventSubject(event, payload);
-  if (event === 'environment.incident') {
-    const p = payload as EnvironmentIncidentPayload;
-    const url = `${siteUrl()}/test-runs/${p.runId}`;
-    const note = 'Left out of flaky scores, baselines, fix verification and the gate (inconclusive).';
-    const body = `
-    <p style="margin:0 0 10px;">${statusPill('Environment incident', 'warning')}</p>
-    <h2 style="margin:0 0 8px;font-size:20px;color:#18181b;">${escapeHtml(subject)}</h2>
-    <p style="margin:0 0 16px;color:#18181b;font-size:14px;">${escapeHtml(p.reason)}</p>
-    <p style="margin:0 0 24px;color:#52525b;font-size:13px;">${escapeHtml(note)}</p>
-    ${emailButton(url, 'View run')}`;
-    const { html } = emailLayout(subject, body, 'warning');
-    return { html, text: `${subject}\n\n${p.reason}\n${note}\n\nView: ${url}` };
-  }
-  return { html: `<p>${escapeHtml(subject)}</p>`, text: subject };
-}
-
-/** One event queued for a digest send. */
-export interface DigestItem {
-  event: NotificationEvent;
-  payload: NotificationPayload;
-}
-
-/**
- * One email summarizing every notification a digest-mode subscription batched
- * since the previous send: subject line + link per item, with run stats where
- * the payload carries them.
- */
-export function renderDigestEmail(items: DigestItem[]): { subject: string; html: string; text: string } {
-  const subject = `Piwi digest — ${items.length} notification${items.length === 1 ? '' : 's'}`;
-
-  const rows = items
-    .map(({ event, payload }) => {
-      const line = renderEventSubject(event, payload);
-      const path = notificationTargetPath(event, payload);
-      const url = path ? `${siteUrl()}${path}` : null;
-      const run = payload as RunFinishedPayload;
-      const stats =
-        event.startsWith('run.') && run.totalTests != null
-          ? `<div style="color:#71717a;font-size:12px;">${run.totalTests} tests${run.failedTests ? ` · <span style="color:${FAILED_COLOR};">${run.failedTests} failed</span>` : ''}</div>`
-          : '';
-      const title = url
-        ? `<a href="${url}" style="color:#18181b;font-weight:600;text-decoration:none;">${escapeHtml(line)}</a>`
-        : `<span style="font-weight:600;">${escapeHtml(line)}</span>`;
-      return `<li style="margin-bottom:12px;list-style:none;">${title}${stats}</li>`;
-    })
-    .join('');
-
-  const body = `
-    <h2 style="margin:0 0 16px;font-size:20px;color:#18181b;">Your notification digest</h2>
-    <ul style="margin:0;padding:0;">${rows}</ul>`;
-  const { html } = emailLayout(subject, body);
-
-  const text = items
-    .map(({ event, payload }) => {
-      const path = notificationTargetPath(event, payload);
-      return `- ${renderEventSubject(event, payload)}${path ? `\n  ${siteUrl()}${path}` : ''}`;
-    })
-    .join('\n');
-  return { subject, html, text: `${subject}\n\n${text}` };
-}
+export type { DigestItem };
 
 // ── Quality report ────────────────────────────────────────────────────────────
 

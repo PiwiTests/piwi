@@ -3,6 +3,7 @@ import {
   EDITORS_DIR_ENV,
   EDITORS_DIR_PARTS,
   editorDiscoveryName,
+  editorForRun,
   formatEditorDiscovery,
   parseEditorDiscovery,
   pidOfDiscoveryName,
@@ -121,5 +122,51 @@ describe('the editors’ discovery files', () => {
     expect(files.removed).toEqual([]);
     expect(files.opened).not.toContain('16.json');
     expect(files.opened).not.toContain('17.json');
+  });
+
+  describe('the service a run started in a terminal attaches to', () => {
+    /** Each folder as its real path: `/link` leads to `/work`, `/gone` is no folder any more. */
+    const real = (folder: string): string | null =>
+      folder.startsWith('/gone') ? null : folder.replace(/^\/link(?=\/|$)/, '/work');
+    const at = (pid: number, roots: string[], startedAt = discovery.startedAt): EditorDiscovery => ({
+      ...discovery,
+      pid,
+      roots,
+      startedAt,
+    });
+
+    test('is the one whose workspace holds the run’s config folder or its working directory', () => {
+      const shop = at(1, ['/work/shop']);
+      const blog = at(2, ['/work/blog']);
+      expect(editorForRun([blog, shop], ['/work/shop/e2e', '/work/shop'], real, false)).toBe(shop);
+      // The working directory alone, when the config is elsewhere.
+      expect(editorForRun([blog, shop], ['/elsewhere', '/work/blog'], real, false)).toBe(blog);
+      // A folder whose name only starts like the workspace's is not in it.
+      expect(editorForRun([shop], ['/work/shopfront'], real, false)).toBeNull();
+      expect(editorForRun([blog, shop], ['/work/other'], real, false)).toBeNull();
+    });
+
+    test('compares real paths, case-insensitively on Windows', () => {
+      const linked = at(1, ['/link/shop']);
+      expect(editorForRun([linked], ['/work/shop/tests'], real, false)).toBe(linked);
+      expect(editorForRun([at(2, ['/gone/shop'])], ['/gone/shop'], real, false)).toBeNull();
+      const windows = at(3, ['C:\\Work\\Shop\\']);
+      expect(editorForRun([windows], ['c:\\work\\shop\\e2e'], (f) => f, true)).toBe(windows);
+      expect(editorForRun([windows], ['c:\\work\\shop\\e2e'], (f) => f, false)).toBeNull();
+    });
+
+    test('takes the most specific workspace, then the service that started last', () => {
+      const monorepo = at(1, ['/work']);
+      const app = at(2, ['/work/shop']);
+      expect(editorForRun([monorepo, app], ['/work/shop'], real, false)).toBe(app);
+      const older = at(3, ['/work/shop'], '2026-10-25T09:00:00.000Z');
+      const newer = at(4, ['/work/shop'], '2026-10-25T12:00:00.000Z');
+      expect(editorForRun([newer, older], ['/work/shop'], real, false)).toBe(newer);
+      expect(editorForRun([older, newer], ['/work/shop'], real, false)).toBe(newer);
+    });
+
+    test('needs a service that names a run channel', () => {
+      expect(editorForRun([{ ...at(1, ['/work/shop']), runChannel: null }], ['/work/shop'], real, false)).toBeNull();
+    });
   });
 });

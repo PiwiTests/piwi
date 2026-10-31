@@ -12,26 +12,35 @@ import {
   PIWI_RESOURCES_RESULTS_ENV,
   type DotEnvUse,
 } from '../internal/config/env.js';
+import { PIWI_EDITOR_ENV, followEditor } from '../internal/config/editors.js';
 import type { PiwiDashboardOptions, ShardInfo } from './options.js';
 import { HttpClient } from '../internal/transport/http-client.js';
 import { Uploader } from '../internal/submit/uploader.js';
 import { StreamBuffer } from '../internal/streaming/stream-buffer.js';
 import { CrashRecovery } from '../internal/streaming/crash-recovery.js';
 import { FileHandler } from '../internal/files/file-handler.js';
-import { ATTACHMENT_NAMES, INTERNAL_ATTACHMENT_NAMES } from '../internal/capture/attachments.js';
+import { ATTACHMENT_NAMES, INTERNAL_ATTACHMENT_NAMES, findPiwiAttachment } from '../internal/capture/attachments.js';
 import { MetadataCollector, resolveScmBranch } from '../internal/collect/metadata-collector.js';
 import { StreamManager } from '../internal/streaming/stream-manager.js';
-import { collectStepMetrics, extractTestStepEvents, extractWaitEvents } from '@piwitests/core/step-analysis';
+import {
+  collectStepMetrics,
+  extractTestStepEvents,
+  extractWaitEvents,
+  hideTypedStepTitle,
+} from '@piwitests/core/step-analysis';
 import { pauseStepEvents, readPauses } from '../internal/collect/pause-events.js';
 import { computeInstanceId } from '../internal/support/instance-id.js';
 import { getReporterVersion } from '../internal/support/reporter-version.js';
 import { collectSourceFrames, extractFailingLine, readSourceSnippet } from '../internal/support/source-snippet.js';
-import { resolveRunLabel } from '../internal/support/ci.js';
+import { detectCi, resolveRunLabel } from '../internal/support/ci.js';
 import { workerIndexOf } from '../internal/support/worker-index.js';
 import { detectCliFileFilters } from '../internal/support/cli-filters.js';
 import { readSelectionStamp } from '../internal/support/selection-env.js';
 import { resolveShardInfo } from '../internal/support/shard-info.js';
 import { isListMode } from '../internal/support/run-mode.js';
+import { peekSetupInfo } from '../internal/support/setup-file.js';
+import { LIVE_VIEW_ENV, formatLiveViewEnv, formatLiveViewMissing } from '@piwitests/core/live-view';
+import { RUN_CHANNEL_ENV } from '@piwitests/core/run-channel';
 import { createGlobalSetup } from './global-setup.js';
 import { wrapConfig } from './config-wrapper.js';
 import { toWireTestCase } from '../internal/submit/serializer.js';
@@ -262,8 +271,24 @@ export class PiwiDashboardReporter {
       this.logger.debug('List mode (--list) detected — no run registered or report uploaded.');
       return;
     }
+    // A run started in a terminal follows the editor whose workspace holds it: its workers, which start after this
+    // hook, inherit the editor's run channel.
+    const followed = followEditor([configDirFromConfig(config), process.cwd()], {
+      env: process.env,
+      argv: process.argv,
+      terminal: !!process.stdout.isTTY || !!process.stderr.isTTY,
+    });
+    if (followed) {
+      const { editor } = followed;
+      this.logger.info(
+        `Following this run in ${editor.client ?? 'the editor'} (pid ${editor.pid}), whose breakpoints stop it: ` +
+          `${PIWI_EDITOR_ENV}=off runs it alone.`,
+      );
+    }
     if (!this.enabled) {
       this.logger.info('Not enabled — set PIWI_DASHBOARD_URL or serverUrl to enable.');
+      // A run the editor follows says why it cannot be shared live.
+      if (!detectCi(process.env)) process.env[LIVE_VIEW_ENV] = formatLiveViewMissing('no-instance');
       return;
     }
     // Nothing in the config pointed at a server, so results are going to the
@@ -402,6 +427,7 @@ export class PiwiDashboardReporter {
       });
     }
 
+    this.shareLiveView();
     this.streamManager?.start(
       this.startTime,
       this.metadata,
@@ -430,6 +456,36 @@ export class PiwiDashboardReporter {
       this.streamManager.onWatched = () => void live.tick();
       live.start();
       this.liveResources = live;
+    }
+  }
+
+  /**
+   * Name the run's live view on the instance for the workers, which Playwright starts after this hook with this
+   * environment: the key the instance gave the global setup, for a project that turned its live view on, for this run
+   * alone. A CI run's workers stream with it at once; a run outside CI's hold it until a person shares the run (Share
+   * live), and such a run without a key names why instead, for the surfaces that would share it. Read before the
+   * stream starts, which takes the setup file.
+   */
+  private shareLiveView(): void {
+    const ci = detectCi(process.env);
+    const setup = this.streamManager ? peekSetupInfo(this.options.projectName!) : null;
+    if (!setup?.liveViewKey) {
+      if (!ci) {
+        process.env[LIVE_VIEW_ENV] = formatLiveViewMissing(
+          setup?.liveViewLocal ? 'local' : setup ? 'off' : 'unregistered',
+        );
+      }
+      return;
+    }
+    process.env[LIVE_VIEW_ENV] = formatLiveViewEnv(this.httpClient.baseUrl, setup.runId, setup.liveViewKey);
+    if (ci) {
+      this.logger.info(
+        "Live view on: people who may open this run can watch its tests' pages on the dashboard while it runs. Nothing is stored.",
+      );
+    } else if (process.env[RUN_CHANNEL_ENV]) {
+      this.logger.info(
+        'Live view ready: this run can be shared live from the editor or Piwi Picker. Nothing is sent until it is.',
+      );
     }
   }
 
@@ -525,7 +581,7 @@ export class PiwiDashboardReporter {
 
     const event: StreamEvent = {
       type: 'step-begin',
-      title: step.title,
+      title: hideTypedStepTitle(step.title, cat),
       subtitle: typeof step.subtitle === 'string' && step.subtitle.length > 0 ? step.subtitle : null,
       location: step.location ? `${step.location.file}:${step.location.line}:${step.location.column}` : 'unknown',
       stepCategory: cat,
@@ -547,7 +603,7 @@ export class PiwiDashboardReporter {
 
     const event: StreamEvent = {
       type: 'step-end',
-      title: step.title,
+      title: hideTypedStepTitle(step.title, cat),
       subtitle: typeof step.subtitle === 'string' && step.subtitle.length > 0 ? step.subtitle : null,
       location: step.location ? `${step.location.file}:${step.location.line}:${step.location.column}` : 'unknown',
       status: step.error ? 'failed' : 'passed',
@@ -644,7 +700,7 @@ export class PiwiDashboardReporter {
 
     if (this.options.collectPerformanceMetrics && result.steps?.length > 0) {
       // The stops at Piwi's pause bar: the steps keep their clock, the statistics leave the stopped time out.
-      const pauses = readPauses(result.attachments?.find((a) => a.name === ATTACHMENT_NAMES.pauses)?.body);
+      const pauses = readPauses(findPiwiAttachment(result.attachments, ATTACHMENT_NAMES.pauses)?.body);
       testCase.performanceMetrics = collectStepMetrics(result.steps, result.errors, pauses);
       const stepEvents = extractTestStepEvents(result.steps, result.startTime);
       const waitEvents = extractWaitEvents(result.steps);
@@ -662,7 +718,7 @@ export class PiwiDashboardReporter {
       // correlated with pw:api steps by index.
       const locatorAttachment =
         this.options.captureLocators !== false
-          ? result.attachments.find((a: any) => a.name === ATTACHMENT_NAMES.locators)
+          ? findPiwiAttachment(result.attachments, ATTACHMENT_NAMES.locators)
           : undefined;
       if (locatorAttachment?.body) {
         try {
@@ -674,7 +730,7 @@ export class PiwiDashboardReporter {
       // The page each locator call ran on, recorded by the same locator wrapper.
       const pagesAttachment =
         this.options.captureLocators !== false
-          ? result.attachments.find((a: any) => a.name === ATTACHMENT_NAMES.locatorPages)
+          ? findPiwiAttachment(result.attachments, ATTACHMENT_NAMES.locatorPages)
           : undefined;
       if (pagesAttachment?.body) {
         try {
@@ -689,7 +745,7 @@ export class PiwiDashboardReporter {
     // The source files the test executed, when code reach is on.
     const reachAttachment =
       this.coverageSettings.browser !== 'off'
-        ? result.attachments.find((a: any) => a.name === ATTACHMENT_NAMES.codeReach)
+        ? findPiwiAttachment(result.attachments, ATTACHMENT_NAMES.codeReach)
         : undefined;
     if (reachAttachment?.body) {
       try {
@@ -782,7 +838,7 @@ export class PiwiDashboardReporter {
         // A file already moved or removed.
       }
     }
-    const attachment = result.attachments?.find((a) => a.name === ATTACHMENT_NAMES.resources);
+    const attachment = findPiwiAttachment(result.attachments, ATTACHMENT_NAMES.resources);
     const census = parseResourceCensus(attachment?.body);
     if (census) {
       this.resourceCensuses.push(census);

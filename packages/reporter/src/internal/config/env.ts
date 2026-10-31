@@ -118,7 +118,8 @@ export const PIWI_ENV_KEYS = {
  * pause bar's Record here hands the page to the editor's recorder, and
  * `PIWI_RUN_CHANNEL` (`@piwitests/core/run-channel`) the same socket, which each
  * worker keeps a run connection to (`internal/capture/run-channel.ts`) when
- * `PIWI_ORIGIN_REF` names the run.
+ * `PIWI_RUN_REF`, else `PIWI_ORIGIN_REF`, names the run. The desktop app names
+ * its own server's socket there for the runs it starts, with `PIWI_RUN_REF`.
  */
 export const PIWI_LOCAL_DEBUG_ENV = {
   pauseAt: 'PIWI_PAUSE_AT',
@@ -299,7 +300,7 @@ export interface DotEnvUse {
   keys: string[];
 }
 
-type DesktopAppMode = NonNullable<PiwiDashboardOptions['desktopApp']>;
+export type DesktopAppMode = NonNullable<PiwiDashboardOptions['desktopApp']>;
 
 const DESKTOP_APP_MODES: ReadonlyArray<DesktopAppMode> = ['prefer', 'fallback', 'off'];
 
@@ -307,7 +308,7 @@ const DESKTOP_APP_MODES: ReadonlyArray<DesktopAppMode> = ['prefer', 'fallback', 
  * The `desktopApp` mode in force: `PIWI_DESKTOP_APP` over the option, and
  * `'fallback'` when neither names a known mode.
  */
-function desktopAppMode(option: unknown, envValue: string | undefined): DesktopAppMode {
+export function desktopAppMode(option: unknown, envValue: string | undefined): DesktopAppMode {
   const fromEnv = envValue?.trim().toLowerCase();
   if (DESKTOP_APP_MODES.includes(fromEnv as DesktopAppMode)) return fromEnv as DesktopAppMode;
   if (DESKTOP_APP_MODES.includes(option as DesktopAppMode)) return option as DesktopAppMode;

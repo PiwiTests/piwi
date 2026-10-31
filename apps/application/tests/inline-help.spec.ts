@@ -15,8 +15,8 @@ import { DOCS_BASE_URL } from '#shared/docs';
  */
 async function openHint(page: Page, name: string) {
   // Some help topics are shared by a card header and a field label (e.g. the
-  // AI provider and wasted-time topics), so the same accessible name resolves to
-  // several buttons. Target the first visible one — the card header hint.
+  // wasted-time topic), so the same accessible name resolves to several
+  // buttons. Target the first visible one — the card header hint.
   const trigger = page.getByRole('button', { name }).first();
   await trigger.waitFor({ state: 'visible', timeout: 15000 });
   await expect(async () => {
@@ -78,8 +78,7 @@ test.describe('Inline help (HelpHint)', () => {
   test('settings AI provider hint lists the backing PIWI_AI_* env vars', async ({ page }) => {
     await page.goto('/settings/ai');
 
-    // The "AI provider" topic is used by both the "Model providers" card header
-    // and the per-role forms; target the first one (the card header).
+    // The "AI provider" topic is the help of the "Provider" card header.
     await openHint(page, 'Help: AI provider');
 
     // The env vars that override the diagnosis provider are surfaced in the

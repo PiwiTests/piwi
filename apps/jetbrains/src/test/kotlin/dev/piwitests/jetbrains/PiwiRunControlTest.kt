@@ -27,6 +27,9 @@ import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.wm.RegisterToolWindowTask
 import com.intellij.openapi.wm.ToolWindowManager
+import com.intellij.openapi.ui.Messages
+import com.intellij.openapi.ui.TestDialog
+import com.intellij.openapi.ui.TestDialogManager
 import com.intellij.testFramework.PlatformTestUtil
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.intellij.xdebugger.XDebuggerManager
@@ -49,6 +52,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     private lateinit var remote: RunRemote
     private val controls = CopyOnWriteArrayList<RunControlParams>()
     private val breakpoints = CopyOnWriteArrayList<SetRunBreakpointsParams>()
+    private val editorBreakpoints = CopyOnWriteArrayList<SetBreakpointsParams>()
     private val pages = CopyOnWriteArrayList<PausedPageParams>()
     private val ended = CopyOnWriteArrayList<CommandEndedParams>()
     private val started = CopyOnWriteArrayList<StopActionParams>()
@@ -57,6 +61,10 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     private var requests = StopRequestsResult(true, "The test kept no response yet.", emptyList())
     private var count: (LocatorAtCaretParams) -> LocatorAtCaretResult = { LocatorAtCaretResult(true, "The outline is gone.", null, null) }
     private var image: PausedImage? = null
+    private val picks = CopyOnWriteArrayList<PickAtParams>()
+    private val binds = CopyOnWriteArrayList<StopBindParams>()
+    private val shares = CopyOnWriteArrayList<ShareRunParams>()
+    private var picked = PickAtResult(true, "getByRole('button', { name: 'Pay now' }) went to the editor, in place of the locator on the stopped line.", "getByRole('button', { name: 'Pay now' })")
     /** The version of a document the IDE gave the service: none until the platform tells it the document opened. */
     private var version: (Document) -> Int? = { (it as DocumentEx).modificationSequence }
     private lateinit var base: File
@@ -64,6 +72,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     override fun setUp() {
         super.setUp()
         sessions = project.service<PiwiRunSessions>()
+        sessions.liveWarned = false
         remote = sessions.remote
         sessions.remote = object : RunRemote {
             override fun control(params: RunControlParams): RunControlResult {
@@ -71,13 +80,32 @@ class PiwiRunControlTest : BasePlatformTestCase() {
                 return RunControlResult(true, "Asked.")
             }
 
+            override fun shareRun(params: ShareRunParams): RunControlResult {
+                shares += params
+                return if (params.ref == "ed-off") {
+                    RunControlResult(false, "This run cannot be shared live: its project's live view is off on the instance.")
+                } else {
+                    RunControlResult(true, if (params.on) "Sharing the run live on piwi.example.com." else "Stopped sharing the run.")
+                }
+            }
+
             override fun pausedPage(params: PausedPageParams): PausedPageResult {
                 pages += params
                 return PausedPageResult(image)
             }
 
+            override fun pickAt(params: PickAtParams): PickAtResult {
+                picks += params
+                return picked
+            }
+
             override fun setBreakpoints(params: SetRunBreakpointsParams) {
                 breakpoints += params
+            }
+
+            override fun setEditorBreakpoints(params: SetBreakpointsParams): Boolean {
+                editorBreakpoints += params
+                return true
             }
 
             override fun commandEnded(params: CommandEndedParams) {
@@ -92,6 +120,12 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             override fun requests(params: StopRequestsParams): StopRequestsResult {
                 listed += params
                 return requests
+            }
+
+            override fun bind(params: StopBindParams): StopBindResult {
+                binds += params
+                val name = "piwi-${params.ref}-w${params.worker}"
+                return if (params.on) StopBindResult(true, "Shared.", name, "npx playwright cli attach $name") else StopBindResult(true, "Not shared.")
             }
 
             override fun locatorAtCaret(params: LocatorAtCaretParams): LocatorAtCaretResult {
@@ -315,7 +349,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         hear(taking("ed-7", file, 4, since))
         val inlay = sessions.shown().inlays.single()
         val renderer = inlay.renderer as StopInlay
-        assertEquals(Glue.StopControl.entries + Glue.StopAction.entries, renderer.links)
+        assertEquals((Glue.StopControl.entries - Glue.StopControl.END) + Glue.StopAction.entries, renderer.links)
         assertEquals(Glue.StopAction.MOCK, renderer.controlAt(inlay, renderer.calcWidthInPixels(inlay) - 1))
         val popup = sessions.stopActions(sessions.stops().single()).getChildren(null).mapNotNull { it.templatePresentation.text }
         assertEquals(listOf("Resume", "Step", "Run to Caret", "Finish", PiwiRunSessions.SHOW_PAUSED_PAGE) + Glue.StopAction.entries.map { it.label }, popup)
@@ -343,6 +377,129 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         hear(headless.copy(workers = headless.workers!!.map { w -> w.copy(stop = w.stop!!.copy(bar = false)) }))
         assertEquals(listOf(Glue.StopAction.MOCK), (sessions.shown().inlays.single().renderer as StopInlay).links.filterIsInstance<Glue.StopAction>())
         assertFalse(myFixture.testAction(actions.getAction("Piwi.AssertAtStop")).isEnabled)
+    }
+
+    /**
+     * The runs' MCP server's token is the project's, in the password safe: one the service tells (the kept port was
+     * taken, or the token reset) replaces it, with its port, so the next start sends both.
+     */
+    fun testATokenTheServiceTellsIsKeptForTheProjectsNextStart() {
+        val service = project.service<PiwiProjectService>()
+        val port = service.local().agentsPort
+        val kept = service.agentsOptions()["token"] as String
+        assertTrue(Glue.isAgentsToken(kept))
+        assertEquals(kept, service.agentsOptions()["token"])
+        val told = Glue.newAgentsToken()
+        try {
+            service.agentsHeard(AgentsResult("http://127.0.0.1:41999/mcp", told, "Moved."))
+            val until = System.currentTimeMillis() + 10_000
+            while (service.agentsOptions()["token"] != told && System.currentTimeMillis() < until) Thread.sleep(20)
+            assertEquals(told, service.agentsOptions()["token"])
+            assertEquals(41999, service.agentsOptions()["port"])
+            // A token that is not one the service takes is never kept.
+            service.agentsHeard(AgentsResult("http://127.0.0.1:41999/mcp", "short", "No."))
+            Thread.sleep(200)
+            assertEquals(told, service.agentsOptions()["token"])
+        } finally {
+            service.local().agentsPort = port
+        }
+    }
+
+    /**
+     * A stop whose reporter takes it offers to share its browser with Playwright's own tools, in its popup and under
+     * Tools → Piwi, and shares it only once the person said yes to the warning.
+     */
+    fun testAStopsBrowserIsSharedWithPlaywrightToolsOnlyOnceThePersonSaidYes() {
+        val file = file("tests/coupon.spec.ts", coupon)
+        val since = "2026-10-25T10:00:09.000Z"
+        val stop = taking("ed-9", file, 4, since)
+        hear(stop.copy(workers = stop.workers!!.map { it.copy(takes = takes + "bind") }))
+        val popup = sessions.stopActions(sessions.stops().single()).getChildren(null).mapNotNull { it.templatePresentation.text }
+        assertEquals(PiwiRunSessions.SHARE_WITH_PLAYWRIGHT, popup.last())
+        myFixture.openFileInEditor(file)
+        val share = ActionManager.getInstance().getAction("Piwi.ShareWithPlaywright")
+        TestDialogManager.setTestDialog(TestDialog.NO)
+        try {
+            assertTrue(myFixture.testAction(share).isEnabled)
+        } finally {
+            TestDialogManager.setTestDialog(TestDialog.DEFAULT)
+        }
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertTrue(binds.isEmpty())
+        TestDialogManager.setTestDialog(TestDialog.OK)
+        try {
+            myFixture.testAction(share)
+        } finally {
+            TestDialogManager.setTestDialog(TestDialog.DEFAULT)
+        }
+        assertEquals(StopBindParams("ed-9", 0, since, true), waitFor("the share") { binds.firstOrNull() })
+        // A stop whose reporter does not take it offers none.
+        hear(taking("ed-9", file, 4, "2026-10-25T10:00:09.500Z"))
+        assertFalse(myFixture.testAction(share).isEnabled)
+    }
+
+    /**
+     * Share the Run Live asks what it sends the first time in the project alone, and shares nothing on a no; a run that
+     * cannot be shared is asked without the warning, and the service says why; Stop Sharing applies once a run is.
+     */
+    fun testARunIsSharedLiveOnlyOnceThePersonSaidYesTheFirstTime() {
+        val page = "https://piwi.example.com/test-runs/42"
+        val share = ActionManager.getInstance().getAction("Piwi.ShareRunLive")
+        val stop = ActionManager.getInstance().getAction("Piwi.StopSharingRun")
+        hear(running("ed-live").copy(live = RunLive(false, null, page, 0)))
+        assertFalse(myFixture.testAction(stop).isEnabled)
+        // The warning names what goes out, and to whom.
+        val asked = mutableListOf<String>()
+        TestDialogManager.setTestDialog { message ->
+            asked += message
+            Messages.NO
+        }
+        try {
+            assertTrue(myFixture.testAction(share).isEnabled)
+        } finally {
+            TestDialogManager.setTestDialog(TestDialog.DEFAULT)
+        }
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertEquals(listOf(Glue.shareLiveWarning(page)), asked)
+        assertTrue(shares.isEmpty())
+        TestDialogManager.setTestDialog(TestDialog.OK)
+        try {
+            myFixture.testAction(share)
+        } finally {
+            TestDialogManager.setTestDialog(TestDialog.DEFAULT)
+        }
+        assertEquals(ShareRunParams("ed-live", true), waitFor("the share") { shares.firstOrNull() })
+        // Shared once, the IDE asks no more in this session.
+        hear(running("ed-live").copy(live = RunLive(false, null, page, 0)))
+        TestDialogManager.setTestDialog { throw AssertionError("asked again") }
+        try {
+            myFixture.testAction(share)
+            waitFor("the second share") { shares.getOrNull(1) }
+        } finally {
+            TestDialogManager.setTestDialog(TestDialog.DEFAULT)
+        }
+        hear(running("ed-live").copy(live = RunLive(true, null, page, 2)))
+        assertEquals("Piwi: shared live · 2 views", Glue.liveStatus(sessions.controls()))
+        assertTrue(myFixture.testAction(stop).isEnabled)
+        assertEquals(ShareRunParams("ed-live", false), waitFor("the stop") { shares.getOrNull(2) })
+    }
+
+    /** A run whose workers have not said yet how it stands on the instance is warned of too, before it is shared. */
+    fun testARunNotHeardOfYetIsWarnedOfBeforeItIsShared() {
+        hear(running("ed-quiet"))
+        val asked = mutableListOf<String>()
+        TestDialogManager.setTestDialog { message ->
+            asked += message
+            Messages.NO
+        }
+        try {
+            myFixture.testAction(ActionManager.getInstance().getAction("Piwi.ShareRunLive"))
+        } finally {
+            TestDialogManager.setTestDialog(TestDialog.DEFAULT)
+        }
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertEquals(listOf(Glue.shareLiveWarning(null)), asked)
+        assertTrue(shares.isEmpty())
     }
 
     /** A failure the IDE holds: its own icon and words, Resume alone among the controls, then the code actions. */
@@ -516,6 +673,52 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         }
     }
 
+    /**
+     * A click on the image of a headless stop whose worker takes `pick-at` picks the element under it: the point in CSS
+     * pixels of the page's viewport, the answer under the caption; an older reporter's image offers no pick.
+     */
+    fun testAClickOnAHeadlessStopsImagePicksThere() {
+        val window = ToolWindowManager.getInstance(project).registerToolWindow(RegisterToolWindowTask.notClosable(PiwiFailuresToolWindowFactory.ID))
+        try {
+            // An image taken at a device scale factor of 2: 2560 by 1600 pixels of a 1280 by 800 viewport.
+            val jpeg = ByteArrayOutputStream().also { ImageIO.write(BufferedImage(2560, 1600, BufferedImage.TYPE_INT_RGB), "jpg", it) }
+            image = PausedImage("image/jpeg", Base64.getEncoder().encodeToString(jpeg.toByteArray()), 1280, 800)
+            val pageObject = file("tests/pages/pick.page.ts", page)
+            val since = "2026-10-27T10:00:01.000Z"
+            val stop = RunStop("pause", "Click getByRole('button', { name: 'Pay now' })", uri(pageObject), 3, 4, null, false, since)
+            hear(RunSession("ed-7", base.path, listOf(RunWorker(0, 0, "stopped", test(retry = 1), stop, takes = listOf("pick", "view", "input", "pick-at")))))
+            val shown = waitFor("the paused page") { sessions.shown().takeIf { it.pageImage != null } }
+            assertTrue(shown.pagePicks)
+            assertNull(shown.pageNote)
+            // A click outside the image picks nothing.
+            sessions.clickPage(2600, 10)
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertEquals(emptyList<PickAtParams>(), picks)
+            sessions.clickPage(1300, 400)
+            val note = waitFor("the pick's answer") { sessions.shown().pageNote?.takeIf { it != "Picking the element under the click…" } }
+            assertEquals(listOf(PickAtParams("ed-7", 0, since, 650, 200)), picks)
+            assertEquals(picked.message, note)
+            // A refusal is said the same way.
+            picked = PickAtResult(false, "No element there: pick an element of the page, not its background.", null)
+            sessions.clickPage(10, 10)
+            assertEquals(picked.message, waitFor("the refusal") { sessions.shown().pageNote?.takeIf { it.startsWith("No element") } })
+            assertEquals(PickAtParams("ed-7", 0, since, 5, 5), picks.last())
+            hear(RunSession("ed-7", ended = true))
+            assertFalse(sessions.shown().pagePicks)
+
+            // A reporter that does not take `pick-at`: the image alone, no hint, a click asks nothing.
+            hear(RunSession("ed-8", base.path, listOf(RunWorker(0, 0, "stopped", test(), stop.copy(since = "2026-10-27T10:00:02.000Z"), takes = listOf("pick")))))
+            waitFor("the older reporter's page") { sessions.shown().takeIf { it.pageImage != null } }
+            assertFalse(sessions.shown().pagePicks)
+            sessions.clickPage(1300, 400)
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertEquals(2, picks.size)
+            hear(RunSession("ed-8", ended = true))
+        } finally {
+            ToolWindowManager.getInstance(project).unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
+        }
+    }
+
     /** The IDE's breakpoints go to a live run as it starts and as they change, filtered as a run's start filters them. */
     fun testTheBreakpointsFollowTheIdesWhileTheRunGoesOn() {
         val type = TestLineBreakpointType()
@@ -563,6 +766,43 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         } finally {
             WriteAction.runAndWait<Throwable> { manager.allBreakpoints.filter { it.type === type }.forEach { manager.removeBreakpoint(it) } }
             // No service runs here: a read leaves nothing of the pushed status to the next tests.
+            service.refreshStatus()
+            val deadline = System.currentTimeMillis() + 10_000
+            while (service.status != null && System.currentTimeMillis() < deadline) Thread.sleep(20)
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        }
+    }
+
+    /**
+     * A run started in a terminal: the service hears the IDE's breakpoints as they stand, which such a run starts with;
+     * its stop says where it runs, offers End the Test, which answers it, and no Stop, which is the terminal's.
+     */
+    fun testARunStartedInATerminalTakesTheBreakpointsAndEndsThere() {
+        val type = TestLineBreakpointType()
+        XBreakpointType.EXTENSION_POINT_NAME.point.registerExtension(type, testRootDisposable)
+        val spec = file("tests/checkout.spec.ts", "test('pays', async ({ page }) => {\n  await page.goto('/');\n});\n")
+        val service = project.service<PiwiProjectService>()
+        service.statusChanged(StatusResult(listOf(ContextStatus(root = base.path, connected = true))))
+        val manager = XDebuggerManager.getInstance(project).breakpointManager
+        try {
+            WriteAction.runAndWait<Throwable> { manager.addLineBreakpoint(type, spec.url, 1, null) }
+            assertEquals(
+                SetBreakpointsParams(listOf(EditorBreakpoint(uri(spec), 1))),
+                waitFor("the IDE's breakpoints") { editorBreakpoints.lastOrNull()?.takeIf { it.places.isNotEmpty() } },
+            )
+            val since = "2026-10-25T10:00:21.000Z"
+            val stop = RunStop("breakpoint", "Fill \"one\" locator('input')", uri(spec), 1, 2, null, true, since)
+            hear(RunSession("terminal-41-1", base.path, listOf(RunWorker(0, 0, "stopped", test(), stop, takes = listOf("end"))), terminal = true))
+            val renderer = sessions.shown().inlays.single().renderer as StopInlay
+            assertEquals("Paused · Fill \"one\" locator('input') · run in a terminal", renderer.text)
+            assertEquals(Glue.StopControl.END, renderer.links.last())
+            myFixture.openFileInEditor(spec)
+            val actions = ActionManager.getInstance()
+            assertFalse("a terminal's run is the terminal's to stop", myFixture.testAction(actions.getAction("Piwi.StopRun")).isEnabled)
+            assertTrue(myFixture.testAction(actions.getAction("Piwi.EndTest")).isEnabled)
+            assertEquals(RunControlParams("terminal-41-1", 0, "end", since = since), waitFor("End the Test") { controls.firstOrNull() })
+        } finally {
+            WriteAction.runAndWait<Throwable> { manager.allBreakpoints.filter { it.type === type }.forEach { manager.removeBreakpoint(it) } }
             service.refreshStatus()
             val deadline = System.currentTimeMillis() + 10_000
             while (service.status != null && System.currentTimeMillis() < deadline) Thread.sleep(20)

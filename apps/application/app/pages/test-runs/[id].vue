@@ -9,17 +9,21 @@ import type {
   RunClusterMeta,
 } from '~~/types/api';
 import type { LiveStepsByWorker } from '~/utils/live-steps';
+import { liveRowNote } from '~/utils/live-row-note';
 import { subscribeDemoEvents } from '~/demo/run-events';
-import { useRunEvents, useRunStream } from '~/composables/useRunStream';
+import { useRunEvents, useRunStart, useRunStream } from '~/composables/useRunStream';
 import { summarizeRunCases } from '#shared/utils/test-counts';
 import { applyLiveResourcesToParts } from '#shared/live-resources';
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
 import type { WireLiveResources } from '#shared/types';
+import { liveWorkerKey, type LiveViewRunState, type LiveWorkerState } from '#shared/live-view';
+import type { StuckAttempt } from '#shared/stuck-tests';
 
 const route = useRoute();
 const router = useRouter();
 const runId = route.params.id;
 const isDemoMode = Boolean(useRuntimeConfig().public.demoMode);
+const isDesktop = useIsDesktop();
 const { can } = useAuth();
 
 const { data: testRun, error: testRunError, refresh } = await useFetch<TestRunDetails>(`/api/test-runs/${runId}`);
@@ -66,6 +70,35 @@ const liveSteps = ref<LiveStepsByWorker>({});
 // per reporter, from the stream's `resources` events. The workers timeline
 // draws them while the run is live, and the stored report once it ended.
 const liveResources = ref<RunResourceTimelinePart[]>([]);
+// The workers in the run's live view, by `liveWorkerKey`, from the stream's `live-worker` events: each running row of
+// one offers Watch, and says Paused while its test is stopped.
+const liveWorkers = ref<Record<string, LiveWorkerState>>({});
+// Whether the run holds a live view key, from the stream's `live-view` events: its project's live view applies to it.
+const liveViewKeyed = ref(false);
+// What the running rows say where Watch would be, while no worker is in the run's view: a run outside CI that holds a
+// key is not shared, and says how to share it (a CI run's workers join at once); in the desktop app, which hands out
+// no key, where the tests' pages show.
+const liveNote = computed(() =>
+  liveRowNote({
+    live: isLive.value,
+    desktop: isDesktop,
+    keyed: liveViewKeyed.value,
+    ci: !!testRun.value?.metadata?.ci,
+    workers: Object.keys(liveWorkers.value).length,
+  }),
+);
+// The worker someone opened Watch on, and the execution of the row they opened it from: the view is that test's.
+const watching = ref<{ worker: number; shard: number | null; test: string; executionId: number } | null>(null);
+const watchOpen = ref(false);
+function watchWorker(worker: LiveWorkerState, testCase: TestCaseResult) {
+  watching.value = {
+    worker: worker.worker,
+    shard: worker.shard,
+    test: testCase.title,
+    executionId: testCase.executionId,
+  };
+  watchOpen.value = true;
+}
 let eventSource: EventSource | null = null;
 
 // Combined test cases: from server data + live stream. Includes every attempt
@@ -150,6 +183,8 @@ function flushPendingEvents() {
         browser?: { projectName?: string } | null;
         repeatEachIndex?: number;
         stepCategory?: string | null;
+        shardIndex?: number | null;
+        stuck?: StuckAttempt | null;
       };
       // Hook/fixture step-begin events are published as `test-begin` with a
       // `stepCategory`. They are not test cases — ignore them so they don't
@@ -173,11 +208,49 @@ function flushPendingEvents() {
             status: 'running',
             location: d.location,
             workerIndex: d.workerIndex ?? null,
+            shardIndex: d.shardIndex ?? null,
             startedAt: d.startedAt ?? Date.now(),
             browser: d.browser ?? null,
             repeatEachIndex: d.repeatEachIndex ?? 0,
+            stuck: d.stuck ?? null,
           },
         ];
+        displayTestCases.value = [...liveTestCases.value];
+      } else {
+        // A known test begins again: a retry starts (its row runs again, unmarked), or a
+        // reconnected stream catches up on a running attempt (its row takes the mark it carries).
+        const idx = liveTestCases.value.findIndex((tc) => liveCaseKey(tc) === key);
+        const existing = idx >= 0 ? liveTestCases.value[idx]! : null;
+        if (existing && (existing.status !== 'running' || d.stuck)) {
+          const copy = [...liveTestCases.value];
+          copy[idx] =
+            existing.status === 'running'
+              ? { ...existing, stuck: d.stuck ?? existing.stuck }
+              : {
+                  ...existing,
+                  status: 'running',
+                  workerIndex: d.workerIndex ?? existing.workerIndex,
+                  shardIndex: d.shardIndex ?? existing.shardIndex,
+                  startedAt: d.startedAt ?? Date.now(),
+                  stuck: d.stuck ?? null,
+                };
+          liveTestCases.value = copy;
+          displayTestCases.value = [...copy];
+        }
+      }
+    } else if (parsed.type === 'test-stuck') {
+      // A running test has run far longer than it usually does: its row says so until it completes.
+      const d = data as unknown as {
+        title: string;
+        location: string;
+        browser?: { projectName?: string } | null;
+        repeatEachIndex?: number;
+      } & StuckAttempt;
+      const key = liveCaseKey(d);
+      const row = liveTestCases.value.find((tc) => tc.status === 'running' && liveCaseKey(tc) === key);
+      if (row) {
+        row.stuck = { elapsedMs: d.elapsedMs, usualMs: d.usualMs };
+        liveTestCases.value = [...liveTestCases.value];
         displayTestCases.value = [...liveTestCases.value];
       }
     } else if (parsed.type === 'test-completed') {
@@ -219,6 +292,8 @@ function flushPendingEvents() {
             filePath: d.filePath ?? existing.filePath,
             suitePath: d.suitePath ?? existing.suitePath,
             status: d.status,
+            // The attempt said to be stuck ended.
+            stuck: null,
             duration: d.duration,
             error: d.error,
             stepEvents: d.stepEvents ?? existing.stepEvents,
@@ -306,6 +381,14 @@ function flushPendingEvents() {
           parentTitle: d.parentTitle ?? null,
         },
       };
+    } else if (parsed.type === 'live-worker') {
+      const worker = data as unknown as LiveWorkerState;
+      const next = { ...liveWorkers.value };
+      if (worker.connected) next[liveWorkerKey(worker)] = worker;
+      else delete next[liveWorkerKey(worker)];
+      liveWorkers.value = next;
+    } else if (parsed.type === 'live-view') {
+      liveViewKeyed.value = (data as unknown as LiveViewRunState).keyed === true;
     } else if (parsed.type === 'resources') {
       liveResources.value = applyLiveResourcesToParts(liveResources.value, data as unknown as WireLiveResources);
     } else if (parsed.type === 'run-finalizing') {
@@ -314,6 +397,8 @@ function flushPendingEvents() {
     } else if (parsed.type === 'run-finished') {
       isFinalizing.value = false;
       liveSteps.value = {};
+      liveWorkers.value = {};
+      liveViewKeyed.value = false;
       disconnectStream();
       refresh();
       // Nudge the Changes tab to refetch — it keeps its own fetch state and
@@ -364,14 +449,6 @@ function connectToDemoStream() {
   demoUnsubscribe = subscribeDemoEvents((message) => {
     if (message.scope === 'run' && message.runId === Number(runId)) {
       enqueueEvent(message.event as unknown as Record<string, unknown>);
-    } else if (
-      message.scope === 'global' &&
-      message.event.runId === Number(runId) &&
-      message.event.type === 'run-started'
-    ) {
-      // Run transitioned from 'initializing' to 'running' — refetch so
-      // isLive flips and progress counters appear.
-      refresh();
     }
   });
 }
@@ -419,8 +496,11 @@ function disconnectStream() {
   }
 }
 
-// In demo mode also stream while 'initializing' so the page picks up the
-// transition to 'running' pushed by the simulator.
+// A run shown as initializing is refetched once it starts, and then streams.
+// The demo's run events replay nothing on connect, so in demo mode the page
+// already listens while the run initializes, for the tests that begin before
+// the refetch lands.
+useRunStart(Number(runId), () => testRun.value?.status, refresh);
 const shouldStream = computed(() => isLive.value || (isDemoMode && testRun.value?.status === 'initializing'));
 
 watch(
@@ -566,6 +646,17 @@ function buildRunSummary(): string {
 // Test-cases filter state — lifted here so it survives tab switches, and kept
 // for the page so it is still there when the user comes back to the run.
 const testCaseSearch = useViewState('run-tests:search', () => '');
+// A search the address carries (a stuck test's notification opens its row this way) wins over the kept one,
+// then leaves the address, so the user's own searches are not overridden by it later.
+watch(
+  () => route.query.search,
+  (search) => {
+    if (typeof search !== 'string') return;
+    testCaseSearch.value = search;
+    if (import.meta.client) void replaceQuery(router, { search: undefined });
+  },
+  { immediate: true },
+);
 const testCaseActiveStatuses = useViewState<string[]>('run-tests:statuses', () => []);
 
 // The count-bar segments toggle the status filters the Tests list applies, and
@@ -853,6 +944,7 @@ const moreMenuItems = computed(() => {
         <template #right>
           <div class="flex items-center shrink-0 min-w-0">
             <ExportMenu
+              :endpoint="`/api/test-runs/${runId}/export`"
               :perfetto-endpoint="`/api/test-runs/${runId}/perfetto`"
               :base-name="`piwi-run-${runId}`"
               class="mr-1"
@@ -901,12 +993,16 @@ const moreMenuItems = computed(() => {
             :total="displayProgress?.totalTests"
             :live-steps="liveSteps"
             :live-resources="liveResources"
+            :live-workers="liveWorkers"
+            :live-note="liveNote"
             :cluster-meta="clusterMeta"
             :quarantined-case-ids="quarantinedCaseIds"
             :project-key="testRun?.projectId"
             :project-name="testRun?.project?.name"
+            :run-id="Number(runId)"
             class="flex-1 min-h-0"
             @quarantine-changed="refreshQuarantine"
+            @watch="watchWorker"
           />
         </template>
 
@@ -961,6 +1057,20 @@ const moreMenuItems = computed(() => {
 
   <ClientOnly>
     <RunKeepModal v-model:open="isKeepOpen" :run-id="Number(runId)" @kept="refresh" />
+  </ClientOnly>
+
+  <ClientOnly>
+    <RunLiveView
+      v-if="watching"
+      :key="`${liveWorkerKey(watching)}:${watching.executionId}`"
+      v-model:open="watchOpen"
+      :run-id="Number(runId)"
+      :worker="watching.worker"
+      :shard="watching.shard"
+      :test="watching.test"
+      :project-key="testRun?.projectId"
+      :project-name="testRun?.project?.name"
+    />
   </ClientOnly>
 
   <ClientOnly>

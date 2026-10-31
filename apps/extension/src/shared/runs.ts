@@ -1,11 +1,13 @@
 /**
  * The Runs window: the runs the paired editor started, as the background worker hears them from each editor
- * service's hub (`background/run-hubs.ts`), and what the window and the worker say to each other through their port
- * (`RUNS_PORT`). The window makes no network call and never sees a hub's token: it reads this state and sends the
- * controls, which the worker passes on. What a hub sends is data from another program: shown as text, an image as an
- * image, never as markup.
+ * service's hub (`background/run-hubs.ts`), and the runs the paired desktop app's shell started, from the hub its
+ * server is, and what the window and the worker say to each other through their port (`RUNS_PORT`). The window makes no network call and never sees a hub's token: it reads this state and sends the
+ * controls, which the worker passes on. What a hub sends is data from another program: shown as text, an image or a
+ * frame of a live view as an image, never as markup. A frame is kept in memory, the latest one alone, never stored.
  */
+import { LIVE_SHARE_MISSING, LIVE_SHARE_UNKNOWN, type LiveViewMissing } from '@piwitests/core/live-view';
 import type {
+  HubAction,
   HubCodeAction,
   HubCodeIntent,
   HubControlAction,
@@ -17,6 +19,7 @@ import type {
   HubTest,
   HubWorker,
 } from '@piwitests/core/run-hub';
+import { isViewPoint, readViewInput, type ViewInput } from '@piwitests/core/run-view';
 
 /** The name of the Runs window's port to the worker. */
 export const RUNS_PORT = 'piwi-runs';
@@ -46,6 +49,12 @@ export type RunsDiscovery =
   /** The editor answered with its hubs. */
   | 'found';
 
+/**
+ * What the worker found when it last asked the paired desktop app for the hub of its runs, once the app proved it
+ * holds the pairing's token: as for the editor, and `unpaired` while no desktop app is paired.
+ */
+export type RunsDesktopDiscovery = Exclude<RunsDiscovery, 'searching'>;
+
 /** A hub as the window shows it: no token. */
 export interface RunsHub {
   /** Its address, which names it in the window's commands. */
@@ -53,6 +62,8 @@ export interface RunsHub {
   connected: boolean;
   /** The editor it belongs to (`Visual Studio Code`, `WebStorm`); null when it does not say. */
   client: string | null;
+  /** The paired desktop app's hub, of the runs its shell starts, rather than an editor's. */
+  desktop: boolean;
 }
 
 /** A run of a hub; `session.ended` for one that ended, kept a while with its last workers. */
@@ -63,6 +74,8 @@ export interface RunsRun {
 
 export interface RunsState {
   discovery: RunsDiscovery;
+  /** What the paired desktop app answered; `unpaired` while none is. */
+  desktop: RunsDesktopDiscovery;
   hubs: RunsHub[];
   /** The live runs first, in the order the hubs told them, then the ended ones, the latest first. */
   runs: RunsRun[];
@@ -70,16 +83,29 @@ export interface RunsState {
 
 /**
  * What a command of the window asks: a control; at a stop, an intent the test's window runs (the pause bar's Pick and
- * Record, the check panel's Assert, a region's Assert a region), the requests its test kept or the one to mock; or an
- * image of the stopped page.
+ * Record, the check panel's Assert, a region's Assert a region), the requests its test kept or the one to mock; an
+ * image of the stopped page; or its live view: watching it (`view`), the input played on it (`input`), and the locator
+ * of the element under a point of an image of it (`pick-at`); or the run shared live on the team instance, or no more
+ * (`share`, Share live).
  */
-export type RunsWhat = HubControlAction | HubIntent | HubCodeIntent | 'requests' | 'mock' | 'image';
+export type RunsWhat =
+  | HubControlAction
+  | HubIntent
+  | HubCodeIntent
+  | 'requests'
+  | 'mock'
+  | 'image'
+  | 'view'
+  | 'input'
+  | 'pick-at'
+  | 'share';
 
 const WHATS: readonly string[] = [
   'pause',
   'step',
   'resume',
   'finish',
+  'end',
   'pick',
   'record',
   'assert',
@@ -87,13 +113,20 @@ const WHATS: readonly string[] = [
   'requests',
   'mock',
   'image',
+  'view',
+  'input',
+  'pick-at',
+  'share',
 ];
+
+/** The commands that name a worker and a stop's live view: the frames come to the window that watches it alone. */
+const VIEW_WHATS: readonly string[] = ['view', 'input', 'pick-at'];
 
 /** What the window sends the worker. */
 export type RunsRequest =
   /** The window's own browser window, which the popup's Runs brings to the front. */
   | { type: 'window'; windowId: number }
-  /** Ask the editor for its hubs again. */
+  /** Ask the editor and the desktop app for their hubs again. */
   | { type: 'find' }
   /** Keeps the worker alive while the window is open. */
   | { type: 'ping' }
@@ -108,10 +141,20 @@ export type RunsRequest =
       what: RunsWhat;
       /** For `mock` alone: the kept response to mock, the `id` of one of those `requests` listed. */
       request?: number;
+      /** For `view`: start watching the stop's live view, or stop; for `share`: share the run live, or stop. */
+      on?: boolean;
+      /** For `input` alone: the events to play on the page, in CSS pixels of its viewport. */
+      events?: ViewInput[];
+      /** For `pick-at` alone: the point of an image of the page, in CSS pixels of its viewport. */
+      x?: number;
+      y?: number;
     };
 
-/** Why the worker answered a command itself: the hub is not connected, or did not answer in time. */
-export type RunsFailure = 'offline' | 'timeout';
+/**
+ * Why the worker answered a command itself: the hub is not connected, did not answer in time, or the window sent
+ * input for a stop it does not watch.
+ */
+export type RunsFailure = 'offline' | 'timeout' | 'unwatched';
 
 /** The answer to a command: the hub's own sentence, or `failure` when it never reached the hub or never came back. */
 export interface RunsAnswer {
@@ -122,6 +165,8 @@ export interface RunsAnswer {
   image?: HubImage | null;
   /** For `requests`: the responses the test kept, oldest first, as the hub listed them (`parseHubMessage`). */
   requests?: HubKeptRequest[];
+  /** For `pick-at`: the locator sent to the editor, null when none was found. */
+  locator?: string | null;
 }
 
 /**
@@ -140,11 +185,30 @@ export interface RunsCode {
   warnings: string[];
 }
 
+/** A stop's live view, as the window and the worker name it: the hub, the run, the worker and the stop. */
+export interface RunsView {
+  hub: string;
+  ref: string;
+  worker: number;
+  since: string;
+}
+
+/**
+ * A frame of the live view of a stop the window watches: a JPEG as the page painted it, base64, its size checked by
+ * `parseHubMessage`, and the page's viewport in CSS pixels (`width`, `height`), which input and `pick-at` name their
+ * points in; or the hub's sentence saying why the view sends none now (`refused`: the page is too heavy for it), until
+ * a frame comes again.
+ */
+export type RunsFrame = RunsView & ({ width: number; height: number; data: string } | { refused: string });
+
 /** What the worker sends the window. */
 export type RunsEvent =
   | { type: 'state'; state: RunsState }
   | ({ type: 'answer'; id: number } & RunsAnswer)
-  | ({ type: 'code' } & RunsCode);
+  | ({ type: 'code' } & RunsCode)
+  | ({ type: 'frame' } & RunsFrame)
+  /** A live view the window watched ended without the window asking: its hub's connection was lost. */
+  | ({ type: 'view-ended' } & RunsView);
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -170,22 +234,137 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
       if (worker !== null && !isIndex(worker)) return null;
       if (since !== null && (typeof since !== 'string' || !since || since.length > 64)) return null;
       if (typeof what !== 'string' || !WHATS.includes(what)) return null;
-      if (what === 'image' && worker === null) return null;
+      if ((what === 'image' || VIEW_WHATS.includes(what)) && worker === null) return null;
+      // Share live names the run alone.
+      if (what === 'share' && (worker !== null || since !== null)) return null;
       // Every control but Pause names the stop it answers, so a click made twice does not answer the next one.
-      if (what !== 'pause' && what !== 'image' && since === null) return null;
+      if (what !== 'pause' && what !== 'image' && what !== 'share' && since === null) return null;
       const command = { type: 'command', id, hub, ref, worker, since, what: what as RunsWhat } as const;
-      // Mock a request names the response, and nothing else does.
-      if (what !== 'mock') return value.request === undefined ? command : null;
-      return isIndex(value.request) && value.request > 0 ? { ...command, request: value.request } : null;
+      // Each field belongs to one command alone: Mock a request names the response, a view whether it is on, an input
+      // its events, a pick on the image its point.
+      const own: Record<string, readonly string[]> = {
+        mock: ['request'],
+        view: ['on'],
+        share: ['on'],
+        input: ['events'],
+        'pick-at': ['x', 'y'],
+      };
+      const fields = own[what] ?? [];
+      if (['request', 'on', 'events', 'x', 'y'].some((f) => !fields.includes(f) && value[f] !== undefined)) return null;
+      switch (what) {
+        case 'mock':
+          return isIndex(value.request) && value.request > 0 ? { ...command, request: value.request } : null;
+        case 'view':
+        case 'share':
+          return typeof value.on === 'boolean' ? { ...command, on: value.on } : null;
+        case 'input': {
+          const events = readViewInput(value.events);
+          return typeof events === 'string' ? null : { ...command, events };
+        }
+        case 'pick-at':
+          return isViewPoint(value.x, value.y) ? { ...command, x: value.x as number, y: value.y as number } : null;
+        default:
+          return command;
+      }
     }
     default:
       return null;
   }
 }
 
+/** The actions in the test's window, which the pause bar shows, or a viewer drives through a headless stop's view. */
+export const IN_WINDOW = ['pick', 'record', 'assert', 'assert-region'] as const;
+
+/**
+ * What a stop takes from this window (`stop.intents`, as the hub tells each connection): its live view, the input on
+ * it while the window watches it, Pick on the image, the actions in the test's window where the pause bar shows or
+ * while the window watches the view, Mock a request, End the test but at a failure. From a service that predates it,
+ * what the worker's reporter takes where the pause bar shows, and Mock a request at any stop: no live view.
+ */
+export function stopIntents(worker: Pick<HubWorker, 'intents'>, stop: Pick<HubStop, 'bar' | 'intents'>): HubAction[] {
+  if (stop.intents) return stop.intents;
+  return worker.intents.filter(
+    (what) => what === 'mock' || (stop.bar && (IN_WINDOW as readonly string[]).includes(what)),
+  );
+}
+
+/**
+ * The state as one window reads it: the background worker's single connection to a hub watches every stop a window
+ * watches, so a stop the window does not watch itself takes from it what it takes from a connection that does not
+ * watch: no input, and at a stop no pause bar shows, none of the actions in the test's window.
+ */
+export function stateForViewer(state: RunsState, watches: (view: RunsView) => boolean): RunsState {
+  return {
+    ...state,
+    runs: state.runs.map(({ hub, session }) => ({
+      hub,
+      session: {
+        ...session,
+        workers: session.workers.map((worker) => {
+          const { stop } = worker;
+          if (!stop?.intents || watches({ hub, ref: session.ref, worker: worker.worker, since: stop.since })) {
+            return worker;
+          }
+          const intents = stop.intents.filter(
+            (what) =>
+              what !== 'input' &&
+              what !== 'input-clicks' &&
+              (stop.bar || !(IN_WINDOW as readonly string[]).includes(what)),
+          );
+          return { ...worker, stop: { ...stop, intents } };
+        }),
+      },
+    })),
+  };
+}
+
+/** Names a stop's live view, for the worker's maps of who watches it. */
+export function viewKey(view: RunsView): string {
+  return `${view.hub}|${view.ref}|${view.worker}|${view.since}`;
+}
+
+/**
+ * A point of an image of a stopped page, from where the pointer is on it to CSS pixels of the page's viewport: the
+ * image is shown scaled to `shown` (its content box, the border left out), and names the viewport it shows
+ * (`viewport`). Kept within the viewport, at a hundredth of a pixel; null for an image shown at no size.
+ */
+export function pagePoint(
+  offset: { x: number; y: number },
+  shown: { width: number; height: number },
+  viewport: { width: number; height: number },
+): { x: number; y: number } | null {
+  if (!(shown.width > 0) || !(shown.height > 0) || !(viewport.width > 0) || !(viewport.height > 0)) return null;
+  const at = (value: number, size: number, page: number) =>
+    Math.round(Math.min(Math.max((value * page) / size, 0), page - 0.01) * 100) / 100;
+  return { x: at(offset.x, shown.width, viewport.width), y: at(offset.y, shown.height, viewport.height) };
+}
+
 /** The live runs of a state. */
 export function liveRuns(state: Pick<RunsState, 'runs'>): RunsRun[] {
   return state.runs.filter((run) => !run.session.ended);
+}
+
+/**
+ * Why a run cannot be shared live, as the reporter says it (`LIVE_SHARE_MISSING`, and `unknown` for workers given no
+ * key at all), which the window says in its own words; null for any other sentence of the hub's, shown as it came.
+ */
+export function shareRefusalOf(refused: string): LiveViewMissing | 'unknown' | null {
+  if (refused === LIVE_SHARE_UNKNOWN) return 'unknown';
+  const reasons = Object.keys(LIVE_SHARE_MISSING) as LiveViewMissing[];
+  return reasons.find((why) => LIVE_SHARE_MISSING[why] === refused) ?? null;
+}
+
+/**
+ * Whether a run says where its tests' pages show: a live run none of whose workers stands stopped, with a worker whose
+ * reporter shows a stopped page live (`view`) and whose test can stop. `desktop` for a run of the desktop app's hub,
+ * which sets no breakpoints; null when there is nothing to say.
+ */
+export function pageHintOf(run: RunsRun, hub: Pick<RunsHub, 'desktop'> | undefined): 'editor' | 'desktop' | null {
+  const { session } = run;
+  if (session.ended || session.workers.some((worker) => worker.state === 'stopped')) return null;
+  const stops = session.workers.some((worker) => worker.intents.includes('view') && !worker.test?.cannotPause);
+  if (!stops) return null;
+  return hub?.desktop ? 'desktop' : 'editor';
 }
 
 /** What the global shortcut sends to one run. */

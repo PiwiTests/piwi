@@ -1,10 +1,12 @@
 /**
- * CI re-run — server-side settings access and the shared dispatch flow.
+ * CI re-run — server-side settings access and the shared dispatch flow, for a
+ * cluster's affected tests and for one execution's test.
  *
  * The settings live on the project row (`projects.ciRerun`), the token is the
  * project's SCM token, and the provider is decided by the repository URL of the
- * cluster's most recent run. This module ties those together so the availability
- * check (for the button's enabled/disabled state) and the dispatch route agree.
+ * run the tests come from (a cluster's most recent run, or the execution's).
+ * This module ties those together so the availability check (for the button's
+ * enabled/disabled state) and the dispatch route agree.
  */
 import { randomBytes } from 'node:crypto';
 import { and, desc, eq, isNotNull } from 'drizzle-orm';
@@ -12,6 +14,7 @@ import { failureClusters, projects, testCases, testRuns, testRunsCases } from '.
 import { createScmProvider, detectScmProvider, resolveScmToken } from './scm';
 import { normalizeGitUrl } from './scm/git-url';
 import { buildRetryArgs, toPosixPath, type RetryCase } from '#shared/retry-command';
+import { clusterRerunCases } from '#shared/handlers/cluster-rerun-cases';
 import {
   flakeLabCiArgs,
   flakeLabRerunSettings,
@@ -72,7 +75,7 @@ export async function ciRerunAvailability(
   if (!provider) {
     return {
       available: false,
-      reason: 'This cluster has no supported repository to dispatch to.',
+      reason: 'Its run has no supported repository to dispatch to.',
       provider: null,
       enabled: true,
       hasToken,
@@ -99,42 +102,12 @@ export async function ciRerunAvailability(
   return { available: true, reason: null, provider, enabled: true, hasToken: true };
 }
 
-/** Affected tests a re-run names at most. */
-const MAX_RERUN_TESTS = 100;
-
-/**
- * The tests a cluster's re-run runs: each affected test at the line and in the
- * Playwright project of its latest failure in the cluster.
- */
-export async function clusterRerunCases(db: DbClient, clusterId: number): Promise<RetryCase[]> {
-  const rows = await db
-    .select({
-      testCaseId: testRunsCases.testCaseId,
-      line: testRunsCases.line,
-      projectName: testRunsCases.browserName,
-      title: testCases.title,
-      filePath: testCases.filePath,
-    })
-    .from(testRunsCases)
-    .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
-    .where(eq(testRunsCases.failureClusterId, clusterId))
-    .orderBy(desc(testRunsCases.id))
-    .limit(MAX_RERUN_TESTS * 10);
-  const latest = new Map<number, RetryCase>();
-  for (const r of rows) {
-    if (r.testCaseId == null || latest.has(r.testCaseId)) continue;
-    latest.set(r.testCaseId, { filePath: r.filePath, title: r.title, line: r.line, projectName: r.projectName });
-    if (latest.size >= MAX_RERUN_TESTS) break;
-  }
-  return [...latest.values()];
-}
-
-/** The branch a cluster's re-run runs on: the branch of the cluster's latest run, when it has one. */
-export async function clusterRerunRef(db: DbClient, lastSeenRunId: number): Promise<string | null> {
+/** The branch a re-run runs on: the branch of the run it re-runs, when that run has one. */
+async function rerunRef(db: DbClient, runId: number): Promise<string | null> {
   const [run] = await db
     .select({ branch: testRuns.branch, metadata: testRuns.metadata })
     .from(testRuns)
-    .where(eq(testRuns.id, lastSeenRunId));
+    .where(eq(testRuns.id, runId));
   return run ? (run.branch ?? resolveRunBranch(run.metadata) ?? null) : null;
 }
 
@@ -152,19 +125,34 @@ export async function dispatchClusterRerun(
   db: DbClient,
   cluster: { id: number; projectId: number; lastSeenRunId: number },
 ): Promise<DispatchedRerun> {
-  const settings = await getCiRerunSettings(db, cluster.projectId);
-  const repositoryUrl = await clusterRepositoryUrl(db, cluster.lastSeenRunId);
+  return dispatchRerunOf(db, {
+    projectId: cluster.projectId,
+    runId: cluster.lastSeenRunId,
+    cases: await clusterRerunCases(db, cluster.id),
+  });
+}
+
+/**
+ * Dispatch a CI re-run of these cases, on the repository and branch of the run
+ * they come from (the target's configured ref when that run has none).
+ */
+async function dispatchRerunOf(
+  db: DbClient,
+  input: { projectId: number; runId: number; cases: RetryCase[] },
+): Promise<DispatchedRerun> {
+  const settings = await getCiRerunSettings(db, input.projectId);
+  const repositoryUrl = await clusterRepositoryUrl(db, input.runId);
   const provider = detectScmProvider(repositoryUrl);
   if (!repositoryUrl || !provider) throw new Error('No supported repository to dispatch to');
 
-  const scm = await createScmProvider(repositoryUrl, db, cluster.projectId);
+  const scm = await createScmProvider(repositoryUrl, db, input.projectId);
   if (!scm) throw new Error('Could not build an SCM client for this repository');
 
-  const cases = await clusterRerunCases(db, cluster.id);
+  const cases = input.cases;
   const args = buildRetryArgs(cases);
   const files = [...new Set(cases.map((c) => toPosixPath(c.filePath)))].sort();
   const id = randomBytes(8).toString('hex');
-  const ref = await clusterRerunRef(db, cluster.lastSeenRunId);
+  const ref = await rerunRef(db, input.runId);
   const sent = await scm.dispatchRerun(settings, args, { ref, dispatchId: id });
   return {
     id,
@@ -173,6 +161,7 @@ export async function dispatchClusterRerun(
     args,
     ref: sent.ref ?? ref,
     files,
+    tests: cases.length,
     ...(sent.pipelineId ? { pipelineId: sent.pipelineId } : {}),
     ...(sent.buildNumber ? { buildNumber: sent.buildNumber } : {}),
   };
@@ -238,6 +227,91 @@ export async function rerunClusterInCi(
     .update(failureClusters)
     .set({ lastRerunDispatch: dispatch, updatedAt: new Date() })
     .where(eq(failureClusters.id, cluster.id));
+  return { ok: true, dispatch };
+}
+
+/** An execution's run, cluster and the one case a re-run of it runs. */
+async function executionRerunTarget(db: DbClient, executionId: number) {
+  const [row] = await db
+    .select({
+      projectId: testRuns.projectId,
+      runId: testRunsCases.testRunId,
+      clusterId: testRunsCases.failureClusterId,
+      line: testRunsCases.line,
+      projectName: testRunsCases.browserName,
+      title: testCases.title,
+      filePath: testCases.filePath,
+    })
+    .from(testRunsCases)
+    .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
+    .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
+    .where(eq(testRunsCases.id, executionId));
+  return row ?? null;
+}
+
+/** Whether an execution's test can be re-run in CI, and its cluster's last re-run, when it has a cluster. */
+export async function executionRerunInfo(db: DbClient, executionId: number) {
+  const target = await executionRerunTarget(db, executionId);
+  if (!target) return null;
+  const availability = await ciRerunAvailability(db, target.projectId, target.runId);
+  let lastDispatch: ClusterRerunDispatch | null = null;
+  if (target.clusterId != null) {
+    const [cluster] = await db
+      .select({ lastRerunDispatch: failureClusters.lastRerunDispatch })
+      .from(failureClusters)
+      .where(eq(failureClusters.id, target.clusterId));
+    lastDispatch = (cluster?.lastRerunDispatch as ClusterRerunDispatch | null) ?? null;
+  }
+  return { ...availability, lastDispatch };
+}
+
+/**
+ * Re-run one execution's test in CI: at its line and in its Playwright project,
+ * on the branch of its run. The dispatch is recorded on the execution's
+ * cluster, when it has one, as that cluster's last re-run, so the run it starts
+ * is recognized as the cluster's (`matchCiRerunRun`).
+ */
+export async function rerunExecutionInCi(
+  db: DbClient,
+  executionId: number,
+  actor: CiRerunActor,
+): Promise<ClusterRerunOutcome> {
+  const target = await executionRerunTarget(db, executionId);
+  if (!target) return { ok: false, error: 'not-found', message: 'Test run case not found' };
+
+  const availability = await ciRerunAvailability(db, target.projectId, target.runId);
+  if (!availability.available) {
+    return {
+      ok: false,
+      error: 'unavailable',
+      message: availability.reason ?? 'CI re-run is not available for this test',
+    };
+  }
+
+  let dispatched: DispatchedRerun;
+  try {
+    dispatched = await dispatchRerunOf(db, {
+      projectId: target.projectId,
+      runId: target.runId,
+      cases: [
+        { filePath: target.filePath, title: target.title, line: target.line, projectName: target.projectName || null },
+      ],
+    });
+  } catch (e) {
+    return {
+      ok: false,
+      error: 'dispatch-failed',
+      message: e instanceof Error ? e.message : 'CI re-run dispatch failed',
+    };
+  }
+
+  const dispatch: ClusterRerunDispatch = { ...dispatched, at: Date.now(), byName: actor.name, byUserId: actor.id };
+  if (target.clusterId != null) {
+    await db
+      .update(failureClusters)
+      .set({ lastRerunDispatch: dispatch, updatedAt: new Date() })
+      .where(eq(failureClusters.id, target.clusterId));
+  }
   return { ok: true, dispatch };
 }
 
@@ -380,7 +454,7 @@ export async function runFlakeLabInCi(
     if (!scm) throw new Error('Could not build an SCM client for this repository');
     const args = flakeLabCiArgs(testCaseId, kind);
     const id = randomBytes(8).toString('hex');
-    const ref = await clusterRerunRef(db, runId);
+    const ref = await rerunRef(db, runId);
     const sent = await scm.dispatchRerun(settings, args, { ref, dispatchId: id });
     return {
       ok: true,

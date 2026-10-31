@@ -10,6 +10,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/core/package.json ./packages/core/
 COPY packages/picker-dom/package.json ./packages/picker-dom/
+COPY packages/editor/package.json ./packages/editor/
 COPY apps/application/package.json ./apps/application/
 COPY packages/reporter/package.json ./packages/reporter/
 COPY integrations/nitro/package.json ./integrations/nitro/
@@ -29,6 +30,12 @@ COPY tsconfig.json ./
 # be present at build time or Rollup fails to resolve the imports.
 COPY packages/core/ ./packages/core/
 COPY packages/picker-dom/ ./packages/picker-dom/
+
+# The editor service's run control (@piwitests/editor/run-host), which the server
+# inlines for the desktop build's hub of its runs (server/utils/desktop-runs.ts),
+# with the extension's mock generator it bundles (src/shared/mock-code.ts).
+COPY packages/editor/ ./packages/editor/
+COPY apps/extension/src/shared/ ./apps/extension/src/shared/
 
 # Copy application source
 COPY apps/application/ ./apps/application/

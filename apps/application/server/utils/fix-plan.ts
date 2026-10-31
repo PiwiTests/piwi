@@ -23,8 +23,9 @@ import { findFixedBefore } from './cluster-memory';
 import { getClusterKnownIssue } from './integrations/known-issue';
 import { storedPatchValidation, validatePatch } from '#shared/patch';
 import { parseCallsiteLocation } from '#shared/callsite-location';
-import { buildRetryCommand, buildTitleGrepFlag } from '#shared/retry-command';
+import { buildRerunCommand } from '#shared/retry-command';
 import { computeReproduceContext } from '#shared/handlers/reproduce';
+import { clusterRerunCases } from '#shared/handlers/cluster-rerun-cases';
 import type { FixPlan, FixPlanEdit } from '#shared/fix-plan.types';
 import { clusterTrailerLine } from '#shared/commit-trailers';
 import type { DrizzleDB } from '#shared/handlers/db';
@@ -135,15 +136,10 @@ export async function buildFixPlan(db: DrizzleDB, clusterId: number): Promise<Fi
   // the in-browser demo.
   const declaredOwner = failingTests.find((test) => test.owner)?.owner ?? null;
 
-  // Files portion — POSIX-normalized, quoted and deduped by the same builder the
-  // UI's retry command uses (so a Windows-captured path can't silently fail to
-  // match), then scoped to exactly this cluster's tests by title.
-  const fileCmd = buildRetryCommand(
-    failingTests.map((test) => ({ filePath: test.filePath, title: test.title })),
-    { mode: 'file' },
-  );
-  const grep = buildTitleGrepFlag(failingTests.slice(0, 5).map((test) => test.title));
-  const verifyCommand = `${fileCmd || 'npx playwright test'}${grep}`;
+  // The tests that verify the fix are the ones a CI re-run of the cluster runs,
+  // each at the line and in the project of its latest failure, as one command.
+  const rerunCases = await clusterRerunCases(db, clusterId);
+  const verifyCommand = buildRerunCommand(rerunCases);
 
   // Reproduce locally and bisect the regression window: the checkout of the
   // failing commit, a pinned install, the browser and the exact test command,
@@ -152,11 +148,7 @@ export async function buildFixPlan(db: DrizzleDB, clusterId: number): Promise<Fi
   // lockstep — no SCM metadata means no bisect, spelled out in the payload.
   const { reproduce, bisect, desktop } = await computeReproduceContext(db, {
     runId: cluster.lastSeenRunId,
-    cases: failingTests.map((test) => ({
-      filePath: test.filePath,
-      title: test.title,
-      projectName: test.projectName,
-    })),
+    cases: rerunCases,
     browserName: reproBrowser,
     verifyCommand,
     clusterId: cluster.id,
@@ -184,6 +176,7 @@ export async function buildFixPlan(db: DrizzleDB, clusterId: number): Promise<Fi
     ownership: { owner: declaredOwner, source: declaredOwner ? 'annotation' : null },
     verify: {
       command: verifyCommand,
+      cases: rerunCases,
       expectation:
         'Re-run the affected tests, or the whole suite. When every test in this cluster passes in one run, full or filtered, Piwi records the fix — with the commit and how long the cluster was open — and the cluster stops being reported as open. Put the commit trailer in the commit message of the fix and report the change as a fix attempt, so the fix is tied to it.',
       commitTrailer: clusterTrailerLine(cluster.id),

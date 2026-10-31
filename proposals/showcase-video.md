@@ -8,14 +8,57 @@ renders the cut: the zooms, a cursor that reads at any size, subtitles and, if a
 one for quick re-films, or a maintainer's own Windows machine for the release (the native take). Played without the
 recording, the same script is a check that the tools still work together, which no test does today.
 
-**Status.** Proposed 2026-10-27. Nothing is built. Two measurements in the [appendix](#appendix-what-was-measured)
-settle how the screen is captured and how the cut is rendered. The story needs pieces of
-[`run-control.md`](run-control.md) that are not merged yet: the editor's controls (its PR 2, beats 4 and 8), the Runs
-window (PR 3, beats 3 and 5), **Assert a region** (PR 4, beat 7), **Debug in my editor** (PR 7, beat 2) and the
-dashboard's live view (PR 8, beat 9). A first cut can be made once its PR 3 has shipped, with today's **Open in IDE**
-in place of **Debug in my editor** and the run page's **Live activity** in place of the live view. The release cut is
-meant to be filmed as a native take on a maintainer's Windows machine (Part 3, D11); nobody on the project films on a
-Mac. Nothing here is on [`ROADMAP.md`](../ROADMAP.md).
+**Status.** Proposed 2026-10-27. V1 and V4 are built, in check mode: `apps/showcase/` builds the set and plays
+beats 1 to 10 with their checks (`xvfb-run … npm run showcase:check`, about four minutes after the builds), nightly in
+`nightly-showcase.yml`, on the pieces of [`run-control.md`](../adr/run-control.md) the story needs, all merged. V2,
+capture and the cut, is built for the virtual take (below); voice and publishing (V3) and the native take (V5) remain.
+Decided from the open questions: VS Code only, the coding agent as the coda, English, the dark look. The build differs from the text in these ways. `apps/showcase/` is a folder of scripts on
+the root's `node_modules`, not yet a workspace, whose `package-lock.json` entry an `npm install` writes (left to a later
+change). The "CI" runs set `CI=true` beside `PIWI_ORIGIN=ci`: the origin alone names the
+run's origin, but the reporter's global setup asks for a live view key only where `detectCi` sees CI. The checkout keeps
+the sample's shop suite alone, so a "CI" run is a full run, and its Playwright config gives actions a 10 s timeout (a
+click cut short by the test timeout has no frame in its stack, so the failure page offers no **Debug in my editor**),
+`SLOW_MO` for the watched CI run, and, outside CI, the test's browser its tile and a debugging port the gestures reach it
+by. Every gesture goes through Playwright (VS Code, Chromium and the test's browser); the script stands in for two
+parts a bare X server lacks, the `vscode://` handler (VS Code's command line with the window's profile) and the host
+grant **Pair** asks for. Beat 6 writes the recorder's `getByRole('checkbox', { name: 'I accept the terms' }).check()`,
+and its recording is stopped from the editor's lens, the page's bar being out of a script's reach. Beat 7 cannot run
+on in the stopped test, which goes on with the code it started with: it ends the test (**End the test**) and runs it
+again to the spec's summary check (a breakpoint at the caret, **Run the test at the cursor**), where **Assert a region**
+reads the order's card. Beat 8's Runs window says the run ended (run-control PR 3 gives it no verdict) and the Testing
+view shows the test passed. In beat 10 the developer pastes a new test and runs it to its last line, and the agent, a
+client of the runs' MCP server configured from **Copy the runs' MCP server configuration**, clicks **Orders** by its
+ref, writes the steps and a check and resumes. One product bug found on the way is skipped where the check meets
+it, and only there ([`apps/showcase/ARCHITECTURE.md`](../apps/showcase/ARCHITECTURE.md#known-bugs)): the healing has
+no candidate for the story's failure (the reporter keeps no element of a click that navigates at once), so **Most
+likely** does not name **Pay now** either. Nothing here is on [`ROADMAP.md`](../ROADMAP.md).
+
+**V2, as built.** `--take virtual` (`npm run showcase:film`) films the story on the same set, and `--cut` (`npm run
+showcase:cut`) renders the cut and Part 6's outputs but the voice: the full cut in MP4 and WebM with and without burned
+subtitles, the teaser, a clip per beat, the posters, the `.vtt` and `.srt`, the chapters and the contact sheet ([the
+take and the cut](../apps/showcase/ARCHITECTURE.md#the-take)); `nightly-showcase.yml` run by hand with `film` does both
+and uploads the cut. Measured here (four cores) on a full take: 3 min 38 s of beats, all checked, the master 187 MB at
+0.8 MB a second, 5316 of its 5318 frames grabbed (24.0 a second, the capture's priority raised); a cut of 3 min 11 s
+(5720 frames) rendered in 586 s by two renderers (103 ms a frame, 312 ms a drawn one), and every output in 34 minutes in
+all, the WebM encodes the longest (6 to 7 minutes each); the full cut 43 MB in MP4 and 34 MB in WebM, the teaser 29 s at
+0.99 MB (MP4) and 0.94 MB (WebM). The build differs from the text in these ways. A take runs each beat's check too, so a
+filmed story is a checked one. Before its capture, a take opens the dashboard's run and failure pages once: the dev
+server builds a page on its first visit, which filmed 20 s of a loading page. The developer's browser runs in the dark
+scheme, in check mode too, so the dashboard and Piwi Picker are dark; the shop stays light. A beat holds until its lines
+are read from its start, one after another, and 1.2 s past its last action. The master is never decoded to files: a
+decoder per renderer streams its frames to the stage as JPEG, in order, so the cut needs no disk but its outputs. A
+quiet stretch of a beat (no line, gesture or window coming up) longer than 3 s plays at 4× with a badge, which the text
+does not have: a run the editor starts takes 7 to 13 s to open its browser. The stage names each window in a frame of
+its own and cuts VS Code's own title bar off, which reads `[Extension Development Host] … [Superuser]` on this set. The
+camera holds still during a line except where a gesture needs another window, zooms only into the dashboard (shown whole
+at half the master's pixels), and never zooms in a 4K cut, whose output pixels are the master's own. The subtitles are
+the stage's own plates, overlaid by ffmpeg, so one render gives the cut with and without them; the cards show their own
+lines, which the burned subtitles leave out. The teaser is 1280 × 720 to stay within 1 MB, and the clips carry no
+subtitles, as Part 4 burns them into the social cut only. After the first cut was watched, the camera moves only when
+the move earns it (64 moves of the first take's cut come down to 21, and 61 of the second's to 18): never to come closer
+by less than 1.35×, nor closer when the wide view already reads, and moves 2.5 s apart join into one. The dashboard,
+which read tiny at 2× across the whole screen, is zoomed to 125 % (a 1536 × 794 viewport at 2.5 device pixels a CSS
+pixel); a device scale factor of 2.5 would also have shrunk the Runs window, which the same browser holds.
 
 **Summary.**
 

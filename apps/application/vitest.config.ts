@@ -5,11 +5,17 @@ const rootDir = fileURLToPath(new URL('.', import.meta.url)).replace(/\/$/, '');
 const appDir = fileURLToPath(new URL('./app', import.meta.url)).replace(/\/$/, '');
 
 export default defineConfig({
+  // Nuxt's `import.meta.client` is false under Vitest; a test runs a composable's
+  // browser branch with `vi.stubGlobal('__IMPORT_META_CLIENT__', true)`.
+  define: { 'import.meta.client': 'globalThis.__IMPORT_META_CLIENT__ === true' },
   test: {
     include: ['tests/unit/**/*.test.ts'],
-    // @piwitests/core ships TS source; inline it so Vitest transpiles it from
-    // the workspace instead of trying to load it as a built dependency.
-    server: { deps: { inline: [/@piwitests\/core/] } },
+    // Migrates one SQLite database for every test file to copy (`migrateToLatest`, tests/unit/temp-db.ts).
+    globalSetup: ['tests/unit/global-setup.ts'],
+    // @piwitests/core and @piwitests/editor ship TS source; inline them so
+    // Vitest transpiles them from the workspace instead of trying to load them
+    // as built dependencies.
+    server: { deps: { inline: [/@piwitests\/core/, /@piwitests\/editor/] } },
     coverage: {
       provider: 'v8',
       // json-summary + json feed the PR coverage comment (see .github/workflows/ci.yml).
