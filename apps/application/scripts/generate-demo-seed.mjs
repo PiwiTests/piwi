@@ -1630,13 +1630,17 @@ function setRequestDuration(nr, ms) {
 /**
  * Split a flaky execution into its failed first attempt and the passing retry,
  * the way the reporter stores attempts: the failed attempt becomes its own row,
- * running the same steps at half the pace up to the failing assertion, and the
- * retry starts once it is over. The failed attempt repeats the retry's
- * `requests`; `failedMs` gives a request's duration on the failed attempt and
- * `retryMs` on the retry (undefined keeps it). Returns the failed attempt's requests.
+ * running the same steps at half the pace up to the failing assertion, which
+ * waits out the timeout its error names, and the retry starts once it is over.
+ * The failed attempt repeats the retry's `requests`; `failedMs` gives a
+ * request's duration on the failed attempt and `retryMs` on the retry
+ * (undefined keeps it). Returns the failed attempt's requests.
  */
 function splitFlakyExecution(row, { error, requests, failedMs, retryMs }) {
-  const failedDuration = Math.round(row.duration / 2);
+  const timeoutMs = Number(/Timeout:?\s+(\d+)ms/.exec(error)?.[1] ?? 0);
+  const lastStep = row.steps.at(-1);
+  const lastStepOffset = lastStep ? Math.round((lastStep.startTime - row.started_at) / 2) : 0;
+  const failedDuration = Math.max(Math.round(row.duration / 2), lastStepOffset + timeoutMs + SEED_WORKER_GAP_MS);
   const failedRow = {
     ...row,
     id: trcId++,
@@ -1654,7 +1658,8 @@ function splitFlakyExecution(row, { error, requests, failedMs, retryMs }) {
     steps: row.steps.map((step, i) => ({
       ...step,
       startTime: row.started_at + Math.round((step.startTime - row.started_at) / 2),
-      duration: Math.round(step.duration / 2),
+      duration:
+        i === row.steps.length - 1 ? Math.max(Math.round(step.duration / 2), timeoutMs) : Math.round(step.duration / 2),
       ...(i === row.steps.length - 1 ? { failed: true, error: { message: error.split('\n')[0] } } : {}),
     })),
     step_events:
