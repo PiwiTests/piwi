@@ -30,13 +30,19 @@ describe('internalCall', () => {
 });
 
 describe('boxCaptureFrames', () => {
-  // The same module and filter the test runner uses to hide its own frames.
+  // The filter the test runner uses to hide its own frames, from the module each Playwright layout keeps it in.
   const requireFromPlaywright = createRequire(
     createRequire(require.resolve('@playwright/test/package.json')).resolve('playwright/package.json'),
   );
-  const { filteredStackTrace } = requireFromPlaywright('playwright-core/lib/coreBundle').utils as {
-    filteredStackTrace: (lines: string[]) => Array<{ file: string }>;
-  };
+  type FilteredStackTrace = (lines: string[]) => Array<{ file: string }>;
+  const filteredStackTrace = ((): FilteredStackTrace => {
+    try {
+      return (requireFromPlaywright('playwright-core/lib/coreBundle') as { utils: { filteredStackTrace: FilteredStackTrace } })
+        .utils.filteredStackTrace;
+    } catch {
+      return (requireFromPlaywright('playwright/lib/util') as { filteredStackTrace: FilteredStackTrace }).filteredStackTrace;
+    }
+  })();
   const packageRoot = path.resolve(__dirname, '..');
   const frame = (file: string) => `    at fn (${file}:10:5)`;
 
