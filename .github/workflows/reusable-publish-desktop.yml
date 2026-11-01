@@ -211,9 +211,9 @@ jobs:
         working-directory: apps/desktop
         run: npx tauri build --target ${{ matrix.target }} --no-bundle
 
-      # Each variant is packed twice: at the app's version, and one revision
-      # above it to install as an update over the running app.
-      - name: Pack the MSIX packages
+      # The Store package, and a copy one revision above it that the smoke test
+      # installs as an update over the running app.
+      - name: Pack the MSIX package
         if: matrix.bundles == 'msix'
         working-directory: apps/desktop
         shell: pwsh
@@ -223,16 +223,15 @@ jobs:
           MSIX_PUBLISHER_DISPLAY_NAME: ${{ vars.MSIX_PUBLISHER_DISPLAY_NAME }}
         run: |
           $version = (Get-Content -Raw src-tauri/tauri.conf.json | ConvertFrom-Json).version
-          foreach ($variant in 'classic', 'win32', 'unvirtualized') {
-            node scripts/msix.mjs --variant $variant --out "msix/$variant.msix"
-            if ($LASTEXITCODE) { throw "packing $variant failed" }
-            node scripts/msix.mjs --variant $variant --version "$version.1" --out "msix/update/$variant.msix"
-            if ($LASTEXITCODE) { throw "packing the $variant update failed" }
-          }
+          node scripts/msix.mjs --out "msix/piwi-dashboard_$version.0_x64.msix"
+          if ($LASTEXITCODE) { throw 'packing the package failed' }
+          node scripts/msix.mjs --version "$version.1" --out msix-update/update.msix
+          if ($LASTEXITCODE) { throw 'packing the update failed' }
 
-      # Installs each variant, signed with a certificate made for this run, and
-      # reports where its writes land in the job summary (scripts/msix-check.ps1).
-      - name: Compare the MSIX package variants
+      # Installs the package, signed with a certificate made for this run, and
+      # fails unless the app starts, writes to the real %APPDATA%, bridges MCP
+      # through its alias and updates cleanly (scripts/msix-check.ps1).
+      - name: Smoke-test the MSIX package
         if: matrix.bundles == 'msix'
         working-directory: apps/desktop
         shell: pwsh
@@ -249,23 +248,17 @@ jobs:
           Export-Certificate -Cert $cert -FilePath signed/test.cer | Out-Null
           $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
             Sort-Object FullName -Descending | Select-Object -First 1
-          '## MSIX package variants' | Add-Content $env:GITHUB_STEP_SUMMARY
-          foreach ($variant in 'classic', 'win32', 'unvirtualized') {
-            Copy-Item "msix/$variant.msix" "signed/$variant.msix"
-            Copy-Item "msix/update/$variant.msix" "signed/$variant-update.msix"
-            foreach ($file in "signed/$variant.msix", "signed/$variant-update.msix") {
-              & $signtool.FullName sign /fd SHA256 /f signed/test.pfx /p msix-test $file
-              if ($LASTEXITCODE) { throw "signing $file failed" }
-            }
-            try {
-              ./scripts/msix-check.ps1 -Package "signed/$variant.msix" -Update "signed/$variant-update.msix" `
-                -Certificate signed/test.cer -Label $variant -Summary $env:GITHUB_STEP_SUMMARY
-            } catch {
-              "| $variant | check failed: $($_.Exception.Message) |" | Add-Content $env:GITHUB_STEP_SUMMARY
-            }
+          Copy-Item (Get-ChildItem msix/*.msix | Select-Object -First 1).FullName signed/package.msix
+          Copy-Item msix-update/update.msix signed/update.msix
+          foreach ($file in 'signed/package.msix', 'signed/update.msix') {
+            & $signtool.FullName sign /fd SHA256 /f signed/test.pfx /p msix-test $file
+            if ($LASTEXITCODE) { throw "signing $file failed" }
           }
+          '## MSIX package' | Add-Content $env:GITHUB_STEP_SUMMARY
+          ./scripts/msix-check.ps1 -Package signed/package.msix -Update signed/update.msix `
+            -Certificate signed/test.cer -Label msix -Summary $env:GITHUB_STEP_SUMMARY
 
-      - name: Upload the MSIX packages
+      - name: Upload the MSIX package
         if: matrix.bundles == 'msix'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

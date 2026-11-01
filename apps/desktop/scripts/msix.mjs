@@ -10,12 +10,12 @@
 //   MSIX_IDENTITY_NAME, MSIX_PUBLISHER, MSIX_PUBLISHER_DISPLAY_NAME
 // Without them the package gets a test identity, installable only with a certificate whose subject is its publisher.
 //
-// Usage: node scripts/msix.mjs --out <file.msix> [--variant classic|win32|unvirtualized] [--version 1.2.3.0]
+// Usage: node scripts/msix.mjs --out <file.msix> [--variant unvirtualized|classic] [--version 1.2.3.0]
 //                              [--target x86_64-pc-windows-msvc] [--layout-only]
-//   --variant   classic: a full-trust packaged desktop app (the default);
-//               win32: uap10 RuntimeBehavior "win32App";
-//               unvirtualized: classic, with AppData and HKCU writes going to the real locations
-//                 (the unvirtualizedResources restricted capability).
+//   --variant   unvirtualized (the default, the Store package): a full-trust packaged desktop app whose AppData and
+//                 HKCU writes go to the real locations, shared with the user's tools and kept on uninstall (the
+//                 unvirtualizedResources restricted capability);
+//               classic: the same app with Windows' default virtualization: new AppData files go to a private copy.
 //   --version   the package version; default: tauri.conf.json's, with a fourth part of 0.
 //   --layout-only  write the layout and manifest beside --out, without makeappx (works on any OS).
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -30,7 +30,7 @@ const tauriDir = resolve(here, "../src-tauri");
 const { values: args } = parseArgs({
   options: {
     out: { type: "string" },
-    variant: { type: "string", default: "classic" },
+    variant: { type: "string", default: "unvirtualized" },
     version: { type: "string" },
     target: { type: "string", default: "x86_64-pc-windows-msvc" },
     "layout-only": { type: "boolean", default: false },
@@ -38,10 +38,8 @@ const { values: args } = parseArgs({
 });
 
 const VARIANTS = {
-  classic: { runtime: 'EntryPoint="Windows.FullTrustApplication"', properties: "", capabilities: "" },
-  win32: { runtime: 'uap10:RuntimeBehavior="win32App" uap10:TrustLevel="mediumIL"', properties: "", capabilities: "" },
+  classic: { properties: [], capabilities: [] },
   unvirtualized: {
-    runtime: 'EntryPoint="Windows.FullTrustApplication"',
     properties: [
       "<desktop6:FileSystemWriteVirtualization>disabled</desktop6:FileSystemWriteVirtualization>",
       "<desktop6:RegistryWriteVirtualization>disabled</desktop6:RegistryWriteVirtualization>",
@@ -104,9 +102,8 @@ const escaped = Object.fromEntries(Object.entries(values).map(([key, value]) => 
 const manifest = readFileSync(join(tauriDir, "windows", "AppxManifest.xml"), "utf8")
   .replace(/<!--[\s\S]*?-->\n/, "")
   .replace(/\{\{(\w+)\}\}/g, (match, key) => {
-    if (key === "RUNTIME") return variant.runtime;
-    if (key === "PROPERTIES") return indent(variant.properties || [], 4);
-    if (key === "CAPABILITIES") return indent(variant.capabilities || [], 4);
+    if (key === "PROPERTIES") return indent(variant.properties, 4);
+    if (key === "CAPABILITIES") return indent(variant.capabilities, 4);
     if (key in escaped) return escaped[key];
     fail(`AppxManifest.xml names an unknown placeholder ${match}`);
   });

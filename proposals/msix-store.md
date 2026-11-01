@@ -5,12 +5,21 @@ A proposal to publish the desktop app on Windows as an **MSIX package in the Mic
 the package itself, so Windows users get a signed app at no cost and without a code-signing certificate. Both
 installers stay as they are.
 
-**Status.** The name "Piwi Dashboard" is reserved in Partner Center. The spike (rollout step 2) runs in CI: the
-`msix` leg of `reusable-publish-desktop.yml` packs three variants of the manifest with `scripts/msix.mjs` (the
-default full-trust app, option A and option B below). `scripts/msix-check.ps1` installs each one on the runner, signed
-with a certificate made for the run, and reports in the job summary where the app's writes land, whether the alias
-bridges MCP, and whether a sidecar outlives an update. The shell changes, the Store submission and the docs remain.
-Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet.
+**Status.** The name "Piwi Dashboard" is reserved in Partner Center, and the identity is in the repository variables.
+The spike ran on a Windows CI runner (release run 41309799632), packing three variants with `scripts/msix.mjs` and
+checking each with `scripts/msix-check.ps1`:
+
+| Variant                     | Server                                                                                           | Data folder and database    | Alias, MCP bridge | Update over the running app |
+| --------------------------- | ------------------------------------------------------------------------------------------------ | --------------------------- | ----------------- | --------------------------- |
+| Default full-trust app      | starts                                                                                           | private copy (`LocalCache`) | work              | installs; old sidecar gone  |
+| A. `win32App`               | crashes: Node is refused loading libSQL's `.node` module from `WindowsApps` (`Access is denied`) | real `%APPDATA%`            | not reached       | not reached                 |
+| B. `unvirtualizedResources` | starts                                                                                           | real `%APPDATA%`            | work              | installs; old sidecar gone  |
+
+Option B is the package: `msix.mjs` packs it by default (`--variant classic` packs the default app), and the `msix`
+leg of `reusable-publish-desktop.yml` smoke-tests it and fails unless every check holds. The package weighs about
+68 MB, like the `.msi`. What remains: certification's answer on the restricted capability, the shell changes (the
+startup task, the alias in `bridge_command`, the Store state in Settings → About, the deeper path-length prefix),
+the automated submission and the docs. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet.
 
 **Summary.** Tauri does not bundle MSIX, so a new Windows leg of `reusable-publish-desktop.yml` builds the app
 without an installer (`tauri build --no-bundle`) and without the updater, then packs it with `makeappx` from a

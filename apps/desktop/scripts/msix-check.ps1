@@ -1,4 +1,5 @@
-# Install an MSIX package of the desktop app, start it, and report what Windows did with its writes.
+# Install an MSIX package of the desktop app, start it, report what Windows did with its writes, and fail when the
+# package does not behave as the app needs.
 #
 # Run on a disposable Windows machine (a CI runner), as an administrator: it trusts the package's certificate,
 # deletes the app's data folder and the discovery file before it starts, and uninstalls the package at the end.
@@ -9,6 +10,9 @@
 #     copy (LocalCache);
 #   - whether the app execution alias exists and bridges an MCP initialize (piwi-desktop.exe mcp-stdio);
 #   - with -Update, whether a Node sidecar of the old version outlives an update installed over the running app.
+#
+# It exits 1 unless the server answers, the database is in the real %APPDATA% (no private copy of the data folder),
+# the alias bridges MCP, and, with -Update, the update installs and stops the old sidecar.
 #
 # Usage: msix-check.ps1 -Package <signed.msix> -Certificate <publisher.cer> -Label <name>
 #                       [-Update <signed newer.msix>] [-Summary <file to append a Markdown row to>]
@@ -127,4 +131,19 @@ if ($Summary) {
   }
   $row = @('variant', 'install', 'server', 'dataFolder', 'database', 'alias', 'bridge', 'update') | ForEach-Object { $facts[$_] }
   Add-Content -LiteralPath $Summary ('| ' + ($row -join ' | ') + ' |')
+}
+
+$expected = [ordered]@{
+  install = 'installed'
+  server = 'answers /api/health'
+  dataFolder = 'real %APPDATA%'
+  database = 'real %APPDATA%'
+  bridge = 'answers'
+}
+if ($Update) { $expected.update = 'installed; old sidecar gone' }
+$failures = @($expected.Keys | Where-Object { $facts[$_] -ne $expected[$_] } |
+  ForEach-Object { "${_}: expected '$($expected[$_])', got '$($facts[$_])'" })
+if ($failures.Count -gt 0) {
+  $failures | ForEach-Object { Write-Host "::error::$Label $_" }
+  exit 1
 }

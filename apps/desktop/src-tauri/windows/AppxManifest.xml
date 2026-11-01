@@ -1,18 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   The MSIX package's manifest, filled by scripts/msix.mjs: {{NAME}} placeholders take the
-  package identity, the version from tauri.conf.json, the executable, and the runtime
-  attributes, capabilities and properties of the variant it packs.
+  package identity, the version from tauri.conf.json, the executable, and the properties
+  and capabilities of the variant it packs.
 -->
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
   xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
-  xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
   xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
   xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-  IgnorableNamespaces="uap uap3 uap10 desktop desktop6 rescap">
+  IgnorableNamespaces="uap uap3 desktop desktop6 rescap">
   <Identity
     Name="{{IDENTITY_NAME}}"
     Publisher="{{PUBLISHER}}"
@@ -31,7 +30,7 @@
     <Resource Language="en-us" />
   </Resources>
   <Applications>
-    <Application Id="App" Executable="{{EXECUTABLE}}" {{RUNTIME}}>
+    <Application Id="App" Executable="{{EXECUTABLE}}" EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements
         DisplayName="Piwi Dashboard"
         Description="{{DESCRIPTION}}"
