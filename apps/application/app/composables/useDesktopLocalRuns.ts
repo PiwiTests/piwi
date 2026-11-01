@@ -850,8 +850,8 @@ export function useDesktopLocalRuns() {
   /**
    * A headless run can take minutes — when the window is hidden or unfocused,
    * also raise an OS notification. Inside the shell, `window.Notification` is
-   * shimmed onto native notifications (and the dock/taskbar unread badge) by
-   * the desktop plugin.
+   * shimmed onto native notifications by the desktop plugin, and the shell
+   * counts them on the dock/taskbar unread badge.
    */
   function notifyUnfocused(run: LocalRun, label: string, tests: string, seconds: number) {
     if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;

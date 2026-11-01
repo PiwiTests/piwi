@@ -1,11 +1,17 @@
 const STORAGE_KEY = 'piwi-diagnosis-notifications';
 
-/** Whether a finished diagnosis notifies: one value per browser, which every caller shares. */
+/** Whether a finished diagnosis notifies: one value per browser, which every caller shares, and every tab follows. */
 let _enabled: Ref<boolean> | null = null;
 
 function sharedEnabled(): Ref<boolean> {
   if (import.meta.server) return ref(true);
-  _enabled ??= ref(localStorage.getItem(STORAGE_KEY) !== 'false');
+  if (!_enabled) {
+    const enabled = ref(localStorage.getItem(STORAGE_KEY) !== 'false');
+    window.addEventListener('storage', (event) => {
+      if (event.key === STORAGE_KEY) enabled.value = event.newValue !== 'false';
+    });
+    _enabled = enabled;
+  }
   return _enabled;
 }
 

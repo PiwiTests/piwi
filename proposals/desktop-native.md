@@ -39,11 +39,11 @@ to follow, then turns the app into the developer's link to the team instance and
 | Window trust     | `lib.rs` (`health_ok`, `main_window_may_navigate`)        | the window loads only the sidecar this launch spawned, and IPC is granted to its origin only   |
 | Local runs       | `runner.rs`, `repro.rs`, `worktree.rs`, `hub_env.rs`      | runs, reproductions, bisects and Flake Lab in the linked folder or a throwaway worktree        |
 | Tray             | `lib.rs` (`TrayIconBuilder`)                              | Open, Open data folder, Run in background, Start on login, Quit; tooltip and status dot        |
-| Ambient state    | `desktop_set_activity`, `desktop_set_run_progress`        | unread badge, taskbar and Dock progress bar, title, Windows overlay icon and thumbnail buttons |
+| Ambient state    | `update_unread`, `desktop_set_run_progress`               | unread badge, taskbar and Dock progress bar, title, Windows overlay icon and thumbnail buttons |
 | Opened files     | `queue_open_files`, `RunEvent::Opened`, file associations | `.zip` archives and `.piwibug` reports from drag and drop, "Open with" or a second launch      |
 | Browser hand-off | `server/middleware/desktop-handoff.ts`                    | a dashboard link opened in the browser shows in the window                                     |
 | MCP              | `mcp_clients.rs`, `mcp_stdio.rs`                          | one-click connection of seven clients, the stdio bridge for Claude Desktop                     |
-| Notifications    | `desktop.client.ts` (`installNativeNotifications`)        | the page's `new Notification()` becomes a native notification                                  |
+| Notifications    | `follow_notifications`, `installNativeNotifications`      | the server's notifications shown by the shell; the page's `new Notification()` goes native     |
 | Updates          | `updates.rs`, two Windows channels                        | signed in-app updates on every installer, `.deb` and `.rpm` included                           |
 
 ## What it lacks
@@ -200,8 +200,6 @@ since the updater plugin 2.10), and `git` and Homebrew's tools are found from a 
 - **Notification clicks on macOS.** The notification plugin reports clicks only by holding a thread and a main-loop
   timer for each notification until it leaves Notification Center, which nothing can clear from the app, so clicks stay
   off on macOS. Bounded tracking there needs the plugin, or the shell showing notifications itself.
-- **Shell-owned notifications.** The page builds each notification's text from the event; the shell would need the
-  same text without a second implementation, so the server may have to send it.
 - **The macOS menubar mode.** Hiding the Dock icon in the background is what menubar applications do, but it also
   hides the app from ⌘Tab.
 

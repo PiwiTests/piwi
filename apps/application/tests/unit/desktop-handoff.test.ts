@@ -22,6 +22,9 @@ describe('desktopSessionTarget', () => {
     expect(desktopSessionTarget('https://evil.example/')).toBe('/');
     expect(desktopSessionTarget('/api/test-runs')).toBe('/');
     expect(desktopSessionTarget('/__piwi/session?token=x')).toBe('/');
+    // A browser drops a tab or a line break from a URL: `/<tab>/host` would read as `//host`.
+    expect(desktopSessionTarget('/\t/evil.example/x')).toBe('/');
+    expect(desktopSessionTarget('/settings\r\nSet-Cookie: x=1')).toBe('/');
   });
 });
 
@@ -51,6 +54,9 @@ describe('desktopPagePath', () => {
   it('refuses anything that could leave the origin', () => {
     expect(desktopPagePath('//evil.example/test-runs/1')).toBeNull();
     expect(desktopPagePath('/\\evil.example')).toBeNull();
+    expect(desktopPagePath('/\t/evil.example')).toBeNull();
+    expect(desktopPagePath('/\n/evil.example')).toBeNull();
+    expect(desktopPagePath('/settings\u007f')).toBeNull();
     expect(desktopPagePath('https://evil.example/')).toBeNull();
     expect(desktopPagePath('javascript:alert(1)')).toBeNull();
     expect(desktopPagePath('')).toBeNull();
