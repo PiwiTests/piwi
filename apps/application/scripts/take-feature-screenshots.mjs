@@ -3226,7 +3226,7 @@ const SCENES = [
       'Feature map of the web-dashboard project: one circle per feature, colored by its worst open gap, linked where features share nodes',
     tags: ['docs'],
     out: 'docs',
-    route: '/projects/5?tab=gaps',
+    route: '/projects/5?tab=coverage&view=map',
     viewport: { width: 1280, height: 1100 },
     async run({ page, shoot, settle }) {
       await page
@@ -3240,10 +3240,10 @@ const SCENES = [
   {
     name: 'scenario-gaps-tab',
     description:
-      'Gaps tab: the Users feature of the web-dashboard project, its top five gaps ranked with class, evidence and verbs',
+      'Gaps view of the Coverage tab: the Users feature of the web-dashboard project, its top five gaps ranked with class, evidence and verbs',
     tags: ['docs'],
     out: 'docs',
-    route: '/projects/5?tab=gaps',
+    route: '/projects/5?tab=coverage',
     viewport: { width: 1280, height: 1600 },
     async run({ page, shoot, settle }) {
       await page
@@ -3263,10 +3263,10 @@ const SCENES = [
   {
     name: 'scenario-gaps-map-health',
     description:
-      'Map health on the Gaps tab: each input of the web-dashboard Test Map against what it could hold, and the step behind the one short',
+      'Map health in the Coverage tab’s Map view: each input of the web-dashboard Test Map against what it could hold, and the step behind the one short',
     tags: ['docs'],
     out: 'docs',
-    route: '/projects/5?tab=gaps',
+    route: '/projects/5?tab=coverage&view=map',
     viewport: { width: 1280, height: 2400 },
     async run({ page, shoot, settle }) {
       await page
@@ -3282,7 +3282,7 @@ const SCENES = [
     description: 'Feature graph around a page one test reaches: what leads to it, what it contains, links to and loads',
     tags: ['docs'],
     out: 'docs',
-    route: '/projects/5?tab=gaps',
+    route: '/projects/5?tab=coverage',
     viewport: { width: 1280, height: 1800 },
     async run({ page, shoot, settle }) {
       await page
@@ -4334,7 +4334,7 @@ const SCENES = [
     {
       name: `coverage-restart-note${suffix}`,
       description: `A commit’s combined coverage at ${viewport.width} px whose only run’s backend restarted: the note naming the run`,
-      route: '/projects/5/coverage',
+      route: '/projects/5?tab=coverage&view=code',
       viewport,
       async run({ page, settle, shoot }) {
         await page.locator('[data-testid="coverage-notes"] [data-note="runs-incomplete"]').waitFor({ timeout: 60_000 });
@@ -5609,7 +5609,7 @@ const SCENES = [
       'A project’s combined coverage page: the share of lines every suite ran at one commit, each suite’s share, and the folders with src/ open beside its least-covered files',
     tags: ['docs'],
     out: 'docs',
-    route: `/projects/${COVERAGE_SCENE_PROJECT}/coverage?folder=src`,
+    route: `/projects/${COVERAGE_SCENE_PROJECT}?tab=coverage&view=code&folder=src`,
     viewport: { width: 1280, height: 1400 },
     async run({ page, settle, shoot }) {
       const tree = page.locator('[data-testid="coverage-tree"]');
@@ -5738,7 +5738,9 @@ const SCENES = [
         this.branch = await reportSupersededBranch(request, base);
       },
       async run({ page, goto, settle, shoot }) {
-        await goto(`/projects/${this.branch.projectId}/coverage?branch=${encodeURIComponent(this.branch.branch)}`);
+        await goto(
+          `/projects/${this.branch.projectId}?tab=coverage&view=code&branch=${encodeURIComponent(this.branch.branch)}`,
+        );
         await page.locator('[data-testid="coverage-notes"] [data-note="carried"]').waitFor({ timeout: 60_000 });
         await page.locator('[data-testid="coverage-tree"] [data-entry]').first().waitFor({ timeout: 60_000 });
         await settle();
@@ -5754,7 +5756,7 @@ const SCENES = [
         this.branch = await reportSupersededBranch(request, base);
       },
       async run({ page, goto, settle, shoot }) {
-        await goto(`/projects/${this.branch.projectId}/coverage?commit=${this.branch.first}`);
+        await goto(`/projects/${this.branch.projectId}?tab=coverage&view=code&commit=${this.branch.first}`);
         await page.locator('[data-testid="coverage-files-removed"]').waitFor({ timeout: 60_000 });
         await settle();
         await shoot(undefined, { of: '[data-shot="coverage-overview"]', pad });
@@ -7498,89 +7500,95 @@ async function openQuarantineLossScene(page, goto, settle, reach) {
  */
 async function uncoveredChangesMarkdown() {
   const { renderChangeCoverage } = await import('../shared/pr-feedback.ts');
-  return renderChangeCoverage({
-    fileReach: true,
-    totalFiles: 7,
-    uncoveredFiles: 3,
-    reachedFiles: 4,
-    notCounted: { notObservable: 1, outOfScope: 2, deleted: 0 },
-    ticketCount: 2,
-    windowRuns: 30,
-    patchCoverage: {
-      commit: 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678',
-      changedLines: 41,
-      executedLines: 34,
-      unitLines: 28,
-      e2eLines: 19,
-      undeterminedLines: 0,
-      suites: [
-        { name: 'unit-front', kind: 'unit', executedLines: 22 },
-        { name: 'unit-back', kind: 'unit', executedLines: 6 },
-        { name: 'e2e', kind: 'e2e', executedLines: 19 },
-      ],
-      areas: [
-        { name: 'front', changedLines: 30, executedLines: 28 },
-        { name: 'back', changedLines: 11, executedLines: 6 },
-      ],
-      files: 6,
-    },
-    tickets: [
-      {
-        ticket: 'PROJ-418',
-        files: [
-          {
-            filePath: 'server/api/orders/[id].patch.ts',
-            additions: 41,
-            deletions: 3,
-            reach: 'unreached',
-            draftTitle: 'a scenario that exercises [id].patch.ts',
-          },
-          {
-            filePath: 'server/utils/order-status.ts',
-            additions: 12,
-            deletions: 4,
-            reach: 'unreached',
-            lines: { changed: 5, ran: 0, undetermined: 0, notRun: [[14, 18]] },
-            draftTitle: 'a scenario that moves an order to shipped',
-          },
-          {
-            filePath: 'app/pages/orders/[id].vue',
-            additions: 9,
-            deletions: 2,
-            reach: 'reached',
-            lines: { changed: 9, ran: 7, undetermined: 0, notRun: [[31, 32]] },
-          },
-          {
-            filePath: 'server/api/orders/index.get.ts',
-            additions: 6,
-            deletions: 1,
-            reach: 'reached',
-            lines: {
-              changed: 6,
-              ran: 4,
-              undetermined: 0,
-              notRun: [
-                [18, 18],
-                [24, 24],
-              ],
+  return renderChangeCoverage(
+    {
+      projectId: 4,
+      prNumber: 7,
+      changeTimeGaps: 2,
+      fileReach: true,
+      totalFiles: 7,
+      uncoveredFiles: 3,
+      reachedFiles: 4,
+      notCounted: { notObservable: 1, outOfScope: 2, deleted: 0 },
+      ticketCount: 2,
+      windowRuns: 30,
+      patchCoverage: {
+        commit: 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678',
+        changedLines: 41,
+        executedLines: 34,
+        unitLines: 28,
+        e2eLines: 19,
+        undeterminedLines: 0,
+        suites: [
+          { name: 'unit-front', kind: 'unit', executedLines: 22 },
+          { name: 'unit-back', kind: 'unit', executedLines: 6 },
+          { name: 'e2e', kind: 'e2e', executedLines: 19 },
+        ],
+        areas: [
+          { name: 'front', changedLines: 30, executedLines: 28 },
+          { name: 'back', changedLines: 11, executedLines: 6 },
+        ],
+        files: 6,
+      },
+      tickets: [
+        {
+          ticket: 'PROJ-418',
+          files: [
+            {
+              filePath: 'server/api/orders/[id].patch.ts',
+              additions: 41,
+              deletions: 3,
+              reach: 'unreached',
+              gapId: 31,
             },
-          },
-        ],
-      },
-      {
-        ticket: 'PROJ-421',
-        files: [
-          {
-            filePath: 'app/components/RefundDialog.vue',
-            additions: 28,
-            deletions: 0,
-            reach: 'unreached',
-            draftTitle: 'a scenario that opens the refund dialog',
-          },
-        ],
-      },
-    ],
-  });
+            {
+              filePath: 'server/utils/order-status.ts',
+              additions: 12,
+              deletions: 4,
+              reach: 'unreached',
+              lines: { changed: 5, ran: 0, undetermined: 0, notRun: [[14, 18]] },
+              gapId: 32,
+            },
+            {
+              filePath: 'app/pages/orders/[id].vue',
+              additions: 9,
+              deletions: 2,
+              reach: 'reached',
+              lines: { changed: 9, ran: 7, undetermined: 0, notRun: [[31, 32]] },
+            },
+            {
+              filePath: 'server/api/orders/index.get.ts',
+              additions: 6,
+              deletions: 1,
+              reach: 'reached',
+              lines: {
+                changed: 6,
+                ran: 4,
+                undetermined: 0,
+                notRun: [
+                  [18, 18],
+                  [24, 24],
+                ],
+              },
+            },
+          ],
+        },
+        {
+          ticket: 'PROJ-421',
+          files: [
+            {
+              filePath: 'app/components/RefundDialog.vue',
+              additions: 28,
+              deletions: 0,
+              reach: 'unreached',
+              gapId: 33,
+            },
+          ],
+        },
+      ],
+    },
+    'https://piwi.example.com',
+  );
 }
 
 /** The pull-request comment of a run with a new regression, a failure that predates the change, a flake and a fix. */

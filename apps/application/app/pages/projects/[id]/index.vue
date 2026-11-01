@@ -13,6 +13,7 @@ import { RUN_STATUS_SERIES, legendOf } from '~/utils/chart';
 import { drillQueryKey, parseDrillQuery, type DrillScope } from '~/utils/analytics-drilldown';
 import { projectRunScopeQuery, runInProjectScope, type ProjectRunScope } from '#shared/project-run-scope';
 import type { ProjectHeaderTarget } from '~/components/project/ProjectHeader.vue';
+import { COVERAGE_VIEW_KEYS } from '~/utils/coverage-tab';
 
 const route = useRoute();
 const router = useRouter();
@@ -33,7 +34,7 @@ const toast = useToast();
 
 const { can } = useAuth();
 // Project-level capability states gate the bell, the Quarantine segment, the
-// Gaps tab and the Timeline's add-marker control.
+// Coverage tab and the Timeline's add-marker control.
 const { isHidden: projCapHidden } = await useProjectCapabilities(Number(projectId));
 
 // *Export*: this project as a quality report over the last 30 days, the project page's own window.
@@ -344,7 +345,7 @@ function refreshFailureCounts() {
 useRunStream(() => Promise.all([refresh(), refreshFailureCounts()]));
 
 // === TABS ===
-const TABS = ['runs', 'tests', 'failures', 'flake-lab', 'gaps', 'performance', 'settings'] as const;
+const TABS = ['runs', 'tests', 'failures', 'flake-lab', 'coverage', 'performance', 'settings'] as const;
 type TabValue = (typeof TABS)[number];
 
 // Other ?tab= values (and the redirecting sub-routes) land on the tab that holds them.
@@ -357,6 +358,7 @@ const TAB_ALIASES: Record<string, TabValue> = {
   'failure-clusters': 'failures',
   'flaky-tests': 'failures',
   quarantine: 'failures',
+  gaps: 'coverage',
   'ai-steps': 'performance',
   members: 'settings',
 };
@@ -397,16 +399,16 @@ function resolveTab(raw: unknown): TabValue | null {
   return TAB_ALIASES[raw] ?? null;
 }
 
-// The Gaps and Flake Lab tabs follow the `test-map` and `flake-lab`
-// capabilities: a project that declined one loses its tab, and a stale
-// `?tab=` link to it falls back to Runs.
-const TAB_CAPABILITY: Partial<Record<TabValue, Parameters<typeof projCapHidden>[0]>> = {
-  gaps: 'test-map',
-  'flake-lab': 'flake-lab',
+// The Flake Lab tab follows the `flake-lab` capability, and the Coverage tab
+// the `test-map` and `coverage` ones (it shows while either is on): a project
+// that declined them loses the tab, and a stale `?tab=` link to it falls back to Runs.
+const TAB_CAPABILITIES: Partial<Record<TabValue, Array<Parameters<typeof projCapHidden>[0]>>> = {
+  coverage: ['test-map', 'coverage'],
+  'flake-lab': ['flake-lab'],
 };
 const tabHidden = (tab: TabValue) => {
-  const capability = TAB_CAPABILITY[tab];
-  return capability ? projCapHidden(capability) : false;
+  const capabilities = TAB_CAPABILITIES[tab];
+  return capabilities ? capabilities.every((capability) => projCapHidden(capability)) : false;
 };
 watch(
   () => tabHidden(activeTab.value),
@@ -436,8 +438,11 @@ watch(
 );
 
 // Reflect the active tab in the URL (replace, so tab switches don't stack history).
-// A tab's own keys leave with it: the Settings section, the Gaps tab's graph node.
-const TAB_QUERY_KEYS: Partial<Record<TabValue, string[]>> = { settings: ['section'], gaps: ['node'] };
+// A tab's own keys leave with it: the Settings section, the Coverage tab's view and the keys of its views.
+const TAB_QUERY_KEYS: Partial<Record<TabValue, string[]>> = {
+  settings: ['section'],
+  coverage: ['view', ...Object.values(COVERAGE_VIEW_KEYS).flat()],
+};
 watch(activeTab, (tab) => {
   if (route.query.tab === tab) return;
   const patch: Record<string, string | undefined> = { tab };
@@ -480,7 +485,7 @@ const tabItems = computed(() =>
       value: 'failures' as const,
     },
     { label: 'Flake Lab', icon: 'i-lucide-snowflake', value: 'flake-lab' as const },
-    { label: 'Gaps', icon: 'i-lucide-radar', value: 'gaps' as const },
+    { label: 'Coverage', icon: 'i-lucide-radar', value: 'coverage' as const },
     { label: 'Performance', icon: 'i-lucide-trending-up', value: 'performance' as const },
     { label: 'Settings', icon: 'i-lucide-settings', value: 'settings' as const },
   ].filter((item) => !tabHidden(item.value)),
@@ -828,11 +833,6 @@ const moreMenuItems = computed(() => {
     label: 'Locators',
     icon: 'i-lucide-crosshair',
     onSelect: () => navigateTo(`/projects/${projectId}/locators`),
-  });
-  items.push({
-    label: 'Coverage',
-    icon: 'i-lucide-scan-line',
-    onSelect: () => navigateTo(`/projects/${projectId}/coverage`),
   });
   if (!projCapHidden('bug-reports'))
     items.push({
@@ -1270,21 +1270,7 @@ const moreMenuItems = computed(() => {
 
         <!-- FAILURES TAB -->
         <div v-if="activeTab === 'failures'" class="space-y-4" data-tour="project-failures-tab">
-          <div class="flex">
-            <div class="inline-flex rounded-lg border border-default p-0.5 bg-elevated/40">
-              <button
-                v-for="seg in failureSegments"
-                :key="seg.key"
-                type="button"
-                class="px-3 py-1.5 text-sm font-medium rounded-md transition-colors"
-                :class="failureSegment === seg.key ? SEGMENTED_SELECTED_CLASS : 'text-muted hover:text-highlighted'"
-                :aria-pressed="failureSegment === seg.key"
-                @click="failureSegment = seg.key"
-              >
-                {{ seg.label }} <span class="tabular-nums text-muted">({{ seg.count }})</span>
-              </button>
-            </div>
-          </div>
+          <SegmentedSwitch v-model="failureSegment" :items="failureSegments" />
 
           <template v-if="failureSegment === 'clusters'">
             <ClusterMergeSuggestions
@@ -1330,9 +1316,9 @@ const moreMenuItems = computed(() => {
           <FlakeLabPanel :project-id="Number(projectId)" :scope="runScope" :project-name="project?.name" />
         </div>
 
-        <!-- GAPS TAB -->
-        <div v-if="activeTab === 'gaps'" data-tour="project-gaps-tab">
-          <GapsPanel :project-id="Number(projectId)" />
+        <!-- COVERAGE TAB -->
+        <div v-if="activeTab === 'coverage'" data-tour="project-coverage-tab">
+          <ProjectCoverageTab :project-id="Number(projectId)" :scope="runScope" />
         </div>
 
         <!-- PERFORMANCE TAB -->

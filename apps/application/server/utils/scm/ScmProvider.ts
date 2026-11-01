@@ -131,6 +131,8 @@ export interface ScmPullRequest {
   /** Number on GitHub / Bitbucket, `iid` on GitLab. */
   number: number;
   url: string;
+  /** The branch it merges into, when the host said. */
+  baseBranch?: string | null;
 }
 
 /** Normalized lifecycle state of an issue or pull/merge request. */

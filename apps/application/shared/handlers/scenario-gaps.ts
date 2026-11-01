@@ -56,7 +56,12 @@ import {
   runBaseUrls,
   linkNodeKey,
   templateAccessibleName,
+  fileRouteTarget,
+  filePageTarget,
+  routeKeyMatchesTarget,
+  pageKeyMatchesTarget,
 } from '../graph';
+import { pathSegments } from '@piwitests/core/file-routes';
 import { LOCATING_METHODS, isInteractionAction, tryParseLocatorChain, type LocatorArg } from '../locator-chain';
 import {
   scoreTargetMatch,
@@ -71,6 +76,18 @@ import { decidesCheck } from './probes';
 import { finalAttempts, isFailedStatus } from '../utils/test-counts';
 import { projectDefaultBranch } from '../../server/utils/scm/stored-default-branch';
 import { RETIRED_DETECTORS, loadMutedDetectors } from './detector-precision';
+import {
+  closeUnraisedErrorPaths,
+  detectCodeNotExecuted,
+  detectErrorPathNotExecuted,
+  detectSingleCoveringFunction,
+  loadDefaultBranchCoverage,
+  loadErrorPathFiles,
+  loadSingleCoveredFiles,
+  unexecutedFiles,
+  type SourceReader,
+} from './code-gaps';
+import type { GapCloseReason } from '../gap-classes';
 import type { DiffAnchor } from '@piwitests/core/diff-anchors';
 import { predictLocatorBreaks, type PredictLocatorBreaksOptions } from '@piwitests/core/locator-break';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
@@ -85,6 +102,7 @@ import { suggestionHash, type HandbackActor } from '../handback-outcomes';
 export type GapKind = 'gap' | 'finding';
 export type GapClass = 'blind-spot' | 'false-comfort' | 'fragile' | 'unhandled' | 'degraded';
 export type GapStatus = 'open' | 'snoozed' | 'dismissed' | 'accepted' | 'closed';
+export type { GapCloseReason };
 
 /** The window of recent runs every honest evidence line is measured against. */
 export const HISTORY_WINDOW_RUNS = 30;
@@ -92,6 +110,8 @@ export const HISTORY_WINDOW_RUNS = 30;
 const SUCCESS_ONLY_MIN_OBSERVATIONS = 5;
 /** Each exposure factor is clamped here so a missing input can never zero a row. */
 export const FACTOR_FLOOR = 0.1;
+/** A bug report counts toward escape history, and a closed one raises a gap, for this many days. */
+const ESCAPE_WINDOW_DAYS = 180;
 
 // ── Detected + scored shapes ─────────────────────────────────────────────────
 
@@ -112,6 +132,8 @@ export interface DetectedGap {
   failureClusterId?: number | null;
   /** Files whose churn/age/escape define exposure, when the gap is file-shaped. */
   files?: string[];
+  /** Pages whose escape history the gap shares: its own page, or the pages holding its control. */
+  pages?: string[];
   /** `piwi:priority` observed around the subject, when known. */
   priority?: string | null;
 }
@@ -142,6 +164,8 @@ export interface FileExposure {
 export interface ExposureInputs {
   /** Keyed by file path; absent files fall back to the neutral floor. */
   files?: Map<string, FileExposure>;
+  /** Pages a bug report named: a bug escaped the suite there. */
+  escapedPages?: Set<string>;
 }
 
 // ── Exposure scoring (pure) ──────────────────────────────────────────────────
@@ -202,6 +226,7 @@ export function exposureFactorsFor(gap: DetectedGap, inputs: ExposureInputs): Ex
     age = Math.max(age, ageFactor(fx.ageDays));
     if (fx.escaped) escapeHistory = 1;
   }
+  if (gap.pages?.some((page) => inputs.escapedPages?.has(page))) escapeHistory = 1;
 
   return {
     churn,
@@ -548,25 +573,37 @@ export function detectChangedUnreached(
 /** The reads of a changed file that mean a test reached it. */
 const REACHED_CHANGES = new Set<ChangeReach>(['reached', 'reached-earlier']);
 
+/** The close reason of a *changed, unreached* gap, by the read of its file. */
+const CHANGE_CLOSE_REASONS: Record<Exclude<ChangeReach, 'unreached'>, GapCloseReason> = {
+  reached: 'reached',
+  'reached-earlier': 'reached',
+  'out-of-scope': 'out-of-scope',
+  deleted: 'deleted',
+  'not-observable': 'not-observable',
+};
+
 /**
  * Close the *changed, unreached* gaps of the files a diff read: the open and
  * snoozed gaps of those it no longer reads as uncovered changes, by the rule of
  * change coverage (reached, outside the coverage scope, deleted, or nothing
  * observes them), and the accepted gaps of those a test reached, whose test was
- * written. Returns how many closed.
+ * written. A reached gap of the pull request `prNumber` names closes as
+ * `acted-on`. Returns how many closed.
  */
 export async function closeChangedUnreachedGaps(
   db: DrizzleDB,
   projectId: number,
   runId: number | null,
   files: Array<{ filePath: string; reach: ChangeReach }>,
+  prNumber: number | null = null,
 ): Promise<number> {
-  const settled = files.filter((f) => f.reach !== 'unreached').map((f) => f.filePath);
-  const reached = files.filter((f) => REACHED_CHANGES.has(f.reach)).map((f) => f.filePath);
-  return (
-    (await closeChangedGapsOf(db, projectId, runId, settled, ['open', 'snoozed'])) +
-    (await closeChangedGapsOf(db, projectId, runId, reached, ['accepted']))
-  );
+  let closed = 0;
+  for (const [reach, reason] of Object.entries(CHANGE_CLOSE_REASONS) as Array<[ChangeReach, GapCloseReason]>) {
+    const paths = files.filter((f) => f.reach === reach).map((f) => f.filePath);
+    const statuses: GapStatus[] = REACHED_CHANGES.has(reach) ? ['open', 'snoozed', 'accepted'] : ['open', 'snoozed'];
+    closed += await closeChangedGapsOf(db, projectId, runId, paths, statuses, reason, prNumber);
+  }
+  return closed;
 }
 
 /** Close the *changed, unreached* gaps of `filePaths` whose status is one of `statuses`. */
@@ -576,13 +613,19 @@ async function closeChangedGapsOf(
   runId: number | null,
   filePaths: string[],
   statuses: GapStatus[],
+  reason: GapCloseReason,
+  prNumber: number | null,
 ): Promise<number> {
   const now = new Date();
+  const closeReason =
+    reason === 'reached' && prNumber != null
+      ? sql<string>`case when ${scenarioGaps.prNumber} = ${prNumber} then 'acted-on' else 'reached' end`
+      : reason;
   let closed = 0;
   for (let i = 0; i < filePaths.length; i += 100) {
     const rows = await db
       .update(scenarioGaps)
-      .set({ status: 'closed', closedAt: now, closedByRunId: runId, updatedAt: now })
+      .set({ status: 'closed', closedAt: now, closedByRunId: runId, closeReason, updatedAt: now })
       .where(
         and(
           eq(scenarioGaps.projectId, projectId),
@@ -917,6 +960,33 @@ export function detectReportedBugEscapes(reports: ReportedBugInput[]): DetectedG
       (r) => `Bug report #${r.id}: ${r.title} — no test names it yet; commit its failing test (piwi:bug ${r.id}).`,
     ),
     confidence: Math.min(1, 0.6 + 0.1 * (list.length - 1)),
+  }));
+}
+
+/** A bug report closed with no test naming it, reported on `pageKey`. */
+export interface ClosedBugInput {
+  id: number;
+  title: string;
+  pageKey: string | null;
+}
+
+/**
+ * Fixed without a regression test: a bug report someone closed while no test
+ * names it (`piwi:bug`). The bug escaped the suite once and nothing would catch
+ * it again; its recorded steps are the test's draft. Blind spot, one per report.
+ */
+export function detectFixedWithoutTest(reports: ClosedBugInput[]): DetectedGap[] {
+  return reports.map((r) => ({
+    detector: 'fixed-without-test',
+    kind: 'gap',
+    class: 'blind-spot',
+    key: `bug:${r.id}`,
+    title: `Bug report #${r.id} was fixed without a regression test: ${r.title}`,
+    evidence: [
+      `Closed${r.pageKey ? ` on ${r.pageKey}` : ''} · no test names it — commit its recorded steps as a test (piwi:bug ${r.id}).`,
+    ],
+    confidence: 0.7,
+    ...(r.pageKey ? { pages: [r.pageKey] } : {}),
   }));
 }
 
@@ -1513,6 +1583,42 @@ async function loadEvidenceWindow(db: DrizzleDB, projectId: number, limit: numbe
   return { runIds: await ids(window), completeRunIds: await ids(and(window, completeRunSql())) };
 }
 
+/**
+ * The statuses each route answered with: in the detectors' evidence window and in
+ * `extraRunIds` (a pull request's own run, whose tests may already exercise what
+ * it adds), keyed by route node key.
+ */
+export async function observedRouteStatuses(
+  db: DrizzleDB,
+  projectId: number,
+  routeKeys: readonly string[],
+  extraRunIds: readonly number[] = [],
+): Promise<Map<string, Set<number>>> {
+  const statuses = new Map<string, Set<number>>();
+  if (routeKeys.length === 0) return statuses;
+  const wanted = new Set(routeKeys);
+  const { runIds } = await loadEvidenceWindow(db, projectId, HISTORY_WINDOW_RUNS);
+  const ids = [...new Set([...runIds, ...extraRunIds])];
+  if (ids.length === 0) return statuses;
+  const rows = await db
+    .selectDistinct({
+      method: networkRequests.method,
+      url: networkRequests.normalizedUrl,
+      status: networkRequests.status,
+    })
+    .from(networkRequests)
+    .where(inArray(networkRequests.testRunId, ids));
+  for (const r of rows) {
+    if (!r.url) continue;
+    const key = routeNodeKey(r.method, r.url);
+    if (!wanted.has(key)) continue;
+    const set = statuses.get(key) ?? new Set<number>();
+    set.add(r.status);
+    statuses.set(key, set);
+  }
+  return statuses;
+}
+
 /** Title + priority for a set of test cases. */
 async function loadTestMeta(
   db: DrizzleDB,
@@ -2010,7 +2116,13 @@ function parseJsonArray(value: unknown): unknown[] {
 export async function computeScenarioGaps(
   db: DrizzleDB,
   projectId: number,
-  options: { exposure?: ExposureInputs; branch?: string | null; closeTriaged?: boolean } = {},
+  options: {
+    exposure?: ExposureInputs;
+    branch?: string | null;
+    closeTriaged?: boolean;
+    /** Reads a file's source: *error path never executed* runs only with one, and leaves its gaps alone without. */
+    readSource?: SourceReader;
+  } = {},
 ): Promise<{ upserted: number; closed: number }> {
   if (options.branch) return { upserted: 0, closed: 0 };
   const { runIds: recentIds, completeRunIds } = await loadEvidenceWindow(db, projectId, HISTORY_WINDOW_RUNS);
@@ -2424,13 +2536,32 @@ export async function computeScenarioGaps(
     };
   });
 
-  // Escaped defects: the project's bug reports that no test names yet.
-  const openReports: ReportedBugInput[] = (
-    await db
-      .select({ id: bugReports.id, title: bugReports.title, pageKey: bugReports.pageKey })
-      .from(bugReports)
-      .where(and(eq(bugReports.projectId, projectId), eq(bugReports.status, 'open')))
-  ).map((r) => ({ id: r.id, title: r.title, pageKey: r.pageKey }));
+  // Escaped defects: the project's bug reports that no test names yet, the
+  // open ones and those closed without a test in the escape window. Every
+  // report in the window that was not dismissed marks its page as escaped.
+  const escapeSince = new Date(Date.now() - ESCAPE_WINDOW_DAYS * 86_400_000);
+  const reportRows = await db
+    .select({
+      id: bugReports.id,
+      title: bugReports.title,
+      pageKey: bugReports.pageKey,
+      status: bugReports.status,
+      testCaseId: bugReports.testCaseId,
+      createdAt: bugReports.createdAt,
+      closedAt: bugReports.closedAt,
+    })
+    .from(bugReports)
+    .where(and(eq(bugReports.projectId, projectId), ne(bugReports.status, 'dismissed')));
+  const inWindow = (d: Date | number | null) => d != null && toMs(d) >= escapeSince.getTime();
+  const openReports: ReportedBugInput[] = reportRows
+    .filter((r) => r.status === 'open')
+    .map((r) => ({ id: r.id, title: r.title, pageKey: r.pageKey }));
+  const closedUntested: ClosedBugInput[] = reportRows
+    .filter((r) => r.status === 'closed' && r.testCaseId == null && inWindow(r.closedAt))
+    .map((r) => ({ id: r.id, title: r.title, pageKey: r.pageKey }));
+  const escapedPages = new Set(
+    reportRows.filter((r) => r.pageKey && (r.status === 'open' || inWindow(r.createdAt))).map((r) => r.pageKey!),
+  );
 
   // Passing tests the application reported an error under, on the default branch.
   const passedWithErrors = await loadPassedWithErrors(db, projectId, routeNodeKeys);
@@ -2460,8 +2591,14 @@ export async function computeScenarioGaps(
     }),
   );
 
+  // The default branch's combined coverage, and the error paths of its files when the caller can read their source.
+  const defaultCoverage = await loadDefaultBranchCoverage(db, projectId).catch(() => null);
+  const errorPaths = options.readSource
+    ? await loadErrorPathFiles(defaultCoverage, options.readSource)
+    : { files: [], scanned: [], settled: [] };
   const detected = [
     ...detectReportedBugEscapes(openReports),
+    ...detectFixedWithoutTest(closedUntested),
     ...detectSuccessOnly([...routeStats.values()]),
     ...detectSingleCoveringTest(
       // A control another test may have operated through an unnamed locator is not known to be single-covered.
@@ -2482,6 +2619,9 @@ export async function computeScenarioGaps(
     ...detectPassedWithErrors(passedExecutions),
     ...detectAssertionLight(assertionPages),
     ...detectCatalogMethodNoTestCalls(catalogReach),
+    ...detectCodeNotExecuted(unexecutedFiles(defaultCoverage)),
+    ...detectSingleCoveringFunction(await loadSingleCoveredFiles(db, projectId)),
+    ...detectErrorPathNotExecuted(errorPaths.files),
   ];
 
   // A gap on a route, a handler or a dependency is exposed through the handler
@@ -2496,7 +2636,17 @@ export async function computeScenarioGaps(
     }
     return [];
   };
+  // A gap on a page or a control shares the escape history of the page it sits on.
+  const pagesOf = (subject: GapSubject): string[] => {
+    if (subject.kind === 'page') return [subject.key];
+    if (subject.kind === 'control') return [...(pagesByControl.get(subject.key) ?? [])];
+    return [];
+  };
   for (const gap of detected) {
+    if (!gap.pages?.length) {
+      const pages = pagesOf(subjectFromGapKey(gap.key));
+      if (pages.length > 0) gap.pages = pages;
+    }
     if (gap.files?.length) continue;
     const files = handlerFilesOf(subjectFromGapKey(gap.key));
     if (files.length > 0) gap.files = files;
@@ -2507,6 +2657,7 @@ export async function computeScenarioGaps(
       ...(await loadRecordedFileExposure(db, projectId, handlerFiles)),
       ...(options.exposure?.files ?? []),
     ]),
+    escapedPages,
   };
   const scored = detected.map((gap) => rankGap(gap, exposure));
 
@@ -2553,17 +2704,28 @@ export async function computeScenarioGaps(
       'declared-never-hit',
       'unprobed-dependency',
       'escaped-defect',
+      'fixed-without-test',
       'passed-with-errors',
       'assertion-light',
       'catalog-method-no-test-calls',
+      'code-not-executed',
+      'single-covering-function',
     ],
     scored,
     latestRunId,
     closeStatuses,
   );
   const closedChanged = await closeReachedChangedUnreached(db, projectId, latestRunId, closeStatuses);
+  const closedErrorPaths = await closeUnraisedErrorPaths(
+    db,
+    projectId,
+    [...errorPaths.scanned, ...errorPaths.settled],
+    new Set(errorPaths.files.map((f) => f.path)),
+    latestRunId,
+    closeStatuses,
+  );
   const closedRetired = await closeRetiredDetectorGaps(db, projectId);
-  return { upserted, closed: closed + closedChanged + closedRetired };
+  return { upserted, closed: closed + closedChanged + closedRetired + closedErrorPaths };
 }
 
 /**
@@ -2574,7 +2736,7 @@ async function closeRetiredDetectorGaps(db: DrizzleDB, projectId: number): Promi
   const now = new Date();
   const closed = await db
     .update(scenarioGaps)
-    .set({ status: 'closed', closedAt: now, closedByRunId: null, updatedAt: now })
+    .set({ status: 'closed', closedAt: now, closedByRunId: null, closeReason: 'retired', updatedAt: now })
     .where(
       and(
         eq(scenarioGaps.projectId, projectId),
@@ -3523,17 +3685,22 @@ async function closeReachedChangedUnreached(
   const reachOf = new Map(read.files.map((f) => [f.filePath, f.reach]));
   // An open or snoozed gap closes once its file is reached or out of scope; an accepted one once a test reached it.
   const settled = new Set<ChangeReach>(['reached', 'reached-earlier', 'out-of-scope']);
-  const toClose = open
-    .filter((g) => (g.status === 'accepted' ? REACHED_CHANGES : settled).has(reachOf.get(g.key) ?? 'unreached'))
-    .map((g) => g.id);
+  const toClose = open.filter((g) =>
+    (g.status === 'accepted' ? REACHED_CHANGES : settled).has(reachOf.get(g.key) ?? 'unreached'),
+  );
   if (toClose.length === 0) return 0;
 
   const now = new Date();
-  for (let i = 0; i < toClose.length; i += 100) {
-    await db
-      .update(scenarioGaps)
-      .set({ status: 'closed', closedAt: now, closedByRunId: runId, updatedAt: now })
-      .where(inArray(scenarioGaps.id, toClose.slice(i, i + 100)));
+  for (const reason of ['reached', 'out-of-scope'] as const) {
+    const ids = toClose
+      .filter((g) => (reachOf.get(g.key) === 'out-of-scope' ? 'out-of-scope' : 'reached') === reason)
+      .map((g) => g.id);
+    for (let i = 0; i < ids.length; i += 100) {
+      await db
+        .update(scenarioGaps)
+        .set({ status: 'closed', closedAt: now, closedByRunId: runId, closeReason: reason, updatedAt: now })
+        .where(inArray(scenarioGaps.id, ids.slice(i, i + 100)));
+    }
   }
   return toClose.length;
 }
@@ -3623,6 +3790,7 @@ export async function upsertScenarioGaps(
           status: sql`case when ${reopens} then 'open' else ${scenarioGaps.status} end`,
           closedAt: sql`case when ${reopens} then null else ${scenarioGaps.closedAt} end`,
           closedByRunId: sql`case when ${reopens} then null else ${scenarioGaps.closedByRunId} end`,
+          closeReason: sql`case when ${reopens} then null else ${scenarioGaps.closeReason} end`,
         },
       });
     written += slice.length;
@@ -3664,7 +3832,7 @@ async function closeMissingGaps(
   for (let i = 0; i < toClose.length; i += 100) {
     await db
       .update(scenarioGaps)
-      .set({ status: 'closed', closedAt: now, closedByRunId: runId, updatedAt: now })
+      .set({ status: 'closed', closedAt: now, closedByRunId: runId, closeReason: 'not-detected', updatedAt: now })
       .where(inArray(scenarioGaps.id, toClose.slice(i, i + 100)));
   }
   return toClose.length;
@@ -3685,6 +3853,8 @@ export interface ScenarioGapRow {
   factors: ExposureFactors | null;
   score: number | null;
   status: GapStatus;
+  /** Why a closed gap closed; null while it is not closed. */
+  closeReason: GapCloseReason | null;
   dismissReason: string | null;
   ticket: string | null;
   prNumber: number | null;
@@ -3723,6 +3893,7 @@ function mapGapRow(r: typeof scenarioGaps.$inferSelect): ScenarioGapRow {
     factors: (r.factors as ExposureFactors | null) ?? null,
     score: r.score ?? null,
     status: r.status as GapStatus,
+    closeReason: r.status === 'closed' ? ((r.closeReason as GapCloseReason | null) ?? null) : null,
     dismissReason: r.dismissReason ?? null,
     ticket: r.ticket ?? null,
     prNumber: r.prNumber ?? null,
@@ -3738,6 +3909,10 @@ function mapGapRow(r: typeof scenarioGaps.$inferSelect): ScenarioGapRow {
 }
 
 export interface GapFilters {
+  /** One gap by its id. */
+  gapId?: number;
+  /** The gaps of one key, such as a changed file's path. */
+  key?: string;
   kind?: string;
   class?: string;
   detector?: string;
@@ -3763,6 +3938,8 @@ export async function listScenarioGaps(
   const where = [eq(scenarioGaps.projectId, projectId)];
   if (filters.status && filters.status !== 'all') where.push(eq(scenarioGaps.status, filters.status));
   else if (!filters.status) where.push(eq(scenarioGaps.status, 'open'));
+  if (filters.gapId != null) where.push(eq(scenarioGaps.id, filters.gapId));
+  if (filters.key) where.push(eq(scenarioGaps.key, filters.key));
   if (filters.kind) where.push(eq(scenarioGaps.kind, filters.kind));
   if (filters.class) where.push(eq(scenarioGaps.class, filters.class));
   if (filters.detector) where.push(eq(scenarioGaps.detector, filters.detector));
@@ -4003,7 +4180,11 @@ export async function triageGap(
   const now = new Date();
   const subject = subjectFromGapKey(gap.key);
   // Record who gave the verdict on every triage action (null when auth is off).
-  const set: Record<string, unknown> = { updatedAt: now, triagedBy: input.triagedByUserId ?? null };
+  const set: Record<string, unknown> = {
+    updatedAt: now,
+    triagedBy: input.triagedByUserId ?? null,
+    closeReason: null,
+  };
 
   if (input.verb === 'accept') {
     set.status = 'accepted';
@@ -4041,6 +4222,7 @@ export async function triageGap(
     set.status = 'closed';
     set.closedAt = now;
     set.closedByRunId = null;
+    set.closeReason = 'covered-by';
     set.coveredAt = now;
     if (input.coveringTestCaseId != null) {
       await writeManualReachesEdge(db, projectId, subject, input.coveringTestCaseId);
@@ -4271,6 +4453,7 @@ export function subjectFromGapKey(key: string): GapSubject {
     'feature',
     'ticket',
     'handler',
+    'bug',
   ]) {
     const prefix = `${kind}:`;
     if (key.startsWith(prefix)) return { kind, key: key.slice(prefix.length) };
@@ -4310,6 +4493,78 @@ export async function issueScenarioDraft(
   return draft;
 }
 
+/**
+ * Where a changed file's draft starts: the route or page the file serves by the
+ * file-routing convention (`own`), when a test reaches it; else the reached route
+ * or page nearest it, the one sharing the most leading path segments (two at
+ * least, or all of a shorter path), whose page and test the draft borrows. Null
+ * for a file the convention maps to nothing.
+ */
+async function fileDraftAnchor(
+  db: DrizzleDB,
+  projectId: number,
+  filePath: string,
+): Promise<{ anchor: GapSubject; own: GapSubject | null } | null> {
+  const routeTarget = fileRouteTarget(filePath);
+  const pageTarget = routeTarget ? null : filePageTarget(filePath);
+  const target = routeTarget ?? pageTarget;
+  if (!target) return null;
+  const kind = routeTarget ? 'route' : 'page';
+  const matches = (key: string) =>
+    routeTarget ? routeKeyMatchesTarget(routeTarget, key) : pageKeyMatchesTarget(pageTarget!, key);
+
+  const nodes = await db
+    .select({ key: graphNodes.key })
+    .from(graphNodes)
+    .where(
+      and(
+        eq(graphNodes.projectId, projectId),
+        eq(graphNodes.kind, kind),
+        isNull(graphNodes.branch),
+        isNull(graphNodes.prunedAt),
+      ),
+    );
+  const ownKey = nodes.find((n) => matches(n.key))?.key ?? null;
+  const own: GapSubject | null = ownKey ? { kind, key: ownKey } : null;
+  const reached = new Set(
+    (
+      await db
+        .selectDistinct({ key: graphEdges.toKey })
+        .from(graphEdges)
+        .where(
+          and(
+            eq(graphEdges.projectId, projectId),
+            eq(graphEdges.kind, 'reaches'),
+            eq(graphEdges.toKind, kind),
+            isNull(graphEdges.branch),
+          ),
+        )
+    ).map((r) => r.key),
+  );
+  if (ownKey && reached.has(ownKey)) return { anchor: { kind, key: ownKey }, own };
+
+  const needed = Math.min(2, target.segments.length);
+  let best: { key: string; shared: number } | null = null;
+  for (const key of reached) {
+    const segments = pathSegments(kind === 'route' ? parseRouteNodeKey(key).pattern : key);
+    let shared = 0;
+    while (
+      shared < Math.min(segments.length, target.segments.length) &&
+      (target.segments[shared] === CONVENTION_PARAM || target.segments[shared] === segments[shared])
+    ) {
+      shared++;
+    }
+    if (shared >= needed && (!best || shared > best.shared || (shared === best.shared && key < best.key))) {
+      best = { key, shared };
+    }
+  }
+  if (best) return { anchor: { kind, key: best.key }, own };
+  return own ? { anchor: own, own } : null;
+}
+
+/** The segment a file-routing `[param]` reads as, which matches any value. */
+const CONVENTION_PARAM = '\x00';
+
 export async function draftScenario(db: DrizzleDB, projectId: number, gapId: number): Promise<ScenarioDraft | null> {
   const [gap] = await db
     .select()
@@ -4318,11 +4573,25 @@ export async function draftScenario(db: DrizzleDB, projectId: number, gapId: num
   if (!gap) return null;
 
   const subject = subjectFromGapKey(gap.key);
-  const evidence = Array.isArray(gap.evidence) ? (gap.evidence as string[]) : [];
+  const evidence = Array.isArray(gap.evidence) ? [...(gap.evidence as string[])] : [];
+  // The node the path and the nearest test come from: the gap's own, or for a
+  // changed file, the route or page it serves, else the nearest one a test reaches.
+  let anchor: GapSubject = subject;
+  let assertionSubject: GapSubject = subject;
+  if (subject.kind === 'file') {
+    const start = await fileDraftAnchor(db, projectId, subject.key);
+    if (start) {
+      anchor = start.anchor;
+      if (start.own) assertionSubject = start.own;
+      if (!start.own || start.own.key !== start.anchor.key) {
+        evidence.push(`Starts from ${start.anchor.kind} ${start.anchor.key}, the nearest one a test reaches.`);
+      }
+    }
+  }
 
   // Nearest test: the gap's own, else a test reaching the subject node.
   let nearestTestId = gap.testCaseId ?? null;
-  if (nearestTestId == null && (subject.kind === 'route' || subject.kind === 'page' || subject.kind === 'control')) {
+  if (nearestTestId == null && (anchor.kind === 'route' || anchor.kind === 'page' || anchor.kind === 'control')) {
     const [edge] = await db
       .select({ fromKey: graphEdges.fromKey })
       .from(graphEdges)
@@ -4330,8 +4599,8 @@ export async function draftScenario(db: DrizzleDB, projectId: number, gapId: num
         and(
           eq(graphEdges.projectId, projectId),
           eq(graphEdges.kind, 'reaches'),
-          eq(graphEdges.toKind, subject.kind),
-          eq(graphEdges.toKey, subject.key),
+          eq(graphEdges.toKind, anchor.kind),
+          eq(graphEdges.toKey, anchor.key),
           isNull(graphEdges.branch),
         ),
       )
@@ -4363,10 +4632,10 @@ export async function draftScenario(db: DrizzleDB, projectId: number, gapId: num
   // Path: a reached page nearest the subject.
   const path: string[] = [];
   let pageForCatalog: string | null = null;
-  if (subject.kind === 'page') {
-    pageForCatalog = subject.key;
-    path.push(gotoStep(subject.key));
-  } else if (subject.kind === 'control' || subject.kind === 'route') {
+  if (anchor.kind === 'page') {
+    pageForCatalog = anchor.key;
+    path.push(gotoStep(anchor.key));
+  } else if (anchor.kind === 'control' || anchor.kind === 'route') {
     // A page that contains the control, or loads/triggers the route.
     const [edge] = await db
       .select({ pageKey: graphEdges.fromKey })
@@ -4374,10 +4643,10 @@ export async function draftScenario(db: DrizzleDB, projectId: number, gapId: num
       .where(
         and(
           eq(graphEdges.projectId, projectId),
-          inArray(graphEdges.kind, subject.kind === 'control' ? ['contains'] : ['loads', 'triggers']),
+          inArray(graphEdges.kind, anchor.kind === 'control' ? ['contains'] : ['loads', 'triggers']),
           eq(graphEdges.fromKind, 'page'),
-          eq(graphEdges.toKind, subject.kind),
-          eq(graphEdges.toKey, subject.key),
+          eq(graphEdges.toKind, anchor.kind),
+          eq(graphEdges.toKey, anchor.key),
           isNull(graphEdges.branch),
         ),
       )
@@ -4386,8 +4655,8 @@ export async function draftScenario(db: DrizzleDB, projectId: number, gapId: num
       pageForCatalog = edge.pageKey;
       path.push(gotoStep(edge.pageKey));
     }
-    if (subject.kind === 'control') {
-      const [role, ...nameParts] = subject.key.split(':');
+    if (anchor.kind === 'control') {
+      const [role, ...nameParts] = anchor.key.split(':');
       const name = nameParts.join(':');
       path.push(`await page.getByRole(${q(role ?? 'button')}, { name: ${q(name)} }).click();`);
     }
@@ -4416,7 +4685,7 @@ export async function draftScenario(db: DrizzleDB, projectId: number, gapId: num
   return renderScenarioDraft({
     gapTitle: gap.title,
     gapClass: gap.class,
-    subject,
+    subject: assertionSubject,
     nearestTest,
     path,
     catalogMethods,

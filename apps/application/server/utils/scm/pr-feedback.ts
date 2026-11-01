@@ -42,6 +42,7 @@ import { getProjectFlakyTests } from '#shared/handlers/projects';
 import { getQuarantinedCaseIds } from '#shared/handlers/quarantine';
 import {
   buildChangeCoverageStatus,
+  changeCoverageStatusUrl,
   hasChangeCoverage,
   buildCommitStatus,
   buildPrComment,
@@ -485,7 +486,14 @@ export async function postRunPrFeedback(
     if (effectiveChangeCoverage && hasChangeCoverage(effectiveChangeCoverage)) {
       const coverageContext = `${settings.statusContext}/change-coverage`;
       const coveragePosted = await provider
-        .postCommitStatus(commit, buildChangeCoverageStatus(effectiveChangeCoverage, summary.runUrl, coverageContext))
+        .postCommitStatus(
+          commit,
+          buildChangeCoverageStatus(
+            effectiveChangeCoverage,
+            changeCoverageStatusUrl(effectiveChangeCoverage, summary.runUrl),
+            coverageContext,
+          ),
+        )
         .catch(() => false);
       if (coveragePosted) statuses.push(coverageContext);
     }

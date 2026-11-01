@@ -8,8 +8,8 @@
  * or no SCM token yields no section and no gaps, never an error.
  */
 
-import { desc, eq } from 'drizzle-orm';
-import { projects, testRuns, failureClusters } from '../../database/schema';
+import { and, desc, eq, inArray } from 'drizzle-orm';
+import { projects, testRuns, failureClusters, scenarioGaps } from '../../database/schema';
 import type { DbClient } from '../../database';
 import type { RunMetadata } from '../run-json-types';
 import { normalizeGitUrl, FALLBACK_DEFAULT_BRANCH } from './git-url';
@@ -18,6 +18,8 @@ import { resolveDefaultBranch } from './default-branch';
 import { resolveFallbackBranch } from '#shared/handlers/baseline-scope';
 import { selectBaselineRun } from '../branch-baseline';
 import { createScmProvider } from './index';
+import { runPrNumber } from './pr-feedback-posts';
+import { CHANGE_TIME_DETECTORS, computeChangeTimeGaps } from './change-time-gaps';
 import { MAX_SCM_FILES } from './ScmProvider';
 import type { ScmChanges, ScmProvider } from './ScmProvider';
 import {
@@ -255,27 +257,49 @@ function toChangedFiles(changes: ScmChanges): ChangedFileInput[] {
   }));
 }
 
-/** A generic, honest draft suggestion for an uncovered changed file. */
-function draftTitleFor(filePath: string): string {
-  const base = filePath.split('/').pop() || filePath;
-  return `a scenario that exercises ${base}`;
+/**
+ * The pull request a run belongs to and the branch it merges into: the one its
+ * CI named, into `namedBase` (the base its CI recorded, else the default branch),
+ * else the one open on its branch, whatever triggered the run. A run on the
+ * default branch has none.
+ */
+export async function resolveRunPullRequest(
+  provider: Pick<ScmProvider, 'findPullRequestForBranch'>,
+  named: number | null,
+  branch: string | null,
+  defaultBranch: string,
+  namedBase: string,
+): Promise<{ number: number; baseBranch: string } | null> {
+  if (named != null) return { number: named, baseBranch: namedBase };
+  if (!branch || branch === defaultBranch) return null;
+  const pr = await provider.findPullRequestForBranch(branch).catch(() => null);
+  return pr ? { number: pr.number, baseBranch: pr.baseBranch?.trim() || defaultBranch } : null;
+}
+
+/** What a run's diff is taken against, and the pull request it belongs to. */
+interface RunDiffBase {
+  baseRef: string;
+  baseBranch: string;
+  prNumber: number | null;
 }
 
 /**
- * The ref a run's diff is taken against: for a pull-request run, its base branch
- * (the provider's compare then gives the merge-base … head diff — the whole PR);
- * otherwise the commit of the last passing run on the same branch. Returns null
- * when neither is available.
+ * The ref a run's diff is taken against: for a run of a pull request
+ * (`resolveRunPullRequest`), the branch it merges into, so the provider's compare
+ * gives the merge-base … head diff, the whole pull request; otherwise the commit
+ * of the last passing run on the same branch. Null when neither is available.
  */
 async function resolveDiffBase(
   db: DbClient,
+  provider: Pick<ScmProvider, 'findPullRequestForBranch'>,
   run: { projectId: number; startTime: Date; environment: string | null },
   meta: RunMetadata | null,
   branch: string | null,
-  fallbackBranch: string,
-  prNumber: number | null,
-): Promise<string | null> {
-  if (prNumber != null) return fallbackBranch || null;
+  defaultBranch: string,
+): Promise<RunDiffBase | null> {
+  const fallbackBranch = resolveFallbackBranch(meta, defaultBranch).branch;
+  const pr = await resolveRunPullRequest(provider, runPrNumber(meta), branch, defaultBranch, fallbackBranch);
+  if (pr) return { baseRef: pr.baseBranch, baseBranch: pr.baseBranch, prNumber: pr.number };
   const baseline = await selectBaselineRun(db, {
     projectId: run.projectId,
     before: run.startTime,
@@ -283,7 +307,8 @@ async function resolveDiffBase(
     environment: run.environment ?? null,
     fallbackBranch,
   });
-  return ((baseline?.run.metadata as RunMetadata | null)?.scm?.commit ?? null)?.trim() || null;
+  const commit = ((baseline?.run.metadata as RunMetadata | null)?.scm?.commit ?? null)?.trim();
+  return commit ? { baseRef: commit, baseBranch: fallbackBranch, prNumber: null } : null;
 }
 
 /**
@@ -298,8 +323,6 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
   const meta = (run.metadata as RunMetadata | null) ?? null;
   const headSha = meta?.scm?.commit?.trim() || null;
   const repositoryUrl = normalizeGitUrl(meta?.scm?.remoteUrl ?? null);
-  const prNumberRaw = meta?.scm?.prNumber;
-  const prNumber = prNumberRaw != null && Number.isFinite(Number(prNumberRaw)) ? Number(prNumberRaw) : null;
   if (!headSha || !repositoryUrl) return null;
 
   const [project] = await db
@@ -310,18 +333,19 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
 
   const branch = run.branch ?? resolveRunBranch(meta);
   const defaultBranch = await resolveDefaultBranch(db, project, meta).catch(() => FALLBACK_DEFAULT_BRANCH);
-  const fallback = resolveFallbackBranch(meta, defaultBranch);
-
-  // A pull request is diffed against its base branch (merge-base … head) so every
-  // push reports the whole PR, not only its latest commits — the comment, edited
-  // in place, then never drops a file an earlier push introduced. A run that is
-  // not a pull request keeps the baseline-run comparison (what changed since the
-  // last green run on its branch).
-  const baseRef = await resolveDiffBase(db, run, meta, branch, fallback.branch, prNumber);
-  if (!baseRef || baseRef === headSha) return null;
 
   const provider = await createScmProvider(repositoryUrl, db, run.projectId);
   if (!provider) return null;
+
+  // A pull request is diffed against its base branch (merge-base … head) so every
+  // push reports the whole PR, not only its latest commits — the comment, edited
+  // in place, then never drops a file an earlier push introduced. That holds for a
+  // push-triggered run too, whose pull request is found by its branch. A run of no
+  // pull request keeps the baseline-run comparison (what changed since the last
+  // green run on its branch).
+  const diffBase = await resolveDiffBase(db, provider, run, meta, branch, defaultBranch);
+  if (!diffBase || diffBase.baseRef === headSha) return null;
+  const { baseRef, baseBranch, prNumber } = diffBase;
 
   const changes = await provider.fetchChanges(baseRef, headSha).catch(() => null);
   if (!changes || changes.files.length === 0) return null;
@@ -331,7 +355,7 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
 
   const ticketKey = (await readProjectIntegration(db, run.projectId).catch(() => null))?.projectKey ?? null;
   const tickets = extractTicketIds(
-    [branch, fallback.branch, ...changes.commits.map((c) => c.message), prNumber != null ? `#${prNumber}` : null],
+    [branch, baseBranch, ...changes.commits.map((c) => c.message), prNumber != null ? `#${prNumber}` : null],
     { ticketKey },
   );
 
@@ -344,7 +368,7 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
     runId,
     baseSha,
     headSha,
-    baseBranch: fallback.branch,
+    baseBranch,
     tickets,
     ticketKey,
     fileTickets,
@@ -372,9 +396,9 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
   // When the SCM flow can see the pull request has closed or merged, drop this
   // branch's tagged rows now instead of waiting for the thirty-day sweep, so its
   // surface, code reach and coverage stop shadowing the default branch.
+  const pullRequest = prNumber != null ? await provider.fetchPullRequest(prNumber).catch(() => null) : null;
   if (branchTag && prNumber != null) {
-    await provider
-      .fetchPullRequest(prNumber)
+    await Promise.resolve(pullRequest)
       .then(async (pr) => {
         if (pr && (pr.state === 'closed' || pr.state === 'merged')) {
           return (
@@ -393,7 +417,7 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
     run.projectId,
     provider,
     headSha,
-    fallback.branch,
+    baseBranch,
     changedFiles.map((f) => f.filePath),
   );
   const reaches: ChangedFileReach[] = coverage.files.map((f) => ({
@@ -405,13 +429,26 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
     ticket: f.ticket,
   }));
   // A muted detector keeps writing its ledger rows — so it still collects triage
-  // verdicts on the Gaps tab and can climb back above the threshold — but drops
+  // verdicts in the Gaps view and can climb back above the threshold — but drops
   // out of the pull-request comment (see the return below).
   const muted = await loadMutedDetectors(db, run.projectId).catch(() => new Set<string>());
   const gaps = detectChangedUnreached(reaches, runId, coverage.windowRuns).map((g) => rankGap(g, exposure));
   await upsertScenarioGaps(db, run.projectId, gaps, { runId, prNumber }).catch(() => {});
   // A file this diff no longer reads as an uncovered change closes its gap; an accepted one, once a test reached it.
-  await closeChangedUnreachedGaps(db, run.projectId, runId, coverage.files).catch(() => 0);
+  await closeChangedUnreachedGaps(db, run.projectId, runId, coverage.files, prNumber).catch(() => 0);
+
+  // The change-time detectors read the whole pull request's patches and its title.
+  if (prNumber != null && !changes.patchesOmitted) {
+    await computeChangeTimeGaps(db, {
+      projectId: run.projectId,
+      runId,
+      prNumber,
+      title: pullRequest?.title ?? null,
+      ticket: tickets.length === 1 ? tickets[0]! : null,
+      files: changes.files,
+      exposure,
+    }).catch((e) => console.error(`[change-time] detectors failed for run #${runId}`, e));
+  }
 
   // Import edges for the changed files no test reached, from a shallow scan at the
   // run's ref — so an unreached file still connects to the files that import it.
@@ -423,7 +460,7 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
 
   const locatorBreaks = changes.patchesOmitted
     ? null
-    : await computeRunLocatorBreaks(db, { id: runId, projectId: run.projectId }, changes.files, fallback.branch).catch(
+    : await computeRunLocatorBreaks(db, { id: runId, projectId: run.projectId }, changes.files, baseBranch).catch(
         (e) => {
           console.error('[locator-breaks] prediction failed', e);
           return null;
@@ -432,7 +469,69 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
 
   // Withhold the pull-request section's file list when its detector is muted; the
   // rows are already persisted above so the detector can still recover.
-  return { coverage, pr: toPrChangeCoverage(coverage, !muted.has('changed-unreached')), locatorBreaks };
+  const gapIds = await changedUnreachedGapIds(
+    db,
+    run.projectId,
+    coverage.files.filter((f) => f.reach === 'unreached').map((f) => f.filePath),
+  ).catch(() => new Map<string, number>());
+  return {
+    coverage,
+    pr: toPrChangeCoverage(coverage, !muted.has('changed-unreached'), {
+      projectId: run.projectId,
+      prNumber,
+      gapIds,
+      changeTimeGaps:
+        prNumber != null ? await openChangeTimeGaps(db, run.projectId, prNumber, muted).catch(() => 0) : 0,
+    }),
+    locatorBreaks,
+  };
+}
+
+/** How many open gaps the change-time detectors not muted on the project hold for a pull request. */
+async function openChangeTimeGaps(
+  db: DbClient,
+  projectId: number,
+  prNumber: number,
+  muted: ReadonlySet<string>,
+): Promise<number> {
+  const detectors = CHANGE_TIME_DETECTORS.filter((d) => !muted.has(d));
+  if (detectors.length === 0) return 0;
+  const rows = await db
+    .select({ id: scenarioGaps.id })
+    .from(scenarioGaps)
+    .where(
+      and(
+        eq(scenarioGaps.projectId, projectId),
+        eq(scenarioGaps.prNumber, prNumber),
+        inArray(scenarioGaps.detector, detectors),
+        inArray(scenarioGaps.status, ['open', 'snoozed', 'accepted']),
+      ),
+    );
+  return rows.length;
+}
+
+/** The ids of the open *changed, unreached* gaps of these files, by file. */
+async function changedUnreachedGapIds(
+  db: DbClient,
+  projectId: number,
+  filePaths: string[],
+): Promise<Map<string, number>> {
+  const ids = new Map<string, number>();
+  for (let i = 0; i < filePaths.length; i += 100) {
+    const rows = await db
+      .select({ id: scenarioGaps.id, key: scenarioGaps.key })
+      .from(scenarioGaps)
+      .where(
+        and(
+          eq(scenarioGaps.projectId, projectId),
+          eq(scenarioGaps.detector, 'changed-unreached'),
+          inArray(scenarioGaps.status, ['open', 'snoozed', 'accepted']),
+          inArray(scenarioGaps.key, filePaths.slice(i, i + 100)),
+        ),
+      );
+    for (const r of rows) ids.set(r.key, r.id);
+  }
+  return ids;
 }
 
 /**
@@ -483,13 +582,14 @@ export async function readChangeCoverage(
     const defaultBranch = project
       ? await resolveDefaultBranch(db, project, meta).catch(() => FALLBACK_DEFAULT_BRANCH)
       : FALLBACK_DEFAULT_BRANCH;
-    const fallback = resolveFallbackBranch(meta, defaultBranch);
-    baseBranch = fallback.branch;
-    const prNumberRaw = meta?.scm?.prNumber;
-    const prNumber = prNumberRaw != null && Number.isFinite(Number(prNumberRaw)) ? Number(prNumberRaw) : null;
     // A pull-request run is diffed against its base branch (whole PR); otherwise
     // against the last passing run on its branch.
-    baseSha = await resolveDiffBase(db, run, meta, branch, fallback.branch, prNumber);
+    if (repositoryUrl) {
+      const runProvider = await createScmProvider(repositoryUrl, db, projectId);
+      const diffBase = runProvider ? await resolveDiffBase(db, runProvider, run, meta, branch, defaultBranch) : null;
+      baseSha = diffBase?.baseRef ?? null;
+      baseBranch = diffBase?.baseBranch ?? resolveFallbackBranch(meta, defaultBranch).branch;
+    }
   } else {
     // Explicit range — resolve the repository from the latest run that carries one.
     const runs = await db
@@ -539,9 +639,21 @@ export async function readChangeCoverage(
  * withholds the files no test reached, the Test Map's part, and keeps the
  * changed lines.
  */
-export function toPrChangeCoverage(coverage: ChangeCoverage, fileReach = true): PrChangeCoverage {
+export function toPrChangeCoverage(
+  coverage: ChangeCoverage,
+  fileReach = true,
+  gaps: {
+    projectId?: number;
+    prNumber?: number | null;
+    gapIds?: ReadonlyMap<string, number>;
+    changeTimeGaps?: number;
+  } = {},
+): PrChangeCoverage {
   return {
     fileReach,
+    projectId: gaps.projectId ?? null,
+    prNumber: gaps.prNumber ?? null,
+    changeTimeGaps: gaps.changeTimeGaps ?? 0,
     totalFiles: coverage.countedFiles,
     uncoveredFiles: coverage.uncoveredFiles,
     reachedFiles: coverage.reachedFiles,
@@ -558,7 +670,7 @@ export function toPrChangeCoverage(coverage: ChangeCoverage, fileReach = true): 
         deletions: f.deletions,
         reach: f.reach,
         lines: f.lines,
-        draftTitle: f.reach === 'unreached' ? draftTitleFor(f.filePath) : null,
+        gapId: f.reach === 'unreached' ? (gaps.gapIds?.get(f.filePath) ?? null) : null,
       })),
     })),
   };

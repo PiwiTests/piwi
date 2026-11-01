@@ -3035,7 +3035,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const pr = params.pr != null ? numericParam(params.pr, 'pr') : undefined;
     const limit = params.limit != null ? clampPageSize(params.limit) : 20;
 
-    // A muted detector's gaps come after every other, as on the Gaps tab.
+    // A muted detector's gaps come after every other, as in the Gaps view.
     let gaps = await listScenarioGaps(db, projectId, {
       class: gapClass,
       minScore,

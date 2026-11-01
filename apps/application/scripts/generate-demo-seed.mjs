@@ -373,6 +373,50 @@ const BUG_REPORTS = [
     created_at: BUG_REPORT_TIME,
     updated_at: BUG_REPORT_TIME,
   },
+  // Fixed and closed by hand with no test naming it: the fixed-without-test gap.
+  {
+    id: 2,
+    project_id: 1,
+    title: 'Gift card balance shown twice',
+    note: null,
+    page_key: '/checkout',
+    path: '/checkout',
+    origin: 'https://staging.checkout.example.com',
+    status: 'closed',
+    steps: {
+      v: 1,
+      title: 'Gift card balance shown twice',
+      origin: 'https://staging.checkout.example.com',
+      recordedAt: 0,
+      note: null,
+      steps: [
+        { action: 'goto', target: null, value: '/checkout', redacted: false, pageUrl: '/checkout', timestamp: 1 },
+      ],
+    },
+    evidence: {
+      console: [],
+      consoleDropped: 0,
+      requests: [],
+      requestsDropped: 0,
+      screenshots: [],
+      screenshotNote: 'none was taken',
+      outline: '- main:\n  - heading "Checkout" [level=1]',
+    },
+    context: {
+      origin: 'https://staging.checkout.example.com',
+      pageKey: '/checkout',
+      path: '/checkout',
+      browser: 'Chrome 141',
+      userAgent: null,
+      viewport: { width: 1440, height: 900 },
+      time: 0,
+      extensionVersion: '0.41.0',
+    },
+    language: 'en',
+    closed_at: BUG_REPORT_TIME + 86_400,
+    created_at: BUG_REPORT_TIME - 86_400,
+    updated_at: BUG_REPORT_TIME + 86_400,
+  },
 ];
 const BUG_REPRODUCTIONS = [
   {
@@ -5232,7 +5276,7 @@ const REBASE_SQL = [
   `UPDATE projects SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE markers SET occurred_at = occurred_at + ${D}, created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE project_url_patterns SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
-  `UPDATE bug_reports SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
+  `UPDATE bug_reports SET created_at = created_at + ${D}, updated_at = updated_at + ${D}, closed_at = closed_at + ${D};`,
   `UPDATE bug_reproductions SET created_at = created_at + ${D};`,
   `UPDATE users SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE app_settings SET updated_at = updated_at + ${D};`,
@@ -5819,6 +5863,38 @@ const SCENARIO_GAPS = [
   {
     project_id: 1,
     kind: 'gap',
+    detector: 'fixed-without-test',
+    class: 'blind-spot',
+    key: 'bug:2',
+    title: 'Bug report #2 was fixed without a regression test: Gift card balance shown twice',
+    evidence: ['Closed on /checkout · no test names it — commit its recorded steps as a test (piwi:bug 2).'],
+    factors: { churn: 0.1, age: 0.1, escapeHistory: 1, priority: 0.1 },
+    status: 'open',
+    created_at: BASE_START_MS,
+    updated_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    kind: 'gap',
+    detector: 'changed-unreached',
+    class: 'blind-spot',
+    key: 'src/api/cart.ts',
+    title: 'src/api/cart.ts changed but not reached',
+    evidence: [`+12 −2 · no test in run #${gapRun.id} · 0 in 30 runs — observed reach.`],
+    factors: { churn: 0.6, age: 0.5, escapeHistory: 0.1, priority: 0.5 },
+    ticket: 'PROJ-418',
+    test_run_id: gapRun.id,
+    pr_number: 418,
+    status: 'closed',
+    close_reason: 'acted-on',
+    closed_by_run_id: gapRun.id,
+    closed_at: BASE_START_MS,
+    created_at: BASE_START_MS,
+    updated_at: BASE_START_MS,
+  },
+  {
+    project_id: 1,
+    kind: 'gap',
     detector: 'single-covering-test',
     class: 'fragile',
     key: 'route:POST /api/orders',
@@ -5913,6 +5989,7 @@ const SEEDED_GAP_CONFIDENCE = {
   'declared-never-hit': 0.7,
   'unprobed-dependency': 0.4,
   'changed-unreached': 0.9,
+  'fixed-without-test': 0.7,
   'single-covering-test': 0.5,
   'success-only': 1,
   'not-noticed': 0.8,
@@ -5941,6 +6018,105 @@ for (const gap of SCENARIO_GAPS) {
   PROBES.push(...map.probes);
   SCENARIO_GAPS.push(...map.gaps);
   TEST_FUNCTIONS.push(...map.functions);
+  // A changed file no test reached, among the files the combined coverage holds: the Coverage
+  // tab's Gaps view names its lines run, and the Code view's tree counts it.
+  SCENARIO_GAPS.push({
+    project_id: proj.id,
+    kind: 'gap',
+    detector: 'changed-unreached',
+    class: 'blind-spot',
+    key: 'src/composables/usePagination.ts',
+    title: 'src/composables/usePagination.ts changed but not reached',
+    evidence: [`+18 −4 · no test in run #${runIds.at(-1)} · 0 in 30 runs — observed reach.`],
+    factors: { churn: 0.5, age: 0.3, escapeHistory: 0.1, priority: 0.4 },
+    score: 0.2433,
+    test_run_id: runIds.at(-1),
+    status: 'open',
+    created_at: BASE_START_MS,
+    updated_at: BASE_START_MS,
+  }); // What the coverage detectors raise on this project's combined and per-test coverage.
+  const FLOOR_FACTORS = { churn: 0.1, age: 0.1, escapeHistory: 0.1, priority: 0.1 };
+  const codeGap = (detector, cls, key, title, evidence, score, testCaseId = null, factors = FLOOR_FACTORS) =>
+    SCENARIO_GAPS.push({
+      project_id: proj.id,
+      kind: 'gap',
+      detector,
+      class: cls,
+      key,
+      title,
+      evidence: [evidence],
+      factors,
+      score,
+      test_case_id: testCaseId,
+      test_run_id: runIds.at(-1),
+      status: 'open',
+      created_at: BASE_START_MS,
+      updated_at: BASE_START_MS,
+    });
+  codeGap(
+    'code-not-executed',
+    'blind-spot',
+    'src/components/UsersTable.vue',
+    '1 of 2 functions of src/components/UsersTable.vue no suite runs',
+    'Functions at lines 17–27 · no suite ran them at 9a8b7c6: dead code, or a test to write.',
+    0.55 * 0.1,
+  );
+  codeGap(
+    'code-not-executed',
+    'blind-spot',
+    'src/composables/usePagination.ts',
+    '1 of 2 functions of src/composables/usePagination.ts no suite runs',
+    'Functions at lines 17–27 · no suite ran them at 9a8b7c6: dead code, or a test to write.',
+    0.55 * 0.1,
+  );
+  codeGap(
+    'code-not-executed',
+    'blind-spot',
+    'src/pages/users/index.vue',
+    '1 of 2 functions of src/pages/users/index.vue no suite runs',
+    'Functions at lines 17–27 · no suite ran them at 9a8b7c6: dead code, or a test to write.',
+    0.55 * 0.1,
+  );
+  codeGap(
+    'single-covering-function',
+    'fragile',
+    'api/Organizations/OrganizationEndpoints.cs',
+    '1 function of api/Organizations/OrganizationEndpoints.cs runs under one test only',
+    'Only updates the organization name runs the functions at lines 34–67: a second test would make them resilient.',
+    0.05,
+    caseIds.get('updates the organization name'),
+  );
+  codeGap(
+    'single-covering-function',
+    'fragile',
+    'api/Preferences/PreferencesEndpoints.cs',
+    '2 functions of api/Preferences/PreferencesEndpoints.cs run under one test only',
+    'Only toggles dark mode runs the functions at lines 24–32, 34–63: a second test would make them resilient.',
+    0.05,
+    caseIds.get('toggles dark mode'),
+  );
+  codeGap(
+    'single-covering-function',
+    'fragile',
+    'api/Users/UsersEndpoints.cs',
+    '1 function of api/Users/UsersEndpoints.cs runs under one test only',
+    'Only invites a user by email runs the functions at lines 45–65: a second test would make them resilient.',
+    // A fixing commit touched the file: escape history 1.
+    0.5 * Math.pow(0.1 * 0.1 * 1 * 0.1, 1 / 4),
+    caseIds.get('invites a user by email'),
+    { churn: 0.1, age: 0.1, escapeHistory: 1, priority: 0.1 },
+  );
+  // The demo's source of UsersEndpoints.cs read at the commit: UpdateUser ran, its not-found answer never did.
+  codeGap(
+    'error-path-not-executed',
+    'blind-spot',
+    'api/Users/UsersEndpoints.cs',
+    '1 error path of api/Users/UsersEndpoints.cs never run',
+    'Line 59 · return TypedResults.NotFound(); · its function ran, this never did.',
+    0.7 * Math.pow(0.1 * 0.1 * 1 * 0.1, 1 / 4),
+    null,
+    { churn: 0.1, age: 0.1, escapeHistory: 1, priority: 0.1 },
+  );
 }
 
 // The v2.4.0 release marker, linked to the run it keeps.

@@ -6,6 +6,7 @@ import { rebuildProjectGraph } from '../../../../utils/graph-ingest';
 import { refreshOpenApiSurface } from '../../../../utils/openapi-surface';
 import { withProjectGraphLock } from '../../../../utils/project-graph-lock';
 import { computeScenarioGaps } from '#shared/handlers/scenario-gaps';
+import { projectSourceReader } from '../../../../utils/source-at-blob';
 
 defineRouteMeta({
   openAPI: {
@@ -38,7 +39,7 @@ export default eventHandler(async (event) => {
     if (project?.openApiUrl) await refreshOpenApiSurface(db, projectId, project.openApiUrl);
 
     // The project-wide gaps are the default branch's, whatever branch ran last.
-    const gaps = await computeScenarioGaps(db, projectId);
+    const gaps = await computeScenarioGaps(db, projectId, { readSource: projectSourceReader(db, projectId) });
     return { success: true, runsProcessed: graph.runsProcessed, gapsUpserted: gaps.upserted, gapsClosed: gaps.closed };
   });
 });

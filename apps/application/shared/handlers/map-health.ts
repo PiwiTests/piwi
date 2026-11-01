@@ -1,9 +1,9 @@
 /**
  * Map health: how complete a project's Test Map is, input by input. Each input
  * is optional, and a detector that reads one stays silent without it, so a quiet
- * Gaps tab can mean a covered application or a map that cannot see. Each row
+ * Gaps view can mean a covered application or a map that cannot see. Each row
  * counts what the input holds against what it could hold, and names the
- * detectors it wakes; the Gaps tab adds the setup step behind each.
+ * detectors it wakes; the Map view adds the setup step behind each.
  */
 import { and, count, countDistinct, eq, gte, inArray, isNull, ne } from 'drizzle-orm';
 import { graphEdges, graphNodes, locatorUsages, testFunctions } from '../../server/database/schema';

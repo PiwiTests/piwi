@@ -2,7 +2,7 @@
 /**
  * Map health — how much of the Test Map's input a project sends, one row per
  * optional input: what it holds against what it could, the detectors it wakes,
- * and the setup step behind it when it is short. A quiet Gaps tab then reads as
+ * and the setup step behind it when it is short. A quiet Gaps view then reads as
  * either a covered application or a map that cannot see yet.
  */
 import { docsUrl } from '#shared/docs';
@@ -98,7 +98,6 @@ async function load() {
 }
 
 watch(() => props.projectId, load, { immediate: true });
-defineExpose({ reload: load });
 
 type RowState = 'full' | 'partial' | 'missing' | 'idle';
 

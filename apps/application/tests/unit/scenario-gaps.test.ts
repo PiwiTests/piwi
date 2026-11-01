@@ -342,6 +342,35 @@ describe('computeScenarioGaps', () => {
     expect(single!.factors).not.toBeNull();
   });
 
+  test('a bug report closed with no test is a gap, and its page ranks with escape history', async () => {
+    await seedRun(1);
+    await seedReach(1, 'page', '/checkout', 1);
+    const report = (title: string, status: string, testCaseId: number | null = null) => ({
+      projectId: 1,
+      title,
+      pageKey: '/checkout',
+      status,
+      testCaseId,
+      steps: [],
+      evidence: {},
+      context: {},
+      closedAt: status === 'closed' ? new Date() : null,
+    });
+    const [untested] = await db
+      .insert(schema.bugReports)
+      .values([
+        report('coupon applied twice', 'closed'),
+        report('total off by a cent', 'closed', 1),
+        report('not a bug', 'dismissed'),
+      ])
+      .returning({ id: schema.bugReports.id });
+
+    await gaps.computeScenarioGaps(db, 1);
+    const rows = await gaps.listScenarioGaps(db, 1, {});
+    expect(rows.filter((r) => r.detector === 'fixed-without-test').map((r) => r.key)).toEqual([`bug:${untested!.id}`]);
+    expect(rows.find((r) => r.detector === 'single-covering-test')!.factors!.escapeHistory).toBe(1);
+  });
+
   test('recomputation preserves triage — a dismissed gap stays dismissed', async () => {
     await seedRun(1);
     await seedReach(1, 'page', '/checkout', 1);
@@ -673,6 +702,44 @@ describe('computeScenarioGaps', () => {
       'src/d.ts': 'open',
       'src/e.ts': 'closed',
       'src/f.ts': 'accepted',
+    });
+  });
+
+  test('a changed gap closes with the read of its file as its reason, acted on when its own pull request reached it', async () => {
+    await seedRun(1);
+    const gap = (key: string, prNumber: number | null) => ({
+      projectId: 1,
+      detector: 'changed-unreached',
+      class: 'blind-spot',
+      key,
+      title: `${key} changed but not reached`,
+      prNumber,
+    });
+    await db
+      .insert(schema.scenarioGaps)
+      .values([gap('src/a.ts', 7), gap('src/b.ts', 3), gap('src/c.ts', 7), gap('src/d.ts', 7)]);
+
+    await gaps.closeChangedUnreachedGaps(
+      db,
+      1,
+      1,
+      [
+        { filePath: 'src/a.ts', reach: 'reached' },
+        { filePath: 'src/b.ts', reach: 'reached' },
+        { filePath: 'src/c.ts', reach: 'out-of-scope' },
+        { filePath: 'src/d.ts', reach: 'deleted' },
+      ],
+      7,
+    );
+
+    const rows = await db
+      .select({ key: schema.scenarioGaps.key, reason: schema.scenarioGaps.closeReason })
+      .from(schema.scenarioGaps);
+    expect(Object.fromEntries(rows.map((r) => [r.key, r.reason]))).toEqual({
+      'src/a.ts': 'acted-on',
+      'src/b.ts': 'reached',
+      'src/c.ts': 'out-of-scope',
+      'src/d.ts': 'deleted',
     });
   });
 

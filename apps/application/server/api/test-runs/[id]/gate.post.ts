@@ -9,7 +9,7 @@ import { parseTagFilter } from '#shared/utils/tag-filter';
 import { getQuarantinedCaseIds } from '#shared/handlers/quarantine';
 import { getSelection, resolveSelectionDefinition } from '#shared/handlers/selections';
 import { readChangeCoverage } from '../../../utils/scm/change-coverage';
-import { patchCoverageWarning } from '#shared/patch-coverage';
+import { patchCoverageWarning, uncoveredChangesWarning } from '#shared/patch-coverage';
 import { runFindingsNovelty } from '#shared/handlers/resource-findings';
 import { isLeak } from '#shared/resource-fingerprint.mjs';
 import { readRunIncident } from '#shared/run-incident';
@@ -285,10 +285,12 @@ export default eventHandler(async (event) => {
       warnings.push('Uncovered changes could not be counted: this run has no source control diff — warn-only.');
     } else {
       if (maxUncoveredChanges != null && coverage.uncoveredFiles > maxUncoveredChanges) {
-        const n = coverage.uncoveredFiles;
         warnings.push(
-          `${n} uncovered ${n === 1 ? 'change' : 'changes'} (threshold ${maxUncoveredChanges}): ` +
-            `changed ${n === 1 ? 'file' : 'files'} no test reached — warn-only.`,
+          uncoveredChangesWarning(
+            coverage.files.filter((f) => f.reach === 'unreached').map((f) => f.filePath),
+            coverage.uncoveredFiles,
+            maxUncoveredChanges,
+          ),
         );
       }
       if (minPatchCoverage != null) {
@@ -317,6 +319,7 @@ export default eventHandler(async (event) => {
       runMetadata: run.metadata,
       policy: { ...policy, maxUncoveredChanges, minPatchCoverage },
       result,
+      warnings,
       source: gateSource(getRequestHeader(event, GATE_CLIENT_HEADER)),
       clusterIds,
     });

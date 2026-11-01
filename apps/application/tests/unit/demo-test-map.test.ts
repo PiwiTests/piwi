@@ -15,6 +15,10 @@ import {
 } from '#shared/demo/demo-test-map.mjs';
 
 const { computeScenarioGaps } = await import('../../shared/handlers/scenario-gaps');
+const { getDemoSourceAtBlob } = await import('../../app/demo/demo-scm');
+/** The demo's sources, as its recompute reads them for *error path never executed*. */
+const readSource = async (path: string, blob: string) =>
+  (await getDemoSourceAtBlob(WEB_DASHBOARD_PROJECT_ID, path, blob))?.content ?? null;
 const { backfillUnindexedProjects } = await import('../../server/utils/locator-usages');
 const { getMapHealth } = await import('../../shared/handlers/map-health');
 
@@ -180,7 +184,7 @@ afterAll(() => {
 describe('the web-dashboard Test Map', () => {
   test('recomputing its gaps leaves the seeded ledger as it is', async () => {
     const seeded = shape(await projectGaps());
-    await computeScenarioGaps(db as never, WEB_DASHBOARD_PROJECT_ID);
+    await computeScenarioGaps(db as never, WEB_DASHBOARD_PROJECT_ID, { readSource });
     const after = await projectGaps();
     if (process.env.PIWI_UPDATE_DEMO_TEST_MAP) await writeLedger(after);
     expect(shape(after)).toEqual(seeded);

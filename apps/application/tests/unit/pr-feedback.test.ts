@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'vitest';
 import {
   buildChangeCoverageStatus,
+  changeCoverageStatusUrl,
   buildCommitStatus,
   buildGateStatus,
   buildPrComment,
@@ -489,7 +490,7 @@ describe('change coverage section', () => {
               additions: 41,
               deletions: 3,
               reach: 'unreached',
-              draftTitle: 'a scenario that exercises [id].patch.ts',
+              gapId: 31,
             },
             {
               filePath: 'components/OrderRow.vue',
@@ -514,6 +515,36 @@ describe('change coverage section', () => {
     expect(section).not.toContain('OrderRow.vue');
     expect(section).toContain('5 files reached.');
     expect(section).not.toContain('Gate');
+  });
+
+  test('links each uncovered file to its gap, where a draft test is one click away', () => {
+    const section = renderChangeCoverage(coverage({ projectId: 4 }), 'https://piwi.example.com')!;
+    expect(section).toContain(
+      '→ [open its gap](https://piwi.example.com/projects/4?tab=coverage&gap=31): **Accept** copies a draft test',
+    );
+    // Without the instance's address the comment links nothing.
+    expect(renderChangeCoverage(coverage({ projectId: 4 }))).not.toContain('open its gap');
+  });
+
+  test('the change-coverage status leads to the pull request’s uncovered changes, else to the run', () => {
+    const run = 'https://piwi.example.com/test-runs/42';
+    expect(changeCoverageStatusUrl(coverage({ projectId: 4, prNumber: 7 }), run)).toBe(
+      'https://piwi.example.com/projects/4?tab=coverage&gapPr=7',
+    );
+    expect(changeCoverageStatusUrl(coverage({ projectId: 4 }), run)).toBe(run);
+    expect(changeCoverageStatusUrl(coverage({ projectId: 4, prNumber: 7, uncoveredFiles: 0 }), run)).toBe(run);
+    expect(changeCoverageStatusUrl(coverage({ projectId: 4, prNumber: 7, fileReach: false }), run)).toBe(run);
+  });
+
+  test('counts the gaps the change-time detectors raised, linked to the pull request’s gaps', () => {
+    const cc = coverage({ projectId: 4, prNumber: 7, changeTimeGaps: 2 });
+    expect(renderChangeCoverage(cc, 'https://piwi.example.com')).toContain(
+      '2 gaps this change adds: a new error path, a new control or an intent no test names, [on the Coverage tab](https://piwi.example.com/projects/4?tab=coverage&gapPr=7).',
+    );
+    const onlyRaised = coverage({ projectId: 4, prNumber: 7, changeTimeGaps: 1, uncoveredFiles: 0, tickets: [] });
+    expect(changeCoverageStatusUrl(onlyRaised, 'https://piwi.example.com/test-runs/42')).toBe(
+      'https://piwi.example.com/projects/4?tab=coverage&gapPr=7',
+    );
   });
 
   test('reports a clean diff without listing files', () => {
@@ -590,7 +621,6 @@ describe('change coverage section', () => {
                 additions: 5,
                 deletions: 0,
                 reach: 'unreached',
-                draftTitle: 'exercise new.ts',
               },
               {
                 filePath: 'src/old.ts',

@@ -60,8 +60,10 @@ note counts the runs it hides. The **More** menu holds Edit, [Test functions](./
   [quarantine](./flaky-tests#quarantine-with-a-way-out) list.
 - **Flake Lab**: where each flaky test stands in the [Flake Lab](./flake-lab) and the command it needs next, and the
   project's newest experiments. Hidden when the Flake Lab is switched off.
-- **Gaps**: the tests the suite does not have yet, proposed from the Test Map, with the feature map and the graph view
-  ([Scenario gaps & the Test Map](./scenario-gaps)). Hidden when the Test Map is switched off.
+- **Coverage**: what the suite does not test, in three views: **Gaps**, the tests to write, proposed from the Test Map
+  ([Scenario gaps & the Test Map](./scenario-gaps)); **Map**, the feature map and the graph view; **Code**, every
+  suite's [combined coverage](./combined-coverage) of a commit. Hidden when both the Test Map and coverage are switched
+  off.
 - **Performance**: duration trends, the slowest tests, timeout opportunities and the slow endpoints
   ([Slow tests & wasted time](./slow-tests)).
 - **Settings**: one section at a time, picked from a menu beside it: the label and tags, the project's

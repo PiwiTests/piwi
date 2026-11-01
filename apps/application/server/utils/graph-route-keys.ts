@@ -305,7 +305,7 @@ export async function rewriteProjectRouteKeys(db: DrizzleDB, projectId: number):
       if (gap === keeper || !['open', 'snoozed', 'accepted'].includes(gap.status)) continue;
       await db
         .update(scenarioGaps)
-        .set({ status: 'closed', closedAt: now, closedByRunId: null, updatedAt: now })
+        .set({ status: 'closed', closedAt: now, closedByRunId: null, closeReason: 'merged', updatedAt: now })
         .where(eq(scenarioGaps.id, gap.id));
     }
     out.gaps += rows.length;

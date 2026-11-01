@@ -79,7 +79,8 @@ no test's locator acts on, requests or runs. The rule is close to the pull reque
 coverage scope and no window of runs, and a page a test only visited reads as unreached. Its lines changed since the default branch are marked orange: those added since
 the commit your branch left it at (the merge base with `origin/main`, else `main`), uncommitted changes included,
 blank lines left out. The file's top lens says `Uncovered changes: 12 lines changed since main, and no test reaches
-this file`, and so does the hover on a marked line. A test that reaches the file, or the change reaching the default
+this file`, and opens the file's gaps on the dashboard's Coverage tab, where **Accept** copies a draft test once a
+pull-request run has raised one. The hover on a marked line says the same. A test that reaches the file, or the change reaching the default
 branch, takes the marks away. A file nothing can observe, and a project whose code reach is missing or cut short, show
 nothing.
 

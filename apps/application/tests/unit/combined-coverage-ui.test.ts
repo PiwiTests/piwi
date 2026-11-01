@@ -145,21 +145,22 @@ describe('plural', () => {
 });
 
 describe('coverageLink', () => {
-  test('keeps the pinned commit, the branch and the area beside the query', () => {
+  test('leads to the Coverage tab’s Code view, keeping the pinned commit, the branch and the area', () => {
     expect(coverageLink(5, { commit: 'abc1234', branch: 'feat', area: 'front' }, { folder: 'src' })).toEqual({
-      path: '/projects/5/coverage',
-      query: { commit: 'abc1234', branch: 'feat', area: 'front', folder: 'src' },
+      path: '/projects/5',
+      query: { tab: 'coverage', view: 'code', commit: 'abc1234', branch: 'feat', area: 'front', folder: 'src' },
     });
   });
 
   test('leaves out what the context does not hold, and lets the query clear a key', () => {
     expect(coverageLink(5, { commit: null, branch: '', area: 'front' }, { area: undefined })).toEqual({
-      path: '/projects/5/coverage',
-      query: { commit: undefined, branch: undefined, area: undefined },
+      path: '/projects/5',
+      query: { tab: 'coverage', view: 'code', commit: undefined, branch: undefined, area: undefined },
     });
   });
 
-  test('opens a file marked by suite at the same commit', () => {
+  test('opens a file’s coverage page, marked by suite at the same commit', () => {
+    expect(coverageFileLink(5, { commit: 'abc1234' }, 'src/a.ts').path).toBe('/projects/5/coverage');
     expect(coverageFileLink(5, { commit: 'abc1234' }, 'src/a.ts').query).toEqual({
       commit: 'abc1234',
       branch: undefined,

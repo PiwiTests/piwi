@@ -461,7 +461,8 @@ export const HELP_TOPICS = {
       'Environment, branch and **Full runs only** scope the whole page; the choice is remembered per project.',
       '',
       '- **Scoped** — the status above, the runs, the test catalog, the failures, the Flake Lab and the performance trends.',
-      '- **Not scoped** — the quarantine list and the Gaps tab, which belong to the project whatever the filters.',
+      '- **Not scoped** — the quarantine list, and the gaps and map of the Coverage tab, which belong to the project whatever the filters.',
+      '- **Branch only** — the Code view of the Coverage tab reads the one branch picked; coverage is read per commit, so environments and **Full runs only** do not apply.',
       '- **Branch** — with none picked, the default branch and the runs that report no branch; **All branches** reads every branch.',
     ].join('\n'),
     doc: 'features/ui-overview#project-detail',
@@ -765,7 +766,7 @@ export const HELP_TOPICS = {
   },
   'coverage.areas': {
     title: 'Coverage areas',
-    text: 'Name the parts of your code, `front` and `back` for instance, by the patterns of their files. Every suite’s coverage splits the same way, unit and end to end: each area gets its own totals on the coverage page, its own line in the coverage trend, and its share of a pull request’s changed lines. A file belongs to the first area whose patterns match it; a file in none counts only in the totals. The coverage scope, its include and exclude patterns, decides which files count at all.',
+    text: 'Name the parts of your code, `front` and `back` for instance, by the patterns of their files. Every suite’s coverage splits the same way, unit and end to end: each area gets its own totals in the Coverage tab’s Code view, its own line in the coverage trend, and its share of a pull request’s changed lines. A file belongs to the first area whose patterns match it; a file in none counts only in the totals. The coverage scope, its include and exclude patterns, decides which files count at all.',
     doc: 'features/combined-coverage#areas',
   },
   'coverage.tree': {
@@ -850,7 +851,7 @@ export const HELP_TOPICS = {
       'Coverage says which lines of the file ran; the Test Map says which user paths reach it, and which tests are still to write on them.',
       '',
       '- **Nodes** — the file’s route handler and the routes it serves, the page or route its file name gives it, and the file itself when a test ran it or it changed unreached.',
-      '- **Gaps** — each node’s open scenario gaps, the highest exposure first: tests that do not exist yet. Open a node to see its graph on the Gaps tab.',
+      '- **Gaps** — each node’s open scenario gaps, the highest exposure first: tests that do not exist yet. Open a node to see its graph in the Coverage tab’s Map view.',
     ].join('\n'),
     doc: 'guide/concepts#coverage-and-the-test-map',
   },

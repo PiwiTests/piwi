@@ -650,3 +650,34 @@ describe('verifyClusterFixes — the auto-heal PR that landed the fix', () => {
     ).toEqual(['k1']);
   });
 });
+
+describe('verifyClusterFixes — incidental catch', () => {
+  const catchesOf = async (clusterId: number) =>
+    (await db.select().from(schema.scenarioGaps))
+      .filter((g) => g.failureClusterId === clusterId)
+      .map((g) => `${g.detector} ${g.title}`);
+
+  async function fixWith(files: string[]) {
+    const failing = await insertRun('failed', `f${runSeq + 1}`);
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId);
+    changedFiles = files;
+    const green = await insertRun('passed', `g${runSeq + 1}`);
+    await insertCase(green, 'passed', null);
+    await verifyClusterFixes(db, green);
+    return clusterId;
+  }
+
+  test('a fix in a file the catching test is not about raises incidental catch', async () => {
+    const clusterId = await fixWith(['src/pricing/rounding.ts']);
+    expect(await catchesOf(clusterId)).toEqual([
+      'incidental-catch src/pricing/rounding.ts is caught only incidentally',
+    ]);
+  });
+
+  test('a fix in the file the test is named for, one that came with a test, or a broad one raises nothing', async () => {
+    expect(await catchesOf(await fixWith(['src/checkout.ts']))).toEqual([]);
+    expect(await catchesOf(await fixWith(['src/pricing/rounding.ts', 'tests/rounding.spec.ts']))).toEqual([]);
+    expect(await catchesOf(await fixWith(['a/one.ts', 'b/two.ts', 'c/three.ts', 'd/four.ts']))).toEqual([]);
+  });
+});

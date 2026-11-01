@@ -3,7 +3,12 @@ import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { computeDetectorPrecision, isDetectorMuted, MUTE_MIN_VERDICTS } from '../../shared/handlers/detector-precision';
-import { detectMatrix, detectEscapedDefect } from '../../shared/handlers/scenario-gaps';
+import {
+  detectMatrix,
+  detectEscapedDefect,
+  detectFixedWithoutTest,
+  exposureFactorsFor,
+} from '../../shared/handlers/scenario-gaps';
 import { selectWeeklyDigest } from '../../shared/handlers/gap-digest';
 import { migrateToLatest } from './temp-db';
 
@@ -21,6 +26,21 @@ describe('computeDetectorPrecision / isDetectorMuted', () => {
     expect(successOnly.muted).toBe(true); // below 60% over 20+ verdicts
     const drift = result.find((r) => r.detector === 'surface-drift')!;
     expect(drift.muted).toBe(false); // only one verdict
+  });
+
+  test('counts the gaps raised on a pull request and the ones it acted on, beside the verdicts', () => {
+    const result = computeDetectorPrecision(
+      [{ detector: 'changed-unreached', verdict: 'for' }],
+      [
+        { detector: 'changed-unreached', actedOn: true },
+        { detector: 'changed-unreached', actedOn: false },
+        { detector: 'new-error-path', actedOn: true },
+      ],
+    );
+    expect(result.map((r) => [r.detector, r.verdicts, r.pullRequestGaps, r.actedOn])).toEqual([
+      ['changed-unreached', 1, 2, 1],
+      ['new-error-path', 0, 1, 1],
+    ]);
   });
 
   test('does not mute below the minimum verdict count', () => {
@@ -108,6 +128,16 @@ describe('detectEscapedDefect', () => {
     expect(gaps[0]!.detector).toBe('escaped-defect');
     expect(gaps[0]!.key).toBe('ticket:PROJ-412');
     expect(gaps[0]!.evidence[0]).toContain('Refunds');
+  });
+});
+
+describe('detectFixedWithoutTest and escape history', () => {
+  test('a bug report closed with no test naming it is a gap on its page, which shares its escape history', () => {
+    const [gap] = detectFixedWithoutTest([{ id: 7, title: 'refund rounds down', pageKey: '/refunds' }]);
+    expect(gap).toMatchObject({ detector: 'fixed-without-test', key: 'bug:7', pages: ['/refunds'] });
+    expect(gap!.evidence[0]).toContain('piwi:bug 7');
+    expect(exposureFactorsFor(gap!, { escapedPages: new Set(['/refunds']) }).escapeHistory).toBe(1);
+    expect(exposureFactorsFor(gap!, { escapedPages: new Set(['/orders']) }).escapeHistory).toBe(0.1);
   });
 });
 

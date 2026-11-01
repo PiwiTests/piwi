@@ -416,10 +416,14 @@ export class GitHubProvider extends ScmProvider {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
       if (!res.ok) return null;
-      const data = (await res.json()) as Array<{ number?: number; html_url?: string }>;
+      const data = (await res.json()) as Array<{ number?: number; html_url?: string; base?: { ref?: string } }>;
       const pr = data[0];
       if (!pr?.number) return null;
-      return { number: pr.number, url: pr.html_url ?? `https://github.com/${this.repoPath}/pull/${pr.number}` };
+      return {
+        number: pr.number,
+        url: pr.html_url ?? `https://github.com/${this.repoPath}/pull/${pr.number}`,
+        baseBranch: pr.base?.ref ?? null,
+      };
     } catch {
       return null;
     }

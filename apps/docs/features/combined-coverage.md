@@ -108,10 +108,11 @@ coverage of the commit's complete Playwright runs (never a partial, probe or fla
   the commit's branch then on the default branch, file by file where the file's version is unchanged.
 - **A run whose backend restarted** still joins `e2e`, adding only lines that ran; alone, it marks `e2e` incomplete.
 
-The project's **Coverage** page shows the commit whose coverage arrived last, and a run's header links its commit's.
+The **Code** view of the project's **Coverage** tab shows the commit whose coverage arrived last, and a run's header
+links its commit's.
 
 <figure>
-  <img src="/screenshots/combined-coverage.png" alt="A project's combined coverage page">
+  <img src="/screenshots/combined-coverage.png" alt="A project's combined coverage in the Code view">
   <figcaption>Three suites of one commit, counted on the same lines.</figcaption>
 </figure>
 
@@ -130,11 +131,14 @@ not count.
 
 ## Find what is not covered
 
-Every bar on the coverage page splits lines by class, as a file's marks do. **Files** is a foldable tree, each
-folder and file with its bar, sortable by lines not run; beside it, the selected folder's suites and least-covered
+Every bar in the Code view splits lines by class, as a file's marks do. **Files** is a foldable tree, each
+folder and file with its bar and its open [scenario gaps](./scenario-gaps), sortable by lines not run; beside it, the selected folder's suites and least-covered
 files. A file opens on its source, through the
 [source control](/guide/source-control) connection, each line marked by the suites that ran it; **Next range** jumps to
-the next lines no suite ran. **In the Test Map** lists its routes and pages with their [scenario gaps](./scenario-gaps).
+the next lines no suite ran. **In the Test Map** lists its routes and pages with their [scenario gaps](./scenario-gaps), each with its
+**Accept**, **Snooze**, **Covered by** and **Dismiss**. The functions no suite ran, the error paths no suite ran in code that ran, and the
+functions only one test runs are gaps of their own ([the detectors](/reference/gap-detectors#detectors)). The view reads the branch the project's filters pick, or the
+default branch when they pick none or several.
 
 <figure>
   <img src="/screenshots/combined-coverage-file.png" alt="A file's lines marked by suite">
@@ -163,7 +167,7 @@ one counting an incomplete `e2e` says so.
 
 ## Export
 
-The coverage page's card menu downloads the commit's combined coverage as LCOV or Cobertura, for Sonar, Codecov or an
+The Code view's card menu downloads the commit's combined coverage as LCOV or Cobertura, for Sonar, Codecov or an
 IDE (`coverage-export?format=` in the API). A line any suite ran has 1 hit, else 0, an undetermined line included:
 Piwi keeps no hit counts and no branches.
 
@@ -179,7 +183,7 @@ inventory: its tracked files in scope and their blob ids.
 ## Areas
 
 Name the parts of the code in the same settings (`coverageAreas` in the API): `front: apps/web/`, `back: src/Api/`. A
-file belongs to the first area whose patterns match it, and every suite splits the same way: the coverage page gives
+file belongs to the first area whose patterns match it, and every suite splits the same way: the Code view gives
 each area its totals and each suite's share, the coverage trend a line per area, and the pull-request comment the
 changed lines per area. A change recounts the commits that keep their reports; a removed area
 leaves the trend.

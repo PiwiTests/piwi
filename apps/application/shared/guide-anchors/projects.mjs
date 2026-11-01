@@ -68,7 +68,7 @@ export const PROJECTS_ANCHORS = [
     kind: 'action',
     pages: ['/projects/[id]'],
     describes:
-      'The project’s More actions menu: Edit, its Test functions, Selections, Locators and Coverage pages, Bug reports, a report schedule, Delete and Refresh.',
+      'The project’s More actions menu: Edit, its Test functions, Selections and Locators pages, Bug reports, a report schedule, Delete and Refresh.',
     doc: 'features/ui-overview#project-detail',
     sample: { route: '/projects/1', expect: PROJECT_1 },
   },
@@ -326,30 +326,62 @@ export const PROJECTS_ANCHORS = [
     sample: { route: '/projects/3?tab=flake-lab', expect: PROJECT_3 },
   },
 
-  // ── The Gaps tab ────────────────────────────────────────────────────────
+  // ── The Coverage tab ────────────────────────────────────────────────────
   {
-    id: 'project-gaps-tab',
+    id: 'project-coverage-tab',
     kind: 'tab',
     pages: ['/projects/[id]'],
-    reveal: [{ query: { tab: 'gaps' } }],
+    reveal: [{ query: { tab: 'coverage' } }],
     describes:
-      'The Gaps tab: the tests the suite does not have yet, proposed from the Test Map and ranked by exposure, with the feature map and its graph.',
+      'The Coverage tab: what the suite does not test, in three views: the gaps to write tests for, the feature map, and the code the suites ran.',
+    doc: 'features/scenario-gaps',
+    sample: { route: '/projects/1?tab=coverage', expect: PROJECT_1 },
+  },
+  {
+    id: 'coverage-gaps-view',
+    kind: 'tab',
+    pages: ['/projects/[id]'],
+    reveal: [{ query: { tab: 'coverage', view: 'gaps' } }],
+    describes:
+      'The Gaps view of the Coverage tab: the tests the suite does not have yet, proposed from the Test Map and ranked by exposure.',
     requires: { capability: 'test-map' },
     help: 'project.gaps',
     doc: 'features/scenario-gaps',
-    sample: { route: '/projects/1?tab=gaps', expect: PROJECT_1 },
+    sample: { route: '/projects/1?tab=coverage&view=gaps', expect: PROJECT_1 },
+  },
+  {
+    id: 'coverage-map-view',
+    kind: 'tab',
+    pages: ['/projects/[id]'],
+    reveal: [{ query: { tab: 'coverage', view: 'map' } }],
+    describes:
+      'The Map view of the Coverage tab: the project graph folded per feature, the graph of one node, and what inputs the map has.',
+    requires: { capability: 'test-map' },
+    doc: 'features/scenario-gaps#the-coverage-tab',
+    sample: { route: '/projects/1?tab=coverage&view=map', expect: PROJECT_1 },
+  },
+  {
+    id: 'coverage-code-view',
+    kind: 'tab',
+    pages: ['/projects/[id]'],
+    reveal: [{ query: { tab: 'coverage', view: 'code' } }],
+    describes:
+      'The Code view of the Coverage tab: every suite’s coverage of one commit combined, by suite, by area and through the file tree.',
+    requires: { capability: 'coverage' },
+    doc: 'features/combined-coverage',
+    sample: { route: '/projects/5?tab=coverage&view=code', expect: PROJECT_5 },
   },
   {
     id: 'feature-map',
     kind: 'block',
     pages: ['/projects/[id]'],
-    reveal: [{ query: { tab: 'gaps' } }],
+    reveal: [{ query: { tab: 'coverage', view: 'map' } }],
     describes:
-      'The feature map of the Gaps tab: the features the Test Map draws from the routes and pages each feature’s tests reach.',
+      'The feature map of the Coverage tab: the features the Test Map draws from the routes and pages each feature’s tests reach.',
     shownWhen: 'When tests of the project are tagged with piwi:feature.',
     requires: { capability: 'test-map' },
     doc: 'features/scenario-gaps',
-    sample: { route: '/projects/1?tab=gaps', expect: PROJECT_1 },
+    sample: { route: '/projects/1?tab=coverage&view=map', expect: PROJECT_1 },
   },
 
   // ── The Performance tab ─────────────────────────────────────────────────
@@ -641,20 +673,20 @@ export const PROJECTS_ANCHORS = [
     sample: { route: '/projects/1?tab=settings&section=local-folder', expect: PROJECT_1, surface: 'desktop' },
   },
 
-  // ── The coverage page ───────────────────────────────────────────────────
+  // ── A file's coverage page, and the Coverage tab's Code view ────────────
   {
     id: 'project-coverage-page',
     kind: 'page',
     pages: ['/projects/[id]/coverage'],
-    describes:
-      'The project’s coverage page: every suite’s coverage of one commit combined, by area and through the file tree, or one file with the lines its tests ran.',
-    doc: 'features/combined-coverage',
-    sample: { route: '/projects/5/coverage', expect: PROJECT_5 },
+    describes: 'A file’s coverage page: the lines of one file each test ran, and which suites ran them at a commit.',
+    doc: 'features/code-reach#which-tests-run-a-file',
+    sample: { route: '/projects/5/coverage?file=api/Users/UsersEndpoints.cs', expect: USERS_ENDPOINTS },
   },
   {
     id: 'coverage-overview',
     kind: 'block',
-    pages: ['/projects/[id]/coverage'],
+    pages: ['/projects/[id]'],
+    reveal: [{ query: { tab: 'coverage', view: 'code' } }],
     describes:
       'The Combined coverage card: the share of lines the unit suites and the Playwright run of one commit ran together, then each suite’s share.',
     shownWhen: 'When a suite uploaded a coverage report or a run recorded run coverage for the project.',
@@ -662,14 +694,15 @@ export const PROJECTS_ANCHORS = [
     help: 'coverage.combined',
     doc: 'features/combined-coverage',
     sample: {
-      route: '/projects/5/coverage',
+      route: '/projects/5?tab=coverage&view=code',
       expect: { ...PROJECT_5, combinedCoverage: { suites: 3, filesWithoutData: 2 } },
     },
   },
   {
     id: 'coverage-notes',
     kind: 'block',
-    pages: ['/projects/[id]/coverage'],
+    pages: ['/projects/[id]', '/projects/[id]/coverage'],
+    reveal: [{ query: { tab: 'coverage', view: 'code' } }],
     describes:
       'The note on what a commit’s coverage numbers leave out or take from elsewhere, such as a suite carried from an earlier commit or an incomplete report.',
     shownWhen: 'When the commit’s coverage carries a suite from elsewhere or misses data.',
@@ -677,56 +710,60 @@ export const PROJECTS_ANCHORS = [
     help: 'coverage.notes',
     doc: 'features/combined-coverage#what-the-numbers-leave-out',
     sample: {
-      route: '/projects/5/coverage?branch=develop',
+      route: '/projects/5?tab=coverage&view=code&branch=develop',
       expect: { ...PROJECT_5, supersededCoverage: { branch: 'develop', carried: 'unit-back' } },
     },
   },
   {
     id: 'coverage-class-legend',
     kind: 'block',
-    pages: ['/projects/[id]/coverage'],
+    pages: ['/projects/[id]', '/projects/[id]/coverage'],
+    reveal: [{ query: { tab: 'coverage', view: 'code' } }],
     describes:
       'The key to the coverage colors: the lines both kinds of suite ran, unit tests only, end-to-end tests only, undetermined, and the lines no suite ran.',
     requires: { capability: 'coverage' },
     help: 'coverage.combined-marks',
     doc: 'features/combined-coverage#find-what-is-not-covered',
-    sample: { route: '/projects/5/coverage', expect: PROJECT_5 },
+    sample: { route: '/projects/5?tab=coverage&view=code', expect: PROJECT_5 },
   },
   {
     id: 'coverage-areas',
     kind: 'block',
-    pages: ['/projects/[id]/coverage'],
+    pages: ['/projects/[id]'],
+    reveal: [{ query: { tab: 'coverage', view: 'code' } }],
     describes:
-      'The Areas card of the coverage page: each area of the code the project names, with the share of its lines that ran and each suite’s share.',
+      'The Areas card of the Code view: each area of the code the project names, with the share of its lines that ran and each suite’s share.',
     shownWhen: 'When the project’s coverage settings name areas.',
     requires: { capability: 'coverage' },
     help: 'coverage.areas',
     doc: 'features/combined-coverage#areas',
-    sample: { route: '/projects/5/coverage', expect: PROJECT_5 },
+    sample: { route: '/projects/5?tab=coverage&view=code', expect: PROJECT_5 },
   },
   {
     id: 'coverage-files',
     kind: 'block',
-    pages: ['/projects/[id]/coverage'],
+    pages: ['/projects/[id]'],
+    reveal: [{ query: { tab: 'coverage', view: 'code' } }],
     describes:
-      'The Files card of the coverage page: the repository as a tree at the commit, each folder and file barred by the kinds of suite that ran its lines.',
+      'The Files card of the Code view: the repository as a tree at the commit, each folder and file barred by the kinds of suite that ran its lines.',
     shownWhen: 'When the commit keeps its file detail.',
     requires: { capability: 'coverage' },
     help: 'coverage.tree',
     doc: 'features/combined-coverage#find-what-is-not-covered',
-    sample: { route: '/projects/5/coverage', expect: PROJECT_5 },
+    sample: { route: '/projects/5?tab=coverage&view=code', expect: PROJECT_5 },
   },
   {
     id: 'coverage-least-covered',
     kind: 'block',
-    pages: ['/projects/[id]/coverage'],
+    pages: ['/projects/[id]'],
+    reveal: [{ query: { tab: 'coverage', view: 'code' } }],
     describes:
       'Least covered here, beside the file tree: the files of the selected folder with the most lines no suite ran, each opening on the next lines to cover.',
     shownWhen: 'When a file of the selected folder has lines no suite ran.',
     requires: { capability: 'coverage' },
     help: 'coverage.least-covered',
     doc: 'features/combined-coverage#find-what-is-not-covered',
-    sample: { route: '/projects/5/coverage', expect: PROJECT_5 },
+    sample: { route: '/projects/5?tab=coverage&view=code', expect: PROJECT_5 },
   },
   {
     id: 'coverage-file-heading',

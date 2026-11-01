@@ -3007,7 +3007,20 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         uncoveredOf(params.uri).catch(() => null),
         null,
       );
-      return uncovered ? { file: { line: 0, title: `Uncovered changes: ${uncovered.label}` }, lines: [] } : empty;
+      if (!uncovered) return empty;
+      const target = coverageTarget(params.uri);
+      const gaps =
+        target?.context.client && target.context.project
+          ? {
+              title: 'Open its gap in the dashboard',
+              command: 'piwi.openInDashboard' as const,
+              arguments: [target.context.client.gapsOfFileUrl(target.context.project.id, target.repoRelative)],
+            }
+          : undefined;
+      return {
+        file: { line: 0, title: `Uncovered changes: ${uncovered.label}`, ...(gaps ? { command: gaps } : {}) },
+        lines: [],
+      };
     }
     const pageLine: SummaryLine = {
       line: 0,

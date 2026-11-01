@@ -65,7 +65,7 @@ test.describe.serial('Declining the Test Map with graph data', () => {
     await request.patch(`/api/projects/${projectId}/capabilities`, { data: { decisions: { 'test-map': null } } });
   });
 
-  test('a project decline hides the Gaps tab even though graph nodes exist', async ({ page, request }) => {
+  test('a project decline hides the Gaps view even though graph nodes exist', async ({ page, request }) => {
     // The run reached a route, so the project has graph rows: the Test Map reads
     // active off that passive data until a decision is stored. The active state is
     // the evidence — before the fix it also survived a decline.
@@ -73,17 +73,14 @@ test.describe.serial('Declining the Test Map with graph data', () => {
     const caps = await (await request.get(`/api/projects/${projectId}/capabilities`)).json();
     expect(stateOf(caps.items)).toBe('active');
 
-    // The tab strip renders the item as a button (onSelect, no `to`); match a link
-    // too in case Nuxt UI changes that, so the assertion tracks the tab.
-    const gapsTab = page
-      .getByRole('button', { name: 'Gaps', exact: true })
-      .or(page.getByRole('link', { name: 'Gaps', exact: true }));
+    // The Coverage tab's switch names each view it has.
+    const gapsView = page.getByRole('button', { name: 'Gaps', exact: true });
 
-    await page.goto(`/projects/${projectId}?tab=runs`);
+    await page.goto(`/projects/${projectId}?tab=coverage`);
     await waitForHydration(page);
-    await expect(gapsTab).toBeVisible();
+    await expect(gapsView).toBeVisible();
 
-    // Decline at project level → the tab disappears, active passive data and all.
+    // Decline at project level → the view disappears, active passive data and all.
     await request.patch(`/api/projects/${projectId}/capabilities`, {
       data: { decisions: { 'test-map': 'declined' } },
     });
@@ -92,17 +89,17 @@ test.describe.serial('Declining the Test Map with graph data', () => {
 
     await page.reload();
     await waitForHydration(page);
-    await expect(gapsTab).toHaveCount(0);
+    await expect(gapsView).toHaveCount(0);
 
-    // A stale ?tab=gaps deep link falls back rather than opening a hidden tab.
+    // A stale ?tab=gaps deep link opens what the tab still has rather than the hidden view.
     await page.goto(`/projects/${projectId}?tab=gaps`);
     await waitForHydration(page);
     await expect(page.locator('[data-shot="gaps-panel"]')).toHaveCount(0);
 
-    // Reconsider (clear the decision) → the tab returns.
+    // Reconsider (clear the decision) → the view returns.
     await request.patch(`/api/projects/${projectId}/capabilities`, { data: { decisions: { 'test-map': null } } });
-    await page.goto(`/projects/${projectId}?tab=runs`);
+    await page.goto(`/projects/${projectId}?tab=coverage`);
     await waitForHydration(page);
-    await expect(gapsTab).toBeVisible();
+    await expect(gapsView).toBeVisible();
   });
 });

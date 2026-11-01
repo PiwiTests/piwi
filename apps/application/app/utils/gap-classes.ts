@@ -1,5 +1,5 @@
 /**
- * How the Gaps tab and the graph views color a gap class: one mapping for the
+ * How the Gaps view and the graph views color a gap class: one mapping for the
  * SVG fills, the badge colors and the plain-language legend, so a red badge in
  * the list is the same red as the node in the graph. Severity order lives in
  * `#shared/gap-classes`; this file only names the paint.

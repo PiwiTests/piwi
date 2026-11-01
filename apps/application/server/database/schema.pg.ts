@@ -2028,6 +2028,7 @@ export const scenarioGaps = pgTable(
       .$defaultFn(() => new Date()),
     closedAt: timestamp('closed_at', { mode: 'date' }),
     closedByRunId: integer('closed_by_run_id'),
+    closeReason: text('close_reason'), // why a closed gap closed: 'reached', 'reached-in-pull-request', 'covered-by', 'not-detected', …; null while open
   },
   (table) => ({
     detectorKeyIdx: uniqueIndex('idx_scenario_gaps_detector_key').on(table.projectId, table.detector, table.key),
@@ -2245,6 +2246,7 @@ export const gateEvaluations = pgTable(
     passed: boolean('passed').notNull(),
     verdict: text('verdict').notNull(), // 'passed' | 'failed' | 'inconclusive'
     violations: jsonb('violations').notNull(), // GateViolation[]
+    warnings: jsonb('warnings'), // string[]: the warn-only rules that warned, such as uncovered changes
     clusterIds: jsonb('cluster_ids'), // number[]: the clusters of the run's new regressions, read for an escape
     source: text('source').notNull(), // 'cli' | 'api'
     evaluatedAt: timestamp('evaluated_at', { mode: 'date' })

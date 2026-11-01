@@ -11,8 +11,8 @@ lang: en-US
 A pull request that changes `server/api/orders/[id].patch.ts` while no test ever requests that route passes CI and
 proves nothing about the change. When a run finishes, Piwi joins the files its change touched to the tests that
 [observably reach](/guide/concepts#reach) them, and names the changed files nothing reaches: the **uncovered
-changes**. Each one is a *changed, unreached* [scenario gap](/features/scenario-gaps); its draft holds the file and
-the evidence, and no steps, since no test leads to it. When the head commit has
+changes**. Each one is a *changed, unreached* [scenario gap](/features/scenario-gaps). Its draft starts from the route or
+page the file serves, or the nearest one a test reaches under the same path, with that test named. When the head commit has
 [combined coverage](/features/combined-coverage), the same section counts the changed lines too, and names those no
 suite ran, in every file.
 
@@ -50,8 +50,10 @@ Before the pull request, the [editor extensions](./editor-coverage#uncovered-cha
 change of a page or a server route in the file itself, by a rule of their own: no coverage scope, no window of runs,
 and a page counts as reached only when a test's locator acted on it.
 
-The diff comes from the [source control](/guide/source-control) connection: a pull-request run is compared with its
-base branch, any other run with the commit of the last passing run. A public repository is read without a token, so
+The diff comes from the [source control](/guide/source-control) connection. A run of a pull request is compared
+with the branch it merges into, so every push reports the whole pull request: the one its CI names, else the one
+open on its branch, so a push-triggered workflow reads its pull request too. Any other run is compared with the
+commit of the last passing run. A public repository is read without a token, so
 its uncovered changes and their gaps appear in Piwi, though nothing is posted; a private one needs a
 [token](/guide/source-control#set-the-token). With no diff, nothing appears.
 
@@ -66,7 +68,7 @@ Changed files no test reached, in this run or the last 30 runs. Observed reach, 
 
 **PROJ-418**
 - `server/api/orders/[id].patch.ts` · changed (+41 −3) · 0 tests in 30 runs
-  → *a scenario that exercises [id].patch.ts* · draft
+  → [open its gap](https://piwi.example.com/projects/4?tab=coverage&gap=31): **Accept** copies a draft test
 ```
 
 When the head commit has [combined coverage](/features/combined-coverage), the section also counts the change's lines
@@ -83,6 +85,11 @@ visiting a file is not a test running the change.
 The section ends with what it did not count: *Not counted: 2 files Piwi cannot observe, 1 file outside the coverage
 scope.*
 
+Three more detectors read the whole pull request at each run: an error status a route's handler gains that no run
+answered with, a control a page gains, and a title no test's words match ([the detectors](/reference/gap-detectors#detectors)).
+Their gaps carry the pull request's number, close when a later run no longer raises them, and the section counts them
+with a link to the pull request's gaps, where the change-coverage status leads too.
+
 <figure>
   <img src="/screenshots/uncovered-changes.png" alt="The Uncovered changes section of a pull-request comment">
   <figcaption>Patch coverage, the changed files no test reaches, and the changed lines no suite ran.</figcaption>
@@ -93,7 +100,8 @@ comment again a few seconds later; a later push's comment is never overwritten b
 
 When commit statuses are on too, a second status joins the run's own: `piwi/tests/change-coverage` with the default
 status context, described as *3 of 7 changed files no test reached*, with the patch coverage when there is one. It is
-always **success**, so it informs a reviewer without blocking the merge.
+always **success**, so it informs a reviewer without blocking the merge, and it leads to the pull request's gaps on the
+Coverage tab.
 
 The files no test reached are the Test Map's part: they are left out while the *changed, unreached* detector is
 [muted](/features/scenario-gaps#triage) on the project, or where the Test Map is declined. The changed lines are
@@ -115,6 +123,7 @@ Two flags of [`piwi gate`](/guide/ci#blocking-a-merge) read the same rule, one p
   none of them (the line form). Run it after the unit-test jobs uploaded their reports.
 
 Both are **warn-only**: they never change the verdict or the exit code, because the numbers inform rather than prove.
+The first names up to five of the files, and a stored evaluation keeps its warnings.
 Either warns too when the run has no source control diff to count. Without them, the gate ignores uncovered changes.
 
 ## Limits

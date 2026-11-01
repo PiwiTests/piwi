@@ -93,6 +93,7 @@ import {
   exportCommitCoverage,
   getCoverageSummary,
   getCoverageTree,
+  getGapCode,
   recountProjectCoverage,
   invalidateCommitCoverage,
   parseCoverageExportFormat,
@@ -236,6 +237,7 @@ import {
 } from '#shared/handlers/scenario-gaps';
 import { getFeatureGraph, getFeatureMap, getFileTestMap, MAX_GRAPH_DEPTH } from '~~/server/utils/feature-graph';
 import { loadDetectorPrecision } from '#shared/handlers/detector-precision';
+import { parseGapIds } from '#shared/gap-ids';
 import { getMapHealth } from '#shared/handlers/map-health';
 import { parseRouteNodeKey } from '#shared/graph';
 import { ingestProjectManifest } from '~~/server/utils/surface-manifest';
@@ -2872,7 +2874,9 @@ const routes: RouteEntry[] = [
     permission: 'triage:write',
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      const gaps = await computeScenarioGaps(await getDemoDb(), +m[1]!);
+      const gaps = await computeScenarioGaps(await getDemoDb(), +m[1]!, {
+        readSource: async (path, blob) => (await getDemoSourceAtBlob(+m[1]!, path, blob))?.content ?? null,
+      });
       return { success: true, runsProcessed: 0, gapsUpserted: gaps.upserted, gapsClosed: gaps.closed };
     },
   },
@@ -2980,6 +2984,20 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/gaps\/code$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const ids = parseGapIds(q?.get('ids'));
+      if ('error' in ids) throw demoHttpError(400, ids.error);
+      const parsed = parseCoverageSummaryQuery(q?.get('commit'), q?.get('branch'), undefined);
+      if ('error' in parsed) throw demoHttpError(400, parsed.error);
+      const code = await getGapCode(await getDemoDb(), +m[1]!, ids, parsed);
+      if (!code) throw demoHttpError(404, 'No coverage for this commit');
+      return code;
+    },
+  },
+  {
+    method: 'GET',
     pattern: /^\/api\/projects\/(\d+)\/gaps\/precision$/,
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
@@ -3057,6 +3075,8 @@ const routes: RouteEntry[] = [
       };
       return {
         items: await listScenarioGaps(await getDemoDb(), +m[1]!, {
+          gapId: num(query?.get('gap')),
+          key: query?.get('key') ?? undefined,
           kind: query?.get('kind') ?? undefined,
           class: query?.get('class') ?? undefined,
           detector: query?.get('detector') ?? undefined,

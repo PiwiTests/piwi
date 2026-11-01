@@ -55,7 +55,9 @@ lists them, and the owner is the one of the spec file whose tests visit the page
 CODEOWNERS). It needs the [capture fixtures](/guide/capture-fixtures), which record the page each locator ran on.
 
 Until a test names it, an open report is also an **escaped defect** on the [Test Map](./scenario-gaps): one blind spot
-per page with open reports, ranked like any gap.
+per page with open reports, ranked like any gap. A report closed while no test names it becomes a gap of its own,
+*fixed without a regression test*, and every report of the last 180 days raises the escape history of the gaps on its
+page ([exposure](/reference/gap-detectors#exposure)).
 
 ## The failing test
 

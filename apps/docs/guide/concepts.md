@@ -318,9 +318,10 @@ Two answers to "what do the tests miss", each with its own number. **Coverage** 
 functions ran, as a ratio over the lines that can run; the lines no test or suite ran are **lines not run**. The
 **Test Map** measures the application: which routes, pages and controls the tests reach and would notice breaking;
 what they miss becomes a [scenario gap](#scenario-gap), a test to write, ranked by exposure and never a percentage.
-They meet at the file: a file's [coverage page](/features/combined-coverage) lists the file's nodes in the Test Map
-with their open gaps and opens the [Gaps tab](/features/scenario-gaps) on one, and the Gaps tab's graph links a file or
-a route handler to its coverage. Neither fails a build.
+They meet on a project's [Coverage tab](/features/scenario-gaps#the-coverage-tab), whose views hold the gaps, the map
+and the code, and at the file: a file's [coverage page](/features/code-reach#which-tests-run-a-file) lists the file's
+nodes in the Test Map with their open gaps and opens the Map view on one, and the Map view's graph links a file or a
+route handler to its coverage. Neither fails a build.
 
 ### Uncovered change
 
@@ -425,7 +426,7 @@ is not in it. Off by default: turn it on with `capturePageInventory`.
 
 How complete a project's Test Map is, per input: the page inventory, the pages of locator calls, route handlers,
 probes, the declared surface, change history and the function catalog, each against what it could hold, with the
-detectors it wakes. A detector stays silent without its input, so a quiet Gaps tab can mean a map that cannot see; the
+detectors it wakes. A detector stays silent without its input, so a quiet Gaps view can mean a map that cannot see; the
 panel under the gap list names the step behind each input that is short. See
 [Scenario gaps & the Test Map](/features/scenario-gaps#map-health).
 
