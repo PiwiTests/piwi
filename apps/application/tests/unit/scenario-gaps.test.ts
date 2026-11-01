@@ -104,6 +104,25 @@ describe('detectSurfaceDrift', () => {
     expect(
       gaps.detectSurfaceDrift([{ nodeKind: 'feature', nodeKey: 'Checkout', firstSeenRunId: 830, reachCount: 0 }], 830),
     ).toEqual([]);
+    expect(
+      gaps.detectSurfaceDrift(
+        [{ nodeKind: 'feature', nodeKey: 'Checkout', firstSeenRunId: 812, reachCount: 0, liveGap: true }],
+        830,
+      ),
+    ).toEqual([]);
+  });
+
+  test('a gap the ledger holds stays raised while no test reaches its node, naming the run it appeared in', () => {
+    const node = { nodeKind: 'page', nodeKey: '/billing/plans', firstSeenRunId: 812, reachCount: 0, liveGap: true };
+    const [gap] = gaps.detectSurfaceDrift([node], 830, 800);
+    expect(gap!.key).toBe('page:/billing/plans');
+    expect(gap!.evidence[0]).toBe('Appeared in run #812; no test reaches it yet — observed reach.');
+    expect(gaps.detectSurfaceDrift([{ ...node, firstSeenRunId: null }], 830, 800)[0]!.evidence[0]).toBe(
+      'No test reaches it yet — observed reach.',
+    );
+    // A test reaching the node ends it, and an older node the ledger holds no gap for is never raised.
+    expect(gaps.detectSurfaceDrift([{ ...node, reachCount: 1 }], 830, 800)).toEqual([]);
+    expect(gaps.detectSurfaceDrift([{ ...node, liveGap: false }], 830, 800)).toEqual([]);
   });
 
   test('the run that built the graph first is the baseline, not drift', () => {

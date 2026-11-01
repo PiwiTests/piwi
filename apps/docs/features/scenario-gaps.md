@@ -28,8 +28,8 @@ and page visits of every run.
 ## What a gap is
 
 A **[detector](/guide/concepts#detector)** reads the Test Map and the last 30 runs and reports one kind of gap: a
-route observed only with success statuses, a node exactly one test reaches, a page that appeared in the latest run, a
-declared route nothing requests. [Gap detectors & exposure](/reference/gap-detectors) lists every detector with its
+route observed only with success statuses, a node exactly one test reaches, a new page no test reaches yet, a declared
+route nothing requests. [Gap detectors & exposure](/reference/gap-detectors) lists every detector with its
 evidence. Each gap names its detector and its **[class](/guide/concepts#gap-class)**:
 
 | Class | Meaning | Example |
@@ -94,7 +94,8 @@ Every gap takes the same four verbs as an inbox item:
   detector raises it again, and the covering test is recorded as reaching the node.
 
 Gaps persist, so triage survives recomputation: a dismissed gap keeps its verdict, and a gap **closes itself** when
-the detector no longer finds it, for example once its node gains a trusted test, so "closed this month" is real. A
+the detector no longer finds it, for example once its node gains a trusted test, so "closed this month" is real. A gap
+on new surface stays open past the run that found it, until any test reaches the node or the node leaves the graph. A
 closed gap that comes back reopens, unless it was closed with **Covered by**. Home lists the gaps accepted more than a week ago whose test was never written.
 
 <figure>
