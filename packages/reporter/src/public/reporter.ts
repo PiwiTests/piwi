@@ -34,7 +34,7 @@ import { getReporterVersion } from '../internal/support/reporter-version.js';
 import { collectSourceFrames, extractFailingLine, readSourceSnippet } from '../internal/support/source-snippet.js';
 import { detectCi, resolveRunLabel } from '../internal/support/ci.js';
 import { workerIndexOf } from '../internal/support/worker-index.js';
-import { detectCliFileFilters, detectCliNarrowingFlags } from '../internal/support/cli-filters.js';
+import { detectCliFileFilters, detectCliGrep, detectCliNarrowingFlags } from '../internal/support/cli-filters.js';
 import { readSelectionStamp } from '../internal/support/selection-env.js';
 import { resolveShardInfo } from '../internal/support/shard-info.js';
 import { isListMode } from '../internal/support/run-mode.js';
@@ -338,11 +338,13 @@ export class PiwiDashboardReporter {
     const rawConfig = config as any;
     const grepRe = rawConfig.grep instanceof RegExp ? rawConfig.grep : undefined;
     const grepInvertRe = rawConfig.grepInvert instanceof RegExp ? rawConfig.grepInvert : undefined;
-    // Playwright's default grep is /.*/ (matches everything) — only a non-default pattern is a real filter.
-    const grep = grepRe && grepRe.source !== '.*' ? grepRe.source : undefined;
-    const grepInvert = grepInvertRe?.source;
-    // File/path filters come from the CLI invocation, not config.grep, and so do
-    // `--last-failed` and `--only-changed`, which run a subset chosen from history or a diff.
+    // Playwright's default grep is /.*/ (matches everything): only another pattern is a real filter. A
+    // pattern given on the command line reaches the runner, not config.grep, so it is read from there too.
+    const cliGrep = detectCliGrep();
+    const grep = (grepRe && grepRe.source !== '.*' ? grepRe.source : undefined) ?? cliGrep.grep;
+    const grepInvert = grepInvertRe?.source ?? cliGrep.grepInvert;
+    // File/path filters come from the CLI invocation, not config.grep, and so do the flags that run
+    // a subset chosen from history, a diff or a list (`--last-failed`, `--only-changed`, `--test-list`).
     const fileFilters = detectCliFileFilters();
     const narrowed = detectCliNarrowingFlags().length > 0;
     // A run launched by `piwi run <key>` carries the resolved selection's

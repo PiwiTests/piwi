@@ -8,7 +8,7 @@ import { resolveRunLabel } from '../src/internal/support/ci.js';
 import { readSourceSnippet, collectSourceFrames } from '../src/internal/support/source-snippet.js';
 import { createLimiter } from '../src/internal/support/limiter.js';
 import { workerIndexOf } from '../src/internal/support/worker-index.js';
-import { detectCliFileFilters, detectCliNarrowingFlags } from '../src/internal/support/cli-filters.js';
+import { detectCliFileFilters, detectCliGrep, detectCliNarrowingFlags } from '../src/internal/support/cli-filters.js';
 
 const CI_KEYS = [
   'GITHUB_ACTIONS',
@@ -88,9 +88,28 @@ describe('detectCliFileFilters', () => {
   it('does not mistake value-taking flag values for files', () => {
     expect(detectCliFileFilters([...N, 'test', '-g', '@smoke'])).toEqual([]);
     expect(detectCliFileFilters([...N, 'test', '--grep', '@smoke', 'tests/a.spec.ts'])).toEqual(['tests/a.spec.ts']);
-    expect(detectCliFileFilters([...N, 'test', '-j', '4', '--project', 'chromium', 'a.spec.ts'])).toEqual([
+    expect(detectCliFileFilters([...N, 'test', '-j', '4', '--project', 'chromium', '--headed', 'a.spec.ts'])).toEqual([
       'a.spec.ts',
     ]);
+  });
+  it('reads every value-taking option as Playwright does', () => {
+    for (const args of [
+      ['--only-changed', 'origin/main'],
+      ['--last-failed', '--last-failed-file', 'ci/last-run.json'],
+      ['--test-list', 'smoke.txt'],
+      ['--tsconfig', 'tsconfig.e2e.json'],
+      ['--add-reporter', 'html'],
+      ['--update-snapshots', 'all'],
+      ['-u', 'missing'],
+      ['--shuffle', '42'],
+      ['--project', 'chromium', 'firefox'],
+    ]) {
+      expect(detectCliFileFilters([...N, 'test', ...args]), args.join(' ')).toEqual([]);
+    }
+    expect(detectCliFileFilters([...N, 'test', '--only-changed', '--headed', 'a.spec.ts'])).toEqual(['a.spec.ts']);
+  });
+  it('reads no filter from merge-reports, whose arguments name report folders', () => {
+    expect(detectCliFileFilters([...N, 'merge-reports', '--reporter', '@piwitests/reporter', './blobs'])).toEqual([]);
   });
   it('handles --flag=value forms (no extra token consumed)', () => {
     expect(detectCliFileFilters([...N, 'test', '--project=chromium', 'a.spec.ts'])).toEqual(['a.spec.ts']);
@@ -105,6 +124,13 @@ describe('detectCliNarrowingFlags', () => {
   it('returns [] for a full-suite run', () => {
     expect(detectCliNarrowingFlags([...N, 'test', '--workers=4', '--project', 'chromium'])).toEqual([]);
   });
+  it('names --test-list and --test-list-invert, whose file chooses the tests', () => {
+    expect(detectCliNarrowingFlags([...N, 'test', '--test-list', 'smoke.txt'])).toEqual(['test-list']);
+    expect(detectCliNarrowingFlags([...N, 'test', '--test-list-invert=quarantine.txt'])).toEqual(['test-list-invert']);
+  });
+  it('does not read a value as a flag', () => {
+    expect(detectCliNarrowingFlags([...N, 'test', '--grep', '--last-failed'])).toEqual([]);
+  });
   it('names --last-failed and --only-changed, with or without a ref', () => {
     expect(detectCliNarrowingFlags([...N, 'test', '--last-failed'])).toEqual(['last-failed']);
     expect(detectCliNarrowingFlags([...N, 'test', '--only-changed=origin/main'])).toEqual(['only-changed']);
@@ -112,6 +138,21 @@ describe('detectCliNarrowingFlags', () => {
       'only-changed',
       'last-failed',
     ]);
+  });
+});
+
+describe('detectCliGrep', () => {
+  const N = ['node', 'playwright'];
+  it('reads the patterns Playwright hands to its runner rather than to config.grep', () => {
+    expect(detectCliGrep([...N, 'test', '--grep', '@smoke'])).toEqual({ grep: '@smoke' });
+    expect(detectCliGrep([...N, 'test', '-g', 'checkout', '-G', '@slow'])).toEqual({
+      grep: 'checkout',
+      grepInvert: '@slow',
+    });
+    expect(detectCliGrep([...N, 'test', '--grep-invert=@flaky'])).toEqual({ grepInvert: '@flaky' });
+  });
+  it('is empty for a full-suite run', () => {
+    expect(detectCliGrep([...N, 'test', '--workers=4', 'a.spec.ts'])).toEqual({});
   });
 });
 
