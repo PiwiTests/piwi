@@ -11,15 +11,17 @@ and the macOS app menu's Quit asks first; the Dock icon brings the hidden window
 notification click opens what it is about, and on macOS 14 and later the main window is not suspended in the background
 (Windows and Linux offer no such policy); the log rotates and the tray shows it; Settings › Storage sets the desktop
 app's retention, and its server runs the retention sweep a few minutes after it starts; what the server serves downloads
-straight to disk, while a file the page builds (a chart image, a workbook) still crosses IPC. Notifications still come
-from the page; the shell reading the server's stream itself stays in step 3. The Rust is unit-tested and the page side
+straight to disk, while a file the page builds (a chart image, a workbook) still crosses IPC. The Rust is unit-tested and the page side
 has Playwright specs with a faked bridge, but the macOS menu, the Dock, the background policy and the notification
 clicks are compile-checked only and still need a pass on macOS and Windows. Step 2 is built: the windows open where they
 were left (`tauri-plugin-window-state`), Cmd/Ctrl +, - and 0 zoom the dashboard (the trace and output windows on Windows
 only), a run that fails unseen asks for attention, the machine does not idle-sleep while a local run goes, and the macOS
 app menu holds Settings, Import, Back and Forward and the Help items. The tray lists the local runs going, each with
-Stop, and Windows and Linux take the menu's keys with Ctrl in the page. Nothing beyond step 2 is built, and nothing here
-is on [`ROADMAP.md`](../ROADMAP.md) yet.
+Stop, and Windows and Linux take the menu's keys with Ctrl in the page. Step 3 is built: a `piwi://open/<page>` link
+opens that page in the app, starting it if needed, and the shell shows the server's notifications from a stream of its
+own (`/api/desktop/notifications`), with the choices the window gives it and an unread count it keeps itself, so they
+no longer depend on the page; registering the scheme with each installer and the links on macOS still need a pass on
+real installs. Nothing beyond step 3 is built, and nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet.
 
 **Summary.** The shell is strong where Piwi is unique: it runs, reproduces and bisects tests in throwaway worktrees,
 hosts Flake Lab, connects MCP clients, opens Playwright archives and bug reports, and shows a run's progress on the
@@ -166,7 +168,7 @@ Tauri 2.12.5, as locked. Versions name the release that added an API.
 | ---------------------------------------------------------------- | -------------- | ----------------------------------------------------------------------- |
 | Notification `on_action` (plugin 2.6, 2.7 locked)                | yes, clicks    | click-to-open, Open and Re-run buttons (Windows: while the toast shows) |
 | `backgroundThrottling` (2.3, macOS 14+)                          | yes            | the hidden window keeps working                                         |
-| `tauri-plugin-deep-link`                                         | no             | `piwi://` links (macOS: the bundle installed in `/Applications` only)   |
+| `tauri-plugin-deep-link`                                         | yes            | `piwi://` links (macOS: the bundle installed in `/Applications` only)   |
 | `tauri-plugin-global-shortcut`, `tauri-plugin-clipboard-manager` | no             | the quick lookup; images copied to the clipboard                        |
 | `tauri-plugin-window-state`, `tauri-plugin-positioner`           | window-state   | remembered windows; the tray popover                                    |
 | `tauri-plugin-fs` `watch`, `tauri-plugin-log` rotation           | no             | watched folders; a log that rotates                                     |

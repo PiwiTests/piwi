@@ -3,11 +3,10 @@ import { test, expect } from './fixtures';
 import { waitForHydration } from './utils';
 
 /**
- * The desktop shell's ambient unread state: the Notification shim (installed
- * by the desktop plugin whenever the IPC bridge exists) shows native
- * notifications and, while the window is hidden or unfocused, bumps
- * `desktop_set_activity`; focusing the window clears it. Driven against the
- * web build with a faked bridge.
+ * The page's side of the desktop shell's notifications: the Notification shim (installed by the desktop plugin
+ * whenever the IPC bridge exists) shows the page's notifications through the shell, which counts the ones shown while
+ * the window is not in front as unread, and hands a click back; the page gives the shell its notification choices,
+ * which the shell applies to the server's notifications. Driven against the web build with a faked bridge.
  */
 
 interface FakeInvocation {
@@ -42,6 +41,7 @@ async function installFakeBridge(page: Page) {
             return null;
           },
         },
+        window: { getCurrentWindow: () => ({ label: 'main' }) },
         event: {
           listen: async (event: string, handler: (event: { payload: unknown }) => void) => {
             listeners.set(event, [...(listeners.get(event) ?? []), handler]);
@@ -53,8 +53,8 @@ async function installFakeBridge(page: Page) {
   });
 }
 
-test.describe('Desktop ambient unread state', () => {
-  test('notifications bump the badge while unfocused and focus clears it', async ({ page }) => {
+test.describe('Desktop notifications from the page', () => {
+  test('a notification the page shows goes to the shell', async ({ page }) => {
     await installFakeBridge(page);
     await page.goto('/');
     await waitForHydration(page);
@@ -63,28 +63,17 @@ test.describe('Desktop ambient unread state', () => {
     const permission = await page.evaluate(() => window.Notification.permission);
     expect(permission).toBe('granted');
 
-    // Two notifications while the document reads as hidden.
     await page.evaluate(() => {
-      Object.defineProperty(document, 'hidden', { value: true, configurable: true });
       new Notification('Piwi Dashboard', { body: 'acme-web on main: 3/120 tests failed' });
       new Notification('Piwi Dashboard', { body: 'acme-web: new failure cluster' });
     });
 
-    let invocations = await page.evaluate(() => window.__piwiAmbientInvocations);
+    const invocations = await page.evaluate(() => window.__piwiAmbientInvocations);
     const notifies = invocations.filter((i) => i.cmd === 'desktop_notify');
-    expect(notifies).toHaveLength(2);
-    const activity = invocations.filter((i) => i.cmd === 'desktop_set_activity');
-    expect(activity.map((i) => i.args?.count)).toEqual([1, 2]);
-    expect(activity[0]?.args?.status).toBe('acme-web on main: 3/120 tests failed');
-
-    // Focus clears the badge.
-    await page.evaluate(() => {
-      Object.defineProperty(document, 'hidden', { value: false, configurable: true });
-      window.dispatchEvent(new Event('focus'));
-    });
-    invocations = await page.evaluate(() => window.__piwiAmbientInvocations);
-    const last = invocations.filter((i) => i.cmd === 'desktop_set_activity').at(-1);
-    expect(last?.args?.count).toBe(0);
+    expect(notifies.map((i) => [i.args?.title, i.args?.body])).toEqual([
+      ['Piwi Dashboard', 'acme-web on main: 3/120 tests failed'],
+      ['Piwi Dashboard', 'acme-web: new failure cluster'],
+    ]);
   });
 
   test('a click the shell reports runs the notification’s own click handler', async ({ page }) => {
@@ -112,19 +101,29 @@ test.describe('Desktop ambient unread state', () => {
     expect(clicks.opened).toEqual(['cluster', 'run']);
   });
 
-  test('a notification while focused shows natively but does not bump the badge', async ({ page }) => {
+  test('the shell gets the notification choices, and each change', async ({ page, context, baseURL }) => {
     await installFakeBridge(page);
-    await page.goto('/');
+    await context.addCookies([
+      {
+        name: 'piwi-browser-notify',
+        value: encodeURIComponent(JSON.stringify({ projects: { 3: { events: ['cluster.new'] } } })),
+        url: baseURL!,
+      },
+    ]);
+    await page.addInitScript(() => localStorage.setItem('piwi-diagnosis-notifications', 'false'));
+    await page.goto('/settings/ai');
     await waitForHydration(page);
 
-    await page.evaluate(() => {
-      Object.defineProperty(document, 'hidden', { value: false, configurable: true });
-      Object.defineProperty(document, 'hasFocus', { value: () => true, configurable: true });
-      new Notification('Piwi Dashboard', { body: 'focused — no badge' });
-    });
+    const choices = () =>
+      page.evaluate(() =>
+        window.__piwiAmbientInvocations
+          .filter((i) => i.cmd === 'desktop_set_notification_choices')
+          .map((i) => i.args?.choices),
+      );
+    await expect.poll(choices).toEqual([{ projects: { 3: ['cluster.new'] }, muted: ['diagnosis.completed'] }]);
 
-    const invocations = await page.evaluate(() => window.__piwiAmbientInvocations);
-    expect(invocations.filter((i) => i.cmd === 'desktop_notify')).toHaveLength(1);
-    expect(invocations.filter((i) => i.cmd === 'desktop_set_activity')).toHaveLength(0);
+    // Turning diagnosis notifications back on reaches the shell at once.
+    await page.getByRole('switch', { name: 'Diagnosis notifications' }).click();
+    await expect.poll(async () => (await choices()).at(-1)).toEqual({ projects: { 3: ['cluster.new'] }, muted: [] });
   });
 });

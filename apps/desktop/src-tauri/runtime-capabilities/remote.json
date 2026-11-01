@@ -52,7 +52,7 @@
     "allow-desktop-restart-app",
     "allow-desktop-get-update-settings",
     "allow-desktop-set-update-notification",
-    "allow-desktop-set-activity",
+    "allow-desktop-set-notification-choices",
     "allow-desktop-set-run-progress"
   ]
 }

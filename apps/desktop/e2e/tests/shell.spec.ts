@@ -126,14 +126,17 @@ test('the dashboard can reach the shell IPC commands', async ({ tauriPage: fixtu
   expect(updateSettings.supported).toBe(false);
   expect(updateSettings.pending).toBeNull();
 
-  // The ambient badge/tooltip command is granted and accepts a set + clear.
-  const activity = (await tauriPage.evaluate(`
-    window.__TAURI__.core.invoke('desktop_set_activity', { count: 2, status: 'e2e' })
-      .then(() => window.__TAURI__.core.invoke('desktop_set_activity', { count: 0, status: null }))
+  // The notification choices command is granted and takes the page's choices; a project id that is not one is
+  // dropped rather than refused.
+  const choices = (await tauriPage.evaluate(`
+    window.__TAURI__.core.invoke('desktop_set_notification_choices', {
+      choices: { projects: { 3: ['cluster.new'], 'x/y': ['run.failed'] }, muted: ['diagnosis.completed'] },
+    })
+      .then(() => window.__TAURI__.core.invoke('desktop_set_notification_choices', { choices: { projects: {}, muted: [] } }))
       .then(() => ({ ok: true }))
       .catch((e) => ({ ok: false, error: String((e && e.message) || e) }))
   `)) as { ok: boolean; error?: string };
-  expect(activity.ok, `desktop_set_activity rejected: ${activity.error ?? 'unknown'}`).toBe(true);
+  expect(choices.ok, `desktop_set_notification_choices rejected: ${choices.error ?? 'unknown'}`).toBe(true);
 
   // A run's output opens in a window of its own on the dashboard's run output page, which the dashboard window feeds
   // over a BroadcastChannel: the page says it is ready, then shows the state it is sent (its title becomes the

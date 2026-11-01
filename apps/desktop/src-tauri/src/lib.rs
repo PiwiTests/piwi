@@ -384,26 +384,48 @@ fn refresh_tray_tooltip(app: &tauri::AppHandle) {
     }
 }
 
-/// Ambient unread status while the window is hidden or unfocused: an unread
-/// count on the dock/taskbar badge (where the platform supports one) and the
-/// tray tooltip. Driven by the dashboard, which knows what fired; the shell only
-/// renders. Count 0 clears the unread part (a run's progress, if any, stays).
-#[tauri::command]
-fn desktop_set_activity(app: tauri::AppHandle, count: u32, status: Option<String>) {
+/// Ambient unread status: an unread count on the dock/taskbar badge (where the
+/// platform supports one) and the tray tooltip, with the first line of the
+/// latest notification. Every notification shown while the dashboard window is
+/// not in front counts (`show_notification`); focusing the window clears it.
+/// Badge and tray belong on the main thread on every platform.
+fn update_unread(app: &AppHandle, update: impl FnOnce(&mut TrayStatusInner) + Send + 'static) {
     let handle = app.clone();
-    // Badge and tray mutations belong on the main thread on every platform.
     let _ = app.run_on_main_thread(move || {
+        let Some(state) = handle.try_state::<TrayStatus>() else {
+            return;
+        };
+        let count = {
+            let mut inner = state.0.lock().unwrap();
+            let before = (inner.unread, inner.activity.clone());
+            update(&mut inner);
+            if (inner.unread, inner.activity.clone()) == before {
+                return;
+            }
+            inner.unread
+        };
         if let Some(w) = handle.get_webview_window("main") {
             // Unsupported platforms (Windows) reject the call — that's fine,
             // the tray tooltip still carries the count.
             let _ = w.set_badge_count(if count > 0 { Some(count as i64) } else { None });
         }
-        if let Some(state) = handle.try_state::<TrayStatus>() {
-            let mut inner = state.0.lock().unwrap();
-            inner.unread = count;
-            inner.activity = status.filter(|s| !s.is_empty());
-        }
         refresh_tray_tooltip(&handle);
+    });
+}
+
+/// Count one more unread notification, `status` its first line.
+fn note_unread(app: &AppHandle, status: String) {
+    update_unread(app, move |inner| {
+        inner.unread += 1;
+        inner.activity = Some(status).filter(|s| !s.is_empty());
+    });
+}
+
+/// The user is looking: no unread notification left.
+fn clear_unread(app: &AppHandle) {
+    update_unread(app, |inner| {
+        inner.unread = 0;
+        inner.activity = None;
     });
 }
 
@@ -1765,21 +1787,49 @@ fn desktop_close_output_window(app: tauri::AppHandle, name: String) -> Result<()
 /// notification the user clicked (see `desktop_notify`).
 const NOTIFICATION_CLICK_EVENT: &str = "piwi:notification-click";
 
-/// Show a native OS notification (the webview's own Notification API is
-/// unavailable / permission-denied there). `id` is what a click on it reports
-/// back to the page (`NOTIFICATION_CLICK_EVENT`).
-#[tauri::command]
-fn desktop_notify(app: tauri::AppHandle, title: String, body: String, id: Option<i32>) -> Result<(), String> {
+/// The key of a notification's `extra` data that holds the dashboard page a
+/// click on it opens (`show_notification`).
+const NOTIFICATION_PAGE_KEY: &str = "piwiPage";
+
+/// Whether the dashboard window is where the user looks: shown, not minimized,
+/// and focused. The page tells about what happens while it is; a notification
+/// then shows without counting as unread.
+fn main_window_in_front(app: &AppHandle) -> bool {
+    app.get_webview_window("main").is_some_and(|w| {
+        w.is_visible().unwrap_or(false) && !w.is_minimized().unwrap_or(false) && w.is_focused().unwrap_or(false)
+    })
+}
+
+/// Show a native OS notification. A click on it (`report_notification_clicks`)
+/// opens `page`, or hands `id` back to the page that showed it. While the
+/// dashboard window is not in front, it counts as unread.
+fn show_notification(app: &AppHandle, title: &str, body: &str, id: Option<i32>, page: Option<&str>) -> Result<(), String> {
     let mut builder = app.notification().builder().title(title).body(body);
     if let Some(id) = id {
         builder = builder.id(id);
     }
-    builder.show().map_err(|e| e.to_string())
+    if let Some(page) = page {
+        builder = builder.extra(NOTIFICATION_PAGE_KEY, page);
+    }
+    builder.show().map_err(|e| e.to_string())?;
+    if !main_window_in_front(app) {
+        let status = body.lines().next().filter(|line| !line.is_empty()).unwrap_or(title);
+        note_unread(app, status.to_string());
+    }
+    Ok(())
 }
 
-/// A click on a notification (`tap`) brings the dashboard window forward and
-/// hands the notification's id to the page, which opens what it is about.
-/// Registered before the first notification: the plugin reports clicks only
+/// Show a native OS notification for the page (the webview's own Notification
+/// API is unavailable / permission-denied there). `id` is what a click on it
+/// reports back to the page (`NOTIFICATION_CLICK_EVENT`).
+#[tauri::command]
+fn desktop_notify(app: tauri::AppHandle, title: String, body: String, id: Option<i32>) -> Result<(), String> {
+    show_notification(&app, &title, &body, id, None)
+}
+
+/// A click on a notification (`tap`) opens the page it is about, or brings the
+/// dashboard window forward and hands the notification's id to the page that
+/// showed it. Registered before the first notification: the plugin reports clicks only
 /// on notifications shown once a handler exists. Windows and Linux only: on
 /// macOS the plugin then holds a thread and a main-loop timer per notification
 /// until it leaves Notification Center, and nothing can remove it from there.
@@ -1790,9 +1840,18 @@ fn report_notification_clicks(app: &AppHandle) {
         if performed.action_id() != "tap" {
             return;
         }
-        let id = performed.notification().map(|n| n.id());
+        let notification = performed.notification();
+        let id = notification.map(|n| n.id());
+        let page = notification
+            .and_then(|n| n.extra().get(NOTIFICATION_PAGE_KEY))
+            .and_then(|page| page.as_str())
+            .map(str::to_string);
         let inner = handle.clone();
         let _ = handle.run_on_main_thread(move || {
+            if let Some(page) = page {
+                show_page(&inner, &page);
+                return;
+            }
             if let Some(w) = inner.get_webview_window("main") {
                 bring_to_front(&w);
             }
@@ -1800,6 +1859,201 @@ fn report_notification_clicks(app: &AppHandle) {
                 let _ = inner.emit_to("main", NOTIFICATION_CLICK_EVENT, id);
             }
         });
+    });
+}
+
+// ── The server's notifications, which the shell shows itself ─────────────────
+
+/// The store key of the dashboard's notification choices
+/// (`desktop_set_notification_choices`).
+const NOTIFICATION_CHOICES_KEY: &str = "notificationChoices";
+
+/// Which of the server's notifications to show, as the dashboard window chose
+/// them: the events each project's bell picked, by project id, and the events
+/// off for every project. A project with no entry notifies on the events the
+/// server marks `defaultOn`.
+#[derive(Debug, Default, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
+struct NotificationChoices {
+    #[serde(default)]
+    projects: HashMap<String, Vec<String>>,
+    #[serde(default)]
+    muted: Vec<String>,
+}
+
+impl NotificationChoices {
+    /// These choices with only the entries of real project ids (digits).
+    fn of_projects(mut self) -> Self {
+        self.projects.retain(|id, _| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()));
+        self
+    }
+}
+
+#[derive(Default)]
+struct NotificationChoicesState(Mutex<NotificationChoices>);
+
+/// One notification the server renders for the shell (`/api/desktop/notifications`).
+#[derive(Debug, PartialEq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ServerNotification {
+    #[serde(rename = "type")]
+    kind: String,
+    project_id: Option<u64>,
+    title: String,
+    body: String,
+    path: Option<String>,
+    #[serde(default)]
+    default_on: bool,
+}
+
+/// Whether `choices` show `notification`.
+fn notification_wanted(choices: &NotificationChoices, notification: &ServerNotification) -> bool {
+    if choices.muted.contains(&notification.kind) {
+        return false;
+    }
+    let Some(project_id) = notification.project_id else {
+        return true;
+    };
+    match choices.projects.get(&project_id.to_string()) {
+        Some(events) => events.contains(&notification.kind),
+        None => notification.default_on,
+    }
+}
+
+/// Keep the dashboard's notification choices, for this run and the next start.
+#[tauri::command]
+fn desktop_set_notification_choices(app: tauri::AppHandle, choices: NotificationChoices) {
+    let choices = choices.of_projects();
+    let Some(state) = app.try_state::<NotificationChoicesState>() else {
+        return;
+    };
+    {
+        let mut current = state.0.lock().unwrap();
+        if *current == choices {
+            return;
+        }
+        *current = choices.clone();
+    }
+    if let (Ok(store), Ok(value)) = (app.store(STORE_FILE), serde_json::to_value(&choices)) {
+        store.set(NOTIFICATION_CHOICES_KEY, value);
+        let _ = store.save();
+    }
+}
+
+/// The notification choices kept from the last time the dashboard gave them.
+fn kept_notification_choices(app: &AppHandle) -> NotificationChoices {
+    app.store(STORE_FILE)
+        .ok()
+        .and_then(|store| store.get(NOTIFICATION_CHOICES_KEY))
+        .and_then(|value| serde_json::from_value::<NotificationChoices>(value).ok())
+        .map(NotificationChoices::of_projects)
+        .unwrap_or_default()
+}
+
+/// Show a notification the server sent, when the choices want it and the
+/// dashboard window is not in front: the page itself tells what happens
+/// while the user looks at it.
+fn show_server_notification(app: &AppHandle, notification: ServerNotification) {
+    let wanted = app
+        .try_state::<NotificationChoicesState>()
+        .map_or(true, |choices| notification_wanted(&choices.0.lock().unwrap(), &notification));
+    if !wanted || main_window_in_front(app) {
+        return;
+    }
+    let _ = show_notification(app, &notification.title, &notification.body, None, notification.path.as_deref());
+}
+
+/// How long the notification stream may stay silent before the shell connects
+/// again: the server sends a heartbeat every 15 seconds.
+const NOTIFICATION_STREAM_IDLE: Duration = Duration::from_secs(60);
+
+/// The pauses before the shell connects again to a stream that ended or never
+/// answered: the first, then doubled up to the last.
+const NOTIFICATION_RETRY_FIRST: Duration = Duration::from_secs(2);
+const NOTIFICATION_RETRY_LAST: Duration = Duration::from_secs(60);
+
+/// Call `on_data` with the data of each event of a `text/event-stream`, until
+/// it ends. Comment lines (the heartbeats) and the other fields are skipped.
+fn read_event_stream(reader: impl std::io::BufRead, mut on_data: impl FnMut(&str)) -> std::io::Result<()> {
+    let mut data: Vec<String> = Vec::new();
+    for line in reader.lines() {
+        let line = line?;
+        let line = line.strip_suffix('\r').unwrap_or(&line);
+        if line.is_empty() {
+            if !data.is_empty() {
+                on_data(&data.join("\n"));
+                data.clear();
+            }
+        } else if let Some(value) = line.strip_prefix("data:") {
+            data.push(value.strip_prefix(' ').unwrap_or(value).to_string());
+        }
+    }
+    Ok(())
+}
+
+/// Follow the server's notification stream on `port` with `token` until it
+/// ends, showing each notification (`show_server_notification`). `Ok` once the
+/// stream answered and then ended.
+fn follow_notification_stream(app: &AppHandle, port: u16, token: &str) -> Result<(), String> {
+    use std::io::{BufRead, Write};
+    let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).map_err(|e| e.to_string())?;
+    let _ = stream.set_read_timeout(Some(NOTIFICATION_STREAM_IDLE));
+    let request = format!(
+        "GET /api/desktop/notifications HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\nx-piwi-token: {token}\r\n\
+         Accept: text/event-stream\r\nConnection: close\r\n\r\n"
+    );
+    stream.write_all(request.as_bytes()).map_err(|e| e.to_string())?;
+    let mut reader = std::io::BufReader::new(stream);
+    let mut status = String::new();
+    reader.read_line(&mut status).map_err(|e| e.to_string())?;
+    if !status.contains(" 200 ") {
+        return Err(format!("the notification stream answered {}", status.trim()));
+    }
+    // The head ends at the first empty line; HTTP/1.0 sends the body as is.
+    loop {
+        let mut header = String::new();
+        if reader.read_line(&mut header).map_err(|e| e.to_string())? == 0 || header.trim().is_empty() {
+            break;
+        }
+    }
+    read_event_stream(reader, |data| match serde_json::from_str::<ServerNotification>(data) {
+        Ok(notification) => show_server_notification(app, notification),
+        Err(e) => {
+            if let Some(log) = app.try_state::<LogFile>() {
+                append_log(&log.0, &format!("unreadable notification from the server: {e}"));
+            }
+        }
+    })
+    .map_err(|e| e.to_string())
+}
+
+/// Show the server's notifications for as long as the app runs, whether or
+/// not the dashboard page is loaded: the stream is followed again whenever it
+/// ends, once the server answers its readiness probe (`health_ok`), so a
+/// server restart loses only what happened while it was down.
+fn follow_notifications(app: AppHandle, port: u16, token: String, nonce: String, shutting_down: Arc<AtomicBool>) {
+    std::thread::spawn(move || {
+        let mut retry = NOTIFICATION_RETRY_FIRST;
+        let mut last_error: Option<String> = None;
+        while !shutting_down.load(Ordering::SeqCst) {
+            if health_ok(port, &nonce) {
+                match follow_notification_stream(&app, port, &token) {
+                    Ok(()) => {
+                        retry = NOTIFICATION_RETRY_FIRST;
+                        last_error = None;
+                    }
+                    Err(e) => {
+                        if last_error.as_deref() != Some(e.as_str()) {
+                            if let Some(log) = app.try_state::<LogFile>() {
+                                append_log(&log.0, &format!("notification stream: {e}"));
+                            }
+                            last_error = Some(e);
+                        }
+                    }
+                }
+            }
+            std::thread::sleep(retry);
+            retry = (retry * 2).min(NOTIFICATION_RETRY_LAST);
+        }
     });
 }
 
@@ -2487,7 +2741,7 @@ pub fn run() {
             desktop_restart_app,
             desktop_get_update_settings,
             desktop_set_update_notification,
-            desktop_set_activity,
+            desktop_set_notification_choices,
             desktop_set_run_progress
         ])
         .manage(ServerProcess::default())
@@ -2543,6 +2797,7 @@ pub fn run() {
             app.manage(DataDir(data_dir.clone()));
             app.manage(mcp_clients::ServerInfo { port, token: token.clone() });
             app.manage(LaunchNonce(launch_nonce.clone()));
+            app.manage(NotificationChoicesState(Mutex::new(kept_notification_choices(app.handle()))));
 
             // MCP client configs written on earlier launches embed the URL and
             // token — bring any that drifted (a different port this launch)
@@ -2678,6 +2933,8 @@ pub fn run() {
                     }
                     return;
                 }
+                // The server's notifications show from now on, page or no page.
+                follow_notifications(nav_handle.clone(), port, token.clone(), launch_nonce.clone(), quitting.clone());
                 // A `piwi://` link that launched the app, or came while it started, opens its page.
                 let page = nav_handle.try_state::<LinkedPage>().and_then(|linked| linked.take_as_dashboard_shows());
                 let bootstrap_url = bootstrap_url(port, &token, page.as_deref());
@@ -2865,10 +3122,12 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             // Seen: end the attention a failed run asked for (`desktop_set_run_progress`),
-            // which Linux's urgency hint keeps until it is withdrawn.
+            // which Linux's urgency hint keeps until it is withdrawn,
+            // and the unread notifications.
             if let WindowEvent::Focused(true) = event {
                 if window.label() == "main" {
                     let _ = window.request_user_attention(None);
+                    clear_unread(window.app_handle());
                 }
             }
             // The output windows close with the dashboard window, and the
@@ -2951,12 +3210,77 @@ mod tests {
         AppMenuAction, AwakeChange,
         DOCS_URL, NEW_ISSUE_URL,
         bootstrap_url, link_page, LinkedPage,
+        notification_wanted, read_event_stream, NotificationChoices, ServerNotification,
         parse_retention_env, rotated_log_path, splash_status_script, stream_download, valid_retention_days,
         status_dot_color, valid_port, write_new_download, BAD_PORTS, DEFAULT_PORT,
         INSTALLER_CHOICES_FILE, MIN_PORT, SERVER_PORT_KEY, STORE_FILE,
     };
     use std::fs;
     use tauri::window::ProgressBarStatus;
+
+    fn server_notification(kind: &str, project_id: Option<u64>, default_on: bool) -> ServerNotification {
+        ServerNotification {
+            kind: kind.into(),
+            project_id,
+            title: "Piwi Dashboard".into(),
+            body: "acme-web: 3/120 tests failed".into(),
+            path: Some("/test-runs/146".into()),
+            default_on,
+        }
+    }
+
+    #[test]
+    fn the_choices_pick_which_server_notifications_show() {
+        let choices = NotificationChoices {
+            projects: [("3".to_string(), vec!["cluster.new".to_string()]), ("4".to_string(), vec![])].into(),
+            muted: vec!["diagnosis.completed".into()],
+        };
+        // A project's bell picks its events, none at all included.
+        assert!(notification_wanted(&choices, &server_notification("cluster.new", Some(3), false)));
+        assert!(!notification_wanted(&choices, &server_notification("run.failed", Some(3), true)));
+        assert!(!notification_wanted(&choices, &server_notification("run.failed", Some(4), true)));
+        // A project nobody chose events for follows the server's defaults.
+        assert!(notification_wanted(&choices, &server_notification("run.failed", Some(5), true)));
+        assert!(!notification_wanted(&choices, &server_notification("cluster.new", Some(5), false)));
+        // An event about no one project shows; a muted one never does.
+        assert!(notification_wanted(&choices, &server_notification("report.ready", None, false)));
+        assert!(!notification_wanted(&choices, &server_notification("diagnosis.completed", Some(3), false)));
+        // With no choices yet, the defaults.
+        let none = NotificationChoices::default();
+        assert!(notification_wanted(&none, &server_notification("run.failed", Some(3), true)));
+        assert!(!notification_wanted(&none, &server_notification("cluster.new", Some(3), false)));
+    }
+
+    #[test]
+    fn the_choices_keep_only_project_ids() {
+        let choices: NotificationChoices = serde_json::from_value(serde_json::json!({
+            "projects": { "3": ["run.failed"], "../x": ["run.failed"], "": [] },
+        }))
+        .unwrap();
+        let kept = choices.of_projects();
+        assert_eq!(kept.projects.keys().collect::<Vec<_>>(), vec!["3"]);
+        assert!(kept.muted.is_empty());
+    }
+
+    #[test]
+    fn a_server_notification_reads_as_the_server_sends_it() {
+        let sent = r#"{"type":"run.failed","projectId":3,"title":"Piwi Dashboard","body":"acme-web: 3/120 tests failed","path":"/test-runs/146","defaultOn":true}"#;
+        assert_eq!(
+            serde_json::from_str::<ServerNotification>(sent).unwrap(),
+            server_notification("run.failed", Some(3), true)
+        );
+        let about_no_project = r#"{"type":"report.ready","projectId":null,"title":"Piwi Dashboard","body":"Your quality report is ready","path":null,"defaultOn":false}"#;
+        let read = serde_json::from_str::<ServerNotification>(about_no_project).unwrap();
+        assert_eq!((read.project_id, read.path), (None, None));
+    }
+
+    #[test]
+    fn the_event_stream_yields_each_event_s_data() {
+        let stream = ": heartbeat\n\ndata: {\"a\":1}\n\nevent: x\r\ndata:two\r\ndata: lines\r\n\r\n: heartbeat\n\ndata: cut short";
+        let mut events = Vec::new();
+        read_event_stream(std::io::Cursor::new(stream), |data| events.push(data.to_string())).unwrap();
+        assert_eq!(events, vec!["{\"a\":1}", "two\nlines"]);
+    }
 
     #[test]
     fn a_link_opens_the_page_after_open() {

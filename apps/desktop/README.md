@@ -79,13 +79,23 @@ channel, so a per-user install pulls a per-user update.
    clients' config files (`src-tauri/src/mcp_clients.rs`): strict-JSON merge
    of one key with a backup next to the file, and a startup pass that rewrites
    entries whose URL/token drifted after a port change.
-7. Native notifications shown while the window is hidden bump an unread badge
-   on the dock icon and the tray tooltip (`desktop_set_activity`), cleared
-   when the window regains focus. The page creates them (`desktop_notify`,
-   with an id), so the main window is not suspended in the background
-   (`backgroundThrottling: "disabled"`, which macOS 14 and later honor; the
-   Windows and Linux web views have no such policy). On Windows and Linux a
-   click on one brings the window forward and the shell hands the id back
+7. The shell shows the server's notifications itself, page or no page: once
+   the server is ready it follows `GET /api/desktop/notifications`
+   (`follow_notifications`), whose messages the server renders from its
+   notification events (`server/utils/desktop-notifications.ts`), and connects
+   again whenever the stream ends. It shows one when the dashboard window is
+   not in front and the window's choices want it: the window gives the shell
+   each project's bell events (the `piwi-browser-notify` cookie) and the
+   events off everywhere (`desktop_set_notification_choices`), which the shell
+   keeps in `settings.json` for the next start; a project with no choice
+   notifies on the events the server marks `defaultOn`. The page's own
+   notifications go through `desktop_notify`. Each one shown while the window
+   is not in front bumps an unread badge on the dock icon and the tray
+   tooltip, which focusing the window clears. The main window is not
+   suspended in the background (`backgroundThrottling: "disabled"`, which
+   macOS 14 and later honor; the Windows and Linux web views have no such
+   policy). On Windows and Linux a click on a notification brings the window
+   forward and opens its page, or, for one the page showed, hands its id back
    (`piwi:notification-click`), which runs the `onclick` the page set; on
    Windows a click counts only while the toast is on screen. On macOS clicks
    are not reported: the notification plugin would hold a thread and a

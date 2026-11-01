@@ -100,7 +100,7 @@ async function installFakeBridge(page: Page, options: FakeBridgeOptions) {
                 return `output-${String(args?.name)}_0`;
               case 'desktop_close_output_window':
               case 'desktop_notify':
-              case 'desktop_set_activity':
+              case 'desktop_set_notification_choices':
                 return null;
               default:
                 throw new Error(`unexpected command: ${cmd}`);

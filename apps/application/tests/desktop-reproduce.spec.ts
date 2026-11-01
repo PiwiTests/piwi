@@ -84,7 +84,7 @@ async function installFakeBridge(page: Page, options: FakeBridgeOptions = {}) {
                 return ++state.lastRunId;
               case 'desktop_stop_local_tests':
               case 'desktop_notify':
-              case 'desktop_set_activity':
+              case 'desktop_set_notification_choices':
                 return null;
               default:
                 throw new Error(`unexpected command: ${cmd}`);
