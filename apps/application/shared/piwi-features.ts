@@ -464,6 +464,114 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
     ],
   },
   {
+    title: 'Write and debug tests',
+    intro:
+      'Record a test from the editor or the browser, run it, stop it at a breakpoint and write the fix where it stopped: the loop from a new spec to a passing one.',
+    features: [
+      {
+        title: 'Write, run and fix a test',
+        summary:
+          'The loop from a new spec to a passing test: which tool records it, runs it, stops it and writes the fix at the stop.',
+        needs: ['fixtures'],
+        where: 'Your editor; Piwi Picker; the desktop app',
+        doc: 'features/write-run-fix',
+      },
+      {
+        title: 'Record tests from the editor',
+        summary:
+          "A browser your project's own Playwright opens from VS Code or a JetBrains IDE, and each step you take there written at the cursor as you go, with verified locators and calls to your page objects.",
+        needs: [],
+        where: 'Piwi: Record here; Tools → Piwi → Record Here in a JetBrains IDE',
+        doc: 'features/editor-recording',
+      },
+      {
+        title: 'Recorded code',
+        summary:
+          "What a recording from the editor writes: locators verified on the page, a wait for each new page, the imports it needs, calls to your page objects and passwords read from the environment, shaped for the whole repository by the '@piwi' options in the Playwright config.",
+        needs: [],
+        where: "playwright.config.ts → '@piwi' → codegen",
+        doc: 'features/recorded-code',
+      },
+      {
+        title: 'Runs from the editor',
+        summary:
+          "Run tests from VS Code or a JetBrains IDE, follow the run in the status bar, and see its results laid over the latest CI run's failures within a second of its end.",
+        needs: [],
+        where: 'Piwi: Run the tests that reach this file, Piwi: Run selection…; the status bar',
+        doc: 'features/editor-runs',
+      },
+      {
+        title: 'Runs started outside Piwi',
+        summary:
+          "A Playwright run you start yourself, in a terminal or with a JetBrains IDE's own Run, in a folder of your editor's workspace, follows that editor window: it stops at its breakpoints and takes its controls, as a run Piwi started does.",
+        needs: ['fixtures'],
+        where:
+          "npx playwright test in a terminal of the workspace, or a JetBrains IDE's gutter Run and Playwright run configurations; PIWI_EDITOR=off runs it alone",
+        doc: 'features/terminal-runs',
+      },
+      {
+        title: 'Runs window',
+        summary:
+          "A window beside the test's browser that pauses, steps and resumes the tests your editor runs, writes code from a stop through the editor, and shows a headless test's page live, to click, type and pick a locator on.",
+        needs: ['fixtures', 'extension'],
+        where: 'Browser extension → More tools → Runs',
+        doc: 'features/runs-window',
+      },
+      {
+        title: 'Breakpoints in the browser',
+        summary:
+          "Set a breakpoint in VS Code or a JetBrains IDE: the next run Piwi starts pauses there in a headed browser, with Piwi's bar to resume, step, or pick a locator that replaces the one on that line.",
+        needs: ['fixtures'],
+        where: "The editor's breakpoints; piwi.breakpoints, or Settings → Tools → Piwi in a JetBrains IDE",
+        doc: 'features/editor-breakpoints',
+      },
+      {
+        title: 'Pause and step from the editor',
+        summary:
+          'Pause a run Piwi started from VS Code or a JetBrains IDE, step it call by call, run it to the cursor, resume or finish it, with the paused line marked in the editor and your breakpoints applied as you change them.',
+        needs: ['fixtures'],
+        where:
+          'Piwi: Pause the run, Resume the run, Step to the next call, Run to the cursor; Tools → Piwi in a JetBrains IDE',
+        doc: 'features/editor-run-control',
+      },
+      {
+        title: 'Code from a pause',
+        summary:
+          "At a test paused or failed in a run Piwi started, an assertion, a region's ARIA snapshot or a mock of a request the page made written above the stopped line, a locator picked or steps recorded there, and the count of the locator at the cursor on the stopped page.",
+        needs: ['fixtures'],
+        where:
+          "The paused line's CodeLens in VS Code, Piwi: Write code at the stop…; its inlay and Tools → Piwi in a JetBrains IDE",
+        doc: 'features/editor-stop-code',
+      },
+      {
+        title: 'End the test',
+        summary:
+          'End a stopped test where it stands, from the editor, the pause bar, Piwi Picker, the desktop app or an agent: the call it stopped before never runs, and Playwright reports the test as skipped.',
+        needs: ['fixtures'],
+        where:
+          "End test on the stopped line's CodeLens, Piwi: End the test here; Tools → Piwi → End the Test in a JetBrains IDE",
+        doc: 'features/end-the-test',
+      },
+      {
+        title: 'Debug in my editor',
+        summary:
+          "From a failure's page, the failing line opened in VS Code or a JetBrains IDE and, once you say yes there, the test run headed with one worker to stop at that line, the locator healing's suggestion outlined on the page.",
+        needs: ['fixtures'],
+        where: "Execution → Source, beside the failing line's frame",
+        doc: 'features/debug-in-editor',
+      },
+      {
+        title: 'Run control for agents',
+        summary:
+          'The test runs your editor or the desktop app starts, served to a coding agent on your machine as MCP tools: it follows a run, stops it, reads the stopped page as its ARIA snapshot, acts on it by ref and has Piwi write the code there, through the editor, or make it to copy in the desktop app.',
+        needs: ['fixtures'],
+        where:
+          'The Piwi runs MCP server, listed in VS Code; Tools → Piwi in a JetBrains IDE; the desktop app’s MCP server',
+        doc: 'features/agent-run-control',
+      },
+    ],
+  },
+  {
     title: 'Use it from elsewhere',
     intro: 'Reach your results and act on them from wherever you already work.',
     features: [
@@ -584,14 +692,6 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/mock-requests',
       },
       {
-        title: 'Runs window',
-        summary:
-          "A window beside the test's browser that pauses, steps and resumes the tests your editor runs, writes code from a stop through the editor, and shows a headless test's page live, to click, type and pick a locator on.",
-        needs: ['fixtures', 'extension'],
-        where: 'Browser extension → More tools → Runs',
-        doc: 'features/runs-window',
-      },
-      {
         title: 'Test functions catalog',
         summary: 'The reusable helpers and page-object methods your suite calls, catalogued with their parameters.',
         needs: [],
@@ -630,97 +730,12 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/editor-failures',
       },
       {
-        title: 'Runs from the editor',
-        summary:
-          "Run tests from VS Code or a JetBrains IDE, follow the run in the status bar, and see its results laid over the latest CI run's failures within a second of its end.",
-        needs: [],
-        where: 'Piwi: Run the tests that reach this file, Piwi: Run selection…; the status bar',
-        doc: 'features/editor-runs',
-      },
-      {
         title: 'Coverage in the editor',
         summary:
           'The lines your tests ran, marked in VS Code and the JetBrains IDEs, Rider included: the lines run and not run, the tests behind each function and line, and the lines changed since the coverage run.',
         needs: ['fixtures', 'backend'],
         where: 'Application files in the editor; Piwi: Toggle the coverage marks, Tools → Piwi → Show Coverage Marks',
         doc: 'features/editor-coverage',
-      },
-      {
-        title: 'Breakpoints in the browser',
-        summary:
-          "Set a breakpoint in VS Code or a JetBrains IDE: the next run Piwi starts pauses there in a headed browser, with Piwi's bar to resume, step, or pick a locator that replaces the one on that line.",
-        needs: ['fixtures'],
-        where: "The editor's breakpoints; piwi.breakpoints, or Settings → Tools → Piwi in a JetBrains IDE",
-        doc: 'features/editor-breakpoints',
-      },
-      {
-        title: 'Pause and step from the editor',
-        summary:
-          'Pause a run Piwi started from VS Code or a JetBrains IDE, step it call by call, run it to the cursor, resume or finish it, with the paused line marked in the editor and your breakpoints applied as you change them.',
-        needs: ['fixtures'],
-        where:
-          'Piwi: Pause the run, Resume the run, Step to the next call, Run to the cursor; Tools → Piwi in a JetBrains IDE',
-        doc: 'features/editor-run-control',
-      },
-      {
-        title: 'End the test',
-        summary:
-          'End a stopped test where it stands, from the editor, the pause bar, Piwi Picker, the desktop app or an agent: the call it stopped before never runs, and Playwright reports the test as skipped.',
-        needs: ['fixtures'],
-        where:
-          "End test on the stopped line's CodeLens, Piwi: End the test here; Tools → Piwi → End the Test in a JetBrains IDE",
-        doc: 'features/end-the-test',
-      },
-      {
-        title: 'Runs started outside Piwi',
-        summary:
-          "A Playwright run you start yourself, in a terminal or with a JetBrains IDE's own Run, in a folder of your editor's workspace, follows that editor window: it stops at its breakpoints and takes its controls, as a run Piwi started does.",
-        needs: ['fixtures'],
-        where:
-          "npx playwright test in a terminal of the workspace, or a JetBrains IDE's gutter Run and Playwright run configurations; PIWI_EDITOR=off runs it alone",
-        doc: 'features/terminal-runs',
-      },
-      {
-        title: 'Code from a pause',
-        summary:
-          "At a test paused or failed in a run Piwi started, an assertion, a region's ARIA snapshot or a mock of a request the page made written above the stopped line, a locator picked or steps recorded there, and the count of the locator at the cursor on the stopped page.",
-        needs: ['fixtures'],
-        where:
-          "The paused line's CodeLens in VS Code, Piwi: Write code at the stop…; its inlay and Tools → Piwi in a JetBrains IDE",
-        doc: 'features/editor-stop-code',
-      },
-      {
-        title: 'Debug in my editor',
-        summary:
-          "From a failure's page, the failing line opened in VS Code or a JetBrains IDE and, once you say yes there, the test run headed with one worker to stop at that line, the locator healing's suggestion outlined on the page.",
-        needs: ['fixtures'],
-        where: "Execution → Source, beside the failing line's frame",
-        doc: 'features/debug-in-editor',
-      },
-      {
-        title: 'Run control for agents',
-        summary:
-          'The test runs your editor or the desktop app starts, served to a coding agent on your machine as MCP tools: it follows a run, stops it, reads the stopped page as its ARIA snapshot, acts on it by ref and has Piwi write the code there, through the editor, or make it to copy in the desktop app.',
-        needs: ['fixtures'],
-        where:
-          'The Piwi runs MCP server, listed in VS Code; Tools → Piwi in a JetBrains IDE; the desktop app’s MCP server',
-        doc: 'features/agent-run-control',
-      },
-      {
-        title: 'Record tests from the editor',
-        summary:
-          "A browser your project's own Playwright opens from VS Code or a JetBrains IDE, and each step you take there written at the cursor as you go, with verified locators and calls to your page objects.",
-        needs: [],
-        where: 'Piwi: Record here; Tools → Piwi → Record Here in a JetBrains IDE',
-        doc: 'features/editor-recording',
-      },
-      {
-        title: 'Recorded code',
-        summary:
-          "What a recording from the editor writes: locators verified on the page, a wait for each new page, the imports it needs, calls to your page objects and passwords read from the environment, shaped for the whole repository by the '@piwi' options in the Playwright config.",
-        needs: [],
-        where: "playwright.config.ts → '@piwi' → codegen",
-        doc: 'features/recorded-code',
       },
       {
         title: 'Editor connection',

@@ -84,7 +84,7 @@ export const HELP_TOPICS = {
   },
   'home.failure-inbox': {
     title: 'Failure inbox',
-    text: "A queue of the failures you still owe a decision. Switch queues to focus — new since you last looked, mine, regressions, fixes that didn't hold, quarantines ready to release, merge suggestions. Triage from the row or the keyboard: j / k move, x select, r resolve, i ignore, q quarantine, a assign, s snooze, l link, o open.",
+    text: "A queue of the failures you still owe a decision. Switch queues to focus — new since you last looked, mine, regressions, fixes that didn't hold, quarantines ready to release, merge suggestions. Failures seen in developers' local runs and never in CI stay out until you show them. Triage from the row or the keyboard: j / k move, x select, r resolve, i ignore, q quarantine, a assign, s snooze, l link, o open.",
     doc: 'features/failure-clusters#the-failure-inbox',
   },
   'home.flake-lab': {

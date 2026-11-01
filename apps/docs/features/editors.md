@@ -92,9 +92,9 @@ a warning, with the chains it breaks on hover, and one quick fix that rewrites e
 ## Piwi's MCP server for the agent
 
 In VS Code 1.101 and later, the extension provides Piwi's [MCP server](/features/mcp) to the editor's agent with the
-connection it already has. Elsewhere, **Piwi: Copy the MCP server configuration** puts an entry on the clipboard: for
-`mcp.json` in VS Code, for the AI Assistant's MCP settings in a JetBrains IDE (an `mcpServers` entry running
-`mcp-remote`). It holds your API key: keep it out of the repository.
+connection it already has. Elsewhere, **Piwi: Copy the MCP server configuration** puts an entry on the clipboard: VS Code's
+`mcp.json` or Cursor's `mcpServers`, as you choose; the AI Assistant's in a JetBrains IDE, an `mcpServers` entry
+running `mcp-remote`. It holds your API key: keep it out of the repository.
 
 The key carries your whole role, write tools included. For a token of the agent's own, set `piwi.mcpAuthorization`
 to `sign-in` (**Settings → Tools → Piwi → AI Assistant** in a JetBrains IDE): the server comes without a key, and the

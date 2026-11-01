@@ -32,8 +32,8 @@ Before the browser opens, the editor asks for:
 3. **The Playwright project**, when the config has several. The browser gets its `use` options: `baseURL`,
    `storageState`, the viewport and device, the locale, the extra headers and `testIdAttribute`.
 
-The editor offers your last answers again. A new test file is offered next to the file you are in, and the recording
-writes a whole spec into it.
+The editor offers your last answers. A new spec goes beside the one at hand, else in `testDir`, and receives the whole
+recording.
 
 ## While it records
 

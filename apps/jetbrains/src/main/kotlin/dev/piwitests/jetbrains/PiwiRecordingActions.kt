@@ -27,6 +27,7 @@ import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.ui.ColoredListCellRenderer
 import com.intellij.ui.SimpleTextAttributes
@@ -35,6 +36,8 @@ import com.intellij.ui.dsl.builder.COLUMNS_LARGE
 import com.intellij.ui.dsl.builder.columns
 import com.intellij.ui.dsl.builder.panel
 import java.io.IOException
+import java.net.URI
+import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionException
@@ -89,25 +92,26 @@ class RecordHereGenerateAction : RecordHereAction() {
 }
 
 /**
- * Piwi: Record a New Test File… — a spec created in the folder at hand, under a Playwright config's folder (the first
- * one when no folder is at hand), then recorded into.
+ * Piwi: Record a New Test File… — a spec created where the service offers it (`piwi/newTestFile`: beside the spec at
+ * hand in a test folder, else in the test folder of the config holding the file at hand), then recorded into.
  */
 class RecordNewFileAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
         val service = e.project?.service<PiwiProjectService>()
-        e.presentation.isEnabledAndVisible = service != null && service.hasPlaywrightConfig() &&
-            directoryAtHand(e).let { it == null || Glue.inConfigDirs(it.nioPathOrNull(), service.playwrightConfigDirs()) }
+        e.presentation.isEnabledAndVisible = service != null && service.hasPlaywrightConfig()
     }
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
         val service = project.service<PiwiProjectService>()
-        val directory = directoryAtHand(e)?.takeIf { Glue.inConfigDirs(it.nioPathOrNull(), service.playwrightConfigDirs()) }
-            ?: service.playwrightConfigDirs().firstOrNull()?.let { LocalFileSystem.getInstance().findFileByNioFile(it) }
+        // Where the service does not answer: the folder at hand under a config, else the first config's folder.
+        val fallback = directoryAtHand(e)?.nioPathOrNull()?.takeIf { Glue.inConfigDirs(it, service.playwrightConfigDirs()) }
+            ?: service.playwrightConfigDirs().firstOrNull()
             ?: return
-        PiwiRecordFlow.recordNewFile(project, directory)
+        val atHand = e.getData(CommonDataKeys.VIRTUAL_FILE)?.takeIf { it.isInLocalFileSystem }
+        PiwiRecordFlow.recordNewFile(project, atHand, fallback)
     }
 
     /** The folder selected, or the selected file's; null when nothing on disk is. */
@@ -183,11 +187,34 @@ object PiwiRecordFlow {
 
     fun recordHere(project: Project, editor: Editor, file: VirtualFile) = start(project, editor, file, null)
 
-    fun recordNewFile(project: Project, directory: VirtualFile) {
+    /**
+     * Record a New Test File: the service says where the spec goes (`piwi/newTestFile`: beside the spec at hand in a
+     * test folder, else in the test folder of the config holding the file at hand, under a name it does not hold yet),
+     * then the name is asked there; a folder that does not exist yet is created with the file. `fallback` is the folder
+     * when the service does not answer.
+     */
+    fun recordNewFile(project: Project, atHand: VirtualFile?, fallback: Path) {
+        val uri = atHand?.let { runCatching { it.toNioPath().toUri().toString() }.getOrNull() }
+        background(project, "Piwi: finding where the test file goes") {
+            val offered = project.service<PiwiProjectService>().server()?.newTestFile(NewTestFileParams(uri))?.orNull()
+            val path = offered?.uri?.let { runCatching { Path.of(URI(it)) }.getOrNull() }
+            val folder = path?.parent ?: fallback
+            val offeredName = path?.fileName?.toString()
+            val name = offeredName?.takeIf { !Files.exists(folder.resolve(it)) }
+                ?: freeName(folder, offeredName?.let { Glue.testFileSuffix(it) } ?: ".spec.ts")
+            ApplicationManager.getApplication().invokeLater({ askNewFile(project, folder, name) }, project.disposed)
+        }
+    }
+
+    /**
+     * Asks the new spec's name in `directory`, offering `offered`, then creates it, and the folder when it does not exist
+     * yet, and records a whole spec into it.
+     */
+    private fun askNewFile(project: Project, directory: Path, offered: String) {
         val validator = object : InputValidatorEx {
             override fun getErrorText(inputString: String?): String? {
                 val name = Glue.specFileName(inputString.orEmpty()) ?: return "A JavaScript or TypeScript file, such as checkout.spec.ts"
-                return if (directory.findChild(name) == null) null else "This file exists already."
+                return if (Files.exists(directory.resolve(name))) "This file exists already." else null
             }
 
             override fun checkInput(inputString: String?): Boolean = getErrorText(inputString) == null
@@ -196,16 +223,17 @@ object PiwiRecordFlow {
         }
         val typed = Messages.showInputDialog(
             project,
-            "The new spec's name, in ${directory.presentableUrl}. What you do in the browser is written into it as a test.",
+            "The new spec's name, in $directory. What you do in the browser is written into it as a test.",
             "Piwi: Record a New Test File",
             null,
-            freeName(directory),
+            offered,
             validator,
         ) ?: return
         val name = Glue.specFileName(typed) ?: return
         val file = try {
             WriteCommandAction.writeCommandAction(project).withName("Create $name").compute<VirtualFile, IOException> {
-                directory.createChildData(this, name)
+                val folder = VfsUtil.createDirectoryIfMissing(directory.toString()) ?: throw IOException("could not create $directory")
+                folder.createChildData(this, name)
             }
         } catch (e: IOException) {
             Messages.showErrorDialog(project, "Could not create $name: ${e.message}", "Piwi: Record a New Test File")
@@ -266,9 +294,10 @@ object PiwiRecordFlow {
         }, project.disposed)
     }
 
-    /** `recorded.spec.ts`, else `recorded-2.spec.ts`, and so on: the first name the folder does not hold. */
-    private fun freeName(directory: VirtualFile): String =
-        generateSequence(1) { it + 1 }.map { if (it == 1) "recorded.spec.ts" else "recorded-$it.spec.ts" }.first { directory.findChild(it) == null }
+    /** `recorded<suffix>`, else `recorded-2<suffix>`, and so on: the first name the folder does not hold. */
+    private fun freeName(directory: Path, suffix: String): String =
+        generateSequence(1) { it + 1 }.map { if (it == 1) "recorded$suffix" else "recorded-$it$suffix" }
+            .first { !Files.exists(directory.resolve(it)) }
 
     private fun start(project: Project, editor: Editor, file: VirtualFile, fixedInto: String?) {
         val uri = runCatching { file.toNioPath().toUri().toString() }.getOrNull() ?: return
@@ -301,7 +330,7 @@ object PiwiRecordFlow {
                 val dialog = RecordDialog(project, into, context, file.name, local.recordStartUrl, found, local.recordPage)
                 if (!dialog.showAndGet()) return@invokeLater
                 local.recordStartUrl = dialog.startUrl().orEmpty()
-                dialog.typedPage()?.let { local.recordPage = it }
+                dialog.page()?.let { local.recordPage = it }
                 val params = RecordParams(
                     uri = uri,
                     line = line,
@@ -446,7 +475,8 @@ object PiwiRecordFlow {
 /**
  * What a recording asks before it starts: the page the browser opens (a path on the `baseURL`, or a URL; the last one
  * typed), and the page expression the steps run on: the candidates of the code around the caret, the default first,
- * and the last expression typed that was not among them, or any other typed in.
+ * and the expression chosen last when it was not among them, or any other typed in; the one chosen last is selected
+ * when the code offers it, else the default.
  */
 private class RecordDialog(
     project: Project,
@@ -473,11 +503,12 @@ private class RecordDialog(
         val candidates = found?.candidates.orEmpty().mapNotNull { c -> c.expression?.trim()?.ifEmpty { null }?.let { it to c.reason.orEmpty() } }
         val default = found?.default?.trim()?.ifEmpty { null }
         offered = (listOfNotNull(default) + candidates.map { it.first }).distinct()
-        val typed = remembered.trim().ifEmpty { null }?.takeIf { it !in offered }
-        reasons = candidates.toMap() + listOfNotNull(typed?.let { it to "typed last time" })
+        val last = remembered.trim().ifEmpty { null }
+        val typed = last?.takeIf { it !in offered }
+        reasons = candidates.toMap() + listOfNotNull(typed?.let { it to "chosen last time" })
         page = ComboBox((offered + listOfNotNull(typed)).toTypedArray()).apply {
             isEditable = true
-            selectedItem = default ?: offered.firstOrNull()
+            selectedItem = last?.takeIf { it in offered } ?: default ?: offered.firstOrNull()
             renderer = object : ColoredListCellRenderer<String>() {
                 override fun customizeCellRenderer(list: JList<out String>, value: String?, index: Int, selected: Boolean, hasFocus: Boolean) {
                     append(value.orEmpty())
@@ -495,9 +526,6 @@ private class RecordDialog(
 
     /** The page expression; null for the service's default. */
     fun page(): String? = ((page.editor.item ?: page.selectedItem) as? String)?.trim()?.ifEmpty { null }
-
-    /** The page expression when it is not among those offered, to offer next time. */
-    fun typedPage(): String? = page()?.takeIf { it !in offered }
 
     override fun createCenterPanel(): JComponent = panel {
         row { text(where, maxLineLength = 70) }

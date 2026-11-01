@@ -33,6 +33,7 @@ import type {
   RecordResult,
   RecordingUpdate,
   RenderStepsResult,
+  NewTestFileResult,
   RunCommand,
   RunEnded,
   RunStatusResult,
@@ -3710,6 +3711,16 @@ describe('the configs of one repository reading one project', () => {
     expect(failures).not.toHaveProperty('run');
   });
 
+  test('answer where Record a new test file goes from the config whose folder is at hand', async () => {
+    const admin = path.join(repo, 'admin');
+    for (const at of [pathToFileURL(admin).href, `${pathToFileURL(admin).href}/`]) {
+      expect(await twoClient.sendRequest('piwi/newTestFile', { uri: at })).toEqual({
+        uri: pathToFileURL(path.join(admin, 'recorded.spec.ts')).href,
+        root: admin,
+      });
+    }
+  });
+
   test('read its latest run and its flaky tests once for the refresh they make together', async () => {
     await waitFor(() => reads.get('flaky-tests'));
     // The other config's read, on its way or answered a moment before, is the same one.
@@ -4054,6 +4065,40 @@ describe('recording from the editor', () => {
       character: 0,
     })) as PageCandidatesResult;
     expect(atTop).toMatchObject({ context: 'file', default: 'userPage' });
+  });
+
+  test('answers where Record a new test file creates its spec, in the projects’ test folder as Playwright reads it', async () => {
+    const asked = (params: object) => recorder.sendRequest('piwi/newTestFile', params) as Promise<NewTestFileResult>;
+    // The workspace's root at hand: the test folder Playwright resolved, with the suffix its specs use.
+    expect(await asked({ uri: pathToFileURL(dir).href })).toEqual({
+      uri: pathToFileURL(path.join(dir, 'tests', 'recorded.spec.ts')).href,
+      root: dir,
+    });
+    // A page object at hand: the test folder holding it.
+    expect(await asked({ uri: uri('tests/pages/checkout.page.ts') })).toEqual({
+      uri: pathToFileURL(path.join(dir, 'tests', 'recorded.spec.ts')).href,
+      root: dir,
+    });
+    expect(await asked({})).toMatchObject({ root: dir });
+    // A spec at hand in the test folder: beside it, with its suffix; one outside every test folder: the test folder.
+    const extra = ['tests/admin/users.test.ts', 'examples/demo.spec.ts'];
+    for (const file of extra) {
+      fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+      fs.writeFileSync(path.join(dir, file), '');
+    }
+    try {
+      expect(await asked({ uri: uri('tests/admin/users.test.ts') })).toEqual({
+        uri: pathToFileURL(path.join(dir, 'tests', 'admin', 'recorded.test.ts')).href,
+        root: dir,
+      });
+      expect(await asked({ uri: uri('examples/demo.spec.ts') })).toEqual({
+        uri: pathToFileURL(path.join(dir, 'tests', 'recorded.spec.ts')).href,
+        root: dir,
+      });
+    } finally {
+      fs.rmSync(path.join(dir, 'tests/admin'), { recursive: true, force: true });
+      fs.rmSync(path.join(dir, 'examples'), { recursive: true, force: true });
+    }
   });
 
   test('renders steps on the page expression at the caret, with their imports apart when asked', async () => {

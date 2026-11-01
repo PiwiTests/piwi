@@ -141,6 +141,7 @@ import {
   verificationCommand,
 } from './commands.js';
 import { DesktopJobs } from './desktop-jobs.js';
+import { newTestFile } from './new-test-file.js';
 import { RunWatch, exitVerdict, newRunRef } from './run-watch.js';
 import { specPattern } from '@piwitests/core/spec-filter';
 import { breakpointLines, declaredNamesAt, fileFixtures, pageCandidates } from './recorder/page-candidates.js';
@@ -191,6 +192,7 @@ import {
   NOTICE_NOTIFICATION,
   PAGE_CANDIDATES_REQUEST,
   RECORD_REQUEST,
+  NEW_TEST_FILE_REQUEST,
   RECORDING_COMMAND_REQUEST,
   RECORDING_NOTIFICATION,
   RECORD_REQUESTED_NOTIFICATION,
@@ -282,6 +284,8 @@ import {
   type PageCandidatesParams,
   type PageCandidatesResult,
   type RecordParams,
+  type NewTestFileParams,
+  type NewTestFileResult,
   type RecordRequested,
   type DeclineRecordParams,
   type RecordResult,
@@ -344,7 +348,10 @@ const GIT_WATCH_MS = 2_000;
 const ACTIVE_RUN = new Set(['running', 'initializing', 'finalizing']);
 /** Pause after a keystroke before an application file is compared with `HEAD`. */
 const DEBOUNCE_MS = 500;
-/** How long `piwi/renderSteps` waits for a config's project options before writing URLs as paths. */
+/**
+ * How long `piwi/renderSteps` waits for a config's project options before writing URLs as paths, and
+ * `piwi/newTestFile` before reading the test folders from the config's text.
+ */
 const OPTIONS_WAIT_MS = 3_000;
 /**
  * How long a quick fix or a hover waits for what it fetches from the instance: past it, it answers without, and the
@@ -3548,6 +3555,33 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           }
         : {}),
     };
+  });
+
+  connection.onRequest(NEW_TEST_FILE_REQUEST, async (params: NewTestFileParams | null): Promise<NewTestFileResult> => {
+    const at = params?.uri ? uriToPath(params.uri) : null;
+    // The config whose folder is the folder at hand, else the one holding the file at hand, else the first.
+    const own = at ? contexts.find((c) => path.relative(c.root, at) === '') : undefined;
+    const context = own ?? (at ? contextFor(at) : null) ?? contexts[0] ?? null;
+    if (!context) return null;
+    const configFile = playwrightConfigFile(context.root);
+    // Playwright's own reading of the projects' test folders, when it answers soon enough.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const options = configFile
+      ? await Promise.race([
+          projectOptions(configFile).catch(() => null),
+          new Promise<null>((resolve) => {
+            timer = setTimeout(() => resolve(null), OPTIONS_WAIT_MS);
+          }),
+        ])
+      : null;
+    clearTimeout(timer);
+    const place = newTestFile({
+      at,
+      root: context.root,
+      configFile,
+      testDirs: options ? options.projects.map((p) => p.testDir) : [],
+    });
+    return { uri: pathToFileURL(path.join(place.folder, place.name)).href, root: context.root };
   });
 
   connection.onRequest(PAGE_CANDIDATES_REQUEST, (params: PageCandidatesParams): PageCandidatesResult => {

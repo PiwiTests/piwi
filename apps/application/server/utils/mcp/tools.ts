@@ -2301,6 +2301,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
             occurrences: c.occurrences,
             lastSeenRunId: c.lastSeenRunId,
             sampleError: trunc(c.sampleError, 300),
+            seenOnlyLocally: c.seenOnlyLocally || null,
           }),
         );
       return paginatedItems(mappedQueue, pageSize, (c: any) => String(c.id));

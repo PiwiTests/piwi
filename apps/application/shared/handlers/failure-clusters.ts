@@ -9,7 +9,7 @@
   clusterMergeSuggestions,
   projectIntegrations,
 } from '../../server/database/schema';
-import { eq, and, desc, gte, sql, inArray, or, isNull, lte } from 'drizzle-orm';
+import { eq, and, desc, gte, sql, inArray, or, isNull, lte, type SQL } from 'drizzle-orm';
 import { makeTimeBuckets } from './analytics/common';
 import { isLabRun } from './probes';
 import { splitSuitePath } from '../utils/suites';
@@ -33,7 +33,13 @@ import { parsePlaywrightError } from '#shared/error-parse';
 import { failingStepParams } from '#shared/describe-failure';
 import { caseHeadline } from '#shared/failure-verdict';
 import { computeClusterState, failureGoesOn, ticketReconcileKey, type ClusterState } from '#shared/cluster-state';
-import { UNFINISHED_RUN_STATUSES } from '#shared/run-eligibility';
+import {
+  CI_RUN_ORIGINS,
+  LOCAL_RUN_ORIGINS,
+  runOriginIn,
+  UNFINISHED_RUN_STATUSES,
+  type RunOriginKind,
+} from '#shared/run-eligibility';
 import { computeNextStep, type FlakeLabStepFacts, type NextStep } from '#shared/next-step';
 import { getFlakeLabStepFacts } from './flake-lab';
 import { mayHaveFlakeSuspects } from './flake-profile';
@@ -722,6 +728,54 @@ export async function extractClusterCases(
   };
 }
 
+/** How `getOpenFailureClusters` treats the clusters seen only in developers' own runs (`seenOnlyLocallySql`). */
+export interface OpenClustersOptions {
+  /** `exclude` leaves them out, as Home's inbox asks by default; `include` (the default here) keeps them. */
+  localOnly?: 'include' | 'exclude';
+}
+
+/**
+ * SQL: the failure cluster was seen in developers' own runs (`LOCAL_RUN_ORIGINS`: their machine, the desktop app, an
+ * editor) and never in CI (`CI_RUN_ORIGINS`), in a project that runs in CI. A project with no CI run keeps every
+ * cluster. The projects that run in CI are read once per query; a cluster CI saw stops at its first CI execution.
+ */
+function seenOnlyLocallySql(): SQL {
+  const runsInCi = sql`SELECT ${projects.id} FROM ${projects} WHERE EXISTS (SELECT 1 FROM ${testRuns} WHERE ${testRuns.projectId} = ${projects.id} AND ${runOriginIn(testRuns.origin, CI_RUN_ORIGINS)})`;
+  const seenIn = (origins: readonly RunOriginKind[]) =>
+    sql`EXISTS (SELECT 1 FROM ${testRunsCases} INNER JOIN ${testRuns} ON ${testRuns.id} = ${testRunsCases.testRunId} WHERE ${testRunsCases.failureClusterId} = ${failureClusters.id} AND ${runOriginIn(testRuns.origin, origins)})`;
+  return sql`(${failureClusters.projectId} IN (${runsInCi}) AND NOT ${seenIn(CI_RUN_ORIGINS)} AND ${seenIn(LOCAL_RUN_ORIGINS)})`;
+}
+
+/** The open, not snoozed clusters of `scope`, those seen only locally left out with `localOnly: 'exclude'`. */
+function openClustersWhere(scope: ProjectScope, now: Date, localOnly: 'include' | 'exclude'): SQL | undefined {
+  const allowed = scope === 'all' ? 'all' : [...scope];
+  if (allowed !== 'all' && allowed.length === 0) return undefined;
+  // Open, and not currently snoozed (null deadline, or a deadline already past —
+  // which is how an "until it recurs" wake and an expired timed snooze both read).
+  const notSnoozed = or(isNull(failureClusters.snoozedUntil), lte(failureClusters.snoozedUntil, now));
+  return and(
+    eq(failureClusters.status, 'open'),
+    notSnoozed,
+    ...(allowed === 'all' ? [] : [inArray(failureClusters.projectId, allowed)]),
+    ...(localOnly === 'exclude' ? [sql`NOT ${seenOnlyLocallySql()}`] : []),
+  );
+}
+
+/** How many open, not snoozed clusters of `scope` were seen only in developers' own runs (`seenOnlyLocallySql`). */
+export async function countLocalOnlyClusters(
+  db: DrizzleDB,
+  scope: ProjectScope = 'all',
+  now: Date = new Date(),
+): Promise<number> {
+  const where = openClustersWhere(scope, now, 'include');
+  if (!where) return 0;
+  const [row] = await db
+    .select({ n: sql<number>`count(*)` })
+    .from(failureClusters)
+    .where(and(where, seenOnlyLocallySql()));
+  return Number(row?.n ?? 0);
+}
+
 /**
  * Open failure clusters across every project the caller can see, newest first
  * by last seen — the Home failure inbox. Each row carries everything the inbox
@@ -742,17 +796,11 @@ export async function getOpenFailureClusters(
   scope: ProjectScope = 'all',
   limit = 50,
   now: Date = new Date(),
+  options: OpenClustersOptions = {},
 ): Promise<OpenFailureCluster[]> {
-  const allowed = scope === 'all' ? 'all' : [...scope];
-  if (allowed !== 'all' && allowed.length === 0) return [];
-
-  // Open, and not currently snoozed (null deadline, or a deadline already past —
-  // which is how an "until it recurs" wake and an expired timed snooze both read).
-  const notSnoozed = or(isNull(failureClusters.snoozedUntil), lte(failureClusters.snoozedUntil, now));
-  const where =
-    allowed === 'all'
-      ? and(eq(failureClusters.status, 'open'), notSnoozed)
-      : and(eq(failureClusters.status, 'open'), inArray(failureClusters.projectId, allowed), notSnoozed);
+  const localOnly = options.localOnly ?? 'include';
+  const where = openClustersWhere(scope, now, localOnly);
+  if (!where) return [];
 
   const clusters: any[] = await db
     .select({
@@ -785,85 +833,95 @@ export async function getOpenFailureClusters(
     ...new Set(clusters.flatMap((c) => [c.lastSeenRunId, c.firstSeenRunId]).filter((id) => id != null)),
   ];
 
-  const [projectRows, counts, seenRuns, ownerRows, linkRows, regressionRows, mergeRows] = await Promise.all([
-    db
-      .select({ id: projects.id, name: projects.name, label: projects.label, defaultBranch: projects.defaultBranch })
-      .from(projects)
-      .where(inArray(projects.id, projectIds)),
+  const [projectRows, counts, seenRuns, ownerRows, linkRows, regressionRows, mergeRows, localOnlyRows] =
+    await Promise.all([
+      db
+        .select({ id: projects.id, name: projects.name, label: projects.label, defaultBranch: projects.defaultBranch })
+        .from(projects)
+        .where(inArray(projects.id, projectIds)),
 
-    db
-      .select({
-        clusterId: testRunsCases.failureClusterId,
-        affectedTests: sql<number>`count(distinct ${testRunsCases.testCaseId})`,
-      })
-      .from(testRunsCases)
-      .where(inArray(testRunsCases.failureClusterId, clusterIds))
-      .groupBy(testRunsCases.failureClusterId),
+      db
+        .select({
+          clusterId: testRunsCases.failureClusterId,
+          affectedTests: sql<number>`count(distinct ${testRunsCases.testCaseId})`,
+        })
+        .from(testRunsCases)
+        .where(inArray(testRunsCases.failureClusterId, clusterIds))
+        .groupBy(testRunsCases.failureClusterId),
 
-    db
-      .select({
-        id: testRuns.id,
-        status: testRuns.status,
-        startTime: testRuns.startTime,
-        branch: testRuns.branch,
-        metadata: testRuns.metadata,
-      })
-      .from(testRuns)
-      .where(inArray(testRuns.id, seenRunIds)),
+      db
+        .select({
+          id: testRuns.id,
+          status: testRuns.status,
+          startTime: testRuns.startTime,
+          branch: testRuns.branch,
+          metadata: testRuns.metadata,
+        })
+        .from(testRuns)
+        .where(inArray(testRuns.id, seenRunIds)),
 
-    // One row per (cluster, test): the most-affected test names the cluster when
-    // the sample error has no frame and supplies the `piwi:owner` annotation. The
-    // test-case ids also feed the quarantine-readiness cross-reference below.
-    db
-      .select({
-        clusterId: testRunsCases.failureClusterId,
-        testCaseId: testCases.id,
-        filePath: testCases.filePath,
-        owner: testCases.owner,
-        runCount: sql<number>`count(${testRunsCases.id})`,
-      })
-      .from(testRunsCases)
-      .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
-      .where(inArray(testRunsCases.failureClusterId, clusterIds))
-      .groupBy(testRunsCases.failureClusterId, testCases.id, testCases.filePath, testCases.owner),
+      // One row per (cluster, test): the most-affected test names the cluster when
+      // the sample error has no frame and supplies the `piwi:owner` annotation. The
+      // test-case ids also feed the quarantine-readiness cross-reference below.
+      db
+        .select({
+          clusterId: testRunsCases.failureClusterId,
+          testCaseId: testCases.id,
+          filePath: testCases.filePath,
+          owner: testCases.owner,
+          runCount: sql<number>`count(${testRunsCases.id})`,
+        })
+        .from(testRunsCases)
+        .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
+        .where(inArray(testRunsCases.failureClusterId, clusterIds))
+        .groupBy(testRunsCases.failureClusterId, testCases.id, testCases.filePath, testCases.owner),
 
-    db
-      .select({
-        clusterId: entityLinks.failureClusterId,
-        url: entityLinks.url,
-        provider: entityLinks.provider,
-        key: entityLinks.key,
-        connectionId: entityLinks.connectionId,
-      })
-      .from(entityLinks)
-      .where(inArray(entityLinks.failureClusterId, clusterIds))
-      .orderBy(desc(entityLinks.id)),
+      db
+        .select({
+          clusterId: entityLinks.failureClusterId,
+          url: entityLinks.url,
+          provider: entityLinks.provider,
+          key: entityLinks.key,
+          connectionId: entityLinks.connectionId,
+        })
+        .from(entityLinks)
+        .where(inArray(entityLinks.failureClusterId, clusterIds))
+        .orderBy(desc(entityLinks.id)),
 
-    // Clusters that ever regressed (passed in baseline, then failed) and on which
-    // branch — paired below with the cluster's last-seen branch to decide whether
-    // it is a regression still failing on the default branch.
-    db
-      .select({ clusterId: testRunsCases.failureClusterId, branch: testRuns.branch })
-      .from(testRunsCases)
-      .innerJoin(testRuns, eq(testRuns.id, testRunsCases.testRunId))
-      .where(and(inArray(testRunsCases.failureClusterId, clusterIds), eq(testRunsCases.isNewRegression, 1)))
-      .groupBy(testRunsCases.failureClusterId, testRuns.branch),
+      // Clusters that ever regressed (passed in baseline, then failed) and on which
+      // branch — paired below with the cluster's last-seen branch to decide whether
+      // it is a regression still failing on the default branch.
+      db
+        .select({ clusterId: testRunsCases.failureClusterId, branch: testRuns.branch })
+        .from(testRunsCases)
+        .innerJoin(testRuns, eq(testRuns.id, testRunsCases.testRunId))
+        .where(and(inArray(testRunsCases.failureClusterId, clusterIds), eq(testRunsCases.isNewRegression, 1)))
+        .groupBy(testRunsCases.failureClusterId, testRuns.branch),
 
-    // Pending merge suggestions touching any of these clusters.
-    db
-      .select({ a: clusterMergeSuggestions.clusterAId, b: clusterMergeSuggestions.clusterBId })
-      .from(clusterMergeSuggestions)
-      .where(
-        and(
-          eq(clusterMergeSuggestions.status, 'pending'),
-          or(
-            inArray(clusterMergeSuggestions.clusterAId, clusterIds),
-            inArray(clusterMergeSuggestions.clusterBId, clusterIds),
+      // Pending merge suggestions touching any of these clusters.
+      db
+        .select({ a: clusterMergeSuggestions.clusterAId, b: clusterMergeSuggestions.clusterBId })
+        .from(clusterMergeSuggestions)
+        .where(
+          and(
+            eq(clusterMergeSuggestions.status, 'pending'),
+            or(
+              inArray(clusterMergeSuggestions.clusterAId, clusterIds),
+              inArray(clusterMergeSuggestions.clusterBId, clusterIds),
+            ),
           ),
         ),
-      ),
-  ]);
 
+      // The clusters listed that were seen only locally; none once `exclude` left them out.
+      localOnly === 'include'
+        ? db
+            .select({ id: failureClusters.id })
+            .from(failureClusters)
+            .where(and(inArray(failureClusters.id, clusterIds), seenOnlyLocallySql()))
+        : Promise.resolve([] as Array<{ id: number }>),
+    ]);
+
+  const localOnlyIds = new Set(localOnlyRows.map((r: { id: number }) => r.id));
   const projectById = new Map(projectRows.map((p: any) => [p.id, p]));
   const affectedById = new Map(counts.map((c: any) => [c.clusterId, Number(c.affectedTests)]));
   const runById = new Map(
@@ -1006,6 +1064,7 @@ export async function getOpenFailureClusters(
       mergeSuggestionPending: mergeSuggestionClusterIds.has(c.id),
       snoozedUntil: c.snoozedUntil ?? null,
       snoozeMode: c.snoozeMode ?? null,
+      seenOnlyLocally: localOnlyIds.has(c.id),
       incidentRun: firstRun?.incident
         ? {
             runId: c.firstSeenRunId,

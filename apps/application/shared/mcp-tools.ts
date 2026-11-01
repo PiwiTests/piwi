@@ -1049,6 +1049,7 @@ export const MCP_TOOL_DEFS = [
     description: md(
       'List the failure clusters of every project you can read, open ones by default, most occurrences first: a cross-project triage queue.',
       '`queue` focuses one queue of the failure inbox: `regressions` on the default branch, `fix-didnt-hold`, `quarantine-ready`, `merge-suggestions` awaiting a decision, `needs-ticket`, or `mine` (assigned to you or owned by you). A queue keeps open, non-snoozed clusters and overrides `status`; without one, snoozed clusters are listed too.',
+      "A queue lists the clusters seen in developers' own runs and never in CI too, each with `seenOnlyLocally: true`: Home's inbox leaves those out until asked.",
     ),
     inputSchema: {
       type: 'object',

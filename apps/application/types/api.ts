@@ -377,6 +377,11 @@ export interface OpenFailureCluster {
   /** Snooze state — hidden from queues while snoozed; cleared/marked on wake. */
   snoozedUntil: string | Date | null;
   snoozeMode: string | null;
+  /**
+   * Seen in developers' own runs (their machine, the desktop app, an editor) and never in CI, in a project that runs in
+   * CI: work in progress, which the team's inbox leaves out unless asked.
+   */
+  seenOnlyLocally: boolean;
   /** Set when the cluster first appeared in a run flagged as an environment incident. */
   incidentRun: InboxIncidentRun | null;
 }

@@ -4392,7 +4392,9 @@ function seedCoverageReports(story, run, fragmentIdOf) {
 // test's duration, Playwright's, leaves the stops out. The page polls its quote
 // during the second stop. Dated before the project's newest runs and on a
 // branch, so the project's pages, which read its default branch, leave it out,
-// and a run from the editor sends no notification. Its failure joins no cluster.
+// and a run from the editor sends no notification. Its failure is a cluster of its
+// own, seen in this editor run alone: Home's inbox leaves it out until someone
+// shows the failures seen only in developers' local runs.
 {
   const testCase = TEST_CASES.find((c) => c.project_id === 1 && c.title === 'should display cart total correctly');
   const template = TEST_RUNS_CASES.filter((row) => row.test_case_id === testCase.id && row.status === 'passed')
@@ -4520,6 +4522,27 @@ function seedCoverageReports(story, run, fragmentIdOf) {
     created_at: startTime,
     updated_at: startTime + Math.ceil((clockMs + 1_400) / 1000),
   });
+  const fp = await computeDemoFingerprint(error);
+  if (FAILURE_CLUSTERS.some((c) => c.project_id === 1 && c.fingerprint === fp.fingerprint)) {
+    throw new Error('The paused editor run’s failure fingerprints like a story cluster');
+  }
+  const clusterId = Math.max(...FAILURE_CLUSTERS.map((c) => c.id)) + 1;
+  FAILURE_CLUSTERS.push({
+    id: clusterId,
+    project_id: 1,
+    fingerprint: fp.fingerprint,
+    signature: fp.signature,
+    error_type: fp.errorType,
+    selector: fp.selector,
+    sample_error: error,
+    status: 'open',
+    triage_note: null,
+    first_seen_run_id: id,
+    last_seen_run_id: id,
+    occurrences: 1,
+    created_at: startTime,
+    updated_at: startTime,
+  });
   TEST_RUNS_CASES.push({
     ...template,
     id: executionId,
@@ -4527,7 +4550,7 @@ function seedCoverageReports(story, run, fragmentIdOf) {
     status: 'failed',
     duration,
     error,
-    failure_cluster_id: null,
+    failure_cluster_id: clusterId,
     retries: 0,
     repeat_each_index: 0,
     attempts: JSON.stringify([{ retry: 0, status: 'failed', duration, startedAt: T }]),

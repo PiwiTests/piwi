@@ -34,7 +34,18 @@ variables (R10, R11, R12), leaving when the machine summary prints and one prefi
 Runs tile shown for the desktop app too (DOC2), leaving `globalTimeout` and the hooks in the Breakpoints page's
 limits and the bundled Node on the desktop page (both pages at their word budget), the new-file and last-answers
 sentences of the recording page (each client to check first), and the sentences S7 and D11 make wrong, left to
-their fixes; the recording page says `piwi codegen` reads its own flags, not the config's section (W13's docs half). From the medium items, built in part: 2, a pick and a recording at a stop placed by the line the run's edits moved
+their fixes; the recording page says `piwi codegen` reads its own flags, not the config's section (W13's docs half). From the larger items, built: 1, a page for the loop, **Write, run and fix a test**, leading a new catalog group,
+**Write and debug tests**, which holds the loop's features that sat under **Use it from elsewhere** (DOC1). From the
+medium items, built: 7, the clusters seen in developers' own runs and never in CI, in a project that runs in CI,
+left out of Home's Failure inbox on its `local=exclude`, which says how many and lists them on **Show them**, the
+demo's paused editor run holding one (V3); 3, a new test file's place from the service (`piwi/newTestFile`: beside
+the spec at hand in a test folder, else in the config's test folder as Playwright reads it or the config names it,
+with the suite's suffix), for both editors (P3, W5), leaving P4. Built in part: 1 and the larger item 3, JetBrains'
+gutter running a test with Piwi (**Run with Piwi** and **Verify ×3 with Piwi** in the menu of a test's result icon,
+P1), leaving a test with no result yet to the caret's actions, until a run line marker joins the IDE's own run icon;
+the recording's page expression
+chosen last selected again (P11), and VS Code's MCP configuration copied in Cursor's `mcpServers` shape too (P10),
+leaving P5 to P9 and P12 to P14; 2, a pick and a recording at a stop placed by the line the run's edits moved
 the paused call to, through the stopped worker's run, with no protocol change (F3, F4), leaving JetBrains' pick routed
 to the project whose run holds the stop (P2); 10, a breakpoint's file followed through its links and compared without
 case on Windows in the reporter (D7's reporter half), leaving the files outside the config's folder that the clients
