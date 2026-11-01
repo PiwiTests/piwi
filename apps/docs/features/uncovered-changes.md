@@ -68,7 +68,7 @@ Changed files no test reached, in this run or the last 30 runs. Observed reach, 
 
 **PROJ-418**
 - `server/api/orders/[id].patch.ts` · changed (+41 −3) · 0 tests in 30 runs
-  → [open its gap](https://piwi.example.com/projects/4?tab=gaps&gap=31): **Accept** copies a draft test
+  → [open its gap](https://piwi.example.com/projects/4?tab=coverage&gap=31): **Accept** copies a draft test
 ```
 
 When the head commit has [combined coverage](/features/combined-coverage), the section also counts the change's lines
@@ -101,7 +101,7 @@ comment again a few seconds later; a later push's comment is never overwritten b
 When commit statuses are on too, a second status joins the run's own: `piwi/tests/change-coverage` with the default
 status context, described as *3 of 7 changed files no test reached*, with the patch coverage when there is one. It is
 always **success**, so it informs a reviewer without blocking the merge, and it leads to the pull request's gaps on the
-Gaps tab.
+Coverage tab.
 
 The files no test reached are the Test Map's part: they are left out while the *changed, unreached* detector is
 [muted](/features/scenario-gaps#triage) on the project, or where the Test Map is declined. The changed lines are

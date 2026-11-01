@@ -3226,7 +3226,7 @@ const SCENES = [
       'Feature map of the web-dashboard project: one circle per feature, colored by its worst open gap, linked where features share nodes',
     tags: ['docs'],
     out: 'docs',
-    route: '/projects/5?tab=gaps',
+    route: '/projects/5?tab=coverage&view=map',
     viewport: { width: 1280, height: 1100 },
     async run({ page, shoot, settle }) {
       await page
@@ -3240,10 +3240,10 @@ const SCENES = [
   {
     name: 'scenario-gaps-tab',
     description:
-      'Gaps tab: the Users feature of the web-dashboard project, its top five gaps ranked with class, evidence and verbs',
+      'Gaps view of the Coverage tab: the Users feature of the web-dashboard project, its top five gaps ranked with class, evidence and verbs',
     tags: ['docs'],
     out: 'docs',
-    route: '/projects/5?tab=gaps',
+    route: '/projects/5?tab=coverage',
     viewport: { width: 1280, height: 1600 },
     async run({ page, shoot, settle }) {
       await page
@@ -3263,10 +3263,10 @@ const SCENES = [
   {
     name: 'scenario-gaps-map-health',
     description:
-      'Map health on the Gaps tab: each input of the web-dashboard Test Map against what it could hold, and the step behind the one short',
+      'Map health in the Coverage tab’s Map view: each input of the web-dashboard Test Map against what it could hold, and the step behind the one short',
     tags: ['docs'],
     out: 'docs',
-    route: '/projects/5?tab=gaps',
+    route: '/projects/5?tab=coverage&view=map',
     viewport: { width: 1280, height: 2400 },
     async run({ page, shoot, settle }) {
       await page
@@ -3282,7 +3282,7 @@ const SCENES = [
     description: 'Feature graph around a page one test reaches: what leads to it, what it contains, links to and loads',
     tags: ['docs'],
     out: 'docs',
-    route: '/projects/5?tab=gaps',
+    route: '/projects/5?tab=coverage',
     viewport: { width: 1280, height: 1800 },
     async run({ page, shoot, settle }) {
       await page
@@ -4334,7 +4334,7 @@ const SCENES = [
     {
       name: `coverage-restart-note${suffix}`,
       description: `A commit’s combined coverage at ${viewport.width} px whose only run’s backend restarted: the note naming the run`,
-      route: '/projects/5/coverage',
+      route: '/projects/5?tab=coverage&view=code',
       viewport,
       async run({ page, settle, shoot }) {
         await page.locator('[data-testid="coverage-notes"] [data-note="runs-incomplete"]').waitFor({ timeout: 60_000 });
@@ -5609,7 +5609,7 @@ const SCENES = [
       'A project’s combined coverage page: the share of lines every suite ran at one commit, each suite’s share, and the folders with src/ open beside its least-covered files',
     tags: ['docs'],
     out: 'docs',
-    route: `/projects/${COVERAGE_SCENE_PROJECT}/coverage?folder=src`,
+    route: `/projects/${COVERAGE_SCENE_PROJECT}?tab=coverage&view=code&folder=src`,
     viewport: { width: 1280, height: 1400 },
     async run({ page, settle, shoot }) {
       const tree = page.locator('[data-testid="coverage-tree"]');
@@ -5738,7 +5738,9 @@ const SCENES = [
         this.branch = await reportSupersededBranch(request, base);
       },
       async run({ page, goto, settle, shoot }) {
-        await goto(`/projects/${this.branch.projectId}/coverage?branch=${encodeURIComponent(this.branch.branch)}`);
+        await goto(
+          `/projects/${this.branch.projectId}?tab=coverage&view=code&branch=${encodeURIComponent(this.branch.branch)}`,
+        );
         await page.locator('[data-testid="coverage-notes"] [data-note="carried"]').waitFor({ timeout: 60_000 });
         await page.locator('[data-testid="coverage-tree"] [data-entry]').first().waitFor({ timeout: 60_000 });
         await settle();
@@ -5754,7 +5756,7 @@ const SCENES = [
         this.branch = await reportSupersededBranch(request, base);
       },
       async run({ page, goto, settle, shoot }) {
-        await goto(`/projects/${this.branch.projectId}/coverage?commit=${this.branch.first}`);
+        await goto(`/projects/${this.branch.projectId}?tab=coverage&view=code&commit=${this.branch.first}`);
         await page.locator('[data-testid="coverage-files-removed"]').waitFor({ timeout: 60_000 });
         await settle();
         await shoot(undefined, { of: '[data-shot="coverage-overview"]', pad });

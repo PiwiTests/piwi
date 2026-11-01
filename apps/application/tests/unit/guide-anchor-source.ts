@@ -252,6 +252,14 @@ export const TAB_LISTS: readonly TabList[] = [
     pick: 'keys',
     query: (tab) => ({ tab }),
   },
+  // The Coverage tab's views.
+  {
+    page: '/projects/[id]',
+    file: 'utils/coverage-tab.ts',
+    marker: 'export const COVERAGE_VIEWS =',
+    pick: 'strings',
+    query: (view) => ({ tab: 'coverage', view }),
+  },
   {
     page: '/projects/[id]',
     file: 'components/project/ProjectSettingsPanel.vue',

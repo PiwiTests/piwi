@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * A project's combined coverage at one commit (`/projects/:id/coverage`
- * without `?file=`), read top to bottom: the share of lines every suite ran
+ * A project's combined coverage at one commit (the Coverage tab's Code
+ * view), read top to bottom: the share of lines every suite ran
  * together, each suite's share on the same lines and each named area's, then
  * the files. Every bar splits lines the way the source marks do, by the kinds
  * of suite that ran them, in the colors of one legend.
@@ -20,6 +20,7 @@
  * detail was removed shows its stored totals, suites and areas, and the files
  * give way to a link to the commit that superseded it.
  */
+import { coverageTabLink } from '~/utils/coverage-tab';
 import type { CoverageSummary } from '~~/server/utils/coverage-summary';
 import { CODE_CHIP_CLASS, SEGMENTED_SELECTED_CLASS, SELECTED_ROW_CLASS, SENTENCE_LINK_CLASS } from '~/utils';
 import { downloadBlob } from '~/utils/chart-export';
@@ -373,7 +374,7 @@ const exportItems = [
             </ol>
             <p v-if="!isHidden('test-map')" class="text-xs text-muted" data-testid="coverage-test-map-pointer">
               Lines say what ran; the Test Map’s
-              <NuxtLink :to="`/projects/${projectId}?tab=gaps`" :class="SENTENCE_LINK_CLASS">scenario gaps</NuxtLink>
+              <NuxtLink :to="coverageTabLink(projectId, 'gaps')" :class="SENTENCE_LINK_CLASS">scenario gaps</NuxtLink>
               say which tests to write.
             </p>
           </div>

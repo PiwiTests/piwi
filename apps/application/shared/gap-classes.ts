@@ -56,7 +56,7 @@ export type GapCloseReason =
   | 'deleted'
   | 'not-observable';
 
-/** How the Gaps tab names each close reason, after "closed". */
+/** How the Gaps view names each close reason, after "closed". */
 export const GAP_CLOSE_REASON_LABELS: Record<GapCloseReason, string> = {
   'acted-on': 'acted on in its pull request',
   reached: 'a test reached it',

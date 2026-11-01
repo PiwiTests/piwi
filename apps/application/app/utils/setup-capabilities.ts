@@ -226,7 +226,7 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     title: 'Scenario gaps',
     summary:
       'The tests you have not written yet: routes and pages your runs reach but nothing checks, ranked by exposure, each with a skeleton to start from.',
-    how: "Automatic — the map builds from your runs, and gaps appear on a project's Gaps tab as reach accrues.",
+    how: "Automatic — the map builds from your runs, and gaps appear on a project's Coverage tab as reach accrues.",
     icon: 'i-lucide-map',
     doc: 'features/scenario-gaps',
   },

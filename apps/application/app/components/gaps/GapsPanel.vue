@@ -1,19 +1,16 @@
 <script setup lang="ts">
 /**
- * The Gaps tab: a project's scenario gaps and resilience findings, grouped by
- * feature and ranked, each with its class, exposure factors and evidence lines,
- * and the inbox verbs — accept (opens the draft), snooze, dismiss with a reason,
- * covered-by. A status filter switches between the open queue and the accepted
- * (or every) gap, so the Home inbox can link straight to the accepted ones.
- * Above the list sits the feature map — the project graph folded per feature —
- * and any feature or gap node opens in the feature-graph view under it; the
- * node it is open on is the address's `?node=kind:key`, so a link from another
- * page (a file's coverage, for one) opens the tab on that node. Under
- * the list, map health counts the inputs the map has and the steps it lacks.
+ * The Coverage tab's Gaps view: a project's scenario gaps and resilience
+ * findings, grouped by feature and ranked, each with its class, exposure
+ * factors and evidence lines, and the inbox verbs — accept (opens the draft),
+ * snooze, dismiss with a reason, covered-by. A status filter switches between
+ * the open queue and the accepted (or every) gap, so the Home inbox can link
+ * straight to the accepted ones. A gap's subject opens in the Map view's graph.
  * Self-contained: fetches its own data with watch + $fetch so it fires only when
- * the tab mounts.
+ * the view mounts.
  */
 import { errorMessage, SENTENCE_LINK_CLASS } from '~/utils';
+import { coverageTabLink } from '~/utils/coverage-tab';
 import { GAP_CLOSE_REASON_LABELS, type GapCloseReason } from '#shared/gap-classes';
 
 interface GapFactors {
@@ -74,7 +71,7 @@ function queryId(value: unknown): number | null {
 
 // A pull-request comment's links show one gap (`?gap=`), or the gaps one pull request's change raised
 // (`?gapPr=`, from its change-coverage status); an editor's, the gaps of one file (`?gapFile=`). Each
-// shows them whatever their status, without the feature map.
+// shows them whatever their status.
 const linkedGap = computed(() => queryId(route.query.gap));
 const linkedPr = computed(() => (linkedGap.value ? null : queryId(route.query.gapPr)));
 const linkedFile = computed(() =>
@@ -92,34 +89,11 @@ const gaps = ref<Gap[]>([]);
 const loading = ref(false);
 const loadError = ref<string | null>(null);
 const recomputing = ref(false);
-const graphSeed = ref<string | null>(
-  typeof route.query.node === 'string' && route.query.node ? route.query.node : null,
-);
-const graphCard = ref<HTMLElement | null>(null);
-// The graph's node is the address's `?node=`: an open graph can be shared, and a link can open one,
-// also while the tab is open.
-watch(graphSeed, (node) => {
-  if ((route.query.node ?? null) === node) return;
-  router.replace({ query: { ...route.query, node: node ?? undefined } });
-});
-watch(
-  () => route.query.node,
-  (node) => {
-    const seed = typeof node === 'string' && node ? node : null;
-    if (seed !== graphSeed.value) graphSeed.value = seed;
-  },
-);
-onMounted(() => {
-  if (graphSeed.value) nextTick(() => graphCard.value?.scrollIntoView?.({ block: 'start' }));
-});
 const mutedDetectors = ref<string[]>([]);
-const mapView = ref<{ reload: () => Promise<void> } | null>(null);
-const healthView = ref<{ reload: () => Promise<void> } | null>(null);
 
-/** Open a node in the graph view and bring the view into sight. */
+/** Open a gap's subject in the Map view's graph. */
 function openInGraph(node: { kind: string; key: string }) {
-  graphSeed.value = `${node.kind}:${node.key}`;
-  nextTick(() => graphCard.value?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }));
+  void router.push(coverageTabLink(props.projectId, 'map', { node: `${node.kind}:${node.key}` }));
 }
 
 async function load() {
@@ -216,8 +190,6 @@ async function triage(gap: Gap, body: Record<string, unknown>): Promise<boolean>
       body,
     });
     await load();
-    // The map counts open gaps, so a verdict changes it too.
-    await mapView.value?.reload();
     return true;
   } catch {
     toast.add({ title: 'Triage failed', color: 'error' });
@@ -309,7 +281,6 @@ async function recompute() {
       method: 'POST',
     });
     await load();
-    await Promise.all([mapView.value?.reload(), healthView.value?.reload()]);
     toast.add({ title: 'Gaps recomputed', color: 'success' });
   } catch {
     toast.add({ title: 'Recompute failed', color: 'error' });
@@ -328,12 +299,12 @@ const emptyText = computed(() =>
 
 <template>
   <div class="space-y-4" data-shot="gaps-panel">
-    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between max-sm:px-4">
       <p class="text-sm text-highlighted leading-relaxed" data-testid="gaps-lead">
         Proposed tests that do not exist yet, ranked by exposure, from observed reach: what tests visit, call and click.
         <template v-if="!isHidden('coverage')">
-          Which lines they ran is on
-          <NuxtLink :to="`/projects/${projectId}/coverage`" :class="SENTENCE_LINK_CLASS">the coverage page</NuxtLink>.
+          Which lines they ran is in the
+          <NuxtLink :to="coverageTabLink(projectId, 'code')" :class="SENTENCE_LINK_CLASS">Code view</NuxtLink>.
         </template>
         <HelpHint topic="project.gaps" />
       </p>
@@ -357,7 +328,7 @@ const emptyText = computed(() =>
       </div>
     </div>
 
-    <p v-if="linked" class="text-xs text-muted" data-testid="gaps-linked">
+    <p v-if="linked" class="text-xs text-muted max-sm:px-4" data-testid="gaps-linked">
       <span>
         <template v-if="linkedGap">Showing the gap a link named.</template>
         <template v-else-if="linkedPr">Showing the gaps of pull request #{{ linkedPr }}.</template>
@@ -369,35 +340,11 @@ const emptyText = computed(() =>
       <button type="button" :class="[SENTENCE_LINK_CLASS, 'ms-1']" @click="showAllGaps">Show all gaps</button>
     </p>
 
-    <p v-if="mutedDetectors.length > 0" class="text-xs text-muted">
+    <p v-if="mutedDetectors.length > 0" class="text-xs text-muted max-sm:px-4">
       Muted on this project (below 60% precision over 20+ verdicts; their gaps are listed last and left out of the PR
       comment and the gaps digest):
       <span class="font-mono">{{ mutedDetectors.join(', ') }}</span>
     </p>
-
-    <SectionCard
-      v-if="!linked"
-      title="Feature map"
-      subtitle="The project graph folded per feature — click one to open it in the graph"
-    >
-      <FeatureMapView ref="mapView" :project-id="projectId" :selected="graphSeed" @select="openInGraph" />
-    </SectionCard>
-
-    <div v-if="graphSeed" ref="graphCard" class="scroll-mt-4">
-      <SectionCard title="Feature graph">
-        <template #actions>
-          <UButton
-            size="xs"
-            color="neutral"
-            variant="ghost"
-            icon="i-lucide-x"
-            aria-label="Close feature graph"
-            @click="graphSeed = null"
-          />
-        </template>
-        <FeatureGraphView :project-id="projectId" :seed-node="graphSeed" @select="openInGraph" />
-      </SectionCard>
-    </div>
 
     <ErrorState v-if="loadError" :text="`Couldn't load gaps: ${loadError}`">
       <template #action>
@@ -478,18 +425,10 @@ const emptyText = computed(() =>
         </div>
       </SectionCard>
 
-      <p v-if="capped" class="text-xs text-muted">
+      <p v-if="capped" class="text-xs text-muted max-sm:px-4">
         Showing the top {{ PAGE_LIMIT }} gaps by exposure — narrow with a status filter or on a feature to see the rest.
       </p>
     </template>
-
-    <SectionCard
-      data-shot="map-health-card"
-      title="Map health"
-      subtitle="What the map can see: an input it lacks keeps the detectors that read it silent"
-    >
-      <MapHealthView ref="healthView" :project-id="projectId" />
-    </SectionCard>
 
     <UModal v-model:open="coveredOpen" :title="coveredDismiss ? 'Covered elsewhere' : 'Covered by a test'">
       <template #body>

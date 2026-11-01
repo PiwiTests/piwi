@@ -1,5 +1,5 @@
 /**
- * A commit's combined coverage as the API, the coverage page and the MCP tool
+ * A commit's combined coverage as the API, the Coverage tab’s Code view and the MCP tool
  * read it: the totals of every suite together and of each suite, the files
  * without coverage data, one folder's breakdown, and the notes on what the
  * numbers leave out. Computed from the stored reports and run coverage on

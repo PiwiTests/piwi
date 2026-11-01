@@ -2,7 +2,7 @@
 /**
  * Project settings → Coverage: the coverage scope (the files every coverage
  * ratio counts, as include and exclude patterns) and the named areas of the
- * code (`front: apps/web/`), each counted apart on the coverage page, in the
+ * code (`front: apps/web/`), each counted apart in the Coverage tab's Code view, in the
  * trend and in the pull-request comment. Patterns use the CODEOWNERS syntax.
  */
 import { DEFAULT_COVERAGE_EXCLUDES } from '@piwitests/core/coverage-scope';
@@ -66,7 +66,7 @@ function restoreDefaults() {
           label="Areas"
           name="areas"
           :error="areasError"
-          description="One per line, name then patterns: “front: apps/web/, packages/ui/”. A file belongs to the first area that matches it. Each area gets its own row on the coverage page, its own line in the trend and its share of the pull request’s changed lines."
+          description="One per line, name then patterns: “front: apps/web/, packages/ui/”. A file belongs to the first area that matches it. Each area gets its own row in the Coverage tab’s Code view, its own line in the trend and its share of the pull request’s changed lines."
         >
           <UTextarea
             v-model="state.areas"

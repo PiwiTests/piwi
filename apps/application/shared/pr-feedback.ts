@@ -324,7 +324,7 @@ export function renderChangeCoverage(cc: PrChangeCoverage, origin: string | null
         let line = `- ${codeSpan(file.filePath)} · changed (+${file.additions} −${file.deletions}) · 0 tests in ${cc.windowRuns} runs`;
         if (file.lines) line += ` · ${unreachedLinesText(file.lines)}`;
         if (file.gapId != null && cc.projectId != null && origin) {
-          line += `\n  → [open its gap](${origin}/projects/${cc.projectId}?tab=gaps&gap=${file.gapId}): **Accept** copies a draft test`;
+          line += `\n  → [open its gap](${origin}/projects/${cc.projectId}?tab=coverage&gap=${file.gapId}): **Accept** copies a draft test`;
         }
         lines.push(line);
       }
@@ -341,7 +341,7 @@ export function renderChangeCoverage(cc: PrChangeCoverage, origin: string | null
   if (raised > 0) {
     const link = origin && cc.projectId != null && cc.prNumber != null ? gapsOfPullRequestUrl(origin, cc) : null;
     const what = `${raised} ${raised === 1 ? 'gap' : 'gaps'} this change adds: a new error path, a new control or an intent no test names`;
-    blocks.push(link ? `${what}, [on the Gaps tab](${link}).` : `${what}.`);
+    blocks.push(link ? `${what}, [on the Coverage tab](${link}).` : `${what}.`);
   }
 
   // The changed lines no suite ran, of the files a test reached or, without the file list, of every file.
@@ -737,7 +737,7 @@ export function buildCommitStatus(input: PrSummaryInput, context: string): Commi
  * release, so the state is always `success` — it reports, it never blocks.
  */
 /**
- * Where the change-coverage status leads: the Gaps tab on the pull request's
+ * Where the change-coverage status leads: the Coverage tab on the pull request's
  * gaps, when its change raised some and they carry its number; else the run.
  */
 export function changeCoverageStatusUrl(cc: PrChangeCoverage, runUrl: string): string {
@@ -747,9 +747,9 @@ export function changeCoverageStatusUrl(cc: PrChangeCoverage, runUrl: string): s
   return gapsOfPullRequestUrl(origin, cc);
 }
 
-/** The Gaps tab on the gaps a pull request's change raised. */
+/** The Coverage tab on the gaps a pull request's change raised. */
 function gapsOfPullRequestUrl(origin: string, cc: PrChangeCoverage): string {
-  return `${origin}/projects/${cc.projectId}?tab=gaps&gapPr=${cc.prNumber}`;
+  return `${origin}/projects/${cc.projectId}?tab=coverage&gapPr=${cc.prNumber}`;
 }
 
 export function buildChangeCoverageStatus(cc: PrChangeCoverage, targetUrl: string, context: string): CommitStatusInput {

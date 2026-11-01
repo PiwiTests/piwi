@@ -4,12 +4,13 @@
  * or serves (its route handler, the routes the handler serves, the page or
  * route its file name gives it, the file itself), each with the tests that
  * reach it, its feature and its open scenario gaps, and a link that opens the
- * Gaps tab's graph on it. Coverage says which lines ran; this says which user
+ * Map view's graph on it. Coverage says which lines ran; this says which user
  * paths reach the file and which tests are still to write. Renders nothing
  * where the project declined the Test Map, or the map holds nothing for the
  * file. Self-contained: it reads `GET /api/projects/:id/gaps/file` when the
  * file changes.
  */
+import { coverageTabLink } from '~/utils/coverage-tab';
 import type { FileNodeVia, FileTestMap, FileTestMapNode } from '~~/server/utils/feature-graph';
 import { SENTENCE_LINK_CLASS } from '~/utils';
 
@@ -45,9 +46,9 @@ const VIA_LABEL: Record<FileNodeVia, string> = {
   convention: 'by its file name',
 };
 
-/** The Gaps tab, its graph open on the node. */
+/** The Coverage tab's Map view, its graph open on the node. */
 function nodeLink(node: FileTestMapNode) {
-  return { path: `/projects/${props.projectId}`, query: { tab: 'gaps', node: `${node.kind}:${node.key}` } };
+  return coverageTabLink(props.projectId, 'map', { node: `${node.kind}:${node.key}` });
 }
 
 function factsOf(node: FileTestMapNode): string {

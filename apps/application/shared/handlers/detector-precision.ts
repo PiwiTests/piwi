@@ -5,7 +5,7 @@
  * dismissal with no reason or as not worth testing counts for nothing. A
  * detector below the threshold on a project with enough
  * verdicts mutes itself there: its rows drop out of the pull-request comment
- * first, and the Gaps tab says so. Beside the verdicts, the outcome no one
+ * first, and the Gaps view says so. Beside the verdicts, the outcome no one
  * triages: how many of the gaps a detector raised on a pull request that pull
  * request acted on (a test it added answered the gap before it merged).
  *

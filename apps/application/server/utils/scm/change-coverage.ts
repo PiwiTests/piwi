@@ -429,7 +429,7 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
     ticket: f.ticket,
   }));
   // A muted detector keeps writing its ledger rows — so it still collects triage
-  // verdicts on the Gaps tab and can climb back above the threshold — but drops
+  // verdicts in the Gaps view and can climb back above the threshold — but drops
   // out of the pull-request comment (see the return below).
   const muted = await loadMutedDetectors(db, run.projectId).catch(() => new Set<string>());
   const gaps = detectChangedUnreached(reaches, runId, coverage.windowRuns).map((g) => rankGap(g, exposure));

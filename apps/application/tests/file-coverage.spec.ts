@@ -96,7 +96,7 @@ async function openFileNode(page: Page, projectId: number, request: APIRequestCo
   const gap = (gaps.items as Array<{ id: number; subject: { kind: string; key: string } }>).find(
     (g) => g.subject.kind === 'route' && g.subject.key === 'POST /api/orders-file-coverage',
   )!;
-  await page.goto(`/projects/${projectId}?tab=gaps`);
+  await page.goto(`/projects/${projectId}?tab=coverage`);
   await waitForHydration(page);
   await page.locator(`[data-shot="gap-${gap.id}"]`).getByRole('button', { name: 'View', exact: false }).click();
   const graph = page.locator('[data-shot="feature-graph"]');
@@ -265,7 +265,7 @@ test.describe('File coverage', () => {
     await expect(node).toContainText('this file · reached by 4 tests');
     await node.getByRole('link', { name: ENDPOINTS }).click();
 
-    await expect(page).toHaveURL(new RegExp(`/projects/${projectId}\\?tab=gaps&node=file`));
+    await expect(page).toHaveURL(new RegExp(`/projects/${projectId}\\?tab=coverage&view=map&node=file`));
     const seed = page.locator('[data-shot="feature-graph-seed"]');
     await expect(seed).toContainText(`file:${ENDPOINTS}`);
     await expect(seed.locator('[data-coverage-link]')).toBeVisible();
