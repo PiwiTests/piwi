@@ -45,7 +45,8 @@ With an embedding model configured, near-duplicate clusters that the fingerprint
 The **Failure inbox** on Home lists up to 50 open failure clusters across the projects you can see, most
 recently seen first. Each row shows the cluster's **headline**, its **top clue**, the **owner or assignee**, the
 **affected-test count**, when it was **last seen**, and only the exceptional **badges**, such as a regression on the
-default branch.
+default branch. A cluster seen only in developers' local runs, in a project that also runs in CI, stays out: the inbox
+says how many, and **Show them** lists them.
 
 ### Queues
 

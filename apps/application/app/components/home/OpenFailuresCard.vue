@@ -15,9 +15,13 @@ import type { OpenFailureCluster } from '~~/types/api';
 
 const props = defineProps<{
   clusters: OpenFailureCluster[];
+  /** How many clusters seen only in developers' own runs the list leaves out (`seenOnlyLocally`). */
+  localOnlyHidden?: number;
+  /** The list holds those clusters too. */
+  localIncluded?: boolean;
 }>();
 
-const emit = defineEmits<{ changed: [] }>();
+const emit = defineEmits<{ changed: []; 'include-local': [include: boolean] }>();
 
 const toast = useToast();
 const route = useRoute();
@@ -819,6 +823,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
                 }}</span>
               </template>
             </ClientOnly>
+            <template v-if="cluster.seenOnlyLocally">
+              <span class="shrink-0">·</span>
+              <span class="whitespace-nowrap" data-local-only>local runs only</span>
+            </template>
           </div>
         </div>
 
@@ -963,6 +971,29 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
         </div>
       </div>
     </div>
+
+    <!-- The clusters seen only in developers' own runs: work in progress, left out of the team's list unless asked -->
+    <p v-if="(localOnlyHidden ?? 0) > 0" class="mt-3 text-xs text-muted" data-local-note>
+      {{ localOnlyHidden }} {{ localOnlyHidden === 1 ? 'failure' : 'failures' }} seen only in developers' local runs
+      {{ localOnlyHidden === 1 ? 'is' : 'are' }} left out.
+      <button
+        type="button"
+        class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
+        @click="emit('include-local', true)"
+      >
+        Show {{ localOnlyHidden === 1 ? 'it' : 'them' }}
+      </button>
+    </p>
+    <p v-else-if="localIncluded" class="mt-3 text-xs text-muted" data-local-note>
+      Failures seen only in developers' local runs are listed.
+      <button
+        type="button"
+        class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
+        @click="emit('include-local', false)"
+      >
+        Leave them out
+      </button>
+    </p>
 
     <!-- Keyboard hints (hidden on touch) -->
     <p

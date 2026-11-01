@@ -9,7 +9,7 @@
   clusterMergeSuggestions,
   projectIntegrations,
 } from '../../server/database/schema';
-import { eq, and, desc, gte, sql, inArray, or, isNull, lte } from 'drizzle-orm';
+import { eq, and, desc, gte, sql, inArray, or, isNull, lte, type SQL } from 'drizzle-orm';
 import { makeTimeBuckets } from './analytics/common';
 import { isLabRun } from './probes';
 import { splitSuitePath } from '../utils/suites';
@@ -33,7 +33,7 @@ import { parsePlaywrightError } from '#shared/error-parse';
 import { failingStepParams } from '#shared/describe-failure';
 import { caseHeadline } from '#shared/failure-verdict';
 import { computeClusterState, failureGoesOn, ticketReconcileKey, type ClusterState } from '#shared/cluster-state';
-import { UNFINISHED_RUN_STATUSES } from '#shared/run-eligibility';
+import { LOCAL_RUN_ORIGINS, runOriginIn, UNFINISHED_RUN_STATUSES } from '#shared/run-eligibility';
 import { computeNextStep, type FlakeLabStepFacts, type NextStep } from '#shared/next-step';
 import { getFlakeLabStepFacts } from './flake-lab';
 import { mayHaveFlakeSuspects } from './flake-profile';
@@ -722,6 +722,56 @@ export async function extractClusterCases(
   };
 }
 
+/** How `getOpenFailureClusters` treats the clusters seen only in developers' own runs (`seenOnlyLocallySql`). */
+export interface OpenClustersOptions {
+  /** `exclude` leaves them out, as the team's inbox does by default; `include` (the default here) keeps them. */
+  localOnly?: 'include' | 'exclude';
+}
+
+/**
+ * SQL: the failure cluster was seen in developers' own runs alone (`LOCAL_RUN_ORIGINS`: their machine, the desktop app,
+ * an editor), in a project that also has other runs (CI): a failing execution of it in such a run, none in another.
+ * Work in progress on a laptop then stays out of the team's inbox; a project that only ever runs locally keeps its
+ * clusters there.
+ */
+function seenOnlyLocallySql(): SQL {
+  const local = runOriginIn(testRuns.origin, LOCAL_RUN_ORIGINS);
+  const seenIn = (origin: SQL) =>
+    sql`EXISTS (SELECT 1 FROM ${testRunsCases} INNER JOIN ${testRuns} ON ${testRuns.id} = ${testRunsCases.testRunId} WHERE ${testRunsCases.failureClusterId} = ${failureClusters.id} AND ${origin})`;
+  const otherRuns = sql`EXISTS (SELECT 1 FROM ${testRuns} WHERE ${testRuns.projectId} = ${failureClusters.projectId} AND NOT ${local})`;
+  return sql`(${seenIn(local)} AND NOT ${seenIn(sql`NOT ${local}`)} AND ${otherRuns})`;
+}
+
+/** The open, not snoozed clusters of `scope`, those seen only locally left out with `localOnly: 'exclude'`. */
+function openClustersWhere(scope: ProjectScope, now: Date, localOnly: 'include' | 'exclude'): SQL | undefined {
+  const allowed = scope === 'all' ? 'all' : [...scope];
+  if (allowed !== 'all' && allowed.length === 0) return undefined;
+  // Open, and not currently snoozed (null deadline, or a deadline already past —
+  // which is how an "until it recurs" wake and an expired timed snooze both read).
+  const notSnoozed = or(isNull(failureClusters.snoozedUntil), lte(failureClusters.snoozedUntil, now));
+  return and(
+    eq(failureClusters.status, 'open'),
+    notSnoozed,
+    ...(allowed === 'all' ? [] : [inArray(failureClusters.projectId, allowed)]),
+    ...(localOnly === 'exclude' ? [sql`NOT ${seenOnlyLocallySql()}`] : []),
+  );
+}
+
+/** How many open, not snoozed clusters of `scope` were seen only in developers' own runs (`seenOnlyLocallySql`). */
+export async function countLocalOnlyClusters(
+  db: DrizzleDB,
+  scope: ProjectScope = 'all',
+  now: Date = new Date(),
+): Promise<number> {
+  const where = openClustersWhere(scope, now, 'include');
+  if (!where) return 0;
+  const [row] = await db
+    .select({ n: sql<number>`count(*)` })
+    .from(failureClusters)
+    .where(and(where, seenOnlyLocallySql()));
+  return Number(row?.n ?? 0);
+}
+
 /**
  * Open failure clusters across every project the caller can see, newest first
  * by last seen — the Home failure inbox. Each row carries everything the inbox
@@ -742,17 +792,10 @@ export async function getOpenFailureClusters(
   scope: ProjectScope = 'all',
   limit = 50,
   now: Date = new Date(),
+  options: OpenClustersOptions = {},
 ): Promise<OpenFailureCluster[]> {
-  const allowed = scope === 'all' ? 'all' : [...scope];
-  if (allowed !== 'all' && allowed.length === 0) return [];
-
-  // Open, and not currently snoozed (null deadline, or a deadline already past —
-  // which is how an "until it recurs" wake and an expired timed snooze both read).
-  const notSnoozed = or(isNull(failureClusters.snoozedUntil), lte(failureClusters.snoozedUntil, now));
-  const where =
-    allowed === 'all'
-      ? and(eq(failureClusters.status, 'open'), notSnoozed)
-      : and(eq(failureClusters.status, 'open'), inArray(failureClusters.projectId, allowed), notSnoozed);
+  const where = openClustersWhere(scope, now, options.localOnly ?? 'include');
+  if (!where) return [];
 
   const clusters: any[] = await db
     .select({
@@ -771,6 +814,7 @@ export async function getOpenFailureClusters(
       fixVerification: failureClusters.fixVerification,
       snoozedUntil: failureClusters.snoozedUntil,
       snoozeMode: failureClusters.snoozeMode,
+      seenOnlyLocally: sql<number>`CASE WHEN ${seenOnlyLocallySql()} THEN 1 ELSE 0 END`,
     })
     .from(failureClusters)
     .where(where)
@@ -1006,6 +1050,7 @@ export async function getOpenFailureClusters(
       mergeSuggestionPending: mergeSuggestionClusterIds.has(c.id),
       snoozedUntil: c.snoozedUntil ?? null,
       snoozeMode: c.snoozeMode ?? null,
+      seenOnlyLocally: Number(c.seenOnlyLocally) === 1,
       incidentRun: firstRun?.incident
         ? {
             runId: c.firstSeenRunId,

@@ -299,6 +299,7 @@ import { getVerifiedFixes } from '#shared/handlers/flake-verified';
 import { getRunResources, getRunResourceTimeline } from '#shared/handlers/run-resources';
 import {
   getFailureCluster,
+  countLocalOnlyClusters,
   getOpenFailureClusters,
   patchClusterStatus,
   patchClusterAssignee,
@@ -1403,7 +1404,14 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/failure-clusters$/,
     handler: async (_m, _b, q, ctx) => {
       const limit = Math.min(200, Math.max(1, Number(q?.get('limit')) || 50));
-      return { items: await getOpenFailureClusters(await getDemoDb(), ctx?.scope, limit) };
+      const local = q?.get('local') === 'include' ? 'include' : 'exclude';
+      const db = await getDemoDb();
+      const now = new Date();
+      const [items, localOnlyHidden] = await Promise.all([
+        getOpenFailureClusters(db, ctx?.scope, limit, now, { localOnly: local }),
+        local === 'exclude' ? countLocalOnlyClusters(db, ctx?.scope, now) : 0,
+      ]);
+      return { items, localOnlyHidden };
     },
   },
   {

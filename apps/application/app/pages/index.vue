@@ -28,13 +28,18 @@ const {
   transform: (r: { items: TestRunForChart[] }) => r.items,
 });
 
-// Open failure clusters across the visible projects — the "Open failures" card.
-const { data: openClusters, refresh: refreshOpenClusters } = useFetch('/api/failure-clusters', {
+// Open failure clusters across the visible projects — the "Open failures" card. The clusters seen only in
+// developers' own runs stay out unless the viewer asks for them.
+const inboxLocal = useViewState('home-inbox-local', () => false);
+const { data: openClustersAnswer, refresh: refreshOpenClusters } = useFetch<{
+  items: OpenFailureCluster[];
+  localOnlyHidden: number;
+}>('/api/failure-clusters', {
   lazy: true,
-  query: { status: 'open', limit: 50 },
-  default: () => [] as OpenFailureCluster[],
-  transform: (r: { items: OpenFailureCluster[] }) => r.items,
+  query: computed(() => ({ status: 'open', limit: 50, local: inboxLocal.value ? 'include' : 'exclude' })),
+  default: () => ({ items: [] as OpenFailureCluster[], localOnlyHidden: 0 }),
 });
+const openClusters = computed(() => openClustersAnswer.value?.items ?? []);
 
 // Accepted-but-unwritten scenario gaps older than a week — the Home gaps queue.
 // The queue follows the instance `test-map` state: an instance that declined it
@@ -460,7 +465,10 @@ useViewScroll(() => dashboardPanelBody('home'));
           v-if="hasProjects"
           data-shot="open-failures"
           :clusters="openClusters"
+          :local-only-hidden="openClustersAnswer?.localOnlyHidden ?? 0"
+          :local-included="inboxLocal"
           @changed="refreshOpenClusters"
+          @include-local="(include) => (inboxLocal = include)"
         />
 
         <!-- Accepted-but-unwritten scenario gaps — the gaps inbox queue -->
