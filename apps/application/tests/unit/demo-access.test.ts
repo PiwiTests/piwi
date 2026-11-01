@@ -135,6 +135,27 @@ describe('the demo router holds each route to its permission', () => {
     });
   });
 
+  test('the tracker pickers read through the canned connection only, which every project is bound to', async () => {
+    // Priya files issues on project 2; another connection id answers as a missing connection does.
+    expect((await as(PRIYA).get('/api/integrations/connections/1/projects')).projects).toHaveLength(1);
+    expect((await as(PRIYA).get('/api/integrations/connections/1/issue-picker', 'q=')).issues).not.toHaveLength(0);
+    const paths = [
+      '/projects',
+      '/projects/DEMO/issue-types',
+      '/projects/DEMO/issue-types/Bug/fields',
+      '/assignable',
+      '/issue-picker',
+    ];
+    for (const path of paths) {
+      expect(await refusal(as(PRIYA).get(`/api/integrations/connections/2${path}`, 'project=DEMO')), path).toEqual({
+        statusCode: 404,
+        message: 'Connection not found or has no credentials',
+      });
+    }
+    // Sam files issues nowhere: the permission check refuses the request first.
+    expect((await refusal(as(SAM).get('/api/integrations/connections/1/projects')))?.statusCode).toBe(403);
+  });
+
   test('instance permissions are for the administrator only', async () => {
     expect((await as(AVERY).get('/api/project-access')).users).toHaveLength(DEMO_USERS.length);
     expect((await refusal(as(QUINN).get('/api/project-access')))?.statusCode).toBe(403);

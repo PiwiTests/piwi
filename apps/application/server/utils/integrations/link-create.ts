@@ -2,15 +2,18 @@ import { eq } from 'drizzle-orm';
 import { createLink, type LinkEntityType } from '#shared/handlers/links';
 import { entityLinks, type EntityLink } from '../../database/schema';
 import type { DbClient } from '../../database';
-import type { ProjectScope } from '../project-access';
-import { detectProviderWithConnections } from './link-resolve';
+import { resolveLinkEntityProjectId, type ProjectScope } from '../project-access';
+import { boundConnectionId } from './bound-connection';
+import { detectProviderWithConnection } from './link-resolve';
 import { unfurlLink } from './link-unfurl';
 import { mergeEntityLinkMetadata } from './entity-links';
 
 /**
- * Attach an external URL to an entity, matching it against the tracker
- * connections, then enrich it (title, status) on a best-effort basis. Throws
- * when the entity does not exist. The REST route and the MCP tool both call it.
+ * Attach an external URL to an entity, matching it against the connection the
+ * entity's project is bound to, then enrich it (title, status) on a best-effort
+ * basis. A URL on any other site, another connection's included, stays a plain
+ * link. Throws when the entity does not exist. The REST route and the MCP tool
+ * both call it.
  *
  * A tracker issue's status category is recorded as the link is made, as for an
  * issue Piwi files, so the status pull counts the issue's first move (to Done,
@@ -22,12 +25,19 @@ export async function createEnrichedLink(
   input: { entityType: LinkEntityType; entityId: number; url: string; title?: string | null },
   readable: ProjectScope,
 ): Promise<EntityLink | null> {
-  const { link } = await createLink(db, input, (u) => detectProviderWithConnections(db, u));
+  const projectId = await resolveLinkEntityProjectId(db, input.entityType, input.entityId);
+  const projectConnectionId = await boundConnectionId(db, projectId);
+  const { link } = await createLink(db, input, (u) => detectProviderWithConnection(db, u, projectConnectionId));
   if (!link) return null;
 
-  // Through the connection when the link matched one, otherwise the rich
-  // provider / OpenGraph path.
-  const { title, statusText, statusColor, statusCategory, assignee } = await unfurlLink(db, link, readable);
+  // Through the project's connection when the link matched it, otherwise the
+  // rich provider / OpenGraph path.
+  const { title, statusText, statusColor, statusCategory, assignee } = await unfurlLink(
+    db,
+    link,
+    readable,
+    projectConnectionId,
+  );
   if (statusCategory) await mergeEntityLinkMetadata(db, link.id, { statusCategory, assignee: assignee ?? null });
   if (!title && !statusText) return link;
   await db

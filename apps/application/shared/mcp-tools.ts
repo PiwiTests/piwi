@@ -1537,7 +1537,7 @@ export const MCP_TOOL_DEFS = [
     permission: 'link:write',
     description: md(
       'Link an existing ticket or pull request to a failure cluster, an execution, a test case, a run or a bug report.',
-      'It is the **Links** panel’s action. Any http or https URL works; one from a connected tracker is matched to its connection and shows its live status. Returns the stored link. To file a new Jira issue, use `create_issue`.',
+      'It is the **Links** panel’s action. Any http or https URL works; one on the site of the tracker the project is bound to is matched to that connection and shows its live status, and any other stays a plain link. Returns the stored link. To file a new Jira issue, use `create_issue`.',
       'Requires `link:write` (Contributor and above on the project).',
     ),
     inputSchema: {
