@@ -38,7 +38,10 @@ their fixes; the recording page says `piwi codegen` reads its own flags, not the
 runs, left out of Home's Failure inbox, which says how many and lists them on **Show them**, the API's `local=include`
 listing them too (V3); 3, a new test file's place from the service (`piwi/newTestFile`: beside the spec at hand, else
 in the config's test folder as Playwright reads it, with the suite's suffix), for both editors (P3, W5), leaving P4.
-Built in part: 2, a pick and a recording at a stop placed by the line the run's edits moved
+Built in part: 1 and the larger item 3, JetBrains' gutter running a test with Piwi (**Run with Piwi** and **Verify ×3
+with Piwi** in each test's icon menu, a run icon on a test with no result yet, P1), the recording's page expression
+chosen last selected again (P11), and VS Code's MCP configuration copied in Cursor's `mcpServers` shape too (P10),
+leaving P5 to P9 and P12 to P14; 2, a pick and a recording at a stop placed by the line the run's edits moved
 the paused call to, through the stopped worker's run, with no protocol change (F3, F4), leaving JetBrains' pick routed
 to the project whose run holds the stop (P2); 10, a breakpoint's file followed through its links and compared without
 case on Windows in the reporter (D7's reporter half), leaving the files outside the config's folder that the clients

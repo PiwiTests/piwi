@@ -458,6 +458,10 @@ describe('mcpConfiguration', () => {
         'piwi-2': { type: 'http', url: 'http://b/mcp' },
       },
     });
+    // The shape Cursor and Claude Code read.
+    expect(JSON.parse(mcpConfiguration([keyed], 'mcpServers'))).toEqual({
+      mcpServers: { piwi: { type: 'http', url: 'https://a/mcp', headers: { Authorization: 'Bearer pd_x' } } },
+    });
   });
 
   test('says whether it holds a key, or that the agent signs in', () => {

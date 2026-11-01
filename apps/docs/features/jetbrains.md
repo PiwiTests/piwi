@@ -46,7 +46,9 @@ The rest is native, and every action is under **Tools → Piwi**:
 - **The Piwi tool window** names the connection and holds the [failures view](./editor-failures#the-failures-view),
   since the IDE highlights open files only.
 - **Code Vision** shows the lines above files, locators and failing lines; each test's result is in the gutter, and a
-  click on its icon opens the test in the dashboard.
+  click on its icon opens the test in the dashboard. A test with no result yet has a run icon instead, and either
+  icon's right-click menu holds **Run with Piwi** and **Verify ×3 with Piwi**, which report to the instance as
+  Piwi's own runs do.
 - **The status bar** shows the latest run, or the run in progress, of the selected file's Playwright config, with an
   icon for its state and the error color while its tests fail; a click opens a menu of the actions, led by what the
   item calls for: [the status bar](./editor-runs#the-status-bar).

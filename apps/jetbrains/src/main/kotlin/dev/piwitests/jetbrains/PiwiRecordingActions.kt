@@ -323,7 +323,7 @@ object PiwiRecordFlow {
                 val dialog = RecordDialog(project, into, context, file.name, local.recordStartUrl, found, local.recordPage)
                 if (!dialog.showAndGet()) return@invokeLater
                 local.recordStartUrl = dialog.startUrl().orEmpty()
-                dialog.typedPage()?.let { local.recordPage = it }
+                dialog.page()?.let { local.recordPage = it }
                 val params = RecordParams(
                     uri = uri,
                     line = line,
@@ -468,7 +468,8 @@ object PiwiRecordFlow {
 /**
  * What a recording asks before it starts: the page the browser opens (a path on the `baseURL`, or a URL; the last one
  * typed), and the page expression the steps run on: the candidates of the code around the caret, the default first,
- * and the last expression typed that was not among them, or any other typed in.
+ * and the expression chosen last when it was not among them, or any other typed in; the one chosen last is selected
+ * when the code offers it, else the default.
  */
 private class RecordDialog(
     project: Project,
@@ -495,11 +496,12 @@ private class RecordDialog(
         val candidates = found?.candidates.orEmpty().mapNotNull { c -> c.expression?.trim()?.ifEmpty { null }?.let { it to c.reason.orEmpty() } }
         val default = found?.default?.trim()?.ifEmpty { null }
         offered = (listOfNotNull(default) + candidates.map { it.first }).distinct()
-        val typed = remembered.trim().ifEmpty { null }?.takeIf { it !in offered }
-        reasons = candidates.toMap() + listOfNotNull(typed?.let { it to "typed last time" })
+        val last = remembered.trim().ifEmpty { null }
+        val typed = last?.takeIf { it !in offered }
+        reasons = candidates.toMap() + listOfNotNull(typed?.let { it to "chosen last time" })
         page = ComboBox((offered + listOfNotNull(typed)).toTypedArray()).apply {
             isEditable = true
-            selectedItem = default ?: offered.firstOrNull()
+            selectedItem = last?.takeIf { it in offered } ?: default ?: offered.firstOrNull()
             renderer = object : ColoredListCellRenderer<String>() {
                 override fun customizeCellRenderer(list: JList<out String>, value: String?, index: Int, selected: Boolean, hasFocus: Boolean) {
                     append(value.orEmpty())
@@ -517,9 +519,6 @@ private class RecordDialog(
 
     /** The page expression; null for the service's default. */
     fun page(): String? = ((page.editor.item ?: page.selectedItem) as? String)?.trim()?.ifEmpty { null }
-
-    /** The page expression when it is not among those offered, to offer next time. */
-    fun typedPage(): String? = page()?.takeIf { it !in offered }
 
     override fun createCenterPanel(): JComponent = panel {
         row { text(where, maxLineLength = 70) }
