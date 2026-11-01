@@ -3674,6 +3674,13 @@ describe('the configs of one repository reading one project', () => {
     fs.rmSync(repo, { recursive: true, force: true });
   });
 
+  /** The failures once both configs read their latest run, which each reads after its locator index. */
+  const readFailures = () =>
+    waitFor(async () => {
+      const failures = (await twoClient.sendRequest('piwi/failures')) as FailuresResult;
+      return failures.tree.length === 2 && failures.tree.every((n) => n.children.length > 0) ? failures : undefined;
+    });
+
   test('download its locator index once, and show each failure once, from the config of its spec', async () => {
     const status = await waitFor(async () => {
       const s = (await twoClient.sendRequest('piwi/status')) as StatusResult;
@@ -3681,7 +3688,7 @@ describe('the configs of one repository reading one project', () => {
     });
     expect(status.contexts.map((c) => c.locators)).toEqual([2, 2]);
     expect(downloads).toBe(1);
-    const failures = (await twoClient.sendRequest('piwi/failures')) as FailuresResult;
+    const failures = await readFailures();
     const shown = failures.items.filter((f) => f.title === 'removes a row');
     expect(shown.map((f) => [f.root, f.uri])).toEqual([
       [repo, pathToFileURL(path.join(repo, 'tests/pages/checkout.page.ts')).href],
@@ -3695,7 +3702,7 @@ describe('the configs of one repository reading one project', () => {
       [repo, path.basename(repo)],
       [admin, 'admin'],
     ]);
-    const failures = (await twoClient.sendRequest('piwi/failures')) as FailuresResult;
+    const failures = await readFailures();
     expect(failures.tree.map((n) => [n.key, n.kind, n.label, n.description, n.root])).toEqual([
       [`context:${repo}`, 'context', path.basename(repo), 'Acme Mugs · 1 failing', repo],
       [`context:${admin}`, 'context', 'admin', 'Acme Mugs · 0 failing', admin],
