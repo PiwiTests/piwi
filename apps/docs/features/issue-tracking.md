@@ -25,6 +25,8 @@ It is **off until an [administrator connects Jira](/operate/integrations#connect
   *Create issues* button in the inbox bulk bar), and on a [bug report](./bug-reports#filing-it-in-jira). The cluster's
   **Issue** line and an execution's **Cluster** line offer *Create issue* and *Link an issue* until the cluster has a
   ticket, then name it, its summary on hover; the ⋮ menu offers *Open PROJ-123*.
+- **Link an issue** pins an existing ticket: one on the site of the [bound connection](#the-project-binding) shows its
+  live status; any other stays a plain link, read through no connection.
 - The issue **body is the fix plan**, rendered to Atlassian Document Format: *What happened*, *Most likely*, *Evidence*,
   *What to do* (patch, locator replacement, verify command, reproduce steps), *Related issues* fixed before and *Links*
   back to Piwi. Every section degrades independently.
@@ -87,6 +89,9 @@ type, default labels and assignee, the [ticket language](#language), what a tick
 **owner routes** — mapping a cluster's owner (`@acme/checkout`, an email) to a Jira project, component, assignee and
 labels. The create-issue draft picks the first matching route.
 
+Tickets linked through a connection the project is no longer bound to keep their last status; the sync and the
+policies skip them.
+
 <figure>
   <img src="/screenshots/project-integration-binding.png" alt="The project's Issue tracker settings: connection, Jira project and issue type, labels, the runs that write to the ticket, sync-policy switches, an owner-routes table, and automatic creation with one rule">
   <figcaption>A project's Issue tracker settings.</figcaption>
@@ -117,8 +122,8 @@ refusal naming the field, which the modal then asks for.
 ## Requirements
 
 - A connected **Jira Cloud** site — see [Operate → Integrations](/operate/integrations#connecting-jira-cloud).
-- A [project binding](#the-project-binding) naming the connection: a project's issues are filed through that one
-  connection, never through another.
+- A [project binding](#the-project-binding) naming the connection: a project's issues are filed, read and written
+  back through that one connection, never through another.
 - **`PIWI_SITE_URL`** set, so the issue body's links resolve back to the dashboard.
 - The **Contributor** [role](/operate/project-access#what-each-role-can-do) or above to create or link an issue; anyone
   who reads the project sees the key and status.

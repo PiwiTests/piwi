@@ -69,8 +69,8 @@ Every row can be triaged in place. Select a row with the mouse or `j` / `k`, the
 tracker is connected). `x` selects rows for a **bulk bar** that applies the same actions to all of them. Resolve, ignore, snooze and assign on
 one row can be undone for a few seconds. [Keyboard shortcuts](/reference/keyboard-shortcuts#failure-inbox) lists every key.
 
-Linking a known issue (`l`) pins a URL; with an [issue tracker connected](/operate/integrations), Jira links unfurl
-and stay in sync (see [issue tracking](/features/issue-tracking)).
+Linking a known issue (`l`) pins a URL; with the project bound to an [issue tracker](/operate/integrations), Jira links
+to its site unfurl and stay in sync (see [issue tracking](/features/issue-tracking)).
 
 ## Owners and assignees
 

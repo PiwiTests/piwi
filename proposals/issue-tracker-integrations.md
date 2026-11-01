@@ -318,9 +318,11 @@ external_id    TEXT                                            -- the tracker's 
 origin         'pinned' | 'created' | 'annotation' | 'reporter' -- who put it there
 ```
 
-- **Detection learns the connections.** `detectProvider(url)` keeps its URL-shape rules; a server-side
-  `detectProviderWithConnections(db, url)` first asks each connection's `parseIssueUrl`, so `https://jira.company.com/browse/XYZ-99`
-  is `jira` once that host is connected. The demo and the client keep the pure detector.
+- **Detection learns the project's connection.** `detectProvider(url)` keeps its URL-shape rules; a server-side
+  `detectProviderWithConnection(db, url, projectConnectionId)` first asks the `parseIssueUrl` of the connection the
+  link's project is bound to, so `https://jira.company.com/browse/XYZ-99` is `jira` once the project is bound to that
+  host, and a link to any other site, another connection's included, stays a plain link. The demo and the client keep
+  the pure detector.
 - **Refresh goes through the connection**, replacing the ad-hoc `loadAtlassianConfig`. `unfurlUrl` becomes: a link
   with a `connection_id` refreshes through `tracker.getIssue(externalId)`; a link without one keeps today's path.
 - **Two loose ends close.** The reporter's `relatedIssue` (`'PROJ-12'`) becomes a run link (`origin: 'reporter'`)
@@ -571,7 +573,7 @@ Jira the same way; the settings page hides nothing there.
   private-host policy, the generated configuration reference for the env vars, and the `mcp.md` tool table.
 - **Unit** (Vitest): every renderer against fixture documents (ADF snapshots checked against the schema's node
   list), every builder against seeded facts, the Jira client with `vi.stubGlobal('fetch')` as `scm-unfurl.test.ts`
-  does, dedupe candidate ranking, the policy guards, the backoff helper, `detectProviderWithConnections`.
+  does, dedupe candidate ranking, the policy guards, the backoff helper, `detectProviderWithConnection`.
 - **E2E** (Playwright): a mock Jira HTTP server in `tests/utils/` (the `ai-diagnosis.spec.ts` mock-provider pattern)
   driving create → chip → sync → comment → close → cluster prompt; a mock Confluence for publish; role checks; the
   env-managed connection; the MCP tool. Project names registered in `shared/test-project-names.ts`.
