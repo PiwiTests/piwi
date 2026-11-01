@@ -74,7 +74,7 @@ export interface GateFacts {
   quarantinedFailures: number;
   /** Tests currently quarantined in this project. */
   quarantinedTotal: number;
-  /** Tests that passed only after a retry in this run. */
+  /** Tests that passed in this run after an earlier attempt failed. */
   flakyTests: number;
   /** Set when `requireSelection` was asked: how the named selection fared in this run. */
   selection?: {

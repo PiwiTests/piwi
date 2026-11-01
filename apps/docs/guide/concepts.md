@@ -71,10 +71,11 @@ So is each `--repeat-each` repetition, which Playwright runs as a test of its ow
 repetition once, as Playwright's summary does, and a test failed in a run when one of its repetitions
 failed, whatever the others did.
 
-A test is **flaky** in a run when it passed after an earlier attempt failed or timed out, as Playwright counts
-it. A retry alone does not make it flaky: when one test of a `describe.serial` group fails, Playwright retries
-the whole group, and the tests that passed before, a `test.fail()` test that failed as expected, and a test
-that did not run behind the failure pass again without being flaky.
+A test is **flaky** in a run when its last attempt passed after an earlier attempt failed or timed out. A
+retry alone does not make it flaky: when one test of a `describe.serial` group fails, Playwright retries the
+whole group, and the tests that passed before, a `test.fail()` test that failed as expected, and a test that
+did not run behind the failure pass again without being flaky. The last attempt decides: a test that passed,
+then failed on the group's retry, counts as failed, where Playwright's summary calls it flaky.
 
 This is the object at `/test-run-cases/:id` — the error, steps, trace, screenshots, console, network,
 Web Vitals, and (for a failure) the diagnosis view. When the docs say *execution* or *test-run case*,

@@ -192,7 +192,7 @@ export class RunSubmitter {
     if (sm?.enabled && sm?.runId != null) {
       if (sm.lostResults) fallbackReason = 'results-lost';
       else {
-        outcome = await this.tryFinishStreaming(run, overallStatus, duration, auth);
+        outcome = await this.tryFinishStreaming(run, overallStatus, duration, auth, counts.flakyTests);
         if (!outcome.done) fallbackReason = 'finish-failed';
       }
     }
@@ -284,10 +284,10 @@ export class RunSubmitter {
     overallStatus: string,
     duration: number,
     auth: string | null,
+    flakyTests: number,
   ): Promise<SubmitOutcome> {
     const sm = this.streamManager!;
     try {
-      const { flakyTests } = computeDistinctRunCounts(run.testCases);
       const durations = run.testCases.filter((tc) => tc.duration != null).map((tc) => tc.duration as number);
 
       await sm.uploadRemaining(run.testCases);

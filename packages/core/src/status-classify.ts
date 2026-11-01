@@ -95,10 +95,12 @@ export function isUnexpectedStatus(status: string | null | undefined): boolean {
 }
 
 /**
- * Whether a test result is flaky, as Playwright counts it: its last attempt passed, and an earlier attempt that ran
- * ended unexpectedly (`isUnexpectedStatus`). A retry is not flaky when every earlier attempt passed (a
- * `describe.serial` group retried for another test's failure, or a `test.fail()` test that failed as expected), was
- * skipped or did not run. Statuses are the stored ones (`classifyStatus`).
+ * Whether a test result is flaky: its last attempt passed, and an earlier attempt that ran ended unexpectedly
+ * (`isUnexpectedStatus`). A retry is not flaky when every earlier attempt passed (a `describe.serial` group retried
+ * for another test's failure, or a `test.fail()` test that failed as expected), was skipped or did not run. The last
+ * attempt decides a result's bucket, so a result whose last attempt did not pass is never flaky here, where
+ * Playwright's own summary, which ignores attempt order, calls a pass followed by a failure flaky. Statuses are the
+ * stored ones (`classifyStatus`).
  */
 export function isFlakyResult(
   lastStatus: string | null | undefined,
