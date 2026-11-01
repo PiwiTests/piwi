@@ -88,6 +88,9 @@ describe('selectProbePlan', () => {
     expect(decidesCheck('not-noticed', 'drop-field')).toBe(true);
     expect(decidesCheck('inconclusive', 'status-500')).toBe(false);
     expect(decidesCheck('not-noticed', 'slow')).toBe(false);
+    expect(decidesCheck('noticed', 'delay')).toBe(false);
+    expect(decidesCheck('not-noticed', 'slow-first')).toBe(false);
+    expect(decidesCheck('noticed', 'throw')).toBe(true);
   });
 });
 

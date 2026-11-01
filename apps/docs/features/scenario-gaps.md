@@ -92,7 +92,7 @@ Every gap takes the same four verbs as an inbox item:
 - **Snooze** for a day, a week, or until the node changes.
 - **Dismiss** with a reason: *not worth testing*, *covered elsewhere* (which records the covering test as reaching the
   node), or *wrong*.
-- **Covered by** names the test that covers it and closes the gap. A gap closed this way stays closed when its
+- **Covered by** names the test written for it and closes the gap. A gap closed this way stays closed when its
   detector raises it again, and the covering test is recorded as reaching the node.
 
 Gaps persist, so triage survives recomputation: a dismissed gap keeps its verdict, and a gap **closes itself** when
@@ -107,8 +107,8 @@ acceptance: the tests not yet written.
 
 Every verdict is also a labeled example that counts
 [for or against its detector](/reference/gap-detectors#precision). A detector below 60% precision on a project with twenty or more verdicts **mutes itself**
-there: its rows leave the pull-request comment, the Gaps digest and the feature map, its gaps sort last in the Gaps tab
-and in the MCP tools, and the Gaps tab and **Settings → About** say so.
+there: its rows leave the pull-request comment, the Gaps digest, the feature map and graph, its gaps sort last in the Gaps
+tab and in the MCP tools, and the Gaps tab and **Settings → About** say so.
 
 The top new gaps of each project are the **Gaps digest**
 [quality report](/features/quality-reports#what-a-report-contains); [schedule it](/features/quality-reports#report-schedules)
@@ -118,8 +118,8 @@ to your channels. Agents list, draft and triage gaps with the
 
 ## What feeds the map
 
-Every run adds the routes its tests' pages called on the application's own origin (a page load is the page itself,
-never a route) and the pages they ran locator calls on or ended on. Three optional sources add the rest:
+Every run adds the routes its tests requested on the application's own origin and the pages they ran locator calls
+on or ended on. Three optional sources add the rest:
 
 - **The [page inventory](/guide/concepts#page-inventory).** With `capturePageInventory` on (off by default), the
   reporter records the controls and links of the pages a passing run visits. Control and link nodes, and the
@@ -140,7 +140,8 @@ reaches is named a **declared, never hit** blind spot instead of staying invisib
 - **An OpenAPI URL**, set per project under Project → Settings → Capabilities → Scenario gaps. Piwi reads the document
   when the URL is saved, every night and on a recompute, declares each path under the path of the document's first
   server (or Swagger's `basePath`), and records each route's documented response codes, so a *success only* gap can
-  name the error codes a route documents but never returned under test.
+  name the error codes a route documents but never returned under test. A route a later read no longer finds stops
+  being declared.
 
 A declared pattern is reached by every request it serves, as in a router: `/blog/{slug}` by `/blog/hello`.
 

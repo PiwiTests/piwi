@@ -3034,18 +3034,20 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const pr = params.pr != null ? numericParam(params.pr, 'pr') : undefined;
     const limit = params.limit != null ? clampPageSize(params.limit) : 20;
 
-    let gaps = await listScenarioGaps(db, projectId, { class: gapClass, minScore, prNumber: pr, limit: 200 });
+    // A muted detector's gaps come after every other, as on the Gaps tab.
+    let gaps = await listScenarioGaps(db, projectId, {
+      class: gapClass,
+      minScore,
+      prNumber: pr,
+      limit: 200,
+      mutedLast: true,
+    });
 
     // Feature filter: the gaps the list files under the feature (a hub's gaps
     // belong to no one feature).
     if (feature) gaps = gaps.filter((g) => g.feature === feature);
-
-    // A muted detector's gaps come after every other, as on the Gaps tab.
+    gaps = gaps.slice(0, limit);
     const muted = await loadMutedDetectors(db, projectId);
-    gaps = [...gaps.filter((g) => !muted.has(g.detector)), ...gaps.filter((g) => muted.has(g.detector))].slice(
-      0,
-      limit,
-    );
 
     return {
       items: gaps.map((g) =>

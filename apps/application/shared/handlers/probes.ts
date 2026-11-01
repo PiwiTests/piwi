@@ -47,20 +47,26 @@ export const PLANNED_PROBE_FAULTS = ['status-500', 'empty-body', 'drop-field'] a
 
 export type ProbeOutcome = 'noticed' | 'not-noticed' | 'inconclusive';
 
+/** Faults that only delay a response, client (`slow`) or server (`delay`, `slow-first`). */
+const DELAY_FAULTS = new Set(['slow', 'delay', 'slow-first']);
+
 /**
  * Whether a probe result says if the test checks what the fault broke: a
- * decisive outcome of a fault that breaks it. A `slow` outcome reads the test's
- * timeout, and an inconclusive one says nothing.
+ * decisive outcome of a fault that breaks it. A delay reads the test's timeout
+ * rather than its assertions, and an inconclusive outcome says nothing.
  */
 export function decidesCheck(outcome: string | null | undefined, fault: string | null | undefined): boolean {
-  return (outcome === 'noticed' || outcome === 'not-noticed') && fault !== 'slow';
+  return (outcome === 'noticed' || outcome === 'not-noticed') && !DELAY_FAULTS.has(fault ?? '');
 }
+
+/** How much an outcome says, for keeping one result per pair and fault: a pass under the fault says most. */
+const OUTCOME_WEIGHT: Record<ProbeOutcome, number> = { 'not-noticed': 2, noticed: 1, inconclusive: 0 };
 export type ProbeLevel = 'client' | 'server';
 
 /** Default per-project probes per run. */
 export const DEFAULT_PROBE_BUDGET = 50;
 
-/** An inconclusive (test, route) pair is eligible to be re-probed after this cooldown. */
+/** A (test, route) pair no probe decided is eligible to be re-probed after this cooldown. */
 export const PROBE_INCONCLUSIVE_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** The fraction of the budget reserved for server (level-two) items when enabled. */
@@ -413,23 +419,27 @@ export async function buildProbePlan(
     }
   }
 
-  // Existing probes: (test, route) → last probedAt and last outcome.
+  // Existing probes: (test, route) → the newest probe, and whether any probe decided the check.
   const existing = await db
     .select({
       testCaseId: probes.testCaseId,
       routeKey: probes.routeKey,
       probedAt: probes.probedAt,
       outcome: probes.outcome,
+      fault: probes.fault,
     })
     .from(probes)
     .where(eq(probes.projectId, projectId));
-  const lastProbe = new Map<string, { at: number; outcome: string }>();
+  const lastProbe = new Map<string, { at: number; decided: boolean }>();
   for (const p of existing) {
     if (p.testCaseId == null || !p.routeKey) continue;
     const at = p.probedAt instanceof Date ? p.probedAt.getTime() : Number(p.probedAt) || 0;
     const key = `${p.testCaseId}\x00${p.routeKey}`;
     const prev = lastProbe.get(key);
-    if (!prev || at > prev.at) lastProbe.set(key, { at, outcome: p.outcome });
+    lastProbe.set(key, {
+      at: Math.max(prev?.at ?? 0, at),
+      decided: (prev?.decided ?? false) || decidesCheck(p.outcome, p.fault),
+    });
   }
 
   const probedTests = [...new Set([...lastProbe.keys()].map((key) => Number(key.split('\x00')[0])))].filter((id) =>
@@ -451,11 +461,10 @@ export async function buildProbePlan(
     if (!meta) continue;
     const pairKey = `${testCaseId}\x00${r.routeKey}`;
     const prior = lastProbe.get(pairKey);
-    // An inconclusive probe does not block the pair forever: after a cooldown the
-    // pair is eligible again, so a fault the server never honored is retried.
-    const inconclusiveExpired =
-      prior != null && prior.outcome === 'inconclusive' && now - prior.at > PROBE_INCONCLUSIVE_COOLDOWN_MS;
-    const probed = prior != null && !inconclusiveExpired;
+    // A pair is probed once a probe decided its check. One whose probes decided
+    // nothing (inconclusive, or a delay) is eligible again after a cooldown, so a
+    // fault that never applied is retried.
+    const probed = prior != null && (prior.decided || now - prior.at <= PROBE_INCONCLUSIVE_COOLDOWN_MS);
     candidates.push({
       testCaseId,
       testTitle: meta.title,
@@ -609,10 +618,12 @@ async function loadRouteDependencies(db: DrizzleDB, projectId: number): Promise<
 }
 
 /**
- * Record a probe run's outcomes: one `probes` row per pair (deduped by
- * (project, test, route, fault)) and a refreshed `checks` edge test → route
- * carrying the outcome. A noticed probe is confidence 1, not-noticed 0,
- * inconclusive unscored.
+ * Record a probe run's outcomes: one `probes` row per (test, route, fault), and,
+ * for a result that decides the check (`decidesCheck`), the `checks` edge test →
+ * route carrying it: confidence 1 when noticed, 0 when not. Results of one pair
+ * and fault from several Playwright projects keep the one that says most: a pass
+ * under the fault, then a failure, then an inconclusive result. A server probe
+ * whose outcome is decided, and whose application did not cope, files a finding.
  */
 export async function recordProbeResults(
   db: DrizzleDB,
@@ -651,6 +662,8 @@ export async function recordProbeResults(
     return true;
   });
   if (results.length === 0) return { recorded: 0 };
+  const findingResults = results.filter((r) => r.outcome === 'noticed' || r.outcome === 'not-noticed');
+  results = strongestPerPair(results);
 
   // Resolve route node ids for the checks edges and the ledger's node_id.
   const routeKeys = [...new Set(results.map((r) => r.routeKey))];
@@ -772,7 +785,7 @@ export async function recordProbeResults(
       });
 
     // A server dependency probe also checks the dependency node, so an unprobed-
-    // dependency gap clears once a probe of it applied.
+    // dependency gap clears once a probe of it decided.
     if (r.dependency) {
       await db
         .insert(graphEdges)
@@ -813,7 +826,7 @@ export async function recordProbeResults(
 
   // Resilience findings: a server probe where the application did not handle the
   // fault gracefully, written as scenario_gaps rows ranked by exposure × severity.
-  const signals: ResilienceSignal[] = results
+  const signals: ResilienceSignal[] = findingResults
     .filter((r) => r.handled === 'degraded' || r.handled === 'unhandled')
     .map((r) => ({
       routeKey: r.routeKey,
@@ -833,4 +846,16 @@ export async function recordProbeResults(
   }
 
   return { recorded };
+}
+
+/** One result per (test, route, fault): the one whose outcome says most, the later one on a tie. */
+function strongestPerPair(results: ProbeResultInput[]): ProbeResultInput[] {
+  const weight = (r: ProbeResultInput) => OUTCOME_WEIGHT[r.outcome as ProbeOutcome] ?? 0;
+  const kept = new Map<string, ProbeResultInput>();
+  for (const r of results) {
+    const key = `${r.testCaseId}\x00${r.routeKey}\x00${r.fault}`;
+    const prev = kept.get(key);
+    if (!prev || weight(r) >= weight(prev)) kept.set(key, r);
+  }
+  return [...kept.values()];
 }

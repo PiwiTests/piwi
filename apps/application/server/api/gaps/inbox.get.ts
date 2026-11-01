@@ -8,7 +8,7 @@ defineRouteMeta({
     tags: ['Scenario gaps'],
     summary: 'Accepted-but-unwritten scenario gaps across projects',
     description:
-      'Gaps accepted more than a week ago whose node still has no trusted edge — the draft was never turned into a test. Drives the Home "gaps" inbox queue.',
+      'Gaps still accepted more than a week after their acceptance: the draft never became a test, or the test does not reach the gap yet. A gap closes once a recompute no longer finds it; findings never close themselves and are left out. Drives the Home "gaps" inbox queue.',
     parameters: [],
     'x-required-permission': 'project:read',
   },

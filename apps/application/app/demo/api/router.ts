@@ -3055,6 +3055,7 @@ const routes: RouteEntry[] = [
           status: query?.get('status') ?? undefined,
           prNumber: num(query?.get('pr')),
           limit: num(query?.get('limit')),
+          mutedLast: true,
         }),
       };
     },

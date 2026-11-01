@@ -70,7 +70,7 @@ import { completeRunSql, eligibleRunSql } from '../run-eligibility';
 import { decidesCheck } from './probes';
 import { finalAttempts, isFailedStatus } from '../utils/test-counts';
 import { projectDefaultBranch } from '../../server/utils/scm/stored-default-branch';
-import { RETIRED_DETECTORS } from './detector-precision';
+import { RETIRED_DETECTORS, loadMutedDetectors } from './detector-precision';
 import type { DiffAnchor } from '@piwitests/core/diff-anchors';
 import { predictLocatorBreaks, type PredictLocatorBreaksOptions } from '@piwitests/core/locator-break';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
@@ -534,20 +534,38 @@ export function detectChangedUnreached(
   return gaps;
 }
 
+/** The reads of a changed file that mean a test reached it. */
+const REACHED_CHANGES = new Set<ChangeReach>(['reached', 'reached-earlier']);
+
 /**
- * Close the open, snoozed and accepted *changed, unreached* gaps of `filePaths`:
- * files a diff no longer reads as uncovered changes, by the rule of change
- * coverage (reached, outside the coverage scope, deleted, or nothing observes
- * them). An accepted gap whose file a test now reaches had its test written.
- * Returns how many closed.
+ * Close the *changed, unreached* gaps of the files a diff read: the open and
+ * snoozed gaps of those it no longer reads as uncovered changes, by the rule of
+ * change coverage (reached, outside the coverage scope, deleted, or nothing
+ * observes them), and the accepted gaps of those a test reached, whose test was
+ * written. Returns how many closed.
  */
 export async function closeChangedUnreachedGaps(
   db: DrizzleDB,
   projectId: number,
   runId: number | null,
-  filePaths: string[],
+  files: Array<{ filePath: string; reach: ChangeReach }>,
 ): Promise<number> {
-  if (filePaths.length === 0) return 0;
+  const settled = files.filter((f) => f.reach !== 'unreached').map((f) => f.filePath);
+  const reached = files.filter((f) => REACHED_CHANGES.has(f.reach)).map((f) => f.filePath);
+  return (
+    (await closeChangedGapsOf(db, projectId, runId, settled, ['open', 'snoozed'])) +
+    (await closeChangedGapsOf(db, projectId, runId, reached, ['accepted']))
+  );
+}
+
+/** Close the *changed, unreached* gaps of `filePaths` whose status is one of `statuses`. */
+async function closeChangedGapsOf(
+  db: DrizzleDB,
+  projectId: number,
+  runId: number | null,
+  filePaths: string[],
+  statuses: GapStatus[],
+): Promise<number> {
   const now = new Date();
   let closed = 0;
   for (let i = 0; i < filePaths.length; i += 100) {
@@ -558,7 +576,7 @@ export async function closeChangedUnreachedGaps(
         and(
           eq(scenarioGaps.projectId, projectId),
           eq(scenarioGaps.detector, 'changed-unreached'),
-          inArray(scenarioGaps.status, ['open', 'snoozed', 'accepted']),
+          inArray(scenarioGaps.status, statuses),
           inArray(scenarioGaps.key, filePaths.slice(i, i + 100)),
         ),
       )
@@ -695,7 +713,7 @@ export interface DependencyProbeStatus {
   dependencyKey: string;
   /** Route keys whose handlers call this dependency. */
   calledByRoutes: string[];
-  /** True when any test has a `checks` edge on this dependency. */
+  /** True when a probe decided a `checks` edge on this dependency (`decidesCheck`). */
   probed: boolean;
 }
 
@@ -1502,6 +1520,26 @@ async function loadTestMeta(
 /** A test failing each of its last this many runs of the window protects nothing it reaches. */
 const FAILING_RUNS = 3;
 
+/**
+ * Flips between a failing and a passing run that make a test flaky across runs:
+ * one failure fixed in the next run is two, so three is a test that keeps going
+ * back.
+ */
+const FLAKY_FLIPS = 3;
+
+/** How many times a test's outcome turned from failed to passed, or back, across the runs it ran in. */
+function outcomeFlips(runs: readonly WindowOutcome[]): number {
+  let flips = 0;
+  let failedBefore: boolean | null = null;
+  for (const outcome of runs) {
+    if (outcome === 'skipped' || outcome === 'did-not-run') continue;
+    const failed = outcome === 'failed';
+    if (failedBefore !== null && failedBefore !== failed) flips++;
+    failedBefore = failed;
+  }
+  return flips;
+}
+
 /** A test's outcome in one run, from its final attempts on every browser and repetition. */
 type WindowOutcome = 'passed' | 'flaky' | 'failed' | 'skipped' | 'did-not-run';
 
@@ -1564,7 +1602,8 @@ async function loadWindowOutcomes(
 
 /**
  * Test cases whose reach is not trusted today, from the window's runs and the
- * quarantine: a test that passed only after a retry in one of them (flaky), one
+ * quarantine: a test that passed only after a retry in one of them, or whose
+ * outcome flipped between failed and passed three times across them (flaky), one
  * that failed each of its last three (failing), one under an active quarantine,
  * or one whose newest execution among them was skipped or did not run. Such a
  * test is a fragile single cover, never a second trusted one, so
@@ -1582,7 +1621,9 @@ async function loadUntrustedTests(
   const untrusted = new Map<number, UntrustedReason>();
   if (ids.length === 0) return untrusted;
   const outcomes = await loadWindowOutcomes(db, ids, runIds);
-  for (const [id, runs] of outcomes) if (runs.includes('flaky')) untrusted.set(id, 'flaky');
+  for (const [id, runs] of outcomes) {
+    if (runs.includes('flaky') || outcomeFlips(runs) >= FLAKY_FLIPS) untrusted.set(id, 'flaky');
+  }
   for (let i = 0; i < ids.length; i += 200) {
     const quarantined = await db
       .select({ id: quarantinedTests.testCaseId })
@@ -1632,7 +1673,8 @@ async function loadFirstGraphRunId(db: DrizzleDB, projectId: number): Promise<nu
  * for patterns the graph holds as route nodes. Route nodes are written on ingest
  * from the run's own origin alone, so this reuses that own-origin filter and a
  * third-party beacon's raw `network_requests` never becomes a success-only gap.
- * A page load is no call to a route, so its status never counts.
+ * A page load (a GET of a document) is no call a page makes, so its status
+ * never counts; a form's POST is one.
  */
 async function loadRouteStats(
   db: DrizzleDB,
@@ -1652,7 +1694,11 @@ async function loadRouteStats(
     .where(
       and(
         inArray(networkRequests.testRunId, runIds),
-        or(isNull(networkRequests.resourceType), ne(networkRequests.resourceType, 'document')),
+        or(
+          isNull(networkRequests.resourceType),
+          ne(networkRequests.resourceType, 'document'),
+          sql`upper(${networkRequests.method}) <> 'GET'`,
+        ),
       ),
     )
     .groupBy(networkRequests.method, networkRequests.normalizedUrl, networkRequests.status);
@@ -2203,7 +2249,7 @@ export async function computeScenarioGaps(
       set.add(e.toKey);
       dependenciesByHandler.set(e.fromKey, set);
     } else if (e.kind === 'checks') {
-      // Only a probe that decided the check counts: never an inconclusive one, nor a `slow` delay.
+      // Only a probe that decided the check counts (`decidesCheck`): never an inconclusive one, nor a delay.
       const ev = (e.evidence ?? {}) as { outcome?: string; fault?: string };
       if (!decidesCheck(ev.outcome, ev.fault)) continue;
       if (e.toKind === 'dependency') probedDependencies.add(e.toKey);
@@ -3396,9 +3442,10 @@ async function syncFeatureNodes(
 /**
  * Close the *changed, unreached* gaps in `statuses` (open and snoozed, and
  * accepted after a run) whose file the rule of change coverage now reads as
- * reached, in the recent window, or outside the coverage scope. Without the diff, a file Piwi observed only through the
- * head commit's coverage cannot be read again, so a file nothing else
- * observes keeps its gap until a later diff settles it.
+ * reached, in the recent window, or outside the coverage scope; an accepted
+ * gap closes only once its file is reached. Without the diff, a file Piwi
+ * observed only through the head commit's coverage cannot be read again, so a
+ * file nothing else observes keeps its gap until a later diff settles it.
  */
 async function closeReachedChangedUnreached(
   db: DrizzleDB,
@@ -3409,7 +3456,7 @@ async function closeReachedChangedUnreached(
   const closable = statuses.filter((s) => s === 'open' || s === 'snoozed' || s === 'accepted');
   if (closable.length === 0) return 0;
   const open = await db
-    .select({ id: scenarioGaps.id, key: scenarioGaps.key })
+    .select({ id: scenarioGaps.id, key: scenarioGaps.key, status: scenarioGaps.status })
     .from(scenarioGaps)
     .where(
       and(
@@ -3424,8 +3471,11 @@ async function closeReachedChangedUnreached(
     changedFiles: open.map((g) => ({ filePath: g.key, additions: 0, deletions: 0 })),
   });
   const reachOf = new Map(read.files.map((f) => [f.filePath, f.reach]));
+  // An open or snoozed gap closes once its file is reached or out of scope; an accepted one once a test reached it.
   const settled = new Set<ChangeReach>(['reached', 'reached-earlier', 'out-of-scope']);
-  const toClose = open.filter((g) => settled.has(reachOf.get(g.key) ?? 'unreached')).map((g) => g.id);
+  const toClose = open
+    .filter((g) => (g.status === 'accepted' ? REACHED_CHANGES : settled).has(reachOf.get(g.key) ?? 'unreached'))
+    .map((g) => g.id);
   if (toClose.length === 0) return 0;
 
   const now = new Date();
@@ -3646,6 +3696,8 @@ export interface GapFilters {
   /** Keep only gaps at or above this exposure score. */
   minScore?: number;
   limit?: number;
+  /** List a muted detector's gaps after every other one, so a page holds the others first. */
+  mutedLast?: boolean;
 }
 
 /** List a project's gaps, ranked by score. Defaults to open gaps only. */
@@ -3668,11 +3720,17 @@ export async function listScenarioGaps(
   if (filters.minScore != null) where.push(gte(scenarioGaps.score, filters.minScore));
 
   const limit = Math.min(200, Math.max(1, filters.limit ?? 100));
+  const muted = filters.mutedLast ? [...(await loadMutedDetectors(db, projectId))] : [];
+  const byScore = [desc(scenarioGaps.score), desc(scenarioGaps.updatedAt)];
   const rows = await db
     .select()
     .from(scenarioGaps)
     .where(and(...where))
-    .orderBy(desc(scenarioGaps.score), desc(scenarioGaps.updatedAt))
+    .orderBy(
+      ...(muted.length > 0
+        ? [sql`CASE WHEN ${inArray(scenarioGaps.detector, muted)} THEN 1 ELSE 0 END`, ...byScore]
+        : byScore),
+    )
     .limit(limit);
 
   const mapped = rows.map(mapGapRow);
@@ -4005,7 +4063,8 @@ async function reopenChangedNodeSnoozes(db: DrizzleDB, projectId: number, now: D
  * Accepted-but-unwritten gaps older than a week: the Home `gaps` inbox queue. A
  * gap whose test was written closes once a run's recompute no longer finds it
  * (a change gap, once a diff reads its file as reached), so a gap still accepted
- * a week on is one whose draft never became a test.
+ * a week on is one whose draft never became a test. A finding never closes
+ * itself, so it is never in the queue.
  */
 export async function listAcceptedUnwritten(
   db: DrizzleDB,
@@ -4013,7 +4072,11 @@ export async function listAcceptedUnwritten(
   now: Date = new Date(),
 ): Promise<ScenarioGapRow[]> {
   const cutoff = new Date(now.getTime() - 7 * DAY_MS);
-  const where = [eq(scenarioGaps.status, 'accepted'), lt(scenarioGaps.acceptedAt, cutoff)];
+  const where = [
+    eq(scenarioGaps.status, 'accepted'),
+    lt(scenarioGaps.acceptedAt, cutoff),
+    ne(scenarioGaps.kind, 'finding'),
+  ];
   if (projectIds !== 'all') {
     if (projectIds.length === 0) return [];
     where.push(inArray(scenarioGaps.projectId, projectIds));

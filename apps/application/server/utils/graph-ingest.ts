@@ -9,8 +9,7 @@
  * tagged with that branch, so a route added on a pull request never shows up as
  * surface drift on the default branch. Route nodes come only from requests to
  * the run's own origin, so third-party beacons and CDN assets never enter the
- * graph, and never from page loads (`isPageLoad`), which are the pages' own
- * nodes.
+ * graph.
  */
 
 import { and, asc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
@@ -30,7 +29,6 @@ import {
   collectOwnOrigins,
   isOwnOriginRequest,
   originsFromDocumentRequests,
-  isPageLoad,
   buildRequestGraph,
   buildPageInventoryGraph,
   buildManifestGraph,
@@ -53,6 +51,7 @@ import { FALLBACK_DEFAULT_BRANCH } from './scm/git-url';
 import { resolveCasePayloadContents } from './case-payloads';
 import { parseStoredLocatorPages } from './locator-pages';
 import { isLabRun } from '#shared/handlers/probes';
+import { completeRunSql, eligibleRunSql } from '#shared/run-eligibility';
 import { subjectFromGapKey } from '#shared/handlers/scenario-gaps';
 import type { DbClient as DB } from '../database';
 
@@ -102,19 +101,12 @@ type LocatorPagesOfRow = ReadonlyArray<{ origin: string; page: string }> | null 
  * those origins count — third-party beacons, CDN assets and redirects are
  * dropped before the fold, so they never key a node. A locator page counts only
  * against a known origin: its key has no host, so a third-party sign-in page
- * would otherwise merge into the application's page of the same path. A page
- * load reaches its page, never a route.
+ * would otherwise merge into the application's page of the same path.
  */
 export function collectRunGraphReaches(
   rows: Array<{ testCaseId: number | null | undefined; pageState: unknown; locatorPages?: LocatorPagesOfRow }>,
   networkBuilders: Array<{
-    items: Array<{
-      method: string;
-      normalizedUrl: string;
-      status: number;
-      url?: string | null;
-      resourceType?: string | null;
-    }>;
+    items: Array<{ method: string; normalizedUrl: string; status: number; url?: string | null }>;
   }>,
   options: { origins?: Set<string> } = {},
 ): RunGraphReach[] {
@@ -137,7 +129,7 @@ export function collectRunGraphReaches(
       byCase.set(testCaseId, entry);
     }
     for (const item of networkBuilders[i]?.items ?? []) {
-      if (!item.normalizedUrl || isPageLoad(item.resourceType)) continue;
+      if (!item.normalizedUrl) continue;
       if (!isOwnOriginRequest(item.url, origins)) continue;
       entry.routes.set(routeNodeKey(item.method, item.normalizedUrl), item);
     }
@@ -453,8 +445,8 @@ export interface PageInventoryCase {
   }>;
 }
 
-/** Load resource types that count as a page loading a route during settle; a page load opens a page, never a route. */
-const LOAD_RESOURCE_TYPES = new Set(['xhr', 'fetch']);
+/** Load resource types that count as a page loading a route during settle. */
+const LOAD_RESOURCE_TYPES = new Set(['document', 'xhr', 'fetch']);
 
 /**
  * Turn a run's cases into page inventories: one {@link PageInventoryInput} per
@@ -509,7 +501,7 @@ export function collectPageInventories(cases: PageInventoryCase[], origins: Set<
     }
     if (entries.length === 0) continue;
 
-    // Attribute each own-origin xhr/fetch request to the page current
+    // Attribute each own-origin document/xhr/fetch request to the page current
     // when it started — the entry with the greatest settle time at or before the
     // request start. A request with no start time, or before the first settle,
     // cannot be placed, so it produces no `loads` edge rather than a wrong one.
@@ -617,24 +609,17 @@ function dependencyNameFromSpan(span: ServerSpanEntry): string | null {
  * Extract per-route handler and dependency inputs from a run's network builders,
  * own-origin routes with server spans only. A request without spans contributes
  * nothing, so `handled-by` and `calls` edges form only for instrumented projects.
- * A page load is no route, so a server-rendered page's spans add nothing either.
  */
 export function collectRequestGraph(
   builders: Array<{
-    items: Array<{
-      method: string;
-      normalizedUrl: string;
-      url?: string | null;
-      serverTraces?: unknown;
-      resourceType?: string | null;
-    }>;
+    items: Array<{ method: string; normalizedUrl: string; url?: string | null; serverTraces?: unknown }>;
   }>,
   origins: Set<string>,
 ): RequestSpansInput[] {
   const out = new Map<string, RequestSpansInput & { dependencies: string[] }>();
   for (const b of builders) {
     for (const item of b.items) {
-      if (!item.normalizedUrl || isPageLoad(item.resourceType)) continue;
+      if (!item.normalizedUrl) continue;
       if (!isOwnOriginRequest(item.url, origins)) continue;
       const spans = Array.isArray(item.serverTraces) ? (item.serverTraces as ServerSpanEntry[]) : [];
       if (spans.length === 0) continue;
@@ -666,13 +651,7 @@ export async function ingestRequestGraph(
   projectId: number,
   runId: number,
   builders: Array<{
-    items: Array<{
-      method: string;
-      normalizedUrl: string;
-      url?: string | null;
-      serverTraces?: unknown;
-      resourceType?: string | null;
-    }>;
+    items: Array<{ method: string; normalizedUrl: string; url?: string | null; serverTraces?: unknown }>;
   }>,
   origins: Set<string>,
   options: { branch?: string | null } = {},
@@ -823,18 +802,12 @@ export async function rebuildProjectGraph(db: DB, projectId: number): Promise<{ 
 
     const byCase = new Map<
       number,
-      Array<{ method: string; normalizedUrl: string; status: number; url: string | null; resourceType: string | null }>
+      Array<{ method: string; normalizedUrl: string; status: number; url: string | null }>
     >();
     for (const r of requests) {
       if (!r.normalizedUrl) continue;
       const list = byCase.get(r.testRunsCaseId) ?? [];
-      list.push({
-        method: r.method,
-        normalizedUrl: r.normalizedUrl,
-        status: r.status,
-        url: r.url,
-        resourceType: r.resourceType,
-      });
+      list.push({ method: r.method, normalizedUrl: r.normalizedUrl, status: r.status, url: r.url });
       byCase.set(r.testRunsCaseId, list);
     }
 
@@ -964,10 +937,12 @@ export async function pruneStaleCanonicalNodes(db: DB): Promise<number> {
       .where(eq(projects.id, projectId));
     const defaultBranch = proj ? await resolveStoredDefaultBranch(db, proj) : FALLBACK_DEFAULT_BRANCH;
 
-    // Runs on the default branch that are not lab runs. Scan a bounded window
-    // and drop lab runs before taking the floor. A run whose branch is unknown
-    // counts only in a project that never recorded a branch: elsewhere it may be
-    // a pull-request run, and counting it would age canonical nodes it never saw.
+    // Complete runs on the default branch that are not lab runs, the ones the
+    // detectors read as evidence (`test-map`): a partial run says nothing about a
+    // node it did not reach. Scan a bounded window and drop lab runs before
+    // taking the floor. A run whose branch is unknown counts only in a project
+    // that never recorded a branch: elsewhere it may be a pull-request run, and
+    // counting it would age canonical nodes it never saw.
     const branchKnown = await projectHasKnownBranch(db, projectId);
     const onDefault = branchKnown
       ? eq(testRuns.branch, defaultBranch)
@@ -975,7 +950,7 @@ export async function pruneStaleCanonicalNodes(db: DB): Promise<number> {
     const canonicalRuns = await db
       .select({ id: testRuns.id, metadata: testRuns.metadata })
       .from(testRuns)
-      .where(and(eq(testRuns.projectId, projectId), onDefault))
+      .where(and(eq(testRuns.projectId, projectId), onDefault, eligibleRunSql('test-map'), completeRunSql()))
       .orderBy(sql`${testRuns.id} desc`)
       .limit(STALE_NODE_RUN_SCAN);
     const canonical = canonicalRuns.filter((r) => !isLabRun(r.metadata)).slice(0, STALE_NODE_RUNS);

@@ -267,9 +267,10 @@ describe('parseOpenApiSpec', () => {
       }),
     ).toEqual(['/v2/orders/{id}']);
     expect(patterns({ basePath: '/api' })).toEqual(['/api/orders/{id}']);
-    // A server at the root, or a variable with no default, adds nothing.
+    // A server at the root adds nothing; a variable with no default stays a parameter.
     expect(patterns({ servers: [{ url: 'https://api.example.com' }] })).toEqual(['/orders/{id}']);
-    expect(patterns({ servers: [{ url: '/{tenant}/api' }] })).toEqual(['/orders/{id}']);
+    expect(patterns({ servers: [{ url: '/{tenant}/api' }] })).toEqual(['/{tenant}/api/orders/{id}']);
+    expect(patterns({ servers: [{ url: './api/../v1/' }] })).toEqual(['/v1/orders/{id}']);
   });
 });
 

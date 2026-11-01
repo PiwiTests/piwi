@@ -63,12 +63,10 @@ function backfillTraceResourceLinks(): void {
 }
 
 /**
- * Bring the stored Test Map in line with its node rules, once per instance each,
+ * Take the query out of the route keys stored with one, once per instance,
  * without blocking startup; a failure is logged and the next start tries again.
- * The route keys lose their query first, so the page loads are matched against
- * the keys the nodes now have.
  */
-function repairGraph(target: DB): void {
+function rewriteRouteKeys(target: DB): void {
   void (async () => {
     try {
       const { rewriteQueryRouteKeysOnce } = await import('../utils/graph-route-keys');
@@ -80,15 +78,6 @@ function repairGraph(target: DB): void {
       }
     } catch (err) {
       console.error('[Database] Route-key rewrite failed:', err);
-    }
-    try {
-      const { retirePageLoadRoutesOnce } = await import('../utils/graph-page-loads');
-      const retired = await retirePageLoadRoutesOnce(target as any);
-      if (retired && retired.nodes + retired.edges > 0) {
-        console.log(`[Database] Page-load routes retired: ${retired.nodes} node(s), ${retired.edges} edge(s)`);
-      }
-    } catch (err) {
-      console.error('[Database] Page-load route retirement failed:', err);
     }
   })();
 }
@@ -152,7 +141,7 @@ async function openDatabase(): Promise<DB> {
           } catch (rcErr) {
             console.error('[Database] Failure-cluster re-fingerprinting failed:', rcErr);
           }
-          repairGraph(db as any);
+          rewriteRouteKeys(db as any);
           backfillTraceResourceLinks();
           backfillAnalyticsRollups();
         } catch (error) {
@@ -211,7 +200,7 @@ async function openDatabase(): Promise<DB> {
           } catch (rcErr) {
             console.error('[Database] Failure-cluster re-fingerprinting failed:', rcErr);
           }
-          repairGraph(db);
+          rewriteRouteKeys(db);
           backfillTraceResourceLinks();
           backfillAnalyticsRollups();
         } catch (error) {

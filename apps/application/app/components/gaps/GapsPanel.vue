@@ -449,8 +449,13 @@ const emptyText = computed(() =>
       <template #body>
         <div class="space-y-3">
           <p class="text-sm text-highlighted">
-            Enter the test case id that covers this. A manual reaches edge is written so the gap closes on the next
-            recompute<span v-if="coveredDismiss"> and the gap is dismissed</span>.
+            <template v-if="coveredDismiss">
+              Enter the test case id of the test that already covered this: no test was missing.
+            </template>
+            <template v-else>Enter the test case id of the test written for this gap.</template>
+            A manual reaches edge is written so the gap closes on the next recompute<span v-if="coveredDismiss">
+              and the gap is dismissed</span
+            >.
           </p>
           <UFormField label="Covering test case id" :error="coveredError ?? undefined">
             <UInput v-model="coveredTestId" type="number" placeholder="test case id" class="w-full" />

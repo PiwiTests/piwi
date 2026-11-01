@@ -8,6 +8,7 @@ import { describe, test, expect, beforeEach } from 'vitest';
 import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
+import { eq } from 'drizzle-orm';
 import { migrateToLatest } from './temp-db';
 
 delete process.env.PIWI_DATABASE_URL;
@@ -274,6 +275,38 @@ describe('computeScenarioGaps — success only', () => {
     const raised = await gaps.listScenarioGaps(db, 1, { detector: 'success-only' });
     expect(raised.map((g) => g.subject)).toEqual([{ kind: 'route', key: 'GET /users' }]);
   });
+
+  test("a form's POST is a call: always answered with a redirect, it has no error path under test", async () => {
+    await db.insert(schema.testRuns).values({
+      id: 1,
+      projectId: 1,
+      status: 'passed',
+      startTime: new Date(),
+      branch: 'main',
+      metadata: metadata as never,
+    });
+    await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'contacts us' });
+    await db
+      .insert(schema.graphNodes)
+      .values({ projectId: 1, kind: 'route', key: 'POST /contact', firstSeenRunId: 1, lastSeenRunId: 1 });
+    await execution({
+      id: 1,
+      runId: 1,
+      testCaseId: 1,
+      requests: [
+        ...Array.from({ length: 5 }, () => ({
+          method: 'POST',
+          path: '/contact',
+          status: 303,
+          resourceType: 'document',
+        })),
+      ],
+    });
+
+    await gaps.computeScenarioGaps(db, 1);
+    const raised = await gaps.listScenarioGaps(db, 1, { detector: 'success-only' });
+    expect(raised.map((g) => g.subject)).toEqual([{ kind: 'route', key: 'POST /contact' }]);
+  });
 });
 
 describe('computeScenarioGaps — the evidence window', () => {
@@ -356,6 +389,45 @@ describe('computeScenarioGaps — the evidence window', () => {
     await gaps.computeScenarioGaps(db, 1);
     expect(await gaps.listScenarioGaps(db, 1, { detector: 'orphan-test' })).toEqual([]);
   });
+
+  test('a test whose nodes no complete run reached is an orphan, partial runs between them or not', async () => {
+    const run = (id: number, isFullRun: number) => ({
+      id,
+      projectId: 1,
+      status: 'passed',
+      startTime: new Date(),
+      branch: 'main',
+      isFullRun,
+      metadata: metadata as never,
+    });
+    // Run 1 saw the node; 30 complete runs since, with a partial run after each, never did.
+    await db
+      .insert(schema.testRuns)
+      .values([run(1, 1), ...Array.from({ length: 30 }, (_, i) => [run(2 * i + 2, 1), run(2 * i + 3, 0)]).flat()]);
+    await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'billing' });
+    await db.insert(schema.graphNodes).values(node('GET /api/billing', 1));
+    await db.insert(schema.graphEdges).values(reach(1, 'GET /api/billing'));
+
+    await gaps.computeScenarioGaps(db, 1);
+    expect((await gaps.listScenarioGaps(db, 1, { detector: 'orphan-test' })).map((g) => g.key)).toEqual(['test:1']);
+  });
+
+  test('partial runs never age a node toward retirement', async () => {
+    await db.insert(schema.testRuns).values(
+      Array.from({ length: 40 }, (_, i) => ({
+        id: i + 2,
+        projectId: 1,
+        status: 'passed',
+        startTime: new Date(),
+        branch: 'main',
+        isFullRun: 0,
+        metadata: metadata as never,
+      })),
+    );
+    await db.insert(schema.graphNodes).values(node('GET /api/billing', 1));
+    const { pruneStaleCanonicalNodes } = await import('../../server/utils/graph-ingest');
+    expect(await pruneStaleCanonicalNodes(db as never)).toBe(0);
+  });
 });
 
 describe('computeScenarioGaps — which tests are trusted', () => {
@@ -418,6 +490,28 @@ describe('computeScenarioGaps — which tests are trusted', () => {
     await run(1, [{ status: 'failed' }, { status: 'passed', retries: 1 }]);
     await run(2, [{ status: 'passed' }]);
     expect((await onlyTestGap()).evidence.join(' ')).toContain('(flaky)');
+  });
+
+  test('a test whose outcome flips between failed and passed across runs is flaky, with no retry', async () => {
+    for (const [id, status] of [
+      [1, 'passed'],
+      [2, 'failed'],
+      [3, 'passed'],
+      [4, 'failed'],
+      [5, 'passed'],
+    ] as const)
+      await run(id, [{ status }]);
+    expect((await onlyTestGap()).evidence.join(' ')).toContain('(flaky)');
+  });
+
+  test('one failure fixed in the next run is not flaky', async () => {
+    for (const [id, status] of [
+      [1, 'passed'],
+      [2, 'failed'],
+      [3, 'passed'],
+    ] as const)
+      await run(id, [{ status }]);
+    expect((await onlyTestGap()).title).toBe('Only one test reaches route POST /api/orders');
   });
 
   test('a test failing its last three runs protects nothing', async () => {
@@ -675,5 +769,43 @@ describe('computeScenarioGaps — assertion-light and the function catalog', () 
     expect(
       (await gaps.listScenarioGaps(db, 1, { detector: 'catalog-method-no-test-calls' })).map((g) => g.title),
     ).toEqual(['usersPage.goToNextPage is never called']);
+  });
+});
+
+describe('undeclareOpenApiRoutes', () => {
+  test('a route the new OpenAPI document no longer declares stops being declared, and its gap closes', async () => {
+    const { ingestProjectManifest } = await import('../../server/utils/surface-manifest');
+    const { undeclareOpenApiRoutes } = await import('../../server/utils/openapi-surface');
+    await db.insert(schema.testRuns).values({
+      id: 1,
+      projectId: 1,
+      status: 'passed',
+      startTime: new Date(),
+      branch: 'main',
+      metadata: metadata as never,
+    });
+    const openGaps = async () =>
+      (await db.select().from(schema.scenarioGaps))
+        .filter((g) => g.detector === 'declared-never-hit' && g.status === 'open')
+        .map((g) => g.key)
+        .sort();
+
+    await ingestProjectManifest(db as never, 1, { routes: [{ method: 'GET', pattern: '/orders/{id}' }] }, 'openapi');
+    await gaps.computeScenarioGaps(db as never, 1);
+    expect(await openGaps()).toEqual(['route:GET /orders/:id']);
+
+    const moved = { routes: [{ method: 'GET', pattern: '/api/v1/orders/{id}' }] };
+    await ingestProjectManifest(db as never, 1, moved, 'openapi');
+    expect(await undeclareOpenApiRoutes(db as never, 1, moved)).toBe(1);
+    await gaps.computeScenarioGaps(db as never, 1);
+    expect(await openGaps()).toEqual(['route:GET /api/v1/orders/:id']);
+
+    const [old] = await db.select().from(schema.graphNodes).where(eq(schema.graphNodes.key, 'GET /orders/:id'));
+    expect(old?.origin).toBe('observed');
+    expect((old?.attrs as { declared?: boolean } | null)?.declared).toBeUndefined();
+
+    expect(await undeclareOpenApiRoutes(db as never, 1, null)).toBe(1);
+    await gaps.computeScenarioGaps(db as never, 1);
+    expect(await openGaps()).toEqual([]);
   });
 });

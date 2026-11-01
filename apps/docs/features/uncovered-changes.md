@@ -43,7 +43,8 @@ A test reaches a file when it:
 
 Piwi can observe a file when one of these could happen to it, or when the head commit's coverage counts its changed
 lines. A skipped test reaches nothing. A *changed, unreached* gap closes when a later diff no longer counts its file
-as uncovered, or when the Test Map's next recompute finds it reached or out of scope.
+as uncovered, or when the Test Map's next recompute finds it reached or out of scope; an accepted one closes only once
+a test reaches the file.
 
 Before the pull request, the [editor extensions](./editor-coverage#uncovered-changes) mark the lines of an uncovered
 change of a page or a server route in the file itself, by a rule of their own: no coverage scope, no window of runs,

@@ -30,9 +30,10 @@ function documentedCodes(responses: unknown): number[] {
 
 /**
  * The path every route of a document is served under: the path of its first
- * server's URL (OpenAPI 3, its variables filled with their defaults) or its
- * `basePath` (Swagger 2), without a trailing slash; empty when it names none,
- * or a variable has no default.
+ * server's URL (OpenAPI 3) or its `basePath` (Swagger 2), without a trailing
+ * slash; empty when it names none. A server variable with a default takes it;
+ * one without stays a parameter, as in a route, so the routes match whatever
+ * value a test's server used.
  */
 export function openApiBasePath(spec: unknown): string {
   const doc = spec as {
@@ -50,14 +51,13 @@ export function openApiBasePath(spec: unknown): string {
   } else if (typeof doc?.basePath === 'string') {
     raw = doc.basePath;
   }
-  if (!raw || raw.includes('{')) return '';
-  let path: string;
-  try {
-    path = new URL(raw, 'http://base.invalid').pathname;
-  } catch {
-    return '';
+  if (!raw) return '';
+  const segments: string[] = [];
+  for (const segment of raw.split(/[?#]/, 1)[0]!.split('/')) {
+    if (segment === '..') segments.pop();
+    else if (segment && segment !== '.') segments.push(segment);
   }
-  return path.replace(/\/+$/, '');
+  return segments.length > 0 ? `/${segments.join('/')}` : '';
 }
 
 /**

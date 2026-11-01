@@ -1253,7 +1253,7 @@ export const MCP_TOOL_DEFS = [
         '`accept`: queue its draft, optionally for `assignedTo`',
         '`snooze`: for `1-day`, `1-week` or `until-node-changes`',
         '`dismiss`: with a `reason`, `not-worth-testing`, `covered-elsewhere` (with the covering test) or `wrong`',
-        '`covered-by`: record the test that covers it, without dismissing it',
+        '`covered-by`: record the test written for it, which closes it without dismissing it; a test that already covered it is a dismissal as `covered-elsewhere`',
       ],
       'Requires `triage:write` (Maintainer and above on the project).',
     ),
@@ -1272,7 +1272,7 @@ export const MCP_TOOL_DEFS = [
           type: 'string',
           enum: ['not-worth-testing', 'covered-elsewhere', 'wrong'],
           description:
-            'With dismiss: why. `wrong` and `covered-elsewhere` count against the detector; with no reason the dismissal counts for nothing',
+            'With dismiss: why. `wrong` counts against the detector, and so does `covered-elsewhere` on a gap (not on a finding); `not-worth-testing`, or no reason, counts for neither',
         },
         coveringTestCaseId: {
           type: 'number',

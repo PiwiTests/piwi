@@ -164,6 +164,11 @@ describe('reopenExpiredSnoozes / listAcceptedUnwritten', () => {
     expect(await listAcceptedUnwritten(db, [1])).toHaveLength(0);
   });
 
+  test('an accepted finding, which never closes itself, is never in the queue', async () => {
+    await seedGap({ status: 'accepted', kind: 'finding', acceptedAt: new Date(Date.now() - 8 * 24 * 3600 * 1000) });
+    expect(await listAcceptedUnwritten(db, [1])).toHaveLength(0);
+  });
+
   test('listScenarioGaps reopens an expired snooze before listing', async () => {
     await seedGap({ status: 'snoozed', snoozedUntil: new Date(Date.now() - 1000) });
     const open = await listScenarioGaps(db, 1, {}); // defaults to open only

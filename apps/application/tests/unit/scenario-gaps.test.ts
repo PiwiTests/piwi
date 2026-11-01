@@ -612,7 +612,7 @@ describe('computeScenarioGaps', () => {
     });
   });
 
-  test('closes the open, snoozed and accepted changed-unreached gaps of files a diff no longer reads as uncovered', async () => {
+  test('closes the open and snoozed changed-unreached gaps of files a diff no longer reads as uncovered, and the accepted ones of files a test reached', async () => {
     await seedRun(1);
     const gap = (key: string, status: string) => ({
       projectId: 1,
@@ -630,9 +630,19 @@ describe('computeScenarioGaps', () => {
         gap('src/c.ts', 'dismissed'),
         gap('src/d.ts', 'open'),
         gap('src/e.ts', 'accepted'),
+        gap('src/f.ts', 'accepted'),
       ]);
 
-    expect(await gaps.closeChangedUnreachedGaps(db, 1, 1, ['src/a.ts', 'src/b.ts', 'src/c.ts', 'src/e.ts'])).toBe(3);
+    expect(
+      await gaps.closeChangedUnreachedGaps(db, 1, 1, [
+        { filePath: 'src/a.ts', reach: 'reached' },
+        { filePath: 'src/b.ts', reach: 'deleted' },
+        { filePath: 'src/c.ts', reach: 'reached' },
+        { filePath: 'src/d.ts', reach: 'unreached' },
+        { filePath: 'src/e.ts', reach: 'reached-earlier' },
+        { filePath: 'src/f.ts', reach: 'not-observable' },
+      ]),
+    ).toBe(3);
 
     const rows = await db
       .select({ key: schema.scenarioGaps.key, status: schema.scenarioGaps.status })
@@ -643,6 +653,7 @@ describe('computeScenarioGaps', () => {
       'src/c.ts': 'dismissed',
       'src/d.ts': 'open',
       'src/e.ts': 'closed',
+      'src/f.ts': 'accepted',
     });
   });
 
@@ -800,6 +811,33 @@ describe('computeScenarioGaps', () => {
     // regardless of the order the edges came back from the database.
     const list = await gaps.listScenarioGaps(db, 1, { detector: 'not-noticed' });
     expect(list.find((r) => r.key === 'route:POST /api/orders')).toBeFalsy();
+  });
+
+  test('a probe that decided nothing never checks a route', async () => {
+    await seedRun(1);
+    await db.insert(schema.testCases).values({ id: 2, projectId: 1, filePath: 'tests/b.spec.ts', title: 'b' });
+    await seedReach(1, 'route', 'POST /api/orders', 1);
+    await seedReach(2, 'route', 'POST /api/orders', 1);
+    for (const [testCaseId, outcome, fault] of [
+      [1, 'not-noticed', 'status-500'],
+      [2, 'noticed', 'slow'],
+    ] as const) {
+      await db.insert(schema.graphEdges).values({
+        projectId: 1,
+        fromKind: 'test',
+        fromKey: String(testCaseId),
+        toKind: 'route',
+        toKey: 'POST /api/orders',
+        kind: 'checks',
+        evidence: { outcome, fault },
+        lastSeenAt: new Date(++clock),
+      });
+    }
+
+    await gaps.computeScenarioGaps(db, 1);
+    // A test failing under a delay read its timeout, not its assertions: the route is still unchecked.
+    const list = await gaps.listScenarioGaps(db, 1, { detector: 'not-noticed' });
+    expect(list.map((r) => r.key)).toContain('route:POST /api/orders');
   });
 
   test('a flaky test noticing a probe does not check the route', async () => {
