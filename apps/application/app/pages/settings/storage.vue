@@ -123,6 +123,7 @@ async function handleCleanup() {
       data-shot="cleanup-card"
       data-tour="storage-cleanup"
     >
+      <DesktopRetentionSetting />
       <p v-if="storage?.kept" class="text-xs text-muted mb-3" data-shot="kept-runs-note">
         <template v-if="storage.kept.runs > 0">
           {{ storage.kept.runs }} kept {{ storage.kept.runs === 1 ? 'run is' : 'runs are' }} never deleted — they hold

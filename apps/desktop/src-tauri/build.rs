@@ -18,6 +18,7 @@ fn main() {
             "desktop_set_run_in_background",
             "desktop_set_start_on_login",
             "desktop_set_server_port",
+            "desktop_set_retention_days",
             "desktop_open_external",
             "desktop_open_in_ide",
             "desktop_open_window",

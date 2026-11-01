@@ -100,6 +100,12 @@ const BAD_PORTS: [u16; 19] = [
 ];
 /// Settings key: the port the server listens on from the next start.
 const SERVER_PORT_KEY: &str = "serverPort";
+/// Settings key: the days of runs the server's nightly sweep keeps from the next
+/// start (`PIWI_RETENTION_DAYS`, 0 keeps them all). Absent until the user picks
+/// one, and the server then follows the environment the app was started in.
+const RETENTION_DAYS_KEY: &str = "retentionDays";
+/// The longest retention a user may choose: a hundred years.
+const MAX_RETENTION_DAYS: u32 = 36_500;
 /// File the Windows installer leaves in the app data folder with the port the
 /// user confirmed on its welcome page (`{ "serverPort": <port> }`); the next
 /// start moves it into the settings (`adopt_installer_choices`).
@@ -439,6 +445,25 @@ fn configured_port(app: &AppHandle) -> u16 {
         .unwrap_or(DEFAULT_PORT)
 }
 
+/// A retention a user may choose, read from a settings value.
+fn valid_retention_days(value: &serde_json::Value) -> Option<u32> {
+    value
+        .as_u64()
+        .and_then(|days| u32::try_from(days).ok())
+        .filter(|days| *days <= MAX_RETENTION_DAYS)
+}
+
+/// The retention the server applies from the next start, when the user chose one.
+fn configured_retention_days(app: &AppHandle) -> Option<u32> {
+    app.store(STORE_FILE)
+        .ok()
+        .and_then(|s| s.get(RETENTION_DAYS_KEY))
+        .and_then(|v| valid_retention_days(&v))
+}
+
+/// The retention this launch gave its server, `None` when it gave none.
+struct RetentionAtStart(Option<u32>);
+
 /// The port an installer choices file names, when it names a valid one.
 fn read_installer_port(path: &Path) -> Option<u16> {
     let text = std::fs::read_to_string(path).ok()?;
@@ -772,6 +797,8 @@ struct ServerConfig {
     /// Random per launch: `/api/health` echoes it, so `health_ok` knows its own server.
     launch_nonce: String,
     port: u16,
+    /// `PIWI_RETENTION_DAYS` for the server, when the user chose a retention.
+    retention_days: Option<u32>,
     log_path: PathBuf,
     /// Where Node keeps the compiled code of the server's modules between launches
     /// (`NODE_COMPILE_CACHE`); `None` when the folder could not be created.
@@ -829,6 +856,9 @@ fn spawn_server_process(app: &AppHandle, cfg: &ServerConfig) -> Option<(Receiver
         .env("NUXT_PUBLIC_DESKTOP", "true");
     if let Some(dir) = &cfg.compile_cache_dir {
         cmd = cmd.env("NODE_COMPILE_CACHE", node_path(dir));
+    }
+    if let Some(days) = cfg.retention_days {
+        cmd = cmd.env("PIWI_RETENTION_DAYS", days.to_string());
     }
 
     match cmd.spawn() {
@@ -1041,6 +1071,11 @@ struct ServiceSettings {
     /// The port it listens on now: another one when `server_port` was taken at
     /// startup or changed since.
     active_port: u16,
+    /// The days of runs the server keeps from the next start; `None` until the
+    /// user chose (the server then follows the environment).
+    retention_days: Option<u32>,
+    /// The retention the running server was started with.
+    active_retention_days: Option<u32>,
 }
 
 #[tauri::command]
@@ -1055,7 +1090,21 @@ fn desktop_get_service_settings(app: tauri::AppHandle) -> ServiceSettings {
         start_on_login,
         server_port: configured_port(&app),
         active_port: app.state::<mcp_clients::ServerInfo>().port,
+        retention_days: configured_retention_days(&app),
+        active_retention_days: app.try_state::<RetentionAtStart>().and_then(|r| r.0),
     }
+}
+
+/// Set the days of runs the server's nightly sweep keeps, from the next start
+/// (0 keeps them all).
+#[tauri::command]
+fn desktop_set_retention_days(app: tauri::AppHandle, days: u32) -> Result<(), String> {
+    if days > MAX_RETENTION_DAYS {
+        return Err(format!("Choose at most {MAX_RETENTION_DAYS} days."));
+    }
+    let store = app.store(STORE_FILE).map_err(|e| e.to_string())?;
+    store.set(RETENTION_DAYS_KEY, json!(days));
+    store.save().map_err(|e| e.to_string())
 }
 
 /// Set the port the server listens on from the next start.
@@ -1879,6 +1928,7 @@ pub fn run() {
             desktop_set_run_in_background,
             desktop_set_start_on_login,
             desktop_set_server_port,
+            desktop_set_retention_days,
             desktop_open_external,
             desktop_open_in_ide,
             desktop_open_window,
@@ -2041,6 +2091,8 @@ pub fn run() {
             // splash shows an error) instead of a silent panic. Once running, the
             // supervisor restarts the server if it exits unexpectedly (e.g. an OOM
             // crash) so the window is never left pointed at a dead port.
+            let retention_days = configured_retention_days(app.handle());
+            app.manage(RetentionAtStart(retention_days));
             let server_config = ServerConfig {
                 server_entry: server_entry.clone(),
                 db_path: db_path.clone(),
@@ -2049,6 +2101,7 @@ pub fn run() {
                 token: token.clone(),
                 launch_nonce: launch_nonce.clone(),
                 port,
+                retention_days,
                 log_path: log_path.clone(),
                 compile_cache_dir: app.path().app_cache_dir().ok().and_then(|dir| {
                     prepare_compile_cache(
@@ -2330,7 +2383,7 @@ mod tests {
         is_output_window_name, is_sidecar_url, is_truthy_flag, main_window_may_navigate,
         output_window_name, port_refusal, prepare_compile_cache, progress_bar_status, read_installer_port,
         remote_capability, remove_other_versions, render_status_dot, request_target, rotate_log_if_full,
-        rotated_log_path, splash_status_script, stream_download,
+        rotated_log_path, splash_status_script, stream_download, valid_retention_days,
         status_dot_color, valid_port, write_new_download, BAD_PORTS, DEFAULT_PORT,
         INSTALLER_CHOICES_FILE, MIN_PORT, SERVER_PORT_KEY, STORE_FILE,
     };
@@ -2377,6 +2430,22 @@ mod tests {
         assert_eq!(port_refusal(80).as_deref(), Some("Choose a port between 1024 and 65535."));
         assert_eq!(port_refusal(6000).as_deref(), Some("Browsers refuse port 6000: choose another."));
         assert_eq!(port_refusal(4100), None);
+    }
+
+    #[test]
+    fn a_chosen_retention_is_a_whole_number_of_days_up_to_a_century() {
+        for days in [0u32, 1, 90, 36_500] {
+            assert_eq!(valid_retention_days(&serde_json::json!(days)), Some(days));
+        }
+        for value in [
+            serde_json::json!(36_501),
+            serde_json::json!(-1),
+            serde_json::json!(30.5),
+            serde_json::json!("30"),
+            serde_json::Value::Null,
+        ] {
+            assert_eq!(valid_retention_days(&value), None, "{value}");
+        }
     }
 
     #[test]

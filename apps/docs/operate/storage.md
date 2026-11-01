@@ -135,7 +135,7 @@ A kept run cannot be deleted until it is released; a selection skips kept runs.
 
 A nightly sweep (03:17 server time) handles recurring cleanup:
 
-- **Test-run pruning** — deletes runs older than `PIWI_RETENTION_DAYS` days, including their files, traces, and reports. **Off by default**: nothing is pruned until you set it. [Kept runs](#keeping-runs-forever) are never pruned, and `PIWI_RETENTION_MIN_RUNS` keeps each project's newest runs whatever their age, so a project that stops reporting keeps its last runs instead of emptying.
+- **Test-run pruning** — deletes runs older than `PIWI_RETENTION_DAYS` days, including their files, traces, and reports. **Off by default**: nothing is pruned until you set it. [Kept runs](#keeping-runs-forever) are never pruned, and `PIWI_RETENTION_MIN_RUNS` keeps each project's newest runs whatever their age, so a project that stops reporting keeps its last runs instead of emptying. The [desktop app](/features/desktop) sets it under **Settings › Storage**, from its next start.
 - **Analytics rollups** — pruned runs' numbers are moved into the [daily rollups](/features/analytics#where-the-numbers-come-from) in the transaction that deletes them, so the analytics trends keep the days that retention empties; deleting a single run by hand removes its numbers instead. Hand-back outcomes are counted the same way.
 - **Notification outbox pruning** — removes sent/failed delivery rows older than `PIWI_RETENTION_NOTIFICATION_DAYS` days (default 30).
 - **Report snapshot pruning** — removes [quality reports](/features/quality-reports#report-schedules) older than `PIWI_RETENTION_REPORT_DAYS` days (default 365; 0 keeps them).

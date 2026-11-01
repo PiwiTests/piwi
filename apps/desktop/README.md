@@ -21,7 +21,10 @@ channel, so a per-user install pulls a per-user update.
    sidecar** (`src-tauri/binaries/node-<triple>` running
    `src-tauri/resources/app-server/.output/server/index.mjs`), with Node's
    compile cache in `app_cache_dir()/node-compile-cache/<app version>` (the
-   other versions' folders are deleted in the background).
+   other versions' folders are deleted in the background). The retention the
+   user picks on Settings › Storage (`retentionDays` in `settings.json`, set by
+   `desktop_set_retention_days`) reaches the server as `PIWI_RETENTION_DAYS`;
+   until one is picked, the server follows the environment the app started in.
 2. It polls `GET /api/health` (200 = database migrated) until the answer
    carries the random nonce the shell gave this launch's sidecar
    (`PIWI_DESKTOP_LAUNCH_NONCE`, echoed in `X-Piwi-Desktop-Nonce`), so another
