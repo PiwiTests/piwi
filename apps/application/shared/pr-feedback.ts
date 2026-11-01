@@ -226,6 +226,8 @@ export interface PrChangeCoverage {
   projectId?: number | null;
   /** The pull request the gaps are tagged with, for the link to all of them. */
   prNumber?: number | null;
+  /** The gaps the change-time detectors raised on the change: new error paths, new controls, an intent no test names. */
+  changeTimeGaps?: number;
 }
 
 /**
@@ -282,13 +284,14 @@ function notCountedLine(cc: PrChangeCoverage): string | null {
 
 /** Whether the section has something to say: counted files to show, or changed lines the coverage counts. */
 export function hasChangeCoverage(cc: PrChangeCoverage): boolean {
-  return (cc.fileReach && cc.totalFiles > 0) || cc.patchCoverage != null;
+  return (cc.fileReach && cc.totalFiles > 0) || cc.patchCoverage != null || (cc.changeTimeGaps ?? 0) > 0;
 }
 
 /**
  * Render the uncovered-changes section: the changed files no test reached,
- * grouped by ticket, each with a draft suggestion, then the changed lines no
- * suite ran of the files the coverage counts. The files are the Test Map's
+ * grouped by ticket, each with a link to its gap, then the changed lines no
+ * suite ran of the files the coverage counts, then the gaps the change-time
+ * detectors raised. The files are the Test Map's
  * part (`fileReach`), the lines coverage's; returns null when neither has
  * anything to say.
  */
@@ -331,6 +334,14 @@ export function renderChangeCoverage(cc: PrChangeCoverage, origin: string | null
     }
     const hidden = cc.uncoveredFiles - listed;
     if (hidden > 0) blocks.push(`…and ${hidden} more`);
+  }
+
+  // The change-time gaps: what the change adds that no test names.
+  const raised = cc.changeTimeGaps ?? 0;
+  if (raised > 0) {
+    const link = origin && cc.projectId != null && cc.prNumber != null ? gapsOfPullRequestUrl(origin, cc) : null;
+    const what = `${raised} ${raised === 1 ? 'gap' : 'gaps'} this change adds: a new error path, a new control or an intent no test names`;
+    blocks.push(link ? `${what}, [on the Gaps tab](${link}).` : `${what}.`);
   }
 
   // The changed lines no suite ran, of the files a test reached or, without the file list, of every file.
@@ -727,14 +738,17 @@ export function buildCommitStatus(input: PrSummaryInput, context: string): Commi
  */
 /**
  * Where the change-coverage status leads: the Gaps tab on the pull request's
- * uncovered changes, when the change left some and the gaps carry its number;
- * else the run.
+ * gaps, when its change raised some and they carry its number; else the run.
  */
 export function changeCoverageStatusUrl(cc: PrChangeCoverage, runUrl: string): string {
   const origin = originOf(runUrl);
-  if (!origin || !cc.fileReach || cc.uncoveredFiles === 0 || cc.projectId == null || cc.prNumber == null) {
-    return runUrl;
-  }
+  const gaps = (cc.fileReach ? cc.uncoveredFiles : 0) + (cc.changeTimeGaps ?? 0);
+  if (!origin || gaps === 0 || cc.projectId == null || cc.prNumber == null) return runUrl;
+  return gapsOfPullRequestUrl(origin, cc);
+}
+
+/** The Gaps tab on the gaps a pull request's change raised. */
+function gapsOfPullRequestUrl(origin: string, cc: PrChangeCoverage): string {
   return `${origin}/projects/${cc.projectId}?tab=gaps&gapPr=${cc.prNumber}`;
 }
 

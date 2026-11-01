@@ -85,6 +85,11 @@ visiting a file is not a test running the change.
 The section ends with what it did not count: *Not counted: 2 files Piwi cannot observe, 1 file outside the coverage
 scope.*
 
+Three more detectors read the whole pull request at each run: an error status a route's handler gains that no run
+answered with, a control a page gains, and a title no test's words match ([the detectors](/reference/gap-detectors#detectors)).
+Their gaps carry the pull request's number, close when a later run no longer raises them, and the section counts them
+with a link to the pull request's gaps, where the change-coverage status leads too.
+
 <figure>
   <img src="/screenshots/uncovered-changes.png" alt="The Uncovered changes section of a pull-request comment">
   <figcaption>Patch coverage, the changed files no test reaches, and the changed lines no suite ran.</figcaption>
@@ -95,8 +100,8 @@ comment again a few seconds later; a later push's comment is never overwritten b
 
 When commit statuses are on too, a second status joins the run's own: `piwi/tests/change-coverage` with the default
 status context, described as *3 of 7 changed files no test reached*, with the patch coverage when there is one. It is
-always **success**, so it informs a reviewer without blocking the merge, and it leads to the pull request's uncovered
-changes on the Gaps tab.
+always **success**, so it informs a reviewer without blocking the merge, and it leads to the pull request's gaps on the
+Gaps tab.
 
 The files no test reached are the Test Map's part: they are left out while the *changed, unreached* detector is
 [muted](/features/scenario-gaps#triage) on the project, or where the Test Map is declined. The changed lines are

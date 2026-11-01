@@ -1518,6 +1518,42 @@ async function loadEvidenceWindow(db: DrizzleDB, projectId: number, limit: numbe
   return { runIds: await ids(window), completeRunIds: await ids(and(window, completeRunSql())) };
 }
 
+/**
+ * The statuses each route answered with: in the detectors' evidence window and in
+ * `extraRunIds` (a pull request's own run, whose tests may already exercise what
+ * it adds), keyed by route node key.
+ */
+export async function observedRouteStatuses(
+  db: DrizzleDB,
+  projectId: number,
+  routeKeys: readonly string[],
+  extraRunIds: readonly number[] = [],
+): Promise<Map<string, Set<number>>> {
+  const statuses = new Map<string, Set<number>>();
+  if (routeKeys.length === 0) return statuses;
+  const wanted = new Set(routeKeys);
+  const { runIds } = await loadEvidenceWindow(db, projectId, HISTORY_WINDOW_RUNS);
+  const ids = [...new Set([...runIds, ...extraRunIds])];
+  if (ids.length === 0) return statuses;
+  const rows = await db
+    .selectDistinct({
+      method: networkRequests.method,
+      url: networkRequests.normalizedUrl,
+      status: networkRequests.status,
+    })
+    .from(networkRequests)
+    .where(inArray(networkRequests.testRunId, ids));
+  for (const r of rows) {
+    if (!r.url) continue;
+    const key = routeNodeKey(r.method, r.url);
+    if (!wanted.has(key)) continue;
+    const set = statuses.get(key) ?? new Set<number>();
+    set.add(r.status);
+    statuses.set(key, set);
+  }
+  return statuses;
+}
+
 /** Title + priority for a set of test cases. */
 async function loadTestMeta(
   db: DrizzleDB,

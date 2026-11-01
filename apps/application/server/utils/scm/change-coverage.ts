@@ -19,6 +19,7 @@ import { resolveFallbackBranch } from '#shared/handlers/baseline-scope';
 import { selectBaselineRun } from '../branch-baseline';
 import { createScmProvider } from './index';
 import { runPrNumber } from './pr-feedback-posts';
+import { CHANGE_TIME_DETECTORS, computeChangeTimeGaps } from './change-time-gaps';
 import { MAX_SCM_FILES } from './ScmProvider';
 import type { ScmChanges, ScmProvider } from './ScmProvider';
 import {
@@ -395,9 +396,9 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
   // When the SCM flow can see the pull request has closed or merged, drop this
   // branch's tagged rows now instead of waiting for the thirty-day sweep, so its
   // surface, code reach and coverage stop shadowing the default branch.
+  const pullRequest = prNumber != null ? await provider.fetchPullRequest(prNumber).catch(() => null) : null;
   if (branchTag && prNumber != null) {
-    await provider
-      .fetchPullRequest(prNumber)
+    await Promise.resolve(pullRequest)
       .then(async (pr) => {
         if (pr && (pr.state === 'closed' || pr.state === 'merged')) {
           return (
@@ -436,6 +437,19 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
   // A file this diff no longer reads as an uncovered change closes its gap; an accepted one, once a test reached it.
   await closeChangedUnreachedGaps(db, run.projectId, runId, coverage.files).catch(() => 0);
 
+  // The change-time detectors read the whole pull request's patches and its title.
+  if (prNumber != null && !changes.patchesOmitted) {
+    await computeChangeTimeGaps(db, {
+      projectId: run.projectId,
+      runId,
+      prNumber,
+      title: pullRequest?.title ?? null,
+      ticket: tickets.length === 1 ? tickets[0]! : null,
+      files: changes.files,
+      exposure,
+    }).catch((e) => console.error(`[change-time] detectors failed for run #${runId}`, e));
+  }
+
   // Import edges for the changed files no test reached, from a shallow scan at the
   // run's ref — so an unreached file still connects to the files that import it.
   const unreached = coverage.files
@@ -462,9 +476,38 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
   ).catch(() => new Map<string, number>());
   return {
     coverage,
-    pr: toPrChangeCoverage(coverage, !muted.has('changed-unreached'), { projectId: run.projectId, prNumber, gapIds }),
+    pr: toPrChangeCoverage(coverage, !muted.has('changed-unreached'), {
+      projectId: run.projectId,
+      prNumber,
+      gapIds,
+      changeTimeGaps:
+        prNumber != null ? await openChangeTimeGaps(db, run.projectId, prNumber, muted).catch(() => 0) : 0,
+    }),
     locatorBreaks,
   };
+}
+
+/** How many open gaps the change-time detectors not muted on the project hold for a pull request. */
+async function openChangeTimeGaps(
+  db: DbClient,
+  projectId: number,
+  prNumber: number,
+  muted: ReadonlySet<string>,
+): Promise<number> {
+  const detectors = CHANGE_TIME_DETECTORS.filter((d) => !muted.has(d));
+  if (detectors.length === 0) return 0;
+  const rows = await db
+    .select({ id: scenarioGaps.id })
+    .from(scenarioGaps)
+    .where(
+      and(
+        eq(scenarioGaps.projectId, projectId),
+        eq(scenarioGaps.prNumber, prNumber),
+        inArray(scenarioGaps.detector, detectors),
+        inArray(scenarioGaps.status, ['open', 'snoozed', 'accepted']),
+      ),
+    );
+  return rows.length;
 }
 
 /** The ids of the open *changed, unreached* gaps of these files, by file. */
@@ -599,12 +642,18 @@ export async function readChangeCoverage(
 export function toPrChangeCoverage(
   coverage: ChangeCoverage,
   fileReach = true,
-  gaps: { projectId?: number; prNumber?: number | null; gapIds?: ReadonlyMap<string, number> } = {},
+  gaps: {
+    projectId?: number;
+    prNumber?: number | null;
+    gapIds?: ReadonlyMap<string, number>;
+    changeTimeGaps?: number;
+  } = {},
 ): PrChangeCoverage {
   return {
     fileReach,
     projectId: gaps.projectId ?? null,
     prNumber: gaps.prNumber ?? null,
+    changeTimeGaps: gaps.changeTimeGaps ?? 0,
     totalFiles: coverage.countedFiles,
     uncoveredFiles: coverage.uncoveredFiles,
     reachedFiles: coverage.reachedFiles,

@@ -70,7 +70,7 @@ function queryId(value: unknown): number | null {
   return Number.isInteger(id) && id > 0 ? id : null;
 }
 
-// A pull-request comment's links show one gap (`?gap=`), or the uncovered changes of one pull request
+// A pull-request comment's links show one gap (`?gap=`), or the gaps one pull request's change raised
 // (`?gapPr=`, from its change-coverage status); an editor's, the gaps of one file (`?gapFile=`). Each
 // shows them whatever their status, without the feature map.
 const linkedGap = computed(() => queryId(route.query.gap));
@@ -127,7 +127,7 @@ async function load() {
       query: linkedGap.value
         ? { gap: linkedGap.value, status: 'all', limit: 1 }
         : linkedPr.value
-          ? { pr: linkedPr.value, detector: 'changed-unreached', status: 'all', limit: PAGE_LIMIT }
+          ? { pr: linkedPr.value, status: 'all', limit: PAGE_LIMIT }
           : linkedFile.value
             ? { key: linkedFile.value, status: 'all', limit: PAGE_LIMIT }
             : { status: statusFilter.value, limit: PAGE_LIMIT },
@@ -358,7 +358,7 @@ const emptyText = computed(() =>
     <p v-if="linked" class="text-xs text-muted" data-testid="gaps-linked">
       <span>
         <template v-if="linkedGap">Showing the gap a link named.</template>
-        <template v-else-if="linkedPr">Showing the uncovered changes of pull request #{{ linkedPr }}.</template>
+        <template v-else-if="linkedPr">Showing the gaps of pull request #{{ linkedPr }}.</template>
         <template v-else>
           Showing the gaps of <span class="font-mono">{{ linkedFile }}</span
           >; a pull-request run raises one for an uncovered change.

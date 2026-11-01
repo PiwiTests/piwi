@@ -536,6 +536,17 @@ describe('change coverage section', () => {
     expect(changeCoverageStatusUrl(coverage({ projectId: 4, prNumber: 7, fileReach: false }), run)).toBe(run);
   });
 
+  test('counts the gaps the change-time detectors raised, linked to the pull request’s gaps', () => {
+    const cc = coverage({ projectId: 4, prNumber: 7, changeTimeGaps: 2 });
+    expect(renderChangeCoverage(cc, 'https://piwi.example.com')).toContain(
+      '2 gaps this change adds: a new error path, a new control or an intent no test names, [on the Gaps tab](https://piwi.example.com/projects/4?tab=gaps&gapPr=7).',
+    );
+    const onlyRaised = coverage({ projectId: 4, prNumber: 7, changeTimeGaps: 1, uncoveredFiles: 0, tickets: [] });
+    expect(changeCoverageStatusUrl(onlyRaised, 'https://piwi.example.com/test-runs/42')).toBe(
+      'https://piwi.example.com/projects/4?tab=gaps&gapPr=7',
+    );
+  });
+
   test('reports a clean diff without listing files', () => {
     const section = renderChangeCoverage(coverage({ uncoveredFiles: 0, reachedFiles: 7, tickets: [] }));
     expect(section).toContain('All 7 changed files are reached.');

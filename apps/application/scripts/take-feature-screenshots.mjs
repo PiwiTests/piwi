@@ -7501,6 +7501,8 @@ async function uncoveredChangesMarkdown() {
   return renderChangeCoverage(
     {
       projectId: 4,
+      prNumber: 7,
+      changeTimeGaps: 2,
       fileReach: true,
       totalFiles: 7,
       uncoveredFiles: 3,
