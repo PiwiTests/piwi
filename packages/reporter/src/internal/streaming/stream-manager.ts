@@ -25,6 +25,8 @@ const EVENT_ENVELOPE_BYTES = 1024;
 const MAX_EVENT_REQUEST_BYTES = 4 * 1024 * 1024;
 /** Uploads in a row without any response after which `uploadRemaining` gives up. */
 const MAX_UPLOAD_CONNECTION_FAILURES = 3;
+/** The least a heartbeat waits once activity put it off: pending events flush first. */
+const MIN_HEARTBEAT_WAIT_MS = 250;
 
 /**
  * Manages the streaming protocol: queues events (begin / complete), flushes
@@ -459,12 +461,12 @@ export class StreamManager {
   }
 
   // Schedule the next idle heartbeat. Self-rescheduling; cleared by stopHeartbeat.
-  private scheduleHeartbeat(): void {
+  private scheduleHeartbeat(delay: number = this.heartbeatDelay()): void {
     if (this.heartbeatStopped || this.heartbeatTimer) return;
     this.heartbeatTimer = setTimeout(() => {
       this.heartbeatTimer = null;
       void this.sendHeartbeat();
-    }, this.heartbeatDelay());
+    }, delay);
   }
 
   // Ping the server only when the run has actually been idle. Real event traffic
@@ -473,9 +475,11 @@ export class StreamManager {
   private async sendHeartbeat(): Promise<void> {
     if (this.heartbeatStopped || !this._enabled || !this._runId || !this._token) return;
 
+    // Activity within the period: the heartbeat waits for the rest of it only, so a run nobody watched learns that
+    // someone opened it within one period.
     const idleFor = Date.now() - this.lastActivityAt;
     if (idleFor < this.heartbeatDelay() || this.pendingEvents.length > 0) {
-      this.scheduleHeartbeat();
+      this.scheduleHeartbeat(Math.max(this.heartbeatDelay() - idleFor, MIN_HEARTBEAT_WAIT_MS));
       return;
     }
 

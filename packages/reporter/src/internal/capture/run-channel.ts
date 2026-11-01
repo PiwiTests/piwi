@@ -43,12 +43,14 @@ import {
 import { startedByTestRunner } from '../config/editors.js';
 import { PIWI_LOCAL_DEBUG_ENV, PIWI_ORIGIN_ENV } from '../config/env.js';
 import { errorMessage } from '../support/errors.js';
+import { playwrightVersionAtLeast } from '../support/playwright-version.js';
 import { getReporterVersion } from '../support/reporter-version.js';
 import { bindBrowser } from './agent-page.js';
 import { locatorOn } from './chain-locator.js';
 import { keptRequests, keptResponse } from './kept-responses.js';
 import { liveViewState, onLiveViewChange, shareLiveView } from './live-view.js';
 import { openPageView, viewportOf } from './page-view.js';
+import { PICK_AT_SINCE } from './pick-at.js';
 import { takeHighlightDown, type PauseAnswer } from './pause-at.js';
 import { internalCall } from './quiet-capture.js';
 
@@ -254,13 +256,15 @@ const NO_AGENT_PAGE = "This stop has no page an agent can read: its call does no
 /**
  * What a worker takes, of `RUN_TAKES`: Pick a locator only where the run names a pairing its locators go to
  * (`PIWI_EDITOR_SEND`), Record here and Assert only where it names a record channel (`PIWI_RECORD_CHANNEL`), neither of
- * which a run started in a terminal carries.
+ * which a run started in a terminal carries, and Pick on the image only on a Playwright (`playwright`, when known)
+ * whose snapshots give each element's box (1.60).
  */
-export function workerTakes(env: NodeJS.ProcessEnv = process.env): RunTake[] {
+export function workerTakes(env: NodeJS.ProcessEnv = process.env, playwright?: string): RunTake[] {
   const pairing = !!env[PIWI_LOCAL_DEBUG_ENV.editorSend];
   const recorder = parseRecordChannel(env[RECORD_CHANNEL_ENV]) !== null;
+  const boxes = playwright === undefined || playwrightVersionAtLeast(playwright, PICK_AT_SINCE);
   return RUN_TAKES.filter((take) =>
-    take === 'pick' ? pairing : take === 'record' || take === 'assert' ? recorder : true,
+    take === 'pick' ? pairing : take === 'record' || take === 'assert' ? recorder : take === 'pick-at' ? boxes : true,
   );
 }
 
@@ -333,7 +337,7 @@ export async function openRunChannel(
     pid: process.pid,
     playwright: worker.config.version,
     reporter: getReporterVersion(),
-    takes: workerTakes(env),
+    takes: workerTakes(env, worker.config.version),
     holds: [...RUN_HOLDS],
     // A run the reporter follows from outside the editor, which its own test runner started.
     ...(ref.startsWith(TERMINAL_REF_PREFIX) && startedByTestRunner(env) ? { runner: true as const } : {}),

@@ -9,6 +9,7 @@
     ".": "./src/index.ts",
     "./codeowners": "./src/codeowners.ts",
     "./gate": "./src/gate.ts",
+    "./spec-filter": "./src/spec-filter.ts",
     "./locator-generation": "./src/locator-generation.ts",
     "./locator-fingerprint": "./src/locator-fingerprint.ts",
     "./locator-healing-types": "./src/locator-healing-types.ts",

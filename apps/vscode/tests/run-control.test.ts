@@ -249,7 +249,7 @@ describe('what the controls offer', () => {
     expect(controlItems(shown).map((i) => [i.command, i.tooltip])).toEqual([
       ['piwi.resumeRun', 'Piwi: Resume (F5)'],
       ['piwi.stepRun', 'Piwi: Step to the next call (F10)'],
-      ['piwi.finishRun', 'Piwi: Finish the test without stopping again (Shift+F11)'],
+      ['piwi.finishRun', 'Piwi: Finish the test without stopping at a breakpoint again (Shift+F11)'],
       ['piwi.stopRun', 'Piwi: Stop the run (Shift+F5)'],
     ]);
   });

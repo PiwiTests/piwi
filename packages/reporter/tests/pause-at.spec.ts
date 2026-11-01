@@ -1,3 +1,5 @@
+import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -17,6 +19,7 @@ import {
   currentPauseSet,
   goOn,
   inFlightCallSite,
+  lineKey,
   markPausesWrapped,
   parsePauseAt,
   pauseState,
@@ -80,6 +83,26 @@ describe('parsePauseAt', () => {
     expect(set.matches('tests/a.spec.ts:3:1')).toBe(true);
     expect(set.matches('tests/b.spec.ts:4:1')).toBe(true);
     expect(set.matches('../shared/c.ts:5:1')).toBe(true);
+  });
+
+  it('follows the links on the way to a listed file, as a stack frame names the file Node loaded', () => {
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-pause-link-')));
+    try {
+      fs.mkdirSync(path.join(root, 'shared', 'pages'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'shared', 'pages', 'cart.page.ts'), '');
+      fs.mkdirSync(path.join(root, 'app'));
+      fs.symlinkSync(path.join(root, 'shared', 'pages'), path.join(root, 'app', 'pages'), 'dir');
+      const set = parsePauseAt('pages/cart.page.ts:3', path.join(root, 'app'));
+      expect(set.matches('../shared/pages/cart.page.ts:3:5')).toBe(true);
+      expect(set.matches('pages/cart.page.ts:3:5')).toBe(false);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('compares the lines without case on Windows alone', () => {
+    expect(lineKey('tests/Pages/cart.page.ts:3', true)).toBe(lineKey('tests/pages/cart.page.ts:3', true));
+    expect(lineKey('tests/Pages/cart.page.ts:3', false)).not.toBe(lineKey('tests/pages/cart.page.ts:3', false));
   });
 
   it('reads a path holding a comma', () => {
@@ -1326,6 +1349,23 @@ describe('the Inspector switch', () => {
     };
     return { debugger: dbg };
   }
+
+  it('leaves no switch of its own to the projects that depend on this one as the worker stops', () => {
+    // Playwright reads the worker's environment as its `__stop__` message comes, and hands what changed on.
+    const stop = () => process.emit('message' as never, { method: '__stop__' } as never);
+    watchStops(watchedContext() as never, () => {});
+    markPausesWrapped();
+    expect(process.env.PW_CODEGEN_NO_INSPECTOR).toBe('1');
+    stop();
+    expect(process.env.PW_CODEGEN_NO_INSPECTOR).toBeUndefined();
+    // A value set outside Piwi is the user's.
+    resetInspectorSwitch();
+    process.env.PW_CODEGEN_NO_INSPECTOR = '1';
+    watchStops(watchedContext() as never, () => {});
+    markPausesWrapped();
+    stop();
+    expect(process.env.PW_CODEGEN_NO_INSPECTOR).toBe('1');
+  });
 
   it('closes Playwright’s Inspector once every page.pause() goes through Piwi, and opens it while one left to Playwright runs', async () => {
     expect(watchStops(watchedContext() as never, () => {})).toBe(true);

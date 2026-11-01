@@ -540,8 +540,8 @@ async function replayInOtherTab(tabId: number): Promise<boolean> {
 }
 
 /**
- * The Runs tile: shown, with the number of runs, while a hub of the paired editor answers. The worker finds the hubs
- * through the pairing and keeps their connections (`background/run-hubs.ts`); the popup only asks it.
+ * The Runs tile: shown, with the number of runs, while a hub of the paired editor or desktop app answers. The worker
+ * finds the hubs through the pairings and keeps their connections (`background/run-hubs.ts`); the popup only asks it.
  */
 async function showRunsTile(): Promise<void> {
   const summary = (await chrome.runtime.sendMessage({ type: 'piwi-runs-summary' }).catch(() => null)) as {

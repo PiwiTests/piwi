@@ -1,3 +1,4 @@
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { BrowserContext, Page, TestInfo } from '@playwright/test';
 import { isInsidePath, parsePairing, type EditorSendPayload } from '@piwitests/core/editor-send';
@@ -26,9 +27,18 @@ import { playwrightVersionAtLeast } from '../support/playwright-version.js';
  * own debugger (`PWDEBUG`, `--debug`). Every attempt pauses.
  */
 
+/** A call site's line (`file:line`) as two are compared: without case on Windows, whose file names ignore it. */
+export function lineKey(line: string, windows: boolean = process.platform === 'win32'): string {
+  return windows ? line.toLowerCase() : line;
+}
+
 /** The lines a run pauses at, keyed the way `captureCallerLocation` writes a call site, without its column. */
 export class PauseSet {
-  constructor(private readonly lines: ReadonlySet<string>) {}
+  private readonly lines: ReadonlySet<string>;
+
+  constructor(lines: ReadonlySet<string>) {
+    this.lines = new Set([...lines].map((line) => lineKey(line)));
+  }
 
   get size(): number {
     return this.lines.size;
@@ -38,20 +48,39 @@ export class PauseSet {
   matches(callerLocation: string | null): boolean {
     if (!callerLocation) return false;
     const col = callerLocation.lastIndexOf(':');
-    return col > 0 && this.lines.has(callerLocation.slice(0, col));
+    return col > 0 && this.lines.has(lineKey(callerLocation.slice(0, col)));
   }
 }
 
 export const NO_BREAKPOINTS = new PauseSet(new Set());
 
-/** A file of `PIWI_PAUSE_AT` written as `captureCallerLocation` writes one: relative to `cwd`, with forward slashes. */
+/**
+ * A file of `PIWI_PAUSE_AT` written as `captureCallerLocation` writes one: relative to `cwd`, with forward slashes, and
+ * through the links it goes through, as a stack frame names the file Node loaded.
+ */
 function callSiteFile(file: string, cwd: string): string {
   const slashed = file.replace(/\\/g, '/');
   const absolute = path.isAbsolute(file) || path.isAbsolute(slashed) || /^[A-Za-z]:\//.test(slashed);
-  let rel = absolute ? path.relative(cwd, file) : path.normalize(slashed);
+  const resolved = path.resolve(cwd, absolute ? file : slashed);
+  const real = realPath(resolved);
+  let rel =
+    real !== null && real !== resolved
+      ? path.relative(realPath(cwd) ?? cwd, real)
+      : absolute
+        ? path.relative(cwd, file)
+        : path.normalize(slashed);
   rel = rel.split(path.sep).join('/').replace(/\\/g, '/');
   if (rel.startsWith('./')) rel = rel.slice(2);
   return rel;
+}
+
+/** The file `file` names once every link on its way is followed; null when it does not exist. */
+function realPath(file: string): string | null {
+  try {
+    return fs.realpathSync(file);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -154,7 +183,10 @@ export function placeLine(place: Place, cwd: string = process.cwd()): string {
 export interface PauseGate {
   /** Raw `CI` env value. Anything except unset/empty/`'false'` counts as CI. */
   ci: string | undefined;
-  /** `testInfo.project.use.headless`: must be explicitly `false` (headed). */
+  /**
+   * The test's `headless` fixture, which `test.use`, `launchOptions.headless` and `--headed` set, else
+   * `testInfo.project.use.headless`: must be explicitly `false` (headed).
+   */
   headless: unknown;
   /** Raw `PWDEBUG` env value: Playwright's Inspector drives the debugger unless it is unset, empty, `0`, `false` or `console`. */
   pwdebug?: string | undefined;
@@ -166,11 +198,17 @@ export interface PauseGate {
 
 type ConfigInternal = { _configInternal?: { configCLIOverrides?: { debug?: unknown } } };
 
-export function pauseGateFromTestInfo(testInfo: TestInfo): PauseGate {
+/** The gate of a test, with its `headless` fixture's value when the caller has it. */
+export function pauseGateFromTestInfo(testInfo: TestInfo, headless?: unknown): PauseGate {
   const use = (testInfo.project?.use ?? {}) as { headless?: unknown };
   // A Playwright internal, feature-checked: the one place the worker sees `--debug=cli`.
   const debug = (testInfo as unknown as ConfigInternal)._configInternal?.configCLIOverrides?.debug;
-  return { ci: process.env.CI, headless: use.headless, pwdebug: process.env.PWDEBUG, debug };
+  return {
+    ci: process.env.CI,
+    headless: headless !== undefined ? headless : use.headless,
+    pwdebug: process.env.PWDEBUG,
+    debug,
+  };
 }
 
 /**
@@ -245,7 +283,7 @@ export function atStop(state: PauseState, callSite: string | null): { show: Stop
       ? 'step'
       : state.pause
         ? 'pause'
-        : state.runTo !== null && callSiteLine(callSite) === state.runTo
+        : state.runTo !== null && lineKey(callSiteLine(callSite)) === lineKey(state.runTo)
           ? 'run-to'
           : atBreakpoint(state, callSite)
             ? 'breakpoint'
@@ -416,10 +454,31 @@ function syncInspectorSwitch(): void {
   if (closed && process.env[NO_INSPECTOR_ENV] === undefined) {
     process.env[NO_INSPECTOR_ENV] = '1';
     inspectorSwitch.set = true;
+    clearSwitchAtStop();
   } else if (!closed && inspectorSwitch.set) {
-    if (process.env[NO_INSPECTOR_ENV] === '1') delete process.env[NO_INSPECTOR_ENV];
-    inspectorSwitch.set = false;
+    clearSwitch();
   }
+}
+
+/** Clear the switch Piwi set. */
+function clearSwitch(): void {
+  if (inspectorSwitch.set && process.env[NO_INSPECTOR_ENV] === '1') delete process.env[NO_INSPECTOR_ENV];
+  inspectorSwitch.set = false;
+}
+
+let clearsAtStop = false;
+
+/**
+ * Clear the switch as the worker stops, before Playwright compares the worker's environment (its `__stop__` message)
+ * with the one it started with: what changed there reaches the projects that depend on this worker's, and the switch
+ * is this worker's alone.
+ */
+function clearSwitchAtStop(): void {
+  if (clearsAtStop) return;
+  clearsAtStop = true;
+  process.prependListener('message', (message: unknown) => {
+    if ((message as { method?: unknown } | null)?.method === '__stop__') clearSwitch();
+  });
 }
 
 /**
@@ -450,7 +509,7 @@ export async function withInspector<T>(run: () => Promise<T>): Promise<T> {
 
 /** Test-only: the switch as a fresh worker has it. */
 export function resetInspectorSwitch(): void {
-  if (inspectorSwitch.set && process.env[NO_INSPECTOR_ENV] === '1') delete process.env[NO_INSPECTOR_ENV];
+  clearSwitch();
   Object.assign(inspectorSwitch, { set: false, watching: false, wrapped: false, open: 0 });
 }
 

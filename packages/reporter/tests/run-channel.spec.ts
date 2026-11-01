@@ -318,6 +318,13 @@ describe('the worker’s run connection', () => {
     );
   });
 
+  it('takes Pick on the image only on a Playwright whose snapshots give the boxes it reads', () => {
+    const env = { PIWI_RUN_CHANNEL: 'x' };
+    expect(workerTakes(env, '1.59.1')).not.toContain('pick-at');
+    expect(workerTakes(env, '1.60.0')).toContain('pick-at');
+    expect(workerTakes(env, '1.62.0-next')).toContain('pick-at');
+  });
+
   it('hands End the test to the stop it names, and to no other', async () => {
     const hub = await startHub();
     try {

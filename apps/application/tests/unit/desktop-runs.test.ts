@@ -467,7 +467,8 @@ describe('the hub Piwi Picker reaches', () => {
     picker.send({ type: 'runControl', id: 9, ref: 'desktop-99', worker: null, action: 'pause', since: null });
     expect(await picker.answer(9)).toMatchObject({
       ok: false,
-      message: 'No worker of this run is connected to the desktop app.',
+      message:
+        "No worker of this run is connected to the desktop app: none has started a test yet, or its tests import `test` from '@playwright/test' rather than from the file that extends Piwi's capture fixtures.",
     });
     worker.socket.destroy();
     picker.socket.close();

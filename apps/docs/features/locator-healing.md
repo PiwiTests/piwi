@@ -134,7 +134,8 @@ With `PIWI_PAUSE_AT=tests/login.spec.ts:42` (semicolon-separated `file:line`, re
 absolute: `tests/login.spec.ts:42;tests/pages/checkout.page.ts:9`; an entry without a line is skipped, and the output
 says so), a call on a listed line that acts on, reads or checks the page (a navigation, an action, an assertion) waits
 before it runs, with a bar at the top of the page: **Resume**, **Step** (pause at the next call), **Pick a locator**
-(the picker above) and **Finish** (no more pauses); <kbd>Esc</kbd> resumes. A pick is recorded and printed like the
+(the picker above) and **Finish** (no more pauses); <kbd>Esc</kbd> resumes, unless the page takes it to close a
+dialog or an open list. A pick is recorded and printed like the
 failure-time one, and posted to `PIWI_EDITOR_SEND`, an editor's pairing address, with its line. Headed and never under
 CI, like the options above. The editor extensions set both from your [breakpoints](./editor-breakpoints).
 

@@ -409,6 +409,18 @@ describe('collectSourceFrames', () => {
     }
   });
 
+  it('reads a relative frame from the project root, wherever the run started', () => {
+    const { root, spec } = makeProject();
+    try {
+      // The frame the error text appends is relative to the config's folder, not the working directory.
+      const error = 'Error: boom\n    at tests/checkout.spec.ts:20:5';
+      const frames = collectSourceFrames(error, spec, 42, { projectRoot: root, context: 1 });
+      expect(frames.map((f) => `${f.file}:${f.line}`)).toEqual([`${path.join('tests', 'checkout.spec.ts')}:20`]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('caps the number of frames', () => {
     const { root, spec, helper } = makeProject();
     try {

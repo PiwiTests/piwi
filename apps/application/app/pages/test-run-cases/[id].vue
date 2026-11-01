@@ -6,6 +6,7 @@ import { isPiwiAnnotation } from '@piwitests/core/test-meta';
 import { isExpectedFailurePassed } from '@piwitests/core/status-classify';
 import { renderAnsi } from '~/utils';
 import { buildRetryCommand } from '~/utils/retry-command';
+import { fixturesActiveIn } from '~/utils/fixtures-active';
 import type { FailureVerdict } from '#shared/failure-verdict';
 import type { FailureCluesResult } from '#shared/handlers/test-cases';
 import { clusterSectionLocatorKey } from '~/composables/useClusterSectionLocator';
@@ -995,6 +996,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
                 ref="locatorPanel"
                 :test-runs-case-id="Number(testCaseId)"
                 :healing="locatorHealingData ?? null"
+                :fixtures-active="fixturesActiveIn(testCase)"
                 :ai-intents="aiIntents"
                 :chrome="false"
                 :has-page-diff="true"

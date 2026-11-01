@@ -24,7 +24,7 @@ import {
 import { dirnamePosix, isAbsolutePosix, joinPosix, normalizePosix, relativePosix } from '#shared/utils/posix-path';
 import { classifyStatus, expectedFailureError, mergeAnnotations } from '#shared/status-classify';
 import { normalizeTestTags, parseTestMetadata } from '@piwitests/core/test-meta';
-import { joinErrorMessages, appendErrorLocation } from '#shared/error-text';
+import { joinErrorMessages, appendErrorLocation, locatedError } from '#shared/error-text';
 import type { TestAnnotation } from '#shared/types';
 import type { RunCaseInput } from './persist-run-cases';
 
@@ -369,7 +369,7 @@ function buildErrorText(errors: unknown, resolver: PathResolver): string | null 
   const text = joinErrorMessages(errors as Array<{ message?: string }>);
   if (!text) return null;
 
-  const location = errorLocation(errors[0] as Record<string, unknown> | undefined, resolver);
+  const location = errorLocation(locatedError(errors as Array<Record<string, unknown>>), resolver);
   return location ? appendErrorLocation(text, location) : text;
 }
 

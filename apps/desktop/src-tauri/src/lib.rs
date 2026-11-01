@@ -946,13 +946,14 @@ pub(crate) fn shut_down(app_handle: &AppHandle, server_wait: Option<Duration>) {
     if let Some(flag) = app_handle.try_state::<ShuttingDown>() {
         flag.0.store(true, Ordering::SeqCst);
     }
+    // Local test runs die with the shell — never orphan a browser fleet. They stop first, while the server is up to
+    // take the end each run's reporter sends in the grace `kill_all` gives it.
+    if let Some(runs) = app_handle.try_state::<runner::LocalRuns>() {
+        runs.kill_all();
+    }
     // Best-effort: stop the bundled server so no orphan process lingers.
     if let Some(child) = app_handle.state::<ServerProcess>().0.lock().unwrap().take() {
         kill_server(child, server_wait);
-    }
-    // Local test runs die with the shell — never orphan a browser fleet.
-    if let Some(runs) = app_handle.try_state::<runner::LocalRuns>() {
-        runs.kill_all();
     }
     // Withdraw the reporter discovery file with the server it points
     // at, so a later test run does not try a dead port.

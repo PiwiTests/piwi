@@ -1429,7 +1429,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     vscode.commands.registerCommand('piwi.pairPicker', async () => {
       await vscode.env.clipboard.writeText(await pickerPairing());
       void vscode.window.showInformationMessage(
-        "Piwi: the pairing address is on the clipboard. Paste it in Piwi Picker's options, under Send to editor.",
+        "Piwi: the pairing address is on the clipboard. Paste it in Piwi Picker's settings, under Send to editor.",
       );
     }),
     { dispose: () => void sendListener?.close() },
@@ -1574,7 +1574,8 @@ async function insertFromPicker(lc: LanguageClient, payload: EditorSendPayload):
       const edit = new vscode.WorkspaceEdit();
       edit.replace(uri, new vscode.Range(start.line, start.character, end.line, end.character), answer.edit.newText);
       if (await vscode.workspace.applyEdit(edit)) {
-        void vscode.window.showInformationMessage(pickNotice(at, 'replaced'));
+        // The line the locator landed on, which edits made since the run may have moved from the run's.
+        void vscode.window.showInformationMessage(pickNotice({ file: at.file, line: start.line + 1 }, 'replaced'));
         return { inserted: true, file: uri.scheme === 'file' ? uri.fsPath : null };
       }
     }

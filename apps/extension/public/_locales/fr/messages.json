@@ -1281,6 +1281,33 @@
   "options_editorPermission": {
     "message": "Piwi Picker a besoin de l’autorisation de joindre l’éditeur sur cet ordinateur."
   },
+  "options_editorNotProven": {
+    "message": "Associé à $url$, mais le programme sur ce port ne prouve pas qu’il est votre éditeur, donc rien ne lui est envoyé : relancez la commande Piwi « Pair with Piwi Picker » dans votre éditeur et associez l’adresse copiée, ou mettez à jour Piwi dans l’éditeur.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:47211/piwi/send"
+      }
+    }
+  },
+  "options_editorUnreachable": {
+    "message": "Associé à $url$, mais rien n’y répond pour l’instant : ouvrez votre éditeur avec l’extension Piwi. Si sa commande Piwi « Pair with Piwi Picker » copie une autre adresse, associez celle-là.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:47211/piwi/send"
+      }
+    }
+  },
+  "options_editorNoAccess": {
+    "message": "Associé à $url$, mais le navigateur a retiré à Piwi Picker l’accès à cette adresse : relancez la commande Piwi « Pair with Piwi Picker » dans votre éditeur et associez l’adresse copiée.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:47211/piwi/send"
+      }
+    }
+  },
   "common_close": {
     "message": "Fermer"
   },
@@ -3821,7 +3848,7 @@
     "message": "Associez d’abord l’application de bureau, dans les réglages de Piwi Picker sous Application de bureau."
   },
   "replay_desktopOpenOptions": {
-    "message": "Ouvrir les options"
+    "message": "Ouvrir les réglages"
   },
   "replay_desktopPreview": {
     "message": "Envoie à l’application de bureau à $url$ : le titre et ces étapes, avec les valeurs saisies. Aucune capture, entrée de console ou requête. Rien ne se lance avant que vous le démarriez dans la fenêtre de l’application.",
@@ -6344,7 +6371,7 @@
     "message": "L’extension Piwi de votre éditeur ne partage pas ses exécutions : mettez-la à jour."
   },
   "runs_statusUnproven": {
-    "message": "Le programme sur le port associé n’est pas cet éditeur : Piwi Picker ne lui a rien envoyé, et redemande dans un instant."
+    "message": "Le programme sur le port associé n’est pas cet éditeur : Piwi Picker ne lui a rien envoyé, et redemande dans un instant. Si votre éditeur a changé de port, associez à nouveau Piwi Picker à votre éditeur dans les réglages."
   },
   "runs_statusNoHub": {
     "message": "Votre éditeur répond, mais aucune de ses fenêtres ne partage ses exécutions : mettez à jour l’extension Piwi."
@@ -6485,7 +6512,7 @@
     "message": "Terminer"
   },
   "runs_finishTitle": {
-    "message": "Continuer le test sans plus s’arrêter aux points d’arrêt"
+    "message": "Continuer le test sans plus s’arrêter aux points d’arrêt dans cette tentative"
   },
   "runs_end": {
     "message": "Terminer le test"

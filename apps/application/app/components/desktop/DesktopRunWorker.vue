@@ -48,7 +48,7 @@ const STEER: Record<DesktopSteer, { label: string; title: string; icon: string }
   step: { label: 'Step', title: 'Run this call and stop before the next one', icon: 'i-lucide-step-forward' },
   finish: {
     label: 'Finish',
-    title: 'Turn the breakpoints off and let the test run to its end',
+    title: 'Run the test on without stopping at a breakpoint again in this attempt',
     icon: 'i-lucide-skip-forward',
   },
   end: { label: 'End the test', title: 'End the test here: the rest of it is skipped', icon: 'i-lucide-square' },

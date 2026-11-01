@@ -545,7 +545,7 @@ export function controlItems(state: ControlState): ControlItem[] {
       { text: '$(debug-step-over)', tooltip: 'Piwi: Step to the next call (F10)', command: RUN_COMMANDS.step },
       {
         text: '$(debug-step-out)',
-        tooltip: 'Piwi: Finish the test without stopping again (Shift+F11)',
+        tooltip: 'Piwi: Finish the test without stopping at a breakpoint again (Shift+F11)',
         command: RUN_COMMANDS.finish,
       },
       ...(state.endable

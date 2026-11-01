@@ -7,7 +7,7 @@ import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { formatRecordChannel, lineReader, parseHandoffToEditor } from '@piwitests/core/ide-recorder';
 import { parseRunToHub, type HubToRun, type RunIntent, type RunToHub } from '@piwitests/core/run-channel';
-import { jsonRes, startServer, type FakeServer } from './_helpers.js';
+import { jsonRes, playwrightAtLeast, startServer, type FakeServer } from './_helpers.js';
 
 /**
  * Pick a locator and Record here started from outside the page, as Piwi Picker starts them through the editor's hub:
@@ -20,6 +20,8 @@ import { jsonRes, startServer, type FakeServer } from './_helpers.js';
  */
 
 const pkgRoot = path.join(import.meta.dirname, '..');
+/** Whether the worker offers Pick on the image: Playwright 1.60 or later. */
+const PICKS_AT = playwrightAtLeast('1.60');
 const dist = path.join(pkgRoot, 'dist', 'index.js');
 const project = path.join(pkgRoot, 'tests', `.run-intents-${process.pid}`);
 const REF = 'ed-1a2b3c4d';
@@ -396,7 +398,7 @@ describe('Pick and Record started from outside the page', () => {
     expect(tests.find((t) => t.title === 'ended under a pick')!.errors).toEqual([
       expect.stringContaining('the test gave up while the pick ran'),
     ]);
-    expect(connections[0]!.heard[0]).toMatchObject({ type: 'run-attach', ref: REF, takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator', 'view', 'input', 'input-clicks', 'pick-at', 'agent', 'events', 'bind', 'end', 'share'] });
+    expect(connections[0]!.heard[0]).toMatchObject({ type: 'run-attach', ref: REF, takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator', 'view', 'input', 'input-clicks', ...(PICKS_AT ? ['pick-at'] : []), 'agent', 'events', 'bind', 'end', 'share'] });
   });
 
   it('picks in the test’s window as the bar’s Pick a locator does, the locator going to the editor', () => {

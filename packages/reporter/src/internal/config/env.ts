@@ -224,9 +224,28 @@ export const PIWI_FLAKE_ENV = {
  */
 export const PIWI_RESOURCES_RESULTS_ENV = 'PIWI_RESOURCES_RESULTS';
 
+/** A boolean variable's value: `true`, `1`, `yes` or `on`, in any case, is true; anything else is false. */
 export function readBool(val: string | undefined): boolean | undefined {
   if (val === undefined) return undefined;
-  return val === 'true';
+  return ['true', '1', 'yes', 'on'].includes(val.trim().toLowerCase());
+}
+
+/**
+ * Write each boolean `PIWI_*` variable set in `env` as `true` or `false`, as `readBool` reads it, so the workers, which
+ * read a few of them from the environment as they are (`PIWI_CAPTURE_PAGE_INVENTORY === 'true'`), read the value the
+ * reporter does: `1`, `yes` and `on` too.
+ */
+export function normalizeBoolEnv(env: NodeJS.ProcessEnv = process.env): void {
+  const keys = [
+    ...ENV_FALLBACK_SPECS.filter((spec) => spec.kind === 'bool').map((spec) => spec.env),
+    PIWI_ENV_KEYS.verbose,
+    PIWI_ENV_KEYS.aiScreenshotFallback,
+    'PIWI_AI_UPDATE',
+  ];
+  for (const key of keys) {
+    const value = env[key];
+    if (value !== undefined) env[key] = readBool(value) ? 'true' : 'false';
+  }
 }
 
 /** How an env var's string value coerces into its option value. */
@@ -447,7 +466,7 @@ export function resolveOptions(raw: Record<string, any>, configDir?: string): Pi
   const opts: PiwiDashboardOptions = { ...DEFAULTS, ...mergedRaw };
 
   // PIWI_VERBOSE wins over both default and user option.
-  if (env[PIWI_ENV_KEYS.verbose] !== undefined) opts.verbose = env[PIWI_ENV_KEYS.verbose] === 'true';
+  if (env[PIWI_ENV_KEYS.verbose] !== undefined) opts.verbose = readBool(env[PIWI_ENV_KEYS.verbose])!;
 
   return opts;
 }

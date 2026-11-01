@@ -22,10 +22,10 @@ code from the page: [Code from a pause](./editor-stop-code).
 | **Pause** | Stops a running test before its next call that acts on, reads or checks the page | none | Resume Program's, `F9` |
 | **Resume** | Runs the stopped test on to the next breakpoint | `F5` | Resume Program's, `F9` |
 | **Step** | Runs the call and stops before the next one, breakpoint or not | `F10` | Step Over's, `F8` |
-| **Run to cursor** | Stops at the first call on the cursor's line, or at a breakpoint before it | `Ctrl+F10` | Run to Cursor's, `Alt+F9` |
+| **Run to cursor** | Stops at the first call on the cursor's line (on a statement broken over lines, at its call), or at a breakpoint before it | `Ctrl+F10` | Run to Cursor's, `Alt+F9` |
 | **Finish** | Runs the test on without stopping at a breakpoint again in this attempt | `Shift+F11` | Step Out's, `Shift+F8` |
 | **End the test** | [Skips the rest of the test](./end-the-test), and a stopped locator call from Playwright 1.62 | none | none |
-| **Stop** | Ends the run's process | `Shift+F5` | the Run tool window's Stop |
+| **Stop** | Ends the run's process | `Shift+F5` | **Stop the Run**, or the Run tool window's Stop |
 
 The keys are the IDE's own debugger keys (in a JetBrains IDE, your keymap's), Piwi's only while their control applies
 and no debug session runs, and first where a JetBrains keymap gives one to another action too. On macOS, `Cmd+F10`
@@ -97,7 +97,8 @@ A breakpoint you add, remove or toggle applies to the run from its next call, in
 included. One that only moves because you edited the lines above it keeps the line the run has, and one you set in an
 edited file applies to that line of the run's code. The breakpoints that count are those a run's start reads: line
 breakpoints in script files under a Playwright config's folder, while `piwi.breakpoints` (**Pause the runs Piwi starts
-at the editor's breakpoints** in a JetBrains IDE) is on.
+at the editor's breakpoints** in a JetBrains IDE) is on. A logpoint, or a breakpoint that does not suspend, never stops
+the test; a condition is not read, so a conditional breakpoint stops at each pass.
 
 ## Share live
 

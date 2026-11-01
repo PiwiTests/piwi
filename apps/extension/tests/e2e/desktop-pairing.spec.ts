@@ -300,6 +300,26 @@ test.describe('the desktop app as the instance', () => {
     expect(await removals(page)).toEqual([`${desktop}/*`]);
   });
 
+  test('the editor’s Unpair leaves an address the desktop app’s pairing holds too', async ({
+    context,
+    extensionId,
+  }) => {
+    const page = await context.newPage();
+    await openSettings(page, extensionId);
+    await recordRemovals(page);
+    await pairByHand(page);
+    const editor = page.locator('#editor-card');
+    await editor.getByLabel('Pairing address').fill(`${desktop}/piwi/send#editor_token_0123456789`);
+    await editor.getByRole('button', { name: 'Pair' }).click();
+    await expect(editor.locator('#editor-pill')).toHaveText('Paired');
+    await editor.getByRole('button', { name: 'Unpair' }).click();
+    await expect(editor.locator('#editor-pill')).toHaveText('Not paired');
+    expect(await removals(page)).toEqual([]);
+    await page.locator('#desktop-card').getByRole('button', { name: 'Unpair' }).click();
+    await expect(page.locator('#desktop-status')).toHaveText('The desktop app is no longer paired.');
+    expect(await removals(page)).toEqual([`${desktop}/*`]);
+  });
+
   test('its token goes only to a program at the address that proves it holds it, paired or not', async ({
     context,
     extensionId,

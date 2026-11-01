@@ -73,6 +73,7 @@ import type {
 } from './protocol.js';
 import type { HubAction } from '@piwitests/core/run-hub';
 import { relativeTo } from './workspace.js';
+import { breakpointLines, runToLine } from './recorder/page-candidates.js';
 
 /** How often a session's changes are sent at most, but a stop and its end, which are sent at once. */
 export const SESSION_PACE_MS = 300;
@@ -295,6 +296,12 @@ export interface RunSessionsOptions {
    * it (`root`); `worker` is null for the run's end.
    */
   heard?(ref: string, worker: number | null, what: RunHeard, root: string | null): void;
+  /**
+   * The text of `file` as the run of `ref` runs it, which a breakpoint or a Run to cursor is read against: on a
+   * statement broken over lines, a breakpoint stops at each of its lines (`breakpointLines`) and Run to cursor runs to
+   * the line of its call (`runToLine`). Null, or no such option, keeps the line as it is.
+   */
+  runText?(ref: string, file: string): string | null;
   paceMs?: number;
   burstMs?: number;
   lingerMs?: number;
@@ -454,6 +461,21 @@ export class RunSessions {
   }
 
   /**
+   * Why a run has no worker to answer: none has started a test yet, or its tests run without the capture fixtures,
+   * whose worker fixture opens the run's connection.
+   */
+  /**
+   * Why a control reaches no worker of a run: none ever connected (`session` unknown), which a spec whose tests take
+   * `test` from Playwright explains, or those that did are gone.
+   */
+  private noWorker(session: Session | undefined): string {
+    return session
+      ? `No worker of this run is connected to ${this.host} now: the run ended, or Playwright is starting another worker.`
+      : `No worker of this run is connected to ${this.host}: none has started a test yet, or its tests import ` +
+          "`test` from '@playwright/test' rather than from the file that extends Piwi's capture fixtures.";
+  }
+
+  /**
    * A worker connected with `attach`: it joins its run's session, a new one when none runs, hears which of the stops it
    * holds only then the service shows (`attached`, to a worker that lists them: a failure's, unless its run holds none),
    * with what the service is called when it is not the editor (`host`), and the breakpoints sent for the run since it
@@ -523,7 +545,7 @@ export class RunSessions {
       this.send(worker, { type: 'attached', holds, ...(this.options.host ? { host: this.options.host } : {}) });
     }
     const breakpoints = this.breakpoints.get(attach.ref);
-    if (breakpoints) this.sendBreakpoints(worker, breakpoints, session.root);
+    if (breakpoints) this.sendBreakpoints(worker, attach.ref, breakpoints, session.root);
     if (this.followedRuns.has(attach.ref) && worker.takes.has('events'))
       this.send(worker, { type: 'events', on: true });
     // A worker that comes later follows the sharing as a person left it.
@@ -569,12 +591,12 @@ export class RunSessions {
     const refuse = (message: string): RunControlResult => ({ ok: false, message });
     if (typeof params?.on !== 'boolean') return refuse('Share live needs on: true to share the run, false to stop.');
     const session = typeof params.ref === 'string' ? this.sessions.get(params.ref) : undefined;
-    if (!session) return refuse(`No worker of this run is connected to ${this.host}.`);
+    if (!session) return refuse(this.noWorker(session));
     const live = this.liveOf(session);
     const instance = live?.page ? instanceOf(live.page) : 'the instance';
     const workers = [...session.workers.values()].filter((w) => w.takes.has('share'));
     if (params.on) {
-      if (!session.workers.size) return refuse(`No worker of this run is connected to ${this.host}.`);
+      if (!session.workers.size) return refuse(this.noWorker(session));
       if (!workers.length) {
         const reporter = [...session.workers.values()][0]!.reporter;
         return refuse(`@piwitests/reporter ${reporter}`.trimEnd() + ' cannot share a run live: update it.');
@@ -624,7 +646,7 @@ export class RunSessions {
   control(params: RunControlParams, by: 'agent' | null = null): RunControlResult {
     const refuse = (message: string): RunControlResult => ({ ok: false, message });
     const session = typeof params?.ref === 'string' ? this.sessions.get(params.ref) : undefined;
-    if (!session?.workers.size) return refuse(`No worker of this run is connected to ${this.host}.`);
+    if (!session?.workers.size) return refuse(this.noWorker(session));
     const named = typeof params.worker === 'number' ? (session.workers.get(params.worker) ?? null) : null;
     if (typeof params.worker === 'number' && !named) {
       return refuse(`Worker ${params.worker} of this run is not connected to ${this.host}.`);
@@ -680,7 +702,9 @@ export class RunSessions {
           }
           const relative = this.relative(worker, file, session.root);
           if (!relative) return refuse(`${path.basename(file)} is outside the folder the run runs in.`);
-          this.send(worker, { type: 'run-to', stop, place: { file: relative, line: line + 1 } });
+          const text = this.options.runText?.(params.ref, file) ?? null;
+          const to = text ? runToLine(text, line) : line;
+          this.send(worker, { type: 'run-to', stop, place: { file: relative, line: to + 1 } });
           worker.askedBy = by;
           return { ok: true, message: `Running to ${path.basename(file)}:${line + 1}.` };
         }
@@ -725,7 +749,7 @@ export class RunSessions {
   private stopped(params: StopParams): { session: Session; worker: Worker } | RunControlResult {
     const refuse = (message: string): RunControlResult => ({ ok: false, message });
     const session = typeof params?.ref === 'string' ? this.sessions.get(params.ref) : undefined;
-    if (!session?.workers.size) return refuse(`No worker of this run is connected to ${this.host}.`);
+    if (!session?.workers.size) return refuse(this.noWorker(session));
     const named = typeof params.worker === 'number' ? (session.workers.get(params.worker) ?? null) : null;
     if (typeof params.worker === 'number' && !named) {
       return refuse(`Worker ${params.worker} of this run is not connected to ${this.host}.`);
@@ -1110,7 +1134,8 @@ export class RunSessions {
     const files = filesOf(params.places);
     this.keepBreakpoints(params.ref, files);
     const session = this.sessions.get(params.ref);
-    for (const worker of session?.workers.values() ?? []) this.sendBreakpoints(worker, files, session!.root);
+    for (const worker of session?.workers.values() ?? [])
+      this.sendBreakpoints(worker, params.ref, files, session!.root);
   }
 
   /** `piwi/setBreakpoints`: the editor's breakpoints as it holds them now, which a terminal's run starts with. */
@@ -1436,11 +1461,22 @@ export class RunSessions {
     if (!worker.socket.destroyed) worker.socket.write(`${JSON.stringify(message)}\n`);
   }
 
-  private sendBreakpoints(worker: Worker, files: Array<{ file: string; line: number }>, root: string | null): void {
+  private sendBreakpoints(
+    worker: Worker,
+    ref: string,
+    files: Array<{ file: string; line: number }>,
+    root: string | null,
+  ): void {
     const places = new Map<string, Place>();
+    const texts = new Map<string, string | null>();
     for (const { file, line } of files) {
       const relative = this.relative(worker, file, root);
-      if (relative) places.set(`${relative}:${line}`, { file: relative, line: line + 1 });
+      if (!relative) continue;
+      if (!texts.has(file)) texts.set(file, this.options.runText?.(ref, file) ?? null);
+      const text = texts.get(file);
+      for (const at of text ? breakpointLines(text, line) : [line]) {
+        places.set(`${relative}:${at}`, { file: relative, line: at + 1 });
+      }
     }
     this.send(worker, { type: 'breakpoints', places: [...places.values()] });
   }

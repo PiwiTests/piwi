@@ -142,13 +142,16 @@ import {
 } from './commands.js';
 import { DesktopJobs } from './desktop-jobs.js';
 import { RunWatch, exitVerdict, newRunRef } from './run-watch.js';
-import { declaredNamesAt, pageCandidates } from './recorder/page-candidates.js';
+import { specPattern } from '@piwitests/core/spec-filter';
+import { breakpointLines, declaredNamesAt, fileFixtures, pageCandidates } from './recorder/page-candidates.js';
 import { readProjectOptions, type ProjectOptions } from './recorder/project-options.js';
 import { canonicalPath } from './recorder/playwright.js';
 import {
   RecordingSessions,
   blockImports,
+  freeTestTitle,
   indentBlock,
+  newTestModule,
   originOf,
   repositoryCodegen,
   siblingSpecs,
@@ -156,7 +159,7 @@ import {
 } from './recorder/sessions.js';
 import { expectModuleOf, importInsertion } from './recorder/imports.js';
 import { RecordChannel, type Handoff } from './recorder/handoff.js';
-import { RunLines, type DiskFile } from './run-lines.js';
+import { RunLines, type DiskFile, type LineNow } from './run-lines.js';
 import { RunSessions } from './run-sessions.js';
 import { ClientPageView } from './client-page-view.js';
 import { RunHub } from './run-hub.js';
@@ -1757,6 +1760,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       runAgent.heard(ref, worker, what, root);
       debugRuns.heard(ref, worker, what, root);
     },
+    // The run runs a file as it stood on disk when it started: one written since keeps each line as it is.
+    runText: (ref, file) => {
+      const disk = diskFile(file);
+      const started = runLines.startedAt(ref);
+      return disk && (started === null || disk.mtime <= started) ? disk.text : null;
+    },
   });
   clientPageView = new ClientPageView(runSessions, (frame) =>
     connection.sendNotification(PAGE_FRAME_NOTIFICATION, frame),
@@ -1782,7 +1791,14 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       recordChannel?.refuse(handoff.id, `no Playwright config of this editor's workspace holds ${handoff.file}.`);
       return;
     }
+    // The steps go above the paused call where it stands now, which an earlier recording at this stop moved down.
+    const now = stopLineNow(file, handoff.line - 1);
+    if ('refusal' in now) {
+      recordChannel?.refuse(handoff.id, now.refusal);
+      return;
+    }
     handoff.file = file;
+    handoff.line = now.line + 1;
     void connection.sendNotification(RECORD_REQUESTED_NOTIFICATION, {
       handoff: handoff.id,
       uri: pathToFileURL(handoff.file).href,
@@ -3128,16 +3144,21 @@ export function startServer(connection: Connection, options: ServerOptions = {})
 
   /**
    * A test run's command with the editor's breakpoints: `PIWI_PAUSE_AT` for those in the files under the context's
-   * folder, `--headed`, and a notice when the project's reporter does not pause at them. Unchanged without one.
+   * folder, each on every line of the statement it is set on as the file stands on disk (`breakpointLines`),
+   * `--headed`, and a notice when the project's reporter does not pause at them. Unchanged without one.
    */
   const withBreakpoints = (
     context: PiwiContext,
     command: RunCommand,
     breakpoints: EditorBreakpoint[] | undefined,
   ): RunCommand => {
+    const texts = new Map<string, string | null>();
     const files = (Array.isArray(breakpoints) ? breakpoints : []).flatMap((b) => {
       const file = typeof b?.uri === 'string' ? uriToPath(b.uri) : null;
-      return file && typeof b.line === 'number' ? [{ file, line: b.line }] : [];
+      if (!file || typeof b.line !== 'number') return [];
+      if (!texts.has(file)) texts.set(file, diskFile(file)?.text ?? null);
+      const text = texts.get(file);
+      return (text ? breakpointLines(text, b.line) : [b.line]).map((line) => ({ file, line }));
     });
     const pauseAt = pauseAtValue(context.root, files);
     if (!pauseAt) return command;
@@ -3193,10 +3214,17 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     return SPEC_FILE.test(spec) && fs.existsSync(path.join(context.root, spec));
   };
 
-  /** The Playwright arguments that run the tests `params` names: by location, else by id from the instance. */
+  /**
+   * The Playwright arguments that run the tests `params` names: by location, each spec as Playwright's file filter
+   * reads it (`specPattern`), else by id from the instance.
+   */
   const testArgs = async (context: PiwiContext, params: RunTestsArgs): Promise<string[] | null> => {
     if (Array.isArray(params.locations) && params.locations.length) {
-      return params.locations.every((l) => specLocation(context, l)) ? [...params.locations] : null;
+      if (!params.locations.every((l) => specLocation(context, l))) return null;
+      return params.locations.map((l) => {
+        const colon = l.lastIndexOf(':');
+        return `${specPattern(l.slice(0, colon))}${l.slice(colon)}`;
+      });
     }
     if (!context.client || !context.project || !params.testIds?.length) return null;
     const answer = await context.client.runArgs(context.project.id, params.testIds);
@@ -3234,7 +3262,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     if (text === null) return refuse(`${relative} cannot be read, so Piwi runs nothing.`);
     const test = debugTest(text, relative, debug.title);
     if (typeof test === 'string') return refuse(test);
-    const args = debugArgs(`${relative}:${test.line + 1}`, debug.project);
+    const args = debugArgs(`${specPattern(relative)}:${test.line + 1}`, debug.project, test, debug.title);
     const command = playwrightTestCommand(args);
     if (!command) {
       return refuse(
@@ -3276,7 +3304,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       ref,
     };
     if (repeat === null) return withRecording(context, withBreakpoints(context, run, params.breakpoints), params);
-    repeatedCommands.set(ref, { root: context.root, repeat, target: tests!.join(' ') });
+    const named = Array.isArray(params.locations) && params.locations.length ? params.locations : tests!;
+    repeatedCommands.set(ref, { root: context.root, repeat, target: named.join(' ') });
     for (const oldest of repeatedCommands.keys()) {
       if (repeatedCommands.size <= MAX_REPEATED_COMMANDS) break;
       repeatedCommands.delete(oldest);
@@ -3355,16 +3384,37 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         : null;
     if (!file) return { uri: null, edit: null };
     const uri = openDocument(file)?.uri ?? pathToFileURL(file).href;
-    const lineText = readText(file)?.split(/\r?\n/)[params.line];
+    const now = stopLineNow(file, params.line);
+    const line = 'line' in now ? now.line : null;
+    const lineText = line === null ? undefined : readText(file)?.split(/\r?\n/)[line];
     const edit = lineText === undefined || !params.locator ? null : pickEditOnLine(lineText, params.locator);
     return {
       uri,
       edit: edit && {
-        range: { start: { line: params.line, character: edit.start }, end: { line: params.line, character: edit.end } },
+        range: { start: { line: line!, character: edit.start }, end: { line: line!, character: edit.end } },
         newText: edit.newText,
       },
     };
   });
+
+  /**
+   * Where the run's 0-based `line` of `file`, which a pick or a recording at a stop names, stands now: mapped through
+   * the edits made since the run of a worker stopped there started (`RunLines`), as the code from a stop is, so it
+   * lands on the paused call after a recording wrote above it; why not when that line was removed or cannot be
+   * followed. The line as it is when no worker is stopped there.
+   */
+  const stopLineNow = (file: string, line: number): LineNow => {
+    const key = lineKey(file);
+    const stopped = runSessions.current().find((session) =>
+      session.workers.some((w) => {
+        const at = w.stop ? uriToPath(w.stop.uri) : null;
+        return !!at && lineKey(at) === key && w.stop!.line === line;
+      }),
+    );
+    if (!stopped) return { line };
+    const open = !!openDocument(file);
+    return runLines.lineNow(stopped.ref, key, line, open, open ? null : diskFile(file));
+  };
 
   connection.onRequest(FAILURES_REQUEST, (params: FailuresParams | null): FailuresResult => {
     failuresGrouping = parseFailuresGrouping(params?.grouping) ?? failuresGrouping;
@@ -3459,12 +3509,18 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           () => null,
         )
       : null;
+    // At a caret outside any test, class or function, the steps go in a new test, as Record here writes one there.
+    const newTest = !!file && candidates?.context === 'file';
+    const testModule = newTest ? newTestModule(file!, text) : null;
     const result = renderSpec(sessionFromSteps(parsed.steps), {
-      format: 'body',
+      format: newTest ? 'test' : 'body',
+      ...(newTest
+        ? { title: freeTestTitle(text, parsed.steps.title?.trim() || undefined), fixtures: fileFixtures(text) }
+        : {}),
       urls: context ? await stepUrls(context, parsed.steps.origin) : 'relative',
       locators: 'stable',
       urlChecks: true,
-      ...repositoryCodegen(codegenConfigOf(piwi).options, 'steps', candidates?.context ?? 'file'),
+      ...repositoryCodegen(codegenConfigOf(piwi).options, newTest ? 'test' : 'steps', candidates?.context ?? 'file'),
       catalog: context ? await context.functionCatalog() : [],
       preferLocators: suiteLocators(context),
       ...(page ? { page } : {}),
@@ -3478,7 +3534,19 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           ? result.code
           : indentBlock(result.code, caretLine.slice(0, caretLine.length - caretLine.trimStart().length)),
       warnings: result.warnings.map((w) => w.message),
-      ...(separate ? { importEdit: importInsertion(text, blockImports(text, result)) } : {}),
+      ...(separate
+        ? {
+            importEdit: importInsertion(
+              text,
+              blockImports(text, result, {
+                ...(testModule ? { testModule } : {}),
+                ...(file
+                  ? { expectModule: expectModuleOf(text, { siblings: () => siblingSpecs(file), testModule }) }
+                  : {}),
+              }),
+            ),
+          }
+        : {}),
     };
   });
 

@@ -7,7 +7,7 @@ import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { formatRecordChannel, lineReader, parseHandoffToEditor } from '@piwitests/core/ide-recorder';
 import { parseRunToHub, type HubToRun, type RunToHub } from '@piwitests/core/run-channel';
-import { jsonRes, startServer, type FakeServer } from './_helpers.js';
+import { jsonRes, playwrightAtLeast, startServer, type FakeServer } from './_helpers.js';
 
 /**
  * Code from a stop, the worker's part, in real Playwright runs through the built package under a fake editor service:
@@ -21,6 +21,8 @@ import { jsonRes, startServer, type FakeServer } from './_helpers.js';
  */
 
 const pkgRoot = path.join(import.meta.dirname, '..');
+/** Whether the worker offers Pick on the image: Playwright 1.60 or later. */
+const PICKS_AT = playwrightAtLeast('1.60');
 const dist = path.join(pkgRoot, 'dist', 'index.js');
 const project = path.join(pkgRoot, 'tests', `.run-code-${process.pid}`);
 const REF = 'ed-5e6f7a8b';
@@ -536,7 +538,7 @@ describe('code from a stop, the worker’s part', () => {
     ]);
     expect(connections[0]!.heard[0]).toMatchObject({
       type: 'run-attach',
-      takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator', 'view', 'input', 'input-clicks', 'pick-at', 'agent', 'events', 'bind', 'end', 'share'],
+      takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator', 'view', 'input', 'input-clicks', ...(PICKS_AT ? ['pick-at'] : []), 'agent', 'events', 'bind', 'end', 'share'],
       holds: ['failure'],
     });
   });

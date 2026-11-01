@@ -1563,6 +1563,36 @@
     "message": "Piwi Picker needs permission to reach the editor on this computer.",
     "description": "Error when the user declines the permission to reach the editor’s local address."
   },
+  "options_editorNotProven": {
+    "message": "Paired with $url$, but the program on that port does not prove it is your editor, so nothing goes to it: run “Piwi: Pair with Piwi Picker” in your editor again and pair with the address it copies, or update Piwi there.",
+    "description": "Settings page, the Send to editor card's status line when the program on the paired editor's port does not prove it holds the pairing's token (another program took the port, or the editor's Piwi is older than the proof). $url$ is the editor’s local address. Piwi: Pair with Piwi Picker is the editor command’s name, in English.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:47211/piwi/send"
+      }
+    }
+  },
+  "options_editorUnreachable": {
+    "message": "Paired with $url$, but nothing answers there now: open your editor with Piwi’s extension. If its “Piwi: Pair with Piwi Picker” copies another address, pair with that one.",
+    "description": "Settings page, the Send to editor card's status line when nothing answers at the paired editor's address. $url$ is the editor’s local address. Piwi: Pair with Piwi Picker is the editor command’s name, in English.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:47211/piwi/send"
+      }
+    }
+  },
+  "options_editorNoAccess": {
+    "message": "Paired with $url$, but the browser took back Piwi Picker’s access to it: run “Piwi: Pair with Piwi Picker” in your editor again and pair with the address it copies.",
+    "description": "Settings page, the Send to editor card's status line when the permission to reach the paired editor's address was taken back. $url$ is the editor’s local address. Piwi: Pair with Piwi Picker is the editor command’s name, in English.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:47211/piwi/send"
+      }
+    }
+  },
   "common_close": {
     "message": "Close",
     "description": "Button or aria-label that closes a panel or dialog."
@@ -1585,7 +1615,7 @@
   },
   "common_sendToEditorFailed": {
     "message": "Not sent",
-    "description": "A Send to editor button’s label when the editor did not accept what was sent; the reason is in the button’s tooltip."
+    "description": "A Send to editor button’s label when the editor did not accept what was sent; the reason shows in a line after the button."
   },
   "common_editorNotProven": {
     "message": "The program on the editor’s port did not prove it is the paired editor, so nothing was sent: pair Piwi Picker with your editor again in the settings.",
@@ -4544,12 +4574,12 @@
     "description": "Run with Playwright dialog: its title."
   },
   "replay_desktopNotPaired": {
-    "message": "Pair the desktop app first, in Piwi Picker’s options under Desktop app.",
-    "description": "Run with Playwright dialog: no desktop app is paired in the options."
+    "message": "Pair the desktop app first, in Piwi Picker’s settings under Desktop app.",
+    "description": "Run with Playwright dialog: no desktop app is paired in the settings."
   },
   "replay_desktopOpenOptions": {
-    "message": "Open the options",
-    "description": "Run with Playwright dialog: button opening the options page."
+    "message": "Open the settings",
+    "description": "Run with Playwright dialog: button opening the settings page."
   },
   "replay_desktopPreview": {
     "message": "Sends to the desktop app at $url$: the title and these steps, with the values typed in them. No screenshot, console entry or request. Nothing runs until you start it in the app’s window.",
@@ -7518,8 +7548,8 @@
     "description": "Runs window, when the paired editor’s Piwi extension is older than the Runs window."
   },
   "runs_statusUnproven": {
-    "message": "The program on the paired port is not this editor: Piwi Picker sent it nothing, and asks again in a moment.",
-    "description": "Runs window, when the program on the paired editor’s port does not prove it holds the pairing’s token: another program took the port. Nothing was sent to it."
+    "message": "The program on the paired port is not this editor: Piwi Picker sent it nothing, and asks again in a moment. If your editor moved to another port, pair Piwi Picker with it again in the settings.",
+    "description": "Runs window, when the program on the paired editor’s port does not prove it holds the pairing’s token: another program took the port, or the editor moved to another one. Nothing was sent to it."
   },
   "runs_statusNoHub": {
     "message": "Your editor answers, but none of its windows shares its runs: update Piwi’s extension there.",
@@ -7696,8 +7726,8 @@
     "description": "Runs window, button on a stopped test: it runs on without stopping at a breakpoint again."
   },
   "runs_finishTitle": {
-    "message": "Run the test on without stopping at a breakpoint again",
-    "description": "Runs window, the Finish button’s tooltip."
+    "message": "Run the test on without stopping at a breakpoint again in this attempt",
+    "description": "Runs window, the tooltip of the Finish button (runs_finish): the stopped test runs on without stopping at a breakpoint again in this attempt."
   },
   "runs_end": {
     "message": "End the test",

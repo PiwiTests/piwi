@@ -50,6 +50,7 @@ export type FailureClueRule =
   | 'element-renamed'
   | 'page-structure-changed'
   | 'element-present-but-blocked'
+  | 'locator-matched-nothing'
   | 'wrong-page'
   | 'worker-pollution'
   | 'lock-holder-failed'
@@ -275,6 +276,16 @@ export interface FailureClueInput {
 const MAX_CLUES = 8;
 
 const DEFAULT_SLOW_REQUEST_MS = 1500;
+
+/** The clues that say why a locator matched nothing, which `locator-matched-nothing` yields to. */
+const EXPLAINS_NOTHING_MATCHED: ReadonlySet<FailureClueRule> = new Set<FailureClueRule>([
+  'wrong-page',
+  'lock-holder-failed',
+  'slow-request-overlapping-failure',
+  'failed-request-before-failure',
+  'backend-error-attached',
+]);
+
 /**
  * How far past the failure a failed request may be recorded as ending: the
  * capture stamps a response when its body is read, a few ms after the test
@@ -292,6 +303,7 @@ const RULE_ORDER: FailureClueRule[] = [
   'element-renamed',
   'page-structure-changed',
   'element-present-but-blocked',
+  'locator-matched-nothing',
   'wrong-page',
   'worker-pollution',
   'lock-holder-failed',
@@ -763,6 +775,37 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
     }
   }
 
+  // ── locator-matched-nothing (strong with the page's own match, else medium) ─
+  // The call waited for a locator that never found an element, and nothing
+  // explains why the element is gone: the locator is wrong, as in a test being
+  // written, or the element never showed. The failure-time snapshot's closest
+  // element, which locator healing recommends from that snapshot alone, names
+  // what the page had; for a flaky test, whose locator found its element in other
+  // runs, it names nothing. A crash or a failed navigation is no locator's doing,
+  // and a wrong page or a failed lock holder explains it: those clues stand alone.
+  const matchedNothing =
+    !!parsed?.isLocatorResolutionFailure &&
+    parsed.kind !== 'strict-mode' &&
+    parsed.kind !== 'crash' &&
+    !parsed.isNavigationFailure;
+  if (matchedNothing && !clues.some((c) => c.rule === 'element-renamed' || c.rule === 'page-structure-changed')) {
+    const failing = parsed.locator ?? 'the locator';
+    const flaky = (input.flakeSuspects?.length ?? 0) > 0;
+    const offered =
+      flaky || healing?.source !== 'aria-snapshot' ? null : (healing.recommendation?.recommended?.locator ?? null);
+    add({
+      id: 'locator-matched-nothing',
+      rule: 'locator-matched-nothing',
+      strength: offered ? 'strong' : 'medium',
+      title: 'The locator matched nothing on the page',
+      detail: offered
+        ? `No element matched \`${failing}\` at the failure; the page had \`${offered}\`.`
+        : `No element matched \`${failing}\` at the failure: the page did not show it, or the locator names it differently.`,
+      citations: [{ section: offered ? 'locatorHealing' : 'steps' }],
+      ...(failedStep ? { at: failedStep.at } : {}),
+    });
+  }
+
   // ── wrong-page (strong) ────────────────────────────────────────────────────
   // The page ended on an auth/error route, or somewhere other than the last
   // navigation the test asked for — when nothing the test did after it (a click,
@@ -898,13 +941,16 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
     if (stepRatio >= 0.8 || execRatio >= 0.95) {
       const pct = Math.round(Math.max(stepRatio, execRatio) * 100);
       facts.timing = { pct };
+      // A failed step that spent the time waiting for a locator matching nothing: the time is no cause of its own.
+      const waitedForNothing = matchedNothing && stepRatio >= 0.8;
       add({
         id: 'timeout-budget',
         rule: 'timeout-budget',
-        strength: 'medium',
+        strength: waitedForNothing ? 'weak' : 'medium',
         title: `The failure used ${pct}% of the timeout budget`,
-        detail:
-          stepRatio >= 0.8
+        detail: waitedForNothing
+          ? `The failed step ran ${Math.round(stepRatio * 100)}% of the ${timeout} ms timeout, waiting for a locator that matched nothing.`
+          : stepRatio >= 0.8
             ? `The failed step ran ${Math.round(stepRatio * 100)}% of the ${timeout} ms timeout — a slow operation, not necessarily a wrong one.`
             : `The execution used ${Math.round(execRatio * 100)}% of the ${timeout} ms timeout before failing.`,
         citations: [{ section: 'steps' }],
@@ -968,6 +1014,13 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
   // The fact that a fix landed before and did not hold is not a clue about the
   // cause; it belongs to the verdict's `since.fixedBefore` and the situation
   // sentence, so it is not emitted here.
+
+  // A wrong page, a failed lock holder, or a request that was slow, failed or erred on the backend around the failure
+  // says why the locator matched nothing.
+  if (clues.some((c) => EXPLAINS_NOTHING_MATCHED.has(c.rule))) {
+    const at = clues.findIndex((c) => c.rule === 'locator-matched-nothing');
+    if (at >= 0) clues.splice(at, 1);
+  }
 
   // Chain the clues into a story before ranking, so the tie-break can lift a
   // clue that belongs to the story above one that does not.

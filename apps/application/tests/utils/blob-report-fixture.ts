@@ -25,6 +25,8 @@ export interface FixtureTest {
     status: 'passed' | 'failed' | 'timedOut' | 'skipped' | 'interrupted';
     duration?: number;
     errorMessage?: string;
+    /** The attempt's errors as Playwright lists them, in place of `errorMessage`'s: each at a line of the spec when it names one. */
+    errors?: Array<{ message: string; line?: number; column?: number }>;
     annotations?: Array<{ type: string; description?: string }>;
     /** Attach a `trace` (zip), `screenshot` (png) or `error-context` (markdown). */
     attachments?: Array<{ name: string; contentType: string; body: string }>;
@@ -139,15 +141,22 @@ export function buildBlobReport(options: FixtureOptions): Buffer {
             id: resultId,
             duration: attempt.duration ?? 10,
             status: attempt.status,
-            errors: attempt.errorMessage
-              ? [
-                  {
-                    message: attempt.errorMessage,
-                    stack: attempt.errorMessage,
-                    location: { file: `${rootDir}/${file}`, line: test.line ?? 3, column: test.column ?? 5 },
-                  },
-                ]
-              : [],
+            errors: attempt.errors
+              ? attempt.errors.map((error) => ({
+                  message: error.message,
+                  ...(error.line
+                    ? { location: { file: `${rootDir}/${file}`, line: error.line, column: error.column ?? 1 } }
+                    : {}),
+                }))
+              : attempt.errorMessage
+                ? [
+                    {
+                      message: attempt.errorMessage,
+                      stack: attempt.errorMessage,
+                      location: { file: `${rootDir}/${file}`, line: test.line ?? 3, column: test.column ?? 5 },
+                    },
+                  ]
+                : [],
             ...(attempt.annotations ? { annotations: attempt.annotations } : {}),
           },
         },
