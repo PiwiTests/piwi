@@ -36,9 +36,13 @@ responsibilities.
    - the editor's breakpoints (`internal/capture/pause-at.ts`, with `PIWI_PAUSE_AT` in a headed local run): the pause
      bar, `PW_CODEGEN_NO_INSPECTOR`, the wrapped `Page.prototype.pause`, the runner internals it reads
      (`_onDidFinishTestFunctionCallbacks`, `_timeoutManager.defaultSlot()`, both feature-checked), the `piwi-pauses`
-     attachment and the locator posted to `PIWI_EDITOR_SEND` (`@piwitests/core/editor-send`); on Playwright 1.59, the
-     masked screenshot that takes a stop's highlight down, the test's own screencast overlays with it
-     (`takeHighlightDown`);
+     attachment and the locator posted to `PIWI_EDITOR_SEND` (`@piwitests/core/editor-send`); and a stop's highlights
+     and outlines, which Piwi draws itself in its own layer of the page, a manual popover in the top layer
+     (`highlightAtStop`, `showStopHighlight` of `@piwitests/picker-dom`), never through Playwright's highlight, so the
+     test's own highlights and screencast overlays stay as they were: drawn again every `REDRAW_MS` in the frame the
+     locator enters (`frameOf`, reading `_frame` and `_selector`), each is taken down in every frame it was drawn in
+     before the test goes on, `TAKE_DOWN_MS` at most, and one its frame draws later draws nothing
+     (`__piwiStopHighlightsGone`, in the page's world);
    - with `PIWI_RECORD_CHANNEL`, **Record here** handing the page to the editor's recorder
      (`internal/capture/record-handoff.ts`, framed as `@piwitests/core/ide-recorder`): this package carries the relay
      alone, the recorder's host stays in the editor service;
@@ -71,7 +75,7 @@ responsibilities.
      listener on the worker's Playwright instrumentation); it always posts its test's stops (`showStop`). Each frame
      has the page's secret fields (`SECRET_FIELD_SELECTOR`) and the project's `masks` painted over before it goes, read
      through `internalCall` before and after it and painted with the `jpeg-js` of `playwright-core/lib/utilsBundle`,
-     feature-checked: without it, a frame that shows one does not go (`live-mask.ts`). Never a frame while nobody
+     feature-checked: without it, a frame that shows one does not go, nor one of a page zoomed in (`live-mask.ts`). Never a frame while nobody
      watches, never stored, nothing from a run outside CI unless it is shared (`tests/live-view.spec.ts`,
      `tests/live-view-share.spec.ts`, `tests/live-view-worker.spec.ts`, `tests/live-view-call-log.spec.ts`,
      `tests/live-view-mask.spec.ts`). The key is
@@ -90,7 +94,8 @@ responsibilities.
    through `hideSecretsInUrl`, and a held failure's title and error through `hideSecretsInText`
    (`tests/run-channel-code.spec.ts`); for an agent, the value of a field that holds a secret (`SECRET_FIELDS` in
    `agent-page.ts`: a password field and `SECRET_AUTOCOMPLETE`'s) is hidden in the snapshot, plain or quoted
-   (`withoutFieldSecrets`), masked in the image, in every frame, and never sent as an element's
+   (`withoutFieldSecrets`), painted over in the image as the live view's are, over the boxes Playwright measures too
+   (`maskedImage`), in every frame, none of a page zoomed in, and never sent as an element's
    (`tests/agent-page.spec.ts`).
 4. **The desktop discovery file.** The desktop shell writes `~/.piwi/desktop.json` (`apps/desktop/src-tauri/src/lib.rs`)
    and this package reads its `url`, `token` and `pid` (`internal/config/desktop.ts`); the shell also writes

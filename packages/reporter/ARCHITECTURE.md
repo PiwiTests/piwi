@@ -187,11 +187,26 @@ What the package does to a user's run, process by process.
   credentials hidden part by part, its host and ids kept (`hideSecretsInUrl`).
 - `locator` counts a chain (`chain-locator.ts`, built through the chain grammar's calls
   alone) on the stopped page, one count after the other, and, where the bar shows,
-  outlines its matches with Playwright's highlight, the one before taken down first and
-  the last before the stop ends. A highlight comes down through its own `dispose` or
-  `page.hideHighlight` (1.60), and before 1.60 through an image of the page with a mask
-  in each frame, whose end takes the frame's highlight down (`takeHighlightDown` in
-  `pause-at.ts`, for the pause bar's highlight too).
+  outlines its matches, the one before taken down first and the last before the stop
+  ends; the answer says whether they were outlined (`outlined`). This outline and the
+  pause bar's highlight of the stopped call's element are Piwi's own
+  (`highlightAtStop` in `pause-at.ts`). `frameOf` finds the frame the locator enters
+  from Playwright's client (`_frame`, `_selector`: the iframe before its last
+  `internal:control=enter-frame`, and the selector after it), and `showStopHighlight`
+  of `@piwitests/picker-dom` runs there through `evaluateAll`: it draws a box over each
+  match in a layer of its own (`[data-piwi-stop-highlight]`, `aria-hidden`), a manual
+  popover raised in the top layer on each draw, so it shows above a modal dialog and
+  under a transformed `<html>`, kept on the elements as the page moves, the locator
+  beside the first. The matches are found anew every `REDRAW_MS` (500 ms), as
+  Playwright's own highlight does, so an element the page renders or replaces during
+  the stop gets its box; a draw on the same elements leaves the layer as it is. The
+  answer counts the boxes that show, none for a match the page does not draw.
+  Playwright's highlight is never used, so the test's own highlights and screencast
+  overlays, which Playwright draws in its `x-pw-glass`, stay as they were on every
+  version. A highlight is taken down by its name (`removeStopHighlight`) in each frame
+  it was drawn in, whatever the locator matches there by then, before the test goes on
+  and `TAKE_DOWN_MS` at most, and the page keeps its name
+  (`__piwiStopHighlightsGone`): a frame that answers only after that draws nothing.
 - **The live view**, for a viewer outside the page (Piwi Picker, through the editor's
   hub). `view` shows the stopped page live: its screencast (`page.screencast.start`
   through an internal call, at its viewport scaled to fit 1280 by 800, JPEG quality 60,
@@ -236,7 +251,11 @@ What the package does to a user's run, process by process.
   snapshot in AI mode to a depth (`page.ariaSnapshot({ mode: 'ai', depth })`), its
   credentials hidden by `hideSecretsInText` and each secret field's value written as
   `<hidden>` (`withoutFieldSecrets`: an AI snapshot shows a field's value, quoted when
-  YAML needs it), with an image whose secret fields are masked when asked, in each frame;
+  YAML needs it), with an image whose secret fields are painted over in the image when
+  asked, in each frame, as the live view's are, over the boxes Playwright measures
+  through its protocol too, which no script of the page changes (`maskedImage` in
+  `live-mask.ts`), so the test's own highlights stay in the page; none of a page zoomed
+  in, whose image shows its fields larger than they read;
   a secret field is a password field or one whose `autocomplete` names a password, a
   one-time code or a card's number or security code (`SECRET_FIELDS`, from
   `SECRET_AUTOCOMPLETE`); `ref-locator` ranks the element a

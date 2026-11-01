@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   installPickerOverlay,
   pauseAnswered,
+  removeStopHighlight,
   showPauseBar,
   showPickerChoices,
   takePauseState,
@@ -18,6 +19,7 @@ import {
   callSitePlace,
   currentPauseSet,
   goOn,
+  highlightAtStop,
   inFlightCallSite,
   lineKey,
   markPausesWrapped,
@@ -539,8 +541,7 @@ function fakePausePage(
         return takes < answers.length ? answers[takes++] : 'resume';
       } else if (fn === installPickerOverlay) {
         if (!opts.hangPick) g.__piwiPickState = opts.pick ? 'picked' : 'skipped';
-      }
-      else if (fn === showPickerChoices) g.__piwiPickChoice = 0;
+      } else if (fn === showPickerChoices) g.__piwiPickChoice = 0;
       else if (typeof fn === 'function' && String(fn).includes('__piwi')) return (fn as (a: unknown) => unknown)(arg);
       return null;
     }),
@@ -572,8 +573,8 @@ describe('pauseHere', () => {
 
   it('highlights the element, shows the bar with the call about to run, and hides the highlight on Resume', async () => {
     const { page, shown } = fakePausePage(['resume']);
-    const hide = vi.fn(async () => {});
-    const target = { highlight: vi.fn(async () => ({ dispose: hide })) };
+    const hide = vi.fn(async () => true);
+    const target = { highlight: vi.fn(() => ({ shown: Promise.resolve(true), hide })) };
     const choice = await pauseHere(page as never, { ...POINT, target }, PROBE, () => {});
     expect(choice).toBe('resume');
     expect(target.highlight).toHaveBeenCalledOnce();
@@ -637,7 +638,7 @@ describe('pauseHere', () => {
     expect(record.mock.calls[0]![0]).toBe(stopped.signal);
   });
 
-  it('ends with its stop on a page that stops answering, taking the bar down a second at most', async () => {
+  it('ends with its stop on a page that stops answering, taking the bar and its highlight down a second at most', async () => {
     vi.useFakeTimers();
     try {
       const page = {
@@ -648,7 +649,12 @@ describe('pauseHere', () => {
       };
       const ended = new AbortController();
       let answer: string | undefined;
-      void pauseHere(page as never, POINT, PROBE, () => {}, undefined, ended.signal).then((a) => (answer = a));
+      // Its highlight comes down in the same second as the bar, the most its take-down takes.
+      const hide = vi.fn(() => new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 1000)));
+      const target = { highlight: () => ({ shown: Promise.resolve(true), hide }) };
+      void pauseHere(page as never, { ...POINT, target }, PROBE, () => {}, undefined, ended.signal).then(
+        (a) => (answer = a),
+      );
       await vi.advanceTimersByTimeAsync(0);
       expect(page.evaluate).toHaveBeenCalledWith(showPauseBar, expect.anything());
       ended.abort('ended');
@@ -657,6 +663,30 @@ describe('pauseHere', () => {
       expect(answer).toBeUndefined();
       await vi.advanceTimersByTimeAsync(1000);
       expect(answer).toBe('resume');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('takes its highlight down before the test goes on, one its frame has not drawn yet included', async () => {
+    vi.useFakeTimers();
+    try {
+      const { page, shown } = fakePausePage(['resume']);
+      const order: string[] = [];
+      // A frame that does not answer: the highlight is not drawn by the time the bar shows.
+      const hide = vi.fn(async () => (order.push('hidden'), false));
+      const target = { highlight: vi.fn(() => ({ shown: new Promise<boolean>(() => {}), hide })) };
+      let answer: string | undefined;
+      void pauseHere(page as never, { ...POINT, target }, PROBE, () => {}).then((a) => {
+        order.push('went on');
+        answer = a;
+      });
+      await vi.advanceTimersByTimeAsync(1999);
+      expect(shown).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(answer).toBe('resume');
+      expect(shown).toHaveLength(1);
+      expect(order).toEqual(['hidden', 'went on']);
     } finally {
       vi.useRealTimers();
     }
@@ -721,6 +751,110 @@ describe('pauseHere', () => {
     stopped.abort('closed');
     expect(await recorded).toBe('resume');
     expect(record).not.toHaveBeenCalled();
+  });
+});
+
+describe('a stop’s highlight', () => {
+  /** A frame whose `evaluate` notes each call, answering `answer`. */
+  const frameOf = (answer: () => Promise<unknown> = async () => true) => {
+    const calls: Array<{ fn: unknown; arg: unknown }> = [];
+    return {
+      calls,
+      evaluate: async (fn: unknown, arg: unknown) => {
+        calls.push({ fn, arg });
+        return answer();
+      },
+    };
+  };
+  /**
+   * A locator of `frame` (Playwright's client `_frame`, `_selector`) whose matches there run the page function on
+   * `elements`, each draw noted, or reject with `fails`.
+   */
+  const locatorIn = (frame: Record<string, unknown>, elements: unknown[] = [], fails?: Error) => {
+    const draws: unknown[] = [];
+    Object.assign(frame, {
+      locator: (selector: string) => ({
+        evaluateAll: async (fn: (elements: unknown[], arg: unknown) => unknown, arg: unknown) => {
+          draws.push({ selector, arg });
+          if (fails) throw fails;
+          return fn(elements, arg);
+        },
+      }),
+    });
+    return {
+      draws,
+      locator: { _frame: frame, _selector: 'internal:role=button', highlight: vi.fn(), describe: vi.fn() },
+    };
+  };
+
+  it('draws Piwi’s own highlight in the locator’s frame, anew until it is taken down there by its name', async () => {
+    vi.useFakeTimers();
+    try {
+      const frame = frameOf();
+      const { draws, locator } = locatorIn(frame);
+      const page = { hideHighlight: vi.fn(), mainFrame: () => frameOf(), isClosed: () => false };
+      const call = highlightAtStop(page as never, locator as never, 'call', "getByRole('button')");
+      // No document here: nothing is drawn.
+      expect(await call.shown).toBe(false);
+      expect(draws).toEqual([
+        {
+          selector: 'internal:role=button',
+          arg: { id: expect.stringMatching(/^call-\d+$/), kind: 'call', label: "getByRole('button')" },
+        },
+      ]);
+      // The matches are found anew every half second while the stop lasts.
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(draws).toHaveLength(3);
+      expect(await call.hide()).toBe(true);
+      const id = (draws[0] as { arg: { id: string } }).arg.id;
+      expect(frame.calls).toEqual([{ fn: removeStopHighlight, arg: id }]);
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(draws).toHaveLength(3);
+      expect(locator.highlight).not.toHaveBeenCalled();
+      expect(locator.describe).not.toHaveBeenCalled();
+      expect(page.hideHighlight).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      delete (globalThis as Record<string, unknown>).__piwiStopHighlightsGone;
+    }
+  });
+
+  it('takes it down within a second in a frame that does not answer', async () => {
+    vi.useFakeTimers();
+    try {
+      const frame = frameOf(() => new Promise(() => {}));
+      const { locator } = locatorIn(frame);
+      const page = { mainFrame: () => frame, isClosed: () => false };
+      const highlight = highlightAtStop(page as never, locator as never, 'count', 'x');
+      await highlight.shown;
+      let hidden: boolean | undefined;
+      void highlight.hide().then((answer) => (hidden = answer));
+      await vi.advanceTimersByTimeAsync(999);
+      expect(hidden).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(hidden).toBe(false);
+    } finally {
+      vi.useRealTimers();
+      delete (globalThis as Record<string, unknown>).__piwiStopHighlightsGone;
+    }
+  });
+
+  it('neither throws nor rejects on a page that breaks under it', async () => {
+    const closed = new Error('Target page, context or browser has been closed');
+    const frame = frameOf(() => Promise.reject(closed));
+    const { locator } = locatorIn(frame, [], closed);
+    const page = { mainFrame: () => frame, isClosed: () => true };
+    const highlight = highlightAtStop(page as never, locator as never, 'count', 'x');
+    expect(await highlight.shown).toBe(false);
+    expect(await highlight.hide()).toBe(false);
+    const thrown = {
+      evaluateAll: () => {
+        throw new Error('not a locator');
+      },
+    };
+    const broken = highlightAtStop(page as never, thrown as never, 'call', 'x');
+    expect(await broken.shown).toBe(false);
+    expect(await broken.hide()).toBe(false);
   });
 });
 

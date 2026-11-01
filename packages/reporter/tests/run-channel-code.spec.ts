@@ -12,7 +12,10 @@ import { jsonRes, playwrightAtLeast, startServer, type FakeServer } from './_hel
 /**
  * Code from a stop, the worker's part, in real Playwright runs through the built package under a fake editor service:
  * the text bodies an interactive run keeps and the one handed over to mock, a locator counted and outlined on the
- * stopped page, a region picked with its ARIA snapshot (its `toMatchAriaSnapshot` run against the page) or refused,
+ * stopped page, the highlights of a stop taken down and the test's own left as they were, in a frame with no address,
+ * one whose response had no content and a sandboxed one, through a stop as a new document begins and from a selector
+ * engine run in the page too, none drawn after a stop a frame of another site held up, a region picked with its ARIA
+ * snapshot (its `toMatchAriaSnapshot` run against the page) or refused,
  * a check handed to the editor's check panel, and a failure held at its line, headed and headless, once the test and
  * its hooks are done, where Pick replaces the failing locator and Resume lets the test end as it failed, the evidence
  * being what the test left at the failure, its error's credentials hidden. Under CI, without a run connection, and
@@ -57,7 +60,7 @@ customElements.define('x-secret', class extends HTMLElement {
 if (location.pathname === '/big') document.querySelector('section p').textContent = 'many words '.repeat(105 * 1024);
 const PICK = location.pathname === '/r' || location.pathname === '/big' ? 'section' : 'button';
 new MutationObserver(() => {
-  if (document.querySelector('x-pw-glass') && !window.__glassSaid) {
+  if (document.querySelector('[data-piwi-stop-highlight]') && !window.__glassSaid) {
     window.__glassSaid = true;
     fetch('/glass', { method: 'POST', body: location.pathname });
   }
@@ -100,11 +103,28 @@ if (location.pathname === '/h') {
 </script>`;
 
 const HEADED_SPEC = (base: string) => `const { test, expect } = require('../fixture.cjs');
+const { selectors } = require('@playwright/test');
+// A selector engine registered without its content script: Playwright resolves it in the page's own world.
+test.beforeAll(() => selectors.register('tag', () => ({
+  query: (root, name) => root.querySelector(name),
+  queryAll: (root, name) => Array.from(root.querySelectorAll(name)),
+})));
+// A window just opened has no image to take until it shows a frame: its first contentful paint, which Chromium marks
+// once that frame is shown.
+const painted = (page) => page.evaluate(() => new Promise((resolve) => new PerformanceObserver((list, observer) => {
+  if (!list.getEntriesByName('first-contentful-paint').length) return;
+  observer.disconnect();
+  resolve();
+}).observe({ type: 'paint', buffered: true })));
+// The highlights a page shows: Playwright's layer, where the test's own are, and Piwi's own.
+const LAYERS = 'x-pw-glass, [data-piwi-stop-highlight]';
+const glassIn = (page) => page.evaluate((layers) => document.querySelectorAll(layers).length, LAYERS);
+const glassInFrame = (page) => page.frames().find((f) => f !== page.mainFrame()).evaluate((layers) => document.querySelectorAll(layers).length, LAYERS);
 test('keeps the text bodies', async ({ page }) => {
   await page.goto('${base}/k');
   await expect(page).toHaveTitle('done');
   await page.keyboard.press('Tab'); // bp
-  test.info().annotations.push({ type: 'glass', description: String(await page.evaluate(() => document.querySelectorAll('x-pw-glass').length)) });
+  test.info().annotations.push({ type: 'glass', description: String(await glassIn(page)) });
 });
 test('keeps nothing of the test before', async ({ page }) => {
   await page.goto('${base}/a');
@@ -124,19 +144,102 @@ test('checks an element', async ({ page }) => {
 });
 test('takes every outline down', async ({ page }) => {
   await page.goto('${base}/a');
-  // A window just opened has no image to take until it shows a frame: its first contentful paint, which Chromium
-  // marks once that frame is shown.
-  await page.evaluate(() => new Promise((resolve) => new PerformanceObserver((list, observer) => {
-    if (!list.getEntriesByName('first-contentful-paint').length) return;
-    observer.disconnect();
-    resolve();
-  }).observe({ type: 'paint', buffered: true })));
+  await painted(page);
   const before = await page.screenshot({ caret: 'initial' });
   await expect(page.getByTestId('go')).toBeVisible(); // bp
   const styled = await page.evaluate(() => document.querySelectorAll('input[style], textarea[style], [contenteditable][style]').length);
+  const glass = await glassIn(page);
   const after = await page.screenshot({ caret: 'initial' });
   test.info().annotations.push({ type: 'same', description: String(before.equals(after)) });
   test.info().annotations.push({ type: 'styled', description: String(styled) });
+  test.info().annotations.push({ type: 'glass', description: String(glass) });
+});
+test('keeps the test’s own highlight', async ({ page }) => {
+  await page.goto('${base}/a');
+  await page.getByTestId('go').highlight();
+  await painted(page);
+  const before = await page.screenshot({ caret: 'initial' });
+  await page.keyboard.press('Shift'); // bp
+  await expect(page.getByTestId('go')).toBeVisible(); // bp
+  const after = await page.screenshot({ caret: 'initial' });
+  test.info().annotations.push({ type: 'same', description: String(before.equals(after)) });
+  test.info().annotations.push({ type: 'glass', description: String(await glassIn(page)) });
+});
+test('keeps the test’s own highlight through a new document', async ({ page }) => {
+  await page.goto('${base}/a');
+  await page.locator('section h2').highlight();
+  await page.goto('${base}/a?again');
+  await expect(page.getByTestId('go')).toBeVisible(); // bp
+  // Playwright 1.63 draws the highlights it holds into a new document within a second.
+  await page.waitForTimeout(1500);
+  test.info().annotations.push({ type: 'glass', description: String(await glassIn(page)) });
+});
+test('takes the layer down on a page with a frame not loaded yet', async ({ page }) => {
+  await page.goto('${base}/lazy');
+  await expect(page.getByTestId('go')).toBeVisible(); // bp
+  test.info().annotations.push({ type: 'glass', description: String(await glassIn(page)) });
+});
+test('keeps the test’s own highlight in a frame with no address', async ({ page }) => {
+  await page.goto('${base}/script-frame');
+  await page.frameLocator('#script').getByRole('button', { name: 'Inside' }).highlight();
+  await expect(page.getByTestId('go')).toBeVisible(); // bp
+  test.info().annotations.push({ type: 'glass', description: String(await glassInFrame(page)) });
+});
+test('takes the outline down in a frame with no address', async ({ page }) => {
+  await page.goto('${base}/script-frame');
+  await page.keyboard.press('Tab'); // bp
+  test.info().annotations.push({ type: 'glass', description: String(await glassInFrame(page)) });
+});
+test('keeps the test’s own highlight in a frame whose response had no content', async ({ page }) => {
+  await page.goto('${base}/empty-frame');
+  const inside = page.frameLocator('#empty').getByRole('button', { name: 'Inside' });
+  await expect(inside).toBeVisible();
+  await inside.highlight();
+  const before = await glassInFrame(page);
+  await expect(page.getByTestId('go')).toBeVisible(); // bp
+  test.info().annotations.push({ type: 'glass', description: \`\${before} \${await glassInFrame(page)}\` });
+});
+test('takes the outline down in a frame whose response had no content', async ({ page }) => {
+  await page.goto('${base}/empty-frame-outline');
+  await page.keyboard.press('Tab'); // bp
+  test.info().annotations.push({ type: 'glass', description: String(await glassInFrame(page)) });
+});
+test('highlights at each stop on a page with a sandboxed frame', async ({ page }) => {
+  await page.goto('${base}/sandboxed-frame');
+  await expect(page.getByTestId('go')).toBeVisible(); // bp
+  await expect(page.getByTestId('go')).toBeVisible(); // bp
+  test.info().annotations.push({ type: 'glass', description: String(await page.evaluate(() => window.__glassAtBars)) });
+});
+test('keeps the test’s own highlight through a stop as a new document begins', async ({ page }) => {
+  test.setTimeout(15_000);
+  await page.goto('${base}/a');
+  await page.locator('section h2').highlight();
+  await page.goto('${base}/late', { waitUntil: 'commit' });
+  await expect(page.getByTestId('go')).toBeVisible(); // bp
+  // Playwright 1.64 draws the highlights it holds into the document once it has a root element, within a second.
+  await page.waitForTimeout(1500);
+  test.info().annotations.push({ type: 'glass', description: String(await glassIn(page)) });
+  await page.goto('${base}/a?later');
+  await page.waitForTimeout(1500);
+  test.info().annotations.push({ type: 'later', description: String(await glassIn(page)) });
+});
+test('draws nothing after the test went on, while a frame of another site does not answer', async ({ page }) => {
+  test.setTimeout(20_000);
+  await page.goto('${base}/busy-frame');
+  await expect(page.frameLocator('iframe').getByText('busy')).toBeVisible();
+  // The frame runs for five seconds from just before the stop, in a process of its own.
+  await page.evaluate(() => document.querySelector('iframe').contentWindow.postMessage('busy', '*'));
+  await expect(page.getByTestId('go')).toBeVisible(); // bp
+  const wentOn = Date.now();
+  await page.waitForTimeout(4000);
+  const late = await page.evaluate((at) => window.__glassAdded.filter((added) => added > at).length, wentOn);
+  test.info().annotations.push({ type: 'late', description: String(late) });
+});
+test('shows the test’s own highlight from an engine run in the page, after a stop at one', async ({ page }) => {
+  await page.goto('${base}/engine');
+  await expect(page.locator('tag=button')).toBeVisible(); // bp
+  await page.locator('tag=h2').highlight();
+  test.info().annotations.push({ type: 'glass', description: String(await glassIn(page)) });
 });
 test('fails headed', async ({ page }) => {
   await page.goto('${base}/a');
@@ -162,7 +265,11 @@ test('fails at an address with a credential', async ({ page }) => {
 `;
 
 /** The check Assert a region writes, run against the page the region was picked on. */
-const CHECK_SPEC = (base: string, locator: string, snapshot: string) => `const { test, expect } = require('../fixture.cjs');
+const CHECK_SPEC = (
+  base: string,
+  locator: string,
+  snapshot: string,
+) => `const { test, expect } = require('../fixture.cjs');
 test('matches the region', async ({ page }) => {
   await page.goto('${base}/r');
   await expect(page.${locator}).toMatchAriaSnapshot(${JSON.stringify(snapshot)});
@@ -287,7 +394,9 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
   (stops[test] ??= []).push(stop);
   const said = (heard[test] ??= []);
   const barsBefore = bars.length;
-  if (stop.bar) await waitFor(() => (bars.length > barsBefore ? true : undefined));
+  // A stop whose page has no body yet goes on with no bar.
+  const ended = () => connection.heard.some((m) => m.type === 'running' && m.stop === stop.stop);
+  if (stop.bar) await waitFor(() => (bars.length > barsBefore || ended() ? true : undefined));
   await sleep(LOOK_MS);
   const at = { stop: stop.stop };
   switch (test) {
@@ -314,6 +423,31 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
       break;
     case 'keeps nothing of the test before':
       said.push(await ask(connection, { what: 'requests', ...at }));
+      break;
+    case 'keeps the test’s own highlight':
+      if (stop.locator) said.push(await ask(connection, { what: 'locator', ...at, locator: "getByTestId('go')" }));
+      break;
+    case 'takes the outline down in a frame with no address':
+      said.push(
+        await ask(connection, {
+          what: 'locator',
+          ...at,
+          locator: "frameLocator('#script').getByRole('button', { name: 'Inside' })",
+        }),
+      );
+      break;
+    case 'takes the outline down in a frame whose response had no content':
+      said.push(
+        await ask(connection, {
+          what: 'locator',
+          ...at,
+          locator: "frameLocator('#empty').getByRole('button', { name: 'Inside' })",
+        }),
+      );
+      break;
+    case 'shows the test’s own highlight from an engine run in the page, after a stop at one':
+      // Whether the stop drew its highlight, the bar showing.
+      said.push(outlined.includes('/engine'));
       break;
     case 'asserts a region':
     case 'asserts a region too long':
@@ -445,6 +579,66 @@ beforeAll(async () => {
       case '/api/during-hold':
         actedDuringHold = true;
         return jsonRes(res, 200, { during: 'hold' });
+      case '/script-frame':
+        // A frame Playwright gives no address.
+        res.writeHead(200, { 'content-type': 'text/html' });
+        return res.end(`${PAGE}<iframe id="script" src="javascript:'<button>Inside</button>'"></iframe>`);
+      case '/empty-frame':
+      case '/empty-frame-outline':
+        // A frame Playwright neither gives an address nor sees load: its response has no content, and the page writes
+        // its first document.
+        res.writeHead(200, { 'content-type': 'text/html' });
+        return res.end(
+          `${PAGE}<iframe id="empty" src="/no-content"></iframe><script>addEventListener('load', () => {
+document.getElementById('empty').contentDocument.body.innerHTML = '<button>Inside</button>'; });</script>`,
+        );
+      case '/no-content':
+        res.writeHead(204);
+        return res.end();
+      case '/sandboxed-frame':
+        // A sandboxed frame of its own document, which a headed Playwright 1.59 holds as navigating, with no address.
+        // The page notes how many highlight layers it shows as each bar shows.
+        res.writeHead(200, { 'content-type': 'text/html' });
+        return res.end(`${PAGE}<iframe sandbox="allow-scripts" srcdoc="<button>Inside</button>"></iframe><script>
+new MutationObserver(() => {
+  const bar = document.getElementById('__piwi-pause-bar');
+  if (!bar || bar.dataset.glass) return;
+  bar.dataset.glass = '1';
+  (window.__glassAtBars ??= []).push(document.querySelectorAll('[data-piwi-stop-highlight]').length);
+}).observe(document.documentElement, { childList: true, subtree: true });
+</script>`);
+      case '/late':
+        // A page whose headers come at once, and its document 300 ms later.
+        res.writeHead(200, { 'content-type': 'text/html' });
+        res.flushHeaders();
+        setTimeout(() => res.end(PAGE), 300);
+        return;
+      case '/busy-frame':
+        // A frame of another site, which runs in a process of its own; the page notes when Playwright's highlight
+        // layer comes into it.
+        res.writeHead(200, { 'content-type': 'text/html' });
+        return res.end(
+          `${PAGE}<iframe src="${server.url.replace('127.0.0.1', 'localhost')}/busy"></iframe><script>
+window.__glassAdded = [];
+new MutationObserver((records) => {
+  for (const r of records) {
+    for (const n of r.addedNodes) {
+      if (n.nodeName === 'X-PW-GLASS' || n.dataset?.piwiStopHighlight) window.__glassAdded.push(Date.now());
+    }
+  }
+}).observe(document.documentElement, { childList: true });
+</script>`,
+        );
+      case '/busy':
+        // Busy for five seconds once told.
+        res.writeHead(200, { 'content-type': 'text/html' });
+        return res.end(
+          `<p>busy</p><script>addEventListener('message', () => { const t = Date.now(); while (Date.now() - t < 5000); });</script>`,
+        );
+      case '/lazy':
+        // A frame far below the window, which Chromium does not load.
+        res.writeHead(200, { 'content-type': 'text/html' });
+        return res.end(`${PAGE}<div style="height: 12000px"></div><iframe loading="lazy" src="/b"></iframe>`);
     }
     res.writeHead(200, { 'content-type': 'text/html' });
     res.end(PAGE);
@@ -524,13 +718,27 @@ describe('code from a stop, the worker’s part', () => {
     expect(exitCode, output).toBe(1);
     // Each test's errors, which say why a test that should pass did not.
     const errors = tests.flatMap((t) => t.errors.map((error) => `${t.title}: ${error}`)).join('\n');
-    expect(tests.map((t) => [t.title, t.status]), errors).toEqual([
+    expect(
+      tests.map((t) => [t.title, t.status]),
+      errors,
+    ).toEqual([
       ['keeps the text bodies', 'passed'],
       ['keeps nothing of the test before', 'passed'],
       ['asserts a region', 'passed'],
       ['asserts a region too long', 'passed'],
       ['checks an element', 'passed'],
       ['takes every outline down', 'passed'],
+      ['keeps the test’s own highlight', 'passed'],
+      ['keeps the test’s own highlight through a new document', 'passed'],
+      ['takes the layer down on a page with a frame not loaded yet', 'passed'],
+      ['keeps the test’s own highlight in a frame with no address', 'passed'],
+      ['takes the outline down in a frame with no address', 'passed'],
+      ['keeps the test’s own highlight in a frame whose response had no content', 'passed'],
+      ['takes the outline down in a frame whose response had no content', 'passed'],
+      ['highlights at each stop on a page with a sandboxed frame', 'passed'],
+      ['keeps the test’s own highlight through a stop as a new document begins', 'passed'],
+      ['draws nothing after the test went on, while a frame of another site does not answer', 'passed'],
+      ['shows the test’s own highlight from an engine run in the page, after a stop at one', 'passed'],
       ['fails headed', 'failed'],
       ['fails headless', 'failed'],
       ['fails, its page acting during the hold', 'failed'],
@@ -538,7 +746,24 @@ describe('code from a stop, the worker’s part', () => {
     ]);
     expect(connections[0]!.heard[0]).toMatchObject({
       type: 'run-attach',
-      takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator', 'view', 'input', 'input-clicks', ...(PICKS_AT ? ['pick-at'] : []), 'agent', 'events', 'bind', 'end', 'share'],
+      takes: [
+        'pick',
+        'record',
+        'assert',
+        'assert-region',
+        'requests',
+        'mock',
+        'locator',
+        'view',
+        'input',
+        'input-clicks',
+        ...(PICKS_AT ? ['pick-at'] : []),
+        'agent',
+        'events',
+        'bind',
+        'end',
+        'share',
+      ],
       holds: ['failure'],
     });
   });
@@ -613,10 +838,10 @@ describe('code from a stop, the worker’s part', () => {
 
   it('counts a locator on the stopped page, outlines its matches and takes the outline down as the test goes on', () => {
     const [, , , one, none, broken, again] = heard['keeps the text bodies']!;
-    expect(one).toEqual({ ok: true, message: '1 element matches.', count: 1 });
-    expect(none).toEqual({ ok: true, message: 'No element matches.', count: 0 });
+    expect(one).toEqual({ ok: true, message: '1 element matches.', count: 1, outlined: true });
+    expect(none).toEqual({ ok: true, message: 'No element matches.', count: 0, outlined: false });
     expect(broken).toEqual({ ok: false, message: 'getByRole( is not a locator Piwi can build.', count: null });
-    expect(again).toEqual({ ok: true, message: '1 element matches.', count: 1 });
+    expect(again).toEqual({ ok: true, message: '1 element matches.', count: 1, outlined: true });
     // Drawn in the page while it stood stopped, gone once the test went on.
     expect(outlined).toContain('/k');
     const glass = tests[0]!.annotations.find((a) => a.type === 'glass');
@@ -627,13 +852,92 @@ describe('code from a stop, the worker’s part', () => {
     // Counted at the test's breakpoint, its one stop.
     expect(stops['takes every outline down']?.map((s) => s.reason)).toEqual(['breakpoint']);
     expect(heard['takes every outline down']).toEqual([
-      { ok: true, message: '1 element matches.', count: 1 },
-      { ok: true, message: '1 element matches.', count: 1 },
+      { ok: true, message: '1 element matches.', count: 1, outlined: true },
+      { ok: true, message: '1 element matches.', count: 1, outlined: true },
     ]);
     const result = tests.find((t) => t.title === 'takes every outline down')!;
     expect(result.annotations.find((a) => a.type === 'same')?.description).toBe('true');
     // No field of the page carries a style it did not: taking an outline down leaves the fields' caret alone.
     expect(result.annotations.find((a) => a.type === 'styled')?.description).toBe('0');
+    // Nor does a highlight layer stay, Piwi's or Playwright's, on a page that showed none of its own.
+    expect(result.annotations.find((a) => a.type === 'glass')?.description).toBe('0');
+  });
+
+  it('leaves the test’s own highlight of the locator the stop acts on and the editor counts as it was', () => {
+    expect(stops['keeps the test’s own highlight']?.map((s) => [s.reason, !!s.locator])).toEqual([
+      ['breakpoint', false],
+      ['breakpoint', true],
+    ]);
+    expect(heard['keeps the test’s own highlight']).toEqual([
+      { ok: true, message: '1 element matches.', count: 1, outlined: true },
+    ]);
+    const result = tests.find((t) => t.title === 'keeps the test’s own highlight')!;
+    expect(result.annotations.find((a) => a.type === 'same')?.description).toBe('true');
+    expect(result.annotations.find((a) => a.type === 'glass')?.description).toBe('1');
+  });
+
+  it('keeps the test’s own highlight that Playwright draws again in a new document, through a stop just after it', () => {
+    const result = tests.find((t) => t.title === 'keeps the test’s own highlight through a new document')!;
+    // Playwright 1.63 holds the test's highlights through a navigation; an older one leaves them with the document.
+    expect(result.annotations.find((a) => a.type === 'glass')?.description).toBe(playwrightAtLeast('1.63') ? '1' : '0');
+  });
+
+  it('highlights on a page with a frame not loaded yet, and takes the layer down', () => {
+    expect(outlined).toContain('/lazy');
+    const result = tests.find((t) => t.title === 'takes the layer down on a page with a frame not loaded yet')!;
+    expect(result.annotations.find((a) => a.type === 'glass')?.description).toBe('0');
+  });
+
+  it('keeps the test’s own highlight in a frame with no address, and takes an outline drawn in one down', () => {
+    const kept = tests.find((t) => t.title === 'keeps the test’s own highlight in a frame with no address')!;
+    expect(kept.annotations.find((a) => a.type === 'glass')?.description).toBe('1');
+    expect(heard['takes the outline down in a frame with no address']).toEqual([
+      { ok: true, message: '1 element matches.', count: 1, outlined: true },
+    ]);
+    const outline = tests.find((t) => t.title === 'takes the outline down in a frame with no address')!;
+    expect(outline.annotations.find((a) => a.type === 'glass')?.description).toBe('0');
+  });
+
+  it('keeps the test’s own highlight in a frame whose response had no content, and takes an outline drawn in one down', () => {
+    expect(outlined).toContain('/empty-frame');
+    const kept = tests.find(
+      (t) => t.title === 'keeps the test’s own highlight in a frame whose response had no content',
+    )!;
+    const [before, after] = kept.annotations.find((a) => a.type === 'glass')!.description!.split(' ');
+    expect(after).toBe(before);
+    expect(heard['takes the outline down in a frame whose response had no content']).toEqual([
+      { ok: true, message: '1 element matches.', count: 1, outlined: true },
+    ]);
+    const outline = tests.find((t) => t.title === 'takes the outline down in a frame whose response had no content')!;
+    expect(outline.annotations.find((a) => a.type === 'glass')?.description).toBe('0');
+  });
+
+  it('highlights at each stop on a page with a frame Playwright holds as navigating', () => {
+    const result = tests.find((t) => t.title === 'highlights at each stop on a page with a sandboxed frame')!;
+    expect(result.annotations.find((a) => a.type === 'glass')?.description).toBe('1,1');
+  });
+
+  it('keeps the test’s own highlight Playwright holds through a stop that begins before the document has its root', () => {
+    const result = tests.find(
+      (t) => t.title === 'keeps the test’s own highlight through a stop as a new document begins',
+    )!;
+    // Playwright 1.64 draws what it holds into that document once it has one; 1.63 into the next document alone.
+    expect(result.annotations.find((a) => a.type === 'glass')?.description).toBe(playwrightAtLeast('1.64') ? '1' : '0');
+    expect(result.annotations.find((a) => a.type === 'later')?.description).toBe(playwrightAtLeast('1.63') ? '1' : '0');
+  });
+
+  it('draws no highlight after the test went on, on a page whose frame of another site did not answer as the stop began', () => {
+    const result = tests.find(
+      (t) => t.title === 'draws nothing after the test went on, while a frame of another site does not answer',
+    )!;
+    expect(result.annotations.find((a) => a.type === 'late')?.description).toBe('0');
+  });
+
+  it('highlights a locator Playwright resolves in the page’s own world, the test’s own shown after', () => {
+    const title = 'shows the test’s own highlight from an engine run in the page, after a stop at one';
+    expect(heard[title]).toEqual([true]);
+    const result = tests.find((t) => t.title === title)!;
+    expect(result.annotations.find((a) => a.type === 'glass')?.description).toBe('1');
   });
 
   it('picks a region in the test’s window and sends its ARIA snapshot', () => {
@@ -665,7 +969,10 @@ describe('code from a stop, the worker’s part', () => {
     const { locator, snapshot } = region as { locator: string; snapshot: string };
     write('tests/check.spec.cjs', CHECK_SPEC(server.url, locator, snapshot));
     const checked = await run(baseEnv, ['--project=check'], 60_000);
-    expect(checked.tests.map((t) => [t.title, t.status]), checked.output).toEqual([['matches the region', 'passed']]);
+    expect(
+      checked.tests.map((t) => [t.title, t.status]),
+      checked.output,
+    ).toEqual([['matches the region', 'passed']]);
   }, 90_000);
 
   it('says why a region picked brings no snapshot, at its stop', () => {
@@ -674,7 +981,8 @@ describe('code from a stop, the worker’s part', () => {
     expect(region).toEqual({
       type: 'region',
       stop: stops['asserts a region too long']![0]!.stop,
-      refused: "The ARIA snapshot of getByRole('region', { name: 'Order summary' }) is longer than 1048576 characters: pick a smaller region.",
+      refused:
+        "The ARIA snapshot of getByRole('region', { name: 'Order summary' }) is longer than 1048576 characters: pick a smaller region.",
     });
   });
 
@@ -741,7 +1049,8 @@ describe('code from a stop, the worker’s part', () => {
       message: "Assert needs the pause bar in the test's window, and this stop shows none: run the test headed.",
     });
     expect(listed).toMatchObject({ ok: true, message: 'The test kept 3 responses.' });
-    expect(counted).toEqual({ ok: true, message: '1 element matches.', count: 1 });
+    // A stop no pause bar shows: nothing is outlined.
+    expect(counted).toEqual({ ok: true, message: '1 element matches.', count: 1, outlined: false });
   });
 
   it('hides the credentials of the URL a failure names in its title and its error', () => {
@@ -800,8 +1109,8 @@ describe('code from a stop, the worker’s part', () => {
 
   it('shows none of its own calls among the test’s steps', () => {
     for (const result of tests) {
-      // The test that compares the page before and after its stop takes its own two screenshots.
-      const own = result.title === 'takes every outline down' ? 2 : 0;
+      // The tests that compare the page before and after their stops take their own two screenshots.
+      const own = ['takes every outline down', 'keeps the test’s own highlight'].includes(result.title) ? 2 : 0;
       const titles = allSteps(result.steps).map((s) => s.title);
       expect(
         titles.filter((t) => /Screenshot/i.test(t)),

@@ -15,13 +15,17 @@ import { internalCall, resolvePlaywrightPackageJson } from './quiet-capture.js';
  * find no element, and the viewport the frame names, goes as it is; one whose two reads find the same boxes goes with
  * them painted over, two a second at most (`MASKED_SPACING_MS`); any other is replaced by a screenshot taken between two
  * reads, which goes, painted over, when those agree, and no image goes when they do not (the page moved). A child
- * frame's boxes are placed from its iframe's content box; an iframe drawn at another size than its own (a transform)
- * is painted over whole. Each image keeps the size of the frame it stands for. The paint is `jpeg-js` as Playwright
+ * frame's boxes are placed from its iframe's content box; an iframe drawn at another size than its own (a transform),
+ * or whose frame does not answer within `FRAME_READ_MS` (a lazy frame, a busy one), is painted over whole. Each image
+ * keeps the size of the frame it stands for. The paint is `jpeg-js` as Playwright
  * bundles it: an image is decoded, its boxes filled, scaled down to that size and encoded again. No image goes, and the
- * viewers hear why, while an image shows a masked element and there is no `jpeg-js` to paint with, while a locator of
- * the project's is one this Playwright cannot build or this reporter cannot read, and once the boxes could not be read
+ * viewers hear why, while an image shows a masked element and there is no `jpeg-js` to paint with, while the page is
+ * zoomed in (its visual viewport smaller than its layout viewport, which an image shows and the boxes are read in),
+ * while a locator of the project's is one this Playwright cannot build or this reporter cannot read, and once the
+ * boxes could not be read
  * `MAX_FAILED_READS` times in a row. An element the page shows only between two reads, less than a frame's interval,
- * is not seen.
+ * is not seen. The agent's image of a stopped page is painted over the same way, and over the boxes Playwright
+ * measures itself too (`maskedImage`).
  */
 
 /** A box of the page's viewport, in CSS pixels. */
@@ -45,6 +49,8 @@ interface FrameRead {
   rects: Array<readonly [number, number, number, number]>;
   width: number;
   height: number;
+  /** The frame's visual viewport is not its layout viewport: the page is zoomed in, an image shows it larger. */
+  zoomed?: boolean;
 }
 
 /** The least time between two images that show a masked element. */
@@ -59,6 +65,11 @@ const MAX_FRAMES = 32;
 const PAD = 2;
 /** Two reads of a box, or of a size, agree within this many CSS pixels. */
 const SAME_WITHIN = 1;
+/**
+ * How long a frame's masked elements may take to be read: a child frame that has not answered by then (a lazy frame, an
+ * awaited response) is painted over whole, from its iframe's box.
+ */
+const FRAME_READ_MS = 1000;
 /** How many reads may fail in a row before the viewers hear that no image goes. */
 const MAX_FAILED_READS = 3;
 /** The mask's color, in RGB. */
@@ -69,6 +80,7 @@ const NO_CODEC =
   'A secret field shows on this page, and this Playwright gives the reporter nothing to mask it with: no image goes while it shows.';
 const UNREAD =
   'The live view cannot read where the secret fields of this page are, so no image of it goes until it can.';
+const ZOOMED = 'This page is zoomed in: no image of it goes until it is not, its secret fields shown larger than read.';
 const UNREADABLE_MASKS =
   'The project masks elements this reporter cannot read: no image goes. Update @piwitests/reporter.';
 
@@ -120,7 +132,22 @@ const near = (a: number, b: number): boolean => Math.abs(a - b) <= SAME_WITHIN;
 function readFrameRects(page: Page, frame: Frame, masks: readonly string[]): Promise<FrameRead> {
   return internalCall(page, () =>
     maskedIn(frame, masks).evaluateAll((elements) => {
-      const view = globalThis as unknown as { innerWidth: number; innerHeight: number };
+      const view = globalThis as unknown as {
+        innerWidth: number;
+        innerHeight: number;
+        visualViewport?: { offsetLeft: number; offsetTop: number; width: number; height: number; scale: number };
+        document: { scrollingElement: { clientWidth: number; clientHeight: number } | null };
+      };
+      const visual = view.visualViewport;
+      // The layout viewport without its scroll bars, in standards and quirks mode alike.
+      const layout = view.document.scrollingElement;
+      const zoomed =
+        !!visual &&
+        (Math.abs(visual.offsetLeft) > 0.5 ||
+          Math.abs(visual.offsetTop) > 0.5 ||
+          (layout
+            ? visual.width < layout.clientWidth - 1 || visual.height < layout.clientHeight - 1
+            : visual.scale > 1.001));
       return {
         rects: elements
           .map((element) => {
@@ -130,6 +157,7 @@ function readFrameRects(page: Page, frame: Frame, masks: readonly string[]): Pro
           .filter(([, , width, height]) => width > 0 && height > 0),
         width: view.innerWidth,
         height: view.innerHeight,
+        zoomed,
       };
     }),
   );
@@ -186,10 +214,47 @@ async function childOrigin(
   });
 }
 
-/** The boxes of the masked elements `frame` shows, in the page's viewport; null when they cannot be read. */
+/** `run`'s answer, or undefined once `ms` passed, `run` left to settle on its own. */
+async function within<T>(run: Promise<T>, ms: number): Promise<T | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      run,
+      new Promise<undefined>((resolve) => (timer = setTimeout(() => resolve(undefined), ms))),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * A child frame that did not answer, painted over whole: its iframe's box in the page's viewport, none for an iframe
+ * the page does not draw; null when its parent does not say where it is either.
+ */
+async function wholeFrame(page: Page, frame: Frame): Promise<FrameRead | null> {
+  const box = await within(
+    internalCall(page, async () => {
+      const element = await frame.frameElement();
+      try {
+        return await element.boundingBox();
+      } finally {
+        await element.dispose();
+      }
+    }),
+    FRAME_READ_MS,
+  ).catch(() => undefined);
+  if (box === undefined) return null;
+  return { rects: box ? [[box.x, box.y, box.width, box.height]] : [], width: 0, height: 0 };
+}
+
+/**
+ * The boxes of the masked elements `frame` shows, in the page's viewport; null when they cannot be read. A child frame
+ * that does not answer within `FRAME_READ_MS` is painted over whole (`wholeFrame`).
+ */
 async function readFrame(page: Page, frame: Frame, masks: readonly string[]): Promise<FrameRead | null> {
   try {
-    const read = await readFrameRects(page, frame, masks);
+    const read = await within(readFrameRects(page, frame, masks), FRAME_READ_MS);
+    if (!read) return frame === page.mainFrame() ? null : await wholeFrame(page, frame);
     if (!read.rects.length || frame === page.mainFrame()) return read;
     const origin = await childOrigin(page, frame, read);
     if (!origin) return { ...read, rects: [] };
@@ -223,6 +288,7 @@ async function readBoxes(
   if (read.some((frame) => frame === null)) return null;
   const top = read[frames.indexOf(main)];
   if (!top) return null;
+  if (top.zoomed) return ZOOMED;
   return {
     boxes: (read as FrameRead[]).flatMap((frame) =>
       frame.rects.map(([x, y, width, height]) => ({ x, y, width, height })),
@@ -319,6 +385,88 @@ function paintBoxes(
   }
   const fits = image.width <= size.width && image.height <= size.height;
   return jpeg.encode(fits ? image : shrink(image, size.width, size.height), quality).data;
+}
+
+/**
+ * The boxes of `frame`'s secret fields as Playwright measures them, through the browser's protocol (`boundingBox`),
+ * which no script of the page can change, in the page's viewport: its whole iframe's box for a child frame that does
+ * not answer within `FRAME_READ_MS` (`wholeFrame`); null when they cannot be read.
+ */
+async function measureFrame(page: Page, frame: Frame): Promise<Box[] | null> {
+  try {
+    const measured = await within(
+      internalCall(page, async () => {
+        const fields = await frame.locator(SECRET_FIELD_SELECTOR).elementHandles();
+        try {
+          return await Promise.all(fields.map((field) => field.boundingBox()));
+        } finally {
+          await Promise.all(fields.map((field) => field.dispose().catch(() => undefined)));
+        }
+      }),
+      FRAME_READ_MS,
+    );
+    if (measured) return measured.filter((box): box is Box => !!box && box.width > 0 && box.height > 0);
+    const whole = frame === page.mainFrame() ? null : await wholeFrame(page, frame);
+    return whole && whole.rects.map(([x, y, width, height]) => ({ x, y, width, height }));
+  } catch {
+    return frame.isDetached() ? [] : null;
+  }
+}
+
+/**
+ * The boxes of the page's secret fields, read in the page (`readBoxes`) and measured by Playwright (`measureFrame`),
+ * both painted: a script of the page can change the first, and an iframe's own border shifts the second. Null when
+ * either cannot be read, or the page is zoomed in.
+ */
+async function secretBoxes(page: Page): Promise<Omit<Read, 'began' | 'ended'> | null> {
+  const [read, measured] = await Promise.all([
+    readBoxes(page, []),
+    Promise.all(
+      page
+        .frames()
+        .slice(0, MAX_FRAMES)
+        .map((frame) => measureFrame(page, frame)),
+    ),
+  ]);
+  if (!read || typeof read === 'string' || measured.some((boxes) => !boxes)) return null;
+  return { ...read, boxes: [...read.boxes, ...(measured as Box[][]).flat()] };
+}
+
+/**
+ * An image of `page`'s viewport with its secret fields (`SECRET_FIELD_SELECTOR`, in every frame) painted over in the
+ * image itself, never in the page, so the test's own highlights stay as they are: taken between two reads of their
+ * boxes (`secretBoxes`), through `internalCall`, which must agree. Null when they do not, when the page cannot be read
+ * or is zoomed in, and when a field shows and there is no `jpeg-js` to paint with. `style` applies while the image is
+ * taken.
+ */
+export async function maskedImage(
+  page: Page,
+  options: { quality: number; style?: string; timeout: number },
+): Promise<Buffer | null> {
+  const before = await secretBoxes(page);
+  if (!before) return null;
+  const shot = await internalCall(page, () =>
+    page.screenshot({
+      type: 'jpeg',
+      quality: options.quality,
+      timeout: options.timeout,
+      ...(options.style ? { style: options.style } : {}),
+    }),
+  ).catch(() => null);
+  if (!shot) return null;
+  const after = await secretBoxes(page);
+  if (!after || !sameBoxes(before.boxes, after.boxes)) return null;
+  const { width, height } = after.viewport;
+  if (!near(width, before.viewport.width) || !near(height, before.viewport.height)) return null;
+  if (!after.boxes.length) return shot;
+  const jpeg = jpegCodec();
+  const size = jpegSize(shot);
+  if (!jpeg || !size) return null;
+  try {
+    return paintBoxes(jpeg, { data: shot, width, height, at: Date.now() }, after.boxes, size, options.quality);
+  } catch {
+    return null;
+  }
 }
 
 export interface SecretFieldMaskOptions {

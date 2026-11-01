@@ -269,7 +269,9 @@ export class DebugRuns {
       say(`Piwi's suggested locator, ${locator}, matches nothing on the stopped page.`);
       return null;
     }
-    say(`Piwi's suggested locator: ${locator}${stop.bar ? ' (outlined on the page)' : ''}. ${answer.message}`);
-    return stop.bar ? { locator, file: run.file, line: stop.line } : null;
+    // A reporter that does not say whether it outlined the matches outlines them where the pause bar shows.
+    const outlined = answer.outlined ?? stop.bar;
+    say(`Piwi's suggested locator: ${locator}${outlined ? ' (outlined on the page)' : ''}. ${answer.message}`);
+    return outlined ? { locator, file: run.file, line: stop.line } : null;
   }
 }

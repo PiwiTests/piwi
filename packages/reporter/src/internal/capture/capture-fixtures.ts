@@ -110,6 +110,7 @@ import {
   contextDebugger,
   currentPauseSet,
   goOn,
+  highlightAtStop,
   inFlightCallSite,
   logPauseSkipOnce,
   markPausesWrapped,
@@ -1960,6 +1961,7 @@ async function showStop(
       }
       return 'resume';
     }
+    const stoppedOn = call?.page === page ? call : null;
     return internalCall(page, () =>
       pauseHere(
         page,
@@ -1967,7 +1969,17 @@ async function showStop(
           location,
           call: title,
           attempt: testInfo.retry > 0 ? testInfo.retry + 1 : null,
-          target: call?.page === page ? call.target : null,
+          target: stoppedOn
+            ? {
+                highlight: () =>
+                  highlightAtStop(
+                    page,
+                    stoppedOn.target,
+                    'call',
+                    locatorSource(stoppedOn.target, stoppedOn.origin.method, stoppedOn.origin.args),
+                  ),
+              }
+            : null,
           ...(failure ? { failure: true } : sink.functionEnded ? {} : { end: true }),
         },
         probe,

@@ -1,9 +1,17 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { BrowserContext, Page, TestInfo } from '@playwright/test';
+import type { BrowserContext, Frame, Locator, Page, TestInfo } from '@playwright/test';
 import { isInsidePath, parsePairing, type EditorSendPayload } from '@piwitests/core/editor-send';
 import type { Place, RunIntent, StopReason } from '@piwitests/core/run-channel';
-import { pauseAnswered, showPauseBar, takePauseState, type PauseBarArg, type PauseChoice } from '@piwitests/picker-dom';
+import {
+  pauseAnswered,
+  removeStopHighlight,
+  showPauseBar,
+  showStopHighlight,
+  takePauseState,
+  type PauseBarArg,
+  type PauseChoice,
+} from '@piwitests/picker-dom';
 import { isCi } from './inspect-on-failure.js';
 import { pickLocator, unlessEnded, type PickedLocator, type PickerProbe } from './pick-on-failure.js';
 import { internalCall } from './quiet-capture.js';
@@ -658,11 +666,8 @@ export interface PausePoint {
   call: string;
   /** The attempt, 1-based, when the test is retried; null on the first attempt. */
   attempt: number | null;
-  /**
-   * The element the call acts on, highlighted while stopped; null for none. Its highlight may answer something to
-   * `dispose()` of, which hides it.
-   */
-  target: { highlight?: () => Promise<unknown> } | null;
+  /** The element the call acts on, highlighted while stopped (`highlightAtStop`); null for none. */
+  target: { highlight(): StopHighlight } | null;
   /** The test failed at `location` (`call` says how): no call is about to run, and the bar offers no Step nor Finish. */
   failure?: boolean;
   /** The test can end at this stop, skipped (End the test): the bar offers it. */
@@ -781,25 +786,95 @@ export async function viewHere(
   }
 }
 
-/** A selector no element of a page matches. */
-const NO_ELEMENT = '#__piwi_no_element';
+/** A highlight Piwi draws at a stop (`highlightAtStop`). */
+export interface StopHighlight {
+  /** Whether its first draw shows a box: none for a locator that matches nothing shown, nor for a page that has none. */
+  shown: Promise<boolean>;
+  /** Take it down, a draw that comes after included, `TAKE_DOWN_MS` at most: whether one showed. */
+  hide(): Promise<boolean>;
+}
+
+/** How often a stop's highlight finds its locator's matches anew: an element the page renders meanwhile gets its box. */
+const REDRAW_MS = 500;
+
+/** How many highlights this worker drew at stops: each one's name in its page. */
+let stopHighlights = 0;
+
+/** What a frame hop of a locator's selector reads: the part before it names the iframe, the part after its contents. */
+const FRAME_HOP = ' >> internal:control=enter-frame >> ';
 
 /**
- * Take down what `locator.highlight()` drew in `page`: through the highlight it returned (`shown`, disposable from
- * Playwright 1.60), else `page.hideHighlight` (1.60), else through an image of the page with a mask in each of its
- * frames, whose end takes that frame's highlight layer down, the test's own screencast overlays with it, as any masked
- * screenshot does there. The image leaves the page's fields as they are (`caret: 'initial'`). The caller makes the
- * call internal.
+ * Where `locator` finds its elements: the frame its last frame hop enters (`frameLocator`, `contentFrame`), found
+ * through the first iframe the part before it matches, and the selector there; `locator`'s own frame and selector
+ * when it has no hop. Read from Playwright's client (`_frame`, `_selector`), feature-checked: null when it says
+ * neither, or when the iframe is not there.
  */
-export async function takeHighlightDown(page: Page, shown: unknown): Promise<void> {
-  const dispose = (shown as { dispose?: () => Promise<void> } | null)?.dispose;
-  const hide = (page as unknown as { hideHighlight?: () => Promise<void> }).hideHighlight;
-  if (typeof dispose === 'function') await dispose.call(shown);
-  else if (typeof hide === 'function') await hide.call(page);
-  else {
-    const mask = page.frames().map((frame) => frame.locator(NO_ELEMENT));
-    await page.screenshot({ mask, caret: 'initial', timeout: TAKE_DOWN_MS });
+async function frameOf(locator: Locator): Promise<{ frame: Frame; selector: string } | null> {
+  const own = locator as unknown as { _frame?: Frame; _selector?: unknown };
+  if (!own._frame || typeof own._selector !== 'string') return null;
+  const at = own._selector.lastIndexOf(FRAME_HOP);
+  if (at < 0) return { frame: own._frame, selector: own._selector };
+  const [iframe] = await own._frame.locator(own._selector.slice(0, at)).first().elementHandles();
+  if (!iframe) return null;
+  try {
+    const frame = await iframe.contentFrame();
+    return frame ? { frame, selector: own._selector.slice(at + FRAME_HOP.length) } : null;
+  } finally {
+    await iframe.dispose().catch(() => undefined);
   }
+}
+
+/**
+ * Highlight `locator`'s matches in `page` at a stop, as `what` (the stopped call's element, a count's matches), labelled
+ * `label` (the locator, as source): Piwi draws them itself, in its own layer of the frame the locator enters
+ * (`frameOf`, `showStopHighlight`), never through Playwright's highlight, so the test's own highlights and screencast
+ * overlays stay as they are. It finds the matches anew every `REDRAW_MS` until it is taken down, as Playwright's own
+ * highlight does, so an element the page renders or replaces meanwhile is boxed. The take-down runs in each frame it
+ * drew in, whatever the locator matches there by then. Its page calls are internal; neither rejects.
+ */
+export function highlightAtStop(page: Page, locator: Locator, what: 'call' | 'count', label: string): StopHighlight {
+  const id = `${what}-${++stopHighlights}`;
+  const arg = { id, kind: what, label };
+  /** The frames it drew in, which its take-down reaches. */
+  const drawnIn = new Set<Frame>();
+  let hidden = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const draw = async (): Promise<number> => {
+    const target = await frameOf(locator);
+    if (hidden) return 0;
+    if (!target) return locator.evaluateAll(showStopHighlight, arg);
+    drawnIn.add(target.frame);
+    return target.frame.locator(target.selector).evaluateAll(showStopHighlight, arg);
+  };
+  const again = (): void => {
+    if (hidden || page.isClosed?.()) return;
+    timer = setTimeout(
+      () =>
+        void internalCall(page, draw)
+          .catch(() => 0)
+          .then(again),
+      REDRAW_MS,
+    );
+    timer.unref?.();
+  };
+  const first = internalCall(page, draw).catch(() => 0);
+  void first.then(again);
+  const removeIn = (frame: Frame): Promise<boolean> =>
+    internalCall(page, async () => frame.evaluate(removeStopHighlight, id)).catch(() => false);
+  return {
+    shown: first.then((boxes) => boxes > 0),
+    hide: async () => {
+      hidden = true;
+      clearTimeout(timer);
+      try {
+        const frames = drawnIn.size ? [...drawnIn] : [page.mainFrame()];
+        const removed = await within(Promise.all(frames.map(removeIn)), TAKE_DOWN_MS);
+        return removed?.includes(true) ?? false;
+      } catch {
+        return false;
+      }
+    },
+  };
 }
 
 /**
@@ -812,8 +887,9 @@ export async function takeHighlightDown(page: Page, shown: unknown): Promise<voi
  * that ends the stop: `resume`, `step`, `finish` or `end`; `resume` when the page breaks or `ended` aborts (the test
  * ended under the bar, its page closed, the editor answered the stop), never throwing: the bar, the picker and the
  * recording then end at once, whether the bar or an intent started them, leaving nothing of theirs in the page. The bar
- * and the highlight are gone once it returns, unless the page stops answering: no page call holds it past `ended` but
- * taking them down, for `TAKE_DOWN_MS` at most. Every page call it makes must run inside an internal call.
+ * and the highlight are gone once it returns, unless the page stops answering (a highlight its frame draws later
+ * draws nothing): no page call holds it past `ended` but taking them down, for `TAKE_DOWN_MS` at most. Every page call
+ * it makes must run inside an internal call.
  */
 export async function pauseHere(
   page: Page,
@@ -825,16 +901,11 @@ export async function pauseHere(
   intents?: BarIntents,
   onIntent?: (intent: CodeIntent, ended?: AbortSignal) => Promise<void>,
 ): Promise<PauseAnswer> {
-  let shown: unknown = null;
-  let drawn = false;
+  let highlight: StopHighlight | null = null;
   try {
-    const highlight = point.target?.highlight;
-    if (typeof highlight === 'function') {
-      drawn = true;
-      const highlighted = Promise.resolve()
-        .then(() => highlight.call(point.target))
-        .catch(() => null);
-      shown = (await within(highlighted, HIGHLIGHT_MS)) ?? null;
+    if (point.target) {
+      highlight = point.target.highlight();
+      await within(highlight.shown, HIGHLIGHT_MS);
     }
     const arg: PauseBarArg = {
       place: pausePlace(point.location),
@@ -901,17 +972,12 @@ export async function pauseHere(
   } catch {
     return 'resume';
   } finally {
-    const takeDown = async (): Promise<void> => {
-      try {
-        // A bar the stop ended under without its answer is taken down here.
-        if (ended?.aborted) await page.evaluate(takePauseState);
-        // Every highlight in the page comes down with the bar, its own or not, where `page.hideHighlight` can (1.60).
-        const hides = typeof (page as unknown as { hideHighlight?: unknown }).hideHighlight === 'function';
-        if (drawn || hides) await takeHighlightDown(page, shown);
-      } catch {
-        // The page may be gone.
-      }
-    };
-    await within(takeDown(), TAKE_DOWN_MS);
+    // A bar the stop ended under without its answer, and the bar's own highlight, are taken down together, before the
+    // test goes on, `TAKE_DOWN_MS` at most: a highlight its frame draws later than that draws nothing. The page may be
+    // gone.
+    await Promise.all([
+      ended?.aborted ? within(page.evaluate(takePauseState), TAKE_DOWN_MS).catch(() => undefined) : undefined,
+      highlight?.hide(),
+    ]);
   }
 }

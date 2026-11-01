@@ -208,9 +208,13 @@ export interface MockAnswer extends IntentAnswer {
   response: KeptResponse | null;
 }
 
-/** The answer to `locator`: how many elements it matches on the stopped page, null when it could not be counted. */
+/**
+ * The answer to `locator`: how many elements it matches on the stopped page, null when it could not be counted, and
+ * whether its matches were outlined there (absent from a reporter that does not say).
+ */
 export interface LocatorAnswer extends IntentAnswer {
   count: number | null;
+  outlined?: boolean;
 }
 
 /**
@@ -899,8 +903,12 @@ export function parseRunToHub(line: string): RunToHub | null {
       if (what === 'locator') {
         const said = readAnswer(answered);
         const count = isObject(answered) ? answered.count : undefined;
+        const outlined = isObject(answered) ? answered.outlined : undefined;
         if (!said || (count !== null && !isInt(count, 0))) return null;
-        return { type: 'answer', request, what, value: { ...said, count: count as number | null } };
+        if (outlined !== undefined && typeof outlined !== 'boolean') return null;
+        const value: LocatorAnswer = { ...said, count: count as number | null };
+        if (outlined !== undefined) value.outlined = outlined;
+        return { type: 'answer', request, what, value };
       }
       if (what === 'view' || what === 'input') {
         const said = readAnswer(answered);
