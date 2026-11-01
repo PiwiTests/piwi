@@ -7,6 +7,7 @@ import { computeRunCountsFromRows } from './run-counts';
 import { runEventBus } from './run-events';
 import { runFinalizeSideEffects } from './run-finalize-side-effects';
 import { updateRunMetadata, type MetadataObject } from './run-metadata';
+import { readShardSpans, shardedRunSpan, shardSpan, withShardSpan, type ShardReport } from './shard-spans';
 import { cancelInstanceRuns } from './cancel-instance-runs';
 import { withInstanceRunLock } from './ingest-locks';
 import { sanitizeMetadata } from './sanitize';
@@ -57,7 +58,8 @@ export interface BatchShardTally {
   skippedTests: number;
   didNotRunTests: number;
   flakyTests: number;
-  duration: number;
+  /** The shard's index, start, duration and metadata, which place it in the run's span. */
+  shard: ShardReport;
   /** The shard's test durations. */
   durations: unknown[];
 }
@@ -77,7 +79,12 @@ export function batchShardTally(
     skippedTests: body.skippedTests ?? 0,
     didNotRunTests: body.didNotRunTests ?? 0,
     flakyTests: testCases.filter((tc) => tc.status === 'passed' && Number(tc.retries ?? 0) > 0).length,
-    duration: typeof body.duration === 'number' ? body.duration : 0,
+    shard: {
+      shardIndex: body.shardIndex,
+      startTime: body.startTime,
+      duration: typeof body.duration === 'number' ? body.duration : 0,
+      metadata: body.metadata,
+    },
     durations: testCases.map((tc) => tc.duration),
   };
 }
@@ -130,29 +137,42 @@ export function batchShardRun(db: DbClient, projectId: number, instanceId: strin
 
 /**
  * Count a shard of a batch submission into its run, once its executions are
- * stored: the counters add up, the run's duration is its longest shard's, and
- * the shard counts as finished.
+ * stored: the counters add up, the shard joins the run's span (see
+ * `shardedRunSpanUpdate`), and the shard counts as finished.
  */
 export async function addBatchShard(db: DbClient, runId: number, tally: BatchShardTally): Promise<void> {
-  await updateRunMetadata(db, runId, (metadata) => withShardDurations(metadata, tally.durations), {
-    updatedAt: new Date(),
-    totalTests: sql`${testRuns.totalTests} + ${tally.totalTests}`,
-    passedTests: sql`${testRuns.passedTests} + ${tally.passedTests}`,
-    failedTests: sql`${testRuns.failedTests} + ${tally.failedTests}`,
-    skippedTests: sql`${testRuns.skippedTests} + ${tally.skippedTests}`,
-    didNotRunTests: sql`${testRuns.didNotRunTests} + ${tally.didNotRunTests}`,
-    flakyTests: sql`${testRuns.flakyTests} + ${tally.flakyTests}`,
-    shardsFinished: sql`${testRuns.shardsFinished} + 1`,
-    duration: longestDuration(tally.duration),
-  });
+  const span = shardSpan(tally.shard, Date.now());
+  const [run] = await db.select({ startTime: testRuns.startTime }).from(testRuns).where(eq(testRuns.id, runId));
+  if (!run) return;
+  await updateRunMetadata(
+    db,
+    runId,
+    (metadata) => withShardSpan(withShardDurations(metadata, tally.durations), span),
+    (metadata) => ({
+      updatedAt: new Date(),
+      totalTests: sql`${testRuns.totalTests} + ${tally.totalTests}`,
+      passedTests: sql`${testRuns.passedTests} + ${tally.passedTests}`,
+      failedTests: sql`${testRuns.failedTests} + ${tally.failedTests}`,
+      skippedTests: sql`${testRuns.skippedTests} + ${tally.skippedTests}`,
+      didNotRunTests: sql`${testRuns.didNotRunTests} + ${tally.didNotRunTests}`,
+      flakyTests: sql`${testRuns.flakyTests} + ${tally.flakyTests}`,
+      shardsFinished: sql`${testRuns.shardsFinished} + 1`,
+      ...shardedRunSpanUpdate(run.startTime, metadata),
+    }),
+  );
 }
 
 /**
- * The larger of the run's duration and `duration`. SQLite's scalar MAX(a,b) is
- * an aggregate in PostgreSQL, so a CASE expression runs on both dialects.
+ * The start and duration of a sharded run whose metadata is `metadata`: from
+ * the earliest of its stored start and its shards' starts, to its last shard's
+ * end. Written in the same write as the shard that moves them, so shards ending
+ * at once each count.
  */
-export function longestDuration(duration: number) {
-  return sql`CASE WHEN coalesce(${testRuns.duration}, 0) > ${duration} THEN coalesce(${testRuns.duration}, 0) ELSE ${duration} END`;
+export function shardedRunSpanUpdate(
+  startTime: Date,
+  metadata: MetadataObject,
+): { startTime?: Date; duration?: number } {
+  return shardedRunSpan(startTime, readShardSpans(metadata)) ?? {};
 }
 
 /**

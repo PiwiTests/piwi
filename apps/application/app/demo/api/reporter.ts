@@ -110,6 +110,7 @@ import { sanitizeLiveResources } from '#shared/live-resources';
 import { demoHttpError } from './http-error';
 import { sanitizeExecutionResources, sanitizeResourceReport } from '#shared/resource-report';
 import { saveResourceReportPart } from '#shared/handlers/resource-reports';
+import { readShardSpans, shardedRunSpan, shardSpan, withShardSpan } from '~~/server/utils/shard-spans';
 
 type DemoDb = Awaited<ReturnType<typeof getDemoDb>>;
 
@@ -1059,6 +1060,12 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
     const prevDurations = currentMeta.shardDurations as number[] | undefined;
     if (prevDurations) allDurations.push(...prevDurations);
     if (body.durations && Array.isArray(body.durations)) allDurations.push(...body.durations);
+    // This shard's span joins the others': the run lasts from the first shard's start to the last one's end.
+    const shardMeta = withShardSpan(
+      { ...currentMeta, shardDurations: allDurations },
+      shardSpan({ ...body, duration }, Date.now()),
+    );
+    const runSpan = shardedRunSpan(testRun.startTime, readShardSpans(shardMeta));
 
     await db
       .update(testRuns)
@@ -1074,10 +1081,10 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
         didNotRunTests: sql`${testRuns.didNotRunTests} + ${body.didNotRunTests ?? 0}`,
         flakyTests: sql`${testRuns.flakyTests} + ${flakyTests}`,
         shardsFinished: sql`${testRuns.shardsFinished} + 1`,
-        duration: sql`MAX(coalesce(${testRuns.duration}, 0), ${duration})`,
-        metadata: { ...currentMeta, shardDurations: allDurations },
-        origin: runOrigin(currentMeta),
-        commit: runCommit(currentMeta),
+        ...runSpan,
+        metadata: shardMeta,
+        origin: runOrigin(shardMeta),
+        commit: runCommit(shardMeta),
         // The first shard to report a branch names the run's branch.
         branch: sql`COALESCE(${testRuns.branch}, ${resolveRunBranch(body.metadata)})`,
         ...(body.setupSteps && { setupSteps: body.setupSteps }),

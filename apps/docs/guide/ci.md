@@ -103,6 +103,8 @@ How the merge works:
 3. The run stays `running` until the **last** shard reports; batched shards may arrive an hour apart.
 4. Counters accumulate across shards. The run is `failed` if any shard reported a failure, and the run page shows a
    shard progress badge (`2/3`) while shards are arriving.
+5. The run lasts from the first shard's start to the last shard's end, whether the shards run side by side or one
+   after another. Its metadata keeps each shard's start, end and worker count under `shards`.
 
 **All shards must use the same `projectName`.**
 

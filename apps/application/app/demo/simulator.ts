@@ -1632,6 +1632,7 @@ async function runSingleSimulation(
     body: {
       streamToken,
       status,
+      startTime: startTime.toISOString(),
       duration: virtualEnd - virtualStart,
       totalTests: tests.length,
       passedTests: completed - failedCount,
