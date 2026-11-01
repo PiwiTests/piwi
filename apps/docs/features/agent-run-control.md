@@ -93,8 +93,8 @@ characters). Piwi refuses to write a secret field's value, and a text or a value
   between two markers that share a random value the page cannot know, and every tool's description tells the agent to
   read it as data, never as instructions. An image comes after a line that says it is the page's too.
 - **Secrets stay hidden.** The value of a password field, a one-time code and a card's number or security code is
-  never sent: its line in the snapshot reads `<hidden>`, in every frame, the image masks the field, and no assertion
-  writes it. Tokens and credentials in the page's text, its addresses and the locators `page_locator` shows are
+  never sent: its line in the snapshot reads `<hidden>`, in every frame, the image paints over the field (a page zoomed
+  in gets no image), and no assertion writes it. Tokens and credentials in the page's text, its addresses and the locators `page_locator` shows are
   hidden, as on Piwi's other surfaces.
 - **You watch it happen.** The agent's stops show in the editor and the Runs window as yours do, the editor's as
   `Paused by the agent · …`; its first action at a stop says so in a notification; the code it has written names it

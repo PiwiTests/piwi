@@ -203,6 +203,45 @@ const t = Date.now(); while (Date.now() - t < 6000); });</script>`,
     }
   }, 20_000);
 
+  it('shows no secret field of a page zoomed in, which an image shows larger than the page reads it', async () => {
+    const context = await browser.newContext({ viewport: { width: 412, height: 839 }, isMobile: true, hasTouch: true });
+    try {
+      const zoomed = await context.newPage();
+      await zoomed.setContent(`<!doctype html><meta name="viewport" content="width=device-width, initial-scale=2">
+<body style="margin:0;background:#fff"><div style="height:100px"></div><input autocomplete="one-time-code"
+value="246810" style="display:block;border:0;background:#f00;width:200px;height:60px">`);
+      expect(await zoomed.evaluate('visualViewport.scale')).toBe(2);
+      // At twice its size, the field shows from (0, 200) to (400, 320) of the image: no image goes.
+      expect(await maskedImage(zoomed, { quality: 90, style: BAR_HIDDEN_HERE, timeout: 5000 })).toBeNull();
+    } finally {
+      await context.close();
+    }
+  }, 20_000);
+
+  it('paints over a secret field whose box the page’s own script misreports', async () => {
+    const other = await browser.newPage({ viewport: { width: 800, height: 600 } });
+    try {
+      await other.setContent(`<!doctype html><body style="margin:0;background:#fff"><div style="height:100px"></div>
+<input autocomplete="one-time-code" value="246810" style="display:block;width:200px;height:60px;border:0">
+<script>const own = Element.prototype.getBoundingClientRect;
+Element.prototype.getBoundingClientRect = function () {
+  const r = own.call(this);
+  return new DOMRect(r.x / 2, r.y / 2, r.width / 2, r.height / 2);
+};</script>`);
+      const image = await maskedImage(other, { quality: 90, style: BAR_HIDDEN_HERE, timeout: 5000 });
+      expect(image).not.toBeNull();
+      for (const [x, y] of [
+        [10, 105],
+        [150, 130],
+        [190, 155],
+      ] as const) {
+        expect(painted(await pixel(image!, x, y))).toBe(true);
+      }
+    } finally {
+      await other.close();
+    }
+  }, 20_000);
+
   it('answers a card’s number, its security code and a one-time code as secrets, without their values', async () => {
     const read = await readSnapshot(page, null, false);
     for (const name of ['Card number', 'CVC', 'Code', 'PIN']) {

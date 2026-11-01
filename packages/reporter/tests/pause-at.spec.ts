@@ -8,7 +8,6 @@ import {
   removeStopHighlight,
   showPauseBar,
   showPickerChoices,
-  showStopHighlight,
   takePauseState,
 } from '@piwitests/picker-dom';
 import {
@@ -639,7 +638,7 @@ describe('pauseHere', () => {
     expect(record.mock.calls[0]![0]).toBe(stopped.signal);
   });
 
-  it('ends with its stop on a page that stops answering, taking the bar down a second at most', async () => {
+  it('ends with its stop on a page that stops answering, taking the bar and its highlight down a second at most', async () => {
     vi.useFakeTimers();
     try {
       const page = {
@@ -650,7 +649,12 @@ describe('pauseHere', () => {
       };
       const ended = new AbortController();
       let answer: string | undefined;
-      void pauseHere(page as never, POINT, PROBE, () => {}, undefined, ended.signal).then((a) => (answer = a));
+      // Its highlight comes down in the same second as the bar, the most its take-down takes.
+      const hide = vi.fn(() => new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 1000)));
+      const target = { highlight: () => ({ shown: Promise.resolve(true), hide }) };
+      void pauseHere(page as never, { ...POINT, target }, PROBE, () => {}, undefined, ended.signal).then(
+        (a) => (answer = a),
+      );
       await vi.advanceTimersByTimeAsync(0);
       expect(page.evaluate).toHaveBeenCalledWith(showPauseBar, expect.anything());
       ended.abort('ended');
@@ -751,45 +755,96 @@ describe('pauseHere', () => {
 });
 
 describe('a stop’s highlight', () => {
-  /** A locator whose `evaluateAll` runs the page function on `elements`, each call noted, or rejects with `fails`. */
-  const locatorOf = (elements: unknown[], fails?: Error) => {
+  /** A frame whose `evaluate` notes each call, answering `answer`. */
+  const frameOf = (answer: () => Promise<unknown> = async () => true) => {
     const calls: Array<{ fn: unknown; arg: unknown }> = [];
     return {
       calls,
-      evaluateAll: async (fn: (elements: unknown[], arg: unknown) => unknown, arg: unknown) => {
+      evaluate: async (fn: unknown, arg: unknown) => {
         calls.push({ fn, arg });
-        if (fails) throw fails;
-        return fn(elements, arg);
+        return answer();
       },
     };
   };
-
-  it('draws Piwi’s own highlight through the locator, labelled, never Playwright’s, and takes it down by its name', async () => {
-    const g = globalThis as Record<string, unknown>;
-    const locator = { ...locatorOf([]), highlight: vi.fn(), describe: vi.fn() };
-    const page = { hideHighlight: vi.fn() };
-    const call = highlightAtStop(page as never, locator as never, 'call', "getByRole('button')");
-    const count = highlightAtStop(page as never, locator as never, 'count', "getByText('Pay')");
-    // No document here: nothing is drawn.
-    expect(await call.shown).toBe(false);
-    expect(await count.shown).toBe(false);
-    const [drawn, other] = locator.calls;
-    expect(drawn).toEqual({
-      fn: showStopHighlight,
-      arg: { id: expect.stringMatching(/^call-\d+$/), kind: 'call', label: "getByRole('button')" },
+  /**
+   * A locator of `frame` (Playwright's client `_frame`, `_selector`) whose matches there run the page function on
+   * `elements`, each draw noted, or reject with `fails`.
+   */
+  const locatorIn = (frame: Record<string, unknown>, elements: unknown[] = [], fails?: Error) => {
+    const draws: unknown[] = [];
+    Object.assign(frame, {
+      locator: (selector: string) => ({
+        evaluateAll: async (fn: (elements: unknown[], arg: unknown) => unknown, arg: unknown) => {
+          draws.push({ selector, arg });
+          if (fails) throw fails;
+          return fn(elements, arg);
+        },
+      }),
     });
-    expect(other!.arg).toMatchObject({ id: expect.stringMatching(/^count-\d+$/), kind: 'count' });
-    expect(await call.hide()).toBe(false);
-    expect(locator.calls[2]).toEqual({ fn: removeStopHighlight, arg: (drawn!.arg as { id: string }).id });
-    expect(locator.highlight).not.toHaveBeenCalled();
-    expect(locator.describe).not.toHaveBeenCalled();
-    expect(page.hideHighlight).not.toHaveBeenCalled();
-    delete g.__piwiStopHighlightsGone;
+    return {
+      draws,
+      locator: { _frame: frame, _selector: 'internal:role=button', highlight: vi.fn(), describe: vi.fn() },
+    };
+  };
+
+  it('draws Piwi’s own highlight in the locator’s frame, anew until it is taken down there by its name', async () => {
+    vi.useFakeTimers();
+    try {
+      const frame = frameOf();
+      const { draws, locator } = locatorIn(frame);
+      const page = { hideHighlight: vi.fn(), mainFrame: () => frameOf(), isClosed: () => false };
+      const call = highlightAtStop(page as never, locator as never, 'call', "getByRole('button')");
+      // No document here: nothing is drawn.
+      expect(await call.shown).toBe(false);
+      expect(draws).toEqual([
+        {
+          selector: 'internal:role=button',
+          arg: { id: expect.stringMatching(/^call-\d+$/), kind: 'call', label: "getByRole('button')" },
+        },
+      ]);
+      // The matches are found anew every half second while the stop lasts.
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(draws).toHaveLength(3);
+      expect(await call.hide()).toBe(true);
+      const id = (draws[0] as { arg: { id: string } }).arg.id;
+      expect(frame.calls).toEqual([{ fn: removeStopHighlight, arg: id }]);
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(draws).toHaveLength(3);
+      expect(locator.highlight).not.toHaveBeenCalled();
+      expect(locator.describe).not.toHaveBeenCalled();
+      expect(page.hideHighlight).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      delete (globalThis as Record<string, unknown>).__piwiStopHighlightsGone;
+    }
+  });
+
+  it('takes it down within a second in a frame that does not answer', async () => {
+    vi.useFakeTimers();
+    try {
+      const frame = frameOf(() => new Promise(() => {}));
+      const { locator } = locatorIn(frame);
+      const page = { mainFrame: () => frame, isClosed: () => false };
+      const highlight = highlightAtStop(page as never, locator as never, 'count', 'x');
+      await highlight.shown;
+      let hidden: boolean | undefined;
+      void highlight.hide().then((answer) => (hidden = answer));
+      await vi.advanceTimersByTimeAsync(999);
+      expect(hidden).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(hidden).toBe(false);
+    } finally {
+      vi.useRealTimers();
+      delete (globalThis as Record<string, unknown>).__piwiStopHighlightsGone;
+    }
   });
 
   it('neither throws nor rejects on a page that breaks under it', async () => {
-    const locator = locatorOf([], new Error('Target page, context or browser has been closed'));
-    const highlight = highlightAtStop({} as never, locator as never, 'count', 'x');
+    const closed = new Error('Target page, context or browser has been closed');
+    const frame = frameOf(() => Promise.reject(closed));
+    const { locator } = locatorIn(frame, [], closed);
+    const page = { mainFrame: () => frame, isClosed: () => true };
+    const highlight = highlightAtStop(page as never, locator as never, 'count', 'x');
     expect(await highlight.shown).toBe(false);
     expect(await highlight.hide()).toBe(false);
     const thrown = {
@@ -797,7 +852,7 @@ describe('a stop’s highlight', () => {
         throw new Error('not a locator');
       },
     };
-    const broken = highlightAtStop({} as never, thrown as never, 'call', 'x');
+    const broken = highlightAtStop(page as never, thrown as never, 'call', 'x');
     expect(await broken.shown).toBe(false);
     expect(await broken.hide()).toBe(false);
   });

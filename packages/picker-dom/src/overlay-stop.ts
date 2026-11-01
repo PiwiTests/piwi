@@ -9,18 +9,46 @@ export interface StopHighlightArg {
 }
 
 /**
- * Runs inside the browser via `locator.evaluateAll()`: draws a box over each of `elements` (the first 500) while a test
- * is stopped, in Piwi's own layer of the page, kept on them as the page scrolls or moves them, and the locator beside
- * the first one shown. Leaves the page's own elements, and Playwright's highlights, as they are. Draws nothing once
- * `removeStopHighlight` took the same `id` down in this document, as a draw that comes after the stop ended would.
- * Answers whether it drew. Must stay fully self-contained.
+ * Runs inside the browser via `locator.evaluateAll()`, again each time its caller finds the matches anew: draws a box
+ * over each of `elements` (the first 500) while a test is stopped, in Piwi's own layer of the page, kept on them as the
+ * page moves them, and the locator beside the first one shown. The layer is a manual popover in the page's top layer,
+ * raised again on each draw, so it shows above a modal dialog or a popover the page opened and in the viewport under a
+ * transformed `<html>`; without popovers it stays a fixed layer. A draw on the same elements leaves the layer as it is,
+ * one on others draws it anew, and one on none takes it away. Leaves the page's own elements, and Playwright's
+ * highlights, as they are. Draws nothing once `removeStopHighlight` took the same `id` down in this document, as a
+ * draw that comes after the stop ended would. Answers how many boxes show. Must stay fully self-contained.
  */
-export function showStopHighlight(elements: unknown[], arg: StopHighlightArg): boolean {
+export function showStopHighlight(elements: unknown[], arg: StopHighlightArg): number {
   const g = globalThis as any;
   const doc = g.document;
   const gone: Set<string> = g.__piwiStopHighlightsGone instanceof Set ? g.__piwiStopHighlightsGone : new Set();
   g.__piwiStopHighlightsGone = gone;
-  if (gone.has(arg.id) || !doc || !doc.documentElement) return false;
+  if (!doc || !doc.documentElement) return 0;
+  const drawn = doc.getElementById(`__piwi_stop_highlight_${arg.id}`);
+  const targets = gone.has(arg.id) ? [] : (elements.slice(0, 500) as any[]);
+  const shownIn = (layer: any): number =>
+    Array.from(layer.children as ArrayLike<any>).filter((box) => box.dataset.box && box.style.display !== 'none')
+      .length;
+  /** Raise the layer above what the page put in the top layer since. */
+  const raise = (layer: any) => {
+    if (!layer.hasAttribute('popover')) return;
+    try {
+      if (layer.matches(':popover-open')) layer.hidePopover();
+      layer.showPopover();
+    } catch {
+      // A popover the page's browser refuses: the layer stays in the page.
+      layer.removeAttribute('popover');
+    }
+  };
+  const before: any[] | undefined = drawn?.__piwiTargets;
+  if (drawn && before && before.length === targets.length && before.every((el, i) => el === targets[i])) {
+    if (targets.length) raise(drawn);
+    drawn.__piwiPlace?.();
+    return shownIn(drawn);
+  }
+  drawn?.remove();
+  if (!targets.length) return 0;
+
   const Z = 2147483600;
   const MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace';
   const layer = doc.createElement('div');
@@ -28,7 +56,12 @@ export function showStopHighlight(elements: unknown[], arg: StopHighlightArg): b
   layer.setAttribute('data-piwi-stop-highlight', arg.kind);
   // Out of the page's accessibility tree: an ARIA snapshot taken at the stop leaves it out.
   layer.setAttribute('aria-hidden', 'true');
-  layer.style.cssText = `position:fixed;top:0;left:0;width:0;height:0;overflow:visible;pointer-events:none;z-index:${Z - 1};`;
+  layer.setAttribute('popover', 'manual');
+  // A popover's own look reset: a box of no size at the viewport's corner, its children placed in the viewport.
+  layer.style.cssText =
+    'position:fixed;inset:auto;top:0;left:0;width:0;height:0;margin:0;padding:0;border:0;background:transparent;' +
+    `overflow:visible;pointer-events:none;z-index:${Z - 1};`;
+  layer.__piwiTargets = targets;
   // A light hairline outside the ring and a dark one outside that, so the box keeps its edge on any background.
   const look =
     arg.kind === 'call'
@@ -36,9 +69,9 @@ export function showStopHighlight(elements: unknown[], arg: StopHighlightArg): b
         'box-shadow:0 0 0 1px rgba(255,255,255,.9),0 0 0 3px rgba(59,7,100,.55);'
       : 'border:2px dashed #a78bfa;background:rgba(167,139,250,.15);border-radius:3px;' +
         'box-shadow:0 0 0 1px rgba(255,255,255,.8);';
-  const targets = elements.slice(0, 500) as any[];
   const boxes = targets.map(() => {
     const box = doc.createElement('div');
+    box.dataset.box = '1';
     box.style.cssText = `position:fixed;display:none;box-sizing:border-box;pointer-events:none;${look}`;
     layer.appendChild(box);
     return box;
@@ -52,9 +85,10 @@ export function showStopHighlight(elements: unknown[], arg: StopHighlightArg): b
   label.textContent = arg.label;
   layer.appendChild(label);
   doc.documentElement.appendChild(layer);
+  raise(layer);
 
+  /** Place each box on its element, and the label beside the first one shown. */
   const place = () => {
-    if (!layer.isConnected) return;
     let first: any = null;
     targets.forEach((el, i) => {
       const box = boxes[i];
@@ -80,18 +114,23 @@ export function showStopHighlight(elements: unknown[], arg: StopHighlightArg): b
     } else {
       label.style.display = 'none';
     }
-    g.requestAnimationFrame(place);
   };
-  place();
-  return true;
+  layer.__piwiPlace = place;
+  const follow = () => {
+    if (!layer.isConnected) return;
+    place();
+    g.requestAnimationFrame(follow);
+  };
+  follow();
+  return shownIn(layer);
 }
 
 /**
- * Runs inside the browser via `locator.evaluateAll()` (`elements` unread): takes the highlight `id` down in this
- * document, and keeps a draw of it that comes later from drawing (`showStopHighlight`). Answers whether one showed.
- * Must stay fully self-contained.
+ * Runs inside the browser via `frame.evaluate()`, in each frame a highlight was drawn in: takes the highlight `id`
+ * down in this document, and keeps a draw of it that comes later from drawing (`showStopHighlight`). Answers whether
+ * one showed. Must stay fully self-contained.
  */
-export function removeStopHighlight(_elements: unknown, id: string): boolean {
+export function removeStopHighlight(id: string): boolean {
   const g = globalThis as any;
   const gone: Set<string> = g.__piwiStopHighlightsGone instanceof Set ? g.__piwiStopHighlightsGone : new Set();
   g.__piwiStopHighlightsGone = gone;
