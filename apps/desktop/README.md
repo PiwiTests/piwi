@@ -138,7 +138,7 @@ requests that change the desktop app — see `.github/workflows/reusable-e2e-des
 which `ci.yml` calls.
 
 This `e2e/` suite is a **shell smoke test** (the real webview calling native
-commands). To exercise the *dashboard's* full E2E suite against a running
+commands). To exercise the _dashboard's_ full E2E suite against a running
 desktop app instead — the same server, driven through its loopback origin —
 launch the app and run `npm run app:test:desktop` from `apps/application/`
 (`PIWI_DESKTOP_E2E=1`); it adopts the app's URL + token from `~/.piwi/desktop.json`.
@@ -167,7 +167,7 @@ The Microsoft Store package is built apart from the installers: `npx tauri build
 `resources\app-server` as an install has them, fills `src-tauri/windows/AppxManifest.xml` and packs it with the
 Windows SDK's `makeappx`; `--layout-only` stops before packing, on any OS. The package identity comes from Partner
 Center through `MSIX_IDENTITY_NAME`, `MSIX_PUBLISHER` and `MSIX_PUBLISHER_DISPLAY_NAME` (repository variables in
-CI), and a test identity stands in without them.
+CI), all three or none: a test identity stands in without them.
 
 The package is unsigned: the Store signs it. To install one elsewhere, sign a copy with a certificate whose subject
 is the package's publisher and trust that certificate. `scripts/msix-check.ps1` does both on a disposable machine,

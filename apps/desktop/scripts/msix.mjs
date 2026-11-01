@@ -90,10 +90,21 @@ for (const logo of LOGOS) cpSync(join(sources.icons, logo), join(layout, "Assets
 const xml = (text) =>
   text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 const indent = (lines, spaces) => (lines.length ? lines.map((line) => `\n${" ".repeat(spaces)}${line}`).join("") : "");
+const IDENTITY = {
+  IDENTITY_NAME: ["MSIX_IDENTITY_NAME", "PiwiTests.PiwiDashboard"],
+  PUBLISHER: ["MSIX_PUBLISHER", "CN=Piwi Dashboard Test"],
+  PUBLISHER_DISPLAY_NAME: ["MSIX_PUBLISHER_DISPLAY_NAME", "Piwi Dashboard (test)"],
+};
+const missing = Object.values(IDENTITY)
+  .map(([name]) => name)
+  .filter((name) => !process.env[name]);
+if (missing.length > 0 && missing.length < Object.keys(IDENTITY).length) {
+  fail(`the package identity is incomplete: set ${missing.join(", ")} too, or none of the three for a test identity`);
+}
 const values = {
-  IDENTITY_NAME: process.env.MSIX_IDENTITY_NAME || "PiwiTests.PiwiDashboard",
-  PUBLISHER: process.env.MSIX_PUBLISHER || "CN=Piwi Dashboard Test",
-  PUBLISHER_DISPLAY_NAME: process.env.MSIX_PUBLISHER_DISPLAY_NAME || "Piwi Dashboard (test)",
+  ...Object.fromEntries(
+    Object.entries(IDENTITY).map(([key, [name, testValue]]) => [key, process.env[name] || testValue]),
+  ),
   VERSION: version,
   DESCRIPTION: config.bundle.shortDescription,
   EXECUTABLE: executable,
