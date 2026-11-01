@@ -87,6 +87,12 @@ channel, so a per-user install pulls a per-user update.
    navigates to it and calls `desktop_bring_to_front`, which restores, shows
    and focuses it. Only navigations the browser marks `Sec-Fetch-Site: none`
    qualify, so a web page cannot drive the window.
+9. A download the dashboard offers (a trace, an export, a report) goes through
+   `desktop_download`: the shell requests the URL, which must be on the
+   sidecar's origin, from its own server with the app's token and streams it
+   into the Downloads folder (never replacing a file), then reveals it. A file
+   the page builds itself (a workbook, an image) goes through
+   `desktop_save_download` instead.
 
 Local access is gated by a token the app creates once and keeps for the install (see
 `apps/application/server/middleware/desktop-guard.ts`), so only the app — not other

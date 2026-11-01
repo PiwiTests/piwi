@@ -87,9 +87,6 @@ async function downloadAs(format: ReportFormat) {
   await download(
     `${base.value}/api/reports/preview?${params}`,
     `piwi-quality-report-${dashboard.value}-${day}.${format}`,
-    {
-      binary: format === 'pdf' || format === 'xlsx',
-    },
   );
 }
 

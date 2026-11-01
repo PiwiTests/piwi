@@ -27,6 +27,7 @@ fn main() {
             "desktop_notify",
             "desktop_log",
             "desktop_save_download",
+            "desktop_download",
             "desktop_pick_folder",
             "desktop_pick_import_files",
             "desktop_inspect_folder",

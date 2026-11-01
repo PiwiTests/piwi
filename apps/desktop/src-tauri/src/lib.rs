@@ -1479,6 +1479,14 @@ fn decode_base64(input: &str) -> Result<Vec<u8>, String> {
 /// disk, e.g. clobber or trojan an installer/DLL the user already trusts.
 fn write_new_download(dir: &Path, name: &str, bytes: &[u8]) -> Result<PathBuf, String> {
     use std::io::Write as _;
+    let (path, mut file) = create_new_download(dir, name)?;
+    file.write_all(bytes).map_err(|e| e.to_string())?;
+    Ok(path)
+}
+
+/// Create a new file in `dir` for a download named `name`, never replacing one
+/// that exists (see [`write_new_download`]), and return its path and handle.
+fn create_new_download(dir: &Path, name: &str) -> Result<(PathBuf, std::fs::File), String> {
     let as_path = Path::new(name);
     let stem = as_path
         .file_stem()
@@ -1495,10 +1503,7 @@ fn write_new_download(dir: &Path, name: &str, bytes: &[u8]) -> Result<PathBuf, S
         };
         let candidate = dir.join(&candidate_name);
         match std::fs::OpenOptions::new().write(true).create_new(true).open(&candidate) {
-            Ok(mut file) => {
-                file.write_all(bytes).map_err(|e| e.to_string())?;
-                return Ok(candidate);
-            }
+            Ok(file) => return Ok((candidate, file)),
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(e) => return Err(e.to_string()),
         }
@@ -1522,11 +1527,7 @@ fn desktop_save_download(
     encoding: Option<String>,
 ) -> Result<String, String> {
     let dir = app.path().download_dir().map_err(|e| e.to_string())?;
-    let name = std::path::Path::new(&filename)
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .filter(|n| !n.is_empty())
-        .unwrap_or_else(|| "download".to_string());
+    let name = download_file_name(&filename);
 
     let bytes = match encoding.as_deref() {
         Some("base64") => decode_base64(&contents)?,
@@ -1536,6 +1537,110 @@ fn desktop_save_download(
 
     let _ = app.opener().reveal_item_in_dir(&target);
     Ok(node_path(&target))
+}
+
+/// The base name of a file the webview asks to save, so it cannot leave the
+/// Downloads folder; `download` when it has none.
+fn download_file_name(filename: &str) -> String {
+    Path::new(filename)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .filter(|n| !n.is_empty())
+        .unwrap_or_else(|| "download".to_string())
+}
+
+/// Download a dashboard URL into the user's Downloads folder and reveal it;
+/// returns the saved path. The shell requests it from its own server with the
+/// app's token and streams the answer to disk, so the file neither crosses IPC
+/// nor sits whole in the webview. The URL must be on the sidecar's exact origin
+/// (`is_sidecar_url`); the name is reduced as for `desktop_save_download`.
+#[tauri::command]
+async fn desktop_download(app: tauri::AppHandle, url: String, filename: String) -> Result<String, String> {
+    let parsed = tauri::Url::parse(&url).map_err(|e| e.to_string())?;
+    let (port, token) = {
+        let server = app.state::<mcp_clients::ServerInfo>();
+        (server.port, server.token.clone())
+    };
+    if !is_sidecar_url(&parsed, port) {
+        return Err("unsupported url".into());
+    }
+    let dir = app.path().download_dir().map_err(|e| e.to_string())?;
+    let name = download_file_name(&filename);
+    let target = request_target(&parsed);
+    let saved = tauri::async_runtime::spawn_blocking(move || stream_download(port, &token, &target, &dir, &name))
+        .await
+        .map_err(|e| e.to_string())??;
+    let _ = app.opener().reveal_item_in_dir(&saved);
+    Ok(node_path(&saved))
+}
+
+/// The request target of `url`: its path and query.
+fn request_target(url: &tauri::Url) -> String {
+    match url.query() {
+        Some(query) => format!("{}?{query}", url.path()),
+        None => url.path().to_string(),
+    }
+}
+
+/// The most a response head may hold before the download gives up on it.
+const MAX_RESPONSE_HEAD: usize = 64 * 1024;
+
+/// GET `target` from the bundled server on `port` with `token` and stream a
+/// 200's body into a new file of `dir` (see [`create_new_download`]). Any other
+/// status is an error carrying the server's message. A transfer that fails, or
+/// ends short of its `Content-Length`, removes the partial file.
+fn stream_download(port: u16, token: &str, target: &str, dir: &Path, name: &str) -> Result<PathBuf, String> {
+    use std::io::{Read, Write};
+    let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).map_err(|e| e.to_string())?;
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(60)));
+    let request =
+        format!("GET {target} HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\nx-piwi-token: {token}\r\nConnection: close\r\n\r\n");
+    stream.write_all(request.as_bytes()).map_err(|e| e.to_string())?;
+
+    let mut received = Vec::new();
+    let mut chunk = [0u8; 8192];
+    let split = loop {
+        if let Some(split) = received.windows(4).position(|w| w == b"\r\n\r\n") {
+            break split;
+        }
+        if received.len() > MAX_RESPONSE_HEAD {
+            return Err("the local server sent an incomplete response".into());
+        }
+        let n = stream.read(&mut chunk).map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err("the local server sent an incomplete response".into());
+        }
+        received.extend_from_slice(&chunk[..n]);
+    };
+    let head = String::from_utf8_lossy(&received[..split]).to_string();
+    if !head.lines().next().is_some_and(|status| status.contains(" 200 ")) {
+        let _ = (&mut stream).take(MAX_RESPONSE_HEAD as u64).read_to_end(&mut received);
+        return Err(crate::repro::http_body(&received).err().unwrap_or_else(|| "the download failed".into()));
+    }
+    let expected = head.lines().skip(1).find_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        name.trim().eq_ignore_ascii_case("content-length").then(|| value.trim().parse::<u64>().ok())?
+    });
+
+    let (path, mut file) = create_new_download(dir, name)?;
+    let body_start = &received[split + 4..];
+    let copied = file
+        .write_all(body_start)
+        .and_then(|()| std::io::copy(&mut stream, &mut file))
+        .and_then(|rest| file.flush().map(|()| body_start.len() as u64 + rest));
+    let outcome = match copied {
+        Ok(written) if expected.is_some_and(|length| length != written) => {
+            Err("the download ended before the whole file arrived".to_string())
+        }
+        Ok(_) => Ok(()),
+        Err(e) => Err(e.to_string()),
+    };
+    if let Err(message) = outcome {
+        drop(file);
+        let _ = std::fs::remove_file(&path);
+        return Err(message);
+    }
+    Ok(path)
 }
 
 // ── Leaving the app while local test runs are in flight ───────────────────────
@@ -1783,6 +1888,7 @@ pub fn run() {
             desktop_notify,
             desktop_log,
             desktop_save_download,
+            desktop_download,
             desktop_pick_folder,
             desktop_pick_import_files,
             desktop_inspect_folder,
@@ -2219,12 +2325,12 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        clamp_log_line, collect_open_args, compose_tooltip, debug_mode_requested, discovery_body,
+        clamp_log_line, collect_open_args, compose_tooltip, debug_mode_requested, discovery_body, download_file_name,
         health_ok, health_response_proves, ide_launcher_args, is_known_launcher,
         is_output_window_name, is_sidecar_url, is_truthy_flag, main_window_may_navigate,
         output_window_name, port_refusal, prepare_compile_cache, progress_bar_status, read_installer_port,
-        remote_capability, remove_other_versions, render_status_dot, rotate_log_if_full, rotated_log_path,
-        splash_status_script,
+        remote_capability, remove_other_versions, render_status_dot, request_target, rotate_log_if_full,
+        rotated_log_path, splash_status_script, stream_download,
         status_dot_color, valid_port, write_new_download, BAD_PORTS, DEFAULT_PORT,
         INSTALLER_CHOICES_FILE, MIN_PORT, SERVER_PORT_KEY, STORE_FILE,
     };
@@ -2311,6 +2417,92 @@ mod tests {
         ] {
             assert!(hooks.contains(&expected), "installer-hooks.nsh should contain {expected}");
         }
+    }
+
+    /// Answer one request on a free loopback port with `response`; the handle
+    /// yields the request it received.
+    fn serve_once(response: Vec<u8>) -> (u16, std::thread::JoinHandle<String>) {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = Vec::new();
+            let mut buf = [0u8; 1024];
+            while !request.windows(4).any(|w| w == b"\r\n\r\n") {
+                let n = stream.read(&mut buf).unwrap();
+                if n == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buf[..n]);
+            }
+            stream.write_all(&response).unwrap();
+            String::from_utf8_lossy(&request).to_string()
+        });
+        (port, handle)
+    }
+
+    fn download_dir(test: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("piwi-download-{test}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn a_download_streams_the_body_into_a_new_file_with_the_token() {
+        let dir = download_dir("ok");
+        let body: Vec<u8> = (0..200_000u32).map(|i| (i % 251) as u8).collect();
+        let mut response =
+            format!("HTTP/1.1 200 OK\r\nContent-Type: application/zip\r\nContent-Length: {}\r\n\r\n", body.len())
+                .into_bytes();
+        response.extend_from_slice(&body);
+
+        let (port, server) = serve_once(response.clone());
+        let saved = stream_download(port, "pd_x", "/api/files/a.zip?x=1", &dir, "trace.zip").unwrap();
+        assert_eq!(saved, dir.join("trace.zip"));
+        assert_eq!(fs::read(&saved).unwrap(), body);
+        let request = server.join().unwrap();
+        assert!(request.starts_with("GET /api/files/a.zip?x=1 HTTP/1.0\r\n"), "{request}");
+        assert!(request.contains("\r\nx-piwi-token: pd_x\r\n"), "{request}");
+
+        // The same name again never replaces the first file.
+        let (port, server) = serve_once(response);
+        let again = stream_download(port, "pd_x", "/api/files/a.zip", &dir, "trace.zip").unwrap();
+        server.join().unwrap();
+        assert_eq!(again, dir.join("trace (1).zip"));
+        assert_eq!(fs::read(&saved).unwrap(), body);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_refused_or_cut_download_leaves_no_file() {
+        let dir = download_dir("refused");
+        let refusal = b"HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\n\r\n{\"message\":\"Trace not found\"}";
+        let (port, server) = serve_once(refusal.to_vec());
+        let error = stream_download(port, "pd_x", "/api/files/gone.zip", &dir, "gone.zip").unwrap_err();
+        server.join().unwrap();
+        assert_eq!(error, "Trace not found");
+
+        let cut = b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nonly ten b".to_vec();
+        let (port, server) = serve_once(cut);
+        let error = stream_download(port, "pd_x", "/api/files/cut.zip", &dir, "cut.zip").unwrap_err();
+        server.join().unwrap();
+        assert!(error.contains("before the whole file"), "{error}");
+
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 0);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_download_keeps_the_query_and_only_the_file_name() {
+        let url = tauri::Url::parse("http://127.0.0.1:3000/api/reports/7/export?format=pdf").unwrap();
+        assert_eq!(request_target(&url), "/api/reports/7/export?format=pdf");
+        let url = tauri::Url::parse("http://127.0.0.1:3000/api/openapi").unwrap();
+        assert_eq!(request_target(&url), "/api/openapi");
+        assert_eq!(download_file_name("../../etc/passwd"), "passwd");
+        assert_eq!(download_file_name("report.pdf"), "report.pdf");
+        assert_eq!(download_file_name(""), "download");
     }
 
     #[test]
