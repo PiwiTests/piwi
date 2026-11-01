@@ -50,6 +50,9 @@
  * branch), and a regression records `regressed` on the attempts a fix verified
  * (`server/utils/fix-attempts.ts`).
  *
+ * A fix whose change names a cause none of the cluster's tests is about raises
+ * an *incidental catch* gap (`server/utils/incidental-catch.ts`).
+ *
  * Every step is best-effort — the run is already stored, and SCM being
  * unreachable must never turn into an ingest error.
  */
@@ -77,6 +80,7 @@ import {
 } from './integrations/policies';
 import { listOutcomes, recordOutcome } from './outcomes';
 import { regressFixAttempts, verifyFixAttempts } from './fix-attempts';
+import { recordIncidentalCatch } from './incidental-catch';
 import type { DbClient } from '../database';
 
 const FAIL_STATUSES = ['failed', 'timedOut', 'timedout'];
@@ -685,15 +689,16 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
       let verification: VerifiedFix['verification'] = 'stopped-failing';
       let healPr: HealPrRef | undefined;
       let changes: ScmChanges | null | undefined;
+      let files: string[] = [];
       if (repositoryUrl && fromCommit && currentCommit) {
-        const files = await diagnosedFiles(db, cluster.id);
+        files = await diagnosedFiles(db, cluster.id);
+        changes = changesByFromCommit.get(fromCommit);
+        if (changes === undefined) {
+          changes = await fetchRangeChanges(db, run.projectId, repositoryUrl, fromCommit, currentCommit);
+          changesByFromCommit.set(fromCommit, changes);
+        }
+        if (changesTouchFiles(changes, files)) verification = 'diagnosis-verified';
         if (files.length > 0 || (await projectHasHealPrs())) {
-          changes = changesByFromCommit.get(fromCommit);
-          if (changes === undefined) {
-            changes = await fetchRangeChanges(db, run.projectId, repositoryUrl, fromCommit, currentCommit);
-            changesByFromCommit.set(fromCommit, changes);
-          }
-          if (changesTouchFiles(changes, files)) verification = 'diagnosis-verified';
           healPr = await findHealPr(db, run.projectId, cluster.id, healKeysFromCommits(changes?.commits ?? [])).catch(
             () => undefined,
           );
@@ -759,6 +764,15 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
         fromCommit,
         repositoryUrl,
       }).catch((e) => console.error('[outcomes] fix attempt verification failed', e));
+      // The fixing change names the cause: tests not about it caught it by accident.
+      await recordIncidentalCatch(db, {
+        projectId: run.projectId,
+        runId,
+        clusterId: cluster.id,
+        caseIds: [...clusterCases],
+        diagnosedFiles: verification === 'diagnosis-verified' ? files : [],
+        changedFiles: changes && !changes.filesTruncated ? changes.files.map((file) => file.filename) : null,
+      }).catch((e) => console.error('[fix-verification] incidental catch failed', e));
 
       fixed.push({
         clusterId: cluster.id,

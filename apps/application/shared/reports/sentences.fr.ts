@@ -725,6 +725,12 @@ const GAP_TITLES: Record<string, Array<[pattern: RegExp, write: (...parts: strin
     ],
   ],
   'new-control': [[/^New control (.+) on (.+)$/, (control, page) => `Nouveau contrôle ${control} sur ${page}`]],
+  'fixed-without-test': [
+    [
+      /^Bug report #(\d+) was fixed without a regression test: (.+)$/,
+      (id, title) => `Le rapport de bug n°${NBSP}${id} a été corrigé sans test de non-régression${NBSP}: ${title}`,
+    ],
+  ],
 };
 
 function gapTitle(detector: string | undefined, title: string): string {

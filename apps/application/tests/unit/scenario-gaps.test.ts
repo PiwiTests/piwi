@@ -342,6 +342,35 @@ describe('computeScenarioGaps', () => {
     expect(single!.factors).not.toBeNull();
   });
 
+  test('a bug report closed with no test is a gap, and its page ranks with escape history', async () => {
+    await seedRun(1);
+    await seedReach(1, 'page', '/checkout', 1);
+    const report = (title: string, status: string, testCaseId: number | null = null) => ({
+      projectId: 1,
+      title,
+      pageKey: '/checkout',
+      status,
+      testCaseId,
+      steps: [],
+      evidence: {},
+      context: {},
+      closedAt: status === 'closed' ? new Date() : null,
+    });
+    const [untested] = await db
+      .insert(schema.bugReports)
+      .values([
+        report('coupon applied twice', 'closed'),
+        report('total off by a cent', 'closed', 1),
+        report('not a bug', 'dismissed'),
+      ])
+      .returning({ id: schema.bugReports.id });
+
+    await gaps.computeScenarioGaps(db, 1);
+    const rows = await gaps.listScenarioGaps(db, 1, {});
+    expect(rows.filter((r) => r.detector === 'fixed-without-test').map((r) => r.key)).toEqual([`bug:${untested!.id}`]);
+    expect(rows.find((r) => r.detector === 'single-covering-test')!.factors!.escapeHistory).toBe(1);
+  });
+
   test('recomputation preserves triage — a dismissed gap stays dismissed', async () => {
     await seedRun(1);
     await seedReach(1, 'page', '/checkout', 1);

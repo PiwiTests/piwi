@@ -99,6 +99,8 @@ export const HISTORY_WINDOW_RUNS = 30;
 const SUCCESS_ONLY_MIN_OBSERVATIONS = 5;
 /** Each exposure factor is clamped here so a missing input can never zero a row. */
 export const FACTOR_FLOOR = 0.1;
+/** A bug report counts toward escape history, and a closed one raises a gap, for this many days. */
+const ESCAPE_WINDOW_DAYS = 180;
 
 // ── Detected + scored shapes ─────────────────────────────────────────────────
 
@@ -119,6 +121,8 @@ export interface DetectedGap {
   failureClusterId?: number | null;
   /** Files whose churn/age/escape define exposure, when the gap is file-shaped. */
   files?: string[];
+  /** Pages whose escape history the gap shares: its own page, or the pages holding its control. */
+  pages?: string[];
   /** `piwi:priority` observed around the subject, when known. */
   priority?: string | null;
 }
@@ -149,6 +153,8 @@ export interface FileExposure {
 export interface ExposureInputs {
   /** Keyed by file path; absent files fall back to the neutral floor. */
   files?: Map<string, FileExposure>;
+  /** Pages a bug report named: a bug escaped the suite there. */
+  escapedPages?: Set<string>;
 }
 
 // ── Exposure scoring (pure) ──────────────────────────────────────────────────
@@ -209,6 +215,7 @@ export function exposureFactorsFor(gap: DetectedGap, inputs: ExposureInputs): Ex
     age = Math.max(age, ageFactor(fx.ageDays));
     if (fx.escaped) escapeHistory = 1;
   }
+  if (gap.pages?.some((page) => inputs.escapedPages?.has(page))) escapeHistory = 1;
 
   return {
     churn,
@@ -942,6 +949,33 @@ export function detectReportedBugEscapes(reports: ReportedBugInput[]): DetectedG
       (r) => `Bug report #${r.id}: ${r.title} — no test names it yet; commit its failing test (piwi:bug ${r.id}).`,
     ),
     confidence: Math.min(1, 0.6 + 0.1 * (list.length - 1)),
+  }));
+}
+
+/** A bug report closed with no test naming it, reported on `pageKey`. */
+export interface ClosedBugInput {
+  id: number;
+  title: string;
+  pageKey: string | null;
+}
+
+/**
+ * Fixed without a regression test: a bug report someone closed while no test
+ * names it (`piwi:bug`). The bug escaped the suite once and nothing would catch
+ * it again; its recorded steps are the test's draft. Blind spot, one per report.
+ */
+export function detectFixedWithoutTest(reports: ClosedBugInput[]): DetectedGap[] {
+  return reports.map((r) => ({
+    detector: 'fixed-without-test',
+    kind: 'gap',
+    class: 'blind-spot',
+    key: `bug:${r.id}`,
+    title: `Bug report #${r.id} was fixed without a regression test: ${r.title}`,
+    evidence: [
+      `Closed${r.pageKey ? ` on ${r.pageKey}` : ''} · no test names it — commit its recorded steps as a test (piwi:bug ${r.id}).`,
+    ],
+    confidence: 0.7,
+    ...(r.pageKey ? { pages: [r.pageKey] } : {}),
   }));
 }
 
@@ -2485,13 +2519,32 @@ export async function computeScenarioGaps(
     };
   });
 
-  // Escaped defects: the project's bug reports that no test names yet.
-  const openReports: ReportedBugInput[] = (
-    await db
-      .select({ id: bugReports.id, title: bugReports.title, pageKey: bugReports.pageKey })
-      .from(bugReports)
-      .where(and(eq(bugReports.projectId, projectId), eq(bugReports.status, 'open')))
-  ).map((r) => ({ id: r.id, title: r.title, pageKey: r.pageKey }));
+  // Escaped defects: the project's bug reports that no test names yet, the
+  // open ones and those closed without a test in the escape window. Every
+  // report in the window that was not dismissed marks its page as escaped.
+  const escapeSince = new Date(Date.now() - ESCAPE_WINDOW_DAYS * 86_400_000);
+  const reportRows = await db
+    .select({
+      id: bugReports.id,
+      title: bugReports.title,
+      pageKey: bugReports.pageKey,
+      status: bugReports.status,
+      testCaseId: bugReports.testCaseId,
+      createdAt: bugReports.createdAt,
+      closedAt: bugReports.closedAt,
+    })
+    .from(bugReports)
+    .where(and(eq(bugReports.projectId, projectId), ne(bugReports.status, 'dismissed')));
+  const inWindow = (d: Date | number | null) => d != null && toMs(d) >= escapeSince.getTime();
+  const openReports: ReportedBugInput[] = reportRows
+    .filter((r) => r.status === 'open')
+    .map((r) => ({ id: r.id, title: r.title, pageKey: r.pageKey }));
+  const closedUntested: ClosedBugInput[] = reportRows
+    .filter((r) => r.status === 'closed' && r.testCaseId == null && inWindow(r.closedAt))
+    .map((r) => ({ id: r.id, title: r.title, pageKey: r.pageKey }));
+  const escapedPages = new Set(
+    reportRows.filter((r) => r.pageKey && (r.status === 'open' || inWindow(r.createdAt))).map((r) => r.pageKey!),
+  );
 
   // Passing tests the application reported an error under, on the default branch.
   const passedWithErrors = await loadPassedWithErrors(db, projectId, routeNodeKeys);
@@ -2523,6 +2576,7 @@ export async function computeScenarioGaps(
 
   const detected = [
     ...detectReportedBugEscapes(openReports),
+    ...detectFixedWithoutTest(closedUntested),
     ...detectSuccessOnly([...routeStats.values()]),
     ...detectSingleCoveringTest(
       // A control another test may have operated through an unnamed locator is not known to be single-covered.
@@ -2557,7 +2611,17 @@ export async function computeScenarioGaps(
     }
     return [];
   };
+  // A gap on a page or a control shares the escape history of the page it sits on.
+  const pagesOf = (subject: GapSubject): string[] => {
+    if (subject.kind === 'page') return [subject.key];
+    if (subject.kind === 'control') return [...(pagesByControl.get(subject.key) ?? [])];
+    return [];
+  };
   for (const gap of detected) {
+    if (!gap.pages?.length) {
+      const pages = pagesOf(subjectFromGapKey(gap.key));
+      if (pages.length > 0) gap.pages = pages;
+    }
     if (gap.files?.length) continue;
     const files = handlerFilesOf(subjectFromGapKey(gap.key));
     if (files.length > 0) gap.files = files;
@@ -2568,6 +2632,7 @@ export async function computeScenarioGaps(
       ...(await loadRecordedFileExposure(db, projectId, handlerFiles)),
       ...(options.exposure?.files ?? []),
     ]),
+    escapedPages,
   };
   const scored = detected.map((gap) => rankGap(gap, exposure));
 
@@ -2614,6 +2679,7 @@ export async function computeScenarioGaps(
       'declared-never-hit',
       'unprobed-dependency',
       'escaped-defect',
+      'fixed-without-test',
       'passed-with-errors',
       'assertion-light',
       'catalog-method-no-test-calls',
@@ -4352,6 +4418,7 @@ export function subjectFromGapKey(key: string): GapSubject {
     'feature',
     'ticket',
     'handler',
+    'bug',
   ]) {
     const prefix = `${kind}:`;
     if (key.startsWith(prefix)) return { kind, key: key.slice(prefix.length) };

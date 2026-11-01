@@ -134,4 +134,9 @@ export const GAP_TITLE_SAMPLES: Array<[detector: string, english: string, french
     'La route POST /api/orders renvoie désormais un 409 qu’aucun test ne couvre',
   ],
   ['new-control', 'New control checkout.coupon on /checkout', 'Nouveau contrôle checkout.coupon sur /checkout'],
+  [
+    'fixed-without-test',
+    'Bug report #7 was fixed without a regression test: Coupon applied twice',
+    `Le rapport de bug n°${NBSP}7 a été corrigé sans test de non-régression${NBSP}: Coupon applied twice`,
+  ],
 ];
