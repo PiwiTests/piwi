@@ -49,7 +49,7 @@ import { locatorOn } from './chain-locator.js';
 import { keptRequests, keptResponse } from './kept-responses.js';
 import { liveViewState, onLiveViewChange, shareLiveView } from './live-view.js';
 import { openPageView, viewportOf } from './page-view.js';
-import { highlightAtStop, highlightsLocator, takeHighlightDown, type PauseAnswer } from './pause-at.js';
+import { highlightAtStop, type PauseAnswer } from './pause-at.js';
 import { internalCall } from './quiet-capture.js';
 
 /**
@@ -86,9 +86,6 @@ const CONNECT_MS = 2000;
 /** The pause bar, hidden in an image of the stopped page. */
 const BAR_HIDDEN = '#__piwi-pause-bar { display: none !important; }';
 
-/** How the matches of the locator at the editor's caret are outlined in the stopped page. */
-const OUTLINE_STYLE = 'outline: 2px dashed #a78bfa; outline-offset: 2px; background: rgba(167, 139, 250, 0.15);';
-
 /** Why a request naming a stop that ended is refused. */
 const WENT_ON = 'The test went on.';
 
@@ -106,6 +103,8 @@ const TOO_HEAVY =
 const VIEW_END_MS = 1000;
 /** How long starting a view, and a pick on an image, may take before the editor hears that the page did not answer. */
 const PAGE_ANSWER_MS = 10_000;
+/** How long a count's outline may take to show before the count answers without it. */
+const OUTLINE_MS = 2000;
 /** Why a view or a pick on an image is refused when the page does not answer. */
 const NO_ANSWER = 'The page did not answer in time.';
 /** What an agent's action the page did not answer in time is answered with: it may still be played. */
@@ -136,7 +135,6 @@ interface HeldStop {
   stop: number;
   page: Page | null;
   bar: boolean;
-  outlines: boolean | Promise<boolean>;
   answer(choice: PauseAnswer): void;
   intent(what: RunIntent): IntentAnswer;
   pickAt?(x: number, y: number): Promise<PickAtAnswer>;
@@ -157,13 +155,8 @@ export interface StopToHold {
   title: string;
   place: Place;
   locator: string | null;
-  /** Whether Piwi's pause bar shows the stop. */
+  /** Whether Piwi's pause bar shows the stop: a count outlines its matches there. */
   bar: boolean;
-  /**
-   * Whether a count may outline its matches on the stopped page: where the bar shows and Piwi may highlight, which a
-   * read of the page settles.
-   */
-  outlines: boolean | Promise<boolean>;
   /** A failure's error, as plain text: the editor shows it beside the stop. */
   error?: string;
   /** The page an image of the stop is taken of: none when the stop's page is not known. */
@@ -479,7 +472,6 @@ export function holdStop(
     stop: id,
     page: stop.page,
     bar: stop.bar,
-    outlines: stop.outlines,
     answer: (choice) => {
       if (answered) return;
       answered = true;
@@ -770,14 +762,17 @@ async function countLocator(holding: HeldStop, source: string | null): Promise<L
   if (!locator) return { ok: false, message: `${source} is not a locator Piwi can build.`, count: null };
   try {
     const count = await internalCall(page, () => locator.count());
-    if (count > 0 && (await holding.outlines) && held === holding && highlightsLocator(page, locator)) {
-      const shown = await internalCall(page, () => highlightAtStop(page, locator, 'count', OUTLINE_STYLE));
-      outline = { stop: holding.stop, remove: () => internalCall(page, () => takeHighlightDown(page, shown)) };
+    let outlined = false;
+    if (holding.bar && count > 0 && held === holding) {
+      const shown = highlightAtStop(page, locator, 'count', source);
+      outline = { stop: holding.stop, remove: async () => void (await shown.hide()) };
+      outlined = await answerWithin(shown.shown, OUTLINE_MS, false);
     }
     return {
       ok: true,
       message: count === 0 ? 'No element matches.' : count === 1 ? '1 element matches.' : `${count} elements match.`,
       count,
+      outlined,
     };
   } catch (error) {
     return { ok: false, message: `The locator could not be counted: ${errorMessage(error)}`, count: null };

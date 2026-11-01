@@ -3,8 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   installPickerOverlay,
   pauseAnswered,
+  removeStopHighlight,
   showPauseBar,
   showPickerChoices,
+  showStopHighlight,
   takePauseState,
 } from '@piwitests/picker-dom';
 import {
@@ -17,10 +19,8 @@ import {
   currentPauseSet,
   goOn,
   highlightAtStop,
-  highlightsLocator,
   inFlightCallSite,
   markPausesWrapped,
-  mayHighlight,
   parsePauseAt,
   pauseState,
   placeLine,
@@ -32,13 +32,10 @@ import {
   pauseSkipReason,
   pickPayload,
   postPickToEditor,
-  readHighlightLayer,
   resetInspectorSwitch,
   resetPauseLogs,
   restoreTestTime,
   stopCallSite,
-  takeHighlightDown,
-  takeLayerDown,
   testTimeSlot,
   watchStops,
   withEndSignal,
@@ -554,8 +551,8 @@ describe('pauseHere', () => {
 
   it('highlights the element, shows the bar with the call about to run, and hides the highlight on Resume', async () => {
     const { page, shown } = fakePausePage(['resume']);
-    const hide = vi.fn(async () => {});
-    const target = { highlight: vi.fn(async () => ({ dispose: hide })) };
+    const hide = vi.fn(async () => true);
+    const target = { highlight: vi.fn(() => ({ shown: Promise.resolve(true), hide })) };
     const choice = await pauseHere(page as never, { ...POINT, target }, PROBE, () => {});
     expect(choice).toBe('resume');
     expect(target.highlight).toHaveBeenCalledOnce();
@@ -644,63 +641,27 @@ describe('pauseHere', () => {
     }
   });
 
-  it('takes the highlight drawn by the end down before the test goes on, and a late one only where Playwright disposes it', async () => {
-    const fontsWait = process.env.PW_TEST_SCREENSHOT_NO_FONTS_READY;
-    delete process.env.PW_TEST_SCREENSHOT_NO_FONTS_READY;
+  it('takes its highlight down before the test goes on, one its frame has not drawn yet included', async () => {
     vi.useFakeTimers();
     try {
-      // Before 1.60: an image of the page as the stop ends, which waits for no font then only.
-      const { page } = fakePausePage(['resume']);
-      const images: unknown[] = [];
-      const screenshot = vi.fn(async () => void images.push(process.env.PW_TEST_SCREENSHOT_NO_FONTS_READY));
-      // The frame Piwi's highlight shows its layer in.
-      const layered = { url: () => 'http://x/', isDetached: () => false, locator: () => ({ count: async () => 1 }) };
-      Object.assign(page, { frames: () => [layered], screenshot });
-      let settle: (value: unknown) => void = () => {};
-      const target = { highlight: vi.fn(() => new Promise((resolve) => (settle = resolve))) };
+      const { page, shown } = fakePausePage(['resume']);
+      const order: string[] = [];
+      // A frame that does not answer: the highlight is not drawn by the time the bar shows.
+      const hide = vi.fn(async () => (order.push('hidden'), false));
+      const target = { highlight: vi.fn(() => ({ shown: new Promise<boolean>(() => {}), hide })) };
       let answer: string | undefined;
-      void pauseHere(page as never, { ...POINT, target }, PROBE, () => {}).then((a) => (answer = a));
-      await vi.advanceTimersByTimeAsync(2000);
+      void pauseHere(page as never, { ...POINT, target }, PROBE, () => {}).then((a) => {
+        order.push('went on');
+        answer = a;
+      });
+      await vi.advanceTimersByTimeAsync(1999);
+      expect(shown).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1);
       expect(answer).toBe('resume');
-      expect(images).toEqual(['1']);
-      expect(process.env.PW_TEST_SCREENSHOT_NO_FONTS_READY).toBeUndefined();
-      // A highlight that comes after the stop ended: no image while the test runs.
-      settle(undefined);
-      await vi.advanceTimersByTimeAsync(2000);
-      expect(screenshot).toHaveBeenCalledOnce();
-
-      // A switch the run set itself stays as it was.
-      process.env.PW_TEST_SCREENSHOT_NO_FONTS_READY = 'yes';
-      const drawn = fakePausePage(['resume']);
-      const fontsAtImage: unknown[] = [];
-      const imaged = vi.fn(async () => void fontsAtImage.push(process.env.PW_TEST_SCREENSHOT_NO_FONTS_READY));
-      Object.assign(drawn.page, { frames: () => [layered], screenshot: imaged });
-      const done = pauseHere(drawn.page as never, { ...POINT, target: { highlight: async () => {} } }, PROBE, () => {});
-      await vi.advanceTimersByTimeAsync(0);
-      expect(await done).toBe('resume');
-      expect(fontsAtImage).toEqual(['yes']);
-      expect(process.env.PW_TEST_SCREENSHOT_NO_FONTS_READY).toBe('yes');
-
-      // From 1.60: a late highlight is disposed once it came.
-      const disposing = fakePausePage(['resume']);
-      Object.assign(disposing.page, { hideHighlight: async () => {} });
-      const dispose = vi.fn(async () => {});
-      let settleLate: (value: unknown) => void = () => {};
-      const late = { highlight: vi.fn(() => new Promise((resolve) => (settleLate = resolve))) };
-      let lateAnswer: string | undefined;
-      void pauseHere(disposing.page as never, { ...POINT, target: late }, PROBE, () => {}).then(
-        (a) => (lateAnswer = a),
-      );
-      await vi.advanceTimersByTimeAsync(2000);
-      expect(lateAnswer).toBe('resume');
-      expect(dispose).not.toHaveBeenCalled();
-      settleLate({ dispose });
-      await vi.advanceTimersByTimeAsync(0);
-      expect(dispose).toHaveBeenCalledOnce();
+      expect(shown).toHaveLength(1);
+      expect(order).toEqual(['hidden', 'went on']);
     } finally {
       vi.useRealTimers();
-      if (fontsWait === undefined) delete process.env.PW_TEST_SCREENSHOT_NO_FONTS_READY;
-      else process.env.PW_TEST_SCREENSHOT_NO_FONTS_READY = fontsWait;
     }
   });
 
@@ -766,276 +727,56 @@ describe('pauseHere', () => {
   });
 });
 
-describe('the highlight layer of a stop', () => {
-  /**
-   * A frame of a page whose layer count settles as `count` does, and its root element's as `root` does, with the load
-   * states Playwright's client saw.
-   */
-  const frame = (
-    count: () => Promise<number>,
-    {
-      url = 'http://x/',
-      detached = false,
-      loadStates = undefined as string[] | undefined,
-      root = async () => 1 as number,
-    } = {},
-  ) => ({
-    url: () => url,
-    isDetached: () => detached,
-    locator: (selector: string) => ({ count: selector === ':root' ? root : count }),
-    ...(loadStates ? { _loadStates: new Set(loadStates) } : {}),
-  });
-  /** A page of `frames`, whose `hideHighlight` of a locator runs `drawn`. */
-  const pageOf = (frames: unknown[], drawn: () => void = () => {}) => ({
-    frames: () => frames,
-    locator: () => ({ hideHighlight: async () => drawn() }),
-  });
-  /** Whether the read of `page` on Playwright `version` says a frame showed the layer. */
-  const shown = (page: unknown, version: string) => readHighlightLayer(page as never, version).shown;
-  const never = () => new Promise<number>(() => {});
-
-  it('reads none where no frame holds one, a frame detached under the read and one with no document included', async () => {
-    const detached = frame(() => Promise.reject(new Error('Frame was detached')), { detached: true });
-    const unloaded = frame(never, { url: '' });
-    // A lazy frame, or one awaiting its response: no address, and no document loaded.
-    const lazy = frame(never, { url: '', loadStates: ['commit', 'networkidle'] });
-    expect(await shown(pageOf([frame(async () => 0), detached, unloaded, lazy]), '1.64.1')).toBe(false);
-  });
-
-  it('reads one where a frame holds one, a frame with no address that holds a document included', async () => {
-    expect(await shown(pageOf([frame(async () => 0), frame(async () => 1)]), '1.64.1')).toBe(true);
-    // A `javascript:` frame: Playwright gives it no address.
-    const scripted = frame(async () => 1, { url: '', loadStates: ['commit', 'domcontentloaded', 'load'] });
-    expect(await shown(pageOf([frame(async () => 0), scripted]), '1.64.1')).toBe(true);
-    // A frame whose response had no content: no address and no load, its first document written by its page.
-    const empty = frame(async () => 1, { url: '', loadStates: ['commit', 'networkidle'] });
-    expect(await shown(pageOf([frame(async () => 0), empty]), '1.64.1')).toBe(true);
-    const broken = frame(() => Promise.reject(new Error('busy')));
-    expect(await shown(pageOf([broken]), '1.64.1')).toBe(true);
-    expect(await shown({}, '1.64.1')).toBe(true);
-  });
-
-  it('reads one where a frame that is there does not answer within two seconds', async () => {
-    vi.useFakeTimers();
-    try {
-      let shows: boolean | undefined;
-      void shown(pageOf([frame(never)]), '1.64.1').then((read) => (shows = read));
-      await vi.advanceTimersByTimeAsync(1999);
-      expect(shows).toBeUndefined();
-      await vi.advanceTimersByTimeAsync(1);
-      expect(shows).toBe(true);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('reads a frame with no address that answers once those Playwright saw load did, on a page busy as the stop begins', async () => {
-    vi.useFakeTimers();
-    try {
-      // The page answers nothing for a second, then at once.
-      const until = Date.now() + 1000;
-      const busy = (count: number) => () =>
-        new Promise<number>((resolve) => setTimeout(() => resolve(count), until - Date.now()));
-      const lazy = frame(never, { url: '', loadStates: ['commit', 'networkidle'] });
-      const reads = [1, 0].map((count) => {
-        const empty = frame(busy(count), { url: '', loadStates: ['commit', 'networkidle'] });
-        return shown(pageOf([frame(busy(0)), empty, lazy]), '1.64.1');
-      });
-      await vi.advanceTimersByTimeAsync(1300);
-      expect(await Promise.all(reads)).toEqual([true, false]);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('reads once Playwright drew the highlights it holds, from 1.63', async () => {
-    const order: string[] = [];
-    const read = frame(async () => (order.push('read'), 0));
-    await shown(
-      pageOf([read], () => order.push('drawn')),
-      '1.63.0',
-    );
-    await shown(
-      pageOf([read], () => order.push('drawn')),
-      '1.62.0',
-    );
-    expect(order).toEqual(['drawn', 'read', 'read']);
-  });
-
-  it('reads one where a document has no root element yet as the read begins, from 1.63', async () => {
-    const order: string[] = [];
-    const drawn = () => order.push('drawn');
-    // A navigation that just committed, the page's first bytes still to come: what Playwright holds is not drawn there.
-    const rootless = frame(async () => (order.push('layer'), 0), { root: async () => (order.push('root'), 0) });
-    for (const version of ['1.63.0', '1.64.1']) {
-      expect(await shown(pageOf([frame(async () => 0), rootless], drawn), version)).toBe(true);
-    }
-    expect(order).toEqual(['root', 'root']);
-    expect(await shown(pageOf([frame(async () => 0), rootless]), '1.62.0')).toBe(false);
-    // The roots are read first: Playwright draws what it holds into a document that had one by then.
-    order.length = 0;
-    const rooted = frame(async () => (order.push('layer'), 1), { root: async () => (order.push('root'), 1) });
-    expect(await shown(pageOf([rooted], drawn), '1.64.1')).toBe(true);
-    expect(order).toEqual(['root', 'drawn', 'layer']);
-  });
-
-  it('lets Piwi highlight from 1.60 once the read asked every frame, after Playwright drew what it holds, not once it answered', async () => {
-    const order: string[] = [];
-    const page = {
-      ...pageOf([frame(() => (order.push('layer'), never()))]),
-      locator: () => ({
-        hideHighlight: () => new Promise<void>((resolve) => setTimeout(() => (order.push('drawn'), resolve()), 10)),
-      }),
-      hideHighlight: async () => {},
-    };
-    expect(await mayHighlight(page as never, readHighlightLayer(page as never, '1.64.1'))).toBe(true);
-    order.push('highlight');
-    expect(order).toEqual(['drawn', 'layer', 'highlight']);
-    // Before 1.63, Playwright draws nothing for the read, which asks every frame at once.
-    const read162 = { ...pageOf([frame(never)]), hideHighlight: async () => {} };
-    expect(await mayHighlight(read162 as never, readHighlightLayer(read162 as never, '1.62.0'))).toBe(true);
-  });
-
-  it('lets Piwi highlight nothing where the read could not ask every frame within two seconds, and asks none after', async () => {
-    vi.useFakeTimers();
-    try {
-      // Playwright holds every highlight asked after the read's own while a frame does not answer.
-      let drawn: () => void = () => {};
-      const count = vi.fn(async () => 0);
-      const redrawing = {
-        frames: () => [frame(count)],
-        locator: () => ({ hideHighlight: () => new Promise<void>((resolve) => (drawn = resolve)) }),
-        hideHighlight: async () => {},
-      };
-      // A frame that does not say whether its document has a root element: Playwright is not asked to draw.
-      const redraw = vi.fn(async () => {});
-      const rooting = { frames: () => [frame(count, { root: never })], locator: () => ({ hideHighlight: redraw }) };
-      for (const page of [redrawing, { ...rooting, hideHighlight: async () => {} }]) {
-        const read = readHighlightLayer(page as never, '1.64.1');
-        const answers: (boolean | undefined)[] = [undefined, undefined];
-        void read.shown.then((shows) => (answers[0] = shows));
-        void mayHighlight(page as never, read).then((may) => (answers[1] = may));
-        await vi.advanceTimersByTimeAsync(1999);
-        expect(answers).toEqual([undefined, undefined]);
-        await vi.advanceTimersByTimeAsync(1);
-        expect(answers).toEqual([true, false]);
-      }
-      // Drawn once the stop may be over: the read asks no frame then.
-      drawn();
-      await vi.advanceTimersByTimeAsync(0);
-      expect(count).not.toHaveBeenCalled();
-      expect(redraw).not.toHaveBeenCalled();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('lets Piwi highlight before 1.60 once the read says the page showed no layer', async () => {
-    const read = (shows: boolean) => ({ shown: Promise.resolve(shows), asked: Promise.resolve(true) });
-    expect(await mayHighlight({} as never, read(false))).toBe(true);
-    expect(await mayHighlight({} as never, read(true))).toBe(false);
-  });
-
-  it('highlights under a selector of its own, and takes the layer down once a stop that highlighted ends', async () => {
-    const described: string[] = [];
-    const options: unknown[] = [];
-    const locator = {
-      describe: (text: string) => {
-        described.push(text);
-        return { highlight: async (o: unknown) => void options.push(o) };
+describe('a stop’s highlight', () => {
+  /** A locator whose `evaluateAll` runs the page function on `elements`, each call noted, or rejects with `fails`. */
+  const locatorOf = (elements: unknown[], fails?: Error) => {
+    const calls: Array<{ fn: unknown; arg: unknown }> = [];
+    return {
+      calls,
+      evaluateAll: async (fn: (elements: unknown[], arg: unknown) => unknown, arg: unknown) => {
+        calls.push({ fn, arg });
+        if (fails) throw fails;
+        return fn(elements, arg);
       },
     };
-    let hidden = 0;
-    const page = { frames: () => [], hideHighlight: async () => void hidden++ };
-    await takeLayerDown(page as never, false);
-    expect(hidden).toBe(0);
-    await highlightAtStop(page as never, locator as never, 'call');
-    // On a page that showed a layer of its own as the stop began, the layer stays.
-    await takeLayerDown(page as never, true);
-    expect(hidden).toBe(0);
-    await highlightAtStop(page as never, locator as never, 'count', 'outline: 1px solid');
-    await takeLayerDown(page as never, Promise.resolve(true));
-    expect(hidden).toBe(0);
-    await highlightAtStop(page as never, locator as never, 'count', 'outline: 1px solid');
-    await takeLayerDown(page as never, Promise.resolve(false));
-    await takeLayerDown(page as never, false);
-    expect(hidden).toBe(1);
-    expect(described).toEqual(['piwi call', 'piwi count', 'piwi count']);
-    expect(options).toEqual([undefined, { style: 'outline: 1px solid' }, { style: 'outline: 1px solid' }]);
-  });
+  };
 
-  it('leaves the layer to each highlight’s own take-down before 1.60', async () => {
-    const touched: string[] = [];
-    const loaded = { url: () => 'http://x/', evaluate: async () => void touched.push('frame') };
-    const page = { frames: () => [loaded], evaluate: async () => void touched.push('page') };
-    const locator = { describe: () => ({ highlight: async () => {} }) };
-    await highlightAtStop(page as never, locator as never, 'call');
-    await takeLayerDown(page as never, false);
-    expect(touched).toEqual([]);
-  });
-
-  it('takes a highlight down before 1.60 in each frame that shows a layer, each one seen loaded when that read is slow', async () => {
-    /** A frame whose mask names it. */
-    const named = (name: string, count: () => Promise<number>, options: Parameters<typeof frame>[1] = {}) => ({
-      ...frame(count, options),
-      locator: () => ({ name, count }),
+  it('draws Piwi’s own highlight through the locator, labelled, never Playwright’s, and takes it down by its name', async () => {
+    const g = globalThis as Record<string, unknown>;
+    const locator = { ...locatorOf([]), highlight: vi.fn(), describe: vi.fn() };
+    const page = { hideHighlight: vi.fn() };
+    const call = highlightAtStop(page as never, locator as never, 'call', "getByRole('button')");
+    const count = highlightAtStop(page as never, locator as never, 'count', "getByText('Pay')");
+    // No document here: nothing is drawn.
+    expect(await call.shown).toBe(false);
+    expect(await count.shown).toBe(false);
+    const [drawn, other] = locator.calls;
+    expect(drawn).toEqual({
+      fn: showStopHighlight,
+      arg: { id: expect.stringMatching(/^call-\d+$/), kind: 'call', label: "getByRole('button')" },
     });
-    const masked: string[][] = [];
-    const imaged = (frames: unknown[]) => ({
-      frames: () => frames,
-      screenshot: async ({ mask }: { mask: { name: string }[] }) => void masked.push(mask.map((m) => m.name)),
-    });
-    const shows = named('shows', async () => 1);
-    const plain = named('plain', async () => 0);
-    // A sandboxed `srcdoc` frame a headed 1.59 holds as navigating for good: a mask there keeps its layer.
-    const sandboxed = named('sandboxed', async () => 0, { url: '', loadStates: ['commit', 'domcontentloaded'] });
-    // A frame whose response had no content, its first document written by its page: Playwright did not see it load.
-    const empty = named('empty', async () => 1, { url: '', loadStates: ['commit', 'networkidle'] });
-    const lazy = named('lazy', never, { url: '', loadStates: ['commit', 'networkidle'] });
-    await takeHighlightDown(imaged([shows, plain, sandboxed, empty, lazy]) as never, undefined);
-    // No layer to take down: no image.
-    await takeHighlightDown(imaged([plain, lazy]) as never, undefined);
-    expect(masked).toEqual([['shows', 'empty']]);
-    vi.useFakeTimers();
-    try {
-      const slow = named('slow', never);
-      const done = takeHighlightDown(imaged([slow, sandboxed, lazy]) as never, undefined);
-      await vi.advanceTimersByTimeAsync(500);
-      await done;
-      expect(masked).toEqual([
-        ['shows', 'empty'],
-        ['slow', 'sandboxed'],
-      ]);
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(other!.arg).toMatchObject({ id: expect.stringMatching(/^count-\d+$/), kind: 'count' });
+    expect(await call.hide()).toBe(false);
+    expect(locator.calls[2]).toEqual({ fn: removeStopHighlight, arg: (drawn!.arg as { id: string }).id });
+    expect(locator.highlight).not.toHaveBeenCalled();
+    expect(locator.describe).not.toHaveBeenCalled();
+    expect(page.hideHighlight).not.toHaveBeenCalled();
+    delete g.__piwiStopHighlightsGone;
   });
 
-  it('highlights any locator from 1.60, and before it only one Playwright resolves in its own world', () => {
-    const engines = [{ name: 'tag' }, { name: 'own', contentScript: true }];
-    const context = { _browser: { _browserType: { _playwright: { selectors: { _selectorEngines: engines } } } } };
-    const before160 = { context: () => context };
-    const from160 = { context: () => context, hideHighlight: async () => {} };
-    const at = (selector: string) => ({ _selector: selector }) as never;
-    for (const selector of ['internal:role=button[name="Pay"i]', 'own=button', 'internal:attr=[data-tag="x"i]']) {
-      expect(highlightsLocator(before160 as never, at(selector))).toBe(true);
-    }
-    for (const selector of [
-      '_react=Button',
-      'css=main >> _vue=Item',
-      'tag=button',
-      'internal:has="tag=p"',
-      '*tag=a',
-      // Playwright trims the engine's name.
-      'tag =button',
-      '_react =App',
-      'internal:and="tag =p"',
-    ]) {
-      expect(highlightsLocator(before160 as never, at(selector))).toBe(false);
-      expect(highlightsLocator(from160 as never, at(selector))).toBe(true);
-    }
-    // A Playwright that does not say which engines it registered: no highlight before 1.60.
-    expect(highlightsLocator({ context: () => ({}) } as never, at('css=p'))).toBe(false);
+  it('neither throws nor rejects on a page that breaks under it', async () => {
+    const locator = locatorOf([], new Error('Target page, context or browser has been closed'));
+    const highlight = highlightAtStop({} as never, locator as never, 'count', 'x');
+    expect(await highlight.shown).toBe(false);
+    expect(await highlight.hide()).toBe(false);
+    const thrown = {
+      evaluateAll: () => {
+        throw new Error('not a locator');
+      },
+    };
+    const broken = highlightAtStop({} as never, thrown as never, 'call', 'x');
+    expect(await broken.shown).toBe(false);
+    expect(await broken.hide()).toBe(false);
   });
 });
 

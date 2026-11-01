@@ -187,37 +187,18 @@ What the package does to a user's run, process by process.
   credentials hidden part by part, its host and ids kept (`hideSecretsInUrl`).
 - `locator` counts a chain (`chain-locator.ts`, built through the chain grammar's calls
   alone) on the stopped page, one count after the other, and, where the bar shows,
-  outlines its matches with Playwright's highlight, the one before taken down first and
-  the last before the stop ends. This outline and the pause bar's highlight are drawn
-  under selectors of Piwi's own (`highlightAtStop` in `pause-at.ts`, through
-  `describe`): Playwright keeps one highlight per frame and selector (1.60), so the
-  test's own highlight of the same locator stays, and the two stay apart. A highlight
-  comes down through its own `dispose` (1.60), even one that came after the stop
-  ended, and before 1.60 through an image of the page with a mask in each frame that
-  shows a layer, which only Piwi's can then: the mask takes the frame's layer in
-  Playwright's own world down whole, and the image skips the wait for the page's fonts
-  (`takeHighlightDown`). It is taken while the stop still holds the test: a highlight
-  that comes later stays. A disposed highlight leaves the layer, an empty `x-pw-glass`:
-  as the stop begins, `showStop` reads whether a frame shows one (`readHighlightLayer`,
-  in Playwright's own world, two seconds at most and without holding the editor's
-  notice), and as a stop that highlighted ends, takes the layer down where none showed
-  (`takeLayerDown`: `page.hideHighlight`, which on 1.60 to 1.62 reaches Playwright's
-  own world alone: the layer of a locator resolved in the page's world stays). The
-  read (`layersIn`) waits for each frame Playwright saw load (`_loadStates`), and
-  250 ms more for the others: one whose response had no content holds a document and
-  answers, a lazy one never does. From 1.63 it first asks Playwright to draw the
-  highlights it holds into a new document, and counts a document with no root element
-  yet as showing a layer, nothing drawn in it then. Piwi highlights once the read
-  asked every frame, which then leaves Piwi's highlights out, without waiting for its
-  answer from 1.60 (`mayHighlight`); from 1.63, whose highlights each wait for every
-  frame, none where the read could not ask within those two seconds. On 1.59, whose
-  take-down removes the whole layer of Playwright's own world and no other, a page that
-  showed one, or did not answer, gets no highlight (`mayHighlight`), nor does a
-  locator resolved in the page's own world (`highlightsLocator`: `_react`, `_vue`, an
-  engine registered without its content script, read from
-  `selectors._selectorEngines`), so the test's own highlights and screencast overlays
-  stay. A highlight of the test's in a frame the page does not show then (1.63) is the
-  one the take-down drops.
+  outlines its matches, the one before taken down first and the last before the stop
+  ends; the answer says whether they were outlined (`outlined`). This outline and the
+  pause bar's highlight of the stopped call's element are Piwi's own
+  (`highlightAtStop` in `pause-at.ts`): `locator.evaluateAll` runs `showStopHighlight`
+  of `@piwitests/picker-dom` in the frame the locator reaches, which draws a box over
+  each match in a layer of its own (`[data-piwi-stop-highlight]`, `aria-hidden`), kept
+  on the elements as the page moves, the locator beside the first. Playwright's
+  highlight is never used, so the test's own highlights and screencast overlays, which
+  Playwright draws in its `x-pw-glass`, stay as they were on every version. A highlight
+  is taken down through the same locator (`removeStopHighlight`) before the test goes
+  on, and the page keeps its name (`__piwiStopHighlightsGone`): a frame that answers
+  only after that, its draw late, draws nothing.
 - **The live view**, for a viewer outside the page (Piwi Picker, through the editor's
   hub). `view` shows the stopped page live: its screencast (`page.screencast.start`
   through an internal call, at its viewport scaled to fit 1280 by 800, JPEG quality 60,
@@ -262,7 +243,9 @@ What the package does to a user's run, process by process.
   snapshot in AI mode to a depth (`page.ariaSnapshot({ mode: 'ai', depth })`), its
   credentials hidden by `hideSecretsInText` and each secret field's value written as
   `<hidden>` (`withoutFieldSecrets`: an AI snapshot shows a field's value, quoted when
-  YAML needs it), with an image whose secret fields are masked when asked, in each frame;
+  YAML needs it), with an image whose secret fields are painted over in the image when
+  asked, in each frame, as the live view's are (`maskedImage` in `live-mask.ts`), so
+  the test's own highlights stay in the page;
   a secret field is a password field or one whose `autocomplete` names a password, a
   one-time code or a card's number or security code (`SECRET_FIELDS`, from
   `SECRET_AUTOCOMPLETE`); `ref-locator` ranks the element a

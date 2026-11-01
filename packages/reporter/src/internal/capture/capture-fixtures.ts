@@ -94,7 +94,6 @@ import {
   deriveFailedLocator,
   pickLocator,
   runLocatorPicker,
-  unlessEnded,
   type PickedLocator,
   type UserPickResult,
 } from './pick-on-failure.js';
@@ -110,13 +109,11 @@ import {
   currentPauseSet,
   goOn,
   highlightAtStop,
-  highlightsLocator,
   inFlightCallSite,
   logPauseSkipOnce,
   markPausesWrapped,
   NO_BREAKPOINTS,
   pauseGateFromTestInfo,
-  mayHighlight,
   mayPause,
   pauseHere,
   pauseSkipReason,
@@ -124,13 +121,11 @@ import {
   pickPayload,
   placeLine,
   postPickToEditor,
-  readHighlightLayer,
   replacePauseSet,
   restoreTestTime,
   steerDebugger,
   stopCallSite,
   stopShown,
-  takeLayerDown,
   takesEndSignal,
   testTimeSlot,
   viewHere,
@@ -1821,11 +1816,6 @@ async function showStop(
   const bar = !!page && (testInfo.project?.use as { headless?: unknown } | undefined)?.headless === false;
   const place = runChannelOpen() ? callSitePlace(location) : null;
   if (!bar && !place) return undefined;
-  // Piwi highlights only where it can take its highlights down leaving the page's own (`mayHighlight`,
-  // `highlightsLocator`), and takes the highlight layer they leave down as the stop ends on a page that showed none as
-  // it began (`takeLayerDown`): the page is read as the stop begins, while the editor hears of it.
-  const layer = page && bar ? readHighlightLayer(page, testInfo.config?.version) : null;
-  const highlights = page && layer ? mayHighlight(page, layer) : Promise.resolve(false);
   const failing = failure?.failed ?? null;
   /** A pick, folded into the snapshots, printed and posted to the editor: whether the editor took it. */
   const pickTaken = async (picked: PickedLocator): Promise<boolean> => {
@@ -1920,7 +1910,6 @@ async function showStop(
               ? renderFailing(failing)
               : null,
           bar,
-          outlines: highlights,
           page: guessed ? null : page,
           ...(failure?.error ? { error: failure.error } : {}),
           intent: intents
@@ -1966,10 +1955,7 @@ async function showStop(
       }
       return 'resume';
     }
-    const stoppedOn =
-      call?.page === page && (await unlessEnded(highlights, over.signal)) && highlightsLocator(page, call.target)
-        ? call.target
-        : null;
+    const stoppedOn = call?.page === page ? call : null;
     return internalCall(page, () =>
       pauseHere(
         page,
@@ -1977,7 +1963,17 @@ async function showStop(
           location,
           call: title,
           attempt: testInfo.retry > 0 ? testInfo.retry + 1 : null,
-          target: stoppedOn ? { highlight: () => highlightAtStop(page, stoppedOn, 'call') } : null,
+          target: stoppedOn
+            ? {
+                highlight: () =>
+                  highlightAtStop(
+                    page,
+                    stoppedOn.target,
+                    'call',
+                    locatorSource(stoppedOn.target, stoppedOn.origin.method, stoppedOn.origin.args),
+                  ),
+              }
+            : null,
           ...(failure ? { failure: true } : sink.functionEnded ? {} : { end: true }),
         },
         probe,
@@ -1995,7 +1991,6 @@ async function showStop(
     sink.shownStops.delete(end);
     goneOn();
     await held?.release();
-    if (page) await internalCall(page, () => takeLayerDown(page, layer?.shown ?? true)).catch(() => undefined);
   });
   const heldAt = testTimeSlot(testInfo)?.elapsed ?? null;
   const stop: ShownStop = { page, guessed, context, record, done: shown.catch(() => undefined), heldAt, after: null };

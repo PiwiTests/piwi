@@ -13,6 +13,7 @@
     "./overlay-anchors": "./src/overlay-anchors.ts",
     "./overlay-confirm": "./src/overlay-confirm.ts",
     "./overlay-pause": "./src/overlay-pause.ts",
+    "./overlay-stop": "./src/overlay-stop.ts",
     "./anchor-alternatives": "./src/anchor-alternatives.ts",
     "./syntax-highlight": "./src/syntax-highlight.ts",
     "./dom-role": "./src/dom-role.ts"

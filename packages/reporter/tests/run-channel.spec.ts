@@ -105,7 +105,6 @@ const STOP: StopToHold = {
   place: { file: 'tests/a.spec.ts', line: 4, column: 9 },
   locator: "getByRole('button')",
   bar: false,
-  outlines: false,
   page: null,
 };
 
@@ -272,7 +271,24 @@ describe('the worker’s run connection', () => {
         pid: process.pid,
         playwright: '1.64.1',
         reporter: expect.any(String),
-        takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'locator', 'view', 'input', 'input-clicks', 'pick-at', 'agent', 'events', 'bind', 'end', 'share'],
+        takes: [
+          'pick',
+          'record',
+          'assert',
+          'assert-region',
+          'requests',
+          'mock',
+          'locator',
+          'view',
+          'input',
+          'input-clicks',
+          'pick-at',
+          'agent',
+          'events',
+          'bind',
+          'end',
+          'share',
+        ],
         holds: ['failure'],
       });
       const answers: string[] = [];
@@ -341,7 +357,10 @@ describe('the worker’s run connection', () => {
     try {
       expect(await openRunChannel(WORKER, handlers().control, hub.env)).toBe(true);
       const intents: string[] = [];
-      const held = holdStop({ ...STOP, bar: true, intent: (what) => (intents.push(what), { ok: true, message: `${what} started` }) }, () => {});
+      const held = holdStop(
+        { ...STOP, bar: true, intent: (what) => (intents.push(what), { ok: true, message: `${what} started` }) },
+        () => {},
+      );
       const { stop } = (await until(() => hub.heard.find((m) => m.type === 'stopped'))) as { stop: number };
       const answers = () => hub.heard.filter((m) => m.type === 'answer');
       hub.send({ type: 'request', request: 1, what: 'pick', stop });
@@ -366,7 +385,8 @@ describe('the worker’s run connection', () => {
         what: 'record',
         value: {
           ok: false,
-          message: "Record here needs the pause bar in the test's window, and this stop shows none: run the test headed.",
+          message:
+            "Record here needs the pause bar in the test's window, and this stop shows none: run the test headed.",
         },
       });
     } finally {
@@ -459,7 +479,9 @@ describe('the worker’s run connection', () => {
       hub.send({ type: 'control', action: 'stop', stop: 1 });
       expect(await until(() => hub.heard.find((m) => m.type === 'notice'))).toEqual({
         type: 'notice',
-        message: expect.stringMatching(/^@piwitests\/reporter .* does not take the editor's control stop: update it\.$/),
+        message: expect.stringMatching(
+          /^@piwitests\/reporter .* does not take the editor's control stop: update it\.$/,
+        ),
       });
     } finally {
       await hub.close();

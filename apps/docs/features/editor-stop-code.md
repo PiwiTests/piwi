@@ -97,8 +97,8 @@ its size, with what it hides:
 
 While a test is stopped, put the cursor on a line of the stopped file: its end says how many elements the line's
 locator matches on the stopped page, `Piwi: 3 matches`, `1 match` or `no match`, and where the pause bar shows, the
-matches are outlined in the page ([not always](./editor-breakpoints#limits)). Edit the locator and it is counted again.
-The outline goes when the cursor leaves the file or the test goes on.
+matches are outlined in the page. Edit the locator and it is counted again. The outline goes
+when the cursor leaves the file or the test goes on.
 
 The locator must start from the page the test stopped on, as the code written there would: a line of `adminPage` at a
 stop on `page` may be another page, and says so for a moment instead of a count. Only the stopped file's lines are

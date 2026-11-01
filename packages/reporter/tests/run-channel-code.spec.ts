@@ -58,7 +58,7 @@ customElements.define('x-secret', class extends HTMLElement {
 if (location.pathname === '/big') document.querySelector('section p').textContent = 'many words '.repeat(105 * 1024);
 const PICK = location.pathname === '/r' || location.pathname === '/big' ? 'section' : 'button';
 new MutationObserver(() => {
-  if (document.querySelector('x-pw-glass') && !window.__glassSaid) {
+  if (document.querySelector('[data-piwi-stop-highlight]') && !window.__glassSaid) {
     window.__glassSaid = true;
     fetch('/glass', { method: 'POST', body: location.pathname });
   }
@@ -114,13 +114,15 @@ const painted = (page) => page.evaluate(() => new Promise((resolve) => new Perfo
   observer.disconnect();
   resolve();
 }).observe({ type: 'paint', buffered: true })));
-const glassIn = (page) => page.evaluate(() => document.querySelectorAll('x-pw-glass').length);
-const glassInFrame = (page) => page.frames().find((f) => f !== page.mainFrame()).evaluate(() => document.querySelectorAll('x-pw-glass').length);
+// The highlights a page shows: Playwright's layer, where the test's own are, and Piwi's own.
+const LAYERS = 'x-pw-glass, [data-piwi-stop-highlight]';
+const glassIn = (page) => page.evaluate((layers) => document.querySelectorAll(layers).length, LAYERS);
+const glassInFrame = (page) => page.frames().find((f) => f !== page.mainFrame()).evaluate((layers) => document.querySelectorAll(layers).length, LAYERS);
 test('keeps the text bodies', async ({ page }) => {
   await page.goto('${base}/k');
   await expect(page).toHaveTitle('done');
   await page.keyboard.press('Tab'); // bp
-  test.info().annotations.push({ type: 'glass', description: String(await page.evaluate(() => document.querySelectorAll('x-pw-glass').length)) });
+  test.info().annotations.push({ type: 'glass', description: String(await glassIn(page)) });
 });
 test('keeps nothing of the test before', async ({ page }) => {
   await page.goto('${base}/a');
@@ -600,7 +602,7 @@ new MutationObserver(() => {
   const bar = document.getElementById('__piwi-pause-bar');
   if (!bar || bar.dataset.glass) return;
   bar.dataset.glass = '1';
-  (window.__glassAtBars ??= []).push(document.querySelectorAll('x-pw-glass').length);
+  (window.__glassAtBars ??= []).push(document.querySelectorAll('[data-piwi-stop-highlight]').length);
 }).observe(document.documentElement, { childList: true, subtree: true });
 </script>`);
       case '/late':
@@ -617,7 +619,11 @@ new MutationObserver(() => {
           `${PAGE}<iframe src="${server.url.replace('127.0.0.1', 'localhost')}/busy"></iframe><script>
 window.__glassAdded = [];
 new MutationObserver((records) => {
-  for (const r of records) for (const n of r.addedNodes) if (n.nodeName === 'X-PW-GLASS') window.__glassAdded.push(Date.now());
+  for (const r of records) {
+    for (const n of r.addedNodes) {
+      if (n.nodeName === 'X-PW-GLASS' || n.dataset?.piwiStopHighlight) window.__glassAdded.push(Date.now());
+    }
+  }
 }).observe(document.documentElement, { childList: true });
 </script>`,
         );
@@ -830,10 +836,10 @@ describe('code from a stop, the worker’s part', () => {
 
   it('counts a locator on the stopped page, outlines its matches and takes the outline down as the test goes on', () => {
     const [, , , one, none, broken, again] = heard['keeps the text bodies']!;
-    expect(one).toEqual({ ok: true, message: '1 element matches.', count: 1 });
-    expect(none).toEqual({ ok: true, message: 'No element matches.', count: 0 });
+    expect(one).toEqual({ ok: true, message: '1 element matches.', count: 1, outlined: true });
+    expect(none).toEqual({ ok: true, message: 'No element matches.', count: 0, outlined: false });
     expect(broken).toEqual({ ok: false, message: 'getByRole( is not a locator Piwi can build.', count: null });
-    expect(again).toEqual({ ok: true, message: '1 element matches.', count: 1 });
+    expect(again).toEqual({ ok: true, message: '1 element matches.', count: 1, outlined: true });
     // Drawn in the page while it stood stopped, gone once the test went on.
     expect(outlined).toContain('/k');
     const glass = tests[0]!.annotations.find((a) => a.type === 'glass');
@@ -844,14 +850,14 @@ describe('code from a stop, the worker’s part', () => {
     // Counted at the test's breakpoint, its one stop.
     expect(stops['takes every outline down']?.map((s) => s.reason)).toEqual(['breakpoint']);
     expect(heard['takes every outline down']).toEqual([
-      { ok: true, message: '1 element matches.', count: 1 },
-      { ok: true, message: '1 element matches.', count: 1 },
+      { ok: true, message: '1 element matches.', count: 1, outlined: true },
+      { ok: true, message: '1 element matches.', count: 1, outlined: true },
     ]);
     const result = tests.find((t) => t.title === 'takes every outline down')!;
     expect(result.annotations.find((a) => a.type === 'same')?.description).toBe('true');
     // No field of the page carries a style it did not: taking an outline down leaves the fields' caret alone.
     expect(result.annotations.find((a) => a.type === 'styled')?.description).toBe('0');
-    // Nor does Playwright's highlight layer stay, on a page that showed none of its own.
+    // Nor does a highlight layer stay, Piwi's or Playwright's, on a page that showed none of its own.
     expect(result.annotations.find((a) => a.type === 'glass')?.description).toBe('0');
   });
 
@@ -860,7 +866,9 @@ describe('code from a stop, the worker’s part', () => {
       ['breakpoint', false],
       ['breakpoint', true],
     ]);
-    expect(heard['keeps the test’s own highlight']).toEqual([{ ok: true, message: '1 element matches.', count: 1 }]);
+    expect(heard['keeps the test’s own highlight']).toEqual([
+      { ok: true, message: '1 element matches.', count: 1, outlined: true },
+    ]);
     const result = tests.find((t) => t.title === 'keeps the test’s own highlight')!;
     expect(result.annotations.find((a) => a.type === 'same')?.description).toBe('true');
     expect(result.annotations.find((a) => a.type === 'glass')?.description).toBe('1');
@@ -882,22 +890,21 @@ describe('code from a stop, the worker’s part', () => {
     const kept = tests.find((t) => t.title === 'keeps the test’s own highlight in a frame with no address')!;
     expect(kept.annotations.find((a) => a.type === 'glass')?.description).toBe('1');
     expect(heard['takes the outline down in a frame with no address']).toEqual([
-      { ok: true, message: '1 element matches.', count: 1 },
+      { ok: true, message: '1 element matches.', count: 1, outlined: true },
     ]);
     const outline = tests.find((t) => t.title === 'takes the outline down in a frame with no address')!;
     expect(outline.annotations.find((a) => a.type === 'glass')?.description).toBe('0');
   });
 
   it('keeps the test’s own highlight in a frame whose response had no content, and takes an outline drawn in one down', () => {
-    // Before 1.60, a page that shows a highlight of the test's own, in a frame too, gets none of Piwi's.
-    expect(outlined.includes('/empty-frame')).toBe(playwrightAtLeast('1.60'));
+    expect(outlined).toContain('/empty-frame');
     const kept = tests.find(
       (t) => t.title === 'keeps the test’s own highlight in a frame whose response had no content',
     )!;
     const [before, after] = kept.annotations.find((a) => a.type === 'glass')!.description!.split(' ');
     expect(after).toBe(before);
     expect(heard['takes the outline down in a frame whose response had no content']).toEqual([
-      { ok: true, message: '1 element matches.', count: 1 },
+      { ok: true, message: '1 element matches.', count: 1, outlined: true },
     ]);
     const outline = tests.find((t) => t.title === 'takes the outline down in a frame whose response had no content')!;
     expect(outline.annotations.find((a) => a.type === 'glass')?.description).toBe('0');
@@ -924,9 +931,9 @@ describe('code from a stop, the worker’s part', () => {
     expect(result.annotations.find((a) => a.type === 'late')?.description).toBe('0');
   });
 
-  it('highlights no locator Playwright resolves in the page’s own world before 1.60, the test’s own shown after', () => {
+  it('highlights a locator Playwright resolves in the page’s own world, the test’s own shown after', () => {
     const title = 'shows the test’s own highlight from an engine run in the page, after a stop at one';
-    expect(heard[title]).toEqual([playwrightAtLeast('1.60')]);
+    expect(heard[title]).toEqual([true]);
     const result = tests.find((t) => t.title === title)!;
     expect(result.annotations.find((a) => a.type === 'glass')?.description).toBe('1');
   });
@@ -1040,7 +1047,8 @@ describe('code from a stop, the worker’s part', () => {
       message: "Assert needs the pause bar in the test's window, and this stop shows none: run the test headed.",
     });
     expect(listed).toMatchObject({ ok: true, message: 'The test kept 3 responses.' });
-    expect(counted).toEqual({ ok: true, message: '1 element matches.', count: 1 });
+    // A stop no pause bar shows: nothing is outlined.
+    expect(counted).toEqual({ ok: true, message: '1 element matches.', count: 1, outlined: false });
   });
 
   it('hides the credentials of the URL a failure names in its title and its error', () => {

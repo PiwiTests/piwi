@@ -15,13 +15,14 @@ import { internalCall, resolvePlaywrightPackageJson } from './quiet-capture.js';
  * find no element, and the viewport the frame names, goes as it is; one whose two reads find the same boxes goes with
  * them painted over, two a second at most (`MASKED_SPACING_MS`); any other is replaced by a screenshot taken between two
  * reads, which goes, painted over, when those agree, and no image goes when they do not (the page moved). A child
- * frame's boxes are placed from its iframe's content box; an iframe drawn at another size than its own (a transform)
- * is painted over whole. Each image keeps the size of the frame it stands for. The paint is `jpeg-js` as Playwright
+ * frame's boxes are placed from its iframe's content box; an iframe drawn at another size than its own (a transform),
+ * or whose frame does not answer within `FRAME_READ_MS` (a lazy frame, a busy one), is painted over whole. Each image
+ * keeps the size of the frame it stands for. The paint is `jpeg-js` as Playwright
  * bundles it: an image is decoded, its boxes filled, scaled down to that size and encoded again. No image goes, and the
  * viewers hear why, while an image shows a masked element and there is no `jpeg-js` to paint with, while a locator of
  * the project's is one this Playwright cannot build or this reporter cannot read, and once the boxes could not be read
  * `MAX_FAILED_READS` times in a row. An element the page shows only between two reads, less than a frame's interval,
- * is not seen.
+ * is not seen. The agent's image of a stopped page is painted over the same way (`maskedImage`).
  */
 
 /** A box of the page's viewport, in CSS pixels. */
@@ -59,6 +60,11 @@ const MAX_FRAMES = 32;
 const PAD = 2;
 /** Two reads of a box, or of a size, agree within this many CSS pixels. */
 const SAME_WITHIN = 1;
+/**
+ * How long a frame's masked elements may take to be read: a child frame that has not answered by then (a lazy frame, an
+ * awaited response) is painted over whole, from its iframe's box.
+ */
+const FRAME_READ_MS = 1000;
 /** How many reads may fail in a row before the viewers hear that no image goes. */
 const MAX_FAILED_READS = 3;
 /** The mask's color, in RGB. */
@@ -186,10 +192,47 @@ async function childOrigin(
   });
 }
 
-/** The boxes of the masked elements `frame` shows, in the page's viewport; null when they cannot be read. */
+/** `run`'s answer, or undefined once `ms` passed, `run` left to settle on its own. */
+async function within<T>(run: Promise<T>, ms: number): Promise<T | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      run,
+      new Promise<undefined>((resolve) => (timer = setTimeout(() => resolve(undefined), ms))),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * A child frame that did not answer, painted over whole: its iframe's box in the page's viewport, none for an iframe
+ * the page does not draw; null when its parent does not say where it is either.
+ */
+async function wholeFrame(page: Page, frame: Frame): Promise<FrameRead | null> {
+  const box = await within(
+    internalCall(page, async () => {
+      const element = await frame.frameElement();
+      try {
+        return await element.boundingBox();
+      } finally {
+        await element.dispose();
+      }
+    }),
+    FRAME_READ_MS,
+  ).catch(() => undefined);
+  if (box === undefined) return null;
+  return { rects: box ? [[box.x, box.y, box.width, box.height]] : [], width: 0, height: 0 };
+}
+
+/**
+ * The boxes of the masked elements `frame` shows, in the page's viewport; null when they cannot be read. A child frame
+ * that does not answer within `FRAME_READ_MS` is painted over whole (`wholeFrame`).
+ */
 async function readFrame(page: Page, frame: Frame, masks: readonly string[]): Promise<FrameRead | null> {
   try {
-    const read = await readFrameRects(page, frame, masks);
+    const read = await within(readFrameRects(page, frame, masks), FRAME_READ_MS);
+    if (!read) return frame === page.mainFrame() ? null : await wholeFrame(page, frame);
     if (!read.rects.length || frame === page.mainFrame()) return read;
     const origin = await childOrigin(page, frame, read);
     if (!origin) return { ...read, rects: [] };
@@ -319,6 +362,42 @@ function paintBoxes(
   }
   const fits = image.width <= size.width && image.height <= size.height;
   return jpeg.encode(fits ? image : shrink(image, size.width, size.height), quality).data;
+}
+
+/**
+ * An image of `page`'s viewport with its secret fields (`SECRET_FIELD_SELECTOR`, in every frame) painted over in the
+ * image itself, never in the page, so the test's own highlights stay as they are: taken between two reads of their
+ * boxes, through `internalCall`, which must agree. Null when they do not, when the page cannot be read (`readBoxes`),
+ * and when a field shows and there is no `jpeg-js` to paint with. `style` applies while the image is taken.
+ */
+export async function maskedImage(
+  page: Page,
+  options: { quality: number; style?: string; timeout: number },
+): Promise<Buffer | null> {
+  const before = await readBoxes(page, []);
+  if (!before || typeof before === 'string') return null;
+  const shot = await internalCall(page, () =>
+    page.screenshot({
+      type: 'jpeg',
+      quality: options.quality,
+      timeout: options.timeout,
+      ...(options.style ? { style: options.style } : {}),
+    }),
+  ).catch(() => null);
+  if (!shot) return null;
+  const after = await readBoxes(page, []);
+  if (!after || typeof after === 'string' || !sameBoxes(before.boxes, after.boxes)) return null;
+  const { width, height } = after.viewport;
+  if (!near(width, before.viewport.width) || !near(height, before.viewport.height)) return null;
+  if (!after.boxes.length) return shot;
+  const jpeg = jpegCodec();
+  const size = jpegSize(shot);
+  if (!jpeg || !size) return null;
+  try {
+    return paintBoxes(jpeg, { data: shot, width, height, at: Date.now() }, after.boxes, size, options.quality);
+  } catch {
+    return null;
+  }
 }
 
 export interface SecretFieldMaskOptions {

@@ -35,17 +35,11 @@ responsibilities.
    - the editor's breakpoints (`internal/capture/pause-at.ts`, with `PIWI_PAUSE_AT` in a headed local run): the pause
      bar, `PW_CODEGEN_NO_INSPECTOR`, the wrapped `Page.prototype.pause`, the runner internals it reads
      (`_onDidFinishTestFunctionCallbacks`, `_timeoutManager.defaultSlot()`, both feature-checked), the `piwi-pauses`
-     attachment and the locator posted to `PIWI_EDITOR_SEND` (`@piwitests/core/editor-send`); and a stop's highlights,
-     under selectors of Piwi's own (`highlightAtStop`), which leave the test's own highlights and screencast overlays
-     as they were, but for one Playwright 1.63 holds for a frame the page does not show then: Playwright's highlight
-     layer (`x-pw-glass`) is taken down as a stop that highlighted ends only on a page that showed none as it began
-     (`takeLayerDown`; `readHighlightLayer` takes a frame with no address through `_loadStates` or its answer, and
-     from 1.63 a document with no root element yet as showing one), in Playwright's own world alone on 1.60 to 1.62,
-     where the layer of a locator resolved in the page's world stays; from 1.63, a page with a frame that does not
-     answer within two seconds gets no highlight (`mayHighlight`); and on Playwright 1.59, whose take-down removes the
-     whole layer of its own world, with `PW_TEST_SCREENSHOT_NO_FONTS_READY` set while the stop holds the test, a page
-     that showed one gets no highlight, nor a locator resolved in the page's world (`highlightsLocator`, reading
-     `_selector` and `selectors._selectorEngines`);
+     attachment and the locator posted to `PIWI_EDITOR_SEND` (`@piwitests/core/editor-send`); and a stop's highlights
+     and outlines, which Piwi draws itself in its own layer of the page (`highlightAtStop`, `showStopHighlight` of
+     `@piwitests/picker-dom` through `locator.evaluateAll`), never through Playwright's highlight, so the test's own
+     highlights and screencast overlays stay as they were: each is taken down before the test goes on, and one its
+     frame draws later draws nothing (`__piwiStopHighlightsGone`, in the page's world);
    - with `PIWI_RECORD_CHANNEL`, **Record here** handing the page to the editor's recorder
      (`internal/capture/record-handoff.ts`, framed as `@piwitests/core/ide-recorder`): this package carries the relay
      alone, the recorder's host stays in the editor service;
@@ -97,8 +91,8 @@ responsibilities.
    through `hideSecretsInUrl`, and a held failure's title and error through `hideSecretsInText`
    (`tests/run-channel-code.spec.ts`); for an agent, the value of a field that holds a secret (`SECRET_FIELDS` in
    `agent-page.ts`: a password field and `SECRET_AUTOCOMPLETE`'s) is hidden in the snapshot, plain or quoted
-   (`withoutFieldSecrets`), masked in the image, in every frame, and never sent as an element's
-   (`tests/agent-page.spec.ts`).
+   (`withoutFieldSecrets`), painted over in the image as the live view's are (`maskedImage`), in every frame, and
+   never sent as an element's (`tests/agent-page.spec.ts`).
 4. **The desktop discovery file.** The desktop shell writes `~/.piwi/desktop.json` (`apps/desktop/src-tauri/src/lib.rs`)
    and this package reads its `url`, `token` and `pid` (`internal/config/desktop.ts`); the shell also writes
    `projects` for other readers ([`apps/desktop/AGENTS.md`](../../apps/desktop/AGENTS.md)). The two ship on independent
