@@ -27,7 +27,7 @@ npx @piwitests/reporter flake tests/checkout.spec.ts:42
 The command reads the test's plan from the dashboard, so it needs the reporter's `PIWI_DASHBOARD_URL` and
 `PIWI_API_KEY` (or the project's `.env`). The specs must use the
 [capture fixtures](/guide/capture-fixtures), which apply the conditions inside the page. In the
-[desktop app](./desktop#reproducing-a-flake), **Reproduce this flake** on the Flakiness tab runs it at the commit
+[desktop app](./desktop-runs#reproducing-a-flake), **Reproduce this flake** on the Flakiness tab runs it at the commit
 of the latest failure, and a bisect of a reproduced flake runs its arm at each step (`flake verify --bisect`).
 
 It runs, one after the other:
@@ -190,4 +190,4 @@ The [live demo](https://piwitests.dev/demo/) cannot run the lab but holds experi
 - [Piwi CLI](/reference/cli#flake): every flag of `piwi flake`
 - [Clue rules](/reference/clues): `known-flake-suspect`
 - [Agent skills](./agent-skills): `stabilize-flaky-tests`
-- [Desktop app](./desktop#reproducing-a-flake): the lab and a flake-aware bisect in a worktree
+- [Desktop app](./desktop-runs#reproducing-a-flake): the lab and a flake-aware bisect in a worktree

@@ -89,6 +89,17 @@ your editor started) cannot be shared: the app hands out no live view key, since
 offers no **Share live** for it, the app's project settings have no **Live view** section, and on the run's page its
 running tests say **See its page at a stop** where **Watch** would be.
 
+## Reproducing a flake
+
+On a flaky test's Flakiness tab, **Reproduce this flake** runs the [Flake Lab](/features/flake-lab) here: it checks
+out the commit of the test's latest failure in a throwaway worktree, installs, and runs `piwi flake` there. Its options
+pick the arms (every suspect, all at once, or one), the runs and the budget. The experiment lands on the tab, recorded
+as run from `desktop`.
+
+Once an experiment has reproduced a test, **Find the breaking commit here** on its failure is flake-aware: each step
+runs the reproducing arm (`piwi flake verify --bisect`), bad at a failure with the same error as in CI, good after
+enough clean runs, which tells when a flake started.
+
 ## From Piwi Picker
 
 Paired with the app, [Piwi Picker's Runs window](./runs-window#the-desktop-app-s-runs) lists its runs beside your

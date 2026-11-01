@@ -108,13 +108,17 @@ channel, so a per-user install pulls a per-user update.
     Tauri's shortcut script calls on macOS and Linux); the trace and output
     windows hold no IPC grant, so they zoom on Windows only, where the web view
     does it itself.
-11. A local run that ends with failures while the window is not focused asks
-    for attention once (`request_user_attention`): the Dock icon bounces, the
-    taskbar button flashes, or Linux sets the urgency hint. While a local run or
-    job is going, the machine does not idle-sleep (`keep_awake_while_runs_go`,
-    the `keepawake` crate, on a thread of its own since Windows ties the
-    request to the thread that made it); the display still turns off, and
-    closing a laptop's lid still sleeps it.
+11. A run reported into the app that ends with failures while the window is
+    not focused asks for attention once (`request_user_attention`, on the
+    dashboard's "Run failed" flash, never for a failed attempt while a run
+    goes): the Dock icon bounces, the taskbar button flashes, or Linux sets the
+    urgency hint, which focusing the window withdraws. While a local run or job
+    is going, a run in UI mode or paused at a stop included, the machine does
+    not idle-sleep (`keep_awake_while_runs_go`, the `keepawake` crate, on a
+    thread of its own since Windows ties the request to the thread that made
+    it; on Linux with logind's sleep inhibitor too, which GNOME's idle suspend
+    respects). The display still turns off, closing a laptop's lid still sleeps
+    it, and a refused request is logged.
 12. On macOS the app menu is Tauri's default with Piwi's items (`app_menu`,
     run by `run_app_menu_action`): Settings… (Cmd+,), which shows the page
     through a `piwi:open-page` event; a Quit (Cmd+Q) that asks while local runs

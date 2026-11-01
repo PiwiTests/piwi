@@ -72,8 +72,10 @@ const RUN_BG_KEY: &str = "runInBackground";
 /// plugin has saved a state, the window opens maximized unless this is false.
 const WINDOW_MAXIMIZED_KEY: &str = "windowMaximized";
 /// What the window-state plugin saves and restores of each window: everything
-/// but visibility, which Run in background and `--hidden` decide.
-const WINDOW_STATE_FLAGS: StateFlags = StateFlags::all().difference(StateFlags::VISIBLE);
+/// but visibility, which Run in background and `--hidden` decide, and full
+/// screen, which a window hidden at login or a new trace window should not open in.
+const WINDOW_STATE_FLAGS: StateFlags =
+    StateFlags::all().difference(StateFlags::VISIBLE.union(StateFlags::FULLSCREEN));
 
 /// The key the window-state plugin keeps a window's state under: the
 /// dashboard window's own, and one for each kind of window opened at run time
@@ -237,7 +239,7 @@ struct TrayStatusInner {
     activity: Option<String>,
     /// Label of the local run(s) currently in flight, e.g. "Running 7/12…".
     progress: Option<String>,
-    /// Whether the run progress last reported a failed end (`error`).
+    /// Whether the run progress last showed a failed end (`is_failed_end`).
     run_failed: bool,
 }
 
@@ -307,10 +309,17 @@ fn desktop_set_activity(app: tauri::AppHandle, count: u32, status: Option<String
     });
 }
 
-/// Whether the run progress just turned to a failed end (`error`), which asks
-/// for the user's attention once, however often the dashboard repeats it.
-fn run_newly_failed(was_failed: bool, state: &str) -> bool {
-    state == "error" && !was_failed
+/// Whether the run progress shows a failed end: the dashboard's "Run failed"
+/// flash once the last run ended, `error` without `failing`. A run still going
+/// sends `error` with `failing` as soon as an attempt fails, a flaky one too.
+fn is_failed_end(state: &str, failing: bool) -> bool {
+    state == "error" && !failing
+}
+
+/// Whether the run progress just turned to a failed end, which asks for the
+/// user's attention once, however often the dashboard repeats it.
+fn run_newly_failed(was_failed_end: bool, state: &str, failing: bool) -> bool {
+    is_failed_end(state, failing) && !was_failed_end
 }
 
 /// Map the dashboard's run state to a taskbar/Dock progress-bar status. Any
@@ -430,8 +439,9 @@ fn desktop_set_run_progress(
         if let Some(tray_state) = handle.try_state::<TrayStatus>() {
             let mut inner = tray_state.0.lock().unwrap();
             inner.progress = if active { label.filter(|s| !s.is_empty()) } else { None };
-            newly_failed = run_newly_failed(inner.run_failed, &state);
-            inner.run_failed = state == "error";
+            let failing = failing.unwrap_or(false);
+            newly_failed = run_newly_failed(inner.run_failed, &state, failing);
+            inner.run_failed = is_failed_end(&state, failing);
         }
         refresh_tray_tooltip(&handle);
         // A run that failed while nobody looked: a Dock bounce on macOS, a
@@ -1030,10 +1040,17 @@ fn awake_change(running: bool, holding: bool, tried: bool) -> AwakeChange {
 /// Keep the machine from sleeping while a local run or job is going: a run, a
 /// reproduction, a bisect or a Flake Lab session can take an hour, and a
 /// sleeping machine stops it. Idle sleep only: the display still turns off, and
-/// closing a laptop's lid still puts it to sleep. One thread holds the
+/// closing a laptop's lid still puts it to sleep. On Linux it also takes
+/// logind's sleep inhibitor, since GNOME suspends an idle machine by asking
+/// logind to sleep, which an idle inhibitor does not stop. One thread holds the
 /// assertion for the life of the app, since Windows ties
-/// `SetThreadExecutionState` to the thread that set it.
-fn keep_awake_while_runs_go(app: AppHandle, shutting_down: Arc<AtomicBool>) -> std::io::Result<()> {
+/// `SetThreadExecutionState` to the thread that set it. A refused assertion is
+/// logged.
+fn keep_awake_while_runs_go(
+    app: AppHandle,
+    shutting_down: Arc<AtomicBool>,
+    log_path: PathBuf,
+) -> std::io::Result<()> {
     std::thread::Builder::new().name("keep-awake".into()).spawn(move || {
         let mut held: Option<keepawake::KeepAwake> = None;
         let mut tried = false;
@@ -1042,13 +1059,17 @@ fn keep_awake_while_runs_go(app: AppHandle, shutting_down: Arc<AtomicBool>) -> s
             match awake_change(running, held.is_some(), tried) {
                 AwakeChange::Take => {
                     tried = true;
-                    held = keepawake::Builder::default()
+                    match keepawake::Builder::default()
                         .idle(true)
+                        .sleep(cfg!(target_os = "linux"))
                         .reason("Playwright tests are running")
                         .app_name("Piwi Dashboard")
                         .app_reverse_domain("io.piwitests.dashboard")
                         .create()
-                        .ok();
+                    {
+                        Ok(assertion) => held = Some(assertion),
+                        Err(e) => append_log(&log_path, &format!("could not keep the machine awake during a run: {e}")),
+                    }
                 }
                 AwakeChange::Release => held = None,
                 AwakeChange::Nothing => {}
@@ -1102,7 +1123,7 @@ fn show_splash_status(app: &AppHandle, text: &'static str) {
 pub(crate) fn shut_down(app_handle: &AppHandle, server_wait: Option<Duration>) {
     // Save where the windows are: the plugin saves on `RunEvent::Exit`, which
     // the Windows updater's exit never sends.
-    let _ = app_handle.save_window_state(WINDOW_STATE_FLAGS);
+    save_window_places(app_handle);
     // Tell the supervisor this stop is deliberate so it doesn't restart
     // the server we are about to kill.
     if let Some(flag) = app_handle.try_state::<ShuttingDown>() {
@@ -1121,6 +1142,27 @@ pub(crate) fn shut_down(app_handle: &AppHandle, server_wait: Option<Duration>) {
     // at, so a later test run does not try a dead port.
     if let Some(discovery) = app_handle.try_state::<DiscoveryFile>() {
         let _ = std::fs::remove_file(&discovery.0);
+    }
+}
+
+/// Save where the windows are, on the main thread: the plugin holds its cache
+/// while it reads each window's place, a read another thread makes by waiting
+/// on the main thread, where the plugin's own window handlers take the same
+/// cache. From another thread (the updater's exit) the save is sent to the main
+/// thread, and waited for a moment.
+fn save_window_places(app: &AppHandle) {
+    if std::thread::current().name() == Some("main") {
+        let _ = app.save_window_state(WINDOW_STATE_FLAGS);
+        return;
+    }
+    let (saved, wait) = std::sync::mpsc::channel();
+    let handle = app.clone();
+    let sent = app.run_on_main_thread(move || {
+        let _ = handle.save_window_state(WINDOW_STATE_FLAGS);
+        let _ = saved.send(());
+    });
+    if sent.is_ok() {
+        let _ = wait.recv_timeout(Duration::from_secs(2));
     }
 }
 
@@ -1927,7 +1969,8 @@ fn run_app_menu_action(app: &AppHandle, action: AppMenuAction) {
         }
         AppMenuAction::Import => pick_files_to_open(app),
         AppMenuAction::History(direction) => {
-            if let Some(w) = app.get_webview_window("main") {
+            // The window the user is in: the dashboard, a trace or a run's output.
+            if let Some(w) = app.webview_windows().into_values().find(|w| w.is_focused().unwrap_or(false)) {
                 let _ = w.eval(&format!("history.{direction}()"));
             }
         }
@@ -2323,7 +2366,7 @@ pub fn run() {
             // intentional shutdown apart from a crash worth restarting.
             let shutting_down = Arc::new(AtomicBool::new(false));
             app.manage(ShuttingDown(shutting_down.clone()));
-            if let Err(e) = keep_awake_while_runs_go(app.handle().clone(), shutting_down.clone()) {
+            if let Err(e) = keep_awake_while_runs_go(app.handle().clone(), shutting_down.clone(), log_path.clone()) {
                 append_log(&log_path, &format!("could not start the keep-awake thread: {e}"));
             }
 
@@ -2587,6 +2630,13 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            // Seen: end the attention a failed run asked for (`desktop_set_run_progress`),
+            // which Linux's urgency hint keeps until it is withdrawn.
+            if let WindowEvent::Focused(true) = event {
+                if window.label() == "main" {
+                    let _ = window.request_user_attention(None);
+                }
+            }
             // The output windows close with the dashboard window, and the
             // dashboard hears when one is gone.
             if let WindowEvent::Destroyed = event {
@@ -2881,7 +2931,7 @@ mod tests {
         for id in ["quit", "show_logs", "open", "run_bg"] {
             assert_eq!(app_menu_action(id), None, "{id}");
         }
-        // The page path is one the dashboard's open-page handler accepts.
+        // Help opens the docs site.
         assert!(DOCS_URL.starts_with("https://piwitests.dev/"));
     }
 
@@ -2899,11 +2949,14 @@ mod tests {
 
     #[test]
     fn a_failed_end_asks_for_attention_once() {
-        assert!(run_newly_failed(false, "error"));
+        // The "Run failed" flash once the last run ended.
+        assert!(run_newly_failed(false, "error", false));
         // The dashboard repeats a state while it shows it: no second request.
-        assert!(!run_newly_failed(true, "error"));
+        assert!(!run_newly_failed(true, "error", false));
+        // A run still going with a failed attempt, a flaky one's included: no request.
+        assert!(!run_newly_failed(false, "error", true));
         for state in ["normal", "indeterminate", "paused", "none"] {
-            assert!(!run_newly_failed(false, state), "{state}");
+            assert!(!run_newly_failed(false, state, false), "{state}");
         }
     }
 
