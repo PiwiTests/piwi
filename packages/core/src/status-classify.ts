@@ -85,6 +85,30 @@ export function isExpectedFailurePassed(status: string | null | undefined, expec
   return status === 'failed' && expectedStatus === 'failed';
 }
 
+/**
+ * Whether a stored attempt status is an unexpected outcome: failed or timed out, in either spelling of timed out.
+ * `classifyStatus` stores an expected failure as `passed` and an unexpected pass as `failed`, so the stored status is
+ * already read against the test's expected status.
+ */
+export function isUnexpectedStatus(status: string | null | undefined): boolean {
+  return status === 'failed' || status === 'timedout' || status === 'timedOut';
+}
+
+/**
+ * Whether a test result is flaky, as Playwright counts it: its last attempt passed, and an earlier attempt that ran
+ * ended unexpectedly (`isUnexpectedStatus`). A retry is not flaky when every earlier attempt passed (a
+ * `describe.serial` group retried for another test's failure, or a `test.fail()` test that failed as expected), was
+ * skipped or did not run. Statuses are the stored ones (`classifyStatus`).
+ */
+export function isFlakyResult(
+  lastStatus: string | null | undefined,
+  earlierStatuses: Iterable<string | null | undefined>,
+): boolean {
+  if (lastStatus !== 'passed') return false;
+  for (const status of earlierStatuses) if (isUnexpectedStatus(status)) return true;
+  return false;
+}
+
 /** The fields `lastAttempts` groups and orders a run's executions by. */
 export interface AttemptRow {
   testCaseId: number;

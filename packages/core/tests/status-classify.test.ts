@@ -5,6 +5,8 @@ import {
   classifyStatus,
   resolveExpectedStatus,
   isExpectedFailurePassed,
+  isFlakyResult,
+  isUnexpectedStatus,
   bugOutcome,
   lastAttempts,
   looksFixed,
@@ -104,6 +106,40 @@ describe('expected status', () => {
     expect(isExpectedFailurePassed(failedBody, 'failed')).toBe(false);
     expect(isExpectedFailurePassed('failed', 'passed')).toBe(false);
     expect(isExpectedFailurePassed('failed', null)).toBe(false);
+  });
+});
+
+describe('isFlakyResult', () => {
+  it('reads a pass after a failed or timed-out attempt as flaky', () => {
+    expect(isFlakyResult('passed', ['failed'])).toBe(true);
+    expect(isFlakyResult('passed', ['timedout'])).toBe(true);
+    expect(isFlakyResult('passed', ['timedOut', 'passed'])).toBe(true);
+  });
+
+  it('reads a retry that passed after passing attempts as not flaky', () => {
+    // A describe.serial group retried for another test's failure runs this test again.
+    expect(isFlakyResult('passed', ['passed'])).toBe(false);
+    // An expected failure (test.fail()) is stored as passed on every attempt.
+    expect(isFlakyResult('passed', ['passed', 'passed'])).toBe(false);
+  });
+
+  it('leaves out the attempts that did not run', () => {
+    expect(isFlakyResult('passed', ['didnotrun'])).toBe(false);
+    expect(isFlakyResult('passed', ['skipped'])).toBe(false);
+    expect(isFlakyResult('passed', ['interrupted'])).toBe(false);
+    expect(isFlakyResult('passed', ['didnotrun', 'failed'])).toBe(true);
+  });
+
+  it('reads a result whose last attempt did not pass as not flaky', () => {
+    expect(isFlakyResult('failed', ['passed'])).toBe(false);
+    expect(isFlakyResult('didnotrun', ['failed'])).toBe(false);
+    expect(isFlakyResult('passed', [])).toBe(false);
+  });
+
+  it('reads an unexpected pass of an expected failure as an unexpected outcome', () => {
+    // classifyStatus stores a test.fail() test that passed as failed.
+    expect(isUnexpectedStatus(classifyStatus('passed', [{ type: 'fail' }]))).toBe(true);
+    expect(isUnexpectedStatus(classifyStatus('failed', [{ type: 'fail' }]))).toBe(false);
   });
 });
 

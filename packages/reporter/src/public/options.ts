@@ -349,7 +349,7 @@ export interface PiwiDashboardOptions {
 
   // ── CI gate ────────────────────────────────────────────────────────────────
   /**
-   * Fail the run when any test was flaky (passed only after a retry). Forwarded
+   * Fail the run when any test was flaky (passed after an earlier attempt failed). Forwarded
    * to Playwright's native `failOnFlakyTests` config option (Playwright 1.52+)
    * when the reporter is installed via `wrapConfig`, so a flaky-only run exits
    * non-zero without any server round-trip. Defaults to `false`. Can also be

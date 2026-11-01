@@ -287,7 +287,7 @@ export class RunSubmitter {
   ): Promise<SubmitOutcome> {
     const sm = this.streamManager!;
     try {
-      const flakyTests = run.testCases.filter((tc) => tc.status === 'passed' && (tc.retries || 0) > 0).length;
+      const { flakyTests } = computeDistinctRunCounts(run.testCases);
       const durations = run.testCases.filter((tc) => tc.duration != null).map((tc) => tc.duration as number);
 
       await sm.uploadRemaining(run.testCases);
