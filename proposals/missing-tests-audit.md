@@ -12,17 +12,24 @@ control) are out of scope; they appear only where they feed or consume the signa
 **Status.** Proposed 2026-10-31, against `main` at v0.63.0 (`2bd05d42`). The quick wins of §10 are built, some in
 part. A pull request that builds more of §10 updates this paragraph.
 
-- **Built:** S1 to S4, S6, S9 and S13.
-- **S5, in part.** Verdicts count by their reason, and muting holds in MCP and on the feature map. *Covered by* is
-  still one verb (open question 2).
-- **S8, in part.** An OpenAPI document's paths sit under its server path. Requests to the project's other origins are
-  still dropped (TM-5).
-- **S10, in part.** `--last-failed` and `--only-changed` runs are partial, a target line reads its innermost function,
-  and build output and generated sources leave the default scope. `--project` and `--max-failures` runs still count as
-  complete, and carry-forward is still by suite (CV-1).
-- **S11, in part.** The comment goes to the pull request the run names, and `onlyOnFailure` keeps the uncovered
-  changes. Statuses still go to the run's commit, and the projects of one repository still share one comment and one
-  status context (CT-3).
+- **Built:** S2 to S4, S6, S9 and S13.
+- **S1, in part.** *Success only* no longer counts a GET page load, so a page never reads as a route without its
+  error path. A page load still reaches the route of its URL, since a backend can serve a declared route by
+  navigation (open question 1). So *single covering test* can still raise a page and its route, and the probe plan
+  still holds pairs whose route a test only loaded.
+- **S5, in part.** Verdicts count by their reason, and a muted detector's gaps list last in the Gaps tab and MCP and
+  leave the feature map and graph. *Covered by* is still one verb (open question 2).
+- **S8, in part.** An OpenAPI document's paths sit under its server path, and a route a later read no longer finds
+  stops being declared. Requests to the project's other origins are still dropped (TM-5).
+- **S10, in part.**
+  - Built: `--last-failed`, `--only-changed`, `--test-list` and command-line `--grep` runs are partial. A target line
+    reads its innermost function. Build output and generated sources leave the default scope.
+  - Left: `--project` and `--max-failures` runs still count as complete, and carry-forward is still by suite (CV-1).
+- **S11, in part.**
+  - Built: the comment goes to the pull request the run names, when the CI runs in the repository Piwi posts to, and
+    *Only comment on failures* keeps the comment of a green run whose change left a file no test reached.
+  - Left: statuses still go to the run's commit, and the projects of one repository still share one comment and one
+    status context (CT-3).
 - **S12, in part.** A finding's exposure shows its reach. A feature is still colored by its worst class.
 - **Not built:** S7. The docs say which ids collapse in a key ([`gap-detectors.md`](../apps/docs/reference/gap-detectors.md)).
 
