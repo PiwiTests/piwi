@@ -156,6 +156,23 @@ export function computePatchCoverage(
   return out.changedLines > 0 ? out : null;
 }
 
+/** The most uncovered files the gate's warning names; it counts the rest. */
+const WARNING_FILES = 5;
+
+/**
+ * The gate's warn-only `maxUncoveredChanges` warning: how many changed files no
+ * test reached, against the threshold, naming the first of them.
+ */
+export function uncoveredChangesWarning(files: readonly string[], count: number, threshold: number): string {
+  const named = files.slice(0, WARNING_FILES);
+  const more = count - named.length;
+  const list = named.length > 0 ? ` (${named.join(', ')}${more > 0 ? `, and ${more} more` : ''})` : '';
+  return (
+    `${count} uncovered ${count === 1 ? 'change' : 'changes'} (threshold ${threshold}): ` +
+    `changed ${count === 1 ? 'file' : 'files'} no test reached${list} — warn-only.`
+  );
+}
+
 /** The gate's warn-only `minPatchCoverage` warning; null when the change meets it. */
 export function patchCoverageWarning(pc: PatchCoverage | null, minPercent: number): string | null {
   if (!pc) {

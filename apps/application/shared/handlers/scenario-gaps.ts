@@ -3745,6 +3745,8 @@ function mapGapRow(r: typeof scenarioGaps.$inferSelect): ScenarioGapRow {
 export interface GapFilters {
   /** One gap by its id. */
   gapId?: number;
+  /** The gaps of one key, such as a changed file's path. */
+  key?: string;
   kind?: string;
   class?: string;
   detector?: string;
@@ -3771,6 +3773,7 @@ export async function listScenarioGaps(
   if (filters.status && filters.status !== 'all') where.push(eq(scenarioGaps.status, filters.status));
   else if (!filters.status) where.push(eq(scenarioGaps.status, 'open'));
   if (filters.gapId != null) where.push(eq(scenarioGaps.id, filters.gapId));
+  if (filters.key) where.push(eq(scenarioGaps.key, filters.key));
   if (filters.kind) where.push(eq(scenarioGaps.kind, filters.kind));
   if (filters.class) where.push(eq(scenarioGaps.class, filters.class));
   if (filters.detector) where.push(eq(scenarioGaps.detector, filters.detector));

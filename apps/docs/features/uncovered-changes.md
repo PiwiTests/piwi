@@ -95,7 +95,8 @@ comment again a few seconds later; a later push's comment is never overwritten b
 
 When commit statuses are on too, a second status joins the run's own: `piwi/tests/change-coverage` with the default
 status context, described as *3 of 7 changed files no test reached*, with the patch coverage when there is one. It is
-always **success**, so it informs a reviewer without blocking the merge.
+always **success**, so it informs a reviewer without blocking the merge, and it leads to the pull request's uncovered
+changes on the Gaps tab.
 
 The files no test reached are the Test Map's part: they are left out while the *changed, unreached* detector is
 [muted](/features/scenario-gaps#triage) on the project, or where the Test Map is declined. The changed lines are
@@ -117,6 +118,7 @@ Two flags of [`piwi gate`](/guide/ci#blocking-a-merge) read the same rule, one p
   none of them (the line form). Run it after the unit-test jobs uploaded their reports.
 
 Both are **warn-only**: they never change the verdict or the exit code, because the numbers inform rather than prove.
+The first names up to five of the files, and a stored evaluation keeps its warnings.
 Either warns too when the run has no source control diff to count. Without them, the gate ignores uncovered changes.
 
 ## Limits

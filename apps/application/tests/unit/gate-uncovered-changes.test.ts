@@ -93,6 +93,24 @@ describe('the gate’s warn-only uncovered changes', () => {
     ]);
   });
 
+  test('names the files no test reached, and stores the warnings with the evaluation', async () => {
+    const file = (filePath: string, reach: ChangeCoverage['files'][number]['reach']) =>
+      ({ filePath, additions: 1, deletions: 0, reach, ticket: null }) as ChangeCoverage['files'][number];
+    coverage.value = changeCoverage({
+      uncoveredFiles: 7,
+      files: [
+        file('src/ok.ts', 'reached'),
+        ...['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((n) => file(`src/${n}.ts`, 'unreached')),
+      ],
+    });
+    const result = await gate({ params: { id: '1' }, body: { maxUncoveredChanges: 0 } });
+    const warning =
+      '7 uncovered changes (threshold 0): changed files no test reached (src/a.ts, src/b.ts, src/c.ts, src/d.ts, src/e.ts, and 2 more) — warn-only.';
+    expect(result.warnings).toEqual([warning]);
+    const [stored] = await state.db.select({ warnings: schema.gateEvaluations.warnings }).from(schema.gateEvaluations);
+    expect(stored?.warnings).toEqual([warning]);
+  });
+
   test('says nothing when the change meets both', async () => {
     const result = await gate({ params: { id: '1' }, body: { maxUncoveredChanges: 3, minPatchCoverage: 75 } });
     expect(result.warnings).toBeUndefined();

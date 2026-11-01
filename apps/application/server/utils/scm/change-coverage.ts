@@ -462,7 +462,7 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
   ).catch(() => new Map<string, number>());
   return {
     coverage,
-    pr: toPrChangeCoverage(coverage, !muted.has('changed-unreached'), { projectId: run.projectId, gapIds }),
+    pr: toPrChangeCoverage(coverage, !muted.has('changed-unreached'), { projectId: run.projectId, prNumber, gapIds }),
     locatorBreaks,
   };
 }
@@ -599,11 +599,12 @@ export async function readChangeCoverage(
 export function toPrChangeCoverage(
   coverage: ChangeCoverage,
   fileReach = true,
-  gaps: { projectId?: number; gapIds?: ReadonlyMap<string, number> } = {},
+  gaps: { projectId?: number; prNumber?: number | null; gapIds?: ReadonlyMap<string, number> } = {},
 ): PrChangeCoverage {
   return {
     fileReach,
     projectId: gaps.projectId ?? null,
+    prNumber: gaps.prNumber ?? null,
     totalFiles: coverage.countedFiles,
     uncoveredFiles: coverage.uncoveredFiles,
     reachedFiles: coverage.reachedFiles,

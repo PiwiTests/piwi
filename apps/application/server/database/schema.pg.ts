@@ -2245,6 +2245,7 @@ export const gateEvaluations = pgTable(
     passed: boolean('passed').notNull(),
     verdict: text('verdict').notNull(), // 'passed' | 'failed' | 'inconclusive'
     violations: jsonb('violations').notNull(), // GateViolation[]
+    warnings: jsonb('warnings'), // string[]: the warn-only rules that warned, such as uncovered changes
     clusterIds: jsonb('cluster_ids'), // number[]: the clusters of the run's new regressions, read for an escape
     source: text('source').notNull(), // 'cli' | 'api'
     evaluatedAt: timestamp('evaluated_at', { mode: 'date' })

@@ -995,6 +995,13 @@
       "when": 1793398264020,
       "tag": "0141_new_red_hulk",
       "breakpoints": true
+    },
+    {
+      "idx": 142,
+      "version": "7",
+      "when": 1793525853801,
+      "tag": "0142_deep_skrulls",
+      "breakpoints": true
     }
   ]
 }

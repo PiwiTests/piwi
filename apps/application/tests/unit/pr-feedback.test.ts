@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'vitest';
 import {
   buildChangeCoverageStatus,
+  changeCoverageStatusUrl,
   buildCommitStatus,
   buildGateStatus,
   buildPrComment,
@@ -523,6 +524,16 @@ describe('change coverage section', () => {
     );
     // Without the instance's address the comment links nothing.
     expect(renderChangeCoverage(coverage({ projectId: 4 }))).not.toContain('open its gap');
+  });
+
+  test('the change-coverage status leads to the pull request’s uncovered changes, else to the run', () => {
+    const run = 'https://piwi.example.com/test-runs/42';
+    expect(changeCoverageStatusUrl(coverage({ projectId: 4, prNumber: 7 }), run)).toBe(
+      'https://piwi.example.com/projects/4?tab=gaps&gapPr=7',
+    );
+    expect(changeCoverageStatusUrl(coverage({ projectId: 4 }), run)).toBe(run);
+    expect(changeCoverageStatusUrl(coverage({ projectId: 4, prNumber: 7, uncoveredFiles: 0 }), run)).toBe(run);
+    expect(changeCoverageStatusUrl(coverage({ projectId: 4, prNumber: 7, fileReach: false }), run)).toBe(run);
   });
 
   test('reports a clean diff without listing files', () => {

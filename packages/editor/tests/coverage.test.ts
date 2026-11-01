@@ -779,7 +779,15 @@ describe('coverage in the editor', () => {
     );
     expect(await hover(refunds, 1)).toBe('');
     expect(await client.sendRequest('piwi/fileSummary', { uri: uri(refunds) })).toEqual({
-      file: { line: 0, title: `Uncovered changes: ${label}` },
+      file: {
+        line: 0,
+        title: `Uncovered changes: ${label}`,
+        command: {
+          title: 'Open its gap in the dashboard',
+          command: 'piwi.openInDashboard',
+          arguments: [expect.stringMatching(/\/projects\/\d+\?tab=gaps&gapFile=server%2Fapi%2Frefunds\.post\.ts$/)],
+        },
+      },
       lines: [],
     });
     expect(coverageAsks.filter((a) => a.file === refunds)).toEqual([]);

@@ -64,14 +64,26 @@ appliedLinkedStatus.value = linkedStatus;
 /** The most gaps one request returns; the server caps here, so a full page is truncated. */
 const PAGE_LIMIT = 200;
 
-// A `?gap=` link, such as a pull-request comment's, shows that one gap, whatever its status, without the feature map.
-const linkedGap = computed(() => {
-  const id = Number(route.query.gap);
+/** A positive integer from the query, else null. */
+function queryId(value: unknown): number | null {
+  const id = Number(value);
   return Number.isInteger(id) && id > 0 ? id : null;
-});
+}
+
+// A pull-request comment's links show one gap (`?gap=`), or the uncovered changes of one pull request
+// (`?gapPr=`, from its change-coverage status); an editor's, the gaps of one file (`?gapFile=`). Each
+// shows them whatever their status, without the feature map.
+const linkedGap = computed(() => queryId(route.query.gap));
+const linkedPr = computed(() => (linkedGap.value ? null : queryId(route.query.gapPr)));
+const linkedFile = computed(() =>
+  linkedGap.value || linkedPr.value || typeof route.query.gapFile !== 'string' || !route.query.gapFile
+    ? null
+    : route.query.gapFile,
+);
+const linked = computed(() => linkedGap.value != null || linkedPr.value != null || linkedFile.value != null);
 
 function showAllGaps() {
-  router.replace({ query: { ...route.query, gap: undefined } });
+  router.replace({ query: { ...route.query, gap: undefined, gapPr: undefined, gapFile: undefined } });
 }
 
 const gaps = ref<Gap[]>([]);
@@ -114,7 +126,11 @@ async function load() {
     const res = await $fetch<{ items: Gap[] }>(`/api/projects/${props.projectId}/gaps` as `/api/projects/:id/gaps`, {
       query: linkedGap.value
         ? { gap: linkedGap.value, status: 'all', limit: 1 }
-        : { status: statusFilter.value, limit: PAGE_LIMIT },
+        : linkedPr.value
+          ? { pr: linkedPr.value, detector: 'changed-unreached', status: 'all', limit: PAGE_LIMIT }
+          : linkedFile.value
+            ? { key: linkedFile.value, status: 'all', limit: PAGE_LIMIT }
+            : { status: statusFilter.value, limit: PAGE_LIMIT },
     });
     gaps.value = res.items ?? [];
     loadError.value = null;
@@ -137,7 +153,7 @@ async function load() {
   }
 }
 
-watch([() => props.projectId, statusFilter, linkedGap], load, { immediate: true });
+watch([() => props.projectId, statusFilter, linkedGap, linkedPr, linkedFile], load, { immediate: true });
 
 /** True once a full page came back — the server capped the list, so some are hidden. */
 const capped = computed(() => gaps.value.length >= PAGE_LIMIT);
@@ -339,9 +355,16 @@ const emptyText = computed(() =>
       </div>
     </div>
 
-    <p v-if="linkedGap" class="text-xs text-muted" data-testid="gaps-linked">
-      Showing the gap a link named.
-      <button type="button" :class="SENTENCE_LINK_CLASS" @click="showAllGaps">Show all gaps</button>
+    <p v-if="linked" class="text-xs text-muted" data-testid="gaps-linked">
+      <span>
+        <template v-if="linkedGap">Showing the gap a link named.</template>
+        <template v-else-if="linkedPr">Showing the uncovered changes of pull request #{{ linkedPr }}.</template>
+        <template v-else>
+          Showing the gaps of <span class="font-mono">{{ linkedFile }}</span
+          >; a pull-request run raises one for an uncovered change.
+        </template>
+      </span>
+      <button type="button" :class="[SENTENCE_LINK_CLASS, 'ms-1']" @click="showAllGaps">Show all gaps</button>
     </p>
 
     <p v-if="mutedDetectors.length > 0" class="text-xs text-muted">
@@ -351,7 +374,7 @@ const emptyText = computed(() =>
     </p>
 
     <SectionCard
-      v-if="!linkedGap"
+      v-if="!linked"
       title="Feature map"
       subtitle="The project graph folded per feature — click one to open it in the graph"
     >
@@ -398,7 +421,7 @@ const emptyText = computed(() =>
                     gap.class
                   }}</UBadge>
                   <span v-if="gap.kind === 'finding'" class="text-xs text-muted">finding</span>
-                  <span v-if="statusFilter !== 'open' || linkedGap" class="text-xs text-muted">{{ gap.status }}</span>
+                  <span v-if="statusFilter !== 'open' || linked" class="text-xs text-muted">{{ gap.status }}</span>
                   <span class="text-xs text-muted font-mono">{{ gap.detector }}</span>
                 </div>
                 <p class="mt-1 text-sm text-highlighted leading-relaxed">{{ gap.title }}</p>

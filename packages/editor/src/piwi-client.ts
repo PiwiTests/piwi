@@ -840,4 +840,9 @@ export class PiwiClient {
   flakinessUrl(testCaseId: number): string {
     return `${this.testUrl(testCaseId)}?tab=flakiness`;
   }
+
+  /** The Gaps tab on the gaps of one repository-relative file, such as its uncovered change. */
+  gapsOfFileUrl(projectId: number, file: string): string {
+    return `${this.connection.serverUrl}/projects/${projectId}?tab=gaps&gapFile=${encodeURIComponent(file)}`;
+  }
 }

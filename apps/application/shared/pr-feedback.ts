@@ -224,6 +224,8 @@ export interface PrChangeCoverage {
   patchCoverage?: PatchCoverage | null;
   /** The project the gaps are in, for their links. */
   projectId?: number | null;
+  /** The pull request the gaps are tagged with, for the link to all of them. */
+  prNumber?: number | null;
 }
 
 /**
@@ -723,6 +725,19 @@ export function buildCommitStatus(input: PrSummaryInput, context: string): Commi
  * Build the informational commit status for change coverage. Warn-only in this
  * release, so the state is always `success` — it reports, it never blocks.
  */
+/**
+ * Where the change-coverage status leads: the Gaps tab on the pull request's
+ * uncovered changes, when the change left some and the gaps carry its number;
+ * else the run.
+ */
+export function changeCoverageStatusUrl(cc: PrChangeCoverage, runUrl: string): string {
+  const origin = originOf(runUrl);
+  if (!origin || !cc.fileReach || cc.uncoveredFiles === 0 || cc.projectId == null || cc.prNumber == null) {
+    return runUrl;
+  }
+  return `${origin}/projects/${cc.projectId}?tab=gaps&gapPr=${cc.prNumber}`;
+}
+
 export function buildChangeCoverageStatus(cc: PrChangeCoverage, targetUrl: string, context: string): CommitStatusInput {
   const parts: string[] = [];
   if (cc.fileReach && cc.totalFiles > 0) {

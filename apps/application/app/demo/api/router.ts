@@ -3058,6 +3058,7 @@ const routes: RouteEntry[] = [
       return {
         items: await listScenarioGaps(await getDemoDb(), +m[1]!, {
           gapId: num(query?.get('gap')),
+          key: query?.get('key') ?? undefined,
           kind: query?.get('kind') ?? undefined,
           class: query?.get('class') ?? undefined,
           detector: query?.get('detector') ?? undefined,

@@ -2260,6 +2260,7 @@ export const gateEvaluations = sqliteTable(
     passed: integer('passed', { mode: 'boolean' }).notNull(),
     verdict: text('verdict').notNull(), // 'passed' | 'failed' | 'inconclusive'
     violations: text('violations', { mode: 'json' }).notNull(), // GateViolation[]
+    warnings: text('warnings', { mode: 'json' }), // string[]: the warn-only rules that warned, such as uncovered changes
     clusterIds: text('cluster_ids', { mode: 'json' }), // number[]: the clusters of the run's new regressions, read for an escape
     source: text('source').notNull(), // 'cli' | 'api'
     evaluatedAt: integer('evaluated_at', { mode: 'timestamp_ms' })

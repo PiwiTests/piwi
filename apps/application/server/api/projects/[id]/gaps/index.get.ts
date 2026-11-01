@@ -7,10 +7,11 @@ defineRouteMeta({
     tags: ['Scenario gaps'],
     summary: 'List a project’s scenario gaps',
     description:
-      'Returns the project’s ranked scenario gaps — proposed tests that do not exist yet — with their evidence, exposure factors and score. Filter by `gap` (one gap by its id), `kind`, `class`, `detector`, `status` and `pr`. A muted detector’s gaps come after every other one. Reach is observed reach, never instrumented coverage.',
+      'Returns the project’s ranked scenario gaps — proposed tests that do not exist yet — with their evidence, exposure factors and score. Filter by `gap` (one gap by its id), `key` (the gaps of one key, such as a changed file’s path), `kind`, `class`, `detector`, `status` and `pr`. A muted detector’s gaps come after every other one. Reach is observed reach, never instrumented coverage.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { name: 'gap', in: 'query', required: false, schema: { type: 'integer' } },
+      { name: 'key', in: 'query', required: false, schema: { type: 'string' } },
       { name: 'kind', in: 'query', required: false, schema: { type: 'string', enum: ['gap', 'finding'] } },
       {
         name: 'class',
@@ -47,6 +48,7 @@ export default eventHandler(async (event) => {
   return {
     items: await listScenarioGaps(db, projectId, {
       gapId: num(query.gap),
+      key: str(query.key),
       kind: str(query.kind),
       class: str(query.class),
       detector: str(query.detector),

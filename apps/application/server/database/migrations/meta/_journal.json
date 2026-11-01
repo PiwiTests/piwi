@@ -981,6 +981,13 @@
       "when": 1793398261917,
       "tag": "0139_keen_spectrum",
       "breakpoints": true
+    },
+    {
+      "idx": 140,
+      "version": "6",
+      "when": 1793525851364,
+      "tag": "0140_chemical_shockwave",
+      "breakpoints": true
     }
   ]
 }

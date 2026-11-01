@@ -66,6 +66,8 @@ export interface GateEvaluationInput {
   /** The policy as evaluated, `maxUncoveredChanges` and `minPatchCoverage` included when asked. */
   policy: Record<string, unknown>;
   result: Pick<GateResult, 'passed' | 'verdict' | 'violations'>;
+  /** What the warn-only rules warned of, such as uncovered changes. */
+  warnings?: string[];
   source: GateSource;
   /** The clusters of the run's new regressions, read later for an escape. */
   clusterIds: number[];
@@ -100,6 +102,7 @@ export async function recordGateEvaluation(db: DbClient, input: GateEvaluationIn
       passed: input.result.passed,
       verdict: input.result.verdict,
       violations: input.result.violations,
+      warnings: input.warnings?.length ? input.warnings : null,
       clusterIds: [...new Set(input.clusterIds)].sort((a, b) => a - b),
       source: input.source,
       evaluatedAt,
