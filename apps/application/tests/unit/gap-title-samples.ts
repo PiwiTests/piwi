@@ -141,6 +141,11 @@ export const GAP_TITLE_SAMPLES: Array<[detector: string, english: string, french
     '2 des 5 fonctions de src/cart.ts ne sont exécutées par aucune suite',
   ],
   [
+    'error-path-not-executed',
+    '2 error paths of api/Users/UsersEndpoints.cs never run',
+    '2 chemins d’erreur de api/Users/UsersEndpoints.cs n’ont jamais été exécutés',
+  ],
+  [
     'single-covering-function',
     '3 functions of src/cart.ts run under one test only',
     '3 fonctions de src/cart.ts ne s’exécutent que sous un seul test',

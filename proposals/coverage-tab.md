@@ -9,10 +9,10 @@ proposal makes them one project tab.
 
 - **Built:** the project page's **Coverage** tab holds three views, Gaps, Map and Code, with the coverage overview in
   Code. A gap names the files behind it with their lines run, a file's page lists its gaps with their verbs, the file
-  tree counts open gaps, and Code reads the filters' branch. *Code nobody executes* and *single covering function*
-  raise gaps in the Gaps view's list, ranked by the churn of their file.
-- **Left:** *error path never executed*, which needs a statement classification from a syntax scan of each file, and a
-  *Draft a test for these lines* action on a range of the file view.
+  tree counts open gaps, and Code reads the filters' branch. *Code nobody executes*, *single covering function* and
+  *error path never executed* raise gaps in the Gaps view's list, ranked by the churn of their file. The last scans
+  each file's source at the commit (brace-syntax languages), on **Recompute** and the nightly sweep only.
+- **Left:** a *Draft a test for these lines* action on a range of the file view.
 - **Limits:** a gap on a page or a control names no file (no route serves it), and the gap's files link to their
   coverage page rather than to the first range of lines not run.
 

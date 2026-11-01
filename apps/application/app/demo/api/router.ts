@@ -2874,7 +2874,9 @@ const routes: RouteEntry[] = [
     permission: 'triage:write',
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      const gaps = await computeScenarioGaps(await getDemoDb(), +m[1]!);
+      const gaps = await computeScenarioGaps(await getDemoDb(), +m[1]!, {
+        readSource: async (path, blob) => (await getDemoSourceAtBlob(+m[1]!, path, blob))?.content ?? null,
+      });
       return { success: true, runsProcessed: 0, gapsUpserted: gaps.upserted, gapsClosed: gaps.closed };
     },
   },

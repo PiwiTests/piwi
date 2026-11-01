@@ -136,8 +136,8 @@ folder and file with its bar and its open [scenario gaps](./scenario-gaps), sort
 files. A file opens on its source, through the
 [source control](/guide/source-control) connection, each line marked by the suites that ran it; **Next range** jumps to
 the next lines no suite ran. **In the Test Map** lists its routes and pages with their [scenario gaps](./scenario-gaps), each with its
-**Accept**, **Snooze**, **Covered by** and **Dismiss**. The functions no suite ran, and those only one test runs,
-are gaps of their own ([the detectors](/reference/gap-detectors#detectors)). The view reads the branch the project's filters pick, or the
+**Accept**, **Snooze**, **Covered by** and **Dismiss**. The functions no suite ran, the error paths no suite ran in code that ran, and the
+functions only one test runs are gaps of their own ([the detectors](/reference/gap-detectors#detectors)). The view reads the branch the project's filters pick, or the
 default branch when they pick none or several.
 
 <figure>

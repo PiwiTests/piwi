@@ -90,7 +90,7 @@ describe('code nobody executes', () => {
       { path: 'src/legacy.ts', blob: 'b'.repeat(40), executable: [[1, 8]], lines: [] },
       { path: 'src/done.ts', blob: 'c'.repeat(40), executable: [[1, 4]], lines: [[1, 4]] },
     ]);
-    const gaps = code.detectCodeNotExecuted(await code.loadUnexecutedFiles(db as never, 1));
+    const gaps = code.detectCodeNotExecuted(code.unexecutedFiles(await code.loadDefaultBranchCoverage(db as never, 1)));
     expect(gaps.map((g) => [g.key, g.title])).toEqual([
       ['src/cart.ts', '2 of 3 functions of src/cart.ts no suite runs'],
       ['src/legacy.ts', 'No suite runs src/legacy.ts'],
@@ -139,5 +139,76 @@ describe('the sweep', () => {
     await upload([{ path: 'src/legacy.ts', blob: 'b'.repeat(40), executable: [[1, 8]], lines: [[1, 8]] }]);
     await computeScenarioGaps(db as never, 1);
     expect(await open()).toEqual([]);
+  });
+});
+
+describe('error path never executed', () => {
+  const SOURCE = [
+    'export function save(user) {',
+    '  if (!user) {',
+    '    throw new Error("no user");',
+    '  }',
+    '  return store(user);',
+    '}',
+    'export function unused() {',
+    '  throw new Error("never");',
+    '}',
+  ].join('\n');
+  const report = (lines: Array<[number, number]>) =>
+    upload([
+      {
+        path: 'src/save.ts',
+        blob: 'e'.repeat(40),
+        executable: [
+          [1, 5],
+          [7, 8],
+        ],
+        lines,
+        allFunctions: [
+          [1, 6],
+          [7, 9],
+        ],
+        functions: [[1, 6]],
+      },
+    ]);
+  const reader = async (path: string, blob: string) =>
+    path === 'src/save.ts' && blob === 'e'.repeat(40) ? SOURCE : null;
+
+  test('names the error path no suite ran inside a function that ran, and not one in a function that never ran', async () => {
+    await report([
+      [1, 2],
+      [5, 5],
+    ]);
+    const { files, scanned } = await code.loadErrorPathFiles(
+      await code.loadDefaultBranchCoverage(db as never, 1),
+      reader,
+    );
+    expect(scanned).toEqual(['src/save.ts']);
+    const [gap] = code.detectErrorPathNotExecuted(files);
+    expect(gap).toMatchObject({ key: 'src/save.ts', title: '1 error path of src/save.ts never run' });
+    expect(gap!.evidence).toEqual(['Line 3 · throw new Error("no user"); · its function ran, this never did.']);
+  });
+
+  test('the sweep raises it with a source reader, closes it once the path runs, and leaves it alone without one', async () => {
+    await db.insert(schema.testRuns).values({ id: 1, projectId: 1, status: 'passed', startTime: new Date() });
+    await report([
+      [1, 2],
+      [5, 5],
+    ]);
+    const errorGaps = async () =>
+      (await db.select().from(schema.scenarioGaps))
+        .filter((g) => g.detector === 'error-path-not-executed')
+        .map((g) => `${g.key} ${g.status}`);
+    await computeScenarioGaps(db as never, 1, { readSource: reader });
+    expect(await errorGaps()).toEqual(['src/save.ts open']);
+
+    await report([
+      [1, 3],
+      [5, 5],
+    ]);
+    await computeScenarioGaps(db as never, 1);
+    expect(await errorGaps()).toEqual(['src/save.ts open']);
+    await computeScenarioGaps(db as never, 1, { readSource: reader });
+    expect(await errorGaps()).toEqual(['src/save.ts closed']);
   });
 });

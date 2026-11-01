@@ -37,12 +37,16 @@ const NAMED_RESULT = new RegExp(`\\b(${Object.keys(NAMED_RESULTS).join('|')})\\(
  */
 export function addedErrorStatuses(patch: string): number[] {
   const found = new Set<number>();
-  for (const line of addedLines(patch)) {
-    for (const m of line.matchAll(NAMED_RESULT)) found.add(NAMED_RESULTS[m[1]!]!);
-    if (!ERROR_CONTEXT.test(line)) continue;
-    for (const m of line.matchAll(/\b([45]\d\d)\b/g)) found.add(Number(m[1]));
-  }
+  for (const line of addedLines(patch)) for (const status of errorStatusesOfLine(line)) found.add(status);
   return [...found].sort((a, b) => a - b);
+}
+
+/** The error statuses one line of code answers with or throws, as {@link addedErrorStatuses} reads them. */
+export function errorStatusesOfLine(line: string): number[] {
+  const found = new Set<number>();
+  for (const m of line.matchAll(NAMED_RESULT)) found.add(NAMED_RESULTS[m[1]!]!);
+  if (ERROR_CONTEXT.test(line)) for (const m of line.matchAll(/\b([45]\d\d)\b/g)) found.add(Number(m[1]));
+  return [...found];
 }
 
 /** Words too common in a change's title to say what it is about. */

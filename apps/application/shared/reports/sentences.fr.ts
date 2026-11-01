@@ -733,6 +733,13 @@ const GAP_TITLES: Record<string, Array<[pattern: RegExp, write: (...parts: strin
         `${n} des ${total} fonctions de ${file} ${Number(n) === 1 ? 'n’est exécutée' : 'ne sont exécutées'} par aucune suite`,
     ],
   ],
+  'error-path-not-executed': [
+    [
+      /^(\d+) error paths? of (.+) never run$/,
+      (n, file) =>
+        `${n} ${plural(Number(n), 'chemin d’erreur', 'chemins d’erreur')} de ${file} ${Number(n) === 1 ? 'n’a jamais été exécuté' : 'n’ont jamais été exécutés'}`,
+    ],
+  ],
   'single-covering-function': [
     [
       /^(\d+) functions? of (.+) runs? under one test only$/,

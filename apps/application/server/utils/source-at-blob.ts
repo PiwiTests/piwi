@@ -139,3 +139,11 @@ export function clearSourceAtBlobCache(): void {
   sources.deleteWhere(() => true);
   misses.deleteWhere(() => true);
 }
+
+/** A project's files read at a blob through its source control provider, as the gap sweep reads them. */
+export function projectSourceReader(
+  db: DbClient,
+  projectId: number,
+): (path: string, blob: string) => Promise<string | null> {
+  return async (path, blob) => (await getSourceAtBlob(db, projectId, { path, blob }))?.content ?? null;
+}

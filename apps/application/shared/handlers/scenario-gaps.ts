@@ -77,10 +77,15 @@ import { finalAttempts, isFailedStatus } from '../utils/test-counts';
 import { projectDefaultBranch } from '../../server/utils/scm/stored-default-branch';
 import { RETIRED_DETECTORS, loadMutedDetectors } from './detector-precision';
 import {
+  closeUnraisedErrorPaths,
   detectCodeNotExecuted,
+  detectErrorPathNotExecuted,
   detectSingleCoveringFunction,
+  loadDefaultBranchCoverage,
+  loadErrorPathFiles,
   loadSingleCoveredFiles,
-  loadUnexecutedFiles,
+  unexecutedFiles,
+  type SourceReader,
 } from './code-gaps';
 import type { GapCloseReason } from '../gap-classes';
 import type { DiffAnchor } from '@piwitests/core/diff-anchors';
@@ -2111,7 +2116,13 @@ function parseJsonArray(value: unknown): unknown[] {
 export async function computeScenarioGaps(
   db: DrizzleDB,
   projectId: number,
-  options: { exposure?: ExposureInputs; branch?: string | null; closeTriaged?: boolean } = {},
+  options: {
+    exposure?: ExposureInputs;
+    branch?: string | null;
+    closeTriaged?: boolean;
+    /** Reads a file's source: *error path never executed* runs only with one, and leaves its gaps alone without. */
+    readSource?: SourceReader;
+  } = {},
 ): Promise<{ upserted: number; closed: number }> {
   if (options.branch) return { upserted: 0, closed: 0 };
   const { runIds: recentIds, completeRunIds } = await loadEvidenceWindow(db, projectId, HISTORY_WINDOW_RUNS);
@@ -2580,6 +2591,11 @@ export async function computeScenarioGaps(
     }),
   );
 
+  // The default branch's combined coverage, and the error paths of its files when the caller can read their source.
+  const defaultCoverage = await loadDefaultBranchCoverage(db, projectId).catch(() => null);
+  const errorPaths = options.readSource
+    ? await loadErrorPathFiles(defaultCoverage, options.readSource)
+    : { files: [], scanned: [], settled: [] };
   const detected = [
     ...detectReportedBugEscapes(openReports),
     ...detectFixedWithoutTest(closedUntested),
@@ -2603,8 +2619,9 @@ export async function computeScenarioGaps(
     ...detectPassedWithErrors(passedExecutions),
     ...detectAssertionLight(assertionPages),
     ...detectCatalogMethodNoTestCalls(catalogReach),
-    ...detectCodeNotExecuted(await loadUnexecutedFiles(db, projectId)),
+    ...detectCodeNotExecuted(unexecutedFiles(defaultCoverage)),
     ...detectSingleCoveringFunction(await loadSingleCoveredFiles(db, projectId)),
+    ...detectErrorPathNotExecuted(errorPaths.files),
   ];
 
   // A gap on a route, a handler or a dependency is exposed through the handler
@@ -2699,8 +2716,16 @@ export async function computeScenarioGaps(
     closeStatuses,
   );
   const closedChanged = await closeReachedChangedUnreached(db, projectId, latestRunId, closeStatuses);
+  const closedErrorPaths = await closeUnraisedErrorPaths(
+    db,
+    projectId,
+    [...errorPaths.scanned, ...errorPaths.settled],
+    new Set(errorPaths.files.map((f) => f.path)),
+    latestRunId,
+    closeStatuses,
+  );
   const closedRetired = await closeRetiredDetectorGaps(db, projectId);
-  return { upserted, closed: closed + closedChanged + closedRetired };
+  return { upserted, closed: closed + closedChanged + closedRetired + closedErrorPaths };
 }
 
 /**

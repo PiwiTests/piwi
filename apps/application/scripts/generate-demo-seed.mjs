@@ -6106,6 +6106,17 @@ for (const gap of SCENARIO_GAPS) {
     caseIds.get('invites a user by email'),
     { churn: 0.1, age: 0.1, escapeHistory: 1, priority: 0.1 },
   );
+  // The demo's source of UsersEndpoints.cs read at the commit: UpdateUser ran, its not-found answer never did.
+  codeGap(
+    'error-path-not-executed',
+    'blind-spot',
+    'api/Users/UsersEndpoints.cs',
+    '1 error path of api/Users/UsersEndpoints.cs never run',
+    'Line 59 · return TypedResults.NotFound(); · its function ran, this never did.',
+    0.7 * Math.pow(0.1 * 0.1 * 1 * 0.1, 1 / 4),
+    null,
+    { churn: 0.1, age: 0.1, escapeHistory: 1, priority: 0.1 },
+  );
 }
 
 // The v2.4.0 release marker, linked to the run it keeps.

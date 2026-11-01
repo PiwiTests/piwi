@@ -48,7 +48,7 @@ how long it has been changing. The score and its factors show on every gap, and
 surface looks complete exactly when that surface is sparse.
 
 An [uncovered change](/features/uncovered-changes) is a gap too, raised at pull-request time, and so is a page with
-open [bug reports](/features/bug-reports), and code no suite runs or only one test runs.
+open [bug reports](/features/bug-reports), and code no suite runs, error paths no suite runs, or code only one test runs.
 
 ## The Coverage tab
 

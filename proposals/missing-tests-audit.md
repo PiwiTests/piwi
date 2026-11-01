@@ -47,9 +47,10 @@ Medium items:
   instead, when the fixing change names a cause those tests are not about. Bug reports mark their page as escaped.
   Tracker bugs (*escaped defect* from a tracker) still do not run.
 
-- **M7, in part.** *Code nobody executes* (by function, from the default branch's combined coverage) and *single
-  covering test* by function (as *single covering function*) raise gaps, ranked by churn, on the Coverage tab
-  ([`coverage-tab.md`](coverage-tab.md)). Left: *error path never executed* and a draft action on a range of lines.
+- **M7, in part.** *Code nobody executes* (by function, from the default branch's combined coverage), *single
+  covering test* by function (as *single covering function*) and *error path never executed* (from a scan of each
+  file's source, brace-syntax languages) raise gaps, ranked by churn, on the Coverage tab
+  ([`coverage-tab.md`](coverage-tab.md)). Left: a draft action on a range of lines.
 
 M6, M8 to M10 and the programs are not started.
 

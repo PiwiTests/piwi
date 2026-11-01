@@ -9,6 +9,10 @@
  * - *Single covering function*: the functions of a file that exactly one test
  *   runs in the tests' latest coverage on the default branch, or that only
  *   quarantined tests run. One refactor of that test and nothing runs them.
+ * - *Error path never executed*: a `catch` block, a `throw` or an error return
+ *   no suite ran, in a function that ran (a file that ran, when the coverage
+ *   records it by line), from a scan of the file's source at the commit. The
+ *   code-level form of *success only*.
  *
  * One gap per file, keyed by its path, so the Coverage tab's views (the gap's
  * code, the file tree's counts, the file's page) find it. The detectors are
@@ -16,11 +20,39 @@
  */
 
 import { and, eq, inArray, isNull } from 'drizzle-orm';
-import { decodeFunctionRanges, type LineRange } from '@piwitests/core/coverage';
-import { coverageFragments, quarantinedTests, testCases, testCoverage } from '../../server/database/schema';
-import { finalCommitTotals, latestCoverageCommit, loadCommitCoverage } from '../../server/utils/coverage-totals';
+import { decodeFunctionRanges, intersectLineRanges, type LineRange } from '@piwitests/core/coverage';
+import {
+  coverageFragments,
+  quarantinedTests,
+  scenarioGaps,
+  testCases,
+  testCoverage,
+} from '../../server/database/schema';
+import {
+  finalCommitTotals,
+  latestCoverageCommit,
+  loadCommitCoverage,
+  type CommitCoverage,
+} from '../../server/utils/coverage-totals';
+import { findErrorPaths, type ErrorPath } from '../error-paths';
 import type { DrizzleDB } from './db';
-import type { DetectedGap } from './scenario-gaps';
+import type { DetectedGap, GapStatus } from './scenario-gaps';
+
+/** The text of a repository file at a git blob, or null when it cannot be read. */
+export type SourceReader = (path: string, blob: string) => Promise<string | null>;
+
+/**
+ * The default branch's newest combined coverage, which *code nobody executes*
+ * and *error path never executed* read. Null when the default branch has no
+ * coverage, or keeps only the commit's totals.
+ */
+export async function loadDefaultBranchCoverage(db: DrizzleDB, projectId: number): Promise<CommitCoverage | null> {
+  const commit = await latestCoverageCommit(db, projectId, '');
+  if (!commit || (await finalCommitTotals(db, projectId, commit))) return null;
+  return loadCommitCoverage(db, projectId, commit);
+}
+
+const lineCount = (ranges: readonly LineRange[]) => ranges.reduce((n, [a, b]) => n + b - a + 1, 0);
 
 /** Files each detector raises a gap for at most, those with the most functions first. */
 export const MAX_CODE_GAPS = 30;
@@ -94,24 +126,20 @@ export function detectCodeNotExecuted(files: UnexecutedFile[]): DetectedGap[] {
 }
 
 /**
- * The files of the default branch's newest combined coverage with functions,
- * or every line, no suite ran: the {@link MAX_CODE_GAPS} with the most first.
- * None when the default branch has no coverage, or keeps only its totals.
+ * The files of a commit's combined coverage with functions, or every line, no
+ * suite ran: the {@link MAX_CODE_GAPS} with the most first.
  */
-export async function loadUnexecutedFiles(db: DrizzleDB, projectId: number): Promise<UnexecutedFile[]> {
-  const commit = await latestCoverageCommit(db, projectId, '');
-  if (!commit || (await finalCommitTotals(db, projectId, commit))) return [];
-  const coverage = await loadCommitCoverage(db, projectId, commit);
+export function unexecutedFiles(coverage: CommitCoverage | null): UnexecutedFile[] {
   if (!coverage) return [];
   const files: UnexecutedFile[] = [];
   for (const f of coverage.combined.files) {
     const ran = new Set(f.runFunctions.map((r) => r[0]));
     const unrunFunctions = f.knownFunctions.filter((r) => !ran.has(r[0]));
-    const executableLines = f.executable.reduce((n, [a, b]) => n + b - a + 1, 0);
-    const executedLines = f.executed.reduce((n, [a, b]) => n + b - a + 1, 0);
+    const executableLines = lineCount(f.executable);
+    const executedLines = lineCount(f.executed);
     files.push({
       path: f.path,
-      commit,
+      commit: coverage.commit,
       knownFunctions: f.knownFunctions.length,
       unrunFunctions,
       executableLines,
@@ -262,4 +290,126 @@ export async function loadSingleCoveredFiles(db: DrizzleDB, projectId: number): 
       test: fn.testId == null ? null : { id: fn.testId, title: titles.get(fn.testId) ?? `test ${fn.testId}` },
     })),
   }));
+}
+
+// ── Error path never executed ────────────────────────────────────────────────
+
+/** One error path no suite ran, and what did run around it. */
+export interface UnrunErrorPath {
+  path: ErrorPath;
+  /** `function`: the function holding it ran; `file`: the file ran, recorded by line only. */
+  ran: 'function' | 'file';
+}
+
+export interface ErrorPathFile {
+  path: string;
+  paths: UnrunErrorPath[];
+}
+
+/** Error paths an evidence list names at most; the rest are counted. */
+const LISTED_ERROR_PATHS = 3;
+
+/**
+ * Error path never executed: the `catch` blocks, `throw`s and error returns of
+ * a file no suite ran, inside code that ran. Blind spot.
+ */
+export function detectErrorPathNotExecuted(files: ErrorPathFile[]): DetectedGap[] {
+  return files
+    .filter((f) => f.paths.length > 0)
+    .map((f) => {
+      const evidence = f.paths.slice(0, LISTED_ERROR_PATHS).map(({ path, ran }) => {
+        const [a, b] = path.range;
+        const lines = a === b ? `Line ${a}` : `Lines ${a}–${b}`;
+        return `${lines} · ${path.text} · ${ran === 'function' ? 'its function ran' : 'the file ran'}, this never did.`;
+      });
+      const more = f.paths.length - LISTED_ERROR_PATHS;
+      if (more > 0) evidence.push(`And ${plural(more, 'more error path')} no suite ran.`);
+      return {
+        detector: 'error-path-not-executed',
+        kind: 'gap' as const,
+        class: 'blind-spot' as const,
+        key: f.path,
+        title: `${plural(f.paths.length, 'error path')} of ${f.path} never run`,
+        evidence,
+        confidence: 0.7,
+        files: [f.path],
+      };
+    });
+}
+
+/**
+ * The error paths no suite ran in the files of a commit's combined coverage
+ * that ran in part: the {@link MAX_CODE_GAPS} with the most lines not run,
+ * each read at its blob. `scanned` lists the files whose source was read, and
+ * `settled` the files every line of which ran: a gap of theirs that is not
+ * raised again closes; any other file's gap stays as it is.
+ */
+export async function loadErrorPathFiles(
+  coverage: CommitCoverage | null,
+  readSource: SourceReader,
+): Promise<{ files: ErrorPathFile[]; scanned: string[]; settled: string[] }> {
+  if (!coverage) return { files: [], scanned: [], settled: [] };
+  const unrun = (f: CommitCoverage['combined']['files'][number]) => lineCount(f.executable) - lineCount(f.executed);
+  const ran = coverage.combined.files.filter((f) => f.executed.length > 0);
+  const settled = ran.filter((f) => unrun(f) <= 0).map((f) => f.path);
+  const candidates = ran
+    .filter((f) => f.blob && unrun(f) > 0)
+    .sort((a, b) => unrun(b) - unrun(a) || a.path.localeCompare(b.path))
+    .slice(0, MAX_CODE_GAPS);
+
+  const files: ErrorPathFile[] = [];
+  const scanned: string[] = [];
+  for (const f of candidates) {
+    const source = await readSource(f.path, f.blob!).catch(() => null);
+    if (source === null) continue;
+    scanned.push(f.path);
+    const runStarts = new Set(f.runFunctions.map((r) => r[0]));
+    const paths: UnrunErrorPath[] = [];
+    for (const path of findErrorPaths(source)) {
+      const span: LineRange[] = [path.range];
+      if (intersectLineRanges(f.executable, span).length === 0) continue;
+      if (intersectLineRanges(f.executed, span).length > 0) continue;
+      if (f.knownFunctions.length === 0) {
+        paths.push({ path, ran: 'file' });
+        continue;
+      }
+      const holder = f.knownFunctions.find(([a, b]) => path.range[0] >= a && path.range[0] <= b);
+      if (holder && runStarts.has(holder[0])) paths.push({ path, ran: 'function' });
+    }
+    if (paths.length > 0) files.push({ path: f.path, paths });
+  }
+  return { files, scanned, settled };
+}
+
+/**
+ * Close the open gaps of *error path never executed* on `paths` (the files
+ * scanned, and those every line of which ran) that the sweep did not raise.
+ */
+export async function closeUnraisedErrorPaths(
+  db: DrizzleDB,
+  projectId: number,
+  paths: string[],
+  raised: Set<string>,
+  runId: number | null,
+  statuses: GapStatus[],
+): Promise<number> {
+  const keys = paths.filter((p) => !raised.has(p));
+  const now = new Date();
+  let closed = 0;
+  for (let i = 0; i < keys.length; i += 200) {
+    const rows = await db
+      .update(scenarioGaps)
+      .set({ status: 'closed', closedAt: now, closedByRunId: runId, closeReason: 'not-detected', updatedAt: now })
+      .where(
+        and(
+          eq(scenarioGaps.projectId, projectId),
+          eq(scenarioGaps.detector, 'error-path-not-executed'),
+          inArray(scenarioGaps.status, statuses),
+          inArray(scenarioGaps.key, keys.slice(i, i + 200)),
+        ),
+      )
+      .returning({ id: scenarioGaps.id });
+    closed += rows.length;
+  }
+  return closed;
 }
