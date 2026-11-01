@@ -50,8 +50,10 @@ Before the pull request, the [editor extensions](./editor-coverage#uncovered-cha
 change of a page or a server route in the file itself, by a rule of their own: no coverage scope, no window of runs,
 and a page counts as reached only when a test's locator acted on it.
 
-The diff comes from the [source control](/guide/source-control) connection: a pull-request run is compared with its
-base branch, any other run with the commit of the last passing run. A public repository is read without a token, so
+The diff comes from the [source control](/guide/source-control) connection. A run of a pull request is compared
+with the branch it merges into, so every push reports the whole pull request: the one its CI names, else the one
+open on its branch, so a push-triggered workflow reads its pull request too. Any other run is compared with the
+commit of the last passing run. A public repository is read without a token, so
 its uncovered changes and their gaps appear in Piwi, though nothing is posted; a private one needs a
 [token](/guide/source-control#set-the-token). With no diff, nothing appears.
 

@@ -419,12 +419,13 @@ export class GitLabProvider extends ScmProvider {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
       if (!res.ok) return null;
-      const data = (await res.json()) as Array<{ iid?: number; web_url?: string }>;
+      const data = (await res.json()) as Array<{ iid?: number; web_url?: string; target_branch?: string }>;
       const mr = data[0];
       if (!mr?.iid) return null;
       return {
         number: mr.iid,
         url: mr.web_url ?? `https://${this.hostname}/${this.repoPath}/-/merge_requests/${mr.iid}`,
+        baseBranch: mr.target_branch ?? null,
       };
     } catch {
       return null;

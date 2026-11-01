@@ -430,12 +430,19 @@ export class BitbucketProvider extends ScmProvider {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
       if (!res.ok) return null;
-      const data = (await res.json()) as { values?: Array<{ id?: number; links?: { html?: { href?: string } } }> };
+      const data = (await res.json()) as {
+        values?: Array<{
+          id?: number;
+          links?: { html?: { href?: string } };
+          destination?: { branch?: { name?: string } };
+        }>;
+      };
       const pr = data.values?.[0];
       if (!pr?.id) return null;
       return {
         number: pr.id,
         url: pr.links?.html?.href ?? `https://bitbucket.org/${this.workspace}/${this.repoSlug}/pull-requests/${pr.id}`,
+        baseBranch: pr.destination?.branch?.name ?? null,
       };
     } catch {
       return null;
