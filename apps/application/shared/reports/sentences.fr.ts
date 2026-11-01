@@ -725,6 +725,21 @@ const GAP_TITLES: Record<string, Array<[pattern: RegExp, write: (...parts: strin
     ],
   ],
   'new-control': [[/^New control (.+) on (.+)$/, (control, page) => `Nouveau contrôle ${control} sur ${page}`]],
+  'code-not-executed': [
+    [/^No suite runs (.+)$/, (file) => `Aucune suite n’exécute ${file}`],
+    [
+      /^(\d+) of (\d+) functions? of (.+) no suite runs$/,
+      (n, total, file) =>
+        `${n} des ${total} fonctions de ${file} ${Number(n) === 1 ? 'n’est exécutée' : 'ne sont exécutées'} par aucune suite`,
+    ],
+  ],
+  'single-covering-function': [
+    [
+      /^(\d+) functions? of (.+) runs? under one test only$/,
+      (n, file) =>
+        `${n} ${plural(Number(n), 'fonction', 'fonctions')} de ${file} ${Number(n) === 1 ? 'ne s’exécute' : 'ne s’exécutent'} que sous un seul test`,
+    ],
+  ],
   'fixed-without-test': [
     [
       /^Bug report #(\d+) was fixed without a regression test: (.+)$/,

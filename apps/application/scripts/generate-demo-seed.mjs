@@ -6034,7 +6034,78 @@ for (const gap of SCENARIO_GAPS) {
     status: 'open',
     created_at: BASE_START_MS,
     updated_at: BASE_START_MS,
-  });
+  }); // What the coverage detectors raise on this project's combined and per-test coverage.
+  const FLOOR_FACTORS = { churn: 0.1, age: 0.1, escapeHistory: 0.1, priority: 0.1 };
+  const codeGap = (detector, cls, key, title, evidence, score, testCaseId = null, factors = FLOOR_FACTORS) =>
+    SCENARIO_GAPS.push({
+      project_id: proj.id,
+      kind: 'gap',
+      detector,
+      class: cls,
+      key,
+      title,
+      evidence: [evidence],
+      factors,
+      score,
+      test_case_id: testCaseId,
+      test_run_id: runIds.at(-1),
+      status: 'open',
+      created_at: BASE_START_MS,
+      updated_at: BASE_START_MS,
+    });
+  codeGap(
+    'code-not-executed',
+    'blind-spot',
+    'src/components/UsersTable.vue',
+    '1 of 2 functions of src/components/UsersTable.vue no suite runs',
+    'Functions at lines 17–27 · no suite ran them at 9a8b7c6: dead code, or a test to write.',
+    0.55 * 0.1,
+  );
+  codeGap(
+    'code-not-executed',
+    'blind-spot',
+    'src/composables/usePagination.ts',
+    '1 of 2 functions of src/composables/usePagination.ts no suite runs',
+    'Functions at lines 17–27 · no suite ran them at 9a8b7c6: dead code, or a test to write.',
+    0.55 * 0.1,
+  );
+  codeGap(
+    'code-not-executed',
+    'blind-spot',
+    'src/pages/users/index.vue',
+    '1 of 2 functions of src/pages/users/index.vue no suite runs',
+    'Functions at lines 17–27 · no suite ran them at 9a8b7c6: dead code, or a test to write.',
+    0.55 * 0.1,
+  );
+  codeGap(
+    'single-covering-function',
+    'fragile',
+    'api/Organizations/OrganizationEndpoints.cs',
+    '1 function of api/Organizations/OrganizationEndpoints.cs runs under one test only',
+    'Only updates the organization name runs the functions at lines 34–67: a second test would make them resilient.',
+    0.05,
+    caseIds.get('updates the organization name'),
+  );
+  codeGap(
+    'single-covering-function',
+    'fragile',
+    'api/Preferences/PreferencesEndpoints.cs',
+    '2 functions of api/Preferences/PreferencesEndpoints.cs run under one test only',
+    'Only toggles dark mode runs the functions at lines 24–32, 34–63: a second test would make them resilient.',
+    0.05,
+    caseIds.get('toggles dark mode'),
+  );
+  codeGap(
+    'single-covering-function',
+    'fragile',
+    'api/Users/UsersEndpoints.cs',
+    '1 function of api/Users/UsersEndpoints.cs runs under one test only',
+    'Only invites a user by email runs the functions at lines 45–65: a second test would make them resilient.',
+    // A fixing commit touched the file: escape history 1.
+    0.5 * Math.pow(0.1 * 0.1 * 1 * 0.1, 1 / 4),
+    caseIds.get('invites a user by email'),
+    { churn: 0.1, age: 0.1, escapeHistory: 1, priority: 0.1 },
+  );
 }
 
 // The v2.4.0 release marker, linked to the run it keeps.

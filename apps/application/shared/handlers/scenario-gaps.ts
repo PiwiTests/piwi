@@ -76,6 +76,12 @@ import { decidesCheck } from './probes';
 import { finalAttempts, isFailedStatus } from '../utils/test-counts';
 import { projectDefaultBranch } from '../../server/utils/scm/stored-default-branch';
 import { RETIRED_DETECTORS, loadMutedDetectors } from './detector-precision';
+import {
+  detectCodeNotExecuted,
+  detectSingleCoveringFunction,
+  loadSingleCoveredFiles,
+  loadUnexecutedFiles,
+} from './code-gaps';
 import type { GapCloseReason } from '../gap-classes';
 import type { DiffAnchor } from '@piwitests/core/diff-anchors';
 import { predictLocatorBreaks, type PredictLocatorBreaksOptions } from '@piwitests/core/locator-break';
@@ -2597,6 +2603,8 @@ export async function computeScenarioGaps(
     ...detectPassedWithErrors(passedExecutions),
     ...detectAssertionLight(assertionPages),
     ...detectCatalogMethodNoTestCalls(catalogReach),
+    ...detectCodeNotExecuted(await loadUnexecutedFiles(db, projectId)),
+    ...detectSingleCoveringFunction(await loadSingleCoveredFiles(db, projectId)),
   ];
 
   // A gap on a route, a handler or a dependency is exposed through the handler
@@ -2683,6 +2691,8 @@ export async function computeScenarioGaps(
       'passed-with-errors',
       'assertion-light',
       'catalog-method-no-test-calls',
+      'code-not-executed',
+      'single-covering-function',
     ],
     scored,
     latestRunId,

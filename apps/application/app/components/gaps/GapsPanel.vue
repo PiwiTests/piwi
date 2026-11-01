@@ -226,7 +226,7 @@ const emptyText = computed(() =>
         <template v-else-if="linkedPr">Showing the gaps of pull request #{{ linkedPr }}.</template>
         <template v-else>
           Showing the gaps of <span class="font-mono">{{ linkedFile }}</span
-          >; a pull-request run raises one for an uncovered change.
+          >: an uncovered change a pull-request run raises, and code no suite runs or one test alone runs.
         </template>
       </span>
       <button type="button" :class="[SENTENCE_LINK_CLASS, 'ms-1']" @click="showAllGaps">Show all gaps</button>

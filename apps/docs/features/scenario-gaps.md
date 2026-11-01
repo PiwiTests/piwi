@@ -44,12 +44,11 @@ the application itself did not cope with the fault, whatever the tests saw.
 Gaps are ranked by **[exposure](/guide/concepts#exposure)**, a score from how often the code behind a node changes,
 whether it was part of an earlier escaped failure and the priority of the tests that reach it, and, for a changed file,
 how long it has been changing. The score and its factors show on every gap, and
-[which gaps get which factors](/reference/gap-detectors#exposure) varies: a gap on a page or a control ranks by
-priority and its detector alone. Counts are per class, never a coverage percentage: a percentage over an observed
+[which gaps get which factors](/reference/gap-detectors#exposure) varies. Counts are per class, never a coverage percentage: a percentage over an observed
 surface looks complete exactly when that surface is sparse.
 
 An [uncovered change](/features/uncovered-changes) is a gap too, raised at pull-request time, and so is a page with
-open [bug reports](/features/bug-reports).
+open [bug reports](/features/bug-reports), and code no suite runs or only one test runs.
 
 ## The Coverage tab
 
