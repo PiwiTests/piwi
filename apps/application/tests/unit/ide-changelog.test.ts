@@ -116,6 +116,8 @@ describe('an entry shared between scopes', () => {
       '',
       `- **desktop, ide:** reproduce and bisect team CI failures and share the verdict (${link('c7140f5')}, ${link('0588512')})`,
       `- **app,ide:** open a run from the editor (${link('6666666')})`,
+      `- **desktop/ide:** run a reproduction from the editor (${link('9999999')})`,
+      `- **ide \\ app:** show a run's verdict in the editor (${link('aaaaaaa')})`,
       `- **desktop, extension:** pick a locator in the desktop app (${link('7777777')})`,
       `- **ideas:** not the editor extensions (${link('8888888')})`,
     ].join('\n'),
@@ -131,6 +133,8 @@ describe('an entry shared between scopes', () => {
             links: [link('c7140f5'), link('0588512')],
           },
           { text: 'open a run from the editor', links: [link('6666666')] },
+          { text: 'run a reproduction from the editor', links: [link('9999999')] },
+          { text: "show a run's verdict in the editor", links: [link('aaaaaaa')] },
         ],
       },
     ]);
@@ -190,9 +194,9 @@ describe('the repository changelog', () => {
 
   test('has every ide entry in the Markdown, and no other scope', () => {
     for (const line of changelog.split('\n')) {
-      const scoped = /^[*-] \*\*([a-z-]+(?:,\s*[a-z-]+)*):\*\*/.exec(line);
+      const scoped = /^[*-] \*\*([^*]+):\*\*/.exec(line);
       if (!scoped) continue;
-      const isIde = scoped[1]!.split(/,\s*/).includes('ide');
+      const isIde = /\bide\b/.test(scoped[1]!);
       for (const hash of hashesOf(line)) {
         if (isIde) expect(markdown, line).toContain(`[${hash}](`);
         else expect(markdown, line).not.toContain(`[${hash}](`);

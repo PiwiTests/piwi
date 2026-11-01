@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // The editor extensions' changelog: the `ide` entries of the root CHANGELOG.md (the lines
-// `* **ide:** …`, or `* **desktop, ide:** …` for an entry a polished section shares between
-// scopes), under their version heading and section heading. The publish workflows
-// write it as apps/vscode/CHANGELOG.md, which the VSIX ships, and as the JetBrains plugin's
-// change notes, the Marketplace's "What's new"; neither is committed.
+// `* **ide:** …`, or `* **desktop, ide:** …` for an entry shared between scopes), under their
+// version heading and section heading. The publish workflows write it as
+// apps/vscode/CHANGELOG.md, which the VSIX ships, and as the JetBrains plugin's change notes,
+// the Marketplace's "What's new"; neither is committed.
 //
 // Usage:
 //   node scripts/ide-changelog.mjs [--format md|html] [--version <v>] [--all]
@@ -38,8 +38,10 @@ const usage = `Usage:
 // stays in the section above it.
 const VERSION_HEADING = /^## \[?(\d+\.\d+\.\d+[^\]\s]*)/;
 const SECTION_HEADING = /^### (.+?)\s*$/;
-// A bullet with a scope prefix: one scope (`**ide:**`) or several (`**desktop, ide:**`).
-const SCOPED_ENTRY = /^[*-] \*\*([a-z-]+(?:,\s*[a-z-]+)*):\*\* (.+?)\s*$/;
+// A bullet with a scope prefix: one scope (`**ide:**`) or several, separated as commitlint
+// allows (`**desktop, ide:**`, `**desktop/ide:**`, `**desktop\ide:**`).
+const SCOPED_ENTRY = /^[*-] \*\*([a-z-]+(?:\s*[,/\\]\s*[a-z-]+)*):\*\* (.+?)\s*$/;
+const SCOPE_SEPARATOR = /\s*[,/\\]\s*/;
 // One `[hash](url)` commit link (7 to 40 hex chars), and the trailing parenthetical made only
 // of such links, comma-separated, that ends an entry.
 const LINK = /\[[0-9a-f]{7,40}\]\([^)]+\)/g;
@@ -79,7 +81,7 @@ export function extractIdeEntries(changelog) {
       continue;
     }
     const entry = SCOPED_ENTRY.exec(line);
-    if (!entry || !entry[1].split(/,\s*/).includes('ide')) continue;
+    if (!entry || !entry[1].split(SCOPE_SEPARATOR).includes('ide')) continue;
     const trailing = TRAILING_LINKS.exec(entry[2])?.[0] ?? '';
     const links = trailing.match(LINK) ?? [];
     const text = entry[2].slice(0, entry[2].length - trailing.length).trim();
