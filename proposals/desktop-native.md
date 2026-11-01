@@ -5,9 +5,15 @@ plan for what it could become once it does. It covers the shell (`apps/desktop/`
 inside it (`app/plugins/desktop.client.ts`, `app/components/desktop/`), and what Tauri 2.12 offers that the shell does
 not use yet.
 
-**Status.** Proposed 2026-11-01, against `main` at v0.63.0 (`11909c0e`). Nothing beyond step 1 is built. Step 1, the
-defects filed as [PiwiTests/piwi#997](https://github.com/PiwiTests/piwi/issues/997), is being built on
-`claude/zen-franklin-1kfunm`. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet.
+**Status.** Proposed 2026-11-01, against `main` at v0.63.0 (`11909c0e`). Step 1, the defects filed as
+[PiwiTests/piwi#997](https://github.com/PiwiTests/piwi/issues/997), is built on `claude/zen-franklin-1kfunm`:
+`shut_down` runs on `RunEvent::Exit` too and the macOS app menu's Quit asks first; the Dock icon brings the hidden
+window back; a notification click opens what it is about and the main window is never suspended in the background; the
+log rotates and the tray shows it; Settings › Storage sets the desktop app's retention; downloads stream to disk from
+the shell. Notifications still come from the page; the shell reading the server's stream itself stays in step 3. The
+Rust is unit-tested and the page side has Playwright specs with a faked bridge, but the macOS menu, the Dock, the
+background policy and the notification clicks are compile-checked only and still need a pass on macOS and Windows.
+Nothing beyond step 1 is built, and nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet.
 
 **Summary.** The shell is strong where Piwi is unique: it runs, reproduces and bisects tests in throwaway worktrees,
 hosts Flake Lab, connects MCP clients, opens Playwright archives and bug reports, and shows a run's progress on the
