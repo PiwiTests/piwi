@@ -76,6 +76,7 @@ import { decidesCheck } from './probes';
 import { finalAttempts, isFailedStatus } from '../utils/test-counts';
 import { projectDefaultBranch } from '../../server/utils/scm/stored-default-branch';
 import { RETIRED_DETECTORS, loadMutedDetectors } from './detector-precision';
+import type { GapCloseReason } from '../gap-classes';
 import type { DiffAnchor } from '@piwitests/core/diff-anchors';
 import { predictLocatorBreaks, type PredictLocatorBreaksOptions } from '@piwitests/core/locator-break';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
@@ -90,6 +91,7 @@ import { suggestionHash, type HandbackActor } from '../handback-outcomes';
 export type GapKind = 'gap' | 'finding';
 export type GapClass = 'blind-spot' | 'false-comfort' | 'fragile' | 'unhandled' | 'degraded';
 export type GapStatus = 'open' | 'snoozed' | 'dismissed' | 'accepted' | 'closed';
+export type { GapCloseReason };
 
 /** The window of recent runs every honest evidence line is measured against. */
 export const HISTORY_WINDOW_RUNS = 30;
@@ -553,25 +555,37 @@ export function detectChangedUnreached(
 /** The reads of a changed file that mean a test reached it. */
 const REACHED_CHANGES = new Set<ChangeReach>(['reached', 'reached-earlier']);
 
+/** The close reason of a *changed, unreached* gap, by the read of its file. */
+const CHANGE_CLOSE_REASONS: Record<Exclude<ChangeReach, 'unreached'>, GapCloseReason> = {
+  reached: 'reached',
+  'reached-earlier': 'reached',
+  'out-of-scope': 'out-of-scope',
+  deleted: 'deleted',
+  'not-observable': 'not-observable',
+};
+
 /**
  * Close the *changed, unreached* gaps of the files a diff read: the open and
  * snoozed gaps of those it no longer reads as uncovered changes, by the rule of
  * change coverage (reached, outside the coverage scope, deleted, or nothing
  * observes them), and the accepted gaps of those a test reached, whose test was
- * written. Returns how many closed.
+ * written. A reached gap of the pull request `prNumber` names closes as
+ * `acted-on`. Returns how many closed.
  */
 export async function closeChangedUnreachedGaps(
   db: DrizzleDB,
   projectId: number,
   runId: number | null,
   files: Array<{ filePath: string; reach: ChangeReach }>,
+  prNumber: number | null = null,
 ): Promise<number> {
-  const settled = files.filter((f) => f.reach !== 'unreached').map((f) => f.filePath);
-  const reached = files.filter((f) => REACHED_CHANGES.has(f.reach)).map((f) => f.filePath);
-  return (
-    (await closeChangedGapsOf(db, projectId, runId, settled, ['open', 'snoozed'])) +
-    (await closeChangedGapsOf(db, projectId, runId, reached, ['accepted']))
-  );
+  let closed = 0;
+  for (const [reach, reason] of Object.entries(CHANGE_CLOSE_REASONS) as Array<[ChangeReach, GapCloseReason]>) {
+    const paths = files.filter((f) => f.reach === reach).map((f) => f.filePath);
+    const statuses: GapStatus[] = REACHED_CHANGES.has(reach) ? ['open', 'snoozed', 'accepted'] : ['open', 'snoozed'];
+    closed += await closeChangedGapsOf(db, projectId, runId, paths, statuses, reason, prNumber);
+  }
+  return closed;
 }
 
 /** Close the *changed, unreached* gaps of `filePaths` whose status is one of `statuses`. */
@@ -581,13 +595,19 @@ async function closeChangedGapsOf(
   runId: number | null,
   filePaths: string[],
   statuses: GapStatus[],
+  reason: GapCloseReason,
+  prNumber: number | null,
 ): Promise<number> {
   const now = new Date();
+  const closeReason =
+    reason === 'reached' && prNumber != null
+      ? sql<string>`case when ${scenarioGaps.prNumber} = ${prNumber} then 'acted-on' else 'reached' end`
+      : reason;
   let closed = 0;
   for (let i = 0; i < filePaths.length; i += 100) {
     const rows = await db
       .update(scenarioGaps)
-      .set({ status: 'closed', closedAt: now, closedByRunId: runId, updatedAt: now })
+      .set({ status: 'closed', closedAt: now, closedByRunId: runId, closeReason, updatedAt: now })
       .where(
         and(
           eq(scenarioGaps.projectId, projectId),
@@ -2615,7 +2635,7 @@ async function closeRetiredDetectorGaps(db: DrizzleDB, projectId: number): Promi
   const now = new Date();
   const closed = await db
     .update(scenarioGaps)
-    .set({ status: 'closed', closedAt: now, closedByRunId: null, updatedAt: now })
+    .set({ status: 'closed', closedAt: now, closedByRunId: null, closeReason: 'retired', updatedAt: now })
     .where(
       and(
         eq(scenarioGaps.projectId, projectId),
@@ -3564,17 +3584,22 @@ async function closeReachedChangedUnreached(
   const reachOf = new Map(read.files.map((f) => [f.filePath, f.reach]));
   // An open or snoozed gap closes once its file is reached or out of scope; an accepted one once a test reached it.
   const settled = new Set<ChangeReach>(['reached', 'reached-earlier', 'out-of-scope']);
-  const toClose = open
-    .filter((g) => (g.status === 'accepted' ? REACHED_CHANGES : settled).has(reachOf.get(g.key) ?? 'unreached'))
-    .map((g) => g.id);
+  const toClose = open.filter((g) =>
+    (g.status === 'accepted' ? REACHED_CHANGES : settled).has(reachOf.get(g.key) ?? 'unreached'),
+  );
   if (toClose.length === 0) return 0;
 
   const now = new Date();
-  for (let i = 0; i < toClose.length; i += 100) {
-    await db
-      .update(scenarioGaps)
-      .set({ status: 'closed', closedAt: now, closedByRunId: runId, updatedAt: now })
-      .where(inArray(scenarioGaps.id, toClose.slice(i, i + 100)));
+  for (const reason of ['reached', 'out-of-scope'] as const) {
+    const ids = toClose
+      .filter((g) => (reachOf.get(g.key) === 'out-of-scope' ? 'out-of-scope' : 'reached') === reason)
+      .map((g) => g.id);
+    for (let i = 0; i < ids.length; i += 100) {
+      await db
+        .update(scenarioGaps)
+        .set({ status: 'closed', closedAt: now, closedByRunId: runId, closeReason: reason, updatedAt: now })
+        .where(inArray(scenarioGaps.id, ids.slice(i, i + 100)));
+    }
   }
   return toClose.length;
 }
@@ -3664,6 +3689,7 @@ export async function upsertScenarioGaps(
           status: sql`case when ${reopens} then 'open' else ${scenarioGaps.status} end`,
           closedAt: sql`case when ${reopens} then null else ${scenarioGaps.closedAt} end`,
           closedByRunId: sql`case when ${reopens} then null else ${scenarioGaps.closedByRunId} end`,
+          closeReason: sql`case when ${reopens} then null else ${scenarioGaps.closeReason} end`,
         },
       });
     written += slice.length;
@@ -3705,7 +3731,7 @@ async function closeMissingGaps(
   for (let i = 0; i < toClose.length; i += 100) {
     await db
       .update(scenarioGaps)
-      .set({ status: 'closed', closedAt: now, closedByRunId: runId, updatedAt: now })
+      .set({ status: 'closed', closedAt: now, closedByRunId: runId, closeReason: 'not-detected', updatedAt: now })
       .where(inArray(scenarioGaps.id, toClose.slice(i, i + 100)));
   }
   return toClose.length;
@@ -3726,6 +3752,8 @@ export interface ScenarioGapRow {
   factors: ExposureFactors | null;
   score: number | null;
   status: GapStatus;
+  /** Why a closed gap closed; null while it is not closed. */
+  closeReason: GapCloseReason | null;
   dismissReason: string | null;
   ticket: string | null;
   prNumber: number | null;
@@ -3764,6 +3792,7 @@ function mapGapRow(r: typeof scenarioGaps.$inferSelect): ScenarioGapRow {
     factors: (r.factors as ExposureFactors | null) ?? null,
     score: r.score ?? null,
     status: r.status as GapStatus,
+    closeReason: r.status === 'closed' ? ((r.closeReason as GapCloseReason | null) ?? null) : null,
     dismissReason: r.dismissReason ?? null,
     ticket: r.ticket ?? null,
     prNumber: r.prNumber ?? null,
@@ -4050,7 +4079,11 @@ export async function triageGap(
   const now = new Date();
   const subject = subjectFromGapKey(gap.key);
   // Record who gave the verdict on every triage action (null when auth is off).
-  const set: Record<string, unknown> = { updatedAt: now, triagedBy: input.triagedByUserId ?? null };
+  const set: Record<string, unknown> = {
+    updatedAt: now,
+    triagedBy: input.triagedByUserId ?? null,
+    closeReason: null,
+  };
 
   if (input.verb === 'accept') {
     set.status = 'accepted';
@@ -4088,6 +4121,7 @@ export async function triageGap(
     set.status = 'closed';
     set.closedAt = now;
     set.closedByRunId = null;
+    set.closeReason = 'covered-by';
     set.coveredAt = now;
     if (input.coveringTestCaseId != null) {
       await writeManualReachesEdge(db, projectId, subject, input.coveringTestCaseId);

@@ -2,10 +2,12 @@
  * The change-time detectors of a pull request: *new error path*, *intent without
  * a test* and *new control*, run on the patches and the title of its change when
  * a run of it finishes. Their gaps carry the pull request's number; each run of it
- * reads the whole change again, so a gap it no longer raises closes.
+ * reads the whole change again, so a gap it no longer raises closes: as acted on
+ * when the change still holds its subject and the pull request answered it (a run
+ * answered with the status, a test names the intent), else as not detected.
  */
 
-import { and, eq, inArray, isNull, notInArray } from 'drizzle-orm';
+import { and, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
 import { graphEdges, graphNodes, scenarioGaps, testCases } from '../../database/schema';
 import type { DbClient } from '../../database';
 import type { ChangedFile } from './ScmProvider';
@@ -63,9 +65,13 @@ export async function computeChangeTimeGaps(db: DbClient, input: ChangeTimeInput
   const errorPaths = await newErrorPathInputs(db, input, files, routeKeys);
   const controls = await newControlInputs(db, input.projectId, files, pageKeys);
   const intents = input.title ? await intentInputs(db, input, files) : [];
+  const answered = [
+    ...errorPaths.answered,
+    ...intents.filter((i) => i.matchedByTest).map((i) => `intent:${i.ticket ?? i.title}`),
+  ];
 
   const gaps = [
-    ...detectNewErrorPath(errorPaths),
+    ...detectNewErrorPath(errorPaths.inputs),
     ...detectIntentWithoutTest(intents),
     ...detectNewControl(controls),
   ].map((gap) => rankGap(gap, input.exposure));
@@ -76,7 +82,16 @@ export async function computeChangeTimeGaps(db: DbClient, input: ChangeTimeInput
   const now = new Date();
   await db
     .update(scenarioGaps)
-    .set({ status: 'closed', closedAt: now, closedByRunId: input.runId, updatedAt: now })
+    .set({
+      status: 'closed',
+      closedAt: now,
+      closedByRunId: input.runId,
+      closeReason:
+        answered.length > 0
+          ? sql<string>`case when ${inArray(scenarioGaps.key, answered)} then 'acted-on' else 'not-detected' end`
+          : 'not-detected',
+      updatedAt: now,
+    })
     .where(
       and(
         eq(scenarioGaps.projectId, input.projectId),
@@ -89,13 +104,16 @@ export async function computeChangeTimeGaps(db: DbClient, input: ChangeTimeInput
   return raised;
 }
 
-/** The statuses the patch of a route's handler adds that no run of the route answered with. */
+/**
+ * The statuses the patch of a route's handler adds that no run of the route
+ * answered with, and the gap keys of those a run answered with.
+ */
 async function newErrorPathInputs(
   db: DbClient,
   input: ChangeTimeInput,
   files: ChangedFile[],
   routeKeys: string[],
-): Promise<NewErrorPathInput[]> {
+): Promise<{ inputs: NewErrorPathInput[]; answered: string[] }> {
   const added: Array<{ routeKey: string; filePath: string; statuses: number[] }> = [];
   for (const file of files) {
     const target = file.patch ? fileRouteTarget(file.filename) : null;
@@ -106,18 +124,24 @@ async function newErrorPathInputs(
       added.push({ routeKey, filePath: file.filename, statuses });
     }
   }
-  if (added.length === 0) return [];
+  if (added.length === 0) return { inputs: [], answered: [] };
   const observed = await observedRouteStatuses(
     db,
     input.projectId,
     added.map((a) => a.routeKey),
     [input.runId],
   );
-  return added.flatMap((a) =>
-    a.statuses
-      .filter((status) => !observed.get(a.routeKey)?.has(status))
-      .map((addedStatus) => ({ routeKey: a.routeKey, addedStatus, filePath: a.filePath })),
-  );
+  const answeredBy = (routeKey: string, status: number) => observed.get(routeKey)?.has(status) ?? false;
+  return {
+    inputs: added.flatMap((a) =>
+      a.statuses
+        .filter((status) => !answeredBy(a.routeKey, status))
+        .map((addedStatus) => ({ routeKey: a.routeKey, addedStatus, filePath: a.filePath })),
+    ),
+    answered: added.flatMap((a) =>
+      a.statuses.filter((status) => answeredBy(a.routeKey, status)).map((status) => `route:${a.routeKey}:${status}`),
+    ),
+  };
 }
 
 /** The controls the patch of a page's template adds, with whether a test reaches the page. */

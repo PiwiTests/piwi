@@ -988,6 +988,13 @@
       "when": 1793525851364,
       "tag": "0140_chemical_shockwave",
       "breakpoints": true
+    },
+    {
+      "idx": 141,
+      "version": "6",
+      "when": 1793527598458,
+      "tag": "0141_mature_radioactive_man",
+      "breakpoints": true
     }
   ]
 }

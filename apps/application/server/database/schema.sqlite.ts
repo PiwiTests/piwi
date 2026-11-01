@@ -2042,6 +2042,7 @@ export const scenarioGaps = sqliteTable(
       .$defaultFn(() => new Date()),
     closedAt: integer('closed_at', { mode: 'timestamp_ms' }),
     closedByRunId: integer('closed_by_run_id'),
+    closeReason: text('close_reason'), // why a closed gap closed: 'reached', 'reached-in-pull-request', 'covered-by', 'not-detected', …; null while open
   },
   (table) => ({
     detectorKeyIdx: uniqueIndex('idx_scenario_gaps_detector_key').on(table.projectId, table.detector, table.key),

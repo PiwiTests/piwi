@@ -20,6 +20,8 @@ interface DetectorPrecisionRow {
   verdicts: number;
   precision: number | null;
   muted: boolean;
+  pullRequestGaps: number;
+  actedOn: number;
 }
 // Lazy so the precision query never blocks the About page's first paint.
 const { data: precisionProjects } = useFetch('/api/gaps/precision', {
@@ -130,17 +132,25 @@ const dbBackendLabel = computed(() => {
         From triage verdicts: accepted and covered-by count for a detector, dismissed-as-wrong against. A detector below
         60% over 20+ verdicts mutes itself on that project<template v-if="!instCapHidden('pr-feedback')">
           and drops out of the PR comment first</template
-        >.
+        >. A gap raised on a pull request is acted on when a run of that pull request answered it.
       </p>
       <div v-for="proj in precisionProjects" :key="proj.projectId" class="mb-4">
         <p class="text-xs font-medium text-muted">{{ proj.projectName }}</p>
         <div class="mt-1 divide-y divide-default text-sm">
-          <div v-for="d in proj.detectors" :key="d.detector" class="flex items-center gap-3 py-1.5">
-            <span class="font-mono text-xs w-56 shrink-0">{{ d.detector }}</span>
-            <span class="tabular-nums w-16 text-right">{{
+          <div
+            v-for="d in proj.detectors"
+            :key="d.detector"
+            class="flex flex-wrap items-center gap-x-3 gap-y-0.5 py-1.5 sm:flex-nowrap"
+          >
+            <span class="font-mono text-xs w-full sm:w-56 sm:shrink-0">{{ d.detector }}</span>
+            <span class="tabular-nums sm:w-16 sm:shrink-0 sm:text-right">{{
               d.precision != null ? `${Math.round(d.precision * 100)}%` : '—'
             }}</span>
-            <span class="text-xs text-muted">{{ d.for }} for · {{ d.against }} against</span>
+            <span class="text-xs text-muted"
+              >{{ d.for }} for · {{ d.against }} against<template v-if="d.pullRequestGaps > 0">
+                · {{ d.actedOn }} of {{ d.pullRequestGaps }} PR gaps acted on</template
+              ></span
+            >
             <UBadge v-if="d.muted" color="warning" variant="subtle" size="sm">muted</UBadge>
           </div>
         </div>

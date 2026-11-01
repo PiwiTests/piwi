@@ -101,6 +101,24 @@ describe('computeChangeTimeGaps', () => {
     expect(await openGaps()).toEqual(['new-control control:/checkout:button "Apply promo" #7']);
   });
 
+  test('a gap the pull request answered closes as acted on, one its change dropped as not detected', async () => {
+    await run('feat: apply a promo discount');
+    await db.insert(schema.networkRequests).values({
+      testRunId: 2,
+      testRunsCaseId: 1,
+      method: 'POST',
+      url: 'https://app.test/api/orders',
+      normalizedUrl: '/api/orders',
+      status: 422,
+    });
+    await run('feat: apply a promo discount', [changed[0]!]);
+    const reasons = (await db.select().from(schema.scenarioGaps))
+      .filter((g) => g.status === 'closed')
+      .map((g) => `${g.detector} ${g.closeReason}`)
+      .sort();
+    expect(reasons).toEqual(['new-control not-detected', 'new-error-path acted-on']);
+  });
+
   test('a status a run already answered with, or an order title a test mentions, raises nothing', async () => {
     await db.insert(schema.networkRequests).values({
       testRunId: 2,

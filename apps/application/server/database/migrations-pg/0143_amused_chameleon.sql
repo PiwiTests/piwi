@@ -1,0 +1,1 @@
+ALTER TABLE "scenario_gaps" ADD COLUMN "close_reason" text;

@@ -23,6 +23,21 @@ describe('computeDetectorPrecision / isDetectorMuted', () => {
     expect(drift.muted).toBe(false); // only one verdict
   });
 
+  test('counts the gaps raised on a pull request and the ones it acted on, beside the verdicts', () => {
+    const result = computeDetectorPrecision(
+      [{ detector: 'changed-unreached', verdict: 'for' }],
+      [
+        { detector: 'changed-unreached', actedOn: true },
+        { detector: 'changed-unreached', actedOn: false },
+        { detector: 'new-error-path', actedOn: true },
+      ],
+    );
+    expect(result.map((r) => [r.detector, r.verdicts, r.pullRequestGaps, r.actedOn])).toEqual([
+      ['changed-unreached', 1, 2, 1],
+      ['new-error-path', 0, 1, 1],
+    ]);
+  });
+
   test('does not mute below the minimum verdict count', () => {
     expect(isDetectorMuted(0.1, MUTE_MIN_VERDICTS - 1)).toBe(false);
     expect(isDetectorMuted(0.1, MUTE_MIN_VERDICTS)).toBe(true);

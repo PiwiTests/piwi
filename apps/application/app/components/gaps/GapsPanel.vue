@@ -14,6 +14,7 @@
  * the tab mounts.
  */
 import { errorMessage, SENTENCE_LINK_CLASS } from '~/utils';
+import { GAP_CLOSE_REASON_LABELS, type GapCloseReason } from '#shared/gap-classes';
 
 interface GapFactors {
   churn: number;
@@ -32,6 +33,7 @@ interface Gap {
   factors: GapFactors | null;
   score: number | null;
   status: string;
+  closeReason: GapCloseReason | null;
   feature: string | null;
   hub?: boolean;
   testCaseId: number | null;
@@ -421,7 +423,10 @@ const emptyText = computed(() =>
                     gap.class
                   }}</UBadge>
                   <span v-if="gap.kind === 'finding'" class="text-xs text-muted">finding</span>
-                  <span v-if="statusFilter !== 'open' || linked" class="text-xs text-muted">{{ gap.status }}</span>
+                  <span v-if="statusFilter !== 'open' || linked" class="text-xs text-muted"
+                    >{{ gap.status
+                    }}<template v-if="gap.closeReason">: {{ GAP_CLOSE_REASON_LABELS[gap.closeReason] }}</template></span
+                  >
                   <span class="text-xs text-muted font-mono">{{ gap.detector }}</span>
                 </div>
                 <p class="mt-1 text-sm text-highlighted leading-relaxed">{{ gap.title }}</p>

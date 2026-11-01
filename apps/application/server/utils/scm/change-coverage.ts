@@ -435,7 +435,7 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
   const gaps = detectChangedUnreached(reaches, runId, coverage.windowRuns).map((g) => rankGap(g, exposure));
   await upsertScenarioGaps(db, run.projectId, gaps, { runId, prNumber }).catch(() => {});
   // A file this diff no longer reads as an uncovered change closes its gap; an accepted one, once a test reached it.
-  await closeChangedUnreachedGaps(db, run.projectId, runId, coverage.files).catch(() => 0);
+  await closeChangedUnreachedGaps(db, run.projectId, runId, coverage.files, prNumber).catch(() => 0);
 
   // The change-time detectors read the whole pull request's patches and its title.
   if (prNumber != null && !changes.patchesOmitted) {
