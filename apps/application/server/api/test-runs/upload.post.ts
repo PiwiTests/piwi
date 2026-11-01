@@ -27,6 +27,7 @@ import {
   addBatchShard,
   batchShardRun,
   batchShardTally,
+  countFlakyBatchCases,
   finalizeShardedRun,
   publishShardProgress,
 } from '../../utils/sharded-runs';
@@ -555,7 +556,7 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
       const durations = testCasesData.map((tc) => tc.duration);
 
       // Flaky count is independent of whether duration data is present
-      const flakyTestCount = testCasesData.filter((tc) => tc.status === 'passed' && (tc.retries || 0) > 0).length;
+      const flakyTestCount = countFlakyBatchCases(testCasesData);
 
       const stats = durationStats(durations);
       if (stats) {

@@ -15,6 +15,7 @@ import { runFinalizeSideEffects } from '../../../utils/run-finalize-side-effects
 import { keepIncidentMetadata } from '#shared/run-incident';
 import { withPendingStatus } from '../../../utils/finalizing-runs';
 import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
+import { computeRunCountsFromRows } from '../../../utils/run-counts';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 import { sanitizeResourceReport } from '#shared/resource-report';
 import { saveResourceReportPart } from '#shared/handlers/resource-reports';
@@ -24,7 +25,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Finish a streaming test run',
     description:
-      'Finalize a streaming test run by setting its final status and calculating performance metrics. Supports pending uploads mode where reports are uploaded asynchronously after finishing. For sharded runs, the run finishes only after all shards report; test counters come from the streamed events, and the run lasts from the start of its first shard to the end of its last shard. A shard runs from its `startTime` for its `duration`, or until its `/finish` arrives when it sends no `duration`; with no `startTime`, or one that puts its end more than a day from its `/finish`, it ends when its `/finish` arrives.',
+      'Finalize a streaming test run by setting its final status and calculating performance metrics. Supports pending uploads mode where reports are uploaded asynchronously after finishing. For sharded runs, the run finishes only after all shards report; test counters come from the streamed events, and the run lasts from the start of its first shard to the end of its last shard. A shard runs from its `startTime` for its `duration`, or until its `/finish` arrives when it sends no `duration`; with no `startTime`, or one that puts its end more than a day from its `/finish`, it ends when its `/finish` arrives. The flaky count is read from the attempts the run stored.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     requestBody: {
       content: {
@@ -108,8 +109,8 @@ export default eventHandler(async (event) => {
     }
   }
 
-  // Calculate flaky tests count (default to 0 if not provided)
-  const flakyTests = body.flakyTests ?? 0;
+  // Flaky results, from the attempts the run streamed: one passed after an earlier attempt failed.
+  const { flakyTests } = await computeRunCountsFromRows(db, id);
 
   const hasPendingUploads = body.hasPendingUploads === true;
 
@@ -153,7 +154,7 @@ export default eventHandler(async (event) => {
       ...(hasBodyFailed && { failedTests: failedTestsValue }),
       ...(body.skippedTests !== undefined && { skippedTests: body.skippedTests }),
       ...(body.didNotRunTests !== undefined && { didNotRunTests: body.didNotRunTests }),
-      ...(body.flakyTests !== undefined && { flakyTests }),
+      flakyTests,
       ...(avgTestDuration !== null && { avgTestDuration }),
       ...(p90TestDuration !== null && { p90TestDuration }),
       metadata: pendingMetadata,
@@ -197,7 +198,7 @@ export default eventHandler(async (event) => {
       ...(hasBodyFailed && { failedTests: failedTestsValue }),
       ...(body.skippedTests !== undefined && { skippedTests: body.skippedTests }),
       ...(body.didNotRunTests !== undefined && { didNotRunTests: body.didNotRunTests }),
-      ...(body.flakyTests !== undefined && { flakyTests }),
+      flakyTests,
       ...(avgTestDuration !== null && { avgTestDuration }),
       ...(p90TestDuration !== null && { p90TestDuration }),
       ...(body.metadata && {

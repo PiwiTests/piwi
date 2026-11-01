@@ -12,8 +12,9 @@ import { withInstanceRunLock } from './ingest-locks';
 import { sanitizeMetadata } from './sanitize';
 import { resolveRunBranch } from './run-branch';
 import { runCommit, runOrigin } from '#shared/run-eligibility';
-import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
-import type { TestRunSubmitPayload } from '#shared/types';
+import { flakyFinalAttempts, sumFailedAndTimedOut } from '#shared/utils/test-counts';
+import { resolveBrowserName } from '#shared/browser-name';
+import type { TestCasePayload, TestRunSubmitPayload } from '#shared/types';
 
 /**
  * The initializing or running sharded run of a project instance, which another
@@ -54,18 +55,41 @@ export interface BatchShardTally {
 /** The run-level fields of a batch submission, as `/submit` and the `testRun` field of `/upload` carry them. */
 type BatchRunBody = Omit<TestRunSubmitPayload, 'projectName' | 'testCases'>;
 
+/** A batch's test cases, one per attempt, as the reporter sends them; every field may be missing. */
+type BatchCase = Partial<
+  Pick<TestCasePayload, 'title' | 'location' | 'suitePath' | 'browser' | 'repeatEachIndex' | 'retries' | 'status'>
+> & { duration?: unknown };
+
+/**
+ * How many of a batch's test results are flaky (`flakyFinalAttempts`): its cases are the attempts of each test,
+ * told apart by title, location, describe path and browser, and grouped by repetition.
+ */
+export function countFlakyBatchCases(testCases: ReadonlyArray<BatchCase>): number {
+  const testIds = new Map<string, number>();
+  const rows = testCases.map((tc) => {
+    const test = [tc.title, tc.location, (tc.suitePath ?? []).join('\x1f')].join('\x00');
+    let testCaseId = testIds.get(test);
+    if (testCaseId === undefined) testIds.set(test, (testCaseId = testIds.size));
+    return {
+      testCaseId,
+      browserName: resolveBrowserName(tc.browser),
+      repeatEachIndex: tc.repeatEachIndex ?? 0,
+      retries: Number(tc.retries ?? 0),
+      status: String(tc.status ?? ''),
+    };
+  });
+  return flakyFinalAttempts(rows).size;
+}
+
 /** A batch shard's tally, from its run-level counters and its test cases. */
-export function batchShardTally(
-  body: BatchRunBody,
-  testCases: ReadonlyArray<{ status?: unknown; retries?: unknown; duration?: unknown }>,
-): BatchShardTally {
+export function batchShardTally(body: BatchRunBody, testCases: ReadonlyArray<BatchCase>): BatchShardTally {
   return {
     totalTests: body.totalTests ?? 0,
     passedTests: body.passedTests ?? 0,
     failedTests: sumFailedAndTimedOut(body.failedTests, body.timedOutTests),
     skippedTests: body.skippedTests ?? 0,
     didNotRunTests: body.didNotRunTests ?? 0,
-    flakyTests: testCases.filter((tc) => tc.status === 'passed' && Number(tc.retries ?? 0) > 0).length,
+    flakyTests: countFlakyBatchCases(testCases),
     shard: { shardIndex: body.shardIndex, startTime: body.startTime, duration: body.duration, metadata: body.metadata },
     durations: testCases.map((tc) => tc.duration),
   };

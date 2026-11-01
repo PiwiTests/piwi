@@ -1,6 +1,7 @@
 import type { TestCaseResult } from '~~/types/api';
 import type { RetryCase, RetryMode } from '~/utils/retry-command';
 import { buildRetryCommand, retryCaseOf } from '~/utils/retry-command';
+import { isFlakyExecution } from '#shared/utils/test-counts';
 
 /**
  * The run page's retry command, derived once from the run's execution rows so
@@ -10,9 +11,9 @@ import { buildRetryCommand, retryCaseOf } from '~/utils/retry-command';
  * Each set is one row per test and Playwright project, its final attempt
  * (highest retry index): the failing set takes the ones that failed or timed
  * out, the rows the Tests list selects, so a test that passed on retry is never re-run; the
- * flaky set the ones that passed on a retry; the whole set every test that was
- * not skipped. File, line and project come from the row itself, which makes the
- * command exact.
+ * flaky set the ones that passed after an earlier attempt failed (`isFlakyExecution`); the
+ * whole set every test that was not skipped. File, line and project come from the row
+ * itself, which makes the command exact.
  */
 export function useRunRetryCommand(testCases: MaybeRefOrGetter<TestCaseResult[] | null | undefined>) {
   const mode = useState<RetryMode>('run-retry-mode', () => 'file-line');
@@ -31,9 +32,7 @@ export function useRunRetryCommand(testCases: MaybeRefOrGetter<TestCaseResult[] 
   const failedCases = computed<RetryCase[]>(() =>
     finalAttempts.value.filter((tc) => isFailedStatus(tc.status)).map(retryCaseOf),
   );
-  const flakyCases = computed<RetryCase[]>(() =>
-    finalAttempts.value.filter((tc) => statusPaletteKey(tc.status, tc.retries) === 'flaky').map(retryCaseOf),
-  );
+  const flakyCases = computed<RetryCase[]>(() => finalAttempts.value.filter(isFlakyExecution).map(retryCaseOf));
   const allCases = computed<RetryCase[]>(() =>
     finalAttempts.value
       .filter((tc) => !['skipped', 'fixme'].includes(statusPaletteKey(tc.status, tc.retries)))

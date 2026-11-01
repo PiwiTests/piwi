@@ -29,6 +29,7 @@ import {
 } from '#shared/demo/failure-stories.mjs';
 import { demoExternalId, demoLocks, demoTags, demoTestMeta, buildAiUsage } from '#shared/demo/demo-test-meta.mjs';
 import { demoExecutionResources, demoResourceReport } from '#shared/demo/demo-resources.mjs';
+import { isFlakyResult } from '#shared/status-classify';
 
 export const DEMO_SIMULATOR_INSTANCE_ID = 'demo-simulator';
 
@@ -1578,7 +1579,12 @@ async function runSingleSimulation(
       durations.push(finalDuration);
       if (finalAttempt.status === 'failed') {
         failedCount++;
-      } else if (test.attempts.length > 1) {
+      } else if (
+        isFlakyResult(
+          finalAttempt.status,
+          test.attempts.slice(0, -1).map((a) => a.status),
+        )
+      ) {
         flakyCount++;
       }
       virtualEnd = Math.max(virtualEnd, virtualNow);

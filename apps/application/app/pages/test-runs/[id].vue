@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, watch, onUnmounted } from 'vue';
 import type {
+  AttemptOutcome,
   TestRunDetails,
   TestCaseResult,
   ReportInfo,
@@ -153,15 +154,23 @@ watch(
   { immediate: true },
 );
 
-// Initialise liveTestCases from persisted data when SSE connects
+// Initialise liveTestCases from persisted data when SSE connects: one row per
+// test the stream has not shown yet, its latest attempt.
 function seedLiveFromPersisted(cases: TestCaseResult[]) {
+  const rows = [...liveTestCases.value];
+  const seeded = new Map<string, number>();
   for (const tc of cases) {
     const key = liveCaseKey(tc);
-    if (!liveTestCaseKeys.has(key)) {
+    const idx = seeded.get(key);
+    if (idx !== undefined) {
+      if ((tc.retries ?? 0) > (rows[idx]!.retries ?? 0)) rows[idx] = tc;
+    } else if (!liveTestCaseKeys.has(key)) {
       liveTestCaseKeys.set(key, true);
-      liveTestCases.value = [...liveTestCases.value, tc];
+      seeded.set(key, rows.length);
+      rows.push(tc);
     }
   }
+  liveTestCases.value = rows;
   displayTestCases.value = [...liveTestCases.value];
 }
 
@@ -286,6 +295,7 @@ function flushPendingEvents() {
         browser?: { projectName?: string } | null;
         stepCategory?: string | null;
         retries?: number | null;
+        attempts?: AttemptOutcome[] | null;
         repeatEachIndex?: number;
         executionId?: number | null;
         testCaseId?: number | null;
@@ -299,6 +309,8 @@ function flushPendingEvents() {
         const idx = liveTestCases.value.findIndex((tc) => liveCaseKey(tc) === key);
         if (idx >= 0) {
           const existing = liveTestCases.value[idx]!;
+          // A replayed earlier attempt of a test whose later attempt the row shows changes nothing.
+          if (existing.status !== 'running' && (d.retries ?? 0) < (existing.retries ?? 0)) continue;
           const copy = [...liveTestCases.value];
           copy[idx] = {
             ...existing,
@@ -316,9 +328,10 @@ function flushPendingEvents() {
             workerIndex: d.workerIndex ?? existing.workerIndex,
             startedAt: d.startedAt ? d.startedAt : existing.startedAt,
             browser: d.browser ?? existing.browser,
-            // A later attempt's higher retry count wins, so a fail-then-pass
-            // test ends up as passed-on-retry rather than a plain pass.
+            // A later attempt's retry count and attempt history win, so a
+            // fail-then-pass test ends up flaky rather than a plain pass.
             retries: d.retries ?? existing.retries,
+            attempts: d.attempts ?? existing.attempts,
             // The real ids replace the placeholder once persistence happens;
             // a duplicate event without ids keeps whatever the row already has.
             executionId: d.executionId ?? existing.executionId,
@@ -349,6 +362,7 @@ function flushPendingEvents() {
             startedAt: d.startedAt ?? undefined,
             browser: d.browser ?? null,
             retries: d.retries ?? null,
+            attempts: d.attempts ?? null,
             repeatEachIndex: d.repeatEachIndex ?? 0,
           },
         ];
@@ -595,8 +609,8 @@ watch(displayTestCases, (val) => {
 // Display progress: the header counts, the count bar and the grouped list are
 // all derived from the same de-duplicated case list (one row per test, its
 // final attempt), so they cannot disagree — clicking a bar segment always lands
-// on exactly that many rows. A flaky test passed on a retry, so it counts as
-// passed and as flaky, never as a failure via its earlier failed attempt. While
+// on exactly that many rows. A flaky test passed after an earlier attempt
+// failed, so it counts as passed and as flaky, never as a failure. While
 // live the planned suite size the reporter reports at /start is the denominator
 // (right from the first render); once finished the persisted case list is
 // complete. The stored run columns are only a fallback for a run whose cases are
