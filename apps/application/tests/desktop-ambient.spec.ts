@@ -18,13 +18,21 @@ interface FakeInvocation {
 declare global {
   interface Window {
     __piwiAmbientInvocations: FakeInvocation[];
+    /** Deliver a shell event to the page's listeners, as the shell's `emit` does. */
+    __piwiAmbientEmit: (event: string, payload: unknown) => void;
   }
 }
 
 async function installFakeBridge(page: Page) {
   await page.addInitScript(() => {
     const invocations: FakeInvocation[] = [];
-    Object.assign(window, { __piwiAmbientInvocations: invocations });
+    const listeners = new Map<string, Array<(event: { payload: unknown }) => void>>();
+    Object.assign(window, {
+      __piwiAmbientInvocations: invocations,
+      __piwiAmbientEmit: (event: string, payload: unknown) => {
+        for (const handler of listeners.get(event) ?? []) handler({ payload });
+      },
+    });
     Object.assign(window, {
       __TAURI__: {
         core: {
@@ -35,7 +43,10 @@ async function installFakeBridge(page: Page) {
           },
         },
         event: {
-          listen: async () => () => {},
+          listen: async (event: string, handler: (event: { payload: unknown }) => void) => {
+            listeners.set(event, [...(listeners.get(event) ?? []), handler]);
+            return () => {};
+          },
         },
       },
     });
@@ -74,6 +85,31 @@ test.describe('Desktop ambient unread state', () => {
     invocations = await page.evaluate(() => window.__piwiAmbientInvocations);
     const last = invocations.filter((i) => i.cmd === 'desktop_set_activity').at(-1);
     expect(last?.args?.count).toBe(0);
+  });
+
+  test('a click the shell reports runs the notification’s own click handler', async ({ page }) => {
+    await installFakeBridge(page);
+    await page.goto('/');
+    await waitForHydration(page);
+
+    const clicks = await page.evaluate(() => {
+      const opened: string[] = [];
+      const first = new Notification('Piwi Dashboard', { body: 'acme-web on main: 3/120 tests failed' });
+      first.onclick = () => opened.push('run');
+      const second = new Notification('Piwi Dashboard', { body: 'acme-web: new failure cluster' });
+      second.addEventListener('click', () => opened.push('cluster'));
+      const ids = window.__piwiAmbientInvocations
+        .filter((i) => i.cmd === 'desktop_notify')
+        .map((i) => i.args?.id as number);
+      window.__piwiAmbientEmit('piwi:notification-click', ids[1]);
+      window.__piwiAmbientEmit('piwi:notification-click', ids[0]);
+      // An id this page never gave, such as one from before a reload, opens nothing.
+      window.__piwiAmbientEmit('piwi:notification-click', -1);
+      return { ids, opened };
+    });
+
+    expect(new Set(clicks.ids).size).toBe(2);
+    expect(clicks.opened).toEqual(['cluster', 'run']);
   });
 
   test('a notification while focused shows natively but does not bump the badge', async ({ page }) => {

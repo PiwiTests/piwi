@@ -72,7 +72,12 @@ channel, so a per-user install pulls a per-user update.
    entries whose URL/token drifted after a port change.
 7. Native notifications shown while the window is hidden bump an unread badge
    on the dock icon and the tray tooltip (`desktop_set_activity`), cleared
-   when the window regains focus.
+   when the window regains focus. The page creates them (`desktop_notify`,
+   with an id), so the main window is never suspended in the background
+   (`backgroundThrottling: "disabled"`); a click on one brings the window
+   forward and the shell hands the id back (`piwi:notification-click`), which
+   runs the `onclick` the page set. On Windows a click counts only while the
+   toast is on screen.
 8. A dashboard link opened in the system browser (the reporter's `View run:`
    URL clicked in a terminal) shows in the app window instead: the server
    answers the tab with a notice that closes the tab where the browser allows

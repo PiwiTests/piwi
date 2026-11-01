@@ -1372,16 +1372,43 @@ fn desktop_close_output_window(app: tauri::AppHandle, name: String) -> Result<()
     Ok(())
 }
 
+/// Event the shell emits to the dashboard window with the `id` of a
+/// notification the user clicked (see `desktop_notify`).
+const NOTIFICATION_CLICK_EVENT: &str = "piwi:notification-click";
+
 /// Show a native OS notification (the webview's own Notification API is
-/// unavailable / permission-denied there).
+/// unavailable / permission-denied there). `id` is what a click on it reports
+/// back to the page (`NOTIFICATION_CLICK_EVENT`).
 #[tauri::command]
-fn desktop_notify(app: tauri::AppHandle, title: String, body: String) -> Result<(), String> {
-    app.notification()
-        .builder()
-        .title(title)
-        .body(body)
-        .show()
-        .map_err(|e| e.to_string())
+fn desktop_notify(app: tauri::AppHandle, title: String, body: String, id: Option<i32>) -> Result<(), String> {
+    let mut builder = app.notification().builder().title(title).body(body);
+    if let Some(id) = id {
+        builder = builder.id(id);
+    }
+    builder.show().map_err(|e| e.to_string())
+}
+
+/// A click on a notification (`tap`) brings the dashboard window forward and
+/// hands the notification's id to the page, which opens what it is about.
+/// Registered before the first notification: the plugin reports clicks only
+/// on notifications shown once a handler exists.
+fn report_notification_clicks(app: &AppHandle) {
+    let handle = app.clone();
+    let _ = app.notification().on_action(move |performed| {
+        if performed.action_id() != "tap" {
+            return;
+        }
+        let id = performed.notification().map(|n| n.id());
+        let inner = handle.clone();
+        let _ = handle.run_on_main_thread(move || {
+            if let Some(w) = inner.get_webview_window("main") {
+                bring_to_front(&w);
+            }
+            if let Some(id) = id {
+                let _ = inner.emit_to("main", NOTIFICATION_CLICK_EVENT, id);
+            }
+        });
+    });
 }
 
 /// Append a line reported by the webview to the server log. The dashboard runs
@@ -1819,6 +1846,7 @@ pub fn run() {
             // and record whether this is a debug launch (for the aux-window opener).
             app.manage(LogFile(log_path.clone()));
             app.manage(DebugMode(debug_mode));
+            report_notification_clicks(app.handle());
 
             let secret = load_or_create_secret(&app_data_dir);
             let token = load_or_create_token(&app_data_dir);
