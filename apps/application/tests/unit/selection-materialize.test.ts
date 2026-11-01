@@ -106,16 +106,12 @@ describe('shell safety', () => {
     locks: [],
   };
 
-  test('a file token a shell would expand is left out of both args and command', () => {
+  test('a file holding characters a shell expands is named with `.` in their place, in args and command', () => {
     const result = materializeSelection([hostile, tests[0]!], 'args');
-    expect(result.args).toEqual(['tests/login.spec.ts:10']);
+    expect(result.args).toEqual(['tests/.[(]touch pwned[)].spec.ts:5', 'tests/login.spec.ts:10']);
     expect(result.command).not.toContain('$(');
-  });
-
-  test('when every file token is unsafe it selects by title, with shell characters matched as `.`', () => {
-    const result = materializeSelection([hostile], 'files');
-    expect(result.format).toBe('grep');
-    expect(result.args).toEqual(['--grep', 'checkout .id. works']);
-    expect(result.command).toBe('npx playwright test "--grep" "checkout .id. works"');
+    const files = materializeSelection([hostile], 'files');
+    expect(files.format).toBe('files');
+    expect(files.command).toBe('npx playwright test "tests/.[(]touch pwned[)].spec.ts"');
   });
 });

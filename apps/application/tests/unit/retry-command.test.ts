@@ -185,22 +185,22 @@ describe('buildTitleGrepFlag', () => {
 });
 
 describe('unsafe file paths and project names are left out', () => {
-  test('a path a shell would expand is dropped, and the project flag with it', () => {
+  test('a path holding characters a shell expands names its file with `.` in their place, and such a project is dropped', () => {
     expect(buildRetryCommand([{ filePath: 'tests/`id`.spec.ts', title: 't', line: 1, projectName: 'chromium' }])).toBe(
-      '',
+      'npx playwright test "tests/.id..spec.ts:1" --project="chromium"',
     );
     expect(buildRetryCommand([{ filePath: 'tests/a.spec.ts', title: 't', line: 1, projectName: 'x$(id)' }])).toBe(
       'npx playwright test "tests/a.spec.ts:1"',
     );
   });
 
-  test('CI re-run arguments keep only safe specs', () => {
+  test('CI re-run arguments hold nothing a shell expands', () => {
     expect(
       buildRetryArgs([
         { filePath: 'tests/$(id).spec.ts', title: 't', line: null },
         { filePath: 'tests/b.spec.ts', title: 't', line: null },
       ]),
-    ).toBe('"tests/b.spec.ts"');
+    ).toBe('"tests/.[(]id[)].spec.ts" "tests/b.spec.ts"');
   });
 });
 
