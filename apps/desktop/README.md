@@ -34,15 +34,20 @@ channel, so a per-user install pulls a per-user update.
    it says the server stopped once the supervisor, which restarts a crashed server
    with a backoff, gives up. The dashboard shows the restarts as a toast
    (`server-status` events).
-3. The tray offers **Run in background** (keep serving after the window closes),
-   **Start on login**, and **Open data folder**.
+3. The tray offers **Run in background** (keep serving after the window closes;
+   on macOS a click on the Dock icon brings the window back), **Start on login**,
+   **Open data folder** and **Show logs**, which reveals `logs/server.log` in the
+   app data folder. The log rotates at 10 MB, keeping `server.1.log` and
+   `server.2.log`.
 4. The dashboard can link a Piwi project to a folder on this machine and run
    `playwright test` there (`src-tauri/src/runner.rs`): the shell resolves the
    folder's own Playwright package, executes it with the bundled Node sidecar,
    and streams output back to the webview as `piwi:local-run` events. Those
    processes die with the shell, so every way out — closing the window, the
-   tray's Quit, or an update restart — asks for confirmation first while any
-   of them is still running. Every such run, reproductions, bisect steps and
+   tray's Quit, Cmd+Q on macOS, or an update restart — asks for confirmation
+   first while any of them is still running. The ways out that cannot be held
+   (the Dock's Quit on macOS, logging out, shutting down) still run the quit
+   cleanup (`shut_down` on `RunEvent::Exit`). Every such run, reproductions, bisect steps and
    Flake Lab included, names the bundled server as its hub
    (`PIWI_RUN_CHANNEL`, `PIWI_RUN_REF`): each worker keeps a connection to
    the server's run channel, so the window and the paired Piwi Picker (over

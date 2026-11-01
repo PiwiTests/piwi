@@ -680,14 +680,48 @@ pub(crate) fn node_path(p: &std::path::Path) -> String {
     s.strip_prefix(r"\\?\").unwrap_or(&s).to_string()
 }
 
+/// The size at which the server log rotates, and how many rotated files stay
+/// beside it (`server.1.log` the newest).
+const LOG_MAX_BYTES: u64 = 10 * 1024 * 1024;
+const LOG_ROTATED_KEPT: u32 = 2;
+
+/// Serializes the log's writers (the sidecar's supervisor, the webview error
+/// bridge, the shell), so lines never interleave and one rotation happens at a time.
+static LOG_WRITE: Mutex<()> = Mutex::new(());
+
 /// Append a line to the server log. A release build is a windowed app with no
 /// console, so the sidecar's output and any startup errors would otherwise be
-/// invisible — this makes them readable via the data folder's `logs/server.log`.
+/// invisible — this makes them readable in `logs/server.log`, which the tray's
+/// Show logs reveals.
 fn append_log(path: &std::path::Path, line: &str) {
     use std::io::Write;
+    let _guard = LOG_WRITE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    rotate_log_if_full(path, LOG_MAX_BYTES, LOG_ROTATED_KEPT);
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
         let _ = writeln!(f, "{line}");
     }
+}
+
+/// Once `path` holds `max_bytes`, move it to `<stem>.1.<ext>`, each older
+/// rotated file one number up, and drop the one past `kept`.
+fn rotate_log_if_full(path: &Path, max_bytes: u64, kept: u32) {
+    if kept == 0 || !std::fs::metadata(path).is_ok_and(|m| m.len() >= max_bytes) {
+        return;
+    }
+    for n in (1..kept).rev() {
+        let _ = std::fs::rename(rotated_log_path(path, n), rotated_log_path(path, n + 1));
+    }
+    let _ = std::fs::rename(path, rotated_log_path(path, 1));
+}
+
+/// The `n`th rotated file of a log: `logs/server.log` → `logs/server.<n>.log`.
+fn rotated_log_path(path: &Path, n: u32) -> PathBuf {
+    let stem = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+    let name = match path.extension() {
+        Some(ext) => format!("{stem}.{n}.{}", ext.to_string_lossy()),
+        None => format!("{stem}.{n}"),
+    };
+    path.with_file_name(name)
 }
 
 /// A `PIWI_DEBUG`-style value counts as "on" unless it is empty or an explicit
@@ -1519,6 +1553,43 @@ pub(crate) fn confirm_stopping_local_runs(
         });
 }
 
+/// Quit the app, asking first while local test runs are going: the tray's Quit
+/// and, on macOS, the app menu's.
+fn quit_after_confirming(app: &AppHandle) {
+    let handle = app.clone();
+    confirm_stopping_local_runs(app, "Quit Piwi?", "quitting", "Quit", move || {
+        handle.exit(0);
+    });
+}
+
+/// Id of the app menu's Quit item (see `app_menu`).
+const APP_MENU_QUIT_ID: &str = "app-menu-quit";
+
+/// The macOS app menu: Tauri's default menu, its Quit item (Cmd+Q) replaced by
+/// one that goes through [`quit_after_confirming`]. The predefined Quit sends
+/// `terminate:`, which no `ExitRequested` precedes, so nothing could ask first.
+/// Built on every platform so it is type-checked everywhere; only macOS
+/// installs it.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    use tauri::menu::{Menu, MenuItemKind};
+
+    let menu = Menu::default(app)?;
+    if let Some(MenuItemKind::Submenu(app_submenu)) = menu.items()?.into_iter().next() {
+        let items = app_submenu.items()?;
+        if let Some(MenuItemKind::Predefined(quit)) = items.last() {
+            if quit.text().is_ok_and(|text| text.starts_with("Quit")) {
+                app_submenu.remove(quit)?;
+            }
+        }
+        let quit = MenuItemBuilder::with_id(APP_MENU_QUIT_ID, format!("Quit {}", app.package_info().name))
+            .accelerator("CmdOrCtrl+Q")
+            .build(app)?;
+        app_submenu.append(&quit)?;
+    }
+    Ok(menu)
+}
+
 /// The window-close variant of the question above.
 ///
 /// Reports whether the close has to be held back: `true` once the question is on
@@ -1737,8 +1808,8 @@ pub fn run() {
             let db_path = data_dir.join("piwi.db");
 
             // Server logs go to a file so failures are visible in a windowed
-            // (console-less) release build — read it via the "Open data folder"
-            // tray item, under logs/server.log.
+            // (console-less) release build: logs/server.log, which the tray's
+            // Show logs reveals.
             let log_dir = app_data_dir.join("logs");
             let _ = std::fs::create_dir_all(&log_dir);
             let log_path = log_dir.join("server.log");
@@ -1904,6 +1975,7 @@ pub fn run() {
             // --- tray ---
             let open_i = MenuItemBuilder::with_id("open", "Open Piwi Dashboard").build(app)?;
             let folder_i = MenuItemBuilder::with_id("open_folder", "Open data folder").build(app)?;
+            let logs_i = MenuItemBuilder::with_id("show_logs", "Show logs").build(app)?;
             let bg_i = CheckMenuItemBuilder::with_id("run_bg", "Run in background")
                 .checked(run_bg_initial)
                 .build(app)?;
@@ -1916,6 +1988,7 @@ pub fn run() {
             let menu = MenuBuilder::new(app)
                 .item(&open_i)
                 .item(&folder_i)
+                .item(&logs_i)
                 .separator()
                 .item(&bg_i)
                 .item(&login_i)
@@ -1948,6 +2021,10 @@ pub fn run() {
                             bring_to_front(&w);
                         }
                     }
+                    "show_logs" => {
+                        let log = app.state::<LogFile>().0.clone();
+                        let _ = app.opener().reveal_item_in_dir(&log);
+                    }
                     "open_folder" => {
                         let dir = app.state::<DataDir>().0.clone();
                         let _ = app
@@ -1969,15 +2046,21 @@ pub fn run() {
                         let _ = if enabled { mgr.disable() } else { mgr.enable() };
                         let _ = login_i.set_checked(!enabled);
                     }
-                    "quit" => {
-                        let handle = app.clone();
-                        confirm_stopping_local_runs(app, "Quit Piwi?", "quitting", "Quit", move || {
-                            handle.exit(0);
-                        });
-                    }
+                    "quit" => quit_after_confirming(app),
                     _ => {}
                 })
                 .build(app)?;
+
+            // macOS: Cmd+Q asks before it stops local runs, like the tray's Quit.
+            #[cfg(target_os = "macos")]
+            {
+                app.set_menu(app_menu(app.handle())?)?;
+                app.on_menu_event(|app, event| {
+                    if event.id().as_ref() == APP_MENU_QUIT_ID {
+                        quit_after_confirming(app);
+                    }
+                });
+            }
 
             // Window size: maximized on first launch (no stored preference), and
             // thereafter whatever the user last left it as — persisted on quit
@@ -2075,6 +2158,18 @@ pub fn run() {
         .expect("error while building the Piwi Dashboard app")
         .run(|app_handle, event| match event {
             RunEvent::ExitRequested { .. } => shut_down(app_handle, None),
+            // Some ways out end the app with `Exit` alone: the Dock's Quit on
+            // macOS, and logging out or shutting down. `shut_down` is
+            // idempotent, so the paths that also sent `ExitRequested` lose nothing.
+            RunEvent::Exit => shut_down(app_handle, None),
+            // macOS: a click on the Dock icon brings back the window hidden by
+            // Run in background; AppKit does nothing when no window is visible.
+            #[cfg(target_os = "macos")]
+            RunEvent::Reopen { has_visible_windows: false, .. } => {
+                if let Some(w) = app_handle.get_webview_window("main") {
+                    bring_to_front(&w);
+                }
+            }
             // macOS delivers file-association opens as an event, not argv.
             #[cfg(target_os = "macos")]
             RunEvent::Opened { urls } => {
@@ -2100,7 +2195,8 @@ mod tests {
         health_ok, health_response_proves, ide_launcher_args, is_known_launcher,
         is_output_window_name, is_sidecar_url, is_truthy_flag, main_window_may_navigate,
         output_window_name, port_refusal, prepare_compile_cache, progress_bar_status, read_installer_port,
-        remote_capability, remove_other_versions, render_status_dot, splash_status_script,
+        remote_capability, remove_other_versions, render_status_dot, rotate_log_if_full, rotated_log_path,
+        splash_status_script,
         status_dot_color, valid_port, write_new_download, BAD_PORTS, DEFAULT_PORT,
         INSTALLER_CHOICES_FILE, MIN_PORT, SERVER_PORT_KEY, STORE_FILE,
     };
@@ -2187,6 +2283,47 @@ mod tests {
         ] {
             assert!(hooks.contains(&expected), "installer-hooks.nsh should contain {expected}");
         }
+    }
+
+    #[test]
+    fn rotated_logs_are_numbered_before_the_extension() {
+        use std::path::{Path, PathBuf};
+        assert_eq!(
+            rotated_log_path(Path::new("/data/logs/server.log"), 1),
+            PathBuf::from("/data/logs/server.1.log")
+        );
+        assert_eq!(rotated_log_path(Path::new("/data/logs/server"), 2), PathBuf::from("/data/logs/server.2"));
+    }
+
+    #[test]
+    fn a_full_log_rotates_keeping_the_newest_rotated_files() {
+        let dir = std::env::temp_dir().join(format!("piwi-log-rotation-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("server.log");
+        let read = |n: u32| fs::read_to_string(rotated_log_path(&log, n)).ok();
+
+        // Below the limit: nothing moves.
+        fs::write(&log, "tiny").unwrap();
+        rotate_log_if_full(&log, 100, 2);
+        assert!(log.exists());
+        assert_eq!(read(1), None);
+
+        // Each full log becomes server.1.log, the previous one moves up, the oldest goes.
+        for text in ["first", "second", "third"] {
+            fs::write(&log, text).unwrap();
+            rotate_log_if_full(&log, 5, 2);
+            assert!(!log.exists(), "{text} should have rotated");
+        }
+        assert_eq!(read(1).as_deref(), Some("third"));
+        assert_eq!(read(2).as_deref(), Some("second"));
+        assert_eq!(read(3), None);
+
+        // Keeping none never deletes the log itself.
+        fs::write(&log, "kept").unwrap();
+        rotate_log_if_full(&log, 1, 0);
+        assert!(log.exists());
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
