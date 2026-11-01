@@ -41,7 +41,9 @@ channel, so a per-user install pulls a per-user update.
    on macOS a click on the Dock icon brings the window back), **Start on login**,
    **Open data folder** and **Show logs**, which reveals `logs/server.log` in the
    app data folder. The log rotates at 10 MB, keeping `server.1.log` and
-   `server.2.log`.
+   `server.2.log`. While local runs are going, the tray lists them under
+   Open, each with a Stop item (`refresh_tray_runs`, kept current once a second
+   by `watch_local_runs`), which stops it as the window's Stop does.
 4. The dashboard can link a Piwi project to a folder on this machine and run
    `playwright test` there (`src-tauri/src/runner.rs`): the shell resolves the
    folder's own Playwright package, executes it with the bundled Node sidecar,
@@ -114,7 +116,7 @@ channel, so a per-user install pulls a per-user update.
     goes): the Dock icon bounces, the taskbar button flashes, or Linux sets the
     urgency hint, which focusing the window withdraws. While a local run or job
     is going, a run in UI mode or paused at a stop included, the machine does
-    not idle-sleep (`keep_awake_while_runs_go`, the `keepawake` crate, on a
+    not idle-sleep (`watch_local_runs`, the `keepawake` crate, on a
     thread of its own since Windows ties the request to the thread that made
     it; on Linux with logind's sleep inhibitor too, which GNOME's idle suspend
     respects). The display still turns off, closing a laptop's lid still sleeps

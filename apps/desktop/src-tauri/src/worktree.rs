@@ -1130,6 +1130,7 @@ pub async fn desktop_reproduce_here(
     let stop = Arc::new(AtomicBool::new(false));
     let cleaned = Arc::new(AtomicBool::new(false));
     let worktree = add_worktree(&app, &git, &folder, &project_id, &commit, id)?;
+    state.label(id, crate::runner::run_label("the reproduction", &folder));
     state.register_job(
         id,
         Job {
@@ -1274,6 +1275,7 @@ pub async fn desktop_bisect_here(
     let stop = Arc::new(AtomicBool::new(false));
     let cleaned = Arc::new(AtomicBool::new(false));
     let worktree = add_worktree(&app, &git, &folder, &project_id, &bad, id)?;
+    state.label(id, crate::runner::run_label("the bisect", &folder));
     state.register_job(
         id,
         Job {
@@ -1551,6 +1553,7 @@ pub async fn desktop_flake_lab_here(
         &commit,
         id,
     )?;
+    state.label(id, crate::runner::run_label("the Flake Lab session", &folder));
     state.register_job(
         id,
         Job {
@@ -1708,6 +1711,7 @@ pub async fn desktop_flake_lab_job(
 
     let stop = Arc::new(AtomicBool::new(false));
     let cleaned = Arc::new(AtomicBool::new(false));
+    state.label(id, crate::runner::run_label("the Flake Lab job", &folder));
     state.register_job(
         id,
         Job {

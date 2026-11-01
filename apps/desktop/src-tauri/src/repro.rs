@@ -361,6 +361,7 @@ pub async fn desktop_run_repro(
         }
     };
     state.track_child(id, child);
+    state.label(id, crate::runner::run_label("the bug report", &folder));
 
     let emit_app = app.clone();
     tauri::async_runtime::spawn(async move {

@@ -1015,8 +1015,8 @@ fn supervise_server(
     });
 }
 
-/// How often the keep-awake thread looks at the local runs.
-const KEEP_AWAKE_TICK: Duration = Duration::from_secs(5);
+/// How often the local runs watcher looks at the local runs.
+const RUNS_WATCH_TICK: Duration = Duration::from_secs(1);
 
 /// What the keep-awake thread does on a tick.
 #[derive(Debug, PartialEq)]
@@ -1037,25 +1037,29 @@ fn awake_change(running: bool, holding: bool, tried: bool) -> AwakeChange {
     }
 }
 
-/// Keep the machine from sleeping while a local run or job is going: a run, a
-/// reproduction, a bisect or a Flake Lab session can take an hour, and a
-/// sleeping machine stops it. Idle sleep only: the display still turns off, and
+/// Watch the local runs, once a second, for the rest of the app's life: list
+/// them in the tray, each with its Stop item (`refresh_tray_runs`), and keep the
+/// machine from sleeping while one is going: a run, a reproduction, a bisect
+/// or a Flake Lab session can take an hour, and a sleeping machine stops it. Idle sleep only: the display still turns off, and
 /// closing a laptop's lid still puts it to sleep. On Linux it also takes
 /// logind's sleep inhibitor, since GNOME suspends an idle machine by asking
 /// logind to sleep, which an idle inhibitor does not stop. One thread holds the
 /// assertion for the life of the app, since Windows ties
 /// `SetThreadExecutionState` to the thread that set it. A refused assertion is
 /// logged.
-fn keep_awake_while_runs_go(
-    app: AppHandle,
-    shutting_down: Arc<AtomicBool>,
-    log_path: PathBuf,
-) -> std::io::Result<()> {
-    std::thread::Builder::new().name("keep-awake".into()).spawn(move || {
+fn watch_local_runs(app: AppHandle, shutting_down: Arc<AtomicBool>, log_path: PathBuf) -> std::io::Result<()> {
+    std::thread::Builder::new().name("local-runs".into()).spawn(move || {
         let mut held: Option<keepawake::KeepAwake> = None;
         let mut tried = false;
+        let mut listed: Vec<(u32, String)> = Vec::new();
         while !shutting_down.load(Ordering::SeqCst) {
-            let running = app.try_state::<runner::LocalRuns>().is_some_and(|runs| runs.active_count() > 0);
+            let runs = app.try_state::<runner::LocalRuns>().map(|runs| runs.listed()).unwrap_or_default();
+            if runs != listed {
+                listed = runs.clone();
+                let handle = app.clone();
+                let _ = app.run_on_main_thread(move || refresh_tray_runs(&handle, &runs));
+            }
+            let running = !listed.is_empty();
             match awake_change(running, held.is_some(), tried) {
                 AwakeChange::Take => {
                     tried = true;
@@ -1077,10 +1081,60 @@ fn keep_awake_while_runs_go(
             if !running {
                 tried = false;
             }
-            std::thread::sleep(KEEP_AWAKE_TICK);
+            std::thread::sleep(RUNS_WATCH_TICK);
         }
     })?;
     Ok(())
+}
+
+/// Id prefix of the tray's Stop items: `stop-run-<run id>`.
+const TRAY_STOP_RUN_PREFIX: &str = "stop-run-";
+
+/// The tray's Stop item of each running run: its menu id and its text.
+fn tray_run_entries(runs: &[(u32, String)]) -> Vec<(String, String)> {
+    runs.iter()
+        .map(|(id, label)| (format!("{TRAY_STOP_RUN_PREFIX}{id}"), format!("Stop {label}")))
+        .collect()
+}
+
+/// The run a tray Stop item stops, `None` for any other item.
+fn tray_stop_run_id(menu_id: &str) -> Option<u32> {
+    menu_id.strip_prefix(TRAY_STOP_RUN_PREFIX)?.parse().ok()
+}
+
+/// The tray's menu, which the runs watcher adds the Stop items to.
+struct TrayMenu(tauri::menu::Menu<tauri::Wry>);
+
+/// The items the runs watcher put in the tray's menu last: a Stop item per
+/// running run, then a separator.
+#[derive(Default)]
+struct TrayRunItems(Mutex<Vec<tauri::menu::MenuItemKind<tauri::Wry>>>);
+
+/// Put a Stop item per running run in the tray's menu, under Open, in place of
+/// the last ones. On the main thread.
+fn refresh_tray_runs(app: &AppHandle, runs: &[(u32, String)]) {
+    use tauri::menu::{MenuItemKind, PredefinedMenuItem};
+    let (Some(menu), Some(items)) = (app.try_state::<TrayMenu>(), app.try_state::<TrayRunItems>()) else {
+        return;
+    };
+    let mut items = items.0.lock().unwrap();
+    for item in items.drain(..) {
+        let _ = menu.0.remove(&item);
+    }
+    if runs.is_empty() {
+        return;
+    }
+    for (id, text) in tray_run_entries(runs) {
+        if let Ok(item) = MenuItemBuilder::with_id(id, text).build(app) {
+            items.push(MenuItemKind::MenuItem(item));
+        }
+    }
+    if let Ok(separator) = PredefinedMenuItem::separator(app) {
+        items.push(MenuItemKind::Predefined(separator));
+    }
+    for (offset, item) in items.iter().enumerate() {
+        let _ = menu.0.insert(item, 1 + offset);
+    }
 }
 
 /// The server is down for good: end the readiness wait, which says so on the
@@ -2366,8 +2420,8 @@ pub fn run() {
             // intentional shutdown apart from a crash worth restarting.
             let shutting_down = Arc::new(AtomicBool::new(false));
             app.manage(ShuttingDown(shutting_down.clone()));
-            if let Err(e) = keep_awake_while_runs_go(app.handle().clone(), shutting_down.clone(), log_path.clone()) {
-                append_log(&log_path, &format!("could not start the keep-awake thread: {e}"));
+            if let Err(e) = watch_local_runs(app.handle().clone(), shutting_down.clone(), log_path.clone()) {
+                append_log(&log_path, &format!("could not start the local runs watcher: {e}"));
             }
 
             // --- resolve the bundled server entry (shipped unpacked via resources) ---
@@ -2500,6 +2554,8 @@ pub fn run() {
                 .separator()
                 .item(&quit_i)
                 .build()?;
+            app.manage(TrayMenu(menu.clone()));
+            app.manage(TrayRunItems::default());
 
             let menu_run_bg = run_bg.clone();
             let _tray = TrayIconBuilder::with_id("main")
@@ -2549,6 +2605,11 @@ pub fn run() {
                         let _ = login_i.set_checked(!enabled);
                     }
                     "quit" => quit_after_confirming(app),
+                    id if tray_stop_run_id(id).is_some() => {
+                        if let Some(run_id) = tray_stop_run_id(id) {
+                            tauri::async_runtime::spawn(runner::desktop_stop_local_tests(app.clone(), run_id));
+                        }
+                    }
                     _ => {}
                 })
                 .build(app)?;
@@ -2713,7 +2774,8 @@ mod tests {
         is_output_window_name, is_sidecar_url, is_truthy_flag, main_window_may_navigate,
         output_window_name, port_refusal, prepare_compile_cache, progress_bar_status, read_installer_port,
         remote_capability, remove_other_versions, render_status_dot, request_target, rotate_log_if_full,
-        app_menu_action, awake_change, run_newly_failed, window_state_key, AppMenuAction, AwakeChange,
+        app_menu_action, awake_change, run_newly_failed, tray_run_entries, tray_stop_run_id, window_state_key,
+        AppMenuAction, AwakeChange,
         DOCS_URL, NEW_ISSUE_URL,
         parse_retention_env, rotated_log_path, splash_status_script, stream_download, valid_retention_days,
         status_dot_color, valid_port, write_new_download, BAD_PORTS, DEFAULT_PORT,
@@ -2933,6 +2995,22 @@ mod tests {
         }
         // Help opens the docs site.
         assert!(DOCS_URL.starts_with("https://piwitests.dev/"));
+    }
+
+    #[test]
+    fn the_tray_lists_a_stop_item_per_running_run() {
+        let runs = vec![(3, "tests in shop".to_string()), (12, "the bisect in admin".to_string())];
+        assert_eq!(
+            tray_run_entries(&runs),
+            vec![
+                ("stop-run-3".to_string(), "Stop tests in shop".to_string()),
+                ("stop-run-12".to_string(), "Stop the bisect in admin".to_string()),
+            ]
+        );
+        assert_eq!(tray_stop_run_id("stop-run-12"), Some(12));
+        for id in ["stop-run-", "stop-run-x", "quit", "run_bg", "app-menu-quit"] {
+            assert_eq!(tray_stop_run_id(id), None, "{id}");
+        }
     }
 
     #[test]
