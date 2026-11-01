@@ -10,7 +10,7 @@ recorder, the quality of a draft), debugging (suspect lines, coverage divergence
 control) are out of scope; they appear only where they feed or consume the signals.
 
 **Status.** Proposed 2026-10-31, against `main` at v0.63.0 (`2bd05d42`). The quick wins of §10 are built, some in
-part. A pull request that builds more of §10 updates this paragraph.
+part, and the medium items M1 to M5. A pull request that builds more of §10 updates this paragraph.
 
 - **Built:** S2 to S4, S6, S9 and S13.
 - **S1, in part.** *Success only* no longer counts a GET page load, so a page never reads as a route without its
@@ -33,7 +33,21 @@ part. A pull request that builds more of §10 updates this paragraph.
 - **S12, in part.** A finding's exposure shows its reach. A feature is still colored by its worst class.
 - **Not built:** S7. The docs say which ids collapse in a key ([`gap-detectors.md`](../apps/docs/reference/gap-detectors.md)).
 
-The medium items and the programs are not started.
+Medium items:
+
+- **Built:** M1 and M3.
+- **M2, in part.** Each uncovered file in the comment links its gap, whose **Accept** copies the draft; the
+  change-coverage status opens the pull request's gaps; the gate names the files and stores its warnings; the editor
+  lens opens the file's gaps. A file's draft starts from the route or page it serves, else the nearest one a test
+  reaches. Left: a run's own *Uncovered changes* view, and recording a gap from the editor.
+- **M4, in part.** Every closed gap stores its reason, and each detector's pull-request gaps and the ones acted on
+  show beside its precision. Left: escape lift and leave-one-test-out recall.
+- **M5, built with one change.** *Fixed without a regression test* reads closed bug reports no test names, not
+  recorded cluster fixes: the tests a cluster failed already guard its fix. A recorded fix raises *incidental catch*
+  instead, when the fixing change names a cause those tests are not about. Bug reports mark their page as escaped.
+  Tracker bugs (*escaped defect* from a tracker) still do not run.
+
+M6 to M10 and the programs are not started.
 
 **Summary.** Piwi already stores most of what finding a missing test needs: per-test server lines, browser functions
 and CSS rules, the routes, pages and controls every test reaches, a declared surface, probe outcomes, the diff of
