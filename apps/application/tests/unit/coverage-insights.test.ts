@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import type { CoverageCapture, CoverageFile } from '@piwitests/core/coverage';
+import type { CoverageCapture, CoverageFile, LineRange } from '@piwitests/core/coverage';
 import {
   bestExplanation,
   compactFileCoverage,
@@ -408,6 +408,21 @@ describe('reachOfTargets', () => {
       ran: [[79, 80]],
       notRan: [[81, 82]],
     });
+  });
+
+  test('a callback nested in a function that ran, and never called, did not run', () => {
+    const page = { path: 'src/Checkout.vue', runtime: 'browser', blob: A, functions: [[1, 30]] } as CoverageFile;
+    const allFunctions: LineRange[] = [
+      [1, 30],
+      [10, 14],
+    ];
+    expect(reachOfTargets(page, true, [[10, 14]], null, allFunctions)).toMatchObject({
+      granularity: 'functions',
+      ran: [],
+      notRan: [[10, 14]],
+      allRan: false,
+    });
+    expect(reachOfTargets(page, true, [[16, 20]], null, allFunctions)).toMatchObject({ ran: [[16, 20]], allRan: true });
   });
 });
 

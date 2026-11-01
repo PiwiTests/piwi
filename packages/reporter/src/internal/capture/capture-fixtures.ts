@@ -69,6 +69,8 @@ import {
   recordProbeOutcome,
   outcomeFromStatus,
   classifyProbeHandled,
+  faultIsTheError,
+  probeConsoleErrors,
 } from '../probe/mode.js';
 import { installProbeInterception, type ProbeInterception } from '../probe/interception.js';
 import type { ProbePlanItem } from '../probe/plan.js';
@@ -3892,8 +3894,10 @@ export const piwiFixtures: Fixtures<
         currentSink = null;
         // A pause the editor asked that no call of this test took stops the next test's first call.
         if (sink.pause?.pause) pauseNextTest = true;
-        // Record the probe outcome (this test noticed the fault iff it failed)
-        // before flushing the rest of the capture.
+        // Record the probe outcome before flushing the rest of the capture: a
+        // failure noticed the fault, a pass did not, and an applied fault whose
+        // test was skipped or interrupted, or a fault that never applied, says
+        // neither (`outcomeFromStatus`).
         if (sink.probeItem) {
           const applied = sink.probeInterception?.applied() ?? false;
           const level = sink.probeItem.level ?? 'client';
@@ -3905,9 +3909,10 @@ export const piwiFixtures: Fixtures<
           const handled =
             level === 'server' && applied
               ? classifyProbeHandled({
-                  consoleErrors: sink.consoleEntries.filter((e) => e.type === 'error').length,
+                  consoleErrors: probeConsoleErrors(sink.consoleEntries),
                   dialogs: sink.dialogs.length,
                   backendError: sink.probeInterception?.serverError() ?? false,
+                  faultIsTheError: faultIsTheError(sink.probeItem.fault),
                   pageErrors: sink.probePageErrors,
                   blankPage: sink.probeBlankPage,
                 })

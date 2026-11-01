@@ -6,10 +6,10 @@
  * gaps the ledger already holds on new surface).
  */
 import { describe, test, expect, beforeEach } from 'vitest';
-import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
+import { eq } from 'drizzle-orm';
 import { migrateToLatest } from './temp-db';
 
 delete process.env.PIWI_DATABASE_URL;
@@ -224,6 +224,7 @@ async function execution(opts: {
     status: number;
     logs?: Array<{ level: string; message: string }>;
     fulfilled?: boolean;
+    resourceType?: string;
   }>;
 }) {
   await db.insert(schema.testRunsCases).values({
@@ -243,9 +244,290 @@ async function execution(opts: {
       status: r.status,
       serverLogs: r.logs ? (r.logs.map((l) => ({ ...l, timestamp: 0, category: 'app' })) as never) : null,
       fulfilled: r.fulfilled ?? null,
+      resourceType: r.resourceType ?? null,
     });
   }
 }
+
+describe('computeScenarioGaps — success only', () => {
+  test("a page load's status never counts toward a route's error paths", async () => {
+    await db.insert(schema.testRuns).values({
+      id: 1,
+      projectId: 1,
+      status: 'passed',
+      startTime: new Date(),
+      branch: 'main',
+      metadata: metadata as never,
+    });
+    await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'lists users' });
+    await db
+      .insert(schema.graphNodes)
+      .values({ projectId: 1, kind: 'route', key: 'GET /users', firstSeenRunId: 1, lastSeenRunId: 1 });
+    await execution({
+      id: 1,
+      runId: 1,
+      testCaseId: 1,
+      requests: [
+        ...Array.from({ length: 5 }, () => ({ method: 'GET', path: '/users', status: 200, resourceType: 'xhr' })),
+        { method: 'GET', path: '/users', status: 500, resourceType: 'document' },
+      ],
+    });
+
+    await gaps.computeScenarioGaps(db, 1);
+    const raised = await gaps.listScenarioGaps(db, 1, { detector: 'success-only' });
+    expect(raised.map((g) => g.subject)).toEqual([{ kind: 'route', key: 'GET /users' }]);
+  });
+
+  test("a form's POST is a call: always answered with a redirect, it has no error path under test", async () => {
+    await db.insert(schema.testRuns).values({
+      id: 1,
+      projectId: 1,
+      status: 'passed',
+      startTime: new Date(),
+      branch: 'main',
+      metadata: metadata as never,
+    });
+    await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'contacts us' });
+    await db
+      .insert(schema.graphNodes)
+      .values({ projectId: 1, kind: 'route', key: 'POST /contact', firstSeenRunId: 1, lastSeenRunId: 1 });
+    await execution({
+      id: 1,
+      runId: 1,
+      testCaseId: 1,
+      requests: [
+        ...Array.from({ length: 5 }, () => ({
+          method: 'POST',
+          path: '/contact',
+          status: 303,
+          resourceType: 'document',
+        })),
+      ],
+    });
+
+    await gaps.computeScenarioGaps(db, 1);
+    const raised = await gaps.listScenarioGaps(db, 1, { detector: 'success-only' });
+    expect(raised.map((g) => g.subject)).toEqual([{ kind: 'route', key: 'POST /contact' }]);
+  });
+});
+
+describe('computeScenarioGaps — the evidence window', () => {
+  const node = (key: string, firstSeenRunId: number, lastSeenRunId = firstSeenRunId) => ({
+    projectId: 1,
+    kind: 'route',
+    key,
+    firstSeenRunId,
+    lastSeenRunId,
+  });
+  const reach = (testCaseId: number, key: string) => ({
+    projectId: 1,
+    fromKind: 'test',
+    fromKey: String(testCaseId),
+    toKind: 'route',
+    toKey: key,
+    kind: 'reaches',
+    lastSeenAt: new Date(),
+  });
+
+  test('a pull-request run neither erases new surface nor closes an error path with its 500', async () => {
+    await db.insert(schema.testRuns).values([
+      { id: 1, projectId: 1, status: 'passed', startTime: new Date(), branch: 'main', metadata: metadata as never },
+      { id: 2, projectId: 1, status: 'passed', startTime: new Date(), branch: 'main', metadata: metadata as never },
+      {
+        id: 3,
+        projectId: 1,
+        status: 'failed',
+        startTime: new Date(),
+        branch: 'feature/x',
+        metadata: metadata as never,
+      },
+    ]);
+    await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'orders' });
+    await db.insert(schema.graphNodes).values([node('GET /api/orders', 1, 2), node('GET /api/billing', 2)]);
+    await db.insert(schema.graphEdges).values(reach(1, 'GET /api/orders'));
+    await execution({
+      id: 1,
+      runId: 2,
+      testCaseId: 1,
+      requests: Array.from({ length: 5 }, () => ({ method: 'GET', path: '/api/orders', status: 200 })),
+    });
+    await execution({
+      id: 2,
+      runId: 3,
+      testCaseId: 1,
+      status: 'failed',
+      requests: [{ method: 'GET', path: '/api/orders', status: 500 }],
+    });
+
+    await gaps.computeScenarioGaps(db, 1);
+    expect((await gaps.listScenarioGaps(db, 1, { detector: 'surface-drift' })).map((g) => g.subject.key)).toEqual([
+      'GET /api/billing',
+    ]);
+    expect((await gaps.listScenarioGaps(db, 1, { detector: 'success-only' })).map((g) => g.subject.key)).toEqual([
+      'GET /api/orders',
+    ]);
+  });
+
+  test('only a complete run that misses a node says it vanished', async () => {
+    await db.insert(schema.testRuns).values([
+      { id: 1, projectId: 1, status: 'passed', startTime: new Date(), branch: 'main', metadata: metadata as never },
+      ...Array.from({ length: 30 }, (_, i) => ({
+        id: i + 2,
+        projectId: 1,
+        status: 'passed',
+        startTime: new Date(),
+        branch: 'main',
+        isFullRun: 0,
+        metadata: metadata as never,
+      })),
+    ]);
+    await db.insert(schema.testCases).values([
+      { id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'billing' },
+      { id: 2, projectId: 1, filePath: 'a.spec.ts', title: 'orders' },
+    ]);
+    await db.insert(schema.graphNodes).values([node('GET /api/billing', 1), node('GET /api/orders', 1, 31)]);
+    await db.insert(schema.graphEdges).values([reach(1, 'GET /api/billing'), reach(2, 'GET /api/orders')]);
+
+    await gaps.computeScenarioGaps(db, 1);
+    expect(await gaps.listScenarioGaps(db, 1, { detector: 'orphan-test' })).toEqual([]);
+  });
+
+  test('a test whose nodes no complete run reached is an orphan, partial runs between them or not', async () => {
+    const run = (id: number, isFullRun: number) => ({
+      id,
+      projectId: 1,
+      status: 'passed',
+      startTime: new Date(),
+      branch: 'main',
+      isFullRun,
+      metadata: metadata as never,
+    });
+    // Run 1 saw the node; 30 complete runs since, with a partial run after each, never did.
+    await db
+      .insert(schema.testRuns)
+      .values([run(1, 1), ...Array.from({ length: 30 }, (_, i) => [run(2 * i + 2, 1), run(2 * i + 3, 0)]).flat()]);
+    await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'billing' });
+    await db.insert(schema.graphNodes).values(node('GET /api/billing', 1));
+    await db.insert(schema.graphEdges).values(reach(1, 'GET /api/billing'));
+
+    await gaps.computeScenarioGaps(db, 1);
+    expect((await gaps.listScenarioGaps(db, 1, { detector: 'orphan-test' })).map((g) => g.key)).toEqual(['test:1']);
+  });
+
+  test('partial runs never age a node toward retirement', async () => {
+    await db.insert(schema.testRuns).values(
+      Array.from({ length: 40 }, (_, i) => ({
+        id: i + 2,
+        projectId: 1,
+        status: 'passed',
+        startTime: new Date(),
+        branch: 'main',
+        isFullRun: 0,
+        metadata: metadata as never,
+      })),
+    );
+    await db.insert(schema.graphNodes).values(node('GET /api/billing', 1));
+    const { pruneStaleCanonicalNodes } = await import('../../server/utils/graph-ingest');
+    expect(await pruneStaleCanonicalNodes(db as never)).toBe(0);
+  });
+});
+
+describe('computeScenarioGaps — which tests are trusted', () => {
+  /** One run on the default branch, and the attempts of test 1 in it. */
+  async function run(id: number, attempts: Array<{ status: string; retries?: number }>, origin?: string) {
+    await db
+      .insert(schema.testCases)
+      .values({ id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'checkout' })
+      .onConflictDoNothing();
+    await db.insert(schema.testRuns).values({
+      id,
+      projectId: 1,
+      status: 'passed',
+      startTime: new Date(),
+      branch: 'main',
+      metadata: { ...metadata, ...(origin ? { piwiOrigin: { kind: origin } } : {}) } as never,
+      origin: origin ?? 'ci',
+    });
+    for (const [k, a] of attempts.entries()) {
+      await db.insert(schema.testRunsCases).values({
+        id: id * 10 + k,
+        testRunId: id,
+        testCaseId: 1,
+        status: a.status,
+        retries: a.retries ?? 0,
+      });
+    }
+  }
+
+  async function onlyTestGap() {
+    await db
+      .insert(schema.graphNodes)
+      .values({ projectId: 1, kind: 'route', key: 'POST /api/orders', firstSeenRunId: 1, lastSeenRunId: 1 });
+    await db.insert(schema.graphEdges).values({
+      projectId: 1,
+      fromKind: 'test',
+      fromKey: '1',
+      toKind: 'route',
+      toKey: 'POST /api/orders',
+      kind: 'reaches',
+      lastSeenAt: new Date(),
+    });
+    await gaps.computeScenarioGaps(db, 1);
+    const [gap] = await gaps.listScenarioGaps(db, 1, { detector: 'single-covering-test' });
+    return gap!;
+  }
+
+  test('a flaky classification from long ago does not make a test untrusted today', async () => {
+    await run(1, [{ status: 'passed' }]);
+    await run(2, [{ status: 'passed' }]);
+    const gap = await onlyTestGap();
+    await db.update(schema.testCases).set({ flakyRootCause: 'timing' as never });
+    await gaps.computeScenarioGaps(db, 1);
+    const [after] = await gaps.listScenarioGaps(db, 1, { detector: 'single-covering-test' });
+    expect(gap.title).toBe('Only one test reaches route POST /api/orders');
+    expect(after!.title).toBe('Only one test reaches route POST /api/orders');
+  });
+
+  test('a test that passed only after a retry lately is flaky', async () => {
+    await run(1, [{ status: 'failed' }, { status: 'passed', retries: 1 }]);
+    await run(2, [{ status: 'passed' }]);
+    expect((await onlyTestGap()).evidence.join(' ')).toContain('(flaky)');
+  });
+
+  test('a test whose outcome flips between failed and passed across runs is flaky, with no retry', async () => {
+    for (const [id, status] of [
+      [1, 'passed'],
+      [2, 'failed'],
+      [3, 'passed'],
+      [4, 'failed'],
+      [5, 'passed'],
+    ] as const)
+      await run(id, [{ status }]);
+    expect((await onlyTestGap()).evidence.join(' ')).toContain('(flaky)');
+  });
+
+  test('one failure fixed in the next run is not flaky', async () => {
+    for (const [id, status] of [
+      [1, 'passed'],
+      [2, 'failed'],
+      [3, 'passed'],
+    ] as const)
+      await run(id, [{ status }]);
+    expect((await onlyTestGap()).title).toBe('Only one test reaches route POST /api/orders');
+  });
+
+  test('a test failing its last three runs protects nothing', async () => {
+    await run(1, [{ status: 'passed' }]);
+    for (const id of [2, 3, 4]) await run(id, [{ status: 'failed' }, { status: 'failed', retries: 1 }]);
+    expect((await onlyTestGap()).evidence.join(' ')).toContain('(failing)');
+  });
+
+  test("a probe run's statuses say nothing about the test", async () => {
+    await run(1, [{ status: 'passed' }]);
+    await run(2, [{ status: 'didnotrun' }], 'probe');
+    expect((await onlyTestGap()).title).toBe('Only one test reaches route POST /api/orders');
+  });
+});
 
 describe('computeScenarioGaps — passed with errors', () => {
   test('raises the passing tests the application reported an error under, on the default branch only', async () => {
@@ -489,6 +771,44 @@ describe('computeScenarioGaps — assertion-light and the function catalog', () 
     expect(
       (await gaps.listScenarioGaps(db, 1, { detector: 'catalog-method-no-test-calls' })).map((g) => g.title),
     ).toEqual(['usersPage.goToNextPage is never called']);
+  });
+});
+
+describe('undeclareOpenApiRoutes', () => {
+  test('a route the new OpenAPI document no longer declares stops being declared, and its gap closes', async () => {
+    const { ingestProjectManifest } = await import('../../server/utils/surface-manifest');
+    const { undeclareOpenApiRoutes } = await import('../../server/utils/openapi-surface');
+    await db.insert(schema.testRuns).values({
+      id: 1,
+      projectId: 1,
+      status: 'passed',
+      startTime: new Date(),
+      branch: 'main',
+      metadata: metadata as never,
+    });
+    const openGaps = async () =>
+      (await db.select().from(schema.scenarioGaps))
+        .filter((g) => g.detector === 'declared-never-hit' && g.status === 'open')
+        .map((g) => g.key)
+        .sort();
+
+    await ingestProjectManifest(db as never, 1, { routes: [{ method: 'GET', pattern: '/orders/{id}' }] }, 'openapi');
+    await gaps.computeScenarioGaps(db as never, 1);
+    expect(await openGaps()).toEqual(['route:GET /orders/:id']);
+
+    const moved = { routes: [{ method: 'GET', pattern: '/api/v1/orders/{id}' }] };
+    await ingestProjectManifest(db as never, 1, moved, 'openapi');
+    expect(await undeclareOpenApiRoutes(db as never, 1, moved)).toBe(1);
+    await gaps.computeScenarioGaps(db as never, 1);
+    expect(await openGaps()).toEqual(['route:GET /api/v1/orders/:id']);
+
+    const [old] = await db.select().from(schema.graphNodes).where(eq(schema.graphNodes.key, 'GET /orders/:id'));
+    expect(old?.origin).toBe('observed');
+    expect((old?.attrs as { declared?: boolean } | null)?.declared).toBeUndefined();
+
+    expect(await undeclareOpenApiRoutes(db as never, 1, null)).toBe(1);
+    await gaps.computeScenarioGaps(db as never, 1);
+    expect(await openGaps()).toEqual([]);
   });
 });
 

@@ -8,11 +8,14 @@ lang: en-US
 
 The [detectors](/guide/concepts#detector) that turn the [Test Map](/features/scenario-gaps) into scenario gaps, the
 **exposure** score that ranks them, and the rules that decide what the graph holds. Evidence counts use the last 30
-runs of the project, probe runs excluded.
+runs of the project's default branch: never a pull-request run, a probe or Flake Lab run, a bisect step or a
+reproduction, nor a run flagged as an environment incident. *Changed, unreached* reads the window of
+[change coverage](/features/uncovered-changes#one-rule-for-every-changed-file) instead.
 
 ## Detectors
 
-The Test Map is recomputed after every run, nightly, and on demand. Every detector reads the runs the
+The Test Map is recomputed after every run of the default branch, nightly, and on demand (**Recompute** on the Gaps
+tab), always for the default branch whatever branch ran last. Every detector reads the runs the
 [capture fixtures](/guide/capture-fixtures) record; **Needs** names what else it reads, and a detector stays silent
 without it.
 
@@ -26,13 +29,13 @@ without it.
 | **Escaped defect**<br>`escaped-defect` | blind-spot | a page with [bug reports](/features/bug-reports) no test names yet, one gap per page | Piwi Picker sending reports | 0.6 plus 0.1 per further report, at most 1 | `Bug report #37: Coupon not applied to the total — no test names it yet` |
 | **Changed, unreached**<br>`changed-unreached` | blind-spot | an [uncovered change](/features/uncovered-changes#one-rule-for-every-changed-file), at pull-request time: a changed file Piwi can observe that no test reached, in the run or the last 30, and no suite ran a changed line of | an SCM token | 0.9 | `+41 −3 · no test in run #812 or in the last 30 runs` |
 | **Single covering test**<br>`single-covering-test` | fragile | a node exactly one trusted test reaches, or that only untrusted tests reach | nothing more | 0.5; 0.6 when only untrusted tests reach it | `Only checkout › coupon reaches this`; `Only toggles dark mode (flaky) reaches this` |
-| **Orphan test**<br>`orphan-test` | fragile | a test whose every reached node disappeared from the last 30 runs | nothing more | 0.4 | `All 3 node(s) it reaches disappeared from recent runs` |
+| **Orphan test**<br>`orphan-test` | fragile | a test whose every reached node went unseen through the default branch's last 30 complete runs | nothing more | 0.4 | `All 3 node(s) it reaches disappeared from recent runs` |
 | **Fix did not hold**<br>`fix-did-not-hold` | fragile | a failure cluster whose fix later regressed | nothing more | 0.6 | `Fixed in a1b2c3d · regressed 6 days later` |
-| **Not noticed**<br>`not-noticed` | false-comfort | a route a probe broke while no test noticed | [probes](/features/probes) | 0.8 | `A probe (status-500) on POST /api/orders did not make checkout › pay fail` |
+| **Not noticed**<br>`not-noticed` | false-comfort | a route a probe broke while no test noticed (a delay never counts) | [probes](/features/probes) | 0.8 | `A probe (status-500) on POST /api/orders did not make checkout › pay fail` |
 | **Passed with errors**<br>`passed-with-errors` | false-comfort | a test whose newest execution in the default branch's last 30 runs passed while the application reported an error: a 5xx from one of its routes, a backend log at error level, or a console error from its own origin | nothing more; backend logs need the [instrumentation](/guide/backend-logs) | 0.6 | `Passed · run #73 · the backend logged an error on PATCH /api/orgs/current` |
 | **Assertion-light**<br>`assertion-light` | false-comfort | a page some test asserts on, every check there only that an element is visible, hidden, attached or in the viewport | the locator index | 0.4 | `2 tests assert on this page, only that elements are present` |
 | **Catalog method, no test calls**<br>`catalog-method-no-test-calls` | blind-spot | a page-object method or helper on a reached page that no test runs | the [test functions catalog](/features/test-functions) | 0.5 | `./pages/UsersPage · goToNextPage · page reached by 3, called by 0` |
-| **Unprobed dependency**<br>`unprobed-dependency` | false-comfort | a dependency a route's handler calls that no probe has failed | server spans | 0.3 plus 0.1 per calling route, at most 0.7 | `Called by 4 route(s) · no probe has checked what happens when it fails` |
+| **Unprobed dependency**<br>`unprobed-dependency` | false-comfort | a dependency a route's handler calls that no probe has decided | server spans | 0.3 plus 0.1 per calling route, at most 0.7 | `Called by 4 route(s) · no probe has checked what happens when it fails` |
 | **Not handled**<br>`not-handled` | unhandled, degraded | the application did not cope with a server probe's fault; a finding, not a gap | [server probes](/features/probes#server-probes) | 1 unhandled, 0.5 degraded | `A server probe made POST /api/orders fail; the application did not handle it` |
 
 *Passed with errors* leaves out a console line from another origin's script and the browser's own *Failed to load
@@ -46,12 +49,15 @@ so a page checked only that way reads as light. A test calls a catalog method wh
 locator uses does what one of the method's steps does, on the element that step names by test id or name, on a page
 its URL pattern matches. A method whose every target comes from a parameter gets no decision.
 
-A trusted test is one that is not flaky, not quarantined, and not skipped in its latest run. *Surface drift* raises a
-node in the run it first appears in; the gap then stays open until any test reaches the node or the node leaves the
-graph, unless you dismiss it or close it with *Covered by* first. A node only untrusted tests reach is then a
-*Single covering test* gap. *Changed, unreached* is covered on
-[Uncovered changes in pull requests](/features/uncovered-changes): its gap closes once a test reaches the file. A
-finding never closes itself; triage it.
+A trusted test is judged on the default branch's last 30 runs: it did not pass only after a retry in any of them, did
+not flip between failing and passing three times across them, did not fail each of its last three, is not quarantined, and was neither skipped nor left unrun in the newest it ran in.
+A test with no run among them stays trusted. *Surface drift* raises a node in the run it first appears in; the gap
+then stays open until any test reaches the node or the node leaves the graph, unless you dismiss it or close it with
+*Covered by* first. A node only untrusted tests reach is then a *Single covering test* gap. *Changed, unreached* is
+covered on [Uncovered changes in pull requests](/features/uncovered-changes): its gap closes once a test reaches the
+file, or a later diff no longer counts the file; an accepted gap closes only once a test reaches the file. A file no
+later diff reads, such as the old path of a rename or a file of an abandoned pull request, keeps its gap until a test
+reaches it or it is triaged. A finding never closes itself; triage it.
 
 Runs record reach to routes and pages: a test reaches every route its page requested, every page it ran a locator
 call on, and the page it ended on. Each recompute adds reach to controls and links from the default branch's
@@ -71,8 +77,8 @@ kept between 0.1 and 1, so a missing input lowers the score without zeroing it.
 
 | Factor | From | Reaches 1 at |
 |---|---|---|
-| **Churn** | commits touching the files in the last 90 days | 12 commits |
-| **Age** | the age of those files; older weighs more, since escaped defects concentrate there | one year |
+| **Churn** | commits touching the files: on a pull request, among the base branch's newest twelve in the last 90 days | 12 commits |
+| **Age** | on a pull request, the days since the oldest of those commits; older weighs more, since escaped defects concentrate there. The 90-day scan stops it near 0.25 | one year |
 | **Escape history** | whether a file was part of a failure cluster's fixing commit | yes, else 0.1 |
 | **Priority** | the highest [`piwi:priority`](/reference/test-metadata#ownership-metadata-piwi-annotations) of the tests reaching the node: critical 1, high 0.7, medium 0.4, low 0.2 | critical |
 
@@ -84,6 +90,19 @@ files in the diff that ended on a fixing commit, which holds every change since 
 file's history, so it stays at 0.1 there. The other detectors
 rank by priority and confidence. A finding ranks by its severity (1 for unhandled, 0.5 for degraded) times the
 route's reach.
+
+## Precision
+
+Each verdict on a gap counts for or against its detector, on that project:
+
+- **For**: accepted at any point, or closed with **Covered by**, even once the gap later closes, unless it was then
+  dismissed as *wrong* or *covered elsewhere*.
+- **Against**: dismissed as *wrong*, or as *covered elsewhere* (no test was missing). On a finding, *covered
+  elsewhere* counts for neither.
+- **Neither**: dismissed as *not worth testing*, or with no reason, and never accepted.
+
+A detector's precision is its share of verdicts *for*. Below 60%, on a project with twenty or more verdicts, the
+detector [mutes itself](/features/scenario-gaps#triage) there.
 
 ## Features
 
@@ -107,16 +126,23 @@ The graph stays proportional to the application's surface, not its data volume:
 
 - **Your own origin only.** Route nodes come from requests to the Playwright `baseURL` of the run's projects (or the
   project's configured route origins); analytics beacons and CDN assets never become nodes.
+- **A page load reaches its route.** A page load (`page.goto`, a link followed) reaches the route of its URL, so a
+  route a backend serves by navigation is reached. *Success only* counts only the calls a page makes, a form's POST
+  included, so a page never reads as a route without its error path.
 - **Pages are path patterns.** `/orders/123` and `/orders/456` are one node, as is the same path from staging and
-  production.
+  production. Numbers, UUIDs, JWTs, ULIDs and long tokens become placeholders; other ids (a Mongo ObjectId, a cuid, a
+  slug) stay in the key, one node per value. A single-page app routed by the URL hash (`/#/settings`) is one page, `/`.
 - **Routes drop the query.** `GET /api/orders?page=2` and `GET /api/orders?status=open` are one node, `GET /api/orders`.
 - **Controls and links are templated.** Dates, ids and numbers in an accessible name become placeholders, and each
   page keeps at most 200 controls and 200 links.
 - **Branches stay separate.** A default-branch run writes the canonical graph; any other branch writes rows tagged
   with it, so a route added on a pull request never shows as drift on the default branch. Those rows drop when the
-  pull request closes, or after 30 days unseen. Detectors read the canonical graph; change coverage reads every branch.
-- **Old nodes retire.** A node unseen for 30 default-branch runs leaves the graph unless an open, snoozed or
-  accepted gap other than *Surface drift* is about it; its *Surface drift* gap then closes.
+  pull request closes, or after 30 days unseen. Detectors read the canonical graph and the default branch's runs;
+  change coverage reads every branch.
+- **Old nodes retire.** A node unseen for 30 complete default-branch runs leaves the graph, unless an open, snoozed
+  or accepted gap other than *Surface drift* is about it: that node stays until the gap is closed or dismissed, and a
+  *Surface drift* gap closes with its node. With a [retention period](/operate/storage#data-retention), a node goes
+  with the runs that saw it, whatever gap is about it.
 
 ## Related
 

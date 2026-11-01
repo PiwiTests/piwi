@@ -7,7 +7,7 @@ defineRouteMeta({
     tags: ['Scenario gaps'],
     summary: 'Per-detector precision from triage verdicts',
     description:
-      'For each detector on this project, the share of triage verdicts that went for it (accepted, covered-by) versus against it (dismissed as wrong), and whether it has muted itself (below 60% with at least 20 verdicts). A muted detector drops out of the pull-request comment first.',
+      'For each detector on this project, the share of triage verdicts that went for it (accepted, covered-by) versus against it (dismissed as wrong, or a gap dismissed as covered elsewhere), and whether it has muted itself (below 60% with at least 20 verdicts). A muted detector leaves the pull-request comment, the digest and the feature map, and its gaps list last.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:read',
   },

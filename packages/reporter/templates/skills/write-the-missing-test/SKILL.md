@@ -87,10 +87,12 @@ view, and work from what it shows plus the repo.
 
 8. **Report back to Piwi.** Tell Piwi what you decided about the gap with
    `triage_gap` (Maintainer role or above on the project): `verb: "accept"` for the gap you
-   wrote the test for, `covered-by` with the covering test's id when a test you
-   found already covers it, or `dismiss` with the reason (`not-worth-testing`,
-   `covered-elsewhere`, `wrong`) when the evidence did not hold. Each verdict counts toward the precision of the
-   detector that raised the gap, so a detector that keeps being wrong is muted.
+   wrote the test for, `covered-by` with the test's id once a test written for the gap
+   has run, or `dismiss` when the gap needed no new test: `covered-elsewhere` with the id
+   of a test that already covered it, `not-worth-testing`, or `wrong` when the evidence did
+   not hold. Each verdict counts toward the precision of the detector that raised the gap
+   (`accept` and `covered-by` for it, `wrong` and `covered-elsewhere` against it), so a
+   detector that keeps being wrong is muted.
 
 ## Guardrails
 

@@ -51,6 +51,7 @@ import { FALLBACK_DEFAULT_BRANCH } from './scm/git-url';
 import { resolveCasePayloadContents } from './case-payloads';
 import { parseStoredLocatorPages } from './locator-pages';
 import { isLabRun } from '#shared/handlers/probes';
+import { completeRunSql, eligibleRunSql } from '#shared/run-eligibility';
 import { subjectFromGapKey } from '#shared/handlers/scenario-gaps';
 import type { DbClient as DB } from '../database';
 
@@ -937,10 +938,12 @@ export async function pruneStaleCanonicalNodes(db: DB): Promise<number> {
       .where(eq(projects.id, projectId));
     const defaultBranch = proj ? await resolveStoredDefaultBranch(db, proj) : FALLBACK_DEFAULT_BRANCH;
 
-    // Runs on the default branch that are not lab runs. Scan a bounded window
-    // and drop lab runs before taking the floor. A run whose branch is unknown
-    // counts only in a project that never recorded a branch: elsewhere it may be
-    // a pull-request run, and counting it would age canonical nodes it never saw.
+    // Complete runs on the default branch that are not lab runs, the ones the
+    // detectors read as evidence (`test-map`): a partial run says nothing about a
+    // node it did not reach. Scan a bounded window and drop lab runs before
+    // taking the floor. A run whose branch is unknown counts only in a project
+    // that never recorded a branch: elsewhere it may be a pull-request run, and
+    // counting it would age canonical nodes it never saw.
     const branchKnown = await projectHasKnownBranch(db, projectId);
     const onDefault = branchKnown
       ? eq(testRuns.branch, defaultBranch)
@@ -948,7 +951,7 @@ export async function pruneStaleCanonicalNodes(db: DB): Promise<number> {
     const canonicalRuns = await db
       .select({ id: testRuns.id, metadata: testRuns.metadata })
       .from(testRuns)
-      .where(and(eq(testRuns.projectId, projectId), onDefault))
+      .where(and(eq(testRuns.projectId, projectId), onDefault, eligibleRunSql('test-map'), completeRunSql()))
       .orderBy(sql`${testRuns.id} desc`)
       .limit(STALE_NODE_RUN_SCAN);
     const canonical = canonicalRuns.filter((r) => !isLabRun(r.metadata)).slice(0, STALE_NODE_RUNS);

@@ -19,9 +19,12 @@ import { liveViewRelay } from '../../utils/live-view';
 import { runEventBus } from '../../utils/run-events';
 import type { LiveViewRunState } from '#shared/live-view';
 import { and, eq, inArray } from 'drizzle-orm';
-import { testRuns } from '../../database/schema';
+import { projects, testRuns } from '../../database/schema';
 import { UNFINISHED_RUN_STATUSES } from '#shared/run-eligibility';
 import { parseLiveMasks } from '@piwitests/core/live-view';
+import { refreshOpenApiSurface, undeclareOpenApiRoutes } from '../../utils/openapi-surface';
+import { withProjectGraphLock } from '../../utils/project-graph-lock';
+import { computeScenarioGaps } from '#shared/handlers/scenario-gaps';
 
 defineRouteMeta({
   openAPI: {
@@ -156,6 +159,14 @@ export default eventHandler(async (event) => {
         ? null
         : resolveCiRerunSettings(ciRerun as Partial<CiRerunSettings>);
 
+  // The OpenAPI URL before the save: the declared surface is read again only when it changes.
+  const [before] =
+    openApiUrl === undefined
+      ? [null]
+      : await db.select({ openApiUrl: projects.openApiUrl }).from(projects).where(eq(projects.id, id));
+  const savedOpenApiUrl = openApiUrl === undefined ? undefined : openApiUrl?.trim() || null;
+  const openApiUrlChanged = savedOpenApiUrl !== undefined && savedOpenApiUrl !== (before?.openApiUrl?.trim() || null);
+
   try {
     return await updateProject(db, id, {
       label,
@@ -206,6 +217,16 @@ export default eventHandler(async (event) => {
       }
       // The workers of the project's live runs mask the elements listed now from their next image on.
       if (liveViewMasks !== undefined) liveViewRelay.setMasks(id, parseLiveMasks(project.project.liveViewMasks) ?? []);
+      // A changed OpenAPI URL is read at once, off the request, so its declared routes are gaps before the next
+      // run; a cleared one declares nothing. The recompute closes no snoozed or accepted gap, as the sweep's.
+      if (openApiUrlChanged) {
+        void withProjectGraphLock(id, async () => {
+          const declaredChanged = savedOpenApiUrl
+            ? await refreshOpenApiSurface(db, id, savedOpenApiUrl)
+            : (await undeclareOpenApiRoutes(db, id, null)) > 0;
+          if (declaredChanged) await computeScenarioGaps(db, id, { closeTriaged: false });
+        }).catch((err) => console.warn('[projects] OpenAPI refresh failed', err));
+      }
       return project;
     });
   } catch (e: any) {

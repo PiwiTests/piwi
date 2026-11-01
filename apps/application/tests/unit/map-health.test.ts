@@ -59,22 +59,28 @@ describe('getMapHealth', () => {
       { projectId: 1, kind: 'page', key: '/users', branch: 'feature/x' },
       { projectId: 2, kind: 'route', key: 'GET /api/other' },
     ]);
-    await db
-      .insert(schema.graphEdges)
-      .values([
-        edge('test', '1', 'reaches', 'page', '/users'),
-        edge('test', '2', 'reaches', 'page', '/reports'),
-        edge('test', '1', 'reaches', 'page', '/gone'),
-        edge('page', '/users', 'contains', 'control', 'button:Invite'),
-        edge('page', '/reports', 'contains', 'control', 'button:Export', 'feature/x'),
-        edge('test', '1', 'reaches', 'route', 'GET /api/users'),
-        edge('test', '2', 'reaches', 'route', 'GET /api/reports'),
-        edge('route', 'GET /api/users', 'handled-by', 'handler', 'server/api/users.get.ts'),
-        edge('test', '1', 'checks', 'route', 'GET /api/users'),
-        edge('commit', 'abc', 'changes', 'file', 'server/api/users.get.ts'),
-        edge('commit', 'abc', 'changes', 'file', 'server/api/reports.get.ts'),
-        edge('commit', 'def', 'changes', 'file', 'server/api/users.get.ts', 'feature/x'),
-      ]);
+    await db.insert(schema.graphEdges).values([
+      edge('test', '1', 'reaches', 'page', '/users'),
+      edge('test', '2', 'reaches', 'page', '/reports'),
+      edge('test', '1', 'reaches', 'page', '/gone'),
+      edge('page', '/users', 'contains', 'control', 'button:Invite'),
+      edge('page', '/reports', 'contains', 'control', 'button:Export', 'feature/x'),
+      edge('test', '1', 'reaches', 'route', 'GET /api/users'),
+      edge('test', '2', 'reaches', 'route', 'GET /api/reports'),
+      edge('route', 'GET /api/users', 'handled-by', 'handler', 'server/api/users.get.ts'),
+      {
+        ...edge('test', '1', 'checks', 'route', 'GET /api/users'),
+        evidence: { outcome: 'noticed', fault: 'empty-body' },
+      },
+      // A probe that decided nothing does not count the route as probed.
+      {
+        ...edge('test', '2', 'checks', 'route', 'GET /api/reports'),
+        evidence: { outcome: 'inconclusive', fault: 'status-500' },
+      },
+      edge('commit', 'abc', 'changes', 'file', 'server/api/users.get.ts'),
+      edge('commit', 'abc', 'changes', 'file', 'server/api/reports.get.ts'),
+      edge('commit', 'def', 'changes', 'file', 'server/api/users.get.ts', 'feature/x'),
+    ]);
     const use = (testCaseId: number, page: string, branch = '') => ({
       projectId: 1,
       testCaseId,

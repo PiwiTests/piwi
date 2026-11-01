@@ -410,9 +410,8 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
   const muted = await loadMutedDetectors(db, run.projectId).catch(() => new Set<string>());
   const gaps = detectChangedUnreached(reaches, runId, coverage.windowRuns).map((g) => rankGap(g, exposure));
   await upsertScenarioGaps(db, run.projectId, gaps, { runId, prNumber }).catch(() => {});
-  // A file this diff no longer reads as an uncovered change closes its gap.
-  const settled = coverage.files.filter((f) => f.reach !== 'unreached').map((f) => f.filePath);
-  await closeChangedUnreachedGaps(db, run.projectId, runId, settled).catch(() => 0);
+  // A file this diff no longer reads as an uncovered change closes its gap; an accepted one, once a test reached it.
+  await closeChangedUnreachedGaps(db, run.projectId, runId, coverage.files).catch(() => 0);
 
   // Import edges for the changed files no test reached, from a shallow scan at the
   // run's ref — so an unreached file still connects to the files that import it.

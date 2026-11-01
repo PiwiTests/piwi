@@ -581,7 +581,7 @@ function scopeTooltip(run: TestRunSummary): string {
   if (files?.length) parts.push(`files: ${files.join(', ')}`);
   return parts.length
     ? `Partial run — ${parts.join(' · ')}`
-    : 'Partial run — only a filtered subset of tests ran (grep, file, or line filter)';
+    : 'Partial run — only part of the suite ran (a grep, file or line filter, --last-failed or --only-changed)';
 }
 
 const runsColumns: TableColumn<TestRunSummary>[] = [

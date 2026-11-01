@@ -166,8 +166,15 @@ const CLASS_COLOR: Record<string, string> = {
   degraded: 'warning',
 };
 
-function factorLine(f: GapFactors | null): string {
+/**
+ * The factors behind a gap's score. A finding ranks by its severity (its class)
+ * times its route's reach, which its factors carry in `priority`, so it shows
+ * the reach alone.
+ */
+function factorLine(gap: Gap): string {
+  const f = gap.factors;
   if (!f) return '';
+  if (gap.kind === 'finding') return `reach ${f.priority.toFixed(1)}`;
   return `churn ${f.churn.toFixed(1)} · age ${f.age.toFixed(1)} · escape ${f.escapeHistory.toFixed(1)} · priority ${f.priority.toFixed(1)}`;
 }
 
@@ -381,8 +388,7 @@ const emptyText = computed(() =>
                   <li v-for="(line, i) in gap.evidence" :key="i" class="text-xs text-muted">{{ line }}</li>
                 </ul>
                 <p class="mt-1 text-xs text-muted">
-                  Score {{ (gap.score ?? 0).toFixed(3)
-                  }}<span v-if="gap.factors"> · {{ factorLine(gap.factors) }}</span>
+                  Score {{ (gap.score ?? 0).toFixed(3) }}<span v-if="gap.factors"> · {{ factorLine(gap) }}</span>
                 </p>
               </div>
               <div class="flex flex-wrap items-center gap-1 sm:shrink-0">
@@ -443,8 +449,13 @@ const emptyText = computed(() =>
       <template #body>
         <div class="space-y-3">
           <p class="text-sm text-highlighted">
-            Enter the test case id that covers this. A manual reaches edge is written so the gap closes on the next
-            recompute<span v-if="coveredDismiss"> and the gap is dismissed</span>.
+            <template v-if="coveredDismiss">
+              Enter the test case id of the test that already covered this: no test was missing.
+            </template>
+            <template v-else>Enter the test case id of the test written for this gap.</template>
+            A manual reaches edge is written so the gap closes on the next recompute<span v-if="coveredDismiss">
+              and the gap is dismissed</span
+            >.
           </p>
           <UFormField label="Covering test case id" :error="coveredError ?? undefined">
             <UInput v-model="coveredTestId" type="number" placeholder="test case id" class="w-full" />
