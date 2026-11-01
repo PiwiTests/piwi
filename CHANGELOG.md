@@ -1354,7 +1354,7 @@ This release brings the developer's local runs into the editor: follow them as t
 
 ## [0.48.0](https://github.com/PiwiTests/platform/compare/v0.47.0...v0.48.0) (2026-10-06)
 
-This release makes every project tab follow the page's filters, says how many partial runs a filter hides, traces requests and their SQL with OpenTelemetry, and speeds up the project pages, ingestion and live streaming.
+This release makes every project tab follow the page's filters, says how many partial runs a filter hides, traces requests and their SQL with OpenTelemetry, speeds up the project pages and ingestion, and sends live step events in batches only while someone has the run open.
 
 **Full diff:** [v0.47.0…v0.48.0](https://github.com/PiwiTests/platform/compare/v0.47.0...v0.48.0)
 
@@ -1418,7 +1418,7 @@ This release makes every project tab follow the page's filters, says how many pa
 
 ## [0.47.0](https://github.com/PiwiTests/platform/compare/v0.46.0...v0.47.0) (2026-10-05)
 
-This release adds project roles, user groups and per-project permissions: every route and MCP tool declares the permission it needs, and the dashboard shows each action only to those allowed to take it on that project.
+This release adds project roles, user groups and per-project permissions: every route declares the permission it needs and each MCP tool is checked against its REST route's, and the dashboard shows each action only to those allowed to take it on that project.
 
 **Full diff:** [v0.46.0…v0.47.0](https://github.com/PiwiTests/platform/compare/v0.46.0...v0.47.0)
 
@@ -1459,8 +1459,8 @@ This release records Playwright tests from VS Code and JetBrains IDEs, runs an e
 ### ✨ Highlights
 
 - **🎬 Record tests from the editor** — VS Code and JetBrains IDEs record a Playwright test in a browser the editor opens, with checks and a pause on the recording bar, and write it with the file's page objects, fixtures and the project's test id attribute.
-- **🔁 Reproduce, bisect and Flake Lab in the desktop app** — From the editor, team CI failures are reproduced and bisected and Flake Lab plans run in the desktop app; the verdict and a bisect's first bad commit go back to the team instance.
-- **🏷️ Every run carries its origin** — The reporter and the desktop app stamp each run with what launched it, and one rule decides which runs feed which analysis, so lab, local and historical runs stay out of CI's numbers.
+- **🔁 Reproduce, bisect and Flake Lab in the desktop app** — From the editor, team CI failures are reproduced and bisected and Flake Lab plans run in the desktop app; the verdict is shared, and a bisect's first bad commit can be recorded on any instance and over MCP.
+- **🏷️ Every run carries its origin** — The reporter and the desktop app stamp each run with what launched it, and one rule decides which runs feed which analysis, so lab runs stay out of CI analyses and historical imports out of shared state.
 - **🌩️ Environment incidents** — Piwi recognizes environment incidents, counting failed requests to the app's host, and keeps them out of every verdict; `checkBaseUrl` stops a run before any test when the app does not answer.
 - **📊 Worker resources on the timeline** — The reporter samples each worker's CPU and memory and the run's open pages over time, on Windows too, and the workers timeline draws them under each row.
 - **🤖 Agents write back** — Agents record diagnoses and fix attempts, triage clusters, gaps, merges and bug reports over MCP, and dismiss quarantine proposals; installed skills end each workflow with their write-back.
@@ -1618,7 +1618,7 @@ This release keeps resource-leak findings across runs, so a merge can be gated o
 
 ## [0.44.0](https://github.com/PiwiTests/platform/compare/v0.43.0...v0.44.0) (2026-10-01)
 
-This release gives every step of a bug report a screenshot, so a step the replay cannot play is handed to the person with its picture and element, saves bug reports as `.piwibug` files the desktop app opens, and suggests URL patterns from the pages and requests a run loaded.
+This release gives every step of a bug report a screenshot, hands a step the replay cannot play to the person with its screenshot and element, saves bug reports as `.piwibug` files the desktop app opens, and suggests URL patterns from the pages a run loaded and from network requests.
 
 **Full diff:** [v0.43.0…v0.44.0](https://github.com/PiwiTests/platform/compare/v0.43.0...v0.44.0)
 
@@ -1627,7 +1627,7 @@ This release gives every step of a bug report a screenshot, so a step the replay
 - **📸 Step screenshots in bug reports** — Piwi Picker keeps a screenshot of the page as each step of a bug began, and Piwi keeps and shows it on the report.
 - **🤝 Hand-over steps** — A step the replay cannot play is handed to the person with its screenshot, and the element it is about is shown on the page too.
 - **📁 `.piwibug` files** — Bug reports save as `.piwibug` files the desktop app opens, and replay at the viewport their steps were played at.
-- **🧭 URL pattern suggestions from runs** — Extension URL patterns are suggested from the pages a run loaded and from its network requests.
+- **🧭 URL pattern suggestions** — Extension URL patterns are suggested from the pages a run loaded and from network requests.
 - **🕰️ A baseline for always-failing runs** — A run is compared with its last failed run when no earlier run passed.
 
 ### Features
