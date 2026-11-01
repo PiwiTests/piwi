@@ -28,9 +28,9 @@ and page visits of every run.
 ## What a gap is
 
 A **[detector](/guide/concepts#detector)** reads the Test Map and the default branch's last 30 runs and reports one
-kind of gap: a route observed only with success statuses, a node exactly one test reaches, a page that appeared in
-the latest run, a declared route nothing requests. [Gap detectors & exposure](/reference/gap-detectors) lists every
-detector with its evidence. Each gap names its detector and its **[class](/guide/concepts#gap-class)**:
+kind of gap: a route observed only with success statuses, a node exactly one test reaches, a new page no test reaches
+yet, a declared route nothing requests. [Gap detectors & exposure](/reference/gap-detectors) lists every detector
+with its evidence. Each gap names its detector and its **[class](/guide/concepts#gap-class)**:
 
 | Class | Meaning | Example |
 |---|---|---|
@@ -97,9 +97,10 @@ Every gap takes the same four verbs as an inbox item:
 
 Gaps persist, so triage survives recomputation: a dismissed gap keeps its verdict, and a gap **closes itself** when
 the detector no longer finds it, for example once its node gains a trusted test. A closed gap is not always a test
-written: an uncovered change also closes when its file is deleted or nothing observes it any more. A closed gap that
-comes back reopens, unless it was closed with **Covered by**. Home lists the gaps still accepted a week after their
-acceptance: the tests not yet written.
+written: an uncovered change also closes when its file is deleted or nothing observes it any more. A gap on new
+surface stays open until a test reaches it ([detectors](/reference/gap-detectors#detectors)). A closed gap that comes
+back reopens, unless it was closed with **Covered by**. Home lists the gaps still accepted a
+week after their acceptance: the tests not yet written.
 
 <figure>
   <img src="/diagrams/scenario-gaps-loop.svg" alt="Sources feed the Test Map, detectors, ranking and delivery; triage flows back">

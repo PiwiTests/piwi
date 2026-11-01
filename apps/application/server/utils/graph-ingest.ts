@@ -12,7 +12,7 @@
  * graph.
  */
 
-import { and, asc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import {
   graphNodes,
   graphEdges,
@@ -920,7 +920,8 @@ const STALE_NODE_RUN_SCAN = STALE_NODE_RUNS * 10;
  * a naive "last 30 runs" does) lets thirty pull-request runs with no default-branch
  * run in between prune every canonical node, wiping the graph and closing every
  * gap built on it. A node backing any open, snoozed or accepted gap is kept so
- * triage never loses its subject.
+ * triage never loses its subject, except a surface-drift gap: that gap holds
+ * only while its node is in the graph, and closes once the node is pruned.
  *
  * The node's row is kept but stamped `pruned_at` — the bulk (its `reaches` edges)
  * is deleted, and keeping the row preserves `first_seen` so a re-appearance is
@@ -971,13 +972,20 @@ export async function pruneStaleCanonicalNodes(db: DB): Promise<number> {
       );
     if (stale.length === 0) continue;
 
-    // Keep any node that backs a live gap — open, snoozed or accepted, any
-    // detector — so pruning never strips the subject out from under triage and
-    // lets the recompute close it.
+    // Keep any node that backs a live gap — open, snoozed or accepted — so
+    // pruning never strips the subject out from under triage and lets the
+    // recompute close it. A surface-drift gap keeps no node: it is raised while
+    // its node is in the graph, so the recompute after this prune closes it.
     const liveGaps = await db
       .select({ key: scenarioGaps.key })
       .from(scenarioGaps)
-      .where(and(eq(scenarioGaps.projectId, projectId), inArray(scenarioGaps.status, ['open', 'snoozed', 'accepted'])));
+      .where(
+        and(
+          eq(scenarioGaps.projectId, projectId),
+          inArray(scenarioGaps.status, ['open', 'snoozed', 'accepted']),
+          ne(scenarioGaps.detector, 'surface-drift'),
+        ),
+      );
     const keptSubjects = new Set(
       liveGaps.map((g) => {
         const s = subjectFromGapKey(g.key);
