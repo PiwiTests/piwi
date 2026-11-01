@@ -25,7 +25,7 @@ design record these rules follow, with its measurements: [`adr/ci-workflows.md`]
   `agent-run.test.ts`.
 - **Least privilege.** `permissions: contents: read` at the top of every workflow, anything more on the job that needs
   it. A job that calls a reusable workflow grants the permissions its jobs ask for: a called job asking for more fails
-  the run. `id-token: write` only where a step uses it (npm provenance).
+  the run. `id-token: write` only where a step uses it (npm provenance, Visual Studio Marketplace Trusted Publishing).
 - **Publish only from a release tag.** A publishing step runs when `github.ref` is a `v*` tag (`TAG_BUILD`), or `main`
   for the `edge` image. Anywhere else the workflow builds and packs, so a pull request can run it.
 - **Publishing secrets reach a release tag only.** A `reusable-publish-*.yml` declares the secrets it uses
@@ -34,6 +34,10 @@ design record these rules follow, with its measurements: [`adr/ci-workflows.md`]
   JetBrains `signPlugin`, the Tauri updater key) runs on a tag only. The publishing jobs of a tag run in the `release`
   environment (`environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}`), whose protection rules
   and secrets are set in the repository settings.
+- **The Visual Studio Marketplace trusts `release.yml` in the `release` environment.** `reusable-publish-vscode.yml`
+  publishes with `vsce publish --oidc` and no token, so renaming either workflow file or the environment means updating
+  the publisher's Trusted Publishing policy. Every run of `release.yml` can mint an OIDC token: the policy's
+  environment, which deploys from `v*` tags only, is what keeps a pull request's run from publishing.
 - **`.github/` is owned by its maintainer** (`CODEOWNERS`): a change here needs their review.
 - **The GHCR image name is fixed.** It is `ghcr.io/piwitests/platform` (`REGISTRY` and `IMAGE_NAME` in
   `reusable-publish-container.yml`), never derived from `github.repository`: users pull it by that name, and a registry
