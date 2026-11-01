@@ -17,8 +17,6 @@ const props = defineProps<{
   clusters: OpenFailureCluster[];
   /** How many clusters seen only in developers' own runs the list leaves out (`seenOnlyLocally`). */
   localOnlyHidden?: number;
-  /** The list holds those clusters too. */
-  localIncluded?: boolean;
 }>();
 
 const emit = defineEmits<{ changed: []; 'include-local': [include: boolean] }>();
@@ -31,6 +29,29 @@ const { hasTracker } = useTrackerStatus();
 
 // ── What the viewer may do on each cluster's project ─────────────────────────
 // Each action shows to the holders of the permission its route declares there.
+/**
+ * The note on the clusters seen only in developers' own runs: how many the list leaves out, or that it lists some; null
+ * when there is nothing to say. Only a list that includes them marks them, so the note stays while it is fetched again.
+ */
+const localNote = computed(() => {
+  const hidden = props.localOnlyHidden ?? 0;
+  if (hidden > 0) {
+    return {
+      text: `${hidden} ${hidden === 1 ? 'failure' : 'failures'} seen only in developers' local runs ${hidden === 1 ? 'is' : 'are'} left out.`,
+      action: hidden === 1 ? 'Show it' : 'Show them',
+      include: true,
+    };
+  }
+  if (props.clusters.some((c) => c.seenOnlyLocally)) {
+    return {
+      text: "Failures seen only in developers' local runs are listed.",
+      action: 'Leave them out',
+      include: false,
+    };
+  }
+  return null;
+});
+
 const canTriage = (c: OpenFailureCluster) => can('triage:write', c.projectId);
 const canQuarantine = (c: OpenFailureCluster) => can('quarantine:write', c.projectId);
 const canLink = (c: OpenFailureCluster) => can('link:write', c.projectId);
@@ -727,7 +748,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
     <p v-if="rows.length === 0 && incidentRows.length === 0" class="py-3 text-sm text-gray-500 dark:text-gray-400">
       {{
         queue === 'all'
-          ? 'No open failure clusters — nothing needs triage right now.'
+          ? (localOnlyHidden ?? 0) > 0
+            ? "No open failure clusters outside developers' local runs."
+            : 'No open failure clusters — nothing needs triage right now.'
           : 'Nothing in this queue right now.'
       }}
     </p>
@@ -972,26 +995,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
       </div>
     </div>
 
-    <!-- The clusters seen only in developers' own runs: work in progress, left out of the team's list unless asked -->
-    <p v-if="(localOnlyHidden ?? 0) > 0" class="mt-3 text-xs text-muted" data-local-note>
-      {{ localOnlyHidden }} {{ localOnlyHidden === 1 ? 'failure' : 'failures' }} seen only in developers' local runs
-      {{ localOnlyHidden === 1 ? 'is' : 'are' }} left out.
+    <!-- The clusters seen only in developers' own runs: work in progress, left out of the team's list unless asked.
+         One paragraph and one button whose words change, so the button keeps the focus. -->
+    <p v-if="localNote" class="mt-3 text-xs text-muted" data-local-note>
+      {{ localNote.text }}
       <button
         type="button"
         class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
-        @click="emit('include-local', true)"
+        @click="emit('include-local', localNote.include)"
       >
-        Show {{ localOnlyHidden === 1 ? 'it' : 'them' }}
-      </button>
-    </p>
-    <p v-else-if="localIncluded" class="mt-3 text-xs text-muted" data-local-note>
-      Failures seen only in developers' local runs are listed.
-      <button
-        type="button"
-        class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
-        @click="emit('include-local', false)"
-      >
-        Leave them out
+        {{ localNote.action }}
       </button>
     </p>
 

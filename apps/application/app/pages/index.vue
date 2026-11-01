@@ -466,7 +466,6 @@ useViewScroll(() => dashboardPanelBody('home'));
           data-shot="open-failures"
           :clusters="openClusters"
           :local-only-hidden="openClustersAnswer?.localOnlyHidden ?? 0"
-          :local-included="inboxLocal"
           @changed="refreshOpenClusters"
           @include-local="(include) => (inboxLocal = include)"
         />

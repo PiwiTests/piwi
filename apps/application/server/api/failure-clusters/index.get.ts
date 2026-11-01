@@ -8,7 +8,7 @@ defineRouteMeta({
     tags: ['Failure Clusters'],
     summary: 'List open failure clusters across projects',
     description:
-      'Open failure clusters across every project the caller can see, newest first by last seen. Drives the Home "Open failures" card. A cluster seen only in developers\' own runs (their machine, the desktop app, an editor), in a project that also has other runs, is left out unless `local=include`; `localOnlyHidden` counts those left out.',
+      'Open failure clusters across every project the caller can see, newest first by last seen. Drives the Home "Open failures" card. With `local=exclude`, as Home asks, a cluster seen in developers\' own runs (their machine, the desktop app, an editor) and never in CI, in a project that runs in CI, is left out, and `localOnlyHidden` counts those left out; each listed cluster says whether it is one (`seenOnlyLocally`).',
     parameters: [
       {
         name: 'status',
@@ -28,8 +28,8 @@ defineRouteMeta({
         name: 'local',
         in: 'query',
         required: false,
-        schema: { type: 'string', enum: ['include', 'exclude'], default: 'exclude' },
-        description: "`include` lists the clusters seen only in developers' own runs too",
+        schema: { type: 'string', enum: ['include', 'exclude'], default: 'include' },
+        description: "`exclude` leaves out the clusters seen only in developers' own runs",
       },
     ],
     'x-required-permission': 'project:read',
@@ -42,7 +42,7 @@ export default eventHandler(async (event) => {
   const scope = await getProjectScope(db, user as any);
   const query = getQuery(event);
   const limit = Math.min(200, Math.max(1, Number(query.limit) || 50));
-  const local = query.local === 'include' ? 'include' : 'exclude';
+  const local = query.local === 'exclude' ? 'exclude' : 'include';
   const now = new Date();
   const [items, localOnlyHidden] = await Promise.all([
     getOpenFailureClusters(db, scope, limit, now, { localOnly: local }),

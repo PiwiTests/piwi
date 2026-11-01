@@ -378,8 +378,8 @@ export interface OpenFailureCluster {
   snoozedUntil: string | Date | null;
   snoozeMode: string | null;
   /**
-   * Seen only in developers' own runs (their machine, the desktop app, an editor), in a project that also has CI runs:
-   * work in progress, which the team's inbox leaves out unless asked.
+   * Seen in developers' own runs (their machine, the desktop app, an editor) and never in CI, in a project that runs in
+   * CI: work in progress, which the team's inbox leaves out unless asked.
    */
   seenOnlyLocally: boolean;
   /** Set when the cluster first appeared in a run flagged as an environment incident. */

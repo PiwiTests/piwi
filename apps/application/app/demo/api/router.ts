@@ -1404,7 +1404,7 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/failure-clusters$/,
     handler: async (_m, _b, q, ctx) => {
       const limit = Math.min(200, Math.max(1, Number(q?.get('limit')) || 50));
-      const local = q?.get('local') === 'include' ? 'include' : 'exclude';
+      const local = q?.get('local') === 'exclude' ? 'exclude' : 'include';
       const db = await getDemoDb();
       const now = new Date();
       const [items, localOnlyHidden] = await Promise.all([
