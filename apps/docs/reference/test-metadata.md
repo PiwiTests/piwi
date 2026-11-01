@@ -87,7 +87,8 @@ What each origin feeds:
 
 ### Playwright configuration
 
-The reporter also records browser project configs, worker count, the global timeout, and parallel settings.
+The reporter also records browser project configs, worker count, the global timeout, and parallel settings. A sharded
+run keeps the configuration of the shard that began it, and each shard's own worker count under `shards`.
 
 ### Browser configuration per test case
 

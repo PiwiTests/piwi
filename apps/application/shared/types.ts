@@ -259,6 +259,8 @@ export interface StreamEventPayload {
 export interface TestRunFinishPayload {
   streamToken: string | null;
   status: string;
+  /** When the reporter's run started: a shard's span in a sharded run starts there. */
+  startTime?: string;
   duration: number;
   totalTests: number;
   passedTests: number;

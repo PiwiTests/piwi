@@ -6,7 +6,7 @@ import { durationStats } from '#shared/utils/stats';
 import { computeRunCountsFromRows } from './run-counts';
 import { runEventBus } from './run-events';
 import { runFinalizeSideEffects } from './run-finalize-side-effects';
-import { updateRunMetadata, type MetadataObject } from './run-metadata';
+import { readShardDurations, recordShardEnd, shardSpan, withShardDurations, type ShardReport } from './shard-spans';
 import { cancelInstanceRuns } from './cancel-instance-runs';
 import { withInstanceRunLock } from './ingest-locks';
 import { sanitizeMetadata } from './sanitize';
@@ -37,18 +37,6 @@ export async function findActiveShardedRun(db: DbClient, projectId: number, inst
   return run;
 }
 
-/** The test durations a sharded run's shards reported so far. */
-function shardDurations(metadata: MetadataObject): number[] {
-  const durations = metadata.shardDurations;
-  return Array.isArray(durations) ? durations.filter((d): d is number => typeof d === 'number') : [];
-}
-
-/** A copy of a sharded run's metadata with one shard's test durations added to the others'. */
-export function withShardDurations(metadata: MetadataObject, durations: unknown[]): MetadataObject {
-  const added = durations.filter((d): d is number => typeof d === 'number' && Number.isFinite(d));
-  return { ...metadata, shardDurations: [...shardDurations(metadata), ...added] };
-}
-
 /** One shard's tally in a batch submission (`/submit` or `/upload`) of a sharded run. */
 export interface BatchShardTally {
   totalTests: number;
@@ -58,7 +46,8 @@ export interface BatchShardTally {
   skippedTests: number;
   didNotRunTests: number;
   flakyTests: number;
-  duration: number;
+  /** The shard's index, start, duration and metadata, which place it in the run's span. */
+  shard: ShardReport;
   /** The shard's test durations. */
   durations: unknown[];
 }
@@ -101,7 +90,7 @@ export function batchShardTally(body: BatchRunBody, testCases: ReadonlyArray<Bat
     skippedTests: body.skippedTests ?? 0,
     didNotRunTests: body.didNotRunTests ?? 0,
     flakyTests: countFlakyBatchCases(testCases),
-    duration: typeof body.duration === 'number' ? body.duration : 0,
+    shard: { shardIndex: body.shardIndex, startTime: body.startTime, duration: body.duration, metadata: body.metadata },
     durations: testCases.map((tc) => tc.duration),
   };
 }
@@ -154,29 +143,26 @@ export function batchShardRun(db: DbClient, projectId: number, instanceId: strin
 
 /**
  * Count a shard of a batch submission into its run, once its executions are
- * stored: the counters add up, the run's duration is its longest shard's, and
- * the shard counts as finished.
+ * stored: the counters add up, the shard's span joins the run's
+ * (`recordShardEnd`), and the shard counts as finished.
  */
 export async function addBatchShard(db: DbClient, runId: number, tally: BatchShardTally): Promise<void> {
-  await updateRunMetadata(db, runId, (metadata) => withShardDurations(metadata, tally.durations), {
-    updatedAt: new Date(),
-    totalTests: sql`${testRuns.totalTests} + ${tally.totalTests}`,
-    passedTests: sql`${testRuns.passedTests} + ${tally.passedTests}`,
-    failedTests: sql`${testRuns.failedTests} + ${tally.failedTests}`,
-    skippedTests: sql`${testRuns.skippedTests} + ${tally.skippedTests}`,
-    didNotRunTests: sql`${testRuns.didNotRunTests} + ${tally.didNotRunTests}`,
-    flakyTests: sql`${testRuns.flakyTests} + ${tally.flakyTests}`,
-    shardsFinished: sql`${testRuns.shardsFinished} + 1`,
-    duration: longestDuration(tally.duration),
-  });
-}
-
-/**
- * The larger of the run's duration and `duration`. SQLite's scalar MAX(a,b) is
- * an aggregate in PostgreSQL, so a CASE expression runs on both dialects.
- */
-export function longestDuration(duration: number) {
-  return sql`CASE WHEN coalesce(${testRuns.duration}, 0) > ${duration} THEN coalesce(${testRuns.duration}, 0) ELSE ${duration} END`;
+  await recordShardEnd(
+    db,
+    runId,
+    shardSpan(tally.shard, Date.now()),
+    (metadata) => withShardDurations(metadata, tally.durations),
+    {
+      updatedAt: new Date(),
+      totalTests: sql`${testRuns.totalTests} + ${tally.totalTests}`,
+      passedTests: sql`${testRuns.passedTests} + ${tally.passedTests}`,
+      failedTests: sql`${testRuns.failedTests} + ${tally.failedTests}`,
+      skippedTests: sql`${testRuns.skippedTests} + ${tally.skippedTests}`,
+      didNotRunTests: sql`${testRuns.didNotRunTests} + ${tally.didNotRunTests}`,
+      flakyTests: sql`${testRuns.flakyTests} + ${tally.flakyTests}`,
+      shardsFinished: sql`${testRuns.shardsFinished} + 1`,
+    },
+  );
 }
 
 /**
@@ -200,7 +186,7 @@ export async function finalizeShardedRun(
 
   const counts = await computeRunCountsFromRows(db, runId);
   const status = counts.failedTests > 0 ? 'failed' : 'passed';
-  const stats = durationStats(shardDurations((run.metadata as MetadataObject | null) ?? {}));
+  const stats = durationStats(readShardDurations(run.metadata));
   // The planned total (summed across shards), or the distinct rows when a shard planned none.
   const totalTests = Math.max(run.totalTests ?? 0, counts.totalTests);
 

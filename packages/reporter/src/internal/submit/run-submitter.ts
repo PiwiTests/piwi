@@ -295,6 +295,8 @@ export class RunSubmitter {
       const finishBody: Record<string, unknown> = {
         streamToken: sm.token,
         status: overallStatus,
+        // With `duration`, the span the run of a shard covers in its sharded run.
+        startTime: run.startTime ?? undefined,
         duration,
         totalTests: run.totalTests,
         passedTests: run.passedTests,

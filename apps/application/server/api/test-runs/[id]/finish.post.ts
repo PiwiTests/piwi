@@ -9,13 +9,8 @@ import { resolveRunBranch } from '../../../utils/run-branch';
 import { runCommit, runOrigin } from '#shared/run-eligibility';
 import { validateAndReviveRun } from '../../../utils/revive-run';
 import { matchesShardToken, readShardTokensFromMeta, withoutShardToken } from '../../../utils/shard-tokens';
-import { updateRunMetadata } from '../../../utils/run-metadata';
-import {
-  finalizeShardedRun,
-  longestDuration,
-  publishShardProgress,
-  withShardDurations,
-} from '../../../utils/sharded-runs';
+import { finalizeShardedRun, publishShardProgress } from '../../../utils/sharded-runs';
+import { recordShardEnd, shardSpan, withShardDurations } from '../../../utils/shard-spans';
 import { runFinalizeSideEffects } from '../../../utils/run-finalize-side-effects';
 import { keepIncidentMetadata } from '#shared/run-incident';
 import { withPendingStatus } from '../../../utils/finalizing-runs';
@@ -30,7 +25,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Finish a streaming test run',
     description:
-      'Finalize a streaming test run by setting its final status and calculating performance metrics. Supports pending uploads mode where reports are uploaded asynchronously after finishing. For sharded runs, the run finishes only after all shards report; test counters come from the streamed events. The flaky count is read from the attempts the run stored.',
+      'Finalize a streaming test run by setting its final status and calculating performance metrics. Supports pending uploads mode where reports are uploaded asynchronously after finishing. For sharded runs, the run finishes only after all shards report; test counters come from the streamed events, and the run lasts from the start of its first shard to the end of its last shard. A shard runs from its `startTime` for its `duration`, or until its `/finish` arrives when it sends no `duration`; with no `startTime`, or one that puts its end more than a day from its `/finish`, it ends when its `/finish` arrives. The flaky count is read from the attempts the run stored.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     requestBody: {
       content: {
@@ -40,6 +35,7 @@ defineRouteMeta({
             properties: {
               streamToken: { type: 'string' },
               status: { type: 'string' },
+              startTime: { type: 'string', format: 'date-time' },
               duration: { type: 'number' },
               durations: { type: 'array', items: { type: 'number' } },
               hasPendingUploads: { type: 'boolean' },
@@ -93,8 +89,8 @@ export default eventHandler(async (event) => {
   const isShardToken = shardTokens ? (token: string) => matchesShardToken(shardTokens, token) : undefined;
   await validateAndReviveRun(db, id, testRun, body.streamToken, isShardToken);
 
+  if (isSharded) return finishShard(db, id, body);
   const duration = body.duration ?? Date.now() - new Date(testRun.startTime).getTime();
-  if (isSharded) return finishShard(db, id, body, duration);
 
   await applyReporterKeep(db, id, body.keep);
 
@@ -256,15 +252,18 @@ export default eventHandler(async (event) => {
 
 /**
  * One shard of a sharded run reports its end. The shard's token leaves the
- * run's shard tokens in the same write that records its test durations, so a
- * replayed `/finish` finds it gone and changes nothing. The run's test counters
+ * run's shard tokens in the same write that records its test durations and its
+ * span and sets the run's start and duration from its shards' spans
+ * (`recordShardEnd`), so a replayed `/finish` finds the token gone and changes
+ * nothing. The run's test counters
  * are not touched: every case (synthesized didnotrun ones included) arrives as
  * a streamed event, which the events endpoint already counted. Only flakyTests
  * adds up here, since the events tally has no flaky notion. The run settles
  * once every shard finished.
  */
-async function finishShard(db: DbClient, id: number, body: Record<string, any>, duration: number) {
-  const recorded = await updateRunMetadata(db, id, (metadata) => {
+async function finishShard(db: DbClient, id: number, body: Record<string, any>) {
+  const span = shardSpan(body, Date.now());
+  const recorded = await recordShardEnd(db, id, span, (metadata) => {
     const remaining = withoutShardToken(metadata, body.streamToken);
     return remaining && withShardDurations(remaining, Array.isArray(body.durations) ? body.durations : []);
   });
@@ -287,7 +286,6 @@ async function finishShard(db: DbClient, id: number, body: Record<string, any>, 
       updatedAt: new Date(),
       flakyTests: sql`${testRuns.flakyTests} + ${body.flakyTests ?? 0}`,
       shardsFinished: sql`${testRuns.shardsFinished} + 1`,
-      duration: longestDuration(duration),
       // The first shard to report a branch names the run's branch.
       branch: sql`COALESCE(${testRuns.branch}, ${resolveRunBranch(body.metadata)})`,
       ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),

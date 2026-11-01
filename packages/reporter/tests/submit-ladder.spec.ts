@@ -127,6 +127,8 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     expect(finishBody.streamToken).toBe('tok-123');
     expect(finishBody.totalTests).toBe(1);
     expect(finishBody.passedTests).toBe(1);
+    // and the run's start, which with its duration places a shard in its sharded run
+    expect(Date.parse(finishBody.startTime)).toBeLessThanOrEqual(Date.now() - finishBody.duration);
     // events body carries testCases array
     expect(Array.isArray(eventsBody.testCases)).toBeTruthy();
     expect(eventsBody.testCases.length >= 1).toBeTruthy();

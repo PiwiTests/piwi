@@ -100,9 +100,12 @@ How the merge works:
    (`GITHUB_RUN_ID` with `GITHUB_RUN_ATTEMPT`, `CI_PIPELINE_ID`, `CIRCLE_WORKFLOW_ID` and their equivalents on the
    systems listed above). A re-run of a GitHub Actions workflow is a new attempt, so it starts a new run.
 2. Shards sharing a run label **and** a `projectName` resolve to the same run, streamed or batched.
-3. The run stays `running` until the **last** shard reports; batched shards may arrive an hour apart.
+3. The run stays `running` until the **last** shard reports. While none of its shards is running, it waits up to an
+   hour for the next one, streamed or batched, so a shard may start an hour after the others ended.
 4. Counters accumulate across shards. The run is `failed` if any shard reported a failure, and the run page shows a
    shard progress badge (`2/3`) while shards are arriving.
+5. The run lasts from the first shard's start to the last shard's end, whether the shards run side by side or one
+   after another. Its metadata keeps each shard's start, end and worker count under `shards`.
 
 **All shards must use the same `projectName`.**
 

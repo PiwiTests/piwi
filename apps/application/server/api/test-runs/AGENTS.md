@@ -56,6 +56,9 @@ How the server merges shards:
 - Each shard's counters add up with SQL `+`, and the run settles only once `shardsFinished` reaches `shardTotal`
   (`finalizeShardedRun`, which runs the side effects once). `cancelInstanceRuns()` with `isShardedRun: true` cancels
   only the instance's non-sharded runs.
+- **A shard's end is recorded only through `recordShardEnd`** (`server/utils/shard-spans.ts`, the server and the demo):
+  its span joins `metadata.shards` and the run's start and duration become the first start to the last end, in one
+  write that shards of one run make one at a time (`tests/unit/sharded-run-setup.test.ts`).
 - **A shard's resource report replaces the one it sent before, whole**: one `test_run_resource_reports` row per run
   and shard (`saveResourceReportPart`, `shared/handlers/resource-reports.ts`), never merged into another shard's row.
 

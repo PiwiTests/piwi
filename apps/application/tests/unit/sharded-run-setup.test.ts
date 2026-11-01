@@ -40,6 +40,8 @@ const begin = (await import('../../server/api/test-runs/[id]/begin.post')).defau
 const events = (await import('../../server/api/test-runs/[id]/events.post')).default as unknown as Route;
 const finish = (await import('../../server/api/test-runs/[id]/finish.post')).default as unknown as Route;
 const { runEventBus } = await import('../../server/utils/run-events');
+const { MAX_RUN_DURATION_MS } = await import('../../server/utils/shard-spans');
+const { interruptStaleRuns } = await import('../../server/utils/stale-runs');
 const { shardTokenDigest } = await import('../../server/utils/shard-tokens');
 const { testCaseCache } = await import('../../server/utils/test-case-cache');
 const { testSuiteCache } = await import('../../server/utils/test-suite-cache');
@@ -63,16 +65,16 @@ beforeEach(async () => {
 });
 
 /** A shard's global setup: `/setup`, which hands back the run and a setup token. */
-async function setupShard(shardIndex: number): Promise<{ runId: number; setupToken: string }> {
-  const res = await setup({ body: { projectName: PROJECT, ...SHARDS, shardIndex } });
+async function setupShard(shardIndex: number, shards = SHARDS): Promise<{ runId: number; setupToken: string }> {
+  const res = await setup({ body: { projectName: PROJECT, ...shards, shardIndex } });
   return { runId: res.runId, setupToken: res.setupToken };
 }
 
 /** A shard's reporter starting: `/begin` with its setup token, which hands back a stream token. */
-async function beginShard(runId: number, setupToken: string, shardIndex: number): Promise<string> {
+async function beginShard(runId: number, setupToken: string, shardIndex: number, shards = SHARDS): Promise<string> {
   const res = await begin({
     params: { id: String(runId) },
-    body: { setupToken, totalTests: 1, metadata: METADATA, ...SHARDS, shardIndex },
+    body: { setupToken, totalTests: 1, metadata: METADATA, ...shards, shardIndex },
   });
   return res.streamToken;
 }
@@ -89,8 +91,42 @@ async function streamCase(runId: number, streamToken: string, title: string, sha
   });
 }
 
-async function finishShard(runId: number, streamToken: string, durations?: number[]) {
-  return finish({ params: { id: String(runId) }, body: { streamToken, status: 'passed', duration: 1000, durations } });
+async function finishShard(
+  runId: number,
+  streamToken: string,
+  durations?: number[],
+  shard: Record<string, unknown> = { duration: 1000 },
+) {
+  return finish({ params: { id: String(runId) }, body: { streamToken, status: 'passed', durations, ...shard } });
+}
+
+/** Every shard of a run set up and begun, with their stream tokens in shard order. */
+async function beginAllShards(shardTotal = 2): Promise<{ runId: number; tokens: string[] }> {
+  const shards = { ...SHARDS, shardTotal };
+  const tokens: string[] = [];
+  let runId = 0;
+  for (let index = 1; index <= shardTotal; index++) {
+    const shard = await setupShard(index, shards);
+    runId = shard.runId;
+    tokens.push(await beginShard(shard.runId, shard.setupToken, index, shards));
+  }
+  return { runId, tokens };
+}
+
+/** Run `fn` with the clock at `iso`, so a shard's end reaches the server then. */
+async function at<T>(iso: string, fn: () => Promise<T>): Promise<T> {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date(iso));
+  try {
+    return await fn();
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
+/** A shard's end as `/finish` reports it: its index, its start, its duration and its worker count. */
+function shardEnd(shardIndex: number, startTime: string, duration: number, workers: number) {
+  return { shardIndex, startTime, duration, metadata: { playwrightConfig: { actualWorkers: workers } } };
 }
 
 async function readRun(runId: number) {
@@ -318,13 +354,170 @@ describe('shards that reach the server at once', () => {
   });
 });
 
+describe("a sharded run's duration", () => {
+  const spans = async (runId: number) => (await readRun(runId)).metadata as Record<string, unknown>;
+
+  test("runs from the first shard's start to the last shard's end when the shards run one after another", async () => {
+    const { runId, tokens } = await beginAllShards();
+
+    await at('2026-11-01T02:42:29.000Z', () =>
+      finishShard(runId, tokens[0]!, [10], shardEnd(1, '2026-10-31T23:00:59.000Z', 13_290_000, 1)),
+    );
+    expect(await readRun(runId)).toMatchObject({ status: 'running', duration: 13_290_000 });
+    await at('2026-11-01T03:13:44.000Z', () =>
+      finishShard(runId, tokens[1]!, [30], shardEnd(2, '2026-11-01T02:43:34.000Z', 1_810_000, 3)),
+    );
+
+    const run = await readRun(runId);
+    expect(run).toMatchObject({ status: 'passed', duration: 15_165_000 });
+    expect(run.startTime.toISOString()).toBe('2026-10-31T23:00:59.000Z');
+    expect((await spans(runId)).shards).toEqual([
+      {
+        shardIndex: 1,
+        startTime: '2026-10-31T23:00:59.000Z',
+        endTime: '2026-11-01T02:42:29.000Z',
+        duration: 13_290_000,
+        workers: 1,
+      },
+      {
+        shardIndex: 2,
+        startTime: '2026-11-01T02:43:34.000Z',
+        endTime: '2026-11-01T03:13:44.000Z',
+        duration: 1_810_000,
+        workers: 3,
+      },
+    ]);
+  });
+
+  test('waits for a shard that starts minutes after the others ended, and lasts until it ends', async () => {
+    const one = await setupShard(1);
+    const tokenOne = await beginShard(one.runId, one.setupToken, 1);
+    await finishShard(one.runId, tokenOne, [10], { duration: 60_000 });
+
+    // The stale-run sweep passes while no shard runs.
+    expect(await interruptStaleRuns(db, Date.now() + 5 * 60_000)).toEqual([]);
+    expect(await readRun(one.runId)).toMatchObject({ status: 'running', shardsFinished: 1 });
+
+    const two = await setupShard(2);
+    expect(two.runId).toBe(one.runId);
+    const tokenTwo = await beginShard(two.runId, two.setupToken, 2);
+    await finishShard(two.runId, tokenTwo, [30], { duration: 30_000 });
+
+    expect(await readRun(one.runId)).toMatchObject({ status: 'passed', shardsFinished: 2 });
+    expect(await db.select().from(schema.testRuns)).toHaveLength(1);
+  });
+
+  test("is the longest shard's when the shards start together and finish at once", async () => {
+    const { runId, tokens } = await beginAllShards();
+
+    await at('2026-10-31T23:00:08.000Z', () =>
+      Promise.all([
+        finishShard(runId, tokens[0]!, [10], shardEnd(1, '2026-10-31T23:00:00.000Z', 5_000, 2)),
+        finishShard(runId, tokens[1]!, [30], shardEnd(2, '2026-10-31T23:00:00.000Z', 8_000, 2)),
+      ]),
+    );
+
+    const run = await readRun(runId);
+    expect(run).toMatchObject({ status: 'passed', duration: 8_000 });
+    expect(run.startTime.toISOString()).toBe('2026-10-31T23:00:00.000Z');
+    expect((await spans(runId)).shards).toHaveLength(2);
+  });
+
+  test('keeps every shard of a large run that finish at once', async () => {
+    const { runId, tokens } = await beginAllShards(12);
+    const minutes = (index: number) => (index === 9 ? 20 : index) * 60_000;
+
+    await at('2026-10-31T23:20:00.000Z', () =>
+      Promise.all(
+        tokens.map((token, i) =>
+          finishShard(runId, token, [10], shardEnd(i + 1, '2026-10-31T23:00:00.000Z', minutes(i + 1), 1)),
+        ),
+      ),
+    );
+
+    const run = await readRun(runId);
+    expect(run).toMatchObject({ status: 'passed', shardsFinished: 12, duration: 1_200_000 });
+    const metadata = await spans(runId);
+    expect(
+      (metadata.shards as Array<{ shardIndex: number }>).map((shard) => shard.shardIndex).sort((a, b) => a - b),
+    ).toEqual(Array.from({ length: 12 }, (_, i) => i + 1));
+    expect(metadata.shardTokens).toBeUndefined();
+  });
+
+  test('ends a shard that sends a start and no duration when its /finish arrives', async () => {
+    const { runId, tokens } = await beginAllShards();
+
+    await at('2026-10-31T23:01:00.000Z', () =>
+      finishShard(runId, tokens[0]!, [10], { startTime: '2026-10-31T23:00:00.000Z', duration: 60_000 }),
+    );
+    await at('2026-10-31T23:01:31.000Z', () =>
+      finishShard(runId, tokens[1]!, [30], { startTime: '2026-10-31T23:01:01.000Z' }),
+    );
+
+    expect(await readRun(runId)).toMatchObject({ duration: 91_000 });
+    expect(((await spans(runId)).shards as unknown[])[1]).toMatchObject({
+      startTime: '2026-10-31T23:01:01.000Z',
+      endTime: '2026-10-31T23:01:31.000Z',
+      duration: 30_000,
+    });
+  });
+
+  test('ends a shard that sends no start when its /finish arrives', async () => {
+    const { runId, tokens } = await beginAllShards();
+
+    await at('2026-11-01T00:00:10.000Z', () => finishShard(runId, tokens[0]!, [10], { duration: 10_000 }));
+    await at('2026-11-01T00:00:30.000Z', () => finishShard(runId, tokens[1]!, [30], { duration: 15_000 }));
+
+    const run = await readRun(runId);
+    expect(run.startTime.toISOString()).toBe('2026-11-01T00:00:00.000Z');
+    expect(run.duration).toBe(30_000);
+  });
+
+  test('places a shard whose clock is off by its arrival', async () => {
+    const { runId, tokens } = await beginAllShards();
+
+    await at('2026-10-31T23:01:00.000Z', () =>
+      finishShard(runId, tokens[0]!, [10], { startTime: '1970-01-01T00:00:00.000Z', duration: 60_000 }),
+    );
+    await at('2026-10-31T23:01:30.000Z', () =>
+      finishShard(runId, tokens[1]!, [30], { startTime: '2026-11-03T23:00:00.000Z', duration: 60_000 }),
+    );
+
+    const run = await readRun(runId);
+    expect(run).toMatchObject({ duration: 90_000 });
+    expect(run.startTime.toISOString()).toBe('2026-10-31T23:00:00.000Z');
+    expect((await spans(runId)).shards).toMatchObject([
+      { startTime: '2026-10-31T23:00:00.000Z', endTime: '2026-10-31T23:01:00.000Z' },
+      { startTime: '2026-10-31T23:00:30.000Z', endTime: '2026-10-31T23:01:30.000Z' },
+    ]);
+  });
+
+  test('keeps an out-of-range duration within what the duration column holds', async () => {
+    const { runId, tokens } = await beginAllShards();
+
+    await at('2026-10-31T23:01:00.000Z', () => finishShard(runId, tokens[0]!, [10], { duration: 60_000 }));
+    await expect(
+      at('2026-10-31T23:01:30.000Z', () =>
+        finishShard(runId, tokens[1]!, [30], { startTime: '+275760-09-13T00:00:00.000Z', duration: 1e16 }),
+      ),
+    ).resolves.toMatchObject({ status: 'passed' });
+
+    expect((await readRun(runId)).duration).toBe(MAX_RUN_DURATION_MS);
+  });
+});
+
 describe('a sharded run delivered by batch submissions', () => {
-  const shardBody = (shardIndex: number, title: string, status: 'passed' | 'failed') => ({
+  const shardBody = (
+    shardIndex: number,
+    title: string,
+    status: 'passed' | 'failed',
+    startTime = '2026-10-31T23:00:00.000Z',
+  ) => ({
     projectName: PROJECT,
     ...SHARDS,
     shardIndex,
     status,
-    startTime: new Date().toISOString(),
+    startTime,
     duration: 1000 * shardIndex,
     totalTests: 1,
     passedTests: status === 'passed' ? 1 : 0,
@@ -333,11 +526,11 @@ describe('a sharded run delivered by batch submissions', () => {
   });
 
   test('every shard joins one run, which the last shard settles from all their executions', async () => {
-    const one = await submit({ body: shardBody(1, 'pays', 'failed') });
+    const one = await at('2026-10-31T23:00:01.000Z', () => submit({ body: shardBody(1, 'pays', 'failed') }));
     expect(await readRun(one.runId)).toMatchObject({ status: 'running', shardsFinished: 1 });
     expect(runFinalizeSideEffects).not.toHaveBeenCalled();
 
-    const two = await submit({ body: shardBody(2, 'adds', 'passed') });
+    const two = await at('2026-10-31T23:00:02.000Z', () => submit({ body: shardBody(2, 'adds', 'passed') }));
     expect(two.runId).toBe(one.runId);
     expect(await db.select().from(schema.testRuns)).toHaveLength(1);
     expect(await readRun(one.runId)).toMatchObject({
@@ -350,6 +543,19 @@ describe('a sharded run delivered by batch submissions', () => {
       avgTestDuration: 15,
     });
     expect(runFinalizeSideEffects).toHaveBeenCalledTimes(1);
+  });
+
+  test("a shard that started first but arrives last moves the run's start back to its own", async () => {
+    const two = await at('2026-10-31T23:00:12.000Z', () =>
+      submit({ body: shardBody(2, 'adds', 'passed', '2026-10-31T23:00:10.000Z') }),
+    );
+    await at('2026-10-31T23:00:13.000Z', () =>
+      submit({ body: shardBody(1, 'pays', 'passed', '2026-10-31T23:00:00.000Z') }),
+    );
+
+    const run = await readRun(two.runId);
+    expect(run).toMatchObject({ status: 'passed', duration: 12_000 });
+    expect(run.startTime.toISOString()).toBe('2026-10-31T23:00:00.000Z');
   });
 
   test('shards submitted together join one run and settle it once', async () => {
