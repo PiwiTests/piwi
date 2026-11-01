@@ -100,7 +100,7 @@ async function installFakeBridge(page: Page, options: FakeBridgeOptions) {
                 return `output-${String(args?.name)}_0`;
               case 'desktop_close_output_window':
               case 'desktop_notify':
-              case 'desktop_set_activity':
+              case 'desktop_set_notification_choices':
                 return null;
               default:
                 throw new Error(`unexpected command: ${cmd}`);
@@ -348,6 +348,31 @@ test.describe('Desktop local run', () => {
       window.__piwiFakeTauri.invocations.filter((i) => i.cmd === 'desktop_stop_local_tests').map((i) => i.args),
     );
     expect(stops).toEqual([{ runId: 7 }, { runId: 7 }]);
+  });
+
+  test("the tray's Stop stops the run as its own Stop does", async ({ page }) => {
+    await installFakeBridge(page, { linked: true, autoExit: false });
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await expect(tray(page).getByText('Running 0/1…', { exact: true })).toBeVisible();
+
+    // The tray's item names the run by the shell id of its current step.
+    await page.evaluate(() => window.__piwiFakeTauri.emitEvent('piwi:tray-stop', 7));
+    await expect(tray(page).getByText('Stopping…', { exact: true })).toBeVisible();
+    await page.evaluate(() => window.__piwiFakeTauri.finish(130));
+    await expect(tray(page).getByText('Stopped', { exact: true })).toBeVisible();
+
+    // A process no window run owns is stopped by the shell directly.
+    await page.evaluate(() => window.__piwiFakeTauri.emitEvent('piwi:tray-stop', 99));
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          window.__piwiFakeTauri.invocations.filter((i) => i.cmd === 'desktop_stop_local_tests').map((i) => i.args),
+        ),
+      )
+      .toEqual([{ runId: 7 }, { runId: 99 }]);
   });
 
   test('colored output shows in its colors and still counts the tests', async ({ page }) => {

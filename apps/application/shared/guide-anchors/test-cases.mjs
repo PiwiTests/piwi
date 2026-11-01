@@ -152,7 +152,7 @@ export const TEST_CASES_ANCHORS = [
       'The desktop app’s Reproduce this flake button: runs the Flake Lab at the commit of the latest failure, in a throwaway worktree of the linked folder.',
     shownWhen: 'In the desktop app, once the project’s folder is linked.',
     requires: { capability: 'flake-lab', desktop: true },
-    doc: 'features/desktop#reproducing-a-flake',
+    doc: 'features/desktop-runs#reproducing-a-flake',
     sample: {
       route: '/test-cases/9?tab=flakiness',
       expect: { testCase: { id: 9, title: 'should apply discount code' } },

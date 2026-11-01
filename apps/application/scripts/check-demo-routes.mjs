@@ -50,6 +50,7 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'GET /api/desktop/picker-pairings/:id', // desktop build only; Piwi Picker polls for the answer
   'PATCH /api/desktop/picker-pairings/:id', // desktop build only; the window allows or denies a pairing
   'GET /api/desktop/run-channel', // desktop build only; the shell reads the run channel it names in each run it starts
+  'GET /api/desktop/notifications', // desktop build only; the shell shows the notifications it streams
   'GET /api/desktop/live', // desktop build only; Piwi Picker reads the hub of the desktop app's runs
   'GET /api/desktop/runs/events', // desktop build only; the window's stream of the runs the shell starts
   'POST /api/desktop/runs/commands', // desktop build only; the window's commands to those runs

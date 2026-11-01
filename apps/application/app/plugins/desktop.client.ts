@@ -9,6 +9,8 @@
  *     `target="_blank"` new-window request, so we hand them to the OS browser;
  *   - the Web Notification API is unavailable / permission-denied in the
  *     webview, so we shim it onto native OS notifications;
+ *   - the shell shows the server's notifications itself, so it is given the
+ *     choices of which ones to show;
  *   - the shell restarts the bundled server when it stops, and gives up after
  *     repeated crashes: a toast says so, since the API stops answering meanwhile.
  *
@@ -24,6 +26,8 @@ export default defineNuxtPlugin((nuxtApp) => {
 
   installExternalLinkHandler(core);
   installNativeNotifications(core);
+  installNotificationChoices(core);
+  installShortcuts(core);
   installErrorForwarding(core);
   installServerStatus();
 
@@ -185,32 +189,44 @@ function installExternalLinkHandler(core: Bridge) {
 }
 
 /**
+ * The dashboard window's Ctrl shortcuts on Windows and Linux (`DESKTOP_SHORTCUTS`): Settings, Import Playwright
+ * report, Back and Forward, the keys the macOS app menu holds with ⌘. Only in the `main` window: the trace and
+ * output windows hold no IPC grant, and their history is their own.
+ */
+function installShortcuts(core: Bridge) {
+  if (tauriWindowLabel() !== 'main') return;
+  const router = useRouter();
+  const macOS = /Mac|iPhone|iPad/.test(navigator.platform);
+  window.addEventListener('keydown', (event) => {
+    if (event.defaultPrevented) return;
+    const target = event.target as HTMLElement | null;
+    const inField = !!target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
+    const action = desktopShortcut(event, { macOS, inField });
+    if (!action) return;
+    event.preventDefault();
+    if (action === 'settings') void router.push('/settings');
+    else if (action === 'import') core.invoke('desktop_pick_files_to_open').catch(() => {});
+    else if (action === 'back') history.back();
+    else history.forward();
+  });
+}
+
+/**
  * Replace `window.Notification` with a shim that shows native OS notifications
  * through the shell. The dashboard's notification code checks `'Notification' in
  * window`, reads `Notification.permission`, and constructs `new Notification()`;
- * routing those through the shell makes browser-channel notifications work in
- * the desktop app without touching a dozen call sites. On Windows and Linux, a
- * click on one brings the window forward and runs the `onclick` the page set,
- * as a browser does: the shell reports it as `piwi:notification-click` with the
- * id the shim gave the notification (on Windows, only while the toast is on
- * screen).
- *
- * Every notification shown while the window is hidden or unfocused also bumps
- * the ambient unread state — a dock/taskbar badge where the platform has one,
- * and the tray tooltip everywhere. Focusing the window clears it.
+ * routing those through the shell makes them work in the desktop app without
+ * touching each call site. On Windows and Linux, a click on one brings the
+ * window forward and runs the `onclick` the page set, as a browser does: the
+ * shell reports it as `piwi:notification-click` with the id the shim gave the
+ * notification (on Windows, only while the toast is on screen). The shell counts
+ * the ones shown while the window is hidden or unfocused as unread.
  */
 function installNativeNotifications(core: Bridge) {
-  let unread = 0;
   const shown = createShownNotifications<NativeNotification>();
 
   void tauriEvent()?.listen<number>('piwi:notification-click', ({ payload }) => {
     shown.get(payload)?.click();
-  });
-
-  window.addEventListener('focus', () => {
-    if (unread === 0) return;
-    unread = 0;
-    core.invoke('desktop_set_activity', { count: 0, status: null }).catch(() => {});
   });
 
   class NativeNotification extends EventTarget {
@@ -233,11 +249,6 @@ function installNativeNotifications(core: Bridge) {
       this.body = options?.body ?? '';
       this.#id = shown.add(this);
       core.invoke('desktop_notify', { title, body: this.body, id: this.#id }).catch(() => {});
-      if (document.hidden || !document.hasFocus()) {
-        unread += 1;
-        const status = this.body.split('\n')[0] || this.title;
-        core.invoke('desktop_set_activity', { count: unread, status }).catch(() => {});
-      }
     }
 
     /** What a browser does when its notification is clicked: `onclick`, then the `click` listeners. */
@@ -261,4 +272,26 @@ function installNativeNotifications(core: Bridge) {
   } catch {
     // A locked-down webview may refuse the redefinition — degrade silently.
   }
+}
+
+/**
+ * Give the shell the notification choices, now and on every change: the events each project's bell picked (the
+ * `piwi-browser-notify` cookie), and the events off for every project (a finished diagnosis, on Settings › AI). The
+ * shell shows the server's notifications itself (`/api/desktop/notifications`) and keeps the choices for the next
+ * start, so they hold while the page is not loaded.
+ */
+function installNotificationChoices(core: Bridge) {
+  if (tauriWindowLabel() !== 'main') return;
+  const { stored } = useBrowserNotificationCookie();
+  const { enabled: diagnosisNotifies } = useDiagnosisNotification();
+  watch(
+    () => ({
+      projects: Object.fromEntries(Object.entries(stored.value.projects).map(([id, project]) => [id, project.events])),
+      muted: diagnosisNotifies.value ? [] : ['diagnosis.completed'],
+    }),
+    (choices) => {
+      core.invoke('desktop_set_notification_choices', { choices }).catch(() => {});
+    },
+    { immediate: true },
+  );
 }

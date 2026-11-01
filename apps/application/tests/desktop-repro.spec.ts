@@ -117,7 +117,7 @@ async function installFakeBridge(page: Page, linkedProjectId: number) {
               }
               case 'desktop_bring_to_front':
               case 'desktop_notify':
-              case 'desktop_set_activity':
+              case 'desktop_set_notification_choices':
               case 'desktop_set_run_progress':
                 return null;
               default:

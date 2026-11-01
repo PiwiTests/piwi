@@ -99,6 +99,17 @@ pub struct LocalRuns {
     /// Reproduction specs written into a linked folder, by run id: removed when
     /// their run ends, or when the app quits.
     specs: Mutex<HashMap<u32, PathBuf>>,
+    /// What each running run is, for the tray's Stop items (`run_label`).
+    labels: Mutex<HashMap<u32, String>>,
+}
+
+/// What a local run is, as the tray names it: `tests in shop`, `the bisect in
+/// shop`, after the linked folder's name.
+pub(crate) fn run_label(what: &str, folder: &Path) -> String {
+    match folder.file_name() {
+        Some(name) => format!("{what} in {}", name.to_string_lossy()),
+        None => what.to_string(),
+    }
 }
 
 impl LocalRuns {
@@ -113,6 +124,23 @@ impl LocalRuns {
         self.next_id.fetch_add(1, Ordering::SeqCst) + 1
     }
 
+    /// The running runs, by id, each with its label (`run_label`).
+    pub fn listed(&self) -> Vec<(u32, String)> {
+        let mut ids: Vec<u32> = self.children.lock().unwrap().keys().copied().collect();
+        ids.extend(self.jobs.lock().unwrap().keys().copied());
+        ids.sort_unstable();
+        ids.dedup();
+        let labels = self.labels.lock().unwrap();
+        ids.into_iter()
+            .map(|id| (id, labels.get(&id).cloned().unwrap_or_else(|| "a local run".to_string())))
+            .collect()
+    }
+
+    /// Name run `id` for the tray (`run_label`).
+    pub(crate) fn label(&self, id: u32, label: String) {
+        self.labels.lock().unwrap().insert(id, label);
+    }
+
     /// Register a reproduce/bisect job so it can be stopped and cleaned up.
     pub(crate) fn register_job(&self, id: u32, job: Job) {
         self.jobs.lock().unwrap().insert(id, job);
@@ -121,6 +149,7 @@ impl LocalRuns {
     /// Remove a job from tracking once its driver has finished with it.
     pub(crate) fn drop_job(&self, id: u32) {
         self.jobs.lock().unwrap().remove(&id);
+        self.labels.lock().unwrap().remove(&id);
     }
 
     /// Record (or clear) the child currently running for a job, so a stop or
@@ -157,12 +186,14 @@ impl LocalRuns {
     fn drop_child(&self, id: u32) {
         self.children.lock().unwrap().remove(&id);
         self.stopping.lock().unwrap().remove(&id);
+        self.labels.lock().unwrap().remove(&id);
     }
 
     /// Kill a plain run's process tree now, if it is still running.
     fn kill_child(&self, id: u32) {
         let child = self.children.lock().unwrap().remove(&id);
         self.stopping.lock().unwrap().remove(&id);
+        self.labels.lock().unwrap().remove(&id);
         if let Some(child) = child {
             crate::worktree::kill_child_tree(child.pid());
             let _ = child.kill();
@@ -216,6 +247,7 @@ impl LocalRuns {
         for (_, spec) in self.specs.lock().unwrap().drain() {
             crate::repro::remove_spec(&spec);
         }
+        self.labels.lock().unwrap().clear();
     }
 
     /// Whether a plain run, or a job's test or browser install, is still running.
@@ -714,6 +746,7 @@ pub async fn desktop_run_local_tests(
     let (mut rx, child) = command.spawn().map_err(|e| e.to_string())?;
 
     let state = app.state::<LocalRuns>();
+    state.label(id, run_label("tests", &folder));
     state.children.lock().unwrap().insert(id, child);
 
     let emit_app = app.clone();
@@ -804,6 +837,13 @@ fn after_grace(app: &AppHandle, force: impl FnOnce(&LocalRuns) + Send + 'static)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_run_is_named_after_its_linked_folder() {
+        assert_eq!(run_label("tests", Path::new("/work/shop")), "tests in shop");
+        assert_eq!(run_label("the bisect", Path::new("/work/admin/")), "the bisect in admin");
+        assert_eq!(run_label("tests", Path::new("/")), "tests");
+    }
 
     #[test]
     fn quitting_removes_the_reproduction_specs_still_on_disk() {

@@ -9,15 +9,16 @@ platform-native flourishes.
 taskbar/Dock progress bar, the window title and the composed tray tooltip; a tray status dot and (Windows) a taskbar
 overlay icon show run state; and a Windows taskbar thumbnail toolbar adds Stop/Open buttons under the thumbnail. The
 dashboard aggregates its active runs and feeds the shell, showing progress whenever a run is active and flashing the
-outcome (green pass / red fail) before clearing.
-Still open: the live run menu in the tray (rollout step 3), the progress scenario of the ambient-state E2E test
-(step 5), the optional Rerun thumbnail button, and the **in-place progress toast** (tier 3):
-it duplicates the completion notifications that already exist, and its Windows AUMID/WinRT behaviour has to be validated
-on a real desktop, so it is deferred rather than written blind. The Rust and front-end are unit-tested and compile for
-both the native and the Windows target; the native *rendering* — bar colours, the status dot, the overlay icon, and the
-thumb-button icons and their click handling (COM + a window subclass) — is compile-verified only and still needs a
-visual/functional pass on Windows and macOS. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The design below is
-the original text.
+outcome (green pass / red fail) before clearing. The tray's menu lists the local runs going, each with a Stop item
+(rollout step 3, without the progress count: the shell names each run where it registers it, `LocalRuns::label`, and
+`refresh_tray_runs` keeps the items; a Stop goes to the window as `piwi:tray-stop`, which stops the run as its own Stop
+does). Still open: the progress scenario of the ambient-state E2E test (step 5), the optional Rerun thumbnail button,
+and the **in-place progress toast** (tier 3): it duplicates the completion notifications that already exist, and its
+Windows AUMID/WinRT behaviour has to be validated on a real desktop, so it is deferred rather than written blind. The
+Rust and front-end are unit-tested and compile for both the native and the Windows target; the native *rendering* — bar
+colours, the status dot, the overlay icon, and the thumb-button icons and their click handling (COM + a window subclass)
+— is compile-verified only and still needs a visual/functional pass on Windows and macOS. Nothing here is on
+[`ROADMAP.md`](../ROADMAP.md) yet. The design below is the original text.
 
 **Summary.** A "run" in the desktop shell is a local Playwright execution (`desktop_run_local_tests`, plus reproduce
 and bisect), spawned via the bundled Node sidecar and streamed back as `piwi:local-run` events. The front end already

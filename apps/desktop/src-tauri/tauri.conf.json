@@ -18,6 +18,7 @@
         "minHeight": 540,
         "resizable": true,
         "backgroundThrottling": "disabled",
+        "zoomHotkeysEnabled": true,
         "url": "index.html"
       }
     ],
@@ -102,6 +103,13 @@
         "headerImage": "windows/installer-header.bmp",
         "uninstallerHeaderImage": "windows/installer-header.bmp",
         "sidebarImage": "windows/installer-sidebar.bmp"
+      }
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["piwi"]
       }
     }
   }

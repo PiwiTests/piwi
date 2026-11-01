@@ -428,6 +428,15 @@ describe('hand-written reference pages match the code', () => {
     for (const key of searchKeys) {
       expect(lists, `${page} does not list the test search key \`${key}\``).toContain(`\`${key}\``);
     }
+    // The desktop app's Ctrl shortcuts, `DESKTOP_SHORTCUTS`.
+    const desktopKeys = [
+      ...read('apps/application/app/utils/desktop-shortcuts.ts').matchAll(/^ {2}'?([^':\s]+)'?: '\w+',$/gm),
+    ].map((m) => m[1]!.toUpperCase());
+    expect(desktopKeys.length, 'no keys found in DESKTOP_SHORTCUTS').toBeGreaterThan(0);
+    const desktop = sectionOf(page, 'Desktop app');
+    for (const key of desktopKeys) {
+      expect(desktop, `${page} does not list the desktop shortcut Ctrl + ${key}`).toContain(`\`Ctrl\` + \`${key}\``);
+    }
     // The assistant: Ctrl+I anywhere, and the keys its question field's keydown handler takes.
     expect(read('apps/application/app/components/assistant/AssistantPanel.vue')).toContain('meta_i:');
     expect(anywhere, `${page} does not list the Ctrl + I assistant shortcut`).toContain('`Ctrl` + `I`');

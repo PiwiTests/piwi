@@ -41,7 +41,12 @@ channel, so a per-user install pulls a per-user update.
    on macOS a click on the Dock icon brings the window back), **Start on login**,
    **Open data folder** and **Show logs**, which reveals `logs/server.log` in the
    app data folder. The log rotates at 10 MB, keeping `server.1.log` and
-   `server.2.log`.
+   `server.2.log`. While local runs are going, the tray lists them under
+   Open, each with a Stop item (`refresh_tray_runs`, kept current once a second
+   by `watch_local_runs`). A Stop goes to the dashboard window as
+   `piwi:tray-stop`, which stops the run as its own Stop does (`stopRun`, so a
+   run of several steps ends as stopped); a process no window run owns is
+   stopped by the shell directly.
 4. The dashboard can link a Piwi project to a folder on this machine and run
    `playwright test` there (`src-tauri/src/runner.rs`): the shell resolves the
    folder's own Playwright package, executes it with the bundled Node sidecar,
@@ -74,13 +79,23 @@ channel, so a per-user install pulls a per-user update.
    clients' config files (`src-tauri/src/mcp_clients.rs`): strict-JSON merge
    of one key with a backup next to the file, and a startup pass that rewrites
    entries whose URL/token drifted after a port change.
-7. Native notifications shown while the window is hidden bump an unread badge
-   on the dock icon and the tray tooltip (`desktop_set_activity`), cleared
-   when the window regains focus. The page creates them (`desktop_notify`,
-   with an id), so the main window is not suspended in the background
-   (`backgroundThrottling: "disabled"`, which macOS 14 and later honor; the
-   Windows and Linux web views have no such policy). On Windows and Linux a
-   click on one brings the window forward and the shell hands the id back
+7. The shell shows the server's notifications itself, page or no page: once
+   the server is ready it follows `GET /api/desktop/notifications`
+   (`follow_notifications`), whose messages the server renders from its
+   notification events (`server/utils/desktop-notifications.ts`), and connects
+   again whenever the stream ends. It shows one when the dashboard window is
+   not in front and the window's choices want it: the window gives the shell
+   each project's bell events (the `piwi-browser-notify` cookie) and the
+   events off everywhere (`desktop_set_notification_choices`), which the shell
+   keeps in `settings.json` for the next start; a project with no choice
+   notifies on the events the server marks `defaultOn`. The page's own
+   notifications go through `desktop_notify`. Each one shown while the window
+   is not in front bumps an unread badge on the dock icon and the tray
+   tooltip, which focusing the window clears. The main window is not
+   suspended in the background (`backgroundThrottling: "disabled"`, which
+   macOS 14 and later honor; the Windows and Linux web views have no such
+   policy). On Windows and Linux a click on a notification brings the window
+   forward and opens its page, or, for one the page showed, hands its id back
    (`piwi:notification-click`), which runs the `onclick` the page set; on
    Windows a click counts only while the toast is on screen. On macOS clicks
    are not reported: the notification plugin would hold a thread and a
@@ -100,6 +115,55 @@ channel, so a per-user install pulls a per-user update.
    into the Downloads folder (never replacing a file), then reveals it. A file
    the page builds itself (a workbook, an image) goes through
    `desktop_save_download` instead.
+10. The windows open where they were last left (`tauri-plugin-window-state`,
+    `.window-state.json` in the app config folder): the dashboard window by
+    itself, the trace and output windows by kind (`window_state_key`); with
+    nothing saved yet, the dashboard opens maximized. Cmd/Ctrl with +, - or 0
+    zooms the dashboard (its capability grants `set_webview_zoom`, which
+    Tauri's shortcut script calls on macOS and Linux); the trace and output
+    windows hold no IPC grant, so they zoom on Windows only, where the web view
+    does it itself.
+11. A run reported into the app that ends with failures while the window is
+    not focused asks for attention once (`request_user_attention`, on the
+    dashboard's "Run failed" flash, never for a failed attempt while a run
+    goes): the Dock icon bounces, the taskbar button flashes, or Linux sets the
+    urgency hint, which focusing the window withdraws. While a local run or job
+    is going, a run in UI mode or paused at a stop included, the machine does
+    not idle-sleep (`watch_local_runs`, the `keepawake` crate, on a
+    thread of its own since Windows ties the request to the thread that made
+    it; on Linux with logind's sleep inhibitor too, which GNOME's idle suspend
+    respects). The display still turns off, closing a laptop's lid still sleeps
+    it, and a refused request is logged.
+12. On macOS the app menu is Tauri's default with Piwi's items (`app_menu`,
+    run by `run_app_menu_action`): Settings… (Cmd+,), which shows the page
+    through a `piwi:open-page` event; a Quit (Cmd+Q) that asks while local runs
+    are going; File › Import Playwright report… (Cmd+O), whose files the
+    dashboard receives as the ones the OS opens with the app
+    (`queue_open_files`); View › Back and Forward (Cmd+[ and Cmd+]); Help ›
+    Piwi documentation, Report an issue and Show logs. Windows and Linux show
+    no menu bar: the dashboard window takes the same keys with Ctrl, outside a
+    field being typed in (`DESKTOP_SHORTCUTS` in
+    `app/utils/desktop-shortcuts.ts`), Ctrl+O through
+    `desktop_pick_files_to_open`, which opens one picker at a time, in front of
+    the window.
+13. A `piwi://open/<page>` link shows that dashboard page in the window
+    (`tauri-plugin-deep-link`, `plugins.deep-link` in `tauri.conf.json`). The
+    `.msi` and `.exe` register the scheme as they install, and macOS reads it
+    from the bundle once the app is in `/Applications`. On Linux the shell
+    registers it each time it starts, off the main thread (`register_all`: a
+    handler entry with `%u` in the user's applications folder), since the
+    `.deb` and `.rpm` menu entry passes the app no URL and an AppImage installs
+    none. A link that launched the app (its one argument on Windows and Linux)
+    or came while the server started waits in `LinkedPage` and reaches the
+    session bootstrap as `to`, which redirects to it once `desktopPagePath`
+    accepts it. One that comes while the dashboard page loads waits until the
+    page listens and takes it (`desktop_take_linked_page`); after that, a link
+    goes to the window as `piwi:open-page` (`open_links`). A second launch hands
+    its link to the running app through single-instance's `deep-link` feature.
+    Only the `open` host is read, so a link shows a page and never acts, and a
+    launch whose first argument is a link acts on no other argument
+    (`args_to_act_on`): Windows hands the link over as `"%1"`, which a quote in
+    it can split.
 
 Local access is gated by a token the app creates once and keeps for the install (see
 `apps/application/server/middleware/desktop-guard.ts`), so only the app — not other

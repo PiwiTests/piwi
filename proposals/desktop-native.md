@@ -11,11 +11,17 @@ and the macOS app menu's Quit asks first; the Dock icon brings the hidden window
 notification click opens what it is about, and on macOS 14 and later the main window is not suspended in the background
 (Windows and Linux offer no such policy); the log rotates and the tray shows it; Settings › Storage sets the desktop
 app's retention, and its server runs the retention sweep a few minutes after it starts; what the server serves downloads
-straight to disk, while a file the page builds (a chart image, a workbook) still crosses IPC. Notifications still come
-from the page; the shell reading the server's stream itself stays in step 3. The Rust is unit-tested and the page side
+straight to disk, while a file the page builds (a chart image, a workbook) still crosses IPC. The Rust is unit-tested and the page side
 has Playwright specs with a faked bridge, but the macOS menu, the Dock, the background policy and the notification
-clicks are compile-checked only and still need a pass on macOS and Windows. Nothing beyond step 1 is built, and nothing
-here is on [`ROADMAP.md`](../ROADMAP.md) yet.
+clicks are compile-checked only and still need a pass on macOS and Windows. Step 2 is built: the windows open where they
+were left (`tauri-plugin-window-state`), Cmd/Ctrl +, - and 0 zoom the dashboard (the trace and output windows on Windows
+only), a run that fails unseen asks for attention, the machine does not idle-sleep while a local run goes, and the macOS
+app menu holds Settings, Import, Back and Forward and the Help items. The tray lists the local runs going, each with
+Stop, and Windows and Linux take the menu's keys with Ctrl in the page. Step 3 is built: a `piwi://open/<page>` link
+opens that page in the app, starting it if needed, and the shell shows the server's notifications from a stream of its
+own (`/api/desktop/notifications`), with the choices the window gives it and an unread count it keeps itself, so they
+no longer depend on the page; registering the scheme with each installer and the links on macOS still need a pass on
+real installs. Nothing beyond step 3 is built, and nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet.
 
 **Summary.** The shell is strong where Piwi is unique: it runs, reproduces and bisects tests in throwaway worktrees,
 hosts Flake Lab, connects MCP clients, opens Playwright archives and bug reports, and shows a run's progress on the
@@ -33,11 +39,11 @@ to follow, then turns the app into the developer's link to the team instance and
 | Window trust     | `lib.rs` (`health_ok`, `main_window_may_navigate`)        | the window loads only the sidecar this launch spawned, and IPC is granted to its origin only   |
 | Local runs       | `runner.rs`, `repro.rs`, `worktree.rs`, `hub_env.rs`      | runs, reproductions, bisects and Flake Lab in the linked folder or a throwaway worktree        |
 | Tray             | `lib.rs` (`TrayIconBuilder`)                              | Open, Open data folder, Run in background, Start on login, Quit; tooltip and status dot        |
-| Ambient state    | `desktop_set_activity`, `desktop_set_run_progress`        | unread badge, taskbar and Dock progress bar, title, Windows overlay icon and thumbnail buttons |
+| Ambient state    | `update_unread`, `desktop_set_run_progress`               | unread badge, taskbar and Dock progress bar, title, Windows overlay icon and thumbnail buttons |
 | Opened files     | `queue_open_files`, `RunEvent::Opened`, file associations | `.zip` archives and `.piwibug` reports from drag and drop, "Open with" or a second launch      |
 | Browser hand-off | `server/middleware/desktop-handoff.ts`                    | a dashboard link opened in the browser shows in the window                                     |
 | MCP              | `mcp_clients.rs`, `mcp_stdio.rs`                          | one-click connection of seven clients, the stdio bridge for Claude Desktop                     |
-| Notifications    | `desktop.client.ts` (`installNativeNotifications`)        | the page's `new Notification()` becomes a native notification                                  |
+| Notifications    | `follow_notifications`, `installNativeNotifications`      | the server's notifications shown by the shell; the page's `new Notification()` goes native     |
 | Updates          | `updates.rs`, two Windows channels                        | signed in-app updates on every installer, `.deb` and `.rpm` included                           |
 
 ## What it lacks
@@ -158,21 +164,21 @@ odds with zero telemetry.
 
 Tauri 2.12.5, as locked. Versions name the release that added an API.
 
-| Capability                                                       | Used        | What it gives Piwi                                                      |
-| ---------------------------------------------------------------- | ----------- | ----------------------------------------------------------------------- |
-| Notification `on_action` (plugin 2.6, 2.7 locked)                | yes, clicks | click-to-open, Open and Re-run buttons (Windows: while the toast shows) |
-| `backgroundThrottling` (2.3, macOS 14+)                          | yes         | the hidden window keeps working                                         |
-| `tauri-plugin-deep-link`                                         | no          | `piwi://` links (macOS: the bundle installed in `/Applications` only)   |
-| `tauri-plugin-global-shortcut`, `tauri-plugin-clipboard-manager` | no          | the quick lookup; images copied to the clipboard                        |
-| `tauri-plugin-window-state`, `tauri-plugin-positioner`           | no          | remembered windows; the tray popover                                    |
-| `tauri-plugin-fs` `watch`, `tauri-plugin-log` rotation           | no          | watched folders; a log that rotates                                     |
-| App and context menus, `zoomHotkeysEnabled`                      | no          | menus, right-click, zoom                                                |
-| `set_dock_visibility` (2.5), `request_user_attention`            | no          | menubar-only background mode; a bounce or a flash on failure            |
-| `on_download`, `on_new_window` (2.8)                             | no          | native downloads and windows                                            |
-| Mica, vibrancy, Liquid Glass (2.12), title bar overlay, tabs     | no          | each platform's look                                                    |
-| Several webviews in one window                                   | no          | a trace beside its run; still behind `unstable`                         |
-| `keyring`, `tauri-plugin-drag`, `tauri-nspanel`, `keepawake`     | no          | keychain, drag-out, panels, no sleep mid-run (community crates)         |
-| Dock menu, Jump List                                             | —           | no Tauri API: native code                                               |
+| Capability                                                       | Used           | What it gives Piwi                                                      |
+| ---------------------------------------------------------------- | -------------- | ----------------------------------------------------------------------- |
+| Notification `on_action` (plugin 2.6, 2.7 locked)                | yes, clicks    | click-to-open, Open and Re-run buttons (Windows: while the toast shows) |
+| `backgroundThrottling` (2.3, macOS 14+)                          | yes            | the hidden window keeps working                                         |
+| `tauri-plugin-deep-link`                                         | yes            | `piwi://` links (macOS: the bundle installed in `/Applications` only)   |
+| `tauri-plugin-global-shortcut`, `tauri-plugin-clipboard-manager` | no             | the quick lookup; images copied to the clipboard                        |
+| `tauri-plugin-window-state`, `tauri-plugin-positioner`           | window-state   | remembered windows; the tray popover                                    |
+| `tauri-plugin-fs` `watch`, `tauri-plugin-log` rotation           | no             | watched folders; a log that rotates                                     |
+| App and context menus, `zoomHotkeysEnabled`                      | app menu, zoom | menus, right-click, zoom                                                |
+| `set_dock_visibility` (2.5), `request_user_attention`            | attention      | menubar-only background mode; a bounce or a flash on failure            |
+| `on_download`, `on_new_window` (2.8)                             | no             | native downloads and windows                                            |
+| Mica, vibrancy, Liquid Glass (2.12), title bar overlay, tabs     | no             | each platform's look                                                    |
+| Several webviews in one window                                   | no             | a trace beside its run; still behind `unstable`                         |
+| `keyring`, `tauri-plugin-drag`, `tauri-nspanel`, `keepawake`     | keepawake      | keychain, drag-out, panels, no sleep mid-run (community crates)         |
+| Dock menu, Jump List                                             | —              | no Tauri API: native code                                               |
 
 Checked and not missing: `.deb` and `.rpm` installs update in place (the release's `latest.json` lists both, supported
 since the updater plugin 2.10), and `git` and Homebrew's tools are found from a Finder launch (`run_path_env`).
@@ -194,8 +200,6 @@ since the updater plugin 2.10), and `git` and Homebrew's tools are found from a 
 - **Notification clicks on macOS.** The notification plugin reports clicks only by holding a thread and a main-loop
   timer for each notification until it leaves Notification Center, which nothing can clear from the app, so clicks stay
   off on macOS. Bounded tracking there needs the plugin, or the shell showing notifications itself.
-- **Shell-owned notifications.** The page builds each notification's text from the event; the shell would need the
-  same text without a second implementation, so the server may have to send it.
 - **The macOS menubar mode.** Hiding the Dock icon in the background is what menubar applications do, but it also
   hides the app from ⌘Tab.
 

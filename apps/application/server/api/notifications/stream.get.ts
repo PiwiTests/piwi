@@ -1,6 +1,7 @@
 import { eq, and, or, isNull } from 'drizzle-orm';
 import { requireAuth, isAuthEnabled } from '../../utils/auth';
-import { getProjectScope, scopeAllows } from '../../utils/project-access';
+import { getProjectScope } from '../../utils/project-access';
+import { opensEveryProject } from '../../utils/notifications/event-scope';
 import { runEventBus } from '../../utils/run-events';
 import { createSSEEndpoint } from '../../utils/sse';
 import { getDatabase } from '../../database';
@@ -128,14 +129,8 @@ export default eventHandler(async (event) => {
       const type = notificationEvent.type as string | undefined;
       const projectId = notificationEvent.projectId as number | undefined;
       // Whoever the event is addressed to, it reaches only a caller who can open
-      // every project it is about: every one a quality report covers (a report
-      // about none, like its snapshot, is anyone's), else its own project; any
-      // other event naming no project reaches nobody.
-      const opensEveryProject =
-        type === REPORT_READY_EVENT
-          ? ((notificationEvent.projectIds as number[] | undefined) ?? []).every((id) => scopeAllows(scope, id))
-          : typeof projectId === 'number' && scopeAllows(scope, projectId);
-      if (!opensEveryProject) return;
+      // every project it is about.
+      if (!opensEveryProject(scope, notificationEvent)) return;
 
       // A targeted event (e.g. cluster.fixed addressed at the author of the fix)
       // is delivered to that one user regardless of their subscriptions; every

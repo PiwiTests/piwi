@@ -29,6 +29,9 @@ shell and are feature-equivalent.
   - A command that turns webview input into a path or a process takes only known values: digits-only project ids,
     hexadecimal request ids, skill slugs of lowercase letters, digits and dashes, the known IDE launcher names
     (`is_known_launcher`).
+- **A `piwi://` link only shows a page.** Anyone can send one, so the shell reads only `piwi://open/<page>`
+  (`link_page`), the page passes `desktopPagePath` again in the window and at the session bootstrap, and a launch whose
+  first argument is a link acts on no other argument (`args_to_act_on`, unit-tested in `lib.rs`).
 - **A new Tauri command is wired in three places**: `tauri::generate_handler!` in `src-tauri/src/lib.rs`, the
   `.commands(&[…])` list in `src-tauri/build.rs`, and an `allow-*` grant in `runtime-capabilities/remote.json`.
   Without all three, the window's `invoke` is refused at runtime; `apps/application/tests/unit/desktop-acl-consistency.test.ts`

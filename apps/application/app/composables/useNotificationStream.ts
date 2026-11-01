@@ -1,5 +1,10 @@
-import { isDesktopAppRunEvent, notificationTargetPath, type TestStuckPayload } from '#shared/notification-events';
-import { durationShort } from '#shared/relative-time';
+import {
+  NOTIFICATION_MESSAGE_TITLE,
+  notificationMessageBody,
+  notificationMessagePath,
+  notificationMessageTag,
+  type NotificationEventData,
+} from '#shared/notifications/browser-message';
 import { subscribeDemoEvents } from '~/demo/run-events';
 import { useDiagnosisNotification } from './useDiagnosisNotification';
 import { useBrowserNotificationCookie } from './useBrowserNotificationCookie';
@@ -22,115 +27,6 @@ if (import.meta.client) {
   _windowFocused = document.hasFocus();
 }
 let _cookie: ReturnType<typeof useBrowserNotificationCookie> | null = null;
-let _desktop = false;
-
-interface NotificationEventData {
-  type: string;
-  projectId?: number;
-  projectName?: string;
-  runId?: number;
-  status?: string;
-  failedTests?: number;
-  totalTests?: number;
-  branch?: string;
-  signature?: string;
-  title?: string | null;
-  verification?: string;
-  origin?: string;
-  clusterId?: number;
-  executionId?: number;
-  summary?: string | null;
-  rootCause?: string | null;
-  category?: string | null;
-  confidence?: string | null;
-  topFailures?: { title: string }[];
-  affectedCases?: number;
-  snapshotId?: number;
-  tests?: { title: string }[];
-  reason?: string;
-  testTitle?: string;
-  elapsedMs?: number;
-  usualMs?: number;
-}
-
-function renderBody(data: NotificationEventData): string {
-  const lines: string[] = [];
-  switch (data.type) {
-    case 'run.finished':
-    case 'run.failed':
-    case 'run.failed.default_branch':
-    case 'run.interrupted':
-    case 'flakiness.spike':
-    case 'perf.regression': {
-      const name = data.projectName ?? `Project #${data.projectId}`;
-      const branchSuffix = data.branch && data.type !== 'perf.regression' ? ` on ${data.branch}` : '';
-      if (data.type === 'run.finished') lines.push(`${name}${branchSuffix}: ${data.status ?? 'finished'}`);
-      else if (data.type === 'run.failed')
-        lines.push(`${name}${branchSuffix}: ${data.failedTests ?? 0}/${data.totalTests ?? 0} tests failed`);
-      else if (data.type === 'run.interrupted')
-        lines.push(`${name}${branchSuffix}: interrupted before it finished, the reporter stopped sending`);
-      else if (data.type === 'run.failed.default_branch')
-        lines.push(`${name}: ${data.failedTests ?? 0} failures on default branch`);
-      else if (data.type === 'flakiness.spike') lines.push(`${name}: flakiness spike detected`);
-      else if (data.type === 'perf.regression') lines.push(`${name}: performance regression detected`);
-      if (data.failedTests) lines.push(`${data.failedTests} failed, ${data.totalTests} total`);
-      if (data.topFailures?.length) {
-        const [first, ...rest] = data.topFailures;
-        lines.push(rest.length ? `${first!.title} +${rest.length} more` : first!.title);
-      }
-      break;
-    }
-    case 'cluster.new':
-      lines.push(`${data.projectName ?? `Project #${data.projectId}`}: new failure cluster`);
-      if (data.title || data.signature) lines.push(data.title || data.signature || '');
-      break;
-    case 'cluster.fixed':
-      lines.push(
-        `${data.projectName ?? `Project #${data.projectId}`}: ${data.verification === 'diagnosis-verified' ? 'diagnosis verified' : 'cluster stopped failing'}`,
-      );
-      if (data.title || data.signature) lines.push(data.title || data.signature || '');
-      break;
-    case 'cluster.regressed':
-      lines.push(`${data.projectName ?? `Project #${data.projectId}`}: a fixed cluster is failing again`);
-      if (data.title || data.signature) lines.push(data.title || data.signature || '');
-      break;
-    case 'bug.looks_fixed':
-      lines.push(`${data.projectName ?? `Project #${data.projectId}`}: a test marked to fail now passes`);
-      if (data.tests?.length) lines.push(data.tests.map((t) => t.title).join(', '));
-      break;
-    case 'environment.incident':
-      lines.push(`${data.projectName ?? `Project #${data.projectId}`}: environment incident`);
-      if (data.reason) lines.push(data.reason);
-      break;
-    case 'test.stuck':
-      lines.push(`${data.projectName ?? `Project #${data.projectId}`}: a test may be stuck`);
-      if (data.testTitle) lines.push(data.testTitle);
-      if (data.elapsedMs != null && data.usualMs != null) {
-        lines.push(`Running for ${durationShort(data.elapsedMs)}, ${durationShort(data.usualMs)} at most usually`);
-      }
-      break;
-    case 'report.ready':
-      lines.push(`Your quality report is ready: ${data.title ?? 'open it in Piwi'}`);
-      break;
-    case 'diagnosis.completed':
-      lines.push(data.summary || data.rootCause || '');
-      if (data.category) lines.push(`Category: ${data.category}`);
-      if (data.confidence) lines.push(`Confidence: ${data.confidence}`);
-      break;
-  }
-  return lines.filter(Boolean).join('\n');
-}
-
-function getLink(data: NotificationEventData): string | null {
-  if (data.snapshotId) return `/reports/${data.snapshotId}`;
-  if (data.type === 'test.stuck' && data.runId && data.testTitle) {
-    return notificationTargetPath('test.stuck', data as unknown as TestStuckPayload);
-  }
-  if (data.type === 'diagnosis.completed' && data.executionId) return `/test-run-cases/${data.executionId}`;
-  if (data.clusterId) return `/failure-clusters/${data.clusterId}`;
-  if (data.runId && data.projectId) return `/test-runs/${data.runId}`;
-  return null;
-}
 
 let _diagnosisActive: ReturnType<typeof useDiagnosisNotification>['active'] | null = null;
 
@@ -142,30 +38,20 @@ function handleEvent(data: NotificationEventData) {
     return;
   }
 
-  if (_desktop && isDesktopAppRunEvent(data.type, data.origin)) return;
-
   if (_cookie && data.projectId != null) {
     if (!_cookie.isEventSubscribed(data.projectId, data.type)) return;
   }
 
-  const body = renderBody(data);
+  const body = notificationMessageBody(data);
   if (!body) return;
 
-  // Use type + key id for dedup tag
-  // A stuck test is one of several a run may have: each keeps its own notification.
-  const dedupKey =
-    data.type === 'test.stuck'
-      ? `${data.runId}-${data.testTitle}`
-      : (data.snapshotId ?? data.executionId ?? data.clusterId ?? data.runId ?? data.signature ?? data.type);
-  const tag = `piwi-${data.type}-${dedupKey}`;
-
-  const notification = new Notification('Piwi Dashboard', {
+  const notification = new Notification(NOTIFICATION_MESSAGE_TITLE, {
     body,
-    tag,
+    tag: notificationMessageTag(data),
     icon: `${_baseURL.replace(/\/$/, '')}/logo.svg`,
   });
 
-  const link = getLink(data);
+  const link = notificationMessagePath(data);
   if (link) {
     notification.onclick = () => {
       window.focus();
@@ -229,8 +115,12 @@ function connectLive() {
   };
 }
 
+/**
+ * Show the server's notification events as browser notifications while the tab is hidden or unfocused. In the
+ * desktop app the shell shows them itself, from its server's stream, so the page does not.
+ */
 export function useNotificationStream() {
-  if (!import.meta.client || started) return;
+  if (!import.meta.client || started || useIsDesktop()) return;
   started = true;
 
   const { active } = useDiagnosisNotification();
@@ -239,7 +129,6 @@ export function useNotificationStream() {
   const config = useRuntimeConfig();
   _router = useRouter();
   _baseURL = config.app.baseURL || '/';
-  _desktop = useIsDesktop();
 
   if (!config.public.authEnabled) {
     _cookie = useBrowserNotificationCookie();

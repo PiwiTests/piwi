@@ -41,7 +41,11 @@ folder** show it. Back up the parent folder while the app is closed; its `secret
 tokens.
 
 Closing the window quits the app unless **Run in background** is on in the tray menu; **Start on login** launches
-it hidden into the tray. In the background, [notifications](/features/notifications#browser) arrive as OS notifications,
+it hidden into the tray. The windows open where you left them, and Cmd or Ctrl with +, - and 0 zoom the dashboard. On macOS the app menu
+holds Settings (⌘,), Import Playwright report (⌘O), Back and Forward (⌘[ and ⌘]) and the docs; Windows and Linux
+take the same keys with Ctrl. The tray lists the tests running from the app, each with Stop. While tests run from
+the app, the machine does not go to sleep on its own, and a run that fails while you look elsewhere bounces the Dock
+icon or flashes the taskbar button. In the background, [notifications](/features/notifications#browser) arrive as OS notifications,
 with no setup, and an unread count on the dock icon or the tray tooltip.
 
 It listens on port 3000, or the one set in the `.exe` installer or on **Setup → Desktop app** (`serverPort` in
@@ -64,7 +68,8 @@ its local runs here with
 When the tests run as another user or in a container, **Setup → Send results to this app** gives the
 address and the token to configure by hand. Keep the token in `PIWI_API_KEY`.
 
-A dashboard link opened in your browser opens in the app, and its tab closes.
+A dashboard link opened in your browser opens in the app, and its tab closes. A `piwi://open/<page>` link opens its
+page there, starting the app if needed (macOS: from Applications; Linux: after one run).
 
 ## Projects from local folders
 
@@ -116,17 +121,6 @@ On a failure of a team instance, the [editor extensions](/features/editor-failur
 whose test has an untested suspect, a [Flake Lab](/features/flake-lab#from-the-editor-and-the-failure-pages) run of
 the team instance's plan. The window shows the commits, tests or arms, and runs nothing until you start it. The editor
 gets the verdict and can share it on the team instance with its own key, which the app never holds.
-
-### Reproducing a flake
-
-On a flaky test's Flakiness tab, **Reproduce this flake** runs the [Flake Lab](/features/flake-lab) here: it checks
-out the commit of the test's latest failure in a throwaway worktree, installs, and runs `piwi flake` there. Its options
-pick the arms (every suspect, all at once, or one), the runs and the budget. The experiment lands on the tab, recorded
-as run from `desktop`.
-
-Once an experiment has reproduced a test, **Find the breaking commit here** on its failure is flake-aware: each step
-runs the reproducing arm (`piwi flake verify --bisect`), bad at a failure with the same error as in CI, good after
-enough clean runs, which tells when a flake started.
 
 ## Importing local files
 
