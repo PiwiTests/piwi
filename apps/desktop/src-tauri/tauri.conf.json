@@ -105,5 +105,12 @@
         "sidebarImage": "windows/installer-sidebar.bmp"
       }
     }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["piwi"]
+      }
+    }
   }
 }

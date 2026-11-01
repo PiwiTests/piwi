@@ -28,3 +28,11 @@ export function desktopPagePath(url: string): string | null {
   if (lastSegment.includes('.')) return null;
   return withoutHash;
 }
+
+/**
+ * Where the session bootstrap (`/__piwi/session`) sends the window once it is signed in: the page its `to` names,
+ * which the shell passes for a `piwi://open/…` link that launched the app, or the home page.
+ */
+export function desktopSessionTarget(to: unknown): string {
+  return (typeof to === 'string' && desktopPagePath(to)) || '/';
+}

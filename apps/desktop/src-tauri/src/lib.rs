@@ -38,6 +38,7 @@ use tauri::window::{ProgressBarState, ProgressBarStatus};
 use tauri::{AppHandle, Emitter as _, Manager, RunEvent, WindowEvent};
 
 use tauri_plugin_autostart::MacosLauncher;
+use tauri_plugin_deep_link::DeepLinkExt as _;
 use tauri_plugin_autostart::ManagerExt as _;
 use tauri_plugin_dialog::{DialogExt as _, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_notification::NotificationExt as _;
@@ -221,6 +222,103 @@ fn desktop_take_pending_open_files(app: tauri::AppHandle) -> Vec<String> {
     app.try_state::<PendingOpenFiles>()
         .map(|s| std::mem::take(&mut *s.0.lock().unwrap()))
         .unwrap_or_default()
+}
+
+/// The scheme of the links into the app, registered with the OS by the
+/// installers (`plugins.deep-link` in `tauri.conf.json`).
+const LINK_SCHEME: &str = "piwi";
+
+/// The app-relative page (path and query) a `piwi://open/<page>` link shows,
+/// `None` for any other URL. The page and the session bootstrap check it again
+/// (`desktopPagePath`), so it never leaves the dashboard.
+fn link_page(url: &tauri::Url) -> Option<String> {
+    if url.scheme() != LINK_SCHEME || !url.host_str().is_some_and(|host| host.eq_ignore_ascii_case("open")) {
+        return None;
+    }
+    let path = if url.path().is_empty() { "/" } else { url.path() };
+    if !path.starts_with('/') {
+        return None;
+    }
+    Some(match url.query() {
+        Some(query) => format!("{path}?{query}"),
+        None => path.to_string(),
+    })
+}
+
+/// The page a link asked for before the dashboard showed, which the session
+/// bootstrap opens (`bootstrap_url`). Once the dashboard shows, the window
+/// opens a link's page itself.
+#[derive(Default)]
+struct LinkedPage(Mutex<LinkedPageInner>);
+
+#[derive(Default)]
+struct LinkedPageInner {
+    dashboard_shown: bool,
+    waiting: Option<String>,
+}
+
+impl LinkedPage {
+    /// Keep `page` for the dashboard to open as it shows: `false` once it shows,
+    /// when the window opens it instead. The last link wins.
+    fn hold(&self, page: &str) -> bool {
+        let mut inner = self.0.lock().unwrap();
+        if inner.dashboard_shown {
+            return false;
+        }
+        inner.waiting = Some(page.to_string());
+        true
+    }
+
+    /// The dashboard shows: the page a link asked for so far, if any. Links that
+    /// come after go to the window.
+    fn take_as_dashboard_shows(&self) -> Option<String> {
+        let mut inner = self.0.lock().unwrap();
+        inner.dashboard_shown = true;
+        inner.waiting.take()
+    }
+}
+
+/// Show the dashboard window at `path`, an app-relative page
+/// (`app/plugins/desktop-open-page.client.ts`).
+fn show_page(app: &AppHandle, path: &str) {
+    if let Some(w) = app.get_webview_window("main") {
+        bring_to_front(&w);
+    }
+    let _ = app.emit_to("main", OPEN_PAGE_EVENT, path);
+}
+
+/// Open the page of the last `piwi://open/…` link of `urls`: the window comes
+/// forward, and shows the page now or as the dashboard loads.
+fn open_links(app: &AppHandle, urls: &[tauri::Url]) {
+    // On macOS the files the app opens come through here too, as `file:` URLs.
+    if !urls.iter().any(|url| url.scheme() == LINK_SCHEME) {
+        return;
+    }
+    let Some(page) = urls.iter().rev().find_map(link_page) else {
+        if let Some(log) = app.try_state::<LogFile>() {
+            append_log(&log.0, &format!("ignored a {LINK_SCHEME}:// link that opens no page"));
+        }
+        return;
+    };
+    let held = app.try_state::<LinkedPage>().is_some_and(|linked| linked.hold(&page));
+    if held {
+        if let Some(w) = app.get_webview_window("main") {
+            bring_to_front(&w);
+        }
+    } else {
+        show_page(app, &page);
+    }
+}
+
+/// The URL that signs the window in to the server (`/__piwi/session`), then
+/// shows `page`, or the home page.
+fn bootstrap_url(port: u16, token: &str, page: Option<&str>) -> String {
+    let mut url = tauri::Url::parse(&format!("http://127.0.0.1:{port}/__piwi/session")).expect("a valid URL");
+    url.query_pairs_mut().append_pair("token", token);
+    if let Some(page) = page {
+        url.query_pairs_mut().append_pair("to", page);
+    }
+    url.to_string()
 }
 
 /// Two ambient signals the dashboard drives share the tray tooltip — the unread
@@ -2056,12 +2154,7 @@ fn app_menu_action(id: &str) -> Option<AppMenuAction> {
 fn run_app_menu_action(app: &AppHandle, action: AppMenuAction) {
     match action {
         AppMenuAction::Quit => quit_after_confirming(app),
-        AppMenuAction::OpenPage(path) => {
-            if let Some(w) = app.get_webview_window("main") {
-                bring_to_front(&w);
-            }
-            let _ = app.emit_to("main", OPEN_PAGE_EVENT, path);
-        }
+        AppMenuAction::OpenPage(path) => show_page(app, path),
         AppMenuAction::Import => pick_files_to_open(app),
         AppMenuAction::History(direction) => {
             // The window the user is in: the dashboard, a trace or a run's output.
@@ -2280,6 +2373,9 @@ pub fn run() {
                 bring_to_front(&w);
             }
         }))
+        // `piwi://open/<page>` links (`open_links`). Registered after
+        // single-instance, which hands it a second launch's link.
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -2400,6 +2496,7 @@ pub fn run() {
         .manage(TrayStatus::default())
         .manage(QuitConfirmed::default())
         .manage(PendingOpenFiles::default())
+        .manage(LinkedPage::default())
         .manage(updates::UpdaterSupport(updater_supported))
         .manage(updates::PendingUpdate::default())
         .setup(move |app| {
@@ -2552,7 +2649,6 @@ pub fn run() {
             // splash says, and ends when the supervisor gives up or the app quits.
             let nav_handle = app.handle().clone();
             let ready_log = log_path.clone();
-            let bootstrap_url = format!("http://127.0.0.1:{port}/__piwi/session?token={token}");
             let quitting = shutting_down.clone();
             std::thread::spawn(move || {
                 let started = Instant::now();
@@ -2582,6 +2678,9 @@ pub fn run() {
                     }
                     return;
                 }
+                // A `piwi://` link that launched the app, or came while it started, opens its page.
+                let page = nav_handle.try_state::<LinkedPage>().and_then(|linked| linked.take_as_dashboard_shows());
+                let bootstrap_url = bootstrap_url(port, &token, page.as_deref());
                 let inner = nav_handle.clone();
                 let _ = nav_handle.run_on_main_thread(move || {
                     if let Some(w) = inner.get_webview_window("main") {
@@ -2722,6 +2821,21 @@ pub fn run() {
                 }
             }
 
+            // Links into the app: the one that launched it (Windows and Linux
+            // pass it as the argument), then each one that comes while it runs.
+            // An AppImage is not installed, so it registers the scheme itself.
+            #[cfg(target_os = "linux")]
+            if std::env::var_os("APPIMAGE").is_some() {
+                if let Err(e) = app.deep_link().register_all() {
+                    append_log(&log_path, &format!("could not register {LINK_SCHEME}:// links: {e}"));
+                }
+            }
+            if let Ok(Some(urls)) = app.deep_link().get_current() {
+                open_links(app.handle(), &urls);
+            }
+            let link_handle = app.handle().clone();
+            app.deep_link().on_open_url(move |event| open_links(&link_handle, &event.urls()));
+
             // Archives passed on the very first launch ("Open with" while the
             // app was closed) — queued now, drained once the dashboard boots.
             let argv: Vec<String> = std::env::args().skip(1).collect();
@@ -2836,12 +2950,48 @@ mod tests {
         app_menu_action, awake_change, run_newly_failed, tray_run_entries, tray_stop_run_id, window_state_key,
         AppMenuAction, AwakeChange,
         DOCS_URL, NEW_ISSUE_URL,
+        bootstrap_url, link_page, LinkedPage,
         parse_retention_env, rotated_log_path, splash_status_script, stream_download, valid_retention_days,
         status_dot_color, valid_port, write_new_download, BAD_PORTS, DEFAULT_PORT,
         INSTALLER_CHOICES_FILE, MIN_PORT, SERVER_PORT_KEY, STORE_FILE,
     };
     use std::fs;
     use tauri::window::ProgressBarStatus;
+
+    #[test]
+    fn a_link_opens_the_page_after_open() {
+        let page = |url: &str| link_page(&url.parse().unwrap());
+        assert_eq!(page("piwi://open/test-runs/146").as_deref(), Some("/test-runs/146"));
+        assert_eq!(page("piwi://open/test-runs/146?tab=changes#top").as_deref(), Some("/test-runs/146?tab=changes"));
+        assert_eq!(page("piwi://OPEN/settings").as_deref(), Some("/settings"));
+        assert_eq!(page("piwi://open").as_deref(), Some("/"));
+        assert_eq!(page("piwi://open/").as_deref(), Some("/"));
+        // Only `open`, and only this scheme: the dashboard checks the page itself.
+        assert_eq!(page("piwi://reproduce/test-runs/146"), None);
+        assert_eq!(page("piwi:open/settings"), None);
+        assert_eq!(page("https://open/settings"), None);
+        assert_eq!(page("file:///tmp/report.zip"), None);
+    }
+
+    #[test]
+    fn a_link_waits_for_the_dashboard_then_goes_to_the_window() {
+        let linked = LinkedPage::default();
+        assert!(linked.hold("/settings"));
+        assert!(linked.hold("/test-runs/146"));
+        assert_eq!(linked.take_as_dashboard_shows().as_deref(), Some("/test-runs/146"));
+        assert!(!linked.hold("/settings"));
+        assert_eq!(linked.take_as_dashboard_shows(), None);
+        assert_eq!(LinkedPage::default().take_as_dashboard_shows(), None);
+    }
+
+    #[test]
+    fn the_bootstrap_carries_the_page_to_show() {
+        assert_eq!(bootstrap_url(3000, "pd_x", None), "http://127.0.0.1:3000/__piwi/session?token=pd_x");
+        assert_eq!(
+            bootstrap_url(3000, "pd_x", Some("/test-runs/146?tab=changes&x='")),
+            "http://127.0.0.1:3000/__piwi/session?token=pd_x&to=%2Ftest-runs%2F146%3Ftab%3Dchanges%26x%3D%27"
+        );
+    }
 
     #[test]
     fn discovery_lists_the_linked_projects_by_id() {

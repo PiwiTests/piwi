@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { describe, it, expect } from 'vitest';
-import { desktopPagePath } from '#shared/desktop-handoff';
+import { desktopPagePath, desktopSessionTarget } from '#shared/desktop-handoff';
 import {
   DESKTOP_HANDOFF_CSP,
   isOutsideNavigation,
@@ -8,6 +8,22 @@ import {
   requestDesktopOpen,
   subscribeDesktopOpenRequests,
 } from '../../server/utils/desktop-handoff';
+
+describe('desktopSessionTarget', () => {
+  it('shows the page a link named once the window is signed in', () => {
+    expect(desktopSessionTarget('/test-runs/146?tab=changes')).toBe('/test-runs/146?tab=changes');
+    expect(desktopSessionTarget('/settings')).toBe('/settings');
+  });
+
+  it('shows the home page for anything that is not a dashboard page', () => {
+    expect(desktopSessionTarget(undefined)).toBe('/');
+    expect(desktopSessionTarget(['/settings', '/projects'])).toBe('/');
+    expect(desktopSessionTarget('//evil.example/')).toBe('/');
+    expect(desktopSessionTarget('https://evil.example/')).toBe('/');
+    expect(desktopSessionTarget('/api/test-runs')).toBe('/');
+    expect(desktopSessionTarget('/__piwi/session?token=x')).toBe('/');
+  });
+});
 
 describe('desktopPagePath', () => {
   it('keeps a dashboard page with its query', () => {

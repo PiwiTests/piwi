@@ -1,3 +1,4 @@
+import { desktopSessionTarget } from '#shared/desktop-handoff';
 import { timingSafeEqualStr } from '../../utils/timing-safe';
 
 // Desktop (Tauri) bootstrap endpoint.
@@ -6,8 +7,10 @@ import { timingSafeEqualStr } from '../../utils/timing-safe';
 // desktop token (passed on the query string) for an httpOnly cookie. Every
 // subsequent request — the SSR HTML load, its internal /api fetches, and the
 // notification/live-run EventSource streams — then carries the cookie and is
-// authorized by server/middleware/desktop-guard.ts. Responds 404 unless
-// PIWI_DESKTOP_TOKEN is set, so it does not exist on the normal server build.
+// authorized by server/middleware/desktop-guard.ts. It then shows the page
+// `to` names (a `piwi://open/…` link that launched the app), or the home page.
+// Responds 404 unless PIWI_DESKTOP_TOKEN is set, so it does not exist on the
+// normal server build.
 export default defineEventHandler((event) => {
   const token = process.env.PIWI_DESKTOP_TOKEN;
   if (!token) {
@@ -26,5 +29,5 @@ export default defineEventHandler((event) => {
     maxAge: 60 * 60 * 24 * 365,
   });
 
-  return sendRedirect(event, '/');
+  return sendRedirect(event, desktopSessionTarget(getQuery(event).to));
 });

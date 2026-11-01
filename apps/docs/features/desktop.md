@@ -68,7 +68,8 @@ its local runs here with
 When the tests run as another user or in a container, **Setup → Send results to this app** gives the
 address and the token to configure by hand. Keep the token in `PIWI_API_KEY`.
 
-A dashboard link opened in your browser opens in the app, and its tab closes.
+A dashboard link opened in your browser opens in the app, and its tab closes. A `piwi://open/<page>` link, such as
+`piwi://open/settings`, opens its page there too, starting the app if needed.
 
 ## Projects from local folders
 

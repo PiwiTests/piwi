@@ -136,6 +136,17 @@ channel, so a per-user install pulls a per-user update.
     `app/utils/desktop-shortcuts.ts`), Ctrl+O through
     `desktop_pick_files_to_open`, which opens one picker at a time, in front of
     the window.
+13. A `piwi://open/<page>` link shows that dashboard page in the window
+    (`tauri-plugin-deep-link`, `plugins.deep-link` in `tauri.conf.json`). The
+    `.msi`, `.exe`, `.deb` and `.rpm` register the scheme as they install, an
+    AppImage registers it as it starts (`register_all`), and macOS reads it from
+    the bundle once the app is in `/Applications`. A link that launched the app
+    (its one argument on Windows and Linux) or came while the server started
+    waits in `LinkedPage` and reaches the session bootstrap as `to`, which
+    redirects to it once `desktopPagePath` accepts it; after that, a link goes to
+    the window as `piwi:open-page` (`open_links`). A second launch hands its link
+    to the running app through single-instance's `deep-link` feature. Only the
+    `open` host is read, so a link shows a page and never acts.
 
 Local access is gated by a token the app creates once and keeps for the install (see
 `apps/application/server/middleware/desktop-guard.ts`), so only the app — not other
