@@ -278,7 +278,7 @@ export async function computeRunInsights(
   const baselineCases = finalAttempts(baselineRows);
   const baselineFlaky = flakyFinalAttempts(baselineRows);
   // Each test is compared with the baseline through its outcome in either run, whatever their repetitions.
-  const baselineByTest = new Map<string, any>(testOutcomes(baselineCases).map((bc) => [testKey(bc), bc]));
+  const baselineByTest = new Map<string, any>(testOutcomes(baselineRows).map((bc) => [testKey(bc), bc]));
 
   const newRegressions: TestCaseEntry[] = [];
   const recurrences: TestCaseEntry[] = [];
@@ -287,7 +287,7 @@ export async function computeRunInsights(
   const flakyOnRetry: Array<{ executionId: number; title: string; filePath: string; retries: number }> = [];
   const perfChanges: PerfChangeEntry[] = [];
 
-  for (const cc of testOutcomes(currentCases)) {
+  for (const cc of testOutcomes(currentRows)) {
     const bc = baselineByTest.get(testKey(cc));
 
     // Status changes

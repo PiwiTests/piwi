@@ -967,8 +967,8 @@ export async function apiPostRunEvents(
         shardIndex: tc.shardIndex ?? null,
         startedAt: tc.startedAt ?? null,
         browser: tc.browser ?? null,
-        // Mirrors the server: the attempt number and the attempts before it let the
-        // live page mark a flaky test as passing rather than failing.
+        // Mirrors the server: the attempt number and the attempt history up to it let
+        // the live page tell a flaky pass (an earlier attempt failed) from another pass.
         retries: tc.retries ?? null,
         attempts: tc.attempts ?? null,
         repeatEachIndex: resolveRepeatEachIndex(tc.repeatEachIndex),

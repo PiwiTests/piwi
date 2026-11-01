@@ -7,6 +7,8 @@ import {
   normalizeTestCaseStatus,
   summarizeRunCases,
   sumFailedAndTimedOut,
+  testOutcomes,
+  withAttemptHistory,
 } from '#shared/utils/test-counts';
 
 describe('countFailedFromTally', () => {
@@ -302,6 +304,80 @@ describe('flaky results', () => {
     expect(isFlakyExecution({ status: 'failed', retries: 0, attempts: failedFirst.slice(0, 1) })).toBe(false);
     expect(isFlakyExecution({ status: 'passed', retries: 0, attempts: null })).toBe(false);
     expect(isFlakyExecution({ status: 'passed', retries: 1, attempts: null })).toBe(true);
+    // A history that holds no earlier attempt reads as no history.
+    expect(isFlakyExecution({ status: 'passed', retries: 1, attempts: [{ retry: 1, status: 'passed' }] })).toBe(true);
+  });
+
+  test('reads a retry pass none of whose earlier attempts is among the rows as flaky', () => {
+    const rows = [
+      { testCaseId: 1, browserName: null, repeatEachIndex: 0, retries: 2, status: 'passed' },
+      { testCaseId: 2, browserName: null, repeatEachIndex: 0, retries: 0, status: 'passed' },
+    ];
+    expect([...flakyFinalAttempts(rows)]).toEqual([rows[0]]);
+  });
+
+  test("picks a test's flaky repetition as its outcome, not a re-run that passed twice", () => {
+    const rows = [
+      { testCaseId: 1, browserName: null, repeatEachIndex: 0, retries: 0, status: 'failed' },
+      { testCaseId: 1, browserName: null, repeatEachIndex: 0, retries: 1, status: 'passed' },
+      { testCaseId: 1, browserName: null, repeatEachIndex: 1, retries: 0, status: 'passed' },
+      { testCaseId: 1, browserName: null, repeatEachIndex: 1, retries: 1, status: 'passed' },
+    ];
+    expect(testOutcomes(rows)).toEqual([rows[1]]);
+    expect(flakyFinalAttempts(rows).has(testOutcomes(rows)[0]!)).toBe(true);
+  });
+
+  test("gives a row without a history the run's stored attempts of it, so both readings agree", () => {
+    // A trace import: one row per trace, no history, both passed.
+    const rows = [
+      {
+        testCaseId: 1,
+        browserName: null,
+        repeatEachIndex: 0,
+        retries: 0,
+        status: 'passed',
+        startedAt: 10,
+        duration: 5,
+      },
+      {
+        testCaseId: 1,
+        browserName: null,
+        repeatEachIndex: 0,
+        retries: 1,
+        status: 'passed',
+        startedAt: 20,
+        duration: 5,
+      },
+      {
+        testCaseId: 2,
+        browserName: null,
+        repeatEachIndex: 0,
+        retries: 0,
+        status: 'failed',
+        startedAt: 10,
+        duration: 5,
+      },
+      {
+        testCaseId: 2,
+        browserName: null,
+        repeatEachIndex: 0,
+        retries: 1,
+        status: 'passed',
+        startedAt: 20,
+        duration: 5,
+      },
+    ];
+    const filled = withAttemptHistory(rows);
+    expect(filled[1]!.attempts).toEqual([
+      { retry: 0, status: 'passed', duration: 5, startedAt: 10 },
+      { retry: 1, status: 'passed', duration: 5, startedAt: 20 },
+    ]);
+    expect(filled[0]).toBe(rows[0]);
+    expect(filled.map((row) => isFlakyExecution(row))).toEqual([false, false, false, true]);
+    expect([...flakyFinalAttempts(rows)]).toEqual([rows[3]]);
+
+    const reported = { ...rows[1]!, attempts: [{ retry: 0, status: 'failed' }] };
+    expect(withAttemptHistory([rows[0]!, reported])[1]).toBe(reported);
   });
 });
 

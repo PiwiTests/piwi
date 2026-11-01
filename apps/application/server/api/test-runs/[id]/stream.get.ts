@@ -1,5 +1,5 @@
 import { testRuns, testCases, testRunsCases, projects } from '../../../database/schema';
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { runEventBus } from '../../../utils/run-events';
 import { createSSEEndpoint } from '../../../utils/sse';
 import { liveViewRelay } from '../../../utils/live-view';
@@ -123,7 +123,9 @@ export default eventHandler(async (event) => {
           })
           .from(testRunsCases)
           .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
-          .where(eq(testRunsCases.testRunId, id));
+          .where(eq(testRunsCases.testRunId, id))
+          // Each test's attempts in order, so its latest one is replayed last.
+          .orderBy(asc(testRunsCases.retries), asc(testRunsCases.id));
 
         for (const tc of existingCases) {
           const location = tc.line && tc.column ? `${tc.filePath}:${tc.line}:${tc.column}` : tc.filePath;

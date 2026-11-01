@@ -97,38 +97,54 @@ export function testKey(row: Pick<AttemptRow, 'testCaseId' | 'browserName'>): st
   return `${row.testCaseId}\x00${row.browserName ?? ''}`;
 }
 
-/** How strongly a repetition's final attempt speaks for its test: a failure first, then a pass after a retry. */
-function outcomeRank(row: { status: string; retries?: number | null }): number {
+/** A final attempt as `decidesOutcome` compares it. */
+interface OutcomeRow {
+  status: string;
+  retries?: number | null;
+  repeatEachIndex: number | null;
+}
+
+/** A pass on a retry: how a final attempt reads as flaky when none of its earlier attempts is at hand. */
+function passedOnRetry(row: { status: string; retries?: number | null }): boolean {
+  return row.status === 'passed' && (row.retries ?? 0) > 0;
+}
+
+/** How strongly a repetition's final attempt speaks for its test: a failure first, then a flaky pass. */
+function outcomeRank(row: { status: string }, flaky: boolean): number {
   if (FAILED_STATUS_SET.has(row.status)) return 3;
-  if (row.status === 'passed') return (row.retries ?? 0) > 0 ? 2 : 1;
+  if (row.status === 'passed') return flaky ? 2 : 1;
   return 0;
 }
 
 /**
  * Whether `row` rather than `current` decides a test's outcome in a run, both being final attempts of its
- * repetitions: a failed one when any failed, else one that passed after a retry, else the later repetition.
+ * repetitions: a failed one when any failed, else a flaky one, else the later repetition. `isFlaky` tells a flaky
+ * final attempt (`flakyFinalAttempts`); without it, a pass on a retry reads as flaky.
  */
-export function decidesOutcome(
-  row: { status: string; retries?: number | null; repeatEachIndex: number | null },
-  current: { status: string; retries?: number | null; repeatEachIndex: number | null } | undefined,
+export function decidesOutcome<R extends OutcomeRow>(
+  row: R,
+  current: R | undefined,
+  isFlaky: (row: R) => boolean = passedOnRetry,
 ): boolean {
   if (!current) return true;
-  const rank = outcomeRank(row);
-  const currentRank = outcomeRank(current);
+  const rank = outcomeRank(row, isFlaky(row));
+  const currentRank = outcomeRank(current, isFlaky(current));
   return rank > currentRank || (rank === currentRank && (row.repeatEachIndex ?? 0) >= (current.repeatEachIndex ?? 0));
 }
 
 /**
  * The outcome of each test in a run, one row per (test case, browser): among the final attempts of its repetitions
  * (`finalAttempts`), the one `decidesOutcome` picks. A test failed in a run when one of its repetitions failed, and
- * is flaky there when none failed and one passed only on a retry. Without `--repeat-each` this is the test's final
- * attempt.
+ * is flaky there when none failed and one is flaky (`flakyFinalAttempts`). Without `--repeat-each` this is the test's
+ * final attempt. Pass every attempt row of the run; the returned rows are the given objects.
  */
 export function testOutcomes<T extends AttemptRow & { status: string }>(rows: ReadonlyArray<T>): T[] {
+  const flaky = flakyFinalAttempts(rows);
+  const isFlaky = (row: T) => flaky.has(row);
   const outcome = new Map<string, T>();
   for (const r of finalAttempts(rows)) {
     const key = testKey(r);
-    if (decidesOutcome(r, outcome.get(key))) outcome.set(key, r);
+    if (decidesOutcome(r, outcome.get(key), isFlaky)) outcome.set(key, r);
   }
   return [...outcome.values()];
 }
@@ -136,8 +152,9 @@ export function testOutcomes<T extends AttemptRow & { status: string }>(rows: Re
 /**
  * The final attempts (`finalAttempts`) of a run's rows that are flaky: each passed after an earlier attempt of its
  * repetition failed or timed out (`isFlakyResult`). A retry that passed after attempts that passed, were skipped or
- * did not run (a `describe.serial` group retried for another test's failure) is not flaky. Pass every attempt row of
- * the run; the returned rows are the given objects.
+ * did not run (a `describe.serial` group retried for another test's failure) is not flaky. A final attempt none of
+ * whose earlier attempts is among the rows (a payload of final attempts only) is flaky when it passed on a retry.
+ * Pass every attempt row of the run; the returned rows are the given objects.
  */
 export function flakyFinalAttempts<T extends AttemptRow & { status: string }>(rows: ReadonlyArray<T>): Set<T> {
   const final = new Map(finalAttempts(rows).map((row) => [attemptKey(row), row]));
@@ -151,7 +168,10 @@ export function flakyFinalAttempts<T extends AttemptRow & { status: string }>(ro
     else earlier.set(key, [row.status]);
   }
   const flaky = new Set<T>();
-  for (const [key, row] of final) if (isFlakyResult(row.status, earlier.get(key) ?? [])) flaky.add(row);
+  for (const [key, row] of final) {
+    const statuses = earlier.get(key);
+    if (statuses ? isFlakyResult(row.status, statuses) : passedOnRetry(row)) flaky.add(row);
+  }
   return flaky;
 }
 
@@ -162,10 +182,10 @@ interface AttemptHistoryEntry {
 }
 
 /**
- * Whether a test result is flaky, read from its final attempt's row alone: it passed, and the attempt history the
- * reporter writes on each attempt (`attempts`) holds an earlier attempt that failed or timed out (`isFlakyResult`). A
- * row without a history (an older reporter, a trace import) counts as flaky when it passed on a retry. Where every
- * attempt row of the run is at hand, `flakyFinalAttempts` reads them instead.
+ * Whether a test result is flaky, read from its final attempt's row alone: it passed, and its attempt history
+ * (`attempts`: the reporter's, or the run's stored attempts of it, `withAttemptHistory`) holds an earlier attempt
+ * that failed or timed out (`isFlakyResult`). A row whose history holds no earlier attempt is flaky when it passed on
+ * a retry, as `flakyFinalAttempts` reads a final attempt with no earlier row.
  */
 export function isFlakyExecution(row: {
   status: string;
@@ -173,12 +193,48 @@ export function isFlakyExecution(row: {
   attempts?: ReadonlyArray<AttemptHistoryEntry> | null;
 }): boolean {
   const retries = row.retries ?? 0;
-  if (row.status !== 'passed' || retries === 0) return false;
-  if (!Array.isArray(row.attempts) || row.attempts.length === 0) return true;
-  return isFlakyResult(
-    row.status,
-    row.attempts.filter((a) => (a?.retry ?? 0) < retries).map((a) => a?.status),
-  );
+  const history = Array.isArray(row.attempts) ? row.attempts : [];
+  const earlier = history.filter((a) => (a?.retry ?? 0) < retries).map((a) => a?.status);
+  return earlier.length > 0 ? isFlakyResult(row.status, earlier) : passedOnRetry(row);
+}
+
+/** A stored attempt row, as `withAttemptHistory` reads it into a history entry. */
+interface StoredAttempt extends AttemptRow {
+  status: string;
+  duration?: number | null;
+  startedAt?: number | null;
+  attempts?: unknown;
+}
+
+/**
+ * A run's attempt rows, each without an attempt history (a trace import, a reporter that sent none) given one from
+ * the run's stored attempts of the same test, project and repetition up to it, so `isFlakyExecution` reads it as
+ * `flakyFinalAttempts` reads the rows. A row with a history, or with no earlier stored attempt, is returned as is.
+ */
+export function withAttemptHistory<T extends StoredAttempt>(rows: ReadonlyArray<T>): T[] {
+  const byKey = new Map<string, T[]>();
+  for (const row of rows) {
+    const key = attemptKey(row);
+    const list = byKey.get(key);
+    if (list) list.push(row);
+    else byKey.set(key, [row]);
+  }
+  return rows.map((row) => {
+    if (Array.isArray(row.attempts) && row.attempts.length > 0) return row;
+    const retries = row.retries ?? 0;
+    const upTo = byKey
+      .get(attemptKey(row))!
+      .filter((a) => (a.retries ?? 0) <= retries)
+      .sort((a, b) => (a.retries ?? 0) - (b.retries ?? 0));
+    if (upTo.length < 2) return row;
+    const attempts = upTo.map((a) => ({
+      retry: a.retries ?? 0,
+      status: a.status,
+      duration: a.duration ?? 0,
+      startedAt: a.startedAt ?? null,
+    }));
+    return { ...row, attempts };
+  });
 }
 
 /**

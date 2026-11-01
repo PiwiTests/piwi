@@ -119,6 +119,24 @@ describe('the flaky count of a run', () => {
     expect(await readRun(runId)).toMatchObject({ passedTests: 4, flakyTests: 1 });
   });
 
+  test('a submitted run of final attempts only counts each pass on a retry', async () => {
+    const final = (title: string, line: number, retries: number) => {
+      const { attempts: _history, ...tc } = attempt(title, line, ['passed']);
+      return { ...tc, retries };
+    };
+    const { runId } = await submit({
+      body: {
+        projectName: PROJECT,
+        status: 'passed',
+        startTime: new Date().toISOString(),
+        testCases: [final('stable', 3, 0), final('retried once', 7, 1), final('retried twice', 11, 2)],
+        totalTests: 3,
+        passedTests: 3,
+      },
+    });
+    expect(await readRun(runId)).toMatchObject({ passedTests: 3, flakyTests: 2 });
+  });
+
   test("a sharded batch run counts it in each shard's tally and once settled", async () => {
     const shard = (shardIndex: number, testCases: unknown[], counts: Record<string, number>) =>
       submit({

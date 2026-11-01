@@ -154,15 +154,23 @@ watch(
   { immediate: true },
 );
 
-// Initialise liveTestCases from persisted data when SSE connects
+// Initialise liveTestCases from persisted data when SSE connects: one row per
+// test the stream has not shown yet, its latest attempt.
 function seedLiveFromPersisted(cases: TestCaseResult[]) {
+  const rows = [...liveTestCases.value];
+  const seeded = new Map<string, number>();
   for (const tc of cases) {
     const key = liveCaseKey(tc);
-    if (!liveTestCaseKeys.has(key)) {
+    const idx = seeded.get(key);
+    if (idx !== undefined) {
+      if ((tc.retries ?? 0) > (rows[idx]!.retries ?? 0)) rows[idx] = tc;
+    } else if (!liveTestCaseKeys.has(key)) {
       liveTestCaseKeys.set(key, true);
-      liveTestCases.value = [...liveTestCases.value, tc];
+      seeded.set(key, rows.length);
+      rows.push(tc);
     }
   }
+  liveTestCases.value = rows;
   displayTestCases.value = [...liveTestCases.value];
 }
 
@@ -301,6 +309,8 @@ function flushPendingEvents() {
         const idx = liveTestCases.value.findIndex((tc) => liveCaseKey(tc) === key);
         if (idx >= 0) {
           const existing = liveTestCases.value[idx]!;
+          // A replayed earlier attempt of a test whose later attempt the row shows changes nothing.
+          if (existing.status !== 'running' && (d.retries ?? 0) < (existing.retries ?? 0)) continue;
           const copy = [...liveTestCases.value];
           copy[idx] = {
             ...existing,

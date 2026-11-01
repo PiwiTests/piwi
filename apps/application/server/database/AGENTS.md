@@ -83,7 +83,9 @@ its own retries, as in Playwright, and a row without one reads `repeat_each_inde
 
 - **Read the rows through `shared/utils/test-counts.ts`**: a run's counters with `distinctRunCountsFromAttempts` (each
   repetition counts once), each repetition's last attempt with `finalAttempts`, a test's outcome in a run with
-  `testOutcomes` or `decidesOutcome` (failed when one of its repetitions failed).
+  `testOutcomes` or `decidesOutcome` (failed when one of its repetitions failed), and its flaky results with
+  `flakyFinalAttempts` (all the rows) or `isFlakyExecution` (one row and its attempt history), never with
+  `retries > 0`: a `describe.serial` retry runs tests that passed again.
 - **A test's attempts are the rows of one repetition.** Never take the highest retry across repetitions as its last
   attempt, nor a pass in one repetition as a retry pass of another. `lastAttempts` (`@piwitests/core/status-classify`)
   and the SQL of `latestRunStatusSql` (`shared/handlers/latest-run-status.ts`) follow the same rule.
