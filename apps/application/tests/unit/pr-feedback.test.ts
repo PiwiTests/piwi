@@ -377,7 +377,7 @@ describe('isQuietRun', () => {
     expect(isQuietRun({ onlyOnFailure: false }, summary())).toBe(false);
   });
 
-  test('posts a green run whose change left a file unreached or changed lines unrun', () => {
+  test('posts a green run whose change left a file unreached, and not for changed lines unrun alone', () => {
     const base = {
       fileReach: true,
       totalFiles: 1,
@@ -407,7 +407,10 @@ describe('isQuietRun', () => {
         },
       ],
     };
-    expect(isQuietRun(onlyOnFailure, summary({ changeCoverage: unrunLines }))).toBe(false);
+    expect(isQuietRun(onlyOnFailure, summary({ changeCoverage: unrunLines }))).toBe(true);
+    expect(
+      isQuietRun(onlyOnFailure, summary({ changeCoverage: { ...base, fileReach: false, uncoveredFiles: 1 } })),
+    ).toBe(true);
   });
 });
 

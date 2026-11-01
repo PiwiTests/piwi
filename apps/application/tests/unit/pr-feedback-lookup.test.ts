@@ -5,7 +5,7 @@
 import { describe, expect, test } from 'vitest';
 
 delete process.env.PIWI_DATABASE_URL;
-const { findRunPullRequestNumber } = await import('../../server/utils/scm/pr-feedback');
+const { ciNamesRepository, findRunPullRequestNumber } = await import('../../server/utils/scm/pr-feedback');
 
 function provider(open: Record<number, 'open' | 'draft' | 'closed' | 'merged'>, onBranch: number | null) {
   const asked: string[] = [];
@@ -41,5 +41,17 @@ describe('findRunPullRequestNumber', () => {
   test('a run that names none is found by its branch, and a run with neither has none', async () => {
     expect(await findRunPullRequestNumber(provider({}, 7), null, 'feature/x')).toBe(7);
     expect(await findRunPullRequestNumber(provider({}, 7), null, null)).toBeNull();
+  });
+});
+
+describe('ciNamesRepository', () => {
+  test("a number from the CI of the repository Piwi posts to is that repository's", () => {
+    expect(ciNamesRepository('PiwiTests/piwi', 'https://github.com/piwitests/piwi')).toBe(true);
+    expect(ciNamesRepository(null, 'https://github.com/piwitests/piwi')).toBe(true);
+  });
+
+  test("a suite checked out from another repository names its CI's pull requests, not this one's", () => {
+    expect(ciNamesRepository('acme/shop', 'https://github.com/acme/shop-e2e')).toBe(false);
+    expect(ciNamesRepository('acme/shop', 'https://github.com/other/acme/shop-e2e')).toBe(false);
   });
 });

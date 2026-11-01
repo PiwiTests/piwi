@@ -66,7 +66,13 @@ export interface RunMetadata {
    * provider → this hint → `'main'`).
    */
   defaultBranch?: string | null;
-  ci?: { provider?: string | null; pipelineId?: string | null; buildNumber?: string | null } | null;
+  ci?: {
+    provider?: string | null;
+    pipelineId?: string | null;
+    buildNumber?: string | null;
+    /** The CI's own repository, `owner/repo` (GitHub Actions, Bitbucket Pipelines). */
+    repository?: string | null;
+  } | null;
   /** What launched the run (`PIWI_ORIGIN`); read through `runOrigin` in `#shared/run-eligibility`. */
   piwiOrigin?: RunOrigin | null;
   htmlReport?: {

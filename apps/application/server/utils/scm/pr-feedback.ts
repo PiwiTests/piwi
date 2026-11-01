@@ -371,6 +371,21 @@ export async function buildRunPrSummary(
 }
 
 /**
+ * Whether the pull request number a run's CI named belongs to `repositoryUrl`:
+ * the CI's own repository (`owner/repo`, recorded on GitHub Actions and
+ * Bitbucket Pipelines) is that one, or was not recorded. A suite checked out
+ * from another repository names its CI's pull requests, not this one's.
+ */
+export function ciNamesRepository(ciRepository: string | null | undefined, repositoryUrl: string): boolean {
+  const named = ciRepository
+    ?.trim()
+    .replace(/^\/+|\/+$/g, '')
+    .toLowerCase();
+  if (!named) return true;
+  return repositoryUrl.toLowerCase().endsWith(`/${named}`);
+}
+
+/**
  * The open pull request a run belongs to: the one its CI named, a pull request
  * from a fork included, else the one open on its branch. Null when neither is.
  */
@@ -445,7 +460,8 @@ export async function postRunPrFeedback(
   let prNumber = runPrNumber(run.metadata);
   let commentId: string | null = null;
   if (settings.comment && !quiet) {
-    const pullRequestNumber = await findRunPullRequestNumber(provider, prNumber, branch);
+    const named = ciNamesRepository(meta?.ci?.repository, repositoryUrl) ? prNumber : null;
+    const pullRequestNumber = await findRunPullRequestNumber(provider, named, branch);
     if (pullRequestNumber != null) {
       prNumber = pullRequestNumber;
       const comment = await provider.postPullRequestComment(
