@@ -100,6 +100,21 @@ channel, so a per-user install pulls a per-user update.
    into the Downloads folder (never replacing a file), then reveals it. A file
    the page builds itself (a workbook, an image) goes through
    `desktop_save_download` instead.
+10. The windows open where they were last left (`tauri-plugin-window-state`,
+    `.window-state.json` in the app config folder): the dashboard window by
+    itself, the trace and output windows by kind (`window_state_key`); with
+    nothing saved yet, the dashboard opens maximized. Cmd/Ctrl with +, - or 0
+    zooms the dashboard (its capability grants `set_webview_zoom`, which
+    Tauri's shortcut script calls on macOS and Linux); the trace and output
+    windows hold no IPC grant, so they zoom on Windows only, where the web view
+    does it itself.
+11. A local run that ends with failures while the window is not focused asks
+    for attention once (`request_user_attention`): the Dock icon bounces, the
+    taskbar button flashes, or Linux sets the urgency hint. While a local run or
+    job is going, the machine does not idle-sleep (`keep_awake_while_runs_go`,
+    the `keepawake` crate, on a thread of its own since Windows ties the
+    request to the thread that made it); the display still turns off, and
+    closing a laptop's lid still sleeps it.
 
 Local access is gated by a token the app creates once and keeps for the install (see
 `apps/application/server/middleware/desktop-guard.ts`), so only the app — not other

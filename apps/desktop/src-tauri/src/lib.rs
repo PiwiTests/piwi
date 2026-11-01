@@ -45,6 +45,7 @@ use tauri_plugin_opener::OpenerExt as _;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt as _;
 use tauri_plugin_store::StoreExt as _;
+use tauri_plugin_window_state::{AppHandleExt as _, StateFlags};
 
 use inspect::{desktop_find_importable_runs, desktop_inspect_folder};
 use mcp_clients::{
@@ -67,9 +68,25 @@ use worktree::{
 
 pub(crate) const STORE_FILE: &str = "settings.json";
 const RUN_BG_KEY: &str = "runInBackground";
-/// Persisted maximized state of the main window. Absent on first launch, when
-/// the window opens maximized by default.
+/// Settings key: whether the main window is maximized. Until the window-state
+/// plugin has saved a state, the window opens maximized unless this is false.
 const WINDOW_MAXIMIZED_KEY: &str = "windowMaximized";
+/// What the window-state plugin saves and restores of each window: everything
+/// but visibility, which Run in background and `--hidden` decide.
+const WINDOW_STATE_FLAGS: StateFlags = StateFlags::all().difference(StateFlags::VISIBLE);
+
+/// The key the window-state plugin keeps a window's state under: the
+/// dashboard window's own, and one for each kind of window opened at run time
+/// (`aux-<n>`, `output-<name>_<n>`), so the next one opens where the last was.
+fn window_state_key(label: &str) -> &str {
+    if label.starts_with("aux-") {
+        "aux"
+    } else if output_window_name(label).is_some() {
+        "output"
+    } else {
+        label
+    }
+}
 /// How long the splash waits for the server before it says the start is slow; it keeps waiting after.
 const READY_TIMEOUT_SECS: u64 = 60;
 /// The splash's status line once the server takes longer than `READY_TIMEOUT_SECS`.
@@ -220,6 +237,8 @@ struct TrayStatusInner {
     activity: Option<String>,
     /// Label of the local run(s) currently in flight, e.g. "Running 7/12…".
     progress: Option<String>,
+    /// Whether the run progress last reported a failed end (`error`).
+    run_failed: bool,
 }
 
 const TRAY_TOOLTIP_IDLE: &str = "Piwi Dashboard (click to open)";
@@ -286,6 +305,12 @@ fn desktop_set_activity(app: tauri::AppHandle, count: u32, status: Option<String
         }
         refresh_tray_tooltip(&handle);
     });
+}
+
+/// Whether the run progress just turned to a failed end (`error`), which asks
+/// for the user's attention once, however often the dashboard repeats it.
+fn run_newly_failed(was_failed: bool, state: &str) -> bool {
+    state == "error" && !was_failed
 }
 
 /// Map the dashboard's run state to a taskbar/Dock progress-bar status. Any
@@ -401,11 +426,23 @@ fn desktop_set_run_progress(
             };
             let _ = tray.set_icon(icon);
         }
+        let mut newly_failed = false;
         if let Some(tray_state) = handle.try_state::<TrayStatus>() {
             let mut inner = tray_state.0.lock().unwrap();
             inner.progress = if active { label.filter(|s| !s.is_empty()) } else { None };
+            newly_failed = run_newly_failed(inner.run_failed, &state);
+            inner.run_failed = state == "error";
         }
         refresh_tray_tooltip(&handle);
+        // A run that failed while nobody looked: a Dock bounce on macOS, a
+        // flash of the taskbar button on Windows, the urgency hint on Linux.
+        if newly_failed {
+            if let Some(w) = handle.get_webview_window("main") {
+                if !w.is_focused().unwrap_or(false) {
+                    let _ = w.request_user_attention(Some(tauri::UserAttentionType::Informational));
+                }
+            }
+        }
     });
 }
 
@@ -968,6 +1005,63 @@ fn supervise_server(
     });
 }
 
+/// How often the keep-awake thread looks at the local runs.
+const KEEP_AWAKE_TICK: Duration = Duration::from_secs(5);
+
+/// What the keep-awake thread does on a tick.
+#[derive(Debug, PartialEq)]
+enum AwakeChange {
+    Take,
+    Release,
+    Nothing,
+}
+
+/// Take the assertion while a local run is going and none is held, once per
+/// stretch of runs (`tried`: a refused one is not asked again until the runs
+/// end), and release it once no run is.
+fn awake_change(running: bool, holding: bool, tried: bool) -> AwakeChange {
+    match (running, holding) {
+        (true, false) if !tried => AwakeChange::Take,
+        (false, true) => AwakeChange::Release,
+        _ => AwakeChange::Nothing,
+    }
+}
+
+/// Keep the machine from sleeping while a local run or job is going: a run, a
+/// reproduction, a bisect or a Flake Lab session can take an hour, and a
+/// sleeping machine stops it. Idle sleep only: the display still turns off, and
+/// closing a laptop's lid still puts it to sleep. One thread holds the
+/// assertion for the life of the app, since Windows ties
+/// `SetThreadExecutionState` to the thread that set it.
+fn keep_awake_while_runs_go(app: AppHandle, shutting_down: Arc<AtomicBool>) -> std::io::Result<()> {
+    std::thread::Builder::new().name("keep-awake".into()).spawn(move || {
+        let mut held: Option<keepawake::KeepAwake> = None;
+        let mut tried = false;
+        while !shutting_down.load(Ordering::SeqCst) {
+            let running = app.try_state::<runner::LocalRuns>().is_some_and(|runs| runs.active_count() > 0);
+            match awake_change(running, held.is_some(), tried) {
+                AwakeChange::Take => {
+                    tried = true;
+                    held = keepawake::Builder::default()
+                        .idle(true)
+                        .reason("Playwright tests are running")
+                        .app_name("Piwi Dashboard")
+                        .app_reverse_domain("io.piwitests.dashboard")
+                        .create()
+                        .ok();
+                }
+                AwakeChange::Release => held = None,
+                AwakeChange::Nothing => {}
+            }
+            if !running {
+                tried = false;
+            }
+            std::thread::sleep(KEEP_AWAKE_TICK);
+        }
+    })?;
+    Ok(())
+}
+
 /// The server is down for good: end the readiness wait, which says so on the
 /// splash, and tell the dashboard (`server-status`).
 fn give_up_server(app: &AppHandle) {
@@ -1006,14 +1100,9 @@ fn show_splash_status(app: &AppHandle, text: &'static str) {
 /// that long): a kill only starts the termination, and until it completes the
 /// files the server has loaded — the bundled native modules — stay locked.
 pub(crate) fn shut_down(app_handle: &AppHandle, server_wait: Option<Duration>) {
-    // Remember whether the window was maximized so the next launch
-    // restores it (first launch, with no stored value, maximizes).
-    if let Some(w) = app_handle.get_webview_window("main") {
-        if let Ok(store) = app_handle.store(STORE_FILE) {
-            store.set(WINDOW_MAXIMIZED_KEY, json!(w.is_maximized().unwrap_or(false)));
-            let _ = store.save();
-        }
-    }
+    // Save where the windows are: the plugin saves on `RunEvent::Exit`, which
+    // the Windows updater's exit never sends.
+    let _ = app_handle.save_window_state(WINDOW_STATE_FLAGS);
     // Tell the supervisor this stop is deliberate so it doesn't restart
     // the server we are about to kill.
     if let Some(flag) = app_handle.try_state::<ShuttingDown>() {
@@ -1319,6 +1408,11 @@ fn desktop_bring_to_front(app: tauri::AppHandle) {
     }
 }
 
+/// Whether the windows opened at run time take the zoom shortcuts: on Windows,
+/// where the web view zooms itself. On macOS and Linux Tauri's shortcut script
+/// calls an IPC command, and these windows hold no IPC grant.
+const RUNTIME_WINDOW_ZOOM: bool = cfg!(windows);
+
 /// Unique label for each runtime-created auxiliary window (Tauri requires labels
 /// to be distinct for the life of the app).
 static AUX_WINDOW_SEQ: AtomicU32 = AtomicU32::new(0);
@@ -1343,6 +1437,7 @@ async fn desktop_open_window(app: tauri::AppHandle, url: String) -> Result<(), S
     let window = tauri::WebviewWindowBuilder::new(&app, label, tauri::WebviewUrl::External(parsed))
         .title("Piwi Dashboard")
         .inner_size(1200.0, 820.0)
+        .zoom_hotkeys_enabled(RUNTIME_WINDOW_ZOOM)
         .build()
         .map_err(|e| e.to_string())?;
     // In debug mode, open the inspector on the new window too (the trace viewer,
@@ -1410,6 +1505,7 @@ async fn desktop_open_output_window(app: tauri::AppHandle, name: String) -> Resu
     tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::External(url))
         .title("Piwi Dashboard")
         .inner_size(960.0, 640.0)
+        .zoom_hotkeys_enabled(RUNTIME_WINDOW_ZOOM)
         .on_document_title_changed(|window, title| {
             let _ = window.set_title(&title);
         })
@@ -1900,6 +1996,14 @@ pub fn run() {
             Some(vec!["--hidden"]),
         ))
         .plugin(tauri_plugin_notification::init())
+        // Every window opens where it was last left, the run-time ones by kind
+        // (`window_state_key`). Registered before the dashboard window exists.
+        .plugin(
+            tauri_plugin_window_state::Builder::new()
+                .with_state_flags(WINDOW_STATE_FLAGS)
+                .map_label(window_state_key)
+                .build(),
+        )
         // The dashboard window, which holds the IPC bridge, stays on the app's
         // own pages and the sidecar's origin (`main_window_may_navigate`).
         .plugin(
@@ -2081,6 +2185,9 @@ pub fn run() {
             // intentional shutdown apart from a crash worth restarting.
             let shutting_down = Arc::new(AtomicBool::new(false));
             app.manage(ShuttingDown(shutting_down.clone()));
+            if let Err(e) = keep_awake_while_runs_go(app.handle().clone(), shutting_down.clone()) {
+                append_log(&log_path, &format!("could not start the keep-awake thread: {e}"));
+            }
 
             // --- resolve the bundled server entry (shipped unpacked via resources) ---
             // Tauri may place the resource at <res>/resources/app-server (preserving
@@ -2284,16 +2391,21 @@ pub fn run() {
                 });
             }
 
-            // Window size: maximized on first launch (no stored preference), and
-            // thereafter whatever the user last left it as — persisted on quit
-            // (see the ExitRequested handler). Applied while the window is still
-            // visible, before the --hidden case may hide it.
-            let start_maximized = app
-                .store(STORE_FILE)
-                .ok()
-                .and_then(|s| s.get(WINDOW_MAXIMIZED_KEY))
-                .and_then(|v| v.as_bool())
-                .unwrap_or(true);
+            // Window size and place: the window-state plugin restored them as the
+            // window was created. With nothing saved yet, the window opens
+            // maximized (see `WINDOW_MAXIMIZED_KEY`). Applied while the window
+            // is still visible, before the --hidden case may hide it.
+            let window_state_saved = app
+                .path()
+                .app_config_dir()
+                .is_ok_and(|dir| dir.join(tauri_plugin_window_state::DEFAULT_FILENAME).exists());
+            let start_maximized = !window_state_saved
+                && app
+                    .store(STORE_FILE)
+                    .ok()
+                    .and_then(|s| s.get(WINDOW_MAXIMIZED_KEY))
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true);
             if start_maximized {
                 if let Some(w) = app.get_webview_window("main") {
                     let _ = w.maximize();
@@ -2421,6 +2533,7 @@ mod tests {
         is_output_window_name, is_sidecar_url, is_truthy_flag, main_window_may_navigate,
         output_window_name, port_refusal, prepare_compile_cache, progress_bar_status, read_installer_port,
         remote_capability, remove_other_versions, render_status_dot, request_target, rotate_log_if_full,
+        awake_change, run_newly_failed, window_state_key, AwakeChange,
         parse_retention_env, rotated_log_path, splash_status_script, stream_download, valid_retention_days,
         status_dot_color, valid_port, write_new_download, BAD_PORTS, DEFAULT_PORT,
         INSTALLER_CHOICES_FILE, MIN_PORT, SERVER_PORT_KEY, STORE_FILE,
@@ -2621,6 +2734,38 @@ mod tests {
         assert_eq!(download_file_name("../../etc/passwd"), "passwd");
         assert_eq!(download_file_name("report.pdf"), "report.pdf");
         assert_eq!(download_file_name(""), "download");
+    }
+
+    #[test]
+    fn the_machine_stays_awake_while_a_run_goes() {
+        // A run starts: take the assertion.
+        assert_eq!(awake_change(true, false, false), AwakeChange::Take);
+        // Held, or refused once already: nothing more until the runs end.
+        assert_eq!(awake_change(true, true, true), AwakeChange::Nothing);
+        assert_eq!(awake_change(true, false, true), AwakeChange::Nothing);
+        // The runs ended: release it, and nothing to do while idle.
+        assert_eq!(awake_change(false, true, true), AwakeChange::Release);
+        assert_eq!(awake_change(false, false, false), AwakeChange::Nothing);
+    }
+
+    #[test]
+    fn a_failed_end_asks_for_attention_once() {
+        assert!(run_newly_failed(false, "error"));
+        // The dashboard repeats a state while it shows it: no second request.
+        assert!(!run_newly_failed(true, "error"));
+        for state in ["normal", "indeterminate", "paused", "none"] {
+            assert!(!run_newly_failed(false, state), "{state}");
+        }
+    }
+
+    #[test]
+    fn run_time_windows_share_a_saved_state_by_kind() {
+        assert_eq!(window_state_key("main"), "main");
+        assert_eq!(window_state_key("aux-0"), "aux");
+        assert_eq!(window_state_key("aux-17"), "aux");
+        assert_eq!(window_state_key("output-run-12_3"), "output");
+        // Not a run output window's label: kept as it is.
+        assert_eq!(window_state_key("output-"), "output-");
     }
 
     #[test]

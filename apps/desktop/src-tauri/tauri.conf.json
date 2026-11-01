@@ -18,6 +18,7 @@
         "minHeight": 540,
         "resizable": true,
         "backgroundThrottling": "disabled",
+        "zoomHotkeysEnabled": true,
         "url": "index.html"
       }
     ],
