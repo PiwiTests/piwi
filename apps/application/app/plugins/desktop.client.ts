@@ -24,6 +24,7 @@ export default defineNuxtPlugin((nuxtApp) => {
 
   installExternalLinkHandler(core);
   installNativeNotifications(core);
+  installShortcuts(core);
   installErrorForwarding(core);
   installServerStatus();
 
@@ -182,6 +183,26 @@ function installExternalLinkHandler(core: Bridge) {
     },
     true, // capture — beat Vue Router's own click handling
   );
+}
+
+/**
+ * The dashboard window's Ctrl shortcuts (`DESKTOP_SHORTCUTS`): Settings, Import Playwright report, Back and
+ * Forward, the keys the macOS app menu holds with ⌘. Only in the `main` window: the trace and output windows hold
+ * no IPC grant, and their history is their own.
+ */
+function installShortcuts(core: Bridge) {
+  if (tauriWindowLabel() !== 'main') return;
+  const router = useRouter();
+  window.addEventListener('keydown', (event) => {
+    if (event.defaultPrevented) return;
+    const action = desktopShortcut(event);
+    if (!action) return;
+    event.preventDefault();
+    if (action === 'settings') void router.push('/settings');
+    else if (action === 'import') core.invoke('desktop_pick_files_to_open').catch(() => {});
+    else if (action === 'back') history.back();
+    else history.forward();
+  });
 }
 
 /**

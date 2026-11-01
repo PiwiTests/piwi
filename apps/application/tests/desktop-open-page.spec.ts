@@ -128,6 +128,21 @@ test.describe('Desktop window shows a page opened outside the app', () => {
     await expect.poll(() => invokedCommands(page)).toContain('desktop_bring_to_front');
   });
 
+  test('the Ctrl shortcuts open Settings, ask the shell for files, and go back', async ({ page }) => {
+    await installFakeBridge(page, 'main');
+    await page.goto('/');
+    await waitForHydration(page);
+
+    await page.keyboard.press('Control+O');
+    await expect.poll(() => invokedCommands(page)).toContain('desktop_pick_files_to_open');
+
+    await page.keyboard.press('Control+Comma');
+    await expect(page).toHaveURL(/\/settings/);
+
+    await page.keyboard.press('Control+BracketLeft');
+    await expect.poll(() => new URL(page.url()).pathname).toBe('/');
+  });
+
   test('another shell window ignores it', async ({ page }) => {
     await installFakeBridge(page, 'aux-1');
     const stream = await holdDesktopEvents(page, [{ type: 'open-page', path: '/settings/about' }]);

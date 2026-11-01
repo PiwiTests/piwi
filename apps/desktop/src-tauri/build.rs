@@ -31,6 +31,7 @@ fn main() {
             "desktop_download",
             "desktop_pick_folder",
             "desktop_pick_import_files",
+            "desktop_pick_files_to_open",
             "desktop_inspect_folder",
             "desktop_find_importable_runs",
             "desktop_get_project_link",

@@ -14,12 +14,12 @@ app's retention, and its server runs the retention sweep a few minutes after it 
 straight to disk, while a file the page builds (a chart image, a workbook) still crosses IPC. Notifications still come
 from the page; the shell reading the server's stream itself stays in step 3. The Rust is unit-tested and the page side
 has Playwright specs with a faked bridge, but the macOS menu, the Dock, the background policy and the notification
-clicks are compile-checked only and still need a pass on macOS and Windows. Step 2 is partly built: the windows open
-where they were left (`tauri-plugin-window-state`), Cmd/Ctrl +, - and 0 zoom the dashboard (the trace and output windows
-on Windows only), a run that fails unseen asks for attention, the machine does not idle-sleep while a local run goes,
-and the macOS app menu holds Settings, Import, Back and Forward and the Help items. The live tray menu and the same
-shortcuts on Windows and Linux remain. Nothing beyond step 2 is built, and nothing here is on
-[`ROADMAP.md`](../ROADMAP.md) yet.
+clicks are compile-checked only and still need a pass on macOS and Windows. Step 2 is built: the windows open where they
+were left (`tauri-plugin-window-state`), Cmd/Ctrl +, - and 0 zoom the dashboard (the trace and output windows on Windows
+only), a run that fails unseen asks for attention, the machine does not idle-sleep while a local run goes, and the macOS
+app menu holds Settings, Import, Back and Forward and the Help items. The tray lists the local runs going, each with
+Stop, and Windows and Linux take the menu's keys with Ctrl in the page. Nothing beyond step 2 is built, and nothing here
+is on [`ROADMAP.md`](../ROADMAP.md) yet.
 
 **Summary.** The shell is strong where Piwi is unique: it runs, reproduces and bisects tests in throwaway worktrees,
 hosts Flake Lab, connects MCP clients, opens Playwright archives and bug reports, and shows a run's progress on the

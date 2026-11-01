@@ -128,7 +128,9 @@ channel, so a per-user install pulls a per-user update.
     dashboard receives as the ones the OS opens with the app
     (`queue_open_files`); View › Back and Forward (Cmd+[ and Cmd+]); Help ›
     Piwi documentation, Report an issue and Show logs. Windows and Linux show
-    no menu bar.
+    no menu bar: the dashboard window takes the same keys with Ctrl
+    (`DESKTOP_SHORTCUTS` in `app/utils/desktop-shortcuts.ts`), Ctrl+O through
+    `desktop_pick_files_to_open`.
 
 Local access is gated by a token the app creates once and keeps for the install (see
 `apps/application/server/middleware/desktop-guard.ts`), so only the app — not other

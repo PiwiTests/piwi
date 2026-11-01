@@ -2049,8 +2049,8 @@ fn reveal_log(app: &AppHandle) {
 
 /// Ask for Playwright archives and bug reports to open, then hand them to the
 /// dashboard as the OS hands it a file (`queue_open_files`), which offers to
-/// import them.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+/// import them: the macOS menu's File › Import, and Ctrl+O on Windows and
+/// Linux (`desktop_pick_files_to_open`).
 fn pick_files_to_open(app: &AppHandle) {
     let handle = app.clone();
     app.dialog()
@@ -2072,6 +2072,13 @@ fn pick_files_to_open(app: &AppHandle) {
                 bring_to_front(&w);
             }
         });
+}
+
+/// Ctrl+O in the dashboard window on Windows and Linux: what the macOS menu's
+/// File › Import does ([`pick_files_to_open`]).
+#[tauri::command]
+fn desktop_pick_files_to_open(app: tauri::AppHandle) {
+    pick_files_to_open(&app);
 }
 
 /// The macOS app menu: Tauri's default menu with Piwi's own items, which
@@ -2307,6 +2314,7 @@ pub fn run() {
             desktop_download,
             desktop_pick_folder,
             desktop_pick_import_files,
+            desktop_pick_files_to_open,
             desktop_inspect_folder,
             desktop_find_importable_runs,
             desktop_get_project_link,
