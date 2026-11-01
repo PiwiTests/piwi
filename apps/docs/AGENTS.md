@@ -111,7 +111,7 @@ which the drift test also reads.
 ### Where a new page goes
 
 - **A new feature** adds a catalog entry and one page under `features/`. The entry's `title` is the page's H1 and its
-  sidebar label, so the feature has one name everywhere. Never extend another feature's page with it. In the six
+  sidebar label, so the feature has one name everywhere. Never extend another feature's page with it. In the
   feature groups an entry's `doc` is a whole page, never a `#section`; only the Self-hosting group may point into a
   section of an operator page. A page stays single-purpose: if it needs two sentences to say what it is for, it is two
   pages (`storage` + `database` was one).
