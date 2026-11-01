@@ -24,7 +24,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Finish a streaming test run',
     description:
-      'Finalize a streaming test run by setting its final status and calculating performance metrics. Supports pending uploads mode where reports are uploaded asynchronously after finishing. For sharded runs, the run finishes only after all shards report; test counters come from the streamed events, and the run lasts from the start of its first shard to the end of its last shard: a shard ends at its `startTime` plus its `duration`, or, when it sends no `startTime`, when its `/finish` arrives.',
+      'Finalize a streaming test run by setting its final status and calculating performance metrics. Supports pending uploads mode where reports are uploaded asynchronously after finishing. For sharded runs, the run finishes only after all shards report; test counters come from the streamed events, and the run lasts from the start of its first shard to the end of its last shard. A shard runs from its `startTime` for its `duration`, or until its `/finish` arrives when it sends no `duration`; with no `startTime`, or one that puts its end more than a day from its `/finish`, it ends when its `/finish` arrives.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     requestBody: {
       content: {
