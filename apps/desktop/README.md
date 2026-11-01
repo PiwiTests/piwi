@@ -21,7 +21,10 @@ channel, so a per-user install pulls a per-user update.
    sidecar** (`src-tauri/binaries/node-<triple>` running
    `src-tauri/resources/app-server/.output/server/index.mjs`), with Node's
    compile cache in `app_cache_dir()/node-compile-cache/<app version>` (the
-   other versions' folders are deleted in the background).
+   other versions' folders are deleted in the background). The retention the
+   user picks on Settings › Storage (`retentionDays` in `settings.json`, set by
+   `desktop_set_retention_days`) reaches the server as `PIWI_RETENTION_DAYS`;
+   until one is picked, the server follows the environment the app started in.
 2. It polls `GET /api/health` (200 = database migrated) until the answer
    carries the random nonce the shell gave this launch's sidecar
    (`PIWI_DESKTOP_LAUNCH_NONCE`, echoed in `X-Piwi-Desktop-Nonce`), so another
@@ -34,15 +37,21 @@ channel, so a per-user install pulls a per-user update.
    it says the server stopped once the supervisor, which restarts a crashed server
    with a backoff, gives up. The dashboard shows the restarts as a toast
    (`server-status` events).
-3. The tray offers **Run in background** (keep serving after the window closes),
-   **Start on login**, and **Open data folder**.
+3. The tray offers **Run in background** (keep serving after the window closes;
+   on macOS a click on the Dock icon brings the window back), **Start on login**,
+   **Open data folder** and **Show logs**, which reveals `logs/server.log` in the
+   app data folder. The log rotates at 10 MB, keeping `server.1.log` and
+   `server.2.log`.
 4. The dashboard can link a Piwi project to a folder on this machine and run
    `playwright test` there (`src-tauri/src/runner.rs`): the shell resolves the
    folder's own Playwright package, executes it with the bundled Node sidecar,
    and streams output back to the webview as `piwi:local-run` events. Those
    processes die with the shell, so every way out — closing the window, the
-   tray's Quit, or an update restart — asks for confirmation first while any
-   of them is still running. Every such run, reproductions, bisect steps and
+   tray's Quit, Cmd+Q on macOS, or an update restart — asks for confirmation
+   first while any of them is still running. The ways out that cannot be held
+   (the Dock's Quit on macOS, logging out or shutting down on macOS and
+   Windows) still run the quit cleanup (`shut_down` on `RunEvent::Exit`); on
+   Linux the session's end stops the app without it. Every such run, reproductions, bisect steps and
    Flake Lab included, names the bundled server as its hub
    (`PIWI_RUN_CHANNEL`, `PIWI_RUN_REF`): each worker keeps a connection to
    the server's run channel, so the window and the paired Piwi Picker (over
@@ -67,7 +76,15 @@ channel, so a per-user install pulls a per-user update.
    entries whose URL/token drifted after a port change.
 7. Native notifications shown while the window is hidden bump an unread badge
    on the dock icon and the tray tooltip (`desktop_set_activity`), cleared
-   when the window regains focus.
+   when the window regains focus. The page creates them (`desktop_notify`,
+   with an id), so the main window is not suspended in the background
+   (`backgroundThrottling: "disabled"`, which macOS 14 and later honor; the
+   Windows and Linux web views have no such policy). On Windows and Linux a
+   click on one brings the window forward and the shell hands the id back
+   (`piwi:notification-click`), which runs the `onclick` the page set; on
+   Windows a click counts only while the toast is on screen. On macOS clicks
+   are not reported: the notification plugin would hold a thread and a
+   main-loop timer for each notification until it leaves Notification Center.
 8. A dashboard link opened in the system browser (the reporter's `View run:`
    URL clicked in a terminal) shows in the app window instead: the server
    answers the tab with a notice that closes the tab where the browser allows
@@ -77,6 +94,12 @@ channel, so a per-user install pulls a per-user update.
    navigates to it and calls `desktop_bring_to_front`, which restores, shows
    and focuses it. Only navigations the browser marks `Sec-Fetch-Site: none`
    qualify, so a web page cannot drive the window.
+9. A download the dashboard offers (a trace, an export, a report) goes through
+   `desktop_download`: the shell requests the URL, which must be on the
+   sidecar's origin, from its own server with the app's token and streams it
+   into the Downloads folder (never replacing a file), then reveals it. A file
+   the page builds itself (a workbook, an image) goes through
+   `desktop_save_download` instead.
 
 Local access is gated by a token the app creates once and keeps for the install (see
 `apps/application/server/middleware/desktop-guard.ts`), so only the app — not other

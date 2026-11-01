@@ -20,7 +20,7 @@ export function useDesktopReportLink() {
   function openReport(report: { path: string; type: string }) {
     const url = fileApiUrl(report.path, null, config.app?.baseURL);
     if (report.type === 'blob') {
-      download(url, report.path.split('/').pop() || 'report.zip', { binary: true });
+      download(url, report.path.split('/').pop() || 'report.zip');
     } else {
       openWindow(url);
     }

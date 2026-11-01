@@ -17,6 +17,7 @@
         "minWidth": 720,
         "minHeight": 540,
         "resizable": true,
+        "backgroundThrottling": "disabled",
         "url": "index.html"
       }
     ],

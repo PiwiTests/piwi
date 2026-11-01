@@ -189,8 +189,11 @@ function installExternalLinkHandler(core: Bridge) {
  * through the shell. The dashboard's notification code checks `'Notification' in
  * window`, reads `Notification.permission`, and constructs `new Notification()`;
  * routing those through the shell makes browser-channel notifications work in
- * the desktop app without touching a dozen call sites. (Native click-to-open is
- * platform-dependent and not wired — the notification still displays.)
+ * the desktop app without touching a dozen call sites. On Windows and Linux, a
+ * click on one brings the window forward and runs the `onclick` the page set,
+ * as a browser does: the shell reports it as `piwi:notification-click` with the
+ * id the shim gave the notification (on Windows, only while the toast is on
+ * screen).
  *
  * Every notification shown while the window is hidden or unfocused also bumps
  * the ambient unread state — a dock/taskbar badge where the platform has one,
@@ -198,6 +201,11 @@ function installExternalLinkHandler(core: Bridge) {
  */
 function installNativeNotifications(core: Bridge) {
   let unread = 0;
+  const shown = createShownNotifications<NativeNotification>();
+
+  void tauriEvent()?.listen<number>('piwi:notification-click', ({ payload }) => {
+    shown.get(payload)?.click();
+  });
 
   window.addEventListener('focus', () => {
     if (unread === 0) return;
@@ -217,12 +225,14 @@ function installNativeNotifications(core: Bridge) {
     onshow: ((this: Notification, ev: Event) => unknown) | null = null;
     readonly title: string;
     readonly body: string;
+    readonly #id: number;
 
     constructor(title: string, options?: NotificationOptions) {
       super();
       this.title = title;
       this.body = options?.body ?? '';
-      core.invoke('desktop_notify', { title, body: this.body }).catch(() => {});
+      this.#id = shown.add(this);
+      core.invoke('desktop_notify', { title, body: this.body, id: this.#id }).catch(() => {});
       if (document.hidden || !document.hasFocus()) {
         unread += 1;
         const status = this.body.split('\n')[0] || this.title;
@@ -230,7 +240,16 @@ function installNativeNotifications(core: Bridge) {
       }
     }
 
-    close() {}
+    /** What a browser does when its notification is clicked: `onclick`, then the `click` listeners. */
+    click() {
+      const event = new Event('click');
+      this.onclick?.call(this as unknown as Notification, event);
+      this.dispatchEvent(event);
+    }
+
+    close() {
+      shown.remove(this.#id);
+    }
   }
 
   try {

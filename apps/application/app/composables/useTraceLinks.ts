@@ -63,7 +63,7 @@ export function useTraceLinks(trace: MaybeRefOrGetter<TraceInfo | null | undefin
   function onDownload(event: MouseEvent) {
     if (!isDesktop || !downloadUrl.value) return;
     event.preventDefault();
-    download(downloadUrl.value, HASHED_NAME_RE.test(fileName.value) ? 'trace.zip' : fileName.value, { binary: true });
+    download(downloadUrl.value, HASHED_NAME_RE.test(fileName.value) ? 'trace.zip' : fileName.value);
   }
 
   return { name, viewUrl, viewUnavailable, downloadUrl, onView, onDownload };

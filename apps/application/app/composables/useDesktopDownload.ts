@@ -3,18 +3,19 @@
  *
  * A `target="_blank"` / `download` link is inert in the Tauri webview — the
  * new-window request is dropped, so the file never lands anywhere (this is why
- * "download the OpenAPI spec" appears to do nothing in the desktop app). Here we
- * fetch the content in-webview (so the desktop access-token cookie rides along
- * for guarded routes) and hand the bytes to the shell, which writes them to the
- * user's Downloads folder and reveals the file.
+ * "download the OpenAPI spec" appears to do nothing in the desktop app). On the
+ * desktop, `download` hands the URL to the shell, which requests it from its own
+ * server with the app's token and streams it into the user's Downloads folder,
+ * then reveals it: the file never crosses IPC or sits whole in the page,
+ * however large it is.
  *
  * Outside the desktop shell there is no bridge, so `download` falls back to a
  * normal navigation and the browser handles it — meaning callers can wire this
  * unconditionally and it does the right thing on web and desktop alike.
  *
- * Binary payloads (ZIP archives, images) ride the bridge base64-encoded: a byte
- * array crosses Tauri's IPC as JSON numbers, which multiplies the size of any
- * real archive.
+ * `saveBlob` saves a file built in the page (a workbook, an image): its bytes
+ * ride the bridge base64-encoded, since a byte array crosses Tauri's IPC as JSON
+ * numbers, which multiplies its size.
  */
 
 import { downloadBlob } from '~/utils/chart-export';
@@ -29,16 +30,17 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+/** The shell's commands reject with their message as a plain string; anything else reads as `errorMessage` does. */
+function shellErrorMessage(error: unknown): string {
+  return typeof error === 'string' && error ? error : errorMessage(error);
+}
+
 export function useDesktopDownload() {
   const isDesktop = useIsDesktop();
   const toast = useToast();
 
-  /**
-   * @param binary  Save raw bytes rather than text. Required for anything that
-   *                is not UTF-8 (archives, PDFs, images) — decoding those as
-   *                text corrupts them.
-   */
-  async function download(url: string, filename: string, options: { binary?: boolean } = {}): Promise<void> {
+  /** Save what `url` (a page of this dashboard) serves under `filename`, its bytes as they are. */
+  async function download(url: string, filename: string): Promise<void> {
     const core = tauriCore();
     if (!core) {
       window.open(url, '_blank');
@@ -46,12 +48,13 @@ export function useDesktopDownload() {
     }
 
     try {
-      const res = await fetch(url, { credentials: 'include' });
-      if (!res.ok) throw new Error(`Request failed (${res.status})`);
-      const contents = options.binary ? toBase64(new Uint8Array(await res.arrayBuffer())) : await res.text();
-      await saveThroughShell(core, filename, contents, options.binary ? 'base64' : 'utf8');
+      const path = await core.invoke<string>('desktop_download', {
+        url: new URL(url, window.location.href).href,
+        filename,
+      });
+      savedToast(path);
     } catch (error) {
-      toast.add({ title: 'Download failed', description: errorMessage(error), color: 'error' });
+      toast.add({ title: 'Download failed', description: shellErrorMessage(error), color: 'error' });
     }
   }
 
@@ -65,7 +68,7 @@ export function useDesktopDownload() {
     try {
       await saveThroughShell(core, filename, toBase64(new Uint8Array(await blob.arrayBuffer())), 'base64');
     } catch (error) {
-      toast.add({ title: 'Download failed', description: errorMessage(error), color: 'error' });
+      toast.add({ title: 'Download failed', description: shellErrorMessage(error), color: 'error' });
     }
   }
 
@@ -75,7 +78,10 @@ export function useDesktopDownload() {
     contents: string,
     encoding: 'base64' | 'utf8',
   ): Promise<void> {
-    const path = await core.invoke<string>('desktop_save_download', { filename, contents, encoding });
+    savedToast(await core.invoke<string>('desktop_save_download', { filename, contents, encoding }));
+  }
+
+  function savedToast(path: string): void {
     toast.add({
       title: 'Saved to Downloads',
       description: path,

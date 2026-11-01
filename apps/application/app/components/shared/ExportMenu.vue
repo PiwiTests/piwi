@@ -38,17 +38,14 @@ function withBase(path: string): string {
 
 async function run(format: 'html' | 'zip' | 'pdf' | 'json' | 'md') {
   open.value = false;
-  // ZIP and PDF are the binary formats; the rest are text the shell writes directly.
-  await download(withBase(`${props.endpoint}?format=${format}`), `${props.baseName}.${format}`, {
-    binary: format === 'zip' || format === 'pdf',
-  });
+  await download(withBase(`${props.endpoint}?format=${format}`), `${props.baseName}.${format}`);
 }
 
 /** The Perfetto trace is a JSON file that opens at ui.perfetto.dev. */
 async function runPerfetto() {
   open.value = false;
   if (!props.perfettoEndpoint) return;
-  await download(withBase(props.perfettoEndpoint), `${props.baseName}-perfetto.json`, { binary: false });
+  await download(withBase(props.perfettoEndpoint), `${props.baseName}-perfetto.json`);
 }
 
 /**
@@ -111,7 +108,7 @@ const replayTitle = computed(() => {
 async function runReplay() {
   open.value = false;
   if (!props.replayEndpoint) return;
-  await download(withBase(`${props.replayEndpoint}/piwibug`), `${props.baseName}.piwibug`, { binary: true });
+  await download(withBase(`${props.replayEndpoint}/piwibug`), `${props.baseName}.piwibug`);
 }
 
 async function copySteps() {

@@ -53,7 +53,7 @@ Sends native OS notifications to any open Piwi tab, even in the background, thro
 
 - **With authentication**: create a channel of type `browser` in **Settings → Notifications** and subscribe it to events; the stream then delivers exactly the events and projects your subscriptions cover.
 - **Without authentication**: no channel is needed; the **bell** on each project page stores per-browser preferences (a cookie) for which events raise notifications.
-- **In the [desktop app](./desktop)**: on with no setup for failed runs and environment incidents; a project's bell changes them.
+- **In the [desktop app](./desktop)**: on with no setup for failed runs and environment incidents; a project's bell changes them. On Windows and Linux, a click on one opens what it is about (on Windows, while the toast shows).
 
 Diagnosis-completion notifications can be switched off per browser in **Settings → AI → Diagnosis
 notifications**.
