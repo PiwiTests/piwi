@@ -110,7 +110,7 @@ import { sanitizeLiveResources } from '#shared/live-resources';
 import { demoHttpError } from './http-error';
 import { sanitizeExecutionResources, sanitizeResourceReport } from '#shared/resource-report';
 import { saveResourceReportPart } from '#shared/handlers/resource-reports';
-import { readShardSpans, shardedRunSpan, shardSpan, withShardSpan } from '~~/server/utils/shard-spans';
+import { readShardDurations, recordShardEnd, shardSpan, withShardDurations } from '~~/server/utils/shard-spans';
 
 type DemoDb = Awaited<ReturnType<typeof getDemoDb>>;
 
@@ -1052,24 +1052,14 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
 
   if (isSharded) {
     const flakyTests = body.flakyTests ?? 0;
-    const duration = body.duration ?? Date.now() - new Date(testRun.startTime).getTime();
 
-    // Merge this shard's durations with any previously accumulated ones
-    const allDurations: number[] = [];
-    const currentMeta = (testRun.metadata as Record<string, unknown>) ?? {};
-    const prevDurations = currentMeta.shardDurations as number[] | undefined;
-    if (prevDurations) allDurations.push(...prevDurations);
-    if (body.durations && Array.isArray(body.durations)) allDurations.push(...body.durations);
-    // This shard's span joins the others': the run lasts from the first shard's start to the last one's end.
-    const shardMeta = withShardSpan(
-      { ...currentMeta, shardDurations: allDurations },
-      shardSpan({ ...body, duration }, Date.now()),
-    );
-    const runSpan = shardedRunSpan(testRun.startTime, readShardSpans(shardMeta));
-
-    await db
-      .update(testRuns)
-      .set({
+    // This shard's test durations and span join the others', and the run's start and duration become its shards'.
+    await recordShardEnd(
+      db,
+      id,
+      shardSpan(body, Date.now()),
+      (metadata) => withShardDurations(metadata, Array.isArray(body.durations) ? body.durations : []),
+      {
         updatedAt: new Date(),
         status: 'running',
         // `totalTests` is the planned total set at /begin; the per-status
@@ -1081,17 +1071,13 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
         didNotRunTests: sql`${testRuns.didNotRunTests} + ${body.didNotRunTests ?? 0}`,
         flakyTests: sql`${testRuns.flakyTests} + ${flakyTests}`,
         shardsFinished: sql`${testRuns.shardsFinished} + 1`,
-        ...runSpan,
-        metadata: shardMeta,
-        origin: runOrigin(shardMeta),
-        commit: runCommit(shardMeta),
         // The first shard to report a branch names the run's branch.
         branch: sql`COALESCE(${testRuns.branch}, ${resolveRunBranch(body.metadata)})`,
         ...(body.setupSteps && { setupSteps: body.setupSteps }),
         ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
         ...(body.filterDetails !== undefined && { filterDetails: body.filterDetails ?? null }),
-      })
-      .where(eq(testRuns.id, id));
+      },
+    );
 
     // This shard is done — drop its token so it cannot send more events.
     if (streamToken) {
@@ -1126,18 +1112,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       const counts = distinctRunCountsFromAttempts(attemptRows);
       finalStatus = counts.failedTests > 0 ? 'failed' : 'passed';
 
-      let avgTestDuration: number | null = null;
-      let p90TestDuration: number | null = null;
-      if (allDurations.length > 0) {
-        const stats = durationStats(allDurations);
-        if (stats) {
-          avgTestDuration = stats.avg;
-          p90TestDuration = stats.p90;
-        }
-      }
-
-      const existingMeta = (updatedRun.metadata as Record<string, unknown>) ?? {};
-      const finalMeta = { ...existingMeta, shardDurations: allDurations };
+      const stats = durationStats(readShardDurations(updatedRun.metadata));
 
       await db
         .update(testRuns)
@@ -1150,11 +1125,8 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
           skippedTests: counts.skippedTests,
           didNotRunTests: counts.didNotRunTests,
           flakyTests: counts.flakyTests,
-          avgTestDuration,
-          p90TestDuration,
-          metadata: finalMeta,
-          origin: runOrigin(finalMeta),
-          commit: runCommit(finalMeta),
+          avgTestDuration: stats?.avg ?? null,
+          p90TestDuration: stats?.p90 ?? null,
           updatedAt: new Date(),
         })
         .where(eq(testRuns.id, id));

@@ -8,7 +8,7 @@ import { runCommit, runOrigin } from '#shared/run-eligibility';
 export type MetadataObject = Record<string, unknown>;
 
 /** Columns written next to a run's metadata. */
-type RunUpdate = SQLiteUpdateSetSource<typeof testRuns>;
+export type RunUpdate = SQLiteUpdateSetSource<typeof testRuns>;
 
 /** Attempts at the conditional write before the last one is made unconditionally. */
 const WRITE_ATTEMPTS = 8;

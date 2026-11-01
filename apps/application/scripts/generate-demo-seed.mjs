@@ -2110,6 +2110,30 @@ const RESOURCE_OCCURRENCES = [];
       lanes.set(row.worker_index, lane);
       shards.set(shard, lanes);
     }
+    if (run.shard_total === 2) {
+      // Each shard's span as its end records it (`metadata.shards`): both start with the run, each ends with its
+      // last test, and the last to end ends the run, whose duration runs from the first start to that end.
+      const runStartMs = run.start_time * 1000;
+      const runEndMs = runStartMs + run.duration;
+      const ends = [...shards.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(([shard, lanes]) => ({
+          shard,
+          workers: lanes.size,
+          end: Math.max(...[...lanes.values()].flat().map((row) => row.started_at + (row.duration ?? 0))),
+        }));
+      const lastEnd = Math.max(...ends.map((entry) => entry.end));
+      run.metadata.shards = ends.map(({ shard, workers, end }) => {
+        const endMs = end === lastEnd ? runEndMs : Math.min(end, runEndMs);
+        return {
+          shardIndex: shard,
+          startTime: new Date(runStartMs).toISOString(),
+          endTime: new Date(endMs).toISOString(),
+          duration: endMs - runStartMs,
+          workers,
+        };
+      });
+    }
     const parts = [];
     for (const [shard, lanes] of [...shards.entries()].sort((a, b) => (a[0] ?? 0) - (b[0] ?? 0))) {
       let artifactBytes = 0;

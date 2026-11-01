@@ -9,14 +9,8 @@ import { resolveRunBranch } from '../../../utils/run-branch';
 import { runCommit, runOrigin } from '#shared/run-eligibility';
 import { validateAndReviveRun } from '../../../utils/revive-run';
 import { matchesShardToken, readShardTokensFromMeta, withoutShardToken } from '../../../utils/shard-tokens';
-import { updateRunMetadata } from '../../../utils/run-metadata';
-import {
-  finalizeShardedRun,
-  publishShardProgress,
-  shardedRunSpanUpdate,
-  withShardDurations,
-} from '../../../utils/sharded-runs';
-import { shardSpan, withShardSpan } from '../../../utils/shard-spans';
+import { finalizeShardedRun, publishShardProgress } from '../../../utils/sharded-runs';
+import { recordShardEnd, shardSpan, withShardDurations } from '../../../utils/shard-spans';
 import { runFinalizeSideEffects } from '../../../utils/run-finalize-side-effects';
 import { keepIncidentMetadata } from '#shared/run-incident';
 import { withPendingStatus } from '../../../utils/finalizing-runs';
@@ -94,8 +88,8 @@ export default eventHandler(async (event) => {
   const isShardToken = shardTokens ? (token: string) => matchesShardToken(shardTokens, token) : undefined;
   await validateAndReviveRun(db, id, testRun, body.streamToken, isShardToken);
 
+  if (isSharded) return finishShard(db, id, body);
   const duration = body.duration ?? Date.now() - new Date(testRun.startTime).getTime();
-  if (isSharded) return finishShard(db, id, body, testRun.startTime, duration);
 
   await applyReporterKeep(db, id, body.keep);
 
@@ -258,28 +252,20 @@ export default eventHandler(async (event) => {
 /**
  * One shard of a sharded run reports its end. The shard's token leaves the
  * run's shard tokens in the same write that records its test durations and its
- * span, and moves the run's start and duration to cover it, so a replayed
- * `/finish` finds the token gone and changes nothing. The run's test counters
+ * span and sets the run's start and duration from its shards' spans
+ * (`recordShardEnd`), so a replayed `/finish` finds the token gone and changes
+ * nothing. The run's test counters
  * are not touched: every case (synthesized didnotrun ones included) arrives as
  * a streamed event, which the events endpoint already counted. Only flakyTests
  * adds up here, since the events tally has no flaky notion. The run settles
  * once every shard finished.
  */
-async function finishShard(db: DbClient, id: number, body: Record<string, any>, runStart: Date, duration: number) {
-  const span = shardSpan(
-    { shardIndex: body.shardIndex, startTime: body.startTime, duration, metadata: body.metadata },
-    Date.now(),
-  );
-  const recorded = await updateRunMetadata(
-    db,
-    id,
-    (metadata) => {
-      const remaining = withoutShardToken(metadata, body.streamToken);
-      if (!remaining) return null;
-      return withShardSpan(withShardDurations(remaining, Array.isArray(body.durations) ? body.durations : []), span);
-    },
-    (metadata) => shardedRunSpanUpdate(runStart, metadata),
-  );
+async function finishShard(db: DbClient, id: number, body: Record<string, any>) {
+  const span = shardSpan(body, Date.now());
+  const recorded = await recordShardEnd(db, id, span, (metadata) => {
+    const remaining = withoutShardToken(metadata, body.streamToken);
+    return remaining && withShardDurations(remaining, Array.isArray(body.durations) ? body.durations : []);
+  });
   runEventBus.removeShardToken(id, body.streamToken);
 
   if (!recorded) {
