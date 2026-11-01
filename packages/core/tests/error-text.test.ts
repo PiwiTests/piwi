@@ -4,7 +4,9 @@ import { extractErrorSignature } from '../src/error-signature';
 
 describe('the error of a timed-out test', () => {
   // As Playwright lists them: the timeout first, with no place, then the call it interrupted.
-  const timeout = { message: 'Test timeout of 30000ms exceeded.' };
+  const timeout: { message: string; location?: { file: string; line: number; column: number } } = {
+    message: 'Test timeout of 30000ms exceeded.',
+  };
   const click = {
     message:
       "Error: locator.click: Test timeout of 30000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: 'Log in' })",

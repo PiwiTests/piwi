@@ -276,6 +276,16 @@ export interface FailureClueInput {
 const MAX_CLUES = 8;
 
 const DEFAULT_SLOW_REQUEST_MS = 1500;
+
+/** The clues that say why a locator matched nothing, which `locator-matched-nothing` yields to. */
+const EXPLAINS_NOTHING_MATCHED: ReadonlySet<FailureClueRule> = new Set<FailureClueRule>([
+  'wrong-page',
+  'lock-holder-failed',
+  'slow-request-overlapping-failure',
+  'failed-request-before-failure',
+  'backend-error-attached',
+]);
+
 /**
  * How far past the failure a failed request may be recorded as ending: the
  * capture stamps a response when its body is read, a few ms after the test
@@ -1005,8 +1015,9 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
   // cause; it belongs to the verdict's `since.fixedBefore` and the situation
   // sentence, so it is not emitted here.
 
-  // A wrong page or a failed lock holder says why the locator matched nothing.
-  if (clues.some((c) => c.rule === 'wrong-page' || c.rule === 'lock-holder-failed')) {
+  // A wrong page, a failed lock holder, or a request that was slow, failed or erred on the backend around the failure
+  // says why the locator matched nothing.
+  if (clues.some((c) => EXPLAINS_NOTHING_MATCHED.has(c.rule))) {
     const at = clues.findIndex((c) => c.rule === 'locator-matched-nothing');
     if (at >= 0) clues.splice(at, 1);
   }

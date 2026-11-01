@@ -624,6 +624,15 @@ describe('locator-matched-nothing', () => {
     expect(rules(input)).not.toContain('locator-matched-nothing');
   });
 
+  test('yields to a slow request in flight during the failed step, which says why nothing matched', () => {
+    const input = baseInput({
+      parsedError: parsePlaywrightError(NOT_FOUND),
+      networkRequests: [{ method: 'POST', url: '/api/quote', status: 200, duration: 9_000, startTime: T0 + 1_000 }],
+    });
+    expect(rules(input)).toContain('slow-request-overlapping-failure');
+    expect(rules(input)).not.toContain('locator-matched-nothing');
+  });
+
   test('a time budget spent before the failed step stays its own cause', () => {
     // The failed step ran 3500 ms of 5200: the execution's 5000 ms went mostly to the steps before it.
     const clue = runClues(baseInput({ timeout: 5_200, parsedError: parsePlaywrightError(NOT_FOUND) })).find(
