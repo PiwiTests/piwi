@@ -489,7 +489,7 @@ describe('change coverage section', () => {
               additions: 41,
               deletions: 3,
               reach: 'unreached',
-              draftTitle: 'a scenario that exercises [id].patch.ts',
+              gapId: 31,
             },
             {
               filePath: 'components/OrderRow.vue',
@@ -514,6 +514,15 @@ describe('change coverage section', () => {
     expect(section).not.toContain('OrderRow.vue');
     expect(section).toContain('5 files reached.');
     expect(section).not.toContain('Gate');
+  });
+
+  test('links each uncovered file to its gap, where a draft test is one click away', () => {
+    const section = renderChangeCoverage(coverage({ projectId: 4 }), 'https://piwi.example.com')!;
+    expect(section).toContain(
+      '→ [open its gap](https://piwi.example.com/projects/4?tab=gaps&gap=31): **Accept** copies a draft test',
+    );
+    // Without the instance's address the comment links nothing.
+    expect(renderChangeCoverage(coverage({ projectId: 4 }))).not.toContain('open its gap');
   });
 
   test('reports a clean diff without listing files', () => {
@@ -590,7 +599,6 @@ describe('change coverage section', () => {
                 additions: 5,
                 deletions: 0,
                 reach: 'unreached',
-                draftTitle: 'exercise new.ts',
               },
               {
                 filePath: 'src/old.ts',

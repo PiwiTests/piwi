@@ -193,8 +193,8 @@ export interface PrChangeCoverageFile {
   reach: ChangeReach;
   /** The file's changed lines as the head commit's coverage counts them, when it counts some. */
   lines?: ChangedLines | null;
-  /** A one-line suggestion for the scenario to write, when there is one. */
-  draftTitle?: string | null;
+  /** The file's *changed, unreached* gap, which the comment links to, when there is one. */
+  gapId?: number | null;
 }
 
 export interface PrChangeCoverageTicket {
@@ -222,6 +222,8 @@ export interface PrChangeCoverage {
   filesTruncated?: boolean;
   /** The changed lines the head commit's combined coverage counts. */
   patchCoverage?: PatchCoverage | null;
+  /** The project the gaps are in, for their links. */
+  projectId?: number | null;
 }
 
 /**
@@ -288,7 +290,7 @@ export function hasChangeCoverage(cc: PrChangeCoverage): boolean {
  * part (`fileReach`), the lines coverage's; returns null when neither has
  * anything to say.
  */
-export function renderChangeCoverage(cc: PrChangeCoverage): string | null {
+export function renderChangeCoverage(cc: PrChangeCoverage, origin: string | null = null): string | null {
   if (!hasChangeCoverage(cc)) return null;
   const patch = cc.patchCoverage ?? null;
   const all = cc.tickets.flatMap((group) => group.files);
@@ -316,7 +318,9 @@ export function renderChangeCoverage(cc: PrChangeCoverage): string | null {
         listed++;
         let line = `- ${codeSpan(file.filePath)} · changed (+${file.additions} −${file.deletions}) · 0 tests in ${cc.windowRuns} runs`;
         if (file.lines) line += ` · ${unreachedLinesText(file.lines)}`;
-        if (file.draftTitle) line += `\n  → *${escapeInline(file.draftTitle)}* · draft`;
+        if (file.gapId != null && cc.projectId != null && origin) {
+          line += `\n  → [open its gap](${origin}/projects/${cc.projectId}?tab=gaps&gap=${file.gapId}): **Accept** copies a draft test`;
+        }
         lines.push(line);
       }
       if (lines.length === 0) continue;
@@ -617,7 +621,7 @@ export function buildPrComment(input: PrSummaryInput): string {
   }
 
   if (input.changeCoverage) {
-    const section = renderChangeCoverage(input.changeCoverage);
+    const section = renderChangeCoverage(input.changeCoverage, originOf(input.runUrl));
     if (section) sections.push(section);
   }
 

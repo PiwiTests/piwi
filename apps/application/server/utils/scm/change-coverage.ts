@@ -8,8 +8,8 @@
  * or no SCM token yields no section and no gaps, never an error.
  */
 
-import { desc, eq } from 'drizzle-orm';
-import { projects, testRuns, failureClusters } from '../../database/schema';
+import { and, desc, eq, inArray } from 'drizzle-orm';
+import { projects, testRuns, failureClusters, scenarioGaps } from '../../database/schema';
 import type { DbClient } from '../../database';
 import type { RunMetadata } from '../run-json-types';
 import { normalizeGitUrl, FALLBACK_DEFAULT_BRANCH } from './git-url';
@@ -256,12 +256,6 @@ function toChangedFiles(changes: ScmChanges): ChangedFileInput[] {
   }));
 }
 
-/** A generic, honest draft suggestion for an uncovered changed file. */
-function draftTitleFor(filePath: string): string {
-  const base = filePath.split('/').pop() || filePath;
-  return `a scenario that exercises ${base}`;
-}
-
 /**
  * The pull request a run belongs to and the branch it merges into: the one its
  * CI named, into `namedBase` (the base its CI recorded, else the default branch),
@@ -461,7 +455,40 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
 
   // Withhold the pull-request section's file list when its detector is muted; the
   // rows are already persisted above so the detector can still recover.
-  return { coverage, pr: toPrChangeCoverage(coverage, !muted.has('changed-unreached')), locatorBreaks };
+  const gapIds = await changedUnreachedGapIds(
+    db,
+    run.projectId,
+    coverage.files.filter((f) => f.reach === 'unreached').map((f) => f.filePath),
+  ).catch(() => new Map<string, number>());
+  return {
+    coverage,
+    pr: toPrChangeCoverage(coverage, !muted.has('changed-unreached'), { projectId: run.projectId, gapIds }),
+    locatorBreaks,
+  };
+}
+
+/** The ids of the open *changed, unreached* gaps of these files, by file. */
+async function changedUnreachedGapIds(
+  db: DbClient,
+  projectId: number,
+  filePaths: string[],
+): Promise<Map<string, number>> {
+  const ids = new Map<string, number>();
+  for (let i = 0; i < filePaths.length; i += 100) {
+    const rows = await db
+      .select({ id: scenarioGaps.id, key: scenarioGaps.key })
+      .from(scenarioGaps)
+      .where(
+        and(
+          eq(scenarioGaps.projectId, projectId),
+          eq(scenarioGaps.detector, 'changed-unreached'),
+          inArray(scenarioGaps.status, ['open', 'snoozed', 'accepted']),
+          inArray(scenarioGaps.key, filePaths.slice(i, i + 100)),
+        ),
+      );
+    for (const r of rows) ids.set(r.key, r.id);
+  }
+  return ids;
 }
 
 /**
@@ -569,9 +596,14 @@ export async function readChangeCoverage(
  * withholds the files no test reached, the Test Map's part, and keeps the
  * changed lines.
  */
-export function toPrChangeCoverage(coverage: ChangeCoverage, fileReach = true): PrChangeCoverage {
+export function toPrChangeCoverage(
+  coverage: ChangeCoverage,
+  fileReach = true,
+  gaps: { projectId?: number; gapIds?: ReadonlyMap<string, number> } = {},
+): PrChangeCoverage {
   return {
     fileReach,
+    projectId: gaps.projectId ?? null,
     totalFiles: coverage.countedFiles,
     uncoveredFiles: coverage.uncoveredFiles,
     reachedFiles: coverage.reachedFiles,
@@ -588,7 +620,7 @@ export function toPrChangeCoverage(coverage: ChangeCoverage, fileReach = true): 
         deletions: f.deletions,
         reach: f.reach,
         lines: f.lines,
-        draftTitle: f.reach === 'unreached' ? draftTitleFor(f.filePath) : null,
+        gapId: f.reach === 'unreached' ? (gaps.gapIds?.get(f.filePath) ?? null) : null,
       })),
     })),
   };

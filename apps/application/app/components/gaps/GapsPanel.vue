@@ -64,6 +64,16 @@ appliedLinkedStatus.value = linkedStatus;
 /** The most gaps one request returns; the server caps here, so a full page is truncated. */
 const PAGE_LIMIT = 200;
 
+// A `?gap=` link, such as a pull-request comment's, shows that one gap, whatever its status, without the feature map.
+const linkedGap = computed(() => {
+  const id = Number(route.query.gap);
+  return Number.isInteger(id) && id > 0 ? id : null;
+});
+
+function showAllGaps() {
+  router.replace({ query: { ...route.query, gap: undefined } });
+}
+
 const gaps = ref<Gap[]>([]);
 const loading = ref(false);
 const loadError = ref<string | null>(null);
@@ -102,7 +112,9 @@ async function load() {
   loading.value = true;
   try {
     const res = await $fetch<{ items: Gap[] }>(`/api/projects/${props.projectId}/gaps` as `/api/projects/:id/gaps`, {
-      query: { status: statusFilter.value, limit: PAGE_LIMIT },
+      query: linkedGap.value
+        ? { gap: linkedGap.value, status: 'all', limit: 1 }
+        : { status: statusFilter.value, limit: PAGE_LIMIT },
     });
     gaps.value = res.items ?? [];
     loadError.value = null;
@@ -125,7 +137,7 @@ async function load() {
   }
 }
 
-watch([() => props.projectId, statusFilter], load, { immediate: true });
+watch([() => props.projectId, statusFilter, linkedGap], load, { immediate: true });
 
 /** True once a full page came back — the server capped the list, so some are hidden. */
 const capped = computed(() => gaps.value.length >= PAGE_LIMIT);
@@ -327,6 +339,11 @@ const emptyText = computed(() =>
       </div>
     </div>
 
+    <p v-if="linkedGap" class="text-xs text-muted" data-testid="gaps-linked">
+      Showing the gap a link named.
+      <button type="button" :class="SENTENCE_LINK_CLASS" @click="showAllGaps">Show all gaps</button>
+    </p>
+
     <p v-if="mutedDetectors.length > 0" class="text-xs text-muted">
       Muted on this project (below 60% precision over 20+ verdicts; their gaps are listed last and left out of the PR
       comment and the gaps digest):
@@ -334,6 +351,7 @@ const emptyText = computed(() =>
     </p>
 
     <SectionCard
+      v-if="!linkedGap"
       title="Feature map"
       subtitle="The project graph folded per feature — click one to open it in the graph"
     >
@@ -380,7 +398,7 @@ const emptyText = computed(() =>
                     gap.class
                   }}</UBadge>
                   <span v-if="gap.kind === 'finding'" class="text-xs text-muted">finding</span>
-                  <span v-if="statusFilter !== 'open'" class="text-xs text-muted">{{ gap.status }}</span>
+                  <span v-if="statusFilter !== 'open' || linkedGap" class="text-xs text-muted">{{ gap.status }}</span>
                   <span class="text-xs text-muted font-mono">{{ gap.detector }}</span>
                 </div>
                 <p class="mt-1 text-sm text-highlighted leading-relaxed">{{ gap.title }}</p>

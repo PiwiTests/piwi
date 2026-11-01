@@ -7498,89 +7498,93 @@ async function openQuarantineLossScene(page, goto, settle, reach) {
  */
 async function uncoveredChangesMarkdown() {
   const { renderChangeCoverage } = await import('../shared/pr-feedback.ts');
-  return renderChangeCoverage({
-    fileReach: true,
-    totalFiles: 7,
-    uncoveredFiles: 3,
-    reachedFiles: 4,
-    notCounted: { notObservable: 1, outOfScope: 2, deleted: 0 },
-    ticketCount: 2,
-    windowRuns: 30,
-    patchCoverage: {
-      commit: 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678',
-      changedLines: 41,
-      executedLines: 34,
-      unitLines: 28,
-      e2eLines: 19,
-      undeterminedLines: 0,
-      suites: [
-        { name: 'unit-front', kind: 'unit', executedLines: 22 },
-        { name: 'unit-back', kind: 'unit', executedLines: 6 },
-        { name: 'e2e', kind: 'e2e', executedLines: 19 },
-      ],
-      areas: [
-        { name: 'front', changedLines: 30, executedLines: 28 },
-        { name: 'back', changedLines: 11, executedLines: 6 },
-      ],
-      files: 6,
-    },
-    tickets: [
-      {
-        ticket: 'PROJ-418',
-        files: [
-          {
-            filePath: 'server/api/orders/[id].patch.ts',
-            additions: 41,
-            deletions: 3,
-            reach: 'unreached',
-            draftTitle: 'a scenario that exercises [id].patch.ts',
-          },
-          {
-            filePath: 'server/utils/order-status.ts',
-            additions: 12,
-            deletions: 4,
-            reach: 'unreached',
-            lines: { changed: 5, ran: 0, undetermined: 0, notRun: [[14, 18]] },
-            draftTitle: 'a scenario that moves an order to shipped',
-          },
-          {
-            filePath: 'app/pages/orders/[id].vue',
-            additions: 9,
-            deletions: 2,
-            reach: 'reached',
-            lines: { changed: 9, ran: 7, undetermined: 0, notRun: [[31, 32]] },
-          },
-          {
-            filePath: 'server/api/orders/index.get.ts',
-            additions: 6,
-            deletions: 1,
-            reach: 'reached',
-            lines: {
-              changed: 6,
-              ran: 4,
-              undetermined: 0,
-              notRun: [
-                [18, 18],
-                [24, 24],
-              ],
+  return renderChangeCoverage(
+    {
+      projectId: 4,
+      fileReach: true,
+      totalFiles: 7,
+      uncoveredFiles: 3,
+      reachedFiles: 4,
+      notCounted: { notObservable: 1, outOfScope: 2, deleted: 0 },
+      ticketCount: 2,
+      windowRuns: 30,
+      patchCoverage: {
+        commit: 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678',
+        changedLines: 41,
+        executedLines: 34,
+        unitLines: 28,
+        e2eLines: 19,
+        undeterminedLines: 0,
+        suites: [
+          { name: 'unit-front', kind: 'unit', executedLines: 22 },
+          { name: 'unit-back', kind: 'unit', executedLines: 6 },
+          { name: 'e2e', kind: 'e2e', executedLines: 19 },
+        ],
+        areas: [
+          { name: 'front', changedLines: 30, executedLines: 28 },
+          { name: 'back', changedLines: 11, executedLines: 6 },
+        ],
+        files: 6,
+      },
+      tickets: [
+        {
+          ticket: 'PROJ-418',
+          files: [
+            {
+              filePath: 'server/api/orders/[id].patch.ts',
+              additions: 41,
+              deletions: 3,
+              reach: 'unreached',
+              gapId: 31,
             },
-          },
-        ],
-      },
-      {
-        ticket: 'PROJ-421',
-        files: [
-          {
-            filePath: 'app/components/RefundDialog.vue',
-            additions: 28,
-            deletions: 0,
-            reach: 'unreached',
-            draftTitle: 'a scenario that opens the refund dialog',
-          },
-        ],
-      },
-    ],
-  });
+            {
+              filePath: 'server/utils/order-status.ts',
+              additions: 12,
+              deletions: 4,
+              reach: 'unreached',
+              lines: { changed: 5, ran: 0, undetermined: 0, notRun: [[14, 18]] },
+              gapId: 32,
+            },
+            {
+              filePath: 'app/pages/orders/[id].vue',
+              additions: 9,
+              deletions: 2,
+              reach: 'reached',
+              lines: { changed: 9, ran: 7, undetermined: 0, notRun: [[31, 32]] },
+            },
+            {
+              filePath: 'server/api/orders/index.get.ts',
+              additions: 6,
+              deletions: 1,
+              reach: 'reached',
+              lines: {
+                changed: 6,
+                ran: 4,
+                undetermined: 0,
+                notRun: [
+                  [18, 18],
+                  [24, 24],
+                ],
+              },
+            },
+          ],
+        },
+        {
+          ticket: 'PROJ-421',
+          files: [
+            {
+              filePath: 'app/components/RefundDialog.vue',
+              additions: 28,
+              deletions: 0,
+              reach: 'unreached',
+              gapId: 33,
+            },
+          ],
+        },
+      ],
+    },
+    'https://piwi.example.com',
+  );
 }
 
 /** The pull-request comment of a run with a new regression, a failure that predates the change, a flake and a fix. */

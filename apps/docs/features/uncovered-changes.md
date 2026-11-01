@@ -11,8 +11,8 @@ lang: en-US
 A pull request that changes `server/api/orders/[id].patch.ts` while no test ever requests that route passes CI and
 proves nothing about the change. When a run finishes, Piwi joins the files its change touched to the tests that
 [observably reach](/guide/concepts#reach) them, and names the changed files nothing reaches: the **uncovered
-changes**. Each one is a *changed, unreached* [scenario gap](/features/scenario-gaps); its draft holds the file and
-the evidence, and no steps, since no test leads to it. When the head commit has
+changes**. Each one is a *changed, unreached* [scenario gap](/features/scenario-gaps). Its draft starts from the route or
+page the file serves, or the nearest one a test reaches under the same path, with that test named. When the head commit has
 [combined coverage](/features/combined-coverage), the same section counts the changed lines too, and names those no
 suite ran, in every file.
 
@@ -68,7 +68,7 @@ Changed files no test reached, in this run or the last 30 runs. Observed reach, 
 
 **PROJ-418**
 - `server/api/orders/[id].patch.ts` · changed (+41 −3) · 0 tests in 30 runs
-  → *a scenario that exercises [id].patch.ts* · draft
+  → [open its gap](https://piwi.example.com/projects/4?tab=gaps&gap=31): **Accept** copies a draft test
 ```
 
 When the head commit has [combined coverage](/features/combined-coverage), the section also counts the change's lines

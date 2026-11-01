@@ -56,7 +56,12 @@ import {
   runBaseUrls,
   linkNodeKey,
   templateAccessibleName,
+  fileRouteTarget,
+  filePageTarget,
+  routeKeyMatchesTarget,
+  pageKeyMatchesTarget,
 } from '../graph';
+import { pathSegments } from '@piwitests/core/file-routes';
 import { LOCATING_METHODS, isInteractionAction, tryParseLocatorChain, type LocatorArg } from '../locator-chain';
 import {
   scoreTargetMatch,
@@ -3738,6 +3743,8 @@ function mapGapRow(r: typeof scenarioGaps.$inferSelect): ScenarioGapRow {
 }
 
 export interface GapFilters {
+  /** One gap by its id. */
+  gapId?: number;
   kind?: string;
   class?: string;
   detector?: string;
@@ -3763,6 +3770,7 @@ export async function listScenarioGaps(
   const where = [eq(scenarioGaps.projectId, projectId)];
   if (filters.status && filters.status !== 'all') where.push(eq(scenarioGaps.status, filters.status));
   else if (!filters.status) where.push(eq(scenarioGaps.status, 'open'));
+  if (filters.gapId != null) where.push(eq(scenarioGaps.id, filters.gapId));
   if (filters.kind) where.push(eq(scenarioGaps.kind, filters.kind));
   if (filters.class) where.push(eq(scenarioGaps.class, filters.class));
   if (filters.detector) where.push(eq(scenarioGaps.detector, filters.detector));
@@ -4310,6 +4318,78 @@ export async function issueScenarioDraft(
   return draft;
 }
 
+/**
+ * Where a changed file's draft starts: the route or page the file serves by the
+ * file-routing convention (`own`), when a test reaches it; else the reached route
+ * or page nearest it, the one sharing the most leading path segments (two at
+ * least, or all of a shorter path), whose page and test the draft borrows. Null
+ * for a file the convention maps to nothing.
+ */
+async function fileDraftAnchor(
+  db: DrizzleDB,
+  projectId: number,
+  filePath: string,
+): Promise<{ anchor: GapSubject; own: GapSubject | null } | null> {
+  const routeTarget = fileRouteTarget(filePath);
+  const pageTarget = routeTarget ? null : filePageTarget(filePath);
+  const target = routeTarget ?? pageTarget;
+  if (!target) return null;
+  const kind = routeTarget ? 'route' : 'page';
+  const matches = (key: string) =>
+    routeTarget ? routeKeyMatchesTarget(routeTarget, key) : pageKeyMatchesTarget(pageTarget!, key);
+
+  const nodes = await db
+    .select({ key: graphNodes.key })
+    .from(graphNodes)
+    .where(
+      and(
+        eq(graphNodes.projectId, projectId),
+        eq(graphNodes.kind, kind),
+        isNull(graphNodes.branch),
+        isNull(graphNodes.prunedAt),
+      ),
+    );
+  const ownKey = nodes.find((n) => matches(n.key))?.key ?? null;
+  const own: GapSubject | null = ownKey ? { kind, key: ownKey } : null;
+  const reached = new Set(
+    (
+      await db
+        .selectDistinct({ key: graphEdges.toKey })
+        .from(graphEdges)
+        .where(
+          and(
+            eq(graphEdges.projectId, projectId),
+            eq(graphEdges.kind, 'reaches'),
+            eq(graphEdges.toKind, kind),
+            isNull(graphEdges.branch),
+          ),
+        )
+    ).map((r) => r.key),
+  );
+  if (ownKey && reached.has(ownKey)) return { anchor: { kind, key: ownKey }, own };
+
+  const needed = Math.min(2, target.segments.length);
+  let best: { key: string; shared: number } | null = null;
+  for (const key of reached) {
+    const segments = pathSegments(kind === 'route' ? parseRouteNodeKey(key).pattern : key);
+    let shared = 0;
+    while (
+      shared < Math.min(segments.length, target.segments.length) &&
+      (target.segments[shared] === CONVENTION_PARAM || target.segments[shared] === segments[shared])
+    ) {
+      shared++;
+    }
+    if (shared >= needed && (!best || shared > best.shared || (shared === best.shared && key < best.key))) {
+      best = { key, shared };
+    }
+  }
+  if (best) return { anchor: { kind, key: best.key }, own };
+  return own ? { anchor: own, own } : null;
+}
+
+/** The segment a file-routing `[param]` reads as, which matches any value. */
+const CONVENTION_PARAM = '\x00';
+
 export async function draftScenario(db: DrizzleDB, projectId: number, gapId: number): Promise<ScenarioDraft | null> {
   const [gap] = await db
     .select()
@@ -4318,11 +4398,25 @@ export async function draftScenario(db: DrizzleDB, projectId: number, gapId: num
   if (!gap) return null;
 
   const subject = subjectFromGapKey(gap.key);
-  const evidence = Array.isArray(gap.evidence) ? (gap.evidence as string[]) : [];
+  const evidence = Array.isArray(gap.evidence) ? [...(gap.evidence as string[])] : [];
+  // The node the path and the nearest test come from: the gap's own, or for a
+  // changed file, the route or page it serves, else the nearest one a test reaches.
+  let anchor: GapSubject = subject;
+  let assertionSubject: GapSubject = subject;
+  if (subject.kind === 'file') {
+    const start = await fileDraftAnchor(db, projectId, subject.key);
+    if (start) {
+      anchor = start.anchor;
+      if (start.own) assertionSubject = start.own;
+      if (!start.own || start.own.key !== start.anchor.key) {
+        evidence.push(`Starts from ${start.anchor.kind} ${start.anchor.key}, the nearest one a test reaches.`);
+      }
+    }
+  }
 
   // Nearest test: the gap's own, else a test reaching the subject node.
   let nearestTestId = gap.testCaseId ?? null;
-  if (nearestTestId == null && (subject.kind === 'route' || subject.kind === 'page' || subject.kind === 'control')) {
+  if (nearestTestId == null && (anchor.kind === 'route' || anchor.kind === 'page' || anchor.kind === 'control')) {
     const [edge] = await db
       .select({ fromKey: graphEdges.fromKey })
       .from(graphEdges)
@@ -4330,8 +4424,8 @@ export async function draftScenario(db: DrizzleDB, projectId: number, gapId: num
         and(
           eq(graphEdges.projectId, projectId),
           eq(graphEdges.kind, 'reaches'),
-          eq(graphEdges.toKind, subject.kind),
-          eq(graphEdges.toKey, subject.key),
+          eq(graphEdges.toKind, anchor.kind),
+          eq(graphEdges.toKey, anchor.key),
           isNull(graphEdges.branch),
         ),
       )
@@ -4363,10 +4457,10 @@ export async function draftScenario(db: DrizzleDB, projectId: number, gapId: num
   // Path: a reached page nearest the subject.
   const path: string[] = [];
   let pageForCatalog: string | null = null;
-  if (subject.kind === 'page') {
-    pageForCatalog = subject.key;
-    path.push(gotoStep(subject.key));
-  } else if (subject.kind === 'control' || subject.kind === 'route') {
+  if (anchor.kind === 'page') {
+    pageForCatalog = anchor.key;
+    path.push(gotoStep(anchor.key));
+  } else if (anchor.kind === 'control' || anchor.kind === 'route') {
     // A page that contains the control, or loads/triggers the route.
     const [edge] = await db
       .select({ pageKey: graphEdges.fromKey })
@@ -4374,10 +4468,10 @@ export async function draftScenario(db: DrizzleDB, projectId: number, gapId: num
       .where(
         and(
           eq(graphEdges.projectId, projectId),
-          inArray(graphEdges.kind, subject.kind === 'control' ? ['contains'] : ['loads', 'triggers']),
+          inArray(graphEdges.kind, anchor.kind === 'control' ? ['contains'] : ['loads', 'triggers']),
           eq(graphEdges.fromKind, 'page'),
-          eq(graphEdges.toKind, subject.kind),
-          eq(graphEdges.toKey, subject.key),
+          eq(graphEdges.toKind, anchor.kind),
+          eq(graphEdges.toKey, anchor.key),
           isNull(graphEdges.branch),
         ),
       )
@@ -4386,8 +4480,8 @@ export async function draftScenario(db: DrizzleDB, projectId: number, gapId: num
       pageForCatalog = edge.pageKey;
       path.push(gotoStep(edge.pageKey));
     }
-    if (subject.kind === 'control') {
-      const [role, ...nameParts] = subject.key.split(':');
+    if (anchor.kind === 'control') {
+      const [role, ...nameParts] = anchor.key.split(':');
       const name = nameParts.join(':');
       path.push(`await page.getByRole(${q(role ?? 'button')}, { name: ${q(name)} }).click();`);
     }
@@ -4416,7 +4510,7 @@ export async function draftScenario(db: DrizzleDB, projectId: number, gapId: num
   return renderScenarioDraft({
     gapTitle: gap.title,
     gapClass: gap.class,
-    subject,
+    subject: assertionSubject,
     nearestTest,
     path,
     catalogMethods,
