@@ -17,7 +17,7 @@ Failed executions sharing an **error fingerprint** join one cluster, so twenty s
 *"20 failures, 3 root causes"*. Clustering is always on.
 
 - The fingerprint **masks volatile fragments** of the error: timeouts and other numbers, UUIDs and hashes, URLs and
-  emails, the *expected* and *received* values of an assertion, and dynamic locator options such as the
+  emails, an assertion's *expected* and *received* values, and dynamic locator options such as the
   `{ name: '…' }` of a table row, wherever the error prints the locator. The locator target itself (the test id, the
   role) still tells different failures apart.
 - It is **call-site agnostic**: the failing stack frame is shown for context but does not split a cluster, so one root
@@ -43,14 +43,14 @@ With an embedding model configured, near-duplicate clusters that the fingerprint
 ## The failure inbox
 
 The **Failure inbox** on Home lists up to 50 open failure clusters across the projects you can see, most
-recently seen first. Each row shows the cluster's **headline**, its **top clue**, the **owner or assignee**, the
+recently seen first. Each row shows the cluster's **headline**, **top clue**, **owner or assignee**,
 **affected-test count**, when it was **last seen**, and only the exceptional **badges**, such as a regression on the
 default branch. A cluster seen in developers' local runs and never in CI, in a project that runs in CI, stays out: the
 inbox says how many, and **Show them** lists them.
 
 ### Queues
 
-The inbox is split into queues, each with a live count, shareable in the URL as `?queue=`.
+The inbox has queues, each with a live count, shareable in the URL as `?queue=`.
 
 | Queue | What it holds |
 |---|---|
@@ -76,9 +76,8 @@ to its site unfurl and stay in sync (see [issue tracking](/features/issue-tracki
 ## Owners and assignees
 
 A cluster's **owner** is derived, not stored: it comes from the failing test's `piwi:owner` annotation; the
-cluster and execution pages (not the inbox) fall back to the repository's `CODEOWNERS`. **Assigning** the cluster to a person overrides it,
-and the **Mine** queue matches either one against the
-signed-in user (by name or email).
+cluster and execution pages (not the inbox) fall back to the repository's `CODEOWNERS`. An **assignee** overrides it, and the **Mine** queue
+matches either against the signed-in user (by name or email).
 
 ## The cluster page
 
@@ -129,7 +128,7 @@ long the cluster was open. Three verdicts:
 | **Diagnosis verified** | The commits since the last failing run touched a file the [suggested patch](./ai-diagnosis#what-a-diagnosis-contains) named. |
 | **Regressed** | A fix was recorded, and the cluster is failing again. |
 
-**Every affected test must pass**: a test that did not run counts against the fix. A filtered run covering all of it can close
+**Every affected test must pass**: a test that did not run counts against the fix. A filtered run covering them all can close
 the cluster, so `--grep` over exactly the affected tests is enough.
 
 **The commit must have changed.** A run at the commit the cluster last failed at (a CI retry, or **Re-run in CI**)
