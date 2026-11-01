@@ -21,7 +21,6 @@ describe('compileCoverageScope', () => {
       'src/Shop/bin/Release/x.cs',
       'src/Shop/Resources.Designer.cs',
       'src/Shop/Grpc.g.cs',
-      'e2e/checkout.page.ts',
       'playwright.config.ts',
       'apps/web/dist/assets/index-3f2a.js',
       'apps/web/.next/server/app/page.js',
@@ -30,11 +29,19 @@ describe('compileCoverageScope', () => {
       'src/api/client.gen.ts',
       'src/graphql/__generated__/types.ts',
       'src/env.d.ts',
-      'coverage/lcov-report/index.js',
     ]) {
       expect(inScope(path), path).toBe(false);
     }
-    expect(inScope('src/builder/order.ts')).toBe(true);
+    // An exclude names a folder at any depth, so the defaults name no folder product code is often kept in.
+    for (const path of [
+      'src/builder/order.ts',
+      'src/features/build/BuildStatus.vue',
+      'src/insurance/coverage/CoverageCard.tsx',
+      'src/marketing/target/Audience.ts',
+      'src/services/e2e/encryption.ts',
+    ]) {
+      expect(inScope(path), path).toBe(true);
+    }
   });
 
   it('counts only what an include pattern names, and an exclude wins over it', () => {
