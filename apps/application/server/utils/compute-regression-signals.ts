@@ -6,16 +6,16 @@ import { resolveDefaultBranch } from './scm/default-branch';
 import { FALLBACK_DEFAULT_BRANCH } from './scm/git-url';
 import { selectBaselineRun } from './branch-baseline';
 import { resolveFallbackBranch } from '#shared/handlers/baseline-scope';
-import { flakyFinalAttempts, testOutcomes } from '#shared/utils/test-counts';
+import { finalAttempts, flakyFinalAttempts, testOutcomes } from '#shared/utils/test-counts';
 
 /** Execution ids one flag UPDATE sets at most. */
 const UPDATE_BATCH = 500;
 
 /**
- * Compute isNewRegression and isNewFlaky signals for all test_runs_cases
- * in a finished run by comparing against the passing baseline the run-level
- * ladder picks: the same environment first, and within it the same branch,
- * else the branch it forked from, else any branch.
+ * Compute the isNewRegression and isNewFlaky signals of a finished run, on the
+ * final attempt of each repetition of its tests, by comparing against the
+ * passing baseline the run-level ladder picks: the same environment first, and
+ * within it the same branch, else the branch it forked from, else any branch.
  */
 export async function computeRegressionSignals(db: DB, runId: number): Promise<void> {
   const runResults: any[] = await db
@@ -89,7 +89,8 @@ export async function computeRegressionSignals(db: DB, runId: number): Promise<v
   const newRegressionIds: number[] = [];
   const newFlakyIds: number[] = [];
 
-  for (const cc of currentCases) {
+  // Each repetition's final attempt: an earlier attempt of a retried test is not a result of its own.
+  for (const cc of finalAttempts(currentCases)) {
     const baseline = baselineByCaseId.get(cc.testCaseId);
     if (!baseline) continue;
 

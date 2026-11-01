@@ -58,12 +58,33 @@ describe('computeRegressionSignals', () => {
       })
       .from(schema.testRunsCases)
       .where(eq(schema.testRunsCases.testRunId, 2));
-    const finals = rows.filter((row) => row.testCaseId % 3 !== 2 || row.retries === 1);
-    expect(finals).toHaveLength(cases);
-    for (const row of finals) {
+    expect(rows).toHaveLength(cases + rows.filter((row) => row.retries === 1).length);
+    for (const row of rows) {
+      // A flaky test's failed first attempt is no new regression: the test passed in the run.
       expect(row.isNewRegression).toBe(row.testCaseId % 3 === 1 ? 1 : null);
-      expect(row.isNewFlaky).toBe(row.testCaseId % 3 === 2 ? 1 : null);
+      expect(row.isNewFlaky).toBe(row.testCaseId % 3 === 2 && row.retries === 1 ? 1 : null);
     }
+  });
+
+  test('flags a regression on the final attempt of a test that failed on every attempt', async () => {
+    await db.insert(schema.testCases).values([{ id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'pays' }]);
+    await db.insert(schema.testRuns).values([
+      { id: 1, projectId: 1, status: 'passed', startTime: new Date('2026-10-01T10:00:00Z'), branch: 'main' },
+      { id: 2, projectId: 1, status: 'failed', startTime: new Date('2026-10-02T10:00:00Z'), branch: 'main' },
+    ]);
+    await db.insert(schema.testRunsCases).values([
+      { testRunId: 1, testCaseId: 1, status: 'passed', retries: 0 },
+      { testRunId: 2, testCaseId: 1, status: 'failed', retries: 0 },
+      { testRunId: 2, testCaseId: 1, status: 'timedout', retries: 1 },
+    ]);
+
+    await computeRegressionSignals(db as never, 2);
+
+    const flagged = await db
+      .select({ retries: schema.testRunsCases.retries })
+      .from(schema.testRunsCases)
+      .where(eq(schema.testRunsCases.isNewRegression, 1));
+    expect(flagged).toEqual([{ retries: 1 }]);
   });
 
   test('flags no retry that passed after attempts that passed, here or in the baseline', async () => {

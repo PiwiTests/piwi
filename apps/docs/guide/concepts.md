@@ -116,7 +116,8 @@ repository's default branch read from the SCM provider, else `main`. The **base 
 pull-request run is the branch the CI provider says the pull request targets (`GITHUB_BASE_REF` and its
 equivalents), or `PIWI_BASE_BRANCH` when you set it — see [Branches](/features/branches).
 
-Two derived flags are stored per execution:
+Two derived flags are stored on the last attempt of each test in a run (of each repetition with
+`--repeat-each`), never on an earlier attempt of a retried test:
 
 - **New regression** — passed in the baseline, fails now.
 - **New flaky** — passed in the baseline with no failed attempt, flaky now.
