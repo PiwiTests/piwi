@@ -17,13 +17,13 @@ Failed executions sharing an **error fingerprint** join one cluster, so twenty s
 *"20 failures, 3 root causes"*. Clustering is always on.
 
 - The fingerprint **masks volatile fragments** of the error: timeouts and other numbers, UUIDs and hashes, URLs and
-  emails, the *expected* and *received* values of an assertion, and dynamic locator options such as the
+  emails, an assertion's *expected* and *received* values, and dynamic locator options such as the
   `{ name: '…' }` of a table row, wherever the error prints the locator. The locator target itself (the test id, the
   role) still tells different failures apart.
 - It is **call-site agnostic**: the failing stack frame is shown for context but does not split a cluster, so one root
   cause reached from several spec files stays one cluster.
-- The fingerprint comes from the error that created the cluster, so an improved normalization regroups clusters in
-  place, keeping their triage, notes and diagnoses.
+- The fingerprint is computed from the error the cluster was created from, so an improved normalization
+  regroups clusters in place and keeps their triage, notes and diagnoses.
 - A run's **Tests** tab can group its failures by cluster, each group with its triage status; the
   `get_failure_groups` [MCP tool](/reference/mcp-tools#get_failure_groups) adds a **worker-correlation** flag: "the
   app is broken" versus "worker 3 is misbehaving".
@@ -32,7 +32,7 @@ Failed executions sharing an **error fingerprint** join one cluster, so twenty s
   <img src="/diagrams/failure-clustering-fingerprint.svg" alt="The fingerprint pipeline: a raw error is normalized, hashed and routed to one cluster">
 </figure>
 
-With an embedding model configured, near-duplicate clusters the fingerprint keeps apart are merged too: see
+With an embedding model configured, near-duplicate clusters that the fingerprint keeps apart are merged too: see
 [semantic merging](./ai-diagnosis#semantic-merging-optional).
 
 <figure>
@@ -43,7 +43,7 @@ With an embedding model configured, near-duplicate clusters the fingerprint keep
 ## The failure inbox
 
 The **Failure inbox** on Home lists up to 50 open failure clusters across the projects you can see, most
-recently seen first. Each row shows the cluster's **headline**, its **top clue**, the **owner or assignee**, the
+recently seen first. Each row shows the cluster's **headline**, **top clue**, **owner or assignee**,
 **affected-test count**, when it was **last seen**, and only the exceptional **badges**, such as a regression on the
 default branch. A cluster seen in developers' local runs and never in CI, in a project that runs in CI, stays out: the
 inbox says how many, and **Show them** lists them.
@@ -76,9 +76,8 @@ to its site unfurl and stay in sync (see [issue tracking](/features/issue-tracki
 ## Owners and assignees
 
 A cluster's **owner** is derived, not stored: it comes from the failing test's `piwi:owner` annotation; the
-cluster and execution pages (not the inbox) fall back to the repository's `CODEOWNERS`. **Assigning** the cluster to a person overrides it,
-and the **Mine** queue matches either one against the
-signed-in user (by name or email).
+cluster and execution pages (not the inbox) fall back to the repository's `CODEOWNERS`. An **assignee** overrides it, and the **Mine** queue
+matches either against the signed-in user (by name or email).
 
 ## The cluster page
 
@@ -129,8 +128,8 @@ long the cluster was open. Three verdicts:
 | **Diagnosis verified** | The commits since the last failing run touched a file the [suggested patch](./ai-diagnosis#what-a-diagnosis-contains) named. |
 | **Regressed** | A fix was recorded, and the cluster is failing again. |
 
-**Every affected test must pass**: a test that did not run counts against the fix. A filtered run covering all of it can close
-the cluster: `--grep` over exactly the affected tests is enough.
+**Every affected test must pass**: a test that did not run counts against the fix. A filtered run covering them all can close
+the cluster, so `--grep` over exactly the affected tests is enough.
 
 **The commit must have changed.** A run at the commit the cluster last failed at (a CI retry, or **Re-run in CI**)
 proves nothing was fixed: Piwi records it as flake evidence and the state line says *passed again at the same commit,
