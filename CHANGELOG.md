@@ -4,1380 +4,1864 @@
 
 ## [0.63.0](https://github.com/PiwiTests/piwi/compare/v0.62.0...v0.63.0) (2026-10-29)
 
+This release lets a developer share a run on their own machine live with the team instance and watch each worker's page as it runs, serves runs to coding agents over MCP from the editors and the desktop app, makes the desktop app the hub of the runs it starts, and takes a CI failure to a debugger stopped at its failing line.
+
+**Full diff:** [v0.62.0…v0.63.0](https://github.com/PiwiTests/piwi/compare/v0.62.0...v0.63.0)
+
+### ✨ Highlights
+
+- **📡 Share a local run live** — A run on a developer's machine can be shared live with the team instance from VS Code, JetBrains, Piwi Picker's Runs window, the desktop app's Local runs tray or the editor service, and stopped at any time; the run page shows the shared run and says how to share one when nobody does.
+- **👀 Watch each worker live** — In a project that turns it on, the run page shows each worker's page of a live run while someone watches, and Piwi Picker can watch and steer a headless stopped page, pick on its image and reach remote windows.
+- **🤖 Runs for coding agents over MCP** — The editor service, VS Code, JetBrains IDEs and the desktop app serve their runs to agents as an MCP server: agents follow, steer and read runs, read and act on a stopped page, and get back the code they made.
+- **🖥️ The desktop app as run hub** — The desktop app's bundled server is the hub of the runs its shell starts: they show live in its window with their code to copy, appear in Piwi Picker's Runs window, and each one has a Hold failures switch; desktop notifications work with no setup.
+- **🛑 End a stopped test, steer terminal runs** — End the test is offered at a stop in the editors, the Runs window and the desktop tray, and a run started in a terminal follows the editor and can be steered from it.
+- **🐞 Debug in my editor** — A failure's failing line offers Debug in my editor, which runs the failed test from a debug link and stops once at that line.
+- **🔁 Clearer re-runs** — Each re-run says what it runs, one test can be re-run from its execution page (in CI too), and each cluster gets one test selection.
+- **📦 Whole-run offline exports** — A whole run can be exported for offline reading, and the offline exports and the quality report have a clearer layout.
+- **🔔 Richer notifications** — Emails, Slack and Teams messages show outcomes, history and the failing code, highlighted in emails.
 
 ### Features
 
-* **app:** add Debug in my editor beside a failure's failing line ([c9a8313](https://github.com/PiwiTests/piwi/commit/c9a831339187b342d9713ac22eb9186e9e72ec9d))
-* **app:** collect a whole run for an offline export ([2b903fc](https://github.com/PiwiTests/piwi/commit/2b903fc9fad6fcaee9c5b55d83ff11ef8cb23bcf))
-* **app:** desktop notifications with no setup, and no server-only settings in the desktop app ([18ecc58](https://github.com/PiwiTests/piwi/commit/18ecc58752715e633cd13b2a4a1ea616ae0f1bb2))
-* **app:** desktop notifications with no setup, and no server-only settings in the desktop app ([b07a0dd](https://github.com/PiwiTests/piwi/commit/b07a0dda29a43d29c0506f3a9a68ffafc275f580))
-* **app:** give the offline exports and the quality report a clearer layout ([034c2f0](https://github.com/PiwiTests/piwi/commit/034c2f0f8a93c4a025b820f23357988cd4362a4e))
-* **app:** let coding agents follow, steer and read the desktop app's own runs from its MCP server ([8368926](https://github.com/PiwiTests/piwi/commit/8368926d9c6a56128e146d9806a25fa591730d45))
-* **app:** let each desktop run hold its failures with a Hold failures switch ([c143df5](https://github.com/PiwiTests/piwi/commit/c143df5db9a84b23470bd8e1d6efceaf91dc946f))
-* **app:** make the desktop server the hub of the runs its shell starts ([02b3a9a](https://github.com/PiwiTests/piwi/commit/02b3a9a14528abed9aa8f4c7d279ece05c240507))
-* **app:** offer End the test in the desktop app's Local runs tray ([f1bc418](https://github.com/PiwiTests/piwi/commit/f1bc41889af616f4f2da8aeca684bc934e11dee2))
-* **app:** one test selection per cluster, CI re-run of one test, and clearer local re-runs ([f9c9dc9](https://github.com/PiwiTests/piwi/commit/f9c9dc9c64c72258dc1aef6e52c2e24467963d99))
-* **app:** refresh the offline exports and the quality report, and export a whole run ([82e2b0a](https://github.com/PiwiTests/piwi/commit/82e2b0aee91dab056c2b7aa22be478849ddfb054))
-* **app:** render a whole run in the offline exports ([94ded87](https://github.com/PiwiTests/piwi/commit/94ded87e4f6d9078b584b3ea652003702205c19f))
-* **app:** say on a run's running tests that nobody shares it live, and how to ([bcfb040](https://github.com/PiwiTests/piwi/commit/bcfb0409851cfd233da03cb6d6164e4cacd29132))
-* **app:** say on a run's running tests that nobody shares it live, and how to ([de3fef4](https://github.com/PiwiTests/piwi/commit/de3fef4f6c2c04796af2f316891dc33be65b88a6))
-* **app:** say what each desktop re-run runs, and re-run an execution from its header ([e0787be](https://github.com/PiwiTests/piwi/commit/e0787be10401dec1cf50b358fadad96f09d9995d))
-* **app:** say what each re-run runs, and re-run one test from its execution page ([3688315](https://github.com/PiwiTests/piwi/commit/3688315a049e1616cf8d1ca939c2f00e960dbdc9))
-* **app:** serve the desktop app's runs to agents from its MCP server ([d82491f](https://github.com/PiwiTests/piwi/commit/d82491f38e224dd054aa8887c1fa450b35d52d83))
-* **app:** share a run live from the desktop app's Local runs tray ([b1dffbc](https://github.com/PiwiTests/piwi/commit/b1dffbce1056a65390af7686f8546ff122f73de1))
-* **app:** show a run a developer shares live, and end its views when they stop ([337d13a](https://github.com/PiwiTests/piwi/commit/337d13ae7514866697a8ae5fd15aaa529f65ce7c))
-* **app:** show the desktop app's runs live in its window, with their code to copy ([90b625f](https://github.com/PiwiTests/piwi/commit/90b625f56be7ea39a96fbd6108bec2b138cc2fb0))
-* **app:** watch each worker of a live CI run from the run page, in a project that turns it on ([79964d9](https://github.com/PiwiTests/piwi/commit/79964d95802075d230632672d9e30092f9c056b7))
-* **app:** watch each worker of a live run from the run page, in a project that turns it on ([7526c3c](https://github.com/PiwiTests/piwi/commit/7526c3cedce19626849f33109f1daa2e6bcc7911))
-* **demo:** calm the showcase cut's camera, enlarge its dashboard, and harden the take and cut ([7145afe](https://github.com/PiwiTests/piwi/commit/7145afe448022755c1ec9188dd316e28510c1002))
-* **demo:** film the showcase on a virtual screen and cut it into the video ([c8adc58](https://github.com/PiwiTests/piwi/commit/c8adc58e2ca588c1489bc6346941b2a343366e98))
-* **desktop:** name the bundled server as the hub of each run the shell starts ([e1856f8](https://github.com/PiwiTests/piwi/commit/e1856f8c1b278dfdf56d678a6dae0dba1bfa8072))
-* **desktop:** name the bundled server as where the runs' picks go ([a443836](https://github.com/PiwiTests/piwi/commit/a44383669ee6765c6a69884d7cf94e535c401b0f))
-* **extension:** list the desktop app's runs in the Runs window ([c1ebf3f](https://github.com/PiwiTests/piwi/commit/c1ebf3f64b5c87405922ee502540bfb534de551b))
-* **extension:** offer End the test in the Runs window, and mark a terminal's runs ([9c377e4](https://github.com/PiwiTests/piwi/commit/9c377e46cb554f1209c4a7faf8faf8f4c6dc97ac))
-* **extension:** share a run live from Piwi Picker's Runs window ([e1dfca5](https://github.com/PiwiTests/piwi/commit/e1dfca53e9b1a29d9ff83e3c8a10505cb1852241))
-* **extension:** watch and steer a headless stopped page live, pick on its image, reach remote windows ([584b64d](https://github.com/PiwiTests/piwi/commit/584b64d0afc5786490cffbebe4db750efa564798))
-* **ide:** end the test at a stop, and steer the runs started in a terminal ([4afdf31](https://github.com/PiwiTests/piwi/commit/4afdf31eecd07245de2120e44f70a7c022a3d18c))
-* **ide:** give a JetBrains IDE's agents the runs' MCP server, and share a stop with Playwright ([bd204b9](https://github.com/PiwiTests/piwi/commit/bd204b9a19e037d8f52325fc03b88c2a39f31b5a))
-* **ide:** let a run control host hold no failure of a run, and name itself to the workers ([e916a80](https://github.com/PiwiTests/piwi/commit/e916a80782c7e9be957c59c4cda7a0758682fc36))
-* **ide:** list the runs' MCP server for VS Code's agent, and share a stop with Playwright ([2759f7f](https://github.com/PiwiTests/piwi/commit/2759f7f09978c2b86fae850d82b6b1fbf1fee3f2))
-* **ide:** read on the hub that a stop is one an agent asked for ([416d46c](https://github.com/PiwiTests/piwi/commit/416d46c5a56bd390f9912497ea4c85b6489c19e1))
-* **ide:** run a failed test from a debug link, stopping once at its failing line ([5739ecb](https://github.com/PiwiTests/piwi/commit/5739ecb6b77b7848113874ae933dbc4b1ede5de0))
-* **ide:** serve the agents' run tools in a host's own words, and give back the code made ([0339284](https://github.com/PiwiTests/piwi/commit/0339284ff12bc2e57edda03434651d5806d2a7de))
-* **ide:** serve the editor window's runs to agents as an MCP server ([508f860](https://github.com/PiwiTests/piwi/commit/508f860045e2948947c721543ff11cdee2be6156))
-* **ide:** serve the runs to agents as the service starts, and keep a failure's title apart ([c24ba8c](https://github.com/PiwiTests/piwi/commit/c24ba8c8f1ead965daf55a4ad71ed73f446304ec))
-* **ide:** share a run live from VS Code and JetBrains, and stop sharing it ([fd5dd02](https://github.com/PiwiTests/piwi/commit/fd5dd02f28338cd66541be4d86e52896540c06ae))
-* **ide:** share a run live, or stop, from the editor service and the run hub ([4af73c3](https://github.com/PiwiTests/piwi/commit/4af73c3667fdbb8d660fc41c785c7190eafa9c8e))
-* **ide:** share a run on your machine live with the team instance, from any surface, at any time ([e9f7e8b](https://github.com/PiwiTests/piwi/commit/e9f7e8bff4cde91e9819fdcf834a55cbec2c8497))
-* **notifications:** show outcomes, history and failing code in emails, Slack and Teams ([a6931a5](https://github.com/PiwiTests/piwi/commit/a6931a57e361af1d7c804f18dd31cfbeab7d3c14))
-* **notifications:** show outcomes, history and failing code in Slack and Teams messages ([ca6bcde](https://github.com/PiwiTests/piwi/commit/ca6bcdebc26a6c9c33ce677c9e476a7fd6b7e9df))
-* **notifications:** show outcomes, history and highlighted code in notification emails ([1f8364e](https://github.com/PiwiTests/piwi/commit/1f8364e52551e7a69b7d29ff75b28b3a73c2fbe4))
-* **reporter:** end a stopped test, and follow the editor from a run started in a terminal ([317c628](https://github.com/PiwiTests/piwi/commit/317c628562a4db2c046138e71ff362dfdfb6944f))
-* **reporter:** let a run on a developer's machine be shared live on the team instance ([e2344b5](https://github.com/PiwiTests/piwi/commit/e2344b56de0ad82628fabe0b2035cbad90e79478))
-* **reporter:** name a run on its run channel by PIWI_RUN_REF before PIWI_ORIGIN_REF ([1b9a393](https://github.com/PiwiTests/piwi/commit/1b9a393b6cda459622018b4fb5a0d68507e25ef2))
-* **reporter:** play the click count of a viewer's button down and up, and say so as input-clicks ([dbd6082](https://github.com/PiwiTests/piwi/commit/dbd6082c6fa1026ffecf93db5bd8597fa7278dd6))
-* **reporter:** read and act on a stopped page for an agent, and share its browser ([c6c4f84](https://github.com/PiwiTests/piwi/commit/c6c4f84c11dd3c6f0ecf84c0879614c60f1fd159))
-* **reporter:** send each worker's page to the instance's live view while someone watches ([ed9a046](https://github.com/PiwiTests/piwi/commit/ed9a04664947ce7b718ca72b98e29887501865af))
+#### Share a run live
+- **ide:** share a run on your machine live with the team instance, from any surface, at any time ([e9f7e8b](https://github.com/PiwiTests/piwi/commit/e9f7e8bff4cde91e9819fdcf834a55cbec2c8497))
+- **reporter:** let a run on a developer's machine be shared live on the team instance ([e2344b5](https://github.com/PiwiTests/piwi/commit/e2344b56de0ad82628fabe0b2035cbad90e79478))
+- **ide:** share a run live, or stop, from the editor service and the run hub ([4af73c3](https://github.com/PiwiTests/piwi/commit/4af73c3667fdbb8d660fc41c785c7190eafa9c8e))
+- **ide:** share a run live from VS Code and JetBrains, and stop sharing it ([fd5dd02](https://github.com/PiwiTests/piwi/commit/fd5dd02f28338cd66541be4d86e52896540c06ae))
+- **extension:** share a run live from Piwi Picker's Runs window ([e1dfca5](https://github.com/PiwiTests/piwi/commit/e1dfca53e9b1a29d9ff83e3c8a10505cb1852241))
+- **app:** share a run live from the desktop app's Local runs tray ([b1dffbc](https://github.com/PiwiTests/piwi/commit/b1dffbce1056a65390af7686f8546ff122f73de1))
+- **app:** show a run a developer shares live, and end its views when they stop ([337d13a](https://github.com/PiwiTests/piwi/commit/337d13ae7514866697a8ae5fd15aaa529f65ce7c))
+- **app:** say on a run's running tests that nobody shares it live, and how to ([bcfb040](https://github.com/PiwiTests/piwi/commit/bcfb0409851cfd233da03cb6d6164e4cacd29132), [de3fef4](https://github.com/PiwiTests/piwi/commit/de3fef4f6c2c04796af2f316891dc33be65b88a6))
 
+#### Live view of each worker
+- **app:** watch each worker of a live run, CI runs included, from the run page, in a project that turns it on ([79964d9](https://github.com/PiwiTests/piwi/commit/79964d95802075d230632672d9e30092f9c056b7), [7526c3c](https://github.com/PiwiTests/piwi/commit/7526c3cedce19626849f33109f1daa2e6bcc7911))
+- **reporter:** send each worker's page to the instance's live view while someone watches ([ed9a046](https://github.com/PiwiTests/piwi/commit/ed9a04664947ce7b718ca72b98e29887501865af))
+- **reporter:** play the click count of a viewer's button down and up, and say so as `input-clicks` ([dbd6082](https://github.com/PiwiTests/piwi/commit/dbd6082c6fa1026ffecf93db5bd8597fa7278dd6))
+- **extension:** watch and steer a headless stopped page live, pick on its image, reach remote windows ([584b64d](https://github.com/PiwiTests/piwi/commit/584b64d0afc5786490cffbebe4db750efa564798))
+
+#### Runs for coding agents (MCP)
+- **ide:** serve the editor window's runs to agents as an MCP server ([508f860](https://github.com/PiwiTests/piwi/commit/508f860045e2948947c721543ff11cdee2be6156))
+- **ide:** serve the runs to agents as the service starts, and keep a failure's title apart ([c24ba8c](https://github.com/PiwiTests/piwi/commit/c24ba8c8f1ead965daf55a4ad71ed73f446304ec))
+- **ide:** serve the agents' run tools in a host's own words, and give back the code made ([0339284](https://github.com/PiwiTests/piwi/commit/0339284ff12bc2e57edda03434651d5806d2a7de))
+- **ide:** list the runs' MCP server for VS Code's agent, and share a stop with Playwright ([2759f7f](https://github.com/PiwiTests/piwi/commit/2759f7f09978c2b86fae850d82b6b1fbf1fee3f2))
+- **ide:** give a JetBrains IDE's agents the runs' MCP server, and share a stop with Playwright ([bd204b9](https://github.com/PiwiTests/piwi/commit/bd204b9a19e037d8f52325fc03b88c2a39f31b5a))
+- **ide:** read on the hub that a stop is one an agent asked for ([416d46c](https://github.com/PiwiTests/piwi/commit/416d46c5a56bd390f9912497ea4c85b6489c19e1))
+- **reporter:** read and act on a stopped page for an agent, and share its browser ([c6c4f84](https://github.com/PiwiTests/piwi/commit/c6c4f84c11dd3c6f0ecf84c0879614c60f1fd159))
+- **app:** serve the desktop app's runs to agents from its MCP server ([d82491f](https://github.com/PiwiTests/piwi/commit/d82491f38e224dd054aa8887c1fa450b35d52d83))
+- **app:** let coding agents follow, steer and read the desktop app's own runs from its MCP server ([8368926](https://github.com/PiwiTests/piwi/commit/8368926d9c6a56128e146d9806a25fa591730d45))
+
+#### The desktop app as run hub
+- **app:** make the desktop server the hub of the runs its shell starts ([02b3a9a](https://github.com/PiwiTests/piwi/commit/02b3a9a14528abed9aa8f4c7d279ece05c240507))
+- **desktop:** name the bundled server as the hub of each run the shell starts ([e1856f8](https://github.com/PiwiTests/piwi/commit/e1856f8c1b278dfdf56d678a6dae0dba1bfa8072))
+- **desktop:** name the bundled server as where the runs' picks go ([a443836](https://github.com/PiwiTests/piwi/commit/a44383669ee6765c6a69884d7cf94e535c401b0f))
+- **app:** show the desktop app's runs live in its window, with their code to copy ([90b625f](https://github.com/PiwiTests/piwi/commit/90b625f56be7ea39a96fbd6108bec2b138cc2fb0))
+- **extension:** list the desktop app's runs in the Runs window ([c1ebf3f](https://github.com/PiwiTests/piwi/commit/c1ebf3f64b5c87405922ee502540bfb534de551b))
+- **app:** let each desktop run hold its failures with a Hold failures switch ([c143df5](https://github.com/PiwiTests/piwi/commit/c143df5db9a84b23470bd8e1d6efceaf91dc946f))
+- **app:** desktop notifications with no setup, and no server-only settings in the desktop app ([18ecc58](https://github.com/PiwiTests/piwi/commit/18ecc58752715e633cd13b2a4a1ea616ae0f1bb2), [b07a0dd](https://github.com/PiwiTests/piwi/commit/b07a0dda29a43d29c0506f3a9a68ffafc275f580))
+
+#### Stopped tests & terminal runs
+- **ide:** end the test at a stop, and steer the runs started in a terminal ([4afdf31](https://github.com/PiwiTests/piwi/commit/4afdf31eecd07245de2120e44f70a7c022a3d18c))
+- **reporter:** end a stopped test, and follow the editor from a run started in a terminal ([317c628](https://github.com/PiwiTests/piwi/commit/317c628562a4db2c046138e71ff362dfdfb6944f))
+- **extension:** offer End the test in the Runs window, and mark a terminal's runs ([9c377e4](https://github.com/PiwiTests/piwi/commit/9c377e46cb554f1209c4a7faf8faf8f4c6dc97ac))
+- **app:** offer End the test in the desktop app's Local runs tray ([f1bc418](https://github.com/PiwiTests/piwi/commit/f1bc41889af616f4f2da8aeca684bc934e11dee2))
+- **ide:** let a run control host hold no failure of a run, and name itself to the workers ([e916a80](https://github.com/PiwiTests/piwi/commit/e916a80782c7e9be957c59c4cda7a0758682fc36))
+- **reporter:** name a run on its run channel by `PIWI_RUN_REF` before `PIWI_ORIGIN_REF` ([1b9a393](https://github.com/PiwiTests/piwi/commit/1b9a393b6cda459622018b4fb5a0d68507e25ef2))
+
+#### Debugging & re-runs
+- **app:** add Debug in my editor beside a failure's failing line ([c9a8313](https://github.com/PiwiTests/piwi/commit/c9a831339187b342d9713ac22eb9186e9e72ec9d))
+- **ide:** run a failed test from a debug link, stopping once at its failing line ([5739ecb](https://github.com/PiwiTests/piwi/commit/5739ecb6b77b7848113874ae933dbc4b1ede5de0))
+- **app:** one test selection per cluster, CI re-run of one test, and clearer local re-runs ([f9c9dc9](https://github.com/PiwiTests/piwi/commit/f9c9dc9c64c72258dc1aef6e52c2e24467963d99))
+- **app:** say what each re-run runs, and re-run one test from its execution page ([3688315](https://github.com/PiwiTests/piwi/commit/3688315a049e1616cf8d1ca939c2f00e960dbdc9))
+- **app:** say what each desktop re-run runs, and re-run an execution from its header ([e0787be](https://github.com/PiwiTests/piwi/commit/e0787be10401dec1cf50b358fadad96f09d9995d))
+
+#### Offline exports & the quality report
+- **app:** collect a whole run for an offline export, and render it in the offline exports ([2b903fc](https://github.com/PiwiTests/piwi/commit/2b903fc9fad6fcaee9c5b55d83ff11ef8cb23bcf), [94ded87](https://github.com/PiwiTests/piwi/commit/94ded87e4f6d9078b584b3ea652003702205c19f))
+- **app:** refresh the offline exports and the quality report, and export a whole run ([82e2b0a](https://github.com/PiwiTests/piwi/commit/82e2b0aee91dab056c2b7aa22be478849ddfb054))
+- **app:** give the offline exports and the quality report a clearer layout ([034c2f0](https://github.com/PiwiTests/piwi/commit/034c2f0f8a93c4a025b820f23357988cd4362a4e))
+
+#### Notifications
+- **notifications:** show outcomes, history and the failing code in emails, Slack and Teams messages, with the code highlighted in emails ([a6931a5](https://github.com/PiwiTests/piwi/commit/a6931a57e361af1d7c804f18dd31cfbeab7d3c14), [ca6bcde](https://github.com/PiwiTests/piwi/commit/ca6bcdebc26a6c9c33ce677c9e476a7fd6b7e9df), [1f8364e](https://github.com/PiwiTests/piwi/commit/1f8364e52551e7a69b7d29ff75b28b3a73c2fbe4))
+
+#### Showcase
+- **demo:** film the showcase on a virtual screen and cut it into the video ([c8adc58](https://github.com/PiwiTests/piwi/commit/c8adc58e2ca588c1489bc6346941b2a343366e98))
+- **demo:** calm the showcase cut's camera, enlarge its dashboard, and harden the take and cut ([7145afe](https://github.com/PiwiTests/piwi/commit/7145afe448022755c1ec9188dd316e28510c1002))
 
 ### Bug Fixes
 
-* **app:** clear the run channel folders a killed desktop server left behind ([eb7441e](https://github.com/PiwiTests/piwi/commit/eb7441e804ffd78d45d1bbaa2c526701fde968af))
-* **app:** close the desktop gaps the review found ([3bf1898](https://github.com/PiwiTests/piwi/commit/3bf1898411517773b08b434a5de3ca7cd5edb517))
-* **app:** count what the desktop window has not read on its runs' stream ([30df947](https://github.com/PiwiTests/piwi/commit/30df947f4ab1930198ea97d0c104792b661a2b9e))
-* **app:** end each worker's view on the run page, whatever ends the run's live view ([6b2d4e3](https://github.com/PiwiTests/piwi/commit/6b2d4e367f6db709a3c957981eb3bd6d0b0bd79e))
-* **app:** find a fix's verify and bisect tests by title, and fix what the re-run review found ([c75405b](https://github.com/PiwiTests/piwi/commit/c75405b04532b635da6b3d700748a51513e5f89a))
-* **app:** give the desktop runs' picks a token that opens their route alone ([bb5775d](https://github.com/PiwiTests/piwi/commit/bb5775d9e06a786f2fafa8fc6f7025378bed3abd))
-* **app:** hold a desktop run's failure only where the person opened it, never in a lab ([91f8082](https://github.com/PiwiTests/piwi/commit/91f8082bed8d4ec09852de3475d07ade00db1408))
-* **app:** hold an agent's stop on a desktop run only where a person can see it ([bf43980](https://github.com/PiwiTests/piwi/commit/bf43980f630ae4fc0e33a7b2d023c8d45a8a7dee))
-* **app:** keep the keyboard on a desktop run's controls across a step ([f2cfa45](https://github.com/PiwiTests/piwi/commit/f2cfa4561f00983f0350306ffc05810aa374634e))
-* **app:** keep the live view key of a run that streams, and tell a worker why its key ended ([d6e3e01](https://github.com/PiwiTests/piwi/commit/d6e3e01b4ed75b46559ba25298d254a0c4384433))
-* **app:** list a run's results and failure groups as the run page does ([1c07b9f](https://github.com/PiwiTests/piwi/commit/1c07b9f2d1842a59bbda862c05d134ce7366904b))
-* **app:** offer no Share live in the tray for a run that reports to the desktop app ([2eb8dea](https://github.com/PiwiTests/piwi/commit/2eb8dea8b997f0b2932be1c68b38c1725dfc89c6))
-* **app:** pin the mcp-remote release the MCP page and its docs give Claude Desktop ([5dae504](https://github.com/PiwiTests/piwi/commit/5dae504543fd18b09c1b223524386cf090f5ec84))
-* **app:** read an initializing run again once the page has hydrated ([d354bc2](https://github.com/PiwiTests/piwi/commit/d354bc26b48cac7f7d539c2a9173706593dfbc2c))
-* **app:** read the desktop flag before awaiting in useAuthoredGuides ([15f6050](https://github.com/PiwiTests/piwi/commit/15f60509e84b6385cac0384b992140905136635d))
-* **app:** refetch an initializing run once after hydration, and end every spec run ([34d9504](https://github.com/PiwiTests/piwi/commit/34d9504a66523d0d0a73031a5f6da891f9b3e0e2))
-* **app:** take a run page live when its initializing run starts ([fd36fb5](https://github.com/PiwiTests/piwi/commit/fd36fb50c72b7b9131c5d4ba59a46dd6ad8d3c43))
-* **app:** take a run page live when its initializing run starts ([15abf5c](https://github.com/PiwiTests/piwi/commit/15abf5c626981fb6f97618426ac59249f5fbae24))
-* **db:** run the incremental vacuum to its end so it releases the sqlite write lock ([7f4b1d7](https://github.com/PiwiTests/piwi/commit/7f4b1d719588884dd4fb3b9807ea2bea95b0628b))
-* **db:** run the incremental vacuum to its end so it releases the sqlite write lock ([480b4b5](https://github.com/PiwiTests/piwi/commit/480b4b56484a37fbd5346da2fae2eabc568bf55a))
-* **demo:** let the nightly showcase pass on a GitHub runner ([87cd5da](https://github.com/PiwiTests/piwi/commit/87cd5daa19ed3744c2469e338cba3e8db3ad5bd9))
-* **demo:** open the popup again until it offers the Runs tile, and keep a failed set's evidence ([304ec61](https://github.com/PiwiTests/piwi/commit/304ec613153a6262138097aac9ecb4174f9efae4))
-* **demo:** read the showcase's instance through its API again, and remove a set that failed ([0c74e78](https://github.com/PiwiTests/piwi/commit/0c74e780c62800611f862d2217d2943fa53e8da5))
-* **demo:** serve the showcase's instance on the address its take reaches it by ([3e88e17](https://github.com/PiwiTests/piwi/commit/3e88e174c68f76db82015bd0de0187c6c0688ac9))
-* **demo:** show what happens at the top of VS Code in the showcase's cut ([9c6ceca](https://github.com/PiwiTests/piwi/commit/9c6ceca187a14ba02f8a5094056f80c68220bc71))
-* **demo:** tell the run page's known bug by the run's status before the page opens ([89800af](https://github.com/PiwiTests/piwi/commit/89800afdc822932afa79dbc2c416c29210707179))
-* **desktop:** name the runs nobody attends apart on the bundled server's run channel ([267f75f](https://github.com/PiwiTests/piwi/commit/267f75f4eb0b69c34d0564201f5bd3220c1c4f21))
-* **desktop:** never send a tool call again once the app had it ([851d7ad](https://github.com/PiwiTests/piwi/commit/851d7ad344d112de36081f5851e107b4ac571848))
-* **extension:** keep watch live on through a hub's reconnection, the worker's restart included ([bdfe4b6](https://github.com/PiwiTests/piwi/commit/bdfe4b606e1b567ca5af215fe728c6ed3321d170))
-* **extension:** leave a paste's control characters out of what the live view types ([dd137be](https://github.com/PiwiTests/piwi/commit/dd137be4ff25c96ca6f03b43b70ce443ec5362f6))
-* **extension:** leave the click counts out of what a stop takes from a window that does not watch it ([b789dbb](https://github.com/PiwiTests/piwi/commit/b789dbb28dc5170b0d158c8a34c768a3117fc3c7))
-* **extension:** say all a share sends in the Runs window, and why a sharing stopped ([92128ac](https://github.com/PiwiTests/piwi/commit/92128ac82789e5b94b51b73b03339d873127184e))
-* **extension:** send a click on the live view at once, as the system counts it, with its keys held ([2f2e04a](https://github.com/PiwiTests/piwi/commit/2f2e04a77a121ad7594dbc218d4484991a31946e))
-* **ide:** assert an element's whole text, or the first words of a long one ([fc58c6a](https://github.com/PiwiTests/piwi/commit/fc58c6ad36d9dd533b1d17a15f29bf16303f05d4))
-* **ide:** free an agent's long poll as soon as its client leaves or cancels it ([6f69ebf](https://github.com/PiwiTests/piwi/commit/6f69ebf929348657c112ca2818ad91fde68bfaf3))
-* **ide:** give a new token to a server another call was opening as the token is reset ([ebbc25a](https://github.com/PiwiTests/piwi/commit/ebbc25ad91c3f2f44532970695e358f6a999f54a))
-* **ide:** give a viewer that comes to a watched stop its latest frame at once ([8701c59](https://github.com/PiwiTests/piwi/commit/8701c5909b695b53ee2de901519607f1d7055fa9))
-* **ide:** hide what a followed call typed, answer a stop as stopped, and let a host hold a stop ([ec45ba7](https://github.com/PiwiTests/piwi/commit/ec45ba7313424d0a4da88fa07827be011b65599a))
-* **ide:** keep a debug link's project from closing its quotes, and its paths from reading as links ([63c38dd](https://github.com/PiwiTests/piwi/commit/63c38dd30a1b8225497eee5f3c1e86f762686dd9))
-* **ide:** keep an agent's token to the runs' server alone, and pin the bridge it runs ([78468d3](https://github.com/PiwiTests/piwi/commit/78468d3c82b1921025fd30c7dc8b579ebdcff15f))
-* **ide:** keep the page's words out of Piwi's answers to an agent ([f146ccd](https://github.com/PiwiTests/piwi/commit/f146ccd03d60abb6b16cc9cdd6a7e215bce9e361))
-* **ide:** list a remote window's hub on 127.0.0.1, and read every hub piwi picker finds there ([136afc7](https://github.com/PiwiTests/piwi/commit/136afc7d68709031b815e4cbfda4910487360063))
-* **ide:** never name the text a stopped fill types in what an agent reads ([9304ebe](https://github.com/PiwiTests/piwi/commit/9304ebeb8e1d60d11018fca11b7fb98af71bf389))
-* **ide:** never refuse to stop sharing a run, and show it shared as its workers say ([e49cd77](https://github.com/PiwiTests/piwi/commit/e49cd7714ad1707ed53b6ef401c6618aa5006a09))
-* **ide:** pin mcp-remote to 0.14.3, a release more than two weeks old ([0e8917e](https://github.com/PiwiTests/piwi/commit/0e8917e692d91428a4b79ccb3d9e92c22d25e147))
-* **ide:** read a rerun's events with a cursor of the run before it ([c163139](https://github.com/PiwiTests/piwi/commit/c163139b7098d84b4e1a30932bb545de58a1d2bf))
-* **ide:** say an act the page answered late may still take effect, and keep it if it does ([03c31c7](https://github.com/PiwiTests/piwi/commit/03c31c7d6a95efb558b4c47356a80396dac06b2e))
-* **ide:** start VS Code's service again with the agents' token it kept last ([71e66f1](https://github.com/PiwiTests/piwi/commit/71e66f131c6515bf041d768be7a0d870fa780656))
-* **ide:** stop a run's events once no agent follows it ([1b4b89b](https://github.com/PiwiTests/piwi/commit/1b4b89bf66f177e4820b38b0e4c443b94a7b787d))
-* **ide:** warn of every share in VS Code and JetBrains, and count the views open ([9b7cd62](https://github.com/PiwiTests/piwi/commit/9b7cd6284df072495ea498a269bdafa06544ed94))
-* **notifications:** correct counts, routing and edge cases of the new notification messages ([5b47510](https://github.com/PiwiTests/piwi/commit/5b47510735ea5b7a72db9e2bc2d275277968f745))
-* **notifications:** stop bisect steps and reproductions from notifying ([4a463f8](https://github.com/PiwiTests/piwi/commit/4a463f83ed8b75e7bdb6046fc921aa1def7b5ef3))
-* **notifications:** stop bisect steps and reproductions from notifying ([ba50dee](https://github.com/PiwiTests/piwi/commit/ba50dee0e19dda5aee732109204fe238b509dace))
-* **reporter:** close a replaced live view stream for good, and say why each sharing stops ([7c80a5d](https://github.com/PiwiTests/piwi/commit/7c80a5dcdb8569515de223ee8a30fc184cd4eab7))
-* **reporter:** follow from a terminal only an editor still serving, and never in UI mode ([e361ecc](https://github.com/PiwiTests/piwi/commit/e361eccad64dde42ae54a59b777ed9529a4e6bad))
-* **reporter:** give an agent only the first line of a failed page call's error ([5eb4048](https://github.com/PiwiTests/piwi/commit/5eb4048e298420c8d606eb13d9560a15ced80af9))
-* **reporter:** hide every secret field's value from an agent, quoted and in each frame ([6dc3644](https://github.com/PiwiTests/piwi/commit/6dc364428b81e0dae9a1b2a0e2460667d45a1c03))
-* **reporter:** hold one live view frame's acknowledgment at a time, so a video leaves none behind ([de9dfc8](https://github.com/PiwiTests/piwi/commit/de9dfc8d6f4533ab8223aa336ca9236bfbbb11a0))
-* **reporter:** keep a call site when the working directory is gone ([83e91e2](https://github.com/PiwiTests/piwi/commit/83e91e2cfb9f7bb317ae605839c77f486c779c45))
-* **reporter:** let an agent's action through the pause bar to what it covers ([a9aefba](https://github.com/PiwiTests/piwi/commit/a9aefba852aa3a0c0054e78adfb90cee901bce7f))
-* **reporter:** let an agent's action through the pause bar to what it covers ([80b178d](https://github.com/PiwiTests/piwi/commit/80b178db11a51b2ad963e68aa054c10b36388164))
-* **reporter:** let the live view's lighter image finish before the view ends ([442ba8d](https://github.com/PiwiTests/piwi/commit/442ba8d7d26bdac0ed660907ed3d04b77b23a20b))
-* **reporter:** mark every picker panel as piwi's own, and leave no pick mark in the page after it ([0d01af9](https://github.com/PiwiTests/piwi/commit/0d01af910b9360db46e9a1967b426cc6534acbd7))
-* **reporter:** name the run's host in what a stopped test says ([a59b786](https://github.com/PiwiTests/piwi/commit/a59b786538ef3771d9be0dc0065664b8acfebf17))
-* **reporter:** pick on the image the element a click at the point lands on, not one hidden under it ([00d172e](https://github.com/PiwiTests/piwi/commit/00d172e19cbf289c872962d9971813e28da06e88))
-* **reporter:** read an ES-module call site from its file URL ([7fc832a](https://github.com/PiwiTests/piwi/commit/7fc832a42c24d8a5b9a8d38612c0350533283a38))
-* **reporter:** read file URLs in stack frames through fileURLToPath ([6a18955](https://github.com/PiwiTests/piwi/commit/6a1895512481d06842a706a0d5ffd266357dd21c))
-* **reporter:** read file URLs in stack frames through fileURLToPath ([e33c748](https://github.com/PiwiTests/piwi/commit/e33c748dab579ecf3cba966b58085ddb3aa9e255))
-* **reporter:** refuse a viewer's text with a control character but a tab or a line break ([910d926](https://github.com/PiwiTests/piwi/commit/910d926eff0f544fb2afa65bdd4e9f327a157fc0))
-* **reporter:** send the live view from CI runs alone, out of the test's way ([f07377b](https://github.com/PiwiTests/piwi/commit/f07377bc786c48e00f4327639fd1dc2077dee7e3))
-* **reporter:** show a lighter image of a page too heavy for the live view, and say when none fits ([b551408](https://github.com/PiwiTests/piwi/commit/b551408c95e60380be745036faa5596691aae09e))
-* **reporter:** skip package frames by either separator in the resource ledger ([3e10bde](https://github.com/PiwiTests/piwi/commit/3e10bde6ef530600cb7eff02a30f0fef25c5156d))
-* **ui:** bind Watch to the test of its row, and open the paused call's place in the IDE ([e98ed66](https://github.com/PiwiTests/piwi/commit/e98ed66f40bf1e65b2d447b5b2fd69191dae7273))
+#### Live view & sharing
+- **app:** end each worker's view on the run page, whatever ends the run's live view ([6b2d4e3](https://github.com/PiwiTests/piwi/commit/6b2d4e367f6db709a3c957981eb3bd6d0b0bd79e))
+- **app:** keep the live view key of a run that streams, and tell a worker why its key ended ([d6e3e01](https://github.com/PiwiTests/piwi/commit/d6e3e01b4ed75b46559ba25298d254a0c4384433))
+- **reporter:** send the live view from CI runs alone, out of the test's way ([f07377b](https://github.com/PiwiTests/piwi/commit/f07377bc786c48e00f4327639fd1dc2077dee7e3))
+- **reporter:** close a replaced live view stream for good, and say why each sharing stops ([7c80a5d](https://github.com/PiwiTests/piwi/commit/7c80a5dcdb8569515de223ee8a30fc184cd4eab7))
+- **reporter:** hold one live view frame's acknowledgment at a time, so a video leaves none behind ([de9dfc8](https://github.com/PiwiTests/piwi/commit/de9dfc8d6f4533ab8223aa336ca9236bfbbb11a0))
+- **reporter:** show a lighter image of a page too heavy for the live view, and say when none fits ([b551408](https://github.com/PiwiTests/piwi/commit/b551408c95e60380be745036faa5596691aae09e))
+- **reporter:** let the live view's lighter image finish before the view ends ([442ba8d](https://github.com/PiwiTests/piwi/commit/442ba8d7d26bdac0ed660907ed3d04b77b23a20b))
+- **reporter:** refuse a viewer's text with a control character but a tab or a line break ([910d926](https://github.com/PiwiTests/piwi/commit/910d926eff0f544fb2afa65bdd4e9f327a157fc0))
+- **reporter:** pick on the image the element a click at the point lands on, not one hidden under it ([00d172e](https://github.com/PiwiTests/piwi/commit/00d172e19cbf289c872962d9971813e28da06e88))
+- **extension:** send a click on the live view at once, as the system counts it, with its keys held ([2f2e04a](https://github.com/PiwiTests/piwi/commit/2f2e04a77a121ad7594dbc218d4484991a31946e))
+- **extension:** leave a paste's control characters out of what the live view types ([dd137be](https://github.com/PiwiTests/piwi/commit/dd137be4ff25c96ca6f03b43b70ce443ec5362f6))
+- **extension:** leave the click counts out of what a stop takes from a window that does not watch it ([b789dbb](https://github.com/PiwiTests/piwi/commit/b789dbb28dc5170b0d158c8a34c768a3117fc3c7))
+- **extension:** keep watch live on through a hub's reconnection, the worker's restart included ([bdfe4b6](https://github.com/PiwiTests/piwi/commit/bdfe4b606e1b567ca5af215fe728c6ed3321d170))
+- **extension:** say all a share sends in the Runs window, and why a sharing stopped ([92128ac](https://github.com/PiwiTests/piwi/commit/92128ac82789e5b94b51b73b03339d873127184e))
+- **ide:** give a viewer that comes to a watched stop its latest frame at once ([8701c59](https://github.com/PiwiTests/piwi/commit/8701c5909b695b53ee2de901519607f1d7055fa9))
+- **ide:** never refuse to stop sharing a run, and show it shared as its workers say ([e49cd77](https://github.com/PiwiTests/piwi/commit/e49cd7714ad1707ed53b6ef401c6618aa5006a09))
+- **ide:** warn of every share in VS Code and JetBrains, and count the views open ([9b7cd62](https://github.com/PiwiTests/piwi/commit/9b7cd6284df072495ea498a269bdafa06544ed94))
+- **ui:** bind Watch to the test of its row, and open the paused call's place in the IDE ([e98ed66](https://github.com/PiwiTests/piwi/commit/e98ed66f40bf1e65b2d447b5b2fd69191dae7273))
+
+#### Agents, stops & the editors
+- **reporter:** hide every secret field's value from an agent, quoted and in each frame ([6dc3644](https://github.com/PiwiTests/piwi/commit/6dc364428b81e0dae9a1b2a0e2460667d45a1c03))
+- **ide:** never name the text a stopped fill types in what an agent reads ([9304ebe](https://github.com/PiwiTests/piwi/commit/9304ebeb8e1d60d11018fca11b7fb98af71bf389))
+- **ide:** hide what a followed call typed, answer a stop as stopped, and let a host hold a stop ([ec45ba7](https://github.com/PiwiTests/piwi/commit/ec45ba7313424d0a4da88fa07827be011b65599a))
+- **ide:** keep the page's words out of Piwi's answers to an agent ([f146ccd](https://github.com/PiwiTests/piwi/commit/f146ccd03d60abb6b16cc9cdd6a7e215bce9e361))
+- **reporter:** give an agent only the first line of a failed page call's error ([5eb4048](https://github.com/PiwiTests/piwi/commit/5eb4048e298420c8d606eb13d9560a15ced80af9))
+- **reporter:** let an agent's action through the pause bar to what it covers ([a9aefba](https://github.com/PiwiTests/piwi/commit/a9aefba852aa3a0c0054e78adfb90cee901bce7f), [80b178d](https://github.com/PiwiTests/piwi/commit/80b178db11a51b2ad963e68aa054c10b36388164))
+- **reporter:** mark every picker panel as piwi's own, and leave no pick mark in the page after it ([0d01af9](https://github.com/PiwiTests/piwi/commit/0d01af910b9360db46e9a1967b426cc6534acbd7))
+- **reporter:** name the run's host in what a stopped test says ([a59b786](https://github.com/PiwiTests/piwi/commit/a59b786538ef3771d9be0dc0065664b8acfebf17))
+- **reporter:** follow from a terminal only an editor still serving, and never in UI mode ([e361ecc](https://github.com/PiwiTests/piwi/commit/e361eccad64dde42ae54a59b777ed9529a4e6bad))
+- **ide:** say an act the page answered late may still take effect, and keep it if it does ([03c31c7](https://github.com/PiwiTests/piwi/commit/03c31c7d6a95efb558b4c47356a80396dac06b2e))
+- **ide:** assert an element's whole text, or the first words of a long one ([fc58c6a](https://github.com/PiwiTests/piwi/commit/fc58c6ad36d9dd533b1d17a15f29bf16303f05d4))
+- **ide:** free an agent's long poll as soon as its client leaves or cancels it ([6f69ebf](https://github.com/PiwiTests/piwi/commit/6f69ebf929348657c112ca2818ad91fde68bfaf3))
+- **ide:** stop a run's events once no agent follows it ([1b4b89b](https://github.com/PiwiTests/piwi/commit/1b4b89bf66f177e4820b38b0e4c443b94a7b787d))
+- **ide:** read a rerun's events with a cursor of the run before it ([c163139](https://github.com/PiwiTests/piwi/commit/c163139b7098d84b4e1a30932bb545de58a1d2bf))
+- **ide:** keep an agent's token to the runs' server alone, and pin the bridge it runs ([78468d3](https://github.com/PiwiTests/piwi/commit/78468d3c82b1921025fd30c7dc8b579ebdcff15f))
+- **ide:** give a new token to a server another call was opening as the token is reset ([ebbc25a](https://github.com/PiwiTests/piwi/commit/ebbc25ad91c3f2f44532970695e358f6a999f54a))
+- **ide:** start VS Code's service again with the agents' token it kept last ([71e66f1](https://github.com/PiwiTests/piwi/commit/71e66f131c6515bf041d768be7a0d870fa780656))
+- **ide:** list a remote window's hub on `127.0.0.1`, and read every hub Piwi Picker finds there ([136afc7](https://github.com/PiwiTests/piwi/commit/136afc7d68709031b815e4cbfda4910487360063))
+- **ide:** keep a debug link's project from closing its quotes, and its paths from reading as links ([63c38dd](https://github.com/PiwiTests/piwi/commit/63c38dd30a1b8225497eee5f3c1e86f762686dd9))
+- **ide:** pin `mcp-remote` to 0.14.3, a release more than two weeks old ([0e8917e](https://github.com/PiwiTests/piwi/commit/0e8917e692d91428a4b79ccb3d9e92c22d25e147))
+- **app:** pin the `mcp-remote` release the MCP page and its docs give Claude Desktop ([5dae504](https://github.com/PiwiTests/piwi/commit/5dae504543fd18b09c1b223524386cf090f5ec84))
+
+#### Desktop app
+- **app:** close the desktop gaps the review found ([3bf1898](https://github.com/PiwiTests/piwi/commit/3bf1898411517773b08b434a5de3ca7cd5edb517))
+- **app:** hold a desktop run's failure only where the person opened it, never in a lab ([91f8082](https://github.com/PiwiTests/piwi/commit/91f8082bed8d4ec09852de3475d07ade00db1408))
+- **app:** hold an agent's stop on a desktop run only where a person can see it ([bf43980](https://github.com/PiwiTests/piwi/commit/bf43980f630ae4fc0e33a7b2d023c8d45a8a7dee))
+- **app:** give the desktop runs' picks a token that opens their route alone ([bb5775d](https://github.com/PiwiTests/piwi/commit/bb5775d9e06a786f2fafa8fc6f7025378bed3abd))
+- **app:** offer no Share live in the tray for a run that reports to the desktop app ([2eb8dea](https://github.com/PiwiTests/piwi/commit/2eb8dea8b997f0b2932be1c68b38c1725dfc89c6))
+- **app:** keep the keyboard on a desktop run's controls across a step ([f2cfa45](https://github.com/PiwiTests/piwi/commit/f2cfa4561f00983f0350306ffc05810aa374634e))
+- **app:** count what the desktop window has not read on its runs' stream ([30df947](https://github.com/PiwiTests/piwi/commit/30df947f4ab1930198ea97d0c104792b661a2b9e))
+- **app:** clear the run channel folders a killed desktop server left behind ([eb7441e](https://github.com/PiwiTests/piwi/commit/eb7441e804ffd78d45d1bbaa2c526701fde968af))
+- **app:** read the desktop flag before awaiting in `useAuthoredGuides` ([15f6050](https://github.com/PiwiTests/piwi/commit/15f60509e84b6385cac0384b992140905136635d))
+- **desktop:** name the runs nobody attends apart on the bundled server's run channel ([267f75f](https://github.com/PiwiTests/piwi/commit/267f75f4eb0b69c34d0564201f5bd3220c1c4f21))
+- **desktop:** never send a tool call again once the app had it ([851d7ad](https://github.com/PiwiTests/piwi/commit/851d7ad344d112de36081f5851e107b4ac571848))
+
+#### Run page, re-runs & exports
+- **app:** take a run page live when its initializing run starts ([fd36fb5](https://github.com/PiwiTests/piwi/commit/fd36fb50c72b7b9131c5d4ba59a46dd6ad8d3c43), [15abf5c](https://github.com/PiwiTests/piwi/commit/15abf5c626981fb6f97618426ac59249f5fbae24))
+- **app:** read an initializing run again once the page has hydrated, and end every spec run ([d354bc2](https://github.com/PiwiTests/piwi/commit/d354bc26b48cac7f7d539c2a9173706593dfbc2c), [34d9504](https://github.com/PiwiTests/piwi/commit/34d9504a66523d0d0a73031a5f6da891f9b3e0e2))
+- **app:** find a fix's verify and bisect tests by title, and fix what the re-run review found ([c75405b](https://github.com/PiwiTests/piwi/commit/c75405b04532b635da6b3d700748a51513e5f89a))
+- **app:** list a run's results and failure groups as the run page does ([1c07b9f](https://github.com/PiwiTests/piwi/commit/1c07b9f2d1842a59bbda862c05d134ce7366904b))
+
+#### Call sites in the reporter
+- **reporter:** read an ES-module call site and other file URLs in stack frames through `fileURLToPath` ([7fc832a](https://github.com/PiwiTests/piwi/commit/7fc832a42c24d8a5b9a8d38612c0350533283a38), [6a18955](https://github.com/PiwiTests/piwi/commit/6a1895512481d06842a706a0d5ffd266357dd21c), [e33c748](https://github.com/PiwiTests/piwi/commit/e33c748dab579ecf3cba966b58085ddb3aa9e255))
+- **reporter:** keep a call site when the working directory is gone ([83e91e2](https://github.com/PiwiTests/piwi/commit/83e91e2cfb9f7bb317ae605839c77f486c779c45))
+- **reporter:** skip package frames by either separator in the resource ledger ([3e10bde](https://github.com/PiwiTests/piwi/commit/3e10bde6ef530600cb7eff02a30f0fef25c5156d))
+
+#### Notifications & database
+- **notifications:** correct counts, routing and edge cases of the new notification messages ([5b47510](https://github.com/PiwiTests/piwi/commit/5b47510735ea5b7a72db9e2bc2d275277968f745))
+- **notifications:** stop bisect steps and reproductions from notifying ([4a463f8](https://github.com/PiwiTests/piwi/commit/4a463f83ed8b75e7bdb6046fc921aa1def7b5ef3), [ba50dee](https://github.com/PiwiTests/piwi/commit/ba50dee0e19dda5aee732109204fe238b509dace))
+- **db:** run the incremental vacuum to its end so it releases the SQLite write lock ([7f4b1d7](https://github.com/PiwiTests/piwi/commit/7f4b1d719588884dd4fb3b9807ea2bea95b0628b), [480b4b5](https://github.com/PiwiTests/piwi/commit/480b4b56484a37fbd5346da2fae2eabc568bf55a))
+
+<details>
+<summary><strong>Showcase fixes</strong> — keeping the nightly showcase run and its film working</summary>
+
+- **demo:** let the nightly showcase pass on a GitHub runner ([87cd5da](https://github.com/PiwiTests/piwi/commit/87cd5daa19ed3744c2469e338cba3e8db3ad5bd9))
+- **demo:** serve the showcase's instance on the address its take reaches it by ([3e88e17](https://github.com/PiwiTests/piwi/commit/3e88e174c68f76db82015bd0de0187c6c0688ac9))
+- **demo:** read the showcase's instance through its API again, and remove a set that failed ([0c74e78](https://github.com/PiwiTests/piwi/commit/0c74e780c62800611f862d2217d2943fa53e8da5))
+- **demo:** open the popup again until it offers the Runs tile, and keep a failed set's evidence ([304ec61](https://github.com/PiwiTests/piwi/commit/304ec613153a6262138097aac9ecb4174f9efae4))
+- **demo:** tell the run page's known bug by the run's status before the page opens ([89800af](https://github.com/PiwiTests/piwi/commit/89800afdc822932afa79dbc2c416c29210707179))
+- **demo:** show what happens at the top of VS Code in the showcase's cut ([9c6ceca](https://github.com/PiwiTests/piwi/commit/9c6ceca187a14ba02f8a5094056f80c68220bc71))
+
+</details>
+
+<!-- notes:polished -->
 
 ## [0.62.0](https://github.com/PiwiTests/piwi/compare/v0.61.0...v0.62.0) (2026-10-27)
 
+This release turns a stopped test into a place to write it: pause, step and resume a running test from VS Code and JetBrains IDEs, write assertions, mocks and code at the stop, hold a failure at its line for a watched run, and follow and steer the editor's runs from Piwi Picker's runs window; the reporter also finds servers and processes piling up and draws a test's resources on the failure timeline.
+
+**Full diff:** [v0.61.0…v0.62.0](https://github.com/PiwiTests/piwi/compare/v0.61.0...v0.62.0)
+
+### ✨ Highlights
+
+- **⏯️ Pause, step and resume from the editor** — Control a running test from VS Code and the JetBrains IDEs, and start the pause bar's pick and recording at a stop.
+- **✍️ Write code at a stop** — Write assertions, mocks and other code from a paused test, rendered by the editor service and written by VS Code or JetBrains, with a count of the locator under the cursor or caret.
+- **🛑 Held failures** — A failure in a watched run is held at its line with its error named, and shown in the editor and in Piwi Picker's runs window.
+- **🪟 A runs window in Piwi Picker** — Follow and steer the editor's runs from a runs window and a global shortcut, through a local hub, and see what each code from a stop came to.
+- **📊 Resources that pile up** — The reporter finds servers, child processes and more piling up, places them at their line, and the failed execution's timeline draws the test's worker resources.
+- **🚦 Status-setting runs** — A status filter picks the runs that set a project's status.
+- **🔗 Desktop handoff** — The browser tab closes after handing a link to the desktop app, and the dev server moves to port 7494.
 
 ### Features
 
-* **app:** close the browser tab after handing a link to the desktop app ([0bd85b3](https://github.com/PiwiTests/piwi/commit/0bd85b311797427acb5cfb4b999f467035c62faf))
-* **app:** close the handed-off browser tab, and move the dev server to port 7494 ([699591f](https://github.com/PiwiTests/piwi/commit/699591f368c10cd56d645003ac369271fa3e8c4d))
-* **app:** pick the runs that set a project's status with a status filter ([eee75af](https://github.com/PiwiTests/piwi/commit/eee75afe15e16729d0cef13bf79dee81cf1bc590))
-* **app:** pick the runs that set a project's status with a status filter ([0ea692c](https://github.com/PiwiTests/piwi/commit/0ea692c3aff806da7bd737a48a0d3a2d15eac403))
-* **extension:** follow and steer the editor's runs from a runs window and a global shortcut ([0efe109](https://github.com/PiwiTests/piwi/commit/0efe1093e08a1bd1ad55884da0fc6c6d85ae794f))
-* **extension:** follow and steer the editor's runs from piwi picker's runs window ([78188a9](https://github.com/PiwiTests/piwi/commit/78188a98505029b7c457af60f01dfee080a1da16))
-* **extension:** show in the runs window what each code from a stop came to ([efc5e32](https://github.com/PiwiTests/piwi/commit/efc5e32ddd7567d0a19e0c66292127288ffdfbee))
-* **extension:** write code from a stopped test in the runs window, and show a failure held there ([edc560f](https://github.com/PiwiTests/piwi/commit/edc560f386eae1e32877c40ea215fc79bf68fd74))
-* **ide:** let piwi picker find the editor's runs and steer them through a local hub ([32c85cc](https://github.com/PiwiTests/piwi/commit/32c85ccda23ac563ab13f010f7b0c374cfdbc2cb))
-* **ide:** pause, step and resume a running test from vs code and the jetbrains ides ([25e4d0f](https://github.com/PiwiTests/piwi/commit/25e4d0ff8042b0a0ad381dacaf29594fce12cc72))
-* **ide:** render the code made at a stopped test and send it to the client to write ([8ff645c](https://github.com/PiwiTests/piwi/commit/8ff645c94de66fa439ae0eeca12c3f1e06464295))
-* **ide:** tell piwi picker what each code from a stop came to, and a failure's error ([ce8a281](https://github.com/PiwiTests/piwi/commit/ce8a281493f00baf888758eb97bf0546fc1dae68))
-* **ide:** write assertions and mocks from a paused test, and hold a failure for a watched run ([7fc8c44](https://github.com/PiwiTests/piwi/commit/7fc8c44e27fd44bfe835a72ced92487cb73ae253))
-* **ide:** write code at a stop from a JetBrains IDE, count the caret's locator, show a held failure ([5ce43e8](https://github.com/PiwiTests/piwi/commit/5ce43e8e57a556c5b8f8ae3de57b3f7ffed1a109))
-* **ide:** write code at a stop from VS Code, count the cursor's locator and show a held failure ([3b814cc](https://github.com/PiwiTests/piwi/commit/3b814ccb552815f821a4c209a3f9626514d30275))
-* **reporter:** do a stopped test's page work for code from a stop, and hold a failure ([9b92f78](https://github.com/PiwiTests/piwi/commit/9b92f78f0aa38c636502b7daefe00eb5209a842d))
-* **reporter:** find servers, processes and more piling up; show resources on the failure timeline ([070bd97](https://github.com/PiwiTests/piwi/commit/070bd974c9123dc8020a10aa03838ce63e9bdd4c))
-* **reporter:** name the error of a failure held at its line ([d838663](https://github.com/PiwiTests/piwi/commit/d8386639b1a64c7a7d263aef58ed0b94ddf7b020))
-* **reporter:** place servers and child processes at their line and see more piling up ([168c0ed](https://github.com/PiwiTests/piwi/commit/168c0ede434780c99a4db2fd02973ae69607661d))
-* **reporter:** start the pause bar's pick and recording at a stop from the editor ([f39ac1b](https://github.com/PiwiTests/piwi/commit/f39ac1baa9a3c913649ab7405a6bcafa56a731c6))
-* **ui:** draw the test's worker resources on a failed execution's timeline ([b3af9e4](https://github.com/PiwiTests/piwi/commit/b3af9e4ffea0f36f97011488345de182c17bd325))
-* **ui:** show the way a guide takes to each stop and number the parts it explains ([ce5d3de](https://github.com/PiwiTests/piwi/commit/ce5d3de93bb0bccbd74c9b6c78a0305d4ccf43c7))
-* **ui:** show the way a guide takes to each stop and number the parts it explains ([609f222](https://github.com/PiwiTests/piwi/commit/609f22243e1a4df9fe3dd9b8b6b5e10f9ba20a7f))
+#### Stopped tests in the editor
+- **ide:** pause, step and resume a running test from VS Code and the JetBrains IDEs ([25e4d0f](https://github.com/PiwiTests/piwi/commit/25e4d0ff8042b0a0ad381dacaf29594fce12cc72))
+- **ide:** write assertions and mocks from a paused test, and hold a failure for a watched run ([7fc8c44](https://github.com/PiwiTests/piwi/commit/7fc8c44e27fd44bfe835a72ced92487cb73ae253))
+- **ide:** render the code made at a stopped test and send it to the client to write ([8ff645c](https://github.com/PiwiTests/piwi/commit/8ff645c94de66fa439ae0eeca12c3f1e06464295))
+- **ide:** write code at a stop from VS Code, count the cursor's locator and show a held failure ([3b814cc](https://github.com/PiwiTests/piwi/commit/3b814ccb552815f821a4c209a3f9626514d30275))
+- **ide:** write code at a stop from a JetBrains IDE, count the caret's locator, show a held failure ([5ce43e8](https://github.com/PiwiTests/piwi/commit/5ce43e8e57a556c5b8f8ae3de57b3f7ffed1a109))
+- **reporter:** do a stopped test's page work for code from a stop, and hold a failure ([9b92f78](https://github.com/PiwiTests/piwi/commit/9b92f78f0aa38c636502b7daefe00eb5209a842d))
+- **reporter:** name the error of a failure held at its line ([d838663](https://github.com/PiwiTests/piwi/commit/d8386639b1a64c7a7d263aef58ed0b94ddf7b020))
+- **reporter:** start the pause bar's pick and recording at a stop from the editor ([f39ac1b](https://github.com/PiwiTests/piwi/commit/f39ac1baa9a3c913649ab7405a6bcafa56a731c6))
 
+#### Piwi Picker's runs window
+- **extension:** follow and steer the editor's runs from Piwi Picker's runs window and a global shortcut ([0efe109](https://github.com/PiwiTests/piwi/commit/0efe1093e08a1bd1ad55884da0fc6c6d85ae794f), [78188a9](https://github.com/PiwiTests/piwi/commit/78188a98505029b7c457af60f01dfee080a1da16))
+- **ide:** let Piwi Picker find the editor's runs and steer them through a local hub ([32c85cc](https://github.com/PiwiTests/piwi/commit/32c85ccda23ac563ab13f010f7b0c374cfdbc2cb))
+- **extension:** write code from a stopped test in the runs window, and show a failure held there ([edc560f](https://github.com/PiwiTests/piwi/commit/edc560f386eae1e32877c40ea215fc79bf68fd74))
+- **extension:** show in the runs window what each code from a stop came to ([efc5e32](https://github.com/PiwiTests/piwi/commit/efc5e32ddd7567d0a19e0c66292127288ffdfbee))
+- **ide:** tell Piwi Picker what each code from a stop came to, and a failure's error ([ce8a281](https://github.com/PiwiTests/piwi/commit/ce8a281493f00baf888758eb97bf0546fc1dae68))
 
-### Bug Fixes
+#### Resources & leaks
+- **reporter:** find servers, processes and more piling up; show resources on the failure timeline ([070bd97](https://github.com/PiwiTests/piwi/commit/070bd974c9123dc8020a10aa03838ce63e9bdd4c))
+- **reporter:** place servers and child processes at their line and see more piling up ([168c0ed](https://github.com/PiwiTests/piwi/commit/168c0ede434780c99a4db2fd02973ae69607661d))
+- **ui:** draw the test's worker resources on a failed execution's timeline ([b3af9e4](https://github.com/PiwiTests/piwi/commit/b3af9e4ffea0f36f97011488345de182c17bd325))
 
-* **app:** read step locations relative to the project and name the test's own slow HTTP call ([6691411](https://github.com/PiwiTests/piwi/commit/6691411441202407ad8fd039ea509a9ec68e1ccb))
-* **app:** read step locations relative to the run's working directory ([916ca4d](https://github.com/PiwiTests/piwi/commit/916ca4d75bdf17e1adaba544b8a5843519a2beb4))
-* **app:** resolve status filters in one query and tighten their edge cases ([eec3695](https://github.com/PiwiTests/piwi/commit/eec369580c84696ae268abfe8103b4b877aa5b60))
-* **auth:** authenticate before looking up a route's id ([aee379a](https://github.com/PiwiTests/piwi/commit/aee379a189572b07c37c1534fd25ef606741cfa0))
-* close the review findings in the editor, cli, extension, server and attachment reads ([c5f4417](https://github.com/PiwiTests/piwi/commit/c5f44171ca4e3e1192cf4604a6852aeb44f5439f))
-* **demo:** load Playwright and Chromium in the demo media scripts as the other scripts do ([a9f1fe2](https://github.com/PiwiTests/piwi/commit/a9f1fe259bda4cc071261f19d7e8d454dcbd8729))
-* **demo:** regenerate the dev seed without rewriting the committed seed version ([25bba51](https://github.com/PiwiTests/piwi/commit/25bba51e23d172d2f2cde418c345442a15bb7105))
-* **deps:** keep OpenTelemetry on SDK 2 so the Windows installers build again ([43a34f1](https://github.com/PiwiTests/piwi/commit/43a34f1eee91a5bf2e9608f7e80a56e008afb98e))
-* **extension:** bind a page's replay origin to its frame as well as its tab ([e40a7cb](https://github.com/PiwiTests/piwi/commit/e40a7cb683012d2969e3652d1fab2351ae130d56))
-* **extension:** follow the runs only while a runs window is open, and say code was sent, not written ([6a3b831](https://github.com/PiwiTests/piwi/commit/6a3b8317a047aa672412f948d14d1635f3083dc2))
-* **extension:** hide a mock's credentials by one written rule, keeping a url's host and ids ([cbd28b1](https://github.com/PiwiTests/piwi/commit/cbd28b1a3e8f7cb3e1498829d04df6c40f3ee954))
-* **extension:** hide every credential a mock writes, by name and by shape ([27ad79f](https://github.com/PiwiTests/piwi/commit/27ad79f8913c2433dc7312667071012a963c1201))
-* **extension:** prove the editor on its live route and keep the runs window's controls in place ([3e3da57](https://github.com/PiwiTests/piwi/commit/3e3da575703525d9fc2127bc5f8c5499c74b31c6))
-* **extension:** start a replay from a page only on that page's origin ([ec5ec2d](https://github.com/PiwiTests/piwi/commit/ec5ec2d8ec07331e8283fbd601c7bb1b55d04dc0))
-* **ide:** count the locator again when the caret comes back, and write in a jetbrains file once open ([bb56715](https://github.com/PiwiTests/piwi/commit/bb567151bffee4552eca752c640ae0219be5ea0d))
-* **ide:** draw the paused line's icon with the editor's own icons ([715a721](https://github.com/PiwiTests/piwi/commit/715a721040c1cac5da5648a020cd9d8f2054b7f1))
-* **ide:** have the editor prove it holds the pairing's token, and harden the hub ([1b8697c](https://github.com/PiwiTests/piwi/commit/1b8697c8a64cf3f369eaffaafdc82b0e0a86bd05))
-* **ide:** hide the credentials in every url of a stopped test's requests ([238b76b](https://github.com/PiwiTests/piwi/commit/238b76b01824953d9a7f2e9d30d45ff735e22f2d))
-* **ide:** hold a failure only while a runs window follows, and write a rerun's code where it stands ([bd07ebf](https://github.com/PiwiTests/piwi/commit/bd07ebf1aab6b4a869c3ab1e9a93728e64e58ad2))
-* **ide:** name the code actions shorter above the stopped line, so the stop's row fits ([c29f034](https://github.com/PiwiTests/piwi/commit/c29f034bf3b69b31e629d2125f2584fdc34e77d0))
-* **ide:** read a spec's tests past comments, and take the only case of a title ([c48f1c8](https://github.com/PiwiTests/piwi/commit/c48f1c8ab95b2d3380bbbdc6bdf4ba9b33860be8))
-* **ide:** read the bundled service's discovery file once it is renamed into place ([3433b5e](https://github.com/PiwiTests/piwi/commit/3433b5e8f90ba914790eeb4c93e12e5f6b8a46c4))
-* **ide:** run the test at the cursor by its describe blocks, not by its title alone ([e5b34fc](https://github.com/PiwiTests/piwi/commit/e5b34fc5f4d85ee04d242ecbb112145d444d5652))
-* **ide:** say on the hub that a stop whose page is not known has no image ([c0f6c15](https://github.com/PiwiTests/piwi/commit/c0f6c15bb50b14593a1cc141295666180657d1e3))
-* **ide:** skip only commented-out lines, read regex literals, and fall back narrowly ([568840d](https://github.com/PiwiTests/piwi/commit/568840d6818e6e6ab14f392e46bdd9fd0a2c7ee1))
-* **ide:** tell no client of a failure nobody watches, and name the locator a count refuses ([fe9c750](https://github.com/PiwiTests/piwi/commit/fe9c7509b38bbe9ef5059f8bbb49fd0574e8f5db))
-* **ide:** write no code at a stop's line where no statement starts ([050f5cb](https://github.com/PiwiTests/piwi/commit/050f5cbe8babd2c0623a9f6144173d43ac33fd4b))
-* **release:** keep the release notes, and the previous release latest until installers are in ([6d30525](https://github.com/PiwiTests/piwi/commit/6d305257e6cdd4f91ac0d80b1314d04bd942af66))
-* **reporter:** hold a failure once its test ended, and keep what it shows to the failure ([f03229c](https://github.com/PiwiTests/piwi/commit/f03229ca0c3ec681ccee7d1854d20a80b8fef296))
-* **reporter:** hold a failure only for an editor that shows one, and send no secret of a region ([21a856d](https://github.com/PiwiTests/piwi/commit/21a856dffcc1ca1585bea9a34fe8736f76956757))
-* **reporter:** honor PIWI_DESKTOP_APP in the cli and say when --api-key is not sent ([f0eeffe](https://github.com/PiwiTests/piwi/commit/f0eeffe1747affa76a1a7e2d4fb9f761bfd3b722))
-* **reporter:** keep the editor's pairing token from the processes a test starts ([a0706de](https://github.com/PiwiTests/piwi/commit/a0706de0efbdcb17fba8b537f3a8c8c80ccd5219))
-* **reporter:** let a stop that comes once the test's teardown began go on unshown ([28cde68](https://github.com/PiwiTests/piwi/commit/28cde68204a9dd4d11ea09168ea719b4d3f5dd05))
-* **reporter:** let a waiting stop go on when its context or page closes ([3114dda](https://github.com/PiwiTests/piwi/commit/3114dda2b74756051a45afa5f2703689a886ecf5))
-* **reporter:** pair a .env url with its own key, and match the reporter's fallback mode ([c24bdc5](https://github.com/PiwiTests/piwi/commit/c24bdc5d9f7e46b8cbb5fb8818e2449e74958039))
-* **reporter:** read piwi attachments only with the content type the fixtures write ([c1102fa](https://github.com/PiwiTests/piwi/commit/c1102faf8c4d37ade0dfc4ec0d8650ff04f7a2ac))
-* **reporter:** read the project's .env in bug, codegen and the other cli commands ([dfceb36](https://github.com/PiwiTests/piwi/commit/dfceb36baf21cbf5660ef2ba9f63e5c5be02da08))
-* **reporter:** refuse an intent at a stop that is ending or whose page is a guess ([ca12f89](https://github.com/PiwiTests/piwi/commit/ca12f89ee79590c3df98db4aa83c122245e8959b))
-* **reporter:** write the aria snapshot with a content type a browser server cannot give ([accafbd](https://github.com/PiwiTests/piwi/commit/accafbd5303e47f4260af89299ff7a6b880ca761))
-* **ui:** point at the tab a guide selects and keep the path line to the stop's own tab ([a56d1eb](https://github.com/PiwiTests/piwi/commit/a56d1eb4f040bc37bf35a302f9ae253e34f2d2df))
-
+#### Dashboard & desktop
+- **app:** pick the runs that set a project's status with a status filter ([eee75af](https://github.com/PiwiTests/piwi/commit/eee75afe15e16729d0cef13bf79dee81cf1bc590), [0ea692c](https://github.com/PiwiTests/piwi/commit/0ea692c3aff806da7bd737a48a0d3a2d15eac403))
+- **app:** close the browser tab after handing a link to the desktop app, and move the dev server to port 7494 ([0bd85b3](https://github.com/PiwiTests/piwi/commit/0bd85b311797427acb5cfb4b999f467035c62faf), [699591f](https://github.com/PiwiTests/piwi/commit/699591f368c10cd56d645003ac369271fa3e8c4d))
+- **ui:** show the way a guide takes to each stop and number the parts it explains ([ce5d3de](https://github.com/PiwiTests/piwi/commit/ce5d3de93bb0bccbd74c9b6c78a0305d4ccf43c7), [609f222](https://github.com/PiwiTests/piwi/commit/609f22243e1a4df9fe3dd9b8b6b5e10f9ba20a7f))
 
 ### Performance Improvements
 
-* **reporter:** take the close-time page reads together, during the probe drain ([fbd358c](https://github.com/PiwiTests/piwi/commit/fbd358c2af7fb518c467ebcbf8f9a58e21705588))
-* **reporter:** take the close-time page reads together, during the probe drain ([7086221](https://github.com/PiwiTests/piwi/commit/7086221806a92ce4e70302701a0bb3617c315ebf)), closes [#911](https://github.com/PiwiTests/piwi/issues/911)
+- **reporter:** take the close-time page reads together, during the probe drain, closes [#911](https://github.com/PiwiTests/piwi/issues/911) ([fbd358c](https://github.com/PiwiTests/piwi/commit/fbd358c2af7fb518c467ebcbf8f9a58e21705588), [7086221](https://github.com/PiwiTests/piwi/commit/7086221806a92ce4e70302701a0bb3617c315ebf))
+
+### Bug Fixes
+
+- close the review findings in the editor, CLI, extension, server and attachment reads ([c5f4417](https://github.com/PiwiTests/piwi/commit/c5f44171ca4e3e1192cf4604a6852aeb44f5439f))
+
+#### Stops & held failures
+- **reporter:** hold a failure once its test ended, and keep what it shows to the failure ([f03229c](https://github.com/PiwiTests/piwi/commit/f03229ca0c3ec681ccee7d1854d20a80b8fef296))
+- **reporter:** hold a failure only for an editor that shows one, and send no secret of a region ([21a856d](https://github.com/PiwiTests/piwi/commit/21a856dffcc1ca1585bea9a34fe8736f76956757))
+- **reporter:** let a stop that comes once the test's teardown began go on unshown ([28cde68](https://github.com/PiwiTests/piwi/commit/28cde68204a9dd4d11ea09168ea719b4d3f5dd05))
+- **reporter:** let a waiting stop go on when its context or page closes ([3114dda](https://github.com/PiwiTests/piwi/commit/3114dda2b74756051a45afa5f2703689a886ecf5))
+- **reporter:** refuse an intent at a stop that is ending or whose page is a guess ([ca12f89](https://github.com/PiwiTests/piwi/commit/ca12f89ee79590c3df98db4aa83c122245e8959b))
+- **ide:** hold a failure only while a runs window follows, and write a rerun's code where it stands ([bd07ebf](https://github.com/PiwiTests/piwi/commit/bd07ebf1aab6b4a869c3ab1e9a93728e64e58ad2))
+- **ide:** tell no client of a failure nobody watches, and name the locator a count refuses ([fe9c750](https://github.com/PiwiTests/piwi/commit/fe9c7509b38bbe9ef5059f8bbb49fd0574e8f5db))
+- **ide:** write no code at a stop's line where no statement starts ([050f5cb](https://github.com/PiwiTests/piwi/commit/050f5cbe8babd2c0623a9f6144173d43ac33fd4b))
+- **ide:** count the locator again when the caret comes back, and write in a JetBrains file once open ([bb56715](https://github.com/PiwiTests/piwi/commit/bb567151bffee4552eca752c640ae0219be5ea0d))
+- **ide:** name the code actions shorter above the stopped line, so the stop's row fits ([c29f034](https://github.com/PiwiTests/piwi/commit/c29f034bf3b69b31e629d2125f2584fdc34e77d0))
+- **ide:** draw the paused line's icon with the editor's own icons ([715a721](https://github.com/PiwiTests/piwi/commit/715a721040c1cac5da5648a020cd9d8f2054b7f1))
+- **ide:** say on the hub that a stop whose page is not known has no image ([c0f6c15](https://github.com/PiwiTests/piwi/commit/c0f6c15bb50b14593a1cc141295666180657d1e3))
+
+#### Editors
+- **ide:** run the test at the cursor by its describe blocks, not by its title alone ([e5b34fc](https://github.com/PiwiTests/piwi/commit/e5b34fc5f4d85ee04d242ecbb112145d444d5652))
+- **ide:** read a spec's tests past comments, and take the only case of a title ([c48f1c8](https://github.com/PiwiTests/piwi/commit/c48f1c8ab95b2d3380bbbdc6bdf4ba9b33860be8))
+- **ide:** skip only commented-out lines, read regex literals, and fall back narrowly ([568840d](https://github.com/PiwiTests/piwi/commit/568840d6818e6e6ab14f392e46bdd9fd0a2c7ee1))
+- **ide:** read the bundled service's discovery file once it is renamed into place ([3433b5e](https://github.com/PiwiTests/piwi/commit/3433b5e8f90ba914790eeb4c93e12e5f6b8a46c4))
+
+#### Credentials & pairing
+- **auth:** authenticate before looking up a route's id ([aee379a](https://github.com/PiwiTests/piwi/commit/aee379a189572b07c37c1534fd25ef606741cfa0))
+- **ide:** have the editor prove it holds the pairing's token, and harden the hub ([1b8697c](https://github.com/PiwiTests/piwi/commit/1b8697c8a64cf3f369eaffaafdc82b0e0a86bd05))
+- **reporter:** keep the editor's pairing token from the processes a test starts ([a0706de](https://github.com/PiwiTests/piwi/commit/a0706de0efbdcb17fba8b537f3a8c8c80ccd5219))
+- **ide:** hide the credentials in every URL of a stopped test's requests ([238b76b](https://github.com/PiwiTests/piwi/commit/238b76b01824953d9a7f2e9d30d45ff735e22f2d))
+- **extension:** hide every credential a mock writes, by name and by shape ([27ad79f](https://github.com/PiwiTests/piwi/commit/27ad79f8913c2433dc7312667071012a963c1201))
+- **extension:** hide a mock's credentials by one written rule, keeping a URL's host and ids ([cbd28b1](https://github.com/PiwiTests/piwi/commit/cbd28b1a3e8f7cb3e1498829d04df6c40f3ee954))
+
+#### Piwi Picker
+- **extension:** follow the runs only while a runs window is open, and say code was sent, not written ([6a3b831](https://github.com/PiwiTests/piwi/commit/6a3b8317a047aa672412f948d14d1635f3083dc2))
+- **extension:** prove the editor on its live route and keep the runs window's controls in place ([3e3da57](https://github.com/PiwiTests/piwi/commit/3e3da575703525d9fc2127bc5f8c5499c74b31c6))
+- **extension:** start a replay from a page only on that page's origin ([ec5ec2d](https://github.com/PiwiTests/piwi/commit/ec5ec2d8ec07331e8283fbd601c7bb1b55d04dc0))
+- **extension:** bind a page's replay origin to its frame as well as its tab ([e40a7cb](https://github.com/PiwiTests/piwi/commit/e40a7cb683012d2969e3652d1fab2351ae130d56))
+
+#### Reporter CLI & attachments
+- **reporter:** read the project's `.env` in `bug`, `codegen` and the other CLI commands ([dfceb36](https://github.com/PiwiTests/piwi/commit/dfceb36baf21cbf5660ef2ba9f63e5c5be02da08))
+- **reporter:** pair a `.env` URL with its own key, and match the reporter's fallback mode ([c24bdc5](https://github.com/PiwiTests/piwi/commit/c24bdc5d9f7e46b8cbb5fb8818e2449e74958039))
+- **reporter:** honor `PIWI_DESKTOP_APP` in the CLI and say when `--api-key` is not sent ([f0eeffe](https://github.com/PiwiTests/piwi/commit/f0eeffe1747affa76a1a7e2d4fb9f761bfd3b722))
+- **reporter:** read Piwi attachments only with the content type the fixtures write ([c1102fa](https://github.com/PiwiTests/piwi/commit/c1102faf8c4d37ade0dfc4ec0d8650ff04f7a2ac))
+- **reporter:** write the aria snapshot with a content type a browser server cannot give ([accafbd](https://github.com/PiwiTests/piwi/commit/accafbd5303e47f4260af89299ff7a6b880ca761))
+
+#### Dashboard
+- **app:** read step locations relative to the run's working directory ([916ca4d](https://github.com/PiwiTests/piwi/commit/916ca4d75bdf17e1adaba544b8a5843519a2beb4))
+- **app:** read step locations relative to the project and name the test's own slow HTTP call ([6691411](https://github.com/PiwiTests/piwi/commit/6691411441202407ad8fd039ea509a9ec68e1ccb))
+- **app:** resolve status filters in one query and tighten their edge cases ([eec3695](https://github.com/PiwiTests/piwi/commit/eec369580c84696ae268abfe8103b4b877aa5b60))
+- **ui:** point at the tab a guide selects and keep the path line to the stop's own tab ([a56d1eb](https://github.com/PiwiTests/piwi/commit/a56d1eb4f040bc37bf35a302f9ae253e34f2d2df))
+
+<details>
+<summary><strong>Build, release and demo fixes</strong> — installers, release notes and the demo's scripts</summary>
+
+- **deps:** keep OpenTelemetry on SDK 2 so the Windows installers build again ([43a34f1](https://github.com/PiwiTests/piwi/commit/43a34f1eee91a5bf2e9608f7e80a56e008afb98e))
+- **release:** keep the release notes, and the previous release latest until installers are in ([6d30525](https://github.com/PiwiTests/piwi/commit/6d305257e6cdd4f91ac0d80b1314d04bd942af66))
+- **demo:** load Playwright and Chromium in the demo media scripts as the other scripts do ([a9f1fe2](https://github.com/PiwiTests/piwi/commit/a9f1fe259bda4cc071261f19d7e8d454dcbd8729))
+- **demo:** regenerate the dev seed without rewriting the committed seed version ([25bba51](https://github.com/PiwiTests/piwi/commit/25bba51e23d172d2f2cde418c345442a15bb7105))
+
+</details>
+
+<!-- notes:polished -->
 
 ## [0.61.0](https://github.com/PiwiTests/piwi/compare/v0.60.0...v0.61.0) (2026-10-26)
 
+This release runs the assistant on the Codex and DeepSeek CLIs in a docked panel with question history, draws a live run's CPU, memory and open pages on its timeline, records per-test server coverage from Nitro backends and the CSS rules each test matched, and posts Slack notifications through the Web API with a bot token.
+
+**Full diff:** [v0.60.0…v0.61.0](https://github.com/PiwiTests/piwi/compare/v0.60.0...v0.61.0)
+
+### ✨ Highlights
+
+- **🤖 Codex and DeepSeek for the assistant** — Isolated Codex and official DeepSeek CLI providers, whose runs stop when an answer is stopped, and a docked assistant panel with question history, next-question hints, stop and usage.
+- **📈 Live resources on the timeline** — A watched run posts its CPU, memory and open pages as it runs, drawn on the live run's timeline and shown for each running test's worker.
+- **🧭 Server and CSS coverage per test** — The reporter records per-test server coverage from Nitro backends and the style sheet rules each test matched.
+- **🔔 Slack through the Web API** — Slack notifications can be posted with a bot token, kept encrypted on every create path.
 
 ### Features
 
-* **ai:** add isolated codex and official deepseek cli providers ([f9e864b](https://github.com/PiwiTests/piwi/commit/f9e864b214749bbeceb2b48920330944a51a7e8b))
-* **ai:** add isolated local codex cli provider ([6769ad0](https://github.com/PiwiTests/piwi/commit/6769ad0a01c3e8db2bf2039d2d4fca75f849108b))
-* **ai:** add official deepseek harness cli provider ([a6144c1](https://github.com/PiwiTests/piwi/commit/a6144c1fbea2222ab7ee4e2c90f4425b8c207a9f))
-* **ai:** dock the assistant panel and add question history, next-question hints, stop and usage ([e34a904](https://github.com/PiwiTests/piwi/commit/e34a9040ddf866451797fd4b349bfc26fc1ca456))
-* **ai:** dock the assistant panel and add question history, next-question hints, stop and usage ([e9cc191](https://github.com/PiwiTests/piwi/commit/e9cc19195037ddb47ebb2f5feb3457b8c976bfd2))
-* **ai:** stop the Codex and DeepSeek CLI runs of an assistant answer ([f9125a0](https://github.com/PiwiTests/piwi/commit/f9125a040249cccaac26285029e5c91a005aa798))
-* **app:** draw a live run's CPU, memory and open pages on its timeline ([624066b](https://github.com/PiwiTests/piwi/commit/624066b9f475dd4e8ca75dc6318709a5c4489380))
-* **app:** draw a live run's CPU, memory and open pages on its timeline ([801da44](https://github.com/PiwiTests/piwi/commit/801da44c475f90e8cf8b6229a19b309f945c2182))
-* **demo:** give the sample's nitro backend server and combined coverage ([66bafcd](https://github.com/PiwiTests/piwi/commit/66bafcd85702131740cbcafab2713cd948c7f94e))
-* **notifications:** post Slack notifications through the Web API with a bot token ([36ca3f5](https://github.com/PiwiTests/piwi/commit/36ca3f5516b03fa33a9d17ef9951f81ea5a9ee16))
-* **notifications:** post Slack notifications through the Web API with a bot token ([92c08f9](https://github.com/PiwiTests/piwi/commit/92c08f957c84e451e766f4980646d659fa0448cb)), closes [#618](https://github.com/PiwiTests/piwi/issues/618)
-* **reporter:** per-test server coverage for Nitro backends, and CSS rule coverage ([57f5e4b](https://github.com/PiwiTests/piwi/commit/57f5e4b330eb15ee5df219b2dd0afda920795234))
-* **reporter:** post a watched run's CPU, memory and open pages as it runs ([11504da](https://github.com/PiwiTests/piwi/commit/11504da2f2405b9136bffeb12d3fa155ec1dc5dd))
-* **reporter:** record per-test server coverage from nitro backends ([0528ee8](https://github.com/PiwiTests/piwi/commit/0528ee81091f460695a3bd8c6642ca8b9f3fafda))
-* **reporter:** record the style sheet rules each test matched ([48be085](https://github.com/PiwiTests/piwi/commit/48be085a156dbd019bba1e324560be53c980552b))
-* **ui:** show each running test's worker cores, memory and open pages ([3cb0a6d](https://github.com/PiwiTests/piwi/commit/3cb0a6d29ece2f1bd510f35475833f751c2bde62))
+#### Assistant
+- **ai:** add isolated Codex and official DeepSeek CLI providers ([f9e864b](https://github.com/PiwiTests/piwi/commit/f9e864b214749bbeceb2b48920330944a51a7e8b), [6769ad0](https://github.com/PiwiTests/piwi/commit/6769ad0a01c3e8db2bf2039d2d4fca75f849108b), [a6144c1](https://github.com/PiwiTests/piwi/commit/a6144c1fbea2222ab7ee4e2c90f4425b8c207a9f))
+- **ai:** stop the Codex and DeepSeek CLI runs of an assistant answer ([f9125a0](https://github.com/PiwiTests/piwi/commit/f9125a040249cccaac26285029e5c91a005aa798))
+- **ai:** dock the assistant panel and add question history, next-question hints, stop and usage ([e34a904](https://github.com/PiwiTests/piwi/commit/e34a9040ddf866451797fd4b349bfc26fc1ca456), [e9cc191](https://github.com/PiwiTests/piwi/commit/e9cc19195037ddb47ebb2f5feb3457b8c976bfd2))
 
+#### Live run resources
+- **reporter:** post a watched run's CPU, memory and open pages as it runs ([11504da](https://github.com/PiwiTests/piwi/commit/11504da2f2405b9136bffeb12d3fa155ec1dc5dd))
+- **app:** draw a live run's CPU, memory and open pages on its timeline ([624066b](https://github.com/PiwiTests/piwi/commit/624066b9f475dd4e8ca75dc6318709a5c4489380), [801da44](https://github.com/PiwiTests/piwi/commit/801da44c475f90e8cf8b6229a19b309f945c2182))
+- **ui:** show each running test's worker cores, memory and open pages ([3cb0a6d](https://github.com/PiwiTests/piwi/commit/3cb0a6d29ece2f1bd510f35475833f751c2bde62))
+
+#### Server & CSS coverage
+- **reporter:** per-test server coverage for Nitro backends, and CSS rule coverage ([57f5e4b](https://github.com/PiwiTests/piwi/commit/57f5e4b330eb15ee5df219b2dd0afda920795234))
+- **reporter:** record per-test server coverage from Nitro backends ([0528ee8](https://github.com/PiwiTests/piwi/commit/0528ee81091f460695a3bd8c6642ca8b9f3fafda))
+- **reporter:** record the style sheet rules each test matched ([48be085](https://github.com/PiwiTests/piwi/commit/48be085a156dbd019bba1e324560be53c980552b))
+- **demo:** give the sample's Nitro backend server and combined coverage ([66bafcd](https://github.com/PiwiTests/piwi/commit/66bafcd85702131740cbcafab2713cd948c7f94e))
+
+#### Notifications
+- **notifications:** post Slack notifications through the Web API with a bot token, closes [#618](https://github.com/PiwiTests/piwi/issues/618) ([36ca3f5](https://github.com/PiwiTests/piwi/commit/36ca3f5516b03fa33a9d17ef9951f81ea5a9ee16), [92c08f9](https://github.com/PiwiTests/piwi/commit/92c08f957c84e451e766f4980646d659fa0448cb))
 
 ### Bug Fixes
 
-* **app:** replay a run's select options and write its manual steps in the reader's language ([1f24e19](https://github.com/PiwiTests/piwi/commit/1f24e194db751c320e8663f470b1a7a9c0f9861d))
-* **app:** replay the option a select step chose in a run's bug report ([3bf98ee](https://github.com/PiwiTests/piwi/commit/3bf98ee26200c2ca62917066b80522796f2f1443))
-* **extension:** escape a manual step's run values and read all its options ([9fd7744](https://github.com/PiwiTests/piwi/commit/9fd7744902c329b6ca50bf84919d72fc11f1abc6))
-* **extension:** write a run's manual steps in Piwi Picker's language ([33d730d](https://github.com/PiwiTests/piwi/commit/33d730d604acf6cef26b9e110eb225f8866bb4c0))
-* **notifications:** keep Slack bot tokens encrypted on every create path ([5466b97](https://github.com/PiwiTests/piwi/commit/5466b97bde6b1329add2e2084f8f61d97022d01d))
-* **reporter:** keep css rule coverage sound against compiled sheets and page changes ([9b9bf49](https://github.com/PiwiTests/piwi/commit/9b9bf49daf47dbf8005be1df8e94b80093947db0))
-* **reporter:** read a three-part request id's process key, and harden the nitro coverage transform ([888c688](https://github.com/PiwiTests/piwi/commit/888c6880e6acd10913f6ba3bbb02e429014e3032))
-* **reporter:** read connectOptions before the environment in the base URL check ([a37da6b](https://github.com/PiwiTests/piwi/commit/a37da6b0f438488a228db340ba4a891bb1c679fe))
-* **reporter:** say when checkBaseUrl ran from another network than the browser ([f5d2134](https://github.com/PiwiTests/piwi/commit/f5d21340f497256237d5c838a91bd3243f63ca84))
-* **reporter:** say when checkBaseUrl ran from another network than the browser ([244be01](https://github.com/PiwiTests/piwi/commit/244be0151f6512bdc356a7e55c0280261e1e3562)), closes [#912](https://github.com/PiwiTests/piwi/issues/912)
-* **reporter:** type the nitro coverage runtime for the dashboard's strict check ([5cc0c00](https://github.com/PiwiTests/piwi/commit/5cc0c00675c41d17ef30008957126b6f2b02f521))
-* **ui:** render the same timeline on the server and in the browser for a live run ([388a55a](https://github.com/PiwiTests/piwi/commit/388a55a6e33ab4492c164645ac6fa7b2a196c206))
+#### Coverage & live runs
+- **reporter:** keep CSS rule coverage sound against compiled sheets and page changes ([9b9bf49](https://github.com/PiwiTests/piwi/commit/9b9bf49daf47dbf8005be1df8e94b80093947db0))
+- **reporter:** read a three-part request id's process key, and harden the Nitro coverage transform ([888c688](https://github.com/PiwiTests/piwi/commit/888c6880e6acd10913f6ba3bbb02e429014e3032))
+- **reporter:** type the Nitro coverage runtime for the dashboard's strict check ([5cc0c00](https://github.com/PiwiTests/piwi/commit/5cc0c00675c41d17ef30008957126b6f2b02f521))
+- **ui:** render the same timeline on the server and in the browser for a live run ([388a55a](https://github.com/PiwiTests/piwi/commit/388a55a6e33ab4492c164645ac6fa7b2a196c206))
+
+#### Bug reports & manual steps
+- **app:** replay the option a select step chose in a run's bug report ([3bf98ee](https://github.com/PiwiTests/piwi/commit/3bf98ee26200c2ca62917066b80522796f2f1443))
+- **app:** replay a run's select options and write its manual steps in the reader's language ([1f24e19](https://github.com/PiwiTests/piwi/commit/1f24e194db751c320e8663f470b1a7a9c0f9861d))
+- **extension:** write a run's manual steps in Piwi Picker's language ([33d730d](https://github.com/PiwiTests/piwi/commit/33d730d604acf6cef26b9e110eb225f8866bb4c0))
+- **extension:** escape a manual step's run values and read all its options ([9fd7744](https://github.com/PiwiTests/piwi/commit/9fd7744902c329b6ca50bf84919d72fc11f1abc6))
+
+#### Base URL check
+- **reporter:** say when `checkBaseUrl` ran from another network than the browser, closes [#912](https://github.com/PiwiTests/piwi/issues/912) ([f5d2134](https://github.com/PiwiTests/piwi/commit/f5d21340f497256237d5c838a91bd3243f63ca84), [244be01](https://github.com/PiwiTests/piwi/commit/244be0151f6512bdc356a7e55c0280261e1e3562))
+- **reporter:** read `connectOptions` before the environment in the base URL check ([a37da6b](https://github.com/PiwiTests/piwi/commit/a37da6b0f438488a228db340ba4a891bb1c679fe))
+
+#### Notifications
+- **notifications:** keep Slack bot tokens encrypted on every create path ([5466b97](https://github.com/PiwiTests/piwi/commit/5466b97bde6b1329add2e2084f8f61d97022d01d))
+
+<!-- notes:polished -->
 
 ## [0.60.0](https://github.com/PiwiTests/piwi/compare/v0.59.0...v0.60.0) (2026-10-25)
 
+This release adds an in-app assistant that answers questions about the instance from its MCP tools, walks users through common tasks and proposes changes; it also selects the tests that ran a change's exact lines, pauses tests at editor breakpoints and records from them, and lists Piwi's tests in VS Code's Testing view.
+
+**Full diff:** [v0.59.0…v0.60.0](https://github.com/PiwiTests/piwi/compare/v0.59.0...v0.60.0)
+
+### ✨ Highlights
+
+- **🤖 An in-app assistant** — A panel that answers questions about the instance by reading the MCP tools, shows its answers as blocks, suggests guides anchored on every block of the dashboard, walks users through common tasks and proposes changes; the demo answers from its seed.
+- **🔍 Line-level impact** — Select the tests that ran a change's lines, over MCP and with `piwi run impact`, keeping the tests line-level impact cannot rule out.
+- **⏸️ Pause at breakpoints** — The reporter pauses at breakpoints through Playwright's debugger, the timeline draws each stop as a paused band, and paused time stays out of step statistics; from the editor, record from a test paused at a breakpoint or `page.pause()`.
+- **🧪 Piwi in VS Code's Testing view** — Piwi's tests appear in the Testing view with their latest results, and the editors mark the changes to a page or route no test reaches before the pull request does.
+- **🔑 MCP sign-in for the editor's agent** — The editor's agent signs in to Piwi's MCP server for a token of its own.
+- **🖥️ Local runs to the desktop app** — The reporter's `desktopApp: 'prefer'` option sends local runs to the desktop app.
+- **🔌 One connect wizard** — The setup page is rebuilt around one connect wizard.
+- **📊 Run progress at a glance** — A running run's progress shows on the browser tab, a run's counts are written on its bar, and the count bar alone filters its tests by outcome.
 
 ### Features
 
-* **ai:** add an in-app assistant that answers, guides and proposes changes ([f1ee982](https://github.com/PiwiTests/piwi/commit/f1ee982d2ef39ab6e217c8fa34eddb373e2cc407))
-* **ai:** answer questions about the instance with an assistant that reads the MCP tools ([7c6681c](https://github.com/PiwiTests/piwi/commit/7c6681ced739f4e41463103c1764d660ee1237e1))
-* **ai:** define the assistant's answer blocks and replies ([fa923ab](https://github.com/PiwiTests/piwi/commit/fa923ab6959a8abb5643c2bdb6e0d03df3d1395e))
-* **ai:** open the assistant in a panel whose answers show, guide and ask ([8303743](https://github.com/PiwiTests/piwi/commit/830374329f425278b0cd306bb548c10c2556dc8a))
-* **ai:** suggest guides where they help, answer the demo's questions from its seed ([b7fc772](https://github.com/PiwiTests/piwi/commit/b7fc772f73307e1dec2f36b5c276492097bac467))
-* **ai:** walk users through common tasks and let the assistant propose changes ([21fe4ff](https://github.com/PiwiTests/piwi/commit/21fe4ff6c6ae87e29a972b929ecb9296bb501877))
-* **app:** draw each stop as a paused band and keep paused time out of step statistics ([66c307b](https://github.com/PiwiTests/piwi/commit/66c307be42fba8b537615da7a12c299935d0f310))
-* **app:** select the tests that ran a change's lines, over MCP and piwi run impact ([c1ca2bd](https://github.com/PiwiTests/piwi/commit/c1ca2bd3e9cdca6e9ab9cc31bade3eefc7bfcf97))
-* **app:** select the tests that ran a change's lines, over MCP and piwi run impact ([5f4bb6b](https://github.com/PiwiTests/piwi/commit/5f4bb6bd3a0e6c982aeea36f64bc239ce9b4edb1))
-* **app:** write MCP tool descriptions in Markdown and open each tool on the MCP page ([a496c8d](https://github.com/PiwiTests/piwi/commit/a496c8d40a9197352086ec2b8535ae904298e5d9))
-* **app:** write MCP tool descriptions in Markdown and open each tool on the MCP page ([f703414](https://github.com/PiwiTests/piwi/commit/f703414faa426f77c18f6146eae4741dba0757ae))
-* **demo:** seed a test paused at editor breakpoints, with its screenshot scenes ([1781443](https://github.com/PiwiTests/piwi/commit/17814434eb0a40d0d310622f69982335c2bf54d7))
-* **ide:** let the editor's agent sign in to piwi's mcp server for a token of its own ([527db76](https://github.com/PiwiTests/piwi/commit/527db7692d4915b411c0bacf02270bf0fb293519))
-* **ide:** list Piwi's tests in VS Code's Testing view, with their latest results ([1d03b9a](https://github.com/PiwiTests/piwi/commit/1d03b9a2106ecabbb723e9721b44117a036b44a7))
-* **ide:** mark the changes of a page or route no test reaches, before the pull request does ([6400d58](https://github.com/PiwiTests/piwi/commit/6400d58e12a793fe79696234de749185ceb9824d))
-* **ide:** record from a test paused at a breakpoint or page.pause(), in its own page ([f37ff96](https://github.com/PiwiTests/piwi/commit/f37ff962750d2405d8e0fdecf41a5ccdc2a6f33c))
-* **ide:** the Testing view, uncovered changes, recording from a pause, and an MCP sign-in ([08e4fca](https://github.com/PiwiTests/piwi/commit/08e4fca6d7a679b8c0755e0b15efa0cb685e24e3))
-* **reporter:** pause at breakpoints through playwright's debugger ([acdc1ad](https://github.com/PiwiTests/piwi/commit/acdc1ad9978d8792133fcb2ed22e3ddf8510c736))
-* **reporter:** pause at breakpoints through playwright's debugger ([b3a712f](https://github.com/PiwiTests/piwi/commit/b3a712f9d5d83176c12875fb46c3ba3bc794841c))
-* **reporter:** send local runs to the desktop app with desktopApp: 'prefer' ([3c96ef1](https://github.com/PiwiTests/piwi/commit/3c96ef199493d287ee77cfb4fad577577ec83a2b))
-* **reporter:** send local runs to the desktop app with desktopApp: 'prefer' ([bda7cfc](https://github.com/PiwiTests/piwi/commit/bda7cfc79977621a964e87967e220b80aecc838a))
-* **ui:** filter a run's tests by outcome from the count bar alone ([0b29d0c](https://github.com/PiwiTests/piwi/commit/0b29d0c178e49617df574d8cb34f0015743a0d41))
-* **ui:** give every block of the dashboard a tested guide anchor ([c894427](https://github.com/PiwiTests/piwi/commit/c894427dc73fab26c5cace290236f3cd06d2f0fc))
-* **ui:** rebuild the setup page around one connect wizard ([9fbade9](https://github.com/PiwiTests/piwi/commit/9fbade952acafd8ed828eeec16d2c62fe891e928))
-* **ui:** show a running run's progress on the browser tab ([a5fd1b9](https://github.com/PiwiTests/piwi/commit/a5fd1b91a1b798eb8bb195efe76612891adaa90a))
-* **ui:** show a running run's progress on the browser tab ([8473f31](https://github.com/PiwiTests/piwi/commit/8473f31569a01c968d518b2309b3d68c86ba196c))
-* **ui:** write a run's counts on its bar and give every page one 16 px gutter ([5a2348e](https://github.com/PiwiTests/piwi/commit/5a2348ecd3a8398182862b1dfff722629ecaa52c))
+#### In-app assistant
+- **ai:** add an in-app assistant that answers, guides and proposes changes ([f1ee982](https://github.com/PiwiTests/piwi/commit/f1ee982d2ef39ab6e217c8fa34eddb373e2cc407))
+- **ai:** answer questions about the instance with an assistant that reads the MCP tools ([7c6681c](https://github.com/PiwiTests/piwi/commit/7c6681ced739f4e41463103c1764d660ee1237e1))
+- **ai:** define the assistant's answer blocks and replies ([fa923ab](https://github.com/PiwiTests/piwi/commit/fa923ab6959a8abb5643c2bdb6e0d03df3d1395e))
+- **ai:** open the assistant in a panel whose answers show, guide and ask ([8303743](https://github.com/PiwiTests/piwi/commit/830374329f425278b0cd306bb548c10c2556dc8a))
+- **ai:** walk users through common tasks and let the assistant propose changes ([21fe4ff](https://github.com/PiwiTests/piwi/commit/21fe4ff6c6ae87e29a972b929ecb9296bb501877))
+- **ai:** suggest guides where they help, answer the demo's questions from its seed ([b7fc772](https://github.com/PiwiTests/piwi/commit/b7fc772f73307e1dec2f36b5c276492097bac467))
+- **ui:** give every block of the dashboard a tested guide anchor ([c894427](https://github.com/PiwiTests/piwi/commit/c894427dc73fab26c5cace290236f3cd06d2f0fc))
 
+#### MCP
+- **app:** write MCP tool descriptions in Markdown and open each tool on the MCP page ([a496c8d](https://github.com/PiwiTests/piwi/commit/a496c8d40a9197352086ec2b8535ae904298e5d9), [f703414](https://github.com/PiwiTests/piwi/commit/f703414faa426f77c18f6146eae4741dba0757ae))
+- **ide:** let the editor's agent sign in to Piwi's MCP server for a token of its own ([527db76](https://github.com/PiwiTests/piwi/commit/527db7692d4915b411c0bacf02270bf0fb293519))
 
-### Bug Fixes
+#### Impact
+- **app:** select the tests that ran a change's lines, over MCP and `piwi run impact` ([c1ca2bd](https://github.com/PiwiTests/piwi/commit/c1ca2bd3e9cdca6e9ab9cc31bade3eefc7bfcf97), [5f4bb6b](https://github.com/PiwiTests/piwi/commit/5f4bb6bd3a0e6c982aeea36f64bc239ce9b4edb1))
+- **ide:** mark the changes of a page or route no test reaches, before the pull request does ([6400d58](https://github.com/PiwiTests/piwi/commit/6400d58e12a793fe79696234de749185ceb9824d))
 
-* **ai:** close the races and gaps the assistant's code review found ([741ec41](https://github.com/PiwiTests/piwi/commit/741ec41ec3f3ba90c032508620232173728e9055))
-* **ai:** let a server run the assistant on Claude Code, reaching its tools over IPv4 or IPv6 ([eca46cf](https://github.com/PiwiTests/piwi/commit/eca46cfc4932eba1ffc138d588dcd29f6da15fb4))
-* **app:** budget the controls the failure pages open on, not what the fold cuts ([53edb96](https://github.com/PiwiTests/piwi/commit/53edb9634f9efcc75d09c9a88b1afd26a8794800))
-* **app:** budget the controls the failure pages open on, not what the fold cuts ([4c9edd5](https://github.com/PiwiTests/piwi/commit/4c9edd51b1c847a8905ac029b0f30fc0fcfc34bb))
-* **app:** correct MCP tool descriptions against what the handlers return ([f4f3fa8](https://github.com/PiwiTests/piwi/commit/f4f3fa840087d2c85a392c36bae370ec9579f50f))
-* **app:** keep MCP tool summaries plain and the tool rows within the type scale ([6130f57](https://github.com/PiwiTests/piwi/commit/6130f57dffc75148baf7e813dabc5e446518065c))
-* **app:** keep the tests line-level impact cannot rule out ([964a782](https://github.com/PiwiTests/piwi/commit/964a782ca6cb4ff5332d851e5e954426c2ae90cc))
-* **app:** lighten a guide's overlay so the page around the stop stays readable ([24d6387](https://github.com/PiwiTests/piwi/commit/24d6387af11bff36ebcb700c14556fe9cc441ca7))
-* **app:** name the AI settings page "AI", as the docs and the dashboard call it ([395ed55](https://github.com/PiwiTests/piwi/commit/395ed5558f6704f4e4b3ddda3a78303caad3c448))
-* **app:** name the test's own HTTP call as the slow request when it is the failed step ([3aa9b43](https://github.com/PiwiTests/piwi/commit/3aa9b43528ea27d85bbadb19f97ed0cec319f881))
-* **app:** name the test's own HTTP call as the slow request when it is the failed step ([63c7386](https://github.com/PiwiTests/piwi/commit/63c7386a3e7c3c1800b54996fd8039dc384937ce))
-* **app:** read a paused step's own time in clues, hints, exports and the AI context ([accbeaa](https://github.com/PiwiTests/piwi/commit/accbeaa8cb7ae1d49b73298172fa2626f45fa64f))
-* **app:** show marker details on hover and rework the markers panel ([beb2e9f](https://github.com/PiwiTests/piwi/commit/beb2e9f9e03afbd54d8e2b15f0f272d030a62429))
-* **app:** show marker details on hover and rework the markers panel ([0edcab3](https://github.com/PiwiTests/piwi/commit/0edcab39eb28db6815f73ba3efc22b303b7225d2))
-* **ci:** keep the full chromium build out of the headless shell's cache ([a0e5f42](https://github.com/PiwiTests/piwi/commit/a0e5f422eddb8e6e8932da4dbcf131f03dc79d36))
-* **demo:** serve the sql.js WASM of the installed sql.js ([ece156c](https://github.com/PiwiTests/piwi/commit/ece156c17b54ed92bfb4f7d6c403ebcbb6601b6c))
-* **deps:** adapt to the npm minor-and-patch group, holding back three updates ([70c3ee7](https://github.com/PiwiTests/piwi/commit/70c3ee7fb257a3561d49f339914608e1460aea89))
-* **deps:** bump @libsql/client to 0.18 and set the sqlite pragmas on each pooled connection ([3f18da5](https://github.com/PiwiTests/piwi/commit/3f18da55fe5b728447c73ed3b517bebf3944e448))
-* **deps:** bump @libsql/client to 0.18 and set the sqlite pragmas on each pooled connection ([9890753](https://github.com/PiwiTests/piwi/commit/9890753bc5951d0793903f0d245006c10015715b))
-* **deps:** keep OpenTelemetry on one release line (SDK 2.12) ([216004d](https://github.com/PiwiTests/piwi/commit/216004de18203beedf27f49736ad9c51a80fa25c))
-* **deps:** take the fixes for the npm and RustSec advisories that have one ([6fd7064](https://github.com/PiwiTests/piwi/commit/6fd7064f97001ebaf5d820720a76a967596e513e))
-* **deps:** take the open Dependabot updates and the advisory fixes they unblock ([c0ec2bd](https://github.com/PiwiTests/piwi/commit/c0ec2bd98e4960375e90c40d8c22e1b89ce5a4b7))
-* **extension:** count a Back after a page load as the person's, and shorten card-long names ([6596018](https://github.com/PiwiTests/piwi/commit/65960185af83da1cbceb17d2ecc744ea526cbe93))
-* **extension:** give the keys a replay sends with page events their key codes ([43a6c9c](https://github.com/PiwiTests/piwi/commit/43a6c9cda273dabc060e41e1e798495a9869d842))
-* **extension:** hand over replay input a browser dialog took, and let the recording bar move ([38a59a2](https://github.com/PiwiTests/piwi/commit/38a59a2e14af213f5afc27ab05cd23808dc52348))
-* **extension:** record a click whose candidate also finds its container's parent ([1f92f33](https://github.com/PiwiTests/piwi/commit/1f92f33baecb03c185ec17af141c3eacf4535be7))
-* **extension:** record an icon's own control, and only the person's own Back, Forward and reload ([983325f](https://github.com/PiwiTests/piwi/commit/983325ff49f49c8b95f0ae9eb988aab9878a2ae3))
-* **extension:** replay on the recorded locator first, and say why a step is left to the person ([8f80066](https://github.com/PiwiTests/piwi/commit/8f8006653716d44088e02dd46daed992e54e52be))
-* **extension:** replay with every recorded locator, and record what real sites showed it missed ([d6d38e4](https://github.com/PiwiTests/piwi/commit/d6d38e493b7bf024c016c2170a7ae378e085c47b))
-* **extension:** replay with every recorded locator, and record what was missed ([1095f43](https://github.com/PiwiTests/piwi/commit/1095f43d41627c7f95231fb415a96eeb5afa37bd))
-* **extension:** weigh a brittle recorded locator's vote less in a replay ([9796b47](https://github.com/PiwiTests/piwi/commit/9796b477a4097b6bb958fce5fd680d79960fb16e))
-* **ide:** address the independent review of the editor plugins' larger items ([f9fe5e4](https://github.com/PiwiTests/piwi/commit/f9fe5e44f7d60badf0d5ecf61f9645f359a4fcd4))
-* **ide:** close the gaps a review found in the testing view, a pause's recording and its runs ([e78a204](https://github.com/PiwiTests/piwi/commit/e78a2040bd9fc7df14bc98c735a21b35aacae154))
-* **ide:** watch the JetBrains editor service's process, not the internal LSP listener ([39afdcf](https://github.com/PiwiTests/piwi/commit/39afdcf6284f3dd8d5cfc9cb57f5077f063a985a))
-* **ide:** watch the JetBrains editor service's process, not the internal LSP listener ([e516a15](https://github.com/PiwiTests/piwi/commit/e516a15d943f09c082c78a034a33337b3680c402))
-* **reporter:** ignore a desktop app that crashed, and keep init's choices ([dd8ba1e](https://github.com/PiwiTests/piwi/commit/dd8ba1e142872c7459c76a92ed867baf839d02a1))
-* **reporter:** leave playwright's own pauses alone and keep stops off the timeline ([0c8b3c2](https://github.com/PiwiTests/piwi/commit/0c8b3c241600907ccc3dcbbfa4d45a91fe5100a6))
-* **reporter:** leave the stop out of a test that ended under the bar ([70d4e3d](https://github.com/PiwiTests/piwi/commit/70d4e3dffbe8d792342540362292d7ab38456a08))
-* **reporter:** let a held call go at once when a stop ends unanswered ([ed092a4](https://github.com/PiwiTests/piwi/commit/ed092a4c1211838f00d03efb50de6829087f9e87))
-* **reporter:** make piwi select impact print arguments that run nothing when no test is impacted ([84acb8f](https://github.com/PiwiTests/piwi/commit/84acb8f04ea752ee0c6882e3aa64dc3c7912e224))
-* **reporter:** read the connection from the config folder's .env ([7adc665](https://github.com/PiwiTests/piwi/commit/7adc6659ecbe27349aea424f591698d7f4e0d98c))
-* **reporter:** read the connection from the config folder's .env ([6d334d8](https://github.com/PiwiTests/piwi/commit/6d334d8c5e4ca1266a4adf81b4c8f04ac93dc14e))
-* **ui:** end a paused test's bar where it ended and keep the band labels readable ([a31268a](https://github.com/PiwiTests/piwi/commit/a31268a0c8c29ff92bac524b22b45f68881f88a2))
-* **ui:** gate the setup page's API key and keep its status line current ([72236b3](https://github.com/PiwiTests/piwi/commit/72236b3070ea2b8ee9ba541bb30a83185843bbf8))
-* **ui:** give the run's test list more room and every page one gutter ([5c3be1b](https://github.com/PiwiTests/piwi/commit/5c3be1b76c0eefcea857479c25b81849f0f4990e))
-* **ui:** keep the count bar a pill, its end segments rounded when selected ([c529eac](https://github.com/PiwiTests/piwi/commit/c529eacaaff668e67766dc872021fc391bcf87d1))
-* **ui:** keep the run tab indicator right on cancelled and growing runs ([033a378](https://github.com/PiwiTests/piwi/commit/033a3789a17a979b8d95498fb53804e6c1dce562))
-* **ui:** measure every count bar segment and keep loose page content off the phone edge ([9405436](https://github.com/PiwiTests/piwi/commit/9405436f00f9351b0738b9be069a4b723429312c))
-* **ui:** open a slower or faster test on its Performance evidence tab ([a4cc283](https://github.com/PiwiTests/piwi/commit/a4cc2834e0adbf19f866e50d0904581879e2a99b))
-* **ui:** open the tab a link names on the run, project and execution pages ([89aa801](https://github.com/PiwiTests/piwi/commit/89aa801c4dc72481b859729bd1a387994193dcdd))
-* **ui:** open the tab a link names when it points at the page already open ([06af4a8](https://github.com/PiwiTests/piwi/commit/06af4a84be0b6e5629c3987e9c4c54057270532e))
+#### Pauses & breakpoints
+- **reporter:** pause at breakpoints through Playwright's debugger ([acdc1ad](https://github.com/PiwiTests/piwi/commit/acdc1ad9978d8792133fcb2ed22e3ddf8510c736), [b3a712f](https://github.com/PiwiTests/piwi/commit/b3a712f9d5d83176c12875fb46c3ba3bc794841c))
+- **app:** draw each stop as a paused band and keep paused time out of step statistics ([66c307b](https://github.com/PiwiTests/piwi/commit/66c307be42fba8b537615da7a12c299935d0f310))
+- **ide:** record from a test paused at a breakpoint or `page.pause()`, in its own page ([f37ff96](https://github.com/PiwiTests/piwi/commit/f37ff962750d2405d8e0fdecf41a5ccdc2a6f33c))
+- **demo:** seed a test paused at editor breakpoints, with its screenshot scenes ([1781443](https://github.com/PiwiTests/piwi/commit/17814434eb0a40d0d310622f69982335c2bf54d7))
 
+#### Piwi in your editor
+- **ide:** list Piwi's tests in VS Code's Testing view, with their latest results ([1d03b9a](https://github.com/PiwiTests/piwi/commit/1d03b9a2106ecabbb723e9721b44117a036b44a7))
+- **ide:** the Testing view, uncovered changes, recording from a pause, and an MCP sign-in ([08e4fca](https://github.com/PiwiTests/piwi/commit/08e4fca6d7a679b8c0755e0b15efa0cb685e24e3))
+
+#### Setup, runs & layout
+- **reporter:** send local runs to the desktop app with `desktopApp: 'prefer'` ([3c96ef1](https://github.com/PiwiTests/piwi/commit/3c96ef199493d287ee77cfb4fad577577ec83a2b), [bda7cfc](https://github.com/PiwiTests/piwi/commit/bda7cfc79977621a964e87967e220b80aecc838a))
+- **ui:** rebuild the setup page around one connect wizard ([9fbade9](https://github.com/PiwiTests/piwi/commit/9fbade952acafd8ed828eeec16d2c62fe891e928))
+- **ui:** show a running run's progress on the browser tab ([a5fd1b9](https://github.com/PiwiTests/piwi/commit/a5fd1b91a1b798eb8bb195efe76612891adaa90a), [8473f31](https://github.com/PiwiTests/piwi/commit/8473f31569a01c968d518b2309b3d68c86ba196c))
+- **ui:** filter a run's tests by outcome from the count bar alone ([0b29d0c](https://github.com/PiwiTests/piwi/commit/0b29d0c178e49617df574d8cb34f0015743a0d41))
+- **ui:** write a run's counts on its bar and give every page one 16 px gutter ([5a2348e](https://github.com/PiwiTests/piwi/commit/5a2348ecd3a8398182862b1dfff722629ecaa52c))
 
 ### Performance Improvements
 
-* **ai:** tell a declined assistant from the capability states, with no status request per page ([66b9d67](https://github.com/PiwiTests/piwi/commit/66b9d6702a40930170f36270c7f6d0e6c2af1761))
+- **ai:** tell a declined assistant from the capability states, with no status request per page ([66b9d67](https://github.com/PiwiTests/piwi/commit/66b9d6702a40930170f36270c7f6d0e6c2af1761))
+
+### Bug Fixes
+
+#### Assistant & MCP
+- **ai:** close the races and gaps the assistant's code review found ([741ec41](https://github.com/PiwiTests/piwi/commit/741ec41ec3f3ba90c032508620232173728e9055))
+- **ai:** let a server run the assistant on Claude Code, reaching its tools over IPv4 or IPv6 ([eca46cf](https://github.com/PiwiTests/piwi/commit/eca46cfc4932eba1ffc138d588dcd29f6da15fb4))
+- **app:** lighten a guide's overlay so the page around the stop stays readable ([24d6387](https://github.com/PiwiTests/piwi/commit/24d6387af11bff36ebcb700c14556fe9cc441ca7))
+- **app:** name the AI settings page "AI", as the docs and the dashboard call it ([395ed55](https://github.com/PiwiTests/piwi/commit/395ed5558f6704f4e4b3ddda3a78303caad3c448))
+- **app:** correct MCP tool descriptions against what the handlers return ([f4f3fa8](https://github.com/PiwiTests/piwi/commit/f4f3fa840087d2c85a392c36bae370ec9579f50f))
+- **app:** keep MCP tool summaries plain and the tool rows within the type scale ([6130f57](https://github.com/PiwiTests/piwi/commit/6130f57dffc75148baf7e813dabc5e446518065c))
+
+#### Pauses & the timeline
+- **reporter:** leave Playwright's own pauses alone and keep stops off the timeline ([0c8b3c2](https://github.com/PiwiTests/piwi/commit/0c8b3c241600907ccc3dcbbfa4d45a91fe5100a6))
+- **reporter:** leave the stop out of a test that ended under the bar ([70d4e3d](https://github.com/PiwiTests/piwi/commit/70d4e3dffbe8d792342540362292d7ab38456a08))
+- **reporter:** let a held call go at once when a stop ends unanswered ([ed092a4](https://github.com/PiwiTests/piwi/commit/ed092a4c1211838f00d03efb50de6829087f9e87))
+- **app:** read a paused step's own time in clues, hints, exports and the AI context ([accbeaa](https://github.com/PiwiTests/piwi/commit/accbeaa8cb7ae1d49b73298172fa2626f45fa64f))
+- **ui:** end a paused test's bar where it ended and keep the band labels readable ([a31268a](https://github.com/PiwiTests/piwi/commit/a31268a0c8c29ff92bac524b22b45f68881f88a2))
+- **app:** show marker details on hover and rework the markers panel ([beb2e9f](https://github.com/PiwiTests/piwi/commit/beb2e9f9e03afbd54d8e2b15f0f272d030a62429), [0edcab3](https://github.com/PiwiTests/piwi/commit/0edcab39eb28db6815f73ba3efc22b303b7225d2))
+
+#### Impact & failure analysis
+- **app:** keep the tests line-level impact cannot rule out ([964a782](https://github.com/PiwiTests/piwi/commit/964a782ca6cb4ff5332d851e5e954426c2ae90cc))
+- **reporter:** make `piwi select impact` print arguments that run nothing when no test is impacted ([84acb8f](https://github.com/PiwiTests/piwi/commit/84acb8f04ea752ee0c6882e3aa64dc3c7912e224))
+- **app:** name the test's own HTTP call as the slow request when it is the failed step ([3aa9b43](https://github.com/PiwiTests/piwi/commit/3aa9b43528ea27d85bbadb19f97ed0cec319f881), [63c7386](https://github.com/PiwiTests/piwi/commit/63c7386a3e7c3c1800b54996fd8039dc384937ce))
+- **app:** budget the controls the failure pages open on, not what the fold cuts ([53edb96](https://github.com/PiwiTests/piwi/commit/53edb9634f9efcc75d09c9a88b1afd26a8794800), [4c9edd5](https://github.com/PiwiTests/piwi/commit/4c9edd51b1c847a8905ac029b0f30fc0fcfc34bb))
+
+#### Dashboard
+- **ui:** gate the setup page's API key and keep its status line current ([72236b3](https://github.com/PiwiTests/piwi/commit/72236b3070ea2b8ee9ba541bb30a83185843bbf8))
+- **ui:** keep the run tab indicator right on cancelled and growing runs ([033a378](https://github.com/PiwiTests/piwi/commit/033a3789a17a979b8d95498fb53804e6c1dce562))
+- **ui:** keep the count bar a pill, its end segments rounded when selected ([c529eac](https://github.com/PiwiTests/piwi/commit/c529eacaaff668e67766dc872021fc391bcf87d1))
+- **ui:** measure every count bar segment and keep loose page content off the phone edge ([9405436](https://github.com/PiwiTests/piwi/commit/9405436f00f9351b0738b9be069a4b723429312c))
+- **ui:** give the run's test list more room and every page one gutter ([5c3be1b](https://github.com/PiwiTests/piwi/commit/5c3be1b76c0eefcea857479c25b81849f0f4990e))
+- **ui:** open a slower or faster test on its Performance evidence tab ([a4cc283](https://github.com/PiwiTests/piwi/commit/a4cc2834e0adbf19f866e50d0904581879e2a99b))
+- **ui:** open the tab a link names on the run, project and execution pages ([89aa801](https://github.com/PiwiTests/piwi/commit/89aa801c4dc72481b859729bd1a387994193dcdd))
+- **ui:** open the tab a link names when it points at the page already open ([06af4a8](https://github.com/PiwiTests/piwi/commit/06af4a84be0b6e5629c3987e9c4c54057270532e))
+
+#### Reporter & editors
+- **reporter:** read the connection from the config folder's `.env` ([7adc665](https://github.com/PiwiTests/piwi/commit/7adc6659ecbe27349aea424f591698d7f4e0d98c), [6d334d8](https://github.com/PiwiTests/piwi/commit/6d334d8c5e4ca1266a4adf81b4c8f04ac93dc14e))
+- **reporter:** ignore a desktop app that crashed, and keep init's choices ([dd8ba1e](https://github.com/PiwiTests/piwi/commit/dd8ba1e142872c7459c76a92ed867baf839d02a1))
+- **ide:** close the gaps a review found in the Testing view, a pause's recording and its runs ([e78a204](https://github.com/PiwiTests/piwi/commit/e78a2040bd9fc7df14bc98c735a21b35aacae154))
+- **ide:** address the independent review of the editor plugins' larger items ([f9fe5e4](https://github.com/PiwiTests/piwi/commit/f9fe5e44f7d60badf0d5ecf61f9645f359a4fcd4))
+- **ide:** watch the JetBrains editor service's process, not the internal LSP listener ([39afdcf](https://github.com/PiwiTests/piwi/commit/39afdcf6284f3dd8d5cfc9cb57f5077f063a985a), [e516a15](https://github.com/PiwiTests/piwi/commit/e516a15d943f09c082c78a034a33337b3680c402))
+
+<details>
+<summary><strong>Piwi Picker recording and replay fixes</strong> — recording the control the person meant, and replaying it with every locator it recorded</summary>
+
+- **extension:** replay with every recorded locator, and record what real sites showed it missed ([d6d38e4](https://github.com/PiwiTests/piwi/commit/d6d38e493b7bf024c016c2170a7ae378e085c47b), [1095f43](https://github.com/PiwiTests/piwi/commit/1095f43d41627c7f95231fb415a96eeb5afa37bd))
+- **extension:** replay on the recorded locator first, and say why a step is left to the person ([8f80066](https://github.com/PiwiTests/piwi/commit/8f8006653716d44088e02dd46daed992e54e52be))
+- **extension:** weigh a brittle recorded locator's vote less in a replay ([9796b47](https://github.com/PiwiTests/piwi/commit/9796b477a4097b6bb958fce5fd680d79960fb16e))
+- **extension:** give the keys a replay sends with page events their key codes ([43a6c9c](https://github.com/PiwiTests/piwi/commit/43a6c9cda273dabc060e41e1e798495a9869d842))
+- **extension:** hand over replay input a browser dialog took, and let the recording bar move ([38a59a2](https://github.com/PiwiTests/piwi/commit/38a59a2e14af213f5afc27ab05cd23808dc52348))
+- **extension:** record a click whose candidate also finds its container's parent ([1f92f33](https://github.com/PiwiTests/piwi/commit/1f92f33baecb03c185ec17af141c3eacf4535be7))
+- **extension:** record an icon's own control, and only the person's own Back, Forward and reload ([983325f](https://github.com/PiwiTests/piwi/commit/983325ff49f49c8b95f0ae9eb988aab9878a2ae3))
+- **extension:** count a Back after a page load as the person's, and shorten card-long names ([6596018](https://github.com/PiwiTests/piwi/commit/65960185af83da1cbceb17d2ecc744ea526cbe93))
+
+</details>
+
+<details>
+<summary><strong>Dependencies, CI and demo build</strong> — dependency updates, advisory fixes and build plumbing</summary>
+
+- **deps:** bump `@libsql/client` to 0.18 and set the SQLite pragmas on each pooled connection ([3f18da5](https://github.com/PiwiTests/piwi/commit/3f18da55fe5b728447c73ed3b517bebf3944e448), [9890753](https://github.com/PiwiTests/piwi/commit/9890753bc5951d0793903f0d245006c10015715b))
+- **deps:** keep OpenTelemetry on one release line (SDK 2.12) ([216004d](https://github.com/PiwiTests/piwi/commit/216004de18203beedf27f49736ad9c51a80fa25c))
+- **deps:** take the fixes for the npm and RustSec advisories that have one ([6fd7064](https://github.com/PiwiTests/piwi/commit/6fd7064f97001ebaf5d820720a76a967596e513e))
+- **deps:** take the open Dependabot updates and the advisory fixes they unblock ([c0ec2bd](https://github.com/PiwiTests/piwi/commit/c0ec2bd98e4960375e90c40d8c22e1b89ce5a4b7))
+- **deps:** adapt to the npm minor-and-patch group, holding back three updates ([70c3ee7](https://github.com/PiwiTests/piwi/commit/70c3ee7fb257a3561d49f339914608e1460aea89))
+- **ci:** keep the full Chromium build out of the headless shell's cache ([a0e5f42](https://github.com/PiwiTests/piwi/commit/a0e5f422eddb8e6e8932da4dbcf131f03dc79d36))
+- **demo:** serve the sql.js WASM of the installed sql.js ([ece156c](https://github.com/PiwiTests/piwi/commit/ece156c17b54ed92bfb4f7d6c403ebcbb6601b6c))
+
+</details>
+
+<!-- notes:polished -->
 
 ## [0.59.0](https://github.com/PiwiTests/platform/compare/v0.58.0...v0.59.0) (2026-10-22)
 
+This release works through the Piwi Picker and editor audits: Piwi Picker picks inside shadow roots, narrows a locator to the repeated row or card it sits in, words its results and writes the action and assertion an element calls for, while the VS Code and JetBrains integrations gain a getting-started walkthrough, a Failures node per Playwright config, running the test at the cursor, and every `--repeat-each` result.
+
+**Full diff:** [v0.58.0…v0.59.0](https://github.com/PiwiTests/platform/compare/v0.58.0...v0.59.0)
+
+### ✨ Highlights
+
+- **🎯 Picking that reaches more of the page** — Pick elements inside open shadow roots, pick the outlined or focused element with Enter, and keep the picked element outlined with an offer to pick another.
+- **🧱 Repeated rows and cards** — Piwi Picker narrows a locator to the repeated row or card it sits in, derives the repeated pattern in multi-pick, and lint suggests test ids from names and repeated containers.
+- **✍️ The action and the assertion** — Pick results are worded instead of scored, and Piwi Picker writes the action and the assertion the picked element calls for.
+- **🧪 A Locators console with a history** — The console keeps a history, copies a locator in other forms, adds it to the session and sends it to the paired editor.
+- **⏯️ Recordings you can pause and replay** — Pause and resume a recording from its bar, give it a title its spec and steps file take, and replay a plain recording before exporting it.
+- **🧑‍💻 Editors, from first run to the test at the cursor** — A getting-started walkthrough in VS Code and a first-run notification in JetBrains, one Failures node per Playwright config, running the test at the cursor and running tests as VS Code tasks.
+- **🔁 Every `--repeat-each` result kept** — A run keeps each repetition of a test, and the editors read a repeated run's total from its counts.
+- **📍 Lists as you left them** — Coming back to a page shows each list, and each tab's scroll, as the user left it.
 
 ### Features
 
-* **app:** open a path in VS Code through the Piwi extension, with no workspace root ([5edc315](https://github.com/PiwiTests/platform/commit/5edc3158540323c10faf13b57b4c94b5a658eb48))
-* **app:** pick elements inside open shadow roots ([0eb3280](https://github.com/PiwiTests/platform/commit/0eb328076525757c49ff52b5ef9b7d8324fad58d))
-* **app:** pick the outlined or the focused element with Enter ([115f5c6](https://github.com/PiwiTests/platform/commit/115f5c65a9eb8d65d091da6d1b74868ac25be968))
-* **extension:** add a picked locator to the session from the pick results ([b060c01](https://github.com/PiwiTests/platform/commit/b060c01684be157492c77a754fbcaf2540e72338))
-* **extension:** build the quick wins and the ranking fixes of the Piwi Picker audit ([3a9c75b](https://github.com/PiwiTests/platform/commit/3a9c75bfa35ba416447f1303f444af0262862254))
-* **extension:** derive the repeated row or card pattern in multi-pick ([35bf614](https://github.com/PiwiTests/platform/commit/35bf614800a56287d3bcd2ba86ad85c9ce391d5b))
-* **extension:** give a recording a title its spec and steps file take ([cb18885](https://github.com/PiwiTests/platform/commit/cb18885f4c8dbf4810e14cbe46581b29095285a2))
-* **extension:** give the Locators console a history, Copy as and Add to session ([ea7ffdc](https://github.com/PiwiTests/platform/commit/ea7ffdc0917829b5f23390e06679e4d73edf456c))
-* **extension:** keep the picked element outlined and offer pick another ([9507834](https://github.com/PiwiTests/platform/commit/95078342ca5faf0c9d0e3bccd9a87710436dbd8f))
-* **extension:** list the sites Piwi Picker may run on, with Revoke ([9d8a729](https://github.com/PiwiTests/platform/commit/9d8a729e356e765369696152ce8d50dc9ea13e06))
-* **extension:** narrow a locator to the repeated row or card it sits in ([02dc310](https://github.com/PiwiTests/platform/commit/02dc310fec9fe06e83efe0eb64420afb905dd237))
-* **extension:** offer the paired desktop app as the instance, and the reverse ([df137c9](https://github.com/PiwiTests/platform/commit/df137c99f07d076925f9f8862ad5bf26cb6dd7bc))
-* **extension:** pause and resume a recording from its bar ([550bb78](https://github.com/PiwiTests/platform/commit/550bb783e36d88f55a5d9df024815a1e0db5140f))
-* **extension:** replay a plain recording before exporting it ([d1aaeb5](https://github.com/PiwiTests/platform/commit/d1aaeb5f4d01563d231b70be6aa28cfe8f6df9a0))
-* **extension:** say in the popup and the settings whether the instance answers ([2ee3cb2](https://github.com/PiwiTests/platform/commit/2ee3cb25fb5fffe189aab1f026bb0e95758c63fa))
-* **extension:** send the Locators console's locator to the paired editor ([171273f](https://github.com/PiwiTests/platform/commit/171273fb8f0aeb7eb82e64b93a2394b4e4fd04a2))
-* **extension:** send the top locator to the editor from the elements sidebar ([53711e7](https://github.com/PiwiTests/platform/commit/53711e7b9d77650155a83b875869daf57b72e69a))
-* **extension:** show the compact tiles' hints and say what to do when not set up ([5b5b441](https://github.com/PiwiTests/platform/commit/5b5b441bd39ff29e5e60f9bb75f30e86fb36f5cc))
-* **extension:** skip the anchors step when a locator finds the element alone ([5f9974b](https://github.com/PiwiTests/platform/commit/5f9974bf195ffbac704e9592d1480a67b9003ea6))
-* **extension:** start Pick, Lint and Tested elements from the Piwi panel's toolbar ([a3e031d](https://github.com/PiwiTests/platform/commit/a3e031d33a3eb288106206faeed66b7d2730c8c3))
-* **extension:** suggest lint test ids from names and repeated containers ([7209922](https://github.com/PiwiTests/platform/commit/7209922b619a838690cee0945b8d5356cd28dbf9))
-* **extension:** word each pick result instead of showing its score ([d1dd1cf](https://github.com/PiwiTests/platform/commit/d1dd1cf199eae048e850d9b0729c330a5a61be19))
-* **extension:** write the action and the assertion the element calls for ([1a8a0dd](https://github.com/PiwiTests/platform/commit/1a8a0dd79fcc0932a31a9316fc808cd9da8b3d4e))
-* **ide:** a getting-started walkthrough in VS Code and a first-run notification in JetBrains ([eaa6e66](https://github.com/PiwiTests/platform/commit/eaa6e665cfa6195bee045fbf0bb2a05f0d55f5d2))
-* **ide:** build the editor extensions audit, and keep every --repeat-each result ([41632b1](https://github.com/PiwiTests/platform/commit/41632b17cdb123ec8a1d132c80c640184d7bb0c3))
-* **ide:** complete locators after any page expression and inside expect( ([bef8eb7](https://github.com/PiwiTests/platform/commit/bef8eb7d62113a1fb6245a6efbcd57fb97411ff9))
-* **ide:** one Failures node per Playwright config, and a status bar for the active file's config ([fdb65b6](https://github.com/PiwiTests/platform/commit/fdb65b6aad1b3eee65e1cc95d5eee6dac703d18a))
-* **ide:** proxy settings, keybindings, a trace setting and a log command in VS Code ([fe17837](https://github.com/PiwiTests/platform/commit/fe1783763172b6967ad362202e8b105e6a88aaf9))
-* **ide:** run or verify a recorded test three times, and choose another verified locator ([e9a4436](https://github.com/PiwiTests/platform/commit/e9a4436d8e89c63701f283d1d2613dfbee3fea6c))
-* **ide:** run the test at the cursor, choose a failure's severity, run tests as VS Code tasks ([9513629](https://github.com/PiwiTests/platform/commit/9513629ae40032670b002b4327825944ec9c4c3e))
-* **ui:** show each list as the user left it when they come back to a page ([5b78dbc](https://github.com/PiwiTests/platform/commit/5b78dbc3734809aeb2061ba03285eceb1ab7404c))
+#### Picking & ranking
+- **app:** pick elements inside open shadow roots ([0eb3280](https://github.com/PiwiTests/platform/commit/0eb328076525757c49ff52b5ef9b7d8324fad58d))
+- **app:** pick the outlined or the focused element with Enter ([115f5c6](https://github.com/PiwiTests/platform/commit/115f5c65a9eb8d65d091da6d1b74868ac25be968))
+- **extension:** keep the picked element outlined and offer pick another ([9507834](https://github.com/PiwiTests/platform/commit/95078342ca5faf0c9d0e3bccd9a87710436dbd8f))
+- **extension:** word each pick result instead of showing its score ([d1dd1cf](https://github.com/PiwiTests/platform/commit/d1dd1cf199eae048e850d9b0729c330a5a61be19))
+- **extension:** write the action and the assertion the element calls for ([1a8a0dd](https://github.com/PiwiTests/platform/commit/1a8a0dd79fcc0932a31a9316fc808cd9da8b3d4e))
+- **extension:** skip the anchors step when a locator finds the element alone ([5f9974b](https://github.com/PiwiTests/platform/commit/5f9974bf195ffbac704e9592d1480a67b9003ea6))
+- **extension:** build the quick wins and the ranking fixes of the Piwi Picker audit ([3a9c75b](https://github.com/PiwiTests/platform/commit/3a9c75bfa35ba416447f1303f444af0262862254))
 
+#### Repeated rows, cards & lint
+- **extension:** narrow a locator to the repeated row or card it sits in ([02dc310](https://github.com/PiwiTests/platform/commit/02dc310fec9fe06e83efe0eb64420afb905dd237))
+- **extension:** derive the repeated row or card pattern in multi-pick ([35bf614](https://github.com/PiwiTests/platform/commit/35bf614800a56287d3bcd2ba86ad85c9ce391d5b))
+- **extension:** suggest lint test ids from names and repeated containers ([7209922](https://github.com/PiwiTests/platform/commit/7209922b619a838690cee0945b8d5356cd28dbf9))
 
-### Bug Fixes
+#### Locators console & sessions
+- **extension:** give the Locators console a history, Copy as and Add to session ([ea7ffdc](https://github.com/PiwiTests/platform/commit/ea7ffdc0917829b5f23390e06679e4d73edf456c))
+- **extension:** add a picked locator to the session from the pick results ([b060c01](https://github.com/PiwiTests/platform/commit/b060c01684be157492c77a754fbcaf2540e72338))
+- **extension:** send the Locators console's locator to the paired editor ([171273f](https://github.com/PiwiTests/platform/commit/171273fb8f0aeb7eb82e64b93a2394b4e4fd04a2))
+- **extension:** send the top locator to the editor from the elements sidebar ([53711e7](https://github.com/PiwiTests/platform/commit/53711e7b9d77650155a83b875869daf57b72e69a))
+- **extension:** start Pick, Lint and Tested elements from the Piwi panel's toolbar ([a3e031d](https://github.com/PiwiTests/platform/commit/a3e031d33a3eb288106206faeed66b7d2730c8c3))
 
-* **db:** keep every --repeat-each result of a test in a run ([a8ae723](https://github.com/PiwiTests/platform/commit/a8ae723cd9ab68f0c8a85d2b75dfaecd2332144f))
-* **desktop:** pass Tauri's window handle to the windows 0.62 taskbar calls ([f799d18](https://github.com/PiwiTests/platform/commit/f799d1867de7e4651763cebb1b15ff868d0b6641))
-* **extension:** copy the locators console's assertion from its match count and first match ([7c52a50](https://github.com/PiwiTests/platform/commit/7c52a501c43864f19a22d7b4fe730188680acb57))
-* **extension:** keep a recorded event when a pause or a title write lands beside it in firefox ([552d538](https://github.com/PiwiTests/platform/commit/552d53804b6ee4e4d08ef03dbe5209d45495c8c3))
-* **extension:** keep the lines of this browser across Disconnect and reconnect ([56b08c1](https://github.com/PiwiTests/platform/commit/56b08c1c0d43fbbcc9d80f2d035dfb4c66cfd2a8))
-* **extension:** keep the playwright view's labels from overlapping ([34c17a5](https://github.com/PiwiTests/platform/commit/34c17a55fcea5835d6b59ad8b5cd3e8bf2fedebc))
-* **extension:** keep the recording's evidence out of a replay started on its page ([e1f26b3](https://github.com/PiwiTests/platform/commit/e1f26b3601da897affcf727eddcbe54ab3c1b8c6))
-* **extension:** keep the set-aside lines until a reconnection is kept ([fc6061c](https://github.com/PiwiTests/platform/commit/fc6061c75ce81f2cbb2f27f9dd62a8d620148955))
-* **extension:** make the non-modal panels regions instead of dialogs ([5e0bc4a](https://github.com/PiwiTests/platform/commit/5e0bc4ab67669b2efabccd2a8abe913e15b3fadb))
-* **extension:** prove the desktop app before sending its token as an instance key ([47d43c0](https://github.com/PiwiTests/platform/commit/47d43c05c350027aadfd584c497e1250e9e4021e))
-* **extension:** refresh the bug bar's evidence once a screenshot is stored ([8fb6e65](https://github.com/PiwiTests/platform/commit/8fb6e65cde32b6600e9a80ac0895f3e96e8851a6))
-* **extension:** share add to session's name checks and storage errors across its forms ([f85f134](https://github.com/PiwiTests/platform/commit/f85f134e1ef6dc428ca2fe9da13d5ef89194bd29))
-* **extension:** stop the recording bar's pulse under reduced motion ([9b79bee](https://github.com/PiwiTests/platform/commit/9b79beedc80c8bca84d0c7b699dd16f87a164473))
-* **extension:** suggest toHaveAccessibleName only for an element that has a name ([37f9d02](https://github.com/PiwiTests/platform/commit/37f9d02318caa2021cfed9cd1e330f9aefef19eb))
-* **extension:** write a review title only to the recording it reviews, and never after discard ([42201b0](https://github.com/PiwiTests/platform/commit/42201b071e1726ca48b9e8aa9b1e8a6859f7b987))
-* **ide:** a read after a run moved asks the instance again, and every caller gets its own copy ([054f8c3](https://github.com/PiwiTests/platform/commit/054f8c3eb2c385ca865bba02e58a75e6c28f5f35))
-* **ide:** reach an instance through the proxy the editor names, on every Node version ([41a542b](https://github.com/PiwiTests/platform/commit/41a542bd9c5f5e9a949878de980bde52674538e4))
-* **ide:** read a recording's project options again when .env changes, with the project's Node ([64cec3a](https://github.com/PiwiTests/platform/commit/64cec3a88f99d22766f90c7bd2410f55b46bef9a))
-* **ide:** read a repeated run's total from its counts, which hold each repetition ([b17e37e](https://github.com/PiwiTests/platform/commit/b17e37e8dcec587ffe0667de2345bd325d98cb02))
-* **ide:** record into CommonJS specs, page-object fixtures and multi-line calls correctly ([cd3be45](https://github.com/PiwiTests/platform/commit/cd3be45cb5eb5bcfc03390ed97c1d804671125fa))
-* **ide:** redraw only the coverage marks that changed, and follow renamed files ([4841594](https://github.com/PiwiTests/platform/commit/4841594e0d6dc0487c119b9f47decb5fb7889daa))
-* **ide:** serve JetBrains local requests off the I/O thread, and record in test folders only ([fc20b55](https://github.com/PiwiTests/platform/commit/fc20b5561d1891922842901700c26f1eac6f3a34))
-* **ide:** start the JetBrains editor service again when the IDE stops it while it starts ([7027b98](https://github.com/PiwiTests/platform/commit/7027b9853b47d447302829c2eb86982875f42b0a))
-* **ui:** record each tab's scroll and keep the user's choices over old links ([a551819](https://github.com/PiwiTests/platform/commit/a5518190ccf481fa2c7ffdc3a6754eaefdb2483d))
-* **ui:** stop restoring a page's scroll once the page scrolls it itself ([f3f8312](https://github.com/PiwiTests/platform/commit/f3f83121b40a6036333d13bb65c17e06df9b8b08))
+#### Recording
+- **extension:** pause and resume a recording from its bar ([550bb78](https://github.com/PiwiTests/platform/commit/550bb783e36d88f55a5d9df024815a1e0db5140f))
+- **extension:** give a recording a title its spec and steps file take ([cb18885](https://github.com/PiwiTests/platform/commit/cb18885f4c8dbf4810e14cbe46581b29095285a2))
+- **extension:** replay a plain recording before exporting it ([d1aaeb5](https://github.com/PiwiTests/platform/commit/d1aaeb5f4d01563d231b70be6aa28cfe8f6df9a0))
 
+#### Connecting Piwi Picker
+- **extension:** list the sites Piwi Picker may run on, with Revoke ([9d8a729](https://github.com/PiwiTests/platform/commit/9d8a729e356e765369696152ce8d50dc9ea13e06))
+- **extension:** offer the paired desktop app as the instance, and the reverse ([df137c9](https://github.com/PiwiTests/platform/commit/df137c99f07d076925f9f8862ad5bf26cb6dd7bc))
+- **extension:** say in the popup and the settings whether the instance answers ([2ee3cb2](https://github.com/PiwiTests/platform/commit/2ee3cb25fb5fffe189aab1f026bb0e95758c63fa))
+- **extension:** show the compact tiles' hints and say what to do when not set up ([5b5b441](https://github.com/PiwiTests/platform/commit/5b5b441bd39ff29e5e60f9bb75f30e86fb36f5cc))
+
+#### Piwi in your editor
+- **ide:** a getting-started walkthrough in VS Code and a first-run notification in JetBrains ([eaa6e66](https://github.com/PiwiTests/platform/commit/eaa6e665cfa6195bee045fbf0bb2a05f0d55f5d2))
+- **ide:** one Failures node per Playwright config, and a status bar for the active file's config ([fdb65b6](https://github.com/PiwiTests/platform/commit/fdb65b6aad1b3eee65e1cc95d5eee6dac703d18a))
+- **ide:** run the test at the cursor, choose a failure's severity, run tests as VS Code tasks ([9513629](https://github.com/PiwiTests/platform/commit/9513629ae40032670b002b4327825944ec9c4c3e))
+- **ide:** run or verify a recorded test three times, and choose another verified locator ([e9a4436](https://github.com/PiwiTests/platform/commit/e9a4436d8e89c63701f283d1d2613dfbee3fea6c))
+- **ide:** complete locators after any page expression and inside `expect(` ([bef8eb7](https://github.com/PiwiTests/platform/commit/bef8eb7d62113a1fb6245a6efbcd57fb97411ff9))
+- **ide:** proxy settings, keybindings, a trace setting and a log command in VS Code ([fe17837](https://github.com/PiwiTests/platform/commit/fe1783763172b6967ad362202e8b105e6a88aaf9))
+- **ide:** build the editor extensions audit, and keep every `--repeat-each` result ([41632b1](https://github.com/PiwiTests/platform/commit/41632b17cdb123ec8a1d132c80c640184d7bb0c3))
+- **app:** open a path in VS Code through the Piwi extension, with no workspace root ([5edc315](https://github.com/PiwiTests/platform/commit/5edc3158540323c10faf13b57b4c94b5a658eb48))
+
+#### Dashboard
+- **ui:** show each list as the user left it when they come back to a page ([5b78dbc](https://github.com/PiwiTests/platform/commit/5b78dbc3734809aeb2061ba03285eceb1ab7404c))
 
 ### Performance Improvements
 
-* **extension:** lower each row's text once when a repeated container looks for its text ([ca38b54](https://github.com/PiwiTests/platform/commit/ca38b54a7bf849d22f20d247e2a3edf709e0f747))
-* **extension:** read the page's headings once per lint scan ([9b823d5](https://github.com/PiwiTests/platform/commit/9b823d50f8ed7bf35b411e79840e04bdd153b298))
-* **extension:** read the pick results' copy facts once and redraw their ring on events ([b532a53](https://github.com/PiwiTests/platform/commit/b532a532129d8368bf1c09de9d85b0b0d0f71e48))
-* **ide:** answer an unchanged branch-failures with 304, and match If-None-Match weakly ([8415468](https://github.com/PiwiTests/platform/commit/8415468e3d8960ea158df4990b7e793916b91d0c))
-* **ide:** follow checkouts at once, and read less from the instance in the editor service ([498c291](https://github.com/PiwiTests/platform/commit/498c2912dbce695e2706ad6c6c5488b5ae418101))
+- **extension:** lower each row's text once when a repeated container looks for its text ([ca38b54](https://github.com/PiwiTests/platform/commit/ca38b54a7bf849d22f20d247e2a3edf709e0f747))
+- **extension:** read the page's headings once per lint scan ([9b823d5](https://github.com/PiwiTests/platform/commit/9b823d50f8ed7bf35b411e79840e04bdd153b298))
+- **extension:** read the pick results' copy facts once and redraw their ring on events ([b532a53](https://github.com/PiwiTests/platform/commit/b532a532129d8368bf1c09de9d85b0b0d0f71e48))
+- **ide:** answer an unchanged branch-failures request with `304`, and match `If-None-Match` weakly ([8415468](https://github.com/PiwiTests/platform/commit/8415468e3d8960ea158df4990b7e793916b91d0c))
+- **ide:** follow checkouts at once, and read less from the instance in the editor service ([498c291](https://github.com/PiwiTests/platform/commit/498c2912dbce695e2706ad6c6c5488b5ae418101))
+
+### Bug Fixes
+
+#### Runs & dashboard
+- **db:** keep every `--repeat-each` result of a test in a run ([a8ae723](https://github.com/PiwiTests/platform/commit/a8ae723cd9ab68f0c8a85d2b75dfaecd2332144f))
+- **ui:** record each tab's scroll and keep the user's choices over old links ([a551819](https://github.com/PiwiTests/platform/commit/a5518190ccf481fa2c7ffdc3a6754eaefdb2483d))
+- **ui:** stop restoring a page's scroll once the page scrolls it itself ([f3f8312](https://github.com/PiwiTests/platform/commit/f3f83121b40a6036333d13bb65c17e06df9b8b08))
+- **desktop:** pass Tauri's window handle to the `windows` 0.62 taskbar calls ([f799d18](https://github.com/PiwiTests/platform/commit/f799d1867de7e4651763cebb1b15ff868d0b6641))
+
+#### Editors
+- **ide:** a read after a run moved asks the instance again, and every caller gets its own copy ([054f8c3](https://github.com/PiwiTests/platform/commit/054f8c3eb2c385ca865bba02e58a75e6c28f5f35))
+- **ide:** read a repeated run's total from its counts, which hold each repetition ([b17e37e](https://github.com/PiwiTests/platform/commit/b17e37e8dcec587ffe0667de2345bd325d98cb02))
+- **ide:** reach an instance through the proxy the editor names, on every Node version ([41a542b](https://github.com/PiwiTests/platform/commit/41a542bd9c5f5e9a949878de980bde52674538e4))
+- **ide:** read a recording's project options again when `.env` changes, with the project's Node ([64cec3a](https://github.com/PiwiTests/platform/commit/64cec3a88f99d22766f90c7bd2410f55b46bef9a))
+- **ide:** record into CommonJS specs, page-object fixtures and multi-line calls correctly ([cd3be45](https://github.com/PiwiTests/platform/commit/cd3be45cb5eb5bcfc03390ed97c1d804671125fa))
+- **ide:** redraw only the coverage marks that changed, and follow renamed files ([4841594](https://github.com/PiwiTests/platform/commit/4841594e0d6dc0487c119b9f47decb5fb7889daa))
+- **ide:** serve JetBrains local requests off the I/O thread, and record in test folders only ([fc20b55](https://github.com/PiwiTests/platform/commit/fc20b5561d1891922842901700c26f1eac6f3a34))
+- **ide:** start the JetBrains editor service again when the IDE stops it while it starts ([7027b98](https://github.com/PiwiTests/platform/commit/7027b9853b47d447302829c2eb86982875f42b0a))
+
+#### Piwi Picker connection
+- **extension:** prove the desktop app before sending its token as an instance key ([47d43c0](https://github.com/PiwiTests/platform/commit/47d43c05c350027aadfd584c497e1250e9e4021e))
+- **extension:** keep the lines of this browser across Disconnect and reconnect ([56b08c1](https://github.com/PiwiTests/platform/commit/56b08c1c0d43fbbcc9d80f2d035dfb4c66cfd2a8))
+- **extension:** keep the set-aside lines until a reconnection is kept ([fc6061c](https://github.com/PiwiTests/platform/commit/fc6061c75ce81f2cbb2f27f9dd62a8d620148955))
+
+#### Piwi Picker recording & locators
+- **extension:** keep a recorded event when a pause or a title write lands beside it in Firefox ([552d538](https://github.com/PiwiTests/platform/commit/552d53804b6ee4e4d08ef03dbe5209d45495c8c3))
+- **extension:** write a review title only to the recording it reviews, and never after discard ([42201b0](https://github.com/PiwiTests/platform/commit/42201b071e1726ca48b9e8aa9b1e8a6859f7b987))
+- **extension:** keep the recording's evidence out of a replay started on its page ([e1f26b3](https://github.com/PiwiTests/platform/commit/e1f26b3601da897affcf727eddcbe54ab3c1b8c6))
+- **extension:** refresh the bug bar's evidence once a screenshot is stored ([8fb6e65](https://github.com/PiwiTests/platform/commit/8fb6e65cde32b6600e9a80ac0895f3e96e8851a6))
+- **extension:** stop the recording bar's pulse under reduced motion ([9b79bee](https://github.com/PiwiTests/platform/commit/9b79beedc80c8bca84d0c7b699dd16f87a164473))
+- **extension:** copy the Locators console's assertion from its match count and first match ([7c52a50](https://github.com/PiwiTests/platform/commit/7c52a501c43864f19a22d7b4fe730188680acb57))
+- **extension:** suggest `toHaveAccessibleName` only for an element that has a name ([37f9d02](https://github.com/PiwiTests/platform/commit/37f9d02318caa2021cfed9cd1e330f9aefef19eb))
+- **extension:** share Add to session's name checks and storage errors across its forms ([f85f134](https://github.com/PiwiTests/platform/commit/f85f134e1ef6dc428ca2fe9da13d5ef89194bd29))
+- **extension:** keep the Playwright view's labels from overlapping ([34c17a5](https://github.com/PiwiTests/platform/commit/34c17a55fcea5835d6b59ad8b5cd3e8bf2fedebc))
+- **extension:** make the non-modal panels regions instead of dialogs ([5e0bc4a](https://github.com/PiwiTests/platform/commit/5e0bc4ab67669b2efabccd2a8abe913e15b3fadb))
+
+<!-- notes:polished -->
 
 ## [0.58.0](https://github.com/PiwiTests/platform/compare/v0.57.0...v0.58.0) (2026-10-21)
 
+This release keeps a test's history across renames and moves through external test IDs, names the changed lines no suite ran by one rule linked with the Test Map, moves the dashboard to a violet identity, and shortens the desktop app's startup.
+
+**Full diff:** [v0.57.0…v0.58.0](https://github.com/PiwiTests/platform/compare/v0.57.0...v0.58.0)
+
+### ✨ Highlights
+
+- **🆔 External test IDs** — A test keeps its history when it is renamed or moved, by its external ID; the reporter reads the IDs and reports duplicates before the run, the dashboard links them to the test management tool, and two test cases can be merged to join a history a rename split.
+- **🗺️ Coverage and the Test Map** — Uncovered changes are counted by one rule that names the changed lines no suite ran, and a file's coverage and its place in the Test Map link to each other both ways.
+- **🎨 Violet identity** — The dashboard is rebranded to the violet identity, with the logo at the top of the sidebar, and exported documents and emails end with the Piwi credit.
+- **⚡ Faster desktop startup** — The desktop app starts faster, keeps Node's compile cache of the server between launches, and bounds its readiness probe's connect at 200 ms.
 
 ### Features
 
-* **app:** count uncovered changes by one rule and link coverage with the Test Map ([469cba6](https://github.com/PiwiTests/platform/commit/469cba6847f11c8103ab07c50940a5b2af1d0d2d))
-* **app:** count uncovered changes by one rule and name the changed lines no suite ran ([2457dc7](https://github.com/PiwiTests/platform/commit/2457dc7de3b1edbd1c440c76cf69059c37d82d22))
-* **app:** keep a test's history across renames and moves with external test IDs ([75ffff7](https://github.com/PiwiTests/platform/commit/75ffff732e63ca663e1af2a7402ff6ccd056bdf5))
-* **app:** keep a test's history when it is renamed or moved, by its external ID ([b29f16a](https://github.com/PiwiTests/platform/commit/b29f16a18b054a025a7949c314f8500720afebe6))
-* **app:** link external test IDs to the test management tool and name tests by them ([8fc536b](https://github.com/PiwiTests/platform/commit/8fc536b9763c7aef4db19e1fbfbd8f3ef0745f1a))
-* **app:** link the VS Code extension's Marketplace listing next to the JetBrains plugin ([535667e](https://github.com/PiwiTests/platform/commit/535667e1faec43e35fcb3df1527834ea7009dfba))
-* **app:** link the VS Code extension's Marketplace listing next to the JetBrains plugin ([700222b](https://github.com/PiwiTests/platform/commit/700222b5d726dd4933b66e8e815063e99404af6f))
-* **app:** merge two test cases to join a history a rename split ([b9a5063](https://github.com/PiwiTests/platform/commit/b9a5063ec2a37edd8ae8ac95361c06f734a57f56))
-* **extension:** capture the store and docs illustrations of Piwi Picker ([532a92a](https://github.com/PiwiTests/platform/commit/532a92a924c9e7e1f1e8fa8429c9fcb6ac8ee4d3))
-* **ide:** capture the editor extensions' illustrations in the real editors ([ef2ef40](https://github.com/PiwiTests/platform/commit/ef2ef4053ffc4b3d8cbc3977f3aef27bd8b1a58f))
-* **ide:** capture the JetBrains plugin's illustrations in WebStorm ([7de7053](https://github.com/PiwiTests/platform/commit/7de70537e482cc222705247d51c39474e2ad9a2c))
-* **notifications:** end every exported document and email with the Piwi credit ([7300c00](https://github.com/PiwiTests/platform/commit/7300c009b4959438c982b559454dcae9d2c7de1d))
-* **reporter:** read external test IDs and report duplicates before the run ([a43fa3a](https://github.com/PiwiTests/platform/commit/a43fa3a600172c02659b088a6cfd5f5a4b20a3ba))
-* **ui:** link a file's coverage and its place in the Test Map both ways ([e7727cf](https://github.com/PiwiTests/platform/commit/e7727cf72853146522b8187691119b06244943b1))
-* **ui:** list the MCP clients beside their setup ([bbf5c90](https://github.com/PiwiTests/platform/commit/bbf5c90639888a0606c2438810d2616e3ff839cd))
-* **ui:** name the failing test by its title path on the failure pages ([e6d6eeb](https://github.com/PiwiTests/platform/commit/e6d6eeb650e73ab0eb03b7fd04011dc92c5890f2))
-* **ui:** put the logo at the top of the sidebar ([8db1219](https://github.com/PiwiTests/platform/commit/8db1219b07aca9f52b31b0fca61b20f85746c1ed))
-* **ui:** rebrand to the violet identity ([f644eb7](https://github.com/PiwiTests/platform/commit/f644eb73335a9809c85bce699df481c2f6dd8012))
-* **ui:** rebrand to the violet identity ([71fd172](https://github.com/PiwiTests/platform/commit/71fd172f3c8356dd1a7b4ee16c0aca5f605ea13b))
+#### External test IDs & history
+- **app:** keep a test's history across renames and moves by its external ID ([75ffff7](https://github.com/PiwiTests/platform/commit/75ffff732e63ca663e1af2a7402ff6ccd056bdf5), [b29f16a](https://github.com/PiwiTests/platform/commit/b29f16a18b054a025a7949c314f8500720afebe6))
+- **app:** link external test IDs to the test management tool and name tests by them ([8fc536b](https://github.com/PiwiTests/platform/commit/8fc536b9763c7aef4db19e1fbfbd8f3ef0745f1a))
+- **app:** merge two test cases to join a history a rename split ([b9a5063](https://github.com/PiwiTests/platform/commit/b9a5063ec2a37edd8ae8ac95361c06f734a57f56))
+- **reporter:** read external test IDs and report duplicates before the run ([a43fa3a](https://github.com/PiwiTests/platform/commit/a43fa3a600172c02659b088a6cfd5f5a4b20a3ba))
 
+#### Coverage & the Test Map
+- **app:** count uncovered changes by one rule, name the changed lines no suite ran, and link coverage with the Test Map ([469cba6](https://github.com/PiwiTests/platform/commit/469cba6847f11c8103ab07c50940a5b2af1d0d2d), [2457dc7](https://github.com/PiwiTests/platform/commit/2457dc7de3b1edbd1c440c76cf69059c37d82d22))
+- **ui:** link a file's coverage and its place in the Test Map both ways ([e7727cf](https://github.com/PiwiTests/platform/commit/e7727cf72853146522b8187691119b06244943b1))
 
-### Bug Fixes
+#### Brand & dashboard
+- **ui:** rebrand to the violet identity ([f644eb7](https://github.com/PiwiTests/platform/commit/f644eb73335a9809c85bce699df481c2f6dd8012), [71fd172](https://github.com/PiwiTests/platform/commit/71fd172f3c8356dd1a7b4ee16c0aca5f605ea13b))
+- **ui:** put the logo at the top of the sidebar ([8db1219](https://github.com/PiwiTests/platform/commit/8db1219b07aca9f52b31b0fca61b20f85746c1ed))
+- **notifications:** end every exported document and email with the Piwi credit ([7300c00](https://github.com/PiwiTests/platform/commit/7300c009b4959438c982b559454dcae9d2c7de1d))
+- **ui:** name the failing test by its title path on the failure pages ([e6d6eeb](https://github.com/PiwiTests/platform/commit/e6d6eeb650e73ab0eb03b7fd04011dc92c5890f2))
+- **ui:** list the MCP clients beside their setup ([bbf5c90](https://github.com/PiwiTests/platform/commit/bbf5c90639888a0606c2438810d2616e3ff839cd))
+- **app:** link the VS Code extension's Marketplace listing next to the JetBrains plugin ([535667e](https://github.com/PiwiTests/platform/commit/535667e1faec43e35fcb3df1527834ea7009dfba), [700222b](https://github.com/PiwiTests/platform/commit/700222b5d726dd4933b66e8e815063e99404af6f))
 
-* **app:** let a failed directory upload settle before its cleanup ([e6ea6ae](https://github.com/PiwiTests/platform/commit/e6ea6ae451ecd77b2c611f89d7eb6c2f7abd3740))
-* **app:** make external ID matching order-independent and keep its run notes ([cc859e8](https://github.com/PiwiTests/platform/commit/cc859e8a321e1a4d60fdcd169f494ed063a49d1b))
-* **app:** rename the matching options type off a name Nitro shares globally ([3b5c451](https://github.com/PiwiTests/platform/commit/3b5c45133636479ecd26b93c9ddf9cbd5444942c))
-* **app:** show every required Jira field in the create form and give long values the full row ([22e9cc7](https://github.com/PiwiTests/platform/commit/22e9cc7f449e55c4052c833bf52fd51c017e31d9))
-* **app:** show every required Jira field in the create form and give long values the full row ([e4113a7](https://github.com/PiwiTests/platform/commit/e4113a710103fc7cb7546a228da82334b82f13a2))
-* **app:** take up the review of the coverage and Test Map pass ([e4e8ba0](https://github.com/PiwiTests/platform/commit/e4e8ba09b3e69d5f95ec8d10545af4da7ac9e9be))
-* **docs:** take up the review of the landing-page refresh ([a1c166c](https://github.com/PiwiTests/platform/commit/a1c166cdb87b478259c6447e10e6123a07df1121))
-* **notifications:** load the brand mark under Node's ESM loader ([d6536cb](https://github.com/PiwiTests/platform/commit/d6536cbcc59bd9d86dacfea36a353e97838beb8a))
-* **ui:** call a file's lines no suite ran "lines not run", never a gap ([ac53768](https://github.com/PiwiTests/platform/commit/ac537681a18ff006ebfa7bd2461d960027a3dd39))
-
+#### Illustrations
+- **extension:** capture the store and docs illustrations of Piwi Picker ([532a92a](https://github.com/PiwiTests/platform/commit/532a92a924c9e7e1f1e8fa8429c9fcb6ac8ee4d3))
+- **ide:** capture the editor extensions' illustrations in the real editors ([ef2ef40](https://github.com/PiwiTests/platform/commit/ef2ef4053ffc4b3d8cbc3977f3aef27bd8b1a58f))
+- **ide:** capture the JetBrains plugin's illustrations in WebStorm ([7de7053](https://github.com/PiwiTests/platform/commit/7de70537e482cc222705247d51c39474e2ad9a2c))
 
 ### Performance Improvements
 
-* **app:** bundle date-fns and drizzle-orm into the server build ([0baa50c](https://github.com/PiwiTests/platform/commit/0baa50c6905f510e9aacd978a6a4e1a1d101f2ba))
-* **app:** fetch Home's Flake Lab inbox in the browser, from the kept profiles ([881f47d](https://github.com/PiwiTests/platform/commit/881f47dc2ac8605a731171334dd6743181c30c01))
-* **app:** load the optional server dependencies on first use ([cb3a613](https://github.com/PiwiTests/platform/commit/cb3a61355bcfbd7bd2ce13cc2ebd8059bc464b06))
-* **ci:** bring the performance comparison under eight minutes ([4a23717](https://github.com/PiwiTests/platform/commit/4a237175e1225f7b9bae461c138a5a80c7c31367))
-* **ci:** bring the performance comparison under eight minutes ([ceb9df8](https://github.com/PiwiTests/platform/commit/ceb9df86b0c8e455ee962bd0e1b99bbd31a97e75))
-* **ci:** ship the Windows Node sidecar without UPX compression ([5e3fb66](https://github.com/PiwiTests/platform/commit/5e3fb663529b4b5569778d8d37fb09577d93d990))
-* **desktop:** cut the desktop app's startup time ([4c1bb4f](https://github.com/PiwiTests/platform/commit/4c1bb4fdc4096416d80e21c70363512a6dad47a0))
-* **desktop:** give the readiness probe's connect a 200 ms bound ([84e8470](https://github.com/PiwiTests/platform/commit/84e8470d3386f76df7c33f208ea42e8a33aecfb0))
-* **desktop:** keep Node's compile cache of the server between launches ([c306694](https://github.com/PiwiTests/platform/commit/c306694b1aac01c4c596cbc12d926aedf1e7a06e))
+#### Desktop
+- **desktop:** cut the desktop app's startup time ([4c1bb4f](https://github.com/PiwiTests/platform/commit/4c1bb4fdc4096416d80e21c70363512a6dad47a0))
+- **desktop:** keep Node's compile cache of the server between launches ([c306694](https://github.com/PiwiTests/platform/commit/c306694b1aac01c4c596cbc12d926aedf1e7a06e))
+- **desktop:** give the readiness probe's connect a 200 ms bound ([84e8470](https://github.com/PiwiTests/platform/commit/84e8470d3386f76df7c33f208ea42e8a33aecfb0))
+- **ci:** ship the Windows Node sidecar without UPX compression ([5e3fb66](https://github.com/PiwiTests/platform/commit/5e3fb663529b4b5569778d8d37fb09577d93d990))
+
+#### Server & CI
+- **app:** bundle `date-fns` and `drizzle-orm` into the server build ([0baa50c](https://github.com/PiwiTests/platform/commit/0baa50c6905f510e9aacd978a6a4e1a1d101f2ba))
+- **app:** load the optional server dependencies on first use ([cb3a613](https://github.com/PiwiTests/platform/commit/cb3a61355bcfbd7bd2ce13cc2ebd8059bc464b06))
+- **app:** fetch Home's Flake Lab inbox in the browser, from the kept profiles ([881f47d](https://github.com/PiwiTests/platform/commit/881f47dc2ac8605a731171334dd6743181c30c01))
+- **ci:** bring the performance comparison under eight minutes ([4a23717](https://github.com/PiwiTests/platform/commit/4a237175e1225f7b9bae461c138a5a80c7c31367), [ceb9df8](https://github.com/PiwiTests/platform/commit/ceb9df86b0c8e455ee962bd0e1b99bbd31a97e75))
+
+### Bug Fixes
+
+- **app:** make external ID matching order-independent and keep its run notes ([cc859e8](https://github.com/PiwiTests/platform/commit/cc859e8a321e1a4d60fdcd169f494ed063a49d1b))
+- **app:** take up the review of the coverage and Test Map pass ([e4e8ba0](https://github.com/PiwiTests/platform/commit/e4e8ba09b3e69d5f95ec8d10545af4da7ac9e9be))
+- **ui:** call a file's lines no suite ran "lines not run", never a gap ([ac53768](https://github.com/PiwiTests/platform/commit/ac537681a18ff006ebfa7bd2461d960027a3dd39))
+- **app:** show every required Jira field in the create form and give long values the full row ([22e9cc7](https://github.com/PiwiTests/platform/commit/22e9cc7f449e55c4052c833bf52fd51c017e31d9), [e4113a7](https://github.com/PiwiTests/platform/commit/e4113a710103fc7cb7546a228da82334b82f13a2))
+- **app:** let a failed directory upload settle before its cleanup ([e6ea6ae](https://github.com/PiwiTests/platform/commit/e6ea6ae451ecd77b2c611f89d7eb6c2f7abd3740))
+- **app:** rename the matching options type off a name Nitro shares globally ([3b5c451](https://github.com/PiwiTests/platform/commit/3b5c45133636479ecd26b93c9ddf9cbd5444942c))
+- **notifications:** load the brand mark under Node's ESM loader ([d6536cb](https://github.com/PiwiTests/platform/commit/d6536cbcc59bd9d86dacfea36a353e97838beb8a))
+- **docs:** take up the review of the landing-page refresh ([a1c166c](https://github.com/PiwiTests/platform/commit/a1c166cdb87b478259c6447e10e6123a07df1121))
+
+<!-- notes:polished -->
 
 ## [0.57.0](https://github.com/PiwiTests/platform/compare/v0.56.0...v0.57.0) (2026-10-20)
 
+This release lets you replay a failed CI execution in Piwi Picker from a `.piwibug` export, add any Jira field when filing an issue, and gives every Piwi Picker button an icon and a color, with each step's parts highlighted as core writes them.
+
+**Full diff:** [v0.56.0…v0.57.0](https://github.com/PiwiTests/platform/compare/v0.56.0...v0.57.0)
+
+### ✨ Highlights
+
+- **🐞 Replay a CI failure in Piwi Picker** — Download a failed execution as a `.piwibug` and replay it with Piwi Picker's Replay, which runs manual steps and count, contains and checked assertions.
+- **🎫 Any Jira field when filing** — The create-issue dialog adds any Jira field on demand and shows Jira's icons and assignees' avatars in its pickers.
+- **🎨 Icons, colors and highlighted steps** — Every Piwi Picker button has an icon and a color, and a step's parts are highlighted from core's step parts in the extension and on a bug report's page.
 
 ### Features
 
-* **app:** add any Jira field on demand in the create-issue dialog, with Jira's icons ([2050bca](https://github.com/PiwiTests/platform/commit/2050bca87f1ecb075d5dde26890a1a6fc3259fc7))
-* **app:** add any Jira field on demand when creating an issue ([2a6f7d3](https://github.com/PiwiTests/platform/commit/2a6f7d369eb902405edc7b613ca8a6fe4e6e0146))
-* **app:** download a failed execution as a .piwibug for Piwi Picker's Replay ([b9cac71](https://github.com/PiwiTests/platform/commit/b9cac71b551b358481168569fb4c81c2fc53e686))
-* **app:** highlight a bug report's steps from core's step parts ([cfdb65c](https://github.com/PiwiTests/platform/commit/cfdb65c61f84fd2f0e5d29673a8228786c3f8d7a))
-* **app:** improve dotnet coverage exclusions and server restart resilience ([890d7fd](https://github.com/PiwiTests/platform/commit/890d7fd65bbe667bd704a80ecafebacd4421c3de))
-* **app:** replay a failed execution in Piwi Picker from a .piwibug export ([5d25eb5](https://github.com/PiwiTests/platform/commit/5d25eb5abd8c2a3656764bb2865b335c4327c550))
-* **app:** show assignees' avatars in the create-issue pickers ([2d41b71](https://github.com/PiwiTests/platform/commit/2d41b71b0c316ca9f348d9c1a5246bfdf35d6cb8))
-* **app:** show Jira's icons in the create-issue pickers ([bd4f435](https://github.com/PiwiTests/platform/commit/bd4f43579ae9226892e21174ebd3602acfd7bab8))
-* **extension:** give every button an icon and a color, and highlight steps everywhere ([952d808](https://github.com/PiwiTests/platform/commit/952d808f0204b0a325f0e5a6dc39ec6e708fef05))
-* **extension:** give the pick and page tools' buttons icons and colors ([cbfe12b](https://github.com/PiwiTests/platform/commit/cbfe12b0200ac9f1f7833975c3993964e7e34961))
-* **extension:** give the recorder's and bug report's buttons icons and colors ([05b94e6](https://github.com/PiwiTests/platform/commit/05b94e63c7e11121bc43a36c95807b428596514c))
-* **extension:** give the replay's buttons icons and colors, and highlight its steps ([107af2d](https://github.com/PiwiTests/platform/commit/107af2d8495232a145153e1e9283dc65a1b8087b))
-* **extension:** give the settings, popup and DevTools buttons icons and colors ([76aea3a](https://github.com/PiwiTests/platform/commit/76aea3a549c508885172581e51620bc6f7998399))
-* **extension:** highlight a step's parts as core writes them, not by reading its sentence again ([e3a9348](https://github.com/PiwiTests/platform/commit/e3a934896d21bdbc9961cd6b3d30ddbbc8d0ca6c))
-* **extension:** replay manual steps and count, contains and checked assertions ([5de53d7](https://github.com/PiwiTests/platform/commit/5de53d731d2939dde02abf8462ed22c4e9b02834))
-* **reporter:** keep a .NET coverage build out of production ([4f7974d](https://github.com/PiwiTests/platform/commit/4f7974d8f9ebcc4fb7ae7d131d5378550f2bb57c))
+#### Replaying failures
+- **app:** download a failed execution as a `.piwibug` and replay it in Piwi Picker's Replay ([b9cac71](https://github.com/PiwiTests/platform/commit/b9cac71b551b358481168569fb4c81c2fc53e686), [5d25eb5](https://github.com/PiwiTests/platform/commit/5d25eb5abd8c2a3656764bb2865b335c4327c550))
+- **extension:** replay manual steps and count, contains and checked assertions ([5de53d7](https://github.com/PiwiTests/platform/commit/5de53d731d2939dde02abf8462ed22c4e9b02834))
 
+#### Filing Jira issues
+- **app:** add any Jira field on demand when creating an issue, in the create-issue dialog, with Jira's icons ([2a6f7d3](https://github.com/PiwiTests/platform/commit/2a6f7d369eb902405edc7b613ca8a6fe4e6e0146), [2050bca](https://github.com/PiwiTests/platform/commit/2050bca87f1ecb075d5dde26890a1a6fc3259fc7))
+- **app:** show Jira's icons in the create-issue pickers ([bd4f435](https://github.com/PiwiTests/platform/commit/bd4f43579ae9226892e21174ebd3602acfd7bab8))
+- **app:** show assignees' avatars in the create-issue pickers ([2d41b71](https://github.com/PiwiTests/platform/commit/2d41b71b0c316ca9f348d9c1a5246bfdf35d6cb8))
+
+#### Piwi Picker's look & step highlighting
+- **extension:** give every button an icon and a color, and highlight steps everywhere ([952d808](https://github.com/PiwiTests/platform/commit/952d808f0204b0a325f0e5a6dc39ec6e708fef05)) — the pick and page tools ([cbfe12b](https://github.com/PiwiTests/platform/commit/cbfe12b0200ac9f1f7833975c3993964e7e34961)), the recorder and bug report ([05b94e6](https://github.com/PiwiTests/platform/commit/05b94e63c7e11121bc43a36c95807b428596514c)), the replay, with its steps highlighted ([107af2d](https://github.com/PiwiTests/platform/commit/107af2d8495232a145153e1e9283dc65a1b8087b)), and the settings, popup and DevTools ([76aea3a](https://github.com/PiwiTests/platform/commit/76aea3a549c508885172581e51620bc6f7998399))
+- **extension:** highlight a step's parts as core writes them, not by reading its sentence again ([e3a9348](https://github.com/PiwiTests/platform/commit/e3a934896d21bdbc9961cd6b3d30ddbbc8d0ca6c))
+- **app:** highlight a bug report's steps from core's step parts ([cfdb65c](https://github.com/PiwiTests/platform/commit/cfdb65c61f84fd2f0e5d29673a8228786c3f8d7a))
+
+#### .NET coverage
+- **app:** improve .NET coverage exclusions and server restart resilience ([890d7fd](https://github.com/PiwiTests/platform/commit/890d7fd65bbe667bd704a80ecafebacd4421c3de))
+- **reporter:** keep a .NET coverage build out of production ([4f7974d](https://github.com/PiwiTests/platform/commit/4f7974d8f9ebcc4fb7ae7d131d5378550f2bb57c))
 
 ### Bug Fixes
 
-* **app:** close the icon route's encoded-path escape and stop caching outages ([b7ebc41](https://github.com/PiwiTests/platform/commit/b7ebc41893fcea855af465d7222bf4183c0654ff))
-* **app:** close the icon route's encoded-path escape and stop caching outages ([1bbc8bc](https://github.com/PiwiTests/platform/commit/1bbc8bc7d6389159be3ce59595cf01c0869a9b4c))
-* **app:** harden the .piwibug export of a failed execution ([d159576](https://github.com/PiwiTests/platform/commit/d159576a4ac6e64ea12306d95747d230600e20e4))
-* **extension:** center the icons on their grid and on whole pixels ([a036e76](https://github.com/PiwiTests/platform/commit/a036e76eacb690d7c50e55504b99d5374ad4de8f))
-* **extension:** draw no focus ring around the bug report's and the review's dialogs ([2958580](https://github.com/PiwiTests/platform/commit/2958580bd49dce6d8adc0a840a36ce64bd97f502))
-* **extension:** fix what the review of the restyled screens found ([ac3c727](https://github.com/PiwiTests/platform/commit/ac3c727d6258cab0cef191dda1dd9886b8e2dc02))
-* **extension:** follow a bug replay into the tab a step opens ([23ce63c](https://github.com/PiwiTests/platform/commit/23ce63c571d109458a5a3fdc704a80d7ec330dff))
-* **extension:** follow a replay into the tab a step opens ([90f1af0](https://github.com/PiwiTests/platform/commit/90f1af0b430d584fa6b10f80d9a6fd4bf04d1ede))
+- **app:** close the icon route's encoded-path escape and stop caching outages ([b7ebc41](https://github.com/PiwiTests/platform/commit/b7ebc41893fcea855af465d7222bf4183c0654ff), [1bbc8bc](https://github.com/PiwiTests/platform/commit/1bbc8bc7d6389159be3ce59595cf01c0869a9b4c))
+- **app:** harden the `.piwibug` export of a failed execution ([d159576](https://github.com/PiwiTests/platform/commit/d159576a4ac6e64ea12306d95747d230600e20e4))
+- **extension:** follow a replay, including a bug replay, into the tab a step opens ([90f1af0](https://github.com/PiwiTests/platform/commit/90f1af0b430d584fa6b10f80d9a6fd4bf04d1ede), [23ce63c](https://github.com/PiwiTests/platform/commit/23ce63c571d109458a5a3fdc704a80d7ec330dff))
+- **extension:** center the icons on their grid and on whole pixels ([a036e76](https://github.com/PiwiTests/platform/commit/a036e76eacb690d7c50e55504b99d5374ad4de8f))
+- **extension:** draw no focus ring around the bug report's and the review's dialogs ([2958580](https://github.com/PiwiTests/platform/commit/2958580bd49dce6d8adc0a840a36ce64bd97f502))
+- **extension:** fix what the review of the restyled screens found ([ac3c727](https://github.com/PiwiTests/platform/commit/ac3c727d6258cab0cef191dda1dd9886b8e2dc02))
+
+<!-- notes:polished -->
 
 ## [0.56.0](https://github.com/PiwiTests/platform/compare/v0.55.0...v0.56.0) (2026-10-19)
 
+This release closes the findings of a security and code audit across the dashboard, the reporter, the desktop app, the editors and Piwi Picker: sign-in, tokens, uploads and outbound requests are bounded and checked, concurrent shards merge into one run, and healing suggests only locators related to the failing one.
+
+**Full diff:** [v0.55.0…v0.56.0](https://github.com/PiwiTests/platform/compare/v0.55.0...v0.56.0)
+
+### ✨ Highlights
+
+- **🔒 Audit findings closed** — The high- and medium-severity findings of the audit are fixed, along with the remaining ones, dead code and unused API routes; the dashboard refuses to be framed by another site, and link unfurls go through `safeFetch`.
+- **🔑 Sign-in and tokens** — Passwords are hashed with scrypt at N=2^17 and rehashed on sign-in, sign-out revokes every session of the account, the login throttle counts concurrent attempts, and run stream and Jira webhook tokens are stored as digests.
+- **📦 Bounded uploads and traces** — Trace archive inflation is bounded and digests are verified, upload caps count the bytes read, reports are extracted into private folders, and traces are stored under the hash the server computes.
+- **🧩 Shards and deliveries** — Shards that arrive together merge into one run that settles once, and a batch the reporter sends again is stored once.
+- **🩹 Healing suggestions** — Locator healing and its ARIA fallback suggest only elements related to the failing locator, never the failing locator's own element.
+- **🖥️ Desktop hardening** — The desktop app trusts only its spawned sidecar, creates its key, token and discovery file owner-only, checks the bundled Node download against the release's SHA-256 list, and gives each reproduce, bisect and lab job its own worktree.
+- **🤖 AI providers** — The Claude CLI runs with its tools off, for one turn, in an allowlisted environment, and AI step resolutions are bounded and rate-limited per caller.
 
 ### Features
 
-* **demo:** add a relabeled field whose locator fix is copied, not applied ([b306936](https://github.com/PiwiTests/platform/commit/b306936c43080a3bcadf32f349dbd48e48e17a86))
-* **ui:** disable a jira connection's inbound webhook and sync the tracker statuses from settings ([3364860](https://github.com/PiwiTests/platform/commit/3364860b0fbaa37538d7f1aed6ed0867162bd4fe))
-
-
-### Bug Fixes
-
-* **ai:** bound every field of an AI step resolution and rate-limit each caller ([4b4f188](https://github.com/PiwiTests/platform/commit/4b4f188da53c9eee71a38f676dc89080b7fecf20))
-* **ai:** read a groq stream's token usage from x_groq.usage ([759e6df](https://github.com/PiwiTests/platform/commit/759e6dfe2a20d845bfffaab4a5ec53981d1ce905))
-* **ai:** run the Claude CLI with its tools off, one turn and an allowlisted environment ([c76b841](https://github.com/PiwiTests/platform/commit/c76b84106d7e304d87e1407e2700229d52a4e280))
-* **ai:** send the claude cli a text-only diagnosis prompt and list no image modality for it ([6039245](https://github.com/PiwiTests/platform/commit/6039245ddd458858048b8cc51238e64f67b7c934))
-* **app:** answer local storage exists() for regular files only ([bad3546](https://github.com/PiwiTests/platform/commit/bad3546fca53240d991a1ef9a05e65b17efe0bf4))
-* **app:** bound trace archive inflation and verify trace and resource digests ([21d53ef](https://github.com/PiwiTests/platform/commit/21d53effbe9ec2c1ab5d45413b0baba7217f3ce9))
-* **app:** build scm links only from http and https repository urls ([5e638f5](https://github.com/PiwiTests/platform/commit/5e638f54370f09d67333745ed304ac30642d7106))
-* **app:** close the high-severity findings of the security audit ([ed6ca78](https://github.com/PiwiTests/platform/commit/ed6ca78ebab9e38024cdf103be33b2c1f989204f))
-* **app:** close the medium-severity findings of the code audit ([bc7e9b1](https://github.com/PiwiTests/platform/commit/bc7e9b142632c56d59a2d3f64b36521c95028ec4))
-* **app:** close the remaining audit findings, dead code and unused api routes ([105e127](https://github.com/PiwiTests/platform/commit/105e127a97e7d6e7b4a9aebdb7275bf1f428a387))
-* **app:** count upload caps on the bytes read and check case-file tokens first ([367b874](https://github.com/PiwiTests/platform/commit/367b8749e9f3e2cde6c7756cac732d044981e4bb))
-* **app:** delete stored traces no execution links in the nightly sweep ([6980bd8](https://github.com/PiwiTests/platform/commit/6980bd82c82ca2e3a6fe77a7a2b53678b1cc9e62))
-* **app:** extract uploaded reports a few files at a time into private folders ([c87e6fa](https://github.com/PiwiTests/platform/commit/c87e6faa0470f7e564b7bec01fc7e4ede165b5a1))
-* **app:** give a Coolify deploy a site URL with its scheme ([918ad32](https://github.com/PiwiTests/platform/commit/918ad3200778b0024c74a2e69f02ea391482dfea))
-* **app:** keep a cluster's last seen run when an older run is imported ([d37cc4e](https://github.com/PiwiTests/platform/commit/d37cc4e9af5280df7e5cb6814a44f85e8f73d403))
-* **app:** keep a jira webhook token as its digest and look the connection up by it ([1f4ee07](https://github.com/PiwiTests/platform/commit/1f4ee07afbf6fd615449ec8066ecac75c1923815))
-* **app:** keep attachments of one execution that share a file name ([2728fbe](https://github.com/PiwiTests/platform/commit/2728fbe70f51d404cbf2c2fb714959585a9b2286))
-* **app:** keep run stream tokens out of api responses and store them as digests ([7b50646](https://github.com/PiwiTests/platform/commit/7b50646251e84bcda86f9ecfcb358b07c5879bc7))
-* **app:** keep the failing locator's own element out of healing suggestions ([6e6e699](https://github.com/PiwiTests/platform/commit/6e6e6993d362fb3ff3fda533e2bdc8ce50512f85))
-* **app:** leave bisect, reproduction and incident runs out of flaked-again and quarantine streaks ([63ca8d9](https://github.com/PiwiTests/platform/commit/63ca8d917e5ba6315ce78a47bd6affacdbd64933))
-* **app:** merge concurrent shards and deliveries, and fix data-integrity bugs ([f29362b](https://github.com/PiwiTests/platform/commit/f29362b2a37795c026fe91fe2663fe574fc86d4a))
-* **app:** merge shards that arrive together into one run and settle it once ([10b4993](https://github.com/PiwiTests/platform/commit/10b49939509d2e035d45d646419cdb0e5c25cf00))
-* **app:** open a run with more executions than the database binds parameters ([e287d70](https://github.com/PiwiTests/platform/commit/e287d70b2e7af987fa5d0b1604c88096ac3e6015))
-* **app:** parse error texts in linear time, whatever their blank lines ([a3098db](https://github.com/PiwiTests/platform/commit/a3098db23a9819d823ab57604d5e2a814215892d))
-* **app:** quote every generated locator string and edit tests only with canonical locators ([1a33c6b](https://github.com/PiwiTests/platform/commit/1a33c6b594d55290e4429b74cbbec94c077a6999))
-* **app:** rank the Analytics flakiest tests over the whole scope before the top-50 cut ([b7565e0](https://github.com/PiwiTests/platform/commit/b7565e06e7ed67e9292c9fb26e05e69ecaead523))
-* **app:** read every project's SCM repository from a pinned url, never from run metadata ([c7413e2](https://github.com/PiwiTests/platform/commit/c7413e2cc48d0b36bd96f8f86ab3eb89d8a9f812))
-* **app:** read fixed-before candidates with no landed fix last on postgresql too ([72f259a](https://github.com/PiwiTests/platform/commit/72f259adf7d502126dca8b4fd9a1a3153314f307))
-* **app:** read one default branch in Analytics, the project tabs and the flaky leaderboard ([f977ec8](https://github.com/PiwiTests/platform/commit/f977ec80ee226edc11ec55c6e568d314ccebb2f7))
-* **app:** recommend timeouts from finished runs the flakiness use reads ([b51a6e8](https://github.com/PiwiTests/platform/commit/b51a6e851cc50eeab8315052529741e6612fb8bc))
-* **app:** refuse to be framed by another site with x-frame-options and frame-ancestors ([25b66a5](https://github.com/PiwiTests/platform/commit/25b66a53b1411361365ab93741a8ca5f6fb26562))
-* **app:** retry an outbox row after 1, 5, 15, 60 and 240 minutes, as documented ([301e895](https://github.com/PiwiTests/platform/commit/301e89538cae74fb019b9b29bb57751df51b14b7))
-* **app:** serve only report archives from inside a .gz, read as a bounded stream ([19eb66e](https://github.com/PiwiTests/platform/commit/19eb66e2313232f21547493013484538883683aa))
-* **app:** store a batch delivery once when the reporter sends it again ([4c40033](https://github.com/PiwiTests/platform/commit/4c40033644c42d13b68651858e1bd715d2b01390))
-* **app:** store every uploaded trace in the blob store under the hash the server computes ([8df29bd](https://github.com/PiwiTests/platform/commit/8df29bde62b2903d7ea02328382067d364c2a67d))
-* **app:** suggest only locators related to the failing one in locator healing ([e91a3a2](https://github.com/PiwiTests/platform/commit/e91a3a25f68aa4c83fb9ae8d35195be26cfe646c))
-* **app:** suggest only related elements in the ARIA healing fallback ([208515c](https://github.com/PiwiTests/platform/commit/208515c97639f899275a3a72b142d62bd72887b5))
-* **app:** take a Fly.io instance's site URL from its app name ([9396ab3](https://github.com/PiwiTests/platform/commit/9396ab31a7088438df62af5a8043e5ae2b947769))
-* **app:** turn nitro instrumentation off when NODE_ENV is not set ([e8c7479](https://github.com/PiwiTests/platform/commit/e8c747971ac1623e78cff2ae971e7e5343b8bf6b))
-* **app:** unfurl links through safeFetch and connect only to the addresses it checked ([cff9680](https://github.com/PiwiTests/platform/commit/cff9680ac735c37fd5c0a2e2dc9a51f17351babe))
-* **app:** validate an uploaded run and create it before storing its reports ([a297539](https://github.com/PiwiTests/platform/commit/a29753977ff74b229d32146b3e648d95231e13fd))
-* **app:** weigh a test with no recorded duration at the median when balancing shards ([426dd61](https://github.com/PiwiTests/platform/commit/426dd61b28ee46102bdc140e90fa6921c1c656a0))
-* **auth:** ask for PIWI_SETUP_TOKEN on the first-admin form and generate it in one-click deploys ([e9e0654](https://github.com/PiwiTests/platform/commit/e9e0654c91f62002584e83b50e4c806fe9b00637))
-* **auth:** count concurrent login attempts against the throttle before checking the password ([7ebe557](https://github.com/PiwiTests/platform/commit/7ebe557f94afd83357eeb7bff83747f7d4f4ccf5))
-* **auth:** count oauth and extension lookup misses before the lookup runs ([482551d](https://github.com/PiwiTests/platform/commit/482551d396e9a86411967600ee8045dd2db2269e))
-* **auth:** create a ticket's share link only when the issue is filed, with share:create ([edc01cb](https://github.com/PiwiTests/platform/commit/edc01cb5d632020ac02278500c0e6ffd9d22fdac))
-* **auth:** hash passwords with scrypt at N=2^17, encode the cost, and rehash on sign-in ([e78fe06](https://github.com/PiwiTests/platform/commit/e78fe066aceb7728c35647f3868c9052f5318896))
-* **auth:** keep first-admin setup open while no administrator exists ([0db18e7](https://github.com/PiwiTests/platform/commit/0db18e7e2adc467660b9173a4226ec56a0db2c5a))
-* **auth:** keep the last administrator under concurrent demotions on postgresql ([eb9cdbd](https://github.com/PiwiTests/platform/commit/eb9cdbdf42f56d7c6a156182c53fda837327a971))
-* **auth:** revoke every session of the account on sign-out ([8b5de6a](https://github.com/PiwiTests/platform/commit/8b5de6a7b73bed2e6e43ef928bb79d1012cacf52))
-* **auth:** store gate verdicts and mark incidents only with run:submit or run:control ([cd1c291](https://github.com/PiwiTests/platform/commit/cd1c29196ba906185693786920b6a6865134978a))
-* **ci:** build the dashboard without the Nuxt build cache on CI ([3d3559a](https://github.com/PiwiTests/platform/commit/3d3559a16a26209c7113317ca63f4ea3a98c9d0a))
-* **ci:** keep publishing and signing secrets away from pull-request runs of the release ([ef53a77](https://github.com/PiwiTests/platform/commit/ef53a774c9c2be421849ebce01d1b3dcfe6a6061))
-* **ci:** read the tool configs as a local run does when running knip ([27c65fa](https://github.com/PiwiTests/platform/commit/27c65fa34d57b1cb266ea87532c88d9e54a8654e))
-* **ci:** start the server image before publishing it, and move latest only to the newest release ([3066076](https://github.com/PiwiTests/platform/commit/30660765e386d994275864d7028d3419d25afc8b))
-* **db:** store a cluster's time to resolution as bigint on PostgreSQL ([3780c8a](https://github.com/PiwiTests/platform/commit/3780c8a6a5e191947def171b28495cbda2392394))
-* **demo:** disable open trace for a run imported into the demo, and say why ([c6f7f41](https://github.com/PiwiTests/platform/commit/c6f7f41f7eae64d1e8be2a3ee6b906e1f072d562))
-* **demo:** keep notification links and icon under the demo's base and open no event stream there ([bae1863](https://github.com/PiwiTests/platform/commit/bae1863082d152fa053a347be45ae41ecd8e4530))
-* **demo:** keep the outbound openapi fetch out of the demo service worker ([90f5bb8](https://github.com/PiwiTests/platform/commit/90f5bb8ac9b1c6291556699b98ad2543dc022d0e))
-* **deps:** bump nodemailer to 10.1.7 and sharp to 0.35.5 ([ea7fdf4](https://github.com/PiwiTests/platform/commit/ea7fdf46668a7e5e1a2ed265d14dd8f76cf84ed0))
-* **deps:** install the locked sharp and libsql versions in the docker image ([8118246](https://github.com/PiwiTests/platform/commit/81182466d2785b568497990bde1f7504c4cf2be5))
-* **desktop:** bundle Node 24.22.0 and check its download against the release's SHA-256 list ([2337b13](https://github.com/PiwiTests/platform/commit/2337b13ee6784f280fa0104c7c234ac09b761894))
-* **desktop:** compare the desktop session token in constant time ([626cfba](https://github.com/PiwiTests/platform/commit/626cfba7993b0afed851a4cd68ba1ca7d9990923))
-* **desktop:** create the key, the token and the discovery file owner-only from the start ([9beb8a0](https://github.com/PiwiTests/platform/commit/9beb8a0678a28cbedf4979a7e904a9ab7bfcf662))
-* **desktop:** give each reproduce, bisect and lab job its own worktree ([12a3e69](https://github.com/PiwiTests/platform/commit/12a3e695b6685b7ba6b2457ae88d644ec7a4e5e6))
-* **desktop:** keep waiting for a slow server, and show its state on the splash and in the dashboard ([54b9cba](https://github.com/PiwiTests/platform/commit/54b9cbaa498a94967ab90bbcfd22c5e9f4ef927f))
-* **desktop:** let the dashboard window load its pages from devUrl under tauri dev ([3402b48](https://github.com/PiwiTests/platform/commit/3402b48c2473d9631f50cb3ed3df55fd37707b32))
-* **desktop:** stop local runs with their webServer on quit and remove their repro specs ([2ab8363](https://github.com/PiwiTests/platform/commit/2ab83636fba82f8c9a0f83f606967d92a7e64111))
-* **desktop:** trust only the spawned sidecar and allow only known IDE launchers ([7ca9de4](https://github.com/PiwiTests/platform/commit/7ca9de45f8319948da4d341149db08508d597028))
-* **extension:** give a replay started from an extension page to the first tab that asks ([afc8d72](https://github.com/PiwiTests/platform/commit/afc8d722475d5aa0389044105315b5be97346ca5))
-* **extension:** pair the desktop app on 127.0.0.1 whatever loopback name was typed ([6aa87bd](https://github.com/PiwiTests/platform/commit/6aa87bd96f1baf4579c20117b3256650e63288ed))
-* **extension:** put a no-break space before the colon of the french unproven-app message ([328e85f](https://github.com/PiwiTests/platform/commit/328e85ffddcef85bec8ce1c2127993cb810831bb))
-* **extension:** quote the strings of generated code with core's quoteJsString ([e6b2fca](https://github.com/PiwiTests/platform/commit/e6b2fca2a2b9ba3b849239f5ceeee1c5ca03799a))
-* **extension:** send the desktop token only to the app that proves it holds it ([26ce69d](https://github.com/PiwiTests/platform/commit/26ce69d8dce21def0ce3c3e36ed01002628a4e2c))
-* **ide:** build run commands in the editor service and wait for trust in a JetBrains project ([48d7204](https://github.com/PiwiTests/platform/commit/48d7204dc7374429dec9b39fa593014856aa7d4f))
-* **ide:** escape the instance's text in a test's jetbrains gutter tooltip ([abe8b6d](https://github.com/PiwiTests/platform/commit/abe8b6d517351eaa6f7dedcceb30db5488b349f6))
-* **ide:** escape the instance's text in the jetbrains status bar and recording tooltips ([f9f9aa8](https://github.com/PiwiTests/platform/commit/f9f9aa880f0836d231e7e88bb75507db40fe13e2))
-* **ide:** keep downloaded traces in a private per-user folder, and fetch a pruned one again ([6f7fb56](https://github.com/PiwiTests/platform/commit/6f7fb56c5591852ad81486e32c88c8005c51844a))
-* **notifications:** escape every value a Slack message interpolates ([806f4a4](https://github.com/PiwiTests/platform/commit/806f4a4858a6a1a5e22748380e1cf607a7956119))
-* **notifications:** re-check the caller and reload their scope every minute on the event stream ([fa11a79](https://github.com/PiwiTests/platform/commit/fa11a79d6071087b2dfd30c384e64148999cbff9))
-* **notifications:** send email only to verified addresses and rate-limit saved-channel tests ([1e1535b](https://github.com/PiwiTests/platform/commit/1e1535ba1cfe015cc751ebf77ce860f91479fc17))
-* **notifications:** show a global webhook's origin, not its full url, to users who do not own it ([ab9086f](https://github.com/PiwiTests/platform/commit/ab9086f14de59b085f3c2f74f99bd353d1d1e6b4))
-* **reporter:** bound a Nitro request's logs and keep those of its server-side $fetch calls ([6efa123](https://github.com/PiwiTests/platform/commit/6efa123f78587367bab8eb8597fa8e2d861590d9))
-* **reporter:** count tests that share a title and a line once each ([7981dcd](https://github.com/PiwiTests/platform/commit/7981dcd9df61381dba743c24bbdf59339235bb03))
-* **reporter:** drop the credentials a git remote url carries before sending it ([cadf902](https://github.com/PiwiTests/platform/commit/cadf902570b817c261577749a25599e240398dd0))
-* **reporter:** give each .NET coverage request id a random secret ([82efa04](https://github.com/PiwiTests/platform/commit/82efa04ebe1e6312ccb382898db1372abfdb067e))
-* **reporter:** guard the .NET capture buffer the parallel tasks of a request share ([efb74e4](https://github.com/PiwiTests/platform/commit/efb74e4b64aee0e4b4e7dbf6ba7df01c028ebd20))
-* **reporter:** keep the crash-recovery file per dashboard, owner-only, until its replay succeeds ([33c53a0](https://github.com/PiwiTests/platform/commit/33c53a07d38bdf951bcfc887a0c18e365e70cc2f))
-* **reporter:** list only the routes a nitro route handler matched in the route manifest ([309e013](https://github.com/PiwiTests/platform/commit/309e013448ae7b752b6f10147179969e56f5d326))
-* **reporter:** mask the credentials a page's URL fragment carries before it is uploaded ([ba553b3](https://github.com/PiwiTests/platform/commit/ba553b35d1fdda07e5815335745a636e4d34aaca))
-* **reporter:** name test files relative to the playwright config's folder, not the working directory ([8b46231](https://github.com/PiwiTests/platform/commit/8b46231175f98b868f3168a4034f715607313948))
-* **reporter:** never fail a green run from onEnd, and keep Playwright's terminal output ([97c4d83](https://github.com/PiwiTests/platform/commit/97c4d839787764c16bf37cdfa83b858efcb9a433))
-* **reporter:** read a failure's stack frames in linear time ([58a77bf](https://github.com/PiwiTests/platform/commit/58a77bf933ec18cd3f6c97564d87e3fecde556ac))
-* **reporter:** record a .NET request's leftover work at run level once its coverage is collected ([8ef99d4](https://github.com/PiwiTests/platform/commit/8ef99d47b3e1a90fddd1b3698999326c959bdf0b))
-* **reporter:** start playwright and package managers from the piwi cli on windows too ([148e7fa](https://github.com/PiwiTests/platform/commit/148e7fabc6b3fdefa33b0b06124665baaaa420d6))
-* **ui:** apply an Analytics drill-down once, not on every change of the project page's URL ([b86429f](https://github.com/PiwiTests/platform/commit/b86429f0081347b6999865bb9b0e238e84e6407a))
-* **ui:** copy a failure, a cluster or a diagnosis as plain text where rich copy is unavailable ([28209fe](https://github.com/PiwiTests/platform/commit/28209fe2d5546c83a307d030825baaa18309e155))
-* **ui:** fetch the trace snapshots and the healing of the execution being shown ([7d34193](https://github.com/PiwiTests/platform/commit/7d341930e28a2cc5bdb6b304903b82669e8abea2))
-* **ui:** keep only the latest answer of the performance tab, diagnosis context and search ([07c9b25](https://github.com/PiwiTests/platform/commit/07c9b250b834b58fee8ce61c65074d0dfcc63cc8))
-* **ui:** keep the api console's bearer token for the tab session and clear it on sign-out ([a898eba](https://github.com/PiwiTests/platform/commit/a898eba15677f8bf3a96c121d7aadb9132074cce))
-* **ui:** keep the inbox new queue's cut for the whole browser session ([9994e65](https://github.com/PiwiTests/platform/commit/9994e65893660360eb2770f10e081a6cc699929b))
-* **ui:** let an API key expire at the end of the chosen day in the viewer's time zone ([51d84da](https://github.com/PiwiTests/platform/commit/51d84daa88894a214be3235bbcd7b1cffb1f8e65))
-* **ui:** let ctrl and cmd-click open test and run links, with the app's base path ([76c7a6b](https://github.com/PiwiTests/platform/commit/76c7a6b2791b9577ab0d9b2ab07ff7d4e8c9f67f))
-* **ui:** link view page source to the matched page's file under apps/application ([7265023](https://github.com/PiwiTests/platform/commit/7265023c97f240a2a6279585e878485a1e11ec7d))
-* **ui:** reload an execution's running diagnosis on Refresh and poll it until it lands ([5a40ba6](https://github.com/PiwiTests/platform/commit/5a40ba6232d6be23f4293ba59cfa6158d8dd7203))
-* **ui:** show the network drawer's body of the request it is open on ([a2a8a03](https://github.com/PiwiTests/platform/commit/a2a8a035d6df58cfa9451c91ab7cdc1637bff3dc))
-* **ui:** show why a streaming diagnosis could not start, and follow one already running ([a1a4bfb](https://github.com/PiwiTests/platform/commit/a1a4bfb2aca735e08c9901b8e6120adada072bd9))
-
+- **ui:** disable a Jira connection's inbound webhook and sync the tracker statuses from settings ([3364860](https://github.com/PiwiTests/platform/commit/3364860b0fbaa37538d7f1aed6ed0867162bd4fe))
+- **demo:** add a relabeled field whose locator fix is copied, not applied ([b306936](https://github.com/PiwiTests/platform/commit/b306936c43080a3bcadf32f349dbd48e48e17a86))
 
 ### Performance Improvements
 
-* **app:** read each run's eligibility once for the quarantine release streaks ([ede13ba](https://github.com/PiwiTests/platform/commit/ede13ba1c1ac1bec5f8ca98aff983c8dea465cde))
-* **app:** set regression and flaky signals with one update per batch of 500 executions ([a564454](https://github.com/PiwiTests/platform/commit/a564454fa95ad2e81fbca79f228f15a01be3691c))
-* **db:** restore the test_run_id index of test_runs_cases ([84ce9ca](https://github.com/PiwiTests/platform/commit/84ce9ca76d21fda445ddd9f920a242f65db0f4cc))
+- **app:** read each run's eligibility once for the quarantine release streaks ([ede13ba](https://github.com/PiwiTests/platform/commit/ede13ba1c1ac1bec5f8ca98aff983c8dea465cde))
+- **app:** set regression and flaky signals with one update per batch of 500 executions ([a564454](https://github.com/PiwiTests/platform/commit/a564454fa95ad2e81fbca79f228f15a01be3691c))
+- **db:** restore the `test_run_id` index of `test_runs_cases` ([84ce9ca](https://github.com/PiwiTests/platform/commit/84ce9ca76d21fda445ddd9f920a242f65db0f4cc))
+
+### Bug Fixes
+
+#### Audit & web security
+- **app:** close the high-severity findings of the security audit ([ed6ca78](https://github.com/PiwiTests/platform/commit/ed6ca78ebab9e38024cdf103be33b2c1f989204f))
+- **app:** close the medium-severity findings of the code audit ([bc7e9b1](https://github.com/PiwiTests/platform/commit/bc7e9b142632c56d59a2d3f64b36521c95028ec4))
+- **app:** close the remaining audit findings, dead code and unused API routes ([105e127](https://github.com/PiwiTests/platform/commit/105e127a97e7d6e7b4a9aebdb7275bf1f428a387))
+- **app:** refuse to be framed by another site with `X-Frame-Options` and `frame-ancestors` ([25b66a5](https://github.com/PiwiTests/platform/commit/25b66a53b1411361365ab93741a8ca5f6fb26562))
+- **app:** unfurl links through `safeFetch` and connect only to the addresses it checked ([cff9680](https://github.com/PiwiTests/platform/commit/cff9680ac735c37fd5c0a2e2dc9a51f17351babe))
+- **app:** build SCM links only from http and https repository URLs ([5e638f5](https://github.com/PiwiTests/platform/commit/5e638f54370f09d67333745ed304ac30642d7106))
+- **app:** read every project's SCM repository from a pinned URL, never from run metadata ([c7413e2](https://github.com/PiwiTests/platform/commit/c7413e2cc48d0b36bd96f8f86ab3eb89d8a9f812))
+- **app:** keep run stream tokens out of API responses and store them as digests ([7b50646](https://github.com/PiwiTests/platform/commit/7b50646251e84bcda86f9ecfcb358b07c5879bc7))
+- **app:** keep a Jira webhook token as its digest and look the connection up by it ([1f4ee07](https://github.com/PiwiTests/platform/commit/1f4ee07afbf6fd615449ec8066ecac75c1923815))
+
+#### Sign-in & permissions
+- **auth:** hash passwords with scrypt at N=2^17, encode the cost, and rehash on sign-in ([e78fe06](https://github.com/PiwiTests/platform/commit/e78fe066aceb7728c35647f3868c9052f5318896))
+- **auth:** revoke every session of the account on sign-out ([8b5de6a](https://github.com/PiwiTests/platform/commit/8b5de6a7b73bed2e6e43ef928bb79d1012cacf52))
+- **auth:** count concurrent login attempts against the throttle before checking the password ([7ebe557](https://github.com/PiwiTests/platform/commit/7ebe557f94afd83357eeb7bff83747f7d4f4ccf5))
+- **auth:** count OAuth and extension lookup misses before the lookup runs ([482551d](https://github.com/PiwiTests/platform/commit/482551d396e9a86411967600ee8045dd2db2269e))
+- **auth:** ask for `PIWI_SETUP_TOKEN` on the first-admin form and generate it in one-click deploys ([e9e0654](https://github.com/PiwiTests/platform/commit/e9e0654c91f62002584e83b50e4c806fe9b00637))
+- **auth:** keep first-admin setup open while no administrator exists ([0db18e7](https://github.com/PiwiTests/platform/commit/0db18e7e2adc467660b9173a4226ec56a0db2c5a))
+- **auth:** keep the last administrator under concurrent demotions on PostgreSQL ([eb9cdbd](https://github.com/PiwiTests/platform/commit/eb9cdbdf42f56d7c6a156182c53fda837327a971))
+- **auth:** create a ticket's share link only when the issue is filed, with `share:create` ([edc01cb](https://github.com/PiwiTests/platform/commit/edc01cb5d632020ac02278500c0e6ffd9d22fdac))
+- **auth:** store gate verdicts and mark incidents only with `run:submit` or `run:control` ([cd1c291](https://github.com/PiwiTests/platform/commit/cd1c29196ba906185693786920b6a6865134978a))
+
+#### Uploads, storage & traces
+- **app:** bound trace archive inflation and verify trace and resource digests ([21d53ef](https://github.com/PiwiTests/platform/commit/21d53effbe9ec2c1ab5d45413b0baba7217f3ce9))
+- **app:** count upload caps on the bytes read and check case-file tokens first ([367b874](https://github.com/PiwiTests/platform/commit/367b8749e9f3e2cde6c7756cac732d044981e4bb))
+- **app:** extract uploaded reports a few files at a time into private folders ([c87e6fa](https://github.com/PiwiTests/platform/commit/c87e6faa0470f7e564b7bec01fc7e4ede165b5a1))
+- **app:** serve only report archives from inside a `.gz`, read as a bounded stream ([19eb66e](https://github.com/PiwiTests/platform/commit/19eb66e2313232f21547493013484538883683aa))
+- **app:** validate an uploaded run and create it before storing its reports ([a297539](https://github.com/PiwiTests/platform/commit/a29753977ff74b229d32146b3e648d95231e13fd))
+- **app:** store every uploaded trace in the blob store under the hash the server computes ([8df29bd](https://github.com/PiwiTests/platform/commit/8df29bde62b2903d7ea02328382067d364c2a67d))
+- **app:** delete stored traces no execution links in the nightly sweep ([6980bd8](https://github.com/PiwiTests/platform/commit/6980bd82c82ca2e3a6fe77a7a2b53678b1cc9e62))
+- **app:** keep attachments of one execution that share a file name ([2728fbe](https://github.com/PiwiTests/platform/commit/2728fbe70f51d404cbf2c2fb714959585a9b2286))
+- **app:** answer local storage `exists()` for regular files only ([bad3546](https://github.com/PiwiTests/platform/commit/bad3546fca53240d991a1ef9a05e65b17efe0bf4))
+
+#### Ingestion & data integrity
+- **app:** merge shards that arrive together into one run and settle it once ([10b4993](https://github.com/PiwiTests/platform/commit/10b49939509d2e035d45d646419cdb0e5c25cf00))
+- **app:** merge concurrent shards and deliveries, and fix data-integrity bugs ([f29362b](https://github.com/PiwiTests/platform/commit/f29362b2a37795c026fe91fe2663fe574fc86d4a))
+- **app:** store a batch delivery once when the reporter sends it again ([4c40033](https://github.com/PiwiTests/platform/commit/4c40033644c42d13b68651858e1bd715d2b01390))
+- **app:** open a run with more executions than the database binds parameters ([e287d70](https://github.com/PiwiTests/platform/commit/e287d70b2e7af987fa5d0b1604c88096ac3e6015))
+- **app:** keep a cluster's last seen run when an older run is imported ([d37cc4e](https://github.com/PiwiTests/platform/commit/d37cc4e9af5280df7e5cb6814a44f85e8f73d403))
+- **app:** retry an outbox row after 1, 5, 15, 60 and 240 minutes, as documented ([301e895](https://github.com/PiwiTests/platform/commit/301e89538cae74fb019b9b29bb57751df51b14b7))
+- **app:** parse error texts in linear time, whatever their blank lines ([a3098db](https://github.com/PiwiTests/platform/commit/a3098db23a9819d823ab57604d5e2a814215892d))
+- **db:** store a cluster's time to resolution as `bigint` on PostgreSQL ([3780c8a](https://github.com/PiwiTests/platform/commit/3780c8a6a5e191947def171b28495cbda2392394))
+
+#### Locator healing & generated code
+- **app:** suggest only locators related to the failing one in locator healing ([e91a3a2](https://github.com/PiwiTests/platform/commit/e91a3a25f68aa4c83fb9ae8d35195be26cfe646c))
+- **app:** suggest only related elements in the ARIA healing fallback ([208515c](https://github.com/PiwiTests/platform/commit/208515c97639f899275a3a72b142d62bd72887b5))
+- **app:** keep the failing locator's own element out of healing suggestions ([6e6e699](https://github.com/PiwiTests/platform/commit/6e6e6993d362fb3ff3fda533e2bdc8ce50512f85))
+- **app:** quote every generated locator string and edit tests only with canonical locators ([1a33c6b](https://github.com/PiwiTests/platform/commit/1a33c6b594d55290e4429b74cbbec94c077a6999))
+- **extension:** quote the strings of generated code with core's `quoteJsString` ([e6b2fca](https://github.com/PiwiTests/platform/commit/e6b2fca2a2b9ba3b849239f5ceeee1c5ca03799a))
+
+#### Analytics, flaky tests & sharding
+- **app:** leave bisect, reproduction and incident runs out of flaked-again and quarantine streaks ([63ca8d9](https://github.com/PiwiTests/platform/commit/63ca8d917e5ba6315ce78a47bd6affacdbd64933))
+- **app:** rank the Analytics flakiest tests over the whole scope before the top-50 cut ([b7565e0](https://github.com/PiwiTests/platform/commit/b7565e06e7ed67e9292c9fb26e05e69ecaead523))
+- **app:** read one default branch in Analytics, the project tabs and the flaky leaderboard ([f977ec8](https://github.com/PiwiTests/platform/commit/f977ec80ee226edc11ec55c6e568d314ccebb2f7))
+- **app:** read fixed-before candidates with no landed fix last on PostgreSQL too ([72f259a](https://github.com/PiwiTests/platform/commit/72f259adf7d502126dca8b4fd9a1a3153314f307))
+- **app:** recommend timeouts from finished runs the flakiness use reads ([b51a6e8](https://github.com/PiwiTests/platform/commit/b51a6e851cc50eeab8315052529741e6612fb8bc))
+- **app:** weigh a test with no recorded duration at the median when balancing shards ([426dd61](https://github.com/PiwiTests/platform/commit/426dd61b28ee46102bdc140e90fa6921c1c656a0))
+
+#### AI
+- **ai:** run the Claude CLI with its tools off, one turn and an allowlisted environment ([c76b841](https://github.com/PiwiTests/platform/commit/c76b84106d7e304d87e1407e2700229d52a4e280))
+- **ai:** send the Claude CLI a text-only diagnosis prompt and list no image modality for it ([6039245](https://github.com/PiwiTests/platform/commit/6039245ddd458858048b8cc51238e64f67b7c934))
+- **ai:** bound every field of an AI step resolution and rate-limit each caller ([4b4f188](https://github.com/PiwiTests/platform/commit/4b4f188da53c9eee71a38f676dc89080b7fecf20))
+- **ai:** read a Groq stream's token usage from `x_groq.usage` ([759e6df](https://github.com/PiwiTests/platform/commit/759e6dfe2a20d845bfffaab4a5ec53981d1ce905))
+
+#### Notifications
+- **notifications:** escape every value a Slack message interpolates ([806f4a4](https://github.com/PiwiTests/platform/commit/806f4a4858a6a1a5e22748380e1cf607a7956119))
+- **notifications:** re-check the caller and reload their scope every minute on the event stream ([fa11a79](https://github.com/PiwiTests/platform/commit/fa11a79d6071087b2dfd30c384e64148999cbff9))
+- **notifications:** send email only to verified addresses and rate-limit saved-channel tests ([1e1535b](https://github.com/PiwiTests/platform/commit/1e1535ba1cfe015cc751ebf77ce860f91479fc17))
+- **notifications:** show a global webhook's origin, not its full URL, to users who do not own it ([ab9086f](https://github.com/PiwiTests/platform/commit/ab9086f14de59b085f3c2f74f99bd353d1d1e6b4))
+
+#### Reporter
+- **reporter:** never fail a green run from `onEnd`, and keep Playwright's terminal output ([97c4d83](https://github.com/PiwiTests/platform/commit/97c4d839787764c16bf37cdfa83b858efcb9a433))
+- **reporter:** drop the credentials a git remote URL carries before sending it ([cadf902](https://github.com/PiwiTests/platform/commit/cadf902570b817c261577749a25599e240398dd0))
+- **reporter:** mask the credentials a page's URL fragment carries before it is uploaded ([ba553b3](https://github.com/PiwiTests/platform/commit/ba553b35d1fdda07e5815335745a636e4d34aaca))
+- **reporter:** keep the crash-recovery file per dashboard, owner-only, until its replay succeeds ([33c53a0](https://github.com/PiwiTests/platform/commit/33c53a07d38bdf951bcfc887a0c18e365e70cc2f))
+- **reporter:** name test files relative to the Playwright config's folder, not the working directory ([8b46231](https://github.com/PiwiTests/platform/commit/8b46231175f98b868f3168a4034f715607313948))
+- **reporter:** count tests that share a title and a line once each ([7981dcd](https://github.com/PiwiTests/platform/commit/7981dcd9df61381dba743c24bbdf59339235bb03))
+- **reporter:** read a failure's stack frames in linear time ([58a77bf](https://github.com/PiwiTests/platform/commit/58a77bf933ec18cd3f6c97564d87e3fecde556ac))
+- **reporter:** start Playwright and package managers from the `piwi` CLI on Windows too ([148e7fa](https://github.com/PiwiTests/platform/commit/148e7fabc6b3fdefa33b0b06124665baaaa420d6))
+- **reporter:** bound a Nitro request's logs and keep those of its server-side `$fetch` calls ([6efa123](https://github.com/PiwiTests/platform/commit/6efa123f78587367bab8eb8597fa8e2d861590d9))
+- **reporter:** list only the routes a Nitro route handler matched in the route manifest ([309e013](https://github.com/PiwiTests/platform/commit/309e013448ae7b752b6f10147179969e56f5d326))
+- **reporter:** give each .NET coverage request id a random secret ([82efa04](https://github.com/PiwiTests/platform/commit/82efa04ebe1e6312ccb382898db1372abfdb067e))
+- **reporter:** guard the .NET capture buffer the parallel tasks of a request share ([efb74e4](https://github.com/PiwiTests/platform/commit/efb74e4b64aee0e4b4e7dbf6ba7df01c028ebd20))
+- **reporter:** record a .NET request's leftover work at run level once its coverage is collected ([8ef99d4](https://github.com/PiwiTests/platform/commit/8ef99d47b3e1a90fddd1b3698999326c959bdf0b))
+
+#### Desktop
+- **desktop:** trust only the spawned sidecar and allow only known IDE launchers ([7ca9de4](https://github.com/PiwiTests/platform/commit/7ca9de45f8319948da4d341149db08508d597028))
+- **desktop:** create the key, the token and the discovery file owner-only from the start ([9beb8a0](https://github.com/PiwiTests/platform/commit/9beb8a0678a28cbedf4979a7e904a9ab7bfcf662))
+- **desktop:** compare the desktop session token in constant time ([626cfba](https://github.com/PiwiTests/platform/commit/626cfba7993b0afed851a4cd68ba1ca7d9990923))
+- **desktop:** bundle Node 24.22.0 and check its download against the release's SHA-256 list ([2337b13](https://github.com/PiwiTests/platform/commit/2337b13ee6784f280fa0104c7c234ac09b761894))
+- **desktop:** give each reproduce, bisect and lab job its own worktree ([12a3e69](https://github.com/PiwiTests/platform/commit/12a3e695b6685b7ba6b2457ae88d644ec7a4e5e6))
+- **desktop:** stop local runs with their `webServer` on quit and remove their repro specs ([2ab8363](https://github.com/PiwiTests/platform/commit/2ab83636fba82f8c9a0f83f606967d92a7e64111))
+- **desktop:** keep waiting for a slow server, and show its state on the splash and in the dashboard ([54b9cba](https://github.com/PiwiTests/platform/commit/54b9cbaa498a94967ab90bbcfd22c5e9f4ef927f))
+- **desktop:** let the dashboard window load its pages from `devUrl` under `tauri dev` ([3402b48](https://github.com/PiwiTests/platform/commit/3402b48c2473d9631f50cb3ed3df55fd37707b32))
+
+#### Piwi Picker & editors
+- **extension:** send the desktop token only to the app that proves it holds it ([26ce69d](https://github.com/PiwiTests/platform/commit/26ce69d8dce21def0ce3c3e36ed01002628a4e2c))
+- **extension:** pair the desktop app on 127.0.0.1 whatever loopback name was typed ([6aa87bd](https://github.com/PiwiTests/platform/commit/6aa87bd96f1baf4579c20117b3256650e63288ed))
+- **extension:** give a replay started from an extension page to the first tab that asks ([afc8d72](https://github.com/PiwiTests/platform/commit/afc8d722475d5aa0389044105315b5be97346ca5))
+- **extension:** put a no-break space before the colon of the French unproven-app message ([328e85f](https://github.com/PiwiTests/platform/commit/328e85ffddcef85bec8ce1c2127993cb810831bb))
+- **ide:** build run commands in the editor service and wait for trust in a JetBrains project ([48d7204](https://github.com/PiwiTests/platform/commit/48d7204dc7374429dec9b39fa593014856aa7d4f))
+- **ide:** escape the instance's text in a test's JetBrains gutter tooltip ([abe8b6d](https://github.com/PiwiTests/platform/commit/abe8b6d517351eaa6f7dedcceb30db5488b349f6)), and in the JetBrains status bar and recording tooltips ([f9f9aa8](https://github.com/PiwiTests/platform/commit/f9f9aa880f0836d231e7e88bb75507db40fe13e2))
+- **ide:** keep downloaded traces in a private per-user folder, and fetch a pruned one again ([6f7fb56](https://github.com/PiwiTests/platform/commit/6f7fb56c5591852ad81486e32c88c8005c51844a))
+
+#### Dashboard
+- **ui:** keep the API console's bearer token for the tab session and clear it on sign-out ([a898eba](https://github.com/PiwiTests/platform/commit/a898eba15677f8bf3a96c121d7aadb9132074cce))
+- **ui:** let an API key expire at the end of the chosen day in the viewer's time zone ([51d84da](https://github.com/PiwiTests/platform/commit/51d84daa88894a214be3235bbcd7b1cffb1f8e65))
+- **ui:** show why a streaming diagnosis could not start, and follow one already running ([a1a4bfb](https://github.com/PiwiTests/platform/commit/a1a4bfb2aca735e08c9901b8e6120adada072bd9))
+- **ui:** reload an execution's running diagnosis on Refresh and poll it until it lands ([5a40ba6](https://github.com/PiwiTests/platform/commit/5a40ba6232d6be23f4293ba59cfa6158d8dd7203))
+- **ui:** fetch the trace snapshots and the healing of the execution being shown ([7d34193](https://github.com/PiwiTests/platform/commit/7d341930e28a2cc5bdb6b304903b82669e8abea2))
+- **ui:** show the network drawer's body of the request it is open on ([a2a8a03](https://github.com/PiwiTests/platform/commit/a2a8a035d6df58cfa9451c91ab7cdc1637bff3dc))
+- **ui:** keep only the latest answer of the performance tab, diagnosis context and search ([07c9b25](https://github.com/PiwiTests/platform/commit/07c9b250b834b58fee8ce61c65074d0dfcc63cc8))
+- **ui:** apply an Analytics drill-down once, not on every change of the project page's URL ([b86429f](https://github.com/PiwiTests/platform/commit/b86429f0081347b6999865bb9b0e238e84e6407a))
+- **ui:** keep the inbox new queue's cut for the whole browser session ([9994e65](https://github.com/PiwiTests/platform/commit/9994e65893660360eb2770f10e081a6cc699929b))
+- **ui:** copy a failure, a cluster or a diagnosis as plain text where rich copy is unavailable ([28209fe](https://github.com/PiwiTests/platform/commit/28209fe2d5546c83a307d030825baaa18309e155))
+- **ui:** let ctrl and cmd-click open test and run links, with the app's base path ([76c7a6b](https://github.com/PiwiTests/platform/commit/76c7a6b2791b9577ab0d9b2ab07ff7d4e8c9f67f))
+- **ui:** link view page source to the matched page's file under `apps/application` ([7265023](https://github.com/PiwiTests/platform/commit/7265023c97f240a2a6279585e878485a1e11ec7d))
+
+#### Deploys
+- **app:** give a Coolify deploy a site URL with its scheme ([918ad32](https://github.com/PiwiTests/platform/commit/918ad3200778b0024c74a2e69f02ea391482dfea))
+- **app:** take a Fly.io instance's site URL from its app name ([9396ab3](https://github.com/PiwiTests/platform/commit/9396ab31a7088438df62af5a8043e5ae2b947769))
+- **app:** turn Nitro instrumentation off when `NODE_ENV` is not set ([e8c7479](https://github.com/PiwiTests/platform/commit/e8c747971ac1623e78cff2ae971e7e5343b8bf6b))
+
+<details>
+<summary><strong>Demo, CI & dependencies</strong> — the in-browser demo, the release pipeline and the Docker image</summary>
+
+- **demo:** disable open trace for a run imported into the demo, and say why ([c6f7f41](https://github.com/PiwiTests/platform/commit/c6f7f41f7eae64d1e8be2a3ee6b906e1f072d562))
+- **demo:** keep notification links and icon under the demo's base and open no event stream there ([bae1863](https://github.com/PiwiTests/platform/commit/bae1863082d152fa053a347be45ae41ecd8e4530))
+- **demo:** keep the outbound OpenAPI fetch out of the demo service worker ([90f5bb8](https://github.com/PiwiTests/platform/commit/90f5bb8ac9b1c6291556699b98ad2543dc022d0e))
+- **ci:** keep publishing and signing secrets away from pull-request runs of the release ([ef53a77](https://github.com/PiwiTests/platform/commit/ef53a774c9c2be421849ebce01d1b3dcfe6a6061))
+- **ci:** start the server image before publishing it, and move `latest` only to the newest release ([3066076](https://github.com/PiwiTests/platform/commit/30660765e386d994275864d7028d3419d25afc8b))
+- **ci:** build the dashboard without the Nuxt build cache on CI ([3d3559a](https://github.com/PiwiTests/platform/commit/3d3559a16a26209c7113317ca63f4ea3a98c9d0a))
+- **ci:** read the tool configs as a local run does when running knip ([27c65fa](https://github.com/PiwiTests/platform/commit/27c65fa34d57b1cb266ea87532c88d9e54a8654e))
+- **deps:** bump nodemailer to 10.1.7 and sharp to 0.35.5 ([ea7fdf4](https://github.com/PiwiTests/platform/commit/ea7fdf46668a7e5e1a2ed265d14dd8f76cf84ed0))
+- **deps:** install the locked sharp and libsql versions in the Docker image ([8118246](https://github.com/PiwiTests/platform/commit/81182466d2785b568497990bde1f7504c4cf2be5))
+
+</details>
+
+<!-- notes:polished -->
 
 ## [0.55.0](https://github.com/PiwiTests/platform/compare/v0.54.0...v0.55.0) (2026-10-17)
 
+This release combines unit and end-to-end coverage into one ratio per commit: upload unit-test reports with `piwi coverage upload`, explore a commit's coverage as a tree split by suite, follow the trend, export it as LCOV or Cobertura, and gate pull requests on patch coverage.
+
+**Full diff:** [v0.54.0…v0.55.0](https://github.com/PiwiTests/platform/compare/v0.54.0...v0.55.0)
+
+### ✨ Highlights
+
+- **🧩 Combined coverage** — Every suite's coverage of a commit, unit and end-to-end, counts toward one ratio, shown on the project's coverage, run and file pages, with a note on what the numbers leave out.
+- **📤 `piwi coverage upload`** — The reporter uploads unit-test coverage reports, reads Cobertura and LCOV, and sends a .NET test host's run-level report as `--format piwi`.
+- **🌳 Coverage tree & gaps** — Explore a commit's coverage as a foldable tree with every bar split by suite kind, rank the least-covered files, and step through a file's gaps line by line.
+- **📊 Trend & export** — Combined coverage is charted over time and exported as LCOV or Cobertura; named areas of the code are counted apart in coverage, the trend and pull requests.
+- **🚦 Patch coverage in pull requests** — The pull-request comment and gate count patch coverage and unit suites.
+- **🌐 Coverage across origins** — The reporter follows suites across origins, pages and documents, records the lines of each browser function that ran, and uploads the route manifest of every instrumented origin a run reaches.
 
 ### Features
 
-* **app:** chart combined coverage over time and export it as LCOV or Cobertura ([b12d214](https://github.com/PiwiTests/platform/commit/b12d214366412ed9937b2a2ff61b0d9036a4fd09))
-* **app:** combine every suite's coverage of a commit into one ratio ([080f1fd](https://github.com/PiwiTests/platform/commit/080f1fdeaac219578e4bca5b3e52d449ecd778e2))
-* **app:** combine unit and end-to-end coverage into one ratio per commit ([24ed380](https://github.com/PiwiTests/platform/commit/24ed38044856548db393bc0691709da221c02374))
-* **app:** count named areas of the code apart in coverage, the trend and pull requests ([b8824ad](https://github.com/PiwiTests/platform/commit/b8824adcf23add24f133dcee1952ff80abbe23f4))
-* **app:** count patch coverage and unit suites in the pull-request comment and gate ([cbe11ca](https://github.com/PiwiTests/platform/commit/cbe11cafd570c919fb2a1a8dea4679574eba6662))
-* **app:** explore a commit's coverage as a foldable tree, every bar split by suite kind ([dd292ad](https://github.com/PiwiTests/platform/commit/dd292ade5deea0c33c840b04e3437f9c9cb00632))
-* **app:** rank the least-covered files, mark a file's lines by suite and step through its gaps ([bf256b3](https://github.com/PiwiTests/platform/commit/bf256b3f75b81e0c1606e83168b503550f07419d))
-* **app:** say what a commit's coverage numbers leave out ([739dde6](https://github.com/PiwiTests/platform/commit/739dde6f0f2c864ddfd92a1376c89ab3a1a039a4))
-* **app:** show a project's combined coverage on its coverage, run and file pages ([a6889c1](https://github.com/PiwiTests/platform/commit/a6889c15667ee7caf82ca030783f8c42e4df047d))
-* **app:** store uploaded coverage reports by commit and suite, executable lines by file version ([951cc1c](https://github.com/PiwiTests/platform/commit/951cc1c8cb1172ae0362d33828b66d804391ce3a))
-* **db:** keep a branch's newest coverage report per suite, earlier totals frozen ([5f8fc80](https://github.com/PiwiTests/platform/commit/5f8fc804c580957c6056539a71d8ef7f2d6259b6))
-* **demo:** show a branch push superseded by the next one ([25a70ea](https://github.com/PiwiTests/platform/commit/25a70ea349c6b3d426a08c156f1357c610f86d85))
-* **demo:** wire the sample app for combined coverage ([84b116c](https://github.com/PiwiTests/platform/commit/84b116c71640ecd324f26b577b6e92b4247d2da4))
-* **ide:** one pair of coverage mark colors in the dashboard and the editors, with what they mean ([c62c29a](https://github.com/PiwiTests/platform/commit/c62c29a586efb1a063e9db74d14a5b47e75dba90))
-* **ide:** record the browser's coverage by function from a browser file's lens ([04bd0a5](https://github.com/PiwiTests/platform/commit/04bd0a5911878f345a3f90ebd43342b9164b3910))
-* **reporter:** add piwi coverage upload for unit-test coverage reports ([6933dbd](https://github.com/PiwiTests/platform/commit/6933dbd0060ddcc17c914426fe36d869b40e2b22))
-* **reporter:** follow suites across origins, pages and documents for coverage and route manifests ([984b840](https://github.com/PiwiTests/platform/commit/984b840a2ae1b0eb29c824d88ca94f9e42ab2147))
-* **reporter:** read Cobertura and LCOV reports, and keep the browser functions that did not run ([cde1ca3](https://github.com/PiwiTests/platform/commit/cde1ca35f28e6aac9a1646891c87167416b2ed79))
-* **reporter:** record code reach on every page a test has and every document it leaves ([c9a39ee](https://github.com/PiwiTests/platform/commit/c9a39eedac3c7cc9f0e7ceb421a0e66b8668eaf7))
-* **reporter:** record the lines of each function that ran in the browser ([5926401](https://github.com/PiwiTests/platform/commit/5926401dbe41cdd7eaf689fb0e2ff46602f3f484))
-* **reporter:** resolve code reach against the roots of each origin ([6748d4b](https://github.com/PiwiTests/platform/commit/6748d4b5ea78144d8adcaad771fdc32666852515))
-* **reporter:** say when an uploaded commit's coverage was superseded ([92472a7](https://github.com/PiwiTests/platform/commit/92472a7877601c2635969fbc6f98898b7faa6797))
-* **reporter:** upload a .NET test host's run-level report, written at exit, as --format piwi ([a70fa64](https://github.com/PiwiTests/platform/commit/a70fa64d533f2507197eda4db86d134e369a7a51))
-* **reporter:** upload the route manifest of every instrumented origin a run reaches ([88a4a17](https://github.com/PiwiTests/platform/commit/88a4a171749e253fd72f982e9a368d6aff20fb6b))
+#### Combined coverage
+- **app:** combine every suite's coverage of a commit, unit and end-to-end, into one ratio per commit ([080f1fd](https://github.com/PiwiTests/platform/commit/080f1fdeaac219578e4bca5b3e52d449ecd778e2), [24ed380](https://github.com/PiwiTests/platform/commit/24ed38044856548db393bc0691709da221c02374))
+- **app:** store uploaded coverage reports by commit and suite, executable lines by file version ([951cc1c](https://github.com/PiwiTests/platform/commit/951cc1c8cb1172ae0362d33828b66d804391ce3a))
+- **db:** keep a branch's newest coverage report per suite, earlier totals frozen ([5f8fc80](https://github.com/PiwiTests/platform/commit/5f8fc804c580957c6056539a71d8ef7f2d6259b6))
+- **app:** show a project's combined coverage on its coverage, run and file pages ([a6889c1](https://github.com/PiwiTests/platform/commit/a6889c15667ee7caf82ca030783f8c42e4df047d))
+- **app:** say what a commit's coverage numbers leave out ([739dde6](https://github.com/PiwiTests/platform/commit/739dde6f0f2c864ddfd92a1376c89ab3a1a039a4))
 
+#### Exploring coverage
+- **app:** explore a commit's coverage as a foldable tree, every bar split by suite kind ([dd292ad](https://github.com/PiwiTests/platform/commit/dd292ade5deea0c33c840b04e3437f9c9cb00632))
+- **app:** rank the least-covered files, mark a file's lines by suite and step through its gaps ([bf256b3](https://github.com/PiwiTests/platform/commit/bf256b3f75b81e0c1606e83168b503550f07419d))
+- **app:** chart combined coverage over time and export it as LCOV or Cobertura ([b12d214](https://github.com/PiwiTests/platform/commit/b12d214366412ed9937b2a2ff61b0d9036a4fd09))
+- **app:** count named areas of the code apart in coverage, the trend and pull requests ([b8824ad](https://github.com/PiwiTests/platform/commit/b8824adcf23add24f133dcee1952ff80abbe23f4))
+- **app:** count patch coverage and unit suites in the pull-request comment and gate ([cbe11ca](https://github.com/PiwiTests/platform/commit/cbe11cafd570c919fb2a1a8dea4679574eba6662))
 
-### Bug Fixes
+#### Uploading coverage
+- **reporter:** add `piwi coverage upload` for unit-test coverage reports ([6933dbd](https://github.com/PiwiTests/platform/commit/6933dbd0060ddcc17c914426fe36d869b40e2b22))
+- **reporter:** read Cobertura and LCOV reports, and keep the browser functions that did not run ([cde1ca3](https://github.com/PiwiTests/platform/commit/cde1ca35f28e6aac9a1646891c87167416b2ed79))
+- **reporter:** upload a .NET test host's run-level report, written at exit, as `--format piwi` ([a70fa64](https://github.com/PiwiTests/platform/commit/a70fa64d533f2507197eda4db86d134e369a7a51))
+- **reporter:** say when an uploaded commit's coverage was superseded ([92472a7](https://github.com/PiwiTests/platform/commit/92472a7877601c2635969fbc6f98898b7faa6797))
 
-* **app:** ask the run coverage of server files only, and say browser files unfold ([947e926](https://github.com/PiwiTests/platform/commit/947e926860bb97d146b189717158c876ba6cb3b9))
-* **app:** carry coverage only from earlier commits, recount every stale commit ([36186b9](https://github.com/PiwiTests/platform/commit/36186b92394c901b0362c4a74f94d67e0a6f4970))
-* **app:** give the coverage trend's change the subtitle, clear of a long legend ([74f2c84](https://github.com/PiwiTests/platform/commit/74f2c845f62b6b5c4e382ba9bc9e7b4a3772d9b8))
-* **app:** keep the coverage overview in place, its links on the pinned commit and area ([71e5cae](https://github.com/PiwiTests/platform/commit/71e5caecc9b708f21a5cfe146da9f7eebf0cc8e7))
-* **app:** list every Jira project, not just the first page ([310ab9e](https://github.com/PiwiTests/platform/commit/310ab9e082420c37ca62bbfd3b0efdeb48ab2d8b))
-* **app:** list every Jira project, not just the first page ([41dc77b](https://github.com/PiwiTests/platform/commit/41dc77b2e0aab39b0da7d659469348bd8fc31b51)), closes [#816](https://github.com/PiwiTests/platform/issues/816)
-* **app:** merge coverage uploads safely, keep a default-branch commit, bound report bodies ([e4febf1](https://github.com/PiwiTests/platform/commit/e4febf17b51d75df9ac3144e4873044237f3fe80))
-* **db:** store when a commit's coverage arrived, count report inventories once ([53c3689](https://github.com/PiwiTests/platform/commit/53c3689d35d4fbc48503452b0762b18f74207534))
-* **demo:** run the unit coverage without a shell, upload only this run's reports ([29c7e23](https://github.com/PiwiTests/platform/commit/29c7e237a44d531216511e5cdd1fd04265adc5e4))
-* **ide:** mark a file with its own coverage, not another file's ending with the same path ([5c545ff](https://github.com/PiwiTests/platform/commit/5c545ff6d381d25da2b5f22167892599300b307e))
-* **reporter:** bound the end-of-run wait for browser blob ids too ([b466e25](https://github.com/PiwiTests/platform/commit/b466e2581b44df2d71521b7d6af938a49062a9af))
-* **reporter:** count every instrumented assembly's lines, drop lines built from other sources ([fd086cb](https://github.com/PiwiTests/platform/commit/fd086cb80bfe3ae9693a6962e7762785572a0147))
-* **reporter:** fetch an origin's manifest as it is first seen, through the backend request helper ([864d341](https://github.com/PiwiTests/platform/commit/864d3417bc40e5b33d1f52cb35551aa5d899deb2))
-* **reporter:** place a function that ran on its own lines through a production bundle's map ([ab8c415](https://github.com/PiwiTests/platform/commit/ab8c415fce1eb7f0a1f1d2e0599acb7bf9d2aeed))
-* **reporter:** read each document's coverage against the scripts it parsed, and keep only what ran ([bc9f6fb](https://github.com/PiwiTests/platform/commit/bc9f6fbbc944e0862693587f0ff1c702d107cd07))
-* **reporter:** read quoted Cobertura values in one pass, match scope patterns without backtracking ([f3127ca](https://github.com/PiwiTests/platform/commit/f3127caa1fc8eb2c9cff911a51e837feb7c3f681))
-* **reporter:** send every browser function in parts, keep idle ones only at functions ([102f2ca](https://github.com/PiwiTests/platform/commit/102f2ca796d94863fa71d3547b800cb7c6ceb06d))
-* **reporter:** wait at the end of a test for the code reach a closing page started stopping ([32f421d](https://github.com/PiwiTests/platform/commit/32f421d26f798db49981e2341bd6178c6ffa43cb))
-* **reporter:** write a .NET host's coverage report in time, one file per host ([fa84f0c](https://github.com/PiwiTests/platform/commit/fa84f0c21e6de7650ef9f18ad8715ad23a773e99))
+#### Browser coverage & code reach
+- **reporter:** follow suites across origins, pages and documents for coverage and route manifests ([984b840](https://github.com/PiwiTests/platform/commit/984b840a2ae1b0eb29c824d88ca94f9e42ab2147))
+- **reporter:** record the lines of each function that ran in the browser ([5926401](https://github.com/PiwiTests/platform/commit/5926401dbe41cdd7eaf689fb0e2ff46602f3f484))
+- **reporter:** record code reach on every page a test has and every document it leaves ([c9a39ee](https://github.com/PiwiTests/platform/commit/c9a39eedac3c7cc9f0e7ceb421a0e66b8668eaf7))
+- **reporter:** resolve code reach against the roots of each origin ([6748d4b](https://github.com/PiwiTests/platform/commit/6748d4b5ea78144d8adcaad771fdc32666852515))
+- **reporter:** upload the route manifest of every instrumented origin a run reaches ([88a4a17](https://github.com/PiwiTests/platform/commit/88a4a171749e253fd72f982e9a368d6aff20fb6b))
 
+#### Editors
+- **ide:** one pair of coverage mark colors in the dashboard and the editors, with what they mean ([c62c29a](https://github.com/PiwiTests/platform/commit/c62c29a586efb1a063e9db74d14a5b47e75dba90))
+- **ide:** record the browser's coverage by function from a browser file's lens ([04bd0a5](https://github.com/PiwiTests/platform/commit/04bd0a5911878f345a3f90ebd43342b9164b3910))
+
+#### Demo
+- **demo:** wire the sample app for combined coverage ([84b116c](https://github.com/PiwiTests/platform/commit/84b116c71640ecd324f26b577b6e92b4247d2da4))
+- **demo:** show a branch push superseded by the next one ([25a70ea](https://github.com/PiwiTests/platform/commit/25a70ea349c6b3d426a08c156f1357c610f86d85))
 
 ### Performance Improvements
 
-* **reporter:** keep code reach's script cache small enough to hold a large app's modules ([3cf95c9](https://github.com/PiwiTests/platform/commit/3cf95c9a59197fc9d3bd0723e644fb057e6475eb))
-* **reporter:** keep each decoded source map in four typed arrays, not three per line ([c91d5bc](https://github.com/PiwiTests/platform/commit/c91d5bcdfd64abae882b25b8587faae46b622bf4))
+- **reporter:** keep code reach's script cache small enough to hold a large app's modules ([3cf95c9](https://github.com/PiwiTests/platform/commit/3cf95c9a59197fc9d3bd0723e644fb057e6475eb))
+- **reporter:** keep each decoded source map in four typed arrays, not three per line ([c91d5bc](https://github.com/PiwiTests/platform/commit/c91d5bcdfd64abae882b25b8587faae46b622bf4))
+
+### Bug Fixes
+
+#### Coverage in the dashboard
+- **app:** carry coverage only from earlier commits, recount every stale commit ([36186b9](https://github.com/PiwiTests/platform/commit/36186b92394c901b0362c4a74f94d67e0a6f4970))
+- **app:** merge coverage uploads safely, keep a default-branch commit, bound report bodies ([e4febf1](https://github.com/PiwiTests/platform/commit/e4febf17b51d75df9ac3144e4873044237f3fe80))
+- **db:** store when a commit's coverage arrived, count report inventories once ([53c3689](https://github.com/PiwiTests/platform/commit/53c3689d35d4fbc48503452b0762b18f74207534))
+- **app:** ask the run coverage of server files only, and say browser files unfold ([947e926](https://github.com/PiwiTests/platform/commit/947e926860bb97d146b189717158c876ba6cb3b9))
+- **app:** give the coverage trend's change the subtitle, clear of a long legend ([74f2c84](https://github.com/PiwiTests/platform/commit/74f2c845f62b6b5c4e382ba9bc9e7b4a3772d9b8))
+- **app:** keep the coverage overview in place, its links on the pinned commit and area ([71e5cae](https://github.com/PiwiTests/platform/commit/71e5caecc9b708f21a5cfe146da9f7eebf0cc8e7))
+- **ide:** mark a file with its own coverage, not another file's ending with the same path ([5c545ff](https://github.com/PiwiTests/platform/commit/5c545ff6d381d25da2b5f22167892599300b307e))
+- **demo:** run the unit coverage without a shell, upload only this run's reports ([29c7e23](https://github.com/PiwiTests/platform/commit/29c7e237a44d531216511e5cdd1fd04265adc5e4))
+
+#### Coverage capture & upload
+- **reporter:** bound the end-of-run wait for browser blob ids too ([b466e25](https://github.com/PiwiTests/platform/commit/b466e2581b44df2d71521b7d6af938a49062a9af))
+- **reporter:** count every instrumented assembly's lines, drop lines built from other sources ([fd086cb](https://github.com/PiwiTests/platform/commit/fd086cb80bfe3ae9693a6962e7762785572a0147))
+- **reporter:** fetch an origin's manifest as it is first seen, through the backend request helper ([864d341](https://github.com/PiwiTests/platform/commit/864d3417bc40e5b33d1f52cb35551aa5d899deb2))
+- **reporter:** place a function that ran on its own lines through a production bundle's map ([ab8c415](https://github.com/PiwiTests/platform/commit/ab8c415fce1eb7f0a1f1d2e0599acb7bf9d2aeed))
+- **reporter:** read each document's coverage against the scripts it parsed, and keep only what ran ([bc9f6fb](https://github.com/PiwiTests/platform/commit/bc9f6fbbc944e0862693587f0ff1c702d107cd07))
+- **reporter:** read quoted Cobertura values in one pass, match scope patterns without backtracking ([f3127ca](https://github.com/PiwiTests/platform/commit/f3127caa1fc8eb2c9cff911a51e837feb7c3f681))
+- **reporter:** send every browser function in parts, keep idle ones only at functions ([102f2ca](https://github.com/PiwiTests/platform/commit/102f2ca796d94863fa71d3547b800cb7c6ceb06d))
+- **reporter:** wait at the end of a test for the code reach a closing page started stopping ([32f421d](https://github.com/PiwiTests/platform/commit/32f421d26f798db49981e2341bd6178c6ffa43cb))
+- **reporter:** write a .NET host's coverage report in time, one file per host ([fa84f0c](https://github.com/PiwiTests/platform/commit/fa84f0c21e6de7650ef9f18ad8715ad23a773e99))
+
+#### Integrations
+- **app:** list every Jira project, not just the first page ([310ab9e](https://github.com/PiwiTests/platform/commit/310ab9e082420c37ca62bbfd3b0efdeb48ab2d8b), [41dc77b](https://github.com/PiwiTests/platform/commit/41dc77b2e0aab39b0da7d659469348bd8fc31b51)), closes [#816](https://github.com/PiwiTests/platform/issues/816)
+
+<!-- notes:polished -->
 
 ## [0.54.0](https://github.com/PiwiTests/platform/compare/v0.53.0...v0.54.0) (2026-10-15)
 
+This release shows what each test covers: a file coverage page, per-test coverage in the dashboard and the editors, coverage comparisons and checks through the API and MCP, and the calls of Playwright's `request` fixture captured with their logs and coverage.
+
+**Full diff:** [v0.53.0…v0.54.0](https://github.com/PiwiTests/platform/compare/v0.53.0...v0.54.0)
+
+### ✨ Highlights
+
+- **📊 Coverage in the dashboard** — A file coverage page shows a file's coverage against its executable lines, each test's coverage appears in the execution page's source tab, and coverage insights show up where decisions are made.
+- **🧑‍💻 Coverage in the editors** — VS Code and JetBrains show recorded coverage as line marks, function lenses and hovers.
+- **🧱 Coverage through the API and MCP** — Compare, protect and check test coverage from scripts and AI agents.
+- **🔗 API calls captured** — The reporter records the calls of Playwright's `request` fixture with their logs and coverage.
 
 ### Features
 
-* **app:** add a file coverage page and show coverage insights where decisions are made ([c4c40b1](https://github.com/PiwiTests/platform/commit/c4c40b118f415bce77c0fa2992e8e15aecad0e76))
-* **app:** compare, protect and check test coverage through the api and mcp ([d24fae0](https://github.com/PiwiTests/platform/commit/d24fae06f8877bf90f272385192a4b3d7d1a51c0))
-* **app:** give a file's coverage its executable lines and an etag ([c522611](https://github.com/PiwiTests/platform/commit/c52261194e653def9ab0f54a6d553fb123956b7a))
-* **app:** list a test's coverage in the execution page's source tab, with sources by blob ([f0d1dc8](https://github.com/PiwiTests/platform/commit/f0d1dc83c2aacddcec785977332954d3e778acac))
-* **app:** show each test's coverage in the dashboard and the editors, and what it reveals ([ab92919](https://github.com/PiwiTests/platform/commit/ab929192ec5999f7a19c44b82ed63d2550d5776c))
-* **ide:** show recorded coverage as line marks, function lenses and hovers in the editors ([459ad9e](https://github.com/PiwiTests/platform/commit/459ad9efc7d7a0ac087c600d5e08fde5044e6132))
-* **reporter:** capture the calls of playwright's request fixture with their logs and coverage ([e4b6641](https://github.com/PiwiTests/platform/commit/e4b664118f756337d6d8204517ef7d5075af69e7))
+#### Coverage in the dashboard
+- **app:** add a file coverage page and show coverage insights where decisions are made ([c4c40b1](https://github.com/PiwiTests/platform/commit/c4c40b118f415bce77c0fa2992e8e15aecad0e76))
+- **app:** give a file's coverage its executable lines and an etag ([c522611](https://github.com/PiwiTests/platform/commit/c52261194e653def9ab0f54a6d553fb123956b7a))
+- **app:** list a test's coverage in the execution page's source tab, with sources by blob ([f0d1dc8](https://github.com/PiwiTests/platform/commit/f0d1dc83c2aacddcec785977332954d3e778acac))
+- **app:** show each test's coverage in the dashboard and the editors, and what it reveals ([ab92919](https://github.com/PiwiTests/platform/commit/ab929192ec5999f7a19c44b82ed63d2550d5776c))
 
+#### Coverage in the editors
+- **ide:** show recorded coverage as line marks, function lenses and hovers in the editors ([459ad9e](https://github.com/PiwiTests/platform/commit/459ad9efc7d7a0ac087c600d5e08fde5044e6132))
 
-### Bug Fixes
-
-* **app:** answer 403 or 404 with an error page for an entity the viewer cannot open ([023b3b0](https://github.com/PiwiTests/platform/commit/023b3b0a5b9ed9b21a1d7eba8e1e478afe51c573))
-* **app:** answer 403 or 404 with an error page for an entity the viewer cannot open ([2cfb8a2](https://github.com/PiwiTests/platform/commit/2cfb8a228ea2ea3b6943123a11710037af4cfca7))
-* **app:** fix what the review of the coverage work found ([9ba8fdc](https://github.com/PiwiTests/platform/commit/9ba8fdcffc3d8099311716fbcc66a8e636711a98))
-* **ide:** count function-recorded lines as run and read coverage past another branch's code index ([096c576](https://github.com/PiwiTests/platform/commit/096c576bd9807a46989053fb04bf674ceb5b3a31))
-
+#### API, MCP & capture
+- **app:** compare, protect and check test coverage through the API and MCP ([d24fae0](https://github.com/PiwiTests/platform/commit/d24fae06f8877bf90f272385192a4b3d7d1a51c0))
+- **reporter:** capture the calls of Playwright's `request` fixture with their logs and coverage ([e4b6641](https://github.com/PiwiTests/platform/commit/e4b664118f756337d6d8204517ef7d5075af69e7))
 
 ### Performance Improvements
 
-* **app:** read the run page's coverage capability only once a test is selected ([81f0b30](https://github.com/PiwiTests/platform/commit/81f0b30f5e91fb451e0dde0e8d48678a02473f00))
+- **app:** read the run page's coverage capability only once a test is selected ([81f0b30](https://github.com/PiwiTests/platform/commit/81f0b30f5e91fb451e0dde0e8d48678a02473f00))
+
+### Bug Fixes
+
+- **app:** answer 403 or 404 with an error page for an entity the viewer cannot open ([023b3b0](https://github.com/PiwiTests/platform/commit/023b3b0a5b9ed9b21a1d7eba8e1e478afe51c573), [2cfb8a2](https://github.com/PiwiTests/platform/commit/2cfb8a228ea2ea3b6943123a11710037af4cfca7))
+- **app:** fix what the review of the coverage work found ([9ba8fdc](https://github.com/PiwiTests/platform/commit/9ba8fdcffc3d8099311716fbcc66a8e636711a98))
+- **ide:** count function-recorded lines as run and read coverage past another branch's code index ([096c576](https://github.com/PiwiTests/platform/commit/096c576bd9807a46989053fb04bf674ceb5b3a31))
+
+<!-- notes:polished -->
 
 ## [0.53.0](https://github.com/PiwiTests/platform/compare/v0.52.0...v0.53.0) (2026-10-14)
 
+This release records per-test browser and server coverage and ranks the changed lines the failing tests executed as suspect lines, shows the page's live state in the DOM view, marks retried attempts on the run timeline, and adds a sample app that ASP.NET Core and Nitro both serve.
+
+**Full diff:** [v0.52.0…v0.53.0](https://github.com/PiwiTests/platform/compare/v0.52.0...v0.53.0)
+
+### ✨ Highlights
+
+- **🎯 Suspect lines** — From per-test browser and server coverage, Piwi ranks the changed lines the failing tests executed, reads them against the file at the head commit, and shows them on the failure pages and in the cluster's diff.
+- **🧪 Per-test server coverage** — The ASP.NET Core instrumentation records each test's server code coverage, and the reporter sends it with the test.
+- **🖱️ Live page state in the DOM view** — The reporter captures focus, hover and selection at test end, and the DOM view shows the page's values, dialogs, focus, hover and the mouse.
+- **🔁 Retries on the run timeline** — The run timeline shows which failed attempts were retried and links a test's attempts.
+- **🧱 One sample app for every backend** — A sample app served by ASP.NET Core and Nitro replaces the Nitro example, and a Nitro module lists every route in the route manifest at build time.
 
 ### Features
 
-* add a sample app every supported backend serves, with ASP.NET Core first ([0afde3b](https://github.com/PiwiTests/platform/commit/0afde3b082f41e4acc6f76dec58c0b1e7f13dff2))
-* **ai:** rank the changed lines the failing tests executed as suspect lines ([3a0284b](https://github.com/PiwiTests/platform/commit/3a0284b5c00829bc8aae6cce692098668c1c201f))
-* **ai:** read suspect lines against the file version at the head commit ([7c528d2](https://github.com/PiwiTests/platform/commit/7c528d25558718aef1c8be57371e2f6b1c87ba76))
-* **app:** render the page's recorded live state in the DOM view ([f356181](https://github.com/PiwiTests/platform/commit/f35618132bfa96b88cfb3a4415a82eccb7294a17))
-* **app:** show line-level suspect lines in the demo, from an ASP.NET Core API file ([5fd51b4](https://github.com/PiwiTests/platform/commit/5fd51b43c881cd27315a3e137624f525f4df9d0d))
-* **app:** show line-level suspect lines in the demo, from an ASP.NET Core API file ([1b27c0b](https://github.com/PiwiTests/platform/commit/1b27c0b14b0b44e806fad2f63bf29247d5a9f5ed))
-* **app:** show the mouse and what it hovered in the DOM view ([8ba8cb6](https://github.com/PiwiTests/platform/commit/8ba8cb618883602e4c4a760a099532784f307a96))
-* **app:** show the page's live state (values, dialogs, focus, hover) in the DOM view ([9005636](https://github.com/PiwiTests/platform/commit/90056366e9408dea46d86a30bf09bb8418f28afd))
-* **app:** show which failed attempts were retried on the run timeline, and link a test's attempts ([7f059ca](https://github.com/PiwiTests/platform/commit/7f059ca80d1fc94accda20afc0cf55249a9f779e))
-* **app:** show which failed attempts were retried on the run timeline, and link a test's attempts ([8216a1c](https://github.com/PiwiTests/platform/commit/8216a1cab93af708c8565300a618f9d3a87aae6f))
-* **db:** store per-test coverage, run coverage and code reach per runtime ([81fc74c](https://github.com/PiwiTests/platform/commit/81fc74caa00a4ae728c0d6d9bf1eb0727cce7842))
-* list every Nitro route in the route manifest, read at build time by a Nitro module ([177220b](https://github.com/PiwiTests/platform/commit/177220b1d781dc0a11e946ffef80f5fc98633144))
-* record per-test browser and server coverage, and rank suspect lines ([7d9a429](https://github.com/PiwiTests/platform/commit/7d9a4291ef687e2a2410510cbf663c0e2712686c))
-* record per-test server code coverage in the ASP.NET Core instrumentation ([ad86808](https://github.com/PiwiTests/platform/commit/ad86808781c7e77aa08e054799891ad6412b1845))
-* **reporter:** add the coverage model and its wire shapes to @piwitests/core ([9a7b29b](https://github.com/PiwiTests/platform/commit/9a7b29bb2ea2c7f608dceabba662671009e8563c))
-* **reporter:** capture focus, hover and selection at test end ([b7a5cde](https://github.com/PiwiTests/platform/commit/b7a5cdeb6abfe38c7f2b3365f7b37d1a758435a4))
-* **reporter:** collect each test's server coverage and send it with the test ([990230b](https://github.com/PiwiTests/platform/commit/990230b757dc8ca538e460f1bc7ae5e62817eabf))
-* serve the sample app from Nitro too, and retire the Nitro example ([6ecc377](https://github.com/PiwiTests/platform/commit/6ecc37755fc15415aced84a907a62ade3cd33b53))
-* **ui:** show suspect lines on the failure pages and mark them in the cluster's diff ([675ebd7](https://github.com/PiwiTests/platform/commit/675ebd7884c5ce013087836ec0e4c1d1a42f9215))
+#### Coverage & suspect lines
+- record per-test browser and server coverage, and rank suspect lines ([7d9a429](https://github.com/PiwiTests/platform/commit/7d9a4291ef687e2a2410510cbf663c0e2712686c))
+- **reporter:** add the coverage model and its wire shapes to `@piwitests/core` ([9a7b29b](https://github.com/PiwiTests/platform/commit/9a7b29bb2ea2c7f608dceabba662671009e8563c))
+- **db:** store per-test coverage, run coverage and code reach per runtime ([81fc74c](https://github.com/PiwiTests/platform/commit/81fc74caa00a4ae728c0d6d9bf1eb0727cce7842))
+- record per-test server code coverage in the ASP.NET Core instrumentation ([ad86808](https://github.com/PiwiTests/platform/commit/ad86808781c7e77aa08e054799891ad6412b1845))
+- **reporter:** collect each test's server coverage and send it with the test ([990230b](https://github.com/PiwiTests/platform/commit/990230b757dc8ca538e460f1bc7ae5e62817eabf))
+- **ai:** rank the changed lines the failing tests executed as suspect lines ([3a0284b](https://github.com/PiwiTests/platform/commit/3a0284b5c00829bc8aae6cce692098668c1c201f))
+- **ai:** read suspect lines against the file version at the head commit ([7c528d2](https://github.com/PiwiTests/platform/commit/7c528d25558718aef1c8be57371e2f6b1c87ba76))
+- **ui:** show suspect lines on the failure pages and mark them in the cluster's diff ([675ebd7](https://github.com/PiwiTests/platform/commit/675ebd7884c5ce013087836ec0e4c1d1a42f9215))
+- **app:** show line-level suspect lines in the demo, from an ASP.NET Core API file ([5fd51b4](https://github.com/PiwiTests/platform/commit/5fd51b43c881cd27315a3e137624f525f4df9d0d), [1b27c0b](https://github.com/PiwiTests/platform/commit/1b27c0b14b0b44e806fad2f63bf29247d5a9f5ed))
 
+#### DOM view & the run timeline
+- **reporter:** capture focus, hover and selection at test end ([b7a5cde](https://github.com/PiwiTests/platform/commit/b7a5cdeb6abfe38c7f2b3365f7b37d1a758435a4))
+- **app:** show the page's live state (values, dialogs, focus, hover) in the DOM view ([9005636](https://github.com/PiwiTests/platform/commit/90056366e9408dea46d86a30bf09bb8418f28afd))
+- **app:** render the page's recorded live state in the DOM view ([f356181](https://github.com/PiwiTests/platform/commit/f35618132bfa96b88cfb3a4415a82eccb7294a17))
+- **app:** show the mouse and what it hovered in the DOM view ([8ba8cb6](https://github.com/PiwiTests/platform/commit/8ba8cb618883602e4c4a760a099532784f307a96))
+- **app:** show which failed attempts were retried on the run timeline, and link a test's attempts ([7f059ca](https://github.com/PiwiTests/platform/commit/7f059ca80d1fc94accda20afc0cf55249a9f779e), [8216a1c](https://github.com/PiwiTests/platform/commit/8216a1cab93af708c8565300a618f9d3a87aae6f))
 
-### Bug Fixes
-
-* **ai:** fix what the review of suspect lines found ([eba7ba8](https://github.com/PiwiTests/platform/commit/eba7ba8144a1995b50614e5e11f6c1a5563091e4))
-* **app:** show a screenshot at the failure only when it is the failing page ([2cec8b7](https://github.com/PiwiTests/platform/commit/2cec8b7b3fed591f39614700e8d4f8807a68942d))
-* **app:** show the failing page's screenshot at the failure, not the first one ([36eabfa](https://github.com/PiwiTests/platform/commit/36eabfaed27bd734b380ef61a9c9d9d3b15aa06b))
-* load the Nitro integration's build in Node, and name a route by its h3 1.x pattern ([82b8c17](https://github.com/PiwiTests/platform/commit/82b8c177784e04b1bb9ad86c3307b6adb9e76f78))
-* place a backend's source files when it runs outside its repository ([d76f10d](https://github.com/PiwiTests/platform/commit/d76f10d153912444e9bb329ea3a3bff9644e55ab))
-* recompile when switching between a coverage build and a plain build ([ca8b80a](https://github.com/PiwiTests/platform/commit/ca8b80a68345535d75accd472bf3ab9d70d4e46a))
-* record an unhandled exception on the X-Piwi-Logs of its 500 response ([202e89d](https://github.com/PiwiTests/platform/commit/202e89dbb8175a6613611bdfb06632981ecbeb76))
-* **reporter:** give coverage the blob id git stores, after its line ending filters ([9bc9645](https://github.com/PiwiTests/platform/commit/9bc9645264d09bb5e386e324bb4696a4c053ccbd))
-* **reporter:** keep a request whose response arrived but whose body the page never read ([b87a8a8](https://github.com/PiwiTests/platform/commit/b87a8a8adeac2037187239396c7470bc6f65ed8f))
-* **reporter:** screenshot the page a failed test was on ([b799e80](https://github.com/PiwiTests/platform/commit/b799e80358f368fbc3391e710aef0a8792b62cec))
-
+#### Sample app & backends
+- add a sample app every supported backend serves, with ASP.NET Core first ([0afde3b](https://github.com/PiwiTests/platform/commit/0afde3b082f41e4acc6f76dec58c0b1e7f13dff2))
+- serve the sample app from Nitro too, and retire the Nitro example ([6ecc377](https://github.com/PiwiTests/platform/commit/6ecc37755fc15415aced84a907a62ade3cd33b53))
+- list every Nitro route in the route manifest, read at build time by a Nitro module ([177220b](https://github.com/PiwiTests/platform/commit/177220b1d781dc0a11e946ffef80f5fc98633144))
 
 ### Performance Improvements
 
-* **reporter:** read code reach from V8 function coverage through a CDP session ([767fbec](https://github.com/PiwiTests/platform/commit/767fbecc77d8f7f36cd5a153230e598955c34eb6))
+- **reporter:** read code reach from V8 function coverage through a CDP session ([767fbec](https://github.com/PiwiTests/platform/commit/767fbecc77d8f7f36cd5a153230e598955c34eb6))
+
+### Bug Fixes
+
+#### Coverage & suspect lines
+- **ai:** fix what the review of suspect lines found ([eba7ba8](https://github.com/PiwiTests/platform/commit/eba7ba8144a1995b50614e5e11f6c1a5563091e4))
+- **reporter:** give coverage the blob id git stores, after its line ending filters ([9bc9645](https://github.com/PiwiTests/platform/commit/9bc9645264d09bb5e386e324bb4696a4c053ccbd))
+- recompile when switching between a coverage build and a plain build ([ca8b80a](https://github.com/PiwiTests/platform/commit/ca8b80a68345535d75accd472bf3ab9d70d4e46a))
+- place a backend's source files when it runs outside its repository ([d76f10d](https://github.com/PiwiTests/platform/commit/d76f10d153912444e9bb329ea3a3bff9644e55ab))
+
+#### Screenshots & requests
+- **app:** show the failing page's screenshot at the failure, not the first one, and only when it is the failing page ([36eabfa](https://github.com/PiwiTests/platform/commit/36eabfaed27bd734b380ef61a9c9d9d3b15aa06b), [2cec8b7](https://github.com/PiwiTests/platform/commit/2cec8b7b3fed591f39614700e8d4f8807a68942d))
+- **reporter:** screenshot the page a failed test was on ([b799e80](https://github.com/PiwiTests/platform/commit/b799e80358f368fbc3391e710aef0a8792b62cec))
+- **reporter:** keep a request whose response arrived but whose body the page never read ([b87a8a8](https://github.com/PiwiTests/platform/commit/b87a8a8adeac2037187239396c7470bc6f65ed8f))
+
+#### Integrations
+- load the Nitro integration's build in Node, and name a route by its h3 1.x pattern ([82b8c17](https://github.com/PiwiTests/platform/commit/82b8c177784e04b1bb9ad86c3307b6adb9e76f78))
+- record an unhandled exception on the `X-Piwi-Logs` of its 500 response ([202e89d](https://github.com/PiwiTests/platform/commit/202e89dbb8175a6613611bdfb06632981ecbeb76))
+
+<!-- notes:polished -->
 
 ## [0.52.0](https://github.com/PiwiTests/platform/compare/v0.51.0...v0.52.0) (2026-10-12)
 
+This release stores each distinct trace screenshot once, serves a route manifest from the ASP.NET Core instrumentation, and signs the macOS desktop app so a downloaded copy opens and receives updates.
+
+**Full diff:** [v0.51.0…v0.52.0](https://github.com/PiwiTests/platform/compare/v0.51.0...v0.52.0)
+
+### ✨ Highlights
+
+- **🗜️ Trace screenshots stored once** — Each distinct trace screenshot is stored once, and storage counts real trace bytes.
+- **🧭 ASP.NET Core route manifest** — The ASP.NET Core instrumentation serves a route manifest, and Piwi matches requests to the declared route patterns that serve them.
+- **🍎 macOS desktop app opens and updates** — The macOS app is signed ad hoc so a downloaded copy opens, and its app bundle is built so macOS installs get updates.
 
 ### Features
 
-* **app:** store each distinct trace screenshot once and count real trace bytes ([084301e](https://github.com/PiwiTests/platform/commit/084301e5b604df93c8817ba5a22fd0b2f89bee0b))
-* **app:** store each distinct trace screenshot once and count real trace bytes ([5328b9b](https://github.com/PiwiTests/platform/commit/5328b9b551181c4ce3323460e9ecd680cc2e00e0))
-* serve the route manifest from ASP.NET Core and match declared route patterns ([7954f3e](https://github.com/PiwiTests/platform/commit/7954f3efac495d5f837c0b28c995a78453e94385))
-* serve the route manifest from the ASP.NET Core instrumentation ([0be1a43](https://github.com/PiwiTests/platform/commit/0be1a436c470700d90d97b4fffd0ba74024676e0))
+#### Trace storage
+- **app:** store each distinct trace screenshot once and count real trace bytes ([084301e](https://github.com/PiwiTests/platform/commit/084301e5b604df93c8817ba5a22fd0b2f89bee0b), [5328b9b](https://github.com/PiwiTests/platform/commit/5328b9b551181c4ce3323460e9ecd680cc2e00e0))
 
+#### ASP.NET Core route manifest
+- serve the route manifest from the ASP.NET Core instrumentation ([0be1a43](https://github.com/PiwiTests/platform/commit/0be1a436c470700d90d97b4fffd0ba74024676e0))
+- serve the route manifest from ASP.NET Core and match declared route patterns ([7954f3e](https://github.com/PiwiTests/platform/commit/7954f3efac495d5f837c0b28c995a78453e94385))
 
 ### Bug Fixes
 
-* **app:** keep pooled trace files safe from reclaim, planting and partial rebuilds ([802f5d2](https://github.com/PiwiTests/platform/commit/802f5d21822bcad3d12b5b503438ca405ec387b8))
-* **app:** match declared routes to the requests their patterns serve ([81490bb](https://github.com/PiwiTests/platform/commit/81490bba5be6d8913d43dd12bc21adadb44d2ccb))
-* **app:** tighten declared pattern matching ([b6ba87c](https://github.com/PiwiTests/platform/commit/b6ba87cec227f36283db4d1247b02e1760a8ba5f))
-* **ci:** build the macOS app bundle so macOS installs get updates ([e46bbc7](https://github.com/PiwiTests/platform/commit/e46bbc732786ff217023f666f70ba0ed8c987527))
-* **desktop:** require macOS 13.5, the floor of the bundled Node runtime ([a3ea0d8](https://github.com/PiwiTests/platform/commit/a3ea0d89b6ac302cb636eb770f0fea957411f85c))
-* **desktop:** sign macOS app ad hoc and verify bundle integrity ([0ea6c0a](https://github.com/PiwiTests/platform/commit/0ea6c0ab04a88dd70680f5cb0ed8ae0648395bbe))
-* **desktop:** sign the macOS app ad hoc so a downloaded copy opens ([5ac7c9c](https://github.com/PiwiTests/platform/commit/5ac7c9c410c855676ba083c61aeca8384b8c266f))
-* keep optional parameters in the ASP.NET Core route manifest ([6241315](https://github.com/PiwiTests/platform/commit/624131559213dee78928eb7aebb78f6c4013b497))
-* **reporter:** fetch the instrumentation manifest under the base URL path ([9fd27af](https://github.com/PiwiTests/platform/commit/9fd27af2b8ff46370d3fc4e36361f1430bfa828a))
+#### Trace storage
+- **app:** keep pooled trace files safe from reclaim, planting and partial rebuilds ([802f5d2](https://github.com/PiwiTests/platform/commit/802f5d21822bcad3d12b5b503438ca405ec387b8))
+
+#### Route manifest
+- **app:** match declared routes to the requests their patterns serve ([81490bb](https://github.com/PiwiTests/platform/commit/81490bba5be6d8913d43dd12bc21adadb44d2ccb))
+- **app:** tighten declared pattern matching ([b6ba87c](https://github.com/PiwiTests/platform/commit/b6ba87cec227f36283db4d1247b02e1760a8ba5f))
+- keep optional parameters in the ASP.NET Core route manifest ([6241315](https://github.com/PiwiTests/platform/commit/624131559213dee78928eb7aebb78f6c4013b497))
+- **reporter:** fetch the instrumentation manifest under the base URL path ([9fd27af](https://github.com/PiwiTests/platform/commit/9fd27af2b8ff46370d3fc4e36361f1430bfa828a))
+
+#### macOS desktop app
+- **desktop:** sign the macOS app ad hoc so a downloaded copy opens, and verify the bundle's integrity ([5ac7c9c](https://github.com/PiwiTests/platform/commit/5ac7c9c410c855676ba083c61aeca8384b8c266f), [0ea6c0a](https://github.com/PiwiTests/platform/commit/0ea6c0ab04a88dd70680f5cb0ed8ae0648395bbe))
+- **desktop:** require macOS 13.5, the floor of the bundled Node runtime ([a3ea0d8](https://github.com/PiwiTests/platform/commit/a3ea0d89b6ac302cb636eb770f0fea957411f85c))
+- **ci:** build the macOS app bundle so macOS installs get updates ([e46bbc7](https://github.com/PiwiTests/platform/commit/e46bbc732786ff217023f666f70ba0ed8c987527))
+
+<!-- notes:polished -->
 
 ## [0.51.0](https://github.com/PiwiTests/platform/compare/v0.50.0...v0.51.0) (2026-10-10)
 
+This release reworks the failure pages around one Most likely rule that cites its evidence and says whether the failure still happens, teaches the Test Map to see controls and score itself, points the timeline at the steps and requests that stand out, loads stored traces once, and adds a guided demo tour in four languages.
+
+**Full diff:** [v0.50.0…v0.51.0](https://github.com/PiwiTests/platform/compare/v0.50.0...v0.51.0)
+
+### ✨ Highlights
+
+- **🧭 Failure pages lead with Most likely** — Both failure pages open with one Most likely rule, mark the evidence rows it cites, say under the headline whether the failure still happens, and show the change the next step copies.
+- **🗺️ The Test Map sees controls** — The Test Map reaches controls from the locator index, groups a feature's pages and sets hubs apart, keys routes without the query, adds three detectors and shows its health on the Gaps tab, scored on a labeled demo.
+- **⏱️ A timeline that points at outliers** — Each step and request carries its usual duration, so the timeline points at what stands out.
+- **🩹 Fixes you can apply and check** — A locator step with an edit offers Download `.patch`, and a verified fix says whether its diagnosed patch still applies, checked at the fix's commit.
+- **⚡ Faster trace loading** — Each stored trace loads once, shared between views, which read and inflate only the streams they need.
+- **🎓 Guided demo tour** — The demo offers a guided tour by role in four languages, on a web-dashboard project with a full Test Map and a seeded Jira issue.
+- **🧩 Piwi Picker on Firefox** — The dashboard links the Firefox Add-ons listing next to the Chrome Web Store, and suggests Piwi Picker where it is the next step unless it is installed.
 
 ### Features
 
-* **app:** add three Test Map detectors, key routes without the query, and show map health ([afac453](https://github.com/PiwiTests/platform/commit/afac453658c2a85ce2c9001472fcec9cee4847ce))
-* **app:** group what a feature's pages hold, set hubs apart, and score detectors on the demo ([e494d5d](https://github.com/PiwiTests/platform/commit/e494d5d9511b842090d3330acaff5d9844d92669))
-* **app:** leave a muted detector out of the gaps digest and list its gaps last ([75e277e](https://github.com/PiwiTests/platform/commit/75e277ecda1c7201ca567e35b705954e0d18fceb))
-* **app:** link Piwi Picker's Firefox Add-ons listing next to the Chrome Web Store ([1f9c7ee](https://github.com/PiwiTests/platform/commit/1f9c7ee1c8511d91efe749ecdbfe28571882b31a))
-* **app:** link Piwi Picker's Firefox Add-ons listing next to the Chrome Web Store ([e637637](https://github.com/PiwiTests/platform/commit/e6376379bc9ba746ba50d0fd987208bf06dfcaad))
-* **app:** make the Test Map see controls, group features, and score itself on a labeled demo ([e095a7b](https://github.com/PiwiTests/platform/commit/e095a7b987e19bf0dd08e4cfb49f51e33d201f0f))
-* **app:** name the failed attempt of a test that passed on retry in explain_failure ([10bb7be](https://github.com/PiwiTests/platform/commit/10bb7bedb8a9620820bb36dd123605011b432849))
-* **app:** offer Download .patch on a locator step with an edit ([8e0ffcf](https://github.com/PiwiTests/platform/commit/8e0ffcf413e89e006c2f358592ec799e49014650))
-* **app:** raise passes with errors, visibility-only pages and uncalled catalog methods ([c5e7d5d](https://github.com/PiwiTests/platform/commit/c5e7d5dce4f3ea3951792ffb3fe5973255908b62))
-* **app:** reach controls from the locator index and rank node gaps by recorded churn ([7d8892d](https://github.com/PiwiTests/platform/commit/7d8892dd5617fe3e1614352abda3d37986dc33bc))
-* **app:** say when a verified fix's diagnosed patch still applies ([6362471](https://github.com/PiwiTests/platform/commit/6362471fe881f783daf5a5f4849167d23b6ae1e6))
-* **app:** send each step's and request's usual duration with the timeline ([bface6c](https://github.com/PiwiTests/platform/commit/bface6c004fc8df518b67dd08954557f2a270fd1))
-* **app:** show map health on the Gaps tab, and file test and catalog gaps under a feature ([d3c6aba](https://github.com/PiwiTests/platform/commit/d3c6abab457614bc9113187642ee8a7a64dc1440))
-* **app:** suggest Piwi Picker where it is the next step, unless installed ([d2f6457](https://github.com/PiwiTests/platform/commit/d2f64572f43d5e3db4a9e2b4cac15772fa6a7c48))
-* **demo:** add driver.js and the guided tour's per-language copy ([ac19996](https://github.com/PiwiTests/platform/commit/ac199965efee0b5568e3c696f06e19cb40ae3db1))
-* **demo:** add driver.js and the guided tour's per-language copy ([ee64ae3](https://github.com/PiwiTests/platform/commit/ee64ae3a56d692f07627f0c05daa4723af795abf))
-* **demo:** give the web-dashboard project a full Test Map ([6e87a16](https://github.com/PiwiTests/platform/commit/6e87a1630016661ad15c7ec87b913867ae07b7d9))
-* **demo:** give the web-dashboard tests their own steps, control reach and recorded churn ([f4f7e3c](https://github.com/PiwiTests/platform/commit/f4f7e3cdfdcea97683e2add026807bf6fb41b0a6))
-* **demo:** offer a guided tour by role, in four languages ([f0a9e24](https://github.com/PiwiTests/platform/commit/f0a9e2456cc4b473864ce508087a9990852487a0))
-* **demo:** track the login 500 in a seeded Jira issue ([1fa43b0](https://github.com/PiwiTests/platform/commit/1fa43b07a5d38f21ad23cb58302d24bfea3ba974))
-* **extension:** mark the connected instance's pages for the dashboard ([bbd105d](https://github.com/PiwiTests/platform/commit/bbd105d17b90e7fa6e388f43d4a61edc6343e7d2))
-* **reporter:** mark a captured response no server sent as fulfilled ([bd721ed](https://github.com/PiwiTests/platform/commit/bd721ed851d7d643c8ec338521e609428efa8ac8))
-* **reporter:** report a server probe the page did not survive as unhandled ([4ef99b3](https://github.com/PiwiTests/platform/commit/4ef99b30d4332471faf682832f48f25e469c9eda))
-* **ui:** fold a cluster's occurrence chart and activity at the foot of its page ([51e67de](https://github.com/PiwiTests/platform/commit/51e67de9b230a95b73c2f363ec343f103a61d4a1))
-* **ui:** give a test that did not run its reason as Most likely and a step that opens the run ([e46b6f0](https://github.com/PiwiTests/platform/commit/e46b6f024b912d6a8c628c2085841db03ff5090b))
-* **ui:** head the cluster page with its latest headline when it says more than the name ([6403c6f](https://github.com/PiwiTests/platform/commit/6403c6f23ef6674d37c9ba1726a89dcaf6010ef8))
-* **ui:** lead both failure pages with one Most likely rule and name the next step's source ([ec7d1d0](https://github.com/PiwiTests/platform/commit/ec7d1d08daa096e159c5e5778865b7a25184ae3d))
-* **ui:** make the failure pages easier to read and act on ([e8cbef2](https://github.com/PiwiTests/platform/commit/e8cbef2b2c302d79aa7aeb2a12368e8cdd7db38d))
-* **ui:** make the timeline point at what stands out ([e1d4fbe](https://github.com/PiwiTests/platform/commit/e1d4fbe200ce823af21ae393b118fe1d9e22bf2d))
-* **ui:** mark the evidence rows the Most likely line cites ([fc31f5f](https://github.com/PiwiTests/platform/commit/fc31f5f91d2c107f05e50054b9a320ab68245d94))
-* **ui:** name a cluster's one test in its block and the evidence's subject ([092c1c7](https://github.com/PiwiTests/platform/commit/092c1c784c7893b1cfed12a562f33e921722ec44))
-* **ui:** name a refused filing and what happens to the cluster's issue ([fca72f0](https://github.com/PiwiTests/platform/commit/fca72f0ebd6f34e3fe2d0a1c1ba651712f4695c2))
-* **ui:** open a passed-on-retry execution on its failed attempt ([28c9264](https://github.com/PiwiTests/platform/commit/28c9264716e5f458c63376705b201e93be4d8359))
-* **ui:** open the cluster page's fix section above the affected tests ([0697f84](https://github.com/PiwiTests/platform/commit/0697f845ac4bafde624811cf2b79390576c72539))
-* **ui:** order the situation block as explanation, action, context ([efa1aa8](https://github.com/PiwiTests/platform/commit/efa1aa85a4dde6a0e32d1910edbe93ae7ce387ac))
-* **ui:** say under the headline whether the failure still happens ([2eb67a2](https://github.com/PiwiTests/platform/commit/2eb67a255388385e180ecd5fbdc411af2da77842))
-* **ui:** show a What changed setup gap as the commit range and a help hint ([76fbc45](https://github.com/PiwiTests/platform/commit/76fbc45567efc4df5c8c50fe5c2ac55dbbf3c085))
-* **ui:** show the change the next step copies and label its button by the result ([dce661b](https://github.com/PiwiTests/platform/commit/dce661b71464ed6ad7df5e7f1faf2e46867c0ab4))
+#### Failure pages
+- **ui:** make the failure pages easier to read and act on ([e8cbef2](https://github.com/PiwiTests/platform/commit/e8cbef2b2c302d79aa7aeb2a12368e8cdd7db38d))
+- **ui:** lead both failure pages with one Most likely rule and name the next step's source ([ec7d1d0](https://github.com/PiwiTests/platform/commit/ec7d1d08daa096e159c5e5778865b7a25184ae3d))
+- **ui:** mark the evidence rows the Most likely line cites ([fc31f5f](https://github.com/PiwiTests/platform/commit/fc31f5f91d2c107f05e50054b9a320ab68245d94))
+- **ui:** give a test that did not run its reason as Most likely and a step that opens the run ([e46b6f0](https://github.com/PiwiTests/platform/commit/e46b6f024b912d6a8c628c2085841db03ff5090b))
+- **ui:** say under the headline whether the failure still happens ([2eb67a2](https://github.com/PiwiTests/platform/commit/2eb67a255388385e180ecd5fbdc411af2da77842))
+- **ui:** order the situation block as explanation, action, context ([efa1aa8](https://github.com/PiwiTests/platform/commit/efa1aa85a4dde6a0e32d1910edbe93ae7ce387ac))
+- **ui:** show the change the next step copies and label its button by the result ([dce661b](https://github.com/PiwiTests/platform/commit/dce661b71464ed6ad7df5e7f1faf2e46867c0ab4))
+- **ui:** show a What changed setup gap as the commit range and a help hint ([76fbc45](https://github.com/PiwiTests/platform/commit/76fbc45567efc4df5c8c50fe5c2ac55dbbf3c085))
+- **ui:** name a refused filing and what happens to the cluster's issue ([fca72f0](https://github.com/PiwiTests/platform/commit/fca72f0ebd6f34e3fe2d0a1c1ba651712f4695c2))
+- **ui:** open a passed-on-retry execution on its failed attempt ([28c9264](https://github.com/PiwiTests/platform/commit/28c9264716e5f458c63376705b201e93be4d8359))
+- **app:** name the failed attempt of a test that passed on retry in `explain_failure` ([10bb7be](https://github.com/PiwiTests/platform/commit/10bb7bedb8a9620820bb36dd123605011b432849))
 
+#### Cluster page
+- **ui:** head the cluster page with its latest headline when it says more than the name ([6403c6f](https://github.com/PiwiTests/platform/commit/6403c6f23ef6674d37c9ba1726a89dcaf6010ef8))
+- **ui:** name a cluster's one test in its block and the evidence's subject ([092c1c7](https://github.com/PiwiTests/platform/commit/092c1c784c7893b1cfed12a562f33e921722ec44))
+- **ui:** open the cluster page's fix section above the affected tests ([0697f84](https://github.com/PiwiTests/platform/commit/0697f845ac4bafde624811cf2b79390576c72539))
+- **ui:** fold a cluster's occurrence chart and activity at the foot of its page ([51e67de](https://github.com/PiwiTests/platform/commit/51e67de9b230a95b73c2f363ec343f103a61d4a1))
 
-### Bug Fixes
+#### Fixes & the timeline
+- **app:** offer Download `.patch` on a locator step with an edit ([8e0ffcf](https://github.com/PiwiTests/platform/commit/8e0ffcf413e89e006c2f358592ec799e49014650))
+- **app:** say when a verified fix's diagnosed patch still applies ([6362471](https://github.com/PiwiTests/platform/commit/6362471fe881f783daf5a5f4849167d23b6ae1e6))
+- **app:** send each step's and request's usual duration with the timeline ([bface6c](https://github.com/PiwiTests/platform/commit/bface6c004fc8df518b67dd08954557f2a270fd1))
+- **ui:** make the timeline point at what stands out ([e1d4fbe](https://github.com/PiwiTests/platform/commit/e1d4fbe200ce823af21ae393b118fe1d9e22bf2d))
 
-* **app:** check a verified fix's diagnosed patch at the fix's commit ([5e04648](https://github.com/PiwiTests/platform/commit/5e046489656649b18fd3b8bcf404947de7f1e76b))
-* **app:** decide whether a Done ticket's failure goes on the same way on both pages ([4f514d9](https://github.com/PiwiTests/platform/commit/4f514d9ec2b00109b23c73aeb635f6007fd90431))
-* **app:** drop unassigned, name the CODEOWNERS owner and stop fallback steps denying the clues ([5eaf6bd](https://github.com/PiwiTests/platform/commit/5eaf6bd17ecdc7db3d6e2c35b960dc4c66d025b5))
-* **app:** hold a rule back from a Done issue only while a reopen is under way ([54304da](https://github.com/PiwiTests/platform/commit/54304da968fa1607edd0f19d396549abb499ed98))
-* **app:** keep a response the test fulfilled out of passed with errors ([4526155](https://github.com/PiwiTests/platform/commit/45261550ce4ef48dec892685c98bd8c23b8fab24))
-* **app:** keep hubs and inferred groups from skewing links, snoozes and counts ([c5bb573](https://github.com/PiwiTests/platform/commit/c5bb5734abff2f7af79b99d0d05c56be64ee0689))
-* **app:** keep the locator's own name in the clue story ([07d97f9](https://github.com/PiwiTests/platform/commit/07d97f9fa6a16c5382af64ea48f49529f289fc22))
-* **app:** key a route without its query, and merge the nodes a query split ([6d5a18e](https://github.com/PiwiTests/platform/commit/6d5a18edd30fd4207fbcf2aebd8b3076ee83fce9))
-* **app:** let a rule file only where the cluster's filing rules would ([d065cff](https://github.com/PiwiTests/platform/commit/d065cffbd0849561f372513698b241f76aec44f7))
-* **app:** list description updates and a rule's filings in the cluster Activity ([0038910](https://github.com/PiwiTests/platform/commit/00389105d2fb86522830f2ef95b4b5d59c2217b3))
-* **app:** match catalog pages one way, keep verdicts and startup safe in the route-key rewrite ([2f79eb2](https://github.com/PiwiTests/platform/commit/2f79eb29abb6a2a8936c915b3649a7ed1002fd7a))
-* **app:** match control names as Playwright does, and count churn by diff ([8cc589f](https://github.com/PiwiTests/platform/commit/8cc589fe8d15ec37bac1285b237493f480d99beb))
-* **app:** measure on a free port and with the default settings only ([9d8d7f3](https://github.com/PiwiTests/platform/commit/9d8d7f3ba06ad667ca7636c8fe8e972e561314ad))
-* **app:** name the CODEOWNERS owner in the situation the MCP tools return ([29a8be2](https://github.com/PiwiTests/platform/commit/29a8be26b63f5f3b6d2551b56cf123b9f6dccc88))
-* **app:** name the open issue a rule finds beside a Done one, never the cluster's own ([24c1889](https://github.com/PiwiTests/platform/commit/24c1889293c627ee21a52695c7f3b2e907ab45a3))
-* **app:** open a stopped run's one failed test, counting each test once across its retries ([ab9f5eb](https://github.com/PiwiTests/platform/commit/ab9f5eb849d63d0a149cff8ec32a91546ecd741a))
-* **app:** propose a locator replacement only where the project shows locator healing ([6cf77f4](https://github.com/PiwiTests/platform/commit/6cf77f432c0b98965b40e61fb77cfc9703f5aa6b))
-* **app:** read a diagnosis's stored patch validation the same way everywhere ([174f4f5](https://github.com/PiwiTests/platform/commit/174f4f5ac71393575cc15c1d74a805fdd69e8b7b))
-* **app:** say "another error" only of the runs it holds for, and name the project ([affc56d](https://github.com/PiwiTests/platform/commit/affc56d40739fb64ff585a3e14a58563296c873c))
-* **app:** stop the Test Map flagging what the suite does exercise ([5a4e146](https://github.com/PiwiTests/platform/commit/5a4e146fb6ec7ac851fd0832b5300a10baae05ba))
-* **demo:** fit the dashboard panel under the demo banner ([ddf87bd](https://github.com/PiwiTests/platform/commit/ddf87bd0fbd46556577d1a31d4ffe9c480455be1))
-* **demo:** ground cluster [#1](https://github.com/PiwiTests/platform/issues/1)'s re-diagnosis on the slow quote it waits for ([f9c8f68](https://github.com/PiwiTests/platform/commit/f9c8f68fe1c9b026a3a8ddb0ed02c3c518b7da14))
-* **demo:** hold every API request until the service worker controls the page ([59ce2e1](https://github.com/PiwiTests/platform/commit/59ce2e10263603516802035bf7f87fbecdb14834))
-* **demo:** keep a did-not-run attempt an object through the load-time rebase ([3011782](https://github.com/PiwiTests/platform/commit/3011782a402aae98de0572711333b10d8cbec8e3))
-* **demo:** label every control step and score the benchmark on an empty gap ledger ([63cba7b](https://github.com/PiwiTests/platform/commit/63cba7b38d1b91f3f6c49b920ebaf317d769deb0))
-* **demo:** let the seed check accept the backend log a passing save carries ([f33093b](https://github.com/PiwiTests/platform/commit/f33093b926fd40b6d2e01387e9b5a5cd79bad771))
-* **demo:** make each seeded failure's steps, duration and timeout follow its story ([6c3d5c0](https://github.com/PiwiTests/platform/commit/6c3d5c0c738bf8c3ae9704e8b3ed280bf361bf93))
-* **demo:** place the simulator's cluster-1 evidence from its attempt's start ([a8159f1](https://github.com/PiwiTests/platform/commit/a8159f138a923f8f4613c119a7f3f556db9efdab))
-* **demo:** run a story's authored steps after its fixtures, with no sleep ([518c2ac](https://github.com/PiwiTests/platform/commit/518c2ac670864a167adfecf8d1256f6e67041c84))
-* **demo:** stop a failing web-dashboard case at the call its error names ([95a9dea](https://github.com/PiwiTests/platform/commit/95a9dea853739e74b33eea19fcd6eab6567f3d14))
-* **demo:** store each retry pass's failed attempt and no steps on a test that did not run ([83af3ca](https://github.com/PiwiTests/platform/commit/83af3caf44cd1c6523f46e2c8df9cea4077f6590))
-* **demo:** wait for the quote in cluster [#1](https://github.com/PiwiTests/platform/issues/1)'s fix and quote the counts in cluster [#10](https://github.com/PiwiTests/platform/issues/10)'s diagnosis ([2fc3fbc](https://github.com/PiwiTests/platform/commit/2fc3fbc42a32f9bf4791ddfed79e08a10f1782d9))
-* **reporter:** classify only an applied server fault, and read a blank page from its ARIA snapshot ([ee3ad97](https://github.com/PiwiTests/platform/commit/ee3ad97323c20f3f3d91a14d883f45c3c336e282))
-* **ui:** color a request's duration by the same rule on the Network tab ([498701b](https://github.com/PiwiTests/platform/commit/498701b961b276736d7429030d8c85ba254c5ddb))
-* **ui:** count one route, page, control or test in the singular on the feature map ([7d76310](https://github.com/PiwiTests/platform/commit/7d7631039a2a06f4f6430e95f9a5c74bfc6bb8cf))
-* **ui:** count only the changed lines a locator edit's preview leaves out ([c618263](https://github.com/PiwiTests/platform/commit/c618263f069a16e8eb42d947a736e709df62b4f0))
-* **ui:** give the situation block's help a lead sentence and one item per row ([82374bb](https://github.com/PiwiTests/platform/commit/82374bbb6459ae4959675d15ef51282a81b4762f))
-* **ui:** keep "Open the latest" with its separator when the meta line wraps ([385396b](https://github.com/PiwiTests/platform/commit/385396b6e66986e863208fe8a55f8caccaef24f6))
-* **ui:** keep the affected tests' selection and the current-item markers neutral ([8da9992](https://github.com/PiwiTests/platform/commit/8da9992683490ad5900d9bafff6c282e8a794a40))
-* **ui:** keep the Network tab's switches and doc link out of the primary color ([2a36650](https://github.com/PiwiTests/platform/commit/2a3665035cc0bf7a7f4383f546cd244fd7bd5960))
-* **ui:** keep the timeline's hidden Kind label inside its table scroller ([bdf26bd](https://github.com/PiwiTests/platform/commit/bdf26bd337748067c893f45d61fa8927daff8a7f))
-* **ui:** label a timeline row the Most likely line cites "Cited by Most likely" ([36a32e0](https://github.com/PiwiTests/platform/commit/36a32e0c476bf972045829f57c4855f9a0fb4df0))
-* **ui:** leave no gap where a test that did not run has no evidence ([676750d](https://github.com/PiwiTests/platform/commit/676750d9fc44c811bab2ac078119b43705f2eb45))
-* **ui:** leave the open toolbox section alone when asked for a missing one ([67d350f](https://github.com/PiwiTests/platform/commit/67d350f65638187e632cd59c87cbae9abf3c33da))
-* **ui:** name on the Issue line the open issue a rule left to a person ([8d9199a](https://github.com/PiwiTests/platform/commit/8d9199ae5c442e564fbbb80d65e138abdb70a5ba))
-* **ui:** number every attempt on the Attempts tab as the line under the headline does ([13ffeba](https://github.com/PiwiTests/platform/commit/13ffebae562dedbc27b2691b02498fd7a6ab83ea))
-* **ui:** open a cluster's occurrence chart on a window that holds its first occurrence ([cf026f7](https://github.com/PiwiTests/platform/commit/cf026f7665bff0a051bcc6532e1de8d5ddf39a1b))
-* **ui:** open a folded fix section before acting on its panel ([68a75f5](https://github.com/PiwiTests/platform/commit/68a75f57617e7ad39b9b651e979a22324dab90f8))
-* **ui:** open the execution's Details below the facts line and list the cluster's links ([07723b8](https://github.com/PiwiTests/platform/commit/07723b8633fac00894f3945bae44d04513fd2967))
-* **ui:** order the More actions menu the same way on both failure pages ([c676782](https://github.com/PiwiTests/platform/commit/c6767828ab6eba4133de5c15ae13edd0c05fc033))
-* **ui:** place the execution's Details by its height and show a refused filing at once ([df0120e](https://github.com/PiwiTests/platform/commit/df0120e6dbf7deb8cf6c48761634ee81a8210e05))
-* **ui:** place timeline bars from the test start ([b6dc43c](https://github.com/PiwiTests/platform/commit/b6dc43cadab4e086810f13debb7e6d2bed32d492))
-* **ui:** preview the fix's main change, not an import tweak, in the Next row ([0225ea4](https://github.com/PiwiTests/platform/commit/0225ea47b4d7583ea22f033f94100e6086c1c3c6))
-* **ui:** read a cluster's locator healing from the execution its next step checked ([5a78a31](https://github.com/PiwiTests/platform/commit/5a78a31d74b3f863f606e4fa958606b6e0dcdd1e))
-* **ui:** render the Locator fix panel from the healing its page fetched ([a878ab4](https://github.com/PiwiTests/platform/commit/a878ab4c3d1165880de67ab652ad5fe124ab2721))
-* **ui:** say on the occurrence line when a cluster's one test is quarantined ([61221f2](https://github.com/PiwiTests/platform/commit/61221f2a26e6d705a74861bcb0a04470432873af))
-* **ui:** say why a followed diagnosis's patch is not the step from its validation ([486888f](https://github.com/PiwiTests/platform/commit/486888f95999d8359d367319bbeb5c9f8044bc9a))
-* **ui:** set a cluster's name in the meta style and keep copy to what the page does ([9837e7d](https://github.com/PiwiTests/platform/commit/9837e7d220060bacb413173757ec22b31b27bbff))
-* **ui:** show a folded card as its header alone at phone width ([75f6bd5](https://github.com/PiwiTests/platform/commit/75f6bd5a5c78b2652cbdb5fbadb2ac90b353174e))
-* **ui:** show a request's server time in neutral text on the Network tab ([e91a423](https://github.com/PiwiTests/platform/commit/e91a423df9c11ec039d5b938f8781fdc30a46b04))
-* **ui:** show the host's error on What changed and split its help from a missing token ([a94104b](https://github.com/PiwiTests/platform/commit/a94104b80075260fb45218663b0ad6cffef6ddf1))
-* **ui:** show the Locator fix section for a rename the run's own diff made ([28dd5b9](https://github.com/PiwiTests/platform/commit/28dd5b97627f2b791e1e8d648f7db4fb21209e3e))
+#### Test Map
+- **app:** make the Test Map see controls, group features, and score itself on a labeled demo ([e095a7b](https://github.com/PiwiTests/platform/commit/e095a7b987e19bf0dd08e4cfb49f51e33d201f0f))
+- **app:** add three Test Map detectors, key routes without the query, and show map health ([afac453](https://github.com/PiwiTests/platform/commit/afac453658c2a85ce2c9001472fcec9cee4847ce))
+- **app:** group what a feature's pages hold, set hubs apart, and score detectors on the demo ([e494d5d](https://github.com/PiwiTests/platform/commit/e494d5d9511b842090d3330acaff5d9844d92669))
+- **app:** reach controls from the locator index and rank node gaps by recorded churn ([7d8892d](https://github.com/PiwiTests/platform/commit/7d8892dd5617fe3e1614352abda3d37986dc33bc))
+- **app:** raise passes with errors, visibility-only pages and uncalled catalog methods ([c5e7d5d](https://github.com/PiwiTests/platform/commit/c5e7d5dce4f3ea3951792ffb3fe5973255908b62))
+- **app:** show map health on the Gaps tab, and file test and catalog gaps under a feature ([d3c6aba](https://github.com/PiwiTests/platform/commit/d3c6abab457614bc9113187642ee8a7a64dc1440))
+- **app:** leave a muted detector out of the gaps digest and list its gaps last ([75e277e](https://github.com/PiwiTests/platform/commit/75e277ecda1c7201ca567e35b705954e0d18fceb))
 
+#### Captured responses & server faults
+- **reporter:** mark a captured response no server sent as fulfilled ([bd721ed](https://github.com/PiwiTests/platform/commit/bd721ed851d7d643c8ec338521e609428efa8ac8))
+- **reporter:** report a server probe the page did not survive as unhandled ([4ef99b3](https://github.com/PiwiTests/platform/commit/4ef99b30d4332471faf682832f48f25e469c9eda))
+
+#### Piwi Picker
+- **app:** link Piwi Picker's Firefox Add-ons listing next to the Chrome Web Store ([1f9c7ee](https://github.com/PiwiTests/platform/commit/1f9c7ee1c8511d91efe749ecdbfe28571882b31a), [e637637](https://github.com/PiwiTests/platform/commit/e6376379bc9ba746ba50d0fd987208bf06dfcaad))
+- **app:** suggest Piwi Picker where it is the next step, unless installed ([d2f6457](https://github.com/PiwiTests/platform/commit/d2f64572f43d5e3db4a9e2b4cac15772fa6a7c48))
+- **extension:** mark the connected instance's pages for the dashboard ([bbd105d](https://github.com/PiwiTests/platform/commit/bbd105d17b90e7fa6e388f43d4a61edc6343e7d2))
+
+#### Demo
+- **demo:** offer a guided tour by role, in four languages ([f0a9e24](https://github.com/PiwiTests/platform/commit/f0a9e2456cc4b473864ce508087a9990852487a0))
+- **demo:** add driver.js and the guided tour's per-language copy ([ac19996](https://github.com/PiwiTests/platform/commit/ac199965efee0b5568e3c696f06e19cb40ae3db1), [ee64ae3](https://github.com/PiwiTests/platform/commit/ee64ae3a56d692f07627f0c05daa4723af795abf))
+- **demo:** give the web-dashboard project a full Test Map ([6e87a16](https://github.com/PiwiTests/platform/commit/6e87a1630016661ad15c7ec87b913867ae07b7d9))
+- **demo:** give the web-dashboard tests their own steps, control reach and recorded churn ([f4f7e3c](https://github.com/PiwiTests/platform/commit/f4f7e3cdfdcea97683e2add026807bf6fb41b0a6))
+- **demo:** track the login 500 in a seeded Jira issue ([1fa43b0](https://github.com/PiwiTests/platform/commit/1fa43b07a5d38f21ad23cb58302d24bfea3ba974))
 
 ### Performance Improvements
 
-* **app:** free the trace archive after a load and harden the shared trace cache ([edc141e](https://github.com/PiwiTests/platform/commit/edc141e7ba0b36ab85037c63d8f2994c931f1eb8))
-* **app:** load each stored trace once and inflate only what its views read ([2dad4a7](https://github.com/PiwiTests/platform/commit/2dad4a7e3312a5cd12e103906df5ce087ad0aa8a))
-* **app:** read only the trace streams a view needs and share each load ([2045eef](https://github.com/PiwiTests/platform/commit/2045eefa9e798e832cfb3ecbaf7f596800f8ba7e))
+- **app:** load each stored trace once and inflate only what its views read ([2dad4a7](https://github.com/PiwiTests/platform/commit/2dad4a7e3312a5cd12e103906df5ce087ad0aa8a))
+- **app:** read only the trace streams a view needs and share each load ([2045eef](https://github.com/PiwiTests/platform/commit/2045eefa9e798e832cfb3ecbaf7f596800f8ba7e))
+- **app:** free the trace archive after a load and harden the shared trace cache ([edc141e](https://github.com/PiwiTests/platform/commit/edc141e7ba0b36ab85037c63d8f2994c931f1eb8))
+
+### Bug Fixes
+
+#### Issues, owners & filing rules
+- **app:** decide whether a Done ticket's failure goes on the same way on both pages ([4f514d9](https://github.com/PiwiTests/platform/commit/4f514d9ec2b00109b23c73aeb635f6007fd90431))
+- **app:** hold a rule back from a Done issue only while a reopen is under way ([54304da](https://github.com/PiwiTests/platform/commit/54304da968fa1607edd0f19d396549abb499ed98))
+- **app:** name the open issue a rule finds beside a Done one, never the cluster's own ([24c1889](https://github.com/PiwiTests/platform/commit/24c1889293c627ee21a52695c7f3b2e907ab45a3))
+- **ui:** name on the Issue line the open issue a rule left to a person ([8d9199a](https://github.com/PiwiTests/platform/commit/8d9199ae5c442e564fbbb80d65e138abdb70a5ba))
+- **app:** let a rule file only where the cluster's filing rules would ([d065cff](https://github.com/PiwiTests/platform/commit/d065cffbd0849561f372513698b241f76aec44f7))
+- **app:** list description updates and a rule's filings in the cluster Activity ([0038910](https://github.com/PiwiTests/platform/commit/00389105d2fb86522830f2ef95b4b5d59c2217b3))
+- **app:** drop unassigned, name the CODEOWNERS owner and stop fallback steps denying the clues ([5eaf6bd](https://github.com/PiwiTests/platform/commit/5eaf6bd17ecdc7db3d6e2c35b960dc4c66d025b5))
+- **app:** name the CODEOWNERS owner in the situation the MCP tools return ([29a8be2](https://github.com/PiwiTests/platform/commit/29a8be26b63f5f3b6d2551b56cf123b9f6dccc88))
+
+#### Fixes, patches & locator healing
+- **app:** check a verified fix's diagnosed patch at the fix's commit ([5e04648](https://github.com/PiwiTests/platform/commit/5e046489656649b18fd3b8bcf404947de7f1e76b))
+- **app:** read a diagnosis's stored patch validation the same way everywhere ([174f4f5](https://github.com/PiwiTests/platform/commit/174f4f5ac71393575cc15c1d74a805fdd69e8b7b))
+- **ui:** say why a followed diagnosis's patch is not the step from its validation ([486888f](https://github.com/PiwiTests/platform/commit/486888f95999d8359d367319bbeb5c9f8044bc9a))
+- **ui:** preview the fix's main change, not an import tweak, in the Next row ([0225ea4](https://github.com/PiwiTests/platform/commit/0225ea47b4d7583ea22f033f94100e6086c1c3c6))
+- **ui:** count only the changed lines a locator edit's preview leaves out ([c618263](https://github.com/PiwiTests/platform/commit/c618263f069a16e8eb42d947a736e709df62b4f0))
+- **app:** propose a locator replacement only where the project shows locator healing ([6cf77f4](https://github.com/PiwiTests/platform/commit/6cf77f432c0b98965b40e61fb77cfc9703f5aa6b))
+- **app:** keep the locator's own name in the clue story ([07d97f9](https://github.com/PiwiTests/platform/commit/07d97f9fa6a16c5382af64ea48f49529f289fc22))
+- **ui:** read a cluster's locator healing from the execution its next step checked ([5a78a31](https://github.com/PiwiTests/platform/commit/5a78a31d74b3f863f606e4fa958606b6e0dcdd1e))
+- **ui:** render the Locator fix panel from the healing its page fetched ([a878ab4](https://github.com/PiwiTests/platform/commit/a878ab4c3d1165880de67ab652ad5fe124ab2721))
+- **ui:** show the Locator fix section for a rename the run's own diff made ([28dd5b9](https://github.com/PiwiTests/platform/commit/28dd5b97627f2b791e1e8d648f7db4fb21209e3e))
+- **ui:** open a folded fix section before acting on its panel ([68a75f5](https://github.com/PiwiTests/platform/commit/68a75f57617e7ad39b9b651e979a22324dab90f8))
+
+#### Failure pages & clusters
+- **app:** say "another error" only of the runs it holds for, and name the project ([affc56d](https://github.com/PiwiTests/platform/commit/affc56d40739fb64ff585a3e14a58563296c873c))
+- **app:** open a stopped run's one failed test, counting each test once across its retries ([ab9f5eb](https://github.com/PiwiTests/platform/commit/ab9f5eb849d63d0a149cff8ec32a91546ecd741a))
+- **ui:** give the situation block's help a lead sentence and one item per row ([82374bb](https://github.com/PiwiTests/platform/commit/82374bbb6459ae4959675d15ef51282a81b4762f))
+- **ui:** show the host's error on What changed and split its help from a missing token ([a94104b](https://github.com/PiwiTests/platform/commit/a94104b80075260fb45218663b0ad6cffef6ddf1))
+- **ui:** leave no gap where a test that did not run has no evidence ([676750d](https://github.com/PiwiTests/platform/commit/676750d9fc44c811bab2ac078119b43705f2eb45))
+- **ui:** number every attempt on the Attempts tab as the line under the headline does ([13ffeba](https://github.com/PiwiTests/platform/commit/13ffebae562dedbc27b2691b02498fd7a6ab83ea))
+- **ui:** order the More actions menu the same way on both failure pages ([c676782](https://github.com/PiwiTests/platform/commit/c6767828ab6eba4133de5c15ae13edd0c05fc033))
+- **ui:** open the execution's Details below the facts line and list the cluster's links ([07723b8](https://github.com/PiwiTests/platform/commit/07723b8633fac00894f3945bae44d04513fd2967))
+- **ui:** place the execution's Details by its height and show a refused filing at once ([df0120e](https://github.com/PiwiTests/platform/commit/df0120e6dbf7deb8cf6c48761634ee81a8210e05))
+- **ui:** keep "Open the latest" with its separator when the meta line wraps ([385396b](https://github.com/PiwiTests/platform/commit/385396b6e66986e863208fe8a55f8caccaef24f6))
+- **ui:** set a cluster's name in the meta style and keep copy to what the page does ([9837e7d](https://github.com/PiwiTests/platform/commit/9837e7d220060bacb413173757ec22b31b27bbff))
+- **ui:** say on the occurrence line when a cluster's one test is quarantined ([61221f2](https://github.com/PiwiTests/platform/commit/61221f2a26e6d705a74861bcb0a04470432873af))
+- **ui:** open a cluster's occurrence chart on a window that holds its first occurrence ([cf026f7](https://github.com/PiwiTests/platform/commit/cf026f7665bff0a051bcc6532e1de8d5ddf39a1b))
+- **ui:** keep the affected tests' selection and the current-item markers neutral ([8da9992](https://github.com/PiwiTests/platform/commit/8da9992683490ad5900d9bafff6c282e8a794a40))
+- **ui:** leave the open toolbox section alone when asked for a missing one ([67d350f](https://github.com/PiwiTests/platform/commit/67d350f65638187e632cd59c87cbae9abf3c33da))
+- **ui:** show a folded card as its header alone at phone width ([75f6bd5](https://github.com/PiwiTests/platform/commit/75f6bd5a5c78b2652cbdb5fbadb2ac90b353174e))
+
+#### Timeline & Network tab
+- **ui:** place timeline bars from the test start ([b6dc43c](https://github.com/PiwiTests/platform/commit/b6dc43cadab4e086810f13debb7e6d2bed32d492))
+- **ui:** label a timeline row the Most likely line cites "Cited by Most likely" ([36a32e0](https://github.com/PiwiTests/platform/commit/36a32e0c476bf972045829f57c4855f9a0fb4df0))
+- **ui:** keep the timeline's hidden Kind label inside its table scroller ([bdf26bd](https://github.com/PiwiTests/platform/commit/bdf26bd337748067c893f45d61fa8927daff8a7f))
+- **ui:** color a request's duration by the same rule on the Network tab ([498701b](https://github.com/PiwiTests/platform/commit/498701b961b276736d7429030d8c85ba254c5ddb))
+- **ui:** show a request's server time in neutral text on the Network tab ([e91a423](https://github.com/PiwiTests/platform/commit/e91a423df9c11ec039d5b938f8781fdc30a46b04))
+- **ui:** keep the Network tab's switches and doc link out of the primary color ([2a36650](https://github.com/PiwiTests/platform/commit/2a3665035cc0bf7a7f4383f546cd244fd7bd5960))
+
+#### Test Map
+- **app:** stop the Test Map flagging what the suite does exercise ([5a4e146](https://github.com/PiwiTests/platform/commit/5a4e146fb6ec7ac851fd0832b5300a10baae05ba))
+- **app:** key a route without its query, and merge the nodes a query split ([6d5a18e](https://github.com/PiwiTests/platform/commit/6d5a18edd30fd4207fbcf2aebd8b3076ee83fce9))
+- **app:** match catalog pages one way, keep verdicts and startup safe in the route-key rewrite ([2f79eb2](https://github.com/PiwiTests/platform/commit/2f79eb29abb6a2a8936c915b3649a7ed1002fd7a))
+- **app:** match control names as Playwright does, and count churn by diff ([8cc589f](https://github.com/PiwiTests/platform/commit/8cc589fe8d15ec37bac1285b237493f480d99beb))
+- **app:** keep hubs and inferred groups from skewing links, snoozes and counts ([c5bb573](https://github.com/PiwiTests/platform/commit/c5bb5734abff2f7af79b99d0d05c56be64ee0689))
+- **ui:** count one route, page, control or test in the singular on the feature map ([7d76310](https://github.com/PiwiTests/platform/commit/7d7631039a2a06f4f6430e95f9a5c74bfc6bb8cf))
+
+#### Reporter & tooling
+- **app:** keep a response the test fulfilled out of passed with errors ([4526155](https://github.com/PiwiTests/platform/commit/45261550ce4ef48dec892685c98bd8c23b8fab24))
+- **reporter:** classify only an applied server fault, and read a blank page from its ARIA snapshot ([ee3ad97](https://github.com/PiwiTests/platform/commit/ee3ad97323c20f3f3d91a14d883f45c3c336e282))
+- **app:** measure on a free port and with the default settings only ([9d8d7f3](https://github.com/PiwiTests/platform/commit/9d8d7f3ba06ad667ca7636c8fe8e972e561314ad))
+
+<details>
+<summary><strong>Demo fixes</strong> — seeded failures, the simulator and the demo's loading follow each story</summary>
+
+- **demo:** make each seeded failure's steps, duration and timeout follow its story ([6c3d5c0](https://github.com/PiwiTests/platform/commit/6c3d5c0c738bf8c3ae9704e8b3ed280bf361bf93))
+- **demo:** run a story's authored steps after its fixtures, with no sleep ([518c2ac](https://github.com/PiwiTests/platform/commit/518c2ac670864a167adfecf8d1256f6e67041c84))
+- **demo:** stop a failing web-dashboard case at the call its error names ([95a9dea](https://github.com/PiwiTests/platform/commit/95a9dea853739e74b33eea19fcd6eab6567f3d14))
+- **demo:** store each retry pass's failed attempt and no steps on a test that did not run ([83af3ca](https://github.com/PiwiTests/platform/commit/83af3caf44cd1c6523f46e2c8df9cea4077f6590))
+- **demo:** keep a did-not-run attempt an object through the load-time rebase ([3011782](https://github.com/PiwiTests/platform/commit/3011782a402aae98de0572711333b10d8cbec8e3))
+- **demo:** place the simulator's cluster-1 evidence from its attempt's start ([a8159f1](https://github.com/PiwiTests/platform/commit/a8159f138a923f8f4613c119a7f3f556db9efdab))
+- **demo:** ground cluster #1's re-diagnosis on the slow quote it waits for ([f9c8f68](https://github.com/PiwiTests/platform/commit/f9c8f68fe1c9b026a3a8ddb0ed02c3c518b7da14))
+- **demo:** wait for the quote in cluster #1's fix and quote the counts in cluster #10's diagnosis ([2fc3fbc](https://github.com/PiwiTests/platform/commit/2fc3fbc42a32f9bf4791ddfed79e08a10f1782d9))
+- **demo:** label every control step and score the benchmark on an empty gap ledger ([63cba7b](https://github.com/PiwiTests/platform/commit/63cba7b38d1b91f3f6c49b920ebaf317d769deb0))
+- **demo:** let the seed check accept the backend log a passing save carries ([f33093b](https://github.com/PiwiTests/platform/commit/f33093b926fd40b6d2e01387e9b5a5cd79bad771))
+- **demo:** hold every API request until the service worker controls the page ([59ce2e1](https://github.com/PiwiTests/platform/commit/59ce2e10263603516802035bf7f87fbecdb14834))
+- **demo:** fit the dashboard panel under the demo banner ([ddf87bd](https://github.com/PiwiTests/platform/commit/ddf87bd0fbd46556577d1a31d4ffe9c480455be1))
+
+</details>
+
+<!-- notes:polished -->
 
 ## [0.50.0](https://github.com/PiwiTests/platform/compare/v0.49.0...v0.50.0) (2026-10-08)
 
+This release lets MCP clients sign in through OAuth and diagnose and triage a failure with write tools, files tracker issues by rules and keeps them current, leads the home page with project health, and makes email addresses unique ignoring case.
 
-### ⚠ BREAKING CHANGES
+**Full diff:** [v0.49.0…v0.50.0](https://github.com/PiwiTests/platform/compare/v0.49.0...v0.50.0)
 
-* **auth:** email addresses are unique ignoring case. An instance where two users have the same address written with different letter case stops at the upgrade migration until each address belongs to one user (see Upgrading in the docs).
+### ⚠ Breaking changes
+
+- **auth:** email addresses are unique ignoring case. An instance where two users have the same address written with different letter case stops at the upgrade migration until each address belongs to one user (see Upgrading in the docs).
+
+### ✨ Highlights
+
+- **🔑 OAuth for MCP clients** — MCP clients sign in to Piwi through OAuth.
+- **🤖 Diagnose and triage from an agent** — New MCP write tools let an agent diagnose and triage a failure, and AI diagnosis can run at the scope of one execution.
+- **🎫 Tracker issues by rules** — Piwi files tracker issues automatically by rules and keeps their descriptions and comments current.
+- **🏠 A home page led by project health** — Home opens on project health and recent activity, and an enlarged screenshot shows the test, step and error beside it.
+- **🎭 Playwright 1.64** — The reporter supports Playwright 1.64's filtered projects, shuffle seeds and aria refs.
+- **📧 One account per email address** — Email addresses are compared ignoring case, at account creation, OAuth linking and sign-in.
 
 ### Features
 
-* **app:** add mcp write tools to diagnose and triage a failure ([e068f6c](https://github.com/PiwiTests/platform/commit/e068f6c27d578284361b47b8e0092becb4c4e64b))
-* **app:** file tracker issues by rules and keep their comments and descriptions current ([3334eec](https://github.com/PiwiTests/platform/commit/3334eec914c6cd242064dccb3f3ec3b4bf5d031a))
-* **auth:** sign MCP clients in through OAuth ([20db6a3](https://github.com/PiwiTests/platform/commit/20db6a3a9f4b336cec3bb5052298dca71e01ca89))
-* **auth:** sign MCP clients in through OAuth ([dc190f1](https://github.com/PiwiTests/platform/commit/dc190f1fdff89414061c8f58e0b104a3c3657d44))
-* **diagnosis:** support execution-scope AI diagnosis ([321cbeb](https://github.com/PiwiTests/platform/commit/321cbeb701ada0b0d2bb27b42cc1bcd1ff302acb))
-* **integrations:** automatic issue creation and description updates ([9561a71](https://github.com/PiwiTests/platform/commit/9561a71eae35cbceb7d9597befe109d375a42775))
-* **reporter:** support Playwright 1.64 filtered projects, shuffle seeds and aria refs ([70fc5aa](https://github.com/PiwiTests/platform/commit/70fc5aa951040e1289285e591a33d956c02d97ab))
-* **ui:** lead home with project health and recent activity ([fdd837d](https://github.com/PiwiTests/platform/commit/fdd837da9039e547021e163455cb9f844b467502))
-* **ui:** lead home with project health and show details beside enlarged screenshots ([a54abfe](https://github.com/PiwiTests/platform/commit/a54abfe0ef6d953396c799e458fedb7f987e5310))
-* **ui:** show the test, step and error beside an enlarged screenshot ([45a29da](https://github.com/PiwiTests/platform/commit/45a29daf1b0285967b4272f6f0b57f333bfcbc0f))
-* **users:** enforce email uniqueness on account creation ([b0b8afb](https://github.com/PiwiTests/platform/commit/b0b8afb7bb81f606b42cccf33eddbee34b194d4f))
+#### MCP & AI
+- **auth:** sign MCP clients in through OAuth ([20db6a3](https://github.com/PiwiTests/platform/commit/20db6a3a9f4b336cec3bb5052298dca71e01ca89), [dc190f1](https://github.com/PiwiTests/platform/commit/dc190f1fdff89414061c8f58e0b104a3c3657d44))
+- **app:** add MCP write tools to diagnose and triage a failure ([e068f6c](https://github.com/PiwiTests/platform/commit/e068f6c27d578284361b47b8e0092becb4c4e64b))
+- **diagnosis:** support execution-scope AI diagnosis ([321cbeb](https://github.com/PiwiTests/platform/commit/321cbeb701ada0b0d2bb27b42cc1bcd1ff302acb))
 
+#### Issue trackers
+- **app, integrations:** file tracker issues automatically by rules and keep their comments and descriptions current ([3334eec](https://github.com/PiwiTests/platform/commit/3334eec914c6cd242064dccb3f3ec3b4bf5d031a), [9561a71](https://github.com/PiwiTests/platform/commit/9561a71eae35cbceb7d9597befe109d375a42775))
+
+#### Home & screenshots
+- **ui:** lead home with project health and recent activity, and show the test, step and error beside an enlarged screenshot ([fdd837d](https://github.com/PiwiTests/platform/commit/fdd837da9039e547021e163455cb9f844b467502), [a54abfe](https://github.com/PiwiTests/platform/commit/a54abfe0ef6d953396c799e458fedb7f987e5310), [45a29da](https://github.com/PiwiTests/platform/commit/45a29daf1b0285967b4272f6f0b57f333bfcbc0f))
+
+#### Reporter & accounts
+- **reporter:** support Playwright 1.64 filtered projects, shuffle seeds and aria refs ([70fc5aa](https://github.com/PiwiTests/platform/commit/70fc5aa951040e1289285e591a33d956c02d97ab))
+- **users:** enforce email uniqueness on account creation ([b0b8afb](https://github.com/PiwiTests/platform/commit/b0b8afb7bb81f606b42cccf33eddbee34b194d4f))
 
 ### Bug Fixes
 
-* **ai:** address the review of the failure diagnosis and triage tools ([17422e8](https://github.com/PiwiTests/platform/commit/17422e80b0ee05756c5ea9f37512e9dd946f77a2))
-* **ai:** keep diagnosis reads without ai and notify only real clusters ([fde3b93](https://github.com/PiwiTests/platform/commit/fde3b933450163f1b6640913cc13319db532cf07))
-* **ai:** tighten ref grounding, shuffle diff and project selection ([08a8c83](https://github.com/PiwiTests/platform/commit/08a8c83b6f590d26bf12f1d892ed53a896323ec0))
-* **app:** refuse a taken email when creating a user ([69299cd](https://github.com/PiwiTests/platform/commit/69299cd9cbe9a7c597ae56c140dbe48623308d54)), closes [#781](https://github.com/PiwiTests/platform/issues/781)
-* **app:** serve the seeded evidence media on a dev server ([45cda81](https://github.com/PiwiTests/platform/commit/45cda8112b67804e6c708b467491943d510bb021))
-* **auth:** compare email addresses ignoring case for OAuth linking ([47eb827](https://github.com/PiwiTests/platform/commit/47eb827a5ac639298de68970c7a303670c489e37))
-* **auth:** give an OAuth sign-up a free address and tie emailed links to theirs ([376302c](https://github.com/PiwiTests/platform/commit/376302cef2200ac0c5627a636906e14c967464a5))
-* **auth:** harden the MCP OAuth server after review ([4065512](https://github.com/PiwiTests/platform/commit/4065512755cc55e3ed86095af60788b32ecf9b08))
-* **auth:** keep the OAuth error reason in apiError data ([afa6ebd](https://github.com/PiwiTests/platform/commit/afa6ebdedc9d6733b42ba4807fba18d2f00e2557))
-* **auth:** keep the stored email spelling when a sign-in changes only its case ([45eb691](https://github.com/PiwiTests/platform/commit/45eb691343ef5fa29cb29bd7defffd12c39ed48e))
-* **auth:** never link by a Unicode case folding, nor refresh onto a held address ([1e2f191](https://github.com/PiwiTests/platform/commit/1e2f191b61f64b333695f13b223446185ba2fd09))
-* **auth:** refuse an emailed link once the account changes its address ([ee2c513](https://github.com/PiwiTests/platform/commit/ee2c51365b77cc20b546138825265a91e64b4f02))
-* **auth:** sign in with an unverified provider email another account uses ([96bb401](https://github.com/PiwiTests/platform/commit/96bb40107ec517b33e26f88dce3defb6c58e14fc))
-* **db:** make idx_users_email ignore letter case ([5b261fc](https://github.com/PiwiTests/platform/commit/5b261fccb0ea3e81e761741bff85670cf0498648))
-* **ui:** show the open-in-IDE caret on hover only, never on phones ([428d016](https://github.com/PiwiTests/platform/commit/428d0167023ae7e33763e3b67a1797fdbe1ab4c2))
+#### Email addresses & sign-in
+- **db:** make `idx_users_email` ignore letter case ([5b261fc](https://github.com/PiwiTests/platform/commit/5b261fccb0ea3e81e761741bff85670cf0498648))
+- **app:** refuse a taken email when creating a user ([69299cd](https://github.com/PiwiTests/platform/commit/69299cd9cbe9a7c597ae56c140dbe48623308d54)), closes [#781](https://github.com/PiwiTests/platform/issues/781)
+- **auth:** compare email addresses ignoring case for OAuth linking ([47eb827](https://github.com/PiwiTests/platform/commit/47eb827a5ac639298de68970c7a303670c489e37))
+- **auth:** never link by a Unicode case folding, nor refresh onto a held address ([1e2f191](https://github.com/PiwiTests/platform/commit/1e2f191b61f64b333695f13b223446185ba2fd09))
+- **auth:** keep the stored email spelling when a sign-in changes only its case ([45eb691](https://github.com/PiwiTests/platform/commit/45eb691343ef5fa29cb29bd7defffd12c39ed48e))
+- **auth:** give an OAuth sign-up a free address and tie emailed links to theirs ([376302c](https://github.com/PiwiTests/platform/commit/376302cef2200ac0c5627a636906e14c967464a5))
+- **auth:** refuse an emailed link once the account changes its address ([ee2c513](https://github.com/PiwiTests/platform/commit/ee2c51365b77cc20b546138825265a91e64b4f02))
+- **auth:** sign in with an unverified provider email another account uses ([96bb401](https://github.com/PiwiTests/platform/commit/96bb40107ec517b33e26f88dce3defb6c58e14fc))
+
+#### MCP & AI
+- **auth:** harden the MCP OAuth server after review ([4065512](https://github.com/PiwiTests/platform/commit/4065512755cc55e3ed86095af60788b32ecf9b08))
+- **auth:** keep the OAuth error reason in `apiError` data ([afa6ebd](https://github.com/PiwiTests/platform/commit/afa6ebdedc9d6733b42ba4807fba18d2f00e2557))
+- **ai:** address the review of the failure diagnosis and triage tools ([17422e8](https://github.com/PiwiTests/platform/commit/17422e80b0ee05756c5ea9f37512e9dd946f77a2))
+- **ai:** keep diagnosis reads without AI and notify only real clusters ([fde3b93](https://github.com/PiwiTests/platform/commit/fde3b933450163f1b6640913cc13319db532cf07))
+- **ai:** tighten ref grounding, shuffle diff and project selection ([08a8c83](https://github.com/PiwiTests/platform/commit/08a8c83b6f590d26bf12f1d892ed53a896323ec0))
+
+#### Dashboard
+- **ui:** show the open-in-IDE caret on hover only, never on phones ([428d016](https://github.com/PiwiTests/platform/commit/428d0167023ae7e33763e3b67a1797fdbe1ab4c2))
+- **app:** serve the seeded evidence media on a dev server ([45cda81](https://github.com/PiwiTests/platform/commit/45cda8112b67804e6c708b467491943d510bb021))
+
+<!-- notes:polished -->
 
 ## [0.49.0](https://github.com/PiwiTests/platform/compare/v0.48.0...v0.49.0) (2026-10-07)
 
+This release brings the developer's local runs into the editor: follow them as they go, choose the run they are compared with, see what a run changed, list the failures as a tree, and run a test to the editor's breakpoints with the picker.
+
+**Full diff:** [v0.48.0…v0.49.0](https://github.com/PiwiTests/platform/compare/v0.48.0...v0.49.0)
+
+### ✨ Highlights
+
+- **🔴 Run to the editor's breakpoints** — Start a run from VS Code or a JetBrains IDE that pauses at the editor's breakpoints, with the picker.
+- **💻 Local runs in the editor** — The editors follow the developer's local runs, compare them with a run you choose, and say what each run changed.
+- **🌳 Failures as a tree** — Both editors list the failures as a tree.
+- **🔍 Accent- and case-insensitive search** — Every search in the dashboard ignores accents and case.
 
 ### Features
 
-* **app:** make every search ignore accents and case ([6f6a09f](https://github.com/PiwiTests/platform/commit/6f6a09f5389ec2d06d9af6837ccfc5e436e3b648))
-* **app:** make every search ignore accents and case ([e4b9e69](https://github.com/PiwiTests/platform/commit/e4b9e69c8aa3d57e8cbbc7f9cde4df8b478ffbf9))
-* **app:** read the branch's latest run by a chosen baseline ([90afd09](https://github.com/PiwiTests/platform/commit/90afd09ac39ecf5a0344d95664f996aaba9c0440))
-* **app:** resolve every selection of a project in one request ([b96831b](https://github.com/PiwiTests/platform/commit/b96831b576ba2a504a57fb6feabf3fddf58683f6))
-* **ide:** choose the run the editor compares with ([6925e7d](https://github.com/PiwiTests/platform/commit/6925e7d0d6f4c2f571a800e450578337a6ee169b))
-* **ide:** follow the developer's local runs in the editor ([46815e1](https://github.com/PiwiTests/platform/commit/46815e1f50012cc2af2389fe233c525b976f2f19))
-* **ide:** list the failures as a tree in both editors ([251a956](https://github.com/PiwiTests/platform/commit/251a956d4be0b7ad35b4dfec1558c05e6c268150))
-* **ide:** run to the editor's breakpoints ([a883f9e](https://github.com/PiwiTests/platform/commit/a883f9e343201c5591ddf0ba39b546e69fd402bf))
-* **ide:** say what the editor's run changed ([4088439](https://github.com/PiwiTests/platform/commit/40884395eadae813fe4627145bf08c4ef669a53f))
-* **reporter:** pause a run at the editor's breakpoints with the picker ([5ccc813](https://github.com/PiwiTests/platform/commit/5ccc813cdbf627fbad4ab6a888d1cd5980cf94db))
+#### Piwi in your editor
+- **ide:** run to the editor's breakpoints ([a883f9e](https://github.com/PiwiTests/platform/commit/a883f9e343201c5591ddf0ba39b546e69fd402bf))
+- **reporter:** pause a run at the editor's breakpoints with the picker ([5ccc813](https://github.com/PiwiTests/platform/commit/5ccc813cdbf627fbad4ab6a888d1cd5980cf94db))
+- **ide:** follow the developer's local runs in the editor ([46815e1](https://github.com/PiwiTests/platform/commit/46815e1f50012cc2af2389fe233c525b976f2f19))
+- **ide:** choose the run the editor compares with ([6925e7d](https://github.com/PiwiTests/platform/commit/6925e7d0d6f4c2f571a800e450578337a6ee169b))
+- **ide:** say what the editor's run changed ([4088439](https://github.com/PiwiTests/platform/commit/40884395eadae813fe4627145bf08c4ef669a53f))
+- **ide:** list the failures as a tree in both editors ([251a956](https://github.com/PiwiTests/platform/commit/251a956d4be0b7ad35b4dfec1558c05e6c268150))
 
-
-### Bug Fixes
-
-* **app:** judge a flagged run's incident event by its stored origin ([d3b9332](https://github.com/PiwiTests/platform/commit/d3b933226413c684de14c7583a049775a71c0e23))
-* **extension:** change the Firefox add-on ID to picker@piwitests.dev ([99a9aae](https://github.com/PiwiTests/platform/commit/99a9aae21ea185fddcb2ac031d151326bccb107f))
-* **extension:** handle Firefox host permission patterns without ports ([34a629e](https://github.com/PiwiTests/platform/commit/34a629efa6f62a13ca2be8db32259f72f9821cbc))
-* **extension:** leave the port out of host permissions in Firefox ([7def593](https://github.com/PiwiTests/platform/commit/7def593dc3b447e3f586896d958b4d0f5329d653))
-* **ide:** follow live runs, local baselines and edits more closely in the editors ([bba4cd8](https://github.com/PiwiTests/platform/commit/bba4cd828caaf631547e7c39d347d0f11b915fca))
-* **ide:** run the editor's commands in the config folder as the disk spells it ([3c7bd53](https://github.com/PiwiTests/platform/commit/3c7bd53d1af787726c8d8286a0e27d11f782af47))
-* **reporter:** separate the breakpoints of PIWI_PAUSE_AT with semicolons ([059f0f6](https://github.com/PiwiTests/platform/commit/059f0f67e9b7152d5b079d59e1a5d263c514a3fc))
-* **ui:** grow the run count bar's active segment vertically ([54256a1](https://github.com/PiwiTests/platform/commit/54256a1668129bbed1973e2bc60a99afb52565ee))
-* **ui:** grow the run count bar's active segment vertically ([1ef6c1c](https://github.com/PiwiTests/platform/commit/1ef6c1cf26b6f94d2b7cbb57d9328141f2323c8e))
-
+#### Search, baselines & selections
+- **app:** make every search ignore accents and case ([6f6a09f](https://github.com/PiwiTests/platform/commit/6f6a09f5389ec2d06d9af6837ccfc5e436e3b648), [e4b9e69](https://github.com/PiwiTests/platform/commit/e4b9e69c8aa3d57e8cbbc7f9cde4df8b478ffbf9))
+- **app:** read the branch's latest run by a chosen baseline ([90afd09](https://github.com/PiwiTests/platform/commit/90afd09ac39ecf5a0344d95664f996aaba9c0440))
+- **app:** resolve every selection of a project in one request ([b96831b](https://github.com/PiwiTests/platform/commit/b96831b576ba2a504a57fb6feabf3fddf58683f6))
 
 ### Performance Improvements
 
-* **app:** read the lab's suspects through the flake profiles the server keeps ([0515f6c](https://github.com/PiwiTests/platform/commit/0515f6c9e144f2a1b7221a815ec0621fa44bf48d))
-* **ide:** show a refresh's failures before the indexes read after them ([59ee69d](https://github.com/PiwiTests/platform/commit/59ee69de6bac8ce0e3007ca472a2c0ea49074c56))
+- **app:** read the lab's suspects through the flake profiles the server keeps ([0515f6c](https://github.com/PiwiTests/platform/commit/0515f6c9e144f2a1b7221a815ec0621fa44bf48d))
+- **ide:** show a refresh's failures before the indexes read after them ([59ee69d](https://github.com/PiwiTests/platform/commit/59ee69de6bac8ce0e3007ca472a2c0ea49074c56))
+
+### Bug Fixes
+
+#### Editors & reporter
+- **ide:** follow live runs, local baselines and edits more closely in the editors ([bba4cd8](https://github.com/PiwiTests/platform/commit/bba4cd828caaf631547e7c39d347d0f11b915fca))
+- **ide:** run the editor's commands in the config folder as the disk spells it ([3c7bd53](https://github.com/PiwiTests/platform/commit/3c7bd53d1af787726c8d8286a0e27d11f782af47))
+- **reporter:** separate the breakpoints of `PIWI_PAUSE_AT` with semicolons ([059f0f6](https://github.com/PiwiTests/platform/commit/059f0f67e9b7152d5b079d59e1a5d263c514a3fc))
+
+#### Piwi Picker on Firefox
+- **extension:** change the Firefox add-on ID to `picker@piwitests.dev` ([99a9aae](https://github.com/PiwiTests/platform/commit/99a9aae21ea185fddcb2ac031d151326bccb107f))
+- **extension:** leave the port out of host permissions in Firefox, and handle Firefox host permission patterns without ports ([7def593](https://github.com/PiwiTests/platform/commit/7def593dc3b447e3f586896d958b4d0f5329d653), [34a629e](https://github.com/PiwiTests/platform/commit/34a629efa6f62a13ca2be8db32259f72f9821cbc))
+
+#### Dashboard
+- **app:** judge a flagged run's incident event by its stored origin ([d3b9332](https://github.com/PiwiTests/platform/commit/d3b933226413c684de14c7583a049775a71c0e23))
+- **ui:** grow the run count bar's active segment vertically ([54256a1](https://github.com/PiwiTests/platform/commit/54256a1668129bbed1973e2bc60a99afb52565ee), [1ef6c1c](https://github.com/PiwiTests/platform/commit/1ef6c1cf26b6f94d2b7cbb57d9328141f2323c8e))
+
+<!-- notes:polished -->
 
 ## [0.48.0](https://github.com/PiwiTests/platform/compare/v0.47.0...v0.48.0) (2026-10-06)
 
+This release makes every project tab follow the page's filters, says how many partial runs a filter hides, traces requests and their SQL with OpenTelemetry, and speeds up the project pages, ingestion and live streaming.
+
+**Full diff:** [v0.47.0…v0.48.0](https://github.com/PiwiTests/platform/compare/v0.47.0...v0.48.0)
+
+### ✨ Highlights
+
+- **🎛️ One set of filters per page** — Every page's filters sit in one filters block, and every tab of the reorganized project page follows them.
+- **🙈 Hidden partial runs, counted** — The runs list shows how many partial runs its filter hides.
+- **🔭 OpenTelemetry tracing** — The server traces requests and their SQL statements with OpenTelemetry.
+- **📡 Live steps only when watched** — The reporter streams live steps only while someone has the run open, in batches of 20.
+- **⚡ Faster project pages** — The Runs, Flaky and Tests tabs load faster, and the main pages are measured on every pull request.
+- **📥 Lighter ingestion** — Each batch reads its run, project and default branch once, and default-branch lookups are shared.
 
 ### Features
 
-* **application:** notify when partial runs are hidden by filter ([2ad9039](https://github.com/PiwiTests/platform/commit/2ad9039606bc048e1138f3aab159a0d3dd9b3936))
-* **app:** make every project tab follow the page's filters ([27c4b1b](https://github.com/PiwiTests/platform/commit/27c4b1b6606084a66c73aae8ccfbf2009a5b6d2e))
-* **app:** reorganize the project page and make every tab follow its filters ([459272d](https://github.com/PiwiTests/platform/commit/459272d585e6f1bc36c2e23af63646a690582c8c))
-* **app:** show how many partial runs the runs list hides ([bb5f025](https://github.com/PiwiTests/platform/commit/bb5f025c4d3c10a22f838094532fa3e36e3df585))
-* **app:** trace requests and their sql statements with opentelemetry ([677a753](https://github.com/PiwiTests/platform/commit/677a7535ef70853f8aaeeb31b9d3e8837c66c499))
-* **help:** render help hints as Markdown with structured formatting ([d2f08c6](https://github.com/PiwiTests/platform/commit/d2f08c6c8c0093a3d0f03a07c143a77a02e8afbd))
-* **ui:** put every page's filters in one filters block ([cacf943](https://github.com/PiwiTests/platform/commit/cacf943f4a38b96cbe4945f7a2f8f28672fd1797))
+#### Filters & the project page
+- **ui:** put every page's filters in one filters block ([cacf943](https://github.com/PiwiTests/platform/commit/cacf943f4a38b96cbe4945f7a2f8f28672fd1797))
+- **app:** reorganize the project page and make every tab follow the page's filters ([459272d](https://github.com/PiwiTests/platform/commit/459272d585e6f1bc36c2e23af63646a690582c8c), [27c4b1b](https://github.com/PiwiTests/platform/commit/27c4b1b6606084a66c73aae8ccfbf2009a5b6d2e))
+- **app:** show how many partial runs the runs list hides, and notify when a filter hides them ([bb5f025](https://github.com/PiwiTests/platform/commit/bb5f025c4d3c10a22f838094532fa3e36e3df585), [2ad9039](https://github.com/PiwiTests/platform/commit/2ad9039606bc048e1138f3aab159a0d3dd9b3936))
 
-
-### Bug Fixes
-
-* **docs:** move proposals to ADR ([80bd3c3](https://github.com/PiwiTests/platform/commit/80bd3c374c3acfd0f5ccb8b8f9fcdd76f3aa7c56))
-
+#### Observability & help
+- **app:** trace requests and their SQL statements with OpenTelemetry ([677a753](https://github.com/PiwiTests/platform/commit/677a7535ef70853f8aaeeb31b9d3e8837c66c499))
+- **help:** render help hints as Markdown with structured formatting ([d2f08c6](https://github.com/PiwiTests/platform/commit/d2f08c6c8c0093a3d0f03a07c143a77a02e8afbd))
 
 ### Performance Improvements
 
-* **app:** build one date formatter per locale, zone and format ([466a5bf](https://github.com/PiwiTests/platform/commit/466a5bfbacbc345d36c713739bf882236237576c))
-* **app:** cache found capability evidence and index the rare rows its probes seek ([6dc1389](https://github.com/PiwiTests/platform/commit/6dc1389d060bbc13c8cff8670639f35c006dd032))
-* **app:** cut per-batch ingest work and repeated default-branch lookups ([75907af](https://github.com/PiwiTests/platform/commit/75907afb1fea01df04e069cbe666c3f1a48ed8d0))
-* **app:** fetch the tab counters without the analysis only their lists show ([89b4bb6](https://github.com/PiwiTests/platform/commit/89b4bb6119635ecc53ca2cffa9883ce6dcd62a3e))
-* **app:** find each flaky attempt's predecessor with one lookup per attempt ([be18880](https://github.com/PiwiTests/platform/commit/be18880964274ef22323cfae6314cf4d47fd0d4a))
-* **app:** hash with node's crypto module on the server ([f3f7438](https://github.com/PiwiTests/platform/commit/f3f7438a6ff088d3db4d595d1ddd3ddea01ccd7b))
-* **app:** keep the flaky list's flake profiles until a run of the project ends ([babb872](https://github.com/PiwiTests/platform/commit/babb8725fb7dd703da5aeeb4708f1c2668b0e77a))
-* **app:** list a project's lab runs once on the catalog's join ([cfe6322](https://github.com/PiwiTests/platform/commit/cfe6322a2206d4d1bce3d0e2ced8da908a4eeb03))
-* **app:** load the subscription bell and the ai-steps check in the browser ([044acf9](https://github.com/PiwiTests/platform/commit/044acf9c4d2a556a8e768cae152beeb6e2a02ff8))
-* **app:** page the tests tab before aggregating and filter its lab runs per project ([16b71ec](https://github.com/PiwiTests/platform/commit/16b71ec851bd2749c853c01f567de89e3a9bab28))
-* **app:** read a batch's run, project and default branch once while persisting it ([07d80e3](https://github.com/PiwiTests/platform/commit/07d80e3c5d1234a78cc865c0b002b0898f2ae949))
-* **app:** read a catalog page's executions through the test case index ([9b698de](https://github.com/PiwiTests/platform/commit/9b698de1708457dd66199d1b17d75de36c8608cc))
-* **app:** share capability states and the project list across one render ([bf3f254](https://github.com/PiwiTests/platform/commit/bf3f25479f39282d0cb32b2faa971013fbac7a41))
-* **app:** share default-branch lookups and keep failed ones for ten minutes ([a5799a7](https://github.com/PiwiTests/platform/commit/a5799a7d13fd921634b30db7a1f6b92c8d87d9d4))
-* **app:** show the runs table 50 runs to a page ([081821b](https://github.com/PiwiTests/platform/commit/081821ba7ca75450112fd6a2f55b2032eaff99f0))
-* **app:** speed up the project pages and measure the main pages on every pull request ([de4d35d](https://github.com/PiwiTests/platform/commit/de4d35deb893f60e72719523618915001ac5243f))
-* **app:** speed up the Runs, Flaky and Tests tabs of a project ([87af5ca](https://github.com/PiwiTests/platform/commit/87af5caffe08ab12261df0cdccb8441fd37f22a0))
-* **app:** store each run's origin in a column the eligibility rule reads ([c264e05](https://github.com/PiwiTests/platform/commit/c264e05d2b9f03829311f45fc2bb46ace4045731))
-* **app:** store each run's origin in a column the eligibility rule reads ([0ae85b2](https://github.com/PiwiTests/platform/commit/0ae85b2c20708a491290b303f4ddd1e55f0bda1d))
-* **app:** tell the reporter whether anyone has a run open live ([f20b2c1](https://github.com/PiwiTests/platform/commit/f20b2c127709d3d5c96a155d13c58e4b18cb1df7))
-* **reporter:** send queued live events in batches of 20 by default ([cc7222f](https://github.com/PiwiTests/platform/commit/cc7222f643ef04b5fbde8c59a47c65992d4961c4))
-* **reporter:** send step events only while someone has the run open ([ac8a006](https://github.com/PiwiTests/platform/commit/ac8a0067162f39e22a946aba79fc3b9c1a97d6bf))
-* **reporter:** stream live steps only while someone watches the run, in batches of 20 ([c1ce1bb](https://github.com/PiwiTests/platform/commit/c1ce1bb3055c0146dece34d0eec7f4fe969be043))
-* **ui:** build the runs list's hidden cards, menus and tooltips only when used ([1b77e2c](https://github.com/PiwiTests/platform/commit/1b77e2cd42a3882b4db715c4ee9d9c272c971ca1))
-* **ui:** show the runs table 25 runs to a page ([bef3a78](https://github.com/PiwiTests/platform/commit/bef3a78f31f2684e943038c37e2d2e28d695a2b2))
+#### Project pages
+- **app:** speed up the Runs, Flaky and Tests tabs of a project ([87af5ca](https://github.com/PiwiTests/platform/commit/87af5caffe08ab12261df0cdccb8441fd37f22a0))
+- **app:** speed up the project pages and measure the main pages on every pull request ([de4d35d](https://github.com/PiwiTests/platform/commit/de4d35deb893f60e72719523618915001ac5243f))
+- **app:** fetch the tab counters without the analysis only their lists show ([89b4bb6](https://github.com/PiwiTests/platform/commit/89b4bb6119635ecc53ca2cffa9883ce6dcd62a3e))
+- **app:** page the Tests tab before aggregating and filter its lab runs per project ([16b71ec](https://github.com/PiwiTests/platform/commit/16b71ec851bd2749c853c01f567de89e3a9bab28))
+- **app:** read a catalog page's executions through the test case index ([9b698de](https://github.com/PiwiTests/platform/commit/9b698de1708457dd66199d1b17d75de36c8608cc))
+- **app:** list a project's lab runs once on the catalog's join ([cfe6322](https://github.com/PiwiTests/platform/commit/cfe6322a2206d4d1bce3d0e2ced8da908a4eeb03))
+- **app:** find each flaky attempt's predecessor with one lookup per attempt ([be18880](https://github.com/PiwiTests/platform/commit/be18880964274ef22323cfae6314cf4d47fd0d4a))
+- **app:** keep the flaky list's flake profiles until a run of the project ends ([babb872](https://github.com/PiwiTests/platform/commit/babb8725fb7dd703da5aeeb4708f1c2668b0e77a))
+- **app:** show the runs table 50 runs to a page ([081821b](https://github.com/PiwiTests/platform/commit/081821ba7ca75450112fd6a2f55b2032eaff99f0))
+- **ui:** show the runs table 25 runs to a page ([bef3a78](https://github.com/PiwiTests/platform/commit/bef3a78f31f2684e943038c37e2d2e28d695a2b2))
+- **ui:** build the runs list's hidden cards, menus and tooltips only when used ([1b77e2c](https://github.com/PiwiTests/platform/commit/1b77e2cd42a3882b4db715c4ee9d9c272c971ca1))
+
+#### Rendering & caching
+- **app:** share capability states and the project list across one render ([bf3f254](https://github.com/PiwiTests/platform/commit/bf3f25479f39282d0cb32b2faa971013fbac7a41))
+- **app:** cache found capability evidence and index the rare rows its probes seek ([6dc1389](https://github.com/PiwiTests/platform/commit/6dc1389d060bbc13c8cff8670639f35c006dd032))
+- **app:** load the subscription bell and the AI-steps check in the browser ([044acf9](https://github.com/PiwiTests/platform/commit/044acf9c4d2a556a8e768cae152beeb6e2a02ff8))
+- **app:** build one date formatter per locale, zone and format ([466a5bf](https://github.com/PiwiTests/platform/commit/466a5bfbacbc345d36c713739bf882236237576c))
+- **app:** hash with Node's `crypto` module on the server ([f3f7438](https://github.com/PiwiTests/platform/commit/f3f7438a6ff088d3db4d595d1ddd3ddea01ccd7b))
+
+#### Ingestion
+- **app:** cut per-batch ingest work and repeated default-branch lookups ([75907af](https://github.com/PiwiTests/platform/commit/75907afb1fea01df04e069cbe666c3f1a48ed8d0))
+- **app:** read a batch's run, project and default branch once while persisting it ([07d80e3](https://github.com/PiwiTests/platform/commit/07d80e3c5d1234a78cc865c0b002b0898f2ae949))
+- **app:** share default-branch lookups and keep failed ones for ten minutes ([a5799a7](https://github.com/PiwiTests/platform/commit/a5799a7d13fd921634b30db7a1f6b92c8d87d9d4))
+- **app:** store each run's origin in a column the eligibility rule reads ([c264e05](https://github.com/PiwiTests/platform/commit/c264e05d2b9f03829311f45fc2bb46ace4045731), [0ae85b2](https://github.com/PiwiTests/platform/commit/0ae85b2c20708a491290b303f4ddd1e55f0bda1d))
+
+#### Live streaming
+- **reporter:** stream live steps only while someone watches the run, in batches of 20: step events are sent only while someone has the run open, and queued live events go in batches of 20 by default ([c1ce1bb](https://github.com/PiwiTests/platform/commit/c1ce1bb3055c0146dece34d0eec7f4fe969be043), [ac8a006](https://github.com/PiwiTests/platform/commit/ac8a0067162f39e22a946aba79fc3b9c1a97d6bf), [cc7222f](https://github.com/PiwiTests/platform/commit/cc7222f643ef04b5fbde8c59a47c65992d4961c4))
+- **app:** tell the reporter whether anyone has a run open live ([f20b2c1](https://github.com/PiwiTests/platform/commit/f20b2c127709d3d5c96a155d13c58e4b18cb1df7))
+
+### Bug Fixes
+
+- **docs:** move proposals to ADR ([80bd3c3](https://github.com/PiwiTests/platform/commit/80bd3c374c3acfd0f5ccb8b8f9fcdd76f3aa7c56))
+
+<!-- notes:polished -->
 
 ## [0.47.0](https://github.com/PiwiTests/platform/compare/v0.46.0...v0.47.0) (2026-10-05)
 
+This release adds project roles, user groups and per-project permissions: every route and MCP tool declares the permission it needs, and the dashboard shows each action only to those allowed to take it on that project.
+
+**Full diff:** [v0.46.0…v0.47.0](https://github.com/PiwiTests/platform/compare/v0.46.0...v0.47.0)
+
+### ✨ Highlights
+
+- **👥 Project roles and groups** — Give users and groups a role per project, managed in settings and in project members, with an API for groups and project roles.
+- **🔐 A permission on every route** — Every route declares a permission from one catalog of instance and project roles, and MCP tools are checked against the permission of their REST route.
+- **📋 Settings > Roles** — A read-only page lists what each role can do, and actions show by permission on the project they act on.
+- **⚡ Nuxt 4.5** — The dashboard runs on Nuxt 4.5 and forwards prefetch preload hints.
 
 ### Features
 
-* **app:** upgrade to Nuxt 4.5 and forward prefetch preload hints ([04838be](https://github.com/PiwiTests/platform/commit/04838be83702b8c191b3e9f56744d2da83122d09))
-* **auth:** add the access-management API for groups and project roles ([5e60520](https://github.com/PiwiTests/platform/commit/5e6052088e13a7a831c3afd64671c0abd86b1b6a))
-* **auth:** add the permission catalog for instance and project roles ([1453c50](https://github.com/PiwiTests/platform/commit/1453c50df5828c3807d3946eb89dfbf4388d1c53))
-* **auth:** check MCP tools against the permission of their REST route ([1c1a819](https://github.com/PiwiTests/platform/commit/1c1a819ee3b83a83d0841b3c92e66a6257027d96))
-* **auth:** declare a permission on every route ([8242e77](https://github.com/PiwiTests/platform/commit/8242e775bb9696f093f214322b4fb16a2acc420e))
-* **auth:** project roles, user groups and per-project permissions ([5c486b1](https://github.com/PiwiTests/platform/commit/5c486b14df4b09e865bfd4bd301adbe9e733a5ab))
-* **auth:** store project roles in role bindings and add groups ([d512fcc](https://github.com/PiwiTests/platform/commit/d512fcc5b7266aa8fa2a7e262da1512e96c1d2b8))
-* **ui:** add a read-only Settings &gt; Roles page listing what each role can do ([6ab33b3](https://github.com/PiwiTests/platform/commit/6ab33b300d9d377641f5394cd62efaf5cea4ac47))
-* **ui:** manage groups and project roles in settings and project members ([2cd9f8d](https://github.com/PiwiTests/platform/commit/2cd9f8d4504d4ba69b9627e95f94b06cd72c3540))
-* **ui:** move the Settings pages to a vertical section menu ([3404f60](https://github.com/PiwiTests/platform/commit/3404f60c90830affb9256a5364d7beb480e5d41f))
-* **ui:** show actions by permission on the project they act on ([b9d3ea9](https://github.com/PiwiTests/platform/commit/b9d3ea98cf8bfda0d083781804a4239c92d6f7c2))
+#### Roles, groups & permissions
+- **auth:** project roles, user groups and per-project permissions ([5c486b1](https://github.com/PiwiTests/platform/commit/5c486b14df4b09e865bfd4bd301adbe9e733a5ab))
+- **auth:** store project roles in role bindings and add groups ([d512fcc](https://github.com/PiwiTests/platform/commit/d512fcc5b7266aa8fa2a7e262da1512e96c1d2b8))
+- **auth:** add the permission catalog for instance and project roles ([1453c50](https://github.com/PiwiTests/platform/commit/1453c50df5828c3807d3946eb89dfbf4388d1c53))
+- **auth:** declare a permission on every route ([8242e77](https://github.com/PiwiTests/platform/commit/8242e775bb9696f093f214322b4fb16a2acc420e))
+- **auth:** check MCP tools against the permission of their REST route ([1c1a819](https://github.com/PiwiTests/platform/commit/1c1a819ee3b83a83d0841b3c92e66a6257027d96))
+- **auth:** add the access-management API for groups and project roles ([5e60520](https://github.com/PiwiTests/platform/commit/5e6052088e13a7a831c3afd64671c0abd86b1b6a))
+
+#### Settings & dashboard
+- **ui:** manage groups and project roles in settings and project members ([2cd9f8d](https://github.com/PiwiTests/platform/commit/2cd9f8d4504d4ba69b9627e95f94b06cd72c3540))
+- **ui:** add a read-only Settings > Roles page listing what each role can do ([6ab33b3](https://github.com/PiwiTests/platform/commit/6ab33b300d9d377641f5394cd62efaf5cea4ac47))
+- **ui:** show actions by permission on the project they act on ([b9d3ea9](https://github.com/PiwiTests/platform/commit/b9d3ea98cf8bfda0d083781804a4239c92d6f7c2))
+- **ui:** move the Settings pages to a vertical section menu ([3404f60](https://github.com/PiwiTests/platform/commit/3404f60c90830affb9256a5364d7beb480e5d41f))
+
+#### Platform
+- **app:** upgrade to Nuxt 4.5 and forward prefetch preload hints ([04838be](https://github.com/PiwiTests/platform/commit/04838be83702b8c191b3e9f56744d2da83122d09))
+
+<!-- notes:polished -->
 
 ## [0.46.0](https://github.com/PiwiTests/platform/compare/v0.45.0...v0.46.0) (2026-10-04)
 
+This release records Playwright tests from VS Code and JetBrains IDEs, runs an editor's reproduce, bisect and Flake Lab jobs in the desktop app, stamps every run with its origin so one rule decides which runs feed each analysis, draws each worker's CPU, memory and open pages on the timeline, and lets agents write their diagnoses and triage back while Piwi measures whether its hand-backs work.
+
+**Full diff:** [v0.45.0…v0.46.0](https://github.com/PiwiTests/platform/compare/v0.45.0...v0.46.0)
+
+### ✨ Highlights
+
+- **🎬 Record tests from the editor** — VS Code and JetBrains IDEs record a Playwright test in a browser the editor opens, with checks and a pause on the recording bar, and write it with the file's page objects, fixtures and the project's test id attribute.
+- **🔁 Reproduce, bisect and Flake Lab in the desktop app** — From the editor, team CI failures are reproduced and bisected and Flake Lab plans run in the desktop app; the verdict and a bisect's first bad commit go back to the team instance.
+- **🏷️ Every run carries its origin** — The reporter and the desktop app stamp each run with what launched it, and one rule decides which runs feed which analysis, so lab, local and historical runs stay out of CI's numbers.
+- **🌩️ Environment incidents** — Piwi recognizes environment incidents, counting failed requests to the app's host, and keeps them out of every verdict; `checkBaseUrl` stops a run before any test when the app does not answer.
+- **📊 Worker resources on the timeline** — The reporter samples each worker's CPU and memory and the run's open pages over time, on Windows too, and the workers timeline draws them under each row.
+- **🤖 Agents write back** — Agents record diagnoses and fix attempts, triage clusters, gaps, merges and bug reports over MCP, and dismiss quarantine proposals; installed skills end each workflow with their write-back.
+- **📈 Whether hand-backs work** — Piwi records what happened to every hand-back it makes, from gate verdicts and PR feedback to closed auto-heal PRs, and shows whether they work per kind and per AI model.
 
 ### Features
 
-* **ai:** let agents record diagnoses and fix attempts, and log their writes ([1a47745](https://github.com/PiwiTests/platform/commit/1a4774544fddc243b31adf8380ab8df65ac33fe7))
-* **ai:** let agents record diagnoses and fix attempts, and make skills report back ([d1e59c4](https://github.com/PiwiTests/platform/commit/d1e59c4b8bbc5ab49afa83957124019ff9102623))
-* **app:** count failed requests to the app's host in the incident classifier ([19e893e](https://github.com/PiwiTests/platform/commit/19e893e911e6af7a7462949ff69bab2170910bf2))
-* **app:** decide which runs feed which analysis in one rule ([e83bdf3](https://github.com/PiwiTests/platform/commit/e83bdf363f3c7857e763adab5f7b1114028b962b))
-* **app:** draw CPU, memory and open pages above the workers timeline rows ([afcaf33](https://github.com/PiwiTests/platform/commit/afcaf33360df265a9bb2014029f806353dffaaf6))
-* **app:** draw each worker's sampled CPU and memory under its row ([6623bf6](https://github.com/PiwiTests/platform/commit/6623bf61c9ac5730b39f23f9eb99d5b2a4ead7ed))
-* **app:** draw one resource metric under each worker row ([de1de08](https://github.com/PiwiTests/platform/commit/de1de08c257952f44966702e9674d55a35ad2186))
-* **app:** learn from closed auto-heal PRs and trace fixes to their Piwi-Heal commit ([9bceb10](https://github.com/PiwiTests/platform/commit/9bceb108f4a2add0af52b61855ffd7b414b13845))
-* **app:** learn from closed auto-heal PRs and trace fixes to their Piwi-Heal commit ([7819766](https://github.com/PiwiTests/platform/commit/7819766437dc283525f7ef30f503f2d685065001))
-* **app:** leave historical imports out of shared state through the rule ([5555232](https://github.com/PiwiTests/platform/commit/5555232d70527a89dd3bb6ab1546fef61dc7cd43))
-* **app:** let agents triage clusters, gaps, merges and bug reports over MCP ([988cf78](https://github.com/PiwiTests/platform/commit/988cf78c764745142ce5476f6432bbdbb5c98d45))
-* **app:** let agents triage clusters, gaps, merges and bug reports over MCP ([5e06a1a](https://github.com/PiwiTests/platform/commit/5e06a1aba3ade197fb14993d81bdb2370f8b1c17))
-* **app:** let people and agents dismiss a quarantine proposal ([b4e65b4](https://github.com/PiwiTests/platform/commit/b4e65b4190ee4e4be6abd8622a49663e4dc8dc89))
-* **app:** let people and agents dismiss a quarantine proposal ([00b62b0](https://github.com/PiwiTests/platform/commit/00b62b01de707b3dcb0dc66f862f59cbb3f1df64))
-* **app:** match CI re-runs to their dispatch and run each test at its line ([79b610a](https://github.com/PiwiTests/platform/commit/79b610a4ede24a97a611783c3a3bcb50326dc0ad))
-* **app:** offer the Flake Lab as the next step of a flaky failure and list it on Home ([1904de6](https://github.com/PiwiTests/platform/commit/1904de6ea059dc1dd59170edc970f2f14782e142))
-* **app:** pick the flaky list's suspect by the lab's order ([d2b1a7f](https://github.com/PiwiTests/platform/commit/d2b1a7fc0a6f9612ba8194085b359e9b8cf5a34d))
-* **app:** point the Resources tab's open pages at the timeline ([dbabab8](https://github.com/PiwiTests/platform/commit/dbabab8ae9c9383ef9e61b12bbb0266d0b5b576f))
-* **app:** recognize environment incidents and keep them out of every verdict ([3945dcd](https://github.com/PiwiTests/platform/commit/3945dcd27695da1029e7c79ae63011be27c2def9))
-* **app:** recognize environment incidents and keep them out of every verdict ([f137911](https://github.com/PiwiTests/platform/commit/f1379119ba047c2b013c679ea67e2b7ef8daf4b8))
-* **app:** record a bisect's first bad commit on any instance and over MCP ([92cc37c](https://github.com/PiwiTests/platform/commit/92cc37c2d8ed0f200601f1c823bf9768c4c5a64c))
-* **app:** record what happened to every hand-back Piwi makes ([ba7877f](https://github.com/PiwiTests/platform/commit/ba7877fbe356f5be9fad52d087242e8b7d0b72c4))
-* **app:** record what happened to every hand-back Piwi makes ([49a5927](https://github.com/PiwiTests/platform/commit/49a5927071df7495486d6f24cc5138a1777dbe0f))
-* **app:** record what ingest dropped and backfill the branch on stored runs ([5e86e94](https://github.com/PiwiTests/platform/commit/5e86e94623f6adbfb5858cffabae555466dab5f6))
-* **app:** record what ingest dropped and backfill the branch on stored runs ([ef3b584](https://github.com/PiwiTests/platform/commit/ef3b5842631e4b3af537d2a5730552ba046e022c))
-* **app:** return full commit messages from every scm provider ([d68045e](https://github.com/PiwiTests/platform/commit/d68045e453973aad68159a499f047b7e2cc20c96))
-* **app:** run an editor's reproduce and bisect jobs in the desktop app ([1c37ff6](https://github.com/PiwiTests/platform/commit/1c37ff63ea9405b7ae6cc43fbb3fc7994fca87ee))
-* **app:** show CPU, memory and open pages on the workers timeline ([99c8e72](https://github.com/PiwiTests/platform/commit/99c8e72a990889a169f85a1150f72d59a881c9eb))
-* **app:** show whether Piwi's hand-backs work, per kind and per AI model ([f7a1476](https://github.com/PiwiTests/platform/commit/f7a1476d676e9a5aea139706f3b0a2054d8f896d))
-* **app:** show whether Piwi's hand-backs work, per kind and per AI model ([9b7857e](https://github.com/PiwiTests/platform/commit/9b7857eb171737cd31da84c4a03c9691ca6bb830))
-* **app:** stamp every run with its origin and decide eligibility in one rule ([fcff940](https://github.com/PiwiTests/platform/commit/fcff94046bbf5412d6c917b938bd04b77460c027))
-* **app:** store gate verdicts and PR feedback, and count merges that overrode the gate ([64c2df8](https://github.com/PiwiTests/platform/commit/64c2df868b61a8373dab34233e0bc6619441531f))
-* **app:** store gate verdicts and PR feedback, and count merges that overrode the gate ([bcd480a](https://github.com/PiwiTests/platform/commit/bcd480adcbd689563c2e3ff9e65d91d93ea0fa6e))
-* **desktop:** reproduce and bisect team CI failures on the desktop and share the verdict ([c7140f5](https://github.com/PiwiTests/platform/commit/c7140f52d01e5bfd68aaa60a4e687f1c4afb1105))
-* **desktop:** run a team instance's Flake Lab plan in the desktop app from the editor ([ddb6b14](https://github.com/PiwiTests/platform/commit/ddb6b14ba54a64938ae5ad4bbd705dad4616bd1b))
-* **desktop:** stamp every local run with the origin reference the window chooses ([80c53c2](https://github.com/PiwiTests/platform/commit/80c53c2b96d76e898495feeafc43f397be50055c))
-* **desktop:** stamp local, reproduction and bisect runs with their origin ([ea21b22](https://github.com/PiwiTests/platform/commit/ea21b2241bfb9d79f554ffe2b713365450d454fe))
-* **extension:** add checks to a test recording's bar ([48ea0e9](https://github.com/PiwiTests/platform/commit/48ea0e99424becbca7951656adf0373d974277c7))
-* **ide:** add the recording requests to the editor service protocol ([bb05a2a](https://github.com/PiwiTests/platform/commit/bb05a2abd5a542159378eafc13fca0d5762a8711))
-* **ide:** build the recorder as a bundle for a browser the editor opens ([3150880](https://github.com/PiwiTests/platform/commit/31508800ab3d5bfb13f09f110d8a583cbffeb56c))
-* **ide:** leave out the page waits next to a call to your own code ([c200aaa](https://github.com/PiwiTests/platform/commit/c200aaab7eb8f2780b7922e3874c958f96431293))
-* **ide:** pause a recording from the browser's recording bar ([0810405](https://github.com/PiwiTests/platform/commit/08104053ee6b4e2749ae2a77527920be79055afe))
-* **ide:** read the recorded code's options from the Playwright config's '[@piwi](https://github.com/piwi)' section ([90ea5f6](https://github.com/PiwiTests/platform/commit/90ea5f677727f279d80dad6a8a7e75b98caeffd6))
-* **ide:** record from Alt+Enter and the Generate menu in JetBrains IDEs ([b66e27b](https://github.com/PiwiTests/platform/commit/b66e27b6a1778603c5a81c39f62597b93114f92e))
-* **ide:** record Playwright tests from the editor ([81a1449](https://github.com/PiwiTests/platform/commit/81a1449d6950fc336269f10bae58f1b4ff03eaa5))
-* **ide:** record Playwright tests through the editor service ([5d40a97](https://github.com/PiwiTests/platform/commit/5d40a9706feed89ccc7fe6a1ab2f19f42acdfce8))
-* **ide:** recording sessions and the editor clients, work in progress ([c0969ad](https://github.com/PiwiTests/platform/commit/c0969ad8f861d26c5bc5feeb2ea867dff21df1f9))
-* **ide:** recording sessions and the JetBrains client, work in progress ([19ef3ce](https://github.com/PiwiTests/platform/commit/19ef3ce5193011fbb1ac51ef03214bbd669156c9))
-* **ide:** recording sessions and the JetBrains client, work in progress ([9956570](https://github.com/PiwiTests/platform/commit/9956570805590d21cd185259cf16caa6fba8a8fe))
-* **ide:** recording sessions and the JetBrains client, work in progress ([ceeec56](https://github.com/PiwiTests/platform/commit/ceeec56781e93568c51034694fee244acab4374b))
-* **ide:** render recorded steps as a test, on any page, with the project's test id attribute ([0621226](https://github.com/PiwiTests/platform/commit/0621226e94ebc6edca7ea7ec65970df201399a20))
-* **ide:** reproduce and bisect team CI failures in the desktop app and share the verdict ([0588512](https://github.com/PiwiTests/platform/commit/05885129643a8233c6d4960a8fc9b3484afc27c7))
-* **ide:** reproduce and verify a flaky test from its code lens ([4db305c](https://github.com/PiwiTests/platform/commit/4db305cd9573b8cc43e4e8ff0192240dd4ebeed9))
-* **ide:** reproduce and verify flaky tests from the editor and the failure pages ([7ec07dc](https://github.com/PiwiTests/platform/commit/7ec07dc116e2c75624dcc5b9fb128744b8bec7f6))
-* **ide:** run tests from the editor as editor runs ([c57e69f](https://github.com/PiwiTests/platform/commit/c57e69f45bd86abcf1704b371d89a3d18d321d39))
-* **ide:** show the editor service's messages while recording in VS Code ([6f476bb](https://github.com/PiwiTests/platform/commit/6f476bb92f7bb07bbeb63b8e68a29d7d41942da4))
-* **ide:** take recorded page objects as fixtures, as the file's tests do ([f4911b2](https://github.com/PiwiTests/platform/commit/f4911b2a0c0eacffc6db0c3258f281c33bba3b76))
-* **ide:** the JetBrains recording client, work in progress ([889067a](https://github.com/PiwiTests/platform/commit/889067a7f5d423787e838ffa856c2b8ba8e3dfc6))
-* **ide:** the JetBrains recording client, work in progress ([c9600e9](https://github.com/PiwiTests/platform/commit/c9600e994d1e66de7f082589632e9f4cfcb0e090))
-* **reporter:** add checkBaseUrl to stop a run before any test when the app does not answer ([c4a0b3e](https://github.com/PiwiTests/platform/commit/c4a0b3eb5eb9064bc817ac1408f15c84fd509518))
-* **reporter:** check base URLs before tests run ([def97fc](https://github.com/PiwiTests/platform/commit/def97fc1bb2e8017fdb30b2c6fc8168bfceaa276))
-* **reporter:** read the CPU and memory of each worker's processes over time ([5dca40d](https://github.com/PiwiTests/platform/commit/5dca40d78bcf2b63295ecb6b74c625461afbb65a))
-* **reporter:** read the run's process tree and memory on Windows ([6a3113d](https://github.com/PiwiTests/platform/commit/6a3113d42f6128b03206b1c8ec80de18088baa31))
-* **reporter:** read the run's process tree and memory on Windows ([74a79a0](https://github.com/PiwiTests/platform/commit/74a79a0aba0b3a5df636da1ab242b7cc73c730cd))
-* **reporter:** send the run's CPU, memory and open pages over time ([9e38bbd](https://github.com/PiwiTests/platform/commit/9e38bbd8d08f922a40b82edf5b7d281355404332))
-* **reporter:** stamp every run with what launched it ([8081de2](https://github.com/PiwiTests/platform/commit/8081de2a6b72b915aaff1d1bdfb46e6cd6355da0))
-* **reporter:** stamp installed skills and end each workflow with its write-back ([5b47f8f](https://github.com/PiwiTests/platform/commit/5b47f8fbd79e734bfbcbdfc1e3f639c53c7c26c1))
-* support Flake Lab jobs from the editor to the desktop app ([cb2da49](https://github.com/PiwiTests/platform/commit/cb2da49e3fbbd4b5a389709c23b95df4f7ee659e))
+#### Recording tests from the editor
+- **ide:** record Playwright tests from the editor, through the editor service ([81a1449](https://github.com/PiwiTests/platform/commit/81a1449d6950fc336269f10bae58f1b4ff03eaa5), [5d40a97](https://github.com/PiwiTests/platform/commit/5d40a9706feed89ccc7fe6a1ab2f19f42acdfce8))
+- **ide:** add the recording requests to the editor service protocol ([bb05a2a](https://github.com/PiwiTests/platform/commit/bb05a2abd5a542159378eafc13fca0d5762a8711))
+- **ide:** build the recorder as a bundle for a browser the editor opens ([3150880](https://github.com/PiwiTests/platform/commit/31508800ab3d5bfb13f09f110d8a583cbffeb56c))
+- **ide:** recording sessions, the editor clients and the JetBrains recording client, work in progress ([c0969ad](https://github.com/PiwiTests/platform/commit/c0969ad8f861d26c5bc5feeb2ea867dff21df1f9), [19ef3ce](https://github.com/PiwiTests/platform/commit/19ef3ce5193011fbb1ac51ef03214bbd669156c9), [9956570](https://github.com/PiwiTests/platform/commit/9956570805590d21cd185259cf16caa6fba8a8fe), [ceeec56](https://github.com/PiwiTests/platform/commit/ceeec56781e93568c51034694fee244acab4374b), [889067a](https://github.com/PiwiTests/platform/commit/889067a7f5d423787e838ffa856c2b8ba8e3dfc6), [c9600e9](https://github.com/PiwiTests/platform/commit/c9600e994d1e66de7f082589632e9f4cfcb0e090))
+- **ide:** record from Alt+Enter and the Generate menu in JetBrains IDEs ([b66e27b](https://github.com/PiwiTests/platform/commit/b66e27b6a1778603c5a81c39f62597b93114f92e))
+- **ide:** show the editor service's messages while recording in VS Code ([6f476bb](https://github.com/PiwiTests/platform/commit/6f476bb92f7bb07bbeb63b8e68a29d7d41942da4))
+- **ide:** pause a recording from the browser's recording bar ([0810405](https://github.com/PiwiTests/platform/commit/08104053ee6b4e2749ae2a77527920be79055afe))
+- **extension:** add checks to a test recording's bar ([48ea0e9](https://github.com/PiwiTests/platform/commit/48ea0e99424becbca7951656adf0373d974277c7))
+- **ide:** render recorded steps as a test, on any page, with the project's test id attribute ([0621226](https://github.com/PiwiTests/platform/commit/0621226e94ebc6edca7ea7ec65970df201399a20))
+- **ide:** take recorded page objects as fixtures, as the file's tests do ([f4911b2](https://github.com/PiwiTests/platform/commit/f4911b2a0c0eacffc6db0c3258f281c33bba3b76))
+- **ide:** leave out the page waits next to a call to your own code ([c200aaa](https://github.com/PiwiTests/platform/commit/c200aaab7eb8f2780b7922e3874c958f96431293))
+- **ide:** read the recorded code's options from the Playwright config's `@piwi` section ([90ea5f6](https://github.com/PiwiTests/platform/commit/90ea5f677727f279d80dad6a8a7e75b98caeffd6))
 
+#### Reproduce, bisect & Flake Lab from the editor
+- **ide:** run tests from the editor as editor runs ([c57e69f](https://github.com/PiwiTests/platform/commit/c57e69f45bd86abcf1704b371d89a3d18d321d39))
+- **ide:** reproduce and verify flaky tests from the editor, a test's code lens and the failure pages ([7ec07dc](https://github.com/PiwiTests/platform/commit/7ec07dc116e2c75624dcc5b9fb128744b8bec7f6), [4db305c](https://github.com/PiwiTests/platform/commit/4db305cd9573b8cc43e4e8ff0192240dd4ebeed9))
+- **desktop:** reproduce and bisect team CI failures in the desktop app and share the verdict ([c7140f5](https://github.com/PiwiTests/platform/commit/c7140f52d01e5bfd68aaa60a4e687f1c4afb1105))
+- **ide:** reproduce and bisect team CI failures in the desktop app and share the verdict ([0588512](https://github.com/PiwiTests/platform/commit/05885129643a8233c6d4960a8fc9b3484afc27c7))
+- **app:** run an editor's reproduce and bisect jobs in the desktop app ([1c37ff6](https://github.com/PiwiTests/platform/commit/1c37ff63ea9405b7ae6cc43fbb3fc7994fca87ee))
+- **app:** record a bisect's first bad commit on any instance and over MCP ([92cc37c](https://github.com/PiwiTests/platform/commit/92cc37c2d8ed0f200601f1c823bf9768c4c5a64c))
+- **desktop:** run a team instance's Flake Lab plan in the desktop app from the editor, with Flake Lab jobs passed from the editor to the desktop app ([ddb6b14](https://github.com/PiwiTests/platform/commit/ddb6b14ba54a64938ae5ad4bbd705dad4616bd1b), [cb2da49](https://github.com/PiwiTests/platform/commit/cb2da49e3fbbd4b5a389709c23b95df4f7ee659e))
+- **app:** offer the Flake Lab as the next step of a flaky failure and list it on Home ([1904de6](https://github.com/PiwiTests/platform/commit/1904de6ea059dc1dd59170edc970f2f14782e142))
+- **app:** pick the flaky list's suspect by the lab's order ([d2b1a7f](https://github.com/PiwiTests/platform/commit/d2b1a7fc0a6f9612ba8194085b359e9b8cf5a34d))
+
+#### Run origin & which runs feed which analysis
+- **reporter:** stamp every run with what launched it ([8081de2](https://github.com/PiwiTests/platform/commit/8081de2a6b72b915aaff1d1bdfb46e6cd6355da0))
+- **app:** stamp every run with its origin and decide eligibility in one rule ([fcff940](https://github.com/PiwiTests/platform/commit/fcff94046bbf5412d6c917b938bd04b77460c027))
+- **desktop:** stamp local, reproduction and bisect runs with their origin ([ea21b22](https://github.com/PiwiTests/platform/commit/ea21b2241bfb9d79f554ffe2b713365450d454fe))
+- **desktop:** stamp every local run with the origin reference the window chooses ([80c53c2](https://github.com/PiwiTests/platform/commit/80c53c2b96d76e898495feeafc43f397be50055c))
+- **app:** decide which runs feed which analysis in one rule ([e83bdf3](https://github.com/PiwiTests/platform/commit/e83bdf363f3c7857e763adab5f7b1114028b962b))
+- **app:** leave historical imports out of shared state through the rule ([5555232](https://github.com/PiwiTests/platform/commit/5555232d70527a89dd3bb6ab1546fef61dc7cd43))
+- **app:** match CI re-runs to their dispatch and run each test at its line ([79b610a](https://github.com/PiwiTests/platform/commit/79b610a4ede24a97a611783c3a3bcb50326dc0ad))
+- **app:** record what ingest dropped and backfill the branch on stored runs ([5e86e94](https://github.com/PiwiTests/platform/commit/5e86e94623f6adbfb5858cffabae555466dab5f6), [ef3b584](https://github.com/PiwiTests/platform/commit/ef3b5842631e4b3af537d2a5730552ba046e022c))
+
+#### Environment incidents & base URL checks
+- **app:** recognize environment incidents and keep them out of every verdict ([3945dcd](https://github.com/PiwiTests/platform/commit/3945dcd27695da1029e7c79ae63011be27c2def9), [f137911](https://github.com/PiwiTests/platform/commit/f1379119ba047c2b013c679ea67e2b7ef8daf4b8))
+- **app:** count failed requests to the app's host in the incident classifier ([19e893e](https://github.com/PiwiTests/platform/commit/19e893e911e6af7a7462949ff69bab2170910bf2))
+- **reporter:** add `checkBaseUrl`, which checks base URLs before tests run and stops a run before any test when the app does not answer ([c4a0b3e](https://github.com/PiwiTests/platform/commit/c4a0b3eb5eb9064bc817ac1408f15c84fd509518), [def97fc](https://github.com/PiwiTests/platform/commit/def97fc1bb2e8017fdb30b2c6fc8168bfceaa276))
+
+#### Worker resources
+- **reporter:** send the run's CPU, memory and open pages over time ([9e38bbd](https://github.com/PiwiTests/platform/commit/9e38bbd8d08f922a40b82edf5b7d281355404332))
+- **reporter:** read the CPU and memory of each worker's processes over time ([5dca40d](https://github.com/PiwiTests/platform/commit/5dca40d78bcf2b63295ecb6b74c625461afbb65a))
+- **reporter:** read the run's process tree and memory on Windows ([6a3113d](https://github.com/PiwiTests/platform/commit/6a3113d42f6128b03206b1c8ec80de18088baa31), [74a79a0](https://github.com/PiwiTests/platform/commit/74a79a0aba0b3a5df636da1ab242b7cc73c730cd))
+- **app:** show CPU, memory and open pages on the workers timeline ([99c8e72](https://github.com/PiwiTests/platform/commit/99c8e72a990889a169f85a1150f72d59a881c9eb))
+- **app:** draw CPU, memory and open pages above the workers timeline rows ([afcaf33](https://github.com/PiwiTests/platform/commit/afcaf33360df265a9bb2014029f806353dffaaf6))
+- **app:** draw each worker's sampled CPU and memory under its row ([6623bf6](https://github.com/PiwiTests/platform/commit/6623bf61c9ac5730b39f23f9eb99d5b2a4ead7ed))
+- **app:** draw one resource metric under each worker row ([de1de08](https://github.com/PiwiTests/platform/commit/de1de08c257952f44966702e9674d55a35ad2186))
+- **app:** point the Resources tab's open pages at the timeline ([dbabab8](https://github.com/PiwiTests/platform/commit/dbabab8ae9c9383ef9e61b12bbb0266d0b5b576f))
+
+#### Agents, hand-backs & feedback
+- **ai:** let agents record diagnoses and fix attempts, log their writes, and make skills report back ([1a47745](https://github.com/PiwiTests/platform/commit/1a4774544fddc243b31adf8380ab8df65ac33fe7), [d1e59c4](https://github.com/PiwiTests/platform/commit/d1e59c4b8bbc5ab49afa83957124019ff9102623))
+- **reporter:** stamp installed skills and end each workflow with its write-back ([5b47f8f](https://github.com/PiwiTests/platform/commit/5b47f8fbd79e734bfbcbdfc1e3f639c53c7c26c1))
+- **app:** let agents triage clusters, gaps, merges and bug reports over MCP ([988cf78](https://github.com/PiwiTests/platform/commit/988cf78c764745142ce5476f6432bbdbb5c98d45), [5e06a1a](https://github.com/PiwiTests/platform/commit/5e06a1aba3ade197fb14993d81bdb2370f8b1c17))
+- **app:** let people and agents dismiss a quarantine proposal ([b4e65b4](https://github.com/PiwiTests/platform/commit/b4e65b4190ee4e4be6abd8622a49663e4dc8dc89), [00b62b0](https://github.com/PiwiTests/platform/commit/00b62b01de707b3dcb0dc66f862f59cbb3f1df64))
+- **app:** record what happened to every hand-back Piwi makes ([ba7877f](https://github.com/PiwiTests/platform/commit/ba7877fbe356f5be9fad52d087242e8b7d0b72c4), [49a5927](https://github.com/PiwiTests/platform/commit/49a5927071df7495486d6f24cc5138a1777dbe0f))
+- **app:** show whether Piwi's hand-backs work, per kind and per AI model ([f7a1476](https://github.com/PiwiTests/platform/commit/f7a1476d676e9a5aea139706f3b0a2054d8f896d), [9b7857e](https://github.com/PiwiTests/platform/commit/9b7857eb171737cd31da84c4a03c9691ca6bb830))
+- **app:** store gate verdicts and PR feedback, and count merges that overrode the gate ([64c2df8](https://github.com/PiwiTests/platform/commit/64c2df868b61a8373dab34233e0bc6619441531f), [bcd480a](https://github.com/PiwiTests/platform/commit/bcd480adcbd689563c2e3ff9e65d91d93ea0fa6e))
+- **app:** learn from closed auto-heal PRs and trace fixes to their Piwi-Heal commit ([9bceb10](https://github.com/PiwiTests/platform/commit/9bceb108f4a2add0af52b61855ffd7b414b13845), [7819766](https://github.com/PiwiTests/platform/commit/7819766437dc283525f7ef30f503f2d685065001))
+- **app:** return full commit messages from every SCM provider ([d68045e](https://github.com/PiwiTests/platform/commit/d68045e453973aad68159a499f047b7e2cc20c96))
 
 ### Bug Fixes
 
-* **ai:** read retry passes by test in the diagnosis recurrence sections ([3064037](https://github.com/PiwiTests/platform/commit/306403729131e7fc7ec73fd7eb09c5a835489577))
-* **app:** close a gap marked covered-by ([be0be9a](https://github.com/PiwiTests/platform/commit/be0be9a8f5c78d06c87e14bfc691d1863a29c641))
-* **app:** correct impact selection, clustering, flake clues and gap triage ([6317ee2](https://github.com/PiwiTests/platform/commit/6317ee2f11ec631265265725b11c5f9a2b4b9041))
-* **app:** disable translate modal when launching chromium from JB plugin ([31cabbb](https://github.com/PiwiTests/platform/commit/31cabbb9e15abbcf453f4ac518f22dc8b3a2b74a))
-* **app:** disable translate modal when launching chromium from JB plugin ([ca1eaf3](https://github.com/PiwiTests/platform/commit/ca1eaf33b11e938b3837c9e99acf96156f07b5cb))
-* **app:** keep the branch on every ingest path and lab runs out of CI analyses ([6626618](https://github.com/PiwiTests/platform/commit/6626618d54f10d49a427988e9ec203112256daee))
-* **app:** keep the branch on every ingest path and lab runs out of CI analyses ([b743c13](https://github.com/PiwiTests/platform/commit/b743c131640699e391fcde4f3ac4a9b805010e72))
-* **app:** keep the failing step when capping stored steps ([e7cf08b](https://github.com/PiwiTests/platform/commit/e7cf08b008fc8c455ba0e62c95c36938f1e4ebb6))
-* **app:** let branchless runs move bug reports when no branch is recorded ([44bd821](https://github.com/PiwiTests/platform/commit/44bd8213c6513dc46ac3980250ef4de05fbddb17))
-* **app:** let every shard of a run pass global setup ([21f92d1](https://github.com/PiwiTests/platform/commit/21f92d1673d9158bdd32ac8e57a09daffbdbe541))
-* **app:** let every shard of a run pass global setup ([cf4d029](https://github.com/PiwiTests/platform/commit/cf4d02904056ea1f5b4409fb250d2747ed917dbc))
-* **app:** link bug reports and list a cluster's merge suggestions over MCP ([6fed664](https://github.com/PiwiTests/platform/commit/6fed66406bc13a4f39745b0a2d07ad95cd22c3c8))
-* **app:** make fix verification, diagnosis ratings and auto-heal rows trustworthy ([e5dbc93](https://github.com/PiwiTests/platform/commit/e5dbc9379bd1a2c05066f15704221a2a0b1d6208))
-* **app:** make fix verification, diagnosis ratings and auto-heal rows trustworthy ([8434bd5](https://github.com/PiwiTests/platform/commit/8434bd5ae6104c144e746f3f3fbef9d2dd40530c))
-* **app:** move bug reports on default-branch runs only ([58053e6](https://github.com/PiwiTests/platform/commit/58053e6a7f2a00dd596a8781f4315cc6718e831d))
-* **app:** move tests to a real cluster and keep decided merge pairs apart ([241e693](https://github.com/PiwiTests/platform/commit/241e6937fb1d64dfeabd9ca751b06e8fd07044eb))
-* **app:** name the reproduced flake suspect first and keep the load suspect's id ([0d44b65](https://github.com/PiwiTests/platform/commit/0d44b651583f6cd0fe545acfc86bae4d76186d02))
-* **app:** re-probe a pair when its test's source changes ([3c90e8d](https://github.com/PiwiTests/platform/commit/3c90e8d12a8e7404780f3172b0e66f5368bf5962))
-* **app:** seed the database PIWI_DATABASE_PATH names ([b5fedce](https://github.com/PiwiTests/platform/commit/b5fedce36de41bb220acf59638fee086863d19a4))
-* **app:** stop green sampling when green-samples is declined ([2711282](https://github.com/PiwiTests/platform/commit/27112823301ec766d6343c13362504d0da16814a))
-* **app:** widen impact selection when a changed file is not fully mapped ([497b37d](https://github.com/PiwiTests/platform/commit/497b37d19bac1d20e6d5c3a5bc26335aeb536614))
-* **ci:** retry the package smoke's run poll on a reset connection ([649b67f](https://github.com/PiwiTests/platform/commit/649b67fa2a90c6ff09523cc7737c150af40aa29c))
-* **desktop:** report reproduction and bisect steps to the local app only ([6d410d5](https://github.com/PiwiTests/platform/commit/6d410d59dbe33fb5b3a6ecc33a6e24b09e676c14))
-* **docs:** render the Flake Lab workflow expression literally ([1893db9](https://github.com/PiwiTests/platform/commit/1893db9832c0eee6f6fe507e3a4de3b90d8e9bb2))
-* **docs:** render the Flake Lab workflow expression literally ([2bceab5](https://github.com/PiwiTests/platform/commit/2bceab58f74a40c99e0e9d1fb0390421b9a02ebe))
-* **extension:** fix the bugs a full review of the extension found ([b103d2d](https://github.com/PiwiTests/platform/commit/b103d2d2262be0df511a002ac250dfbfefd7a01d))
-* **extension:** fix the low-severity bugs a review of the extension found ([3fc8460](https://github.com/PiwiTests/platform/commit/3fc84600e9534b172a98b98194c6d9022e5a8f32))
-* **extension:** fix the medium-severity bugs a review of the extension found ([d434c91](https://github.com/PiwiTests/platform/commit/d434c91d849d8416c7a92228f1957880a5f57c3e))
-* **extension:** hide elements marked hidden in every page panel ([5e85720](https://github.com/PiwiTests/platform/commit/5e85720dc507e71bc62f7dfdde9ef510af684914))
-* **extension:** keep a replay to its own tab and never overwrite a stop ([e8df213](https://github.com/PiwiTests/platform/commit/e8df2139171b312b7f9569bc74e3a77215cd785f))
-* **extension:** keep page surfaces usable above a modal dialog the page opened ([e909a1d](https://github.com/PiwiTests/platform/commit/e909a1d1166170bdb8672bd49a34164c782a48c1))
-* **extension:** keep the keyboard focus in the bug HUD when it is drawn again ([13e8399](https://github.com/PiwiTests/platform/commit/13e8399993eead9690075e241c6fc492da5fca19))
-* **extension:** let page tools hand the page over without breaking each other ([47c84cc](https://github.com/PiwiTests/platform/commit/47c84cce618523d12729ba1a7adac86031541822))
-* **extension:** never let a Continue play a step that waits for Next ([e444db1](https://github.com/PiwiTests/platform/commit/e444db1bbf427131019bb6244e3dfc40ee0c529c))
-* **extension:** never record a password typed in a web component, nor Enter's submit twice ([0056839](https://github.com/PiwiTests/platform/commit/0056839a47c2746b0a9d56a440cf77b51d0e7803))
-* **extension:** save every cookie of the site in Save login for tests ([91093ec](https://github.com/PiwiTests/platform/commit/91093ec20eaa7acf104a664689fa5a744868f8a5))
-* **ide:** let an instance open files only in the projects connected to it ([d359af2](https://github.com/PiwiTests/platform/commit/d359af2a548e1df7ab11051c878b83ba5b276010))
-* **ide:** never import a name a recorded test's file binds already in VS Code ([8d2e7d5](https://github.com/PiwiTests/platform/commit/8d2e7d52b872f169c39adbf40bfe1c2b79e357ce))
-* **ide:** open files in a JetBrains IDE only for the connected instance and the desktop app ([8c194f5](https://github.com/PiwiTests/platform/commit/8c194f5527471d003f380476426400dce76239eb))
-* **ide:** read a config's options through its real path, so Playwright loads once ([1a8ace9](https://github.com/PiwiTests/platform/commit/1a8ace955cf012676dd0087bc8591a7a7aa3b6ab))
-* **ide:** read a password that a page object call takes from the environment ([6a98eb9](https://github.com/PiwiTests/platform/commit/6a98eb92742a68fce658029a7eab9e2ec9026673))
-* **ide:** read the desktop app's address from its discovery file for Open in IDE ([f7852a3](https://github.com/PiwiTests/platform/commit/f7852a3284dc8ee1f524d4f0c51d77f499c8f0b7))
-* **ide:** recognize tests called through a fixture or another name ([5b40c47](https://github.com/PiwiTests/platform/commit/5b40c47d0c478885983345ee6b986f13a97b0847))
-* **ide:** record only on http pages and cap the events a recording keeps ([3599c9b](https://github.com/PiwiTests/platform/commit/3599c9bd6953c49b73ff68a5aced81999e21b37c))
-* **ide:** record the steps of a page object's method from VS Code ([ebd8c21](https://github.com/PiwiTests/platform/commit/ebd8c21139195b32aa4fa4d48171b288a4907968))
-* **ide:** record where code can go, from the recorded page only, without duplicates ([7966f9e](https://github.com/PiwiTests/platform/commit/7966f9ee2b737cdcad16a4820d00e43393e530b5))
-* **ide:** replace steps with a catalog call only when they act on the elements it names ([3ea8689](https://github.com/PiwiTests/platform/commit/3ea8689012f11f2363aac2d5b2bb33565b21fe20))
-* **ide:** review fixes for the editor service and the JetBrains client, work in progress ([e736b57](https://github.com/PiwiTests/platform/commit/e736b57044d15b0e2046ffea3524ef38d5d520d8))
-* **ide:** review fixes for the editor service and the JetBrains client, work in progress ([3bf3c80](https://github.com/PiwiTests/platform/commit/3bf3c80e4c1e0f00d08399ece7e70a7a0125425c))
-* **ide:** review fixes for the editor service, work in progress ([b92d39e](https://github.com/PiwiTests/platform/commit/b92d39e8a7038b0f554730b69b4252b28fcfa3b1))
-* **ide:** show a paused recording and never orphan one in VS Code ([dc83451](https://github.com/PiwiTests/platform/commit/dc834510fb5b46b791ee9589b67d2ce53468ba7e))
-* **ide:** start recordings in JetBrains IDEs only where the cursor is known ([fd47a8c](https://github.com/PiwiTests/platform/commit/fd47a8c9381a1722f85323d663da75327c08877e))
-* **notifications:** apply owner filters to every event that carries owners ([8687cd3](https://github.com/PiwiTests/platform/commit/8687cd376f05496d5dee31b4d36327b7082f2d09))
-* **reporter:** leave room for a cold CIM query on Windows ([32d0015](https://github.com/PiwiTests/platform/commit/32d00153f5be36ec11197bfa1ad2cb425c5349c4))
-* **reporter:** name a working command for non-canonical AI-step entries ([72a2e1e](https://github.com/PiwiTests/platform/commit/72a2e1e669b1b78af08628179c315c940d9772ac))
-* **ui:** show a live bisect's commit on its own cluster only ([e4088be](https://github.com/PiwiTests/platform/commit/e4088be3d2811cb07cdcb2295867dbb0fed4d069))
+#### Analysis & triage
+- **app:** correct impact selection, clustering, flake clues and gap triage ([6317ee2](https://github.com/PiwiTests/platform/commit/6317ee2f11ec631265265725b11c5f9a2b4b9041))
+- **app:** widen impact selection when a changed file is not fully mapped ([497b37d](https://github.com/PiwiTests/platform/commit/497b37d19bac1d20e6d5c3a5bc26335aeb536614))
+- **app:** move tests to a real cluster and keep decided merge pairs apart ([241e693](https://github.com/PiwiTests/platform/commit/241e6937fb1d64dfeabd9ca751b06e8fd07044eb))
+- **app:** close a gap marked covered-by ([be0be9a](https://github.com/PiwiTests/platform/commit/be0be9a8f5c78d06c87e14bfc691d1863a29c641))
+- **app:** re-probe a pair when its test's source changes ([3c90e8d](https://github.com/PiwiTests/platform/commit/3c90e8d12a8e7404780f3172b0e66f5368bf5962))
+- **app:** name the reproduced flake suspect first and keep the load suspect's id ([0d44b65](https://github.com/PiwiTests/platform/commit/0d44b651583f6cd0fe545acfc86bae4d76186d02))
+- **app:** stop green sampling when green-samples is declined ([2711282](https://github.com/PiwiTests/platform/commit/27112823301ec766d6343c13362504d0da16814a))
+- **app:** make fix verification, diagnosis ratings and auto-heal rows trustworthy ([e5dbc93](https://github.com/PiwiTests/platform/commit/e5dbc9379bd1a2c05066f15704221a2a0b1d6208), [8434bd5](https://github.com/PiwiTests/platform/commit/8434bd5ae6104c144e746f3f3fbef9d2dd40530c))
+- **app:** link bug reports and list a cluster's merge suggestions over MCP ([6fed664](https://github.com/PiwiTests/platform/commit/6fed66406bc13a4f39745b0a2d07ad95cd22c3c8))
+- **ai:** read retry passes by test in the diagnosis recurrence sections ([3064037](https://github.com/PiwiTests/platform/commit/306403729131e7fc7ec73fd7eb09c5a835489577))
+- **ui:** show a live bisect's commit on its own cluster only ([e4088be](https://github.com/PiwiTests/platform/commit/e4088be3d2811cb07cdcb2295867dbb0fed4d069))
+- **notifications:** apply owner filters to every event that carries owners ([8687cd3](https://github.com/PiwiTests/platform/commit/8687cd376f05496d5dee31b4d36327b7082f2d09))
+
+#### Ingest, branches & bug reports
+- **app:** keep the branch on every ingest path and lab runs out of CI analyses ([6626618](https://github.com/PiwiTests/platform/commit/6626618d54f10d49a427988e9ec203112256daee), [b743c13](https://github.com/PiwiTests/platform/commit/b743c131640699e391fcde4f3ac4a9b805010e72))
+- **app:** keep the failing step when capping stored steps ([e7cf08b](https://github.com/PiwiTests/platform/commit/e7cf08b008fc8c455ba0e62c95c36938f1e4ebb6))
+- **app:** let every shard of a run pass global setup ([21f92d1](https://github.com/PiwiTests/platform/commit/21f92d1673d9158bdd32ac8e57a09daffbdbe541), [cf4d029](https://github.com/PiwiTests/platform/commit/cf4d02904056ea1f5b4409fb250d2747ed917dbc))
+- **app:** move bug reports on default-branch runs only ([58053e6](https://github.com/PiwiTests/platform/commit/58053e6a7f2a00dd596a8781f4315cc6718e831d))
+- **app:** let branchless runs move bug reports when no branch is recorded ([44bd821](https://github.com/PiwiTests/platform/commit/44bd8213c6513dc46ac3980250ef4de05fbddb17))
+- **app:** seed the database `PIWI_DATABASE_PATH` names ([b5fedce](https://github.com/PiwiTests/platform/commit/b5fedce36de41bb220acf59638fee086863d19a4))
+
+#### Editors & desktop
+- **ide:** record only on http pages and cap the events a recording keeps ([3599c9b](https://github.com/PiwiTests/platform/commit/3599c9bd6953c49b73ff68a5aced81999e21b37c))
+- **ide:** record where code can go, from the recorded page only, without duplicates ([7966f9e](https://github.com/PiwiTests/platform/commit/7966f9ee2b737cdcad16a4820d00e43393e530b5))
+- **ide:** record the steps of a page object's method from VS Code ([ebd8c21](https://github.com/PiwiTests/platform/commit/ebd8c21139195b32aa4fa4d48171b288a4907968))
+- **ide:** replace steps with a catalog call only when they act on the elements it names ([3ea8689](https://github.com/PiwiTests/platform/commit/3ea8689012f11f2363aac2d5b2bb33565b21fe20))
+- **ide:** recognize tests called through a fixture or another name ([5b40c47](https://github.com/PiwiTests/platform/commit/5b40c47d0c478885983345ee6b986f13a97b0847))
+- **ide:** read a password that a page object call takes from the environment ([6a98eb9](https://github.com/PiwiTests/platform/commit/6a98eb92742a68fce658029a7eab9e2ec9026673))
+- **ide:** never import a name a recorded test's file binds already in VS Code ([8d2e7d5](https://github.com/PiwiTests/platform/commit/8d2e7d52b872f169c39adbf40bfe1c2b79e357ce))
+- **ide:** read a config's options through its real path, so Playwright loads once ([1a8ace9](https://github.com/PiwiTests/platform/commit/1a8ace955cf012676dd0087bc8591a7a7aa3b6ab))
+- **ide:** show a paused recording and never orphan one in VS Code ([dc83451](https://github.com/PiwiTests/platform/commit/dc834510fb5b46b791ee9589b67d2ce53468ba7e))
+- **ide:** start recordings in JetBrains IDEs only where the cursor is known ([fd47a8c](https://github.com/PiwiTests/platform/commit/fd47a8c9381a1722f85323d663da75327c08877e))
+- **app:** disable the translate modal when launching Chromium from the JetBrains plugin ([31cabbb](https://github.com/PiwiTests/platform/commit/31cabbb9e15abbcf453f4ac518f22dc8b3a2b74a), [ca1eaf3](https://github.com/PiwiTests/platform/commit/ca1eaf33b11e938b3837c9e99acf96156f07b5cb))
+- **ide:** let an instance open files only in the projects connected to it ([d359af2](https://github.com/PiwiTests/platform/commit/d359af2a548e1df7ab11051c878b83ba5b276010))
+- **ide:** open files in a JetBrains IDE only for the connected instance and the desktop app ([8c194f5](https://github.com/PiwiTests/platform/commit/8c194f5527471d003f380476426400dce76239eb))
+- **ide:** read the desktop app's address from its discovery file for Open in IDE ([f7852a3](https://github.com/PiwiTests/platform/commit/f7852a3284dc8ee1f524d4f0c51d77f499c8f0b7))
+- **ide:** review fixes for the editor service and the JetBrains client, work in progress ([b92d39e](https://github.com/PiwiTests/platform/commit/b92d39e8a7038b0f554730b69b4252b28fcfa3b1), [e736b57](https://github.com/PiwiTests/platform/commit/e736b57044d15b0e2046ffea3524ef38d5d520d8), [3bf3c80](https://github.com/PiwiTests/platform/commit/3bf3c80e4c1e0f00d08399ece7e70a7a0125425c))
+- **desktop:** report reproduction and bisect steps to the local app only ([6d410d5](https://github.com/PiwiTests/platform/commit/6d410d59dbe33fb5b3a6ecc33a6e24b09e676c14))
+
+#### Reporter, CI & docs
+- **reporter:** leave room for a cold CIM query on Windows ([32d0015](https://github.com/PiwiTests/platform/commit/32d00153f5be36ec11197bfa1ad2cb425c5349c4))
+- **reporter:** name a working command for non-canonical AI-step entries ([72a2e1e](https://github.com/PiwiTests/platform/commit/72a2e1e669b1b78af08628179c315c940d9772ac))
+- **ci:** retry the package smoke's run poll on a reset connection ([649b67f](https://github.com/PiwiTests/platform/commit/649b67fa2a90c6ff09523cc7737c150af40aa29c))
+- **docs:** render the Flake Lab workflow expression literally ([1893db9](https://github.com/PiwiTests/platform/commit/1893db9832c0eee6f6fe507e3a4de3b90d8e9bb2), [2bceab5](https://github.com/PiwiTests/platform/commit/2bceab58f74a40c99e0e9d1fb0390421b9a02ebe))
+
+<details>
+<summary><strong>Piwi Picker fixes</strong> — what a full review of the extension found, and the page tools' handoffs</summary>
+
+- **extension:** fix the bugs a full review of the extension found, its medium- and low-severity ones included ([b103d2d](https://github.com/PiwiTests/platform/commit/b103d2d2262be0df511a002ac250dfbfefd7a01d), [d434c91](https://github.com/PiwiTests/platform/commit/d434c91d849d8416c7a92228f1957880a5f57c3e), [3fc8460](https://github.com/PiwiTests/platform/commit/3fc84600e9534b172a98b98194c6d9022e5a8f32))
+- **extension:** let page tools hand the page over without breaking each other ([47c84cc](https://github.com/PiwiTests/platform/commit/47c84cce618523d12729ba1a7adac86031541822))
+- **extension:** keep page surfaces usable above a modal dialog the page opened ([e909a1d](https://github.com/PiwiTests/platform/commit/e909a1d1166170bdb8672bd49a34164c782a48c1))
+- **extension:** hide elements marked hidden in every page panel ([5e85720](https://github.com/PiwiTests/platform/commit/5e85720dc507e71bc62f7dfdde9ef510af684914))
+- **extension:** keep the keyboard focus in the bug HUD when it is drawn again ([13e8399](https://github.com/PiwiTests/platform/commit/13e8399993eead9690075e241c6fc492da5fca19))
+- **extension:** keep a replay to its own tab and never overwrite a stop ([e8df213](https://github.com/PiwiTests/platform/commit/e8df2139171b312b7f9569bc74e3a77215cd785f))
+- **extension:** never let a Continue play a step that waits for Next ([e444db1](https://github.com/PiwiTests/platform/commit/e444db1bbf427131019bb6244e3dfc40ee0c529c))
+- **extension:** never record a password typed in a web component, nor Enter's submit twice ([0056839](https://github.com/PiwiTests/platform/commit/0056839a47c2746b0a9d56a440cf77b51d0e7803))
+- **extension:** save every cookie of the site in Save login for tests ([91093ec](https://github.com/PiwiTests/platform/commit/91093ec20eaa7acf104a664689fa5a744868f8a5))
+
+</details>
+
+<!-- notes:polished -->
 
 ## [0.45.0](https://github.com/PiwiTests/platform/compare/v0.44.0...v0.45.0) (2026-10-02)
 
+This release keeps resource-leak findings across runs, so a merge can be gated on the leaks it introduces.
+
+**Full diff:** [v0.44.0…v0.45.0](https://github.com/PiwiTests/platform/compare/v0.44.0...v0.45.0)
+
+### ✨ Highlights
+
+- **🚦 Gate merges on new leaks** — Resource findings are kept across runs, and a merge can be gated on leaks that are new.
 
 ### Features
 
-* **app:** keep resource findings across runs and gate merges on new leaks ([3e4ea38](https://github.com/PiwiTests/platform/commit/3e4ea38dc562818af1c1eeb6503fe82fb3e05f42))
-
+- **app:** keep resource findings across runs and gate merges on new leaks ([3e4ea38](https://github.com/PiwiTests/platform/commit/3e4ea38dc562818af1c1eeb6503fe82fb3e05f42))
 
 ### Bug Fixes
 
-* **app:** count leaks per opening line and keep each shard's report ([578d334](https://github.com/PiwiTests/platform/commit/578d3343f342d6159ceec538f5f40fdd5133fc8e))
-* **ui:** keep the companion links out of the env-var and SCM-host scans ([5404b1a](https://github.com/PiwiTests/platform/commit/5404b1a190ad51032bbbae3fd0a49ea79af7ed6e))
-* **ui:** name the latest run's age in the sidebar badge once mounted ([fff2e8f](https://github.com/PiwiTests/platform/commit/fff2e8f0dd596642823947b5f27be03bb7c8efb9))
+- **app:** count leaks per opening line and keep each shard's report ([578d334](https://github.com/PiwiTests/platform/commit/578d3343f342d6159ceec538f5f40fdd5133fc8e))
+- **ui:** name the latest run's age in the sidebar badge once mounted ([fff2e8f](https://github.com/PiwiTests/platform/commit/fff2e8f0dd596642823947b5f27be03bb7c8efb9))
+- **ui:** keep the companion links out of the env-var and SCM-host scans ([5404b1a](https://github.com/PiwiTests/platform/commit/5404b1a190ad51032bbbae3fd0a49ea79af7ed6e))
+
+<!-- notes:polished -->
 
 ## [0.44.0](https://github.com/PiwiTests/platform/compare/v0.43.0...v0.44.0) (2026-10-01)
 
+This release gives every step of a bug report a screenshot, so a step the replay cannot play is handed to the person with its picture and element, saves bug reports as `.piwibug` files the desktop app opens, and suggests URL patterns from the pages and requests a run loaded.
+
+**Full diff:** [v0.43.0…v0.44.0](https://github.com/PiwiTests/platform/compare/v0.43.0...v0.44.0)
+
+### ✨ Highlights
+
+- **📸 Step screenshots in bug reports** — Piwi Picker keeps a screenshot of the page as each step of a bug began, and Piwi keeps and shows it on the report.
+- **🤝 Hand-over steps** — A step the replay cannot play is handed to the person with its screenshot, and the element it is about is shown on the page too.
+- **📁 `.piwibug` files** — Bug reports save as `.piwibug` files the desktop app opens, and replay at the viewport their steps were played at.
+- **🧭 URL pattern suggestions from runs** — Extension URL patterns are suggested from the pages a run loaded and from its network requests.
+- **🕰️ A baseline for always-failing runs** — A run is compared with its last failed run when no earlier run passed.
 
 ### Features
 
-* **app:** compare a run with its last failed run when no earlier run passed ([5761da5](https://github.com/PiwiTests/platform/commit/5761da5c473ccd82dda7b8fd5acc9355b153e9a0))
-* **app:** compare a run with its last failed run when no earlier run passed ([176983f](https://github.com/PiwiTests/platform/commit/176983fd07e3594118f66575c53b99f5ce11bbbd))
-* **app:** keep and show the screenshot of each step a bug report sends ([e4e790f](https://github.com/PiwiTests/platform/commit/e4e790f3dae8b5a13189601697f9cb4e97e6e021))
-* **app:** read git history from the linked folder on the desktop app ([aefb6e7](https://github.com/PiwiTests/platform/commit/aefb6e7f57bf864e74ff52a52db12f516a186fc8))
-* **app:** read git history from the linked folder on the desktop app ([9414acc](https://github.com/PiwiTests/platform/commit/9414acc1ed8fbd008d2a63d27700d6ec10456e02))
-* **app:** suggest extension URL patterns from the pages a run loaded ([ec69258](https://github.com/PiwiTests/platform/commit/ec692584d51e86fb8ee30d2507b09315a34670d2))
-* **extension:** capture and display step screenshots in bug reports ([e8249a3](https://github.com/PiwiTests/platform/commit/e8249a3a62e3ee7b52f396781448f3eec23eaa5d))
-* **extension:** hand a step the replay cannot play to the person, with its screenshot ([5704ba9](https://github.com/PiwiTests/platform/commit/5704ba947870f0fc5e1acd6aec58fb508a36f00f))
-* **extension:** keep a screenshot of the page as each step of a bug began ([94ee35b](https://github.com/PiwiTests/platform/commit/94ee35b1f2c233a8dfc345eb58f4c46f6f892604))
-* **extension:** record the viewport a bug's steps were played at, and replay at it ([55865a9](https://github.com/PiwiTests/platform/commit/55865a93d385c479327b021d438b5d7bd4de0b64))
-* **extension:** save bug reports as .piwibug files the desktop app opens ([0787c97](https://github.com/PiwiTests/platform/commit/0787c97960094a0b9730ca587d22604f30ab9852))
-* **extension:** show which element a handed-over step is about, on the page too ([2850f1c](https://github.com/PiwiTests/platform/commit/2850f1cbc20fcd3552b83cde8848534c125e4cbd))
-* **ui:** remember the theme colors and appearance in cookies ([1c28725](https://github.com/PiwiTests/platform/commit/1c28725710ed6cc9206cceaf4d0df474b926063f))
-* **ui:** remember the theme colors and appearance in cookies ([91763fe](https://github.com/PiwiTests/platform/commit/91763fe1acb2a220fd1f37b525de77c87c304c13))
-* **ui:** split the project settings into sections with a side menu ([85d3f20](https://github.com/PiwiTests/platform/commit/85d3f205bf146e3f6b2e178031984fb873785b08))
-* **url-patterns:** suggest patterns from network requests ([0cc13ab](https://github.com/PiwiTests/platform/commit/0cc13ab1c5abed03e3103c7f74e7a552b8a6f40b))
+#### Bug reports from Piwi Picker
+- **extension:** keep a screenshot of the page as each step of a bug began, and display it in bug reports ([94ee35b](https://github.com/PiwiTests/platform/commit/94ee35b1f2c233a8dfc345eb58f4c46f6f892604), [e8249a3](https://github.com/PiwiTests/platform/commit/e8249a3a62e3ee7b52f396781448f3eec23eaa5d))
+- **app:** keep and show the screenshot of each step a bug report sends ([e4e790f](https://github.com/PiwiTests/platform/commit/e4e790f3dae8b5a13189601697f9cb4e97e6e021))
+- **extension:** hand a step the replay cannot play to the person, with its screenshot ([5704ba9](https://github.com/PiwiTests/platform/commit/5704ba947870f0fc5e1acd6aec58fb508a36f00f))
+- **extension:** show which element a handed-over step is about, on the page too ([2850f1c](https://github.com/PiwiTests/platform/commit/2850f1cbc20fcd3552b83cde8848534c125e4cbd))
+- **extension:** record the viewport a bug's steps were played at, and replay at it ([55865a9](https://github.com/PiwiTests/platform/commit/55865a93d385c479327b021d438b5d7bd4de0b64))
+- **extension:** save bug reports as `.piwibug` files the desktop app opens ([0787c97](https://github.com/PiwiTests/platform/commit/0787c97960094a0b9730ca587d22604f30ab9852))
 
+#### URL patterns
+- **app:** suggest extension URL patterns from the pages a run loaded ([ec69258](https://github.com/PiwiTests/platform/commit/ec692584d51e86fb8ee30d2507b09315a34670d2))
+- **url-patterns:** suggest patterns from network requests ([0cc13ab](https://github.com/PiwiTests/platform/commit/0cc13ab1c5abed03e3103c7f74e7a552b8a6f40b))
+
+#### Runs & the desktop app
+- **app:** compare a run with its last failed run when no earlier run passed ([5761da5](https://github.com/PiwiTests/platform/commit/5761da5c473ccd82dda7b8fd5acc9355b153e9a0), [176983f](https://github.com/PiwiTests/platform/commit/176983fd07e3594118f66575c53b99f5ce11bbbd))
+- **app:** read git history from the linked folder on the desktop app ([aefb6e7](https://github.com/PiwiTests/platform/commit/aefb6e7f57bf864e74ff52a52db12f516a186fc8), [9414acc](https://github.com/PiwiTests/platform/commit/9414acc1ed8fbd008d2a63d27700d6ec10456e02))
+
+#### Dashboard
+- **ui:** split the project settings into sections with a side menu ([85d3f20](https://github.com/PiwiTests/platform/commit/85d3f205bf146e3f6b2e178031984fb873785b08))
+- **ui:** remember the theme colors and appearance in cookies ([1c28725](https://github.com/PiwiTests/platform/commit/1c28725710ed6cc9206cceaf4d0df474b926063f), [91763fe](https://github.com/PiwiTests/platform/commit/91763fe1acb2a220fd1f37b525de77c87c304c13))
 
 ### Bug Fixes
 
-* **app:** keep the demo service worker from reading process at load ([c423603](https://github.com/PiwiTests/platform/commit/c423603be6bf0e61990a0eb0ec6608c39a7d021e))
-* **app:** put the step screenshot scene's boxes on the elements of its images ([1909a0e](https://github.com/PiwiTests/platform/commit/1909a0e83810cf0622a8b159270b359fa10ccca2))
-* **desktop:** exempt the desktop-only bug report import from the demo route check ([1fcb9ba](https://github.com/PiwiTests/platform/commit/1fcb9bab479a0e807fa5b765f35d09c8a8603ad0))
-* **extension:** set viewports in CSS pixels whatever the zoom, and keep a bug's zoom ([e060d55](https://github.com/PiwiTests/platform/commit/e060d55e0a6e39b82a10d72bf9f9e152daca8671))
-* **extension:** take a step's view again when the page scrolls, so its box sits on its element ([0951edd](https://github.com/PiwiTests/platform/commit/0951edd7084e311af188a863198537db38f3726a))
-* **extension:** wait for the settings page's listeners in the e2e specs ([28a424e](https://github.com/PiwiTests/platform/commit/28a424e350a1f6aa956b5ef9b3a247fe26bcc956))
-* **notifications:** open the branch and environment pickers on click ([b3fea8f](https://github.com/PiwiTests/platform/commit/b3fea8f9405860a9f68141c29b2b12938688ccb8))
-* **notifications:** open the branch and environment pickers on click ([1738e6c](https://github.com/PiwiTests/platform/commit/1738e6ceb8116ac9bbde1d58d150613746da8932))
+- **extension:** set viewports in CSS pixels whatever the zoom, and keep a bug's zoom ([e060d55](https://github.com/PiwiTests/platform/commit/e060d55e0a6e39b82a10d72bf9f9e152daca8671))
+- **extension:** take a step's view again when the page scrolls, so its box sits on its element ([0951edd](https://github.com/PiwiTests/platform/commit/0951edd7084e311af188a863198537db38f3726a))
+- **app:** put the step screenshot scene's boxes on the elements of its images ([1909a0e](https://github.com/PiwiTests/platform/commit/1909a0e83810cf0622a8b159270b359fa10ccca2))
+- **notifications:** open the branch and environment pickers on click ([b3fea8f](https://github.com/PiwiTests/platform/commit/b3fea8f9405860a9f68141c29b2b12938688ccb8), [1738e6c](https://github.com/PiwiTests/platform/commit/1738e6ceb8116ac9bbde1d58d150613746da8932))
+- **app:** keep the demo service worker from reading `process` at load ([c423603](https://github.com/PiwiTests/platform/commit/c423603be6bf0e61990a0eb0ec6608c39a7d021e))
+- **desktop:** exempt the desktop-only bug report import from the demo route check ([1fcb9ba](https://github.com/PiwiTests/platform/commit/1fcb9bab479a0e807fa5b765f35d09c8a8603ad0))
+- **extension:** wait for the settings page's listeners in the e2e specs ([28a424e](https://github.com/PiwiTests/platform/commit/28a424e350a1f6aa956b5ef9b3a247fe26bcc956))
+
+<!-- notes:polished -->
 
 ## [0.43.0](https://github.com/PiwiTests/platform/compare/v0.42.0...v0.43.0) (2026-09-30)
 
+This release adds a GitHub-style search language to the test lists, marks the line a test failed at in VS Code and JetBrains IDEs, connects the editors to the desktop app without pairing, and closes the security and data-correctness findings of a code audit.
 
-### ⚠ BREAKING CHANGES
+**Full diff:** [v0.42.0…v0.43.0](https://github.com/PiwiTests/platform/compare/v0.42.0...v0.43.0)
 
-* **ide:** the JetBrains plugin needs a 2024.1 or later IDE; 2023.3 and 2023.x IDEs no longer install it.
+### ⚠ Breaking changes
+
+- **ide:** the JetBrains plugin needs a 2024.1 or later IDE; 2023.3 and 2023.x IDEs no longer install it. The plugin requires IntelliJ platform 2024.1 and drops the 2023.3 workarounds ([43cc081](https://github.com/PiwiTests/platform/commit/43cc0816d48bca2c98d136b30157b228fa4cfbcc))
+
+### ✨ Highlights
+
+- **🔍 Test search language** — Search the test catalog and the test lists with GitHub-style qualifiers; the Tests tabs share one search, order and highlight.
+- **📍 Failures at the line** — The editor extensions mark the line a test failed at, with why, its screenshot and its trace, and show each test's latest result in the gutter, from the default branch if yours never ran.
+- **🖥️ Editors meet the desktop app** — VS Code and JetBrains IDEs connect to the desktop app with no pairing, on the folder's linked project, and keep it beside a shared instance, one Connect away.
+- **🔔 Targeted notifications** — Subscriptions filter by branch and environment, and a scheduled report shows who receives it and whose each channel is.
+- **🔒 Security audit fixes** — Cross-site writes are refused, stored-XSS paths into the dashboard and its emails are closed, stored credentials go only to their own endpoint, and request bodies, uploads and batches are bounded.
+- **🧮 Data correctness** — Each test counts once in run insights and the CI gate, PostgreSQL reports correct counts and pass rates, and SQLite queues writes behind an open transaction instead of failing.
+- **📤 A reporter that does not hold up CI** — The end-of-run upload no longer stalls CI against an unresponsive dashboard, an unreadable file fails its upload instead of crashing the runner, and parallel CI jobs and re-runs stay in separate runs.
 
 ### Features
 
-* add test search language to test lists ([966387e](https://github.com/PiwiTests/platform/commit/966387e68c6ddd67a51e07c5b4a57772afcdc904))
-* **app:** search the test catalog with GitHub-style qualifiers ([483ea3e](https://github.com/PiwiTests/platform/commit/483ea3eb2b9f78341712364d0a5a9909ef911eb7))
-* **app:** suggest URL patterns from page.goto when runs record no baseURL ([ac9c22f](https://github.com/PiwiTests/platform/commit/ac9c22f705b580ce303befcab1cb1645eb442de6))
-* **app:** suggest URL patterns from page.goto when runs record no baseURL ([ee22b50](https://github.com/PiwiTests/platform/commit/ee22b5075f42f6550210286c9b5c1c61c34e4eb1))
-* **desktop:** publish the linked project folders in the discovery file ([722c932](https://github.com/PiwiTests/platform/commit/722c9324aa193fa81107886ec71ce7d752d96e3e))
-* **ide:** connect to the desktop app with no pairing, on the folder's linked project ([a6b3da3](https://github.com/PiwiTests/platform/commit/a6b3da3b66b737f86e361762d0c173d49c25a682))
-* **ide:** connect to the desktop app with no pairing, on the folder's linked project ([093f204](https://github.com/PiwiTests/platform/commit/093f204f3177b6cfbad6bdf9a184446f4c2a662d))
-* **ide:** keep the desktop app beside a shared instance, one Connect away ([da9013f](https://github.com/PiwiTests/platform/commit/da9013f3841ddb4e3cab25a958c4618516f972ef))
-* **ide:** keep the desktop app beside a shared instance, one Connect away ([08e5ab0](https://github.com/PiwiTests/platform/commit/08e5ab01f832cf12cb14b5ae7cf2077b17673f64))
-* **ide:** mark the line a test failed at, with why and its evidence ([1959408](https://github.com/PiwiTests/platform/commit/19594088a2311b0e253a8f02534d2628c0109480))
-* **ide:** mark the line a test failed at, with why, its screenshot and its trace ([249bcfd](https://github.com/PiwiTests/platform/commit/249bcfdc14127fba56f37767f2ff01989378abff))
-* **ide:** open Piwi's settings from the Language Services widget in JetBrains IDEs ([71fd806](https://github.com/PiwiTests/platform/commit/71fd806453c136e0ff138a0fec7c6e7dbac9912a))
-* **ide:** open the dashboard's source paths through the JetBrains plugin ([28d6c89](https://github.com/PiwiTests/platform/commit/28d6c8909559d13bb3342e6f1f9f791a8105e642))
-* **ide:** show each test's latest result in the gutter, from the default branch if yours never ran ([b3b0bb0](https://github.com/PiwiTests/platform/commit/b3b0bb02d9457aa9e882f7a08392273c6b3521ac))
-* **integrations:** support typed labels and tags in issue creation ([1ca8b54](https://github.com/PiwiTests/platform/commit/1ca8b54dd3296943711f186df280d15664cff008))
-* **notifications:** filter subscriptions by branch and environment ([c66c716](https://github.com/PiwiTests/platform/commit/c66c716bb974a201f07ba33d38cf2532c86674ad))
-* **notifications:** filter subscriptions by branch and environment ([cb580b4](https://github.com/PiwiTests/platform/commit/cb580b46ef68555435bf149f5b124c01457ae25e))
-* **notifications:** show who receives a scheduled report and whose each channel is ([7e52db3](https://github.com/PiwiTests/platform/commit/7e52db358adf5aba274510c94df4721ff6c36bf8))
-* **notifications:** show who receives a scheduled report and whose each channel is ([1b58f49](https://github.com/PiwiTests/platform/commit/1b58f492030cbc6756475e269513b491d1050a06))
-* **ui:** rename a saved dashboard from its menu and the dashboards list ([7960735](https://github.com/PiwiTests/platform/commit/79607358d96eafa19e62f45a428f65c96e5558af))
-* **ui:** share one search, order and highlight across the Tests tabs ([4bdb725](https://github.com/PiwiTests/platform/commit/4bdb725b8ed23d2b8e7e27df92254f40766e9798))
+#### Test search
+- add a test search language to test lists ([966387e](https://github.com/PiwiTests/platform/commit/966387e68c6ddd67a51e07c5b4a57772afcdc904))
+- **app:** search the test catalog with GitHub-style qualifiers ([483ea3e](https://github.com/PiwiTests/platform/commit/483ea3eb2b9f78341712364d0a5a9909ef911eb7))
+- **ui:** share one search, order and highlight across the Tests tabs ([4bdb725](https://github.com/PiwiTests/platform/commit/4bdb725b8ed23d2b8e7e27df92254f40766e9798))
 
+#### Piwi in your editor
+- **ide:** mark the line a test failed at, with why and its evidence: its screenshot and its trace ([1959408](https://github.com/PiwiTests/platform/commit/19594088a2311b0e253a8f02534d2628c0109480), [249bcfd](https://github.com/PiwiTests/platform/commit/249bcfdc14127fba56f37767f2ff01989378abff))
+- **ide:** show each test's latest result in the gutter, from the default branch if yours never ran ([b3b0bb0](https://github.com/PiwiTests/platform/commit/b3b0bb02d9457aa9e882f7a08392273c6b3521ac))
+- **ide:** connect to the desktop app with no pairing, on the folder's linked project ([a6b3da3](https://github.com/PiwiTests/platform/commit/a6b3da3b66b737f86e361762d0c173d49c25a682), [093f204](https://github.com/PiwiTests/platform/commit/093f204f3177b6cfbad6bdf9a184446f4c2a662d))
+- **ide:** keep the desktop app beside a shared instance, one Connect away ([da9013f](https://github.com/PiwiTests/platform/commit/da9013f3841ddb4e3cab25a958c4618516f972ef), [08e5ab0](https://github.com/PiwiTests/platform/commit/08e5ab01f832cf12cb14b5ae7cf2077b17673f64))
+- **desktop:** publish the linked project folders in the discovery file ([722c932](https://github.com/PiwiTests/platform/commit/722c9324aa193fa81107886ec71ce7d752d96e3e))
+- **ide:** open Piwi's settings from the Language Services widget in JetBrains IDEs ([71fd806](https://github.com/PiwiTests/platform/commit/71fd806453c136e0ff138a0fec7c6e7dbac9912a))
+- **ide:** open the dashboard's source paths through the JetBrains plugin ([28d6c89](https://github.com/PiwiTests/platform/commit/28d6c8909559d13bb3342e6f1f9f791a8105e642))
+
+#### Notifications
+- **notifications:** filter subscriptions by branch and environment ([c66c716](https://github.com/PiwiTests/platform/commit/c66c716bb974a201f07ba33d38cf2532c86674ad), [cb580b4](https://github.com/PiwiTests/platform/commit/cb580b46ef68555435bf149f5b124c01457ae25e))
+- **notifications:** show who receives a scheduled report and whose each channel is ([7e52db3](https://github.com/PiwiTests/platform/commit/7e52db358adf5aba274510c94df4721ff6c36bf8), [1b58f49](https://github.com/PiwiTests/platform/commit/1b58f492030cbc6756475e269513b491d1050a06))
+
+#### Issues, dashboards & URL patterns
+- **integrations:** support typed labels and tags in issue creation ([1ca8b54](https://github.com/PiwiTests/platform/commit/1ca8b54dd3296943711f186df280d15664cff008))
+- **ui:** rename a saved dashboard from its menu and the dashboards list ([7960735](https://github.com/PiwiTests/platform/commit/79607358d96eafa19e62f45a428f65c96e5558af))
+- **app:** suggest URL patterns from `page.goto` when runs record no `baseURL` ([ac9c22f](https://github.com/PiwiTests/platform/commit/ac9c22f705b580ce303befcab1cb1645eb442de6), [ee22b50](https://github.com/PiwiTests/platform/commit/ee22b5075f42f6550210286c9b5c1c61c34e4eb1))
 
 ### Bug Fixes
 
-* **ai:** use the per-role models picked in settings when ai is env-managed ([add2bb1](https://github.com/PiwiTests/platform/commit/add2bb176cac1f451b0b37148421f633eb8cd2b0))
-* **app:** attach uploaded traces and screenshots to the right test when duplicates are skipped ([2b64c77](https://github.com/PiwiTests/platform/commit/2b64c778ec8242943e1e20712271ec7283e6e0ce))
-* **app:** bound request bodies, uploads, shards, periods and MCP batches ([7481cc3](https://github.com/PiwiTests/platform/commit/7481cc3910e839d7a67a4742acc9687fc09f6ce6))
-* **app:** close reads of another project's files and diagnoses ([2b98030](https://github.com/PiwiTests/platform/commit/2b9803013ba18784666a89a952c76663a4d55615))
-* **app:** close stored-XSS paths into the dashboard and its emails ([dbed337](https://github.com/PiwiTests/platform/commit/dbed3375a1c2918438998ee0f988690e19767c29))
-* **app:** close the security findings from the code audit ([928b2b6](https://github.com/PiwiTests/platform/commit/928b2b65c4843a7b55b4885cdea5a9ba2e2611df))
-* **app:** count each test once in run insights and the ci gate ([a3fb650](https://github.com/PiwiTests/platform/commit/a3fb65000470eafaadceb79f28905fbfad3c1f90))
-* **app:** find a restricted user's search matches, ignoring case and wildcards ([d29769e](https://github.com/PiwiTests/platform/commit/d29769ed42df8238ab1b8705d06070262ab3469f))
-* **app:** fix the data-correctness bugs from the code audit ([6baee93](https://github.com/PiwiTests/platform/commit/6baee93f834a2f8719e5da5b23e27ecd409ca887))
-* **app:** keep a project's scm token when its settings are saved ([f71af79](https://github.com/PiwiTests/platform/commit/f71af79b89566f51f6a2009868a5a3d9080e3dac))
-* **app:** keep ingesting a project after one failed test-case cache load ([7b9ef36](https://github.com/PiwiTests/platform/commit/7b9ef364e15630b0560d0060c23bcf7b543fe31c))
-* **app:** keep recent lab runs from emptying history, flaky and gap windows ([3ac20d9](https://github.com/PiwiTests/platform/commit/3ac20d91d99c5de81c7ac5cc7d2d39561d61e83e))
-* **app:** keep reporter data from expanding in generated shell commands ([79f2322](https://github.com/PiwiTests/platform/commit/79f23223c8a622a3a77d7bc5878c83ddecdc071d))
-* **app:** keep shard stream tokens as digests in run metadata ([6677a98](https://github.com/PiwiTests/platform/commit/6677a9893d05b8b264cbcc1a1bf1cca5fad6173c))
-* **app:** keep the reported status of a run whose report upload is slow or lost ([8e5bc91](https://github.com/PiwiTests/platform/commit/8e5bc914b050b93950efcd3defa073a629799ba2))
-* **app:** let a failed import be retried instead of reported as a duplicate ([1474df0](https://github.com/PiwiTests/platform/commit/1474df081f89243b0fc77dc2fbe7111cf148571b))
-* **app:** mask locator option values without exponential backtracking ([e61a2d0](https://github.com/PiwiTests/platform/commit/e61a2d050603f10582de8343e5ef19cf0280f063))
-* **app:** open one auto-heal pull request per action when sweeps overlap ([7519fb9](https://github.com/PiwiTests/platform/commit/7519fb92a50c3ab198a92ec55d987bc69c0c3bf3))
-* **app:** open the test page on postgresql 14 and 15 ([c957da7](https://github.com/PiwiTests/platform/commit/c957da73efdea8872f6c0087fd98c87210a3c35c))
-* **app:** refuse cross-site writes and drop the wildcard CORS headers ([c43ead0](https://github.com/PiwiTests/platform/commit/c43ead0000eebae0f757f4ddbb6ee015c526e34a))
-* **app:** report test-case counts, pass rates and last-run times correctly on postgresql ([3c8914a](https://github.com/PiwiTests/platform/commit/3c8914a9ff1cdb1f3b7b6fbb9d3310493c48fc5f))
-* **app:** require the run's own stream token to revive an interrupted run ([8daa2fd](https://github.com/PiwiTests/platform/commit/8daa2fdc22efb6246eaa95e868c845a6c313d114))
-* **app:** send stored AI keys and Jira tokens only to their own endpoint ([77b2140](https://github.com/PiwiTests/platform/commit/77b21409377e7a721b275b261c75cc6df0e2b3cc))
-* **app:** send the SCM token only to known GitLab hosts ([1386d77](https://github.com/PiwiTests/platform/commit/1386d77cf650e373d94185b5b8bb3898a5cba48c))
-* **app:** show a restricted user the recent runs of their own projects ([aad1e42](https://github.com/PiwiTests/platform/commit/aad1e422cb5adaaf02983c2799962334d9cf315d))
-* **app:** stop concurrent first reports of a new project failing with a server error ([e6520ce](https://github.com/PiwiTests/platform/commit/e6520cea50ee13357be027b490d997417cf30a54))
-* **app:** write each jira issue and comment once when a click and the sweep race ([c0e7fd9](https://github.com/PiwiTests/platform/commit/c0e7fd9fc1a0c51be5199557a1f1bc05380a6a5d))
-* **app:** write project settings, tags and members all or nothing ([51efb1f](https://github.com/PiwiTests/platform/commit/51efb1f86b330de934b7dd9e797f177429c5e44d))
-* **db:** queue sqlite writes behind an open transaction instead of failing with busy ([81cf9f2](https://github.com/PiwiTests/platform/commit/81cf9f26d488e893fc817fa23f9e0b107466a049))
-* **desktop:** find IDE launchers off the PATH and under their Windows names ([45f6634](https://github.com/PiwiTests/platform/commit/45f6634d2aa6ed9441286e36f06c34485f0e32a0))
-* **desktop:** find IDE launchers off the PATH and under their Windows names ([8e7b290](https://github.com/PiwiTests/platform/commit/8e7b29075c89467d300d674688d266aaf02bd806))
-* **ide:** connect to a local nuxt dev server from a JetBrains IDE ([e247fca](https://github.com/PiwiTests/platform/commit/e247fca20547e4b8a26977379459850b09419adb))
-* **ide:** install, update and remove the JetBrains plugin with a restart ([7a88071](https://github.com/PiwiTests/platform/commit/7a8807100e14f3d3283106f9444549779988ca6b))
-* **ide:** keep downloaded evidence names to plain characters ([15d68a4](https://github.com/PiwiTests/platform/commit/15d68a4917e1b5b38129bb598e51ec5e0c05b752))
-* **ide:** keep the JetBrains plugin off the UI thread and find Rider's Playwright configs ([4a89c26](https://github.com/PiwiTests/platform/commit/4a89c2610631c5a4ca05770e24a4cee59547b34d))
-* **ide:** keep the JetBrains plugin off the UI thread and find Rider's Playwright configs ([dfc616f](https://github.com/PiwiTests/platform/commit/dfc616f7749fa1c319e12225a2b27c7a4b657cae))
-* **ide:** keep the test-title regex linear on unterminated strings ([2344494](https://github.com/PiwiTests/platform/commit/234449481849c4cfffd573721004b8b47b7ede29))
-* **ide:** reach a local instance on whichever loopback address it listens on ([28db343](https://github.com/PiwiTests/platform/commit/28db34399cf0528db8fc630b46f391cb864e6587))
-* **ide:** reach the editor service from the JetBrains plugin on 2026.x IDEs ([0f0c4c0](https://github.com/PiwiTests/platform/commit/0f0c4c033cf9e2f1aa1b322fd94a87b7a650d01b))
-* **ide:** start test commands off the UI thread and let Connect's wait be cancelled ([c23d511](https://github.com/PiwiTests/platform/commit/c23d511673603e5a1b1aa9c27892c1e59e1ef6c2))
-* **ide:** stop using APIs 2026.3 deprecates or schedules for removal, where 2024.1 allows ([9d56d96](https://github.com/PiwiTests/platform/commit/9d56d960ddf31c7d372d437a92d53e46ea674a8f))
-* **notifications:** send each outbox delivery once when sweeps overlap ([837cce6](https://github.com/PiwiTests/platform/commit/837cce627559286d1de3cb97c978e3b90230c6ba))
-* **reporter:** fail an upload whose file cannot be read instead of crashing the playwright runner ([2f9d7f0](https://github.com/PiwiTests/platform/commit/2f9d7f037d7a34b0c9aa483d8ed5d76a83aaa717))
-* **reporter:** keep parallel ci jobs and workflow re-runs in separate dashboard runs ([6c9313b](https://github.com/PiwiTests/platform/commit/6c9313bfda5138c4f4832cb063cd65d6a6134a91))
-* **reporter:** replay undelivered live events only into the run they came from ([1bc5fdc](https://github.com/PiwiTests/platform/commit/1bc5fdc44e3b360b6aec3996823b24159acff94f))
-* **reporter:** stop an oversized live event batch from blocking the rest of the stream ([c72c333](https://github.com/PiwiTests/platform/commit/c72c333362514d82192a4259f3ae942c686cc165))
-* **reporter:** stop the end-of-run upload from stalling ci against an unresponsive dashboard ([977e380](https://github.com/PiwiTests/platform/commit/977e380b294d45cf3fd25a3168fb802213ce7fac))
-* **ui:** complete a qualifier whose values arrive after the typing ([e1f3969](https://github.com/PiwiTests/platform/commit/e1f396926280f2493188b96e3440a0086cf7fa96))
-* **ui:** keep typed values in the issue labels and tag field pickers ([ddd78af](https://github.com/PiwiTests/platform/commit/ddd78aff551f1b8c46bc7b072904e92a0c11fe4a))
-* **ui:** load server-rendered page data with the viewer's session ([359bebd](https://github.com/PiwiTests/platform/commit/359bebde6c66bdc9d0f4f318fe7efe288629a648))
-* **ui:** refresh the timeline and attempts tabs when another test is picked ([2cb6e8d](https://github.com/PiwiTests/platform/commit/2cb6e8d7e6f8311962d057c086ce92b9fe6f5f33))
+#### Security & access
+- **app:** close the security findings from the code audit ([928b2b6](https://github.com/PiwiTests/platform/commit/928b2b65c4843a7b55b4885cdea5a9ba2e2611df))
+- **app:** refuse cross-site writes and drop the wildcard CORS headers ([c43ead0](https://github.com/PiwiTests/platform/commit/c43ead0000eebae0f757f4ddbb6ee015c526e34a))
+- **app:** close stored-XSS paths into the dashboard and its emails ([dbed337](https://github.com/PiwiTests/platform/commit/dbed3375a1c2918438998ee0f988690e19767c29))
+- **app:** close reads of another project's files and diagnoses ([2b98030](https://github.com/PiwiTests/platform/commit/2b9803013ba18784666a89a952c76663a4d55615))
+- **app:** send stored AI keys and Jira tokens only to their own endpoint ([77b2140](https://github.com/PiwiTests/platform/commit/77b21409377e7a721b275b261c75cc6df0e2b3cc))
+- **app:** send the SCM token only to known GitLab hosts ([1386d77](https://github.com/PiwiTests/platform/commit/1386d77cf650e373d94185b5b8bb3898a5cba48c))
+- **app:** keep shard stream tokens as digests in run metadata ([6677a98](https://github.com/PiwiTests/platform/commit/6677a9893d05b8b264cbcc1a1bf1cca5fad6173c))
+- **app:** require the run's own stream token to revive an interrupted run ([8daa2fd](https://github.com/PiwiTests/platform/commit/8daa2fdc22efb6246eaa95e868c845a6c313d114))
+- **app:** bound request bodies, uploads, shards, periods and MCP batches ([7481cc3](https://github.com/PiwiTests/platform/commit/7481cc3910e839d7a67a4742acc9687fc09f6ce6))
+- **app:** keep reporter data from expanding in generated shell commands ([79f2322](https://github.com/PiwiTests/platform/commit/79f23223c8a622a3a77d7bc5878c83ddecdc071d))
+- **app:** mask locator option values without exponential backtracking ([e61a2d0](https://github.com/PiwiTests/platform/commit/e61a2d050603f10582de8343e5ef19cf0280f063))
+- **app:** show a restricted user the recent runs of their own projects ([aad1e42](https://github.com/PiwiTests/platform/commit/aad1e422cb5adaaf02983c2799962334d9cf315d))
+- **app:** find a restricted user's search matches, ignoring case and wildcards ([d29769e](https://github.com/PiwiTests/platform/commit/d29769ed42df8238ab1b8705d06070262ab3469f))
 
+#### Data correctness & ingestion
+- **app:** fix the data-correctness bugs from the code audit ([6baee93](https://github.com/PiwiTests/platform/commit/6baee93f834a2f8719e5da5b23e27ecd409ca887))
+- **app:** count each test once in run insights and the CI gate ([a3fb650](https://github.com/PiwiTests/platform/commit/a3fb65000470eafaadceb79f28905fbfad3c1f90))
+- **app:** attach uploaded traces and screenshots to the right test when duplicates are skipped ([2b64c77](https://github.com/PiwiTests/platform/commit/2b64c778ec8242943e1e20712271ec7283e6e0ce))
+- **app:** keep the reported status of a run whose report upload is slow or lost ([8e5bc91](https://github.com/PiwiTests/platform/commit/8e5bc914b050b93950efcd3defa073a629799ba2))
+- **app:** let a failed import be retried instead of reported as a duplicate ([1474df0](https://github.com/PiwiTests/platform/commit/1474df081f89243b0fc77dc2fbe7111cf148571b))
+- **app:** keep ingesting a project after one failed test-case cache load ([7b9ef36](https://github.com/PiwiTests/platform/commit/7b9ef364e15630b0560d0060c23bcf7b543fe31c))
+- **app:** stop concurrent first reports of a new project failing with a server error ([e6520ce](https://github.com/PiwiTests/platform/commit/e6520cea50ee13357be027b490d997417cf30a54))
+- **app:** keep recent lab runs from emptying history, flaky and gap windows ([3ac20d9](https://github.com/PiwiTests/platform/commit/3ac20d91d99c5de81c7ac5cc7d2d39561d61e83e))
+- **app:** keep a project's SCM token when its settings are saved ([f71af79](https://github.com/PiwiTests/platform/commit/f71af79b89566f51f6a2009868a5a3d9080e3dac))
+- **app:** write project settings, tags and members all or nothing ([51efb1f](https://github.com/PiwiTests/platform/commit/51efb1f86b330de934b7dd9e797f177429c5e44d))
+- **app:** open one auto-heal pull request per action when sweeps overlap ([7519fb9](https://github.com/PiwiTests/platform/commit/7519fb92a50c3ab198a92ec55d987bc69c0c3bf3))
+- **app:** write each Jira issue and comment once when a click and the sweep race ([c0e7fd9](https://github.com/PiwiTests/platform/commit/c0e7fd9fc1a0c51be5199557a1f1bc05380a6a5d))
+- **notifications:** send each outbox delivery once when sweeps overlap ([837cce6](https://github.com/PiwiTests/platform/commit/837cce627559286d1de3cb97c978e3b90230c6ba))
+- **ai:** use the per-role models picked in settings when AI is env-managed ([add2bb1](https://github.com/PiwiTests/platform/commit/add2bb176cac1f451b0b37148421f633eb8cd2b0))
 
-### Build System
+#### Databases
+- **app:** open the test page on PostgreSQL 14 and 15 ([c957da7](https://github.com/PiwiTests/platform/commit/c957da73efdea8872f6c0087fd98c87210a3c35c))
+- **app:** report test-case counts, pass rates and last-run times correctly on PostgreSQL ([3c8914a](https://github.com/PiwiTests/platform/commit/3c8914a9ff1cdb1f3b7b6fbb9d3310493c48fc5f))
+- **db:** queue SQLite writes behind an open transaction instead of failing with busy ([81cf9f2](https://github.com/PiwiTests/platform/commit/81cf9f26d488e893fc817fa23f9e0b107466a049))
 
-* **ide:** require IntelliJ platform 2024.1 and drop the 2023.3 workarounds ([43cc081](https://github.com/PiwiTests/platform/commit/43cc0816d48bca2c98d136b30157b228fa4cfbcc))
+#### Reporter
+- **reporter:** stop the end-of-run upload from stalling CI against an unresponsive dashboard ([977e380](https://github.com/PiwiTests/platform/commit/977e380b294d45cf3fd25a3168fb802213ce7fac))
+- **reporter:** fail an upload whose file cannot be read instead of crashing the Playwright runner ([2f9d7f0](https://github.com/PiwiTests/platform/commit/2f9d7f037d7a34b0c9aa483d8ed5d76a83aaa717))
+- **reporter:** keep parallel CI jobs and workflow re-runs in separate dashboard runs ([6c9313b](https://github.com/PiwiTests/platform/commit/6c9313bfda5138c4f4832cb063cd65d6a6134a91))
+- **reporter:** replay undelivered live events only into the run they came from ([1bc5fdc](https://github.com/PiwiTests/platform/commit/1bc5fdc44e3b360b6aec3996823b24159acff94f))
+- **reporter:** stop an oversized live event batch from blocking the rest of the stream ([c72c333](https://github.com/PiwiTests/platform/commit/c72c333362514d82192a4259f3ae942c686cc165))
+
+#### Dashboard
+- **ui:** complete a qualifier whose values arrive after the typing ([e1f3969](https://github.com/PiwiTests/platform/commit/e1f396926280f2493188b96e3440a0086cf7fa96))
+- **ui:** keep typed values in the issue labels and tag field pickers ([ddd78af](https://github.com/PiwiTests/platform/commit/ddd78aff551f1b8c46bc7b072904e92a0c11fe4a))
+- **ui:** load server-rendered page data with the viewer's session ([359bebd](https://github.com/PiwiTests/platform/commit/359bebde6c66bdc9d0f4f318fe7efe288629a648))
+- **ui:** refresh the timeline and attempts tabs when another test is picked ([2cb6e8d](https://github.com/PiwiTests/platform/commit/2cb6e8d7e6f8311962d057c086ce92b9fe6f5f33))
+
+#### Editors & desktop
+- **ide:** install, update and remove the JetBrains plugin with a restart ([7a88071](https://github.com/PiwiTests/platform/commit/7a8807100e14f3d3283106f9444549779988ca6b))
+- **ide:** keep the JetBrains plugin off the UI thread and find Rider's Playwright configs ([4a89c26](https://github.com/PiwiTests/platform/commit/4a89c2610631c5a4ca05770e24a4cee59547b34d), [dfc616f](https://github.com/PiwiTests/platform/commit/dfc616f7749fa1c319e12225a2b27c7a4b657cae))
+- **ide:** start test commands off the UI thread and let Connect's wait be cancelled ([c23d511](https://github.com/PiwiTests/platform/commit/c23d511673603e5a1b1aa9c27892c1e59e1ef6c2))
+- **ide:** reach the editor service from the JetBrains plugin on 2026.x IDEs ([0f0c4c0](https://github.com/PiwiTests/platform/commit/0f0c4c033cf9e2f1aa1b322fd94a87b7a650d01b))
+- **ide:** stop using APIs 2026.3 deprecates or schedules for removal, where 2024.1 allows ([9d56d96](https://github.com/PiwiTests/platform/commit/9d56d960ddf31c7d372d437a92d53e46ea674a8f))
+- **ide:** connect to a local Nuxt dev server from a JetBrains IDE ([e247fca](https://github.com/PiwiTests/platform/commit/e247fca20547e4b8a26977379459850b09419adb))
+- **ide:** reach a local instance on whichever loopback address it listens on ([28db343](https://github.com/PiwiTests/platform/commit/28db34399cf0528db8fc630b46f391cb864e6587))
+- **ide:** keep downloaded evidence names to plain characters ([15d68a4](https://github.com/PiwiTests/platform/commit/15d68a4917e1b5b38129bb598e51ec5e0c05b752))
+- **ide:** keep the test-title regex linear on unterminated strings ([2344494](https://github.com/PiwiTests/platform/commit/234449481849c4cfffd573721004b8b47b7ede29))
+- **desktop:** find IDE launchers off the `PATH` and under their Windows names ([45f6634](https://github.com/PiwiTests/platform/commit/45f6634d2aa6ed9441286e36f06c34485f0e32a0), [8e7b290](https://github.com/PiwiTests/platform/commit/8e7b29075c89467d300d674688d266aaf02bd806))
+
+<!-- notes:polished -->
 
 ## [0.42.0](https://github.com/PiwiTests/platform/compare/v0.41.0...v0.42.0) (2026-09-29)
 
+This release lets the Flake Lab run its experiments: reproduce a flaky test and bisect it from the desktop app, mark the fixes that hold as verified, and see the page as it was at a failure, DOM included, beside its screenshot.
+
+**Full diff:** [v0.41.0…v0.42.0](https://github.com/PiwiTests/platform/compare/v0.41.0...v0.42.0)
+
+### ✨ Highlights
+
+- **🧪 Flake Lab experiments** — The project page gains a Flake Lab tab, and the desktop app runs a flake lab session in a worktree to reproduce a flaky test.
+- **🔎 Flake-aware bisect** — The desktop app bisects a flake with its lab arm, and `piwi flake verify --bisect` answers each step.
+- **✅ Verified flake fixes** — A verified flake fix shows as "Verified fixed" on the Flakiness tab, the flaky list and in quarantine, leaves the ranking until the test flakes again, and proposes releasing the quarantine.
+- **🖼️ The page at the failure** — The failing step's DOM snapshot sits beside its screenshot in tabbed views, rendered at the moment the screenshot shows, and opens the picker from that DOM.
+- **🗑️ Delete runs in bulk** — Select several runs and delete them together, following each one's progress; a project deletion shows its progress too.
+- **🔑 Browser sign-in for the editors** — The VS Code and JetBrains extensions connect from a settings page with a browser sign-in, one key per instance.
+- **🤖 Two more MCP tools** — `describe_piwi` and `get_release_notes` give an agent a description of Piwi and its release notes.
 
 ### Features
 
-* add flake lab to diagnose and fix flaky tests ([c40b133](https://github.com/PiwiTests/platform/commit/c40b13322e23d8aa0b3b8d254ca0e46c37486d08))
-* add flake-lab experiment runner and dashboard integration ([5229925](https://github.com/PiwiTests/platform/commit/522992571fa290f1724a98bbd77d417b9f954809))
-* **app:** add describe_piwi and get_release_notes mcp tools ([1912e56](https://github.com/PiwiTests/platform/commit/1912e56a1da6eb4c66c062f487e6b0a16b18b016))
-* **app:** add describe_piwi and get_release_notes mcp tools ([8a37a76](https://github.com/PiwiTests/platform/commit/8a37a767b61f906f528e6770184d12fa640dfea2))
-* **app:** add Reproduce this flake and the flake-aware bisect to the desktop app ([cb11b52](https://github.com/PiwiTests/platform/commit/cb11b52ff19ab446fe96edffe2e5aa7cfc88e863))
-* **app:** add sidebar badge shortcut to latest test run ([a207f38](https://github.com/PiwiTests/platform/commit/a207f38dcd7c9d577bffb69a0cc78aee7098b807))
-* **app:** group URL pattern suggestions by environment ([afe7a2b](https://github.com/PiwiTests/platform/commit/afe7a2b44ba5452f223d62c60a13d8fa71e08687))
-* **app:** let the editor extensions sign in through the browser ([5abe67c](https://github.com/PiwiTests/platform/commit/5abe67c185f6749ee3234e09d7d11d2390479ea5))
-* **app:** mark verified flake fixes on the flaky list and propose quarantine release ([5dba253](https://github.com/PiwiTests/platform/commit/5dba253d9b285d6bd0cf69319948ed9ee3ba3346))
-* **app:** open a project's latest run from its sidebar status badge ([75e0819](https://github.com/PiwiTests/platform/commit/75e081940de1dd6bfa7c4f53b3ecca95d112cd3a))
-* **app:** show a project deletion's progress while it runs ([4f68257](https://github.com/PiwiTests/platform/commit/4f68257d785ef260ce4f8d07ca152c10518484eb))
-* **app:** show verified fixed on the Flakiness tab, the flaky list and in quarantine ([e34318c](https://github.com/PiwiTests/platform/commit/e34318c2a250cc83f2acfc9cdc813db8b9d9e53e))
-* **app:** suggest extension URL patterns per environment ([e510f12](https://github.com/PiwiTests/platform/commit/e510f122ef53a2be759137010b7998803314fbfe))
-* **app:** take a verified-fixed flaky test off the ranking until it flakes again ([260ba0c](https://github.com/PiwiTests/platform/commit/260ba0c4f5c77b588ad1342bfb2f9ca437830ba3))
-* **demo:** seed a verified flake fix and link the flake lab examples from the docs ([8bae29f](https://github.com/PiwiTests/platform/commit/8bae29f90eaf82f8a622500c001d97e289746e69))
-* **desktop:** reproduce a flake and bisect it with its lab arm in the desktop app ([1b9110b](https://github.com/PiwiTests/platform/commit/1b9110b8237bbef0c6718e928ac9e34c1aa1367e))
-* **desktop:** run a flake lab session and a flake-aware bisect in a worktree ([333eca4](https://github.com/PiwiTests/platform/commit/333eca400d6cd73d4e1e3219855589d5a0876e09))
-* **docs:** link feature pages to demo examples from one checked registry ([c70d70a](https://github.com/PiwiTests/platform/commit/c70d70a31a6d6f5b114a5dec5a8f713d23435b07))
-* **docs:** link feature pages to demo examples from one checked registry ([b4cc149](https://github.com/PiwiTests/platform/commit/b4cc14910d33cba8d6129fee4e346ef2632d8cfd))
-* **ide:** connect from a settings page with a browser sign-in, one key per instance ([d741eb4](https://github.com/PiwiTests/platform/commit/d741eb47fa0b216c3a407c786535770ad72d6dcf))
-* **ide:** connect from a settings page with a browser sign-in, one key per instance ([85216bc](https://github.com/PiwiTests/platform/commit/85216bc3286f9ef69274d11dba955f02152dca8b))
-* **reporter:** answer a bisect step with piwi flake verify --bisect ([ff55ca0](https://github.com/PiwiTests/platform/commit/ff55ca0614479fc76b631d0d181d06635a16c199))
-* track caught errors and error locations in step traces ([aaba845](https://github.com/PiwiTests/platform/commit/aaba845c64a718174e89f7bc3947cab3a2ed8a10))
-* **ui:** add a Flake Lab tab to the project page ([e9f3fc9](https://github.com/PiwiTests/platform/commit/e9f3fc90b3f3022f34df7582ce8b208a64b07f68))
-* **ui:** add a project Flake Lab tab and a verified flake fix to the demo ([a04c33e](https://github.com/PiwiTests/platform/commit/a04c33e31ae2208719243fb25a62503a178bdfbd))
-* **ui:** delete a selection of runs and follow each run as it goes ([5aaa89f](https://github.com/PiwiTests/platform/commit/5aaa89fe8dcb0816d16ad61c576e819bd330619e))
-* **ui:** delete a selection of runs and show deletion progress ([87fb230](https://github.com/PiwiTests/platform/commit/87fb230ffd3a37ccb04ee915d0ffff2280364e56))
-* **ui:** show the failing step's DOM snapshot beside its screenshot ([dd25109](https://github.com/PiwiTests/platform/commit/dd25109607e427cf5c42c94dfe17db89fef7e46a))
-* **ui:** show the page at the failure as tabbed views and open the picker from its DOM ([92dc8b3](https://github.com/PiwiTests/platform/commit/92dc8b3785d435cadca889d188f90f6d52f65dc7))
+#### Flake Lab
+- add the flake lab to diagnose and fix flaky tests, with its experiment runner and dashboard integration ([c40b133](https://github.com/PiwiTests/platform/commit/c40b13322e23d8aa0b3b8d254ca0e46c37486d08), [5229925](https://github.com/PiwiTests/platform/commit/522992571fa290f1724a98bbd77d417b9f954809))
+- **ui:** add a Flake Lab tab to the project page, and a verified flake fix to the demo ([e9f3fc9](https://github.com/PiwiTests/platform/commit/e9f3fc90b3f3022f34df7582ce8b208a64b07f68), [a04c33e](https://github.com/PiwiTests/platform/commit/a04c33e31ae2208719243fb25a62503a178bdfbd))
+- **desktop:** run a flake lab session and a flake-aware bisect in a worktree ([333eca4](https://github.com/PiwiTests/platform/commit/333eca400d6cd73d4e1e3219855589d5a0876e09))
+- **app, desktop:** add Reproduce this flake and the flake-aware bisect, with its lab arm, to the desktop app ([cb11b52](https://github.com/PiwiTests/platform/commit/cb11b52ff19ab446fe96edffe2e5aa7cfc88e863), [1b9110b](https://github.com/PiwiTests/platform/commit/1b9110b8237bbef0c6718e928ac9e34c1aa1367e))
+- **reporter:** answer a bisect step with `piwi flake verify --bisect` ([ff55ca0](https://github.com/PiwiTests/platform/commit/ff55ca0614479fc76b631d0d181d06635a16c199))
 
+#### Verified flake fixes
+- **app:** mark verified flake fixes on the flaky list and propose quarantine release ([5dba253](https://github.com/PiwiTests/platform/commit/5dba253d9b285d6bd0cf69319948ed9ee3ba3346))
+- **app:** show verified fixed on the Flakiness tab, the flaky list and in quarantine ([e34318c](https://github.com/PiwiTests/platform/commit/e34318c2a250cc83f2acfc9cdc813db8b9d9e53e))
+- **app:** take a verified-fixed flaky test off the ranking until it flakes again ([260ba0c](https://github.com/PiwiTests/platform/commit/260ba0c4f5c77b588ad1342bfb2f9ca437830ba3))
+- **demo:** seed a verified flake fix and link the flake lab examples from the docs ([8bae29f](https://github.com/PiwiTests/platform/commit/8bae29f90eaf82f8a622500c001d97e289746e69))
+
+#### Failure evidence
+- **ui:** show the failing step's DOM snapshot beside its screenshot ([dd25109](https://github.com/PiwiTests/platform/commit/dd25109607e427cf5c42c94dfe17db89fef7e46a))
+- **ui:** show the page at the failure as tabbed views and open the picker from its DOM ([92dc8b3](https://github.com/PiwiTests/platform/commit/92dc8b3785d435cadca889d188f90f6d52f65dc7))
+- track caught errors and error locations in step traces ([aaba845](https://github.com/PiwiTests/platform/commit/aaba845c64a718174e89f7bc3947cab3a2ed8a10))
+
+#### Runs & projects
+- **app:** open a project's latest run from its sidebar status badge ([a207f38](https://github.com/PiwiTests/platform/commit/a207f38dcd7c9d577bffb69a0cc78aee7098b807), [75e0819](https://github.com/PiwiTests/platform/commit/75e081940de1dd6bfa7c4f53b3ecca95d112cd3a))
+- **ui:** delete a selection of runs and follow each run's deletion progress as it goes ([5aaa89f](https://github.com/PiwiTests/platform/commit/5aaa89fe8dcb0816d16ad61c576e819bd330619e), [87fb230](https://github.com/PiwiTests/platform/commit/87fb230ffd3a37ccb04ee915d0ffff2280364e56))
+- **app:** show a project deletion's progress while it runs ([4f68257](https://github.com/PiwiTests/platform/commit/4f68257d785ef260ce4f8d07ca152c10518484eb))
+
+#### Editors, agents & Piwi Picker
+- **app:** let the editor extensions sign in through the browser ([5abe67c](https://github.com/PiwiTests/platform/commit/5abe67c185f6749ee3234e09d7d11d2390479ea5))
+- **ide:** connect from a settings page with a browser sign-in, one key per instance ([d741eb4](https://github.com/PiwiTests/platform/commit/d741eb47fa0b216c3a407c786535770ad72d6dcf), [85216bc](https://github.com/PiwiTests/platform/commit/85216bc3286f9ef69274d11dba955f02152dca8b))
+- **app:** add the `describe_piwi` and `get_release_notes` MCP tools ([1912e56](https://github.com/PiwiTests/platform/commit/1912e56a1da6eb4c66c062f487e6b0a16b18b016), [8a37a76](https://github.com/PiwiTests/platform/commit/8a37a767b61f906f528e6770184d12fa640dfea2))
+- **app:** suggest extension URL patterns per environment, grouped by environment ([e510f12](https://github.com/PiwiTests/platform/commit/e510f122ef53a2be759137010b7998803314fbfe), [afe7a2b](https://github.com/PiwiTests/platform/commit/afe7a2b44ba5452f223d62c60a13d8fa71e08687))
+
+#### Docs
+- **docs:** link feature pages to demo examples from one checked registry ([c70d70a](https://github.com/PiwiTests/platform/commit/c70d70a31a6d6f5b114a5dec5a8f713d23435b07), [b4cc149](https://github.com/PiwiTests/platform/commit/b4cc14910d33cba8d6129fee4e346ef2632d8cfd))
 
 ### Bug Fixes
 
-* **ai:** spend the auto-diagnose budget on clusters that need a diagnosis ([256a03c](https://github.com/PiwiTests/platform/commit/256a03c56579e54532f33d54e6553db5ad6d3a2f))
-* **app:** accept the desktop token in X-API-Key so piwi commands reach the app ([c16f82a](https://github.com/PiwiTests/platform/commit/c16f82a9b8720f39dede009fa69d92bf549d5946))
-* **app:** anchor failure analysis on the step that failed the test ([031e383](https://github.com/PiwiTests/platform/commit/031e38315a4b9ed958cc608927b054de43d09ec2)), closes [#695](https://github.com/PiwiTests/platform/issues/695)
-* **app:** apply PIWI_* settings to the built server at runtime ([215fbe6](https://github.com/PiwiTests/platform/commit/215fbe654f44df6679fbad253d0de34dcff61bf6))
-* **app:** assign a root cause to flaky tests on a real instance ([c7bbe78](https://github.com/PiwiTests/platform/commit/c7bbe7834cd7a4d259e775ae23f13d79e7b6de35))
-* **app:** correct in-product text the docs audit found out of date ([36ce877](https://github.com/PiwiTests/platform/commit/36ce8772518c6af079648948069d871fc91b691a))
-* **app:** escape test titles in the verify command's -g pattern ([979dc35](https://github.com/PiwiTests/platform/commit/979dc35d16d370fc5457326f705701ae3e52a093))
-* **app:** give the tracker sync task one result shape ([b627a29](https://github.com/PiwiTests/platform/commit/b627a29665dcab2697d76a9ef849938731385989))
-* **app:** group per-row locator failures into one cluster ([9e8814e](https://github.com/PiwiTests/platform/commit/9e8814edef7b683db70c907764f623f0f9b013ce))
-* **app:** list every affected test in cluster exports and share pages ([02c154f](https://github.com/PiwiTests/platform/commit/02c154f5c3e1cd1ceb0ceb4ed41c6e58d73c1dc1))
-* **app:** make project access backfill resilient to failures ([403ed7c](https://github.com/PiwiTests/platform/commit/403ed7c39076061a02ff90f1022e76ae91c5baf6))
-* **app:** render the failure-time DOM at the moment the failure screenshot shows ([f7833a6](https://github.com/PiwiTests/platform/commit/f7833a6a1b14c2621b473dd1659ad0b15583ca5e))
-* **app:** resolve the code bugs found while checking the docs ([d16a6fe](https://github.com/PiwiTests/platform/commit/d16a6fe5842e8397c83dbf163bf0d00653518b23))
-* **app:** send aspnetcore backend logs in the shape the dashboard reads ([047567d](https://github.com/PiwiTests/platform/commit/047567d22fa1bda5cc304a4ba21f802dff3a06dd))
-* **app:** stop counting merged auto-heal prs against max open prs ([ca82749](https://github.com/PiwiTests/platform/commit/ca82749e82db60e44d9b008b665c3694b8c8f62a))
-* **app:** word verified fixes "Verified fixed" in quarantine and on the tab ([3bb00cc](https://github.com/PiwiTests/platform/commit/3bb00cc63b21a42af41668d84fffc2a6e81b4e06))
-* **auth:** grant all-projects access only on the upgrade that adds project access ([b29450c](https://github.com/PiwiTests/platform/commit/b29450c7f6b45bac2940f0f2689f8643b636329a))
-* **demo:** cover the pairing routes in the demo check and pass the lab source ([8f89391](https://github.com/PiwiTests/platform/commit/8f89391d4103d01a624c2cdc88660c23c4afecee))
-* **desktop:** land on the folder section from Link folder ([3baf728](https://github.com/PiwiTests/platform/commit/3baf728cb1f805f912809f68d858a1d4f0e88b35))
-* **docs:** drop the MCP tool count from the ecosystem diagram ([c5b1e14](https://github.com/PiwiTests/platform/commit/c5b1e1446f7d472bb07a716ce39837f6d6b32848))
-* **docs:** list polished release notes on the What's new page ([e6233f6](https://github.com/PiwiTests/platform/commit/e6233f681d4a0947a8a7d43d59076605f01e3660))
-* **notifications:** keep the owners filter when creating a subscription ([267a703](https://github.com/PiwiTests/platform/commit/267a70339e2e61760e146d71ce2023bf56761c03))
-* **notifications:** send a full email for fixed and regressed clusters ([6143417](https://github.com/PiwiTests/platform/commit/614341732d8592a17a521b2e570f9cbc798b02e1))
-* **reporter:** use the offline cache by project name and keep shards in one run ([deb7f37](https://github.com/PiwiTests/platform/commit/deb7f378654a478629a3e6983a508ab943ae0ade))
-* **ui:** hide the Jira screenshot switches that do nothing ([140cdb2](https://github.com/PiwiTests/platform/commit/140cdb23d29dc8c0f4434c3d891af59c88eb412b))
-* **ui:** label the spec-health execution count as executions ([6c08d62](https://github.com/PiwiTests/platform/commit/6c08d622171daaf3cc294af772081131de3c35e3))
-* **ui:** stop pointing the empty function catalog at recordings ([7c541b1](https://github.com/PiwiTests/platform/commit/7c541b18b53db9afd54d591f25b20dc4d07722b4))
+#### Failure analysis & clusters
+- **app:** anchor failure analysis on the step that failed the test ([031e383](https://github.com/PiwiTests/platform/commit/031e38315a4b9ed958cc608927b054de43d09ec2)), closes [#695](https://github.com/PiwiTests/platform/issues/695)
+- **app:** render the failure-time DOM at the moment the failure screenshot shows ([f7833a6](https://github.com/PiwiTests/platform/commit/f7833a6a1b14c2621b473dd1659ad0b15583ca5e))
+- **app:** group per-row locator failures into one cluster ([9e8814e](https://github.com/PiwiTests/platform/commit/9e8814edef7b683db70c907764f623f0f9b013ce))
+- **app:** list every affected test in cluster exports and share pages ([02c154f](https://github.com/PiwiTests/platform/commit/02c154f5c3e1cd1ceb0ceb4ed41c6e58d73c1dc1))
+- **ai:** spend the auto-diagnose budget on clusters that need a diagnosis ([256a03c](https://github.com/PiwiTests/platform/commit/256a03c56579e54532f33d54e6553db5ad6d3a2f))
+
+#### Flaky tests & Flake Lab
+- **app:** assign a root cause to flaky tests on a real instance ([c7bbe78](https://github.com/PiwiTests/platform/commit/c7bbe7834cd7a4d259e775ae23f13d79e7b6de35))
+- **app:** escape test titles in the verify command's `-g` pattern ([979dc35](https://github.com/PiwiTests/platform/commit/979dc35d16d370fc5457326f705701ae3e52a093))
+- **app:** word verified fixes "Verified fixed" in quarantine and on the tab ([3bb00cc](https://github.com/PiwiTests/platform/commit/3bb00cc63b21a42af41668d84fffc2a6e81b4e06))
+- **demo:** cover the pairing routes in the demo check and pass the lab source ([8f89391](https://github.com/PiwiTests/platform/commit/8f89391d4103d01a624c2cdc88660c23c4afecee))
+
+#### Server, access & integrations
+- **app:** apply `PIWI_*` settings to the built server at runtime ([215fbe6](https://github.com/PiwiTests/platform/commit/215fbe654f44df6679fbad253d0de34dcff61bf6))
+- **app:** accept the desktop token in `X-API-Key` so `piwi` commands reach the app ([c16f82a](https://github.com/PiwiTests/platform/commit/c16f82a9b8720f39dede009fa69d92bf549d5946))
+- **auth:** grant all-projects access only on the upgrade that adds project access ([b29450c](https://github.com/PiwiTests/platform/commit/b29450c7f6b45bac2940f0f2689f8643b636329a))
+- **app:** make project access backfill resilient to failures ([403ed7c](https://github.com/PiwiTests/platform/commit/403ed7c39076061a02ff90f1022e76ae91c5baf6))
+- **app:** send aspnetcore backend logs in the shape the dashboard reads ([047567d](https://github.com/PiwiTests/platform/commit/047567d22fa1bda5cc304a4ba21f802dff3a06dd))
+- **app:** give the tracker sync task one result shape ([b627a29](https://github.com/PiwiTests/platform/commit/b627a29665dcab2697d76a9ef849938731385989))
+- **app:** stop counting merged auto-heal PRs against max open PRs ([ca82749](https://github.com/PiwiTests/platform/commit/ca82749e82db60e44d9b008b665c3694b8c8f62a))
+- **reporter:** use the offline cache by project name and keep shards in one run ([deb7f37](https://github.com/PiwiTests/platform/commit/deb7f378654a478629a3e6983a508ab943ae0ade))
+- **desktop:** land on the folder section from Link folder ([3baf728](https://github.com/PiwiTests/platform/commit/3baf728cb1f805f912809f68d858a1d4f0e88b35))
+
+#### Notifications
+- **notifications:** keep the owners filter when creating a subscription ([267a703](https://github.com/PiwiTests/platform/commit/267a70339e2e61760e146d71ce2023bf56761c03))
+- **notifications:** send a full email for fixed and regressed clusters ([6143417](https://github.com/PiwiTests/platform/commit/614341732d8592a17a521b2e570f9cbc798b02e1))
+
+#### Interface & docs
+- **app:** correct in-product text the docs audit found out of date ([36ce877](https://github.com/PiwiTests/platform/commit/36ce8772518c6af079648948069d871fc91b691a))
+- **app:** resolve the code bugs found while checking the docs ([d16a6fe](https://github.com/PiwiTests/platform/commit/d16a6fe5842e8397c83dbf163bf0d00653518b23))
+- **ui:** hide the Jira screenshot switches that do nothing ([140cdb2](https://github.com/PiwiTests/platform/commit/140cdb23d29dc8c0f4434c3d891af59c88eb412b))
+- **ui:** label the spec-health execution count as executions ([6c08d62](https://github.com/PiwiTests/platform/commit/6c08d622171daaf3cc294af772081131de3c35e3))
+- **ui:** stop pointing the empty function catalog at recordings ([7c541b1](https://github.com/PiwiTests/platform/commit/7c541b18b53db9afd54d591f25b20dc4d07722b4))
+- **docs:** drop the MCP tool count from the ecosystem diagram ([c5b1e14](https://github.com/PiwiTests/platform/commit/c5b1e1446f7d472bb07a716ce39837f6d6b32848))
+- **docs:** list polished release notes on the What's new page ([e6233f6](https://github.com/PiwiTests/platform/commit/e6233f681d4a0947a8a7d43d59076605f01e3660))
+
+<!-- notes:polished -->
 
 ## [0.41.0](https://github.com/PiwiTests/platform/compare/v0.40.0...v0.41.0) (2026-09-28)
 
