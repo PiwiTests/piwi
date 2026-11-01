@@ -160,6 +160,20 @@ the updater's among them, skip the page and keep the setting. Everywhere else,
 the Setup page's **Desktop app** card changes the port. Ports below 1024 and the
 ones browsers refuse (6000, 10080…) are not accepted.
 
+## The MSIX package
+
+The Microsoft Store package is built apart from the installers: `npx tauri build --target x86_64-pc-windows-msvc
+--no-bundle`, then `node scripts/msix.mjs --out <file>.msix`. It lays out the executable, `node.exe` and
+`resources\app-server` as an install has them, fills `src-tauri/windows/AppxManifest.xml` and packs it with the
+Windows SDK's `makeappx`; `--layout-only` stops before packing, on any OS. The package identity comes from Partner
+Center through `MSIX_IDENTITY_NAME`, `MSIX_PUBLISHER` and `MSIX_PUBLISHER_DISPLAY_NAME` (repository variables in
+CI), and a test identity stands in without them.
+
+The package is unsigned: the Store signs it. To install one elsewhere, sign a copy with a certificate whose subject
+is the package's publisher and trust that certificate. `scripts/msix-check.ps1` does both on a disposable machine,
+starts the app and reports where its writes land; the `msix` leg of `reusable-publish-desktop.yml` runs it. The
+design and its open questions: [`proposals/msix-store.md`](../../proposals/msix-store.md).
+
 ## Signing
 
 Installers carry no publisher signature unless code-signing secrets are

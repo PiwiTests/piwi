@@ -5,8 +5,12 @@ A proposal to publish the desktop app on Windows as an **MSIX package in the Mic
 the package itself, so Windows users get a signed app at no cost and without a code-signing certificate. Both
 installers stay as they are.
 
-**Status.** Proposed; nothing is built. Rollout step 2 (the spike) settles the one open design question, AppData
-virtualization, before any code is written. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet.
+**Status.** The name "Piwi Dashboard" is reserved in Partner Center. The spike (rollout step 2) runs in CI: the
+`msix` leg of `reusable-publish-desktop.yml` packs three variants of the manifest with `scripts/msix.mjs` (the
+default full-trust app, option A and option B below). `scripts/msix-check.ps1` installs each one on the runner, signed
+with a certificate made for the run, and reports in the job summary where the app's writes land, whether the alias
+bridges MCP, and whether a sidecar outlives an update. The shell changes, the Store submission and the docs remain.
+Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet.
 
 **Summary.** Tauri does not bundle MSIX, so a new Windows leg of `reusable-publish-desktop.yml` builds the app
 without an installer (`tauri build --no-bundle`) and without the updater, then packs it with `makeappx` from a
@@ -223,8 +227,8 @@ through `bridge_command`**, never `current_exe()`.
 ## Rollout
 
 1. **Account and name** (the maintainer): the developer account, the name reservation, the identity values.
-2. **Spike**: build a layout from a release build and register it unpacked with `Add-AppxPackage -Register` (in
-   Developer Mode). Then answer each check above: virtualization (option A, then B), the sidecar exiting on an
+2. **Spike**: pack each variant in CI and install it on the Windows runner (`scripts/msix-check.ps1`), or register
+   a layout unpacked with `Add-AppxPackage -Register` in Developer Mode. Then answer each check above: virtualization (option A, then B), the sidecar exiting on an
    update, the read-only install folder, the AUMID features. Record the answers in this Status.
 3. **Shell changes**:
    - packaged detection (`GetCurrentPackageFullName`);
