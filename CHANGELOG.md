@@ -4,19 +4,19 @@
 
 ## [0.63.0](https://github.com/PiwiTests/piwi/compare/v0.62.0...v0.63.0) (2026-10-29)
 
-This release lets a developer share a run on their own machine live with the team instance and watch each worker's page as it runs, serves runs to coding agents over MCP from the editors and the desktop app, makes the desktop app the hub of the runs it starts, and takes a CI failure to a debugger stopped at its failing line.
+This release lets a developer share a run on their own machine live with the team instance, shows each worker's page of a live CI run on the run page, serves runs to coding agents over MCP from the editor service and the desktop app, makes the desktop app the hub of the runs it starts, and takes a failure to a debugger stopped at its failing line.
 
 **Full diff:** [v0.62.0…v0.63.0](https://github.com/PiwiTests/piwi/compare/v0.62.0...v0.63.0)
 
 ### ✨ Highlights
 
 - **📡 Share a local run live** — A run on a developer's machine can be shared live with the team instance from VS Code, JetBrains, Piwi Picker's Runs window, the desktop app's Local runs tray or the editor service, and stopped at any time; the run page shows the shared run and says how to share one when nobody does.
-- **👀 Watch each worker live** — In a project that turns it on, the run page shows each worker's page of a live run while someone watches, and Piwi Picker can watch and steer a headless stopped page, pick on its image and reach remote windows.
-- **🤖 Runs for coding agents over MCP** — The editor service, VS Code, JetBrains IDEs and the desktop app serve their runs to agents as an MCP server: agents follow, steer and read runs, read and act on a stopped page, and get back the code they made.
+- **👀 Watch each worker live** — In a project that turns it on, the run page shows each worker's page of a live CI run while someone watches, and Piwi Picker can watch and steer a headless stopped page, pick on its image and reach remote windows.
+- **🤖 Runs for coding agents over MCP** — The editor service and the desktop app serve their runs to agents as an MCP server, which VS Code and JetBrains IDEs give to their own agents: agents follow, steer and read runs, read and act on a stopped page, and get back the code made.
 - **🖥️ The desktop app as run hub** — The desktop app's bundled server is the hub of the runs its shell starts: they show live in its window with their code to copy, appear in Piwi Picker's Runs window, and each one has a Hold failures switch; desktop notifications work with no setup.
 - **🛑 End a stopped test, steer terminal runs** — End the test is offered at a stop in the editors, the Runs window and the desktop tray, and a run started in a terminal follows the editor and can be steered from it.
 - **🐞 Debug in my editor** — A failure's failing line offers Debug in my editor, which runs the failed test from a debug link and stops once at that line.
-- **🔁 Clearer re-runs** — Each re-run says what it runs, one test can be re-run from its execution page (in CI too), and each cluster gets one test selection.
+- **🔁 Clearer re-runs** — Each re-run says what it runs, one test can be re-run from its execution page or in CI, and each cluster gets one test selection.
 - **📦 Whole-run offline exports** — A whole run can be exported for offline reading, and the offline exports and the quality report have a clearer layout.
 - **🔔 Richer notifications** — Emails, Slack and Teams messages show outcomes, history and the failing code, highlighted in emails.
 
@@ -33,7 +33,7 @@ This release lets a developer share a run on their own machine live with the tea
 - **app:** say on a run's running tests that nobody shares it live, and how to ([bcfb040](https://github.com/PiwiTests/piwi/commit/bcfb0409851cfd233da03cb6d6164e4cacd29132), [de3fef4](https://github.com/PiwiTests/piwi/commit/de3fef4f6c2c04796af2f316891dc33be65b88a6))
 
 #### Live view of each worker
-- **app:** watch each worker of a live run, CI runs included, from the run page, in a project that turns it on ([79964d9](https://github.com/PiwiTests/piwi/commit/79964d95802075d230632672d9e30092f9c056b7), [7526c3c](https://github.com/PiwiTests/piwi/commit/7526c3cedce19626849f33109f1daa2e6bcc7911))
+- **app:** watch each worker of a live CI run from the run page, in a project that turns it on ([79964d9](https://github.com/PiwiTests/piwi/commit/79964d95802075d230632672d9e30092f9c056b7), [7526c3c](https://github.com/PiwiTests/piwi/commit/7526c3cedce19626849f33109f1daa2e6bcc7911))
 - **reporter:** send each worker's page to the instance's live view while someone watches ([ed9a046](https://github.com/PiwiTests/piwi/commit/ed9a04664947ce7b718ca72b98e29887501865af))
 - **reporter:** play the click count of a viewer's button down and up, and say so as `input-clicks` ([dbd6082](https://github.com/PiwiTests/piwi/commit/dbd6082c6fa1026ffecf93db5bd8597fa7278dd6))
 - **extension:** watch and steer a headless stopped page live, pick on its image, reach remote windows ([584b64d](https://github.com/PiwiTests/piwi/commit/584b64d0afc5786490cffbebe4db750efa564798))
@@ -471,7 +471,7 @@ This release adds an in-app assistant that answers questions about the instance 
 
 ## [0.59.0](https://github.com/PiwiTests/platform/compare/v0.58.0...v0.59.0) (2026-10-22)
 
-This release works through the Piwi Picker and editor audits: Piwi Picker picks inside shadow roots, narrows a locator to the repeated row or card it sits in, words its results and writes the action and assertion an element calls for, while the VS Code and JetBrains integrations gain a getting-started walkthrough, a Failures node per Playwright config, running the test at the cursor, and every `--repeat-each` result.
+This release works through the Piwi Picker and editor audits: the picker picks inside open shadow roots, narrows a locator to the repeated row or card it sits in, words its results and writes the action and assertion an element calls for, while the VS Code and JetBrains integrations gain a getting-started walkthrough, a Failures node per Playwright config, running the test at the cursor, and every `--repeat-each` result.
 
 **Full diff:** [v0.58.0…v0.59.0](https://github.com/PiwiTests/platform/compare/v0.58.0...v0.59.0)
 
@@ -547,7 +547,6 @@ This release works through the Piwi Picker and editor audits: Piwi Picker picks 
 - **db:** keep every `--repeat-each` result of a test in a run ([a8ae723](https://github.com/PiwiTests/platform/commit/a8ae723cd9ab68f0c8a85d2b75dfaecd2332144f))
 - **ui:** record each tab's scroll and keep the user's choices over old links ([a551819](https://github.com/PiwiTests/platform/commit/a5518190ccf481fa2c7ffdc3a6754eaefdb2483d))
 - **ui:** stop restoring a page's scroll once the page scrolls it itself ([f3f8312](https://github.com/PiwiTests/platform/commit/f3f83121b40a6036333d13bb65c17e06df9b8b08))
-- **desktop:** pass Tauri's window handle to the `windows` 0.62 taskbar calls ([f799d18](https://github.com/PiwiTests/platform/commit/f799d1867de7e4651763cebb1b15ff868d0b6641))
 
 #### Editors
 - **ide:** a read after a run moved asks the instance again, and every caller gets its own copy ([054f8c3](https://github.com/PiwiTests/platform/commit/054f8c3eb2c385ca865bba02e58a75e6c28f5f35))
@@ -576,11 +575,14 @@ This release works through the Piwi Picker and editor audits: Piwi Picker picks 
 - **extension:** keep the Playwright view's labels from overlapping ([34c17a5](https://github.com/PiwiTests/platform/commit/34c17a55fcea5835d6b59ad8b5cd3e8bf2fedebc))
 - **extension:** make the non-modal panels regions instead of dialogs ([5e0bc4a](https://github.com/PiwiTests/platform/commit/5e0bc4ab67669b2efabccd2a8abe913e15b3fadb))
 
+#### Desktop app
+- **desktop:** pass Tauri's window handle to the `windows` 0.62 taskbar calls ([f799d18](https://github.com/PiwiTests/platform/commit/f799d1867de7e4651763cebb1b15ff868d0b6641))
+
 <!-- notes:polished -->
 
 ## [0.58.0](https://github.com/PiwiTests/platform/compare/v0.57.0...v0.58.0) (2026-10-21)
 
-This release keeps a test's history across renames and moves through external test IDs, names the changed lines no suite ran by one rule linked with the Test Map, moves the dashboard to a violet identity, and shortens the desktop app's startup.
+This release keeps a test's history across renames and moves through external test IDs, names the changed lines no suite ran, counts uncovered changes by one rule, links coverage with the Test Map, moves the dashboard to a violet identity, and shortens the desktop app's startup.
 
 **Full diff:** [v0.57.0…v0.58.0](https://github.com/PiwiTests/platform/compare/v0.57.0...v0.58.0)
 
