@@ -8,6 +8,7 @@
 import { and, count, countDistinct, eq, gte, inArray, isNull, ne } from 'drizzle-orm';
 import { graphEdges, graphNodes, locatorUsages, testFunctions } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
+import { decidesCheck } from './probes';
 
 /** The inputs the panel lists, in its order. */
 export type MapHealthInput = 'inventory' | 'locator-pages' | 'handlers' | 'probes' | 'declared' | 'changes' | 'catalog';
@@ -53,6 +54,28 @@ async function edgeTargets(db: DrizzleDB, projectId: number, kind: string, toKin
       ),
     );
   return new Set(rows.map((r) => r.key));
+}
+
+/** The routes a probe decided: a canonical `checks` edge whose outcome `decidesCheck`. */
+async function decidedCheckRoutes(db: DrizzleDB, projectId: number): Promise<Set<string>> {
+  const rows = await db
+    .select({ key: graphEdges.toKey, evidence: graphEdges.evidence })
+    .from(graphEdges)
+    .where(
+      and(
+        eq(graphEdges.projectId, projectId),
+        eq(graphEdges.kind, 'checks'),
+        eq(graphEdges.toKind, 'route'),
+        eq(graphEdges.fromKind, 'test'),
+        isNull(graphEdges.branch),
+      ),
+    );
+  const routes = new Set<string>();
+  for (const r of rows) {
+    const evidence = (r.evidence ?? null) as { outcome?: string; fault?: string } | null;
+    if (decidesCheck(evidence?.outcome, evidence?.fault)) routes.add(r.key);
+  }
+  return routes;
 }
 
 /** Distinct `from_key`s of a project's canonical edges of one kind out of one node kind. */
@@ -155,7 +178,7 @@ export async function getMapHealth(db: DrizzleDB, projectId: number, now: Date =
     },
     {
       id: 'probes',
-      have: within(reachedRoutes, await edgeTargets(db, projectId, 'checks', 'route')),
+      have: within(reachedRoutes, await decidedCheckRoutes(db, projectId)),
       of: reachedRoutes.size,
     },
     { id: 'declared', have: declared.length, of: null },

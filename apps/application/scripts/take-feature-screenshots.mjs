@@ -1451,19 +1451,29 @@ async function prepareJiraSceneConnection({ base, request }) {
   jiraSceneConnectionId = (await created.json()).connection.id;
 }
 
-/** The scene Jira connection, and PROJ-131 linked to cluster 1 when it is missing, so the cluster is tracked. */
-async function prepareClusterOneTracked({ base, request }) {
+/**
+ * Link a scene Jira issue to a cluster when it is missing, so the cluster is
+ * tracked. A link is matched only against the connection its project is bound
+ * to, so the project is bound to the scene connection while the link is made,
+ * then given back the binding it had.
+ */
+async function pinSceneIssue({ base, request }, { clusterId, key, title }) {
   await prepareJiraSceneConnection({ base, request });
-  const links = await (await request.get(`${base}/api/links?entityType=failure_cluster&entityId=1`)).json();
-  if (links.items?.some((l) => l.key === 'PROJ-131')) return;
+  const links = await (await request.get(`${base}/api/links?entityType=failure_cluster&entityId=${clusterId}`)).json();
+  if (links.items?.some((l) => l.key === key)) return;
+  const projectId = (await (await request.get(`${base}/api/failure-clusters/${clusterId}`)).json()).project.id;
+  const binding = `${base}/api/projects/${projectId}/integrations`;
+  const before = await (await request.get(binding)).json();
+  await request.put(binding, { data: { connectionId: jiraSceneConnectionId } });
   await request.post(`${base}/api/links`, {
-    data: {
-      entityType: 'failure_cluster',
-      entityId: 1,
-      url: 'http://127.0.0.1:9/browse/PROJ-131',
-      title: 'Pay button click times out',
-    },
+    data: { entityType: 'failure_cluster', entityId: clusterId, url: `http://127.0.0.1:9/browse/${key}`, title },
   });
+  await request.put(binding, { data: before });
+}
+
+/** The scene Jira connection, and PROJ-131 linked to cluster 1, so the cluster is tracked. */
+async function prepareClusterOneTracked({ base, request }) {
+  await pinSceneIssue({ base, request }, { clusterId: 1, key: 'PROJ-131', title: 'Pay button click times out' });
 }
 
 /**
@@ -3509,21 +3519,9 @@ const SCENES = [
       "Cluster situation block: the latest failure's headline as the heading, the cluster's name under it, and the Issue line naming the cluster's Jira issue and its status",
     tags: ['docs'],
     out: 'docs',
-    // Pin a Jira issue to the cluster so its key shows on the Issue line. The
-    // scene connection's host makes the URL a Jira issue on any database.
+    // Pin a Jira issue to the cluster so its key shows on the Issue line.
     async prepare({ base, request }) {
-      await prepareJiraSceneConnection({ base, request });
-      const links = await (await request.get(`${base}/api/links?entityType=failure_cluster&entityId=10`)).json();
-      if (!links.items?.some((l) => l.key === 'PROJ-128')) {
-        await request.post(`${base}/api/links`, {
-          data: {
-            entityType: 'failure_cluster',
-            entityId: 10,
-            url: 'http://127.0.0.1:9/browse/PROJ-128',
-            title: 'Checkout button is disabled',
-          },
-        });
-      }
+      await pinSceneIssue({ base, request }, { clusterId: 10, key: 'PROJ-128', title: 'Checkout button is disabled' });
     },
     route: '/failure-clusters/10',
     viewport: { width: 1280, height: 900 },

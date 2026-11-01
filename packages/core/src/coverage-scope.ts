@@ -19,21 +19,30 @@ export interface CoverageScope {
   exclude: string[];
 }
 
-/** What every scope leaves out unless a project changes its excludes. */
+/** What every scope leaves out unless a project changes its excludes: tests, build output and generated sources. */
 export const DEFAULT_COVERAGE_EXCLUDES: readonly string[] = [
   '*.test.*',
   '*.spec.*',
   'tests/',
   'test/',
   '__tests__/',
+  'playwright.config.*',
   '*Tests/',
   '*.Tests/',
   'obj/',
   'bin/',
   'node_modules/',
+  'dist/',
+  '.next/',
+  '.nuxt/',
+  '.output/',
+  '.svelte-kit/',
   '*.g.cs',
   '*.Designer.cs',
   '*.generated.*',
+  '*.gen.*',
+  '__generated__/',
+  '*.d.ts',
 ];
 
 /** The scope a project starts with: every file, but the default excludes. */

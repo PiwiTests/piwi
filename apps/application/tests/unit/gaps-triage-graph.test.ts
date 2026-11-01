@@ -143,9 +143,8 @@ describe('reopenExpiredSnoozes / listAcceptedUnwritten', () => {
     expect(rows[0]!.status).toBe('accepted');
   });
 
-  test('an accepted gap whose subject gained a trusted edge drops out of the queue', async () => {
+  test('an accepted gap on a reached route stays in the queue: reaching the route is not testing its error path', async () => {
     await seedGap({ status: 'accepted', acceptedAt: new Date(Date.now() - 8 * 24 * 3600 * 1000) });
-    // A canonical reaches edge to the gap's subject node means the test was written.
     await db.insert(schema.graphEdges).values({
       projectId: 1,
       fromKind: 'test',
@@ -154,10 +153,19 @@ describe('reopenExpiredSnoozes / listAcceptedUnwritten', () => {
       toKey: 'GET /api/cart',
       kind: 'reaches',
       branch: null,
-      origin: 'manual',
       confidence: 1,
       lastSeenAt: new Date(),
     });
+    expect(await listAcceptedUnwritten(db, [1])).toHaveLength(1);
+  });
+
+  test('an accepted gap a recompute closed, its test written, leaves the queue', async () => {
+    await seedGap({ status: 'closed', acceptedAt: new Date(Date.now() - 8 * 24 * 3600 * 1000) });
+    expect(await listAcceptedUnwritten(db, [1])).toHaveLength(0);
+  });
+
+  test('an accepted finding, which never closes itself, is never in the queue', async () => {
+    await seedGap({ status: 'accepted', kind: 'finding', acceptedAt: new Date(Date.now() - 8 * 24 * 3600 * 1000) });
     expect(await listAcceptedUnwritten(db, [1])).toHaveLength(0);
   });
 
@@ -503,6 +511,25 @@ describe('getFeatureMap', () => {
     const checkout = map.features.find((f) => f.key === 'Checkout')!;
     expect(checkout.worstClass).toBeNull();
     expect(checkout.gaps).toEqual({});
+  });
+
+  test('a muted detector neither counts nor colors a feature', async () => {
+    // Twenty gaps dismissed as wrong mute success-only on the project.
+    await db.insert(schema.scenarioGaps).values(
+      Array.from({ length: 20 }, (_, i) => ({
+        projectId: 1,
+        detector: 'success-only',
+        class: 'blind-spot',
+        key: `GET /api/noise-${i}`,
+        title: 't',
+        status: 'dismissed',
+        dismissReason: 'wrong',
+      })),
+    );
+    const map = await getFeatureMap(db, 1);
+    const catalog = map.features.find((f) => f.key === 'Catalog')!;
+    expect(catalog.gaps).toEqual({});
+    expect(catalog.worstClass).toBeNull();
   });
 
   test('an empty project maps to no features', async () => {

@@ -76,6 +76,8 @@ export interface ProbeResilienceSignals {
   dialogs: number;
   /** A backend error (5xx / error root span) rode back in the probe response's trace. */
   backendError: boolean;
+  /** The backend error is the fault itself: a handler made to throw or to answer an error status. */
+  faultIsTheError?: boolean;
   /** Exceptions the page threw, and nothing caught, once the fault applied. */
   pageErrors?: number;
   /** The page held no accessible content (an empty ARIA snapshot) as it closed. */
@@ -86,23 +88,43 @@ export interface ProbeResilienceSignals {
  * Classify how the application handled a server fault from the signals the probe
  * collected: an uncaught page error, or a backend error that left the page blank,
  * is `unhandled`; a visible degradation (a console error, a dialog, a blank page
- * or a backend error alone) is `degraded`; anything else `graceful`. Client
- * faults never reach here — their line records `n/a`.
+ * or a backend error the fault did not inject itself) is `degraded`; anything
+ * else `graceful`. Client faults never reach here — their line records `n/a`.
  */
 export function classifyProbeHandled(signals: ProbeResilienceSignals): 'graceful' | 'degraded' | 'unhandled' {
   const blank = signals.blankPage === true;
   if ((signals.pageErrors ?? 0) > 0 || (signals.backendError && blank)) return 'unhandled';
-  return signals.consoleErrors > 0 || signals.dialogs > 0 || signals.backendError || blank ? 'degraded' : 'graceful';
+  const backendDegraded = signals.backendError && signals.faultIsTheError !== true;
+  return signals.consoleErrors > 0 || signals.dialogs > 0 || backendDegraded || blank ? 'degraded' : 'graceful';
+}
+
+/** Server faults whose backend error is the fault itself: the handler throws, or answers an error status. */
+const SELF_ERROR_FAULTS: ReadonlySet<string> = new Set(['throw', 'status']);
+
+/** Whether a server fault's backend error is the fault itself rather than how the application coped with it. */
+export function faultIsTheError(fault: string): boolean {
+  return SELF_ERROR_FAULTS.has(fault);
+}
+
+/** The browser's own console line for a failed response, which only repeats its status. */
+const RESOURCE_ERROR_TEXT = /^Failed to load resource\b/;
+
+/** The console errors that say how the page coped: the browser's failed-resource lines repeat a status and are left out. */
+export function probeConsoleErrors(entries: ReadonlyArray<Record<string, unknown>>): number {
+  return entries.filter((e) => e.type === 'error' && !(typeof e.text === 'string' && RESOURCE_ERROR_TEXT.test(e.text)))
+    .length;
 }
 
 /**
  * The probe outcome from a test's status: a failed or timed-out test *noticed*
- * the injected fault; a passing test did *not*. An unapplied fault (the request
- * never fired) is inconclusive.
+ * the injected fault, and a passing test did *not*. An unapplied fault (the
+ * request never fired), a skipped test and an interrupted run say nothing either
+ * way, so they are inconclusive.
  */
 export function outcomeFromStatus(status: string | undefined, applied: boolean): ProbeOutcomeLine['outcome'] {
   if (!applied) return 'inconclusive';
-  return status === 'failed' || status === 'timedOut' || status === 'interrupted' ? 'noticed' : 'not-noticed';
+  if (status === 'failed' || status === 'timedOut') return 'noticed';
+  return status === 'passed' ? 'not-noticed' : 'inconclusive';
 }
 
 /** Append one probe outcome to the results file, best-effort (JSON lines). */

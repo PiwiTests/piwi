@@ -156,6 +156,7 @@ import { readProjectRepositoryUrl } from '../scm/project-repository';
 import { readChangeCoverage } from '../scm/change-coverage';
 import { isValidGitRef } from '../scm/refs';
 import { listScenarioGaps, issueScenarioDraft, gapTriageSchema, triageGap } from '#shared/handlers/scenario-gaps';
+import { loadMutedDetectors } from '#shared/handlers/detector-precision';
 import { addQuarantine, dismissQuarantineProposal, releaseQuarantine } from '#shared/handlers/quarantine';
 import { isQuarantineProposal, normalizeDismissReason } from '#shared/quarantine-proposals';
 import { getFeatureGraph } from '../feature-graph';
@@ -3034,16 +3035,20 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const pr = params.pr != null ? numericParam(params.pr, 'pr') : undefined;
     const limit = params.limit != null ? clampPageSize(params.limit) : 20;
 
+    // A muted detector's gaps come after every other, as on the Gaps tab.
     let gaps = await listScenarioGaps(db, projectId, {
       class: gapClass,
       minScore,
       prNumber: pr,
-      limit: feature ? 200 : limit,
+      limit: 200,
+      mutedLast: true,
     });
 
     // Feature filter: the gaps the list files under the feature (a hub's gaps
     // belong to no one feature).
-    if (feature) gaps = gaps.filter((g) => g.feature === feature).slice(0, limit);
+    if (feature) gaps = gaps.filter((g) => g.feature === feature);
+    gaps = gaps.slice(0, limit);
+    const muted = await loadMutedDetectors(db, projectId);
 
     return {
       items: gaps.map((g) =>
@@ -3058,6 +3063,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
           ticket: g.ticket,
           prNumber: g.prNumber,
           testCaseId: g.testCaseId,
+          muted: muted.has(g.detector) ? true : null,
         }),
       ),
     };

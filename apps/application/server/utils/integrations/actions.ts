@@ -16,6 +16,10 @@
  * wrong (a missing required field, a project the account cannot see), or a
  * transition whose screen requires a field the project gives no value for —
  * fails the action at once instead of retrying it for hours.
+ *
+ * An action runs only through the connection its project is bound to when it
+ * runs: one whose project is bound to another connection, or to none, is
+ * skipped.
  */
 import { and, eq, inArray, lt, lte } from 'drizzle-orm';
 import { bugReports, entityLinks, integrationActions } from '../../database/schema';
@@ -30,6 +34,7 @@ import type { LinkEntityType } from '#shared/handlers/links';
 import type { IntegrationAction } from '../../database/schema';
 import type { IssueTracker } from './types';
 import { createTracker } from './connections';
+import { boundConnectionId } from './bound-connection';
 import { JiraError } from './jira/client';
 import { mergeEntityLinkMetadata, writeCreatedIssueLink } from './entity-links';
 import {
@@ -538,6 +543,9 @@ async function applyTransition(tracker: IssueTracker, action: IntegrationAction)
   await tracker.transition(payload.issueKey, target.id, fieldPayload(values, screen, TRANSITION_SKIPPED_FIELDS));
 }
 
+/** Why an action whose project is bound to another connection, or to none, was not run. */
+const NOT_BOUND = 'the project is not bound to this connection';
+
 export type ActionOutcome =
   | { status: 'done'; result?: unknown }
   | { status: 'skipped'; reason: string }
@@ -559,6 +567,15 @@ export type ActionOutcome =
 export async function runAction(db: DbClient, action: IntegrationAction): Promise<ActionOutcome> {
   const now = new Date();
   const attempts = action.attempts + 1;
+
+  // An action writes only through the connection its project is bound to.
+  if ((await boundConnectionId(db, action.projectId)) !== action.connectionId) {
+    await db
+      .update(integrationActions)
+      .set({ status: 'skipped', error: NOT_BOUND, attempts, finishedAt: now })
+      .where(eq(integrationActions.id, action.id));
+    return { status: 'skipped', reason: NOT_BOUND };
+  }
 
   const tracker = await createTracker(db, action.connectionId);
   if (!tracker) {

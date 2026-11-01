@@ -279,7 +279,8 @@ A test **reaches** a route or a page when a real run observes it doing so: a req
 on the page or the test ending there. A control or a link is reached when one of the test's locators names it, or when
 triage records a covering test for it. Reach is measured from runs, never from instrumented code coverage, which is
 why the docs and the dashboard say *observed reach* rather than *coverage*.
-A flaky, quarantined or skipped test's reach does not count as trusted.
+The reach of a test flaky or failing in the default branch's recent runs, quarantined or skipped does not count as
+trusted.
 
 ### Feature and hub
 
@@ -395,9 +396,10 @@ lists them all.
 
 ### Exposure
 
-The score that ranks gaps: the geometric mean of four factors (how often the files involved change, how old they are,
-whether they were part of an earlier escaped failure, and the `piwi:priority` of the tests around them), multiplied by
-the detector's confidence. See [Gap detectors & exposure](/reference/gap-detectors#exposure).
+The score that ranks gaps: the geometric mean of four factors (how often the files involved change, how long a changed
+file has been changing, whether they were part of an earlier escaped failure, and the `piwi:priority` of the tests
+that reach the node), multiplied by the detector's confidence. A factor with no input counts as 0.1. See
+[Gap detectors & exposure](/reference/gap-detectors#exposure).
 
 ### Probe
 
@@ -415,8 +417,9 @@ is a *declared, never hit* gap.
 ### Page inventory
 
 The controls (role and accessible name) and links the reporter records on each visited page of a passing run, so the
-Test Map knows what a page offers beyond what the tests clicked. Field values are never recorded. Off by default:
-turn it on with `capturePageInventory`.
+Test Map knows what a page offers beyond what the tests clicked: at most 200 of each per page, never a field value.
+It reads a page when its URL changes, once per page per worker, so a control that renders later, or only in a dialog,
+is not in it. Off by default: turn it on with `capturePageInventory`.
 
 ### Map health
 

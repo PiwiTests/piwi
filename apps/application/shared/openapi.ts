@@ -29,15 +29,50 @@ function documentedCodes(responses: unknown): number[] {
 }
 
 /**
- * Parse an OpenAPI 3.x document into a manifest. Malformed input yields an empty
- * manifest rather than throwing — a broken spec must never break ingest.
+ * The path every route of a document is served under: the path of its first
+ * server's URL (OpenAPI 3) or its `basePath` (Swagger 2), without a trailing
+ * slash; empty when it names none. A server variable with a default takes it;
+ * one without stays a parameter, as in a route, so the routes match whatever
+ * value a test's server used.
+ */
+export function openApiBasePath(spec: unknown): string {
+  const doc = spec as {
+    servers?: Array<{ url?: unknown; variables?: Record<string, { default?: unknown }> }>;
+    basePath?: unknown;
+  } | null;
+  let raw: string | null = null;
+  const server = Array.isArray(doc?.servers) ? doc.servers[0] : undefined;
+  if (server && typeof server.url === 'string') {
+    // Only the path counts: the scheme and host go first, with any variable in them.
+    raw = server.url.replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*/i, '').replace(/\{([^}]+)\}/g, (whole, name: string) => {
+      const value = server.variables?.[name]?.default;
+      return typeof value === 'string' ? value : whole;
+    });
+  } else if (typeof doc?.basePath === 'string') {
+    raw = doc.basePath;
+  }
+  if (!raw) return '';
+  const segments: string[] = [];
+  for (const segment of raw.split(/[?#]/, 1)[0]!.split('/')) {
+    if (segment === '..') segments.pop();
+    else if (segment && segment !== '.') segments.push(segment);
+  }
+  return segments.length > 0 ? `/${segments.join('/')}` : '';
+}
+
+/**
+ * Parse an OpenAPI 3.x (or Swagger 2) document into a manifest, each path
+ * under the document's base path. Malformed input yields an empty manifest
+ * rather than throwing — a broken spec must never break ingest.
  */
 export function parseOpenApiSpec(spec: unknown): AppManifest {
   const routes: ManifestRoute[] = [];
   const paths = (spec as { paths?: unknown } | null)?.paths;
   if (!paths || typeof paths !== 'object') return { routes: [] };
-  outer: for (const [pattern, pathItem] of Object.entries(paths as Record<string, unknown>)) {
+  const base = openApiBasePath(spec);
+  outer: for (const [path, pathItem] of Object.entries(paths as Record<string, unknown>)) {
     if (!pathItem || typeof pathItem !== 'object') continue;
+    const pattern = `${base}${path}`;
     for (const [method, operation] of Object.entries(pathItem as Record<string, unknown>)) {
       if (!HTTP_METHODS.has(method.toLowerCase())) continue;
       const responses = (operation as { responses?: unknown } | null)?.responses;

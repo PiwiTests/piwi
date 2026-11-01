@@ -109,6 +109,36 @@ describe('buildProbePlan — inconclusive cooldown (F11)', () => {
     const plan = await buildProbePlan(db, 1, { budget: 50 });
     expect(plan.items.map((i) => i.testCaseId)).not.toContain(1);
   });
+
+  test('a pair probed only with a delay, which decides nothing, is planned again after the cooldown', async () => {
+    await seedReach(1, 'GET /api/a');
+    await db.insert(schema.probes).values({
+      projectId: 1,
+      testCaseId: 1,
+      routeKey: 'GET /api/a',
+      fault: 'slow',
+      outcome: 'not-noticed',
+      level: 'client',
+      probedAt: new Date(Date.now() - PROBE_INCONCLUSIVE_COOLDOWN_MS - 60_000),
+    });
+    const plan = await buildProbePlan(db, 1, { budget: 50 });
+    expect(plan.items.map((i) => i.testCaseId)).toContain(1);
+  });
+
+  test('a decided pair stays probed, whatever a later inconclusive probe said', async () => {
+    await seedInconclusiveProbe(PROBE_INCONCLUSIVE_COOLDOWN_MS + 60_000);
+    await db.insert(schema.probes).values({
+      projectId: 1,
+      testCaseId: 1,
+      routeKey: 'GET /api/a',
+      fault: 'empty-body',
+      outcome: 'noticed',
+      level: 'client',
+      probedAt: new Date(Date.now() - 2 * PROBE_INCONCLUSIVE_COOLDOWN_MS),
+    });
+    const plan = await buildProbePlan(db, 1, { budget: 50 });
+    expect(plan.items.map((i) => i.testCaseId)).not.toContain(1);
+  });
 });
 
 describe('buildProbePlan — re-probe when the test changed', () => {
@@ -202,5 +232,106 @@ describe('recordProbeResults — project scope + fault allow-list (F3, F5)', () 
       { testCaseId: 1, routeKey: 'GET /api/a', fault: 'status', outcome: 'not-noticed', level: 'server' },
     ]);
     expect(recorded).toBe(0);
+  });
+});
+
+describe('recordProbeResults — which results decide a check', () => {
+  async function seedRouteNode(): Promise<void> {
+    await db
+      .insert(schema.graphNodes)
+      .values({ projectId: 1, kind: 'route', key: 'GET /api/a', origin: 'observed', lastSeenAt: new Date() });
+  }
+  const verdicts = async () =>
+    (
+      await db
+        .select({ toKind: schema.graphEdges.toKind, evidence: schema.graphEdges.evidence })
+        .from(schema.graphEdges)
+    ).map((e) => ({ toKind: e.toKind, ...((e.evidence as { outcome?: string; fault?: string } | null) ?? {}) }));
+
+  test('an inconclusive re-probe keeps the verdict, and a delay never makes one', async () => {
+    await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'mine' });
+    await seedRouteNode();
+    const verdict = async () =>
+      (await db.select({ evidence: schema.graphEdges.evidence }).from(schema.graphEdges)).map(
+        (e) => (e.evidence as { outcome?: string; fault?: string } | null) ?? null,
+      );
+    await recordProbeResults(db, 1, null, [
+      { testCaseId: 1, routeKey: 'GET /api/a', fault: 'slow', outcome: 'not-noticed', level: 'client' },
+    ]);
+    expect(await verdict()).toEqual([]);
+    await recordProbeResults(db, 1, null, [
+      { testCaseId: 1, routeKey: 'GET /api/a', fault: 'status-500', outcome: 'not-noticed', level: 'client' },
+    ]);
+    await recordProbeResults(db, 1, null, [
+      { testCaseId: 1, routeKey: 'GET /api/a', fault: 'empty-body', outcome: 'inconclusive', level: 'client' },
+    ]);
+    expect(await verdict()).toEqual([{ fault: 'status-500', outcome: 'not-noticed', level: 'client' }]);
+    // Every result stays in the ledger.
+    expect((await db.select().from(schema.probes)).map((r) => r.fault).sort()).toEqual([
+      'empty-body',
+      'slow',
+      'status-500',
+    ]);
+  });
+
+  test('results of one pair from several Playwright projects keep the one that says most', async () => {
+    await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'mine' });
+    await seedRouteNode();
+    await recordProbeResults(db, 1, null, [
+      { testCaseId: 1, routeKey: 'GET /api/a', fault: 'status-500', outcome: 'noticed', level: 'client' },
+      { testCaseId: 1, routeKey: 'GET /api/a', fault: 'status-500', outcome: 'inconclusive', level: 'client' },
+    ]);
+    expect((await db.select().from(schema.probes)).map((r) => r.outcome)).toEqual(['noticed']);
+    await recordProbeResults(db, 1, null, [
+      { testCaseId: 1, routeKey: 'GET /api/a', fault: 'empty-body', outcome: 'not-noticed', level: 'client' },
+      { testCaseId: 1, routeKey: 'GET /api/a', fault: 'empty-body', outcome: 'noticed', level: 'client' },
+    ]);
+    expect(await verdicts()).toEqual([
+      { toKind: 'route', fault: 'empty-body', outcome: 'not-noticed', level: 'client' },
+    ]);
+  });
+
+  test('neither an undecided dependency probe nor an undecided server probe writes an edge or a finding', async () => {
+    await db
+      .update(schema.projects)
+      .set({
+        serverProbes: { enabled: true, faults: ['dependency', 'throw'], routes: [], dependencyOnStateChanging: false },
+      })
+      .where(eq(schema.projects.id, 1));
+    await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'mine' });
+    await seedRouteNode();
+    await recordProbeResults(db, 1, null, [
+      {
+        testCaseId: 1,
+        routeKey: 'GET /api/a',
+        fault: 'dependency',
+        dependency: 'db:postgres',
+        outcome: 'inconclusive',
+        level: 'server',
+        handled: 'unhandled',
+      },
+      {
+        testCaseId: 1,
+        routeKey: 'GET /api/a',
+        fault: 'throw',
+        outcome: 'inconclusive',
+        level: 'server',
+        handled: 'unhandled',
+      },
+    ]);
+    expect(await verdicts()).toEqual([]);
+    expect(await db.select().from(schema.scenarioGaps)).toEqual([]);
+
+    await recordProbeResults(db, 1, null, [
+      {
+        testCaseId: 1,
+        routeKey: 'GET /api/a',
+        fault: 'throw',
+        outcome: 'noticed',
+        level: 'server',
+        handled: 'degraded',
+      },
+    ]);
+    expect((await db.select().from(schema.scenarioGaps)).map((g) => g.detector)).toEqual(['not-handled']);
   });
 });

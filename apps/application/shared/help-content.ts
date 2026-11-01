@@ -1227,7 +1227,7 @@ export const HELP_TOPICS = {
   },
   'settings.integrations': {
     title: 'Integrations',
-    text: 'Connect an issue tracker so pinned links unfurl with a title and status and stay in sync. Jira Cloud connects with an account email and an API token, classic or scoped; set the connection once and every project uses it.',
+    text: "Connect an issue tracker and bind a project to it, so the project's pinned links to its site unfurl with a title and status and stay in sync. Jira Cloud connects with an account email and an API token, classic or scoped; set the connection once and any project can be bound to it.",
     doc: 'operate/integrations',
     envVars: ['PIWI_JIRA_BASE_URL', 'PIWI_JIRA_EMAIL', 'PIWI_JIRA_API_TOKEN'],
   },

@@ -1,7 +1,9 @@
 /**
  * Detector precision from triage verdicts — the learning loop. Every triage is a
- * labeled example: accepted and covered-by count for the detector, dismissed-as-
- * wrong counts against. A detector below the threshold on a project with enough
+ * labeled example: accepted and covered-by count for the detector, a gap dismissed
+ * as wrong or as covered elsewhere (no test was missing) counts against, and a
+ * dismissal with no reason or as not worth testing counts for nothing. A
+ * detector below the threshold on a project with enough
  * verdicts mutes itself there: its rows drop out of the pull-request comment
  * first, and the Gaps tab says so.
  *
@@ -74,13 +76,15 @@ export function computeDetectorPrecision(verdicts: DetectorVerdict[]): DetectorP
  * the action a human took, recorded durably on the gap, not a reading of its
  * current status: a gap that was **accepted** or marked **covered-by** counts
  * *for* its detector even after it later closes, and a gap **dismissed as wrong**
- * counts *against*. A covered-by credits only the gap it was given on (its own
- * `covered_at`), never every detector that happens to share the subject node.
+ * or as **covered elsewhere** counts *against*. A covered-by credits only the
+ * gap it was given on (its own `covered_at`), never every detector that happens
+ * to share the subject node.
  */
 export async function loadDetectorPrecision(db: DrizzleDB, projectId: number): Promise<DetectorPrecision[]> {
   const rows = await db
     .select({
       detector: scenarioGaps.detector,
+      kind: scenarioGaps.kind,
       status: scenarioGaps.status,
       dismissReason: scenarioGaps.dismissReason,
       acceptedAt: scenarioGaps.acceptedAt,
@@ -91,7 +95,8 @@ export async function loadDetectorPrecision(db: DrizzleDB, projectId: number): P
 
   const verdicts: DetectorVerdict[] = [];
   for (const r of rows) {
-    if (r.status === 'dismissed' && r.dismissReason === 'wrong') {
+    const noTestMissing = r.dismissReason === 'covered-elsewhere' && r.kind !== 'finding';
+    if (r.status === 'dismissed' && (r.dismissReason === 'wrong' || noTestMissing)) {
       verdicts.push({ detector: r.detector, verdict: 'against' });
     } else if (r.status === 'accepted' || r.acceptedAt != null || r.coveredAt != null) {
       verdicts.push({ detector: r.detector, verdict: 'for' });

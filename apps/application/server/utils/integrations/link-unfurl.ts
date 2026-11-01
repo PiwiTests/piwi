@@ -15,17 +15,20 @@ export interface LinkUnfurlResult extends UnfurlResult {
 const EMPTY: LinkUnfurlResult = { title: null, statusText: null, statusColor: null };
 
 /**
- * Refresh a link's enrichment. A link bound to a connection reads its record
- * through that connection's tracker; a link without one keeps the generic unfurl
- * path (rich SCM/OpenGraph), which uses the instance SCM token only for a
- * repository pinned by a project in `readable`, the projects the caller can read.
+ * Refresh a link's enrichment, through the connection its project is bound to
+ * (`projectConnectionId`) and no other. A link on that connection reads its
+ * record through the connection's tracker; any other link keeps the generic
+ * unfurl path (rich SCM/OpenGraph), which reads a Jira URL only through that
+ * same connection, and uses the instance SCM token only for a repository pinned
+ * by a project in `readable`, the projects the caller can read.
  */
 export async function unfurlLink(
   db: DbClient,
   link: Pick<EntityLink, 'url' | 'connectionId' | 'externalId' | 'key'>,
   readable: ProjectScope,
+  projectConnectionId: number | null,
 ): Promise<LinkUnfurlResult> {
-  if (link.connectionId) {
+  if (link.connectionId != null && link.connectionId === projectConnectionId) {
     const tracker = await createTracker(db, link.connectionId);
     if (!tracker) return EMPTY;
     const idOrKey = link.externalId ?? link.key;
@@ -46,5 +49,5 @@ export async function unfurlLink(
     }
     return EMPTY;
   }
-  return unfurlUrl(link.url, db, readable);
+  return unfurlUrl(link.url, db, readable, projectConnectionId);
 }

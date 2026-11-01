@@ -73,9 +73,10 @@ file's lens says `coverage recorded on another version`. Fetching it brings the 
 ## Uncovered changes
 
 A file the editor can observe and no test reaches has its changes marked before the pull request's
-[uncovered changes](./uncovered-changes) list them, by the same rule: a page (Nuxt `pages/**`) while Piwi knows the
-pages your tests visit, or a server route (`server/api/**`, `server/routes/**`) while code reach maps routes to tests,
-that no test visits, requests or runs. Its lines changed since the default branch are marked orange: those added since
+[uncovered changes](./uncovered-changes) list them: a page (Nuxt `pages/**`) while the locator index knows the pages
+your tests act on, or a server route (`server/api/**`, `server/routes/**`) while code reach maps routes to tests, that
+no test's locator acts on, requests or runs. The rule is close to the pull request's, not the same: it applies no
+coverage scope and no window of runs, and a page a test only visited reads as unreached. Its lines changed since the default branch are marked orange: those added since
 the commit your branch left it at (the merge base with `origin/main`, else `main`), uncommitted changes included,
 blank lines left out. The file's top lens says `Uncovered changes: 12 lines changed since main, and no test reaches
 this file`, and so does the hover on a marked line. A test that reaches the file, or the change reaching the default

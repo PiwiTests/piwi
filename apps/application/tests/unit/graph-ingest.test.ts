@@ -232,15 +232,25 @@ describe('graph pruning', () => {
       kind: 'reaches',
       lastSeenAt: daysAgo(1),
     });
-    // An open surface-drift gap protects its node from removal.
-    await db.insert(schema.scenarioGaps).values({
-      projectId: 1,
-      detector: 'surface-drift',
-      class: 'blind-spot',
-      key: 'route:GET /kept',
-      title: 'new route',
-      status: 'open',
-    });
+    // An open gap protects its node from removal, except a surface-drift gap, which closes with its node.
+    await db.insert(schema.scenarioGaps).values([
+      {
+        projectId: 1,
+        detector: 'single-covering-test',
+        class: 'fragile',
+        key: 'route:GET /kept',
+        title: 'one test',
+        status: 'open',
+      },
+      {
+        projectId: 1,
+        detector: 'surface-drift',
+        class: 'blind-spot',
+        key: 'route:GET /gone',
+        title: 'new route',
+        status: 'open',
+      },
+    ]);
 
     const removed = await pruneStaleCanonicalNodes(db);
     expect(removed).toBe(1);

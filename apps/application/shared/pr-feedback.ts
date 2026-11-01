@@ -669,15 +669,27 @@ export function countedFailures(input: FailureCounts): number {
 }
 
 /**
+ * True when the change left an uncovered change: a counted file no test reached,
+ * shown while the Test Map's part of the section is. Changed lines no suite ran
+ * stay in the section and the change-coverage status, and never make a comment
+ * on their own.
+ */
+export function hasUncoveredChanges(cc: PrChangeCoverage | null | undefined): boolean {
+  return !!cc && cc.fileReach && cc.uncoveredFiles > 0;
+}
+
+/**
  * True when `onlyOnFailure` keeps the comment off a run: no failure counts
- * against it (`countedFailures`), it fixed no cluster and it opened no new leak.
+ * against it (`countedFailures`), it fixed no cluster, it opened no new leak and
+ * its change left no uncovered change.
  */
 export function isQuietRun(settings: Pick<PrFeedbackSettings, 'onlyOnFailure'>, summary: PrSummaryInput): boolean {
   return (
     settings.onlyOnFailure &&
     countedFailures(summary) === 0 &&
     (summary.fixedClusters?.length ?? 0) === 0 &&
-    (summary.newLeaks?.leaks.length ?? 0) === 0
+    (summary.newLeaks?.leaks.length ?? 0) === 0 &&
+    !hasUncoveredChanges(summary.changeCoverage)
   );
 }
 

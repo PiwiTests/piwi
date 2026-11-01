@@ -109,8 +109,9 @@ summary to their answer.
 Given a test, a file and target lines, Piwi reads the test's latest execution with coverage, or the execution you
 name, and splits the target lines into those that **ran**, those that **did not run** (from a complete capture
 only) and those it **cannot tell** (file granularity, or an incomplete capture). At function granularity a line ran
-when a function around it ran. When a run recorded the file's executable lines for that version, target lines that
-cannot run (blank lines, comments) are set apart.
+when the innermost function around it ran: a callback nested in a function that ran, and never called, did not. When
+a run recorded the file's executable lines for that version, target lines that cannot run (blank lines, comments) are
+set apart.
 
 When a target line did not run, the answer names the **nearest test**: the one running most of the function around
 the first target line at that version, else of the target lines, else, at another version, of the file. It is the
