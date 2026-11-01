@@ -41,6 +41,7 @@ const events = (await import('../../server/api/test-runs/[id]/events.post')).def
 const finish = (await import('../../server/api/test-runs/[id]/finish.post')).default as unknown as Route;
 const { runEventBus } = await import('../../server/utils/run-events');
 const { MAX_RUN_DURATION_MS } = await import('../../server/utils/shard-spans');
+const { interruptStaleRuns } = await import('../../server/utils/stale-runs');
 const { shardTokenDigest } = await import('../../server/utils/shard-tokens');
 const { testCaseCache } = await import('../../server/utils/test-case-cache');
 const { testSuiteCache } = await import('../../server/utils/test-suite-cache');
@@ -386,6 +387,24 @@ describe("a sharded run's duration", () => {
         workers: 3,
       },
     ]);
+  });
+
+  test('waits for a shard that starts minutes after the others ended, and lasts until it ends', async () => {
+    const one = await setupShard(1);
+    const tokenOne = await beginShard(one.runId, one.setupToken, 1);
+    await finishShard(one.runId, tokenOne, [10], { duration: 60_000 });
+
+    // The stale-run sweep passes while no shard runs.
+    expect(await interruptStaleRuns(db, Date.now() + 5 * 60_000)).toEqual([]);
+    expect(await readRun(one.runId)).toMatchObject({ status: 'running', shardsFinished: 1 });
+
+    const two = await setupShard(2);
+    expect(two.runId).toBe(one.runId);
+    const tokenTwo = await beginShard(two.runId, two.setupToken, 2);
+    await finishShard(two.runId, tokenTwo, [30], { duration: 30_000 });
+
+    expect(await readRun(one.runId)).toMatchObject({ status: 'passed', shardsFinished: 2 });
+    expect(await db.select().from(schema.testRuns)).toHaveLength(1);
   });
 
   test("is the longest shard's when the shards start together and finish at once", async () => {
