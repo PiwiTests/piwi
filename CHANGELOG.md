@@ -645,13 +645,13 @@ This release keeps a test's history across renames and moves through external te
 
 ## [0.57.0](https://github.com/PiwiTests/platform/compare/v0.56.0...v0.57.0) (2026-10-20)
 
-This release lets you replay a failed CI execution in Piwi Picker from a `.piwibug` export, add any Jira field when filing an issue, and gives every Piwi Picker button an icon and a color, with each step's parts highlighted as core writes them.
+This release lets you replay a failed execution in Piwi Picker from a `.piwibug` export, add any Jira field when filing an issue, and gives every Piwi Picker button an icon and a color, with each step's parts highlighted as core writes them.
 
 **Full diff:** [v0.56.0…v0.57.0](https://github.com/PiwiTests/platform/compare/v0.56.0...v0.57.0)
 
 ### ✨ Highlights
 
-- **🐞 Replay a CI failure in Piwi Picker** — Download a failed execution as a `.piwibug` and replay it with Piwi Picker's Replay, which runs manual steps and count, contains and checked assertions.
+- **🐞 Replay a failed execution in Piwi Picker** — Download a failed execution as a `.piwibug` and replay it with Piwi Picker's Replay, which runs manual steps and count, contains and checked assertions.
 - **🎫 Any Jira field when filing** — The create-issue dialog adds any Jira field on demand and shows Jira's icons and assignees' avatars in its pickers.
 - **🎨 Icons, colors and highlighted steps** — Every Piwi Picker button has an icon and a color, and a step's parts are highlighted from core's step parts in the extension and on a bug report's page.
 
@@ -688,13 +688,13 @@ This release lets you replay a failed CI execution in Piwi Picker from a `.piwib
 
 ## [0.56.0](https://github.com/PiwiTests/platform/compare/v0.55.0...v0.56.0) (2026-10-19)
 
-This release closes the findings of a security and code audit across the dashboard, the reporter, the desktop app, the editors and Piwi Picker: sign-in, tokens, uploads and outbound requests are bounded and checked, concurrent shards merge into one run, and healing suggests only locators related to the failing one.
+This release closes the findings of a security audit and a code audit across the dashboard, the reporter, the desktop app, the editors and Piwi Picker: sign-in, tokens, uploads and outbound requests are bounded and checked, concurrent shards merge into one run, and healing suggests only locators related to the failing one.
 
 **Full diff:** [v0.55.0…v0.56.0](https://github.com/PiwiTests/platform/compare/v0.55.0...v0.56.0)
 
 ### ✨ Highlights
 
-- **🔒 Audit findings closed** — The high- and medium-severity findings of the audit are fixed, along with the remaining ones, dead code and unused API routes; the dashboard refuses to be framed by another site, and link unfurls go through `safeFetch`.
+- **🔒 Audit findings closed** — The high-severity findings of the security audit and the medium-severity findings of the code audit are fixed, along with the remaining ones, dead code and unused API routes; the dashboard refuses to be framed by another site, and link unfurls go through `safeFetch`.
 - **🔑 Sign-in and tokens** — Passwords are hashed with scrypt at N=2^17 and rehashed on sign-in, sign-out revokes every session of the account, the login throttle counts concurrent attempts, and run stream and Jira webhook tokens are stored as digests.
 - **📦 Bounded uploads and traces** — Trace archive inflation is bounded and digests are verified, upload caps count the bytes read, reports are extracted into private folders, and traces are stored under the hash the server computes.
 - **🧩 Shards and deliveries** — Shards that arrive together merge into one run that settles once, and a batch the reporter sends again is stored once.
@@ -865,7 +865,7 @@ This release combines unit and end-to-end coverage into one ratio per commit: up
 
 - **🧩 Combined coverage** — Every suite's coverage of a commit, unit and end-to-end, counts toward one ratio, shown on the project's coverage, run and file pages, with a note on what the numbers leave out.
 - **📤 `piwi coverage upload`** — The reporter uploads unit-test coverage reports, reads Cobertura and LCOV, and sends a .NET test host's run-level report as `--format piwi`.
-- **🌳 Coverage tree & gaps** — Explore a commit's coverage as a foldable tree with every bar split by suite kind, rank the least-covered files, and step through a file's gaps line by line.
+- **🌳 Coverage tree & gaps** — Explore a commit's coverage as a foldable tree with every bar split by suite kind, rank the least-covered files, and step through a file's gaps.
 - **📊 Trend & export** — Combined coverage is charted over time and exported as LCOV or Cobertura; named areas of the code are counted apart in coverage, the trend and pull requests.
 - **🚦 Patch coverage in pull requests** — The pull-request comment and gate count patch coverage and unit suites.
 - **🌐 Coverage across origins** — The reporter follows suites across origins, pages and documents, records the lines of each browser function that ran, and uploads the route manifest of every instrumented origin a run reaches.
@@ -1032,7 +1032,7 @@ This release records per-test browser and server coverage and ranks the changed 
 - place a backend's source files when it runs outside its repository ([d76f10d](https://github.com/PiwiTests/platform/commit/d76f10d153912444e9bb329ea3a3bff9644e55ab))
 
 #### Screenshots & requests
-- **app:** show the failing page's screenshot at the failure, not the first one, and only when it is the failing page ([36eabfa](https://github.com/PiwiTests/platform/commit/36eabfaed27bd734b380ef61a9c9d9d3b15aa06b), [2cec8b7](https://github.com/PiwiTests/platform/commit/2cec8b7b3fed591f39614700e8d4f8807a68942d))
+- **app:** show a screenshot at the failure only when it is the failing page's, not the first one ([36eabfa](https://github.com/PiwiTests/platform/commit/36eabfaed27bd734b380ef61a9c9d9d3b15aa06b), [2cec8b7](https://github.com/PiwiTests/platform/commit/2cec8b7b3fed591f39614700e8d4f8807a68942d))
 - **reporter:** screenshot the page a failed test was on ([b799e80](https://github.com/PiwiTests/platform/commit/b799e80358f368fbc3391e710aef0a8792b62cec))
 - **reporter:** keep a request whose response arrived but whose body the page never read ([b87a8a8](https://github.com/PiwiTests/platform/commit/b87a8a8adeac2037187239396c7470bc6f65ed8f))
 
@@ -1044,7 +1044,7 @@ This release records per-test browser and server coverage and ranks the changed 
 
 ## [0.52.0](https://github.com/PiwiTests/platform/compare/v0.51.0...v0.52.0) (2026-10-12)
 
-This release stores each distinct trace screenshot once, serves a route manifest from the ASP.NET Core instrumentation, and signs the macOS desktop app so a downloaded copy opens and receives updates.
+This release stores each distinct trace screenshot once, serves a route manifest from the ASP.NET Core instrumentation, signs the macOS desktop app so a downloaded copy opens, and builds the macOS app bundle so macOS installs get updates.
 
 **Full diff:** [v0.51.0…v0.52.0](https://github.com/PiwiTests/platform/compare/v0.51.0...v0.52.0)
 
@@ -1092,10 +1092,10 @@ This release reworks the failure pages around one Most likely rule that cites it
 - **🧭 Failure pages lead with Most likely** — Both failure pages open with one Most likely rule, mark the evidence rows it cites, say under the headline whether the failure still happens, and show the change the next step copies.
 - **🗺️ The Test Map sees controls** — The Test Map reaches controls from the locator index, groups a feature's pages and sets hubs apart, keys routes without the query, adds three detectors and shows its health on the Gaps tab, scored on a labeled demo.
 - **⏱️ A timeline that points at outliers** — Each step and request carries its usual duration, so the timeline points at what stands out.
-- **🩹 Fixes you can apply and check** — A locator step with an edit offers Download `.patch`, and a verified fix says whether its diagnosed patch still applies, checked at the fix's commit.
+- **🩹 Patches to download and check** — A locator step with an edit offers Download `.patch`, and a verified fix says whether its diagnosed patch still applies, checked at the fix's commit.
 - **⚡ Faster trace loading** — Each stored trace loads once, shared between views, which read and inflate only the streams they need.
-- **🎓 Guided demo tour** — The demo offers a guided tour by role in four languages, on a web-dashboard project with a full Test Map and a seeded Jira issue.
-- **🧩 Piwi Picker on Firefox** — The dashboard links the Firefox Add-ons listing next to the Chrome Web Store, and suggests Piwi Picker where it is the next step unless it is installed.
+- **🎓 Guided demo tour** — The demo offers a guided tour by role in four languages; its web-dashboard project gets a full Test Map, and the login 500 is tracked in a seeded Jira issue.
+- **🧩 Piwi Picker's Firefox listing** — The dashboard links the Firefox Add-ons listing next to the Chrome Web Store, and suggests Piwi Picker where it is the next step unless it is installed.
 
 ### Features
 
@@ -1228,8 +1228,8 @@ This release reworks the failure pages around one Most likely rule that cites it
 - **demo:** store each retry pass's failed attempt and no steps on a test that did not run ([83af3ca](https://github.com/PiwiTests/platform/commit/83af3caf44cd1c6523f46e2c8df9cea4077f6590))
 - **demo:** keep a did-not-run attempt an object through the load-time rebase ([3011782](https://github.com/PiwiTests/platform/commit/3011782a402aae98de0572711333b10d8cbec8e3))
 - **demo:** place the simulator's cluster-1 evidence from its attempt's start ([a8159f1](https://github.com/PiwiTests/platform/commit/a8159f138a923f8f4613c119a7f3f556db9efdab))
-- **demo:** ground cluster #1's re-diagnosis on the slow quote it waits for ([f9c8f68](https://github.com/PiwiTests/platform/commit/f9c8f68fe1c9b026a3a8ddb0ed02c3c518b7da14))
-- **demo:** wait for the quote in cluster #1's fix and quote the counts in cluster #10's diagnosis ([2fc3fbc](https://github.com/PiwiTests/platform/commit/2fc3fbc42a32f9bf4791ddfed79e08a10f1782d9))
+- **demo:** ground cluster 1's re-diagnosis on the slow quote it waits for ([f9c8f68](https://github.com/PiwiTests/platform/commit/f9c8f68fe1c9b026a3a8ddb0ed02c3c518b7da14))
+- **demo:** wait for the quote in cluster 1's fix and quote the counts in cluster 10's diagnosis ([2fc3fbc](https://github.com/PiwiTests/platform/commit/2fc3fbc42a32f9bf4791ddfed79e08a10f1782d9))
 - **demo:** label every control step and score the benchmark on an empty gap ledger ([63cba7b](https://github.com/PiwiTests/platform/commit/63cba7b38d1b91f3f6c49b920ebaf317d769deb0))
 - **demo:** let the seed check accept the backend log a passing save carries ([f33093b](https://github.com/PiwiTests/platform/commit/f33093b926fd40b6d2e01387e9b5a5cd79bad771))
 - **demo:** hold every API request until the service worker controls the page ([59ce2e1](https://github.com/PiwiTests/platform/commit/59ce2e10263603516802035bf7f87fbecdb14834))
