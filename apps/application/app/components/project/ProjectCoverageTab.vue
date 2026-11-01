@@ -3,15 +3,17 @@
  * The project page's Coverage tab: what the suite does not test, in three
  * views behind one switch. **Gaps** ranks the tests to write, **Map** draws the
  * project graph per feature, **Code** combines the suites' coverage of a commit.
- * Gaps and Map follow the `test-map` capability, Code the `coverage` one.
+ * Gaps and Map follow the `test-map` capability, Code the `coverage` one, and
+ * Code reads the branch the project's filters pick.
  *
  * The view is the address's `?view=`. Without one, a `?node=` opens Map, a
  * `?commit=`, `?folder=` or `?area=` opens Code, and anything else the first
  * view the project has. A view's own keys leave the address when another opens.
  */
 import { COVERAGE_VIEW_KEYS, COVERAGE_VIEWS, type CoverageView } from '~/utils/coverage-tab';
+import type { ProjectRunScope } from '#shared/project-run-scope';
 
-const props = defineProps<{ projectId: number }>();
+const props = defineProps<{ projectId: number; scope?: ProjectRunScope }>();
 const route = useRoute();
 const router = useRouter();
 const { isHidden } = await useProjectCapabilities(props.projectId);
@@ -59,7 +61,7 @@ const view = computed<CoverageView>({
       <TestMapPanel :project-id="props.projectId" />
     </div>
     <div v-else data-tour="coverage-code-view">
-      <ProjectCodeCoverage :project-id="props.projectId" />
+      <ProjectCodeCoverage :project-id="props.projectId" :scope="props.scope" />
     </div>
   </div>
 </template>

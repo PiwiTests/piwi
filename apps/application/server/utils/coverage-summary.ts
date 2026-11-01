@@ -8,9 +8,10 @@
  * totals, with no files.
  */
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { countLines } from '@piwitests/core/coverage';
 import type { CoverageScope } from '@piwitests/core/coverage-scope';
 import { writeCobertura, writeLcov } from '@piwitests/core/coverage-writers';
-import { coverageReports, runCoverage, testRuns } from '../database/schema';
+import { coverageReports, runCoverage, scenarioGaps, testRuns } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
 import {
   COMBINED_SUITE,
@@ -42,6 +43,7 @@ import {
   type FinalCommitTotals,
 } from './coverage-totals';
 import { locatorBranchTag } from './locator-usages';
+import { coveragePathOf, gapFilesByKey, openGapFiles } from './gap-code';
 import { projectDefaultBranch } from './scm/stored-default-branch';
 
 /** Paths of files without coverage data an answer lists at most. */
@@ -397,7 +399,8 @@ export interface CoverageTree {
   commit: string;
   folder: string;
   area: string | null;
-  entries: Array<TreeEntry & CoverageRatios>;
+  /** Each entry with its open scenario gaps: those on its files, or on the routes their handlers serve. */
+  entries: Array<TreeEntry & CoverageRatios & { openGaps: number }>;
 }
 
 /**
@@ -419,12 +422,103 @@ export async function getCoverageTree(
   const inArea = (path: string) => area === null || coverage.areaOf(path) === area;
   const files = coverage.combined.files.filter((f) => inArea(f.path));
   const withoutData = (coverage.combined.filesWithoutData ?? []).filter(inArea);
+  const gapsByPath = await openGapsByPath(db, projectId, [...files.map((f) => f.path), ...withoutData]);
+  const gapsUnder = (path: string, kind: TreeEntry['kind']) => {
+    if (kind === 'file') return gapsByPath.get(path)?.size ?? 0;
+    const ids = new Set<number>();
+    for (const [file, gaps] of gapsByPath) if (file.startsWith(`${path}/`)) for (const id of gaps) ids.add(id);
+    return ids.size;
+  };
   return {
     commit: coverage.commit,
     folder: query.folder,
     area,
-    entries: coverageTreeLevel(files, withoutData, query.folder).map((e) => ratios(e)),
+    entries: coverageTreeLevel(files, withoutData, query.folder).map((e) => ({
+      ...ratios(e),
+      openGaps: gapsUnder(e.path, e.kind),
+    })),
   };
+}
+
+/** The open gaps on each of a commit's `paths`, by the gap files it matches. */
+async function openGapsByPath(db: DrizzleDB, projectId: number, paths: string[]): Promise<Map<string, Set<number>>> {
+  const out = new Map<string, Set<number>>();
+  for (const [id, files] of await openGapFiles(db, projectId)) {
+    for (const file of files) {
+      const path = coveragePathOf(file, paths);
+      if (path) out.set(path, (out.get(path) ?? new Set<number>()).add(id));
+    }
+  }
+  return out;
+}
+
+/** One file behind a gap, with its lines at the commit. */
+export interface GapCodeFile {
+  /** The file's path in the commit's coverage. */
+  path: string;
+  executableLines: number;
+  executedLines: number;
+  /** Executable lines no suite ran, the undetermined ones not counted. */
+  unrunLines: number;
+}
+
+/** The files behind each of a set of gaps, with their coverage at one commit. */
+export interface GapCode {
+  commit: string;
+  gaps: Array<{ id: number; files: GapCodeFile[] }>;
+}
+
+/**
+ * The files behind each of `gapIds` (a gap on a file or a handler, or on a
+ * route the handlers behind it serve), each with its lines at a commit (or the
+ * newest with coverage on the branch), in the order of `gapIds`. A file the
+ * commit's coverage does not hold is left out, and so is a gap with no file left. Null when there is no
+ * coverage, or only the commit's totals are kept.
+ */
+export async function getGapCode(
+  db: DrizzleDB,
+  projectId: number,
+  gapIds: number[],
+  query: Pick<CoverageSummaryQuery, 'commit' | 'branch'>,
+): Promise<GapCode | null> {
+  const read = await queriedCommitCoverage(db, projectId, query);
+  if (!read || 'final' in read) return null;
+  const { coverage } = read;
+  const rows =
+    gapIds.length > 0
+      ? await db
+          .select({ id: scenarioGaps.id, key: scenarioGaps.key })
+          .from(scenarioGaps)
+          .where(and(eq(scenarioGaps.projectId, projectId), inArray(scenarioGaps.id, gapIds)))
+      : [];
+  const filesByKey = await gapFilesByKey(
+    db,
+    projectId,
+    rows.map((row) => row.key),
+  );
+  const byPath = new Map(coverage.combined.files.map((f) => [f.path, f]));
+  const paths = [...byPath.keys()];
+  const gaps: GapCode['gaps'] = [];
+  const order = new Map(gapIds.map((id, i) => [id, i]));
+  for (const row of rows.sort((a, b) => order.get(a.id)! - order.get(b.id)!)) {
+    const files: GapCodeFile[] = [];
+    for (const file of filesByKey.get(row.key) ?? []) {
+      const path = coveragePathOf(file, paths);
+      const at = path ? byPath.get(path) : undefined;
+      if (!at || files.some((f) => f.path === path)) continue;
+      const executableLines = countLines(at.executable);
+      const executedLines = countLines(at.executed);
+      const undetermined = countLines(at.classes.undetermined);
+      files.push({
+        path: at.path,
+        executableLines,
+        executedLines,
+        unrunLines: Math.max(0, executableLines - executedLines - undetermined),
+      });
+    }
+    if (files.length > 0) gaps.push({ id: row.id, files });
+  }
+  return { commit: coverage.commit, gaps };
 }
 
 /** The suites the project knows on a branch and on the default branch: its reports', and `e2e` once a run recorded run coverage. */

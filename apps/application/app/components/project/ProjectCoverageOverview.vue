@@ -43,6 +43,8 @@ import {
 const props = defineProps<{
   projectId: number;
   summary: CoverageSummary;
+  /** The branch read when the address names none: the project filters' one branch. */
+  branch?: string | null;
 }>();
 
 const { isHidden } = await useProjectCapabilities(props.projectId);
@@ -58,16 +60,21 @@ const meta = computed(() =>
   ].filter((line): line is string => !!line),
 );
 
-/** What every link keeps: the commit when the page pins one, the branch and the area. */
+/**
+ * What every link keeps: the commit when the page pins one, the branch and the
+ * area. A link within the view keeps the address's branch only, so the filters
+ * still choose it; a link to a file carries the branch read.
+ */
 const linkContext = computed<CoverageLinkContext>(() => ({
   commit: typeof route.query.commit === 'string' && route.query.commit ? props.summary.commit : null,
-  branch: typeof route.query.branch === 'string' ? route.query.branch : null,
+  branch: typeof route.query.branch === 'string' ? route.query.branch : (props.branch ?? null),
   area: props.summary.area,
 }));
 
-/** A link to this page with other query values, the commit, branch and area kept. */
+/** A link to this view with other query values, the commit, the address's branch and the area kept. */
 function pageLink(query: Record<string, string | undefined>) {
-  return coverageLink(props.projectId, linkContext.value, query);
+  const branch = typeof route.query.branch === 'string' ? route.query.branch : null;
+  return coverageLink(props.projectId, { ...linkContext.value, branch }, query);
 }
 
 function fileLink(path: string) {

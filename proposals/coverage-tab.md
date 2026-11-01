@@ -5,8 +5,11 @@ write, from what the tests reach: routes, pages, controls, features. The **cover
 suites, areas, folders, files, lines. They answer one question, *what is not tested?*, at two altitudes, and this
 proposal makes them one project tab.
 
-**Status.** Proposed 2026-11-01. Phase 1 is built: the project page's **Coverage** tab holds three views, Gaps, Map
-and Code, and the coverage overview lives in Code. Phases 2 and 3 are not started.
+**Status.** Proposed 2026-11-01. Phases 1 and 2 are built: the project page's **Coverage** tab holds three views, Gaps,
+Map and Code, the coverage overview lives in Code, a gap names the files behind it with their lines run, a file's page
+lists its gaps with their verbs, the file tree counts open gaps, and Code reads the filters' branch. Phase 3 is not
+started. Two limits of phase 2: a gap on a page or a control names no file (no route serves it), and the gap's files
+link to their coverage page rather than to the first range of lines not run.
 
 ## The problem
 

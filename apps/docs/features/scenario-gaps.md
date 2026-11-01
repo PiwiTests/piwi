@@ -55,7 +55,8 @@ open [bug reports](/features/bug-reports).
 
 The project's **Coverage** tab has three views. **Gaps** lists gaps and findings by feature, ranked, each with its
 class, score factors and evidence: the top 200 of the status picked, so a large map is read one status or one feature
-at a time. **Code** is the [combined coverage](/features/combined-coverage) of a commit.
+at a time. A gap on a file, a handler or a route names the files behind it with the lines the suites ran. **Code** is
+the [combined coverage](/features/combined-coverage) of a commit.
 
 **Map** opens on the **feature map**: one circle per feature (from the
 [`piwi:feature` tag](/reference/test-metadata)), sized by the routes, pages and controls it groups, colored by its

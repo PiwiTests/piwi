@@ -11,30 +11,18 @@
  */
 import { errorMessage, SENTENCE_LINK_CLASS } from '~/utils';
 import { coverageTabLink } from '~/utils/coverage-tab';
-import { GAP_CLOSE_REASON_LABELS, type GapCloseReason } from '#shared/gap-classes';
+import type { GapRowItem } from '~/utils/gap-row';
+import type { GapCode } from '~~/server/utils/coverage-summary';
 
-interface GapFactors {
-  churn: number;
-  age: number;
-  escapeHistory: number;
-  priority: number;
-}
-interface Gap {
-  id: number;
+type Gap = GapRowItem & {
   kind: 'gap' | 'finding';
-  detector: string;
-  class: string;
   subject: { kind: string; key: string };
-  title: string;
   evidence: string[];
-  factors: GapFactors | null;
-  score: number | null;
   status: string;
-  closeReason: GapCloseReason | null;
   feature: string | null;
   hub?: boolean;
   testCaseId: number | null;
-}
+};
 
 const props = defineProps<{ projectId: number }>();
 const { isHidden } = await useProjectCapabilities(props.projectId);
@@ -127,6 +115,22 @@ async function load() {
   } catch {
     mutedDetectors.value = [];
   }
+  await loadCode();
+}
+
+// The files behind the listed gaps, with their coverage on the default branch: secondary, so a
+// project without coverage, or a failed read, shows the gaps alone.
+const codeByGap = ref(new Map<number, GapCode['gaps'][number]['files']>());
+async function loadCode() {
+  const ids = gaps.value.map((g) => g.id);
+  if (isHidden('coverage') || ids.length === 0) {
+    codeByGap.value = new Map();
+    return;
+  }
+  const code = await $fetch<GapCode>(`/api/projects/${props.projectId}/gaps/code` as `/api/projects/:id/gaps/code`, {
+    query: { ids: ids.join(',') },
+  }).catch(() => null);
+  codeByGap.value = new Map((code?.gaps ?? []).map((g) => [g.id, g.files]));
 }
 
 watch([() => props.projectId, statusFilter, linkedGap, linkedPr, linkedFile], load, { immediate: true });
@@ -161,118 +165,6 @@ const grouped = computed(() => {
         (b.items[0]?.score ?? 0) - (a.items[0]?.score ?? 0),
     );
 });
-
-const CLASS_COLOR: Record<string, string> = {
-  'blind-spot': 'warning',
-  'false-comfort': 'error',
-  fragile: 'warning',
-  unhandled: 'error',
-  degraded: 'warning',
-};
-
-/**
- * The factors behind a gap's score. A finding ranks by its severity (its class)
- * times its route's reach, which its factors carry in `priority`, so it shows
- * the reach alone.
- */
-function factorLine(gap: Gap): string {
-  const f = gap.factors;
-  if (!f) return '';
-  if (gap.kind === 'finding') return `reach ${f.priority.toFixed(1)}`;
-  return `churn ${f.churn.toFixed(1)} · age ${f.age.toFixed(1)} · escape ${f.escapeHistory.toFixed(1)} · priority ${f.priority.toFixed(1)}`;
-}
-
-/** Run a triage verb; returns whether it succeeded so callers show one outcome. */
-async function triage(gap: Gap, body: Record<string, unknown>): Promise<boolean> {
-  try {
-    await $fetch(`/api/projects/${props.projectId}/gaps/${gap.id}/triage` as `/api/projects/:id/gaps/:gapId/triage`, {
-      method: 'POST',
-      body,
-    });
-    await load();
-    return true;
-  } catch {
-    toast.add({ title: 'Triage failed', color: 'error' });
-    return false;
-  }
-}
-
-async function accept(gap: Gap) {
-  // One outcome, one toast: a failed triage stops here with its own error toast,
-  // so accept never reports both "Triage failed" and "draft copied".
-  if (!(await triage(gap, { verb: 'accept' }))) return;
-  try {
-    const draft = await $fetch<{ text: string }>(
-      `/api/projects/${props.projectId}/gaps/${gap.id}/draft` as `/api/projects/:id/gaps/:gapId/draft`,
-      { method: 'POST' },
-    );
-    if (draft?.text && typeof navigator !== 'undefined' && navigator.clipboard) {
-      await navigator.clipboard.writeText(draft.text).catch(() => {});
-      toast.add({ title: 'Accepted — draft copied to clipboard', color: 'success' });
-      return;
-    }
-  } catch {
-    // The draft is best-effort; acceptance already succeeded.
-  }
-  toast.add({ title: 'Gap accepted', color: 'success' });
-}
-
-// Covered-by modal state.
-const coveredOpen = ref(false);
-const coveredGap = ref<Gap | null>(null);
-const coveredTestId = ref<string>('');
-const coveredDismiss = ref(false);
-const coveredError = ref<string | null>(null);
-
-function openCovered(gap: Gap, alsoDismiss: boolean) {
-  coveredGap.value = gap;
-  coveredTestId.value = '';
-  coveredDismiss.value = alsoDismiss;
-  coveredError.value = null;
-  coveredOpen.value = true;
-}
-
-async function submitCovered() {
-  const gap = coveredGap.value;
-  const raw = coveredTestId.value.trim();
-  const id = Number(raw);
-  // Validate before sending: an empty box is `Number('') === 0`, which would
-  // otherwise submit test case id 0.
-  if (!gap || raw === '' || !Number.isInteger(id) || id <= 0) {
-    coveredError.value = 'Enter a positive test case id.';
-    return;
-  }
-  const ok = await triage(
-    gap,
-    coveredDismiss.value
-      ? { verb: 'dismiss', reason: 'covered-elsewhere', coveringTestCaseId: id }
-      : { verb: 'covered-by', coveringTestCaseId: id },
-  );
-  if (ok) coveredOpen.value = false;
-}
-
-function snoozeItems(gap: Gap) {
-  return [
-    [
-      { label: 'For 1 day', onSelect: () => triage(gap, { verb: 'snooze', snooze: '1-day' }) },
-      { label: 'For 1 week', onSelect: () => triage(gap, { verb: 'snooze', snooze: '1-week' }) },
-      {
-        label: 'Until the node changes',
-        onSelect: () => triage(gap, { verb: 'snooze', snooze: 'until-node-changes' }),
-      },
-    ],
-  ];
-}
-
-function dismissItems(gap: Gap) {
-  return [
-    [
-      { label: 'Not worth testing', onSelect: () => triage(gap, { verb: 'dismiss', reason: 'not-worth-testing' }) },
-      { label: 'Covered elsewhere…', onSelect: () => openCovered(gap, true) },
-      { label: 'Wrong', onSelect: () => triage(gap, { verb: 'dismiss', reason: 'wrong' }) },
-    ],
-  ];
-}
 
 async function recompute() {
   recomputing.value = true;
@@ -363,64 +255,14 @@ const emptyText = computed(() =>
       >
         <div class="divide-y divide-default">
           <div v-for="gap in group.items" :key="gap.id" class="py-3 space-y-2" :data-shot="`gap-${gap.id}`">
-            <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
-              <div class="min-w-0">
-                <div class="flex flex-wrap items-center gap-2">
-                  <UBadge :color="(CLASS_COLOR[gap.class] as any) ?? 'neutral'" variant="subtle" size="sm">{{
-                    gap.class
-                  }}</UBadge>
-                  <span v-if="gap.kind === 'finding'" class="text-xs text-muted">finding</span>
-                  <span v-if="statusFilter !== 'open' || linked" class="text-xs text-muted"
-                    >{{ gap.status
-                    }}<template v-if="gap.closeReason">: {{ GAP_CLOSE_REASON_LABELS[gap.closeReason] }}</template></span
-                  >
-                  <span class="text-xs text-muted font-mono">{{ gap.detector }}</span>
-                </div>
-                <p class="mt-1 text-sm text-highlighted leading-relaxed">{{ gap.title }}</p>
-                <ul class="mt-1 space-y-0.5">
-                  <li v-for="(line, i) in gap.evidence" :key="i" class="text-xs text-muted">{{ line }}</li>
-                </ul>
-                <p class="mt-1 text-xs text-muted">
-                  Score {{ (gap.score ?? 0).toFixed(3) }}<span v-if="gap.factors"> · {{ factorLine(gap) }}</span>
-                </p>
-              </div>
-              <div class="flex flex-wrap items-center gap-1 sm:shrink-0">
-                <UButton size="xs" color="primary" label="Accept" @click="accept(gap)" />
-                <UDropdownMenu :items="snoozeItems(gap)">
-                  <UButton
-                    size="xs"
-                    color="neutral"
-                    variant="ghost"
-                    label="Snooze"
-                    trailing-icon="i-lucide-chevron-down"
-                  />
-                </UDropdownMenu>
-                <UButton
-                  size="xs"
-                  color="neutral"
-                  variant="ghost"
-                  label="Covered by"
-                  @click="openCovered(gap, false)"
-                />
-                <UDropdownMenu :items="dismissItems(gap)">
-                  <UButton
-                    size="xs"
-                    color="neutral"
-                    variant="ghost"
-                    label="Dismiss"
-                    trailing-icon="i-lucide-chevron-down"
-                  />
-                </UDropdownMenu>
-                <UButton
-                  size="xs"
-                  color="neutral"
-                  variant="ghost"
-                  icon="i-lucide-radar"
-                  :title="`View ${gap.subject.kind}:${gap.subject.key} in the graph`"
-                  @click="openInGraph(gap.subject)"
-                />
-              </div>
-            </div>
+            <GapRow
+              :project-id="projectId"
+              :gap="gap"
+              :show-status="statusFilter !== 'open' || linked"
+              :code="codeByGap.get(gap.id)"
+              @changed="load"
+              @graph="openInGraph"
+            />
           </div>
         </div>
       </SectionCard>
@@ -429,28 +271,5 @@ const emptyText = computed(() =>
         Showing the top {{ PAGE_LIMIT }} gaps by exposure — narrow with a status filter or on a feature to see the rest.
       </p>
     </template>
-
-    <UModal v-model:open="coveredOpen" :title="coveredDismiss ? 'Covered elsewhere' : 'Covered by a test'">
-      <template #body>
-        <div class="space-y-3">
-          <p class="text-sm text-highlighted">
-            <template v-if="coveredDismiss">
-              Enter the test case id of the test that already covered this: no test was missing.
-            </template>
-            <template v-else>Enter the test case id of the test written for this gap.</template>
-            A manual reaches edge is written so the gap closes on the next recompute<span v-if="coveredDismiss">
-              and the gap is dismissed</span
-            >.
-          </p>
-          <UFormField label="Covering test case id" :error="coveredError ?? undefined">
-            <UInput v-model="coveredTestId" type="number" placeholder="test case id" class="w-full" />
-          </UFormField>
-          <div class="flex justify-end gap-2">
-            <UButton color="neutral" variant="ghost" label="Cancel" @click="coveredOpen = false" />
-            <UButton color="primary" label="Save" @click="submitCovered" />
-          </div>
-        </div>
-      </template>
-    </UModal>
   </div>
 </template>

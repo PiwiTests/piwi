@@ -6018,6 +6018,23 @@ for (const gap of SCENARIO_GAPS) {
   PROBES.push(...map.probes);
   SCENARIO_GAPS.push(...map.gaps);
   TEST_FUNCTIONS.push(...map.functions);
+  // A changed file no test reached, among the files the combined coverage holds: the Coverage
+  // tab's Gaps view names its lines run, and the Code view's tree counts it.
+  SCENARIO_GAPS.push({
+    project_id: proj.id,
+    kind: 'gap',
+    detector: 'changed-unreached',
+    class: 'blind-spot',
+    key: 'src/composables/usePagination.ts',
+    title: 'src/composables/usePagination.ts changed but not reached',
+    evidence: [`+18 −4 · no test in run #${runIds.at(-1)} · 0 in 30 runs — observed reach.`],
+    factors: { churn: 0.5, age: 0.3, escapeHistory: 0.1, priority: 0.4 },
+    score: 0.2433,
+    test_run_id: runIds.at(-1),
+    status: 'open',
+    created_at: BASE_START_MS,
+    updated_at: BASE_START_MS,
+  });
 }
 
 // The v2.4.0 release marker, linked to the run it keeps.

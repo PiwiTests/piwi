@@ -8,7 +8,8 @@
  * selected folder's parents are opened beside them. A folder's name selects
  * it (`select`), its chevron only folds it; a file opens its view, marked by
  * suite, at the commit, branch and area of `link`. Files no suite names show
- * in place, greyed. `sort` orders each folder's children by name, or by lines
+ * in place, greyed. Beside the lines not run, the open scenario gaps on the
+ * entry's files or on the routes they serve. `sort` orders each folder's children by name, or by lines
  * no suite ran, the most first.
  */
 import type { CoverageTree } from '~~/server/utils/coverage-summary';
@@ -16,6 +17,7 @@ import {
   coverageFileLink,
   formatCount,
   formatPercent,
+  plural,
   withLineage,
   type CoverageLinkContext,
 } from '~/utils/combined-coverage';
@@ -146,7 +148,7 @@ const indent = (depth: number) => ({ paddingLeft: `${depth * 1.25}rem` });
     <li
       v-for="row in rows"
       :key="row.entry ? row.entry.path : `${row.state}:${row.parent}`"
-      class="grid grid-cols-[minmax(0,1fr)_4rem_3.5rem] sm:grid-cols-[minmax(0,1fr)_8rem_3.5rem_6rem] items-center gap-x-3 rounded px-1 py-0.5"
+      class="grid grid-cols-[minmax(0,1fr)_4rem_3.5rem] sm:grid-cols-[minmax(0,1fr)_8rem_3.5rem_9rem] items-center gap-x-3 rounded px-1 py-0.5"
       :class="row.entry?.kind === 'folder' && row.entry.path === selected ? 'bg-elevated' : 'hover:bg-elevated/50'"
       :data-entry="row.entry?.path"
     >
@@ -204,6 +206,13 @@ const indent = (depth: number) => ({ paddingLeft: `${depth * 1.25}rem` });
           <span class="hidden text-right text-xs tabular-nums text-muted sm:block">
             <template v-if="row.entry.unrunLines">{{ formatCount(row.entry.unrunLines) }} not run</template>
             <template v-else-if="row.entry.filesWithoutData">{{ row.entry.filesWithoutData }} without data</template>
+            <span
+              v-if="row.entry.openGaps"
+              :title="`${row.entry.openGaps} open scenario gap${row.entry.openGaps === 1 ? '' : 's'} on its files or the routes they serve`"
+              data-entry-gaps
+              >{{ row.entry.unrunLines || row.entry.filesWithoutData ? ' · ' : ''
+              }}{{ plural(row.entry.openGaps, 'gap') }}</span
+            >
           </span>
         </template>
       </template>

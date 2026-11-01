@@ -1318,7 +1318,7 @@ const moreMenuItems = computed(() => {
 
         <!-- COVERAGE TAB -->
         <div v-if="activeTab === 'coverage'" data-tour="project-coverage-tab">
-          <ProjectCoverageTab :project-id="Number(projectId)" />
+          <ProjectCoverageTab :project-id="Number(projectId)" :scope="runScope" />
         </div>
 
         <!-- PERFORMANCE TAB -->
