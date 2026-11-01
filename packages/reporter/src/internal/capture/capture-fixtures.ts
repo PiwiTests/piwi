@@ -94,6 +94,7 @@ import {
   deriveFailedLocator,
   pickLocator,
   runLocatorPicker,
+  unlessEnded,
   type PickedLocator,
   type UserPickResult,
 } from './pick-on-failure.js';
@@ -109,6 +110,7 @@ import {
   currentPauseSet,
   goOn,
   highlightAtStop,
+  highlightsLocator,
   inFlightCallSite,
   logPauseSkipOnce,
   markPausesWrapped,
@@ -1819,12 +1821,14 @@ async function showStop(
   const bar = !!page && (testInfo.project?.use as { headless?: unknown } | undefined)?.headless === false;
   const place = runChannelOpen() ? callSitePlace(location) : null;
   if (!bar && !place) return undefined;
-  // Piwi highlights only where it can take its highlights down leaving the page's own (`mayHighlight`), and takes the
-  // highlight layer they leave down as the stop ends on a page that showed none as it began (`takeLayerDown`).
+  // Piwi highlights only where it can take its highlights down leaving the page's own (`mayHighlight`,
+  // `highlightsLocator`), and takes the highlight layer they leave down as the stop ends on a page that showed none as
+  // it began (`takeLayerDown`): the page is read as the stop begins, while the editor hears of it.
   const layerBefore =
-    page && bar ? await internalCall(page, () => showsHighlightLayer(page, testInfo.config?.version)) : true;
-  const highlights = !!page && bar && mayHighlight(page, layerBefore);
-  const stoppedOn = call?.page === page && highlights ? call.target : null;
+    page && bar
+      ? internalCall(page, () => showsHighlightLayer(page, testInfo.config?.version)).catch(() => true)
+      : Promise.resolve(true);
+  const highlights = layerBefore.then((before) => !!page && bar && mayHighlight(page, before));
   const failing = failure?.failed ?? null;
   /** A pick, folded into the snapshots, printed and posted to the editor: whether the editor took it. */
   const pickTaken = async (picked: PickedLocator): Promise<boolean> => {
@@ -1965,6 +1969,10 @@ async function showStop(
       }
       return 'resume';
     }
+    const stoppedOn =
+      call?.page === page && (await unlessEnded(highlights, over.signal)) && highlightsLocator(page, call.target)
+        ? call.target
+        : null;
     return internalCall(page, () =>
       pauseHere(
         page,

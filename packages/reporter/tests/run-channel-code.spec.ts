@@ -12,7 +12,9 @@ import { jsonRes, playwrightAtLeast, startServer, type FakeServer } from './_hel
 /**
  * Code from a stop, the worker's part, in real Playwright runs through the built package under a fake editor service:
  * the text bodies an interactive run keeps and the one handed over to mock, a locator counted and outlined on the
- * stopped page, the highlights of a stop taken down and the test's own left as they were, a region picked with its ARIA snapshot (its `toMatchAriaSnapshot` run against the page) or refused,
+ * stopped page, the highlights of a stop taken down and the test's own left as they were, in a frame with no address
+ * and from a selector engine run in the page too, a region picked with its ARIA snapshot (its `toMatchAriaSnapshot` run
+ * against the page) or refused,
  * a check handed to the editor's check panel, and a failure held at its line, headed and headless, once the test and
  * its hooks are done, where Pick replaces the failing locator and Resume lets the test end as it failed, the evidence
  * being what the test left at the failure, its error's credentials hidden. Under CI, without a run connection, and
@@ -98,6 +100,12 @@ if (location.pathname === '/h') {
 </script>`;
 
 const HEADED_SPEC = (base: string) => `const { test, expect } = require('../fixture.cjs');
+const { selectors } = require('@playwright/test');
+// A selector engine registered without its content script: Playwright resolves it in the page's own world.
+test.beforeAll(() => selectors.register('tag', () => ({
+  query: (root, name) => root.querySelector(name),
+  queryAll: (root, name) => Array.from(root.querySelectorAll(name)),
+})));
 // A window just opened has no image to take until it shows a frame: its first contentful paint, which Chromium marks
 // once that frame is shown.
 const painted = (page) => page.evaluate(() => new Promise((resolve) => new PerformanceObserver((list, observer) => {
@@ -106,6 +114,7 @@ const painted = (page) => page.evaluate(() => new Promise((resolve) => new Perfo
   resolve();
 }).observe({ type: 'paint', buffered: true })));
 const glassIn = (page) => page.evaluate(() => document.querySelectorAll('x-pw-glass').length);
+const glassInFrame = (page) => page.frames().find((f) => f !== page.mainFrame()).evaluate(() => document.querySelectorAll('x-pw-glass').length);
 test('keeps the text bodies', async ({ page }) => {
   await page.goto('${base}/k');
   await expect(page).toHaveTitle('done');
@@ -163,6 +172,23 @@ test('keeps the test’s own highlight through a new document', async ({ page })
 test('takes the layer down on a page with a frame not loaded yet', async ({ page }) => {
   await page.goto('${base}/lazy');
   await expect(page.getByTestId('go')).toBeVisible(); // bp
+  test.info().annotations.push({ type: 'glass', description: String(await glassIn(page)) });
+});
+test('keeps the test’s own highlight in a frame with no address', async ({ page }) => {
+  await page.goto('${base}/script-frame');
+  await page.frameLocator('#script').getByRole('button', { name: 'Inside' }).highlight();
+  await expect(page.getByTestId('go')).toBeVisible(); // bp
+  test.info().annotations.push({ type: 'glass', description: String(await glassInFrame(page)) });
+});
+test('takes the outline down in a frame with no address', async ({ page }) => {
+  await page.goto('${base}/script-frame');
+  await page.keyboard.press('Tab'); // bp
+  test.info().annotations.push({ type: 'glass', description: String(await glassInFrame(page)) });
+});
+test('shows the test’s own highlight from an engine run in the page, after a stop at one', async ({ page }) => {
+  await page.goto('${base}/engine');
+  await expect(page.locator('tag=button')).toBeVisible(); // bp
+  await page.locator('tag=h2').highlight();
   test.info().annotations.push({ type: 'glass', description: String(await glassIn(page)) });
 });
 test('fails headed', async ({ page }) => {
@@ -349,6 +375,19 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
     case 'keeps the test’s own highlight':
       if (stop.locator) said.push(await ask(connection, { what: 'locator', ...at, locator: "getByTestId('go')" }));
       break;
+    case 'takes the outline down in a frame with no address':
+      said.push(
+        await ask(connection, {
+          what: 'locator',
+          ...at,
+          locator: "frameLocator('#script').getByRole('button', { name: 'Inside' })",
+        }),
+      );
+      break;
+    case 'shows the test’s own highlight from an engine run in the page, after a stop at one':
+      // Whether the stop drew its highlight, the bar showing.
+      said.push(outlined.includes('/engine'));
+      break;
     case 'asserts a region':
     case 'asserts a region too long':
       said.push(await ask(connection, { what: 'assert-region', ...at }));
@@ -479,6 +518,10 @@ beforeAll(async () => {
       case '/api/during-hold':
         actedDuringHold = true;
         return jsonRes(res, 200, { during: 'hold' });
+      case '/script-frame':
+        // A frame Playwright gives no address.
+        res.writeHead(200, { 'content-type': 'text/html' });
+        return res.end(`${PAGE}<iframe id="script" src="javascript:'<button>Inside</button>'"></iframe>`);
       case '/lazy':
         // A frame far below the window, which Chromium does not load.
         res.writeHead(200, { 'content-type': 'text/html' });
@@ -575,6 +618,9 @@ describe('code from a stop, the worker’s part', () => {
       ['keeps the test’s own highlight', 'passed'],
       ['keeps the test’s own highlight through a new document', 'passed'],
       ['takes the layer down on a page with a frame not loaded yet', 'passed'],
+      ['keeps the test’s own highlight in a frame with no address', 'passed'],
+      ['takes the outline down in a frame with no address', 'passed'],
+      ['shows the test’s own highlight from an engine run in the page, after a stop at one', 'passed'],
       ['fails headed', 'failed'],
       ['fails headless', 'failed'],
       ['fails, its page acting during the hold', 'failed'],
@@ -720,6 +766,23 @@ describe('code from a stop, the worker’s part', () => {
     expect(outlined).toContain('/lazy');
     const result = tests.find((t) => t.title === 'takes the layer down on a page with a frame not loaded yet')!;
     expect(result.annotations.find((a) => a.type === 'glass')?.description).toBe('0');
+  });
+
+  it('keeps the test’s own highlight in a frame with no address, and takes an outline drawn in one down', () => {
+    const kept = tests.find((t) => t.title === 'keeps the test’s own highlight in a frame with no address')!;
+    expect(kept.annotations.find((a) => a.type === 'glass')?.description).toBe('1');
+    expect(heard['takes the outline down in a frame with no address']).toEqual([
+      { ok: true, message: '1 element matches.', count: 1 },
+    ]);
+    const outline = tests.find((t) => t.title === 'takes the outline down in a frame with no address')!;
+    expect(outline.annotations.find((a) => a.type === 'glass')?.description).toBe('0');
+  });
+
+  it('highlights no locator Playwright resolves in the page’s own world before 1.60, the test’s own shown after', () => {
+    const title = 'shows the test’s own highlight from an engine run in the page, after a stop at one';
+    expect(heard[title]).toEqual([playwrightAtLeast('1.60')]);
+    const result = tests.find((t) => t.title === title)!;
+    expect(result.annotations.find((a) => a.type === 'glass')?.description).toBe('1');
   });
 
   it('picks a region in the test’s window and sends its ARIA snapshot', () => {

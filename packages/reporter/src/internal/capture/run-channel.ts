@@ -49,7 +49,7 @@ import { locatorOn } from './chain-locator.js';
 import { keptRequests, keptResponse } from './kept-responses.js';
 import { liveViewState, onLiveViewChange, shareLiveView } from './live-view.js';
 import { openPageView, viewportOf } from './page-view.js';
-import { highlightAtStop, takeHighlightDown, type PauseAnswer } from './pause-at.js';
+import { highlightAtStop, highlightsLocator, takeHighlightDown, type PauseAnswer } from './pause-at.js';
 import { internalCall } from './quiet-capture.js';
 
 /**
@@ -136,7 +136,7 @@ interface HeldStop {
   stop: number;
   page: Page | null;
   bar: boolean;
-  outlines: boolean;
+  outlines: boolean | Promise<boolean>;
   answer(choice: PauseAnswer): void;
   intent(what: RunIntent): IntentAnswer;
   pickAt?(x: number, y: number): Promise<PickAtAnswer>;
@@ -159,8 +159,11 @@ export interface StopToHold {
   locator: string | null;
   /** Whether Piwi's pause bar shows the stop. */
   bar: boolean;
-  /** Whether a count may outline its matches on the stopped page: where the bar shows and Piwi may highlight. */
-  outlines: boolean;
+  /**
+   * Whether a count may outline its matches on the stopped page: where the bar shows and Piwi may highlight, which a
+   * read of the page settles.
+   */
+  outlines: boolean | Promise<boolean>;
   /** A failure's error, as plain text: the editor shows it beside the stop. */
   error?: string;
   /** The page an image of the stop is taken of: none when the stop's page is not known. */
@@ -767,7 +770,7 @@ async function countLocator(holding: HeldStop, source: string | null): Promise<L
   if (!locator) return { ok: false, message: `${source} is not a locator Piwi can build.`, count: null };
   try {
     const count = await internalCall(page, () => locator.count());
-    if (holding.outlines && count > 0 && held === holding) {
+    if (count > 0 && (await holding.outlines) && held === holding && highlightsLocator(page, locator)) {
       const shown = await internalCall(page, () => highlightAtStop(page, locator, 'count', OUTLINE_STYLE));
       outline = { stop: holding.stop, remove: () => internalCall(page, () => takeHighlightDown(page, shown)) };
     }

@@ -17,6 +17,7 @@ import {
   currentPauseSet,
   goOn,
   highlightAtStop,
+  highlightsLocator,
   inFlightCallSite,
   markPausesWrapped,
   parsePauseAt,
@@ -641,6 +642,61 @@ describe('pauseHere', () => {
     }
   });
 
+  it('takes the highlight drawn by the end down before the test goes on, and a late one only where Playwright disposes it', async () => {
+    const fontsWait = process.env.PW_TEST_SCREENSHOT_NO_FONTS_READY;
+    delete process.env.PW_TEST_SCREENSHOT_NO_FONTS_READY;
+    vi.useFakeTimers();
+    try {
+      // Before 1.60: an image of the page as the stop ends, which waits for no font then only.
+      const { page } = fakePausePage(['resume']);
+      const images: unknown[] = [];
+      const screenshot = vi.fn(async () => void images.push(process.env.PW_TEST_SCREENSHOT_NO_FONTS_READY));
+      Object.assign(page, { frames: () => [], screenshot });
+      let settle: (value: unknown) => void = () => {};
+      const target = { highlight: vi.fn(() => new Promise((resolve) => (settle = resolve))) };
+      let answer: string | undefined;
+      void pauseHere(page as never, { ...POINT, target }, PROBE, () => {}).then((a) => (answer = a));
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(answer).toBe('resume');
+      expect(images).toEqual(['1']);
+      expect(process.env.PW_TEST_SCREENSHOT_NO_FONTS_READY).toBeUndefined();
+      // A highlight that comes after the stop ended: no image while the test runs.
+      settle(undefined);
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(screenshot).toHaveBeenCalledOnce();
+
+      // A switch the run set itself stays as it was.
+      process.env.PW_TEST_SCREENSHOT_NO_FONTS_READY = 'yes';
+      const drawn = fakePausePage(['resume']);
+      Object.assign(drawn.page, { frames: () => [], screenshot: vi.fn(async () => {}) });
+      const done = pauseHere(drawn.page as never, { ...POINT, target: { highlight: async () => {} } }, PROBE, () => {});
+      await vi.advanceTimersByTimeAsync(0);
+      expect(await done).toBe('resume');
+      expect(process.env.PW_TEST_SCREENSHOT_NO_FONTS_READY).toBe('yes');
+
+      // From 1.60: a late highlight is disposed once it came.
+      const disposing = fakePausePage(['resume']);
+      Object.assign(disposing.page, { hideHighlight: async () => {} });
+      const dispose = vi.fn(async () => {});
+      let settleLate: (value: unknown) => void = () => {};
+      const late = { highlight: vi.fn(() => new Promise((resolve) => (settleLate = resolve))) };
+      let lateAnswer: string | undefined;
+      void pauseHere(disposing.page as never, { ...POINT, target: late }, PROBE, () => {}).then(
+        (a) => (lateAnswer = a),
+      );
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(lateAnswer).toBe('resume');
+      expect(dispose).not.toHaveBeenCalled();
+      settleLate({ dispose });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(dispose).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+      if (fontsWait === undefined) delete process.env.PW_TEST_SCREENSHOT_NO_FONTS_READY;
+      else process.env.PW_TEST_SCREENSHOT_NO_FONTS_READY = fontsWait;
+    }
+  });
+
   it('offers Record here when the editor can record, and shows the bar again once the recording ended', async () => {
     const { page, shown } = fakePausePage(['record', 'resume']);
     const recorded = vi.fn(async () => {});
@@ -704,11 +760,15 @@ describe('pauseHere', () => {
 });
 
 describe('the highlight layer of a stop', () => {
-  /** A frame of a page whose layer count settles as `count` does. */
-  const frame = (count: () => Promise<number>, { url = 'http://x/', detached = false } = {}) => ({
+  /** A frame of a page whose layer count settles as `count` does, with the load states Playwright's client saw. */
+  const frame = (
+    count: () => Promise<number>,
+    { url = 'http://x/', detached = false, loadStates = undefined as string[] | undefined } = {},
+  ) => ({
     url: () => url,
     isDetached: () => detached,
     locator: () => ({ count }),
+    ...(loadStates ? { _loadStates: new Set(loadStates) } : {}),
   });
   /** A page of `frames`, whose `hideHighlight` of a locator runs `drawn`. */
   const pageOf = (frames: unknown[], drawn: () => void = () => {}) => ({
@@ -720,19 +780,37 @@ describe('the highlight layer of a stop', () => {
   it('reads none where no frame holds one, a frame detached under the read and one with no document included', async () => {
     const detached = frame(() => Promise.reject(new Error('Frame was detached')), { detached: true });
     const unloaded = frame(never, { url: '' });
-    expect(await showsHighlightLayer(pageOf([frame(async () => 0), detached, unloaded]) as never, '1.64.1')).toBe(
+    // A lazy frame, or one awaiting its response: no address, and no document loaded.
+    const lazy = frame(never, { url: '', loadStates: ['commit', 'networkidle'] });
+    expect(await showsHighlightLayer(pageOf([frame(async () => 0), detached, unloaded, lazy]) as never, '1.64.1')).toBe(
       false,
     );
   });
 
-  it('reads one where a frame holds one, or a frame that is there does not answer', async () => {
+  it('reads one where a frame holds one, a frame with no address that loaded a document included', async () => {
     expect(await showsHighlightLayer(pageOf([frame(async () => 0), frame(async () => 1)]) as never, '1.64.1')).toBe(
       true,
     );
+    // A `javascript:` frame: Playwright gives it no address.
+    const scripted = frame(async () => 1, { url: '', loadStates: ['commit', 'domcontentloaded', 'load'] });
+    expect(await showsHighlightLayer(pageOf([frame(async () => 0), scripted]) as never, '1.64.1')).toBe(true);
     const broken = frame(() => Promise.reject(new Error('busy')));
     expect(await showsHighlightLayer(pageOf([broken]) as never, '1.64.1')).toBe(true);
-    expect(await showsHighlightLayer(pageOf([frame(never)]) as never, '1.64.1')).toBe(true);
     expect(await showsHighlightLayer({} as never, '1.64.1')).toBe(true);
+  });
+
+  it('reads one where a frame that is there does not answer within two seconds', async () => {
+    vi.useFakeTimers();
+    try {
+      let shows: boolean | undefined;
+      void showsHighlightLayer(pageOf([frame(never)]) as never, '1.64.1').then((read) => (shows = read));
+      await vi.advanceTimersByTimeAsync(1999);
+      expect(shows).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(shows).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('reads once Playwright drew the highlights it holds, from 1.63', async () => {
@@ -761,11 +839,41 @@ describe('the highlight layer of a stop', () => {
     await takeLayerDown(page as never, true);
     expect(hidden).toBe(0);
     await highlightAtStop(page as never, locator as never, 'count', 'outline: 1px solid');
-    await takeLayerDown(page as never, false);
+    await takeLayerDown(page as never, Promise.resolve(true));
+    expect(hidden).toBe(0);
+    await highlightAtStop(page as never, locator as never, 'count', 'outline: 1px solid');
+    await takeLayerDown(page as never, Promise.resolve(false));
     await takeLayerDown(page as never, false);
     expect(hidden).toBe(1);
-    expect(described).toEqual(['piwi call', 'piwi count']);
-    expect(options).toEqual([undefined, { style: 'outline: 1px solid' }]);
+    expect(described).toEqual(['piwi call', 'piwi count', 'piwi count']);
+    expect(options).toEqual([undefined, { style: 'outline: 1px solid' }, { style: 'outline: 1px solid' }]);
+  });
+
+  it('leaves the layer to each highlight’s own take-down before 1.60', async () => {
+    const touched: string[] = [];
+    const loaded = { url: () => 'http://x/', evaluate: async () => void touched.push('frame') };
+    const page = { frames: () => [loaded], evaluate: async () => void touched.push('page') };
+    const locator = { describe: () => ({ highlight: async () => {} }) };
+    await highlightAtStop(page as never, locator as never, 'call');
+    await takeLayerDown(page as never, false);
+    expect(touched).toEqual([]);
+  });
+
+  it('highlights any locator from 1.60, and before it only one Playwright resolves in its own world', () => {
+    const engines = [{ name: 'tag' }, { name: 'own', contentScript: true }];
+    const context = { _browser: { _browserType: { _playwright: { selectors: { _selectorEngines: engines } } } } };
+    const before160 = { context: () => context };
+    const from160 = { context: () => context, hideHighlight: async () => {} };
+    const at = (selector: string) => ({ _selector: selector }) as never;
+    for (const selector of ['internal:role=button[name="Pay"i]', 'own=button', 'internal:attr=[data-tag="x"i]']) {
+      expect(highlightsLocator(before160 as never, at(selector))).toBe(true);
+    }
+    for (const selector of ['_react=Button', 'css=main >> _vue=Item', 'tag=button', 'internal:has="tag=p"', '*tag=a']) {
+      expect(highlightsLocator(before160 as never, at(selector))).toBe(false);
+      expect(highlightsLocator(from160 as never, at(selector))).toBe(true);
+    }
+    // A Playwright that does not say which engines it registered: no highlight before 1.60.
+    expect(highlightsLocator({ context: () => ({}) } as never, at('css=p'))).toBe(false);
   });
 });
 

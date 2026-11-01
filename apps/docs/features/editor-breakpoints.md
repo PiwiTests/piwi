@@ -22,8 +22,7 @@ or pick a better locator, which lands back on that line in the editor. The stop 
 2. Run the test from Piwi: **Run this test**, or any command of [Runs from the editor](./editor-runs#run-tests).
 3. The run opens a headed browser. Before the call on your line runs, the pause bar appears with the call as
    Playwright names it, `Paused at login.spec.ts:42 · Click getByText('Pay now')`, and a locator call's element is
-   highlighted, unless, on Playwright 1.59, the page has shown a highlight or a screencast overlay of the test's own
-   since it loaded.
+   highlighted (on Playwright 1.59, [not always](#limits)).
 
 | Button | What it does |
 |---|---|
@@ -82,10 +81,6 @@ once.
 **Record here** records http(s) pages: on a page the test made with `setContent`, or a `file:` page, the editor says
 so and nothing is recorded.
 
-The test reaches the editor through `PIWI_RECORD_CHANNEL`, the socket of
-[the run's connection](./editor-run-control#how-it-works); a recording not started within 30 seconds is refused, and
-the test goes on.
-
 ## The setting
 
 Breakpoints are on by default. Turn them off with the `piwi.breakpoints` setting in VS Code, or **Pause the runs Piwi
@@ -123,6 +118,9 @@ starts at the editor's breakpoints** under **Settings → Tools → Piwi** in a 
   Inspector too, and a context that opened one keeps it. A `page.pause()` on a browser launched through a second copy
   of Playwright shows neither bar nor Inspector and waits until the test's timeout.
 - **Every attempt pauses.** With retries, a test pauses again on its retry, and the bar says `attempt 2`.
+- **On Playwright 1.59, no highlight or outline** on a page that has shown a highlight or a screencast overlay of the
+  test's own since it loaded or does not answer within two seconds, nor for a locator whose selector engine runs in the
+  page (`_react`, `_vue`, or one registered without `contentScript`).
 - **Each worker pauses its own browser.** When several tests reach a breakpoint, run `--workers=1` to pause one at a
   time.
 - **Record here** is offered from Piwi's pause bar only, never from a debugger paused in your code.
