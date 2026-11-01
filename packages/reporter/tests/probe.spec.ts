@@ -1,6 +1,7 @@
 import { gzipSync } from 'node:zlib';
 import { describe, it, expect } from 'vitest';
 import { computeFault, isFaultAllowed, SLOW_FAULT_DELAY_MS } from '../src/internal/probe/faults.js';
+import { probePlaywrightArgs } from '../src/cli/probe.js';
 import { fulfillHeaders, parseProbeTrace } from '../src/internal/probe/interception.js';
 import {
   matchProbeItem,
@@ -51,6 +52,14 @@ describe('computeFault (fault application)', () => {
     const out = computeFault('drop-field', { status: 200, body: '[{"a":1,"b":2},{"a":3,"b":4}]' });
     expect(JSON.parse(out.body)).toEqual([{ b: 2 }, { b: 4 }]);
     expect(out.changed).toBe(true);
+  });
+
+  it('drop-field records no change for JSON with no field to drop, however it is formatted', () => {
+    for (const body of ['[\n  "admin",\n  "editor"\n]', '[1.0]', '[ ]', '{ }', '"text"', '["a\\/b"]']) {
+      const out = computeFault('drop-field', { status: 200, body });
+      expect(out.body).toBe(body);
+      expect(out.changed).toBe(false);
+    }
   });
 
   it('drop-field leaves non-JSON untouched and records no change', () => {
@@ -344,5 +353,27 @@ describe('shouldAct (after first navigation, Nth match)', () => {
     expect(shouldAct(state, 2)).toBe(false); // 1st match
     expect(shouldAct(state, 2)).toBe(true); // 2nd match
     expect(shouldAct(state, 2)).toBe(false); // 3rd match
+  });
+});
+
+describe('probePlaywrightArgs', () => {
+  it('runs the planned tests with retries and the failure limit off', () => {
+    expect(probePlaywrightArgs(['--project=chromium'], ['adds a user', null, 'pays (card)'])).toEqual([
+      '--project=chromium',
+      '--grep',
+      'adds a user|pays \\(card\\)',
+      '--retries=0',
+      '--max-failures=0',
+    ]);
+  });
+
+  it('keeps a grep, retries and a failure limit given after --', () => {
+    expect(probePlaywrightArgs(['-g', 'checkout', '--retries=1', '-x'], ['adds a user'])).toEqual([
+      '-g',
+      'checkout',
+      '--retries=1',
+      '-x',
+    ]);
+    expect(probePlaywrightArgs(['--max-failures', '3'], [])).toEqual(['--max-failures', '3', '--retries=0']);
   });
 });

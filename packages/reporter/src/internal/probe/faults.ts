@@ -86,31 +86,38 @@ export interface FaultOutput {
   changed: boolean;
 }
 
-/** Drop the first own key of a JSON object, or of each element of a JSON array. */
+/**
+ * Drop the first own key of a JSON object, or of each element of a JSON array.
+ * A body with no key to drop (not JSON, a scalar, an array of scalars) comes
+ * back exactly as it was, however it is formatted.
+ */
 function dropOneField(body: string): string {
   let parsed: unknown;
   try {
     parsed = JSON.parse(body);
   } catch {
-    return body; // not JSON — nothing to drop
+    return body;
   }
+  let dropped = false;
   if (Array.isArray(parsed)) {
     let key: string | undefined;
     for (const el of parsed) {
       if (el && typeof el === 'object' && !Array.isArray(el)) {
         key ??= Object.keys(el as Record<string, unknown>)[0];
-        if (key) delete (el as Record<string, unknown>)[key];
+        if (key && Object.prototype.hasOwnProperty.call(el, key)) {
+          delete (el as Record<string, unknown>)[key];
+          dropped = true;
+        }
       }
     }
-    return JSON.stringify(parsed);
+  } else if (parsed && typeof parsed === 'object') {
+    const key = Object.keys(parsed)[0];
+    if (key) {
+      delete (parsed as Record<string, unknown>)[key];
+      dropped = true;
+    }
   }
-  if (parsed && typeof parsed === 'object') {
-    const obj = parsed as Record<string, unknown>;
-    const key = Object.keys(obj)[0];
-    if (key) delete obj[key];
-    return JSON.stringify(obj);
-  }
-  return body;
+  return dropped ? JSON.stringify(parsed) : body;
 }
 
 /**
