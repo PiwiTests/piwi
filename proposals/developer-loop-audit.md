@@ -36,7 +36,9 @@ limits and the bundled Node on the desktop page (both pages at their word budget
 sentences of the recording page (each client to check first), and the sentences S7 and D11 make wrong, left to
 their fixes; the recording page says `piwi codegen` reads its own flags, not the config's section (W13's docs half). From the medium items, built: 7, the clusters seen only in developers' own runs, in a project that also has other
 runs, left out of Home's Failure inbox, which says how many and lists them on **Show them**, the API's `local=include`
-listing them too (V3). Built in part: 2, a pick and a recording at a stop placed by the line the run's edits moved
+listing them too (V3); 3, a new test file's place from the service (`piwi/newTestFile`: beside the spec at hand, else
+in the config's test folder as Playwright reads it, with the suite's suffix), for both editors (P3, W5), leaving P4.
+Built in part: 2, a pick and a recording at a stop placed by the line the run's edits moved
 the paused call to, through the stopped worker's run, with no protocol change (F3, F4), leaving JetBrains' pick routed
 to the project whose run holds the stop (P2); 10, a breakpoint's file followed through its links and compared without
 case on Windows in the reporter (D7's reporter half), leaving the files outside the config's folder that the clients

@@ -1149,24 +1149,6 @@ export function testAtRun(uri: string, found: TestAtResult | null, repeat?: numb
   return { uri, testIds: [], locations: [found.location], ...(repeat ? { repeat } : {}) };
 }
 
-/** A Playwright test file's name: `.spec` or `.test`, then a JavaScript or TypeScript extension. */
-export const TEST_FILE = /\.(?:spec|test)\.[cm]?[jt]sx?$/;
-
-/** The `testDir` a Playwright config names as a string literal; null when it names none that way. */
-export function configTestDir(config: string): string | null {
-  return /\btestDir\s*:\s*(['"`])([^'"`]+)\1/.exec(config)?.[2] ?? null;
-}
-
-/**
- * The name offered for a new test file, with the suffix of `sample`: a test file's own (`.test.js`), else `.spec.js`
- * beside a JavaScript Playwright config, else `.spec.ts`.
- */
-export function newTestFileName(sample: string | null): string {
-  const suffix =
-    (sample && TEST_FILE.exec(sample)?.[0]) || (sample && /\.[cm]?js$/.test(sample) ? '.spec.js' : '.spec.ts');
-  return `recorded${suffix}`;
-}
-
 /**
  * One run of `fn` for the calls made until `schedule` runs it: the first call schedules the run, the later ones join
  * it, and a call once it ran schedules the next.

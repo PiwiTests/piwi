@@ -485,6 +485,16 @@ data class RenderStepsParams(
 data class RenderStepsResult(val code: String? = null, val warnings: List<String>? = null, val importEdit: FileEdit? = null)
 
 /**
+ * `piwi/newTestFile`: where Record a New Test File offers to create its spec, from the file or folder at hand (`uri`):
+ * beside the spec at hand, else in the test folder of the config holding it (`testDir`, as Playwright resolves it),
+ * named `recorded` with the suffix the suite's specs use, a name the folder does not hold yet.
+ */
+data class NewTestFileParams(val uri: String? = null)
+
+/** The new spec's path (`uri`) and the folder of its config (`root`, a path); null with no config. */
+data class NewTestFileResult(val uri: String? = null, val root: String? = null)
+
+/**
  * `piwi/record`: open a browser through the Playwright of the file's config and write what is done there into the
  * file at `uri`, from the caret (0-based). `into` is `steps` (lines of the test the caret is in), `test` (a new test at
  * the caret) or `file` (a whole new spec). `project` names the Playwright project whose `use` options the browser
@@ -969,6 +979,9 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/renderSteps")
     fun renderSteps(params: RenderStepsParams): CompletableFuture<RenderStepsResult?>
+
+    @JsonRequest("piwi/newTestFile")
+    fun newTestFile(params: NewTestFileParams): CompletableFuture<NewTestFileResult?>
 
     @JsonRequest("piwi/selections")
     fun selections(params: SelectionsParams): CompletableFuture<SelectionsResult?>

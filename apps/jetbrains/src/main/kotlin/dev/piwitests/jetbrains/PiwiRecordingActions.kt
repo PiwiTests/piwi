@@ -35,6 +35,7 @@ import com.intellij.ui.dsl.builder.COLUMNS_LARGE
 import com.intellij.ui.dsl.builder.columns
 import com.intellij.ui.dsl.builder.panel
 import java.io.IOException
+import java.net.URI
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionException
@@ -97,17 +98,18 @@ class RecordNewFileAction : AnAction(), DumbAware {
 
     override fun update(e: AnActionEvent) {
         val service = e.project?.service<PiwiProjectService>()
-        e.presentation.isEnabledAndVisible = service != null && service.hasPlaywrightConfig() &&
-            directoryAtHand(e).let { it == null || Glue.inConfigDirs(it.nioPathOrNull(), service.playwrightConfigDirs()) }
+        e.presentation.isEnabledAndVisible = service != null && service.hasPlaywrightConfig()
     }
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
         val service = project.service<PiwiProjectService>()
-        val directory = directoryAtHand(e)?.takeIf { Glue.inConfigDirs(it.nioPathOrNull(), service.playwrightConfigDirs()) }
+        // Where the service does not answer: the folder at hand under a config, else the first config's folder.
+        val fallback = directoryAtHand(e)?.takeIf { Glue.inConfigDirs(it.nioPathOrNull(), service.playwrightConfigDirs()) }
             ?: service.playwrightConfigDirs().firstOrNull()?.let { LocalFileSystem.getInstance().findFileByNioFile(it) }
             ?: return
-        PiwiRecordFlow.recordNewFile(project, directory)
+        val atHand = e.getData(CommonDataKeys.VIRTUAL_FILE)?.takeIf { it.isInLocalFileSystem }
+        PiwiRecordFlow.recordNewFile(project, atHand, fallback)
     }
 
     /** The folder selected, or the selected file's; null when nothing on disk is. */
@@ -183,7 +185,27 @@ object PiwiRecordFlow {
 
     fun recordHere(project: Project, editor: Editor, file: VirtualFile) = start(project, editor, file, null)
 
-    fun recordNewFile(project: Project, directory: VirtualFile) {
+    /**
+     * Record a New Test File: the service says where the spec goes (`piwi/newTestFile`: beside the spec at hand, else in
+     * the test folder of the config holding the file at hand, under a name it does not hold yet), then the name is asked
+     * there. `fallback` is the folder when the service does not answer.
+     */
+    fun recordNewFile(project: Project, atHand: VirtualFile?, fallback: VirtualFile) {
+        val uri = atHand?.let { runCatching { it.toNioPath().toUri().toString() }.getOrNull() }
+        background(project, "Piwi: finding where the test file goes") {
+            val offered = project.service<PiwiProjectService>().server()?.newTestFile(NewTestFileParams(uri))?.orNull()
+            val path = offered?.uri?.let { runCatching { Path.of(URI(it)) }.getOrNull() }
+            val directory = path?.parent?.let { LocalFileSystem.getInstance().refreshAndFindFileByNioFile(it) }
+            ApplicationManager.getApplication().invokeLater({
+                val folder = directory ?: fallback
+                val name = path?.fileName?.toString()?.takeIf { directory != null && folder.findChild(it) == null }
+                askNewFile(project, folder, name ?: freeName(folder))
+            }, project.disposed)
+        }
+    }
+
+    /** Asks the new spec's name in `directory`, offering `offered`, then creates it and records a whole spec into it. */
+    private fun askNewFile(project: Project, directory: VirtualFile, offered: String) {
         val validator = object : InputValidatorEx {
             override fun getErrorText(inputString: String?): String? {
                 val name = Glue.specFileName(inputString.orEmpty()) ?: return "A JavaScript or TypeScript file, such as checkout.spec.ts"
@@ -199,7 +221,7 @@ object PiwiRecordFlow {
             "The new spec's name, in ${directory.presentableUrl}. What you do in the browser is written into it as a test.",
             "Piwi: Record a New Test File",
             null,
-            freeName(directory),
+            offered,
             validator,
         ) ?: return
         val name = Glue.specFileName(typed) ?: return

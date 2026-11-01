@@ -33,6 +33,7 @@ import type {
   RecordResult,
   RecordingUpdate,
   RenderStepsResult,
+  NewTestFileResult,
   RunCommand,
   RunEnded,
   RunStatusResult,
@@ -4054,6 +4055,21 @@ describe('recording from the editor', () => {
       character: 0,
     })) as PageCandidatesResult;
     expect(atTop).toMatchObject({ context: 'file', default: 'userPage' });
+  });
+
+  test('answers where Record a new test file creates its spec, in the projects’ test folder as Playwright reads it', async () => {
+    const asked = (params: object) => recorder.sendRequest('piwi/newTestFile', params) as Promise<NewTestFileResult>;
+    // The workspace's root at hand: the test folder Playwright resolved, with the suffix its specs use.
+    expect(await asked({ uri: pathToFileURL(dir).href })).toEqual({
+      uri: pathToFileURL(path.join(dir, 'tests', 'recorded.spec.ts')).href,
+      root: dir,
+    });
+    // A spec at hand: beside it.
+    expect(await asked({ uri: uri('tests/pages/checkout.page.ts') })).toEqual({
+      uri: pathToFileURL(path.join(dir, 'tests', 'recorded.spec.ts')).href,
+      root: dir,
+    });
+    expect(await asked({})).toMatchObject({ root: dir });
   });
 
   test('renders steps on the page expression at the caret, with their imports apart when asked', async () => {

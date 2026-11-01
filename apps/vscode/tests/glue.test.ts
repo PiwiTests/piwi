@@ -22,7 +22,6 @@ import {
   coverageDecorations,
   hasCoverageMarks,
   pickNotice,
-  configTestDir,
   connectChoices,
   desktopJobNotice,
   disconnectQuestion,
@@ -40,7 +39,6 @@ import {
   agentsTokenKey,
   runsMcpConfiguration,
   runsMcpHeaders,
-  newTestFileName,
   openLink,
   openLinkMissing,
   resolveOpenFile,
@@ -1268,20 +1266,6 @@ describe('the test at a line', () => {
     expect(testLineArg({ scheme: 'file', path: '/w/tests/checkout.spec.ts' })).toBeNull();
     expect(testLineArg({ uri, line: -1 })).toBeNull();
     expect(testLineArg(undefined)).toBeNull();
-  });
-});
-
-describe('a new test file', () => {
-  test('goes in the folder the Playwright config tests', () => {
-    expect(configTestDir("export default defineConfig({\n  testDir: './e2e',\n  use: {} });")).toBe('./e2e');
-    expect(configTestDir('export default defineConfig({ testDir: path.join(__dirname, "e2e") });')).toBeNull();
-  });
-
-  test('is named after the test files around it', () => {
-    expect(newTestFileName('/w/tests/cart.test.js')).toBe('recorded.test.js');
-    expect(newTestFileName('/w/playwright.config.mjs')).toBe('recorded.spec.js');
-    expect(newTestFileName('/w/playwright.config.ts')).toBe('recorded.spec.ts');
-    expect(newTestFileName(null)).toBe('recorded.spec.ts');
   });
 });
 
