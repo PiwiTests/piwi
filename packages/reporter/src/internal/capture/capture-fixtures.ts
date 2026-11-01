@@ -124,9 +124,9 @@ import {
   pickPayload,
   placeLine,
   postPickToEditor,
+  readHighlightLayer,
   replacePauseSet,
   restoreTestTime,
-  showsHighlightLayer,
   steerDebugger,
   stopCallSite,
   stopShown,
@@ -1824,11 +1824,8 @@ async function showStop(
   // Piwi highlights only where it can take its highlights down leaving the page's own (`mayHighlight`,
   // `highlightsLocator`), and takes the highlight layer they leave down as the stop ends on a page that showed none as
   // it began (`takeLayerDown`): the page is read as the stop begins, while the editor hears of it.
-  const layerBefore =
-    page && bar
-      ? internalCall(page, () => showsHighlightLayer(page, testInfo.config?.version)).catch(() => true)
-      : Promise.resolve(true);
-  const highlights = layerBefore.then((before) => !!page && bar && mayHighlight(page, before));
+  const layer = page && bar ? readHighlightLayer(page, testInfo.config?.version) : null;
+  const highlights = page && layer ? mayHighlight(page, layer) : Promise.resolve(false);
   const failing = failure?.failed ?? null;
   /** A pick, folded into the snapshots, printed and posted to the editor: whether the editor took it. */
   const pickTaken = async (picked: PickedLocator): Promise<boolean> => {
@@ -1998,7 +1995,7 @@ async function showStop(
     sink.shownStops.delete(end);
     goneOn();
     await held?.release();
-    if (page) await internalCall(page, () => takeLayerDown(page, layerBefore)).catch(() => undefined);
+    if (page) await internalCall(page, () => takeLayerDown(page, layer?.shown ?? true)).catch(() => undefined);
   });
   const heldAt = testTimeSlot(testInfo)?.elapsed ?? null;
   const stop: ShownStop = { page, guessed, context, record, done: shown.catch(() => undefined), heldAt, after: null };

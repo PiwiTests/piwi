@@ -193,22 +193,31 @@ What the package does to a user's run, process by process.
   `describe`): Playwright keeps one highlight per frame and selector (1.60), so the
   test's own highlight of the same locator stays, and the two stay apart. A highlight
   comes down through its own `dispose` (1.60), even one that came after the stop
-  ended, and before 1.60 through an image of the page with a mask in each frame, which
-  takes the frame's layer in Playwright's own world down whole and skips the wait for
-  the page's fonts (`takeHighlightDown`), taken while the stop still holds the test: a
-  highlight that comes later stays. A disposed highlight leaves the layer, an empty
-  `x-pw-glass`: as the stop begins, `showStop` reads whether a frame with a document
-  holds one (`showsHighlightLayer`, in Playwright's own world, once 1.63 drew the
-  highlights it holds into a new document; a frame with no address counts once
-  Playwright saw it load, `_loadStates`), two seconds at most and without holding the
-  editor's notice, and as a stop that highlighted ends, takes the layer down where none
-  showed (`takeLayerDown`: `page.hideHighlight`). On 1.59, whose take-down removes the
-  whole layer of Playwright's own world and no other, a page that showed one, or did
-  not answer, gets no highlight (`mayHighlight`), nor does a locator resolved in the
-  page's own world (`highlightsLocator`: `_react`, `_vue`, an engine registered without
-  its content script, read from `selectors._selectorEngines`), so the test's own
-  highlights and screencast overlays stay. A highlight of the test's in a frame the
-  page does not show then (1.63) is the one the take-down drops.
+  ended, and before 1.60 through an image of the page with a mask in each frame that
+  shows a layer, which only Piwi's can then: the mask takes the frame's layer in
+  Playwright's own world down whole, and the image skips the wait for the page's fonts
+  (`takeHighlightDown`). It is taken while the stop still holds the test: a highlight
+  that comes later stays. A disposed highlight leaves the layer, an empty `x-pw-glass`:
+  as the stop begins, `showStop` reads whether a frame shows one (`readHighlightLayer`,
+  in Playwright's own world, two seconds at most and without holding the editor's
+  notice), and as a stop that highlighted ends, takes the layer down where none showed
+  (`takeLayerDown`: `page.hideHighlight`, which on 1.60 to 1.62 reaches Playwright's
+  own world alone: the layer of a locator resolved in the page's world stays). The
+  read (`layersIn`) waits for each frame Playwright saw load (`_loadStates`), and
+  250 ms more for the others: one whose response had no content holds a document and
+  answers, a lazy one never does. From 1.63 it first asks Playwright to draw the
+  highlights it holds into a new document, and counts a document with no root element
+  yet as showing a layer, nothing drawn in it then. Piwi highlights once the read
+  asked every frame, which then leaves Piwi's highlights out, without waiting for its
+  answer from 1.60 (`mayHighlight`); from 1.63, whose highlights each wait for every
+  frame, none where the read could not ask within those two seconds. On 1.59, whose
+  take-down removes the whole layer of Playwright's own world and no other, a page that
+  showed one, or did not answer, gets no highlight (`mayHighlight`), nor does a
+  locator resolved in the page's own world (`highlightsLocator`: `_react`, `_vue`, an
+  engine registered without its content script, read from
+  `selectors._selectorEngines`), so the test's own highlights and screencast overlays
+  stay. A highlight of the test's in a frame the page does not show then (1.63) is the
+  one the take-down drops.
 - **The live view**, for a viewer outside the page (Piwi Picker, through the editor's
   hub). `view` shows the stopped page live: its screencast (`page.screencast.start`
   through an internal call, at its viewport scaled to fit 1280 by 800, JPEG quality 60,

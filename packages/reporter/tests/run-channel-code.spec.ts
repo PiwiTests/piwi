@@ -12,9 +12,10 @@ import { jsonRes, playwrightAtLeast, startServer, type FakeServer } from './_hel
 /**
  * Code from a stop, the worker's part, in real Playwright runs through the built package under a fake editor service:
  * the text bodies an interactive run keeps and the one handed over to mock, a locator counted and outlined on the
- * stopped page, the highlights of a stop taken down and the test's own left as they were, in a frame with no address
- * and from a selector engine run in the page too, a region picked with its ARIA snapshot (its `toMatchAriaSnapshot` run
- * against the page) or refused,
+ * stopped page, the highlights of a stop taken down and the test's own left as they were, in a frame with no address,
+ * one whose response had no content and a sandboxed one, through a stop as a new document begins and from a selector
+ * engine run in the page too, none drawn after a stop a frame of another site held up, a region picked with its ARIA
+ * snapshot (its `toMatchAriaSnapshot` run against the page) or refused,
  * a check handed to the editor's check panel, and a failure held at its line, headed and headless, once the test and
  * its hooks are done, where Pick replaces the failing locator and Resume lets the test end as it failed, the evidence
  * being what the test left at the failure, its error's credentials hidden. Under CI, without a run connection, and
@@ -185,6 +186,51 @@ test('takes the outline down in a frame with no address', async ({ page }) => {
   await page.keyboard.press('Tab'); // bp
   test.info().annotations.push({ type: 'glass', description: String(await glassInFrame(page)) });
 });
+test('keeps the test’s own highlight in a frame whose response had no content', async ({ page }) => {
+  await page.goto('${base}/empty-frame');
+  const inside = page.frameLocator('#empty').getByRole('button', { name: 'Inside' });
+  await expect(inside).toBeVisible();
+  await inside.highlight();
+  const before = await glassInFrame(page);
+  await expect(page.getByTestId('go')).toBeVisible(); // bp
+  test.info().annotations.push({ type: 'glass', description: \`\${before} \${await glassInFrame(page)}\` });
+});
+test('takes the outline down in a frame whose response had no content', async ({ page }) => {
+  await page.goto('${base}/empty-frame-outline');
+  await page.keyboard.press('Tab'); // bp
+  test.info().annotations.push({ type: 'glass', description: String(await glassInFrame(page)) });
+});
+test('highlights at each stop on a page with a sandboxed frame', async ({ page }) => {
+  await page.goto('${base}/sandboxed-frame');
+  await expect(page.getByTestId('go')).toBeVisible(); // bp
+  await expect(page.getByTestId('go')).toBeVisible(); // bp
+  test.info().annotations.push({ type: 'glass', description: String(await page.evaluate(() => window.__glassAtBars)) });
+});
+test('keeps the test’s own highlight through a stop as a new document begins', async ({ page }) => {
+  test.setTimeout(15_000);
+  await page.goto('${base}/a');
+  await page.locator('section h2').highlight();
+  await page.goto('${base}/late', { waitUntil: 'commit' });
+  await expect(page.getByTestId('go')).toBeVisible(); // bp
+  // Playwright 1.64 draws the highlights it holds into the document once it has a root element, within a second.
+  await page.waitForTimeout(1500);
+  test.info().annotations.push({ type: 'glass', description: String(await glassIn(page)) });
+  await page.goto('${base}/a?later');
+  await page.waitForTimeout(1500);
+  test.info().annotations.push({ type: 'later', description: String(await glassIn(page)) });
+});
+test('draws nothing after the test went on, while a frame of another site does not answer', async ({ page }) => {
+  test.setTimeout(20_000);
+  await page.goto('${base}/busy-frame');
+  await expect(page.frameLocator('iframe').getByText('busy')).toBeVisible();
+  // The frame runs for five seconds from just before the stop, in a process of its own.
+  await page.evaluate(() => document.querySelector('iframe').contentWindow.postMessage('busy', '*'));
+  await expect(page.getByTestId('go')).toBeVisible(); // bp
+  const wentOn = Date.now();
+  await page.waitForTimeout(4000);
+  const late = await page.evaluate((at) => window.__glassAdded.filter((added) => added > at).length, wentOn);
+  test.info().annotations.push({ type: 'late', description: String(late) });
+});
 test('shows the test’s own highlight from an engine run in the page, after a stop at one', async ({ page }) => {
   await page.goto('${base}/engine');
   await expect(page.locator('tag=button')).toBeVisible(); // bp
@@ -344,7 +390,9 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
   (stops[test] ??= []).push(stop);
   const said = (heard[test] ??= []);
   const barsBefore = bars.length;
-  if (stop.bar) await waitFor(() => (bars.length > barsBefore ? true : undefined));
+  // A stop whose page has no body yet goes on with no bar.
+  const ended = () => connection.heard.some((m) => m.type === 'running' && m.stop === stop.stop);
+  if (stop.bar) await waitFor(() => (bars.length > barsBefore || ended() ? true : undefined));
   await sleep(LOOK_MS);
   const at = { stop: stop.stop };
   switch (test) {
@@ -381,6 +429,15 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
           what: 'locator',
           ...at,
           locator: "frameLocator('#script').getByRole('button', { name: 'Inside' })",
+        }),
+      );
+      break;
+    case 'takes the outline down in a frame whose response had no content':
+      said.push(
+        await ask(connection, {
+          what: 'locator',
+          ...at,
+          locator: "frameLocator('#empty').getByRole('button', { name: 'Inside' })",
         }),
       );
       break;
@@ -522,6 +579,54 @@ beforeAll(async () => {
         // A frame Playwright gives no address.
         res.writeHead(200, { 'content-type': 'text/html' });
         return res.end(`${PAGE}<iframe id="script" src="javascript:'<button>Inside</button>'"></iframe>`);
+      case '/empty-frame':
+      case '/empty-frame-outline':
+        // A frame Playwright neither gives an address nor sees load: its response has no content, and the page writes
+        // its first document.
+        res.writeHead(200, { 'content-type': 'text/html' });
+        return res.end(
+          `${PAGE}<iframe id="empty" src="/no-content"></iframe><script>addEventListener('load', () => {
+document.getElementById('empty').contentDocument.body.innerHTML = '<button>Inside</button>'; });</script>`,
+        );
+      case '/no-content':
+        res.writeHead(204);
+        return res.end();
+      case '/sandboxed-frame':
+        // A sandboxed frame of its own document, which a headed Playwright 1.59 holds as navigating, with no address.
+        // The page notes how many highlight layers it shows as each bar shows.
+        res.writeHead(200, { 'content-type': 'text/html' });
+        return res.end(`${PAGE}<iframe sandbox="allow-scripts" srcdoc="<button>Inside</button>"></iframe><script>
+new MutationObserver(() => {
+  const bar = document.getElementById('__piwi-pause-bar');
+  if (!bar || bar.dataset.glass) return;
+  bar.dataset.glass = '1';
+  (window.__glassAtBars ??= []).push(document.querySelectorAll('x-pw-glass').length);
+}).observe(document.documentElement, { childList: true, subtree: true });
+</script>`);
+      case '/late':
+        // A page whose headers come at once, and its document 300 ms later.
+        res.writeHead(200, { 'content-type': 'text/html' });
+        res.flushHeaders();
+        setTimeout(() => res.end(PAGE), 300);
+        return;
+      case '/busy-frame':
+        // A frame of another site, which runs in a process of its own; the page notes when Playwright's highlight
+        // layer comes into it.
+        res.writeHead(200, { 'content-type': 'text/html' });
+        return res.end(
+          `${PAGE}<iframe src="${server.url.replace('127.0.0.1', 'localhost')}/busy"></iframe><script>
+window.__glassAdded = [];
+new MutationObserver((records) => {
+  for (const r of records) for (const n of r.addedNodes) if (n.nodeName === 'X-PW-GLASS') window.__glassAdded.push(Date.now());
+}).observe(document.documentElement, { childList: true });
+</script>`,
+        );
+      case '/busy':
+        // Busy for five seconds once told.
+        res.writeHead(200, { 'content-type': 'text/html' });
+        return res.end(
+          `<p>busy</p><script>addEventListener('message', () => { const t = Date.now(); while (Date.now() - t < 5000); });</script>`,
+        );
       case '/lazy':
         // A frame far below the window, which Chromium does not load.
         res.writeHead(200, { 'content-type': 'text/html' });
@@ -620,6 +725,11 @@ describe('code from a stop, the worker’s part', () => {
       ['takes the layer down on a page with a frame not loaded yet', 'passed'],
       ['keeps the test’s own highlight in a frame with no address', 'passed'],
       ['takes the outline down in a frame with no address', 'passed'],
+      ['keeps the test’s own highlight in a frame whose response had no content', 'passed'],
+      ['takes the outline down in a frame whose response had no content', 'passed'],
+      ['highlights at each stop on a page with a sandboxed frame', 'passed'],
+      ['keeps the test’s own highlight through a stop as a new document begins', 'passed'],
+      ['draws nothing after the test went on, while a frame of another site does not answer', 'passed'],
       ['shows the test’s own highlight from an engine run in the page, after a stop at one', 'passed'],
       ['fails headed', 'failed'],
       ['fails headless', 'failed'],
@@ -776,6 +886,42 @@ describe('code from a stop, the worker’s part', () => {
     ]);
     const outline = tests.find((t) => t.title === 'takes the outline down in a frame with no address')!;
     expect(outline.annotations.find((a) => a.type === 'glass')?.description).toBe('0');
+  });
+
+  it('keeps the test’s own highlight in a frame whose response had no content, and takes an outline drawn in one down', () => {
+    // Before 1.60, a page that shows a highlight of the test's own, in a frame too, gets none of Piwi's.
+    expect(outlined.includes('/empty-frame')).toBe(playwrightAtLeast('1.60'));
+    const kept = tests.find(
+      (t) => t.title === 'keeps the test’s own highlight in a frame whose response had no content',
+    )!;
+    const [before, after] = kept.annotations.find((a) => a.type === 'glass')!.description!.split(' ');
+    expect(after).toBe(before);
+    expect(heard['takes the outline down in a frame whose response had no content']).toEqual([
+      { ok: true, message: '1 element matches.', count: 1 },
+    ]);
+    const outline = tests.find((t) => t.title === 'takes the outline down in a frame whose response had no content')!;
+    expect(outline.annotations.find((a) => a.type === 'glass')?.description).toBe('0');
+  });
+
+  it('highlights at each stop on a page with a frame Playwright holds as navigating', () => {
+    const result = tests.find((t) => t.title === 'highlights at each stop on a page with a sandboxed frame')!;
+    expect(result.annotations.find((a) => a.type === 'glass')?.description).toBe('1,1');
+  });
+
+  it('keeps the test’s own highlight Playwright holds through a stop that begins before the document has its root', () => {
+    const result = tests.find(
+      (t) => t.title === 'keeps the test’s own highlight through a stop as a new document begins',
+    )!;
+    // Playwright 1.64 draws what it holds into that document once it has one; 1.63 into the next document alone.
+    expect(result.annotations.find((a) => a.type === 'glass')?.description).toBe(playwrightAtLeast('1.64') ? '1' : '0');
+    expect(result.annotations.find((a) => a.type === 'later')?.description).toBe(playwrightAtLeast('1.63') ? '1' : '0');
+  });
+
+  it('draws no highlight after the test went on, on a page whose frame of another site did not answer as the stop began', () => {
+    const result = tests.find(
+      (t) => t.title === 'draws nothing after the test went on, while a frame of another site does not answer',
+    )!;
+    expect(result.annotations.find((a) => a.type === 'late')?.description).toBe('0');
   });
 
   it('highlights no locator Playwright resolves in the page’s own world before 1.60, the test’s own shown after', () => {

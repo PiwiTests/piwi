@@ -728,6 +728,12 @@ const NO_ELEMENT = '#__piwi_no_element';
 /** The element Playwright draws its highlights in, in each frame: the test's own and its screencast overlays too. */
 const HIGHLIGHT_LAYER = 'x-pw-glass';
 
+/** The root element of a frame's document, which Playwright draws its highlight layer in: none until the page sent it. */
+const DOCUMENT_ROOT = ':root';
+
+/** How long a frame Playwright did not see load is given to answer, once those it saw load answered (`layersIn`). */
+const NO_DOCUMENT_MS = 250;
+
 /** Playwright's switch for an image that does not wait for the page's fonts, read as each image begins (1.59). */
 const NO_FONTS_WAIT_ENV = 'PW_TEST_SCREENSHOT_NO_FONTS_READY';
 
@@ -758,53 +764,106 @@ function holdsHighlights(version: string | undefined): boolean {
 }
 
 /**
- * The frames of `page` that hold a document: one with an address, or one Playwright saw load without one (a
- * `javascript:` frame, a sandboxed `srcdoc` frame in a headed 1.59), from its client's load states, feature-checked. A
- * frame not loaded yet (a lazy frame, an awaited response) answers none.
+ * Whether Playwright saw `frame` load a document: it has an address, or its client's load states hold
+ * `domcontentloaded` (a `javascript:` frame, a sandboxed `srcdoc` frame in a headed 1.59), feature-checked.
  */
-function loadedFrames(page: Page): Frame[] {
-  return page.frames().filter((frame) => {
-    const loadStates = (frame as unknown as { _loadStates?: unknown })._loadStates;
-    return frame.url() !== '' || (loadStates instanceof Set && loadStates.has('domcontentloaded'));
-  });
+function sawLoad(frame: Frame): boolean {
+  const loadStates = (frame as unknown as { _loadStates?: unknown })._loadStates;
+  return frame.url() !== '' || (loadStates instanceof Set && loadStates.has('domcontentloaded'));
 }
 
 /**
- * Whether a frame of `page` shows Playwright's highlight layer: one a highlight or a screencast overlay of the test's
- * own drew since the frame loaded. Read as a stop begins, before Piwi highlights anything, once Playwright drew what it
- * holds (`holdsHighlights`), in Playwright's own world, where the overlays it draws again in a new document come
- * first. A frame with no document yet holds none (`loadedFrames`), nor does one detached meanwhile. True when a frame,
- * or the page, does not answer within `HIGHLIGHT_MS`. The caller makes the call internal.
+ * Whether each frame of `page` shows Playwright's highlight layer, read in Playwright's own world, every frame asked at
+ * once as the call begins: undefined where it did not answer. A frame Playwright saw load (`sawLoad`) is waited for,
+ * and shows one when the read fails while it is attached. One it did not see load is given `NO_DOCUMENT_MS` once those
+ * answered: one whose response had no content keeps its first document, which its page may write in, and answers; one
+ * not loaded yet (a lazy frame, an awaited response) never does.
  */
-export async function showsHighlightLayer(page: Page, version: string | undefined): Promise<boolean> {
+async function layersIn(page: Page): Promise<{ frame: Frame; shows: boolean | undefined }[]> {
+  const reads = page.frames().map((frame) => {
+    const seen = sawLoad(frame);
+    const shows = frame
+      .locator(HIGHLIGHT_LAYER)
+      .count()
+      .then(
+        (count) => count > 0,
+        () => seen && !frame.isDetached(),
+      );
+    return { frame, seen, shows };
+  });
+  await Promise.all(reads.filter((read) => read.seen).map((read) => read.shows));
+  return Promise.all(
+    reads.map(async ({ frame, seen, shows }) => ({
+      frame,
+      shows: await (seen ? shows : within(shows, NO_DOCUMENT_MS)),
+    })),
+  );
+}
+
+/** What a stop reads of its page's highlight layer as it begins (`readHighlightLayer`). */
+export interface LayerRead {
+  /**
+   * Whether a frame showed Playwright's highlight layer: one a highlight or a screencast overlay of the test's own drew
+   * since the frame loaded. True where the page did not say within `HIGHLIGHT_MS`.
+   */
+  shown: Promise<boolean>;
+  /**
+   * True once the read asked every frame, or ended, within `HIGHLIGHT_MS`, false once that time passed: a highlight
+   * asked for after it is true is not counted.
+   */
+  asked: Promise<boolean>;
+}
+
+/**
+ * Read whether `page` shows Playwright's highlight layer as a stop begins, before Piwi highlights anything (`layersIn`,
+ * in Playwright's own world, where the overlays it draws again in a new document come first). From 1.63
+ * (`holdsHighlights`), the read first has Playwright draw what it holds, and a frame whose document has no root element
+ * yet, which Playwright draws nothing in, or that does not say, shows one. No frame is asked once `HIGHLIGHT_MS`
+ * passed. Its page calls are internal.
+ */
+export function readHighlightLayer(page: Page, version: string | undefined): LayerRead {
+  let askedAll: (asked: boolean) => void = () => {};
+  const asked = new Promise<boolean>((resolve) => (askedAll = resolve));
+  let late = false;
   const read = async (): Promise<boolean> => {
     if (holdsHighlights(version)) {
+      const roots = await Promise.all(
+        page
+          .frames()
+          .filter(sawLoad)
+          .map((frame) =>
+            frame
+              .locator(DOCUMENT_ROOT)
+              .count()
+              .catch(() => (frame.isDetached() ? 1 : 0)),
+          ),
+      );
+      if (late || roots.includes(0)) return true;
       const none = page.locator(NO_ELEMENT) as unknown as { hideHighlight?: () => Promise<void> };
       await none.hideHighlight?.();
+      if (late) return true;
     }
-    const shows = await Promise.all(
-      loadedFrames(page).map((frame) =>
-        frame
-          .locator(HIGHLIGHT_LAYER)
-          .count()
-          .then(
-            (count) => count > 0,
-            () => !frame.isDetached(),
-          ),
-      ),
-    );
-    return shows.some(Boolean);
+    const layers = layersIn(page);
+    askedAll(true);
+    return (await layers).some((layer) => layer.shows);
   };
-  const reading = read().catch(() => true);
-  return (await within(reading, HIGHLIGHT_MS)) ?? true;
+  const shown = internalCall(page, async () => {
+    const reading = read().catch(() => true);
+    const shows = await within(reading, HIGHLIGHT_MS);
+    late = shows === undefined;
+    askedAll(!late);
+    return shows ?? true;
+  }).catch(() => true);
+  return { shown, asked };
 }
 
 /**
- * Whether Piwi may highlight at a stop: where it takes its highlights down alone (1.60), or on a page that showed no
- * highlight layer as the stop began, which taking the whole layer down leaves as it was.
+ * Whether Piwi may highlight at a stop, as its read settles it (`readHighlightLayer`): from 1.60, where Piwi takes its
+ * highlights down alone, once the read asked every frame; before 1.60, on a page that showed no highlight layer as the
+ * stop began, which taking the whole layer down leaves as it was.
  */
-export function mayHighlight(page: Page, layerBefore: boolean): boolean {
-  return disposesHighlights(page) || !layerBefore;
+export async function mayHighlight(page: Page, read: LayerRead): Promise<boolean> {
+  return disposesHighlights(page) ? read.asked : !(await read.shown);
 }
 
 /**
@@ -819,7 +878,8 @@ export function highlightsLocator(page: Page, locator: Locator): boolean {
     ?._selectorEngines;
   if (typeof selector !== 'string' || !Array.isArray(registered)) return false;
   const inPage = [...PAGE_WORLD_ENGINES, ...registered.filter((engine) => !engine.contentScript).map((e) => e.name)];
-  return !new RegExp(`(?:^|[\\s>"*])(?:${inPage.join('|')})=`).test(selector);
+  // Playwright reads an engine's name up to the `=`, spaces trimmed.
+  return !new RegExp(`(?:^|[\\s>"*])(?:${inPage.join('|')})\\s*=`).test(selector);
 }
 
 /**
@@ -844,22 +904,28 @@ export function highlightAtStop(
 /**
  * Take down what `highlightAtStop` drew in `page`, waiting until `until` at most (`TAKE_DOWN_MS` from now when not
  * given): through the highlight it returned (`shown`, disposable from Playwright 1.60), disposed even past that time,
- * else, before 1.60, through an image of the page with a mask in each of its frames, taken only before that time, whose
- * end takes each frame's highlight layer in Playwright's own world down whole (`mayHighlight`). The image leaves the
+ * else, before 1.60, through an image of the page taken only before that time, with a mask in each frame that shows a
+ * highlight layer (`layersIn`, each frame Playwright saw load when that read takes half the time), whose end takes that
+ * frame's layer in Playwright's own world down whole: only Piwi's can show then (`mayHighlight`). The image leaves the
  * page's fields as they are (`caret: 'initial'`), and does not wait for the page's fonts, which lasts until it loaded:
  * the switch is set while it is taken, and only when unset, so the caller holds the test until it settles. The caller
  * makes the call internal.
  */
 export async function takeHighlightDown(page: Page, shown: unknown, until = Date.now() + TAKE_DOWN_MS): Promise<void> {
-  const left = Math.max(0, until - Date.now());
+  const left = (): number => Math.max(0, until - Date.now());
   const dispose = (shown as { dispose?: () => Promise<void> } | null)?.dispose;
-  if (typeof dispose === 'function') await within(dispose.call(shown), left);
-  else if (!disposesHighlights(page) && left > 0) {
-    const mask = loadedFrames(page).map((frame) => frame.locator(NO_ELEMENT));
+  if (typeof dispose === 'function') await within(dispose.call(shown), left());
+  else if (!disposesHighlights(page) && left() > 0) {
+    const layers = await within(layersIn(page), left() / 2);
+    const frames = layers
+      ? layers.filter((layer) => layer.shows).map((layer) => layer.frame)
+      : page.frames().filter(sawLoad);
+    if (frames.length === 0 || left() === 0) return;
+    const mask = frames.map((frame) => frame.locator(NO_ELEMENT));
     const setHere = process.env[NO_FONTS_WAIT_ENV] === undefined;
     if (setHere) process.env[NO_FONTS_WAIT_ENV] = '1';
     try {
-      await page.screenshot({ mask, caret: 'initial', timeout: left });
+      await page.screenshot({ mask, caret: 'initial', timeout: left() });
     } finally {
       if (setHere) delete process.env[NO_FONTS_WAIT_ENV];
     }
@@ -870,8 +936,9 @@ export async function takeHighlightDown(page: Page, shown: unknown, until = Date
  * Take down, as a stop ends, the highlight layer Piwi's highlights at it left (`highlightAtStop`), on a page that
  * showed none as it began (`layerBefore`, once read): from 1.60 a disposed highlight keeps the layer, empty, which
  * `page.hideHighlight` takes down, the highlights Playwright holds for a frame the page does not show then included
- * (1.63). Before 1.60, each highlight's own take-down takes its layer down (`takeHighlightDown`). The caller makes the
- * call internal.
+ * (1.63). On 1.60 to 1.62 it reaches Playwright's own world alone: the layer of a locator resolved in the page's world
+ * stays (`PAGE_WORLD_ENGINES`). Before 1.60, each highlight's own take-down takes its layer down (`takeHighlightDown`).
+ * The caller makes the call internal.
  */
 export async function takeLayerDown(page: Page, layerBefore: boolean | Promise<boolean>): Promise<void> {
   if (!highlightedPages.delete(page) || (await layerBefore)) return;
