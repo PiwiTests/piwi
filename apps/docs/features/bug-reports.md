@@ -56,7 +56,7 @@ CODEOWNERS). It needs the [capture fixtures](/guide/capture-fixtures), which rec
 
 Until a test names it, an open report is also an **escaped defect** on the [Test Map](./scenario-gaps): one blind spot
 per page with open reports, ranked like any gap. A report closed while no test names it becomes a gap of its own,
-_fixed without a regression test_, and every report of the last 180 days raises the escape history of the gaps on its
+*fixed without a regression test*, and every report of the last 180 days raises the escape history of the gaps on its
 page ([exposure](/reference/gap-detectors#exposure)).
 
 ## The failing test
@@ -71,20 +71,16 @@ when it is not brittle. Two versions:
 - **To run**: the same test without `test.fail()`, which fails on the expected result while the bug is there.
 
 ```ts
-test(
-  "bug: coupon not applied to the total",
-  {
-    tag: ["@bug"],
-    annotation: [{ type: "piwi:bug", description: "37" }],
-  },
-  async ({ page }) => {
-    test.fail(); // passes while the bug exists; remove this line with the fix
-    await page.goto("/cart");
-    await page.getByLabel("Coupon").fill("SPRING10");
-    await page.getByRole("button", { name: "Apply coupon" }).click();
-    await expect(page.getByTestId("cart-total")).toHaveText("Total: 36.00"); // recorded: 'Total: 40.00'
-  },
-);
+test('bug: coupon not applied to the total', {
+  tag: ['@bug'],
+  annotation: [{ type: 'piwi:bug', description: '37' }],
+}, async ({ page }) => {
+  test.fail(); // passes while the bug exists; remove this line with the fix
+  await page.goto('/cart');
+  await page.getByLabel('Coupon').fill('SPRING10');
+  await page.getByRole('button', { name: 'Apply coupon' }).click();
+  await expect(page.getByTestId('cart-total')).toHaveText('Total: 36.00'); // recorded: 'Total: 40.00'
+});
 ```
 
 Two project settings shape it, under **Generated specs** in the **Source control** section of the project's **Settings**
@@ -103,12 +99,12 @@ From a terminal, [`piwi bug 37 --write`](/reference/cli#bug) writes the spec int
 Once a test naming the report (`piwi:bug 37`) runs on the default branch, the report follows it (the run `piwi bug --write`
 starts moves nothing):
 
-| Status             | When                                                                                                                                                                                                                                                            |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Open**           | Sent; no run has carried a test naming it yet.                                                                                                                                                                                                                  |
-| **Test committed** | A test naming it ran and the bug still shows: with `test.fail()`, the test failed as expected.                                                                                                                                                                  |
-| **Looks fixed**    | That test, still marked `test.fail()`, passed in every browser project that ran it. The run's [pull-request comment](./pr-feedback) says to remove `test.fail()` from its file, and the `bug.looks_fixed` [notification](/reference/notification-events) fires. |
-| **Closed**         | The test passed as an ordinary test, `test.fail()` removed: the fix holds.                                                                                                                                                                                      |
+| Status | When |
+|---|---|
+| **Open** | Sent; no run has carried a test naming it yet. |
+| **Test committed** | A test naming it ran and the bug still shows: with `test.fail()`, the test failed as expected. |
+| **Looks fixed** | That test, still marked `test.fail()`, passed in every browser project that ran it. The run's [pull-request comment](./pr-feedback) says to remove `test.fail()` from its file, and the `bug.looks_fixed` [notification](/reference/notification-events) fires. |
+| **Closed** | The test passed as an ordinary test, `test.fail()` removed: the fix holds. |
 
 A closed report whose test fails again goes back to **Test committed**. A test marked `test.fail()` that passes is
 never counted into a [failure cluster](./failure-clusters): it is good news about one test, shown as **Looks fixed** on
