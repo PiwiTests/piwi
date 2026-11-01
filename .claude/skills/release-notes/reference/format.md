@@ -67,7 +67,8 @@ Do **not** demote them yourself: write one version and let the script place it c
   already merges exact-duplicate subjects this way.
 - **Duplicates:** squash + cherry-pick land the same subject on several commits. `raw` collapses
   identical subjects. Merge a semantic near-duplicate (same change, different wording) by hand while
-  drafting, keeping both links.
+  drafting, keeping both links. Merged entries of different scopes join them (`**desktop, ide:**`):
+  `scripts/ide-changelog.mjs` reads any prefix that lists `ide`, so keep `ide` in it.
 - **Opaque titles:** if an entry's text is a branch slug rather than a description, title it from the
   descriptive words in the slug and keep its link.
 - **One sentence per entry**, imperative or descriptive, keeping the commit subject's lower-case
