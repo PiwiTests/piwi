@@ -23,6 +23,8 @@ interface FakeBridgeOptions {
   /** What the startup check already found — `desktop_get_update_settings`'s `pending`. */
   pending?: boolean;
   notifyOnStartup?: boolean;
+  /** The Microsoft Store package: `desktop_get_update_settings`'s `store`. */
+  store?: boolean;
 }
 
 async function installFakeBridge(
@@ -52,6 +54,7 @@ async function installFakeBridge(
               case 'desktop_get_update_settings':
                 return {
                   supported: state !== 'unsupported',
+                  store: opts.store ?? false,
                   notify_on_startup: opts.notifyOnStartup ?? true,
                   pending: opts.pending ? found : null,
                 };
@@ -99,6 +102,17 @@ test.describe('Desktop update card', () => {
     await page.getByRole('button', { name: 'Check for updates' }).click();
     await expect(page.getByText('This build has no update channel')).toBeVisible();
     // Nothing to be notified about on a build that cannot update.
+    await expect(page.getByRole('checkbox', { name: /notification at startup/ })).toHaveCount(0);
+  });
+
+  test('leaves the Store package to the Microsoft Store', async ({ page }) => {
+    await installFakeBridge(page, 'unsupported', { store: true });
+    await page.goto('/settings/about');
+    await waitForHydration(page);
+
+    await expect(page.getByText('The Microsoft Store updates this app')).toBeVisible();
+    await expect(page.getByText('Windows installs new versions in the background.')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Check for updates' })).toHaveCount(0);
     await expect(page.getByRole('checkbox', { name: /notification at startup/ })).toHaveCount(0);
   });
 

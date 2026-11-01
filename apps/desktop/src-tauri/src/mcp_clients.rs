@@ -119,10 +119,17 @@ fn stdio_bridge_entry(command: &str) -> Value {
     json!({ "command": command, "args": [mcp_stdio::STDIO_ARG] })
 }
 
-/// This executable, as the path another app can spawn it by. `current_exe`
-/// fails only in pathological cases (the binary unlinked mid-run); the bare
-/// name is a last resort that at least resolves if the app is on PATH.
+/// This executable, as the path another app can spawn it by: the app execution
+/// alias in the MSIX build, whose install folder is named after its version.
+/// `current_exe` fails only in pathological cases (the binary unlinked
+/// mid-run); the bare name is a last resort that at least resolves if the app
+/// is on PATH.
 fn bridge_command() -> String {
+    if crate::msix::is_packaged() {
+        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+            return crate::node_path(&crate::msix::alias_path(Path::new(&local)));
+        }
+    }
     let exe = std::env::current_exe().ok();
     let appimage = if cfg!(target_os = "linux") {
         std::env::var_os("APPIMAGE")

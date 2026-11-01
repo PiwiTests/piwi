@@ -6,7 +6,8 @@
  * dead button. Progress arrives as `piwi:update-progress` events while the
  * shell downloads and installs; the restart happens only when the user asks.
  * An update the shell's startup check already found shows without a click, and
- * a checkbox turns that check's native notification on or off.
+ * a checkbox turns that check's native notification on or off. The Microsoft
+ * Store package updates through the Store, which the card says instead.
  */
 const props = defineProps<{ currentVersion?: string | null }>();
 
@@ -19,6 +20,7 @@ interface UpdateStatus {
 
 interface UpdateSettings {
   supported: boolean;
+  store: boolean;
   notify_on_startup: boolean;
   pending: UpdateStatus | null;
 }
@@ -32,6 +34,7 @@ const installed = ref(false);
 const status = ref<UpdateStatus | null>(null);
 const progress = ref<{ downloaded: number; total: number | null } | null>(null);
 const supported = ref(false);
+const fromStore = ref(false);
 const notifyOnStartup = ref(true);
 const savingNotify = ref(false);
 
@@ -44,6 +47,7 @@ onMounted(async () => {
   try {
     const settings = await core.invoke<UpdateSettings>('desktop_get_update_settings');
     supported.value = settings.supported;
+    fromStore.value = settings.store === true;
     notifyOnStartup.value = settings.notify_on_startup;
     if (settings.pending && !status.value) status.value = settings.pending;
   } catch {
@@ -131,12 +135,19 @@ const progressPercent = computed(() => {
 <template>
   <SectionCard v-if="available" icon="i-lucide-arrow-up-circle" title="Updates">
     <template #subtitle>
-      Updates install from GitHub releases and apply on restart{{
-        currentVersion ? ` — you are on v${currentVersion}` : ''
-      }}.
+      {{
+        fromStore
+          ? 'The Microsoft Store updates this app'
+          : 'Updates install from GitHub releases and apply on restart'
+      }}{{ currentVersion ? ` — you are on v${currentVersion}` : '' }}.
     </template>
 
-    <div class="space-y-3">
+    <p v-if="fromStore" class="text-sm text-muted">
+      Windows installs new versions in the background. To update now, open the Microsoft Store and check
+      <strong>Library</strong> for updates.
+    </p>
+
+    <div v-else class="space-y-3">
       <div v-if="!status" class="flex items-center justify-between gap-3">
         <p class="text-sm text-muted">Check GitHub for a newer version of the desktop app.</p>
         <UButton size="xs" icon="i-lucide-refresh-cw" :loading="checking" @click="check">Check for updates</UButton>

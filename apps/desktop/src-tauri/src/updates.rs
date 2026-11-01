@@ -6,7 +6,9 @@
 // secret is configured, and that config is what compiles the updater plugin
 // config into the app. Everything here degrades to `unsupported` when the
 // config is absent, so dev builds and unsigned releases keep working with the
-// whole update surface hidden.
+// whole update surface hidden. The MSIX package never carries the overlay: the
+// Microsoft Store updates it, which `desktop_get_update_settings` reports as
+// `store`.
 //
 // Flow: `desktop_check_update` asks the endpoint and parks the found update in
 // state; `desktop_install_update` downloads + installs it, streaming progress
@@ -94,6 +96,8 @@ impl UpdateStatus {
 pub struct UpdateSettings {
     /// Whether this build can update itself at all.
     supported: bool,
+    /// Whether the Microsoft Store updates this build (the MSIX package).
+    store: bool,
     notify_on_startup: bool,
     /// The update found by an earlier check (the startup one included) and
     /// not installed yet.
@@ -119,6 +123,7 @@ pub fn desktop_get_update_settings(app: AppHandle) -> UpdateSettings {
         .map(UpdateStatus::available);
     UpdateSettings {
         supported: is_supported(&app),
+        store: crate::msix::is_packaged(),
         notify_on_startup: notify_on_startup(&app),
         pending,
     }

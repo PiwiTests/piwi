@@ -16,6 +16,7 @@ mod inspect;
 mod interrupt;
 mod mcp_clients;
 mod mcp_stdio;
+mod msix;
 mod private_fs;
 mod repro;
 mod runner;
@@ -1015,7 +1016,7 @@ fn desktop_get_service_settings(app: tauri::AppHandle) -> ServiceSettings {
         .try_state::<RunInBackground>()
         .map(|s| s.0.load(Ordering::SeqCst))
         .unwrap_or(false);
-    let start_on_login = app.autolaunch().is_enabled().unwrap_or(false);
+    let start_on_login = start_on_login_enabled(&app);
     ServiceSettings {
         run_in_background,
         start_on_login,
@@ -1048,12 +1049,23 @@ fn desktop_set_run_in_background(app: tauri::AppHandle, enabled: bool) {
 
 #[tauri::command]
 fn desktop_set_start_on_login(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
-    let mgr = app.autolaunch();
-    if enabled {
-        mgr.enable().map_err(|e| e.to_string())
-    } else {
-        mgr.disable().map_err(|e| e.to_string())
+    set_start_on_login(&app, enabled)
+}
+
+/// Whether the app starts on login: the package's startup task in the MSIX build, the autostart plugin elsewhere.
+fn start_on_login_enabled(app: &AppHandle) -> bool {
+    if msix::is_packaged() {
+        return msix::startup_task_enabled();
     }
+    app.autolaunch().is_enabled().unwrap_or(false)
+}
+
+fn set_start_on_login(app: &AppHandle, enabled: bool) -> Result<(), String> {
+    if msix::is_packaged() {
+        return msix::set_startup_task(enabled);
+    }
+    let mgr = app.autolaunch();
+    if enabled { mgr.enable() } else { mgr.disable() }.map_err(|e| e.to_string())
 }
 
 // ── Webview-shell affordances the loopback dashboard drives over IPC ────────────
@@ -1907,7 +1919,7 @@ pub fn run() {
             let bg_i = CheckMenuItemBuilder::with_id("run_bg", "Run in background")
                 .checked(run_bg_initial)
                 .build(app)?;
-            let autostart_enabled = app.autolaunch().is_enabled().unwrap_or(false);
+            let autostart_enabled = start_on_login_enabled(app.handle());
             let login_i = CheckMenuItemBuilder::with_id("autostart", "Start on login")
                 .checked(autostart_enabled)
                 .build(app)?;
@@ -1964,10 +1976,15 @@ pub fn run() {
                         }
                     }
                     "autostart" => {
-                        let mgr = app.autolaunch();
-                        let enabled = mgr.is_enabled().unwrap_or(false);
-                        let _ = if enabled { mgr.disable() } else { mgr.enable() };
-                        let _ = login_i.set_checked(!enabled);
+                        let enabled = start_on_login_enabled(app);
+                        if let Err(e) = set_start_on_login(app, !enabled) {
+                            app.dialog()
+                                .message(e)
+                                .title("Start on login")
+                                .kind(MessageDialogKind::Warning)
+                                .show(|_| {});
+                        }
+                        let _ = login_i.set_checked(start_on_login_enabled(app));
                     }
                     "quit" => {
                         let handle = app.clone();

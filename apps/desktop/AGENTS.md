@@ -66,6 +66,7 @@ shell and are feature-equivalent.
   `tests/unit/desktop-runs.test.ts`), but a reproduction, a bisect step and `piwi flake`, whose reporter may predate
   `PIWI_DESKTOP_APP=prefer`: they carry the app's address and token, and `prefer` with the discovery file's path, so a
   reporter that knows it takes both from the file before a server its config names (`flake_lab_env` in `worktree.rs`).
+
 - **The discovery file is a cross-package contract.** The shell publishes `{ url, token, pid, projects }` to
   `~/.piwi/desktop.json` while it runs, rewrites it when a folder link changes (`projects` is `[{ id, path }]`, the
   linked folders), and deletes it on quit. Its readers:
@@ -77,10 +78,16 @@ shell and are feature-equivalent.
 
   They ship separately, so changing the path or the shape means changing all of them; a new field is fine, since
   every reader ignores the ones it does not know.
+
 - **`piwi-desktop mcp-stdio` is a published entry point.** Claude Desktop takes only stdio MCP servers, so its
   one-click setup writes that command into `claude_desktop_config.json` on the user's machine. Renaming the argument
   breaks every config already written: it can only be added to, and the bridge must keep speaking newline-delimited
   JSON-RPC on stdin/stdout.
+- **The MSIX package is the same shell, told apart at run time by `msix::is_packaged()`** (`src-tauri/src/msix.rs`).
+  A path another app spawns goes through `bridge_command` in `mcp_clients.rs`, which gives the package's alias, never
+  `current_exe()` (the install folder is named after the version); start on login goes through `start_on_login_enabled`
+  and `set_start_on_login` in `lib.rs`, never the autostart plugin directly. The alias and task id are pinned against
+  `windows/AppxManifest.xml` by `msix.rs`'s tests.
 - **Each Windows installer updates from its own manifest.** The `.msi` installs per machine (admin) and reads
   `latest.json`; the NSIS `.exe` installs per user (`installMode: currentUser`, no admin) and reads `latest-nsis.json`.
   The two `tauri.updater*.conf.json` overlays and `reusable-publish-desktop.yml` keep them apart, so a per-user install

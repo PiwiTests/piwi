@@ -4,11 +4,14 @@
 // A Windows program that is not long-path aware opens a path of at most 259
 // characters (MAX_PATH): makensis and WiX's light stop on a longer one while
 // they build the installers, and the installers are held to it while they
-// write the files. The deepest folder the server lands in is the per-user
-// install (the .exe) of a user whose name is as long as Windows allows (20
-// characters), so every path under .output must fit in what that folder leaves.
-// A dependency installed in two versions nests one under the other and is the
-// usual cause; `npm ls <package>` shows which.
+// write the files. The server lands deepest in one of two folders: the
+// per-user install (the .exe) of a user whose name is as long as Windows
+// allows (20 characters), and the Microsoft Store package's folder under
+// WindowsApps, named after the package, its version (up to 9.99.99.0) and its
+// publisher's 13-character id. Every path under .output must fit in what the
+// deeper one leaves. A dependency
+// installed in two versions nests one under the other and is the usual cause;
+// `npm ls <package>` shows which.
 //
 // Usage: node scripts/check-path-lengths.mjs [path to .output]
 //        (default: ../application/.output)
@@ -17,18 +20,16 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const MAX_PATH = 259;
-const INSTALLED_OUTPUT = [
+const SERVER = ['resources', 'app-server', '.output', ''];
+const PER_USER_OUTPUT = ['C:', 'Users', 'u'.repeat(20), 'AppData', 'Local', 'Piwi Dashboard', ...SERVER].join('\\');
+const PACKAGE_OUTPUT = [
   'C:',
-  'Users',
-  'u'.repeat(20),
-  'AppData',
-  'Local',
-  'Piwi Dashboard',
-  'resources',
-  'app-server',
-  '.output',
-  '',
+  'Program Files',
+  'WindowsApps',
+  `PiwiTests.PiwiDashboard_9.99.99.0_x64__${'p'.repeat(13)}`,
+  ...SERVER,
 ].join('\\');
+const INSTALLED_OUTPUT = [PER_USER_OUTPUT, PACKAGE_OUTPUT].reduce((a, b) => (b.length > a.length ? b : a));
 const BUDGET = MAX_PATH - INSTALLED_OUTPUT.length;
 
 const here = dirname(fileURLToPath(import.meta.url));

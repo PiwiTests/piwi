@@ -169,6 +169,13 @@ Windows SDK's `makeappx`; `--layout-only` stops before packing, on any OS. The p
 Center through `MSIX_IDENTITY_NAME`, `MSIX_PUBLISHER` and `MSIX_PUBLISHER_DISPLAY_NAME` (repository variables in
 CI), all three or none: a test identity stands in without them.
 
+It declares the unvirtualizedResources capability, so its writes to `%APPDATA%` and `HKCU` reach the real
+locations, as an installer's do, and every process it starts inherits that. Three things differ when the shell runs
+from it (`src-tauri/src/msix.rs` tells): another app starts it through its app execution alias,
+`%LOCALAPPDATA%\Microsoft\WindowsApps\piwi-desktop.exe`, since the install folder is named after the version; start
+on login is the package's startup task (`PiwiStartup`, started with `--hidden`); and the Store updates it, so it
+carries no updater and Settings → About says so.
+
 The package is unsigned: the Store signs it. To install one elsewhere, sign a copy with a certificate whose subject
 is the package's publisher and trust that certificate. `scripts/msix-check.ps1` does both on a disposable machine,
 starts the app and reports where its writes land; the `msix` leg of `reusable-publish-desktop.yml` runs it. The

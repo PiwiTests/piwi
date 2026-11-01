@@ -18,9 +18,12 @@ checking each with `scripts/msix-check.ps1`:
 Option B is the package: `msix.mjs` packs it by default (`--variant classic` packs the default app), and the `msix`
 leg of `reusable-publish-desktop.yml` smoke-tests it and fails unless every check holds. The package weighs about
 68 MB, like the `.msi`. Release run 41311622819 packed it with the Partner Center identity and passed the smoke
-test, and its package is the first submission's. What remains: certification's answer on the restricted capability, the shell changes (the
-startup task, the alias in `bridge_command`, the Store state in Settings → About, the deeper path-length prefix),
-the automated submission and the docs. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet.
+test, and its package went to certification on 2026-11-01, before the shell changes below. The shell changes
+are built: `src-tauri/src/msix.rs` tells a packaged process apart, `bridge_command` gives the alias, start on login
+uses the package's startup task (launched with `--hidden` through `uap10:Parameters`), Settings → About says the
+Store updates the app, and `check-path-lengths.mjs` holds the server to the package's folder. What remains:
+certification's answer on the restricted capability, a submission carrying the shell changes, the automated
+submission and the docs. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet.
 
 **Summary.** Tauri does not bundle MSIX, so a new Windows leg of `reusable-publish-desktop.yml` builds the app
 without an installer (`tauri build --no-bundle`) and without the updater, then packs it with `makeappx` from a
