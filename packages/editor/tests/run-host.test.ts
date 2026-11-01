@@ -139,7 +139,11 @@ describe('a host of its own', () => {
     });
     expect(
       await peer.command({ type: 'runControl', id: 3, ref: 'host-2', worker: null, action: 'pause', since: null }),
-    ).toMatchObject({ ok: false, message: 'No worker of this run is connected to the desktop app.' });
+    ).toMatchObject({
+      ok: false,
+      message:
+        "No worker of this run is connected to the desktop app: none has started a test yet, or its tests import `test` from '@playwright/test' rather than from the file that extends Piwi's capture fixtures.",
+    });
 
     // The peer leaves: nobody answers the stop any more, and it goes on.
     peer.leave();

@@ -1135,7 +1135,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message?.type === 'piwi-runs-summary') {
-    // The popup's Runs tile: shown while a hub of the paired editor answers.
+    // The popup's Runs tile: shown while a hub of the paired editor or desktop app answers.
     void runsSummary().then(sendResponse, () => sendResponse({ connected: false, runs: 0 }));
     return true;
   }

@@ -6,6 +6,7 @@ import {
   resolveOptions,
   usedDesktopDiscovery,
   desktopReplacedServer,
+  normalizeBoolEnv,
   usedDotEnv,
   PIWI_DEFAULTED_CAPTURE_ENV,
   PIWI_ENV_KEYS,
@@ -34,7 +35,7 @@ import { getReporterVersion } from '../internal/support/reporter-version.js';
 import { collectSourceFrames, extractFailingLine, readSourceSnippet } from '../internal/support/source-snippet.js';
 import { detectCi, resolveRunLabel } from '../internal/support/ci.js';
 import { workerIndexOf } from '../internal/support/worker-index.js';
-import { detectCliFileFilters } from '../internal/support/cli-filters.js';
+import { detectCliFileFilters, detectCliGrep, detectCliNarrowingFlags } from '../internal/support/cli-filters.js';
 import { readSelectionStamp } from '../internal/support/selection-env.js';
 import { resolveShardInfo } from '../internal/support/shard-info.js';
 import { isListMode } from '../internal/support/run-mode.js';
@@ -118,6 +119,27 @@ function testFile(test: TestCase, base: string): string {
 }
 
 /**
+ * Whether an attempt made Playwright calls with no capture fixtures set up: its steps hold a `pw:api` call outside its
+ * hooks and no step of the `piwiCapture` fixture, which every test that imports `test` from a file extending
+ * `piwiFixtures` sets up. A `beforeAll` runs before the test's own fixtures: its calls say nothing of them.
+ */
+function uncapturedCalls(steps: readonly TestStep[]): boolean {
+  let calls = false;
+  const captured = (list: readonly TestStep[], inHook: boolean): boolean =>
+    list.some((step) => {
+      if (step.category === 'pw:api' && !inHook) calls = true;
+      return (
+        (step.category === 'fixture' && /\bpiwiCapture\b/.test(step.title)) ||
+        captured(step.steps, inHook || step.category === 'hook')
+      );
+    });
+  return !captured(steps, false) && calls;
+}
+
+/** How many of the other spec files that ran without the capture fixtures the run's last line names. */
+const MAX_UNCAPTURED_NAMED = 5;
+
+/**
  * Piwi Dashboard Playwright reporter.
  *
  * Collects test results, metadata, performance metrics and trace files, then
@@ -141,6 +163,10 @@ export class PiwiDashboardReporter {
   private plannedTests: TestCase[] = [];
   /** Ids of tests that actually reported via `onTestEnd`, to find the ones that never ran. */
   private reportedTestIds = new Set<string>();
+  /** The spec files said to have run without the capture fixtures in a run that can stop (`noteUncaptured`). */
+  private uncapturedSpecs = new Set<string>();
+  /** The live steps begun and not ended, by step, sent again when someone opens the run (`onWatched`). */
+  private openSteps = new Map<unknown, StreamEvent>();
   /** Per-test attempt history, keyed by `test.id`; snapshotted onto every attempt's payload. */
   private attemptsByTest = new Map<
     string,
@@ -272,6 +298,8 @@ export class PiwiDashboardReporter {
       this.logger.debug('List mode (--list) detected — no run registered or report uploaded.');
       return;
     }
+    // The workers, which start after this hook, read the boolean variables as the reporter does.
+    normalizeBoolEnv(process.env);
     // A run started in a terminal follows the editor whose workspace holds it: its workers, which start after this
     // hook, inherit the editor's run channel.
     const followed = followEditor([configDirFromConfig(config), process.cwd()], {
@@ -338,16 +366,20 @@ export class PiwiDashboardReporter {
     const rawConfig = config as any;
     const grepRe = rawConfig.grep instanceof RegExp ? rawConfig.grep : undefined;
     const grepInvertRe = rawConfig.grepInvert instanceof RegExp ? rawConfig.grepInvert : undefined;
-    // Playwright's default grep is /.*/ (matches everything) — only a non-default pattern is a real filter.
-    const grep = grepRe && grepRe.source !== '.*' ? grepRe.source : undefined;
-    const grepInvert = grepInvertRe?.source;
-    // File/path filters come from the CLI invocation, not config.grep.
+    // Playwright's default grep is /.*/ (matches everything): only another pattern is a real filter. A
+    // pattern given on the command line reaches the runner, not config.grep, so it is read from there too.
+    const cliGrep = detectCliGrep();
+    const grep = (grepRe && grepRe.source !== '.*' ? grepRe.source : undefined) ?? cliGrep.grep;
+    const grepInvert = grepInvertRe?.source ?? cliGrep.grepInvert;
+    // File/path filters come from the CLI invocation, not config.grep, and so do the flags that run
+    // a subset chosen from history, a diff or a list (`--last-failed`, `--only-changed`, `--test-list`).
     const fileFilters = detectCliFileFilters();
+    const narrowed = detectCliNarrowingFlags().length > 0;
     // A run launched by `piwi run <key>` carries the resolved selection's
     // identity in the environment; stamp it so the dashboard can name the
     // subset and a gate can re-resolve the same definition.
     const selection = readSelectionStamp();
-    if (grep || grepInvert || fileFilters.length > 0 || selection) {
+    if (grep || grepInvert || fileFilters.length > 0 || selection || narrowed) {
       this.isFullRun = false;
       this.filterDetails = {
         ...(grep ? { grep } : {}),
@@ -355,7 +387,7 @@ export class PiwiDashboardReporter {
         ...(fileFilters.length > 0 ? { files: fileFilters } : {}),
         ...(selection ? { selection } : {}),
       };
-      this.logger.info(
+      this.logger.debug(
         selection ? `Selection run detected (${selection.key})` : 'Partial run detected (filter active)',
       );
     }
@@ -442,6 +474,13 @@ export class PiwiDashboardReporter {
       // the dashboard shows the real total from the first render.
       this.plannedTests.length,
     );
+    if (this.streamManager) {
+      // A person who opens the run sees the step each test is in now, not only the steps that begin after.
+      this.streamManager.onWatched = () => {
+        void this.liveResources?.tick();
+        for (const event of this.openSteps.values()) this.streamManager?.queueEvent(event);
+      };
+    }
     if (this.streamManager && this.options.captureResources !== false) {
       const live = new LiveResources(
         this.streamManager,
@@ -454,7 +493,6 @@ export class PiwiDashboardReporter {
         },
         this.logger,
       );
-      this.streamManager.onWatched = () => void live.tick();
       live.start();
       this.liveResources = live;
     }
@@ -570,6 +608,37 @@ export class PiwiDashboardReporter {
     return true;
   }
 
+  /**
+   * In a run that can stop (breakpoints, or a run channel to an editor or the desktop app), say of the first spec file
+   * whose test made Playwright calls without the capture fixtures, where the stops happen, that it never stops at a
+   * breakpoint nor at Pause, which nothing else says; the others are named in one line as the run ends
+   * (`noteOtherUncaptured`).
+   */
+  private noteUncaptured(test: TestCase, result: TestResult): void {
+    if (!process.env.PIWI_PAUSE_AT && !process.env[RUN_CHANNEL_ENV]) return;
+    if (!uncapturedCalls(result.steps)) return;
+    const file = testFile(test, this.testPathBase);
+    if (this.uncapturedSpecs.has(file)) return;
+    this.uncapturedSpecs.add(file);
+    if (this.uncapturedSpecs.size > 1) return;
+    this.logger.warn(
+      `${file} ran without Piwi's capture fixtures, so its tests never stop at a breakpoint or at Pause: ` +
+        "import `test` from your fixtures file (the one that extends piwiFixtures) instead of '@playwright/test'.",
+    );
+  }
+
+  /** The spec files past the first that ran without the capture fixtures, in one line (`noteUncaptured`). */
+  private noteOtherUncaptured(): void {
+    const others = [...this.uncapturedSpecs].slice(1);
+    if (!others.length) return;
+    const named = others.slice(0, MAX_UNCAPTURED_NAMED).join(', ');
+    const more = others.length > MAX_UNCAPTURED_NAMED ? `, and ${others.length - MAX_UNCAPTURED_NAMED} more` : '';
+    this.logger.warn(
+      `${others.length} more spec file${others.length === 1 ? '' : 's'} ran without Piwi's capture fixtures, ` +
+        `so their tests never stop at a breakpoint or at Pause either: ${named}${more}.`,
+    );
+  }
+
   /** Playwright reporter hook: called when a step (including hook/fixture) begins */
   onStepBegin(test: TestCase | undefined, _result: TestResult | undefined, step: any): void {
     // Gate on the stream manager *existing*, not on it being live yet: the
@@ -589,6 +658,7 @@ export class PiwiDashboardReporter {
       workerIndex: workerIndexOf(_result),
       startedAt: step.startTime instanceof Date ? step.startTime.getTime() : null,
     };
+    this.openSteps.set(step, event);
     this.streamManager?.queueBeginEvent(event);
   }
 
@@ -596,6 +666,7 @@ export class PiwiDashboardReporter {
   onStepEnd(test: TestCase | undefined, _result: TestResult | undefined, step: any): void {
     if (!this.enabled || !this.streamManager) return;
     if (!PiwiDashboardReporter.isLiveStep(step)) return;
+    this.openSteps.delete(step);
     const cat = step.category;
 
     const workerIndex = workerIndexOf(_result);
@@ -632,8 +703,12 @@ export class PiwiDashboardReporter {
   /** Playwright reporter hook: called when an individual test finishes */
   onTestEnd(test: TestCase, result: TestResult): void {
     this.totalTests++;
+    // A worker runs one test at a time: a step of its still open once the test ended (a worker that crashed) never ends.
+    const worker = workerIndexOf(result);
+    for (const [step, event] of this.openSteps) if (event.workerIndex === worker) this.openSteps.delete(step);
 
     this.reportedTestIds.add(test.id);
+    this.noteUncaptured(test, result);
 
     const { suitePath, suiteConfig } = this.metadataCollector.getSuiteInfo(test);
     const annotations = mergeAnnotations(test, result);
@@ -689,12 +764,15 @@ export class PiwiDashboardReporter {
     };
 
     if (result.status === 'failed' || result.status === 'timedOut') {
-      const failingLine = extractFailingLine(testCase.error, test.location.file, test.location.line);
+      const failingLine = extractFailingLine(testCase.error, test.location.file, test.location.line, this.testPathBase);
       const snippet = readSourceSnippet(test.location.file, test.location.line, 30, failingLine);
       if (snippet) testCase.testSource = snippet;
       // The call stack's in-project frames (innermost first) — the failing line
-      // plus the callers above it, so a failure inside a helper is visible.
-      const frames = collectSourceFrames(testCase.error, test.location.file, test.location.line);
+      // plus the callers above it, so a failure inside a helper is visible —
+      // named relative to the config's folder, as the test's own path is.
+      const frames = collectSourceFrames(testCase.error, test.location.file, test.location.line, {
+        projectRoot: this.testPathBase,
+      });
       if (frames.length) testCase.testSourceFrames = frames;
     }
 
@@ -961,6 +1039,7 @@ export class PiwiDashboardReporter {
    * ID and `externalId.onDuplicate` is `'fail'`.
    */
   async onEnd(result: FullResult): Promise<{ status?: FullResult['status'] } | void> {
+    this.noteOtherUncaptured();
     const duplicates = this.externalIds?.duplicates.length ?? 0;
     const failsOnDuplicates =
       duplicates > 0 && resolveOnDuplicate(this.options.externalId?.onDuplicate).onDuplicate === 'fail';

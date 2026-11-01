@@ -63,7 +63,7 @@ export class CrashRecovery {
     try {
       fs.writeFileSync(temp, JSON.stringify(file), { encoding: 'utf8', flag: 'wx', mode: 0o600 });
       fs.renameSync(temp, this.filePath);
-      this.logger.info('Saved recovery data for later upload');
+      this.logger.debug('Saved recovery data for later upload');
     } catch (error) {
       fs.rmSync(temp, { force: true });
       this.logger.error(`Failed to save recovery data: ${errorMessage(error)}`);

@@ -57,7 +57,7 @@ export interface TerminalRunGate {
 export function terminalRunSkip(gate: TerminalRunGate): string | null {
   const { env, argv } = gate;
   const editor = env[PIWI_EDITOR_ENV]?.trim().toLowerCase();
-  if (editor === 'off') return `${PIWI_EDITOR_ENV}=off`;
+  if (editor && ['off', 'false', '0', 'no'].includes(editor)) return `${PIWI_EDITOR_ENV}=${editor}`;
   if (env[RUN_CHANNEL_ENV] !== undefined) return `the run names its ${RUN_CHANNEL_ENV}`;
   if (env[PIWI_ORIGIN_ENV.kind]) return 'a launcher started the run';
   if (detectCi(env)) return 'running under CI';
@@ -68,7 +68,8 @@ export function terminalRunSkip(gate: TerminalRunGate): string | null {
     return "Playwright's debugger or UI mode runs it";
   }
   if (argv.slice(2).includes('merge-reports')) return 'it merges reports, running no test';
-  if (!gate.terminal && editor !== 'on' && !startedByTestRunner(env)) return 'its output goes to no terminal';
+  const forced = !!editor && ['on', 'true', '1', 'yes'].includes(editor);
+  if (!gate.terminal && !forced && !startedByTestRunner(env)) return 'its output goes to no terminal';
   return null;
 }
 

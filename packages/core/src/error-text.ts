@@ -40,6 +40,22 @@ export function joinErrorMessages(errors: ReadonlyArray<{ message?: string }> | 
 }
 
 /**
+ * The first of a result's errors that names the place it was thrown, whose
+ * location the error text's frame gives. A test timeout's first error, the bare
+ * `Test timeout of 30000ms exceeded.`, names none; the error of the call it
+ * interrupted, which follows it, names the line the test stood at.
+ */
+export function locatedError<E extends { location?: unknown }>(
+  errors: ReadonlyArray<E | null | undefined> | null | undefined,
+): E | undefined {
+  for (const error of errors ?? []) {
+    const file = (error?.location as { file?: unknown } | null | undefined)?.file;
+    if (error && typeof file === 'string' && file.length > 0) return error;
+  }
+  return undefined;
+}
+
+/**
  * Append a synthetic `at file:line:col` frame when the text carries no stack
  * frame, so locator healing can find the pre-captured snapshot for that call
  * site. The frame sits after the message, where `extractMessageHead` trims it

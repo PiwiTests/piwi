@@ -196,7 +196,8 @@ the custom messages of `src/protocol.ts`:
   - failures: `piwi/failures`, `piwi/agentContext`, `piwi/trace`, `piwi/screenshot`, `piwi/applyPick`;
   - connection: `piwi/status`, `piwi/refresh`, `piwi/desktop`, `piwi/mcp`;
   - desktop jobs: `piwi/desktopJob`, `piwi/shareDesktopJob`;
-  - recorder: `piwi/record`, `piwi/stopRecording`, `piwi/recordingCommand`, `piwi/pageCandidates`, `piwi/renderSteps`.
+  - recorder: `piwi/record`, `piwi/stopRecording`, `piwi/recordingCommand`, `piwi/pageCandidates`, `piwi/renderSteps`,
+    `piwi/newTestFile`.
 - **Notifications from the client**: `piwi/setCredentials`, `piwi/setBaseline`, `piwi/commandStarted`,
   `piwi/commandEnded`, `piwi/declineRecord`, `piwi/setRunBreakpoints`, `piwi/setBreakpoints`.
 - **Notifications from the service**: `piwi/statusChanged`, `piwi/runStatusChanged`, `piwi/failuresChanged`,
@@ -539,8 +540,11 @@ reporter says nothing.
 
 `piwi/applyPick` answers the edit that puts a picked locator in place of the locator chain its line holds now
 (`pickEditOnLine`: the chain `replaceLocatorOnLine` replaces). The file is the one at `uri`, else the one at `file`, a
-path relative to a Playwright config's folder (never absolute, never through `..`), open or saved. The edit is null when
-the line holds no locator chain, and the client then inserts the locator at the cursor.
+path relative to a Playwright config's folder (never absolute, never through `..`), open or saved. The line is the
+run's: while a worker of a run is stopped on it, it is mapped through the edits since that run started
+(`stopLineNow`, `RunLines`), as a recording's hand-off at a stop is, so a pick lands on the paused call after a recording
+wrote above it. The edit is null when the line holds no locator chain, or was removed or cannot be followed, and the
+client then inserts the locator at the cursor.
 
 ## Run control
 

@@ -163,14 +163,14 @@ export function subtractLineRanges(a: LineRange[], b: LineRange[]): LineRange[] 
 const union = (...ranges: LineRange[][]) => normalizeLineRanges(ranges.flat());
 
 /**
- * The lines of the functions a suite recording functions only ran, less the
- * functions nested in them it lists as not run: a line counts when the
- * innermost function around it ran.
+ * The lines of the functions that ran, less the functions nested in them that
+ * `all` lists and that did not run: a line counts when the innermost function
+ * around it ran.
  */
-function linesInRunFunctions(file: SuiteFile): LineRange[] {
-  const ran = normalizeFunctionRanges(file.functions);
+export function innermostRunLines(ranFunctions: unknown, allFunctions: unknown): LineRange[] {
+  const ran = normalizeFunctionRanges(ranFunctions);
   const ranStarts = new Set(ran.map((f) => f[0]));
-  const notRun = normalizeFunctionRanges(file.allFunctions)
+  const notRun = normalizeFunctionRanges(allFunctions)
     .filter((f) => !ranStarts.has(f[0]))
     .sort((a, b) => a[0] - b[0]);
   return union(
@@ -313,7 +313,7 @@ export function combineCoverage(input: CombineInput): CombinedCoverage {
       const ran = intersectLineRanges(normalizeLineRanges(file.lines), executable);
       bySuite[suite.name] = union(bySuite[suite.name] ?? [], ran);
       (suite.kind === 'unit' ? unitRan : e2eRan).push(ran);
-      if (!file.linesRecorded) inFunctionsRan.push(linesInRunFunctions(file));
+      if (!file.linesRecorded) inFunctionsRan.push(innermostRunLines(file.functions, file.allFunctions));
     }
     const unit = union(...unitRan);
     const e2e = union(...e2eRan);

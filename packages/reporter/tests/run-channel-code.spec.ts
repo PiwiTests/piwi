@@ -24,6 +24,8 @@ import { jsonRes, playwrightAtLeast, startServer, type FakeServer } from './_hel
  */
 
 const pkgRoot = path.join(import.meta.dirname, '..');
+/** Whether the worker offers Pick on the image: Playwright 1.60 or later. */
+const PICKS_AT = playwrightAtLeast('1.60');
 const dist = path.join(pkgRoot, 'dist', 'index.js');
 const project = path.join(pkgRoot, 'tests', `.run-code-${process.pid}`);
 const REF = 'ed-5e6f7a8b';
@@ -755,7 +757,7 @@ describe('code from a stop, the worker’s part', () => {
         'view',
         'input',
         'input-clicks',
-        'pick-at',
+        ...(PICKS_AT ? ['pick-at'] : []),
         'agent',
         'events',
         'bind',

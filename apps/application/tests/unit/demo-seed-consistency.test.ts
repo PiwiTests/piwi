@@ -125,12 +125,15 @@ describe('fingerprint mirror parity (demo mirror vs the real algorithm)', () => 
 });
 
 describe('cluster ↔ case ↔ file coherence', () => {
+  /** The clusters a failure story makes, written as an SQL list; the paused editor run's own cluster is the other one. */
+  const storyClusters = FAILURE_STORIES.map((s) => s.clusterId).join(', ');
+
   test('every failing execution error matches its story, and its case is really in that file', () => {
     const rows = q(`
       select trc.error, trc.line, trc.column, trc.failure_cluster_id, tc.file_path, tc.title
       from test_runs_cases trc
       join test_cases tc on tc.id = trc.test_case_id
-      where trc.failure_cluster_id is not null
+      where trc.failure_cluster_id in (${storyClusters})
     `);
     expect(rows.length).toBeGreaterThan(0);
 
@@ -164,7 +167,7 @@ describe('cluster ↔ case ↔ file coherence', () => {
   }
   const failingStoryRows = () =>
     q(`select id, started_at, duration, timeout, error, steps, console_logs, failure_cluster_id
-      from test_runs_cases where failure_cluster_id is not null`) as unknown as FailingRow[];
+      from test_runs_cases where failure_cluster_id in (${storyClusters})`) as unknown as FailingRow[];
   const lastStepOf = (r: FailingRow) =>
     (JSON.parse(r.steps) as Array<Record<string, unknown> & { startTime: number; duration: number }>).at(-1)!;
   const canonical = (locator: string) => {
@@ -243,7 +246,7 @@ describe('cluster ↔ case ↔ file coherence', () => {
   test('an execution running its authored steps never sleeps, and its before hooks hold its beforeEach steps', () => {
     const rows = q(`select trc.id, trc.steps, trc.step_events, trc.wasted_time_ms, trc.failure_cluster_id, tc.title
       from test_runs_cases trc join test_cases tc on tc.id = trc.test_case_id
-      where trc.failure_cluster_id is not null`);
+      where trc.failure_cluster_id in (${storyClusters})`);
     let checked = 0;
     for (const r of rows) {
       const story = FAILURE_STORIES.find((s) => s.clusterId === r.failure_cluster_id)!;
@@ -278,11 +281,23 @@ describe('cluster ↔ case ↔ file coherence', () => {
 
   test('cluster fingerprint matches the real recomputation of its sample_error', async () => {
     const rows = q('select id, fingerprint, sample_error from failure_clusters');
-    expect(rows.length).toBe(FAILURE_STORIES.length);
+    expect(rows.length).toBe(FAILURE_STORIES.length + 1);
     for (const r of rows) {
       const real = await computeErrorFingerprint(r.sample_error as string);
       expect(real.fingerprint, `cluster ${r.id}`).toBe(r.fingerprint);
     }
+  });
+
+  test('the paused editor run’s failure is a cluster seen in that run alone, in a project that runs in CI', () => {
+    const local = q(`select fc.id, fc.project_id from failure_clusters fc where fc.id not in (${storyClusters})`);
+    expect(local).toHaveLength(1);
+    const runs = q(`select distinct tr.origin from test_runs_cases trc join test_runs tr on tr.id = trc.test_run_id
+      where trc.failure_cluster_id = ${local[0]!.id as number}`);
+    expect(runs.map((r) => r.origin)).toEqual(['editor']);
+    const ci = q(
+      `select count(*) as n from test_runs where project_id = ${local[0]!.project_id as number} and origin = 'ci'`,
+    );
+    expect(ci[0]!.n as number).toBeGreaterThan(0);
   });
 
   test('cluster occurrences and first/last run ids are internally consistent', () => {

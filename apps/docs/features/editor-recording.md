@@ -32,8 +32,8 @@ Before the browser opens, the editor asks for:
 3. **The Playwright project**, when the config has several. The browser gets its `use` options: `baseURL`,
    `storageState`, the viewport and device, the locale, the extra headers and `testIdAttribute`.
 
-The editor offers your last answers again. A new test file is offered next to the file you are in, and the recording
-writes a whole spec into it.
+The editor offers your last answers. A new spec goes beside the one at hand, else in `testDir`, and receives the whole
+recording.
 
 ## While it records
 
@@ -100,11 +100,12 @@ recorded, lands at the editor's cursor too:
 3. A picked locator's row, the top locator of the [Elements sidebar](./devtools#the-elements-sidebar), the
    [Locators console](./devtools#the-piwi-panel) in DevTools and the recording review then show **Send to editor**. A
    locator is inserted in the copy form you chose; a recording is rendered as the body of a test, like
-   [`piwi codegen --body`](/reference/cli#codegen).
+   [`piwi codegen --body`](/reference/cli#codegen), or as a new test outside one.
 
 The editor listens on the loopback interface only, answers only a request addressed to `127.0.0.1` or `localhost` at
 its port, and accepts one only with the token. Before Piwi Picker sends the token, the editor proves it holds it, so
-another program that took the port is sent nothing. With several VS Code windows open, the one that paired receives.
+another program that took the port is sent nothing; the settings ask for that proof as they open and after
+**Pair**. With several VS Code windows open, the one that paired receives.
 With no editor open, a JetBrains IDE puts it in a new scratch file. In a remote window (Remote SSH, WSL, Dev
 Containers), the pairing address is the local end of a port VS Code forwards to the listener, listed in the Ports
 view, and Piwi Picker's Runs window lists that window's runs: [Remote development](/guide/remote-development).

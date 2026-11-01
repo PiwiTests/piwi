@@ -1,3 +1,7 @@
+import { specPattern } from '@piwitests/core/spec-filter';
+
+export { specPattern };
+
 export type RetryMode = 'file-line' | 'grep' | 'file';
 
 export interface RetryCase {
@@ -112,7 +116,7 @@ export function buildRetryCommand(cases: RetryCase[], opts?: { mode?: RetryMode;
     let cmd: string;
 
     if (mode === 'file') {
-      const args = quoteSpecs(dedupeFiles(projectCases).map(toPosixPath));
+      const args = quoteSpecs(dedupeFiles(projectCases).map(specPattern));
       if (args.length === 0) continue;
       cmd = `${baseCmd} ${args.join(' ')}`;
     } else if (mode === 'file-line') {
@@ -125,7 +129,7 @@ export function buildRetryCommand(cases: RetryCase[], opts?: { mode?: RetryMode;
             if (c.line) seen.add(key);
             return true;
           })
-          .map((c) => (c.line ? `${toPosixPath(c.filePath)}:${c.line}` : toPosixPath(c.filePath))),
+          .map((c) => (c.line ? `${specPattern(c.filePath)}:${c.line}` : specPattern(c.filePath))),
       );
       if (args.length === 0) continue;
       cmd = `${baseCmd} ${args.join(' ')}`;
@@ -151,7 +155,7 @@ export function buildRetryCommand(cases: RetryCase[], opts?: { mode?: RetryMode;
     if (mode === 'file-line') {
       return buildRetryCommand(cases, { ...opts, mode: 'file' });
     }
-    const args = quoteSpecs(dedupeFilePaths(cases).map(toPosixPath));
+    const args = quoteSpecs(dedupeFilePaths(cases).map(specPattern));
     if (args.length === 0) return '';
     let cmd = `${baseCmd} ${args.join(' ')}`;
     if (cmd.length > MAX_CMD_LENGTH) {
@@ -175,7 +179,7 @@ export function buildRetryCommand(cases: RetryCase[], opts?: { mode?: RetryMode;
 export function buildRetryArgs(cases: RetryCase[]): string {
   if (cases.length === 0) return '';
   const specs = [
-    ...new Set(cases.map((c) => (c.line ? `${toPosixPath(c.filePath)}:${c.line}` : toPosixPath(c.filePath)))),
+    ...new Set(cases.map((c) => (c.line ? `${specPattern(c.filePath)}:${c.line}` : specPattern(c.filePath)))),
   ];
   const quoted = quoteSpecs(specs);
   if (quoted.length === 0) return '';
@@ -193,7 +197,7 @@ export function buildRetryArgs(cases: RetryCase[]): string {
 export function buildRerunCommand(cases: RetryCase[]): string {
   const base = 'npx playwright test';
   if (cases.length === 0) return base;
-  const files = quoteSpecs([...new Set(cases.map((c) => toPosixPath(c.filePath)))]);
+  const files = quoteSpecs([...new Set(cases.map((c) => specPattern(c.filePath)))]);
   const projects = projectFlags(caseProjects(cases));
   const head = [base, ...files].join(' ');
   const withTitles = `${head}${buildTitleGrepFlag([...new Set(cases.map((c) => c.title))])}${projects}`;

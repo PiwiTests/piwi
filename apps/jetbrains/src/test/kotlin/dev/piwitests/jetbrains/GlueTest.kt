@@ -5,6 +5,7 @@ import com.google.gson.JsonParser
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -1675,6 +1676,9 @@ class GlueTest {
         assertEquals("checkout.spec.ts", Glue.specFileName(" checkout "))
         assertEquals("checkout.test.ts", Glue.specFileName("checkout.test"))
         assertEquals("checkout.spec.js", Glue.specFileName("checkout.spec.js"))
+        assertEquals(".test.js", Glue.testFileSuffix("recorded.test.js"))
+        assertEquals(".spec.mts", Glue.testFileSuffix("cart.spec.mts"))
+        assertNull(Glue.testFileSuffix("cart.page.ts"))
         assertEquals("flow.mts", Glue.specFileName("flow.mts"))
         assertEquals("cart.page.spec.ts", Glue.specFileName("cart.page"))
         assertEquals(null, Glue.specFileName(""))

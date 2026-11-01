@@ -7,7 +7,7 @@
  * copy-pasteable command) rather than only a shell string, and it works from a
  * resolved selection rather than a set of failures.
  */
-import { quoteShellArg, titleGrepPattern, toPosixPath } from '../retry-command';
+import { quoteShellArg, specPattern, titleGrepPattern } from '../retry-command';
 import type { MaterializedSelection, ResolvedTest, SelectionFormat } from './types';
 
 const MAX_CMD_LENGTH = 4096;
@@ -21,7 +21,7 @@ function fileLineArgs(tests: ResolvedTest[]): string[] {
   const seen = new Set<string>();
   const args: string[] = [];
   for (const t of tests) {
-    const token = t.line ? `${toPosixPath(t.filePath)}:${t.line}` : toPosixPath(t.filePath);
+    const token = t.line ? `${specPattern(t.filePath)}:${t.line}` : specPattern(t.filePath);
     if (seen.has(token) || !isShellSafe(token)) continue;
     seen.add(token);
     args.push(token);
@@ -33,7 +33,7 @@ function fileArgs(tests: ResolvedTest[]): string[] {
   const seen = new Set<string>();
   const args: string[] = [];
   for (const t of tests) {
-    const posix = toPosixPath(t.filePath);
+    const posix = specPattern(t.filePath);
     if (seen.has(posix) || !isShellSafe(posix)) continue;
     seen.add(posix);
     args.push(posix);

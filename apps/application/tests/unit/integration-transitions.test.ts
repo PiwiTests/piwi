@@ -22,6 +22,7 @@ delete process.env.PIWI_DATABASE_URL;
 process.env.PIWI_SECRET_KEY = 'unit-test-secret-key-not-for-production';
 
 const { createConnection } = await import('../../server/utils/integrations/connections');
+const { writeProjectIntegration } = await import('../../server/utils/integrations/binding');
 const { enqueueAction, runAction } = await import('../../server/utils/integrations/actions');
 const { getTransitionSample, sampleIssueQueries } = await import('../../server/utils/integrations/transitions');
 const { transitionsCache } = await import('../../server/utils/integrations/picker-cache');
@@ -120,6 +121,8 @@ beforeAll(async () => {
       credentials: { email: 'ci@example.com', apiToken: 'token' },
     })
   ).id;
+  // The actions run through the connection the project is bound to.
+  await writeProjectIntegration(dbc, 1, { connectionId, projectKey: 'PROJ', issueType: 'Bug' });
 });
 
 afterAll(async () => {

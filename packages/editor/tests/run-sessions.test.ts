@@ -112,6 +112,59 @@ describe('a run’s session, with a client that answers stops', () => {
     }
   });
 
+  test('stops at a statement broken over lines, by a breakpoint or Run to cursor on its first line', async () => {
+    fs.writeFileSync(
+      path.join(dir, 'tests/wrapped.spec.ts'),
+      [
+        "import { test, expect } from '@playwright/test';",
+        '',
+        "test('shows the cart', async ({ page }) => {",
+        '  await expect(',
+        "    page.getByRole('heading', { name: 'Cart' }),",
+        '  ).toBeVisible();',
+        '});',
+        '',
+      ].join('\n'),
+    );
+    const atFirstLine = { uri: uri('tests/wrapped.spec.ts'), line: 3 };
+    const started = (await svc.client.sendRequest('piwi/runArgs', {
+      uri: uri('tests/wrapped.spec.ts'),
+      testIds: [],
+      locations: ['tests/wrapped.spec.ts:3'],
+      breakpoints: [atFirstLine],
+    })) as RunCommand;
+    expect(started.env?.PIWI_PAUSE_AT).toBe('tests/wrapped.spec.ts:4;tests/wrapped.spec.ts:5;tests/wrapped.spec.ts:6');
+    const discovery = await waitFor(() => last(svc.published) ?? undefined);
+    const channel = discovery.runChannel!;
+    await svc.client.sendNotification('piwi/setBreakpoints', { places: [atFirstLine] });
+    // Once the service read it.
+    await control({ ref: 'none', action: 'pause' });
+    const ref = 'terminal-4243-1730000000001';
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0, [...RUN_TAKES]);
+    try {
+      // Playwright stops at `toBeVisible`, on the statement's third line.
+      expect(await worker.next('breakpoints')).toEqual({
+        type: 'breakpoints',
+        places: [4, 5, 6].map((line) => ({ file: 'tests/wrapped.spec.ts', line })),
+      });
+      worker.begin();
+      worker.stopAt(1, 3);
+      await waitFor(() => svc.latest(ref)?.workers[0]?.stop ?? undefined);
+      expect(await control({ ref, action: 'run-to', place: atFirstLine })).toEqual({
+        ok: true,
+        message: 'Running to wrapped.spec.ts:4.',
+      });
+      expect(await worker.next('run-to')).toEqual({
+        type: 'run-to',
+        stop: 1,
+        place: { file: 'tests/wrapped.spec.ts', line: 6 },
+      });
+    } finally {
+      worker.socket.destroy();
+      await svc.client.sendNotification('piwi/setBreakpoints', { places: [] });
+    }
+  });
+
   test('shares a run live through piwi/shareRun, the client hearing how it stands', async () => {
     const { ref, channel } = await svc.command();
     const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0, [...RUN_TAKES]);
@@ -203,6 +256,19 @@ describe('a run’s session, with a client that answers stops', () => {
     }
   });
 
+  test('says a run’s workers are gone, rather than blame its imports, once those that connected left', async () => {
+    const { ref, channel } = await svc.command();
+    const worker = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0);
+    await waitFor(() => (svc.latest(ref)?.workers.length === 1 ? true : undefined));
+    worker.socket.destroy();
+    await waitFor(() => (svc.latest(ref)?.workers.length === 0 ? true : undefined));
+    expect(await control({ ref, action: 'pause' })).toEqual({
+      ok: false,
+      message:
+        'No worker of this run is connected to the editor now: the run ended, or Playwright is starting another worker.',
+    });
+  });
+
   test('answers each control: a pause to the running workers, the others to the one stopped, and why not', async () => {
     const { ref, channel } = await svc.command();
     const first = new FakeWorker(channel.path, dir).attach(channel.token, ref, 0);
@@ -211,7 +277,8 @@ describe('a run’s session, with a client that answers stops', () => {
       await waitFor(() => (svc.latest(ref)?.workers.length === 2 ? true : undefined));
       expect(await control({ ref: 'ed-00000000', action: 'pause' })).toEqual({
         ok: false,
-        message: 'No worker of this run is connected to the editor.',
+        message:
+          "No worker of this run is connected to the editor: none has started a test yet, or its tests import `test` from '@playwright/test' rather than from the file that extends Piwi's capture fixtures.",
       });
       expect(await control({ ref, action: 'resume' })).toEqual({ ok: false, message: 'No test runs now.' });
       expect(await control({ ref, worker: 1, action: 'step' })).toEqual({

@@ -3,7 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { describe, it, beforeEach, afterEach, expect } from 'vitest';
 import type { PlaywrightTestConfig } from '@playwright/test';
-import { applyOptionsToEnv, originEnv, resolveOptions, usedDotEnv } from '../src/internal/config/env.js';
+import { applyOptionsToEnv, normalizeBoolEnv, originEnv, resolveOptions, usedDotEnv } from '../src/internal/config/env.js';
 import { wrapConfig } from '../src/public/config-wrapper.js';
 import { createGlobalSetup } from '../src/public/global-setup.js';
 import { PiwiDashboardReporter } from '../src/public/reporter.js';
@@ -186,6 +186,31 @@ describe('resolveOptions', () => {
     process.env.PIWI_VERBOSE = 'false';
     const opts = resolveOptions({});
     expect(opts.verbose).toBe(false);
+  });
+
+  it('PIWI_VERBOSE=1 turns it on, as yes and on do', () => {
+    for (const value of ['1', 'yes', 'ON']) {
+      process.env.PIWI_VERBOSE = value;
+      expect(resolveOptions({}).verbose).toBe(true);
+    }
+  });
+
+  it('writes each boolean variable as true or false for the workers, which read some of them as they are', () => {
+    const env: NodeJS.ProcessEnv = {
+      PIWI_CAPTURE_PAGE_INVENTORY: 'yes',
+      PIWI_CAPTURE_LOCATORS: '0',
+      PIWI_AI_UPDATE: 'On',
+      PIWI_VERBOSE: '1',
+      PIWI_PROJECT_NAME: 'shop',
+    };
+    normalizeBoolEnv(env);
+    expect(env).toEqual({
+      PIWI_CAPTURE_PAGE_INVENTORY: 'true',
+      PIWI_CAPTURE_LOCATORS: 'false',
+      PIWI_AI_UPDATE: 'true',
+      PIWI_VERBOSE: 'true',
+      PIWI_PROJECT_NAME: 'shop',
+    });
   });
 
   it('reads PIWI_OUTPUT_FILE from env, and a user option wins over it', () => {

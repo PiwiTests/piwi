@@ -28,6 +28,7 @@ import {
 } from '../../database/schema';
 import { getAppSetting } from '../app-settings';
 import { createScmProvider } from './index';
+import type { ScmProvider } from './ScmProvider';
 import { normalizeGitUrl } from './git-url';
 import { getLocatorHealingBatch } from '../locator-healing';
 import { mapHealActionsByCluster } from '../heal/lookup';
@@ -370,6 +371,38 @@ export async function buildRunPrSummary(
 }
 
 /**
+ * Whether the pull request number a run's CI named belongs to `repositoryUrl`:
+ * the CI's own repository (`owner/repo`, recorded on GitHub Actions and
+ * Bitbucket Pipelines) is that one, or was not recorded. A suite checked out
+ * from another repository names its CI's pull requests, not this one's.
+ */
+export function ciNamesRepository(ciRepository: string | null | undefined, repositoryUrl: string): boolean {
+  const named = ciRepository
+    ?.trim()
+    .replace(/^\/+|\/+$/g, '')
+    .toLowerCase();
+  if (!named) return true;
+  return repositoryUrl.toLowerCase().endsWith(`/${named}`);
+}
+
+/**
+ * The open pull request a run belongs to: the one its CI named, a pull request
+ * from a fork included, else the one open on its branch. Null when neither is.
+ */
+export async function findRunPullRequestNumber(
+  provider: Pick<ScmProvider, 'fetchPullRequest' | 'findPullRequestForBranch'>,
+  prNumber: number | null,
+  branch: string | null,
+): Promise<number | null> {
+  if (prNumber != null) {
+    const named = await provider.fetchPullRequest(prNumber).catch(() => null);
+    if (named?.state === 'open' || named?.state === 'draft') return prNumber;
+  }
+  if (!branch) return null;
+  return (await provider.findPullRequestForBranch(branch).catch(() => null))?.number ?? null;
+}
+
+/**
  * Resolve the pull request for a finished run and post the comment and/or the
  * commit status. Returns what it managed to do, for logs and tests.
  */
@@ -419,19 +452,20 @@ export async function postRunPrFeedback(
   summary.newLeaks = states.resources === 'declined' ? null : await readNewLeaks(db, runId);
 
   // `onlyOnFailure` silences routine green runs, but a run that closed a
-  // cluster or opened a new leak is news. Quarantined failures follow the
-  // commit status's rule.
+  // cluster, opened a new leak or left its change untested is news.
+  // Quarantined failures follow the commit status's rule.
   const quiet = isQuietRun(settings, summary);
 
   let commentPosted = false;
   let prNumber = runPrNumber(run.metadata);
   let commentId: string | null = null;
-  if (settings.comment && branch && !quiet) {
-    const pullRequest = await provider.findPullRequestForBranch(branch);
-    if (pullRequest) {
-      prNumber = pullRequest.number;
+  if (settings.comment && !quiet) {
+    const named = ciNamesRepository(meta?.ci?.repository, repositoryUrl) ? prNumber : null;
+    const pullRequestNumber = await findRunPullRequestNumber(provider, named, branch);
+    if (pullRequestNumber != null) {
+      prNumber = pullRequestNumber;
       const comment = await provider.postPullRequestComment(
-        pullRequest.number,
+        pullRequestNumber,
         PR_COMMENT_MARKER,
         buildPrComment(summary),
       );

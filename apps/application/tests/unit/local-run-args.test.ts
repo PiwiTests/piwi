@@ -135,3 +135,13 @@ describe('buildBisectArgs', () => {
     expect(buildBisectArgs([{ filePath: '-u', title: 'u', line: null, projectName: null }])).toEqual(['--grep=u']);
   });
 });
+
+describe('a spec whose path holds a character a regular expression reads', () => {
+  test('is passed as a pattern that names its own file', () => {
+    const cases = [{ filePath: 'tests/[slug].spec.ts', title: 'shows a post', line: 3, projectName: 'chromium' }];
+    expect(buildReproduceArgs(cases)).toEqual(['tests/[[]slug].spec.ts:3', '--project=chromium']);
+    expect(buildBisectArgs([{ ...cases[0]!, filePath: 'tests/checkout (guest).spec.ts' }])[0]).toBe(
+      'tests/checkout [(]guest[)].spec.ts',
+    );
+  });
+});

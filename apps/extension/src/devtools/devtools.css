@@ -472,6 +472,20 @@ li.locator .locator-verdict {
   margin-left: 6px;
 }
 
+.piwi-send-status {
+  flex-basis: 100%;
+  color: var(--bad);
+  overflow-wrap: anywhere;
+}
+
+.piwi-send-status:empty {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
 .session-form {
   display: flex;
   flex-wrap: wrap;

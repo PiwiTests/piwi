@@ -7,7 +7,7 @@
  * the copyable command: a `--project` filter and a `file:line` filter must pair
  * up, so mixed-project retries become sequential steps.
  */
-import { escapeGrep, toPosixPath, type RetryCase, type RetryMode } from './retry-command';
+import { escapeGrep, specPattern, type RetryCase, type RetryMode } from './retry-command';
 
 /** How the browser runs. `debug` opens the inspector, `ui` opens UI mode. */
 export type LocalRunMode = 'normal' | 'headed' | 'debug' | 'ui';
@@ -53,7 +53,7 @@ function specArgs(cases: RetryCase[], mode: RetryMode): string[] {
   const seen = new Set<string>();
   const specs: string[] = [];
   for (const c of cases) {
-    const spec = mode === 'file-line' && c.line ? `${toPosixPath(c.filePath)}:${c.line}` : toPosixPath(c.filePath);
+    const spec = mode === 'file-line' && c.line ? `${specPattern(c.filePath)}:${c.line}` : specPattern(c.filePath);
     if (seen.has(spec)) continue;
     seen.add(spec);
     specs.push(spec);
@@ -87,7 +87,7 @@ export function buildReproduceArgs(cases: RetryCase[]): string[] {
  * be read as an option and is left out.
  */
 export function buildBisectArgs(cases: RetryCase[]): string[] {
-  const files = [...new Set(cases.map((c) => toPosixPath(c.filePath)))].filter((f) => f && !f.startsWith('-'));
+  const files = [...new Set(cases.map((c) => specPattern(c.filePath)))].filter((f) => f && !f.startsWith('-'));
   const titles = [...new Set(cases.map((c) => c.title).filter(Boolean))].map(escapeGrep);
   const args = [...files];
   if (titles.length > 0) args.push(`--grep=${titles.length === 1 ? titles[0]! : `(${titles.join('|')})`}`);

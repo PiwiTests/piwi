@@ -84,6 +84,30 @@ describe('parseBlobReport', () => {
     expect(parsed.cases[0]!.case.filePath).toBe('tests/login/auth.spec.ts');
   });
 
+  test('places the error of a timed-out test at the line of the call it interrupted', async () => {
+    const parsed = await parse(
+      buildBlobReport({
+        tests: [
+          {
+            testId: 't',
+            title: 'signs in',
+            attempts: [
+              {
+                status: 'timedOut',
+                errors: [
+                  { message: 'Test timeout of 30000ms exceeded.' },
+                  { message: 'Error: locator.click: Test timeout of 30000ms exceeded.', line: 7, column: 54 },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(parsed.cases[0]!.case.error).toMatch(/\n {4}at tests\/demo\.spec\.ts:7:54$/);
+  });
+
   test('keeps the spec path as-is when the config sits at the test root', async () => {
     const parsed = await parse(
       buildBlobReport({

@@ -32,8 +32,9 @@ export type PauseChoice = 'resume' | 'step' | 'pick' | 'record' | 'finish' | 'en
  * the page while a test is paused before a call: where it is paused, the
  * attempt, the call and its locator, and its buttons (Record here when the editor can record, End the test when the
  * test can end there). The choice lands in
- * `__piwiPauseState` (see `PauseChoice`), polled from Node; Esc resumes. The
- * page under the bar stays live. Must stay fully self-contained.
+ * `__piwiPauseState` (see `PauseChoice`), polled from Node; Esc resumes, but in a
+ * dialog, a menu or an open popup of the page. The page under the bar stays live.
+ * Must stay fully self-contained.
  */
 export function showPauseBar(arg: PauseBarArg): void {
   const g = globalThis as any;
@@ -71,8 +72,25 @@ export function showPauseBar(arg: PauseBarArg): void {
     cleanup();
     g.__piwiPauseState = choice;
   };
+  // Esc pressed in a dialog, a list box or a menu of the page, on a control whose popup is open (a combobox's list, a
+  // menu button's menu), or while the page shows a modal dialog, closes it: it leaves the test paused. An open
+  // disclosure (an accordion's toggle) has no popup to close.
+  const pageTakesEscape = (e: any): boolean => {
+    const path = typeof e.composedPath === 'function' ? e.composedPath() : [e.target];
+    const el = path.find((node: any) => node && node.nodeType === 1);
+    if (el && !bar.contains(el) && typeof el.closest === 'function') {
+      if (el.closest('dialog[open],[role="dialog"],[role="alertdialog"],[role="listbox"],[role="menu"]')) return true;
+      const popup = '[aria-expanded="true"]:is([role="combobox"],[aria-haspopup]:not([aria-haspopup="false"]))';
+      if (el.matches(popup)) return true;
+    }
+    try {
+      return !!doc.querySelector('dialog:modal');
+    } catch {
+      return false;
+    }
+  };
   const onKey = (e: any) => {
-    if (e.key !== 'Escape') return;
+    if (e.key !== 'Escape' || pageTakesEscape(e)) return;
     e.preventDefault();
     e.stopImmediatePropagation();
     done('resume');
@@ -103,7 +121,14 @@ export function showPauseBar(arg: PauseBarArg): void {
       : []),
     ...(arg.failure
       ? []
-      : [['Finish', 'finish', 'Run on and pause no more in this test', false] as [string, string, string, boolean]]),
+      : [
+          ['Finish', 'finish', 'Run the test on without stopping at a breakpoint again in this attempt', false] as [
+            string,
+            string,
+            string,
+            boolean,
+          ],
+        ]),
     ...(arg.end && !arg.failure
       ? [
           ['End the test', 'end', 'Skip the rest of this test: it is reported as skipped', false] as [

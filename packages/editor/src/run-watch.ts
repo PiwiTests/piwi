@@ -184,14 +184,14 @@ export function repeatVerdict(
 
 /**
  * What a command that ran the tests at `target` `repeat` times each says once it ended, when its run reached no
- * instance: from its exit code alone, every run passed, or at least one failed.
+ * instance: from its exit code alone, no run failed (a skipped test exits 0 too), or at least one did.
  */
 export function exitVerdict(
   repeat: number,
   exitCode: number | null,
   target: string,
 ): Pick<Notice, 'severity' | 'message'> {
-  if (exitCode === 0) return { severity: 'information', message: `Passed ${repeat} of ${repeat}: ${target}` };
+  if (exitCode === 0) return { severity: 'information', message: `None of ${repeat} runs failed: ${target}` };
   if (exitCode === null) {
     return {
       severity: 'warning',

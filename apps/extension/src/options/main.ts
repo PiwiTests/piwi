@@ -1,3 +1,4 @@
+import type { EditorPairing } from '@piwitests/core/editor-send';
 import {
   editorOriginPattern,
   getEditorPairing,
@@ -28,6 +29,7 @@ import {
   testDesktop,
   startDesktopPairing,
   pollDesktopPairing,
+  provePairedEditor,
   type ProjectOption,
 } from '../shared/piwi-client.js';
 import {
@@ -1088,11 +1090,17 @@ saveBtn.addEventListener('click', () => {
  */
 async function revokeInstanceHostPermission(instanceUrl: string): Promise<void> {
   const pattern = originPattern(instanceUrl);
-  if (!pattern) return;
-  // The desktop app paired at the same address keeps it for Run with Playwright; Unpair gives it back.
-  const desktop = await getDesktopSettings().catch(() => null);
-  if (desktop && hostPattern(desktop.url) === pattern) return;
-  await chrome.permissions.remove({ origins: [pattern] }).catch(() => undefined);
+  if (pattern) await releaseGrant(pattern);
+}
+
+/**
+ * Gives back the grant of `pattern` that the instance or a pairing let go of, unless another of them, a recording or a
+ * replay still holds it: in Firefox, a pattern names no port, so every address on 127.0.0.1 shares one.
+ */
+async function releaseGrant(pattern: string): Promise<void> {
+  const [grant] = siteGrants([pattern], await grantHolders());
+  if (grant && !canRevoke(grant)) return;
+  await chrome.permissions.remove({ origins: [pattern] }).catch(() => false);
 }
 
 disconnectBtn.addEventListener('click', () => {
@@ -1210,9 +1218,36 @@ async function renderEditorPairing(): Promise<void> {
   editorPairBtn.classList.toggle('primary', !pairing);
   renderEditorPill();
   void renderSiteAccess();
+  if (pairing) void checkEditorPairing(pairing);
+}
+
+/** Bumped by each check of the pairing and each click on the card, so a check answers only while nothing came since. */
+let editorCheck = 0;
+
+/**
+ * Asks the program on the paired port to prove it is the paired editor, as Send to editor does before it sends, and
+ * says on the status line why nothing would reach the editor when it does not.
+ */
+async function checkEditorPairing(pairing: EditorPairing): Promise<void> {
+  const check = ++editorCheck;
+  const allowed = await chrome.permissions.contains({ origins: [editorOriginPattern(pairing)] }).catch(() => false);
+  const proof = allowed ? await provePairedEditor(pairing) : null;
+  if (proof === 'proven' || check !== editorCheck) return;
+  // A pairing changed or forgotten meanwhile, from another page of the extension too, is checked on its own.
+  const current = await getEditorPairing().catch(() => null);
+  if (check !== editorCheck || current?.url !== pairing.url || current.token !== pairing.token) return;
+  const url = patternView(pairing.url);
+  const words =
+    proof === null
+      ? tNodes('options_editorNoAccess', { url })
+      : proof === 'unreachable'
+        ? tNodes('options_editorUnreachable', { url })
+        : tNodes('options_editorNotProven', { url });
+  writeStatus(editorStatusEl, words, 'error');
 }
 
 editorPairBtn.addEventListener('click', () => {
+  editorCheck++;
   // On 127.0.0.1 whatever loopback name it was typed with: the origin granted is the one kept.
   const pairing = parseEditorPairing(editorAddressEl.value);
   if (!pairing) {
@@ -1233,10 +1268,11 @@ editorPairBtn.addEventListener('click', () => {
 });
 
 editorUnpairBtn.addEventListener('click', () => {
+  editorCheck++;
   void (async () => {
     const pairing = await getEditorPairing();
     await setEditorPairing(null);
-    if (pairing) await chrome.permissions.remove({ origins: [editorOriginPattern(pairing)] }).catch(() => false);
+    if (pairing) await releaseGrant(editorOriginPattern(pairing));
     await renderEditorPairing();
   })();
 });
@@ -1393,10 +1429,7 @@ desktopForgetBtn.addEventListener('click', () => {
     if (desktop) await markDesktopApiKey(desktop).catch(() => undefined);
     await clearDesktopSettings();
     // The instance kept at the app's address goes on using it; Disconnect gives it back.
-    const pattern = desktop ? hostPattern(desktop.url) : null;
-    if (pattern && pattern !== originPattern(stored.instanceUrl)) {
-      await chrome.permissions.remove({ origins: [pattern] }).catch(() => false);
-    }
+    if (desktop) await releaseGrant(hostPattern(desktop.url));
     desktopTokenEl.value = '';
     setDesktopStatus(t('options_desktopForgotten'), 'ok');
     await renderDesktopState();

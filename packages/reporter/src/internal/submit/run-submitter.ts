@@ -322,7 +322,7 @@ export class RunSubmitter {
 
       await this.httpClient.postJSON(`/api/test-runs/${sm.runId}/finish`, finishBody, auth);
 
-      this.logger.info(`Successfully finalized streaming run #${sm.runId}`);
+      this.logger.debug(`Successfully finalized streaming run #${sm.runId}`);
       this.dropLocalCopies();
 
       if (this.hasReports(run)) {
@@ -359,8 +359,7 @@ export class RunSubmitter {
       return { done: true, output: this.buildOutput(response?.runId, response?.projectId, run, overallStatus) };
     } catch (error) {
       if (error instanceof HttpError && error.status === 401 && !auth) return this.stopForMissingAuth(run, payload);
-      this.logger.warn(`Failed to upload with files: ${errorMessage(error)}`);
-      this.logger.info('Falling back to JSON upload...');
+      this.logger.warn(`Could not upload the run's files (${errorMessage(error)}): sending its results alone.`);
       return { done: false, output: null };
     }
   }

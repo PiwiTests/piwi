@@ -110,3 +110,47 @@ test.describe('Scenario gaps tab', () => {
     await expect(gap).toBeHidden({ timeout: 10000 });
   });
 });
+
+test.describe('Recomputing scenario gaps', () => {
+  test.setTimeout(90000);
+
+  test('computes the default branch’s gaps when the newest run is on another branch', async ({ request }) => {
+    const run = (branch: string, title: string) =>
+      retryPost(request, '/api/test-runs/submit', {
+        data: {
+          projectName: PROJECT.SCENARIO_GAPS_RECOMPUTE,
+          status: 'passed',
+          startTime: new Date().toISOString(),
+          duration: 1000,
+          totalTests: 1,
+          passedTests: 1,
+          failedTests: 0,
+          skippedTests: 0,
+          metadata: { scm: { branch } },
+          testCases: [
+            {
+              title,
+              status: 'passed',
+              duration: 500,
+              location: 'tests/orders.spec.ts:10:5',
+              retries: 0,
+              networkRequests: [{ method: 'POST', url: 'https://app.test/api/orders-recompute', status: 201 }],
+            },
+          ],
+        },
+        timeout: 20000,
+      });
+
+    await run('main', 'places an order');
+    const menu = await (await request.get('/api/projects/menu')).json();
+    const projectId = (menu.items as Array<{ id: number; name: string }>).find(
+      (p) => p.name === PROJECT.SCENARIO_GAPS_RECOMPUTE,
+    )!.id;
+    await request.patch(`/api/projects/${projectId}`, { data: { defaultBranch: 'main' } });
+    await run('feature/checkout', 'places an order');
+
+    const res = await retryPost(request, `/api/projects/${projectId}/gaps/recompute`, { data: {}, timeout: 20000 });
+    const body = await res.json();
+    expect(body.gapsUpserted).toBeGreaterThan(0);
+  });
+});

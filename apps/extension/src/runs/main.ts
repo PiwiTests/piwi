@@ -1004,7 +1004,8 @@ function emptyOf(current: RunsState): [IconName, string, EmptyAction[]] {
     case 'outdated':
       return ['alert', t('runs_statusOutdated'), ['again']];
     case 'unproven':
-      return ['alert', t('runs_statusUnproven'), ['again']];
+      // An editor that moved to another port is paired again from the settings, at its new address.
+      return ['alert', t('runs_statusUnproven'), ['settings', 'again']];
     default:
       if (current.hubs.length === 0) return ['plug', t('runs_statusNoHub'), ['again']];
       if (!current.hubs.some((hub) => hub.connected)) return ['clock', t('runs_statusSearching'), []];

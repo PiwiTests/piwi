@@ -1,9 +1,10 @@
 /**
  * Status pull — reading the ticket back into the dashboard. Every entity link
- * that carries a `connection_id` is refreshed through its tracker: the status
- * name and color, the title, the status category and assignee (kept in the
- * link's metadata), so a cluster whose Jira issue closed last week stops sitting
- * in the inbox as open.
+ * that carries the connection its project is bound to is refreshed through its
+ * tracker: the status name and color, the title, the status category and
+ * assignee (kept in the link's metadata), so a cluster whose Jira issue closed
+ * last week stops sitting in the inbox as open. A link on another connection is
+ * not read (`linksOnBoundConnection`).
  *
  * Links on an open cluster refresh every sweep; links on a resolved or ignored
  * cluster refresh at most daily. When the ticket moves to Done the
@@ -24,6 +25,7 @@ import type { IssueTracker } from './types';
 import { statusColorForCategory, ticketMove } from './types';
 import { createTracker } from './connections';
 import { readProjectIntegration } from './binding';
+import { linksOnBoundConnection } from './bound-connection';
 import { updateEntityLinkStatus, mergeEntityLinkMetadata } from './entity-links';
 import { appendTriageNote } from '../fix-verification';
 import { SYNC_BATCH_LIMIT, isLinkRefreshDue } from '#shared/integrations/sync-config';
@@ -198,11 +200,14 @@ export async function syncTrackerLinks(db: DbClient, opts: { now?: Date; limit?:
   const now = opts.now ?? new Date();
   const limit = opts.limit ?? SYNC_BATCH_LIMIT;
 
-  const links = await db
-    .select()
-    .from(entityLinks)
-    .where(and(isNotNull(entityLinks.connectionId), isNotNull(entityLinks.key)))
-    .orderBy(asc(entityLinks.unfurledAt));
+  const links = await linksOnBoundConnection(
+    db,
+    await db
+      .select()
+      .from(entityLinks)
+      .where(and(isNotNull(entityLinks.connectionId), isNotNull(entityLinks.key)))
+      .orderBy(asc(entityLinks.unfurledAt)),
+  );
 
   const clusterByLink = await clustersForLinks(db, links);
   const due = links
@@ -262,16 +267,22 @@ export async function syncTrackerLinks(db: DbClient, opts: { now?: Date; limit?:
   return { refreshed, failed, skipped };
 }
 
-/** Sync a single connection's links immediately (the webhook and the tests use this). */
+/**
+ * Sync a single connection's links to one issue immediately, those of the
+ * projects bound to that connection (the webhook and the tests use this).
+ */
 export async function refreshLinkByExternalId(
   db: DbClient,
   connectionId: number,
   externalId: string,
 ): Promise<boolean> {
-  const links = await db
-    .select()
-    .from(entityLinks)
-    .where(and(eq(entityLinks.connectionId, connectionId), eq(entityLinks.externalId, externalId)));
+  const links = await linksOnBoundConnection(
+    db,
+    await db
+      .select()
+      .from(entityLinks)
+      .where(and(eq(entityLinks.connectionId, connectionId), eq(entityLinks.externalId, externalId))),
+  );
   if (links.length === 0) return false;
   const tracker = await createTracker(db, connectionId).catch(() => null);
   if (!tracker) return false;

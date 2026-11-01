@@ -1018,7 +1018,7 @@ export const MCP_TOOL_DEFS = [
         'the tests whose coverage reaches it',
       ],
       'With recorded coverage of a modified file’s base version, its coverage-reached tests narrow to those that ran a changed line (`lines`) or a function around one (`functions`). A test its coverage cannot rule out stays (`file`): another version, no ranges, an incomplete capture, or a change outside every function, listed in `fileLevelLines`.',
-      'Each file gives its `level` (`lines`, `file` or `none`), its tests with how they were selected and the changed lines they ran (1-based, `12-15,20`), `ruledOut` (how many tests reach it and ran none of the changed lines) and `notRun` (changed lines inside functions no test ran: what a new test should cover, see the `write_the_missing_test` prompt). A changed file that maps to no test widens the selection to the whole suite (`widened`, with a warning) rather than skipping it.',
+      'Each file gives its `level` (`lines`, `file` or `none`), its tests with how they were selected and the changed lines they ran (1-based, `12-15,20`), `ruledOut` (how many tests reach it and ran none of the changed lines) and `notRun` (changed lines inside functions no test ran, numbered as in the file before the change: what a new test should cover, see the `write_the_missing_test` prompt). A changed file that maps to no test widens the selection to the whole suite (`widened`, with a warning) rather than skipping it.',
     ),
     inputSchema: {
       type: 'object',
@@ -1049,6 +1049,7 @@ export const MCP_TOOL_DEFS = [
     description: md(
       'List the failure clusters of every project you can read, open ones by default, most occurrences first: a cross-project triage queue.',
       '`queue` focuses one queue of the failure inbox: `regressions` on the default branch, `fix-didnt-hold`, `quarantine-ready`, `merge-suggestions` awaiting a decision, `needs-ticket`, or `mine` (assigned to you or owned by you). A queue keeps open, non-snoozed clusters and overrides `status`; without one, snoozed clusters are listed too.',
+      "A queue lists the clusters seen in developers' own runs and never in CI too, each with `seenOnlyLocally: true`: Home's inbox leaves those out until asked.",
     ),
     inputSchema: {
       type: 'object',
@@ -1253,7 +1254,7 @@ export const MCP_TOOL_DEFS = [
         '`accept`: queue its draft, optionally for `assignedTo`',
         '`snooze`: for `1-day`, `1-week` or `until-node-changes`',
         '`dismiss`: with a `reason`, `not-worth-testing`, `covered-elsewhere` (with the covering test) or `wrong`',
-        '`covered-by`: record the test that covers it, without dismissing it',
+        '`covered-by`: record the test written for it, which closes it without dismissing it; a test that already covered it is a dismissal as `covered-elsewhere`',
       ],
       'Requires `triage:write` (Maintainer and above on the project).',
     ),
@@ -1271,7 +1272,8 @@ export const MCP_TOOL_DEFS = [
         reason: {
           type: 'string',
           enum: ['not-worth-testing', 'covered-elsewhere', 'wrong'],
-          description: 'With dismiss: why (default wrong)',
+          description:
+            'With dismiss: why. `wrong` counts against the detector, and so does `covered-elsewhere` on a gap (not on a finding); `not-worth-testing`, or no reason, counts for neither',
         },
         coveringTestCaseId: {
           type: 'number',
@@ -1536,7 +1538,7 @@ export const MCP_TOOL_DEFS = [
     permission: 'link:write',
     description: md(
       'Link an existing ticket or pull request to a failure cluster, an execution, a test case, a run or a bug report.',
-      'It is the **Links** panel’s action. Any http or https URL works; one from a connected tracker is matched to its connection and shows its live status. Returns the stored link. To file a new Jira issue, use `create_issue`.',
+      'It is the **Links** panel’s action. Any http or https URL works; one on the site of the tracker the project is bound to is matched to that connection and shows its live status, and any other stays a plain link. Returns the stored link. To file a new Jira issue, use `create_issue`.',
       'Requires `link:write` (Contributor and above on the project).',
     ),
     inputSchema: {
@@ -1869,6 +1871,7 @@ export const MCP_TOOL_DEFS = [
     description: md(
       'List a project’s scenario gaps, ranked: the tests that do not exist yet, each with its class, evidence lines and exposure score.',
       'Every evidence line is observed reach, never instrumented coverage. `draft_scenario` turns a gap into a test skeleton.',
+      'The gaps of a detector muted on the project, for its low precision, come last, marked `muted`.',
     ),
     inputSchema: {
       type: 'object',

@@ -181,7 +181,12 @@ test.describe('the Elements sidebar', () => {
     // The worker answers why it did not send: the browser never granted the editor's address.
     await send.click();
     await expect(first.getByRole('button', { name: 'Not sent' })).toBeVisible();
-    await expect(send).toHaveAttribute('title', 'Piwi Picker needs permission to reach the editor on this computer.');
+    await expect(first.getByRole('status')).toHaveText(
+      'Piwi Picker needs permission to reach the editor on this computer.',
+    );
+    // The reason goes under the row's buttons, which keep their line.
+    const addToSession = first.getByRole('button', { name: 'Add to session' });
+    expect((await addToSession.boundingBox())!.y).toBe((await send.boundingBox())!.y);
 
     // What reaches the worker when it does send: the line the Action button copied last.
     await sidebar.evaluate(() => {
@@ -195,6 +200,8 @@ test.describe('the Elements sidebar', () => {
     await first.getByRole('button', { name: 'Action (click)' }).click();
     await send.click();
     await expect(first.getByRole('button', { name: 'Sent' })).toBeVisible();
+    // Emptied, the line stays a live region for the next reason, out of sight.
+    await expect(first.getByRole('status')).toHaveText('');
     expect(await sidebar.evaluate(() => (globalThis as { __sent?: unknown[] }).__sent)).toEqual([
       {
         type: 'piwi-send-to-editor',

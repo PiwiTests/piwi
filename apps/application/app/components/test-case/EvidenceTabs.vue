@@ -23,6 +23,7 @@ import type { AttachmentInfo, NetworkRequest, PerformanceStep, TraceInfo, WebVit
 import type { WireExecutionResources } from '#shared/types';
 import { isVideoFile } from '~/utils/text-format';
 import { debugTargetOf } from '~/utils/ide-links';
+import { fixturesActiveIn } from '~/utils/fixtures-active';
 import { getPerformanceHints } from '~/utils/performance-hints';
 import { resolveEvidenceState, type EvidenceState } from '#shared/evidence-state';
 import type { CapabilityState } from '#shared/capabilities';
@@ -116,19 +117,7 @@ const testSource = computed<string | null>(() => props.testCase?.testSource ?? n
 const evidenceSources = computed(
   () => (props.testCase?.evidenceSources as { console?: 'trace'; network?: 'trace'; aria?: 'trace' } | null) ?? null,
 );
-const fixturesActive = computed(() => {
-  const tc = props.testCase;
-  if (!tc) return false;
-  const src = evidenceSources.value ?? {};
-  return (
-    (consoleLogs.value.length > 0 && src.console !== 'trace') ||
-    (networkRequests.value.length > 0 && src.network !== 'trace') ||
-    (Boolean(ariaSnapshot.value) && src.aria !== 'trace') ||
-    Boolean(pageState.value) ||
-    Boolean(webVitals.value) ||
-    Boolean(tc.aiUsage)
-  );
-});
+const fixturesActive = computed(() => fixturesActiveIn(props.testCase));
 const mk = (hasData: boolean, traced?: boolean) => ({
   hasData,
   source: traced ? ('trace' as const) : ('fixture' as const),

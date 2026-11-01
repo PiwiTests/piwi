@@ -299,6 +299,7 @@ import { getVerifiedFixes } from '#shared/handlers/flake-verified';
 import { getRunResources, getRunResourceTimeline } from '#shared/handlers/run-resources';
 import {
   getFailureCluster,
+  countLocalOnlyClusters,
   getOpenFailureClusters,
   patchClusterStatus,
   patchClusterAssignee,
@@ -353,12 +354,14 @@ import {
   demoTransitionSample,
   demoAssignable,
   demoIssuePicker,
+  demoConnectionBoundProjects,
   getDemoProjectIntegration,
   saveDemoProjectIntegration,
   demoAutoCreatePreview,
   generateDemoWebhookToken,
   disableDemoWebhookToken,
 } from './integrations';
+import { canReadThroughConnection, CONNECTION_NOT_FOUND } from '#shared/integrations/connection-access';
 import type { ConnectionInput } from '#shared/integrations/types';
 import type { ResolvedProjectIntegration } from '#shared/integrations/binding';
 import { toIssueLocale } from '#shared/integrations/messages';
@@ -643,6 +646,17 @@ async function assertDemoLinkTargetScope(
   // An unknown entity type is left to the handler's own validation.
   if (!entity || !Number.isInteger(entityId) || entityId <= 0) return;
   await assertDemoEntityScope(ctx, entity, entityId);
+}
+
+/**
+ * Refuse a connection the acting user may not read through, and one that does
+ * not exist, with the 404 of the server's `requireConnectionAccess`.
+ */
+async function assertDemoConnectionAccess(ctx: DemoCtx | undefined, connectionId: number): Promise<void> {
+  const bound = await demoConnectionBoundProjects(await getDemoDb(), connectionId);
+  if (!bound || (ctx && !canReadThroughConnection(ctx.access, bound))) {
+    throw demoHttpError(404, CONNECTION_NOT_FOUND);
+  }
 }
 
 /** Check the route's permission on the project of an existing link's target (the server's `resolveLinkProjectId`). */
@@ -1403,7 +1417,14 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/failure-clusters$/,
     handler: async (_m, _b, q, ctx) => {
       const limit = Math.min(200, Math.max(1, Number(q?.get('limit')) || 50));
-      return { items: await getOpenFailureClusters(await getDemoDb(), ctx?.scope, limit) };
+      const local = q?.get('local') === 'exclude' ? 'exclude' : 'include';
+      const db = await getDemoDb();
+      const now = new Date();
+      const [items, localOnlyHidden] = await Promise.all([
+        getOpenFailureClusters(db, ctx?.scope, limit, now, { localOnly: local }),
+        local === 'exclude' ? countLocalOnlyClusters(db, ctx?.scope, now) : 0,
+      ]);
+      return { items, localOnlyHidden };
     },
   },
   {
@@ -3042,6 +3063,7 @@ const routes: RouteEntry[] = [
           status: query?.get('status') ?? undefined,
           prNumber: num(query?.get('pr')),
           limit: num(query?.get('limit')),
+          mutedLast: true,
         }),
       };
     },
@@ -3468,19 +3490,28 @@ const routes: RouteEntry[] = [
     method: 'GET',
     pattern: /^\/api\/integrations\/connections\/(\d+)\/projects$/,
     permission: 'issue:create',
-    handler: async () => demoConnectionProjects(),
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoConnectionAccess(ctx, +m[1]!);
+      return demoConnectionProjects();
+    },
   },
   {
     method: 'GET',
     pattern: /^\/api\/integrations\/connections\/(\d+)\/projects\/([^/]+)\/issue-types$/,
     permission: 'issue:create',
-    handler: async () => demoConnectionIssueTypes(),
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoConnectionAccess(ctx, +m[1]!);
+      return demoConnectionIssueTypes();
+    },
   },
   {
     method: 'GET',
     pattern: /^\/api\/integrations\/connections\/(\d+)\/projects\/([^/]+)\/issue-types\/([^/]+)\/fields$/,
     permission: 'issue:create',
-    handler: async (m) => demoCreateFields(decodeURIComponent(m[3]!)),
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoConnectionAccess(ctx, +m[1]!);
+      return demoCreateFields(decodeURIComponent(m[3]!));
+    },
   },
   {
     method: 'GET',
@@ -3492,13 +3523,19 @@ const routes: RouteEntry[] = [
     method: 'GET',
     pattern: /^\/api\/integrations\/connections\/(\d+)\/assignable$/,
     permission: 'issue:create',
-    handler: async () => demoAssignable(),
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoConnectionAccess(ctx, +m[1]!);
+      return demoAssignable();
+    },
   },
   {
     method: 'GET',
     pattern: /^\/api\/integrations\/connections\/(\d+)\/issue-picker$/,
     permission: 'issue:create',
-    handler: async (_m, _body, query) => demoIssuePicker(query?.get('q') ?? ''),
+    handler: async (m, _body, query, ctx) => {
+      await assertDemoConnectionAccess(ctx, +m[1]!);
+      return demoIssuePicker(query?.get('q') ?? '');
+    },
   },
   {
     method: 'POST',

@@ -1166,6 +1166,21 @@ export interface RecordResult {
 
 export const RECORD_REQUEST = 'piwi/record';
 
+/**
+ * `piwi/newTestFile`: where Record a new test file offers to create its spec, from the file or folder at hand (`uri`):
+ * beside the spec at hand, in a folder of a config's test folder at hand, else in the test folder of the config holding
+ * it (`testDir`, as Playwright resolves it), or of the workspace's first config. Named `recorded` with the suffix the
+ * suite's specs use, a name the folder does not hold yet.
+ */
+export interface NewTestFileParams {
+  uri?: string | null;
+}
+
+/** The new spec's path (`uri`), and the folder of the config it belongs to (`root`, a path). Null with no config. */
+export type NewTestFileResult = { uri: string; root: string } | null;
+
+export const NEW_TEST_FILE_REQUEST = 'piwi/newTestFile';
+
 /** `piwi/stopRecording`: stop recording; the browser closes and a last `piwi/recordingChanged` says `stopped`. */
 export interface StopRecordingParams {
   sessionId: string;

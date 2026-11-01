@@ -45,7 +45,8 @@ With an embedding model configured, near-duplicate clusters that the fingerprint
 The **Failure inbox** on Home lists up to 50 open failure clusters across the projects you can see, most
 recently seen first. Each row shows the cluster's **headline**, its **top clue**, the **owner or assignee**, the
 **affected-test count**, when it was **last seen**, and only the exceptional **badges**, such as a regression on the
-default branch.
+default branch. A cluster seen in developers' local runs and never in CI, in a project that runs in CI, stays out: the
+inbox says how many, and **Show them** lists them.
 
 ### Queues
 
@@ -69,8 +70,8 @@ Every row can be triaged in place. Select a row with the mouse or `j` / `k`, the
 tracker is connected). `x` selects rows for a **bulk bar** that applies the same actions to all of them. Resolve, ignore, snooze and assign on
 one row can be undone for a few seconds. [Keyboard shortcuts](/reference/keyboard-shortcuts#failure-inbox) lists every key.
 
-Linking a known issue (`l`) pins a URL; with an [issue tracker connected](/operate/integrations), Jira links unfurl
-and stay in sync (see [issue tracking](/features/issue-tracking)).
+Linking a known issue (`l`) pins a URL; with the project bound to an [issue tracker](/operate/integrations), Jira links
+to its site unfurl and stay in sync (see [issue tracking](/features/issue-tracking)).
 
 ## Owners and assignees
 

@@ -16,11 +16,12 @@ responsibilities.
    pins the two together.
 3. **Side effects**: what a user's suite can observe, each changed only on purpose:
    - `PIWI_*` env vars (`internal/config/env.ts`; `PIWI_DASHBOARD_URL`, `PIWI_API_KEY` and `PIWI_PROJECT_NAME` also from
-     the `.env` in the Playwright config's folder, below the environment), and the ones `onBegin` sets for the
-     workers: for a run started in a terminal or by an editor's test runner (`PW_TEST_REPORTER` naming a file),
-     `PIWI_RUN_CHANNEL` and `PIWI_RUN_REF` (`terminal-<pid>-<time>`) of the editor whose workspace holds it
-     (`internal/config/editors.ts`: never under CI, Playwright's debugger or UI mode, nor with `PIWI_EDITOR=off`, and
-     only with a terminal or a test runner unless `PIWI_EDITOR=on`), with one line saying so;
+     the `.env` in the Playwright config's folder, below the environment; the boolean ones `onBegin` writes as `true`
+     or `false`, `normalizeBoolEnv`), and the ones `onBegin` sets for the workers: for a run started in a terminal or
+     by an editor's test runner (`PW_TEST_REPORTER` naming a file), `PIWI_RUN_CHANNEL` and `PIWI_RUN_REF`
+     (`terminal-<pid>-<time>`) of the editor whose workspace holds it (`internal/config/editors.ts`: never under CI,
+     Playwright's debugger or UI mode, nor with `PIWI_EDITOR=off`, and only with a terminal or a test runner unless
+     `PIWI_EDITOR=on`), with one line saying so;
    - `piwi-*` attachment names (`internal/capture/attachments.ts`), temp files in `os.tmpdir()`, and
      `[Piwi Dashboard]`-prefixed log output;
    - the `__piwiProbeElement` global the capture fixtures install into every instrumented page

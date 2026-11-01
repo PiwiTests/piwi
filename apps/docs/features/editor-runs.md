@@ -85,7 +85,8 @@ Tools → Piwi** in a JetBrains IDE) shows it always, only when something fails,
 A verification (**Verify ×3**) says how many of its runs passed instead, whatever the setting: `Piwi: run #124 ·
 Passed 3 of 3`, or `Failed 1 of 3`. Each run is a result of its own on the instance, and the editor counts them from
 the results the run streams as it executes; when it missed some, a failing verification says `Failed at least 1 of 3`.
-When its run never reached an instance, the exit code says it: `Passed 3 of 3: tests/checkout.spec.ts:42`, or
+When its run never reached an instance, the exit code says it, which cannot tell a pass from a skip:
+`None of 3 runs failed: tests/checkout.spec.ts:42`, or
 `Failed at least 1 of 3: tests/checkout.spec.ts:42 (exit code 1)`.
 
 ## The status bar

@@ -376,6 +376,42 @@ describe('isQuietRun', () => {
   test('posts every run when only-on-failure is off', () => {
     expect(isQuietRun({ onlyOnFailure: false }, summary())).toBe(false);
   });
+
+  test('posts a green run whose change left a file unreached, and not for changed lines unrun alone', () => {
+    const base = {
+      fileReach: true,
+      totalFiles: 1,
+      uncoveredFiles: 0,
+      reachedFiles: 1,
+      notCounted: { notObservable: 0, outOfScope: 0, deleted: 0 },
+      ticketCount: 0,
+      windowRuns: 30,
+      tickets: [],
+    } satisfies PrChangeCoverage;
+    expect(isQuietRun(onlyOnFailure, summary({ changeCoverage: base }))).toBe(true);
+    expect(isQuietRun(onlyOnFailure, summary({ changeCoverage: { ...base, uncoveredFiles: 1 } }))).toBe(false);
+    const unrunLines: PrChangeCoverage = {
+      ...base,
+      tickets: [
+        {
+          ticket: null,
+          files: [
+            {
+              filePath: 'src/Orders.cs',
+              additions: 4,
+              deletions: 0,
+              reach: 'reached',
+              lines: { changed: 4, ran: 2, undetermined: 0, notRun: [[14, 15]] },
+            },
+          ],
+        },
+      ],
+    };
+    expect(isQuietRun(onlyOnFailure, summary({ changeCoverage: unrunLines }))).toBe(true);
+    expect(
+      isQuietRun(onlyOnFailure, summary({ changeCoverage: { ...base, fileReach: false, uncoveredFiles: 1 } })),
+    ).toBe(true);
+  });
 });
 
 describe('buildGateStatus', () => {

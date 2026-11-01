@@ -18,7 +18,7 @@ or pick a better locator, which lands back on that line in the editor. The stop 
 
 1. Set a line breakpoint on a line with a Playwright call, in a spec or a page object:
    `await page.getByText('Pay now').click();`, `await page.goto('/checkout');`, `await page.keyboard.press('Tab');`
-   or `await expect(page).toHaveURL(/cart/);`.
+   or `await expect(page).toHaveURL(/cart/);`. On a statement broken over lines, any of its lines will do.
 2. Run the test from Piwi: **Run this test**, or any command of [Runs from the editor](./editor-runs#run-tests).
 3. The run opens a headed browser. Before the call on your line runs, the pause bar appears with the call as
    Playwright names it, `Paused at login.spec.ts:42 · Click getByText('Pay now')`, and a locator call's element is
@@ -71,11 +71,12 @@ starts recording. Pause and Stop are in the recorder's bar in the page and in th
 comes back, and **Resume** runs the rest of the test from the page as you left it, which checks that the new steps fit
 what follows.
 
-`await page.pause()` in a test does the same without a breakpoint: in a run Piwi starts, or any headed run with
-breakpoints, it shows Piwi's pause bar there in place of Playwright's Inspector, with **Record here** among its
+`await page.pause()` in a test does the same without a breakpoint: in a run Piwi starts or
+[that follows your editor](./terminal-runs), or any headed run with breakpoints, it stops there under Piwi's pause bar
+in place of Playwright's Inspector (headless, in the editor), with **Record here** among its
 buttons in a run Piwi starts, and Piwi adds `--headed` to a run whose spec holds a `page.pause()` call. The
-`page.pause()` line stays, so the next run can record from there again; remove it when the test is done. In a run
-without breakpoints Piwi did not start, outside a test (a `beforeAll` or `afterAll`) and on a page of a browser the
+`page.pause()` line stays, so the next run can record from there again; remove it when the test is done. In any other
+run, outside a test (a `beforeAll` or `afterAll`) and on a page of a browser the
 test launched itself, `page.pause()` is Playwright's own, with its Inspector; in a headless browser it returns at
 once.
 **Record here** records http(s) pages: on a page the test made with `setContent`, or a `file:` page, the editor says
@@ -90,7 +91,8 @@ starts at the editor's breakpoints** under **Settings → Tools → Piwi** in a 
 
 - **`@piwitests/reporter` 0.48.0 or later**, with the [capture fixtures](/guide/capture-fixtures) in your tests: the
   pause runs in them. With an older one, the run starts anyway and the editor warns once. A reporter of 0.59.0 or
-  older pauses before locator actions and assertions only.
+  older pauses before locator actions and assertions only. A spec that imports `test` from `@playwright/test` never
+  stops, and the run's output names it once.
 - **A run started from Piwi**, or [started outside Piwi](./terminal-runs). The editor passes the breakpoints under the
   Playwright config's folder to the run as `PIWI_PAUSE_AT` (`tests/login.spec.ts:42;tests/pages/checkout.page.ts:9`,
   relative to that folder), with its pairing address as `PIWI_EDITOR_SEND`, and adds `--headed` to the command unless it

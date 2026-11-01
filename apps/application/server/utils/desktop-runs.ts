@@ -277,6 +277,13 @@ export class DesktopRuns {
       surfaces: "the desktop app's window",
       // An agent following the runs hears what each worker says.
       heard: (ref, worker, what, root) => this.agent.heard(ref, worker, what, root),
+      // A breakpoint and Run to cursor are read against the file as the run runs it: as it stood on disk when the run
+      // started, none written since.
+      runText: (ref, file) => {
+        const disk = diskFile(file);
+        const started = this.lines.startedAt(ref);
+        return disk && (started === null || disk.mtime <= started) ? disk.text : null;
+      },
       lingerMs: options.lingerMs,
       requestMs: options.requestMs,
     });

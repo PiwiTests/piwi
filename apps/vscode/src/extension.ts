@@ -142,6 +142,7 @@ import {
   MCP_SIGN_IN,
   mcpAuthorizationNote,
   mcpConfiguration,
+  MCP_FORMATS,
   RUNS_MCP_FORMATS,
   RUNS_MCP_LABEL,
   agentsTokenKey,
@@ -1259,13 +1260,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         viewColumn: vscode.ViewColumn.Beside,
       });
     }),
-    vscode.commands.registerCommand('piwi.copyMcpConfiguration', async () => {
+    // The format the configuration is copied in: chosen, or named by the command's argument.
+    vscode.commands.registerCommand('piwi.copyMcpConfiguration', async (asked?: unknown) => {
       const servers = await lc.sendRequest<McpServersResult>(MCP_REQUEST);
       if (!servers.servers.length) {
         void vscode.window.showWarningMessage('Piwi: connect to an instance first.');
         return;
       }
-      await vscode.env.clipboard.writeText(mcpConfiguration(servers.servers));
+      const format: RunsMcpFormat | undefined = MCP_FORMATS.some((f) => f.format === asked)
+        ? (asked as RunsMcpFormat)
+        : (
+            await vscode.window.showQuickPick(
+              MCP_FORMATS.map((f) => ({ label: f.label, detail: f.detail, format: f.format })),
+              { title: 'Piwi: copy the MCP server configuration for' },
+            )
+          )?.format;
+      if (!format) return;
+      await vscode.env.clipboard.writeText(mcpConfiguration(servers.servers, format));
       void vscode.window.showInformationMessage(
         `Piwi: the MCP configuration is on the clipboard. ${mcpAuthorizationNote(servers.servers)}`.trimEnd(),
       );
@@ -1429,7 +1440,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     vscode.commands.registerCommand('piwi.pairPicker', async () => {
       await vscode.env.clipboard.writeText(await pickerPairing());
       void vscode.window.showInformationMessage(
-        "Piwi: the pairing address is on the clipboard. Paste it in Piwi Picker's options, under Send to editor.",
+        "Piwi: the pairing address is on the clipboard. Paste it in Piwi Picker's settings, under Send to editor.",
       );
     }),
     { dispose: () => void sendListener?.close() },
@@ -1574,7 +1585,8 @@ async function insertFromPicker(lc: LanguageClient, payload: EditorSendPayload):
       const edit = new vscode.WorkspaceEdit();
       edit.replace(uri, new vscode.Range(start.line, start.character, end.line, end.character), answer.edit.newText);
       if (await vscode.workspace.applyEdit(edit)) {
-        void vscode.window.showInformationMessage(pickNotice(at, 'replaced'));
+        // The line the locator landed on, which edits made since the run may have moved from the run's.
+        void vscode.window.showInformationMessage(pickNotice({ file: at.file, line: start.line + 1 }, 'replaced'));
         return { inserted: true, file: uri.scheme === 'file' ? uri.fsPath : null };
       }
     }

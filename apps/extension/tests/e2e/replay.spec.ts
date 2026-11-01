@@ -1167,7 +1167,7 @@ test.describe('Run with Playwright', () => {
 
     const desktop = await chooseReport(page);
     await expect(desktop).toContainText('Pair the desktop app first');
-    await expect(desktop.getByRole('button', { name: 'Open the options' })).toBeVisible();
+    await expect(desktop.getByRole('button', { name: 'Open the settings' })).toBeVisible();
   });
 
   test('says so when the desktop app’s verdict is not one it can show', async ({ context }) => {

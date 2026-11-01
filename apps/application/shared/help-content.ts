@@ -84,7 +84,7 @@ export const HELP_TOPICS = {
   },
   'home.failure-inbox': {
     title: 'Failure inbox',
-    text: "A queue of the failures you still owe a decision. Switch queues to focus — new since you last looked, mine, regressions, fixes that didn't hold, quarantines ready to release, merge suggestions. Triage from the row or the keyboard: j / k move, x select, r resolve, i ignore, q quarantine, a assign, s snooze, l link, o open.",
+    text: "A queue of the failures you still owe a decision. Switch queues to focus — new since you last looked, mine, regressions, fixes that didn't hold, quarantines ready to release, merge suggestions. Failures seen in developers' local runs and never in CI stay out until you show them. Triage from the row or the keyboard: j / k move, x select, r resolve, i ignore, q quarantine, a assign, s snooze, l link, o open.",
     doc: 'features/failure-clusters#the-failure-inbox',
   },
   'home.flake-lab': {
@@ -1227,7 +1227,7 @@ export const HELP_TOPICS = {
   },
   'settings.integrations': {
     title: 'Integrations',
-    text: 'Connect an issue tracker so pinned links unfurl with a title and status and stay in sync. Jira Cloud connects with an account email and an API token, classic or scoped; set the connection once and every project uses it.',
+    text: "Connect an issue tracker and bind a project to it, so the project's pinned links to its site unfurl with a title and status and stay in sync. Jira Cloud connects with an account email and an API token, classic or scoped; set the connection once and any project can be bound to it.",
     doc: 'operate/integrations',
     envVars: ['PIWI_JIRA_BASE_URL', 'PIWI_JIRA_EMAIL', 'PIWI_JIRA_API_TOKEN'],
   },

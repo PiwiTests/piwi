@@ -102,6 +102,9 @@ export const MAX_CHECKED = 8;
 /** Where the locator `normalize()` writes ranks among the candidates: below a role's, a label's or a test id's. */
 const NORMALIZED_SCORE = 60;
 
+/** The Playwright whose `page.ariaSnapshot({ boxes: true })` gives each element's box, which a pick under a point reads. */
+export const PICK_AT_SINCE = '1.60';
+
 export const PICK_AT_NEEDS =
   'Pick on the image needs Playwright 1.60 or later (the boxes of page.ariaSnapshot): update @playwright/test.';
 const NO_ELEMENT = 'No element there: pick an element of the page, not its background.';

@@ -33,6 +33,7 @@ import type {
   RecordResult,
   RecordingUpdate,
   RenderStepsResult,
+  NewTestFileResult,
   RunCommand,
   RunEnded,
   RunStatusResult,
@@ -2730,7 +2731,7 @@ describe('runs as they happen', () => {
         severity: 'warning',
         message: `The run ended (exit code 0) but did not reach ${url}: is the Piwi reporter in the Playwright config?`,
       },
-      { root: dir, severity: 'information', message: 'Passed 3 of 3: tests/checkout.spec.ts:3' },
+      { root: dir, severity: 'information', message: 'None of 3 runs failed: tests/checkout.spec.ts:3' },
     ]);
   });
 
@@ -3710,6 +3711,16 @@ describe('the configs of one repository reading one project', () => {
     expect(failures).not.toHaveProperty('run');
   });
 
+  test('answer where Record a new test file goes from the config whose folder is at hand', async () => {
+    const admin = path.join(repo, 'admin');
+    for (const at of [pathToFileURL(admin).href, `${pathToFileURL(admin).href}/`]) {
+      expect(await twoClient.sendRequest('piwi/newTestFile', { uri: at })).toEqual({
+        uri: pathToFileURL(path.join(admin, 'recorded.spec.ts')).href,
+        root: admin,
+      });
+    }
+  });
+
   test('read its latest run and its flaky tests once for the refresh they make together', async () => {
     await waitFor(() => reads.get('flaky-tests'));
     // The other config's read, on its way or answered a moment before, is the same one.
@@ -4056,6 +4067,40 @@ describe('recording from the editor', () => {
     expect(atTop).toMatchObject({ context: 'file', default: 'userPage' });
   });
 
+  test('answers where Record a new test file creates its spec, in the projects’ test folder as Playwright reads it', async () => {
+    const asked = (params: object) => recorder.sendRequest('piwi/newTestFile', params) as Promise<NewTestFileResult>;
+    // The workspace's root at hand: the test folder Playwright resolved, with the suffix its specs use.
+    expect(await asked({ uri: pathToFileURL(dir).href })).toEqual({
+      uri: pathToFileURL(path.join(dir, 'tests', 'recorded.spec.ts')).href,
+      root: dir,
+    });
+    // A page object at hand: the test folder holding it.
+    expect(await asked({ uri: uri('tests/pages/checkout.page.ts') })).toEqual({
+      uri: pathToFileURL(path.join(dir, 'tests', 'recorded.spec.ts')).href,
+      root: dir,
+    });
+    expect(await asked({})).toMatchObject({ root: dir });
+    // A spec at hand in the test folder: beside it, with its suffix; one outside every test folder: the test folder.
+    const extra = ['tests/admin/users.test.ts', 'examples/demo.spec.ts'];
+    for (const file of extra) {
+      fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+      fs.writeFileSync(path.join(dir, file), '');
+    }
+    try {
+      expect(await asked({ uri: uri('tests/admin/users.test.ts') })).toEqual({
+        uri: pathToFileURL(path.join(dir, 'tests', 'admin', 'recorded.test.ts')).href,
+        root: dir,
+      });
+      expect(await asked({ uri: uri('examples/demo.spec.ts') })).toEqual({
+        uri: pathToFileURL(path.join(dir, 'tests', 'recorded.spec.ts')).href,
+        root: dir,
+      });
+    } finally {
+      fs.rmSync(path.join(dir, 'tests/admin'), { recursive: true, force: true });
+      fs.rmSync(path.join(dir, 'examples'), { recursive: true, force: true });
+    }
+  });
+
   test('renders steps on the page expression at the caret, with their imports apart when asked', async () => {
     const steps = toStepsDocument(
       buildSession([goto('https://shop.test/checkout'), pay('https://shop.test/checkout')], 1),
@@ -4090,6 +4135,51 @@ describe('recording from the editor', () => {
     })) as RenderStepsResult;
     expect(comments.code).toContain("  // Needs: import { CheckoutPage } from 'tests/pages/checkout.page.ts';");
     expect(comments.importEdit).toBeUndefined();
+  });
+
+  test('renders steps sent outside any test as a new test, with the test import a file without one needs', async () => {
+    const steps = toStepsDocument(buildSession([goto('https://shop.test/checkout'), payNow], 1));
+    await openHere(
+      'tests/between.spec.ts',
+      ["import { test } from '@playwright/test';", '', "test('recorded flow', async ({ page }) => {});", '', ''].join(
+        '\n',
+      ),
+    );
+    const between = (await recorder.sendRequest('piwi/renderSteps', {
+      uri: uri('tests/between.spec.ts'),
+      steps,
+      line: 3,
+      character: 0,
+      imports: 'separate',
+    })) as RenderStepsResult;
+    expect(between.code.split('\n')[0]).toBe("test('recorded flow 2', async ({ page }) => {");
+    expect(between.code).toContain("  await page.getByRole('button', { name: 'Pay now' }).click();");
+    expect(between.importEdit).toBeNull();
+
+    await openHere('tests/empty.spec.ts', '');
+    const empty = (await recorder.sendRequest('piwi/renderSteps', {
+      uri: uri('tests/empty.spec.ts'),
+      steps,
+      line: 0,
+      character: 0,
+      imports: 'separate',
+    })) as RenderStepsResult;
+    expect(empty.code.split('\n')[0]).toBe("test('recorded flow', async ({ page }) => {");
+    // A recording's own title the file holds already takes a number.
+    const titled = toStepsDocument(buildSession([goto('https://shop.test/checkout'), payNow], 1), { title: 'pays' });
+    await openHere(
+      'tests/titled.spec.ts',
+      "import { test } from '@playwright/test';\n\ntest('pays', async () => {});\n\n",
+    );
+    const again = (await recorder.sendRequest('piwi/renderSteps', {
+      uri: uri('tests/titled.spec.ts'),
+      steps: titled,
+      line: 3,
+      character: 0,
+      imports: 'separate',
+    })) as RenderStepsResult;
+    expect(again.code.split('\n')[0]).toBe("test('pays 2', async ({ page }) => {");
+    expect(empty.importEdit?.newText).toContain("import { test } from '@playwright/test';");
   });
 
   test('renders steps without the imports the open file has, nor a page object the test declares already', async () => {

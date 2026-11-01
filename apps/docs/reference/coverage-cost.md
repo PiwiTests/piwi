@@ -18,9 +18,11 @@ Coverage has two sides, each opt-in: the browser's, [code reach](/features/code-
 | Server files | `coverage.server: 'files'`, with a coverage build | the backend files that ran | paths |
 | Server functions | `coverage.server: 'functions'` | also the start and end line of each function that ran | paths, line numbers, git blob ids |
 | Server lines | `coverage.server: 'lines'` | also the executed lines, and the run's executable lines | paths, line numbers, git blob ids |
+| CSS rules | `coverage.css: 'rules'`, on its own | the start and end line of each style rule a page matched, and every rule of each sheet | paths, line numbers, git blob ids |
 
-Never source code, never hit counts. Each variable form (`PIWI_COVERAGE_BROWSER`, `PIWI_COVERAGE_SERVER`) fills the
-option the Playwright config leaves unset.
+Never source code, never hit counts. Each variable form (`PIWI_COVERAGE_BROWSER`, `PIWI_COVERAGE_SERVER`,
+`PIWI_COVERAGE_CSS`) fills the option the Playwright config leaves unset. [CSS coverage](/features/css-coverage#cost)
+measures its own cost.
 
 ## On a large ASP.NET Core and Vue application
 

@@ -38,6 +38,12 @@ const props = defineProps<{
    */
   chrome?: boolean;
   /**
+   * Whether the execution ran with the capture fixtures (`fixturesActiveIn`): a healing read from the ARIA snapshot
+   * then means no passing run captured the element's attributes yet, rather than fixtures to switch on. Absent, it
+   * reads as false, and the hint points to the fixtures.
+   */
+  fixturesActive?: boolean;
+  /**
    * Number of tests this failure affects (cluster context). When > 1, the panel
    * notes that one fix covers them all — a cluster is one masked-locator root
    * cause, so the recommended locator applies across the group.
@@ -681,11 +687,17 @@ defineExpose({
     <!-- ARIA-snapshot fallback hint -->
     <UAlert v-if="healing?.source === 'aria-snapshot'" class="mt-3" color="info" icon="i-lucide-info" variant="subtle">
       <template #description>
-        No HTML attributes were available.
-        <DocLink to="guide/capture-fixtures" no-icon class="text-primary hover:underline"
-          >Enable Piwi fixture capture</DocLink
-        >
-        for full alternatives including data-testid and CSS selectors.
+        <template v-if="fixturesActive">
+          No HTML attributes were captured for this element yet: a passing run of the test captures them, unless locator
+          capture is off (<code>captureLocators</code>), for alternatives including data-testid and CSS selectors.
+        </template>
+        <template v-else>
+          No HTML attributes were available.
+          <DocLink to="guide/capture-fixtures" no-icon class="text-primary hover:underline"
+            >Enable Piwi fixture capture</DocLink
+          >
+          for full alternatives including data-testid and CSS selectors.
+        </template>
       </template>
     </UAlert>
   </component>

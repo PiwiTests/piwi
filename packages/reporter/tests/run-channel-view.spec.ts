@@ -698,9 +698,10 @@ describe('the live view of a stopped page', () => {
       ['watched on a page too heavy for a lighter image', 'passed', []],
       ...(FIREFOX ? [['watched in Firefox', 'passed', []]] : []),
     ]);
+    // Pick on the image reads each element's box from the snapshot, which Playwright 1.60 added.
     expect(connections[0]!.heard[0]!.message).toMatchObject({
       type: 'run-attach',
-      takes: expect.arrayContaining(['view', 'input', 'pick-at']),
+      takes: expect.arrayContaining(['view', 'input', ...(PICKS_AT ? ['pick-at'] : [])]),
     });
   });
 
@@ -872,7 +873,10 @@ describe('the live view of a stopped page', () => {
     const lighter = watched['watched on a page too heavy for its frames']!;
     expect(lighter.firstJpeg!.length).toBeLessThanOrEqual(MAX_VIEW_FRAME);
     expect(jpegSize(lighter.firstJpeg!)).toEqual({ width: 1280, height: 720 });
-    expect(said['watched on a page too heavy for a lighter image']).toEqual([ON, { ok: true, message: 'Played 1 event.' }]);
+    expect(said['watched on a page too heavy for a lighter image']).toEqual([
+      ON,
+      { ok: true, message: 'Played 1 event.' },
+    ]);
     expect(heavy.refusals).toEqual([
       'This page is too heavy for the live view: each image of it is over 384 KB, a lighter one included. The image of the stop still shows it.',
     ]);

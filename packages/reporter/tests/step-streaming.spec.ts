@@ -221,6 +221,53 @@ describe('PiwiDashboardReporter live step streaming', () => {
     ]);
   });
 
+  it('sends the step a test is in when someone opens the run, though it began while nobody watched', async () => {
+    const eventsBodies: EventsBody[] = [];
+    let answers = 0;
+    server = await startServer((req, res) => {
+      if (req.url === '/api/test-runs/start') {
+        jsonRes(res, 200, { runId: 1, streamToken: 'tok' });
+      } else if (req.url === '/api/test-runs/1/events') {
+        eventsBodies.push(JSON.parse(req.body));
+        // Nobody watches at first; the run is open by the next request.
+        jsonRes(res, 200, { success: true, processed: 1, watched: answers++ > 0 });
+      } else if (req.url === '/api/auth/me') {
+        jsonRes(res, 200, {});
+      } else {
+        textRes(res, 404, 'nope');
+      }
+    });
+    const reporter = new PiwiDashboardReporter({
+      serverUrl: server.url,
+      projectName,
+      streaming: true,
+      uploadReport: false,
+      uploadTraces: false,
+      liveFileUploads: false,
+      streamingBatchDelay: 30,
+      streamingBatchSize: 1,
+    });
+    const suite = fakeSuite();
+    const test = fakeTestCase({ title: 'the test', parent: suite });
+    const result = fakeResult({ workerIndex: 0 });
+    reporter.onBegin(fakeConfig(), suite);
+
+    reporter.onStepBegin(test, result, makeStep('pw:api', 'Navigate'));
+    await waitFor(() => (reporter as any).streamManager?.watched === false);
+    // The click the test waits in begins while nobody watches: it is not sent then.
+    const stuck = makeStep('pw:api', "Click getByRole('button', { name: 'Continue' })");
+    reporter.onStepBegin(test, result, stuck);
+    reporter.onTestBegin(test, result);
+    await waitFor(() => streamed(eventsBodies).filter((e) => e.type === 'step-begin').length >= 3);
+
+    expect(streamed(eventsBodies).map((e) => `${e.type} ${e.title}`)).toEqual([
+      'step-begin Navigate',
+      'begin the test',
+      'step-begin Navigate',
+      "step-begin Click getByRole('button', { name: 'Continue' })",
+    ]);
+  });
+
   it('suite-level hooks keep parentTitle null and land in setupSteps', async () => {
     let finishBody = null as { setupSteps?: unknown[] } | null;
     server = await startServer((req, res) => {

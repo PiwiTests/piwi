@@ -368,42 +368,35 @@ export async function getProjectBinding(
 }
 
 /**
- * The Atlassian config for unfurling a Jira URL: the credentials of a Jira
- * connection whose base URL host matches the link's host, or null. Callers use
- * it for links that have no `connection_id` yet — a matching connection makes the
- * generic unfurl path work.
+ * The Atlassian config for unfurling a Jira URL through one connection, the one
+ * the link's project is bound to: its credentials when the URL is on its site,
+ * else null. Callers use it for links that carry no `connection_id`, whose URL
+ * the connection's own parser did not read as an issue.
  */
 export async function resolveJiraUnfurlConfig(
   db: DbClient,
   url: string,
+  connectionId: number | null,
 ): Promise<{ baseUrl: string; email: string; apiToken: string; cloudId: string | null } | null> {
-  let host: string;
+  if (connectionId == null) return null;
+  await ensureEnvManagedConnections(db);
+  const row = await getConnectionRow(db, connectionId);
+  if (row?.provider !== 'jira') return null;
+  let sameSite: boolean;
   try {
-    host = new URL(url).host;
+    sameSite = new URL(url).host === new URL(row.baseUrl).host;
   } catch {
     return null;
   }
-  await ensureEnvManagedConnections(db);
-  const rows = await db.select().from(integrationConnections).where(eq(integrationConnections.provider, 'jira'));
-  for (const row of rows) {
-    let rowHost: string;
-    try {
-      rowHost = new URL(row.baseUrl).host;
-    } catch {
-      continue;
-    }
-    if (rowHost !== host) continue;
-    const credentials = resolveTrackerCredentials(row);
-    if (credentials) {
-      return {
-        baseUrl: row.baseUrl,
-        email: credentials.email,
-        apiToken: credentials.apiToken,
-        cloudId: cloudIdFromConfig(row),
-      };
-    }
-  }
-  return null;
+  if (!sameSite) return null;
+  const credentials = resolveTrackerCredentials(row);
+  if (!credentials) return null;
+  return {
+    baseUrl: row.baseUrl,
+    email: credentials.email,
+    apiToken: credentials.apiToken,
+    cloudId: cloudIdFromConfig(row),
+  };
 }
 
 /** Verify a connection with the provider's `whoAmI`, recording the outcome. */

@@ -2302,4 +2302,7 @@ object Glue {
             else -> "$name.spec.ts"
         }
     }
+
+    /** A test file's suffix, `.spec` or `.test` and its script extension (`.test.js` of `cart.test.js`); null for another file. */
+    fun testFileSuffix(name: String): String? = SPEC_FILE.find(name)?.value
 }

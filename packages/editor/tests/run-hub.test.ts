@@ -258,7 +258,8 @@ describe('the commands', () => {
     client.send({ type: 'runControl', id: 3, ref: 'ed-00000000', action: 'pause' });
     expect(await client.answer(3)).toMatchObject({
       ok: false,
-      message: 'No worker of this run is connected to the editor.',
+      message:
+        "No worker of this run is connected to the editor: none has started a test yet, or its tests import `test` from '@playwright/test' rather than from the file that extends Piwi's capture fixtures.",
     });
     expect(client.socket.readyState).toBe(WebSocket.OPEN);
     client.socket.close();

@@ -21,6 +21,7 @@ process.env.PIWI_SECRET_KEY = 'unit-test-secret-key-not-for-production';
 process.env.PIWI_SHARE_LINKS_ENABLED = 'true';
 
 const { createConnection } = await import('../../server/utils/integrations/connections');
+const { writeProjectIntegration } = await import('../../server/utils/integrations/binding');
 const { createIssue } = await import('../../server/utils/integrations/create');
 const { buildIssueDraft } = await import('../../server/utils/integrations/draft');
 
@@ -99,6 +100,8 @@ beforeAll(async () => {
     credentials: { email: 'ci@example.com', apiToken: 'token' },
   });
   connectionId = connection.id;
+  // The actions run through the connection the project is bound to.
+  await writeProjectIntegration(dbc, 1, { connectionId, projectKey: 'PROJ', issueType: 'Bug' });
 });
 
 afterAll(async () => {

@@ -1028,7 +1028,7 @@ const tests = {
 
   async 'the MCP configuration carries the key, or none once the agent is set to sign in'() {
     const copied = async () => {
-      await vscode.commands.executeCommand('piwi.copyMcpConfiguration');
+      await vscode.commands.executeCommand('piwi.copyMcpConfiguration', 'vscode');
       return JSON.parse(await vscode.env.clipboard.readText()).servers.piwi;
     };
     assert.deepEqual((await copied()).headers, { Authorization: 'Bearer pd_integration' });
