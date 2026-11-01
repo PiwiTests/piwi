@@ -34,7 +34,9 @@ variables (R10, R11, R12), leaving when the machine summary prints and one prefi
 Runs tile shown for the desktop app too (DOC2), leaving `globalTimeout` and the hooks in the Breakpoints page's
 limits and the bundled Node on the desktop page (both pages at their word budget), the new-file and last-answers
 sentences of the recording page (each client to check first), and the sentences S7 and D11 make wrong, left to
-their fixes; the recording page says `piwi codegen` reads its own flags, not the config's section (W13's docs half). From the medium items, built: 7, the clusters seen only in developers' own runs, in a project that also has other
+their fixes; the recording page says `piwi codegen` reads its own flags, not the config's section (W13's docs half). From the larger items, built: 1, a page for the loop, **Write, run and fix a test**, leading a new catalog group,
+**Write and debug tests**, which holds the loop's features that sat under **Use it from elsewhere** (DOC1). From the
+medium items, built: 7, the clusters seen only in developers' own runs, in a project that also has other
 runs, left out of Home's Failure inbox, which says how many and lists them on **Show them**, the API's `local=include`
 listing them too (V3); 3, a new test file's place from the service (`piwi/newTestFile`: beside the spec at hand, else
 in the config's test folder as Playwright reads it, with the suite's suffix), for both editors (P3, W5), leaving P4.
