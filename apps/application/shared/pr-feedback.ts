@@ -106,7 +106,7 @@ export interface PrSummaryInput {
   newRegressions: PrFailureEntry[];
   /** Failures that were already failing before this change. */
   preExisting: PrFailureEntry[];
-  /** Tests that passed only after a retry in this run. */
+  /** Tests that passed in this run after an earlier attempt failed. */
   flaky: PrFailureEntry[];
   /** `test.fail()` tests that passed: the bug each reproduces looks fixed. */
   looksFixed?: Array<{
@@ -571,7 +571,7 @@ export function buildPrComment(input: PrSummaryInput): string {
 
   if (input.flaky.length > 0) {
     sections.push(
-      `#### 🟡 Flaky (${input.flaky.length})\nPassed only after a retry.\n\n${renderFailureList(input.flaky, input.runUrl)}`,
+      `#### 🟡 Flaky (${input.flaky.length})\nPassed after an earlier attempt failed.\n\n${renderFailureList(input.flaky, input.runUrl)}`,
     );
   }
 

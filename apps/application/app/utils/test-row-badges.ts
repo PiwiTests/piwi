@@ -1,5 +1,6 @@
 import { isPiwiAnnotation, TEST_PRIORITIES, type TestMetadata } from '@piwitests/core/test-meta';
 import { isExpectedFailurePassed } from '@piwitests/core/status-classify';
+import { isFlakyExecution } from '#shared/utils/test-counts';
 import type { TestCaseResult } from '~~/types/api';
 
 /**
@@ -196,7 +197,7 @@ export function badgesFromTestCase(tc: TestCaseResult, opts?: { quarantined?: bo
     looksFixed: isExpectedFailurePassed(tc.status, tc.expectedStatus),
     isNewRegression: tc.isNewRegression,
     isNewFlaky: tc.isNewFlaky,
-    passedOnRetry: tc.status === 'passed' && (tc.retries ?? 0) > 0,
+    passedOnRetry: isFlakyExecution(tc),
     quarantined: opts?.quarantined,
     annotations: tc.testAnnotations,
     tags: tc.tags,

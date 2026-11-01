@@ -7,7 +7,7 @@ import { listBaselineBranches, selectBaselineRun } from '../../server/utils/bran
 import { normalizeGitUrl } from '../../server/utils/scm/git-url';
 import { buildCommitRange, computeMetadataDiff, type CommitRange, type MetaDiffEntry } from '../utils/run-metadata';
 import { readProjectDefaultBranch, resolveFallbackBranch } from './baseline-scope';
-import { finalAttempts, testKey, testOutcomes } from '../utils/test-counts';
+import { finalAttempts, flakyFinalAttempts, testKey, testOutcomes } from '../utils/test-counts';
 import { notLabRun } from './probes';
 import { TERMINAL_STATUSES } from './projects';
 import { describeRunBaseline, type RunBaselineFallback, type RunBaselineMatch } from '#shared/run-baseline';
@@ -132,25 +132,25 @@ export async function computeRunInsights(
   const run = runResults[0];
   if (!run) throw new Error('Run not found');
 
-  // The run's test results, one row per (test case, browser, repetition): its final attempt.
-  const currentCases: any[] = finalAttempts(
-    await db
-      .select({
-        id: testRunsCases.id,
-        testCaseId: testRunsCases.testCaseId,
-        browserName: testRunsCases.browserName,
-        repeatEachIndex: testRunsCases.repeatEachIndex,
-        status: testRunsCases.status,
-        duration: testRunsCases.duration,
-        retries: testRunsCases.retries,
-        workerIndex: testRunsCases.workerIndex,
-        title: testCases.title,
-        filePath: testCases.filePath,
-      })
-      .from(testRunsCases)
-      .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
-      .where(eq(testRunsCases.testRunId, runId)),
-  );
+  // The run's attempts; its test results are their final attempts, one per (test case, browser, repetition).
+  const currentRows: any[] = await db
+    .select({
+      id: testRunsCases.id,
+      testCaseId: testRunsCases.testCaseId,
+      browserName: testRunsCases.browserName,
+      repeatEachIndex: testRunsCases.repeatEachIndex,
+      status: testRunsCases.status,
+      duration: testRunsCases.duration,
+      retries: testRunsCases.retries,
+      workerIndex: testRunsCases.workerIndex,
+      title: testCases.title,
+      filePath: testCases.filePath,
+    })
+    .from(testRunsCases)
+    .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
+    .where(eq(testRunsCases.testRunId, runId));
+  const currentCases = finalAttempts(currentRows);
+  const currentFlaky = flakyFinalAttempts(currentRows);
 
   // The baseline ladder: a passing full run in this run's environment, on its
   // own branch, else on the branch it forked from (the pull request's target
@@ -264,19 +264,19 @@ export async function computeRunInsights(
 
   if (!baselineRun) return empty;
 
-  const baselineCases: any[] = finalAttempts(
-    await db
-      .select({
-        testCaseId: testRunsCases.testCaseId,
-        browserName: testRunsCases.browserName,
-        repeatEachIndex: testRunsCases.repeatEachIndex,
-        status: testRunsCases.status,
-        duration: testRunsCases.duration,
-        retries: testRunsCases.retries,
-      })
-      .from(testRunsCases)
-      .where(eq(testRunsCases.testRunId, baselineRun.id)),
-  );
+  const baselineRows: any[] = await db
+    .select({
+      testCaseId: testRunsCases.testCaseId,
+      browserName: testRunsCases.browserName,
+      repeatEachIndex: testRunsCases.repeatEachIndex,
+      status: testRunsCases.status,
+      duration: testRunsCases.duration,
+      retries: testRunsCases.retries,
+    })
+    .from(testRunsCases)
+    .where(eq(testRunsCases.testRunId, baselineRun.id));
+  const baselineCases = finalAttempts(baselineRows);
+  const baselineFlaky = flakyFinalAttempts(baselineRows);
   // Each test is compared with the baseline through its outcome in either run, whatever their repetitions.
   const baselineByTest = new Map<string, any>(testOutcomes(baselineCases).map((bc) => [testKey(bc), bc]));
 
@@ -306,8 +306,8 @@ export async function computeRunInsights(
 
     // Flaky detection
     if (bc) {
-      const wasStable = (bc.retries ?? 0) === 0 && bc.status === 'passed';
-      const isNowFlaky = (cc.retries ?? 0) > 0 && cc.status === 'passed';
+      const wasStable = bc.status === 'passed' && !baselineFlaky.has(bc);
+      const isNowFlaky = currentFlaky.has(cc);
       if (wasStable && isNowFlaky) {
         newFlaky.push({ executionId: cc.id, title: cc.title, filePath: cc.filePath, duration: cc.duration });
       }
@@ -331,10 +331,10 @@ export async function computeRunInsights(
     }
   }
 
-  // Flaky on retry (passed but had retries): once per test, with the repetition that needed the most retries
+  // Flaky on retry (passed after an earlier attempt failed): once per test, with the repetition that needed the most retries
   const flakyByTest = new Map<string, (typeof flakyOnRetry)[number]>();
   for (const cc of currentCases) {
-    if (cc.status !== 'passed' || (cc.retries ?? 0) === 0) continue;
+    if (!currentFlaky.has(cc)) continue;
     const known = flakyByTest.get(testKey(cc));
     if (!known || (cc.retries ?? 0) > known.retries) {
       flakyByTest.set(testKey(cc), {

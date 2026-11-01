@@ -11,7 +11,7 @@ import { getTestRunCase, getTestRunCaseTraces } from '#shared/handlers/test-case
 import { getFailureCluster, getClusterDiagnosis, getExecutionDiagnosis } from '#shared/handlers/failure-clusters';
 import { getFailureGroups, getTestRun } from '#shared/handlers/test-runs';
 import { classifyEvidenceFile, contentTypeForPath } from '#shared/file-classify';
-import { finalAttempts, isFailedStatus } from '#shared/utils/test-counts';
+import { finalAttempts, flakyFinalAttempts, isFailedStatus } from '#shared/utils/test-counts';
 import { stripAnsi } from '#shared/error-fingerprint';
 import type { ExportAsset, ExportBundle, ExportCase, ExportRunGroup, ExportRunTest } from './types';
 
@@ -245,6 +245,7 @@ export async function collectRunBundle(
     browserName: (tc.browserName ?? tc.browser?.projectName ?? null) as string | null,
   }));
   const final = finalAttempts(rows);
+  const flaky = flakyFinalAttempts(rows);
   const repeated = final.some((tc) => (tc.repeatEachIndex ?? 0) > 0);
   const tests: ExportRunTest[] = final
     .map((tc) => {
@@ -263,7 +264,7 @@ export async function collectRunBundle(
         browser: tc.browserName,
         repetition: repeated ? (tc.repeatEachIndex ?? 0) + 1 : null,
         status: tc.status,
-        flaky: tc.status === 'passed' && Number(tc.retries ?? 0) > 0,
+        flaky: flaky.has(tc),
         retries: Number(tc.retries ?? 0),
         duration: tc.duration == null ? null : Number(tc.duration),
         error: error ? error.split('\n')[0]!.slice(0, 300) : null,

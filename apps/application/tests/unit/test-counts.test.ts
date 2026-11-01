@@ -2,6 +2,8 @@ import { describe, test, expect } from 'vitest';
 import {
   countFailedFromTally,
   distinctRunCountsFromAttempts,
+  flakyFinalAttempts,
+  isFlakyExecution,
   normalizeTestCaseStatus,
   summarizeRunCases,
   sumFailedAndTimedOut,
@@ -68,6 +70,38 @@ describe('summarizeRunCases', () => {
     expect(s.passed).toBe(2);
     expect(s.flaky).toBe(1);
     expect(s.failed).toBe(0);
+  });
+
+  test('counts a retry as flaky only when its history holds an earlier failed attempt', () => {
+    const s = summarizeRunCases([
+      {
+        status: 'passed',
+        retries: 1,
+        attempts: [
+          { retry: 0, status: 'failed' },
+          { retry: 1, status: 'passed' },
+        ],
+      },
+      // A describe.serial sibling re-run when its group was retried.
+      {
+        status: 'passed',
+        retries: 1,
+        attempts: [
+          { retry: 0, status: 'passed' },
+          { retry: 1, status: 'passed' },
+        ],
+      },
+      // Did not run behind the group's failure, then passed on the retry.
+      {
+        status: 'passed',
+        retries: 1,
+        attempts: [
+          { retry: 0, status: 'didnotrun' },
+          { retry: 1, status: 'passed' },
+        ],
+      },
+    ]);
+    expect(s).toMatchObject({ total: 3, passed: 3, flaky: 1 });
   });
 
   test('folds timed-out into failed (both spellings)', () => {
@@ -197,6 +231,77 @@ describe('distinctRunCountsFromAttempts', () => {
     expect(counts.passedTests + counts.failedTests + counts.skippedTests + counts.didNotRunTests).toBe(
       counts.totalTests,
     );
+  });
+});
+
+describe('flaky results', () => {
+  // A describe.serial group where `checkout` fails once: Playwright retries the whole group.
+  const serialGroup = [
+    { testCaseId: 1, browserName: 'chromium', repeatEachIndex: 0, retries: 0, status: 'passed' }, // login
+    { testCaseId: 1, browserName: 'chromium', repeatEachIndex: 0, retries: 1, status: 'passed' },
+    { testCaseId: 2, browserName: 'chromium', repeatEachIndex: 0, retries: 0, status: 'failed' }, // checkout
+    { testCaseId: 2, browserName: 'chromium', repeatEachIndex: 0, retries: 1, status: 'passed' },
+    { testCaseId: 3, browserName: 'chromium', repeatEachIndex: 0, retries: 0, status: 'didnotrun' }, // receipt
+    { testCaseId: 3, browserName: 'chromium', repeatEachIndex: 0, retries: 1, status: 'passed' },
+    // A test.fail() test: its expected failure is stored as passed on both attempts.
+    { testCaseId: 4, browserName: 'chromium', repeatEachIndex: 0, retries: 0, status: 'passed' },
+    { testCaseId: 4, browserName: 'chromium', repeatEachIndex: 0, retries: 1, status: 'passed' },
+  ];
+
+  test('counts only the test whose earlier attempt failed, as Playwright does', () => {
+    expect(distinctRunCountsFromAttempts(serialGroup)).toEqual({
+      totalTests: 4,
+      passedTests: 4,
+      failedTests: 0,
+      skippedTests: 0,
+      didNotRunTests: 0,
+      flakyTests: 1,
+    });
+  });
+
+  test('returns the final attempt of each flaky result', () => {
+    expect([...flakyFinalAttempts(serialGroup)]).toEqual([serialGroup[3]]);
+  });
+
+  test('reads an earlier timed-out attempt as a failure, and a later failure as no flake', () => {
+    const rows = [
+      { testCaseId: 1, browserName: null, repeatEachIndex: 0, retries: 0, status: 'timedout' },
+      { testCaseId: 1, browserName: null, repeatEachIndex: 0, retries: 1, status: 'passed' },
+      { testCaseId: 2, browserName: null, repeatEachIndex: 0, retries: 0, status: 'passed' },
+      { testCaseId: 2, browserName: null, repeatEachIndex: 0, retries: 1, status: 'failed' },
+    ];
+    expect(distinctRunCountsFromAttempts(rows)).toMatchObject({ passedTests: 1, failedTests: 1, flakyTests: 1 });
+  });
+
+  test('keeps each repetition to its own attempts', () => {
+    const rows = [
+      { testCaseId: 1, browserName: null, repeatEachIndex: 0, retries: 0, status: 'failed' },
+      { testCaseId: 1, browserName: null, repeatEachIndex: 1, retries: 0, status: 'passed' },
+      { testCaseId: 1, browserName: null, repeatEachIndex: 1, retries: 1, status: 'passed' },
+    ];
+    expect(distinctRunCountsFromAttempts(rows)).toMatchObject({ totalTests: 2, failedTests: 1, flakyTests: 0 });
+  });
+
+  test("reads a final attempt's own history, and a retry pass without one as flaky", () => {
+    const failedFirst = [
+      { retry: 0, status: 'failed' },
+      { retry: 1, status: 'passed' },
+    ];
+    expect(isFlakyExecution({ status: 'passed', retries: 1, attempts: failedFirst })).toBe(true);
+    expect(
+      isFlakyExecution({
+        status: 'passed',
+        retries: 1,
+        attempts: [
+          { retry: 0, status: 'passed' },
+          { retry: 1, status: 'passed' },
+        ],
+      }),
+    ).toBe(false);
+    // The earlier attempt's row, whose history stops at it, is no flaky result.
+    expect(isFlakyExecution({ status: 'failed', retries: 0, attempts: failedFirst.slice(0, 1) })).toBe(false);
+    expect(isFlakyExecution({ status: 'passed', retries: 0, attempts: null })).toBe(false);
+    expect(isFlakyExecution({ status: 'passed', retries: 1, attempts: null })).toBe(true);
   });
 });
 

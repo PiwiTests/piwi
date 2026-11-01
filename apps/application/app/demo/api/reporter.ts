@@ -83,7 +83,8 @@ import { DEFAULT_INGEST_LIMITS } from '#shared/ingest-limits';
 import { computeErrorFingerprint, type ErrorFingerprint } from '#shared/error-fingerprint';
 import { isExpectedFailurePassed, resolveExpectedStatus } from '#shared/status-classify';
 import { durationStats } from '#shared/utils/stats';
-import { countFailedFromTally, distinctRunCountsFromAttempts, sumFailedAndTimedOut } from '#shared/utils/test-counts';
+import { countFailedFromTally, sumFailedAndTimedOut } from '#shared/utils/test-counts';
+import { computeRunCountsFromRows } from '~~/server/utils/run-counts';
 import { syncAutoMarkersForRun } from '#shared/handlers/markers';
 import { recordRunHealth } from '#shared/handlers/run-health';
 import { upsertDailyRollup } from '#shared/handlers/analytics/rollups';
@@ -966,9 +967,10 @@ export async function apiPostRunEvents(
         shardIndex: tc.shardIndex ?? null,
         startedAt: tc.startedAt ?? null,
         browser: tc.browser ?? null,
-        // Mirrors the server: the attempt number lets the live page mark a
-        // passed-on-retry (flaky) test as passing rather than failing.
+        // Mirrors the server: the attempt number and the attempts before it let the
+        // live page mark a flaky test as passing rather than failing.
         retries: tc.retries ?? null,
+        attempts: tc.attempts ?? null,
         repeatEachIndex: resolveRepeatEachIndex(tc.repeatEachIndex),
         executionId: persisted?.id ?? null,
         testCaseId: persisted?.testCaseId ?? null,
@@ -1106,17 +1108,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       // Recompute distinct-test counters from the persisted rows (the per-shard
       // events counted attempts), so a flaky-only sharded run reads as passed —
       // mirrors the server's finish handler.
-      const attemptRows = await db
-        .select({
-          testCaseId: testRunsCases.testCaseId,
-          browserName: testRunsCases.browserName,
-          repeatEachIndex: testRunsCases.repeatEachIndex,
-          retries: testRunsCases.retries,
-          status: testRunsCases.status,
-        })
-        .from(testRunsCases)
-        .where(eq(testRunsCases.testRunId, id));
-      const counts = distinctRunCountsFromAttempts(attemptRows);
+      const counts = await computeRunCountsFromRows(db, id);
       finalStatus = counts.failedTests > 0 ? 'failed' : 'passed';
 
       let avgTestDuration: number | null = null;
@@ -1207,7 +1199,8 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
     }
   }
 
-  const flakyTests = body.flakyTests ?? 0;
+  // Mirrors the server: flaky results come from the attempts the run streamed.
+  const { flakyTests } = await computeRunCountsFromRows(db, id);
 
   // Fold timed-out into failed (see shared/utils/test-counts.ts).
   const hasBodyFailed = body.failedTests !== undefined || body.timedOutTests !== undefined;
@@ -1230,7 +1223,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       ...(hasBodyFailed && { failedTests: failedTestsValue }),
       ...(body.skippedTests !== undefined && { skippedTests: body.skippedTests }),
       ...(body.didNotRunTests !== undefined && { didNotRunTests: body.didNotRunTests }),
-      ...(body.flakyTests !== undefined && { flakyTests }),
+      flakyTests,
       ...(avgTestDuration !== null && { avgTestDuration }),
       ...(p90TestDuration !== null && { p90TestDuration }),
       ...(body.metadata && {

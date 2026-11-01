@@ -43,7 +43,7 @@ Two ways to compare against something else:
 - **New failures** — passed in the baseline, failing here.
 - **Fixed** — failed in the baseline, passing here.
 - **Still failing** — failing in both.
-- **Newly flaky / passed on retry** — passed here but needed a retry.
+- **Newly flaky / passed on retry** — passed here after an earlier attempt failed.
 - **Slower / faster** — the ten largest duration changes each way.
 - **Commits since the baseline** — the commit range, a copyable `git log` command and, when the SCM host is known, a link to the commits.
 - **Environment changes** — the fields that differ (environment, branch, CI provider, browsers, and the [test order](#shuffled-runs) of a shuffled run), in *This run* / *Baseline* columns.

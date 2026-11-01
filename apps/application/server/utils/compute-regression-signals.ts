@@ -6,7 +6,7 @@ import { resolveDefaultBranch } from './scm/default-branch';
 import { FALLBACK_DEFAULT_BRANCH } from './scm/git-url';
 import { selectBaselineRun } from './branch-baseline';
 import { resolveFallbackBranch } from '#shared/handlers/baseline-scope';
-import { testOutcomes } from '#shared/utils/test-counts';
+import { flakyFinalAttempts, testOutcomes } from '#shared/utils/test-counts';
 
 /** Execution ids one flag UPDATE sets at most. */
 const UPDATE_BATCH = 500;
@@ -51,38 +51,40 @@ export async function computeRegressionSignals(db: DB, runId: number): Promise<v
   const baselineRun = baseline.run;
 
   // The baseline's outcome of each test per browser: a test failed there when one of its repetitions failed
-  const baselineCases = testOutcomes(
-    await db
-      .select({
-        testCaseId: testRunsCases.testCaseId,
-        browserName: testRunsCases.browserName,
-        repeatEachIndex: testRunsCases.repeatEachIndex,
-        status: testRunsCases.status,
-        retries: testRunsCases.retries,
-      })
-      .from(testRunsCases)
-      .where(eq(testRunsCases.testRunId, baselineRun.id)),
-  );
+  const baselineRows = await db
+    .select({
+      testCaseId: testRunsCases.testCaseId,
+      browserName: testRunsCases.browserName,
+      repeatEachIndex: testRunsCases.repeatEachIndex,
+      status: testRunsCases.status,
+      retries: testRunsCases.retries,
+    })
+    .from(testRunsCases)
+    .where(eq(testRunsCases.testRunId, baselineRun.id));
+  const baselineFlaky = flakyFinalAttempts(baselineRows);
 
-  const baselineByCaseId = new Map<number, { status: string; retries: number }>();
-  for (const bc of baselineCases) {
+  const baselineByCaseId = new Map<number, { status: string; flaky: boolean }>();
+  for (const bc of testOutcomes(baselineRows)) {
     // Only keep the best result (passed beats failed)
     const existing = baselineByCaseId.get(bc.testCaseId);
     if (!existing || bc.status === 'passed') {
-      baselineByCaseId.set(bc.testCaseId, { status: bc.status, retries: bc.retries ?? 0 });
+      baselineByCaseId.set(bc.testCaseId, { status: bc.status, flaky: baselineFlaky.has(bc) });
     }
   }
 
   // Fetch current run's cases
-  const currentCases: any[] = await db
+  const currentCases = await db
     .select({
       id: testRunsCases.id,
       testCaseId: testRunsCases.testCaseId,
+      browserName: testRunsCases.browserName,
+      repeatEachIndex: testRunsCases.repeatEachIndex,
       status: testRunsCases.status,
       retries: testRunsCases.retries,
     })
     .from(testRunsCases)
     .where(eq(testRunsCases.testRunId, runId));
+  const currentFlaky = flakyFinalAttempts(currentCases);
 
   const newRegressionIds: number[] = [];
   const newFlakyIds: number[] = [];
@@ -95,10 +97,8 @@ export async function computeRegressionSignals(db: DB, runId: number): Promise<v
     const isFail = cc.status === 'failed' || cc.status === 'timedOut' || cc.status === 'timedout';
     if (isFail && baseline.status === 'passed') newRegressionIds.push(cc.id);
 
-    // isNewFlaky: retry-pass in current, no retries + passed in baseline
-    if (cc.status === 'passed' && (cc.retries ?? 0) > 0 && baseline.retries === 0 && baseline.status === 'passed') {
-      newFlakyIds.push(cc.id);
-    }
+    // isNewFlaky: passed after a failed attempt in current, passed without one in baseline
+    if (currentFlaky.has(cc) && baseline.status === 'passed' && !baseline.flaky) newFlakyIds.push(cc.id);
   }
 
   // One UPDATE per flag and batch of ids, within the database's bound-parameter limit.

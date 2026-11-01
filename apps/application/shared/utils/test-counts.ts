@@ -13,6 +13,7 @@
  * produced the value.
  */
 
+import { isFlakyResult } from '@piwitests/core/status-classify';
 import { isFixmeSkip } from './skip-kind';
 
 /**
@@ -133,14 +134,63 @@ export function testOutcomes<T extends AttemptRow & { status: string }>(rows: Re
 }
 
 /**
+ * The final attempts (`finalAttempts`) of a run's rows that are flaky: each passed after an earlier attempt of its
+ * repetition failed or timed out (`isFlakyResult`). A retry that passed after attempts that passed, were skipped or
+ * did not run (a `describe.serial` group retried for another test's failure) is not flaky. Pass every attempt row of
+ * the run; the returned rows are the given objects.
+ */
+export function flakyFinalAttempts<T extends AttemptRow & { status: string }>(rows: ReadonlyArray<T>): Set<T> {
+  const final = new Map(finalAttempts(rows).map((row) => [attemptKey(row), row]));
+  const earlier = new Map<string, string[]>();
+  for (const row of rows) {
+    const key = attemptKey(row);
+    const last = final.get(key);
+    if (!last || (row.retries ?? 0) >= (last.retries ?? 0)) continue;
+    const statuses = earlier.get(key);
+    if (statuses) statuses.push(row.status);
+    else earlier.set(key, [row.status]);
+  }
+  const flaky = new Set<T>();
+  for (const [key, row] of final) if (isFlakyResult(row.status, earlier.get(key) ?? [])) flaky.add(row);
+  return flaky;
+}
+
+/** One attempt in an execution's own attempt history (`test_runs_cases.attempts`). */
+interface AttemptHistoryEntry {
+  retry?: number | null;
+  status?: string | null;
+}
+
+/**
+ * Whether a test result is flaky, read from its final attempt's row alone: it passed, and the attempt history the
+ * reporter writes on each attempt (`attempts`) holds an earlier attempt that failed or timed out (`isFlakyResult`). A
+ * row without a history (an older reporter, a trace import) counts as flaky when it passed on a retry. Where every
+ * attempt row of the run is at hand, `flakyFinalAttempts` reads them instead.
+ */
+export function isFlakyExecution(row: {
+  status: string;
+  retries?: number | null;
+  attempts?: ReadonlyArray<AttemptHistoryEntry> | null;
+}): boolean {
+  const retries = row.retries ?? 0;
+  if (row.status !== 'passed' || retries === 0) return false;
+  if (!Array.isArray(row.attempts) || row.attempts.length === 0) return true;
+  return isFlakyResult(
+    row.status,
+    row.attempts.filter((a) => (a?.retry ?? 0) < retries).map((a) => a?.status),
+  );
+}
+
+/**
  * Reduce a run's per-attempt `test_runs_cases` rows to its counters, one per test result: the final attempt of each
  * repetition of a test (per test case, browser and `--repeat-each` repetition, the highest retry) decides that
  * result, so retry attempts never inflate the counters while each repetition counts once, as Playwright's own summary
- * counts them. Timed-out folds into `failedTests` (Piwi has no separate column), and a result that passed only after
- * a retry counts as passed and as flaky.
+ * counts them. Timed-out folds into `failedTests` (Piwi has no separate column), and a result that passed after an
+ * earlier attempt failed counts as passed and as flaky (`flakyFinalAttempts`).
  */
 export function distinctRunCountsFromAttempts(rows: ReadonlyArray<AttemptRow & { status: string }>): DistinctRunCounts {
   const final = finalAttempts(rows);
+  const flaky = flakyFinalAttempts(rows);
   const counts: DistinctRunCounts = {
     totalTests: final.length,
     passedTests: 0,
@@ -149,11 +199,12 @@ export function distinctRunCountsFromAttempts(rows: ReadonlyArray<AttemptRow & {
     didNotRunTests: 0,
     flakyTests: 0,
   };
-  for (const { status, retries } of final) {
+  for (const row of final) {
+    const { status } = row;
     if (FAILED_STATUS_SET.has(status)) counts.failedTests++;
     else if (status === 'passed') {
       counts.passedTests++;
-      if ((retries ?? 0) > 0) counts.flakyTests++;
+      if (flaky.has(row)) counts.flakyTests++;
     } else if (status === 'skipped') counts.skippedTests++;
     else if (status === 'didnotrun') counts.didNotRunTests++;
   }
@@ -168,7 +219,7 @@ export interface RunCaseSummary {
   failed: number;
   skipped: number;
   didNotRun: number;
-  /** Passed on a retry — a subset of `passed`, not an extra bucket. */
+  /** Passed after an earlier attempt failed (`isFlakyExecution`): a subset of `passed`, not an extra bucket. */
   flaky: number;
   /** Skipped by `test.fixme()` — a subset of `skipped`, not an extra bucket. */
   fixme: number;
@@ -178,11 +229,12 @@ export interface RunCaseSummary {
 
 /**
  * Tally a run's cases the way the live run views count them: timed-out folds
- * into `failed`, a case whose final status is `passed` after a retry counts as
- * `passed` **and** as `flaky` (never as a failure), a `test.fixme()` skip
- * counts as `skipped` **and** as `fixme`, and `running` is the in-flight
- * remainder. Pass one entry per test (de-duplicate attempts first)
- * and the buckets reconcile: `total = passed + failed + skipped + didNotRun +
+ * into `failed`, a case that passed after an earlier attempt failed
+ * (`isFlakyExecution`) counts as `passed` **and** as `flaky` (never as a
+ * failure), a `test.fixme()` skip counts as `skipped` **and** as `fixme`, and
+ * `running` is the in-flight remainder. Pass one entry per test, its final
+ * attempt with its attempt history (de-duplicate attempts first), and the
+ * buckets reconcile: `total = passed + failed + skipped + didNotRun +
  * running`. This is the single source the run header, the count bar and the
  * grouped list all count with, so they cannot disagree.
  */
@@ -190,6 +242,7 @@ export function summarizeRunCases(
   cases: ReadonlyArray<{
     status: string;
     retries?: number | null;
+    attempts?: ReadonlyArray<AttemptHistoryEntry> | null;
     testAnnotations?: ReadonlyArray<{ type: string }> | null;
   }>,
 ): RunCaseSummary {
@@ -207,7 +260,7 @@ export function summarizeRunCases(
     if (FAILED_STATUS_SET.has(tc.status)) s.failed++;
     else if (tc.status === 'passed') {
       s.passed++;
-      if ((tc.retries ?? 0) > 0) s.flaky++;
+      if (isFlakyExecution(tc)) s.flaky++;
     } else if (tc.status === 'skipped') {
       s.skipped++;
       if (isFixmeSkip(tc)) s.fixme++;
