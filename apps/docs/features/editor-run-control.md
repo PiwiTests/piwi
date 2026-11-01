@@ -116,8 +116,6 @@ out and to whom (once a VS Code window, once a JetBrains project); shared, the s
 With a reporter newer than 0.59.0, each worker of a Piwi run stays connected to the editor service, through a socket on
 your machine only you can read (`PIWI_RUN_CHANNEL`): it says which test it runs and where it stops, and the editor
 answers. Closing the IDE closes the connections: a stop with no pause bar then goes on, one the bar shows waits there.
-[Record here](./editor-breakpoints#record-from-a-pause) reaches the editor through `PIWI_RECORD_CHANNEL`, the socket of
-this connection; a recording not started within 30 seconds is refused, and the test goes on.
 
 ## Limits
 

@@ -82,6 +82,10 @@ once.
 **Record here** records http(s) pages: on a page the test made with `setContent`, or a `file:` page, the editor says
 so and nothing is recorded.
 
+The test reaches the editor through `PIWI_RECORD_CHANNEL`, the socket of
+[the run's connection](./editor-run-control#how-it-works); a recording not started within 30 seconds is refused, and
+the test goes on.
+
 ## The setting
 
 Breakpoints are on by default. Turn them off with the `piwi.breakpoints` setting in VS Code, or **Pause the runs Piwi
