@@ -375,6 +375,42 @@ describe('a debug run through the service', () => {
     }
   });
 
+  test('says a suggestion the worker counted without outlining it, the bar showing, without the outline', async () => {
+    const unseen = await debugCommand();
+    const third = workerOf(unseen);
+    try {
+      third.stopAt(1, 7, true);
+      const asked = await third.next('request');
+      third.send({
+        type: 'answer',
+        request: asked.request,
+        what: 'locator',
+        value: { ok: true, message: '1 element matches.', count: 1, outlined: false },
+      });
+      await waitFor(() =>
+        svc.notices.find((n) => n.message === `Piwi's suggested locator: ${SUGGESTED}. 1 element matches.`),
+      );
+      const since = svc.latest(unseen.ref!)!.workers[0]!.stop!.since;
+      const counting = svc.client.sendRequest('piwi/locatorAtCaret', {
+        ref: unseen.ref,
+        since,
+        uri: uri('tests/pages/cart.page.ts'),
+        line: 6,
+      }) as Promise<LocatorAtCaretResult>;
+      const own = await third.next('request', 1);
+      expect(own).toMatchObject({ locator: "getByRole('button', { name: 'Add' })" });
+      third.send({
+        type: 'answer',
+        request: own.request,
+        what: 'locator',
+        value: { ok: true, message: '1 element matches.', count: 1, outlined: true },
+      });
+      expect(await counting).toMatchObject({ count: 1 });
+    } finally {
+      third.socket.destroy();
+    }
+  });
+
   test('refuses a test the spec does not hold, a file outside the config’s folder and text that is not plain', async () => {
     const ask = (debug: object, spec = 'tests/cart.spec.ts') =>
       svc.client.sendRequest('piwi/runArgs', { uri: uri(spec), testIds: [], debug }) as Promise<RunCommand | null>;

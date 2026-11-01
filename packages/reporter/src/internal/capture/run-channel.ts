@@ -51,7 +51,7 @@ import { keptRequests, keptResponse } from './kept-responses.js';
 import { liveViewState, onLiveViewChange, shareLiveView } from './live-view.js';
 import { openPageView, viewportOf } from './page-view.js';
 import { PICK_AT_SINCE } from './pick-at.js';
-import { takeHighlightDown, type PauseAnswer } from './pause-at.js';
+import { highlightAtStop, type PauseAnswer } from './pause-at.js';
 import { internalCall } from './quiet-capture.js';
 
 /**
@@ -88,9 +88,6 @@ const CONNECT_MS = 2000;
 /** The pause bar, hidden in an image of the stopped page. */
 const BAR_HIDDEN = '#__piwi-pause-bar { display: none !important; }';
 
-/** How the matches of the locator at the editor's caret are outlined in the stopped page. */
-const OUTLINE_STYLE = 'outline: 2px dashed #a78bfa; outline-offset: 2px; background: rgba(167, 139, 250, 0.15);';
-
 /** Why a request naming a stop that ended is refused. */
 const WENT_ON = 'The test went on.';
 
@@ -108,6 +105,8 @@ const TOO_HEAVY =
 const VIEW_END_MS = 1000;
 /** How long starting a view, and a pick on an image, may take before the editor hears that the page did not answer. */
 const PAGE_ANSWER_MS = 10_000;
+/** How long a count's outline may take to show before the count answers without it. */
+const OUTLINE_MS = 2000;
 /** Why a view or a pick on an image is refused when the page does not answer. */
 const NO_ANSWER = 'The page did not answer in time.';
 /** What an agent's action the page did not answer in time is answered with: it may still be played. */
@@ -158,7 +157,7 @@ export interface StopToHold {
   title: string;
   place: Place;
   locator: string | null;
-  /** Whether Piwi's pause bar shows the stop. */
+  /** Whether Piwi's pause bar shows the stop: a count outlines its matches there. */
   bar: boolean;
   /** A failure's error, as plain text: the editor shows it beside the stop. */
   error?: string;
@@ -755,8 +754,8 @@ async function removeOutline(): Promise<void> {
 }
 
 /**
- * How many elements `source` matches on the stopped page, its matches outlined where the pause bar shows, in place of
- * the outline before; null takes the outline down. Every call to the page is internal.
+ * How many elements `source` matches on the stopped page, its matches outlined where the stop may outline them, in
+ * place of the outline before; null takes the outline down. Every call to the page is internal.
  */
 async function countLocator(holding: HeldStop, source: string | null): Promise<LocatorAnswer> {
   await removeOutline();
@@ -767,14 +766,17 @@ async function countLocator(holding: HeldStop, source: string | null): Promise<L
   if (!locator) return { ok: false, message: `${source} is not a locator Piwi can build.`, count: null };
   try {
     const count = await internalCall(page, () => locator.count());
+    let outlined = false;
     if (holding.bar && count > 0 && held === holding) {
-      const shown = (await internalCall(page, () => locator.highlight({ style: OUTLINE_STYLE }))) as unknown;
-      outline = { stop: holding.stop, remove: () => internalCall(page, () => takeHighlightDown(page, shown)) };
+      const shown = highlightAtStop(page, locator, 'count', source);
+      outline = { stop: holding.stop, remove: async () => void (await shown.hide()) };
+      outlined = await answerWithin(shown.shown, OUTLINE_MS, false);
     }
     return {
       ok: true,
       message: count === 0 ? 'No element matches.' : count === 1 ? '1 element matches.' : `${count} elements match.`,
       count,
+      outlined,
     };
   } catch (error) {
     return { ok: false, message: `The locator could not be counted: ${errorMessage(error)}`, count: null };

@@ -4,11 +4,13 @@ import { MAX_ELEMENT_TEXT } from '@piwitests/core/run-channel';
 import { probeElementAttrs, showPauseBar } from '@piwitests/picker-dom';
 import { CAPTURED_ATTRS_ARG } from '../src/internal/capture/capture-fixtures.js';
 import { actOnRef, readSnapshot, refLocators, withoutFieldSecrets } from '../src/internal/capture/agent-page.js';
+import { maskedImage } from '../src/internal/capture/live-mask.js';
 
 /**
  * What an agent reads of a stopped page holding secrets: the value of a password field, a card's number or security
  * code and a one-time code, short or long, plain or quoted in the snapshot, in the main frame or an iframe, is hidden in
- * the snapshot, masked in the image and left out of the element's answer. And an element's text, read whole up to its
+ * the snapshot, painted over in the image, the test's own highlight left in the page, and left out of the element's
+ * answer, a frame that does not answer painted over whole. And an element's text, read whole up to its
  * limit, as Playwright's text assertions compare it. And an action on an element under the pause bar, which the
  * agent's image leaves out.
  */
@@ -40,6 +42,9 @@ describe('a snapshot without the secret fields’ values', () => {
     expect(withoutFieldSecrets(snapshot, [])).toBe(snapshot);
   });
 });
+
+/** The style the agent's image is taken with: Piwi's pause bar hidden. */
+const BAR_HIDDEN_HERE = '#__piwi-pause-bar { display: none !important; }';
 
 describe('a stopped page with secrets, for an agent', () => {
   let browser: Browser;
@@ -98,14 +103,144 @@ describe('a stopped page with secrets, for an agent', () => {
         context.drawImage(img, 0, 0);
         return Array.from(context.getImageData(${x}, ${y}, 1, 1).data);
       })()`);
-      // Playwright's mask: magenta over the field, where its digits would be.
-      expect(r).toBeGreaterThan(200);
-      expect(g).toBeLessThan(60);
-      expect(b).toBeGreaterThan(200);
+      // Gray painted over the field, where its digits would be.
+      for (const channel of [r, g, b]) expect(Math.abs(channel! - 96)).toBeLessThan(24);
     } finally {
       await viewer.close();
     }
   });
+
+  it('leaves the test’s own highlight in the page as the image is taken', async () => {
+    await page.getByText('Coupon').highlight();
+    const glass = () => page.evaluate<number>('document.querySelectorAll("x-pw-glass").length');
+    expect(await glass()).toBe(1);
+    const read = await readSnapshot(page, null, true);
+    expect(read.image).toMatchObject({ mime: 'image/jpeg' });
+    expect(await glass()).toBe(1);
+    await page.evaluate('new Promise(requestAnimationFrame)');
+    expect(await glass()).toBe(1);
+  });
+
+  /** The red, green and blue of `image`'s pixel at `x`, `y`, read on a canvas of another page. */
+  async function pixel(image: Buffer, x: number, y: number): Promise<number[]> {
+    const viewer = await browser.newPage();
+    try {
+      await viewer.setContent(`<img id="shot" src="data:image/jpeg;base64,${image.toString('base64')}">`);
+      await viewer.waitForFunction('document.getElementById("shot").complete');
+      const rgba = await viewer.evaluate<number[]>(`(() => {
+        const img = document.getElementById('shot');
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const context = canvas.getContext('2d');
+        context.drawImage(img, 0, 0);
+        return Array.from(context.getImageData(${x}, ${y}, 1, 1).data);
+      })()`);
+      return rgba.slice(0, 3);
+    } finally {
+      await viewer.close();
+    }
+  }
+  /** Whether a pixel is the gray painted over a masked element. */
+  const painted = (rgb: number[]) => rgb.every((channel) => Math.abs(channel - 96) < 24);
+
+  it('takes the image of a page with a lazy frame, which never answers, its secret fields painted over', async () => {
+    const other = await browser.newPage({ viewport: { width: 800, height: 600 } });
+    try {
+      await other.route('https://piwi.test/**', (route) =>
+        route.fulfill({
+          contentType: 'text/html',
+          body: route.request().url().endsWith('/lazy')
+            ? 'lazy'
+            : `<!doctype html><body style="margin:0;background:#fff"><input type="password" value="hunter2"
+style="width:200px;height:30px"><div style="height:12000px"></div><iframe loading="lazy" src="/lazy"></iframe>`,
+        }),
+      );
+      await other.goto('https://piwi.test/');
+      const started = Date.now();
+      const image = await maskedImage(other, { quality: 90, style: BAR_HIDDEN_HERE, timeout: 5000 });
+      expect(Date.now() - started).toBeLessThan(4000);
+      expect(image).not.toBeNull();
+      expect(painted(await pixel(image!, 100, 15))).toBe(true);
+      expect(painted(await pixel(image!, 500, 300))).toBe(false);
+    } finally {
+      await other.close();
+    }
+  }, 20_000);
+
+  it('gives no image of a page whose frame in view does not answer, unless that frame is painted over whole', async () => {
+    const other = await browser.newPage({ viewport: { width: 800, height: 600 } });
+    try {
+      await other.route('https://piwi.test/**', (route) =>
+        route.fulfill({
+          contentType: 'text/html',
+          body: `<!doctype html><body style="margin:0;background:#fff"><iframe src="https://other.test/busy"
+style="display:block;width:300px;height:100px;border:0"></iframe>`,
+        }),
+      );
+      // A frame of another site, in a process of its own, busy for six seconds once told.
+      await other.route('https://other.test/**', (route) =>
+        route.fulfill({
+          contentType: 'text/html',
+          body: `<input type="password" value="hunter2"><script>addEventListener('message', () => {
+const t = Date.now(); while (Date.now() - t < 6000); });</script>`,
+        }),
+      );
+      await other.goto('https://piwi.test/');
+      await other.evaluate('document.querySelector("iframe").contentWindow.postMessage("busy", "*")');
+      const image = await maskedImage(other, { quality: 90, style: BAR_HIDDEN_HERE, timeout: 3000 });
+      if (image) {
+        for (const [x, y] of [
+          [20, 10],
+          [150, 50],
+          [290, 90],
+        ] as const) {
+          expect(painted(await pixel(image, x, y))).toBe(true);
+        }
+      }
+    } finally {
+      await other.close();
+    }
+  }, 20_000);
+
+  it('shows no secret field of a page zoomed in, which an image shows larger than the page reads it', async () => {
+    const context = await browser.newContext({ viewport: { width: 412, height: 839 }, isMobile: true, hasTouch: true });
+    try {
+      const zoomed = await context.newPage();
+      await zoomed.setContent(`<!doctype html><meta name="viewport" content="width=device-width, initial-scale=2">
+<body style="margin:0;background:#fff"><div style="height:100px"></div><input autocomplete="one-time-code"
+value="246810" style="display:block;border:0;background:#f00;width:200px;height:60px">`);
+      expect(await zoomed.evaluate('visualViewport.scale')).toBe(2);
+      // At twice its size, the field shows from (0, 200) to (400, 320) of the image: no image goes.
+      expect(await maskedImage(zoomed, { quality: 90, style: BAR_HIDDEN_HERE, timeout: 5000 })).toBeNull();
+    } finally {
+      await context.close();
+    }
+  }, 20_000);
+
+  it('paints over a secret field whose box the page’s own script misreports', async () => {
+    const other = await browser.newPage({ viewport: { width: 800, height: 600 } });
+    try {
+      await other.setContent(`<!doctype html><body style="margin:0;background:#fff"><div style="height:100px"></div>
+<input autocomplete="one-time-code" value="246810" style="display:block;width:200px;height:60px;border:0">
+<script>const own = Element.prototype.getBoundingClientRect;
+Element.prototype.getBoundingClientRect = function () {
+  const r = own.call(this);
+  return new DOMRect(r.x / 2, r.y / 2, r.width / 2, r.height / 2);
+};</script>`);
+      const image = await maskedImage(other, { quality: 90, style: BAR_HIDDEN_HERE, timeout: 5000 });
+      expect(image).not.toBeNull();
+      for (const [x, y] of [
+        [10, 105],
+        [150, 130],
+        [190, 155],
+      ] as const) {
+        expect(painted(await pixel(image!, x, y))).toBe(true);
+      }
+    } finally {
+      await other.close();
+    }
+  }, 20_000);
 
   it('answers a card’s number, its security code and a one-time code as secrets, without their values', async () => {
     const read = await readSnapshot(page, null, false);

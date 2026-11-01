@@ -309,7 +309,7 @@ describe('the run channel', () => {
       expect(parseRunToHub(line({ ...mock, value: { ok: true, message: 'x' } }))).toBeNull();
     });
 
-    test('reads a locator’s count, or none, and a region picked with its ARIA snapshot', () => {
+    test('reads a locator’s count, or none, whether it was outlined, and a region picked with its ARIA snapshot', () => {
       const counted = {
         type: 'answer',
         request: 6,
@@ -322,6 +322,10 @@ describe('the run channel', () => {
       ).toMatchObject({ value: { count: null } });
       expect(parseRunToHub(line({ ...counted, value: { ok: true, message: '', count: -1 } }))).toBeNull();
       expect(parseRunToHub(line({ ...counted, value: { ok: true, message: '' } }))).toBeNull();
+      // Whether the matches were outlined: a reporter that does not say leaves it out.
+      const outlined = { ...counted, value: { ...counted.value, outlined: true } } satisfies RunToHub;
+      expect(parseRunToHub(line(outlined))).toEqual(outlined);
+      expect(parseRunToHub(line({ ...counted, value: { ...counted.value, outlined: 'yes' } }))).toBeNull();
 
       const region = {
         type: 'region',

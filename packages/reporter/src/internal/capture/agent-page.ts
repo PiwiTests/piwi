@@ -16,6 +16,7 @@ import {
 import { resolveAriaRole } from '@piwitests/core/locator-generation';
 import { errorMessage } from '../support/errors.js';
 import { locatorOfRef } from './aria-ref.js';
+import { maskedImage } from './live-mask.js';
 import { MAX_CHECKED, findsAlone, rankedCandidates } from './pick-at.js';
 import type { PickerProbe } from './pick-on-failure.js';
 
@@ -27,8 +28,8 @@ import type { PickerProbe } from './pick-on-failure.js';
  * element, one of a closed set, played as trusted input by Playwright's own action; and the worker's browser bound for
  * Playwright's own tools (`browser.bind`, 1.59), until the test ends. The page's text, its address and its errors have
  * their credentials hidden (`@piwitests/core/mask`), and the value of a field that holds a secret (`SECRET_FIELDS`) is
- * never sent: hidden in the snapshot, masked in the image, in every frame, and left out of an element's answer. Every
- * call is the caller's to make internal.
+ * never sent: hidden in the snapshot, painted over in the image (`maskedImage`), in every frame, and left out of an
+ * element's answer. Every call is the caller's to make internal.
  */
 
 /** How long an action, and a read of an element, may take on a stopped page. */
@@ -133,18 +134,7 @@ export async function readSnapshot(page: Page, depth: number | null, image: bool
   const cut = hidden.length > MAX_AGENT_SNAPSHOT;
   let shot: PausedImage | null = null;
   if (image) {
-    const data = await page
-      .screenshot({
-        type: 'jpeg',
-        quality: 60,
-        style: BAR_HIDDEN,
-        mask: page
-          .frames()
-          .slice(0, MAX_FRAMES)
-          .map((frame) => frame.locator(SECRET_FIELDS)),
-        timeout: ACT_MS,
-      })
-      .catch(() => null);
+    const data = await maskedImage(page, { quality: 60, style: BAR_HIDDEN, timeout: ACT_MS });
     const viewport = page.viewportSize();
     if (data) shot = { mime: 'image/jpeg', data: data.toString('base64'), ...viewport };
   }

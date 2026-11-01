@@ -24,11 +24,20 @@ export default defineConfig({
     'src/internal/capture/attachments.ts',
   ],
   format: ['cjs'],
-  // The public `.` entry's types (dist/index.d.ts) inline core fully. The
-  // internal capture entries' .d.ts still name @piwitests/core, but they are
-  // gated out of the `exports` map, so external consumers can't reach them —
-  // only the in-repo dogfood (which has core) imports them.
-  dts: true,
+  // Every entry's types, the internal capture entries' too (the public entry
+  // re-exports the fixtures from one), take in the types of @piwitests/core and
+  // @piwitests/picker-dom, which a consumer never installs: the types build
+  // resolves both from their sources (`paths`, `rootDir` above this package).
+  dts: {
+    resolve: [/^@piwitests\//],
+    compilerOptions: {
+      rootDir: '..',
+      paths: {
+        '@piwitests/core/*': ['../core/src/*.ts'],
+        '@piwitests/picker-dom': ['../picker-dom/src/index.ts'],
+      },
+    },
+  },
   bundle: true,
   outDir: 'dist',
   target: 'node20',
