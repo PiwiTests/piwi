@@ -64,15 +64,17 @@ jobs:
           if-no-files-found: error
 
       # Each marketplace's step runs whether or not the one before it failed,
-      # so one failure fails the job without holding back the other.
+      # so one failure fails the job without holding back the other. A version a
+      # marketplace already has is skipped, so "Re-run failed jobs" retries only
+      # the one that failed.
       - name: Publish to the Visual Studio Marketplace
         if: ${{ !cancelled() && steps.package.outcome == 'success' && env.TAG_BUILD == 'true' }}
         working-directory: ./apps/vscode
-        run: npx vsce publish --oidc --packagePath dist/piwi.vsix
+        run: npx vsce publish --oidc --skip-duplicate --packagePath dist/piwi.vsix
 
       - name: Publish to Open VSX
         if: ${{ !cancelled() && steps.package.outcome == 'success' && env.TAG_BUILD == 'true' && env.OVSX_CONFIGURED == 'true' }}
         working-directory: ./apps/vscode
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
-        run: npx ovsx publish dist/piwi.vsix
+        run: npx ovsx publish dist/piwi.vsix --skip-duplicate
