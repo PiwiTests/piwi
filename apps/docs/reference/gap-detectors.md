@@ -47,8 +47,9 @@ locator uses does what one of the method's steps does, on the element that step 
 its URL pattern matches. A method whose every target comes from a parameter gets no decision.
 
 A trusted test is one that is not flaky, not quarantined, and not skipped in its latest run. *Surface drift* raises a
-node in the run it first appears in; the gap then stays open until a test reaches the node or the node leaves the
-graph, unless you triage it first. *Changed, unreached* is covered on
+node in the run it first appears in; the gap then stays open until any test reaches the node or the node leaves the
+graph, unless you dismiss it or close it with *Covered by* first. A node only untrusted tests reach is then a
+*Single covering test* gap. *Changed, unreached* is covered on
 [Uncovered changes in pull requests](/features/uncovered-changes): its gap closes once a test reaches the file. A
 finding never closes itself; triage it.
 
@@ -60,8 +61,8 @@ Playwright matches it without `exact` (a case-insensitive part of exactly one na
 placeholder or title reaches the one input-like control (textbox, combobox, checkbox, radio, switch, …) carrying that
 name. Triage adds reach too (*covered by* or *covered elsewhere*), but *Control nobody exercises* stays silent until a
 locator reaches some control on the project. A test that clicks or fills an element no node matches, through a test
-id or a CSS selector, might have used any control on that page, so neither *Control nobody exercises* nor *Single
-covering test* raises those controls.
+id or a CSS selector, might have used any control on that page, so *Control nobody exercises*, *Single covering
+test* and *Surface drift* raise none of those controls.
 
 ## Exposure
 
@@ -114,7 +115,8 @@ The graph stays proportional to the application's surface, not its data volume:
 - **Branches stay separate.** A default-branch run writes the canonical graph; any other branch writes rows tagged
   with it, so a route added on a pull request never shows as drift on the default branch. Those rows drop when the
   pull request closes, or after 30 days unseen. Detectors read the canonical graph; change coverage reads every branch.
-- **Old nodes retire.** A node unseen for 30 default-branch runs that backs no open gap leaves the graph.
+- **Old nodes retire.** A node unseen for 30 default-branch runs leaves the graph unless an open, snoozed or
+  accepted gap other than *Surface drift* is about it; its *Surface drift* gap then closes.
 
 ## Related
 

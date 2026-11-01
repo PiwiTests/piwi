@@ -95,7 +95,7 @@ Every gap takes the same four verbs as an inbox item:
 
 Gaps persist, so triage survives recomputation: a dismissed gap keeps its verdict, and a gap **closes itself** when
 the detector no longer finds it, for example once its node gains a trusted test, so "closed this month" is real. A gap
-on new surface stays open past the run that found it, until a test reaches the node or the node leaves the graph. A
+on new surface stays open past the run that found it, until any test reaches the node or the node leaves the graph. A
 closed gap that comes back reopens, unless it was closed with **Covered by**. Home lists the gaps accepted more than a week ago whose test was never written.
 
 <figure>

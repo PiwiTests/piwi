@@ -2186,36 +2186,6 @@ export async function computeScenarioGaps(
     probed: probedDependencies.has(dependencyKey),
   }));
 
-  // Surface drift: each node's first sighting, its reach, and whether the ledger
-  // holds its drift gap. A test reaches a route, never the code behind it, so a
-  // handler is reached through the routes it serves and a dependency through the
-  // routes whose handlers call it.
-  const liveDrift = await loadLiveGapKeys(db, projectId, 'surface-drift');
-  const servedRoutes = (kind: string, key: string): Iterable<string> => {
-    if (kind === 'handler') return routesByHandler.get(key) ?? [];
-    if (kind === 'dependency') return routesByDependency.get(key) ?? [];
-    return [];
-  };
-  const nodeDrift: NodeDrift[] = [];
-  for (const node of nodeRows) {
-    // Declared nodes (manifest/OpenAPI) carry their own "declared, never hit"
-    // detector and are stamped with the latest run on ingest, so they must never
-    // feed surface drift — a newly documented route is not drift.
-    if (node.origin === 'manifest' || node.origin === 'openapi') continue;
-    const ids = new Set(reachByNode.get(`${node.kind}\x00${node.key}`));
-    for (const route of servedRoutes(node.kind, node.key)) {
-      for (const id of reachByNode.get(`route\x00${route}`) ?? []) ids.add(id);
-    }
-    nodeDrift.push({
-      nodeKind: node.kind,
-      nodeKey: node.key,
-      firstSeenRunId: node.firstSeenRunId ?? null,
-      reachCount: ids.size,
-      priority: maxPriority(ids, meta),
-      liveGap: liveDrift.has(`${node.kind}:${node.key}`),
-    });
-  }
-
   // Node recency for orphan tests: a node last seen inside the recent window.
   const recentSet = new Set(recentIds);
   const nodeSeenRecently = new Map<string, boolean>();
@@ -2230,6 +2200,43 @@ export async function computeScenarioGaps(
     const tests = new Set<number>();
     for (const page of pages) for (const id of unresolvedByPage.get(page) ?? []) tests.add(id);
     if (tests.size > 0) unresolvedTestsByControl.set(control, tests);
+  }
+
+  // Surface drift reads the nodes new in the latest run and those whose drift gap
+  // the ledger holds. A test reaches a route, never the code behind it, so a
+  // handler is reached through the routes it serves and a dependency through the
+  // routes whose handlers call it; a control may be reached by a test that
+  // operated an element the locator index could not name on a page holding it.
+  const liveDrift = await loadLiveGapKeys(db, projectId, 'surface-drift');
+  const driftReach = (kind: string, key: string): Set<number> => {
+    const ids = new Set(reachByNode.get(`${kind}\x00${key}`));
+    let routes: Set<string> | undefined;
+    if (kind === 'handler') routes = routesByHandler.get(key);
+    if (kind === 'dependency') routes = routesByDependency.get(key);
+    for (const route of routes ?? []) {
+      for (const id of reachByNode.get(`route\x00${route}`) ?? []) ids.add(id);
+    }
+    if (kind === 'control') for (const id of unresolvedTestsByControl.get(key) ?? []) ids.add(id);
+    return ids;
+  };
+  const nodeDrift: NodeDrift[] = [];
+  for (const node of nodeRows) {
+    // Declared nodes (manifest/OpenAPI) carry their own "declared, never hit"
+    // detector and are stamped with the latest run on ingest, so they must never
+    // feed surface drift — a newly documented route is not drift. A file is the
+    // code behind the surface, not surface, and never drifts.
+    if (node.kind === 'file' || node.origin === 'manifest' || node.origin === 'openapi') continue;
+    const liveGap = liveDrift.has(`${node.kind}:${node.key}`);
+    if (!liveGap && (node.firstSeenRunId == null || node.firstSeenRunId !== latestRunId)) continue;
+    const ids = driftReach(node.kind, node.key);
+    nodeDrift.push({
+      nodeKind: node.kind,
+      nodeKey: node.key,
+      firstSeenRunId: node.firstSeenRunId ?? null,
+      reachCount: ids.size,
+      priority: maxPriority(ids, meta),
+      liveGap,
+    });
   }
 
   const controlReach: ControlReach[] = [];

@@ -14,6 +14,7 @@ import { migrateToLatest } from './temp-db';
 
 delete process.env.PIWI_DATABASE_URL;
 const gaps = await import('../../shared/handlers/scenario-gaps');
+const { pruneStaleCanonicalNodes } = await import('../../server/utils/graph-ingest');
 
 describe('assertionLightPages', () => {
   const pages = new Set(['/users', '/reports', '/login']);
@@ -533,9 +534,32 @@ describe('computeScenarioGaps — surface drift', () => {
     await edge('reaches', 'test', '1', 'page', '/billing');
     await gaps.computeScenarioGaps(db, 1);
     expect(await drift()).toMatchObject([{ key: 'page:/billing', status: 'closed', closedByRunId: 3 }]);
+
+    // The reach ages out: the page is no longer new, so its gap stays closed.
+    await db.delete(schema.graphEdges);
+    await gaps.computeScenarioGaps(db, 1);
+    expect((await drift()).map((g) => [g.key, g.status])).toEqual([['page:/billing', 'closed']]);
   });
 
-  test('a gap closes once its node is pruned from the graph, and an accepted one keeps its verdict meanwhile', async () => {
+  test('a dismissed gap keeps its verdict and is not raised again', async () => {
+    await run(1);
+    await run(2);
+    await db.insert(schema.graphNodes).values([
+      { projectId: 1, kind: 'page', key: '/users', firstSeenRunId: 1, lastSeenRunId: 2 },
+      { projectId: 1, kind: 'page', key: '/billing', firstSeenRunId: 2, lastSeenRunId: 2 },
+    ]);
+    await gaps.computeScenarioGaps(db, 1);
+    const [billing] = await drift();
+    await gaps.triageGap(db, 1, billing!.id, { verb: 'dismiss', reason: 'not-worth-testing' });
+    const [dismissed] = await drift();
+
+    await run(3);
+    await gaps.computeScenarioGaps(db, 1);
+    expect(await drift()).toEqual([dismissed]);
+    expect(dismissed).toMatchObject({ status: 'dismissed', dismissReason: 'not-worth-testing' });
+  });
+
+  test('the stale-node sweep prunes a node only its drift gap backs, and the next recompute closes that gap', async () => {
     await run(1);
     await run(2);
     await db.insert(schema.graphNodes).values([
@@ -547,14 +571,18 @@ describe('computeScenarioGaps — surface drift', () => {
     const billing = (await drift()).find((g) => g.key === 'page:/billing')!;
     expect(await gaps.triageGap(db, 1, billing.id, { verb: 'accept' })).toEqual({ status: 'accepted' });
 
-    await run(3);
+    // Thirty more runs see both pages, never the link.
+    for (let id = 3; id <= 32; id++) await run(id);
+    await db.update(schema.graphNodes).set({ lastSeenRunId: 32 }).where(eq(schema.graphNodes.kind, 'page'));
     await gaps.computeScenarioGaps(db, 1);
     expect((await drift()).map((g) => [g.key, g.status])).toEqual([
       ['link:link:Pricing', 'open'],
       ['page:/billing', 'accepted'],
     ]);
 
-    await db.update(schema.graphNodes).set({ prunedAt: new Date() }).where(eq(schema.graphNodes.key, 'link:Pricing'));
+    expect(await pruneStaleCanonicalNodes(db as never)).toBe(1);
+    const [link] = await db.select().from(schema.graphNodes).where(eq(schema.graphNodes.key, 'link:Pricing'));
+    expect(link!.prunedAt).not.toBeNull();
     await gaps.computeScenarioGaps(db, 1);
     expect((await drift()).map((g) => [g.key, g.status])).toEqual([
       ['link:link:Pricing', 'closed'],
@@ -562,7 +590,28 @@ describe('computeScenarioGaps — surface drift', () => {
     ]);
   });
 
-  test('a handler is reached through the routes it serves, and a dependency through its handlers', async () => {
+  test('any test reaching the node closes its gap; one only untrusted tests reach is a single-covering-test gap', async () => {
+    await run(1);
+    await run(2);
+    await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'billing.spec.ts', title: 'pays' });
+    await db.insert(schema.quarantinedTests).values({ projectId: 1, testCaseId: 1 });
+    await db.insert(schema.graphNodes).values([
+      { projectId: 1, kind: 'page', key: '/users', firstSeenRunId: 1, lastSeenRunId: 2 },
+      { projectId: 1, kind: 'page', key: '/billing', firstSeenRunId: 2, lastSeenRunId: 2 },
+    ]);
+    await gaps.computeScenarioGaps(db, 1);
+    expect((await drift()).map((g) => [g.key, g.status])).toEqual([['page:/billing', 'open']]);
+
+    await run(3);
+    await edge('reaches', 'test', '1', 'page', '/billing');
+    await gaps.computeScenarioGaps(db, 1);
+    expect((await drift()).map((g) => [g.key, g.status])).toEqual([['page:/billing', 'closed']]);
+    expect((await gaps.listScenarioGaps(db, 1, { detector: 'single-covering-test' })).map((g) => g.title)).toEqual([
+      'No trusted test reaches page /billing',
+    ]);
+  });
+
+  test('a handler is reached through the routes it serves, a dependency through its handlers, and a file never drifts', async () => {
     await run(1);
     await run(2);
     await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'orders.spec.ts', title: 'orders' });
@@ -572,6 +621,7 @@ describe('computeScenarioGaps — surface drift', () => {
       { projectId: 1, kind: 'handler', key: 'server/api/orders.post.ts', firstSeenRunId: 2, lastSeenRunId: 2 },
       { projectId: 1, kind: 'handler', key: 'server/api/export.post.ts', firstSeenRunId: 2, lastSeenRunId: 2 },
       { projectId: 1, kind: 'dependency', key: 'payments-svc', firstSeenRunId: 2, lastSeenRunId: 2 },
+      { projectId: 1, kind: 'file', key: 'src/lib/money.ts', origin: 'import', firstSeenRunId: 2, lastSeenRunId: 2 },
     ]);
     await edge('handled-by', 'route', 'POST /api/orders', 'handler', 'server/api/orders.post.ts');
     await edge('handled-by', 'route', 'POST /api/export', 'handler', 'server/api/export.post.ts');
@@ -584,5 +634,33 @@ describe('computeScenarioGaps — surface drift', () => {
     await edge('reaches', 'test', '1', 'route', 'POST /api/export');
     await gaps.computeScenarioGaps(db, 1);
     expect((await drift()).map((g) => [g.key, g.status])).toEqual([['handler:server/api/export.post.ts', 'closed']]);
+  });
+
+  test('a control a test may have operated through a locator the index cannot name is not drift', async () => {
+    await run(1);
+    await run(2);
+    await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'org.spec.ts', title: 'archives' });
+    await db.insert(schema.graphNodes).values([
+      { projectId: 1, kind: 'page', key: '/settings', firstSeenRunId: 1, lastSeenRunId: 2 },
+      { projectId: 1, kind: 'page', key: '/reports', firstSeenRunId: 1, lastSeenRunId: 2 },
+      { projectId: 1, kind: 'control', key: 'button:Archive', firstSeenRunId: 2, lastSeenRunId: 2 },
+      { projectId: 1, kind: 'control', key: 'button:Print', firstSeenRunId: 2, lastSeenRunId: 2 },
+    ]);
+    await edge('contains', 'page', '/settings', 'control', 'button:Archive');
+    await edge('contains', 'page', '/reports', 'control', 'button:Print');
+    await db.insert(schema.locatorUsages).values({
+      projectId: 1,
+      testCaseId: 1,
+      locator: "getByTestId('archive')",
+      target: "getByTestId('archive')",
+      action: 'click',
+      browserName: 'chromium',
+      callSite: 'org.spec.ts:4:5',
+      page: '/settings',
+      lastSeenAt: new Date(),
+    });
+
+    await gaps.computeScenarioGaps(db, 1);
+    expect((await drift()).map((g) => g.key)).toEqual(['control:button:Print']);
   });
 });
