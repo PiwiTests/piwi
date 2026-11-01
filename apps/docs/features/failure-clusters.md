@@ -147,7 +147,7 @@ changes nothing, and an *ignored* cluster is never touched. The [notifications](
 
 **Snoozing** hides a cluster from every inbox queue without touching its status. **1 day** and
 **1 week** return it then; **Until it recurs** returns it to the **New** queue, with a **snoozed,
-back** badge, when a run fails it again.
+back** badge, when a new run fails it again.
 
 ## From an AI agent
 
