@@ -128,7 +128,9 @@ run or believe what the repository holds. A supported file opened meanwhile says
 `PiwiTestAnnotator.kt` is an external annotator on JavaScript, so on its TypeScript dialects too. It draws each test's
 latest result from `piwi/fileSummary`:
 
-- a gutter icon, with the details as its tooltip; its click runs what the line names (Open in Dashboard);
+- a gutter icon, with the details as its tooltip; its click runs what the line names (Open in Dashboard), and its
+  right-click menu holds **Run with Piwi** and **Verify ×3 with Piwi** (`PiwiCommands.runTestAt`), at the line a range
+  marker follows through edits;
 - the `PIWI_FAILING_TEST` background over a failing test;
 - `PIWI_FAILING_LINE` on the line it failed at, with the reason as the tooltip. The test's background goes around that
   line, since two backgrounds on one line have no set order.
@@ -363,7 +365,8 @@ Playwright config (`RunInSpecAction`):
 Each asks `piwi/testAt` for the caret on a pooled thread, and saves the spec's document on the event thread when it
 has unsaved changes. Then it runs as `PiwiCommands.runTests` does (`PiwiCommands.runTestAt`): the test by its id when
 Piwi knows it, else by its location (`Glue.testAtRun`); to verify, by its location, three times (`Glue.VERIFY_REPEAT`).
-When there is no test, a balloon says so. The gutter icon's click stays Open in Dashboard.
+When there is no test, a balloon says so. The gutter icon's click stays Open in Dashboard; its right-click menu runs
+and verifies the test the same way.
 
 ### Breakpoints
 
@@ -562,12 +565,13 @@ the steps there, which the service refuses where they cannot go. Without an answ
   extension's chords. Which keymaps already use them:
   [`apps/vscode/ARCHITECTURE.md`](../vscode/ARCHITECTURE.md#keybindings).
 - **The choices.** A dialog asks for the start page and the page expression (the candidates, the default first, any
-  other typed in), then the plugin sends `piwi/record`; a popup asks for the Playwright project when the answer lists
+  other typed in; the expression chosen last is selected again), then the plugin sends `piwi/record`; a popup asks for the Playwright project when the answer lists
   `projects`. The choices stay in `PiwiLocalSettings`.
 - **A tab closed** while `piwi/record` is pending cancels the recording, in a balloon.
 
-**Record a New Test File…** (also under **New**) creates the spec first, in a config folder. Its name dialog says why
-a name is refused (`InputValidatorEx`).
+**Record a New Test File…** (also under **New**) creates the spec first, where `piwi/newTestFile` offers it: beside the
+spec at hand in a test folder, else in the test folder of the config holding the file at hand, created when it does
+not exist yet. Its name dialog says why a name is refused (`InputValidatorEx`).
 
 **Recording from a paused test.** A test paused in a run started here can ask to record from there
 (`piwi/recordRequested`, `PiwiLsp4jClient.recordRequested`). Its file opens at the paused line and its recording starts

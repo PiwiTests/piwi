@@ -348,7 +348,10 @@ const GIT_WATCH_MS = 2_000;
 const ACTIVE_RUN = new Set(['running', 'initializing', 'finalizing']);
 /** Pause after a keystroke before an application file is compared with `HEAD`. */
 const DEBOUNCE_MS = 500;
-/** How long `piwi/renderSteps` waits for a config's project options before writing URLs as paths. */
+/**
+ * How long `piwi/renderSteps` waits for a config's project options before writing URLs as paths, and
+ * `piwi/newTestFile` before reading the test folders from the config's text.
+ */
 const OPTIONS_WAIT_MS = 3_000;
 /**
  * How long a quick fix or a hover waits for what it fetches from the instance: past it, it answers without, and the
@@ -3556,16 +3559,22 @@ export function startServer(connection: Connection, options: ServerOptions = {})
 
   connection.onRequest(NEW_TEST_FILE_REQUEST, async (params: NewTestFileParams | null): Promise<NewTestFileResult> => {
     const at = params?.uri ? uriToPath(params.uri) : null;
-    const context = (at ? contextFor(at) : null) ?? contexts[0] ?? null;
+    // The config whose folder is the folder at hand, else the one holding the file at hand, else the first.
+    const own = at ? contexts.find((c) => path.relative(c.root, at) === '') : undefined;
+    const context = own ?? (at ? contextFor(at) : null) ?? contexts[0] ?? null;
     if (!context) return null;
     const configFile = playwrightConfigFile(context.root);
     // Playwright's own reading of the projects' test folders, when it answers soon enough.
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const options = configFile
-      ? await within(
+      ? await Promise.race([
           projectOptions(configFile).catch(() => null),
-          null,
-        )
+          new Promise<null>((resolve) => {
+            timer = setTimeout(() => resolve(null), OPTIONS_WAIT_MS);
+          }),
+        ])
       : null;
+    clearTimeout(timer);
     const place = newTestFile({
       at,
       root: context.root,

@@ -742,16 +742,22 @@ export function registerRecording(context: vscode.ExtensionContext, lc: Language
 
   /**
    * The new test file's path, asked relative to its workspace folder, from where the service offers it
-   * (`piwi/newTestFile`: beside the spec at hand, else in the test folder of the config holding the file at hand, under
-   * a name it does not hold yet); null when cancelled.
+   * (`piwi/newTestFile`: beside the spec at hand in a test folder, else in the test folder of the config holding the
+   * file at hand, under a name it does not hold yet); null when cancelled.
    */
   const askNewFile = async (file: vscode.Uri | undefined): Promise<vscode.Uri | null> => {
-    const offered = await lc
-      .sendRequest<NewTestFileResult>(NEW_TEST_FILE_REQUEST, {
-        uri:
-          file?.scheme === 'file' ? file.toString() : (vscode.workspace.workspaceFolders?.[0]?.uri.toString() ?? null),
-      } satisfies NewTestFileParams)
-      .catch(() => null);
+    const offered = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Window, title: 'Piwi: finding where the test file goes' },
+      () =>
+        lc
+          .sendRequest<NewTestFileResult>(NEW_TEST_FILE_REQUEST, {
+            uri:
+              file?.scheme === 'file'
+                ? file.toString()
+                : (vscode.workspace.workspaceFolders?.[0]?.uri.toString() ?? null),
+          } satisfies NewTestFileParams)
+          .catch(() => null),
+    );
     if (!offered) {
       void vscode.window.showInformationMessage(
         'Piwi: open a folder with a Playwright config to create the test file in.',
