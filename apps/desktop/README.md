@@ -115,6 +115,14 @@ channel, so a per-user install pulls a per-user update.
     the `keepawake` crate, on a thread of its own since Windows ties the
     request to the thread that made it); the display still turns off, and
     closing a laptop's lid still sleeps it.
+12. On macOS the app menu is Tauri's default with Piwi's items (`app_menu`,
+    run by `run_app_menu_action`): Settings… (Cmd+,), which shows the page
+    through a `piwi:open-page` event; a Quit (Cmd+Q) that asks while local runs
+    are going; File › Import Playwright report… (Cmd+O), whose files the
+    dashboard receives as the ones the OS opens with the app
+    (`queue_open_files`); View › Back and Forward (Cmd+[ and Cmd+]); Help ›
+    Piwi documentation, Report an issue and Show logs. Windows and Linux show
+    no menu bar.
 
 Local access is gated by a token the app creates once and keeps for the install (see
 `apps/application/server/middleware/desktop-guard.ts`), so only the app — not other

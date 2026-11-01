@@ -20,6 +20,8 @@ declare global {
   interface Window {
     __piwiOpenPageInvocations: FakeInvocation[];
     __piwiDesktopEvents: string[];
+    /** Deliver a shell event to the page's listeners, as the shell's `emit_to` does. */
+    __piwiShellEmit: (event: string, payload: unknown) => void;
   }
 }
 
@@ -28,7 +30,14 @@ async function installFakeBridge(page: Page, label: string) {
   await page.addInitScript((windowLabel) => {
     const invocations: FakeInvocation[] = [];
     const events: string[] = [];
-    Object.assign(window, { __piwiOpenPageInvocations: invocations, __piwiDesktopEvents: events });
+    const listeners = new Map<string, Array<(event: { payload: unknown }) => void>>();
+    Object.assign(window, {
+      __piwiOpenPageInvocations: invocations,
+      __piwiDesktopEvents: events,
+      __piwiShellEmit: (event: string, payload: unknown) => {
+        for (const handler of listeners.get(event) ?? []) handler({ payload });
+      },
+    });
     Object.assign(window, {
       __TAURI__: {
         core: {
@@ -38,7 +47,12 @@ async function installFakeBridge(page: Page, label: string) {
             return null;
           },
         },
-        event: { listen: async () => () => {} },
+        event: {
+          listen: async (event: string, handler: (event: { payload: unknown }) => void) => {
+            listeners.set(event, [...(listeners.get(event) ?? []), handler]);
+            return () => {};
+          },
+        },
         window: { getCurrentWindow: () => ({ label: windowLabel }) },
       },
     });
@@ -98,6 +112,20 @@ test.describe('Desktop window shows a page opened outside the app', () => {
     await expect.poll(() => page.evaluate(() => window.__piwiDesktopEvents.length)).toBe(1);
     expect(new URL(page.url()).pathname).toBe('/');
     expect(await invokedCommands(page)).not.toContain('desktop_bring_to_front');
+  });
+
+  test('the shell opens a page with its own event, under the same path check', async ({ page }) => {
+    await installFakeBridge(page, 'main');
+    await page.goto('/');
+    await waitForHydration(page);
+
+    await page.evaluate(() => window.__piwiShellEmit('piwi:open-page', '//evil.example/settings'));
+    expect(new URL(page.url()).pathname).toBe('/');
+    expect(await invokedCommands(page)).not.toContain('desktop_bring_to_front');
+
+    await page.evaluate(() => window.__piwiShellEmit('piwi:open-page', '/settings/about'));
+    await expect(page).toHaveURL(/\/settings\/about$/);
+    await expect.poll(() => invokedCommands(page)).toContain('desktop_bring_to_front');
   });
 
   test('another shell window ignores it', async ({ page }) => {

@@ -1866,30 +1866,168 @@ fn quit_after_confirming(app: &AppHandle) {
     });
 }
 
-/// Id of the app menu's Quit item (see `app_menu`).
+/// Ids of the app menu's own items (see `app_menu`).
 const APP_MENU_QUIT_ID: &str = "app-menu-quit";
+const APP_MENU_SETTINGS_ID: &str = "app-menu-settings";
+const APP_MENU_IMPORT_ID: &str = "app-menu-import";
+const APP_MENU_BACK_ID: &str = "app-menu-back";
+const APP_MENU_FORWARD_ID: &str = "app-menu-forward";
+const APP_MENU_DOCS_ID: &str = "app-menu-docs";
+const APP_MENU_ISSUE_ID: &str = "app-menu-issue";
+const APP_MENU_LOGS_ID: &str = "app-menu-logs";
 
-/// The macOS app menu: Tauri's default menu, its Quit item (Cmd+Q) replaced by
-/// one that goes through [`quit_after_confirming`]. The predefined Quit sends
-/// `terminate:`, which no `ExitRequested` precedes, so nothing could ask first.
+/// Where Help › Piwi documentation and Help › Report an issue go.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+const DOCS_URL: &str = "https://piwitests.dev/features/desktop";
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+const NEW_ISSUE_URL: &str = "https://github.com/PiwiTests/piwi/issues/new";
+
+/// Event the shell emits to the dashboard window with an app-relative path to
+/// show (`app/plugins/desktop-open-page.client.ts`).
+const OPEN_PAGE_EVENT: &str = "piwi:open-page";
+
+/// What an item of the app menu does.
+#[derive(Debug, PartialEq)]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+enum AppMenuAction {
+    Quit,
+    OpenPage(&'static str),
+    Import,
+    History(&'static str),
+    OpenUrl(&'static str),
+    ShowLogs,
+}
+
+/// The action of the app menu item `id`, `None` for any other menu's item.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn app_menu_action(id: &str) -> Option<AppMenuAction> {
+    match id {
+        APP_MENU_QUIT_ID => Some(AppMenuAction::Quit),
+        APP_MENU_SETTINGS_ID => Some(AppMenuAction::OpenPage("/settings")),
+        APP_MENU_IMPORT_ID => Some(AppMenuAction::Import),
+        APP_MENU_BACK_ID => Some(AppMenuAction::History("back")),
+        APP_MENU_FORWARD_ID => Some(AppMenuAction::History("forward")),
+        APP_MENU_DOCS_ID => Some(AppMenuAction::OpenUrl(DOCS_URL)),
+        APP_MENU_ISSUE_ID => Some(AppMenuAction::OpenUrl(NEW_ISSUE_URL)),
+        APP_MENU_LOGS_ID => Some(AppMenuAction::ShowLogs),
+        _ => None,
+    }
+}
+
+/// Run an app menu item's action.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn run_app_menu_action(app: &AppHandle, action: AppMenuAction) {
+    match action {
+        AppMenuAction::Quit => quit_after_confirming(app),
+        AppMenuAction::OpenPage(path) => {
+            if let Some(w) = app.get_webview_window("main") {
+                bring_to_front(&w);
+            }
+            let _ = app.emit_to("main", OPEN_PAGE_EVENT, path);
+        }
+        AppMenuAction::Import => pick_files_to_open(app),
+        AppMenuAction::History(direction) => {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.eval(&format!("history.{direction}()"));
+            }
+        }
+        AppMenuAction::OpenUrl(url) => {
+            let _ = app.opener().open_url(url, None::<&str>);
+        }
+        AppMenuAction::ShowLogs => reveal_log(app),
+    }
+}
+
+/// Reveal the server log in the file manager, off the main thread: on Linux
+/// the reveal waits on the file manager over D-Bus.
+fn reveal_log(app: &AppHandle) {
+    let Some(log) = app.try_state::<LogFile>().map(|l| l.0.clone()) else {
+        return;
+    };
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        let _ = handle.opener().reveal_item_in_dir(&log);
+    });
+}
+
+/// Ask for Playwright archives and bug reports to open, then hand them to the
+/// dashboard as the OS hands it a file (`queue_open_files`), which offers to
+/// import them.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn pick_files_to_open(app: &AppHandle) {
+    let handle = app.clone();
+    app.dialog()
+        .file()
+        .add_filter("Playwright archives and Piwi bug reports", &["zip", "piwibug"])
+        .pick_files(move |files| {
+            let paths: Vec<String> = files
+                .into_iter()
+                .flatten()
+                .filter_map(|f| f.into_path().ok())
+                .map(|p| p.to_string_lossy().to_string())
+                .filter(|p| is_opened_file(p))
+                .collect();
+            if paths.is_empty() {
+                return;
+            }
+            queue_open_files(&handle, paths);
+            if let Some(w) = handle.get_webview_window("main") {
+                bring_to_front(&w);
+            }
+        });
+}
+
+/// The macOS app menu: Tauri's default menu with Piwi's own items, which
+/// [`run_app_menu_action`] runs. Settings… (Cmd+,) in the app menu; its Quit
+/// (Cmd+Q) goes through [`quit_after_confirming`], since the predefined Quit
+/// sends `terminate:`, which no `ExitRequested` precedes, so nothing could ask
+/// first. File › Import Playwright report… (Cmd+O); View › Back and Forward
+/// (Cmd+[ and Cmd+]); Help › Piwi documentation, Report an issue and Show logs.
 /// Built on every platform so it is type-checked everywhere; only macOS
 /// installs it.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
-    use tauri::menu::{Menu, MenuItemKind};
+    use tauri::menu::{Menu, MenuItemKind, PredefinedMenuItem};
 
-    let menu = Menu::default(app)?;
-    if let Some(MenuItemKind::Submenu(app_submenu)) = menu.items()?.into_iter().next() {
-        let items = app_submenu.items()?;
-        if let Some(MenuItemKind::Predefined(quit)) = items.last() {
-            if quit.text().is_ok_and(|text| text.starts_with("Quit")) {
-                app_submenu.remove(quit)?;
-            }
+    let item = |id: &str, text: &str, accelerator: Option<&str>| {
+        let builder = MenuItemBuilder::with_id(id, text);
+        match accelerator {
+            Some(accelerator) => builder.accelerator(accelerator),
+            None => builder,
         }
-        let quit = MenuItemBuilder::with_id(APP_MENU_QUIT_ID, format!("Quit {}", app.package_info().name))
-            .accelerator("CmdOrCtrl+Q")
-            .build(app)?;
-        app_submenu.append(&quit)?;
+        .build(app)
+    };
+    let app_name = app.package_info().name.clone();
+    let menu = Menu::default(app)?;
+    for entry in menu.items()? {
+        let MenuItemKind::Submenu(submenu) = entry else {
+            continue;
+        };
+        let title = submenu.text()?;
+        if title == app_name {
+            let items = submenu.items()?;
+            if let Some(MenuItemKind::Predefined(quit)) = items.last() {
+                if quit.text().is_ok_and(|text| text.starts_with("Quit")) {
+                    submenu.remove(quit)?;
+                }
+            }
+            // After About and its separator, where macOS applications put Settings.
+            submenu.insert(&item(APP_MENU_SETTINGS_ID, "Settings…", Some("CmdOrCtrl+,"))?, 2)?;
+            submenu.insert(&PredefinedMenuItem::separator(app)?, 3)?;
+            submenu.append(&item(APP_MENU_QUIT_ID, &format!("Quit {app_name}"), Some("CmdOrCtrl+Q"))?)?;
+        } else if title == "File" {
+            submenu.insert(&item(APP_MENU_IMPORT_ID, "Import Playwright report…", Some("CmdOrCtrl+O"))?, 0)?;
+            submenu.insert(&PredefinedMenuItem::separator(app)?, 1)?;
+        } else if title == "View" {
+            submenu.insert(&item(APP_MENU_BACK_ID, "Back", Some("CmdOrCtrl+["))?, 0)?;
+            submenu.insert(&item(APP_MENU_FORWARD_ID, "Forward", Some("CmdOrCtrl+]"))?, 1)?;
+            submenu.insert(&PredefinedMenuItem::separator(app)?, 2)?;
+        } else if title == "Help" {
+            submenu.append(&item(APP_MENU_DOCS_ID, "Piwi documentation", None)?)?;
+            submenu.append(&item(APP_MENU_ISSUE_ID, "Report an issue", None)?)?;
+            submenu.append(&PredefinedMenuItem::separator(app)?)?;
+            submenu.append(&item(APP_MENU_LOGS_ID, "Show logs", None)?)?;
+        }
     }
     Ok(menu)
 }
@@ -2345,15 +2483,7 @@ pub fn run() {
                             bring_to_front(&w);
                         }
                     }
-                    "show_logs" => {
-                        // Off the main thread: on Linux the reveal waits on the
-                        // file manager over D-Bus.
-                        let log = app.state::<LogFile>().0.clone();
-                        let handle = app.clone();
-                        std::thread::spawn(move || {
-                            let _ = handle.opener().reveal_item_in_dir(&log);
-                        });
-                    }
+                    "show_logs" => reveal_log(app),
                     "open_folder" => {
                         let dir = app.state::<DataDir>().0.clone();
                         let _ = app
@@ -2380,13 +2510,13 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // macOS: Cmd+Q asks before it stops local runs, like the tray's Quit.
+            // macOS: the app menu, with Piwi's own items (`app_menu`).
             #[cfg(target_os = "macos")]
             {
                 app.set_menu(app_menu(app.handle())?)?;
                 app.on_menu_event(|app, event| {
-                    if event.id().as_ref() == APP_MENU_QUIT_ID {
-                        quit_after_confirming(app);
+                    if let Some(action) = app_menu_action(event.id().as_ref()) {
+                        run_app_menu_action(app, action);
                     }
                 });
             }
@@ -2533,7 +2663,8 @@ mod tests {
         is_output_window_name, is_sidecar_url, is_truthy_flag, main_window_may_navigate,
         output_window_name, port_refusal, prepare_compile_cache, progress_bar_status, read_installer_port,
         remote_capability, remove_other_versions, render_status_dot, request_target, rotate_log_if_full,
-        awake_change, run_newly_failed, window_state_key, AwakeChange,
+        app_menu_action, awake_change, run_newly_failed, window_state_key, AppMenuAction, AwakeChange,
+        DOCS_URL, NEW_ISSUE_URL,
         parse_retention_env, rotated_log_path, splash_status_script, stream_download, valid_retention_days,
         status_dot_color, valid_port, write_new_download, BAD_PORTS, DEFAULT_PORT,
         INSTALLER_CHOICES_FILE, MIN_PORT, SERVER_PORT_KEY, STORE_FILE,
@@ -2734,6 +2865,24 @@ mod tests {
         assert_eq!(download_file_name("../../etc/passwd"), "passwd");
         assert_eq!(download_file_name("report.pdf"), "report.pdf");
         assert_eq!(download_file_name(""), "download");
+    }
+
+    #[test]
+    fn the_app_menu_items_map_to_their_actions() {
+        assert_eq!(app_menu_action("app-menu-quit"), Some(AppMenuAction::Quit));
+        assert_eq!(app_menu_action("app-menu-settings"), Some(AppMenuAction::OpenPage("/settings")));
+        assert_eq!(app_menu_action("app-menu-import"), Some(AppMenuAction::Import));
+        assert_eq!(app_menu_action("app-menu-back"), Some(AppMenuAction::History("back")));
+        assert_eq!(app_menu_action("app-menu-forward"), Some(AppMenuAction::History("forward")));
+        assert_eq!(app_menu_action("app-menu-docs"), Some(AppMenuAction::OpenUrl(DOCS_URL)));
+        assert_eq!(app_menu_action("app-menu-issue"), Some(AppMenuAction::OpenUrl(NEW_ISSUE_URL)));
+        assert_eq!(app_menu_action("app-menu-logs"), Some(AppMenuAction::ShowLogs));
+        // The tray's items are its own handler's.
+        for id in ["quit", "show_logs", "open", "run_bg"] {
+            assert_eq!(app_menu_action(id), None, "{id}");
+        }
+        // The page path is one the dashboard's open-page handler accepts.
+        assert!(DOCS_URL.starts_with("https://piwitests.dev/"));
     }
 
     #[test]
