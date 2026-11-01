@@ -186,16 +186,19 @@ function installExternalLinkHandler(core: Bridge) {
 }
 
 /**
- * The dashboard window's Ctrl shortcuts (`DESKTOP_SHORTCUTS`): Settings, Import Playwright report, Back and
- * Forward, the keys the macOS app menu holds with ⌘. Only in the `main` window: the trace and output windows hold
- * no IPC grant, and their history is their own.
+ * The dashboard window's Ctrl shortcuts on Windows and Linux (`DESKTOP_SHORTCUTS`): Settings, Import Playwright
+ * report, Back and Forward, the keys the macOS app menu holds with ⌘. Only in the `main` window: the trace and
+ * output windows hold no IPC grant, and their history is their own.
  */
 function installShortcuts(core: Bridge) {
   if (tauriWindowLabel() !== 'main') return;
   const router = useRouter();
+  const macOS = /Mac|iPhone|iPad/.test(navigator.platform);
   window.addEventListener('keydown', (event) => {
     if (event.defaultPrevented) return;
-    const action = desktopShortcut(event);
+    const target = event.target as HTMLElement | null;
+    const inField = !!target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
+    const action = desktopShortcut(event, { macOS, inField });
     if (!action) return;
     event.preventDefault();
     if (action === 'settings') void router.push('/settings');

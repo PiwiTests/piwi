@@ -43,7 +43,10 @@ channel, so a per-user install pulls a per-user update.
    app data folder. The log rotates at 10 MB, keeping `server.1.log` and
    `server.2.log`. While local runs are going, the tray lists them under
    Open, each with a Stop item (`refresh_tray_runs`, kept current once a second
-   by `watch_local_runs`), which stops it as the window's Stop does.
+   by `watch_local_runs`). A Stop goes to the dashboard window as
+   `piwi:tray-stop`, which stops the run as its own Stop does (`stopRun`, so a
+   run of several steps ends as stopped); a process no window run owns is
+   stopped by the shell directly.
 4. The dashboard can link a Piwi project to a folder on this machine and run
    `playwright test` there (`src-tauri/src/runner.rs`): the shell resolves the
    folder's own Playwright package, executes it with the bundled Node sidecar,
@@ -128,9 +131,11 @@ channel, so a per-user install pulls a per-user update.
     dashboard receives as the ones the OS opens with the app
     (`queue_open_files`); View › Back and Forward (Cmd+[ and Cmd+]); Help ›
     Piwi documentation, Report an issue and Show logs. Windows and Linux show
-    no menu bar: the dashboard window takes the same keys with Ctrl
-    (`DESKTOP_SHORTCUTS` in `app/utils/desktop-shortcuts.ts`), Ctrl+O through
-    `desktop_pick_files_to_open`.
+    no menu bar: the dashboard window takes the same keys with Ctrl, outside a
+    field being typed in (`DESKTOP_SHORTCUTS` in
+    `app/utils/desktop-shortcuts.ts`), Ctrl+O through
+    `desktop_pick_files_to_open`, which opens one picker at a time, in front of
+    the window.
 
 Local access is gated by a token the app creates once and keeps for the install (see
 `apps/application/server/middleware/desktop-guard.ts`), so only the app — not other

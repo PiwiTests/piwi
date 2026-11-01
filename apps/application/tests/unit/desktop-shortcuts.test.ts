@@ -14,23 +14,32 @@ const press = (
   ...modifiers,
 });
 
+const WINDOWS = { macOS: false, inField: false };
+const shortcut = (event: ReturnType<typeof press>, context = WINDOWS) => desktopShortcut(event, context);
+
 describe('the desktop app’s Ctrl shortcuts', () => {
   it('maps Ctrl with the macOS menu’s keys to their actions', () => {
-    expect(desktopShortcut(press(',', { ctrlKey: true }))).toBe('settings');
-    expect(desktopShortcut(press('o', { ctrlKey: true }))).toBe('import');
-    expect(desktopShortcut(press('O', { ctrlKey: true }))).toBe('import');
-    expect(desktopShortcut(press('[', { ctrlKey: true }))).toBe('back');
-    expect(desktopShortcut(press(']', { ctrlKey: true }))).toBe('forward');
+    expect(shortcut(press(',', { ctrlKey: true }))).toBe('settings');
+    expect(shortcut(press('o', { ctrlKey: true }))).toBe('import');
+    expect(shortcut(press('O', { ctrlKey: true }))).toBe('import');
+    expect(shortcut(press('[', { ctrlKey: true }))).toBe('back');
+    expect(shortcut(press(']', { ctrlKey: true }))).toBe('forward');
   });
 
   it('leaves every other key press alone', () => {
-    expect(desktopShortcut(press(','))).toBeNull();
-    expect(desktopShortcut(press('k', { ctrlKey: true }))).toBeNull();
-    expect(desktopShortcut(press(',', { ctrlKey: true, shiftKey: true }))).toBeNull();
-    expect(desktopShortcut(press('o', { ctrlKey: true, altKey: true }))).toBeNull();
+    expect(shortcut(press(','))).toBeNull();
+    expect(shortcut(press('k', { ctrlKey: true }))).toBeNull();
+    expect(shortcut(press(',', { ctrlKey: true, shiftKey: true }))).toBeNull();
+    expect(shortcut(press('o', { ctrlKey: true, altKey: true }))).toBeNull();
     // ⌘ belongs to the macOS menu, and a held key acts once.
-    expect(desktopShortcut(press(',', { metaKey: true }))).toBeNull();
-    expect(desktopShortcut(press(',', { ctrlKey: true, metaKey: true }))).toBeNull();
-    expect(desktopShortcut(press('[', { ctrlKey: true, repeat: true }))).toBeNull();
+    expect(shortcut(press(',', { metaKey: true }))).toBeNull();
+    expect(shortcut(press(',', { ctrlKey: true, metaKey: true }))).toBeNull();
+    expect(shortcut(press('[', { ctrlKey: true, repeat: true }))).toBeNull();
+  });
+
+  it('leaves the keys to macOS, whose menu holds them, and to a field being typed in', () => {
+    const ctrlComma = press(',', { ctrlKey: true });
+    expect(shortcut(ctrlComma, { macOS: true, inField: false })).toBeNull();
+    expect(shortcut(ctrlComma, { macOS: false, inField: true })).toBeNull();
   });
 });

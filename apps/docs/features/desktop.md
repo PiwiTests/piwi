@@ -43,7 +43,7 @@ tokens.
 Closing the window quits the app unless **Run in background** is on in the tray menu; **Start on login** launches
 it hidden into the tray. The windows open where you left them, and Cmd or Ctrl with +, - and 0 zoom the dashboard. On macOS the app menu
 holds Settings (⌘,), Import Playwright report (⌘O), Back and Forward (⌘[ and ⌘]) and the docs; Windows and Linux
-take the same keys with Ctrl. While tests run from
+take the same keys with Ctrl. The tray lists the tests running from the app, each with Stop. While tests run from
 the app, the machine does not go to sleep on its own, and a run that fails while you look elsewhere bounces the Dock
 icon or flashes the taskbar button. In the background, [notifications](/features/notifications#browser) arrive as OS notifications,
 with no setup, and an unread count on the dock icon or the tray tooltip.

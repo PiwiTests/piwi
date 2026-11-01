@@ -169,6 +169,19 @@ export default defineNuxtPlugin(() => {
       })
       .catch(() => {});
 
+    // The tray's Stop item of one run reaches the dashboard with the shell id of the run's current step, so the run
+    // stops as with its own Stop. A process no window run owns (left by a reload) is stopped by the shell directly.
+    tauriEvent()
+      ?.listen<number>('piwi:tray-stop', ({ payload }) => {
+        const run = runs.value.find((r) => r.shellId === payload);
+        if (run) void stopRun(run);
+        else
+          void tauriCore()
+            ?.invoke('desktop_stop_local_tests', { runId: payload })
+            .catch(() => {});
+      })
+      .catch(() => {});
+
     // A stopped local process the shell had to kill never reports its end, and
     // the server marks its runs interrupted only after the stale timeout, so
     // drop them from the bar once the process is gone. After a clean stop the

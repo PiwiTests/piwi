@@ -1018,7 +1018,7 @@ fn supervise_server(
 /// How often the local runs watcher looks at the local runs.
 const RUNS_WATCH_TICK: Duration = Duration::from_secs(1);
 
-/// What the keep-awake thread does on a tick.
+/// What the runs watcher does on a tick.
 #[derive(Debug, PartialEq)]
 enum AwakeChange {
     Take,
@@ -1090,12 +1090,31 @@ fn watch_local_runs(app: AppHandle, shutting_down: Arc<AtomicBool>, log_path: Pa
 /// Id prefix of the tray's Stop items: `stop-run-<run id>`.
 const TRAY_STOP_RUN_PREFIX: &str = "stop-run-";
 
-/// The tray's Stop item of each running run: its menu id and its text.
+/// The tray's Stop item of each running run: its menu id and its text. A
+/// label's `&` is doubled, since the menus read a single one as a mnemonic
+/// mark, and control characters become spaces; runs of the same label are
+/// numbered from the second on.
 fn tray_run_entries(runs: &[(u32, String)]) -> Vec<(String, String)> {
+    let mut seen: HashMap<&str, usize> = HashMap::new();
     runs.iter()
-        .map(|(id, label)| (format!("{TRAY_STOP_RUN_PREFIX}{id}"), format!("Stop {label}")))
+        .map(|(id, label)| {
+            let count = seen.entry(label.as_str()).or_insert(0);
+            *count += 1;
+            let text: String = label
+                .chars()
+                .map(|c| if c.is_control() { ' ' } else { c })
+                .collect::<String>()
+                .replace('&', "&&");
+            let text = if *count > 1 { format!("Stop {text} ({count})") } else { format!("Stop {text}") };
+            (format!("{TRAY_STOP_RUN_PREFIX}{id}"), text)
+        })
         .collect()
 }
+
+/// Event the shell emits to the dashboard window with the shell id of a run
+/// the tray's Stop item asks to stop: the window stops it as its own Stop does
+/// (`stopRun`), so a run of several steps ends as stopped.
+const TRAY_STOP_RUN_EVENT: &str = "piwi:tray-stop";
 
 /// The run a tray Stop item stops, `None` for any other item.
 fn tray_stop_run_id(menu_id: &str) -> Option<u32> {
@@ -1105,35 +1124,57 @@ fn tray_stop_run_id(menu_id: &str) -> Option<u32> {
 /// The tray's menu, which the runs watcher adds the Stop items to.
 struct TrayMenu(tauri::menu::Menu<tauri::Wry>);
 
-/// The items the runs watcher put in the tray's menu last: a Stop item per
-/// running run, then a separator.
+/// The items the runs watcher keeps in the tray's menu, under Open: a Stop
+/// item per running run, with the id and text it was made with, then a
+/// separator while there is any.
 #[derive(Default)]
-struct TrayRunItems(Mutex<Vec<tauri::menu::MenuItemKind<tauri::Wry>>>);
+struct TrayRunItems(Mutex<TrayRunItemsInner>);
 
-/// Put a Stop item per running run in the tray's menu, under Open, in place of
-/// the last ones. On the main thread.
+#[derive(Default)]
+struct TrayRunItemsInner {
+    stops: Vec<(String, String, tauri::menu::MenuItem<tauri::Wry>)>,
+    separator: Option<tauri::menu::PredefinedMenuItem<tauri::Wry>>,
+}
+
+/// Keep a Stop item per running run in the tray's menu, under Open. The items
+/// of the runs still going stay where they are, so a menu open while a run
+/// ends or starts moves as little as it can. On the main thread.
 fn refresh_tray_runs(app: &AppHandle, runs: &[(u32, String)]) {
-    use tauri::menu::{MenuItemKind, PredefinedMenuItem};
+    use tauri::menu::PredefinedMenuItem;
     let (Some(menu), Some(items)) = (app.try_state::<TrayMenu>(), app.try_state::<TrayRunItems>()) else {
         return;
     };
     let mut items = items.0.lock().unwrap();
-    for item in items.drain(..) {
-        let _ = menu.0.remove(&item);
-    }
-    if runs.is_empty() {
-        return;
-    }
-    for (id, text) in tray_run_entries(runs) {
-        if let Ok(item) = MenuItemBuilder::with_id(id, text).build(app) {
-            items.push(MenuItemKind::MenuItem(item));
+    let wanted = tray_run_entries(runs);
+    items.stops.retain(|(id, text, item)| {
+        let keep = wanted.iter().any(|(w_id, w_text)| w_id == id && w_text == text);
+        if !keep {
+            let _ = menu.0.remove(item);
+        }
+        keep
+    });
+    for (index, (id, text)) in wanted.iter().enumerate() {
+        let present = items.stops.get(index).is_some_and(|(have, _, _)| have == id);
+        if present {
+            continue;
+        }
+        if let Ok(item) = MenuItemBuilder::with_id(id.as_str(), text.as_str()).build(app) {
+            let _ = menu.0.insert(&item, 1 + index);
+            items.stops.insert(index, (id.clone(), text.clone(), item));
         }
     }
-    if let Ok(separator) = PredefinedMenuItem::separator(app) {
-        items.push(MenuItemKind::Predefined(separator));
-    }
-    for (offset, item) in items.iter().enumerate() {
-        let _ = menu.0.insert(item, 1 + offset);
+    match (&items.separator, items.stops.is_empty()) {
+        (Some(separator), true) => {
+            let _ = menu.0.remove(separator);
+            items.separator = None;
+        }
+        (None, false) => {
+            if let Ok(separator) = PredefinedMenuItem::separator(app) {
+                let _ = menu.0.insert(&separator, 1 + items.stops.len());
+                items.separator = Some(separator);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -2052,26 +2093,36 @@ fn reveal_log(app: &AppHandle) {
 /// import them: the macOS menu's File › Import, and Ctrl+O on Windows and
 /// Linux (`desktop_pick_files_to_open`).
 fn pick_files_to_open(app: &AppHandle) {
+    static PICKING: AtomicBool = AtomicBool::new(false);
+    // One picker at a time, in front of the dashboard window.
+    if PICKING.swap(true, Ordering::SeqCst) {
+        return;
+    }
     let handle = app.clone();
-    app.dialog()
+    let mut dialog = app
+        .dialog()
         .file()
-        .add_filter("Playwright archives and Piwi bug reports", &["zip", "piwibug"])
-        .pick_files(move |files| {
-            let paths: Vec<String> = files
-                .into_iter()
-                .flatten()
-                .filter_map(|f| f.into_path().ok())
-                .map(|p| p.to_string_lossy().to_string())
-                .filter(|p| is_opened_file(p))
-                .collect();
-            if paths.is_empty() {
-                return;
-            }
-            queue_open_files(&handle, paths);
-            if let Some(w) = handle.get_webview_window("main") {
-                bring_to_front(&w);
-            }
-        });
+        .add_filter("Playwright archives and Piwi bug reports", &["zip", "piwibug"]);
+    if let Some(w) = app.get_webview_window("main") {
+        dialog = dialog.set_parent(&w);
+    }
+    dialog.pick_files(move |files| {
+        PICKING.store(false, Ordering::SeqCst);
+        let paths: Vec<String> = files
+            .into_iter()
+            .flatten()
+            .filter_map(|f| f.into_path().ok())
+            .map(|p| p.to_string_lossy().to_string())
+            .filter(|p| is_opened_file(p))
+            .collect();
+        if paths.is_empty() {
+            return;
+        }
+        queue_open_files(&handle, paths);
+        if let Some(w) = handle.get_webview_window("main") {
+            bring_to_front(&w);
+        }
+    });
 }
 
 /// Ctrl+O in the dashboard window on Windows and Linux: what the macOS menu's
@@ -2615,7 +2666,7 @@ pub fn run() {
                     "quit" => quit_after_confirming(app),
                     id if tray_stop_run_id(id).is_some() => {
                         if let Some(run_id) = tray_stop_run_id(id) {
-                            tauri::async_runtime::spawn(runner::desktop_stop_local_tests(app.clone(), run_id));
+                            let _ = app.emit_to("main", TRAY_STOP_RUN_EVENT, run_id);
                         }
                     }
                     _ => {}
@@ -3003,6 +3054,17 @@ mod tests {
         }
         // Help opens the docs site.
         assert!(DOCS_URL.starts_with("https://piwitests.dev/"));
+    }
+
+    #[test]
+    fn a_stop_item_shows_its_label_as_written_and_tells_twins_apart() {
+        let runs = vec![
+            (1, "tests in R&D".to_string()),
+            (2, "tests in R&D".to_string()),
+            (3, "tests in odd\tname".to_string()),
+        ];
+        let texts: Vec<String> = tray_run_entries(&runs).into_iter().map(|(_, text)| text).collect();
+        assert_eq!(texts, ["Stop tests in R&&D", "Stop tests in R&&D (2)", "Stop tests in odd name"]);
     }
 
     #[test]

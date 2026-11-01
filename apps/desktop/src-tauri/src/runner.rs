@@ -746,8 +746,8 @@ pub async fn desktop_run_local_tests(
     let (mut rx, child) = command.spawn().map_err(|e| e.to_string())?;
 
     let state = app.state::<LocalRuns>();
-    state.children.lock().unwrap().insert(id, child);
     state.label(id, run_label("tests", &folder));
+    state.children.lock().unwrap().insert(id, child);
 
     let emit_app = app.clone();
     tauri::async_runtime::spawn(async move {
