@@ -2,15 +2,15 @@ name: Publish VS Code extension
 
 # Packages apps/vscode on each release tag and keeps the .vsix as a workflow
 # artifact, to publish or install by hand. A tag build then publishes it to the
-# Visual Studio Marketplace (VSCE_PAT) and Open VSX (OVSX_PAT), for Cursor and
-# VSCodium. A marketplace whose token is not configured is skipped.
+# Visual Studio Marketplace, through Trusted Publishing (OIDC), and to Open VSX
+# (OVSX_PAT), for Cursor and VSCodium; Open VSX is skipped when its token is not
+# configured. The Marketplace publisher's Trusted Publishing policy names this
+# repository, the release.yml workflow and the release environment.
 # release.yml calls it: from a release tag it publishes; from anywhere else it
 # only builds the artifact.
 on:
   workflow_call:
     secrets:
-      VSCE_PAT:
-        required: false
       OVSX_PAT:
         required: false
 
@@ -25,11 +25,12 @@ jobs:
     environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}
     permissions:
       contents: read
+      # vsce publish --oidc
+      id-token: write
     env:
       TAG_BUILD: ${{ startsWith(github.ref, 'refs/tags/v') }}
-      # Whether each marketplace is configured. The tokens themselves reach
-      # only the step that publishes to that marketplace.
-      VSCE_CONFIGURED: ${{ secrets.VSCE_PAT != '' }}
+      # Whether Open VSX is configured. The token itself reaches only the step
+      # that publishes there.
       OVSX_CONFIGURED: ${{ secrets.OVSX_PAT != '' }}
     steps:
       - name: Checkout
@@ -65,11 +66,9 @@ jobs:
       # Each marketplace's step runs whether or not the one before it failed,
       # so one failure fails the job without holding back the other.
       - name: Publish to the Visual Studio Marketplace
-        if: ${{ !cancelled() && steps.package.outcome == 'success' && env.TAG_BUILD == 'true' && env.VSCE_CONFIGURED == 'true' }}
+        if: ${{ !cancelled() && steps.package.outcome == 'success' && env.TAG_BUILD == 'true' }}
         working-directory: ./apps/vscode
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: npx vsce publish --packagePath dist/piwi.vsix
+        run: npx vsce publish --oidc --packagePath dist/piwi.vsix
 
       - name: Publish to Open VSX
         if: ${{ !cancelled() && steps.package.outcome == 'success' && env.TAG_BUILD == 'true' && env.OVSX_CONFIGURED == 'true' }}

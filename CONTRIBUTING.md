@@ -116,14 +116,14 @@ The release PR runs one job of `ci.yml`, `Versions`: it installs the dependencie
 
 `release.yml` builds the node-server bundle once and calls one reusable workflow per target: `reusable-publish-npm.yml` (`@piwitests/reporter`, `@piwitests/server`, `@piwitests/instrumentation-nitro`), `reusable-publish-container.yml` (GHCR and Docker Hub), `reusable-publish-nuget.yml`, `reusable-publish-desktop.yml` (the installers, attached to the GitHub release, which becomes GitHub's latest only once every installer is attached: until then `release-please.yml` keeps the previous release the latest, for the desktop updater and the download links) and the three below. One target failing holds back none of the others, and **Re-run failed jobs** on the run retries only the failed ones. If a release's tag already exists but some targets never published (e.g. because this wasn't set up yet), run `release.yml` manually against that tag (**Run workflow**, the tag as the ref) with only those targets ticked. A pull request that changes a release workflow runs `release.yml` too: it builds and packs every target and publishes nothing.
 
-The browser extension and the editor plugins keep their packages as the run's workflow artifacts (not release assets), each downloading as the file a store takes, so they can be uploaded by hand; then each publishes to every store whose secrets are set and skips the others:
+The browser extension and the editor plugins keep their packages as the run's workflow artifacts (not release assets), each downloading as the file a store takes, so they can be uploaded by hand; then each publishes to every store whose secrets are set and skips the others. The Visual Studio Marketplace takes no secret: it trusts `release.yml` in the `release` environment (a Trusted Publishing policy on the `piwitests` publisher), and the job publishes there on every release tag:
 
 | Workflow | Store | Secrets |
 |---|---|---|
 | `reusable-publish-extension.yml` | Chrome Web Store | `CHROME_PUBLISHER_ID`, `CHROME_CLIENT_ID`, `CHROME_CLIENT_SECRET`, `CHROME_REFRESH_TOKEN` |
 | | Edge Add-ons | `EDGE_PRODUCT_ID`, `EDGE_CLIENT_ID`, `EDGE_API_KEY` |
 | | Firefox Add-ons (AMO) | `AMO_JWT_ISSUER`, `AMO_JWT_SECRET` |
-| `reusable-publish-vscode.yml` | Visual Studio Marketplace | `VSCE_PAT` |
+| `reusable-publish-vscode.yml` | Visual Studio Marketplace | none: Trusted Publishing (OIDC) |
 | | Open VSX | `OVSX_PAT` |
 | `reusable-publish-jetbrains.yml` | JetBrains Marketplace | `JETBRAINS_PUBLISH_TOKEN`, plus `JETBRAINS_CERTIFICATE_CHAIN`, `JETBRAINS_PRIVATE_KEY` and `JETBRAINS_PRIVATE_KEY_PASSWORD` to sign the plugin (the artifact too) |
 
