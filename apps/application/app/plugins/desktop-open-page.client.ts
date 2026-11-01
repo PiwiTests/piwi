@@ -9,7 +9,9 @@ import { desktopPagePath } from '#shared/desktop-handoff';
  * stream (`server/middleware/desktop-handoff.ts`); the dashboard window
  * navigates to it and asks the shell to bring it to the front — restored if
  * minimized, shown if closed to the tray, then focused. The shell's own menu
- * opens a page the same way, with a `piwi:open-page` event.
+ * and a `piwi://open/…` link open a page the same way, with a `piwi:open-page`
+ * event; a link that came while this page loaded waits in the shell until the
+ * page listens (`desktop_take_linked_page`).
  *
  * Activates only in the shell's `main` window: the other shell windows (trace
  * viewer, attachments) and the shared web build ignore it.
@@ -29,5 +31,12 @@ export default defineNuxtPlugin(() => {
   subscribeDesktopEvents((message) => {
     if (message.type === 'open-page') open(message.path);
   });
-  void tauriEvent()?.listen<string>('piwi:open-page', ({ payload }) => open(payload));
+  const listening = tauriEvent()?.listen<string>('piwi:open-page', ({ payload }) => open(payload));
+  // Once the first page has shown, so its own navigation does not replace the linked one.
+  onNuxtReady(() => {
+    void Promise.resolve(listening)
+      .then(() => core.invoke<string | null>('desktop_take_linked_page'))
+      .then(open)
+      .catch(() => {});
+  });
 });

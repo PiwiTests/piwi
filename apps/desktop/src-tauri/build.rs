@@ -46,6 +46,7 @@ fn main() {
             "desktop_check_local_specs",
             "desktop_check_local_env",
             "desktop_take_pending_open_files",
+            "desktop_take_linked_page",
             "desktop_mcp_clients",
             "desktop_mcp_connect",
             "desktop_mcp_disconnect",

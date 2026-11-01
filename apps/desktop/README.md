@@ -148,15 +148,22 @@ channel, so a per-user install pulls a per-user update.
     the window.
 13. A `piwi://open/<page>` link shows that dashboard page in the window
     (`tauri-plugin-deep-link`, `plugins.deep-link` in `tauri.conf.json`). The
-    `.msi`, `.exe`, `.deb` and `.rpm` register the scheme as they install, an
-    AppImage registers it as it starts (`register_all`), and macOS reads it from
-    the bundle once the app is in `/Applications`. A link that launched the app
-    (its one argument on Windows and Linux) or came while the server started
-    waits in `LinkedPage` and reaches the session bootstrap as `to`, which
-    redirects to it once `desktopPagePath` accepts it; after that, a link goes to
-    the window as `piwi:open-page` (`open_links`). A second launch hands its link
-    to the running app through single-instance's `deep-link` feature. Only the
-    `open` host is read, so a link shows a page and never acts.
+    `.msi` and `.exe` register the scheme as they install, and macOS reads it
+    from the bundle once the app is in `/Applications`. On Linux the shell
+    registers it each time it starts, off the main thread (`register_all`: a
+    handler entry with `%u` in the user's applications folder), since the
+    `.deb` and `.rpm` menu entry passes the app no URL and an AppImage installs
+    none. A link that launched the app (its one argument on Windows and Linux)
+    or came while the server started waits in `LinkedPage` and reaches the
+    session bootstrap as `to`, which redirects to it once `desktopPagePath`
+    accepts it. One that comes while the dashboard page loads waits until the
+    page listens and takes it (`desktop_take_linked_page`); after that, a link
+    goes to the window as `piwi:open-page` (`open_links`). A second launch hands
+    its link to the running app through single-instance's `deep-link` feature.
+    Only the `open` host is read, so a link shows a page and never acts, and a
+    launch whose first argument is a link acts on no other argument
+    (`args_to_act_on`): Windows hands the link over as `"%1"`, which a quote in
+    it can split.
 
 Local access is gated by a token the app creates once and keeps for the install (see
 `apps/application/server/middleware/desktop-guard.ts`), so only the app — not other

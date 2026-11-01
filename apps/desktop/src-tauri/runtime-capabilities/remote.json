@@ -41,6 +41,7 @@
     "allow-desktop-check-local-specs",
     "allow-desktop-check-local-env",
     "allow-desktop-take-pending-open-files",
+    "allow-desktop-take-linked-page",
     "allow-desktop-mcp-clients",
     "allow-desktop-mcp-connect",
     "allow-desktop-mcp-disconnect",

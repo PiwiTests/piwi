@@ -245,36 +245,71 @@ fn link_page(url: &tauri::Url) -> Option<String> {
     })
 }
 
-/// The page a link asked for before the dashboard showed, which the session
-/// bootstrap opens (`bootstrap_url`). Once the dashboard shows, the window
-/// opens a link's page itself.
+/// The page a link asked for while the dashboard page could not open it: the
+/// session bootstrap opens it (`bootstrap_url`), or the page takes it once it
+/// listens (`desktop_take_linked_page`). From then on, until the window loads
+/// another document, the window opens a link's page itself.
 #[derive(Default)]
 struct LinkedPage(Mutex<LinkedPageInner>);
 
 #[derive(Default)]
 struct LinkedPageInner {
-    dashboard_shown: bool,
+    page_listens: bool,
     waiting: Option<String>,
 }
 
 impl LinkedPage {
-    /// Keep `page` for the dashboard to open as it shows: `false` once it shows,
-    /// when the window opens it instead. The last link wins.
+    /// Keep `page` until the dashboard page can open it: `false` while it
+    /// listens, when the window opens it instead. The last link wins.
     fn hold(&self, page: &str) -> bool {
         let mut inner = self.0.lock().unwrap();
-        if inner.dashboard_shown {
+        if inner.page_listens {
             return false;
         }
         inner.waiting = Some(page.to_string());
         true
     }
 
-    /// The dashboard shows: the page a link asked for so far, if any. Links that
-    /// come after go to the window.
-    fn take_as_dashboard_shows(&self) -> Option<String> {
+    /// The page a link asked for so far, for the session bootstrap to open.
+    fn take_waiting(&self) -> Option<String> {
+        self.0.lock().unwrap().waiting.take()
+    }
+
+    /// The dashboard page listens: the page a link asked for so far, if any.
+    /// Links that come after go to the window.
+    fn take_as_page_listens(&self) -> Option<String> {
         let mut inner = self.0.lock().unwrap();
-        inner.dashboard_shown = true;
+        inner.page_listens = true;
         inner.waiting.take()
+    }
+
+    /// The window loads another document: links wait until it listens again.
+    fn page_unloads(&self) {
+        self.0.lock().unwrap().page_listens = false;
+    }
+}
+
+/// The page a link asked for while the dashboard page loaded. From now on, the
+/// window hears of each link (`OPEN_PAGE_EVENT`).
+#[tauri::command]
+fn desktop_take_linked_page(app: tauri::AppHandle) -> Option<String> {
+    app.try_state::<LinkedPage>().and_then(|linked| linked.take_as_page_listens())
+}
+
+/// The command-line arguments the app acts on: all of them, or only its own
+/// name when the first is a `piwi:` link. Windows hands a link over as `"%1"`,
+/// so a launcher that leaves a `"` in it unescaped splits the link into
+/// arguments of its choosing (a file to open, `--devtools`).
+fn args_to_act_on(args: Vec<String>) -> Vec<String> {
+    let scheme = format!("{LINK_SCHEME}:");
+    let launched_by_link = args
+        .get(1)
+        .and_then(|first| first.get(..scheme.len()))
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(&scheme));
+    if launched_by_link {
+        args.into_iter().take(1).collect()
+    } else {
+        args
     }
 }
 
@@ -321,9 +356,10 @@ fn bootstrap_url(port: u16, token: &str, page: Option<&str>) -> String {
     url.to_string()
 }
 
-/// Two ambient signals the dashboard drives share the tray tooltip — the unread
-/// notification count and the live progress of local test runs — so they are
-/// held in one place and composed together instead of overwriting each other.
+/// Two ambient signals share the tray tooltip — the unread notification count,
+/// which the shell keeps (`update_unread`), and the live progress of local test
+/// runs, which the dashboard drives — so they are held in one place and
+/// composed together instead of overwriting each other.
 /// The badge (dock/taskbar) still tracks unread only; run progress goes to the
 /// taskbar/Dock progress bar and the window title (see `desktop_set_run_progress`).
 #[derive(Default)]
@@ -1991,9 +2027,10 @@ fn read_event_stream(reader: impl std::io::BufRead, mut on_data: impl FnMut(&str
 }
 
 /// Follow the server's notification stream on `port` with `token` until it
-/// ends, showing each notification (`show_server_notification`). `Ok` once the
-/// stream answered and then ended.
-fn follow_notification_stream(app: &AppHandle, port: u16, token: &str) -> Result<(), String> {
+/// ends, showing each notification (`show_server_notification`). `answered`
+/// turns true once the server answered with the stream; `Ok` when it then
+/// ended cleanly.
+fn follow_notification_stream(app: &AppHandle, port: u16, token: &str, answered: &mut bool) -> Result<(), String> {
     use std::io::{BufRead, Write};
     let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).map_err(|e| e.to_string())?;
     let _ = stream.set_read_timeout(Some(NOTIFICATION_STREAM_IDLE));
@@ -2008,6 +2045,7 @@ fn follow_notification_stream(app: &AppHandle, port: u16, token: &str) -> Result
     if !status.contains(" 200 ") {
         return Err(format!("the notification stream answered {}", status.trim()));
     }
+    *answered = true;
     // The head ends at the first empty line; HTTP/1.0 sends the body as is.
     loop {
         let mut header = String::new();
@@ -2028,31 +2066,38 @@ fn follow_notification_stream(app: &AppHandle, port: u16, token: &str) -> Result
 
 /// Show the server's notifications for as long as the app runs, whether or
 /// not the dashboard page is loaded: the stream is followed again whenever it
-/// ends, once the server answers its readiness probe (`health_ok`), so a
-/// server restart loses only what happened while it was down.
+/// ends, as soon as the server answers its readiness probe (`health_ok`), so a
+/// server restart loses only what happened while it was down. A stream the
+/// server refuses is asked for again less and less often.
 fn follow_notifications(app: AppHandle, port: u16, token: String, nonce: String, shutting_down: Arc<AtomicBool>) {
     std::thread::spawn(move || {
         let mut retry = NOTIFICATION_RETRY_FIRST;
         let mut last_error: Option<String> = None;
         while !shutting_down.load(Ordering::SeqCst) {
-            if health_ok(port, &nonce) {
-                match follow_notification_stream(&app, port, &token) {
-                    Ok(()) => {
-                        retry = NOTIFICATION_RETRY_FIRST;
-                        last_error = None;
-                    }
-                    Err(e) => {
-                        if last_error.as_deref() != Some(e.as_str()) {
-                            if let Some(log) = app.try_state::<LogFile>() {
-                                append_log(&log.0, &format!("notification stream: {e}"));
-                            }
-                            last_error = Some(e);
+            if !health_ok(port, &nonce) {
+                std::thread::sleep(NOTIFICATION_RETRY_FIRST);
+                continue;
+            }
+            let mut answered = false;
+            let outcome = follow_notification_stream(&app, port, &token, &mut answered);
+            if answered {
+                retry = NOTIFICATION_RETRY_FIRST;
+            }
+            match outcome {
+                Ok(()) => last_error = None,
+                Err(e) => {
+                    if last_error.as_deref() != Some(e.as_str()) {
+                        if let Some(log) = app.try_state::<LogFile>() {
+                            append_log(&log.0, &format!("notification stream: {e}"));
                         }
+                        last_error = Some(e);
                     }
                 }
             }
             std::thread::sleep(retry);
-            retry = (retry * 2).min(NOTIFICATION_RETRY_LAST);
+            if !answered {
+                retry = (retry * 2).min(NOTIFICATION_RETRY_LAST);
+            }
         }
     });
 }
@@ -2596,24 +2641,25 @@ pub fn run() {
         }
     }
 
+    let args = args_to_act_on(std::env::args().collect());
+
     // Claude Desktop only loads stdio MCP servers, so its one-click setup points
     // it at this same binary in bridge mode: it proxies MCP over stdin/stdout to
     // the running app's /mcp endpoint. Handled before the app starts — no window,
     // no tray icon, no second server, and no hand-off to the running instance.
-    if std::env::args().skip(1).any(|a| mcp_stdio::is_bridge_arg(&a)) {
+    if args.iter().skip(1).any(|a| mcp_stdio::is_bridge_arg(a)) {
         mcp_stdio::run_bridge();
         return;
     }
 
-    let launched_hidden = std::env::args().any(|a| a == "--hidden");
+    let launched_hidden = args.iter().any(|a| a == "--hidden");
 
     // Debug mode: `--devtools` (or `--debug`) on the command line, or a truthy
     // `PIWI_DEBUG` env value. Opens the webview inspector so web runtime errors
     // can be inspected live in a shipped build (see the setup hook and
     // `desktop_open_window`). Off by default — a normal launch is unchanged.
-    let all_args: Vec<String> = std::env::args().collect();
     let debug_mode = debug_mode_requested(
-        all_args.iter().map(String::as_str),
+        args.iter().map(String::as_str),
         std::env::var("PIWI_DEBUG").ok().as_deref(),
     );
 
@@ -2622,6 +2668,7 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             // A second launch just focuses the running window (never a 2nd
             // server) — and forwards any archives it was asked to open.
+            let args = args_to_act_on(args);
             queue_open_files(app, collect_open_args(args.iter().skip(1).map(String::as_str), Some(Path::new(&cwd))));
             if let Some(w) = app.get_webview_window("main") {
                 bring_to_front(&w);
@@ -2671,6 +2718,10 @@ pub fn run() {
                         && payload.event() == tauri::webview::PageLoadEvent::Started
                     {
                         close_output_windows(webview.app_handle(), None);
+                        // A link waits for the new page to listen.
+                        if let Some(linked) = webview.try_state::<LinkedPage>() {
+                            linked.page_unloads();
+                        }
                     }
                 })
                 .build(),
@@ -2730,6 +2781,7 @@ pub fn run() {
             desktop_check_local_specs,
             desktop_check_local_env,
             desktop_take_pending_open_files,
+            desktop_take_linked_page,
             desktop_mcp_clients,
             desktop_mcp_connect,
             desktop_mcp_disconnect,
@@ -2936,7 +2988,7 @@ pub fn run() {
                 // The server's notifications show from now on, page or no page.
                 follow_notifications(nav_handle.clone(), port, token.clone(), launch_nonce.clone(), quitting.clone());
                 // A `piwi://` link that launched the app, or came while it started, opens its page.
-                let page = nav_handle.try_state::<LinkedPage>().and_then(|linked| linked.take_as_dashboard_shows());
+                let page = nav_handle.try_state::<LinkedPage>().and_then(|linked| linked.take_waiting());
                 let bootstrap_url = bootstrap_url(port, &token, page.as_deref());
                 let inner = nav_handle.clone();
                 let _ = nav_handle.run_on_main_thread(move || {
@@ -3080,12 +3132,19 @@ pub fn run() {
 
             // Links into the app: the one that launched it (Windows and Linux
             // pass it as the argument), then each one that comes while it runs.
-            // An AppImage is not installed, so it registers the scheme itself.
+            // On Linux the shell registers the scheme itself, in the user's
+            // applications folder: the installed menu entry passes the app no
+            // URL (its `Exec` has no `%u`), and an AppImage installs none.
+            // Off the main thread: it runs `xdg-mime` and `update-desktop-database`.
             #[cfg(target_os = "linux")]
-            if std::env::var_os("APPIMAGE").is_some() {
-                if let Err(e) = app.deep_link().register_all() {
-                    append_log(&log_path, &format!("could not register {LINK_SCHEME}:// links: {e}"));
-                }
+            {
+                let handle = app.handle().clone();
+                let log = log_path.clone();
+                std::thread::spawn(move || {
+                    if let Err(e) = handle.deep_link().register_all() {
+                        append_log(&log, &format!("could not register {LINK_SCHEME}:// links: {e}"));
+                    }
+                });
             }
             if let Ok(Some(urls)) = app.deep_link().get_current() {
                 open_links(app.handle(), &urls);
@@ -3095,11 +3154,10 @@ pub fn run() {
 
             // Archives passed on the very first launch ("Open with" while the
             // app was closed) — queued now, drained once the dashboard boots.
-            let argv: Vec<String> = std::env::args().skip(1).collect();
             let launch_cwd = std::env::current_dir().ok();
             queue_open_files(
                 app.handle(),
-                collect_open_args(argv.iter().map(String::as_str), launch_cwd.as_deref()),
+                collect_open_args(args.iter().skip(1).map(String::as_str), launch_cwd.as_deref()),
             );
 
             // e2e builds: grant the Playwright plugin's result-callback command to
@@ -3209,7 +3267,7 @@ mod tests {
         app_menu_action, awake_change, run_newly_failed, tray_run_entries, tray_stop_run_id, window_state_key,
         AppMenuAction, AwakeChange,
         DOCS_URL, NEW_ISSUE_URL,
-        bootstrap_url, link_page, LinkedPage,
+        args_to_act_on, bootstrap_url, link_page, LinkedPage,
         notification_wanted, read_event_stream, NotificationChoices, ServerNotification,
         parse_retention_env, rotated_log_path, splash_status_script, stream_download, valid_retention_days,
         status_dot_color, valid_port, write_new_download, BAD_PORTS, DEFAULT_PORT,
@@ -3298,14 +3356,40 @@ mod tests {
     }
 
     #[test]
-    fn a_link_waits_for_the_dashboard_then_goes_to_the_window() {
+    fn a_link_waits_while_the_page_cannot_open_it() {
         let linked = LinkedPage::default();
+        // Before the dashboard shows: the session bootstrap opens the last one.
         assert!(linked.hold("/settings"));
         assert!(linked.hold("/test-runs/146"));
-        assert_eq!(linked.take_as_dashboard_shows().as_deref(), Some("/test-runs/146"));
-        assert!(!linked.hold("/settings"));
-        assert_eq!(linked.take_as_dashboard_shows(), None);
-        assert_eq!(LinkedPage::default().take_as_dashboard_shows(), None);
+        assert_eq!(linked.take_waiting().as_deref(), Some("/test-runs/146"));
+        // While the dashboard page loads: the page takes it once it listens.
+        assert!(linked.hold("/settings"));
+        assert_eq!(linked.take_as_page_listens().as_deref(), Some("/settings"));
+        assert!(!linked.hold("/test-runs/146"));
+        assert_eq!(linked.take_as_page_listens(), None);
+        // The window loads another document: links wait again.
+        linked.page_unloads();
+        assert!(linked.hold("/test-runs/146"));
+        assert_eq!(linked.take_as_page_listens().as_deref(), Some("/test-runs/146"));
+    }
+
+    #[test]
+    fn a_link_that_launches_the_app_brings_no_arguments() {
+        let args = |list: &[&str]| list.iter().map(|a| a.to_string()).collect::<Vec<_>>();
+        // Windows split `"%1"` at a quote the link held: the rest is ignored.
+        assert_eq!(
+            args_to_act_on(args(&["piwi-desktop", "piwi://open/x", "\\\\host\\share\\a.zip", "--devtools"])),
+            args(&["piwi-desktop"])
+        );
+        assert_eq!(args_to_act_on(args(&["piwi-desktop", "PIWI://open/x", "mcp-stdio"])), args(&["piwi-desktop"]));
+        // Any other launch keeps its arguments.
+        assert_eq!(
+            args_to_act_on(args(&["piwi-desktop", "--hidden", "piwi://open/x"])),
+            args(&["piwi-desktop", "--hidden", "piwi://open/x"])
+        );
+        assert_eq!(args_to_act_on(args(&["piwi-desktop", "report.zip"])), args(&["piwi-desktop", "report.zip"]));
+        assert_eq!(args_to_act_on(args(&["piwi-desktop", "pi"])), args(&["piwi-desktop", "pi"]));
+        assert_eq!(args_to_act_on(args(&["piwi-desktop"])), args(&["piwi-desktop"]));
     }
 
     #[test]

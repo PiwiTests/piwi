@@ -127,16 +127,17 @@ test('the dashboard can reach the shell IPC commands', async ({ tauriPage: fixtu
   expect(updateSettings.pending).toBeNull();
 
   // The notification choices command is granted and takes the page's choices; a project id that is not one is
-  // dropped rather than refused.
+  // dropped rather than refused. The linked page command is granted, and holds no page on a launch with no link.
   const choices = (await tauriPage.evaluate(`
     window.__TAURI__.core.invoke('desktop_set_notification_choices', {
       choices: { projects: { 3: ['cluster.new'], 'x/y': ['run.failed'] }, muted: ['diagnosis.completed'] },
     })
       .then(() => window.__TAURI__.core.invoke('desktop_set_notification_choices', { choices: { projects: {}, muted: [] } }))
-      .then(() => ({ ok: true }))
+      .then(() => window.__TAURI__.core.invoke('desktop_take_linked_page'))
+      .then((page) => ({ ok: page === null, error: page === null ? undefined : 'a linked page was held: ' + page }))
       .catch((e) => ({ ok: false, error: String((e && e.message) || e) }))
   `)) as { ok: boolean; error?: string };
-  expect(choices.ok, `desktop_set_notification_choices rejected: ${choices.error ?? 'unknown'}`).toBe(true);
+  expect(choices.ok, `the notification choices or the linked page failed: ${choices.error ?? 'unknown'}`).toBe(true);
 
   // A run's output opens in a window of its own on the dashboard's run output page, which the dashboard window feeds
   // over a BroadcastChannel: the page says it is ready, then shows the state it is sent (its title becomes the
