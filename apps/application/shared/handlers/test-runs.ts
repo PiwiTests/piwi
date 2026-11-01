@@ -16,6 +16,7 @@ import {
 import { fetchAndFormatSuites, splitSuitePath } from '../utils/suites';
 import { normalizeRoute } from '../utils/route';
 import { percentile } from '../utils/stats';
+import { withAttemptHistory } from '../utils/test-counts';
 import { computeWastedMs, DEFAULT_WASTED_WAIT_PATTERNS } from '../utils/wasted-waits';
 import type { TestStepEvent } from '../types';
 import type { EndpointSummary, DiagnosisCompact } from '../../types/api';
@@ -179,7 +180,9 @@ export async function getTestRun(
     .where(eq(testRunsCases.testRunId, id));
   const suites = await fetchAndFormatSuites(db, testSuites, testRun.projectId, runFilePaths, eq, and, inArray);
 
-  const formattedTestCases = runsCases.map((tc: any) => ({
+  // A row without its attempt history reads it from the run's stored attempts, so the run page counts flaky tests
+  // as the run's counters do.
+  const formattedTestCases = withAttemptHistory(runsCases).map((tc: any) => ({
     executionId: tc.id,
     testCaseId: tc.testCaseId,
     title: tc.title,

@@ -1,4 +1,5 @@
 ﻿import type { FullResult } from '@playwright/test/reporter';
+import { isFlakyResult } from '@piwitests/core/status-classify';
 import type { CollectedTestCase, WireTestCase } from '../../types.js';
 import type { RunPayload } from './uploader.js';
 
@@ -103,6 +104,8 @@ interface RunCounts {
   timedOutTests: number;
   skippedTests: number;
   didNotRunTests: number;
+  /** Results that passed after an earlier attempt failed (`isFlakyResult`): a subset of `passedTests`. */
+  flakyTests: number;
 }
 
 function browserProjectName(browser: unknown): string {
@@ -130,7 +133,8 @@ function isFailingStatus(status: string): boolean {
  * timedOut + skipped + didNotRun`, ignoring any rare interrupted case). Of two
  * attempts with the same retry index, the failing one decides. Timed-out stays
  * its own bucket — the server folds it into failed on ingest — and a test that
- * passed only after a retry counts as passed. Playwright reports
+ * passed only after a retry counts as passed, and as flaky when an earlier
+ * attempt failed or timed out (`isFlakyResult`). Playwright reports
  * each attempt through `onTestEnd`, so the raw counters tally attempts; this is
  * what turns them back into a per-test summary before the run body is sent.
  */
@@ -147,6 +151,7 @@ export function computeDistinctRunCounts(
   }>,
 ): RunCounts {
   const final = new Map<string, { status: string; retries: number }>();
+  const attemptsOf = new Map<string, Array<{ status: string; retries: number }>>();
   for (const tc of testCases) {
     const key =
       tc.testId ??
@@ -159,6 +164,9 @@ export function computeDistinctRunCounts(
       ].join('\x00');
     const status = tc.status ?? '';
     const retries = tc.retries ?? 0;
+    const attempts = attemptsOf.get(key);
+    if (attempts) attempts.push({ status, retries });
+    else attemptsOf.set(key, [{ status, retries }]);
     const prev = final.get(key);
     // The highest-retry attempt is the final one, so it decides the outcome.
     const decides =
@@ -174,10 +182,14 @@ export function computeDistinctRunCounts(
     timedOutTests: 0,
     skippedTests: 0,
     didNotRunTests: 0,
+    flakyTests: 0,
   };
-  for (const { status } of final.values()) {
-    if (status === 'passed') counts.passedTests++;
-    else if (status === 'failed') counts.failedTests++;
+  for (const [key, { status, retries }] of final) {
+    if (status === 'passed') {
+      counts.passedTests++;
+      const earlier = (attemptsOf.get(key) ?? []).filter((a) => a.retries < retries).map((a) => a.status);
+      if (isFlakyResult(status, earlier)) counts.flakyTests++;
+    } else if (status === 'failed') counts.failedTests++;
     else if (status === 'timedOut' || status === 'timedout') counts.timedOutTests++;
     else if (status === 'skipped') counts.skippedTests++;
     else if (status === 'didnotrun') counts.didNotRunTests++;

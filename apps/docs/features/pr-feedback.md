@@ -33,7 +33,7 @@ What the comment says, in this order:
 
 1. **New failures**: failing now, passing in the last green run. This change caused them.
 2. **Pre-existing failures**: already broken before this change. Separated so nobody debugs someone else's bug.
-3. **Flaky**: passed only on a retry.
+3. **Flaky**: passed on a retry after an earlier attempt failed.
 4. **Looks fixed**: `test.fail()` tests that passed, each with "remove `test.fail()`" and its file, since the bug they
    reproduce no longer shows.
 5. **New failure clusters**: root causes never seen before in this project.

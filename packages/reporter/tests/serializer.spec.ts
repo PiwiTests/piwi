@@ -82,6 +82,37 @@ describe('computeDistinctRunCounts', () => {
     expect(computeDistinctRunCounts(attempts)).toMatchObject({ totalTests: 1, failedTests: 1, passedTests: 0 });
     expect(computeDistinctRunCounts([...attempts].reverse())).toMatchObject({ failedTests: 1, passedTests: 0 });
   });
+
+  it('counts a test as flaky only when an attempt before its passing one failed', () => {
+    const counts = computeDistinctRunCounts([
+      // Failed, then passed on a retry: flaky.
+      { testId: 'flaky', title: 'a', location: 'a.spec.ts:1:1', status: 'failed', retries: 0 },
+      { testId: 'flaky', title: 'a', location: 'a.spec.ts:1:1', status: 'passed', retries: 1 },
+      // A describe.serial sibling that passed, run again when the group was retried.
+      { testId: 'serial', title: 'b', location: 'a.spec.ts:2:1', status: 'passed', retries: 0 },
+      { testId: 'serial', title: 'b', location: 'a.spec.ts:2:1', status: 'passed', retries: 1 },
+      // A test.fail() test in that group: its expected failure is stored as passed on both attempts.
+      { testId: 'expected', title: 'c', location: 'a.spec.ts:3:1', status: 'passed', retries: 0 },
+      { testId: 'expected', title: 'c', location: 'a.spec.ts:3:1', status: 'passed', retries: 1 },
+      // Did not run behind the group's failure, then passed on the retry.
+      { testId: 'blocked', title: 'd', location: 'a.spec.ts:4:1', status: 'didnotrun', retries: 0 },
+      { testId: 'blocked', title: 'd', location: 'a.spec.ts:4:1', status: 'passed', retries: 1 },
+      // Timed out, then passed.
+      { testId: 'slow', title: 'e', location: 'a.spec.ts:5:1', status: 'timedOut', retries: 0 },
+      { testId: 'slow', title: 'e', location: 'a.spec.ts:5:1', status: 'passed', retries: 1 },
+    ]);
+    expect(counts).toMatchObject({ totalTests: 5, passedTests: 5, flakyTests: 2 });
+  });
+
+  it('counts a test retried after it already passed once, whatever the attempt order', () => {
+    const attempts = [
+      { testId: 't', title: 't', location: 'a.spec.ts:1:1', status: 'failed', retries: 0 },
+      { testId: 't', title: 't', location: 'a.spec.ts:1:1', status: 'passed', retries: 1 },
+      { testId: 't', title: 't', location: 'a.spec.ts:1:1', status: 'passed', retries: 2 },
+    ];
+    expect(computeDistinctRunCounts(attempts)).toMatchObject({ totalTests: 1, flakyTests: 1 });
+    expect(computeDistinctRunCounts([...attempts].reverse())).toMatchObject({ totalTests: 1, flakyTests: 1 });
+  });
 });
 
 describe('resolveOverallStatus', () => {

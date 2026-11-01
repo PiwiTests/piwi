@@ -22,7 +22,7 @@ import {
   type TestErrorLike,
 } from '#shared/step-analysis';
 import { dirnamePosix, isAbsolutePosix, joinPosix, normalizePosix, relativePosix } from '#shared/utils/posix-path';
-import { classifyStatus, expectedFailureError, mergeAnnotations } from '#shared/status-classify';
+import { classifyStatus, expectedFailureError, isFlakyResult, mergeAnnotations } from '#shared/status-classify';
 import { normalizeTestTags, parseTestMetadata } from '@piwitests/core/test-meta';
 import { joinErrorMessages, appendErrorLocation, locatedError } from '#shared/error-text';
 import type { TestAnnotation } from '#shared/types';
@@ -401,8 +401,11 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
   const planned = new Map<string, PlannedTest>();
   const results = new Map<string, ResultAccumulator>();
   const cases: ImportedRunCase[] = [];
-  /** Final status per test, in report order, to derive the flaky count. */
-  const attemptsByTest = new Map<string, string[]>();
+  /** Each test's attempts in report order: the attempt history its cases carry, and the flaky count. */
+  const attemptsByTest = new Map<
+    string,
+    Array<{ retry: number; status: string; duration: number; startedAt: number | null }>
+  >();
 
   let runStartTime: number | null = null;
   let runDuration: number | null = null;
@@ -475,6 +478,15 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
         ...extractWaitEvents(acc?.rootSteps ?? []),
       ];
 
+      const attempts = attemptsByTest.get(testId) ?? [];
+      attempts.push({
+        retry: acc?.retry ?? 0,
+        status,
+        duration: typeof result.duration === 'number' ? result.duration : 0,
+        startedAt: acc?.startedAt ?? null,
+      });
+      attemptsByTest.set(testId, attempts);
+
       cases.push({
         case: {
           filePath: plan?.filePath ?? 'unknown',
@@ -492,6 +504,7 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
           expectedStatus: typeof test.expectedStatus === 'string' ? test.expectedStatus : null,
           retries: acc?.retry ?? 0,
           repeatEachIndex: plan?.repeatEachIndex ?? 0,
+          attempts: attempts.map((attempt) => ({ ...attempt })),
           line: plan?.line ?? null,
           column: plan?.column ?? null,
           steps: metrics.steps.length ? metrics.steps : null,
@@ -506,10 +519,6 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
         traces: acc?.traces ?? [],
         attachments: acc?.attachments ?? [],
       });
-
-      const attempts = attemptsByTest.get(testId) ?? [];
-      attempts.push(status);
-      attemptsByTest.set(testId, attempts);
 
       if (resultId) results.delete(resultId);
       continue;
@@ -548,7 +557,7 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
       traces: [],
       attachments: [],
     });
-    attemptsByTest.set(testId, ['didnotrun']);
+    attemptsByTest.set(testId, [{ retry: 0, status: 'didnotrun', duration: 0, startedAt: null }]);
   }
 
   const shardConfig = config.shard as Record<string, unknown> | null | undefined;
@@ -570,12 +579,11 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
     else counts.failed++;
   }
 
-  // Flaky: an earlier attempt failed and the last one passed.
+  // Flaky: the last attempt passed after an earlier one failed.
   let flakyTests = 0;
   for (const attempts of attemptsByTest.values()) {
-    if (attempts.length < 2) continue;
-    const last = attempts.at(-1);
-    if (last === 'passed' && attempts.slice(0, -1).some((s) => s === 'failed' || s === 'timedOut')) flakyTests++;
+    const earlier = attempts.slice(0, -1).map((attempt) => attempt.status);
+    if (isFlakyResult(attempts.at(-1)?.status, earlier)) flakyTests++;
   }
 
   const projectNames = [...new Set([...planned.values()].map((p) => p.projectName).filter(Boolean))];

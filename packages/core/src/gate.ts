@@ -28,7 +28,7 @@ export interface GatePolicy {
    * not a solution — this is the ceiling on how much of it a suite may carry.
    */
   maxQuarantined?: number;
-  /** Fail when the run contains any flaky test (passed only after a retry). */
+  /** Fail when the run contains any flaky test (passed after an earlier attempt failed). */
   failOnFlaky?: boolean;
   /**
    * Key of a selection every test of which must have run and passed in this run.
@@ -74,7 +74,7 @@ export interface GateFacts {
   quarantinedFailures: number;
   /** Tests currently quarantined in this project. */
   quarantinedTotal: number;
-  /** Tests that passed only after a retry in this run. */
+  /** Tests that passed in this run after an earlier attempt failed. */
   flakyTests: number;
   /** Set when `requireSelection` was asked: how the named selection fared in this run. */
   selection?: {

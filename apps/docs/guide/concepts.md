@@ -71,6 +71,12 @@ So is each `--repeat-each` repetition, which Playwright runs as a test of its ow
 repetition once, as Playwright's summary does, and a test failed in a run when one of its repetitions
 failed, whatever the others did.
 
+A test is **flaky** in a run when its last attempt passed after an earlier attempt failed or timed out. A
+retry alone does not make it flaky. When one test of a `describe.serial` group fails, Playwright retries the
+whole group: the tests that passed before and a `test.fail()` test that failed as expected pass again, and a
+test that did not run behind the failure passes, none of them flaky. The last attempt decides: a test that
+passed, then failed on the group's retry, counts as failed, where Playwright's summary calls it flaky.
+
 This is the object at `/test-run-cases/:id` — the error, steps, trace, screenshots, console, network,
 Web Vitals, and (for a failure) the diagnosis view. When the docs say *execution* or *test-run case*,
 this is what they mean; when they say *test case*, they mean the identity above it.
@@ -110,10 +116,11 @@ repository's default branch read from the SCM provider, else `main`. The **base 
 pull-request run is the branch the CI provider says the pull request targets (`GITHUB_BASE_REF` and its
 equivalents), or `PIWI_BASE_BRANCH` when you set it — see [Branches](/features/branches).
 
-Two derived flags are stored per execution:
+Two derived flags are stored on the last attempt of each test in a run (of each repetition with
+`--repeat-each`), never on an earlier attempt of a retried test:
 
 - **New regression** — passed in the baseline, fails now.
-- **New flaky** — didn't retry in the baseline, passed on retry now.
+- **New flaky** — passed in the baseline with no failed attempt, flaky now.
 
 ### Environment
 

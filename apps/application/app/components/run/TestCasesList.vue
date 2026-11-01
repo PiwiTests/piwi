@@ -7,7 +7,7 @@ import { liveResourcesByWorker, liveResourcesForCase, type LiveWorkerResources }
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
 import { liveWorkerKey, type LiveWorkerState } from '#shared/live-view';
 import type { LiveRowNote } from '~/utils/live-row-note';
-import { summarizeRunCases } from '#shared/utils/test-counts';
+import { isFlakyExecution, summarizeRunCases } from '#shared/utils/test-counts';
 import { isFixmeSkip } from '#shared/utils/skip-kind';
 import { stripAnsi } from '#shared/error-parse';
 import { parseLocation } from '#shared/parse-location';
@@ -186,8 +186,8 @@ function matchesStatus(tc: TestCaseResult, filter: string): boolean {
   if (filter === 'failed') return isFailedStatus(tc.status);
   // Passed and passed on retry are disjoint here, like skipped and fixme, so
   // each chip and bar segment lands on exactly the rows it counts.
-  if (filter === 'passed') return tc.status === 'passed' && (tc.retries ?? 0) === 0;
-  if (filter === 'flaky') return tc.status === 'passed' && (tc.retries ?? 0) > 0;
+  if (filter === 'passed') return tc.status === 'passed' && !isFlakyExecution(tc);
+  if (filter === 'flaky') return isFlakyExecution(tc);
   if (filter === 'fixme') return isFixmeSkip(tc);
   if (filter === 'skipped') return tc.status === 'skipped' && !isFixmeSkip(tc);
   return tc.status === filter;

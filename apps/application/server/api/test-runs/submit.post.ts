@@ -13,6 +13,7 @@ import {
   addBatchShard,
   batchShardRun,
   batchShardTally,
+  countFlakyBatchCases,
   finalizeShardedRun,
   publishShardProgress,
 } from '../../utils/sharded-runs';
@@ -147,9 +148,7 @@ export default eventHandler(async (event) => {
     // Insert test cases if provided and calculate flaky tests
     let flakyTestCount = 0;
     if (testCases.length > 0) {
-      flakyTestCount = testCases.filter(
-        (testCase) => testCase.status === 'passed' && (testCase.retries || 0) > 0,
-      ).length;
+      flakyTestCount = countFlakyBatchCases(testCases);
 
       await persistRunCases(db, project.id, testRun.id, testCases.map(mapWireCaseToRunCase));
     }

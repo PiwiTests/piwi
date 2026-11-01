@@ -64,6 +64,19 @@ describe('badgesFromTestCase', () => {
     expect(badgesFromTestCase({ ...base, status: 'passed', retries: 0 })).toEqual([]);
   });
 
+  test('a retry whose earlier attempts passed carries no passed-on-retry badge', () => {
+    // A describe.serial group retried for another test's failure runs this one again.
+    const attempts = [
+      { retry: 0, status: 'passed', duration: 10, startedAt: null },
+      { retry: 1, status: 'passed', duration: 10, startedAt: null },
+    ];
+    expect(badgesFromTestCase({ ...base, status: 'passed', retries: 1, attempts })).toEqual([]);
+    const failedFirst = [{ ...attempts[0]!, status: 'failed' }, attempts[1]!];
+    expect(
+      badgesFromTestCase({ ...base, status: 'passed', retries: 1, attempts: failedFirst }).map((b) => b.key),
+    ).toEqual(['passed-on-retry']);
+  });
+
   test('threads the quarantined flag through', () => {
     const badges = badgesFromTestCase({ ...base }, { quarantined: true });
     expect(badges.map((b) => b.key)).toEqual(['quarantined']);

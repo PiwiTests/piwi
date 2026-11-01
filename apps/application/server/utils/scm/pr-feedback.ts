@@ -16,6 +16,7 @@
  * (`analyzeFinishedRunInBackground`); the posting reads its result.
  */
 import { testTextLabel } from '#shared/utils/test-label';
+import { flakyFinalAttempts } from '#shared/utils/test-counts';
 import { and, desc, eq, inArray, max } from 'drizzle-orm';
 import {
   bugReports,
@@ -249,7 +250,7 @@ export async function buildRunPrSummary(
   const failingRows = caseRows.filter(
     (row) => FAIL_STATUSES.includes(row.status) && !isExpectedFailurePassed(row.status, row.expectedStatus),
   );
-  const flakyRows = caseRows.filter((row) => row.status === 'passed' && (row.retries ?? 0) > 0);
+  const flakyRows = [...flakyFinalAttempts(caseRows)];
   const quarantinedIds = await getQuarantinedCaseIds(db, run.projectId).catch(() => new Set<number>());
   const quarantinedFailures = failingRows.filter((row) => quarantinedIds.has(row.testCaseId)).length;
 

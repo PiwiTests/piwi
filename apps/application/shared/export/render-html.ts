@@ -877,7 +877,7 @@ function runFailures(bundle: ExportBundle, run: ExportRun): RawHtml {
   );
 }
 
-/** The tests of a run that passed only on a retry. */
+/** The tests of a run that passed after an earlier attempt failed. */
 function runFlaky(run: ExportRun): RawHtml {
   const flaky = run.tests.filter((t) => t.flaky);
   if (!flaky.length) return raw('');
