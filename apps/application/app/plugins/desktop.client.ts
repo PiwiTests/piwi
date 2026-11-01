@@ -189,10 +189,11 @@ function installExternalLinkHandler(core: Bridge) {
  * through the shell. The dashboard's notification code checks `'Notification' in
  * window`, reads `Notification.permission`, and constructs `new Notification()`;
  * routing those through the shell makes browser-channel notifications work in
- * the desktop app without touching a dozen call sites. A click on one brings
- * the window forward and runs the `onclick` the page set, as a browser does:
- * the shell reports it as `piwi:notification-click` with the id the shim gave
- * the notification (on Windows, only while the toast is on screen).
+ * the desktop app without touching a dozen call sites. On Windows and Linux, a
+ * click on one brings the window forward and runs the `onclick` the page set,
+ * as a browser does: the shell reports it as `piwi:notification-click` with the
+ * id the shim gave the notification (on Windows, only while the toast is on
+ * screen).
  *
  * Every notification shown while the window is hidden or unfocused also bumps
  * the ambient unread state — a dock/taskbar badge where the platform has one,

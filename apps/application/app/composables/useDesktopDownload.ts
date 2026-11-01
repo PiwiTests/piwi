@@ -6,8 +6,8 @@
  * "download the OpenAPI spec" appears to do nothing in the desktop app). On the
  * desktop, `download` hands the URL to the shell, which requests it from its own
  * server with the app's token and streams it into the user's Downloads folder,
- * then reveals it: the file never crosses IPC or sits whole in the page, so an
- * archive of any size saves.
+ * then reveals it: the file never crosses IPC or sits whole in the page,
+ * however large it is.
  *
  * Outside the desktop shell there is no bridge, so `download` falls back to a
  * normal navigation and the browser handles it — meaning callers can wire this
@@ -30,6 +30,11 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+/** The shell's commands reject with their message as a plain string; anything else reads as `errorMessage` does. */
+function shellErrorMessage(error: unknown): string {
+  return typeof error === 'string' && error ? error : errorMessage(error);
+}
+
 export function useDesktopDownload() {
   const isDesktop = useIsDesktop();
   const toast = useToast();
@@ -49,7 +54,7 @@ export function useDesktopDownload() {
       });
       savedToast(path);
     } catch (error) {
-      toast.add({ title: 'Download failed', description: errorMessage(error), color: 'error' });
+      toast.add({ title: 'Download failed', description: shellErrorMessage(error), color: 'error' });
     }
   }
 
@@ -63,7 +68,7 @@ export function useDesktopDownload() {
     try {
       await saveThroughShell(core, filename, toBase64(new Uint8Array(await blob.arrayBuffer())), 'base64');
     } catch (error) {
-      toast.add({ title: 'Download failed', description: errorMessage(error), color: 'error' });
+      toast.add({ title: 'Download failed', description: shellErrorMessage(error), color: 'error' });
     }
   }
 

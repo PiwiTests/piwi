@@ -461,7 +461,16 @@ fn configured_retention_days(app: &AppHandle) -> Option<u32> {
         .and_then(|v| valid_retention_days(&v))
 }
 
-/// The retention this launch gave its server, `None` when it gave none.
+/// `PIWI_RETENTION_DAYS` as the server's sweep reads it (`envInt` in
+/// `server/tasks/retention/sweep.ts`): a non-negative number, rounded down.
+fn parse_retention_env(value: Option<&str>) -> Option<u32> {
+    let days = value?.trim().parse::<f64>().ok()?;
+    (days.is_finite() && days >= 0.0).then(|| days.floor().min(f64::from(u32::MAX)) as u32)
+}
+
+/// The retention the running server applies: the one this launch gave it, else
+/// `PIWI_RETENTION_DAYS` from the environment the app started in, which the
+/// server inherits.
 struct RetentionAtStart(Option<u32>);
 
 /// The port an installer choices file names, when it names a valid one.
@@ -1074,7 +1083,7 @@ struct ServiceSettings {
     /// The days of runs the server keeps from the next start; `None` until the
     /// user chose (the server then follows the environment).
     retention_days: Option<u32>,
-    /// The retention the running server was started with.
+    /// The retention the running server applies (see `RetentionAtStart`).
     active_retention_days: Option<u32>,
 }
 
@@ -1440,7 +1449,10 @@ fn desktop_notify(app: tauri::AppHandle, title: String, body: String, id: Option
 /// A click on a notification (`tap`) brings the dashboard window forward and
 /// hands the notification's id to the page, which opens what it is about.
 /// Registered before the first notification: the plugin reports clicks only
-/// on notifications shown once a handler exists.
+/// on notifications shown once a handler exists. Windows and Linux only: on
+/// macOS the plugin then holds a thread and a main-loop timer per notification
+/// until it leaves Notification Center, and nothing can remove it from there.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 fn report_notification_clicks(app: &AppHandle) {
     let handle = app.clone();
     let _ = app.notification().on_action(move |performed| {
@@ -1613,12 +1625,19 @@ async fn desktop_download(app: tauri::AppHandle, url: String, filename: String) 
     if !is_sidecar_url(&parsed, port) {
         return Err("unsupported url".into());
     }
+    let nonce = app.state::<LaunchNonce>().0.clone();
     let dir = app.path().download_dir().map_err(|e| e.to_string())?;
     let name = download_file_name(&filename);
     let target = request_target(&parsed);
-    let saved = tauri::async_runtime::spawn_blocking(move || stream_download(port, &token, &target, &dir, &name))
-        .await
-        .map_err(|e| e.to_string())??;
+    let saved = tauri::async_runtime::spawn_blocking(move || {
+        // The token goes only to the server this launch spawned.
+        if !health_ok(port, &nonce) {
+            return Err("the local server is not answering".to_string());
+        }
+        stream_download(port, &token, &target, &dir, &name)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
     let _ = app.opener().reveal_item_in_dir(&saved);
     Ok(node_path(&saved))
 }
@@ -1634,16 +1653,24 @@ fn request_target(url: &tauri::Url) -> String {
 /// The most a response head may hold before the download gives up on it.
 const MAX_RESPONSE_HEAD: usize = 64 * 1024;
 
+/// How long a download waits on the server between two reads: an export is
+/// built whole before its first byte is sent.
+const DOWNLOAD_READ_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+
 /// GET `target` from the bundled server on `port` with `token` and stream a
-/// 200's body into a new file of `dir` (see [`create_new_download`]). Any other
+/// 200's body into a new file of `dir` (see [`create_new_download`]). The
+/// request carries the `Sec-Fetch-*` headers of the page's own `fetch`, so a
+/// route that refuses browsers (`isBrowserRequest`) refuses it too. Any other
 /// status is an error carrying the server's message. A transfer that fails, or
 /// ends short of its `Content-Length`, removes the partial file.
 fn stream_download(port: u16, token: &str, target: &str, dir: &Path, name: &str) -> Result<PathBuf, String> {
     use std::io::{Read, Write};
     let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).map_err(|e| e.to_string())?;
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(60)));
-    let request =
-        format!("GET {target} HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\nx-piwi-token: {token}\r\nConnection: close\r\n\r\n");
+    let _ = stream.set_read_timeout(Some(DOWNLOAD_READ_TIMEOUT));
+    let request = format!(
+        "GET {target} HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\nx-piwi-token: {token}\r\n\
+         Sec-Fetch-Site: same-origin\r\nSec-Fetch-Mode: cors\r\nSec-Fetch-Dest: empty\r\nConnection: close\r\n\r\n"
+    );
     stream.write_all(request.as_bytes()).map_err(|e| e.to_string())?;
 
     let mut received = Vec::new();
@@ -2002,6 +2029,7 @@ pub fn run() {
             // and record whether this is a debug launch (for the aux-window opener).
             app.manage(LogFile(log_path.clone()));
             app.manage(DebugMode(debug_mode));
+            #[cfg(not(target_os = "macos"))]
             report_notification_clicks(app.handle());
 
             let secret = load_or_create_secret(&app_data_dir);
@@ -2092,7 +2120,9 @@ pub fn run() {
             // supervisor restarts the server if it exits unexpectedly (e.g. an OOM
             // crash) so the window is never left pointed at a dead port.
             let retention_days = configured_retention_days(app.handle());
-            app.manage(RetentionAtStart(retention_days));
+            app.manage(RetentionAtStart(retention_days.or_else(|| {
+                parse_retention_env(std::env::var("PIWI_RETENTION_DAYS").ok().as_deref())
+            })));
             let server_config = ServerConfig {
                 server_entry: server_entry.clone(),
                 db_path: db_path.clone(),
@@ -2209,8 +2239,13 @@ pub fn run() {
                         }
                     }
                     "show_logs" => {
+                        // Off the main thread: on Linux the reveal waits on the
+                        // file manager over D-Bus.
                         let log = app.state::<LogFile>().0.clone();
-                        let _ = app.opener().reveal_item_in_dir(&log);
+                        let handle = app.clone();
+                        std::thread::spawn(move || {
+                            let _ = handle.opener().reveal_item_in_dir(&log);
+                        });
                     }
                     "open_folder" => {
                         let dir = app.state::<DataDir>().0.clone();
@@ -2349,12 +2384,15 @@ pub fn run() {
             // macOS, and logging out or shutting down. `shut_down` is
             // idempotent, so the paths that also sent `ExitRequested` lose nothing.
             RunEvent::Exit => shut_down(app_handle, None),
-            // macOS: a click on the Dock icon brings back the window hidden by
-            // Run in background; AppKit does nothing when no window is visible.
+            // macOS: a click on the Dock icon brings back the dashboard window
+            // Run in background hid, or minimized, whatever other window shows:
+            // AppKit itself does nothing while any window is visible.
             #[cfg(target_os = "macos")]
-            RunEvent::Reopen { has_visible_windows: false, .. } => {
+            RunEvent::Reopen { .. } => {
                 if let Some(w) = app_handle.get_webview_window("main") {
-                    bring_to_front(&w);
+                    if !w.is_visible().unwrap_or(true) || w.is_minimized().unwrap_or(false) {
+                        bring_to_front(&w);
+                    }
                 }
             }
             // macOS delivers file-association opens as an event, not argv.
@@ -2383,7 +2421,7 @@ mod tests {
         is_output_window_name, is_sidecar_url, is_truthy_flag, main_window_may_navigate,
         output_window_name, port_refusal, prepare_compile_cache, progress_bar_status, read_installer_port,
         remote_capability, remove_other_versions, render_status_dot, request_target, rotate_log_if_full,
-        rotated_log_path, splash_status_script, stream_download, valid_retention_days,
+        parse_retention_env, rotated_log_path, splash_status_script, stream_download, valid_retention_days,
         status_dot_color, valid_port, write_new_download, BAD_PORTS, DEFAULT_PORT,
         INSTALLER_CHOICES_FILE, MIN_PORT, SERVER_PORT_KEY, STORE_FILE,
     };
@@ -2430,6 +2468,16 @@ mod tests {
         assert_eq!(port_refusal(80).as_deref(), Some("Choose a port between 1024 and 65535."));
         assert_eq!(port_refusal(6000).as_deref(), Some("Browsers refuse port 6000: choose another."));
         assert_eq!(port_refusal(4100), None);
+    }
+
+    #[test]
+    fn an_inherited_retention_is_read_as_the_server_reads_it() {
+        assert_eq!(parse_retention_env(Some("30")), Some(30));
+        assert_eq!(parse_retention_env(Some(" 45.9 ")), Some(45));
+        assert_eq!(parse_retention_env(Some("0")), Some(0));
+        for value in [None, Some(""), Some("  "), Some("-1"), Some("ninety"), Some("inf")] {
+            assert_eq!(parse_retention_env(value), None, "{value:?}");
+        }
     }
 
     #[test]
@@ -2534,6 +2582,7 @@ mod tests {
         let request = server.join().unwrap();
         assert!(request.starts_with("GET /api/files/a.zip?x=1 HTTP/1.0\r\n"), "{request}");
         assert!(request.contains("\r\nx-piwi-token: pd_x\r\n"), "{request}");
+        assert!(request.contains("\r\nSec-Fetch-Site: same-origin\r\n"), "{request}");
 
         // The same name again never replaces the first file.
         let (port, server) = serve_once(response);

@@ -488,7 +488,7 @@ export const SETTINGS_ANCHORS = [
     kind: 'field',
     pages: ['/settings/storage'],
     describes:
-      'The Cleanup old test runs card: deletes the runs older than an age you pick, with their reports and traces, skipping kept runs.',
+      "The Cleanup old test runs card: deletes runs older than an age you pick, skipping kept runs; the desktop app's also deletes them automatically.",
     requires: { permission: 'storage:manage' },
     help: 'settings.cleanup',
     doc: 'operate/storage#storage-management',

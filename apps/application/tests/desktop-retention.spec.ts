@@ -51,7 +51,7 @@ test.describe('Desktop automatic cleanup', () => {
     await expect(setting.getByText('Delete old runs automatically')).toBeVisible();
     await expect(setting.getByRole('button', { name: 'Restart now' })).toHaveCount(0);
 
-    await setting.getByRole('combobox', { name: 'Delete runs older than' }).click();
+    await page.getByRole('combobox', { name: 'Delete old runs automatically' }).click();
     await page.getByRole('option', { name: 'After 90 days' }).click();
 
     await expect
@@ -63,6 +63,31 @@ test.describe('Desktop automatic cleanup', () => {
       .toEqual([{ days: 90 }]);
     await expect(setting.getByText('Piwi applies the change the next time it starts.')).toBeVisible();
     await expect(setting.getByRole('button', { name: 'Restart now' })).toBeVisible();
+  });
+
+  test('the select shows the retention the server runs with, inherited from its environment', async ({ page }) => {
+    await installFakeBridge(page, { ...SETTINGS, retention_days: null, active_retention_days: 30 });
+    await page.goto('/settings/storage');
+    await waitForHydration(page);
+
+    const select = page.getByRole('combobox', { name: 'Delete old runs automatically' });
+    await expect(select).toContainText('After 30 days');
+    await expect(page.getByRole('button', { name: 'Restart now' })).toHaveCount(0);
+
+    // Never differs from what the server runs with, so it waits for a restart.
+    await select.click();
+    await page.getByRole('option', { name: 'Never' }).click();
+    await expect(page.getByRole('button', { name: 'Restart now' })).toBeVisible();
+  });
+
+  test('a saved Never where nothing is pruned asks for no restart', async ({ page }) => {
+    await installFakeBridge(page, { ...SETTINGS, retention_days: 0, active_retention_days: null });
+    await page.goto('/settings/storage');
+    await waitForHydration(page);
+
+    await expect(page.getByRole('combobox', { name: 'Delete old runs automatically' })).toContainText('Never');
+    await expect(page.getByText('Piwi applies the change the next time it starts.')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Restart now' })).toHaveCount(0);
   });
 
   test('a shell that predates the setting shows nothing', async ({ page }) => {

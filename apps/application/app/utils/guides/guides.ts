@@ -688,7 +688,7 @@ export const AUTHORED_GUIDES: readonly AuthoredGuide[] = [
         id: 'cleanup',
         anchor: 'storage-cleanup',
         title: 'Retention is a setting of the server',
-        body: 'Runs are never pruned on their own until PIWI_RETENTION_DAYS is set; PIWI_RETENTION_MIN_RUNS then keeps each project’s newest runs whatever their age. **Cleanup old test runs** deletes by hand the runs older than an age you pick.',
+        body: 'Runs are never pruned on their own until PIWI_RETENTION_DAYS is set, which the desktop app does from this card; PIWI_RETENTION_MIN_RUNS then keeps each project’s newest runs whatever their age. **Cleanup old test runs** deletes by hand the runs older than an age you pick.',
         side: 'top',
         align: 'start',
       },

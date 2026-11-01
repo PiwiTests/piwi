@@ -14,10 +14,10 @@ const available = ref(false);
 const busy = ref(false);
 /** The days kept from the next start: `null` until chosen, when the server follows its environment. */
 const configured = ref<number | null>(null);
-/** The days the running server was started with. */
+/** The days the running server keeps: the choice it started with, else `PIWI_RETENTION_DAYS` from its environment. */
 const active = ref<number | null>(null);
 
-const selected = computed(() => configured.value ?? 0);
+const selected = computed(() => configured.value ?? active.value ?? 0);
 const options = computed(() => {
   const days = new Set([...PERIODS, ...(selected.value > 0 ? [selected.value] : [])]);
   return [
@@ -27,7 +27,7 @@ const options = computed(() => {
       .map((n) => ({ label: n === 365 ? 'After 1 year' : `After ${n} days`, value: n })),
   ];
 });
-const pendingRestart = computed(() => configured.value !== null && configured.value !== active.value);
+const pendingRestart = computed(() => configured.value !== null && configured.value !== (active.value ?? 0));
 
 onMounted(async () => {
   const core = tauriCore();
@@ -76,7 +76,8 @@ async function restart() {
     <div class="min-w-0 space-y-0.5">
       <p class="text-sm font-medium">Delete old runs automatically</p>
       <p class="text-xs text-muted">
-        Each night, runs older than this are deleted with their files, except the ones kept forever.
+        A few minutes after Piwi starts and each night while it runs, runs older than this are deleted with their files,
+        except the ones kept forever.
       </p>
       <p v-if="pendingRestart" class="text-xs text-muted">Piwi applies the change the next time it starts.</p>
     </div>
@@ -87,7 +88,7 @@ async function restart() {
         :disabled="busy"
         size="sm"
         class="w-36"
-        aria-label="Delete runs older than"
+        aria-label="Delete old runs automatically"
         @update:model-value="(days: number) => save(days)"
       />
       <UButton v-if="pendingRestart" size="sm" color="neutral" variant="outline" :disabled="busy" @click="restart">
