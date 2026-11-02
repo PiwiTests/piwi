@@ -60,6 +60,13 @@ const props = defineProps<{
   step?: string | null;
   /** The error raised at the failure, shown beside the enlarged page at the failure. */
   error?: string | null;
+  /**
+   * The execution passed (or was skipped): it has no page at the failure, so its
+   * only screenshot is not taken for one and its several need no excuse. Left
+   * out, the execution counts as failed, as before (Vue reads a missing boolean
+   * prop as false, so the prop names the exception, not the rule).
+   */
+  passed?: boolean;
   /** The test, named in the enlarged screenshot's details. */
   subject?: LightboxSubject | null;
 }>();
@@ -109,7 +116,10 @@ const attachedImages = computed(() =>
   (props.attachments ?? []).filter((att) => isImageFile(att.path, att.contentType)),
 );
 // The attached screenshot of the page the test failed on, when one is known to be.
-const failureImage = computed(() => failurePageScreenshot(attachedImages.value, (att) => att.name));
+const executionFailed = computed(() => !props.passed);
+const failureImage = computed(() =>
+  failurePageScreenshot(attachedImages.value, (att) => att.name, { failed: executionFailed.value }),
+);
 // Playwright names each of its screenshots `screenshot`: the file name tells them apart.
 function shotName(att: AttachmentInfo): string {
   if (att.name === FAILURE_SCREENSHOT_ATTACHMENT) return 'Page the test failed on';
@@ -117,7 +127,7 @@ function shotName(att: AttachmentInfo): string {
   return att.path.split('/').pop() || att.path;
 }
 const attachedShots = computed<Shot[]>(() =>
-  failurePageFirst(attachedImages.value, (att) => att.name).map((att) => ({
+  failurePageFirst(attachedImages.value, (att) => att.name, { failed: executionFailed.value }).map((att) => ({
     src: fileApiUrl(att.path, att.contentType, config.app?.baseURL),
     name: shotName(att),
     failed: false,
@@ -125,7 +135,7 @@ const attachedShots = computed<Shot[]>(() =>
 );
 // Several screenshots, none known to show the page the test failed on.
 const unplacedShots = computed(
-  () => !traceShots.value.length && !failureImage.value && attachedImages.value.length > 1,
+  () => executionFailed.value && !traceShots.value.length && !failureImage.value && attachedImages.value.length > 1,
 );
 
 // The failing step's screenshots: the trace's pair, else the attached screenshot

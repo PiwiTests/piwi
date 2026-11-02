@@ -181,6 +181,13 @@ describe('failurePageScreenshot / failurePageFirst', () => {
     expect(failurePageScreenshot([popup], name)).toBe(popup);
   });
 
+  test('a passing execution has no failing page unless the capture fixtures named one', () => {
+    // A test that passed and attached one screenshot of its own did not fail on that page.
+    expect(failurePageScreenshot([popup], name, { failed: false })).toBeNull();
+    expect(failurePageFirst([listPage, popup], name, { failed: false })).toEqual([listPage, popup]);
+    expect(failurePageScreenshot([listPage, failingPage], name, { failed: false })).toBe(failingPage);
+  });
+
   test('among several of Playwright’s own, none is the failing page and the order is kept', () => {
     expect(failurePageScreenshot([listPage, detailPage, popup], name)).toBeNull();
     expect(failurePageFirst([listPage, detailPage, popup], name)).toEqual([listPage, detailPage, popup]);

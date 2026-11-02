@@ -60,14 +60,30 @@ export function isScreenshotFileRow(row: ClassifiableFileRow): boolean {
  * acted on, else the only one. Playwright takes a screenshot of every page
  * still open when a test fails and of every page of each context the test
  * closed before, so among several of its own none is known to be that page.
+ *
+ * The "else the only one" guess holds only for an execution that failed: a
+ * passing test that attaches a single screenshot of its own (a step's evidence,
+ * say) did not fail on that page. Pass `failed: false` for such an execution;
+ * the capture fixtures' named screenshot still counts either way.
  */
-export function failurePageScreenshot<T>(shots: readonly T[], name: (shot: T) => string | null | undefined): T | null {
-  return shots.find((shot) => name(shot) === FAILURE_SCREENSHOT_ATTACHMENT) ?? (shots.length === 1 ? shots[0]! : null);
+export function failurePageScreenshot<T>(
+  shots: readonly T[],
+  name: (shot: T) => string | null | undefined,
+  { failed = true }: { failed?: boolean } = {},
+): T | null {
+  return (
+    shots.find((shot) => name(shot) === FAILURE_SCREENSHOT_ATTACHMENT) ??
+    (failed && shots.length === 1 ? shots[0]! : null)
+  );
 }
 
 /** One execution's screenshots in their order, with the page the test failed on first when it is known. */
-export function failurePageFirst<T>(shots: readonly T[], name: (shot: T) => string | null | undefined): T[] {
-  const atFailure = failurePageScreenshot(shots, name);
+export function failurePageFirst<T>(
+  shots: readonly T[],
+  name: (shot: T) => string | null | undefined,
+  options: { failed?: boolean } = {},
+): T[] {
+  const atFailure = failurePageScreenshot(shots, name, options);
   return atFailure ? [atFailure, ...shots.filter((shot) => shot !== atFailure)] : [...shots];
 }
 
