@@ -20,6 +20,9 @@ import type { CollectedTestCase, RawAttachment, TraceHashInfo } from '../../type
  */
 export const MAX_ATTACHMENT_BYTES = 500 * 1024 * 1024;
 
+/** How much earlier than the run's start a file's time may read and still be the run's: some file systems keep whole seconds. */
+const FILE_TIME_LEEWAY_MS = 2000;
+
 /** File extension for the content types a test commonly attaches inline. */
 const BODY_EXTENSIONS: Record<string, string> = {
   'application/json': '.json',
@@ -61,18 +64,26 @@ export class FileHandler {
     private readonly maxAttachmentBytes: number = MAX_ATTACHMENT_BYTES,
   ) {}
 
-  /** Locate a Playwright HTML report directory containing `index.html`. Optionally override the search path. */
-  findHTMLReportDirectory(customDir?: string): string | null {
-    const possibleDirs = customDir
-      ? [customDir, path.join(process.cwd(), customDir)]
-      : ['playwright-report', './playwright-report', path.join(process.cwd(), 'playwright-report')];
-
-    for (const reportDir of possibleDirs) {
-      if (fs.existsSync(reportDir) && fs.statSync(reportDir).isDirectory()) {
-        if (fs.existsSync(path.join(reportDir, 'index.html'))) return reportDir;
-      }
+  /**
+   * The folder of the HTML report the run's html reporter wrote: `report.folder` when its `index.html` was written
+   * since `report.since` (ms). Null when the run has no html reporter, or the folder holds no report, or an earlier
+   * run's.
+   */
+  findHTMLReport(report: { folder: string; since: number } | null | undefined): string | null {
+    if (!report) return null;
+    let written: number;
+    try {
+      written = fs.statSync(path.join(report.folder, 'index.html')).mtimeMs;
+    } catch {
+      return null;
     }
-    return null;
+    if (written < report.since - FILE_TIME_LEEWAY_MS) {
+      this.logger.info(
+        `The HTML report in ${report.folder} predates this run, so it is not uploaded: list the html reporter before Piwi's, so it writes this run's report before Piwi reads it.`,
+      );
+      return null;
+    }
+    return report.folder;
   }
 
   /** Check if `dir` exists and is a directory; also checks `path.join(process.cwd(), dir)` */

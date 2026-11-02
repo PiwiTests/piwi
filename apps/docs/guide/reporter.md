@@ -194,8 +194,10 @@ export default defineConfig({
 })
 ```
 
-`html` (`playwright-report/`) and `monocart` (`monocart-report/`) open in a new tab; `blob` (`blob-report/`) downloads
-as an archive. Any other type is accepted too, read from `dir` or else `<type>-report/`.
+`html` (the html reporter's folder: its `outputFolder` or `PLAYWRIGHT_HTML_OUTPUT_DIR`, `playwright-report/` by
+default) and `monocart` (`monocart-report/`) open in a new tab; `blob` (`blob-report/`) downloads as an archive. Any other type is accepted too, read from `dir` or else
+`<type>-report/`. Without a `dir`, the HTML report is the one the html reporter wrote during the run: list that
+reporter before Piwi's, as above, so its report is written by the time Piwi uploads it.
 
 ## With authentication enabled
 

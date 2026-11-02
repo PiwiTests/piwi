@@ -704,3 +704,86 @@ describe('RunSubmitter local copies', () => {
     expect(fs.existsSync(recoveryFilePath(server.url, projectName))).toBe(true);
   });
 });
+
+describe('the HTML report a run uploads', () => {
+  let server: FakeServer;
+  let dir: string;
+  const projectName = 'piwi-html-report-' + process.pid;
+
+  beforeEach(() => {
+    cleanupProjectArtifacts(projectName);
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-html-report-run-'));
+  });
+  afterEach(async () => {
+    if (server) await server.close();
+    cleanupProjectArtifacts(projectName, server);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** Run one test under a config in `dir` with these reporters; `report` writes what the html reporter would. */
+  async function runWithReporters(reporters: unknown[], report?: () => void): Promise<string> {
+    let uploadBody = '';
+    server = await startServer((req, res) => {
+      if (req.url === '/api/test-runs/upload') uploadBody = req.body;
+      if (req.url === '/api/test-runs/upload' || req.url === '/api/test-runs/submit') {
+        jsonRes(res, 200, { runId: 1, projectId: 1 });
+      } else {
+        textRes(res, 404, 'nope');
+      }
+    });
+    const reporter = new PiwiDashboardReporter({
+      serverUrl: server.url,
+      projectName,
+      streaming: false,
+      uploadTraces: false,
+      liveFileUploads: false,
+    });
+    const suite = fakeSuite();
+    const test = fakeTestCase({ title: 'reported', parent: suite });
+    suite.allTests = () => [test];
+    reporter.onBegin({ ...fakeConfig({ configFile: path.join(dir, 'playwright.config.ts') }), reporter: reporters }, suite);
+    reporter.onTestBegin(test, fakeResult({ workerIndex: 0 }));
+    reporter.onTestEnd(test, fakeResult({ status: 'passed', workerIndex: 0 }));
+    report?.();
+    await reporter.onEnd({ status: 'passed' } as any);
+    return uploadBody;
+  }
+
+  function writeReport(folder: string, writtenAt?: Date): void {
+    fs.mkdirSync(folder, { recursive: true });
+    fs.writeFileSync(path.join(folder, 'index.html'), '<html>report</html>');
+    if (writtenAt) fs.utimesSync(path.join(folder, 'index.html'), writtenAt, writtenAt);
+  }
+
+  /** Run `fn` from `dir`, as a run started there. */
+  async function fromDir<T>(fn: () => Promise<T>): Promise<T> {
+    const cwd = process.cwd();
+    process.chdir(dir);
+    try {
+      return await fn();
+    } finally {
+      process.chdir(cwd);
+    }
+  }
+
+  it("uploads the report the html reporter wrote to its outputFolder, read from the config's folder", async () => {
+    const body = await runWithReporters([['html', { outputFolder: 'html-out' }], ['@piwitests/reporter']], () =>
+      writeReport(path.join(dir, 'html-out')),
+    );
+    expect(body).toContain('name="report_html"');
+  });
+
+  it("never uploads a report an earlier run left in the html reporter's folder", async () => {
+    fs.writeFileSync(path.join(dir, 'package.json'), '{}');
+    writeReport(path.join(dir, 'playwright-report'), new Date(Date.now() - 60 * 60 * 1000));
+    const body = await fromDir(() => runWithReporters([['html'], ['@piwitests/reporter']]));
+    expect(body).not.toContain('name="report_html"');
+  });
+
+  it('uploads no HTML report for a run without an html reporter, whatever playwright-report holds', async () => {
+    const body = await fromDir(() =>
+      runWithReporters([['list'], ['@piwitests/reporter']], () => writeReport(path.join(dir, 'playwright-report'))),
+    );
+    expect(body).not.toContain('name="report_html"');
+  });
+});

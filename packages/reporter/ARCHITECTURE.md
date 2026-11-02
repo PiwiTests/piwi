@@ -568,7 +568,8 @@ src/
     manifest/   collect (the committed manifest, `/__piwi/manifest` per base URL or origin),
                 run-manifests (the instrumented origins the run reached beyond its base URLs,
                 fetched as each is first seen, uploaded once the run is submitted)
-    files/      file-handler, compression
+    files/      file-handler, compression, html-report (the folder the run's html
+                reporter writes its report to)
     capture/    capture-fixtures, locator-healing, attachments   ← runs in the worker
                 quiet-capture (keeps the capture out of the test's own steps,
                 trace and stack locations — Playwright internals, feature-detected)

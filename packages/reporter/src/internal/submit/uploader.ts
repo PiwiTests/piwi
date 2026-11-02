@@ -68,6 +68,11 @@ export interface ReportOptions {
   uploadReport?: boolean;
   /** Additional report types to discover and upload */
   reports?: Array<{ type: string; dir?: string; label?: string }>;
+  /**
+   * The HTML report the run's html reporter writes: its folder, and when the run began (ms), since an `index.html`
+   * written before that is an earlier run's. Null when the run has no html reporter, and so no HTML report of its own.
+   */
+  htmlReport?: { folder: string; since: number } | null;
 }
 
 /**
@@ -111,7 +116,7 @@ export class Uploader {
     form.append('testRun', JSON.stringify(serializeRun(payload, { includeTestCases: false })));
     form.append('testCases', JSON.stringify(payload.testCases.map((tc) => toWireTestCase(tc))));
 
-    await this.appendReportsToForm(form, reportOptions.reports, reportOptions.uploadReport);
+    await this.appendReportsToForm(form, reportOptions);
     await this.appendFilesToForm(form, payload.testCases, reportOptions.uploadTraces);
 
     const response = await this.httpClient.postFormData('/api/test-runs/upload', form, auth);
@@ -150,7 +155,7 @@ export class Uploader {
     );
     form.append('testCases', JSON.stringify([]));
 
-    await this.appendReportsToForm(form, reportOptions.reports, reportOptions.uploadReport);
+    await this.appendReportsToForm(form, reportOptions);
 
     const response = await this.httpClient.postFormData('/api/test-runs/upload', form, auth);
     this.logger.debug(`Successfully uploaded reports for streaming run #${runId}`);
@@ -245,20 +250,18 @@ export class Uploader {
     return true;
   }
 
-  private async appendReportsToForm(
-    form: FormData,
-    reports?: Array<{ type: string; dir?: string; label?: string }>,
-    uploadReport?: boolean,
-  ): Promise<void> {
-    const list: Array<{ type: string; dir?: string; label?: string }> = reports ? [...reports] : [];
-    if (uploadReport && !list.some((r) => r.type === 'html')) list.push({ type: 'html' });
+  private async appendReportsToForm(form: FormData, reportOptions: ReportOptions): Promise<void> {
+    const list: Array<{ type: string; dir?: string; label?: string }> = reportOptions.reports
+      ? [...reportOptions.reports]
+      : [];
+    if (reportOptions.uploadReport && !list.some((r) => r.type === 'html')) list.push({ type: 'html' });
 
     for (const cfg of list) {
       const defaultDir = this.fileHandler.getDefaultReportDirs()[cfg.type] || cfg.type + '-report';
       const reportDir = cfg.dir
         ? this.fileHandler.findReportDirectory(cfg.dir)
         : cfg.type === 'html'
-          ? this.fileHandler.findHTMLReportDirectory()
+          ? this.fileHandler.findHTMLReport(reportOptions.htmlReport)
           : this.fileHandler.findReportDirectory(defaultDir);
 
       if (!reportDir) {

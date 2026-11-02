@@ -54,6 +54,8 @@ export interface CollectedRun {
   filterDetails: FilterDetails | null;
   /** The run's resource findings and machine profile, from `onEnd`; null when not measured. */
   resourceReport?: WireResourceReport | null;
+  /** The folder the run's html reporter writes its report to; null when the run has none. */
+  htmlReport?: string | null;
 }
 
 /** The run the dashboard took, and the credential that reached it. */
@@ -246,6 +248,7 @@ export class RunSubmitter {
       uploadTraces: run.options.uploadTraces,
       uploadReport: run.options.uploadReport,
       reports: run.options.reports,
+      htmlReport: run.htmlReport && run.startTime ? { folder: run.htmlReport, since: Date.parse(run.startTime) } : null,
     };
   }
 

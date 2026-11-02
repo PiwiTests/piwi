@@ -54,7 +54,10 @@ export interface PiwiDashboardOptions {
   // ── What gets uploaded ─────────────────────────────────────────────────────
   /** Upload trace files to the dashboard. Defaults to `true`. */
   uploadTraces?: boolean;
-  /** Upload the Playwright HTML report. Defaults to `true`. */
+  /**
+   * Upload the HTML report Playwright's `html` reporter writes during the run, from its `outputFolder` (or
+   * `PLAYWRIGHT_HTML_OUTPUT_DIR`); a report an earlier run left there is never uploaded. Defaults to `true`.
+   */
   uploadReport?: boolean;
   /** Upload each test's trace and attachments as soon as the test finishes (streaming mode only). Defaults to `true`. */
   liveFileUploads?: boolean;

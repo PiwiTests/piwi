@@ -20,6 +20,7 @@ import { Uploader } from '../internal/submit/uploader.js';
 import { StreamBuffer } from '../internal/streaming/stream-buffer.js';
 import { CrashRecovery } from '../internal/streaming/crash-recovery.js';
 import { FileHandler } from '../internal/files/file-handler.js';
+import { htmlReportFolder } from '../internal/files/html-report.js';
 import { ATTACHMENT_NAMES, INTERNAL_ATTACHMENT_NAMES, findPiwiAttachment } from '../internal/capture/attachments.js';
 import { MetadataCollector, resolveScmBranch } from '../internal/collect/metadata-collector.js';
 import { StreamManager } from '../internal/streaming/stream-manager.js';
@@ -189,6 +190,8 @@ export class PiwiDashboardReporter {
   >();
   /** The folder test files are named relative to: the Playwright config's, set in `onBegin`. */
   private testPathBase = process.cwd();
+  /** The folder the run's html reporter writes its report to, set in `onBegin`; null when the run has none. */
+  private htmlReport: string | null = null;
   /** Derived in `onBegin`, once the shard is known. */
   private instanceId = '';
   private shardInfo: ShardInfo | null = null;
@@ -349,6 +352,7 @@ export class PiwiDashboardReporter {
     if (this.viaDotEnv) this.logger.debug(`Read ${this.viaDotEnv.keys.join(', ')} from ${this.viaDotEnv.file}.`);
     this.startTime = new Date().toISOString();
     this.testPathBase = configDirFromConfig(config);
+    this.htmlReport = htmlReportFolder(config.reporter, this.testPathBase);
     this.playwrightVersion = config.version;
     this.maxFailures = config.maxFailures ?? 0;
     this.projectDependencies = new Map((config.projects ?? []).map((p) => [p.name, p.dependencies ?? []] as const));
@@ -1176,6 +1180,7 @@ export class PiwiDashboardReporter {
           isFullRun: this.isFullRun,
           filterDetails: this.filterDetails,
           resourceReport: this.resourceReport,
+          htmlReport: this.htmlReport,
         },
         result,
       );
