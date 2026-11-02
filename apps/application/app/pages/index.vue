@@ -2,6 +2,7 @@
 import type { FilterBarState } from '~/components/shared/FilterBar.vue';
 import type { OpenFailureCluster, ProjectOverview, TestRunForChart } from '~~/types/api';
 import { errorMessage } from '~/utils';
+import { overviewInEnvironments } from '~/utils/home-overview';
 import type { FlakeLabInboxItem } from '#shared/handlers/flake-lab';
 
 useHead({ title: 'Piwi Dashboard' });
@@ -133,18 +134,8 @@ const filteredRecentRuns = computed(() => {
   return runs;
 });
 
-const filteredOverview = computed(() => {
-  let projects = overview.value ?? [];
-  if (filters.value.environments.length > 0) {
-    projects = projects
-      .map((p) => ({
-        ...p,
-        recentRuns: p.recentRuns.filter((r) => matchesEnv(r.environment)),
-      }))
-      .filter((p) => p.recentRuns.length > 0);
-  }
-  return projects;
-});
+// The environment filter reaches the bars and every figure read from them: failing now, the pass rate, the tendency.
+const filteredOverview = computed(() => overviewInEnvironments(overview.value ?? [], filters.value.environments));
 
 // ── Stat strip ────────────────────────────────────────────────────────────────
 

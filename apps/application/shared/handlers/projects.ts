@@ -2307,6 +2307,7 @@ export async function getProjectsOverview(db: DrizzleDB, scope: ProjectScope = '
         flakyTests: r.flakyTests ?? 0,
         totalTests: r.totalTests ?? 0,
         startTime: r.startTime,
+        duration: r.duration ?? null,
         environment: r.environment ?? null,
       })),
       tendency,

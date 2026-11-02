@@ -305,6 +305,7 @@ export interface ProjectOverviewRun {
   flakyTests: number;
   totalTests: number;
   startTime: string | Date;
+  duration?: number | null;
   environment?: string | null;
 }
 
