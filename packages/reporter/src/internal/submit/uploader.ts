@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import FormData from 'form-data';
 import type { HttpClient } from '../transport/http-client.js';
-import { HttpError } from '../transport/http-client.js';
+import { HttpError, deliveredRunId } from '../transport/http-client.js';
 import type { FileHandler } from '../files/file-handler.js';
 import { Logger } from '../support/logger.js';
 import { serializeRun, toWireTestCase } from './serializer.js';
@@ -87,22 +87,24 @@ export class Uploader {
     private readonly logger: Logger = new Logger(),
   ) {}
 
-  /** Submit test results as a plain JSON payload (no file attachments) */
+  /** Submit test results as a plain JSON payload (no file attachments); fails unless the answer names the run */
   async uploadJSON(payload: RunPayload, auth: string | null): Promise<any> {
     const response = await this.httpClient.postJSON(
       '/api/test-runs/submit',
       serializeRun(payload, { includeTestCases: true }),
       auth,
     );
+    const runId = deliveredRunId(response, '/api/test-runs/submit');
 
     this.logger.info(`Successfully uploaded test results`);
-    if (response.runId) {
-      this.logger.info(`Test Run ID: ${response.runId}, Project ID: ${response.projectId}`);
-    }
+    this.logger.info(`Test Run ID: ${runId}, Project ID: ${response.projectId}`);
     return response;
   }
 
-  /** Submit test results as a multipart form with trace files and compressed report directories */
+  /**
+   * Submit test results as a multipart form with trace files and compressed report directories; fails unless the
+   * answer names the run
+   */
   async uploadWithFiles(payload: RunPayload, reportOptions: ReportOptions, auth: string | null): Promise<any> {
     const form = new FormData();
     form.append('projectName', payload.projectName);
@@ -113,10 +115,9 @@ export class Uploader {
     await this.appendFilesToForm(form, payload.testCases, reportOptions.uploadTraces);
 
     const response = await this.httpClient.postFormData('/api/test-runs/upload', form, auth);
+    const runId = deliveredRunId(response, '/api/test-runs/upload');
     this.logger.debug(`Successfully uploaded test results with files`);
-    if (response.runId) {
-      this.logger.debug(`Test Run ID: ${response.runId}, Project ID: ${response.projectId}`);
-    }
+    this.logger.debug(`Test Run ID: ${runId}, Project ID: ${response.projectId}`);
     if (response.reports) {
       for (const r of response.reports) this.logger.debug(`${r.label}: ${r.path}`);
     }

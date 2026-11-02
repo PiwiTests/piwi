@@ -92,15 +92,20 @@ describe('HttpClient (against fake http.Server)', () => {
       }
     });
 
-    it('resolves to {} when the response body is not JSON', async () => {
+    it('rejects a 2xx answer that is not JSON, naming its content type', async () => {
       const { server, url } = await startServer((_req, res) => {
-        res.writeHead(200, { 'Content-Type': 'text/plain' });
-        res.end('not json');
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end('<!doctype html><title>Sign in</title>');
       });
       try {
         const client = new HttpClient(url, new Logger(false));
-        const out = await client.postJSON('/api/x', {}, null);
-        expect(out).toEqual({});
+        await expect(client.postJSON('/api/x', {}, null)).rejects.toThrow(
+          'The answer to /api/x is not JSON (text/html; charset=utf-8)',
+        );
+        const form = new FormData();
+        form.append('field', 'value');
+        await expect(client.postFormData('/api/upload', form, null)).rejects.toThrow(/not JSON \(text\/html/);
+        await expect(client.putJSON('/api/put', {}, null)).rejects.toThrow(/not JSON \(text\/html/);
       } finally {
         await new Promise<void>((r) => server.close(() => r()));
       }

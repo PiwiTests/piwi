@@ -94,6 +94,23 @@ describe('Uploader.uploadJSON', () => {
   });
 });
 
+describe('a delivery the answer names no run for', () => {
+  it('fails, on /submit and on /upload alike', async () => {
+    const { server, url } = await startServer((_req, res) => jsonRes(res, 200, { ok: true }));
+    try {
+      const uploader = new Uploader(new HttpClient(url, new Logger(false)), new FileHandler(new Logger(false)));
+      await expect(uploader.uploadJSON(makePayload(), null)).rejects.toThrow(
+        'The answer to /api/test-runs/submit names no run',
+      );
+      await expect(uploader.uploadWithFiles(makePayload(), {}, null)).rejects.toThrow(
+        'The answer to /api/test-runs/upload names no run',
+      );
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+});
+
 describe('Uploader.uploadWithFiles', () => {
   it('assembles a multipart form with the run body, a report, an attachment, and a trace', async () => {
     // A custom report directory (findReportDirectory checks the literal path directly).

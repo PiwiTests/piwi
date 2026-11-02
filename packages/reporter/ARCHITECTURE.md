@@ -488,7 +488,10 @@ A run delivered by a later rung than its first choice carries `metadata.ingestHe
 so the dashboard can say how the run arrived.
 
 All HTTP to the dashboard goes through `internal/transport/http-client.ts`, which throws `HttpError`
-(carrying `status`) so callers branch on `error.status`, never the message text.
+(carrying `status`) so callers branch on `error.status`, never the message text. A successful answer that is not
+JSON fails as well, naming its content type (a sign-in page or a proxy answering in the dashboard's place), and a
+batch delivery (`/submit`, `/upload`, the recovery replay) counts only when its answer names the run
+(`deliveredRunId`).
 
 ## Coverage (`internal/collect/test-coverage.ts`)
 

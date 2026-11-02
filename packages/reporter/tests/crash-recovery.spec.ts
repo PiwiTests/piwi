@@ -82,6 +82,24 @@ describe('the crash-recovery file', () => {
     expect(recovery.load()).toBeNull();
   });
 
+  it("is kept when the answer is not the dashboard's: a sign-in page, or JSON that names no run", async () => {
+    let signInPage = true;
+    server = await startServer((_req, res) => {
+      if (!signInPage) return jsonRes(res, 200, {});
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end('<!doctype html><title>Sign in</title>');
+    });
+    const recovery = recoveryFor(server.url);
+    recovery.save({ projectName, testCases: [] });
+
+    await recovery.tryUpload(new HttpClient(server.url, logger));
+    expect(recovery.load()).not.toBeNull();
+
+    signInPage = false;
+    await recovery.tryUpload(new HttpClient(server.url, logger));
+    expect(recovery.load()).not.toBeNull();
+  });
+
   it('is kept when the replay fails, and deleted when the dashboard refuses the run itself', async () => {
     let status = 503;
     server = await startServer((_req, res) => textRes(res, status, 'no'));

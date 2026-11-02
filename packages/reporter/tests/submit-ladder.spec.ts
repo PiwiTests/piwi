@@ -326,6 +326,26 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     expect(recovered.projectName).toBe(projectName);
   });
 
+  it('a sign-in page answering in place of the dashboard is no delivery: the run is saved for the next one', async () => {
+    server = await startServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end('<!doctype html><title>Sign in</title>');
+    });
+
+    const reporter = new PiwiDashboardReporter({
+      serverUrl: server.url,
+      projectName,
+      streaming: false,
+      uploadReport: false,
+      uploadTraces: false,
+      liveFileUploads: false,
+    });
+    await runOneTest(reporter, 'sign-in-page-test');
+
+    expect(urlsHit(server)).toContain('/api/test-runs/submit');
+    expect(recoveredRun(server, projectName).testCases[0].title).toBe('sign-in-page-test');
+  });
+
   it('batch mode retries a saved recovery payload on the next run', async () => {
     let up = false;
     const submits: any[] = [];

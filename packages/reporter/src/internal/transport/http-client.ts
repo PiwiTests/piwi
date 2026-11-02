@@ -40,6 +40,33 @@ interface HttpResponse {
   headers: http.IncomingHttpHeaders;
 }
 
+/**
+ * The JSON body of a successful answer. A body that is not JSON (a sign-in page, a proxy's or a captive portal's
+ * page) is not the dashboard's answer, so the request fails, naming the content type that came back.
+ */
+function parseAnswer(pathname: string, res: HttpResponse): any {
+  try {
+    return JSON.parse(res.text);
+  } catch {
+    const contentType = res.headers['content-type'] || 'no content type';
+    throw new Error(
+      `The answer to ${pathname} is not JSON (${contentType}): check that serverUrl is the dashboard's address and that no sign-in page or proxy answers in its place.`,
+    );
+  }
+}
+
+/**
+ * The run a delivery's answer names. An answer that names none did not come from the dashboard, so the run was not
+ * delivered.
+ */
+export function deliveredRunId(answer: unknown, pathname: string): number | string {
+  const runId = (answer as { runId?: unknown } | null)?.runId;
+  if (typeof runId === 'number' || (typeof runId === 'string' && runId !== '')) return runId;
+  throw new Error(
+    `The answer to ${pathname} names no run: check that serverUrl is the dashboard's address and that no proxy answers in its place.`,
+  );
+}
+
 /** Options for the unified `request()` core. */
 interface HttpRequestOptions {
   headers?: Record<string, string | number>;
@@ -193,7 +220,10 @@ export class HttpClient {
     }
   }
 
-  /** Send a JSON POST request. `auth` can be an API key (prefix `pd_`) or a session cookie string. */
+  /**
+   * Send a JSON POST request. `auth` can be an API key (prefix `pd_`) or a session cookie string. Resolves to the
+   * answer's JSON; an answer that is not JSON fails.
+   */
   async postJSON(pathname: string, payload: unknown, auth?: string | null): Promise<any> {
     const body = JSON.stringify(payload);
     const res = await this.request('POST', pathname, {
@@ -208,14 +238,10 @@ export class HttpClient {
       this.logger.debugError(`Response: ${res.text}`);
       throw new HttpError(res.status);
     }
-    try {
-      return JSON.parse(res.text);
-    } catch {
-      return {};
-    }
+    return parseAnswer(pathname, res);
   }
 
-  /** Send a JSON PUT request. Used for the declared-surface manifest upload. */
+  /** Send a JSON PUT request. Used for the declared-surface manifest upload. An answer that is not JSON fails. */
   async putJSON(pathname: string, payload: unknown, auth?: string | null): Promise<any> {
     const body = JSON.stringify(payload);
     const res = await this.request('PUT', pathname, {
@@ -230,14 +256,10 @@ export class HttpClient {
       this.logger.debugError(`Response: ${res.text}`);
       throw new HttpError(res.status);
     }
-    try {
-      return JSON.parse(res.text);
-    } catch {
-      return {};
-    }
+    return parseAnswer(pathname, res);
   }
 
-  /** Send a multipart form-data POST request. Used for report and trace uploads. */
+  /** Send a multipart form-data POST request. Used for report and trace uploads. An answer that is not JSON fails. */
   async postFormData(pathname: string, form: FormData, auth?: string | null): Promise<any> {
     const headers = form.getHeaders() as Record<string, string>;
     const res = await this.request('POST', pathname, { headers, form, auth, timeout: this.uploadTimeout });
@@ -249,11 +271,7 @@ export class HttpClient {
         detail ? `Request failed with status ${res.status}: ${detail}` : `Request failed with status ${res.status}`,
       );
     }
-    try {
-      return JSON.parse(res.text);
-    } catch {
-      return {};
-    }
+    return parseAnswer(pathname, res);
   }
 
   /** Unified request core: transport, headers, auth, response accumulation, timeout. */
