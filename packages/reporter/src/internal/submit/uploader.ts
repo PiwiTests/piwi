@@ -60,10 +60,8 @@ export interface RunPayload {
   deliveryKey?: string;
 }
 
-/** Options controlling which report files and traces to upload */
+/** Options controlling which reports to upload */
 export interface ReportOptions {
-  /** Upload trace files. Defaults to `true`. */
-  uploadTraces?: boolean;
   /** Upload the Playwright HTML report. Defaults to `true`. */
   uploadReport?: boolean;
   /** Additional report types to discover and upload */
@@ -73,6 +71,13 @@ export interface ReportOptions {
    * written before that is an earlier run's. Null when the run has no html reporter, and so no HTML report of its own.
    */
   htmlReport?: { folder: string; since: number } | null;
+}
+
+/** A report found on disk, to upload with the run: its type, its folder and its label. */
+export interface FoundReport {
+  type: string;
+  dir: string;
+  label?: string;
 }
 
 /**
@@ -107,17 +112,22 @@ export class Uploader {
   }
 
   /**
-   * Submit test results as a multipart form with trace files and compressed report directories; fails unless the
-   * answer names the run
+   * Submit test results as a multipart form with `reports` compressed, each test's attachments and, with
+   * `uploadTraces`, its traces; fails unless the answer names the run
    */
-  async uploadWithFiles(payload: RunPayload, reportOptions: ReportOptions, auth: string | null): Promise<any> {
+  async uploadWithFiles(
+    payload: RunPayload,
+    reports: FoundReport[],
+    uploadTraces: boolean | undefined,
+    auth: string | null,
+  ): Promise<any> {
     const form = new FormData();
     form.append('projectName', payload.projectName);
     form.append('testRun', JSON.stringify(serializeRun(payload, { includeTestCases: false })));
     form.append('testCases', JSON.stringify(payload.testCases.map((tc) => toWireTestCase(tc))));
 
-    await this.appendReportsToForm(form, reportOptions);
-    await this.appendFilesToForm(form, payload.testCases, reportOptions.uploadTraces);
+    await this.appendReportsToForm(form, reports);
+    await this.appendFilesToForm(form, payload.testCases, uploadTraces);
 
     const response = await this.httpClient.postFormData('/api/test-runs/upload', form, auth);
     const runId = deliveredRunId(response, '/api/test-runs/upload');
@@ -129,11 +139,11 @@ export class Uploader {
     return response;
   }
 
-  /** Upload report files for an already-submitted streaming run */
+  /** Upload `reports` for an already-submitted streaming run */
   async uploadReportsForStreamingRun(
     projectName: string,
     runId: number,
-    reportOptions: ReportOptions,
+    reports: FoundReport[],
     startTime: string | null,
     auth: string | null,
   ): Promise<void> {
@@ -155,7 +165,7 @@ export class Uploader {
     );
     form.append('testCases', JSON.stringify([]));
 
-    await this.appendReportsToForm(form, reportOptions);
+    await this.appendReportsToForm(form, reports);
 
     const response = await this.httpClient.postFormData('/api/test-runs/upload', form, auth);
     this.logger.debug(`Successfully uploaded reports for streaming run #${runId}`);
@@ -250,12 +260,14 @@ export class Uploader {
     return true;
   }
 
-  private async appendReportsToForm(form: FormData, reportOptions: ReportOptions): Promise<void> {
+  /** The reports the options ask for that are on disk. */
+  findReports(reportOptions: ReportOptions): FoundReport[] {
     const list: Array<{ type: string; dir?: string; label?: string }> = reportOptions.reports
       ? [...reportOptions.reports]
       : [];
     if (reportOptions.uploadReport && !list.some((r) => r.type === 'html')) list.push({ type: 'html' });
 
+    const found: FoundReport[] = [];
     for (const cfg of list) {
       const defaultDir = this.fileHandler.getDefaultReportDirs()[cfg.type] || cfg.type + '-report';
       const reportDir = cfg.dir
@@ -268,11 +280,30 @@ export class Uploader {
         this.logger.debug(`No report directory found for type '${cfg.type}'`);
         continue;
       }
+      found.push({ type: cfg.type, dir: reportDir, ...(cfg.label ? { label: cfg.label } : {}) });
+    }
+    return found;
+  }
 
-      const compressed = await this.fileHandler.compressReportDirectory(reportDir);
+  /**
+   * Whether a multipart upload of the run would carry a file: one of `reports`, a test's attachment, or, with
+   * `uploadTraces`, a trace on disk.
+   */
+  hasFiles(testCases: CollectedTestCase[], reports: FoundReport[], uploadTraces: boolean | undefined): boolean {
+    if (reports.length > 0) return true;
+    return testCases.some(
+      (tc) =>
+        this.fileHandler.findAllAttachments(tc).length > 0 ||
+        (!!uploadTraces && this.fileHandler.findTraceFiles(tc).some((tracePath) => fs.existsSync(tracePath))),
+    );
+  }
+
+  private async appendReportsToForm(form: FormData, reports: FoundReport[]): Promise<void> {
+    for (const report of reports) {
+      const compressed = await this.fileHandler.compressReportDirectory(report.dir);
       if (compressed) {
-        form.append(`report_${cfg.type}`, compressed, { filename: `${cfg.type}-report.gz` });
-        if (cfg.label) form.append(`report_label_${cfg.type}`, cfg.label);
+        form.append(`report_${report.type}`, compressed, { filename: `${report.type}-report.gz` });
+        if (report.label) form.append(`report_label_${report.type}`, report.label);
       }
     }
   }

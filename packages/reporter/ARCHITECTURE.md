@@ -468,7 +468,8 @@ submit.
 On `onEnd`, the collected run is handed to `RunSubmitter`, which tries, in order:
 
 1. **streaming `/finish`**: when a streaming session is open (`internal/streaming/`),
-2. **multipart `/upload`**: when there are reports or traces to attach,
+2. **multipart `/upload`**: when reports or traces are asked for and the run has a file to attach (a report, a
+   trace or an attachment),
 3. **plain JSON `/submit`**: last resort,
 4. **crash recovery**: on total failure, persist the payload to disk for the next run: one owner-only file per
    dashboard and project, replayed to that dashboard only and deleted once it took the run (or refused it as

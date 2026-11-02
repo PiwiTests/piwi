@@ -102,7 +102,7 @@ describe('a delivery the answer names no run for', () => {
       await expect(uploader.uploadJSON(makePayload(), null)).rejects.toThrow(
         'The answer to /api/test-runs/submit names no run',
       );
-      await expect(uploader.uploadWithFiles(makePayload(), {}, null)).rejects.toThrow(
+      await expect(uploader.uploadWithFiles(makePayload(), [], false, null)).rejects.toThrow(
         'The answer to /api/test-runs/upload names no run',
       );
     } finally {
@@ -141,7 +141,8 @@ describe('Uploader.uploadWithFiles', () => {
 
       await uploader.uploadWithFiles(
         makePayload([testCase]),
-        { uploadTraces: true, uploadReport: false, reports: [{ type: 'custom', dir: reportDir }] },
+        uploader.findReports({ uploadReport: false, reports: [{ type: 'custom', dir: reportDir }] }),
+        true,
         null,
       );
 
@@ -178,7 +179,7 @@ describe('Uploader.uploadWithFiles', () => {
         attachments: [{ name: 'trace', path: traceFile }],
       } as any;
 
-      await uploader.uploadWithFiles(makePayload([testCase]), { uploadTraces: false, uploadReport: false }, null);
+      await uploader.uploadWithFiles(makePayload([testCase]), [], false, null);
 
       expect(requests[0]!.body).not.toContain('name="trace_0"');
     } finally {
@@ -192,7 +193,7 @@ describe('Uploader.uploadReportsForStreamingRun', () => {
     const { server, url, requests } = await startServer((_req, res) => jsonRes(res, 200, {}));
     try {
       const uploader = new Uploader(new HttpClient(url, new Logger(false)), new FileHandler(new Logger(false)));
-      await uploader.uploadReportsForStreamingRun('proj', 42, {}, '2024-01-01T00:00:00.000Z', null);
+      await uploader.uploadReportsForStreamingRun('proj', 42, [], '2024-01-01T00:00:00.000Z', null);
 
       expect(requests).toHaveLength(1);
       expect(requests[0]!.url).toBe('/api/test-runs/upload');

@@ -62,6 +62,15 @@ async function runOneTest(reporter: PiwiDashboardReporter, title: string, status
 describe('PiwiDashboardReporter submit/fallback ladder', () => {
   let server: FakeServer;
   const projectName = 'piwi-ladder-' + process.pid;
+  const reportDirs: string[] = [];
+
+  /** A report folder on disk, for a run that has a file to attach. */
+  function reportDir(): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-ladder-report-'));
+    fs.writeFileSync(path.join(dir, 'index.html'), '<html>report</html>');
+    reportDirs.push(dir);
+    return dir;
+  }
 
   beforeEach(() => {
     cleanupProjectArtifacts(projectName);
@@ -70,6 +79,7 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
   afterEach(async () => {
     if (server) await server.close();
     cleanupProjectArtifacts(projectName, server);
+    for (const dir of reportDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
   });
 
   it('a run that stopped before any test began (its global setup threw) sends and saves nothing', async () => {
@@ -199,7 +209,7 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     }
   });
 
-  it('streaming disabled, uploadReport=true: multipart /upload only (no /submit)', async () => {
+  it('streaming disabled, a report to attach: multipart /upload only (no /submit)', async () => {
     server = await startServer((req, res) => {
       if (req.url === '/api/test-runs/upload') {
         jsonRes(res, 200, { runId: 11, projectId: 21 });
@@ -212,16 +222,15 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
       serverUrl: server.url,
       projectName,
       streaming: false,
-      uploadReport: false, // no html report on disk → appendReportsToForm finds nothing
+      uploadReport: false,
       uploadTraces: false,
       liveFileUploads: false,
-      reports: [{ type: 'missing-type', dir: '/nonexistent' }], // forces hasReports=true but no files
+      reports: [{ type: 'custom', dir: reportDir() }],
     });
     await runOneTest(reporter, 'upload-test');
 
     const urls = urlsHit(server);
-    // hasReports is true (reports array non-empty) so /upload is attempted;
-    // it succeeds so /submit is NOT called.
+    // The report goes with the multipart /upload, which succeeds, so /submit is not called.
     expect(urls.includes('/api/test-runs/upload'), `urls: ${urls.join(', ')}`).toBeTruthy();
     expect(urls.includes('/api/test-runs/submit')).toBeFalsy();
   });
@@ -248,7 +257,7 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
       uploadReport: false,
       uploadTraces: false,
       liveFileUploads: false,
-      reports: [{ type: 'missing-type', dir: '/nonexistent' }],
+      reports: [{ type: 'custom', dir: reportDir() }],
     });
     await runOneTest(reporter, 'fallback-test');
 
@@ -292,11 +301,57 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
       uploadTraces: true,
       liveFileUploads: false,
       streamingBatchDelay: 50,
+      reports: [{ type: 'custom', dir: reportDir() }],
     });
     await runOneTest(reporter, 'finish-fails-test');
 
     expect(urlsHit(server)).toContain('/api/test-runs/upload');
     expect(uploadBody).toContain('"ingestHealth":{"submitFallback":{"path":"upload","reason":"finish-failed"}}');
+  });
+
+  it('a run with no file to attach skips the multipart upload and sends its results as JSON', async () => {
+    server = await startServer((req, res) =>
+      req.url === '/api/test-runs/submit' ? jsonRes(res, 200, { runId: 3, projectId: 4 }) : textRes(res, 404, 'nope'),
+    );
+
+    // uploadReport and uploadTraces keep their defaults, on; the run has no report, trace or attachment.
+    const reporter = new PiwiDashboardReporter({
+      serverUrl: server.url,
+      projectName,
+      streaming: false,
+      liveFileUploads: false,
+    });
+    await runOneTest(reporter, 'nothing-to-attach-test');
+
+    expect(urlsHit(server)).toEqual(['/api/test-runs/submit']);
+  });
+
+  it('a streamed run with no report to upload finishes without waiting for one', async () => {
+    let finishBody: any;
+    server = await startServer((req, res) => {
+      if (req.url === '/api/test-runs/start') {
+        jsonRes(res, 200, { runId: 1, streamToken: 'tok' });
+      } else if (req.url === '/api/test-runs/1/events') {
+        jsonRes(res, 200, {});
+      } else if (req.url === '/api/test-runs/1/finish') {
+        finishBody = JSON.parse(req.body);
+        jsonRes(res, 200, { success: true, runId: 1 });
+      } else {
+        textRes(res, 404, 'nope');
+      }
+    });
+
+    const reporter = new PiwiDashboardReporter({
+      serverUrl: server.url,
+      projectName,
+      streaming: true,
+      liveFileUploads: false,
+      streamingBatchDelay: 50,
+    });
+    await runOneTest(reporter, 'no-report-test');
+
+    expect(finishBody.hasPendingUploads).toBe(false);
+    expect(urlsHit(server)).not.toContain('/api/test-runs/upload');
   });
 
   it('all upload methods fail → recovery file is written', async () => {
@@ -566,7 +621,7 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
       uploadReport: false,
       uploadTraces: false,
       liveFileUploads: false,
-      reports: [{ type: 'missing-type', dir: '/nonexistent' }],
+      reports: [{ type: 'custom', dir: reportDir() }],
     });
     // onEnd never throws: Playwright would count it as a failure of a green run.
     await expect(runOneTest(reporter, 'auth-fail-test')).resolves.toBeUndefined();

@@ -4,7 +4,7 @@ import type { PiwiDashboardOptions, ShardInfo } from '../../public/options.js';
 import { errorMessage } from '../support/errors.js';
 import type { HttpClient } from '../transport/http-client.js';
 import { HttpError } from '../transport/http-client.js';
-import type { Uploader, RunPayload, ReportOptions } from './uploader.js';
+import type { Uploader, RunPayload, ReportOptions, FoundReport } from './uploader.js';
 import type { CrashRecovery } from '../streaming/crash-recovery.js';
 import type { StreamManager } from '../streaming/stream-manager.js';
 import { Logger } from '../support/logger.js';
@@ -79,8 +79,8 @@ function markSubmitFallback(run: CollectedRun, path: 'upload' | 'submit', reason
  * Owns the three-tier submit/fallback ladder:
  *
  *   1. finalize the streaming run (`/finish`) when streaming is active,
- *   2. fall back to multipart upload (`/upload`) when there are reports or
- *      traces to attach,
+ *   2. fall back to multipart upload (`/upload`) when reports or traces are
+ *      asked for and the run has a file to attach,
  *   3. fall back to plain JSON (`/submit`) as the last resort, persisting a
  *      recovery payload on total failure.
  */
@@ -183,6 +183,9 @@ export class RunSubmitter {
     // retry it here so a saved payload still reaches the server.
     if (!sm) await this.recovery.tryUpload(this.httpClient, auth);
 
+    // The reports on disk that go with the run, found once for every rung.
+    const reports = this.uploader.findReports(this.reportOptions(run));
+
     let outcome: SubmitOutcome = { done: false, output: null };
     // Why the run is not delivered by the rung it would normally take, once a rung failed.
     let fallbackReason: SubmitFallbackReason | null = null;
@@ -194,16 +197,22 @@ export class RunSubmitter {
     if (sm?.enabled && sm?.runId != null) {
       if (sm.lostResults) fallbackReason = 'results-lost';
       else {
-        outcome = await this.tryFinishStreaming(run, overallStatus, duration, auth, counts.flakyTests);
+        outcome = await this.tryFinishStreaming(run, overallStatus, duration, auth, counts.flakyTests, reports);
         if (!outcome.done) fallbackReason = 'finish-failed';
       }
     }
 
-    // Once the time budget closed the client, the multipart upload is skipped:
-    // the JSON rung below fails at once and saves the recovery copy.
-    if (!outcome.done && !this.httpClient.closed && (this.hasReports(run) || run.options.uploadTraces)) {
+    // The multipart upload runs only with a file to carry. Once the time budget
+    // closed the client, it is skipped: the JSON rung below fails at once and
+    // saves the recovery copy.
+    if (
+      !outcome.done &&
+      !this.httpClient.closed &&
+      (this.hasReports(run) || run.options.uploadTraces) &&
+      this.uploader.hasFiles(run.testCases, reports, run.options.uploadTraces)
+    ) {
       if (fallbackReason) markSubmitFallback(run, 'upload', fallbackReason);
-      outcome = await this.tryUploadWithFiles(run, overallStatus, duration, auth);
+      outcome = await this.tryUploadWithFiles(run, overallStatus, duration, auth, reports);
       if (!outcome.done) fallbackReason = 'upload-failed';
     }
 
@@ -245,7 +254,6 @@ export class RunSubmitter {
 
   private reportOptions(run: CollectedRun): ReportOptions {
     return {
-      uploadTraces: run.options.uploadTraces,
       uploadReport: run.options.uploadReport,
       reports: run.options.reports,
       htmlReport: run.htmlReport && run.startTime ? { folder: run.htmlReport, since: Date.parse(run.startTime) } : null,
@@ -288,6 +296,7 @@ export class RunSubmitter {
     duration: number,
     auth: string | null,
     flakyTests: number,
+    reports: FoundReport[],
   ): Promise<SubmitOutcome> {
     const sm = this.streamManager!;
     try {
@@ -312,7 +321,7 @@ export class RunSubmitter {
         label: run.options.label || null,
         keep: run.options.keep === true,
         metadata: run.metadata,
-        hasPendingUploads: this.hasReports(run),
+        hasPendingUploads: reports.length > 0,
         playwrightVersion: run.playwrightVersion ?? undefined,
         reporterVersion: run.reporterVersion ?? undefined,
         setupSteps: run.setupSteps.length > 0 ? run.setupSteps : undefined,
@@ -330,12 +339,12 @@ export class RunSubmitter {
       this.logger.debug(`Successfully finalized streaming run #${sm.runId}`);
       this.dropLocalCopies();
 
-      if (this.hasReports(run)) {
+      if (reports.length > 0) {
         try {
           await this.uploader.uploadReportsForStreamingRun(
             run.options.projectName!,
             sm.runId!,
-            this.reportOptions(run),
+            reports,
             run.startTime,
             auth,
           );
@@ -356,10 +365,11 @@ export class RunSubmitter {
     overallStatus: string,
     duration: number,
     auth: string | null,
+    reports: FoundReport[],
   ): Promise<SubmitOutcome> {
     const payload = this.buildRunPayload(run, overallStatus, duration);
     try {
-      const response = await this.uploader.uploadWithFiles(payload, this.reportOptions(run), auth);
+      const response = await this.uploader.uploadWithFiles(payload, reports, run.options.uploadTraces, auth);
       this.dropLocalCopies();
       return { done: true, output: this.buildOutput(response?.runId, response?.projectId, run, overallStatus) };
     } catch (error) {
