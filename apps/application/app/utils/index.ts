@@ -164,9 +164,12 @@ export function prettyDateFormat(
   return formatAbsolute(date, { locale: prefs.locale, timeZone: prefs.timeZone, dateOnly: options.dateOnly });
 }
 
+/** How long ago `date` was ("5 minutes ago"), or `'N/A'` for empty or invalid input. */
 export function formatRelativeTime(date: string | Date | number | null | undefined): string {
   if (!date) return 'N/A';
-  return formatDistanceToNow(new Date(date), { addSuffix: true, locale: activeLocalePrefs().dateFnsLocale });
+  const value = new Date(date);
+  if (Number.isNaN(value.getTime())) return 'N/A';
+  return formatDistanceToNow(value, { addSuffix: true, locale: activeLocalePrefs().dateFnsLocale });
 }
 
 /** CI time a flaky test wasted, in minutes: seconds under a minute, so a small cost never reads as zero. */

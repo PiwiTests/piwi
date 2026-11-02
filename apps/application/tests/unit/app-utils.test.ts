@@ -136,6 +136,11 @@ describe('formatRelativeTime', () => {
   test('renders a past date with an "ago" suffix', () => {
     expect(formatRelativeTime(new Date(Date.now() - 60_000))).toContain('ago');
   });
+
+  test('returns N/A for a value that is no date, rather than throwing', () => {
+    expect(formatRelativeTime('not a date')).toBe('N/A');
+    expect(formatRelativeTime(new Date(Number.NaN))).toBe('N/A');
+  });
 });
 
 describe('getStatusColor', () => {
