@@ -555,8 +555,9 @@ export async function getTestRunCase(
     eq(testRunsCases.repeatEachIndex, trc.repeatEachIndex),
   );
 
+  // Only a failure blocks a test, and a blocker is a failed execution.
   let blockedTests: BlockedCaseRef[] = [];
-  if (ownLocation) {
+  if (ownLocation && isFailedStatus(trc.status)) {
     const rows = await db
       .select(blockedRefColumns)
       .from(testRunsCases)
@@ -587,6 +588,7 @@ export async function getTestRunCase(
             eq(testCases.filePath, m[1]!),
             eq(testRunsCases.line, Number(m[2])),
             eq(testRunsCases.column, Number(m[3])),
+            inArray(testRunsCases.status, [...FAILED_STATUS_KEYS]),
             ...(trc.didNotRunReason === 'dependency-failure' ? [] : [sameAttempt]),
           ),
         )
