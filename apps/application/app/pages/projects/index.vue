@@ -177,7 +177,9 @@ const columns: TableColumn<ProjectWithStats>[] = [
     header: 'Project',
     columns: [
       {
-        accessorKey: 'name',
+        // Sorted by what the cell shows: the label when the project has one.
+        id: 'name',
+        accessorFn: (project) => project.label || project.name,
         header: createSortHeader<ProjectWithStats>('Name'),
       },
       {
@@ -190,8 +192,10 @@ const columns: TableColumn<ProjectWithStats>[] = [
     accessorKey: 'latestRunData',
     header: 'Latest run',
     columns: [
+      // The latest run's columns sort by its fields; a project with no run has none to sort by.
       {
-        accessorKey: 'latestRun',
+        id: 'latestRun',
+        accessorFn: (project) => (project.latestRun ? new Date(project.latestRun.startTime).getTime() : undefined),
         header: createSortHeader<ProjectWithStats>('Date'),
       },
       {
@@ -200,11 +204,13 @@ const columns: TableColumn<ProjectWithStats>[] = [
       },
 
       {
-        accessorKey: 'duration',
+        id: 'duration',
+        accessorFn: (project) => project.latestRun?.duration ?? undefined,
         header: createSortHeader<ProjectWithStats>('Duration'),
       },
       {
-        accessorKey: 'status',
+        id: 'status',
+        accessorFn: (project) => project.latestRun?.status,
         header: createSortHeader<ProjectWithStats>('Status'),
       },
       {
