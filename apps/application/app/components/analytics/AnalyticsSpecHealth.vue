@@ -41,8 +41,11 @@ const { data, pending, error, refresh } = await useAnalyticsWidget<AnalyticsProj
         <tbody class="divide-y divide-default">
           <tr v-for="spec in data.data.specs" :key="spec.prefix">
             <td class="py-1 pr-2 font-mono text-xs break-all">{{ spec.prefix }}</td>
-            <td class="py-1 px-2 text-right tabular-nums" :class="passRateTextClass(spec.passRate * 100)">
-              {{ Math.round(spec.passRate * 100) }}%
+            <td
+              class="py-1 px-2 text-right tabular-nums"
+              :class="passRateTextClass(spec.passRate === null ? null : spec.passRate * 100)"
+            >
+              {{ spec.passRate === null ? '—' : `${Math.round(spec.passRate * 100)}%` }}
             </td>
             <td class="py-1 px-2 text-right tabular-nums">{{ Math.round(spec.flakyRate * 100) }}%</td>
             <td class="py-1 pl-2 text-right tabular-nums">{{ spec.testCount }}</td>

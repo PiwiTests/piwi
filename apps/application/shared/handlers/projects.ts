@@ -61,6 +61,8 @@ import {
 import { parseProjectRunScope, resolveProjectRunScope, type ProjectRunScope } from '../project-run-scope';
 import { eligibleRunSql } from '../run-eligibility';
 import { isFailedStatus } from '../utils/test-counts';
+import { passRate } from '../utils/pass-rate';
+import { failedCountSql, passedCountSql, passRateSql } from '../utils/pass-rate-sql';
 import { getHoldingVerifiedFixes } from './flake-verified';
 import { fixmeSkipPredicate } from '../utils/skip-kind';
 import { latestRunStatusSql } from './latest-run-status';
@@ -1015,8 +1017,8 @@ function toEpochMs(value: Date | null): number | null {
  *
  * Timed-out runs (both the raw `timedOut` Playwright spelling and the declared
  * lowercase `timedout`) are folded into `failedRuns`, matching how the rest of
- * the UI treats timeouts. `passRate` is computed over executed runs only
- * (passed + failed; skipped/didnotrun excluded) and is null when nothing ran.
+ * the UI treats timeouts. `passRate` is the passed runs over the runs that
+ * passed or failed (`passRateSql`), null when none did.
  * The derived `status` category is what the status filter and sort operate on:
  * `flaky` when any of the last 10 executions is a retry-pass, otherwise the
  * latest run's status (timeouts shown as failed, and failed when one of the
@@ -1050,11 +1052,8 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
   // PostgreSQL returns COUNT and SUM (int8) and AVG and the pass-rate division
   // (numeric) as strings, and a timestamp aggregate unparsed: each selected
   // aggregate is mapped so both dialects agree.
-  const passed = sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' THEN 1 ELSE 0 END)`.mapWith(Number);
-  const failed =
-    sql<number>`SUM(CASE WHEN ${testRunsCases.status} IN ('failed', 'timedOut', 'timedout') THEN 1 ELSE 0 END)`.mapWith(
-      Number,
-    );
+  const passed = passedCountSql(testRunsCases.status).mapWith(Number);
+  const failed = failedCountSql(testRunsCases.status).mapWith(Number);
   const recentFlaky = sql<number>`(
       SELECT COUNT(*) FROM (
         SELECT ${testRunsCases.status} AS s, ${testRunsCases.retries} AS r
@@ -1072,9 +1071,7 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
       WHEN ${lastStatus} IN ('timedOut', 'timedout') THEN 'failed'
       ELSE COALESCE(${lastStatus}, 'never-run')
     END`;
-  const passRate = sql<
-    number | null
-  >`CASE WHEN (${passed} + ${failed}) > 0 THEN (${passed} * 1.0) / (${passed} + ${failed}) END`.mapWith(Number);
+  const rate = passRateSql(passed, failed).mapWith(Number);
 
   const conditions = [eq(testCases.projectId, projectId)];
   if (q) {
@@ -1132,7 +1129,7 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
     lastRun: [sql`MAX(${testRunsCases.createdAt})`],
     title: [sql`lower(${testCases.title})`],
     totalRuns: [sql`COUNT(${testRunsCases.id})`],
-    passRate: [passRate],
+    passRate: [rate],
     avgDuration: [
       sql`AVG(CASE WHEN ${testRunsCases.status} NOT IN ('skipped', 'didnotrun') THEN ${testRunsCases.duration} END)`,
     ],
@@ -1188,7 +1185,7 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
           Number,
         ),
       recentFlakyRuns: recentFlaky,
-      passRate,
+      passRate: rate,
       avgDuration: sql<
         number | null
       >`AVG(CASE WHEN ${testRunsCases.status} NOT IN ('skipped', 'didnotrun') THEN ${testRunsCases.duration} END)`.mapWith(
@@ -1267,11 +1264,16 @@ export async function getProjectTestCaseFacets(
   return { values: collectTestSearchValues(subjects, CATALOG_SEARCH_FIELDS) };
 }
 
+/** A share rounded to two decimals, or null. */
+function roundShare(share: number | null): number | null {
+  return share === null ? null : Math.round(share * 100) / 100;
+}
+
 /**
  * Group a project's recent test executions by spec-file prefix and compute
- * pass rate, flaky rate, failure count, execution count, and average duration over
- * the last `days` days. Shared by the spec-health widget and the MCP
- * `get_spec_health` tool.
+ * pass rate (null when none passed or failed), flaky rate, failure count,
+ * execution count, and average duration over the last `days` days. Shared by
+ * the spec-health widget and the MCP `get_spec_health` tool.
  */
 export async function getProjectSpecHealth(db: DrizzleDB, projectId: number, days: number) {
   const boundedDays = Math.min(90, Math.max(1, days));
@@ -1325,7 +1327,7 @@ export async function getProjectSpecHealth(db: DrizzleDB, projectId: number, day
   const specs = [...specMap.entries()]
     .map(([prefix, data]) => ({
       prefix,
-      passRate: data.testCount > 0 ? Math.round((data.passCount / data.testCount) * 100) / 100 : 0,
+      passRate: roundShare(passRate({ passed: data.passCount, failed: data.failCount })),
       flakyRate: data.testCount > 0 ? Math.round((data.flakyCount / data.testCount) * 100) / 100 : 0,
       failureCount: data.failCount,
       testCount: data.testCount,

@@ -121,7 +121,7 @@ describe.each([
       flakyRuns: 0,
       recentFlakyRuns: 0,
       avgDuration: 6500,
-      passRate: 58,
+      passRate: 50,
     });
     expect(testCase!.lastRunAt).toEqual(at(1));
   });

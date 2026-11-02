@@ -14,6 +14,7 @@ import type { DrizzleDB } from './db';
 import { getQuarantinedCaseIds } from './quarantine';
 import { eligibleExecutionSql } from '../run-eligibility';
 import { latestRunStatusSql } from './latest-run-status';
+import { failedCountSql, passedCountSql, passRateSql } from '../utils/pass-rate-sql';
 import { foldText } from '#shared/utils/fold-text';
 import {
   BUILTIN_SELECTIONS,
@@ -71,8 +72,8 @@ export async function loadSelectionCatalog(
   projectId: number,
   opts: { withFailRanks: boolean } = { withFailRanks: false },
 ): Promise<CatalogRow[]> {
-  const passed = sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' THEN 1 ELSE 0 END)`;
-  const failed = sql<number>`SUM(CASE WHEN ${testRunsCases.status} IN ('failed', 'timedOut', 'timedout') THEN 1 ELSE 0 END)`;
+  const passed = passedCountSql(testRunsCases.status);
+  const failed = failedCountSql(testRunsCases.status);
   const recentFlaky = sql<number>`(
       SELECT COUNT(*) FROM (
         SELECT ${testRunsCases.status} AS s, ${testRunsCases.retries} AS r
@@ -91,9 +92,7 @@ export async function loadSelectionCatalog(
       ORDER BY ${testRunsCases.createdAt} DESC
       LIMIT 1
     )`;
-  const passRate = sql<
-    number | null
-  >`CASE WHEN (${passed} + ${failed}) > 0 THEN (${passed} * 1.0) / (${passed} + ${failed}) END`;
+  const passRate = passRateSql(passed, failed);
 
   const rows: any[] = await db
     .select({

@@ -1249,7 +1249,8 @@ export interface ProjectFailureCluster extends ClusterResolutionFields {
  * `failedRuns` includes timed-out runs; `status` is the derived category the
  * status filter operates on (flaky wins over the last run's status, timeouts
  * count as failed, `never-run` when the case has no executions). `passRate`
- * is over executed runs only (0..1), null when nothing executed.
+ * is the passed runs over the runs that passed or failed (0..1), null when
+ * none did.
  */
 export interface TestCaseWithStats {
   id: number;

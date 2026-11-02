@@ -42,8 +42,8 @@ describe('the test page header', () => {
     expect(items[0]!.failedRuns).toBe(testCase!.failedRuns);
   });
 
-  test('keeps its pass rate', async () => {
+  test('rates the passed runs over the runs that passed or failed, the interrupted one in neither', async () => {
     const testCase = await getTestCase(db as never, 1);
-    expect(testCase!.passRate).toBe(33);
+    expect(testCase!.passRate).toBe(25);
   });
 });

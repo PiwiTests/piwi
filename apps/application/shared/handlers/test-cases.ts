@@ -30,6 +30,7 @@ import { getFlakeLabStepFacts, getFlakeSuspectResults, type FlakeSuspectResult }
 import { isPassiveCapabilityDeclined } from './capabilities';
 import { sanitizeExecutionResources } from '../resource-report';
 import { FAILED_STATUS_KEYS, finalAttempts, isFailedStatus } from '../utils/test-counts';
+import { passRate, passRatePercent } from '../utils/pass-rate';
 import { buildFailureTimeline, type FailureTimeline, type TimelineCallsite } from '../failure-timeline';
 import { timelineResources, type TimelineResources } from '../timeline-resources';
 import { readResourceReport } from './resource-reports';
@@ -192,10 +193,7 @@ export async function getTestCase(db: DrizzleDB, id: number) {
     flakyRuns: aggResult[0]?.flakyRuns ?? 0,
     recentFlakyRuns: aggResult[0]?.recentFlakyRuns ?? 0,
     avgDuration: aggResult[0]?.avgDuration ?? null,
-    passRate:
-      totalRuns > 0
-        ? Math.round((((aggResult[0]?.passedRuns ?? 0) + (aggResult[0]?.skippedRuns ?? 0)) / totalRuns) * 100)
-        : null,
+    passRate: passRatePercent({ passed: aggResult[0]?.passedRuns ?? 0, failed: aggResult[0]?.failedRuns ?? 0 }),
     lastRunAt: aggResult[0]?.lastRunAt ?? null,
     lastExecutionId: lastExecution?.id ?? null,
     failureClusters: clusterRows.map((c: any) => ({
@@ -1565,7 +1563,7 @@ export interface TestCaseStabilityBucket {
   date: string;
   /** Executions in the bucket. */
   totalRuns: number;
-  /** Passed executions over executions, 0–1; null without an execution. */
+  /** Passed executions over the executions that passed or failed, 0–1; null without either. */
   passRate: number | null;
   /** Executions that passed only on a retry over executions, 0–1; null without an execution. */
   flakyRate: number | null;
@@ -1612,22 +1610,26 @@ export async function getTestCaseStabilityTrend(
     .where(and(eq(testRunsCases.testCaseId, testCaseId), gte(testRuns.startTime, new Date(from))));
 
   const buckets = makeTimeBuckets(from, now + 1, options.granularity ?? 'auto');
-  const tally = new Map<string, { total: number; passed: number; flaky: number; durations: number[] }>();
+  const tally = new Map<
+    string,
+    { total: number; passed: number; failed: number; flaky: number; durations: number[] }
+  >();
   for (const row of rawRows) {
     // Lab runs replay a test with an injected fault or condition, so they never shape the trend.
     if (isLabRun(row.runMetadata)) continue;
     const key = buckets.keyFor(row.startTime);
     if (!key) continue;
-    const t = tally.get(key) ?? { total: 0, passed: 0, flaky: 0, durations: [] };
+    const t = tally.get(key) ?? { total: 0, passed: 0, failed: 0, flaky: 0, durations: [] };
     t.total += 1;
     if (row.status === 'passed') {
       t.passed += 1;
       if ((row.retries ?? 0) > 0) t.flaky += 1;
-    }
+    } else if (isFailedStatus(row.status)) t.failed += 1;
     if (row.duration != null) t.durations.push(row.duration);
     tally.set(key, t);
   }
   const rate = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 100) / 100 : null);
+  const round = (share: number | null) => (share === null ? null : Math.round(share * 100) / 100);
   return {
     testCaseId,
     bucketDays: buckets.bucketDays,
@@ -1636,7 +1638,7 @@ export async function getTestCaseStabilityTrend(
       return {
         date,
         totalRuns: t?.total ?? 0,
-        passRate: t ? rate(t.passed, t.total) : null,
+        passRate: t ? round(passRate(t)) : null,
         flakyRate: t ? rate(t.flaky, t.total) : null,
         avgDuration:
           t && t.durations.length > 0 ? Math.round(t.durations.reduce((a, b) => a + b, 0) / t.durations.length) : null,

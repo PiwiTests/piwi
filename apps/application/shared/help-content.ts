@@ -469,7 +469,7 @@ export const HELP_TOPICS = {
   },
   'project.test-cases': {
     title: 'Tests',
-    text: 'Every distinct test in the project with its executed-only pass rate, result breakdown and average duration across runs, in file order. Words search the title, describe blocks and file; qualifiers such as file:, describe:, tag: or owner: search one field, and a leading - excludes. Filter by status, and group by file, or by file and describe block, to see each one’s numbers. Tests not run within the selected age window are hidden by default (last 30 days) — pick "All time" to see obsolete ones. Click a test to see its full history.',
+    text: 'Every distinct test in the project with its pass rate (passed over passed and failed runs), result breakdown and average duration across runs, in file order. Words search the title, describe blocks and file; qualifiers such as file:, describe:, tag: or owner: search one field, and a leading - excludes. Filter by status, and group by file, or by file and describe block, to see each one’s numbers. Tests not run within the selected age window are hidden by default (last 30 days) — pick "All time" to see obsolete ones. Click a test to see its full history.',
     doc: 'reference/test-search',
   },
   'project.members': {
