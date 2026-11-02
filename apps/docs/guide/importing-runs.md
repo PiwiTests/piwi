@@ -70,7 +70,8 @@ as ready again and the retry imports it in full.
 If you kept `test-results/` from a CI job rather than a blob report, upload the `trace.zip` files inside it. Each one
 rebuilds its execution from what the trace itself recorded: the test's title and describe blocks, its spec file and
 line, its timeout, browser and viewport, its start time and duration, its steps, its browser console, and — when the
-test failed — the error with its call log, so it clusters like any other failure.
+test failed — the error with its call log, so it clusters like any other failure. A caught action error
+(`click().catch(() => {})`) leaves it passed.
 
 **Traces you select together become one run.** A trace carries no notion of the run it belonged to, so Piwi treats the
 selection as the run — which is what you want when the files came from a single CI job. Upload a trace on its own and

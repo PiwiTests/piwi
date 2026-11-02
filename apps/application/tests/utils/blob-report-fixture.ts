@@ -227,6 +227,8 @@ export interface TraceFixtureOptions {
   consoleEntries?: Array<{ messageType: string; text: string; time: number }>;
   /** Drop the library context, as a test that never opened a page does. */
   omitLibraryContext?: boolean;
+  /** Drop the runner stream, as a trace recorded outside the test runner (`context.tracing`) has none. */
+  omitRunnerContext?: boolean;
 }
 
 /**
@@ -245,6 +247,7 @@ export function buildTraceArchive(options: TraceFixtureOptions = {}): Buffer {
     actions = [{ apiName: 'locator.click', startTime: monotonicTime + 10, endTime: monotonicTime + 60 }],
     consoleEntries = [],
     omitLibraryContext = false,
+    omitRunnerContext = false,
   } = options;
 
   const runner: unknown[] = [
@@ -309,9 +312,9 @@ export function buildTraceArchive(options: TraceFixtureOptions = {}): Buffer {
     library.push({ type: 'console', messageType: entry.messageType, text: entry.text, time: entry.time });
   }
 
-  const entries: ZipEntry[] = [
-    { name: 'test.trace', data: Buffer.from(runner.map((line) => JSON.stringify(line)).join('\n'), 'utf-8') },
-  ];
+  const entries: ZipEntry[] = omitRunnerContext
+    ? []
+    : [{ name: 'test.trace', data: Buffer.from(runner.map((line) => JSON.stringify(line)).join('\n'), 'utf-8') }];
   if (library.length > 0) {
     entries.push({
       name: '0-trace.trace',
