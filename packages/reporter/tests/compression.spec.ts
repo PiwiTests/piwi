@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -23,8 +23,7 @@ function decodeArchive(archive: Buffer): Map<string, Buffer> {
     offset += 4;
     const content = buf.subarray(offset, offset + contentLen);
     offset += contentLen;
-    // Normalize to forward slashes so assertions are platform-independent.
-    out.set(relPath.split(path.sep).join('/'), content);
+    out.set(relPath, content);
   }
   return out;
 }
@@ -74,6 +73,27 @@ describe('compressDirectory', () => {
     fs.writeFileSync(path.join(tmpDir, 'pixel.png'), bytes);
     const decoded = decodeArchive(await compressDirectory(tmpDir));
     expect(decoded.get('pixel.png')?.equals(bytes)).toBe(true);
+  });
+
+  it('names nested files with forward slashes on Windows too', async () => {
+    vi.resetModules();
+    // Windows joins relative paths with backslashes; the absolute folders of this machine stay readable.
+    vi.doMock('node:path', async () => {
+      const actual = await vi.importActual<typeof path>('node:path');
+      const join = (...parts: string[]): string =>
+        actual.isAbsolute(parts[0] ?? '') ? actual.join(...parts) : actual.win32.join(...parts);
+      return { ...actual, default: { ...actual, join }, join };
+    });
+    try {
+      const windows = await import('../src/internal/files/compression.js');
+      fs.mkdirSync(path.join(tmpDir, 'data', 'traces'), { recursive: true });
+      fs.writeFileSync(path.join(tmpDir, 'data', 'traces', 'trace.zip'), 'TRACE');
+      const decoded = decodeArchive(await windows.compressDirectory(tmpDir));
+      expect([...decoded.keys()]).toEqual(['data/traces/trace.zip']);
+    } finally {
+      vi.doUnmock('node:path');
+      vi.resetModules();
+    }
   });
 
   it('produces an empty (but valid) archive for an empty directory', async () => {

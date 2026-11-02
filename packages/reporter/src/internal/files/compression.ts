@@ -7,7 +7,8 @@ const gzipAsync = promisify(zlib.gzip);
 
 /**
  * Recursively read a directory and pack all files into a gzip-compressed
- * archive (a concatenation of length-prefixed path+content pairs).
+ * archive (a concatenation of length-prefixed path+content pairs). Each path
+ * is relative to the directory, with forward slashes on every platform.
  */
 export async function compressDirectory(sourceDir: string): Promise<Buffer> {
   const files: Array<{ path: string; content: Buffer }> = [];
@@ -15,7 +16,7 @@ export async function compressDirectory(sourceDir: string): Promise<Buffer> {
   function collect(dir: string, baseDir = '') {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
-      const rel = path.join(baseDir, entry.name);
+      const rel = baseDir ? `${baseDir}/${entry.name}` : entry.name;
       if (entry.isDirectory()) collect(full, rel);
       else if (entry.isFile()) files.push({ path: rel, content: fs.readFileSync(full) });
     }
