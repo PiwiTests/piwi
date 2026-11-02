@@ -9,6 +9,7 @@ import {
   type SubscriptionFilters,
 } from '#shared/notification-events';
 import type { LibSQLDatabase } from 'drizzle-orm/libsql';
+import { isUniqueViolation } from '../db-errors';
 import { emailDestinationVerified } from './email-verified';
 
 function parseDigestHHMM(digestAt: string | null | undefined): { hour: number; minute: number } | null {
@@ -31,7 +32,9 @@ function nextDigestTime(digestAt: string): Date {
 
 /**
  * For a given event+payload, find matching subscriptions and enqueue delivery rows.
- * Uses INSERT OR IGNORE (via unique dedupeKey) to make it idempotent.
+ * Idempotent through the unique `dedupeKey`: a delivery already queued is left
+ * alone. Any other failed insert is thrown once every other subscription has
+ * its row, so a notification is never dropped in silence.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function matchAndEnqueue(
@@ -50,6 +53,7 @@ export async function matchAndEnqueue(
     );
 
   let enqueued = 0;
+  let insertError: unknown = null;
   const now = new Date();
 
   // Re-check project access at delivery time so a subscription never leaks a
@@ -99,10 +103,12 @@ export async function matchAndEnqueue(
         createdAt: now,
       });
       enqueued++;
-    } catch {
-      // Unique constraint on dedupeKey → duplicate, skip silently
+    } catch (error) {
+      // The unique dedupe key: this event already has its delivery on this channel.
+      if (!isUniqueViolation(error)) insertError ??= error;
     }
   }
 
+  if (insertError) throw insertError;
   return enqueued;
 }
