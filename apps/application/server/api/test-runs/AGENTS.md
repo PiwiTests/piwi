@@ -22,9 +22,11 @@ Rules for the routes that write runs (the reporter's `setup`, `start`, `begin`, 
 
 - **Run cases are written only through `persistRunCases`** (`server/utils/persist-run-cases.ts`, mirrored for the demo
   in `app/demo/api/reporter.ts`): every ingest route hands it the mapped cases, never an `insert` of its own.
-- **A test's identity is stored as `storableRunCase` makes it** (`server/utils/storable-values.ts`): a title, file,
-  describe path or project name too long for a PostgreSQL index entry keeps its head and a hash. A lookup by an
-  identity a client sends passes it through `storedIdentity` and `storableSuitePath` first, as `[id]/case-files` does.
+- **A test's identity is stored as `storableRunCase` makes it** (`server/utils/storable-values.ts`): its file,
+  describe path and title stay whole while together they fit one PostgreSQL index entry, past it each over 800 bytes
+  keeps its head and a hash, as a project name over 800 bytes always does. A lookup by the names a client sends
+  passes them through `storedTestIdentity` first (`storedIdentityForms` without the describe path), as
+  `[id]/case-files` does (`tests/unit/stored-identity-lookups.test.ts`).
 
 ## Timed-out tests fold into `failedTests`
 

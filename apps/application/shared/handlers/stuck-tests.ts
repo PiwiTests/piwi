@@ -3,7 +3,8 @@ import { testCases, testRuns, testRunsCases } from '../../server/database/schema
 import type { DrizzleDB } from './db';
 import { eligibleRunSql } from '../run-eligibility';
 import { STUCK_HISTORY } from '../stuck-tests';
-import { storableSuitePath, storedIdentity } from '../../server/utils/storable-values';
+import { joinSuitePath } from '../utils/suites';
+import { storedIdentity, storedTestIdentity } from '../../server/utils/storable-values';
 
 /** A running test as its begin event names it. */
 export interface RunningTest {
@@ -26,11 +27,13 @@ export interface RunningTestHistory {
  * its natural key: file, describe path and title. Empty for a test never run before.
  */
 export async function runningTestHistory(db: DrizzleDB, test: RunningTest): Promise<RunningTestHistory> {
-  // The names as the test's rows store them (`storedIdentity`).
-  const [filePath, suitePath, title, browserName] = await Promise.all([
-    storedIdentity(test.filePath),
-    storableSuitePath(test.suitePath ? [...test.suitePath] : null),
-    storedIdentity(test.title),
+  // The names as the test's rows store them (`storedTestIdentity`, `storedIdentity` for its project).
+  const [stored, browserName] = await Promise.all([
+    storedTestIdentity({
+      filePath: test.filePath,
+      suitePath: test.suitePath ? [...test.suitePath] : null,
+      title: test.title,
+    }),
     test.browserName ? storedIdentity(test.browserName) : null,
   ]);
   const [testCase] = await db
@@ -39,9 +42,9 @@ export async function runningTestHistory(db: DrizzleDB, test: RunningTest): Prom
     .where(
       and(
         eq(testCases.projectId, test.projectId),
-        eq(testCases.filePath, filePath),
-        eq(testCases.suitePath, (suitePath ?? []).join('\x1f')),
-        eq(testCases.title, title),
+        eq(testCases.filePath, stored.filePath),
+        eq(testCases.suitePath, joinSuitePath(stored.suitePath)),
+        eq(testCases.title, stored.title),
       ),
     )
     // The test case its external ID names wins over one a rename left under the same key.

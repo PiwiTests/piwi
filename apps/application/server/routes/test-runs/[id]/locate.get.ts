@@ -1,11 +1,11 @@
 import type { H3Event } from 'h3';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { getDatabase } from '../../../database';
 import { testCases, testRuns, testRunsCases } from '../../../database/schema';
 import { getCurrentUser, isAuthEnabled } from '../../../utils/auth';
 import { canAccessProject } from '../../../utils/project-access';
 import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
-import { storedIdentity } from '../../../utils/storable-values';
+import { storedIdentity, storedIdentityForms } from '../../../utils/storable-values';
 
 /**
  * Resolve an execution from what the reporter knows before the server assigns
@@ -50,10 +50,11 @@ export default eventHandler(async (event) => {
     return notFoundPage(event, `Run #${runId} does not exist, or it was deleted.`, null);
   }
 
-  // The names as the test's rows store them (`storedIdentity`).
-  const [storedFile, storedTitle, storedBrowser] = await Promise.all([
-    storedIdentity(file),
-    storedIdentity(title),
+  // The names the test's rows can store: without its describe path, a long file or title may be stored whole or
+  // shortened (`storedIdentityForms`).
+  const [storedFiles, storedTitles, storedBrowser] = await Promise.all([
+    storedIdentityForms(file),
+    storedIdentityForms(title),
     browser === null ? null : storedIdentity(browser),
   ]);
   const candidates = await db
@@ -67,7 +68,11 @@ export default eventHandler(async (event) => {
     .from(testRunsCases)
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
     .where(
-      and(eq(testRunsCases.testRunId, runId), eq(testCases.filePath, storedFile), eq(testCases.title, storedTitle)),
+      and(
+        eq(testRunsCases.testRunId, runId),
+        inArray(testCases.filePath, storedFiles),
+        inArray(testCases.title, storedTitles),
+      ),
     );
 
   const match = pickExecution(candidates, wantedRetry, storedBrowser, wantedRepeat);

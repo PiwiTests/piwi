@@ -104,6 +104,25 @@ describe('POST /api/test-runs/:id/case-files', () => {
     expect(answer).toMatchObject({ executionId: execution!.id, attachments: 1 });
   });
 
+  test.each([
+    ['fits an index entry, its long title kept whole', 'tests/receipt.spec.ts', ['receipt'], 50],
+    [
+      'is too long for one, its long names shortened',
+      `tests/${'receipts/'.repeat(120)}receipt.spec.ts`,
+      Array.from({ length: 40 }, (_, i) => `when the cart holds ${i} items`),
+      60,
+    ],
+  ])('finds the execution of a test whose identity %s', async (_shape, filePath, suitePath, repeats) => {
+    const title = `shows the receipt of ${'a very long order '.repeat(repeats)}`;
+    const [execution] = await stream([
+      { title, filePath, suitePath, status: 'failed', line: 3, column: 1, retries: 0 },
+    ]);
+
+    const answer = await uploadScreenshot({ title, suitePath, location: `${filePath}:3:1`, retries: 0 });
+
+    expect(answer).toMatchObject({ executionId: execution!.id, attachments: 1 });
+  });
+
   test('finds the execution of a test with an empty title, as Playwright runs it', async () => {
     const [execution] = await stream([
       { title: '', filePath: 'tests/receipt.spec.ts', status: 'failed', line: 3, column: 1, retries: 0 },

@@ -9,8 +9,10 @@ import {
   int32,
   MAX_IDENTITY_BYTES,
   MAX_INT32,
-  storableSuitePath,
+  MAX_TEST_IDENTITY_BYTES,
   storedIdentity,
+  storedIdentityForms,
+  storedTestIdentity,
   withoutNul,
 } from '../../server/utils/storable-values';
 
@@ -81,11 +83,48 @@ describe('values held to what the database stores', () => {
     expect(await storedIdentity('pays the order')).toBe('pays the order');
   });
 
-  test('a describe path too long for an index entry is stored as one level', async () => {
-    expect(await storableSuitePath(['checkout', 'pay\0ment'])).toEqual(['checkout', 'payment']);
-    const levels = await storableSuitePath(Array.from({ length: 40 }, (_, i) => `when the cart holds ${i} items`));
-    expect(levels).toHaveLength(1);
-    expect(bytes(levels![0]!)).toBeLessThanOrEqual(MAX_IDENTITY_BYTES);
+  test("a test's file, describe path and title stay whole while together they fit an index entry", async () => {
+    const test = {
+      filePath: 'tests/checkout.spec.ts',
+      suitePath: Array.from({ length: 30 }, (_, i) => `when the cart holds ${i} items`),
+      title: `pays ${'with every line item and its discount '.repeat(25)}`,
+    };
+    expect(bytes(test.title)).toBeGreaterThan(MAX_IDENTITY_BYTES);
+
+    expect(await storedTestIdentity(test)).toEqual(test);
+    expect(await storedTestIdentity({ filePath: 'a.spec.ts', suitePath: ['pay\0ment'], title: 'pays\0' })).toEqual({
+      filePath: 'a.spec.ts',
+      suitePath: ['payment'],
+      title: 'pays',
+    });
+  });
+
+  test('past an index entry, each long name of a test is shortened, a describe path into one level', async () => {
+    const filePath = `tests/${'checkout/'.repeat(120)}pay.spec.ts`;
+    const suitePath = Array.from({ length: 40 }, (_, i) => `when the cart holds ${i} items`);
+    const title = `pays ${'with every line item and its discount '.repeat(30)}`;
+
+    const stored = await storedTestIdentity({ filePath, suitePath, title });
+
+    expect(stored.filePath).toBe(await storedIdentity(filePath));
+    expect(stored.suitePath).toEqual([await storedIdentity(suitePath.join('\x1f'))]);
+    expect(stored.title).toBe(await storedIdentity(title));
+    expect(bytes(stored.filePath) + bytes(stored.suitePath![0]!) + bytes(stored.title)).toBeLessThanOrEqual(
+      MAX_TEST_IDENTITY_BYTES,
+    );
+    // A short name stays whole beside a long one.
+    const longFile = `tests/${'checkout/'.repeat(330)}pay.spec.ts`;
+    expect(await storedTestIdentity({ filePath: longFile, suitePath: ['checkout'], title: 'pays' })).toEqual({
+      filePath: await storedIdentity(longFile),
+      suitePath: ['checkout'],
+      title: 'pays',
+    });
+  });
+
+  test('a lookup without the describe path takes a long name whole or shortened', async () => {
+    const title = `pays ${'with every line item and its discount '.repeat(30)}`;
+    expect(await storedIdentityForms(title)).toEqual([title, await storedIdentity(title)]);
+    expect(await storedIdentityForms('pays\0')).toEqual(['pays']);
   });
 });
 

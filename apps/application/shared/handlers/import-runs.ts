@@ -22,7 +22,7 @@ import type { DrizzleDB } from './db';
 import type { ImportedRunCase, ParsedBlobReport } from '../../server/utils/blob-report';
 import { resolveSpecPath, type ParsedTraceImport } from '../../server/utils/trace-import';
 import { resolveRunBranch } from '../../server/utils/run-branch';
-import { storableSuitePath, storedIdentity } from '../../server/utils/storable-values';
+import { storedIdentity, storedTestIdentity } from '../../server/utils/storable-values';
 import { runCommit, runOrigin } from '../run-eligibility';
 import type { PersistRunCasesOptions } from '../../server/utils/persist-options';
 import { durationStats } from '../utils/stats';
@@ -644,21 +644,17 @@ async function countPriorAttempts(
   testRunId: number,
   input: { filePath: string; suitePath?: string[] | null; title: string; browser?: unknown },
 ): Promise<number> {
-  // The names as the test's rows store them (`storedIdentity`).
-  const [filePath, suitePath, title] = await Promise.all([
-    storedIdentity(input.filePath),
-    storableSuitePath(input.suitePath),
-    storedIdentity(input.title),
-  ]);
+  // The names as the test's rows store them (`storedTestIdentity`).
+  const stored = await storedTestIdentity(input);
   const existing = await db
     .select({ id: testCases.id })
     .from(testCases)
     .where(
       and(
         eq(testCases.projectId, projectId),
-        eq(testCases.filePath, filePath),
-        eq(testCases.suitePath, joinSuitePath(suitePath)),
-        eq(testCases.title, title),
+        eq(testCases.filePath, stored.filePath),
+        eq(testCases.suitePath, joinSuitePath(stored.suitePath)),
+        eq(testCases.title, stored.title),
       ),
     );
 

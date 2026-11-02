@@ -354,6 +354,36 @@ describe('the evidence and counters of an import', () => {
     expect(contexts).toEqual(['resources/context.markdown']);
   });
 
+  test.each([
+    ['fits an index entry, its long title kept whole', 'tests/checkout.spec.ts', ['checkout'], 25],
+    [
+      'is too long for one, its long names shortened',
+      `tests/${'checkout/'.repeat(120)}pay.spec.ts`,
+      Array.from({ length: 40 }, (_, i) => `when the cart holds ${i} items`),
+      30,
+    ],
+  ])('a group of traces counts the attempts of a test whose identity %s', async (_shape, filePath, suitePath, n) => {
+    const title = `pays ${'with every line item and its discount '.repeat(n)}`;
+    const attempt = (importHash: string, status: string) => ({
+      ...traceInput('8'.repeat(64)),
+      importHash,
+      parsed: {
+        ...trace(title),
+        rawFilePath: filePath,
+        case: { ...trace(title).case, filePath, suitePath, status, browser: 'chromium' },
+      },
+    });
+
+    await importTraceRun(db as never, port(), attempt('4'.repeat(64), 'failed'));
+    await importTraceRun(db as never, port(), attempt('5'.repeat(64), 'passed'));
+
+    const executions = await db
+      .select({ retries: schema.testRunsCases.retries })
+      .from(schema.testRunsCases)
+      .orderBy(schema.testRunsCases.id);
+    expect(executions).toEqual([{ retries: 0 }, { retries: 1 }]);
+  });
+
   test('a group of traces counts each test once, by its last attempt in its own browser', async () => {
     const group = '9'.repeat(64);
     const attempt = (importHash: string, status: string, browser: string) => ({
