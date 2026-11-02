@@ -202,6 +202,8 @@ export interface ClusterNewPayload extends RunScope {
   runId: number;
   sampleErrorExcerpt?: string;
   affectedCases?: number;
+  /** The earlier run the cluster first appeared in, which sent no notification of it; absent when it is `runId`. */
+  firstSeenRunId?: number;
   /** The tracker issue the cluster is known by, named in the message when set. */
   knownIssue?: { key: string; url: string };
   /** Distinct owners of the tests that failed into the cluster in this run, resolved as for {@link RunFinishedPayload}. */

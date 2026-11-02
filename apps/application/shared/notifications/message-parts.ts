@@ -734,8 +734,17 @@ export function eventSentences(event: NotificationEvent, payload: NotificationPa
       return ['The usual time is the median of the last runs on the same branch and environment.'];
     case 'cluster.new': {
       const p = payload as ClusterNewPayload;
+      const several = (p.affectedCases ?? 0) > 1;
+      if (p.firstSeenRunId != null) {
+        const first = `first seen in run #${p.firstSeenRunId}, which sent no notification of it`;
+        return [
+          several
+            ? `${p.affectedCases} tests of run #${p.runId} failed with the same error, ${first}.`
+            : `A test of run #${p.runId} failed with an error ${first}.`,
+        ];
+      }
       return [
-        (p.affectedCases ?? 0) > 1
+        several
           ? `${p.affectedCases} tests of run #${p.runId} failed with the same error, one no earlier run produced, so Piwi grouped them in one cluster.`
           : `A test of run #${p.runId} failed with an error no earlier run produced.`,
       ];

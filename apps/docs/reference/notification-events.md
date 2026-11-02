@@ -18,7 +18,7 @@ one fires and what a webhook channel receives; channels, subscriptions and deliv
 | `run.failed` | A run completes with failures, or stops at Playwright's global timeout (`status: "timedout"`) |
 | `run.failed.default_branch` | A run fails, as `run.failed` reads it, on the repository's default branch |
 | `run.interrupted` | A run stops reporting before its end and the stale-run sweep marks it interrupted (two minutes without activity, an hour for a run still in its global setup or with a shard still in its own, and an hour for a sharded run waiting for a shard that has not started, once every shard that started has ended). The payload is a run event's, with `status: "interrupted"` and the results stored so far; Flake Lab and probe runs send none |
-| `cluster.new` | A new failure cluster appears. A cluster first seen by a run that sends no notifications (a run from an editor, a partial run from a developer's machine, an import) is announced by the first run that does |
+| `cluster.new` | A new failure cluster appears in a run that ran to its end (passed, failed or timed out). A cluster first seen by a run that sent no notification of it (a run from an editor, a partial run from a developer's machine, an import, a cancelled or interrupted run) is announced by the first such run that sends notifications, unless the cluster is resolved, ignored or snoozed when that run ends, or its first run was deleted |
 | `cluster.fixed` | A run passes every test a cluster covers: the fix landed (a filtered re-run of just those tests counts). The payload's `verification` says whether the diagnosis was corroborated (`diagnosis-verified`) or the tests merely stopped failing, and `resolved` whether the triage status was closed automatically |
 | `cluster.regressed` | A cluster with a recorded fix fails again, or one resolved by hand fails in a run started after it was resolved (no `fixLandedRunId` then); `reopened` says whether a *resolved* cluster was set back to open |
 | `flakiness.spike` | A completed run contains flaky tests; the flakiness-threshold filter keeps only rates above N% |
@@ -147,7 +147,8 @@ Every event that comes from a run carries that run's `branch` and `environment` 
 - **Run events** (`run.*`, `flakiness.spike`, `perf.regression`): the run, its counts, `topFailures`, and the `owners`
   of the failing tests. `perf.regression` adds `durationMs`, `baselineDurationMs` and `regressionPct`.
 - **`cluster.new`**: the cluster's `signature` and `title`, `sampleErrorExcerpt` (cut like `errorExcerpt`),
-  `affectedCases`, and the `owners` of the tests that failed into it in that run.
+  `affectedCases`, the `owners` of the tests that failed into it in that run, and `firstSeenRunId` when it first
+  appeared in an earlier run, which sent no notification of it.
 - **`cluster.fixed`** and **`cluster.regressed`**: the cluster's `signature`, `title` and the `runId` that decided the
   verdict; for a fix, the `commit` and `timeToResolutionMs`. With an [SCM token](/guide/source-control), a `fixAuthor`
   object (`{ name, email }`) names the author of the fixing commit (for a regression, of the fix that did not hold).

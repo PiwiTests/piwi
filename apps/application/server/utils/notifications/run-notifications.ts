@@ -41,6 +41,7 @@ import type {
 } from '#shared/notification-events';
 import type { TestMetadata } from '#shared/types';
 import { readRunIncident } from '#shared/run-incident';
+import { isCurrentlySnoozed } from '#shared/inbox-queues';
 
 /**
  * The run's `test.fail()` tests that passed in every browser project that ran
@@ -545,8 +546,16 @@ export async function emitIncidentNotification(db: DbClient, runId: number): Pro
 }
 
 /**
- * Whether a run before `runId` that sends notifications (the `notifications`
- * use; an import never sends any) failed into the cluster, and so announced it.
+ * The statuses of a run that ran to its end. A run that sends notifications
+ * (the `notifications` use) announces the clusters it failed into only with
+ * one of them; a cancelled, interrupted or abandoned run announces none.
+ */
+const ANNOUNCING_RUN_STATUSES = ['passed', 'failed', 'timedout'];
+
+/**
+ * Whether a run before `runId` that announces clusters (one that ran to its end
+ * and sends notifications; an import never sends any) failed into the cluster,
+ * and so announced it.
  */
 async function announcedBefore(db: DbClient, clusterId: number, runId: number): Promise<boolean> {
   const [earlier] = await db
@@ -557,6 +566,7 @@ async function announcedBefore(db: DbClient, clusterId: number, runId: number): 
       and(
         eq(testRunsCases.failureClusterId, clusterId),
         lt(testRunsCases.testRunId, runId),
+        inArray(testRuns.status, ANNOUNCING_RUN_STATUSES),
         eligibleRunSql('notifications'),
         ne(testRuns.origin, 'import'),
       ),
@@ -566,12 +576,66 @@ async function announcedBefore(db: DbClient, clusterId: number, runId: number): 
 }
 
 /**
+ * The clusters run `runId` announces with `cluster.new`, when it ran to its
+ * end: those it failed into that are open and not snoozed, whose first seen
+ * run is still stored, and that no earlier run announcing clusters failed into.
+ * The finalize step reads them before the run's verdicts, which may reopen a
+ * cluster a person resolved: the run announces that one as regressed.
+ */
+export async function clustersToAnnounce(db: DbClient, runId: number, now: Date = new Date()): Promise<number[]> {
+  const [run] = await db
+    .select({ projectId: testRuns.projectId, status: testRuns.status })
+    .from(testRuns)
+    .where(eq(testRuns.id, runId));
+  if (!run || !ANNOUNCING_RUN_STATUSES.includes(run.status)) return [];
+  const clusters = await db
+    .select({
+      id: failureClusters.id,
+      status: failureClusters.status,
+      snoozedUntil: failureClusters.snoozedUntil,
+      snoozeMode: failureClusters.snoozeMode,
+      firstSeenRunId: failureClusters.firstSeenRunId,
+    })
+    .from(failureClusters)
+    .where(
+      and(
+        eq(failureClusters.projectId, run.projectId),
+        inArray(
+          failureClusters.id,
+          db
+            .selectDistinct({ id: testRunsCases.failureClusterId })
+            .from(testRunsCases)
+            .where(and(eq(testRunsCases.testRunId, runId), isNotNull(testRunsCases.failureClusterId))),
+        ),
+      ),
+    );
+  const open = clusters.filter((cluster) => cluster.status === 'open' && !isCurrentlySnoozed(cluster, now));
+  const firstRunIds = [...new Set(open.map((cluster) => cluster.firstSeenRunId))];
+  const stored = new Set(
+    firstRunIds.length
+      ? (await db.select({ id: testRuns.id }).from(testRuns).where(inArray(testRuns.id, firstRunIds))).map((r) => r.id)
+      : [],
+  );
+  const announce: number[] = [];
+  for (const cluster of open) {
+    if (!stored.has(cluster.firstSeenRunId) || (await announcedBefore(db, cluster.id, runId))) continue;
+    announce.push(cluster.id);
+  }
+  return announce;
+}
+
+/**
  * Emit run.finished / run.failed / run.failed.default_branch notifications for a completed run,
  * plus flakiness.spike / perf.regression when the run qualifies, and cluster.new
- * for the failure clusters no earlier run that sends notifications failed into.
+ * for the clusters it announces: `announce`, as the finalize step read them
+ * before the run's verdicts, else `clustersToAnnounce` now.
  * Call this after the run status is finalized.
  */
-export async function emitRunNotifications(db: DbClient, runId: number): Promise<void> {
+export async function emitRunNotifications(
+  db: DbClient,
+  runId: number,
+  opts: { announce?: number[] } = {},
+): Promise<void> {
   try {
     const loaded = await loadRunPayload(db, runId);
     if (!loaded) return;
@@ -634,35 +698,26 @@ export async function emitRunNotifications(db: DbClient, runId: number): Promise
       }
     }
 
-    // cluster.new for each cluster this run failed into that no earlier run sending
-    // notifications failed into: a cluster first seen by an editor run, a partial
-    // local run or an import is announced by the first run that sends them.
-    const seenClusters = await db
-      .select({
-        id: failureClusters.id,
-        signature: failureClusters.signature,
-        title: failureClusters.title,
-        errorType: failureClusters.errorType,
-        selector: failureClusters.selector,
-        sampleError: failureClusters.sampleError,
-        firstSeenRunId: failureClusters.firstSeenRunId,
-      })
-      .from(failureClusters)
-      .where(
-        and(
-          eq(failureClusters.projectId, runRow.projectId),
-          inArray(
-            failureClusters.id,
-            db
-              .selectDistinct({ id: testRunsCases.failureClusterId })
-              .from(testRunsCases)
-              .where(and(eq(testRunsCases.testRunId, runId), isNotNull(testRunsCases.failureClusterId))),
-          ),
-        ),
-      );
+    // cluster.new for each cluster the run announces: a cluster first seen by an
+    // editor run, a partial local run or an import is announced by the first run
+    // that sends notifications, naming the run it first appeared in.
+    const announce = opts.announce ?? (await clustersToAnnounce(db, runId));
+    const announcedClusters = announce.length
+      ? await db
+          .select({
+            id: failureClusters.id,
+            signature: failureClusters.signature,
+            title: failureClusters.title,
+            errorType: failureClusters.errorType,
+            selector: failureClusters.selector,
+            sampleError: failureClusters.sampleError,
+            firstSeenRunId: failureClusters.firstSeenRunId,
+          })
+          .from(failureClusters)
+          .where(inArray(failureClusters.id, announce))
+      : [];
 
-    for (const cluster of seenClusters) {
-      if (cluster.firstSeenRunId !== runId && (await announcedBefore(db, cluster.id, runId))) continue;
+    for (const cluster of announcedClusters) {
       const affected = await db
         .select({ id: testRunsCases.id })
         .from(testRunsCases)
@@ -680,6 +735,7 @@ export async function emitRunNotifications(db: DbClient, runId: number): Promise
         environment,
         sampleErrorExcerpt: errorExcerpt(cluster.sampleError),
         affectedCases: affected.length,
+        ...(cluster.firstSeenRunId !== runId ? { firstSeenRunId: cluster.firstSeenRunId } : {}),
         knownIssue: knownIssue ? { key: knownIssue.key, url: knownIssue.url } : undefined,
         owners: clusterOwners(cluster.id),
       });
