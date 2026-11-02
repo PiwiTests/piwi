@@ -1,5 +1,6 @@
 ---
-title: Cut costly flakiness
+title: "Flaky Playwright suite: cut costly flakiness"
+titleTemplate: ":title | Piwi"
 description: "One afternoon to make an unreliable suite trustworthy: fix the flaky tests that cost the most, one root cause at a time, and quarantine the rest."
 lang: en-US
 ---

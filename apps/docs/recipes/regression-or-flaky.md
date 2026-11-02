@@ -1,5 +1,6 @@
 ---
-title: Regression or flake?
+title: "Playwright test failing: regression or flake?"
+titleTemplate: ":title | Piwi"
 description: "Decide in a minute whether a red test is your regression or a known flake, from the run's changes and the test's own history."
 lang: en-US
 ---

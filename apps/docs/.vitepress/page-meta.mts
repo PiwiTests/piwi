@@ -6,6 +6,14 @@ import type { HeadConfig, PageData, SiteConfig } from 'vitepress'
 // whole sentences up to this length reads better than one cut mid-word.
 const MAX_DESCRIPTION = 200
 
+/** The site's `<title>`: the page's title, then the project and the tool it works with. */
+export const TITLE_TEMPLATE = ':title | Piwi for Playwright'
+
+/** The `<title>` VitePress writes: the title through a template holding `:title`; `false` leaves the title alone. */
+export function pageTitle(title: string, template: string | boolean | undefined): string {
+  return typeof template === 'string' ? template.replace(/:title/g, title) : title
+}
+
 /** The first paragraph of prose on the page: no heading, code, component, container or table. */
 export function openingParagraph(markdown: string): string {
   const body = markdown.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '')
@@ -110,7 +118,7 @@ export function pageMeta(
   if (frontmatter.layout === 'home') return { head }
 
   const description = pageDescription(frontmatter, readFileSync(join(siteConfig.srcDir, pageData.filePath), 'utf8'))
-  const title = `${pageData.title} | ${siteConfig.site.title}`
+  const title = pageTitle(pageData.title, frontmatter.titleTemplate ?? siteConfig.site.titleTemplate)
   head.push(['meta', { property: 'og:title', content: title }])
   if (description) head.push(['meta', { property: 'og:description', content: description }])
   if (frontmatter.date) head.push(['meta', { property: 'og:type', content: 'article' }])

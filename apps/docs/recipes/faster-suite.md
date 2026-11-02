@@ -1,5 +1,6 @@
 ---
-title: Cut the time it costs
+title: "Slow Playwright suite: cut the time it costs"
+titleTemplate: ":title | Piwi"
 description: "Find where your suite's CI time goes, from waits and timeouts to flaky retries and slow endpoints, and what to cut first."
 lang: en-US
 ---

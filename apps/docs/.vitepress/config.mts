@@ -1,7 +1,7 @@
 import { fileURLToPath, URL } from 'node:url'
 import { defineConfig, type HeadConfig } from 'vitepress'
 import { landingCards, nav, sidebars } from './navigation'
-import { pageMeta } from './page-meta.mts'
+import { pageMeta, TITLE_TEMPLATE } from './page-meta.mts'
 
 // https://vitepress.dev/reference/site-config
 const ogImage = 'https://piwitests.dev/og-image.png'
@@ -22,6 +22,7 @@ const websiteJsonLd: HeadConfig = [
 
 export default defineConfig({
   title: 'Piwi Dashboard',
+  titleTemplate: TITLE_TEMPLATE,
   description:
     'CI throws away every report it makes. Piwi keeps them, then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used. Self-hosted, zero telemetry.',
   base: '/',

@@ -6,7 +6,9 @@ import {
   clipDescription,
   openingParagraph,
   pageDescription,
+  pageTitle,
   pageUrl,
+  TITLE_TEMPLATE,
   toPlainText,
 } from '../../../docs/.vitepress/page-meta.mts';
 
@@ -107,6 +109,13 @@ describe('pageUrl', () => {
   });
 });
 
+describe('pageTitle', () => {
+  test('puts the title through the template, or leaves it alone without one', () => {
+    expect(pageTitle('Database', ':title | Piwi for Playwright')).toBe('Database | Piwi for Playwright');
+    expect(pageTitle('Piwi: self-hosted Playwright dashboard', false)).toBe('Piwi: self-hosted Playwright dashboard');
+  });
+});
+
 describe('every docs page', () => {
   const pages = (function walk(dir: string): string[] {
     return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -124,6 +133,18 @@ describe('every docs page', () => {
       [...block.matchAll(/^(\w+):\s*(.*)$/gm)].map(([, key, value]) => [key, value.replace(/^(['"])(.*)\1$/, '$2')]),
     );
   };
+
+  // Search engines cut a title past about 60 characters, and "Playwright" is the word a search for this site holds.
+  test.each(pages.map((path) => relative(docsRoot, path)))('%s has a search title', (page) => {
+    const markdown = readFileSync(join(docsRoot, page), 'utf8');
+    const fields = frontmatter(markdown);
+    const heading = /^# (.+)$/m.exec(markdown.replace(/^(```|~~~)[\s\S]*?^\1/gm, ''))?.[1];
+    const template = fields.titleTemplate === 'false' ? false : (fields.titleTemplate ?? TITLE_TEMPLATE);
+    const title = pageTitle(fields.title || heading || '', template);
+    const fix = `give ${page} a shorter title, or a frontmatter title and titleTemplate (apps/docs/AGENTS.md)`;
+    expect(title.length, `"${title}" is ${title.length} characters: ${fix}`).toBeLessThanOrEqual(60);
+    expect(title, `"${title}" does not name Playwright: ${fix}`).toContain('Playwright');
+  });
 
   test.each(pages.map((path) => relative(docsRoot, path)))('%s has a search description', (page) => {
     const markdown = readFileSync(join(docsRoot, page), 'utf8');
