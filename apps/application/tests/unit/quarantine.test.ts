@@ -343,6 +343,27 @@ describe('debt', () => {
     expect(debt.stillFailing).toBe(1);
     expect(debt.readyToRelease).toBe(0);
   });
+
+  test('counts as still failing only a test that failed in the newest run that ran it', async () => {
+    const skippedOnly = await seedCase('skipped since quarantine');
+    const failedThenSkipped = await seedCase('failed, then skipped');
+    const flakyLast = await seedCase('failed, then passed on a retry');
+    for (const caseId of [skippedOnly, failedThenSkipped, flakyLast]) await addQuarantine(db, 1, caseId);
+
+    await seedExecution(skippedOnly, 'skipped');
+    await seedExecution(skippedOnly, 'didnotrun');
+    await seedExecution(failedThenSkipped, 'failed');
+    await seedExecution(failedThenSkipped, 'skipped');
+    await seedExecution(flakyLast, 'failed');
+    await seedRun(flakyLast, [
+      { status: 'failed', retries: 0 },
+      { status: 'passed', retries: 1 },
+    ]);
+
+    const { debt } = await listQuarantine(db, 1);
+    // A test that never ran since is unknown, and one that last passed on a retry is flaky, not broken.
+    expect(debt.stillFailing).toBe(1);
+  });
 });
 
 describe('releaseQuarantine', () => {

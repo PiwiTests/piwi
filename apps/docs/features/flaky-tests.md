@@ -127,7 +127,7 @@ list only grows.
   of 40+, ranked by impact; a high-confidence AI diagnosis calling the test flaky adds a reason. A 200 ms flake
   costs nothing; one burning a four-minute timeout weekly hurts.
 - **Debt** is reported in aggregate: how many are quarantined, how many are ready to release, how long the oldest has
-  been in, and how many still have no passing streak at all.
+  been in, and how many failed in the latest run that ran them.
 
 **Dismiss** turns down either proposal, with an optional reason, and changes nothing else; a dismissed candidate
 returns after a newer run. Agents call [`dismiss_quarantine_proposal`](/reference/mcp-tools#dismiss_quarantine_proposal)

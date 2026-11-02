@@ -68,7 +68,7 @@ export interface QuarantineDebt {
   readyToRelease: number;
   /** Age of the oldest active quarantine, in ms. */
   oldestAgeMs: number;
-  /** Entries with no passing streak at all — still genuinely broken. */
+  /** Entries that failed in the newest run that ran them — still genuinely broken. */
   stillFailing: number;
 }
 
@@ -99,6 +99,16 @@ export async function countQuarantinedClusterTests(
       ),
     );
   return Number(row?.tests ?? 0);
+}
+
+/** A quarantined test's runs since the quarantine, as its exit progress reads them. */
+interface Streak {
+  /** Consecutive runs it passed, counted back from the newest. */
+  passes: number;
+  /** The runs that recorded it, the newest `STREAK_SCAN_LIMIT` at most. */
+  runs: number;
+  /** It failed in the newest run that ran it. */
+  failing: boolean;
 }
 
 /** An attempt row of a quarantined test, as the streak reads it. */
@@ -142,11 +152,7 @@ function runOutcome(rows: StreakRow[]): 'passed' | 'flaky' | 'failed' | null {
  * project's runs the use leaves out are listed once for it
  * (`eligibleExecutionInProject`).
  */
-async function computeStreaks(
-  db: DrizzleDB,
-  projectId: number,
-  testCaseId?: number,
-): Promise<Map<number, { passes: number; runs: number }>> {
+async function computeStreaks(db: DrizzleDB, projectId: number, testCaseId?: number): Promise<Map<number, Streak>> {
   const ranked = db
     .select({
       testCaseId: testRunsCases.testCaseId,
@@ -193,7 +199,7 @@ async function computeStreaks(
     (runs[Number(row.runRank) - 1] ??= []).push(row);
   }
 
-  const streaks = new Map<number, { passes: number; runs: number }>();
+  const streaks = new Map<number, Streak>();
   for (const [caseId, runs] of byCase) {
     const outcomes = runs.map(runOutcome);
     let passes = 0;
@@ -202,7 +208,8 @@ async function computeStreaks(
       if (outcome !== 'passed') break;
       passes++;
     }
-    streaks.set(caseId, { passes, runs: outcomes.length });
+    const latest = outcomes.find((outcome) => outcome !== null);
+    streaks.set(caseId, { passes, runs: outcomes.length, failing: latest === 'failed' });
   }
 
   return streaks;
@@ -214,7 +221,7 @@ function toMs(value: Date | string | number): number {
 
 /** An active entry's exit progress: its passing streak, and a verified fix made since the quarantine. */
 interface ReleaseProgress {
-  streak: { passes: number; runs: number };
+  streak: Streak;
   verifiedFix: VerifiedFix | null;
   /** The streak cleared the threshold. */
   earned: boolean;
@@ -234,7 +241,7 @@ async function releaseProposals(
   );
   const out = new Map<number, ReleaseProgress>();
   for (const entry of entries) {
-    const streak = streaks.get(entry.testCaseId) ?? { passes: 0, runs: 0 };
+    const streak = streaks.get(entry.testCaseId) ?? { passes: 0, runs: 0, failing: false };
     const fix = fixes.get(entry.testCaseId);
     // Only a fix verified after the test was quarantined says it earned its way out.
     const verifiedFix = fix && new Date(fix.verifiedAt).getTime() >= toMs(entry.createdAt) ? fix : null;
@@ -298,7 +305,7 @@ export async function listQuarantine(
     active: entries.length,
     readyToRelease: entries.filter((entry) => entry.releaseProposed).length,
     oldestAgeMs: entries.reduce((max, entry) => Math.max(max, entry.ageMs), 0),
-    stillFailing: entries.filter((entry) => entry.runsSinceQuarantine > 0 && entry.consecutivePasses === 0).length,
+    stillFailing: entries.filter((entry) => proposals.get(entry.testCaseId)!.streak.failing).length,
   };
 
   return { entries, debt };

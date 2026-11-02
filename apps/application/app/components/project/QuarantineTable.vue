@@ -132,7 +132,7 @@ async function release(testCaseId: number) {
             :value-class="data.debt.readyToRelease > 0 ? 'text-green-600 dark:text-green-400' : ''"
             hint="earned their way out"
           />
-          <StatTile label="Still failing" :value="data.debt.stillFailing" hint="no passing streak" />
+          <StatTile label="Still failing" :value="data.debt.stillFailing" hint="failed their latest run" />
           <StatTile label="Oldest" :value="formatAge(data.debt.oldestAgeMs)" size="sm" />
         </StatTileGrid>
 
