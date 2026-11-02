@@ -201,20 +201,22 @@ export async function reclusterFailureFingerprints(db: DrizzleDB): Promise<{ upd
   let updated = 0;
   let merged = 0;
 
-  // Clusters oldest first, each read again at its turn: an earlier merge may
-  // have absorbed it.
-  const clusterIds = await db.select({ id: failureClusters.id }).from(failureClusters).orderBy(asc(failureClusters.id));
-  for (const { id } of clusterIds) {
-    const [cluster] = await db
-      .select({
-        projectId: failureClusters.projectId,
-        fingerprint: failureClusters.fingerprint,
-        sampleError: failureClusters.sampleError,
-        fingerprintSample: failureClusters.fingerprintSample,
-      })
-      .from(failureClusters)
-      .where(eq(failureClusters.id, id));
-    if (!cluster || isSplitFingerprint(cluster.fingerprint)) continue;
+  // Clusters oldest first.
+  const clusters = await db
+    .select({
+      id: failureClusters.id,
+      projectId: failureClusters.projectId,
+      fingerprint: failureClusters.fingerprint,
+      sampleError: failureClusters.sampleError,
+      fingerprintSample: failureClusters.fingerprintSample,
+    })
+    .from(failureClusters)
+    .orderBy(asc(failureClusters.id));
+  // The clusters a merge of this pass absorbed.
+  const absorbed = new Set<number>();
+  for (const cluster of clusters) {
+    const { id } = cluster;
+    if (absorbed.has(id) || isSplitFingerprint(cluster.fingerprint)) continue;
     // Prefer the frozen fingerprint source; older rows only have sampleError.
     const source = cluster.fingerprintSample ?? cluster.sampleError;
     if (!source) continue; // nothing to recompute from — leave as-is
@@ -229,6 +231,7 @@ export async function reclusterFailureFingerprints(db: DrizzleDB): Promise<{ upd
     let survivor = id;
     if (owner !== null && owner !== id) {
       survivor = await mergeIntoOlder(db, owner, id);
+      absorbed.add(survivor === id ? owner : id);
       merged++;
     }
     if (survivor === id) {
@@ -240,24 +243,26 @@ export async function reclusterFailureFingerprints(db: DrizzleDB): Promise<{ upd
 
   // Then the aliases, from the sample each keeps; one with none, or with a
   // split cluster's fingerprint, stays as it is.
-  const aliasIds = await db
-    .select({ id: failureClusterAliases.id })
+  const aliasRows = await db
+    .select({
+      id: failureClusterAliases.id,
+      fingerprint: failureClusterAliases.fingerprint,
+      fingerprintSample: failureClusterAliases.fingerprintSample,
+    })
     .from(failureClusterAliases)
     .orderBy(asc(failureClusterAliases.id));
-  for (const { id } of aliasIds) {
+  for (const { id, fingerprint, fingerprintSample } of aliasRows) {
+    if (!fingerprintSample || isSplitFingerprint(fingerprint)) continue;
+
+    const fp = await computeErrorFingerprint(fingerprintSample);
+    if (fp.fingerprint === fingerprint) continue;
+
+    // Read again: a merge of this pass may have moved it to another cluster, or removed it.
     const [alias] = await db
-      .select({
-        projectId: failureClusterAliases.projectId,
-        fingerprint: failureClusterAliases.fingerprint,
-        fingerprintSample: failureClusterAliases.fingerprintSample,
-        clusterId: failureClusterAliases.clusterId,
-      })
+      .select({ projectId: failureClusterAliases.projectId, clusterId: failureClusterAliases.clusterId })
       .from(failureClusterAliases)
       .where(eq(failureClusterAliases.id, id));
-    if (!alias?.fingerprintSample || isSplitFingerprint(alias.fingerprint)) continue;
-
-    const fp = await computeErrorFingerprint(alias.fingerprintSample);
-    if (fp.fingerprint === alias.fingerprint) continue;
+    if (!alias) continue;
 
     const owner = await clusterOf(db, alias.projectId, fp.fingerprint);
     if (owner === null) {
@@ -274,7 +279,7 @@ export async function reclusterFailureFingerprints(db: DrizzleDB): Promise<{ upd
       // The survivor reaches the fingerprint through the cluster or alias that has it.
       await db.delete(failureClusterAliases).where(eq(failureClusterAliases.id, id));
     }
-    await renameRouteFingerprint(db, alias.projectId, alias.fingerprint, fp.fingerprint);
+    await renameRouteFingerprint(db, alias.projectId, fingerprint, fp.fingerprint);
     updated++;
   }
 
