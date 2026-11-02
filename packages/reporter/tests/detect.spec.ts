@@ -58,6 +58,29 @@ describe('detectProject', () => {
     expect(detectProject(root).packageManager).toBe('yarn');
   });
 
+  it("reads a workspace package's package manager from its workspace's root", () => {
+    write('package.json', JSON.stringify({ name: 'shop', private: true, packageManager: 'pnpm@9.12.0' }));
+    write('pnpm-lock.yaml');
+    write('pnpm-workspace.yaml', 'packages:\n  - packages/*\n');
+    write('packages/e2e/package.json', JSON.stringify({ name: '@shop/e2e' }));
+    write('packages/e2e/playwright.config.ts');
+    const shape = detectProject(path.join(root, 'packages', 'e2e'));
+    expect(shape.packageManager).toBe('pnpm');
+    expect(installCommand(shape.packageManager)).toBe('pnpm add -D @piwitests/reporter');
+    // A lockfile alone names it too, and the nearest folder that names one wins.
+    write('apps/web/package.json', JSON.stringify({ name: 'web' }));
+    write('apps/web/yarn.lock');
+    write('apps/web/tests/e2e/package.json', JSON.stringify({ name: 'web-e2e' }));
+    expect(detectProject(path.join(root, 'apps', 'web', 'tests', 'e2e')).packageManager).toBe('yarn');
+  });
+
+  it('looks no further up than the repository root', () => {
+    write('yarn.lock');
+    write('repo/.git/HEAD', 'ref: refs/heads/main\n');
+    write('repo/package.json', JSON.stringify({ name: 'app' }));
+    expect(detectProject(path.join(root, 'repo')).packageManager).toBe('npm');
+  });
+
   it('defaults to npm and reports no config for a bare directory', () => {
     const shape = detectProject(root);
     expect(shape.packageManager).toBe('npm');

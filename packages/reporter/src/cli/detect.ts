@@ -62,14 +62,31 @@ function readPackageJson(root: string): { pkg: PackageJson | null; pkgPath: stri
   }
 }
 
-/** Corepack's `packageManager` field wins; then a lockfile; else npm. */
-function detectPackageManager(root: string, pkg: PackageJson | null): PackageManager {
+/** A folder's own sign of its package manager: Corepack's `packageManager` field wins, then a lockfile. */
+function declaredPackageManager(dir: string, pkg: PackageJson | null): PackageManager | null {
   const declared = pkg?.packageManager?.split('@')[0];
   if (declared === 'pnpm' || declared === 'yarn' || declared === 'bun' || declared === 'npm') return declared;
   for (const [file, manager] of LOCKFILES) {
-    if (fs.existsSync(path.join(root, file))) return manager;
+    if (fs.existsSync(path.join(dir, file))) return manager;
   }
-  return 'npm';
+  return null;
+}
+
+/**
+ * The package manager of the nearest folder that names one, from `root` up to the repository's root (the folder
+ * holding `.git`): a workspace package names none, its workspace's root does. Else npm.
+ */
+function detectPackageManager(root: string, pkg: PackageJson | null): PackageManager {
+  let dir = root;
+  let dirPkg = pkg;
+  for (;;) {
+    const manager = declaredPackageManager(dir, dirPkg);
+    if (manager) return manager;
+    const parent = path.dirname(dir);
+    if (parent === dir || fs.existsSync(path.join(dir, '.git'))) return 'npm';
+    dir = parent;
+    dirPkg = readPackageJson(dir).pkg;
+  }
 }
 
 function findConfig(root: string): string | null {
