@@ -50,9 +50,14 @@ const data = ref<RunInsightsResult | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
 
+// Each load counts itself, so an answer to an older baseline never replaces a newer one.
+let loadRequest = 0;
+
 async function load() {
+  const asked = ++loadRequest;
   if (!runId || isLive.value) {
     data.value = null;
+    loading.value = false;
     return;
   }
   loading.value = true;
@@ -62,11 +67,12 @@ async function load() {
     if (baselineId.value != null) params.set('baseline', String(baselineId.value));
     else if (baseBranch.value) params.set('baseBranch', baseBranch.value);
     const query = params.size > 0 ? `?${params.toString()}` : '';
-    data.value = await $fetch<RunInsightsResult>(`/api/test-runs/${runId}/insights${query}`);
+    const result = await $fetch<RunInsightsResult>(`/api/test-runs/${runId}/insights${query}`);
+    if (asked === loadRequest) data.value = result;
   } catch (e: any) {
-    error.value = e?.data?.message || e?.message || 'Failed to load changes';
+    if (asked === loadRequest) error.value = e?.data?.message || e?.message || 'Failed to load changes';
   } finally {
-    loading.value = false;
+    if (asked === loadRequest) loading.value = false;
   }
 }
 
