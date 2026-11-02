@@ -42,34 +42,32 @@ import { useTraceSnapshots } from '~/composables/useTraceSnapshots';
 import { useDomSnapshot, type DomSnapshotMoment } from '~/composables/useDomSnapshot';
 import DomSnapshotFrame from './DomSnapshotFrame.vue';
 
-const props = defineProps<{
-  testRunsCaseId: number;
-  /** The execution's attachments — the screenshot of the failing page when the trace has no 1.63 `screen` snapshot. */
-  attachments?: AttachmentInfo[] | null;
-  /** The execution's failure-time ARIA tree, shown when the trace carries no per-action aria. */
-  ariaSnapshot?: string | null;
-  /** Why the ARIA tree is absent, for the Screen tab's empty view. */
-  ariaState?: EvidenceState | null;
-  /** The ARIA tree was recovered from the trace rather than the capture fixtures. */
-  ariaDerived?: boolean;
-  /** The Screen tab's version: every view listed, every attached screenshot, larger frames. */
-  full?: boolean;
-  /** Views listed after the page's own; each renders the slot named by its `value`. */
-  extraViews?: Array<{ value: string; label: string; shown: boolean }>;
-  /** The failing step's label; the trace's action title stands in without it. */
-  step?: string | null;
-  /** The error raised at the failure, shown beside the enlarged page at the failure. */
-  error?: string | null;
-  /**
-   * The execution passed (or was skipped): it has no page at the failure, so its
-   * only screenshot is not taken for one and its several need no excuse. Left
-   * out, the execution counts as failed, as before (Vue reads a missing boolean
-   * prop as false, so the prop names the exception, not the rule).
-   */
-  passed?: boolean;
-  /** The test, named in the enlarged screenshot's details. */
-  subject?: LightboxSubject | null;
-}>();
+const props = withDefaults(
+  defineProps<{
+    testRunsCaseId: number;
+    /** The execution's attachments — the screenshot of the failing page when the trace has no 1.63 `screen` snapshot. */
+    attachments?: AttachmentInfo[] | null;
+    /** The execution's failure-time ARIA tree, shown when the trace carries no per-action aria. */
+    ariaSnapshot?: string | null;
+    /** Why the ARIA tree is absent, for the Screen tab's empty view. */
+    ariaState?: EvidenceState | null;
+    /** The ARIA tree was recovered from the trace rather than the capture fixtures. */
+    ariaDerived?: boolean;
+    /** The Screen tab's version: every view listed, every attached screenshot, larger frames. */
+    full?: boolean;
+    /** Views listed after the page's own; each renders the slot named by its `value`. */
+    extraViews?: Array<{ value: string; label: string; shown: boolean }>;
+    /** The failing step's label; the trace's action title stands in without it. */
+    step?: string | null;
+    /** The error raised at the failure, shown beside the enlarged page at the failure. */
+    error?: string | null;
+    /** The execution failed: only a failed execution has a page at the failure to show. */
+    failed?: boolean;
+    /** The test, named in the enlarged screenshot's details. */
+    subject?: LightboxSubject | null;
+  }>(),
+  { failed: true },
+);
 
 /** The view on show; null lets the component open on the first view with content. */
 const view = defineModel<string | null>('view', { default: null });
@@ -116,9 +114,8 @@ const attachedImages = computed(() =>
   (props.attachments ?? []).filter((att) => isImageFile(att.path, att.contentType)),
 );
 // The attached screenshot of the page the test failed on, when one is known to be.
-const executionFailed = computed(() => !props.passed);
 const failureImage = computed(() =>
-  failurePageScreenshot(attachedImages.value, (att) => att.name, { failed: executionFailed.value }),
+  failurePageScreenshot(attachedImages.value, (att) => att.name, { failed: props.failed }),
 );
 // Playwright names each of its screenshots `screenshot`: the file name tells them apart.
 function shotName(att: AttachmentInfo): string {
@@ -127,7 +124,7 @@ function shotName(att: AttachmentInfo): string {
   return att.path.split('/').pop() || att.path;
 }
 const attachedShots = computed<Shot[]>(() =>
-  failurePageFirst(attachedImages.value, (att) => att.name, { failed: executionFailed.value }).map((att) => ({
+  failurePageFirst(attachedImages.value, (att) => att.name, { failed: props.failed }).map((att) => ({
     src: fileApiUrl(att.path, att.contentType, config.app?.baseURL),
     name: shotName(att),
     failed: false,
@@ -135,7 +132,7 @@ const attachedShots = computed<Shot[]>(() =>
 );
 // Several screenshots, none known to show the page the test failed on.
 const unplacedShots = computed(
-  () => executionFailed.value && !traceShots.value.length && !failureImage.value && attachedImages.value.length > 1,
+  () => props.failed && !traceShots.value.length && !failureImage.value && attachedImages.value.length > 1,
 );
 
 // The failing step's screenshots: the trace's pair, else the attached screenshot

@@ -620,7 +620,7 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
             :aria-derived="ariaDerived"
             :extra-views="screenExtraViews"
             :error="testCase?.error ?? null"
-            :passed="status === 'passed' || status === 'skipped'"
+            :failed="status !== 'passed' && status !== 'skipped'"
             :subject="imageSubject"
           >
             <template #visual-diff>
