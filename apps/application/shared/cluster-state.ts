@@ -226,9 +226,9 @@ export function computeClusterState(cluster: ClusterStateCluster, project: Clust
   // Every test parked in quarantine: the cluster stays open until they are released.
   if (cluster.affectedTests > 0 && cluster.quarantinedTests >= cluster.affectedTests) {
     t(
-      `All ${cluster.affectedTests} test${cluster.affectedTests === 1 ? ' is' : 's are'} quarantined; the cluster stays open until ${
-        cluster.affectedTests === 1 ? 'it is' : 'they are'
-      } released.`,
+      cluster.affectedTests === 1
+        ? 'Its only test is quarantined; the cluster stays open until the test is released.'
+        : `All ${cluster.affectedTests} tests are quarantined; the cluster stays open until they are released.`,
     );
     return done('quarantined', 'release');
   }
