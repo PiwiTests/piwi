@@ -54,7 +54,7 @@ async function act(id: number, action: 'approve' | 'reject') {
     await load();
     if (action === 'approve') emit('merged');
   } catch (e) {
-    toast.add({ title: 'Action failed', description: String((e as Error)?.message ?? e), color: 'error' });
+    toast.add({ title: 'Action failed', description: errorMessage(e), color: 'error' });
   } finally {
     pendingId.value = null;
   }

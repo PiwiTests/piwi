@@ -219,8 +219,7 @@ function createClusterDiagnosisStore(clusterId: number): ClusterDiagnosisStore {
     } catch (err: unknown) {
       const status = (err as { statusCode?: number })?.statusCode;
       if (status === 409) startPoll();
-      else
-        toast.add({ title: 'Diagnosis failed', description: String((err as Error)?.message ?? err), color: 'error' });
+      else toast.add({ title: 'Diagnosis failed', description: errorMessage(err), color: 'error' });
     } finally {
       posting.value = false;
     }
