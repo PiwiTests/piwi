@@ -916,12 +916,16 @@ export function parseTestCasesQuery(input?: URLSearchParams | Record<string, unk
   };
 }
 
+/** The start of the last `maxAgeDays` days. */
+function ageCutoff(maxAgeDays: number): Date {
+  return new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000);
+}
+
 /**
  * Test cases of `projectId` with an execution (outside lab runs, in the run
- * scope's runs when `scopeConditions` is set) in the last `maxAgeDays` days.
+ * scope's runs when `scopeConditions` is set) since `cutoff`.
  */
-function executedWithin(db: DrizzleDB, projectId: number, maxAgeDays: number, scopeConditions: SQL[] | null = null) {
-  const cutoff = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000);
+function executedWithin(db: DrizzleDB, projectId: number, cutoff: Date, scopeConditions: SQL[] | null = null) {
   return exists(
     db
       .select({ one: sql`1` })
@@ -977,7 +981,9 @@ function toEpochMs(value: Date | null): number | null {
  * `flaky` when any of the last 10 executions is a retry-pass, otherwise the
  * latest run's status (timeouts shown as failed, and failed when one of the
  * test's repetitions failed there), or `never-run`. Executions of lab runs
- * (probes, flake experiments) stay out of every aggregate.
+ * (probes, flake experiments) stay out of every aggregate. With `maxAgeDays`,
+ * the catalog lists the tests executed in the last `maxAgeDays` days, and every
+ * aggregate and the category read the executions of that period.
  */
 export async function getProjectTestCases(db: DrizzleDB, projectId: number, options: Partial<TestCasesQuery> = {}) {
   const {
@@ -998,6 +1004,8 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
 
   const scopeConditions = scope ? await projectRunScopeConditions(db, projectId, scope) : null;
   const realExecution = executionInProject(projectId, scopeConditions);
+  const since = maxAgeDays > 0 ? ageCutoff(maxAgeDays) : null;
+  const inPeriod = since ? gte(testRunsCases.createdAt, since) : undefined;
 
   // PostgreSQL returns COUNT and SUM (int8) and AVG and the pass-rate division
   // (numeric) as strings, and a timestamp aggregate unparsed: each selected
@@ -1012,7 +1020,7 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
         SELECT ${testRunsCases.status} AS s, ${testRunsCases.retries} AS r
         FROM ${testRunsCases}
         WHERE ${testRunsCases.testCaseId} = ${testCases.id}
-          AND ${realExecution}
+          AND ${inPeriod ? and(realExecution, inPeriod) : realExecution}
         ORDER BY ${testRunsCases.createdAt} DESC
         LIMIT 10
       ) AS recent WHERE s = 'passed' AND r > 0
@@ -1050,7 +1058,7 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
     const suffix = `%/${file.replace(/[\\%_]/g, (c) => `\\${c}`)}`;
     conditions.push(or(eq(testCases.filePath, file), sql`${testCases.filePath} LIKE ${suffix} ESCAPE '\\'`)!);
   }
-  if (maxAgeDays > 0) conditions.push(executedWithin(db, projectId, maxAgeDays, scopeConditions));
+  if (since) conditions.push(executedWithin(db, projectId, since, scopeConditions));
   if (statuses && statuses.length > 0) {
     conditions.push(inArray(category, statuses));
   }
@@ -1157,6 +1165,7 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
       and(
         eq(testCases.id, testRunsCases.testCaseId),
         scopedExecutionInProjectJoin(projectId, testRunsCases.testRunId, scopeConditions ?? []),
+        inPeriod,
         // PostgreSQL does not carry the page's ids across the join: named on the executions too,
         // they are read through the test case index instead of a scan of every execution.
         pageIds ? inArray(testRunsCases.testCaseId, pageIds) : undefined,
@@ -1191,7 +1200,7 @@ export async function getProjectTestCaseFacets(
   const conditions = [eq(testCases.projectId, projectId)];
   if (maxAgeDays > 0) {
     const scopeConditions = options.scope ? await projectRunScopeConditions(db, projectId, options.scope) : null;
-    conditions.push(executedWithin(db, projectId, maxAgeDays, scopeConditions));
+    conditions.push(executedWithin(db, projectId, ageCutoff(maxAgeDays), scopeConditions));
   }
   const rows: any[] = await db
     .select({

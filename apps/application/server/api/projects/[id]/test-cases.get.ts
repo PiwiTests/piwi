@@ -111,7 +111,8 @@ defineRouteMeta({
         in: 'query',
         required: false,
         schema: { type: 'integer', default: 0, minimum: 0 },
-        description: 'Only include cases executed within the last N days (0 = all time)',
+        description:
+          'Only include cases executed within the last N days, each counted over its executions of those days (0 = all time)',
       },
       {
         name: 'sort',
