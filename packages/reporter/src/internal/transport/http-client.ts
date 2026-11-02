@@ -277,12 +277,17 @@ export class HttpClient {
           headers,
         },
         (res) => {
-          let data = '';
-          res.on('data', (chunk: string) => {
-            data += chunk;
+          // Decoded once whole: a character can span two chunks.
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => {
+            chunks.push(chunk);
           });
           res.on('end', () => {
-            resolve({ status: res.statusCode ?? 0, text: data, headers: res.headers });
+            resolve({
+              status: res.statusCode ?? 0,
+              text: Buffer.concat(chunks).toString('utf8'),
+              headers: res.headers,
+            });
           });
           // A connection dropped after the headers closes the response without
           // `end`; an incomplete body is a failed request, not a pending one.

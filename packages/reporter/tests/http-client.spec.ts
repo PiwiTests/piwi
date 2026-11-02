@@ -76,6 +76,22 @@ describe('HttpClient (against fake http.Server)', () => {
       }
     });
 
+    it('reads a character the answer splits across two chunks', async () => {
+      const body = Buffer.from(JSON.stringify({ title: 'café ✓' }));
+      const cut = body.indexOf(Buffer.from('é')) + 1;
+      const { server, url } = await startServer((_req, res) => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.write(body.subarray(0, cut));
+        setTimeout(() => res.end(body.subarray(cut)), 30);
+      });
+      try {
+        const client = new HttpClient(url, new Logger(false));
+        await expect(client.postJSON('/api/x', {}, null)).resolves.toEqual({ title: 'café ✓' });
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    });
+
     it('resolves to {} when the response body is not JSON', async () => {
       const { server, url } = await startServer((_req, res) => {
         res.writeHead(200, { 'Content-Type': 'text/plain' });
