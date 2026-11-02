@@ -273,7 +273,9 @@ export type DidNotRunReason = 'previous-failure' | 'global-timeout' | 'max-failu
  * `onTestEnd` fired). Derived from the overall run status plus the failure
  * count against `maxFailures`: a timed-out run stopped on the global timeout, a
  * run that hit its failure budget stopped on `maxFailures`, anything else that
- * cut the run short is a generic interruption.
+ * cut the run short is a generic interruption. `failures` counts tests as
+ * Playwright's `maxFailures` does: a test whose last attempt failed, once,
+ * however many attempts it made.
  */
 export function resolveUnrunReason(
   runStatus: string | undefined,

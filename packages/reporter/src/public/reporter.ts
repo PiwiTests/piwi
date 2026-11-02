@@ -140,6 +140,15 @@ function uncapturedCalls(steps: readonly TestStep[]): boolean {
 const MAX_UNCAPTURED_NAMED = 5;
 
 /**
+ * Whether a test's attempts read as Playwright's `unexpected` outcome: every attempt that was not interrupted failed
+ * or timed out (statuses as `classifyStatus` stores them).
+ */
+function failedEveryAttempt(attempts: ReadonlyArray<{ status: string }>): boolean {
+  const ran = attempts.filter((attempt) => attempt.status !== 'interrupted');
+  return ran.length > 0 && ran.every((attempt) => attempt.status === 'failed' || attempt.status === 'timedOut');
+}
+
+/**
  * Piwi Dashboard Playwright reporter.
  *
  * Collects test results, metadata, performance metrics and trace files, then
@@ -161,6 +170,8 @@ export class PiwiDashboardReporter {
   private skippedTests = 0;
   private timedOutTests = 0;
   private didNotRunTests = 0;
+  /** Tests whose last attempt failed, as every attempt before it did: what Playwright's `maxFailures` counts. */
+  private failedTestCount = 0;
   /** Full set of tests Playwright planned to run this shard (captured in `onBegin`). */
   private plannedTests: TestCase[] = [];
   /** Ids of tests that actually reported via `onTestEnd`, to find the ones that never ran. */
@@ -729,6 +740,7 @@ export class PiwiDashboardReporter {
       startedAt: result.startTime ? result.startTime.getTime() : null,
     });
     this.attemptsByTest.set(test.id, attempts);
+    if (result.retry >= (test.retries ?? 0) && failedEveryAttempt(attempts)) this.failedTestCount++;
 
     const testCase: CollectedTestCase = {
       type: 'complete',
@@ -1082,7 +1094,7 @@ export class PiwiDashboardReporter {
     // the global timeout, the failure budget, or an interruption.
     const unrunReason = resolveUnrunReason(result?.status, {
       maxFailures: this.maxFailures,
-      failures: this.failedTests + this.timedOutTests,
+      failures: this.failedTestCount,
     });
     this.materializeUnrunTests(unrunReason);
     // Printed before the submit, so a slow or failed upload never hides it.
