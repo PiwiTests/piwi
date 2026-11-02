@@ -1,4 +1,5 @@
 import type { ProjectOverview } from '~~/types/api';
+import type { RecentRunCount } from '#shared/handlers/test-runs';
 import { projectHealth } from '#shared/project-health';
 
 /**
@@ -33,4 +34,18 @@ export function overviewInEnvironments(projects: ProjectOverview[], environments
       };
     })
     .filter((project) => project.recentRuns.length > 0);
+}
+
+/** How many of the counted runs home's filters keep: the picked environments (every one when none), full runs only when it says so. */
+export function runsInFilters(
+  counts: readonly RecentRunCount[],
+  filters: { environments: string[]; fullRunsOnly: boolean },
+): number {
+  let runs = 0;
+  for (const c of counts) {
+    if (filters.fullRunsOnly && !c.isFullRun) continue;
+    if (filters.environments.length > 0 && !(c.environment && filters.environments.includes(c.environment))) continue;
+    runs += c.runs;
+  }
+  return runs;
 }

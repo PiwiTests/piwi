@@ -370,6 +370,7 @@ import { toIssueLocale } from '#shared/integrations/messages';
 import {
   getTestRun,
   getRecentTestRuns,
+  countRunsLast24h,
   patchTestRun,
   parseTestRunPatch,
   getNetworkRequests,
@@ -1163,7 +1164,13 @@ const routes: RouteEntry[] = [
   {
     method: 'GET',
     pattern: /^\/api\/test-runs\/recent$/,
-    handler: async (_, __, ___, ctx) => ({ items: await getRecentTestRuns(await getDemoDb(), ctx?.scope) }),
+    handler: async (_, __, ___, ctx) => {
+      const db = await getDemoDb();
+      return {
+        items: await getRecentTestRuns(db, ctx?.scope),
+        runsLast24h: await countRunsLast24h(db, ctx?.scope),
+      };
+    },
   },
   {
     method: 'GET',

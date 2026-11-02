@@ -1,4 +1,4 @@
-import { eq, sql, desc, and, isNotNull, inArray, or, notInArray, count, lt, getTableColumns } from 'drizzle-orm';
+import { eq, sql, desc, and, isNotNull, inArray, or, notInArray, count, lt, gte, getTableColumns } from 'drizzle-orm';
 import {
   testRuns,
   testCases,
@@ -380,6 +380,39 @@ export async function getRecentTestRuns(db: DrizzleDB, scope: ProjectScope = 'al
     }
   }
   return result;
+}
+
+/** Runs started in the last 24 hours, counted per environment and run kind. */
+export interface RecentRunCount {
+  environment: string | null;
+  isFullRun: boolean;
+  runs: number;
+}
+
+/**
+ * The runs started in the 24 hours before `now` across the scope, lab runs
+ * left out, counted per environment and run kind (full or partial): home's
+ * runs today, under whichever environment filter and run kind it shows. Every
+ * run counts, not only the ones the recent list holds.
+ */
+export async function countRunsLast24h(
+  db: DrizzleDB,
+  scope: ProjectScope = 'all',
+  now = Date.now(),
+): Promise<RecentRunCount[]> {
+  if (scope !== 'all' && scope.size === 0) return [];
+  const since = new Date(now - 24 * 60 * 60 * 1000);
+  const inScope = scope === 'all' ? undefined : inArray(testRuns.projectId, [...scope]);
+  const rows = await db
+    .select({ environment: testRuns.environment, isFullRun: testRuns.isFullRun, runs: count() })
+    .from(testRuns)
+    .where(and(gte(testRuns.startTime, since), notLabRun(testRuns.origin), inScope))
+    .groupBy(testRuns.environment, testRuns.isFullRun);
+  return rows.map((row: { environment: string | null; isFullRun: number | null; runs: number }) => ({
+    environment: row.environment ?? null,
+    isFullRun: row.isFullRun !== 0,
+    runs: Number(row.runs),
+  }));
 }
 
 /**

@@ -2,7 +2,8 @@
 import type { FilterBarState } from '~/components/shared/FilterBar.vue';
 import type { OpenFailureCluster, ProjectOverview, TestRunForChart } from '~~/types/api';
 import { errorMessage } from '~/utils';
-import { overviewInEnvironments } from '~/utils/home-overview';
+import { overviewInEnvironments, runsInFilters } from '~/utils/home-overview';
+import type { RecentRunCount } from '#shared/handlers/test-runs';
 import type { FlakeLabInboxItem } from '#shared/handlers/flake-lab';
 
 useHead({ title: 'Piwi Dashboard' });
@@ -21,13 +22,11 @@ const {
   transform: (r: { items: ProjectOverview[] }) => r.items,
 });
 const {
-  data: recentTestRuns,
+  data: recentAnswer,
   error: recentRunsError,
   refresh: refreshRecentRuns,
-} = useFetch('/api/test-runs/recent', {
-  lazy: true,
-  transform: (r: { items: TestRunForChart[] }) => r.items,
-});
+} = useFetch<{ items: TestRunForChart[]; runsLast24h?: RecentRunCount[] }>('/api/test-runs/recent', { lazy: true });
+const recentTestRuns = computed(() => recentAnswer.value?.items);
 
 // Open failure clusters across the visible projects — the "Open failures" card. The clusters seen only in
 // developers' own runs stay out unless the viewer asks for them.
@@ -155,8 +154,8 @@ const overviewStats = computed(() => {
   }
   const avgPassRate = totalTests > 0 ? Math.round((totalPassed / totalTests) * 100) : null;
 
-  const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
-  const runs24h = filteredRecentRuns.value.filter((r) => new Date(r.startTime).getTime() > oneDayAgo).length;
+  // Every run of the last 24 hours within the filters, not only the ones the activity list holds.
+  const runs24h = runsInFilters(recentAnswer.value?.runsLast24h ?? [], filters.value);
 
   return { totalProjects, failingNow, flakyNow, avgPassRate, runs24h };
 });
