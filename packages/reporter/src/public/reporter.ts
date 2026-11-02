@@ -8,10 +8,12 @@ import {
   desktopReplacedServer,
   normalizeBoolEnv,
   usedDotEnv,
+  ignoredEnvValues,
   PIWI_DEFAULTED_CAPTURE_ENV,
   PIWI_ENV_KEYS,
   PIWI_RESOURCES_RESULTS_ENV,
   type DotEnvUse,
+  type IgnoredEnvValue,
 } from '../internal/config/env.js';
 import { PIWI_EDITOR_ENV, followEditor } from '../internal/config/editors.js';
 import type { PiwiDashboardOptions, ShardInfo } from './options.js';
@@ -211,6 +213,8 @@ export class PiwiDashboardReporter {
   private readonly desktopReplaced: string | null;
   /** The config folder's `.env` file and the connection variables taken from it, if any. */
   private readonly viaDotEnv: DotEnvUse | null;
+  /** The `PIWI_*` variables whose values could not be read, so their options kept their defaults. */
+  private readonly ignoredEnv: readonly IgnoredEnvValue[];
   private isFullRun = true;
   private filterDetails: FilterDetails | null = null;
   /** Configured `maxFailures` (0 = unlimited) — disambiguates an interrupted run's unrun reason. */
@@ -266,6 +270,7 @@ export class PiwiDashboardReporter {
     this.viaDesktopApp = usedDesktopDiscovery();
     this.desktopReplaced = desktopReplacedServer();
     this.viaDotEnv = usedDotEnv();
+    this.ignoredEnv = ignoredEnvValues();
     this.coverageSettings = coverageSettings(this.options);
 
     const logger = new Logger(this.options.verbose ?? false);
@@ -351,6 +356,9 @@ export class PiwiDashboardReporter {
       );
     }
     if (this.viaDotEnv) this.logger.debug(`Read ${this.viaDotEnv.keys.join(', ')} from ${this.viaDotEnv.file}.`);
+    for (const { name, value, fallback } of this.ignoredEnv) {
+      this.logger.warn(`${name}=${value} is not a number of 0 or more, so the default (${fallback}) applies.`);
+    }
     this.startTime = new Date().toISOString();
     this.testPathBase = configDirFromConfig(config);
     this.htmlReport = htmlReportFolder(config.reporter, this.testPathBase);

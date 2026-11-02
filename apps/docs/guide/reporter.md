@@ -108,9 +108,10 @@ Options go in the reporter's entry in `playwright.config.ts`, or in `wrapConfig`
 also be set with a `PIWI_*` environment variable, which fills in an option you left unset: an option in the config
 wins, except `PIWI_VERBOSE`, which overrides even an explicit `verbose` outside `wrapConfig`. `PIWI_DASHBOARD_URL`,
 `PIWI_API_KEY` and `PIWI_PROJECT_NAME` also come from the config folder's
-[`.env`](/reference/reporter-options#values-from-env), below the environment. [Reporter options](/reference/reporter-options)
-lists every option with its default and its variable, and [Test metadata](/reference/test-metadata) what the reporter
-records on its own.
+[`.env`](/reference/reporter-options#values-from-env), below the environment. A variable of a number option that does
+not hold a number of 0 or more (`PIWI_SUBMIT_TIMEOUT=15m`) is ignored with a warning, and the option keeps its
+default. [Reporter options](/reference/reporter-options) lists every option with its default and its variable, and
+[Test metadata](/reference/test-metadata) what the reporter records on its own.
 
 ### Finding the desktop app automatically
 
