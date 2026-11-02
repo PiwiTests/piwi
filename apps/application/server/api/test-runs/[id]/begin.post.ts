@@ -235,7 +235,7 @@ function swapShardToken(runId: number, metadata: unknown, setupToken: string, st
 
 /**
  * `metadata` with a sharded run's shard tokens once a shard began on `setupToken`, read from the `stored` metadata
- * (`swapShardToken`), and that shard no longer among those still in their global setup.
+ * (`swapShardToken`), and with the shards still in their global setup, that one left out.
  */
 function withBegunShard(
   runId: number,
