@@ -256,6 +256,16 @@ async function loadFailureSources(
   return result;
 }
 
+/** What `load` gives, else `fallback`: a run's notifications go out without an enrichment that failed. */
+async function orWithout<T>(what: string, load: Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await load;
+  } catch (error) {
+    console.error(`[notifications] Could not load the ${what} of a run notification; sending it without`, error);
+    return fallback;
+  }
+}
+
 /** The commit a run tested, from its metadata, linked on the project's repository when its host is known. */
 function runCommitOf(metadata: unknown, repositoryUrl: string | null): RunCommit | undefined {
   const sha = runCommit(metadata);
@@ -365,13 +375,15 @@ export async function loadRunPayload(db: DbClient, runId: number) {
           .sort((a, b) => a.executionId - b.executionId)
           .map((row) => ({ ...row, title: testTextLabel(row) }));
 
-  const history = await loadRunHistory(db, runRow, branch);
+  const history = await orWithout('run history', loadRunHistory(db, runRow, branch), [
+    { runId: runRow.id, status: runRow.status, failedTests: runRow.failedTests },
+  ]);
   const [resolvedOwners, sources, testHistories] = await Promise.all([
     resolveOwners<{ filePath: string; owner: string | null }>(db, runRow.projectId, [...failedAttempts, ...top]).catch(
       () => new Map(),
     ),
-    loadFailureSources(db, top),
-    loadTestHistories(db, history, top),
+    orWithout('failing code', loadFailureSources(db, top), new Map<number, FailureSource>()),
+    orWithout('test histories', loadTestHistories(db, history, top), new Map<string, HistoryOutcome[]>()),
   ]);
   const topFailures = buildTopFailures(
     top.map((row) => ({
