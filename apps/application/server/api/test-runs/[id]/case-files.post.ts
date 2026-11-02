@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { getDatabase, type DbClient } from '../../../database';
 import { testRuns, testCases, testRunsCases, files } from '../../../database/schema';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, isNull } from 'drizzle-orm';
 import { runEventBus } from '../../../utils/run-events';
 import { parseLocation } from '#shared/parse-location';
 import { validateAndReviveRun } from '../../../utils/revive-run';
@@ -26,6 +26,36 @@ defineRouteMeta({
     description:
       'Upload trace files and attachments for a specific test case during an active streaming run. Authenticated by the run stream token. Supports trace deduplication via SHA-256 hashing and is idempotent on retry.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+    requestBody: {
+      content: {
+        'multipart/form-data': {
+          schema: {
+            type: 'object',
+            properties: {
+              streamToken: { type: 'string', description: 'The run stream token, sent before any file part.' },
+              testCase: {
+                type: 'string',
+                description:
+                  'JSON `{ title, location, retries, repeatEachIndex, suitePath, projectName }` naming the execution the files belong to. `projectName` is the Playwright project it ran in (null for none); without the key, the latest execution of the test with these retries and repetition is taken, whatever its project.',
+              },
+              trace: { type: 'string', format: 'binary', description: 'A trace ZIP.' },
+              trace_hash: {
+                type: 'string',
+                description:
+                  'SHA-256 of the trace, checked against it; without a trace part, names a trace the project already stores.',
+              },
+              attach_meta: { type: 'string', description: 'JSON array of `{ name, contentType, originalName }`.' },
+              attach_file: {
+                type: 'string',
+                format: 'binary',
+                description: 'An attachment, in the order of `attach_meta`.',
+              },
+            },
+            required: ['streamToken', 'testCase'],
+          },
+        },
+      },
+    },
   },
 });
 
@@ -39,7 +69,9 @@ defineRouteMeta({
  *
  * Multipart fields:
  *  - streamToken   — run stream token, sent before any file part
- *  - testCase      — JSON { title, location, retries, repeatEachIndex, suitePath } identifying the run case
+ *  - testCase      — JSON { title, location, retries, repeatEachIndex, suitePath, projectName } identifying the
+ *                    run case; `projectName` is the Playwright project it ran in (`browser_name`, null for none),
+ *                    and without the key the test's latest execution with those retries and repetition is taken
  *  - trace         — optional trace ZIP file
  *  - trace_hash    — optional SHA-256 of the trace, checked against it; without a file,
  *                    names a trace the project already stores. The server hashes a
@@ -124,7 +156,14 @@ async function handleCaseFiles(
   const { fields } = multipart;
 
   let caseInfo:
-    | { title?: string; location?: string; retries?: number; repeatEachIndex?: number; suitePath?: string[] | null }
+    | {
+        title?: string;
+        location?: string;
+        retries?: number;
+        repeatEachIndex?: number;
+        suitePath?: string[] | null;
+        projectName?: string | null;
+      }
     | undefined;
   const rawCase = fields.get('testCase');
   if (rawCase !== undefined) {
@@ -185,6 +224,15 @@ async function handleCaseFiles(
     );
   const sharedCase = sharedCases[0];
 
+  // The Playwright project the execution ran in, when the reporter names it: each project runs the test.
+  const { projectName } = caseInfo;
+  const inProject =
+    typeof projectName === 'string'
+      ? eq(testRunsCases.browserName, await storedIdentity(projectName))
+      : projectName === null
+        ? isNull(testRunsCases.browserName)
+        : undefined;
+
   const runCaseRows = sharedCase
     ? await db
         .select({ id: testRunsCases.id })
@@ -195,6 +243,7 @@ async function handleCaseFiles(
             eq(testRunsCases.testCaseId, sharedCase.id),
             eq(testRunsCases.retries, retries),
             eq(testRunsCases.repeatEachIndex, repeatEachIndex),
+            inProject,
           ),
         )
         .orderBy(desc(testRunsCases.id))

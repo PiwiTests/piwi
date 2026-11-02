@@ -104,3 +104,42 @@ describe('POST /api/test-runs/:id/case-files', () => {
     expect(answer).toMatchObject({ executionId: execution!.id, attachments: 1 });
   });
 });
+
+describe('the execution a case-files upload lands on', () => {
+  const ranIn = (projectName: string) => ({
+    title: 'pays',
+    filePath: 'tests/pay.spec.ts',
+    status: 'failed',
+    line: 3,
+    column: 1,
+    retries: 0,
+    browser: { projectName, browserName: projectName },
+  });
+  const testCase = { title: 'pays', location: 'tests/pay.spec.ts:3:1', retries: 0, repeatEachIndex: 0 };
+  const attached = async () =>
+    (await db.select().from(schema.files)).map((file) => [file.testRunsCaseId, file.path.split('/').pop()]);
+
+  test('is the one of the Playwright project the upload names', async () => {
+    const [chromium, firefox] = await stream([ranIn('chromium'), ranIn('firefox')]);
+
+    await uploadScreenshot({ ...testCase, projectName: 'chromium' }, 'chromium.png');
+    await uploadScreenshot({ ...testCase, projectName: 'firefox' }, 'firefox.png');
+
+    expect(await attached()).toEqual([
+      [chromium!.id, 'chromium.png'],
+      [firefox!.id, 'firefox.png'],
+    ]);
+  });
+
+  test("is not another project's when the one named has no execution yet", async () => {
+    await stream([ranIn('firefox')]);
+
+    await expect(uploadScreenshot({ ...testCase, projectName: 'chromium' })).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  test('is found by the test alone when the upload names no project', async () => {
+    const [execution] = await stream([ranIn('chromium')]);
+
+    await expect(uploadScreenshot(testCase)).resolves.toMatchObject({ executionId: execution!.id });
+  });
+});
