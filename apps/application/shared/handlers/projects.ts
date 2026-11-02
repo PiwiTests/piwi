@@ -64,6 +64,7 @@ import { isFailedStatus } from '../utils/test-counts';
 import { getHoldingVerifiedFixes } from './flake-verified';
 import { fixmeSkipPredicate } from '../utils/skip-kind';
 import { latestRunStatusSql } from './latest-run-status';
+import { projectHealth } from '../project-health';
 import { TEST_PRIORITIES } from '@piwitests/core/test-meta';
 
 import type { DrizzleDB } from './db';
@@ -2189,21 +2190,11 @@ export async function getProjectFlakyTestsWithVerified(
 
 // ─── getProjectsOverview ─────────────────────────────────────────────────────
 
-const FAILING_STATUSES = ['failed', 'timedout', 'interrupted'];
-
-function deriveTendency(runs: { status: string; flakyTests: number }[]): 'passing' | 'flaky' | 'failing' | 'unknown' {
-  if (runs.length < 2) return 'unknown';
-  const latest = runs[runs.length - 1]!;
-  if (FAILING_STATUSES.includes(latest.status)) return 'failing';
-  const w = runs.slice(-5);
-  const hasFlaky = w.some((r) => (r.flakyTests ?? 0) > 0);
-  const anyFailed = w.some((r) => FAILING_STATUSES.includes(r.status));
-  const anyPassed = w.some((r) => r.status === 'passed');
-  if (hasFlaky || (anyFailed && anyPassed)) return 'flaky';
-  if (w.every((r) => r.status === 'passed')) return 'passing';
-  return 'unknown';
-}
-
+/**
+ * Each project with its last 20 full runs (its trend bars, oldest first), and
+ * its latest finished full run and tendency (`projectHealth`), which leave out a
+ * run still in progress.
+ */
 export async function getProjectsOverview(db: DrizzleDB, scope: ProjectScope = 'all') {
   const { ids: projectIds, projects: allProjects } = await getProjects(db, scope);
 
@@ -2289,7 +2280,7 @@ export async function getProjectsOverview(db: DrizzleDB, scope: ProjectScope = '
 
   return allProjects.map((project: any) => {
     const runs = runsByProjectId.get(project.id) ?? [];
-    const latest = runs.length > 0 ? runs[runs.length - 1] : null;
+    const { latest, tendency } = projectHealth(runs);
     return {
       id: project.id,
       name: project.name,
@@ -2318,7 +2309,7 @@ export async function getProjectsOverview(db: DrizzleDB, scope: ProjectScope = '
         startTime: r.startTime,
         environment: r.environment ?? null,
       })),
-      tendency: deriveTendency(runs),
+      tendency,
     };
   });
 }

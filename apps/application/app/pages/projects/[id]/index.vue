@@ -12,6 +12,7 @@ import type {
 import { RUN_STATUS_SERIES, legendOf } from '~/utils/chart';
 import { drillQueryKey, parseDrillQuery, type DrillScope } from '~/utils/analytics-drilldown';
 import { projectRunScopeQuery, runInProjectScope, type ProjectRunScope } from '#shared/project-run-scope';
+import { isRunFinished } from '#shared/project-health';
 import type { ProjectHeaderTarget } from '~/components/project/ProjectHeader.vue';
 import { COVERAGE_VIEW_KEYS } from '~/utils/coverage-tab';
 
@@ -265,9 +266,12 @@ const PASS_RATE_RUNS = 20;
 const newestFirst = (a: TestRunSummary, b: TestRunSummary) =>
   new Date(b.startTime).getTime() - new Date(a.startTime).getTime();
 
-const latestRun = computed(() => [...scopedRuns.value].sort(newestFirst)[0] ?? null);
+// A run still in progress has no outcome yet: the latest run is the newest finished one, else the one in progress,
+// and the pass rate reads finished runs only.
+const finishedRuns = computed(() => scopedRuns.value.filter((run) => isRunFinished(run.status)).sort(newestFirst));
+const latestRun = computed(() => finishedRuns.value[0] ?? [...scopedRuns.value].sort(newestFirst)[0] ?? null);
 
-const passRateRuns = computed(() => [...scopedRuns.value].sort(newestFirst).slice(0, PASS_RATE_RUNS));
+const passRateRuns = computed(() => finishedRuns.value.slice(0, PASS_RATE_RUNS));
 const passRate = computed(() => {
   let passed = 0;
   let total = 0;

@@ -44,11 +44,12 @@ first result, or with **New project**.
 ## Project detail
 
 `/projects/:id`: one project's history. The **header** names the project, its description and tags, and where it
-stands: the latest run and the pass rate of the last 20 runs, then the open clusters, flaky tests and quarantined
-tests, each a link. The **Filters** block under it (environment, branch, full runs only) scopes the header and every
-tab that reads run history; with no branch picked it reads the [default branch](./branches#the-default-branch), and a
-note counts the runs it hides. The **More** menu holds Edit, [Test functions](./test-functions),
-[Selections](./test-selection), [Import](/guide/importing-runs) and Delete. The tabs:
+stands: the latest finished run and the pass rate of the last 20 finished runs, then the open clusters, flaky tests
+and quarantined tests, each a link. The **Filters** block under it (environment, branch, full runs only) scopes the
+header and every tab that reads run history; with no branch picked it reads the
+[default branch](./branches#the-default-branch), and a note counts the runs it hides. The **More** menu holds Edit,
+[Test functions](./test-functions), [Selections](./test-selection), [Import](/guide/importing-runs) and Delete. The
+tabs:
 
 - **Runs**: the run trend chart, with its [timeline markers](./timeline-markers), over the filtered runs, and the runs table,
   25 runs to a page; select two runs and **Compare** to see [what changed](./run-changes) between them, or select any
