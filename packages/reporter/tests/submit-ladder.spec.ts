@@ -657,6 +657,22 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     expect(recovered.testCases[0].title).toBe('login-fail-test');
   });
 
+  it('a serverUrl that is not a whole http(s) URL leaves the reporter off with a warning, sending nothing', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const reporter = new PiwiDashboardReporter({ serverUrl: 'piwi.example.com', projectName });
+      await runOneTest(reporter, 'bad-url-test');
+
+      expect(warn.mock.calls.map((call) => String(call[0]))).toContain(
+        `[Piwi Dashboard] serverUrl "piwi.example.com" is not a URL: give the dashboard's whole address, such as https://piwi.example.com. Nothing is sent to the dashboard.`,
+      );
+      expect(fs.existsSync(recoveryFilePath('piwi.example.com', projectName))).toBe(false);
+    } finally {
+      warn.mockRestore();
+      fs.rmSync(recoveryFilePath('piwi.example.com', projectName), { force: true });
+    }
+  });
+
   it('a disabled reporter writes no attachment to disk and keeps no live stream', async () => {
     const reporter = new PiwiDashboardReporter({ serverUrl: 'http://127.0.0.1:1', projectName, enabled: false });
     const suite = fakeSuite();

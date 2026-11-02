@@ -23,7 +23,10 @@ export interface PiwiDashboardOptions {
   // ── Connection ─────────────────────────────────────────────────────────────
   /** Explicitly enable or disable the reporter. Defaults to `true` when `serverUrl` is set. Set to `false` to disable even if `serverUrl` is provided. */
   enabled?: boolean;
-  /** URL of the Piwi Dashboard server */
+  /**
+   * URL of the Piwi Dashboard server: a whole `http://` or `https://` address. Any other value leaves the reporter
+   * off, with a warning.
+   */
   serverUrl?: string;
   /**
    * When results go to the Piwi desktop app running on this machine instead.

@@ -17,7 +17,7 @@ import {
 } from '../internal/config/env.js';
 import { PIWI_EDITOR_ENV, followEditor } from '../internal/config/editors.js';
 import type { PiwiDashboardOptions, ShardInfo } from './options.js';
-import { HttpClient } from '../internal/transport/http-client.js';
+import { HttpClient, serverUrlProblem } from '../internal/transport/http-client.js';
 import { Uploader } from '../internal/submit/uploader.js';
 import { StreamBuffer } from '../internal/streaming/stream-buffer.js';
 import { CrashRecovery } from '../internal/streaming/crash-recovery.js';
@@ -201,6 +201,8 @@ export class PiwiDashboardReporter {
   /** Each planned test's external ID and the IDs two tests share, settled in `onBegin`. */
   private externalIds: ExternalIdPlan | null = null;
   private enabled: boolean;
+  /** Why the configured `serverUrl` cannot be used, which leaves the reporter off; null when it can. */
+  private readonly serverUrlProblem: string | null;
   /**
    * True under `playwright test --list`, where Playwright still constructs this
    * reporter and fires `onBegin`/`onEnd` but runs no tests. Registering and
@@ -265,7 +267,9 @@ export class PiwiDashboardReporter {
     // Playwright passes the config's folder to every reporter it constructs.
     const configDir = typeof rawOptions.configDir === 'string' ? rawOptions.configDir : undefined;
     this.options = resolveOptions(rawOptions, configDir);
-    this.enabled = this.options.enabled !== false && !!this.options.serverUrl;
+    this.serverUrlProblem =
+      this.options.enabled !== false && this.options.serverUrl ? serverUrlProblem(this.options.serverUrl) : null;
+    this.enabled = this.options.enabled !== false && !!this.options.serverUrl && !this.serverUrlProblem;
     this.listMode = isListMode();
     this.viaDesktopApp = usedDesktopDiscovery();
     this.desktopReplaced = desktopReplacedServer();
@@ -341,7 +345,8 @@ export class PiwiDashboardReporter {
       );
     }
     if (!this.enabled) {
-      this.logger.info('Not enabled — set PIWI_DASHBOARD_URL or serverUrl to enable.');
+      if (this.serverUrlProblem) this.logger.warn(`${this.serverUrlProblem} Nothing is sent to the dashboard.`);
+      else this.logger.info('Not enabled — set PIWI_DASHBOARD_URL or serverUrl to enable.');
       // A run the editor follows says why it cannot be shared live.
       if (!detectCi(process.env)) process.env[LIVE_VIEW_ENV] = formatLiveViewMissing('no-instance');
       return;

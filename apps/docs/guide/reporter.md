@@ -220,7 +220,7 @@ through [`wrapConfig`](#installing-via-wrapconfig).
 [Capture fixtures → Troubleshooting](./capture-fixtures#troubleshooting).
 
 **Connection errors.** Check that `serverUrl` answers from where the tests run; `PIWI_VERBOSE=true` logs every
-request. A run the reporter could not deliver (dashboard down, no credential, a sign-in page or a proxy answering in
+request. A `serverUrl` that is not a whole `http://` or `https://` address leaves the reporter off, with a warning. A run the reporter could not deliver (dashboard down, no credential, a sign-in page or a proxy answering in
 its place) is saved locally, owner-only, and sent to the same `serverUrl` on the project's next run, without traces
 or attachments; it never fails the Playwright run.
 An interrupted stream is retried, then sent as a batch.

@@ -321,6 +321,21 @@ describe('HttpClient (against fake http.Server)', () => {
     });
   });
 
+  describe('serverUrl', () => {
+    it('sends nothing to an address that is not a whole http:// or https:// URL', async () => {
+      const { server, url, requests } = await startServer((_req, res) => jsonRes(res, 200, { ok: true }));
+      try {
+        const request = (serverUrl: string) => new HttpClient(serverUrl, new Logger(false)).postJSON('/api/x', {}, null);
+        await expect(request(url.replace('http:', 'ftp:'))).rejects.toThrow('is not an http:// or https:// URL');
+        await expect(request('localhost:3000')).rejects.toThrow('is not an http:// or https:// URL');
+        await expect(request('piwi.example.com')).rejects.toThrow('"piwi.example.com" is not a URL');
+        expect(requests).toHaveLength(0);
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    });
+  });
+
   describe('insecure transport warning', () => {
     function warningsFor(url: string): string[] {
       const logger = new Logger(false);

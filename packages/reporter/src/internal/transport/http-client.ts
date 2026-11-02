@@ -67,6 +67,23 @@ export function deliveredRunId(answer: unknown, pathname: string): number | stri
   );
 }
 
+/**
+ * Why `serverUrl` cannot be the dashboard's address: it must be a whole `http://` or `https://` URL. Null when it
+ * can.
+ */
+export function serverUrlProblem(serverUrl: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(serverUrl);
+  } catch {
+    return `serverUrl "${serverUrl}" is not a URL: give the dashboard's whole address, such as https://piwi.example.com.`;
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    return `serverUrl "${serverUrl}" is not an http:// or https:// URL: give the dashboard's whole address, such as https://piwi.example.com.`;
+  }
+  return null;
+}
+
 /** Options for the unified `request()` core. */
 interface HttpRequestOptions {
   headers?: Record<string, string | number>;
@@ -274,11 +291,19 @@ export class HttpClient {
     return parseAnswer(pathname, res);
   }
 
-  /** Unified request core: transport, headers, auth, response accumulation, timeout. */
+  /**
+   * Unified request core: transport, headers, auth, response accumulation, timeout. Nothing is sent to a `serverUrl`
+   * that is not an `http://` or `https://` URL.
+   */
   private request(method: string, pathname: string, opts: HttpRequestOptions): Promise<HttpResponse> {
     return new Promise((resolve, reject) => {
       if (this.closedReason !== null) {
         reject(new Error(this.closedReason));
+        return;
+      }
+      const problem = serverUrlProblem(this.serverUrl);
+      if (problem) {
+        reject(new Error(problem));
         return;
       }
       const url = new URL(pathname, this.serverUrl);
