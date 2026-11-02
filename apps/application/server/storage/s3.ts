@@ -166,7 +166,14 @@ export class S3StorageAdapter implements StorageAdapter {
               Objects: listResult.Contents.map((obj) => ({ Key: obj.Key })),
             },
           });
-          await s3Client.send(deleteCommand);
+          // DeleteObjects answers 200 when keys could not be deleted: their errors are in the body.
+          const { Errors: errors = [] } = await s3Client.send(deleteCommand);
+          if (errors.length > 0) {
+            const [first] = errors;
+            throw new Error(
+              `${errors.length} object(s) could not be deleted, first ${first!.Key}: ${first!.Code} ${first!.Message ?? ''}`.trim(),
+            );
+          }
         }
 
         continuationToken = listResult.IsTruncated ? listResult.NextContinuationToken : undefined;
