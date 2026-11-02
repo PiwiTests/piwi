@@ -257,6 +257,9 @@ describe('the payload of a run notification, in edge cases', () => {
     ]);
     const [failure] = (await loadRunPayload(db as never, 30))!.runPayload.topFailures;
     expect(failure!.history).toEqual([null, 'interrupted', 'failed']);
+    // The run's counters leave it out; the payload counts it, so the outcome bar names it.
+    expect((await loadRunPayload(db as never, 5))!.runPayload.interruptedTests).toBe(1);
+    expect((await loadRunPayload(db as never, 30))!.runPayload.interruptedTests).toBe(0);
   });
 
   test("falls back to the test's snippet when the captured frame marks no failing line", async () => {

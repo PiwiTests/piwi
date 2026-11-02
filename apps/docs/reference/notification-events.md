@@ -51,6 +51,7 @@ For run events the payload includes up to three failing tests, so you can act wi
     "flakyTests": 2,
     "skippedTests": 3,
     "didNotRunTests": 0,
+    "interruptedTests": 0,
     "failingTestCount": 3,
     "branch": "main",
     "environment": "staging",
@@ -100,7 +101,7 @@ timeout. Slack and email messages lead with the headline, quote the excerpt and 
 The [pull-request comment](/features/pr-feedback) quotes failures the same way.
 
 A test is failing when the last attempt of one of its repetitions failed: a test that passed on a retry counts as flaky,
-never as a failure. `topFailures` names the first three, `failingTestCount` counts them all, each test once per
+never as a failure. `interruptedTests` counts the tests the run's interruption cut short, in none of the other counts. `topFailures` names the first three, `failingTestCount` counts them all, each test once per
 Playwright project however many of its `--repeat-each` repetitions failed (`failedTests` counts each failed repetition),
 and `owners` covers every failed attempt, so a team hears of its flaky test's failed first attempt. Each failure names its describe blocks (`suitePath`), the line it is declared on, its Playwright project
 (`browserName`) and its `owner`. `source` holds the lines around the line the failure threw at, as the reporter

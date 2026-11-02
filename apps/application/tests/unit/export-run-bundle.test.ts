@@ -9,6 +9,7 @@ import { migrateToLatest } from './temp-db';
 delete process.env.PIWI_DATABASE_URL;
 const { collectRunBundle } = await import('../../shared/export/collect');
 const { exportFileName } = await import('../../shared/export/build');
+const { runTestsByOutcome } = await import('../../shared/export/fields');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
 
@@ -123,6 +124,13 @@ describe('the bundle of a run export', () => {
     const bundle = (await collectRunBundle(db as never, 7, { maxCases: 25 }))!;
     expect(bundle.cases.map((c) => c.executionId)).toEqual([11, 14]);
     expect(bundle.run!.tests.find((t) => t.executionId === 16)).toMatchObject({ status: 'interrupted' });
+    // Its outcome bar names it, in no outcome.
+    expect(bundle.run!.detail).toMatchObject({ interruptedTests: 1 });
+    expect(runTestsByOutcome(bundle.run!.detail)!.segments).toContainEqual({
+      key: 'interrupted',
+      label: 'interrupted',
+      count: 1,
+    });
   });
 
   test('lists the failing tests past the cap by name', async () => {

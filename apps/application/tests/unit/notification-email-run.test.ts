@@ -263,6 +263,16 @@ describe('the email blocks', () => {
     ]);
   });
 
+  test('a run names its interrupted tests apart from the ones it never reported', () => {
+    const counts = { totalTests: 10, passedTests: 6, failedTests: 0, flakyTests: 0, didNotRunTests: 1 };
+    expect(runSegments({ ...counts, interruptedTests: 2 })).toEqual([
+      { key: 'passed', label: 'passed', count: 6 },
+      { key: 'didnotrun', label: "didn't run", count: 1 },
+      { key: 'interrupted', label: 'interrupted', count: 2 },
+      { key: 'fixme', label: 'not reported', count: 1 },
+    ]);
+  });
+
   test('the outcome bar gives a tiny share a visible width', () => {
     const bar = outcomeBar(runSegments({ passedTests: 999, failedTests: 1, flakyTests: 0 }), 1000);
     const widths = [...bar.matchAll(/<td width="([\d.]+)%"/g)].map((m) => Number(m[1]));

@@ -301,8 +301,9 @@ const NOT_REPORTED: StatusColorKey = 'fixme';
 /**
  * A run's tests split by outcome, in the dashboard's order, empty outcomes
  * left out. Flaky tests are a part of the passed ones, counted apart from them.
- * The tests a run counted but never reported (an interrupted run stops before
- * them) come last, as not reported.
+ * The tests the run's interruption cut short, in no outcome, are named as
+ * interrupted, and the tests a run counted but never reported (an interrupted
+ * run stops before them) come last, as not reported.
  */
 export function runSegments(counts: {
   totalTests?: number;
@@ -311,6 +312,7 @@ export function runSegments(counts: {
   flakyTests: number;
   skippedTests?: number;
   didNotRunTests?: number;
+  interruptedTests?: number;
 }): OutcomeSegment[] {
   const reported: OutcomeSegment[] = [
     { key: 'passed', label: 'passed', count: Math.max(0, (counts.passedTests ?? 0) - (counts.flakyTests ?? 0)) },
@@ -318,6 +320,7 @@ export function runSegments(counts: {
     { key: 'flaky', label: 'flaky', count: counts.flakyTests ?? 0 },
     { key: 'skipped', label: 'skipped', count: counts.skippedTests ?? 0 },
     { key: 'didnotrun', label: "didn't run", count: counts.didNotRunTests ?? 0 },
+    { key: 'interrupted', label: 'interrupted', count: counts.interruptedTests ?? 0 },
   ];
   const sum = reported.reduce((total, s) => total + s.count, 0);
   const missing = (counts.totalTests ?? 0) - sum;

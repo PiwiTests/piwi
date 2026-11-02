@@ -1,5 +1,5 @@
 import { testTextLabel } from '#shared/utils/test-label';
-import { eq, and, lt, desc, inArray, isNotNull, isNull, ne, or } from 'drizzle-orm';
+import { eq, and, count, lt, desc, inArray, isNotNull, isNull, ne, or } from 'drizzle-orm';
 
 /** Failures scanned for ownership; well past what any comment or digest lists. */
 const OWNER_LOOKUP_LIMIT = 200;
@@ -405,6 +405,11 @@ export async function loadRunPayload(db: DbClient, runId: number) {
 
   const commit = runCommitOf(runRow.metadata, project.repositoryUrl);
   const ciUrl = runCiUrl(runRow.metadata);
+  // The run's counters leave its interrupted tests out: counted here so its outcome bar names them.
+  const [interrupted] = await db
+    .select({ tests: count() })
+    .from(testRunsCases)
+    .where(and(eq(testRunsCases.testRunId, runId), eq(testRunsCases.status, 'interrupted')));
   const runPayload = {
     runId,
     projectId: runRow.projectId,
@@ -416,6 +421,7 @@ export async function loadRunPayload(db: DbClient, runId: number) {
     flakyTests: runRow.flakyTests,
     skippedTests: runRow.skippedTests,
     didNotRunTests: runRow.didNotRunTests,
+    interruptedTests: Number(interrupted?.tests ?? 0),
     flakinessRate: runRow.totalTests > 0 ? runRow.flakyTests / runRow.totalTests : 0,
     durationMs: runRow.duration ?? undefined,
     branch,

@@ -128,6 +128,7 @@ export function runTestsByOutcome(
     flakyTests: Number(run.flakyTests ?? 0),
     skippedTests: Number(run.skippedTests ?? 0),
     didNotRunTests: Number(run.didNotRunTests ?? 0),
+    interruptedTests: Number(run.interruptedTests ?? 0),
   });
   return { segments, total };
 }

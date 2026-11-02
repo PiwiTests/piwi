@@ -161,6 +161,8 @@ export interface RunFinishedPayload extends RunScope {
   flakyTests: number;
   skippedTests?: number;
   didNotRunTests?: number;
+  /** Tests the run's interruption cut short: in no outcome, so in none of the counts above. */
+  interruptedTests?: number;
   isDefaultBranch?: boolean;
   flakinessRate?: number; // 0-1
   /** Duration of the run in milliseconds. */
