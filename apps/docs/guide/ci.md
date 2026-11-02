@@ -134,11 +134,16 @@ If your CI isn't detected, set the label yourself to anything common to all shar
 A job that is not sharded adds the CI job's id (`GITHUB_JOB`, `CI_JOB_ID`, …) to its run label, so a GitLab
 `e2e:chrome` and `e2e:firefox` reporting to one `projectName` stay two runs. The legs of a GitHub Actions matrix
 share one job id, and Jenkins, TeamCity and Drone expose none: give each leg its own label, or its own `projectName`.
-A configured label is used as it is, so the shards of a leg still merge:
+On GitHub Actions, `strategy.job-index` numbers the jobs of a matrix, whatever its keys:
 
 ```yaml
-PIWI_RUN_LABEL: ${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.browser }}
+PIWI_RUN_LABEL: ${{ github.run_id }}-${{ github.run_attempt }}-${{ strategy.job-index }}
 ```
+
+A configured label is used as it is, so each job of the matrix gets a run of its own, a shard too. When the legs are
+themselves sharded (`shard: [1, 2, 3]` beside `browser`), put the leg's keys in the label instead (`matrix.browser`):
+the shards of a leg share them, and merge into one run. Two matrix jobs of one workflow that report to one
+`projectName` also need `github.job` in the label, since each numbers its jobs from 0.
 
 Jobs left sharing a label cancel each other's live runs: the reporter of a cancelled run stops streaming and sends its
 results in one batch at the end of its job, so each job still ends in one complete run, without its live view.
