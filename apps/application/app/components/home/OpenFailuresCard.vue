@@ -8,6 +8,8 @@ import {
   effectiveAssignee,
   groupIncidentClusters,
   inboxIdentity,
+  keepInboxFocus,
+  moveInboxFocus,
   type InboxQueue,
   type SnoozeOption,
   type UserIdentity,
@@ -76,7 +78,7 @@ const queue = computed<InboxQueue>({
     if (value === 'all') delete query.queue;
     else query.queue = value;
     router.replace({ query });
-    selectedIndex.value = -1;
+    focusedId.value = null;
   },
 });
 
@@ -170,9 +172,14 @@ const hints = computed(() => {
   };
 });
 
-watch([visibleRows, queue], () => {
-  if (selectedIndex.value >= visibleRows.value.length) selectedIndex.value = visibleRows.value.length - 1;
-});
+// The list reloads and reorders on every run event: the focus stays on its
+// cluster, and moves to the row in its place when that cluster leaves.
+watch(
+  () => visibleRows.value.map((c) => c.id),
+  (ids, previousIds) => {
+    focusedId.value = keepInboxFocus(ids, previousIds ?? [], focusedId.value);
+  },
+);
 
 // ── Row helpers ──────────────────────────────────────────────────────────────
 
@@ -210,7 +217,8 @@ const knownPeople = computed(() => {
 
 // ── Selection ────────────────────────────────────────────────────────────────
 
-const selectedIndex = ref(-1);
+/** The cluster the keyboard acts on, by id, so a reorder never retargets a key. */
+const focusedId = ref<number | null>(null);
 const selectedIds = ref(new Set<number>());
 
 const selectedClusters = computed(() => rows.value.filter((c) => selectedIds.value.has(c.id)));
@@ -228,10 +236,12 @@ function toggleSelect(cluster: OpenFailureCluster): void {
 function extendSelection(dir: 1 | -1): void {
   const list = visibleRows.value;
   if (list.length === 0) return;
-  if (selectedIndex.value < 0) selectedIndex.value = 0;
-  const next = Math.min(list.length - 1, Math.max(0, selectedIndex.value + dir));
-  selectedIndex.value = next;
-  const target = list[next];
+  focusedId.value = moveInboxFocus(
+    list.map((c) => c.id),
+    focusedId.value,
+    dir,
+  );
+  const target = list.find((c) => c.id === focusedId.value);
   if (target && canSelect(target)) {
     const set = new Set(selectedIds.value);
     set.add(target.id);
@@ -492,18 +502,19 @@ function onKeydown(e: KeyboardEvent): void {
   }
   if (list.length === 0) return;
 
-  const sel = () => list[selectedIndex.value];
+  const sel = () => list.find((c) => c.id === focusedId.value);
+  const ids = list.map((c) => c.id);
 
   switch (e.key) {
     case 'j':
       e.preventDefault();
       if (e.shiftKey) extendSelection(1);
-      else selectedIndex.value = Math.min(list.length - 1, Math.max(0, selectedIndex.value + 1));
+      else focusedId.value = moveInboxFocus(ids, focusedId.value, 1);
       break;
     case 'k':
       e.preventDefault();
       if (e.shiftKey) extendSelection(-1);
-      else selectedIndex.value = Math.max(0, (selectedIndex.value < 0 ? 0 : selectedIndex.value) - 1);
+      else focusedId.value = moveInboxFocus(ids, focusedId.value, -1);
       break;
     case 'x': {
       const c = sel();
@@ -757,20 +768,20 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 
     <div v-if="rows.length > 0" class="divide-y divide-gray-100 dark:divide-gray-800">
       <div
-        v-for="(cluster, index) in visibleRows"
+        v-for="cluster in visibleRows"
         :key="cluster.id"
         role="button"
         tabindex="0"
         :data-cluster-row="cluster.id"
         data-tour="failure-inbox-row"
-        :aria-current="index === selectedIndex ? 'true' : undefined"
+        :aria-current="cluster.id === focusedId ? 'true' : undefined"
         class="group flex flex-col gap-2 py-3 px-2 -mx-2 rounded-md cursor-pointer sm:flex-row sm:items-center sm:gap-3 hover:bg-gray-50 dark:hover:bg-gray-800/60"
         :class="[
-          index === selectedIndex ? 'bg-primary/5 ring-1 ring-primary/30' : '',
+          cluster.id === focusedId ? 'bg-primary/5 ring-1 ring-primary/30' : '',
           selectedIds.has(cluster.id) ? 'bg-primary/5' : '',
         ]"
         @click="open(cluster)"
-        @mouseenter="selectedIndex = index"
+        @mouseenter="focusedId = cluster.id"
         @keydown.enter="open(cluster)"
       >
         <!-- Select checkbox -->

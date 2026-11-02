@@ -231,6 +231,33 @@ export function clusterInQueue(
   }
 }
 
+/**
+ * The cluster the inbox's keyboard focus moves to: the next (`1`) or previous
+ * (`-1`) row of `ids` from the focused cluster, or the first row when none is
+ * focused or it left the list. Held by cluster id, so a list that reloads and
+ * reorders under it keeps the focus on the same cluster.
+ */
+export function moveInboxFocus(ids: readonly number[], focusedId: number | null, step: 1 | -1): number | null {
+  const at = focusedId == null ? -1 : ids.indexOf(focusedId);
+  if (at < 0) return ids[0] ?? null;
+  return ids[Math.min(ids.length - 1, Math.max(0, at + step))] ?? null;
+}
+
+/**
+ * The cluster the inbox's focus rests on once its rows change: the same one
+ * while it is listed, wherever it moved; else, when it left (resolved, ignored,
+ * snoozed), the row now in its place.
+ */
+export function keepInboxFocus(
+  ids: readonly number[],
+  previousIds: readonly number[],
+  focusedId: number | null,
+): number | null {
+  if (focusedId == null || ids.includes(focusedId)) return focusedId;
+  const at = previousIds.indexOf(focusedId);
+  return at < 0 ? null : (ids[Math.min(at, ids.length - 1)] ?? null);
+}
+
 /** The environment-incident run a cluster first appeared in. */
 export interface InboxIncidentRunLike {
   runId: number;

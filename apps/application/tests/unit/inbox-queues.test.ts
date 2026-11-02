@@ -9,6 +9,8 @@ import {
   personIsUser,
   isMine,
   inboxIdentity,
+  moveInboxFocus,
+  keepInboxFocus,
   effectiveAssignee,
   isNewSince,
   clusterInQueue,
@@ -215,5 +217,26 @@ describe('groupIncidentClusters', () => {
   it('leaves an inbox with no incident as it is', () => {
     const clusters = [{ id: 1, projectId: 1, incidentRun: null }];
     expect(groupIncidentClusters(clusters)).toEqual({ clusters, incidents: [] });
+  });
+});
+
+describe('the keyboard focus', () => {
+  it('moves by row from the focused cluster, starting at the first row', () => {
+    expect(moveInboxFocus([5, 3, 9], null, 1)).toBe(5);
+    expect(moveInboxFocus([5, 3, 9], null, -1)).toBe(5);
+    expect(moveInboxFocus([5, 3, 9], 5, 1)).toBe(3);
+    expect(moveInboxFocus([5, 3, 9], 9, 1)).toBe(9);
+    expect(moveInboxFocus([5, 3, 9], 5, -1)).toBe(5);
+    expect(moveInboxFocus([], null, 1)).toBeNull();
+  });
+
+  it('stays on its cluster when the list reorders, and takes the row in its place when it leaves', () => {
+    // A run event reloads the list newest first: cluster 3 moved to the top.
+    expect(keepInboxFocus([3, 5, 9], [5, 3, 9], 5)).toBe(5);
+    // Cluster 5 was resolved: the row now in its place is focused.
+    expect(keepInboxFocus([3, 9], [3, 5, 9], 5)).toBe(9);
+    expect(keepInboxFocus([3], [3, 9], 9)).toBe(3);
+    expect(keepInboxFocus([], [9], 9)).toBeNull();
+    expect(keepInboxFocus([3, 9], [3, 9], null)).toBeNull();
   });
 });
