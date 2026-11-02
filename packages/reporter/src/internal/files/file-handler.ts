@@ -21,7 +21,10 @@ import type { CollectedTestCase, RawAttachment, TraceHashInfo } from '../../type
  */
 export const MAX_ATTACHMENT_BYTES = 500 * 1024 * 1024;
 
-/** How much earlier than the run's start a file's time may read and still be the run's: some file systems keep whole seconds. */
+/**
+ * How much earlier than the run's start a file's time may read and still be the run's: some file systems keep whole
+ * seconds.
+ */
 const FILE_TIME_LEEWAY_MS = 2000;
 
 /** File extension for the content types a test commonly attaches inline. */
