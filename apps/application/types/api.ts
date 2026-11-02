@@ -392,7 +392,10 @@ export interface OpenFailureCluster {
    * CI: work in progress, which the team's inbox leaves out unless asked.
    */
   seenOnlyLocally: boolean;
-  /** Set when the cluster first appeared in a run flagged as an environment incident. */
+  /**
+   * Set when the cluster first appeared in a run flagged as an environment
+   * incident and has not failed since in a run that counts and is no incident.
+   */
   incidentRun: InboxIncidentRun | null;
 }
 

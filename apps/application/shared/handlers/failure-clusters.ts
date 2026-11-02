@@ -36,6 +36,7 @@ import { computeClusterState, failureGoesOn, ticketReconcileKey, type ClusterSta
 import {
   CI_RUN_ORIGINS,
   eligibleRunSql,
+  incidentRunSql,
   LOCAL_RUN_ORIGINS,
   runOriginIn,
   UNFINISHED_RUN_STATUSES,
@@ -1008,6 +1009,26 @@ export async function getOpenFailureClusters(
     ]),
   );
 
+  // The clusters an environment incident opened that failed again in a run that
+  // counts and is no incident: each is a failure of its own from then on.
+  const openedByIncident = clusters
+    .filter((c) => (runById.get(c.firstSeenRunId) as { incident?: unknown } | undefined)?.incident)
+    .map((c) => c.id);
+  const recurredRows: Array<{ clusterId: number | null }> = openedByIncident.length
+    ? await db
+        .selectDistinct({ clusterId: testRunsCases.failureClusterId })
+        .from(testRunsCases)
+        .innerJoin(testRuns, eq(testRuns.id, testRunsCases.testRunId))
+        .where(
+          and(
+            inArray(testRunsCases.failureClusterId, openedByIncident),
+            eligibleRunSql('cluster-occurrences'),
+            sql`NOT ${incidentRunSql(testRuns.metadata)}`,
+          ),
+        )
+    : [];
+  const recurredAfterIncident = new Set(recurredRows.map((r) => r.clusterId));
+
   // Keep the most-affected test per cluster for the name fallback and owner, and
   // collect every affected test-case id per cluster for the quarantine lookup.
   const repByCluster = new Map<number, { filePath: string | null; owner: string | null; runCount: number }>();
@@ -1144,14 +1165,15 @@ export async function getOpenFailureClusters(
       snoozedUntil: c.snoozedUntil ?? null,
       snoozeMode: c.snoozeMode ?? null,
       seenOnlyLocally: localOnlyIds.has(c.id),
-      incidentRun: firstRun?.incident
-        ? {
-            runId: c.firstSeenRunId,
-            reason: firstRun.incident.reason,
-            host: firstRun.incident.host,
-            startedAt: firstRun.startTime ?? null,
-          }
-        : null,
+      incidentRun:
+        firstRun?.incident && !recurredAfterIncident.has(c.id)
+          ? {
+              runId: c.firstSeenRunId,
+              reason: firstRun.incident.reason,
+              host: firstRun.incident.host,
+              startedAt: firstRun.startTime ?? null,
+            }
+          : null,
     };
   });
 }

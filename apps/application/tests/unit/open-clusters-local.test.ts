@@ -128,4 +128,26 @@ describe('the inbox rows', () => {
     const [row] = await getOpenFailureClusters(db as never, 'all', 50);
     expect(row).toMatchObject({ id, onDefaultBranch: true, regressionOnDefault: true });
   });
+
+  test('a cluster an environment incident opened gets a row of its own once a run that counts fails it again', async () => {
+    const incident = { incident: { reason: 'staging was down', host: 'staging.example.test' } };
+    const outage = await run(1, 'ci', { metadata: incident });
+    const id = await cluster(1, 'connection refused', [outage]);
+    const incidentRun = async () => (await getOpenFailureClusters(db as never, 'all', 50))[0]?.incidentRun ?? null;
+    expect(await incidentRun()).toMatchObject({ runId: outage });
+
+    // Another outage, and a bisect step, leave it with the incident.
+    for (const failing of [await run(1, 'ci', { metadata: incident }), await run(1, 'bisect')]) {
+      await db
+        .insert(schema.testRunsCases)
+        .values({ testRunId: failing, testCaseId: 1, status: 'failed', failureClusterId: id });
+    }
+    expect(await incidentRun()).toMatchObject({ runId: outage });
+
+    const again = await run(1, 'ci');
+    await db
+      .insert(schema.testRunsCases)
+      .values({ testRunId: again, testCaseId: 1, status: 'failed', failureClusterId: id });
+    expect(await incidentRun()).toBeNull();
+  });
 });
