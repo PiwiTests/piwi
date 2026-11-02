@@ -355,6 +355,7 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
           reporterVersion: testRunData.reporterVersion || null,
           isFullRun: testRunData.isFullRun !== false ? 1 : 0,
           filterDetails: testRunData.filterDetails || null,
+          ...(testRunData.setupSteps && { setupSteps: testRunData.setupSteps }),
         })
         .returning();
 

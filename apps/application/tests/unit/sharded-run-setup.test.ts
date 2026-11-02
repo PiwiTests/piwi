@@ -667,6 +667,19 @@ describe('a sharded run delivered by batch submissions', () => {
   });
 });
 
+describe("a sharded run's suite setup steps", () => {
+  test("are stored from a shard's /finish", async () => {
+    const setupSteps = [
+      { title: 'beforeAll hook', category: 'hook', startedAt: 1_793_000_000_000, duration: 1200, status: 'passed' },
+    ];
+    const { runId, tokens } = await beginAllShards();
+
+    await finishShard(runId, tokens[0]!, [10], { duration: 1000, setupSteps });
+
+    expect((await readRun(runId)).setupSteps).toEqual(setupSteps);
+  });
+});
+
 describe('a shard that reports its end twice', () => {
   test('counts once when its /finish answer was lost and its batch upload follows', async () => {
     const { runId, tokens } = await beginAllShards();

@@ -163,6 +163,41 @@ describe('a batch body', () => {
   });
 });
 
+describe("a batch run's suite setup steps", () => {
+  const setupSteps = [
+    { title: 'beforeAll hook', category: 'hook', startedAt: 1_793_000_000_000, duration: 1200, status: 'passed' },
+  ];
+
+  test('are stored from /submit and from /upload, as from /finish', async () => {
+    const { runId: submitted } = await submit({ body: runBody({ setupSteps }) });
+    const { testCases, projectName, ...testRun } = runBody({ setupSteps });
+    const { runId: uploaded } = await upload([
+      field('projectName', projectName),
+      field('testRun', testRun),
+      field('testCases', testCases),
+    ]);
+
+    const runs = await db
+      .select({ id: schema.testRuns.id, setupSteps: schema.testRuns.setupSteps })
+      .from(schema.testRuns);
+    expect(runs).toEqual([
+      { id: submitted, setupSteps },
+      { id: uploaded, setupSteps },
+    ]);
+  });
+
+  test("are stored from a shard's batch submission", async () => {
+    const shard = (shardIndex: number) =>
+      runBody({ setupSteps, instanceId: 'ci-9', shardIndex, shardTotal: 2, deliveryKey: undefined });
+    const { runId } = await submit({ body: shard(1) });
+    await submit({ body: shard(2) });
+
+    const [run] = await db.select({ setupSteps: schema.testRuns.setupSteps }).from(schema.testRuns);
+    expect(run).toEqual({ setupSteps });
+    expect(runId).toBeGreaterThan(0);
+  });
+});
+
 describe('a batch whose executions cannot be stored', () => {
   test('leaves no run from /submit, so the delivery sent again stores one run', async () => {
     const body = runBody({ deliveryKey: 'c0ffee00-0000-4000-8000-00000000000a' });

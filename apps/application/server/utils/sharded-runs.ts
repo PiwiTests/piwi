@@ -60,6 +60,8 @@ export interface BatchShardTally {
   shard: ShardReport;
   /** The shard's test durations. */
   durations: unknown[];
+  /** The shard's suite-level hook/fixture steps, when it sent them. */
+  setupSteps: BatchRunBody['setupSteps'];
 }
 
 /** The run-level fields of a batch submission, as `/submit` and the `testRun` field of `/upload` carry them. */
@@ -108,6 +110,7 @@ export function batchShardTally(body: BatchRunBody, testCases: ReadonlyArray<Bat
       status: body.status,
     },
     durations: testCases.map((tc) => tc.duration),
+    setupSteps: body.setupSteps,
   };
 }
 
@@ -180,6 +183,7 @@ export async function addBatchShard(db: DbClient, runId: number, tally: BatchSha
       didNotRunTests: sql`${testRuns.didNotRunTests} + ${tally.didNotRunTests}`,
       flakyTests: sql`${testRuns.flakyTests} + ${tally.flakyTests}`,
       shardsFinished: sql`${testRuns.shardsFinished} + 1`,
+      ...(tally.setupSteps && { setupSteps: tally.setupSteps }),
     },
   );
 }

@@ -178,6 +178,8 @@ export interface TestRunSubmitPayload {
   filterDetails?: FilterDetails | null;
   /** The run's resource findings and what it cost its machine, measured by the reporter. */
   resourceReport?: WireResourceReport | null;
+  /** Suite-level hook/fixture steps (beforeAll/afterAll) for the run timeline, as `/finish` takes them. */
+  setupSteps?: TestRunFinishPayload['setupSteps'];
   /**
    * An id the client generates once for these results and sends with every attempt to deliver them: a delivery
    * repeating a key the project already took answers with the run it went to and stores nothing.
