@@ -70,7 +70,8 @@ export function initCommand(choices: SetupChoices): string {
 /** The Piwi options `init` writes as `wrapConfig`'s second argument, one per line. */
 function optionLines(choices: SetupChoices, indent: string): string {
   const lines: string[] = [];
-  if (choices.serverUrl) lines.push(`serverUrl: ${quoteJsString(choices.serverUrl)},`);
+  if (choices.serverUrl)
+    lines.push(`serverUrl: process.env.PIWI_DASHBOARD_URL || ${quoteJsString(choices.serverUrl)},`);
   lines.push(`projectName: ${quoteJsString(normalizeProjectName(choices.projectName))},`);
   if (choices.serverUrl && choices.preferDesktopApp) lines.push(`desktopApp: 'prefer',`);
   return lines.map((line) => `${indent}${line}`).join('\n');

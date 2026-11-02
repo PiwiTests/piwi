@@ -51,13 +51,15 @@ export default wrapConfig(
     // no `screenshot` / `trace` needed: wrapConfig fills them in
   }),
   {
-    serverUrl: 'http://localhost:3000',
+    serverUrl: process.env.PIWI_DASHBOARD_URL || 'http://localhost:3000',
     projectName: 'my-project',
   },
 )
 ```
 
-The first argument is your Playwright config; the second is the [Piwi options](#configuration-options). On top of injecting the reporter, `wrapConfig`:
+The first argument is your Playwright config; the second is the [Piwi options](#configuration-options). An option set
+in the config wins over its `PIWI_*` variable, so the server URL reads `PIWI_DASHBOARD_URL` first, as `init` writes it:
+a CI job that sets the variable reports there. On top of injecting the reporter, `wrapConfig`:
 
 - Sets `screenshot: 'only-on-failure'` and `trace: { mode: 'retain-on-failure', snapshots: { dom: true, aria: true } }` on the **top-level** `use` block when each is unset (a value you set, `'off'` included, and per-project `use` blocks are kept). They unlock the DOM snapshot, full call stack, full network with bodies and the visual diff **without** the capture fixtures. The trace's aria snapshots feed the [Screen tab and the page diff](/features/evidence#aria-and-screen-snapshots). The `screen` snapshot kind stays opt-in; see [what `screen` adds per action](/operate/storage#trace-snapshots). Opt out with `defaultCapture: false` (or `PIWI_DEFAULT_CAPTURE=false`); the reporter logs one line at the start of the run naming whatever it defaulted.
 - Forwards the CI-gate option `failOnFlakyTests` into Playwright's native config so a flaky-only run exits non-zero locally.
@@ -74,7 +76,7 @@ export default defineConfig({
   reporter: [
     ['list'],
     ['@piwitests/reporter', {
-      serverUrl: 'http://localhost:3000',
+      serverUrl: process.env.PIWI_DASHBOARD_URL || 'http://localhost:3000',
       projectName: 'my-project',
     }],
   ],
@@ -179,7 +181,7 @@ export default defineConfig({
     ['monocart-reporter', { name: 'My Tests', outputFile: 'monocart-report/index.html' }],
     ['blob'],
     ['@piwitests/reporter', {
-      serverUrl: 'http://localhost:3000',
+      serverUrl: process.env.PIWI_DASHBOARD_URL || 'http://localhost:3000',
       projectName: 'my-project',
       reports: [
         { type: 'html' },

@@ -18,6 +18,10 @@ env:
 Everything else — branch, commit, author, workflow, build URL, shard index — is
 [detected automatically](#what-gets-detected).
 
+A `serverUrl` written in the Playwright config wins over `PIWI_DASHBOARD_URL`. `init` writes it as
+`process.env.PIWI_DASHBOARD_URL || '<the URL you gave>'`, so the variable takes over in CI; a config that names the URL
+alone keeps sending to that URL.
+
 ## GitHub Actions
 
 ```yaml

@@ -79,10 +79,14 @@ function matchClosingParen(src: string, openIndex: number): number {
   return -1;
 }
 
-/** The Piwi options object, printed multi-line to sit inside the wrapped call. */
+/**
+ * The Piwi options object, printed multi-line to sit inside the wrapped call. The server URL defers to
+ * `PIWI_DASHBOARD_URL`, since an option set in the config wins over the environment: a CI job that sets the variable
+ * reports there, and a run without it reports to the URL given to `init`.
+ */
 function optionsLiteral(opts: WrapOptions): string {
   const lines: string[] = [];
-  if (opts.serverUrl) lines.push(`    serverUrl: ${quote(opts.serverUrl)},`);
+  if (opts.serverUrl) lines.push(`    serverUrl: process.env.PIWI_DASHBOARD_URL || ${quote(opts.serverUrl)},`);
   lines.push(`    projectName: ${quote(opts.projectName)},`);
   if (opts.desktopApp) lines.push(`    desktopApp: ${quote(opts.desktopApp)},`);
   return `{\n${lines.join('\n')}\n  }`;

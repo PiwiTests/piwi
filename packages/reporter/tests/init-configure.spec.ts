@@ -1,3 +1,4 @@
+import * as vm from 'node:vm';
 import { describe, it, expect } from 'vitest';
 import {
   ensureGitignoreEntry,
@@ -23,7 +24,7 @@ describe('wrapPlaywrightConfig', () => {
     expect(edit.text).toContain("import { wrapConfig } from '@piwitests/reporter'");
     expect(edit.text).toContain('export default wrapConfig(');
     expect(edit.text).toContain('defineConfig({');
-    expect(edit.text).toContain("serverUrl: 'http://localhost:3000',");
+    expect(edit.text).toContain("serverUrl: process.env.PIWI_DASHBOARD_URL || 'http://localhost:3000',");
     expect(edit.text).toContain("projectName: 'checkout',");
     // The original Playwright import survives.
     expect(edit.text).toContain("import { defineConfig } from '@playwright/test'");
@@ -51,6 +52,17 @@ export default defineConfig({
     expect(edit.text).toContain('wrapConfig(');
   });
 
+  it('writes a server URL that PIWI_DASHBOARD_URL overrides, so a CI job reports where its variable says', () => {
+    const edit = wrapPlaywrightConfig(CLEAN_CONFIG, { serverUrl: 'http://localhost:3000', projectName: 'checkout' });
+    const options = edit.text.slice(edit.text.lastIndexOf('{\n    serverUrl'), edit.text.lastIndexOf('}') + 1);
+    const serverUrl = (env: Record<string, string>) =>
+      (vm.runInNewContext(`(${options})`, { process: { env } }) as { serverUrl: string }).serverUrl;
+
+    expect(serverUrl({})).toBe('http://localhost:3000');
+    expect(serverUrl({ PIWI_DASHBOARD_URL: 'https://piwi.example.com' })).toBe('https://piwi.example.com');
+    expect(serverUrl({ PIWI_DASHBOARD_URL: '' })).toBe('http://localhost:3000');
+  });
+
   it('writes desktopApp when it is given', () => {
     const edit = wrapPlaywrightConfig(CLEAN_CONFIG, {
       serverUrl: 'https://piwi.example.com',
@@ -58,7 +70,7 @@ export default defineConfig({
       desktopApp: 'prefer',
     });
     expect(edit.text).toContain(
-      "serverUrl: 'https://piwi.example.com',\n    projectName: 'checkout',\n    desktopApp: 'prefer',",
+      "serverUrl: process.env.PIWI_DASHBOARD_URL || 'https://piwi.example.com',\n    projectName: 'checkout',\n    desktopApp: 'prefer',",
     );
     expect(wrapPlaywrightConfig(CLEAN_CONFIG, { projectName: 'checkout' }).text).not.toContain('desktopApp');
   });

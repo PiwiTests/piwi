@@ -31,7 +31,7 @@ import { defineConfig } from '@playwright/test'
 import { wrapConfig } from '@piwitests/reporter'
 
 export default wrapConfig(defineConfig({}), {
-  serverUrl: 'http://localhost:3000',
+  serverUrl: process.env.PIWI_DASHBOARD_URL || 'http://localhost:3000',
   projectName: 'my-project',
 })
 ```

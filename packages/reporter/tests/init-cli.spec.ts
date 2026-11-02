@@ -55,7 +55,7 @@ describe('runInit', () => {
 
     const config = fs.readFileSync(path.join(root, 'playwright.config.ts'), 'utf-8');
     expect(config).toContain('wrapConfig(');
-    expect(config).toContain("serverUrl: 'https://piwi.example.com',");
+    expect(config).toContain("serverUrl: process.env.PIWI_DASHBOARD_URL || 'https://piwi.example.com',");
 
     expect(fs.existsSync(path.join(root, 'tests', 'fixtures.ts'))).toBe(true);
 
@@ -132,7 +132,7 @@ describe('runInit', () => {
     const plan = JSON.parse(String(log.mock.calls[0]?.[0]));
     const config = plan.steps.find((step: { step: string }) => step.step === 'config');
     expect(config.status).toBe('manual');
-    expect(config.detail).toContain("serverUrl: 'https://piwi.example.com'");
+    expect(config.detail).toContain("serverUrl: process.env.PIWI_DASHBOARD_URL || 'https://piwi.example.com'");
     expect(config.detail).toContain("desktopApp: 'prefer'");
   });
 
