@@ -415,6 +415,7 @@ export async function getFailureCluster(
     ...cluster,
     latestHeadline: clusterLatestHeadline(cluster, latestExec),
     affectedTests: Number(countRow?.affectedTests ?? 0),
+    quarantinedTests: quarantinedCount,
     lastSeenRunStatus: lastRun?.status ?? null,
     lastSeenAt: lastRun?.startTime ?? null,
     firstSeenAt: firstSeenRun?.startTime ?? null,

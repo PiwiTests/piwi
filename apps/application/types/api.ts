@@ -1157,6 +1157,8 @@ export interface FailureClusterDetail extends ClusterResolutionFields {
   firstSeenAt: string | Date | null;
   occurrences: number;
   affectedTests: number;
+  /** How many of those tests are quarantined, beyond the listed `affectedTestCases` too. */
+  quarantinedTests: number;
   lastSeenRunStatus: string | null;
   lastSeenAt: string | Date | null;
   /** The execution in the last-seen run — the cluster's latest occurrence, or null when none loads. */

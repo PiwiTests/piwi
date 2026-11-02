@@ -110,6 +110,17 @@ describe('getFailureCluster affected tests', () => {
     expect(cluster.clusterState.sentence).toContain(`All ${AFFECTED} tests are quarantined`);
   });
 
+  test('counts the quarantined tests beyond the listed page, so the page knows what is left to quarantine', async () => {
+    const ids = await seedCluster();
+    // The tail of the cluster, past the listed page.
+    await quarantine(ids.slice(CLUSTER_DETAIL_TESTS_LIMIT));
+
+    const cluster = (await getFailureCluster(db, CLUSTER_ID))!;
+
+    expect(cluster.affectedTestCases.some((t) => t.quarantined)).toBe(false);
+    expect(cluster.quarantinedTests).toBe(AFFECTED - CLUSTER_DETAIL_TESTS_LIMIT);
+  });
+
   test('counts only the tests that are quarantined and not released', async () => {
     const ids = await seedCluster();
     await quarantine(ids);
