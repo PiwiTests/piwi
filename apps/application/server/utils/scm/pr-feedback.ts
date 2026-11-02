@@ -16,7 +16,7 @@
  * (`analyzeFinishedRunInBackground`); the posting reads its result.
  */
 import { testTextLabel } from '#shared/utils/test-label';
-import { flakyFinalAttempts } from '#shared/utils/test-counts';
+import { finalAttempts, flakyFinalAttempts } from '#shared/utils/test-counts';
 import { and, desc, eq, inArray, max } from 'drizzle-orm';
 import {
   bugReports,
@@ -252,7 +252,14 @@ export async function buildRunPrSummary(
   );
   const flakyRows = [...flakyFinalAttempts(caseRows)];
   const quarantinedIds = await getQuarantinedCaseIds(db, run.projectId).catch(() => new Set<number>());
-  const quarantinedFailures = failingRows.filter((row) => quarantinedIds.has(row.testCaseId)).length;
+  // In the unit of the run's `failedTests`, which it is subtracted from: one final attempt per test, project and
+  // repetition, so a quarantined test's retries never cancel another test's failure.
+  const quarantinedFailures = finalAttempts(caseRows).filter(
+    (row) =>
+      FAIL_STATUSES.includes(row.status) &&
+      !isExpectedFailurePassed(row.status, row.expectedStatus) &&
+      quarantinedIds.has(row.testCaseId),
+  ).length;
 
   // `computeRunInsights` owns the baseline comparison; reuse it rather than
   // re-deriving "new versus pre-existing" with a second, divergent rule.
