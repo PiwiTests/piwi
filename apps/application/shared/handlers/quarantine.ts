@@ -111,33 +111,17 @@ export async function countQuarantinedClusterTests(
  * reproduction runs replay an older commit, and an environment incident fails
  * every test at once, so none of them counts toward or breaks a streak.
  *
- * One query for the whole list: each test's executions since its own quarantine
- * run are ranked newest-first with a window function, and only the first
- * `STREAK_SCAN_LIMIT` of each are read back. The project's runs since the
- * earliest quarantine run that the use leaves out are listed once for it
- * (`eligibleExecutionInProject`).
+ * One query for the whole list, whatever its length: the executions are joined
+ * to the project's active quarantines (one test's alone when `testCaseId` is
+ * given), each test's are ranked newest-first with a window function, and only
+ * the first `STREAK_SCAN_LIMIT` of each are read back. The project's runs the
+ * use leaves out are listed once for it (`eligibleExecutionInProject`).
  */
 async function computeStreaks(
   db: DrizzleDB,
   projectId: number,
-  entries: Array<{ testCaseId: number; quarantinedAtRunId: number | null }>,
+  testCaseId?: number,
 ): Promise<Map<number, { passes: number; runs: number }>> {
-  const streaks = new Map<number, { passes: number; runs: number }>();
-  if (entries.length === 0) return streaks;
-
-  // Every execution read is of a run after the earliest quarantine run, unless an entry names none.
-  const quarantineRuns = entries.map((entry) => entry.quarantinedAtRunId);
-  const earliestRun = quarantineRuns.every((id) => id != null) ? Math.min(...(quarantineRuns as number[])) : null;
-
-  const sinceQuarantine = or(
-    ...entries.map((entry) =>
-      and(
-        eq(testRunsCases.testCaseId, entry.testCaseId),
-        entry.quarantinedAtRunId != null ? gt(testRunsCases.testRunId, entry.quarantinedAtRunId) : sql`1 = 1`,
-      ),
-    ),
-  );
-
   const ranked = db
     .select({
       testCaseId: testRunsCases.testCaseId,
@@ -149,15 +133,17 @@ async function computeStreaks(
         ),
     })
     .from(testRunsCases)
+    .innerJoin(quarantinedTests, eq(quarantinedTests.testCaseId, testRunsCases.testCaseId))
     .where(
       and(
-        sinceQuarantine,
-        eligibleExecutionInProject(
-          'flakiness',
-          projectId,
-          testRunsCases.testRunId,
-          earliestRun != null ? gt(testRuns.id, earliestRun) : undefined,
+        eq(quarantinedTests.projectId, projectId),
+        isNull(quarantinedTests.releasedAt),
+        testCaseId != null ? eq(quarantinedTests.testCaseId, testCaseId) : undefined,
+        or(
+          isNull(quarantinedTests.quarantinedAtRunId),
+          gt(testRunsCases.testRunId, quarantinedTests.quarantinedAtRunId),
         ),
+        eligibleExecutionInProject('flakiness', projectId, testRunsCases.testRunId),
       ),
     )
     .as('ranked');
@@ -175,8 +161,8 @@ async function computeStreaks(
     else byCase.set(row.testCaseId, [row]);
   }
 
-  for (const entry of entries) {
-    const executions = byCase.get(entry.testCaseId) ?? [];
+  const streaks = new Map<number, { passes: number; runs: number }>();
+  for (const [caseId, executions] of byCase) {
     let passes = 0;
     for (const row of executions) {
       if (row.status === 'passed') passes++;
@@ -184,7 +170,7 @@ async function computeStreaks(
       // Skipped / didnotrun executions prove nothing either way; ignore them
       // rather than counting or breaking the streak.
     }
-    streaks.set(entry.testCaseId, { passes, runs: executions.length });
+    streaks.set(caseId, { passes, runs: executions.length });
   }
 
   return streaks;
@@ -202,12 +188,14 @@ interface ReleaseProgress {
   earned: boolean;
 }
 
+/** Each listed entry's release progress; `testCaseId` narrows the streak query to that one test. */
 async function releaseProposals(
   db: DrizzleDB,
   projectId: number,
-  entries: Array<{ testCaseId: number; quarantinedAtRunId: number | null; createdAt: Date | string | number }>,
+  entries: Array<{ testCaseId: number; createdAt: Date | string | number }>,
+  testCaseId?: number,
 ): Promise<Map<number, ReleaseProgress>> {
-  const streaks = await computeStreaks(db, projectId, entries);
+  const streaks = await computeStreaks(db, projectId, testCaseId);
   const fixes = await getHoldingVerifiedFixes(
     db,
     entries.map((entry) => entry.testCaseId),
@@ -234,7 +222,6 @@ export async function listQuarantine(
       testCaseId: quarantinedTests.testCaseId,
       reason: quarantinedTests.reason,
       source: quarantinedTests.source,
-      quarantinedAtRunId: quarantinedTests.quarantinedAtRunId,
       createdAt: quarantinedTests.createdAt,
       title: testCases.title,
       externalId: testCases.externalId,
@@ -366,7 +353,6 @@ export async function releaseQuarantine(
     .select({
       id: quarantinedTests.id,
       testCaseId: quarantinedTests.testCaseId,
-      quarantinedAtRunId: quarantinedTests.quarantinedAtRunId,
       createdAt: quarantinedTests.createdAt,
     })
     .from(quarantinedTests)
@@ -379,7 +365,7 @@ export async function releaseQuarantine(
     );
   if (active.length === 0) return { released: false };
 
-  const proposal = (await releaseProposals(db, projectId, active)).get(testCaseId);
+  const proposal = (await releaseProposals(db, projectId, active, testCaseId)).get(testCaseId);
   const releasedAt = new Date();
   await db
     .update(quarantinedTests)
@@ -432,7 +418,6 @@ export async function dismissQuarantineProposal(
     .select({
       id: quarantinedTests.id,
       testCaseId: quarantinedTests.testCaseId,
-      quarantinedAtRunId: quarantinedTests.quarantinedAtRunId,
       createdAt: quarantinedTests.createdAt,
     })
     .from(quarantinedTests)
@@ -445,7 +430,7 @@ export async function dismissQuarantineProposal(
     );
   if (proposal === 'release') {
     if (!active) return false;
-    const progress = (await releaseProposals(db, projectId, [active])).get(testCaseId);
+    const progress = (await releaseProposals(db, projectId, [active], testCaseId)).get(testCaseId);
     if (!progress?.earned && !progress?.verifiedFix) return false;
   } else {
     if (active) return false;

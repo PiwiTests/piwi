@@ -192,6 +192,20 @@ describe('streak queries', () => {
     select.mockRestore();
   });
 
+  test('reads the streaks of a thousand quarantined tests', async () => {
+    const ids = Array.from({ length: 1_000 }, (_, i) => i + 1);
+    await db
+      .insert(schema.testCases)
+      .values(ids.map((id) => ({ id, projectId: 1, filePath: 'tests/a.spec.ts', title: `test ${id}` })));
+    caseSeq = ids.length;
+    await db.insert(schema.quarantinedTests).values(ids.map((testCaseId) => ({ projectId: 1, testCaseId })));
+    await seedExecution(1, 'passed');
+
+    const { entries } = await listQuarantine(db, 1);
+    expect(entries).toHaveLength(1_000);
+    expect(entries.find((entry) => entry.testCaseId === 1)!.runsSinceQuarantine).toBe(1);
+  });
+
   test('scans at most the newest executions of each test', async () => {
     const caseId = await seedCase('long-history');
     await addQuarantine(db, 1, caseId);
