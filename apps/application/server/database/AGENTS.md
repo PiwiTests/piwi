@@ -89,3 +89,6 @@ its own retries, as in Playwright, and a row without one reads `repeat_each_inde
 - **A test's attempts are the rows of one repetition.** Never take the highest retry across repetitions as its last
   attempt, nor a pass in one repetition as a retry pass of another. `lastAttempts` (`@piwitests/core/status-classify`)
   and the SQL of `latestRunStatusSql` (`shared/handlers/latest-run-status.ts`) follow the same rule.
+- **A test's own pages count its runs, one result per run, project and repetition: its final attempt.** In SQL through
+  `shared/handlers/test-case-aggregates.ts` (`finalAttemptSql`, `testCaseAggregates`, `recentFlakySql`), on both
+  dialects; in memory through `finalAttemptsOfRuns`. `tests/unit/test-case-results.test.ts`, `test-case-runs-pg.test.ts`.
