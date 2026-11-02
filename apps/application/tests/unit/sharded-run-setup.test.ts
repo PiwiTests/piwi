@@ -667,6 +667,37 @@ describe('a sharded run delivered by batch submissions', () => {
   });
 });
 
+describe('a shard that reports its end twice', () => {
+  test('counts once when its /finish answer was lost and its batch upload follows', async () => {
+    const { runId, tokens } = await beginAllShards();
+    await streamCase(runId, tokens[0]!, 'pays', 1);
+    await finishShard(runId, tokens[0]!, [10], { shardIndex: 1, duration: 1000 });
+
+    // The reporter of shard 1 never saw the answer, and falls back to the batch rung.
+    await submit({
+      body: {
+        projectName: PROJECT,
+        ...SHARDS,
+        shardIndex: 1,
+        status: 'passed',
+        startTime: '2026-10-31T23:00:00.000Z',
+        totalTests: 1,
+        passedTests: 1,
+        testCases: [
+          { title: 'pays', location: 'tests/pays.spec.ts:1:1', status: 'passed', duration: 10, shardIndex: 1 },
+        ],
+      },
+    });
+    expect(await readRun(runId)).toMatchObject({ status: 'running', shardsFinished: 1 });
+    expect(runFinalizeSideEffects).not.toHaveBeenCalled();
+
+    await streamCase(runId, tokens[1]!, 'adds', 2);
+    await finishShard(runId, tokens[1]!, [30], { shardIndex: 2, duration: 1000 });
+    expect(await readRun(runId)).toMatchObject({ status: 'passed', shardsFinished: 2, passedTests: 2 });
+    expect(runFinalizeSideEffects).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('a batch delivery repeated under its delivery key', () => {
   const delivery = (deliveryKey: string, extra: Record<string, unknown> = {}) => ({
     projectName: PROJECT,

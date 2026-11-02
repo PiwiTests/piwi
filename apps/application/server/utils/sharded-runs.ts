@@ -7,6 +7,7 @@ import { computeRunCountsFromRows } from './run-counts';
 import { runEventBus } from './run-events';
 import { runFinalizeSideEffects } from './run-finalize-side-effects';
 import {
+  hasShardEnded,
   readShardDurations,
   readShardSpans,
   recordShardEnd,
@@ -159,14 +160,17 @@ export function batchShardRun(db: DbClient, projectId: number, instanceId: strin
 /**
  * Count a shard of a batch submission into its run, once its executions are
  * stored: the counters add up, the shard's span joins the run's
- * (`recordShardEnd`), and the shard counts as finished.
+ * (`recordShardEnd`), and the shard counts as finished. A shard whose end the
+ * run already holds (its `/finish` answer was lost, and its reporter fell back
+ * to the batch upload) counts once.
  */
 export async function addBatchShard(db: DbClient, runId: number, tally: BatchShardTally): Promise<void> {
+  const span = shardSpan(tally.shard, Date.now());
   await recordShardEnd(
     db,
     runId,
-    shardSpan(tally.shard, Date.now()),
-    (metadata) => withShardDurations(metadata, tally.durations),
+    span,
+    (metadata) => (hasShardEnded(metadata, span.shardIndex) ? null : withShardDurations(metadata, tally.durations)),
     {
       updatedAt: new Date(),
       totalTests: sql`${testRuns.totalTests} + ${tally.totalTests}`,

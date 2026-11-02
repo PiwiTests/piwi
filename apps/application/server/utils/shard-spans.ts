@@ -125,6 +125,11 @@ export function shardedRunSpan(spans: ShardSpan[]): { startTime: Date; duration:
   return { startTime: new Date(start), duration: Math.min(Math.max(0, end - start), MAX_RUN_DURATION_MS) };
 }
 
+/** Whether a run's metadata holds the end of shard `shardIndex` already. A shard with no index is never one. */
+export function hasShardEnded(metadata: unknown, shardIndex: number | null): boolean {
+  return shardIndex != null && readShardSpans(metadata).some((span) => span.shardIndex === shardIndex);
+}
+
 /** Run statuses from the least to the most severe, as Playwright's merge-reports ranks its shards' statuses. */
 const SHARD_STATUS_SEVERITY = ['passed', 'interrupted', 'timedout', 'failed'];
 
