@@ -47,6 +47,8 @@ export function openEventStream(event: H3Event): EventStreamSink {
   req.on('close', onGone);
   res.on('close', onGone);
   res.on('error', onGone);
+  // A client that left while the handler awaited its checks fired `close` before these listeners existed.
+  if (req.destroyed || res.closed) onGone();
   return {
     send(message) {
       if (closed) return;
