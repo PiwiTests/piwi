@@ -155,7 +155,7 @@ function createServerImportPort(): ImportPort {
       entryName,
       bytes,
       digest,
-    }): Promise<StoredImportFile | null> {
+    }): Promise<StoredImportFile> {
       // Always a buffer here: only the browser half ever passes a `Blob`.
       const raw = await toBytes(bytes);
       const data = Buffer.from(raw.buffer, raw.byteOffset, raw.byteLength);
@@ -176,8 +176,12 @@ function createServerImportPort(): ImportPort {
         await storage.writeFile(path, data);
         return { path: path.replace(/\\/g, '/'), size: data.length };
       } catch (error) {
+        // The import fails whole: it leaves no run, so a retry once storage recovers imports it in full.
         console.error(`[Import] Failed to store ${kind} ${entryName}: ${error}`);
-        return null;
+        throw apiError({
+          statusCode: 503,
+          message: `The archive's files could not be stored, so nothing was imported: ${error instanceof Error ? error.message : String(error)}`,
+        });
       }
     },
 

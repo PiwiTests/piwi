@@ -77,8 +77,9 @@ export interface ImportPort {
   ): Promise<Array<{ id: number; inputIndex: number }>>;
 
   /**
-   * Write one file and report where it landed, or null if it could not be
-   * stored. `testRunsCaseId` is absent while traces are being staged ahead of
+   * Write one file and report where it landed. Throws when it cannot be
+   * stored, which fails the import: an import never says it imported a file
+   * it lost. `testRunsCaseId` is absent while traces are being staged ahead of
    * their case rows.
    */
   storeFile(input: {
@@ -94,7 +95,7 @@ export interface ImportPort {
      * content-addresses its storage need not read them again to find out.
      */
     digest?: string;
-  }): Promise<StoredImportFile | null>;
+  }): Promise<StoredImportFile>;
 
   /** Console entries recovered from a trace archive's bytes. */
   readTraceConsole(bytes: Uint8Array, startedAt: number | null): Promise<unknown>;
@@ -276,7 +277,7 @@ export async function importBlobReportRun(
         entryName: ref.entry,
         bytes,
       });
-      if (file) staged.push({ file, entryName: ref.entry });
+      staged.push({ file, entryName: ref.entry });
     }
     if (staged.length) stagedTraces.set(index, staged);
   }
@@ -367,7 +368,6 @@ export async function importBlobReportRun(
           entryName: ref.entry,
           bytes,
         });
-        if (!stored) continue;
 
         await db.insert(files).values({
           testRunsCaseId,
@@ -521,14 +521,12 @@ export async function importTraceRun(
       digest: importHash,
     });
 
-    if (stored) {
-      const already = await db
-        .select({ id: files.id })
-        .from(files)
-        .where(and(eq(files.testRunId, run.id), eq(files.path, stored.path)));
-      // The same trace already here is a repeat upload, not a second attempt.
-      if (already.length > 0) return summarizeRun(await reloadRun(db, run.id), projectId, 'duplicate', 0, 0);
-    }
+    const already = await db
+      .select({ id: files.id })
+      .from(files)
+      .where(and(eq(files.testRunId, run.id), eq(files.path, stored.path)));
+    // The same trace already here is a repeat upload, not a second attempt.
+    if (already.length > 0) return summarizeRun(await reloadRun(db, run.id), projectId, 'duplicate', 0, 0);
 
     // A different trace for a test the run already has is a retry. Traces carry
     // no attempt index of their own, so it comes from how many attempts of this
@@ -545,17 +543,15 @@ export async function importTraceRun(
     const testRunsCaseId = inserted[0]?.id;
     if (!testRunsCaseId) return summarizeRun(await reloadRun(db, run.id), projectId, 'duplicate', 0, 0);
 
-    if (stored) {
-      await db.insert(files).values({
-        testRunsCaseId,
-        testRunId: run.id,
-        type: 'trace',
-        path: stored.path,
-        size: stored.size,
-        blobId: stored.blobId ?? null,
-      });
-      traceCount = 1;
-    }
+    await db.insert(files).values({
+      testRunsCaseId,
+      testRunId: run.id,
+      type: 'trace',
+      path: stored.path,
+      size: stored.size,
+      blobId: stored.blobId ?? null,
+    });
+    traceCount = 1;
 
     await rollUpTraceRun(db, run.id, new Date(parsed.startedAt));
   } catch (error) {
