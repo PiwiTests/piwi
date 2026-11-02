@@ -986,7 +986,8 @@ async function checkDemoFlows(page) {
   check(menu.count > 0, 'the seeded database has projects', `${menu.count} projects`);
 
   // Search engines index the entry page under the title of its static shell, so the running app keeps it.
-  const shellTitle = /<title>([^<]*)<\/title>/.exec(await (await fetch(`${ORIGIN}${BASE}`)).text())?.[1] ?? '';
+  const shellHtml = await (await fetch(`${ORIGIN}${BASE}`)).text();
+  const shellTitle = await page.evaluate((html) => new DOMParser().parseFromString(html, 'text/html').title, shellHtml);
   await page.locator('[data-tour="home-page"]').waitFor({ timeout: 60000 });
   // The head is written once the page has rendered.
   await page.waitForTimeout(1000);
