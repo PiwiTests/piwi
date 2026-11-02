@@ -220,13 +220,15 @@ test.describe('Trace screen snapshots of a passing test', () => {
       .getByRole('tab', { name: 'Screen', exact: true })
       .click();
 
+    // The DOM view renders once the trace's snapshots have loaded, so the checks below see the loaded page.
     const views = page.getByRole('tablist', { name: 'Screen view' });
-    await expect(views.getByRole('tab', { name: 'DOM', exact: true })).toBeVisible();
+    await views.getByRole('tab', { name: 'DOM', exact: true }).click();
+    await expect(page.locator('iframe[title="DOM at the end of the test"]')).toBeVisible();
+
+    await views.getByRole('tab', { name: 'Screenshot', exact: true }).click();
+    await expect(page.getByText('No screenshot for this execution.')).toBeVisible();
     await expect(page.getByText('Before the failing action')).toHaveCount(0);
     await expect(page.getByText('At the failure', { exact: true })).toHaveCount(0);
     await expect(views.getByRole('tab', { name: 'Page diff' })).toHaveCount(0);
-
-    await views.getByRole('tab', { name: 'DOM', exact: true }).click();
-    await expect(page.locator('iframe[title="DOM at the end of the test"]')).toBeVisible();
   });
 });
