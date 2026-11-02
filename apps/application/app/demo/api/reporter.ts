@@ -124,6 +124,7 @@ import {
   shardSpan,
   withShardDurations,
 } from '~~/server/utils/shard-spans';
+import { updateRunMetadata } from '~~/server/utils/run-metadata';
 
 type DemoDb = Awaited<ReturnType<typeof getDemoDb>>;
 
@@ -466,17 +467,16 @@ export async function apiBeginTestRun(
     // Subsequent shard in a sharded run: register the per-shard stream token
     // in memory and in the run's stored metadata (so a service-worker restart
     // mid-run keeps accepting the shard's events), and add the shard's slice
-    // of the planned suite to the run's total.
+    // of the planned suite to the run's total. What its metadata tells that the
+    // run's does not yet (the commit, the branch) joins the run's (server behavior).
     const tokens = demoShardTokens.get(id) ?? new Set();
     tokens.add(streamToken);
     demoShardTokens.set(id, tokens);
     await persistDemoShardToken(db, id, streamToken, testRun.metadata as Record<string, unknown> | null);
-    if (body.totalTests) {
-      await db
-        .update(testRuns)
-        .set({ totalTests: sql`${testRuns.totalTests} + ${body.totalTests}` })
-        .where(eq(testRuns.id, id));
-    }
+    await updateRunMetadata(db, id, (stored) => ({ ...sanitizeMetadata(body.metadata), ...stored }), {
+      ...(body.totalTests ? { totalTests: sql`${testRuns.totalTests} + ${body.totalTests}` } : {}),
+      branch: sql`COALESCE(${testRuns.branch}, ${resolveRunBranch(body.metadata)})`,
+    });
   } else {
     // Already running — the caller keeps streaming on the stored token.
     return {
@@ -1079,13 +1079,10 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       {
         updatedAt: new Date(),
         status: 'running',
-        // `totalTests` is the planned total set at /begin; the per-status
-        // counters track live progress and are recomputed distinctly once all
-        // shards finish.
-        passedTests: sql`${testRuns.passedTests} + ${body.passedTests ?? 0}`,
-        failedTests: sql`${testRuns.failedTests} + ${sumFailedAndTimedOut(body.failedTests, body.timedOutTests)}`,
-        skippedTests: sql`${testRuns.skippedTests} + ${body.skippedTests ?? 0}`,
-        didNotRunTests: sql`${testRuns.didNotRunTests} + ${body.didNotRunTests ?? 0}`,
+        // The run's test counters are left as they are: every case arrives as a
+        // streamed event, which the events endpoint counted, and they are
+        // recomputed distinctly once all shards finish. Only flakyTests adds up
+        // here (server behavior).
         flakyTests: sql`${testRuns.flakyTests} + ${flakyTests}`,
         shardsFinished: sql`${testRuns.shardsFinished} + 1`,
         // The first shard to report a branch names the run's branch.
@@ -1118,6 +1115,8 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       // mirrors the server's finish handler.
       const counts = await computeRunCountsFromRows(db, id);
       finalStatus = shardedRunStatus(readShardSpans(updatedRun.metadata), counts.failedTests);
+      // The planned total (summed across shards), or the distinct rows when a shard planned none.
+      const totalTests = Math.max(updatedRun.totalTests ?? 0, counts.totalTests);
 
       const stats = durationStats(readShardDurations(updatedRun.metadata));
 
@@ -1126,7 +1125,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
         .set({
           status: finalStatus,
           streamToken: null,
-          totalTests: counts.totalTests,
+          totalTests,
           passedTests: counts.passedTests,
           failedTests: counts.failedTests,
           skippedTests: counts.skippedTests,
@@ -1143,7 +1142,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
         data: {
           status: finalStatus,
           duration: updatedRun.duration,
-          totalTests: counts.totalTests,
+          totalTests,
           passedTests: counts.passedTests,
           failedTests: counts.failedTests,
           skippedTests: counts.skippedTests,

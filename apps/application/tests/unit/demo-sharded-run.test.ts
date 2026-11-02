@@ -1,0 +1,94 @@
+import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { drizzle } from 'drizzle-orm/libsql';
+import { createClient } from '@libsql/client';
+import { eq } from 'drizzle-orm';
+import * as schema from '../../server/database/schema.sqlite';
+import { migrateToLatest } from './temp-db';
+
+/**
+ * The demo's sharded run, through its reporter endpoints (`app/demo/api/reporter.ts`): the same counters, status and
+ * metadata as the server's (`tests/unit/sharded-run-setup.test.ts`).
+ */
+
+const state = vi.hoisted(() => ({ db: null as unknown }));
+vi.mock('../../app/demo/db.client', () => ({ getDemoDb: async () => state.db }));
+
+const { apiSetupTestRun, apiBeginTestRun, apiPostRunEvents, apiFinishTestRun } =
+  await import('../../app/demo/api/reporter');
+
+type Db = ReturnType<typeof drizzle<typeof schema>>;
+let db: Db;
+
+const SHARDS = { projectName: 'demo-shards', instanceId: 'ci-run-1', shardTotal: 2 };
+
+beforeEach(async () => {
+  db = drizzle(createClient({ url: ':memory:' }), { schema });
+  await migrateToLatest(db);
+  state.db = db;
+});
+
+async function readRun(runId: number) {
+  const [run] = await db.select().from(schema.testRuns).where(eq(schema.testRuns.id, runId));
+  return run!;
+}
+
+/** A shard set up and begun, planning `totalTests`; its stream token. */
+async function beginShard(shardIndex: number, totalTests: number, metadata?: Record<string, unknown>) {
+  const { runId, setupToken } = await apiSetupTestRun({ ...SHARDS, shardIndex });
+  const { streamToken } = await apiBeginTestRun(runId, { setupToken, totalTests, shardIndex, metadata, ...SHARDS });
+  return { runId, streamToken };
+}
+
+function result(title: string, status: string, shardIndex: number) {
+  return { type: 'complete' as const, title, location: `tests/${title}.spec.ts:1:1`, status, duration: 10, shardIndex };
+}
+
+describe("the demo's sharded run", () => {
+  test('counts each result once until its last shard ends, and settles to the planned total', async () => {
+    const one = await beginShard(1, 2);
+    const two = await beginShard(2, 2);
+    expect(two.runId).toBe(one.runId);
+
+    await apiPostRunEvents(one.runId, { streamToken: one.streamToken, testCases: [result('pays', 'passed', 1)] });
+    await apiFinishTestRun(one.runId, {
+      streamToken: one.streamToken,
+      status: 'passed',
+      duration: 1000,
+      totalTests: 2,
+      passedTests: 1,
+      failedTests: 0,
+      skippedTests: 0,
+      didNotRunTests: 1,
+      flakyTests: 0,
+      durations: [10],
+      shardIndex: 1,
+      shardTotal: 2,
+    });
+    expect(await readRun(one.runId)).toMatchObject({ status: 'running', passedTests: 1, didNotRunTests: 0 });
+
+    await apiPostRunEvents(one.runId, { streamToken: two.streamToken, testCases: [result('adds', 'passed', 2)] });
+    await apiFinishTestRun(one.runId, {
+      streamToken: two.streamToken,
+      status: 'timedout',
+      duration: 1000,
+      totalTests: 2,
+      passedTests: 1,
+      failedTests: 0,
+      skippedTests: 0,
+      flakyTests: 0,
+      durations: [10],
+      shardIndex: 2,
+      shardTotal: 2,
+    });
+
+    expect(await readRun(one.runId)).toMatchObject({ status: 'timedout', totalTests: 4, passedTests: 2 });
+  });
+
+  test('takes the branch and commit of a shard that joins a run whose first shard sent none', async () => {
+    const scm = { branch: 'feature/pay', commit: '9f2c4e1a7b' };
+    const one = await beginShard(1, 1);
+    await beginShard(2, 1, { scm });
+
+    expect(await readRun(one.runId)).toMatchObject({ branch: 'feature/pay', commit: '9f2c4e1a7b' });
+  });
+});
