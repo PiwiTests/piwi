@@ -44,9 +44,16 @@ const EXPECTED_FAILURE_PASSED_MESSAGE = 'Expected to fail, but passed.';
  * Synthetic error text for a should-fail test that passed — the one case where
  * `classifyStatus` reports `failed` without Playwright recording any error.
  * Returns null everywhere else, so callers fall back to the real error text.
+ * `expectedStatus` is Playwright's, when the caller has it (see `classifyStatus`).
  */
-export function expectedFailureError(rawStatus: string, annotations: TestAnnotation[]): string | null {
-  return rawStatus === 'passed' && expectsFailure(annotations) ? EXPECTED_FAILURE_PASSED_MESSAGE : null;
+export function expectedFailureError(
+  rawStatus: string,
+  annotations: TestAnnotation[],
+  expectedStatus?: string | null,
+): string | null {
+  return rawStatus === 'passed' && resolveExpectedStatus(expectedStatus, annotations) === 'failed'
+    ? EXPECTED_FAILURE_PASSED_MESSAGE
+    : null;
 }
 
 /** Playwright's `TestCase.expectedStatus` values. */
@@ -222,20 +229,27 @@ export function bugOutcome(attempts: readonly OutcomeRow[]): 'looks-fixed' | 'pa
  *    stays `skipped`. Without one it is a side effect of an earlier failure in a
  *    `describe.serial` group, reclassified to `didnotrun` so the dashboard can
  *    tell a deliberate skip apart from a test that never executed.
- *  - A `test.fail()` test (`expectsFailure`) inverts pass and fail: an actual
- *    `failed` is the expected outcome and counts as `passed`, while an actual
- *    `passed` is unexpected and counts as `failed`. A `timedOut` passes through
- *    unchanged — Playwright counts it as unexpected and the dashboard already
- *    reads a timeout as a failure.
+ *  - A test expected to fail inverts pass and fail: an actual `failed` is the
+ *    expected outcome and counts as `passed`, while an actual `passed` is
+ *    unexpected and counts as `failed`. The expected status is Playwright's
+ *    `expectedStatus` when the caller has it, else the one the annotations
+ *    imply (`resolveExpectedStatus`), so a `fail` annotation a test pushes
+ *    itself, without `test.fail()`, inverts nothing. A `timedOut` passes
+ *    through unchanged — Playwright counts it as unexpected and the dashboard
+ *    already reads a timeout as a failure.
  *
  * Every other status passes through unchanged.
  */
-export function classifyStatus(rawStatus: string, annotations: TestAnnotation[]): string {
+export function classifyStatus(
+  rawStatus: string,
+  annotations: TestAnnotation[],
+  expectedStatus?: string | null,
+): string {
   if (rawStatus === 'skipped') {
     const intentional = annotations.some((a) => a.type === 'skip' || a.type === 'fixme');
     return intentional ? 'skipped' : 'didnotrun';
   }
-  if (expectsFailure(annotations)) {
+  if (resolveExpectedStatus(expectedStatus, annotations) === 'failed') {
     if (rawStatus === 'failed') return 'passed';
     if (rawStatus === 'passed') return 'failed';
   }

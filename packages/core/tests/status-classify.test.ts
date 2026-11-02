@@ -3,6 +3,7 @@ import {
   resolveUnrunReason,
   linkBlockedTests,
   classifyStatus,
+  expectedFailureError,
   resolveExpectedStatus,
   isExpectedFailurePassed,
   isFlakyResult,
@@ -97,6 +98,20 @@ describe('expected status', () => {
     expect(resolveExpectedStatus(undefined, [{ type: 'fail' }])).toBe('failed');
     expect(resolveExpectedStatus(null, [{ type: 'fail' }, { type: 'fixme' }])).toBe('skipped');
     expect(resolveExpectedStatus('bogus', null)).toBe('passed');
+  });
+
+  it('inverts pass and fail by the expected status Playwright reported, else by the annotations', () => {
+    // A `fail` annotation the test pushed itself, without `test.fail()`: Playwright still expects a pass.
+    const pushed = [{ type: 'fail', description: 'tracked in JIRA-12' }];
+    expect(classifyStatus('passed', pushed, 'passed')).toBe('passed');
+    expect(classifyStatus('failed', pushed, 'passed')).toBe('failed');
+    expect(expectedFailureError('passed', pushed, 'passed')).toBeNull();
+    expect(classifyStatus('passed', [{ type: 'fail' }], 'failed')).toBe('failed');
+    expect(classifyStatus('failed', [{ type: 'fail' }], 'failed')).toBe('passed');
+    expect(expectedFailureError('passed', [{ type: 'fail' }], 'failed')).toBe('Expected to fail, but passed.');
+    // No expected status: the annotations decide.
+    expect(classifyStatus('passed', pushed, null)).toBe('failed');
+    expect(classifyStatus('failed', [{ type: 'fail' }])).toBe('passed');
   });
 
   it('tells an expected failure that passed from every other row', () => {

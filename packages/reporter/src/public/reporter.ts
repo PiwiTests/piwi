@@ -714,7 +714,7 @@ export class PiwiDashboardReporter {
 
     const { suitePath, suiteConfig } = this.metadataCollector.getSuiteInfo(test);
     const annotations = mergeAnnotations(test, result);
-    const status = classifyStatus(result.status, annotations);
+    const status = classifyStatus(result.status, annotations, test.expectedStatus);
     const tags = collectTestTags(test);
     const locks = collectTestLocks(test);
 
@@ -742,7 +742,9 @@ export class PiwiDashboardReporter {
       timeout: test.timeout ?? null,
       // A `test.fail()` test that passed is now `failed` with no recorded error;
       // Playwright reports the same line, so synthesize it.
-      error: expectedFailureError(result.status, annotations) ?? buildErrorText(result, this.testPathBase),
+      error:
+        expectedFailureError(result.status, annotations, test.expectedStatus) ??
+        buildErrorText(result, this.testPathBase),
       retries: result.retry,
       // Each `--repeat-each` repetition is a test of its own, with its own attempts.
       repeatEachIndex: test.repeatEachIndex,
