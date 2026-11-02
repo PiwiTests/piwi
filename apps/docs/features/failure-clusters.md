@@ -77,7 +77,7 @@ to its site unfurl and stay in sync (see [issue tracking](/features/issue-tracki
 
 A cluster's **owner** is derived, not stored: it comes from the failing test's `piwi:owner` annotation; the
 cluster and execution pages (not the inbox) fall back to the repository's `CODEOWNERS`. An **assignee** overrides it, and the **Mine** queue
-matches either against the signed-in user (by name or email).
+matches either against the signed-in user (by name, username or email).
 
 ## The cluster page
 

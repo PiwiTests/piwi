@@ -87,6 +87,26 @@ afterEach(async () => {
   await close();
 });
 
+describe('list_open_clusters', () => {
+  test("the Mine queue matches the caller's name, username or email, as the dashboard does", async () => {
+    const robin: McpContext = {
+      user: { id: 2, role: InstanceRole.MEMBER, name: 'Robin', username: 'rob', email: 'robin@example.com' } as User,
+      access: roles([1, ProjectRole.MAINTAINER]),
+      scope: new Set([1]),
+    };
+    for (const [id, assignee] of [
+      [1, 'rob'],
+      [2, 'robin@example.com'],
+    ] as const) {
+      await db.update(schema.failureClusters).set({ assignee }).where(eq(schema.failureClusters.id, id));
+    }
+    const mine = (await tool('list_open_clusters')(db as never, { queue: 'mine' }, robin)) as {
+      items: Array<{ id: number }>;
+    };
+    expect(mine.items.map((c) => c.id).sort()).toEqual([1, 2]);
+  });
+});
+
 describe('triage_cluster', () => {
   test('resolves several clusters with a note and skips the ones out of scope or missing', async () => {
     const result = await tool('triage_cluster')(

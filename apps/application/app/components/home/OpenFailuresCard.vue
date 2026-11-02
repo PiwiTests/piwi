@@ -7,6 +7,7 @@ import {
   isSnoozedBack,
   effectiveAssignee,
   groupIncidentClusters,
+  inboxIdentity,
   type InboxQueue,
   type SnoozeOption,
   type UserIdentity,
@@ -113,10 +114,7 @@ onMounted(() => {
   }
 });
 
-const user = computed<UserIdentity | null>(() => {
-  const u = authState.value.user;
-  return u ? { name: u.name ?? null, username: u.username ?? null } : null;
-});
+const user = computed<UserIdentity | null>(() => inboxIdentity(authState.value.user));
 
 /** The name "Assign to me" writes: none without a signed-in user (authentication off), so the action is not offered. */
 const myAssigneeName = computed(() => user.value?.name ?? user.value?.username ?? null);

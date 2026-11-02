@@ -1306,6 +1306,7 @@ export interface AuthUser {
   username: string;
   role: InstanceRole;
   name?: string | null;
+  email?: string | null;
   avatarUrl?: string | null;
   /** The instance role and the project roles held, own and through groups; `can()` in `#shared/permissions` reads it. */
   access: AccessSummary;

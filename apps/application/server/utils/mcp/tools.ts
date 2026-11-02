@@ -60,7 +60,14 @@ import {
   quarantineClusterTests,
   releaseClusterTests,
 } from '#shared/handlers/failure-clusters';
-import { BULK_TRIAGE_MAX, clusterInQueue, isInboxQueue, isSnoozeOption, parseBulkIds } from '#shared/inbox-queues';
+import {
+  BULK_TRIAGE_MAX,
+  clusterInQueue,
+  inboxIdentity,
+  isInboxQueue,
+  isSnoozeOption,
+  parseBulkIds,
+} from '#shared/inbox-queues';
 import {
   getSuggestionProjectId,
   pendingSuggestionsForCluster,
@@ -2284,7 +2291,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     // the same axis as the emitted cursor.
     const queue = params.queue as string | undefined;
     if (queue && isInboxQueue(queue) && queue !== 'all') {
-      const user = { name: ctx.user?.name ?? null, email: ctx.user?.email ?? null };
+      const user = inboxIdentity(ctx.user);
       const enriched = await getOpenFailureClusters(db, ctx.scope, 200);
       const mappedQueue = enriched
         .filter((c) => clusterInQueue(c, queue, { user, lastVisitMs: null }))

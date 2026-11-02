@@ -105,6 +105,17 @@ export interface UserIdentity {
   email?: string | null;
 }
 
+/**
+ * The identity "Mine" matches for a signed-in user, the same in the dashboard
+ * and over MCP: their name, username and email. None without a user
+ * (authentication off).
+ */
+export function inboxIdentity(
+  user: { name?: string | null; username?: string | null; email?: string | null } | null | undefined,
+): UserIdentity | null {
+  return user ? { name: user.name ?? null, username: user.username ?? null, email: user.email ?? null } : null;
+}
+
 function norm(value: string | null | undefined): string {
   return (value ?? '').trim().toLowerCase();
 }

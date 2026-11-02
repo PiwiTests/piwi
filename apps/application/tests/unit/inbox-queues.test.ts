@@ -8,6 +8,7 @@ import {
   wakeOnRecurrence,
   personIsUser,
   isMine,
+  inboxIdentity,
   effectiveAssignee,
   isNewSince,
   clusterInQueue,
@@ -96,6 +97,14 @@ describe('mine / user match', () => {
     expect(isMine({ assignee: null, owner: { name: 'ada' } }, user)).toBe(true);
     expect(isMine({ assignee: 'bob', owner: { name: 'carol' } }, user)).toBe(false);
     expect(isMine({ assignee: 'ada' }, null)).toBe(false);
+  });
+
+  it("is one identity everywhere: the signed-in user's name, username and email", () => {
+    const signedIn = inboxIdentity({ name: 'Ada Lovelace', username: 'ada', email: 'ada@example.com' });
+    for (const assignee of ['Ada Lovelace', 'ada', 'ada@example.com']) {
+      expect(isMine({ assignee }, signedIn), assignee).toBe(true);
+    }
+    expect(inboxIdentity(null)).toBeNull();
   });
 
   it('prefers the assignee over the owner for the effective owner line', () => {
