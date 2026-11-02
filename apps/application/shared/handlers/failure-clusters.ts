@@ -9,7 +9,7 @@
   clusterMergeSuggestions,
   projectIntegrations,
 } from '../../server/database/schema';
-import { eq, and, desc, gte, sql, inArray, or, isNull, lte, type SQL } from 'drizzle-orm';
+import { eq, and, desc, gte, sql, inArray, notInArray, or, isNull, lte, type SQL } from 'drizzle-orm';
 import { makeTimeBuckets } from './analytics/common';
 import { isLabRun } from './probes';
 import { splitSuitePath } from '../utils/suites';
@@ -35,11 +35,13 @@ import { caseHeadline } from '#shared/failure-verdict';
 import { computeClusterState, failureGoesOn, ticketReconcileKey, type ClusterState } from '#shared/cluster-state';
 import {
   CI_RUN_ORIGINS,
+  eligibleRunSql,
   LOCAL_RUN_ORIGINS,
   runOriginIn,
   UNFINISHED_RUN_STATUSES,
   type RunOriginKind,
 } from '#shared/run-eligibility';
+import { projectDefaultBranch } from '../../server/utils/scm/stored-default-branch';
 import { computeNextStep, type FlakeLabStepFacts, type NextStep } from '#shared/next-step';
 import { getFlakeLabStepFacts } from './flake-lab';
 import { mayHaveFlakeSuspects } from './flake-profile';
@@ -154,6 +156,73 @@ export async function getHealingStepFacts(
 
 type ProjectScope = 'all' | Set<number>;
 
+/** The most recent runs the state line reads to find those that could have shown a cluster's failure. */
+const STATE_LINE_RUNS_SCANNED = 200;
+
+/** The most runs the state line counts a failure as not seen for. */
+const STATE_LINE_RUNS = 50;
+
+/**
+ * The runs the cluster state counts, newest first: the run the cluster was last
+ * seen in, and the runs since that could have shown its failure, by the rule fix
+ * verification follows. Such a run is eligible for fix verification (no lab run,
+ * bisect step, reproduction or environment incident), finished, on the branch
+ * the cluster last failed on or the default branch, and ran every test the
+ * cluster covers. Any other run did not skip the failure. Only the runs since
+ * the last one it was seen in are read: the state counts those.
+ */
+async function clusterStateRunIds(
+  db: DrizzleDB,
+  cluster: { id: number; projectId: number; lastSeenRunId: number },
+  lastSeenBranch: string | null,
+  affectedTests: number,
+): Promise<number[]> {
+  const runs = await db
+    .select({ id: testRuns.id, branch: testRuns.branch })
+    .from(testRuns)
+    .where(
+      and(
+        eq(testRuns.projectId, cluster.projectId),
+        or(
+          eq(testRuns.id, cluster.lastSeenRunId),
+          and(eligibleRunSql('fix-verification'), notInArray(testRuns.status, [...UNFINISHED_RUN_STATUSES])),
+        ),
+      ),
+    )
+    .orderBy(desc(testRuns.startTime), desc(testRuns.id))
+    .limit(STATE_LINE_RUNS_SCANNED);
+  const seenAt = runs.findIndex((run) => run.id === cluster.lastSeenRunId);
+  const since = seenAt < 0 ? runs : runs.slice(0, seenAt);
+  const defaultBranch = since.length ? await projectDefaultBranch(db, cluster.projectId) : null;
+  const failedBranch = lastSeenBranch?.trim() || null;
+  const onBranch = since.filter((run) => {
+    const branch = run.branch?.trim() || null;
+    return branch === failedBranch || (branch != null && branch === defaultBranch);
+  });
+  const ids = onBranch.map((run) => run.id);
+  const covered = ids.length
+    ? await db
+        .select({ runId: testRunsCases.testRunId, tests: sql<number>`count(distinct ${testRunsCases.testCaseId})` })
+        .from(testRunsCases)
+        .where(
+          and(
+            inArray(testRunsCases.testRunId, ids),
+            inArray(
+              testRunsCases.testCaseId,
+              db
+                .select({ testCaseId: testRunsCases.testCaseId })
+                .from(testRunsCases)
+                .where(eq(testRunsCases.failureClusterId, cluster.id)),
+            ),
+          ),
+        )
+        .groupBy(testRunsCases.testRunId)
+    : [];
+  const testsRun = new Map(covered.map((row) => [row.runId, Number(row.tests)]));
+  const skipped = ids.filter((id) => (testsRun.get(id) ?? 0) >= Math.max(1, affectedTests));
+  return [...skipped, ...(seenAt < 0 ? [] : [cluster.lastSeenRunId])].slice(0, STATE_LINE_RUNS);
+}
+
 const VALID_STATUSES = ['open', 'resolved', 'ignored'];
 
 /** Affected tests the cluster detail payload lists; `affectedTests` carries the full count. */
@@ -214,7 +283,7 @@ export async function getFailureCluster(
         .where(eq(testRunsCases.failureClusterId, clusterId)),
 
       db
-        .select({ status: testRuns.status, startTime: testRuns.startTime })
+        .select({ status: testRuns.status, startTime: testRuns.startTime, branch: testRuns.branch })
         .from(testRuns)
         .where(eq(testRuns.id, cluster.lastSeenRunId)),
 
@@ -271,8 +340,9 @@ export async function getFailureCluster(
     ? { name: annotationOwner, source: 'annotation' as const }
     : (null as { name: string; source: 'annotation' | 'codeowners' } | null);
 
-  // The project's recent runs, newest first — the frame for both the occurrence
-  // sparkline (last 20) and the "still failing / quiet" decision.
+  // The project's recent runs, newest first — the frame for the occurrence
+  // sparkline (last 20) and for whether the failure goes on. The "still failing
+  // / quiet" decision reads its own runs (`clusterStateRunIds`).
   const projectRuns = await db
     .select({ id: testRuns.id, startedAt: testRuns.startTime, status: testRuns.status })
     .from(testRuns)
@@ -319,6 +389,12 @@ export async function getFailureCluster(
   // The cluster's diagnosed patch: whether it still applied at the verified fix's
   // commit decides both whether that fix is confirmed and the next step.
   const patchFacts = await getClusterPatchFacts(db, clusterId, { fixLandedRunId: cluster.fixLandedRunId });
+  const stateRunIds = await clusterStateRunIds(
+    db,
+    cluster,
+    lastRun?.branch ?? null,
+    Number(countRow?.affectedTests ?? 0),
+  );
 
   const clusterState: ClusterState = computeClusterState(
     {
@@ -339,7 +415,7 @@ export async function getFailureCluster(
       knownIssue: reconcileKnownIssue,
       diagnosedPatchApplies: patchFacts.patchAppliesAtFix,
     },
-    { runIdsNewestFirst: projectRuns.map((r) => r.id), failureGoesOn: goesOn, now: opts.now },
+    { runIdsNewestFirst: stateRunIds, failureGoesOn: goesOn, now: opts.now },
   );
 
   // The next-step policy runs on the cluster's latest occurrence: its locator
