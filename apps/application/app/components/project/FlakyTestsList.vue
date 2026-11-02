@@ -24,7 +24,11 @@ const quarantiningId = ref<number | null>(null);
 const runsWindow = useViewState('failures:flaky-runs-window', () => 50);
 const rootCauseFilter = useViewState<string[]>('failures:flaky-root-causes', () => []);
 
-const { data: flaky, status } = await useFetch(
+const {
+  data: flaky,
+  status,
+  refresh,
+} = await useFetch(
   () => {
     const params = new URLSearchParams({
       runs: String(runsWindow.value),
@@ -38,6 +42,8 @@ const { data: flaky, status } = await useFetch(
     transform: (r: { items: FlakyTest[]; verifiedFixed?: VerifiedFixedFlakyTest[] }) => r,
   },
 );
+// A run that starts or ends reads the list again, as it does the tab's counts.
+useRunStream(() => refresh());
 const tests = computed(() => flaky.value?.items ?? null);
 /** Tests a verified fix took off the ranking; they return to it at their next retry-pass. */
 const verifiedFixed = computed(() => flaky.value?.verifiedFixed ?? []);

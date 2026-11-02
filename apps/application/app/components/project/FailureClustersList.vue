@@ -51,6 +51,9 @@ const {
   },
 );
 
+// A run that starts or ends reads the list again, as it does the tab's counts.
+useRunStream(() => refresh());
+
 // The server renders before the client-only fetch starts (`idle`), so idle reads as loading too.
 const loading = computed(() => clustersStatus.value === 'idle' || clustersStatus.value === 'pending');
 
