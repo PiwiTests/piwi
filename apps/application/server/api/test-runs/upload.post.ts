@@ -23,7 +23,7 @@ import { runCommit, runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../utils/run-events';
 import { runFinalizeSideEffects } from '../../utils/run-finalize-side-effects';
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
-import { deliverOnce, readDeliveryKey } from '../../utils/run-deliveries';
+import { deliverOnce, readDeliveryKey, storeOrDiscardRun } from '../../utils/run-deliveries';
 import {
   addBatchShard,
   batchShardRun,
@@ -461,12 +461,9 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
     if (!attachingToExistingRun && testCasesData && testCasesData.length > 0) {
       // Traces and attachments are keyed by the index of their case in the
       // upload; a duplicate case the insert skipped has no execution to link to.
-      const insertedRunCases = await persistRunCases(
-        db,
-        project.id,
-        testRun.id,
-        testCasesData.map(mapWireCaseToRunCase),
-      );
+      const persist = () => persistRunCases(db, project.id, testRun.id, testCasesData.map(mapWireCaseToRunCase));
+      // A shard's run holds the other shards' executions: only a run this upload created goes when its own fail.
+      const insertedRunCases = isBatchShard ? await persist() : await storeOrDiscardRun(db, testRun.id, persist);
       const executionByIndex = new Map(insertedRunCases.map((row) => [row.inputIndex, row]));
 
       // Store trace files linked to their test run case, in the project's

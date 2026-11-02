@@ -8,7 +8,7 @@ import { sanitizeMetadata } from '../../utils/sanitize';
 import { resolveRunBranch } from '../../utils/run-branch';
 import { runCommit, runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../utils/run-events';
-import { deliverOnce, readDeliveryKey } from '../../utils/run-deliveries';
+import { deliverOnce, readDeliveryKey, storeOrDiscardRun } from '../../utils/run-deliveries';
 import {
   addBatchShard,
   batchShardRun,
@@ -150,7 +150,9 @@ export default eventHandler(async (event) => {
     if (testCases.length > 0) {
       flakyTestCount = countFlakyBatchCases(testCases);
 
-      await persistRunCases(db, project.id, testRun.id, testCases.map(mapWireCaseToRunCase));
+      await storeOrDiscardRun(db, testRun.id, () =>
+        persistRunCases(db, project.id, testRun.id, testCases.map(mapWireCaseToRunCase)),
+      );
     }
 
     // Update test run with flaky test count if any were found
