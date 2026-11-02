@@ -135,40 +135,9 @@ export function createGlobalSetup(
     try {
       const auth = await httpClient.resolveAuth(opts);
 
-      // The shard from Playwright's --shard=1/3, or the one `piwi run --shard` set
-      const shard = resolveShardInfo(config);
-
-      const response = await httpClient.postJSON(
-        '/api/test-runs/setup',
-        {
-          projectName: opts.projectName,
-          projectDescription: opts.projectDescription,
-          environment: opts.environment || null,
-          label: opts.label || null,
-          keep: opts.keep === true,
-          startTime: new Date().toISOString(),
-          instanceId: computeInstanceId(opts.projectName!, resolveRunLabel(opts.runLabel, shard !== null)),
-          shardIndex: shard?.current,
-          shardTotal: shard?.total,
-          // A key for the run's live view: the instance hands one out only for a project that turned it on, and the
-          // desktop app none. A CI run's workers stream with it at once; a run outside CI sends nothing with it until a
-          // person shares the run.
-          liveView: true,
-        },
-        auth,
-      );
-
-      if (response?.runId && response?.setupToken) {
-        const liveViewKey = response.liveView?.key;
-        writeSetupInfo({
-          runId: response.runId,
-          setupToken: response.setupToken,
-          projectName: opts.projectName!,
-          ...(isLiveViewKey(liveViewKey) ? { liveViewKey } : {}),
-          ...(response.liveView?.refused === 'local' ? { liveViewLocal: true as const } : {}),
-        });
-        logger.debug(`Global setup: initializing run #${response.runId}`);
-      }
+      // The run registered here is the one the reporter streams into. A run sent in one batch at its end creates its
+      // own, so with streaming off nothing is registered: no run waits for a stream that never comes.
+      if (opts.streaming !== false) await registerRun(httpClient, auth, opts, config, logger);
 
       // A prior run's ARIA sample set is always cleared first so a stale file
       // never leaks in — even when sampling is off this run.
@@ -232,4 +201,51 @@ export function createGlobalSetup(
 
     if (userSetup) return userSetup(config);
   };
+}
+
+/**
+ * Register the run the reporter will stream into (`/api/test-runs/setup`), and hand its id, setup token and live view
+ * key to the reporter's stream through the setup file.
+ */
+async function registerRun(
+  httpClient: HttpClient,
+  auth: string | null,
+  opts: PiwiDashboardOptions,
+  config: any,
+  logger: Logger,
+): Promise<void> {
+  // The shard from Playwright's --shard=1/3, or the one `piwi run --shard` set
+  const shard = resolveShardInfo(config);
+
+  const response = await httpClient.postJSON(
+    '/api/test-runs/setup',
+    {
+      projectName: opts.projectName,
+      projectDescription: opts.projectDescription,
+      environment: opts.environment || null,
+      label: opts.label || null,
+      keep: opts.keep === true,
+      startTime: new Date().toISOString(),
+      instanceId: computeInstanceId(opts.projectName!, resolveRunLabel(opts.runLabel, shard !== null)),
+      shardIndex: shard?.current,
+      shardTotal: shard?.total,
+      // A key for the run's live view: the instance hands one out only for a project that turned it on, and the
+      // desktop app none. A CI run's workers stream with it at once; a run outside CI sends nothing with it until a
+      // person shares the run.
+      liveView: true,
+    },
+    auth,
+  );
+
+  if (response?.runId && response?.setupToken) {
+    const liveViewKey = response.liveView?.key;
+    writeSetupInfo({
+      runId: response.runId,
+      setupToken: response.setupToken,
+      projectName: opts.projectName!,
+      ...(isLiveViewKey(liveViewKey) ? { liveViewKey } : {}),
+      ...(response.liveView?.refused === 'local' ? { liveViewLocal: true as const } : {}),
+    });
+    logger.debug(`Global setup: initializing run #${response.runId}`);
+  }
 }

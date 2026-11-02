@@ -107,6 +107,26 @@ describe('createGlobalSetup', () => {
     }
   });
 
+  it('registers no run when streaming is off, while still fetching the sample set', async () => {
+    const { server, url, requests } = await startServer((req, res) => {
+      if (req.url === '/api/projects/menu') return jsonRes(res, 200, { items: [{ id: 9, name: 'batch-only' }] });
+      if (req.url === '/api/projects/9/aria-sampling') return jsonRes(res, 200, { tests: [] });
+      return jsonRes(res, 200, { runId: 5, setupToken: 't' });
+    });
+    cleanupNames.push('batch-only');
+    try {
+      const setupFn = createGlobalSetup({ serverUrl: url, projectName: 'batch-only', streaming: false });
+      await setupFn({ reporter: [PIWI_REPORTER_ENTRY] });
+
+      // The run is created by the batch upload at the end; one registered here would wait for a stream that never comes.
+      expect(requests.map((r) => r.url)).not.toContain('/api/test-runs/setup');
+      expect(requests.map((r) => r.url)).toContain('/api/projects/9/aria-sampling');
+      expect(fs.existsSync(getSetupFilePath('batch-only'))).toBe(false);
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
   it('does not fetch the sample set when sampleAriaOnPass is off', async () => {
     const { server, url, requests } = await startServer((_req, res) => jsonRes(res, 200, { runId: 5, setupToken: 't' }));
     cleanupNames.push('sampling-off');

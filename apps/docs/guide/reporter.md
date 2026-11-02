@@ -167,7 +167,8 @@ export default createGlobalSetup({}, async (config) => {
 ```
 
 Registration is best-effort: if the server is unreachable, the run is created when tests begin. Playwright's UI mode
-(`--ui`) skips registration, since it swaps the reporter out; your own setup still runs.
+(`--ui`) skips registration, since it swaps the reporter out, and so does a run with `streaming: false`, which the
+dashboard receives in one batch at its end; your own setup still runs.
 
 ## Multiple reports
 
