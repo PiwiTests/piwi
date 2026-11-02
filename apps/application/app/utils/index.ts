@@ -6,6 +6,7 @@ import { formatDistanceToNow, formatDuration as formatDurationLib, intervalToDur
 import { TEST_PRIORITIES, type TestPriority } from '@piwitests/core/test-meta';
 import { formatAbsolute } from '#shared/i18n/locale-format';
 import { foldText } from '#shared/utils/fold-text';
+import { passRatePercent } from '#shared/utils/pass-rate';
 import { activeLocalePrefs } from './locale-format';
 import { statusPalette, statusPaletteKey } from './status-palette';
 
@@ -863,9 +864,9 @@ export function copyPreview(text: string | null | undefined, max = 120): string 
 /** Nuxt UI `color` union shared by `UBadge` / `UButton` call sites (`flaky` is registered in nuxt.config.ts). */
 export type BadgeColor = 'error' | 'neutral' | 'primary' | 'success' | 'warning' | 'secondary' | 'info' | 'flaky';
 
-/** Pass rate (0–100) for a single run, guarding against divide-by-zero. */
-export function passRate(run: { passedTests: number; totalTests: number }): number {
-  return run.totalTests > 0 ? Math.round((run.passedTests / run.totalTests) * 100) : 0;
+/** A run's pass rate in whole percent (`passRatePercent`): null when none of its tests passed or failed. */
+export function runPassRate(run: { passedTests: number; failedTests: number }): number | null {
+  return passRatePercent({ passed: run.passedTests, failed: run.failedTests });
 }
 
 /** Badge color for an HTTP method (network request rows). */

@@ -13,6 +13,7 @@ import { RUN_STATUS_SERIES, legendOf } from '~/utils/chart';
 import { drillQueryKey, parseDrillQuery, type DrillScope } from '~/utils/analytics-drilldown';
 import { projectRunScopeQuery, runInProjectScope, type ProjectRunScope } from '#shared/project-run-scope';
 import { isRunFinished } from '#shared/project-health';
+import { passRatePercent } from '#shared/utils/pass-rate';
 import { compareOrder } from '~/utils/run-compare';
 import { sortRows, type SortValue } from '~/utils/table-sort';
 import type { ProjectHeaderTarget } from '~/components/project/ProjectHeader.vue';
@@ -303,12 +304,12 @@ const latestRun = computed(() => finishedRuns.value[0] ?? [...scopedRuns.value].
 const passRateRuns = computed(() => finishedRuns.value.slice(0, PASS_RATE_RUNS));
 const passRate = computed(() => {
   let passed = 0;
-  let total = 0;
+  let failed = 0;
   for (const r of passRateRuns.value) {
     passed += r.passedTests;
-    total += r.totalTests;
+    failed += r.failedTests;
   }
-  return total > 0 ? Math.round((passed / total) * 100) : null;
+  return passRatePercent({ passed, failed });
 });
 
 const {

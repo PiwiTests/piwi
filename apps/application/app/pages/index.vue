@@ -3,6 +3,7 @@ import type { FilterBarState } from '~/components/shared/FilterBar.vue';
 import type { OpenFailureCluster, ProjectOverview, TestRunForChart } from '~~/types/api';
 import { errorMessage } from '~/utils';
 import { overviewInEnvironments, runsInFilters } from '~/utils/home-overview';
+import { passRatePercent } from '#shared/utils/pass-rate';
 import type { RecentRunCount } from '#shared/handlers/test-runs';
 import type { FlakeLabInboxItem } from '#shared/handlers/flake-lab';
 
@@ -144,15 +145,15 @@ const overviewStats = computed(() => {
   const failingNow = projects.filter((p) => p.tendency === 'failing').length;
   const flakyNow = projects.filter((p) => p.tendency === 'flaky').length;
 
-  let totalPassed = 0;
-  let totalTests = 0;
+  let passed = 0;
+  let failed = 0;
   for (const p of projects) {
     if (p.latestFullRun) {
-      totalPassed += p.latestFullRun.passedTests;
-      totalTests += p.latestFullRun.totalTests;
+      passed += p.latestFullRun.passedTests;
+      failed += p.latestFullRun.failedTests;
     }
   }
-  const avgPassRate = totalTests > 0 ? Math.round((totalPassed / totalTests) * 100) : null;
+  const avgPassRate = passRatePercent({ passed, failed });
 
   // Every run of the last 24 hours within the filters, not only the ones the activity list holds.
   const runs24h = runsInFilters(recentAnswer.value?.runsLast24h ?? [], filters.value);
@@ -442,7 +443,9 @@ useViewScroll(() => dashboardPanelBody('home'));
                   <div class="text-xs text-gray-400">Run #{{ run.id }} · {{ formatRelativeTime(run.startTime) }}</div>
                 </div>
                 <div class="text-right tabular-nums shrink-0">
-                  <div :class="passRateTextClass(passRate(run))">{{ passRate(run) }}%</div>
+                  <div :class="passRateTextClass(runPassRate(run))">
+                    {{ runPassRate(run) !== null ? `${runPassRate(run)}%` : '—' }}
+                  </div>
                   <DurationValue v-if="run.duration" :ms="run.duration" class="block text-xs text-gray-400" />
                 </div>
               </NuxtLink>

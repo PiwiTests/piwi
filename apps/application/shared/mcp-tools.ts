@@ -528,6 +528,7 @@ export const MCP_TOOL_DEFS = [
     description: md(
       'Compare a run with its baseline, to answer what changed and whether a fix worked.',
       'It returns the pass-rate delta, new regressions, recurrences, recovered tests, new flaky tests, the biggest performance improvements and regressions, worker imbalance and newly opened clusters.',
+      'A pass rate (`passRate`, `baselinePassRate`) is the passed tests over the tests that passed or failed, in percent, and is absent when none did.',
       'The baseline is the last passing run in the same environment, on the same branch, else the branch it forked from, else any branch; when no earlier full run passed, it is the last failed run, found the same way. `baseline` says why it was chosen.',
     ),
     inputSchema: {

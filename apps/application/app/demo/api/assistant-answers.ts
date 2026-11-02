@@ -929,7 +929,13 @@ async function answerRunChanges(w: AnswerWriter): Promise<DemoAnswer> {
     return w.done('run-changes');
   }
   const baseline = w.link('run', insights.baseline.id);
-  const points = Math.round(insights.passRateDelta * 10) / 10;
+  const points = insights.passRateDelta === null ? null : Math.round(insights.passRateDelta * 10) / 10;
+  const rates =
+    insights.passRate === null
+      ? 'no test passed or failed, so it has no pass rate'
+      : points === null
+        ? `the pass rate is ${insights.passRate}%, and the baseline has none to compare with`
+        : `the pass rate is ${insights.passRate}%, ${points === 0 ? 'the same as' : `${Math.abs(points)} points ${points > 0 ? 'above' : 'below'}`} the baseline’s ${insights.baselinePassRate}%`;
   const list = (items: Array<{ executionId: number; title: string }>, more: number) =>
     `${items.map((t) => w.link('execution', t.executionId, t.title)).join(', ')}${more > items.length ? `, and ${more - items.length} more` : ''}`;
   const lines = [
@@ -958,7 +964,7 @@ async function answerRunChanges(w: AnswerWriter): Promise<DemoAnswer> {
       : null,
   ].filter(Boolean);
   w.text(
-    `${run} against its baseline, ${baseline}${insights.baselineNote ? ` (${insights.baselineNote.charAt(0).toLowerCase()}${insights.baselineNote.slice(1).replace(/\.$/, '')})` : ''}: the pass rate is ${Math.round(insights.passRate)}%, ${points === 0 ? 'the same as' : `${Math.abs(points)} points ${points > 0 ? 'above' : 'below'}`} the baseline’s ${Math.round(insights.baselinePassRate)}%.`,
+    `${run} against its baseline, ${baseline}${insights.baselineNote ? ` (${insights.baselineNote.charAt(0).toLowerCase()}${insights.baselineNote.slice(1).replace(/\.$/, '')})` : ''}: ${rates}.`,
     lines.join('\n'),
   );
   w.block('show_entity', {

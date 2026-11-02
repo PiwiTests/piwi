@@ -71,6 +71,24 @@ describe('computeRunInsights', () => {
     expect(insights).toMatchObject({ baselinePassRate: 75, passRateDelta: -25 });
   });
 
+  test('reads a pass rate over the tests that passed or failed, and none when no test did', async () => {
+    await attempts(10, [
+      { testCaseId: 1, browserName: 'chromium', status: 'skipped', retries: 0 },
+      { testCaseId: 2, browserName: 'chromium', status: 'didnotrun', retries: 0 },
+    ]);
+    await attempts(11, [
+      { testCaseId: 1, browserName: 'chromium', status: 'passed', retries: 0 },
+      { testCaseId: 2, browserName: 'chromium', status: 'skipped', retries: 0 },
+      { testCaseId: 3, browserName: 'chromium', status: 'didnotrun', retries: 0 },
+      { testCaseId: 3, browserName: 'firefox', status: 'interrupted', retries: 0 },
+    ]);
+
+    const insights = await computeRunInsights(db as never, 11);
+
+    expect(insights).toMatchObject({ totalTests: 4, passedTests: 1, failedTests: 0, passRate: 100 });
+    expect(insights).toMatchObject({ baselinePassRate: null, passRateDelta: null });
+  });
+
   test('lists a test flaky on retry once, whatever its repetitions', async () => {
     await attempts(10, [{ testCaseId: 2, browserName: 'chromium', status: 'passed', retries: 0 }]);
     await attempts(11, [

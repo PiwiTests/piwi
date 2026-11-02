@@ -29,6 +29,7 @@ import {
   copyPreview,
   reportIcon,
   getBrowserIcon,
+  runPassRate,
 } from '../../app/utils/index';
 
 describe('formatBytes', () => {
@@ -163,6 +164,18 @@ describe('getStatusColor', () => {
 
   test('falls back to neutral for unknown statuses', () => {
     expect(getStatusColor('whatever')).toBe('neutral');
+  });
+});
+
+describe('runPassRate', () => {
+  test('reads the passed tests of a run over the ones that passed or failed', () => {
+    // 1 passed and 26 did not run: the run stopped, its one decided test passed.
+    expect(runPassRate({ passedTests: 1, failedTests: 0 })).toBe(100);
+    expect(runPassRate({ passedTests: 7, failedTests: 3 })).toBe(70);
+  });
+
+  test('has none when no test passed or failed', () => {
+    expect(runPassRate({ passedTests: 0, failedTests: 0 })).toBeNull();
   });
 });
 

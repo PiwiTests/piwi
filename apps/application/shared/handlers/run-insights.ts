@@ -8,6 +8,7 @@ import { normalizeGitUrl } from '../../server/utils/scm/git-url';
 import { buildCommitRange, computeMetadataDiff, type CommitRange, type MetaDiffEntry } from '../utils/run-metadata';
 import { readProjectDefaultBranch, resolveFallbackBranch } from './baseline-scope';
 import { finalAttempts, flakyFinalAttempts, testKey, testOutcomes } from '../utils/test-counts';
+import { passRatePercent } from '../utils/pass-rate';
 import { notLabRun } from './probes';
 import { TERMINAL_STATUSES } from './projects';
 import { describeRunBaseline, type RunBaselineFallback, type RunBaselineMatch } from '#shared/run-baseline';
@@ -81,9 +82,11 @@ export interface RunInsightsResult {
   totalTests: number;
   passedTests: number;
   failedTests: number;
-  passRate: number;
-  baselinePassRate: number;
-  passRateDelta: number;
+  /** Whole percent (`passRatePercent`); null when no test passed or failed. */
+  passRate: number | null;
+  baselinePassRate: number | null;
+  /** Points this run's pass rate is above the baseline's; null when either has none. */
+  passRateDelta: number | null;
   avgDurationDelta: number | null;
   newRegressions: TestCaseEntry[];
   recurrences: TestCaseEntry[];
@@ -245,9 +248,9 @@ export async function computeRunInsights(
     totalTests: 0,
     passedTests: 0,
     failedTests: 0,
-    passRate: 0,
-    baselinePassRate: 0,
-    passRateDelta: 0,
+    passRate: null,
+    baselinePassRate: null,
+    passRateDelta: null,
     avgDurationDelta: null,
     newRegressions: [],
     recurrences: [],
@@ -351,12 +354,13 @@ export async function computeRunInsights(
   const totalTests = currentCases.length;
   const passedTests = currentCases.filter((c: any) => c.status === 'passed').length;
   const failedTests = currentCases.filter((c: any) => FAIL_STATUSES.has(c.status)).length;
-  const passRate = totalTests > 0 ? Math.round((passedTests / totalTests) * 100) : 0;
+  const passRate = passRatePercent({ passed: passedTests, failed: failedTests });
 
-  const baselineTotal = baselineCases.length;
-  const baselinePassed = baselineCases.filter((bc: any) => bc.status === 'passed').length;
-  const baselinePassRate = baselineTotal > 0 ? Math.round((baselinePassed / baselineTotal) * 100) : 0;
-  const passRateDelta = passRate - baselinePassRate;
+  const baselinePassRate = passRatePercent({
+    passed: baselineCases.filter((bc: any) => bc.status === 'passed').length,
+    failed: baselineCases.filter((bc: any) => FAIL_STATUSES.has(bc.status)).length,
+  });
+  const passRateDelta = passRate !== null && baselinePassRate !== null ? passRate - baselinePassRate : null;
 
   // Average duration change across all comparable passing tests
   const avgDurationDelta =

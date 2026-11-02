@@ -137,11 +137,11 @@ const columns: TableColumn<Row>[] = [
         <!-- Pass rate -->
         <template #passRate-cell="{ row }">
           <span
-            v-if="row.original.latestFullRun"
+            v-if="row.original.latestFullRun && runPassRate(row.original.latestFullRun) !== null"
             class="font-semibold tabular-nums text-sm"
-            :class="passRateTextClass(passRate(row.original.latestFullRun))"
+            :class="passRateTextClass(runPassRate(row.original.latestFullRun))"
           >
-            {{ passRate(row.original.latestFullRun) }}%
+            {{ runPassRate(row.original.latestFullRun) }}%
           </span>
           <span v-else class="text-gray-400 text-sm">—</span>
         </template>
@@ -208,8 +208,8 @@ const columns: TableColumn<Row>[] = [
           <span v-else class="text-gray-400">No full runs</span>
 
           <span v-if="row.latestFullRun" class="shrink-0 tabular-nums text-gray-500 dark:text-gray-400">
-            <span class="font-semibold" :class="passRateTextClass(passRate(row.latestFullRun))">
-              {{ passRate(row.latestFullRun) }}%
+            <span class="font-semibold" :class="passRateTextClass(runPassRate(row.latestFullRun))">
+              {{ runPassRate(row.latestFullRun) !== null ? `${runPassRate(row.latestFullRun)}%` : '—' }}
             </span>
             · {{ row.latestFullRun.passedTests }}/{{ row.latestFullRun.totalTests }}
           </span>

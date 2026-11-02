@@ -84,6 +84,16 @@ this is what they mean; when they say *test case*, they mean the identity above 
 The distinction matters in practice: "this test is flaky" is a statement about a **test case**, and
 "here is the stack trace" is a statement about one **execution**.
 
+### Pass rate
+
+**The passed results over the results that passed or failed.** A timed-out result counts as failed. A skipped,
+did-not-run or interrupted result is in neither term, so a suite that skips tests by design, or a run stopped
+halfway, is rated on the tests that ran to an outcome. A flaky result, passed on a retry, counts as passed. With no
+passed or failed result there is no pass rate: the dashboard shows a dash, never 0% or 100%.
+
+Every pass rate follows this one rule: a run's, a project's, Home's, a test's, the
+[test pass rate metric](/reference/metrics) of Analytics and the quality reports, and a share link's README badge.
+
 ### Baseline (last green run)
 
 Several views answer "what changed?" — the Changes tab and run insights, the regression signals on a
