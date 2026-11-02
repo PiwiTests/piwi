@@ -26,7 +26,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Transition test run from initializing to running',
     description:
-      'Begins a streaming test run by transitioning it from "initializing" to "running" status. Requires the setup token returned by the setup endpoint, which it accepts once. Supports sharded runs: every shard begins with its own setup token, and a shard beginning a run another shard already began joins it with a stream token of its own.',
+      'Begins a streaming test run by transitioning it from "initializing" to "running" status. Requires the setup token returned by the setup endpoint, which it accepts once. Supports sharded runs: every shard begins with its own setup token, and a shard beginning a run another shard already began joins it with a stream token of its own, adding what its `metadata` names that the run lacks, such as the branch and commit.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     requestBody: {
       content: {
@@ -177,20 +177,28 @@ async function beginRun(db: DbClient, id: number, body: Record<string, any>) {
     runEventBus.publishGlobal({ type: 'run-started', runId: testRun.id, projectId: testRun.projectId });
   } else if (isSharded) {
     // Another shard began the run: this shard streams on a token of its own and
-    // adds its slice of the planned suite to the run's total.
+    // adds its slice of the planned suite to the run's total. What its metadata
+    // tells that the run's does not yet (the commit, the branch) joins the run's.
     const shardTokens = swapShardToken(id, testRun.metadata, body.setupToken, streamToken);
     const cachedState = runEventBus.getRunState(id);
     if (cachedState) runEventBus.cacheRunState(id, { ...cachedState, shardTokens });
 
-    await updateRunMetadata(
+    const metadata = await updateRunMetadata(
       db,
       id,
-      (stored) => withShardTokens(stored, swapShardToken(id, stored, body.setupToken, streamToken)),
+      (stored) =>
+        withShardTokens(
+          { ...sanitizeMetadata(body.metadata), ...stored },
+          swapShardToken(id, stored, body.setupToken, streamToken),
+        ),
       {
         ...(body.totalTests ? { totalTests: sql`${testRuns.totalTests} + ${body.totalTests}` } : {}),
+        // The first shard to report a branch names the run's branch.
+        branch: sql`COALESCE(${testRuns.branch}, ${resolveRunBranch(body.metadata)})`,
         updatedAt: new Date(),
       },
     );
+    if (metadata) await pinProjectRepository(db, testRun.projectId, metadata);
   } else {
     // Run is already running and the caller presented its stream token: hand
     // the same token back so the caller can continue streaming. This can happen

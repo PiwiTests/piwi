@@ -290,6 +290,40 @@ describe('every shard of a run goes through global setup', () => {
   });
 });
 
+describe('a run whose global setup takes long', () => {
+  test('waits past the stale-run timeout for its reporter to begin it', async () => {
+    const registered = await setup({ body: { projectName: PROJECT, instanceId: 'local-1' } });
+
+    expect(await interruptStaleRuns(db, Date.now() + 10 * 60_000)).toEqual([]);
+    const began = await begin({
+      params: { id: String(registered.runId) },
+      body: { setupToken: registered.setupToken },
+    });
+
+    expect(began.runId).toBe(registered.runId);
+    expect((await readRun(registered.runId)).status).toBe('running');
+    expect(await db.select().from(schema.testRuns)).toHaveLength(1);
+  });
+
+  test("of a shard that joins a run takes the branch and commit the run's first shard did not send", async () => {
+    const one = await setupShard(1);
+    const two = await setupShard(2);
+    const scm = { branch: 'feature/pay', commit: '9f2c4e1a7b' };
+    await begin({
+      params: { id: String(one.runId) },
+      body: { setupToken: one.setupToken, totalTests: 1, ...SHARDS, shardIndex: 1 },
+    });
+    await begin({
+      params: { id: String(two.runId) },
+      body: { setupToken: two.setupToken, totalTests: 1, metadata: { scm }, ...SHARDS, shardIndex: 2 },
+    });
+
+    const run = await readRun(one.runId);
+    expect(run).toMatchObject({ branch: 'feature/pay', commit: '9f2c4e1a7b', totalTests: 2 });
+    expect((run.metadata as Record<string, unknown>).scm).toEqual(scm);
+  });
+});
+
 describe('a run keeps only the digest of its main token', () => {
   test('setup, begin and events work from the stored digest, which is never a usable token', async () => {
     const started = await setup({ body: { projectName: PROJECT, instanceId: 'local-1' } });
