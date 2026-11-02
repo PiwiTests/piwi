@@ -41,7 +41,7 @@ import {
   UNFINISHED_RUN_STATUSES,
   type RunOriginKind,
 } from '#shared/run-eligibility';
-import { projectDefaultBranch } from '../../server/utils/scm/stored-default-branch';
+import { projectDefaultBranch, resolveStoredDefaultBranches } from '../../server/utils/scm/stored-default-branch';
 import { computeNextStep, type FlakeLabStepFacts, type NextStep } from '#shared/next-step';
 import { getFlakeLabStepFacts } from './flake-lab';
 import { mayHaveFlakeSuspects } from './flake-profile';
@@ -997,6 +997,9 @@ export async function getOpenFailureClusters(
 
   const localOnlyIds = new Set(localOnlyRows.map((r: { id: number }) => r.id));
   const projectById = new Map(projectRows.map((p: any) => [p.id, p]));
+  // Each project's default branch, as the project pages resolve it with no network call.
+  const defaultBranches = await resolveStoredDefaultBranches(db, projectRows);
+
   const affectedById = new Map(counts.map((c: any) => [c.clusterId, Number(c.affectedTests)]));
   const runById = new Map(
     seenRuns.map((r: any) => [
@@ -1091,9 +1094,11 @@ export async function getOpenFailureClusters(
 
     // A regression still failing on the default branch: last seen there, and it
     // began as a regression (passed in baseline) on that same branch.
-    const effectiveDefault = project?.defaultBranch ?? 'main';
+    const effectiveDefault = defaultBranches.get(c.projectId);
     const regressionOnDefault =
-      run?.branch === effectiveDefault && !!regressionBranchesByCluster.get(c.id)?.has(effectiveDefault);
+      effectiveDefault != null &&
+      run?.branch === effectiveDefault &&
+      !!regressionBranchesByCluster.get(c.id)?.has(effectiveDefault);
 
     // Quarantine readiness: a quarantined member test is ready to release when its
     // streak has cleared the threshold, or the cluster's fix has verified as held
@@ -1130,7 +1135,7 @@ export async function getOpenFailureClusters(
       topClue: clusterClue(c),
       fixVerification: c.fixVerification ?? null,
       regressionOnDefault,
-      onDefaultBranch: run?.branch === effectiveDefault,
+      onDefaultBranch: effectiveDefault != null && run?.branch === effectiveDefault,
       hasKnownIssue: hasKnownIssueByCluster.has(c.id),
       needsTicketAfterDays: needsTicketDaysByProject.get(c.projectId) ?? DEFAULT_NEEDS_TICKET_AFTER_DAYS,
       quarantinedCount,

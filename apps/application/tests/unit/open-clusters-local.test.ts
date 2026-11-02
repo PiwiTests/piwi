@@ -28,10 +28,14 @@ afterEach(async () => {
 });
 
 /** A run of `projectId` from `origin`, its id. */
-async function run(projectId: number, origin: string): Promise<number> {
+async function run(
+  projectId: number,
+  origin: string,
+  extra: { branch?: string; metadata?: Record<string, unknown> } = {},
+): Promise<number> {
   const [row] = await db
     .insert(schema.testRuns)
-    .values({ projectId, status: 'failed', startTime: new Date(), origin })
+    .values({ projectId, status: 'failed', startTime: new Date(), origin, ...extra })
     .returning({ id: schema.testRuns.id });
   return row!.id;
 }
@@ -112,5 +116,16 @@ describe('the clusters seen only in developers’ own runs', () => {
     const [listed] = await getOpenFailureClusters(db as never, 'all', 50);
     expect([listed?.id, listed?.seenOnlyLocally]).toEqual([wip, true]);
     expect(await getOpenFailureClusters(db as never, 'all', 50, new Date(), { localOnly: 'exclude' })).toEqual([]);
+  });
+});
+
+describe('the inbox rows', () => {
+  test("read the project's default branch from its runs when none is stored", async () => {
+    const runs = [await run(1, 'ci', { branch: 'master' }), await run(1, 'ci', { branch: 'master' })];
+    const id = await cluster(1, 'checkout times out', runs);
+    await db.update(schema.testRunsCases).set({ isNewRegression: 1 });
+
+    const [row] = await getOpenFailureClusters(db as never, 'all', 50);
+    expect(row).toMatchObject({ id, onDefaultBranch: true, regressionOnDefault: true });
   });
 });
