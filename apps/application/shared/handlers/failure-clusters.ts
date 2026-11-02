@@ -627,12 +627,17 @@ export async function getExecutionDiagnosis(db: DrizzleDB, testRunsCaseId: numbe
 }
 
 /**
- * Set a cluster's triage status. The triage note is kept unless one is given:
- * a string replaces it (empty clears it), `null` clears it. Null for an invalid
- * status or note, or a missing cluster.
+ * Set a cluster's triage status, its note, or both. The status is kept unless
+ * one is given, and so is the note: a string replaces it (empty clears it),
+ * `null` clears it. Null for an invalid status or note, or a missing cluster.
  */
-export async function patchClusterStatus(db: DrizzleDB, clusterId: number, status: string, triageNote?: string | null) {
-  if (!isClusterStatus(status) || !isTriageNoteInput(triageNote)) {
+export async function patchClusterStatus(
+  db: DrizzleDB,
+  clusterId: number,
+  status: string | undefined,
+  triageNote?: string | null,
+) {
+  if ((status !== undefined && !isClusterStatus(status)) || !isTriageNoteInput(triageNote)) {
     return null;
   }
 
@@ -645,7 +650,7 @@ export async function patchClusterStatus(db: DrizzleDB, clusterId: number, statu
   const note = triageNote === undefined ? {} : { triageNote: triageNote?.trim() ? triageNote : null };
   await db
     .update(failureClusters)
-    .set({ status, ...note, updatedAt: new Date() })
+    .set({ ...(status === undefined ? {} : { status }), ...note, updatedAt: new Date() })
     .where(eq(failureClusters.id, clusterId));
 
   const [updated] = await db.select().from(failureClusters).where(eq(failureClusters.id, clusterId));

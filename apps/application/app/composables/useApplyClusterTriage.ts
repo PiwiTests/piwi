@@ -2,13 +2,13 @@ import type { FixedBeforeMatch } from '#shared/fix-plan.types';
 
 /**
  * Copy an earlier resolved cluster's triage note onto the current cluster,
- * prefixed so the history reads as an intentional reuse. The status is left as
- * it is — a new cluster is never marked resolved because an old one was. Both
- * failure pages drive `FixedBeforeMatches` through this one handler.
+ * prefixed so the history reads as an intentional reuse. It sends the note
+ * alone, so the status stays as it is stored — a new cluster is never marked
+ * resolved because an old one was. Both failure pages drive
+ * `FixedBeforeMatches` through this one handler.
  */
 export function useApplyClusterTriage(opts: {
   clusterId: () => number | null | undefined;
-  status: () => string | null | undefined;
   currentNote: () => string | null | undefined;
   onApplied: () => unknown;
 }) {
@@ -17,8 +17,7 @@ export function useApplyClusterTriage(opts: {
 
   async function applyTriage(match: FixedBeforeMatch) {
     const clusterId = opts.clusterId();
-    const status = opts.status();
-    if (clusterId == null || !status || applyingId.value != null) return;
+    if (clusterId == null || applyingId.value != null) return;
     applyingId.value = match.clusterId;
     const excerpt = (match.triageNote ?? match.diagnosisTitle ?? match.reason)
       .replace(/\s+/g, ' ')
@@ -28,7 +27,7 @@ export function useApplyClusterTriage(opts: {
     const existing = opts.currentNote()?.trim();
     const triageNote = existing ? `${existing}\n${line}` : line;
     try {
-      await $fetch(`/api/failure-clusters/${clusterId}/status`, { method: 'PATCH', body: { status, triageNote } });
+      await $fetch(`/api/failure-clusters/${clusterId}/status`, { method: 'PATCH', body: { triageNote } });
       toast.add({ title: `Applied triage from cluster #${match.clusterId}`, color: 'success' });
       await opts.onApplied();
     } catch {

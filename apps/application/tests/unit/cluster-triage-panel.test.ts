@@ -1,11 +1,11 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
-import { toValue } from 'vue';
+import { ref, toValue } from 'vue';
 import { triagePanelPatch } from '../../app/utils/cluster-triage';
 
 /**
- * A status change on the cluster page sends no note, so the server keeps the
- * note as stored, with the lines Piwi added since the page loaded; only a note
- * the person edited is sent.
+ * The cluster page sends only what the person changed: a status change no note,
+ * so the server keeps the note as stored, with the lines Piwi added since the
+ * page loaded, and a note edit no status, so a status Piwi set since stays.
  */
 
 const requests: Array<{ url: string; body: unknown }> = [];
@@ -13,6 +13,7 @@ const requests: Array<{ url: string; body: unknown }> = [];
 beforeEach(() => {
   requests.length = 0;
   vi.stubGlobal('toValue', toValue);
+  vi.stubGlobal('ref', ref);
   vi.stubGlobal('useToast', () => ({ add: () => {} }));
   vi.stubGlobal('$fetch', async (url: string, init: { body: unknown }) => {
     requests.push({ url, body: init.body });
@@ -22,6 +23,7 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 const { useClusterTriage } = await import('../../app/composables/useClusterTriage');
+const { useApplyClusterTriage } = await import('../../app/composables/useApplyClusterTriage');
 
 describe('useClusterTriage', () => {
   test('marks a cluster resolved or reopened without sending a note', async () => {
@@ -43,8 +45,8 @@ describe("the Triage panel's request", () => {
   });
 
   test('an edited note is sent, an emptied one as null', () => {
-    expect(triagePanelPatch({ status: 'open', note: 'The cart API changed' }, stored)).toEqual({
-      status: 'open',
+    expect(triagePanelPatch({ status: 'ignored', note: 'The cart API changed' }, stored)).toEqual({
+      status: 'ignored',
       triageNote: 'The cart API changed',
     });
     expect(triagePanelPatch({ status: 'ignored', note: '  ' }, stored)).toEqual({
@@ -53,7 +55,31 @@ describe("the Triage panel's request", () => {
     });
   });
 
+  test('a note edit alone sends the note alone', () => {
+    // Fix verification may have reopened or resolved the cluster since the page loaded.
+    expect(triagePanelPatch({ status: 'open', note: 'The cart API changed' }, stored)).toEqual({
+      triageNote: 'The cart API changed',
+    });
+  });
+
   test('nothing changed sends nothing', () => {
     expect(triagePanelPatch({ status: 'open', note: 'Looking into it ' }, stored)).toBeNull();
+  });
+});
+
+describe('applying the triage of a cluster fixed before', () => {
+  test('sends the note alone, so the status stays as it is stored', async () => {
+    const { applyTriage } = useApplyClusterTriage({
+      clusterId: () => 7,
+      currentNote: () => 'Looking into it',
+      onApplied: () => {},
+    });
+    await applyTriage({ clusterId: 3, triageNote: 'Fixed by the cart refactor' } as never);
+    expect(requests).toEqual([
+      {
+        url: '/api/failure-clusters/7/status',
+        body: { triageNote: 'Looking into it\nSame as cluster #3: Fixed by the cart refactor' },
+      },
+    ]);
   });
 });

@@ -7,7 +7,10 @@ import type { User } from '../../server/database/schema';
 import { InstanceRole, ProjectRole, buildAccessSummary } from '#shared/permissions';
 import { recordRouteMeta, underRoutePermission, type RouteAccessState } from './route-access';
 
-/** The triage routes of one cluster refuse a malformed body with a 400, not a server error. */
+/**
+ * The triage routes of one cluster refuse a malformed body with a 400, not a
+ * server error, and change only what the body names, in the server and the demo.
+ */
 
 delete process.env.PIWI_DATABASE_URL;
 
@@ -17,6 +20,10 @@ vi.mock('../../server/utils/auth', async () => (await import('./route-access')).
 vi.mock('../../server/utils/project-access', async (importOriginal) =>
   (await import('./route-access')).projectAccessMock(state, await importOriginal<object>()),
 );
+vi.mock('~~/app/demo/db.client', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  getDemoDb: async () => state.db,
+}));
 
 interface FakeEvent {
   body?: unknown;
@@ -38,6 +45,7 @@ const extractCases = underRoutePermission(
   state,
   (await import('../../server/api/failure-clusters/[id]/extract-cases.post')).default as unknown as Handler,
 );
+const { handleDemoRequest } = await import('~~/app/demo/api/router');
 
 let db: TempDb;
 let close: () => Promise<void>;
@@ -68,13 +76,14 @@ afterEach(async () => {
   await close();
 });
 
-const note = async () =>
+const triage = async () =>
   (
     await db
-      .select({ triageNote: schema.failureClusters.triageNote })
+      .select({ status: schema.failureClusters.status, triageNote: schema.failureClusters.triageNote })
       .from(schema.failureClusters)
       .where(eq(schema.failureClusters.id, 1))
-  )[0]?.triageNote;
+  )[0];
+const note = async () => (await triage())?.triageNote;
 
 describe('PATCH /api/failure-clusters/:id/status', () => {
   test('refuses a note that is neither a string nor null, and an unknown status', async () => {
@@ -92,6 +101,24 @@ describe('PATCH /api/failure-clusters/:id/status', () => {
     expect(await note()).toBe('Looking into it');
     await patchStatus({ params: { id: '1' }, body: { status: 'open', triageNote: 'Back again' } });
     expect(await note()).toBe('Back again');
+  });
+
+  test('keeps the status when only a note is sent, and refuses a body with neither', async () => {
+    await db.update(schema.failureClusters).set({ status: 'resolved' });
+    await patchStatus({ params: { id: '1' }, body: { triageNote: 'Fixed by the cart refactor' } });
+    expect(await triage()).toEqual({ status: 'resolved', triageNote: 'Fixed by the cart refactor' });
+    await expect(patchStatus({ params: { id: '1' }, body: {} })).rejects.toMatchObject({ statusCode: 400 });
+  });
+});
+
+describe('PATCH /api/failure-clusters/:id/status in the demo', () => {
+  test('keeps the status when only a note is sent, and refuses a body with neither', async () => {
+    await db.update(schema.failureClusters).set({ status: 'resolved' });
+    await handleDemoRequest('/api/failure-clusters/1/status', 'PATCH', { triageNote: 'Fixed by the cart refactor' });
+    expect(await triage()).toEqual({ status: 'resolved', triageNote: 'Fixed by the cart refactor' });
+    await expect(handleDemoRequest('/api/failure-clusters/1/status', 'PATCH', {})).rejects.toMatchObject({
+      statusCode: 400,
+    });
   });
 });
 

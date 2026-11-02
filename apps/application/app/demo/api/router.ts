@@ -1472,10 +1472,13 @@ const routes: RouteEntry[] = [
     handler: async (m, body, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
       const b = body as { status?: unknown; triageNote?: unknown };
-      if (!isClusterStatus(b.status)) {
+      if (b.status !== undefined && !isClusterStatus(b.status)) {
         throw demoHttpError(400, `Invalid status. Must be one of: ${CLUSTER_STATUSES.join(', ')}`);
       }
       if (!isTriageNoteInput(b.triageNote)) throw demoHttpError(400, 'triageNote must be a string or null');
+      if (b.status === undefined && b.triageNote === undefined) {
+        throw demoHttpError(400, 'Send a status, a triageNote or both');
+      }
       return patchClusterStatus(await getDemoDb(), +m[1]!, b.status, b.triageNote);
     },
   },

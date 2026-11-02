@@ -110,7 +110,8 @@ quarantined*. When an open cluster stopped failing, or its ticket is Done and th
 [stopped](/guide/concepts#cluster-state), the page offers **one action**, *Mark resolved*, which a fix whose patch
 still applies keeps in the **Next** menu; a snoozed cluster offers *Unsnooze*, an all-quarantined one *Release*.
 Beside it, **Triage** sets the status (open / resolved / ignored), a note and the assignee, and
-[snoozes](#snoozing) the cluster. A status change keeps the triage note and the lines Piwi added.
+[snoozes](#snoozing) the cluster. A status change keeps the triage note and the lines Piwi added, a note edit the
+status.
 
 ### Occurrences over time
 
