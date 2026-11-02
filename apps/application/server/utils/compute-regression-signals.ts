@@ -6,7 +6,7 @@ import { resolveDefaultBranch } from './scm/default-branch';
 import { FALLBACK_DEFAULT_BRANCH } from './scm/git-url';
 import { selectBaselineRun } from './branch-baseline';
 import { resolveFallbackBranch } from '#shared/handlers/baseline-scope';
-import { finalAttempts, flakyFinalAttempts, testOutcomes } from '#shared/utils/test-counts';
+import { finalAttempts, flakyFinalAttempts, testKey, testOutcomes } from '#shared/utils/test-counts';
 
 /** Execution ids one flag UPDATE sets at most. */
 const UPDATE_BATCH = 500;
@@ -16,6 +16,9 @@ const UPDATE_BATCH = 500;
  * final attempt of each repetition of its tests, by comparing against the
  * passing baseline the run-level ladder picks: the same environment first, and
  * within it the same branch, else the branch it forked from, else any branch.
+ * The baseline is a complete run the `run-baseline` use reads (the whole suite,
+ * no lab run, bisect step, reproduction or environment incident), and each test
+ * is compared with its own outcome there in the same Playwright project.
  */
 export async function computeRegressionSignals(db: DB, runId: number): Promise<void> {
   const runResults: any[] = await db
@@ -46,11 +49,12 @@ export async function computeRegressionSignals(db: DB, runId: number): Promise<v
     branch,
     environment: run.environment ?? null,
     fallbackBranch: resolveFallbackBranch(run.metadata, defaultBranch).branch,
+    use: 'run-baseline',
   });
   if (!baseline) return;
   const baselineRun = baseline.run;
 
-  // The baseline's outcome of each test per browser: a test failed there when one of its repetitions failed
+  // The baseline's outcome of each test per Playwright project: failed there when one of its repetitions failed
   const baselineRows = await db
     .select({
       testCaseId: testRunsCases.testCaseId,
@@ -63,13 +67,9 @@ export async function computeRegressionSignals(db: DB, runId: number): Promise<v
     .where(eq(testRunsCases.testRunId, baselineRun.id));
   const baselineFlaky = flakyFinalAttempts(baselineRows);
 
-  const baselineByCaseId = new Map<number, { status: string; flaky: boolean }>();
+  const baselineByTest = new Map<string, { status: string; flaky: boolean }>();
   for (const bc of testOutcomes(baselineRows)) {
-    // Only keep the best result (passed beats failed)
-    const existing = baselineByCaseId.get(bc.testCaseId);
-    if (!existing || bc.status === 'passed') {
-      baselineByCaseId.set(bc.testCaseId, { status: bc.status, flaky: baselineFlaky.has(bc) });
-    }
+    baselineByTest.set(testKey(bc), { status: bc.status, flaky: baselineFlaky.has(bc) });
   }
 
   // Fetch current run's cases
@@ -91,7 +91,7 @@ export async function computeRegressionSignals(db: DB, runId: number): Promise<v
 
   // Each repetition's final attempt: an earlier attempt of a retried test is not a result of its own.
   for (const cc of finalAttempts(currentCases)) {
-    const baseline = baselineByCaseId.get(cc.testCaseId);
+    const baseline = baselineByTest.get(testKey(cc));
     if (!baseline) continue;
 
     // isNewRegression: failed in current, passed in baseline

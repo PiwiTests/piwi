@@ -137,9 +137,10 @@ Manage it from the **Quarantine** view of the project's **Failures** tab, or ove
 
 ## Regression signals
 
-Individual test cases in a run carry at-a-glance badges:
+A run's tests carry badges:
 
-- **New regression** (red) — failing here but passing in the baseline (the last passing run)
+- **New regression** (red) — failing here, passing in the baseline: the same Playwright project in the last complete
+  passing run
 - **Newly flaky** (fuchsia) — the first run in which the test was flaky
 - **Passed on retry** (fuchsia) — failed at least once in this run, then passed
 

@@ -120,4 +120,61 @@ describe('computeRegressionSignals', () => {
       .where(eq(schema.testRunsCases.isNewFlaky, 1));
     expect(flagged).toEqual([{ testCaseId: 3, retries: 1 }]);
   });
+
+  test('takes the baseline from a complete run, never a partial, editor or bisect one', async () => {
+    await db.insert(schema.testCases).values([
+      { id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'pays' },
+      { id: 2, projectId: 1, filePath: 'a.spec.ts', title: 'lists' },
+    ]);
+    const day = (d: number) => new Date(`2026-10-0${d}T10:00:00Z`);
+    await db.insert(schema.testRuns).values([
+      { id: 1, projectId: 1, status: 'passed', startTime: day(1), branch: 'main' },
+      // Later passing runs that ran only test 2, from an editor, or at an older commit.
+      { id: 2, projectId: 1, status: 'passed', startTime: day(2), branch: 'main', isFullRun: 0 },
+      { id: 3, projectId: 1, status: 'passed', startTime: day(3), branch: 'main', origin: 'editor', isFullRun: 0 },
+      { id: 4, projectId: 1, status: 'passed', startTime: day(4), branch: 'main', origin: 'bisect' },
+      { id: 5, projectId: 1, status: 'failed', startTime: day(5), branch: 'main' },
+    ]);
+    await db.insert(schema.testRunsCases).values([
+      { testRunId: 1, testCaseId: 1, status: 'passed' },
+      { testRunId: 1, testCaseId: 2, status: 'passed' },
+      { testRunId: 2, testCaseId: 2, status: 'passed' },
+      { testRunId: 3, testCaseId: 2, status: 'passed' },
+      { testRunId: 4, testCaseId: 2, status: 'passed' },
+      { testRunId: 5, testCaseId: 1, status: 'failed' },
+      { testRunId: 5, testCaseId: 2, status: 'passed' },
+    ]);
+
+    await computeRegressionSignals(db as never, 5);
+
+    const flagged = await db
+      .select({ testCaseId: schema.testRunsCases.testCaseId })
+      .from(schema.testRunsCases)
+      .where(eq(schema.testRunsCases.isNewRegression, 1));
+    expect(flagged).toEqual([{ testCaseId: 1 }]);
+  });
+
+  test('compares each Playwright project with its own baseline', async () => {
+    await db.insert(schema.testCases).values([{ id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'pays' }]);
+    await db.insert(schema.testRuns).values([
+      { id: 1, projectId: 1, status: 'passed', startTime: new Date('2026-10-01T10:00:00Z'), branch: 'main' },
+      { id: 2, projectId: 1, status: 'failed', startTime: new Date('2026-10-02T10:00:00Z'), branch: 'main' },
+    ]);
+    // `test.fail(browserName === 'firefox')`: the test passes in firefox too since the bug was fixed, and
+    // that unexpected pass is stored as a failure, run after run.
+    await db.insert(schema.testRunsCases).values([
+      { testRunId: 1, testCaseId: 1, status: 'passed', browserName: 'chromium' },
+      { testRunId: 1, testCaseId: 1, status: 'failed', expectedStatus: 'failed', browserName: 'firefox' },
+      { testRunId: 2, testCaseId: 1, status: 'passed', browserName: 'chromium' },
+      { testRunId: 2, testCaseId: 1, status: 'failed', expectedStatus: 'failed', browserName: 'firefox' },
+    ]);
+
+    await computeRegressionSignals(db as never, 2);
+
+    const flagged = await db
+      .select({ id: schema.testRunsCases.id })
+      .from(schema.testRunsCases)
+      .where(eq(schema.testRunsCases.isNewRegression, 1));
+    expect(flagged).toEqual([]);
+  });
 });

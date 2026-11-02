@@ -2341,23 +2341,26 @@ const INCIDENT_MARKERS = [];
 }
 
 // ── Regression / new-flaky signals ──────────────────────────────────────────
-// Mirror the server's computeRegressionSignals: walk each case's final
-// executions (one per run: an earlier attempt of a retried test is not one) in
-// chronological order; a failure right after a pass is a new regression, and a
-// retry-pass right after a clean pass is newly flaky.
+// Mirror the server's computeRegressionSignals: walk each test's final
+// executions in each Playwright project (one per run: an earlier attempt of a
+// retried test is not one) in chronological order; a failure right after a
+// pass is a new regression, and a retry-pass right after a clean pass is newly
+// flaky. A partial run gets its signals but is no one's baseline.
 {
   const retried = new Set(
     TEST_RUNS_CASES.filter((trc) => trc.retries > 0).map((trc) => `${trc.test_run_id}:${trc.test_case_id}`),
   );
-  const byCase = new Map();
+  const partialRunIds = new Set(TEST_RUNS.filter((run) => run.is_full_run === 0).map((run) => run.id));
+  const byTest = new Map();
   for (const trc of TEST_RUNS_CASES) {
     // An environment incident gets no regression signals and is no one's baseline.
     if (incidentRunIds.has(trc.test_run_id)) continue;
     if (trc.retries === 0 && retried.has(`${trc.test_run_id}:${trc.test_case_id}`)) continue;
-    if (!byCase.has(trc.test_case_id)) byCase.set(trc.test_case_id, []);
-    byCase.get(trc.test_case_id).push(trc);
+    const key = `${trc.test_case_id}:${trc.browser_name}`;
+    if (!byTest.has(key)) byTest.set(key, []);
+    byTest.get(key).push(trc);
   }
-  for (const rows of byCase.values()) {
+  for (const rows of byTest.values()) {
     rows.sort((a, b) => a.started_at - b.started_at);
     let prev = null;
     for (const trc of rows) {
@@ -2368,7 +2371,7 @@ const INCIDENT_MARKERS = [];
           trc.is_new_flaky = 1;
         }
       }
-      prev = trc;
+      if (!partialRunIds.has(trc.test_run_id)) prev = trc;
     }
   }
 }
