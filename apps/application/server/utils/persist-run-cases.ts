@@ -378,10 +378,13 @@ export async function persistRunCases(
   const fingerprintResults = await Promise.all(
     cases.map((c) =>
       // An expected failure that passed is good news about one test, not a
-      // failure mode: it forms no cluster.
+      // failure mode: it forms no cluster. Nor does a test the run's stop cut
+      // short (Ctrl+C, `maxFailures`, the global timeout): its error says the
+      // run ended, nothing about the test.
       c.error &&
       c.status !== 'passed' &&
       c.status !== 'skipped' &&
+      c.status !== 'interrupted' &&
       !isExpectedFailurePassed(c.status, resolveExpectedStatus(c.expectedStatus, c.testAnnotations))
         ? computeErrorFingerprint(c.error)
         : Promise.resolve(null),

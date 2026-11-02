@@ -675,6 +675,7 @@ export async function persistRunCases(
       c.error &&
       c.status !== 'passed' &&
       c.status !== 'skipped' &&
+      c.status !== 'interrupted' &&
       !isExpectedFailurePassed(c.status, expectedStatus)
     ) {
       fingerprint = await computeErrorFingerprint(c.error);
