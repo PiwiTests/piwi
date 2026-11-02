@@ -52,7 +52,8 @@ export interface PiwiDashboardOptions {
    * reporter stops waiting for the dashboard and saves the run's results
    * locally; the next run for the project uploads them, without traces or
    * attachments. Defaults to `900000` (15 minutes). Set to `0` for no limit.
-   * Can also be set with `PIWI_SUBMIT_TIMEOUT`, in milliseconds too.
+   * Can also be set with `PIWI_SUBMIT_TIMEOUT`, in milliseconds too: a value
+   * that is not a number (`15m`) is ignored, with a warning.
    */
   submitTimeout?: number;
 

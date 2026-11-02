@@ -108,10 +108,9 @@ Options go in the reporter's entry in `playwright.config.ts`, or in `wrapConfig`
 also be set with a `PIWI_*` environment variable, which fills in an option you left unset: an option in the config
 wins, except `PIWI_VERBOSE`, which overrides even an explicit `verbose` outside `wrapConfig`. `PIWI_DASHBOARD_URL`,
 `PIWI_API_KEY` and `PIWI_PROJECT_NAME` also come from the config folder's
-[`.env`](/reference/reporter-options#values-from-env), below the environment. A variable of a number option that does
-not hold a number of 0 or more (`PIWI_SUBMIT_TIMEOUT=15m`) is ignored with a warning, and the option keeps its
-default. [Reporter options](/reference/reporter-options) lists every option with its default and its variable, and
-[Test metadata](/reference/test-metadata) what the reporter records on its own.
+[`.env`](/reference/reporter-options#values-from-env), below the environment. [Reporter options](/reference/reporter-options)
+lists every option with its default and its variable, and [Test metadata](/reference/test-metadata) what the reporter
+records on its own.
 
 ### Finding the desktop app automatically
 
@@ -195,12 +194,9 @@ export default defineConfig({
 })
 ```
 
-`html` (the html reporter's folder: its `outputFolder` or `PLAYWRIGHT_HTML_OUTPUT_DIR`, `playwright-report/` by
-default) and `monocart` (`monocart-report/`) open in a new tab; `blob` (`blob-report/`) downloads as an archive. Any
-other type is accepted too, read from `dir` or else `<type>-report/`. Without a `dir`, the HTML report is the one the
-html reporter wrote during the run: list that reporter before Piwi's, as above, so its report is written by the time
-Piwi uploads it. A report whose files add up to more than 500 MB, the dashboard's default upload limit, is left out
-with a warning.
+`html` (the html reporter's folder, `playwright-report/` by default) and `monocart` (`monocart-report/`) open in a new
+tab; `blob` (`blob-report/`) downloads as an archive. Any other type is accepted too, read from `dir` or else
+`<type>-report/`. A report over the 500 MB upload limit is left out.
 
 ## With authentication enabled
 
@@ -220,15 +216,11 @@ through [`wrapConfig`](#installing-via-wrapconfig).
 [Capture fixtures → Troubleshooting](./capture-fixtures#troubleshooting).
 
 **Connection errors.** Check that `serverUrl` answers from where the tests run; `PIWI_VERBOSE=true` logs every
-request. A `serverUrl` that is not a whole `http://` or `https://` address leaves the reporter off, with a warning. A
-run the reporter could not deliver (dashboard down, no credential, a sign-in page or a proxy answering in its place)
+request. A run the reporter could not deliver (dashboard down, no credential, a sign-in page answering in its place)
 is saved locally, owner-only, and sent to the same `serverUrl` on the project's next run, without traces or
-attachments; it never fails the Playwright run. An interrupted stream is retried, then sent as a batch. Live events
-the dashboard refuses, or has not taken after ten tries in a row (about two and a half minutes), leave the live view
-so the later ones flow; the end-of-run upload carries their results.
+attachments; it never fails the Playwright run. An interrupted stream is retried, then sent as a batch.
 [`submitTimeout`](/reference/reporter-options#submittimeout) (15 minutes by default) bounds that end-of-run work, so
-an unresponsive dashboard does not hold the CI job; the file uploads stop a minute before it ends, so a streamed run is
-still finished.
+an unresponsive dashboard does not hold the CI job.
 
 ## Related
 
