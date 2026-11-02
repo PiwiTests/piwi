@@ -51,6 +51,7 @@ const upload = (parts: MultipartPart[]) => uploadRoute(multipartEvent(parts));
 const { persistRunCases } = await import('../../server/utils/persist-run-cases');
 const { serializeRun } = await import('../../../../packages/reporter/src/internal/submit/serializer');
 const { testCaseCache } = await import('../../server/utils/test-case-cache');
+const { runEventBus } = await import('../../server/utils/run-events');
 const { testSuiteCache } = await import('../../server/utils/test-suite-cache');
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
@@ -218,9 +219,11 @@ describe('a batch whose executions cannot be stored', () => {
     expect(await db.select().from(schema.testRunsCases)).toHaveLength(1);
   });
 
-  test('leaves no run from /upload, nor the report it stored', async () => {
+  test('leaves no run from /upload, nor the report it stored, and announces none', async () => {
     const { testCases, projectName, ...testRun } = runBody();
     vi.mocked(persistRunCases).mockRejectedValueOnce(new Error('SQLITE_BUSY: database is locked'));
+    const announced: string[] = [];
+    const unsubscribe = runEventBus.subscribeGlobal((event) => announced.push(event.type));
 
     await expect(
       upload([
@@ -231,8 +234,10 @@ describe('a batch whose executions cannot be stored', () => {
       ]),
     ).rejects.toThrow('database is locked');
 
+    unsubscribe();
     expect(await db.select().from(schema.testRuns)).toEqual([]);
     expect(await db.select().from(schema.files)).toEqual([]);
     expect([...state.stored.keys()]).toEqual([]);
+    expect(announced).not.toContain('run-submitted');
   });
 });

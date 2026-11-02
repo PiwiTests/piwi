@@ -376,13 +376,6 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
       };
       if (incomingResources) await saveResourceReportPart(db, resultTestRun.id, incomingResources);
       await applyReporterKeep(db, resultTestRun.id, testRunData.keep);
-
-      runEventBus.publishGlobal({
-        type: 'run-submitted',
-        runId: resultTestRun.id,
-        projectId: resultTestRun.projectId,
-        status: resultTestRun.status,
-      });
     }
 
     // Store all reports once the run exists, and collect their metadata. Reports
@@ -570,6 +563,13 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
       await addBatchShard(db, testRun.id, batchShardTally(testRunData, testCasesData));
       if (!(await finalizeShardedRun(db, testRun.id, 'run-submitted'))) await publishShardProgress(db, testRun.id);
     } else if (!attachingToExistingRun) {
+      // A new run is announced once its executions and files are stored, as `/submit` announces one.
+      runEventBus.publishGlobal({
+        type: 'run-submitted',
+        runId: testRun.id,
+        projectId: testRun.projectId,
+        status: testRun.status,
+      });
       // For new (non-streaming) runs, fire the finalize side effects after cases are
       // persisted — probe-aware, so a probe-stamped upload stays silent.
       await runFinalizeSideEffects(db, testRun.id, {
