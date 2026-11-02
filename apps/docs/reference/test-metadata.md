@@ -305,6 +305,13 @@ how many lines and characters were cut between them. The dashboard stores each s
 executions wrote it, and shows it on the execution's **Output** tab ([Failure evidence](/features/evidence)), in its
 [offline export](/features/offline-export) and through the MCP `get_test_run_case` tool.
 
+### Hooks
+
+Playwright 1.59 and later give every hook step to a test: a `beforeAll` or `afterAll` hook and the setup of a worker
+fixture are steps of the test they ran for. The run's timeline draws them inside that test's bar, as its setup and
+teardown sections, never on a lane of their own. A worker fixture that throws as its worker shuts down, after its last
+test, is one of the [errors outside the tests](#errors-outside-the-tests).
+
 ## With custom metadata
 
 ```typescript

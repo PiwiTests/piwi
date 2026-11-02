@@ -85,8 +85,7 @@ execution is a slice on its worker's thread, with its hooks, fixtures and steps 
 start time, and a slice colored by outcome (green passed, red failed). A failing execution adds an
 instant marker at the moment it failed. Every slice carries its details in the event arguments —
 source location, step params, tags, locks, annotations, status, error message, and links back to the
-execution and its attachments on the dashboard. Suite-level `beforeAll`/`afterAll` setup steps appear
-on their worker's thread too.
+execution and its attachments on the dashboard.
 
 Open it by dragging the downloaded `.json` onto [ui.perfetto.dev](https://ui.perfetto.dev), or use
 **Open trace file** there. Timestamps are relative to the first event, so a run always starts at zero.

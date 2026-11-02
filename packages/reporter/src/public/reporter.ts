@@ -664,7 +664,11 @@ export class PiwiDashboardReporter {
     if (kept) this.runErrors.push(kept);
   }
 
-  /** Track suite-level setup steps (beforeAll/afterAll) not tied to any test */
+  /**
+   * The steps outside any test, for the run's timeline. Playwright 1.59 and later, the oldest the reporter supports,
+   * give every hook step to a test, `beforeAll` and `afterAll` hooks and worker fixture setup included, so it stays
+   * empty.
+   */
   private setupSteps: SetupStep[] = [];
 
   /** Step categories streamed live while the run executes. */
