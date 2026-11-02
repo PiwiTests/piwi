@@ -5,9 +5,8 @@ import { applyOptionsToEnv, readBool, PIWI_ENV_KEYS, PIWI_DEFAULTED_CAPTURE_ENV 
 import { isProbeMode } from '../internal/probe/mode.js';
 import { isFlakeMode, labModeConflict } from '../internal/flake/mode.js';
 import { playwrightVersionAtLeast } from '../internal/support/playwright-version.js';
+import { PIWI_REPORTER_MODULE, isPiwiReporterModule } from '../internal/support/reporter-entry.js';
 import type { PiwiDashboardOptions } from './options.js';
-
-const PIWI_MODULE = '@piwitests/reporter';
 
 /**
  * Playwright `use` options `wrapConfig` fills in for failure evidence when the
@@ -100,17 +99,22 @@ function applyCaptureDefaults(
   return next;
 }
 
+/**
+ * Whether a reporter entry is Piwi's own. Playwright resolves a relative path from the config's folder, read here as
+ * the working directory, which holds the config of a plain `npx playwright test`.
+ */
 function isPiwiReporterEntry(entry: unknown): boolean {
-  if (typeof entry === 'string') return entry.toLowerCase().includes('piwi');
-  if (Array.isArray(entry) && typeof entry[0] === 'string') return entry[0].toLowerCase().includes('piwi');
-  return false;
+  const id = Array.isArray(entry) ? entry[0] : entry;
+  return typeof id === 'string' && isPiwiReporterModule(id, process.cwd());
 }
 
 function injectReporter(
   reporter: PlaywrightTestConfig['reporter'],
   piwiOptions?: PiwiDashboardOptions,
 ): PlaywrightTestConfig['reporter'] {
-  const piwiEntry: [string] | [string, PiwiDashboardOptions] = piwiOptions ? [PIWI_MODULE, piwiOptions] : [PIWI_MODULE];
+  const piwiEntry: [string] | [string, PiwiDashboardOptions] = piwiOptions
+    ? [PIWI_REPORTER_MODULE, piwiOptions]
+    : [PIWI_REPORTER_MODULE];
 
   if (!reporter) return [piwiEntry];
   if (Array.isArray(reporter)) {

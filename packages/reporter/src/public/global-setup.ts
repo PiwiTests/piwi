@@ -1,4 +1,3 @@
-import * as path from 'node:path';
 import { errorMessage } from '../internal/support/errors.js';
 import type { PiwiDashboardOptions } from './options.js';
 import { resolveOptions } from '../internal/config/env.js';
@@ -17,6 +16,7 @@ import { readCommittedManifest, fetchInstrumentationManifest } from '../internal
 import { configDirFromConfig } from '../internal/support/test-paths.js';
 import { lookupProjectId, uploadManifest } from '../internal/manifest/run-manifests.js';
 import { baseUrlsFromConfig } from '../internal/collect/server-coverage.js';
+import { isPiwiReporterModule } from '../internal/support/reporter-entry.js';
 
 /**
  * Create a Playwright `globalSetup` function that registers a test run on the
@@ -38,37 +38,19 @@ export function createGlobalSetup(
   userSetup?: (config: any) => any,
 ): (config: any) => Promise<any> {
   return async function globalSetupFn(config: any) {
-    // tsup bundles this into `dist/index.js` and `dist/global-setup-module.js`,
-    // so at runtime __dirname is `dist/` and the package entry sits alongside.
-    const piwiReporterPath = path.resolve(__dirname, './index.js');
+    // Piwi's entry in the Playwright config's reporters, which Playwright hands over resolved to a path. Its options
+    // (serverUrl / projectName etc. set inline in the reporters array) are visible here without requiring PIWI_* env
+    // vars or a separate wrapConfig call.
+    const configDir = configDirFromConfig(config);
+    const piwiReporter: unknown[] | undefined = Array.isArray(config?.reporter)
+      ? config.reporter.find(
+          (r: unknown) => Array.isArray(r) && typeof r[0] === 'string' && isPiwiReporterModule(r[0], configDir),
+        )
+      : undefined;
+    const inline = piwiReporter?.[1];
+    const inlineReporterOptions: Record<string, any> = inline && typeof inline === 'object' ? inline : {};
 
-    // Extract options from the Piwi reporter entry in the Playwright config so
-    // that serverUrl / projectName etc. set inline in the reporters array are
-    // visible here without requiring PIWI_* env vars or a separate wrapConfig call.
-    let inlineReporterOptions: Record<string, any> = {};
-    if (Array.isArray(config?.reporter)) {
-      for (const r of config.reporter) {
-        if (!Array.isArray(r) || typeof r[0] !== 'string') continue;
-        const isPiwi =
-          r[0].toLowerCase().includes('piwi') ||
-          (() => {
-            try {
-              return path.resolve(require.resolve(r[0])) === piwiReporterPath;
-            } catch {
-              return false;
-            }
-          })();
-        if (isPiwi && r[1] && typeof r[1] === 'object') {
-          inlineReporterOptions = r[1];
-          break;
-        }
-      }
-    }
-
-    const opts = resolveOptions(
-      { ...inlineReporterOptions, ...options } as Record<string, any>,
-      configDirFromConfig(config),
-    );
+    const opts = resolveOptions({ ...inlineReporterOptions, ...options } as Record<string, any>, configDir);
     const logger = new Logger(opts.verbose ?? false);
 
     // In Playwright's UI mode the reporter never runs to finish a registered
@@ -111,20 +93,7 @@ export function createGlobalSetup(
       return;
     }
 
-    const hasPiwi =
-      Object.keys(inlineReporterOptions).length > 0 ||
-      (Array.isArray(config?.reporter) &&
-        config.reporter.some((r: any) => {
-          if (!Array.isArray(r) || typeof r[0] !== 'string') return false;
-          if (r[0].toLowerCase().includes('piwi')) return true;
-          try {
-            return path.resolve(require.resolve(r[0])) === piwiReporterPath;
-          } catch {
-            return false;
-          }
-        }));
-
-    if (!hasPiwi) {
+    if (!piwiReporter) {
       logger.debug('Not reporting — Piwi is not in the Playwright reporters list.');
       if (userSetup) return userSetup(config);
       return;

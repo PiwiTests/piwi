@@ -614,7 +614,8 @@ src/
                 run-mode, test-paths, reporter-version, connection (the
                 commands' dashboard), playwright-spawn (how commands start
                 `playwright test` and package managers),
-                base-url-check (the `checkBaseUrl` check the global setup runs)
+                base-url-check (the `checkBaseUrl` check the global setup runs),
+                reporter-entry (whether a config's reporter entry is Piwi's)
   types/
     wire.ts        EXTERNAL server contract
     collected.ts   INTERNAL in-process model

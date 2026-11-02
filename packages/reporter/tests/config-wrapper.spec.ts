@@ -96,6 +96,11 @@ describe('wrapConfig', () => {
     expect((config.reporter as any[]).length).toBe(1);
   });
 
+  it("adds Piwi's reporter beside a reporter whose path holds 'piwi'", () => {
+    const config = wrapConfig<PlaywrightTestConfig>({ reporter: [['./reporters/piwi-slack.ts']] });
+    expect((config.reporter as any[]).map((r) => r[0])).toEqual(['./reporters/piwi-slack.ts', '@piwitests/reporter']);
+  });
+
   it('passes piwiOptions to the injected reporter entry', () => {
     const config = wrapConfig<PlaywrightTestConfig>(
       { testDir: './tests' },

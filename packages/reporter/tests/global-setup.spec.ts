@@ -1,6 +1,8 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import * as http from 'node:http';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { createGlobalSetup } from '../src/public/global-setup.js';
 import { PiwiDashboardReporter } from '../src/public/reporter.js';
 import { getSetupFilePath, readSetupInfo } from '../src/internal/support/setup-file.js';
@@ -282,6 +284,48 @@ describe('createGlobalSetup', () => {
       await setupFn({ reporter: [['list', {}]] });
       expect(requests).toHaveLength(0);
     } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  it("does not take a reporter whose path holds 'piwi' for Piwi's", async () => {
+    const { server, url, requests } = await startServer((_req, res) =>
+      jsonRes(res, 200, { runId: 1, setupToken: 't' }),
+    );
+    try {
+      const setupFn = createGlobalSetup({ serverUrl: url, projectName: 'global-setup-piwi-path' });
+      // The project's own reporter, in a folder named after Piwi, as Playwright hands it: resolved to its path.
+      await setupFn({
+        configFile: '/home/me/piwi-shop/playwright.config.ts',
+        reporter: [['/home/me/piwi-shop/reporters/slack.ts', { channel: '#qa' }]],
+      });
+      expect(requests).toHaveLength(0);
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  it("finds Piwi's reporter and its options by the path Playwright resolved it to", async () => {
+    const project = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-entry-'));
+    const pkg = path.join(project, 'node_modules', '@piwitests', 'reporter');
+    fs.mkdirSync(path.join(pkg, 'dist'), { recursive: true });
+    fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ name: '@piwitests/reporter', main: 'dist/index.js' }));
+    fs.writeFileSync(path.join(pkg, 'dist', 'index.js'), '');
+    const { server, url, requests } = await startServer((_req, res) =>
+      jsonRes(res, 200, { runId: 4, setupToken: 't' }),
+    );
+    cleanupNames.push('global-setup-resolved-entry');
+    try {
+      await createGlobalSetup()({
+        configFile: path.join(project, 'playwright.config.ts'),
+        reporter: [
+          ['list', null],
+          [fs.realpathSync(path.join(pkg, 'dist', 'index.js')), { serverUrl: url, projectName: 'global-setup-resolved-entry' }],
+        ],
+      });
+      expect(requests.filter((r) => r.url === '/api/test-runs/setup')).toHaveLength(1);
+    } finally {
+      fs.rmSync(project, { recursive: true, force: true });
       await new Promise<void>((r) => server.close(() => r()));
     }
   });
