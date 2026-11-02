@@ -87,7 +87,7 @@ view, save an [analytics dashboard](./dashboards).
 
 ### Where the numbers come from
 
-The pass rates, run counts, durations, CI time, wasted time and regression counts are read from
+The [pass rates](/guide/concepts#pass-rate), run counts, durations, CI time, wasted time and regression counts are read from
 **daily rollups**, one precomputed row per project, UTC day, environment, branch and run kind, kept at
 ingest and checked nightly against the stored runs. When [retention](/operate/storage#data-retention)
 deletes old runs, their numbers stay in the rollups, so a one-year pass-rate line survives a 30-day

@@ -150,7 +150,7 @@ server, with or without [authentication](/operate/authentication). The hosted
 
 ## The test case page
 
-`/test-cases/:id` is the other axis: not one attempt, but the test's whole life. Total runs, pass rate, average duration
+`/test-cases/:id` is the other axis: not one attempt, but the test's whole life. Total [runs](/guide/concepts#test-case), [pass rate](/guide/concepts#pass-rate), average duration
 and last run, a duration trend, a status-history strip, and the recent executions, each linking back to its execution.
 A flaky test adds a **Flakiness** tab with its [suspects](./flaky-tests#suspects).
 

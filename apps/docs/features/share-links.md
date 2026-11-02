@@ -80,7 +80,7 @@ none; duplicate one first.
 
 A report link and a live dashboard link each carry two images, shown when the link is minted:
 
-- `/share/<token>/badge.svg`: a badge such as "tests on default branch · 97.8% · 7 d", the test pass rate on the
+- `/share/<token>/badge.svg`: a badge such as "tests on default branch · 97.8% · 7 d", the test [pass rate](/guide/concepts#pass-rate) on the
   pass-rate color scale, for a README or a wiki page. The dialog copies it as Markdown.
 - `/share/<token>/chart.png`: the report's trend. A scheduled report's Slack message draws it as an image, since
   Slack needs a public address to show one.

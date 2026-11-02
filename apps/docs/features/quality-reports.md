@@ -21,7 +21,7 @@ projects, branches, environments, test filter and period of the analytics **Filt
 reports:
 
 - **Executive**, for stakeholders, in plain words with no locators and no stack traces: a verdict,
-  six headline numbers, the pass rate over time with the comparison period and your
+  six headline numbers, the [pass rate](/guide/concepts#pass-rate) over time with the comparison period and your
   [timeline markers](./timeline-markers), what changed, what is being done (causes fixed, assigned or
   ticketed, tests released from quarantine) and the risks (metrics moving the wrong way, projects
   failing run after run, the oldest open causes).
