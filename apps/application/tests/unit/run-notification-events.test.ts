@@ -67,6 +67,36 @@ describe('emitRunNotifications', () => {
     expect(perf?.payload).toMatchObject({ baselineDurationMs: 50_000, regressionPct: 22 });
   });
 
+  test('announces a cluster from the first run that sends notifications, once', async () => {
+    // Cluster 7 first appeared in an editor run, cluster 8 in an imported run: neither announced it.
+    await addRun(1, { status: 'failed', origin: 'editor', isFullRun: 0, metadata: { piwiOrigin: { kind: 'editor' } } });
+    await addRun(2, { status: 'failed', origin: 'import', metadata: { import: { source: 'blob' } } });
+    await addRun(3, { status: 'failed' });
+    await addRun(4, { status: 'failed' });
+    await db.insert(schema.failureClusters).values([
+      { id: 7, projectId: 1, fingerprint: 'a', signature: 'TimeoutError', firstSeenRunId: 1, lastSeenRunId: 4 },
+      { id: 8, projectId: 1, fingerprint: 'b', signature: 'Error', firstSeenRunId: 2, lastSeenRunId: 4 },
+    ]);
+    const failure = (testRunId: number, failureClusterId: number) => ({
+      testRunId,
+      testCaseId: 1,
+      status: 'failed',
+      browserName: failureClusterId === 7 ? 'chromium' : 'firefox',
+      failureClusterId,
+    });
+    await db
+      .insert(schema.testRunsCases)
+      .values([failure(1, 7), failure(2, 8), failure(3, 7), failure(3, 8), failure(4, 7), failure(4, 8)]);
+
+    await emitRunNotifications(db as never, 3);
+    const announced = emitted.filter((e) => e.event === 'cluster.new').map((e) => e.payload.clusterId);
+    expect(announced.sort()).toEqual([7, 8]);
+
+    emitted.length = 0;
+    await emitRunNotifications(db as never, 4);
+    expect(events()).not.toContain('cluster.new');
+  });
+
   test('sends no run.failed for a passing run', async () => {
     await addRun(1);
     await emitRunNotifications(db as never, 1);

@@ -1,5 +1,5 @@
 import { testTextLabel } from '#shared/utils/test-label';
-import { eq, and, lt, desc, inArray, isNull, or } from 'drizzle-orm';
+import { eq, and, lt, desc, inArray, isNotNull, isNull, ne, or } from 'drizzle-orm';
 
 /** Failures scanned for ownership; well past what any comment or digest lists. */
 const OWNER_LOOKUP_LIMIT = 200;
@@ -545,9 +545,30 @@ export async function emitIncidentNotification(db: DbClient, runId: number): Pro
 }
 
 /**
+ * Whether a run before `runId` that sends notifications (the `notifications`
+ * use; an import never sends any) failed into the cluster, and so announced it.
+ */
+async function announcedBefore(db: DbClient, clusterId: number, runId: number): Promise<boolean> {
+  const [earlier] = await db
+    .select({ id: testRunsCases.id })
+    .from(testRunsCases)
+    .innerJoin(testRuns, eq(testRuns.id, testRunsCases.testRunId))
+    .where(
+      and(
+        eq(testRunsCases.failureClusterId, clusterId),
+        lt(testRunsCases.testRunId, runId),
+        eligibleRunSql('notifications'),
+        ne(testRuns.origin, 'import'),
+      ),
+    )
+    .limit(1);
+  return earlier !== undefined;
+}
+
+/**
  * Emit run.finished / run.failed / run.failed.default_branch notifications for a completed run,
  * plus flakiness.spike / perf.regression when the run qualifies, and cluster.new
- * for any failure clusters first seen in this run.
+ * for the failure clusters no earlier run that sends notifications failed into.
  * Call this after the run status is finalized.
  */
 export async function emitRunNotifications(db: DbClient, runId: number): Promise<void> {
@@ -613,8 +634,10 @@ export async function emitRunNotifications(db: DbClient, runId: number): Promise
       }
     }
 
-    // Emit cluster.new for any clusters first seen in this run
-    const newClusters = await db
+    // cluster.new for each cluster this run failed into that no earlier run sending
+    // notifications failed into: a cluster first seen by an editor run, a partial
+    // local run or an import is announced by the first run that sends them.
+    const seenClusters = await db
       .select({
         id: failureClusters.id,
         signature: failureClusters.signature,
@@ -622,11 +645,24 @@ export async function emitRunNotifications(db: DbClient, runId: number): Promise
         errorType: failureClusters.errorType,
         selector: failureClusters.selector,
         sampleError: failureClusters.sampleError,
+        firstSeenRunId: failureClusters.firstSeenRunId,
       })
       .from(failureClusters)
-      .where(and(eq(failureClusters.firstSeenRunId, runId), eq(failureClusters.projectId, runRow.projectId)));
+      .where(
+        and(
+          eq(failureClusters.projectId, runRow.projectId),
+          inArray(
+            failureClusters.id,
+            db
+              .selectDistinct({ id: testRunsCases.failureClusterId })
+              .from(testRunsCases)
+              .where(and(eq(testRunsCases.testRunId, runId), isNotNull(testRunsCases.failureClusterId))),
+          ),
+        ),
+      );
 
-    for (const cluster of newClusters) {
+    for (const cluster of seenClusters) {
+      if (cluster.firstSeenRunId !== runId && (await announcedBefore(db, cluster.id, runId))) continue;
       const affected = await db
         .select({ id: testRunsCases.id })
         .from(testRunsCases)
