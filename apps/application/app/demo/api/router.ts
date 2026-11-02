@@ -210,9 +210,8 @@ import { createTestFunctionSchema, updateTestFunctionSchema } from '#shared/test
 import {
   addQuarantine,
   dismissQuarantineProposal,
-  listQuarantine,
+  getProjectQuarantine,
   releaseQuarantine,
-  RELEASE_AFTER_CONSECUTIVE_PASSES,
 } from '#shared/handlers/quarantine';
 import { isQuarantineProposal, normalizeDismissReason } from '#shared/quarantine-proposals';
 import {
@@ -2700,22 +2699,14 @@ const routes: RouteEntry[] = [
     },
   },
 
-  // Quarantine. The demo has no CI to gate, so candidates are omitted — the
-  // proposal query is derived from flaky analysis and would only add work the
-  // browser cannot act on.
+  // Quarantine, with the candidates the flaky analysis proposes unless `?candidates=false`.
   {
     method: 'GET',
     pattern: /^\/api\/projects\/(\d+)\/quarantine$/,
-    handler: async (m, _b, _q, ctx) => {
+    handler: async (m, _b, query, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      const db = await getDemoDb();
-      const { entries, debt } = await listQuarantine(db, +m[1]!);
-      return {
-        entries,
-        debt,
-        candidates: [],
-        releaseAfterConsecutivePasses: RELEASE_AFTER_CONSECUTIVE_PASSES,
-      };
+      const flag = query?.get('candidates');
+      return getProjectQuarantine(await getDemoDb(), +m[1]!, { candidates: flag !== 'false' && flag !== '0' });
     },
   },
   {

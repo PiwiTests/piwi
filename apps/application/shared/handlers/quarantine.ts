@@ -332,6 +332,21 @@ export async function listQuarantine(
   return { entries, debt };
 }
 
+/**
+ * A project's quarantine view, as `GET /api/projects/:id/quarantine` and the
+ * demo answer it: the list with its debt and, unless `candidates` is false, the
+ * tests worth quarantining, each marked when it was dismissed.
+ */
+export async function getProjectQuarantine(db: DrizzleDB, projectId: number, opts: { candidates?: boolean } = {}) {
+  const { entries, debt } = await listQuarantine(db, projectId);
+  const proposed =
+    opts.candidates === false
+      ? []
+      : await proposeQuarantineCandidates(db, projectId, new Set(entries.map((entry) => entry.testCaseId)));
+  const candidates = await markDismissedCandidates(db, projectId, proposed);
+  return { entries, debt, candidates, releaseAfterConsecutivePasses: RELEASE_AFTER_CONSECUTIVE_PASSES };
+}
+
 /** Whether a test is one of the project's quarantine candidates (`proposeQuarantineCandidates`). */
 async function isQuarantineCandidate(db: DrizzleDB, projectId: number, testCaseId: number): Promise<boolean> {
   const candidates = await proposeQuarantineCandidates(db, projectId, await getQuarantinedCaseIds(db, projectId));
@@ -537,7 +552,7 @@ async function dismissedReleases(db: DrizzleDB, projectId: number): Promise<Set<
  * Marks `dismissed` on each of a project's quarantine candidates dismissed since the newest run the candidates read
  * (`newestFlakyRunId`): a run of another branch, a lab or bisect run, or an older report imported later brings none back.
  */
-export async function markDismissedCandidates<C extends { testCaseId: number }>(
+async function markDismissedCandidates<C extends { testCaseId: number }>(
   db: DrizzleDB,
   projectId: number,
   candidates: C[],

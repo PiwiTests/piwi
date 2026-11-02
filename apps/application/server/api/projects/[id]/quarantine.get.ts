@@ -1,8 +1,7 @@
 import { getDatabase } from '../../../database';
 import { queryFlag } from '../../../utils/query-params';
 import { requireProjectAccess, requireRouteId } from '../../../utils/project-access';
-import { listQuarantine, markDismissedCandidates, RELEASE_AFTER_CONSECUTIVE_PASSES } from '#shared/handlers/quarantine';
-import { proposeQuarantineCandidates } from '../../../utils/quarantine-candidates';
+import { getProjectQuarantine } from '#shared/handlers/quarantine';
 
 defineRouteMeta({
   openAPI: {
@@ -29,13 +28,5 @@ export default eventHandler(async (event) => {
   await requireProjectAccess(event, projectId);
 
   const db = await getDatabase();
-  const { entries, debt } = await listQuarantine(db, projectId);
-
-  const wantCandidates = queryFlag(event, 'candidates', { default: true });
-  const proposed = wantCandidates
-    ? await proposeQuarantineCandidates(db, projectId, new Set(entries.map((e) => e.testCaseId)))
-    : [];
-  const candidates = await markDismissedCandidates(db, projectId, proposed);
-
-  return { entries, debt, candidates, releaseAfterConsecutivePasses: RELEASE_AFTER_CONSECUTIVE_PASSES };
+  return getProjectQuarantine(db, projectId, { candidates: queryFlag(event, 'candidates', { default: true }) });
 });
