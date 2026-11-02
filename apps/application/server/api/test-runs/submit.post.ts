@@ -5,6 +5,7 @@ import { requireAuth } from '../../utils/auth';
 import { persistRunCases } from '../../utils/persist-run-cases';
 import { mapWireCaseToRunCase } from '../../utils/map-wire-case';
 import { sanitizeMetadata } from '../../utils/sanitize';
+import { checkSubmitBody } from '../../utils/batch-payload';
 import { resolveRunBranch } from '../../utils/run-branch';
 import { runCommit, runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../utils/run-events';
@@ -32,7 +33,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Submit test results as JSON',
     description:
-      'Submit Playwright test run results as a JSON payload. Creates or updates a project, test run, and test cases. Supports sharded runs via shardIndex / shardTotal.',
+      'Submit Playwright test run results as a JSON payload. Creates or updates a project, test run, and test cases. Supports sharded runs via shardIndex / shardTotal. A body whose run or test case fields have the wrong type answers 400 naming the first such field.',
     'x-required-permission': 'run:submit',
     requestBody: {
       content: {
@@ -41,7 +42,7 @@ defineRouteMeta({
             type: 'object',
             properties: {
               projectName: { type: 'string' },
-              status: { type: 'string' },
+              status: { type: 'string', enum: ['passed', 'failed', 'timedout', 'interrupted'] },
               startTime: { type: 'string', format: 'date-time' },
               shardIndex: { type: 'integer' },
               shardTotal: { type: 'integer' },
@@ -64,14 +65,7 @@ export default eventHandler(async (event) => {
   const user = await requireAuth(event);
 
   const body = await readBody<TestRunSubmitPayload>(event);
-
-  // Validate required fields
-  if (!body.projectName || !body.status || !body.startTime) {
-    throw apiError({
-      statusCode: 400,
-      message: 'Missing required fields: projectName, status, startTime',
-    });
-  }
+  checkSubmitBody(body);
 
   const incomingResources = sanitizeResourceReport(body.resourceReport);
 

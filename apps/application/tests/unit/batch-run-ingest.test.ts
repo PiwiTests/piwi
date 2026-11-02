@@ -49,6 +49,7 @@ const submit = (await import('../../server/api/test-runs/submit.post')).default 
 const uploadRoute = (await import('../../server/api/test-runs/upload.post')).default as unknown as Route;
 const upload = (parts: MultipartPart[]) => uploadRoute(multipartEvent(parts));
 const { persistRunCases } = await import('../../server/utils/persist-run-cases');
+const { serializeRun } = await import('../../../../packages/reporter/src/internal/submit/serializer');
 const { testCaseCache } = await import('../../server/utils/test-case-cache');
 const { testSuiteCache } = await import('../../server/utils/test-suite-cache');
 
@@ -86,6 +87,81 @@ function runBody(extra: Record<string, unknown> = {}) {
     ...extra,
   };
 }
+
+describe('a batch body', () => {
+  test('as the reporter serializes it is stored, null and older-reporter fields included', async () => {
+    const payload = {
+      projectName: PROJECT,
+      status: 'failed',
+      startTime: '2026-10-31T23:00:00.000Z',
+      duration: 1000,
+      totalTests: 2,
+      passedTests: 1,
+      failedTests: 1,
+      skippedTests: 0,
+      environment: undefined,
+      metadata: { scm: { branch: 'main' } },
+      instanceId: 'ci-1',
+      testCases: [
+        { title: 'pays', location: 'tests/pay.spec.ts:3:1', status: 'passed', duration: 10, retries: 0 },
+        {
+          title: 'refunds',
+          location: 'tests/pay.spec.ts:9:1',
+          status: 'timedOut',
+          duration: 30_000,
+          retries: 0,
+          error: 'Test timeout of 30000ms exceeded.',
+          browser: { projectName: 'chromium', browserName: 'chromium' },
+          suitePath: ['payments'],
+        },
+      ],
+    };
+    const body = serializeRun(payload as never, { includeTestCases: true });
+    // An older reporter named the browser by its project alone.
+    (body.testCases as Array<Record<string, unknown>>)[0]!.browser = 'chromium';
+
+    const { runId } = await submit({ body });
+    expect(await db.select().from(schema.testRunsCases)).toHaveLength(2);
+    const { testCases, projectName, ...testRun } = body;
+    await upload([field('projectName', projectName), field('testRun', testRun), field('testCases', testCases)]);
+    expect((await db.select().from(schema.testRuns)).map((run) => run.id)).toContain(runId);
+    expect(await db.select().from(schema.testRunsCases)).toHaveLength(4);
+  });
+
+  test.each([
+    ['testCases', { testCases: 'nope' }],
+    ['status', { status: 'exploded' }],
+    ['startTime', { startTime: 'not a date' }],
+    ['duration', { duration: '1000' }],
+    ['metadata', { metadata: 'ci' }],
+    ['testCases[0]', { testCases: [null] }],
+    ['testCases[0].title', { testCases: [{ location: 'tests/pay.spec.ts:3:1', status: 'passed' }] }],
+    ['testCases[0].startedAt', { testCases: [{ title: 'pays', status: 'passed', startedAt: {} }] }],
+    ['testCases[0].error', { testCases: [{ title: 'pays', status: 'failed', error: { message: 'boom' } }] }],
+    ['testCases[0].suitePath', { testCases: [{ title: 'pays', status: 'passed', suitePath: 'payments' }] }],
+  ])('with a wrong %s answers 400 naming it and stores nothing', async (name, extra) => {
+    await expect(submit({ body: runBody(extra) })).rejects.toMatchObject({
+      statusCode: 400,
+      message: expect.stringContaining(`Invalid ${name} (`),
+    });
+    expect(await db.select().from(schema.testRuns)).toEqual([]);
+  });
+
+  test('of /upload answers 400 naming the field of its testRun or testCases that is wrong, and stores nothing', async () => {
+    const { testCases, projectName, ...testRun } = runBody();
+    const send = (run: unknown, cases: unknown) =>
+      upload([field('projectName', projectName), field('testRun', run), field('testCases', cases)]);
+
+    await expect(send({ ...testRun, status: 'exploded' }, testCases)).rejects.toMatchObject({
+      statusCode: 400,
+      message: expect.stringContaining('Invalid testRun.status ('),
+    });
+    await expect(
+      send(testRun, [...testCases, { title: 'adds', status: 'passed', retries: 'one' }]),
+    ).rejects.toMatchObject({ statusCode: 400, message: expect.stringContaining('Invalid testCases[1].retries (') });
+    expect(await db.select().from(schema.testRuns)).toEqual([]);
+  });
+});
 
 describe('a batch whose executions cannot be stored', () => {
   test('leaves no run from /submit, so the delivery sent again stores one run', async () => {

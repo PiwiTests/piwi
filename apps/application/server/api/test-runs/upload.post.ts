@@ -18,6 +18,7 @@ import { mapWireCaseToRunCase } from '../../utils/map-wire-case';
 import { deriveTraceEvidence } from '../../utils/trace-fallback-evidence';
 import { recordIngestHealth } from '../../utils/ingest-health';
 import { sanitizeMetadata } from '../../utils/sanitize';
+import { checkUploadRun } from '../../utils/batch-payload';
 import { resolveRunBranch } from '../../utils/run-branch';
 import { runCommit, runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../utils/run-events';
@@ -49,7 +50,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Upload test results with reports, traces, and attachments',
     description:
-      'Upload Playwright test run results as multipart form data, including HTML reports, trace files, and other attachments. Supports both new runs and attaching files to existing streaming runs.',
+      'Upload Playwright test run results as multipart form data, including HTML reports, trace files, and other attachments. Supports both new runs and attaching files to existing streaming runs. For a new run, a `testRun` or `testCases` field of the wrong type answers 400 naming the first such field.',
     'x-required-permission': 'run:submit',
     requestBody: {
       content: {
@@ -220,16 +221,8 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
       message: 'Missing required fields: projectName, testRun',
     });
   }
-  // A run this upload creates needs a status and a start time, checked before anything is stored.
-  if (!existingTestRunId) {
-    const startTime: unknown = testRunData.startTime;
-    if (!testRunData.status || typeof testRunData.status !== 'string' || startTime == null || startTime === '') {
-      throw apiError({ statusCode: 400, message: 'Missing required testRun fields: status, startTime' });
-    }
-    if (Number.isNaN(new Date(startTime as string | number).getTime())) {
-      throw apiError({ statusCode: 400, message: 'Invalid testRun startTime' });
-    }
-  }
+  // A run this upload creates is checked, with its test cases, before anything is stored.
+  if (!existingTestRunId) checkUploadRun(testRunData, testCasesData);
 
   const db = await getDatabase();
   const scope = await getProjectScope(db, user as any, 'run:submit');
