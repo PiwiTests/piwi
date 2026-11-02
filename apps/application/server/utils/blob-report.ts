@@ -22,7 +22,8 @@ import {
   type TestErrorLike,
 } from '#shared/step-analysis';
 import { dirnamePosix, isAbsolutePosix, joinPosix, normalizePosix, relativePosix } from '#shared/utils/posix-path';
-import { classifyStatus, expectedFailureError, isFlakyResult, mergeAnnotations } from '#shared/status-classify';
+import { classifyStatus, expectedFailureError, mergeAnnotations } from '#shared/status-classify';
+import { distinctRunCountsFromAttempts, normalizeTestCaseStatus } from '#shared/utils/test-counts';
 import { normalizeTestTags, parseTestMetadata } from '@piwitests/core/test-meta';
 import { joinErrorMessages, appendErrorLocation, locatedError } from '#shared/error-text';
 import type { TestAnnotation } from '#shared/types';
@@ -70,11 +71,14 @@ export interface ParsedBlobReport {
   duration: number | null;
   /** Run status in Piwi's vocabulary (`passed` / `failed` / `timedout` / `interrupted`). */
   status: string;
-  /** One per test and `--repeat-each` repetition, its retries folded in: the counters below add up to it. */
+  /**
+   * One per test and `--repeat-each` repetition, its retries folded in: the counters below add up to it, but for a
+   * test the run stopped (`interrupted`), which counts in none, as in every stored run.
+   */
   totalTests: number;
   passedTests: number;
+  /** Failed and timed-out, folded. */
   failedTests: number;
-  timedOutTests: number;
   skippedTests: number;
   didNotRunTests: number;
   flakyTests: number;
@@ -578,20 +582,18 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
     for (const entry of cases) entry.case.shardIndex = shard.current;
   }
 
-  // One result per test, each `--repeat-each` repetition being a test of its own, as Playwright's summary counts them:
-  // the last attempt decides it, and a pass after an earlier failed attempt is flaky.
-  const counts = { passed: 0, failed: 0, timedOut: 0, skipped: 0, didNotRun: 0 };
-  let flakyTests = 0;
-  for (const attempts of attemptsByTest.values()) {
-    const last = attempts.at(-1)?.status;
-    if (last === 'passed') counts.passed++;
-    else if (last === 'timedOut') counts.timedOut++;
-    else if (last === 'skipped') counts.skipped++;
-    else if (last === 'didnotrun') counts.didNotRun++;
-    else counts.failed++;
-    const earlier = attempts.slice(0, -1).map((attempt) => attempt.status);
-    if (isFlakyResult(last, earlier)) flakyTests++;
-  }
+  // One result per test, each `--repeat-each` repetition being a test of its own (a Playwright test id of its own),
+  // counted from its attempts as the stored rows of every run are (`distinctRunCountsFromAttempts`).
+  const counts = distinctRunCountsFromAttempts(
+    [...attemptsByTest.values()].flatMap((attempts, testCaseId) =>
+      attempts.map((attempt) => ({
+        testCaseId,
+        repeatEachIndex: 0,
+        retries: attempt.retry,
+        status: normalizeTestCaseStatus(attempt.status),
+      })),
+    ),
+  );
 
   const projectNames = [...new Set([...planned.values()].map((p) => p.projectName).filter(Boolean))];
 
@@ -601,13 +603,12 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
     startTime: new Date(runStartTime && runStartTime > 0 ? runStartTime : Date.now()),
     duration: runDuration,
     status: runStatus,
-    totalTests: attemptsByTest.size,
-    passedTests: counts.passed,
-    failedTests: counts.failed,
-    timedOutTests: counts.timedOut,
-    skippedTests: counts.skipped,
-    didNotRunTests: counts.didNotRun,
-    flakyTests,
+    totalTests: counts.totalTests,
+    passedTests: counts.passedTests,
+    failedTests: counts.failedTests,
+    skippedTests: counts.skippedTests,
+    didNotRunTests: counts.didNotRunTests,
+    flakyTests: counts.flakyTests,
     shard,
     projectNames,
     scm: readBlobScm(config.metadata),

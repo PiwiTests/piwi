@@ -354,8 +354,33 @@ describe('parseBlobReport counters', () => {
     expect(parsed.cases).toHaveLength(5);
     expect(parsed.totalTests).toBe(3);
     expect(parsed.passedTests).toBe(2);
-    expect(parsed.failedTests + parsed.timedOutTests).toBe(1);
+    expect(parsed.failedTests).toBe(1);
     expect(parsed.flakyTests).toBe(0);
+  });
+
+  test('count a test the run stopped in no bucket, as the stored rows and the run page do', async () => {
+    const parsed = await parse(
+      buildBlobReport({
+        runStatus: 'interrupted',
+        tests: [
+          { testId: 't-pass', title: 'passes', attempts: [{ status: 'passed' }] },
+          {
+            testId: 't-stop',
+            title: 'stopped',
+            attempts: [{ status: 'interrupted', errorMessage: 'Error: Test ended.' }],
+          },
+        ],
+      }),
+    );
+
+    expect(parsed).toMatchObject({
+      totalTests: 2,
+      passedTests: 1,
+      failedTests: 0,
+      skippedTests: 0,
+      didNotRunTests: 0,
+      flakyTests: 0,
+    });
   });
 });
 

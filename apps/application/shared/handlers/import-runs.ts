@@ -25,7 +25,7 @@ import { resolveRunBranch } from '../../server/utils/run-branch';
 import { runCommit, runOrigin } from '../run-eligibility';
 import type { PersistRunCasesOptions } from '../../server/utils/persist-options';
 import { durationStats } from '../utils/stats';
-import { distinctRunCountsFromAttempts, sumFailedAndTimedOut } from '../utils/test-counts';
+import { distinctRunCountsFromAttempts } from '../utils/test-counts';
 import { joinSuitePath } from '../utils/suites';
 import { formatBytes } from '../utils/format-bytes';
 import type { ImportCheckResult, ImportRunResponse } from '../import.types';
@@ -299,7 +299,7 @@ export async function importBlobReportRun(
       duration: parsed.duration,
       totalTests: parsed.totalTests,
       passedTests: parsed.passedTests,
-      failedTests: sumFailedAndTimedOut(parsed.failedTests, parsed.timedOutTests),
+      failedTests: parsed.failedTests,
       skippedTests: parsed.skippedTests,
       didNotRunTests: parsed.didNotRunTests,
       flakyTests: parsed.flakyTests,
@@ -409,7 +409,7 @@ export async function importBlobReportRun(
     startTime: parsed.startTime.toISOString(),
     totalTests: parsed.totalTests,
     passedTests: parsed.passedTests,
-    failedTests: sumFailedAndTimedOut(parsed.failedTests, parsed.timedOutTests),
+    failedTests: parsed.failedTests,
     skippedTests: parsed.skippedTests,
     didNotRunTests: parsed.didNotRunTests,
     flakyTests: parsed.flakyTests,

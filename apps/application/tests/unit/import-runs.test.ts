@@ -58,7 +58,6 @@ function report(cases: ImportedRunCase[]): ParsedBlobReport {
     totalTests: cases.length,
     passedTests: cases.length,
     failedTests: 0,
-    timedOutTests: 0,
     skippedTests: 0,
     didNotRunTests: 0,
     flakyTests: 0,
