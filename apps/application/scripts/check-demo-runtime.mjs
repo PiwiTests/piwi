@@ -985,6 +985,18 @@ async function checkDemoFlows(page) {
   check(menu.status === 200, 'the in-browser API answers', `status ${menu.status}`);
   check(menu.count > 0, 'the seeded database has projects', `${menu.count} projects`);
 
+  // Search engines index the entry page under the title of its static shell, so the running app keeps it.
+  const shellTitle = /<title>([^<]*)<\/title>/.exec(await (await fetch(`${ORIGIN}${BASE}`)).text())?.[1] ?? '';
+  await page.locator('[data-tour="home-page"]').waitFor({ timeout: 60000 });
+  // The head is written once the page has rendered.
+  await page.waitForTimeout(1000);
+  const homeTitle = await page.title();
+  check(
+    homeTitle === shellTitle && homeTitle.includes('Playwright'),
+    'the home page keeps the title of its static shell, naming Playwright',
+    `shell "${shellTitle}", page "${homeTitle}"`,
+  );
+
   // Find a cluster to export, rather than hard-coding an id the seed may move.
   const clusterId = await page.evaluate(async () => {
     const menu = await (await fetch('/demo/api/projects/menu')).json();
