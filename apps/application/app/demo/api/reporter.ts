@@ -289,7 +289,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload, scope: 'all' | 
         ),
       );
 
-    const existingShardedRun = existingRuns.find((r) => r.shardTotal && r.shardTotal > 1);
+    const existingShardedRun = existingRuns.find((r) => r.shardTotal === shardTotal);
     if (existingShardedRun) {
       const setupToken = randomToken();
       const tokens = demoShardTokens.get(existingShardedRun.id) ?? new Set();

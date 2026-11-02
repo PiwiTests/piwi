@@ -52,10 +52,10 @@ How a run is identified:
 
 How the server merges shards:
 
-- `/setup`, `/start`, `/submit` and `/upload` reuse the instance's active sharded run when `shardTotal > 1`
-  (`findActiveShardedRun`, and `batchShardRun` for the two batch routes, `server/utils/sharded-runs.ts`). `/begin` on a
-  run another shard already began joins it: the shard gets a stream token of its own and adds its planned tests to
-  `totalTests`.
+- `/setup`, `/start`, `/submit` and `/upload` reuse the instance's active sharded run of the same `shardTotal` when
+  `shardTotal > 1` (`findActiveShardedRun`, and `batchShardRun` for the two batch routes,
+  `server/utils/sharded-runs.ts`). `/begin` on a run another shard already began joins it: the shard gets a stream
+  token of its own and adds its planned tests to `totalTests`.
 - Each shard's counters add up with SQL `+`, and the run settles only once `shardsFinished` reaches `shardTotal`
   (`finalizeShardedRun`, which runs the side effects once). `cancelInstanceRuns()` with `isShardedRun: true` cancels
   only the instance's non-sharded runs.

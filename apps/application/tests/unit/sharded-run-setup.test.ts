@@ -252,6 +252,29 @@ describe('every shard of a run goes through global setup', () => {
     expect(await readRun(one.runId)).toMatchObject({ status: 'running', passedTests: 1 });
   });
 
+  test('a shard joins only the run of shards as many as its own', async () => {
+    const ofTwo = await setupShard(1, { ...SHARDS, shardTotal: 2 });
+    const ofThree = await setupShard(1, { ...SHARDS, shardTotal: 3 });
+    expect(ofThree.runId).not.toBe(ofTwo.runId);
+    expect((await setupShard(2, { ...SHARDS, shardTotal: 3 })).runId).toBe(ofThree.runId);
+
+    const started = await start({ body: { projectName: PROJECT, ...SHARDS, shardTotal: 4, shardIndex: 1 } });
+    expect([ofTwo.runId, ofThree.runId]).not.toContain(started.runId);
+    const submitted = await submit({
+      body: {
+        projectName: PROJECT,
+        ...SHARDS,
+        shardTotal: 5,
+        shardIndex: 1,
+        status: 'passed',
+        startTime: '2026-10-31T23:00:00.000Z',
+        testCases: [{ title: 'pays', location: 'tests/pays.spec.ts:1:1', status: 'passed' }],
+      },
+    });
+    expect([ofTwo.runId, ofThree.runId, started.runId]).not.toContain(submitted.runId);
+    expect((await readRun(ofTwo.runId)).status).toBe('initializing');
+  });
+
   test('a cancelled run turns a shard away, so its reporter starts a new run', async () => {
     const one = await setupShard(1);
     const two = await setupShard(2);

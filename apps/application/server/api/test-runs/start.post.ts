@@ -21,7 +21,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Start a streaming test run',
     description:
-      'Start a new streaming test run directly in "running" status. Returns a stream token for authenticating subsequent streaming event submissions. Cancels any previous runs from the same instance. Supports sharded runs: when shardTotal > 1, reuses an existing run from the same instanceId.',
+      'Start a new streaming test run directly in "running" status. Returns a stream token for authenticating subsequent streaming event submissions. Cancels any previous runs from the same instance. Supports sharded runs: when shardTotal > 1, reuses an existing run from the same instanceId and shardTotal.',
     'x-required-permission': 'run:submit',
     requestBody: {
       content: {
@@ -71,7 +71,7 @@ export default eventHandler(async (event) => {
   return withInstanceRunLock(project.id, instanceId, async () => {
     if (isSharded && instanceId) {
       // Sharded run: look for an existing active run with the same instanceId and projectId
-      const existingShardedRun = await findActiveShardedRun(db, project.id, instanceId);
+      const existingShardedRun = await findActiveShardedRun(db, project.id, instanceId, shardTotal!);
 
       if (existingShardedRun) {
         // Reuse the existing run — generate a fresh per-shard stream token

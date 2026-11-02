@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import { testRuns } from '../database/schema';
 import { apiError } from './api-error';
 import type { DbClient } from '../database';
@@ -25,10 +25,11 @@ import { resolveBrowserName } from '#shared/browser-name';
 import type { TestCasePayload, TestRunSubmitPayload } from '#shared/types';
 
 /**
- * The initializing or running sharded run of a project instance, which another
- * shard of the same instance joins rather than starting a run of its own.
+ * The initializing or running sharded run of a project instance, split into
+ * `shardTotal` shards, which another shard of the same instance and shard
+ * count joins rather than starting a run of its own.
  */
-export async function findActiveShardedRun(db: DbClient, projectId: number, instanceId: string) {
+export async function findActiveShardedRun(db: DbClient, projectId: number, instanceId: string, shardTotal: number) {
   const [run] = await db
     .select()
     .from(testRuns)
@@ -37,7 +38,7 @@ export async function findActiveShardedRun(db: DbClient, projectId: number, inst
         eq(testRuns.projectId, projectId),
         eq(testRuns.instanceId, instanceId),
         or(eq(testRuns.status, 'running'), eq(testRuns.status, 'initializing')),
-        gt(testRuns.shardTotal, 1),
+        eq(testRuns.shardTotal, shardTotal),
       ),
     )
     .orderBy(testRuns.id)
@@ -116,7 +117,7 @@ export function batchShardTally(body: BatchRunBody, testCases: ReadonlyArray<Bat
  */
 export function batchShardRun(db: DbClient, projectId: number, instanceId: string, body: BatchRunBody) {
   return withInstanceRunLock(projectId, instanceId, async () => {
-    const active = await findActiveShardedRun(db, projectId, instanceId);
+    const active = await findActiveShardedRun(db, projectId, instanceId, body.shardTotal!);
     if (active) return active;
 
     await cancelInstanceRuns(db, projectId, instanceId, undefined, true);
