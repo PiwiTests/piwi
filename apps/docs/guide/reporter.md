@@ -218,9 +218,11 @@ through [`wrapConfig`](#installing-via-wrapconfig).
 **Connection errors.** Check that `serverUrl` answers from where the tests run; `PIWI_VERBOSE=true` logs every
 request. A run the reporter could not deliver (dashboard down, no credential, a sign-in page answering in its place)
 is saved locally, owner-only, and sent to the same `serverUrl` on the project's next run, without traces or
-attachments; it never fails the Playwright run. An interrupted stream is retried, then sent as a batch.
-[`submitTimeout`](/reference/reporter-options#submittimeout) (15 minutes by default) bounds that end-of-run work, so
-an unresponsive dashboard does not hold the CI job.
+attachments; it never fails the Playwright run. An interrupted stream is retried until it catches up. Live events the
+dashboard refuses, or has not taken two and a half minutes after they first failed, leave the live view so the later
+ones flow; when test results are among the events the dashboard never took, the run is sent again as a batch at its
+end. [`submitTimeout`](/reference/reporter-options#submittimeout) (15 minutes by default) bounds that end-of-run work,
+so an unresponsive dashboard does not hold the CI job.
 
 ## Related
 

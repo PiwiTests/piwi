@@ -26,10 +26,11 @@ const MAX_EVENT_REQUEST_BYTES = 4 * 1024 * 1024;
 /** Uploads in a row without any response after which `uploadRemaining` gives up. */
 const MAX_UPLOAD_CONNECTION_FAILURES = 3;
 /**
- * Attempts in a row at the oldest events that may fail, for want of an answer or with a server error, before they are
- * set aside so the later ones flow: about two and a half minutes of retries while the run goes on.
+ * How long the request of the oldest events may keep failing, for want of an answer or with a server error, from its
+ * first failure, before they are set aside so the later ones flow: two and a half minutes, about ten retries of the
+ * back-off. An outage shorter than that sets nothing aside, however many sends fail in it.
  */
-const MAX_EVENT_REQUEST_ATTEMPTS = 10;
+const EVENT_FAILURE_GRACE_MS = 150_000;
 /** The least a heartbeat waits once activity put it off: pending events flush first. */
 const MIN_HEARTBEAT_WAIT_MS = 250;
 /** Longest delay `setTimeout` supports; a larger one fires at once. */
@@ -59,8 +60,11 @@ export class StreamManager {
   private retryCount = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly maxRetryDelay = 30000;
-  /** Failed attempts in a row at the oldest events' request, counted toward `MAX_EVENT_REQUEST_ATTEMPTS`. */
-  private headFailures = 0;
+  /**
+   * When the request of the oldest events first failed since the dashboard last took one (ms since the epoch), the
+   * start of `EVENT_FAILURE_GRACE_MS`; null while none failed.
+   */
+  private headFailingSince: number | null = null;
   /** Whether events were set aside yet: the first time warns, the later ones are logged at debug level. */
   private setAsideWarned = false;
   /**
@@ -358,9 +362,9 @@ export class StreamManager {
   // Post the events in order, in requests of at most `MAX_EVENT_REQUEST_BYTES`.
   // A request the server refuses as too large (413) is split in half and resent;
   // a single event it still refuses leaves the live stream. A request it refuses
-  // with another client error (except 408 and 429), or one that failed
-  // `MAX_EVENT_REQUEST_ATTEMPTS` times in a row, is set aside so the later ones
-  // flow. On any other failure the unsent events go back to the head of the
+  // with another client error (except 408 and 429), or one still failing
+  // `EVENT_FAILURE_GRACE_MS` after its first failure, is set aside so the later
+  // ones flow. On any other failure the unsent events go back to the head of the
   // queue and a retry is scheduled.
   private async sendEvents(events: StreamEvent[]): Promise<boolean> {
     const chunks = this.chunkEvents(events);
@@ -374,7 +378,7 @@ export class StreamManager {
         );
         this.noteWatched(response);
         this.retryCount = 0;
-        this.headFailures = 0;
+        this.headFailingSince = null;
         this.lastActivityAt = Date.now();
       } catch (error) {
         if (error instanceof HttpError && error.status === 413) {
@@ -386,8 +390,8 @@ export class StreamManager {
           }
           continue;
         }
-        // Once the time budget closed the client, the drain stops: no attempt counts.
-        if (refusesEvents(error) || (!this.httpClient.closed && ++this.headFailures >= MAX_EVENT_REQUEST_ATTEMPTS)) {
+        // Once the time budget closed the client, the drain stops: no failure counts.
+        if (refusesEvents(error) || (!this.httpClient.closed && this.failingPastGrace())) {
           this.setAside(chunk, error);
           continue;
         }
@@ -437,11 +441,19 @@ export class StreamManager {
     }
   }
 
+  // Whether the request of the oldest events, failing now, has kept failing for
+  // `EVENT_FAILURE_GRACE_MS` since its first failure.
+  private failingPastGrace(): boolean {
+    const now = Date.now();
+    this.headFailingSince ??= now;
+    return now - this.headFailingSince >= EVENT_FAILURE_GRACE_MS;
+  }
+
   // Leave events the dashboard did not take out of the live stream, so the later
   // ones flow. A test result among them sends the run through the end-of-run
   // batch upload, which carries the full run (see `lostResults`).
   private setAside(events: StreamEvent[], error: unknown): void {
-    this.headFailures = 0;
+    this.headFailingSince = null;
     const results = events.some((event) => event.type === 'complete');
     if (results) this.resultsUndelivered = true;
     const message =

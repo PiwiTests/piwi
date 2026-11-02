@@ -714,7 +714,8 @@ describe('StreamManager request sizing', () => {
         { ...completeEvent('first'), error: 'x'.repeat(3_000_000) },
         { ...completeEvent('second'), error: 'x'.repeat(2_000_000) },
       ]);
-      expect(buffer.load().map((e) => e.title)).toEqual(['second']);
+      // The drain's tries take about a minute, under the grace before the oldest events are set aside.
+      expect(buffer.load().map((e) => e.title)).toEqual(['first', 'second']);
     });
 
     it('does not flag lost results when only progress events are left', async () => {
@@ -734,14 +735,17 @@ describe('StreamManager events the dashboard does not take', () => {
     cleanup();
   });
 
-  function makeManager(postJSON: (url: string, body: any) => Promise<any>): StreamManager {
+  function makeManager(
+    postJSON: (url: string, body: any) => Promise<any>,
+    options: Partial<PiwiDashboardOptions> = {},
+  ): StreamManager {
     const sm = new StreamManager(
       { postJSON, resolveAuth: async () => null } as any,
       new StreamBuffer(projectName),
       new CrashRecovery(RECOVERY_SERVER, projectName),
       {} as any,
       new FileHandler(),
-      makeOptions({ streamingBatchSize: 1_000_000, streamingBatchDelay: 3_600_000 }),
+      makeOptions({ streamingBatchSize: 1_000_000, streamingBatchDelay: 3_600_000, ...options }),
     );
     (sm as any)._enabled = true;
     (sm as any)._runId = 1;
@@ -777,7 +781,31 @@ describe('StreamManager events the dashboard does not take', () => {
     expect(sm.lostResults).toBe(true);
   });
 
-  it('retries a request that keeps failing with a server error a bounded number of times, then lets the later ones through', async () => {
+  it('sets nothing aside through an outage shorter than two and a half minutes, however many sends fail in it', async () => {
+    const sent: string[] = [];
+    let down = true;
+    const sm = makeManager(
+      async (_url, body) => {
+        if (down) throw new Error('connect ECONNREFUSED');
+        sent.push(...body.testCases.map((e: any) => e.title));
+        return {};
+      },
+      { streamingBatchSize: 1 },
+    );
+    // Three seconds down at twenty results a second: each result is sent at once, and fails.
+    const titles = Array.from({ length: 60 }, (_, i) => `result ${i}`);
+    for (const title of titles) {
+      sm.queueEvent(completeEvent(title));
+      await vi.advanceTimersByTimeAsync(50);
+    }
+    down = false;
+    await drain(sm);
+
+    expect(sent).toEqual(titles);
+    expect(sm.lostResults).toBe(false);
+  });
+
+  it('sets aside a request still failing with a server error two and a half minutes after its first failure', async () => {
     const sent: string[] = [];
     let attempts = 0;
     const sm = makeManager(async (_url, body) => {
@@ -791,24 +819,33 @@ describe('StreamManager events the dashboard does not take', () => {
     // Large enough to go in two requests.
     sm.queueEvent({ ...completeEvent('failing'), error: 'x'.repeat(3_000_000) });
     sm.queueEvent({ ...completeEvent('later'), error: 'x'.repeat(2_000_000) });
-    await drain(sm);
+    void sm.flush();
+    // The back-off retries it while the run goes on, the tenth at 151 s.
+    await vi.advanceTimersByTimeAsync(149_000);
+    expect(sent).toEqual([]);
+    await vi.advanceTimersByTimeAsync(2_000);
 
     expect(sent).toEqual(['later']);
     expect(attempts).toBe(10);
     expect(sm.lostResults).toBe(true);
+    await drain(sm);
   });
 
-  it('keeps retrying a request that has no answer up to the bound, and sets aside only progress without flagging results', async () => {
+  it('sets aside progress that gets no answer for two and a half minutes without flagging results', async () => {
     let attempts = 0;
     const sm = makeManager(async () => {
       attempts++;
       throw new Error('connect ECONNREFUSED');
     });
     sm.queueEvent({ type: 'step-end', title: 'step' } as any);
-    await drain(sm);
+    void sm.flush();
+    await vi.advanceTimersByTimeAsync(151_000);
 
     expect(attempts).toBe(10);
     expect(sm.lostResults).toBe(false);
+    // Nothing is left to send.
+    await drain(sm);
+    expect(attempts).toBe(10);
   });
 });
 
