@@ -82,7 +82,8 @@ export default eventHandler(async (event) => {
   // Process test cases (supports single or batch)
   const testCaseEvents = Array.isArray(body.testCases) ? body.testCases : [body.testCase];
 
-  const validEvents = testCaseEvents.filter((tc: { title?: string }) => tc && tc.title);
+  // Playwright accepts an empty title.
+  const validEvents = testCaseEvents.filter((tc: { title?: unknown }) => tc && typeof tc.title === 'string');
 
   // Split into begin and complete events; step events keep their batch order. A result whose fields the database
   // cannot hold is left out, so it fails neither the batch nor the reporter's retries of it.

@@ -198,7 +198,8 @@ async function handleCaseFiles(
   const traceStreamed = multipart.files.find((f) => f.field === 'trace');
   const attachmentStreamed = multipart.files.filter((f) => f.field === 'attach_file');
 
-  if (!caseInfo?.title || !caseInfo?.location) {
+  // Playwright accepts an empty title.
+  if (typeof caseInfo?.title !== 'string' || !caseInfo?.location) {
     throw apiError({
       statusCode: 400,
       message: 'Missing required testCase fields: title, location',

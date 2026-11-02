@@ -180,3 +180,25 @@ describe('a run case PostgreSQL could not store as it came', () => {
     expect(titles).toEqual([{ title: 'refunds' }]);
   });
 });
+
+describe('a streamed result', () => {
+  test('of a test with an empty title is stored, as Playwright runs it', async () => {
+    const streamToken = 'stream-token-of-the-run';
+    const runId = await newRun({ streamToken: streamTokenDigest(streamToken) });
+    runEventBus.clearRunState(runId);
+
+    await events({
+      params: { id: String(runId) },
+      body: {
+        streamToken,
+        testCases: [{ type: 'complete', title: '', location: 'tests/pay.spec.ts:3:1', status: 'passed' }],
+      },
+    });
+
+    const titles = await db
+      .select({ title: schema.testCases.title })
+      .from(schema.testRunsCases)
+      .innerJoin(schema.testCases, eq(schema.testCases.id, schema.testRunsCases.testCaseId));
+    expect(titles).toEqual([{ title: '' }]);
+  });
+});

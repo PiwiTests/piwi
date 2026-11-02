@@ -103,6 +103,16 @@ describe('POST /api/test-runs/:id/case-files', () => {
 
     expect(answer).toMatchObject({ executionId: execution!.id, attachments: 1 });
   });
+
+  test('finds the execution of a test with an empty title, as Playwright runs it', async () => {
+    const [execution] = await stream([
+      { title: '', filePath: 'tests/receipt.spec.ts', status: 'failed', line: 3, column: 1, retries: 0 },
+    ]);
+
+    const answer = await uploadScreenshot({ title: '', location: 'tests/receipt.spec.ts:3:1', retries: 0 });
+
+    expect(answer).toMatchObject({ executionId: execution!.id, attachments: 1 });
+  });
 });
 
 describe('the execution a case-files upload lands on', () => {

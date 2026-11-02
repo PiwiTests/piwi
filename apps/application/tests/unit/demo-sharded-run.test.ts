@@ -6,8 +6,8 @@ import * as schema from '../../server/database/schema.sqlite';
 import { migrateToLatest } from './temp-db';
 
 /**
- * The demo's sharded run, through its reporter endpoints (`app/demo/api/reporter.ts`): the same counters, status and
- * metadata as the server's (`tests/unit/sharded-run-setup.test.ts`).
+ * The demo's runs, through its reporter endpoints (`app/demo/api/reporter.ts`): the same results, counters, status and
+ * metadata as the server's (a sharded run's in `tests/unit/sharded-run-setup.test.ts`).
  */
 
 const state = vi.hoisted(() => ({ db: null as unknown }));
@@ -90,6 +90,21 @@ describe("the demo's sharded run", () => {
     await beginShard(2, 1, { scm });
 
     expect(await readRun(one.runId)).toMatchObject({ branch: 'feature/pay', commit: '9f2c4e1a7b' });
+  });
+});
+
+describe("the demo's streamed result", () => {
+  test('of a test with an empty title is stored, as Playwright runs it', async () => {
+    const { runId, setupToken } = await apiSetupTestRun({ projectName: 'demo-results', instanceId: 'local-1' });
+    const { streamToken } = await apiBeginTestRun(runId, { setupToken });
+
+    await apiPostRunEvents(runId, { streamToken, testCases: [result('', 'passed', 1)] });
+
+    const titles = await db
+      .select({ title: schema.testCases.title })
+      .from(schema.testRunsCases)
+      .innerJoin(schema.testCases, eq(schema.testCases.id, schema.testRunsCases.testCaseId));
+    expect(titles).toEqual([{ title: '' }]);
   });
 });
 

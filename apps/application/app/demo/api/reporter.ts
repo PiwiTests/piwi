@@ -888,7 +888,10 @@ export async function apiPostRunEvents(
   await validateAndReviveDemoRun(db, testRun, body.streamToken, !!isValidShardToken);
 
   const testCaseEvents = Array.isArray(body.testCases) ? body.testCases : [body.testCase];
-  const validEvents = testCaseEvents.filter((tc): tc is StreamEventPayload => Boolean(tc && tc.title));
+  // Playwright accepts an empty title (server behavior).
+  const validEvents = testCaseEvents.filter((tc): tc is StreamEventPayload =>
+    Boolean(tc && typeof tc.title === 'string'),
+  );
 
   const beginEvents = validEvents.filter((tc) => tc.type === 'begin');
   const completeEvents = validEvents.filter((tc) => tc.type === 'complete');
