@@ -79,15 +79,17 @@ const {
   snapshotUrl,
   pending: traceSnapshotsPending,
 } = useTraceSnapshots(() => props.testRunsCaseId);
+// The trace's failing step. With no failing action the trace names the last one, so only a failed execution has one.
+const failedStep = computed(() => (props.failed ? failingStep.value : null));
 
 // ── Screenshot ──────────────────────────────────────────────────────────────
 type Shot = LightboxImage & { failed: boolean };
 
-const stepLabel = computed(() => props.step || failingStep.value?.title || null);
+const stepLabel = computed(() => props.step || failedStep.value?.title || null);
 const errorText = computed(() => props.error || null);
 
 const traceShots = computed<Shot[]>(() => {
-  const step = failingStep.value;
+  const step = failedStep.value;
   if (!step) return [];
   const list: Shot[] = [];
   if (step.screen.before) {
@@ -153,7 +155,7 @@ const lightboxIndex = ref<number | null>(null);
 // The DOM of the same moment as the screenshot at the failure, asked for once
 // the trace's screenshots are known; the failure-time DOM without them.
 const domAt = computed<DomSnapshotMoment | null>(() => {
-  const step = failingStep.value;
+  const step = failedStep.value;
   if (!step || !traceShots.value.length) return null;
   return { callId: step.callId, phase: step.screen.after ? 'after' : 'before' };
 });
@@ -163,7 +165,10 @@ const dom = useDomSnapshot(
   () => !traceSnapshotsPending.value,
 );
 const hasDom = computed(() => dom.hasDom.value);
-const domCaption = computed(() => (domAt.value?.phase === 'before' ? 'Before the failing action' : 'At the failure'));
+const domCaption = computed(() => {
+  if (!props.failed) return 'At the end of the test';
+  return domAt.value?.phase === 'before' ? 'Before the failing action' : 'At the failure';
+});
 // The rendered page loads the first time the DOM view opens, then stays.
 const domOpened = ref(false);
 
@@ -333,7 +338,7 @@ const frameHeight = computed(() => (props.full ? 'max-h-[32rem]' : 'max-h-80'));
     <figure v-if="domOpened && hasDom" v-show="activeView === 'dom'" class="min-w-0 space-y-1">
       <figcaption class="flex items-center gap-1 text-xs text-muted">
         <span
-          v-if="domAt?.phase !== 'before'"
+          v-if="failed && domAt?.phase !== 'before'"
           class="inline-block size-1.5 shrink-0 rounded-full"
           :class="STATUS_PALETTE.failed.bg"
           aria-hidden="true"

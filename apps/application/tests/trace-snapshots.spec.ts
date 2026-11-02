@@ -181,3 +181,52 @@ test.describe('Trace aria/screen snapshots', () => {
     await expect(page.getByRole('dialog').locator('iframe[title="DOM snapshot"]')).toBeVisible();
   });
 });
+
+test.describe('Trace screen snapshots of a passing test', () => {
+  test.describe.configure({ mode: 'serial' });
+
+  const PASSING = { title: 'checkout — pay and confirm', location: 'tests/checkout.spec.ts:30:3', retries: 0 };
+  let executionId: number;
+
+  test.beforeAll(async ({ request }) => {
+    const start = await retryPost(request, '/api/test-runs/start', {
+      data: { projectName: PROJECT.TRACE_SNAPSHOTS, startTime: new Date().toISOString() },
+    });
+    const { runId, streamToken } = await start.json();
+
+    await retryPost(request, `/api/test-runs/${runId}/events`, {
+      data: {
+        streamToken,
+        testCases: [{ type: 'complete', ...PASSING, status: 'passed', duration: 2000 }],
+      },
+    });
+
+    const form = new FormData();
+    form.set('streamToken', streamToken);
+    form.set('testCase', JSON.stringify(PASSING));
+    form.set('trace_hash', TRACE_HASH);
+    form.append('trace', new Blob([TRACE], { type: 'application/zip' }), 'trace.zip');
+    const upload = await request.post(`/api/test-runs/${runId}/case-files`, { multipart: form });
+    expect(upload.ok()).toBeTruthy();
+    executionId = (await upload.json()).executionId;
+  });
+
+  test('the Screen tab shows no page at the failure, failing-action pair or failing-action diff', async ({ page }) => {
+    await page.goto(`/test-run-cases/${executionId}`);
+    await waitForHydration(page);
+
+    await page
+      .getByRole('tablist', { name: 'Evidence sections' })
+      .getByRole('tab', { name: 'Screen', exact: true })
+      .click();
+
+    const views = page.getByRole('tablist', { name: 'Screen view' });
+    await expect(views.getByRole('tab', { name: 'DOM', exact: true })).toBeVisible();
+    await expect(page.getByText('Before the failing action')).toHaveCount(0);
+    await expect(page.getByText('At the failure', { exact: true })).toHaveCount(0);
+    await expect(views.getByRole('tab', { name: 'Page diff' })).toHaveCount(0);
+
+    await views.getByRole('tab', { name: 'DOM', exact: true }).click();
+    await expect(page.locator('iframe[title="DOM at the end of the test"]')).toBeVisible();
+  });
+});
