@@ -12,6 +12,7 @@ import { readReportArchiveIndex } from '../../utils/report-archive';
 import { getDatabase } from '../../database';
 import { etagMatches } from '../../utils/json-etag';
 import { parseByteRange } from '../../utils/byte-range';
+import { escapesStorageRoot } from '../../utils/sanitize-filename';
 
 defineRouteMeta({
   openAPI: {
@@ -66,7 +67,7 @@ export default eventHandler(async (event) => {
   }
 
   // Security: Prevent path traversal
-  if (path.includes('..') || path.startsWith('/')) {
+  if (escapesStorageRoot(path)) {
     throw apiError({
       statusCode: 403,
       message: 'Invalid file path',

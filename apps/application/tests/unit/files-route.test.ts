@@ -80,6 +80,7 @@ beforeAll(async () => {
   mkdirSync(join(storageDir, 'project-1/run-7/42'), { recursive: true });
   mkdirSync(join(storageDir, 'project-2'), { recursive: true });
   writeFileSync(join(storageDir, 'project-1/run-7/42/video.webm'), VIDEO);
+  writeFileSync(join(storageDir, 'project-1/run-7/42/step-2..json'), '{"step":2}');
   writeFileSync(join(storageDir, 'project-2/secret.txt'), SECRET);
 
   const router = h3.createRouter().get('/api/files/**:path', handler as h3.EventHandler);
@@ -146,6 +147,12 @@ describe('a stored file', () => {
 });
 
 describe('the path checks', () => {
+  test('serve a name that holds two dots, which is no way up', async () => {
+    const answer = await get('/api/files/project-1/run-7/42/step-2..json');
+    expect(answer.status).toBe(200);
+    expect(answer.body.toString()).toBe('{"step":2}');
+  });
+
   test("refuse another project's file to a reader of this one", async () => {
     expect((await get('/api/files/project-2/secret.txt')).status).toBe(403);
   });
