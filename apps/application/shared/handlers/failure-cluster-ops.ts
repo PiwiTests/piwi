@@ -732,7 +732,12 @@ export async function recomputeClusterOccurrences(db: DrizzleDB, clusterId: numb
     .where(and(eq(testRunsCases.failureClusterId, clusterId), eligibleRunSql('cluster-occurrences')));
   const occurrences = Number(row?.count ?? 0);
 
-  await db.update(failureClusters).set({ occurrences, updatedAt: new Date() }).where(eq(failureClusters.id, clusterId));
+  await db.update(failureClusters).set({ occurrences }).where(eq(failureClusters.id, clusterId));
+  // Only an open cluster's `updatedAt` moves (`touchedByOccurrence`): a resolved or ignored one keeps its triage time.
+  await db
+    .update(failureClusters)
+    .set({ updatedAt: new Date() })
+    .where(and(eq(failureClusters.id, clusterId), eq(failureClusters.status, 'open')));
 
   return occurrences;
 }
