@@ -370,10 +370,7 @@ describe('collectSourceFrames', () => {
       ].join('\n');
       const frames = collectSourceFrames(error, spec, 40, { projectRoot: root, context: 2 });
       // The node_modules frame is dropped; helper (innermost in-project) comes before the spec.
-      expect(frames.map((f) => f.file)).toEqual([
-        path.join('tests', 'helper.ts'),
-        path.join('tests', 'checkout.spec.ts'),
-      ]);
+      expect(frames.map((f) => f.file)).toEqual(['tests/helper.ts', 'tests/checkout.spec.ts']);
       expect(frames[0]!.line).toBe(15);
       expect(frames[0]!.snippet).toContain('> ');
       expect(frames[0]!.file.startsWith('..')).toBe(false); // project-relative
@@ -388,7 +385,7 @@ describe('collectSourceFrames', () => {
       const error = `Error: boom\n    at internal (${lib}:5:3)`;
       const frames = collectSourceFrames(error, spec, 42, { projectRoot: root, context: 2 });
       expect(frames).toHaveLength(1);
-      expect(frames[0]!.file).toBe(path.join('tests', 'checkout.spec.ts'));
+      expect(frames[0]!.file).toBe('tests/checkout.spec.ts');
       expect(frames[0]!.line).toBe(42);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
@@ -403,7 +400,7 @@ describe('collectSourceFrames', () => {
       const frames = collectSourceFrames(error, spec, 42, { projectRoot: root, context: 1 });
       expect(performance.now() - started).toBeLessThan(1000);
       // The frame sits past the scanned start of the text, so the test file stands in.
-      expect(frames.map((f) => f.file)).toEqual([path.join('tests', 'checkout.spec.ts')]);
+      expect(frames.map((f) => f.file)).toEqual(['tests/checkout.spec.ts']);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -415,7 +412,7 @@ describe('collectSourceFrames', () => {
       // The frame the error text appends is relative to the config's folder, not the working directory.
       const error = 'Error: boom\n    at tests/checkout.spec.ts:20:5';
       const frames = collectSourceFrames(error, spec, 42, { projectRoot: root, context: 1 });
-      expect(frames.map((f) => `${f.file}:${f.line}`)).toEqual([`${path.join('tests', 'checkout.spec.ts')}:20`]);
+      expect(frames.map((f) => `${f.file}:${f.line}`)).toEqual(['tests/checkout.spec.ts:20']);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { extractStackFrames } from '@piwitests/core/error-parse';
 import type { TestSourceFrame } from '@piwitests/core/wire';
+import { relativeTestPath } from './test-paths.js';
 
 /**
  * Read a snippet of source code surrounding the declaration line, optionally
@@ -58,7 +59,8 @@ function stackFrames(errorText: string): Array<{ file: string; line: number }> {
  * is visible, not just the test line that invoked it.
  *
  * A relative frame is read from `projectRoot`, the folder the error text's
- * paths are relative to, and each frame is named relative to it. Frames in
+ * paths are relative to, and each frame is named relative to it with POSIX
+ * separators, as the test's own file is (`relativeTestPath`). Frames in
  * `node_modules` or outside `projectRoot` are dropped (Playwright / library
  * internals), duplicates are collapsed, and the list is capped. When the stack
  * has no in-project frame at all, falls back to the test file's failing line so
@@ -111,7 +113,11 @@ export function collectSourceFrames(
   for (const p of picked.slice(0, maxFrames)) {
     const snippet = readSourceSnippet(p.absFile, p.line, context, p.line);
     if (snippet) {
-      frames.push({ file: path.relative(projectRoot, p.absFile) || path.basename(p.absFile), line: p.line, snippet });
+      frames.push({
+        file: relativeTestPath(p.absFile, projectRoot) || path.basename(p.absFile),
+        line: p.line,
+        snippet,
+      });
     }
   }
   return frames;
