@@ -6,7 +6,7 @@ defineRouteMeta({
     tags: ['Test Cases'],
     summary: 'Get test case detail (stable identity)',
     description:
-      'Returns the stable test case identity with aggregated run stats, recent executions, linked failure clusters, and entity links.',
+      'Returns the stable test case identity with aggregated run stats, recent executions, linked failure clusters, and entity links. The stats count runs, one result per run, Playwright project and `--repeat-each` repetition read from its final attempt; `passRate` is the passed runs over the runs that passed or failed, in percent, null when none did.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:read',
   },
