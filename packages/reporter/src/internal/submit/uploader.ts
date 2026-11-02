@@ -143,7 +143,10 @@ export class Uploader {
     return response;
   }
 
-  /** Upload `reports` for an already-submitted streaming run */
+  /**
+   * Upload `reports` for an already-submitted streaming run. Any such upload, one with no report too, settles a run
+   * the dashboard keeps `finalizing` until its reports arrive.
+   */
   async uploadReportsForStreamingRun(
     projectName: string,
     runId: number,
@@ -172,7 +175,7 @@ export class Uploader {
     await this.appendReportsToForm(form, reports);
 
     const response = await this.httpClient.postFormData('/api/test-runs/upload', form, auth);
-    this.logger.debug(`Successfully uploaded reports for streaming run #${runId}`);
+    this.logger.debug(`Successfully uploaded ${reports.length} report(s) for streaming run #${runId}`);
     if (response.reports) {
       for (const r of response.reports) this.logger.debug(`${r.label}: ${r.path}`);
     }
@@ -275,7 +278,7 @@ export class Uploader {
     return true;
   }
 
-  /** The reports the options ask for that are on disk, each within the upload limit. */
+  /** The reports the options ask for that are on disk. */
   findReports(reportOptions: ReportOptions): FoundReport[] {
     const list: Array<{ type: string; dir?: string; label?: string }> = reportOptions.reports
       ? [...reportOptions.reports]

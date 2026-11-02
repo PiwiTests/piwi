@@ -354,6 +354,45 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     expect(urlsHit(server)).not.toContain('/api/test-runs/upload');
   });
 
+  it('settles a streamed run whose reports the dashboard refuses with an upload that carries none', async () => {
+    let finishBody: any;
+    const uploads: string[] = [];
+    server = await startServer((req, res) => {
+      if (req.url === '/api/test-runs/start') {
+        jsonRes(res, 200, { runId: 1, streamToken: 'tok' });
+      } else if (req.url === '/api/test-runs/1/events') {
+        jsonRes(res, 200, {});
+      } else if (req.url === '/api/test-runs/1/finish') {
+        finishBody = JSON.parse(req.body);
+        jsonRes(res, 200, { success: true, runId: 1, status: 'finalizing' });
+      } else if (req.url === '/api/test-runs/upload') {
+        uploads.push(req.body);
+        if (req.body.includes('name="report_custom"')) jsonRes(res, 413, { message: 'Upload too large (max 500 MB)' });
+        else jsonRes(res, 200, { success: true, runId: 1 });
+      } else {
+        textRes(res, 404, 'nope');
+      }
+    });
+
+    const reporter = new PiwiDashboardReporter({
+      serverUrl: server.url,
+      projectName,
+      streaming: true,
+      uploadReport: false,
+      uploadTraces: false,
+      liveFileUploads: false,
+      streamingBatchDelay: 50,
+      reports: [{ type: 'custom', dir: reportDir() }],
+    });
+    await runOneTest(reporter, 'refused-report-test');
+
+    // `/finish` left the run waiting for its reports, which the dashboard then refused.
+    expect(finishBody.hasPendingUploads).toBe(true);
+    expect(uploads).toHaveLength(2);
+    expect(uploads[1]).toContain('already-submitted');
+    expect(uploads[1]).not.toContain('name="report_');
+  });
+
   it('all upload methods fail → recovery file is written', async () => {
     server = await startServer((req, res) => {
       if (req.url === '/api/test-runs/submit') {

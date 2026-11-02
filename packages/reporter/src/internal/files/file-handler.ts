@@ -14,10 +14,9 @@ import {
 import type { CollectedTestCase, RawAttachment, TraceHashInfo } from '../../types.js';
 
 /**
- * Size ceiling for one uploadable attachment, path-backed or inline, and for the
- * files of one report together. Matches the dashboard's default multipart upload
- * limit, so a larger file or report could never land anyway; it is skipped here
- * with one warning instead of failing the upload.
+ * Size ceiling for one uploadable attachment, path-backed or inline. Matches
+ * the dashboard's default multipart upload limit, so a larger file could never
+ * land anyway; it is skipped here with one warning instead of failing the upload.
  */
 export const MAX_ATTACHMENT_BYTES = 500 * 1024 * 1024;
 
@@ -101,26 +100,16 @@ export class FileHandler {
   }
 
   /**
-   * The files of a report folder, or null when it cannot be read, or when its files together are over the upload
-   * limit: the dashboard would refuse the upload that carries them, so the report is left out, with one warning,
-   * before its archive is built.
+   * The files of a report folder, or null when it cannot be read. A report of any size is listed: the dashboard's
+   * upload limit, which its operator sets, decides whether the upload that carries it is taken.
    */
   listReport(reportDir: string): ArchiveFile[] | null {
-    let files: ArchiveFile[];
     try {
-      files = listArchiveFiles(reportDir);
+      return listArchiveFiles(reportDir);
     } catch (error) {
       this.logger.warn(`Could not read the report in ${reportDir}: ${errorMessage(error)}`);
       return null;
     }
-    const bytes = files.reduce((sum, file) => sum + file.size, 0);
-    if (bytes > this.maxAttachmentBytes) {
-      this.logger.warn(
-        `Skipping the report in ${reportDir}: its files hold ${formatMiB(bytes)}, over the ${formatMiB(this.maxAttachmentBytes)} upload limit.`,
-      );
-      return null;
-    }
-    return files;
   }
 
   /**

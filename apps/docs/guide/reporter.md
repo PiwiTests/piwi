@@ -196,7 +196,9 @@ export default defineConfig({
 
 `html` (the html reporter's folder, `playwright-report/` by default) and `monocart` (`monocart-report/`) open in a new
 tab; `blob` (`blob-report/`) downloads as an archive. Any other type is accepted too, read from `dir` or else
-`<type>-report/`. A report over the 500 MB upload limit is left out.
+`<type>-report/`. Reports are uploaded compressed, and the dashboard refuses an upload over its limit
+([`PIWI_IMPORT_MAX_BYTES`](/reference/configuration#ingest-limits), 500 MB by default): a streamed run is then
+finished without its reports, and a run sent as a batch keeps only its results.
 
 ## With authentication enabled
 

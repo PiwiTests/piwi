@@ -374,6 +374,7 @@ export class RunSubmitter {
           );
         } catch (error) {
           this.logger.warn(`Failed to upload reports for streaming run: ${errorMessage(error)}`);
+          await this.settleWithoutReports(run, sm.runId!, auth);
         }
       }
       return { done: true, output: this.buildOutput(sm.runId!, undefined, run, overallStatus) };
@@ -381,6 +382,20 @@ export class RunSubmitter {
       this.logger.warn(`Failed to finalize streaming run: ${errorMessage(error)}`);
       this.logger.info('Falling back to batch upload...');
       return { done: false, output: null };
+    }
+  }
+
+  /**
+   * Settle a streamed run whose reports did not upload (refused as over the dashboard's upload limit, say): its
+   * `/finish` left it `finalizing` until they arrive, or until the dashboard stops waiting, and an upload that carries
+   * no report settles it now.
+   */
+  private async settleWithoutReports(run: CollectedRun, runId: number, auth: string | null): Promise<void> {
+    if (this.httpClient.closed) return;
+    try {
+      await this.uploader.uploadReportsForStreamingRun(run.options.projectName!, runId, [], run.startTime, auth);
+    } catch (error) {
+      this.logger.debug(`Could not settle run #${runId} without its reports: ${errorMessage(error)}`);
     }
   }
 

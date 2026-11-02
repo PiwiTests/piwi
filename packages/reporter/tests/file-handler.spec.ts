@@ -121,14 +121,14 @@ describe('FileHandler.listReport', () => {
     expect(new FileHandler(logger).listReport(tmpDir)?.map((file) => file.name)).toEqual(['index.html']);
   });
 
-  it('leaves out a report whose files together are over the upload limit, with one warning', async () => {
+  it("lists a report whatever its size: the dashboard's upload limit, which it sets, decides", async () => {
     const handler = new FileHandler(logger, 8);
     fs.writeFileSync(path.join(tmpDir, 'index.html'), Buffer.alloc(5));
     fs.writeFileSync(path.join(tmpDir, 'data.js'), Buffer.alloc(5));
 
-    expect(handler.listReport(tmpDir)).toBeNull();
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn.mock.calls[0]![0]).toContain(`Skipping the report in ${tmpDir}`);
+    const names = handler.listReport(tmpDir)?.map((file) => file.name);
+    expect(names?.sort()).toEqual(['data.js', 'index.html']);
+    expect(warn).not.toHaveBeenCalled();
   });
 });
 

@@ -189,7 +189,7 @@ describe('Uploader.uploadWithFiles', () => {
 });
 
 describe('Uploader.findReports', () => {
-  it('leaves out a report over the upload limit, so no upload carries it', () => {
+  it("finds a report larger than an attachment may be, for the dashboard's upload limit to decide", () => {
     const reportDir = path.join(tmpDir, 'big-report');
     fs.mkdirSync(reportDir);
     fs.writeFileSync(path.join(reportDir, 'index.html'), 'x'.repeat(16));
@@ -198,7 +198,8 @@ describe('Uploader.findReports', () => {
       new FileHandler(new Logger(false), 8),
     );
 
-    expect(uploader.findReports({ reports: [{ type: 'custom', dir: reportDir }] })).toEqual([]);
+    const found = uploader.findReports({ reports: [{ type: 'custom', dir: reportDir }] });
+    expect(found.map((report) => [report.type, report.dir])).toEqual([['custom', reportDir]]);
   });
 });
 
