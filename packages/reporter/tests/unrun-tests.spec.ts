@@ -73,6 +73,31 @@ describe('the tests a run never reached, on the wire', () => {
     expect(sentCase(stopped, 'ships')).toMatchObject({ status: 'didnotrun', didNotRunReason: 'max-failures' });
   });
 
+  /**
+   * A `describe.serial` group with `retries: 1`: "refunds" fails its first attempt, and the group's retry stops at
+   * "pays", which passed the first time and fails now, so the retry of "refunds" does not run. Playwright's outcome
+   * of "refunds" is `unexpected`: a skip of a test expected to run has no say in it.
+   */
+  function serialGroupRetry(parent: any, file = '/tmp/test.spec.ts') {
+    const pays = { ...fakeTestCase({ id: 'pays', title: 'pays', file, line: 3, parent }), retries: 1 };
+    const refunds = { ...fakeTestCase({ id: 'refunds', title: 'refunds', file, line: 7, parent }), retries: 1 };
+    const attempts: Attempt[] = [
+      { test: pays, status: 'passed', retry: 0 },
+      { test: refunds, status: 'failed', retry: 0 },
+      { test: pays, status: 'failed', retry: 1 },
+      { test: refunds, status: 'skipped', retry: 1 },
+    ];
+    return { tests: [pays, refunds], attempts };
+  }
+
+  it('counts a failed test whose retry did not run against maxFailures, as Playwright does', async () => {
+    const suite = fakeSuite();
+    const group = serialGroupRetry(suite);
+    const ships = fakeTestCase({ id: 'ships', title: 'ships', line: 11, parent: suite });
+    const body = await submitted([...group.tests, ships], group.attempts, 'failed', { maxFailures: 1 });
+    expect(sentCase(body, 'ships')).toMatchObject({ status: 'didnotrun', didNotRunReason: 'max-failures' });
+  });
+
   it('sends a test declared skipped as skipped when the run stopped before it', async () => {
     const suite = fakeSuite();
     const pays = fakeTestCase({ id: 'pays', title: 'pays', line: 1, parent: suite });
@@ -124,6 +149,28 @@ describe('the tests a run never reached, on the wire', () => {
     }
     // A test of a project that depends on no failed project keeps the run's reason.
     expect(sentCase(body, 'other')).toMatchObject({ status: 'didnotrun', didNotRunReason: 'interrupted', blockedBy: null });
+  });
+
+  it('links the tests of a project whose dependency failed to a failure whose retry did not run', async () => {
+    const setup = fakeSuite();
+    setup.project = () => ({ name: 'setup', use: {} });
+    const app = fakeSuite();
+    app.project = () => ({ name: 'app', use: {} });
+    const group = serialGroupRetry(setup, '/repo/auth.setup.ts');
+    const cart = fakeTestCase({ id: 'cart', title: 'adds to cart', file: '/repo/cart.spec.ts', line: 5, parent: app });
+    const body = await submitted([...group.tests, cart], group.attempts, 'failed', {
+      projects: [
+        { name: 'setup', dependencies: [] },
+        { name: 'app', dependencies: ['setup'] },
+      ],
+      configFile: '/repo/playwright.config.ts',
+    });
+    // "pays" passed once, so Playwright counts it flaky; "refunds" is the failure that kept "app" from running.
+    expect(sentCase(body, 'adds to cart')).toMatchObject({
+      status: 'didnotrun',
+      didNotRunReason: 'dependency-failure',
+      blockedBy: 'auth.setup.ts:7:1',
+    });
   });
 });
 

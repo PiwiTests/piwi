@@ -143,11 +143,19 @@ function uncapturedCalls(steps: readonly TestStep[]): boolean {
 const MAX_UNCAPTURED_NAMED = 5;
 
 /**
- * Whether a test's attempts read as Playwright's `unexpected` outcome: every attempt that was not interrupted failed
- * or timed out (statuses as `classifyStatus` stores them).
+ * Whether an attempt has a say in its test's outcome, as Playwright reads it: an interrupted attempt and a skip of a
+ * test expected to run (`didnotrun`) have none (status as `classifyStatus` stores it).
+ */
+function decidesOutcome(status: string): boolean {
+  return status !== 'interrupted' && status !== 'didnotrun';
+}
+
+/**
+ * Whether a test's attempts read as Playwright's `unexpected` outcome: every attempt with a say in it failed or timed
+ * out (statuses as `classifyStatus` stores them).
  */
 function failedEveryAttempt(attempts: ReadonlyArray<{ status: string }>): boolean {
-  const ran = attempts.filter((attempt) => attempt.status !== 'interrupted');
+  const ran = attempts.filter((attempt) => decidesOutcome(attempt.status));
   return ran.length > 0 && ran.every((attempt) => attempt.status === 'failed' || attempt.status === 'timedOut');
 }
 
@@ -173,7 +181,10 @@ export class PiwiDashboardReporter {
   private skippedTests = 0;
   private timedOutTests = 0;
   private didNotRunTests = 0;
-  /** Tests whose last attempt failed, as every attempt before it did: what Playwright's `maxFailures` counts. */
+  /**
+   * Tests whose attempts read as Playwright's `unexpected` outcome (`failedEveryAttempt`), counted once their last
+   * attempt ended: what `maxFailures` counts.
+   */
   private failedTestCount = 0;
   /** Full set of tests Playwright planned to run this shard (captured in `onBegin`). */
   private plannedTests: TestCase[] = [];
@@ -183,7 +194,10 @@ export class PiwiDashboardReporter {
   private uncapturedSpecs = new Set<string>();
   /** The live steps begun and not ended, by step, sent again when someone opens the run (`onWatched`). */
   private openSteps = new Map<unknown, StreamEvent>();
-  /** The failed attempts with retries left, by `test.id`: each is its test's last when the run stops before the retry. */
+  /**
+   * The failed attempts with retries left, by `test.id`: each is its test's last failure when no later attempt has a
+   * say in its outcome (`decidesOutcome`), the run stopping before the retry or the retry not running.
+   */
   private failuresAwaitingRetry = new Map<string, () => FailedTest>();
   /** Per-test attempt history, keyed by `test.id`; snapshotted onto every attempt's payload. */
   private attemptsByTest = new Map<
@@ -905,8 +919,8 @@ export class PiwiDashboardReporter {
 
     // The final attempt of a failing test gets a dashboard link, printed as
     // soon as a run id exists (immediately while streaming, after the submit otherwise).
-    // A failed attempt with retries left gets it when the run ends before a retry that is not interrupted
-    // (`finishRun`): Playwright's outcome leaves interrupted attempts out.
+    // A failed attempt with retries left gets it when the run ends before a retry with a say in the outcome
+    // (`finishRun`): Playwright's outcome leaves interrupted attempts, and skips of a test expected to run, out.
     const isFailure = status === 'failed' || status === 'timedOut';
     const failedTest = (): FailedTest => ({
       title: test.title,
@@ -916,7 +930,7 @@ export class PiwiDashboardReporter {
       repeatEachIndex: test.repeatEachIndex,
       headline: failureHeadline(testCase.error, testCase.performanceMetrics?.steps),
     });
-    if (result.status !== 'interrupted') this.failuresAwaitingRetry.delete(test.id);
+    if (decidesOutcome(status)) this.failuresAwaitingRetry.delete(test.id);
     if (isFailure && result.retry >= (test.retries ?? 0)) this.failureLinks.add(failedTest());
     else if (isFailure) this.failuresAwaitingRetry.set(test.id, failedTest);
     const liveRunId = this.streamManager?.runId;
@@ -1089,8 +1103,9 @@ export class PiwiDashboardReporter {
 
   /**
    * The failure that kept a test from running when a project its project depends on failed: the first test that failed
-   * on every attempt in a project of its project's `dependencies`, directly or through another project. Playwright runs
-   * no test of a project one of whose dependencies failed. Null for a test whose dependencies had no such failure.
+   * every attempt with a say in its outcome (`failedEveryAttempt`) in a project of its project's `dependencies`,
+   * directly or through another project. Playwright runs no test of a project one of whose dependencies failed. Null
+   * for a test whose dependencies had no such failure.
    */
   private dependencyBlocker(test: TestCase): CollectedTestCase | null {
     const project = this.metadataCollector.getBrowserConfig(test)?.projectName;
@@ -1160,7 +1175,7 @@ export class PiwiDashboardReporter {
     // Neither throws out of `onEnd`, where Playwright would count the error as a failure of the run: the run is
     // reported with what was collected.
     try {
-      // A failed attempt the run stopped before retrying is its test's last.
+      // A failed attempt followed by none with a say in the outcome is its test's last failure.
       for (const failedTest of this.failuresAwaitingRetry.values()) this.failureLinks.add(failedTest());
       this.materializeUnrunTests(unrunReason);
     } catch (error) {

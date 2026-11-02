@@ -102,7 +102,13 @@ describe('FailureLinks', () => {
 });
 
 describe('the failures the reporter links', () => {
-  it('links a test whose retry the run never made, as Playwright counts it failed', async () => {
+  /** The title and retry of each failure the run output links, once `attempts` of the tests of `suite` ended. */
+  async function linkedFailures(
+    suite: any,
+    tests: any[],
+    attempts: Array<[any, number, string]>,
+    config: Record<string, unknown> = {},
+  ): Promise<Array<[string, number]>> {
     const server = await startServer((_req, res) => jsonRes(res, 200, { runId: 5, projectId: 1 }));
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-failure-links-'));
     const outputFile = path.join(dir, 'run.json');
@@ -118,24 +124,8 @@ describe('the failures the reporter links', () => {
         captureResources: false,
         outputFile,
       });
-      const suite = fakeSuite();
-      const test = (title: string, line: number) => ({ ...fakeTestCase({ id: title, title, line, parent: suite }), retries: 2 });
-      const fast = test('fails fast', 1);
-      const slow = test('fails slowly', 2);
-      const cut = test('is cut short', 3);
-      suite.allTests = () => [fast, slow, cut];
-      reporter.onBegin({ ...fakeConfig(), maxFailures: 1 }, suite);
-      // As Playwright ends a run whose `maxFailures` is reached: "fails fast" failed its three attempts, the run
-      // stopped before the third attempt of "fails slowly", and it interrupted the retry of "is cut short".
-      const attempts: Array<[any, number, string]> = [
-        [fast, 0, 'failed'],
-        [slow, 0, 'failed'],
-        [cut, 0, 'failed'],
-        [fast, 1, 'failed'],
-        [slow, 1, 'failed'],
-        [fast, 2, 'failed'],
-        [cut, 1, 'interrupted'],
-      ];
+      suite.allTests = () => tests;
+      reporter.onBegin({ ...fakeConfig(), ...config }, suite);
       for (const [t, retry, status] of attempts) {
         reporter.onTestBegin(t, fakeResult({ retry }));
         reporter.onTestEnd(t, fakeResult({ status, retry, error: status === 'failed' ? new Error('no') : null }));
@@ -143,15 +133,56 @@ describe('the failures the reporter links', () => {
       await reporter.onEnd({ status: 'failed' } as any);
 
       const { failures } = JSON.parse(fs.readFileSync(outputFile, 'utf8'));
-      expect(failures.map((f: any) => [f.title, f.retry]).sort()).toEqual([
-        ['fails fast', 2],
-        ['fails slowly', 1],
-        ['is cut short', 0],
-      ]);
+      return failures.map((f: any) => [f.title, f.retry]).sort();
     } finally {
       vi.restoreAllMocks();
       fs.rmSync(dir, { recursive: true, force: true });
       await server.close();
     }
+  }
+
+  it('links a test whose retry the run never made, as Playwright counts it failed', async () => {
+    const suite = fakeSuite();
+    const test = (title: string, line: number) => ({
+      ...fakeTestCase({ id: title, title, line, parent: suite }),
+      retries: 2,
+    });
+    const fast = test('fails fast', 1);
+    const slow = test('fails slowly', 2);
+    const cut = test('is cut short', 3);
+    // As Playwright ends a run whose `maxFailures` is reached: "fails fast" failed its three attempts, the run
+    // stopped before the third attempt of "fails slowly", and it interrupted the retry of "is cut short".
+    const attempts: Array<[any, number, string]> = [
+      [fast, 0, 'failed'],
+      [slow, 0, 'failed'],
+      [cut, 0, 'failed'],
+      [fast, 1, 'failed'],
+      [slow, 1, 'failed'],
+      [fast, 2, 'failed'],
+      [cut, 1, 'interrupted'],
+    ];
+    expect(await linkedFailures(suite, [fast, slow, cut], attempts, { maxFailures: 1 })).toEqual([
+      ['fails fast', 2],
+      ['fails slowly', 1],
+      ['is cut short', 0],
+    ]);
+  });
+
+  it('links a failed test whose retry did not run, as Playwright counts it failed', async () => {
+    const suite = fakeSuite();
+    const test = (title: string, line: number) => ({
+      ...fakeTestCase({ id: title, title, line, parent: suite }),
+      retries: 1,
+    });
+    const pays = test('pays', 1);
+    const refunds = test('refunds', 2);
+    // A `describe.serial` group: "refunds" fails, and the group's retry stops at "pays", so "refunds" is skipped there.
+    const attempts: Array<[any, number, string]> = [
+      [pays, 0, 'passed'],
+      [refunds, 0, 'failed'],
+      [pays, 1, 'failed'],
+      [refunds, 1, 'skipped'],
+    ];
+    expect(await linkedFailures(suite, [pays, refunds], attempts)).toContainEqual(['refunds', 0]);
   });
 });
