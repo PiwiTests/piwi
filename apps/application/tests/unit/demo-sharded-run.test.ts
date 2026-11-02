@@ -84,6 +84,37 @@ describe("the demo's sharded run", () => {
     expect(await readRun(one.runId)).toMatchObject({ status: 'timedout', totalTests: 4, passedTests: 2 });
   });
 
+  test("keeps every shard's suite setup steps", async () => {
+    const hookOf = (shardIndex: number) => ({
+      title: `beforeAll hook of shard ${shardIndex}`,
+      category: 'hook',
+      startedAt: 1_793_000_000_000 + shardIndex,
+      duration: 1200,
+      status: 'passed',
+      workerIndex: 0,
+    });
+    const one = await beginShard(1, 1);
+    const two = await beginShard(2, 1);
+    const finished = (shardIndex: number) => ({
+      status: 'passed',
+      duration: 1000,
+      totalTests: 1,
+      passedTests: 0,
+      failedTests: 0,
+      skippedTests: 0,
+      flakyTests: 0,
+      durations: [],
+      shardIndex,
+      shardTotal: 2,
+      setupSteps: [hookOf(shardIndex)],
+    });
+
+    await apiFinishTestRun(one.runId, { streamToken: one.streamToken, ...finished(1) });
+    await apiFinishTestRun(one.runId, { streamToken: two.streamToken, ...finished(2) });
+
+    expect((await readRun(one.runId)).setupSteps).toEqual([hookOf(1), hookOf(2)]);
+  });
+
   test('takes the branch and commit of a shard that joins a run whose first shard sent none', async () => {
     const scm = { branch: 'feature/pay', commit: '9f2c4e1a7b' };
     const one = await beginShard(1, 1);

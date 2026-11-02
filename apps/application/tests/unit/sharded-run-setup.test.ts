@@ -705,6 +705,16 @@ describe('a sharded run delivered by batch submissions', () => {
 });
 
 describe("a sharded run's suite setup steps", () => {
+  /** The `beforeAll` hook one shard ran on its worker 0. */
+  const hookOf = (shardIndex: number) => ({
+    title: `beforeAll hook of shard ${shardIndex}`,
+    category: 'hook',
+    startedAt: 1_793_000_000_000 + shardIndex,
+    duration: 1200,
+    status: 'passed',
+    workerIndex: 0,
+  });
+
   test("are stored from a shard's /finish", async () => {
     const setupSteps = [
       { title: 'beforeAll hook', category: 'hook', startedAt: 1_793_000_000_000, duration: 1200, status: 'passed' },
@@ -714,6 +724,31 @@ describe("a sharded run's suite setup steps", () => {
     await finishShard(runId, tokens[0]!, [10], { duration: 1000, setupSteps });
 
     expect((await readRun(runId)).setupSteps).toEqual(setupSteps);
+  });
+
+  test("are every shard's, from shards that finish one after another or at once", async () => {
+    const { runId, tokens } = await beginAllShards(3);
+
+    await finishShard(runId, tokens[0]!, [10], { duration: 1000, setupSteps: [hookOf(1)] });
+    await Promise.all([
+      finishShard(runId, tokens[1]!, [20], { duration: 1000, setupSteps: [hookOf(2)] }),
+      finishShard(runId, tokens[2]!, [30], { duration: 1000, setupSteps: [hookOf(3)] }),
+    ]);
+
+    const run = await readRun(runId);
+    expect(run.status).toBe('passed');
+    expect(run.setupSteps).toHaveLength(3);
+    expect(run.setupSteps).toEqual(expect.arrayContaining([hookOf(1), hookOf(2), hookOf(3)]));
+  });
+
+  test('are added once from a /finish sent again', async () => {
+    const { runId, tokens } = await beginAllShards();
+
+    // The first shard's token is also the run's main stream token, so it still opens /finish.
+    await finishShard(runId, tokens[0]!, [10], { duration: 1000, setupSteps: [hookOf(1)] });
+    await finishShard(runId, tokens[0]!, [10], { duration: 1000, setupSteps: [hookOf(1)] });
+
+    expect((await readRun(runId)).setupSteps).toEqual([hookOf(1)]);
   });
 });
 

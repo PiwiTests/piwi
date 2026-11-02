@@ -1092,10 +1092,11 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
         shardsFinished: sql`${testRuns.shardsFinished} + 1`,
         // The first shard to report a branch names the run's branch.
         branch: sql`COALESCE(${testRuns.branch}, ${resolveRunBranch(body.metadata)})`,
-        ...(body.setupSteps && { setupSteps: body.setupSteps }),
         ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
         ...(body.filterDetails !== undefined && { filterDetails: body.filterDetails ?? null }),
       },
+      // This shard's suite setup steps join the other shards' (server behavior).
+      Array.isArray(body.setupSteps) ? body.setupSteps : [],
     );
 
     // This shard is done — drop its token so it cannot send more events.

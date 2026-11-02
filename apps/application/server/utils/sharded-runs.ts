@@ -162,10 +162,10 @@ export function batchShardRun(db: DbClient, projectId: number, instanceId: strin
 
 /**
  * Count a shard of a batch submission into its run, once its executions are
- * stored: the counters add up, the shard's span joins the run's
- * (`recordShardEnd`), and the shard counts as finished. A shard whose end the
- * run already holds (its `/finish` answer was lost, and its reporter fell back
- * to the batch upload) counts once.
+ * stored: the counters add up, the shard's span and suite setup steps join the
+ * run's (`recordShardEnd`), and the shard counts as finished. A shard whose end
+ * the run already holds (its `/finish` answer was lost, and its reporter fell
+ * back to the batch upload) counts once.
  */
 export async function addBatchShard(db: DbClient, runId: number, tally: BatchShardTally): Promise<void> {
   const span = shardSpan(tally.shard, Date.now());
@@ -183,8 +183,8 @@ export async function addBatchShard(db: DbClient, runId: number, tally: BatchSha
       didNotRunTests: sql`${testRuns.didNotRunTests} + ${tally.didNotRunTests}`,
       flakyTests: sql`${testRuns.flakyTests} + ${tally.flakyTests}`,
       shardsFinished: sql`${testRuns.shardsFinished} + 1`,
-      ...(tally.setupSteps && { setupSteps: tally.setupSteps }),
     },
+    tally.setupSteps ?? [],
   );
 }
 

@@ -2,10 +2,13 @@
  * What each shard of a sharded run brings when it ends: the time it ran, kept in
  * the run's `metadata.shards`, from which the run's span is drawn (from the
  * first shard's start to the last shard's end, whether the shards ran side by
- * side or one after another), and its test durations, kept in
- * `metadata.shardDurations` for the run's duration statistics. The server and
- * the demo record a shard's end through `recordShardEnd`.
+ * side or one after another), its test durations, kept in
+ * `metadata.shardDurations` for the run's duration statistics, and its suite
+ * setup steps, added to the run's `setupSteps`. The server and the demo record
+ * a shard's end through `recordShardEnd`.
  */
+import { eq } from 'drizzle-orm';
+import { testRuns } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { createKeyedLock } from './keyed-lock';
 import { updateRunMetadata, type MetadataObject, type RunUpdate } from './run-metadata';
@@ -161,13 +164,21 @@ export function withShardDurations(metadata: MetadataObject, durations: unknown[
 /** Shards of one run record their ends one at a time. */
 const shardEndLock = createKeyedLock<number>();
 
+/** The suite setup steps a run holds. */
+async function readSetupSteps(db: DrizzleDB, runId: number): Promise<unknown[]> {
+  const [run] = await db.select({ setupSteps: testRuns.setupSteps }).from(testRuns).where(eq(testRuns.id, runId));
+  return Array.isArray(run?.setupSteps) ? run.setupSteps : [];
+}
+
 /**
  * Record one shard's end in its sharded run. `change` makes the shard's own
  * changes to the run's metadata (or returns null to record nothing), `span`
- * joins the run's `metadata.shards`, and the run's start and duration become
+ * joins the run's `metadata.shards`, the shard's `setupSteps` (its suite-level
+ * hooks and fixtures) join the run's, and the run's start and duration become
  * those of its shards (`shardedRunSpan`), all in one write with `set`. Shards
  * of one run record their ends one at a time, so shards ending at once each
- * keep their span. Returns the metadata written, or null when nothing was.
+ * keep their span and their steps. Returns the metadata written, or null when
+ * nothing was.
  */
 export function recordShardEnd(
   db: DrizzleDB,
@@ -175,16 +186,18 @@ export function recordShardEnd(
   span: ShardSpan,
   change: (metadata: MetadataObject) => MetadataObject | null,
   set: RunUpdate = {},
+  setupSteps: readonly unknown[] = [],
 ): Promise<MetadataObject | null> {
-  return shardEndLock(runId, () =>
-    updateRunMetadata(
+  return shardEndLock(runId, async () => {
+    const steps = setupSteps.length > 0 ? [...(await readSetupSteps(db, runId)), ...setupSteps] : null;
+    return updateRunMetadata(
       db,
       runId,
       (metadata) => {
         const next = change(metadata);
         return next && { ...next, shards: [...readShardSpans(next), span] };
       },
-      (metadata) => ({ ...set, ...shardedRunSpan(readShardSpans(metadata)) }),
-    ),
-  );
+      (metadata) => ({ ...set, ...(steps && { setupSteps: steps }), ...shardedRunSpan(readShardSpans(metadata)) }),
+    );
+  });
 }

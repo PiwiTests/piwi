@@ -194,14 +194,21 @@ describe("a batch run's suite setup steps", () => {
     ]);
   });
 
-  test("are stored from a shard's batch submission", async () => {
+  test("are every shard's, from the shards' batch submissions", async () => {
+    const stepsOf = (shardIndex: number) => [{ ...setupSteps[0]!, title: `beforeAll hook of shard ${shardIndex}` }];
     const shard = (shardIndex: number) =>
-      runBody({ setupSteps, instanceId: 'ci-9', shardIndex, shardTotal: 2, deliveryKey: undefined });
+      runBody({
+        setupSteps: stepsOf(shardIndex),
+        instanceId: 'ci-9',
+        shardIndex,
+        shardTotal: 2,
+        deliveryKey: undefined,
+      });
     const { runId } = await submit({ body: shard(1) });
     await submit({ body: shard(2) });
 
     const [run] = await db.select({ setupSteps: schema.testRuns.setupSteps }).from(schema.testRuns);
-    expect(run).toEqual({ setupSteps });
+    expect(run).toEqual({ setupSteps: [...stepsOf(1), ...stepsOf(2)] });
     expect(runId).toBeGreaterThan(0);
   });
 });

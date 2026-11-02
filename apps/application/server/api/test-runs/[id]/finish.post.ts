@@ -267,10 +267,10 @@ export default eventHandler(async (event) => {
 
 /**
  * One shard of a sharded run reports its end. The shard's token leaves the
- * run's shard tokens in the same write that records its test durations and its
- * span and sets the run's start and duration from its shards' spans
- * (`recordShardEnd`), so a replayed `/finish` finds the token gone and changes
- * nothing. The run's test counters
+ * run's shard tokens in the same write that records its test durations, its
+ * span and its suite setup steps and sets the run's start and duration from its
+ * shards' spans (`recordShardEnd`), so a replayed `/finish` finds the token gone
+ * and changes nothing. The run's test counters
  * are not touched: every case (synthesized didnotrun ones included) arrives as
  * a streamed event, which the events endpoint already counted. Only flakyTests
  * adds up here, since the events tally has no flaky notion. The run settles
@@ -278,10 +278,17 @@ export default eventHandler(async (event) => {
  */
 async function finishShard(db: DbClient, id: number, body: Record<string, any>) {
   const span = shardSpan(body, Date.now());
-  const recorded = await recordShardEnd(db, id, span, (metadata) => {
-    const remaining = withoutShardToken(metadata, body.streamToken);
-    return remaining && withShardDurations(remaining, Array.isArray(body.durations) ? body.durations : []);
-  });
+  const recorded = await recordShardEnd(
+    db,
+    id,
+    span,
+    (metadata) => {
+      const remaining = withoutShardToken(metadata, body.streamToken);
+      return remaining && withShardDurations(remaining, Array.isArray(body.durations) ? body.durations : []);
+    },
+    {},
+    Array.isArray(body.setupSteps) ? body.setupSteps : [],
+  );
   runEventBus.removeShardToken(id, body.streamToken);
 
   if (!recorded) {
@@ -303,7 +310,6 @@ async function finishShard(db: DbClient, id: number, body: Record<string, any>) 
       shardsFinished: sql`${testRuns.shardsFinished} + 1`,
       // The first shard to report a branch names the run's branch.
       branch: sql`COALESCE(${testRuns.branch}, ${resolveRunBranch(body.metadata)})`,
-      ...(body.setupSteps && { setupSteps: body.setupSteps }),
       ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
       ...(body.filterDetails !== undefined && { filterDetails: body.filterDetails ?? null }),
     })
