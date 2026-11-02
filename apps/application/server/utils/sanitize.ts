@@ -266,7 +266,7 @@ export function capText(text: string | null | undefined, maxChars: number): stri
 
 /**
  * A case's error as it is stored, kept as its cluster's sample and sent to a run's live page: what may be a secret
- * hidden (`hideSecretsInError`), before any cap cuts it. Its fingerprint reads the error as it came.
+ * hidden (`hideSecretsInError`), before any cap cuts it. Its fingerprint reads it capped as its cluster's sample is.
  */
 export function hiddenErrorText(error: unknown): string | null {
   return typeof error === 'string' ? hideSecretsInError(error) : null;

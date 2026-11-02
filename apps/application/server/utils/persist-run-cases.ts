@@ -380,21 +380,24 @@ export async function persistRunCases(
   );
   const resolved = await testCaseCache.resolve(db, projectId, testRunId, claims, { readOnly: !writesTestState });
 
+  // Each case's error as it is kept: what may be a secret hidden, once for all.
+  const errors = cases.map((c) => hiddenErrorText(c.error));
+  // The sample a failure's new cluster keeps, which its fingerprint reads, so
+  // the recluster reads what ingest read. An expected failure that passed is
+  // good news about one test, not a failure mode: it forms no cluster. Nor does
+  // a test the run's stop cut short (Ctrl+C, `maxFailures`, the global
+  // timeout): its error says the run ended, nothing about the test.
+  const samples = cases.map((c, i) =>
+    c.error &&
+    c.status !== 'passed' &&
+    c.status !== 'skipped' &&
+    c.status !== 'interrupted' &&
+    !isExpectedFailurePassed(c.status, resolveExpectedStatus(c.expectedStatus, c.testAnnotations))
+      ? capText(errors[i], limits.sampleErrorChars)
+      : null,
+  );
   const fingerprintResults = await Promise.all(
-    cases.map((c, i) =>
-      // An expected failure that passed is good news about one test, not a
-      // failure mode: it forms no cluster. Nor does a test the run's stop cut
-      // short (Ctrl+C, `maxFailures`, the global timeout): its error says the
-      // run ended, nothing about the test. The fingerprint reads the error as
-      // it came, NUL characters included.
-      c.error &&
-      c.status !== 'passed' &&
-      c.status !== 'skipped' &&
-      c.status !== 'interrupted' &&
-      !isExpectedFailurePassed(c.status, resolveExpectedStatus(c.expectedStatus, c.testAnnotations))
-        ? computeErrorFingerprint(input[i]!.error!)
-        : Promise.resolve(null),
-    ),
+    samples.map((sample) => (sample ? computeErrorFingerprint(sample) : Promise.resolve(null))),
   );
 
   const runCasesRows: Array<typeof testRunsCases.$inferInsert> = [];
@@ -440,8 +443,7 @@ export async function persistRunCases(
 
   for (let i = 0; i < cases.length; i++) {
     const c = cases[i]!;
-    // Hidden once for all it is kept as; its fingerprint read the error as it came.
-    const error = hiddenErrorText(c.error);
+    const error = errors[i] ?? null;
     const fingerprint = fingerprintResults[i] ?? null;
     const caseId = resolved.caseIds[i];
 
@@ -491,12 +493,7 @@ export async function persistRunCases(
       if (pending) {
         pending.count++;
       } else {
-        // The fingerprint was computed from the error as it came; its secrets hidden leave it the same.
-        pendingClusters.set(fingerprint.fingerprint, {
-          fp: fingerprint,
-          sampleError: capText(error, limits.sampleErrorChars)!,
-          count: 1,
-        });
+        pendingClusters.set(fingerprint.fingerprint, { fp: fingerprint, sampleError: samples[i]!, count: 1 });
       }
     }
     rowFingerprints.push(fingerprint);

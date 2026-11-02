@@ -667,7 +667,7 @@ export async function persistRunCases(
 
   for (let i = 0; i < cases.length; i++) {
     const c = cases[i]!;
-    // Hidden once for all it is kept as; its fingerprint reads the error as it came.
+    // Hidden once for all it is kept as.
     const error = hiddenErrorText(c.error);
     const caseId = resolved.caseIds[i];
     if (caseId === undefined) continue;
@@ -694,17 +694,14 @@ export async function persistRunCases(
       c.status !== 'interrupted' &&
       !isExpectedFailurePassed(c.status, expectedStatus)
     ) {
-      fingerprint = await computeErrorFingerprint(input[i]!.error!);
+      // The sample a new cluster keeps, which the fingerprint reads, as the server does.
+      const sample = capText(error, DEFAULT_INGEST_LIMITS.sampleErrorChars)!;
+      fingerprint = await computeErrorFingerprint(sample);
       const pending = pendingClusters.get(fingerprint.fingerprint);
       if (pending) {
         pending.count++;
       } else {
-        // The fingerprint was computed from the error as it came; its secrets hidden leave it the same.
-        pendingClusters.set(fingerprint.fingerprint, {
-          fp: fingerprint,
-          sampleError: capText(error, DEFAULT_INGEST_LIMITS.sampleErrorChars)!,
-          count: 1,
-        });
+        pendingClusters.set(fingerprint.fingerprint, { fp: fingerprint, sampleError: sample, count: 1 });
       }
     }
     rowFingerprints.push(fingerprint);

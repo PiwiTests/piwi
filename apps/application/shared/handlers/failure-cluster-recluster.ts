@@ -8,30 +8,34 @@
  * (status, notes, diagnoses) attached to the old ones.
  *
  * This backfill recomputes each cluster's fingerprint from its immutable
- * `fingerprintSample` (the raw error captured at creation, falling back to
- * `sampleError` for rows created before that column existed) and migrates in
- * place. Reading the frozen sample rather than the display `sampleError` keeps
- * the re-fingerprint deterministic even after the display exemplar has been
- * refreshed to a later occurrence:
+ * `fingerprintSample` (the error its first failure was fingerprinted from,
+ * falling back to `sampleError` for rows created before that column existed)
+ * and migrates in place. Reading the frozen sample rather than the display
+ * `sampleError` keeps the re-fingerprint deterministic even after the display
+ * exemplar has been refreshed to a later occurrence:
  *  - unchanged fingerprint  → already current, skip (keeps the pass idempotent)
- *  - fingerprint now equals another cluster in the same project → merge into it
- *    (the older/lower id wins so the longest-lived triage state survives)
+ *  - fingerprint now leads to another cluster of the project (its own or an
+ *    alias's) → the two merge, the one first seen earlier surviving with its
+ *    triage
  *  - otherwise → update the fingerprint + derived fields on the row
- * Per-test routes keyed by a changed fingerprint move to the new one. A cluster
- * made by moving tests out of another has no computed fingerprint and is left
- * as-is.
+ * Each merge alias is then recomputed the same way from the sample it keeps,
+ * so the failures a merge sent to a cluster keep reaching it. Per-test routes
+ * keyed by a changed fingerprint, a cluster's or an alias's, move to the new
+ * one. A cluster made by moving tests out of another has no computed
+ * fingerprint and is left as-is, as is an alias with no sample.
  *
  * Runs once on startup after migrations; safe to run repeatedly.
  */
 
-import { eq, and, ne, asc, gt, isNull, isNotNull } from 'drizzle-orm';
+import { eq, and, asc, gt, inArray, isNull, isNotNull } from 'drizzle-orm';
 import {
   failureClusters,
   failureClusterAliases,
   failureClusterTestRoutes,
+  testRuns,
   testRunsCases,
 } from '../../server/database/schema';
-import { computeErrorFingerprint } from '../error-fingerprint';
+import { computeErrorFingerprint, type ErrorFingerprint } from '../error-fingerprint';
 import { isSplitFingerprint, mergeFailureClusters } from './failure-cluster-ops';
 import type { DrizzleDB } from './db';
 
@@ -128,78 +132,147 @@ async function renameRouteFingerprint(db: DrizzleDB, projectId: number, from: st
   await db.delete(failureClusterTestRoutes).where(where);
 }
 
-export async function reclusterFailureFingerprints(db: DrizzleDB): Promise<{ updated: number; merged: number }> {
-  // Process oldest-first so a re-fingerprinted cluster that becomes the merge
-  // target already exists by the time later duplicates are visited.
-  const clusters = await db
-    .select({
-      id: failureClusters.id,
-      projectId: failureClusters.projectId,
-      fingerprint: failureClusters.fingerprint,
-      sampleError: failureClusters.sampleError,
-      fingerprintSample: failureClusters.fingerprintSample,
-    })
+/**
+ * The cluster a failure with `fingerprint` joins in project `projectId`: the
+ * cluster that has it, else the one an alias with it leads to.
+ */
+async function clusterOf(db: DrizzleDB, projectId: number, fingerprint: string): Promise<number | null> {
+  const [cluster] = await db
+    .select({ id: failureClusters.id })
     .from(failureClusters)
-    .orderBy(asc(failureClusters.id));
+    .where(and(eq(failureClusters.projectId, projectId), eq(failureClusters.fingerprint, fingerprint)));
+  if (cluster) return cluster.id;
+  const [alias] = await db
+    .select({ clusterId: failureClusterAliases.clusterId })
+    .from(failureClusterAliases)
+    .where(and(eq(failureClusterAliases.projectId, projectId), eq(failureClusterAliases.fingerprint, fingerprint)));
+  return alias?.clusterId ?? null;
+}
 
+/**
+ * Merge two clusters a recomputed fingerprint shows to be one failure. The
+ * cluster first seen earlier survives with its triage: the one whose first
+ * seen run started first (its creation standing in for a run that is gone),
+ * then the lower id. Returns the survivor.
+ */
+async function mergeIntoOlder(db: DrizzleDB, a: number, b: number): Promise<number> {
+  const rows = await db
+    .select({ id: failureClusters.id, createdAt: failureClusters.createdAt, firstSeenAt: testRuns.startTime })
+    .from(failureClusters)
+    .leftJoin(testRuns, eq(testRuns.id, failureClusters.firstSeenRunId))
+    .where(inArray(failureClusters.id, [a, b]));
+  const firstSeen = (id: number) => {
+    const row = rows.find((r) => r.id === id);
+    return (row?.firstSeenAt ?? row?.createdAt)?.getTime() ?? Number.POSITIVE_INFINITY;
+  };
+  const [survivor, victim] = firstSeen(a) < firstSeen(b) || (firstSeen(a) === firstSeen(b) && a < b) ? [a, b] : [b, a];
+  await mergeFailureClusters(db, survivor, victim);
+  return survivor;
+}
+
+/**
+ * Give cluster `id` its recomputed fingerprint and the fields derived from it.
+ * An alias of the cluster with that fingerprint has nothing left to lead to.
+ */
+async function rewriteClusterFingerprint(
+  db: DrizzleDB,
+  id: number,
+  projectId: number,
+  fp: ErrorFingerprint,
+): Promise<void> {
+  await db
+    .delete(failureClusterAliases)
+    .where(
+      and(
+        eq(failureClusterAliases.projectId, projectId),
+        eq(failureClusterAliases.fingerprint, fp.fingerprint),
+        eq(failureClusterAliases.clusterId, id),
+      ),
+    );
+  await db
+    .update(failureClusters)
+    .set({ fingerprint: fp.fingerprint, signature: fp.signature, errorType: fp.errorType, selector: fp.selector })
+    .where(eq(failureClusters.id, id));
+}
+
+export async function reclusterFailureFingerprints(db: DrizzleDB): Promise<{ updated: number; merged: number }> {
   let updated = 0;
   let merged = 0;
 
-  for (const cluster of clusters) {
+  // Clusters oldest first, each read again at its turn: an earlier merge may
+  // have absorbed it.
+  const clusterIds = await db.select({ id: failureClusters.id }).from(failureClusters).orderBy(asc(failureClusters.id));
+  for (const { id } of clusterIds) {
+    const [cluster] = await db
+      .select({
+        projectId: failureClusters.projectId,
+        fingerprint: failureClusters.fingerprint,
+        sampleError: failureClusters.sampleError,
+        fingerprintSample: failureClusters.fingerprintSample,
+      })
+      .from(failureClusters)
+      .where(eq(failureClusters.id, id));
+    if (!cluster || isSplitFingerprint(cluster.fingerprint)) continue;
     // Prefer the frozen fingerprint source; older rows only have sampleError.
     const source = cluster.fingerprintSample ?? cluster.sampleError;
     if (!source) continue; // nothing to recompute from — leave as-is
-    if (isSplitFingerprint(cluster.fingerprint)) continue;
 
     const fp = await computeErrorFingerprint(source);
     if (fp.fingerprint === cluster.fingerprint) continue; // already on the current algorithm
 
-    const [survivor] = await db
-      .select({ id: failureClusters.id })
-      .from(failureClusters)
-      .where(
-        and(
-          eq(failureClusters.projectId, cluster.projectId),
-          eq(failureClusters.fingerprint, fp.fingerprint),
-          ne(failureClusters.id, cluster.id),
-        ),
-      );
-
-    if (survivor) {
-      // Keep the lower id so the longest-lived cluster (and its triage) wins.
-      // Merge BEFORE rewriting the fingerprint: updating the row first could
-      // momentarily duplicate (projectId, fingerprint) and trip the unique index.
-      const [keep, drop] = survivor.id < cluster.id ? [survivor.id, cluster.id] : [cluster.id, survivor.id];
-      await mergeFailureClusters(db, keep, drop);
+    // Merge before rewriting the fingerprint: rewriting first would duplicate
+    // (projectId, fingerprint) and trip the unique index. A survivor other than
+    // this cluster already reaches the fingerprint, as its own or an alias's.
+    const owner = await clusterOf(db, cluster.projectId, fp.fingerprint);
+    let survivor = id;
+    if (owner !== null && owner !== id) {
+      survivor = await mergeIntoOlder(db, owner, id);
       merged++;
-      await renameRouteFingerprint(db, cluster.projectId, cluster.fingerprint, fp.fingerprint);
-      // The surviving row may still hold the old fingerprint (when it was this
-      // cluster). Normalize it to the current algorithm — safe now that the
-      // duplicate is gone.
-      await db
-        .update(failureClusters)
-        .set({
-          fingerprint: fp.fingerprint,
-          signature: fp.signature,
-          errorType: fp.errorType,
-          selector: fp.selector,
-          updatedAt: new Date(),
-        })
-        .where(eq(failureClusters.id, keep));
-      continue;
     }
-
-    await db
-      .update(failureClusters)
-      .set({
-        fingerprint: fp.fingerprint,
-        signature: fp.signature,
-        errorType: fp.errorType,
-        selector: fp.selector,
-        updatedAt: new Date(),
-      })
-      .where(eq(failureClusters.id, cluster.id));
+    if (survivor === id) {
+      await rewriteClusterFingerprint(db, id, cluster.projectId, fp);
+      updated++;
+    }
     await renameRouteFingerprint(db, cluster.projectId, cluster.fingerprint, fp.fingerprint);
+  }
+
+  // Then the aliases, from the sample each keeps; one with none, or with a
+  // split cluster's fingerprint, stays as it is.
+  const aliasIds = await db
+    .select({ id: failureClusterAliases.id })
+    .from(failureClusterAliases)
+    .orderBy(asc(failureClusterAliases.id));
+  for (const { id } of aliasIds) {
+    const [alias] = await db
+      .select({
+        projectId: failureClusterAliases.projectId,
+        fingerprint: failureClusterAliases.fingerprint,
+        fingerprintSample: failureClusterAliases.fingerprintSample,
+        clusterId: failureClusterAliases.clusterId,
+      })
+      .from(failureClusterAliases)
+      .where(eq(failureClusterAliases.id, id));
+    if (!alias?.fingerprintSample || isSplitFingerprint(alias.fingerprint)) continue;
+
+    const fp = await computeErrorFingerprint(alias.fingerprintSample);
+    if (fp.fingerprint === alias.fingerprint) continue;
+
+    const owner = await clusterOf(db, alias.projectId, fp.fingerprint);
+    if (owner === null) {
+      await db
+        .update(failureClusterAliases)
+        .set({ fingerprint: fp.fingerprint })
+        .where(eq(failureClusterAliases.id, id));
+    } else {
+      // Another cluster holds the failure too: the two are one.
+      if (owner !== alias.clusterId) {
+        await mergeIntoOlder(db, owner, alias.clusterId);
+        merged++;
+      }
+      // The survivor reaches the fingerprint through the cluster or alias that has it.
+      await db.delete(failureClusterAliases).where(eq(failureClusterAliases.id, id));
+    }
+    await renameRouteFingerprint(db, alias.projectId, alias.fingerprint, fp.fingerprint);
     updated++;
   }
 

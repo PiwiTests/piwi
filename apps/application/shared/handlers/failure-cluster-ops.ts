@@ -31,6 +31,7 @@ export interface PendingCluster {
     errorType: string | null;
     selector: string | null;
   };
+  /** The text `fp` was computed from; a cluster created for it keeps it as both its samples. */
   sampleError: string;
   count: number;
 }
@@ -433,11 +434,10 @@ export async function getOrCreateFailureClusters(
           errorType: p.fp.errorType,
           selector: p.fp.selector,
           sampleError: p.sampleError,
-          // Immutable fingerprint source: seeded from the same error as the
-          // display sample, its secrets hidden in a way that leaves its
-          // fingerprint the same (`hideSecretsInError`), but never refreshed, so
-          // re-fingerprinting on a version bump stays independent of later
-          // exemplar refreshes.
+          // Immutable fingerprint source: the text the fingerprint was computed
+          // from, which the display sample starts as, never refreshed, so
+          // re-fingerprinting on a version bump reads what ingest read whatever
+          // exemplar the display sample moves to.
           fingerprintSample: p.sampleError,
           firstSeenRunId: testRunId,
           lastSeenRunId: testRunId,

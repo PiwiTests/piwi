@@ -52,8 +52,9 @@ in-app assistant).
   `npm run app:seed:demo`.
 - **A version bump keeps triage state.** At startup, `reclusterFailureFingerprints()`
   (`shared/handlers/failure-cluster-recluster.ts`) computes each cluster's fingerprint again from its stored
-  `fingerprintSample` (`sampleError` for older rows), and updates it in place or merges it into the cluster it now
-  matches (`mergeFailureClusters()`).
+  `fingerprintSample` (`sampleError` for older rows), then each alias's from the sample it keeps, moves the per-test
+  routes with them, and merges two clusters a recomputed fingerprint joins (`mergeFailureClusters()`). Ingest hashes
+  the text a new cluster keeps as `fingerprintSample`, so the recluster reads what ingest read.
 
 ## Locator healing
 

@@ -20,6 +20,7 @@ delete process.env.PIWI_DATABASE_URL;
 
 const { backfillAliasSamples, reclusterFailureFingerprints } =
   await import('../../shared/handlers/failure-cluster-recluster');
+const { assignFailureClusters } = await import('../../shared/handlers/failure-cluster-ops');
 const { computeErrorFingerprint } = await import('../../shared/error-fingerprint');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
@@ -32,24 +33,24 @@ let client: ReturnType<typeof createClient>;
 const originalError = "Error: expect(locator).toHaveText(expected) failed\nExpected: 'Welcome'\nReceived: 'Loading'";
 const laterError = 'TimeoutError: Timeout 30000ms exceeded waiting for getByRole("button")';
 
-async function seedCluster(values: {
-  fingerprint: string;
-  sampleError: string | null;
-  fingerprintSample: string | null;
-}): Promise<number> {
+async function seedCluster(
+  values: {
+    fingerprint: string;
+    sampleError: string | null;
+    fingerprintSample: string | null;
+  } & Partial<typeof schema.failureClusters.$inferInsert>,
+): Promise<number> {
   const inserted = await db
     .insert(schema.failureClusters)
     .values({
       projectId: 1,
-      fingerprint: values.fingerprint,
       signature: 'seed signature',
       errorType: 'assertion',
       selector: null,
-      sampleError: values.sampleError,
-      fingerprintSample: values.fingerprintSample,
       firstSeenRunId: 1,
       lastSeenRunId: 1,
       occurrences: 1,
+      ...values,
     })
     .returning({ id: schema.failureClusters.id });
   return inserted[0]!.id;
@@ -173,5 +174,178 @@ describe('backfillAliasSamples', () => {
       { fingerprint: victimFingerprint, fingerprintSample: victimError },
       { fingerprint: 'fingerprint-no-error-has', fingerprintSample: null },
     ]);
+  });
+});
+
+describe('a fingerprint version bump', () => {
+  // Fingerprints the previous version computed: no error has them any more.
+  const STALE_A = 'previous-version-fingerprint-a';
+  const STALE_B = 'previous-version-fingerprint-b';
+
+  async function seedRun(id: number, startTime: Date) {
+    await db.insert(schema.testRuns).values({ id, projectId: 1, status: 'failed', startTime });
+  }
+
+  /** The cluster test `testCaseId` joins when it fails with `error` in run `runId`, as ingest assigns it. */
+  async function clusterJoined(testCaseId: number, error: string, runId: number): Promise<number | null> {
+    const fp = await computeErrorFingerprint(error);
+    const rows = [{ testCaseId, failureClusterId: null as number | null }];
+    await assignFailureClusters(
+      dbc as never,
+      1,
+      runId,
+      new Map([[fp.fingerprint, { fp, sampleError: error, count: 1 }]]),
+      rows,
+      [fp],
+    );
+    return rows[0]!.failureClusterId;
+  }
+
+  beforeEach(async () => {
+    await db.insert(schema.testCases).values([
+      { id: 1, projectId: 1, filePath: 'tests/welcome.spec.ts', title: 'greets' },
+      { id: 2, projectId: 1, filePath: 'tests/welcome.spec.ts', title: 'greets again' },
+    ]);
+  });
+
+  test('computes the aliases and the per-test routes again, so a merge and a move keep holding', async () => {
+    await seedRun(1, new Date('2026-10-01T10:00:00Z'));
+    // Under the previous version, cluster A absorbed the cluster of `laterError`, then test 2 moved out of A.
+    const a = await seedCluster({ fingerprint: STALE_A, sampleError: originalError, fingerprintSample: originalError });
+    const moved = await seedCluster({
+      fingerprint: 'split:moved',
+      sampleError: originalError,
+      fingerprintSample: null,
+    });
+    await db
+      .insert(schema.failureClusterAliases)
+      .values({ projectId: 1, fingerprint: STALE_B, fingerprintSample: laterError, clusterId: a });
+    await db
+      .insert(schema.failureClusterTestRoutes)
+      .values(
+        [STALE_A, STALE_B].map((fingerprint) => ({ projectId: 1, fingerprint, testCaseId: 2, clusterId: moved })),
+      );
+
+    expect(await reclusterFailureFingerprints(dbc)).toEqual({ updated: 2, merged: 0 });
+
+    const fpA = (await computeErrorFingerprint(originalError)).fingerprint;
+    const fpB = (await computeErrorFingerprint(laterError)).fingerprint;
+    const aliases = await db
+      .select({
+        fingerprint: schema.failureClusterAliases.fingerprint,
+        clusterId: schema.failureClusterAliases.clusterId,
+      })
+      .from(schema.failureClusterAliases);
+    expect(aliases).toEqual([{ fingerprint: fpB, clusterId: a }]);
+    const routes = await db
+      .select({ fingerprint: schema.failureClusterTestRoutes.fingerprint })
+      .from(schema.failureClusterTestRoutes);
+    expect(routes.map((r) => r.fingerprint).sort()).toEqual([fpA, fpB].sort());
+
+    expect(await clusterJoined(1, laterError, 1)).toBe(a);
+    expect(await clusterJoined(2, laterError, 1)).toBe(moved);
+    expect(await clusterJoined(2, originalError, 1)).toBe(moved);
+    expect(await db.$count(schema.failureClusters)).toBe(2);
+    expect(await reclusterFailureFingerprints(dbc)).toEqual({ updated: 0, merged: 0 });
+  });
+
+  test('merges the clusters an alias and a cluster both lead to, the one first seen earlier keeping its triage', async () => {
+    await seedRun(1, new Date('2026-10-01T10:00:00Z'));
+    await seedRun(2, new Date('2026-10-02T10:00:00Z'));
+    // A absorbed `laterError` under the previous version; B, imported from an earlier run, holds it under this one.
+    const a = await seedCluster({
+      fingerprint: STALE_A,
+      sampleError: originalError,
+      fingerprintSample: originalError,
+      firstSeenRunId: 2,
+      lastSeenRunId: 2,
+      status: 'ignored',
+      triageNote: 'Seen on staging only.',
+    });
+    const b = await seedCluster({
+      fingerprint: (await computeErrorFingerprint(laterError)).fingerprint,
+      sampleError: laterError,
+      fingerprintSample: laterError,
+      firstSeenRunId: 1,
+      lastSeenRunId: 1,
+      status: 'resolved',
+      assignee: 'ada',
+      triageNote: 'Fixed by the cart refactor',
+    });
+    await db
+      .insert(schema.failureClusterAliases)
+      .values({ projectId: 1, fingerprint: STALE_B, fingerprintSample: laterError, clusterId: a });
+
+    expect(await reclusterFailureFingerprints(dbc)).toEqual({ updated: 2, merged: 1 });
+
+    const clusters = await db
+      .select({
+        id: schema.failureClusters.id,
+        status: schema.failureClusters.status,
+        assignee: schema.failureClusters.assignee,
+        triageNote: schema.failureClusters.triageNote,
+      })
+      .from(schema.failureClusters);
+    expect(clusters).toEqual([
+      { id: b, status: 'resolved', assignee: 'ada', triageNote: 'Fixed by the cart refactor\nSeen on staging only.' },
+    ]);
+    expect(await clusterJoined(1, originalError, 2)).toBe(b);
+    expect(await clusterJoined(1, laterError, 2)).toBe(b);
+    expect(await reclusterFailureFingerprints(dbc)).toEqual({ updated: 0, merged: 0 });
+  });
+
+  test('leaves the moment a cluster was triaged, which the analytics read as when it was resolved', async () => {
+    const resolvedAt = new Date('2026-09-01T10:00:00Z');
+    const id = await seedCluster({
+      fingerprint: STALE_A,
+      sampleError: originalError,
+      fingerprintSample: originalError,
+      status: 'resolved',
+      updatedAt: resolvedAt,
+    });
+
+    expect(await reclusterFailureFingerprints(dbc)).toEqual({ updated: 1, merged: 0 });
+
+    const [row] = await db
+      .select({ updatedAt: schema.failureClusters.updatedAt })
+      .from(schema.failureClusters)
+      .where(eq(schema.failureClusters.id, id));
+    expect(row!.updatedAt).toEqual(resolvedAt);
+  });
+
+  test('merges two clusters whose samples now share a fingerprint into the one first seen earlier', async () => {
+    await seedRun(1, new Date('2026-10-01T10:00:00Z'));
+    await seedRun(2, new Date('2026-10-02T10:00:00Z'));
+    await seedCluster({
+      fingerprint: STALE_A,
+      sampleError: originalError,
+      fingerprintSample: originalError,
+      firstSeenRunId: 2,
+    });
+    const older = await seedCluster({
+      fingerprint: STALE_B,
+      sampleError: originalError,
+      fingerprintSample: originalError,
+      firstSeenRunId: 1,
+      triageNote: 'Known since the import.',
+    });
+
+    expect(await reclusterFailureFingerprints(dbc)).toEqual({ updated: 2, merged: 1 });
+
+    const clusters = await db
+      .select({
+        id: schema.failureClusters.id,
+        fingerprint: schema.failureClusters.fingerprint,
+        triageNote: schema.failureClusters.triageNote,
+      })
+      .from(schema.failureClusters);
+    expect(clusters).toEqual([
+      {
+        id: older,
+        fingerprint: (await computeErrorFingerprint(originalError)).fingerprint,
+        triageNote: 'Known since the import.',
+      },
+    ]);
+    expect(await db.$count(schema.failureClusterAliases)).toBe(0);
   });
 });
