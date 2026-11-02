@@ -1105,7 +1105,7 @@ export async function getOpenFailureClusters(
       const ready = new Set<number>();
       for (const entry of entries) {
         active.add(entry.testCaseId);
-        if (entry.releaseProposed) ready.add(entry.testCaseId);
+        if (entry.releaseProposed && !entry.releaseDismissed) ready.add(entry.testCaseId);
       }
       quarantineByProject.set(projectId, { active, ready });
     }),

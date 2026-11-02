@@ -79,6 +79,7 @@ const { logMcpToolCall } = await import('../../server/utils/mcp/write-log');
 const { listOutcomes } = await import('../../server/utils/outcomes');
 const { addQuarantine, RELEASE_AFTER_CONSECUTIVE_PASSES } = await import('#shared/handlers/quarantine');
 const { runOrigin } = await import('#shared/run-eligibility');
+const { getOpenFailureClusters } = await import('#shared/handlers/failure-clusters');
 const dismissTool = MCP_TOOLS.find((t) => t.name === 'dismiss_quarantine_proposal')!.handler;
 
 const asUser = (id: number, role: string, name: string) => ({ id, role, name, username: name.toLowerCase() }) as User;
@@ -284,6 +285,30 @@ describe('POST /api/projects/:id/quarantine/:testCaseId/dismiss', () => {
       dismissRoute({ params: { id: '2', testCaseId: '4' }, body: { proposal: 'quarantine' } }),
     ).rejects.toMatchObject({ statusCode: 403 });
     expect(await outcomes()).toEqual([]);
+  });
+});
+
+describe('the failure inbox', () => {
+  test('does not count a test whose proposed release was dismissed as ready to release', async () => {
+    // Test 2 earned its release and failed once before, in a cluster still open.
+    const runId = await insertRun();
+    await db.insert(schema.failureClusters).values({
+      id: 1,
+      projectId: 1,
+      fingerprint: 'cart-timeout',
+      signature: 'Timeout 5000ms exceeded',
+      firstSeenRunId: runId,
+      lastSeenRunId: runId,
+    });
+    await db
+      .insert(schema.testRunsCases)
+      .values({ testRunId: 1, testCaseId: 2, status: 'failed', failureClusterId: 1 });
+    const readyCount = async () => (await getOpenFailureClusters(db as never, 'all'))[0]!.quarantineReadyCount;
+    expect(await readyCount()).toBe(1);
+
+    await dismissRoute({ params: { id: '1', testCaseId: '2' }, body: { proposal: 'release' } });
+
+    expect(await readyCount()).toBe(0);
   });
 });
 
