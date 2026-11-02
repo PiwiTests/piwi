@@ -32,6 +32,8 @@ const MAX_UPLOAD_CONNECTION_FAILURES = 3;
 const MAX_EVENT_REQUEST_ATTEMPTS = 10;
 /** The least a heartbeat waits once activity put it off: pending events flush first. */
 const MIN_HEARTBEAT_WAIT_MS = 250;
+/** Longest delay `setTimeout` supports; a larger one fires at once. */
+const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
 
 /**
  * Manages the streaming protocol: queues events (begin / complete), flushes
@@ -87,6 +89,8 @@ export class StreamManager {
   private watched: boolean | null = null;
   /** Tracks cases whose files have already been uploaded live, so `uploadRemaining` can skip them. */
   private readonly uploadedCaseFiles = new WeakSet<CollectedTestCase>();
+  /** Ends every file upload, live or not, in flight or still to start: aborted at `uploadRemaining`'s deadline. */
+  private readonly fileUploads = new AbortController();
   /** Set when a test-result event left the live stream undelivered: too large to send, or still queued when the drain gave up. */
   private resultsUndelivered = false;
 
@@ -681,6 +685,7 @@ export class StreamManager {
               tc,
               this.options.uploadTraces,
               this._auth,
+              this.fileUploads.signal,
             ),
           );
           this.uploadedCaseFiles.add(tc);
@@ -701,9 +706,24 @@ export class StreamManager {
   /**
    * Wait for all live uploads to settle, then upload files for any test cases
    * that weren't uploaded live. Stops after `MAX_UPLOAD_CONNECTION_FAILURES`
-   * uploads in a row got no response at all.
+   * uploads in a row got no response at all, and at `deadline` (ms since the
+   * epoch), which also ends the uploads in flight, live ones included.
    */
-  async uploadRemaining(testCases: CollectedTestCase[]): Promise<void> {
+  async uploadRemaining(testCases: CollectedTestCase[], deadline: number | null = null): Promise<void> {
+    let stop: ReturnType<typeof setTimeout> | null = null;
+    if (deadline !== null) {
+      const wait = deadline - Date.now();
+      if (wait <= 0) this.stopFileUploads();
+      else stop = setTimeout(() => this.stopFileUploads(), Math.min(wait, MAX_TIMER_DELAY_MS));
+    }
+    try {
+      await this.uploadRemainingFiles(testCases);
+    } finally {
+      if (stop) clearTimeout(stop);
+    }
+  }
+
+  private async uploadRemainingFiles(testCases: CollectedTestCase[]): Promise<void> {
     if (this.liveUploadPromises.length > 0) {
       await Promise.allSettled(this.liveUploadPromises);
       this.liveUploadPromises = [];
@@ -713,6 +733,12 @@ export class StreamManager {
     let connectionFailures = 0;
     for (const tc of testCases) {
       if (this.uploadedCaseFiles.has(tc)) continue;
+      if (this.fileUploads.signal.aborted) {
+        this.logger.warn(
+          `The end-of-run time budget (submitTimeout) leaves no more time for file uploads: skipping the files of the remaining tests so the run can be finished.`,
+        );
+        return;
+      }
       try {
         const uploaded = await this.uploader.uploadCaseFiles(
           this.options.projectName!,
@@ -721,6 +747,7 @@ export class StreamManager {
           tc,
           this.options.uploadTraces,
           this._auth,
+          this.fileUploads.signal,
         );
         if (uploaded) this.uploadedCaseFiles.add(tc);
         connectionFailures = 0;
@@ -735,6 +762,11 @@ export class StreamManager {
         }
       }
     }
+  }
+
+  /** End every file upload, in flight or still to start, so the run's `/finish` keeps its share of the budget. */
+  private stopFileUploads(): void {
+    this.fileUploads.abort(new Error('The end-of-run time budget is kept for finishing the run'));
   }
 }
 

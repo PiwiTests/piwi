@@ -179,7 +179,8 @@ export class Uploader {
   /**
    * Upload one test case's trace and attachments for a streaming run.
    * The matching `complete` event must have been flushed to the server first.
-   * Returns `false` when the case has no files to upload.
+   * Returns `false` when the case has no files to upload. `signal` ends the
+   * upload, or fails it before it starts.
    */
   async uploadCaseFiles(
     projectName: string,
@@ -188,7 +189,9 @@ export class Uploader {
     testCase: CollectedTestCase,
     uploadTraces: boolean | undefined,
     auth: string | null,
+    signal?: AbortSignal,
   ): Promise<boolean> {
+    signal?.throwIfAborted();
     const attachments = this.fileHandler.findAllAttachments(testCase);
 
     let traceInfo: TraceHashInfo | null = null;
@@ -246,11 +249,16 @@ export class Uploader {
 
     const includeTraceFile = !traceInfo || !missingHashes || missingHashes.has(traceInfo.hash);
     try {
-      await this.httpClient.postFormData(`/api/test-runs/${runId}/case-files`, buildForm(includeTraceFile), auth);
+      await this.httpClient.postFormData(
+        `/api/test-runs/${runId}/case-files`,
+        buildForm(includeTraceFile),
+        auth,
+        signal,
+      );
     } catch (error) {
       // 422: the server doesn't have the blob after all — resend with the file
       if (traceInfo && !includeTraceFile && error instanceof HttpError && error.status === 422) {
-        await this.httpClient.postFormData(`/api/test-runs/${runId}/case-files`, buildForm(true), auth);
+        await this.httpClient.postFormData(`/api/test-runs/${runId}/case-files`, buildForm(true), auth, signal);
       } else {
         throw error;
       }

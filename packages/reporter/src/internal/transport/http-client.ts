@@ -94,6 +94,13 @@ interface HttpRequestOptions {
   auth?: string | null;
   /** Socket inactivity timeout for this request, in ms; the client's own by default. */
   timeout?: number;
+  /** Ends the request, in flight or not sent yet, with the signal's reason. */
+  signal?: AbortSignal;
+}
+
+/** The error a request ended by `signal` fails with. */
+function abortError(signal: AbortSignal): Error {
+  return signal.reason instanceof Error ? signal.reason : new Error('The request was cancelled');
 }
 
 /**
@@ -276,10 +283,13 @@ export class HttpClient {
     return parseAnswer(pathname, res);
   }
 
-  /** Send a multipart form-data POST request. Used for report and trace uploads. An answer that is not JSON fails. */
-  async postFormData(pathname: string, form: FormData, auth?: string | null): Promise<any> {
+  /**
+   * Send a multipart form-data POST request. Used for report and trace uploads. An answer that is not JSON fails, and
+   * `signal` ends the upload.
+   */
+  async postFormData(pathname: string, form: FormData, auth?: string | null, signal?: AbortSignal): Promise<any> {
     const headers = form.getHeaders() as Record<string, string>;
-    const res = await this.request('POST', pathname, { headers, form, auth, timeout: this.uploadTimeout });
+    const res = await this.request('POST', pathname, { headers, form, auth, timeout: this.uploadTimeout, signal });
     if (res.status < 200 || res.status >= 300) {
       this.logger.debugError(`Response: ${res.text}`);
       const detail = parseErrorMessage(res.text);
@@ -304,6 +314,11 @@ export class HttpClient {
       const problem = serverUrlProblem(this.serverUrl);
       if (problem) {
         reject(new Error(problem));
+        return;
+      }
+      const signal = opts.signal;
+      if (signal?.aborted) {
+        reject(abortError(signal));
         return;
       }
       const url = new URL(pathname, this.serverUrl);
@@ -344,7 +359,12 @@ export class HttpClient {
       );
 
       this.inFlight.add(req);
-      req.on('close', () => this.inFlight.delete(req));
+      const onAbort = () => req.destroy(abortError(signal!));
+      signal?.addEventListener('abort', onAbort, { once: true });
+      req.on('close', () => {
+        this.inFlight.delete(req);
+        signal?.removeEventListener('abort', onAbort);
+      });
       req.on('error', reject);
       const timeout = opts.timeout ?? this.timeout;
       req.setTimeout(timeout, () => {

@@ -47,10 +47,12 @@ export interface PiwiDashboardOptions {
   /**
    * Time budget (ms) for the reporter's end-of-run work: delivering the last
    * live events, uploading the remaining traces and attachments, and submitting
-   * the run. When it runs out, the reporter stops waiting for the dashboard and
-   * saves the run's results locally; the next run for the project uploads them,
-   * without traces or attachments. Defaults to `900000` (15 minutes). Set to `0`
-   * for no limit. Can also be set with `PIWI_SUBMIT_TIMEOUT`, in milliseconds too.
+   * the run. The uploads stop a minute before it ends (a quarter of a shorter
+   * budget), so a streamed run is still finished. When it runs out, the
+   * reporter stops waiting for the dashboard and saves the run's results
+   * locally; the next run for the project uploads them, without traces or
+   * attachments. Defaults to `900000` (15 minutes). Set to `0` for no limit.
+   * Can also be set with `PIWI_SUBMIT_TIMEOUT`, in milliseconds too.
    */
   submitTimeout?: number;
 

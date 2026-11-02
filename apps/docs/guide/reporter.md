@@ -227,7 +227,8 @@ attachments; it never fails the Playwright run. An interrupted stream is retried
 the dashboard refuses, or has not taken after ten tries in a row (about two and a half minutes), leave the live view
 so the later ones flow; the end-of-run upload carries their results.
 [`submitTimeout`](/reference/reporter-options#submittimeout) (15 minutes by default) bounds that end-of-run work, so
-an unresponsive dashboard does not hold the CI job.
+an unresponsive dashboard does not hold the CI job; the file uploads stop a minute before it ends, so a streamed run is
+still finished.
 
 ## Related
 

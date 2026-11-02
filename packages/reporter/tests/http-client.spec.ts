@@ -256,6 +256,31 @@ describe('HttpClient (against fake http.Server)', () => {
       }
     });
 
+    it('ends an upload when its signal aborts, in flight or before it starts', async () => {
+      const { server, url, requests } = await startServer(() => {
+        // never respond
+      });
+      try {
+        const client = new HttpClient(url, new Logger(false));
+        const controller = new AbortController();
+        const form = new FormData();
+        form.append('field', 'value');
+        const pending = client.postFormData('/api/upload', form, null, controller.signal);
+        await expect.poll(() => requests.length).toBe(1);
+        controller.abort(new Error('no time left'));
+        await expect(pending).rejects.toThrow('no time left');
+
+        const later = new FormData();
+        later.append('field', 'value');
+        await expect(client.postFormData('/api/upload', later, null, controller.signal)).rejects.toThrow('no time left');
+        expect(requests).toHaveLength(1);
+      } finally {
+        (server as any).closeAllConnections?.();
+        server.close();
+        await new Promise<void>((r) => server.on('close', () => r()));
+      }
+    });
+
     it('rejects when a file in the form cannot be read, without an uncaught exception', async () => {
       const { server, url } = await startServer((_req, res) => jsonRes(res, 200, {}));
       const uncaught: unknown[] = [];

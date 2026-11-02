@@ -22,6 +22,12 @@ const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
 const FINISH_RETRY_DELAYS_MS = [1000, 2000];
 
 /**
+ * The part of the end-of-run budget the file uploads leave to `/finish` and its repeats: a minute, or a quarter of a
+ * shorter budget.
+ */
+const FINISH_RESERVE_MS = 60_000;
+
+/**
  * Whether a failed request may have reached the dashboard with its answer lost on the way back: no answer came, or a
  * server error, a timeout (408) or a rate limit (429) did.
  */
@@ -98,6 +104,8 @@ function markSubmitFallback(run: CollectedRun, path: 'upload' | 'submit', reason
 export class RunSubmitter {
   /** The key every batch delivery of this run carries, so the dashboard stores the run once. */
   private readonly deliveryKey = randomUUID();
+  /** The run's `submitTimeout` budget, and when it runs out (ms since the epoch); null without one. */
+  private budget: { ms: number; end: number } | null = null;
 
   /**
    * @param httpClient    HTTP client for auth resolution and the finish call.
@@ -118,17 +126,19 @@ export class RunSubmitter {
 
   /**
    * Run the fallback ladder for a completed test run, within the
-   * `submitTimeout` budget. When the budget runs out, every request in flight
-   * and every later one fails, so the ladder falls through to saving the
-   * recovery copy. Returns the run the dashboard took, or null when none did
-   * or it named no run id.
+   * `submitTimeout` budget. A streamed run's file uploads stop in time to leave
+   * its `/finish` a share of the budget (`FINISH_RESERVE_MS`). When the budget
+   * runs out, every request in flight and every later one fails, so the ladder
+   * falls through to saving the recovery copy. Returns the run the dashboard
+   * took, or null when none did or it named no run id.
    */
   async submit(run: CollectedRun, result: FullResult): Promise<SubmittedRun | null> {
     const budgetMs = run.options.submitTimeout ?? 0;
-    const timer =
-      budgetMs > 0 && Number.isFinite(budgetMs)
-        ? setTimeout(() => this.expireBudget(budgetMs), Math.min(budgetMs, MAX_TIMER_DELAY_MS))
-        : null;
+    const bounded = budgetMs > 0 && Number.isFinite(budgetMs);
+    this.budget = bounded ? { ms: budgetMs, end: Date.now() + budgetMs } : null;
+    const timer = bounded
+      ? setTimeout(() => this.expireBudget(budgetMs), Math.min(budgetMs, MAX_TIMER_DELAY_MS))
+      : null;
     try {
       return await this.submitRun(run, result);
     } finally {
@@ -313,7 +323,9 @@ export class RunSubmitter {
     try {
       const durations = run.testCases.filter((tc) => tc.duration != null).map((tc) => tc.duration as number);
 
-      await sm.uploadRemaining(run.testCases);
+      // The file uploads stop in time to leave `/finish` its share of the budget.
+      const filesDeadline = this.budget && this.budget.end - Math.min(FINISH_RESERVE_MS, this.budget.ms / 4);
+      await sm.uploadRemaining(run.testCases, filesDeadline);
 
       const finishBody: Record<string, unknown> = {
         streamToken: sm.token,
@@ -391,7 +403,9 @@ export class RunSubmitter {
         this.logger.warn(
           `The run's /finish failed (${errorMessage(error)}), perhaps after the dashboard took it: asking again.`,
         );
-        await new Promise((resolve) => setTimeout(resolve, delay));
+        // The wait ends with the budget: a request after it fails at once.
+        const wait = this.budget ? Math.min(delay, Math.max(this.budget.end - Date.now(), 0)) : delay;
+        await new Promise((resolve) => setTimeout(resolve, wait));
       }
     }
   }
