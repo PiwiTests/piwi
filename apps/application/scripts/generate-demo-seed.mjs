@@ -4599,7 +4599,8 @@ function seedCoverageReports(story, run, fragmentIdOf) {
     triage_note: null,
     first_seen_run_id: id,
     last_seen_run_id: id,
-    occurrences: 1,
+    // A run from an editor joins its failures to their clusters without counting them as occurrences.
+    occurrences: 0,
     created_at: startTime,
     updated_at: startTime,
   });

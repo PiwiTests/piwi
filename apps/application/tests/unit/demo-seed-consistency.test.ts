@@ -26,6 +26,7 @@ import { WEB_DASHBOARD_PROJECT_ID, webDashboardRequests } from '#shared/demo/dem
 import { resourceFingerprint } from '#shared/resource-fingerprint.mjs';
 import type { WireResourceFinding } from '#shared/types';
 import { GATEWAY_STATUSES, classifyRunHealth } from '#shared/handlers/run-health';
+import { isEligibleRun } from '#shared/run-eligibility';
 import { runBaseUrls } from '#shared/graph';
 import { TOUR_PROFILES } from '~/utils/demo-tour/profiles';
 import { GUIDE_ANCHORS } from '#shared/guide-anchors/index.mjs';
@@ -301,11 +302,27 @@ describe('cluster ↔ case ↔ file coherence', () => {
   });
 
   test('cluster occurrences and first/last run ids are internally consistent', () => {
+    // Occurrences count the executions of the runs whose failures count as occurrences, as the server does.
+    const counting = new Set(
+      q('select id, metadata, is_full_run, status from test_runs')
+        .filter((run) =>
+          isEligibleRun(
+            {
+              metadata: JSON.parse((run.metadata as string) ?? 'null'),
+              isFullRun: run.is_full_run as number,
+              status: run.status as string,
+            },
+            'cluster-occurrences',
+          ),
+        )
+        .map((run) => run.id as number),
+    );
     const clusters = q('select id, occurrences, first_seen_run_id, last_seen_run_id from failure_clusters');
     for (const c of clusters) {
-      const trcCount = q(`select count(*) as n from test_runs_cases where failure_cluster_id = ${c.id as number}`)[0]!
-        .n as number;
-      expect(trcCount, `cluster ${c.id} occurrences`).toBe(c.occurrences);
+      const occurrences = q(`select test_run_id from test_runs_cases where failure_cluster_id = ${c.id as number}`)
+        .map((r) => r.test_run_id as number)
+        .filter((runId) => counting.has(runId)).length;
+      expect(occurrences, `cluster ${c.id} occurrences`).toBe(c.occurrences);
       expect(c.first_seen_run_id, `cluster ${c.id} first_seen_run_id`).not.toBeNull();
       expect(c.last_seen_run_id, `cluster ${c.id} last_seen_run_id`).not.toBeNull();
     }
