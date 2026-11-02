@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import * as http from 'node:http';
 import * as fs from 'node:fs';
 import { createGlobalSetup } from '../src/public/global-setup.js';
+import { PiwiDashboardReporter } from '../src/public/reporter.js';
 import { getSetupFilePath, readSetupInfo } from '../src/internal/support/setup-file.js';
 import {
   ariaSampleIdentity,
@@ -188,6 +189,22 @@ describe('createGlobalSetup', () => {
 
       const info = readSetupInfo('global-setup-register');
       expect(info).toEqual({ runId: 42, setupToken: 'tok-abc', projectName: 'global-setup-register' });
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  it('leaves no registration behind when the run stops before its tests', async () => {
+    const { server, url } = await startServer((_req, res) => jsonRes(res, 200, { runId: 9, setupToken: 't' }));
+    const projectName = 'global-setup-stopped';
+    cleanupNames.push(projectName);
+    try {
+      await createGlobalSetup({ serverUrl: url, projectName })({ reporter: [PIWI_REPORTER_ENTRY] });
+      expect(fs.existsSync(getSetupFilePath(projectName))).toBe(true);
+      // A spec that does not load: Playwright ends the run without calling `onBegin`.
+      const reporter = new PiwiDashboardReporter({ serverUrl: url, projectName, uploadReport: false, uploadTraces: false });
+      await reporter.onEnd({ status: 'failed' } as any);
+      expect(fs.existsSync(getSetupFilePath(projectName))).toBe(false);
     } finally {
       await new Promise<void>((r) => server.close(() => r()));
     }

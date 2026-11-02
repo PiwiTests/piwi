@@ -39,7 +39,7 @@ import { detectCliFileFilters, detectCliGrep, detectCliNarrowingFlags } from '..
 import { readSelectionStamp } from '../internal/support/selection-env.js';
 import { resolveShardInfo } from '../internal/support/shard-info.js';
 import { isListMode } from '../internal/support/run-mode.js';
-import { peekSetupInfo } from '../internal/support/setup-file.js';
+import { peekSetupInfo, readSetupInfo } from '../internal/support/setup-file.js';
 import { LIVE_VIEW_ENV, formatLiveViewEnv, formatLiveViewMissing } from '@piwitests/core/live-view';
 import { ciLiveViewNote } from '../internal/streaming/live-view-note.js';
 import { RUN_CHANNEL_ENV } from '@piwitests/core/run-channel';
@@ -1119,6 +1119,8 @@ export class PiwiDashboardReporter {
     // `onBegin` never ran: the run stopped before its tests (a global setup threw, a spec did not load).
     if (this.startTime === null) {
       this.logger.debug('The run stopped before any test began — nothing to report.');
+      // Nothing begins the run the global setup registered: its setup file, this process's alone, goes.
+      readSetupInfo(this.options.projectName!);
       return;
     }
 

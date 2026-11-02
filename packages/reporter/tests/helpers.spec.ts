@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { hashForProject, computeInstanceId } from '../src/internal/support/instance-id.js';
-import { getSetupFilePath, readSetupInfo } from '../src/internal/support/setup-file.js';
+import { getSetupFilePath, peekSetupInfo, readSetupInfo, writeSetupInfo } from '../src/internal/support/setup-file.js';
 import { resolveRunLabel } from '../src/internal/support/ci.js';
 import { readSourceSnippet, collectSourceFrames } from '../src/internal/support/source-snippet.js';
 import { createLimiter } from '../src/internal/support/limiter.js';
@@ -453,6 +453,24 @@ describe('readSetupInfo', () => {
       expect(readSetupInfo(projectName)).toBe(null);
     } finally {
       if (fs.existsSync(file)) fs.unlinkSync(file);
+    }
+  });
+
+  it("reads this process's registration alone, never another run's of the same project", () => {
+    const projectName = 'piwi-setup-two-runs-' + Date.now();
+    // Another run of the project on this machine registered too: Playwright ran its global setup in its own runner.
+    const theirs = getSetupFilePath(projectName, process.pid + 1);
+    fs.writeFileSync(theirs, JSON.stringify({ runId: 7, setupToken: 'theirs', projectName }), 'utf8');
+    try {
+      expect(peekSetupInfo(projectName)).toBe(null);
+      expect(readSetupInfo(projectName)).toBe(null);
+      writeSetupInfo({ runId: 8, setupToken: 'ours', projectName });
+      expect(readSetupInfo(projectName)).toEqual({ runId: 8, setupToken: 'ours', projectName });
+      // The other run's registration waits for its own reporter.
+      expect(JSON.parse(fs.readFileSync(theirs, 'utf8')).runId).toBe(7);
+    } finally {
+      fs.rmSync(theirs, { force: true });
+      fs.rmSync(getSetupFilePath(projectName), { force: true });
     }
   });
 
