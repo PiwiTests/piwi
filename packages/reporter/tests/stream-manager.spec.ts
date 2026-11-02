@@ -705,15 +705,110 @@ describe('StreamManager request sizing', () => {
     }
 
     it('flags undelivered results so the run is not finalized without them', async () => {
-      const { sm, buffer } = await drainAgainstDeadServer([completeEvent('undelivered')]);
+      const { sm } = await drainAgainstDeadServer([completeEvent('undelivered')]);
       expect(sm.lostResults).toBe(true);
-      expect(buffer.load().map((e) => e.title)).toEqual(['undelivered']);
+    });
+
+    it('writes the events still queued when it gives up to disk', async () => {
+      const { buffer } = await drainAgainstDeadServer([
+        { ...completeEvent('first'), error: 'x'.repeat(3_000_000) },
+        { ...completeEvent('second'), error: 'x'.repeat(2_000_000) },
+      ]);
+      expect(buffer.load().map((e) => e.title)).toEqual(['second']);
     });
 
     it('does not flag lost results when only progress events are left', async () => {
       const { sm } = await drainAgainstDeadServer([{ type: 'step-end', title: 'step' }]);
       expect(sm.lostResults).toBe(false);
     });
+  });
+});
+
+describe('StreamManager events the dashboard does not take', () => {
+  beforeEach(() => {
+    cleanup();
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    cleanup();
+  });
+
+  function makeManager(postJSON: (url: string, body: any) => Promise<any>): StreamManager {
+    const sm = new StreamManager(
+      { postJSON, resolveAuth: async () => null } as any,
+      new StreamBuffer(projectName),
+      new CrashRecovery(RECOVERY_SERVER, projectName),
+      {} as any,
+      new FileHandler(),
+      makeOptions({ streamingBatchSize: 1_000_000, streamingBatchDelay: 3_600_000 }),
+    );
+    (sm as any)._enabled = true;
+    (sm as any)._runId = 1;
+    (sm as any)._token = 'tok';
+    return sm;
+  }
+
+  async function drain(sm: StreamManager): Promise<void> {
+    const drained = sm.drain();
+    await vi.runAllTimersAsync();
+    await drained;
+  }
+
+  it('sets aside a request refused with a client error at once, so the later events flow', async () => {
+    const sent: string[] = [];
+    let refusals = 0;
+    const sm = makeManager(async (_url, body) => {
+      if (body.testCases.some((e: any) => e.title === 'refused')) {
+        refusals++;
+        throw new HttpError(400);
+      }
+      sent.push(...body.testCases.map((e: any) => e.title));
+      return {};
+    });
+    sm.queueEvent(completeEvent('refused'));
+    await sm.flush();
+    sm.queueEvent(completeEvent('later'));
+    await drain(sm);
+
+    expect(sent).toEqual(['later']);
+    expect(refusals).toBe(1);
+    // The refused result goes with the end-of-run batch upload, which carries the whole run.
+    expect(sm.lostResults).toBe(true);
+  });
+
+  it('retries a request that keeps failing with a server error a bounded number of times, then lets the later ones through', async () => {
+    const sent: string[] = [];
+    let attempts = 0;
+    const sm = makeManager(async (_url, body) => {
+      if (body.testCases.some((e: any) => e.title === 'failing')) {
+        attempts++;
+        throw new HttpError(500);
+      }
+      sent.push(...body.testCases.map((e: any) => e.title));
+      return {};
+    });
+    // Large enough to go in two requests.
+    sm.queueEvent({ ...completeEvent('failing'), error: 'x'.repeat(3_000_000) });
+    sm.queueEvent({ ...completeEvent('later'), error: 'x'.repeat(2_000_000) });
+    await drain(sm);
+
+    expect(sent).toEqual(['later']);
+    expect(attempts).toBe(10);
+    expect(sm.lostResults).toBe(true);
+  });
+
+  it('keeps retrying a request that has no answer up to the bound, and sets aside only progress without flagging results', async () => {
+    let attempts = 0;
+    const sm = makeManager(async () => {
+      attempts++;
+      throw new Error('connect ECONNREFUSED');
+    });
+    sm.queueEvent({ type: 'step-end', title: 'step' } as any);
+    await drain(sm);
+
+    expect(attempts).toBe(10);
+    expect(sm.lostResults).toBe(false);
   });
 });
 

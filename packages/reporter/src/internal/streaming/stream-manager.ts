@@ -25,6 +25,11 @@ const EVENT_ENVELOPE_BYTES = 1024;
 const MAX_EVENT_REQUEST_BYTES = 4 * 1024 * 1024;
 /** Uploads in a row without any response after which `uploadRemaining` gives up. */
 const MAX_UPLOAD_CONNECTION_FAILURES = 3;
+/**
+ * Attempts in a row at the oldest events that may fail, for want of an answer or with a server error, before they are
+ * set aside so the later ones flow: about two and a half minutes of retries while the run goes on.
+ */
+const MAX_EVENT_REQUEST_ATTEMPTS = 10;
 /** The least a heartbeat waits once activity put it off: pending events flush first. */
 const MIN_HEARTBEAT_WAIT_MS = 250;
 
@@ -52,6 +57,10 @@ export class StreamManager {
   private retryCount = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly maxRetryDelay = 30000;
+  /** Failed attempts in a row at the oldest events' request, counted toward `MAX_EVENT_REQUEST_ATTEMPTS`. */
+  private headFailures = 0;
+  /** Whether events were set aside yet: the first time warns, the later ones are logged at debug level. */
+  private setAsideWarned = false;
   /**
    * Idle heartbeat: while the run is open but no events are flowing (e.g. a single
    * long test, or `beforeAll` setup), a periodic ping keeps the server's activity
@@ -344,8 +353,11 @@ export class StreamManager {
 
   // Post the events in order, in requests of at most `MAX_EVENT_REQUEST_BYTES`.
   // A request the server refuses as too large (413) is split in half and resent;
-  // a single event it still refuses leaves the live stream. On any other failure
-  // the unsent events go back to the head of the queue and a retry is scheduled.
+  // a single event it still refuses leaves the live stream. A request it refuses
+  // with another client error (except 408 and 429), or one that failed
+  // `MAX_EVENT_REQUEST_ATTEMPTS` times in a row, is set aside so the later ones
+  // flow. On any other failure the unsent events go back to the head of the
+  // queue and a retry is scheduled.
   private async sendEvents(events: StreamEvent[]): Promise<boolean> {
     const chunks = this.chunkEvents(events);
     while (chunks.length > 0) {
@@ -358,6 +370,7 @@ export class StreamManager {
         );
         this.noteWatched(response);
         this.retryCount = 0;
+        this.headFailures = 0;
         this.lastActivityAt = Date.now();
       } catch (error) {
         if (error instanceof HttpError && error.status === 413) {
@@ -367,6 +380,11 @@ export class StreamManager {
           } else {
             this.dropOversized(chunk[0]);
           }
+          continue;
+        }
+        // Once the time budget closed the client, the drain stops: no attempt counts.
+        if (refusesEvents(error) || (!this.httpClient.closed && ++this.headFailures >= MAX_EVENT_REQUEST_ATTEMPTS)) {
+          this.setAside(chunk, error);
           continue;
         }
         this.pendingEvents.prepend(chunk.concat(...chunks));
@@ -412,6 +430,24 @@ export class StreamManager {
       );
     } else {
       this.logger.debug(`Dropped a ${event.type} event for "${event.title}" that is too large to stream.`);
+    }
+  }
+
+  // Leave events the dashboard did not take out of the live stream, so the later
+  // ones flow. A test result among them sends the run through the end-of-run
+  // batch upload, which carries the full run (see `lostResults`).
+  private setAside(events: StreamEvent[], error: unknown): void {
+    this.headFailures = 0;
+    const results = events.some((event) => event.type === 'complete');
+    if (results) this.resultsUndelivered = true;
+    const message =
+      `The dashboard did not take ${events.length} live event(s) (${errorMessage(error)}): they are left out of the live view` +
+      (results ? `, and the end-of-run upload carries their results.` : '.');
+    if (this.setAsideWarned) {
+      this.logger.debug(message);
+    } else {
+      this.setAsideWarned = true;
+      this.logger.warn(message);
     }
   }
 
@@ -700,6 +736,14 @@ export class StreamManager {
       }
     }
   }
+}
+
+/**
+ * A refusal of a request of events that no retry changes: a client error other than a timeout (408) or a rate
+ * limit (429).
+ */
+function refusesEvents(error: unknown): boolean {
+  return error instanceof HttpError && error.status >= 400 && error.status < 500 && ![408, 429].includes(error.status);
 }
 
 // UTF-8 size of the event's JSON, the unit the server's limit counts, plus one
