@@ -16,8 +16,15 @@ declare global {
 
 delete process.env.PIWI_DATABASE_URL;
 
-const { getOrCreateFailureClusters, transitionClusterStatus, recomputeClusterOccurrences } =
-  await import('../../shared/handlers/failure-cluster-ops');
+const {
+  getOrCreateFailureClusters,
+  transitionClusterStatus,
+  recomputeClusterOccurrences,
+  mergeFailureClusters,
+  mergedTriage,
+} = await import('../../shared/handlers/failure-cluster-ops');
+const { approveMergeSuggestion, recordMergeSuggestion } =
+  await import('../../shared/handlers/cluster-merge-suggestions');
 const { computeErrorFingerprint } = await import('../../shared/error-fingerprint');
 
 // The call log and the stack are excluded from the fingerprint (extractMessageHead
@@ -291,5 +298,128 @@ describe('transitionClusterStatus', () => {
     const id = await insertCluster('open', null);
     expect(await transitionClusterStatus(dbc, id, { ...resolve, where: sql`1 = 0` })).toBe(false);
     expect(await triage(id)).toEqual({ status: 'open', triageNote: null });
+  });
+});
+
+describe('merging two clusters keeps their triage and history', () => {
+  const now = new Date('2026-10-01T10:00:00Z');
+  const later = new Date('2026-10-08T10:00:00Z');
+  const triage = (status: string, more: Record<string, unknown> = {}) => ({
+    status,
+    assignee: null,
+    triageNote: null,
+    snoozedUntil: null,
+    snoozeMode: null,
+    ...more,
+  });
+
+  test('a live victim leaves the survivor open: its resolved or ignored status, or its snooze, cleared', () => {
+    expect(mergedTriage(triage('resolved'), triage('open'), now)).toMatchObject({ status: 'open' });
+    expect(mergedTriage(triage('ignored'), triage('open'), now)).toMatchObject({ status: 'open' });
+    expect(
+      mergedTriage(triage('open', { snoozedUntil: later, snoozeMode: 'until' }), triage('open'), now),
+    ).toMatchObject({ status: 'open', snoozedUntil: null, snoozeMode: null });
+  });
+
+  test('a survivor stays as it is when the victim is not a live failure, or when it is one itself', () => {
+    expect(mergedTriage(triage('ignored'), triage('resolved'), now).status).toBeUndefined();
+    const snoozedVictim = triage('open', { snoozedUntil: later, snoozeMode: 'until' });
+    expect(mergedTriage(triage('resolved'), snoozedVictim, now).status).toBeUndefined();
+    expect(mergedTriage(triage('open'), triage('resolved'), now).status).toBeUndefined();
+  });
+
+  test("the survivor's assignee wins, else the victim's; a victim's note it lacks is appended", () => {
+    expect(mergedTriage(triage('open', { assignee: 'ada' }), triage('open', { assignee: 'bob' }), now).assignee).toBe(
+      'ada',
+    );
+    expect(mergedTriage(triage('open'), triage('open', { assignee: 'bob' }), now).assignee).toBe('bob');
+    expect(
+      mergedTriage(triage('open', { triageNote: 'Cart API' }), triage('open', { triageNote: 'Flaky on CI' }), now)
+        .triageNote,
+    ).toBe('Cart API\nFlaky on CI');
+    expect(
+      mergedTriage(
+        triage('open', { triageNote: 'Cart API\nFlaky on CI' }),
+        triage('open', { triageNote: 'Flaky on CI' }),
+        now,
+      ).triageNote,
+    ).toBe('Cart API\nFlaky on CI');
+  });
+
+  async function insertCluster(id: number, values: Record<string, unknown> = {}) {
+    await db.insert(schema.failureClusters).values({
+      id,
+      projectId: 1,
+      fingerprint: `fp-${id}`,
+      signature: `Error: broken ${id}`,
+      firstSeenRunId: 1,
+      lastSeenRunId: 1,
+      ...values,
+    });
+  }
+
+  test('the survivor takes the triage, fix attempts, tracker writes, agent calls and rejections of the victim', async () => {
+    await insertCluster(1, { status: 'resolved', triageNote: 'Fixed by the cart refactor' });
+    await insertCluster(2, { status: 'open', assignee: 'ada', triageNote: 'Still failing on staging' });
+    await insertCluster(3);
+    await db.insert(schema.handbackOutcomes).values({
+      projectId: 1,
+      kind: 'fix-attempt',
+      subjectType: 'cluster',
+      subjectId: 2,
+      suggestionKey: 'patch:abc',
+      outcome: 'applied',
+      channel: 'mcp',
+      dedupeKey: 'fix-attempt:2:patch:abc:applied',
+    });
+    const [connection] = await db
+      .insert(schema.integrationConnections)
+      .values({ provider: 'jira', name: 'Jira', baseUrl: 'https://example.atlassian.net' })
+      .returning({ id: schema.integrationConnections.id });
+    await db.insert(schema.integrationActions).values({
+      connectionId: connection!.id,
+      projectId: 1,
+      kind: 'comment',
+      entityType: 'failure_cluster',
+      entityId: 2,
+      dedupeKey: 'comment:failure_cluster:2:fixed:9',
+      status: 'done',
+      payload: { issueKey: 'PROJ-1' },
+    });
+    await db
+      .insert(schema.mcpToolCalls)
+      .values({ projectId: 1, tool: 'triage_cluster', subjectType: 'cluster', subjectId: 2, result: 'ok' });
+    await db
+      .insert(schema.clusterMergeSuggestions)
+      .values({ projectId: 1, clusterAId: 2, clusterBId: 3, method: 'split', status: 'rejected' });
+
+    await mergeFailureClusters(dbc, 1, 2);
+
+    const [survivor] = await db.select().from(schema.failureClusters).where(eq(schema.failureClusters.id, 1));
+    expect(survivor).toMatchObject({
+      status: 'open',
+      assignee: 'ada',
+      triageNote: 'Fixed by the cart refactor\nStill failing on staging',
+    });
+    expect((await db.select().from(schema.handbackOutcomes)).map((o) => o.subjectId)).toEqual([1]);
+    expect((await db.select().from(schema.integrationActions)).map((a) => a.entityId)).toEqual([1]);
+    expect((await db.select().from(schema.mcpToolCalls)).map((c) => c.subjectId)).toEqual([1]);
+    expect(
+      (await db.select().from(schema.clusterMergeSuggestions)).map((p) => [p.clusterAId, p.clusterBId, p.status]),
+    ).toEqual([[1, 3, 'rejected']]);
+  });
+
+  test('approving a suggestion applies the rule to the triage the clusters have when it is approved', async () => {
+    await insertCluster(1, { status: 'resolved' });
+    await insertCluster(2, { status: 'resolved' });
+    await recordMergeSuggestion(dbc, { projectId: 1, clusterAId: 1, clusterBId: 2, method: 'embedding' });
+    // The victim fails again after the suggestion was made.
+    await db.update(schema.failureClusters).set({ status: 'open' }).where(eq(schema.failureClusters.id, 2));
+    const [suggestion] = await db.select().from(schema.clusterMergeSuggestions);
+
+    await approveMergeSuggestion(dbc, suggestion!.id);
+
+    const [survivor] = await db.select().from(schema.failureClusters).where(eq(schema.failureClusters.id, 1));
+    expect(survivor?.status).toBe('open');
   });
 });

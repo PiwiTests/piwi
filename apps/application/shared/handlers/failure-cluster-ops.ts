@@ -14,9 +14,12 @@ import {
   failureDiagnoses,
   failureDiagnosisVersions,
   entityLinks,
+  handbackOutcomes,
+  integrationActions,
+  mcpToolCalls,
 } from '../../server/database/schema';
 import { preferExemplar } from '../prefer-exemplar';
-import { wakeOnRecurrence } from '../inbox-queues';
+import { isCurrentlySnoozed, wakeOnRecurrence, type SnoozeState } from '../inbox-queues';
 import { eligibleRunSql, isEligibleRun } from '../run-eligibility';
 import type { DrizzleDB } from './db';
 
@@ -109,8 +112,8 @@ function seenInRun(testRunId: number) {
 }
 
 /**
- * The `updatedAt` a new occurrence writes: an open cluster's moves, and a
- * resolved or ignored cluster's stays at the moment it was triaged, which
+ * The `updatedAt` a new occurrence or a merge writes: an open cluster's moves,
+ * and a resolved or ignored cluster's stays at the moment it was triaged, which
  * reopening it on a recurrence and the analytics read.
  */
 function touchedByOccurrence(status: string | null | undefined): { updatedAt?: Date } {
@@ -466,15 +469,50 @@ export async function getOrCreateFailureClusters(
   return ids;
 }
 
+/** The triage fields the merge policy reads from both clusters. */
+interface MergedTriage extends SnoozeState {
+  status: string;
+  assignee: string | null;
+  triageNote: string | null;
+}
+
+/**
+ * The survivor's triage once the victim merged into it. A live failure is never
+ * buried: when either cluster is open and not snoozed, the survivor ends open,
+ * its resolved or ignored status, or its snooze, cleared; otherwise it keeps its
+ * status and snooze. The survivor's assignee wins, else the victim's, and a
+ * victim's note the survivor lacks is appended to the survivor's.
+ */
+export function mergedTriage(survivor: MergedTriage, victim: MergedTriage, now: Date = new Date()) {
+  const live = (c: MergedTriage) => c.status === 'open' && !isCurrentlySnoozed(c, now);
+  const victimNote = victim.triageNote?.trim();
+  return {
+    ...(live(survivor) || !live(victim)
+      ? {}
+      : {
+          status: 'open',
+          ...(isCurrentlySnoozed(survivor, now) ? { snoozedUntil: null, snoozeMode: null } : {}),
+        }),
+    assignee: survivor.assignee?.trim() ? survivor.assignee : victim.assignee,
+    triageNote:
+      victimNote && !survivor.triageNote?.includes(victimNote)
+        ? appendTriageNote(survivor.triageNote, victimNote)
+        : survivor.triageNote,
+  };
+}
+
 /**
  * Merge one failure cluster into another. The `survivorId` cluster keeps its
- * triage state (status, notes, manual base commit) and absorbs the victim:
- * all linked test-run cases and diagnoses are re-pointed, occurrence counts
- * are summed and the seen-run bounds widened to cover both, then the victim
- * row is deleted.
+ * manual base commit and takes the triage `mergedTriage` gives it, and absorbs
+ * the victim: all linked test-run cases and diagnoses are re-pointed, with the
+ * victim's links, fix attempts, its tracker writes and agent calls, and the
+ * merges a person or the adjudicator decided against; occurrence counts are
+ * summed and the seen-run bounds widened to cover both, then the victim row is
+ * deleted.
  *
  * Used by the re-fingerprinting backfill (when two distinct clusters map onto
- * the same fingerprint), cluster reconciliation and approved merge suggestions.
+ * the same fingerprint), cluster reconciliation and approved merge suggestions,
+ * which apply the policy to the clusters' triage at the moment they merge.
  */
 export async function mergeFailureClusters(db: DrizzleDB, survivorId: number, victimId: number): Promise<void> {
   if (survivorId === victimId) return;
@@ -522,9 +560,38 @@ export async function mergeFailureClusters(db: DrizzleDB, survivorId: number, vi
       .set({ clusterId: survivorId })
       .where(eq(failureDiagnosisVersions.clusterId, victimId));
 
+    // The victim's history follows it: the fix attempts reported on it, what
+    // Piwi wrote to its tracker issue, and what agents did to it.
+    await tx
+      .update(handbackOutcomes)
+      .set({ subjectId: survivorId })
+      .where(
+        and(
+          eq(handbackOutcomes.kind, 'fix-attempt'),
+          eq(handbackOutcomes.subjectType, 'cluster'),
+          eq(handbackOutcomes.subjectId, victimId),
+        ),
+      );
+    await tx
+      .update(integrationActions)
+      .set({ entityId: survivorId })
+      .where(and(eq(integrationActions.entityType, 'failure_cluster'), eq(integrationActions.entityId, victimId)));
+    await tx
+      .update(mcpToolCalls)
+      .set({ subjectId: survivorId })
+      .where(and(eq(mcpToolCalls.subjectType, 'cluster'), eq(mcpToolCalls.subjectId, victimId)));
+
     // Combine the two clusters' aggregates.
+    const triageFields = {
+      status: failureClusters.status,
+      assignee: failureClusters.assignee,
+      triageNote: failureClusters.triageNote,
+      snoozedUntil: failureClusters.snoozedUntil,
+      snoozeMode: failureClusters.snoozeMode,
+    };
     const [survivor] = await tx
       .select({
+        ...triageFields,
         occurrences: failureClusters.occurrences,
         firstSeenRunId: failureClusters.firstSeenRunId,
         lastSeenRunId: failureClusters.lastSeenRunId,
@@ -533,6 +600,7 @@ export async function mergeFailureClusters(db: DrizzleDB, survivorId: number, vi
       .where(eq(failureClusters.id, survivorId));
     const [victim] = await tx
       .select({
+        ...triageFields,
         projectId: failureClusters.projectId,
         fingerprint: failureClusters.fingerprint,
         occurrences: failureClusters.occurrences,
@@ -541,6 +609,37 @@ export async function mergeFailureClusters(db: DrizzleDB, survivorId: number, vi
       })
       .from(failureClusters)
       .where(eq(failureClusters.id, victimId));
+
+    // A merge decided against with the victim (a person's rejection, a split, the
+    // adjudicator's "no") holds for the survivor, which carries its failures.
+    if (victim) {
+      const decided = await tx
+        .select()
+        .from(clusterMergeSuggestions)
+        .where(
+          and(
+            inArray(clusterMergeSuggestions.status, ['rejected', 'declined']),
+            or(eq(clusterMergeSuggestions.clusterAId, victimId), eq(clusterMergeSuggestions.clusterBId, victimId)),
+          ),
+        );
+      for (const pair of decided) {
+        const otherId = pair.clusterAId === victimId ? pair.clusterBId : pair.clusterAId;
+        if (otherId === survivorId) continue;
+        await tx
+          .insert(clusterMergeSuggestions)
+          .values({
+            projectId: pair.projectId,
+            clusterAId: Math.min(survivorId, otherId),
+            clusterBId: Math.max(survivorId, otherId),
+            score: pair.score,
+            method: pair.method,
+            llmConfidence: pair.llmConfidence,
+            llmReason: pair.llmReason,
+            status: pair.status,
+          })
+          .onConflictDoNothing();
+      }
+    }
 
     // Record the victim's fingerprint → survivor so future failures with that
     // fingerprint attach to the survivor, and re-home any aliases that pointed
@@ -562,13 +661,15 @@ export async function mergeFailureClusters(db: DrizzleDB, survivorId: number, vi
       .where(eq(failureClusterTestRoutes.clusterId, victimId));
 
     if (survivor && victim) {
+      const triage = mergedTriage(survivor, victim);
       await tx
         .update(failureClusters)
         .set({
+          ...triage,
           occurrences: (survivor.occurrences ?? 0) + (victim.occurrences ?? 0),
           firstSeenRunId: Math.min(survivor.firstSeenRunId, victim.firstSeenRunId),
           lastSeenRunId: Math.max(survivor.lastSeenRunId, victim.lastSeenRunId),
-          updatedAt: new Date(),
+          ...touchedByOccurrence(triage.status ?? survivor.status),
         })
         .where(eq(failureClusters.id, survivorId));
     }

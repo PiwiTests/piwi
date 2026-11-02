@@ -30,6 +30,9 @@ auto-diagnose.
 Each pair is judged once: the model's no is kept. A pair that someone dismissed, or that came from [moving tests to a
 new cluster](#split-a-cluster-by-hand), is never merged automatically, however close the two clusters score.
 
+A merge never buries a live failure: the survivor ends open when either cluster was open and not snoozed, takes the
+other's assignee when it has none and its note, and keeps its fix attempts, tracker history and dismissed pairs.
+
 <figure>
   <img src="/diagrams/failure-clustering-semantic-merge.svg" alt="Diagram of the semantic merging flow: clusters are embedded, compared by cosine similarity, and kept apart, adjudicated by a model, or merged depending on the score">
   <figcaption>The cosine score decides between keeping two clusters apart, asking a model (or a person), and merging them.</figcaption>
