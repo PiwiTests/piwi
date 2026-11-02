@@ -42,6 +42,14 @@ export interface SendEmailOptions {
 let _transport: Transporter | null = null;
 let _warnedMissingSiteUrl = false;
 
+/**
+ * How long the SMTP transport waits for the connection, for the server's
+ * greeting, and for any reply once talking, in ms. The outbox sends its rows one
+ * after another, so a server that never answers holds every channel queued
+ * behind the email this long at most.
+ */
+const SMTP_TIMEOUTS = { connectionTimeout: 15_000, greetingTimeout: 15_000, socketTimeout: 30_000 };
+
 export function getSmtpConfig(): SmtpConfig {
   const host = process.env.PIWI_SMTP_HOST || '';
   const user = process.env.PIWI_SMTP_USER || '';
@@ -73,6 +81,7 @@ async function getTransport(): Promise<Transporter> {
     host: cfg.host,
     port: cfg.port,
     secure: cfg.secure,
+    ...SMTP_TIMEOUTS,
     // Only authenticate when credentials are set; an auth block with empty
     // values would make nodemailer attempt AUTH against auth-less relays.
     ...(cfg.user && pass ? { auth: { user: cfg.user, pass } } : {}),
