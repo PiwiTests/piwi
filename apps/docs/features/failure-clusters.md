@@ -16,14 +16,14 @@ into a **failure inbox**: the problems you still owe a decision.
 Failed executions sharing an **error fingerprint** join one cluster, so twenty stack traces read as
 *"20 failures, 3 root causes"*. Clustering is always on.
 
-- The fingerprint **masks volatile fragments** of the error: timeouts and other numbers, UUIDs and hashes, URLs and
-  emails, an assertion's *expected* and *received* values, and dynamic locator options such as the
-  `{ name: '…' }` of a table row, wherever the error prints the locator. The locator target itself (the test id, the
-  role) still tells different failures apart.
-- It is **call-site agnostic**: the failing stack frame is shown for context but does not split a cluster, so one root
-  cause reached from several spec files stays one cluster.
+- The fingerprint **masks volatile fragments** of the error ([the list](/guide/concepts#error-fingerprint-failure-cluster)):
+  numbers, ids, timestamps, machine paths, an assertion's *expected* and *received* values, a table row's
+  `{ name: '…' }`. The locator target itself (the test id, the role) still tells different failures apart.
+- It is **call-site agnostic** when the error says what failed: one root cause reached from several spec files
+  stays one cluster. A **generic** error (a bare `toBe`, a test timeout, a `TypeError`) is told apart by the file
+  it failed in.
 - The fingerprint is computed from the error the cluster was created from, so an improved normalization
-  regroups clusters in place and keeps their triage, notes and diagnoses.
+  regroups clusters in place and keeps their triage, notes, diagnoses and merges.
 - A run's **Tests** tab can group its failures by cluster, each group with its triage status; the
   `get_failure_groups` [MCP tool](/reference/mcp-tools#get_failure_groups) adds a **worker-correlation** flag: "the
   app is broken" versus "worker 3 is misbehaving".

@@ -23,7 +23,7 @@ describe('the error of a timed-out test', () => {
     const text = joinErrorMessages([timeout, click])!;
     const placed = appendErrorLocation(text, { file: 'tests/sign-in.spec.ts', line: 7, column: 54 });
     expect(placed.endsWith('\n    at tests/sign-in.spec.ts:7:54')).toBe(true);
-    // The fingerprint hashes the type, the message and the locator; the top frame is for display.
+    // The signature is the type, the message and the locator; the top frame stays apart from it.
     const { topFrameFile, ...hashed } = extractErrorSignature(placed);
     const { topFrameFile: before, ...hashedBefore } = extractErrorSignature(text);
     expect(hashed).toEqual(hashedBefore);

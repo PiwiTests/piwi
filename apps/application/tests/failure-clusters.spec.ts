@@ -54,7 +54,7 @@ test.describe('Error fingerprinting', () => {
     );
   });
 
-  test('stack frame file paths are extracted but do NOT influence the fingerprint', async () => {
+  test('stack frame file paths are extracted but do NOT influence the fingerprint of a specific error', async () => {
     const error = (file: string, line: number) =>
       `Error: boom\n    at doLogin (${file}:${line}:11)\n    at node_modules/playwright/lib/runner.js:5:1`;
 

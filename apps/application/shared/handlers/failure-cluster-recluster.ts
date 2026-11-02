@@ -36,6 +36,7 @@ import {
   testRunsCases,
 } from '../../server/database/schema';
 import { computeErrorFingerprint, type ErrorFingerprint } from '../error-fingerprint';
+import { errorFingerprintV4 } from '../error-fingerprint-v4';
 import { isSplitFingerprint, mergeFailureClusters } from './failure-cluster-ops';
 import type { DrizzleDB } from './db';
 
@@ -76,10 +77,11 @@ async function* aliasSampleCandidates(db: DrizzleDB, clusterId: number): AsyncGe
 /**
  * Give each alias stored without a sample the error its fingerprint was
  * computed from: among its cluster's samples and executions, the first whose
- * fingerprint, by the algorithm that wrote the alias, is the alias's. An alias
- * with no match keeps a null sample, and {@link reclusterFailureFingerprints}
- * leaves it as it is. Run at startup before the recluster. Returns the number
- * of aliases given a sample.
+ * fingerprint, by the algorithm that wrote the alias (`FINGERPRINT_VERSION` 4,
+ * the last before aliases kept their sample), is the alias's. An alias with no
+ * match keeps a null sample, and {@link reclusterFailureFingerprints} leaves it
+ * as it is. Run at startup before the recluster. Returns the number of aliases
+ * given a sample.
  */
 export async function backfillAliasSamples(db: DrizzleDB): Promise<number> {
   const aliases = await db
@@ -102,7 +104,7 @@ export async function backfillAliasSamples(db: DrizzleDB): Promise<number> {
   let found = 0;
   for (const [clusterId, ofCluster] of wanted) {
     for await (const candidate of aliasSampleCandidates(db, clusterId)) {
-      const { fingerprint } = await computeErrorFingerprint(candidate);
+      const fingerprint = await errorFingerprintV4(candidate);
       const aliasId = ofCluster.get(fingerprint);
       if (aliasId === undefined) continue;
       await db

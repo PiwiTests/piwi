@@ -22,6 +22,7 @@ const { backfillAliasSamples, reclusterFailureFingerprints } =
   await import('../../shared/handlers/failure-cluster-recluster');
 const { assignFailureClusters } = await import('../../shared/handlers/failure-cluster-ops');
 const { computeErrorFingerprint } = await import('../../shared/error-fingerprint');
+const { errorFingerprintV4 } = await import('../../shared/error-fingerprint-v4');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
 let dbc: DbClient;
@@ -134,7 +135,7 @@ describe('reclusterFailureFingerprints', () => {
 });
 
 describe('backfillAliasSamples', () => {
-  test("gives an alias the error of its cluster whose fingerprint is the alias's", async () => {
+  test("gives an alias the error of its cluster whose version 4 fingerprint is the alias's", async () => {
     const victimError =
       "TimeoutError: locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByTestId('pay')";
     const id = await seedCluster({
@@ -155,7 +156,9 @@ describe('backfillAliasSamples', () => {
         failureClusterId: id,
       })),
     );
-    const victimFingerprint = (await computeErrorFingerprint(victimError)).fingerprint;
+    // The last version whose aliases kept no sample wrote it.
+    const victimFingerprint = await errorFingerprintV4(victimError);
+    expect(victimFingerprint).not.toBe((await computeErrorFingerprint(victimError)).fingerprint);
     await db.insert(schema.failureClusterAliases).values([
       { projectId: 1, fingerprint: victimFingerprint, clusterId: id },
       { projectId: 1, fingerprint: 'fingerprint-no-error-has', clusterId: id },
@@ -292,6 +295,35 @@ describe('a fingerprint version bump', () => {
     expect(await clusterJoined(1, originalError, 2)).toBe(b);
     expect(await clusterJoined(1, laterError, 2)).toBe(b);
     expect(await reclusterFailureFingerprints(dbc)).toEqual({ updated: 0, merged: 0 });
+  });
+
+  test('keeps a merge version 4 recorded without a sample, once the backfill found it', async () => {
+    await seedRun(1, new Date('2026-10-01T10:00:00Z'));
+    // Version 4 merged the cluster of `laterError` into A: A holds its executions, the alias no sample.
+    const a = await seedCluster({
+      fingerprint: await errorFingerprintV4(originalError),
+      sampleError: originalError,
+      fingerprintSample: originalError,
+    });
+    await db.insert(schema.testRunsCases).values(
+      [originalError, laterError].map((error, i) => ({
+        testRunId: 1,
+        testCaseId: i + 1,
+        status: 'failed',
+        error,
+        failureClusterId: a,
+      })),
+    );
+    await db
+      .insert(schema.failureClusterAliases)
+      .values({ projectId: 1, fingerprint: await errorFingerprintV4(laterError), clusterId: a });
+
+    expect(await backfillAliasSamples(dbc)).toBe(1);
+    expect(await reclusterFailureFingerprints(dbc)).toEqual({ updated: 2, merged: 0 });
+
+    expect(await clusterJoined(2, laterError, 1)).toBe(a);
+    expect(await clusterJoined(1, originalError, 1)).toBe(a);
+    expect(await db.$count(schema.failureClusters)).toBe(1);
   });
 
   test('leaves the moment a cluster was triaged, which the analytics read as when it was resolved', async () => {

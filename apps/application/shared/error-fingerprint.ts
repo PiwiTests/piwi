@@ -4,13 +4,15 @@
  * Normalizes raw Playwright error text into a stable fingerprint so that
  * failures sharing a root cause can be grouped into `failure_clusters` rows:
  * volatile tokens (timeouts, ids, received/expected values, URLs, emails,
- * hashes, dynamic locator options) are masked, while the discriminating
- * signals (error category, message shape, locator target) are kept.
+ * hashes, timestamps, machine paths, dynamic locator options) are masked,
+ * while the discriminating signals (error category, message shape, locator
+ * target) are kept.
  *
- * The fingerprint is deliberately call-site agnostic: the top stack frame is
- * still extracted for display, but is NOT part of the hash, so the same root
- * cause reached from different spec files groups into a single cluster instead
- * of splitting per file.
+ * The top stack frame is hashed only for a generic failure
+ * ({@link isGenericFailure}): its message tells it from no unrelated failure,
+ * so the file it failed in does. Any other failure keeps it out of the hash, so
+ * one root cause reached from several spec files, through a shared helper or
+ * page object, groups into a single cluster.
  *
  * The signature itself (`extractErrorSignature` and its masking) lives in
  * `@piwitests/core/error-signature`, shared with the reporter's flake mode;
@@ -27,6 +29,7 @@ import {
 } from '@piwitests/core/error-parse';
 import {
   extractErrorSignature,
+  maskPaths,
   maskSelector,
   maskVolatile,
   type ErrorSignature,
@@ -40,26 +43,53 @@ export type { ErrorSignature };
 /**
  * Bump when the normalization algorithm changes. The version is part of the
  * hashed input, so old and new fingerprints can never collide silently.
- * Existing clusters are migrated in place by re-fingerprinting their immutable
- * `fingerprintSample` on startup (see shared/handlers/failure-cluster-recluster.ts),
- * so triage status, notes and diagnoses survive an algorithm change.
+ * Existing clusters, their merge aliases and their per-test routes are migrated
+ * in place by re-fingerprinting their immutable samples on startup (see
+ * shared/handlers/failure-cluster-recluster.ts), so triage status, notes,
+ * diagnoses and merges survive an algorithm change.
  */
-export const FINGERPRINT_VERSION = 4;
+export const FINGERPRINT_VERSION = 5;
 
 export interface ErrorFingerprint extends ErrorSignature {
-  /** SHA-256 hex over version + error type + normalized message + masked selector */
+  /**
+   * SHA-256 hex over version + error type + normalized message + masked
+   * selector, and the top frame's file for a generic failure
+   */
   fingerprint: string;
+}
+
+/** The matcher line of an `expect(…)` failure: `expect(received).toBe(expected) // Object.is equality`. */
+const MATCHER_LINE_RE =
+  /^(?:Error: )?expect(?:\.soft|\.poll)?\(\w+\)(?:\.not)?\.to\w+\(\w*\)(?: failed)?(?: \/\/ .*)?$/;
+/** A line of an `expect(…)` failure whose value the masks took out: `Received: <VALUE>`, `Timeout: <N>ms`. */
+const MASKED_VALUE_LINE_RE = /^(?:(?:Expected|Received)[^:]*: <VALUE>|Timeout: <N>ms)$/;
+const TEST_TIMEOUT_RE = /^Test timeout of <N>ms exceeded\b/;
+const BARE_ERROR_RE = /^(?:TypeError|ReferenceError): /;
+
+/**
+ * Whether a failure's signature tells it from no unrelated failure: it names
+ * no locator, and its masked message head is an `expect(…)` matcher whose
+ * values are all masked, a test timeout, or a bare `TypeError` or
+ * `ReferenceError` line. Its fingerprint also hashes the file it failed in.
+ */
+export function isGenericFailure(sig: ErrorSignature): boolean {
+  if (sig.selector) return false;
+  const [head = '', ...rest] = sig.normalizedMessage.split('\n');
+  if (TEST_TIMEOUT_RE.test(head)) return true;
+  if (BARE_ERROR_RE.test(head)) return rest.length === 0;
+  return MATCHER_LINE_RE.test(head) && rest.every((line) => MASKED_VALUE_LINE_RE.test(line));
 }
 
 export async function computeErrorFingerprint(rawError: string): Promise<ErrorFingerprint> {
   const sig = extractErrorSignature(rawError);
-  const input = [
+  const key = [
     `v${FINGERPRINT_VERSION}`,
     sig.errorType,
     sig.normalizedMessage,
     sig.selector ? maskSelector(sig.selector) : '',
-  ].join('\u0000');
-  return { ...sig, fingerprint: await sha256Hex(input) };
+  ];
+  if (isGenericFailure(sig)) key.push(sig.topFrameFile ? maskPaths(sig.topFrameFile) : '');
+  return { ...sig, fingerprint: await sha256Hex(key.join('\u0000')) };
 }
 
 /**

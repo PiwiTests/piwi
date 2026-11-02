@@ -9,7 +9,9 @@ import {
   computeErrorFingerprint,
   condenseErrorText,
   FINGERPRINT_VERSION,
+  isGenericFailure,
 } from '#shared/error-fingerprint';
+import { errorFingerprintV4 } from '#shared/error-fingerprint-v4';
 
 describe('stripAnsi', () => {
   test('removes SGR color codes', () => {
@@ -128,8 +130,8 @@ describe('computeErrorFingerprint', () => {
     expect(a.fingerprint).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  test('groups the same root cause reached from different spec files (stack not hashed)', async () => {
-    const base = 'expect(locator).toBeVisible() failed';
+  test('groups a failure that names its locator across spec files (its frame not hashed)', async () => {
+    const base = "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('button', { name: 'Pay' })";
     const fromA = await computeErrorFingerprint(`${base}\n    at /app/tests/a.spec.ts:1:1`);
     const fromB = await computeErrorFingerprint(`${base}\n    at /app/tests/b.spec.ts:99:9`);
     expect(fromA.fingerprint).toBe(fromB.fingerprint);
@@ -187,6 +189,107 @@ describe('computeErrorFingerprint', () => {
 
   test('exposes a positive fingerprint version', () => {
     expect(FINGERPRINT_VERSION).toBeGreaterThan(0);
+  });
+});
+
+describe('a generic failure', () => {
+  const at = (frames: string[]) => frames.map((frame) => `\n    at ${frame}`).join('');
+  const toBe = (expected: string, received: string) =>
+    `Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: ${expected}\nReceived: ${received}`;
+
+  test('is told apart by the file it failed in: the matchers, test timeouts and TypeErrors of unrelated tests', async () => {
+    const pairs = [
+      [
+        toBe('3', '2') + at(['tests/basic.spec.ts:12:5']),
+        toBe('"accepted"', '"declined"') + at(['tests/serial.spec.ts:30:7']),
+      ],
+      [
+        'Test timeout of 30000ms exceeded.' + at(['tests/cart.spec.ts:4:1']),
+        'Test timeout of 30000ms exceeded.' + at(['tests/search.spec.ts:9:1']),
+      ],
+      [
+        "TypeError: Cannot read properties of undefined (reading 'id')" + at(['tests/orders.spec.ts:20:15']),
+        "TypeError: Cannot read properties of undefined (reading 'id')" + at(['tests/users.spec.ts:7:31']),
+      ],
+    ];
+    for (const [a, b] of pairs) {
+      const [fpA, fpB] = await Promise.all([computeErrorFingerprint(a!), computeErrorFingerprint(b!)]);
+      expect(isGenericFailure(fpA), a).toBe(true);
+      expect(fpA.fingerprint, a).not.toBe(fpB.fingerprint);
+    }
+  });
+
+  test('reached through one helper from two specs still groups: the helper is the file it failed in', async () => {
+    const helper = 'assertTotal (tests/helpers/cart.ts:8:3)';
+    const fromCheckout = await computeErrorFingerprint(toBe('3', '2') + at([helper, 'tests/checkout.spec.ts:12:5']));
+    const fromCart = await computeErrorFingerprint(toBe('5', '0') + at([helper, 'tests/cart.spec.ts:40:9']));
+    expect(fromCheckout.topFrameFile).toBe('tests/helpers/cart.ts');
+    expect(fromCheckout.fingerprint).toBe(fromCart.fingerprint);
+  });
+
+  test('groups across machines: an absolute frame counts from its last segment', async () => {
+    const onCi = await computeErrorFingerprint(
+      toBe('3', '2') + at(['/home/runner/work/shop/shop/tests/basic.spec.ts:12:5']),
+    );
+    const onLaptop = await computeErrorFingerprint(toBe('3', '2') + at(['/Users/alice/shop/tests/basic.spec.ts:12:5']));
+    expect(onCi.fingerprint).toBe(onLaptop.fingerprint);
+  });
+
+  test('is one that names nothing specific', () => {
+    const generic = (text: string) => isGenericFailure(extractErrorSignature(text));
+    expect(generic(toBe('3', '2'))).toBe(true);
+    expect(
+      generic(
+        'Error: expect(page).toHaveURL(expected) failed\n\nExpected: "/done"\nReceived: "/cart"\nTimeout: 5000ms',
+      ),
+    ).toBe(true);
+    expect(generic('Test timeout of 30000ms exceeded while running "beforeEach" hook.')).toBe(true);
+    expect(generic('ReferenceError: total is not defined')).toBe(true);
+    // A locator, a message of the test's own, values the masks keep, or more than a bare TypeError line say what failed.
+    expect(
+      generic(
+        "Test timeout of 30000ms exceeded.\n---\nError: locator.click: Test timeout of 30000ms exceeded.\nCall log:\n  - waiting for getByRole('button')",
+      ),
+    ).toBe(false);
+    expect(generic(`Error: the cart total is wrong\n\n${toBe('3', '2')}`)).toBe(false);
+    expect(
+      generic(
+        'Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 1\n+ Received  + 1\n\n-   "status": "accepted",\n+   "status": "declined",',
+      ),
+    ).toBe(false);
+    expect(
+      generic("TypeError: Cannot read properties of undefined (reading 'id')\n---\nError: the order page broke"),
+    ).toBe(false);
+    expect(generic('Error: something broke')).toBe(false);
+  });
+});
+
+describe('errorFingerprintV4', () => {
+  // The fingerprints version 4 stored for these errors.
+  const STORED = [
+    [
+      'Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: 3\nReceived: 2\n    at tests/basic.spec.ts:12:5',
+      'd8d8061611d2c1d592c70fc0bc3285c1a619235cb074d7a31f367ccd59a447f2',
+    ],
+    [
+      "TimeoutError: locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: 'Pay' })\n    at tests/checkout.spec.ts:20:7",
+      '688fbb833444d91e9ddec5d3c1f443c7533e84b0954f628f54eef9c35e9c945a',
+    ],
+    [
+      "Error: strict mode violation: getByRole('row', { name: 'Alice' }) resolved to 2 elements:\n    1) <tr>…</tr> aka getByRole('row', { name: 'Alice', exact: true })\n    2) <tr>…</tr> aka getByRole('row', { name: 'Alice Smith' })",
+      'd92bf5549ef7edad35be2fed3983c03833e0376714494c63643500850e94f022',
+    ],
+    [
+      "Error: ENOENT: no such file or directory, open '/home/runner/work/app/app/fixtures/order_5f3a9c1e2b.json' at 2024-05-01T10:30:00Z",
+      '72909a236f188f7e482590a32e422ed0859bcf748075f7b9e86ad94b5e79dcb0',
+    ],
+  ] as const;
+
+  test('computes what version 4 stored', async () => {
+    for (const [error, stored] of STORED) {
+      expect(await errorFingerprintV4(error), error).toBe(stored);
+      expect((await computeErrorFingerprint(error)).fingerprint, error).not.toBe(stored);
+    }
   });
 });
 

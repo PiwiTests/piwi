@@ -113,6 +113,13 @@ describe('fingerprint mirror parity (demo mirror vs the real algorithm)', () => 
     "Error: strict mode violation: getByRole('row', { name: 'Alice' }) resolved to 2 elements:\n    1) <tr>…</tr> aka getByRole('row', { name: 'Alice', exact: true })",
     "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('row', { name: 'Bob' })\nExpected: visible\nReceived: <element(s) not found>\nTimeout: 5000ms\n\nCall log:\n  - waiting for getByRole('row', { name: 'Bob' })\n    at tests/x.spec.ts:3:3",
     'Some completely unstructured error with no recognizable shape at all',
+    "Error: locator.click: Error: strict mode violation: getByRole('button') resolved to 3 elements:\n    1) <button>Pay</button> aka getByRole('button', { name: 'Pay' })\n    2) <button>Later</button> aka getByTestId('later')\n    ...\n\nCall log:\n  - waiting for getByRole('button')",
+    'Error: booking order_5f3a9c1e2b expired at 2026-05-01T10:30:00.120Z for cus_4QFJrkXyZ8aB2m, field_label12 kept',
+    "Error: ENOENT: no such file or directory, open '/home/runner/work/shop/shop/fixtures/user.json'",
+    "Error: ENOENT: no such file or directory, open 'C:\\Users\\alice\\shop\\fixtures\\user.json'",
+    'Error: browserType.launch: profile /tmp/playwright_chromiumdev_profile-Xo8n2p is locked',
+    'Test timeout of 30000ms exceeded.\n    at /Users/alice/shop/tests/cart.spec.ts:4:1',
+    "TypeError: Cannot read properties of undefined (reading 'id')\n    at C:\\Users\\alice\\shop\\tests\\orders.spec.ts:20:15",
   ];
 
   for (const [i, err] of corpus.entries()) {

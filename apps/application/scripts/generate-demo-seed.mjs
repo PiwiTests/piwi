@@ -131,7 +131,8 @@ const SCHEMA = journal.entries
 
 // ── Fingerprints (real algorithm mirror) ───────────────────────────────────
 // One fingerprint per story; every per-case error variant of a story MUST hash
-// identically (frames are not part of the hash), or the seed aborts.
+// identically (a frame is part of the hash only for a generic error), or the
+// seed aborts.
 
 const storyFingerprints = new Map();
 for (const story of FAILURE_STORIES) {

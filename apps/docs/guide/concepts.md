@@ -168,15 +168,27 @@ A public repository's CODEOWNERS is read without a token; a private one needs an
 ### Error fingerprint & failure cluster
 
 When an execution fails, Piwi hashes a normalized form of its error — error type, message with the
-volatile parts masked out (timeouts, numbers, UUIDs, URLs, expected/received values), and the locator
-with its dynamic arguments masked. That hash is the **error fingerprint**.
+volatile parts masked out, and the locator with its dynamic arguments masked. That hash is the
+**error fingerprint**. The masks take out what changes from one occurrence to the next:
+
+- timeouts and other numbers, UUIDs, hashes, and ids glued to an underscore (`order_5f3a9c1e2b`);
+- URLs, emails and timestamps (`2026-05-01T10:30:00Z`);
+- the folders of a path under a home folder, a CI workspace or a Windows drive
+  (`/home/runner/work/shop/fixtures/user.json` reads `<PATH>/user.json`), and the random end of a temporary
+  folder's name (`playwright_chromiumdev_profile-Xo8n2p`);
+- an assertion's expected and received values, and the list of elements a strict-mode violation prints;
+- dynamic locator options, such as the `{ name: '…' }` of a table row.
 
 Every failed execution sharing a fingerprint joins one **failure cluster**. Fifty red tests caused by
 one broken endpoint become one cluster you triage once, with a status (open / resolved / ignored) and
 a note.
 
-Fingerprints deliberately **ignore the failing stack frame**, so the same root cause reached from six
-different spec files stays one cluster. Full detail:
+Fingerprints **ignore the failing stack frame** when the error says what failed, so the same root cause
+reached from six different spec files, through a shared helper or page object, stays one cluster. A
+**generic** error says nothing of its own: it names no locator, and its message is an `expect(…)` matcher
+whose values are all masked, a test timeout, or a bare `TypeError` or `ReferenceError` line. Unrelated
+tests fail with the same generic error, so its fingerprint also hashes the file of its failing stack frame:
+the spec file, or the helper it failed in. Full detail:
 [Failure clustering & AI diagnosis](/features/ai-diagnosis).
 
 ### Story

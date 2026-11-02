@@ -14,7 +14,7 @@ import { PROJECT } from '#shared/test-project-names';
  * same rule.
  */
 
-// The stack frame is not hashed, so the two tests share one cluster.
+// The error names its locator, so its stack frame is not hashed: the two tests share one cluster.
 const sharedError = (frame: string) =>
   `TimeoutError: locator.click: Timeout 3000ms exceeded.\nCall log:\n  - waiting for getByRole('button', { name: 'Pay' })\n    at ${frame}`;
 

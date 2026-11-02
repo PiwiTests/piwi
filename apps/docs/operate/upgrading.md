@@ -178,7 +178,9 @@ leaves an old file behind: in Task Manager's **Details** tab, end the `node.exe`
 **Open file location** is that folder, then choose **Retry**.
 
 **Failure clusters look reorganized.** Expected after a fingerprint-algorithm change: clusters that now
-share a root cause have merged. Triage state is carried across the merge.
+share a root cause have merged. Triage state is carried across the merge. A cluster that held unrelated
+failures under one [generic error](/guide/concepts#error-fingerprint-failure-cluster) keeps them, and their next
+failures join a cluster per file they fail in.
 
 ## Related
 - [Backup & restore](./backup-restore) — what to back up and how
