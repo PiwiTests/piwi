@@ -8,6 +8,7 @@ import { migrateToLatest } from './temp-db';
 // so clear it before the modules under test load.
 delete process.env.PIWI_DATABASE_URL;
 const { getTestCase } = await import('../../shared/handlers/test-cases');
+const { getProjectTestCases } = await import('../../shared/handlers/projects');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
 
@@ -33,9 +34,12 @@ beforeAll(async () => {
 });
 
 describe('the test page header', () => {
-  test('counts a timed-out or interrupted execution as failed', async () => {
+  test('counts a timed-out execution as failed, as the catalog counts it', async () => {
     const testCase = await getTestCase(db as never, 1);
-    expect(testCase).toMatchObject({ totalRuns: 6, passedRuns: 1, failedRuns: 4, timedOutRuns: 2, skippedRuns: 1 });
+    expect(testCase).toMatchObject({ totalRuns: 6, passedRuns: 1, failedRuns: 3, timedOutRuns: 2, skippedRuns: 1 });
+
+    const { items } = await getProjectTestCases(db as never, 1);
+    expect(items[0]!.failedRuns).toBe(testCase!.failedRuns);
   });
 
   test('keeps its pass rate', async () => {

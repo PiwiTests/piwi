@@ -81,13 +81,13 @@ export async function getTestCase(db: DrizzleDB, id: number) {
       .then((r: any[]) => (r.length > 0 ? [r[0]] : [undefined])),
     // PostgreSQL returns COUNT and SUM (int8) and AVG (numeric) as strings, and
     // a timestamp aggregate unparsed: each is mapped so both dialects agree.
-    // A timed-out or interrupted execution counts as failed.
+    // A timed-out execution counts as failed, as in the project's test catalog.
     db
       .select({
         totalRuns: sql<number>`COUNT(${testRunsCases.id})`.mapWith(Number),
         passedRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' THEN 1 ELSE 0 END)`.mapWith(Number),
         failedRuns:
-          sql<number>`SUM(CASE WHEN ${testRunsCases.status} IN ('failed', 'timedOut', 'timedout', 'interrupted') THEN 1 ELSE 0 END)`.mapWith(
+          sql<number>`SUM(CASE WHEN ${testRunsCases.status} IN ('failed', 'timedOut', 'timedout') THEN 1 ELSE 0 END)`.mapWith(
             Number,
           ),
         skippedRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'skipped' THEN 1 ELSE 0 END)`.mapWith(Number),
