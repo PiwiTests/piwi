@@ -98,10 +98,19 @@ function connectDemo() {
   });
 }
 
-function connectLive() {
-  sharedSource = new EventSource('/api/notifications/stream');
+const REOPEN_MIN_MS = 2_000;
+const REOPEN_MAX_MS = 30_000;
+let reopenDelay = REOPEN_MIN_MS;
 
-  sharedSource.onmessage = (event) => {
+function connectLive() {
+  const source = new EventSource('/api/notifications/stream');
+  sharedSource = source;
+
+  source.onopen = () => {
+    reopenDelay = REOPEN_MIN_MS;
+  };
+
+  source.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data);
       handleEvent(data as NotificationEventData);
@@ -110,8 +119,14 @@ function connectLive() {
     }
   };
 
-  sharedSource.onerror = () => {
-    // EventSource auto-reconnects
+  // EventSource reconnects by itself, unless an error answer closed it for good (a proxy's 502 while the instance
+  // restarts, an expired session): the stream then opens again, waiting longer each time.
+  source.onerror = () => {
+    if (source.readyState !== EventSource.CLOSED || sharedSource !== source) return;
+    source.close();
+    sharedSource = null;
+    setTimeout(connectLive, reopenDelay);
+    reopenDelay = Math.min(reopenDelay * 2, REOPEN_MAX_MS);
   };
 }
 

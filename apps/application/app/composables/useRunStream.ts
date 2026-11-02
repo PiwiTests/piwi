@@ -15,6 +15,13 @@ import { subscribeDemoEvents } from '~/demo/run-events';
  *   server-side keep-alive. On tab focus it reconnects and immediately
  *   refreshes all subscribers so missed events are caught up.
  *
+ * Error answers:
+ *   The browser reconnects a dropped stream by itself, but gives up on one
+ *   whose reconnection gets an error answer (a proxy's 502 while the instance
+ *   restarts, an expired session). The connection then opens again after a
+ *   wait that doubles each time (2 s to 30 s), and refreshes all subscribers
+ *   once it is open.
+ *
  * In demo mode the API handlers run in the service worker, so the SSE
  * connection is replaced with a BroadcastChannel subscription carrying the
  * same global lifecycle events (see app/demo/run-events.ts).
@@ -98,16 +105,31 @@ function notifySubscribers(eventType: string) {
   }, getDebounceDelay());
 }
 
+const REOPEN_MIN_MS = 2_000;
+const REOPEN_MAX_MS = 30_000;
+let reopenDelay = REOPEN_MIN_MS;
+let reopenTimer: ReturnType<typeof setTimeout> | null = null;
+/** Set while a connection reopened after an error answer has not opened yet: its subscribers refresh once it does. */
+let refreshOnOpen = false;
+
 function openEventSource() {
   if (sharedEventSource || demoMode) return;
 
-  sharedEventSource = new EventSource('/api/stream');
+  const source = new EventSource('/api/stream');
+  sharedEventSource = source;
 
   // Opens once the server has subscribed it (it writes a comment then), on the first connection and on each
   // reconnection.
-  sharedEventSource.onopen = notifyOpenListeners;
+  source.onopen = () => {
+    reopenDelay = REOPEN_MIN_MS;
+    if (refreshOnOpen) {
+      refreshOnOpen = false;
+      for (const fn of subscribers) fn();
+    }
+    notifyOpenListeners();
+  };
 
-  sharedEventSource.onmessage = (event) => {
+  source.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data);
       notifySubscribers(data.type);
@@ -117,9 +139,29 @@ function openEventSource() {
     }
   };
 
-  sharedEventSource.onerror = () => {
-    // EventSource will automatically attempt to reconnect on error
+  source.onerror = () => {
+    // EventSource reconnects by itself, unless an error answer closed it for good.
+    if (source.readyState === EventSource.CLOSED && sharedEventSource === source) reopenEventSource();
   };
+}
+
+/** Open the connection again after an error answer closed it, waiting longer each time. */
+function reopenEventSource() {
+  sharedEventSource?.close();
+  sharedEventSource = null;
+  if (reopenTimer) return;
+  reopenTimer = setTimeout(() => {
+    reopenTimer = null;
+    if (document.visibilityState === 'hidden' || (subscribers.size === 0 && eventListeners.size === 0)) return;
+    refreshOnOpen = true;
+    openEventSource();
+  }, reopenDelay);
+  reopenDelay = Math.min(reopenDelay * 2, REOPEN_MAX_MS);
+}
+
+function cancelReopen() {
+  if (reopenTimer) clearTimeout(reopenTimer);
+  reopenTimer = null;
 }
 
 function handleVisibilityChange() {
@@ -127,6 +169,7 @@ function handleVisibilityChange() {
 
   if (document.visibilityState === 'hidden') {
     // Close SSE while hidden — frees the server-side keep-alive connection
+    cancelReopen();
     if (sharedEventSource) {
       sharedEventSource.close();
       sharedEventSource = null;
@@ -173,6 +216,7 @@ function ensureConnection() {
 function closeConnection() {
   if (subscribers.size > 0 || eventListeners.size > 0) return;
 
+  cancelReopen();
   if (sharedEventSource) {
     sharedEventSource.close();
     sharedEventSource = null;
