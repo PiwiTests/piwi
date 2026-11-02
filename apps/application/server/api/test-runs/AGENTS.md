@@ -78,6 +78,9 @@ How the server merges shards:
   run's own token or any of its shard tokens, from the cache or the database (`validateAndReviveRun` with its
   `isShardToken` callback, which also revives an interrupted run). Never compare a token against the stored set
   directly: `matchesShardToken` and `matchesStreamToken` refuse a presented digest.
+- **A path that ends a run drops its cached state** (`runEventBus.cleanup`), as `/finish`, the stale-run sweep and
+  `cancelInstanceRuns` do: `authorizeStreamToken` trusts the cache without reading the run's status, so a run left in
+  it takes events after it ended (`tests/unit/cancelled-run-stream.test.ts`).
 - **The live view routes authenticate with the run's live view key, and nothing else does** (`liveViewRelay.authorize`,
   `server/utils/live-view.ts`). `setup` mints one, for a project with `live_view` on and a reporter that asked
   (`liveView: true`, any run's: outside CI its workers stream only once shared), and the desktop build none
