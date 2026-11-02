@@ -67,6 +67,14 @@ describe('wrapConfig', () => {
     expect((config.globalSetup as string[])[2]).toBe('./tests/bootstrap');
   });
 
+  it('chains its global setup and adds its reporter once in a config wrapped twice', () => {
+    const once = wrapConfig<PlaywrightTestConfig>({ globalSetup: './tests/globalSetup', reporter: 'list' });
+    const twice = wrapConfig<PlaywrightTestConfig>(once);
+    expect(twice.globalSetup).toEqual(once.globalSetup);
+    expect((twice.globalSetup as string[]).length).toBe(2);
+    expect(twice.reporter).toEqual(once.reporter);
+  });
+
   it('injects piwi reporter when no reporter is set', () => {
     const config = wrapConfig<PlaywrightTestConfig>({ testDir: './tests' });
     expect(Array.isArray(config.reporter)).toBeTruthy();

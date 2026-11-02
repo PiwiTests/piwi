@@ -168,10 +168,12 @@ export function wrapConfig<T extends PlaywrightTestConfig>(config: T, piwiOption
 
   // Piwi's module runs first so the run is registered before the user's own
   // globalSetup, showing as "initializing" on the dashboard while that setup runs.
-  const globalSetupModules: string[] = [resolveSetupModule()];
+  // It runs once in a config wrapped twice, which would otherwise register two runs.
+  const setupModule = resolveSetupModule();
+  const globalSetupModules: string[] = [setupModule];
   if (config.globalSetup) {
     const orig = Array.isArray(config.globalSetup) ? config.globalSetup : [config.globalSetup];
-    globalSetupModules.push(...orig);
+    globalSetupModules.push(...orig.filter((module) => module !== setupModule));
   }
 
   // Forward Piwi's CI-gate options into Playwright's own config so the run
