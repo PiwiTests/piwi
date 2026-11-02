@@ -291,6 +291,17 @@ export interface BlockableCase {
   status?: string;
   didNotRunReason?: string | null;
   blockedBy?: string | null;
+  /** The attempt (`result.retry`); absent reads as the first. */
+  retries?: number | null;
+  /** The `--repeat-each` repetition; absent reads as the first. */
+  repeatEachIndex?: number | null;
+  /** The Playwright project the case ran in, as the reporter collects it. */
+  browser?: { projectName?: string | null } | null;
+}
+
+/** The project, attempt and repetition a case belongs to: a cascade and its blocker share them. */
+function runKey(c: BlockableCase): string {
+  return `${c.browser?.projectName ?? ''}\x00${c.retries ?? 0}\x00${c.repeatEachIndex ?? 0}`;
 }
 
 /** Drop the trailing `:line:column` from a `file:line:column` location string. */
@@ -312,10 +323,11 @@ function sharedPrefixDepth(a: readonly string[], b: readonly string[]): number {
 /**
  * Link each `previous-failure` case to the test that blocked it, by setting
  * `blockedBy` to that test's location. The blocker is the failed/timed-out test
- * in the same file and serial group — an identical suite path, else the one
- * sharing the deepest suite-path prefix (nested serial describes). A cascade
- * with no resolvable blocker (e.g. a failing `beforeAll` hook rather than a
- * sibling test) keeps `blockedBy` null. Mutates the passed cases in place.
+ * of the same Playwright project, attempt and repetition, in the same file and
+ * serial group — an identical suite path, else the one sharing the deepest
+ * suite-path prefix (nested serial describes). A cascade with no resolvable
+ * blocker (e.g. a failing `beforeAll` hook rather than a sibling test) keeps
+ * `blockedBy` null. Mutates the passed cases in place.
  */
 export function linkBlockedTests(cases: BlockableCase[]): void {
   const blockers = cases.filter((c) => c.status === 'failed' || c.status === 'timedOut' || c.status === 'timedout');
@@ -324,7 +336,8 @@ export function linkBlockedTests(cases: BlockableCase[]): void {
   for (const c of cases) {
     if (c.didNotRunReason !== 'previous-failure') continue;
     const file = fileOf(c.location);
-    const inFile = blockers.filter((b) => fileOf(b.location) === file);
+    const run = runKey(c);
+    const inFile = blockers.filter((b) => fileOf(b.location) === file && runKey(b) === run);
     if (inFile.length === 0) continue;
 
     const key = suiteKey(c.suitePath);
