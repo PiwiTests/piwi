@@ -383,3 +383,10 @@ export const OMISSION_REASONS: Record<string, string> = {
 export function consoleLine(entry: Record<string, any>): string {
   return `[${entry.type ?? 'log'}] ${entry.text ?? ''}`;
 }
+
+/** Each stream an execution's test wrote to, stdout then stderr, as plain text: shared by the renderers and the ZIP. */
+export function outputStreams(detail: Record<string, any>): Array<{ name: 'stdout' | 'stderr'; text: string }> {
+  return (['stdout', 'stderr'] as const).flatMap((name) =>
+    typeof detail[name] === 'string' && detail[name] ? [{ name, text: stripAnsi(detail[name]) }] : [],
+  );
+}

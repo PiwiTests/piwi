@@ -138,6 +138,10 @@ export interface CollectedTestCase {
   expectedStatus?: string | null;
   /** For a `previous-failure` or `dependency-failure` case, the location of the failing test that blocked it. */
   blockedBy?: string | null;
+  /** What the attempt wrote to stdout (`TestResult.stdout`), bounded and with its secrets hidden. */
+  stdout?: string | null;
+  /** What the attempt wrote to stderr (`TestResult.stderr`), bounded and with its secrets hidden. */
+  stderr?: string | null;
 }
 
 /** Hash + size of a single trace file, used for dedup against the server. */

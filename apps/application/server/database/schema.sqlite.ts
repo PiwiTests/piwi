@@ -533,6 +533,8 @@ export const testRunsCases = sqliteTable(
     locatorPagesPayloadId: integer('locator_pages_payload_id').references(() => casePayloads.id), // Content-addressed list of the page each locator call ran on (piwi-locator-pages)
     codeReachPayloadId: integer('code_reach_payload_id').references(() => casePayloads.id), // Content-addressed list of the source files the test executed (piwi-code-reach)
     coveragePayloadId: integer('coverage_payload_id').references(() => casePayloads.id), // Content-addressed list of the coverage fragments the execution recorded (coverage_fragments ids)
+    stdoutPayloadId: integer('stdout_payload_id').references(() => casePayloads.id), // Content-addressed text the attempt wrote to stdout, bounded and with its secrets hidden
+    stderrPayloadId: integer('stderr_payload_id').references(() => casePayloads.id), // Content-addressed text the attempt wrote to stderr, bounded and with its secrets hidden
     browser: text('browser', { mode: 'json' }), // Playwright project/browser config: { projectName, browserName, channel, viewport }
     browserName: text('browser_name'), // Scalar browser identity (projectName) for index efficiency
     testAnnotations: text('test_annotations', { mode: 'json' }), // Array<{ type, description? }> — runtime test marks (@fixme, @slow …)
@@ -592,6 +594,12 @@ export const testRunsCases = sqliteTable(
     coveragePayloadIdx: index('idx_trc_coverage_payload')
       .on(table.coveragePayloadId)
       .where(sql`coverage_payload_id IS NOT NULL`),
+    stdoutPayloadIdx: index('idx_trc_stdout_payload')
+      .on(table.stdoutPayloadId)
+      .where(sql`stdout_payload_id IS NOT NULL`),
+    stderrPayloadIdx: index('idx_trc_stderr_payload')
+      .on(table.stderrPayloadId)
+      .where(sql`stderr_payload_id IS NOT NULL`),
     // Partial indexes over the few rows the capability probes and the run list
     // look for, so finding one, or proving there is none, never reads every
     // execution. A query uses one only when it repeats the condition with

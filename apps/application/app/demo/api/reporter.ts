@@ -62,6 +62,7 @@ import {
 } from '~~/server/utils/coverage';
 import { sanitizeCoverage, type CoverageCapture } from '@piwitests/core/coverage';
 import { hideTypedText } from '@piwitests/core/mask';
+import { sanitizeTestOutput } from '@piwitests/core/test-output';
 import { upsertCasePayloads } from '~~/server/utils/case-payloads';
 import { int32, int64, storableRunCase, storableRunErrors } from '~~/server/utils/storable-values';
 import { resolveRunBranch } from '~~/server/utils/run-branch';
@@ -545,6 +546,10 @@ export interface RunCaseInput {
   didNotRunReason?: string | null;
   expectedStatus?: string | null;
   blockedBy?: string | null;
+  /** What the attempt wrote to stdout, stored through case_payloads (server behavior). */
+  stdout?: unknown;
+  /** What the attempt wrote to stderr, stored through case_payloads (server behavior). */
+  stderr?: unknown;
 }
 
 /**
@@ -661,6 +666,9 @@ export async function persistRunCases(
   // like the server, so a rebuild of the index keeps them.
   const rowLocatorPages: Array<string | null> = [];
   const rowCodeReach: Array<string | null> = [];
+  // What each row's attempt wrote to stdout and stderr, stored through case_payloads like the server.
+  const rowStdout: Array<string | null> = [];
+  const rowStderr: Array<string | null> = [];
   const perCaseReach: CodeReachCase[] = [];
   const rowCoverage: Array<CoverageCapture | null> = [];
   const caseMetaSnapshots = new Map<number, CaseMetaSnapshot>();
@@ -717,6 +725,8 @@ export async function persistRunCases(
     rowCoverage.push(coverage);
     const reached = sanitizeCodeReach(c.codeReach);
     rowCodeReach.push(reached ? JSON.stringify(reached) : null);
+    rowStdout.push(sanitizeTestOutput(c.stdout));
+    rowStderr.push(sanitizeTestOutput(c.stderr));
     if (coverage) perCaseReach.push(...codeReachOfCoverage(caseId, testRunId, coverage));
     else if (reached) perCaseReach.push({ testCaseId: caseId, runId: testRunId, files: reached });
     perCaseUsages.push({
@@ -803,6 +813,8 @@ export async function persistRunCases(
     ...rowLocatorPages,
     ...rowCodeReach,
     ...rowCoveragePayload,
+    ...rowStdout,
+    ...rowStderr,
   ]);
   runCasesRows.forEach((row, i) => {
     const content = rowLocatorPages[i];
@@ -811,6 +823,10 @@ export async function persistRunCases(
     row.codeReachPayloadId = reach ? (pagePayloadIds.get(reach) ?? null) : null;
     const coverage = rowCoveragePayload[i];
     row.coveragePayloadId = coverage ? (pagePayloadIds.get(coverage) ?? null) : null;
+    const stdout = rowStdout[i];
+    row.stdoutPayloadId = stdout ? (pagePayloadIds.get(stdout) ?? null) : null;
+    const stderr = rowStderr[i];
+    row.stderrPayloadId = stderr ? (pagePayloadIds.get(stderr) ?? null) : null;
   });
 
   // Whether the run's failures count as occurrences of their clusters (server behavior).

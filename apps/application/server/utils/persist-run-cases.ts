@@ -67,6 +67,7 @@ import {
   type TestCoverageCase,
 } from './coverage';
 import { sanitizeCoverage, type CoverageCapture } from '@piwitests/core/coverage';
+import { sanitizeTestOutput } from '@piwitests/core/test-output';
 import { hideTypedText } from '@piwitests/core/mask';
 import { sanitizeLocatorPages } from './locator-pages';
 import type { LocatorPageUse } from '@piwitests/core/wire';
@@ -169,6 +170,10 @@ export interface RunCaseInput {
   expectedStatus?: string | null;
   /** For a `previous-failure` or `dependency-failure` case, the location of the failing test that blocked it. */
   blockedBy?: string | null;
+  /** What the attempt wrote to stdout — bounded again (`sanitizeTestOutput`), stored through case_payloads. */
+  stdout?: unknown;
+  /** What the attempt wrote to stderr — bounded again (`sanitizeTestOutput`), stored through case_payloads. */
+  stderr?: unknown;
 }
 
 /**
@@ -416,6 +421,8 @@ export async function persistRunCases(
     locatorPages: string | null;
     codeReach: string | null;
     coverage: string | null;
+    stdout: string | null;
+    stderr: string | null;
   }> = [];
   // Each row's coverage, stored as fragments once the loop has built every row.
   const rowCoverage: Array<CoverageCapture | null> = [];
@@ -513,6 +520,8 @@ export async function persistRunCases(
       locatorPages: locatorPages ? JSON.stringify(locatorPages) : null,
       codeReach: reached ? JSON.stringify(reached) : null,
       coverage: null,
+      stdout: sanitizeTestOutput(c.stdout),
+      stderr: sanitizeTestOutput(c.stderr),
     });
     rowCoverage.push(coverage);
 
@@ -612,6 +621,8 @@ export async function persistRunCases(
       p.locatorPages,
       p.codeReach,
       p.coverage,
+      p.stdout,
+      p.stderr,
     ]),
   );
   runCasesRows.forEach((row, i) => {
@@ -624,6 +635,8 @@ export async function persistRunCases(
     row.locatorPagesPayloadId = p.locatorPages ? (payloadIds.get(p.locatorPages) ?? null) : null;
     row.codeReachPayloadId = p.codeReach ? (payloadIds.get(p.codeReach) ?? null) : null;
     row.coveragePayloadId = p.coverage ? (payloadIds.get(p.coverage) ?? null) : null;
+    row.stdoutPayloadId = p.stdout ? (payloadIds.get(p.stdout) ?? null) : null;
+    row.stderrPayloadId = p.stderr ? (payloadIds.get(p.stderr) ?? null) : null;
   });
 
   const countsOccurrences = isEligibleRun({ metadata: run?.metadata }, 'cluster-occurrences');

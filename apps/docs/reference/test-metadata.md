@@ -296,6 +296,15 @@ be a secret hidden as in a test's error: the text a fill typed, a credential in 
 value shaped like a token. A sharded run adds each shard's to the others'. The run page shows them under its header,
 and the MCP `get_run` tool returns them as `runErrors`.
 
+### Test output
+
+The reporter keeps what each attempt wrote to stdout and stderr (`TestResult.stdout` and `stderr`): the test's
+`console.log` lines and what the code it ran printed, text or bytes read as UTF-8. Each stream has what may be a
+secret hidden, as above, and past about 64 KB keeps its first and last lines, cut at a line break, with a line saying
+how many lines and characters were cut between them. The dashboard stores each stream once per project however many
+executions wrote it, and shows it on the execution's **Output** tab ([Failure evidence](/features/evidence)), in its
+[offline export](/features/offline-export) and through the MCP `get_test_run_case` tool.
+
 ## With custom metadata
 
 ```typescript

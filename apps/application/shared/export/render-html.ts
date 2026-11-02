@@ -39,6 +39,7 @@ import {
   fmtStepDuration,
   hasDiagnosis,
   OMISSION_REASONS,
+  outputStreams,
   projectLabel,
   runFacts,
   runFailureGroups,
@@ -619,6 +620,17 @@ function renderConsole(logs: unknown): RawHtml {
   </div>`;
 }
 
+/** What the test wrote to stdout and to stderr, each stream under its name, as plain text. */
+function renderOutput(detail: Record<string, any>): RawHtml {
+  return joinHtml(
+    outputStreams(detail).map(
+      (stream) =>
+        html`<h3 class="file">${stream.name}</h3>
+          <pre class="hljs"><code>${stream.text}</code></pre>`,
+    ),
+  );
+}
+
 function renderNetwork(requests: unknown): RawHtml {
   if (!Array.isArray(requests) || !requests.length) return raw('');
   const rows = (requests as Record<string, any>[]).map(
@@ -729,6 +741,7 @@ function renderCase(exportCase: ExportCase, opts: RenderOptions, caseOpts: CaseO
   const count = (v: unknown) => (Array.isArray(v) ? v.length : undefined);
   parts.push(details('Steps', renderSteps(d.steps, d.pauses), { open: true, count: count(d.steps) }));
   parts.push(details('Console', renderConsole(d.consoleLogs), { count: count(d.consoleLogs) }));
+  parts.push(details('Output', renderOutput(d)));
   parts.push(details('Network', renderNetwork(d.networkRequests), { count: count(d.networkRequests) }));
   if (d.testSource) {
     parts.push(

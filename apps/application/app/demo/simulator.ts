@@ -79,6 +79,9 @@ interface SimAttempt {
   testAnnotations?: Array<{ type: string; description?: string }> | null;
   testSource?: string | null;
   testSourceFrames?: Array<{ file: string; line: number; snippet: string }> | null;
+  /** What the attempt wrote to stdout and stderr, as the reporter keeps it. */
+  stdout?: string | null;
+  stderr?: string | null;
 }
 
 interface SimTest {
@@ -918,6 +921,8 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
             testAnnotations: [{ type: 'fixme', description: `Known issue — see cluster ${CLUSTER1_STORY.clusterId}` }],
             testSource: buildTestSource(CLUSTER1_STORY, failingCase, CHECKOUT_TESTS[i]!.declLine),
             testSourceFrames: buildSourceFrames(failingCase),
+            stdout: CLUSTER1_STORY.evidence.outputOnFail?.stdout ?? null,
+            stderr: CLUSTER1_STORY.evidence.outputOnFail?.stderr ?? null,
           },
         ];
         // Merge in the story's own themed evidence (a slow quote request, not
@@ -1553,6 +1558,8 @@ async function runSingleSimulation(
             ariaSnapshot: a.ariaSnapshot ?? null,
             testSource: a.testSource ?? null,
             testSourceFrames: a.testSourceFrames ?? null,
+            stdout: a.stdout ?? null,
+            stderr: a.stderr ?? null,
             browser: test.browser ?? null,
             workerIndex,
             shardIndex: shardOverride?.shardIndex ?? null,

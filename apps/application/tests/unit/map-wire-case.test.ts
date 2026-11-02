@@ -54,6 +54,8 @@ const wireCase = {
   didNotRunReason: 'previous-failure',
   expectedStatus: 'passed',
   blockedBy: 'tests/checkout.spec.ts:10:3',
+  stdout: 'order 4521 created\n',
+  stderr: 'payment sandbox answered 502\n',
 } satisfies Required<TestCasePayload>;
 
 /** What `persistRunCases` must receive for `wireCase`: every field it reads, by name. */
@@ -105,6 +107,8 @@ const expected = {
   didNotRunReason: wireCase.didNotRunReason,
   expectedStatus: wireCase.expectedStatus,
   blockedBy: wireCase.blockedBy,
+  stdout: wireCase.stdout,
+  stderr: wireCase.stderr,
 } satisfies Required<RunCaseInput>;
 
 describe('mapWireCaseToRunCase', () => {

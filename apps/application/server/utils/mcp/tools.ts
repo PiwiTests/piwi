@@ -36,6 +36,7 @@ import {
 } from '#shared/handlers/flake-lab';
 import { parseBisectResultBody } from '@piwitests/core/bisect';
 import { sanitizeRunErrors } from '@piwitests/core/run-errors';
+import { boundTestOutput } from '@piwitests/core/test-output';
 import { agentDiagnosisErrorMessage, parseAgentDiagnosis, type AgentDiagnosisTarget } from '#shared/agent-diagnosis';
 import { resolveAgentDiagnosisTarget } from '#shared/handlers/agent-diagnosis';
 import { storedPatchValidation } from '#shared/patch';
@@ -158,7 +159,7 @@ const MAX_IMPACT_FILE_TESTS = 20;
 const MAX_PREDICTED_BREAKS = 50;
 import { getPageDiff } from '../page-diff';
 import { describePageDiff, formatPageDiffSummary } from '#shared/page-diff';
-import { inlineCasePayloads } from '../case-payloads';
+import { caseOutput, inlineCasePayloads } from '../case-payloads';
 import { selectCaseScreenshots } from '../case-screenshots';
 import { failurePageScreenshot } from '#shared/file-classify';
 import { createScmProvider } from '../scm';
@@ -226,6 +227,9 @@ import { parseUnifiedDiff } from '@piwitests/core/diff-anchors';
 import { diffImpactInput } from '@piwitests/core/suspect-lines';
 
 // ── Token-optimization helpers ───────────────────────────────────────────────
+
+/** The most characters of each stream an execution wrote that `get_test_run_case` returns: its first and last lines. */
+const MCP_OUTPUT_CHARS = 8000;
 
 function trunc(s: string | null | undefined, max = 300): string | null {
   if (!s) return null;
@@ -1337,6 +1341,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const want = (k: string) => include === null || include.has(k);
 
     const evidence = want('aria') || want('source') ? await inlineCasePayloads(db, row) : row;
+    const output = want('output') ? await caseOutput(db, row) : null;
 
     // Deterministic clues ride alongside the error unless the caller opts out.
     const clues = want('clues') ? await getFailureClues(db, id).catch(() => null) : null;
@@ -1365,6 +1370,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       webVitals: want('webVitals') ? row.webVitals : null,
       ariaSnapshot: want('aria') ? trunc(evidence.ariaSnapshot, 8000) : null,
       testSource: want('source') ? evidence.testSource || null : null,
+      stdout: output?.stdout ? boundTestOutput(stripAnsi(output.stdout), MCP_OUTPUT_CHARS) : null,
+      stderr: output?.stderr ? boundTestOutput(stripAnsi(output.stderr), MCP_OUTPUT_CHARS) : null,
       testAnnotations: row.testAnnotations,
       locks: Array.isArray(row.locks) && row.locks.length ? (row.locks as string[]) : null,
       startedAt: iso(row.startedAt),

@@ -3829,6 +3829,15 @@ const SCENES = [
     outputWidth: 1376,
   },
   {
+    name: 'evidence-output',
+    description: 'Failing execution: the Output tab of its evidence, what the test wrote to stderr',
+    // Execution 37's test wrote Node's deprecation warning to stderr.
+    route: '/test-run-cases/37?evidence=output',
+    viewport: { width: 1280, height: 1200 },
+    of: '[data-shot="evidence-card"]',
+    pad: 12,
+  },
+  {
     name: 'run-timeline',
     description: 'Per-worker run timeline: hook sections over each test, wasted waits switched on (dark)',
     tags: ['docs'],

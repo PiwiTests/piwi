@@ -83,6 +83,41 @@ describe('a step the test stood paused in', () => {
   });
 });
 
+describe('what the test wrote to stdout and stderr', () => {
+  const detail = {
+    error: 'boom',
+    stdout: '\u001b[33morder\u001b[39m 4521 created <script>\n',
+    stderr: 'payment sandbox answered 502\n',
+  };
+
+  it('is in the HTML and the Markdown exports, as plain text under each stream’s name', () => {
+    const b = bundle({ cases: [exportCase({ detail })] });
+    const html = renderExportHtml(b, noAssets);
+    expect(html).toContain('<summary>\n      Output');
+    expect(html).toContain('order 4521 created &lt;script&gt;');
+    expect(html).toContain('payment sandbox answered 502');
+    const markdown = renderExportMarkdown(b);
+    expect(markdown).toContain('**stdout**\n\n```\norder 4521 created <script>\n');
+    expect(markdown).toContain('**stderr**\n\n```\npayment sandbox answered 502\n');
+  });
+
+  it('is left out of an execution that wrote nothing', () => {
+    const b = bundle({ cases: [exportCase({ detail: { error: 'boom', stdout: null } })] });
+    expect(renderExportHtml(b, noAssets)).not.toContain('Output');
+    expect(renderExportMarkdown(b)).not.toContain('**stdout**');
+  });
+
+  it('is a file per stream in the ZIP', async () => {
+    const b = bundle({ cases: [exportCase({ detail })] });
+    const reader = { read: async () => null };
+    const budget = { maxInlineBytes: 1024, maxTotalBytes: 1024 * 1024 };
+    const entries = parseZipSync(Buffer.from((await buildExport(b, 'zip', 1, { reader, budget })).bytes));
+    const file = (name: string) => entries.find((e) => e.name === name)?.data.toString('utf8');
+    expect(file('evidence/login-1/stdout.txt')).toBe('order 4521 created <script>\n');
+    expect(file('evidence/login-1/stderr.txt')).toBe('payment sandbox answered 502\n');
+  });
+});
+
 describe('renderExportHtml', () => {
   it('escapes hostile text from a test run', () => {
     const hostile = '<script>alert(1)</script>';

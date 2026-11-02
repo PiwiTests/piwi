@@ -26,6 +26,8 @@ export interface DemoExampleExpect {
   incident?: true;
   /** The run holds errors Playwright reported outside its tests. */
   runErrors?: true;
+  /** The execution holds what its test wrote to stdout or stderr. */
+  output?: true;
   coverageGap?: 'restarted' | 'unreachable';
   gaps?: { detectors: string[] };
   suspects?: { path: string; granularity?: 'lines' | 'functions' | 'files' };

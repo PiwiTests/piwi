@@ -1009,6 +1009,13 @@
       "when": 1793637990025,
       "tag": "0143_solid_micromax",
       "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "6",
+      "when": 1793638039893,
+      "tag": "0144_public_random",
+      "breakpoints": true
     }
   ]
 }

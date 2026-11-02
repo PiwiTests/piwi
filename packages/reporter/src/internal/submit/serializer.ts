@@ -93,6 +93,8 @@ export function toWireTestCase(tc: CollectedTestCase): WireTestCase {
     didNotRunReason: rest.didNotRunReason ?? null,
     expectedStatus: rest.expectedStatus ?? null,
     blockedBy: rest.blockedBy ?? null,
+    stdout: rest.stdout ?? null,
+    stderr: rest.stderr ?? null,
   };
 }
 

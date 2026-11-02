@@ -77,6 +77,7 @@ import {
 } from '../internal/collect/external-ids.js';
 import { buildErrorText } from '../internal/collect/error-text.js';
 import { runErrorOf } from '../internal/collect/run-errors.js';
+import { testOutputOf } from '../internal/collect/test-output.js';
 import { MAX_RUN_ERRORS } from '@piwitests/core/run-errors';
 import { RunSubmitter } from '../internal/submit/run-submitter.js';
 import { readLeakCheck, type ResourceCensus } from '../internal/capture/resource-ledger.js';
@@ -839,6 +840,9 @@ export class PiwiDashboardReporter {
       // cascade: an earlier test failed and Playwright skipped the rest.
       didNotRunReason: status === 'didnotrun' ? 'previous-failure' : null,
       expectedStatus: test.expectedStatus ?? null,
+      // What the attempt printed, which only a run reported to the dashboard reads.
+      stdout: this.enabled ? testOutputOf(result.stdout) : null,
+      stderr: this.enabled ? testOutputOf(result.stderr) : null,
     };
 
     if (result.status === 'failed' || result.status === 'timedOut') {

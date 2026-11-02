@@ -169,6 +169,8 @@ async function deleteRunSlice(
         locatorPages: testRunsCases.locatorPagesPayloadId,
         codeReach: testRunsCases.codeReachPayloadId,
         coverage: testRunsCases.coveragePayloadId,
+        stdout: testRunsCases.stdoutPayloadId,
+        stderr: testRunsCases.stderrPayloadId,
       })
       .from(testRunsCases)
       .where(inArray(testRunsCases.id, batch));
@@ -181,6 +183,8 @@ async function deleteRunSlice(
       if (ref.locatorPages != null) candidatePayloadIds.add(ref.locatorPages);
       if (ref.codeReach != null) candidatePayloadIds.add(ref.codeReach);
       if (ref.coverage != null) candidatePayloadIds.add(ref.coverage);
+      if (ref.stdout != null) candidatePayloadIds.add(ref.stdout);
+      if (ref.stderr != null) candidatePayloadIds.add(ref.stderr);
     }
   }
 
@@ -376,6 +380,8 @@ function payloadUnreferenced(): SQL {
     AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.locatorPagesPayloadId} = ${casePayloads.id})
     AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.codeReachPayloadId} = ${casePayloads.id})
     AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.coveragePayloadId} = ${casePayloads.id})
+    AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.stdoutPayloadId} = ${casePayloads.id})
+    AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.stderrPayloadId} = ${casePayloads.id})
     AND NOT EXISTS (SELECT 1 FROM ${coverageReports} WHERE ${coverageReports.inventoryPayloadId} = ${casePayloads.id})`;
 }
 

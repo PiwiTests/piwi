@@ -2368,6 +2368,41 @@ const INCIDENT_MARKERS = [];
   ]);
 }
 
+// ── Test output (post-processing, rng-free) ─────────────────────────────────
+// What a story's failing attempt wrote to stdout and stderr, stored through
+// case_payloads as the server stores it, on each execution that still fails
+// with the story's error.
+{
+  const outputPayloadId = (projectId, content, createdAt) => {
+    if (!content) return null;
+    const key = `${projectId}\x00output\x00${content}`;
+    if (!casePayloadIds.has(key)) {
+      const id = CASE_PAYLOADS.length + 1;
+      CASE_PAYLOADS.push({
+        id,
+        project_id: projectId,
+        hash: createHash('sha256').update(content).digest('hex'),
+        content,
+        size: content.length,
+        created_at: createdAt,
+      });
+      casePayloadIds.set(key, id);
+    }
+    return casePayloadIds.get(key);
+  };
+  const runStart = new Map(TEST_RUNS.map((r) => [r.id, r.start_time]));
+  for (const row of TEST_RUNS_CASES) {
+    const entry = storyByCaseId.get(row.test_case_id);
+    const output = entry?.story.evidence.outputOnFail;
+    if (!output || row.status !== 'failed' || row.error !== entry.failingCase.error) continue;
+    const createdAt = runStart.get(row.test_run_id);
+    const stdout = outputPayloadId(entry.story.projectId, output.stdout, createdAt);
+    const stderr = outputPayloadId(entry.story.projectId, output.stderr, createdAt);
+    if (stdout) row.stdout_payload_id = stdout;
+    if (stderr) row.stderr_payload_id = stderr;
+  }
+}
+
 // ── Regression / new-flaky signals ──────────────────────────────────────────
 // Mirror the server's computeRegressionSignals: walk each test's final
 // executions in each Playwright project (one per run: an earlier attempt of a

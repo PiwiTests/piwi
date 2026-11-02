@@ -145,6 +145,10 @@ export interface TestCasePayload {
   expectedStatus?: string | null;
   /** For a `previous-failure` or `dependency-failure` case, the location of the failing test that blocked it. */
   blockedBy?: string | null;
+  /** What the attempt wrote to stdout, bounded and with its secrets hidden (`@piwitests/core/test-output`). */
+  stdout?: string | null;
+  /** What the attempt wrote to stderr, bounded and with its secrets hidden (`@piwitests/core/test-output`). */
+  stderr?: string | null;
 }
 
 // ── Submit (JSON) payload ─────────────────────────────────────────────────────
@@ -264,6 +268,10 @@ export interface StreamEventPayload {
   expectedStatus?: string | null;
   /** For a `previous-failure` or `dependency-failure` case, the location of the failing test that blocked it. */
   blockedBy?: string | null;
+  /** What the attempt wrote to stdout, bounded and with its secrets hidden (`@piwitests/core/test-output`). */
+  stdout?: string | null;
+  /** What the attempt wrote to stderr, bounded and with its secrets hidden (`@piwitests/core/test-output`). */
+  stderr?: string | null;
 }
 
 // ── Finish payload ────────────────────────────────────────────────────────────

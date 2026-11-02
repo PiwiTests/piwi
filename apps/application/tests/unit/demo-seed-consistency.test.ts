@@ -975,6 +975,7 @@ const EXPECT_KEYS = new Set([
   'resources',
   'incident',
   'runErrors',
+  'output',
   'coverageGap',
   'gaps',
   'suspects',
@@ -1057,6 +1058,13 @@ function expectHoldsInSeed(label: string, route: string, want: DemoExampleExpect
     const [row] = q(`select run_errors as errors from test_runs where id = ${want.run!.id}`);
     const errors = row?.errors ? (JSON.parse(String(row.errors)) as Array<{ message: string }>) : [];
     expect(errors.length, `${label}: the run holds errors outside its tests`).toBeGreaterThan(0);
+  }
+  if (want.output) {
+    expect(want.execution, `${label}: output needs an execution`).toBeTruthy();
+    const [row] = q(
+      `select stdout_payload_id as stdout, stderr_payload_id as stderr from test_runs_cases where id = ${want.execution!.id}`,
+    );
+    expect(row?.stdout ?? row?.stderr, `${label}: the execution holds what its test wrote`).toBeTruthy();
   }
   if (want.coverageGap) {
     expect(want.run, `${label}: coverageGap needs a run`).toBeTruthy();

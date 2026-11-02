@@ -346,6 +346,8 @@ describe('toWireTestCase', () => {
       'slowestStepDuration',
       'startedAt',
       'status',
+      'stderr',
+      'stdout',
       'stepEvents',
       'steps',
       'suiteConfig',

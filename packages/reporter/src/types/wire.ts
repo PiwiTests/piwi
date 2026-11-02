@@ -127,6 +127,10 @@ export interface WireTestCase {
   expectedStatus?: string | null;
   /** For a `previous-failure` or `dependency-failure` case, the location of the failing test that blocked it. */
   blockedBy?: string | null;
+  /** What the attempt wrote to stdout, as `@piwitests/core/test-output` keeps it; null when it wrote nothing. */
+  stdout?: string | null;
+  /** What the attempt wrote to stderr, as `@piwitests/core/test-output` keeps it; null when it wrote nothing. */
+  stderr?: string | null;
 }
 
 // ── Stream events (discriminated union) ──────────────────────────────────────
@@ -206,6 +210,10 @@ export interface CompleteStreamEvent {
   expectedStatus?: string | null;
   /** For a `previous-failure` or `dependency-failure` case, the location of the failing test that blocked it. */
   blockedBy?: string | null;
+  /** What the attempt wrote to stdout, as `@piwitests/core/test-output` keeps it; null when it wrote nothing. */
+  stdout?: string | null;
+  /** What the attempt wrote to stderr, as `@piwitests/core/test-output` keeps it; null when it wrote nothing. */
+  stderr?: string | null;
 }
 
 export interface StepBeginStreamEvent {

@@ -7,14 +7,17 @@ import type { TestRunFinishPayload } from '#shared/types';
 import { migrateToLatest } from './temp-db';
 
 /**
- * The demo's runs keep what the server's keep (`tests/unit/run-errors-ingest.test.ts`): a run's errors outside any
- * test, a sharded run adding each shard's.
+ * The demo's runs keep what the server's keep (`tests/unit/run-errors-ingest.test.ts`,
+ * `tests/unit/test-output-ingest.test.ts`): a run's errors outside any test, a sharded run adding each shard's, and
+ * what a test wrote to stdout and stderr, through `case_payloads`.
  */
 
 const state = vi.hoisted(() => ({ db: null as unknown }));
 vi.mock('../../app/demo/db.client', () => ({ getDemoDb: async () => state.db }));
 
-const { apiSetupTestRun, apiBeginTestRun, apiFinishTestRun } = await import('../../app/demo/api/reporter');
+const { apiSetupTestRun, apiBeginTestRun, apiPostRunEvents, apiFinishTestRun } =
+  await import('../../app/demo/api/reporter');
+const { getTestRunCase } = await import('#shared/handlers/test-cases');
 const { getTestRun } = await import('#shared/handlers/test-runs');
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
@@ -85,5 +88,29 @@ describe("the demo's run", () => {
       { message: 'Error: shard 1: No tests found', stack: null, location: null },
       { message: 'Error: shard 2: No tests found', stack: null, location: null },
     ]);
+  });
+
+  test('keeps what a test wrote to stdout and stderr', async () => {
+    const { runId, streamToken } = await beginRun();
+    await apiPostRunEvents(runId, {
+      streamToken,
+      testCases: [
+        {
+          type: 'complete',
+          title: 'pays',
+          location: 'tests/pays.spec.ts:1:1',
+          status: 'failed',
+          duration: 10,
+          stdout: 'order 4521 created\n',
+          stderr: 'payment sandbox answered 502\n',
+        },
+      ],
+    });
+    await apiFinishTestRun(runId, finishBody(streamToken));
+
+    const [execution] = await db.select().from(schema.testRunsCases).where(eq(schema.testRunsCases.testRunId, runId));
+    const detail = await getTestRunCase(db as never, execution!.id);
+    expect(detail?.stdout).toBe('order 4521 created\n');
+    expect(detail?.stderr).toBe('payment sandbox answered 502\n');
   });
 });

@@ -937,6 +937,11 @@ export const HELP_TOPICS = {
     text: 'Browser console messages logged while this test ran — often the first clue for a JavaScript error behind a failure. An empty card says which of three things it means: not captured (add the capture fixtures — links to /setup), captured but the page logged nothing, or not applicable. When a trace but no fixtures were present, the entries are recovered from the trace and marked "derived from the trace".',
     doc: 'guide/capture-fixtures',
   },
+  'case.output': {
+    title: 'Output',
+    text: 'What the test wrote to stdout and stderr while it ran: its own `console.log` lines, a library’s warnings. The reporter keeps the first and the last lines of each, about 64 KB, with what may be a secret hidden; the line between them says how much was cut.',
+    doc: 'reference/test-metadata#test-output',
+  },
   'case.network': {
     title: 'Network requests',
     text: [

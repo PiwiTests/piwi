@@ -15,7 +15,7 @@ import { makeTimeBuckets } from './analytics/common';
 import type { Granularity } from '../analytics/period';
 import { computeWastedMs, DEFAULT_WASTED_WAIT_PATTERNS } from '../utils/wasted-waits';
 import { splitSuitePath } from '../utils/suites';
-import { inlineCasePayloads } from '../../server/utils/case-payloads';
+import { caseOutput, inlineCasePayloads } from '../../server/utils/case-payloads';
 import { buildFailureVerdict } from '../failure-verdict';
 import { buildSituation } from '../situation';
 import { summarizeNewerExecutions, type NewerExecutionRow } from '../latest-execution';
@@ -305,6 +305,7 @@ export async function getTestRunCase(
 
   // Large evidence payloads are content-addressed; a row may still keep them inline.
   const evidence = await inlineCasePayloads(db, trc);
+  const output = await caseOutput(db, trc);
 
   // Every attempt is its own execution row (unique on run + test case + repeat
   // + retries + browser), so each stored attempt maps to the sibling row of the
@@ -808,6 +809,9 @@ export async function getTestRunCase(
     pageState: trc.pageState,
     aiUsage: trc.aiUsage,
     consoleLogs: trc.consoleLogs,
+    // What the attempt wrote to stdout and stderr, as the reporter kept it.
+    stdout: output.stdout,
+    stderr: output.stderr,
     ariaSnapshot: evidence.ariaSnapshot,
     evidenceSources: trc.evidenceSources,
     workerIndex: trc.workerIndex,

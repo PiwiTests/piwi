@@ -93,6 +93,8 @@ export interface StoryEvidence {
   pageInteraction?: PageInteraction;
   /** Crash stories: the page is gone — no console/aria/page-state/web-vitals at all. */
   noPageArtifacts?: boolean;
+  /** What the failing attempt wrote to its streams, as the reporter keeps it (`TestResult.stdout`, `stderr`). */
+  outputOnFail?: { stdout?: string; stderr?: string };
 }
 
 export interface StoryDiagnosis {
