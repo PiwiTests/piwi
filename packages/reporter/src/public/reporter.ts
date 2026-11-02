@@ -88,7 +88,7 @@ import {
   workerHealthOf,
   type ArtifactBytes,
 } from '../internal/collect/machine-panel.js';
-import { FailureLinks, failureHeadline } from '../internal/support/failure-links.js';
+import { FailureLinks, failureHeadline, type FailedTest } from '../internal/support/failure-links.js';
 import { coverageSettings, type CoverageSettings } from '../internal/collect/coverage-settings.js';
 import { CoverageCollection, LastTestWatch } from '../internal/collect/test-coverage.js';
 import { baseUrlsFromConfig, ignoresHttpsErrors } from '../internal/collect/server-coverage.js';
@@ -180,6 +180,8 @@ export class PiwiDashboardReporter {
   private uncapturedSpecs = new Set<string>();
   /** The live steps begun and not ended, by step, sent again when someone opens the run (`onWatched`). */
   private openSteps = new Map<unknown, StreamEvent>();
+  /** The failed attempts with retries left, by `test.id`: each is its test's last when the run stops before the retry. */
+  private failuresAwaitingRetry = new Map<string, () => FailedTest>();
   /** Per-test attempt history, keyed by `test.id`; snapshotted onto every attempt's payload. */
   private attemptsByTest = new Map<
     string,
@@ -885,17 +887,20 @@ export class PiwiDashboardReporter {
 
     // The final attempt of a failing test gets a dashboard link, printed as
     // soon as a run id exists (immediately while streaming, after the submit otherwise).
+    // A failed attempt with retries left gets it when the run ends before a retry that is not interrupted
+    // (`finishRun`): Playwright's outcome leaves interrupted attempts out.
     const isFailure = status === 'failed' || status === 'timedOut';
-    if (isFailure && result.retry >= (test.retries ?? 0)) {
-      this.failureLinks.add({
-        title: test.title,
-        file: testFile(test, this.testPathBase),
-        retry: result.retry,
-        browser: typeof testCase.browser?.projectName === 'string' ? testCase.browser.projectName : null,
-        repeatEachIndex: test.repeatEachIndex,
-        headline: failureHeadline(testCase.error, testCase.performanceMetrics?.steps),
-      });
-    }
+    const failedTest = (): FailedTest => ({
+      title: test.title,
+      file: testFile(test, this.testPathBase),
+      retry: result.retry,
+      browser: typeof testCase.browser?.projectName === 'string' ? testCase.browser.projectName : null,
+      repeatEachIndex: test.repeatEachIndex,
+      headline: failureHeadline(testCase.error, testCase.performanceMetrics?.steps),
+    });
+    if (result.status !== 'interrupted') this.failuresAwaitingRetry.delete(test.id);
+    if (isFailure && result.retry >= (test.retries ?? 0)) this.failureLinks.add(failedTest());
+    else if (isFailure) this.failuresAwaitingRetry.set(test.id, failedTest);
     const liveRunId = this.streamManager?.runId;
     if (liveRunId != null) this.failureLinks.printPending(liveRunId);
 
@@ -1132,6 +1137,8 @@ export class PiwiDashboardReporter {
       maxFailures: this.maxFailures,
       failures: this.failedTestCount,
     });
+    // A failed attempt the run stopped before retrying is its test's last.
+    for (const failedTest of this.failuresAwaitingRetry.values()) this.failureLinks.add(failedTest());
     this.materializeUnrunTests(unrunReason);
     // Printed before the submit, so a slow or failed upload never hides it.
     await this.reportResources();
