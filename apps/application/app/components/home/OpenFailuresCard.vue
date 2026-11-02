@@ -118,6 +118,9 @@ const user = computed<UserIdentity | null>(() => {
   return u ? { name: u.name ?? null, username: u.username ?? null } : null;
 });
 
+/** The name "Assign to me" writes: none without a signed-in user (authentication off), so the action is not offered. */
+const myAssigneeName = computed(() => user.value?.name ?? user.value?.username ?? null);
+
 const queueCtx = computed(() => ({ user: user.value, lastVisitMs: lastVisitMs.value }));
 
 // ── Optimistic state ─────────────────────────────────────────────────────────
@@ -665,10 +668,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
           v-if="bulkCanTriage"
           :items="[
             [
-              {
-                label: 'Assign to me',
-                onSelect: () => bulk('assign', { assignee: user?.name ?? user?.username ?? null }),
-              },
+              ...(myAssigneeName
+                ? [{ label: 'Assign to me', onSelect: () => bulk('assign', { assignee: myAssigneeName }) }]
+                : []),
               { label: 'Unassign', onSelect: () => bulk('assign', { assignee: null }) },
             ],
           ]"
@@ -916,10 +918,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
                   <option v-for="p in knownPeople" :key="p" :value="p" />
                 </datalist>
                 <div class="flex items-center justify-between gap-1">
-                  <UButton size="xs" variant="soft" @click="assign(cluster, user?.name ?? user?.username ?? null)">
+                  <UButton v-if="myAssigneeName" size="xs" variant="soft" @click="assign(cluster, myAssigneeName)">
                     Assign to me
                   </UButton>
-                  <div class="flex gap-1">
+                  <div class="flex gap-1 ml-auto">
                     <UButton
                       v-if="cluster.assignee"
                       size="xs"
