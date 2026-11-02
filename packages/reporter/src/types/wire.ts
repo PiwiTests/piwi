@@ -24,6 +24,7 @@ import type {
   WireExecutionResources,
   WireNetworkRequest,
   WireResourceReport,
+  WireRunError,
 } from '@piwitests/core/wire';
 
 export type {
@@ -39,6 +40,7 @@ export type {
   WireExecutionResources,
   WireNetworkRequest,
   WireResourceReport,
+  WireRunError,
 };
 
 // ── Per-case wire shape ──────────────────────────────────────────────────────

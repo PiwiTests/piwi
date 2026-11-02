@@ -4309,6 +4309,23 @@ const SCENES = [
       await shoot('details');
     },
   },
+  {
+    name: 'run-errors',
+    description:
+      'Run page of a run with errors outside its tests: the failure budget that stopped it and its global teardown, under the facts line, wide then narrow',
+    // Seeded run #4 stopped at its failure budget, and its global teardown threw.
+    route: '/test-runs/4',
+    viewport: { width: 1280, height: 900 },
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="run-errors"]').waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('wide', { of: '[data-shot="run-header"]', pad: 8 });
+      await page.setViewportSize({ width: 390, height: 1400 });
+      await settle();
+      await shoot('narrow', { of: '[data-shot="run-header"]', pad: 8 });
+    },
+    outputs: ['run-errors-wide.png', 'run-errors-narrow.png'],
+  },
   // Seeded run #63's backend restarted halfway through: the run header flags its
   // coverage, Details says what the backend lost, and its commit's combined
   // coverage notes the run.

@@ -23,7 +23,8 @@ import { resolveRunBranch } from './run-branch';
 import { runCommit, runOrigin } from '#shared/run-eligibility';
 import { flakyFinalAttempts, sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { resolveBrowserName } from '#shared/browser-name';
-import type { TestCasePayload, TestRunSubmitPayload } from '#shared/types';
+import type { TestCasePayload, TestRunSubmitPayload, WireRunError } from '#shared/types';
+import { storableRunErrors } from './storable-values';
 
 /**
  * The initializing or running sharded run of a project instance, split into
@@ -62,6 +63,8 @@ export interface BatchShardTally {
   durations: unknown[];
   /** The shard's suite-level hook/fixture steps, when it sent them. */
   setupSteps: BatchRunBody['setupSteps'];
+  /** The shard's errors outside any test, as the run stores them (`storableRunErrors`). */
+  runErrors: WireRunError[] | null;
 }
 
 /** The run-level fields of a batch submission, as `/submit` and the `testRun` field of `/upload` carry them. */
@@ -111,6 +114,7 @@ export function batchShardTally(body: BatchRunBody, testCases: ReadonlyArray<Bat
     },
     durations: testCases.map((tc) => tc.duration),
     setupSteps: body.setupSteps,
+    runErrors: storableRunErrors(body.runErrors),
   };
 }
 
@@ -162,10 +166,10 @@ export function batchShardRun(db: DbClient, projectId: number, instanceId: strin
 
 /**
  * Count a shard of a batch submission into its run, once its executions are
- * stored: the counters add up, the shard's span and suite setup steps join the
- * run's (`recordShardEnd`), and the shard counts as finished. A shard whose end
- * the run already holds (its `/finish` answer was lost, and its reporter fell
- * back to the batch upload) counts once.
+ * stored: the counters add up, the shard's span, suite setup steps and errors
+ * outside any test join the run's (`recordShardEnd`), and the shard counts as
+ * finished. A shard whose end the run already holds (its `/finish` answer was
+ * lost, and its reporter fell back to the batch upload) counts once.
  */
 export async function addBatchShard(db: DbClient, runId: number, tally: BatchShardTally): Promise<void> {
   const span = shardSpan(tally.shard, Date.now());
@@ -185,6 +189,7 @@ export async function addBatchShard(db: DbClient, runId: number, tally: BatchSha
       shardsFinished: sql`${testRuns.shardsFinished} + 1`,
     },
     tally.setupSteps ?? [],
+    tally.runErrors ?? [],
   );
 }
 

@@ -20,6 +20,7 @@ import type {
   WireResourceFinding,
   WireResourceReport,
   WireResourceTimeline,
+  WireRunError,
   WireRunProfile,
   WorkerHealth,
 } from '@piwitests/core/wire';
@@ -47,6 +48,7 @@ export type {
   WireResourceFinding,
   WireResourceReport,
   WireResourceTimeline,
+  WireRunError,
   WireRunProfile,
   WorkerHealth,
 };
@@ -180,6 +182,8 @@ export interface TestRunSubmitPayload {
   resourceReport?: WireResourceReport | null;
   /** Suite-level hook/fixture steps (beforeAll/afterAll) for the run timeline, as `/finish` takes them. */
   setupSteps?: TestRunFinishPayload['setupSteps'];
+  /** The errors Playwright reported outside any test, as `/finish` takes them. */
+  runErrors?: WireRunError[];
   /**
    * An id the client generates once for these results and sends with every attempt to deliver them: a delivery
    * repeating a key the project already took answers with the run it went to and stores nothing.
@@ -303,6 +307,11 @@ export interface TestRunFinishPayload {
   filterDetails?: FilterDetails | null;
   /** The run's resource findings and what it cost its machine, measured by the reporter (per shard). */
   resourceReport?: WireResourceReport | null;
+  /**
+   * The errors Playwright reported outside any test (a global setup that threw, a spec that did not load, a worker's
+   * teardown), read through `sanitizeRunErrors`; a sharded run adds each shard's to the others'.
+   */
+  runErrors?: WireRunError[];
 }
 
 // ── Setup / start payload ─────────────────────────────────────────────────────

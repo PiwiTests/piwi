@@ -14,7 +14,7 @@ import { computeDistinctRunCounts, resolveOverallStatus, serializeRun } from './
 import { runUrl } from '../support/run-url.js';
 import { emitRunOutputs, ciBuildUrlFromMetadata, type RunOutput } from '../support/ci-output.js';
 import type { FailureLinks } from '../support/failure-links.js';
-import type { CollectedTestCase, SetupStep, FilterDetails, WireResourceReport } from '../../types.js';
+import type { CollectedTestCase, SetupStep, FilterDetails, WireResourceReport, WireRunError } from '../../types.js';
 
 /** Longest delay `setTimeout` supports; a larger one fires at once. */
 const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
@@ -74,6 +74,8 @@ export interface CollectedRun {
   resourceReport?: WireResourceReport | null;
   /** The folder the run's html reporter writes its report to; null when the run has none. */
   htmlReport?: string | null;
+  /** The errors Playwright reported outside any test (`onError`), as the run keeps them. */
+  runErrors?: WireRunError[];
 }
 
 /** The run the dashboard took, and the credential that reached it. */
@@ -318,6 +320,7 @@ export class RunSubmitter {
       filterDetails: run.filterDetails,
       resourceReport: run.resourceReport ?? null,
       setupSteps: run.setupSteps,
+      runErrors: run.runErrors,
       deliveryKey: this.deliveryKey,
     };
   }
@@ -361,6 +364,7 @@ export class RunSubmitter {
         filterDetails: run.filterDetails ?? null,
       };
       if (run.resourceReport) finishBody.resourceReport = run.resourceReport;
+      if (run.runErrors?.length) finishBody.runErrors = run.runErrors;
       if (run.shardInfo) {
         finishBody.shardIndex = run.shardInfo.current;
         finishBody.shardTotal = run.shardInfo.total;

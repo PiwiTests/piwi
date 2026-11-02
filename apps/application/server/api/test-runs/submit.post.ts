@@ -44,6 +44,12 @@ defineRouteMeta({
                 description:
                   'An id the client generates once for these results and sends with every attempt to deliver them (16 to 128 letters, digits, `-` or `_`). A delivery repeating a key the project already took stores nothing and answers with the run it went to, with `duplicate: true`.',
               },
+              runErrors: {
+                type: 'array',
+                description:
+                  'The errors Playwright reported outside any test (a global setup that threw, a spec that did not load, a worker fixture whose teardown threw), each `{ message, stack?, location? }`: the first 20 are kept, each message and stack cut to 4,000 characters, with what may be a secret hidden.',
+                items: { type: 'object' },
+              },
             },
             required: ['projectName', 'status', 'startTime'],
           },

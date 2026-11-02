@@ -577,7 +577,8 @@ src/
                 blob-ids (the git blob of each covered file), source-checksums,
                 pause-events (the stops a test made, at the pause bar or in
                 the editor, as the `pause` step events the dashboard draws and
-                the step statistics leave out)
+                the step statistics leave out), run-errors (what the run keeps
+                of an error outside any test, from `onError`)
     manifest/   collect (the committed manifest, `/__piwi/manifest` per base URL or origin),
                 run-manifests (the instrumented origins the run reached beyond its base URLs,
                 fetched as each is first seen, uploaded once the run is submitted)

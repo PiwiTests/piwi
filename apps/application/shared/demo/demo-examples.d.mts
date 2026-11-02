@@ -24,6 +24,8 @@ export interface DemoExampleExpect {
     | 'flaked-again';
   resources?: 'leaky';
   incident?: true;
+  /** The run holds errors Playwright reported outside its tests. */
+  runErrors?: true;
   coverageGap?: 'restarted' | 'unreachable';
   gaps?: { detectors: string[] };
   suspects?: { path: string; granularity?: 'lines' | 'functions' | 'files' };

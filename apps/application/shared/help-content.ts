@@ -639,6 +639,11 @@ export const HELP_TOPICS = {
     doc: 'features/ui-overview#test-run-detail',
     envVars: ['PIWI_INGEST_MAX_STEPS', 'PIWI_INGEST_MAX_CONSOLE_ENTRIES'],
   },
+  'run.errors': {
+    title: 'Errors outside the tests',
+    text: 'What Playwright reported beside the tests, which fails a run whatever its tests did: a global setup that threw, a spec file that did not load (`No tests found` too), a web server that did not start, a worker fixture whose teardown threw, the failure budget (`maxFailures`) that stopped the run. The reporter keeps the first 20, each message and stack cut to 4,000 characters, with what may be a secret hidden.',
+    doc: 'reference/test-metadata#errors-outside-the-tests',
+  },
   'run.externalIdDuplicates': {
     title: 'Duplicate external IDs',
     text: "Each of these IDs is declared by more than one test (with `piwi:id`, or in the title read by the reporter’s `externalId.pattern`). An ID names one test, so this run matched those tests by file, describe path and title instead, as if they had no ID: a renamed or moved one starts a new history. Give each test its own ID; set `externalId.onDuplicate: 'fail'` to fail the run while two tests share one.",

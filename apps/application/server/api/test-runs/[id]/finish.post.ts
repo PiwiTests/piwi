@@ -19,6 +19,7 @@ import { computeRunCountsFromRows } from '../../../utils/run-counts';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 import { sanitizeResourceReport } from '#shared/resource-report';
 import { saveResourceReportPart } from '#shared/handlers/resource-reports';
+import { storableRunErrors } from '../../../utils/storable-values';
 
 defineRouteMeta({
   openAPI: {
@@ -42,6 +43,28 @@ defineRouteMeta({
               flakyTests: { type: 'integer' },
               shardIndex: { type: 'integer' },
               shardTotal: { type: 'integer' },
+              runErrors: {
+                type: 'array',
+                description:
+                  'The errors Playwright reported outside any test (a global setup that threw, a spec that did not load, a worker fixture whose teardown threw): the first 20 are kept, each message and stack cut to 4,000 characters, with what may be a secret hidden. A shard adds its own to the run’s.',
+                items: {
+                  type: 'object',
+                  properties: {
+                    message: { type: 'string' },
+                    stack: { type: 'string', nullable: true },
+                    location: {
+                      type: 'object',
+                      nullable: true,
+                      properties: {
+                        file: { type: 'string' },
+                        line: { type: 'integer' },
+                        column: { type: 'integer' },
+                      },
+                    },
+                  },
+                  required: ['message'],
+                },
+              },
             },
             required: ['streamToken'],
           },
@@ -116,6 +139,7 @@ export default eventHandler(async (event) => {
 
   const incomingResources = sanitizeResourceReport(body.resourceReport);
   if (incomingResources) await saveResourceReportPart(db, id, incomingResources);
+  const runErrors = storableRunErrors(body.runErrors);
 
   // ── Non-sharded run (existing behaviour) ─────────────────────────────────
 
@@ -180,6 +204,7 @@ export default eventHandler(async (event) => {
       ...(body.playwrightVersion && { playwrightVersion: body.playwrightVersion }),
       ...(body.reporterVersion && { reporterVersion: body.reporterVersion }),
       ...(body.setupSteps && { setupSteps: body.setupSteps }),
+      ...(runErrors && { runErrors }),
       ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
       ...(body.filterDetails !== undefined && { filterDetails: body.filterDetails ?? null }),
     };
@@ -226,6 +251,7 @@ export default eventHandler(async (event) => {
       ...(body.playwrightVersion && { playwrightVersion: body.playwrightVersion }),
       ...(body.reporterVersion && { reporterVersion: body.reporterVersion }),
       ...(body.setupSteps && { setupSteps: body.setupSteps }),
+      ...(runErrors && { runErrors }),
       ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
       ...(body.filterDetails !== undefined && { filterDetails: body.filterDetails ?? null }),
     };
@@ -268,13 +294,13 @@ export default eventHandler(async (event) => {
 /**
  * One shard of a sharded run reports its end. The shard's token leaves the
  * run's shard tokens in the same write that records its test durations, its
- * span and its suite setup steps and sets the run's start and duration from its
- * shards' spans (`recordShardEnd`), so a replayed `/finish` finds the token gone
- * and changes nothing. The run's test counters
- * are not touched: every case (synthesized didnotrun ones included) arrives as
- * a streamed event, which the events endpoint already counted. Only flakyTests
- * adds up here, since the events tally has no flaky notion. The run settles
- * once every shard finished.
+ * span, its suite setup steps and its errors outside any test, and sets the
+ * run's start and duration from its shards' spans (`recordShardEnd`), so a
+ * replayed `/finish` finds the token gone and changes nothing. The run's test
+ * counters are not touched: every case (synthesized didnotrun ones included)
+ * arrives as a streamed event, which the events endpoint already counted. Only
+ * flakyTests adds up here, since the events tally has no flaky notion. The run
+ * settles once every shard finished.
  */
 async function finishShard(db: DbClient, id: number, body: Record<string, any>) {
   const span = shardSpan(body, Date.now());
@@ -288,6 +314,7 @@ async function finishShard(db: DbClient, id: number, body: Record<string, any>) 
     },
     {},
     Array.isArray(body.setupSteps) ? body.setupSteps : [],
+    storableRunErrors(body.runErrors) ?? [],
   );
   runEventBus.removeShardToken(id, body.streamToken);
 

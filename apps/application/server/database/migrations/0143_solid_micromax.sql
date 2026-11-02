@@ -1,0 +1,1 @@
+ALTER TABLE `test_runs` ADD `run_errors` text;

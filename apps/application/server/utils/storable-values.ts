@@ -7,6 +7,8 @@
  * `storedTestIdentity`, or `storedIdentityForms` when it lacks the describe path. Shared by `persistRunCases`, the
  * demo's ingest and those lookups.
  */
+import { sanitizeRunErrors } from '@piwitests/core/run-errors';
+import type { WireRunError } from '@piwitests/core/wire';
 import { resolveBrowserName } from '#shared/browser-name';
 import { sha256Hex } from '#shared/utils/hash';
 import { joinSuitePath } from '#shared/utils/suites';
@@ -161,4 +163,12 @@ export async function storableRunCase<T extends CaseIdentity>(input: T): Promise
           ? storedProject
           : { ...(c.browser as Record<string, unknown>), projectName: storedProject },
   };
+}
+
+/**
+ * A run's errors outside any test as the run stores them: read through `sanitizeRunErrors` (the first
+ * `MAX_RUN_ERRORS`, their texts hidden and cut), with no NUL character; null for none.
+ */
+export function storableRunErrors(value: unknown): WireRunError[] | null {
+  return withoutNul(sanitizeRunErrors(value));
 }

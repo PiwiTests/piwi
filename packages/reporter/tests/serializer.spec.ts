@@ -439,6 +439,14 @@ describe('serializeRun', () => {
     expect('setupSteps' in serializeRun({ ...makePayload(), setupSteps: [] }, { includeTestCases: false })).toBe(false);
   });
 
+  it('carries the errors Playwright reported outside any test when the run has some, as /finish does', () => {
+    const error = { message: 'Error: No tests found', stack: null, location: null };
+    expect(serializeRun({ ...makePayload(), runErrors: [error] }, { includeTestCases: true }).runErrors).toEqual([
+      error,
+    ]);
+    expect('runErrors' in serializeRun({ ...makePayload(), runErrors: [] }, { includeTestCases: true })).toBe(false);
+  });
+
   it('sends keep: true only when the run asked to be kept', () => {
     expect(serializeRun(makePayload(), { includeTestCases: false }).keep).toBe(false);
     expect(serializeRun({ ...makePayload(), keep: true }, { includeTestCases: false }).keep).toBe(true);

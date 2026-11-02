@@ -2341,6 +2341,33 @@ const INCIDENT_MARKERS = [];
   });
 }
 
+// ── Errors outside the tests (post-processing, rng-free) ────────────────────
+// The newest checkout run its failure budget stopped (`maxFailures`, its last
+// tests did not run): Playwright said so outside any test, and the global
+// teardown, which still ran, threw. The reporter sends both as the run's
+// errors outside any test (`onError`), each as `sanitizeRunErrors` keeps it.
+{
+  const target = TEST_RUNS.filter((r) => r.project_id === 1 && r.status === 'interrupted' && !incidentRunIds.has(r.id))
+    .sort((a, b) => a.id - b.id)
+    .at(0);
+  if (!target) throw new Error('No checkout run stopped by its failure budget can carry errors outside its tests');
+  target.run_errors = JSON.stringify([
+    {
+      message: `\u001b[31mTesting stopped early after ${target.failed_tests} maximum allowed failures.\u001b[39m`,
+      stack: null,
+      location: null,
+    },
+    {
+      message: 'Error: global teardown could not delete the test tenant ci-checkout-7f3a: 409 Conflict (open orders)',
+      stack: [
+        '    at deleteTenant (/home/runner/work/shop/shop/tests/support/tenants.ts:31:11)',
+        '    at async globalTeardown (/home/runner/work/shop/shop/tests/global-teardown.ts:8:3)',
+      ].join('\n'),
+      location: { file: 'tests/support/tenants.ts', line: 31, column: 11 },
+    },
+  ]);
+}
+
 // ── Regression / new-flaky signals ──────────────────────────────────────────
 // Mirror the server's computeRegressionSignals: walk each test's final
 // executions in each Playwright project (one per run: an earlier attempt of a

@@ -77,6 +77,21 @@ export interface BrowserConfig {
 }
 
 /**
+ * An error Playwright reported outside any test, through a reporter's `onError`: a global setup that threw, a spec
+ * file that failed to load (`No tests found` and a web server that did not start come the same way), a worker
+ * fixture whose teardown threw, the run stopped by `maxFailures`. A run carries at most `MAX_RUN_ERRORS` of them
+ * (`@piwitests/core/run-errors`), each text with what may be a secret hidden and cut to `MAX_RUN_ERROR_CHARS`.
+ */
+export interface WireRunError {
+  /** The error's message, its causes after it (`[cause]: …`), or the value thrown when it was not an `Error`. */
+  message: string;
+  /** The stack's frames (its `at …` lines), the message left out; null when it has none. */
+  stack?: string | null;
+  /** Where it was thrown: the file relative to the Playwright config's folder, with POSIX separators. */
+  location?: { file: string; line: number; column: number } | null;
+}
+
+/**
  * One in-project source frame from a failure's call stack — the failing line
  * plus the callers above it — so the interesting code that led into the
  * assertion is visible, not just the test line that triggered it.

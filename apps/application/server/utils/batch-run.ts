@@ -8,6 +8,7 @@ import { persistRunCases } from './persist-run-cases';
 import { mapWireCaseToRunCase } from './map-wire-case';
 import { resolveRunBranch } from './run-branch';
 import { storeOrDiscardRun } from './run-deliveries';
+import { storableRunErrors } from './storable-values';
 import { sanitizeMetadata } from './sanitize';
 import { countFlakyBatchCases } from './sharded-runs';
 import { streamTokenDigest } from './shard-tokens';
@@ -74,6 +75,7 @@ export async function createBatchRun(
       isFullRun: body.isFullRun !== false ? 1 : 0,
       filterDetails: body.filterDetails ?? null,
       ...(body.setupSteps && { setupSteps: body.setupSteps }),
+      runErrors: storableRunErrors(body.runErrors),
     })
     .returning();
 

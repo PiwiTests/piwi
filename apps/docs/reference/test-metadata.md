@@ -280,6 +280,22 @@ Each `didnotrun` case also carries **`didNotRunReason`**, so the dashboard can s
 
 The run-level counter `didNotRunTests` aggregates these, and the dashboard renders them as a distinct "Didn't run" segment/badge separate from skipped.
 
+### Errors outside the tests
+
+The reporter keeps the errors Playwright reports beside the tests (its `onError`), each with its message, the frames of
+its stack and the place it was thrown, named relative to the Playwright config's folder:
+
+- a global setup or global teardown that threw;
+- a spec file that did not load: a syntax error, an import that failed, a `test()` call where none is allowed. `No
+  tests found` and a web server that did not start come the same way, before any test runs, and the run then has none;
+- a worker fixture whose teardown threw, with the tests the worker ran;
+- the failure budget (`maxFailures`) that stopped the run.
+
+The first 20 go with the run's end, as its `runErrors`, each message and stack cut to 4,000 characters, with what may
+be a secret hidden as in a test's error: the text a fill typed, a credential in a URL, a cookie or a JSON field, a
+value shaped like a token. A sharded run adds each shard's to the others'. The run page shows them under its header,
+and the MCP `get_run` tool returns them as `runErrors`.
+
 ## With custom metadata
 
 ```typescript

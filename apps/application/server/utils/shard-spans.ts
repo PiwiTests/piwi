@@ -3,11 +3,14 @@
  * the run's `metadata.shards`, from which the run's span is drawn (from the
  * first shard's start to the last shard's end, whether the shards ran side by
  * side or one after another), its test durations, kept in
- * `metadata.shardDurations` for the run's duration statistics, and its suite
- * setup steps, added to the run's `setupSteps`. The server and the demo record
- * a shard's end through `recordShardEnd`.
+ * `metadata.shardDurations` for the run's duration statistics, its suite
+ * setup steps, added to the run's `setupSteps`, and its errors outside any
+ * test, added to the run's `runErrors`. The server and the demo record a
+ * shard's end through `recordShardEnd`.
  */
 import { eq } from 'drizzle-orm';
+import { MAX_RUN_ERRORS } from '@piwitests/core/run-errors';
+import type { WireRunError } from '@piwitests/core/wire';
 import { testRuns } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { createKeyedLock } from './keyed-lock';
@@ -164,21 +167,31 @@ export function withShardDurations(metadata: MetadataObject, durations: unknown[
 /** Shards of one run record their ends one at a time. */
 const shardEndLock = createKeyedLock<number>();
 
-/** The suite setup steps a run holds. */
-async function readSetupSteps(db: DrizzleDB, runId: number): Promise<unknown[]> {
-  const [run] = await db.select({ setupSteps: testRuns.setupSteps }).from(testRuns).where(eq(testRuns.id, runId));
-  return Array.isArray(run?.setupSteps) ? run.setupSteps : [];
+/** The suite setup steps and the errors outside any test a run holds. */
+async function readShardAdditions(
+  db: DrizzleDB,
+  runId: number,
+): Promise<{ setupSteps: unknown[]; runErrors: unknown[] }> {
+  const [run] = await db
+    .select({ setupSteps: testRuns.setupSteps, runErrors: testRuns.runErrors })
+    .from(testRuns)
+    .where(eq(testRuns.id, runId));
+  return {
+    setupSteps: Array.isArray(run?.setupSteps) ? run.setupSteps : [],
+    runErrors: Array.isArray(run?.runErrors) ? run.runErrors : [],
+  };
 }
 
 /**
  * Record one shard's end in its sharded run. `change` makes the shard's own
  * changes to the run's metadata (or returns null to record nothing), `span`
  * joins the run's `metadata.shards`, the shard's `setupSteps` (its suite-level
- * hooks and fixtures) join the run's, and the run's start and duration become
- * those of its shards (`shardedRunSpan`), all in one write with `set`. Shards
- * of one run record their ends one at a time, so shards ending at once each
- * keep their span and their steps. Returns the metadata written, or null when
- * nothing was.
+ * hooks and fixtures) join the run's, its `runErrors` (stored as
+ * `storableRunErrors` keeps them) join the run's up to `MAX_RUN_ERRORS`, and
+ * the run's start and duration become those of its shards (`shardedRunSpan`),
+ * all in one write with `set`. Shards of one run record their ends one at a
+ * time, so shards ending at once each keep their span, their steps and their
+ * errors. Returns the metadata written, or null when nothing was.
  */
 export function recordShardEnd(
   db: DrizzleDB,
@@ -187,9 +200,12 @@ export function recordShardEnd(
   change: (metadata: MetadataObject) => MetadataObject | null,
   set: RunUpdate = {},
   setupSteps: readonly unknown[] = [],
+  runErrors: readonly WireRunError[] = [],
 ): Promise<MetadataObject | null> {
   return shardEndLock(runId, async () => {
-    const steps = setupSteps.length > 0 ? [...(await readSetupSteps(db, runId)), ...setupSteps] : null;
+    const held = setupSteps.length > 0 || runErrors.length > 0 ? await readShardAdditions(db, runId) : null;
+    const steps = held && setupSteps.length > 0 ? [...held.setupSteps, ...setupSteps] : null;
+    const errors = held && runErrors.length > 0 ? [...held.runErrors, ...runErrors].slice(0, MAX_RUN_ERRORS) : null;
     return updateRunMetadata(
       db,
       runId,
@@ -197,7 +213,12 @@ export function recordShardEnd(
         const next = change(metadata);
         return next && { ...next, shards: [...readShardSpans(next), span] };
       },
-      (metadata) => ({ ...set, ...(steps && { setupSteps: steps }), ...shardedRunSpan(readShardSpans(metadata)) }),
+      (metadata) => ({
+        ...set,
+        ...(steps && { setupSteps: steps }),
+        ...(errors && { runErrors: errors }),
+        ...shardedRunSpan(readShardSpans(metadata)),
+      }),
     );
   });
 }

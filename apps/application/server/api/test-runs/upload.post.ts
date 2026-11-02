@@ -44,6 +44,7 @@ import { applyReporterKeep } from '#shared/handlers/run-keep';
 import { sanitizeResourceReport } from '#shared/resource-report';
 import { saveResourceReportPart } from '#shared/handlers/resource-reports';
 import type { TestCasePayload, TestRunSubmitPayload } from '#shared/types';
+import { storableRunErrors } from '../../utils/storable-values';
 
 defineRouteMeta({
   openAPI: {
@@ -356,6 +357,7 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
           isFullRun: testRunData.isFullRun !== false ? 1 : 0,
           filterDetails: testRunData.filterDetails || null,
           ...(testRunData.setupSteps && { setupSteps: testRunData.setupSteps }),
+          runErrors: storableRunErrors(testRunData.runErrors),
         })
         .returning();
 

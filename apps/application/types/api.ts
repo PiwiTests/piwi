@@ -12,6 +12,7 @@ import type {
   TestSourceFrame,
   TestStepEventHook,
   WireExecutionResources,
+  WireRunError,
 } from '#shared/types';
 import type { ScmProviderName } from '#shared/scm-urls';
 import type { StuckAttempt } from '#shared/stuck-tests';
@@ -563,6 +564,8 @@ export interface TestRunDetails {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   metadata?: any | null;
   setupSteps?: SetupStepEvent[] | null;
+  /** The errors Playwright reported outside any test: a global setup that threw, a spec that did not load. */
+  runErrors?: WireRunError[] | null;
   environment?: string | null;
   label?: string | null;
   playwrightVersion?: string | null;

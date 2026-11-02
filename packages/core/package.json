@@ -67,7 +67,8 @@
     "./flake-plan": "./src/flake-plan.ts",
     "./flake-verdict": "./src/flake-verdict.ts",
     "./skill-stamp": "./src/skill-stamp.ts",
-    "./page-interaction": "./src/page-interaction.ts"
+    "./page-interaction": "./src/page-interaction.ts",
+    "./run-errors": "./src/run-errors.ts"
   },
   "scripts": {
     "core:typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tests/tsconfig.json",

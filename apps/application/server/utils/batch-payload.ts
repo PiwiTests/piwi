@@ -27,6 +27,7 @@ const batchRunSchema = z.object({
   shardIndex: optionalNumber,
   shardTotal: optionalNumber,
   setupSteps: z.array(z.unknown()).nullish(),
+  runErrors: z.array(z.unknown()).nullish(),
 });
 
 const testCasesSchema = z.array(wireCaseSchema);

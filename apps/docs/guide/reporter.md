@@ -110,7 +110,7 @@ wins, except `PIWI_VERBOSE`, which overrides even an explicit `verbose` outside 
 `PIWI_API_KEY` and `PIWI_PROJECT_NAME` also come from the config folder's
 [`.env`](/reference/reporter-options#values-from-env), below the environment. [Reporter options](/reference/reporter-options)
 lists every option with its default and its variable, and [Test metadata](/reference/test-metadata) what the reporter
-records on its own.
+records on its own, [errors outside the tests](/reference/test-metadata#errors-outside-the-tests) included.
 
 ### Finding the desktop app automatically
 

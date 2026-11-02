@@ -974,6 +974,7 @@ const EXPECT_KEYS = new Set([
   'lab',
   'resources',
   'incident',
+  'runErrors',
   'coverageGap',
   'gaps',
   'suspects',
@@ -1050,6 +1051,12 @@ function expectHoldsInSeed(label: string, route: string, want: DemoExampleExpect
       `select json_extract(metadata, '$.incident.rule') as rule from test_runs where id = ${want.run!.id}`,
     );
     expect(row?.rule, `${label}: the run is flagged as an incident`).toBeTruthy();
+  }
+  if (want.runErrors) {
+    expect(want.run, `${label}: runErrors needs a run`).toBeTruthy();
+    const [row] = q(`select run_errors as errors from test_runs where id = ${want.run!.id}`);
+    const errors = row?.errors ? (JSON.parse(String(row.errors)) as Array<{ message: string }>) : [];
+    expect(errors.length, `${label}: the run holds errors outside its tests`).toBeGreaterThan(0);
   }
   if (want.coverageGap) {
     expect(want.run, `${label}: coverageGap needs a run`).toBeTruthy();

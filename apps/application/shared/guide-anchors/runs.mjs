@@ -162,6 +162,17 @@ export const RUNS_ANCHORS = [
     sample: { route: '/test-runs/63', expect: { run: { id: 63, project: 'web-dashboard' } } },
   },
   {
+    id: 'run-errors',
+    kind: 'block',
+    pages: ['/test-runs/[id]'],
+    describes:
+      'The errors Playwright reported outside the run’s tests, as it printed them: a global setup that threw, a spec that did not load, a failing teardown.',
+    shownWhen: 'When Playwright reported an error outside the tests.',
+    help: 'run.errors',
+    doc: 'reference/test-metadata#errors-outside-the-tests',
+    sample: { route: '/test-runs/4', expect: { run: { id: 4, project: 'e2e-checkout' }, runErrors: true } },
+  },
+  {
     id: 'run-incident',
     kind: 'block',
     pages: ['/test-runs/[id]'],

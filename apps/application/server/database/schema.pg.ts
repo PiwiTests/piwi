@@ -115,6 +115,7 @@ export const testRuns = pgTable(
     origin: text('origin').notNull().default('local'), // What launched the run, `runOrigin(metadata)`, written with every metadata write; read by the eligibility rule
     commit: text('commit_sha'), // The run's commit, `runCommit(metadata)` (metadata.scm.commit), written with every metadata write; null when the run names none
     setupSteps: jsonb('setup_steps'), // Array of suite-level hook/fixture steps (beforeAll/afterAll) for the timeline
+    runErrors: jsonb('run_errors'), // WireRunError[]: errors Playwright reported outside any test (global setup, a spec that did not load, a worker's teardown), at most 20; null when none
     label: text('label'), // Optional human-readable label (e.g. "v2.3.1 release")
     streamToken: text('stream_token'), // Token for authenticating streaming updates
     instanceId: text('instance_id'), // Unique identifier for the reporter instance that created this run

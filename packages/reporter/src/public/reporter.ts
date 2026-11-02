@@ -1,7 +1,15 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import type { FullConfig, Suite, TestCase, TestResult, FullResult, TestStep } from '@playwright/test/reporter';
+import type {
+  FullConfig,
+  Suite,
+  TestCase,
+  TestError,
+  TestResult,
+  FullResult,
+  TestStep,
+} from '@playwright/test/reporter';
 import {
   resolveOptions,
   usedDesktopDiscovery,
@@ -68,6 +76,8 @@ import {
   type ExternalIdPlan,
 } from '../internal/collect/external-ids.js';
 import { buildErrorText } from '../internal/collect/error-text.js';
+import { runErrorOf } from '../internal/collect/run-errors.js';
+import { MAX_RUN_ERRORS } from '@piwitests/core/run-errors';
 import { RunSubmitter } from '../internal/submit/run-submitter.js';
 import { readLeakCheck, type ResourceCensus } from '../internal/capture/resource-ledger.js';
 import {
@@ -105,6 +115,7 @@ import type {
   FilterDetails,
   TestAnnotation,
   WireResourceReport,
+  WireRunError,
 } from '../types.js';
 
 /**
@@ -263,6 +274,8 @@ export class PiwiDashboardReporter {
   private manifests: RunManifests | null = null;
   /** Result events that stream once their test's server coverage is in. */
   private coverageSends: Array<Promise<void>> = [];
+  /** The errors Playwright reported outside any test (`onError`), the first `MAX_RUN_ERRORS` of them. */
+  private readonly runErrors: WireRunError[] = [];
 
   private httpClient: HttpClient;
   private uploader: Uploader;
@@ -636,6 +649,18 @@ export class PiwiDashboardReporter {
     if (this.streamManager) {
       this.streamManager.queueBeginEvent(toWireTestCase(beginEvent) as StreamEvent);
     }
+  }
+
+  /**
+   * Playwright reporter hook: an error outside any test, such as a global setup that threw, a spec file that did not
+   * load (`No tests found` and a web server that did not start come the same way, before any test), or a worker
+   * fixture whose teardown threw. The run keeps the first `MAX_RUN_ERRORS`, with what may be a secret hidden, and sends
+   * them with its end.
+   */
+  onError(error: TestError): void {
+    if (this.listMode || !this.enabled || this.runErrors.length >= MAX_RUN_ERRORS) return;
+    const kept = runErrorOf(error, this.testPathBase);
+    if (kept) this.runErrors.push(kept);
   }
 
   /** Track suite-level setup steps (beforeAll/afterAll) not tied to any test */
@@ -1210,6 +1235,7 @@ export class PiwiDashboardReporter {
           filterDetails: this.filterDetails,
           resourceReport: this.resourceReport,
           htmlReport: this.htmlReport,
+          runErrors: this.runErrors,
         },
         result,
       );

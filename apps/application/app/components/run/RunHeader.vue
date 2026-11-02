@@ -51,6 +51,8 @@ const scm = computed(() => props.testRun?.metadata?.scm);
 const tags = computed(() => props.testRun?.metadata?.tags as string[] | undefined);
 const customData = computed(() => props.testRun?.metadata?.customData);
 const incident = computed(() => readRunIncident(props.testRun?.metadata));
+// The errors Playwright reported outside any test, which explain a failed run its tests do not.
+const runErrors = computed(() => props.testRun?.runErrors ?? []);
 // The seed of a run Playwright scheduled in random order (`--shuffle`).
 const shuffleSeed = computed(() => readShuffleSeed(props.testRun?.metadata));
 const { copy } = useCopy();
@@ -523,15 +525,24 @@ function onLabelKeydown(e: KeyboardEvent) {
       </div>
     </template>
 
-    <template v-if="incident" #below>
-      <RunIncidentLine
-        variant="line"
-        :run-id="testRun.id"
-        :project-id="testRun.projectId"
-        :incident="incident"
-        :review="incidentReview"
-        @changed="emit('label-updated')"
-      />
+    <template v-if="runErrors.length || incident" #below>
+      <div class="space-y-3">
+        <RunErrors
+          v-if="runErrors.length"
+          :errors="runErrors"
+          :project-key="testRun.projectId"
+          :project-name="testRun.project?.name"
+        />
+        <RunIncidentLine
+          v-if="incident"
+          variant="line"
+          :run-id="testRun.id"
+          :project-id="testRun.projectId"
+          :incident="incident"
+          :review="incidentReview"
+          @changed="emit('label-updated')"
+        />
+      </div>
     </template>
 
     <template #count-bar>

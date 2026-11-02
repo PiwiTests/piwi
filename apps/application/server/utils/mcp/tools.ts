@@ -35,6 +35,7 @@ import {
   listFlakeExperiments,
 } from '#shared/handlers/flake-lab';
 import { parseBisectResultBody } from '@piwitests/core/bisect';
+import { sanitizeRunErrors } from '@piwitests/core/run-errors';
 import { agentDiagnosisErrorMessage, parseAgentDiagnosis, type AgentDiagnosisTarget } from '#shared/agent-diagnosis';
 import { resolveAgentDiagnosisTarget } from '#shared/handlers/agent-diagnosis';
 import { storedPatchValidation } from '#shared/patch';
@@ -659,6 +660,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         metadata: testRuns.metadata,
         playwrightVersion: testRuns.playwrightVersion,
         reporterVersion: testRuns.reporterVersion,
+        runErrors: testRuns.runErrors,
       })
       .from(testRuns)
       .innerJoin(projects, eq(testRuns.projectId, projects.id))
@@ -737,6 +739,15 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       commit: meta?.scm?.commit?.slice(0, 8) || null,
       playwrightVersion: run.playwrightVersion || null,
       reporterVersion: run.reporterVersion || null,
+      runErrors: (sanitizeRunErrors(run.runErrors) ?? []).map((e) =>
+        dropNulls({
+          message: trunc(e.message, 400),
+          stack: trunc(e.stack, 400),
+          filePath: e.location?.file ?? null,
+          line: e.location?.line ?? null,
+          column: e.location?.column ?? null,
+        }),
+      ),
       cases: paged.items,
       nextCursor: paged.nextCursor,
       filter: statusFilter,

@@ -9,6 +9,7 @@ import { errorMessage } from '../support/errors.js';
 import { Logger } from '../support/logger.js';
 import { serializeRun, toWireTestCase } from './serializer.js';
 import type { CollectedTestCase, TraceHashInfo, FilterDetails, WireResourceReport, SetupStep } from '../../types.js';
+import type { WireRunError } from '../../types/wire.js';
 
 /** Payload for a batch test-run submission */
 export interface RunPayload {
@@ -57,6 +58,8 @@ export interface RunPayload {
   resourceReport?: WireResourceReport | null;
   /** Suite-level hook and fixture steps (`beforeAll`/`afterAll`) for the run timeline, as `/finish` takes them */
   setupSteps?: SetupStep[];
+  /** The errors Playwright reported outside any test (`onError`), as `/finish` takes them */
+  runErrors?: WireRunError[];
   /**
    * Generated once per run (per shard) and sent with every attempt to deliver it, so the dashboard
    * stores a delivery it already took once: a slow upload the reporter gave up on, then sent again.

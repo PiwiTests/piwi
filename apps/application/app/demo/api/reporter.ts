@@ -63,7 +63,7 @@ import {
 import { sanitizeCoverage, type CoverageCapture } from '@piwitests/core/coverage';
 import { hideTypedText } from '@piwitests/core/mask';
 import { upsertCasePayloads } from '~~/server/utils/case-payloads';
-import { int32, int64, storableRunCase } from '~~/server/utils/storable-values';
+import { int32, int64, storableRunCase, storableRunErrors } from '~~/server/utils/storable-values';
 import { resolveRunBranch } from '~~/server/utils/run-branch';
 import { isEligibleRun, runCommit, runOrigin } from '#shared/run-eligibility';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
@@ -1099,8 +1099,9 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
         ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
         ...(body.filterDetails !== undefined && { filterDetails: body.filterDetails ?? null }),
       },
-      // This shard's suite setup steps join the other shards' (server behavior).
+      // This shard's suite setup steps and errors outside any test join the other shards' (server behavior).
       Array.isArray(body.setupSteps) ? body.setupSteps : [],
+      storableRunErrors(body.runErrors) ?? [],
     );
 
     // This shard is done — drop its token so it cannot send more events.
@@ -1214,6 +1215,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
   const reportedMetadata = body.metadata
     ? carryExternalIdDuplicates(carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata), testRun.metadata)
     : null;
+  const runErrors = storableRunErrors(body.runErrors);
 
   await db
     .update(testRuns)
@@ -1239,6 +1241,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       ...(body.playwrightVersion && { playwrightVersion: body.playwrightVersion }),
       ...(body.reporterVersion && { reporterVersion: body.reporterVersion }),
       ...(body.setupSteps && { setupSteps: body.setupSteps }),
+      ...(runErrors && { runErrors }),
       ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
       ...(body.filterDetails !== undefined && { filterDetails: body.filterDetails ?? null }),
     })
