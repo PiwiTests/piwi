@@ -181,9 +181,9 @@ describe('backfillAliasSamples', () => {
 });
 
 describe('a fingerprint version bump', () => {
-  // Fingerprints the previous version computed: no error has them any more.
-  const STALE_A = 'previous-version-fingerprint-a';
-  const STALE_B = 'previous-version-fingerprint-b';
+  // Fingerprints of an earlier FINGERPRINT_VERSION, which no error hashes to under this one.
+  const STALE_A = 'earlier-version-fingerprint-a';
+  const STALE_B = 'earlier-version-fingerprint-b';
 
   async function seedRun(id: number, startTime: Date) {
     await db.insert(schema.testRuns).values({ id, projectId: 1, status: 'failed', startTime });
@@ -213,7 +213,7 @@ describe('a fingerprint version bump', () => {
 
   test('computes the aliases and the per-test routes again, so a merge and a move keep holding', async () => {
     await seedRun(1, new Date('2026-10-01T10:00:00Z'));
-    // Under the previous version, cluster A absorbed the cluster of `laterError`, then test 2 moved out of A.
+    // Under an earlier version, cluster A absorbed the cluster of `laterError`, then test 2 moved out of A.
     const a = await seedCluster({ fingerprint: STALE_A, sampleError: originalError, fingerprintSample: originalError });
     const moved = await seedCluster({
       fingerprint: 'split:moved',
@@ -255,7 +255,7 @@ describe('a fingerprint version bump', () => {
   test('merges the clusters an alias and a cluster both lead to, the one first seen earlier keeping its triage', async () => {
     await seedRun(1, new Date('2026-10-01T10:00:00Z'));
     await seedRun(2, new Date('2026-10-02T10:00:00Z'));
-    // A absorbed `laterError` under the previous version; B, imported from an earlier run, holds it under this one.
+    // A absorbed `laterError` under an earlier version; B, imported from an earlier run, holds it under this one.
     const a = await seedCluster({
       fingerprint: STALE_A,
       sampleError: originalError,
@@ -345,7 +345,7 @@ describe('a fingerprint version bump', () => {
     expect(row!.updatedAt).toEqual(resolvedAt);
   });
 
-  test('merges two clusters whose samples now share a fingerprint into the one first seen earlier', async () => {
+  test('merges two clusters whose samples share a recomputed fingerprint into the one first seen earlier', async () => {
     await seedRun(1, new Date('2026-10-01T10:00:00Z'));
     await seedRun(2, new Date('2026-10-02T10:00:00Z'));
     await seedCluster({

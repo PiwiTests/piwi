@@ -14,9 +14,9 @@
  * `sampleError` keeps the re-fingerprint deterministic even after the display
  * exemplar has been refreshed to a later occurrence:
  *  - unchanged fingerprint  → already current, skip (keeps the pass idempotent)
- *  - fingerprint now leads to another cluster of the project (its own or an
- *    alias's) → the two merge, the one first seen earlier surviving with its
- *    triage
+ *  - recomputed fingerprint leads to another cluster of the project (its own
+ *    or an alias's) → the two merge, the one first seen earlier surviving with
+ *    its triage
  *  - otherwise → update the fingerprint + derived fields on the row
  * Each merge alias is then recomputed the same way from the sample it keeps,
  * so the failures a merge sent to a cluster keep reaching it. Per-test routes
