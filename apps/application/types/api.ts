@@ -1460,6 +1460,10 @@ export interface TestCaseHistoryPoint {
   retries: number | null;
   /** Per-attempt outcomes, oldest first. */
   attempts?: AttemptOutcome[] | null;
+  /** The Playwright project of the attempt. */
+  browserName?: string | null;
+  /** The `--repeat-each` repetition of the attempt. */
+  repeatEachIndex?: number | null;
   startTime: string | Date;
   runStatus: string;
 }
