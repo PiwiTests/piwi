@@ -13,10 +13,16 @@ describe('statusPaletteKey', () => {
     expect(statusPaletteKey('didnotrun')).toBe('didnotrun');
   });
 
-  test('counts timed-out and interrupted as failed', () => {
+  test('counts timed-out as failed', () => {
     expect(statusPaletteKey('timedout')).toBe('failed');
     expect(statusPaletteKey('timedOut')).toBe('failed');
-    expect(statusPaletteKey('interrupted')).toBe('failed');
+  });
+
+  test('draws interrupted in its own neutral entry, in no outcome', () => {
+    expect(statusPaletteKey('interrupted')).toBe('interrupted');
+    expect(statusPalette('interrupted')).toBe(STATUS_PALETTE.interrupted);
+    expect(statusPalette('interrupted')).not.toBe(STATUS_PALETTE.failed);
+    expect(statusChipLabel('interrupted')).toBe('Interrupted');
   });
 
   test('gives the three in-flight statuses one entry', () => {

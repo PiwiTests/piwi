@@ -1279,6 +1279,8 @@ export interface TestCaseWithStats {
   /** Runs skipped by `test.fixme()` — a subset of `skippedRuns`. */
   fixmeRuns?: number;
   didNotRunRuns: number;
+  /** Runs the run's interruption cut short: in no outcome and no pass rate. */
+  interruptedRuns?: number;
   flakyRuns: number;
   recentFlakyRuns?: number;
   passRate: number | null;

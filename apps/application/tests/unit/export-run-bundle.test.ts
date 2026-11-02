@@ -110,6 +110,21 @@ describe('the bundle of a run export', () => {
     expect(bundle.truncatedCases).toEqual([]);
   });
 
+  test('details no interrupted test among the failures: it is in no outcome', async () => {
+    await db.insert(schema.testCases).values({ id: 5, projectId: 1, filePath: 'tests/ship.spec.ts', title: 'ships' });
+    await db.insert(schema.testRunsCases).values({
+      id: 16,
+      testRunId: 7,
+      testCaseId: 5,
+      status: 'interrupted',
+      browserName: 'chromium',
+      error: 'Test was interrupted.',
+    });
+    const bundle = (await collectRunBundle(db as never, 7, { maxCases: 25 }))!;
+    expect(bundle.cases.map((c) => c.executionId)).toEqual([11, 14]);
+    expect(bundle.run!.tests.find((t) => t.executionId === 16)).toMatchObject({ status: 'interrupted' });
+  });
+
   test('lists the failing tests past the cap by name', async () => {
     const bundle = (await collectRunBundle(db as never, 7, { maxCases: 1 }))!;
     expect(bundle.cases.map((c) => c.executionId)).toEqual([11]);

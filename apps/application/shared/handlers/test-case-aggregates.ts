@@ -78,10 +78,11 @@ function countOf(condition: SQL): SQL<number> {
 /**
  * A test's aggregates over the rows a query keeps, which `finalAttemptSql`
  * narrows to one per run: how many runs, how they ended (a timed-out run
- * counts as failed), the flaky ones (`flakyResultSql`), the pass rate
- * (`passRateSql`) and the average duration of the runs that ran. PostgreSQL
- * returns COUNT and SUM (int8), AVG and the pass-rate division (numeric) as
- * strings, so each is mapped to a number.
+ * counts as failed, an interrupted one in no outcome but its own), the flaky
+ * ones (`flakyResultSql`), the pass rate (`passRateSql`) and the average
+ * duration of the runs that ran. PostgreSQL returns COUNT and SUM (int8), AVG
+ * and the pass-rate division (numeric) as strings, so each is mapped to a
+ * number.
  */
 export function testCaseAggregates(row: Executions = testRunsCases) {
   const passed = passedCountSql(row.status).mapWith(Number);
@@ -94,6 +95,7 @@ export function testCaseAggregates(row: Executions = testRunsCases) {
     timedOutRuns: countOf(sql`${row.status} IN ('timedOut', 'timedout')`),
     fixmeRuns: countOf(fixmeSkipPredicate(row.status, row.testAnnotations)),
     didNotRunRuns: countOf(sql`${row.status} = 'didnotrun'`),
+    interruptedRuns: countOf(sql`${row.status} = 'interrupted'`),
     flakyRuns: countOf(flakyResultSql(row)),
     passRate: passRateSql(passed, failed).mapWith(Number),
     avgDuration: sql<number | null>`AVG(CASE WHEN ${ranSql(row.status)} THEN ${row.duration} END)`.mapWith(Number),

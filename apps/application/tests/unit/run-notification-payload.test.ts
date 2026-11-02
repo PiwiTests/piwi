@@ -240,7 +240,7 @@ describe('the payload of a run notification, in edge cases', () => {
     expect(payload.history!.map((h) => h.runId)).toEqual([1, 5, 200]);
   });
 
-  test('draws an interrupted test as one that did not run, not as a missing result', async () => {
+  test('draws an interrupted test as interrupted, in no outcome, not as a missing result', async () => {
     await db.insert(schema.testRuns).values({
       id: 30,
       projectId: 1,
@@ -256,7 +256,7 @@ describe('the payload of a run notification, in edge cases', () => {
       { testRunId: 30, testCaseId: 3, status: 'failed', browserName: 'webkit' },
     ]);
     const [failure] = (await loadRunPayload(db as never, 30))!.runPayload.topFailures;
-    expect(failure!.history).toEqual([null, 'didnotrun', 'failed']);
+    expect(failure!.history).toEqual([null, 'interrupted', 'failed']);
   });
 
   test("falls back to the test's snippet when the captured frame marks no failing line", async () => {

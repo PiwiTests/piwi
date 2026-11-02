@@ -28,6 +28,8 @@ const props = defineProps<{
     fixmeTests?: number;
     didNotRunTests?: number;
     flakyTests?: number;
+    /** Tests the run's interruption cut short: in no outcome, known from the loaded cases only. */
+    interruptedTests?: number;
   } | null;
   allReports: ReportInfo[];
   totalWastedTime?: number;
@@ -97,6 +99,7 @@ const total = computed(() => props.displayProgress?.totalTests ?? props.testRun?
 // segments while the run is still going instead of only at the end.
 const flaky = computed(() => props.displayProgress?.flakyTests ?? props.testRun?.flakyTests ?? 0);
 const didNotRun = computed(() => props.displayProgress?.didNotRunTests ?? props.testRun?.didNotRunTests ?? 0);
+const interrupted = computed(() => props.displayProgress?.interruptedTests ?? 0);
 
 // The first uploaded report is the run's headline artifact.
 const primaryReport = computed(() => props.allReports[0] ?? null);
@@ -553,6 +556,7 @@ function onLabelKeydown(e: KeyboardEvent) {
         :skipped="skipped"
         :fixme="fixme"
         :did-not-run="didNotRun"
+        :interrupted="interrupted"
         :total="total"
         :active-statuses="activeStatuses"
         @toggle-status="emit('toggle-status', $event)"

@@ -5,7 +5,15 @@
  */
 
 /** The outcomes the palette colors. */
-export type StatusPaletteKey = 'passed' | 'failed' | 'flaky' | 'skipped' | 'fixme' | 'didnotrun' | 'running';
+export type StatusPaletteKey =
+  | 'passed'
+  | 'failed'
+  | 'flaky'
+  | 'skipped'
+  | 'fixme'
+  | 'didnotrun'
+  | 'running'
+  | 'interrupted';
 
 export interface StatusPaletteEntry {
   /** CSS color for SVG fills, chart legends and inline styles. */
@@ -90,13 +98,26 @@ export const STATUS_PALETTE: Record<StatusPaletteKey, StatusPaletteEntry> = {
     chip: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
     tint: 'bg-blue-50 dark:bg-blue-950/30',
   },
+  // A test or run cut short (Ctrl+C, a crashed worker): no outcome, so a
+  // neutral slate, apart from the skipped greys.
+  interrupted: {
+    color: 'var(--color-status-interrupted)',
+    bg: 'bg-status-interrupted',
+    ring: 'ring-status-interrupted',
+    text: 'text-slate-600 dark:text-slate-400',
+    onBg: 'text-white',
+    chip: 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300',
+    tint: 'bg-slate-50 dark:bg-slate-800/40',
+  },
 };
 
 /**
- * Palette key for a raw test or run status. Timed-out and interrupted count as
- * failed (the run counters fold them the same way); an unknown or cancelled
- * status reads as neutral, like skipped. Pass an execution's `retries` to color
- * a pass that needed a retry as flaky, the way the run counters count it.
+ * Palette key for a raw test or run status. Timed-out counts as failed (the run
+ * counters fold it the same way); interrupted is an outcome of none, in its
+ * neutral entry, as the counters leave it out of every bucket; an unknown or
+ * cancelled status reads as neutral, like skipped. Pass an execution's
+ * `retries` to color a pass that needed a retry as flaky, the way the run
+ * counters count it.
  */
 export function statusPaletteKey(status: string | null | undefined, retries?: number | null): StatusPaletteKey {
   switch (status) {
@@ -105,8 +126,9 @@ export function statusPaletteKey(status: string | null | undefined, retries?: nu
     case 'failed':
     case 'timedout':
     case 'timedOut':
-    case 'interrupted':
       return 'failed';
+    case 'interrupted':
+      return 'interrupted';
     case 'flaky':
       return 'flaky';
     case 'fixme':

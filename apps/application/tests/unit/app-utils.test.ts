@@ -156,10 +156,11 @@ describe('getStatusColor', () => {
     expect(getStatusColor('never-run')).toBe('neutral');
   });
 
-  test('reads timed-out and interrupted as failed, like the run counters', () => {
+  test('reads timed-out as failed, like the run counters, and interrupted as neutral, in no outcome', () => {
     expect(getStatusColor('timedout')).toBe('error');
     expect(getStatusColor('timedOut')).toBe('error');
-    expect(getStatusColor('interrupted')).toBe('error');
+    expect(getStatusColor('interrupted')).toBe('neutral');
+    expect(getStatusIcon('interrupted')).toBe('i-lucide-circle-pause');
   });
 
   test('falls back to neutral for unknown statuses', () => {

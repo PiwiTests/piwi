@@ -81,6 +81,10 @@ whole group: the tests that passed before and a `test.fail()` test that failed a
 test that did not run behind the failure passes, none of them flaky. The last attempt decides: a test that
 passed, then failed on the group's retry, counts as failed, where Playwright's summary calls it flaky.
 
+A test is **interrupted** when the run's interruption (Ctrl+C, a crashed worker) cut it short. It counts in no
+outcome: neither passed, failed, skipped nor did not run, and in no pass rate. The dashboard, the exports and the
+notifications draw it in a neutral slate labelled *Interrupted*, and a count bar names the gap it leaves.
+
 This is the object at `/test-run-cases/:id` — the error, steps, trace, screenshots, console, network,
 Web Vitals, and (for a failure) the diagnosis view. When the docs say *execution* or *test-run case*,
 this is what they mean; when they say *test case*, they mean the identity above it.

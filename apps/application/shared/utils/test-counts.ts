@@ -296,7 +296,7 @@ export function distinctRunCountsFromAttempts(rows: ReadonlyArray<AttemptRow & {
 
 /** A distinct-test tally of a run's cases, as the run views count them. */
 export interface RunCaseSummary {
-  /** Number of cases summarized — the denominator (`= passed + failed + skipped + didNotRun + running`). */
+  /** Number of cases summarized — the denominator (`= passed + failed + skipped + didNotRun + running + interrupted`). */
   total: number;
   passed: number;
   failed: number;
@@ -308,18 +308,21 @@ export interface RunCaseSummary {
   fixme: number;
   /** Still in flight (not yet settled). */
   running: number;
+  /** Cut short by the run's interruption: in no outcome, so the gap the other buckets leave, named. */
+  interrupted: number;
 }
 
 /**
  * Tally a run's cases the way the live run views count them: timed-out folds
  * into `failed`, a case that passed after an earlier attempt failed
  * (`isFlakyExecution`) counts as `passed` **and** as `flaky` (never as a
- * failure), a `test.fixme()` skip counts as `skipped` **and** as `fixme`, and
- * `running` is the in-flight remainder. Pass one entry per test, its final
+ * failure), a `test.fixme()` skip counts as `skipped` **and** as `fixme`,
+ * `running` is the in-flight remainder and `interrupted` the cases the run's
+ * interruption cut short, in no outcome. Pass one entry per test, its final
  * attempt with its attempt history (de-duplicate attempts first), and the
- * buckets reconcile: `total = passed + failed + skipped + didNotRun +
- * running`. This is the single source the run header, the count bar and the
- * grouped list all count with, so they cannot disagree.
+ * buckets reconcile: `total = passed + failed + skipped + didNotRun + running +
+ * interrupted`. This is the single source the run header, the count bar and
+ * the grouped list all count with, so they cannot disagree.
  */
 export function summarizeRunCases(
   cases: ReadonlyArray<{
@@ -338,6 +341,7 @@ export function summarizeRunCases(
     flaky: 0,
     fixme: 0,
     running: 0,
+    interrupted: 0,
   };
   for (const tc of cases) {
     if (FAILED_STATUS_SET.has(tc.status)) s.failed++;
@@ -349,6 +353,7 @@ export function summarizeRunCases(
       if (isFixmeSkip(tc)) s.fixme++;
     } else if (tc.status === 'didnotrun') s.didNotRun++;
     else if (tc.status === 'running') s.running++;
+    else if (tc.status === 'interrupted') s.interrupted++;
   }
   return s;
 }

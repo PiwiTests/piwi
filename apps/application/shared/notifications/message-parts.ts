@@ -352,6 +352,7 @@ export const OUTCOME_SQUARES: Record<StatusColorKey, string> = {
   fixme: '⬛',
   didnotrun: '🟧',
   running: '🟦',
+  interrupted: '⬜',
 };
 
 /**
@@ -375,11 +376,11 @@ export function outcomeSquares(segments: OutcomeSegment[], total: number, width 
 
 // ── History ───────────────────────────────────────────────────────────────────
 
-/** A run's status as an outcome color: interrupted in the did-not-run amber. */
+/** A run's status as an outcome color: an interrupted run in the neutral slate of no outcome. */
 export function runStatusKey(status: string): StatusColorKey {
   if (status === 'passed') return 'passed';
   if (status === 'failed' || status === 'timedout') return 'failed';
-  if (status === 'interrupted') return 'didnotrun';
+  if (status === 'interrupted') return 'interrupted';
   return 'skipped';
 }
 
@@ -443,6 +444,7 @@ const RUN_SYMBOLS: Record<StatusColorKey, string> = {
   fixme: '-',
   didnotrun: '!',
   running: '…',
+  interrupted: '-',
 };
 
 /** The history in plain text: one symbol per run, then its sentence. */

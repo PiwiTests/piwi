@@ -186,6 +186,8 @@ describe("a test's runs", () => {
       failedRuns: 1,
       skippedRuns: 1,
       didNotRunRuns: 0,
+      // In no outcome: the gap its bar names.
+      interruptedRuns: 1,
       flakyRuns: 2,
       recentFlakyRuns: 2,
       passRate: 0.8,

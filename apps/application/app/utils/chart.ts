@@ -36,6 +36,7 @@ export const CASE_STATUS_SERIES = [
   { key: 'failed', color: STATUS_PALETTE.failed.color, label: 'Failed' },
   { key: 'skipped', color: STATUS_PALETTE.skipped.color, label: 'Skipped' },
   { key: 'didnotrun', color: STATUS_PALETTE.didnotrun.color, label: "Didn't run" },
+  { key: 'interrupted', color: STATUS_PALETTE.interrupted.color, label: 'Interrupted' },
 ] as const satisfies readonly ChartSeries[];
 
 /**

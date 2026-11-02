@@ -2439,6 +2439,29 @@ const INCIDENT_MARKERS = [];
   }
 }
 
+// ── Interrupted tests (post-processing, rng-free) ───────────────────────────
+// When a run is interrupted, the test in flight is cut short: Playwright reports
+// it `interrupted`, an outcome of none (neither passed, failed, skipped nor did
+// not run), and the tests after it never run. In each interrupted run the first
+// of its unreached tests becomes that test, so the run page's count bar names
+// the gap it leaves ("1 interrupted") and the history strips draw it neutral.
+{
+  const interruptedRuns = new Map(TEST_RUNS.filter((run) => run.status === 'interrupted').map((run) => [run.id, run]));
+  const firstUnreached = new Map();
+  for (const row of TEST_RUNS_CASES) {
+    if (!interruptedRuns.has(row.test_run_id) || row.status !== 'didnotrun') continue;
+    const known = firstUnreached.get(row.test_run_id);
+    if (!known || row.id < known.id) firstUnreached.set(row.test_run_id, row);
+  }
+  for (const [runId, row] of firstUnreached) {
+    row.status = 'interrupted';
+    row.did_not_run_reason = null;
+    row.blocked_by = null;
+    row.attempts = JSON.stringify([{ retry: 0, status: 'interrupted', duration: 0, startedAt: null }]);
+    interruptedRuns.get(runId).did_not_run_tests -= 1;
+  }
+}
+
 // ── Demo media (screenshots, trace, video, visual diff) ────────────────────
 // Real binaries live in public/demo/{screenshots,traces,videos} (committed to
 // the repo; regenerate with scripts/take-demo-screenshots.mjs and

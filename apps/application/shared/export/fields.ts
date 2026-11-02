@@ -78,15 +78,16 @@ export function caseFacts(exportCase: ExportCase): Fact[] {
 
 /**
  * A test's, a run's or a cluster's status as the outcome color it is drawn in, as the dashboard's `statusPaletteKey`
- * draws it: timed-out and interrupted read as failed, a pass on a retry as flaky, a run in progress as running, an
- * open cluster as failed and a resolved one as passed, and any other status as skipped.
+ * draws it: timed-out reads as failed, interrupted as its neutral own, a pass on a retry as flaky, a run in progress
+ * as running, an open cluster as failed and a resolved one as passed, and any other status as skipped.
  */
 export function statusTone(value: unknown, retries?: number | null): StatusColorKey {
   const v = String(value ?? '')
     .toLowerCase()
     .replace(/[^a-z]/g, '');
   if (v === 'passed') return (retries ?? 0) > 0 ? 'flaky' : 'passed';
-  if (v === 'failed' || v === 'timedout' || v === 'interrupted' || v === 'open') return 'failed';
+  if (v === 'failed' || v === 'timedout' || v === 'open') return 'failed';
+  if (v === 'interrupted') return 'interrupted';
   if (v === 'resolved') return 'passed';
   if (v === 'flaky') return 'flaky';
   if (v === 'fixme') return 'fixme';

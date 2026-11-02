@@ -169,7 +169,7 @@ function historyOutcome(row: { status: string; retries: number | null } | undefi
   if (isFailedStatus(row.status)) return 'failed';
   if (row.status === 'passed') return (row.retries ?? 0) > 0 ? 'flaky' : 'passed';
   if (row.status === 'skipped' || row.status === 'didnotrun') return row.status;
-  if (row.status === 'interrupted') return 'didnotrun';
+  if (row.status === 'interrupted') return 'interrupted';
   return null;
 }
 

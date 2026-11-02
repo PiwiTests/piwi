@@ -628,6 +628,7 @@ const displayProgress = computed(() => {
       fixmeTests: s.fixme,
       didNotRunTests: s.didNotRun,
       flakyTests: s.flaky,
+      interruptedTests: s.interrupted,
     };
   }
   return {

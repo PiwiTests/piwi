@@ -176,11 +176,6 @@ export async function collectClusterBundle(
   };
 }
 
-/** Whether a test's outcome in a run is a failure: failed, timed out or interrupted. */
-function isFailingOutcome(status: string): boolean {
-  return isFailedStatus(status) || status === 'interrupted';
-}
-
 /** The run fields an export states, and nothing else of the run row (no local paths, tokens or storage). */
 function exportRunDetail(run: Record<string, any>): Record<string, unknown> {
   const scm = (run.metadata?.scm ?? {}) as Record<string, any>;
@@ -280,7 +275,8 @@ export async function collectRunBundle(
     );
 
   // Each failing result under its own failure cluster, the clusters with the most failures first.
-  const failing = tests.filter((t) => isFailingOutcome(t.status));
+  // An interrupted result is in no outcome, so never among the failures.
+  const failing = tests.filter((t) => isFailedStatus(t.status));
   const members = new Map<number, number[]>();
   for (const t of failing) {
     if (t.failureClusterId == null) continue;

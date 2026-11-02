@@ -8,6 +8,8 @@ const props = defineProps<{
   didNotRun?: number;
   /** `test.fixme()` skips — a subset of `skipped`, drawn in its second grey. */
   fixme?: number;
+  /** Results an interruption cut short: in no outcome, a neutral segment that names the gap they leave. */
+  interrupted?: number;
 }>();
 
 const segments = computed(() => {
@@ -26,6 +28,7 @@ const segments = computed(() => {
     { key: 'skipped', label: 'Skipped', count: props.skipped - fixmeCount, color: STATUS_PALETTE.skipped.bg },
     { key: 'fixme', label: 'Fixme', count: fixmeCount, color: STATUS_PALETTE.fixme.bg },
     { key: 'didNotRun', label: "Didn't run", count: props.didNotRun ?? 0, color: STATUS_PALETTE.didnotrun.bg },
+    { key: 'interrupted', label: 'Interrupted', count: props.interrupted ?? 0, color: STATUS_PALETTE.interrupted.bg },
   ]
     .filter((s) => s.count > 0)
     .map((s) => ({
@@ -36,7 +39,7 @@ const segments = computed(() => {
 });
 
 // Names every segment the bar visibly renders, so the announced summary
-// matches what the eyes see (flaky and didn't-run included).
+// matches what the eyes see (flaky, didn't-run and interrupted included).
 const accessibleLabel = computed(() => {
   const parts = segments.value.map((s) => `${s.count} ${s.label.toLowerCase()}`);
   return `Test results: ${parts.join(', ')}`;
@@ -54,7 +57,7 @@ const accessibleLabel = computed(() => {
       :aria-label="accessibleLabel"
       :aria-valuemin="0"
       :aria-valuemax="total"
-      :aria-valuenow="props.passed + props.failed + props.skipped + (props.didNotRun ?? 0)"
+      :aria-valuenow="props.passed + props.failed + props.skipped + (props.didNotRun ?? 0) + (props.interrupted ?? 0)"
       class="flex gap-0.5 h-2.5 w-full min-w-30 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700"
     >
       <div

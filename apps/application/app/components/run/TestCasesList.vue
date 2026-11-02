@@ -384,7 +384,14 @@ interface GroupHeaderItem {
   icon?: string;
   triageStatus?: string | null;
   clusterId?: number | null;
-  stats?: { passed: number; failed: number; skipped: number; didnotrun: number; running: number } | null;
+  stats?: {
+    passed: number;
+    failed: number;
+    skipped: number;
+    didnotrun: number;
+    interrupted: number;
+    running: number;
+  } | null;
   filePath?: string | null;
   /** Nesting depth for the File + Describe grouping (0 = file). */
   depth?: number;
@@ -402,7 +409,14 @@ type Row = GroupHeaderItem | TestItem;
 
 function computeStats(cases: TestCaseResult[]) {
   const s = summarizeRunCases(cases);
-  return { passed: s.passed, failed: s.failed, skipped: s.skipped, didnotrun: s.didNotRun, running: s.running };
+  return {
+    passed: s.passed,
+    failed: s.failed,
+    skipped: s.skipped,
+    didnotrun: s.didNotRun,
+    interrupted: s.interrupted,
+    running: s.running,
+  };
 }
 
 /** The remainder buckets (non-failing) shown as their own groups; the quiet
@@ -413,6 +427,7 @@ const REMAINDER_BUCKETS: Array<{ key: string; label: string; match: (tc: TestCas
   { key: 'skipped', label: 'Skipped', match: (tc) => tc.status === 'skipped' && !isFixmeSkip(tc) },
   { key: 'fixme', label: 'Fixme', match: isFixmeSkip },
   { key: 'didnotrun', label: "Didn't run", match: (tc) => tc.status === 'didnotrun' },
+  { key: 'interrupted', label: 'Interrupted', match: (tc) => tc.status === 'interrupted' },
 ];
 
 const rows = computed<Row[]>(() => {

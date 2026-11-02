@@ -3,10 +3,14 @@ import { renderNotificationEmailAt, renderDigestEmailAt } from '#shared/notifica
 import { codeBlock, outcomeBar } from '#shared/notifications/email-blocks';
 import {
   historySentence,
+  historySquares,
+  historyText,
   percent,
   runSegments,
+  runStatusKey,
   sourceIsTestFile,
   testHistorySentence,
+  testHistorySquares,
 } from '#shared/notifications/message-parts';
 import { durationShort } from '#shared/relative-time';
 import type { RunFinishedPayload, RunHistoryEntry } from '#shared/notification-events';
@@ -295,6 +299,17 @@ describe('the email blocks', () => {
     expect(sentence(['skipped', 'didnotrun', 'failed'])).toEqual({ text: 'No earlier result here', isNew: false });
     expect(sentence([null, null, 'failed'])).toEqual({ text: 'No earlier result here', isNew: false });
     expect(sentence(['failed', 'passed'])).toBeNull();
+    expect(sentence(['interrupted', 'passed', 'failed'])).toEqual({
+      text: 'Passed the previous time it ran',
+      isNew: true,
+    });
+  });
+
+  test('an interrupted run or test is drawn in no outcome, neither failed nor did not run', () => {
+    expect(runStatusKey('interrupted')).toBe('interrupted');
+    expect(historySquares(history(['passed', 'interrupted', 'failed']))).toBe('🟩⬜🟥');
+    expect(historyText(history(['passed', 'interrupted', 'failed']))).toMatch(/^Last 3 runs: ✓ - ✗/);
+    expect(testHistorySquares(['passed', 'interrupted', 'failed'])).toBe('🟩⬜🟥');
   });
 
   test('the code block drops the shared indentation and the caret row, and marks the failing line', () => {

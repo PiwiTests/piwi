@@ -143,11 +143,11 @@ p { margin:.4rem 0; }
 }
 .chip.new { color:var(--fail); border-color:currentColor; font-weight:650; }
 
-/* Matches getStatusColor in app/utils: timed-out and interrupted read as failed, didn't run as a warning. */
-.s-failed, .s-timedout, .s-interrupted, .s-error, .s-open { color:var(--fail); }
+/* Matches getStatusColor in app/utils: timed-out reads as failed, interrupted as neutral, didn't run as a warning. */
+.s-failed, .s-timedout, .s-error, .s-open { color:var(--fail); }
 .s-passed, .s-resolved { color:var(--pass); }
 .s-flaky { color:var(--flaky); }
-.s-skipped, .s-log, .s-debug, .s-ignored { color:var(--skip); }
+.s-skipped, .s-interrupted, .s-log, .s-debug, .s-ignored { color:var(--skip); }
 .s-didnotrun, .s-warning, .s-warn { color:var(--warn); }
 .s-info { color:var(--info); }
 .tag { font-weight:650; }
@@ -331,6 +331,7 @@ const TONE_CLASSES: Record<StatusColorKey, string> = {
   fixme: 't-skip',
   didnotrun: 't-warn',
   running: 't-info',
+  interrupted: 't-skip',
 };
 
 /** A status → the tone of a header's edge and tint. */

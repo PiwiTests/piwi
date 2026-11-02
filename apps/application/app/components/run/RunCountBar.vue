@@ -6,7 +6,9 @@
  * filter set and switches to the Tests tab. Zero-count segments are hidden
  * unless selected. Flaky (passed on retry) is a subset of passed, so it is
  * subtracted from the passed segment to avoid double-counting; fixme is a
- * subset of skipped the same way, drawn in the second grey.
+ * subset of skipped the same way, drawn in the second grey. The tests the run's
+ * interruption cut short are in no outcome: their segment, in the neutral
+ * slate, names the gap they leave.
  */
 import { useResizeObserver } from '@vueuse/core';
 
@@ -18,6 +20,8 @@ const props = defineProps<{
   /** `test.fixme()` skips — a subset of `skipped`. */
   fixme?: number;
   didNotRun: number;
+  /** Tests the run's interruption cut short, in no outcome. */
+  interrupted?: number;
   total: number;
   /** The status filters currently active, which the Tests list applies. */
   activeStatuses: string[];
@@ -64,6 +68,14 @@ const segments = computed<Segment[]>(() => {
       short: 'dnr',
       count: props.didNotRun,
       palette: STATUS_PALETTE.didnotrun,
+    },
+    {
+      key: 'interrupted',
+      status: 'interrupted',
+      label: 'interrupted',
+      short: 'int',
+      count: props.interrupted ?? 0,
+      palette: STATUS_PALETTE.interrupted,
     },
   ];
   // A selected outcome keeps its segment at zero (a live retry can take the

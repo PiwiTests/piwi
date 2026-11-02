@@ -165,7 +165,8 @@ describe('the facts an export states', () => {
 
   it('colors a status as the dashboard does', () => {
     const tones = (statuses: string[]) => statuses.map((status) => statusTone(status));
-    expect(tones(['failed', 'timedOut', 'interrupted', 'open'])).toEqual(['failed', 'failed', 'failed', 'failed']);
+    expect(tones(['failed', 'timedOut', 'open'])).toEqual(['failed', 'failed', 'failed']);
+    expect(statusTone('interrupted')).toBe('interrupted');
     expect(tones(['passed', 'resolved', 'flaky', 'didNotRun', 'running'])).toEqual([
       'passed',
       'passed',

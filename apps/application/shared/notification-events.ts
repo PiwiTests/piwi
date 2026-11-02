@@ -94,8 +94,11 @@ export interface FailureSource {
   snippet: string;
 }
 
-/** A test's outcome in one run: a status key of `STATUS_COLORS`, or null when the run did not report the test. */
-export type HistoryOutcome = 'passed' | 'flaky' | 'failed' | 'skipped' | 'didnotrun' | null;
+/**
+ * A test's outcome in one run: a status key of `STATUS_COLORS` (`interrupted` when the run's interruption cut it
+ * short, in no outcome), or null when the run did not report the test.
+ */
+export type HistoryOutcome = 'passed' | 'flaky' | 'failed' | 'skipped' | 'didnotrun' | 'interrupted' | null;
 
 /** A single failing test embedded in a run notification for debugging context. */
 export interface TopFailure {

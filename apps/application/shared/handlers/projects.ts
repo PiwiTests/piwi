@@ -1163,6 +1163,7 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
       skippedRuns: aggregates.skippedRuns,
       fixmeRuns: aggregates.fixmeRuns,
       didNotRunRuns: aggregates.didNotRunRuns,
+      interruptedRuns: aggregates.interruptedRuns,
       flakyRuns: aggregates.flakyRuns,
       recentFlakyRuns: recentFlaky,
       passRate: aggregates.passRate,

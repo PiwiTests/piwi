@@ -112,7 +112,8 @@ failing line marked `>`.
 `history` lists the run and up to nine runs before it on the same branch and environment, oldest first: the ended runs
 that would send notifications themselves (no lab run, no run from an editor, no bisect step or reproduction, no
 partial run from a developer's machine or the desktop app, no environment incident). Each failure's `history` gives that test's outcome in each of those runs (`passed`, `flaky`, `failed`,
-`skipped`, `didnotrun` for a test that did not run or was interrupted, or `null` when the run did not report it). `commit`
+`skipped`, `didnotrun` for a test that did not run, `interrupted` for one the run's interruption cut short, in no
+outcome, or `null` when the run did not report it). `commit`
 comes from the run's Git metadata, linked when the project's repository host is known, and `ciUrl` from its CI
 metadata.
 

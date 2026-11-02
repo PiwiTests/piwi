@@ -262,7 +262,8 @@ export function getBrowserHexColor(browserName?: string | null): string {
 
 /**
  * Badge color for a test or run status, on the same hues as the test outcome
- * palette (`status-palette.ts`): timed-out and interrupted read as failed.
+ * palette (`status-palette.ts`): timed-out reads as failed, interrupted as
+ * neutral.
  */
 export function getStatusColor(status: string): BadgeColor {
   switch (statusPaletteKey(status)) {
@@ -296,8 +297,9 @@ export function getStatusIcon(status: string): string {
       return 'i-lucide-check-circle-2';
     case 'failed':
     case 'timedout':
-    case 'interrupted':
       return 'i-lucide-x-circle';
+    case 'interrupted':
+      return 'i-lucide-circle-pause';
     case 'flaky':
       return 'i-lucide-shuffle';
     case 'didnotrun':
