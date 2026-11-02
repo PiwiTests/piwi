@@ -38,7 +38,7 @@ vi.mock('../../server/utils/scm', () => ({
 // import time when PIWI_DATABASE_URL is set, so clear it before the module
 // under test (which imports the barrel) is loaded.
 delete process.env.PIWI_DATABASE_URL;
-const { verifyClusterFixes, appendTriageNote, classifyQuietRun, healKeysFromCommits } =
+const { verifyClusterFixes, appendTriageNote, classifyQuietRun, classifyFailingRun, healKeysFromCommits } =
   await import('../../server/utils/fix-verification');
 const { getClusterPatchFacts, getFailureCluster } = await import('../../shared/handlers/failure-clusters');
 
@@ -497,6 +497,75 @@ describe('verifyClusterFixes — run order', () => {
     row = await cluster(clusterId);
     expect(row.fixVerification).toBe('regressed');
     expect(row.status).toBe('open');
+  });
+});
+
+describe('verifyClusterFixes — runs that send no notifications', () => {
+  test.each([
+    ['an editor run', { origin: 'editor' }],
+    ['a partial local run', { isFullRun: false }],
+  ])('%s records the fix and the regression without an event', async (_label, opts) => {
+    const failing = await insertRun('failed', `ed${runSeq + 1}a`);
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2);
+    commitAuthor = { name: 'Ada Lovelace', email: 'ada@example.com' };
+
+    const green = await insertRun('passed', `ed${runSeq + 1}b`, opts);
+    await insertCase(green, 'passed', null, 2);
+    expect((await verifyClusterFixes(db, green)).some((f) => f.clusterId === clusterId)).toBe(true);
+    expect((await cluster(clusterId)).fixLandedRunId).toBe(green);
+
+    const red = await insertRun('failed', `ed${runSeq + 1}c`, opts);
+    await insertCase(red, 'failed', clusterId, 2);
+    await markSeen(clusterId, red);
+    await verifyClusterFixes(db, red);
+    expect((await cluster(clusterId)).fixVerification).toBe('regressed');
+
+    expect(emitted.filter((e) => e.payload.clusterId === clusterId)).toEqual([]);
+  });
+});
+
+describe('verifyClusterFixes — which failing runs regress a fix', () => {
+  async function fixedOn(branch: string) {
+    const failing = await insertRun('failed', `br${runSeq + 1}a`, { branch });
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2);
+    const green = await insertRun('passed', `br${runSeq + 1}b`, { branch });
+    await insertCase(green, 'passed', null, 2);
+    await verifyClusterFixes(db, green);
+    expect((await cluster(clusterId)).fixLandedRunId).toBe(green);
+    emitted.length = 0;
+    return clusterId;
+  }
+
+  async function failOn(clusterId: number, branch: string) {
+    const red = await insertRun('failed', `br${runSeq + 1}c`, { branch });
+    await insertCase(red, 'failed', clusterId, 2);
+    await markSeen(clusterId, red);
+    await verifyClusterFixes(db, red);
+    return (await cluster(clusterId)).fixVerification;
+  }
+
+  test('a failure on a branch that may not have the fix leaves the fix standing', async () => {
+    const clusterId = await fixedOn('main');
+    expect(await failOn(clusterId, 'feature/old')).toBe('stopped-failing');
+    expect(emitted).toEqual([]);
+    expect(await failOn(clusterId, 'main')).toBe('regressed');
+    expect(emitted.map((e) => e.event)).toEqual(['cluster.regressed']);
+  });
+
+  test('a failure on the branch the fix landed on, or on the default branch, regresses it', async () => {
+    expect(await failOn(await fixedOn('feature/cart'), 'feature/cart')).toBe('regressed');
+    expect(await failOn(await fixedOn('feature/cart'), 'main')).toBe('regressed');
+  });
+
+  test('classifyFailingRun', () => {
+    const base = { runBranch: 'main', fixBranch: 'main', defaultBranch: 'main' };
+    expect(classifyFailingRun(base)).toBe('regression');
+    expect(classifyFailingRun({ ...base, runBranch: 'feature/x' })).toBe('other-branch');
+    expect(classifyFailingRun({ ...base, fixBranch: 'feature/x' })).toBe('regression');
+    expect(classifyFailingRun({ ...base, runBranch: null })).toBe('other-branch');
+    expect(classifyFailingRun({ runBranch: null, fixBranch: null, defaultBranch: null })).toBe('regression');
   });
 });
 

@@ -43,7 +43,8 @@ When each event fires, and its payload, are in
 [Notification events & webhooks](/reference/notification-events). A
 [report schedule](./quality-reports#report-schedules) sends its report to the channels it names, with no subscription.
 A run from an editor, a bisect step, a reproduction, or a partial run from a developer's machine or the desktop app
-fires no run event and no new-cluster, flakiness or performance event ([run origin](/reference/test-metadata#run-origin)).
+fires no run event and no new-cluster, fixed, regressed, flakiness or performance event
+([run origin](/reference/test-metadata#run-origin)).
 
 ## Channels
 

@@ -136,7 +136,9 @@ proves nothing was fixed: Piwi records it as flake evidence and the state line s
 which is flake evidence, not a fix*. **The branch must match**: only a run on the branch the cluster last failed on, or
 on the default branch, records a fix, so a green pull-request or heal branch leaves a cluster that fails on `main`
 open. **Runs count in the order they started**: a run that started before the last failing run records no fix, and
-a failing run that started before the fix landed does not regress it, however late either finishes.
+a failing run that started before the fix landed does not regress it, however late either finishes. A failure
+**regresses** the fix only on the branch the fix landed on or on the default branch: another branch may not have the
+fix yet.
 
 The verdict moves the status only on strong evidence: *Diagnosis verified* sets an **open** cluster **resolved**, and
 *Regressed* sets a **resolved** one back to **open**, each adding a line to the triage note. *Stopped failing* alone
