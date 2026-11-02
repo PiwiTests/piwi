@@ -47,6 +47,7 @@ const handler = (await import('../../server/api/files/[...path].get')).default;
 /** A video's bytes: every byte tells its own offset, so a slice is easy to check. */
 const VIDEO = Buffer.from(Array.from({ length: 1000 }, (_, i) => i % 251));
 const SECRET = Buffer.from('project 2 only');
+const BLOB = 'a'.repeat(64);
 
 const reader = {
   user: { id: 5, username: 'rae', role: InstanceRole.MEMBER } as User,
@@ -81,6 +82,10 @@ beforeAll(async () => {
   mkdirSync(join(storageDir, 'project-2'), { recursive: true });
   writeFileSync(join(storageDir, 'project-1/run-7/42/video.webm'), VIDEO);
   writeFileSync(join(storageDir, 'project-1/run-7/42/step-2..json'), '{"step":2}');
+  // A slim trace blob whose manifest does not parse.
+  mkdirSync(join(storageDir, 'project-1/blobs'), { recursive: true });
+  writeFileSync(join(storageDir, `project-1/blobs/${BLOB}.zip`), 'slim');
+  writeFileSync(join(storageDir, `project-1/blobs/${BLOB}.manifest.json`), '{ not json');
   writeFileSync(join(storageDir, 'project-2/secret.txt'), SECRET);
 
   const router = h3.createRouter().get('/api/files/**:path', handler as h3.EventHandler);
@@ -143,6 +148,16 @@ describe('a stored file', () => {
     const several = await get('/api/files/project-1/run-7/42/video.webm', { Range: 'bytes=0-1,5-6' });
     expect(several.status).toBe(200);
     expect(several.body.equals(VIDEO)).toBe(true);
+  });
+});
+
+describe('a stored trace', () => {
+  test('that cannot be rebuilt goes out as stored, never cached for a year', async () => {
+    const answer = await get(`/api/files/project-1/blobs/${BLOB}.zip`);
+    expect(answer.status).toBe(200);
+    expect(answer.body.toString()).toBe('slim');
+    expect(answer.headers['cache-control']).toBe('no-store');
+    expect(answer.headers.etag).toBeUndefined();
   });
 });
 

@@ -7,6 +7,7 @@ import {
 } from '../../utils/project-access';
 import { getStorage } from '../../storage';
 import { resolveStoredTrace } from '../../utils/trace-reconstruct';
+import { traceManifestPath } from '../../utils/trace-manifest';
 import { prepareHtmlReport } from '../../utils/html-report';
 import { readReportArchiveIndex } from '../../utils/report-archive';
 import { getDatabase } from '../../database';
@@ -277,6 +278,11 @@ export default eventHandler(async (event) => {
         removeResponseHeader(event, 'ETag');
         setResponseHeader(event, 'Cache-Control', 'no-store');
         throw apiError({ statusCode: 503, message: 'The trace could not be read from storage. Try again.' });
+      }
+      if (fullZip === fileContent && (await storage.exists(traceManifestPath(path)))) {
+        // A slim blob whose manifest cannot be parsed goes out as stored, never cached as the trace.
+        removeResponseHeader(event, 'ETag');
+        setResponseHeader(event, 'Cache-Control', 'no-store');
       }
       setResponseHeader(event, 'Content-Type', 'application/zip');
       setResponseHeader(event, 'Content-Length', fullZip.length);
