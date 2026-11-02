@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
+import { sql } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { migrateToLatest } from './temp-db';
 
@@ -30,10 +31,10 @@ beforeEach(async () => {
   testSuiteCache.invalidate(projectId);
 });
 
-async function newRun() {
+async function newRun(extra: Partial<typeof schema.testRuns.$inferInsert> = {}) {
   const [run] = await db
     .insert(schema.testRuns)
-    .values({ projectId, status: 'running', startTime: new Date(), metadata: {}, origin: 'ci' })
+    .values({ projectId, status: 'running', startTime: new Date(), metadata: {}, origin: 'ci', ...extra })
     .returning();
   return run!.id;
 }
@@ -88,6 +89,49 @@ describe("a failure cluster's occurrences", () => {
     // No such run: the executions' insert fails on its foreign key, after the clusters were counted.
     await expect(persistRunCases(db as never, projectId, 9999, [failure('pays')] as never)).rejects.toThrow();
 
+    expect(await occurrences()).toEqual([1]);
+  });
+
+  test("keep another batch's failures, counted before its rows are stored, when a batch sent again is taken back", async () => {
+    const runId = await newRun();
+    const batch = [failure('pays')];
+    await persistRunCases(db as never, projectId, runId, batch as never);
+
+    // Another shard's batch counts its two failures on the cluster, then stores its rows.
+    const [cluster] = await db.select().from(schema.failureClusters);
+    await db.update(schema.failureClusters).set({ occurrences: sql`${schema.failureClusters.occurrences} + 2` });
+    // Meanwhile the first batch is sent again, and none of its rows is stored.
+    expect(await persistRunCases(db as never, projectId, runId, batch as never)).toEqual([]);
+    const tests = await db
+      .insert(schema.testCases)
+      .values([
+        { projectId, title: 'refunds', filePath: 'tests/checkout.spec.ts' },
+        { projectId, title: 'ships', filePath: 'tests/checkout.spec.ts' },
+      ])
+      .returning();
+    await db.insert(schema.testRunsCases).values(
+      tests.map((test) => ({
+        testRunId: runId,
+        testCaseId: test.id,
+        status: 'failed',
+        browserName: 'chromium',
+        failureClusterId: cluster!.id,
+      })),
+    );
+
+    expect(await db.select().from(schema.testRunsCases)).toHaveLength(3);
+    expect(await occurrences()).toEqual([3]);
+  });
+
+  test('stay as they are when a run whose failures do not count sends its batch again', async () => {
+    await persistRunCases(db as never, projectId, await newRun(), [failure('pays')] as never);
+    const editorRun = await newRun({ metadata: { piwiOrigin: { kind: 'editor' } }, origin: 'editor' });
+    const batch = [failure('pays')];
+
+    await persistRunCases(db as never, projectId, editorRun, batch as never);
+    await persistRunCases(db as never, projectId, editorRun, batch as never);
+
+    expect(await db.select().from(schema.testRunsCases)).toHaveLength(2);
     expect(await occurrences()).toEqual([1]);
   });
 });

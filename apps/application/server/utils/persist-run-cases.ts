@@ -34,7 +34,7 @@ import {
   parseTestMetadata,
   sanitizeTestMetadata,
 } from '@piwitests/core/test-meta';
-import { matchInsertedRunCases, recountClustersOfSkippedRows, resolveRepeatEachIndex } from './inserted-run-cases';
+import { matchInsertedRunCases, resolveRepeatEachIndex, uncountClustersOfSkippedRows } from './inserted-run-cases';
 import { testCaseCache } from './test-case-cache';
 import { syncTestCaseMetadata, type CaseMetaSnapshot } from './test-case-metadata-sync';
 import { displayTitleOf, externalIdOf, recordExternalIdDuplicates, type TestCaseClaim } from './test-case-match';
@@ -629,10 +629,11 @@ export async function persistRunCases(
     row.coveragePayloadId = p.coverage ? (payloadIds.get(p.coverage) ?? null) : null;
   });
 
+  const countsOccurrences = isEligibleRun({ metadata: run?.metadata }, 'cluster-occurrences');
   if (!probeRun) {
     await assignFailureClusters(db, projectId, testRunId, pendingClusters, runCasesRows, rowFingerprints, {
       wakeSnoozed: !options.keepSnoozed,
-      countsOccurrences: isEligibleRun({ metadata: run?.metadata }, 'cluster-occurrences'),
+      countsOccurrences,
     });
   }
 
@@ -651,13 +652,18 @@ export async function persistRunCases(
       returnedRows.push(...(await insertRunCases(runCasesRows.slice(i, i + INSERT_CHUNK))));
     }
   } catch (error) {
-    await recountClustersOfSkippedRows(db, runCasesRows, matchInsertedRunCases(runCasesRows, returnedRows)).catch(
-      (err) => console.warn('[persist-run-cases] failed to recount the clusters of a batch it could not store', err),
+    await uncountClustersOfSkippedRows(
+      db,
+      runCasesRows,
+      matchInsertedRunCases(runCasesRows, returnedRows),
+      countsOccurrences,
+    ).catch((err) =>
+      console.warn('[persist-run-cases] failed to take back the cluster counts of a batch it could not store', err),
     );
     throw error;
   }
   const insertedCases = matchInsertedRunCases(runCasesRows, returnedRows);
-  await recountClustersOfSkippedRows(db, runCasesRows, insertedCases);
+  await uncountClustersOfSkippedRows(db, runCasesRows, insertedCases, countsOccurrences);
 
   const result = insertedCases.map((r) => ({
     id: r.id,

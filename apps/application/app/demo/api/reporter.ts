@@ -32,8 +32,8 @@ import {
 } from '~~/server/utils/network-request-helpers';
 import {
   matchInsertedRunCases,
-  recountClustersOfSkippedRows,
   resolveRepeatEachIndex,
+  uncountClustersOfSkippedRows,
 } from '~~/server/utils/inserted-run-cases';
 import { upsertLocatorSnapshots } from '~~/server/utils/locator-healing';
 import { executionCreatedAt, type PersistRunCasesOptions } from '~~/server/utils/persist-options';
@@ -64,7 +64,7 @@ import { hideTypedText } from '@piwitests/core/mask';
 import { upsertCasePayloads } from '~~/server/utils/case-payloads';
 import { int32, int64, storableRunCase } from '~~/server/utils/storable-values';
 import { resolveRunBranch } from '~~/server/utils/run-branch';
-import { runCommit, runOrigin } from '#shared/run-eligibility';
+import { isEligibleRun, runCommit, runOrigin } from '#shared/run-eligibility';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 import type { LocatorSnapshot } from '#shared/locator-healing.types';
 import {
@@ -815,8 +815,12 @@ export async function persistRunCases(
     row.coveragePayloadId = coverage ? (pagePayloadIds.get(coverage) ?? null) : null;
   });
 
+  // Whether the run's failures count as occurrences of their clusters (server behavior).
+  const [run] = await db.select({ metadata: testRuns.metadata }).from(testRuns).where(eq(testRuns.id, testRunId));
+  const countsOccurrences = isEligibleRun({ metadata: run?.metadata }, 'cluster-occurrences');
   await assignFailureClusters(db, projectId, testRunId, pendingClusters, runCasesRows, rowFingerprints, {
     wakeSnoozed: !options.keepSnoozed,
+    countsOccurrences,
   });
 
   // ON CONFLICT DO NOTHING + the (run, case, repeat, retries, browser) unique
@@ -833,7 +837,7 @@ export async function persistRunCases(
       browserName: testRunsCases.browserName,
     }),
   );
-  await recountClustersOfSkippedRows(db, runCasesRows, insertedCases);
+  await uncountClustersOfSkippedRows(db, runCasesRows, insertedCases, countsOccurrences);
 
   const result = insertedCases.map((r) => ({
     id: r.id,

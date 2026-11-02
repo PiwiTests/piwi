@@ -1,4 +1,5 @@
-import { recomputeClusterOccurrences } from '#shared/handlers/failure-cluster-ops';
+import { eq, sql } from 'drizzle-orm';
+import { failureClusters } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { MAX_INT32 } from './storable-values';
 
@@ -62,19 +63,31 @@ export function matchInsertedRunCases<T extends RunCaseKey>(
 }
 
 /**
- * Count again, from the rows that reference it, each failure cluster linked to a batch row the insert did not store:
- * one it skipped (a batch sent again, a row the batch repeats) or never wrote (the insert failed). A batch's failures
- * are counted on their clusters before its rows are inserted.
+ * Take back the failures a batch counted on its failure clusters for the rows the insert did not store: one it skipped
+ * (a batch sent again, a row the batch repeats) or never wrote (the insert failed). A batch counts its failures on
+ * their clusters before its rows are inserted, and only when its run's failures count as occurrences
+ * (`countsOccurrences`, the `cluster-occurrences` use). Each counter moves down by what the batch added for those
+ * rows, so the failures another batch counted meanwhile stay counted.
  */
-export async function recountClustersOfSkippedRows(
+export async function uncountClustersOfSkippedRows(
   db: DrizzleDB,
   rows: Array<{ failureClusterId?: number | null }>,
   inserted: Array<{ rowIndex: number }>,
+  countsOccurrences: boolean,
 ): Promise<void> {
+  if (!countsOccurrences) return;
   const stored = new Set(inserted.map((row) => row.rowIndex));
-  const clusterIds = new Set<number>();
+  const skipped = new Map<number, number>();
   rows.forEach((row, index) => {
-    if (row.failureClusterId != null && !stored.has(index)) clusterIds.add(row.failureClusterId);
+    const clusterId = row.failureClusterId;
+    if (clusterId != null && !stored.has(index)) skipped.set(clusterId, (skipped.get(clusterId) ?? 0) + 1);
   });
-  for (const clusterId of clusterIds) await recomputeClusterOccurrences(db, clusterId);
+  for (const [clusterId, count] of skipped) {
+    await db
+      .update(failureClusters)
+      .set({
+        occurrences: sql`case when ${failureClusters.occurrences} > ${count} then ${failureClusters.occurrences} - ${count} else 0 end`,
+      })
+      .where(eq(failureClusters.id, clusterId));
+  }
 }
