@@ -1,6 +1,8 @@
-import { readFile as fsReadFile, writeFile as fsWriteFile, mkdir as fsMkdir, existsSync } from 'fs';
+import { readFile as fsReadFile, writeFile as fsWriteFile, mkdir as fsMkdir, existsSync, createReadStream } from 'fs';
 import { rm, stat } from 'fs/promises';
+import { once } from 'events';
 import { join, dirname, resolve, relative, isAbsolute } from 'path';
+import type { Readable } from 'stream';
 import { promisify } from 'util';
 import type { StorageAdapter } from './types';
 
@@ -48,6 +50,13 @@ export class LocalStorageAdapter implements StorageAdapter {
   async readFile(path: string): Promise<Buffer> {
     const fullPath = this.resolvePath(path);
     return await readFileAsync(fullPath);
+  }
+
+  async readStream(path: string, range?: { start: number; end: number }): Promise<Readable> {
+    const stream = createReadStream(this.resolvePath(path), range && { start: range.start, end: range.end });
+    // A missing file fails here, before the caller has answered anything.
+    await once(stream, 'open');
+    return stream;
   }
 
   /** Whether a regular file is stored at `path`; a directory is not one. */

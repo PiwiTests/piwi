@@ -1,4 +1,5 @@
 import type { S3Client } from '@aws-sdk/client-s3';
+import type { Readable } from 'node:stream';
 import type { StorageAdapter, S3Config } from './types';
 
 /** The AWS SDK's S3 module, and the client this adapter's config built with it. */
@@ -71,6 +72,23 @@ export class S3StorageAdapter implements StorageAdapter {
         chunks.push(Buffer.from(chunk));
       }
       return Buffer.concat(chunks);
+    } catch (error) {
+      console.error(`Failed to read file from S3: ${path}`, error);
+      throw error;
+    }
+  }
+
+  async readStream(path: string, range?: { start: number; end: number }): Promise<Readable> {
+    try {
+      const { s3, s3Client } = await this.sdk();
+      const command = new s3.GetObjectCommand({
+        Bucket: this.config.bucket,
+        Key: path,
+        ...(range && { Range: `bytes=${range.start}-${range.end}` }),
+      });
+      const response = await s3Client.send(command);
+      // In Node the body is a readable stream of the object's bytes.
+      return response.Body as Readable;
     } catch (error) {
       console.error(`Failed to read file from S3: ${path}`, error);
       throw error;
