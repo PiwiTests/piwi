@@ -505,7 +505,8 @@ function isTooLarge(error: unknown): boolean {
  * Upload the files of each of `testCases` in turn to run `runId`, which takes them with `streamToken`
  * (`Uploader.uploadCaseFiles`), skipping those `skip` names, and calling `uploaded` for each test whose files went.
  * A test whose files fail is logged and the next one goes; the uploads stop after
- * `MAX_UPLOAD_CONNECTION_FAILURES` of them in a row got no answer at all, and once `signal` is aborted.
+ * `MAX_UPLOAD_CONNECTION_FAILURES` of them in a row got no answer at all, once the dashboard answers that the run
+ * takes no more files (409: it ended), and once `signal` is aborted.
  */
 export async function uploadCaseFilesInTurn(
   uploader: Pick<Uploader, 'uploadCaseFiles'>,
@@ -543,6 +544,12 @@ export async function uploadCaseFilesInTurn(
       if (sent) uploaded?.(tc);
       connectionFailures = 0;
     } catch (error) {
+      if (error instanceof HttpError && error.status === 409) {
+        logger.warn(
+          `Run #${run.runId} takes no more files (${errorMessage(error)}): skipping those of the remaining tests.`,
+        );
+        return;
+      }
       logger.warn(`Failed to upload files for "${tc.title}": ${errorMessage(error)}`);
       // Any HTTP status means the dashboard answered; only a request that got
       // no response (refused, reset, timed out) counts toward giving up.

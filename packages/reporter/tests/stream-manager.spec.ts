@@ -938,6 +938,15 @@ describe('StreamManager end-of-run bounds', () => {
     expect(uploadCaseFiles).toHaveBeenCalledTimes(10);
   });
 
+  it('uploadRemaining stops once the dashboard says the run takes no more files (409)', async () => {
+    const uploadCaseFiles = vi.fn(async () => {
+      throw new HttpError(409);
+    });
+    const sm = makeManager({}, { uploadCaseFiles });
+    await sm.uploadRemaining(cases(10));
+    expect(uploadCaseFiles).toHaveBeenCalledTimes(1);
+  });
+
   it('drain stops retrying once the HTTP client is closed', async () => {
     const sm = makeManager({
       closed: true,
