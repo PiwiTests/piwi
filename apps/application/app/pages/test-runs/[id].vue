@@ -15,6 +15,7 @@ import { runSummaryText } from '~/utils/run-summary';
 import { NO_WORKER_GRACE_MS } from '~/utils/run-live-view-status';
 import { subscribeDemoEvents } from '~/demo/run-events';
 import { useRunEvents, useRunStart, useRunStream } from '~/composables/useRunStream';
+import { useReportsPoll } from '~/composables/useReportsPoll';
 import { summarizeRunCases } from '#shared/utils/test-counts';
 import { applyLiveResourcesToParts } from '#shared/live-resources';
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
@@ -449,22 +450,14 @@ function flushPendingEvents() {
   }
 }
 
-function pollForReports(attempts = 0): void {
-  // The reporter may upload HTML/Monocart reports and traces AFTER the run
-  // finishes. Poll for a few iterations so they appear without a manual
-  // refresh. We keep polling a fixed number of times regardless of whether
-  // some files already arrived, because uploads land in several batches
-  // (report directory, then per-case traces/attachments) — stopping at the
-  // first file would miss the rest.
+// The reporter may upload HTML/Monocart reports and traces after the run
+// finishes: the page reads the run again a few times so they appear without a
+// manual refresh, and stops when it leaves.
+const reportsPoll = useReportsPoll(refresh);
+
+function pollForReports(): void {
   if (isDemoMode) return; // demo mode has no file uploads
-  if (attempts >= 5) return;
-  setTimeout(
-    async () => {
-      await refresh();
-      pollForReports(attempts + 1);
-    },
-    1500 * (attempts + 1),
-  );
+  reportsPoll.start();
 }
 
 function enqueueEvent(event: Record<string, unknown>) {
@@ -607,6 +600,10 @@ watch(displayTestCases, (val) => {
     throttledTestCases.value = displayTestCases.value;
     rafId = null;
   });
+});
+onUnmounted(() => {
+  if (rafId !== null) cancelAnimationFrame(rafId);
+  rafId = null;
 });
 
 // Display progress: the header counts, the count bar and the grouped list are
