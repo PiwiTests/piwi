@@ -95,11 +95,12 @@ export async function getTestCase(db: DrizzleDB, id: number) {
           sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' AND ${testRunsCases.retries} > 0 THEN 1 ELSE 0 END)`.mapWith(
             Number,
           ),
+        // The outer query reads one table, so its columns render unqualified: the subquery names the test by its id.
         recentFlakyRuns: sql<number>`(
           SELECT COUNT(*) FROM (
             SELECT ${testRunsCases.status} AS s, ${testRunsCases.retries} AS r
             FROM ${testRunsCases}
-            WHERE ${testRunsCases.testCaseId} = ${testCases.id}
+            WHERE ${testRunsCases.testCaseId} = ${id}
               AND ${notLabExecution(testRunsCases.testRunId)}
             ORDER BY ${testRunsCases.createdAt} DESC
             LIMIT 10
