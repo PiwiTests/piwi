@@ -161,22 +161,30 @@ async function sendSingle(db: Db, d: DeliveryRow, c: ChannelRow) {
   } else throw new Error(`Unknown channel type: ${c.type}`);
 }
 
+function digestItems(rows: DeliveryRow[]): DigestItem[] {
+  return rows.map((d) => ({ event: d.event as NotificationEvent, payload: (d.payload ?? {}) as NotificationPayload }));
+}
+
+/** The digest of a batch of rows as its channel type draws it, without sending it. */
+function renderDigest(c: ChannelRow, rows: DeliveryRow[]) {
+  const items = digestItems(rows);
+  if (c.type === 'personal_email' || c.type === 'email') return renderDigestEmail(items);
+  if (c.type === 'slack') return slackDigestMessage(items, siteBase());
+  if (c.type === 'teams') return teamsDigestMessage(items, siteBase());
+  throw new Error(`Digest not supported for channel type: ${c.type}`);
+}
+
 /** Deliver a batch of digest-mode rows through one channel as one message. */
 async function sendDigest(db: Db, c: ChannelRow, rows: DeliveryRow[]) {
-  const items: DigestItem[] = rows.map((d) => ({
-    event: d.event as NotificationEvent,
-    payload: (d.payload ?? {}) as NotificationPayload,
-  }));
-
   if (c.type === 'personal_email' || c.type === 'email') {
     if (!isEmailConfigured()) throw new Error('SMTP not configured');
     const to = await resolveEmailAddress(db, c);
-    const { subject, html, text } = renderDigestEmail(items);
+    const { subject, html, text } = renderDigestEmail(digestItems(rows));
     await sendEmail({ to, subject, html, text });
   } else if (c.type === 'slack') {
-    await sendSlackDigest((c.config ?? {}) as Record<string, unknown>, items);
+    await sendSlackDigest((c.config ?? {}) as Record<string, unknown>, digestItems(rows));
   } else if (c.type === 'teams') {
-    await postToTeams((c.config ?? {}) as Record<string, unknown>, teamsDigestMessage(items, siteBase()));
+    await postToTeams((c.config ?? {}) as Record<string, unknown>, teamsDigestMessage(digestItems(rows), siteBase()));
   } else {
     throw new Error(`Digest not supported for channel type: ${c.type}`);
   }
@@ -312,10 +320,21 @@ async function sweepDue(db: Db): Promise<SweepResult> {
       notificationDeliveries,
       group.map((g) => g.d.id),
     );
-    const rows = group.map((g) => g.d).filter((d) => claimed.has(d.id));
+    const channel = group[0]!.c;
+    // A row whose payload cannot be drawn fails on its own; the rest of the batch still goes out.
+    const rows: DeliveryRow[] = [];
+    for (const d of group.map((g) => g.d).filter((row) => claimed.has(row.id))) {
+      try {
+        renderDigest(channel, [d]);
+        rows.push(d);
+      } catch (err) {
+        await markFailed(db, [d], err, now);
+        failed++;
+      }
+    }
     if (rows.length === 0) continue;
     try {
-      await sendDigest(db, group[0]!.c, rows);
+      await sendDigest(db, channel, rows);
       await markSent(db, rows, now);
       sent += rows.length;
     } catch (err) {
