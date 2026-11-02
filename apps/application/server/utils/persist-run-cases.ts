@@ -75,6 +75,12 @@ import { sanitizeExecutionResources } from '#shared/resource-report';
 import { resolveStoredDefaultBranch } from './scm/stored-default-branch';
 import type { DbClient as DB } from '../database';
 
+/**
+ * Rows per multi-row INSERT. An execution row binds about 50 parameters, and one statement takes at most 32,766 on
+ * SQLite and 65,534 on PostgreSQL, so a whole run's batch is written in slices of this size.
+ */
+const INSERT_CHUNK = 200;
+
 /** Apply the canonical per-case status spelling to each attempt entry. */
 function normalizeAttemptStatuses(attempts: unknown): unknown {
   if (!Array.isArray(attempts)) return attempts;
@@ -620,17 +626,20 @@ export async function persistRunCases(
     });
   }
 
-  const insertedCases = matchInsertedRunCases(
-    runCasesRows,
-    await db.insert(testRunsCases).values(runCasesRows).onConflictDoNothing().returning({
+  const insertRunCases = (rows: typeof runCasesRows) =>
+    db.insert(testRunsCases).values(rows).onConflictDoNothing().returning({
       id: testRunsCases.id,
       status: testRunsCases.status,
       testCaseId: testRunsCases.testCaseId,
       retries: testRunsCases.retries,
       repeatEachIndex: testRunsCases.repeatEachIndex,
       browserName: testRunsCases.browserName,
-    }),
-  );
+    });
+  const returnedRows: Awaited<ReturnType<typeof insertRunCases>> = [];
+  for (let i = 0; i < runCasesRows.length; i += INSERT_CHUNK) {
+    returnedRows.push(...(await insertRunCases(runCasesRows.slice(i, i + INSERT_CHUNK))));
+  }
+  const insertedCases = matchInsertedRunCases(runCasesRows, returnedRows);
 
   const result = insertedCases.map((r) => ({
     id: r.id,
@@ -640,8 +649,8 @@ export async function persistRunCases(
   }));
 
   const nrValues = buildNetworkRequestInsertValues(networkRequestBuilders, insertedCases, testRunId);
-  if (nrValues.length > 0) {
-    await db.insert(networkRequests).values(nrValues);
+  for (let i = 0; i < nrValues.length; i += INSERT_CHUNK) {
+    await db.insert(networkRequests).values(nrValues.slice(i, i + INSERT_CHUNK));
   }
 
   if (writesTestState) await upsertLocatorSnapshots(db, perCaseLocators, testRunId);
