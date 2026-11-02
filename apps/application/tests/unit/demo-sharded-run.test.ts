@@ -92,3 +92,20 @@ describe("the demo's sharded run", () => {
     expect(await readRun(one.runId)).toMatchObject({ branch: 'feature/pay', commit: '9f2c4e1a7b' });
   });
 });
+
+describe("the demo's run begun after a long global setup", () => {
+  test('is active from its begin', async () => {
+    const { runId, setupToken } = await apiSetupTestRun({ projectName: 'demo-setup', instanceId: 'local-1' });
+    const beganAt = Date.now() + 10 * 60_000;
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(beganAt);
+    try {
+      await apiBeginTestRun(runId, { setupToken });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    // The column keeps whole seconds.
+    expect((await readRun(runId)).updatedAt!.getTime()).toBeGreaterThan(beganAt - 1000);
+  });
+});

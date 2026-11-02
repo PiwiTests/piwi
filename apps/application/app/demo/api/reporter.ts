@@ -459,6 +459,8 @@ export async function apiBeginTestRun(
         reporterVersion: body.reporterVersion || (testRun.reporterVersion as string | null),
         isFullRun: body.isFullRun !== false ? 1 : 0,
         filterDetails: body.filterDetails ?? (testRun.filterDetails as Record<string, unknown> | null),
+        // The run's last activity is its begin (server behavior).
+        updatedAt: new Date(),
       })
       .where(eq(testRuns.id, id));
 

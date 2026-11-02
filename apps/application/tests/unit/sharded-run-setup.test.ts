@@ -305,6 +305,43 @@ describe('a run whose global setup takes long', () => {
     expect(await db.select().from(schema.testRuns)).toHaveLength(1);
   });
 
+  test('stays running once begun, until the sweep after its first heartbeat would be due', async () => {
+    const registered = await setup({ body: { projectName: PROJECT, instanceId: 'local-1' } });
+    const beganAt = Date.now() + 10 * 60_000;
+    await at(new Date(beganAt).toISOString(), () =>
+      begin({ params: { id: String(registered.runId) }, body: { setupToken: registered.setupToken } }),
+    );
+
+    // The begun reporter has sent only `begin` events, which write nothing to the run.
+    expect(await interruptStaleRuns(db, beganAt + 30_000)).toEqual([]);
+    expect((await readRun(registered.runId)).status).toBe('running');
+  });
+
+  test('of a shard keeps its run waiting after the shards that began ended', async () => {
+    const one = await setupShard(1);
+    const tokenOne = await beginShard(one.runId, one.setupToken, 1);
+    await finishShard(one.runId, tokenOne, [10], { duration: 60_000 });
+
+    const two = await setupShard(2);
+    expect(await interruptStaleRuns(db, Date.now() + 5 * 60_000)).toEqual([]);
+
+    const tokenTwo = await beginShard(two.runId, two.setupToken, 2);
+    await finishShard(one.runId, tokenTwo, [30], { duration: 30_000 });
+    expect(await readRun(one.runId)).toMatchObject({ status: 'passed', shardsFinished: 2 });
+  });
+
+  test('of a shard keeps its run waiting while another shard runs it, until that shard begins', async () => {
+    const one = await setupShard(1);
+    const two = await setupShard(2);
+    await beginShard(two.runId, two.setupToken, 2);
+    expect(await interruptStaleRuns(db, Date.now() + 5 * 60_000)).toEqual([]);
+
+    await beginShard(one.runId, one.setupToken, 1);
+    expect((await readRun(one.runId)).metadata).not.toHaveProperty('shardSetupTokens');
+    // Both shards began: a run quiet past the timeout lost its reporters.
+    expect(await interruptStaleRuns(db, Date.now() + 5 * 60_000)).toEqual([one.runId]);
+  });
+
   test("of a shard that joins a run takes the branch and commit the run's first shard did not send", async () => {
     const one = await setupShard(1);
     const two = await setupShard(2);

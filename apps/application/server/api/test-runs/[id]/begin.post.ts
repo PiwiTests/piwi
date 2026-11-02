@@ -16,8 +16,10 @@ import {
   knownShardTokens,
   matchesShardToken,
   matchesStreamToken,
+  readShardSetupTokens,
   shardTokenDigest,
   streamTokenDigest,
+  withShardSetupTokens,
   withShardTokens,
 } from '../../../utils/shard-tokens';
 
@@ -152,6 +154,8 @@ async function beginRun(db: DbClient, id: number, body: Record<string, any>) {
       reporterVersion: body.reporterVersion || testRun.reporterVersion,
       isFullRun: body.isFullRun !== false ? 1 : 0,
       filterDetails: body.filterDetails ?? testRun.filterDetails,
+      // The stale-run sweep measures the run's quiet time from here.
+      updatedAt: new Date(),
     };
     const reported = (stored: unknown) =>
       carryExternalIdDuplicates(carryIngestHealth(sanitizeMetadata(body.metadata || stored), stored), stored);
@@ -162,7 +166,7 @@ async function beginRun(db: DbClient, id: number, body: Record<string, any>) {
       metadata = await updateRunMetadata(
         db,
         id,
-        (stored) => withShardTokens(reported(stored), swapShardToken(id, stored, body.setupToken, streamToken)),
+        (stored) => withBegunShard(id, reported(stored), stored, body.setupToken, streamToken),
         running,
       );
     } else {
@@ -187,10 +191,7 @@ async function beginRun(db: DbClient, id: number, body: Record<string, any>) {
       db,
       id,
       (stored) =>
-        withShardTokens(
-          { ...sanitizeMetadata(body.metadata), ...stored },
-          swapShardToken(id, stored, body.setupToken, streamToken),
-        ),
+        withBegunShard(id, { ...sanitizeMetadata(body.metadata), ...stored }, stored, body.setupToken, streamToken),
       {
         ...(body.totalTests ? { totalTests: sql`${testRuns.totalTests} + ${body.totalTests}` } : {}),
         // The first shard to report a branch names the run's branch.
@@ -230,4 +231,22 @@ function swapShardToken(runId: number, metadata: unknown, setupToken: string, st
   tokens.delete(shardTokenDigest(setupToken));
   tokens.add(shardTokenDigest(streamToken));
   return tokens;
+}
+
+/**
+ * `metadata` with a sharded run's shard tokens once a shard began on `setupToken`, read from the `stored` metadata
+ * (`swapShardToken`), and that shard no longer among those still in their global setup.
+ */
+function withBegunShard(
+  runId: number,
+  metadata: unknown,
+  stored: unknown,
+  setupToken: string,
+  streamToken: string,
+): Record<string, unknown> {
+  const spent = shardTokenDigest(setupToken);
+  return withShardSetupTokens(
+    withShardTokens(metadata, swapShardToken(runId, stored, setupToken, streamToken)),
+    readShardSetupTokens(stored).filter((digest) => digest !== spent),
+  );
 }

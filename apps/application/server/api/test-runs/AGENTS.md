@@ -89,6 +89,9 @@ How the server merges shards:
 - **A run's shard tokens are merged, never replaced**, in the cache and in `metadata`. Every shard's setup token stays
   valid until that shard calls `/begin`, which swaps it for the shard's stream token: read the set with
   `knownShardTokens` (cache and metadata together) and write it back with `withShardTokens`.
+- **A shard still in its global setup keeps its run waiting**: `/setup` lists its setup token's digest in
+  `metadata.shardSetupTokens`, its `/begin` takes it out (`withShardSetupTokens`), and the stale-run sweep gives a
+  running run listing one the hour of a run in its global setup (`tests/unit/sharded-run-setup.test.ts`).
 
 ## Adding a field to test run data
 

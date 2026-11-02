@@ -4,7 +4,7 @@ import { testRuns } from '../../database/schema';
 import { requireAuth } from '../../utils/auth';
 import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { runEventBus } from '../../utils/run-events';
-import { persistShardToken, shardTokenDigest, streamTokenDigest } from '../../utils/shard-tokens';
+import { persistShardToken, shardTokenDigest, streamTokenDigest, withShardSetupTokens } from '../../utils/shard-tokens';
 import { getProjectScope } from '../../utils/project-access';
 import { withInstanceRunLock } from '../../utils/ingest-locks';
 import { findActiveShardedRun } from '../../utils/sharded-runs';
@@ -89,7 +89,7 @@ export default eventHandler(async (event) => {
         // Reuse — return existing runId with a fresh setup token
         const setupToken = randomBytes(32).toString('hex');
         runEventBus.addShardToken(existingShardedRun.id, setupToken);
-        await persistShardToken(db, existingShardedRun.id, setupToken);
+        await persistShardToken(db, existingShardedRun.id, setupToken, { setup: true });
         await applyReporterKeep(db, existingShardedRun.id, body.keep);
 
         return {
@@ -105,7 +105,9 @@ export default eventHandler(async (event) => {
       await cancelInstanceRuns(db, project.id, instanceId, undefined, true);
 
       const setupToken = randomBytes(32).toString('hex');
-      const metadata = { shardTokens: [shardTokenDigest(setupToken)] } as Record<string, unknown>;
+      const digest = shardTokenDigest(setupToken);
+      // The shard is in its global setup until its `/begin` spends the token.
+      const metadata = withShardSetupTokens({ shardTokens: [digest] }, [digest]);
 
       const testRunResult = await db
         .insert(testRuns)

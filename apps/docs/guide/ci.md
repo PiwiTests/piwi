@@ -106,7 +106,8 @@ How the merge works:
 2. Shards sharing a run label, a `projectName` **and** a shard count (the `3` of `--shard=1/3`) resolve to the same
    run, streamed or batched.
 3. The run stays `running` until the **last** shard reports. While none of its shards is running, it waits up to an
-   hour for the next one, streamed or batched, so a shard may start an hour after the others ended.
+   hour for the next one, streamed or batched, so a shard may start an hour after the others ended. It also waits up
+   to an hour for a shard still in its global setup.
 4. Counters accumulate across shards, and the run page shows a shard progress badge (`2/3`) while shards are arriving.
    A shard counts once, even when it reports its end twice (its `/finish` answer lost, then its batch upload).
    The run takes the most severe status its shards reported, as Playwright's `merge-reports` does: `failed`, then
@@ -270,10 +271,10 @@ reach, or a missing API key while authentication is on.
 [`wrapConfig`](./reporter#installing-via-wrapconfig), which sets both when they are unset.
 
 **A run is stuck as `interrupted`.** A run silent for two minutes (a cancelled job, a killed runner, a dropped
-network) is marked `interrupted` until its next event revives it. A run still in its global setup (`initializing`) waits
-an hour for its reporter to begin it. A run still uploading its report (`finalizing`) waits ten minutes, then keeps the
-status the reporter sent. [Analytics](/features/analytics#scope) counts interrupted runs as
-failing; **full runs only** drops only partial runs.
+network) is marked `interrupted` until its next event revives it. A run still in its global setup (`initializing`), or
+a sharded run with a shard still in its own, waits an hour for its reporter to begin it. A run still uploading its
+report (`finalizing`) waits ten minutes, then keeps the status the reporter sent.
+[Analytics](/features/analytics#scope) counts interrupted runs as failing; **full runs only** drops only partial runs.
 
 ## Related
 
