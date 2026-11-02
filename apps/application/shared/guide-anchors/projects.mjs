@@ -223,8 +223,9 @@ export const PROJECTS_ANCHORS = [
       },
       {
         id: 'quarantine',
-        describes: 'Quarantine: keeps the test running and reporting while the CI gate leaves it out.',
-        shownWhen: 'When the user can quarantine the project’s tests.',
+        describes:
+          'Quarantine, or the mark of a test already quarantined: it keeps running and reporting while the CI gate leaves it out.',
+        shownWhen: 'When the user can quarantine the project’s tests, or the test is quarantined.',
       },
       {
         id: 'top-suspect',

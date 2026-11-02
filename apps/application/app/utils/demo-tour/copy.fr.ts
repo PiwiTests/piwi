@@ -83,7 +83,8 @@ export const FR_COPY = {
             wasted: 'Les minutes de CI gaspillées par ses nouvelles tentatives, qui fixent l’ordre.',
             score: 'Son score d’instabilité, de 0 à 100, tiré de ses tentatives et de ses bascules.',
             'top-suspect': 'Son principal suspect : la condition que ses échecs partagent le plus.',
-            quarantine: '**Quarantine** garde le test actif, avec ses résultats, mais le contrôle de la CI l’ignore.',
+            quarantine:
+              '**Quarantined** : le test reste actif, avec ses résultats, mais le contrôle de la CI l’ignore.',
           },
         },
         suspects: {

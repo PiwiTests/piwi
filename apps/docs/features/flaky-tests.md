@@ -27,7 +27,7 @@ The **failure rate** is shown but not scored.
   <figcaption>The score and the impact ranking, computed for one test.</figcaption>
 </figure>
 
-The project's **Failures** tab has a **Flaky** view with a **configurable lookback window**. Each flaky test links to its history and carries a **Quarantine** action.
+The project's **Failures** tab has a **Flaky** view with a **configurable lookback window**. Each flaky test links to its history and, unless already quarantined, offers **Quarantine**.
 
 **Scoping**: only runs within the project's **Filters** count: environment (the [reporter](/guide/reporter)'s `environment` option), branch (the [default branch](./branches#the-default-branch) unless picked) and full runs only.
 

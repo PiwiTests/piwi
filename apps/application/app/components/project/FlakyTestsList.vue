@@ -81,16 +81,18 @@ watch(
   { immediate: true },
 );
 
-// Piwi's quarantine proposals among the listed tests, read after the list so the
+// Piwi's quarantine proposals among the listed tests, and the tests already quarantined, read after the list so the
 // list never waits on them. A proposal dismissed since the newest run the candidates read is not marked.
 type QuarantineResponse = ApiResponse<typeof import('~~/server/api/projects/[id]/quarantine.get').default>;
 const proposals = ref(new Map<number, QuarantineResponse['candidates'][number]>());
+const quarantined = ref(new Set<number>());
 
 async function loadProposals() {
   if (capabilityHidden('quarantine')) return;
   try {
     const res = await $fetch<QuarantineResponse>(`/api/projects/${props.projectId}/quarantine`);
     proposals.value = new Map(res.candidates.filter((c) => !c.dismissed).map((c) => [c.testCaseId, c]));
+    quarantined.value = new Set(res.entries.map((entry) => entry.testCaseId));
   } catch {
     // The proposals are optional; the list reads the same without them.
   }
@@ -126,6 +128,7 @@ async function quarantineTest(test: FlakyTest) {
         : { testCaseId: test.testCaseId, reason: 'Flaky', source: 'manual' },
     });
     toast.add({ title: 'Test quarantined', description: test.title, color: 'success' });
+    quarantined.value = new Set([...quarantined.value, test.testCaseId]);
     if (proposal) {
       const next = new Map(proposals.value);
       next.delete(test.testCaseId);
@@ -278,8 +281,16 @@ function flakyBadges(test: FlakyTest) {
             proposal="quarantine"
             @dismissed="loadProposals"
           />
+          <span
+            v-if="quarantined.has(test.testCaseId)"
+            class="inline-flex"
+            data-testid="flaky-quarantined"
+            data-tour-part="quarantine"
+          >
+            <QuarantinedChip />
+          </span>
           <CoverageLossPopover
-            v-if="canQuarantine"
+            v-else-if="canQuarantine"
             :project-id="projectId"
             :project-name="projectName"
             :test-case-ids="[test.testCaseId]"
