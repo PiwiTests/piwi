@@ -646,7 +646,10 @@ describe('verifyClusterFixes — a cluster resolved by hand that fails again', (
     return clusterId;
   }
 
-  async function failAgain(clusterId: number, opts: { branch?: string; startedHoursBefore?: number } = {}) {
+  async function failAgain(
+    clusterId: number,
+    opts: { branch?: string; origin?: string; startedHoursBefore?: number } = {},
+  ) {
     const red = await insertRun('failed', `rh${runSeq + 1}b`, opts);
     await insertCase(red, 'failed', clusterId, 2);
     await markSeen(clusterId, red);
@@ -679,6 +682,12 @@ describe('verifyClusterFixes — a cluster resolved by hand that fails again', (
     expect((await cluster(clusterId)).status).toBe('resolved');
     await failAgain(clusterId, { branch: 'feature/cart' });
     expect((await cluster(clusterId)).status).toBe('open');
+  });
+
+  test('a failure from a run that does not count as an occurrence leaves it resolved', async () => {
+    const clusterId = await resolvedByHand();
+    await failAgain(clusterId, { origin: 'editor' });
+    expect((await cluster(clusterId)).status).toBe('resolved');
   });
 
   test('an ignored cluster stays ignored', async () => {

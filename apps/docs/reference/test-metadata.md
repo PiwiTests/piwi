@@ -71,14 +71,16 @@ What each origin feeds:
 
 - **Flake Lab and probe runs** feed nothing: they replay tests under conditions Piwi injected.
 - **Bisect steps and reproductions** run at a commit chosen to investigate a failure. They stay out of baselines, fix
-  verification, flaky scores, selections, change coverage, the stored locators and test metadata, and the bug-report
-  lifecycle, and have no outbound effect: no [notification](/features/notifications#events), no
+  verification, flaky scores, selections, change coverage, the stored locators and test metadata, the bug-report
+  lifecycle and a failure cluster's occurrences (its count, its last seen run, the wake of a snooze), and have no
+  outbound effect: no [notification](/features/notifications#events), no
   [pull-request comment or commit status](/features/pr-feedback), no automatic AI diagnosis or auto-heal, and no
   [automatic write to an issue tracker](/features/issue-automation#the-runs-that-write).
 - **`piwi bug` runs** do not move the bug report they were written for.
-- **Local runs** (`local`, `desktop`, `editor`, `preflight`) count like CI runs, with two exceptions. An editor's CI
+- **Local runs** (`local`, `desktop`, `editor`, `preflight`) count like CI runs, with three exceptions. An editor's CI
   failures come from the newest complete CI run on the branch, and a local run stands in only while the branch has
-  none. An `editor` run, or a `local` or `desktop` run of part of the suite, fires no run, new-cluster, flakiness or
+  none. An `editor` run's failures join their clusters without counting as occurrences. An `editor` run, or a `local`
+  or `desktop` run of part of the suite, fires no run, new-cluster, fixed, regressed, flakiness or
   performance [notification](/features/notifications#events), posts no
   [pull-request comment or commit status](/features/pr-feedback), starts no automatic AI diagnosis or auto-heal, and
   writes nothing to an [issue tracker](/features/issue-automation#the-runs-that-write) on its own.

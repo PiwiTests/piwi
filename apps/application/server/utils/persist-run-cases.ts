@@ -632,6 +632,7 @@ export async function persistRunCases(
   if (!probeRun) {
     await assignFailureClusters(db, projectId, testRunId, pendingClusters, runCasesRows, rowFingerprints, {
       wakeSnoozed: !options.keepSnoozed,
+      countsOccurrences: isEligibleRun({ metadata: run?.metadata }, 'cluster-occurrences'),
     });
   }
 

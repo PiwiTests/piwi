@@ -17,6 +17,7 @@ import {
 } from '../../server/database/schema';
 import { preferExemplar } from '../prefer-exemplar';
 import { wakeOnRecurrence } from '../inbox-queues';
+import { eligibleRunSql, isEligibleRun } from '../run-eligibility';
 import type { DrizzleDB } from './db';
 
 /** Per-fingerprint accumulator for the batch being persisted. */
@@ -42,12 +43,31 @@ export function isSplitFingerprint(fingerprint: string): boolean {
   return fingerprint.startsWith(SPLIT_FINGERPRINT_PREFIX);
 }
 
+/** How a batch of failures bumps the clusters it joins. */
+interface BumpOptions {
+  /** False leaves an "until it recurs" snooze in place. */
+  wakeSnoozed?: boolean;
+  /** Whether the run's failures count as occurrences; read from the run when unset. */
+  countsOccurrences?: boolean;
+}
+
+/**
+ * Whether run `testRunId`'s failures count as occurrences of their clusters
+ * (the `cluster-occurrences` use). A run that is not stored counts.
+ */
+async function runCountsOccurrences(db: DrizzleDB, testRunId: number): Promise<boolean> {
+  const [run] = await db.select({ metadata: testRuns.metadata }).from(testRuns).where(eq(testRuns.id, testRunId));
+  return !run || isEligibleRun(run, 'cluster-occurrences');
+}
+
 /**
  * Set `failureClusterId` on a batch's rows: a test moved out of a cluster
  * follows its route for that fingerprint; every other row goes through
  * {@link getOrCreateFailureClusters}. `fingerprints[i]` belongs to `rows[i]`.
  * Routed rows are taken out of `pending` before the clusters are bumped.
- * `wakeSnoozed` applies to routed clusters as to the others.
+ * `wakeSnoozed` applies to routed clusters as to the others. A run whose
+ * failures do not count as occurrences (from an editor, a bisect step, a
+ * reproduction) joins them to their clusters without bumping them.
  */
 export async function assignFailureClusters(
   db: DrizzleDB,
@@ -56,10 +76,14 @@ export async function assignFailureClusters(
   pending: Map<string, PendingCluster>,
   rows: Array<{ testCaseId: number; failureClusterId?: number | null }>,
   fingerprints: Array<{ fingerprint: string } | null>,
-  options: { wakeSnoozed?: boolean } = {},
+  options: BumpOptions = {},
 ): Promise<void> {
-  const routed = await routeMovedTests(db, projectId, testRunId, pending, rows, fingerprints, options);
-  const clusterIds = await getOrCreateFailureClusters(db, projectId, testRunId, pending, options);
+  const bump = {
+    ...options,
+    countsOccurrences: options.countsOccurrences ?? (await runCountsOccurrences(db, testRunId)),
+  };
+  const routed = await routeMovedTests(db, projectId, testRunId, pending, rows, fingerprints, bump);
+  const clusterIds = await getOrCreateFailureClusters(db, projectId, testRunId, pending, bump);
   rows.forEach((row, i) => {
     const fingerprint = fingerprints[i];
     if (fingerprint) row.failureClusterId = routed.get(i) ?? clusterIds.get(fingerprint.fingerprint) ?? null;
@@ -101,7 +125,7 @@ async function routeMovedTests(
   pending: Map<string, PendingCluster>,
   rows: Array<{ testCaseId: number }>,
   fingerprints: Array<{ fingerprint: string } | null>,
-  options: { wakeSnoozed?: boolean },
+  options: BumpOptions,
 ): Promise<Map<number, number>> {
   const routedRows = new Map<number, number>();
   if (pending.size === 0) return routedRows;
@@ -135,6 +159,7 @@ async function routeMovedTests(
     p.count--;
     if (p.count === 0) pending.delete(fingerprint);
   });
+  if (options.countsOccurrences === false) return routedRows;
 
   const clusters = await db
     .select({
@@ -287,18 +312,21 @@ export async function splitFailureCluster(
  * before or after them; new ones start at this run. Insert races with
  * concurrent streaming batches are resolved via the unique
  * (projectId, fingerprint) index + onConflictDoNothing. With `wakeSnoozed`
- * false, a recurrence leaves an "until it recurs" snooze in place.
+ * false, a recurrence leaves an "until it recurs" snooze in place. A run whose
+ * failures do not count as occurrences (`cluster-occurrences`) leaves existing
+ * clusters as they are, and a cluster it creates counts none.
  */
 export async function getOrCreateFailureClusters(
   db: DrizzleDB,
   projectId: number,
   testRunId: number,
   pending: Map<string, PendingCluster>,
-  options: { wakeSnoozed?: boolean } = {},
+  options: BumpOptions = {},
 ): Promise<Map<string, number>> {
   const wakeSnoozed = options.wakeSnoozed !== false;
   const ids = new Map<string, number>();
   if (pending.size === 0) return ids;
+  const counts = options.countsOccurrences ?? (await runCountsOccurrences(db, testRunId));
 
   // Bump a re-hit cluster: count the occurrences, move its first and last seen
   // runs to this run when it started before or after them, and refresh
@@ -306,12 +334,13 @@ export async function getOrCreateFailureClusters(
   // to this occurrence when it is a better one. The fingerprint and the frozen
   // fingerprintSample are deliberately left untouched, so refreshing the display
   // can never destabilize re-fingerprinting.
-  const bumpExisting = (
+  const bumpExisting = async (
     clusterId: number,
     p: PendingCluster,
     current: { sampleError: string | null; status: string; snoozedUntil: Date | null; snoozeMode: string | null },
-  ) =>
-    db
+  ) => {
+    if (!counts) return;
+    await db
       .update(failureClusters)
       .set({
         ...seenInRun(testRunId),
@@ -335,6 +364,7 @@ export async function getOrCreateFailureClusters(
           : {}),
       })
       .where(eq(failureClusters.id, clusterId));
+  };
 
   const existing = await db
     .select({
@@ -406,7 +436,7 @@ export async function getOrCreateFailureClusters(
           fingerprintSample: p.sampleError,
           firstSeenRunId: testRunId,
           lastSeenRunId: testRunId,
-          occurrences: p.count,
+          occurrences: counts ? p.count : 0,
         })
         .onConflictDoNothing()
         .returning({ id: failureClusters.id });
@@ -586,15 +616,17 @@ export async function transitionClusterStatus(
 
 /**
  * Recompute a cluster's occurrence counter from the test-run-cases still
- * linked to it. Must run after the case rows have actually been deleted or
- * unlinked (not before), otherwise the count still includes rows that are
- * about to disappear.
+ * linked to it, in the runs whose failures count as occurrences
+ * (`cluster-occurrences`). Must run after the case rows have actually been
+ * deleted or unlinked (not before), otherwise the count still includes rows
+ * that are about to disappear.
  */
 export async function recomputeClusterOccurrences(db: DrizzleDB, clusterId: number): Promise<number> {
   const [row] = await db
     .select({ count: count() })
     .from(testRunsCases)
-    .where(eq(testRunsCases.failureClusterId, clusterId));
+    .innerJoin(testRuns, eq(testRuns.id, testRunsCases.testRunId))
+    .where(and(eq(testRunsCases.failureClusterId, clusterId), eligibleRunSql('cluster-occurrences')));
   const occurrences = Number(row?.count ?? 0);
 
   await db.update(failureClusters).set({ occurrences, updatedAt: new Date() }).where(eq(failureClusters.id, clusterId));

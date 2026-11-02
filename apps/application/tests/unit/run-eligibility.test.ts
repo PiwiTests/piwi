@@ -42,6 +42,7 @@ const EXCLUDED: Record<RunUse, string[]> = {
   'bug-lifecycle': ['bug', 'flake-lab', 'probe', 'bisect', 'reproduce'],
   notifications: ['flake-lab', 'probe', 'bisect', 'reproduce', 'editor'],
   tracker: ['flake-lab', 'probe', 'bisect', 'reproduce', 'editor'],
+  'cluster-occurrences': ['flake-lab', 'probe', 'bisect', 'reproduce', 'editor'],
   'run-health': ['flake-lab', 'probe'],
 };
 
@@ -128,8 +129,8 @@ describe('the run eligibility table', () => {
     }
   });
 
-  test('a complete local run counts wherever a CI run does, but an editor run never notifies or writes to a tracker', () => {
-    const outbound: RunUse[] = ['notifications', 'tracker'];
+  test('a complete local run counts wherever a CI run does, but an editor run never notifies, writes to a tracker or makes a cluster recur', () => {
+    const outbound: RunUse[] = ['notifications', 'tracker', 'cluster-occurrences'];
     for (const use of USES) {
       for (const kind of ['local', 'desktop', 'editor']) {
         const eligible = isEligibleRun({ metadata: { piwiOrigin: { kind } } }, use);

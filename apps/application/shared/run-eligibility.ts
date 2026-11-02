@@ -23,7 +23,8 @@
  * never sends them, and a run from a developer's machine or the desktop app
  * sends them only when it ran the whole suite. A finished run's analysis (fix
  * verification, change coverage, the hand-back outcomes) does not follow that
- * rule: each step reads the run under its own use.
+ * rule: each step reads the run under its own use. A run from an editor does
+ * not make a failure cluster recur either (`cluster-occurrences`).
  */
 
 import { and, eq, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
@@ -72,6 +73,7 @@ export type RunUse =
   | 'bug-lifecycle'
   | 'notifications'
   | 'tracker'
+  | 'cluster-occurrences'
   | 'run-health';
 
 export interface RunUseRule {
@@ -208,6 +210,18 @@ export const RUN_USES: Record<RunUse, RunUseRule> = {
     excludesIncidents: true,
     completeOnly: false,
     completeOnlyFor: ['local', 'desktop'],
+    excludesHistoricalImports: false,
+  },
+  /**
+   * A failure cluster's occurrences: their count, the runs the cluster was first
+   * and last seen in, and the wake of an "until it recurs" snooze. A run from an
+   * editor, a bisect step or a reproduction still joins its failures to their
+   * clusters, without making them recur.
+   */
+  'cluster-occurrences': {
+    excludes: [...LAB_AND_INVESTIGATION, 'editor'],
+    excludesIncidents: false,
+    completeOnly: false,
     excludesHistoricalImports: false,
   },
   /** The runs the incident classifier judges, and the runs of other projects it compares them with. */

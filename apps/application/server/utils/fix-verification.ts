@@ -17,8 +17,9 @@
  * is failing again is marked `regressed`, because a fix that did not hold is
  * worth more than no record at all. A cluster a person resolved with no fix on
  * record (or after its fix regressed) that fails again in a run started after
- * they resolved it is reopened the same way, and emits `cluster.regressed`
- * with no fix run; an ignored cluster stays ignored.
+ * they resolved it, and whose failures count as occurrences
+ * (`cluster-occurrences`), is reopened the same way, and emits
+ * `cluster.regressed` with no fix run; an ignored cluster stays ignored.
  *
  * A quiet run counts as a fix only when it could have carried one: it started
  * after the run the cluster last failed in, its commit differs from the commit
@@ -596,24 +597,26 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
 
     // ── Failing again after a person resolved it ─────────────────────────────
     // No fix on record (or the recorded one already regressed): the person's
-    // "resolved" is contradicted by a run that started after they resolved it.
-    // A resolved cluster's `updatedAt` is the moment it was resolved, since a
-    // new occurrence leaves it alone.
-    const resolvedByHand = await db
-      .select({
-        id: failureClusters.id,
-        signature: failureClusters.signature,
-        title: failureClusters.title,
-        updatedAt: failureClusters.updatedAt,
-      })
-      .from(failureClusters)
-      .where(
-        and(
-          inArray(failureClusters.id, [...clustersSeenNow]),
-          eq(failureClusters.status, 'resolved'),
-          or(isNull(failureClusters.fixLandedRunId), eq(failureClusters.fixVerification, 'regressed')),
-        ),
-      );
+    // "resolved" is contradicted by a new occurrence, from a run that started
+    // after they resolved it. A resolved cluster's `updatedAt` is the moment it
+    // was resolved, since a new occurrence leaves it alone.
+    const resolvedByHand = !isEligibleRun(run, 'cluster-occurrences')
+      ? []
+      : await db
+          .select({
+            id: failureClusters.id,
+            signature: failureClusters.signature,
+            title: failureClusters.title,
+            updatedAt: failureClusters.updatedAt,
+          })
+          .from(failureClusters)
+          .where(
+            and(
+              inArray(failureClusters.id, [...clustersSeenNow]),
+              eq(failureClusters.status, 'resolved'),
+              or(isNull(failureClusters.fixLandedRunId), eq(failureClusters.fixVerification, 'regressed')),
+            ),
+          );
     for (const cluster of resolvedByHand) {
       if (regressedIds.has(cluster.id) || run.startTime.getTime() <= cluster.updatedAt.getTime()) continue;
       try {

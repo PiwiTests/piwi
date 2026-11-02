@@ -16,7 +16,7 @@ declare global {
 
 delete process.env.PIWI_DATABASE_URL;
 
-const { getOrCreateFailureClusters, transitionClusterStatus } =
+const { getOrCreateFailureClusters, transitionClusterStatus, recomputeClusterOccurrences } =
   await import('../../shared/handlers/failure-cluster-ops');
 const { computeErrorFingerprint } = await import('../../shared/error-fingerprint');
 
@@ -155,6 +155,64 @@ describe('getOrCreateFailureClusters first and last seen runs', () => {
     // Run 12 has a higher id but started two months earlier.
     await getOrCreateFailureClusters(dbc, 1, 12, (await pendingFor(plainError)).map);
     expect(await readCluster(clusterId)).toMatchObject({ firstSeenRunId: 12, lastSeenRunId: 11, occurrences: 3 });
+  });
+});
+
+describe('getOrCreateFailureClusters and runs that do not make a cluster recur', () => {
+  async function insertRun(id: number, origin: string, startTime: string) {
+    await db.insert(schema.testRuns).values({
+      id,
+      projectId: 1,
+      status: 'failed',
+      startTime: new Date(startTime),
+      origin,
+      metadata: { piwiOrigin: { kind: origin } },
+    });
+  }
+
+  test.each(['editor', 'bisect', 'reproduce'])(
+    'a %s run joins the cluster without counting, moving it or waking its snooze',
+    async (origin) => {
+      await insertRun(10, 'ci', '2026-10-01T10:00:00Z');
+      await insertRun(11, origin, '2026-10-02T10:00:00Z');
+      await insertRun(12, 'ci', '2026-10-03T10:00:00Z');
+      const { map, fp } = await pendingFor(plainError);
+      const clusterId = (await getOrCreateFailureClusters(dbc, 1, 10, map)).get(fp.fingerprint)!;
+      const snoozedUntil = new Date('9999-01-01T00:00:00Z');
+      await db
+        .update(schema.failureClusters)
+        .set({ snoozedUntil, snoozeMode: 'until-recurs' })
+        .where(eq(schema.failureClusters.id, clusterId));
+      const snooze = async () =>
+        (
+          await db
+            .select({ snoozedUntil: schema.failureClusters.snoozedUntil })
+            .from(schema.failureClusters)
+            .where(eq(schema.failureClusters.id, clusterId))
+        )[0]!.snoozedUntil;
+
+      const joined = await getOrCreateFailureClusters(dbc, 1, 11, (await pendingFor(plainError)).map);
+      expect(joined.get(fp.fingerprint)).toBe(clusterId);
+      expect(await readCluster(clusterId)).toMatchObject({ occurrences: 1, lastSeenRunId: 10 });
+      expect(await snooze()).toEqual(snoozedUntil);
+
+      await getOrCreateFailureClusters(dbc, 1, 12, (await pendingFor(plainError)).map);
+      expect(await readCluster(clusterId)).toMatchObject({ occurrences: 2, lastSeenRunId: 12 });
+      expect(await snooze()).toBeNull();
+    },
+  );
+
+  test('recounting the occurrences leaves out the runs that do not count', async () => {
+    await insertRun(10, 'ci', '2026-10-01T10:00:00Z');
+    await insertRun(11, 'editor', '2026-10-02T10:00:00Z');
+    await db.insert(schema.testCases).values({ id: 1, projectId: 1, title: 'pays', filePath: 'a.spec.ts' });
+    const { map, fp } = await pendingFor(plainError);
+    const clusterId = (await getOrCreateFailureClusters(dbc, 1, 10, map)).get(fp.fingerprint)!;
+    await db.insert(schema.testRunsCases).values([
+      { testRunId: 10, testCaseId: 1, status: 'failed', failureClusterId: clusterId },
+      { testRunId: 11, testCaseId: 1, status: 'failed', failureClusterId: clusterId },
+    ]);
+    expect(await recomputeClusterOccurrences(dbc, clusterId)).toBe(1);
   });
 });
 
