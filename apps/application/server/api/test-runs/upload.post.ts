@@ -456,7 +456,8 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
       // Traces and attachments are keyed by the index of their case in the
       // upload; a duplicate case the insert skipped has no execution to link to.
       const persist = () => persistRunCases(db, project.id, testRun.id, testCasesData.map(mapWireCaseToRunCase));
-      // A shard's run holds the other shards' executions: only a run this upload created goes when its own fail.
+      // A run this upload created is removed when its executions fail to store; a shard's run, which holds the
+      // other shards' executions, stays.
       const insertedRunCases = isBatchShard ? await persist() : await storeOrDiscardRun(db, testRun.id, persist);
       const executionByIndex = new Map(insertedRunCases.map((row) => [row.inputIndex, row]));
 
