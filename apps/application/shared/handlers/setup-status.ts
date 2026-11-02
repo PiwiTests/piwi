@@ -41,7 +41,7 @@ import {
   prFeedbackPosts,
   assistantMessages,
 } from '../../server/database/schema';
-import { and, eq, isNotNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { getAppSetting, setAppSetting } from '../../server/utils/app-settings';
 import { PR_FEEDBACK_KEY } from '#shared/pr-feedback';
 import { AUTO_HEAL_KEY } from '#shared/auto-heal';
@@ -123,6 +123,42 @@ const PASSED_WITH_ARIA = sql`${testRunsCases.status} = 'passed' and (${testRunsC
 const PASSED_ON_RETRY = sql`${testRunsCases.status} = 'passed' and ${testRunsCases.retries} > 0`;
 const SERVER_TRACE = sql`${networkRequests.serverTraces} is not null`;
 
+/**
+ * What only the capture fixtures record about a test beside its requests: its
+ * page state at the end. Its console and its ARIA snapshot prove nothing, since
+ * an import and Playwright's own error context store them too. No index holds
+ * the column, so a probe reads at most `FIXTURE_EVIDENCE_SAMPLE` executions of
+ * a scope's newest runs (`FIXTURE_EVIDENCE_RUNS`), never every execution.
+ */
+const FIXTURE_EVIDENCE = sql`${testRunsCases.pageState} is not null`;
+const FIXTURE_EVIDENCE_RUNS = 3;
+const FIXTURE_EVIDENCE_SAMPLE = 500;
+
+/** Whether the executions sampled from the newest runs (of a project, else of the instance) hold `FIXTURE_EVIDENCE`. */
+function fixtureEvidenceInNewestRuns(db: DrizzleDB, projectId?: number): Promise<boolean> {
+  const newestRuns = db
+    .select({ id: testRuns.id })
+    .from(testRuns)
+    .where(typeof projectId === 'number' ? eq(testRuns.projectId, projectId) : undefined)
+    .orderBy(desc(testRuns.startTime))
+    .limit(FIXTURE_EVIDENCE_RUNS);
+  // The sample carries a flag, not the column, so no JSON is copied while it is read.
+  const sample = db
+    .select({ evidence: sql<number>`case when ${FIXTURE_EVIDENCE} then 1 else 0 end`.as('evidence') })
+    .from(testRunsCases)
+    .where(inArray(testRunsCases.testRunId, newestRuns))
+    .limit(FIXTURE_EVIDENCE_SAMPLE)
+    .as('fixture_sample');
+  return exists(
+    db,
+    db
+      .select({ one: sql`1` })
+      .from(sample)
+      .where(sql`${sample.evidence} = 1`)
+      .limit(1),
+  );
+}
+
 /** How long found evidence stands before a read probes for it again. */
 const EVIDENCE_TTL_MS = 60_000;
 
@@ -189,8 +225,9 @@ function evidenceProbes(db: DrizzleDB, projectId?: number): Record<SetupCapabili
           ? db.select({ id: testRuns.id }).from(testRuns).where(eq(testRuns.projectId, pid)).limit(1)
           : db.select({ id: testRuns.id }).from(testRuns).limit(1),
       ),
-    fixtures: () =>
-      exists(
+    // The fixtures: a captured request, or the page state they record at a test's end, in the newest runs.
+    fixtures: async () =>
+      (await exists(
         db,
         scoped
           ? db
@@ -200,7 +237,7 @@ function evidenceProbes(db: DrizzleDB, projectId?: number): Record<SetupCapabili
               .where(eq(testRuns.projectId, pid))
               .limit(1)
           : db.select({ id: networkRequests.id }).from(networkRequests).limit(1),
-      ),
+      )) || fixtureEvidenceInNewestRuns(db, projectId),
     'locator-healing': () =>
       exists(
         db,
