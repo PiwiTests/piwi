@@ -221,6 +221,7 @@ const knownPeople = computed(() => {
 const focusedId = ref<number | null>(null);
 const selectedIds = ref(new Set<number>());
 
+/** The selected clusters of this queue: what a bulk action applies to, and what the bar counts. */
 const selectedClusters = computed(() => rows.value.filter((c) => selectedIds.value.has(c.id)));
 const bulkCanTriage = computed(() => selectedClusters.value.every(canTriage));
 const bulkCanQuarantine = computed(() => selectedClusters.value.every(canQuarantine));
@@ -648,10 +649,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 
     <!-- Bulk bar -->
     <div
-      v-if="selectedIds.size > 0"
+      v-if="selectedClusters.length > 0"
       class="mb-2 flex flex-wrap items-center gap-1.5 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm"
     >
-      <span class="font-medium tabular-nums">{{ selectedIds.size }} selected</span>
+      <span class="font-medium tabular-nums">{{ selectedClusters.length }} selected</span>
       <div class="ml-auto flex flex-wrap items-center gap-1">
         <template v-if="bulkCanTriage">
           <UButton
