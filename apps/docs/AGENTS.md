@@ -163,8 +163,9 @@ flags, events): link the reference page instead of copying it.
 - A `description` in its front matter: one sentence of at least 50 characters, used as the search snippet and the
   social card text. The home page is the exception: it uses the site description in `config.mts`.
 - A `<title>` of at most 60 characters that names Playwright: the site's `TITLE_TEMPLATE` (`.vitepress/page-meta.mts`)
-  adds `| Piwi for Playwright` to the H1. A recipe's front matter `title` is the search the page answers, naming
-  Playwright, with `titleTemplate: ":title | Piwi"`. `docs-page-meta.test.ts` checks every page.
+  adds `| Piwi for Playwright` to its front matter `title`. A recipe keeps its sidebar label as `title` and names the
+  search it answers in its own `titleTemplate` (`"Slow Playwright suite: :title | Piwi"`). `docs-page-meta.test.ts`
+  checks every page on disk, the generated ones once `docs:gen` has written them.
 - Its H1 equals its sidebar label. Recipes are the exception: their H1 is the reader's question.
 - One footer heading, `## Related`.
 - An image goes in a `<figure>` with a `<figcaption>`: `custom.css` frames it and `theme/image-zoom.ts` opens it at

@@ -2,6 +2,7 @@ import { describe, test, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, relative } from 'node:path';
+import { parse as parseYaml } from 'yaml';
 import {
   clipDescription,
   openingParagraph,
@@ -16,6 +17,9 @@ import {
 const AGENT_GUIDES = ['AGENTS.md', 'CLAUDE.md'];
 
 const docsRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'docs');
+// The site title, as the docs config sets it (generate-llms.mjs reads it the same way).
+const siteTitle =
+  /^\s*title: '([^']+)'/m.exec(readFileSync(join(docsRoot, '.vitepress', 'config.mts'), 'utf8'))?.[1] ?? '';
 
 describe('openingParagraph', () => {
   test('skips the frontmatter, headings, components, code and containers', () => {
@@ -110,9 +114,19 @@ describe('pageUrl', () => {
 });
 
 describe('pageTitle', () => {
-  test('puts the title through the template, or leaves it alone without one', () => {
-    expect(pageTitle('Database', ':title | Piwi for Playwright')).toBe('Database | Piwi for Playwright');
-    expect(pageTitle('Piwi: self-hosted Playwright dashboard', false)).toBe('Piwi: self-hosted Playwright dashboard');
+  test('builds the title as VitePress does', () => {
+    expect(pageTitle('Database', ':title | Piwi for Playwright', 'Site')).toBe('Database | Piwi for Playwright');
+    expect(pageTitle('Database', 'Piwi for Playwright', 'Site')).toBe('Database | Piwi for Playwright');
+    expect(pageTitle('Database', true, 'Site')).toBe('Database | Site');
+    expect(pageTitle('Database', undefined, 'Site')).toBe('Database | Site');
+    expect(pageTitle('Database', 'Site', 'Site')).toBe('Database');
+    expect(pageTitle('Home', false, 'Site')).toBe('Home');
+    expect(pageTitle('', ':title | Piwi', 'Site')).toBe('Site | Piwi');
+    expect(pageTitle('Site', true, 'Site')).toBe('Site');
+  });
+
+  test('reads the site title from the docs config', () => {
+    expect(siteTitle).not.toBe('');
   });
 });
 
@@ -137,10 +151,11 @@ describe('every docs page', () => {
   // Search engines cut a title past about 60 characters, and "Playwright" is the word a search for this site holds.
   test.each(pages.map((path) => relative(docsRoot, path)))('%s has a search title', (page) => {
     const markdown = readFileSync(join(docsRoot, page), 'utf8');
-    const fields = frontmatter(markdown);
-    const heading = /^# (.+)$/m.exec(markdown.replace(/^(```|~~~)[\s\S]*?^\1/gm, ''))?.[1];
-    const template = fields.titleTemplate === 'false' ? false : (fields.titleTemplate ?? TITLE_TEMPLATE);
-    const title = pageTitle(fields.title || heading || '', template);
+    const block = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/.exec(markdown);
+    const fields = (block ? parseYaml(block[1]!) : null) ?? {};
+    const body = markdown.slice(block?.[0].length ?? 0).replace(/^(```|~~~)[\s\S]*?^\1/gm, '');
+    const heading = /^# (.+?)(?:\s*\{#[^}]*\})?$/m.exec(body)?.[1] ?? '';
+    const title = pageTitle(String(fields.title || heading), fields.titleTemplate ?? TITLE_TEMPLATE, siteTitle);
     const fix = `give ${page} a shorter title, or a frontmatter title and titleTemplate (apps/docs/AGENTS.md)`;
     expect(title.length, `"${title}" is ${title.length} characters: ${fix}`).toBeLessThanOrEqual(60);
     expect(title, `"${title}" does not name Playwright: ${fix}`).toContain('Playwright');
