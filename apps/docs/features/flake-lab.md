@@ -91,7 +91,7 @@ It reruns the reproducing arm and its control for enough runs that a failure at 
 shown with 95% confidence (`⌈ln 0.05 / ln(1 − rate)⌉`, at least 5), and stops at the first matching failure. With
 none, the fix is **verified**. The verify experiment appears on the Flakiness tab next to the one it verifies, and the
 test reads [verified fixed](./flaky-tests#verified-fixed): off the flaky ranking until it retry-passes again, and a
-quarantined test is proposed for release at once.
+quarantined test is proposed for release at once, until it fails again.
 
 **Exit codes:** `0` an arm reproduced the failure (`verify`: the fix held) · `1` nothing reproduced (`verify`: it
 still fails, or too few runs passed to say) · `2` error.

@@ -121,8 +121,8 @@ list only grows.
   retry, resets it. A run that skipped it changes nothing, and an older report imported later never counts.
 - After five consecutive passes the test is flagged **ready to release** — the dashboard tells you, rather than waiting
   to be asked.
-- A fix [verified](#verified-fixed) after the quarantine flags it at once, while it holds. Release stays yours to
-  click.
+- A fix [verified](#verified-fixed) after the quarantine flags it at once, while it holds and the test has not failed
+  since. Release stays yours to click.
 - **Candidates** (**Proposed for quarantine** in the Flaky view) are flaky tests wasting 2+ CI minutes with a score
   of 40+, ranked by impact; a high-confidence AI diagnosis calling the test flaky adds a reason. A 200 ms flake
   costs nothing; one burning a four-minute timeout weekly hurts.

@@ -9,8 +9,8 @@
  * from the [CI gate](./gate)'s verdict and nothing else. That one difference is
  * what makes the exit possible: consecutive passes accumulate, and once a test
  * has earned its way out the dashboard says so instead of waiting to be asked.
- * A Flake Lab verified fix made after the quarantine, still holding, earns it
- * at once. Release itself is always a person's action.
+ * A Flake Lab verified fix made after the quarantine, still holding and not
+ * failed since, earns it at once. Release itself is always a person's action.
  *
  * Both proposals are hand-backs (`quarantine-proposal`): quarantining a
  * proposed test, or releasing a test whose release was proposed, records
@@ -55,7 +55,7 @@ export interface QuarantineEntry {
   releaseProposed: boolean;
   /** Why release is proposed: the passing streak, or a verified fix; null when it is not. */
   releaseReason: 'streak' | 'verified-fix' | null;
-  /** The Flake Lab verified fix made since the quarantine, while it holds. */
+  /** The Flake Lab verified fix made since the quarantine, while it holds and the test has not failed since. */
   verifiedFix: VerifiedFix | null;
   /** Runs since quarantine that recorded the test, the newest 30 at most; zero means nothing has exercised it yet. */
   runsSinceQuarantine: number;
@@ -109,11 +109,14 @@ interface Streak {
   runs: number;
   /** It failed in the newest run that ran it. */
   failing: boolean;
+  /** Start of the newest of those runs where an attempt of it failed, a pass on a retry included; null when none did. */
+  lastFailedAt: Date | null;
 }
 
 /** An attempt row of a quarantined test, as the streak reads it. */
 interface StreakRow {
   testCaseId: number;
+  runStartedAt: Date;
   status: string;
   retries: number | null;
   repeatEachIndex: number;
@@ -156,6 +159,7 @@ async function computeStreaks(db: DrizzleDB, projectId: number, testCaseId?: num
   const ranked = db
     .select({
       testCaseId: testRunsCases.testCaseId,
+      runStartedAt: testRuns.startTime,
       status: testRunsCases.status,
       retries: testRunsCases.retries,
       repeatEachIndex: testRunsCases.repeatEachIndex,
@@ -182,6 +186,7 @@ async function computeStreaks(db: DrizzleDB, projectId: number, testCaseId?: num
   const rows = await db
     .select({
       testCaseId: ranked.testCaseId,
+      runStartedAt: ranked.runStartedAt,
       status: ranked.status,
       retries: ranked.retries,
       repeatEachIndex: ranked.repeatEachIndex,
@@ -209,7 +214,13 @@ async function computeStreaks(db: DrizzleDB, projectId: number, testCaseId?: num
       passes++;
     }
     const latest = outcomes.find((outcome) => outcome !== null);
-    streaks.set(caseId, { passes, runs: outcomes.length, failing: latest === 'failed' });
+    const lastFailed = runs.find((_, i) => outcomes[i] === 'failed' || outcomes[i] === 'flaky');
+    streaks.set(caseId, {
+      passes,
+      runs: outcomes.length,
+      failing: latest === 'failed',
+      lastFailedAt: lastFailed ? lastFailed[0]!.runStartedAt : null,
+    });
   }
 
   return streaks;
@@ -241,10 +252,15 @@ async function releaseProposals(
   );
   const out = new Map<number, ReleaseProgress>();
   for (const entry of entries) {
-    const streak = streaks.get(entry.testCaseId) ?? { passes: 0, runs: 0, failing: false };
+    const streak = streaks.get(entry.testCaseId) ?? { passes: 0, runs: 0, failing: false, lastFailedAt: null };
     const fix = fixes.get(entry.testCaseId);
-    // Only a fix verified after the test was quarantined says it earned its way out.
-    const verifiedFix = fix && new Date(fix.verifiedAt).getTime() >= toMs(entry.createdAt) ? fix : null;
+    // Only a fix verified after the test was quarantined, and not failed since, says it earned its way out.
+    const verifiedFix =
+      fix &&
+      toMs(fix.verifiedAt) >= toMs(entry.createdAt) &&
+      !(streak.lastFailedAt && streak.lastFailedAt.getTime() > toMs(fix.verifiedAt))
+        ? fix
+        : null;
     out.set(entry.testCaseId, { streak, verifiedFix, earned: streak.passes >= RELEASE_AFTER_CONSECUTIVE_PASSES });
   }
   return out;
