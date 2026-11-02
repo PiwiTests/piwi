@@ -1,4 +1,4 @@
-import { sql, eq } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { getDatabase, type DbClient } from '../../../database';
 import { testRuns } from '../../../database/schema';
 import { runEventBus } from '../../../utils/run-events';
@@ -119,6 +119,21 @@ export default eventHandler(async (event) => {
 
   // ── Non-sharded run (existing behaviour) ─────────────────────────────────
 
+  // One /finish settles the run. A request the reporter sends again while this
+  // one runs finds the run settled, changes nothing and answers its status.
+  const settleRun = async (updateData: Record<string, unknown>): Promise<boolean> => {
+    const [settled] = await db
+      .update(testRuns)
+      .set(updateData)
+      .where(and(eq(testRuns.id, id), inArray(testRuns.status, ['running', 'interrupted'])))
+      .returning({ id: testRuns.id });
+    return settled !== undefined;
+  };
+  const settledAnswer = async () => {
+    const [current] = await db.select({ status: testRuns.status }).from(testRuns).where(eq(testRuns.id, id));
+    return { success: true, runId: id, status: current?.status ?? status };
+  };
+
   // Fold timed-out into failed for both the DB write and the live SSE events.
   // Preserve the "use body value when provided, else keep existing DB value"
   // semantics — the reporter sends both fields, but older clients may omit them.
@@ -169,7 +184,7 @@ export default eventHandler(async (event) => {
       ...(body.filterDetails !== undefined && { filterDetails: body.filterDetails ?? null }),
     };
 
-    await db.update(testRuns).set(updateData).where(eq(testRuns.id, id));
+    if (!(await settleRun(updateData))) return settledAnswer();
 
     runEventBus.clearRunState(id);
 
@@ -215,7 +230,7 @@ export default eventHandler(async (event) => {
       ...(body.filterDetails !== undefined && { filterDetails: body.filterDetails ?? null }),
     };
 
-    await db.update(testRuns).set(updateData).where(eq(testRuns.id, id));
+    if (!(await settleRun(updateData))) return settledAnswer();
 
     runEventBus.publish(id, {
       type: 'run-finished',
