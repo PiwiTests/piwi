@@ -52,6 +52,21 @@ describe('emitRunNotifications', () => {
     expect(events()).toEqual(expect.arrayContaining(['run.finished', 'run.failed', 'run.failed.default_branch']));
   });
 
+  test('measures a run against complete runs only, never a Flake Lab or a partial run', async () => {
+    // Two short Flake Lab runs and a partial run come right before the CI run.
+    await addRun(1, { duration: 50_000 });
+    await addRun(2, { duration: 50_000 });
+    await addRun(3, { duration: 300, origin: 'flake-lab', metadata: {} });
+    await addRun(4, { duration: 300, origin: 'flake-lab', metadata: {} });
+    await addRun(5, { duration: 1_000, isFullRun: 0 });
+    await addRun(6, { duration: 61_000 });
+
+    await emitRunNotifications(db as never, 6);
+
+    const perf = emitted.find((e) => e.event === 'perf.regression');
+    expect(perf?.payload).toMatchObject({ baselineDurationMs: 50_000, regressionPct: 22 });
+  });
+
   test('sends no run.failed for a passing run', async () => {
     await addRun(1);
     await emitRunNotifications(db as never, 1);

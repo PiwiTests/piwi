@@ -92,9 +92,10 @@ export async function loadLooksFixedTests(db: DbClient, runId: number): Promise<
 
 /**
  * The run's looks-fixed tests (`loadLooksFixedTests`) that did not already look
- * fixed on the previous completed run of the same project and branch: the
- * tests whose bug started looking fixed with this run. Every looks-fixed test
- * counts when the branch has no earlier run.
+ * fixed on the previous completed run of the same project and branch that sends
+ * notifications (the `notifications` use): the tests whose bug started looking
+ * fixed with this run. Every looks-fixed test counts when the branch has no
+ * such earlier run.
  */
 export async function loadNewlyLooksFixedTests(
   db: DbClient,
@@ -111,6 +112,7 @@ export async function loadNewlyLooksFixedTests(
         eq(testRuns.projectId, run.projectId),
         lt(testRuns.id, run.id),
         inArray(testRuns.status, ['passed', 'failed']),
+        eligibleRunSql('notifications'),
       ),
     )
     .orderBy(desc(testRuns.id))
@@ -572,7 +574,8 @@ export async function emitRunNotifications(db: DbClient, runId: number): Promise
     }
 
     // Perf regression: the run is markedly slower than the median of prior
-    // completed runs on the same branch and in the same environment.
+    // complete runs (the `run-baseline` use: the whole suite, no lab run, bisect
+    // step or environment incident) on the same branch and in the same environment.
     if (runRow.duration && runRow.duration > 0) {
       const priorRuns = await db
         .select({
@@ -587,6 +590,7 @@ export async function emitRunNotifications(db: DbClient, runId: number): Promise
             eq(testRuns.projectId, runRow.projectId),
             lt(testRuns.id, runId),
             inArray(testRuns.status, ['passed', 'failed']),
+            eligibleRunSql('run-baseline'),
           ),
         )
         .orderBy(desc(testRuns.id))
