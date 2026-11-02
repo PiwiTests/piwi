@@ -407,7 +407,7 @@ export const MCP_TOOL_DEFS = [
     module: 'core',
     description: md(
       'Get the full evidence of a failure cluster, the same the diagnosis AI reads: the richest evidence there is for debugging a failure.',
-      'It holds error samples, stack traces, test steps, console logs, network failures, ARIA snapshots and the source-control diff (the files changed since the last green run), with a block saying which sections are present, truncated or absent. `coverage` says what the diff covers (commit range, files, patches left out).',
+      'It holds error samples, stack traces, test steps, console logs, network failures, ARIA snapshots and the source-control diff (the files changed since the last green run), with a block saying which sections are present, truncated or absent. `coverage` says what the diff covers (commit range, files, patches left out), with `filesTruncated` and `totalChangedFiles` when the host listed only the range’s first files, `commitsTruncated` when it listed only its newest commits and `patchesTruncated` when patches were cut.',
     ),
     inputSchema: {
       type: 'object',
@@ -511,6 +511,11 @@ export const MCP_TOOL_DEFS = [
     description: md(
       'Get the changed files and patches of one commit in a project’s repository.',
       'Use it on a commit suspected of causing a failure. Needs a source-control token, set on the project or for the instance.',
+      [
+        '`message` is the commit’s message, when the host gives it.',
+        '`files` lists at most 300 changed files, each with its `patch` (hunks only) and `previousFilename` for a rename; `filesTruncated` says the commit changed more.',
+        'A patch the host cut ends with `[... patch truncated ...]`. The patches share a budget of 200,000 characters: past it, a patch is cut the same way and the next ones are left out. Either sets `patchesTruncated`. `patchesOmitted` says the host sent no patch at all.',
+      ],
     ),
     inputSchema: {
       type: 'object',

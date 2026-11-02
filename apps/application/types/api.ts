@@ -1540,6 +1540,12 @@ export interface DiagnosisContextCoverage {
     patchedFilesCount: number;
     patchesOmitted: boolean;
     patchesTruncated: boolean;
+    /** true when the host listed only the range's first changed files. */
+    filesTruncated?: boolean;
+    /** How many files the range changed in all, when the host says and listed fewer. */
+    totalChangedFiles?: number | null;
+    /** true when the host listed only the range's newest commits. */
+    commitsTruncated?: boolean;
     /** What established the baseline commit: project-wide green run, per-test last-pass, or manual override. */
     baselineKind?: 'run-green' | 'test-green' | 'manual';
     /** Error message when the SCM diff fetch failed. */
@@ -1647,6 +1653,8 @@ export interface CommitListItem {
  */
 export interface ScmChangedFile {
   filename: string;
+  /** The file's path before a rename, where the host gives it. */
+  previousFilename?: string;
   status: string;
   additions: number;
   deletions: number;
@@ -1662,6 +1670,12 @@ export interface ScmChanges {
   commits: { sha: string; message: string }[];
   files: ScmChangedFile[];
   patchesOmitted?: boolean;
+  /** true when the host listed only the first changed files. */
+  filesTruncated?: boolean;
+  /** How many files changed in all, when the host says and listed fewer. */
+  totalChangedFiles?: number;
+  /** true when the host listed only the newest commits. */
+  commitsTruncated?: boolean;
 }
 
 /**

@@ -3,14 +3,16 @@ import {
   type RerunDispatchRequest,
   type RerunDispatchResult,
   truncatePatch,
-  MAX_SCM_FILES,
   MAX_SCM_FILES_TOTAL,
+  HOST_MAX_PAGE_SIZE,
   MAX_FILE_BYTES,
   FETCH_TIMEOUT_MS,
   readBlobText,
 } from './ScmProvider';
 import { isGitObjectId } from '#shared/utils/hash';
 import type {
+  ChangedFile,
+  ScmCommit,
   ScmCommitDetail,
   ScmCommitAuthor,
   ScmChanges,
@@ -42,8 +44,42 @@ const fetchCommitDiffCache = new TtlCache<ScmChanges>(10 * 60 * 1000);
 const fetchFileCache = new TtlCache<ScmFileContent | null>(30 * 60 * 1000);
 const fetchTreeCache = new TtlCache<string[]>(10 * 60 * 1000);
 const defaultBranchCache = new TtlCache<string | null>(30 * 60 * 1000);
-// Author is immutable per SHA, so cache it (incl. negative lookups) for longer.
-const commitAuthorCache = new TtlCache<ScmCommitAuthor | null>(30 * 60 * 1000);
+// A commit is immutable per SHA, so cache it (and a commit the host does not have) for longer.
+const commitInfoCache = new TtlCache<{ id: string; message: string; authorName: string; authorEmail: string } | null>(
+  30 * 60 * 1000,
+);
+
+/** A changed file as the compare and commit diff endpoints list it. */
+interface GitLabDiff {
+  old_path: string;
+  new_path: string;
+  diff: string;
+  new_file: boolean;
+  deleted_file: boolean;
+  renamed_file: boolean;
+}
+
+/** A changed file of GitLab's in the provider's shape. */
+function changedFileOf(f: GitLabDiff): ChangedFile {
+  const { additions, deletions } = countDiffLines(f.diff ?? '');
+  const filename = f.new_path || f.old_path;
+  return {
+    filename,
+    ...(f.renamed_file && f.old_path && f.old_path !== filename ? { previousFilename: f.old_path } : {}),
+    status: f.new_file ? 'added' : f.deleted_file ? 'removed' : f.renamed_file ? 'renamed' : 'modified',
+    additions,
+    deletions,
+    patch: f.diff ? truncatePatch(f.diff) : undefined,
+  };
+}
+
+/** A commit as `fetchChanges` and `fetchCommitDiff` list it. */
+function commitOf(id: string, message: string): ScmCommit {
+  return { sha: id.slice(0, 7), message: (message.split('\n')[0] ?? '').trim(), fullMessage: message };
+}
+
+/** Files read per page of a commit's diff. */
+const COMMIT_DIFF_PAGE_SIZE = HOST_MAX_PAGE_SIZE;
 
 /** Count added/removed lines in a unified-diff hunk body (ignores +++/--- headers). */
 function countDiffLines(diff: string): { additions: number; deletions: number } {
@@ -93,28 +129,43 @@ export class GitLabProvider extends ScmProvider {
     if (hit !== undefined) return hit;
 
     const projectPath = encodeURIComponent(this.repoPath);
-    const url = new URL(`https://${this.hostname}/api/v4/projects/${projectPath}/repository/commits`);
-    url.searchParams.set('per_page', String(limit));
-    if (branch) url.searchParams.set('ref_name', branch);
-
-    const res = await fetch(url.toString(), {
-      headers: this.makeHeaders(),
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
-    if (!res.ok) return [];
-    const data = (await res.json()) as Array<{
-      id: string;
-      message: string;
-      author_name: string;
-      created_at: string;
-    }>;
-    const result = data.map((c) => ({
-      sha: c.id,
-      shortSha: c.id.slice(0, 7),
-      message: (c.message.split('\n')[0] ?? '').trim(),
-      author: c.author_name,
-      date: c.created_at,
-    }));
+    // A page holds at most 100 commits: page until `limit`.
+    const perPage = Math.min(limit, HOST_MAX_PAGE_SIZE);
+    const result: ScmCommitDetail[] = [];
+    let complete = true;
+    for (let page = 1; result.length < limit; page++) {
+      const url = new URL(`https://${this.hostname}/api/v4/projects/${projectPath}/repository/commits`);
+      url.searchParams.set('per_page', String(perPage));
+      url.searchParams.set('page', String(page));
+      if (branch) url.searchParams.set('ref_name', branch);
+      const res = await fetch(url.toString(), {
+        headers: this.makeHeaders(),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (!res.ok) {
+        if (page === 1) return [];
+        complete = false;
+        break;
+      }
+      const data = (await res.json()) as Array<{
+        id: string;
+        message: string;
+        author_name: string;
+        created_at: string;
+      }>;
+      for (const c of data) {
+        result.push({
+          sha: c.id,
+          shortSha: c.id.slice(0, 7),
+          message: (c.message.split('\n')[0] ?? '').trim(),
+          author: c.author_name,
+          date: c.created_at,
+        });
+      }
+      if (data.length < perPage) break;
+    }
+    result.splice(limit);
+    if (!complete) return result;
     listCommitsCache.set(key, result);
     return result;
   }
@@ -133,34 +184,14 @@ export class GitLabProvider extends ScmProvider {
     if (!res.ok) return null;
     const data = (await res.json()) as {
       commits?: Array<{ id: string; message: string }>;
-      diffs?: Array<{
-        old_path: string;
-        new_path: string;
-        diff: string;
-        new_file: boolean;
-        deleted_file: boolean;
-        renamed_file: boolean;
-      }>;
+      diffs?: GitLabDiff[];
     };
     const allDiffs = data.diffs ?? [];
     const result: ScmChanges = {
-      commits: (data.commits ?? []).map((c) => ({
-        sha: c.id.slice(0, 7),
-        message: c.message.split('\n')[0] ?? '',
-        fullMessage: c.message,
-      })),
-      files: allDiffs.slice(0, MAX_SCM_FILES_TOTAL).map((f) => {
-        const { additions, deletions } = countDiffLines(f.diff ?? '');
-        return {
-          filename: f.new_path || f.old_path,
-          status: f.new_file ? 'added' : f.deleted_file ? 'removed' : f.renamed_file ? 'renamed' : 'modified',
-          additions,
-          deletions,
-          patch: f.diff ? truncatePatch(f.diff) : undefined,
-        };
-      }),
+      commits: (data.commits ?? []).map((c) => commitOf(c.id, c.message)),
+      files: allDiffs.slice(0, MAX_SCM_FILES_TOTAL).map(changedFileOf),
       filesTruncated: allDiffs.length > MAX_SCM_FILES_TOTAL,
-      totalChangedFiles: allDiffs.length,
+      ...(allDiffs.length > MAX_SCM_FILES_TOTAL ? { totalChangedFiles: allDiffs.length } : {}),
     };
     fetchChangesCache.set(key, result);
     return result;
@@ -172,49 +203,54 @@ export class GitLabProvider extends ScmProvider {
     const hit = fetchCommitDiffCache.get(key);
     if (hit !== undefined) return hit;
 
-    const projectPath = encodeURIComponent(this.repoPath);
-    const res = await fetch(
-      `https://${this.hostname}/api/v4/projects/${projectPath}/repository/commits/${encodeURIComponent(sha)}/diff`,
-      {
+    const commitUrl = `https://${this.hostname}/api/v4/projects/${encodeURIComponent(this.repoPath)}/repository/commits/${encodeURIComponent(sha)}`;
+    const commitPromise = this.commitInfo(sha);
+    // The endpoint is paged: read pages until the last one or the file cap.
+    const diffs: GitLabDiff[] = [];
+    let filesTruncated = false;
+    // An answer read in part (a later page or the commit failed) is returned but not cached.
+    let complete = true;
+    for (let page = 1; ; page++) {
+      const res = await fetch(`${commitUrl}/diff?per_page=${COMMIT_DIFF_PAGE_SIZE}&page=${page}`, {
         headers: this.makeHeaders(),
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      },
-    );
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { message?: string };
-      throw new Error(body.message ?? `GitLab API error ${res.status}`);
+      });
+      if (!res.ok) {
+        if (page > 1) {
+          complete = false;
+          filesTruncated = true;
+          break;
+        }
+        throw await gitlabError(res, `reading commit ${sha}`);
+      }
+      const pageDiffs = (await res.json()) as GitLabDiff[];
+      diffs.push(...pageDiffs);
+      // GitLab names the next page, and sends the header empty on the last one.
+      const nextPage = res.headers.get('x-next-page');
+      const more = nextPage !== null ? nextPage.trim() !== '' : pageDiffs.length === COMMIT_DIFF_PAGE_SIZE;
+      if (diffs.length > MAX_SCM_FILES_TOTAL || (more && diffs.length >= MAX_SCM_FILES_TOTAL)) {
+        filesTruncated = true;
+        break;
+      }
+      if (!more || pageDiffs.length === 0) break;
     }
-    const data = (await res.json()) as Array<{
-      old_path: string;
-      new_path: string;
-      diff: string;
-      new_file: boolean;
-      deleted_file: boolean;
-      renamed_file: boolean;
-    }>;
+    const commit = await commitPromise;
     const result: ScmChanges = {
-      commits: [],
-      files: data.slice(0, MAX_SCM_FILES).map((f) => {
-        const { additions, deletions } = countDiffLines(f.diff ?? '');
-        return {
-          filename: f.new_path || f.old_path,
-          status: f.new_file ? 'added' : f.deleted_file ? 'removed' : f.renamed_file ? 'renamed' : 'modified',
-          additions,
-          deletions,
-          patch: f.diff ? truncatePatch(f.diff) : undefined,
-        };
-      }),
+      commits: commit ? [commitOf(commit.id, commit.message)] : [],
+      files: diffs.slice(0, MAX_SCM_FILES_TOTAL).map(changedFileOf),
+      filesTruncated,
     };
-    fetchCommitDiffCache.set(key, result);
+    if (complete && commit) fetchCommitDiffCache.set(key, result);
     return result;
   }
 
-  async getCommitAuthor(sha: string): Promise<ScmCommitAuthor | null> {
-    if (!isValidGitRef(sha)) return null;
-    const key = `${this.keyPrefix}:author:${this.hostname}:${this.repoPath}:${sha}`;
-    const hit = commitAuthorCache.get(key);
+  /** A commit's id, message and author, or null when it cannot be read. */
+  private async commitInfo(
+    sha: string,
+  ): Promise<{ id: string; message: string; authorName: string; authorEmail: string } | null> {
+    const key = `${this.keyPrefix}:commit:${this.hostname}:${this.repoPath}:${sha}`;
+    const hit = commitInfoCache.get(key);
     if (hit !== undefined) return hit;
-
     try {
       const projectPath = encodeURIComponent(this.repoPath);
       const res = await fetch(
@@ -222,18 +258,27 @@ export class GitLabProvider extends ScmProvider {
         { headers: this.makeHeaders(), signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
       );
       if (!res.ok) {
-        commitAuthorCache.set(key, null);
+        if (res.status === 404) commitInfoCache.set(key, null);
         return null;
       }
-      const data = (await res.json()) as { author_name?: string; author_email?: string };
-      const name = data.author_name?.trim() ?? '';
-      const email = data.author_email?.trim() ?? '';
-      const result = email ? { name: name || email, email } : null;
-      commitAuthorCache.set(key, result);
+      const data = (await res.json()) as { id?: string; message?: string; author_name?: string; author_email?: string };
+      const result = {
+        id: data.id ?? sha,
+        message: data.message ?? '',
+        authorName: data.author_name?.trim() ?? '',
+        authorEmail: data.author_email?.trim() ?? '',
+      };
+      commitInfoCache.set(key, result);
       return result;
     } catch {
       return null;
     }
+  }
+
+  async getCommitAuthor(sha: string): Promise<ScmCommitAuthor | null> {
+    if (!isValidGitRef(sha)) return null;
+    const commit = await this.commitInfo(sha);
+    return commit?.authorEmail ? { name: commit.authorName || commit.authorEmail, email: commit.authorEmail } : null;
   }
 
   async fetchIssue(number: number): Promise<ScmEntityRef | null> {
@@ -318,7 +363,8 @@ export class GitLabProvider extends ScmProvider {
       { headers: this.makeHeaders(), signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
     );
     if (!res.ok) {
-      fetchFileCache.set(key, null);
+      // Only a missing file is an answer to keep; a refused or failed request is tried again.
+      if (res.status === 404) fetchFileCache.set(key, null);
       return null;
     }
     const raw = await res.text();
