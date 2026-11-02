@@ -14,7 +14,7 @@ import type { DrizzleDB } from './db';
 import { getQuarantinedCaseIds } from './quarantine';
 import { eligibleExecutionSql } from '../run-eligibility';
 import { latestRunStatusSql } from './latest-run-status';
-import { failedCountSql, passedCountSql, passRateSql } from '../utils/pass-rate-sql';
+import { finalAttemptSql, recentFlakySql, testCaseAggregates } from './test-case-aggregates';
 import { foldText } from '#shared/utils/fold-text';
 import {
   BUILTIN_SELECTIONS,
@@ -63,26 +63,19 @@ export interface CatalogRow {
 // ── Catalog loading ──────────────────────────────────────────────────────────
 
 /**
- * Load every test in a project with the per-case aggregates a selection reads.
- * Only executions of runs the `selection-catalog` use reads count: lab runs,
- * bisect steps and reproductions stay out of every aggregate.
+ * Load every test in a project with the per-case aggregates a selection reads,
+ * over its runs: one result per run, Playwright project and repetition, read
+ * from its final attempt (`testCaseAggregates`). Only executions of runs the
+ * `selection-catalog` use reads count: lab runs, bisect steps and
+ * reproductions stay out of every aggregate.
  */
 export async function loadSelectionCatalog(
   db: DrizzleDB,
   projectId: number,
   opts: { withFailRanks: boolean } = { withFailRanks: false },
 ): Promise<CatalogRow[]> {
-  const passed = passedCountSql(testRunsCases.status);
-  const failed = failedCountSql(testRunsCases.status);
-  const recentFlaky = sql<number>`(
-      SELECT COUNT(*) FROM (
-        SELECT ${testRunsCases.status} AS s, ${testRunsCases.retries} AS r
-        FROM ${testRunsCases}
-        WHERE ${testRunsCases.testCaseId} = ${testCases.id} AND ${eligibleExecutionSql('selection-catalog', testRunsCases.testRunId)}
-        ORDER BY ${testRunsCases.createdAt} DESC
-        LIMIT 10
-      ) AS recent WHERE s = 'passed' AND r > 0
-    )`;
+  const aggregates = testCaseAggregates();
+  const recentFlaky = recentFlakySql(testCases.id, eligibleExecutionSql('selection-catalog', testRunsCases.testRunId));
   // The latest run's status: failed when one of the test's repetitions failed there.
   const lastStatus = latestRunStatusSql(eligibleExecutionSql('selection-catalog', testRunsCases.testRunId));
   const lastLine = sql<number | null>`(
@@ -92,7 +85,6 @@ export async function loadSelectionCatalog(
       ORDER BY ${testRunsCases.createdAt} DESC
       LIMIT 1
     )`;
-  const passRate = passRateSql(passed, failed);
 
   const rows: any[] = await db
     .select({
@@ -105,12 +97,10 @@ export async function loadSelectionCatalog(
       owner: testCases.owner,
       priority: testCases.priority,
       feature: testCases.feature,
-      totalRuns: sql<number>`COUNT(${testRunsCases.id})`,
+      totalRuns: aggregates.totalRuns,
       recentFlakyRuns: recentFlaky,
-      passRate,
-      avgDuration: sql<
-        number | null
-      >`AVG(CASE WHEN ${testRunsCases.status} NOT IN ('skipped', 'didnotrun') THEN ${testRunsCases.duration} END)`,
+      passRate: aggregates.passRate,
+      avgDuration: aggregates.avgDuration,
       lastStatus,
       lastLine,
     })
@@ -120,6 +110,7 @@ export async function loadSelectionCatalog(
       and(
         eq(testCases.id, testRunsCases.testCaseId),
         eligibleExecutionSql('selection-catalog', testRunsCases.testRunId),
+        finalAttemptSql(),
       ),
     )
     .where(eq(testCases.projectId, projectId))
@@ -155,8 +146,10 @@ export async function loadSelectionCatalog(
 
 /**
  * Recency rank of each test's most recent failure within its last
- * `MAX_FAILED_IN_LAST_RUNS` executions (1 = the latest execution). Computed with
- * a window function in one pass, only when a definition actually needs it.
+ * `MAX_FAILED_IN_LAST_RUNS` runs (1 = the latest run), a run being one result
+ * per run, Playwright project and repetition (`finalAttemptSql`): a pass on a
+ * retry is not a failure. Computed with a window function in one pass, only
+ * when a definition actually needs it.
  */
 async function loadRecentFailRanks(db: DrizzleDB, projectId: number): Promise<Map<number, number>> {
   const ranked = db.$with('ranked').as(
@@ -171,7 +164,11 @@ async function loadRecentFailRanks(db: DrizzleDB, projectId: number): Promise<Ma
       .from(testRunsCases)
       .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
       .where(
-        and(eq(testCases.projectId, projectId), eligibleExecutionSql('selection-catalog', testRunsCases.testRunId)),
+        and(
+          eq(testCases.projectId, projectId),
+          eligibleExecutionSql('selection-catalog', testRunsCases.testRunId),
+          finalAttemptSql(),
+        ),
       ),
   );
 

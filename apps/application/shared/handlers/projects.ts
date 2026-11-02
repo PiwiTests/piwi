@@ -60,9 +60,9 @@ import {
 } from './project-run-scope';
 import { parseProjectRunScope, resolveProjectRunScope, type ProjectRunScope } from '../project-run-scope';
 import { eligibleRunSql } from '../run-eligibility';
-import { isFailedStatus } from '../utils/test-counts';
+import { finalAttemptsOfRuns, isFailedStatus, ranTest } from '../utils/test-counts';
 import { passRate } from '../utils/pass-rate';
-import { failedCountSql, passedCountSql, passRateSql } from '../utils/pass-rate-sql';
+import { finalAttemptSql, recentFlakySql, testCaseAggregates } from './test-case-aggregates';
 import { getHoldingVerifiedFixes } from './flake-verified';
 import { fixmeSkipPredicate } from '../utils/skip-kind';
 import { latestRunStatusSql } from './latest-run-status';
@@ -1015,12 +1015,14 @@ function toEpochMs(value: Date | null): number | null {
 /**
  * Paginated test-case catalog for a project with per-case aggregates.
  *
- * Timed-out runs (both the raw `timedOut` Playwright spelling and the declared
- * lowercase `timedout`) are folded into `failedRuns`, matching how the rest of
- * the UI treats timeouts. `passRate` is the passed runs over the runs that
- * passed or failed (`passRateSql`), null when none did.
- * The derived `status` category is what the status filter and sort operate on:
- * `flaky` when any of the last 10 executions is a retry-pass, otherwise the
+ * The aggregates count a test's runs: one result per run, Playwright project
+ * and `--repeat-each` repetition, read from its final attempt
+ * (`testCaseAggregates`). Timed-out runs (both the raw `timedOut` Playwright
+ * spelling and the declared lowercase `timedout`) are folded into
+ * `failedRuns`, matching how the rest of the UI treats timeouts. `passRate` is
+ * the passed runs over the runs that passed or failed (`passRateSql`), null
+ * when none did. The derived `status` category is what the status filter and
+ * sort operate on: `flaky` when one of the last 10 runs is flaky, otherwise the
  * latest run's status (timeouts shown as failed, and failed when one of the
  * test's repetitions failed there), or `never-run`. Executions of lab runs
  * (probes, flake experiments) stay out of every aggregate. With `maxAgeDays`,
@@ -1049,21 +1051,10 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
   const since = maxAgeDays > 0 ? ageCutoff(maxAgeDays) : null;
   const inPeriod = since ? gte(testRunsCases.createdAt, since) : undefined;
 
-  // PostgreSQL returns COUNT and SUM (int8) and AVG and the pass-rate division
-  // (numeric) as strings, and a timestamp aggregate unparsed: each selected
-  // aggregate is mapped so both dialects agree.
-  const passed = passedCountSql(testRunsCases.status).mapWith(Number);
-  const failed = failedCountSql(testRunsCases.status).mapWith(Number);
-  const recentFlaky = sql<number>`(
-      SELECT COUNT(*) FROM (
-        SELECT ${testRunsCases.status} AS s, ${testRunsCases.retries} AS r
-        FROM ${testRunsCases}
-        WHERE ${testRunsCases.testCaseId} = ${testCases.id}
-          AND ${inPeriod ? and(realExecution, inPeriod) : realExecution}
-        ORDER BY ${testRunsCases.createdAt} DESC
-        LIMIT 10
-      ) AS recent WHERE s = 'passed' AND r > 0
-    )`.mapWith(Number);
+  // A timestamp aggregate comes back unparsed from PostgreSQL: it is mapped so
+  // both dialects agree, as `testCaseAggregates` maps its counts.
+  const aggregates = testCaseAggregates();
+  const recentFlaky = recentFlakySql(testCases.id, inPeriod ? and(realExecution, inPeriod)! : realExecution);
   // The latest run's status: failed when one of the test's repetitions failed there.
   const lastStatus = latestRunStatusSql(realExecution);
   const category = sql<string>`CASE
@@ -1071,7 +1062,6 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
       WHEN ${lastStatus} IN ('timedOut', 'timedout') THEN 'failed'
       ELSE COALESCE(${lastStatus}, 'never-run')
     END`;
-  const rate = passRateSql(passed, failed).mapWith(Number);
 
   const conditions = [eq(testCases.projectId, projectId)];
   if (q) {
@@ -1128,11 +1118,9 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
     file: [sql`lower(${testCases.filePath})`, line, column, sql`lower(${testCases.title})`],
     lastRun: [sql`MAX(${testRunsCases.createdAt})`],
     title: [sql`lower(${testCases.title})`],
-    totalRuns: [sql`COUNT(${testRunsCases.id})`],
-    passRate: [rate],
-    avgDuration: [
-      sql`AVG(CASE WHEN ${testRunsCases.status} NOT IN ('skipped', 'didnotrun') THEN ${testRunsCases.duration} END)`,
-    ],
+    totalRuns: [aggregates.totalRuns],
+    passRate: [aggregates.passRate],
+    avgDuration: [aggregates.avgDuration],
     status: [category],
   };
   const direction = sql.raw(dir === 'asc' ? 'ASC' : 'DESC');
@@ -1169,28 +1157,16 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
       feature: testCases.feature,
       link: testCases.link,
       status: category,
-      totalRuns: sql<number>`COUNT(${testRunsCases.id})`.mapWith(Number),
-      passedRuns: passed,
-      failedRuns: failed,
-      skippedRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'skipped' THEN 1 ELSE 0 END)`.mapWith(Number),
-      fixmeRuns:
-        sql<number>`SUM(CASE WHEN ${fixmeSkipPredicate(testRunsCases.status, testRunsCases.testAnnotations)} THEN 1 ELSE 0 END)`.mapWith(
-          Number,
-        ),
-      didNotRunRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'didnotrun' THEN 1 ELSE 0 END)`.mapWith(
-        Number,
-      ),
-      flakyRuns:
-        sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' AND ${testRunsCases.retries} > 0 THEN 1 ELSE 0 END)`.mapWith(
-          Number,
-        ),
+      totalRuns: aggregates.totalRuns,
+      passedRuns: aggregates.passedRuns,
+      failedRuns: aggregates.failedRuns,
+      skippedRuns: aggregates.skippedRuns,
+      fixmeRuns: aggregates.fixmeRuns,
+      didNotRunRuns: aggregates.didNotRunRuns,
+      flakyRuns: aggregates.flakyRuns,
       recentFlakyRuns: recentFlaky,
-      passRate: rate,
-      avgDuration: sql<
-        number | null
-      >`AVG(CASE WHEN ${testRunsCases.status} NOT IN ('skipped', 'didnotrun') THEN ${testRunsCases.duration} END)`.mapWith(
-        Number,
-      ),
+      passRate: aggregates.passRate,
+      avgDuration: aggregates.avgDuration,
       lastRun: sql<Date | null>`MAX(${testRunsCases.createdAt})`.mapWith(testRunsCases.createdAt),
       lastStatus,
       line,
@@ -1203,6 +1179,7 @@ export async function getProjectTestCases(db: DrizzleDB, projectId: number, opti
         eq(testCases.id, testRunsCases.testCaseId),
         scopedExecutionInProjectJoin(projectId, testRunsCases.testRunId, scopeConditions ?? []),
         inPeriod,
+        finalAttemptSql(),
         // PostgreSQL does not carry the page's ids across the join: named on the executions too,
         // they are read through the test case index instead of a scan of every execution.
         pageIds ? inArray(testRunsCases.testCaseId, pageIds) : undefined,
@@ -1270,9 +1247,11 @@ function roundShare(share: number | null): number | null {
 }
 
 /**
- * Group a project's recent test executions by spec-file prefix and compute
- * pass rate (null when none passed or failed), flaky rate, failure count,
- * execution count, and average duration over the last `days` days. Shared by
+ * Group a project's recent test runs by spec-file prefix and compute pass rate
+ * (null when none passed or failed), flaky rate, failure count, run count
+ * (`testCount`) and the average duration of the runs that ran, over the last
+ * `days` days. A run is one result per run, test, Playwright project and
+ * repetition, read from its final attempt (`finalAttemptsOfRuns`). Shared by
  * the spec-health widget and the MCP `get_spec_health` tool.
  */
 export async function getProjectSpecHealth(db: DrizzleDB, projectId: number, days: number) {
@@ -1294,6 +1273,10 @@ export async function getProjectSpecHealth(db: DrizzleDB, projectId: number, day
   const runIds: number[] = recentRuns.map((r: any) => r.id);
   const rows: any[] = await db
     .select({
+      testRunId: testRunsCases.testRunId,
+      testCaseId: testRunsCases.testCaseId,
+      browserName: testRunsCases.browserName,
+      repeatEachIndex: testRunsCases.repeatEachIndex,
       filePath: testCases.filePath,
       status: testRunsCases.status,
       duration: testRunsCases.duration,
@@ -1302,13 +1285,14 @@ export async function getProjectSpecHealth(db: DrizzleDB, projectId: number, day
     .from(testRunsCases)
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
     .where(inArray(testRunsCases.testRunId, runIds));
+  const { final, flaky } = finalAttemptsOfRuns(rows);
 
   const specMap = new Map<
     string,
     { testCount: number; passCount: number; failCount: number; flakyCount: number; durations: number[] }
   >();
 
-  for (const row of rows) {
+  for (const row of final) {
     const prefix = row.filePath.split(/[\\/]/).slice(0, 2).join('/');
     if (!specMap.has(prefix)) {
       specMap.set(prefix, { testCount: 0, passCount: 0, failCount: 0, flakyCount: 0, durations: [] });
@@ -1317,11 +1301,11 @@ export async function getProjectSpecHealth(db: DrizzleDB, projectId: number, day
     spec.testCount++;
     if (row.status === 'passed') {
       spec.passCount++;
-      if ((row.retries ?? 0) > 0) spec.flakyCount++;
-    } else if (row.status === 'failed' || row.status === 'timedOut' || row.status === 'timedout') {
+      if (flaky.has(row)) spec.flakyCount++;
+    } else if (isFailedStatus(row.status)) {
       spec.failCount++;
     }
-    if (row.duration != null) spec.durations.push(row.duration);
+    if (row.duration != null && ranTest(row.status)) spec.durations.push(row.duration);
   }
 
   const specs = [...specMap.entries()]

@@ -29,8 +29,9 @@ import { getFlakeProfile, mayHaveFlakeSuspects } from './flake-profile';
 import { getFlakeLabStepFacts, getFlakeSuspectResults, type FlakeSuspectResult } from './flake-lab';
 import { isPassiveCapabilityDeclined } from './capabilities';
 import { sanitizeExecutionResources } from '../resource-report';
-import { FAILED_STATUS_KEYS, finalAttempts, isFailedStatus } from '../utils/test-counts';
+import { FAILED_STATUS_KEYS, finalAttempts, finalAttemptsOfRuns, isFailedStatus, ranTest } from '../utils/test-counts';
 import { passRate, passRatePercent } from '../utils/pass-rate';
+import { finalAttemptSql, recentFlakySql, testCaseAggregates } from './test-case-aggregates';
 import { buildFailureTimeline, type FailureTimeline, type TimelineCallsite } from '../failure-timeline';
 import { timelineResources, type TimelineResources } from '../timeline-resources';
 import { readResourceReport } from './resource-reports';
@@ -65,14 +66,18 @@ import type { DrizzleDB } from './db';
 import { clusterIssueFilings, clusterKnownIssues } from './known-issues';
 
 /**
- * A test case with its header stats, recent executions and clusters. Executions
- * of lab runs (probes, flake experiments) replay the test under injected
- * conditions, so they never count toward the stats nor show as its history.
+ * A test case with its header stats, recent executions and clusters. The stats
+ * count its runs: one result per run, Playwright project and `--repeat-each`
+ * repetition, read from its final attempt (`testCaseAggregates`), so a retry
+ * never counts as a run of its own. Executions of lab runs (probes, flake
+ * experiments) replay the test under injected conditions, so they never count
+ * toward the stats nor show as its history.
  */
 export async function getTestCase(db: DrizzleDB, id: number) {
   const [testCase] = await db.select().from(testCases).where(eq(testCases.id, id));
   if (!testCase) return null;
   const realExecution = and(eq(testRunsCases.testCaseId, id), notLabExecution(testRunsCases.testRunId));
+  const aggregates = testCaseAggregates();
 
   const [[project], aggResult, [lastExecution]] = await Promise.all([
     db
@@ -80,42 +85,22 @@ export async function getTestCase(db: DrizzleDB, id: number) {
       .from(projects)
       .where(eq(projects.id, testCase.projectId))
       .then((r: any[]) => (r.length > 0 ? [r[0]] : [undefined])),
-    // PostgreSQL returns COUNT and SUM (int8) and AVG (numeric) as strings, and
-    // a timestamp aggregate unparsed: each is mapped so both dialects agree.
-    // A timed-out execution counts as failed, as in the project's test catalog.
+    // A timestamp aggregate comes back unparsed from PostgreSQL: it is mapped so both dialects agree.
     db
       .select({
-        totalRuns: sql<number>`COUNT(${testRunsCases.id})`.mapWith(Number),
-        passedRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' THEN 1 ELSE 0 END)`.mapWith(Number),
-        failedRuns:
-          sql<number>`SUM(CASE WHEN ${testRunsCases.status} IN ('failed', 'timedOut', 'timedout') THEN 1 ELSE 0 END)`.mapWith(
-            Number,
-          ),
-        skippedRuns: sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'skipped' THEN 1 ELSE 0 END)`.mapWith(Number),
-        timedOutRuns:
-          sql<number>`SUM(CASE WHEN ${testRunsCases.status} IN ('timedOut', 'timedout') THEN 1 ELSE 0 END)`.mapWith(
-            Number,
-          ),
-        flakyRuns:
-          sql<number>`SUM(CASE WHEN ${testRunsCases.status} = 'passed' AND ${testRunsCases.retries} > 0 THEN 1 ELSE 0 END)`.mapWith(
-            Number,
-          ),
+        totalRuns: aggregates.totalRuns,
+        passedRuns: aggregates.passedRuns,
+        failedRuns: aggregates.failedRuns,
+        skippedRuns: aggregates.skippedRuns,
+        timedOutRuns: aggregates.timedOutRuns,
+        flakyRuns: aggregates.flakyRuns,
         // The outer query reads one table, so its columns render unqualified: the subquery names the test by its id.
-        recentFlakyRuns: sql<number>`(
-          SELECT COUNT(*) FROM (
-            SELECT ${testRunsCases.status} AS s, ${testRunsCases.retries} AS r
-            FROM ${testRunsCases}
-            WHERE ${testRunsCases.testCaseId} = ${id}
-              AND ${notLabExecution(testRunsCases.testRunId)}
-            ORDER BY ${testRunsCases.createdAt} DESC
-            LIMIT 10
-          ) AS recent WHERE s = 'passed' AND r > 0
-        )`.mapWith(Number),
-        avgDuration: sql<number>`AVG(${testRunsCases.duration})`.mapWith(Number),
+        recentFlakyRuns: recentFlakySql(id, notLabExecution(testRunsCases.testRunId)),
+        avgDuration: aggregates.avgDuration,
         lastRunAt: sql<Date>`MAX(${testRunsCases.createdAt})`.mapWith(testRunsCases.createdAt),
       })
       .from(testRunsCases)
-      .where(realExecution),
+      .where(and(realExecution, finalAttemptSql())),
     db
       .select({ id: testRunsCases.id })
       .from(testRunsCases)
@@ -1558,16 +1543,17 @@ export async function getTestRunCaseTraces(db: DrizzleDB, id: number) {
 /** How far back the stability trend of a test case reaches by default. */
 export const STABILITY_TREND_DEFAULT_DAYS = 90;
 
+/** One bucket of a test's stability trend, over its runs there: one result per run, Playwright project and repetition. */
 export interface TestCaseStabilityBucket {
   /** Bucket start (`YYYY-MM-DD`, UTC). */
   date: string;
-  /** Executions in the bucket. */
+  /** Runs in the bucket. */
   totalRuns: number;
-  /** Passed executions over the executions that passed or failed, 0–1; null without either. */
+  /** Passed runs over the runs that passed or failed, 0–1; null without either. */
   passRate: number | null;
-  /** Executions that passed only on a retry over executions, 0–1; null without an execution. */
+  /** Flaky runs (passed after an earlier attempt failed) over runs, 0–1; null without a run. */
   flakyRate: number | null;
-  /** Average duration of the bucket's executions in ms; null without a duration. */
+  /** Average duration in ms of the bucket's runs that ran (neither skipped nor did not run); null without one. */
   avgDuration: number | null;
 }
 
@@ -1579,12 +1565,13 @@ export interface TestCaseStabilityTrend {
 }
 
 /**
- * Stability of a single test case over time: its executions of the last
- * `days` days (lab runs left out) in UTC time buckets, each with its pass
- * rate, flaky rate and average duration. The buckets follow the analytics
- * granularity (`auto` keeps about 31 of them), and a bucket without an
- * execution is a gap. Shared by the REST stability-trend endpoint, the Trend
- * tab of the test page and the MCP `get_test_stability_trend` tool.
+ * Stability of a single test case over time: its runs of the last `days` days
+ * (lab runs left out), one result per run, Playwright project and repetition
+ * read from its final attempt (`finalAttemptsOfRuns`), in UTC time buckets,
+ * each with its pass rate, flaky rate and average duration. The buckets follow
+ * the analytics granularity (`auto` keeps about 31 of them), and a bucket
+ * without a run is a gap. Shared by the REST stability-trend endpoint, the
+ * Trend tab of the test page and the MCP `get_test_stability_trend` tool.
  */
 export async function getTestCaseStabilityTrend(
   db: DrizzleDB,
@@ -1599,6 +1586,10 @@ export async function getTestCaseStabilityTrend(
   const from = Date.parse(`${new Date(now - (days - 1) * 86_400_000).toISOString().slice(0, 10)}T00:00:00Z`);
   const rawRows: any[] = await db
     .select({
+      testRunId: testRunsCases.testRunId,
+      testCaseId: testRunsCases.testCaseId,
+      browserName: testRunsCases.browserName,
+      repeatEachIndex: testRunsCases.repeatEachIndex,
       status: testRunsCases.status,
       duration: testRunsCases.duration,
       retries: testRunsCases.retries,
@@ -1614,18 +1605,18 @@ export async function getTestCaseStabilityTrend(
     string,
     { total: number; passed: number; failed: number; flaky: number; durations: number[] }
   >();
-  for (const row of rawRows) {
-    // Lab runs replay a test with an injected fault or condition, so they never shape the trend.
-    if (isLabRun(row.runMetadata)) continue;
+  // Lab runs replay a test with an injected fault or condition, so they never shape the trend.
+  const { final, flaky } = finalAttemptsOfRuns(rawRows.filter((row) => !isLabRun(row.runMetadata)));
+  for (const row of final) {
     const key = buckets.keyFor(row.startTime);
     if (!key) continue;
     const t = tally.get(key) ?? { total: 0, passed: 0, failed: 0, flaky: 0, durations: [] };
     t.total += 1;
     if (row.status === 'passed') {
       t.passed += 1;
-      if ((row.retries ?? 0) > 0) t.flaky += 1;
+      if (flaky.has(row)) t.flaky += 1;
     } else if (isFailedStatus(row.status)) t.failed += 1;
-    if (row.duration != null) t.durations.push(row.duration);
+    if (row.duration != null && ranTest(row.status)) t.durations.push(row.duration);
     tally.set(key, t);
   }
   const rate = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 100) / 100 : null);

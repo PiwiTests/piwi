@@ -27,7 +27,7 @@ const { data, pending, error, refresh } = await useAnalyticsWidget<AnalyticsProj
       </template>
     </ErrorState>
     <EmptyState v-else-if="data && !data.project" icon="i-lucide-folder" :text="data.reason" />
-    <EmptyState v-else-if="!data?.project || data.data.specs.length === 0" text="No execution in this period." />
+    <EmptyState v-else-if="!data?.project || data.data.specs.length === 0" text="No run in this period." />
     <TableScroller v-else min-width="22rem">
       <table class="w-full text-sm">
         <thead>
@@ -35,7 +35,7 @@ const { data, pending, error, refresh } = await useAnalyticsWidget<AnalyticsProj
             <th class="py-1 pr-2 font-medium">Spec directory</th>
             <th class="py-1 px-2 font-medium text-right">Pass rate</th>
             <th class="py-1 px-2 font-medium text-right">Flaky</th>
-            <th class="py-1 pl-2 font-medium text-right">Executions</th>
+            <th class="py-1 pl-2 font-medium text-right">Runs</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-default">

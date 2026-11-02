@@ -261,6 +261,7 @@ export const MCP_TOOL_DEFS = [
     description: md(
       'Get a test case with its pass and fail stats, its flakiness metrics and its recent executions.',
       'Takes the stable `testCaseId`, not a per-run `executionId`.',
+      'Its `stats` count runs: one result per run, Playwright project and `--repeat-each` repetition, read from its final attempt, so a retry is never a run of its own and a pass on a retry is one flaky run. `recentFlaky` counts the flaky runs among its last 10 executions.',
     ),
     inputSchema: {
       type: 'object',
@@ -549,7 +550,7 @@ export const MCP_TOOL_DEFS = [
     module: 'core',
     description: md(
       'Get the health of each area of a project’s suite over the last N days, grouped by spec-file prefix.',
-      'Each area has its pass rate, flaky rate, failure count, execution count (`testCount`) and average duration. Use it to find the unhealthy parts of a suite.',
+      'Each area has its pass rate, flaky rate, failure count, run count (`testCount`, one per run, test, Playwright project and repetition) and average duration. Use it to find the unhealthy parts of a suite.',
     ),
     inputSchema: {
       type: 'object',
@@ -880,7 +881,7 @@ export const MCP_TOOL_DEFS = [
     module: 'workflow',
     description: md(
       'List a project’s whole test catalog, with each test’s pass, fail and flaky counts, average duration and last status.',
-      'The bulk companion of `get_test_case`; it pages by `offset`, not by cursor.',
+      'The bulk companion of `get_test_case`; it pages by `offset`, not by cursor. The counts are of runs, as in `get_test_case`.',
     ),
     inputSchema: {
       type: 'object',

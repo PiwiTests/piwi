@@ -101,8 +101,8 @@ Piwi ranks flaky tests by **impact** — derived from wasted CI minutes (retries
 
 ### Per-test stability trend
 
-The **Trend** tab of a test's page draws its pass rate, flaky rate and average duration over the last
-30, 90 or 365 days, one point per UTC day, week or month, with the project's timeline markers, so you can
+The **Trend** tab of a test's page draws its pass rate, flaky rate and average duration over its
+[runs](/guide/concepts#test-case) of the last 30, 90 or 365 days, one point per UTC day, week or month, with the project's timeline markers, so you can
 see whether a fix actually stuck. The same series is the MCP `get_test_stability_trend` tool.
 
 ## Quarantine, with a way out
@@ -150,7 +150,7 @@ An [execution](./evidence#one-execution-diagnosis-first) shows them in its statu
 
 ## Spec health by file
 
-The project's **Tests** tab has a **Group by File** view that groups tests by their first two path segments (`tests/admin` for `tests/admin/users.spec.ts`) and carries that group's pass rate, flaky rate, failure count, execution count and average time over the last 90 days in its header, so an unhealthy area of the suite jumps out.
+The project's **Tests** tab has a **Group by File** view that groups tests by their first two path segments (`tests/admin` for `tests/admin/users.spec.ts`) and carries that group's pass rate, flaky rate, failure count, run count and average time over the last 90 days in its header, so an unhealthy area of the suite jumps out.
 
 ## Across every project
 

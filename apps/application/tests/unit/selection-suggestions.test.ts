@@ -127,10 +127,15 @@ describe('smoke mining', () => {
     const flaky = await seedCase('flaky');
     await seedExec(flaky, 'passed', { duration: 100, routes: ['/only-here'] });
     await seedExec(flaky, 'passed', { duration: 100, routes: ['/only-here'] });
-    // Make it flaky: a retry-pass.
+    // Make it flaky: a run where it failed, then passed on its retry.
+    const runId = ++runSeq;
     await db
-      .insert(schema.testRunsCases)
-      .values({ testRunId: 1, testCaseId: flaky, status: 'passed', retries: 1, createdAt: new Date(++clock) });
+      .insert(schema.testRuns)
+      .values({ id: runId, projectId: 1, status: 'passed', startTime: new Date(++clock) });
+    await db.insert(schema.testRunsCases).values([
+      { testRunId: runId, testCaseId: flaky, status: 'failed', retries: 0, createdAt: new Date(++clock) },
+      { testRunId: runId, testCaseId: flaky, status: 'passed', retries: 1, createdAt: new Date(++clock) },
+    ]);
 
     const { smoke } = await getSelectionSuggestions(db, 1, { budgetMs: 60_000 });
     // The only route belongs to a flaky test, so the candidate pool is empty.

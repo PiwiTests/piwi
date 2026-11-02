@@ -34,7 +34,7 @@ async function addExecution(testRunId: number, retries: number, status: string):
 }
 
 describe('getProjectSpecHealth', () => {
-  test('testCount counts the executions of a spec directory, not its distinct tests', async () => {
+  test('testCount counts the runs of a spec directory, a retried one once, not its attempts nor its distinct tests', async () => {
     const first = await addRun();
     await addExecution(first, 0, 'failed');
     await addExecution(first, 1, 'passed');
@@ -42,13 +42,14 @@ describe('getProjectSpecHealth', () => {
 
     const { specs } = await getProjectSpecHealth(db as any, 1, 30);
 
+    // The first run passed on its retry: one flaky run, not a failure.
     expect(specs).toEqual([
       {
         prefix: 'tests/cart',
-        passRate: 0.67,
-        flakyRate: 0.33,
-        failureCount: 1,
-        testCount: 3,
+        passRate: 1,
+        flakyRate: 0.5,
+        failureCount: 0,
+        testCount: 2,
         avgDuration: 1_000,
       },
     ]);

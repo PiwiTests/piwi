@@ -85,7 +85,7 @@ absent `include` starts from the whole suite. The predicates, all optional:
 | `minPassRate` / `maxPassRate` | the [pass rate](/guide/concepts#pass-rate) is within bounds (0–1); a test with none matches neither |
 | `minAvgDurationMs` / `maxAvgDurationMs` | average duration is within bounds |
 | `lastStatus` | the latest execution's status is one of these |
-| `failedInLastRuns` | the test failed within its last _N_ executions (N ≤ 25) |
+| `failedInLastRuns` | the test failed within its last _N_ [runs](/guide/concepts#test-case) (N ≤ 25); a pass on a retry is no failure |
 
 An unknown predicate is a validation error, so a typo never widens the set.
 

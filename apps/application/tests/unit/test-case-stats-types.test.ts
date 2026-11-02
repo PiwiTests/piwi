@@ -42,7 +42,7 @@ const pgLikeDb = drizzleProxy(
   { schema },
 );
 
-/** The word that follows each `FROM ( … )` derived table: its alias, or the next keyword. */
+/** The word that follows each `FROM ( … )` derived table, quoted or not: its alias, or the next keyword. */
 function derivedTableAliases(query: string): string[] {
   const aliases: string[] = [];
   for (const match of query.matchAll(/\bFROM\s*\(/gi)) {
@@ -51,7 +51,7 @@ function derivedTableAliases(query: string): string[] {
       if (query[end] === '(') depth++;
       else if (query[end] === ')' && --depth === 0) break;
     }
-    aliases.push(/^\s*(?:AS\s+)?(\w*)/i.exec(query.slice(end + 1))![1]!);
+    aliases.push(/^\s*(?:AS\s+)?"?(\w*)/i.exec(query.slice(end + 1))![1]!);
   }
   return aliases;
 }

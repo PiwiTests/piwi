@@ -175,6 +175,33 @@ export function flakyFinalAttempts<T extends AttemptRow & { status: string }>(ro
   return flaky;
 }
 
+/**
+ * The results among the attempt rows of several runs: per run, the final attempt of each test, project and
+ * repetition (`finalAttempts`), and those of them that are flaky (`flakyFinalAttempts`). Returns the given objects.
+ */
+export function finalAttemptsOfRuns<T extends AttemptRow & { status: string; testRunId: number }>(
+  rows: ReadonlyArray<T>,
+): { final: T[]; flaky: Set<T> } {
+  const byRun = new Map<number, T[]>();
+  for (const row of rows) {
+    const list = byRun.get(row.testRunId);
+    if (list) list.push(row);
+    else byRun.set(row.testRunId, [row]);
+  }
+  const final: T[] = [];
+  const flaky = new Set<T>();
+  for (const runRows of byRun.values()) {
+    final.push(...finalAttempts(runRows));
+    for (const row of flakyFinalAttempts(runRows)) flaky.add(row);
+  }
+  return { final, flaky };
+}
+
+/** Whether a result ran the test: neither skipped nor did not run. An average duration reads only those. */
+export function ranTest(status: string): boolean {
+  return status !== 'skipped' && status !== 'didnotrun';
+}
+
 /** One attempt in an execution's own attempt history (`test_runs_cases.attempts`). */
 interface AttemptHistoryEntry {
   retry?: number | null;

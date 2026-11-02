@@ -1246,7 +1246,9 @@ export interface ProjectFailureCluster extends ClusterResolutionFields {
 
 /**
  * Test case with statistics - one item of GET /api/projects/[id]/test-cases.
- * `failedRuns` includes timed-out runs; `status` is the derived category the
+ * Its counts are of runs: one result per run, Playwright project and
+ * `--repeat-each` repetition, read from its final attempt. `failedRuns`
+ * includes timed-out runs; `status` is the derived category the
  * status filter operates on (flaky wins over the last run's status, timeouts
  * count as failed, `never-run` when the case has no executions). `passRate`
  * is the passed runs over the runs that passed or failed (0..1), null when

@@ -60,6 +60,10 @@ Chromium, Firefox, or all five projects in your matrix.
 
 This is the object at `/test-cases/:id` — pass rate, duration trend, and the list of every execution.
 
+On a test's own pages (its page and Trend tab, the project's Tests tab, selections and spec health), a **run** of the
+test is one result per run, Playwright project and `--repeat-each` repetition: its final attempt. A retry is never a
+run of its own, and a test that failed, then passed on its retry, is one flaky run.
+
 ### Execution
 
 **One attempt of one test case, in one run, on one browser.** Retries are separate executions, not a

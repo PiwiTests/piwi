@@ -469,7 +469,7 @@ export const HELP_TOPICS = {
   },
   'project.test-cases': {
     title: 'Tests',
-    text: 'Every distinct test in the project with its pass rate (passed over passed and failed runs), result breakdown and average duration across runs, in file order. Words search the title, describe blocks and file; qualifiers such as file:, describe:, tag: or owner: search one field, and a leading - excludes. Filter by status, and group by file, or by file and describe block, to see each one’s numbers. Tests not run within the selected age window are hidden by default (last 30 days) — pick "All time" to see obsolete ones. Click a test to see its full history.',
+    text: 'Every distinct test in the project with its pass rate (passed over passed and failed runs), result breakdown and average duration across runs, a run being one result per run, Playwright project and repetition, in file order. Words search the title, describe blocks and file; qualifiers such as file:, describe:, tag: or owner: search one field, and a leading - excludes. Filter by status, and group by file, or by file and describe block, to see each one’s numbers. Tests not run within the selected age window are hidden by default (last 30 days) — pick "All time" to see obsolete ones. Click a test to see its full history.',
     doc: 'reference/test-search',
   },
   'project.members': {
@@ -489,7 +489,7 @@ export const HELP_TOPICS = {
   },
   'case.stability-trend': {
     title: 'Stability trend',
-    text: 'This test’s pass rate, flaky rate (passed only on a retry) and average duration over time, one point per day, week or month in UTC, with the project’s timeline markers. Probe runs are left out. A gap is a bucket where the test did not run.',
+    text: 'This test’s pass rate, flaky rate (passed only on a retry) and average duration over time, one point per day, week or month in UTC, with the project’s timeline markers; a run is one result per run, Playwright project and repetition. Probe runs are left out. A gap is a bucket where the test did not run.',
     doc: 'features/flaky-tests#per-test-stability-trend',
   },
   'cluster.occurrence-trend': {

@@ -329,7 +329,7 @@ function groupMetrics(rows: TestCaseWithStats[]) {
     },
     { label: 'Flaky', value: executed > 0 ? `${Math.round((flaky / executed) * 100)}%` : '—', tone: 'muted' as const },
     { label: 'Failures', value: String(failed), tone: failed > 0 ? ('poor' as const) : ('muted' as const) },
-    { label: 'Executions', value: String(runs), tone: 'muted' as const },
+    { label: 'Runs', value: String(runs), tone: 'muted' as const },
     { label: 'Avg', value: timedRuns > 0 ? formatMs(durationTotal / timedRuns) : '—', tone: 'muted' as const },
   ];
 }
