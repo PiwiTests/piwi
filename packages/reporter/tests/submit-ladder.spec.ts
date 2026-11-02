@@ -235,6 +235,152 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     expect(urls.includes('/api/test-runs/submit')).toBeFalsy();
   });
 
+  describe('a batch run with files, uploaded in parts', () => {
+    /** A screenshot on disk, attached to a test the way Playwright attaches one. */
+    function screenshot(content: string): any {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-ladder-shot-'));
+      reportDirs.push(dir);
+      const file = path.join(dir, `${content}.png`);
+      fs.writeFileSync(file, content);
+      return { name: 'screenshot', path: file, contentType: 'image/png' };
+    }
+
+    /** A batch run of two failing tests, each with its screenshot, and a report. */
+    async function runInParts(handler: Parameters<typeof startServer>[0], shard: unknown = null): Promise<void> {
+      server = await startServer(handler);
+      const reporter = new PiwiDashboardReporter({
+        serverUrl: server.url,
+        projectName,
+        streaming: false,
+        uploadReport: false,
+        uploadTraces: false,
+        liveFileUploads: false,
+        reports: [{ type: 'custom', dir: reportDir() }],
+      });
+      const suite = fakeSuite();
+      const tests = ['pays', 'ships'].map((t) => fakeTestCase({ title: t, parent: suite }));
+      suite.allTests = () => tests;
+      reporter.onBegin(fakeConfig({ shard }), suite);
+      for (const test of tests) {
+        reporter.onTestBegin(test, fakeResult({ workerIndex: 0 }));
+        reporter.onTestEnd(
+          test,
+          fakeResult({ status: 'failed', workerIndex: 0, attachments: [screenshot(`${test.title}-SHOT`)] }),
+        );
+      }
+      await reporter.onEnd({ status: 'failed' } as any);
+    }
+
+    it("sends the results, then each test's files with the token their answer carries, then the report, which settles the run", async () => {
+      let resultsBody: any;
+      await runInParts((req, res) => {
+        if (req.url === '/api/test-runs/upload/results') {
+          resultsBody = JSON.parse(req.body);
+          jsonRes(res, 200, { success: true, runId: 21, projectId: 2, streamToken: 'held-token' });
+        } else if (req.url === '/api/test-runs/21/case-files' || req.url === '/api/test-runs/upload') {
+          jsonRes(res, 200, { success: true, runId: 21 });
+        } else {
+          textRes(res, 404, 'nope');
+        }
+      });
+
+      expect(urlsHit(server)).toEqual([
+        '/api/test-runs/upload/results',
+        '/api/test-runs/21/case-files',
+        '/api/test-runs/21/case-files',
+        '/api/test-runs/upload',
+      ]);
+      expect(resultsBody.testCases.map((tc: any) => tc.title)).toEqual(['pays', 'ships']);
+      expect(resultsBody.deliveryKey).toMatch(/^[0-9a-f-]{36}$/);
+      const [pays, ships] = server.requests.filter((r) => r.url === '/api/test-runs/21/case-files');
+      expect(pays!.body).toContain('held-token');
+      expect(pays!.body).toContain('pays-SHOT');
+      expect(ships!.body).toContain('ships-SHOT');
+      const settle = server.requests.find((r) => r.url === '/api/test-runs/upload')!.body;
+      expect(settle).toContain('name="runId"');
+      expect(settle).toContain('name="report_custom"');
+    });
+
+    it('a test whose files are refused as too large leaves the others, and the run settles without its refused report', async () => {
+      await runInParts((req, res) => {
+        if (req.url === '/api/test-runs/upload/results') {
+          jsonRes(res, 200, { success: true, runId: 21, projectId: 2, streamToken: 'held-token' });
+        } else if (req.url === '/api/test-runs/21/case-files') {
+          if (req.body.includes('pays-SHOT')) jsonRes(res, 413, { message: 'Upload too large (max 1 MB)' });
+          else jsonRes(res, 200, { success: true });
+        } else if (req.url === '/api/test-runs/upload') {
+          if (req.body.includes('name="report_')) jsonRes(res, 413, { message: 'Upload too large (max 1 MB)' });
+          else jsonRes(res, 200, { success: true, runId: 21 });
+        } else {
+          textRes(res, 404, 'nope');
+        }
+      });
+
+      const caseFiles = server.requests.filter((r) => r.url === '/api/test-runs/21/case-files');
+      expect(caseFiles.map((r) => r.body.includes('ships-SHOT'))).toEqual([false, true]);
+      const uploads = server.requests.filter((r) => r.url === '/api/test-runs/upload');
+      expect(uploads).toHaveLength(2);
+      expect(uploads[1]!.body).toContain('already-submitted');
+      expect(uploads[1]!.body).not.toContain('name="report_');
+      // The run went through its first rung: no single upload of the whole run, no JSON submit.
+      expect(uploads.some((r) => r.body.includes('name="testCases"') && r.body.includes('"pays"'))).toBe(false);
+      expect(urlsHit(server)).not.toContain('/api/test-runs/submit');
+    });
+
+    it('the run settles even when the dashboard refuses every one of its files', async () => {
+      await runInParts((req, res) => {
+        if (req.url === '/api/test-runs/upload/results') {
+          jsonRes(res, 200, { success: true, runId: 21, projectId: 2, streamToken: 'held-token' });
+        } else if (req.url === '/api/test-runs/21/case-files') {
+          jsonRes(res, 500, { message: 'storage unavailable' });
+        } else if (req.url === '/api/test-runs/upload') {
+          if (req.body.includes('name="report_')) jsonRes(res, 413, { message: 'Upload too large (max 1 MB)' });
+          else jsonRes(res, 200, { success: true, runId: 21 });
+        } else {
+          textRes(res, 404, 'nope');
+        }
+      });
+
+      expect(urlsHit(server).filter((u) => u === '/api/test-runs/21/case-files')).toHaveLength(2);
+      const uploads = server.requests.filter((r) => r.url === '/api/test-runs/upload');
+      expect(uploads.map((r) => r.body.includes('already-submitted') && !r.body.includes('name="report_'))).toEqual([
+        false,
+        true,
+      ]);
+      expect(urlsHit(server)).not.toContain('/api/test-runs/submit');
+    });
+
+    it('a shard, whose run settles with its last shard, sends its results and files in one upload', async () => {
+      await runInParts(
+        (req, res) =>
+          req.url === '/api/test-runs/upload'
+            ? jsonRes(res, 200, { success: true, runId: 11, projectId: 2 })
+            : textRes(res, 404, 'nope'),
+        { current: 1, total: 2 },
+      );
+
+      expect(urlsHit(server)).toEqual(['/api/test-runs/upload']);
+    });
+
+    it('a dashboard without /upload/results gets the run in one upload, as before', async () => {
+      let uploadBody = '';
+      await runInParts((req, res) => {
+        if (req.url === '/api/test-runs/upload') {
+          uploadBody = req.body;
+          jsonRes(res, 200, { success: true, runId: 11, projectId: 2 });
+        } else {
+          textRes(res, 404, 'nope');
+        }
+      });
+
+      expect(urlsHit(server)).toEqual(['/api/test-runs/upload/results', '/api/test-runs/upload']);
+      expect(uploadBody).toContain('name="testRun"');
+      expect(uploadBody).toContain('pays-SHOT');
+      expect(uploadBody).toContain('ships-SHOT');
+      expect(uploadBody).toContain('name="report_custom"');
+    });
+  });
+
   it('fallback: /upload fails → /submit succeeds', async () => {
     let submitBody: any;
     let uploadBody = '';

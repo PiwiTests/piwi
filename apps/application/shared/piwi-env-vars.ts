@@ -1047,7 +1047,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_IMPORT_MAX_BYTES: {
     description:
-      'Max size of a single multipart upload (report upload or blob-report import), in bytes. Lower it to match a reverse proxy that rejects large bodies, so the import page rejects an oversized archive before uploading it. An import reads its archive whole, so it takes archives under 2 GiB whatever this allows.',
+      'Max size of a single multipart upload, in bytes: one report or the files of one test, which the reporter sends in a request of their own, or a blob-report import. Lower it to match a reverse proxy that rejects large bodies, so the import page rejects an oversized archive before uploading it. An import reads its archive whole, so it takes archives under 2 GiB whatever this allows.',
     category: 'ingest',
     type: 'number',
     default: String(500 * 1024 * 1024),

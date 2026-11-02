@@ -470,8 +470,13 @@ On `onEnd`, the collected run is handed to `RunSubmitter`, which tries, in order
 1. **streaming `/finish`**: when a streaming session is open (`internal/streaming/`). A `/finish` whose answer may
    have been lost (no answer, a server error) is asked again, twice at most, before the ladder goes on: a repeat the
    dashboard refuses as the run closed (409) or its token spent (403) means the first one finished the run,
-2. **multipart `/upload`**: when reports or traces are asked for and the run has a file to attach (a report, a
-   trace or an attachment),
+2. **the batch upload**: when reports or traces are asked for and the run has a file to attach (a report, a
+   trace or an attachment). It goes in parts, as a streamed run's files do: `/upload/results` (the run and its
+   results, which the dashboard holds `finalizing`), each test's files to `/case-files` with the token its answer
+   carries (`uploadCaseFilesInTurn`, shared with streaming), then each report to `/upload` with `runId`, which
+   settles the run (an upload carrying no report does when none went). A part refused as too large is left out
+   alone, a test's files sent apart first. A shard, whose run settles with its last shard, and a dashboard without
+   `/upload/results` get one multipart `/upload` carrying everything,
 3. **plain JSON `/submit`**: last resort,
 4. **crash recovery**: on total failure, persist the payload to disk for the next run: one owner-only file per
    dashboard and project, replayed to that dashboard only and deleted once it took the run (or refused it as
@@ -482,7 +487,7 @@ the `submitTimeout` budget: when it runs out, `HttpClient.close` fails every req
 in flight and every later one, so the ladder falls through to crash recovery. The
 file uploads, live ones and their trace checks included, end earlier, at the budget minus
 `FINISH_RESERVE_MS` (a minute, or a quarter of a shorter budget), so a streamed run's
-`/finish` still goes out.
+`/finish`, or the reports that settle a run uploaded in parts, still go out.
 
 A 401 with no credential configured, or a failed login, stops the ladder at once: no other rung can succeed, so
 the run goes to crash recovery. Nothing in the ladder throws out of `onEnd`, since Playwright counts a reporter's

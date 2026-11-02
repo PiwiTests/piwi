@@ -238,6 +238,24 @@ describe('HttpClient (against fake http.Server)', () => {
     });
   });
 
+  describe('postJSON of a run', () => {
+    it('waits for a slow answer past the JSON timeout, up to the upload timeout', async () => {
+      const { server, url } = await startServer((_req, res) => {
+        setTimeout(() => jsonRes(res, 200, { runId: 7 }), 300);
+      });
+      try {
+        const client = new HttpClient(url, new Logger(false), 100, 2000);
+        await expect(client.postJSON('/api/results', {}, null, undefined, { upload: true })).resolves.toEqual({
+          runId: 7,
+        });
+      } finally {
+        (server as any).closeAllConnections?.();
+        server.close();
+        await new Promise<void>((r) => server.on('close', () => r()));
+      }
+    });
+  });
+
   describe('postFormData', () => {
     it('waits for a slow answer past the JSON timeout, up to the upload timeout', async () => {
       const { server, url } = await startServer((_req, res) => {

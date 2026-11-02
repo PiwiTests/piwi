@@ -281,7 +281,8 @@ reach, or a missing API key while authentication is on.
 **A run is stuck as `interrupted`.** A run silent for two minutes (a cancelled job, a killed runner, a dropped
 network) is marked `interrupted` until its next event revives it. A run still in its global setup (`initializing`), or
 a sharded run with a shard still in its own, waits an hour for its reporter to begin it. A run still uploading its
-report (`finalizing`) waits ten minutes, then keeps the status the reporter sent.
+files or its reports (`finalizing`) waits ten minutes after the last one arrived, then keeps the status the reporter
+sent.
 [Analytics](/features/analytics#scope) counts interrupted runs as failing; **full runs only** drops only partial runs.
 
 ## Related

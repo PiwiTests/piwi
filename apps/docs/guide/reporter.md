@@ -143,7 +143,8 @@ A server that does not support streaming gets the batch upload instead.
 
 ### Disabling streaming
 
-`streaming: false` sends all results at the end of the run.
+`streaming: false` sends all results at the end of the run, then each test's files and each report in a request of
+their own.
 
 ### Tuning batch parameters
 
@@ -196,9 +197,8 @@ export default defineConfig({
 
 `html` (the html reporter's folder, `playwright-report/` by default) and `monocart` (`monocart-report/`) open in a new
 tab; `blob` (`blob-report/`) downloads as an archive. Any other type is accepted too, read from `dir` or else
-`<type>-report/`. Reports are uploaded compressed, and the dashboard refuses an upload over its limit
-([`PIWI_IMPORT_MAX_BYTES`](/reference/configuration#ingest-limits), 500 MB by default): a streamed run is then
-finished without its reports, and a run sent as a batch keeps only its results.
+`<type>-report/`. Reports are uploaded compressed, and one over the dashboard's upload limit
+([`PIWI_IMPORT_MAX_BYTES`](/reference/configuration#ingest-limits), 500 MB by default) is left out alone.
 
 ## With authentication enabled
 

@@ -123,9 +123,9 @@ export class HttpClient {
    * @param logger    Prefixed logger for verbose diagnostics.
    * @param timeout   Socket inactivity timeout in ms (default 30s), so a hung
    *                  server fails fast rather than stalling the reporter.
-   * @param uploadTimeout Socket inactivity timeout of a multipart upload in ms
-   *                  (default 10 min): the dashboard answers one only once it
-   *                  has stored every report and trace in it.
+   * @param uploadTimeout Socket inactivity timeout of a multipart upload, or of
+   *                  a run's results sent as JSON, in ms (default 10 min): the
+   *                  dashboard answers one only once it has stored all of it.
    */
   constructor(
     private readonly serverUrl: string,
@@ -246,9 +246,16 @@ export class HttpClient {
 
   /**
    * Send a JSON POST request. `auth` can be an API key (prefix `pd_`) or a session cookie string. Resolves to the
-   * answer's JSON; an answer that is not JSON fails, and `signal` ends the request.
+   * answer's JSON; an answer that is not JSON fails, and `signal` ends the request. With `upload`, the answer may come
+   * as late as a multipart upload's: the body is a run's results, which the dashboard stores before it answers.
    */
-  async postJSON(pathname: string, payload: unknown, auth?: string | null, signal?: AbortSignal): Promise<any> {
+  async postJSON(
+    pathname: string,
+    payload: unknown,
+    auth?: string | null,
+    signal?: AbortSignal,
+    { upload = false }: { upload?: boolean } = {},
+  ): Promise<any> {
     const body = JSON.stringify(payload);
     const res = await this.request('POST', pathname, {
       headers: {
@@ -258,6 +265,7 @@ export class HttpClient {
       body,
       auth,
       signal,
+      ...(upload && { timeout: this.uploadTimeout }),
     });
     if (res.status < 200 || res.status >= 300) {
       this.logger.debugError(`Response: ${res.text}`);

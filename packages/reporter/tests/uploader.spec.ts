@@ -330,3 +330,174 @@ describe('Uploader.uploadCaseFiles', () => {
     }
   });
 });
+
+describe('Uploader.uploadCaseFiles, files too large together', () => {
+  it('sends them again in a request each, those of one name together, and leaves out alone one still too large', async () => {
+    const file = (name: string, content: string) => {
+      const filePath = path.join(tmpDir, name);
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, content);
+      return filePath;
+    };
+    const testCase = {
+      type: 'complete',
+      title: 'records the checkout',
+      location: 'l',
+      attachments: [
+        { name: 'trace', path: file('trace.zip', 'TRACE-BYTES') },
+        { name: 'screenshot', path: file('first/screenshot.png', 'FIRST-SHOT'), contentType: 'image/png' },
+        { name: 'video', path: file('video.webm', 'HUGE-VIDEO'), contentType: 'video/webm' },
+        { name: 'screenshot', path: file('second/screenshot.png', 'SECOND-SHOT'), contentType: 'image/png' },
+      ],
+    } as any;
+
+    // Over the limit: a request that carries the video.
+    const { server, url, requests } = await startServer((req, res) =>
+      req.url === '/api/traces/check' || !req.body.includes('HUGE-VIDEO')
+        ? jsonRes(res, 200, { success: true })
+        : jsonRes(res, 413, { message: 'Upload too large (max 1 MB)' }),
+    );
+    try {
+      const uploader = new Uploader(new HttpClient(url, new Logger(false)), new FileHandler(new Logger(false)));
+      const result = await uploader.uploadCaseFiles('proj', 5, 'streamtok', testCase, true, null);
+
+      expect(result).toBe(true);
+      const sent = requests.filter((r) => r.url === '/api/test-runs/5/case-files').map((r) => r.body);
+      expect(sent).toHaveLength(4);
+      // The trace alone, then both screenshots together, then the video alone, which is left out.
+      expect(sent[1]).toContain('TRACE-BYTES');
+      expect(sent[1]).not.toContain('SHOT');
+      expect(sent[2]).toContain('FIRST-SHOT');
+      expect(sent[2]).toContain('SECOND-SHOT');
+      expect(sent[2]).not.toContain('TRACE-BYTES');
+      expect(sent[3]).toContain('HUGE-VIDEO');
+      expect(sent[3]).not.toContain('SHOT');
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  it('throws when the one file of a test is too large, for the next test to go', async () => {
+    const traceFile = path.join(tmpDir, 'trace.zip');
+    fs.writeFileSync(traceFile, 'TRACE-BYTES');
+    const { server, url } = await startServer((req, res) =>
+      req.url === '/api/traces/check' ? jsonRes(res, 200, {}) : jsonRes(res, 413, { message: 'too large' }),
+    );
+    try {
+      const uploader = new Uploader(new HttpClient(url, new Logger(false)), new FileHandler(new Logger(false)));
+      const testCase = {
+        type: 'complete',
+        title: 't',
+        location: 'l',
+        attachments: [{ name: 'trace', path: traceFile }],
+      };
+      await expect(uploader.uploadCaseFiles('proj', 5, 'tok', testCase as any, true, null)).rejects.toMatchObject({
+        status: 413,
+      });
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+});
+
+describe('Uploader.uploadResults', () => {
+  it('sends the run with its results to /api/test-runs/upload/results, and returns the run and its token', async () => {
+    const { server, url, requests } = await startServer((_req, res) =>
+      jsonRes(res, 200, { success: true, runId: 7, projectId: 3, streamToken: 'held-token' }),
+    );
+    try {
+      const uploader = new Uploader(new HttpClient(url, new Logger(false)), new FileHandler(new Logger(false)));
+      const testCase = { type: 'complete', title: 'pays', location: 'l', status: 'passed' } as any;
+      const held = await uploader.uploadResults(makePayload([testCase]), null);
+
+      expect(held).toEqual({ runId: 7, projectId: 3, streamToken: 'held-token' });
+      expect(requests.map((r) => r.url)).toEqual(['/api/test-runs/upload/results']);
+      const body = JSON.parse(requests[0]!.body);
+      expect(body.projectName).toBe('proj');
+      expect(body.testCases.map((tc: any) => tc.title)).toEqual(['pays']);
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  it('waits for the dashboard to store the results as long as for an upload', async () => {
+    const { server, url } = await startServer((_req, res) => {
+      setTimeout(() => jsonRes(res, 200, { success: true, runId: 7, projectId: 3, streamToken: 'held-token' }), 300);
+    });
+    try {
+      const client = new HttpClient(url, new Logger(false), 100, 2000);
+      const uploader = new Uploader(client, new FileHandler(new Logger(false)));
+      expect(await uploader.uploadResults(makePayload(), null)).toMatchObject({ runId: 7 });
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  it('returns null from a dashboard that has no such route, or that names no token, and throws a 401', async () => {
+    for (const [status, answer, expected] of [
+      [404, { message: 'Page not found' }, null],
+      [200, { success: true, runId: 7, projectId: 3 }, null],
+    ] as const) {
+      const { server, url } = await startServer((_req, res) => jsonRes(res, status, answer));
+      try {
+        const uploader = new Uploader(new HttpClient(url, new Logger(false)), new FileHandler(new Logger(false)));
+        expect(await uploader.uploadResults(makePayload(), null)).toBe(expected);
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    }
+
+    const { server, url } = await startServer((_req, res) => jsonRes(res, 401, { message: 'Unauthorized' }));
+    try {
+      const uploader = new Uploader(new HttpClient(url, new Logger(false)), new FileHandler(new Logger(false)));
+      await expect(uploader.uploadResults(makePayload(), null)).rejects.toMatchObject({ status: 401 });
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+});
+
+describe('Uploader.uploadReportsAndSettle', () => {
+  function report(type: string, content: string) {
+    const dir = path.join(tmpDir, `${type}-report`);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'index.html'), content);
+    return { type, dir, files: new FileHandler(new Logger(false)).listReport(dir)! };
+  }
+
+  it('uploads each report in a request of its own, leaving out alone one refused as too large', async () => {
+    const { server, url, requests } = await startServer((req, res) =>
+      req.body.includes('name="report_html"')
+        ? jsonRes(res, 413, { message: 'Upload too large (max 1 MB)' })
+        : jsonRes(res, 200, { success: true, runId: 42 }),
+    );
+    try {
+      const uploader = new Uploader(new HttpClient(url, new Logger(false)), new FileHandler(new Logger(false)));
+      await uploader.uploadReportsAndSettle('proj', 42, [report('html', 'big'), report('custom', 'small')], null, null);
+
+      expect(requests.map((r) => r.body.includes('name="report_html"'))).toEqual([true, false]);
+      expect(requests[1]!.body).toContain('name="report_custom"');
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  it('settles the run with an upload that carries no report when none went through', async () => {
+    const { server, url, requests } = await startServer((req, res) =>
+      req.body.includes('name="report_')
+        ? jsonRes(res, 413, { message: 'Upload too large (max 1 MB)' })
+        : jsonRes(res, 200, { success: true, runId: 42 }),
+    );
+    try {
+      const uploader = new Uploader(new HttpClient(url, new Logger(false)), new FileHandler(new Logger(false)));
+      await uploader.uploadReportsAndSettle('proj', 42, [report('html', 'big')], null, null);
+
+      expect(requests).toHaveLength(2);
+      expect(requests[1]!.body).toContain('already-submitted');
+      expect(requests[1]!.body).not.toContain('name="report_');
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+});
+

@@ -4,7 +4,8 @@ import type { PiwiDashboardOptions, ShardInfo } from '../../public/options.js';
 import { errorMessage } from '../support/errors.js';
 import type { HttpClient } from '../transport/http-client.js';
 import { HttpError } from '../transport/http-client.js';
-import type { Uploader, RunPayload, ReportOptions, FoundReport } from './uploader.js';
+import { uploadCaseFilesInTurn } from './uploader.js';
+import type { Uploader, RunPayload, ReportOptions, FoundReport, HeldRun } from './uploader.js';
 import type { CrashRecovery } from '../streaming/crash-recovery.js';
 import type { StreamManager } from '../streaming/stream-manager.js';
 import { Logger } from '../support/logger.js';
@@ -22,8 +23,8 @@ const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
 const FINISH_RETRY_DELAYS_MS = [1000, 2000];
 
 /**
- * The part of the end-of-run budget the file uploads leave to `/finish` and its repeats: a minute, or a quarter of a
- * shorter budget.
+ * The part of the end-of-run budget the test files leave to what follows them: `/finish` and its repeats, or the
+ * reports of a run uploaded in parts, which settle it. A minute, or a quarter of a shorter budget.
  */
 const FINISH_RESERVE_MS = 60_000;
 
@@ -99,8 +100,10 @@ function markSubmitFallback(run: CollectedRun, path: 'upload' | 'submit', reason
  * Owns the three-tier submit/fallback ladder:
  *
  *   1. finalize the streaming run (`/finish`) when streaming is active,
- *   2. fall back to multipart upload (`/upload`) when reports or traces are
- *      asked for and the run has a file to attach,
+ *   2. fall back to the batch upload when reports or traces are asked for and
+ *      the run has a file to attach: in parts (`/upload/results`, then each
+ *      test's files and each report), or in one multipart `/upload` for a
+ *      shard or a dashboard that takes no results ahead of the files,
  *   3. fall back to plain JSON (`/submit`) as the last resort, persisting a
  *      recovery payload on total failure.
  */
@@ -331,9 +334,7 @@ export class RunSubmitter {
     try {
       const durations = run.testCases.filter((tc) => tc.duration != null).map((tc) => tc.duration as number);
 
-      // The file uploads stop in time to leave `/finish` its share of the budget.
-      const filesDeadline = this.budget && this.budget.end - Math.min(FINISH_RESERVE_MS, this.budget.ms / 4);
-      await sm.uploadRemaining(run.testCases, filesDeadline);
+      await sm.uploadRemaining(run.testCases, this.filesDeadline());
 
       const finishBody: Record<string, unknown> = {
         streamToken: sm.token,
@@ -371,18 +372,7 @@ export class RunSubmitter {
       this.dropLocalCopies();
 
       if (reports.length > 0) {
-        try {
-          await this.uploader.uploadReportsForStreamingRun(
-            run.options.projectName!,
-            sm.runId!,
-            reports,
-            run.startTime,
-            auth,
-          );
-        } catch (error) {
-          this.logger.warn(`Failed to upload reports for streaming run: ${errorMessage(error)}`);
-          await this.settleWithoutReports(run, sm.runId!, auth);
-        }
+        await this.uploader.uploadReportsAndSettle(run.options.projectName!, sm.runId!, reports, run.startTime, auth);
       }
       return { done: true, output: this.buildOutput(sm.runId!, undefined, run, overallStatus) };
     } catch (error) {
@@ -393,17 +383,11 @@ export class RunSubmitter {
   }
 
   /**
-   * Settle a streamed run whose reports did not upload (refused as over the dashboard's upload limit, say): its
-   * `/finish` left it `finalizing` until they arrive, or until the dashboard stops waiting, and an upload that carries
-   * no report settles it now.
+   * When the test files stop (ms since the epoch), so what follows them keeps its share of the budget
+   * (`FINISH_RESERVE_MS`); null without a budget.
    */
-  private async settleWithoutReports(run: CollectedRun, runId: number, auth: string | null): Promise<void> {
-    if (this.httpClient.closed) return;
-    try {
-      await this.uploader.uploadReportsForStreamingRun(run.options.projectName!, runId, [], run.startTime, auth);
-    } catch (error) {
-      this.logger.debug(`Could not settle run #${runId} without its reports: ${errorMessage(error)}`);
-    }
+  private filesDeadline(): number | null {
+    return this.budget && this.budget.end - Math.min(FINISH_RESERVE_MS, this.budget.ms / 4);
   }
 
   /**
@@ -442,7 +426,9 @@ export class RunSubmitter {
   ): Promise<SubmitOutcome> {
     const payload = this.buildRunPayload(run, overallStatus, duration);
     try {
-      const response = await this.uploader.uploadWithFiles(payload, reports, run.options.uploadTraces, auth);
+      const response =
+        (await this.uploadInParts(run, payload, reports, auth)) ??
+        (await this.uploader.uploadWithFiles(payload, reports, run.options.uploadTraces, auth));
       this.dropLocalCopies();
       return { done: true, output: this.buildOutput(response?.runId, response?.projectId, run, overallStatus) };
     } catch (error) {
@@ -450,6 +436,54 @@ export class RunSubmitter {
       this.logger.warn(`Could not upload the run's files (${errorMessage(error)}): sending its results alone.`);
       return { done: false, output: null };
     }
+  }
+
+  /**
+   * Deliver the run in parts, as a streamed run's files go: its results first, which the dashboard holds `finalizing`;
+   * then each test's files, with the token its answer carries; then its reports, which settle the run (an upload
+   * carrying none does when none went through). Each goes in a request of its own, so one the dashboard refuses as
+   * too large is left out alone. Null for a shard, whose run settles with its last shard, and when the dashboard took
+   * no results ahead of the files (an older one): both get the run in one upload.
+   */
+  private async uploadInParts(
+    run: CollectedRun,
+    payload: RunPayload,
+    reports: FoundReport[],
+    auth: string | null,
+  ): Promise<HeldRun | null> {
+    if (run.shardInfo && run.shardInfo.total > 1) return null;
+    const held = await this.uploader.uploadResults(payload, auth);
+    if (!held) return null;
+
+    // The test files stop in time to leave the reports, and the settle, their share of the budget.
+    const files = new AbortController();
+    const deadline = this.filesDeadline();
+    const stop =
+      deadline === null
+        ? null
+        : setTimeout(
+            () => files.abort(new Error('The end-of-run time budget is kept for settling the run')),
+            Math.min(Math.max(deadline - Date.now(), 0), MAX_TIMER_DELAY_MS),
+          );
+    try {
+      await uploadCaseFilesInTurn(
+        this.uploader,
+        this.logger,
+        {
+          projectName: run.options.projectName!,
+          runId: held.runId,
+          streamToken: held.streamToken,
+          uploadTraces: run.options.uploadTraces,
+          auth,
+        },
+        run.testCases,
+        files.signal,
+      );
+    } finally {
+      if (stop) clearTimeout(stop);
+    }
+    await this.uploader.uploadReportsAndSettle(run.options.projectName!, held.runId, reports, run.startTime, auth);
+    return held;
   }
 
   private async tryUploadJSON(

@@ -6,7 +6,7 @@ import { HttpError } from '../transport/http-client.js';
 import type { StreamBuffer } from './stream-buffer.js';
 import { BoundedEventQueue } from './bounded-queue.js';
 import type { CrashRecovery } from './crash-recovery.js';
-import type { Uploader } from '../submit/uploader.js';
+import { uploadCaseFilesInTurn, type Uploader } from '../submit/uploader.js';
 import type { FileHandler } from '../files/file-handler.js';
 import { Logger } from '../support/logger.js';
 import { createLimiter } from '../support/limiter.js';
@@ -23,8 +23,6 @@ const SERVER_MAX_EVENT_BATCH_BYTES = 10 * 1024 * 1024;
 const EVENT_ENVELOPE_BYTES = 1024;
 /** Byte budget for the events of one `/events` request, well under the server's limit. */
 const MAX_EVENT_REQUEST_BYTES = 4 * 1024 * 1024;
-/** Uploads in a row without any response after which `uploadRemaining` gives up. */
-const MAX_UPLOAD_CONNECTION_FAILURES = 3;
 /**
  * How long the request of the oldest events may keep failing, for want of an answer or with a server error, from its
  * first failure, before they are set aside so the later ones flow: two and a half minutes, about ten retries of the
@@ -762,9 +760,9 @@ export class StreamManager {
 
   /**
    * Wait for all live uploads to settle, then upload files for any test cases
-   * that weren't uploaded live. Stops after `MAX_UPLOAD_CONNECTION_FAILURES`
-   * uploads in a row got no response at all, and at `deadline` (ms since the
-   * epoch), which also ends the uploads in flight, live ones included.
+   * that weren't uploaded live (`uploadCaseFilesInTurn`). Stops at `deadline`
+   * (ms since the epoch), which also ends the uploads in flight, live ones
+   * included.
    */
   async uploadRemaining(testCases: CollectedTestCase[], deadline: number | null = null): Promise<void> {
     let stop: ReturnType<typeof setTimeout> | null = null;
@@ -787,38 +785,20 @@ export class StreamManager {
     }
     if (!this._enabled || !this._runId || !this._token) return;
 
-    let connectionFailures = 0;
-    for (const tc of testCases) {
-      if (this.uploadedCaseFiles.has(tc)) continue;
-      if (this.fileUploads.signal.aborted) {
-        this.logger.warn(
-          `The end-of-run time budget (submitTimeout) leaves no more time for file uploads: skipping the files of the remaining tests so the run can be finished.`,
-        );
-        return;
-      }
-      try {
-        const uploaded = await this.uploader.uploadCaseFiles(
-          this.options.projectName!,
-          this._runId,
-          this._token,
-          tc,
-          this.options.uploadTraces,
-          this._auth,
-          this.fileUploads.signal,
-        );
-        if (uploaded) this.uploadedCaseFiles.add(tc);
-        connectionFailures = 0;
-      } catch (error) {
-        this.logger.warn(`Failed to upload files for "${tc.title}": ${errorMessage(error)}`);
-        // Any HTTP status means the dashboard answered; only a request that got
-        // no response (refused, reset, timed out) counts toward giving up.
-        connectionFailures = error instanceof HttpError ? 0 : connectionFailures + 1;
-        if (connectionFailures >= MAX_UPLOAD_CONNECTION_FAILURES) {
-          this.logger.warn(`The dashboard stopped responding — skipping the file uploads of the remaining tests.`);
-          return;
-        }
-      }
-    }
+    await uploadCaseFilesInTurn(
+      this.uploader,
+      this.logger,
+      {
+        projectName: this.options.projectName!,
+        runId: this._runId,
+        streamToken: this._token,
+        uploadTraces: this.options.uploadTraces,
+        auth: this._auth,
+      },
+      testCases,
+      this.fileUploads.signal,
+      { skip: (tc) => this.uploadedCaseFiles.has(tc), uploaded: (tc) => this.uploadedCaseFiles.add(tc) },
+    );
   }
 
   /** End every file upload, in flight or still to start, so the run's `/finish` keeps its share of the budget. */
