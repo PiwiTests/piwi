@@ -11,11 +11,24 @@
  * It never fails destructively: an unrecognized config shape or a pre-existing
  * fixtures file becomes a `manual` step carrying the exact snippet to apply, not
  * a rewrite of a file the tool does not understand.
+ *
+ * Run at a workspace's root that holds no Playwright config, it wires the
+ * workspace package that holds one, or the one the person picks when several
+ * do; with nobody at a terminal to pick, it wires none and names them.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as readline from 'node:readline';
+import * as tty from 'node:tty';
 import { formatStep, type StepResult } from './report.js';
-import { detectProject, installCommand, REPORTER_PACKAGE, type PackageManager, type ProjectShape } from './detect.js';
+import {
+  detectProject,
+  installCommand,
+  REPORTER_PACKAGE,
+  workspacePackagesWithConfig,
+  type PackageManager,
+  type ProjectShape,
+} from './detect.js';
 import {
   ensureGitignoreEntry,
   fixturesContents,
@@ -31,9 +44,23 @@ import {
   WORKFLOW_SKILLS,
   DEFAULT_SKILLS_DIR,
 } from './skills.js';
+import { detectCi } from '../internal/support/ci.js';
 import { runPackageManager } from '../internal/support/playwright-spawn.js';
 
 const DEFAULT_SERVER_URL = 'http://localhost:3000';
+
+/** Asks the person at the terminal one question: their answer, or null when they close the input. */
+type Ask = (question: string) => Promise<string | null>;
+
+/** The workspace `init` ran at the root of, which holds no Playwright config itself. */
+interface WorkspaceChoice {
+  /** Absolute path of the workspace's root. */
+  root: string;
+  /** Its packages that hold a Playwright config, relative to `root`. */
+  packages: string[];
+  /** The package `init` wires, or null when it wires none. */
+  wired: string | null;
+}
 
 const DESKTOP_APP_MODES = ['prefer', 'fallback', 'off'] as const;
 type DesktopAppMode = (typeof DESKTOP_APP_MODES)[number];
@@ -69,6 +96,12 @@ What it does (each step is idempotent and safe to re-run):
   - creates the capture-fixtures file (tests/fixtures.ts)
   - records PIWI_* connection settings in .env / .env.example and .gitignore
   - installs the Piwi agent skills so your coding agent can use them
+
+In a monorepo, run it in the package that holds the playwright.config, or pass
+--cwd <package>. At a workspace root with no playwright.config of its own
+("workspaces" in package.json, or pnpm-workspace.yaml), it wires the workspace
+package that has one. When several have one, it asks which in a terminal; in CI,
+without a terminal or with --json, it wires none and lists them.
 
 Options:
   --server-url <url>   Dashboard URL to write into the config (env PIWI_DASHBOARD_URL,
@@ -118,7 +151,7 @@ function resolveSkillSlugs(raw: string | undefined): ReadonlyArray<string> {
 }
 
 export function parseInitArgs(argv: string[], env: NodeJS.ProcessEnv, cwd: string): InitOptions {
-  const root = path.resolve(readOption(argv, '--cwd') ?? cwd);
+  const root = path.resolve(cwd, readOption(argv, '--cwd') ?? '.');
   const detected = detectProject(root);
   return {
     root,
@@ -357,23 +390,155 @@ function nextSteps(opts: InitOptions, steps: StepResult[]): string[] {
   return out;
 }
 
-/** Run `piwi init`. Returns the process exit code rather than calling exit. */
+/** One line typed in answer to `question`; null when the input closes first, or on Ctrl+C. */
+export function askLine(
+  question: string,
+  input: NodeJS.ReadableStream,
+  output: NodeJS.WritableStream,
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({ input, output });
+    rl.once('close', () => resolve(null));
+    rl.once('SIGINT', () => rl.close());
+    rl.question(question, (answer) => {
+      resolve(answer);
+      rl.close();
+    });
+  });
+}
+
+/** How `init` asks the person at the terminal; null in CI, or when stdin or stdout is not a terminal. */
+export function terminalAsk(env: NodeJS.ProcessEnv, isTerminal: (fd: number) => boolean = tty.isatty): Ask | null {
+  if (detectCi(env) || !isTerminal(0) || !isTerminal(1)) return null;
+  return (question) => askLine(question, process.stdin, process.stdout);
+}
+
+/** Asks which of the workspace packages to wire, by its number in the list; null when the person picks none. */
+async function choosePackage(packages: string[], ask: Ask): Promise<string | null> {
+  console.log(`\nNo playwright.config here, and ${packages.length} workspace packages have one:\n`);
+  packages.forEach((pkg, index) => console.log(`  ${index + 1}. ${pkg}`));
+  console.log('');
+  for (;;) {
+    const answer = (await ask(`Which one should init wire? [1-${packages.length}, Enter for none] `))?.trim();
+    if (!answer) return null;
+    const choice = Number(answer);
+    if (Number.isInteger(choice) && choice >= 1 && choice <= packages.length) return packages[choice - 1];
+  }
+}
+
+/**
+ * At a workspace's root, the packages that hold a Playwright config and the one to wire: the only one; when several
+ * do, the one the person picks, or none with nobody to ask. Null when no workspace package holds one.
+ */
+async function chooseWorkspacePackage(root: string, ask: Ask | null): Promise<WorkspaceChoice | null> {
+  const packages = workspacePackagesWithConfig(root);
+  if (!packages.length) return null;
+  if (packages.length === 1) return { root, packages, wired: packages[0] };
+  return { root, packages, wired: ask ? await choosePackage(packages, ask) : null };
+}
+
+/** The options for the workspace package at `root`: its project name, unless `--project` names one. */
+function inPackage(opts: InitOptions, argv: string[], root: string): InitOptions {
+  return { ...opts, root, projectName: readOption(argv, '--project') ?? detectProject(root).suggestedProjectName };
+}
+
+/** What `init` reports when it wires none of the workspace's packages: which hold a config, and how to pick one. */
+function unwiredWorkspace(workspace: WorkspaceChoice, cwd: string): { step: StepResult; guidance: string[] } {
+  const flags = workspace.packages.map(
+    (pkg) => `\`--cwd ${path.relative(cwd, path.join(workspace.root, pkg)) || '.'}\``,
+  );
+  return {
+    step: {
+      step: 'config',
+      status: 'manual',
+      detail:
+        `No playwright.config here; ${workspace.packages.length} workspace packages have one ` +
+        `(${workspace.packages.join(', ')}) — run init again with \`--cwd <package>\` for the one to wire`,
+    },
+    guidance: [
+      `Run the same command again with ${flags.slice(0, -1).join(', ')} or ${flags[flags.length - 1]}, ` +
+        'for the package to wire.',
+    ],
+  };
+}
+
+/** Prints the steps and what to do next: as text, or as one JSON object under `--json`. */
+function printOutcome(
+  opts: InitOptions,
+  project: ProjectShape,
+  workspace: WorkspaceChoice | null,
+  steps: StepResult[],
+  guidance: string[],
+): void {
+  if (opts.json) {
+    console.log(
+      JSON.stringify(
+        {
+          dryRun: opts.dryRun,
+          project: {
+            root: project.root,
+            packageManager: project.packageManager,
+            configPath: project.configPath ? path.relative(project.root, project.configPath) : null,
+            projectName: opts.projectName,
+            serverUrl: opts.serverUrl,
+            desktopApp: opts.desktopApp,
+          },
+          ...(workspace ? { workspace } : {}),
+          steps,
+          nextSteps: guidance,
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+  if (workspace?.wired && workspace.packages.length === 1) {
+    console.log(
+      `\nNo playwright.config here, so init wires ${workspace.wired}, the one workspace package that has one.`,
+    );
+  }
+  const where = workspace?.wired ? ` in ${workspace.wired}` : '';
+  console.log(`\nPiwi setup${opts.dryRun ? ' (dry run — nothing written)' : ''} for "${opts.projectName}"${where}:\n`);
+  for (const step of steps) console.log(formatStep(step));
+  console.log('\nNext:');
+  for (const line of guidance) console.log(`  • ${line}`);
+  console.log('');
+}
+
+/**
+ * Run `piwi init`. Returns the process exit code rather than calling exit. `ask` puts a question to the person at the
+ * terminal; null when nobody is there to answer.
+ */
 export async function runInit(
   argv: string[],
   env: NodeJS.ProcessEnv = process.env,
   cwd: string = process.cwd(),
+  ask: Ask | null = terminalAsk(env),
 ): Promise<number> {
   if (argv.includes('-h') || argv.includes('--help')) {
     console.log(USAGE);
     return 0;
   }
 
-  const opts = parseInitArgs(argv, env, cwd);
+  let opts = parseInitArgs(argv, env, cwd);
   if (opts.desktopApp !== null && !DESKTOP_APP_MODES.includes(opts.desktopApp as DesktopAppMode)) {
     console.error(`--desktop-app must be one of ${DESKTOP_APP_MODES.join(', ')} (got "${opts.desktopApp}")`);
     return 1;
   }
-  const project = detectProject(opts.root);
+  let project = detectProject(opts.root);
+  // Under --json the output is an agent's to read, so nobody is asked.
+  const workspace =
+    opts.skillsOnly || project.configPath ? null : await chooseWorkspacePackage(project.root, opts.json ? null : ask);
+  if (workspace && !workspace.wired) {
+    const { step, guidance } = unwiredWorkspace(workspace, cwd);
+    printOutcome(opts, project, workspace, [step], guidance);
+    return 0;
+  }
+  if (workspace?.wired) {
+    opts = inPackage(opts, argv, path.join(workspace.root, workspace.wired));
+    project = detectProject(opts.root);
+  }
   const steps: StepResult[] = [];
 
   if (!opts.skillsOnly) {
@@ -396,35 +561,7 @@ export async function runInit(
     );
   }
 
-  const guidance = nextSteps(opts, steps);
-
-  if (opts.json) {
-    console.log(
-      JSON.stringify(
-        {
-          dryRun: opts.dryRun,
-          project: {
-            root: project.root,
-            packageManager: project.packageManager,
-            configPath: project.configPath ? path.relative(project.root, project.configPath) : null,
-            projectName: opts.projectName,
-            serverUrl: opts.serverUrl,
-            desktopApp: opts.desktopApp,
-          },
-          steps,
-          nextSteps: guidance,
-        },
-        null,
-        2,
-      ),
-    );
-  } else {
-    console.log(`\nPiwi setup${opts.dryRun ? ' (dry run — nothing written)' : ''} for "${opts.projectName}":\n`);
-    for (const step of steps) console.log(formatStep(step));
-    console.log('\nNext:');
-    for (const line of guidance) console.log(`  • ${line}`);
-    console.log('');
-  }
+  printOutcome(opts, project, workspace, steps, nextSteps(opts, steps));
 
   // A tool failure (e.g. the install command erroring) is worth a non-zero exit;
   // `manual` steps are expected outcomes, not failures.

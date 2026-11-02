@@ -1,8 +1,9 @@
 /**
  * Read-only inspection of the target project so `init` knows what it is looking
  * at before it changes anything: which package manager runs there, where the
- * Playwright config lives, whether the reporter is already a dependency, and a
- * sensible default project name.
+ * Playwright config lives, whether the reporter is already a dependency, a
+ * sensible default project name, and, at a workspace's root, which of its
+ * packages hold a Playwright config.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -15,6 +16,8 @@ interface PackageJson {
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
   packageManager?: string;
+  /** npm, Yarn and Bun workspaces: a list of globs, or an object holding them in `packages`. */
+  workspaces?: unknown;
 }
 
 export interface ProjectShape {
@@ -112,6 +115,125 @@ function suggestProjectName(root: string, pkg: PackageJson | null): string {
 function hasReporter(pkg: PackageJson | null): boolean {
   if (!pkg) return false;
   return Boolean(pkg.dependencies?.[REPORTER_PACKAGE] || pkg.devDependencies?.[REPORTER_PACKAGE]);
+}
+
+/** The strings of a list, or an empty list when `value` is not one. */
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+/** A plain or quoted YAML scalar, without its trailing comment. */
+function yamlScalar(text: string): string {
+  const value = text.trim();
+  const quoted = /^(['"])(.*?)\1/.exec(value);
+  return quoted ? quoted[2] : value.replace(/\s+#.*$/, '').trim();
+}
+
+/** The `packages` globs of a pnpm-workspace.yaml: a block list under the key, or a flow list beside it. */
+function pnpmWorkspaceGlobs(yaml: string): string[] {
+  const flow = /^packages\s*:\s*\[([^\]]*)\]/m.exec(yaml);
+  if (flow) return flow[1].split(',').map(yamlScalar).filter(Boolean);
+  const lines = yaml.split(/\r?\n/);
+  const start = lines.findIndex((line) => /^packages\s*:\s*(#.*)?$/.test(line));
+  if (start === -1) return [];
+  const globs: string[] = [];
+  for (const line of lines.slice(start + 1)) {
+    if (/^\s*(#.*)?$/.test(line)) continue;
+    const item = /^\s*-\s+(.*)$/.exec(line);
+    if (!item) break;
+    globs.push(yamlScalar(item[1]));
+  }
+  return globs.filter(Boolean);
+}
+
+/** The globs naming a workspace's packages: `workspaces` in its package.json, and its pnpm-workspace.yaml's. */
+function workspaceGlobs(root: string, pkg: PackageJson | null): string[] {
+  const declared = pkg?.workspaces;
+  const globs = stringList(
+    typeof declared === 'object' && declared !== null && 'packages' in declared ? declared.packages : declared,
+  );
+  try {
+    globs.push(...pnpmWorkspaceGlobs(fs.readFileSync(path.join(root, 'pnpm-workspace.yaml'), 'utf-8')));
+  } catch {
+    // No pnpm-workspace.yaml.
+  }
+  return globs;
+}
+
+function isDirectory(dir: string): boolean {
+  try {
+    return fs.statSync(dir).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/** The folders directly in `dir` a wildcard may enter: never node_modules, a dot folder or a symbolic link. */
+function subfolders(dir: string): string[] {
+  try {
+    return fs
+      .readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && entry.name !== 'node_modules' && !entry.name.startsWith('.'))
+      .map((entry) => path.join(dir, entry.name));
+  } catch {
+    return [];
+  }
+}
+
+/** A folder name pattern as a regular expression: `*` any run of characters, `?` one character. */
+function namePattern(segment: string): RegExp {
+  const source = segment
+    .split(/([*?])/)
+    .map((part) => (part === '*' ? '.*' : part === '?' ? '.' : part.replace(/[.+^${}()|[\]\\]/g, '\\$&')))
+    .join('');
+  return new RegExp(`^${source}$`);
+}
+
+/** The folders under `root` a workspace glob names: `*` and `?` within one folder name, `**` any number of folders. */
+function expandGlob(root: string, glob: string): string[] {
+  const segments = glob.split('/').filter((segment) => segment !== '' && segment !== '.');
+  const found: string[] = [];
+  const walk = (dir: string, index: number): void => {
+    if (index === segments.length) {
+      found.push(dir);
+      return;
+    }
+    const segment = segments[index];
+    if (segment === '**') {
+      walk(dir, index + 1);
+      for (const child of subfolders(dir)) walk(child, index);
+    } else if (/[*?]/.test(segment)) {
+      const pattern = namePattern(segment);
+      for (const child of subfolders(dir)) if (pattern.test(path.basename(child))) walk(child, index + 1);
+    } else if (isDirectory(path.join(dir, segment))) {
+      walk(path.join(dir, segment), index + 1);
+    }
+  };
+  walk(root, 0);
+  return found;
+}
+
+/**
+ * The packages of the workspace whose root is `root` that hold a Playwright config, as `/`-separated paths relative to
+ * `root`, sorted. A workspace is declared by `workspaces` in the root's package.json (npm, Yarn, Bun) or by a
+ * pnpm-workspace.yaml; a glob starting with `!` leaves out the folders it names. Empty when `root` declares none.
+ */
+export function workspacePackagesWithConfig(root: string): string[] {
+  const absRoot = path.resolve(root);
+  const globs = workspaceGlobs(absRoot, readPackageJson(absRoot).pkg);
+  const excluded = new Set(
+    globs.filter((glob) => glob.startsWith('!')).flatMap((glob) => expandGlob(absRoot, glob.slice(1))),
+  );
+  const packages = new Set(
+    globs
+      .filter((glob) => !glob.startsWith('!'))
+      .flatMap((glob) => expandGlob(absRoot, glob))
+      .filter((dir) => dir !== absRoot && !excluded.has(dir) && fs.existsSync(path.join(dir, 'package.json'))),
+  );
+  return [...packages]
+    .filter((dir) => findConfig(dir) !== null)
+    .map((dir) => path.relative(absRoot, dir).split(path.sep).join('/'))
+    .sort();
 }
 
 export function detectProject(root: string): ProjectShape {

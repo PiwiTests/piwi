@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { detectProject, installCommand } from '../src/cli/detect.js';
+import { detectProject, installCommand, workspacePackagesWithConfig } from '../src/cli/detect.js';
 
 let root: string;
 
@@ -86,6 +86,55 @@ describe('detectProject', () => {
     expect(shape.packageManager).toBe('npm');
     expect(shape.configPath).toBeNull();
     expect(shape.packageJson).toBeNull();
+  });
+});
+
+describe('workspacePackagesWithConfig', () => {
+  it('lists the packages the workspaces globs name that hold a Playwright config', () => {
+    write('package.json', JSON.stringify({ name: 'shop', workspaces: ['apps/*', './tools/**', '!tools/legacy'] }));
+    write('apps/web/package.json', '{}');
+    write('apps/web/playwright.config.ts');
+    write('apps/api/package.json', '{}');
+    // A folder with a config and no package.json is no package.
+    write('apps/docs/playwright.config.ts');
+    write('tools/e2e/smoke/package.json', '{}');
+    write('tools/e2e/smoke/playwright.config.mjs');
+    write('tools/legacy/package.json', '{}');
+    write('tools/legacy/playwright.config.js');
+    // A wildcard enters neither node_modules nor a dot folder.
+    write('tools/node_modules/dep/package.json', '{}');
+    write('tools/node_modules/dep/playwright.config.ts');
+    write('tools/.cache/copy/package.json', '{}');
+    write('tools/.cache/copy/playwright.config.ts');
+    expect(workspacePackagesWithConfig(root)).toEqual(['apps/web', 'tools/e2e/smoke']);
+  });
+
+  it("reads Yarn's workspaces.packages and the packages of a pnpm-workspace.yaml", () => {
+    write('package.json', JSON.stringify({ name: 'shop', workspaces: { packages: ['web'], nohoist: ['**/react'] } }));
+    write('web/package.json', '{}');
+    write('web/playwright.config.ts');
+    expect(workspacePackagesWithConfig(root)).toEqual(['web']);
+
+    write('package.json', JSON.stringify({ name: 'shop' }));
+    write(
+      'pnpm-workspace.yaml',
+      '# The packages\npackages:\n  - \'apps/*\' # the apps\n  - "e2e"\n\ncatalog:\n  react: ^19.0.0\n',
+    );
+    write('apps/admin/package.json', '{}');
+    write('apps/admin/playwright.config.cts');
+    write('e2e/package.json', '{}');
+    write('e2e/playwright.config.ts');
+    expect(workspacePackagesWithConfig(root)).toEqual(['apps/admin', 'e2e']);
+
+    write('pnpm-workspace.yaml', "packages: ['e2e', web]\n");
+    expect(workspacePackagesWithConfig(root)).toEqual(['e2e', 'web']);
+  });
+
+  it('lists nothing in a folder that declares no workspace', () => {
+    write('package.json', JSON.stringify({ name: 'app' }));
+    write('packages/e2e/package.json', '{}');
+    write('packages/e2e/playwright.config.ts');
+    expect(workspacePackagesWithConfig(root)).toEqual([]);
   });
 });
 
