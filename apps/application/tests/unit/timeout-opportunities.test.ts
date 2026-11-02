@@ -19,8 +19,8 @@ beforeEach(async () => {
 });
 afterEach(() => close());
 
-/** One run where the test took one second under a one-minute timeout. */
-async function seedRun(status: string, metadata: object | null = null) {
+/** One run where the test took one second under a one-minute timeout, or was skipped (`caseStatus`). */
+async function seedRun(status: string, metadata: object | null = null, caseStatus = 'passed') {
   const id = ++runSeq;
   await db.insert(schema.testRuns).values({
     id,
@@ -30,9 +30,13 @@ async function seedRun(status: string, metadata: object | null = null) {
     metadata,
     origin: runOrigin(metadata),
   });
-  await db
-    .insert(schema.testRunsCases)
-    .values({ testRunId: id, testCaseId: 1, status: 'passed', duration: 1_000, timeout: 60_000 });
+  await db.insert(schema.testRunsCases).values({
+    testRunId: id,
+    testCaseId: 1,
+    status: caseStatus,
+    duration: caseStatus === 'passed' ? 1_000 : 0,
+    timeout: 60_000,
+  });
 }
 
 describe('getProjectTimeoutOpportunities', () => {
@@ -45,5 +49,14 @@ describe('getProjectTimeoutOpportunities', () => {
 
     const [opportunity] = await getProjectTimeoutOpportunities(db as never, 1, 50);
     expect(opportunity).toMatchObject({ testCaseId: 1, kind: 'oversized-timeout', runCount: 5 });
+  });
+
+  test('reads the executions that ran, not the 0 ms of a skipped one', async () => {
+    for (let i = 0; i < 5; i++) await seedRun('passed');
+    for (let i = 0; i < 3; i++) await seedRun('passed', null, 'skipped');
+    await seedRun('passed', null, 'didnotrun');
+
+    const [opportunity] = await getProjectTimeoutOpportunities(db as never, 1, 50);
+    expect(opportunity).toMatchObject({ testCaseId: 1, runCount: 5 });
   });
 });

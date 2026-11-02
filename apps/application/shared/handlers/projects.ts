@@ -1634,7 +1634,9 @@ export async function getProjectTimeoutOpportunities(
       };
       byCase.set(row.testCaseId, acc);
     }
-    if (row.duration !== null && row.duration !== undefined) acc.durations.push(row.duration);
+    // A skipped test or one that did not run is stored at 0 ms: it says nothing about how long the test takes.
+    const ran = row.status !== 'skipped' && row.status !== 'didnotrun';
+    if (ran && row.duration !== null && row.duration !== undefined) acc.durations.push(row.duration);
     if (row.status === 'failed' || row.status === 'timedout' || row.status === 'timedOut') acc.failCount++;
     // Latest execution wins for the "current" timeout + slow annotation state.
     const t = new Date(row.startTime).getTime();
