@@ -322,7 +322,9 @@ function flushPendingEvents() {
             // The attempt said to be stuck ended.
             stuck: null,
             duration: d.duration,
-            error: d.error,
+            // A live event always carries the attempt's error, null on a pass; the stream's catch-up of the persisted
+            // cases leaves it out, so the error the page loaded stays.
+            error: d.error !== undefined ? d.error : existing.error,
             stepEvents: d.stepEvents ?? existing.stepEvents,
             wastedTimeMs: d.wastedTimeMs ?? existing.wastedTimeMs,
             workerIndex: d.workerIndex ?? existing.workerIndex,
