@@ -5,6 +5,7 @@ import { testCases, testRuns, testRunsCases } from '../../../database/schema';
 import { getCurrentUser, isAuthEnabled } from '../../../utils/auth';
 import { canAccessProject } from '../../../utils/project-access';
 import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
+import { storedIdentity } from '../../../utils/storable-values';
 
 /**
  * Resolve an execution from what the reporter knows before the server assigns
@@ -49,6 +50,12 @@ export default eventHandler(async (event) => {
     return notFoundPage(event, `Run #${runId} does not exist, or it was deleted.`, null);
   }
 
+  // The names as the test's rows store them (`storedIdentity`).
+  const [storedFile, storedTitle, storedBrowser] = await Promise.all([
+    storedIdentity(file),
+    storedIdentity(title),
+    browser === null ? null : storedIdentity(browser),
+  ]);
   const candidates = await db
     .select({
       id: testRunsCases.id,
@@ -59,9 +66,11 @@ export default eventHandler(async (event) => {
     })
     .from(testRunsCases)
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
-    .where(and(eq(testRunsCases.testRunId, runId), eq(testCases.filePath, file), eq(testCases.title, title)));
+    .where(
+      and(eq(testRunsCases.testRunId, runId), eq(testCases.filePath, storedFile), eq(testCases.title, storedTitle)),
+    );
 
-  const match = pickExecution(candidates, wantedRetry, browser, wantedRepeat);
+  const match = pickExecution(candidates, wantedRetry, storedBrowser, wantedRepeat);
   if (!match) {
     return notFoundPage(event, `Run #${runId} has no execution of "${title}" in ${file}.`, runId);
   }

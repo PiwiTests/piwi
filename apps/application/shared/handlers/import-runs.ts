@@ -22,6 +22,7 @@ import type { DrizzleDB } from './db';
 import type { ImportedRunCase, ParsedBlobReport } from '../../server/utils/blob-report';
 import { resolveSpecPath, type ParsedTraceImport } from '../../server/utils/trace-import';
 import { resolveRunBranch } from '../../server/utils/run-branch';
+import { storableSuitePath, storedIdentity } from '../../server/utils/storable-values';
 import { runCommit, runOrigin } from '../run-eligibility';
 import type { PersistRunCasesOptions } from '../../server/utils/persist-options';
 import { durationStats } from '../utils/stats';
@@ -624,22 +625,29 @@ async function countPriorAttempts(
   testRunId: number,
   input: { filePath: string; suitePath?: string[] | null; title: string; browser?: unknown },
 ): Promise<number> {
+  // The names as the test's rows store them (`storedIdentity`).
+  const [filePath, suitePath, title] = await Promise.all([
+    storedIdentity(input.filePath),
+    storableSuitePath(input.suitePath),
+    storedIdentity(input.title),
+  ]);
   const existing = await db
     .select({ id: testCases.id })
     .from(testCases)
     .where(
       and(
         eq(testCases.projectId, projectId),
-        eq(testCases.filePath, input.filePath),
-        eq(testCases.suitePath, joinSuitePath(input.suitePath)),
-        eq(testCases.title, input.title),
+        eq(testCases.filePath, filePath),
+        eq(testCases.suitePath, joinSuitePath(suitePath)),
+        eq(testCases.title, title),
       ),
     );
 
   const testCaseId = existing[0]?.id;
   if (testCaseId === undefined) return 0;
 
-  const browserName = resolveBrowserName(input.browser);
+  const projectName = resolveBrowserName(input.browser);
+  const browserName = projectName === null ? null : await storedIdentity(projectName);
   const attempts = await db
     .select({ id: testRunsCases.id })
     .from(testRunsCases)

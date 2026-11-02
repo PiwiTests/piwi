@@ -3,6 +3,7 @@ import { testCases, testRuns, testRunsCases } from '../../server/database/schema
 import type { DrizzleDB } from './db';
 import { eligibleRunSql } from '../run-eligibility';
 import { STUCK_HISTORY } from '../stuck-tests';
+import { storableSuitePath, storedIdentity } from '../../server/utils/storable-values';
 
 /** A running test as its begin event names it. */
 export interface RunningTest {
@@ -25,15 +26,22 @@ export interface RunningTestHistory {
  * its natural key: file, describe path and title. Empty for a test never run before.
  */
 export async function runningTestHistory(db: DrizzleDB, test: RunningTest): Promise<RunningTestHistory> {
+  // The names as the test's rows store them (`storedIdentity`).
+  const [filePath, suitePath, title, browserName] = await Promise.all([
+    storedIdentity(test.filePath),
+    storableSuitePath(test.suitePath ? [...test.suitePath] : null),
+    storedIdentity(test.title),
+    test.browserName ? storedIdentity(test.browserName) : null,
+  ]);
   const [testCase] = await db
     .select({ id: testCases.id, owner: testCases.owner })
     .from(testCases)
     .where(
       and(
         eq(testCases.projectId, test.projectId),
-        eq(testCases.filePath, test.filePath),
-        eq(testCases.suitePath, (test.suitePath ?? []).join('\x1f')),
-        eq(testCases.title, test.title),
+        eq(testCases.filePath, filePath),
+        eq(testCases.suitePath, (suitePath ?? []).join('\x1f')),
+        eq(testCases.title, title),
       ),
     )
     // The test case its external ID names wins over one a rename left under the same key.
@@ -46,7 +54,7 @@ export async function runningTestHistory(db: DrizzleDB, test: RunningTest): Prom
     sql`${testRunsCases.duration} IS NOT NULL`,
     eligibleRunSql('baseline'),
   ];
-  if (test.browserName) conds.push(eq(testRunsCases.browserName, test.browserName));
+  if (browserName) conds.push(eq(testRunsCases.browserName, browserName));
   const rows: Array<{ duration: number | null }> = await db
     .select({ duration: testRunsCases.duration })
     .from(testRunsCases)
