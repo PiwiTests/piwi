@@ -1497,8 +1497,9 @@ const routes: RouteEntry[] = [
     permission: 'quarantine:write',
     handler: async (m, body, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
-      const b = (body ?? {}) as { reason?: string };
-      return quarantineClusterTests(await getDemoDb(), +m[1]!, { reason: b.reason });
+      const b = (body ?? {}) as { reason?: unknown };
+      const reason = typeof b.reason === 'string' ? b.reason.slice(0, 500) : undefined;
+      return quarantineClusterTests(await getDemoDb(), +m[1]!, { reason });
     },
   },
   {
