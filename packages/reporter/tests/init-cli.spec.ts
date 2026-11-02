@@ -158,10 +158,30 @@ describe('runInit', () => {
     expect(fs.existsSync(path.join(root, '.env'))).toBe(false);
   });
 
+  it('records the reporter in package.json under --no-install, for the package manager to install', async () => {
+    scaffoldProject();
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((line: string) => void logs.push(line));
+    expect(await runInit(['--no-install', '--no-skills', '--json'], EMPTY_ENV, root)).toBe(0);
+    const { version } = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf-8'));
+    const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf-8'));
+    expect(pkg).toEqual({ name: '@acme/checkout', devDependencies: { '@piwitests/reporter': `^${version}` } });
+    const step = JSON.parse(logs.join('\n')).steps.find((s: { step: string }) => s.step === 'dependency');
+    expect(step).toMatchObject({ file: 'package.json', status: 'updated' });
+    expect(step.detail).toContain('run `npm install` to install it');
+
+    // Run again, it finds the dependency recorded.
+    logs.length = 0;
+    await runInit(['--no-install', '--no-skills', '--json'], EMPTY_ENV, root);
+    expect(JSON.parse(logs.join('\n')).steps.find((s: { step: string }) => s.step === 'dependency').status).toBe('already');
+  });
+
   it('under --dry-run writes nothing at all', async () => {
     scaffoldProject();
     const before = fs.readFileSync(path.join(root, 'playwright.config.ts'), 'utf-8');
+    const pkgBefore = fs.readFileSync(path.join(root, 'package.json'), 'utf-8');
     await runInit(['--no-install', '--dry-run'], EMPTY_ENV, root);
+    expect(fs.readFileSync(path.join(root, 'package.json'), 'utf-8')).toBe(pkgBefore);
     expect(fs.readFileSync(path.join(root, 'playwright.config.ts'), 'utf-8')).toBe(before);
     expect(fs.existsSync(path.join(root, 'tests', 'fixtures.ts'))).toBe(false);
     expect(fs.existsSync(path.join(root, '.claude'))).toBe(false);

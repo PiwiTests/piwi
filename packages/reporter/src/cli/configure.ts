@@ -1,7 +1,7 @@
 /**
  * The deterministic edits `init` makes to a project: wrapping the Playwright
- * config, creating the capture-fixtures file, and recording connection details
- * in `.env` / `.gitignore`.
+ * config, creating the capture-fixtures file, recording connection details
+ * in `.env` / `.gitignore`, and recording the reporter in `package.json`.
  *
  * Every function here is pure — string in, string out — so the risky part
  * (rewriting someone's config) is unit-tested without touching disk, and the
@@ -172,6 +172,38 @@ export function upsertEnvKeys(
     added.push(key);
   }
   return { text, added };
+}
+
+/**
+ * Record `name` at `range` in a `package.json`'s `devDependencies`, sorted as the package managers sort them, for the
+ * package manager to install later. The file keeps its indentation, line endings and final newline. `already` when it
+ * lists `name` among its dependencies, `manual` when it is not a JSON object.
+ */
+export function recordDevDependency(
+  source: string,
+  name: string,
+  range: string,
+): { text: string; status: 'updated' | 'already' | 'manual' } {
+  let pkg: unknown;
+  try {
+    pkg = JSON.parse(source);
+  } catch {
+    return { text: source, status: 'manual' };
+  }
+  if (!pkg || typeof pkg !== 'object' || Array.isArray(pkg)) return { text: source, status: 'manual' };
+  const record = pkg as Record<string, unknown>;
+  const listed = (field: string): Record<string, unknown> => {
+    const value = record[field];
+    return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  };
+  if (name in listed('dependencies') || name in listed('devDependencies')) return { text: source, status: 'already' };
+  record.devDependencies = Object.fromEntries(
+    Object.entries({ ...listed('devDependencies'), [name]: range }).sort(([a], [b]) => a.localeCompare(b, 'en')),
+  );
+  const indent = /^[ \t]+(?=")/m.exec(source)?.[0] ?? '  ';
+  const eol = source.includes('\r\n') ? '\r\n' : '\n';
+  const text = JSON.stringify(record, null, indent).replace(/\n/g, eol) + (source.endsWith('\n') ? eol : '');
+  return { text, status: 'updated' };
 }
 
 /** Ensure `entry` (default `.env`) appears in a `.gitignore`'s contents. */

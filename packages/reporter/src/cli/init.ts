@@ -16,8 +16,21 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { formatStep, type StepResult } from './report.js';
 import { detectProject, installCommand, REPORTER_PACKAGE, type PackageManager, type ProjectShape } from './detect.js';
-import { ensureGitignoreEntry, fixturesContents, upsertEnvKeys, wrapPlaywrightConfig } from './configure.js';
-import { ALL_SKILLS, findTemplatesDir, installSkills, WORKFLOW_SKILLS, DEFAULT_SKILLS_DIR } from './skills.js';
+import {
+  ensureGitignoreEntry,
+  fixturesContents,
+  recordDevDependency,
+  upsertEnvKeys,
+  wrapPlaywrightConfig,
+} from './configure.js';
+import {
+  ALL_SKILLS,
+  findTemplatesDir,
+  installSkills,
+  readTemplatesVersion,
+  WORKFLOW_SKILLS,
+  DEFAULT_SKILLS_DIR,
+} from './skills.js';
 import { runPackageManager } from '../internal/support/playwright-spawn.js';
 
 const DEFAULT_SERVER_URL = 'http://localhost:3000';
@@ -159,8 +172,8 @@ function stepInstallReporter(project: ProjectShape, opts: InitOptions): StepResu
       status: 'manual',
       detail: `No package.json here — run \`npm init\`, then \`${installCommand(project.packageManager)}\``,
     };
-  if (opts.dryRun || !opts.install)
-    return { step, status: 'manual', detail: `Run \`${installCommand(project.packageManager)}\`` };
+  if (!opts.install) return stepRecordReporter(project, opts);
+  if (opts.dryRun) return { step, status: 'manual', detail: `Run \`${installCommand(project.packageManager)}\`` };
 
   const [command, args] = installArgv(project.packageManager);
   const status = runPackageManager(command, args, opts.root);
@@ -169,6 +182,36 @@ function stepInstallReporter(project: ProjectShape, opts: InitOptions): StepResu
     step,
     status: 'error',
     detail: `\`${installCommand(project.packageManager)}\` failed (exit ${status ?? 'unknown'}) — install it by hand`,
+  };
+}
+
+/**
+ * `--no-install`: the reporter recorded in `package.json`'s `devDependencies`, at this package's version, for the
+ * package manager to install with the project's other dependencies.
+ */
+function stepRecordReporter(project: ProjectShape, opts: InitOptions): StepResult {
+  const step = 'dependency';
+  const file = 'package.json';
+  const version = readTemplatesVersion(findTemplatesDir(__dirname));
+  const range = version === '0.0.0' ? 'latest' : `^${version}`;
+  const pkgPath = project.packageJsonPath ?? path.join(project.root, file);
+  const edit = recordDevDependency(readFileOr(pkgPath, ''), REPORTER_PACKAGE, range);
+  if (edit.status === 'manual')
+    return {
+      step,
+      file,
+      status: 'manual',
+      detail: `Could not read package.json — run \`${installCommand(project.packageManager)}\``,
+    };
+  if (edit.status === 'updated' && !opts.dryRun) fs.writeFileSync(pkgPath, edit.text);
+  return {
+    step,
+    file,
+    status: edit.status,
+    detail:
+      edit.status === 'updated'
+        ? `Recorded ${REPORTER_PACKAGE} ${range} in devDependencies — run \`${project.packageManager} install\` to install it`
+        : `${REPORTER_PACKAGE} is already a dependency`,
   };
 }
 

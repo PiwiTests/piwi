@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest';
 import {
   ensureGitignoreEntry,
   fixturesContents,
+  recordDevDependency,
   upsertEnvKeys,
   wrapPlaywrightConfig,
 } from '../src/cli/configure.js';
@@ -146,5 +147,29 @@ describe('ensureGitignoreEntry', () => {
     const { text, added } = ensureGitignoreEntry('node_modules\n.env\n');
     expect(added).toBe(false);
     expect(text).toBe('node_modules\n.env\n');
+  });
+});
+
+describe('recordDevDependency', () => {
+  it('adds the package to devDependencies in name order, keeping the file\'s indentation and final newline', () => {
+    const source = '{\n    "name": "shop",\n    "devDependencies": {\n        "@playwright/test": "^1.59.0",\n        "typescript": "^5.9.0"\n    }\n}\n';
+    const { text, status } = recordDevDependency(source, '@piwitests/reporter', '^0.64.0');
+    expect(status).toBe('updated');
+    expect(text).toBe(
+      '{\n    "name": "shop",\n    "devDependencies": {\n        "@piwitests/reporter": "^0.64.0",\n' +
+        '        "@playwright/test": "^1.59.0",\n        "typescript": "^5.9.0"\n    }\n}\n',
+    );
+  });
+
+  it('creates devDependencies, and keeps tabs and Windows line endings', () => {
+    const { text } = recordDevDependency('{\r\n\t"name": "shop"\r\n}\r\n', '@piwitests/reporter', '^0.64.0');
+    expect(text).toBe('{\r\n\t"name": "shop",\r\n\t"devDependencies": {\r\n\t\t"@piwitests/reporter": "^0.64.0"\r\n\t}\r\n}\r\n');
+  });
+
+  it('leaves a package.json that lists the package, or that it cannot read, as it is', () => {
+    const listed = '{ "dependencies": { "@piwitests/reporter": "^0.60.0" } }';
+    expect(recordDevDependency(listed, '@piwitests/reporter', '^0.64.0')).toEqual({ text: listed, status: 'already' });
+    expect(recordDevDependency('{ "name": ', '@piwitests/reporter', '^0.64.0')).toEqual({ text: '{ "name": ', status: 'manual' });
+    expect(recordDevDependency('[]', '@piwitests/reporter', '^0.64.0').status).toBe('manual');
   });
 });
