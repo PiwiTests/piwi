@@ -39,7 +39,7 @@ const plural = (n: number, one: string, many: string) => (TYPOGRAPHY.singular(n)
 const METRIC_LABELS: Record<MetricId, [label: string, definition: string]> = {
   'test-pass-rate': [
     'Taux de réussite des tests',
-    'Tests réussis divisés par tests exécutés, sommés sur les exécutions de la période.',
+    'Tests réussis divisés par tests réussis ou en échec (dépassements de délai compris), sommés sur les exécutions de la période. Les tests ignorés, non exécutés ou interrompus ne comptent dans aucun des deux, et une réussite après une nouvelle tentative compte comme réussie.',
   ],
   'run-success-rate': ['Taux de succès des exécutions', 'Part des exécutions terminées dont le statut est réussi.'],
   runs: ['Exécutions', 'Exécutions terminées dans la période.'],

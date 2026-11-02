@@ -34,10 +34,11 @@ import {
   loadHandbackCounts,
 } from './handbacks';
 import { median } from '../../utils/stats';
+import { passRatePercent } from '../../utils/pass-rate';
 
 /** The metrics summed from the scalar rows. */
 const ROLLUP_VALUE: Partial<Record<MetricId, (t: RollupTotals, cost: CiCost | null) => number | null>> = {
-  'test-pass-rate': (t) => roundRate(t.passedTests, t.totalTests),
+  'test-pass-rate': (t) => passRatePercent({ passed: t.passedTests, failed: t.failedTests }, 1),
   'run-success-rate': (t) => roundRate(t.passedRuns, t.runs),
   runs: (t) => t.runs,
   'suite-size': (t) => (t.runs > 0 ? t.maxTotalTests : null),

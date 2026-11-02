@@ -1,7 +1,8 @@
 import type { DrizzleDB } from '../db';
 import type { AnalyticsScope } from '../../analytics/scope';
 import type { AnalyticsHeatmap } from '../../analytics/types';
-import { fetchContextProjects, firstNonEmptyIndex, getAnalyticsContext, roundRate, type ProjectAccess } from './common';
+import { passRatePercent } from '../../utils/pass-rate';
+import { fetchContextProjects, firstNonEmptyIndex, getAnalyticsContext, type ProjectAccess } from './common';
 import { groupRows, loadScalarRows } from './scalar-rows';
 
 /**
@@ -32,7 +33,7 @@ export async function getAnalyticsPassRateHeatmap(
       label: project.label,
       cells: buckets.keys.map((key) => {
         const cell = totals.get(`${project.id}:${key}`);
-        return cell ? roundRate(cell.passedTests, cell.totalTests) : null;
+        return cell ? passRatePercent({ passed: cell.passedTests, failed: cell.failedTests }, 1) : null;
       }),
     }))
     // Projects with no runs in the period would render an all-gray row — drop them.

@@ -81,7 +81,8 @@ export const METRICS = [
     label: 'Test pass rate',
     unit: 'percent',
     betterWhen: 'higher',
-    definition: 'Tests passed divided by tests run, summed over the runs of the period.',
+    definition:
+      'Tests passed divided by tests passed or failed (timed out included), summed over the runs of the period. Skipped, did-not-run and interrupted tests count in neither, and a pass on a retry counts as passed.',
     source: 'rollup',
     grain: 'test',
     dimensions: TEST_DIMENSIONS,

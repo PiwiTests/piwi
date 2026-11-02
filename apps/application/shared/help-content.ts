@@ -136,7 +136,7 @@ export const HELP_TOPICS = {
   },
   'analytics.heatmap': {
     title: 'Pass rate heatmap',
-    text: 'Each cell is the aggregate pass rate of one project over one time bucket — green at 90% or more, amber from 50%, red below 50%, gray means no runs. A cell is one UTC day, or a wider bucket on long periods.',
+    text: 'Each cell is the pass rate of one project over one time bucket (its tests that passed over those that passed or failed): green at 90% or more, amber from 50%, red below 50%, gray when no test passed or failed. A cell is one UTC day, or a wider bucket on long periods.',
   },
   'analytics.ci-time': {
     title: 'CI time',
@@ -198,7 +198,7 @@ export const HELP_TOPICS = {
   },
   'analytics.browser-matrix': {
     title: 'Browser matrix',
-    text: 'Pass rate per project × browser, so a suite that is green on one browser but failing on another (a browser-specific bug) stands out immediately.',
+    text: 'Pass rate per project × browser, so a suite that is green on one browser but failing on another (a browser-specific bug) stands out immediately. A test that passed on a retry counts as passed, and a skipped one in neither term.',
   },
   'chart.export': {
     title: 'Chart export',
