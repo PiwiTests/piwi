@@ -14,6 +14,7 @@ import { drillQueryKey, parseDrillQuery, type DrillScope } from '~/utils/analyti
 import { projectRunScopeQuery, runInProjectScope, type ProjectRunScope } from '#shared/project-run-scope';
 import { isRunFinished } from '#shared/project-health';
 import { compareOrder } from '~/utils/run-compare';
+import { sortRows, type SortValue } from '~/utils/table-sort';
 import type { ProjectHeaderTarget } from '~/components/project/ProjectHeader.vue';
 import { COVERAGE_VIEW_KEYS } from '~/utils/coverage-tab';
 
@@ -211,13 +212,25 @@ const tableRuns = computed(() => (keptOnly.value ? filteredKeptRuns.value : filt
 
 // The table shows one page of runs at a time, so the page's HTML and its
 // hydration stay the same size however many runs are loaded; the chart above it
-// draws them all.
+// draws them all. The sort reads every run before the page is cut, and the
+// table and the mobile cards show the same page.
 const RUNS_PAGE_SIZE = 25;
 const runsPage = useViewState('runs:page', () => 1);
 const runsSorting = useViewState<SortingState>('runs:sorting', () => []);
+/** What each sortable column of the runs table sorts by. */
+const RUN_SORT_VALUES: Record<string, (run: TestRunSummary) => SortValue> = {
+  id: (run) => run.id,
+  status: (run) => run.status,
+  startTime: (run) => new Date(run.startTime).getTime(),
+  environment: (run) => run.environment,
+  duration: (run) => run.duration,
+};
+const sortedRuns = computed(() => sortRows(tableRuns.value, runsSorting.value, RUN_SORT_VALUES));
 const pagedRuns = computed(() =>
-  tableRuns.value.slice((runsPage.value - 1) * RUNS_PAGE_SIZE, runsPage.value * RUNS_PAGE_SIZE),
+  sortedRuns.value.slice((runsPage.value - 1) * RUNS_PAGE_SIZE, runsPage.value * RUNS_PAGE_SIZE),
 );
+// A new sort starts from its first page.
+watch(runsSorting, () => (runsPage.value = 1), { deep: true });
 // A narrower filter (or a deleted run) can leave the page past the last one.
 watch(tableRuns, (rows) => {
   const last = Math.max(1, Math.ceil(rows.length / RUNS_PAGE_SIZE));
@@ -1096,6 +1109,7 @@ const moreMenuItems = computed(() => {
               <UTable
                 v-if="tableRuns.length > 0"
                 v-model:sorting="runsSorting"
+                :sorting-options="{ manualSorting: true }"
                 :data="pagedRuns"
                 :columns="runsColumns"
                 :ui="{
