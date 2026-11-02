@@ -137,6 +137,20 @@ describe("the demo's streamed result", () => {
       .innerJoin(schema.testCases, eq(schema.testCases.id, schema.testRunsCases.testCaseId));
     expect(titles).toEqual([{ title: '' }]);
   });
+
+  test('is left out when a field has the wrong type, and the rest of the batch is stored', async () => {
+    const { runId, setupToken } = await apiSetupTestRun({ projectName: 'demo-results', instanceId: 'local-1' });
+    const { streamToken } = await apiBeginTestRun(runId, { setupToken });
+    const wrong = { ...result('pays', 'passed', 1), startedAt: { at: 1 } } as unknown as ReturnType<typeof result>;
+
+    await apiPostRunEvents(runId, { streamToken, testCases: [wrong, result('refunds', 'passed', 1)] });
+
+    const titles = await db
+      .select({ title: schema.testCases.title })
+      .from(schema.testRunsCases)
+      .innerJoin(schema.testCases, eq(schema.testCases.id, schema.testRunsCases.testCaseId));
+    expect(titles).toEqual([{ title: 'refunds' }]);
+  });
 });
 
 describe("the demo's run begun after a long global setup", () => {

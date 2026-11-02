@@ -10,7 +10,7 @@ import { resolveRepeatEachIndex, runningCaseKey } from '../../../utils/inserted-
 import { mapStepEventsToRunEvents } from '../../../utils/map-step-events';
 import { authorizeStreamToken } from '../../../utils/stream-auth';
 import { hiddenErrorText } from '../../../utils/sanitize';
-import { wireCaseProblem } from '../../../utils/batch-payload';
+import { wireCaseProblem } from '../../../utils/wire-case-problem';
 import type { StreamEventPayload } from '#shared/types';
 import { countFailedFromTally } from '#shared/utils/test-counts';
 

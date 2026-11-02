@@ -24,6 +24,7 @@ import {
 } from '~~/server/database/schema.sqlite';
 import { parseLocation } from '#shared/parse-location';
 import { mapWireCaseToRunCase } from '~~/server/utils/map-wire-case';
+import { wireCaseProblem } from '~~/server/utils/wire-case-problem';
 import { mapStepEventsToRunEvents } from '~~/server/utils/map-step-events';
 import {
   buildNetworkRequestItems,
@@ -898,7 +899,9 @@ export async function apiPostRunEvents(
   );
 
   const beginEvents = validEvents.filter((tc) => tc.type === 'begin');
-  const completeEvents = validEvents.filter((tc) => tc.type === 'complete');
+  const results = validEvents.filter((tc) => tc.type === 'complete');
+  // A result whose fields the database cannot hold is left out, and the rest of the batch stored (server behavior).
+  const completeEvents = results.filter((tc) => wireCaseProblem(tc) === null);
   const stepRunEvents = mapStepEventsToRunEvents(validEvents);
 
   for (const tc of beginEvents) {
@@ -918,7 +921,7 @@ export async function apiPostRunEvents(
     publishDemoRunEvent(id, { type: 'test-begin', data: beginData });
     noteDemoBegin(id, beginData);
   }
-  for (const tc of completeEvents) noteDemoComplete(id, tc);
+  for (const tc of results) noteDemoComplete(id, tc);
 
   // Step events publish in batch order through the helper the server's events
   // handler (server/api/test-runs/[id]/events.post.ts) uses.
