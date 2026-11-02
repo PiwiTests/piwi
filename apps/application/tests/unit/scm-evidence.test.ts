@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import type { ScmChanges } from '../../server/utils/scm/ScmProvider';
 import type { McpContext } from '../../server/utils/mcp/tools';
@@ -159,7 +160,7 @@ describe('the diff since the last green run', () => {
     };
     const context = await buildDiagnosisContext(db as never, { kind: 'cluster', clusterId: 1 });
     const diff = context.sections.find((s) => s.id === 'scmInvestigation')!;
-    expect(diff.markdown).toContain('Changed files (the first 2, 412 in all) [truncated]:');
+    expect(diff.markdown).toContain('Changed files (the first 2, 412 in all):');
     expect(diff.truncated).toBe(true);
     expect(context.coverage.scm).toMatchObject({ filesTruncated: true, totalChangedFiles: 412 });
     expect(context.text).toContain('[scmInvestigation] SCM diff since last green: present (truncated)');
@@ -178,6 +179,29 @@ describe('the diff since the last green run', () => {
     expect(diff.truncated).toBe(true);
     expect(context.coverage.scm?.patchesTruncated).toBe(true);
     expect(diff.markdown).toContain('> Note: 1 changed file came with no patch');
+  });
+
+  test('says the host listed only the newest commits', async () => {
+    scm.changes = {
+      commits: [{ sha: 'bbbbbbb', message: 'Newest change' }],
+      commitsTruncated: true,
+      files: [file('src/a.ts')],
+    };
+    const context = await buildDiagnosisContext(db as never, { kind: 'cluster', clusterId: 1 });
+    const diff = context.sections.find((s) => s.id === 'scmInvestigation')!;
+    expect(diff.markdown).toContain('Commits (the newest 1, oldest first; the range has more):');
+    expect(diff.truncated).toBe(true);
+    expect(context.coverage.scm?.commitsTruncated).toBe(true);
+  });
+
+  test('a whole diff stays complete, whatever its patches say', async () => {
+    scm.changes = {
+      commits: [{ sha: 'bbbbbbb', message: 'Change' }],
+      files: [file('src/log.ts', "@@ -1 +1 @@\n-a\n+return text.slice(0, 80) + ' [truncated]';")],
+    };
+    const context = await buildDiagnosisContext(db as never, { kind: 'cluster', clusterId: 1 });
+    expect(context.sections.find((s) => s.id === 'scmInvestigation')!.truncated).toBe(false);
+    expect(context.text).toContain('[scmInvestigation] SCM diff since last green: present\n');
   });
 
   test('sorts the files by relevance without reordering what the provider answered', async () => {
@@ -203,9 +227,29 @@ describe('the diff since the last green run', () => {
       clusterId: 1,
       selectedCommitShas: [sha('c')],
     });
-    const picked = context.sections.find((s) => s.id === 'selectedCommits')!.markdown;
-    expect(picked).toContain('### ccccccc Rename the cart');
-    expect(picked).toContain('- src/basket.ts (renamed from src/cart.ts, +1 -1)');
+    const picked = context.sections.find((s) => s.id === 'selectedCommits')!;
+    expect(picked.markdown).toContain('### ccccccc Rename the cart');
+    expect(picked.markdown).toContain('- src/basket.ts (renamed from src/cart.ts, +1 -1)');
+    expect(picked.truncated).toBe(false);
+  });
+
+  test('says a picked commit came without patches, and caps its file list', async () => {
+    scm.changes = { commits: [], files: [] };
+    scm.commitDiffs.set(sha('d'), {
+      commits: [{ sha: 'ddddddd', message: 'Huge' }],
+      files: Array.from({ length: 45 }, (_, i) => ({ ...file(`src/f${i}.ts`), patch: undefined })),
+      patchesOmitted: true,
+    });
+    const context = await buildDiagnosisContext(db as never, {
+      kind: 'cluster',
+      clusterId: 1,
+      selectedCommitShas: [sha('d')],
+    });
+    const picked = context.sections.find((s) => s.id === 'selectedCommits')!;
+    expect(picked.markdown).toContain('Changed files (the first 30, 45 in all):');
+    expect(picked.markdown).not.toContain('src/f30.ts');
+    expect(picked.markdown).toContain('the host sent no patches for this diff');
+    expect(picked.truncated).toBe(true);
   });
 });
 
@@ -226,6 +270,24 @@ describe('the diff since the test last passed', () => {
     const context = await buildDiagnosisContext(db as never, { kind: 'cluster', clusterId: 2 });
     expect(scm.fetched).toEqual([[sha('1'), sha('2')]]);
     expect(context.coverage.scm?.baselineKind).toBe('test-green');
+  });
+
+  test('skips a pass in a run that cannot be a baseline', async () => {
+    scm.changes = { commits: [{ sha: 'ddddddd', message: 'Change' }], files: [file('src/a.ts')] };
+    await run(10, 'failed', sha('1'), T0);
+    await execution(10, 1, 'passed');
+    await execution(10, 2, 'failed');
+    // A later Flake Lab run, still before the failure, where the test passed.
+    await run(11, 'failed', sha('4'), T0 + HOUR / 2);
+    await db.update(schema.testRuns).set({ origin: 'flake-lab' }).where(eq(schema.testRuns.id, 11));
+    await execution(11, 1, 'passed');
+    await execution(11, 2, 'failed');
+    await run(12, 'failed', sha('2'), T0 + HOUR);
+    await cluster(2, 12);
+    await execution(12, 1, 'failed', 2);
+
+    await buildDiagnosisContext(db as never, { kind: 'cluster', clusterId: 2 });
+    expect(scm.fetched).toEqual([[sha('1'), sha('2')]]);
   });
 });
 
@@ -258,5 +320,20 @@ describe('get_repo_diff', () => {
     expect(answer.files[2]!.patch).toBeUndefined();
     const total = answer.files.reduce((n, f) => n + (f.patch?.length ?? 0), 0);
     expect(total).toBeLessThanOrEqual(200_000 + 2 * PATCH_TRUNCATED_NOTE.length);
+  });
+
+  test('flags a patch the host already cut', async () => {
+    scm.commitDiffs.set(sha('f'), {
+      commits: [],
+      files: [file('src/a.ts', `@@ -1 +1 @@\n-a\n+b\n${PATCH_TRUNCATED_NOTE}`)],
+    });
+    const answer = (await getRepoDiff(db as never, { projectId: 1, sha: sha('f') }, ctx)) as {
+      patchesTruncated?: boolean;
+    };
+    expect(answer.patchesTruncated).toBe(true);
+  });
+
+  test('answers an error, not a crash, to a sha that is not a string', async () => {
+    expect(await getRepoDiff(db as never, { projectId: 1, sha: 42 }, ctx)).toEqual({ error: 'sha is required' });
   });
 });

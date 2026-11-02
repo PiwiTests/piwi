@@ -10,7 +10,7 @@ defineRouteMeta({
     tags: ['Failure Clusters'],
     summary: 'Get commit diff for a cluster',
     description:
-      'Returns the file changes and patches for a specific commit SHA in the cluster repository: at most 300 files (`filesTruncated` when the commit has more) and the commit itself in `commits` when the host gives its message. Answers 502 with the host’s message when the host refuses the request.',
+      'Returns the file changes and patches for a specific commit SHA in the cluster repository: at most 300 files (`filesTruncated` when the commit has more) and the commit itself in `commits` when the host gives its message. Null when the host cannot diff the commit; 502 with the host’s message when the host answers with an error.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       {

@@ -1248,6 +1248,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
             patchesTruncated: coverage.scm.patchesTruncated || null,
             filesTruncated: coverage.scm.filesTruncated || null,
             totalChangedFiles: coverage.scm.totalChangedFiles ?? null,
+            commitsTruncated: coverage.scm.commitsTruncated || null,
             baseCommitUsed: coverage.scm.baseCommitUsed || null,
             range: coverage.scm.range ? `${coverage.scm.range.from}..${coverage.scm.range.to}` : null,
             compareUrl: coverage.scm.compareUrl || null,
@@ -1439,7 +1440,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
   async get_repo_diff(db, params, ctx) {
     const projectId = numericParam(params.projectId, 'projectId');
     assertProject(ctx, projectId);
-    const sha = (params.sha as string)?.trim();
+    const sha = typeof params.sha === 'string' ? params.sha.trim() : '';
     if (!sha) return { error: 'sha is required' };
 
     const repoUrl = await readProjectRepositoryUrl(db, projectId);
@@ -1456,6 +1457,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       let patchesTruncated = false;
       const files = changes.files.map((f) => {
         let patch: string | null = f.patch || null;
+        if (patch?.endsWith(PATCH_TRUNCATED_NOTE)) patchesTruncated = true;
         if (patch && patch.length > budget) {
           patch = budget > 0 ? `${patch.slice(0, budget)}\n${PATCH_TRUNCATED_NOTE}` : null;
           patchesTruncated = true;

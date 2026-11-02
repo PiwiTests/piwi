@@ -350,12 +350,23 @@ export class LocalGitProvider extends ScmProvider {
     const counts = parseNumstat(numstat.stdout);
     const statuses = parseRawDiff(raw.stdout);
     const sections = patch.ok ? splitGitDiff(patch.stdout, patch.overflow) : [];
+    // The patch lists the files in the same order, but a change of type (a file
+    // becoming a symlink) prints two sections for one file: match by path, moving forward.
+    let cursor = 0;
+    const sectionOf = (path: string) => {
+      for (let j = cursor; j < sections.length; j++) {
+        if (sections[j]!.path === path) {
+          cursor = j + 1;
+          return sections[j];
+        }
+      }
+      return undefined;
+    };
     const files: ChangedFile[] = statuses
       .slice(0, MAX_SCM_FILES_TOTAL)
       .map(({ status, path, previousPath, blob }, i) => {
         const count = counts[i]?.path === path ? counts[i] : undefined;
-        const section = sections[i];
-        const hunks = section?.path === path ? section.hunks : undefined;
+        const hunks = sectionOf(path)?.hunks;
         return {
           filename: path,
           ...(previousPath ? { previousFilename: previousPath } : {}),
@@ -428,20 +439,24 @@ export class LocalGitProvider extends ScmProvider {
         '--no-color',
         '--no-show-signature',
         '--reverse',
-        `-n${MAX_RANGE_COMMITS}`,
-        '--format=%H%x1f%s%x1f%B%x1e',
+        // One past the cap, to tell a range that has more.
+        `-n${MAX_RANGE_COMMITS + 1}`,
+        '--format=%H%x1f%B%x1e',
         `${fromSha}..${toSha}`,
         '--',
       ]),
       this.diff([`${fromSha}...${toSha}`]),
     ]);
     if (!log.ok || !diff) return this.hosted.fetchChanges(fromSha, toSha);
-    const commits = parseRecords(log.stdout).map(([sha = '', subject = '', body = '']) => ({
+    const records = parseRecords(log.stdout);
+    // Oldest first: past the cap, the oldest is the one left out.
+    const commitsTruncated = records.length > MAX_RANGE_COMMITS;
+    const commits = records.slice(commitsTruncated ? 1 : 0).map(([sha = '', body = '']) => ({
       sha: sha.slice(0, 7),
-      message: subject,
+      message: (body.trim().split('\n')[0] ?? '').trim(),
       fullMessage: body.trim(),
     }));
-    return { commits, ...diff };
+    return { commits, ...(commitsTruncated ? { commitsTruncated } : {}), ...diff };
   }
 
   async fetchCommitDiff(sha: string): Promise<ScmChanges | null> {
@@ -452,10 +467,11 @@ export class LocalGitProvider extends ScmProvider {
     const base = parent ?? (await this.emptyTree());
     const [diff, log] = await Promise.all([
       base ? this.diff([base, commit]) : null,
-      this.git(['log', '-n1', '--no-color', '--no-show-signature', '--format=%s%x1f%B', commit, '--']),
+      this.git(['log', '-n1', '--no-color', '--no-show-signature', '--format=%B', commit, '--']),
     ]);
     if (!diff) return this.hosted.fetchCommitDiff(sha);
-    const [subject = '', body = ''] = log.ok ? log.stdout.split('\x1f') : [];
+    const body = log.ok ? log.stdout.trim() : '';
+    const subject = (body.split('\n')[0] ?? '').trim();
     return {
       commits: log.ok ? [{ sha: commit.slice(0, 7), message: subject, fullMessage: body.trim() }] : [],
       ...diff,

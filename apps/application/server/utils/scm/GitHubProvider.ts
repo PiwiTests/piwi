@@ -64,7 +64,7 @@ const GITHUB_MAX_COMPARE_FILES = 300;
 
 /** A commit as `fetchChanges` and `fetchCommitDiff` list it. */
 function commitOf(sha: string, message: string): ScmCommit {
-  return { sha: sha.slice(0, 7), message: message.split('\n')[0] ?? '', fullMessage: message };
+  return { sha: sha.slice(0, 7), message: (message.split('\n')[0] ?? '').trim(), fullMessage: message };
 }
 
 const listBranchesCache = new TtlCache<string[]>(3 * 60 * 1000);
@@ -165,21 +165,23 @@ export class GitHubProvider extends ScmProvider {
     const hit = fetchChangesCache.get(key);
     if (hit !== undefined) return hit;
 
-    // Without a paging parameter, the compare endpoint lists the range's newest
-    // 250 commits, oldest first, and up to 300 changed files: paging would list
-    // the oldest commits first and the files on the first page only.
+    // One request without a paging parameter: the compare endpoint then lists
+    // the range's newest 250 commits, oldest first, and up to 300 changed files.
     const res = await fetch(
       `https://api.github.com/repos/${this.repoPath}/compare/${encodeGitRef(fromSha)}...${encodeGitRef(toSha)}`,
       { headers: this.makeHeaders(), signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
     );
     if (!res.ok) return null;
     const data = (await res.json()) as {
+      total_commits?: number;
       commits?: Array<{ sha: string; commit: { message: string } }>;
       files?: GitHubChangedFile[];
     };
     const listed = data.files ?? [];
+    const commits = (data.commits ?? []).map((c) => commitOf(c.sha, c.commit.message));
     const result: ScmChanges = {
-      commits: (data.commits ?? []).map((c) => commitOf(c.sha, c.commit.message)),
+      commits,
+      commitsTruncated: (data.total_commits ?? 0) > commits.length,
       files: listed.slice(0, MAX_SCM_FILES_TOTAL).map(changedFileOf),
       filesTruncated: listed.length >= GITHUB_MAX_COMPARE_FILES,
     };
@@ -226,7 +228,8 @@ export class GitHubProvider extends ScmProvider {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
       if (!res.ok) {
-        if (res.status === 404) commitAuthorCache.set(key, null);
+        // GitHub answers 422 for a commit the repository does not have.
+        if (res.status === 404 || res.status === 422) commitAuthorCache.set(key, null);
         return null;
       }
       const data = (await res.json()) as { commit?: { author?: { name?: string; email?: string } } };

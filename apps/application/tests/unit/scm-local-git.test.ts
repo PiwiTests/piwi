@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
@@ -251,6 +251,24 @@ describe('LocalGitProvider reads', () => {
       ['q"t.ts', '@@ -1 +1 @@\n-one\n+two'],
       ['é.ts', '@@ -1 +1 @@\n-one\n+two'],
     ]);
+  });
+
+  test('keeps each file’s patch when one file of the diff becomes a symlink', async () => {
+    const other = mkdtempSync(join(home, 'typechange-'));
+    const run = (...args: string[]) => execFileSync('git', args, { cwd: other, encoding: 'utf8', env: gitEnv }).trim();
+    run('init', '--quiet', '--initial-branch=main');
+    for (const name of ['a.txt', 'b.txt', 'c.txt']) writeFileSync(join(other, name), 'one\n');
+    run('add', '.');
+    run('commit', '--quiet', '-m', 'First');
+    unlinkSync(join(other, 'a.txt'));
+    symlinkSync('b.txt', join(other, 'a.txt'));
+    for (const name of ['b.txt', 'c.txt']) writeFileSync(join(other, name), 'two\n');
+    run('add', '-A');
+    run('commit', '--quiet', '-m', 'Second');
+    const diff = await new LocalGitProvider(other, 'origin', hosted()).fetchCommitDiff(run('rev-parse', 'HEAD'));
+    const patches = Object.fromEntries((diff?.files ?? []).map((f) => [f.filename, f.patch]));
+    expect(patches['b.txt']).toBe('@@ -1 +1 @@\n-one\n+two');
+    expect(patches['c.txt']).toBe('@@ -1 +1 @@\n-one\n+two');
   });
 
   test('reads a blob by its id, and asks the host for one the clone does not have', async () => {

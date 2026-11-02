@@ -35,7 +35,7 @@ async function bitbucketError(res: Response, action: string): Promise<Error> {
 const listBranchesCache = new TtlCache<string[]>(3 * 60 * 1000);
 const listCommitsCache = new TtlCache<ScmCommitDetail[]>(3 * 60 * 1000);
 const fetchChangesCache = new TtlCache<ScmChanges>(10 * 60 * 1000);
-const rangeCommitsCache = new TtlCache<ScmCommit[]>(10 * 60 * 1000);
+const rangeCommitsCache = new TtlCache<{ commits: ScmCommit[]; truncated: boolean }>(10 * 60 * 1000);
 /** Commits listed for one range: one page of the commits endpoint. */
 const MAX_RANGE_COMMITS = 100;
 const fetchFileCache = new TtlCache<ScmFileContent | null>(30 * 60 * 1000);
@@ -151,11 +151,11 @@ export class BitbucketProvider extends ScmProvider {
     // Bitbucket takes the commit holding the changes first and the one it is
     // compared with second, and diffs from their merge base: `to..from` here is
     // git's `from...to`.
-    const [changes, commits] = await Promise.all([
+    const [changes, range] = await Promise.all([
       this.diffSpec(`${encodeGitRef(toSha)}..${encodeGitRef(fromSha)}`),
       this.rangeCommits(fromSha, toSha),
     ]);
-    return changes ? { ...changes, commits } : null;
+    return changes ? { ...changes, commits: range.commits, commitsTruncated: range.truncated } : null;
   }
 
   /**
@@ -163,7 +163,7 @@ export class BitbucketProvider extends ScmProvider {
    * the other hosts list them, with their full messages. Empty when the
    * commits endpoint fails: the files still answer.
    */
-  private async rangeCommits(fromSha: string, toSha: string): Promise<ScmCommit[]> {
+  private async rangeCommits(fromSha: string, toSha: string): Promise<{ commits: ScmCommit[]; truncated: boolean }> {
     const key = `${this.keyPrefix}:${this.workspace}/${this.repoSlug}:commits:${fromSha}:${toSha}`;
     const hit = rangeCommitsCache.get(key);
     if (hit !== undefined) return hit;
@@ -176,13 +176,16 @@ export class BitbucketProvider extends ScmProvider {
         headers: this.makeHeaders(),
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
-      if (!res.ok) return [];
-      const data = (await res.json()) as { values?: Array<{ hash: string; message?: string }> };
-      const result = (data.values ?? []).map((c) => commitOf(c.hash, c.message ?? '')).reverse();
+      if (!res.ok) return { commits: [], truncated: false };
+      const data = (await res.json()) as { values?: Array<{ hash: string; message?: string }>; next?: string };
+      const result = {
+        commits: (data.values ?? []).map((c) => commitOf(c.hash, c.message ?? '')).reverse(),
+        truncated: Boolean(data.next),
+      };
       rangeCommitsCache.set(key, result);
       return result;
     } catch {
-      return [];
+      return { commits: [], truncated: false };
     }
   }
 
@@ -196,11 +199,12 @@ export class BitbucketProvider extends ScmProvider {
     const hit = fetchChangesCache.get(key);
     if (hit !== undefined) return hit;
 
-    // Raw patch text in parallel; the diffstat is paged for the file list.
-    const diffPromise = fetch(`${this.base}/diff/${spec}`, {
+    // Raw patch text in parallel; the diffstat is paged for the file list. Both
+    // diff from the merge base (`topic`), as git's `from...to` does.
+    const diffPromise = fetch(`${this.base}/diff/${spec}?topic=true`, {
       headers: this.makeHeaders(),
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
+    }).catch(() => null);
 
     type DiffStatValue = {
       status: string;
@@ -213,8 +217,10 @@ export class BitbucketProvider extends ScmProvider {
     let filesTruncated = false;
     // Follow Bitbucket's `next` cursor up to the total cap so a large pull
     // request's later files are not silently dropped at one page of 30.
-    let next: string | null = `${this.base}/diffstat/${spec}?pagelen=100`;
+    let next: string | null = `${this.base}/diffstat/${spec}?pagelen=100&topic=true`;
     let firstPage = true;
+    // An answer read in part (a later page or the raw diff failed) is returned but not cached.
+    let complete = true;
     while (next && values.length < MAX_SCM_FILES_TOTAL) {
       const res: Response = await fetch(next, {
         headers: this.makeHeaders(),
@@ -222,9 +228,11 @@ export class BitbucketProvider extends ScmProvider {
       });
       if (!res.ok) {
         if (firstPage) {
-          diffPromise.then((r) => r.body?.cancel()).catch(() => {});
+          diffPromise.then((r) => r?.body?.cancel()).catch(() => {});
           return null;
         }
+        complete = false;
+        filesTruncated = true;
         break;
       }
       firstPage = false;
@@ -241,15 +249,13 @@ export class BitbucketProvider extends ScmProvider {
     }
 
     let patchesByFile = new Map<string, string>();
-    let patchesOmitted = false;
-    const diffRes = await diffPromise.catch(() => null);
-    if (diffRes?.ok) {
-      const rawDiff = await diffRes.text();
-      if (rawDiff.length > MAX_RAW_DIFF_BYTES) {
-        patchesOmitted = true;
-      } else {
-        patchesByFile = parsePatchesByFile(rawDiff);
-      }
+    let patchesOmitted = true;
+    const diffRes = await diffPromise;
+    const rawDiff = diffRes?.ok ? await diffRes.text().catch(() => null) : null;
+    if (rawDiff === null) complete = false;
+    else if (rawDiff.length <= MAX_RAW_DIFF_BYTES) {
+      patchesByFile = parsePatchesByFile(rawDiff);
+      patchesOmitted = false;
     }
 
     const result: ScmChanges = {
@@ -269,7 +275,7 @@ export class BitbucketProvider extends ScmProvider {
         };
       }),
     };
-    fetchChangesCache.set(key, result);
+    if (complete) fetchChangesCache.set(key, result);
     return result;
   }
 

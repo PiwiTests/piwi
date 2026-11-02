@@ -75,7 +75,7 @@ function changedFileOf(f: GitLabDiff): ChangedFile {
 
 /** A commit as `fetchChanges` and `fetchCommitDiff` list it. */
 function commitOf(id: string, message: string): ScmCommit {
-  return { sha: id.slice(0, 7), message: message.split('\n')[0] ?? '', fullMessage: message };
+  return { sha: id.slice(0, 7), message: (message.split('\n')[0] ?? '').trim(), fullMessage: message };
 }
 
 /** Files read per page of a commit's diff. */
@@ -191,7 +191,7 @@ export class GitLabProvider extends ScmProvider {
       commits: (data.commits ?? []).map((c) => commitOf(c.id, c.message)),
       files: allDiffs.slice(0, MAX_SCM_FILES_TOTAL).map(changedFileOf),
       filesTruncated: allDiffs.length > MAX_SCM_FILES_TOTAL,
-      totalChangedFiles: allDiffs.length,
+      ...(allDiffs.length > MAX_SCM_FILES_TOTAL ? { totalChangedFiles: allDiffs.length } : {}),
     };
     fetchChangesCache.set(key, result);
     return result;
@@ -208,6 +208,8 @@ export class GitLabProvider extends ScmProvider {
     // The endpoint is paged: read pages until the last one or the file cap.
     const diffs: GitLabDiff[] = [];
     let filesTruncated = false;
+    // An answer read in part (a later page or the commit failed) is returned but not cached.
+    let complete = true;
     for (let page = 1; ; page++) {
       const res = await fetch(`${commitUrl}/diff?per_page=${COMMIT_DIFF_PAGE_SIZE}&page=${page}`, {
         headers: this.makeHeaders(),
@@ -215,6 +217,7 @@ export class GitLabProvider extends ScmProvider {
       });
       if (!res.ok) {
         if (page > 1) {
+          complete = false;
           filesTruncated = true;
           break;
         }
@@ -222,8 +225,9 @@ export class GitLabProvider extends ScmProvider {
       }
       const pageDiffs = (await res.json()) as GitLabDiff[];
       diffs.push(...pageDiffs);
+      // GitLab names the next page, and sends the header empty on the last one.
       const nextPage = res.headers.get('x-next-page');
-      const more = nextPage ? nextPage.trim() !== '' : pageDiffs.length === COMMIT_DIFF_PAGE_SIZE;
+      const more = nextPage !== null ? nextPage.trim() !== '' : pageDiffs.length === COMMIT_DIFF_PAGE_SIZE;
       if (diffs.length > MAX_SCM_FILES_TOTAL || (more && diffs.length >= MAX_SCM_FILES_TOTAL)) {
         filesTruncated = true;
         break;
@@ -236,7 +240,7 @@ export class GitLabProvider extends ScmProvider {
       files: diffs.slice(0, MAX_SCM_FILES_TOTAL).map(changedFileOf),
       filesTruncated,
     };
-    fetchCommitDiffCache.set(key, result);
+    if (complete && commit) fetchCommitDiffCache.set(key, result);
     return result;
   }
 

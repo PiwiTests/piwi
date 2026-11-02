@@ -68,8 +68,10 @@ export interface ScmCommitAuthor {
 export interface ScmChanges {
   commits: ScmCommit[];
   files: ChangedFile[];
-  /** true when the raw diff was skipped because it exceeded the size cap */
+  /** true when the host sent no patches: the raw diff exceeded the size cap or could not be read */
   patchesOmitted?: boolean;
+  /** true when the host listed only the range's newest commits */
+  commitsTruncated?: boolean;
   /** true when the changed-file list was capped at {@link MAX_SCM_FILES_TOTAL} */
   filesTruncated?: boolean;
   /** total changed files the provider reported, when it exposes a count past the cap */

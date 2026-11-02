@@ -32,8 +32,7 @@ import { compareUrl, isPlainRevision } from '#shared/scm-urls';
 import { PATCH_TRUNCATED_NOTE } from '#shared/patch';
 import { suspectLinesContext, suspectLinesReasonText } from '#shared/suspect-lines';
 import { coverageDivergenceContext } from '#shared/handlers/coverage-insights';
-import { MAX_RAW_DIFF_BYTES } from './scm/ScmProvider';
-import type { ScmChanges, ChangedFile } from './scm/ScmProvider';
+import { MAX_SCM_FILES, type ScmChanges, type ChangedFile } from './scm/ScmProvider';
 import type {
   BrowserConfig,
   ConsoleLogEntry,
@@ -87,21 +86,23 @@ interface SuspectLinesContext {
 
 // ── Section wrapping helper ─────────────────────────────────────────────────
 
-/** What a section's text holds when part of it was left out; `section` then marks it truncated. */
-const TRUNCATED_MARKER = '[truncated]';
-
+/**
+ * A context section. It is truncated when `truncated` says so, else when its
+ * text holds the `[truncated]` mark a builder leaves where it cut.
+ */
 function section(
   id: SectionId,
   title: string,
   content: string | null | undefined,
   items?: number,
+  truncated?: boolean,
 ): ContextSection | null {
   if (!content) return null;
   return {
     id,
     title,
     chars: content.length,
-    truncated: content.includes(TRUNCATED_MARKER) || content.includes(PATCH_TRUNCATED_NOTE),
+    truncated: truncated ?? content.includes('[truncated]'),
     markdown: content,
     ...(items !== undefined ? { items } : {}),
   };
@@ -240,14 +241,24 @@ function formatChangedFileLine(f: ChangedFile): string {
  * The header of a changed-file list: how many files it shows and, when the
  * host listed only the first ones, that the list is cut.
  */
-function changedFilesHeader(changes: Pick<ScmChanges, 'files' | 'filesTruncated' | 'totalChangedFiles'>): string {
-  if (!changes.filesTruncated) return `Changed files (${changes.files.length}):`;
+function changedFilesHeader(
+  changes: Pick<ScmChanges, 'files' | 'filesTruncated' | 'totalChangedFiles'>,
+  shown = changes.files.length,
+): string {
+  const listed = changes.files.length;
+  if (!changes.filesTruncated && shown >= listed) return `Changed files (${listed}):`;
   const total =
-    changes.totalChangedFiles && changes.totalChangedFiles > changes.files.length
+    changes.totalChangedFiles && changes.totalChangedFiles > listed
       ? `${changes.totalChangedFiles} in all`
-      : 'more changed';
-  return `Changed files (the first ${changes.files.length}, ${total}) ${TRUNCATED_MARKER}:`;
+      : changes.filesTruncated
+        ? 'more changed'
+        : `${listed} in all`;
+  return `Changed files (the first ${shown}, ${total}):`;
 }
+
+/** The note for a diff the host sent without patches. */
+const PATCHES_OMITTED_NOTE =
+  '> Note: the host sent no patches for this diff (the raw diff was too large or could not be read). The files listed above keep their line counts.';
 
 /** A note naming how many listed files came with no patch, or null when every one has one. */
 function filesWithoutPatchNote(files: ChangedFile[]): string | null {
@@ -289,10 +300,14 @@ function renderBudgetedPatches(
 function renderChangedFiles(
   changes: ScmChanges,
   opts: { title: string; budget: number },
-): { text: string; patchedFilesCount: number; patchesTruncated: boolean } {
+): { text: string; patchedFilesCount: number; patchesTruncated: boolean; truncated: boolean } {
   const lines: string[] = [opts.title];
   if (changes.commits.length > 0) {
-    lines.push('Commits:');
+    lines.push(
+      changes.commitsTruncated
+        ? `Commits (the newest ${changes.commits.length}, oldest first; the range has more):`
+        : 'Commits:',
+    );
     for (const c of changes.commits) lines.push(`- ${c.sha} ${c.message}`);
   }
   lines.push(`\n${changedFilesHeader(changes)}`);
@@ -301,9 +316,7 @@ function renderChangedFiles(
   let patchedFilesCount = 0;
   let patchesTruncated = false;
   if (changes.patchesOmitted) {
-    lines.push(
-      `\n> Note: diff omitted — raw diff exceeded size limit (${Math.round(MAX_RAW_DIFF_BYTES / 1024)} KB). The files listed above keep their line counts; no patch content available ${TRUNCATED_MARKER}.`,
-    );
+    lines.push(`\n${PATCHES_OMITTED_NOTE}`);
   } else {
     const budget = { remaining: opts.budget };
     const { patches, skipped } = renderBudgetedPatches(changes.files, budget);
@@ -315,12 +328,13 @@ function renderChangedFiles(
     const noPatch = filesWithoutPatchNote(changes.files);
     if (noPatch) lines.push(`\n${noPatch}`);
     if (skipped > 0) {
-      lines.push(
-        `\n> Note: ${skipped} file patch${skipped > 1 ? 'es' : ''} omitted (context budget exhausted) ${TRUNCATED_MARKER}.`,
-      );
+      lines.push(`\n> Note: ${skipped} file patch${skipped > 1 ? 'es' : ''} omitted (context budget exhausted).`);
     }
   }
-  return { text: lines.join('\n'), patchedFilesCount, patchesTruncated };
+  const truncated = Boolean(
+    patchesTruncated || changes.patchesOmitted || changes.filesTruncated || changes.commitsTruncated,
+  );
+  return { text: lines.join('\n'), patchedFilesCount, patchesTruncated, truncated };
 }
 
 // ── Section builders ────────────────────────────────────────────────────────
@@ -2420,6 +2434,8 @@ async function buildSourceFiles(
 interface ScmSection {
   id: SectionId;
   markdown: string;
+  /** Part of the diff was left out (files, commits or patches). */
+  truncated?: boolean;
 }
 
 /**
@@ -2487,8 +2503,7 @@ async function scmInvestigationSections(
       scmCov.localGit = provider instanceof LocalGitProvider;
       const fetched = provider ? await provider.fetchChanges(fromSha, toSha) : null;
       if (!fetched || (fetched.commits.length === 0 && fetched.files.length === 0)) return;
-      // Score and sort files by relevance, then render with budget. The provider
-      // caches what it answered, so the sorted list goes in a copy.
+      // Score and sort files by relevance into a copy; `fetched` stays as the provider cached it.
       const scored = scoreFilesByRelevance(fetched.files, signals);
       const changes: ScmChanges = { ...fetched, files: scored.map((s) => s.file) };
       scmChanges = changes;
@@ -2496,7 +2511,8 @@ async function scmInvestigationSections(
       scmCov.commitsCount = changes.commits.length;
       scmCov.patchesOmitted = Boolean(changes.patchesOmitted);
       scmCov.filesTruncated = Boolean(changes.filesTruncated);
-      scmCov.totalChangedFiles = changes.totalChangedFiles ?? null;
+      scmCov.totalChangedFiles = changes.filesTruncated ? (changes.totalChangedFiles ?? null) : null;
+      scmCov.commitsTruncated = Boolean(changes.commitsTruncated);
 
       const suspects = await clusterSuspectLinesForChanges(db, cluster.id, changes, { from: fromSha, to: toSha }).catch(
         () => null,
@@ -2513,7 +2529,7 @@ async function scmInvestigationSections(
       const rendered = renderChangedFiles(changes, { title, budget: limits.scmPatchBudget });
       scmCov.patchedFilesCount = rendered.patchedFilesCount;
       scmCov.patchesTruncated = rendered.patchesTruncated;
-      sections.push({ id: 'scmInvestigation', markdown: rendered.text });
+      sections.push({ id: 'scmInvestigation', markdown: rendered.text, truncated: rendered.truncated });
 
       // Surface the most-suspect changed file (by relevance) + newest commit
       const top = getTopSuspectedChange(scored, changes.commits);
@@ -2662,7 +2678,7 @@ async function scmInvestigationSections(
             eligibleRunSql('baseline'),
           ),
         )
-        .orderBy(desc(testRuns.startTime))
+        .orderBy(desc(testRuns.startTime), desc(testRuns.id))
         .limit(1);
 
       if (lastPassRows[0]) {
@@ -2714,7 +2730,7 @@ async function selectedCommitsSection(
   cluster: FailureCluster,
   opts: BuildContextOptions,
   limits: ContextLimits,
-): Promise<string | null> {
+): Promise<{ markdown: string; truncated: boolean } | null> {
   if (!opts.selectedCommitShas?.length) return null;
   try {
     const [runForUrl] = await db
@@ -2729,6 +2745,7 @@ async function selectedCommitsSection(
     if (!provider) return null;
 
     const commitLines: string[] = ['## Commits Manually Selected for Context'];
+    let truncated = false;
     // Shared budget so the total patch size across all selected commits is capped.
     const budget = { remaining: limits.scmPatchBudget };
     for (const sha of opts.selectedCommitShas.slice(0, 10)) {
@@ -2736,18 +2753,26 @@ async function selectedCommitsSection(
         const commitDiff = await provider.fetchCommitDiff(sha);
         if (commitDiff?.files.length) {
           const subject = commitDiff.commits[0]?.message;
+          const shown = commitDiff.files.slice(0, MAX_SCM_FILES);
           commitLines.push(`\n### ${sha.slice(0, 7)}${subject ? ` ${subject}` : ''}`);
-          commitLines.push(changedFilesHeader(commitDiff));
-          for (const f of commitDiff.files) commitLines.push(formatChangedFileLine(f));
-          const { patches, skipped } = renderBudgetedPatches(commitDiff.files, budget);
+          commitLines.push(changedFilesHeader(commitDiff, shown.length));
+          for (const f of shown) commitLines.push(formatChangedFileLine(f));
+          if (commitDiff.filesTruncated || shown.length < commitDiff.files.length) truncated = true;
+          if (commitDiff.patchesOmitted) {
+            commitLines.push(`\n${PATCHES_OMITTED_NOTE}`);
+            truncated = true;
+            continue;
+          }
+          const { patches, skipped } = renderBudgetedPatches(shown, budget);
           if (patches.length) {
             commitLines.push(`\nPatches:\n\`\`\`diff\n${patches.join('\n\n')}\n\`\`\``);
           }
-          const noPatch = commitDiff.patchesOmitted ? null : filesWithoutPatchNote(commitDiff.files);
+          if (skipped > 0 || patches.some((p) => p.endsWith(PATCH_TRUNCATED_NOTE))) truncated = true;
+          const noPatch = filesWithoutPatchNote(shown);
           if (noPatch) commitLines.push(`\n${noPatch}`);
           if (skipped > 0) {
             commitLines.push(
-              `\n> Note: ${skipped} file patch${skipped > 1 ? 'es' : ''} omitted (context budget exhausted) ${TRUNCATED_MARKER}.`,
+              `\n> Note: ${skipped} file patch${skipped > 1 ? 'es' : ''} omitted (context budget exhausted).`,
             );
           }
         }
@@ -2755,7 +2780,7 @@ async function selectedCommitsSection(
         /* skip individual commit on error */
       }
     }
-    return commitLines.length > 1 ? commitLines.join('\n') : null;
+    return commitLines.length > 1 ? { markdown: commitLines.join('\n'), truncated } : null;
   } catch {
     /* skip entire block on error */
     return null;
@@ -3026,9 +3051,20 @@ export async function buildDiagnosisContext(
         testCaseId: rep.testCaseId,
       });
       // One section per id: the range and its changed files are one SCM investigation.
-      const scmParts = new Map<SectionId, string[]>();
-      for (const s of scm.sections) scmParts.set(s.id, [...(scmParts.get(s.id) ?? []), s.markdown]);
-      for (const [id, parts] of scmParts) push(section(id, SCM_SECTION_TITLES[id] ?? id, parts.join('\n\n')));
+      const scmParts = new Map<SectionId, ScmSection[]>();
+      for (const s of scm.sections) scmParts.set(s.id, [...(scmParts.get(s.id) ?? []), s]);
+      for (const [id, parts] of scmParts) {
+        const markdown = parts.map((p) => p.markdown).join('\n\n');
+        push(
+          section(
+            id,
+            SCM_SECTION_TITLES[id] ?? id,
+            markdown,
+            undefined,
+            parts.some((p) => p.truncated),
+          ),
+        );
+      }
       coverage = { ...coverage, scm: scm.coverage, suspectLines: scm.suspectLines.coverage };
       suspectLinesAbsentReason = scm.suspectLines.absentReason;
       scmChanges = scm.scmChanges;
@@ -3039,13 +3075,8 @@ export async function buildDiagnosisContext(
       if (scm.sourceFiles.files.length > 0) sourceFilesOut = scm.sourceFiles.files;
 
       // Selected commits (network fetch)
-      push(
-        section(
-          'selectedCommits',
-          'Manually Selected Commits',
-          await selectedCommitsSection(db, cluster, opts, limits),
-        ),
-      );
+      const selected = await selectedCommitsSection(db, cluster, opts, limits);
+      push(section('selectedCommits', 'Manually Selected Commits', selected?.markdown, undefined, selected?.truncated));
     }
   }
 
