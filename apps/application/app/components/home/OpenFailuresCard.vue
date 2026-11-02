@@ -4,7 +4,7 @@ import {
   INBOX_QUEUES,
   clusterInQueue,
   countQueues,
-  isSnoozedBack,
+  showsSnoozedBack,
   effectiveAssignee,
   groupIncidentClusters,
   inboxIdentity,
@@ -825,7 +825,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
             <UBadge v-if="cluster.quarantinedCount > 0" color="warning" variant="subtle" size="xs" class="gap-1">
               <UIcon name="i-lucide-shield" class="size-3" />Quarantined
             </UBadge>
-            <UBadge v-if="isSnoozedBack(cluster)" color="info" variant="subtle" size="xs" class="gap-1">
+            <UBadge v-if="showsSnoozedBack(cluster, lastVisitMs)" color="info" variant="subtle" size="xs" class="gap-1">
               <UIcon name="i-lucide-alarm-clock" class="size-3" />Snoozed, back
             </UBadge>
             <UBadge v-if="cluster.mergeSuggestionPending" color="neutral" variant="subtle" size="xs" class="gap-1">

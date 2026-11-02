@@ -9,6 +9,7 @@ import {
   personIsUser,
   isMine,
   inboxIdentity,
+  showsSnoozedBack,
   moveInboxFocus,
   keepInboxFocus,
   effectiveAssignee,
@@ -238,5 +239,20 @@ describe('the keyboard focus', () => {
     expect(keepInboxFocus([3], [3, 9], 9)).toBe(3);
     expect(keepInboxFocus([], [9], 9)).toBeNull();
     expect(keepInboxFocus([3, 9], [3, 9], null)).toBeNull();
+  });
+});
+
+describe('the "snoozed, back" badge', () => {
+  const back = { snoozeMode: 'until-recurs', snoozedUntil: null, lastSeenAt: '2026-10-02T10:00:00Z' };
+
+  it('shows while the cluster is new since the viewer last looked, and then goes', () => {
+    expect(showsSnoozedBack(back, Date.parse('2026-10-01T10:00:00Z'))).toBe(true);
+    expect(showsSnoozedBack(back, null)).toBe(true);
+    expect(showsSnoozedBack(back, Date.parse('2026-10-03T10:00:00Z'))).toBe(false);
+  });
+
+  it('never shows on a cluster that did not come back from an until-it-recurs snooze', () => {
+    expect(showsSnoozedBack({ ...back, snoozeMode: null }, null)).toBe(false);
+    expect(showsSnoozedBack({ ...back, snoozedUntil: '9999-01-01T00:00:00Z' }, null)).toBe(false);
   });
 });

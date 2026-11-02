@@ -145,8 +145,8 @@ comment on failures* set.
 ## Snoozing
 
 **Snoozing** hides a cluster from every inbox queue without touching its status. **1 day** and
-**1 week** return it then; **Until it recurs** returns it to the **New** queue, with a **snoozed,
-back** badge, when a new run fails it again.
+**1 week** return it then; **Until it recurs** returns it to the **New** queue when a new run fails
+it again, with a **snoozed, back** badge until your next visit.
 
 ## From an AI agent
 

@@ -232,6 +232,15 @@ export function clusterInQueue(
 }
 
 /**
+ * Whether a row shows the "snoozed, back" badge: the cluster came back from an
+ * "until it recurs" snooze, and is new since the viewer last looked, the queue
+ * it returned to. Once they have seen it in a later visit, the badge is gone.
+ */
+export function showsSnoozedBack(cluster: InboxClusterLike, lastVisitMs: number | null): boolean {
+  return isSnoozedBack(cluster) && isNewSince(cluster, lastVisitMs);
+}
+
+/**
  * The cluster the inbox's keyboard focus moves to: the next (`1`) or previous
  * (`-1`) row of `ids` from the focused cluster, or the first row when none is
  * focused or it left the list. Held by cluster id, so a list that reloads and
