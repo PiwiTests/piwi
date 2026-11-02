@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import type { DbClient } from '../../server/database';
 import { migrateToLatest } from './temp-db';
@@ -16,7 +16,8 @@ declare global {
 
 delete process.env.PIWI_DATABASE_URL;
 
-const { getOrCreateFailureClusters } = await import('../../shared/handlers/failure-cluster-ops');
+const { getOrCreateFailureClusters, transitionClusterStatus } =
+  await import('../../shared/handlers/failure-cluster-ops');
 const { computeErrorFingerprint } = await import('../../shared/error-fingerprint');
 
 // The call log and the stack are excluded from the fingerprint (extractMessageHead
@@ -154,5 +155,56 @@ describe('getOrCreateFailureClusters first and last seen runs', () => {
     // Run 12 has a higher id but started two months earlier.
     await getOrCreateFailureClusters(dbc, 1, 12, (await pendingFor(plainError)).map);
     expect(await readCluster(clusterId)).toMatchObject({ firstSeenRunId: 12, lastSeenRunId: 11, occurrences: 3 });
+  });
+});
+
+describe('transitionClusterStatus', () => {
+  async function insertCluster(status: string, triageNote: string | null) {
+    const [row] = await db
+      .insert(schema.failureClusters)
+      .values({
+        projectId: 1,
+        fingerprint: `fp-${status}-${triageNote}`,
+        signature: 'Error: broken',
+        firstSeenRunId: 1,
+        lastSeenRunId: 1,
+        status,
+        triageNote,
+      })
+      .returning({ id: schema.failureClusters.id });
+    return row!.id;
+  }
+  async function triage(id: number) {
+    const [row] = await db
+      .select({ status: schema.failureClusters.status, triageNote: schema.failureClusters.triageNote })
+      .from(schema.failureClusters)
+      .where(eq(schema.failureClusters.id, id));
+    return row;
+  }
+  const resolve = { from: 'open', to: 'resolved', line: 'Resolved automatically: PROJ-1 is Done' };
+
+  test('moves a cluster still in the status it expects, the line below what a person wrote', async () => {
+    const id = await insertCluster('open', '  Looking into it  ');
+    expect(await transitionClusterStatus(dbc, id, resolve)).toBe(true);
+    expect(await triage(id)).toEqual({
+      status: 'resolved',
+      triageNote: 'Looking into it\nResolved automatically: PROJ-1 is Done',
+    });
+
+    const blank = await insertCluster('open', '   ');
+    await transitionClusterStatus(dbc, blank, resolve);
+    expect((await triage(blank))?.triageNote).toBe('Resolved automatically: PROJ-1 is Done');
+  });
+
+  test('leaves a cluster a person moved to another status', async () => {
+    const id = await insertCluster('ignored', 'Known, ignore');
+    expect(await transitionClusterStatus(dbc, id, resolve)).toBe(false);
+    expect(await triage(id)).toEqual({ status: 'ignored', triageNote: 'Known, ignore' });
+  });
+
+  test('moves only when the extra condition holds', async () => {
+    const id = await insertCluster('open', null);
+    expect(await transitionClusterStatus(dbc, id, { ...resolve, where: sql`1 = 0` })).toBe(false);
+    expect(await triage(id)).toEqual({ status: 'open', triageNote: null });
   });
 });

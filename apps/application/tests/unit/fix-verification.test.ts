@@ -24,9 +24,14 @@ let changedCommits: Array<{ sha: string; message: string; fullMessage?: string }
 let commitAuthor: { name: string; email: string } | null = null;
 // The repository's files at the run's commit, by repo-relative path.
 let filesAtRef: Record<string, string> = {};
+// What happens while the commits are fetched: a person's triage, made meanwhile.
+let whileFetching: (() => Promise<void>) | null = null;
 vi.mock('../../server/utils/scm', () => ({
   createScmProvider: async () => ({
-    fetchChanges: async () => ({ commits: changedCommits, files: changedFiles.map((filename) => ({ filename })) }),
+    fetchChanges: async () => {
+      await whileFetching?.();
+      return { commits: changedCommits, files: changedFiles.map((filename) => ({ filename })) };
+    },
     getCommitAuthor: async () => commitAuthor,
     getDefaultBranch: async () => 'main',
     fetchFileAtRef: async (path: string) =>
@@ -38,8 +43,9 @@ vi.mock('../../server/utils/scm', () => ({
 // import time when PIWI_DATABASE_URL is set, so clear it before the module
 // under test (which imports the barrel) is loaded.
 delete process.env.PIWI_DATABASE_URL;
-const { verifyClusterFixes, appendTriageNote, classifyQuietRun, classifyFailingRun, healKeysFromCommits } =
+const { verifyClusterFixes, classifyQuietRun, classifyFailingRun, healKeysFromCommits } =
   await import('../../server/utils/fix-verification');
+const { appendTriageNote } = await import('../../shared/handlers/failure-cluster-ops');
 const { getClusterPatchFacts, getFailureCluster } = await import('../../shared/handlers/failure-clusters');
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
@@ -136,6 +142,7 @@ beforeEach(() => {
   changedCommits = [];
   commitAuthor = null;
   filesAtRef = {};
+  whileFetching = null;
 });
 
 describe('appendTriageNote', () => {
@@ -497,6 +504,59 @@ describe('verifyClusterFixes — run order', () => {
     row = await cluster(clusterId);
     expect(row.fixVerification).toBe('regressed');
     expect(row.status).toBe('open');
+  });
+});
+
+describe("verifyClusterFixes — a person's triage made meanwhile", () => {
+  test('a person who ignores the cluster while the fix is verified keeps their status and note', async () => {
+    const failing = await insertRun('failed', 'cc10001');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2);
+    await insertDiagnosis(clusterId, 'src/checkout.ts');
+    changedFiles = ['src/checkout.ts'];
+    whileFetching = async () => {
+      whileFetching = null;
+      await db
+        .update(schema.failureClusters)
+        .set({ status: 'ignored', triageNote: 'Known, ignore' })
+        .where(eq(schema.failureClusters.id, clusterId));
+    };
+
+    const green = await insertRun('passed', 'cc10002');
+    await insertCase(green, 'passed', null, 2);
+    await verifyClusterFixes(db, green);
+
+    const row = await cluster(clusterId);
+    expect(row).toMatchObject({
+      fixVerification: 'diagnosis-verified',
+      status: 'ignored',
+      triageNote: 'Known, ignore',
+    });
+    expect(emitted.find((e) => e.payload.clusterId === clusterId)?.payload).toMatchObject({ resolved: false });
+  });
+
+  test('a note a person edits while the fix is verified is kept below the line Piwi adds', async () => {
+    const failing = await insertRun('failed', 'cc20001');
+    const clusterId = await insertCluster({ firstSeenRunId: failing, triageNote: 'Looking into it' });
+    await insertCase(failing, 'failed', clusterId, 2);
+    await insertDiagnosis(clusterId, 'src/checkout.ts');
+    changedFiles = ['src/checkout.ts'];
+    whileFetching = async () => {
+      whileFetching = null;
+      await db
+        .update(schema.failureClusters)
+        .set({ triageNote: 'Looking into it\nThe cart API changed' })
+        .where(eq(schema.failureClusters.id, clusterId));
+    };
+
+    const green = await insertRun('passed', 'cc20002');
+    await insertCase(green, 'passed', null, 2);
+    await verifyClusterFixes(db, green);
+
+    expect(await cluster(clusterId)).toMatchObject({
+      status: 'resolved',
+      triageNote: `Looking into it\nThe cart API changed\nResolved automatically: diagnosis verified in run #${green}`,
+    });
   });
 });
 

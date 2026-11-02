@@ -29,7 +29,9 @@
  *
  * The verdict moves the triage status only when the evidence is strong:
  * `diagnosis-verified` resolves an open cluster, `regressed` reopens a resolved
- * one, each appending a system line to the triage note. `stopped-failing`
+ * one, each appending a system line to the triage note. Each move is one
+ * conditional write (`transitionClusterStatus`), so a person's triage made
+ * while the run was being verified is never overwritten. `stopped-failing`
  * alone changes nothing — a flaky test achieves it by accident. Every recorded
  * fix emits `cluster.fixed` and every regression `cluster.regressed`, with the
  * fix author's email, when the run sends notifications (the `notifications`
@@ -89,6 +91,7 @@ import {
 import { listOutcomes, recordOutcome } from './outcomes';
 import { regressFixAttempts, verifyFixAttempts } from './fix-attempts';
 import { recordIncidentalCatch } from './incidental-catch';
+import { transitionClusterStatus } from '#shared/handlers/failure-cluster-ops';
 import type { DbClient } from '../database';
 
 const FAIL_STATUSES = ['failed', 'timedOut', 'timedout'];
@@ -153,12 +156,6 @@ export function classifyFailingRun(input: {
   if (runBranch === fixBranch) return 'regression';
   if (runBranch != null && runBranch === input.defaultBranch) return 'regression';
   return 'other-branch';
-}
-
-/** Append a system-written line to a triage note, keeping what a person wrote. */
-export function appendTriageNote(existing: string | null | undefined, line: string): string {
-  const current = existing?.trim();
-  return current ? `${current}\n${line}` : line;
 }
 
 /** The files a cluster's completed diagnosis proposed changing, if any. */
@@ -505,8 +502,6 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
         id: failureClusters.id,
         signature: failureClusters.signature,
         title: failureClusters.title,
-        status: failureClusters.status,
-        triageNote: failureClusters.triageNote,
         fixLandedRunId: failureClusters.fixLandedRunId,
         fixLandedAt: failureClusters.fixLandedAt,
         fixCommit: failureClusters.fixCommit,
@@ -540,25 +535,20 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
       });
       if (verdict === 'other-branch') continue;
       try {
+        // Recorded once: a run verified at the same time may have recorded it.
+        const marked = await db
+          .update(failureClusters)
+          .set({ fixVerification: 'regressed', updatedAt: new Date() })
+          .where(and(eq(failureClusters.id, cluster.id), ne(failureClusters.fixVerification, 'regressed')))
+          .returning({ id: failureClusters.id });
+        if (marked.length === 0) continue;
         // A person's "resolved" was contradicted by the runs, so the cluster goes
         // back to open with the reason on record; "ignored" is left alone.
-        const reopened = cluster.status === 'resolved';
-        await db
-          .update(failureClusters)
-          .set({
-            fixVerification: 'regressed',
-            updatedAt: new Date(),
-            ...(reopened
-              ? {
-                  status: 'open',
-                  triageNote: appendTriageNote(
-                    cluster.triageNote,
-                    `Reopened automatically: regressed in run #${runId}`,
-                  ),
-                }
-              : {}),
-          })
-          .where(eq(failureClusters.id, cluster.id));
+        const reopened = await transitionClusterStatus(db, cluster.id, {
+          from: 'resolved',
+          to: 'open',
+          line: `Reopened automatically: regressed in run #${runId}`,
+        });
 
         // The regression reaches the author of the fix that did not hold.
         if (notify) {
@@ -611,8 +601,6 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
       createdAt: failureClusters.createdAt,
       firstSeenRunId: failureClusters.firstSeenRunId,
       lastSeenRunId: failureClusters.lastSeenRunId,
-      status: failureClusters.status,
-      triageNote: failureClusters.triageNote,
     })
     .from(failureClusters)
     .where(
@@ -784,10 +772,8 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
         startTimeByRunId.get(cluster.firstSeenRunId) ?? (cluster.createdAt instanceof Date ? cluster.createdAt : null);
       const timeToResolutionMs = brokeAt ? Math.max(0, landedAt.getTime() - brokeAt.getTime()) : null;
 
-      // The diagnosis pointing at the change that fixed it is strong enough to
-      // close the triage; "stopped failing" alone is not.
-      const resolved = verification === 'diagnosis-verified' && cluster.status === 'open';
-      await db
+      // Recorded once: a run verified at the same time may have recorded a fix.
+      const landed = await db
         .update(failureClusters)
         .set({
           fixLandedRunId: runId,
@@ -796,17 +782,25 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
           timeToResolutionMs,
           fixVerification: verification,
           updatedAt: new Date(),
-          ...(resolved
-            ? {
-                status: 'resolved',
-                triageNote: appendTriageNote(
-                  cluster.triageNote,
-                  `Resolved automatically: diagnosis verified in run #${runId}`,
-                ),
-              }
-            : {}),
         })
-        .where(eq(failureClusters.id, cluster.id));
+        .where(
+          and(
+            eq(failureClusters.id, cluster.id),
+            or(isNull(failureClusters.fixLandedRunId), eq(failureClusters.fixVerification, 'regressed')),
+          ),
+        )
+        .returning({ id: failureClusters.id });
+      if (landed.length === 0) continue;
+
+      // The diagnosis pointing at the change that fixed it is strong enough to
+      // close the triage; "stopped failing" alone is not.
+      const resolved =
+        verification === 'diagnosis-verified' &&
+        (await transitionClusterStatus(db, cluster.id, {
+          from: 'open',
+          to: 'resolved',
+          line: `Resolved automatically: diagnosis verified in run #${runId}`,
+        }));
 
       if (verification === 'diagnosis-verified') {
         await recordDiagnosisVerified(db, run.projectId, cluster.id, runId, currentCommit).catch((e) =>

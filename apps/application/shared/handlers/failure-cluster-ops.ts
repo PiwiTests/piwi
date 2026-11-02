@@ -541,6 +541,43 @@ export async function mergeFailureClusters(db: DrizzleDB, survivorId: number, vi
   });
 }
 
+/** Append a system-written line to a triage note, keeping what a person wrote. */
+export function appendTriageNote(existing: string | null | undefined, line: string): string {
+  const current = existing?.trim();
+  return current ? `${current}\n${line}` : line;
+}
+
+/**
+ * SQL: a cluster's triage note with a line Piwi writes appended below it, as
+ * `appendTriageNote` does: what a person wrote stays, trimmed, and an empty
+ * note becomes the line. It reads the note of the row the UPDATE changes, so
+ * an edit made meanwhile is kept.
+ */
+export function appendedTriageNote(line: string): SQL {
+  const note = failureClusters.triageNote;
+  return sql`case when trim(coalesce(${note}, '')) = '' then cast(${line} as text) else trim(${note}) || cast(${`\n${line}`} as text) end`;
+}
+
+/**
+ * Move a cluster from triage status `from` to `to`, with a line Piwi writes
+ * appended to its note, in one conditional UPDATE: nothing changes when the
+ * status differs from `from` (a person triaged it meanwhile), and the line
+ * joins the note as it is stored at that moment. `where` narrows the
+ * condition. True when the cluster moved.
+ */
+export async function transitionClusterStatus(
+  db: DrizzleDB,
+  clusterId: number,
+  move: { from: string; to: string; line: string; where?: SQL },
+): Promise<boolean> {
+  const moved = await db
+    .update(failureClusters)
+    .set({ status: move.to, triageNote: appendedTriageNote(move.line), updatedAt: new Date() })
+    .where(and(eq(failureClusters.id, clusterId), eq(failureClusters.status, move.from), move.where))
+    .returning({ id: failureClusters.id });
+  return moved.length > 0;
+}
+
 /**
  * Recompute a cluster's occurrence counter from the test-run-cases still
  * linked to it. Must run after the case rows have actually been deleted or

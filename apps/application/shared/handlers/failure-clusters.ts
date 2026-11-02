@@ -17,7 +17,7 @@ import { splitSuitePath } from '../utils/suites';
 import type { DrizzleDB } from './db';
 import type { HandbackActor } from '../handback-outcomes';
 import type { ClusterLatestHeadline, OpenFailureCluster, OccurrenceSeriesPoint } from '../../types/api';
-import { splitFailureCluster } from './failure-cluster-ops';
+import { appendedTriageNote, splitFailureCluster } from './failure-cluster-ops';
 import { clusterIssueFilings, clusterKnownIssues, isTrackerLink } from './known-issues';
 import { readRunIncident } from '../run-incident';
 import {
@@ -706,14 +706,11 @@ export async function extractClusterCases(
   if (!split) return null;
 
   if (split.clusterId != null) {
-    const [source] = await db
-      .select({ triageNote: failureClusters.triageNote })
-      .from(failureClusters)
-      .where(eq(failureClusters.id, clusterId));
+    // Appended to the note as stored, so an edit made meanwhile is kept.
     const line = `Moved ${split.testCount} test${split.testCount === 1 ? '' : 's'} to cluster #${split.clusterId}.`;
     await db
       .update(failureClusters)
-      .set({ triageNote: source?.triageNote ? `${source.triageNote}\n${line}` : line, updatedAt: new Date() })
+      .set({ triageNote: appendedTriageNote(line), updatedAt: new Date() })
       .where(eq(failureClusters.id, clusterId));
   }
 
