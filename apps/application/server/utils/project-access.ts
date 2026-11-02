@@ -103,10 +103,14 @@ export async function holdsProjectPermission(
   return permissions.some((permission) => can(access, permission, projectId));
 }
 
-/** Parse and validate a numeric route param, throwing 400 if missing/invalid. */
+/**
+ * Parse and validate a numeric route param, throwing 400 if missing/invalid. The param is a positive integer written
+ * plainly: `12`, never `012`, `12abc` or `12\..\x`, which `parseInt` would read as 12.
+ */
 export function requireRouteId(event: H3Event, paramName = 'id', label = 'ID'): number {
-  const id = parseInt(getRouterParam(event, paramName) || '0');
-  if (!id) throw apiError({ statusCode: 400, message: `Invalid ${label}` });
+  const raw = getRouterParam(event, paramName) ?? '';
+  const id = /^[1-9]\d*$/.test(raw) ? Number(raw) : 0;
+  if (!Number.isSafeInteger(id) || id <= 0) throw apiError({ statusCode: 400, message: `Invalid ${label}` });
   return id;
 }
 
