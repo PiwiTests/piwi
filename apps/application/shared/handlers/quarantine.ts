@@ -332,9 +332,17 @@ export async function listQuarantine(
   return { entries, debt };
 }
 
+/** Whether a test is one of the project's quarantine candidates (`proposeQuarantineCandidates`). */
+async function isQuarantineCandidate(db: DrizzleDB, projectId: number, testCaseId: number): Promise<boolean> {
+  const candidates = await proposeQuarantineCandidates(db, projectId, await getQuarantinedCaseIds(db, projectId));
+  return candidates.some((candidate) => candidate.testCaseId === testCaseId);
+}
+
 /**
  * Quarantine a test. Idempotent: quarantining an already-quarantined test
  * leaves the original entry (and its streak) alone rather than resetting it.
+ * The entry is `proposed` when the caller says it applies Piwi's proposal and
+ * the test is a candidate, `manual` otherwise.
  */
 export async function addQuarantine(
   db: DrizzleDB,
@@ -363,7 +371,8 @@ export async function addQuarantine(
     .orderBy(desc(testRuns.id))
     .limit(1);
 
-  const source = options.source === 'proposed' ? 'proposed' : 'manual';
+  const source =
+    options.source === 'proposed' && (await isQuarantineCandidate(db, projectId, testCaseId)) ? 'proposed' : 'manual';
   // A request running at the same time (a bulk quarantine of two clusters that share a test) may insert first: the
   // index of active quarantines keeps its row, and this call creates none.
   const inserted = await db
@@ -494,8 +503,7 @@ export async function dismissQuarantineProposal(
     if (!progress?.earned && !progress?.verifiedFix) return false;
   } else {
     if (active) return false;
-    const candidates = await proposeQuarantineCandidates(db, projectId, await getQuarantinedCaseIds(db, projectId));
-    if (!candidates.some((candidate) => candidate.testCaseId === testCaseId)) return false;
+    if (!(await isQuarantineCandidate(db, projectId, testCaseId))) return false;
   }
   // A quarantine proposal is scoped to the newest run the candidates read, so one dismissed again after a newer such
   // run counts again.
