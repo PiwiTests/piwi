@@ -140,7 +140,7 @@ describe('the surfaces around an execution carry its cluster issue', () => {
     expect(detail?.recentExecutions.find((e) => e.id === 10)?.knownIssue?.key).toBe('PIWI-12');
   });
 
-  test('a Done issue tells whether the failure goes on in the latest finished run', async () => {
+  test('a Done issue tells whether a run since the failure could have shown it', async () => {
     const read = async () =>
       ((await getTestRunCase(db as never, 10)) as { failureCluster: { failureGoesOn: boolean | null } | null } | null)
         ?.failureCluster?.failureGoesOn;
@@ -153,14 +153,19 @@ describe('the surfaces around an execution carry its cluster issue', () => {
       // Run 1, the latest finished run, is where the cluster was last seen.
       expect(await read()).toBe(true);
 
-      // A run still going does not count; a finished run without the failure does.
+      // A run still going does not count, nor a bisect step or a finished run that never ran the test; a finished
+      // run that ran it without the failure does.
       await db
         .insert(schema.testRuns)
         .values([{ id: 2, projectId: 1, status: 'running', startTime: new Date('2026-09-02T10:00:00Z') }]);
       expect(await read()).toBe(true);
-      await db
-        .insert(schema.testRuns)
-        .values([{ id: 3, projectId: 1, status: 'passed', startTime: new Date('2026-09-01T12:00:00Z') }]);
+      await db.insert(schema.testRuns).values([
+        { id: 4, projectId: 1, status: 'passed', origin: 'bisect', startTime: new Date('2026-09-01T11:00:00Z') },
+        { id: 3, projectId: 1, status: 'passed', startTime: new Date('2026-09-01T12:00:00Z') },
+      ]);
+      await db.insert(schema.testRunsCases).values({ id: 12, testRunId: 4, testCaseId: 1, status: 'passed' });
+      expect(await read()).toBe(true);
+      await db.insert(schema.testRunsCases).values({ id: 13, testRunId: 3, testCaseId: 1, status: 'passed' });
       expect(await read()).toBe(false);
 
       // The failure stopped under a Done issue: the execution's next step marks the
@@ -172,7 +177,8 @@ describe('the surfaces around an execution carry its cluster issue', () => {
       expect(cluster?.failureGoesOn).toBe(false);
       expect(cluster?.nextStep.title).toBe(execution?.nextStep.title);
     } finally {
-      await db.delete(schema.testRuns).where(inArray(schema.testRuns.id, [2, 3]));
+      await db.delete(schema.testRunsCases).where(inArray(schema.testRunsCases.id, [12, 13]));
+      await db.delete(schema.testRuns).where(inArray(schema.testRuns.id, [2, 3, 4]));
       await db.update(schema.entityLinks).set({ metadata: null }).where(eq(schema.entityLinks.id, link!.id));
     }
   });

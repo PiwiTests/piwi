@@ -39,7 +39,7 @@ import { resolveProjectIntegration } from '#shared/integrations/binding';
 import { parsePlaywrightError } from '#shared/error-parse';
 import { failingStepParams } from '#shared/describe-failure';
 import { caseHeadline } from '#shared/failure-verdict';
-import { computeClusterState, failureGoesOn, ticketReconcileKey, type ClusterState } from '#shared/cluster-state';
+import { computeClusterState, ticketReconcileKey, type ClusterState } from '#shared/cluster-state';
 import {
   CI_RUN_ORIGINS,
   eligibleRunSql,
@@ -231,6 +231,31 @@ async function clusterStateRunIds(
   return [...skipped, ...(seenAt < 0 ? [] : [cluster.lastSeenRunId])].slice(0, STATE_LINE_RUNS);
 }
 
+/** Whether a cluster's failure goes on, from its state runs: no run since its last occurrence could have shown it. */
+function goesOnFromStateRuns(stateRunIds: readonly number[], lastSeenRunId: number): boolean {
+  return !stateRunIds.some((id) => id !== lastSeenRunId);
+}
+
+/**
+ * Whether a cluster's failure goes on: no run since the last one it was seen in could have shown it and did not, by
+ * the frame of its state line (`clusterStateRunIds`). The execution page reads it as the cluster page does.
+ */
+export async function clusterFailureGoesOn(
+  db: DrizzleDB,
+  cluster: { id: number; projectId: number; lastSeenRunId: number },
+): Promise<boolean> {
+  const [[lastRun], [countRow]] = await Promise.all([
+    db.select({ branch: testRuns.branch }).from(testRuns).where(eq(testRuns.id, cluster.lastSeenRunId)),
+    db
+      .select({ affectedTests: sql<number>`count(distinct ${testRunsCases.testCaseId})` })
+      .from(testRunsCases)
+      .where(eq(testRunsCases.failureClusterId, cluster.id)),
+  ]);
+  const affectedTests = Number(countRow?.affectedTests ?? 0);
+  const stateRunIds = await clusterStateRunIds(db, cluster, lastRun?.branch ?? null, affectedTests);
+  return goesOnFromStateRuns(stateRunIds, cluster.lastSeenRunId);
+}
+
 /** Affected tests the cluster detail payload lists; `affectedTests` carries the full count. */
 export const CLUSTER_DETAIL_TESTS_LIMIT = 50;
 
@@ -346,16 +371,15 @@ export async function getFailureCluster(
     ? { name: annotationOwner, source: 'annotation' as const }
     : (null as { name: string; source: 'annotation' | 'codeowners' } | null);
 
-  // The project's recent runs, newest first — the frame for the occurrence
-  // sparkline (last 20) and for whether the failure goes on. The "still failing
-  // / quiet" decision reads its own runs (`clusterStateRunIds`).
-  const projectRuns = await db
-    .select({ id: testRuns.id, startedAt: testRuns.startTime, status: testRuns.status })
+  // The project's 20 most recent runs, newest first: the frame of the occurrence
+  // sparkline. Whether the failure goes on and the "still failing / quiet"
+  // decision read their own runs (`clusterStateRunIds`).
+  const seriesRuns: Array<{ id: number; startedAt: Date }> = await db
+    .select({ id: testRuns.id, startedAt: testRuns.startTime })
     .from(testRuns)
     .where(eq(testRuns.projectId, cluster.projectId))
     .orderBy(desc(testRuns.startTime), desc(testRuns.id))
-    .limit(50);
-  const seriesRuns = projectRuns.slice(0, 20);
+    .limit(20);
   const seriesRunIds = seriesRuns.map((r) => r.id);
   const occurrenceRows =
     seriesRunIds.length > 0
@@ -373,14 +397,16 @@ export async function getFailureCluster(
 
   const quarantinedCount = await countQuarantinedClusterTests(db, cluster.projectId, clusterId);
 
-  // Whether the failure goes on in the project's latest finished run, and the Done
-  // ticket to reconcile once it stopped: the rules the execution page follows too.
-  const latestFinishedRun =
-    projectRuns.find((r) => !(UNFINISHED_RUN_STATUSES as readonly string[]).includes(r.status)) ?? null;
-  const goesOn = failureGoesOn(
-    lastRun ? { id: cluster.lastSeenRunId, startTime: lastRun.startTime } : null,
-    latestFinishedRun ? { id: latestFinishedRun.id, startTime: latestFinishedRun.startedAt } : null,
+  // The runs since the last occurrence that could have shown the failure (the state line's frame); from them, whether
+  // the failure goes on and the Done ticket to reconcile once it stopped: the rules the execution page follows too
+  // (`clusterFailureGoesOn`).
+  const stateRunIds = await clusterStateRunIds(
+    db,
+    cluster,
+    lastRun?.branch ?? null,
+    Number(countRow?.affectedTests ?? 0),
   );
+  const goesOn = goesOnFromStateRuns(stateRunIds, cluster.lastSeenRunId);
   const ticketDoneKey = ticketReconcileKey(
     {
       status: cluster.status ?? 'open',
@@ -395,12 +421,6 @@ export async function getFailureCluster(
   // The cluster's diagnosed patch: whether it still applied at the verified fix's
   // commit decides both whether that fix is confirmed and the next step.
   const patchFacts = await getClusterPatchFacts(db, clusterId, { fixLandedRunId: cluster.fixLandedRunId });
-  const stateRunIds = await clusterStateRunIds(
-    db,
-    cluster,
-    lastRun?.branch ?? null,
-    Number(countRow?.affectedTests ?? 0),
-  );
 
   const clusterState: ClusterState = computeClusterState(
     {

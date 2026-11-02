@@ -69,14 +69,15 @@ export interface ClusterStateProject {
   /** The project's run ids, newest first (by start time). */
   runIdsNewestFirst: number[];
   /**
-   * Whether the failure goes on (`failureGoesOn`). A Done ticket is reconciled
-   * only once it stopped; unset reads as going on.
+   * Whether the failure goes on: no run since its last occurrence could have
+   * shown it (`clusterFailureGoesOn`). A Done ticket is reconciled only once it
+   * stopped; unset reads as going on.
    */
   failureGoesOn?: boolean;
   now?: Date;
 }
 
-/** A run as the failure-goes-on rule reads it: its id and its start time. */
+/** A run as run order reads it: its id and its start time. */
 export interface RunPoint {
   id: number;
   startTime: string | Date | number | null;
@@ -90,21 +91,6 @@ export function runStartedAfter(a: RunPoint, b: RunPoint): boolean {
   const aStart = toEpochMs(a.startTime) ?? -Infinity;
   const bStart = toEpochMs(b.startTime) ?? -Infinity;
   return aStart > bStart || (aStart === bStart && a.id > b.id);
-}
-
-/**
- * Whether a cluster's failure goes on: it was last seen in the project's latest
- * finished run or in a later one, or no run has finished yet. A run still in
- * progress never counts as one the failure skipped. Runs are ordered by start
- * time, then by id when two started in the same second.
- */
-export function failureGoesOn(
-  lastSeen: RunPoint | null | undefined,
-  latestFinished: RunPoint | null | undefined,
-): boolean {
-  if (!latestFinished) return true;
-  if (!lastSeen) return false;
-  return lastSeen.id === latestFinished.id || runStartedAfter(lastSeen, latestFinished);
 }
 
 /**

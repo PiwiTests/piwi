@@ -10,7 +10,7 @@ import {
   networkRequests,
   quarantinedTests,
 } from '../../server/database/schema';
-import { eq, and, or, desc, gt, gte, ne, sql, inArray, isNull, isNotNull, notInArray } from 'drizzle-orm';
+import { eq, and, or, desc, gt, gte, ne, sql, inArray, isNull, isNotNull } from 'drizzle-orm';
 import { makeTimeBuckets } from './analytics/common';
 import type { Granularity } from '../analytics/period';
 import { computeWastedMs, DEFAULT_WASTED_WAIT_PATTERNS } from '../utils/wasted-waits';
@@ -21,10 +21,10 @@ import { buildSituation } from '../situation';
 import { summarizeNewerExecutions, type NewerExecutionRow } from '../latest-execution';
 import { computeNextStep } from '../next-step';
 import { describeDidNotRun } from '../did-not-run';
-import { failureGoesOn, ticketReconcileKey } from '#shared/cluster-state';
-import { getClusterPatchFacts, getHealingStepFacts } from './failure-clusters';
+import { ticketReconcileKey } from '#shared/cluster-state';
+import { clusterFailureGoesOn, getClusterPatchFacts, getHealingStepFacts } from './failure-clusters';
 import { isLabRun, notLabExecution, notLabRun } from './probes';
-import { eligibleRunSql, UNFINISHED_RUN_STATUSES } from '../run-eligibility';
+import { eligibleRunSql } from '../run-eligibility';
 import { getFlakeProfile, mayHaveFlakeSuspects } from './flake-profile';
 import { getFlakeLabStepFacts, getFlakeSuspectResults, type FlakeSuspectResult } from './flake-lab';
 import { isPassiveCapabilityDeclined } from './capabilities';
@@ -440,22 +440,7 @@ export async function getTestRunCase(
       // A Done issue on a failure that goes on calls for a new issue, and on one
       // that stopped, for marking the cluster resolved: the rules the cluster page
       // follows. Read only when the issue is Done.
-      let goesOn: boolean | null = null;
-      if (knownIssue?.statusCategory === 'done') {
-        const [latestFinished] = await db
-          .select({ id: testRuns.id, startTime: testRuns.startTime })
-          .from(testRuns)
-          .where(
-            and(eq(testRuns.projectId, cluster.projectId), notInArray(testRuns.status, [...UNFINISHED_RUN_STATUSES])),
-          )
-          .orderBy(desc(testRuns.startTime), desc(testRuns.id))
-          .limit(1);
-        const [lastSeen] = await db
-          .select({ id: testRuns.id, startTime: testRuns.startTime })
-          .from(testRuns)
-          .where(eq(testRuns.id, cluster.lastSeenRunId));
-        goesOn = failureGoesOn(lastSeen ?? null, latestFinished ?? null);
-      }
+      const goesOn = knownIssue?.statusCategory === 'done' ? await clusterFailureGoesOn(db, cluster) : null;
       ticketDoneKey =
         goesOn === null
           ? null
