@@ -4,7 +4,7 @@ import { subscriptions, notificationChannels } from '../../database/schema';
 import { getRequestAccess, requireAuth } from '../../utils/auth';
 import { formatSubscription } from '../../utils/subscriptions';
 import { NOTIFICATION_EVENTS } from '#shared/notification-events';
-import { subscriptionFiltersSchema } from '#shared/subscription-filters';
+import { digestAtSchema, subscriptionFiltersSchema } from '#shared/subscription-filters';
 import { isAdministrator } from '#shared/permissions';
 import { z } from 'zod';
 
@@ -21,14 +21,10 @@ defineRouteMeta({
 
 const schema = z.object({
   channelId: z.number().int().positive().optional(),
-  events: z.array(z.enum(NOTIFICATION_EVENTS)).optional(),
+  events: z.array(z.enum(NOTIFICATION_EVENTS)).max(NOTIFICATION_EVENTS.length).optional(),
   filters: subscriptionFiltersSchema.nullable().optional(),
   mode: z.enum(['realtime', 'digest']).optional(),
-  digestAt: z
-    .string()
-    .regex(/^\d{1,2}:\d{2}$/)
-    .nullable()
-    .optional(),
+  digestAt: digestAtSchema.nullable().optional(),
   mutedUntil: z.string().datetime().nullable().optional(),
   active: z.boolean().optional(),
 });

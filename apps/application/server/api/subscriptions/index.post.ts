@@ -4,7 +4,7 @@ import { getRequestAccess, requireAuth, isAuthEnabled } from '../../utils/auth';
 import { getProjectScope, scopeAllows } from '../../utils/project-access';
 import { formatSubscription } from '../../utils/subscriptions';
 import { NOTIFICATION_EVENTS } from '#shared/notification-events';
-import { subscriptionFiltersSchema } from '#shared/subscription-filters';
+import { digestAtSchema, subscriptionFiltersSchema } from '#shared/subscription-filters';
 import { isAdministrator } from '#shared/permissions';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
@@ -22,13 +22,10 @@ defineRouteMeta({
 const schema = z.object({
   channelId: z.number().int(),
   projectId: z.number().int().nullable().optional(),
-  events: z.array(z.enum(NOTIFICATION_EVENTS)).min(1),
+  events: z.array(z.enum(NOTIFICATION_EVENTS)).min(1).max(NOTIFICATION_EVENTS.length),
   filters: subscriptionFiltersSchema.optional(),
   mode: z.enum(['realtime', 'digest']).optional(),
-  digestAt: z
-    .string()
-    .regex(/^\d{1,2}:\d{2}$/)
-    .optional(),
+  digestAt: digestAtSchema.optional(),
   global: z.boolean().optional(), // admin only: instance-wide (userId=null) subscription
 });
 

@@ -38,7 +38,7 @@ import {
   type RoutePermission,
 } from '#shared/permissions';
 import { NOTIFICATION_EVENTS } from '#shared/notification-events';
-import { subscriptionFiltersSchema } from '#shared/subscription-filters';
+import { digestAtSchema, subscriptionFiltersSchema } from '#shared/subscription-filters';
 import { MARKER_CATEGORY_IDS } from '#shared/marker-categories';
 import { getUserAccess } from '#shared/handlers/role-bindings';
 import { createGroup, deleteGroup, setGroupMembers, updateGroup } from '#shared/handlers/groups';
@@ -4092,13 +4092,18 @@ routes.push(
         digestAt?: string | null;
       };
       const events = b.events ?? [];
-      if (events.length === 0 || events.some((e) => !(NOTIFICATION_EVENTS as readonly string[]).includes(e))) {
+      if (
+        events.length === 0 ||
+        events.length > NOTIFICATION_EVENTS.length ||
+        events.some((e) => !(NOTIFICATION_EVENTS as readonly string[]).includes(e))
+      ) {
         throw demoHttpError(400, 'events must contain at least one valid event');
       }
       const filters = subscriptionFiltersSchema.optional().safeParse(b.filters);
-      if (!filters.success) throw demoHttpError(400, 'Invalid request body');
+      const digest = digestAtSchema.optional().safeParse(b.digestAt);
+      if (!filters.success || !digest.success) throw demoHttpError(400, 'Invalid request body');
       const mode = b.mode === 'digest' ? 'digest' : 'realtime';
-      const digestAt = typeof b.digestAt === 'string' && /^\d{1,2}:\d{2}$/.test(b.digestAt) ? b.digestAt : null;
+      const digestAt = digest.data ?? null;
       const sub: DemoSubscription = {
         id: _nextSubId++,
         userId: null,
@@ -4126,7 +4131,11 @@ routes.push(
       if (!sub) throw demoHttpError(404, 'Subscription not found');
       const b = body as Partial<DemoSubscription>;
       if (b.events) {
-        if (b.events.length === 0 || b.events.some((e) => !(NOTIFICATION_EVENTS as readonly string[]).includes(e))) {
+        if (
+          b.events.length === 0 ||
+          b.events.length > NOTIFICATION_EVENTS.length ||
+          b.events.some((e) => !(NOTIFICATION_EVENTS as readonly string[]).includes(e))
+        ) {
           throw demoHttpError(400, 'events must contain at least one valid event');
         }
         sub.events = b.events;
@@ -4137,7 +4146,11 @@ routes.push(
         if (!filters.success) throw demoHttpError(400, 'Invalid request body');
         sub.filters = filters.data;
       }
-      if (b.digestAt !== undefined) sub.digestAt = b.digestAt;
+      if (b.digestAt !== undefined) {
+        const digest = digestAtSchema.nullable().safeParse(b.digestAt);
+        if (!digest.success) throw demoHttpError(400, 'Invalid request body');
+        sub.digestAt = digest.data;
+      }
       if (b.mutedUntil !== undefined) sub.mutedUntil = b.mutedUntil;
       if (b.active !== undefined) sub.active = b.active;
       sub.updatedAt = new Date().toISOString();
