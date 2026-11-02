@@ -1006,7 +1006,9 @@ export class PiwiDashboardReporter {
    * carry no result, so they're emitted with zero duration and no error. In
    * streaming mode they're queued as complete events so the pre-finish drain
    * sends them alongside the rest. The `reason` (global timeout / max failures /
-   * interrupted) is resolved once from the overall run status by the caller.
+   * interrupted) is resolved once from the overall run status by the caller. A
+   * test declared skipped (`test.skip()`, `test.fixme()`, a skipped describe)
+   * is sent as `skipped`: it is a skip whether the run reached it or not.
    */
   private materializeUnrunTests(reason: string): void {
     for (const test of this.plannedTests) {
@@ -1016,12 +1018,13 @@ export class PiwiDashboardReporter {
       const declaredAnnotations = (test.annotations ?? []) as TestAnnotation[];
       const tags = collectTestTags(test);
       const locks = collectTestLocks(test);
+      const skipped = test.expectedStatus === 'skipped';
       const testCase: CollectedTestCase = {
         type: 'complete',
         testId: test.id,
         title: test.title,
         location: testLocation(test, this.testPathBase),
-        status: 'didnotrun',
+        status: skipped ? 'skipped' : 'didnotrun',
         duration: 0,
         timeout: test.timeout ?? null,
         error: null,
@@ -1039,13 +1042,14 @@ export class PiwiDashboardReporter {
         locks: locks.length ? locks : null,
         testMeta: collectTestMetadata(declaredAnnotations),
         ...this.externalIdFields(test),
-        didNotRunReason: reason,
+        didNotRunReason: skipped ? null : reason,
         expectedStatus: test.expectedStatus ?? null,
       };
 
       this.testCases.push(testCase);
       this.totalTests++;
-      this.didNotRunTests++;
+      if (skipped) this.skippedTests++;
+      else this.didNotRunTests++;
 
       if (this.streamManager) {
         this.streamManager.queueEvent(toWireTestCase(testCase) as StreamEvent);

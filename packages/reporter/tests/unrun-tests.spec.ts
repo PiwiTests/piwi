@@ -71,4 +71,23 @@ describe('the tests a run never reached, on the wire', () => {
     const stopped = await submitted(tests, attempts, 'failed', { maxFailures: 2 });
     expect(sentCase(stopped, 'ships')).toMatchObject({ status: 'didnotrun', didNotRunReason: 'max-failures' });
   });
+
+  it('sends a test declared skipped as skipped when the run stopped before it', async () => {
+    const suite = fakeSuite();
+    const pays = fakeTestCase({ id: 'pays', title: 'pays', line: 1, parent: suite });
+    // `test.skip('refunds', …)`: Playwright reports it as skipped once the run reaches it.
+    const refunds = fakeTestCase({
+      id: 'refunds',
+      title: 'refunds',
+      line: 2,
+      parent: suite,
+      expectedStatus: 'skipped',
+      annotations: [{ type: 'skip' }],
+    });
+    const ships = fakeTestCase({ id: 'ships', title: 'ships', line: 3, parent: suite });
+    const body = await submitted([pays, refunds, ships], [{ test: pays, status: 'failed' }], 'failed', { maxFailures: 1 });
+    expect(sentCase(body, 'refunds')).toMatchObject({ status: 'skipped', didNotRunReason: null });
+    expect(sentCase(body, 'ships')).toMatchObject({ status: 'didnotrun', didNotRunReason: 'max-failures' });
+    expect(body).toMatchObject({ totalTests: 3, failedTests: 1, skippedTests: 1, didNotRunTests: 1 });
+  });
 });
