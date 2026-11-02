@@ -480,8 +480,9 @@ On `onEnd`, the collected run is handed to `RunSubmitter`, which tries, in order
 The ladder, including the stream drain and the remaining file uploads, runs within
 the `submitTimeout` budget: when it runs out, `HttpClient.close` fails every request
 in flight and every later one, so the ladder falls through to crash recovery. The
-file uploads, live ones included, end earlier, at the budget minus `FINISH_RESERVE_MS`
-(a minute, or a quarter of a shorter budget), so a streamed run's `/finish` still goes out.
+file uploads, live ones and their trace checks included, end earlier, at the budget minus
+`FINISH_RESERVE_MS` (a minute, or a quarter of a shorter budget), so a streamed run's
+`/finish` still goes out.
 
 A 401 with no credential configured, or a failed login, stops the ladder at once: no other rung can succeed, so
 the run goes to crash recovery. Nothing in the ladder throws out of `onEnd`, since Playwright counts a reporter's

@@ -246,9 +246,9 @@ export class HttpClient {
 
   /**
    * Send a JSON POST request. `auth` can be an API key (prefix `pd_`) or a session cookie string. Resolves to the
-   * answer's JSON; an answer that is not JSON fails.
+   * answer's JSON; an answer that is not JSON fails, and `signal` ends the request.
    */
-  async postJSON(pathname: string, payload: unknown, auth?: string | null): Promise<any> {
+  async postJSON(pathname: string, payload: unknown, auth?: string | null, signal?: AbortSignal): Promise<any> {
     const body = JSON.stringify(payload);
     const res = await this.request('POST', pathname, {
       headers: {
@@ -257,6 +257,7 @@ export class HttpClient {
       },
       body,
       auth,
+      signal,
     });
     if (res.status < 200 || res.status >= 300) {
       this.logger.debugError(`Response: ${res.text}`);

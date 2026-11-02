@@ -132,6 +132,21 @@ describe('FileHandler.listReport', () => {
   });
 });
 
+describe('FileHandler.checkMissingTraces', () => {
+  it('asks nothing once the signal is aborted, and takes every trace as missing', async () => {
+    const postJSON = vi.fn(async () => ({ missing: [] }));
+    const missing = await new FileHandler(logger).checkMissingTraces(
+      { postJSON },
+      'proj',
+      new Map([[0, { hash: 'abc' }]]),
+      null,
+      AbortSignal.abort(),
+    );
+    expect(postJSON).not.toHaveBeenCalled();
+    expect([...missing]).toEqual(['abc']);
+  });
+});
+
 describe('FileHandler.compressReport', () => {
   it('writes the archive to a temp file that cleanupBodyAttachments deletes', async () => {
     const handler = new FileHandler(logger);

@@ -350,18 +350,23 @@ export class FileHandler {
     };
   }
 
-  /** Ask the server which trace hashes it already has, returning the set of hashes that are missing */
+  /**
+   * Ask the server which trace hashes it already has, returning the set of hashes that are missing: all of them when
+   * it does not say. `signal` ends the check, and once it is aborted no check is made.
+   */
   async checkMissingTraces(
-    httpClient: { postJSON(path: string, payload: any, auth?: string | null): Promise<any> },
+    httpClient: { postJSON(path: string, payload: any, auth?: string | null, signal?: AbortSignal): Promise<any> },
     projectName: string,
     traceHashMap: Map<number, { hash: string }>,
     auth: string | null,
+    signal?: AbortSignal,
   ): Promise<Set<string>> {
     if (traceHashMap.size === 0) return new Set();
     const hashes = [...traceHashMap.values()].map((h) => h.hash);
+    if (signal?.aborted) return new Set(hashes);
 
     try {
-      const response = await httpClient.postJSON('/api/traces/check', { projectName, hashes }, auth);
+      const response = await httpClient.postJSON('/api/traces/check', { projectName, hashes }, auth, signal);
       const missing = Array.isArray(response.missing) ? response.missing : hashes;
       return new Set(missing);
     } catch {

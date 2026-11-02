@@ -632,6 +632,55 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     server.server.closeAllConnections();
   });
 
+  it('keeps part of submitTimeout for /finish: a trace check that hangs is cut short and the run is finished', async () => {
+    const trace = path.join(reportDir(), 'trace.zip');
+    fs.writeFileSync(trace, 'TRACE');
+    let finishes = 0;
+    server = await startServer((req, res) => {
+      if (req.url === '/api/test-runs/start') {
+        jsonRes(res, 200, { runId: 1, streamToken: 'tok' });
+      } else if (req.url === '/api/test-runs/1/events') {
+        jsonRes(res, 200, {});
+      } else if (req.url === '/api/traces/check') {
+        // Takes the check and never answers.
+      } else if (req.url === '/api/test-runs/1/finish') {
+        finishes++;
+        jsonRes(res, 200, { success: true, runId: 1 });
+      } else {
+        textRes(res, 404, 'nope');
+      }
+    });
+
+    const reporter = new PiwiDashboardReporter({
+      serverUrl: server.url,
+      projectName,
+      streaming: true,
+      uploadReport: false,
+      uploadTraces: true,
+      streamingBatchDelay: 50,
+      submitTimeout: 2000,
+    });
+    const suite = fakeSuite();
+    const test = fakeTestCase({ title: 'hung-trace-check-test', parent: suite });
+    suite.allTests = () => [test];
+    reporter.onBegin(fakeConfig(), suite);
+    reporter.onTestBegin(test, fakeResult({ workerIndex: 0 }));
+    reporter.onTestEnd(
+      test,
+      fakeResult({
+        status: 'failed',
+        workerIndex: 0,
+        attachments: [{ name: 'trace', contentType: 'application/zip', path: trace }],
+      }),
+    );
+    await reporter.onEnd({ status: 'failed' } as any);
+
+    expect(urlsHit(server)).toContain('/api/traces/check');
+    expect(finishes).toBe(1);
+    expect(fs.existsSync(recoveryFilePath(server.url, projectName))).toBe(false);
+    server.server.closeAllConnections();
+  });
+
   it('a non-finite submitTimeout means no limit', async () => {
     server = await startServer((req, res) =>
       req.url === '/api/test-runs/submit' ? jsonRes(res, 200, { runId: 5 }) : textRes(res, 404, 'nope'),

@@ -182,7 +182,7 @@ export class Uploader {
    * Upload one test case's trace and attachments for a streaming run.
    * The matching `complete` event must have been flushed to the server first.
    * Returns `false` when the case has no files to upload. `signal` ends the
-   * upload, or fails it before it starts.
+   * upload, its trace check included, or fails it before it starts.
    */
   async uploadCaseFiles(
     projectName: string,
@@ -211,6 +211,7 @@ export class Uploader {
         projectName,
         new Map([[0, traceInfo]]),
         auth,
+        signal,
       );
     }
 
