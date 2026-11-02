@@ -97,6 +97,13 @@ export interface ImportPort {
     digest?: string;
   }): Promise<StoredImportFile>;
 
+  /**
+   * Remove what an import stored for a run it discarded: the run's own files,
+   * and those of `blobIds` (deduplicated traces) nothing references any more.
+   * A host whose storage is swept by other means leaves it out.
+   */
+  discardFiles?(db: DrizzleDB, input: { projectId: number; runId: number; blobIds: number[] }): Promise<void>;
+
   /** Console entries recovered from a trace archive's bytes. */
   readTraceConsole(bytes: Uint8Array, startedAt: number | null): Promise<unknown>;
 
@@ -393,7 +400,8 @@ export async function importBlobReportRun(
   } catch (error) {
     // A failed import leaves no run behind, so a retry of the same archive is
     // not taken for a duplicate of it.
-    await discardImportedRun(db, port, run.id);
+    const stagedBlobIds = [...stagedTraces.values()].flat().map((staged) => staged.file.blobId);
+    await discardImportedRun(db, port, { projectId, runId: run.id, stagedBlobIds });
     throw error;
   }
 
@@ -506,10 +514,11 @@ export async function importTraceRun(
   if (!run) throw new Error('Failed to create the imported test run');
 
   let traceCount = 0;
+  let stored: StoredImportFile | null = null;
   try {
     // Stage the trace first: its stored path is derived from the bytes, so it
     // doubles as the check for whether this very trace is already in the run.
-    const stored = await port.storeFile({
+    stored = await port.storeFile({
       projectId,
       testRunId: run.id,
       testRunsCaseId: null,
@@ -557,7 +566,9 @@ export async function importTraceRun(
   } catch (error) {
     // A failed import leaves no run of its own behind, so a retry of the same
     // trace is not taken for a duplicate of it.
-    if (createdRun) await discardImportedRun(db, port, run.id);
+    if (createdRun) {
+      await discardImportedRun(db, port, { projectId, runId: run.id, stagedBlobIds: [stored?.blobId] });
+    }
     throw error;
   }
 
@@ -579,16 +590,28 @@ export async function importTraceRun(
 
 /**
  * Remove a run an import created and could not finish, with the rows written
- * for it so far. Child rows are deleted explicitly, since the in-browser
- * database does not enforce foreign keys. A failure here is only reported, so
- * the caller rethrows the import's own error.
+ * for it so far, then the files it stored (`ImportPort.discardFiles`): the
+ * run's own, and the deduplicated traces it staged or linked that nothing else
+ * references. Child rows are deleted explicitly, since the in-browser database
+ * does not enforce foreign keys. A failure here is only reported, so the
+ * caller rethrows the import's own error.
  */
-async function discardImportedRun(db: DrizzleDB, port: ImportPort, runId: number): Promise<void> {
+async function discardImportedRun(
+  db: DrizzleDB,
+  port: ImportPort,
+  input: { projectId: number; runId: number; stagedBlobIds: Array<number | null | undefined> },
+): Promise<void> {
+  const { projectId, runId } = input;
   try {
+    const linked = await db.select({ blobId: files.blobId }).from(files).where(eq(files.testRunId, runId));
     await db.delete(files).where(eq(files.testRunId, runId));
     await db.delete(networkRequests).where(eq(networkRequests.testRunId, runId));
     await db.delete(testRunsCases).where(eq(testRunsCases.testRunId, runId));
     await db.delete(testRuns).where(eq(testRuns.id, runId));
+    const blobIds = [...new Set([...input.stagedBlobIds, ...linked.map((row) => row.blobId)])].filter(
+      (id): id is number => typeof id === 'number',
+    );
+    await port.discardFiles?.(db, { projectId, runId, blobIds });
   } catch (error) {
     port.warn?.(`Could not remove the unfinished run #${runId}: ${error}`);
   }

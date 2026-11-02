@@ -14,6 +14,7 @@ import { resolveMaxUploadBytes } from './upload-limits';
 import { sanitizeFilename } from './sanitize-filename';
 import { persistRunCases } from './persist-run-cases';
 import { upsertTraceBlob } from './trace-blobs';
+import { deleteRunStorageDir, gcTraceBlobs } from './delete-run-files';
 import { parseBlobReport, BlobReportError } from './blob-report';
 import { parseTraceArchive, looksLikeTrace, TraceImportError } from './trace-import';
 import { openArchive, ArchiveError } from './archive-reader';
@@ -183,6 +184,11 @@ function createServerImportPort(): ImportPort {
           message: `The archive's files could not be stored, so nothing was imported: ${error instanceof Error ? error.message : String(error)}`,
         });
       }
+    },
+
+    async discardFiles(db, { projectId, runId, blobIds }) {
+      await deleteRunStorageDir(projectId, runId);
+      await gcTraceBlobs(db as never, blobIds);
     },
 
     async readTraceConsole(bytes, startedAt) {
