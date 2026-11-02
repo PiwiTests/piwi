@@ -1,5 +1,6 @@
 ---
 title: Fix a broken locator
+titleTemplate: ":title in Playwright after a UI change | Piwi"
 description: "A UI change broke a Playwright locator. Piwi proposes ranked replacements captured from the last run where the test passed, and points at the line to change."
 lang: en-US
 ---
