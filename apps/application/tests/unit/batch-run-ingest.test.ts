@@ -128,6 +128,13 @@ describe('a batch body', () => {
     expect(await db.select().from(schema.testRunsCases)).toHaveLength(4);
   });
 
+  test('with a test of an empty title is stored, as Playwright runs it', async () => {
+    await submit({
+      body: runBody({ testCases: [{ title: '', location: 'tests/pay.spec.ts:3:1', status: 'passed' }] }),
+    });
+    expect(await db.select().from(schema.testRunsCases)).toHaveLength(1);
+  });
+
   test.each([
     ['testCases', { testCases: 'nope' }],
     ['status', { status: 'exploded' }],

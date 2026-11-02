@@ -13,7 +13,8 @@ const optionalString = z.string().nullish();
  * stored, and a field the schema does not name passes.
  */
 const wireCaseSchema = z.object({
-  title: z.string().min(1),
+  // Playwright accepts an empty title.
+  title: z.string(),
   location: optionalString,
   status: z.string().min(1),
   duration: optionalNumber,
