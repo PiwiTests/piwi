@@ -328,24 +328,6 @@ describe('merging two clusters keeps their triage and history', () => {
     expect(mergedTriage(triage('open'), triage('resolved'), now).status).toBeUndefined();
   });
 
-  test("the survivor's assignee wins, else the victim's; a victim's note it lacks is appended", () => {
-    expect(mergedTriage(triage('open', { assignee: 'ada' }), triage('open', { assignee: 'bob' }), now).assignee).toBe(
-      'ada',
-    );
-    expect(mergedTriage(triage('open'), triage('open', { assignee: 'bob' }), now).assignee).toBe('bob');
-    expect(
-      mergedTriage(triage('open', { triageNote: 'Cart API' }), triage('open', { triageNote: 'Flaky on CI' }), now)
-        .triageNote,
-    ).toBe('Cart API\nFlaky on CI');
-    expect(
-      mergedTriage(
-        triage('open', { triageNote: 'Cart API\nFlaky on CI' }),
-        triage('open', { triageNote: 'Flaky on CI' }),
-        now,
-      ).triageNote,
-    ).toBe('Cart API\nFlaky on CI');
-  });
-
   async function insertCluster(id: number, values: Record<string, unknown> = {}) {
     await db.insert(schema.failureClusters).values({
       id,
@@ -357,6 +339,42 @@ describe('merging two clusters keeps their triage and history', () => {
       ...values,
     });
   }
+
+  async function survivorTriage(id: number) {
+    const [row] = await db
+      .select({ assignee: schema.failureClusters.assignee, triageNote: schema.failureClusters.triageNote })
+      .from(schema.failureClusters)
+      .where(eq(schema.failureClusters.id, id));
+    return row;
+  }
+
+  test("the survivor's assignee wins, else the victim's; a victim's note it lacks is appended", async () => {
+    await insertCluster(1, { assignee: 'ada', triageNote: 'Cart API' });
+    await insertCluster(2, { assignee: 'bob', triageNote: 'Flaky on CI' });
+    await mergeFailureClusters(dbc, 1, 2);
+    expect(await survivorTriage(1)).toEqual({ assignee: 'ada', triageNote: 'Cart API\nFlaky on CI' });
+
+    await insertCluster(3, { triageNote: 'Cart API\nFlaky on CI' });
+    await insertCluster(4, { assignee: 'bob', triageNote: 'Flaky on CI' });
+    await mergeFailureClusters(dbc, 3, 4);
+    expect(await survivorTriage(3)).toEqual({ assignee: 'bob', triageNote: 'Cart API\nFlaky on CI' });
+  });
+
+  test('an assignee or a note line written to the survivor while the merge runs is kept', async () => {
+    await insertCluster(1, { triageNote: 'Cart API' });
+    await insertCluster(2, { assignee: 'bob', triageNote: 'Flaky on CI' });
+    // Another connection's write committed between the merge's read of the survivor and its update, as PostgreSQL's
+    // read committed isolation lets it: a trigger on the alias the merge records in between stands in for it.
+    await client.execute(`CREATE TRIGGER concurrent_triage AFTER INSERT ON failure_cluster_aliases BEGIN
+      UPDATE failure_clusters SET assignee = 'ada', triage_note = triage_note || char(10) || 'Reopened automatically: failed again in run #9'
+      WHERE id = NEW.cluster_id;
+    END`);
+    await mergeFailureClusters(dbc, 1, 2);
+    expect(await survivorTriage(1)).toEqual({
+      assignee: 'ada',
+      triageNote: 'Cart API\nReopened automatically: failed again in run #9\nFlaky on CI',
+    });
+  });
 
   test('the survivor takes the triage, fix attempts, tracker writes, agent calls and rejections of the victim', async () => {
     await insertCluster(1, { status: 'resolved', triageNote: 'Fixed by the cart refactor' });

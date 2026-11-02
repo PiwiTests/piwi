@@ -45,7 +45,6 @@ vi.mock('../../server/utils/scm', () => ({
 delete process.env.PIWI_DATABASE_URL;
 const { verifyClusterFixes, classifyQuietRun, classifyFailingRun, healKeysFromCommits } =
   await import('../../server/utils/fix-verification');
-const { appendTriageNote } = await import('../../shared/handlers/failure-cluster-ops');
 const { getClusterPatchFacts, getFailureCluster } = await import('../../shared/handlers/failure-clusters');
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
@@ -143,16 +142,6 @@ beforeEach(() => {
   commitAuthor = null;
   filesAtRef = {};
   whileFetching = null;
-});
-
-describe('appendTriageNote', () => {
-  test('keeps what a person wrote and adds the system line below it', () => {
-    expect(appendTriageNote('Closed by hand', 'Reopened automatically: regressed in run #3')).toBe(
-      'Closed by hand\nReopened automatically: regressed in run #3',
-    );
-    expect(appendTriageNote('  ', 'line')).toBe('line');
-    expect(appendTriageNote(null, 'line')).toBe('line');
-  });
 });
 
 describe('verifyClusterFixes — status transitions', () => {

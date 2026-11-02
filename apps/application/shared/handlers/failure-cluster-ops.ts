@@ -474,20 +474,16 @@ export async function getOrCreateFailureClusters(
 /** The triage fields the merge policy reads from both clusters. */
 interface MergedTriage extends SnoozeState {
   status: string;
-  assignee: string | null;
-  triageNote: string | null;
 }
 
 /**
- * The survivor's triage once the victim merged into it. A live failure is never
- * buried: when either cluster is open and not snoozed, the survivor ends open,
- * its resolved or ignored status, or its snooze, cleared; otherwise it keeps its
- * status and snooze. The survivor's assignee wins, else the victim's, and a
- * victim's note the survivor lacks is appended to the survivor's.
+ * The survivor's status and snooze once the victim merged into it. A live
+ * failure is never buried: when either cluster is open and not snoozed, the
+ * survivor ends open, its resolved or ignored status, or its snooze, cleared;
+ * otherwise it keeps its status and snooze.
  */
 export function mergedTriage(survivor: MergedTriage, victim: MergedTriage, now: Date = new Date()) {
   const live = (c: MergedTriage) => c.status === 'open' && !isCurrentlySnoozed(c, now);
-  const victimNote = victim.triageNote?.trim();
   return {
     ...(live(survivor) || !live(victim)
       ? {}
@@ -495,17 +491,34 @@ export function mergedTriage(survivor: MergedTriage, victim: MergedTriage, now: 
           status: 'open',
           ...(isCurrentlySnoozed(survivor, now) ? { snoozedUntil: null, snoozeMode: null } : {}),
         }),
-    assignee: survivor.assignee?.trim() ? survivor.assignee : victim.assignee,
-    triageNote:
-      victimNote && !survivor.triageNote?.includes(victimNote)
-        ? appendTriageNote(survivor.triageNote, victimNote)
-        : survivor.triageNote,
   };
 }
 
 /**
+ * SQL: the survivor's assignee once the victim merged into it: its own, else
+ * the victim's. It reads the assignee of the row the UPDATE changes, so an
+ * assignment made meanwhile is kept.
+ */
+function mergedAssignee(victimAssignee: string | null): SQL {
+  const assignee = failureClusters.assignee;
+  return sql`case when trim(coalesce(${assignee}, '')) <> '' then ${assignee} else cast(${victimAssignee} as text) end`;
+}
+
+/**
+ * SQL: the survivor's triage note once the victim merged into it, the
+ * victim's note appended below it when the survivor's does not hold it already
+ * (`appendedTriageNote`). It reads the note of the row the UPDATE changes, so
+ * an edit or a line Piwi added meanwhile is kept.
+ */
+function mergedTriageNote(victimNote: string): SQL {
+  const note = sql`coalesce(${failureClusters.triageNote}, '')`;
+  return sql`case when replace(${note}, cast(${victimNote} as text), '') = ${note} then ${appendedTriageNote(victimNote)} else ${failureClusters.triageNote} end`;
+}
+
+/**
  * Merge one failure cluster into another. The `survivorId` cluster keeps its
- * manual base commit and takes the triage `mergedTriage` gives it, and absorbs
+ * manual base commit, takes the status `mergedTriage` gives it, the victim's
+ * assignee when it has none and the victim's note when it lacks it, and absorbs
  * the victim: all linked test-run cases and diagnoses are re-pointed, with the
  * victim's links, fix attempts, its tracker writes and agent calls, and the
  * merges a person or the adjudicator decided against; occurrence counts are
@@ -664,10 +677,13 @@ export async function mergeFailureClusters(db: DrizzleDB, survivorId: number, vi
 
     if (survivor && victim) {
       const triage = mergedTriage(survivor, victim);
+      const victimNote = victim.triageNote?.trim();
       await tx
         .update(failureClusters)
         .set({
           ...triage,
+          assignee: mergedAssignee(victim.assignee),
+          ...(victimNote ? { triageNote: mergedTriageNote(victimNote) } : {}),
           occurrences: (survivor.occurrences ?? 0) + (victim.occurrences ?? 0),
           firstSeenRunId: Math.min(survivor.firstSeenRunId, victim.firstSeenRunId),
           lastSeenRunId: Math.max(survivor.lastSeenRunId, victim.lastSeenRunId),
@@ -680,17 +696,10 @@ export async function mergeFailureClusters(db: DrizzleDB, survivorId: number, vi
   });
 }
 
-/** Append a system-written line to a triage note, keeping what a person wrote. */
-export function appendTriageNote(existing: string | null | undefined, line: string): string {
-  const current = existing?.trim();
-  return current ? `${current}\n${line}` : line;
-}
-
 /**
- * SQL: a cluster's triage note with a line Piwi writes appended below it, as
- * `appendTriageNote` does: what a person wrote stays, trimmed, and an empty
- * note becomes the line. It reads the note of the row the UPDATE changes, so
- * an edit made meanwhile is kept.
+ * SQL: a cluster's triage note with a line appended below it: what a person
+ * wrote stays, trimmed, and an empty note becomes the line. It reads the note
+ * of the row the UPDATE changes, so an edit made meanwhile is kept.
  */
 export function appendedTriageNote(line: string): SQL {
   const note = failureClusters.triageNote;
