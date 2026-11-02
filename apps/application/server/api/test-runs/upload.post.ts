@@ -22,6 +22,7 @@ import { resolveRunBranch } from '../../utils/run-branch';
 import { runCommit, runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../utils/run-events';
 import { runFinalizeSideEffects } from '../../utils/run-finalize-side-effects';
+import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { deliverOnce, readDeliveryKey } from '../../utils/run-deliveries';
 import {
   addBatchShard,
@@ -333,7 +334,10 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
       if (incomingResources) await saveResourceReportPart(db, run.id, incomingResources);
       await applyReporterKeep(db, run.id, testRunData.keep);
     } else {
-      // Create a new test run (standard batch upload)
+      // Create a new test run (standard batch upload). Like `/submit`, it replaces the instance's run still in flight:
+      // the stream that fell back to this upload, or a run registered for it, which would otherwise wait until the
+      // stale-run sweep marks it interrupted.
+      await cancelInstanceRuns(db, project.id, instanceId, undefined, !!(shardTotal && shardTotal > 1));
       const metadata = sanitizeMetadata(testRunData.metadata || null);
       const testRunResult = await db
         .insert(testRuns)
