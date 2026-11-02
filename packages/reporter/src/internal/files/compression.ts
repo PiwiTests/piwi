@@ -1,38 +1,57 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as zlib from 'node:zlib';
-import { promisify } from 'node:util';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 
-const gzipAsync = promisify(zlib.gzip);
+/** A file of a folder to archive. */
+export interface ArchiveFile {
+  /** Where the file is. */
+  path: string;
+  /** Its path relative to the archived folder, with forward slashes on every platform. */
+  name: string;
+  size: number;
+}
 
-/**
- * Recursively read a directory and pack all files into a gzip-compressed
- * archive (a concatenation of length-prefixed path+content pairs). Each path
- * is relative to the directory, with forward slashes on every platform.
- */
-export async function compressDirectory(sourceDir: string): Promise<Buffer> {
-  const files: Array<{ path: string; content: Buffer }> = [];
-
+/** Every file under `sourceDir`, with its name in the archive and its size. */
+export function listArchiveFiles(sourceDir: string): ArchiveFile[] {
+  const files: ArchiveFile[] = [];
   function collect(dir: string, baseDir = '') {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
-      const rel = baseDir ? `${baseDir}/${entry.name}` : entry.name;
-      if (entry.isDirectory()) collect(full, rel);
-      else if (entry.isFile()) files.push({ path: rel, content: fs.readFileSync(full) });
+      const name = baseDir ? `${baseDir}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) collect(full, name);
+      else if (entry.isFile()) files.push({ path: full, name, size: fs.statSync(full).size });
     }
   }
-
   collect(sourceDir);
+  return files;
+}
 
-  const parts: Buffer[] = [];
-  for (const f of files) {
-    const pb = Buffer.from(f.path, 'utf8');
-    const plb = Buffer.allocUnsafe(4);
-    plb.writeUInt32LE(pb.length, 0);
-    const clb = Buffer.allocUnsafe(4);
-    clb.writeUInt32LE(f.content.length, 0);
-    parts.push(plb, pb, clb, f.content);
+/** The archive's records: each file's name and content, each preceded by its length (32-bit little-endian). */
+async function* archiveRecords(files: ArchiveFile[]): AsyncGenerator<Buffer> {
+  for (const file of files) {
+    const name = Buffer.from(file.name, 'utf8');
+    const header = Buffer.alloc(8 + name.length);
+    header.writeUInt32LE(name.length, 0);
+    name.copy(header, 4);
+    header.writeUInt32LE(file.size, 4 + name.length);
+    yield header;
+    let read = 0;
+    if (file.size > 0) {
+      for await (const chunk of fs.createReadStream(file.path, { start: 0, end: file.size - 1 })) {
+        read += (chunk as Buffer).length;
+        yield chunk as Buffer;
+      }
+    }
+    if (read !== file.size) throw new Error(`${file.name} changed while it was archived`);
   }
+}
 
-  return await gzipAsync(Buffer.concat(parts), { level: 5 });
+/**
+ * Write the gzip-compressed archive of `files` to `target`: the records the dashboard extracts, read one file at a
+ * time as they are compressed, so neither the files nor the archive are ever held in memory whole.
+ */
+export async function writeArchive(files: ArchiveFile[], target: string): Promise<void> {
+  await pipeline(Readable.from(archiveRecords(files)), zlib.createGzip({ level: 5 }), fs.createWriteStream(target));
 }

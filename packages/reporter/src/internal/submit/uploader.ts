@@ -4,6 +4,7 @@ import FormData from 'form-data';
 import type { HttpClient } from '../transport/http-client.js';
 import { HttpError, deliveredRunId } from '../transport/http-client.js';
 import type { FileHandler } from '../files/file-handler.js';
+import type { ArchiveFile } from '../files/compression.js';
 import { Logger } from '../support/logger.js';
 import { serializeRun, toWireTestCase } from './serializer.js';
 import type { CollectedTestCase, TraceHashInfo, FilterDetails, WireResourceReport } from '../../types.js';
@@ -73,10 +74,11 @@ export interface ReportOptions {
   htmlReport?: { folder: string; since: number } | null;
 }
 
-/** A report found on disk, to upload with the run: its type, its folder and its label. */
+/** A report found on disk, to upload with the run: its type, its folder, its files and its label. */
 export interface FoundReport {
   type: string;
   dir: string;
+  files: ArchiveFile[];
   label?: string;
 }
 
@@ -260,7 +262,7 @@ export class Uploader {
     return true;
   }
 
-  /** The reports the options ask for that are on disk. */
+  /** The reports the options ask for that are on disk, each within the upload limit. */
   findReports(reportOptions: ReportOptions): FoundReport[] {
     const list: Array<{ type: string; dir?: string; label?: string }> = reportOptions.reports
       ? [...reportOptions.reports]
@@ -280,7 +282,8 @@ export class Uploader {
         this.logger.debug(`No report directory found for type '${cfg.type}'`);
         continue;
       }
-      found.push({ type: cfg.type, dir: reportDir, ...(cfg.label ? { label: cfg.label } : {}) });
+      const files = this.fileHandler.listReport(reportDir);
+      if (files) found.push({ type: cfg.type, dir: reportDir, files, ...(cfg.label ? { label: cfg.label } : {}) });
     }
     return found;
   }
@@ -300,9 +303,9 @@ export class Uploader {
 
   private async appendReportsToForm(form: FormData, reports: FoundReport[]): Promise<void> {
     for (const report of reports) {
-      const compressed = await this.fileHandler.compressReportDirectory(report.dir);
-      if (compressed) {
-        form.append(`report_${report.type}`, compressed, { filename: `${report.type}-report.gz` });
+      const archive = await this.fileHandler.compressReport(report.dir, report.files);
+      if (archive) {
+        form.append(`report_${report.type}`, fs.createReadStream(archive), { filename: `${report.type}-report.gz` });
         if (report.label) form.append(`report_label_${report.type}`, report.label);
       }
     }

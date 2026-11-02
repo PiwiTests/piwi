@@ -3,7 +3,7 @@ import * as os from 'node:os';
 import { errorMessage } from '../support/errors.js';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
-import { compressDirectory } from './compression.js';
+import { listArchiveFiles, writeArchive, type ArchiveFile } from './compression.js';
 import { Logger } from '../support/logger.js';
 import {
   ATTACHMENT_NAMES,
@@ -14,9 +14,10 @@ import {
 import type { CollectedTestCase, RawAttachment, TraceHashInfo } from '../../types.js';
 
 /**
- * Size ceiling for one uploadable attachment, path-backed or inline. Matches
- * the dashboard's default multipart upload limit, so a larger file could never
- * land anyway; it is skipped here with one warning instead of failing the upload.
+ * Size ceiling for one uploadable attachment, path-backed or inline, and for the
+ * files of one report together. Matches the dashboard's default multipart upload
+ * limit, so a larger file or report could never land anyway; it is skipped here
+ * with one warning instead of failing the upload.
  */
 export const MAX_ATTACHMENT_BYTES = 500 * 1024 * 1024;
 
@@ -54,8 +55,9 @@ export interface UploadableAttachment {
 export class FileHandler {
   /** Temp files written for body-only attachments, keyed by attachment so repeated lookups reuse one file. */
   private readonly bodyFiles = new WeakMap<RawAttachment, string>();
-  private bodyDir: string | null = null;
-  private bodyFileCount = 0;
+  /** The temp folder of the files staged for the uploads: body-only attachments and report archives. */
+  private stagedDir: string | null = null;
+  private stagedCount = 0;
   /** Attachments already reported as oversized, so each one warns once per run. */
   private readonly oversizedWarned = new Set<string>();
 
@@ -95,11 +97,41 @@ export class FileHandler {
     return null;
   }
 
-  /** Gzip-compress an entire report directory into a single buffer. Returns `null` on failure. */
-  async compressReportDirectory(reportDir: string): Promise<Buffer | null> {
+  /**
+   * The files of a report folder, or null when it cannot be read, or when its files together are over the upload
+   * limit: the dashboard would refuse the upload that carries them, so the report is left out, with one warning,
+   * before its archive is built.
+   */
+  listReport(reportDir: string): ArchiveFile[] | null {
+    let files: ArchiveFile[];
     try {
-      return (await compressDirectory(reportDir)) || null;
+      files = listArchiveFiles(reportDir);
     } catch (error) {
+      this.logger.warn(`Could not read the report in ${reportDir}: ${errorMessage(error)}`);
+      return null;
+    }
+    const bytes = files.reduce((sum, file) => sum + file.size, 0);
+    if (bytes > this.maxAttachmentBytes) {
+      this.logger.warn(
+        `Skipping the report in ${reportDir}: its files hold ${formatMiB(bytes)}, over the ${formatMiB(this.maxAttachmentBytes)} upload limit.`,
+      );
+      return null;
+    }
+    return files;
+  }
+
+  /**
+   * The gzip-compressed archive of a report's files, streamed into a temp file that `cleanupBodyAttachments`
+   * deletes. Returns its path, or `null` on failure.
+   */
+  async compressReport(reportDir: string, files: ArchiveFile[]): Promise<string | null> {
+    let target: string | null = null;
+    try {
+      target = path.join(this.stagingDir(), `${++this.stagedCount}-report.gz`);
+      await writeArchive(files, target);
+      return target;
+    } catch (error) {
+      if (target) fs.rmSync(target, { force: true });
       this.logger.warn(`Failed to compress report directory ${reportDir}: ${errorMessage(error)}`);
       return null;
     }
@@ -136,15 +168,18 @@ export class FileHandler {
     return result;
   }
 
-  /** Delete the temp files written for body-only attachments. Call once the run's uploads are done. */
+  /**
+   * Delete the temp files staged for the uploads: those written for body-only attachments, and the report archives.
+   * Call once the run's uploads are done.
+   */
   cleanupBodyAttachments(): void {
-    if (!this.bodyDir) return;
+    if (!this.stagedDir) return;
     try {
-      fs.rmSync(this.bodyDir, { recursive: true, force: true });
+      fs.rmSync(this.stagedDir, { recursive: true, force: true });
     } catch (error) {
-      this.logger.debug(`Could not remove temp attachments at ${this.bodyDir}: ${errorMessage(error)}`);
+      this.logger.debug(`Could not remove temp attachments at ${this.stagedDir}: ${errorMessage(error)}`);
     }
-    this.bodyDir = null;
+    this.stagedDir = null;
   }
 
   private resolvePathAttachment(a: RawAttachment, testCase: CollectedTestCase): UploadableAttachment | null {
@@ -174,7 +209,7 @@ export class FileHandler {
     let filePath = this.bodyFiles.get(a);
     if (!filePath) {
       try {
-        filePath = path.join(this.bodyAttachmentDir(), `${++this.bodyFileCount}-${originalName}`);
+        filePath = path.join(this.stagingDir(), `${++this.stagedCount}-${originalName}`);
         fs.writeFileSync(filePath, body);
         this.bodyFiles.set(a, filePath);
       } catch (error) {
@@ -185,9 +220,9 @@ export class FileHandler {
     return { name: a.name || 'attachment', path: filePath, contentType, originalName };
   }
 
-  private bodyAttachmentDir(): string {
-    if (!this.bodyDir) this.bodyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-dashboard-attachments-'));
-    return this.bodyDir;
+  private stagingDir(): string {
+    if (!this.stagedDir) this.stagedDir = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-dashboard-attachments-'));
+    return this.stagedDir;
   }
 
   private warnOversized(a: RawAttachment, testCase: CollectedTestCase, size: number): void {

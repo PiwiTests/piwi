@@ -188,6 +188,20 @@ describe('Uploader.uploadWithFiles', () => {
   });
 });
 
+describe('Uploader.findReports', () => {
+  it('leaves out a report over the upload limit, so no upload carries it', () => {
+    const reportDir = path.join(tmpDir, 'big-report');
+    fs.mkdirSync(reportDir);
+    fs.writeFileSync(path.join(reportDir, 'index.html'), 'x'.repeat(16));
+    const uploader = new Uploader(
+      new HttpClient('http://127.0.0.1:1', new Logger(false)),
+      new FileHandler(new Logger(false), 8),
+    );
+
+    expect(uploader.findReports({ reports: [{ type: 'custom', dir: reportDir }] })).toEqual([]);
+  });
+});
+
 describe('Uploader.uploadReportsForStreamingRun', () => {
   it('POSTs a placeholder run body with the given runId to /api/test-runs/upload', async () => {
     const { server, url, requests } = await startServer((_req, res) => jsonRes(res, 200, {}));

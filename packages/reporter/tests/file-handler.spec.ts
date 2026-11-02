@@ -98,3 +98,34 @@ describe('FileHandler.findAllAttachments', () => {
     expect(MAX_ATTACHMENT_BYTES).toBe(500 * 1024 * 1024);
   });
 });
+
+describe('FileHandler.listReport', () => {
+  it("lists a report's files", () => {
+    fs.writeFileSync(path.join(tmpDir, 'index.html'), '<html>');
+    expect(new FileHandler(logger).listReport(tmpDir)?.map((file) => file.name)).toEqual(['index.html']);
+  });
+
+  it('leaves out a report whose files together are over the upload limit, with one warning', async () => {
+    const handler = new FileHandler(logger, 8);
+    fs.writeFileSync(path.join(tmpDir, 'index.html'), Buffer.alloc(5));
+    fs.writeFileSync(path.join(tmpDir, 'data.js'), Buffer.alloc(5));
+
+    expect(handler.listReport(tmpDir)).toBeNull();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]![0]).toContain(`Skipping the report in ${tmpDir}`);
+  });
+});
+
+describe('FileHandler.compressReport', () => {
+  it('writes the archive to a temp file that cleanupBodyAttachments deletes', async () => {
+    const handler = new FileHandler(logger);
+    fs.writeFileSync(path.join(tmpDir, 'index.html'), '<html>report</html>');
+
+    const archive = await handler.compressReport(tmpDir, handler.listReport(tmpDir)!);
+    expect(archive && path.dirname(archive).startsWith(os.tmpdir())).toBe(true);
+    expect(fs.readFileSync(archive!).subarray(0, 2)).toEqual(Buffer.from([0x1f, 0x8b]));
+
+    handler.cleanupBodyAttachments();
+    expect(fs.existsSync(archive!)).toBe(false);
+  });
+});
