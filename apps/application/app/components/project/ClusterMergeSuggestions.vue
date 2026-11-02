@@ -2,7 +2,9 @@
 /**
  * Pending cluster-merge suggestions for a project. Each is a pair the
  * embedding reconciler / LLM adjudicator flagged as probably-the-same root cause
- * but didn't auto-merge. Admins/reporters approve (→ merge) or reject.
+ * but didn't auto-merge. The holders of `triage:write` on the project, the
+ * permission both routes declare, approve (→ merge) or reject; others see the
+ * pairs alone.
  */
 interface ClusterSummary {
   id: number;
@@ -27,6 +29,8 @@ const props = defineProps<{ projectId: string }>();
 const emit = defineEmits<{ merged: [] }>();
 
 const toast = useToast();
+const { can } = useAuth();
+const canDecide = computed(() => can('triage:write', props.projectId));
 const suggestions = ref<MergeSuggestion[]>([]);
 const pendingId = ref<number | null>(null);
 
@@ -92,7 +96,7 @@ const pct = (s: number | null) => (s == null ? '' : `${Math.round(s * 100)}% sim
           </p>
           <p v-if="s.llmReason" class="text-xs text-gray-500 italic">{{ s.llmReason }}</p>
         </div>
-        <div class="flex items-center gap-2 shrink-0">
+        <div v-if="canDecide" class="flex items-center gap-2 shrink-0">
           <UButton
             size="sm"
             color="primary"
