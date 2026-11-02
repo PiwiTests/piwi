@@ -556,7 +556,8 @@ export async function emitRunNotifications(db: DbClient, runId: number): Promise
 
     await emitNotification(db, 'run.finished', runPayload);
 
-    if (runRow.status === 'failed' || runRow.failedTests > 0) {
+    // A run that reached Playwright's global timeout failed, whether or not a test did.
+    if (runRow.status === 'failed' || runRow.status === 'timedout' || runRow.failedTests > 0) {
       await emitNotification(db, 'run.failed', runPayload);
       if (isDefaultBranch) {
         await emitNotification(db, 'run.failed.default_branch', runPayload);
