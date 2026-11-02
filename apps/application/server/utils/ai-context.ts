@@ -1,4 +1,4 @@
-import { eq, and, desc, sql, inArray } from 'drizzle-orm';
+import { eq, and, desc, lt, sql, inArray } from 'drizzle-orm';
 import { describeIngestHealth, readIngestHealth } from '#shared/ingest-health';
 import type { SQL } from 'drizzle-orm';
 import {
@@ -87,6 +87,9 @@ interface SuspectLinesContext {
 
 // ── Section wrapping helper ─────────────────────────────────────────────────
 
+/** What a section's text holds when part of it was left out; `section` then marks it truncated. */
+const TRUNCATED_MARKER = '[truncated]';
+
 function section(
   id: SectionId,
   title: string,
@@ -98,7 +101,7 @@ function section(
     id,
     title,
     chars: content.length,
-    truncated: content.includes('[truncated]'),
+    truncated: content.includes(TRUNCATED_MARKER) || content.includes(PATCH_TRUNCATED_NOTE),
     markdown: content,
     ...(items !== undefined ? { items } : {}),
   };
@@ -229,7 +232,28 @@ function buildCoverageBlock(
 /** "- path (status, +A -B)" line for a changed file. */
 function formatChangedFileLine(f: ChangedFile): string {
   const stats = f.additions || f.deletions ? `, +${f.additions} -${f.deletions}` : '';
-  return `- ${f.filename} (${f.status}${stats})`;
+  const from = f.previousFilename ? ` from ${f.previousFilename}` : '';
+  return `- ${f.filename} (${f.status}${from}${stats})`;
+}
+
+/**
+ * The header of a changed-file list: how many files it shows and, when the
+ * host listed only the first ones, that the list is cut.
+ */
+function changedFilesHeader(changes: Pick<ScmChanges, 'files' | 'filesTruncated' | 'totalChangedFiles'>): string {
+  if (!changes.filesTruncated) return `Changed files (${changes.files.length}):`;
+  const total =
+    changes.totalChangedFiles && changes.totalChangedFiles > changes.files.length
+      ? `${changes.totalChangedFiles} in all`
+      : 'more changed';
+  return `Changed files (the first ${changes.files.length}, ${total}) ${TRUNCATED_MARKER}:`;
+}
+
+/** A note naming how many listed files came with no patch, or null when every one has one. */
+function filesWithoutPatchNote(files: ChangedFile[]): string | null {
+  const count = files.filter((f) => !f.patch).length;
+  if (count === 0) return null;
+  return `> Note: ${count} changed file${count > 1 ? 's' : ''} came with no patch (binary, too large for the host, or a rename or mode change only).`;
 }
 
 /**
@@ -271,14 +295,14 @@ function renderChangedFiles(
     lines.push('Commits:');
     for (const c of changes.commits) lines.push(`- ${c.sha} ${c.message}`);
   }
-  lines.push(`\nChanged files (${changes.files.length}):`);
+  lines.push(`\n${changedFilesHeader(changes)}`);
   for (const f of changes.files) lines.push(formatChangedFileLine(f));
 
   let patchedFilesCount = 0;
   let patchesTruncated = false;
   if (changes.patchesOmitted) {
     lines.push(
-      `\n> Note: diff omitted — raw diff exceeded size limit (${Math.round(MAX_RAW_DIFF_BYTES / 1024)} KB). File names and line counts above are complete; no patch content available.`,
+      `\n> Note: diff omitted — raw diff exceeded size limit (${Math.round(MAX_RAW_DIFF_BYTES / 1024)} KB). The files listed above keep their line counts; no patch content available ${TRUNCATED_MARKER}.`,
     );
   } else {
     const budget = { remaining: opts.budget };
@@ -286,10 +310,14 @@ function renderChangedFiles(
     if (patches.length > 0) {
       lines.push(`\nPatches:\n\`\`\`diff\n${patches.join('\n\n')}\n\`\`\``);
       patchedFilesCount = patches.length;
-      patchesTruncated = skipped > 0;
+      patchesTruncated = skipped > 0 || patches.some((p) => p.endsWith(PATCH_TRUNCATED_NOTE));
     }
+    const noPatch = filesWithoutPatchNote(changes.files);
+    if (noPatch) lines.push(`\n${noPatch}`);
     if (skipped > 0) {
-      lines.push(`\n> Note: ${skipped} file patch${skipped > 1 ? 'es' : ''} omitted (context budget exhausted).`);
+      lines.push(
+        `\n> Note: ${skipped} file patch${skipped > 1 ? 'es' : ''} omitted (context budget exhausted) ${TRUNCATED_MARKER}.`,
+      );
     }
   }
   return { text: lines.join('\n'), patchedFilesCount, patchesTruncated };
@@ -2187,6 +2215,7 @@ function scoreFilesByRelevance(files: ChangedFile[], signals: RelevanceSignals):
 /**
  * The genuinely most-suspect change: the highest-relevance-scored changed file
  * paired with the newest commit in the range (as the entry point to inspect).
+ * Providers list a range's commits oldest first, so the newest is the last.
  * Returns null when nothing scored above zero — a wrong-but-confident hint is
  * worse than none.
  */
@@ -2208,7 +2237,7 @@ function getTopSuspectedChange(
     file: topFile.file.filename,
     score: topFile.score,
     literalMatch: topFile.literalMatch,
-    recentCommit: commits[0] ?? null,
+    recentCommit: commits.at(-1) ?? null,
   };
 }
 
@@ -2456,15 +2485,18 @@ async function scmInvestigationSections(
     try {
       const provider = await createScmProvider(repositoryUrl, db, cluster.projectId);
       scmCov.localGit = provider instanceof LocalGitProvider;
-      const changes = provider ? await provider.fetchChanges(fromSha, toSha) : null;
-      if (!changes || (changes.commits.length === 0 && changes.files.length === 0)) return;
-      // Score and sort files by relevance, then render with budget
-      const scored = scoreFilesByRelevance(changes.files, signals);
-      changes.files = scored.map((s) => s.file);
+      const fetched = provider ? await provider.fetchChanges(fromSha, toSha) : null;
+      if (!fetched || (fetched.commits.length === 0 && fetched.files.length === 0)) return;
+      // Score and sort files by relevance, then render with budget. The provider
+      // caches what it answered, so the sorted list goes in a copy.
+      const scored = scoreFilesByRelevance(fetched.files, signals);
+      const changes: ScmChanges = { ...fetched, files: scored.map((s) => s.file) };
       scmChanges = changes;
       scmCov.filesCount = changes.files.length;
       scmCov.commitsCount = changes.commits.length;
       scmCov.patchesOmitted = Boolean(changes.patchesOmitted);
+      scmCov.filesTruncated = Boolean(changes.filesTruncated);
+      scmCov.totalChangedFiles = changes.totalChangedFiles ?? null;
 
       const suspects = await clusterSuspectLinesForChanges(db, cluster.id, changes, { from: fromSha, to: toSha }).catch(
         () => null,
@@ -2617,21 +2649,24 @@ async function scmInvestigationSections(
     } else if (signals.testCaseId) {
       // No project-wide green run and no manual override — fall back to the last run where
       // this specific test case passed. Gives a tighter causal window than "no SCM data."
+      // The last pass before the failure first appeared, in a run that may be a baseline.
       const lastPassRows = await db
-        .select({ testRunId: testRunsCases.testRunId })
+        .select({ testRunId: testRunsCases.testRunId, metadata: testRuns.metadata })
         .from(testRunsCases)
-        .where(and(eq(testRunsCases.testCaseId, signals.testCaseId), eq(testRunsCases.status, 'passed')))
-        .orderBy(desc(testRunsCases.id))
+        .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
+        .where(
+          and(
+            eq(testRunsCases.testCaseId, signals.testCaseId),
+            eq(testRunsCases.status, 'passed'),
+            lt(testRuns.startTime, firstSeenRunRows[0].startTime),
+            eligibleRunSql('baseline'),
+          ),
+        )
+        .orderBy(desc(testRuns.startTime))
         .limit(1);
 
       if (lastPassRows[0]) {
-        const [lastPassRun] = await db
-          .select({ metadata: testRuns.metadata })
-          .from(testRuns)
-          .where(eq(testRuns.id, lastPassRows[0].testRunId))
-          .limit(1);
-
-        const lastPassMeta = (lastPassRun?.metadata as RunMetadata | null) ?? null;
+        const lastPassMeta = (lastPassRows[0].metadata as RunMetadata | null) ?? null;
         const lastPassCommit: string | null = lastPassMeta?.scm?.commit ?? null;
         const currMeta = firstSeenRunRows[0].metadata as RunMetadata | null;
         const currentCommit: string | null = currMeta?.scm?.commit ?? null;
@@ -2700,12 +2735,20 @@ async function selectedCommitsSection(
       try {
         const commitDiff = await provider.fetchCommitDiff(sha);
         if (commitDiff?.files.length) {
-          commitLines.push(`\n### ${sha.slice(0, 7)}`);
-          commitLines.push(`Changed files (${commitDiff.files.length}):`);
+          const subject = commitDiff.commits[0]?.message;
+          commitLines.push(`\n### ${sha.slice(0, 7)}${subject ? ` ${subject}` : ''}`);
+          commitLines.push(changedFilesHeader(commitDiff));
           for (const f of commitDiff.files) commitLines.push(formatChangedFileLine(f));
-          const { patches } = renderBudgetedPatches(commitDiff.files, budget);
+          const { patches, skipped } = renderBudgetedPatches(commitDiff.files, budget);
           if (patches.length) {
             commitLines.push(`\nPatches:\n\`\`\`diff\n${patches.join('\n\n')}\n\`\`\``);
+          }
+          const noPatch = commitDiff.patchesOmitted ? null : filesWithoutPatchNote(commitDiff.files);
+          if (noPatch) commitLines.push(`\n${noPatch}`);
+          if (skipped > 0) {
+            commitLines.push(
+              `\n> Note: ${skipped} file patch${skipped > 1 ? 'es' : ''} omitted (context budget exhausted) ${TRUNCATED_MARKER}.`,
+            );
           }
         }
       } catch {

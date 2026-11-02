@@ -101,35 +101,40 @@ describe('SCM providers reject a traversal ref before it reaches an API URL', ()
   });
 });
 
-describe('GitHub fetchChanges pages the file list past the 30-file cap', () => {
+describe('GitHub fetchChanges reads the compare endpoint once', () => {
   afterEach(() => vi.unstubAllGlobals());
 
   const filesPage = (n: number) =>
     Array.from({ length: n }, (_, i) => ({ filename: `f${i}.ts`, status: 'modified', additions: 1, deletions: 0 }));
 
-  test('collects files across pages and flags no truncation for a short last page', async () => {
-    const pages = [
-      { commits: [{ sha: 'abc1234', commit: { message: 'one' } }], files: filesPage(100) },
-      { commits: [], files: filesPage(45) },
-    ];
-    let call = 0;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response(JSON.stringify(pages[call++] ?? { files: [] }), { status: 200 })),
+  test('asks with no paging parameter and keeps every file the endpoint lists', async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ commits: [{ sha: 'abc1234', commit: { message: 'one' } }], files: filesPage(145) }),
+          {
+            status: 200,
+          },
+        ),
     );
+    vi.stubGlobal('fetch', fetchMock);
     const gh = new GitHubProvider('acme/app', 'tok');
-    const changes = await gh.fetchChanges('main', 'short-last-page');
+    const changes = await gh.fetchChanges('main', 'one-request');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const url = new URL(String((fetchMock.mock.calls[0] as unknown[])[0]));
+    expect(url.searchParams.has('page')).toBe(false);
+    expect(url.searchParams.has('per_page')).toBe(false);
     expect(changes!.files).toHaveLength(145);
     expect(changes!.filesTruncated).toBe(false);
   });
 
-  test('flags truncation when the total cap is reached with more remaining', async () => {
+  test('flags truncation when the endpoint lists its 300-file maximum', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => new Response(JSON.stringify({ commits: [], files: filesPage(100) }), { status: 200 })),
+      vi.fn(async () => new Response(JSON.stringify({ commits: [], files: filesPage(300) }), { status: 200 })),
     );
     const gh = new GitHubProvider('acme/app', 'tok');
-    const changes = await gh.fetchChanges('main', 'all-full-pages');
+    const changes = await gh.fetchChanges('main', 'all-files');
     const { MAX_SCM_FILES_TOTAL } = await import('../../server/utils/scm/ScmProvider');
     expect(changes!.files).toHaveLength(MAX_SCM_FILES_TOTAL);
     expect(changes!.filesTruncated).toBe(true);

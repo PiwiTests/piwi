@@ -27,18 +27,16 @@ let repo: string;
 const sha: Record<'first' | 'second' | 'third', string> = { first: '', second: '', third: '' };
 const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE, token: process.env.PIWI_DESKTOP_TOKEN };
 
+const gitEnv = {
+  ...process.env,
+  GIT_AUTHOR_NAME: 'Ada Lovelace',
+  GIT_AUTHOR_EMAIL: 'ada@example.com',
+  GIT_COMMITTER_NAME: 'Ada Lovelace',
+  GIT_COMMITTER_EMAIL: 'ada@example.com',
+};
+
 function git(...args: string[]): string {
-  return execFileSync('git', args, {
-    cwd: repo,
-    encoding: 'utf8',
-    env: {
-      ...process.env,
-      GIT_AUTHOR_NAME: 'Ada Lovelace',
-      GIT_AUTHOR_EMAIL: 'ada@example.com',
-      GIT_COMMITTER_NAME: 'Ada Lovelace',
-      GIT_COMMITTER_EMAIL: 'ada@example.com',
-    },
-  }).trim();
+  return execFileSync('git', args, { cwd: repo, encoding: 'utf8', env: gitEnv }).trim();
 }
 
 function writeDiscoveryFile(body: unknown) {
@@ -207,7 +205,13 @@ describe('LocalGitProvider reads', () => {
     expect(byName['README.md']).toMatchObject({ status: 'modified', additions: 1, deletions: 0 });
     expect(byName['README.md']!.patch).toMatch(/^@@ -1 \+1,2 @@\n shop\n\+now with a cart$/);
     expect(byName['e2e/checkout.spec.ts']).toMatchObject({ status: 'added', additions: 1, deletions: 0 });
-    expect(byName['new-name.ts']).toMatchObject({ status: 'renamed', additions: 0, deletions: 0, patch: undefined });
+    expect(byName['new-name.ts']).toMatchObject({
+      status: 'renamed',
+      previousFilename: 'old-name.ts',
+      additions: 0,
+      deletions: 0,
+      patch: undefined,
+    });
     expect(changes?.filesTruncated).toBe(false);
     // Each file carries its blob id at the head, the one git stores.
     for (const name of Object.keys(byName)) expect(byName[name]!.blob).toBe(git('rev-parse', `${sha.third}:${name}`));
@@ -223,8 +227,30 @@ describe('LocalGitProvider reads', () => {
     ]);
     // A removed file has no blob at the head.
     expect(third?.files.find((f) => f.filename === 'notes.md')?.blob).toBeUndefined();
+    expect(third?.commits).toEqual([
+      { sha: sha.third.slice(0, 7), message: 'Rename and add checkout', fullMessage: 'Rename and add checkout' },
+    ]);
     const root = await local.fetchCommitDiff(sha.first);
     expect(root?.files.map((f) => f.status)).toEqual(['added', 'added', 'added']);
+  });
+
+  test('keeps the patch of a file whose name git quotes', async () => {
+    const other = mkdtempSync(join(home, 'quoted-'));
+    const run = (...args: string[]) => execFileSync('git', args, { cwd: other, encoding: 'utf8', env: gitEnv }).trim();
+    run('init', '--quiet', '--initial-branch=main');
+    for (const name of ['q"t.ts', 'a b.ts', 'é.ts']) writeFileSync(join(other, name), 'one\n');
+    run('add', '.');
+    run('commit', '--quiet', '-m', 'First');
+    const first = run('rev-parse', 'HEAD');
+    for (const name of ['q"t.ts', 'a b.ts', 'é.ts']) writeFileSync(join(other, name), 'two\n');
+    run('commit', '--quiet', '-am', 'Second');
+    const second = run('rev-parse', 'HEAD');
+    const changes = await new LocalGitProvider(other, 'origin', hosted()).fetchChanges(first, second);
+    expect(changes?.files.map((f) => [f.filename, f.patch])).toEqual([
+      ['a b.ts', '@@ -1 +1 @@\n-one\n+two'],
+      ['q"t.ts', '@@ -1 +1 @@\n-one\n+two'],
+      ['é.ts', '@@ -1 +1 @@\n-one\n+two'],
+    ]);
   });
 
   test('reads a blob by its id, and asks the host for one the clone does not have', async () => {

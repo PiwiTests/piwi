@@ -3,8 +3,8 @@ import {
   type RerunDispatchRequest,
   type RerunDispatchResult,
   truncatePatch,
-  MAX_SCM_FILES,
   MAX_SCM_FILES_TOTAL,
+  HOST_MAX_PAGE_SIZE,
   MAX_FILE_BYTES,
   FETCH_TIMEOUT_MS,
   readBlobText,
@@ -43,18 +43,28 @@ interface GitHubChangedFile {
   deletions: number;
   patch?: string;
   sha?: string | null;
+  previous_filename?: string;
 }
 
 /** A changed file of GitHub's in the provider's shape, with its head blob unless it was removed. */
 function changedFileOf(f: GitHubChangedFile): ChangedFile {
   return {
     filename: f.filename,
+    ...(f.previous_filename ? { previousFilename: f.previous_filename } : {}),
     status: f.status,
     additions: f.additions,
     deletions: f.deletions,
     patch: f.patch ? truncatePatch(f.patch) : undefined,
     ...(f.status !== 'removed' && isGitObjectId(f.sha) ? { blob: f.sha.toLowerCase() } : {}),
   };
+}
+
+/** The most files the compare endpoint lists for a range; a range listing this many may have more. */
+const GITHUB_MAX_COMPARE_FILES = 300;
+
+/** A commit as `fetchChanges` and `fetchCommitDiff` list it. */
+function commitOf(sha: string, message: string): ScmCommit {
+  return { sha: sha.slice(0, 7), message: message.split('\n')[0] ?? '', fullMessage: message };
 }
 
 const listBranchesCache = new TtlCache<string[]>(3 * 60 * 1000);
@@ -110,26 +120,41 @@ export class GitHubProvider extends ScmProvider {
     const hit = listCommitsCache.get(key);
     if (hit !== undefined) return hit;
 
-    const url = new URL(`https://api.github.com/repos/${this.repoPath}/commits`);
-    url.searchParams.set('per_page', String(limit));
-    if (branch) url.searchParams.set('sha', branch);
-
-    const res = await fetch(url.toString(), {
-      headers: this.makeHeaders(),
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
-    if (!res.ok) return [];
-    const data = (await res.json()) as Array<{
-      sha: string;
-      commit: { message: string; author: { name: string; date: string } | null };
-    }>;
-    const result = data.map((c) => ({
-      sha: c.sha,
-      shortSha: c.sha.slice(0, 7),
-      message: (c.commit.message.split('\n')[0] ?? '').trim(),
-      author: c.commit.author?.name ?? '',
-      date: c.commit.author?.date ?? '',
-    }));
+    // A page holds at most 100 commits: page until `limit`.
+    const perPage = Math.min(limit, HOST_MAX_PAGE_SIZE);
+    const result: ScmCommitDetail[] = [];
+    let complete = true;
+    for (let page = 1; result.length < limit; page++) {
+      const url = new URL(`https://api.github.com/repos/${this.repoPath}/commits`);
+      url.searchParams.set('per_page', String(perPage));
+      url.searchParams.set('page', String(page));
+      if (branch) url.searchParams.set('sha', branch);
+      const res = await fetch(url.toString(), {
+        headers: this.makeHeaders(),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (!res.ok) {
+        if (page === 1) return [];
+        complete = false;
+        break;
+      }
+      const data = (await res.json()) as Array<{
+        sha: string;
+        commit: { message: string; author: { name: string; date: string } | null };
+      }>;
+      for (const c of data) {
+        result.push({
+          sha: c.sha,
+          shortSha: c.sha.slice(0, 7),
+          message: (c.commit.message.split('\n')[0] ?? '').trim(),
+          author: c.commit.author?.name ?? '',
+          date: c.commit.author?.date ?? '',
+        });
+      }
+      if (data.length < perPage) break;
+    }
+    result.splice(limit);
+    if (!complete) return result;
     listCommitsCache.set(key, result);
     return result;
   }
@@ -140,49 +165,24 @@ export class GitHubProvider extends ScmProvider {
     const hit = fetchChangesCache.get(key);
     if (hit !== undefined) return hit;
 
-    // Page the compare endpoint's file list (100 per page) up to the total cap,
-    // so a large pull request's later files are not silently dropped at 30.
-    const base = `https://api.github.com/repos/${this.repoPath}/compare/${encodeGitRef(fromSha)}...${encodeGitRef(toSha)}`;
-    let commits: ScmCommit[] = [];
-    const files: ChangedFile[] = [];
-    let filesTruncated = false;
-    const perPage = 100;
-    for (let page = 1; files.length < MAX_SCM_FILES_TOTAL; page++) {
-      const res = await fetch(`${base}?per_page=${perPage}&page=${page}`, {
-        headers: this.makeHeaders(),
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      });
-      if (!res.ok) {
-        if (page === 1) return null;
-        break;
-      }
-      const data = (await res.json()) as {
-        commits?: Array<{ sha: string; commit: { message: string } }>;
-        files?: GitHubChangedFile[];
-      };
-      if (page === 1) {
-        commits = (data.commits ?? []).map((c) => ({
-          sha: c.sha.slice(0, 7),
-          message: c.commit.message.split('\n')[0] ?? '',
-          fullMessage: c.commit.message,
-        }));
-      }
-      const pageFiles = data.files ?? [];
-      for (const f of pageFiles) {
-        if (files.length >= MAX_SCM_FILES_TOTAL) {
-          filesTruncated = true;
-          break;
-        }
-        files.push(changedFileOf(f));
-      }
-      // A short page is the last page; a full page that reached the cap is truncated.
-      if (pageFiles.length < perPage) break;
-      if (files.length >= MAX_SCM_FILES_TOTAL) {
-        filesTruncated = true;
-        break;
-      }
-    }
-    const result: ScmChanges = { commits, files, filesTruncated };
+    // Without a paging parameter, the compare endpoint lists the range's newest
+    // 250 commits, oldest first, and up to 300 changed files: paging would list
+    // the oldest commits first and the files on the first page only.
+    const res = await fetch(
+      `https://api.github.com/repos/${this.repoPath}/compare/${encodeGitRef(fromSha)}...${encodeGitRef(toSha)}`,
+      { headers: this.makeHeaders(), signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      commits?: Array<{ sha: string; commit: { message: string } }>;
+      files?: GitHubChangedFile[];
+    };
+    const listed = data.files ?? [];
+    const result: ScmChanges = {
+      commits: (data.commits ?? []).map((c) => commitOf(c.sha, c.commit.message)),
+      files: listed.slice(0, MAX_SCM_FILES_TOTAL).map(changedFileOf),
+      filesTruncated: listed.length >= GITHUB_MAX_COMPARE_FILES,
+    };
     fetchChangesCache.set(key, result);
     return result;
   }
@@ -193,20 +193,22 @@ export class GitHubProvider extends ScmProvider {
     const hit = fetchCommitDiffCache.get(key);
     if (hit !== undefined) return hit;
 
+    // One page holds up to 300 files; a link to a next page says the commit has more.
     const res = await fetch(`https://api.github.com/repos/${this.repoPath}/commits/${encodeGitRef(sha)}`, {
       headers: this.makeHeaders(),
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { message?: string };
-      throw new Error(body.message ?? `GitHub API error ${res.status}`);
-    }
+    if (!res.ok) throw await githubError(res, `reading commit ${sha}`);
     const data = (await res.json()) as {
+      sha?: string;
+      commit?: { message?: string };
       files?: GitHubChangedFile[];
     };
+    const listed = data.files ?? [];
     const result: ScmChanges = {
-      commits: [],
-      files: (data.files ?? []).slice(0, MAX_SCM_FILES).map(changedFileOf),
+      commits: data.sha ? [commitOf(data.sha, data.commit?.message ?? '')] : [],
+      files: listed.slice(0, MAX_SCM_FILES_TOTAL).map(changedFileOf),
+      filesTruncated: listed.length > MAX_SCM_FILES_TOTAL || /rel="next"/.test(res.headers.get('link') ?? ''),
     };
     fetchCommitDiffCache.set(key, result);
     return result;
@@ -224,7 +226,7 @@ export class GitHubProvider extends ScmProvider {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
       if (!res.ok) {
-        commitAuthorCache.set(key, null);
+        if (res.status === 404) commitAuthorCache.set(key, null);
         return null;
       }
       const data = (await res.json()) as { commit?: { author?: { name?: string; email?: string } } };
@@ -303,7 +305,8 @@ export class GitHubProvider extends ScmProvider {
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (!res.ok) {
-      fetchFileCache.set(key, null);
+      // Only a missing file is an answer to keep; a refused or failed request is tried again.
+      if (res.status === 404) fetchFileCache.set(key, null);
       return null;
     }
     const raw = await res.text();

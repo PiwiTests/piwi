@@ -25,6 +25,7 @@ import type {
   ScmPostedComment,
 } from './ScmProvider';
 import { isValidGitRef } from './refs';
+import { splitGitDiff } from './diff-text';
 import { TtlCache } from '../ttl-cache';
 import { desktopLinkedFolder } from '../desktop-links';
 import type { CiRerunSettings } from '#shared/ci-rerun';
@@ -238,18 +239,20 @@ const GITLINK_MODE = '160000';
  * old and the new path for a rename or a copy; a removed file's new id is all
  * zeros, and a submodule has no blob.
  */
-function parseRawDiff(out: string): Array<{ status: string; path: string; blob?: string }> {
+function parseRawDiff(out: string): Array<{ status: string; path: string; previousPath?: string; blob?: string }> {
   const parts = out.split('\0');
-  const result: Array<{ status: string; path: string; blob?: string }> = [];
+  const result: Array<{ status: string; path: string; previousPath?: string; blob?: string }> = [];
   for (let i = 0; i < parts.length;) {
     const meta = parts[i++];
     if (!meta?.startsWith(':')) continue;
     const [, newMode = '', , newId = '', code = ''] = meta.slice(1).split(' ');
-    if (code.startsWith('R') || code.startsWith('C')) i++; // the old path comes first
+    // A rename or a copy names the old path first.
+    const previousPath = code.startsWith('R') || code.startsWith('C') ? parts[i++] : undefined;
     const blob = newMode !== GITLINK_MODE && isGitObjectId(newId) && /[^0]/.test(newId) ? newId : undefined;
     result.push({
       status: STATUS_BY_LETTER[code[0]!] ?? 'modified',
       path: parts[i++] ?? '',
+      ...(code.startsWith('R') && previousPath ? { previousPath } : {}),
       ...(blob ? { blob } : {}),
     });
   }
@@ -276,28 +279,6 @@ function parseNumstat(out: string): Array<{ additions: number; deletions: number
     });
   }
   return result;
-}
-
-/**
- * Each file's section of a `git diff --patch`, in diff order: its `diff --git`
- * header and its hunks from the first `@@` line (none for a binary, mode-only
- * or pure-rename change). A section the byte cap cut short is left out.
- */
-function splitPatch(raw: string, cut: boolean): Array<{ header: string; hunks: string | undefined }> {
-  const sections: Array<{ header: string; hunks: string[] }> = [];
-  for (const line of raw.split('\n')) {
-    if (line.startsWith('diff --git ')) {
-      sections.push({ header: line, hunks: [] });
-      continue;
-    }
-    const current = sections[sections.length - 1];
-    if (current && (current.hunks.length > 0 || line.startsWith('@@'))) current.hunks.push(line);
-  }
-  if (cut) sections.pop();
-  return sections.map((s) => ({
-    header: s.header,
-    hunks: s.hunks.length > 0 ? s.hunks.join('\n').replace(/\n$/, '') : undefined,
-  }));
 }
 
 /**
@@ -368,20 +349,23 @@ export class LocalGitProvider extends ScmProvider {
 
     const counts = parseNumstat(numstat.stdout);
     const statuses = parseRawDiff(raw.stdout);
-    const sections = patch.ok ? splitPatch(patch.stdout, patch.overflow) : [];
-    const files: ChangedFile[] = statuses.slice(0, MAX_SCM_FILES_TOTAL).map(({ status, path, blob }, i) => {
-      const count = counts[i]?.path === path ? counts[i] : undefined;
-      const section = sections[i];
-      const hunks = section?.header.endsWith(` b/${path}`) ? section.hunks : undefined;
-      return {
-        filename: path,
-        status,
-        additions: count?.additions ?? 0,
-        deletions: count?.deletions ?? 0,
-        patch: hunks ? truncatePatch(hunks) : undefined,
-        ...(blob ? { blob } : {}),
-      };
-    });
+    const sections = patch.ok ? splitGitDiff(patch.stdout, patch.overflow) : [];
+    const files: ChangedFile[] = statuses
+      .slice(0, MAX_SCM_FILES_TOTAL)
+      .map(({ status, path, previousPath, blob }, i) => {
+        const count = counts[i]?.path === path ? counts[i] : undefined;
+        const section = sections[i];
+        const hunks = section?.path === path ? section.hunks : undefined;
+        return {
+          filename: path,
+          ...(previousPath ? { previousFilename: previousPath } : {}),
+          status,
+          additions: count?.additions ?? 0,
+          deletions: count?.deletions ?? 0,
+          patch: hunks ? truncatePatch(hunks) : undefined,
+          ...(blob ? { blob } : {}),
+        };
+      });
     const filesTruncated = statuses.length > MAX_SCM_FILES_TOTAL;
     return { files, filesTruncated, ...(filesTruncated ? { totalChangedFiles: statuses.length } : {}) };
   }
@@ -466,8 +450,16 @@ export class LocalGitProvider extends ScmProvider {
     const [commit, parent] = parents.ok ? parents.stdout.trim().split(' ') : [];
     if (!commit) return this.hosted.fetchCommitDiff(sha);
     const base = parent ?? (await this.emptyTree());
-    const diff = base ? await this.diff([base, commit]) : null;
-    return diff ? { commits: [], ...diff } : this.hosted.fetchCommitDiff(sha);
+    const [diff, log] = await Promise.all([
+      base ? this.diff([base, commit]) : null,
+      this.git(['log', '-n1', '--no-color', '--no-show-signature', '--format=%s%x1f%B', commit, '--']),
+    ]);
+    if (!diff) return this.hosted.fetchCommitDiff(sha);
+    const [subject = '', body = ''] = log.ok ? log.stdout.split('\x1f') : [];
+    return {
+      commits: log.ok ? [{ sha: commit.slice(0, 7), message: subject, fullMessage: body.trim() }] : [],
+      ...diff,
+    };
   }
 
   async getCommitAuthor(sha: string): Promise<ScmCommitAuthor | null> {

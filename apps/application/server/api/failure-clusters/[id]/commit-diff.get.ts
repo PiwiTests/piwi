@@ -9,7 +9,8 @@ defineRouteMeta({
   openAPI: {
     tags: ['Failure Clusters'],
     summary: 'Get commit diff for a cluster',
-    description: 'Returns the file changes and patches for a specific commit SHA in the cluster repository.',
+    description:
+      'Returns the file changes and patches for a specific commit SHA in the cluster repository: at most 300 files (`filesTruncated` when the commit has more) and the commit itself in `commits` when the host gives its message. Answers 502 with the host’s message when the host refuses the request.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       {
@@ -57,5 +58,11 @@ export default eventHandler(async (event) => {
   const provider = await createScmProvider(repositoryUrl, db, cluster.projectId);
   if (!provider) return null;
 
-  return provider.fetchCommitDiff(sha);
+  try {
+    return await provider.fetchCommitDiff(sha);
+  } catch (err) {
+    // The host refused or could not answer: say what it said.
+    const detail = err instanceof Error ? err.message : String(err);
+    throw apiError({ statusCode: 502, message: `The Git host could not diff this commit: ${detail}`.slice(0, 400) });
+  }
 });

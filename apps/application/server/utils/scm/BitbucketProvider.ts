@@ -4,6 +4,7 @@ import {
   type RerunDispatchResult,
   truncatePatch,
   MAX_SCM_FILES_TOTAL,
+  HOST_MAX_PAGE_SIZE,
   MAX_FILE_BYTES,
   MAX_RAW_DIFF_BYTES,
   FETCH_TIMEOUT_MS,
@@ -21,6 +22,7 @@ import type {
   CreatePullRequestInput,
 } from './ScmProvider';
 import { TtlCache } from '../ttl-cache';
+import { splitGitDiff } from './diff-text';
 import { isValidGitRef, encodeGitRef, encodePathSegments } from './refs';
 import type { CiRerunSettings } from '#shared/ci-rerun';
 
@@ -38,8 +40,15 @@ const rangeCommitsCache = new TtlCache<ScmCommit[]>(10 * 60 * 1000);
 const MAX_RANGE_COMMITS = 100;
 const fetchFileCache = new TtlCache<ScmFileContent | null>(30 * 60 * 1000);
 const defaultBranchCache = new TtlCache<string | null>(30 * 60 * 1000);
-// Author is immutable per SHA, so cache it (incl. negative lookups) for longer.
-const commitAuthorCache = new TtlCache<ScmCommitAuthor | null>(30 * 60 * 1000);
+// A commit is immutable per SHA, so cache it (and a commit the host does not have) for longer.
+const commitInfoCache = new TtlCache<{ hash: string; message: string; authorRaw: string | null } | null>(
+  30 * 60 * 1000,
+);
+
+/** A commit as `fetchChanges` and `fetchCommitDiff` list it. */
+function commitOf(hash: string, message: string): ScmCommit {
+  return { sha: hash.slice(0, 7), message: (message.split('\n')[0] ?? '').trim(), fullMessage: message };
+}
 
 /** Split Bitbucket's `author.raw` ("Ada Lovelace <ada@example.com>") into name + email. */
 function parseAuthorRaw(raw: string): ScmCommitAuthor | null {
@@ -53,27 +62,12 @@ function parseAuthorRaw(raw: string): ScmCommitAuthor | null {
   return /^[^\s@]+@[^\s@]+$/.test(bare) ? { name: bare, email: bare } : null;
 }
 
+/** Each file's hunks in a raw diff, by its path on the new side (the old side for a removed file). */
 function parsePatchesByFile(rawDiff: string): Map<string, string> {
   const result = new Map<string, string>();
-  const lines = rawDiff.split('\n');
-  let currentFile = '';
-  let currentLines: string[] = [];
-
-  const flush = () => {
-    if (currentFile) result.set(currentFile, truncatePatch(currentLines.join('\n')));
-  };
-
-  for (const line of lines) {
-    if (line.startsWith('diff --git ')) {
-      flush();
-      const match = line.match(/ b\/(.+)$/);
-      currentFile = match ? (match[1] ?? '') : '';
-      currentLines = [line];
-    } else if (currentFile) {
-      currentLines.push(line);
-    }
+  for (const section of splitGitDiff(rawDiff)) {
+    if (section.path && section.hunks) result.set(section.path, truncatePatch(section.hunks));
   }
-  flush();
   return result;
 }
 
@@ -114,31 +108,53 @@ export class BitbucketProvider extends ScmProvider {
     const hit = listCommitsCache.get(key);
     if (hit !== undefined) return hit;
 
-    const url = branch
-      ? `${this.base}/commits/${encodeURIComponent(branch)}?pagelen=${limit}`
-      : `${this.base}/commits?pagelen=${limit}`;
-    const res = await fetch(url, {
-      headers: this.makeHeaders(),
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
-    if (!res.ok) return [];
-    const data = (await res.json()) as {
-      values?: Array<{ hash: string; message: string; author: { raw?: string }; date: string }>;
-    };
-    const result = (data.values ?? []).map((c) => ({
-      sha: c.hash,
-      shortSha: c.hash.slice(0, 7),
-      message: (c.message.split('\n')[0] ?? '').trim(),
-      author: (c.author?.raw ?? '').replace(/<[^>]+>\s*$/, '').trim(),
-      date: c.date,
-    }));
+    // A page holds at most 100 commits: follow `next` until `limit`.
+    const pagelen = Math.min(limit, HOST_MAX_PAGE_SIZE);
+    let next: string | null = branch
+      ? `${this.base}/commits/${encodeURIComponent(branch)}?pagelen=${pagelen}`
+      : `${this.base}/commits?pagelen=${pagelen}`;
+    const result: ScmCommitDetail[] = [];
+    let complete = true;
+    while (next && result.length < limit) {
+      const res: Response = await fetch(next, {
+        headers: this.makeHeaders(),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (!res.ok) {
+        if (result.length === 0) return [];
+        complete = false;
+        break;
+      }
+      const data = (await res.json()) as {
+        values?: Array<{ hash: string; message: string; author: { raw?: string }; date: string }>;
+        next?: string;
+      };
+      for (const c of data.values ?? []) {
+        result.push({
+          sha: c.hash,
+          shortSha: c.hash.slice(0, 7),
+          message: (c.message.split('\n')[0] ?? '').trim(),
+          author: (c.author?.raw ?? '').replace(/<[^>]+>\s*$/, '').trim(),
+          date: c.date,
+        });
+      }
+      next = data.next ?? null;
+    }
+    result.splice(limit);
+    if (!complete) return result;
     listCommitsCache.set(key, result);
     return result;
   }
 
   async fetchChanges(fromSha: string, toSha: string): Promise<ScmChanges | null> {
     if (!isValidGitRef(fromSha) || !isValidGitRef(toSha)) return null;
-    const [changes, commits] = await Promise.all([this.diffRange(fromSha, toSha), this.rangeCommits(fromSha, toSha)]);
+    // Bitbucket takes the commit holding the changes first and the one it is
+    // compared with second, and diffs from their merge base: `to..from` here is
+    // git's `from...to`.
+    const [changes, commits] = await Promise.all([
+      this.diffSpec(`${encodeGitRef(toSha)}..${encodeGitRef(fromSha)}`),
+      this.rangeCommits(fromSha, toSha),
+    ]);
     return changes ? { ...changes, commits } : null;
   }
 
@@ -162,12 +178,7 @@ export class BitbucketProvider extends ScmProvider {
       });
       if (!res.ok) return [];
       const data = (await res.json()) as { values?: Array<{ hash: string; message?: string }> };
-      const result = (data.values ?? [])
-        .map((c) => {
-          const message = c.message ?? '';
-          return { sha: c.hash.slice(0, 7), message: (message.split('\n')[0] ?? '').trim(), fullMessage: message };
-        })
-        .reverse();
+      const result = (data.values ?? []).map((c) => commitOf(c.hash, c.message ?? '')).reverse();
       rangeCommitsCache.set(key, result);
       return result;
     } catch {
@@ -176,17 +187,15 @@ export class BitbucketProvider extends ScmProvider {
   }
 
   /**
-   * Diff two refs. Callers pass either two validated refs (fetchChanges) or a
-   * commit and its own `~1` parent (fetchCommitDiff) — the parent suffix is built
-   * from an already-validated SHA, so each ref is trusted here and encoded per
-   * segment before it enters the `from..to` spec.
+   * The changed files of a diff spec: a single commit (against its first
+   * parent) or `<changes>..<compared with>`, each part already validated and
+   * encoded by the caller.
    */
-  private async diffRange(fromRef: string, toRef: string): Promise<ScmChanges | null> {
-    const key = `${this.keyPrefix}:${this.workspace}/${this.repoSlug}:${fromRef}:${toRef}`;
+  private async diffSpec(spec: string): Promise<ScmChanges | null> {
+    const key = `${this.keyPrefix}:${this.workspace}/${this.repoSlug}:${spec}`;
     const hit = fetchChangesCache.get(key);
     if (hit !== undefined) return hit;
 
-    const spec = `${encodeGitRef(fromRef)}..${encodeGitRef(toRef)}`;
     // Raw patch text in parallel; the diffstat is paged for the file list.
     const diffPromise = fetch(`${this.base}/diff/${spec}`, {
       headers: this.makeHeaders(),
@@ -195,8 +204,8 @@ export class BitbucketProvider extends ScmProvider {
 
     type DiffStatValue = {
       status: string;
-      old?: { path: string };
-      new?: { path: string };
+      old?: { path: string } | null;
+      new?: { path: string } | null;
       lines_removed?: number;
       lines_added?: number;
     };
@@ -212,7 +221,10 @@ export class BitbucketProvider extends ScmProvider {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
       if (!res.ok) {
-        if (firstPage) return null;
+        if (firstPage) {
+          diffPromise.then((r) => r.body?.cancel()).catch(() => {});
+          return null;
+        }
         break;
       }
       firstPage = false;
@@ -228,10 +240,10 @@ export class BitbucketProvider extends ScmProvider {
       if (next && values.length >= MAX_SCM_FILES_TOTAL) filesTruncated = true;
     }
 
-    const diffRes = await diffPromise;
     let patchesByFile = new Map<string, string>();
     let patchesOmitted = false;
-    if (diffRes.ok) {
+    const diffRes = await diffPromise.catch(() => null);
+    if (diffRes?.ok) {
       const rawDiff = await diffRes.text();
       if (rawDiff.length > MAX_RAW_DIFF_BYTES) {
         patchesOmitted = true;
@@ -246,8 +258,10 @@ export class BitbucketProvider extends ScmProvider {
       filesTruncated,
       files: values.map((f) => {
         const filename = (f.new?.path || f.old?.path) ?? '';
+        const previous = f.status === 'renamed' && f.old?.path && f.old.path !== filename ? f.old.path : undefined;
         return {
           filename,
+          ...(previous ? { previousFilename: previous } : {}),
           status: f.status,
           additions: f.lines_added ?? 0,
           deletions: f.lines_removed ?? 0,
@@ -261,33 +275,39 @@ export class BitbucketProvider extends ScmProvider {
 
   async fetchCommitDiff(sha: string): Promise<ScmChanges | null> {
     if (!isValidGitRef(sha)) return null;
-    // `${sha}~1` is git rev syntax, not a plain ref, so it is built from the
-    // validated SHA and handed straight to diffRange rather than re-validated.
-    return this.diffRange(`${sha}~1`, sha);
+    // A single commit is diffed against its first parent.
+    const [changes, commit] = await Promise.all([this.diffSpec(encodeGitRef(sha)), this.commitInfo(sha)]);
+    if (!changes) return null;
+    return { ...changes, commits: commit ? [commitOf(commit.hash, commit.message)] : [] };
   }
 
-  async getCommitAuthor(sha: string): Promise<ScmCommitAuthor | null> {
-    if (!isValidGitRef(sha)) return null;
-    const key = `${this.keyPrefix}:author:${this.workspace}/${this.repoSlug}:${sha}`;
-    const hit = commitAuthorCache.get(key);
+  /** A commit's hash, message and raw author, or null when it cannot be read. */
+  private async commitInfo(sha: string): Promise<{ hash: string; message: string; authorRaw: string | null } | null> {
+    const key = `${this.keyPrefix}:commit:${this.workspace}/${this.repoSlug}:${sha}`;
+    const hit = commitInfoCache.get(key);
     if (hit !== undefined) return hit;
-
     try {
       const res = await fetch(`${this.base}/commit/${encodeURIComponent(sha)}`, {
         headers: this.makeHeaders(),
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
       if (!res.ok) {
-        commitAuthorCache.set(key, null);
+        if (res.status === 404) commitInfoCache.set(key, null);
         return null;
       }
-      const data = (await res.json()) as { author?: { raw?: string } };
-      const result = data.author?.raw ? parseAuthorRaw(data.author.raw) : null;
-      commitAuthorCache.set(key, result);
+      const data = (await res.json()) as { hash?: string; message?: string; author?: { raw?: string } };
+      const result = { hash: data.hash ?? sha, message: data.message ?? '', authorRaw: data.author?.raw ?? null };
+      commitInfoCache.set(key, result);
       return result;
     } catch {
       return null;
     }
+  }
+
+  async getCommitAuthor(sha: string): Promise<ScmCommitAuthor | null> {
+    if (!isValidGitRef(sha)) return null;
+    const commit = await this.commitInfo(sha);
+    return commit?.authorRaw ? parseAuthorRaw(commit.authorRaw) : null;
   }
 
   async fetchIssue(number: number): Promise<ScmEntityRef | null> {
@@ -359,7 +379,8 @@ export class BitbucketProvider extends ScmProvider {
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (!res.ok) {
-      fetchFileCache.set(key, null);
+      // Only a missing file is an answer to keep; a refused or failed request is tried again.
+      if (res.status === 404) fetchFileCache.set(key, null);
       return null;
     }
     const raw = await res.text();

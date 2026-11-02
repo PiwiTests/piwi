@@ -90,7 +90,8 @@ The diagnosis is fed the code that changed. On a cluster page you can:
 - **Preview the exact context** before running it, so nothing leaves your server by surprise.
 
 Without a pinned baseline, the diff starts at the last green run before the cluster first appeared, else at the last
-run where this test passed; the context preview names which one it used. With the repository reachable, Piwi also sends the
+run before it where this test passed; the context preview names which one it used. When the host lists only part of a
+large diff, or the patches are cut to the context budget, the context says so and marks the section truncated. With the repository reachable, Piwi also sends the
 **full current content** of the most suspect changed files and of the failing test's local imports (page objects,
 helpers, fixtures), capped by `PIWI_AI_MAX_SOURCE_FILES` (default 4) and `PIWI_AI_MAX_SOURCE_FILE_CHARS`. The
 repository connection is set up on [Source control](/guide/source-control).

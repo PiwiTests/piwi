@@ -37,7 +37,7 @@ import {
 import { parseBisectResultBody } from '@piwitests/core/bisect';
 import { agentDiagnosisErrorMessage, parseAgentDiagnosis, type AgentDiagnosisTarget } from '#shared/agent-diagnosis';
 import { resolveAgentDiagnosisTarget } from '#shared/handlers/agent-diagnosis';
-import { storedPatchValidation } from '#shared/patch';
+import { PATCH_TRUNCATED_NOTE, storedPatchValidation } from '#shared/patch';
 import { parseFixAttempt } from '#shared/fix-attempts';
 import type { LatestExecution } from '#shared/latest-execution';
 import { FIX_ATTEMPT_ERRORS, reportFixAttempt } from '#shared/handlers/fix-attempts';
@@ -141,6 +141,8 @@ import { getLocatorIndex } from '../locator-usages';
 
 /** The largest diff `predict_locator_breaks` and `get_impacted_tests` read, in characters. */
 const MAX_DIFF_CHARS = 2_000_000;
+/** The patch text `get_repo_diff` answers with, all files together. */
+const MAX_REPO_DIFF_PATCH_CHARS = 200_000;
 /** Changed files `get_impacted_tests` lists, and tests per file. */
 const MAX_IMPACT_FILES = 50;
 const MAX_IMPACT_FILE_TESTS = 20;
@@ -1211,8 +1213,10 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     if (!clusterRow) return null;
     assertProject(ctx, clusterRow.projectId);
 
-    const baseCommit = params.baseCommit as string | undefined;
-    const selectedCommitShas = params.selectedCommitShas as string[] | undefined;
+    const baseCommit = typeof params.baseCommit === 'string' ? params.baseCommit : undefined;
+    const selectedCommitShas = Array.isArray(params.selectedCommitShas)
+      ? params.selectedCommitShas.filter((sha): sha is string => typeof sha === 'string')
+      : undefined;
 
     const { text, coverage, images } = await buildClusterDiagnosisContext(db, clusterRow, {
       baseCommit,
@@ -1241,6 +1245,9 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
             filesCount: coverage.scm.filesCount || null,
             patchedFilesCount: coverage.scm.patchedFilesCount || null,
             patchesOmitted: coverage.scm.patchesOmitted || null,
+            patchesTruncated: coverage.scm.patchesTruncated || null,
+            filesTruncated: coverage.scm.filesTruncated || null,
+            totalChangedFiles: coverage.scm.totalChangedFiles ?? null,
             baseCommitUsed: coverage.scm.baseCommitUsed || null,
             range: coverage.scm.range ? `${coverage.scm.range.from}..${coverage.scm.range.to}` : null,
             compareUrl: coverage.scm.compareUrl || null,
@@ -1444,21 +1451,36 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     try {
       const changes = await provider.fetchCommitDiff(sha);
       if (!changes) return { error: 'Diff unavailable for this commit' };
+      // One budget for every patch of the answer: past it, a patch is cut and the next ones are left out.
+      let budget = MAX_REPO_DIFF_PATCH_CHARS;
+      let patchesTruncated = false;
+      const files = changes.files.map((f) => {
+        let patch: string | null = f.patch || null;
+        if (patch && patch.length > budget) {
+          patch = budget > 0 ? `${patch.slice(0, budget)}\n${PATCH_TRUNCATED_NOTE}` : null;
+          patchesTruncated = true;
+        }
+        budget -= Math.min(budget, f.patch?.length ?? 0);
+        return dropNulls({
+          filename: f.filename,
+          previousFilename: f.previousFilename ?? null,
+          status: f.status,
+          additions: f.additions,
+          deletions: f.deletions,
+          patch,
+        });
+      });
+      const commit = changes.commits[0];
       return dropNulls({
         commit: sha,
-        files: changes.files.map((f) =>
-          dropNulls({
-            filename: f.filename,
-            status: f.status,
-            additions: f.additions,
-            deletions: f.deletions,
-            patch: f.patch || null,
-          }),
-        ),
+        message: commit?.fullMessage ?? commit?.message ?? null,
+        files,
+        filesTruncated: changes.filesTruncated || null,
         patchesOmitted: changes.patchesOmitted || null,
+        patchesTruncated: patchesTruncated || null,
       });
     } catch (err) {
-      return { error: err instanceof Error ? err.message : String(err) };
+      return { error: trunc(err instanceof Error ? err.message : String(err), 400) };
     }
   },
 
