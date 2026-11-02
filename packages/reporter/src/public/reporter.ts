@@ -150,6 +150,8 @@ const MAX_UNCAPTURED_NAMED = 5;
 export class PiwiDashboardReporter {
   private options: PiwiDashboardOptions;
   private testCases: CollectedTestCase[] = [];
+  /** The failed and timed-out attempts collected so far: the blockers a `describe.serial` cascade links to. */
+  private readonly failedCases: CollectedTestCase[] = [];
   private startTime: string | null = null;
   private playwrightVersion: string | null = null;
   private readonly reporterVersion = getReporterVersion();
@@ -855,11 +857,14 @@ export class PiwiDashboardReporter {
     }
 
     this.testCases.push(testCase);
+    if (status === 'failed' || status === 'timedOut') this.failedCases.push(testCase);
 
     // A cascade's blocking failure has already reported (serial execution runs
     // it first), so resolve `blockedBy` now — the streamed event then carries
-    // the link even though the whole run isn't collected yet.
-    if (status === 'didnotrun') linkBlockedTests(this.testCases);
+    // the link even though the whole run isn't collected yet. Only this case is
+    // linked, against the failures so far, so a long cascade costs one pass
+    // over the failures per test rather than over every case collected.
+    if (status === 'didnotrun') linkBlockedTests([...this.failedCases, testCase]);
 
     // The final attempt of a failing test gets a dashboard link, printed as
     // soon as a run id exists (immediately while streaming, after the submit otherwise).
