@@ -34,7 +34,7 @@ import {
   parseTestMetadata,
   sanitizeTestMetadata,
 } from '@piwitests/core/test-meta';
-import { matchInsertedRunCases, resolveRepeatEachIndex } from './inserted-run-cases';
+import { matchInsertedRunCases, recountClustersOfSkippedRows, resolveRepeatEachIndex } from './inserted-run-cases';
 import { testCaseCache } from './test-case-cache';
 import { syncTestCaseMetadata, type CaseMetaSnapshot } from './test-case-metadata-sync';
 import { displayTitleOf, externalIdOf, recordExternalIdDuplicates, type TestCaseClaim } from './test-case-match';
@@ -639,10 +639,18 @@ export async function persistRunCases(
       browserName: testRunsCases.browserName,
     });
   const returnedRows: Awaited<ReturnType<typeof insertRunCases>> = [];
-  for (let i = 0; i < runCasesRows.length; i += INSERT_CHUNK) {
-    returnedRows.push(...(await insertRunCases(runCasesRows.slice(i, i + INSERT_CHUNK))));
+  try {
+    for (let i = 0; i < runCasesRows.length; i += INSERT_CHUNK) {
+      returnedRows.push(...(await insertRunCases(runCasesRows.slice(i, i + INSERT_CHUNK))));
+    }
+  } catch (error) {
+    await recountClustersOfSkippedRows(db, runCasesRows, matchInsertedRunCases(runCasesRows, returnedRows)).catch(
+      (err) => console.warn('[persist-run-cases] failed to recount the clusters of a batch it could not store', err),
+    );
+    throw error;
   }
   const insertedCases = matchInsertedRunCases(runCasesRows, returnedRows);
+  await recountClustersOfSkippedRows(db, runCasesRows, insertedCases);
 
   const result = insertedCases.map((r) => ({
     id: r.id,

@@ -30,7 +30,11 @@ import {
   buildNetworkRequestInsertValues,
   type NetworkRequestBuilder,
 } from '~~/server/utils/network-request-helpers';
-import { matchInsertedRunCases, resolveRepeatEachIndex } from '~~/server/utils/inserted-run-cases';
+import {
+  matchInsertedRunCases,
+  recountClustersOfSkippedRows,
+  resolveRepeatEachIndex,
+} from '~~/server/utils/inserted-run-cases';
 import { upsertLocatorSnapshots } from '~~/server/utils/locator-healing';
 import { executionCreatedAt, type PersistRunCasesOptions } from '~~/server/utils/persist-options';
 import { carryIngestHealth } from '#shared/ingest-health';
@@ -818,6 +822,7 @@ export async function persistRunCases(
       browserName: testRunsCases.browserName,
     }),
   );
+  await recountClustersOfSkippedRows(db, runCasesRows, insertedCases);
 
   const result = insertedCases.map((r) => ({
     id: r.id,

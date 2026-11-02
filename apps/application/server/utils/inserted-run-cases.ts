@@ -1,3 +1,6 @@
+import { recomputeClusterOccurrences } from '#shared/handlers/failure-cluster-ops';
+import type { DrizzleDB } from '#shared/handlers/db';
+
 /** The columns of the `(run, case, repeat, retries, browser)` unique index that a batch row carries. */
 interface RunCaseKey {
   testCaseId: number;
@@ -55,4 +58,22 @@ export function matchInsertedRunCases<T extends RunCaseKey>(
     const rowIndex = indicesByKey.get(keyOf(row))?.shift();
     return rowIndex === undefined ? [] : [{ ...row, rowIndex }];
   });
+}
+
+/**
+ * Count again, from the rows that reference it, each failure cluster linked to a batch row the insert did not store:
+ * one it skipped (a batch sent again, a row the batch repeats) or never wrote (the insert failed). A batch's failures
+ * are counted on their clusters before its rows are inserted.
+ */
+export async function recountClustersOfSkippedRows(
+  db: DrizzleDB,
+  rows: Array<{ failureClusterId?: number | null }>,
+  inserted: Array<{ rowIndex: number }>,
+): Promise<void> {
+  const stored = new Set(inserted.map((row) => row.rowIndex));
+  const clusterIds = new Set<number>();
+  rows.forEach((row, index) => {
+    if (row.failureClusterId != null && !stored.has(index)) clusterIds.add(row.failureClusterId);
+  });
+  for (const clusterId of clusterIds) await recomputeClusterOccurrences(db, clusterId);
 }
