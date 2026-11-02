@@ -366,7 +366,7 @@ function applyAttachments(acc: ResultAccumulator, attachments: unknown): void {
 /** Assemble the error text for an execution, matching the reporter's rules. */
 function buildErrorText(errors: unknown, resolver: PathResolver): string | null {
   if (!Array.isArray(errors)) return null;
-  const text = joinErrorMessages(errors as Array<{ message?: string }>);
+  const text = joinErrorMessages(errors as Array<{ message?: string; value?: string }>);
   if (!text) return null;
 
   const location = errorLocation(locatedError(errors as Array<Record<string, unknown>>), resolver);

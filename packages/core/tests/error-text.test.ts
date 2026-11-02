@@ -54,3 +54,16 @@ describe('the error text of a test', () => {
     expect(extractErrorSignature(text)).toEqual(extractErrorSignature(fillError));
   });
 });
+
+describe('the error of a test that threw a value that is not an Error', () => {
+  // As Playwright lists `throw 'boom'` and `throw { code: 42 }`: no message, the value inspected.
+  test('keeps the value as its text', () => {
+    expect(joinErrorMessages([{ value: "'payment declined'" }])).toBe("'payment declined'");
+    expect(joinErrorMessages([{ value: '{ code: 42 }' }, { value: '{ code: 42 }' }])).toBe('{ code: 42 }');
+  });
+
+  test('prefers the message when there is one', () => {
+    expect(joinErrorMessages([{ message: 'Error: boom', value: 'ignored' }])).toBe('Error: boom');
+    expect(joinErrorMessages([{}])).toBeNull();
+  });
+});
