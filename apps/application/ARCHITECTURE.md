@@ -173,8 +173,9 @@ gives the shape.
 Each entry names folders under `server/api/`.
 
 - **`test-runs/`**: the reporter's routes and the run page.
-  - Batch ingest: `submit` (JSON), `upload` (multipart), `import` and `import/check` (a historical blob report or
-    trace).
+  - Batch ingest: `submit` (JSON), `upload` (multipart), `upload/results` (a run's results ahead of its files, which
+    then go to `[id]/case-files` and an `upload` with `runId`), `import` and `import/check` (a historical blob report
+    or trace).
   - The streaming protocol: `setup`, `start`, `[id]/begin`, `[id]/events`, `[id]/heartbeat`, `[id]/case-files`,
     `[id]/finish`, and `[id]/live-resources`: a watched run's CPU, memory and open pages, held in memory by
     `server/utils/run-events.ts` until the run ends and merged by `shared/live-resources.ts`.

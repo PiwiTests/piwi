@@ -1,7 +1,7 @@
 # Run ingestion: agent guide
 
 Rules for the routes that write runs (the reporter's `setup`, `start`, `begin`, `events`, `heartbeat`, `case-files`,
-`finish`, `submit` and `upload`, and the imports) and for what they write. Read
+`finish`, `submit`, `upload` and `upload/results`, and the imports) and for what they write. Read
 [`../../../AGENTS.md`](../../../AGENTS.md) and [`../AGENTS.md`](../AGENTS.md) first.
 
 ## Finish-time side effects
@@ -72,9 +72,13 @@ How the server merges shards:
 
 - **The streaming routes authenticate with the run's stream token**, not `requireAuth`: `[id]/begin` (with the setup
   token `/setup` returned), then `events`, `heartbeat`, `live-resources`, `case-files` and `finish`. `/setup` and
-  `/start` authenticate the caller and hand the token out. A token is kept only as its digest (`streamTokenDigest`,
-  `shardTokenDigest`): in `test_runs.stream_token`, in the in-memory run state (`runEventBus`,
-  `server/utils/run-events.ts`) and, for a shard, in the run's `metadata.shardTokens`, which project members can read.
+  `/start` authenticate the caller and hand the token out, and so does `/upload/results` for a batch run it holds
+  `finalizing` until its files are in. A token is kept only as its digest (`streamTokenDigest`, `shardTokenDigest`):
+  in `test_runs.stream_token`, in the in-memory run state (`runEventBus`, `server/utils/run-events.ts`) and, for a
+  shard, in the run's `metadata.shardTokens`, which project members can read.
+- **A run takes files only with a token of its own**: `case-files` takes those of a running run, or of a run
+  `/upload/results` holds `finalizing`, with its stream token, never with an API key, and `settleFinalizingRun`
+  drops the token (`tests/unit/batch-run-in-parts.test.ts`). An upload with `runId` attaches reports alone.
 - **A new streaming route authenticates with `authorizeStreamToken`** (`server/utils/stream-auth.ts`). It accepts the
   run's own token or any of its shard tokens, from the cache or the database (`validateAndReviveRun` with its
   `isShardToken` callback, which also revives an interrupted run). Never compare a token against the stored set
