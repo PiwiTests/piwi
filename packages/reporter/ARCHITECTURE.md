@@ -467,7 +467,9 @@ submit.
 
 On `onEnd`, the collected run is handed to `RunSubmitter`, which tries, in order:
 
-1. **streaming `/finish`**: when a streaming session is open (`internal/streaming/`),
+1. **streaming `/finish`**: when a streaming session is open (`internal/streaming/`). A `/finish` whose answer may
+   have been lost (no answer, a server error) is asked again, twice at most, before the ladder goes on: a repeat the
+   dashboard refuses as the run closed (409) or its token spent (403) means the first one finished the run,
 2. **multipart `/upload`**: when reports or traces are asked for and the run has a file to attach (a report, a
    trace or an attachment),
 3. **plain JSON `/submit`**: last resort,

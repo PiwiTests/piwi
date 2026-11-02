@@ -18,6 +18,17 @@ import type { CollectedTestCase, SetupStep, FilterDetails, WireResourceReport } 
 /** Longest delay `setTimeout` supports; a larger one fires at once. */
 const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
 
+/** The waits before asking `/finish` again when its answer was lost: three tries in all. */
+const FINISH_RETRY_DELAYS_MS = [1000, 2000];
+
+/**
+ * Whether a failed request may have reached the dashboard with its answer lost on the way back: no answer came, or a
+ * server error, a timeout (408) or a rate limit (429) did.
+ */
+function answerMayBeLost(error: unknown): boolean {
+  return !(error instanceof HttpError) || error.status >= 500 || error.status === 408 || error.status === 429;
+}
+
 /**
  * Result of one rung of the submit ladder. `done` stops the ladder (the run
  * landed, or the last rung was reached); `output` carries the run identity to
@@ -334,7 +345,7 @@ export class RunSubmitter {
         finishBody.shardTotal = run.shardInfo.total;
       }
 
-      await this.httpClient.postJSON(`/api/test-runs/${sm.runId}/finish`, finishBody, auth);
+      await this.postFinish(sm.runId!, finishBody, auth);
 
       this.logger.debug(`Successfully finalized streaming run #${sm.runId}`);
       this.dropLocalCopies();
@@ -357,6 +368,31 @@ export class RunSubmitter {
       this.logger.warn(`Failed to finalize streaming run: ${errorMessage(error)}`);
       this.logger.info('Falling back to batch upload...');
       return { done: false, output: null };
+    }
+  }
+
+  /**
+   * Post the run's `/finish`, asked again when its answer may have been lost, since the dashboard may have finished
+   * the run already: then it refuses the request again as the run's stream is closed (409) or its token spent (403),
+   * which means the earlier request finished it. Throws when the run was not finished.
+   */
+  private async postFinish(runId: number, body: Record<string, unknown>, auth: string | null): Promise<void> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await this.httpClient.postJSON(`/api/test-runs/${runId}/finish`, body, auth);
+        return;
+      } catch (error) {
+        if (attempt > 0 && error instanceof HttpError && (error.status === 409 || error.status === 403)) {
+          this.logger.debug(`Run #${runId} was finished by an earlier /finish whose answer was lost.`);
+          return;
+        }
+        const delay = FINISH_RETRY_DELAYS_MS[attempt];
+        if (delay === undefined || this.httpClient.closed || !answerMayBeLost(error)) throw error;
+        this.logger.warn(
+          `The run's /finish failed (${errorMessage(error)}), perhaps after the dashboard took it: asking again.`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
     }
   }
 

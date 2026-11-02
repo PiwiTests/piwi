@@ -282,7 +282,7 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
       } else if (req.url === '/api/test-runs/1/events') {
         jsonRes(res, 200, {});
       } else if (req.url === '/api/test-runs/1/finish') {
-        textRes(res, 500, 'boom');
+        textRes(res, 404, 'run not found');
       } else if (req.url === '/api/test-runs/upload') {
         uploadBody = req.body;
         jsonRes(res, 200, { runId: 2, projectId: 3 });
@@ -765,6 +765,42 @@ describe('RunSubmitter local copies', () => {
     expect(sm.discardBuffered).toHaveBeenCalledOnce();
   });
 
+  it('asks /finish again when its answer was lost, and takes a refusal of the repeat as the run finished', async () => {
+    let finishes = 0;
+    server = await startServer((req, res) => {
+      if (req.url !== '/api/test-runs/1/finish') return textRes(res, 404, 'nope');
+      finishes++;
+      // The dashboard finishes the run, but its answer never arrives; the repeat finds the run closed.
+      if (finishes === 1) return req.raw.socket?.destroy();
+      jsonRes(res, 409, { message: 'Test run is not in running state' });
+    });
+    const sm = streamSession();
+    const submitted = await submitter(server.url, sm).submit(collectedRun(server.url), { status: 'passed' } as any);
+
+    expect(urlsHit(server)).toEqual(['/api/test-runs/1/finish', '/api/test-runs/1/finish']);
+    expect(submitted?.runId).toBe(1);
+    expect(sm.discardBuffered).toHaveBeenCalledOnce();
+    expect(fs.existsSync(recoveryFilePath(server.url, projectName))).toBe(false);
+  });
+
+  it('falls back to the batch submit once every try at /finish failed', async () => {
+    server = await startServer((req, res) => {
+      if (req.url === '/api/test-runs/1/finish') return textRes(res, 503, 'unavailable');
+      if (req.url === '/api/test-runs/submit') return jsonRes(res, 200, { runId: 2 });
+      textRes(res, 404, 'nope');
+    });
+    const sm = streamSession();
+    const submitted = await submitter(server.url, sm).submit(collectedRun(server.url), { status: 'passed' } as any);
+
+    expect(urlsHit(server)).toEqual([
+      '/api/test-runs/1/finish',
+      '/api/test-runs/1/finish',
+      '/api/test-runs/1/finish',
+      '/api/test-runs/submit',
+    ]);
+    expect(submitted?.runId).toBe(2);
+  });
+
   it("discards the run's buffered live events once the batch submit succeeds", async () => {
     server = await startServer((req, res) =>
       req.url === '/api/test-runs/submit' ? jsonRes(res, 200, { runId: 2 }) : textRes(res, 404, 'nope'),
@@ -786,8 +822,8 @@ describe('RunSubmitter local copies', () => {
     expect(recoveredRun(server, projectName)).toEqual({ projectName, testCases: [] });
   });
 
-  it('keeps the buffered live events when no rung reaches the server', async () => {
-    server = await startServer((_req, res) => textRes(res, 500, 'down'));
+  it('keeps the buffered live events when no rung delivers the run', async () => {
+    server = await startServer((_req, res) => textRes(res, 400, 'refused'));
     const sm = streamSession();
     await submitter(server.url, sm).submit(collectedRun(server.url), { status: 'passed' } as any);
     expect(sm.discardBuffered).not.toHaveBeenCalled();
