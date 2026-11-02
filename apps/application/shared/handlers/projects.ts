@@ -1397,7 +1397,8 @@ export async function getProjectSlowTests(
   const runIds: number[] = recentRuns.map((r: any) => r.id);
   if (runIds.length === 0) return [];
 
-  // Get all test case results from these runs, joining startTime so we can sort chronologically
+  // Get the test case results that ran in these runs, joining startTime so we can sort chronologically. A skipped
+  // test or one that did not run is stored at 0 ms: it says nothing about how long the test takes.
   const results: any[] = await db
     .select({
       testCaseId: testRunsCases.testCaseId,
@@ -1410,7 +1411,13 @@ export async function getProjectSlowTests(
     .from(testRunsCases)
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-    .where(and(inArray(testRunsCases.testRunId, runIds), eq(testCases.projectId, projectId)));
+    .where(
+      and(
+        inArray(testRunsCases.testRunId, runIds),
+        eq(testCases.projectId, projectId),
+        notInArray(testRunsCases.status, ['skipped', 'didnotrun']),
+      ),
+    );
 
   // Group by test case and compute aggregates
   const testCaseMap = new Map<
