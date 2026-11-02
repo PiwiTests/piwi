@@ -147,8 +147,8 @@ the demo.
 
 ## Size limits
 
-Each archive is uploaded whole, so it must fit under the server's limit — **500 MB** by default. The import page shows
-the effective limit and rejects anything larger before uploading it.
+Each archive is uploaded whole, so it must fit under the server's limit — **500 MB** by default, under 2 GB in any
+case. The import page shows the effective limit and rejects anything larger before uploading it.
 
 If a reverse proxy in front of Piwi enforces a smaller body limit, set
 [`PIWI_IMPORT_MAX_BYTES`](/reference/configuration#ingest-limits) to match, so the page rejects the same archives your proxy would

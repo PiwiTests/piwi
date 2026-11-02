@@ -10,7 +10,7 @@ import { getDatabase } from '../database';
 import { getStorage } from '../storage';
 import { getProjectScope } from './project-access';
 import { resolveIngestProject } from './ingest-project';
-import { resolveMaxUploadBytes } from './upload-limits';
+import { resolveMaxImportBytes } from './upload-limits';
 import { sanitizeFilename } from './sanitize-filename';
 import { persistRunCases } from './persist-run-cases';
 import { upsertTraceBlob } from './trace-blobs';
@@ -49,7 +49,7 @@ export async function importArchive(input: ImportArchiveInput): Promise<ImportRu
   const label = input.label ?? null;
   const importGroup = input.importGroup ?? null;
 
-  const maxUploadBytes = resolveMaxUploadBytes();
+  const maxUploadBytes = resolveMaxImportBytes();
   if (archive.data.length === 0) {
     throw apiError({ statusCode: 400, message: 'The uploaded archive is empty' });
   }

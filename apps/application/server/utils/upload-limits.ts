@@ -17,3 +17,15 @@ export function resolveMaxUploadBytes(): number {
 
   return Math.min(MAX_IMPORT_MAX_BYTES, Math.max(MIN_IMPORT_MAX_BYTES, Math.floor(parsed)));
 }
+
+/** The largest file Node reads whole: an imported archive is read into memory at once. */
+const MAX_READABLE_BYTES = 2 ** 31 - 1;
+
+/**
+ * The size ceiling of one imported archive: {@link resolveMaxUploadBytes}, held
+ * under 2 GiB since an import reads its archive whole, so a larger one is
+ * refused before it is uploaded rather than after.
+ */
+export function resolveMaxImportBytes(): number {
+  return Math.min(resolveMaxUploadBytes(), MAX_READABLE_BYTES);
+}

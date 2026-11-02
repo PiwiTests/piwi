@@ -210,7 +210,7 @@ import { stat, readFile, writeFile } from 'node:fs/promises';
 import { isAbsolute, resolve as resolvePath, relative as relativePath, basename } from 'node:path';
 import { importArchive } from '../import-archive';
 import { sanitizeFilename } from '../sanitize-filename';
-import { resolveMaxUploadBytes } from '../upload-limits';
+import { resolveMaxImportBytes } from '../upload-limits';
 import { formatBytes } from '#shared/utils/format-bytes';
 import { dropNulls } from './json';
 import { describePiwi, getReleaseNotes } from './about-piwi';
@@ -3494,7 +3494,7 @@ const DESKTOP_HANDLERS: Record<DesktopMcpToolName, McpToolHandler> = {
       throw new Error(`file not found: ${path}`);
     }
     if (!info.isFile()) throw new Error('not a file');
-    const maxBytes = resolveMaxUploadBytes();
+    const maxBytes = resolveMaxImportBytes();
     if (info.size > maxBytes) throw new Error(`archive too large (max ${formatBytes(maxBytes)})`);
 
     const data = await readFile(path);
