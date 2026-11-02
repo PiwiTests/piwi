@@ -3,7 +3,11 @@
 // TypeScript uses the SQLite types as the canonical reference throughout.
 import { drizzle as sqliteDrizzle } from 'drizzle-orm/libsql/sqlite3';
 import * as sqliteSchema from './schema.sqlite';
-import { reclusterFailureFingerprints } from '#shared/handlers/failure-cluster-recluster';
+import {
+  ALIAS_SAMPLES_BACKFILLED_SETTING,
+  backfillAliasSamples,
+  reclusterFailureFingerprints,
+} from '#shared/handlers/failure-cluster-recluster';
 import { applyMigrations } from './migration-history';
 import { postgresMigrationTarget, sqliteMigrationTarget } from './migration-targets';
 import { configureSqliteConnections, sqliteClientConfig } from './sqlite-connections';
@@ -103,6 +107,29 @@ function backfillAnalyticsRollups(): void {
 }
 
 /**
+ * Re-fingerprint the failure clusters (`reclusterFailureFingerprints`), after
+ * giving a sample to the aliases stored without one (`backfillAliasSamples`),
+ * which runs once per instance. Startup waits for both. A failure is logged,
+ * and the next start tries again.
+ */
+async function reclusterFailureClusters(target: DB): Promise<void> {
+  try {
+    const { getAppSetting, setAppSetting } = await import('../utils/app-settings');
+    if (!(await getAppSetting(target, ALIAS_SAMPLES_BACKFILLED_SETTING))) {
+      const found = await backfillAliasSamples(target);
+      await setAppSetting(target, ALIAS_SAMPLES_BACKFILLED_SETTING, new Date().toISOString());
+      if (found > 0) console.log(`[Database] Failure-cluster alias backfill found ${found} sample(s)`);
+    }
+    const { updated, merged } = await reclusterFailureFingerprints(target);
+    if (updated || merged) {
+      console.log(`[Database] Failure-cluster re-fingerprinting: ${updated} updated, ${merged} merged`);
+    }
+  } catch (err) {
+    console.error('[Database] Failure-cluster re-fingerprinting failed:', err);
+  }
+}
+
+/**
  * Open the database and bring its schema up to date, once per process: the
  * callers that arrive while it is still opening (the startup plugins, the first
  * requests) share the same connection and the same migration run.
@@ -133,14 +160,7 @@ async function openDatabase(): Promise<DB> {
           const target = postgresMigrationTarget(client, () => migrate(pgDb, { migrationsFolder }));
           await applyMigrations(target, migrationsFolder);
           console.log('[Database] PostgreSQL migrations completed successfully');
-          try {
-            const { updated, merged } = await reclusterFailureFingerprints(db as any);
-            if (updated || merged) {
-              console.log(`[Database] Failure-cluster re-fingerprinting: ${updated} updated, ${merged} merged`);
-            }
-          } catch (rcErr) {
-            console.error('[Database] Failure-cluster re-fingerprinting failed:', rcErr);
-          }
+          await reclusterFailureClusters(db);
           rewriteRouteKeys(db as any);
           backfillTraceResourceLinks();
           backfillAnalyticsRollups();
@@ -192,14 +212,7 @@ async function openDatabase(): Promise<DB> {
             migrationClient.close();
           }
           console.log('[Database] SQLite migrations completed successfully');
-          try {
-            const { updated, merged } = await reclusterFailureFingerprints(db);
-            if (updated || merged) {
-              console.log(`[Database] Failure-cluster re-fingerprinting: ${updated} updated, ${merged} merged`);
-            }
-          } catch (rcErr) {
-            console.error('[Database] Failure-cluster re-fingerprinting failed:', rcErr);
-          }
+          await reclusterFailureClusters(db);
           rewriteRouteKeys(db);
           backfillTraceResourceLinks();
           backfillAnalyticsRollups();

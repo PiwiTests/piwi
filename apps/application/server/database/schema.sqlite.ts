@@ -290,6 +290,7 @@ export const failureClusterAliases = sqliteTable(
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
     fingerprint: text('fingerprint').notNull(),
+    fingerprintSample: text('fingerprint_sample'), // the error `fingerprint` was computed from: the absorbed cluster's fingerprint sample, re-fingerprinted on a version bump like a cluster's (null when none was found)
     clusterId: integer('cluster_id')
       .notNull()
       .references(() => failureClusters.id, { onDelete: 'cascade' }),

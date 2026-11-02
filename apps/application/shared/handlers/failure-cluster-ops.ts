@@ -618,6 +618,8 @@ export async function mergeFailureClusters(db: DrizzleDB, survivorId: number, vi
         ...triageFields,
         projectId: failureClusters.projectId,
         fingerprint: failureClusters.fingerprint,
+        fingerprintSample: failureClusters.fingerprintSample,
+        sampleError: failureClusters.sampleError,
         occurrences: failureClusters.occurrences,
         firstSeenRunId: failureClusters.firstSeenRunId,
         lastSeenRunId: failureClusters.lastSeenRunId,
@@ -658,11 +660,20 @@ export async function mergeFailureClusters(db: DrizzleDB, survivorId: number, vi
 
     // Record the victim's fingerprint → survivor so future failures with that
     // fingerprint attach to the survivor, and re-home any aliases that pointed
-    // at the victim (keeps chained merges consistent).
+    // at the victim (keeps chained merges consistent). The alias keeps the
+    // error the fingerprint was computed from, so a version bump computes it
+    // again as it does the clusters'.
     if (victim) {
       await tx
         .insert(failureClusterAliases)
-        .values({ projectId: victim.projectId, fingerprint: victim.fingerprint, clusterId: survivorId })
+        .values({
+          projectId: victim.projectId,
+          fingerprint: victim.fingerprint,
+          fingerprintSample: isSplitFingerprint(victim.fingerprint)
+            ? null
+            : (victim.fingerprintSample ?? victim.sampleError),
+          clusterId: survivorId,
+        })
         .onConflictDoNothing();
       await tx
         .update(failureClusterAliases)

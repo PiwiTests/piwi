@@ -360,6 +360,30 @@ describe('merging two clusters keeps their triage and history', () => {
     expect(await survivorTriage(3)).toEqual({ assignee: 'bob', triageNote: 'Cart API\nFlaky on CI' });
   });
 
+  test("the alias a merge records keeps the victim's fingerprint sample, else its display sample", async () => {
+    await insertCluster(1);
+    await insertCluster(2, { fingerprintSample: plainError, sampleError: richError });
+    // A cluster stored before clusters kept their fingerprint sample, and one made by moving tests.
+    await insertCluster(3, { sampleError: richError });
+    await insertCluster(4, { fingerprint: 'split:moved', sampleError: plainError });
+
+    for (const victim of [2, 3, 4]) await mergeFailureClusters(dbc, 1, victim);
+
+    const aliases = await db
+      .select({
+        fingerprint: schema.failureClusterAliases.fingerprint,
+        fingerprintSample: schema.failureClusterAliases.fingerprintSample,
+        clusterId: schema.failureClusterAliases.clusterId,
+      })
+      .from(schema.failureClusterAliases)
+      .orderBy(schema.failureClusterAliases.id);
+    expect(aliases).toEqual([
+      { fingerprint: 'fp-2', fingerprintSample: plainError, clusterId: 1 },
+      { fingerprint: 'fp-3', fingerprintSample: richError, clusterId: 1 },
+      { fingerprint: 'split:moved', fingerprintSample: null, clusterId: 1 },
+    ]);
+  });
+
   test('an assignee or a note line written to the survivor while the merge runs is kept', async () => {
     await insertCluster(1, { triageNote: 'Cart API' });
     await insertCluster(2, { assignee: 'bob', triageNote: 'Flaky on CI' });

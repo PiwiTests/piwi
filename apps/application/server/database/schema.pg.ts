@@ -328,6 +328,7 @@ export const failureClusterAliases = pgTable(
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
     fingerprint: text('fingerprint').notNull(),
+    fingerprintSample: text('fingerprint_sample'), // the error `fingerprint` was computed from (see schema.sqlite.ts)
     clusterId: integer('cluster_id')
       .notNull()
       .references(() => failureClusters.id, { onDelete: 'cascade' }),

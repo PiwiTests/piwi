@@ -24,11 +24,94 @@
  * Runs once on startup after migrations; safe to run repeatedly.
  */
 
-import { eq, and, ne, asc } from 'drizzle-orm';
-import { failureClusters, failureClusterTestRoutes } from '../../server/database/schema';
+import { eq, and, ne, asc, gt, isNull, isNotNull } from 'drizzle-orm';
+import {
+  failureClusters,
+  failureClusterAliases,
+  failureClusterTestRoutes,
+  testRunsCases,
+} from '../../server/database/schema';
 import { computeErrorFingerprint } from '../error-fingerprint';
 import { isSplitFingerprint, mergeFailureClusters } from './failure-cluster-ops';
 import type { DrizzleDB } from './db';
+
+/** The app setting that records that {@link backfillAliasSamples} ran on this instance. */
+export const ALIAS_SAMPLES_BACKFILLED_SETTING = 'failure_cluster_alias_samples_backfilled_at';
+
+/** How many executions of a cluster {@link backfillAliasSamples} reads at a time. */
+const BACKFILL_PAGE_SIZE = 200;
+
+/**
+ * The errors an alias of cluster `clusterId` may have been computed from: the
+ * cluster's own samples, then its executions' errors, oldest first. A merge
+ * moves the absorbed cluster's executions to the survivor, so they hold the
+ * errors that made its fingerprint.
+ */
+async function* aliasSampleCandidates(db: DrizzleDB, clusterId: number): AsyncGenerator<string> {
+  const [cluster] = await db
+    .select({ fingerprintSample: failureClusters.fingerprintSample, sampleError: failureClusters.sampleError })
+    .from(failureClusters)
+    .where(eq(failureClusters.id, clusterId));
+  for (const sample of new Set([cluster?.fingerprintSample, cluster?.sampleError])) if (sample) yield sample;
+  let after = 0;
+  for (;;) {
+    const page = await db
+      .select({ id: testRunsCases.id, error: testRunsCases.error })
+      .from(testRunsCases)
+      .where(
+        and(eq(testRunsCases.failureClusterId, clusterId), gt(testRunsCases.id, after), isNotNull(testRunsCases.error)),
+      )
+      .orderBy(asc(testRunsCases.id))
+      .limit(BACKFILL_PAGE_SIZE);
+    for (const error of new Set(page.map((row) => row.error))) if (error) yield error;
+    if (page.length < BACKFILL_PAGE_SIZE) return;
+    after = page[page.length - 1]!.id;
+  }
+}
+
+/**
+ * Give each alias stored without a sample the error its fingerprint was
+ * computed from: among its cluster's samples and executions, the first whose
+ * fingerprint, by the algorithm that wrote the alias, is the alias's. An alias
+ * with no match keeps a null sample, and {@link reclusterFailureFingerprints}
+ * leaves it as it is. Run at startup before the recluster. Returns the number
+ * of aliases given a sample.
+ */
+export async function backfillAliasSamples(db: DrizzleDB): Promise<number> {
+  const aliases = await db
+    .select({
+      id: failureClusterAliases.id,
+      fingerprint: failureClusterAliases.fingerprint,
+      clusterId: failureClusterAliases.clusterId,
+    })
+    .from(failureClusterAliases)
+    .where(isNull(failureClusterAliases.fingerprintSample));
+  // Cluster id → fingerprint → id of the alias still looking for its sample.
+  const wanted = new Map<number, Map<string, number>>();
+  for (const alias of aliases) {
+    if (isSplitFingerprint(alias.fingerprint)) continue;
+    const ofCluster = wanted.get(alias.clusterId) ?? new Map<string, number>();
+    ofCluster.set(alias.fingerprint, alias.id);
+    wanted.set(alias.clusterId, ofCluster);
+  }
+
+  let found = 0;
+  for (const [clusterId, ofCluster] of wanted) {
+    for await (const candidate of aliasSampleCandidates(db, clusterId)) {
+      const { fingerprint } = await computeErrorFingerprint(candidate);
+      const aliasId = ofCluster.get(fingerprint);
+      if (aliasId === undefined) continue;
+      await db
+        .update(failureClusterAliases)
+        .set({ fingerprintSample: candidate })
+        .where(eq(failureClusterAliases.id, aliasId));
+      found++;
+      ofCluster.delete(fingerprint);
+      if (ofCluster.size === 0) break;
+    }
+  }
+  return found;
+}
 
 /** Move a project's per-test routes from one fingerprint to another; a route already on the new one wins. */
 async function renameRouteFingerprint(db: DrizzleDB, projectId: number, from: string, to: string): Promise<void> {

@@ -18,7 +18,8 @@ declare global {
 // clear it before the modules under test are loaded so they bind to SQLite.
 delete process.env.PIWI_DATABASE_URL;
 
-const { reclusterFailureFingerprints } = await import('../../shared/handlers/failure-cluster-recluster');
+const { backfillAliasSamples, reclusterFailureFingerprints } =
+  await import('../../shared/handlers/failure-cluster-recluster');
 const { computeErrorFingerprint } = await import('../../shared/error-fingerprint');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
@@ -128,5 +129,49 @@ describe('reclusterFailureFingerprints', () => {
       .from(schema.failureClusters)
       .where(eq(schema.failureClusters.id, id));
     expect(row!.fingerprint).toBe(fromSample.fingerprint);
+  });
+});
+
+describe('backfillAliasSamples', () => {
+  test("gives an alias the error of its cluster whose fingerprint is the alias's", async () => {
+    const victimError =
+      "TimeoutError: locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByTestId('pay')";
+    const id = await seedCluster({
+      fingerprint: (await computeErrorFingerprint(originalError)).fingerprint,
+      sampleError: originalError,
+      fingerprintSample: originalError,
+    });
+    // The executions of the cluster merged into it, which the merge moved to the survivor.
+    await db.insert(schema.testRuns).values({ id: 1, projectId: 1, status: 'failed', startTime: new Date() });
+    await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'tests/pay.spec.ts', title: 'pays' });
+    await db.insert(schema.testRunsCases).values(
+      [originalError, victimError].map((error, retries) => ({
+        testRunId: 1,
+        testCaseId: 1,
+        status: 'failed',
+        retries,
+        error,
+        failureClusterId: id,
+      })),
+    );
+    const victimFingerprint = (await computeErrorFingerprint(victimError)).fingerprint;
+    await db.insert(schema.failureClusterAliases).values([
+      { projectId: 1, fingerprint: victimFingerprint, clusterId: id },
+      { projectId: 1, fingerprint: 'fingerprint-no-error-has', clusterId: id },
+    ]);
+
+    expect(await backfillAliasSamples(dbc)).toBe(1);
+
+    const aliases = await db
+      .select({
+        fingerprint: schema.failureClusterAliases.fingerprint,
+        fingerprintSample: schema.failureClusterAliases.fingerprintSample,
+      })
+      .from(schema.failureClusterAliases)
+      .orderBy(schema.failureClusterAliases.id);
+    expect(aliases).toEqual([
+      { fingerprint: victimFingerprint, fingerprintSample: victimError },
+      { fingerprint: 'fingerprint-no-error-has', fingerprintSample: null },
+    ]);
   });
 });
