@@ -1,5 +1,6 @@
 import { recomputeClusterOccurrences } from '#shared/handlers/failure-cluster-ops';
 import type { DrizzleDB } from '#shared/handlers/db';
+import { MAX_INT32 } from './storable-values';
 
 /** The columns of the `(run, case, repeat, retries, browser)` unique index that a batch row carries. */
 interface RunCaseKey {
@@ -11,10 +12,10 @@ interface RunCaseKey {
 
 /**
  * A row's `repeat_each_index`: the `--repeat-each` repetition the reporter sent, 0 when it sent none (an older
- * reporter, a run without repeats) or a value that is not a non-negative integer.
+ * reporter, a run without repeats) or a value that is not a non-negative integer its column holds.
  */
 export function resolveRepeatEachIndex(value: unknown): number {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : 0;
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= MAX_INT32 ? value : 0;
 }
 
 /**

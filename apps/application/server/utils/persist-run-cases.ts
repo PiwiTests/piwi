@@ -73,6 +73,7 @@ import type { LocatorPageUse } from '@piwitests/core/wire';
 import type { LocatorSnapshot } from '#shared/locator-healing.types';
 import { sanitizeExecutionResources } from '#shared/resource-report';
 import { resolveStoredDefaultBranch } from './scm/stored-default-branch';
+import { int32, int64, storableRunCase } from './storable-values';
 import type { DbClient as DB } from '../database';
 
 /**
@@ -317,7 +318,10 @@ async function dedupeGreenSamples(
 
 /**
  * Get-or-create the shared `test_cases` rows for a batch and insert the per-run
- * `test_runs_cases` rows in a single statement. Network requests, web vitals and
+ * `test_runs_cases` rows in a single statement. Each case is first made
+ * storable on either database (`storableRunCase`: no NUL character, its
+ * identity held to what an index entry takes), and each number held to its
+ * column. Network requests, web vitals and
  * console logs are sanitized here (stripping query strings from URLs). Failed
  * cases with error text are fingerprinted and linked to a `failure_clusters`
  * row so failures sharing a root cause can be grouped.
@@ -338,12 +342,13 @@ export async function persistRunCases(
   db: DB,
   projectId: number,
   testRunId: number,
-  cases: RunCaseInput[],
+  input: RunCaseInput[],
   options: PersistRunCasesOptions = {},
 ): Promise<Array<{ id: number; status: string; testCaseId: number; inputIndex: number }>> {
-  if (cases.length === 0) return [];
+  if (input.length === 0) return [];
 
   const limits = resolveIngestLimits();
+  const cases = await Promise.all(input.map(storableRunCase));
 
   // --- Step 1: Resolve all suites referenced in this batch ---
   const suiteIdMap = await resolveSuites(db, projectId, cases);
@@ -360,7 +365,7 @@ export async function persistRunCases(
       title: c.title,
       externalId,
       displayTitle: displayTitleOf(c, externalId),
-      line: c.line,
+      line: int32(c.line),
     };
   });
   // The run decides what this batch may change on the stored tests: a lab run or an import of an older run matches
@@ -376,17 +381,18 @@ export async function persistRunCases(
   const resolved = await testCaseCache.resolve(db, projectId, testRunId, claims, { readOnly: !writesTestState });
 
   const fingerprintResults = await Promise.all(
-    cases.map((c) =>
+    cases.map((c, i) =>
       // An expected failure that passed is good news about one test, not a
       // failure mode: it forms no cluster. Nor does a test the run's stop cut
       // short (Ctrl+C, `maxFailures`, the global timeout): its error says the
-      // run ended, nothing about the test.
+      // run ended, nothing about the test. The fingerprint reads the error as
+      // it came, NUL characters included.
       c.error &&
       c.status !== 'passed' &&
       c.status !== 'skipped' &&
       c.status !== 'interrupted' &&
       !isExpectedFailurePassed(c.status, resolveExpectedStatus(c.expectedStatus, c.testAnnotations))
-        ? computeErrorFingerprint(c.error)
+        ? computeErrorFingerprint(input[i]!.error!)
         : Promise.resolve(null),
     ),
   );
@@ -517,19 +523,19 @@ export async function persistRunCases(
       testRunId,
       testCaseId: caseId,
       status: normalizeTestCaseStatus(c.status),
-      duration: c.duration ?? null,
-      timeout: c.timeout ?? null,
+      duration: int32(c.duration),
+      timeout: int32(c.timeout),
       error: capErrorText(error, limits.errorChars),
-      retries: c.retries ?? 0,
+      retries: int32(c.retries) ?? 0,
       repeatEachIndex: resolveRepeatEachIndex(c.repeatEachIndex),
       attempts: capArray(normalizeAttemptStatuses(c.attempts), 30),
-      line: c.line,
-      column: c.column,
+      line: int32(c.line),
+      column: int32(c.column),
       steps: cappedSteps,
       stepEvents: capArray(c.stepEvents, limits.stepEvents),
       slowestStep: typeof c.slowestStep === 'string' ? hideTypedText(c.slowestStep) : null,
-      slowestStepDuration: c.slowestStepDuration ?? null,
-      wastedTimeMs: c.wastedTimeMs ?? null,
+      slowestStepDuration: int32(c.slowestStepDuration),
+      wastedTimeMs: int32(c.wastedTimeMs),
       webVitals: sanitizeWebVitals(c.webVitals as Record<string, unknown> | null | undefined) ?? null,
       resources: sanitizeExecutionResources(c.resources),
       pageState: sanitizePageState(c.pageState),
@@ -550,9 +556,9 @@ export async function persistRunCases(
       testMeta,
       browser: c.browser ?? null,
       browserName: resolveBrowserName(c.browser),
-      workerIndex: c.workerIndex ?? null,
-      shardIndex: c.shardIndex ?? null,
-      startedAt: c.startedAt ?? null,
+      workerIndex: int32(c.workerIndex),
+      shardIndex: int32(c.shardIndex),
+      startedAt: int64(c.startedAt),
       didNotRunReason: c.didNotRunReason ?? null,
       expectedStatus: resolveExpectedStatus(c.expectedStatus, c.testAnnotations),
       blockedBy: c.blockedBy ?? null,

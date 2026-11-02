@@ -62,6 +62,7 @@ import {
 import { sanitizeCoverage, type CoverageCapture } from '@piwitests/core/coverage';
 import { hideTypedText } from '@piwitests/core/mask';
 import { upsertCasePayloads } from '~~/server/utils/case-payloads';
+import { int32, int64, storableRunCase } from '~~/server/utils/storable-values';
 import { resolveRunBranch } from '~~/server/utils/run-branch';
 import { runCommit, runOrigin } from '#shared/run-eligibility';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
@@ -589,11 +590,12 @@ export async function persistRunCases(
   db: DemoDb,
   projectId: number,
   testRunId: number,
-  cases: RunCaseInput[],
+  input: RunCaseInput[],
   deduplicate?: boolean,
   options: PersistRunCasesOptions = {},
 ): Promise<Array<{ id: number; status: string; testCaseId: number; inputIndex: number }>> {
-  if (cases.length === 0) return [];
+  if (input.length === 0) return [];
+  const cases = await Promise.all(input.map(storableRunCase));
 
   const suiteIdMap = await resolveSuites(db, projectId, cases);
 
@@ -607,7 +609,7 @@ export async function persistRunCases(
       title: c.title,
       externalId,
       displayTitle: displayTitleOf(c, externalId),
-      line: c.line,
+      line: int32(c.line),
     };
   });
   const resolved = await resolveTestCases(db, projectId, testRunId, await loadTestCaseIndex(db, projectId), claims, {
@@ -669,7 +671,7 @@ export async function persistRunCases(
     caseMetaSnapshots.set(caseId, { tags, locks, meta: testMeta, displayTitle: resolved.displayTitles[i] ?? null });
 
     if (deduplicate && existingRunCaseSet) {
-      const rowKey = `${caseId}::${resolveRepeatEachIndex(c.repeatEachIndex)}::${c.retries ?? 0}::${resolveBrowserName(c.browser) ?? ''}`;
+      const rowKey = `${caseId}::${resolveRepeatEachIndex(c.repeatEachIndex)}::${int32(c.retries) ?? 0}::${resolveBrowserName(c.browser) ?? ''}`;
       if (existingRunCaseSet.has(rowKey)) continue;
     }
 
@@ -682,7 +684,7 @@ export async function persistRunCases(
       c.status !== 'interrupted' &&
       !isExpectedFailurePassed(c.status, expectedStatus)
     ) {
-      fingerprint = await computeErrorFingerprint(c.error);
+      fingerprint = await computeErrorFingerprint(input[i]!.error!);
       const pending = pendingClusters.get(fingerprint.fingerprint);
       if (pending) {
         pending.count++;
@@ -731,17 +733,17 @@ export async function persistRunCases(
       testRunId,
       testCaseId: caseId,
       status: c.status,
-      duration: c.duration ?? null,
+      duration: int32(c.duration),
       error: capErrorText(error, DEFAULT_INGEST_LIMITS.errorChars),
-      retries: c.retries ?? 0,
+      retries: int32(c.retries) ?? 0,
       repeatEachIndex: resolveRepeatEachIndex(c.repeatEachIndex),
       attempts: capArray(c.attempts, 30),
-      line: c.line,
-      column: c.column,
+      line: int32(c.line),
+      column: int32(c.column),
       steps: cappedSteps,
       stepEvents: capArray(c.stepEvents, DEFAULT_INGEST_LIMITS.stepEvents),
       slowestStep: typeof c.slowestStep === 'string' ? hideTypedText(c.slowestStep) : null,
-      slowestStepDuration: c.slowestStepDuration ?? null,
+      slowestStepDuration: int32(c.slowestStepDuration),
       webVitals: sanitizeWebVitals(c.webVitals as Record<string, unknown> | null | undefined) ?? null,
       pageState: sanitizePageState(c.pageState),
       aiUsage: sanitizeAiUsage(c.aiUsage),
@@ -763,12 +765,12 @@ export async function persistRunCases(
       testMeta,
       browser: c.browser ?? null,
       browserName: resolveBrowserName(c.browser),
-      timeout: c.timeout ?? null,
-      wastedTimeMs: c.wastedTimeMs ?? null,
+      timeout: int32(c.timeout),
+      wastedTimeMs: int32(c.wastedTimeMs),
       resources: sanitizeExecutionResources(c.resources),
-      workerIndex: c.workerIndex ?? null,
-      shardIndex: c.shardIndex ?? null,
-      startedAt: c.startedAt ?? null,
+      workerIndex: int32(c.workerIndex),
+      shardIndex: int32(c.shardIndex),
+      startedAt: int64(c.startedAt),
       didNotRunReason: c.didNotRunReason ?? null,
       expectedStatus,
       blockedBy: c.blockedBy ?? null,

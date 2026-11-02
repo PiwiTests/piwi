@@ -10,6 +10,7 @@ import { resolveRepeatEachIndex, runningCaseKey } from '../../../utils/inserted-
 import { mapStepEventsToRunEvents } from '../../../utils/map-step-events';
 import { authorizeStreamToken } from '../../../utils/stream-auth';
 import { hiddenErrorText } from '../../../utils/sanitize';
+import { wireCaseProblem } from '../../../utils/batch-payload';
 import type { StreamEventPayload } from '#shared/types';
 import { countFailedFromTally } from '#shared/utils/test-counts';
 
@@ -18,7 +19,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Submit test case events for a streaming run',
     description:
-      "Submit test case begin, complete and step lifecycle events for an active streaming test run. Requires the stream token. Supports both single and batch event submission for real-time progress updates. Test-attached step events (step-begin/step-end) are streamed to subscribers in the order submitted, without persistence; suite-level hook events keep the timeline shape. The response's `watched` is true while anyone has the run's live stream open; the reporter sends step events only then.",
+      "Submit test case begin, complete and step lifecycle events for an active streaming test run. Requires the stream token. Supports both single and batch event submission for real-time progress updates. Test-attached step events (step-begin/step-end) are streamed to subscribers in the order submitted, without persistence; suite-level hook events keep the timeline shape. The response's `watched` is true while anyone has the run's live stream open; the reporter sends step events only then. A `complete` event with a field of the wrong type is left out, and the rest of the batch stored.",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     requestBody: {
       content: {
@@ -39,6 +40,15 @@ defineRouteMeta({
 });
 
 const MAX_EVENT_BATCH_BYTES = 10 * 1024 * 1024; // 10 MB
+
+/** Whether a streamed result can be stored; one that cannot leaves the run's running tests and is logged. */
+function isStorableResult(runId: number, tc: StreamEventPayload): boolean {
+  const problem = wireCaseProblem(tc);
+  if (!problem) return true;
+  runEventBus.clearRunningCase(runId, runningCaseKey(tc));
+  console.warn(`[events] Run #${runId}: left out the result of "${tc.title}", whose ${problem} cannot be stored`);
+  return false;
+}
 
 export default eventHandler(async (event) => {
   const id = parseInt(getRouterParam(event, 'id') || '0');
@@ -74,9 +84,12 @@ export default eventHandler(async (event) => {
 
   const validEvents = testCaseEvents.filter((tc: { title?: string }) => tc && tc.title);
 
-  // Split into begin and complete events; step events keep their batch order
+  // Split into begin and complete events; step events keep their batch order. A result whose fields the database
+  // cannot hold is left out, so it fails neither the batch nor the reporter's retries of it.
   const beginEvents = validEvents.filter((tc: { type?: string }) => tc.type === 'begin');
-  const completeEvents = validEvents.filter((tc: { type?: string }) => tc.type === 'complete');
+  const completeEvents = validEvents.filter(
+    (tc: StreamEventPayload) => tc.type === 'complete' && isStorableResult(id, tc),
+  );
   const stepRunEvents = mapStepEventsToRunEvents(validEvents);
 
   // What each running case's last event in the batch is: a retry's begin may follow its previous attempt's complete,

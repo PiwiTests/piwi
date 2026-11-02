@@ -1,8 +1,19 @@
 import { sanitizeNetworkRequests, sanitizeUrl } from './sanitize';
 import { normalizeRoute } from '#shared/utils/route';
+import { int32 } from './storable-values';
 
 /** Playwright's error texts are short; this bounds a hostile or garbled one. */
 const MAX_FAILURE_LENGTH = 500;
+
+/**
+ * A captured request the table holds: an object with a method and a status. Any other is left out, so it fails
+ * neither its case nor the batch.
+ */
+function isStorableRequest(request: unknown): request is Record<string, unknown> {
+  if (!request || typeof request !== 'object') return false;
+  const { method, status } = request as Record<string, unknown>;
+  return typeof method === 'string' && typeof status === 'number';
+}
 
 /**
  * Build pre-insert rows for the normalized network_requests child table.
@@ -28,7 +39,7 @@ export function buildNetworkRequestItems(requests: unknown[] | null | undefined)
   /** True when no server sent the response (the test's route handler fulfilled it); null otherwise. */
   fulfilled: boolean | null;
 }> {
-  const rawReqs = requests as Array<Record<string, unknown>> | null | undefined;
+  const rawReqs = Array.isArray(requests) ? requests.filter(isStorableRequest) : null;
 
   const rawUrlMap = new Map<string, string>();
   if (Array.isArray(rawReqs)) {
@@ -46,8 +57,8 @@ export function buildNetworkRequestItems(requests: unknown[] | null | undefined)
     method: req.method as string,
     url: (req.url as string) ?? null,
     normalizedUrl: normalizeRoute(rawUrlMap.get(req.url as string) ?? (req.url as string)),
-    status: req.status as number,
-    duration: (req.duration as number) ?? null,
+    status: int32(req.status) ?? 0,
+    duration: int32(req.duration),
     startTime: typeof req.startTime === 'number' && Number.isFinite(req.startTime) ? Math.round(req.startTime) : null,
     resourceType: (req.resourceType as string) ?? null,
     contentType: (req.contentType as string) ?? null,

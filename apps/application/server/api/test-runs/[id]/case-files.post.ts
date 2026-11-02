@@ -13,6 +13,7 @@ import { resolveRepeatEachIndex } from '../../../utils/inserted-run-cases';
 import { attachmentStoragePaths } from '../../../utils/attachment-paths';
 import { getStorage } from '../../../storage';
 import { joinSuitePath } from '#shared/utils/suites';
+import { storableSuitePath, storedIdentity } from '../../../utils/storable-values';
 import { sanitizeFilename } from '../../../utils/sanitize-filename';
 import { streamMultipart } from '../../../utils/multipart-stream';
 import { resolveMaxUploadBytes } from '../../../utils/upload-limits';
@@ -165,11 +166,11 @@ async function handleCaseFiles(
     });
   }
 
-  // Locate the run case row the reporter streamed earlier
-  const { filePath } = parseLocation(caseInfo.location);
+  // Locate the run case row the reporter streamed earlier, by its test's identity as it is stored
+  const filePath = await storedIdentity(parseLocation(caseInfo.location).filePath);
   const retries = caseInfo.retries ?? 0;
   const repeatEachIndex = resolveRepeatEachIndex(caseInfo.repeatEachIndex);
-  const suitePath = caseInfo.suitePath ? joinSuitePath(caseInfo.suitePath) : '';
+  const suitePath = joinSuitePath(await storableSuitePath(caseInfo.suitePath));
 
   const sharedCases = await db
     .select({ id: testCases.id })
@@ -179,7 +180,7 @@ async function handleCaseFiles(
         eq(testCases.projectId, testRun.projectId),
         eq(testCases.filePath, filePath),
         eq(testCases.suitePath, suitePath),
-        eq(testCases.title, caseInfo.title),
+        eq(testCases.title, await storedIdentity(caseInfo.title)),
       ),
     );
   const sharedCase = sharedCases[0];
