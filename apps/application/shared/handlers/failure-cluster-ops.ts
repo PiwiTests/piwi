@@ -3,7 +3,7 @@
  * and demo reporter implementations.
  */
 
-import { eq, ne, and, or, inArray, sql, isNull, count, type AnyColumn, type SQL } from 'drizzle-orm';
+import { eq, ne, and, or, inArray, sql, isNull, count, asc, desc, type AnyColumn, type SQL } from 'drizzle-orm';
 import {
   testRuns,
   testRunsCases,
@@ -195,7 +195,8 @@ async function routeMovedTests(
  * Move the given tests' executions out of a cluster into a new cluster, and
  * route their later failures with any fingerprint leading to the source
  * cluster (its own and its aliases) to the new one. The pair is recorded as a
- * rejected merge, so reconciliation never folds it back.
+ * rejected merge, so reconciliation never folds it back. Both clusters' seen
+ * runs and occurrences are then recomputed from the executions each holds.
  * Returns null when the cluster does not exist, and no cluster when none of
  * the tests has an execution in it.
  */
@@ -304,7 +305,8 @@ export async function splitFailureCluster(
     return newId;
   });
 
-  await recomputeClusterOccurrences(db, sourceId);
+  await recomputeClusterBounds(db, sourceId);
+  await recomputeClusterBounds(db, clusterId);
   return { clusterId, testCount: movedTests.length };
 }
 
@@ -733,6 +735,31 @@ export async function recomputeClusterOccurrences(db: DrizzleDB, clusterId: numb
   await db.update(failureClusters).set({ occurrences, updatedAt: new Date() }).where(eq(failureClusters.id, clusterId));
 
   return occurrences;
+}
+
+/**
+ * Recompute a cluster's first and last seen runs and its occurrences from the
+ * executions still linked to it, in the runs whose failures count as
+ * occurrences (`cluster-occurrences`): the earliest and the latest of those
+ * runs by start time, then by id. With none left, the seen runs stay.
+ */
+export async function recomputeClusterBounds(db: DrizzleDB, clusterId: number): Promise<void> {
+  const seen = (first: boolean) =>
+    db
+      .select({ runId: testRuns.id })
+      .from(testRunsCases)
+      .innerJoin(testRuns, eq(testRuns.id, testRunsCases.testRunId))
+      .where(and(eq(testRunsCases.failureClusterId, clusterId), eligibleRunSql('cluster-occurrences')))
+      .orderBy(...(first ? [asc(testRuns.startTime), asc(testRuns.id)] : [desc(testRuns.startTime), desc(testRuns.id)]))
+      .limit(1);
+  const [[firstSeen], [lastSeen]] = await Promise.all([seen(true), seen(false)]);
+  if (firstSeen && lastSeen) {
+    await db
+      .update(failureClusters)
+      .set({ firstSeenRunId: firstSeen.runId, lastSeenRunId: lastSeen.runId })
+      .where(eq(failureClusters.id, clusterId));
+  }
+  await recomputeClusterOccurrences(db, clusterId);
 }
 
 /**
