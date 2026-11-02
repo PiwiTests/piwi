@@ -52,7 +52,7 @@ const REMOTE = 'https://github.com/acme/shop.git';
 async function insertRun(
   status: 'passed' | 'failed',
   commit: string,
-  opts: { isFullRun?: boolean; branch?: string; origin?: string } = {},
+  opts: { isFullRun?: boolean; branch?: string; origin?: string; startedHoursBefore?: number } = {},
 ) {
   const id = ++runSeq;
   const branch = opts.branch ?? 'main';
@@ -60,7 +60,8 @@ async function insertRun(
     id,
     projectId: 1,
     status,
-    startTime: new Date(Date.UTC(2026, 0, 1) + id * 3_600_000),
+    // Each run starts an hour after the one before it, unless it started earlier and finished late.
+    startTime: new Date(Date.UTC(2026, 0, 1) + (id - (opts.startedHoursBefore ?? 0)) * 3_600_000),
     isFullRun: opts.isFullRun === false ? 0 : 1,
     environment: 'staging',
     branch,
@@ -447,6 +448,55 @@ describe('verifyClusterFixes — which quiet runs count', () => {
     const local = await insertRun('passed', `ee2222${origin.length}`, { origin: 'local' });
     await insertCase(local, 'passed', null);
     expect((await verifyClusterFixes(db, local)).map((f) => f.clusterId)).toEqual([clusterId]);
+  });
+});
+
+describe('verifyClusterFixes — run order', () => {
+  test('a run that started before the last failure records no fix', async () => {
+    const failing = await insertRun('failed', 'ab10001');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2);
+
+    // Started an hour before the failing run, finished after it.
+    const earlier = await insertRun('passed', 'ab10002', { startedHoursBefore: 2 });
+    await insertCase(earlier, 'passed', null, 2);
+    expect((await verifyClusterFixes(db, earlier)).some((f) => f.clusterId === clusterId)).toBe(false);
+    expect((await cluster(clusterId)).fixLandedRunId).toBeNull();
+    expect(emitted.filter((e) => e.payload.clusterId === clusterId)).toEqual([]);
+
+    const later = await insertRun('passed', 'ab10003');
+    await insertCase(later, 'passed', null, 2);
+    expect((await verifyClusterFixes(db, later)).some((f) => f.clusterId === clusterId)).toBe(true);
+  });
+
+  test('a failing run that started before the fix landed does not regress it', async () => {
+    const failing = await insertRun('failed', 'ab20001');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2);
+    await insertDiagnosis(clusterId, 'src/checkout.ts');
+    changedFiles = ['src/checkout.ts'];
+    const green = await insertRun('passed', 'ab20002');
+    await insertCase(green, 'passed', null, 2);
+    await verifyClusterFixes(db, green);
+    expect((await cluster(clusterId)).status).toBe('resolved');
+    emitted.length = 0;
+
+    // Started between the failure and the fix, finished after the fix.
+    const late = await insertRun('failed', 'ab20003', { startedHoursBefore: 2 });
+    await insertCase(late, 'failed', clusterId, 2);
+    await verifyClusterFixes(db, late);
+    let row = await cluster(clusterId);
+    expect(row.fixVerification).toBe('diagnosis-verified');
+    expect(row.status).toBe('resolved');
+    expect(emitted).toEqual([]);
+
+    const after = await insertRun('failed', 'ab20004');
+    await insertCase(after, 'failed', clusterId, 2);
+    await markSeen(clusterId, after);
+    await verifyClusterFixes(db, after);
+    row = await cluster(clusterId);
+    expect(row.fixVerification).toBe('regressed');
+    expect(row.status).toBe('open');
   });
 });
 

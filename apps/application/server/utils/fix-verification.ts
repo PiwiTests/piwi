@@ -17,11 +17,13 @@
  * is failing again is marked `regressed`, because a fix that did not hold is
  * worth more than no record at all.
  *
- * A quiet run counts as a fix only when it could have carried one: its commit
- * differs from the commit the cluster last failed at, and it ran on the branch
- * the cluster last failed on or on the default branch. A pass at the failing
- * commit (a CI retry, a re-run from the dashboard) is stored as flake evidence
- * on the cluster instead; a pass on another branch says nothing about this one.
+ * A quiet run counts as a fix only when it could have carried one: it started
+ * after the run the cluster last failed in, its commit differs from the commit
+ * the cluster last failed at, and it ran on the branch the cluster last failed
+ * on or on the default branch. A pass at the failing commit (a CI retry, a
+ * re-run from the dashboard) is stored as flake evidence on the cluster
+ * instead; a pass on another branch says nothing about this one. A failing run
+ * says a fix did not hold only when it started after the run the fix landed in.
  *
  * The verdict moves the triage status only when the evidence is strong:
  * `diagnosis-verified` resolves an open cluster, `regressed` reopens a resolved
@@ -69,6 +71,7 @@ import { parseUnifiedDiff, patchInCode, stripAbPrefix, validatePatch } from '#sh
 import type { FixAuthor, HealPrRef, NotificationEvent, NotificationPayload } from '#shared/notification-events';
 import type { RunMetadata } from './run-json-types';
 import { isEligibleRun } from '#shared/run-eligibility';
+import { runStartedAfter, type RunPoint } from '#shared/cluster-state';
 import { resolveRunBranch } from './run-branch';
 import { resolveDefaultBranch } from './scm/default-branch';
 import { getClusterKnownIssue } from './integrations/known-issue';
@@ -418,6 +421,9 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
     branch: run.branch ?? resolveRunBranch(run.metadata) ?? undefined,
     environment: run.environment ?? undefined,
   };
+  // This run in the project's run order: it proves a fix only after the
+  // failure, and a regression only after the fix.
+  const thisRun: RunPoint = { id: runId, startTime: run.startTime };
 
   // What this run saw, per test case: any pass, and any failure.
   const caseRows = await db
@@ -458,6 +464,7 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
         status: failureClusters.status,
         triageNote: failureClusters.triageNote,
         fixLandedRunId: failureClusters.fixLandedRunId,
+        fixLandedAt: failureClusters.fixLandedAt,
         fixCommit: failureClusters.fixCommit,
       })
       .from(failureClusters)
@@ -470,6 +477,8 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
       );
 
     for (const cluster of regressing) {
+      // A run that started before the fix landed ran the code without it.
+      if (!runStartedAfter(thisRun, { id: cluster.fixLandedRunId!, startTime: cluster.fixLandedAt })) continue;
       try {
         // A person's "resolved" was contradicted by the runs, so the cluster goes
         // back to open with the reason on record; "ignored" is left alone.
@@ -669,6 +678,19 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
         }
       }
       if (!allGreen) continue;
+
+      // A run that started before the cluster's last failure ran before it: its
+      // passes say nothing about whether the failure stopped. A deleted last
+      // failing run orders nothing.
+      if (
+        startTimeByRunId.has(cluster.lastSeenRunId) &&
+        !runStartedAfter(thisRun, {
+          id: cluster.lastSeenRunId,
+          startTime: startTimeByRunId.get(cluster.lastSeenRunId) ?? null,
+        })
+      ) {
+        continue;
+      }
 
       const fromCommit = commitByRunId.get(cluster.lastSeenRunId) ?? null;
       const failedBranch = branchByRunId.get(cluster.lastSeenRunId) ?? null;

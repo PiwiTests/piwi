@@ -83,6 +83,16 @@ export interface RunPoint {
 }
 
 /**
+ * Whether run `a` started after run `b`: by start time, then by id when two
+ * started in the same second. A run with no known start time sorts first.
+ */
+export function runStartedAfter(a: RunPoint, b: RunPoint): boolean {
+  const aStart = toEpochMs(a.startTime) ?? -Infinity;
+  const bStart = toEpochMs(b.startTime) ?? -Infinity;
+  return aStart > bStart || (aStart === bStart && a.id > b.id);
+}
+
+/**
  * Whether a cluster's failure goes on: it was last seen in the project's latest
  * finished run or in a later one, or no run has finished yet. A run still in
  * progress never counts as one the failure skipped. Runs are ordered by start
@@ -94,10 +104,7 @@ export function failureGoesOn(
 ): boolean {
   if (!latestFinished) return true;
   if (!lastSeen) return false;
-  if (lastSeen.id === latestFinished.id) return true;
-  const seen = toEpochMs(lastSeen.startTime) ?? -Infinity;
-  const finished = toEpochMs(latestFinished.startTime) ?? -Infinity;
-  return seen > finished || (seen === finished && lastSeen.id > latestFinished.id);
+  return lastSeen.id === latestFinished.id || runStartedAfter(lastSeen, latestFinished);
 }
 
 /**
