@@ -546,6 +546,61 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     expect(submitBody.metadata.ingestHealth).toEqual({ submitFallback: { path: 'submit', reason: 'results-lost' } });
   });
 
+  it('a run the dashboard ended (409) is streamed no more, and goes whole in the batch upload', async () => {
+    let submitBody: any;
+    server = await startServer((req, res) => {
+      if (req.url === '/api/test-runs/start') {
+        jsonRes(res, 200, { runId: 1, streamToken: 'tok' });
+      } else if (req.url?.startsWith('/api/test-runs/1/')) {
+        // Another job with the same run label started, and the dashboard cancelled this run.
+        jsonRes(res, 409, { message: 'Test run is not in running state' });
+      } else if (req.url === '/api/test-runs/submit') {
+        submitBody = JSON.parse(req.body);
+        jsonRes(res, 200, { runId: 2, projectId: 3 });
+      } else {
+        textRes(res, 404, 'nope');
+      }
+    });
+
+    const reporter = new PiwiDashboardReporter({
+      serverUrl: server.url,
+      projectName,
+      streaming: true,
+      uploadReport: false,
+      uploadTraces: false,
+      liveFileUploads: false,
+      streamingBatchSize: 1,
+      streamingBatchDelay: 50,
+    });
+    const suite = fakeSuite();
+    const tests = ['first', 'second', 'third'].map((t) => fakeTestCase({ title: t, parent: suite }));
+    suite.allTests = () => tests;
+    reporter.onBegin(fakeConfig(), suite);
+    await (reporter as any).streamManager.startPromise;
+    const runRequests = () => urlsHit(server).filter((u) => u.startsWith('/api/test-runs/1/'));
+    const [first, ...later] = tests;
+    reporter.onTestBegin(first!, fakeResult({ workerIndex: 0 }));
+    reporter.onTestEnd(first!, fakeResult({ status: 'passed', duration: 5, workerIndex: 0 }));
+    for (let i = 0; i < 100 && runRequests().length === 0; i++) await new Promise((r) => setTimeout(r, 10));
+    await new Promise((r) => setTimeout(r, 100));
+    // The begin and the result of the first test, sent before the dashboard's answer came back.
+    const refused = runRequests();
+    expect(refused.length).toBeGreaterThan(0);
+
+    for (const test of later) {
+      reporter.onTestBegin(test, fakeResult({ workerIndex: 0 }));
+      reporter.onTestEnd(test, fakeResult({ status: 'passed', duration: 5, workerIndex: 0 }));
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    await reporter.onEnd({ status: 'passed' } as any);
+
+    // The refusal ends the stream: no later events, no heartbeat, no /finish.
+    expect(runRequests()).toEqual(refused);
+    expect(refused.every((u) => u === '/api/test-runs/1/events')).toBe(true);
+    expect(submitBody.testCases.map((tc: any) => tc.title)).toEqual(['first', 'second', 'third']);
+    expect(submitBody.metadata.ingestHealth).toEqual({ submitFallback: { path: 'submit', reason: 'run-ended' } });
+  });
+
   it('a result too large for /events keeps the stream going and re-sends the full run via /submit', async () => {
     const streamed: string[] = [];
     let finishHit = false;

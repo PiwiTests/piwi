@@ -97,6 +97,8 @@ export class StreamManager {
   private readonly fileUploads = new AbortController();
   /** Set when a test-result event left the live stream undelivered: too large to send, or still queued when the drain gave up. */
   private resultsUndelivered = false;
+  /** Set when the dashboard refused the run's events or heartbeat as the run is no longer running (`endRun`). */
+  private ended = false;
 
   private _enabled = false;
   private _runId: number | null = null;
@@ -108,9 +110,17 @@ export class StreamManager {
   get enabled(): boolean {
     return this._enabled;
   }
-  /** Server-assigned run ID (`null` until the stream opens) */
+  /** Server-assigned run ID (`null` until the stream opens, and once the dashboard ended the run) */
   get runId(): number | null {
-    return this._runId;
+    return this.ended ? null : this._runId;
+  }
+  /**
+   * Whether the dashboard ended the run while it streamed: it refused an events or heartbeat request with 409, as it
+   * does once another run with the same run label started. Nothing more is streamed, and the run goes whole in the
+   * end-of-run batch upload, which re-sends it from the reporter's own collection.
+   */
+  get runEnded(): boolean {
+    return this.ended;
   }
   /** Stream authentication token (`null` until the stream opens) */
   get token(): string | null {
@@ -321,6 +331,7 @@ export class StreamManager {
   // then prepended to the main queue so it arrives before the matching complete event.
   /** Queue a test-case `begin` event. Held in a pre-start buffer if the stream is not yet open, then prepended so it arrives before the matching `complete` event. */
   queueBeginEvent(event: StreamEvent): void {
+    if (this.ended) return;
     if (this._enabled && this._runId) {
       this.queueEvent(event);
     } else {
@@ -331,9 +342,10 @@ export class StreamManager {
   /**
    * Queue a test-case event. Triggers an immediate flush when the batch size is
    * reached, otherwise schedules a timer-based flush. A step event is dropped
-   * while nobody watches the run.
+   * while nobody watches the run, and every event once the dashboard ended it.
    */
   queueEvent(event: StreamEvent): void {
+    if (this.ended) return;
     if (this.watched === false && (event.type === 'step-begin' || event.type === 'step-end')) return;
     this.pendingEvents.enqueue(event);
 
@@ -362,10 +374,11 @@ export class StreamManager {
   // Post the events in order, in requests of at most `MAX_EVENT_REQUEST_BYTES`.
   // A request the server refuses as too large (413) is split in half and resent;
   // a single event it still refuses leaves the live stream. A request it refuses
-  // with another client error (except 408 and 429), or one still failing
-  // `EVENT_FAILURE_GRACE_MS` after its first failure, is set aside so the later
-  // ones flow. On any other failure the unsent events go back to the head of the
-  // queue and a retry is scheduled.
+  // as the run is no longer running (409) ends the stream (`endRun`). A request
+  // it refuses with another client error (except 408 and 429), or one still
+  // failing `EVENT_FAILURE_GRACE_MS` after its first failure, is set aside so the
+  // later ones flow. On any other failure the unsent events go back to the head
+  // of the queue and a retry is scheduled.
   private async sendEvents(events: StreamEvent[]): Promise<boolean> {
     const chunks = this.chunkEvents(events);
     while (chunks.length > 0) {
@@ -381,6 +394,10 @@ export class StreamManager {
         this.headFailingSince = null;
         this.lastActivityAt = Date.now();
       } catch (error) {
+        if (endsRun(error)) {
+          this.endRun(error);
+          return false;
+        }
         if (error instanceof HttpError && error.status === 413) {
           if (chunk.length > 1) {
             const half = Math.ceil(chunk.length / 2);
@@ -544,9 +561,37 @@ export class StreamManager {
       this.noteWatched(response);
       this.lastActivityAt = Date.now();
     } catch (error) {
+      if (endsRun(error)) {
+        this.endRun(error);
+        return;
+      }
       this.logger.debug(`Heartbeat failed: ${errorMessage(error)}`);
     }
     this.scheduleHeartbeat();
+  }
+
+  /**
+   * The dashboard refused the run's events or heartbeat as the run is no longer running, as it does once another run
+   * with the same run label started. Nothing more is streamed to it, its queued and buffered events are dropped, and
+   * the submitter delivers the run whole with the end-of-run batch upload (`runEnded`).
+   */
+  private endRun(error: unknown): void {
+    if (this.ended) return;
+    this.logger.warn(
+      `The dashboard ended live run #${this._runId} (${errorMessage(error)}), as it does once another run with the ` +
+        `same run label starts: give each parallel job its own runLabel. The results are sent in one batch at the end.`,
+    );
+    this.ended = true;
+    this._enabled = false;
+    this.stopHeartbeat();
+    this.clearRetryTimer();
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
+    this.pendingEvents.clear();
+    this.pendingBeginEvents.clear();
+    this.streamBuffer.clear();
   }
 
   /** Stop the idle heartbeat permanently (called when the run is wrapping up). */
@@ -780,6 +825,11 @@ export class StreamManager {
   private stopFileUploads(): void {
     this.fileUploads.abort(new Error('The end-of-run time budget is kept for finishing the run'));
   }
+}
+
+/** The dashboard's answer for a run that is no longer running: it was cancelled, or it ended otherwise. */
+function endsRun(error: unknown): boolean {
+  return error instanceof HttpError && error.status === 409;
 }
 
 /**

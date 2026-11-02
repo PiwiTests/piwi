@@ -81,8 +81,11 @@ export interface SubmittedRun {
   auth: string | null;
 }
 
-/** Why the reporter left the rung it would normally deliver a run through. */
-type SubmitFallbackReason = 'results-lost' | 'finish-failed' | 'upload-failed';
+/**
+ * Why the reporter left the rung it would normally deliver a run through. `run-ended`: the dashboard ended the run
+ * while it streamed, as it does once another run with the same run label started.
+ */
+type SubmitFallbackReason = 'results-lost' | 'finish-failed' | 'upload-failed' | 'run-ended';
 
 /**
  * Name the fallback rung in the run's `metadata.ingestHealth`, where the
@@ -214,8 +217,12 @@ export class RunSubmitter {
     // When test-result events never reached the server through the live stream,
     // the server is missing that detail; finalizing with `/finish` would lock it
     // in. Fall through to the batch upload, which re-sends the full run from the
-    // reporter's own in-memory collection, so the missing detail is recovered.
-    if (sm?.enabled && sm?.runId != null) {
+    // reporter's own in-memory collection, so the missing detail is recovered. A
+    // run the dashboard ended while it streamed takes nothing more, so it goes
+    // whole in the batch upload too.
+    if (sm?.runEnded) {
+      fallbackReason = 'run-ended';
+    } else if (sm?.enabled && sm?.runId != null) {
       if (sm.lostResults) fallbackReason = 'results-lost';
       else {
         outcome = await this.tryFinishStreaming(run, overallStatus, duration, auth, counts.flakyTests, reports);

@@ -386,6 +386,22 @@ describe('StreamManager idle heartbeat', () => {
     expect(calls.length).toBe(0);
   });
 
+  it('takes a heartbeat refused with 409 as the run ended, and sends no more', async () => {
+    const calls: string[] = [];
+    const sm = makeEnabledManager(async (url) => {
+      calls.push(url);
+      throw new HttpError(409);
+    });
+    (sm as any).lastActivityAt = Date.now() - 1000;
+    (sm as any).scheduleHeartbeat();
+    await wait(100);
+    sm.queueEvent(completeEvent('after'));
+    await sm.drain();
+
+    expect(calls).toEqual(['/api/test-runs/1/heartbeat']);
+    expect(sm.runEnded).toBe(true);
+  });
+
   it('drain stops the heartbeat', async () => {
     const calls: string[] = [];
     const sm = makeEnabledManager(async (url) => {
@@ -779,6 +795,29 @@ describe('StreamManager events the dashboard does not take', () => {
     expect(refusals).toBe(1);
     // The refused result goes with the end-of-run batch upload, which carries the whole run.
     expect(sm.lostResults).toBe(true);
+  });
+
+  it('takes a 409 as the run ended: sends nothing more to it and leaves its results to the batch upload', async () => {
+    const posts: string[] = [];
+    const sm = makeManager(async (url, body) => {
+      posts.push(`${url} ${body.testCases?.map((e: any) => e.title).join(',') ?? ''}`.trim());
+      throw new HttpError(409);
+    });
+    sm.queueEvent(completeEvent('refused'));
+    sm.queueEvent(completeEvent('with it'));
+    await sm.flush();
+
+    // A later result, a retry or the heartbeat would only be refused again.
+    sm.queueEvent(completeEvent('later'));
+    sm.queueBeginEvent({ ...completeEvent('next'), type: 'begin' } as any);
+    await vi.advanceTimersByTimeAsync(120_000);
+    await drain(sm);
+
+    expect(posts).toEqual(['/api/test-runs/1/events refused,with it']);
+    expect(sm.runEnded).toBe(true);
+    expect(sm.enabled).toBe(false);
+    // Failures that come after link to the run the batch upload creates.
+    expect(sm.runId).toBeNull();
   });
 
   it('sets nothing aside through an outage shorter than two and a half minutes, however many sends fail in it', async () => {

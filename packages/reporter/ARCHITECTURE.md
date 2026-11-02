@@ -491,7 +491,9 @@ upload stores the `/submit` that follows it, or the recovery copy, once.
 
 A run delivered by a later rung than its first choice carries `metadata.ingestHealth.submitFallback`
 (`{ path: 'upload' | 'submit', reason }`), and a payload sent from crash recovery carries `{ path: 'recovery' }`,
-so the dashboard can say how the run arrived.
+so the dashboard can say how the run arrived. A stream the dashboard ends while it runs (a 409 to its events or its
+heartbeat: another run with the same run label started and cancelled it) sends nothing more, and the run skips rung 1
+for the batch, with the reason `run-ended`.
 
 All HTTP to the dashboard goes through `internal/transport/http-client.ts`, which throws `HttpError`
 (carrying `status`) so callers branch on `error.status`, never the message text. A successful answer that is not

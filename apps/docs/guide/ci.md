@@ -140,6 +140,9 @@ A configured label is used as it is, so the shards of a leg still merge:
 PIWI_RUN_LABEL: ${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.browser }}
 ```
 
+Jobs left sharing a label cancel each other's live runs: the reporter of a cancelled run stops streaming and sends its
+results in one batch at the end of its job, so each job still ends in one complete run, without its live view.
+
 ## Watching a run while CI is still going
 
 Streaming is on by default: the run fills in test by test, so a failure's trace is readable before the pipeline
