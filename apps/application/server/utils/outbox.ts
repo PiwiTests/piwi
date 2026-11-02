@@ -8,9 +8,10 @@
  * The sweepers keep their own loops (they read different tables and act on
  * different providers); only the "who may attempt this row now" and the "when
  * does the next attempt run, and is this the last one" decisions live here so
- * the three agree.
+ * the three agree. An attempt counts from its claim, so a row whose attempts
+ * keep ending the process is given up at the cap like any other.
  */
-import { and, eq, inArray, lte } from 'drizzle-orm';
+import { and, eq, gte, inArray, lt, lte, sql } from 'drizzle-orm';
 import type { SQLiteColumn, SQLiteTable } from 'drizzle-orm/sqlite-core';
 import type { DrizzleDB } from '#shared/handlers/db';
 
@@ -34,14 +35,25 @@ export const OUTBOX_SWEEPABLE_STATUSES = ['pending', OUTBOX_PROCESSING];
 export const OUTBOX_LEASE_MS = 10 * 60_000;
 
 /** The columns every outbox table shares. */
-type OutboxTable = SQLiteTable & { id: SQLiteColumn; status: SQLiteColumn; scheduledFor: SQLiteColumn };
+type OutboxTable = SQLiteTable & {
+  id: SQLiteColumn;
+  status: SQLiteColumn;
+  scheduledFor: SQLiteColumn;
+  attempts: SQLiteColumn;
+  error: SQLiteColumn;
+};
+
+/** The error a row keeps when its last attempt was claimed and never reported back. */
+export const OUTBOX_ABANDONED_ERROR = 'The last attempt never finished: the server stopped while it ran';
 
 /**
  * Claim rows for one attempt with a single conditional UPDATE, so two sweeps (or
  * a sweep and a click) never both act on a row. A sweep claims the rows that are
- * due: `pending` ones, and `processing` ones whose lease has run out.
- * `anySchedule` claims a `pending` row whatever its schedule (the click path).
- * Returns the ids this caller now holds.
+ * due and below the attempt cap: `pending` ones, and `processing` ones whose
+ * lease has run out. `anySchedule` claims a `pending` row whatever its schedule
+ * (the click path). The claim counts the attempt (`attempts` + 1), so the count
+ * a caller writes when the attempt ends is the row's count read before the
+ * claim, plus one. Returns the ids this caller now holds.
  */
 export async function claimOutboxRows(
   db: Pick<DrizzleDB, 'update'>,
@@ -53,14 +65,47 @@ export async function claimOutboxRows(
   const now = new Date();
   const claimable = anySchedule
     ? eq(table.status, 'pending')
-    : and(inArray(table.status, OUTBOX_SWEEPABLE_STATUSES), lte(table.scheduledFor, now));
+    : and(
+        inArray(table.status, OUTBOX_SWEEPABLE_STATUSES),
+        lte(table.scheduledFor, now),
+        lt(table.attempts, OUTBOX_MAX_ATTEMPTS),
+      );
   // RETURNING reports the claimed rows the same way on libSQL and PostgreSQL.
   const claimed = await db
     .update(table)
-    .set({ status: OUTBOX_PROCESSING, scheduledFor: new Date(now.getTime() + OUTBOX_LEASE_MS) })
+    .set({
+      status: OUTBOX_PROCESSING,
+      scheduledFor: new Date(now.getTime() + OUTBOX_LEASE_MS),
+      attempts: sql`${table.attempts} + 1`,
+    })
     .where(and(inArray(table.id, ids), claimable))
     .returning({ id: table.id });
   return new Set(claimed.map((row) => row.id as number));
+}
+
+/**
+ * Give up on the rows whose last allowed attempt was claimed and never reported
+ * back: the lease ran out with the attempt cap reached, so no sweep claims them
+ * again. Each turns `failed` with {@link OUTBOX_ABANDONED_ERROR}, and `set`'s
+ * columns besides. Returns how many there were.
+ */
+export async function failAbandonedOutboxRows(
+  db: Pick<DrizzleDB, 'update'>,
+  table: OutboxTable,
+  set: Record<string, unknown> = {},
+): Promise<number> {
+  const abandoned = await db
+    .update(table)
+    .set({ ...set, status: 'failed', error: OUTBOX_ABANDONED_ERROR })
+    .where(
+      and(
+        eq(table.status, OUTBOX_PROCESSING),
+        lte(table.scheduledFor, new Date()),
+        gte(table.attempts, OUTBOX_MAX_ATTEMPTS),
+      ),
+    )
+    .returning({ id: table.id });
+  return abandoned.length;
 }
 
 export interface NextAttempt {

@@ -45,6 +45,7 @@ import {
 } from '#shared/integrations/automation';
 import {
   claimOutboxRows,
+  failAbandonedOutboxRows,
   nextAttempt,
   OUTBOX_MAX_ATTEMPTS,
   OUTBOX_PROCESSING,
@@ -684,14 +685,15 @@ export async function runActionNow(db: DbClient, id: number): Promise<ActionOutc
 /**
  * Process queued integration actions that are due now, including a claimed one
  * whose lease ran out. Each is claimed first and skipped when another attempt
- * holds it. Mirrors the heal sweeper.
+ * holds it; one whose last allowed attempt never finished is given up first.
+ * Mirrors the heal sweeper.
  */
 export async function sweepIntegrationActions(
   db: DbClient,
 ): Promise<{ done: number; failed: number; skipped: number }> {
   const now = new Date();
   let done = 0;
-  let failed = 0;
+  let failed = await failAbandonedOutboxRows(db, integrationActions, { finishedAt: now });
   let skipped = 0;
 
   const due = await db

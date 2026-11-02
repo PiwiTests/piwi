@@ -6,7 +6,13 @@ import { safeFetch } from '../safe-fetch';
 import type { NotificationEvent, NotificationPayload } from '#shared/notification-events';
 import { renderEventSubject } from '#shared/notification-events';
 import type { LibSQLDatabase } from 'drizzle-orm/libsql';
-import { claimOutboxRows, nextAttempt, OUTBOX_MAX_ATTEMPTS, OUTBOX_SWEEPABLE_STATUSES } from '../outbox';
+import {
+  claimOutboxRows,
+  failAbandonedOutboxRows,
+  nextAttempt,
+  OUTBOX_MAX_ATTEMPTS,
+  OUTBOX_SWEEPABLE_STATUSES,
+} from '../outbox';
 import { REPORT_READY_EVENT, type ReportReadyPayload } from '#shared/notification-events';
 import {
   loadReportForDelivery,
@@ -253,7 +259,8 @@ export function sweepOutbox(db: Db): Promise<SweepResult> {
 
 /**
  * Send the deliveries that are due now (scheduledFor <= now, attempts < MAX):
- * `pending` ones, and `processing` ones whose claim's lease has run out.
+ * `pending` ones, and `processing` ones whose claim's lease has run out. A
+ * delivery whose last allowed attempt never finished is given up first.
  *
  * Email and Slack deliveries queued by a digest-mode subscription batch into
  * one message per channel; every other delivery (realtime, webhook, browser)
@@ -263,7 +270,7 @@ export function sweepOutbox(db: Db): Promise<SweepResult> {
 async function sweepDue(db: Db): Promise<SweepResult> {
   const now = new Date();
   let sent = 0;
-  let failed = 0;
+  let failed = await failAbandonedOutboxRows(db, notificationDeliveries);
 
   const due = await db
     .select({ d: notificationDeliveries, c: notificationChannels, mode: subscriptions.mode })
