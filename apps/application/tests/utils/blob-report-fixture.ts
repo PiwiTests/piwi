@@ -28,6 +28,8 @@ export interface FixtureTest {
     /** The attempt's errors as Playwright lists them, in place of `errorMessage`'s: each at a line of the spec when it names one. */
     errors?: Array<{ message: string; line?: number; column?: number }>;
     annotations?: Array<{ type: string; description?: string }>;
+    /** Playwright's `test.expectedStatus`; by default `failed` for an attempt annotated `fail`, else `passed`. */
+    expectedStatus?: 'passed' | 'failed';
     /** Attach a `trace` (zip), `screenshot` (png) or `error-context` (markdown). */
     attachments?: Array<{ name: string; contentType: string; body: string }>;
   }>;
@@ -136,7 +138,8 @@ export function buildBlobReport(options: FixtureOptions): Buffer {
         params: {
           test: {
             testId: test.testId,
-            expectedStatus: attempt.annotations?.some((a) => a.type === 'fail') ? 'failed' : 'passed',
+            expectedStatus:
+              attempt.expectedStatus ?? (attempt.annotations?.some((a) => a.type === 'fail') ? 'failed' : 'passed'),
             timeout: test.timeout ?? 30000,
             annotations: [],
           },

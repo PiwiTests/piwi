@@ -193,6 +193,25 @@ describe('parseBlobReport', () => {
     expect(parsed.failedTests).toBe(1);
   });
 
+  test('inverts only a test Playwright expected to fail, not one that pushed a fail annotation itself', async () => {
+    const parsed = await parse(
+      buildBlobReport({
+        tests: [
+          {
+            testId: 't-annotated',
+            title: 'notes a known bug',
+            attempts: [{ status: 'passed', annotations: [{ type: 'fail' }], expectedStatus: 'passed' }],
+          },
+        ],
+      }),
+    );
+
+    const annotated = parsed.cases[0]!.case;
+    expect(annotated.status).toBe('passed');
+    expect(annotated.error).toBeNull();
+    expect(parsed.failedTests).toBe(0);
+  });
+
   test('carries step metrics and splits attachments from traces', async () => {
     const parsed = await parse(
       buildBlobReport({

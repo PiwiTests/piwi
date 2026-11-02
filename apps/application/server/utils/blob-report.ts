@@ -482,7 +482,8 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
         { annotations: result.annotations as TestAnnotation[] | undefined },
       );
       const rawStatus = String(result.status ?? 'failed');
-      const status = classifyStatus(rawStatus, annotations);
+      const expectedStatus = typeof test.expectedStatus === 'string' ? test.expectedStatus : null;
+      const status = classifyStatus(rawStatus, annotations, expectedStatus);
 
       const metrics = collectStepMetrics(acc?.rootSteps ?? [], resultErrors(result.errors, resolver));
       const stepEvents = [
@@ -512,8 +513,9 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
           timeout: typeof test.timeout === 'number' ? test.timeout : (plan?.timeout ?? null),
           // A `test.fail()` test that passed is now `failed` with no recorded
           // error; Playwright reports the same line, so synthesize it.
-          error: expectedFailureError(rawStatus, annotations) ?? buildErrorText(result.errors, resolver),
-          expectedStatus: typeof test.expectedStatus === 'string' ? test.expectedStatus : null,
+          error:
+            expectedFailureError(rawStatus, annotations, expectedStatus) ?? buildErrorText(result.errors, resolver),
+          expectedStatus,
           retries: acc?.retry ?? 0,
           repeatEachIndex: plan?.repeatEachIndex ?? 0,
           attempts: attempts.map((attempt) => ({ ...attempt })),
