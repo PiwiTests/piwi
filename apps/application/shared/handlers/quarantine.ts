@@ -59,12 +59,14 @@ export interface QuarantineEntry {
   verifiedFix: VerifiedFix | null;
   /** Runs since quarantine that recorded the test, the newest 30 at most; zero means nothing has exercised it yet. */
   runsSinceQuarantine: number;
+  /** Someone dismissed the proposed release; it stays proposed, and the test stays until a person releases it. */
+  releaseDismissed: boolean;
 }
 
 /** Aggregate cost of the quarantine list — the debt, so it cannot be ignored. */
 export interface QuarantineDebt {
   active: number;
-  /** Entries whose streak says they should be released. */
+  /** Entries proposed for release, the dismissed proposals left out. */
   readyToRelease: number;
   /** Age of the oldest active quarantine, in ms. */
   oldestAgeMs: number;
@@ -291,6 +293,7 @@ export async function listQuarantine(
     .orderBy(asc(quarantinedTests.createdAt));
 
   const proposals = await releaseProposals(db, projectId, rows);
+  const dismissed = await dismissedReleases(db, projectId);
   const now = Date.now();
 
   const entries: QuarantineEntry[] = rows.map((row) => {
@@ -314,12 +317,13 @@ export async function listQuarantine(
       releaseReason: verifiedFix ? 'verified-fix' : earned ? 'streak' : null,
       verifiedFix,
       runsSinceQuarantine: streak.runs,
+      releaseDismissed: dismissed.has(row.id),
     };
   });
 
   const debt: QuarantineDebt = {
     active: entries.length,
-    readyToRelease: entries.filter((entry) => entry.releaseProposed).length,
+    readyToRelease: entries.filter((entry) => entry.releaseProposed && !entry.releaseDismissed).length,
     oldestAgeMs: entries.reduce((max, entry) => Math.max(max, entry.ageMs), 0),
     stillFailing: entries.filter((entry) => proposals.get(entry.testCaseId)!.streak.failing).length,
   };
@@ -517,23 +521,29 @@ export async function dismissQuarantineProposal(
   return true;
 }
 
-/**
- * Marks the dismissed proposals of a project's quarantine list: `releaseDismissed`
- * on each entry whose proposed release was dismissed, and `dismissed` on each
- * candidate dismissed since the newest run.
- */
-export async function markDismissedProposals<C extends { testCaseId: number }>(
+/** The project's quarantine entries whose proposed release someone dismissed, by entry id. */
+async function dismissedReleases(db: DrizzleDB, projectId: number): Promise<Set<number>> {
+  const rows = await listOutcomes(db, { projectId, kind: 'quarantine-proposal', outcomes: ['rejected'] });
+  return new Set(
+    rows
+      .filter((row) => row.suggestionKey.startsWith('release:'))
+      .map((row) => Number(row.suggestionKey.slice('release:'.length))),
+  );
+}
+
+/** Marks `dismissed` on each of a project's quarantine candidates dismissed since the newest run. */
+export async function markDismissedCandidates<C extends { testCaseId: number }>(
   db: DrizzleDB,
   projectId: number,
-  entries: QuarantineEntry[],
   candidates: C[],
-): Promise<{
-  entries: Array<QuarantineEntry & { releaseDismissed: boolean }>;
-  candidates: Array<C & { dismissed: boolean }>;
-}> {
-  const dismissedCandidates = new Set<number>();
-  const dismissedReleases = new Set<number>();
-  const rows = await listOutcomes(db, { projectId, kind: 'quarantine-proposal', outcomes: ['rejected'] });
+): Promise<Array<C & { dismissed: boolean }>> {
+  const dismissed = new Set<number>();
+  const rows = await listOutcomes(db, {
+    projectId,
+    kind: 'quarantine-proposal',
+    suggestionKey: 'quarantine',
+    outcomes: ['rejected'],
+  });
   if (rows.length > 0) {
     const [latestRun] = await db
       .select({ id: testRuns.id })
@@ -542,18 +552,8 @@ export async function markDismissedProposals<C extends { testCaseId: number }>(
       .orderBy(desc(testRuns.id))
       .limit(1);
     for (const row of rows) {
-      if (row.suggestionKey === 'quarantine') {
-        if (row.runId != null && row.runId === latestRun?.id) dismissedCandidates.add(row.subjectId);
-      } else if (row.suggestionKey.startsWith('release:')) {
-        dismissedReleases.add(Number(row.suggestionKey.slice('release:'.length)));
-      }
+      if (row.runId != null && row.runId === latestRun?.id) dismissed.add(row.subjectId);
     }
   }
-  return {
-    entries: entries.map((entry) => ({ ...entry, releaseDismissed: dismissedReleases.has(entry.id) })),
-    candidates: candidates.map((candidate) => ({
-      ...candidate,
-      dismissed: dismissedCandidates.has(candidate.testCaseId),
-    })),
-  };
+  return candidates.map((candidate) => ({ ...candidate, dismissed: dismissed.has(candidate.testCaseId) }));
 }

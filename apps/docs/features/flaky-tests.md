@@ -129,8 +129,8 @@ list only grows.
 - **Debt** is reported in aggregate: how many are quarantined, how many are ready to release, how long the oldest has
   been in, and how many failed in the latest run that ran them.
 
-**Dismiss** turns down either proposal, with an optional reason, and changes nothing else; a dismissed candidate
-returns after a newer run. Agents call [`dismiss_quarantine_proposal`](/reference/mcp-tools#dismiss_quarantine_proposal)
+**Dismiss** turns down either proposal, with an optional reason, and leaves the test where it is; a dismissed release
+no longer counts as ready to release, and a dismissed candidate returns after a newer run. Agents call [`dismiss_quarantine_proposal`](/reference/mcp-tools#dismiss_quarantine_proposal)
 and [`set_test_quarantine`](/reference/mcp-tools#set_test_quarantine).
 
 The gate always states how many failures quarantine excluded — a green gate that silently ignored failures would be

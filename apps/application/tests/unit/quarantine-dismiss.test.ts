@@ -70,6 +70,7 @@ const { handler: dismissRoute, permission: dismissPermission } = await loadRoute
 }>('../../server/api/projects/[id]/quarantine/[testCaseId]/dismiss.post');
 const { handler: listRoute } = await loadRoute<{
   entries: Array<{ testCaseId: number; releaseProposed: boolean; releaseDismissed: boolean }>;
+  debt: { readyToRelease: number };
   candidates: Array<{ testCaseId: number; dismissed: boolean }>;
 }>('../../server/api/projects/[id]/quarantine.get');
 const { MCP_TOOLS } = await import('../../server/utils/mcp/tools');
@@ -171,6 +172,8 @@ afterEach(async () => {
 
 describe('POST /api/projects/:id/quarantine/:testCaseId/dismiss', () => {
   test('dismisses a proposed release with a reason, as the signed-in person over the dashboard', async () => {
+    const list = () => listRoute({ params: { id: '1' }, path: '/api/projects/1/quarantine' });
+    expect((await list()).debt.readyToRelease).toBe(1);
     const result = await dismissRoute({
       params: { id: '1', testCaseId: '2' },
       body: { proposal: 'release', reason: '  Still fails on staging  ' },
@@ -187,12 +190,13 @@ describe('POST /api/projects/:id/quarantine/:testCaseId/dismiss', () => {
         details: { reason: 'Still fails on staging' },
       },
     ]);
-    // Nothing else changes: the test is still quarantined.
-    const listed = await listRoute({ params: { id: '1' }, path: '/api/projects/1/quarantine' });
+    // Nothing else changes: the test stays quarantined, and its dismissed release does not count as ready.
+    const listed = await list();
     expect(listed.entries.find((e) => e.testCaseId === 2)).toMatchObject({
       releaseProposed: true,
       releaseDismissed: true,
     });
+    expect(listed.debt.readyToRelease).toBe(0);
   });
 
   test('dismisses a quarantine candidate, once, and the list marks it until a newer run arrives', async () => {

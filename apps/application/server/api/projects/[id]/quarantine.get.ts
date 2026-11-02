@@ -1,7 +1,7 @@
 import { getDatabase } from '../../../database';
 import { queryFlag } from '../../../utils/query-params';
 import { requireProjectAccess, requireRouteId } from '../../../utils/project-access';
-import { listQuarantine, markDismissedProposals, RELEASE_AFTER_CONSECUTIVE_PASSES } from '#shared/handlers/quarantine';
+import { listQuarantine, markDismissedCandidates, RELEASE_AFTER_CONSECUTIVE_PASSES } from '#shared/handlers/quarantine';
 import { proposeQuarantineCandidates } from '../../../utils/quarantine-candidates';
 
 defineRouteMeta({
@@ -9,7 +9,7 @@ defineRouteMeta({
     tags: ['Test Cases'],
     summary: 'Quarantined tests, their exit progress, and candidates',
     description:
-      'A quarantined test still runs and still reports — it is excluded from the CI gate’s verdict and nothing else. That is what makes the exit ramp work: `consecutivePasses` counts passing runs since quarantine, and `releaseProposed` turns true once a test has earned its way out. `debt` aggregates the cost of the list so it cannot quietly grow forever. `candidates` proposes tests worth quarantining, ranked by the CI time their flakiness wastes; each lists its `reasons`, and a completed AI diagnosis calling the test flaky with high confidence (not rated unhelpful) adds one, named in `diagnosis`. A dismissed proposal stays listed: `releaseDismissed` marks an entry whose proposed release was dismissed, and `dismissed` a candidate dismissed since the newest run (`POST /api/projects/:id/quarantine/:testCaseId/dismiss`). Set `?candidates=false` to skip that computation.',
+      'A quarantined test still runs and still reports — it is excluded from the CI gate’s verdict and nothing else. That is what makes the exit ramp work: `consecutivePasses` counts passing runs since quarantine, and `releaseProposed` turns true once a test has earned its way out. `debt` aggregates the cost of the list so it cannot quietly grow forever. `candidates` proposes tests worth quarantining, ranked by the CI time their flakiness wastes; each lists its `reasons`, and a completed AI diagnosis calling the test flaky with high confidence (not rated unhelpful) adds one, named in `diagnosis`. A dismissed proposal stays listed: `releaseDismissed` marks an entry whose proposed release was dismissed, which `debt.readyToRelease` leaves out, and `dismissed` a candidate dismissed since the newest run (`POST /api/projects/:id/quarantine/:testCaseId/dismiss`). Set `?candidates=false` to skip that computation.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       {
@@ -29,13 +29,13 @@ export default eventHandler(async (event) => {
   await requireProjectAccess(event, projectId);
 
   const db = await getDatabase();
-  const listed = await listQuarantine(db, projectId);
+  const { entries, debt } = await listQuarantine(db, projectId);
 
   const wantCandidates = queryFlag(event, 'candidates', { default: true });
   const proposed = wantCandidates
-    ? await proposeQuarantineCandidates(db, projectId, new Set(listed.entries.map((e) => e.testCaseId)))
+    ? await proposeQuarantineCandidates(db, projectId, new Set(entries.map((e) => e.testCaseId)))
     : [];
-  const { entries, candidates } = await markDismissedProposals(db, projectId, listed.entries, proposed);
+  const candidates = await markDismissedCandidates(db, projectId, proposed);
 
-  return { entries, debt: listed.debt, candidates, releaseAfterConsecutivePasses: RELEASE_AFTER_CONSECUTIVE_PASSES };
+  return { entries, debt, candidates, releaseAfterConsecutivePasses: RELEASE_AFTER_CONSECUTIVE_PASSES };
 });

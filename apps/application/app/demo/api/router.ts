@@ -211,7 +211,6 @@ import {
   addQuarantine,
   dismissQuarantineProposal,
   listQuarantine,
-  markDismissedProposals,
   releaseQuarantine,
   RELEASE_AFTER_CONSECUTIVE_PASSES,
 } from '#shared/handlers/quarantine';
@@ -2712,7 +2711,7 @@ const routes: RouteEntry[] = [
       const db = await getDemoDb();
       const { entries, debt } = await listQuarantine(db, +m[1]!);
       return {
-        entries: (await markDismissedProposals(db, +m[1]!, entries, [])).entries,
+        entries,
         debt,
         candidates: [],
         releaseAfterConsecutivePasses: RELEASE_AFTER_CONSECUTIVE_PASSES,
