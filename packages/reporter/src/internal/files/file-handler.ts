@@ -208,7 +208,10 @@ export class FileHandler {
       return null;
     }
     const contentType = a.contentType || 'application/octet-stream';
-    const originalName = `${safeFileName(a.name || 'attachment')}${BODY_EXTENSIONS[contentType] ?? ''}`;
+    const baseName = safeFileName(a.name || 'attachment');
+    const extension = BODY_EXTENSIONS[contentType] ?? '';
+    // A name that already ends in its type's extension (`notes.txt`) keeps it once.
+    const originalName = baseName.toLowerCase().endsWith(extension) ? baseName : `${baseName}${extension}`;
     let filePath = this.bodyFiles.get(a);
     if (!filePath) {
       try {

@@ -43,6 +43,22 @@ describe('FileHandler.findAllAttachments', () => {
     expect(fs.existsSync(found!.path)).toBe(false);
   });
 
+  it("adds the type's extension only to a name that does not end in it", () => {
+    const handler = new FileHandler(logger);
+    const tc = testCase([
+      { name: 'notes.txt', contentType: 'text/plain', body: Buffer.from('a') },
+      { name: 'Order.JSON', contentType: 'application/json', body: Buffer.from('{}') },
+      { name: 'order', contentType: 'application/json', body: Buffer.from('{}') },
+    ]);
+
+    expect(handler.findAllAttachments(tc).map((a) => a.originalName)).toEqual([
+      'notes.txt',
+      'Order.JSON',
+      'order.json',
+    ]);
+    handler.cleanupBodyAttachments();
+  });
+
   it('reuses one temp file across repeated lookups of the same attachment', () => {
     const handler = new FileHandler(logger);
     const tc = testCase([{ name: 'note', contentType: 'text/plain', body: Buffer.from('hello') }]);
