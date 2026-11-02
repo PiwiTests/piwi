@@ -11,6 +11,7 @@ import type {
 } from '~~/types/api';
 import type { LiveStepsByWorker } from '~/utils/live-steps';
 import { liveRowNote } from '~/utils/live-row-note';
+import { runSummaryText } from '~/utils/run-summary';
 import { NO_WORKER_GRACE_MS } from '~/utils/run-live-view-status';
 import { subscribeDemoEvents } from '~/demo/run-events';
 import { useRunEvents, useRunStart, useRunStream } from '~/composables/useRunStream';
@@ -689,29 +690,23 @@ const runToDelete = computed(() => [{ id: Number(runId), keptAt: testRun.value?.
 function buildRunSummary(): string {
   const run = testRun.value;
   if (!run) return '';
-  const statusEmoji =
-    run.status === 'passed' ? '✅' : run.status === 'failed' ? '❌' : run.status === 'running' ? '🔄' : '⚠️';
-  const label = run.label ? ` — ${run.label}` : '';
-  const project = run.project?.label ?? run.project?.name ?? '';
   // Count from the same source as the header so the copied summary matches what
   // is on screen; fall back to the stored columns when the cases aren't loaded.
   const p = displayProgress.value;
-  const total = p?.totalTests ?? run.totalTests ?? 0;
-  const passed = p?.passedTests ?? run.passedTests ?? 0;
-  const failed = p?.failedTests ?? run.failedTests ?? 0;
-  const skipped = p?.skippedTests ?? run.skippedTests ?? 0;
-  const fixme = p?.fixmeTests ?? 0;
-  const flaky = p?.flakyTests ?? run.flakyTests ?? 0;
-  const didNotRun = p?.didNotRunTests ?? run.didNotRunTests ?? 0;
-  const flakyPart = flaky > 0 ? ` · ${flaky} passed on retry` : '';
-  const didNotRunPart = didNotRun > 0 ? ` · ${didNotRun} didn't run` : '';
-  const fixmePart = fixme > 0 ? ` (${fixme} fixme)` : '';
-  return [
-    `*Run #${run.id}*${label}`,
-    `Status: ${statusEmoji} ${run.status} | Project: ${project}`,
-    `Tests: ${total} total · ${passed} passed · ${failed} failed · ${skipped} skipped${fixmePart}${didNotRunPart}${flakyPart}`,
-    `Duration: ${formatDuration(run.duration)}`,
-  ].join('\n');
+  return runSummaryText({
+    id: run.id,
+    status: run.status,
+    label: run.label,
+    project: run.project?.label ?? run.project?.name ?? '',
+    duration: run.duration,
+    total: p?.totalTests ?? run.totalTests ?? 0,
+    passed: p?.passedTests ?? run.passedTests ?? 0,
+    failed: p?.failedTests ?? run.failedTests ?? 0,
+    skipped: p?.skippedTests ?? run.skippedTests ?? 0,
+    fixme: p?.fixmeTests ?? 0,
+    flaky: p?.flakyTests ?? run.flakyTests ?? 0,
+    didNotRun: p?.didNotRunTests ?? run.didNotRunTests ?? 0,
+  });
 }
 
 // Test-cases filter state — lifted here so it survives tab switches, and kept
