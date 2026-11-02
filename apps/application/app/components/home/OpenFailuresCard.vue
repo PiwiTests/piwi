@@ -336,9 +336,11 @@ async function assign(cluster: OpenFailureCluster, assignee: string | null): Pro
 async function quarantine(cluster: OpenFailureCluster): Promise<void> {
   if (!canQuarantine(cluster)) return;
   try {
-    const res = await $fetch<{ tests: number }>(`/api/failure-clusters/${cluster.id}/quarantine`, { method: 'POST' });
+    const res = await $fetch<{ tests: number; quarantined: number }>(`/api/failure-clusters/${cluster.id}/quarantine`, {
+      method: 'POST',
+    });
     toast.add({
-      title: `Quarantined ${res.tests} ${res.tests === 1 ? 'test' : 'tests'}`,
+      title: `Quarantined ${res.quarantined} ${res.quarantined === 1 ? 'test' : 'tests'}`,
       description: describeCluster(cluster),
       color: 'success',
     });
