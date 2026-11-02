@@ -317,17 +317,24 @@ export async function addQuarantine(
     .limit(1);
 
   const source = options.source === 'proposed' ? 'proposed' : 'manual';
-  await db.insert(quarantinedTests).values({
-    projectId,
-    testCaseId,
-    reason: options.reason ?? null,
-    source,
-    quarantinedAtRunId: latestRun?.id ?? null,
-    // With authentication disabled the request carries a synthetic user whose
-    // id is 0, which no `users` row has — store null rather than tripping the
-    // foreign key on an instance that has no accounts at all.
-    createdBy: typeof options.createdBy === 'number' && options.createdBy > 0 ? options.createdBy : null,
-  });
+  // A request running at the same time (a bulk quarantine of two clusters that share a test) may insert first: the
+  // index of active quarantines keeps its row, and this call creates none.
+  const inserted = await db
+    .insert(quarantinedTests)
+    .values({
+      projectId,
+      testCaseId,
+      reason: options.reason ?? null,
+      source,
+      quarantinedAtRunId: latestRun?.id ?? null,
+      // With authentication disabled the request carries a synthetic user whose
+      // id is 0, which no `users` row has — store null rather than tripping the
+      // foreign key on an instance that has no accounts at all.
+      createdBy: typeof options.createdBy === 'number' && options.createdBy > 0 ? options.createdBy : null,
+    })
+    .onConflictDoNothing()
+    .returning({ id: quarantinedTests.id });
+  if (inserted.length === 0) return { created: false };
 
   if (source === 'proposed') {
     await recordOutcome(db, {
