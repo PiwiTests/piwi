@@ -562,13 +562,27 @@ export async function getTestRunCase(
     status: testRunsCases.status,
   };
 
+  // A location names the same test in every Playwright project, attempt and repetition. A serial group's cascade and
+  // its blocker share all three; a test blocked by a failed project dependency is in another project than its blocker.
+  const sameAttempt = and(
+    trc.browserName ? eq(testRunsCases.browserName, trc.browserName) : sql`${testRunsCases.browserName} IS NULL`,
+    sql`COALESCE(${testRunsCases.retries}, 0) = ${trc.retries ?? 0}`,
+    eq(testRunsCases.repeatEachIndex, trc.repeatEachIndex),
+  );
+
   let blockedTests: BlockedCaseRef[] = [];
   if (ownLocation) {
     const rows = await db
       .select(blockedRefColumns)
       .from(testRunsCases)
       .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
-      .where(and(eq(testRunsCases.testRunId, trc.testRunId), eq(testRunsCases.blockedBy, ownLocation)));
+      .where(
+        and(
+          eq(testRunsCases.testRunId, trc.testRunId),
+          eq(testRunsCases.blockedBy, ownLocation),
+          or(eq(testRunsCases.didNotRunReason, 'dependency-failure'), sameAttempt),
+        ),
+      );
     blockedTests = rows.map(toRef);
   }
 
@@ -588,8 +602,11 @@ export async function getTestRunCase(
             eq(testCases.filePath, m[1]!),
             eq(testRunsCases.line, Number(m[2])),
             eq(testRunsCases.column, Number(m[3])),
+            ...(trc.didNotRunReason === 'dependency-failure' ? [] : [sameAttempt]),
           ),
-        );
+        )
+        .orderBy(desc(testRunsCases.retries))
+        .limit(1);
       if (row) {
         const steps = Array.isArray(row.steps) ? (row.steps as TreeStepLike[]) : [];
         blockedByCase = { ...toRef(row), failedIn: failureHookContext(steps, row.error) };
