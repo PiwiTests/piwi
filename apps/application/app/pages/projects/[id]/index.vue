@@ -13,6 +13,7 @@ import { RUN_STATUS_SERIES, legendOf } from '~/utils/chart';
 import { drillQueryKey, parseDrillQuery, type DrillScope } from '~/utils/analytics-drilldown';
 import { projectRunScopeQuery, runInProjectScope, type ProjectRunScope } from '#shared/project-run-scope';
 import { isRunFinished } from '#shared/project-health';
+import { compareOrder } from '~/utils/run-compare';
 import type { ProjectHeaderTarget } from '~/components/project/ProjectHeader.vue';
 import { COVERAGE_VIEW_KEYS } from '~/utils/coverage-tab';
 
@@ -570,13 +571,13 @@ async function onRunsDeleted(runIds: number[]) {
   await Promise.all([refresh(), refreshKeptRuns()]);
 }
 
-// Compare opens the newer run's Changes tab with the older run as its baseline.
+// Compare opens the newer run's Changes tab (by start time, `compareOrder`) with the older run as its baseline.
 function compareSelectedRuns() {
   if (selectedRunIds.value.length !== 2) return;
-  const [a, b] = selectedRunIds.value as [number, number];
-  const newer = Math.max(a, b);
-  const older = Math.min(a, b);
-  navigateTo(`/test-runs/${newer}?tab=changes&baseline=${older}`);
+  const [a, b] = selectedRunIds.value.map((id) => tableRuns.value.find((run) => run.id === id));
+  if (!a || !b) return;
+  const { newer, older } = compareOrder(a, b);
+  navigateTo(`/test-runs/${newer.id}?tab=changes&baseline=${older.id}`);
 }
 
 function scopeTooltip(run: TestRunSummary): string {
