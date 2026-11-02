@@ -367,6 +367,8 @@ export function formatDidNotRunReason(reason?: string | null): string {
   switch (reason) {
     case 'previous-failure':
       return 'Blocked by an earlier failure';
+    case 'dependency-failure':
+      return 'Blocked by a failed project dependency';
     case 'global-timeout':
       return 'Global timeout reached';
     case 'max-failures':

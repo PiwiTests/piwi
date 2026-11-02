@@ -166,7 +166,7 @@ export interface RunCaseInput {
   didNotRunReason?: string | null;
   /** Playwright's `TestCase.expectedStatus`; derived from the annotations when absent. */
   expectedStatus?: string | null;
-  /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
+  /** For a `previous-failure` or `dependency-failure` case, the location of the failing test that blocked it. */
   blockedBy?: string | null;
 }
 

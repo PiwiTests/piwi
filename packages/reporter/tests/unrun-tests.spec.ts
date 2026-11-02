@@ -90,4 +90,38 @@ describe('the tests a run never reached, on the wire', () => {
     expect(sentCase(body, 'ships')).toMatchObject({ status: 'didnotrun', didNotRunReason: 'max-failures' });
     expect(body).toMatchObject({ totalTests: 3, failedTests: 1, skippedTests: 1, didNotRunTests: 1 });
   });
+
+  it('links the tests of a project whose dependency failed to that failure', async () => {
+    const inProject = (name: string) => {
+      const suite = fakeSuite();
+      suite.project = () => ({ name, use: {} });
+      return suite;
+    };
+    const login = fakeTestCase({ id: 'login', title: 'logs in', file: '/repo/auth.setup.ts', line: 3, parent: inProject('setup') });
+    const cart = fakeTestCase({ id: 'cart', title: 'adds to cart', file: '/repo/cart.spec.ts', line: 5, parent: inProject('app') });
+    const report = fakeTestCase({ id: 'report', title: 'reports', file: '/repo/report.spec.ts', line: 7, parent: inProject('reports') });
+    const other = fakeTestCase({ id: 'other', title: 'other', file: '/repo/other.spec.ts', line: 9, parent: inProject('other') });
+    const projects = [
+      { name: 'setup', dependencies: [] },
+      { name: 'app', dependencies: ['setup'] },
+      { name: 'reports', dependencies: ['app'] },
+      { name: 'other', dependencies: [] },
+    ];
+    // Playwright's authentication setup (`dependencies: ['setup']`): the login fails, and Playwright reports no test
+    // of a project that depends on its project, directly or through another.
+    const body = await submitted([login, cart, report, other], [{ test: login, status: 'failed' }], 'failed', {
+      projects,
+      configFile: '/repo/playwright.config.ts',
+    });
+    expect(body.testCases.find((tc: any) => tc.title === 'logs in').location).toBe('auth.setup.ts:3:1');
+    for (const title of ['adds to cart', 'reports']) {
+      expect(sentCase(body, title)).toMatchObject({
+        status: 'didnotrun',
+        didNotRunReason: 'dependency-failure',
+        blockedBy: 'auth.setup.ts:3:1',
+      });
+    }
+    // A test of a project that depends on no failed project keeps the run's reason.
+    expect(sentCase(body, 'other')).toMatchObject({ status: 'didnotrun', didNotRunReason: 'interrupted', blockedBy: null });
+  });
 });

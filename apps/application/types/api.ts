@@ -1025,14 +1025,19 @@ export interface TestCaseResult {
   didNotRunReason?: DidNotRunReason | null;
   /** Playwright's expected status: `failed` for a `test.fail()` test. */
   expectedStatus?: string | null;
-  /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
+  /** For a `previous-failure` or `dependency-failure` case, the location of the failing test that blocked it. */
   blockedBy?: string | null;
   /** A running test that has run far longer than it usually does (`#shared/stuck-tests`). */
   stuck?: StuckAttempt | null;
 }
 
 /** Why a `didnotrun` case never executed — mirrors the reporter's taxonomy. */
-export type DidNotRunReason = 'previous-failure' | 'global-timeout' | 'max-failures' | 'interrupted';
+export type DidNotRunReason =
+  | 'previous-failure'
+  | 'dependency-failure'
+  | 'global-timeout'
+  | 'max-failures'
+  | 'interrupted';
 
 /** A lightweight reference to another execution in the same run (cause ↔ effect linking). */
 export interface BlockedCaseRef {

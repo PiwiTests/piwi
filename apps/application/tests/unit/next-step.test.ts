@@ -48,6 +48,13 @@ describe('computeNextStep — one row per rule', () => {
       expect(s.primary.payload).toEqual({ runId: 66, tab: 'failure-groups' });
     });
 
+    test('a failed project dependency with no blocker found opens the failures of the run', () => {
+      const s = run({ didNotRunReason: 'dependency-failure' });
+      expect(s.kind).toBe('open-run');
+      expect(s.why).toBe('Nothing to fix in this test: it runs again once the project it depends on passes.');
+      expect(s.primary.payload).toEqual({ runId: 66, tab: 'failure-groups' });
+    });
+
     test('a global timeout opens the timeline of the run', () => {
       const s = run({ didNotRunReason: 'global-timeout' });
       expect(s.title).toBe('See what made the run slow');
@@ -67,7 +74,14 @@ describe('computeNextStep — one row per rule', () => {
     });
 
     test('never reproduces or diagnoses, and never restates the reason', () => {
-      for (const didNotRunReason of ['max-failures', 'global-timeout', 'interrupted', 'previous-failure', null]) {
+      for (const didNotRunReason of [
+        'max-failures',
+        'global-timeout',
+        'interrupted',
+        'previous-failure',
+        'dependency-failure',
+        null,
+      ]) {
         const s = run({ didNotRunReason, aiConfigured: true, why: null });
         expect(['reproduce', 'diagnose']).not.toContain(s.kind);
         expect(s.why.startsWith('Nothing to fix in this test: ')).toBe(true);
@@ -77,6 +91,7 @@ describe('computeNextStep — one row per rule', () => {
 
     test('the blocker row wins when the blocking failure is known', () => {
       expect(run({ didNotRunReason: 'previous-failure', blockedByCase: { id: 7 } }).kind).toBe('open-blocker');
+      expect(run({ didNotRunReason: 'dependency-failure', blockedByCase: { id: 7 } }).kind).toBe('open-blocker');
     });
   });
 

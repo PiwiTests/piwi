@@ -258,15 +258,23 @@ export function classifyStatus(
 
 /**
  * Why a test carries the `didnotrun` status. A test never executes for one of
- * two shapes of reason:
+ * three shapes of reason:
  *  - `previous-failure` — a preceding test (or hook) in the same serial group
  *    failed, so Playwright skipped the rest; this test *reported* as an
  *    annotation-less skip and links to the failure that blocked it.
+ *  - `dependency-failure` — a test of a project its project depends on
+ *    (`dependencies`) failed, so Playwright ran none of its project's tests;
+ *    this test never reported, and links to that failure.
  *  - the run stopped before reaching it — `global-timeout` (the run's
  *    `globalTimeout` elapsed), `max-failures` (`maxFailures` reached), or a
  *    plain `interrupted` (worker crash / Ctrl-C).
  */
-export type DidNotRunReason = 'previous-failure' | 'global-timeout' | 'max-failures' | 'interrupted';
+export type DidNotRunReason =
+  | 'previous-failure'
+  | 'dependency-failure'
+  | 'global-timeout'
+  | 'max-failures'
+  | 'interrupted';
 
 /**
  * Run-level reason for tests Playwright planned but never reported (no

@@ -134,11 +134,14 @@ export interface TestCasePayload {
   testSource?: string | null;
   /** In-project call-stack frames (innermost first): the failing line + its callers. */
   testSourceFrames?: TestSourceFrame[] | null;
-  /** Why a `didnotrun` case never executed (`previous-failure`/`global-timeout`/`max-failures`/`interrupted`). */
+  /**
+   * Why a `didnotrun` case never executed
+   * (`previous-failure`/`dependency-failure`/`global-timeout`/`max-failures`/`interrupted`).
+   */
   didNotRunReason?: string | null;
   /** Playwright's `TestCase.expectedStatus`: `failed` for a `test.fail()` test. */
   expectedStatus?: string | null;
-  /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
+  /** For a `previous-failure` or `dependency-failure` case, the location of the failing test that blocked it. */
   blockedBy?: string | null;
 }
 
@@ -246,11 +249,14 @@ export interface StreamEventPayload {
   testSource?: string | null;
   /** In-project call-stack frames (innermost first): the failing line + its callers. */
   testSourceFrames?: TestSourceFrame[] | null;
-  /** Why a `didnotrun` case never executed (`previous-failure`/`global-timeout`/`max-failures`/`interrupted`). */
+  /**
+   * Why a `didnotrun` case never executed
+   * (`previous-failure`/`dependency-failure`/`global-timeout`/`max-failures`/`interrupted`).
+   */
   didNotRunReason?: string | null;
   /** Playwright's `TestCase.expectedStatus`: `failed` for a `test.fail()` test. */
   expectedStatus?: string | null;
-  /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
+  /** For a `previous-failure` or `dependency-failure` case, the location of the failing test that blocked it. */
   blockedBy?: string | null;
 }
 

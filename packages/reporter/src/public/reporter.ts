@@ -210,6 +210,8 @@ export class PiwiDashboardReporter {
   private filterDetails: FilterDetails | null = null;
   /** Configured `maxFailures` (0 = unlimited) — disambiguates an interrupted run's unrun reason. */
   private maxFailures = 0;
+  /** Each Playwright project's `dependencies`, by project name, set in `onBegin`. */
+  private projectDependencies = new Map<string, readonly string[]>();
   /** The resource censuses the capture fixtures attached, one per test attempt. */
   private resourceCensuses: ResourceCensus[] = [];
   /** Lifecycle steps of the tests that ran without the fixtures. */
@@ -347,6 +349,7 @@ export class PiwiDashboardReporter {
     this.testPathBase = configDirFromConfig(config);
     this.playwrightVersion = config.version;
     this.maxFailures = config.maxFailures ?? 0;
+    this.projectDependencies = new Map((config.projects ?? []).map((p) => [p.name, p.dependencies ?? []] as const));
 
     // Workers inherit the environment when they start, after this hook: the
     // shutdown census of each one lands in this file, read back in `onEnd`.
@@ -1008,7 +1011,9 @@ export class PiwiDashboardReporter {
    * sends them alongside the rest. The `reason` (global timeout / max failures /
    * interrupted) is resolved once from the overall run status by the caller. A
    * test declared skipped (`test.skip()`, `test.fixme()`, a skipped describe)
-   * is sent as `skipped`: it is a skip whether the run reached it or not.
+   * is sent as `skipped`: it is a skip whether the run reached it or not. A test
+   * of a project whose dependency failed is a `dependency-failure`, blocked by
+   * that failure (`dependencyBlocker`).
    */
   private materializeUnrunTests(reason: string): void {
     for (const test of this.plannedTests) {
@@ -1019,6 +1024,7 @@ export class PiwiDashboardReporter {
       const tags = collectTestTags(test);
       const locks = collectTestLocks(test);
       const skipped = test.expectedStatus === 'skipped';
+      const blocker = skipped ? null : this.dependencyBlocker(test);
       const testCase: CollectedTestCase = {
         type: 'complete',
         testId: test.id,
@@ -1042,8 +1048,9 @@ export class PiwiDashboardReporter {
         locks: locks.length ? locks : null,
         testMeta: collectTestMetadata(declaredAnnotations),
         ...this.externalIdFields(test),
-        didNotRunReason: skipped ? null : reason,
+        didNotRunReason: skipped ? null : blocker ? 'dependency-failure' : reason,
         expectedStatus: test.expectedStatus ?? null,
+        ...(blocker ? { blockedBy: blocker.location } : {}),
       };
 
       this.testCases.push(testCase);
@@ -1055,6 +1062,30 @@ export class PiwiDashboardReporter {
         this.streamManager.queueEvent(toWireTestCase(testCase) as StreamEvent);
       }
     }
+  }
+
+  /**
+   * The failure that kept a test from running when a project its project depends on failed: the first test that failed
+   * on every attempt in a project of its project's `dependencies`, directly or through another project. Playwright runs
+   * no test of a project one of whose dependencies failed. Null for a test whose dependencies had no such failure.
+   */
+  private dependencyBlocker(test: TestCase): CollectedTestCase | null {
+    const project = this.metadataCollector.getBrowserConfig(test)?.projectName;
+    if (typeof project !== 'string') return null;
+    const dependencies = new Set<string>();
+    const pending = [...(this.projectDependencies.get(project) ?? [])];
+    for (let name = pending.pop(); name !== undefined; name = pending.pop()) {
+      if (dependencies.has(name)) continue;
+      dependencies.add(name);
+      pending.push(...(this.projectDependencies.get(name) ?? []));
+    }
+    if (dependencies.size === 0) return null;
+    const blocker = this.failedCases.find(
+      (c) =>
+        dependencies.has(c.browser?.projectName ?? '') &&
+        failedEveryAttempt(this.attemptsByTest.get(c.testId ?? '') ?? []),
+    );
+    return blocker ?? null;
   }
 
   /**
@@ -1095,7 +1126,8 @@ export class PiwiDashboardReporter {
     }
 
     // Tests Playwright never reported were cut off by a run-level condition —
-    // the global timeout, the failure budget, or an interruption.
+    // the global timeout, the failure budget, or an interruption — or by a
+    // failed project they depend on.
     const unrunReason = resolveUnrunReason(result?.status, {
       maxFailures: this.maxFailures,
       failures: this.failedTestCount,

@@ -526,7 +526,8 @@ export async function getTestRunCase(
   //  - `blockedTests`: the downstream tests this execution stopped from running
   //    (they carry `blocked_by = this execution's location`).
   //  - `blockedByCase`: the failing execution that blocked THIS one (only set on
-  //    a `previous-failure` case, resolved from its `blocked_by` location).
+  //    a `previous-failure` or `dependency-failure` case, resolved from its
+  //    `blocked_by` location).
   const ownLocation =
     testCase?.filePath && trc.line != null && trc.column != null
       ? `${testCase.filePath}:${trc.line}:${trc.column}`

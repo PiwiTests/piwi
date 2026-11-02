@@ -261,15 +261,17 @@ Together with the test's duration history this drives the **Timeout opportunitie
 The reporter distinguishes two outcomes that Playwright both reports as `skipped`:
 
 - **`skipped`** — an intentional skip via `test.skip()` / `test.fixme()` (static, conditional, or runtime). These always carry a `skip`/`fixme` annotation, so the skip reason (when provided) is preserved in `testAnnotations` and shown on the test case. The annotation also decides the grey the status bars draw: a `fixme` skip is counted apart from a plain `skip` (it stays part of `skippedTests`), so a test switched off as known broken does not blend into the deliberate skips.
-- **`didnotrun`** — a test that never actually executed. This covers two cases:
+- **`didnotrun`** — a test that never actually executed. This covers three cases:
   - a test skipped as a side effect of an **earlier failure in a `describe.serial` group** (Playwright reports it as `skipped` with no annotation; the reporter reclassifies it);
-  - a test that Playwright **never started because the run was cut short** (no `onTestEnd` fires for these — the reporter materializes them from the planned test list so they still appear, with zero duration and no error).
+  - a test of a project whose **[project dependency](https://playwright.dev/docs/test-projects#dependencies) failed**, such as the tests that need a `setup` project's login (Playwright runs none of them);
+  - a test that Playwright **never started because the run was cut short** (no `onTestEnd` fires for these or the previous case — the reporter materializes them from the planned test list so they still appear, with zero duration and no error).
 
   A test declared skipped (`test.skip()`, `test.fixme()`, a skipped `describe`) is `skipped` even when the run stopped before reaching it.
 
 Each `didnotrun` case also carries **`didNotRunReason`**, so the dashboard can say _why_ a test never ran rather than just that it didn't:
 
 - `previous-failure` — skipped because an earlier test (or hook) in its serial group failed, or because a `beforeAll` hook failed, which skips the rest of its group in any mode. The reporter also records **`blockedBy`**, the location of the failing test that blocked it — so the did-not-run case links to its cause, names the hook when the failure happened in one, and the failing test lists the downstream tests it stopped from running.
+- `dependency-failure` — not run because a test failed in a project its project depends on (`dependencies`), directly or through another project. `blockedBy` holds the location of that failing test, as for `previous-failure`.
 - `global-timeout` — the run's `globalTimeout` elapsed before the test could start.
 - `max-failures` — the run reached its configured `maxFailures` budget.
 - `interrupted` — the run was otherwise cut short (a worker crash or a cancellation).
