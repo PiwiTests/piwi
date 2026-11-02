@@ -65,7 +65,7 @@ describe('the project page reads its runs within its run scope', () => {
     expect(preview.testRuns.every((run: { environment: string | null }) => run.environment === 'preview')).toBe(true);
   });
 
-  test('a request without a scope reads the newest runs of any scope, as before', async () => {
+  test('a request without a scope reads the newest runs of any scope', async () => {
     const project = await getProject(db as never, 1);
     expect(project.testRuns).toHaveLength(200);
     expect(project.unscopedRuns).toBeUndefined();
