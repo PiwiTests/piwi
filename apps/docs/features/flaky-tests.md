@@ -116,25 +116,22 @@ list only grows.
 `--max-failed`, `--max-new-regressions`, `--max-new-flaky`, `--require-tag` and `--require-selection` checks and the
 [commit status](./pr-feedback#what-gets-posted), nothing else. That makes the exit possible:
 
-- The runs that start after the quarantine accumulate as a **streak**, one per run whatever its browser projects and
-  `--repeat-each` repetitions: a run where the test passed adds to it, and one where it failed, or passed only on a
-  retry, resets it. A run that skipped it changes nothing, and an older report imported later never counts.
-- After five consecutive passes the test is flagged **ready to release** — the dashboard tells you, rather than waiting
-  to be asked.
-- A fix [verified](#verified-fixed) after the quarantine flags it at once, while it holds and the test has not failed
-  since. Release stays yours to click.
+- Each run started after the quarantine counts once toward a **streak**: a pass adds one, a failure or a pass on retry
+  resets it, a skip does neither.
+- After five consecutive passes the test is flagged **ready to release**: you're told, not asked.
+- A fix [verified](#verified-fixed) after the quarantine flags it at once, until the test fails again. Release stays
+  yours to click.
 - **Candidates** (**Proposed for quarantine** in the Flaky view) are flaky tests wasting 2+ CI minutes with a score
   of 40+, ranked by impact; a high-confidence AI diagnosis calling the test flaky adds a reason. A 200 ms flake
   costs nothing; one burning a four-minute timeout weekly hurts.
-- **Debt** is reported in aggregate: how many are quarantined, how many are ready to release, how long the oldest has
-  been in, and how many failed in the latest run that ran them.
+- **Debt** is reported in aggregate: how many are quarantined, ready to release or failing in their latest run, and how
+  long the oldest has been in.
 
 **Dismiss** turns down either proposal, with an optional reason, and moves no test: a dismissed release stops counting
 as ready, and a dismissed candidate returns once the flaky analysis reads a newer run. Agents call [`dismiss_quarantine_proposal`](/reference/mcp-tools#dismiss_quarantine_proposal)
 and [`set_test_quarantine`](/reference/mcp-tools#set_test_quarantine).
 
-The gate always states how many failures quarantine excluded — a green gate that silently ignored failures would be
-worthless — and `--max-quarantined` sets a ceiling so the list can't grow unbounded.
+The gate always states how many failures quarantine excluded, and `--max-quarantined` sets a ceiling on the list.
 
 Manage it from the **Quarantine** view of the project's **Failures** tab, or over the REST API (see the [API docs](https://piwitests.dev/demo/docs)).
 
