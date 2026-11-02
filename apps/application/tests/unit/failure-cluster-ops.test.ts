@@ -158,6 +158,33 @@ describe('getOrCreateFailureClusters first and last seen runs', () => {
   });
 });
 
+describe('getOrCreateFailureClusters on a triaged cluster', () => {
+  test('a new occurrence leaves the moment a resolved cluster was resolved, and touches an open one', async () => {
+    const { map, fp } = await pendingFor(plainError);
+    const clusterId = (await getOrCreateFailureClusters(dbc, 1, 100, map)).get(fp.fingerprint)!;
+    const resolvedAt = new Date('2026-10-01T10:00:00Z');
+    await db
+      .update(schema.failureClusters)
+      .set({ status: 'resolved', updatedAt: resolvedAt })
+      .where(eq(schema.failureClusters.id, clusterId));
+    const updatedAt = async () =>
+      (
+        await db
+          .select({ updatedAt: schema.failureClusters.updatedAt })
+          .from(schema.failureClusters)
+          .where(eq(schema.failureClusters.id, clusterId))
+      )[0]!.updatedAt;
+
+    await getOrCreateFailureClusters(dbc, 1, 200, (await pendingFor(plainError)).map);
+    expect(await updatedAt()).toEqual(resolvedAt);
+    expect((await readCluster(clusterId)).occurrences).toBe(2);
+
+    await db.update(schema.failureClusters).set({ status: 'open' }).where(eq(schema.failureClusters.id, clusterId));
+    await getOrCreateFailureClusters(dbc, 1, 300, (await pendingFor(plainError)).map);
+    expect((await updatedAt()).getTime()).toBeGreaterThan(resolvedAt.getTime());
+  });
+});
+
 describe('transitionClusterStatus', () => {
   async function insertCluster(status: string, triageNote: string | null) {
     const [row] = await db

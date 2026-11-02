@@ -20,7 +20,7 @@ one fires and what a webhook channel receives; channels, subscriptions and deliv
 | `run.interrupted` | A run stops reporting before its end and the stale-run sweep marks it interrupted (two minutes without activity, an hour for a run still in its global setup, and an hour for a sharded run waiting for a shard that has not started, once every shard that started has ended). The payload is a run event's, with `status: "interrupted"` and the results stored so far; Flake Lab and probe runs send none |
 | `cluster.new` | A new failure cluster appears |
 | `cluster.fixed` | A run passes every test a cluster covers: the fix landed (a filtered re-run of just those tests counts). The payload's `verification` says whether the diagnosis was corroborated (`diagnosis-verified`) or the tests merely stopped failing, and `resolved` whether the triage status was closed automatically |
-| `cluster.regressed` | A cluster with a recorded fix fails again; `reopened` says whether a *resolved* cluster was set back to open |
+| `cluster.regressed` | A cluster with a recorded fix fails again, or one resolved by hand fails in a run started after it was resolved (no `fixLandedRunId` then); `reopened` says whether a *resolved* cluster was set back to open |
 | `flakiness.spike` | A completed run contains flaky tests; the flakiness-threshold filter keeps only rates above N% |
 | `perf.regression` | A run is at least 20% slower than the median of the previous five completed runs on the same branch and environment; the regression-% filter raises the bar |
 | `diagnosis.completed` | A diagnosis of a cluster, or of one of its failures, is stored: Piwi's (requires an [AI provider](/guide/ai-provider)) or one an agent records. A failure in no cluster sends none |

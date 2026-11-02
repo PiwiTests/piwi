@@ -84,6 +84,15 @@ function seenInRun(testRunId: number) {
   };
 }
 
+/**
+ * The `updatedAt` a new occurrence writes: an open cluster's moves, and a
+ * resolved or ignored cluster's stays at the moment it was triaged, which
+ * reopening it on a recurrence and the analytics read.
+ */
+function touchedByOccurrence(status: string | null | undefined): { updatedAt?: Date } {
+  return status === 'open' ? { updatedAt: new Date() } : {};
+}
+
 /** Row index → cluster for the rows whose test has a route for its fingerprint; bumps each routed cluster. */
 async function routeMovedTests(
   db: DrizzleDB,
@@ -130,6 +139,7 @@ async function routeMovedTests(
   const clusters = await db
     .select({
       id: failureClusters.id,
+      status: failureClusters.status,
       snoozedUntil: failureClusters.snoozedUntil,
       snoozeMode: failureClusters.snoozeMode,
     })
@@ -142,7 +152,7 @@ async function routeMovedTests(
         .set({
           ...seenInRun(testRunId),
           occurrences: sql`${failureClusters.occurrences} + ${countByCluster.get(cluster.id)!}`,
-          updatedAt: new Date(),
+          ...touchedByOccurrence(cluster.status),
           ...(options.wakeSnoozed !== false
             ? (wakeOnRecurrence({ snoozedUntil: cluster.snoozedUntil, snoozeMode: cluster.snoozeMode }) ?? {})
             : {}),
@@ -299,19 +309,18 @@ export async function getOrCreateFailureClusters(
   const bumpExisting = (
     clusterId: number,
     p: PendingCluster,
-    currentSampleError: string | null,
-    snooze?: { snoozedUntil: Date | null; snoozeMode: string | null },
+    current: { sampleError: string | null; status: string; snoozedUntil: Date | null; snoozeMode: string | null },
   ) =>
     db
       .update(failureClusters)
       .set({
         ...seenInRun(testRunId),
         occurrences: sql`${failureClusters.occurrences} + ${p.count}`,
-        updatedAt: new Date(),
+        ...touchedByOccurrence(current.status),
         // A fresh occurrence wakes an "until it recurs" snooze — the cluster
         // returns to the inbox (its "snoozed, back" marker is the surviving mode).
-        ...(snooze && wakeSnoozed ? (wakeOnRecurrence(snooze) ?? {}) : {}),
-        ...(preferExemplar(currentSampleError ?? '', p.sampleError)
+        ...(wakeSnoozed ? (wakeOnRecurrence(current) ?? {}) : {}),
+        ...(preferExemplar(current.sampleError ?? '', p.sampleError)
           ? {
               sampleError: p.sampleError,
               signature: p.fp.signature,
@@ -332,6 +341,7 @@ export async function getOrCreateFailureClusters(
       id: failureClusters.id,
       fingerprint: failureClusters.fingerprint,
       sampleError: failureClusters.sampleError,
+      status: failureClusters.status,
       snoozedUntil: failureClusters.snoozedUntil,
       snoozeMode: failureClusters.snoozeMode,
     })
@@ -343,10 +353,7 @@ export async function getOrCreateFailureClusters(
       const p = pending.get(cluster.fingerprint);
       if (!p) return;
       ids.set(cluster.fingerprint, cluster.id);
-      await bumpExisting(cluster.id, p, cluster.sampleError, {
-        snoozedUntil: cluster.snoozedUntil,
-        snoozeMode: cluster.snoozeMode,
-      });
+      await bumpExisting(cluster.id, p, cluster);
     }),
   );
 
@@ -359,6 +366,7 @@ export async function getOrCreateFailureClusters(
         fingerprint: failureClusterAliases.fingerprint,
         clusterId: failureClusterAliases.clusterId,
         sampleError: failureClusters.sampleError,
+        status: failureClusters.status,
         snoozedUntil: failureClusters.snoozedUntil,
         snoozeMode: failureClusters.snoozeMode,
       })
@@ -372,7 +380,7 @@ export async function getOrCreateFailureClusters(
         const p = pending.get(a.fingerprint);
         if (!p || ids.has(a.fingerprint)) return;
         ids.set(a.fingerprint, a.clusterId);
-        await bumpExisting(a.clusterId, p, a.sampleError, { snoozedUntil: a.snoozedUntil, snoozeMode: a.snoozeMode });
+        await bumpExisting(a.clusterId, p, a);
       }),
     );
   }
@@ -412,6 +420,7 @@ export async function getOrCreateFailureClusters(
         .select({
           id: failureClusters.id,
           sampleError: failureClusters.sampleError,
+          status: failureClusters.status,
           snoozedUntil: failureClusters.snoozedUntil,
           snoozeMode: failureClusters.snoozeMode,
         })
@@ -419,10 +428,7 @@ export async function getOrCreateFailureClusters(
         .where(and(eq(failureClusters.projectId, projectId), eq(failureClusters.fingerprint, fingerprint)));
       if (winner[0]) {
         ids.set(fingerprint, winner[0].id);
-        await bumpExisting(winner[0].id, p, winner[0].sampleError, {
-          snoozedUntil: winner[0].snoozedUntil,
-          snoozeMode: winner[0].snoozeMode,
-        });
+        await bumpExisting(winner[0].id, p, winner[0]);
       }
     }),
   );

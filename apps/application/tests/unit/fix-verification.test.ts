@@ -629,6 +629,66 @@ describe('verifyClusterFixes — which failing runs regress a fix', () => {
   });
 });
 
+describe('verifyClusterFixes — a cluster resolved by hand that fails again', () => {
+  /** A cluster failing on `branch`, resolved by hand half an hour after the failing run started. */
+  async function resolvedByHand(opts: { branch?: string; status?: string } = {}) {
+    const failing = await insertRun('failed', `rh${runSeq + 1}a`, { branch: opts.branch });
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2);
+    await db
+      .update(schema.failureClusters)
+      .set({
+        status: opts.status ?? 'resolved',
+        triageNote: 'Fixed the cart',
+        updatedAt: new Date(Date.UTC(2026, 0, 1) + (failing + 0.5) * 3_600_000),
+      })
+      .where(eq(schema.failureClusters.id, clusterId));
+    return clusterId;
+  }
+
+  async function failAgain(clusterId: number, opts: { branch?: string; startedHoursBefore?: number } = {}) {
+    const red = await insertRun('failed', `rh${runSeq + 1}b`, opts);
+    await insertCase(red, 'failed', clusterId, 2);
+    await markSeen(clusterId, red);
+    await verifyClusterFixes(db, red);
+    return red;
+  }
+
+  test('a run started after it was resolved reopens it, with a line, and sends cluster.regressed', async () => {
+    const clusterId = await resolvedByHand();
+    const red = await failAgain(clusterId);
+    expect(await cluster(clusterId)).toMatchObject({
+      status: 'open',
+      triageNote: `Fixed the cart\nReopened automatically: failed again in run #${red}`,
+      fixVerification: null,
+    });
+    expect(emitted.map((e) => [e.event, e.payload.clusterId])).toEqual([['cluster.regressed', clusterId]]);
+    expect(emitted[0]!.payload).toMatchObject({ runId: red, fixLandedRunId: null, reopened: true });
+  });
+
+  test('a run that started before it was resolved leaves it resolved', async () => {
+    const clusterId = await resolvedByHand();
+    await failAgain(clusterId, { startedHoursBefore: 1 });
+    expect((await cluster(clusterId)).status).toBe('resolved');
+    expect(emitted).toEqual([]);
+  });
+
+  test('a failure on a branch that may not have the fix leaves it resolved', async () => {
+    const clusterId = await resolvedByHand({ branch: 'feature/cart' });
+    await failAgain(clusterId, { branch: 'feature/old' });
+    expect((await cluster(clusterId)).status).toBe('resolved');
+    await failAgain(clusterId, { branch: 'feature/cart' });
+    expect((await cluster(clusterId)).status).toBe('open');
+  });
+
+  test('an ignored cluster stays ignored', async () => {
+    const clusterId = await resolvedByHand({ status: 'ignored' });
+    await failAgain(clusterId);
+    expect((await cluster(clusterId)).status).toBe('ignored');
+    expect(emitted).toEqual([]);
+  });
+});
+
 describe('verifyClusterFixes — diagnosis outcomes', () => {
   const diagnosisOutcomes = async (clusterId: number) =>
     (await db.select().from(schema.handbackOutcomes))

@@ -128,23 +128,19 @@ long the cluster was open. Three verdicts:
 | **Diagnosis verified** | The commits since the last failing run touched a file the [suggested patch](./ai-diagnosis#what-a-diagnosis-contains) named. |
 | **Regressed** | A fix was recorded, and the cluster is failing again. |
 
-**Every affected test must pass**: a test that did not run counts against the fix. A filtered run covering them all can close
-the cluster, so `--grep` over exactly the affected tests is enough.
+**A fix needs every affected test to pass** (a test that did not run counts against it, so a `--grep` over exactly the
+affected tests is enough) in a run that could carry one: started after the last failing run, at another commit (a pass
+at the failing commit, such as a CI retry, is flake evidence, and the state line says so), on the branch the cluster
+last failed on or the default branch, so a green pull-request branch leaves a cluster failing on `main` open.
 
-**The commit must have changed.** A run at the commit the cluster last failed at (a CI retry, or **Re-run in CI**)
-proves nothing was fixed: Piwi records it as flake evidence and the state line says *passed again at the same commit,
-which is flake evidence, not a fix*. **The branch must match**: only a run on the branch the cluster last failed on, or
-on the default branch, records a fix, so a green pull-request or heal branch leaves a cluster that fails on `main`
-open. **Runs count in the order they started**: a run that started before the last failing run records no fix, and
-a failing run that started before the fix landed does not regress it, however late either finishes. A failure
-**regresses** the fix only on the branch the fix landed on or on the default branch: another branch may not have the
-fix yet.
+**A regression needs a run started after the fix landed**, failing on the fix's branch or the default branch.
 
 The verdict moves the status only on strong evidence: *Diagnosis verified* sets an **open** cluster **resolved**, and
-*Regressed* sets a **resolved** one back to **open**, each adding a line to the triage note. *Stopped failing* alone
-changes nothing, and an *ignored* cluster is never touched. The [notifications](./notifications) `cluster.fixed` and
-`cluster.regressed` follow the verdict, and with [pull-request feedback](./pr-feedback) on, the comment gains a
-**Fixed by this change** section, even with *only comment on failures* set.
+*Regressed* sets a **resolved** one back to **open**, as does a new failure after a person resolved a cluster with no fix
+on record; each adds a line to the triage note. *Stopped failing* alone changes nothing, and an *ignored* cluster is
+never touched. The [notifications](./notifications) `cluster.fixed` and `cluster.regressed` follow the verdict, and
+with [pull-request feedback](./pr-feedback) on, the comment gains a **Fixed by this change** section, even with *only
+comment on failures* set.
 
 ## Snoozing
 

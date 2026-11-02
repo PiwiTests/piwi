@@ -15,7 +15,10 @@
  *
  * And one more, in the other direction: a cluster that had a fix recorded and
  * is failing again is marked `regressed`, because a fix that did not hold is
- * worth more than no record at all.
+ * worth more than no record at all. A cluster a person resolved with no fix on
+ * record (or after its fix regressed) that fails again in a run started after
+ * they resolved it is reopened the same way, and emits `cluster.regressed`
+ * with no fix run; an ignored cluster stays ignored.
  *
  * A quiet run counts as a fix only when it could have carried one: it started
  * after the run the cluster last failed in, its commit differs from the commit
@@ -65,7 +68,7 @@
  * Every step is best-effort — the run is already stored, and SCM being
  * unreachable must never turn into an ingest error.
  */
-import { and, eq, inArray, isNotNull, isNull, ne, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, lt, ne, or } from 'drizzle-orm';
 import { failureClusters, failureDiagnoses, healActions, projects, testRuns, testRunsCases } from '../database/schema';
 import { createScmProvider } from './scm';
 import type { ScmChanges, ScmCommit } from './scm/ScmProvider';
@@ -588,6 +591,78 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
         regressedIds.add(cluster.id);
       } catch (error) {
         console.error(`[fix-verification] marking cluster #${cluster.id} regressed in run #${runId} failed`, error);
+      }
+    }
+
+    // ── Failing again after a person resolved it ─────────────────────────────
+    // No fix on record (or the recorded one already regressed): the person's
+    // "resolved" is contradicted by a run that started after they resolved it.
+    // A resolved cluster's `updatedAt` is the moment it was resolved, since a
+    // new occurrence leaves it alone.
+    const resolvedByHand = await db
+      .select({
+        id: failureClusters.id,
+        signature: failureClusters.signature,
+        title: failureClusters.title,
+        updatedAt: failureClusters.updatedAt,
+      })
+      .from(failureClusters)
+      .where(
+        and(
+          inArray(failureClusters.id, [...clustersSeenNow]),
+          eq(failureClusters.status, 'resolved'),
+          or(isNull(failureClusters.fixLandedRunId), eq(failureClusters.fixVerification, 'regressed')),
+        ),
+      );
+    for (const cluster of resolvedByHand) {
+      if (regressedIds.has(cluster.id) || run.startTime.getTime() <= cluster.updatedAt.getTime()) continue;
+      try {
+        // The branch it failed on before it was resolved stands for the branch of a fix.
+        const [failedBefore] = await db
+          .select({ branch: testRuns.branch, metadata: testRuns.metadata })
+          .from(testRunsCases)
+          .innerJoin(testRuns, eq(testRuns.id, testRunsCases.testRunId))
+          .where(and(eq(testRunsCases.failureClusterId, cluster.id), lt(testRuns.startTime, cluster.updatedAt)))
+          .orderBy(desc(testRuns.startTime), desc(testRuns.id))
+          .limit(1);
+        const failedBranch = failedBefore ? (failedBefore.branch ?? resolveRunBranch(failedBefore.metadata)) : null;
+        const verdict = classifyFailingRun({
+          runBranch,
+          fixBranch: failedBranch,
+          defaultBranch: runBranch && runBranch !== failedBranch ? await resolveProjectDefaultBranch() : null,
+        });
+        if (verdict === 'other-branch') continue;
+        const reopened = await transitionClusterStatus(db, cluster.id, {
+          from: 'resolved',
+          to: 'open',
+          line: `Reopened automatically: failed again in run #${runId}`,
+        });
+        if (!reopened) continue;
+
+        if (notify) {
+          const knownIssue = (await getClusterKnownIssue(db, cluster.id).catch(() => null)) ?? undefined;
+          await emitClusterOutcome(db, 'cluster.regressed', {
+            clusterId: cluster.id,
+            projectId: run.projectId,
+            projectName,
+            signature: cluster.signature,
+            title: cluster.title,
+            runId,
+            ...runScope,
+            fixLandedRunId: null,
+            reopened,
+            knownIssue: knownIssue ? { key: knownIssue.key, url: knownIssue.url } : undefined,
+          });
+        }
+        // Comment on (and optionally reopen) the ticket per the binding's policy.
+        await enqueueRegressionPolicies(db, {
+          clusterId: cluster.id,
+          projectId: run.projectId,
+          runId,
+        }).catch((e) => console.error('[integrations] regression policy failed', e));
+        regressedIds.add(cluster.id);
+      } catch (error) {
+        console.error(`[fix-verification] reopening cluster #${cluster.id} in run #${runId} failed`, error);
       }
     }
   }
