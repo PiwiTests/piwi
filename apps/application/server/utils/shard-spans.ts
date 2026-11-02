@@ -22,6 +22,8 @@ export interface ShardSpan {
   duration: number;
   /** The workers Playwright ran the shard with, when its configuration says. */
   workers?: number;
+  /** The status the shard reported for its run (`passed`, `failed`, `timedout`, `interrupted`), when it sent one. */
+  status?: string;
 }
 
 /** What a shard reports of itself when it ends: `/finish`'s body, or a batch shard's run body. */
@@ -32,6 +34,8 @@ export interface ShardReport {
   /** How long the shard ran, in milliseconds. */
   duration?: unknown;
   metadata?: unknown;
+  /** The status the shard's reporter gave its run. */
+  status?: unknown;
 }
 
 /** How far from its arrival a shard's reported start may place its end before its clock counts as wrong. */
@@ -88,6 +92,7 @@ export function shardSpan(report: ShardReport, receivedAt: number): ShardSpan {
     endTime: new Date(start + duration).toISOString(),
     duration,
     ...(workers != null && { workers }),
+    ...(typeof report.status === 'string' && { status: report.status }),
   };
 }
 
@@ -118,6 +123,22 @@ export function shardedRunSpan(spans: ShardSpan[]): { startTime: Date; duration:
   const start = Math.min(...spans.map((span) => Date.parse(span.startTime)));
   const end = Math.max(...spans.map((span) => Date.parse(span.endTime)));
   return { startTime: new Date(start), duration: Math.min(Math.max(0, end - start), MAX_RUN_DURATION_MS) };
+}
+
+/** Run statuses from the least to the most severe, as Playwright's merge-reports ranks its shards' statuses. */
+const SHARD_STATUS_SEVERITY = ['passed', 'interrupted', 'timedout', 'failed'];
+
+/**
+ * A sharded run's status once every shard ended: the most severe status its shards reported (`failed`, then
+ * `timedout`, then `interrupted`), as Playwright's merge-reports settles it, and `failed` when a test failed. A shard
+ * that reported none, or one of another name, changes nothing.
+ */
+export function shardedRunStatus(spans: ShardSpan[], failedTests: number): string {
+  let status = failedTests > 0 ? 'failed' : 'passed';
+  for (const span of spans) {
+    if (SHARD_STATUS_SEVERITY.indexOf(span.status ?? '') > SHARD_STATUS_SEVERITY.indexOf(status)) status = span.status!;
+  }
+  return status;
 }
 
 /** The test durations a sharded run's shards reported so far. */

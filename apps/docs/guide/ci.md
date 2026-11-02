@@ -106,10 +106,11 @@ How the merge works:
 2. Shards sharing a run label **and** a `projectName` resolve to the same run, streamed or batched.
 3. The run stays `running` until the **last** shard reports. While none of its shards is running, it waits up to an
    hour for the next one, streamed or batched, so a shard may start an hour after the others ended.
-4. Counters accumulate across shards. The run is `failed` if any shard reported a failure, and the run page shows a
-   shard progress badge (`2/3`) while shards are arriving.
+4. Counters accumulate across shards, and the run page shows a shard progress badge (`2/3`) while shards are arriving.
+   The run takes the most severe status its shards reported, as Playwright's `merge-reports` does: `failed`, then
+   `timedout`, then `interrupted`. It is `failed` whenever a test failed.
 5. The run lasts from the first shard's start to the last shard's end, whether the shards run side by side or one
-   after another. Its metadata keeps each shard's start, end and worker count under `shards`.
+   after another. Its metadata keeps each shard's start, end, worker count and status under `shards`.
 
 **All shards must use the same `projectName`.**
 

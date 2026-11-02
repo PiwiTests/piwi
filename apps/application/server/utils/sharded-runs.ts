@@ -6,7 +6,15 @@ import { durationStats } from '#shared/utils/stats';
 import { computeRunCountsFromRows } from './run-counts';
 import { runEventBus } from './run-events';
 import { runFinalizeSideEffects } from './run-finalize-side-effects';
-import { readShardDurations, recordShardEnd, shardSpan, withShardDurations, type ShardReport } from './shard-spans';
+import {
+  readShardDurations,
+  readShardSpans,
+  recordShardEnd,
+  shardedRunStatus,
+  shardSpan,
+  withShardDurations,
+  type ShardReport,
+} from './shard-spans';
 import { cancelInstanceRuns } from './cancel-instance-runs';
 import { withInstanceRunLock } from './ingest-locks';
 import { sanitizeMetadata } from './sanitize';
@@ -90,7 +98,13 @@ export function batchShardTally(body: BatchRunBody, testCases: ReadonlyArray<Bat
     skippedTests: body.skippedTests ?? 0,
     didNotRunTests: body.didNotRunTests ?? 0,
     flakyTests: countFlakyBatchCases(testCases),
-    shard: { shardIndex: body.shardIndex, startTime: body.startTime, duration: body.duration, metadata: body.metadata },
+    shard: {
+      shardIndex: body.shardIndex,
+      startTime: body.startTime,
+      duration: body.duration,
+      metadata: body.metadata,
+      status: body.status,
+    },
     durations: testCases.map((tc) => tc.duration),
   };
 }
@@ -167,8 +181,9 @@ export async function addBatchShard(db: DbClient, runId: number, tally: BatchSha
 
 /**
  * Settle a sharded run once every shard reported: its counters from its stored
- * executions, its status from them, its duration statistics from every shard's
- * durations, then the finalize side effects. The write applies only to a run
+ * executions, its status from them and its shards' statuses
+ * (`shardedRunStatus`), its duration statistics from every shard's durations,
+ * then the finalize side effects. The write applies only to a run
  * still running with every shard finished, so of shards finishing at once
  * exactly one settles the run and runs the side effects.
  *
@@ -185,7 +200,7 @@ export async function finalizeShardedRun(
   if (!run || run.shardTotal == null || (run.shardsFinished ?? 0) < run.shardTotal) return null;
 
   const counts = await computeRunCountsFromRows(db, runId);
-  const status = counts.failedTests > 0 ? 'failed' : 'passed';
+  const status = shardedRunStatus(readShardSpans(run.metadata), counts.failedTests);
   const stats = durationStats(readShardDurations(run.metadata));
   // The planned total (summed across shards), or the distinct rows when a shard planned none.
   const totalTests = Math.max(run.totalTests ?? 0, counts.totalTests);

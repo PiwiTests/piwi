@@ -116,7 +116,14 @@ import { sanitizeLiveResources } from '#shared/live-resources';
 import { demoHttpError } from './http-error';
 import { sanitizeExecutionResources, sanitizeResourceReport } from '#shared/resource-report';
 import { saveResourceReportPart } from '#shared/handlers/resource-reports';
-import { readShardDurations, recordShardEnd, shardSpan, withShardDurations } from '~~/server/utils/shard-spans';
+import {
+  readShardDurations,
+  readShardSpans,
+  recordShardEnd,
+  shardedRunStatus,
+  shardSpan,
+  withShardDurations,
+} from '~~/server/utils/shard-spans';
 
 type DemoDb = Awaited<ReturnType<typeof getDemoDb>>;
 
@@ -1110,7 +1117,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       // events counted attempts), so a flaky-only sharded run reads as passed —
       // mirrors the server's finish handler.
       const counts = await computeRunCountsFromRows(db, id);
-      finalStatus = counts.failedTests > 0 ? 'failed' : 'passed';
+      finalStatus = shardedRunStatus(readShardSpans(updatedRun.metadata), counts.failedTests);
 
       const stats = durationStats(readShardDurations(updatedRun.metadata));
 

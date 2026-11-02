@@ -354,6 +354,44 @@ describe('shards that reach the server at once', () => {
   });
 });
 
+describe("a sharded run's status", () => {
+  test.each([
+    [['passed', 'timedout'], 'timedout'],
+    [['interrupted', 'passed'], 'interrupted'],
+    [['interrupted', 'timedout'], 'timedout'],
+    [['timedout', 'failed'], 'failed'],
+    [['passed', 'passed'], 'passed'],
+  ])('settles from shards that reported %j as Playwright merges them: %s', async (statuses, settled) => {
+    const { runId, tokens } = await beginAllShards();
+    await streamCase(runId, tokens[0]!, 'pays', 1);
+    await streamCase(runId, tokens[1]!, 'adds', 2);
+
+    await finishShard(runId, tokens[0]!, [10], { duration: 1000, status: statuses[0] });
+    await finishShard(runId, tokens[1]!, [30], { duration: 1000, status: statuses[1] });
+
+    expect(await readRun(runId)).toMatchObject({ status: settled, passedTests: 2, failedTests: 0 });
+    expect(vi.mocked(runFinalizeSideEffects).mock.calls[0]![2]).toMatchObject({ status: settled });
+  });
+
+  test('settles a batch-delivered run from the status each shard sent', async () => {
+    const shard = (shardIndex: number, status: string) => ({
+      projectName: PROJECT,
+      ...SHARDS,
+      shardIndex,
+      status,
+      startTime: '2026-10-31T23:00:00.000Z',
+      totalTests: 1,
+      passedTests: 1,
+      testCases: [{ title: `test ${shardIndex}`, location: 'tests/a.spec.ts:1:1', status: 'passed', duration: 10 }],
+    });
+
+    const { runId } = await submit({ body: shard(1, 'interrupted') });
+    await submit({ body: shard(2, 'passed') });
+
+    expect(await readRun(runId)).toMatchObject({ status: 'interrupted', passedTests: 2 });
+  });
+});
+
 describe("a sharded run's duration", () => {
   const spans = async (runId: number) => (await readRun(runId)).metadata as Record<string, unknown>;
 
@@ -378,6 +416,7 @@ describe("a sharded run's duration", () => {
         endTime: '2026-11-01T02:42:29.000Z',
         duration: 13_290_000,
         workers: 1,
+        status: 'passed',
       },
       {
         shardIndex: 2,
@@ -385,6 +424,7 @@ describe("a sharded run's duration", () => {
         endTime: '2026-11-01T03:13:44.000Z',
         duration: 1_810_000,
         workers: 3,
+        status: 'passed',
       },
     ]);
   });
