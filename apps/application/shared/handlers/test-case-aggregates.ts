@@ -48,11 +48,12 @@ export function finalAttemptSql(row: Executions = testRunsCases): SQL {
  * Whether `row`, the final attempt of its result, is flaky, as
  * `isFlakyExecution` reads it from the row alone: it passed on a retry, and
  * its attempt history (`attempts`, which the reporter sends complete with a
- * final attempt) holds an earlier attempt that failed or timed out, or holds
- * none. The history is compared as text with its spaces taken out, since
- * PostgreSQL renders `jsonb` with a space after each colon and SQLite stores
- * none. `isFlakyExecution` is also given, for a row that came without a
- * history (a trace import), one built from the run's stored attempts
+ * final attempt, its own attempt last) holds an earlier attempt that failed or
+ * timed out, or no earlier attempt: a history of one attempt is its own. The
+ * history is compared as text with its spaces taken out, since PostgreSQL
+ * renders `jsonb` with a space after each colon and SQLite stores none.
+ * `isFlakyExecution` is also given, for a row that came without a history (a
+ * trace import), one built from the run's stored attempts
  * (`withAttemptHistory`); this reads such a row as a pass on a retry, flaky,
  * as `flakyFinalAttempts` reads a final attempt with no earlier row.
  */

@@ -87,6 +87,7 @@ describe('legendOf', () => {
       { color: 'var(--color-status-failed)', label: 'Failed' },
       { color: 'var(--color-status-skipped)', label: 'Skipped' },
       { color: 'var(--color-status-didnotrun)', label: "Didn't run" },
+      { color: 'var(--color-status-interrupted)', label: 'Interrupted' },
     ]);
   });
 
