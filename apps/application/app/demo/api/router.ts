@@ -314,7 +314,13 @@ import {
   getClusterOccurrenceTrend,
   CLUSTER_TREND_DEFAULT_DAYS,
 } from '#shared/handlers/failure-clusters';
-import { parseBulkIds, isSnoozeOption } from '#shared/inbox-queues';
+import {
+  CLUSTER_STATUSES,
+  isClusterStatus,
+  isTriageNoteInput,
+  parseBulkIds,
+  isSnoozeOption,
+} from '#shared/inbox-queues';
 import { getClusterCommits, getClusterCommitDiff, getClusterBranches } from './scm';
 import { getDemoSourceAtBlob } from '../demo-scm';
 import { getTimeoutThresholds } from '~~/server/utils/timeout-thresholds';
@@ -1465,8 +1471,12 @@ const routes: RouteEntry[] = [
     permission: 'triage:write',
     handler: async (m, body, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
-      const b = body as { status?: string; triageNote?: string | null };
-      return patchClusterStatus(await getDemoDb(), +m[1]!, b.status ?? '', b.triageNote);
+      const b = body as { status?: unknown; triageNote?: unknown };
+      if (!isClusterStatus(b.status)) {
+        throw demoHttpError(400, `Invalid status. Must be one of: ${CLUSTER_STATUSES.join(', ')}`);
+      }
+      if (!isTriageNoteInput(b.triageNote)) throw demoHttpError(400, 'triageNote must be a string or null');
+      return patchClusterStatus(await getDemoDb(), +m[1]!, b.status, b.triageNote);
     },
   },
   {
@@ -1690,8 +1700,9 @@ const routes: RouteEntry[] = [
     permission: 'triage:write',
     handler: async (m, body, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
-      const b = body as { testCaseIds: number[]; triageNote?: string };
-      return extractClusterCases(await getDemoDb(), +m[1]!, b.testCaseIds, b.triageNote);
+      const b = body as { testCaseIds: number[]; triageNote?: unknown };
+      if (!isTriageNoteInput(b.triageNote)) throw demoHttpError(400, 'triageNote must be a string');
+      return extractClusterCases(await getDemoDb(), +m[1]!, b.testCaseIds, b.triageNote ?? undefined);
     },
   },
   {

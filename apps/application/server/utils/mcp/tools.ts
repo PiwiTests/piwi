@@ -62,8 +62,10 @@ import {
 } from '#shared/handlers/failure-clusters';
 import {
   BULK_TRIAGE_MAX,
+  CLUSTER_STATUSES,
   clusterInQueue,
   inboxIdentity,
+  isClusterStatus,
   isInboxQueue,
   isSnoozeOption,
   parseBulkIds,
@@ -2460,8 +2462,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const id = numericParam(params.clusterId, 'clusterId');
     if ((await checkEntityScope(db, ctx, id, resolveClusterProjectId, 'triage:write')) === 'not-found') return null;
     const status = String(params.status ?? '');
-    if (!['open', 'resolved', 'ignored'].includes(status)) {
-      throw new Error('status must be one of: open, resolved, ignored');
+    if (!isClusterStatus(status)) {
+      throw new Error(`status must be one of: ${CLUSTER_STATUSES.join(', ')}`);
     }
     const note = typeof params.triageNote === 'string' ? params.triageNote : undefined;
     const result = await patchClusterStatus(db, id, status, note);
@@ -2560,8 +2562,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     let apply: (allowed: number[]) => Promise<{ updated: number; tests?: number; changed?: number }>;
     if (action === 'status') {
       const status = String(params.status ?? '');
-      if (!['open', 'resolved', 'ignored'].includes(status)) {
-        throw new Error('status must be one of: open, resolved, ignored');
+      if (!isClusterStatus(status)) {
+        throw new Error(`status must be one of: ${CLUSTER_STATUSES.join(', ')}`);
       }
       const note = typeof params.note === 'string' && params.note.trim() ? params.note : null;
       apply = async (allowed) => {

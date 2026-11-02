@@ -27,7 +27,14 @@ import {
   addQuarantine,
   releaseQuarantine,
 } from './quarantine';
-import { clusterClue, computeSnooze, DEFAULT_NEEDS_TICKET_AFTER_DAYS, type SnoozeOption } from '../inbox-queues';
+import {
+  clusterClue,
+  computeSnooze,
+  DEFAULT_NEEDS_TICKET_AFTER_DAYS,
+  isClusterStatus,
+  isTriageNoteInput,
+  type SnoozeOption,
+} from '../inbox-queues';
 import { resolveProjectIntegration } from '#shared/integrations/binding';
 import { parsePlaywrightError } from '#shared/error-parse';
 import { failingStepParams } from '#shared/describe-failure';
@@ -223,8 +230,6 @@ async function clusterStateRunIds(
   const skipped = ids.filter((id) => (testsRun.get(id) ?? 0) >= Math.max(1, affectedTests));
   return [...skipped, ...(seenAt < 0 ? [] : [cluster.lastSeenRunId])].slice(0, STATE_LINE_RUNS);
 }
-
-const VALID_STATUSES = ['open', 'resolved', 'ignored'];
 
 /** Affected tests the cluster detail payload lists; `affectedTests` carries the full count. */
 export const CLUSTER_DETAIL_TESTS_LIMIT = 50;
@@ -561,10 +566,11 @@ export async function getExecutionDiagnosis(db: DrizzleDB, testRunsCaseId: numbe
 
 /**
  * Set a cluster's triage status. The triage note is kept unless one is given:
- * a string replaces it (empty clears it), `null` clears it.
+ * a string replaces it (empty clears it), `null` clears it. Null for an invalid
+ * status or note, or a missing cluster.
  */
 export async function patchClusterStatus(db: DrizzleDB, clusterId: number, status: string, triageNote?: string | null) {
-  if (!status || !VALID_STATUSES.includes(status)) {
+  if (!isClusterStatus(status) || !isTriageNoteInput(triageNote)) {
     return null;
   }
 
@@ -719,7 +725,7 @@ export async function bulkTriageClusters(
 
   let set: Record<string, unknown>;
   if (patch.action === 'status') {
-    if (!VALID_STATUSES.includes(patch.status)) return null;
+    if (!isClusterStatus(patch.status)) return null;
     set = { status: patch.status, updatedAt: new Date() };
   } else if (patch.action === 'assign') {
     const value = typeof patch.assignee === 'string' && patch.assignee.trim() ? patch.assignee.trim() : null;

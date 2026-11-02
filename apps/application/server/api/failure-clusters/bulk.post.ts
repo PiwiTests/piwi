@@ -4,7 +4,7 @@ import { requireAuth } from '../../utils/auth';
 import { getDatabase } from '../../database';
 import { getProjectScope, scopeAllows } from '../../utils/project-access';
 import { bulkTriageClusters, type BulkTriage } from '#shared/handlers/failure-clusters';
-import { parseBulkIds, isSnoozeOption } from '#shared/inbox-queues';
+import { CLUSTER_STATUSES, isClusterStatus, parseBulkIds, isSnoozeOption } from '#shared/inbox-queues';
 
 defineRouteMeta({
   openAPI: {
@@ -15,8 +15,6 @@ defineRouteMeta({
     'x-required-permission': 'triage:write',
   },
 });
-
-const VALID_STATUSES = ['open', 'resolved', 'ignored'];
 
 export default eventHandler(async (event) => {
   const user = await requireAuth(event);
@@ -31,8 +29,8 @@ export default eventHandler(async (event) => {
   const action = body?.action;
   let patch: BulkTriage;
   if (action === 'status') {
-    if (!VALID_STATUSES.includes(body?.status)) {
-      throw apiError({ statusCode: 400, message: `Invalid status. Must be one of: ${VALID_STATUSES.join(', ')}` });
+    if (!isClusterStatus(body?.status)) {
+      throw apiError({ statusCode: 400, message: `Invalid status. Must be one of: ${CLUSTER_STATUSES.join(', ')}` });
     }
     patch = { action: 'status', status: body.status };
   } else if (action === 'assign') {

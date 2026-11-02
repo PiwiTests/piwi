@@ -7,6 +7,20 @@
 
 import type { FailureClueStrength } from './failure-clues';
 
+/** A failure cluster's triage statuses. */
+export const CLUSTER_STATUSES = ['open', 'resolved', 'ignored'] as const;
+
+export type ClusterStatus = (typeof CLUSTER_STATUSES)[number];
+
+export function isClusterStatus(value: unknown): value is ClusterStatus {
+  return typeof value === 'string' && (CLUSTER_STATUSES as readonly string[]).includes(value);
+}
+
+/** A triage note as a request may send it: a string, or null to clear it; anything else is refused. */
+export function isTriageNoteInput(value: unknown): value is string | null | undefined {
+  return value === undefined || value === null || typeof value === 'string';
+}
+
 /** The inbox queues, in display order. `all` is the default. */
 export const INBOX_QUEUES = [
   'all',

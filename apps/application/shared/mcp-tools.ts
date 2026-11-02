@@ -16,6 +16,7 @@ import type { Permission } from '#shared/permissions';
 import { EXTRACT_RULES } from './test-function-extract-prompt';
 import { DESCRIBE_PIWI_TOPICS } from '#shared/piwi-ecosystem';
 import { REPORT_LANGUAGES } from './reports/languages';
+import { CLUSTER_STATUSES } from './inbox-queues';
 
 export interface PaginatedResponse<T> {
   items: T[];
@@ -290,7 +291,7 @@ export const MCP_TOOL_DEFS = [
         projectId: { type: 'number', description: 'Project ID' },
         status: {
           type: 'string',
-          enum: ['open', 'resolved', 'ignored'],
+          enum: [...CLUSTER_STATUSES],
           description: 'Filter by triage status (default: all statuses)',
         },
         pageSize: { type: 'number', description: 'Results per page (default 10, max 50)' },
@@ -1054,7 +1055,7 @@ export const MCP_TOOL_DEFS = [
     inputSchema: {
       type: 'object',
       properties: {
-        status: { type: 'string', enum: ['open', 'resolved', 'ignored'], description: 'Triage status (default: open)' },
+        status: { type: 'string', enum: [...CLUSTER_STATUSES], description: 'Triage status (default: open)' },
         queue: {
           type: 'string',
           enum: ['mine', 'needs-ticket', 'regressions', 'fix-didnt-hold', 'quarantine-ready', 'merge-suggestions'],
@@ -1112,7 +1113,7 @@ export const MCP_TOOL_DEFS = [
       type: 'object',
       properties: {
         clusterId: { type: 'number', description: 'Cluster ID' },
-        status: { type: 'string', enum: ['open', 'resolved', 'ignored'], description: 'New triage status' },
+        status: { type: 'string', enum: [...CLUSTER_STATUSES], description: 'New triage status' },
         triageNote: {
           type: 'string',
           description: 'Optional note replacing the triage note; omitted keeps the current one',
@@ -1227,7 +1228,7 @@ export const MCP_TOOL_DEFS = [
         },
         status: {
           type: 'string',
-          enum: ['open', 'resolved', 'ignored'],
+          enum: [...CLUSTER_STATUSES],
           description: 'With action status: the new status',
         },
         note: { type: 'string', description: 'With action status: the triage note saved on each cluster' },
