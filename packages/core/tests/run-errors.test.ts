@@ -61,7 +61,7 @@ describe("a run's errors outside any test", () => {
     ])!;
     expect(errors).toHaveLength(MAX_RUN_ERRORS);
     expect(errors[0]!.message).toBe('Error: spec 0 did not load');
-    expect(errors.at(-1)!.message).toBe(`Error: spec ${MAX_RUN_ERRORS - 1} did not load`);
+    expect(errors[errors.length - 1]!.message).toBe(`Error: spec ${MAX_RUN_ERRORS - 1} did not load`);
   });
 
   test('is null for no error, or for a value that is no list', () => {
