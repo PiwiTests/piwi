@@ -19,16 +19,14 @@ beforeAll(async () => {
   await migrateToLatest(db);
   await db.insert(schema.projects).values({ id: 1, name: 'shop' });
   await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'cart.spec.ts', title: 'adds to cart' });
-  await db
-    .insert(schema.testRuns)
-    .values(
-      STATUSES.map((_, i) => ({
-        id: i + 1,
-        projectId: 1,
-        status: 'failed',
-        startTime: new Date(Date.now() - i * 60_000),
-      })),
-    );
+  await db.insert(schema.testRuns).values(
+    STATUSES.map((_, i) => ({
+      id: i + 1,
+      projectId: 1,
+      status: 'failed',
+      startTime: new Date(Date.now() - i * 60_000),
+    })),
+  );
   await db
     .insert(schema.testRunsCases)
     .values(STATUSES.map((status, i) => ({ testRunId: i + 1, testCaseId: 1, status, duration: 1000 })));
