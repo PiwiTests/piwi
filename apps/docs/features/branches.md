@@ -30,7 +30,7 @@ Each project has a **Default branch** setting in the **Source control** section 
 
 On a project page, the **Filters** block carries a **branch** multi-select (the git-branch icon) next to the environment filter. It appears once any of the project's runs carries a branch. With no branch picked, the page reads the project's default branch and the runs that report no branch, like [Analytics](./analytics#branch-policy); **All branches** beside it reads every branch, and the branches you pick read exactly those. The header, the runs list, the test catalog, the failure clusters, the flaky leaderboard, the Flake Lab and the performance trends all follow it; a note under the filters counts the runs on other branches they hide.
 
-The branch is an indexed column, so every project tab, Analytics and the MCP `list_runs` tool filter by it in the database; the project's runs list filters its latest 200 runs in the browser. Runs reported before the column existed fall back to the branch recorded in their metadata, so old history still filters.
+The branch is an indexed column, so every project tab (the runs list included), Analytics and the MCP `list_runs` tool filter by it in the database. Runs reported before the column existed carry the branch recorded in their metadata, so old history still filters.
 
 ## The project status
 

@@ -309,6 +309,15 @@ export interface ProjectOverviewRun {
   environment?: string | null;
 }
 
+/** A run of a project with the fields its run scope reads: what the project page's filters offer and hide. */
+export interface ProjectUnscopedRun {
+  id: number;
+  startTime: string | Date;
+  environment: string | null;
+  branch: string | null;
+  isFullRun: boolean;
+}
+
 /**
  * Per-project overview with trend data - returned by GET /api/projects/overview
  */
@@ -407,7 +416,10 @@ export interface ProjectWithTestRuns {
   tags?: TagInfo[];
   createdAt: Date;
   updatedAt: Date;
+  /** The most recent runs, within the run scope the request named. */
   testRuns: TestRunSummary[];
+  /** With a run scope: the most recent runs of any scope, with the fields the scope reads. */
+  unscopedRuns?: ProjectUnscopedRun[];
   diagnosisInstructions?: string | null;
   aiLanguage?: string | null;
   hasScmToken?: boolean;

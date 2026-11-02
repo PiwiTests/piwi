@@ -21,12 +21,29 @@ const route = useRoute();
 const router = useRouter();
 const projectId = route.params.id as string;
 
+// === FILTERS (persisted per project) ===
+const filters = useProjectFilters(projectId);
+
+// === RUN SCOPE ===
+// The filters as the run scope every tab that reads run history follows: the
+// header and the runs table and chart, which the project's own request reads
+// within it, and the catalog, the failures, the Flake Lab and the performance
+// tab on the server.
+const runScope = computed<ProjectRunScope>(() => ({
+  environments: filters.value.environments,
+  branches: filters.value.branches,
+  allBranches: !!filters.value.allBranches,
+  fullRunsOnly: filters.value.fullRunsOnly,
+}));
+const runScopeQuery = computed(() => projectRunScopeQuery(runScope.value));
+
 // === MAIN PROJECT DATA ===
+// Its newest runs within the scope (`testRuns`), and the newest runs of any scope (`unscopedRuns`).
 const {
   data: project,
   error: projectError,
   refresh,
-} = await useFetch<ProjectWithTestRuns>(`/api/projects/${projectId}`);
+} = await useFetch<ProjectWithTestRuns>(`/api/projects/${projectId}`, { query: runScopeQuery });
 if (projectError.value) showPageLoadError(projectError.value, 'project');
 provideExternalIdUrl(() => project.value?.externalIdUrl);
 
@@ -78,9 +95,6 @@ async function handleDeleteProject() {
   }
 }
 
-// === FILTERS (persisted per project) ===
-const filters = useProjectFilters(projectId);
-
 // === DRILL-DOWN FROM ANALYTICS ===
 // A number on a dashboard links here with its scope: the filters and branch
 // policy it names replace the saved ones, and its period narrows the runs
@@ -117,40 +131,40 @@ const defaultBranch = computed(
 );
 const drillText = computed(() => drill.value?.period?.label ?? null);
 
+/** A run as the filters read it: a run of a list, or of `unscopedRuns`. */
+interface ScopedRun {
+  startTime: string | Date;
+  environment?: string | null;
+  branch?: string | null;
+  isFullRun?: boolean;
+  metadata?: { scm?: { branch?: string | null } } | null;
+}
+
 // A run's branch reads the scalar column, falling back to the SCM metadata for
 // runs reported before the branch column existed.
 function runBranch(run: { branch?: string | null; metadata?: { scm?: { branch?: string | null } } | null }) {
   return run.branch ?? run.metadata?.scm?.branch ?? null;
 }
 
+/** The newest runs of any scope: what the filters offer, and the runs they hide. */
+const recentRuns = computed<ScopedRun[]>(() => project.value?.unscopedRuns ?? project.value?.testRuns ?? []);
+
 const availableEnvironments = computed(() => {
   const envs = new Set<string>();
-  for (const run of project.value?.testRuns || []) if (run.environment) envs.add(run.environment);
+  for (const run of recentRuns.value) if (run.environment) envs.add(run.environment);
   return [...envs].sort();
 });
 
 const availableBranches = computed(() => {
   const branches = new Set<string>();
-  for (const run of project.value?.testRuns || []) {
+  for (const run of recentRuns.value) {
     const b = runBranch(run);
     if (b) branches.add(b);
   }
   return [...branches].sort();
 });
 
-// === RUN SCOPE ===
-// The filters as the run scope every tab that reads run history follows: the
-// header, the runs table and chart here, and the catalog, the failures, the
-// Flake Lab and the performance tab on the server.
-const runScope = computed<ProjectRunScope>(() => ({
-  environments: filters.value.environments,
-  branches: filters.value.branches,
-  allBranches: !!filters.value.allBranches,
-  fullRunsOnly: filters.value.fullRunsOnly,
-}));
-const runScopeQuery = computed(() => projectRunScopeQuery(runScope.value));
-
-function inScope(run: TestRunSummary, scope: ProjectRunScope = runScope.value): boolean {
+function inScope(run: ScopedRun, scope: ProjectRunScope = runScope.value): boolean {
   return runInProjectScope(
     { environment: run.environment, branch: runBranch(run), isFullRun: run.isFullRun },
     scope,
@@ -159,14 +173,15 @@ function inScope(run: TestRunSummary, scope: ProjectRunScope = runScope.value): 
 }
 
 /** The drill-down period from Analytics, which narrows the runs table and chart only. */
-function inDrillPeriod(run: TestRunSummary): boolean {
+function inDrillPeriod(run: Pick<ScopedRun, 'startTime'>): boolean {
   const period = drill.value?.period;
   if (!period) return true;
   const t = new Date(run.startTime).getTime();
   return t >= period.from && t < period.to;
 }
 
-const scopedRuns = computed(() => (project.value?.testRuns ?? []).filter((run) => inScope(run)));
+// The server lists the newest runs within the scope.
+const scopedRuns = computed(() => project.value?.testRuns ?? []);
 const filteredRuns = computed(() => scopedRuns.value.filter(inDrillPeriod));
 
 function resetFilters(): void {
@@ -213,7 +228,7 @@ watch(tableRuns, (rows) => {
 // reading hides — both are on by default, so without a note those runs look
 // missing.
 const hiddenRuns = computed(() => {
-  const runs = (keptOnly.value ? keptRunsData.value?.items : project.value?.testRuns) ?? [];
+  const runs: ScopedRun[] = (keptOnly.value ? keptRunsData.value?.items : recentRuns.value) ?? [];
   const scope = runScope.value;
   const withPartialRuns = { ...scope, fullRunsOnly: false };
   const withAllBranches = { ...scope, allBranches: true };
@@ -934,7 +949,7 @@ const moreMenuItems = computed(() => {
           :latest-run="latestRun"
           :pass-rate="passRate"
           :pass-rate-runs="passRateRuns.length"
-          :has-runs="(project?.testRuns?.length ?? 0) > 0"
+          :has-runs="recentRuns.length > 0"
           :failures="headerFailures"
           @open="openHeaderTarget"
         />
@@ -1238,15 +1253,12 @@ const moreMenuItems = computed(() => {
               />
             </div>
 
-            <div
-              v-if="tableRuns.length === 0 && project?.testRuns && project.testRuns.length > 0"
-              class="text-center py-8 text-gray-500"
-            >
+            <div v-if="tableRuns.length === 0 && recentRuns.length > 0" class="text-center py-8 text-gray-500">
               {{ keptOnly ? 'No kept runs match the current filters.' : 'No test runs match the current filters.' }}
             </div>
 
             <EmptyState
-              v-else-if="!project?.testRuns || project.testRuns.length === 0"
+              v-else-if="recentRuns.length === 0"
               icon="i-lucide-rocket"
               text="No test runs yet for this project."
             >

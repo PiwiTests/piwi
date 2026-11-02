@@ -385,7 +385,18 @@ async function toRunSummaries(db: DrizzleDB, runs: any[]) {
   });
 }
 
-export async function getProject(db: DrizzleDB, id: number, options?: { runLimit?: number }) {
+/**
+ * A project with its newest runs (`runLimit`, 200 by default). With a run
+ * scope (the project page's filters) they are the newest runs within the
+ * scope, and `unscopedRuns` lists the newest runs of any scope with the fields
+ * the scope reads: the environments and branches the filters offer, and the
+ * runs they hide.
+ */
+export async function getProject(
+  db: DrizzleDB,
+  id: number,
+  options?: { runLimit?: number; scope?: ProjectRunScope | null },
+) {
   // Bounds the run list (and the charts derived from it) — projects grow
   // unboundedly, so an uncapped select scales with total history.
   const runLimit = clampRunLimit(options?.runLimit);
@@ -395,13 +406,31 @@ export async function getProject(db: DrizzleDB, id: number, options?: { runLimit
 
   if (!project) throw new Error('Project not found');
 
+  // The branch a project run scope reads when no branch is picked.
+  const effectiveDefaultBranch = await resolveStoredDefaultBranch(db, project);
+  const scope = options?.scope ?? null;
+
   // Select only the columns needed for the run list — omit wide JSON columns
   const runs: any[] = await db
     .select(RUN_SUMMARY_COLUMNS)
     .from(testRuns)
-    .where(eq(testRuns.projectId, id))
+    .where(and(eq(testRuns.projectId, id), ...(scope ? runScopeConditions(scope, effectiveDefaultBranch) : [])))
     .orderBy(desc(testRuns.startTime))
     .limit(runLimit);
+  const unscopedRuns: any[] | null = scope
+    ? await db
+        .select({
+          id: testRuns.id,
+          startTime: testRuns.startTime,
+          environment: testRuns.environment,
+          branch: testRuns.branch,
+          isFullRun: testRuns.isFullRun,
+        })
+        .from(testRuns)
+        .where(eq(testRuns.projectId, id))
+        .orderBy(desc(testRuns.startTime))
+        .limit(runLimit)
+    : null;
 
   // Get tags for this project
   const projectTagRows: any[] = await db
@@ -412,14 +441,24 @@ export async function getProject(db: DrizzleDB, id: number, options?: { runLimit
 
   return {
     ...project,
-    // The branch a project run scope reads when no branch is picked.
-    effectiveDefaultBranch: await resolveStoredDefaultBranch(db, project),
+    effectiveDefaultBranch,
     hasScmToken: !!project.scmToken,
     // Validated per-project capability decisions, so the edit form preselects a
     // stored "declined"/"enabled" rather than always reading "instance default".
     capabilities: parseProjectDecisions(project.capabilities ?? null),
     tags: projectTagRows.map((r: any) => r.tag),
     testRuns: await toRunSummaries(db, runs),
+    ...(unscopedRuns
+      ? {
+          unscopedRuns: unscopedRuns.map((r) => ({
+            id: r.id as number,
+            startTime: r.startTime as Date,
+            environment: (r.environment as string | null) ?? null,
+            branch: (r.branch as string | null) ?? null,
+            isFullRun: r.isFullRun === 1,
+          })),
+        }
+      : {}),
   };
 }
 

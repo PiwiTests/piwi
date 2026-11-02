@@ -850,7 +850,7 @@ const routes: RouteEntry[] = [
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       const rawLimit = Number(q?.get('limit'));
       const runLimit = Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : undefined;
-      const project = await getProject(await getDemoDb(), +m[1]!, { runLimit });
+      const project = await getProject(await getDemoDb(), +m[1]!, { runLimit, scope: parseProjectRunScope(q) });
       if (!project) return project;
       const { scmToken: _scm, ...rest } = project as { scmToken?: string | null } & typeof project;
       return rest;
