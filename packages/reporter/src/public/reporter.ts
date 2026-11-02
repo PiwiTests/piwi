@@ -280,7 +280,8 @@ export class PiwiDashboardReporter {
     const streamBuffer = new StreamBuffer(this.options.projectName!);
     streamBuffer.clearStale();
 
-    if (this.options.streaming) {
+    // A disabled reporter streams nothing, so it queues no event and stages no file for an upload.
+    if (this.options.streaming && this.enabled) {
       this.streamManager = new StreamManager(
         this.httpClient,
         streamBuffer,

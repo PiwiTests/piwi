@@ -657,6 +657,25 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     expect(recovered.testCases[0].title).toBe('login-fail-test');
   });
 
+  it('a disabled reporter writes no attachment to disk and keeps no live stream', async () => {
+    const reporter = new PiwiDashboardReporter({ serverUrl: 'http://127.0.0.1:1', projectName, enabled: false });
+    const suite = fakeSuite();
+    const test = fakeTestCase({ title: 'disabled-test', parent: suite });
+    suite.allTests = () => [test];
+    const attachments = [{ name: 'order payload', contentType: 'application/json', body: Buffer.from('{}') }];
+    try {
+      reporter.onBegin(fakeConfig(), suite);
+      reporter.onTestBegin(test, fakeResult({ workerIndex: 0 }));
+      reporter.onTestEnd(test, fakeResult({ status: 'failed', workerIndex: 0, attachments }));
+      await reporter.onEnd({ status: 'failed' } as any);
+
+      expect((reporter as any).fileHandler.stagedDir).toBeNull();
+      expect((reporter as any).streamManager).toBeNull();
+    } finally {
+      (reporter as any).fileHandler.cleanupBodyAttachments();
+    }
+  });
+
   it('leaves the terminal output to Playwright', () => {
     expect(new PiwiDashboardReporter({ serverUrl: 'http://localhost:1', projectName }).printsToStdio()).toBe(false);
   });
