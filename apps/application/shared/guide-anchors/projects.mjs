@@ -246,7 +246,7 @@ export const PROJECTS_ANCHORS = [
     reveal: [{ query: { tab: 'flaky-tests' } }],
     describes:
       'The Quarantine button of a flaky test, which keeps it running but out of the CI gate’s verdict; hovering it previews the lines no other trusted test runs.',
-    shownWhen: 'When a test of the project flaked in its recent runs.',
+    shownWhen: 'When a test of the project flaked in its recent runs and is not quarantined yet.',
     requires: { permission: 'quarantine:write' },
     help: 'quarantine.coverage-loss',
     doc: 'features/coverage-insights#what-quarantining-or-deleting-tests-leaves-uncovered',
