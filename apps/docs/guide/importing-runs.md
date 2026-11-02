@@ -80,8 +80,9 @@ The grouping is fixed when you *choose* the files, not when they upload, so retr
 its siblings. Two separate selections are two runs, even if you import them with one click — pick every trace that
 belongs to a run in one go.
 
-Two different traces for the same test in one selection are treated as **attempts**: the second becomes retry 1, so a
-test that failed then passed is recognized as flaky. Upload order is attempt order.
+Two different traces for the same test and browser in one selection are treated as **attempts**: the second becomes
+retry 1, so a test that failed then passed is recognized as flaky, and the run counts it once. Upload order is attempt
+order.
 
 One kind of trace cannot be imported: Playwright writes the test's title alongside the *browser context*, so a test
 that never opened a page — skipped, or failed in a hook — produces a trace with no title in it. Those files are

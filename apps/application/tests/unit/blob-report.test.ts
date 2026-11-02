@@ -43,11 +43,12 @@ describe('parseBlobReport', () => {
     expect(parsed.duration).toBe(4321);
     expect(parsed.projectNames).toEqual(['chromium']);
 
-    // Three executions: one pass plus the failure and its retry.
-    expect(parsed.totalTests).toBe(3);
+    // Two tests, as Playwright counts them: one pass, and one whose retry turned green, so it counts as passed and
+    // flaky, never as failed. The three executions stay three cases.
+    expect(parsed.cases).toHaveLength(3);
+    expect(parsed.totalTests).toBe(2);
     expect(parsed.passedTests).toBe(2);
-    expect(parsed.failedTests).toBe(1);
-    // The retry turned green, so the test counts as flaky.
+    expect(parsed.failedTests).toBe(0);
     expect(parsed.flakyTests).toBe(1);
 
     const passed = parsed.cases[0]!.case;
@@ -326,5 +327,67 @@ describe('readBlobScm', () => {
   test('is null when the config metadata records no revision', () => {
     expect(readBlobScm({})).toBeNull();
     expect(readBlobScm(undefined)).toBeNull();
+  });
+});
+
+describe('parseBlobReport counters', () => {
+  test('count each test once, by its last attempt, and each --repeat-each repetition apart', async () => {
+    const parsed = await parse(
+      buildBlobReport({
+        runStatus: 'failed',
+        tests: [
+          {
+            testId: 't-broken',
+            title: 'always fails',
+            attempts: [
+              { status: 'failed', errorMessage: 'Error: boom' },
+              { status: 'failed', errorMessage: 'Error: boom' },
+              { status: 'timedOut', errorMessage: 'Test timeout of 30000ms exceeded.' },
+            ],
+          },
+          { testId: 't-rep-0', title: 'repeated', repeatEachIndex: 0, attempts: [{ status: 'passed' }] },
+          { testId: 't-rep-1', title: 'repeated', repeatEachIndex: 1, attempts: [{ status: 'passed' }] },
+        ],
+      }),
+    );
+
+    expect(parsed.cases).toHaveLength(5);
+    expect(parsed.totalTests).toBe(3);
+    expect(parsed.passedTests).toBe(2);
+    expect(parsed.failedTests + parsed.timedOutTests).toBe(1);
+    expect(parsed.flakyTests).toBe(0);
+  });
+});
+
+describe('parseBlobReport on an archive older than Playwright 1.53', () => {
+  test("reads each result's attachments from its end event", async () => {
+    const parsed = await parse(
+      buildBlobReport({
+        playwrightVersion: '1.52.0',
+        attachmentsOnTestEnd: true,
+        runStatus: 'failed',
+        tests: [
+          {
+            testId: 't-fail',
+            title: 'fails',
+            attempts: [
+              {
+                status: 'failed',
+                errorMessage: 'Error: boom',
+                attachments: [
+                  { name: 'trace', contentType: 'application/zip', body: 'trace bytes' },
+                  { name: 'screenshot', contentType: 'image/png', body: 'png bytes' },
+                  { name: '_error-context-0', contentType: 'text/markdown', body: '# Page snapshot' },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    const [failed] = parsed.cases;
+    expect(failed!.traces.map((t) => t.name)).toEqual(['trace']);
+    expect(failed!.attachments.map((a) => a.name)).toEqual(['screenshot', '_error-context-0']);
   });
 });

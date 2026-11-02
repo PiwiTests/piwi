@@ -323,3 +323,60 @@ describe('importTraceRun', () => {
     expect(testCase!.tags).toEqual(['checkout']);
   });
 });
+
+describe('the evidence and counters of an import', () => {
+  test('reads the error context Playwright attached as `_error-context-<n>` before 1.53', async () => {
+    const contexts: string[] = [];
+    const failing: ImportedRunCase = {
+      case: {
+        title: 'pays',
+        filePath: 'tests/checkout.spec.ts',
+        status: 'failed',
+        error: 'Error: boom',
+        line: 10,
+        column: 5,
+        browser: 'chromium',
+      },
+      traces: [],
+      attachments: [{ entry: 'resources/context.markdown', name: '_error-context-0', contentType: 'text/markdown' }],
+    };
+
+    await importBlobReportRun(
+      db as never,
+      port({
+        parseErrorContext: (markdown) => {
+          contexts.push(markdown);
+          return { ariaSnapshot: null, testSource: null };
+        },
+      }),
+      { projectId: 1, parsed: report([failing]), readEntry, importHash: 'f'.repeat(64), source: 'report.zip' },
+    );
+
+    expect(contexts).toEqual(['resources/context.markdown']);
+  });
+
+  test('a group of traces counts each test once, by its last attempt in its own browser', async () => {
+    const group = '9'.repeat(64);
+    const attempt = (importHash: string, status: string, browser: string) => ({
+      ...traceInput(group),
+      importHash,
+      parsed: { ...trace('pays'), case: { ...trace('pays').case, status, browser } },
+    });
+
+    await importTraceRun(db as never, port(), attempt('1'.repeat(64), 'failed', 'chromium'));
+    await importTraceRun(db as never, port(), attempt('2'.repeat(64), 'passed', 'chromium'));
+    const result = await importTraceRun(db as never, port(), attempt('3'.repeat(64), 'passed', 'firefox'));
+
+    const [run] = await db.select().from(schema.testRuns).where(eq(schema.testRuns.id, result.runId));
+    expect(run).toMatchObject({ status: 'passed', totalTests: 2, passedTests: 2, failedTests: 0, flakyTests: 1 });
+    const executions = await db
+      .select({ browserName: schema.testRunsCases.browserName, retries: schema.testRunsCases.retries })
+      .from(schema.testRunsCases)
+      .orderBy(schema.testRunsCases.id);
+    expect(executions).toEqual([
+      { browserName: 'chromium', retries: 0 },
+      { browserName: 'chromium', retries: 1 },
+      { browserName: 'firefox', retries: 0 },
+    ]);
+  });
+});

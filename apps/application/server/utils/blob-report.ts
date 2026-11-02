@@ -70,6 +70,7 @@ export interface ParsedBlobReport {
   duration: number | null;
   /** Run status in Piwi's vocabulary (`passed` / `failed` / `timedout` / `interrupted`). */
   status: string;
+  /** One per test and `--repeat-each` repetition, its retries folded in: the counters below add up to it. */
   totalTests: number;
   passedTests: number;
   failedTests: number;
@@ -463,6 +464,13 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
       const acc = resultId ? results.get(resultId) : undefined;
       const testId = typeof test.testId === 'string' ? test.testId : acc?.testId;
       if (!testId) continue;
+      // Archives written before Playwright 1.53 carry a result's attachments here, with no `onAttach` event: the whole
+      // list, which replaces what the result gathered, as Playwright's own merge reads it.
+      if (acc && Array.isArray(result.attachments)) {
+        acc.traces = [];
+        acc.attachments = [];
+        applyAttachments(acc, result.attachments);
+      }
 
       const plan = planned.get(testId);
       const annotations = mergeAnnotations(
@@ -570,20 +578,19 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
     for (const entry of cases) entry.case.shardIndex = shard.current;
   }
 
+  // One result per test, each `--repeat-each` repetition being a test of its own, as Playwright's summary counts them:
+  // the last attempt decides it, and a pass after an earlier failed attempt is flaky.
   const counts = { passed: 0, failed: 0, timedOut: 0, skipped: 0, didNotRun: 0 };
-  for (const entry of cases) {
-    if (entry.case.status === 'passed') counts.passed++;
-    else if (entry.case.status === 'timedOut') counts.timedOut++;
-    else if (entry.case.status === 'skipped') counts.skipped++;
-    else if (entry.case.status === 'didnotrun') counts.didNotRun++;
-    else counts.failed++;
-  }
-
-  // Flaky: the last attempt passed after an earlier one failed.
   let flakyTests = 0;
   for (const attempts of attemptsByTest.values()) {
+    const last = attempts.at(-1)?.status;
+    if (last === 'passed') counts.passed++;
+    else if (last === 'timedOut') counts.timedOut++;
+    else if (last === 'skipped') counts.skipped++;
+    else if (last === 'didnotrun') counts.didNotRun++;
+    else counts.failed++;
     const earlier = attempts.slice(0, -1).map((attempt) => attempt.status);
-    if (isFlakyResult(attempts.at(-1)?.status, earlier)) flakyTests++;
+    if (isFlakyResult(last, earlier)) flakyTests++;
   }
 
   const projectNames = [...new Set([...planned.values()].map((p) => p.projectName).filter(Boolean))];
@@ -594,7 +601,7 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
     startTime: new Date(runStartTime && runStartTime > 0 ? runStartTime : Date.now()),
     duration: runDuration,
     status: runStatus,
-    totalTests: cases.length,
+    totalTests: attemptsByTest.size,
     passedTests: counts.passed,
     failedTests: counts.failed,
     timedOutTests: counts.timedOut,

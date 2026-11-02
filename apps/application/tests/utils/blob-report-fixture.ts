@@ -44,6 +44,8 @@ export interface FixtureOptions {
   runStatus?: string;
   startTime?: number;
   duration?: number;
+  /** Put each attempt's attachments on its `onTestEnd` result, as Playwright wrote them before 1.53, not in `onAttach`. */
+  attachmentsOnTestEnd?: boolean;
   tests: FixtureTest[];
 }
 
@@ -60,6 +62,7 @@ export function buildBlobReport(options: FixtureOptions): Buffer {
     runStatus = 'passed',
     startTime = 1_700_000_000_000,
     duration = 1234,
+    attachmentsOnTestEnd = false,
     tests,
   } = options;
 
@@ -124,7 +127,7 @@ export function buildBlobReport(options: FixtureOptions): Buffer {
         return { name: attachment.name, contentType: attachment.contentType, path };
       });
 
-      if (attachments.length > 0) {
+      if (attachments.length > 0 && !attachmentsOnTestEnd) {
         lines.push({ method: 'onAttach', params: { testId: test.testId, resultId, attachments } });
       }
 
@@ -158,6 +161,7 @@ export function buildBlobReport(options: FixtureOptions): Buffer {
                   ]
                 : [],
             ...(attempt.annotations ? { annotations: attempt.annotations } : {}),
+            ...(attachmentsOnTestEnd ? { attachments } : {}),
           },
         },
       });

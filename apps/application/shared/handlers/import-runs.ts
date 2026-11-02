@@ -15,7 +15,8 @@
  */
 
 import { RUN_ORIGIN_METADATA_KEY } from '@piwitests/core/wire';
-import { and, eq, gt, ne } from 'drizzle-orm';
+import { and, eq, gt, isNull, ne } from 'drizzle-orm';
+import { resolveBrowserName } from '../browser-name';
 import { testRuns, testRunsCases, testCases, files, networkRequests } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 import type { ImportedRunCase, ParsedBlobReport } from '../../server/utils/blob-report';
@@ -24,7 +25,7 @@ import { resolveRunBranch } from '../../server/utils/run-branch';
 import { runCommit, runOrigin } from '../run-eligibility';
 import type { PersistRunCasesOptions } from '../../server/utils/persist-options';
 import { durationStats } from '../utils/stats';
-import { sumFailedAndTimedOut } from '../utils/test-counts';
+import { distinctRunCountsFromAttempts, sumFailedAndTimedOut } from '../utils/test-counts';
 import { joinSuitePath } from '../utils/suites';
 import { formatBytes } from '../utils/format-bytes';
 import type { ImportCheckResult, ImportRunResponse } from '../import.types';
@@ -596,13 +597,16 @@ async function discardImportedRun(db: DrizzleDB, port: ImportPort, runId: number
   }
 }
 
+/** The name of Playwright's error context: `error-context`, or `_error-context-<n>` before Playwright 1.53. */
+const ERROR_CONTEXT_NAME = /^(?:error-context|_error-context(?:-\d+)?)$/;
+
 /** Recover the evidence Playwright's `error-context` attachment still holds. */
 async function recoverErrorContext(
   port: ImportPort,
   readEntry: ArchiveEntryReader,
   entry: ImportedRunCase,
 ): Promise<void> {
-  const contextRef = entry.attachments.find((a) => a.name === 'error-context');
+  const contextRef = entry.attachments.find((a) => ERROR_CONTEXT_NAME.test(a.name));
   if (!contextRef) return;
 
   const bytes = await readEntry(contextRef.entry);
@@ -613,12 +617,12 @@ async function recoverErrorContext(
   entry.case.testSource = evidence.testSource;
 }
 
-/** How many executions of this same test the run already holds. */
+/** How many executions of this same test, in the same browser, the run already holds. */
 async function countPriorAttempts(
   db: DrizzleDB,
   projectId: number,
   testRunId: number,
-  input: { filePath: string; suitePath?: string[] | null; title: string },
+  input: { filePath: string; suitePath?: string[] | null; title: string; browser?: unknown },
 ): Promise<number> {
   const existing = await db
     .select({ id: testCases.id })
@@ -635,10 +639,17 @@ async function countPriorAttempts(
   const testCaseId = existing[0]?.id;
   if (testCaseId === undefined) return 0;
 
+  const browserName = resolveBrowserName(input.browser);
   const attempts = await db
     .select({ id: testRunsCases.id })
     .from(testRunsCases)
-    .where(and(eq(testRunsCases.testRunId, testRunId), eq(testRunsCases.testCaseId, testCaseId)));
+    .where(
+      and(
+        eq(testRunsCases.testRunId, testRunId),
+        eq(testRunsCases.testCaseId, testCaseId),
+        browserName === null ? isNull(testRunsCases.browserName) : eq(testRunsCases.browserName, browserName),
+      ),
+    );
 
   return attempts.length;
 }
@@ -652,18 +663,20 @@ async function countPriorAttempts(
  */
 async function rollUpTraceRun(db: DrizzleDB, testRunId: number, startTime: Date): Promise<void> {
   const rows = await db
-    .select({ status: testRunsCases.status, duration: testRunsCases.duration, startedAt: testRunsCases.startedAt })
+    .select({
+      testCaseId: testRunsCases.testCaseId,
+      browserName: testRunsCases.browserName,
+      repeatEachIndex: testRunsCases.repeatEachIndex,
+      retries: testRunsCases.retries,
+      status: testRunsCases.status,
+      duration: testRunsCases.duration,
+      startedAt: testRunsCases.startedAt,
+    })
     .from(testRunsCases)
     .where(eq(testRunsCases.testRunId, testRunId));
 
-  const counts = { passed: 0, failed: 0, timedOut: 0, skipped: 0, didNotRun: 0 };
-  for (const row of rows) {
-    if (row.status === 'passed') counts.passed++;
-    else if (row.status === 'timedout' || row.status === 'timedOut') counts.timedOut++;
-    else if (row.status === 'skipped') counts.skipped++;
-    else if (row.status === 'didnotrun') counts.didNotRun++;
-    else counts.failed++;
-  }
+  // One result per test, decided by its last attempt: a trace of a retry that passed makes the test flaky, not failed.
+  const counts = distinctRunCountsFromAttempts(rows);
 
   const stats = durationStats(rows.map((row) => row.duration));
   const earliest = rows.reduce<number>(
@@ -679,14 +692,15 @@ async function rollUpTraceRun(db: DrizzleDB, testRunId: number, startTime: Date)
   await db
     .update(testRuns)
     .set({
-      status: counts.failed + counts.timedOut > 0 ? 'failed' : 'passed',
+      status: counts.failedTests > 0 ? 'failed' : 'passed',
       startTime: new Date(earliest),
       duration: Math.max(0, latestEnd - earliest),
-      totalTests: rows.length,
-      passedTests: counts.passed,
-      failedTests: sumFailedAndTimedOut(counts.failed, counts.timedOut),
-      skippedTests: counts.skipped,
-      didNotRunTests: counts.didNotRun,
+      totalTests: counts.totalTests,
+      passedTests: counts.passedTests,
+      failedTests: counts.failedTests,
+      skippedTests: counts.skippedTests,
+      didNotRunTests: counts.didNotRunTests,
+      flakyTests: counts.flakyTests,
       avgTestDuration: stats?.avg ?? null,
       p90TestDuration: stats?.p90 ?? null,
       updatedAt: new Date(),
