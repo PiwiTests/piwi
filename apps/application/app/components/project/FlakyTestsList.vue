@@ -82,7 +82,7 @@ watch(
 );
 
 // Piwi's quarantine proposals among the listed tests, read after the list so the
-// list never waits on them. A proposal dismissed since the newest run is not marked.
+// list never waits on them. A proposal dismissed since the newest run the candidates read is not marked.
 type QuarantineResponse = ApiResponse<typeof import('~~/server/api/projects/[id]/quarantine.get').default>;
 const proposals = ref(new Map<number, QuarantineResponse['candidates'][number]>());
 

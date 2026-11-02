@@ -1883,6 +1883,65 @@ export interface FlakyTestsFilter {
   runConditions?: SQL[];
 }
 
+/**
+ * The conditions on `test_runs` that pick the runs the flaky leaderboard reads: the project's finished runs. An
+ * explicit branch filter scopes to exactly that branch. Otherwise the leaderboard reads the runs of the project's
+ * default branch (`resolveStoredDefaultBranch`, as the project tabs do) plus runs with no branch (local or
+ * pre-migration), so a work-in-progress branch stops contaminating the project's health signal. Environment scopes
+ * independently. A project run scope replaces all three with the project page's filters, and a filter's run
+ * conditions replace them all. Only runs the `flakiness` use reads count: lab runs inject faults and conditions,
+ * bisect and reproduction runs replay an older commit, and an environment incident fails every test at once.
+ */
+async function flakyRunConditions(
+  db: DrizzleDB,
+  project: { id: number; defaultBranch?: string | null },
+  opts: {
+    environment?: string | null;
+    filter?: FlakyTestsFilter;
+    branch?: string | null;
+    scope?: ProjectRunScope | null;
+  } = {},
+): Promise<SQL[]> {
+  const conditions = [
+    eq(testRuns.projectId, project.id),
+    inArray(testRuns.status, TERMINAL_STATUSES),
+    eligibleRunSql('flakiness'),
+  ];
+  if (opts.filter?.runConditions) {
+    conditions.push(...opts.filter.runConditions);
+  } else if (opts.scope) {
+    conditions.push(...(await projectRunScopeConditions(db, project.id, opts.scope)));
+  } else {
+    if (opts.environment) conditions.push(eq(testRuns.environment, opts.environment));
+    if (opts.branch) {
+      conditions.push(eq(testRuns.branch, opts.branch));
+    } else {
+      const defaultBranch = await resolveStoredDefaultBranch(db, project);
+      conditions.push(or(eq(testRuns.branch, defaultBranch), isNull(testRuns.branch), eq(testRuns.branch, ''))!);
+    }
+  }
+  return conditions;
+}
+
+/**
+ * The newest run, by start time, that `getProjectFlakyTests` reads with no environment, branch or filter: the runs
+ * the quarantine candidates come from. Null when the project has none.
+ */
+export async function newestFlakyRunId(db: DrizzleDB, projectId: number): Promise<number | null> {
+  const [project] = await db
+    .select({ id: projects.id, defaultBranch: projects.defaultBranch })
+    .from(projects)
+    .where(eq(projects.id, projectId));
+  if (!project) return null;
+  const [run] = await db
+    .select({ id: testRuns.id })
+    .from(testRuns)
+    .where(and(...(await flakyRunConditions(db, project))))
+    .orderBy(desc(testRuns.startTime), desc(testRuns.id))
+    .limit(1);
+  return run?.id ?? null;
+}
+
 export async function getProjectFlakyTests(
   db: DrizzleDB,
   projectId: number,
@@ -1921,34 +1980,8 @@ export async function getProjectFlakyTestsWithVerified(
 
   const effectiveLimit = Math.min(200, Math.max(1, runsLimit));
 
-  // Step 1: Last N terminal runs. An explicit branch filter scopes to exactly
-  // that branch. Otherwise the leaderboard reads the runs of the project's
-  // default branch (`resolveStoredDefaultBranch`, as the project tabs do) plus
-  // runs with no branch (local or pre-migration), so a work-in-progress branch
-  // stops contaminating the project's health signal. Environment scopes
-  // independently. A project run
-  // scope replaces all three with the project page's filters. Only runs the
-  // `flakiness` use reads count: lab runs inject faults and conditions,
-  // bisect and reproduction runs replay an older commit, and an environment
-  // incident fails every test at once.
-  const runsConditions = [
-    eq(testRuns.projectId, projectId),
-    inArray(testRuns.status, TERMINAL_STATUSES),
-    eligibleRunSql('flakiness'),
-  ];
-  if (filter?.runConditions) {
-    runsConditions.push(...filter.runConditions);
-  } else if (scope) {
-    runsConditions.push(...(await projectRunScopeConditions(db, projectId, scope)));
-  } else {
-    if (environment) runsConditions.push(eq(testRuns.environment, environment));
-    if (branch) {
-      runsConditions.push(eq(testRuns.branch, branch));
-    } else {
-      const defaultBranch = await resolveStoredDefaultBranch(db, project);
-      runsConditions.push(or(eq(testRuns.branch, defaultBranch), isNull(testRuns.branch), eq(testRuns.branch, ''))!);
-    }
-  }
+  // Step 1: Last N terminal runs.
+  const runsConditions = await flakyRunConditions(db, project, { environment, filter, branch, scope });
   const filteredRuns: any[] = await db
     .select({ id: testRuns.id, startTime: testRuns.startTime })
     .from(testRuns)

@@ -46,7 +46,7 @@ interface Candidate {
   flakyScore: number;
   wastedCiMinutes: number;
   rationale: string;
-  /** Dismissed since the newest run. */
+  /** Dismissed since the newest run the candidates read. */
   dismissed: boolean;
 }
 

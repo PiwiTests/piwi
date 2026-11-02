@@ -21,6 +21,7 @@ import { quarantinedTests, testCases, testRuns, testRunsCases } from '../../serv
 import type { DrizzleDB } from './db';
 import { eligibleExecutionInProject } from '../run-eligibility';
 import { getHoldingVerifiedFixes, type VerifiedFix } from './flake-verified';
+import { newestFlakyRunId } from './projects';
 import { finalAttempts, flakyFinalAttempts, isFailedStatus } from '../utils/test-counts';
 import { listOutcomes, recordOutcome } from '../../server/utils/outcomes';
 import { proposeQuarantineCandidates } from '../../server/utils/quarantine-candidates';
@@ -496,16 +497,9 @@ export async function dismissQuarantineProposal(
     const candidates = await proposeQuarantineCandidates(db, projectId, await getQuarantinedCaseIds(db, projectId));
     if (!candidates.some((candidate) => candidate.testCaseId === testCaseId)) return false;
   }
-  // A quarantine proposal is scoped to the newest run, so one dismissed again after new runs counts again.
-  const [latestRun] =
-    proposal === 'quarantine'
-      ? await db
-          .select({ id: testRuns.id })
-          .from(testRuns)
-          .where(eq(testRuns.projectId, projectId))
-          .orderBy(desc(testRuns.id))
-          .limit(1)
-      : [];
+  // A quarantine proposal is scoped to the newest run the candidates read, so one dismissed again after a newer such
+  // run counts again.
+  const runId = proposal === 'quarantine' ? await newestFlakyRunId(db, projectId) : null;
   const note = normalizeDismissReason(reason);
   await recordOutcome(db, {
     projectId,
@@ -515,7 +509,7 @@ export async function dismissQuarantineProposal(
     suggestionKey: proposal === 'release' ? `release:${active!.id}` : 'quarantine',
     outcome: 'rejected',
     actor,
-    runId: latestRun?.id ?? null,
+    runId,
     details: note ? { reason: note } : null,
   });
   return true;
@@ -531,7 +525,10 @@ async function dismissedReleases(db: DrizzleDB, projectId: number): Promise<Set<
   );
 }
 
-/** Marks `dismissed` on each of a project's quarantine candidates dismissed since the newest run. */
+/**
+ * Marks `dismissed` on each of a project's quarantine candidates dismissed since the newest run the candidates read
+ * (`newestFlakyRunId`): a run of another branch, a lab or bisect run, or an older report imported later brings none back.
+ */
 export async function markDismissedCandidates<C extends { testCaseId: number }>(
   db: DrizzleDB,
   projectId: number,
@@ -545,14 +542,9 @@ export async function markDismissedCandidates<C extends { testCaseId: number }>(
     outcomes: ['rejected'],
   });
   if (rows.length > 0) {
-    const [latestRun] = await db
-      .select({ id: testRuns.id })
-      .from(testRuns)
-      .where(eq(testRuns.projectId, projectId))
-      .orderBy(desc(testRuns.id))
-      .limit(1);
+    const newestRunId = await newestFlakyRunId(db, projectId);
     for (const row of rows) {
-      if (row.runId != null && row.runId === latestRun?.id) dismissed.add(row.subjectId);
+      if (row.runId != null && row.runId === newestRunId) dismissed.add(row.subjectId);
     }
   }
   return candidates.map((candidate) => ({ ...candidate, dismissed: dismissed.has(candidate.testCaseId) }));

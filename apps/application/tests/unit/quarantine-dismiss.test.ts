@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { apiError } from '../../server/utils/api-error';
 import { openTempDb, type TempDb } from './temp-db';
@@ -77,6 +78,7 @@ const { MCP_TOOLS } = await import('../../server/utils/mcp/tools');
 const { logMcpToolCall } = await import('../../server/utils/mcp/write-log');
 const { listOutcomes } = await import('../../server/utils/outcomes');
 const { addQuarantine, RELEASE_AFTER_CONSECUTIVE_PASSES } = await import('#shared/handlers/quarantine');
+const { runOrigin } = await import('#shared/run-eligibility');
 const dismissTool = MCP_TOOLS.find((t) => t.name === 'dismiss_quarantine_proposal')!.handler;
 
 const asUser = (id: number, role: string, name: string) => ({ id, role, name, username: name.toLowerCase() }) as User;
@@ -217,6 +219,35 @@ describe('POST /api/projects/:id/quarantine/:testCaseId/dismiss', () => {
     const list = () => listRoute({ params: { id: '1' }, path: '/api/projects/1/quarantine' });
     expect((await list()).candidates).toMatchObject([{ testCaseId: 1, dismissed: true }]);
     await insertRun();
+    expect((await list()).candidates).toMatchObject([{ testCaseId: 1, dismissed: false }]);
+  });
+
+  test('a dismissed candidate stays dismissed through the runs the candidates do not read', async () => {
+    await db.update(schema.projects).set({ defaultBranch: 'main' }).where(eq(schema.projects.id, 1));
+    await dismissRoute({ params: { id: '1', testCaseId: '1' }, body: { proposal: 'quarantine' } });
+    const list = () => listRoute({ params: { id: '1' }, path: '/api/projects/1/quarantine' });
+    const run = async (values: Partial<typeof schema.testRuns.$inferInsert> = {}) => {
+      const id = ++runSeq;
+      const metadata = values.metadata ?? null;
+      await db.insert(schema.testRuns).values({
+        id,
+        projectId: 1,
+        status: 'passed',
+        startTime: new Date(Date.now() + id * 60_000),
+        ...values,
+        origin: runOrigin(metadata),
+      });
+    };
+
+    await run({ metadata: { piwiFlakeLab: { experimentId: 'exp-1', armId: 'control' } } });
+    await run({ metadata: { piwiOrigin: { kind: 'bisect' } } });
+    await run({ branch: 'feature/cart' });
+    await run({ status: 'running' });
+    // An older report imported after the dismissal.
+    await run({ startTime: new Date(Date.now() - 3_600_000) });
+    expect((await list()).candidates).toMatchObject([{ testCaseId: 1, dismissed: true }]);
+
+    await run({ branch: 'main' });
     expect((await list()).candidates).toMatchObject([{ testCaseId: 1, dismissed: false }]);
   });
 
