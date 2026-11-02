@@ -212,8 +212,12 @@ Where a **failure cluster** stands, said in one sentence with one verb next to a
 failing*, *not seen for N runs — still open*, *fixed and verified — still open*, *fixed, but the diagnosed patch
 still applies at the fix's commit*, *stopped failing*, *regressed — the fix did not hold*, *resolved*, *ignored*,
 *snoozed* or *all tests quarantined*. It reconciles the human triage status with the machine-observed verdict; when
-they disagree the state line offers the one action that closes the gap, unless the Next line already offers it. See
-[Failure clusters](/features/failure-clusters#the-state-line).
+they disagree the state line offers the one action that closes the gap, unless the Next line already offers it.
+*Not seen for N runs* counts the runs since the last failure that could have shown it: finished runs on its branch or
+the default branch (no lab run, bisect step, reproduction or environment incident) that ran its tests and did not fail
+with it. A test skipped or not run is one a run did not run, and a run of the whole suite counts even when a test of
+the cluster no longer exists. The failure of a cluster whose ticket is Done stopped once such a run came after its last
+failure. See [Failure clusters](/features/failure-clusters#the-state-line).
 
 ### Flakiness score
 

@@ -106,11 +106,11 @@ the rest fold into [**More ways to fix**](./fix-plans#more-ways-to-fix).
 The cluster page states where a cluster stands in **one sentence with one verb**, next to a colored dot:
 *still failing*, *not seen for N runs*, *fixed and verified, still open*, *fixed, but the diagnosed patch still
 applies*, *stopped failing*, *regressed, the fix did not hold*, *resolved*, *ignored*, *snoozed* or *all tests
-quarantined*. When an open cluster stopped failing, or its ticket is Done and the latest finished run no longer fails
-it, the page offers **one action**, *Mark resolved*, which a fix whose patch still applies keeps in the **Next** menu;
-a snoozed cluster offers *Unsnooze*, an all-quarantined one *Release*. Beside it, **Triage** sets the status (open /
-resolved / ignored), a note and the assignee, and [snoozes](#snoozing) the cluster. A status change keeps the
-triage note and the lines Piwi added.
+quarantined*. When an open cluster stopped failing, or its ticket is Done and the failure
+[stopped](/guide/concepts#cluster-state), the page offers **one action**, *Mark resolved*, which a fix whose patch
+still applies keeps in the **Next** menu; a snoozed cluster offers *Unsnooze*, an all-quarantined one *Release*.
+Beside it, **Triage** sets the status (open / resolved / ignored), a note and the assignee, and
+[snoozes](#snoozing) the cluster. A status change keeps the triage note and the lines Piwi added.
 
 ### Occurrences over time
 

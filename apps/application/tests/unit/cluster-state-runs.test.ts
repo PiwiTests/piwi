@@ -7,7 +7,7 @@ import { migrateToLatest } from './temp-db';
 
 /**
  * The runs the cluster page's state line counts as runs a failure skipped: only
- * those that could have shown it, by the rule fix verification follows.
+ * those that could have shown it and did not.
  */
 
 delete process.env.PIWI_DATABASE_URL;
@@ -37,8 +37,14 @@ async function insertRun(
   return id;
 }
 
-/** Test 1 failed into the cluster in its last run; each later run ran the tests it names, and passed. */
-async function seed(later: Array<{ tests: number[]; run: Parameters<typeof insertRun>[0] }>) {
+/**
+ * The tests of `clusterTests` (test 1 by default) failed into the cluster in its last run; each later run holds the
+ * tests it names with its `status` (passed by default), a failure joining the cluster.
+ */
+async function seed(
+  later: Array<{ tests: number[]; run: Parameters<typeof insertRun>[0]; status?: string }>,
+  clusterTests: number[] = [1],
+) {
   const failing = await insertRun({ status: 'failed' });
   await db.insert(schema.failureClusters).values({
     id: 1,
@@ -47,15 +53,19 @@ async function seed(later: Array<{ tests: number[]; run: Parameters<typeof inser
     signature: 'Error: the card was declined',
     firstSeenRunId: failing,
     lastSeenRunId: failing,
-    occurrences: 1,
+    occurrences: clusterTests.length,
   });
   await db
     .insert(schema.testRunsCases)
-    .values({ testRunId: failing, testCaseId: 1, status: 'failed', failureClusterId: 1 });
-  for (const { tests, run } of later) {
+    .values(
+      clusterTests.map((testCaseId) => ({ testRunId: failing, testCaseId, status: 'failed', failureClusterId: 1 })),
+    );
+  for (const { tests, run, status = 'passed' } of later) {
     const id = await insertRun(run);
     for (const testCaseId of tests) {
-      await db.insert(schema.testRunsCases).values({ testRunId: id, testCaseId, status: 'passed' });
+      await db
+        .insert(schema.testRunsCases)
+        .values({ testRunId: id, testCaseId, status, ...(status === 'failed' ? { failureClusterId: 1 } : {}) });
     }
   }
 }
@@ -81,6 +91,7 @@ describe("the state line's runs", () => {
       { tests: [1], run: { branch: 'feature/other' } },
       { tests: [1], run: { incident: true } },
       { tests: [1], run: { status: 'running' } },
+      { tests: [], run: {} },
     ]);
     const { clusterState } = (await getFailureCluster(db, 1))!;
     expect(clusterState.kind).toBe('failing');
@@ -95,5 +106,61 @@ describe("the state line's runs", () => {
     const { clusterState } = (await getFailureCluster(db, 1))!;
     expect(clusterState.kind).toBe('quiet');
     expect(clusterState.sentence).toMatch(/^Not seen for 3 runs/);
+  });
+
+  test('a run the cluster failed in is not one it skipped, though it leaves its last seen run alone', async () => {
+    // A run from an editor joins its failure to the cluster without making it recur.
+    await seed([
+      { tests: [1], run: { origin: 'editor' }, status: 'failed' },
+      { tests: [1], run: { origin: 'editor' }, status: 'failed' },
+      { tests: [1], run: { origin: 'editor' }, status: 'failed' },
+    ]);
+    const { clusterState, failureGoesOn } = (await getFailureCluster(db, 1))!;
+    expect(clusterState.kind).toBe('failing');
+    expect(failureGoesOn).toBe(true);
+  });
+
+  test('a run that held its test only as skipped or not run is not one it skipped', async () => {
+    await seed([
+      { tests: [1], run: {}, status: 'skipped' },
+      { tests: [1], run: { isFullRun: 0 }, status: 'skipped' },
+      { tests: [1], run: {}, status: 'didnotrun' },
+    ]);
+    const { clusterState, failureGoesOn } = (await getFailureCluster(db, 1))!;
+    expect(clusterState.kind).toBe('failing');
+    expect(failureGoesOn).toBe(true);
+  });
+
+  test('a whole-suite run is one it skipped though a test of the cluster no longer exists', async () => {
+    // Test 2 was renamed after the failure: no later run holds it.
+    await seed(
+      [
+        { tests: [1], run: {} },
+        { tests: [1], run: {} },
+        { tests: [1], run: {} },
+      ],
+      [1, 2],
+    );
+    const { clusterState, failureGoesOn } = (await getFailureCluster(db, 1))!;
+    expect(clusterState.kind).toBe('quiet');
+    expect(clusterState.sentence).toMatch(/^Not seen for 3 runs/);
+    expect(failureGoesOn).toBe(false);
+  });
+
+  test('a whole-suite run is one it skipped though it holds none of the tests of the cluster', async () => {
+    // The cluster's only test was renamed: the later runs hold the other test alone.
+    await seed([
+      { tests: [2], run: {} },
+      { tests: [2], run: {} },
+      { tests: [2], run: {} },
+    ]);
+    const { clusterState } = (await getFailureCluster(db, 1))!;
+    expect(clusterState.sentence).toMatch(/^Not seen for 3 runs/);
+  });
+
+  test('a partial run is one it skipped only when it ran every test of the cluster', async () => {
+    await seed([{ tests: [1], run: { isFullRun: 0 } }], [1, 2]);
+    const { failureGoesOn } = (await getFailureCluster(db, 1))!;
+    expect(failureGoesOn).toBe(true);
   });
 });
