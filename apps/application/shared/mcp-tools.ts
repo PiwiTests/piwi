@@ -391,7 +391,7 @@ export const MCP_TOOL_DEFS = [
     description: md(
       'List an execution’s screenshots, the page the test failed on first, and return the image data of the first three on request.',
       'By default it returns metadata only (file name, media type, size) for every screenshot. Call it that way first, then set `content: true` to get the first three only, with their base64 image data (each capped at about 100 KB).',
-      'The screenshot of the page the test failed on comes first, flagged `atFailure`, when it is known: the capture fixtures’ screenshot of the page the test last acted on, or the only screenshot. Without the fixtures, Playwright takes one per page still open at the failure and one per page of each context the test closed before, so none of several is flagged.',
+      'The screenshot of the page the test failed on comes first, flagged `atFailure`, when it is known: the capture fixtures’ screenshot of the page the test last acted on, or, for an execution that failed, the only screenshot. Without the fixtures, Playwright takes one per page still open at the failure and one per page of each context the test closed before, so none of several is flagged.',
     ),
     inputSchema: {
       type: 'object',

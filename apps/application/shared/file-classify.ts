@@ -77,6 +77,14 @@ export function failurePageScreenshot<T>(
   );
 }
 
+/**
+ * Whether an execution failed, for `failurePageScreenshot`: every status but passed and skipped. A timed-out or
+ * interrupted test was stopped on a page too, and an unknown status keeps the guess.
+ */
+export function executionFailed(status: string | null | undefined): boolean {
+  return status !== 'passed' && status !== 'skipped';
+}
+
 /** One execution's screenshots in their order, with the page the test failed on first when it is known. */
 export function failurePageFirst<T>(
   shots: readonly T[],

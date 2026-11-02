@@ -122,6 +122,14 @@ describe('getExecutionBugReport', () => {
     });
   });
 
+  test('a passing execution’s only screenshot is not the failure screenshot', async () => {
+    await db.insert(schema.testRunsCases).values([{ id: 8, testRunId: 1, testCaseId: 1, status: 'passed' }]);
+    await db.insert(schema.files).values([
+      { testRunsCaseId: 8, testRunId: 1, type: 'attachment', subtype: 'Step 1', label: 'image/png', path: 'p/8.png' },
+    ]);
+    expect((await getExecutionBugReport(db as never, 8))!.screenshotPath).toBeNull();
+  });
+
   test('answers null for an execution that does not exist', async () => {
     expect(await getExecutionBugReport(db as never, 999)).toBeNull();
   });
