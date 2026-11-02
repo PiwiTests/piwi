@@ -275,6 +275,26 @@ describe('the working directory a run names', () => {
   });
 });
 
+describe("the Playwright config's and project's metadata", () => {
+  /** A suite whose first test's project carries `metadata`. */
+  const suiteOfProject = (metadata: unknown): any => ({ allTests: () => [{ parent: { project: () => ({ metadata }) } }] });
+
+  it("go once each: a project that shares the config's, Playwright's git diff included, sends none of its own", () => {
+    const configMetadata = { gitDiff: 'diff --git a/app.ts b/app.ts', gitCommit: { hash: 'abc123' } };
+    const config = { ...fakeConfig(), metadata: configMetadata } as unknown as FullConfig;
+
+    const shared = new MetadataCollector().collect(config, suiteOfProject(configMetadata), {});
+    expect(shared.playwrightConfig).toEqual(configMetadata);
+    expect(shared.playwrightProject).toBeUndefined();
+
+    const copied = new MetadataCollector().collect(config, suiteOfProject(structuredClone(configMetadata)), {});
+    expect(copied.playwrightProject).toBeUndefined();
+
+    const own = new MetadataCollector().collect(config, suiteOfProject({ team: 'checkout' }), {});
+    expect(own.playwrightProject).toEqual({ team: 'checkout' });
+  });
+});
+
 describe('the run origin', () => {
   it('is local outside CI, with nothing set', () => {
     expect(resolveRunOrigin({})).toEqual({ kind: 'local' });

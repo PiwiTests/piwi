@@ -1,5 +1,6 @@
 import { execSync } from 'node:child_process';
 import type { StdioOptions } from 'node:child_process';
+import { isDeepStrictEqual } from 'node:util';
 import { errorMessage } from '../support/errors.js';
 import type { FullConfig, Suite, TestCase } from '@playwright/test/reporter';
 import { Logger } from '../support/logger.js';
@@ -188,7 +189,11 @@ export class MetadataCollector {
         const first = all[0];
         if (first?.parent) {
           const proj = (first.parent as any).project();
-          if (proj?.metadata) metadata.playwrightProject = proj.metadata;
+          // A project without metadata of its own shares the config's (Playwright's git commit and diff included),
+          // which `playwrightConfig` already carries.
+          if (proj?.metadata && !isDeepStrictEqual(proj.metadata, config.metadata)) {
+            metadata.playwrightProject = proj.metadata;
+          }
         }
       }
     }
