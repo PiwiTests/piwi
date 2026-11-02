@@ -16,11 +16,12 @@
  * proposed test, or releasing a test whose release was proposed, records
  * `applied`; dismissing either proposal records `rejected`.
  */
-import { and, asc, desc, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { quarantinedTests, testCases, testRuns, testRunsCases } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 import { eligibleExecutionInProject } from '../run-eligibility';
 import { getHoldingVerifiedFixes, type VerifiedFix } from './flake-verified';
+import { finalAttempts, flakyFinalAttempts, isFailedStatus } from '../utils/test-counts';
 import { listOutcomes, recordOutcome } from '../../server/utils/outcomes';
 import { proposeQuarantineCandidates } from '../../server/utils/quarantine-candidates';
 import type { HandbackActor } from '../handback-outcomes';
@@ -29,10 +30,8 @@ import { normalizeDismissReason, type QuarantineProposal } from '#shared/quarant
 /** Consecutive passing runs after which release is proposed. */
 export const RELEASE_AFTER_CONSECUTIVE_PASSES = 5;
 
-/** Executions scanned per test when counting the current streak. */
+/** Runs scanned per test when counting the current streak. */
 const STREAK_SCAN_LIMIT = 30;
-
-const FAIL_STATUSES = ['failed', 'timedOut', 'timedout'];
 
 export interface QuarantineEntry {
   id: number;
@@ -58,7 +57,7 @@ export interface QuarantineEntry {
   releaseReason: 'streak' | 'verified-fix' | null;
   /** The Flake Lab verified fix made since the quarantine, while it holds. */
   verifiedFix: VerifiedFix | null;
-  /** Runs seen since quarantine; zero means nothing has exercised it yet. */
+  /** Runs since quarantine that recorded the test, the newest 30 at most; zero means nothing has exercised it yet. */
   runsSinceQuarantine: number;
 }
 
@@ -102,20 +101,46 @@ export async function countQuarantinedClusterTests(
   return Number(row?.tests ?? 0);
 }
 
+/** An attempt row of a quarantined test, as the streak reads it. */
+interface StreakRow {
+  testCaseId: number;
+  status: string;
+  retries: number | null;
+  repeatEachIndex: number;
+  browserName: string | null;
+}
+
 /**
- * Trailing passing streak for each test, counted over executions recorded after
- * the run the test was quarantined at. Ordered newest first and stopped at the
- * first failure, so a single recent flake resets the count — which is the point.
- * Only runs the `flakiness` use reads count: lab runs (probes, flake
- * experiments) replay the test under injected faults or conditions, bisect and
- * reproduction runs replay an older commit, and an environment incident fails
- * every test at once, so none of them counts toward or breaks a streak.
+ * The outcome of a test in one run, from the final attempt of each of its
+ * projects and repetitions there: failed when one failed, flaky when one passed
+ * after a failed attempt, passed when every one that ran passed, and null when
+ * none ran (skipped, did not run).
+ */
+function runOutcome(rows: StreakRow[]): 'passed' | 'flaky' | 'failed' | null {
+  const final = finalAttempts(rows);
+  if (final.some((row) => isFailedStatus(row.status))) return 'failed';
+  if (flakyFinalAttempts(rows).size > 0) return 'flaky';
+  return final.some((row) => row.status === 'passed') ? 'passed' : null;
+}
+
+/**
+ * Trailing passing streak for each test, counted over the runs that started
+ * after it was quarantined, newest first and once per run whatever its
+ * projects and repetitions: a run counts as a pass when the test passed in it,
+ * and a run where it failed, or passed only on a retry, resets the count, so a
+ * single recent flake resets it — which is the point. A run that only skipped
+ * the test proves nothing either way. Only runs the `flakiness` use reads
+ * count: lab runs (probes, flake experiments) replay the test under injected
+ * faults or conditions, bisect and reproduction runs replay an older commit,
+ * and an environment incident fails every test at once, so none of them counts
+ * toward or breaks a streak.
  *
  * One query for the whole list, whatever its length: the executions are joined
  * to the project's active quarantines (one test's alone when `testCaseId` is
- * given), each test's are ranked newest-first with a window function, and only
- * the first `STREAK_SCAN_LIMIT` of each are read back. The project's runs the
- * use leaves out are listed once for it (`eligibleExecutionInProject`).
+ * given), each test's runs are ranked newest-first with a window function, and
+ * the executions of the first `STREAK_SCAN_LIMIT` of each are read back. The
+ * project's runs the use leaves out are listed once for it
+ * (`eligibleExecutionInProject`).
  */
 async function computeStreaks(
   db: DrizzleDB,
@@ -126,51 +151,58 @@ async function computeStreaks(
     .select({
       testCaseId: testRunsCases.testCaseId,
       status: testRunsCases.status,
-      id: testRunsCases.id,
-      newestRank:
-        sql<number>`row_number() over (partition by ${testRunsCases.testCaseId} order by ${testRunsCases.id} desc)`.as(
-          'newest_rank',
+      retries: testRunsCases.retries,
+      repeatEachIndex: testRunsCases.repeatEachIndex,
+      browserName: testRunsCases.browserName,
+      runRank:
+        sql<number>`dense_rank() over (partition by ${testRunsCases.testCaseId} order by ${testRuns.startTime} desc, ${testRuns.id} desc)`.as(
+          'run_rank',
         ),
     })
     .from(testRunsCases)
+    .innerJoin(testRuns, eq(testRuns.id, testRunsCases.testRunId))
     .innerJoin(quarantinedTests, eq(quarantinedTests.testCaseId, testRunsCases.testCaseId))
     .where(
       and(
         eq(quarantinedTests.projectId, projectId),
         isNull(quarantinedTests.releasedAt),
         testCaseId != null ? eq(quarantinedTests.testCaseId, testCaseId) : undefined,
-        or(
-          isNull(quarantinedTests.quarantinedAtRunId),
-          gt(testRunsCases.testRunId, quarantinedTests.quarantinedAtRunId),
-        ),
+        gt(testRuns.startTime, quarantinedTests.createdAt),
         eligibleExecutionInProject('flakiness', projectId, testRunsCases.testRunId),
       ),
     )
     .as('ranked');
 
   const rows = await db
-    .select({ testCaseId: ranked.testCaseId, status: ranked.status, id: ranked.id })
+    .select({
+      testCaseId: ranked.testCaseId,
+      status: ranked.status,
+      retries: ranked.retries,
+      repeatEachIndex: ranked.repeatEachIndex,
+      browserName: ranked.browserName,
+      runRank: ranked.runRank,
+    })
     .from(ranked)
-    .where(lte(ranked.newestRank, STREAK_SCAN_LIMIT))
-    .orderBy(desc(ranked.id));
+    .where(lte(ranked.runRank, STREAK_SCAN_LIMIT));
 
-  const byCase = new Map<number, Array<{ status: string }>>();
+  // Each test's runs, newest first, with their rows: the ranks of a test's runs are 1, 2, 3…
+  const byCase = new Map<number, StreakRow[][]>();
   for (const row of rows) {
-    const list = byCase.get(row.testCaseId);
-    if (list) list.push(row);
-    else byCase.set(row.testCaseId, [row]);
+    const runs = byCase.get(row.testCaseId) ?? [];
+    byCase.set(row.testCaseId, runs);
+    (runs[Number(row.runRank) - 1] ??= []).push(row);
   }
 
   const streaks = new Map<number, { passes: number; runs: number }>();
-  for (const [caseId, executions] of byCase) {
+  for (const [caseId, runs] of byCase) {
+    const outcomes = runs.map(runOutcome);
     let passes = 0;
-    for (const row of executions) {
-      if (row.status === 'passed') passes++;
-      else if (FAIL_STATUSES.includes(row.status)) break;
-      // Skipped / didnotrun executions prove nothing either way; ignore them
-      // rather than counting or breaking the streak.
+    for (const outcome of outcomes) {
+      if (outcome === null) continue;
+      if (outcome !== 'passed') break;
+      passes++;
     }
-    streaks.set(caseId, { passes, runs: executions.length });
+    streaks.set(caseId, { passes, runs: outcomes.length });
   }
 
   return streaks;
@@ -294,8 +326,8 @@ export async function addQuarantine(
     .where(and(eq(quarantinedTests.testCaseId, testCaseId), isNull(quarantinedTests.releasedAt)));
   if (existing.length > 0) return { created: false };
 
-  // Anchor the streak to the newest run so executions already recorded cannot
-  // count toward release — the point of quarantining is that history is bad.
+  // The project's newest run, kept with the entry. The streak reads only the runs that start after the quarantine, so
+  // history already recorded cannot count toward release — the point of quarantining is that history is bad.
   const [latestRun] = await db
     .select({ id: testRuns.id })
     .from(testRuns)

@@ -2793,21 +2793,41 @@ const MERGE_SUGGESTIONS = [
 ];
 
 // ── Demo quarantine ───────────────────────────────────────────────────────
-// Three entries covering the states the tab exists to distinguish: one that has
-// earned its way out, one part-way through its streak, and one still failing.
-// Without all three the exit ramp looks like a list that only grows.
+// Every entry was quarantined on Apr 20 and keeps the project's newest run of
+// that moment. The runs that started since count toward its release, once per
+// run, which gives the tab the states it exists to tell apart: the search test
+// passed in every one and has earned its way out, the pagination test holds a
+// fix the Flake Lab verified (the experiments below), and the other two are
+// part-way back, the discount code test still flaking. Without them the exit
+// ramp looks like a list that only grows.
 const QUARANTINED_TESTS = [];
 {
-  // Runs after the anchor count toward the streak; 4 seeded passes land the
-  // entry at "4 / 5" — part-way through the exit ramp, not yet ready.
-  const PARTIAL_QUARANTINE_STREAK_RUNS = 4;
-  const quarantineSpec = [
-    { projectId: 1, streakState: 'ready', reason: 'Times out on CI only — see cluster 1' },
-    { projectId: 2, streakState: 'partial', reason: 'Search index warm-up races the assertion' },
-    { projectId: 3, streakState: 'failing', reason: 'Pagination flakes under parallel load' },
-  ];
+  const quarantinedAt = ts('2025-04-20T09:00:00');
+  /** The project's newest run that started before the quarantine. */
+  const newestRunBefore = (projectId) =>
+    TEST_RUNS.filter((run) => run.project_id === projectId && run.start_time < quarantinedAt).reduce(
+      (newest, run) => (newest && newest.start_time >= run.start_time ? newest : run),
+      null,
+    )?.id ?? null;
+  const quarantine = (projectId, testCaseId, reason, source) =>
+    QUARANTINED_TESTS.push({
+      id: QUARANTINED_TESTS.length + 1,
+      project_id: projectId,
+      test_case_id: testCaseId,
+      reason,
+      source,
+      quarantined_at_run_id: newestRunBefore(projectId),
+      created_by: null,
+      created_at: quarantinedAt,
+      released_at: null,
+      released_reason: null,
+    });
 
-  let qId = 1;
+  const quarantineSpec = [
+    { projectId: 1, reason: 'Times out on CI only — see cluster 1', source: 'proposed' },
+    { projectId: 2, reason: 'Search index warm-up races the assertion', source: 'manual' },
+    { projectId: 3, reason: 'Pagination flakes under parallel load', source: 'manual' },
+  ];
   for (const spec of quarantineSpec) {
     const flaky = FLAKY_CASES[spec.projectId];
     if (!flaky) continue;
@@ -2815,54 +2835,23 @@ const QUARANTINED_TESTS = [];
     const caseDef = proj?.cases.find((candidate) => candidate.title === flaky.title);
     if (!caseDef) continue;
     const caseId = caseIdByKey.get(`${spec.projectId}\x00${caseDef.file}\x00${caseDef.title}`);
-    if (!caseId) continue;
-
-    // The streak counts executions on runs after the anchor (id > anchor), and
-    // ids descend as time advances in the seed, so an anchor on the newest run
-    // makes every seeded execution count (release-ready) and an anchor on the
-    // oldest run counts none (still failing). The partial entry anchors a few
-    // runs short of the oldest so only a handful of passes accumulate.
-    const anchorRunId =
-      spec.streakState === 'failing'
-        ? (oldestRunByProject[spec.projectId] ?? null)
-        : spec.streakState === 'partial'
-          ? Number(oldestRunByProject[spec.projectId]) - PARTIAL_QUARANTINE_STREAK_RUNS || null
-          : (newestRunByProject[spec.projectId] ?? null);
-
-    QUARANTINED_TESTS.push({
-      id: qId++,
-      project_id: spec.projectId,
-      test_case_id: caseId,
-      reason: spec.reason,
-      source: spec.streakState === 'ready' ? 'proposed' : 'manual',
-      quarantined_at_run_id: anchorRunId,
-      created_by: null,
-      created_at: ts('2025-04-20T09:00:00'),
-      released_at: null,
-      released_reason: null,
-    });
+    if (caseId) quarantine(spec.projectId, caseId, spec.reason, spec.source);
   }
 
   // A quarantined test whose cluster's fix has verified — the inbox's
   // "Quarantine ready" queue: the failures stopped, so the quarantine is safe to
-  // lift. Anchored at that cluster's newest run so the demo shows it release-ready.
+  // lift.
   {
     const story = FAILURE_STORIES.find((s) => s.clusterId === 10);
     const failing = story?.failingCases?.[0];
     const caseId = story && failing && caseIdByKey.get(`${story.projectId}\x00${story.specFile}\x00${failing.title}`);
     if (caseId) {
-      QUARANTINED_TESTS.push({
-        id: qId++,
-        project_id: story.projectId,
-        test_case_id: caseId,
-        reason: 'Held while the pagination fix was verified; the fix landed and held.',
-        source: 'manual',
-        quarantined_at_run_id: newestRunByProject[story.projectId] ?? null,
-        created_by: null,
-        created_at: ts('2025-04-20T09:00:00'),
-        released_at: null,
-        released_reason: null,
-      });
+      quarantine(
+        story.projectId,
+        caseId,
+        'Held while the pagination fix was verified; the fix landed and held.',
+        'manual',
+      );
     }
   }
 }

@@ -240,7 +240,7 @@ export const quarantinedTests = pgTable(
       .references(() => testCases.id, { onDelete: 'cascade' }),
     reason: text('reason'),
     source: text('source').notNull().default('manual'), // 'manual' | 'proposed'
-    /** Run id at quarantine time — passes are counted from after this run. */
+    /** The project's newest run at quarantine time; the release streak reads the runs that start after `created_at`. */
     quarantinedAtRunId: integer('quarantined_at_run_id'),
     createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { mode: 'date' })

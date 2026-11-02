@@ -116,8 +116,9 @@ list only grows.
 `--max-failed`, `--max-new-regressions`, `--max-new-flaky`, `--require-tag` and `--require-selection` checks and the
 [commit status](./pr-feedback#what-gets-posted), nothing else. That makes the exit possible:
 
-- Passing executions after quarantine (one per attempt per browser project) accumulate as a **streak**; one failure
-  resets it.
+- The runs that start after the quarantine accumulate as a **streak**, one per run whatever its browser projects and
+  `--repeat-each` repetitions: a run where the test passed adds to it, and one where it failed, or passed only on a
+  retry, resets it. A run that skipped it changes nothing, and an older report imported later never counts.
 - After five consecutive passes the test is flagged **ready to release** — the dashboard tells you, rather than waiting
   to be asked.
 - A fix [verified](#verified-fixed) after the quarantine flags it at once, while it holds. Release stays yours to

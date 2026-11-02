@@ -97,9 +97,12 @@ let db: TempDb;
 let close: () => Promise<void>;
 let runSeq = 0;
 
+/** A run started a minute after the one before it, and after the quarantines made meanwhile. */
 async function insertRun(projectId = 1): Promise<number> {
   const id = ++runSeq;
-  await db.insert(schema.testRuns).values({ id, projectId, status: 'passed', startTime: new Date() });
+  await db
+    .insert(schema.testRuns)
+    .values({ id, projectId, status: 'passed', startTime: new Date(Date.now() + id * 60_000) });
   return id;
 }
 

@@ -260,6 +260,14 @@ describe('merge suggestions', () => {
 });
 
 describe('quarantine proposals', () => {
+  // Quarantined at T0, so the runs `insertRun` dates after it count toward a release.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'], now: T0 });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   test('quarantining a proposed test applies the proposal; a manual quarantine is no hand-back', async () => {
     await insertRun();
     await addQuarantine(db as never, 1, 1, { source: 'proposed', createdBy: 7 });
