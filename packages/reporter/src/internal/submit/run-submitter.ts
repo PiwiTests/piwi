@@ -307,6 +307,7 @@ export class RunSubmitter {
       isFullRun: run.isFullRun,
       filterDetails: run.filterDetails,
       resourceReport: run.resourceReport ?? null,
+      setupSteps: run.setupSteps,
       deliveryKey: this.deliveryKey,
     };
   }

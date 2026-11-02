@@ -849,6 +849,28 @@ describe('RunSubmitter local copies', () => {
     expect(submitted?.runId).toBe(2);
   });
 
+  it("sends the suite's setup steps with the batch submit a stream fell back to", async () => {
+    let submitBody: any;
+    server = await startServer((req, res) => {
+      if (req.url !== '/api/test-runs/submit') return textRes(res, 404, 'nope');
+      submitBody = JSON.parse(req.body);
+      jsonRes(res, 200, { runId: 2 });
+    });
+    const step = {
+      title: 'beforeAll hook',
+      category: 'hook',
+      startedAt: 1_700_000_000_000,
+      duration: 12,
+      status: 'passed',
+      location: 'tests/a.spec.ts:3:1',
+      workerIndex: 0,
+    };
+    const run = { ...collectedRun(server.url), setupSteps: [step] };
+    await submitter(server.url, streamSession({ lostResults: true })).submit(run, { status: 'passed' } as any);
+
+    expect(submitBody.setupSteps).toEqual([step]);
+  });
+
   it("discards the run's buffered live events once the batch submit succeeds", async () => {
     server = await startServer((req, res) =>
       req.url === '/api/test-runs/submit' ? jsonRes(res, 200, { runId: 2 }) : textRes(res, 404, 'nope'),

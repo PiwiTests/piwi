@@ -423,6 +423,22 @@ describe('serializeRun', () => {
     );
   });
 
+  it("carries the suite's setup steps when the run has some, as /finish does", () => {
+    const step = {
+      title: 'beforeAll hook',
+      category: 'hook',
+      startedAt: 1_700_000_000_000,
+      duration: 12,
+      status: 'passed',
+      location: 'tests/a.spec.ts:3:1',
+      workerIndex: 0,
+    };
+    expect(serializeRun({ ...makePayload(), setupSteps: [step] }, { includeTestCases: false }).setupSteps).toEqual([
+      step,
+    ]);
+    expect('setupSteps' in serializeRun({ ...makePayload(), setupSteps: [] }, { includeTestCases: false })).toBe(false);
+  });
+
   it('sends keep: true only when the run asked to be kept', () => {
     expect(serializeRun(makePayload(), { includeTestCases: false }).keep).toBe(false);
     expect(serializeRun({ ...makePayload(), keep: true }, { includeTestCases: false }).keep).toBe(true);
