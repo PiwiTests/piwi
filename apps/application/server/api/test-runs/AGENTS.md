@@ -50,7 +50,8 @@ How a run is identified:
 - **A shard's identity** is Playwright's `config.shard`, or the `i/n` in `PIWI_SHARD`, which `piwi run --shard` sets
   because it narrows the tests itself and passes Playwright no `--shard`. The reporter reads both through
   `resolveShardInfo` (`packages/reporter/src/internal/support/shard-info.ts`) for `/setup`, `/start` and `/finish`. A
-  run with no shard identity starts non-sharded and cancels every running run of its instance id.
+  run with no shard identity starts non-sharded and cancels every run of its instance id still initializing or
+  running, never a finalizing one, which holds all its results (`tests/unit/finalizing-runs.test.ts`).
 
 How the server merges shards:
 

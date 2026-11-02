@@ -43,6 +43,8 @@ const uploadRoute = (await import('../../server/api/test-runs/upload.post')).def
   event: unknown,
 ) => Promise<unknown>;
 const upload = ({ parts }: { parts: MultipartPart[] }) => uploadRoute(multipartEvent(parts));
+const start = (await import('../../server/api/test-runs/start.post')).default as unknown as Handler;
+const submit = (await import('../../server/api/test-runs/submit.post')).default as unknown as Handler;
 const { settleFinalizingRun } = await import('../../server/utils/finalizing-runs');
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
@@ -143,5 +145,48 @@ describe('a run finishing with its report upload pending', () => {
 
     expect(results.filter((status) => status !== null)).toEqual(['passed']);
     expect(runFinalizeSideEffects).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a finalizing run when another run of its instance starts', () => {
+  const reportUpload = () =>
+    upload({
+      parts: [
+        field('runId', '1'),
+        field('projectName', 'finalizing-project'),
+        field('testRun', { status: 'passed', startTime: '2026-09-30T08:55:00Z' }),
+      ],
+    });
+
+  beforeEach(async () => {
+    await db.update(schema.testRuns).set({ instanceId: 'ci-42' }).where(eq(schema.testRuns.id, 1));
+  });
+
+  test.each([
+    [
+      'a streamed run',
+      () =>
+        start({ body: { projectName: 'finalizing-project', instanceId: 'ci-42', startTime: '2026-09-30T09:01:00Z' } }),
+    ],
+    [
+      'a batch',
+      () =>
+        submit({
+          body: {
+            projectName: 'finalizing-project',
+            instanceId: 'ci-42',
+            status: 'passed',
+            startTime: '2026-09-30T09:01:00Z',
+          },
+        }),
+    ],
+  ])('keeps its results: %s of the instance leaves it to its report upload', async (_other, other) => {
+    await finishWithPendingUploads();
+
+    await other();
+    expect((await runRow()).status).toBe('finalizing');
+
+    await reportUpload();
+    expect((await runRow()).status).toBe('passed');
   });
 });

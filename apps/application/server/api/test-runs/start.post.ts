@@ -21,7 +21,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Start a streaming test run',
     description:
-      'Start a new streaming test run directly in "running" status. Returns a stream token for authenticating subsequent streaming event submissions. Cancels any previous runs from the same instance. Supports sharded runs: when shardTotal > 1, reuses an existing run from the same instanceId and shardTotal.',
+      'Start a new streaming test run directly in "running" status. Returns a stream token for authenticating subsequent streaming event submissions. Cancels the runs of the same instance still initializing or running; a finalizing one settles on its own. Supports sharded runs: when shardTotal > 1, reuses an existing run from the same instanceId and shardTotal.',
     'x-required-permission': 'run:submit',
     requestBody: {
       content: {

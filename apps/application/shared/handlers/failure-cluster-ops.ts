@@ -777,7 +777,8 @@ export async function recomputeClusterBounds(db: DrizzleDB, clusterId: number): 
 }
 
 /**
- * Cancel stale in-progress runs for a given project + instanceId.
+ * Cancel stale in-progress runs for a given project + instanceId: the ones initializing or running. A finalizing
+ * run is left alone: it holds every result of its run and settles once its files are in, or by the stale-run sweep.
  * Returns the cancelled runs so callers can publish their own lifecycle events.
  */
 export async function cancelInstanceRuns(
@@ -792,7 +793,7 @@ export async function cancelInstanceRuns(
   const conditions = [
     eq(testRuns.projectId, projectId),
     eq(testRuns.instanceId, instanceId),
-    or(eq(testRuns.status, 'running'), eq(testRuns.status, 'initializing'), eq(testRuns.status, 'finalizing')),
+    or(eq(testRuns.status, 'running'), eq(testRuns.status, 'initializing')),
   ];
 
   if (excludeRunId !== undefined) {
