@@ -223,6 +223,8 @@ export class Uploader {
           retries: testCase.retries ?? 0,
           repeatEachIndex: testCase.repeatEachIndex ?? 0,
           suitePath: testCase.suitePath ?? null,
+          // The execution's Playwright project, the case payload's `browser.projectName`.
+          projectName: testCase.browser?.projectName ?? null,
         }),
       );
       if (traceInfo) {

@@ -284,6 +284,26 @@ describe('Uploader.uploadCaseFiles', () => {
     }
   });
 
+  it("names the execution's Playwright project, as the case payload's browser does", async () => {
+    const traceFile = path.join(tmpDir, 'trace.zip');
+    fs.writeFileSync(traceFile, 'TRACE-BYTES');
+
+    const { server, url, requests } = await startServer((req, res) => {
+      if (req.url === '/api/traces/check') return jsonRes(res, 200, { missing: [] });
+      return jsonRes(res, 200, { ok: true });
+    });
+    try {
+      const uploader = new Uploader(new HttpClient(url, new Logger(false)), new FileHandler(new Logger(false)));
+      const firefox = { ...makeCase(traceFile), browser: { projectName: 'firefox', browserName: 'firefox' } };
+      await uploader.uploadCaseFiles('proj', 5, 'streamtok', firefox as CollectedTestCase, true, null);
+
+      const body = requests.find((r) => r.url === '/api/test-runs/5/case-files')!.body;
+      expect(body).toContain('"projectName":"firefox"');
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
   it('retries with the trace file body on a 422 (server did not actually have the blob)', async () => {
     const traceFile = path.join(tmpDir, 'trace.zip');
     fs.writeFileSync(traceFile, 'TRACE-BYTES');
