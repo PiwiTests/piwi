@@ -1,5 +1,6 @@
-import { describe, it, afterEach, expect } from 'vitest';
+import { describe, it, afterEach, expect, vi } from 'vitest';
 import { PiwiDashboardReporter } from '../src/public/reporter.js';
+import { RunSampler } from '../src/internal/collect/process-sampler.js';
 import { startServer, jsonRes, textRes, fakeConfig, fakeSuite, fakeTestCase, fakeResult, type FakeServer } from './_helpers.js';
 
 /** One attempt of a test, as `onTestEnd` reports it. */
@@ -123,5 +124,61 @@ describe('the tests a run never reached, on the wire', () => {
     }
     // A test of a project that depends on no failed project keeps the run's reason.
     expect(sentCase(body, 'other')).toMatchObject({ status: 'didnotrun', didNotRunReason: 'interrupted', blockedBy: null });
+  });
+});
+
+describe('the end of a run the reporter cannot read in full', () => {
+  let server: FakeServer | undefined;
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    if (server) await server.close();
+    server = undefined;
+  });
+
+  /** The run body submitted for one passed test and one the run never reached, with `options`. */
+  async function submittedRun(unreached: any, options: Record<string, unknown>): Promise<any> {
+    let body: any;
+    server = await startServer((req, res) => {
+      if (req.url === '/api/test-runs/submit') body = JSON.parse(req.body);
+      jsonRes(res, 200, { runId: 1, projectId: 1 });
+    });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const reporter = new PiwiDashboardReporter({
+      serverUrl: server.url,
+      projectName: 'piwi-unrun-errors-' + process.pid,
+      streaming: false,
+      uploadReport: false,
+      uploadTraces: false,
+      liveFileUploads: false,
+      ...options,
+    });
+    const suite = fakeSuite();
+    const ran = fakeTestCase({ id: 'ran', title: 'ran', line: 1, parent: suite });
+    unreached.parent = suite;
+    suite.allTests = () => [ran, unreached];
+    reporter.onBegin(fakeConfig(), suite);
+    reporter.onTestBegin(ran, fakeResult({}));
+    reporter.onTestEnd(ran, fakeResult({ status: 'passed' }));
+    // Playwright counts an error a reporter throws from `onEnd` as a failure of the run.
+    await expect(reporter.onEnd({ status: 'interrupted' } as any)).resolves.toBeUndefined();
+    return body;
+  }
+
+  it('reports the run when a test it never reached cannot be read', async () => {
+    const unreached = fakeTestCase({ id: 'unreadable', title: 'unreadable', line: 2 });
+    Object.defineProperty(unreached, 'tags', {
+      get() {
+        throw new Error('tags are gone');
+      },
+    });
+    const body = await submittedRun(unreached, { captureResources: false });
+    expect(body.testCases.map((tc: any) => tc.title)).toContain('ran');
+  });
+
+  it('reports the run when its resources cannot be read', async () => {
+    vi.spyOn(RunSampler.prototype, 'stop').mockRejectedValue(new Error('ps is gone'));
+    const body = await submittedRun(fakeTestCase({ id: 'later', title: 'later', line: 2 }), {});
+    expect(body.testCases.map((tc: any) => tc.title)).toEqual(['ran', 'later']);
   });
 });

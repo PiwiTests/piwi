@@ -1137,11 +1137,21 @@ export class PiwiDashboardReporter {
       maxFailures: this.maxFailures,
       failures: this.failedTestCount,
     });
-    // A failed attempt the run stopped before retrying is its test's last.
-    for (const failedTest of this.failuresAwaitingRetry.values()) this.failureLinks.add(failedTest());
-    this.materializeUnrunTests(unrunReason);
-    // Printed before the submit, so a slow or failed upload never hides it.
-    await this.reportResources();
+    // Neither throws out of `onEnd`, where Playwright would count the error as a failure of the run: the run is
+    // reported with what was collected.
+    try {
+      // A failed attempt the run stopped before retrying is its test's last.
+      for (const failedTest of this.failuresAwaitingRetry.values()) this.failureLinks.add(failedTest());
+      this.materializeUnrunTests(unrunReason);
+    } catch (error) {
+      this.logger.error(`Could not add the tests that did not run: ${errorMessage(error)}`);
+    }
+    try {
+      // Printed before the submit, so a slow or failed upload never hides it.
+      await this.reportResources();
+    } catch (error) {
+      this.logger.debug(`Resource summary skipped: ${errorMessage(error)}`);
+    }
 
     try {
       const submitted = await this.submitter.submit(
