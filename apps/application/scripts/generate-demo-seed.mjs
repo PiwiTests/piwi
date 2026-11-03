@@ -6500,6 +6500,40 @@ const ASSISTANT_MESSAGES = [
   for (const row of TEST_RUNS_CASES) row.final_attempt = finals.has(row) ? 1 : 0;
 }
 
+// ── Passed after a failure ─────────────────────────────────────────────────
+// Each execution stores whether it passed after an earlier attempt of its
+// result failed or timed out, as ingest sets it (`fillAttemptHistories`,
+// `isFlakyExecution`): the earlier entries of its attempt history, else the
+// earlier stored attempts of its result. A pass on a retry with neither is one.
+{
+  const unexpected = (status) => status === 'failed' || status === 'timedout' || status === 'timedOut';
+  const byResult = new Map();
+  for (const row of TEST_RUNS_CASES) {
+    const key = `${row.test_run_id}|${row.test_case_id}|${row.browser_name ?? ''}|${row.repeat_each_index ?? 0}`;
+    const list = byResult.get(key);
+    if (list) list.push(row);
+    else byResult.set(key, [row]);
+  }
+  for (const [key, rows] of byResult) {
+    for (const row of rows) {
+      const retries = row.retries ?? 0;
+      if (row.status !== 'passed' || retries === 0) {
+        row.passed_after_failure = 0;
+        continue;
+      }
+      const history = typeof row.attempts === 'string' ? JSON.parse(row.attempts) : row.attempts;
+      const earlier =
+        Array.isArray(history) && history.length > 0
+          ? history.filter((a) => (a?.retry ?? 0) < retries).map((a) => a?.status)
+          : byResult
+              .get(key)
+              .filter((other) => (other.retries ?? 0) < retries)
+              .map((other) => other.status);
+      row.passed_after_failure = earlier.length === 0 || earlier.some(unexpected) ? 1 : 0;
+    }
+  }
+}
+
 // ── Assemble SQL ───────────────────────────────────────────────────────────
 const lines = [
   '-- Piwi Dashboard demo seed',
