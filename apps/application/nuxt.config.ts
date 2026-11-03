@@ -152,22 +152,22 @@ export default defineNuxtConfig({
         baseURL: '/demo/',
         head: {
           htmlAttrs: { lang: 'en' },
-          // Every page title the app sets gains the suffix, so the indexed
-          // entry page reads "Piwi Dashboard (live demo)".
-          title: 'Piwi Dashboard',
+          // Every page title the app sets gains the suffix. The home page sets
+          // none, so the indexed entry page reads this title with the suffix.
+          title: 'Piwi: a Playwright dashboard',
           titleTemplate: '%s (live demo)',
           meta: [
             { name: 'description', content: demoDescription },
             { property: 'og:type', content: 'website' },
             { property: 'og:site_name', content: 'Piwi Dashboard' },
-            { property: 'og:title', content: 'Piwi Dashboard (live demo)' },
+            { property: 'og:title', content: 'Piwi: a Playwright dashboard (live demo)' },
             { property: 'og:description', content: demoDescription },
             { property: 'og:image', content: 'https://piwitests.dev/og-image.png' },
             { property: 'og:image:width', content: '1200' },
             { property: 'og:image:height', content: '630' },
             { property: 'og:url', content: 'https://piwitests.dev/demo/' },
             { name: 'twitter:card', content: 'summary_large_image' },
-            { name: 'twitter:title', content: 'Piwi Dashboard (live demo)' },
+            { name: 'twitter:title', content: 'Piwi: a Playwright dashboard (live demo)' },
             { name: 'twitter:description', content: demoDescription },
             { name: 'twitter:image', content: 'https://piwitests.dev/og-image.png' },
           ],

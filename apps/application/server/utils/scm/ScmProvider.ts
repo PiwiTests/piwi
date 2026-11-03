@@ -29,6 +29,8 @@ import { commitUrl, compareUrl, fileUrl, type ScmProviderName } from '#shared/sc
 
 export interface ChangedFile {
   filename: string;
+  /** The file's path before a rename, where the host gives it. */
+  previousFilename?: string;
   status: string;
   additions: number;
   deletions: number;
@@ -66,8 +68,10 @@ export interface ScmCommitAuthor {
 export interface ScmChanges {
   commits: ScmCommit[];
   files: ChangedFile[];
-  /** true when the raw diff was skipped because it exceeded the size cap */
+  /** true when the host sent no patches: the raw diff exceeded the size cap or could not be read */
   patchesOmitted?: boolean;
+  /** true when the host listed only the range's newest commits */
+  commitsTruncated?: boolean;
   /** true when the changed-file list was capped at {@link MAX_SCM_FILES_TOTAL} */
   filesTruncated?: boolean;
   /** total changed files the provider reported, when it exposes a count past the cap */
@@ -90,6 +94,8 @@ export const MAX_SCM_FILES = 30;
  * where the provider exposes a count, so the comment can say "and N more".
  */
 export const MAX_SCM_FILES_TOTAL = 300;
+/** The most items GitHub, GitLab and Bitbucket list in one page. */
+export const HOST_MAX_PAGE_SIZE = 100;
 export const MAX_PATCH_PER_FILE = 100_000;
 export const MAX_RAW_DIFF_BYTES = 200_000;
 /** Cap on a single file's content fetched via fetchFileAtRef. */
@@ -234,6 +240,13 @@ export abstract class ScmProvider {
    * and the files changed between the two.
    */
   abstract fetchChanges(fromSha: string, toSha: string): Promise<ScmChanges | null>;
+  /**
+   * The files one commit changed against its first parent, at most
+   * {@link MAX_SCM_FILES_TOTAL} (flagged `filesTruncated` past it), and the
+   * commit itself as the only entry of `commits` when the host gives its
+   * message. Null for an invalid ref or a commit the host cannot diff; a host
+   * that answers with an error message may throw it instead.
+   */
   abstract fetchCommitDiff(sha: string): Promise<ScmChanges | null>;
   /**
    * The author (name + email) a commit records, or null when the commit cannot

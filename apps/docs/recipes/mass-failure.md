@@ -1,5 +1,6 @@
 ---
 title: Triage a run gone red
+titleTemplate: "Many Playwright tests failed: :title | Piwi"
 description: "When most of a Playwright run goes red, it is usually two or three causes, not forty bugs. Collapse the failures into clusters, rule out the environment, triage each cause once, then confirm the fix."
 lang: en-US
 ---

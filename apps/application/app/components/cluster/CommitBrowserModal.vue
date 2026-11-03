@@ -10,7 +10,9 @@ const props = defineProps<{
   autoSelectedShas?: string[];
 }>();
 
-const autoSelectedSet = computed(() => new Set(props.autoSelectedShas ?? []));
+// The diagnosis may record a commit by its short SHA.
+const autoSelectedShas = computed(() => (props.autoSelectedShas ?? []).filter((sha) => sha.length >= 7));
+const isAutoSelected = (sha: string) => autoSelectedShas.value.some((auto) => sha.startsWith(auto));
 
 const emit = defineEmits<{
   'update:open': [boolean];
@@ -227,7 +229,7 @@ function confirm() {
                   <template v-if="c.date">
                     <span class="shrink-0">· {{ formatRelativeTime(c.date) }}</span>
                   </template>
-                  <UBadge v-if="autoSelectedSet.has(c.sha)" size="xs" color="info" variant="soft" class="shrink-0">
+                  <UBadge v-if="isAutoSelected(c.sha)" size="xs" color="info" variant="soft" class="shrink-0">
                     auto
                   </UBadge>
                 </p>

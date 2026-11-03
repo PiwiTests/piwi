@@ -431,7 +431,12 @@ async function persistCompletedDiagnosis(
         pipeline,
         selectedCommitShas: opts.selectedCommitShas ?? null,
         additionalContext: opts.additionalContext ?? null,
-        autoSelectedCommits: ctx.scmChanges?.commits?.slice(0, 3).map((c) => c.sha) ?? null,
+        // The range's newest three commits; providers list them oldest first.
+        autoSelectedCommits:
+          ctx.scmChanges?.commits
+            ?.slice(-3)
+            .reverse()
+            .map((c) => c.sha) ?? null,
         patchValidation: validateSuggestedPatch(ctx, diagnosis.suggestedFix.patch),
         promptSha,
       },

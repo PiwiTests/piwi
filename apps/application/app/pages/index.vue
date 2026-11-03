@@ -7,8 +7,6 @@ import { passRatePercent } from '#shared/utils/pass-rate';
 import type { RecentRunCount } from '#shared/handlers/test-runs';
 import type { FlakeLabInboxItem } from '#shared/handlers/flake-lab';
 
-useHead({ title: 'Piwi Dashboard' });
-
 // `lazy` so client-side navigation to Home is instant — the page renders a
 // skeleton immediately instead of blocking on the fetch (which felt like a hang).
 // On first SSR load the data still arrives in the payload, so there's no flash.
