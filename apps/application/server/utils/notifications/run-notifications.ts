@@ -1,5 +1,5 @@
 import { testTextLabel } from '#shared/utils/test-label';
-import { eq, and, count, lt, desc, inArray, isNotNull, isNull, or } from 'drizzle-orm';
+import { eq, and, count, lt, desc, inArray, isNotNull, isNull, ne, notExists, or } from 'drizzle-orm';
 
 /** Failures scanned for ownership; well past what any comment or digest lists. */
 const OWNER_LOOKUP_LIMIT = 200;
@@ -30,6 +30,7 @@ import { safeHttpUrl } from '#shared/utils/safe-url';
 import { parseSourceSnippet } from '#shared/source-snippet';
 import { TERMINAL_RUN_STATUSES } from '#shared/handlers/analytics/common';
 import { getClusterKnownIssue } from '../integrations/known-issue';
+import { getAppSetting, setAppSetting } from '../app-settings';
 import type { DbClient } from '../../database';
 import type {
   FailureSource,
@@ -626,6 +627,41 @@ export async function clustersToAnnounce(db: DbClient, runId: number, now: Date 
     );
     return open.filter((cluster) => stored.has(cluster.firstSeenRunId)).map((cluster) => cluster.id);
   });
+}
+
+/** The app setting that records when {@link releaseUnannouncedClusterClaimsOnce} ran on this instance. */
+export const UNANNOUNCED_CLUSTER_CLAIMS_RELEASED_SETTING = 'failure_cluster_unannounced_claims_released_at';
+
+/**
+ * Release the `cluster.new` claim the migration adding `announced_at` set on
+ * every stored cluster (`announced_at = created_at`) where no run that ran to
+ * its end and sends notifications, other than an import, failed into the
+ * cluster: no run announced it, so the next such run that fails into it does.
+ * A cluster such a run failed into stays claimed, as does one claimed at
+ * another time. Runs once per instance; returns how many claims it released,
+ * null when it had already run.
+ */
+export async function releaseUnannouncedClusterClaimsOnce(db: DbClient): Promise<number | null> {
+  if (await getAppSetting(db, UNANNOUNCED_CLUSTER_CLAIMS_RELEASED_SETTING)) return null;
+  const announcingRun = db
+    .select({ id: testRunsCases.id })
+    .from(testRunsCases)
+    .innerJoin(testRuns, eq(testRuns.id, testRunsCases.testRunId))
+    .where(
+      and(
+        eq(testRunsCases.failureClusterId, failureClusters.id),
+        inArray(testRuns.status, ANNOUNCING_RUN_STATUSES),
+        ne(testRuns.origin, 'import'),
+        eligibleRunSql('notifications'),
+      ),
+    );
+  const released = await db
+    .update(failureClusters)
+    .set({ announcedAt: null })
+    .where(and(eq(failureClusters.announcedAt, failureClusters.createdAt), notExists(announcingRun)))
+    .returning({ id: failureClusters.id });
+  await setAppSetting(db, UNANNOUNCED_CLUSTER_CLAIMS_RELEASED_SETTING, new Date().toISOString());
+  return released.length;
 }
 
 /**

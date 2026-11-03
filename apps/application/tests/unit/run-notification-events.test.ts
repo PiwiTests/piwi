@@ -23,7 +23,8 @@ vi.mock('../../server/utils/notifications/emit', async () => {
 
 delete process.env.PIWI_DATABASE_URL;
 
-const { emitRunNotifications, clustersToAnnounce } = await import('../../server/utils/notifications/run-notifications');
+const { emitRunNotifications, clustersToAnnounce, releaseUnannouncedClusterClaimsOnce } =
+  await import('../../server/utils/notifications/run-notifications');
 const { eventSentences } = await import('../../shared/notifications/message-parts');
 
 let db: TempDb;
@@ -332,6 +333,56 @@ describe('emitRunNotifications', () => {
     for (const statement of sqlFile.split('--> statement-breakpoint')) await db.run(sql.raw(statement));
     await emitRunNotifications(db as never, 2);
     expect(announced()).toEqual([]);
+  });
+
+  test('the startup pass releases the claim the migration set on a cluster no run announced', async () => {
+    // Cluster 7: an editor run and an import failed into it; 8: a CI run still running at the upgrade; 9: a
+    // cancelled run; 10: a CI run that ran to its end; 11: claimed by a run since deleted.
+    await addRun(1, editorRun);
+    await addRun(2, { status: 'failed', origin: 'import', metadata: { import: { source: 'blob' } } });
+    await addRun(3, { status: 'running' });
+    await addRun(4, { status: 'cancelled' });
+    await addRun(5, { status: 'failed' });
+    await addCluster(7, 1);
+    await addCluster(8, 3);
+    await addCluster(9, 4);
+    await addCluster(10, 5);
+    await addCluster(11, 1, {
+      createdAt: new Date('2026-10-01T00:00:00Z'),
+      announcedAt: new Date('2026-10-02T00:00:00Z'),
+    });
+    await addFailures([1, 7], [2, 7], [3, 8], [4, 9], [5, 10]);
+    const sqlFile = migrationSql('backfill_cluster_announced');
+    for (const statement of sqlFile.split('--> statement-breakpoint')) await db.run(sql.raw(statement));
+
+    expect(await releaseUnannouncedClusterClaimsOnce(db as never)).toBe(3);
+
+    await db.update(schema.testRuns).set({ status: 'failed' }).where(eq(schema.testRuns.id, 3));
+    await emitRunNotifications(db as never, 3);
+    await addRun(6, { status: 'failed' });
+    await addFailures([6, 7], [6, 9], [6, 10], [6, 11]);
+    await emitRunNotifications(db as never, 6);
+    expect(announcedBy().sort()).toEqual([
+      [7, 6],
+      [8, 3],
+      [9, 6],
+    ]);
+  });
+
+  test('the startup pass runs once', async () => {
+    expect(await releaseUnannouncedClusterClaimsOnce(db as never)).toBe(0);
+    await addRun(1, editorRun);
+    await addCluster(7, 1);
+    await addFailures([1, 7]);
+    const sqlFile = migrationSql('backfill_cluster_announced');
+    for (const statement of sqlFile.split('--> statement-breakpoint')) await db.run(sql.raw(statement));
+
+    expect(await releaseUnannouncedClusterClaimsOnce(db as never)).toBeNull();
+    const [cluster] = await db
+      .select({ announcedAt: schema.failureClusters.announcedAt })
+      .from(schema.failureClusters)
+      .where(eq(schema.failureClusters.id, 7));
+    expect(cluster!.announcedAt).not.toBeNull();
   });
 
   test('says which run a cluster first appeared in when that run did not announce it', async () => {

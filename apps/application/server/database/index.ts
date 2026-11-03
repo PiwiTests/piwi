@@ -147,6 +147,22 @@ async function reclusterFailureClusters(target: DB): Promise<void> {
 }
 
 /**
+ * Release the `cluster.new` claim the migration adding `announced_at` set on
+ * the clusters no run announced (`releaseUnannouncedClusterClaimsOnce`), once
+ * per instance. Startup waits for it, so no run claims a cluster before it. A
+ * failure is logged, and the next start tries again.
+ */
+async function releaseUnannouncedClusterClaims(target: DB): Promise<void> {
+  try {
+    const { releaseUnannouncedClusterClaimsOnce } = await import('../utils/notifications/run-notifications');
+    const released = await releaseUnannouncedClusterClaimsOnce(target as any);
+    if (released) console.log(`[Database] ${released} failure cluster(s) left for a run to announce`);
+  } catch (err) {
+    console.error('[Database] Releasing unannounced failure-cluster claims failed:', err);
+  }
+}
+
+/**
  * Open the database and bring its schema up to date, once per process: the
  * callers that arrive while it is still opening (the startup plugins, the first
  * requests) share the same connection and the same migration run.
@@ -178,6 +194,7 @@ async function openDatabase(): Promise<DB> {
           await applyMigrations(target, migrationsFolder);
           console.log('[Database] PostgreSQL migrations completed successfully');
           await reclusterFailureClusters(db);
+          await releaseUnannouncedClusterClaims(db);
           rewriteRouteKeys(db as any);
           backfillTraceResourceLinks();
           backfillAnalyticsRollups();
@@ -231,6 +248,7 @@ async function openDatabase(): Promise<DB> {
           }
           console.log('[Database] SQLite migrations completed successfully');
           await reclusterFailureClusters(db);
+          await releaseUnannouncedClusterClaims(db);
           rewriteRouteKeys(db);
           backfillTraceResourceLinks();
           backfillAnalyticsRollups();
