@@ -44,13 +44,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up the workspace
+      # Node alone: the lint step installs the packages commitlint.config.js loads.
+      - name: Set up Node
         uses: ./.github/actions/setup-workspace
         with:
-          ignore-scripts: 'true'
+          install: 'false'
 
       # Dependabot titles its pull requests itself, a capitalised "Bump" included: a pull request it opened, or one
       # labelled `dependencies`, is not linted. The labels are the event's, so adding the label runs the job again.
+      # commitlint, the config it extends and that config's parser preset are installed at the versions
+      # package-lock.json pins, outside the workspace, and the title config beside them imports commitlint.config.js.
       - name: Lint the title
         env:
           TITLE: ${{ github.event.pull_request.title }}
@@ -60,9 +63,20 @@ jobs:
             echo "A Dependabot pull request: the title is not linted."
             exit 0
           fi
-          config="$RUNNER_TEMP/commitlint-title.config.mjs"
-          printf "export default { extends: ['%s/commitlint.config.js'], defaultIgnores: false };\n" "$GITHUB_WORKSPACE" > "$config"
-          printf '%s\n' "$TITLE" | npx commitlint --config "$config" --verbose
+          dir="$RUNNER_TEMP/commitlint"
+          mkdir -p "$dir"
+          node -e '
+            const packages = require("./package-lock.json").packages;
+            for (const name of process.argv.slice(1)) {
+              const version = packages[`node_modules/${name}`]?.version;
+              if (!version) throw new Error(`${name} is not in package-lock.json`);
+              console.log(`${name}@${version}`);
+            }
+          ' @commitlint/cli @commitlint/config-conventional conventional-changelog-conventionalcommits > "$dir/packages.txt"
+          mapfile -t packages < "$dir/packages.txt"
+          npm install --prefix "$dir" --no-save --no-package-lock --ignore-scripts --prefer-offline --no-audit --fund=false "${packages[@]}"
+          printf "import base from '%s/commitlint.config.js';\nexport default { ...base, defaultIgnores: false };\n" "$GITHUB_WORKSPACE" > "$dir/title.config.mjs"
+          printf '%s\n' "$TITLE" | "$dir/node_modules/.bin/commitlint" --config "$dir/title.config.mjs" --verbose
 
   actionlint:
     name: actionlint
