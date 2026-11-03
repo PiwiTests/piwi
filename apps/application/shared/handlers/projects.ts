@@ -1064,9 +1064,10 @@ function toEpochMs(value: Date | null): number | null {
  * `failedRuns`, matching how the rest of the UI treats timeouts. `passRate` is
  * the passed runs over the runs that passed or failed (`passRateSql`), null
  * when none did. The derived `status` category is what the status filter and
- * sort operate on: `flaky` when one of the last 10 runs is flaky, otherwise the
- * latest run's status (timeouts shown as failed, and failed when one of the
- * test's repetitions failed there), or `never-run`. Executions of lab runs
+ * sort operate on: `flaky` when one of its last 10 executions ends a flaky run
+ * (`recentFlakySql`), otherwise the latest run's status (timeouts shown as
+ * failed, and failed when one of the test's repetitions failed there), or
+ * `never-run`. Executions of lab runs
  * (probes, flake experiments) stay out of every aggregate. With `maxAgeDays`,
  * the catalog lists the tests executed in the last `maxAgeDays` days, and every
  * aggregate and the category read the executions of that period.

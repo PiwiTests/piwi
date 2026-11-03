@@ -150,7 +150,7 @@ An [execution](./evidence#one-execution-diagnosis-first) shows them in its statu
 
 ## Spec health by file
 
-The project's **Tests** tab has a **Group by File** view that groups tests by their first two path segments (`tests/admin` for `tests/admin/users.spec.ts`) and carries that group's pass rate, flaky rate, failure count, run count and average time over the last 90 days in its header, so an unhealthy area of the suite jumps out.
+With **Group by: File** on the project's **Tests** tab, each spec file's header carries its tests' pass rate, flaky rate, failure count, run count and average time over the list's window (the last 30 days by default), so an unhealthy file jumps out. The **Spec health** [Analytics](./analytics) widget gives them per spec directory.
 
 ## Across every project
 
