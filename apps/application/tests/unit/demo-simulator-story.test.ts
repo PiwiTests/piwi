@@ -1,5 +1,6 @@
 import { afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
 import { FAILURE_STORIES } from '#shared/demo/failure-stories.mjs';
+import { streamSimulation } from './demo-simulator-harness';
 
 interface StreamedStep {
   title: string;
@@ -25,50 +26,16 @@ interface CompleteEvent {
 
 let simulator: typeof import('~~/app/demo/simulator');
 
-/** The real `setTimeout`, captured before any test installs fake timers. */
-const realSetTimeout = globalThis.setTimeout;
-
 // The simulator's module graph is large: loaded before the tests, its import
 // never counts against the first test's timeout when the whole suite runs.
-// It reads `$fetch` at call time, so the stub below still applies.
 beforeAll(async () => {
   simulator = await import('~~/app/demo/simulator');
 }, 60_000);
 
-/**
- * Run a simulator scenario against a stubbed reporter API on fake timers and
- * return the `complete` events it streamed.
- */
+/** The `complete` events a simulator scenario streams to a stubbed reporter API. */
 async function streamScenario(id: string): Promise<CompleteEvent[]> {
-  vi.useFakeTimers();
-  const completes: CompleteEvent[] = [];
-  vi.stubGlobal(
-    '$fetch',
-    vi.fn(async (url: string, opts?: { body?: { testCases?: Array<{ type: string }> } }) => {
-      if (url.endsWith('/setup')) return { runId: 1, projectId: 1, setupToken: 'setup' };
-      if (url.endsWith('/begin')) return { streamToken: 'stream' };
-      for (const event of opts?.body?.testCases ?? []) {
-        if (event.type === 'complete') completes.push(event as CompleteEvent);
-      }
-      return {};
-    }),
-  );
-  const { DEMO_SCENARIOS, runSimulation } = simulator;
-  const run = runSimulation(DEMO_SCENARIOS.find((s) => s.id === id)!);
-  let settled = false;
-  void run.then(
-    () => (settled = true),
-    () => (settled = true),
-  );
-  // Between its fake timers the simulator awaits real work (SHA-256 digests on the
-  // thread pool), so the timer queue can be empty while the run is still going:
-  // keep advancing until the run settles.
-  while (!settled) {
-    await vi.runAllTimersAsync();
-    if (!settled) await new Promise((resolve) => realSetTimeout(resolve, 1));
-  }
-  await run;
-  return completes;
+  const { events } = await streamSimulation(simulator, id);
+  return events.filter((e) => e.type === 'complete') as unknown as CompleteEvent[];
 }
 
 afterEach(() => {

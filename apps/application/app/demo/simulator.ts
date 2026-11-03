@@ -1189,7 +1189,7 @@ export interface SimulationHooks {
 }
 
 export interface SimulationController {
-  /** Request the run to stop after in-flight tests complete (→ 'interrupted') */
+  /** Request the run to stop: the tests in flight end interrupted and the rest never run (→ 'interrupted') */
   stopped: boolean;
 }
 
@@ -1335,6 +1335,7 @@ async function runSingleSimulation(
   let completed = 0;
   let failedCount = 0;
   let flakyCount = 0;
+  let interruptedCount = 0;
   let queueIndex = 0;
   let virtualEnd = virtualStart;
 
@@ -1405,6 +1406,10 @@ async function runSingleSimulation(
     await $fetch(`/api/test-runs/${runId}/heartbeat`, { method: 'POST', body: { streamToken, at } }).catch(() => {});
   }
 
+  // The run is cut short once the demo stops it or `stopAfter` tests completed: as when Playwright is interrupted,
+  // no test or retry starts any more, and a test in flight ends `interrupted`.
+  const cutShort = () => ctl.stopped || completed >= stopAfter;
+
   // Each simulated worker pulls tests from a shared queue, mirroring how
   // Playwright distributes tests across parallel workers. Timestamps and
   // durations are reported on a virtual clock so the persisted data stays
@@ -1414,13 +1419,16 @@ async function runSingleSimulation(
     // The executions this worker ran so far: in a leaky run each left its page open.
     let ranInWorker = 0;
 
-    while (!ctl.stopped && completed < stopAfter) {
+    while (!cutShort()) {
       const test = tests[queueIndex++];
       if (!test) return;
 
       let finalDuration = test.duration;
+      // The status each attempt of the test ended with.
+      const ended: string[] = [];
 
       for (let attempt = 0; attempt < test.attempts.length; attempt++) {
+        if (attempt > 0 && cutShort()) break;
         const a = test.attempts[attempt]!;
         const attemptDuration = a.duration ?? test.duration;
         const startedAt = virtualNow;
@@ -1483,7 +1491,11 @@ async function runSingleSimulation(
                 await postHeartbeat(virtualNow);
               }
               attemptRemaining -= hung;
-              if (ctl.stopped) return;
+              // A stop ends the wait, and the attempt with it.
+              if (ctl.stopped) {
+                attemptRemaining = 0;
+                break;
+              }
             }
             await postEvents([
               {
@@ -1516,23 +1528,28 @@ async function runSingleSimulation(
               networkRequests: test.networkRequests,
             };
 
+        // An attempt still running when the run was cut short ends interrupted, after the time it ran.
+        const status = cutShort() ? 'interrupted' : a.status;
+        const ranMs = status === 'interrupted' ? virtualNow - startedAt : attemptDuration;
+        ended.push(status);
+
         await postEvents([
           {
             type: 'complete',
             title: test.title,
             location: test.location,
-            status: a.status,
-            duration: attemptDuration,
+            status,
+            duration: ranMs,
             // The effective per-test timeout the real reporter always sends
             // (Playwright's default unless a test overrides it).
             timeout: 30000,
-            error: a.error ?? null,
+            error: status === 'interrupted' ? null : (a.error ?? null),
             retries: attempt,
             repeatEachIndex: 0,
             attempts: test.attempts.slice(0, attempt + 1).map((att, i) => ({
               retry: i,
-              status: att.status,
-              duration: att.duration ?? test.duration,
+              status: ended[i],
+              duration: i === attempt ? ranMs : (att.duration ?? test.duration),
               startedAt: startedAt - (attempt - i) * (test.duration + WORKER_GAP_MS),
             })),
             steps: stamped.steps,
@@ -1567,7 +1584,7 @@ async function runSingleSimulation(
             suitePath: test.suitePath ?? null,
             suiteConfig: test.suiteConfig ?? null,
             testAnnotations: a.testAnnotations ?? null,
-            resources: executionResources(attemptDuration, ranInWorker),
+            resources: executionResources(ranMs, ranInWorker),
           },
         ]);
 
@@ -1577,21 +1594,22 @@ async function runSingleSimulation(
         testsByWorker.set(workerIndex, spans);
         virtualNow += WORKER_GAP_MS;
         virtualEnd = Math.max(virtualEnd, virtualNow);
-        finalDuration = attemptDuration;
+        finalDuration = ranMs;
         postLiveResources();
+        if (status === 'interrupted') break;
       }
 
-      const finalAttempt = test.attempts[test.attempts.length - 1]!;
+      const finalStatus = ended[ended.length - 1]!;
+      if (finalStatus === 'interrupted') {
+        // In no outcome: counted in the run's total only.
+        interruptedCount++;
+        return;
+      }
       completed++;
       durations.push(finalDuration);
-      if (finalAttempt.status === 'failed') {
+      if (finalStatus === 'failed') {
         failedCount++;
-      } else if (
-        isFlakyResult(
-          finalAttempt.status,
-          test.attempts.slice(0, -1).map((a) => a.status),
-        )
-      ) {
+      } else if (isFlakyResult(finalStatus, ended.slice(0, -1))) {
         flakyCount++;
       }
       virtualEnd = Math.max(virtualEnd, virtualNow);
@@ -1605,14 +1623,16 @@ async function runSingleSimulation(
 
   const interrupted = ctl.stopped || completed < tests.length;
   const status = interrupted ? 'interrupted' : failedCount > 0 ? 'failed' : 'passed';
+  // A run cut short after failures stopped on its failure budget, which Playwright reports outside any test and the
+  // reporter sends as the run's error.
+  const stoppedOnFailures = interrupted && failedCount > 0;
 
   // The real reporter materializes tests that never ran (maxFailures, CI kill)
   // as `didnotrun` complete events so the run page shows what was planned but
   // never executed — mirror that before finishing the run.
   if (interrupted) {
-    // A run cut short after failures stopped on its failure budget; one stopped
-    // for any other reason (a CI kill) is a plain interruption.
-    const unrunReason = failedCount > 0 ? 'max-failures' : 'interrupted';
+    // A run stopped for any other reason than its failure budget (a CI kill) is a plain interruption.
+    const unrunReason = stoppedOnFailures ? 'max-failures' : 'interrupted';
     const unrunTests = tests.slice(queueIndex);
     for (const t of unrunTests) {
       await postEvents([
@@ -1651,10 +1671,22 @@ async function runSingleSimulation(
       passedTests: completed - failedCount,
       failedTests: failedCount,
       skippedTests: 0,
-      // Tests that never ran because the run was cut short (interrupted/maxFailures).
-      didNotRunTests: tests.length - completed,
+      // Tests that never ran because the run was cut short (interrupted/maxFailures); the interrupted
+      // ones count in the total only.
+      didNotRunTests: tests.length - completed - interruptedCount,
       flakyTests: flakyCount,
       durations,
+      ...(stoppedOnFailures
+        ? {
+            runErrors: [
+              {
+                message: `\u001b[31mTesting stopped early after ${failedCount} maximum allowed failures.\u001b[39m`,
+                stack: null,
+                location: null,
+              },
+            ],
+          }
+        : {}),
       metadata,
       playwrightVersion: scenario.playwrightVersion ?? '1.51.0',
       reporterVersion: '0.7.0',
