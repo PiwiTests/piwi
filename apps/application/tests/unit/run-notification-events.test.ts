@@ -1,4 +1,6 @@
-import { eq, inArray } from 'drizzle-orm';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import * as schema from '../../server/database/schema.sqlite';
 import { openTempDb, type TempDb } from './temp-db';
@@ -51,6 +53,17 @@ const announcedBy = () => announced().map((e) => [e.payload.clusterId, e.payload
 async function subscribeToNewClusters() {
   const [channel] = await db.insert(schema.notificationChannels).values({ name: 'Team', type: 'browser' }).returning();
   await db.insert(schema.subscriptions).values({ channelId: channel!.id, events: ['cluster.new'] });
+}
+
+/** The SQL of the SQLite migration whose file name ends with `name`. */
+function migrationSql(name: string): string {
+  const folder = fileURLToPath(new URL('../../server/database/migrations', import.meta.url));
+  const journal = JSON.parse(readFileSync(`${folder}/meta/_journal.json`, 'utf8')) as {
+    entries: Array<{ tag: string }>;
+  };
+  const entry = journal.entries.find((e) => e.tag.endsWith(name));
+  if (!entry) throw new Error(`no migration named ${name}`);
+  return readFileSync(`${folder}/${entry.tag}.sql`, 'utf8');
 }
 
 const editorRun: RunValues = {
@@ -193,45 +206,73 @@ describe('emitRunNotifications', () => {
     await emitRunNotifications(db as never, 1);
     await emitRunNotifications(db as never, 3);
     expect(announcedBy()).toEqual([[7, 2]]);
-    // No channel receives it: the run that ran to its end is the record.
-    expect(await db.select().from(schema.notificationDeliveries)).toEqual([]);
   });
 
-  test('a cluster two overlapping runs fail into is announced once, by the first to end, as the outbox records it', async () => {
-    await subscribeToNewClusters();
-    // Run 2 ends while run 1, where the cluster first appeared, is still running; a local run of the
-    // whole suite still running is passed over too.
-    await addRun(1, { status: 'running' });
+  test.each([
+    ['no channel is subscribed', false],
+    ['a channel is subscribed', true],
+  ])(
+    'a cluster two overlapping runs fail into is announced once, by the first to end, when %s',
+    async (_, subscribed) => {
+      if (subscribed) await subscribeToNewClusters();
+      // Run 2 ends while run 1, where the cluster first appeared, is still running; a local run of the
+      // whole suite still running is passed over too.
+      await addRun(1, { status: 'running' });
+      await addRun(2, { status: 'failed' });
+      await addRun(3, { status: 'running', origin: 'local', metadata: {} });
+      await addRun(4, { status: 'failed' });
+      await addCluster(7, 1);
+      await addCluster(8, 3);
+      await addFailures([1, 7], [2, 7], [3, 8], [4, 8]);
+
+      await emitRunNotifications(db as never, 2);
+      await emitRunNotifications(db as never, 4);
+      await db
+        .update(schema.testRuns)
+        .set({ status: 'failed' })
+        .where(inArray(schema.testRuns.id, [1, 3]));
+      await emitRunNotifications(db as never, 1);
+      await emitRunNotifications(db as never, 3);
+      expect(announcedBy()).toEqual([
+        [7, 2],
+        [8, 4],
+      ]);
+      const keys = await db
+        .select({ key: schema.notificationDeliveries.dedupeKey })
+        .from(schema.notificationDeliveries);
+      expect(keys.map((row) => row.key).sort()).toEqual(subscribed ? ['cluster.new:c7:1', 'cluster.new:c8:1'] : []);
+    },
+  );
+
+  test('two runs that end at once announce a cluster once', async () => {
+    await addRun(1, { status: 'failed' });
     await addRun(2, { status: 'failed' });
-    await addRun(3, { status: 'running', origin: 'local', metadata: {} });
-    await addRun(4, { status: 'failed' });
     await addCluster(7, 1);
-    await addCluster(8, 3);
-    await addFailures([1, 7], [2, 7], [3, 8], [4, 8]);
+    await addFailures([1, 7], [2, 7]);
 
-    await emitRunNotifications(db as never, 2);
-    await emitRunNotifications(db as never, 4);
-    expect(announcedBy()).toEqual([
-      [7, 2],
-      [8, 4],
-    ]);
-
-    await db
-      .update(schema.testRuns)
-      .set({ status: 'failed' })
-      .where(inArray(schema.testRuns.id, [1, 3]));
-    await emitRunNotifications(db as never, 1);
-    await emitRunNotifications(db as never, 3);
-    expect(announcedBy()).toEqual([
-      [7, 2],
-      [8, 4],
-    ]);
-    const keys = await db.select({ key: schema.notificationDeliveries.dedupeKey }).from(schema.notificationDeliveries);
-    expect(keys.map((row) => row.key).sort()).toEqual(['cluster.new:c7:1', 'cluster.new:c8:1']);
+    const [first, second] = await Promise.all([clustersToAnnounce(db as never, 1), clustersToAnnounce(db as never, 2)]);
+    expect([...first!, ...second!]).toEqual([7]);
   });
 
-  test('a cluster the outbox records as announced is not announced again once the run that sent it is deleted', async () => {
-    await subscribeToNewClusters();
+  test('a run whose notifications would not announce a cluster claims none', async () => {
+    await addRun(1, editorRun);
+    await addRun(2, { status: 'failed', origin: 'local', isFullRun: 0, metadata: {} });
+    await addRun(3, { status: 'failed' });
+    await addCluster(7, 1);
+    await addFailures([1, 7], [2, 7], [3, 7]);
+
+    expect(await clustersToAnnounce(db as never, 1)).toEqual([]);
+    expect(await clustersToAnnounce(db as never, 2)).toEqual([]);
+    const [cluster] = await db
+      .select({ announcedAt: schema.failureClusters.announcedAt })
+      .from(schema.failureClusters)
+      .where(eq(schema.failureClusters.id, 7));
+    expect(cluster!.announcedAt).toBeNull();
+    await emitRunNotifications(db as never, 3);
+    expect(announcedBy()).toEqual([[7, 3]]);
+  });
+
+  test('a cluster stays announced once the run that announced it is deleted', async () => {
     await addRun(1, editorRun);
     await addRun(2, { status: 'failed' });
     await addRun(3, { status: 'failed' });
@@ -243,6 +284,18 @@ describe('emitRunNotifications', () => {
     await db.delete(schema.testRuns).where(eq(schema.testRuns.id, 2));
     await emitRunNotifications(db as never, 3);
     expect(announcedBy()).toEqual([[7, 2]]);
+  });
+
+  test('the migration that adds the claim reads every stored cluster as announced', async () => {
+    await addRun(1, editorRun);
+    await addRun(2, { status: 'failed' });
+    await addCluster(7, 1);
+    await addFailures([1, 7], [2, 7]);
+
+    const sqlFile = migrationSql('backfill_cluster_announced');
+    for (const statement of sqlFile.split('--> statement-breakpoint')) await db.run(sql.raw(statement));
+    await emitRunNotifications(db as never, 2);
+    expect(announced()).toEqual([]);
   });
 
   test('says which run a cluster first appeared in when that run did not announce it', async () => {

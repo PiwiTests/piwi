@@ -262,6 +262,9 @@ export const failureClusters = sqliteTable(
     snoozedUntil: integer('snoozed_until', { mode: 'timestamp' }), // hidden from queues until this instant; null when not snoozed
     snoozeMode: text('snooze_mode'), // 'until' (wake at snoozedUntil) | 'until-recurs' (wake at snoozedUntil OR a new occurrence)
     assignee: text('assignee'), // person this cluster is assigned to (name or email); overrides the derived owner
+    // When a run that sends notifications decided the cluster's `cluster.new`, claimed by that one run: it announced
+    // the cluster then, or found it triaged or snoozed. Null until then; clusters older than the column read as decided.
+    announcedAt: integer('announced_at', { mode: 'timestamp' }),
     createdAt: integer('created_at', { mode: 'timestamp' })
       .notNull()
       .$defaultFn(() => new Date()),

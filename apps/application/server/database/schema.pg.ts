@@ -303,6 +303,9 @@ export const failureClusters = pgTable(
     snoozedUntil: timestamp('snoozed_until', { mode: 'date' }), // hidden from queues until this instant; null when not snoozed
     snoozeMode: text('snooze_mode'), // 'until' (wake at snoozedUntil) | 'until-recurs' (wake at snoozedUntil OR a new occurrence)
     assignee: text('assignee'), // person this cluster is assigned to (name or email); overrides the derived owner
+    // When a run that sends notifications decided the cluster's `cluster.new`, claimed by that one run: it announced
+    // the cluster then, or found it triaged or snoozed. Null until then; clusters older than the column read as decided.
+    announcedAt: timestamp('announced_at', { mode: 'date' }),
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),

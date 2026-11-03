@@ -1,0 +1,1 @@
+ALTER TABLE `failure_clusters` ADD `announced_at` integer;

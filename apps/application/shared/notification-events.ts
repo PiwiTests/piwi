@@ -658,11 +658,6 @@ export function describeSubscriptionFilters(filters: SubscriptionFilters | null 
   return parts;
 }
 
-/** The start of every `cluster.new` idempotency key of a cluster, whatever the channel. */
-export function clusterNewDedupeKeyPrefix(clusterId: number): string {
-  return `cluster.new:c${clusterId}:`;
-}
-
 /**
  * Idempotency key for one logical notification to one channel. Keyed on the
  * entity the event is about — the run for run-scoped events, the cluster for
@@ -679,7 +674,8 @@ export function buildNotificationDedupeKey(
   channelId: number,
 ): string {
   if (event === 'cluster.new') {
-    return `${clusterNewDedupeKeyPrefix((payload as ClusterNewPayload).clusterId)}${channelId}`;
+    const p = payload as ClusterNewPayload;
+    return `${event}:c${p.clusterId}:${channelId}`;
   }
   if (event === 'cluster.fixed' || event === 'cluster.regressed') {
     const p = payload as ClusterFixedPayload;

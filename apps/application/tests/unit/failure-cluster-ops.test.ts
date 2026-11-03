@@ -360,6 +360,28 @@ describe('merging two clusters keeps their triage and history', () => {
     expect(await survivorTriage(3)).toEqual({ assignee: 'bob', triageNote: 'Cart API\nFlaky on CI' });
   });
 
+  test('the survivor is announced when either cluster was, and keeps its own moment', async () => {
+    const at = (iso: string) => new Date(iso);
+    await insertCluster(1);
+    await insertCluster(2, { announcedAt: at('2026-10-01T00:00:00Z') });
+    await insertCluster(3, { announcedAt: at('2026-10-02T00:00:00Z') });
+    await insertCluster(4, { announcedAt: at('2026-10-03T00:00:00Z') });
+    await insertCluster(5);
+    await insertCluster(6);
+    await mergeFailureClusters(dbc, 1, 2);
+    await mergeFailureClusters(dbc, 3, 4);
+    await mergeFailureClusters(dbc, 5, 6);
+    const rows = await db
+      .select({ id: schema.failureClusters.id, announcedAt: schema.failureClusters.announcedAt })
+      .from(schema.failureClusters)
+      .orderBy(schema.failureClusters.id);
+    expect(rows).toEqual([
+      { id: 1, announcedAt: at('2026-10-01T00:00:00Z') },
+      { id: 3, announcedAt: at('2026-10-02T00:00:00Z') },
+      { id: 5, announcedAt: null },
+    ]);
+  });
+
   test("the alias a merge records keeps the victim's fingerprint sample, else its display sample", async () => {
     await insertCluster(1);
     await insertCluster(2, { fingerprintSample: plainError, sampleError: richError });

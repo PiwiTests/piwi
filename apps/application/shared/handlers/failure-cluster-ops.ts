@@ -215,6 +215,7 @@ export async function splitFailureCluster(
       errorType: failureClusters.errorType,
       selector: failureClusters.selector,
       sampleError: failureClusters.sampleError,
+      announcedAt: failureClusters.announcedAt,
     })
     .from(failureClusters)
     .where(eq(failureClusters.id, sourceId));
@@ -256,6 +257,8 @@ export async function splitFailureCluster(
         lastSeenRunId: Math.max(...runIds),
         occurrences: moved.length,
         triageNote: triageNote || null,
+        // Split from a cluster already announced, it is not new.
+        announcedAt: source.announcedAt,
       })
       .returning({ id: failureClusters.id });
     const newId = created!.id;
@@ -610,6 +613,7 @@ export async function mergeFailureClusters(db: DrizzleDB, survivorId: number, vi
         occurrences: failureClusters.occurrences,
         firstSeenRunId: failureClusters.firstSeenRunId,
         lastSeenRunId: failureClusters.lastSeenRunId,
+        announcedAt: failureClusters.announcedAt,
       })
       .from(failureClusters)
       .where(eq(failureClusters.id, survivorId));
@@ -623,6 +627,7 @@ export async function mergeFailureClusters(db: DrizzleDB, survivorId: number, vi
         occurrences: failureClusters.occurrences,
         firstSeenRunId: failureClusters.firstSeenRunId,
         lastSeenRunId: failureClusters.lastSeenRunId,
+        announcedAt: failureClusters.announcedAt,
       })
       .from(failureClusters)
       .where(eq(failureClusters.id, victimId));
@@ -698,6 +703,8 @@ export async function mergeFailureClusters(db: DrizzleDB, survivorId: number, vi
           occurrences: (survivor.occurrences ?? 0) + (victim.occurrences ?? 0),
           firstSeenRunId: Math.min(survivor.firstSeenRunId, victim.firstSeenRunId),
           lastSeenRunId: Math.max(survivor.lastSeenRunId, victim.lastSeenRunId),
+          // Announced when either was: the failures it carries are not new.
+          ...(survivor.announcedAt == null && victim.announcedAt ? { announcedAt: victim.announcedAt } : {}),
           ...touchedByOccurrence(triage.status ?? survivor.status),
         })
         .where(eq(failureClusters.id, survivorId));

@@ -2809,6 +2809,8 @@ for (const story of FAILURE_STORIES) {
     occurrences: stats.occurrences || 1,
     ...buildClusterFix(story, stats),
     ...(embedding ? { embedding: JSON.stringify(embedding), embedding_model: DEMO_EMBED_TAG } : {}),
+    // Announced by the CI run that first failed into it.
+    announced_at: createdAt,
     created_at: createdAt,
     updated_at: updatedAt,
   });
@@ -5394,8 +5396,8 @@ const REBASE_SQL = [
   `UPDATE coverage_executable SET created_at = created_at + ${D};`,
   `UPDATE coverage_reports SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE coverage_daily SET day = date(day, printf('%+d days', ${D} / 86400)), commit_seen_at = commit_seen_at + ${D}, computed_at = computed_at + ${D};`,
-  // fix_landed_at is nullable; NULL + delta stays NULL, so no guard is needed.
-  `UPDATE failure_clusters SET created_at = created_at + ${D}, updated_at = updated_at + ${D}, fix_landed_at = fix_landed_at + ${D};`,
+  // fix_landed_at and announced_at are nullable; NULL + delta stays NULL, so no guard is needed.
+  `UPDATE failure_clusters SET created_at = created_at + ${D}, updated_at = updated_at + ${D}, fix_landed_at = fix_landed_at + ${D}, announced_at = announced_at + ${D};`,
   `UPDATE test_run_resource_reports SET updated_at = updated_at + ${D};`,
   `UPDATE resource_findings SET first_seen_at = first_seen_at + ${D}, last_seen_at = last_seen_at + ${D}, created_at = created_at + ${D}, updated_at = updated_at + ${D}, fixed_at = fixed_at + ${D};`,
   `UPDATE quarantined_tests SET created_at = created_at + ${D}, released_at = released_at + ${D};`,

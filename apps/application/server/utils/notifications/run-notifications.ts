@@ -1,22 +1,14 @@
 import { testTextLabel } from '#shared/utils/test-label';
-import { eq, and, count, lt, desc, inArray, isNotNull, isNull, like, ne, or } from 'drizzle-orm';
+import { eq, and, count, lt, desc, inArray, isNotNull, isNull, or } from 'drizzle-orm';
 
 /** Failures scanned for ownership; well past what any comment or digest lists. */
 const OWNER_LOOKUP_LIMIT = 200;
 /** Prior runs fetched per project when looking for same-branch baseline runs. */
 const BASELINE_FETCH_LIMIT = 25;
-import {
-  projects,
-  testRuns,
-  failureClusters,
-  testRunsCases,
-  testCases,
-  notificationDeliveries,
-} from '../../database/schema';
+import { projects, testRuns, failureClusters, testRunsCases, testCases } from '../../database/schema';
 import { emitNotification } from './emit';
 import {
   buildTopFailures,
-  clusterNewDedupeKeyPrefix,
   errorExcerpt,
   computePerfBaseline,
   truncateExcerpt,
@@ -567,71 +559,43 @@ export async function emitIncidentNotification(db: DbClient, runId: number): Pro
 const ANNOUNCING_RUN_STATUSES = ['passed', 'failed', 'timedout'];
 
 /**
- * Whether a run before `runId` that ran to its end and sends notifications (an
- * import never sends any) failed into the cluster: that run announced it, or
- * found it already announced or triaged. A run still unfinished counts for
- * nothing, since it may yet end cancelled or interrupted.
- */
-async function announcedBefore(db: DbClient, clusterId: number, runId: number): Promise<boolean> {
-  const [earlier] = await db
-    .select({ id: testRunsCases.id })
-    .from(testRunsCases)
-    .innerJoin(testRuns, eq(testRuns.id, testRunsCases.testRunId))
-    .where(
-      and(
-        eq(testRunsCases.failureClusterId, clusterId),
-        lt(testRunsCases.testRunId, runId),
-        inArray(testRuns.status, ANNOUNCING_RUN_STATUSES),
-        eligibleRunSql('notifications'),
-        ne(testRuns.origin, 'import'),
-      ),
-    )
-    .limit(1);
-  return earlier !== undefined;
-}
-
-/**
- * Whether the outbox records a `cluster.new` of the cluster, on any channel and
- * in any state: some run announced it. A run whose notifications reach no
- * channel records none.
- */
-async function clusterNewQueued(db: DbClient, clusterId: number): Promise<boolean> {
-  const [queued] = await db
-    .select({ id: notificationDeliveries.id })
-    .from(notificationDeliveries)
-    .where(like(notificationDeliveries.dedupeKey, `${clusterNewDedupeKeyPrefix(clusterId)}%`))
-    .limit(1);
-  return queued !== undefined;
-}
-
-/**
- * The clusters run `runId` announces with `cluster.new`, when it ran to its
- * end: those it failed into that are open and not snoozed, whose first seen
- * run is still stored, and that no earlier run that ran to its end and
- * announces clusters failed into. `emitRunNotifications` then leaves out a
- * cluster the outbox records as announced, which a later run that ended first
- * did.
- * The finalize step reads them before the run's verdicts, which may reopen a
+ * The clusters run `runId` announces with `cluster.new`. A run that ran to its
+ * end and sends notifications (an import never sends any) claims each cluster
+ * it failed into that no run claimed yet, in one conditional UPDATE of
+ * `announcedAt`: one run claims a cluster, however runs overlap and whether or
+ * not a channel is subscribed, and the first to end is that run. It announces
+ * the clusters it claimed that are open and not snoozed and whose first seen
+ * run is still stored; a cluster it claims and does not announce (triaged,
+ * snoozed, or its first run deleted) is no longer new to a later run.
+ * The finalize step claims them before the run's verdicts, which may reopen a
  * cluster a person resolved: the run announces that one as regressed.
  */
 export async function clustersToAnnounce(db: DbClient, runId: number, now: Date = new Date()): Promise<number[]> {
   const [run] = await db
-    .select({ projectId: testRuns.projectId, status: testRuns.status })
+    .select({
+      projectId: testRuns.projectId,
+      status: testRuns.status,
+      origin: testRuns.origin,
+      metadata: testRuns.metadata,
+      isFullRun: testRuns.isFullRun,
+    })
     .from(testRuns)
     .where(eq(testRuns.id, runId));
-  if (!run || !ANNOUNCING_RUN_STATUSES.includes(run.status)) return [];
-  const clusters = await db
-    .select({
-      id: failureClusters.id,
-      status: failureClusters.status,
-      snoozedUntil: failureClusters.snoozedUntil,
-      snoozeMode: failureClusters.snoozeMode,
-      firstSeenRunId: failureClusters.firstSeenRunId,
-    })
-    .from(failureClusters)
+  if (
+    !run ||
+    !ANNOUNCING_RUN_STATUSES.includes(run.status) ||
+    run.origin === 'import' ||
+    !isEligibleRun(run, 'notifications')
+  ) {
+    return [];
+  }
+  const claimed = await db
+    .update(failureClusters)
+    .set({ announcedAt: now })
     .where(
       and(
         eq(failureClusters.projectId, run.projectId),
+        isNull(failureClusters.announcedAt),
         inArray(
           failureClusters.id,
           db
@@ -640,28 +604,29 @@ export async function clustersToAnnounce(db: DbClient, runId: number, now: Date 
             .where(and(eq(testRunsCases.testRunId, runId), isNotNull(testRunsCases.failureClusterId))),
         ),
       ),
-    );
-  const open = clusters.filter((cluster) => cluster.status === 'open' && !isCurrentlySnoozed(cluster, now));
+    )
+    .returning({
+      id: failureClusters.id,
+      status: failureClusters.status,
+      snoozedUntil: failureClusters.snoozedUntil,
+      snoozeMode: failureClusters.snoozeMode,
+      firstSeenRunId: failureClusters.firstSeenRunId,
+    });
+  const open = claimed.filter((cluster) => cluster.status === 'open' && !isCurrentlySnoozed(cluster, now));
   const firstRunIds = [...new Set(open.map((cluster) => cluster.firstSeenRunId))];
   const stored = new Set(
     firstRunIds.length
       ? (await db.select({ id: testRuns.id }).from(testRuns).where(inArray(testRuns.id, firstRunIds))).map((r) => r.id)
       : [],
   );
-  const announce: number[] = [];
-  for (const cluster of open) {
-    if (!stored.has(cluster.firstSeenRunId) || (await announcedBefore(db, cluster.id, runId))) continue;
-    announce.push(cluster.id);
-  }
-  return announce;
+  return open.filter((cluster) => stored.has(cluster.firstSeenRunId)).map((cluster) => cluster.id);
 }
 
 /**
  * Emit run.finished / run.failed / run.failed.default_branch notifications for a completed run,
  * plus flakiness.spike / perf.regression when the run qualifies, and cluster.new
- * for the clusters it announces: `announce`, as the finalize step read them
- * before the run's verdicts, else `clustersToAnnounce` now, less those the
- * outbox records as announced.
+ * for the clusters it announces: `announce`, as the finalize step claimed them
+ * before the run's verdicts, else `clustersToAnnounce` now.
  * Call this after the run status is finalized.
  */
 export async function emitRunNotifications(
@@ -733,12 +698,8 @@ export async function emitRunNotifications(
 
     // cluster.new for each cluster the run announces: a cluster first seen by an
     // editor run, a partial local run or an import is announced by the first run
-    // that sends notifications, naming the run it first appeared in. One the
-    // outbox already records was announced by another run, read just before sending.
-    const announce: number[] = [];
-    for (const id of opts.announce ?? (await clustersToAnnounce(db, runId))) {
-      if (!(await clusterNewQueued(db, id))) announce.push(id);
-    }
+    // that sends notifications, naming the run it first appeared in.
+    const announce = opts.announce ?? (await clustersToAnnounce(db, runId));
     const announcedClusters = announce.length
       ? await db
           .select({

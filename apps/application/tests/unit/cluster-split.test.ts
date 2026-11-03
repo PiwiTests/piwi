@@ -122,6 +122,17 @@ describe('moving tests to a new cluster', () => {
     expect(moved.map((r) => r.failureClusterId)).toEqual([newId]);
   });
 
+  test('a cluster split from an announced one is announced too', async () => {
+    const first = await ingestFailures([1, 2]);
+    const sourceId = first.get(1)!;
+    const announcedAt = new Date('2026-10-01T00:00:00Z');
+    await db.update(schema.failureClusters).set({ announcedAt });
+
+    const result = await extractClusterCases(db as never, sourceId, [2], null);
+
+    expect((await readCluster(result!.clusterId!))!.announcedAt).toEqual(announcedAt);
+  });
+
   test('later failures of a moved test join the new cluster, the others the source', async () => {
     const sourceId = (await ingestFailures([1, 2])).get(1)!;
     const newId = (await extractClusterCases(db as never, sourceId, [2]))!.clusterId!;
