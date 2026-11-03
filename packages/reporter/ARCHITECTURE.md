@@ -45,7 +45,9 @@ What the package does to a user's run, process by process.
   and `PIWI_PROJECT_NAME` are also read from the `.env` in the Playwright config's
   folder, below the environment, by the reporter and the global setup alike.
 - `piwi-*` testInfo attachment names (`internal/capture/attachments.ts`), temp files in
-  `os.tmpdir()`, and `[Piwi Dashboard]`-prefixed logs (`internal/support/logger.ts`).
+  `os.tmpdir()` (owner-only, never written through a link and read back only when this
+  user owns them: `internal/support/private-file.ts`, or a `fs.mkdtempSync` folder), and
+  `[Piwi Dashboard]`-prefixed logs (`internal/support/logger.ts`).
 
 **In each test worker** (the capture fixtures)
 
@@ -635,7 +637,8 @@ src/
                 page, the results file; lab (the command line's side of an arm)
     support/    logger, limiter, ci, ci-output, failure-links, run-url, instance-id,
                 system-readers (`/proc`, cgroup and `ps` readers),
-                cli-filters, setup-file, source-snippet, worker-index, errors,
+                cli-filters, setup-file, private-file (the temp files: owner-only,
+                checked before they are read), source-snippet, worker-index, errors,
                 selection-client, selection-env, shard-info, aria-sampling,
                 run-mode, test-paths, reporter-version, connection (the
                 commands' dashboard), playwright-spawn (how commands start

@@ -61,7 +61,7 @@ describe('the resource summary', () => {
     suite.allTests = () => [testCase];
     reporter.onBegin(fakeConfig(), suite);
     const resultsFile = process.env[PIWI_RESOURCES_RESULTS_ENV];
-    if (shutdown && resultsFile) fs.appendFileSync(resultsFile, `${JSON.stringify(shutdown)}\n`);
+    if (shutdown && resultsFile) fs.appendFileSync(resultsFile, `${JSON.stringify(shutdown)}\n`, { mode: 0o600 });
     reporter.onTestBegin(testCase, result);
     reporter.onTestEnd(testCase, result);
     await reporter.onEnd({ status: 'passed' } as any);

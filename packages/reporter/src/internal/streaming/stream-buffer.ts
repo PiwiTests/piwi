@@ -2,12 +2,14 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import * as fs from 'node:fs';
 import { hashForProject } from '../support/instance-id.js';
+import { appendPrivateFile, readPrivateFile } from '../support/private-file.js';
 import type { StreamEvent } from '../../types.js';
 
 /**
  * Persistent JSONL buffer on disk for live events that could not be delivered.
  * The file is scoped to the project and the run, so its events are only ever
- * replayed into the run they came from.
+ * replayed into the run they came from. It is readable by its owner alone, and
+ * read back only when this user wrote it (`private-file.ts`).
  */
 export class StreamBuffer {
   private readonly prefix: string;
@@ -27,7 +29,7 @@ export class StreamBuffer {
     if (!this.filePath || events.length === 0) return;
     try {
       const lines = events.map((e) => JSON.stringify(e) + '\n').join('');
-      fs.appendFileSync(this.filePath, lines, 'utf8');
+      appendPrivateFile(this.filePath, lines);
     } catch {
       // Non-fatal
     }
@@ -37,9 +39,9 @@ export class StreamBuffer {
   load(): StreamEvent[] {
     if (!this.filePath) return [];
     try {
-      if (fs.existsSync(this.filePath)) {
-        const content = fs.readFileSync(this.filePath, 'utf8');
-        return content
+      const read = readPrivateFile(this.filePath);
+      if (read && 'text' in read) {
+        return read.text
           .split('\n')
           .filter(Boolean)
           .map((line) => JSON.parse(line) as StreamEvent);
