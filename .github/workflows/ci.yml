@@ -392,6 +392,13 @@ jobs:
       - name: Install the full Chromium build
         run: npx playwright install chromium --no-shell
 
+      # The reference pages the docs build writes from the app's registries (gitignored): docs-drift.test.ts checks the
+      # MCP tools and the in-app links against them, and fails under CI on a missing one. The generators run on the
+      # root install.
+      - name: Generate the docs reference pages
+        working-directory: apps/docs
+        run: npm run docs:gen
+
       # Vitest's default worker count, one fewer than the cores: the main process serves the workers' imports.
       - name: Test
         working-directory: apps/application
