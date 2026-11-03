@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeEach, afterAll, vi } from 'vitest';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
@@ -17,7 +18,9 @@ vi.mock('../../server/database', () => ({ getDatabase: async () => state.db }));
 
 vi.stubGlobal('defineRouteMeta', () => {});
 vi.stubGlobal('eventHandler', (handler: unknown) => handler);
-vi.stubGlobal('readBody', async (event: { body: unknown }) => event.body);
+vi.stubGlobal('readBody', async (event: { body: unknown }) =>
+  typeof event.body === 'function' ? event.body() : event.body,
+);
 vi.stubGlobal('apiError', apiError);
 
 type Handler = (event: unknown) => Promise<any>;
@@ -83,5 +86,35 @@ describe('first-admin setup without a token', () => {
   test('the form asks for none, and the first request creates the admin', async () => {
     expect(await setupStatus(request())).toEqual({ needsSetup: true, setupTokenRequired: false });
     expect(await setup(request())).toMatchObject({ success: true });
+  });
+
+  test('a request whose body arrives after another setup finished creates no administrator', async () => {
+    let bodyRequested!: () => void;
+    const requested = new Promise<void>((resolve) => (bodyRequested = resolve));
+    let sendBody!: () => void;
+    const sent = new Promise<void>((resolve) => (sendBody = resolve));
+    const slow = request();
+    const slowBody = slow.body;
+    const slowRequest = setup({
+      ...slow,
+      body: async () => {
+        bodyRequested();
+        await sent;
+        return { ...slowBody, username: 'second' };
+      },
+    });
+
+    await requested;
+    address += 1;
+    expect(await setup(request())).toMatchObject({ success: true, user: { username: 'admin' } });
+    sendBody();
+    await expect(slowRequest).rejects.toMatchObject({ statusCode: 400 });
+
+    const db = state.db as ReturnType<typeof drizzle<typeof schema>>;
+    const administrators = await db
+      .select({ username: schema.users.username })
+      .from(schema.users)
+      .where(eq(schema.users.role, 'administrator'));
+    expect(administrators).toEqual([{ username: 'admin' }]);
   });
 });

@@ -42,13 +42,6 @@ export default eventHandler(async (event) => {
     throw rateLimitedError(event, [rateKey]);
   }
 
-  if (!(await needsInitialSetup())) {
-    throw apiError({
-      statusCode: 400,
-      message: 'An administrator already exists. This endpoint is only for initial setup.',
-    });
-  }
-
   const body = await readBody(event);
   const validation = createAdminSchema.safeParse(body);
 
@@ -61,6 +54,15 @@ export default eventHandler(async (event) => {
   }
 
   const { username, password, name, setupToken } = validation.data;
+
+  // Checked once the body has arrived, so a request that took long to send it
+  // sees an administrator another setup created meanwhile.
+  if (!(await needsInitialSetup())) {
+    throw apiError({
+      statusCode: 400,
+      message: 'An administrator already exists. This endpoint is only for initial setup.',
+    });
+  }
 
   if (!setupTokenMatches(setupToken)) {
     throw apiError({
@@ -75,7 +77,7 @@ export default eventHandler(async (event) => {
 
   // Two concurrent setup requests can both pass the needsInitialSetup() check
   // above. claimInitialSetup() lets exactly one of them create the
-  // administrator; the rest are rejected.
+  // administrator, and none once an administrator exists; the rest are rejected.
   if (!(await claimInitialSetup())) {
     throw apiError({
       statusCode: 400,

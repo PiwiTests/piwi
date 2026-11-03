@@ -3,7 +3,7 @@ import { apiError } from './api-error';
 import { useSession, updateSession, clearSession as h3ClearSession } from 'h3';
 import { getDatabase } from '../database';
 import { users, apiKeys, appSettings } from '../database/schema';
-import { and, eq, ne, sql } from 'drizzle-orm';
+import { and, eq, ne, notExists, sql } from 'drizzle-orm';
 import type { User } from '../database/schema';
 import { scrypt, randomBytes, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
@@ -331,39 +331,45 @@ export function setupTokenMatches(given: unknown): boolean {
   return timingSafeEqual(Buffer.from(hashToken(given.trim()), 'hex'), Buffer.from(hashToken(expected), 'hex'));
 }
 
-/** The setup record: `claimed` while a setup creates the administrator, anything else once one did. */
+/**
+ * The setup record: `open` until a setup claims it, `claimed` while a setup
+ * creates the administrator, `true` once one did.
+ */
 const INITIAL_SETUP_KEY = 'initial_setup_completed';
+const SETUP_OPEN = 'open';
 const SETUP_CLAIMED = 'claimed';
 
 /**
- * Atomically claim first-admin setup, returning true for exactly one caller.
+ * Atomically claim first-admin setup, returning true for exactly one caller,
+ * and only while no administrator exists.
  *
  * `needsInitialSetup` (a SELECT) and `createUser` (a later INSERT) are separate
  * statements, so two concurrent `POST /api/auth/setup` requests could both see
- * no administrator and each create one. The first claim inserts the setup
- * record with `INSERT ... ON CONFLICT DO NOTHING`, which SQLite and PostgreSQL
- * resolve atomically, so the other callers conflict and get false. A record
- * left by an earlier, finished setup (its administrator since gone) is taken
- * over by one caller, with an UPDATE that only changes a record not claimed
- * yet. Callers gate on `needsInitialSetup()` first, so a finished setup is only
- * taken over while no administrator exists.
+ * no administrator and each create one. The claim is one UPDATE of the setup
+ * record (inserted first as `open` when missing) that matches only a record not
+ * claimed yet, and only while no administrator exists: SQLite and PostgreSQL
+ * apply it atomically, so one caller changes the record and the others match
+ * nothing. A record left by an earlier, finished setup is taken over the same
+ * way once its administrator is gone.
  */
 export async function claimInitialSetup(db?: DrizzleDB): Promise<boolean> {
   const database = db ?? (await getDatabase());
   const now = new Date();
-  const inserted = await database
+  await database
     .insert(appSettings)
-    .values({ key: INITIAL_SETUP_KEY, value: SETUP_CLAIMED, updatedAt: now })
-    .onConflictDoNothing({ target: appSettings.key })
-    .returning({ key: appSettings.key });
-  if (inserted.length > 0) return true;
+    .values({ key: INITIAL_SETUP_KEY, value: SETUP_OPEN, updatedAt: now })
+    .onConflictDoNothing({ target: appSettings.key });
 
-  const taken = await database
+  const administrators = database
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.role, InstanceRole.ADMINISTRATOR));
+  const claimed = await database
     .update(appSettings)
     .set({ value: SETUP_CLAIMED, updatedAt: now })
-    .where(and(eq(appSettings.key, INITIAL_SETUP_KEY), ne(appSettings.value, SETUP_CLAIMED)))
+    .where(and(eq(appSettings.key, INITIAL_SETUP_KEY), ne(appSettings.value, SETUP_CLAIMED), notExists(administrators)))
     .returning({ key: appSettings.key });
-  return taken.length > 0;
+  return claimed.length > 0;
 }
 
 /** Record that the claimed setup created its administrator. */
