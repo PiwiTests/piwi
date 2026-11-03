@@ -14,6 +14,7 @@ const run = {
   fixme: 1,
   flaky: 2,
   didNotRun: 0,
+  interrupted: 0,
 };
 
 describe('runSummaryText', () => {
@@ -31,5 +32,23 @@ describe('runSummaryText', () => {
         'Duration: 25 minutes',
       ].join('\n'),
     );
+  });
+
+  test('names the tests an interruption cut short, apart from every outcome', () => {
+    const cut = {
+      ...run,
+      total: 3,
+      passed: 1,
+      failed: 0,
+      skipped: 0,
+      fixme: 0,
+      flaky: 0,
+      didNotRun: 1,
+      interrupted: 1,
+    };
+    expect(runSummaryText(cut)).toContain(
+      "Tests: 3 total · 1 passed · 0 failed · 0 skipped · 1 didn't run · 1 interrupted",
+    );
+    expect(runSummaryText(run)).not.toContain('interrupted');
   });
 });

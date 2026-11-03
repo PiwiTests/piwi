@@ -639,6 +639,7 @@ const displayProgress = computed(() => {
     fixmeTests: 0,
     didNotRunTests: testRun.value.didNotRunTests ?? 0,
     flakyTests: testRun.value.flakyTests ?? 0,
+    interruptedTests: 0,
   };
 });
 
@@ -704,6 +705,7 @@ function buildRunSummary(): string {
     fixme: p?.fixmeTests ?? 0,
     flaky: p?.flakyTests ?? run.flakyTests ?? 0,
     didNotRun: p?.didNotRunTests ?? run.didNotRunTests ?? 0,
+    interrupted: p?.interruptedTests ?? 0,
   });
 }
 
