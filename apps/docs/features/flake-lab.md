@@ -26,9 +26,8 @@ npx @piwitests/reporter flake tests/checkout.spec.ts:42
 
 The command reads the test's plan from the dashboard, so it needs the reporter's `PIWI_DASHBOARD_URL` and
 `PIWI_API_KEY` (or the project's `.env`). The specs must use the
-[capture fixtures](/guide/capture-fixtures), which apply the conditions inside the page. In the
-[desktop app](./desktop-runs#reproducing-a-flake), **Reproduce this flake** on the Flakiness tab runs it at the commit
-of the latest failure, and a bisect of a reproduced flake runs its arm at each step (`flake verify --bisect`).
+[capture fixtures](/guide/capture-fixtures), which apply the conditions inside the page. The
+[desktop app](#in-the-desktop-app) runs it for you.
 
 It runs, one after the other:
 
@@ -126,6 +125,17 @@ and every other comparison between runs.
 - **On a flaky failure's page**, the next step reproduces it under the top untested suspect, then verifies the fix.
 - **Home** lists the tests waiting for a verify, then those whose top suspect is untested.
 
+## In the desktop app
+
+On a flaky test's Flakiness tab in the [desktop app](./desktop), **Reproduce this flake** checks out the commit of the
+test's latest failure in a throwaway worktree, installs, and runs `piwi flake` there. Its options pick the arms (every
+suspect, all at once, or one), the runs and the budget. The experiment lands on the tab, recorded as run from
+`desktop`.
+
+Once an experiment has reproduced a test, **Find the breaking commit here** on its failure is flake-aware: each step
+runs the reproducing arm (`piwi flake verify --bisect`), bad at a failure with the same error as in CI, good after
+enough clean runs, which tells when a flake started.
+
 ## Run it in CI
 
 A local machine is not CI: a delay reproduces a race anywhere, but load and interference depend on the machine. Run it
@@ -190,4 +200,4 @@ The [live demo](https://piwitests.dev/demo/) cannot run the lab but holds experi
 - [Piwi CLI](/reference/cli#flake): every flag of `piwi flake`
 - [Clue rules](/reference/clues): `known-flake-suspect`
 - [Agent skills](./agent-skills): `stabilize-flaky-tests`
-- [Desktop app](./desktop-runs#reproducing-a-flake): the lab and a flake-aware bisect in a worktree
+- [Desktop app runs](./desktop-runs): the runs the app starts, the lab's among them, in its Local runs tray

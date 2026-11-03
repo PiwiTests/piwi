@@ -1,7 +1,8 @@
 /**
  * The desktop app window's view of the Playwright runs its shell starts, the pure half: which run of the Local runs
- * tray a hub session is (`desktopRunRef`, `desktopRunOf`), what a worker says and which controls it takes, where a
- * stop stands, and what a code made at a stop or a locator picked reads as, to copy. The hub's shapes are
+ * tray a hub session is (`desktopRunRef`, `desktopRunOf`), which live runs report a run's page and which worker runs
+ * each running row of it (`desktopSessionsOfRun`, `desktopRowWorker`), what a worker says and which controls it takes,
+ * where a stop stands, and what a code made at a stop or a locator picked reads as, to copy. The hub's shapes are
  * `@piwitests/core/run-hub`'s; the stop's place and error, a test's name and what a stop takes come from the Runs
  * window's own pure half (`apps/extension/src/shared/runs.ts`), which both surfaces share, as they share its live
  * view's input (`view-input.ts`).
@@ -10,7 +11,9 @@ import { LIVE_SHARE_MISSING } from '@piwitests/core/live-view';
 import type { HubAction, HubCodeAction, HubLive, HubSession, HubStop, HubWorker } from '@piwitests/core/run-hub';
 import type { StopCode } from '@piwitests/editor/run-host';
 import { UNATTENDED_RUN_SUFFIX, isUnattendedDesktopRun, type DesktopRunPick } from '#shared/desktop-runs';
+import { parseLocation } from '#shared/parse-location';
 import type { LocalRunKind } from '~/composables/useDesktopLocalRuns';
+import { localRunOriginKind } from '~/utils/desktop-job';
 import { runFile, stopError, stopIntents, stopPlace, testName } from '../../../extension/src/shared/runs';
 
 /** The name a run the shell started gives the bundled server on its run channel (`PIWI_RUN_REF`, `hub_env.rs`). */
@@ -110,6 +113,99 @@ export function desktopWorkerState(worker: HubWorker, root: string | null): stri
   if (worker.pausing) return 'Pausing before its next call…';
   if (worker.state === 'running') return 'Running';
   return 'Between tests';
+}
+
+/** A Local runs entry, as far as finding the runs it reports goes. */
+interface DesktopLinkedRun {
+  kind: LocalRunKind;
+  status: string;
+  originRef: string | null;
+  /** The Piwi run it was linked to first (**Live in Piwi**). */
+  piwiRunId: number | null;
+  /** Its steps' names on the hub. */
+  hubRefs: readonly string[];
+}
+
+/** A Piwi run, as far as finding the Local runs entry that reports it goes: its id and the origin its metadata records. */
+interface DesktopReportedRun {
+  id: number;
+  kind: string;
+  ref: string | null;
+}
+
+/**
+ * The live runs of the running Local runs entry that reports the Piwi run `run`, by the origin the shell stamps on each
+ * run of an entry (`PIWI_ORIGIN`, `PIWI_ORIGIN_REF`): each step of a Re-run in several Playwright projects and each step
+ * of a bisect reports a run of its own under it. Of several running entries under one origin (two reproductions of one
+ * cluster), the one linked to the run alone, and none until it is linked. None for a run whose origin names no
+ * reference.
+ */
+export function desktopSessionsOfRun(
+  run: DesktopReportedRun | null,
+  runs: readonly DesktopLinkedRun[],
+  sessions: readonly HubSession[],
+): HubSession[] {
+  if (!run?.ref) return [];
+  const running = runs.filter(
+    (entry) => entry.status === 'running' && entry.originRef === run.ref && localRunOriginKind(entry.kind) === run.kind,
+  );
+  const entry = running.find((one) => one.piwiRunId === run.id) ?? (running.length === 1 ? running[0] : undefined);
+  if (!entry) return [];
+  return sessions.filter((session) => entry.hubRefs.includes(desktopRunOf(session.ref)));
+}
+
+/** A running row of a run's page, as far as finding the worker that runs its test goes. */
+interface DesktopRunRow {
+  status: string;
+  /** The test's own title. */
+  title: string;
+  /** `file:line:column` of its `test(…)` call, the file relative to its Playwright config's folder. */
+  location?: string | null;
+  /** Playwright's worker index. */
+  workerIndex?: number | null;
+}
+
+/** A worker of a live run, with its run. */
+export interface DesktopRowWorker {
+  session: HubSession;
+  worker: HubWorker;
+}
+
+/**
+ * The worker that runs a running row's test now, among the live runs that report to the row's run: the one the row
+ * names (Playwright's worker index), whose test is the row's by its own title, its spec and the line of its
+ * `test(…)` call. Null for a row that does not run, or whose worker runs another test now (its next one, before the
+ * row's end came).
+ */
+export function desktopRowWorker(sessions: readonly HubSession[], row: DesktopRunRow): DesktopRowWorker | null {
+  if (row.status !== 'running' || row.workerIndex == null || !row.location) return null;
+  const { filePath, line } = parseLocation(row.location);
+  if (line === null) return null;
+  // A spec outside the config's folder comes as `../tests/…`: it is matched by its path below that folder's parents.
+  const below = filePath.replace(/^(?:\.\.?\/)+/, '');
+  for (const session of sessions) {
+    for (const worker of session.workers) {
+      const test = worker.test;
+      if (worker.worker !== row.workerIndex || !test) continue;
+      if (test.title.at(-1) !== row.title || test.line + 1 !== line) continue;
+      if (runFile(test.uri, null).endsWith(`/${below}`)) return { session, worker };
+    }
+  }
+  return null;
+}
+
+/**
+ * A stop's file, relative to the run's folder, and its 1-based line, for a link that opens it in the editor; null for
+ * a run with no folder of its own (a reproduction or a bisect step, in a throwaway worktree) or a file outside its
+ * folder, whose place shows as text (`desktopStopPlace`).
+ */
+export function desktopStopLink(
+  stop: Pick<HubStop, 'uri' | 'line'>,
+  root: string | null,
+): { file: string; line: number } | null {
+  if (!root) return null;
+  const file = runFile(stop.uri, root);
+  return /^(?:\/|[a-z][a-z\d+.-]*:)/i.test(file) ? null : { file, line: stop.line + 1 };
 }
 
 /** A worker's test, its `describe` blocks' titles then its own; null between tests. */

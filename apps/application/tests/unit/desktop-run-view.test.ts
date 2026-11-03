@@ -12,11 +12,14 @@ import {
   desktopLiveText,
   desktopPickItem,
   desktopRunName,
+  desktopRowWorker,
   desktopRunOf,
   desktopRunRef,
+  desktopSessionsOfRun,
   desktopShareOffered,
   desktopShareWarning,
   desktopSteering,
+  desktopStopLink,
   desktopStopPlace,
   desktopWorkerMeta,
   desktopWorkerState,
@@ -167,6 +170,96 @@ describe('a worker of a desktop run', () => {
     expect(desktopCodeActions(at, at.stop!)).toEqual(['assert-region', 'mock']);
     const none = workerOf({ state: 'stopped', stop: stopOf({ intents: ['view'] }) });
     expect(desktopCodeActions(none, none.stop!)).toEqual([]);
+  });
+});
+
+describe('the worker of a running row of the run page', () => {
+  // The row as the run's stream shows it: the test's own title, its spec relative to its config's folder and the
+  // 1-based line of its `test(…)` call, and Playwright's worker index.
+  const row = { status: 'running', title: 'pays', location: 'tests/checkout.spec.ts:3:7', workerIndex: 1 };
+  const first = workerOf();
+  const second = workerOf({
+    worker: 1,
+    parallelIndex: 1,
+    test: { ...workerOf().test!, id: 't2', title: ['checkout', 'pays'] },
+  });
+
+  test('is the worker the row names, running the row’s test', () => {
+    const session = sessionOf('desktop-7', [first, second]);
+    expect(desktopRowWorker([session], row)).toEqual({ session, worker: second });
+    // Among several runs, the one whose worker runs it: the same worker index of another run runs another test.
+    const other = sessionOf('desktop-8', [{ ...second, test: { ...second.test!, title: ['cart', 'adds'] } }]);
+    expect(desktopRowWorker([other, session], row)?.session).toBe(session);
+  });
+
+  test('is looked for in the live runs of the running Local runs entry that reports the run, each step’s', () => {
+    const entry = (over: Record<string, unknown>) => ({
+      kind: 'tests' as const,
+      status: 'running',
+      originRef: 'desktop:abc',
+      piwiRunId: null,
+      hubRefs: [] as string[],
+      ...over,
+    });
+    const tests = entry({ hubRefs: ['desktop-7', 'desktop-9'], piwiRunId: 71 });
+    const bisect = entry({ kind: 'bisect', originRef: '37', hubRefs: ['desktop-8'] });
+    const reproduce = entry({ kind: 'reproduce', originRef: '37', hubRefs: ['desktop-6'] });
+    const done = entry({ kind: 'reproduce', originRef: '37', status: 'passed', hubRefs: ['desktop-5'] });
+    const live = ['desktop-5', 'desktop-6', 'desktop-7', 'desktop-8-unattended', 'desktop-9', 'desktop-10'].map((ref) =>
+      sessionOf(ref, [first]),
+    );
+    const refsOf = (
+      run: { id: number; kind: string; ref: string | null } | null,
+      runs = [tests, bisect, reproduce, done],
+    ) => desktopSessionsOfRun(run, runs, live).map((session) => session.ref);
+    // A Re-run in two Playwright projects: the run of its second step too, which the entry is not linked to.
+    expect(refsOf({ id: 72, kind: 'desktop', ref: 'desktop:abc' })).toEqual(['desktop-7', 'desktop-9']);
+    // A bisect, a run nobody attends, and a reproduction of the same cluster, told apart by their kind; a finished
+    // reproduction of it is left out.
+    expect(refsOf({ id: 80, kind: 'bisect', ref: '37' })).toEqual(['desktop-8-unattended']);
+    expect(refsOf({ id: 81, kind: 'reproduce', ref: '37' })).toEqual(['desktop-6']);
+    // Two reproductions of one cluster at once: the one linked to the run alone, none until one is.
+    const other = entry({ kind: 'reproduce', originRef: '37', hubRefs: ['desktop-10'] });
+    expect(refsOf({ id: 81, kind: 'reproduce', ref: '37' }, [reproduce, other])).toEqual([]);
+    expect(refsOf({ id: 81, kind: 'reproduce', ref: '37' }, [reproduce, { ...other, piwiRunId: 81 }])).toEqual([
+      'desktop-10',
+    ]);
+    // A run of another origin, or one that names no reference: no run of the app's reports it.
+    expect(refsOf({ id: 90, kind: 'desktop', ref: 'desktop:other' })).toEqual([]);
+    expect(refsOf({ id: 91, kind: 'local', ref: null })).toEqual([]);
+    expect(refsOf(null)).toEqual([]);
+  });
+
+  test('is none for a row that does not run, or whose worker runs another test now', () => {
+    const session = sessionOf('desktop-7', [first, second]);
+    expect(desktopRowWorker([session], { ...row, status: 'passed' })).toBeNull();
+    expect(desktopRowWorker([session], { ...row, workerIndex: null })).toBeNull();
+    expect(desktopRowWorker([session], { ...row, workerIndex: 4 })).toBeNull();
+    // The worker went on to its next test before the row's end came: another title, line or spec.
+    expect(desktopRowWorker([session], { ...row, title: 'refunds' })).toBeNull();
+    expect(desktopRowWorker([session], { ...row, location: 'tests/checkout.spec.ts:9:7' })).toBeNull();
+    expect(desktopRowWorker([session], { ...row, location: 'tests/cart.spec.ts:3:7' })).toBeNull();
+    expect(desktopRowWorker([sessionOf('desktop-7', [{ ...second, test: null, state: 'between' }])], row)).toBeNull();
+    expect(desktopRowWorker([], row)).toBeNull();
+  });
+
+  test('reads the spec of a run in any folder, a Windows one or one with spaces', () => {
+    const at = (uri: string, location = row.location) =>
+      desktopRowWorker([sessionOf('desktop-7', [{ ...second, test: { ...second.test!, uri } }])], { ...row, location });
+    expect(at('file:///C:/Users/dev/shop/tests/checkout.spec.ts')).not.toBeNull();
+    expect(at('file:///home/dev/shop/e2e/tests/checkout.spec.ts')).not.toBeNull();
+    expect(at('file:///home/dev/my%20shop/tests/pay%20now.spec.ts', 'tests/pay now.spec.ts:3:7')).not.toBeNull();
+    expect(at('file:///home/dev/shop/mytests/checkout.spec.ts')).toBeNull();
+    // A spec outside the config's folder (`testDir: '../tests'`).
+    expect(at('file:///home/dev/tests/checkout.spec.ts', '../tests/checkout.spec.ts:3:7')).not.toBeNull();
+  });
+
+  test('links a stop’s place inside the run’s folder, and shows any other as text', () => {
+    expect(desktopStopLink(stopOf(), ROOT)).toEqual({ file: 'tests/checkout.spec.ts', line: 5 });
+    // A page object outside the run's folder, or a run with no folder of its own (a worktree's).
+    expect(desktopStopLink(stopOf({ uri: 'file:///home/dev/shared/cart.page.ts' }), ROOT)).toBeNull();
+    expect(desktopStopLink(stopOf(), null)).toBeNull();
+    expect(desktopStopLink(stopOf({ uri: 'file:///C:/dev/shop/tests/a.spec.ts' }), '/home/dev/shop')).toBeNull();
   });
 });
 
@@ -382,6 +475,28 @@ describe('the window’s stream of its runs', () => {
     expect(runs.state.roots['desktop-7']).toBe(ROOT);
     off();
     runs.want(false);
+  });
+
+  test('keeps Watch live for each worker through a new stream, until it is turned off or its run ends', async () => {
+    const runs = await hub();
+    runs.want(true);
+    const source = FakeSource.last!;
+    source.send({ type: 'hello', viewer: VIEWER });
+    source.send({ type: 'session', session: sessionOf('desktop-7', [workerOf(), workerOf({ worker: 1 })]) });
+    expect(runs.watchesLive('desktop-7', 0)).toBe(false);
+    runs.setWatchLive('desktop-7', 0, true);
+    runs.setWatchLive('desktop-7', 1, true);
+    runs.setWatchLive('desktop-7', 1, false);
+    expect([runs.watchesLive('desktop-7', 0), runs.watchesLive('desktop-7', 1)]).toEqual([true, false]);
+    // The stream opens again: Watch live stays.
+    source.send({ type: 'hello', viewer: VIEWER });
+    expect(runs.watchesLive('desktop-7', 0)).toBe(true);
+    source.send({ type: 'session', session: sessionOf('desktop-7', [], { ended: true }) });
+    expect(runs.watchesLive('desktop-7', 0)).toBe(false);
+    // The window stops listening: every run it showed is over, and so is their Watch live.
+    runs.setWatchLive('desktop-8', 0, true);
+    runs.want(false);
+    expect(runs.watchesLive('desktop-8', 0)).toBe(false);
   });
 
   test('passes a frame to who watches its view alone, keeping the latest one until the last one leaves', async () => {

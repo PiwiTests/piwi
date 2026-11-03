@@ -2,12 +2,12 @@
 /**
  * Desktop shell only: the page of a stopped worker of a run the shell started, in the Local runs tray. Its image,
  * asked once per stop; **Watch live**, where the stop takes it, which shows the stop's frames in the image's place and
- * stays on for the worker's next stops until it is turned off; the pointer, the wheel and the keys on the live view go
- * to the page where the stop takes the window's input (Tab leaves the view unless a click took the keyboard, Escape
- * gives it back); **Pick on the image**, or a Shift+click on the image or the view, names the element under the
- * pointer. The input and the points come from the Runs window's own logic (`view-input.ts`, `pagePoint`). A frame is
- * drawn into the one image element as it comes and is kept nowhere else; the view ends with the stop, as the window
- * hides, and when it is turned off.
+ * stays on for the worker's next stops until it is turned off (the run page's **Pause and watch** turns it on too,
+ * through `useDesktopRunHub`); the pointer, the wheel and the keys on the live view go to the page where the stop
+ * takes the window's input (Tab leaves the view unless a click took the keyboard, Escape gives it back); **Pick on the
+ * image**, or a Shift+click on the image or the view, names the element under the pointer. The input and the points
+ * come from the Runs window's own logic (`view-input.ts`, `pagePoint`). A frame is drawn into the one image element as
+ * it comes and is kept nowhere else; the view ends with the stop, as the window hides, and when it is turned off.
  */
 import type { HubAction, HubImage, HubStop } from '@piwitests/core/run-hub';
 import { isViewFrameData, type ViewButton, type ViewInput } from '@piwitests/core/run-view';
@@ -72,7 +72,7 @@ const stillShown = computed(() => (still.value?.since === props.stop.since ? sti
 // ── The live view ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 const canView = computed(() => props.takes.includes('view'));
-/** Watch live, as the person left it, kept by the worker: on, each next stop of the worker is watched too. */
+/** Watch live, as the person left it for the worker, kept by the window: on, each next stop of the worker is watched. */
 const watchLive = defineModel<boolean>('watchLive', { default: false });
 const view = ref<{
   since: string;
@@ -87,7 +87,7 @@ let unlisten: (() => void) | null = null;
 /** A frame waiting while the one before decodes: the latest alone. */
 let nextFrame: Extract<DesktopFrame, { data: string }> | null = null;
 let decoding = false;
-const visible = ref(true);
+const visible = ref(import.meta.client ? !document.hidden : true);
 
 const live = computed(() => view.value?.since === props.stop.since && ['starting', 'on'].includes(view.value.status));
 const framed = computed(() => live.value && !!view.value?.viewport);

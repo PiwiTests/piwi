@@ -13,7 +13,9 @@
  * of the tray runs or the hub still has a live run: while it does, a headless
  * stop waits for the window, so the tray opens on every stop it hears, and a
  * notification says so of a failure or a `page.pause()` when the window is in
- * the background. A running run's **Hold failures** switch, off by default
+ * the background. It also opens on the worker the run page's **Show its page**
+ * names (`showWorker`), its run expanded and the focus on that worker. A
+ * running run's **Hold failures** switch, off by default
  * and on from the start for a reproduction, makes a failure no pause bar shows
  * wait at its line (`show`); a run nobody attends (a Flake Lab, a bisect, a
  * run repeating its tests or in UI mode) holds none, and its switch says why.
@@ -38,11 +40,12 @@ import {
   desktopRunName,
   desktopRunOf,
   desktopStopPlace,
+  desktopWorkerKey,
   desktopWorkerTest,
 } from '~/utils/desktop-run-view';
 
 const store = useDesktopLocalRuns();
-const { runs, trayOpen, activeCount } = store;
+const { runs, trayOpen, shownWorker, activeCount } = store;
 const toast = useToast();
 
 const available = ref(false);
@@ -134,6 +137,18 @@ function isExpanded(run: LocalRun): boolean {
 function toggleExpanded(run: LocalRun) {
   expandedByKey.value = { ...expandedByKey.value, [run.key]: !isExpanded(run) };
 }
+
+// A worker the window was asked to show (the run page's Show its page): its run expands, and the focus moves to the
+// worker once it is drawn.
+watch(shownWorker, async (shown) => {
+  if (!shown) return;
+  shownWorker.value = null;
+  const session = hub.state.sessions[shown.ref];
+  const run = session ? runOf(session) : undefined;
+  if (run) expandedByKey.value = { ...expandedByKey.value, [run.key]: true };
+  await nextTick();
+  document.querySelector<HTMLElement>(`[data-worker="${desktopWorkerKey(shown.ref, shown.worker)}"]`)?.focus();
+});
 
 /** The runs whose output shows in a separate window instead of the tray. */
 const separateByKey = ref<Record<number, boolean>>({});

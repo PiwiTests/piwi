@@ -424,6 +424,8 @@ const PROGRESS_RESULT_RE = /^\s{1,6}(?:✓|✘|✗|x|ok|-)\s+\d+\s/;
 export function useDesktopLocalRuns() {
   const runs = useState<LocalRun[]>('desktop-local-runs', () => []);
   const trayOpen = useState<boolean>('desktop-local-runs-tray', () => false);
+  /** A worker of a hub's run the tray is asked to show (`showWorker`), until the tray has shown it. */
+  const shownWorker = useState<{ ref: string; worker: number } | null>('desktop-local-runs-shown-worker', () => null);
   const optionsByProject = useState<Record<string, SavedLocalRunOptions>>('desktop-local-run-options', () => ({}));
   if (import.meta.client) {
     toastApi = useToast();
@@ -1303,6 +1305,12 @@ export function useDesktopLocalRuns() {
     }
   }
 
+  /** Opens the tray on a worker of a hub's run: its run expands, and the focus moves to the worker. */
+  function showWorker(ref: string, worker: number) {
+    trayOpen.value = true;
+    shownWorker.value = { ref, worker };
+  }
+
   function clearFinished() {
     runs.value = runs.value.filter((r) => r.status === 'running');
   }
@@ -1324,6 +1332,8 @@ export function useDesktopLocalRuns() {
   return {
     runs,
     trayOpen,
+    shownWorker,
+    showWorker,
     activeCount,
     startRun,
     startReproduce,

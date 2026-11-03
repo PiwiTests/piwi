@@ -22,7 +22,8 @@
 import type { TestCaseResult } from '~~/types/api';
 import type { LiveStepInfo } from '~/utils/live-steps';
 import type { LiveWorkerState } from '#shared/live-view';
-import type { LiveRowNote } from '~/utils/live-row-note';
+import { liveRowShows, type LiveRowNote } from '~/utils/live-row-note';
+import type { DesktopRowWorker } from '~/utils/desktop-run-view';
 import { liveResourcesLabel, type LiveWorkerResources } from '~/utils/live-worker-resources';
 import type { TestRowBadge } from '~/utils/test-row-badges';
 import type { KnownIssueRef } from '#shared/handlers/known-issues';
@@ -79,6 +80,11 @@ const props = withDefaults(
     /** This row's worker in the run's live view: Watch, and Paused while its test is stopped (live runs only). */
     liveWorker?: LiveWorkerState | null;
     /**
+     * This row's worker in a run the desktop app started: Pause and watch, and where its test stopped (live runs in
+     * the desktop app only).
+     */
+    desktopWorker?: DesktopRowWorker | null;
+    /**
      * What a running row says where Watch would be: its run is not shared live from the developer's machine, and how to
      * share it; or, in the desktop app, where its test's page shows (live runs only).
      */
@@ -120,6 +126,7 @@ const props = withDefaults(
     liveStep: null,
     liveResources: null,
     liveWorker: null,
+    desktopWorker: null,
     liveNote: null,
     highlighted: false,
     projectKey: null,
@@ -134,6 +141,12 @@ const props = withDefaults(
 const emit = defineEmits<{ toggle: []; select: []; watch: [] }>();
 
 const tc = computed(() => props.testCase);
+/** What the row shows where Watch would be: Watch, Pause and watch, or the run's note. */
+const liveShows = computed(() =>
+  liveRowShows({ liveWorker: !!props.liveWorker, desktopWorker: !!props.desktopWorker, note: props.liveNote }),
+);
+/** The row's test stands at a stop: in the run's live view, or in a run the desktop app started. */
+const stopped = computed(() => !!props.liveWorker?.paused || props.desktopWorker?.worker.state === 'stopped');
 const liveResourcesText = computed(() => (props.liveResources ? liveResourcesLabel(props.liveResources) : ''));
 const liveResourcesTitle = computed(() => {
   const kind = props.liveResources?.memoryKind ? ` (memory as ${props.liveResources.memoryKind.toUpperCase()})` : '';
@@ -266,7 +279,7 @@ const clusterLabel = computed(() =>
               <template v-if="tc">
                 <template v-if="tc.status === 'running'">
                   <TestRowStuck v-if="tc.stuck" :stuck="tc.stuck" />
-                  <span v-else-if="!liveStep && !liveWorker?.paused" class="text-info">In progress…</span>
+                  <span v-else-if="!liveStep && !stopped" class="text-info">In progress…</span>
                   <span
                     v-if="liveResourcesText"
                     class="inline-flex items-center gap-0.5 tabular-nums"
@@ -336,18 +349,25 @@ const clusterLabel = computed(() =>
 
         <slot name="subline" />
 
-        <div v-if="liveStep || liveWorker || liveNote" class="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
+        <div v-if="liveStep || liveShows" class="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
           <!-- A stopped test shows where it is paused in place of its last step. -->
-          <TestRowLiveStep v-if="liveStep && !liveWorker?.paused" :step="liveStep" class="max-w-full" />
+          <TestRowLiveStep v-if="liveStep && !stopped" :step="liveStep" class="max-w-full" />
           <TestRowLiveWorker
-            v-if="liveWorker"
+            v-if="liveWorker && liveShows === 'watch'"
             :worker="liveWorker"
             :project-key="projectKey"
             :project-name="projectName"
             @watch="emit('watch')"
           />
+          <TestRowDesktopWorker
+            v-else-if="desktopWorker && liveShows === 'pause-and-watch'"
+            :session="desktopWorker.session"
+            :worker="desktopWorker.worker"
+            :project-key="projectKey"
+            :project-name="projectName"
+          />
           <span
-            v-else-if="liveNote === 'unshared'"
+            v-else-if="liveShows === 'unshared'"
             class="inline-flex items-center gap-1 text-xs text-muted"
             data-testid="live-unshared"
             @click.stop
@@ -357,7 +377,7 @@ const clusterLabel = computed(() =>
             <HelpHint topic="run.live-unshared" />
           </span>
           <span
-            v-else-if="liveNote === 'desktop'"
+            v-else-if="liveShows === 'desktop'"
             class="inline-flex items-center gap-1 text-xs text-muted"
             data-testid="live-at-stop"
             @click.stop

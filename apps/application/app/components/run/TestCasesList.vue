@@ -7,6 +7,8 @@ import { liveResourcesByWorker, liveResourcesForCase, type LiveWorkerResources }
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
 import { liveWorkerKey, type LiveWorkerState } from '#shared/live-view';
 import type { LiveRowNote } from '~/utils/live-row-note';
+import type { HubSession } from '@piwitests/core/run-hub';
+import { desktopRowWorker, type DesktopRowWorker } from '~/utils/desktop-run-view';
 import { isFlakyExecution, summarizeRunCases } from '#shared/utils/test-counts';
 import { isFixmeSkip } from '#shared/utils/skip-kind';
 import { stripAnsi } from '#shared/error-parse';
@@ -47,6 +49,8 @@ const props = defineProps<{
   liveWorkers?: Record<string, LiveWorkerState> | null;
   /** What the run's running rows say where Watch would be: it is not shared live, or where its pages show. */
   liveNote?: LiveRowNote | null;
+  /** The live runs the desktop app started that report to this run: each running row of theirs offers Pause and watch. */
+  desktopSessions?: HubSession[] | null;
   clusterMeta?: RunClusterMeta | null;
   /** Stable test-case ids currently quarantined — marks the matching rows. */
   quarantinedCaseIds?: Set<number> | null;
@@ -82,15 +86,16 @@ function workerKeyOf(tc: TestCaseResult): string | null {
 }
 
 /**
- * The execution each worker in the live view runs now: its running row that began last. A row of the test before,
- * whose end has not streamed in yet, is not it.
+ * The execution each worker runs now, in the run's live view or in a run the desktop app started: its running row that
+ * began last. A row of the test before, whose end has not streamed in yet, is not it, nor an earlier repetition of the
+ * same test (`--repeat-each`).
  */
 const currentExecutionOf = computed(() => {
   const current = new Map<string, TestCaseResult>();
-  if (!props.liveWorkers) return current;
+  if (!props.liveWorkers && !props.desktopSessions?.length) return current;
   for (const tc of props.testCases) {
     const key = workerKeyOf(tc);
-    if (!key || !props.liveWorkers[key]) continue;
+    if (!key) continue;
     const seen = current.get(key);
     if (!seen || (tc.startedAt ?? 0) >= (seen.startedAt ?? 0)) current.set(key, tc);
   }
@@ -106,6 +111,14 @@ function liveWorkerOf(tc: TestCaseResult): LiveWorkerState | null {
   const worker = key ? props.liveWorkers?.[key] : null;
   if (!key || !worker || currentExecutionOf.value.get(key)?.executionId !== tc.executionId) return null;
   return worker.paused?.test && worker.paused.test !== tc.title ? { ...worker, paused: null } : worker;
+}
+
+/** The row's worker in a run the desktop app started, when the row is the test that worker runs now. */
+function desktopWorkerOf(tc: TestCaseResult): DesktopRowWorker | null {
+  const key = workerKeyOf(tc);
+  if (!key || !props.desktopSessions?.length) return null;
+  if (currentExecutionOf.value.get(key)?.executionId !== tc.executionId) return null;
+  return desktopRowWorker(props.desktopSessions, tc);
 }
 
 const liveWorkerValues = computed(() => liveResourcesByWorker(props.liveResources));
@@ -1012,6 +1025,8 @@ defineExpose({ scrollToCase });
                       liveResourcesOf(item.tc) !== null,
                       liveWorkerOf(item.tc)?.paused?.call.title,
                       liveWorkerOf(item.tc) !== null,
+                      desktopWorkerOf(item.tc)?.worker.stop?.title,
+                      desktopWorkerOf(item.tc) !== null,
                       item.tc.status === 'running' ? liveNote : null,
                       showSuitePath,
                       item.tc.suitePath,
@@ -1047,6 +1062,7 @@ defineExpose({ scrollToCase });
                 :live-step="liveStep(item.tc)"
                 :live-resources="liveResourcesOf(item.tc)"
                 :live-worker="liveWorkerOf(item.tc)"
+                :desktop-worker="desktopWorkerOf(item.tc)"
                 :live-note="item.tc.status === 'running' ? liveNote : null"
                 :highlighted="highlightedCaseId === item.tc.executionId"
                 :indent="(item.depth ?? 0) * 16"

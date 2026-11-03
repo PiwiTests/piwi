@@ -31,6 +31,8 @@ declare global {
     __hub: { send(event: unknown): void; open(): number };
     /** The native notifications the page asked the shell for, as `title | body`. */
     __notes: string[];
+    /** What the page asked the shell to run its tests with, last. */
+    __runArgs?: { originRef?: string };
   }
 }
 
@@ -61,6 +63,7 @@ async function installBridge(page: Page) {
                   playwrightCli: '/home/dev/acme/node_modules/@playwright/test/cli.js',
                 };
               case 'desktop_run_local_tests':
+                window.__runArgs = args;
                 return 41;
               default:
                 return null;
@@ -616,5 +619,130 @@ test.describe('Desktop run live view', () => {
     await expect(
       tray(page).locator('[data-shot="desktop-run-worker"]').getByText('Running', { exact: true }),
     ).toBeVisible();
+  });
+
+  test('pauses a running test from its row on the run’s page, and shows its page live at the stop', async ({
+    page,
+    request,
+  }) => {
+    await installBridge(page);
+    // The first pause meets a test that has just stopped.
+    let stoppedAlready = true;
+    const commands = await playHub(page, (command) => {
+      if (command.type !== 'runControl' || !stoppedAlready) return {};
+      stoppedAlready = false;
+      return { ok: false, message: 'The test is stopped already.' };
+    });
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    // As it starts the run, the tray notes the project's latest run: only a newer one is linked to it.
+    const baseline = page.waitForResponse((response) => new URL(response.url()).pathname.endsWith('/latest-run'));
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await baseline;
+    await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
+    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    // A run another window of the app started runs the same test on the same worker: no row of this run is its.
+    const elsewhere = session(RUNNING);
+    elsewhere.session.ref = 'desktop-77';
+    await page.evaluate((event) => window.__hub.send(event), elsewhere);
+    await page.evaluate((event) => window.__hub.send(event), session(RUNNING));
+
+    // The run reports to this app with the reference the app gave it, and its test begins on worker 0.
+    const originRef = await page.evaluate(() => window.__runArgs?.originRef);
+    expect(originRef).toMatch(/^desktop:/);
+    const start = await retryPost(request, '/api/test-runs/start', {
+      data: {
+        projectName: PROJECT.DESKTOP_RUN_VIEW,
+        startTime: new Date().toISOString(),
+        metadata: { piwiOrigin: { kind: 'desktop', ref: originRef } },
+      },
+    });
+    expect(start.ok()).toBeTruthy();
+    const live = (await start.json()) as { runId: number; streamToken: string };
+    try {
+      const begun = await retryPost(request, `/api/test-runs/${live.runId}/events`, {
+        data: {
+          streamToken: live.streamToken,
+          testCases: [
+            {
+              type: 'begin',
+              title: 'pays',
+              location: 'tests/checkout.spec.ts:3:1',
+              workerIndex: 0,
+              startedAt: Date.now(),
+              browser: { projectName: 'chromium' },
+            },
+          ],
+        },
+      });
+      expect(begun.ok()).toBeTruthy();
+      await tray(page)
+        .getByRole('link', { name: `Live in Piwi — Run #${live.runId}` })
+        .click({ timeout: 15_000 });
+      await expect(page).toHaveURL(new RegExp(`/test-runs/${live.runId}$`));
+
+      // Its running row: Pause and watch pauses that worker of this run before its next call. The test stopped at a
+      // page.pause() as the pause went: the hub says so, and that stop, which comes next, is watched live.
+      const watch = page.getByRole('button', { name: 'Pause and watch' });
+      await expect(watch).toHaveAttribute(
+        'title',
+        'Stop the test before its next call that acts on or checks the page, and watch its page live in Local runs',
+      );
+      await expect(watch).toHaveAccessibleName('Pause and watch: checkout › pays');
+      await watch.click();
+      // The toast, and its copy for screen readers.
+      await expect(page.getByText('The test is stopped already.').first()).toBeVisible();
+      await page.evaluate((event) => window.__hub.send(event), session(stopped('s0', { reason: 'page-pause' })));
+      await expect(tray(page).getByText('Stopped at page.pause()')).toBeVisible();
+      await expect(tray(page).getByRole('button', { name: 'Watch live' })).toHaveAttribute('aria-pressed', 'true');
+
+      // It goes on, and the next pause reaches it.
+      await page.evaluate((event) => window.__hub.send(event), session(RUNNING));
+      await watch.click();
+      await expect
+        .poll(() => commands.filter((c) => c.type === 'runControl'))
+        .toEqual([
+          expect.objectContaining({ ref: REF, worker: 0, action: 'pause', since: null }),
+          expect.objectContaining({ ref: REF, worker: 0, action: 'pause', since: null }),
+        ]);
+      await page.evaluate((event) => window.__hub.send(event), session({ ...RUNNING, pausing: true }));
+      await expect(page.getByRole('button', { name: 'Pausing…' })).toHaveAttribute('aria-disabled', 'true');
+      await page.evaluate((event) => window.__hub.send(event), session(stopped('s1')));
+      await expect(tray(page).getByText('Paused', { exact: true })).toBeVisible();
+      await expect(tray(page).getByRole('button', { name: 'Watch live' })).toHaveAttribute('aria-pressed', 'true');
+
+      // The row says where the test stopped. Closed, the tray ends the view; Show its page opens it on the worker,
+      // the focus there, and Watch live, left on, watches the stop again.
+      await expect(page.getByTestId('desktop-stopped')).toContainText(
+        /Paused\s*·\s*Click getByRole\('button', \{ name: 'Pay' \}\)\s*·\s*tests\/checkout\.spec\.ts:5/,
+      );
+      await tray(page).getByRole('button', { name: 'Close local runs' }).click();
+      await expect(tray(page)).toHaveCount(0);
+      await page.getByRole('button', { name: 'Show its page' }).click();
+      await expect(tray(page).locator(`[data-worker="${REF}|0"]`)).toBeFocused();
+      await expect(tray(page).getByRole('button', { name: 'Watch live' })).toHaveAttribute('aria-pressed', 'true');
+      await expect
+        .poll(() => commands.filter((c) => c.type === 'view').map((c) => [c.ref, c.since, c.on]))
+        .toEqual([
+          [REF, 's0', true],
+          [REF, 's0', false],
+          [REF, 's1', true],
+          [REF, 's1', false],
+          [REF, 's1', true],
+        ]);
+
+      // A test that never stops says why, in place of Pause and watch.
+      const never = "Playwright's Inspector runs the test (PWDEBUG) — run without --debug";
+      await page.evaluate(
+        (event) => window.__hub.send(event),
+        session({ ...RUNNING, test: { ...TEST, cannotPause: never } }),
+      );
+      await expect(page.getByTestId('desktop-cannot-pause')).toHaveText(`This test never stops: ${never}`);
+      await expect(page.getByRole('button', { name: 'Pause and watch' })).toHaveCount(0);
+    } finally {
+      await request.post(`/api/test-runs/${live.runId}/finish`, {
+        data: { streamToken: live.streamToken, status: 'passed', totalTests: 1 },
+      });
+    }
   });
 });

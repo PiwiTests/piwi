@@ -6,9 +6,10 @@
  * it hears (`onStop`), once, a stream that opens again included, and the stop waits there; closed, nobody here answers
  * and such a stop goes on at once, unless Piwi Picker follows the runs.
  *
- * What it keeps: each live run as the hub last told it, what each code made at a stop came to, and the codes and
- * the locators picked, to copy. The frames of a stop's live view go to whoever listens for that view (`onFrame`):
- * none is reactive state, and only the latest one of each view is kept, in memory, until the view ends. Commands go to
+ * What it keeps: each live run as the hub last told it, what each code made at a stop came to, the codes and the
+ * locators picked, to copy, and the workers whose **Watch live** is on, which the tray and the run page both turn on.
+ * The frames of a stop's live view go to whoever listens for that view (`onFrame`): none is reactive state, and only
+ * the latest one of each view is kept, in memory, until the view ends. Commands go to
  * `POST /api/desktop/runs/commands`, naming the stream (`viewer`); `show` says which runs hold their failures (the
  * tray's **Hold failures**), so a failure no pause bar shows is held in them, and is said again as the stream opens
  * again. **Share live** asks what it sends the first time in this session of the app (`shareAsks`).
@@ -57,12 +58,25 @@ interface HubState {
   kept: DesktopKept[];
   /** Goes up each time the stream opens again: every view of the stream before ended with it. */
   epoch: number;
+  /**
+   * The workers whose Watch live is on, by run (ref): each next stop of theirs is watched, until it is turned off or
+   * their run ends. A stream that opens again keeps them.
+   */
+  watchLive: Record<string, number[]>;
 }
 
 /** How long the window waits before it opens a stream the server refused (no hub, too many windows) again. */
 const REOPEN_MS = 5000;
 
-const state = reactive<HubState>({ connected: false, sessions: {}, roots: {}, outcomes: {}, kept: [], epoch: 0 });
+const state = reactive<HubState>({
+  connected: false,
+  sessions: {},
+  roots: {},
+  outcomes: {},
+  kept: [],
+  epoch: 0,
+  watchLive: {},
+});
 
 let source: EventSource | null = null;
 let viewer: string | null = null;
@@ -149,6 +163,7 @@ function heardSession(session: HubSession): void {
   if (session.ended) {
     delete state.sessions[session.ref];
     heardAt.delete(session.ref);
+    delete state.watchLive[session.ref];
     return;
   }
   state.sessions[session.ref] = session;
@@ -199,7 +214,7 @@ function close(): void {
   told = new Set();
   latestFrames.clear();
   heardAt.clear();
-  Object.assign(state, { connected: false, sessions: {}, outcomes: {}, epoch: state.epoch + 1 });
+  Object.assign(state, { connected: false, sessions: {}, outcomes: {}, epoch: state.epoch + 1, watchLive: {} });
 }
 
 /** Tells the server which runs the window shows live, what changed since it was told last. */
@@ -253,6 +268,17 @@ export function useDesktopRunHub() {
     },
     shareWarned(): void {
       shareWarned = true;
+    },
+    /** Whether Watch live is on for a worker: each next stop of it is watched. */
+    watchesLive(ref: string, worker: number): boolean {
+      return state.watchLive[ref]?.includes(worker) ?? false;
+    },
+    /** Turns Watch live on or off for a worker, for the window, until its run ends. */
+    setWatchLive(ref: string, worker: number, on: boolean): void {
+      const others = (state.watchLive[ref] ?? []).filter((w) => w !== worker);
+      if (on) state.watchLive[ref] = [...others, worker];
+      else if (others.length) state.watchLive[ref] = others;
+      else delete state.watchLive[ref];
     },
     /** Hears each stop as a worker comes to it; returns the unsubscribe. */
     onStop(listener: (session: HubSession, worker: HubWorker) => void): () => void {

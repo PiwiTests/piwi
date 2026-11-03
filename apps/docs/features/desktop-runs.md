@@ -52,6 +52,10 @@ until you turn it off. Your clicks, the wheel and your keys on the view go to th
 to the tray, and `Tab` leaves the view unless a click into it took the keyboard. The frames go from the test's worker
 to the windows that watch that stop, the app's and Piwi Picker's Runs window, and nothing keeps them.
 
+**Pause and watch**, on a running test of the run's page in the app (**Live in Piwi** on the run in the tray), pauses
+the test as **Pause** does, with **Watch live** on for its worker: the tray opens at the stop, the page live. The row
+then says where the test stopped, with **Show its page** to open the tray on it again.
+
 **Pick on the image** (Playwright 1.60 or later), or a `Shift`+click on the image or the view, names the element under
 the pointer: its locator shows under the test, with **Copy**.
 
@@ -87,18 +91,8 @@ machine](./live-view#share-a-run-from-your-machine).
 A run that reports to the app itself (a reproduction, a bisect, a **Re-run** in a folder that names no instance, a run
 your editor started) cannot be shared: the app hands out no live view key, since no teammate reaches it. The tray
 offers no **Share live** for it, the app's project settings have no **Live view** section, and on the run's page its
-running tests say **See its page at a stop** where **Watch** would be.
-
-## Reproducing a flake
-
-On a flaky test's Flakiness tab, **Reproduce this flake** runs the [Flake Lab](/features/flake-lab) here: it checks
-out the commit of the test's latest failure in a throwaway worktree, installs, and runs `piwi flake` there. Its options
-pick the arms (every suspect, all at once, or one), the runs and the budget. The experiment lands on the tab, recorded
-as run from `desktop`.
-
-Once an experiment has reproduced a test, **Find the breaking commit here** on its failure is flake-aware: each step
-runs the reproducing arm (`piwi flake verify --bisect`), bad at a failure with the same error as in CI, good after
-enough clean runs, which tells when a flake started.
+running tests offer [**Pause and watch**](#watch-live) where **Watch** would be. A run your editor started says **See
+its page at a stop** there: its page shows where the editor steers it.
 
 ## From Piwi Picker
 
@@ -142,3 +136,4 @@ for an agent that left.
 - [Code from a pause](./editor-stop-code): what each action writes.
 - [Runs window](./runs-window): Piwi Picker's window for the same runs.
 - [Run control for agents](./agent-run-control): the tools an agent steers the runs with.
+- [Flake Lab](./flake-lab#in-the-desktop-app): **Reproduce this flake** and a flake-aware bisect, run by the app.

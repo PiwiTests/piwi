@@ -21,6 +21,7 @@ import { applyLiveResourcesToParts } from '#shared/live-resources';
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
 import type { WireLiveResources } from '#shared/types';
 import { liveWorkerKey, type LiveViewRunState, type LiveWorkerState } from '#shared/live-view';
+import { runOrigin, runOriginRef } from '#shared/run-eligibility';
 import type { StuckAttempt } from '#shared/stuck-tests';
 
 const route = useRoute();
@@ -102,6 +103,13 @@ const liveNote = computed(() =>
     workers: Object.keys(liveWorkers.value).length,
   }),
 );
+// The live runs the desktop app started that report to this run, by the origin it records: their running rows offer
+// Pause and watch.
+const desktopSessions = useDesktopRunSessions(() => ({
+  id: Number(runId),
+  kind: runOrigin(testRun.value?.metadata),
+  ref: runOriginRef(testRun.value?.metadata),
+}));
 // The worker someone opened Watch on, and the execution of the row they opened it from: the view is that test's.
 const watching = ref<{ worker: number; shard: number | null; test: string; executionId: number } | null>(null);
 const watchOpen = ref(false);
@@ -1061,6 +1069,7 @@ const moreMenuItems = computed(() => {
             :live-resources="liveResources"
             :live-workers="liveWorkers"
             :live-note="liveNote"
+            :desktop-sessions="isLive ? desktopSessions : null"
             :cluster-meta="clusterMeta"
             :quarantined-case-ids="quarantinedCaseIds"
             :project-key="testRun?.projectId"
