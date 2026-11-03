@@ -184,7 +184,10 @@ describe('subscription input bounds', () => {
     await expect(create({ branches: ['b'.repeat(200), `${'*e'.repeat(10)}`] })).resolves.toBeTruthy();
     const { subscription } = await create({ branches: ['main'] });
     await expect(
-      updateSubscription({ params: { id: String(subscription.id) }, body: { filters: { branches: ['*'.repeat(11)] } } }),
+      updateSubscription({
+        params: { id: String(subscription.id) },
+        body: { filters: { branches: ['*'.repeat(11)] } },
+      }),
     ).rejects.toMatchObject(refused);
   });
 

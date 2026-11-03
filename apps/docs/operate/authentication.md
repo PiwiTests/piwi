@@ -163,10 +163,9 @@ without authentication.
 
 With authentication off, the dashboard answers only requests whose `Host` header names an IP address, a name with no
 dot (`localhost`, a container name), a name under `.localhost`, the host of
-[`PIWI_SITE_URL`](/reference/configuration#general) or a name `PIWI_ALLOWED_HOSTS` lists; any other gets a `403`. To
-open it under a domain name, set `PIWI_SITE_URL` to that address, and list other names (`host.docker.internal`,
-`.example.lan` for a domain) in `PIWI_ALLOWED_HOSTS`. Its entry `*` turns the check off, removing the protection
-against DNS rebinding.
+[`PIWI_SITE_URL`](/reference/configuration#general) or a name `PIWI_ALLOWED_HOSTS` lists (`host.docker.internal`, or
+`.example.lan` for a whole domain); any other gets a `403`. Its entry `*` turns the check off, and with it the
+protection against DNS rebinding.
 
 ## Related
 
