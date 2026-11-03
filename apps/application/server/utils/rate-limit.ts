@@ -4,8 +4,24 @@ import { getRequestHeader, getRequestIP, setResponseHeader } from 'h3';
 
 const store = new Map<string, { count: number; resetAt: number }>();
 
+/** The store's size below which no sweep of ended windows runs. */
+const SWEEP_FLOOR = 1000;
+/** The size at which the next new key sweeps the ended windows: twice what the last sweep kept, at least the floor. */
+let sweepAt = SWEEP_FLOOR;
+
+/** Drop every key whose window has ended. */
+function sweepEndedWindows(now: number): void {
+  for (const [key, entry] of store) {
+    if (entry.resetAt < now) store.delete(key);
+  }
+  sweepAt = Math.max(SWEEP_FLOOR, store.size * 2);
+}
+
 /**
  * Simple in-memory rate limiter. Returns true if the request is allowed.
+ * A new key first sweeps the ended windows once the store has grown to
+ * `sweepAt`, so it never holds more than the floor or twice the keys the last
+ * sweep kept.
  * @param key       Unique key (e.g. IP + endpoint)
  * @param limit     Max requests per window
  * @param windowMs  Window duration in ms
@@ -14,6 +30,7 @@ export function checkRateLimit(key: string, limit: number, windowMs: number): bo
   const now = Date.now();
   const entry = store.get(key);
   if (!entry || entry.resetAt < now) {
+    if (!entry && store.size >= sweepAt) sweepEndedWindows(now);
     store.set(key, { count: 1, resetAt: now + windowMs });
     return true;
   }
@@ -56,6 +73,11 @@ export async function limitLookupMisses<T>(
 /** Clear a key's counter (e.g. after a success), so it no longer counts toward a lockout. */
 export function resetRateLimit(key: string): void {
   store.delete(key);
+}
+
+/** How many keys the limiter holds, ended windows not swept yet included. */
+export function rateLimitKeyCount(): number {
+  return store.size;
 }
 
 /** Seconds until `key`'s current window expires — 0 when no window is active. */

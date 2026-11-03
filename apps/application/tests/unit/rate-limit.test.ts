@@ -51,6 +51,31 @@ describe('checkRateLimit', () => {
   });
 });
 
+describe('the store', () => {
+  test('sweeps the ended windows when a new key arrives once it has grown, and keeps the live ones', async () => {
+    vi.resetModules();
+    const fresh = await import('../../server/utils/rate-limit');
+    for (let i = 0; i < 999; i++) fresh.checkRateLimit(`ended:${i}`, 1, 1000);
+    fresh.checkRateLimit('live', 1, WINDOW_MS);
+    vi.advanceTimersByTime(2000);
+    expect(fresh.rateLimitKeyCount()).toBe(1000);
+
+    fresh.checkRateLimit('new', 1, WINDOW_MS);
+    expect(fresh.rateLimitKeyCount()).toBe(2);
+    expect(fresh.checkRateLimit('live', 1, WINDOW_MS)).toBe(false);
+  });
+
+  test('stays bounded under a stream of keys that each end', async () => {
+    vi.resetModules();
+    const fresh = await import('../../server/utils/rate-limit');
+    for (let i = 0; i < 5000; i++) {
+      fresh.checkRateLimit(`stream:${i}`, 1, 1000);
+      vi.advanceTimersByTime(10);
+    }
+    expect(fresh.rateLimitKeyCount()).toBeLessThanOrEqual(1000);
+  });
+});
+
 describe('limitLookupMisses', () => {
   const limit = { limit: 2, windowMs: WINDOW_MS };
   const status = (promise: Promise<unknown>) =>
