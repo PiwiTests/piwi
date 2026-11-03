@@ -15,6 +15,9 @@ env:
   PIWI_API_KEY: ${{ secrets.PIWI_API_KEY }}   # only if authentication is enabled
 ```
 
+With authentication off, the server's `PIWI_SITE_URL` or `PIWI_ALLOWED_HOSTS` must name a domain in that URL
+([why](/operate/authentication#disabling-authentication)).
+
 Everything else — branch, commit, author, workflow, build URL, shard index — is
 [detected automatically](#what-gets-detected).
 
