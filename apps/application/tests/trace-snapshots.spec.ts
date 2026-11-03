@@ -141,7 +141,9 @@ test.describe('Trace aria/screen snapshots', () => {
       .getByRole('tab', { name: 'Timeline', exact: true })
       .click();
 
-    await expect(page.getByRole('region', { name: 'Filmstrip of the page before each step' })).toBeVisible();
+    const filmstrip = page.getByRole('region', { name: 'Filmstrip of the page before each step' });
+    await expect(filmstrip).toBeVisible();
+    await expect(filmstrip.locator('[aria-label="failed"]')).toHaveCount(1);
   });
 
   test("the Timeline tab shows the failing step's page as views and picks from the DOM of that moment", async ({
@@ -230,5 +232,20 @@ test.describe('Trace screen snapshots of a passing test', () => {
     await expect(page.getByText('Before the failing action')).toHaveCount(0);
     await expect(page.getByText('At the failure', { exact: true })).toHaveCount(0);
     await expect(views.getByRole('tab', { name: 'Page diff' })).toHaveCount(0);
+  });
+
+  test("the Timeline tab's filmstrip marks no step as failed", async ({ page }) => {
+    await page.goto(`/test-run-cases/${executionId}`);
+    await waitForHydration(page);
+
+    await page
+      .getByRole('tablist', { name: 'Evidence sections' })
+      .getByRole('tab', { name: 'Timeline', exact: true })
+      .click();
+
+    const filmstrip = page.getByRole('region', { name: 'Filmstrip of the page before each step' });
+    await expect(filmstrip).toBeVisible();
+    await expect(filmstrip.getByRole('listitem').first()).toBeVisible();
+    await expect(filmstrip.locator('[aria-label="failed"]')).toHaveCount(0);
   });
 });
