@@ -24,4 +24,58 @@ describe('isCrossSiteWrite', () => {
     );
     expect(isCrossSiteWrite({ method: 'PUT', secFetchSite: 'cross-site', origin: 'moz-extension://uuid' })).toBe(false);
   });
+
+  test('keeps judging by Sec-Fetch-Site when a browser sends it', () => {
+    const own = { host: 'piwi.example.com', protocol: 'https' };
+    expect(
+      isCrossSiteWrite({ method: 'POST', secFetchSite: 'same-origin', origin: 'https://evil.example', ...own }),
+    ).toBe(false);
+    expect(
+      isCrossSiteWrite({ method: 'POST', secFetchSite: 'cross-site', origin: 'https://piwi.example.com', ...own }),
+    ).toBe(true);
+  });
+
+  describe('a browser that sends no Sec-Fetch-Site', () => {
+    const write = (origin: string | null, extra: Partial<Parameters<typeof isCrossSiteWrite>[0]> = {}) =>
+      isCrossSiteWrite({ method: 'POST', origin, host: 'localhost:7494', protocol: 'http', ...extra });
+
+    test('is refused when its Origin is another site', () => {
+      expect(write('https://evil.example')).toBe(true);
+      expect(write('http://localhost:7495')).toBe(true);
+      expect(write('https://localhost:7494')).toBe(true);
+      expect(write('http://sub.localhost:7494')).toBe(true);
+      expect(write('null')).toBe(true);
+      expect(write('not an origin')).toBe(true);
+      expect(write('https://evil.example', { host: null })).toBe(true);
+    });
+
+    test("is allowed from the request's own origin", () => {
+      expect(write('http://localhost:7494')).toBe(false);
+      expect(write('HTTP://LOCALHOST:7494')).toBe(false);
+      expect(write('http://piwi.lan', { host: 'piwi.lan:80' })).toBe(false);
+      expect(write('https://piwi.example.com', { host: 'piwi.example.com', protocol: 'https' })).toBe(false);
+      expect(write('http://[::1]:7494', { host: '[::1]:7494' })).toBe(false);
+    });
+
+    test('is allowed from the origin of PIWI_SITE_URL', () => {
+      const behindProxy = { host: 'piwi:3000', protocol: 'http', siteUrl: 'https://piwi.example.com/' };
+      expect(write('https://piwi.example.com', behindProxy)).toBe(false);
+      expect(write('https://evil.example', behindProxy)).toBe(true);
+      expect(write('http://piwi.example.com', behindProxy)).toBe(true);
+    });
+
+    test('is allowed from the browser extension', () => {
+      expect(write('chrome-extension://abc')).toBe(false);
+      expect(write('safari-web-extension://uuid')).toBe(false);
+    });
+
+    test('is never refused for a read', () => {
+      expect(isCrossSiteWrite({ method: 'GET', origin: 'https://evil.example', host: 'localhost:7494' })).toBe(false);
+    });
+  });
+
+  test('allows a request with neither header, as servers, the reporter and CLIs send', () => {
+    expect(isCrossSiteWrite({ method: 'POST', host: 'localhost:7494', protocol: 'http' })).toBe(false);
+    expect(isCrossSiteWrite({ method: 'DELETE', origin: null, host: 'piwi.example.com' })).toBe(false);
+  });
 });
