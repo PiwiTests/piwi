@@ -17,7 +17,7 @@ agents and, for a failure, the AI diagnosis.
 
 The insights read the coverage your runs already record: set up [server coverage](./server-coverage) with
 `coverage: { server: 'lines' }` in the reporter options, or `PIWI_COVERAGE_SERVER=lines`. Line answers need the
-`lines` granularity; `functions`, on the server or in the browser (`coverage.browser: 'functions'`), gives function
+`lines` granularity (`coverage.browser: 'lines'` in the browser); `functions`, on the server or in the browser (`coverage.browser: 'functions'`), gives function
 answers, and `files` gives file answers. A run without coverage changes nothing, so a nightly job with coverage on is
 enough for the comparisons across runs.
 

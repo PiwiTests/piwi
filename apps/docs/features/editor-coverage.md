@@ -22,7 +22,7 @@ The marks show what the reporter records, per test:
   every line of a function that ran is marked run, and no line is marked as not run.
 - **Browser code**: recorded per file ([code reach](./code-reach#turn-it-on)), so such a file lists its tests in its
   top lens, with no line marks; with `coverage.browser: 'functions'`, every line of a function that ran is marked run,
-  with its lens above it. No line of a browser file is marked as not run.
+  with its lens above it, and no line is marked as not run; with `'lines'`, its lines are marked as a server file's.
 
 Nothing else is needed in the editor. A test file, a file no recorded coverage names lines of, and a project without
 coverage show nothing of it: no mark, no lens line, no command, no hover text.

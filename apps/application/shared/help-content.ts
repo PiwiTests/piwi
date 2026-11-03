@@ -788,7 +788,7 @@ export const HELP_TOPICS = {
       '- **Blue**: only unit tests ran it. No user path in the end-to-end tests reaches it.',
       '- **Violet**: only the end-to-end tests ran it. Only the Playwright suite protects it.',
       '- **Slate**: no suite ran it. The first place to add a test.',
-      '- **Yellow**: undetermined. It sits in a function the browser ran, and the browser records functions, not lines.',
+      "- **Yellow**: undetermined. It sits in a function the browser ran, and the browser recorded functions, not lines (`coverage.browser: 'functions'`; `'lines'` records them).",
       '',
       'An unmarked line is not code (a blank line, a comment, a brace the compiler does not count).',
     ].join('\n'),

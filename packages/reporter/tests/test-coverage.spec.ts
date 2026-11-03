@@ -8,6 +8,7 @@ import { BlobIds, gitBlobId } from '../src/internal/collect/blob-ids.js';
 import {
   browserFunctionCoverage,
   coverageSettings,
+  newBrowserLines,
   newKnownFunctions,
   type CoverageSettings,
 } from '../src/internal/collect/coverage-settings.js';
@@ -190,6 +191,7 @@ describe('coverageSettings', () => {
     });
     expect(coverageSettings({ captureCodeReach: true })).toEqual({ browser: 'files', server: 'off', css: 'off' });
     expect(coverageSettings({ captureCodeReach: true, coverage: { browser: 'functions' } }).browser).toBe('functions');
+    expect(coverageSettings({ coverage: { browser: 'lines' } }).browser).toBe('lines');
     expect(coverageSettings({ coverage: { server: 'nope' as never } }).server).toBe('off');
   });
 
@@ -206,6 +208,37 @@ describe('coverageSettings', () => {
         coverage: { browser: 'files', server: 'lines', css: 'rules' },
       }),
     ).toEqual({ browser: 'off', server: 'off', css: 'off' });
+  });
+});
+
+describe('newBrowserLines', () => {
+  it('names the executable lines and the lines that ran of each file once per worker', () => {
+    const sentExecutable = new Map<string, Set<string>>();
+    const sentLines = new Map<string, Set<string>>();
+    const executable = new Map<string, Array<[number, number]>>([
+      [
+        'src/Pay.vue',
+        [
+          [5, 9],
+          [10, 13],
+        ],
+      ],
+      ['node_modules/vue/index.js', [[1, 2]]],
+    ]);
+    const lines = new Map<string, Array<[number, number]>>([['src/Pay.vue', [[5, 6]]]]);
+    expect(newBrowserLines(executable, lines, sentExecutable, sentLines)).toEqual([
+      { v: 1, files: [{ path: 'src/Pay.vue', executable: [[5, 13]] }] },
+      { v: 1, files: [{ path: 'src/Pay.vue', lines: [[5, 6]] }] },
+    ]);
+    expect(newBrowserLines(executable, lines, sentExecutable, sentLines)).toEqual([]);
+    // A later test that ran more names the lines again, merged: the reporter unites them.
+    lines.set('src/Pay.vue', [
+      [5, 6],
+      [9, 11],
+    ]);
+    expect(newBrowserLines(executable, lines, sentExecutable, sentLines)).toEqual([
+      { v: 1, files: [{ path: 'src/Pay.vue', lines: [[9, 11]] }] },
+    ]);
   });
 });
 
@@ -509,6 +542,96 @@ describe('CoverageCollection', () => {
         {
           v: 1,
           files: [{ path: 'web/app.css', runtime: 'browser', blob, functions: [[1, 1]], allFunctions: [[1, 1], [2, 2]] }],
+        },
+      ]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("sends the run's browser lines at lines granularity: those the tests ran and the executable ones", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-browser-lines-'));
+    try {
+      fs.mkdirSync(path.join(dir, 'src'));
+      const source = 'export function pay(ok) {\n  if (ok) {\n    big();\n  }\n}\nexport const rate = 2;\n';
+      fs.writeFileSync(path.join(dir, 'src', 'pay.ts'), source);
+      fs.writeFileSync(path.join(dir, 'src', 'rates.ts'), 'export const rates = [1];\n');
+      const collection = new CoverageCollection({
+        settings: { browser: 'lines', server: 'off' },
+        baseUrls: [],
+        configDir: dir,
+      });
+      const json = (body: unknown) => Buffer.from(JSON.stringify(body));
+      const tc = testCase(['src/pay.ts']);
+      collection.apply(tc, [
+        {
+          name: ATTACHMENT_NAMES.browserCoverage,
+          contentType: 'application/json',
+          body: json({
+            v: 1,
+            files: [{ path: 'src/pay.ts', runtime: 'browser', functions: [[1, 5]], lines: [[1, 2]] }],
+          }),
+        },
+        {
+          name: ATTACHMENT_NAMES.browserFunctions,
+          contentType: 'application/json',
+          body: json({ v: 1, files: [{ path: 'src/pay.ts', allFunctions: [[1, 5]] }] }),
+        },
+        // A module no function of which ran counts its top-level lines in the run.
+        {
+          name: ATTACHMENT_NAMES.browserLines,
+          contentType: 'application/json',
+          body: json({
+            v: 1,
+            files: [
+              { path: 'src/pay.ts', executable: [[1, 6]] },
+              { path: 'src/rates.ts', executable: [[1, 1]] },
+            ],
+          }),
+        },
+        {
+          name: ATTACHMENT_NAMES.browserLines,
+          contentType: 'application/json',
+          body: json({
+            v: 1,
+            files: [
+              { path: 'src/pay.ts', lines: [[5, 6]] },
+              { path: 'src/rates.ts', lines: [[1, 1]] },
+            ],
+          }),
+        },
+      ]);
+      await collection.settle();
+      const blob = gitBlobId(Buffer.from(source));
+      expect(tc.coverage).toEqual({
+        v: 1,
+        files: [{ path: 'src/pay.ts', runtime: 'browser', blob, functions: [[1, 5]], lines: [[1, 2]] }],
+      });
+      const sent: Array<{ files: unknown[] }> = [];
+      await collection.sendRunCoverage(
+        { putJSON: async (_url: string, body: unknown) => void sent.push(body as { files: unknown[] }) } as never,
+        7,
+        null,
+      );
+      expect(sent.flatMap((body) => body.files)).toEqual([
+        {
+          path: 'src/pay.ts',
+          runtime: 'browser',
+          blob,
+          functions: [[1, 5]],
+          lines: [
+            [1, 2],
+            [5, 6],
+          ],
+          allFunctions: [[1, 5]],
+          executable: [[1, 6]],
+        },
+        {
+          path: 'src/rates.ts',
+          runtime: 'browser',
+          blob: gitBlobId(Buffer.from('export const rates = [1];\n')),
+          lines: [[1, 1]],
+          executable: [[1, 1]],
         },
       ]);
     } finally {

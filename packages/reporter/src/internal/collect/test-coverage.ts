@@ -2,6 +2,7 @@ import {
   mergeCoverage,
   normalizeCoveragePath,
   normalizeFunctionRanges,
+  normalizeLineRanges,
   reduceCoverage,
   sanitizeCoverage,
   type CoverageCapture,
@@ -34,7 +35,8 @@ import {
  * test whose responses named server coverage waits for it, within a bound;
  * the run-level coverage of each backend goes to the dashboard once the run
  * id is known, and so, at `coverage.browser: 'functions'`, does the browser's:
- * per file, the functions any test ran and every function the pages declared.
+ * per file, the functions any test ran and every function the pages declared;
+ * at `'lines'`, also the lines any test ran and the executable lines.
  */
 
 /** How long a test waits for its server coverage at most, in ms. */
@@ -55,7 +57,7 @@ const INCOMPLETE: ServerCoverage = { files: [], incomplete: true };
  * A test's coverage from its parts: the server coverage, when server
  * coverage is on, at its granularity, and the browser files, when browser
  * coverage is on: paths, or files with the lines of their functions at
- * `functions`. Null when no file remains.
+ * `functions`, and the lines that ran at `lines`. Null when no file remains.
  */
 export function composeTestCoverage(
   server: ServerCoverage | null,
@@ -89,7 +91,7 @@ export function composeTestCoverage(
   // A style sheet's matched rules keep their line ranges, whatever the scripts' granularity, except in a file the
   // scripts reached whole (a component's `.vue` file at `files`): its rules alone would read as all the file ran.
   const wholeFiles = new Set(
-    settings.browser === 'functions'
+    settings.browser === 'functions' || settings.browser === 'lines'
       ? []
       : (browserFiles ?? []).map((file) => (typeof file === 'string' ? file : file.path)),
   );
@@ -122,6 +124,16 @@ type CoverageAttachment = { name: string; contentType?: string; body?: Buffer };
 
 /** Function ranges by file, each range once. */
 type RangesByFile = Map<string, Map<string, LineRange>>;
+
+/** Whether the browser side records functions: at `functions` and `lines`. */
+const recordsFunctions = (settings: CoverageSettings) =>
+  settings.browser === 'functions' || settings.browser === 'lines';
+
+/** Add line ranges to a file's, merged. */
+function addLines(into: Map<string, LineRange[]>, filePath: string, ranges: LineRange[]): void {
+  if (ranges.length === 0) return;
+  into.set(filePath, normalizeLineRanges([...(into.get(filePath) ?? []), ...ranges]));
+}
 
 /** Add function ranges to a file's, each once. */
 function addRanges(into: RangesByFile, filePath: string, ranges: LineRange[]): void {
@@ -215,12 +227,16 @@ export class CoverageCollection {
   private readonly browserRan: RangesByFile = new Map();
   /** Every browser function the workers found, run or not, by file. */
   private readonly browserKnown: RangesByFile = new Map();
+  /** At `coverage.browser: 'lines'`, the browser lines the run's tests ran, by file. */
+  private readonly browserLines = new Map<string, LineRange[]>();
+  /** At `coverage.browser: 'lines'`, the executable lines of the browser files the workers found, by file. */
+  private readonly browserExecutable = new Map<string, LineRange[]>();
 
   constructor(private readonly options: CoverageCollectionOptions) {
     this.logger = options.logger ?? new Logger();
     this.waitMs = options.waitMs ?? TEST_COVERAGE_WAIT_MS;
     this.browserBlobs =
-      options.settings.browser === 'functions' || options.settings.css === 'rules'
+      recordsFunctions(options.settings) || options.settings.css === 'rules'
         ? new BlobIds(() => repositoryRoot(options.configDir))
         : null;
     const granularity = options.settings.server;
@@ -242,8 +258,8 @@ export class CoverageCollection {
 
   /**
    * The browser side of a test's coverage: its code reach paths, or, at
-   * `functions` granularity, the files of its `piwi-browser-coverage` attachment
-   * with their blob ids, once read; with `coverage.css: 'rules'`, the style
+   * `functions` and `lines` granularity, the files of its `piwi-browser-coverage`
+   * attachment with their blob ids, once read; with `coverage.css: 'rules'`, the style
    * sheet files of its `piwi-css-coverage` attachment too. Never rejects.
    */
   private browserCoverage(
@@ -253,12 +269,13 @@ export class CoverageCollection {
     const { browser, css } = this.options.settings;
     if (browser === 'off' && css !== 'rules') return {};
     const paths = browser === 'off' ? undefined : testCase.codeReach;
+    const functions = recordsFunctions(this.options.settings);
     for (const known of attachments ?? []) {
-      if (browser === 'functions' && isPiwiAttachment(known, ATTACHMENT_NAMES.browserFunctions))
-        this.addKnownFunctions(known);
+      if (functions && isPiwiAttachment(known, ATTACHMENT_NAMES.browserFunctions)) this.addKnownFunctions(known);
+      if (browser === 'lines' && isPiwiAttachment(known, ATTACHMENT_NAMES.browserLines)) this.addFileLines(known);
       if (css === 'rules' && isPiwiAttachment(known, ATTACHMENT_NAMES.cssRules)) this.addKnownFunctions(known);
     }
-    const scripts = browser === 'functions' ? this.rangedFiles(attachments, ATTACHMENT_NAMES.browserCoverage) : [];
+    const scripts = functions ? this.rangedFiles(attachments, ATTACHMENT_NAMES.browserCoverage) : [];
     const sheets = css === 'rules' ? this.rangedFiles(attachments, ATTACHMENT_NAMES.cssCoverage) : [];
     const blobs = this.browserBlobs;
     if (!blobs || (scripts.length === 0 && sheets.length === 0)) return { files: paths };
@@ -283,8 +300,30 @@ export class CoverageCollection {
       return [];
     }
     const browser = files.filter((file) => file.runtime === 'browser');
-    for (const file of browser) addRanges(this.browserRan, file.path, file.functions ?? []);
+    for (const file of browser) {
+      addRanges(this.browserRan, file.path, file.functions ?? []);
+      if (name === ATTACHMENT_NAMES.browserCoverage) addLines(this.browserLines, file.path, file.lines ?? []);
+    }
     return browser;
+  }
+
+  /** Add the lines of a `piwi-browser-lines` attachment, one of a test's, to the run's. */
+  private addFileLines(attachment: { body?: Buffer } | undefined): void {
+    if (!attachment?.body) return;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(attachment.body.toString('utf8'));
+    } catch {
+      return;
+    }
+    const files = (parsed as { v?: unknown; files?: unknown })?.v === 1 ? (parsed as { files: unknown }).files : null;
+    if (!Array.isArray(files)) return;
+    for (const item of files as Array<{ path?: unknown; executable?: unknown; lines?: unknown }>) {
+      const filePath = normalizeCoveragePath(item?.path);
+      if (filePath === null) continue;
+      addLines(this.browserExecutable, filePath, normalizeLineRanges(item.executable));
+      addLines(this.browserLines, filePath, normalizeLineRanges(item.lines));
+    }
   }
 
   /** Add the functions of a `piwi-browser-functions` attachment, one of a test's, to the run's. */
@@ -307,20 +346,32 @@ export class CoverageCollection {
   /**
    * The browser side of the run's coverage, at `coverage.browser: 'functions'`:
    * per file, the functions the tests ran and every function the pages
-   * declared, run or not, with the file's blob id.
+   * declared, run or not, with the file's blob id; at `'lines'`, also the lines
+   * that ran and the executable lines, each line that ran counted executable.
    */
   private async browserRunFiles(): Promise<RunCoverageFile[]> {
     if (!this.browserBlobs) return [];
-    const paths = [...new Set([...this.browserKnown.keys(), ...this.browserRan.keys()])].sort();
+    const paths = [
+      ...new Set([
+        ...this.browserKnown.keys(),
+        ...this.browserRan.keys(),
+        ...this.browserExecutable.keys(),
+        ...this.browserLines.keys(),
+      ]),
+    ].sort();
     const files: RunCoverageFile[] = paths.map((filePath) => {
       const functions = normalizeFunctionRanges([...(this.browserRan.get(filePath)?.values() ?? [])]);
       const allFunctions = normalizeFunctionRanges([
         ...(this.browserKnown.get(filePath)?.values() ?? []),
         ...functions,
       ]);
+      const lines = this.browserLines.get(filePath) ?? [];
+      const executable = normalizeLineRanges([...(this.browserExecutable.get(filePath) ?? []), ...lines]);
       const file: RunCoverageFile = { path: filePath, runtime: 'browser' };
       if (functions.length > 0) file.functions = functions;
+      if (lines.length > 0) file.lines = lines;
       if (allFunctions.length > 0) file.allFunctions = allFunctions;
+      if (executable.length > 0) file.executable = executable;
       return file;
     });
     try {

@@ -193,7 +193,9 @@ import {
   browserFunctionCoverage,
   cssCoverageInWorker,
   newKnownFunctions,
+  newBrowserLines,
   browserFunctionsInWorker,
+  browserLinesInWorker,
   serverCoverageInWorker,
 } from '../collect/coverage-settings.js';
 import type { LineRange } from '@piwitests/core/coverage';
@@ -454,11 +456,15 @@ interface CaptureSink {
   // JavaScript coverage of each page the test has, when code reach is on, and
   // the source files they resolved to once stopped.
   // With `coverage.browser: 'functions'`, every function the scripts declare in those files, run or not.
+  // With `coverage.browser: 'lines'`, also the lines that ran in every file the scripts resolve to, and its
+  // executable lines.
   // With `coverage.css: 'rules'`, the style sheet files the pages' matched rules resolved to, and every rule of them.
   codeReach: {
     sessions: Map<Page, CodeReachSession>;
     files: Map<string, LineRange[]>;
     known: Map<string, LineRange[]>;
+    lines: Map<string, LineRange[]>;
+    executable: Map<string, LineRange[]>;
     cssFiles: Map<string, LineRange[]>;
     cssKnown: Map<string, LineRange[]>;
   };
@@ -518,7 +524,15 @@ function createSink(): CaptureSink {
     releasedQuietSince: 0,
     releasedUntil: null,
     locatorPages: new LocatorPageLog(),
-    codeReach: { sessions: new Map(), files: new Map(), known: new Map(), cssFiles: new Map(), cssKnown: new Map() },
+    codeReach: {
+      sessions: new Map(),
+      files: new Map(),
+      known: new Map(),
+      lines: new Map(),
+      executable: new Map(),
+      cssFiles: new Map(),
+      cssKnown: new Map(),
+    },
     serverCoverage: new Map(),
     baseURL: null,
     headless: undefined,
@@ -653,11 +667,17 @@ async function stopPageCodeReach(
       append(sink.codeReach.cssKnown, rules.known);
     }
     if (!scripts) return;
-    const { reached, known } = await resolveCodeReachFunctions(scripts, roots, fetchMap, page.url(), {
-      known: browserFunctionsInWorker(),
-    });
+    const { reached, known, lines, executable } = await resolveCodeReachFunctions(
+      scripts,
+      roots,
+      fetchMap,
+      page.url(),
+      { known: browserFunctionsInWorker(), lines: browserLinesInWorker() },
+    );
     append(sink.codeReach.files, reached);
     append(sink.codeReach.known, known);
+    append(sink.codeReach.lines, lines);
+    append(sink.codeReach.executable, executable);
   } catch {
     /* code reach is best-effort and must never affect the test */
   }
@@ -673,6 +693,9 @@ let currentSink: CaptureSink | null = null;
 
 /** The browser functions this worker named in a `piwi-browser-functions` attachment, by file, as `start:end`. */
 const KNOWN_FUNCTIONS_SENT = new Map<string, Set<string>>();
+/** The executable lines and the lines that ran this worker named in a `piwi-browser-lines` attachment, by file. */
+const EXECUTABLE_LINES_SENT = new Map<string, Set<string>>();
+const RAN_LINES_SENT = new Map<string, Set<string>>();
 /** The style sheet rules this worker named in a `piwi-css-rules` attachment, by file, as `start:end`. */
 const KNOWN_CSS_RULES_SENT = new Map<string, Set<string>>();
 
@@ -3439,8 +3462,11 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
       contentType: 'application/json',
       body: Buffer.from(JSON.stringify(finalizeCodeReach(sink.codeReach.files.keys()))),
     });
-    // With `coverage.browser: 'functions'`, the line ranges of the functions that ran in each file.
-    const functions = browserFunctionsInWorker() ? browserFunctionCoverage(sink.codeReach.files) : null;
+    // With `coverage.browser: 'functions'`, the line ranges of the functions that ran in each file; with `'lines'`,
+    // the lines that ran in each too.
+    const functions = browserFunctionsInWorker()
+      ? browserFunctionCoverage(sink.codeReach.files, browserLinesInWorker() ? sink.codeReach.lines : undefined)
+      : null;
     if (functions) {
       await testInfo.attach(ATTACHMENT_NAMES.browserCoverage, {
         contentType: 'application/json',
@@ -3453,6 +3479,18 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
   const known = browserFunctionsInWorker() ? newKnownFunctions(sink.codeReach.known, KNOWN_FUNCTIONS_SENT) : [];
   for (const part of known) {
     await testInfo.attach(ATTACHMENT_NAMES.browserFunctions, {
+      contentType: 'application/json',
+      body: Buffer.from(JSON.stringify(part)),
+    });
+  }
+  // With `coverage.browser: 'lines'`, the executable lines of the browser files and the lines that ran in them, every
+  // file the scripts resolve to, whether a function of it ran or not, the first time this worker finds them: the
+  // run's line ratio counts them.
+  const fileLines = browserLinesInWorker()
+    ? newBrowserLines(sink.codeReach.executable, sink.codeReach.lines, EXECUTABLE_LINES_SENT, RAN_LINES_SENT)
+    : [];
+  for (const part of fileLines) {
+    await testInfo.attach(ATTACHMENT_NAMES.browserLines, {
       contentType: 'application/json',
       body: Buffer.from(JSON.stringify(part)),
     });
