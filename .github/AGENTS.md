@@ -38,7 +38,11 @@ design record these rules follow, with its measurements: [`adr/ci-workflows.md`]
   publishes with `vsce publish --oidc` and no token, so renaming either workflow file or the environment means updating
   the publisher's Trusted Publishing policy. Every run of `release.yml` can mint an OIDC token: the policy's
   environment, which deploys from `v*` tags only, is what keeps a pull request's run from publishing.
-- **`.github/` is owned by its maintainer** (`CODEOWNERS`): a change here needs their review.
+- **`.github/` and `commitlint.config.js` are owned by their maintainer** (`CODEOWNERS`): a change to either needs
+  their review. The `commitlint` and `title` checks read the rules from the pull request's own `commitlint.config.js`.
+- **The `title` job installs what `commitlint.config.js` loads, from `package-lock.json`.** A package the config names
+  (an `extends`, a parser preset, a plugin, a formatter) goes in `PACKAGES` of `scripts/commitlint-title.mjs`, which
+  fails on a name it does not list.
 - **The GHCR image name is fixed.** It is `ghcr.io/piwitests/platform` (`REGISTRY` and `IMAGE_NAME` in
   `reusable-publish-container.yml`), never derived from `github.repository`: users pull it by that name, and a registry
   does not redirect when the repository is renamed.
@@ -65,7 +69,9 @@ design record these rules follow, with its measurements: [`adr/ci-workflows.md`]
   (`release.yml` cancels its pull-request runs only, never a tag's). A reusable workflow has none: there
   `github.workflow` is the caller's name, so its group would collide with the caller's and cancel the run.
 - **Artifacts expire.** An explicit `retention-days` on every artifact: 1 day for the ones jobs hand to each other, 3
-  for `release.yml`'s server bundle, which **Re-run failed jobs** needs in the following days.
+  for `release.yml`'s server bundle, which **Re-run failed jobs** needs in the following days, and for `ci.yml`'s blob
+  reports, 7 for the packages a maintainer uploads to a store by hand when its publish fails (the packages and
+  installers of the `reusable-publish-*.yml`) and for the E2E reports, 14 for the perf and nightly results.
 - **Comments state the rule** the workflow follows, as everywhere in the repository (see the root `AGENTS.md`).
 
 ## Checking a change
