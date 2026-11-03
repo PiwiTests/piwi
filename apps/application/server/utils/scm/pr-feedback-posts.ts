@@ -5,11 +5,12 @@
  * `postRunPrFeedback` and by the gate's commit status; Setup reads it to mark
  * pull-request feedback active.
  */
-import { eq } from 'drizzle-orm';
+import { and, eq, gt } from 'drizzle-orm';
 import { prFeedbackPosts } from '../../database/schema';
 import { detectScmHost } from '#shared/scm-urls';
 import type { DbClient } from '../../database';
 import type { VerifiedFix } from '../fix-verification';
+import { sameRepository } from './git-url';
 
 export interface PrFeedbackPostInput {
   projectId: number;
@@ -54,6 +55,20 @@ export async function readPrFeedbackPost(db: DbClient, runId: number): Promise<P
     statuses: Array.isArray(row.statuses) ? (row.statuses as string[]) : [],
     fixes: Array.isArray(row.fixes) ? (row.fixes as VerifiedFix[]) : [],
   };
+}
+
+/**
+ * Whether a run later than `post`'s posted on the same pull request. The
+ * repositories are compared whatever form each post stored (https or SSH, a
+ * host alias, case).
+ */
+export async function hasNewerPostOnPullRequest(db: DbClient, post: PrFeedbackPost): Promise<boolean> {
+  if (post.prNumber == null) return false;
+  const later = await db
+    .select({ repositoryUrl: prFeedbackPosts.repositoryUrl })
+    .from(prFeedbackPosts)
+    .where(and(eq(prFeedbackPosts.prNumber, post.prNumber), gt(prFeedbackPosts.runId, post.runId)));
+  return later.some((row) => sameRepository(row.repositoryUrl, post.repositoryUrl));
 }
 
 /**
