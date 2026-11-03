@@ -70,8 +70,9 @@ Click the trash icon next to the key, in the same place you created it. The key 
 ## Using the API key in the reporter
 
 The reporter reads the key from `PIWI_API_KEY`, in the environment or in the `.env` beside the Playwright config
-(`init --api-key` writes it), so the config needs no change: store the key as a CI secret under that name. To read it from
-another variable, pass it in the [`wrapConfig`](/guide/reporter#installing-via-wrapconfig) options:
+(`init --api-key` writes it there, unless git tracks that file), so the config needs no change: store the key as a CI
+secret under that name. To read it from another variable, pass it in the
+[`wrapConfig`](/guide/reporter#installing-via-wrapconfig) options:
 
 ```typescript
 // playwright.config.ts
