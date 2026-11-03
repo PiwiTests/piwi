@@ -7,6 +7,16 @@ import { matchesShardToken, matchesStreamToken, readShardTokensFromMeta } from '
 import type { DbClient as DB } from '../database';
 
 /**
+ * Refuse a streaming request for a run that does not exist (404, as its route answers), before the route reads the
+ * body that carries its token: a run in the run cache exists, any other is looked up by its id alone.
+ */
+export async function requireRunExists(db: DB, runId: number): Promise<void> {
+  if (runEventBus.getRunState(runId)) return;
+  const [run] = await db.select({ id: testRuns.id }).from(testRuns).where(eq(testRuns.id, runId)).limit(1);
+  if (!run) throw apiError({ statusCode: 404, message: 'Test run not found' });
+}
+
+/**
  * Authorize a streaming request by its stream token and return the run's `projectId`.
  *
  * Fast path: when the run is cached in memory (warm), validate the token against

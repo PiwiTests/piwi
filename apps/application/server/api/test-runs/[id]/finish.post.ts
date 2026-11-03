@@ -21,13 +21,14 @@ import { sanitizeResourceReport } from '#shared/resource-report';
 import { saveResourceReportPart } from '#shared/handlers/resource-reports';
 import { storableRunErrors } from '../../../utils/storable-values';
 import { requireRouteId } from '../../../utils/project-access';
+import { requireRunExists } from '../../../utils/stream-auth';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Runs'],
     summary: 'Finish a streaming test run',
     description:
-      'Finalize a streaming test run by setting its final status and calculating performance metrics. Supports pending uploads mode where reports are uploaded asynchronously after finishing. For sharded runs, the run finishes only after all shards report; test counters come from the streamed events, and the run lasts from the start of its first shard to the end of its last shard. A shard runs from its `startTime` for its `duration`, or until its `/finish` arrives when it sends no `duration`; with no `startTime`, or one that puts its end more than a day from its `/finish`, it ends when its `/finish` arrives. The flaky count is read from the attempts the run stored. A sharded run takes the most severe `status` its shards sent, as `playwright merge-reports` does (`failed`, then `timedout`, then `interrupted`), and is `failed` when a test failed.',
+      'Finalize a streaming test run by setting its final status and calculating performance metrics. Supports pending uploads mode where reports are uploaded asynchronously after finishing. For sharded runs, the run finishes only after all shards report; test counters come from the streamed events, and the run lasts from the start of its first shard to the end of its last shard. A shard runs from its `startTime` for its `duration`, or until its `/finish` arrives when it sends no `duration`; with no `startTime`, or one that puts its end more than a day from its `/finish`, it ends when its `/finish` arrives. The flaky count is read from the attempts the run stored. A sharded run takes the most severe `status` its shards sent, as `playwright merge-reports` does (`failed`, then `timedout`, then `interrupted`), and is `failed` when a test failed. A run that does not exist answers 404 before the body is read.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     requestBody: {
       content: {
@@ -77,6 +78,8 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'test run ID');
+  const db = await getDatabase();
+  await requireRunExists(db, id);
 
   const body = await readBody(event);
 
@@ -87,8 +90,6 @@ export default eventHandler(async (event) => {
       message: 'Missing stream token',
     });
   }
-
-  const db = await getDatabase();
 
   // Verify the run exists and the stream token matches
   const testRunResults = await db.select().from(testRuns).where(eq(testRuns.id, id));

@@ -8,6 +8,12 @@ export const MAX_REQUEST_BODY_BYTES = 32 * 1024 * 1024;
 /** Largest body read by a route that reads it before checking any credential. */
 export const MAX_OPEN_ROUTE_BODY_BYTES = 64 * 1024;
 
+/**
+ * Largest batch of a streaming run's events, read before its stream token: the reporter sends an event alone up to it
+ * (`SERVER_MAX_EVENT_BATCH_BYTES` in its stream manager).
+ */
+export const MAX_EVENT_BATCH_BYTES = 10 * 1024 * 1024;
+
 // The reporter's batch submit, and the results of a run it uploads in parts, carry a whole run as one JSON document:
 // up to `PIWI_SUBMIT_MAX_BYTES` (`resolveMaxSubmitBytes`).
 const SUBMIT_PATHS = ['/api/test-runs/submit', '/api/test-runs/upload/results'];
@@ -23,6 +29,9 @@ const OPEN_ROUTE_PATHS = [
   /^\/api\/desktop\/picker-pairings$/,
   /^\/api\/test-runs\/[^/]+\/heartbeat$/,
 ];
+
+// A streaming run's batch of events, up to `MAX_EVENT_BATCH_BYTES`.
+const EVENTS_PATH = /^\/api\/test-runs\/[^/]+\/events$/;
 
 // Routes that parse a multipart body as a stream (`streamMultipart`), with caps
 // counted on the bytes read. Any other route buffers what it reads.
@@ -52,6 +61,12 @@ function bodyLimitFor(path: string): { maxBytes: number; message: string } {
   if (OPEN_ROUTE_PATHS.some((route) => route.test(path))) {
     return { maxBytes: MAX_OPEN_ROUTE_BODY_BYTES, message: `Request body over ${MAX_OPEN_ROUTE_BODY_BYTES / 1024} KB` };
   }
+  if (EVENTS_PATH.test(path)) {
+    return {
+      maxBytes: MAX_EVENT_BATCH_BYTES,
+      message: `Event batch too large (max ${MAX_EVENT_BATCH_BYTES / 1024 / 1024} MB)`,
+    };
+  }
   return { maxBytes: MAX_REQUEST_BODY_BYTES, message: `Request body over ${MAX_REQUEST_BODY_BYTES / 1024 / 1024} MB` };
 }
 
@@ -60,7 +75,8 @@ function bodyLimitFor(path: string): { maxBytes: number; message: string } {
  * body has to declare its size, since h3 buffers it whole: a chunked one (no
  * `Content-Length`) gets 411, one over its route's limit gets 413: a run's
  * results sent as JSON take up to `PIWI_SUBMIT_MAX_BYTES`, a route that reads
- * a body before any credential {@link MAX_OPEN_ROUTE_BODY_BYTES}, any other body
+ * a body before any credential {@link MAX_OPEN_ROUTE_BODY_BYTES}, a streaming
+ * run's batch of events {@link MAX_EVENT_BATCH_BYTES}, any other body
  * {@link MAX_REQUEST_BODY_BYTES}. Routes that check `Content-Length` against a
  * smaller limit can then rely on it. A multipart body sent to a route that
  * streams it is left to that route.

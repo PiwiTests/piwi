@@ -4,6 +4,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   bodyLimitError,
+  MAX_EVENT_BATCH_BYTES,
   MAX_REQUEST_BODY_BYTES,
   MAX_OPEN_ROUTE_BODY_BYTES,
   readStreamWithin,
@@ -92,13 +93,14 @@ describe('the routes that read a body before checking any credential', () => {
     'server/api/integrations/jira/webhook/[token].post.ts':
       "Reads its body after the token in its path names a connection; a Jira issue's payload can pass 64 KiB.",
     'server/api/test-runs/[id]/begin.post.ts':
-      "Carries the run's metadata and filter details, which can pass 64 KiB, with the setup token in the body.",
+      "Carries the run's metadata, whose `customData` and Playwright `metadata` are the user's and bounded by nothing, so it takes any body's 32 MB; a run that does not exist is refused before the body is read.",
     'server/api/test-runs/[id]/case-files.post.ts': 'A multipart upload, streamed under caps of its own.',
-    'server/api/test-runs/[id]/events.post.ts': 'A batch of test events, up to its own 10 MB limit.',
+    'server/api/test-runs/[id]/events.post.ts':
+      'A batch of test events, up to its own 10 MB: the reporter sends an event alone up to it, and an event carries every step of its test, which nothing bounds; a run that does not exist is refused before the body is read.',
     'server/api/test-runs/[id]/finish.post.ts':
-      "Carries the run's closing data (hook steps, errors, metadata), which can pass 64 KiB.",
+      "Carries a duration per test and the run's metadata, which nothing bounds, so it takes any body's 32 MB; a run that does not exist is refused before the body is read.",
     'server/api/test-runs/[id]/live-resources.post.ts':
-      'A post that resets the series carries every point of the run so far, which can pass 64 KiB.',
+      "A post that resets the series names every worker the reporter sampled, which nothing bounds, so it takes any body's 32 MB; a run that does not exist is refused before the body is read.",
     'server/api/test-runs/[id]/live-view.post.ts':
       "Reads its body after the run's live view key, up to its own limit on a message.",
     'server/routes/mcp.post.ts': 'Reads its body after `requireMcpAuth`.',
@@ -145,6 +147,31 @@ describe('the routes that read a body before checking any credential', () => {
       'Add these routes to OPEN_ROUTE_PATHS in server/utils/body-limit.ts, or to LARGER_OR_AFTER_CREDENTIAL with the reason',
     ).toEqual([]);
     expect(Object.keys(LARGER_OR_AFTER_CREDENTIAL).filter((file) => !open.includes(file))).toEqual([]);
+  });
+});
+
+describe("a streaming run's routes that read the body before its token", () => {
+  test('a batch of events takes up to 10 MB, the most the reporter sends, and a 413 naming it past that', () => {
+    expect(MAX_EVENT_BATCH_BYTES).toBe(10 * 1024 * 1024);
+    for (const path of ['/api/test-runs/12/events', '/api/test-runs/12/events/', '/api/test-runs/12/events?x=1']) {
+      expect(bodyLimitError({ ...json, path, contentLength: String(MAX_EVENT_BATCH_BYTES) })).toBeNull();
+      expect(bodyLimitError({ ...json, path, contentLength: String(MAX_EVENT_BATCH_BYTES + 1) })).toEqual({
+        statusCode: 413,
+        message: 'Event batch too large (max 10 MB)',
+      });
+      expect(bodyLimitError({ ...json, path, transferEncoding: 'chunked' })?.statusCode).toBe(411);
+    }
+  });
+
+  test("begin, finish and live resources take any body's 32 MB, and a 413 naming it past that", () => {
+    for (const route of ['begin', 'finish', 'live-resources']) {
+      const path = `/api/test-runs/12/${route}`;
+      expect(bodyLimitError({ ...json, path, contentLength: String(MAX_REQUEST_BODY_BYTES) })).toBeNull();
+      expect(bodyLimitError({ ...json, path, contentLength: String(MAX_REQUEST_BODY_BYTES + 1) })).toEqual({
+        statusCode: 413,
+        message: 'Request body over 32 MB',
+      });
+    }
   });
 });
 

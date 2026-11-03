@@ -16,7 +16,7 @@ import type { CollectedTestCase, StreamEvent, FilterDetails } from '../../types.
 
 /**
  * Largest `/events` request body the dashboard accepts (`MAX_EVENT_BATCH_BYTES`
- * in its events route); a larger one is refused with 413.
+ * in its `server/utils/body-limit.ts`); a larger one is refused with 413.
  */
 const SERVER_MAX_EVENT_BATCH_BYTES = 10 * 1024 * 1024;
 /** Room kept for the request envelope (`streamToken`, the `testCases` array) around the events. */
