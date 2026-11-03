@@ -660,7 +660,7 @@ export function commandFolder(context: PiwiContext): string {
 }
 
 /**
- * The Flake Lab lines above a flaky test: its flaky rate and top suspect, which
+ * The Flake Lab lines above a flaky test: its flaky N% and top suspect, which
  * open its Flakiness tab, then the `piwi flake` commands it can run, each through
  * `piwi.runCommand` in the config's folder and reporting to the instance the
  * context reads. With `desktop`, while the desktop app runs beside a team
