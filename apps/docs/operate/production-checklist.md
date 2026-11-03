@@ -10,7 +10,7 @@ A fresh Piwi instance starts as an **open dashboard with authentication off** �
 
 ## Before you expose it
 
-1. **Turn authentication on.** Set `PIWI_AUTH_ENABLED=true` and a strong `PIWI_AUTH_SECRET` (session-cookie signing key). The server refuses to start with auth enabled and no secret, so this can't half-apply. Set `PIWI_SETUP_TOKEN` to a random value too: the first-administrator form asks for it, so whoever reaches the URL before you cannot make themselves administrator. Then create that account before you share the URL. See [Authentication](./authentication#initial-setup).
+1. **Turn authentication on.** Set `PIWI_AUTH_ENABLED=true` and a strong `PIWI_AUTH_SECRET` (session-cookie signing key). The server refuses to start with auth enabled and no secret, or one shorter than 32 characters, so this can't half-apply. Set `PIWI_SETUP_TOKEN` to a random value too: the first-administrator form asks for it, so whoever reaches the URL before you cannot make themselves administrator. Then create that account before you share the URL. See [Authentication](./authentication#initial-setup).
 2. **Set the encryption key.** Set `PIWI_SECRET_KEY` so the credentials you store in the dashboard — AI API keys, SCM tokens, webhook secrets — are encrypted with **your** key. Unset, the dashboard refuses to save them. Generate either secret with:
 
    <<< @/snippets/secret.sh{bash}

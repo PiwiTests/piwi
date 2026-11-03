@@ -463,12 +463,13 @@ export const PIWI_ENV_VARS = {
     default: 'false',
   },
   PIWI_AUTH_SECRET: {
-    description: 'Secret used to sign/encrypt session cookies. Required when PIWI_AUTH_ENABLED is true.',
+    description:
+      'Secret used to sign/encrypt session cookies, at least 32 characters. Required when PIWI_AUTH_ENABLED is true.',
     category: 'auth',
     secret: true,
     relevantWhen: { PIWI_AUTH_ENABLED: 'true' },
     requiredWhen: { PIWI_AUTH_ENABLED: 'true' },
-    notes: 'The server refuses to start when auth is enabled and this is unset.',
+    notes: 'The server refuses to start when auth is enabled and this is unset or shorter than 32 characters.',
   },
   PIWI_SETUP_TOKEN: {
     description:

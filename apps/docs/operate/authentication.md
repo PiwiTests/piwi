@@ -34,7 +34,8 @@ What a Member can do inside a project comes from the **project roles** granted t
 
    <<< @/snippets/secret.sh{bash}
 
-2. Restart the server. It refuses to start with authentication on and no `PIWI_AUTH_SECRET`.
+2. Restart the server. It refuses to start with authentication on and no `PIWI_AUTH_SECRET`, or one shorter than 32
+   characters.
 
 ## Initial setup
 
