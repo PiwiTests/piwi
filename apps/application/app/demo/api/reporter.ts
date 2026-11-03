@@ -673,6 +673,15 @@ export async function persistRunCases(
   const perCaseReach: CodeReachCase[] = [];
   const rowCoverage: Array<CoverageCapture | null> = [];
   const caseMetaSnapshots = new Map<number, CaseMetaSnapshot>();
+  // The rows of the batch already stored, by an earlier request that failed past its insert: settled with the rest.
+  const storedRows: Array<{
+    testCaseId: number;
+    browserName: string | null;
+    repeatEachIndex: number;
+    retries: number;
+    status: string;
+    attempts: unknown;
+  }> = [];
 
   for (let i = 0; i < cases.length; i++) {
     const c = cases[i]!;
@@ -691,7 +700,17 @@ export async function persistRunCases(
 
     if (deduplicate && existingRunCaseSet) {
       const rowKey = `${caseId}::${resolveRepeatEachIndex(c.repeatEachIndex)}::${int32(c.retries) ?? 0}::${resolveBrowserName(c.browser) ?? ''}`;
-      if (existingRunCaseSet.has(rowKey)) continue;
+      if (existingRunCaseSet.has(rowKey)) {
+        storedRows.push({
+          testCaseId: caseId,
+          browserName: resolveBrowserName(c.browser),
+          repeatEachIndex: resolveRepeatEachIndex(c.repeatEachIndex),
+          retries: int32(c.retries) ?? 0,
+          status: c.status,
+          attempts: c.attempts,
+        });
+        continue;
+      }
     }
 
     let fingerprint: ErrorFingerprint | null = null;
@@ -800,7 +819,10 @@ export async function persistRunCases(
     networkRequestBuilders.push({ items: nrItems });
   }
 
-  if (runCasesRows.length === 0) return [];
+  if (runCasesRows.length === 0) {
+    await settleFinalAttempts(db, testRunId, storedRows, await fillAttemptHistories(db, testRunId, storedRows));
+    return [];
+  }
 
   const rowFragments = await upsertCoverageFragments(db, projectId, rowCoverage);
   const rowCoveragePayload = rowFragments.map((fragments, i) =>
@@ -838,7 +860,8 @@ export async function persistRunCases(
     countsOccurrences,
   });
 
-  await fillAttemptHistories(db, testRunId, runCasesRows);
+  const batch = [...runCasesRows, ...storedRows];
+  const withoutHistory = await fillAttemptHistories(db, testRunId, batch);
 
   // ON CONFLICT DO NOTHING + the (run, case, repeat, retries, browser) unique
   // index keep this idempotent across batch retries, while each attempt,
@@ -855,11 +878,7 @@ export async function persistRunCases(
     }),
   );
   await uncountClustersOfSkippedRows(db, runCasesRows, insertedCases, countsOccurrences);
-  await settleFinalAttempts(
-    db,
-    testRunId,
-    insertedCases.map((r) => r.testCaseId),
-  );
+  await settleFinalAttempts(db, testRunId, batch, withoutHistory);
 
   const result = insertedCases.map((r) => ({
     id: r.id,

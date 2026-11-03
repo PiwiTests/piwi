@@ -9,7 +9,8 @@
  * `test_runs_cases` keeps through `settleFinalAttempts`; the flaky check reads
  * the row alone, so a query costs no lookup per execution for either: a retry
  * that comes without an attempt history is given one as it is stored
- * (`fillAttemptHistories`).
+ * (`fillAttemptHistories`), and completed when an earlier attempt is stored
+ * after it (`settleFinalAttempts`).
  */
 import { aliasedTable, and, eq, inArray, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { testRunsCases } from '../../server/database/schema';
@@ -56,20 +57,53 @@ export function finalAttemptSql(row: Executions = testRunsCases): SQL {
 /** How many tests one statement of `settleFinalAttempts` reads. */
 const SETTLE_CHUNK = 500;
 
+/** How many entries a stored attempt history keeps, as ingest caps the one a reporter sends. */
+const MAX_HISTORY_ENTRIES = 30;
+
+/** An execution of a batch, as `settleFinalAttempts` reads it: its result and its retry. */
+interface BatchAttempt {
+  testCaseId: number;
+  browserName?: string | null;
+  repeatEachIndex?: number | null;
+  retries?: number | null;
+}
+
+/** The result `row` is an attempt of in its run: its test, Playwright project and repetition (`attemptKey`). */
+function resultOf(row: BatchAttempt): string {
+  return attemptKey({ ...row, repeatEachIndex: row.repeatEachIndex ?? 0 });
+}
+
+/** Which attempt of its result `row` is. */
+function attemptOf(row: BatchAttempt): string {
+  return `${resultOf(row)}\x00${row.retries ?? 0}`;
+}
+
 /**
- * Keep `final_attempt` right after rows of tests `testCaseIds` were added to
- * run `testRunId`: each of their attempts with a later attempt of its result
- * stored (`laterAttemptSql`) is no longer a final attempt. A row is stored as
- * one, so an attempt stored after a later one is settled too. Every write of
- * `test_runs_cases` calls it with the tests it wrote: `persistRunCases` on the
- * server and in the demo.
+ * Keep the stored attempts of run `testRunId` right after a write of `rows`, a
+ * batch of its executions (each row inserted, or stored already by a request
+ * that failed past its insert):
+ * - an attempt of their tests with a later attempt of its result stored
+ *   (`laterAttemptSql`) is marked as not final. A row is stored as final, so
+ *   an attempt stored after a later one is settled too;
+ * - a stored retry of a result `withoutHistory` holds an attempt of (the rows
+ *   `fillAttemptHistories` found without a history: their reporter sends
+ *   none, so the server built the result's stored histories) is given the
+ *   history `withAttemptHistory` builds from the result's stored attempts
+ *   when it lists more of them than the stored one, so an attempt stored
+ *   after its retry completes the retry's history. A history the reporter
+ *   sent whole lists every attempt and is kept, as is one the batch carries.
+ * Every write of `test_runs_cases` calls it after its insert with every row of
+ * its batch, so sending a batch again repairs both: `persistRunCases` on the
+ * server and in the demo. The stored attempts of the tests of
+ * `withoutHistory` are read once, `SETTLE_CHUNK` tests per statement.
  */
 export async function settleFinalAttempts(
   db: DrizzleDB,
   testRunId: number,
-  testCaseIds: Iterable<number>,
+  rows: ReadonlyArray<BatchAttempt>,
+  withoutHistory: ReadonlyArray<BatchAttempt>,
 ): Promise<void> {
-  const tests = [...new Set(testCaseIds)];
+  const tests = [...new Set(rows.map((row) => row.testCaseId))];
   for (let i = 0; i < tests.length; i += SETTLE_CHUNK) {
     const superseded = await db
       .select({ id: testRunsCases.id })
@@ -93,6 +127,51 @@ export async function settleFinalAttempts(
         ),
       );
   }
+  await completeAttemptHistories(db, testRunId, rows, withoutHistory);
+}
+
+/** The history part of `settleFinalAttempts`. */
+async function completeAttemptHistories(
+  db: DrizzleDB,
+  testRunId: number,
+  rows: ReadonlyArray<BatchAttempt>,
+  withoutHistory: ReadonlyArray<BatchAttempt>,
+): Promise<void> {
+  if (withoutHistory.length === 0) return;
+  const results = new Set(withoutHistory.map(resultOf));
+  const bare = new Set(withoutHistory);
+  const carried = new Set(rows.filter((row) => !bare.has(row)).map(attemptOf));
+  const tests = [...new Set(withoutHistory.map((row) => row.testCaseId))];
+  for (let i = 0; i < tests.length; i += SETTLE_CHUNK) {
+    const stored = await db
+      .select({
+        id: testRunsCases.id,
+        testCaseId: testRunsCases.testCaseId,
+        browserName: testRunsCases.browserName,
+        repeatEachIndex: testRunsCases.repeatEachIndex,
+        retries: testRunsCases.retries,
+        status: testRunsCases.status,
+        duration: testRunsCases.duration,
+        startedAt: testRunsCases.startedAt,
+        attempts: testRunsCases.attempts,
+      })
+      .from(testRunsCases)
+      .where(
+        and(
+          eq(testRunsCases.testRunId, testRunId),
+          inArray(testRunsCases.testCaseId, tests.slice(i, i + SETTLE_CHUNK)),
+        ),
+      );
+    const ofResults = stored.filter((row) => results.has(resultOf(row)));
+    const listed = new Map(ofResults.map((row) => [row.id, Array.isArray(row.attempts) ? row.attempts.length : 0]));
+    const rebuilt = withAttemptHistory(ofResults.map((row) => ({ ...row, attempts: null as unknown })));
+    for (const row of rebuilt) {
+      if ((row.retries ?? 0) === 0 || carried.has(attemptOf(row)) || !Array.isArray(row.attempts)) continue;
+      const attempts = row.attempts.slice(0, MAX_HISTORY_ENTRIES);
+      if (attempts.length <= listed.get(row.id)!) continue;
+      await db.update(testRunsCases).set({ attempts }).where(eq(testRunsCases.id, row.id));
+    }
+  }
 }
 
 /** An execution about to be stored, as `fillAttemptHistories` reads it. */
@@ -107,9 +186,6 @@ interface NewAttempt {
   attempts?: unknown;
 }
 
-/** How many entries a stored attempt history keeps, as ingest caps the one a reporter sends. */
-const MAX_HISTORY_ENTRIES = 30;
-
 /** Whether an execution came without an attempt history. */
 function lacksHistory(attempts: unknown): boolean {
   return !Array.isArray(attempts) || attempts.length === 0;
@@ -123,12 +199,19 @@ function lacksHistory(attempts: unknown): boolean {
  * attempt counting once when the batch repeats it. `flakyResultSql` then reads
  * the row as the run page reads the run's rows. A row that came with a history
  * keeps it. The stored attempts are read in one query, only when a retry lacks
- * a history. Every write of `test_runs_cases` calls it before its insert:
+ * a history. Returns the rows that came without a history, which
+ * `settleFinalAttempts` completes the stored histories of their results with.
+ * Every write of `test_runs_cases` calls it before its insert:
  * `persistRunCases` on the server and in the demo.
  */
-export async function fillAttemptHistories(db: DrizzleDB, testRunId: number, rows: NewAttempt[]): Promise<void> {
-  const missing = new Set(rows.filter((row) => (row.retries ?? 0) > 0 && lacksHistory(row.attempts)));
-  if (missing.size === 0) return;
+export async function fillAttemptHistories(
+  db: DrizzleDB,
+  testRunId: number,
+  rows: NewAttempt[],
+): Promise<NewAttempt[]> {
+  const withoutHistory = rows.filter((row) => lacksHistory(row.attempts));
+  const missing = new Set(withoutHistory.filter((row) => (row.retries ?? 0) > 0));
+  if (missing.size === 0) return withoutHistory;
   const stored = await db
     .select({
       testCaseId: testRunsCases.testCaseId,
@@ -146,8 +229,6 @@ export async function fillAttemptHistories(db: DrizzleDB, testRunId: number, row
         inArray(testRunsCases.testCaseId, [...new Set([...missing].map((row) => row.testCaseId))]),
       ),
     );
-  const attemptOf = (row: { retries?: number | null } & Parameters<typeof attemptKey>[0]) =>
-    `${attemptKey(row)}\x00${row.retries ?? 0}`;
   const storedAttempts = new Set(stored.map(attemptOf));
   const pool = [
     ...stored.map((row) => ({ ...row, attempts: null, source: null })),
@@ -159,6 +240,7 @@ export async function fillAttemptHistories(db: DrizzleDB, testRunId: number, row
     if (!row.source || !missing.has(row.source) || !Array.isArray(row.attempts)) continue;
     row.source.attempts = row.attempts.slice(0, MAX_HISTORY_ENTRIES);
   }
+  return withoutHistory;
 }
 
 /**
@@ -170,10 +252,13 @@ export async function fillAttemptHistories(db: DrizzleDB, testRunId: number, row
  * history is compared as text with its spaces taken out, since PostgreSQL
  * renders `jsonb` with a space after each colon and SQLite stores none. A
  * trace import stores each attempt with the history of the run's attempts
- * before it (`importTraceRun`), as the reporter does, and a retry stored
- * without one is given it at startup (`backfillAttemptHistories`). A retry
- * left without a history has no earlier stored attempt: it is flaky when it
- * passed, as `flakyFinalAttempts` reads a final attempt with no earlier row.
+ * before it (`importTraceRun`), as the reporter does. A retry that comes
+ * without one is given the one its result's stored attempts make
+ * (`fillAttemptHistories`), completed by an earlier attempt stored after it
+ * (`settleFinalAttempts`), and a retry stored without one by an earlier
+ * version is given it at startup (`backfillAttemptHistories`). A retry left
+ * without a history has no earlier attempt stored: it is flaky when it passed,
+ * as `flakyFinalAttempts` reads a final attempt with no earlier row.
  */
 export function flakyResultSql(row: Executions = testRunsCases): SQL<boolean> {
   const history = sql`REPLACE(CAST(${row.attempts} AS TEXT), ' ', '')`;

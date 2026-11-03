@@ -19,7 +19,8 @@ import { STORED_ATTEMPTS, expectedFinalFlags, finalAttemptBackfillSql } from './
  * later attempt arrives, and when an attempt arrives after a later one: a batch, a streamed run, the imports and the
  * demo's ingest. A migration gives the executions stored before it theirs. A retry an older reporter sends without
  * its attempt history is given the one its result's stored and earlier attempts make, which the catalog and the test
- * page read its flakiness from.
+ * page read its flakiness from, and an earlier attempt stored after it completes it. A batch sent again after its
+ * request failed past its insert repairs both.
  */
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
@@ -35,6 +36,21 @@ vi.mock('../../server/utils/auth', () => ({
   isAuthEnabled: () => false,
 }));
 vi.mock('../../server/utils/run-finalize-side-effects', () => ({ runFinalizeSideEffects: vi.fn(async () => {}) }));
+// A request that fails after its insert: the next `settles` calls of `settleFinalAttempts` throw.
+const failing = vi.hoisted(() => ({ settles: 0 }));
+vi.mock('#shared/handlers/test-case-aggregates', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('#shared/handlers/test-case-aggregates')>();
+  return {
+    ...actual,
+    settleFinalAttempts: async (...args: Parameters<typeof actual.settleFinalAttempts>) => {
+      if (failing.settles > 0) {
+        failing.settles--;
+        throw new Error('SQLITE_BUSY: database is locked');
+      }
+      return actual.settleFinalAttempts(...args);
+    },
+  };
+});
 
 interface RouteEvent {
   params?: Record<string, string>;
@@ -57,6 +73,8 @@ const { importBlobReportRun, importTraceRun } = await import('#shared/handlers/i
 const { persistRunCases } = await import('../../server/utils/persist-run-cases');
 const { apiSetupTestRun, apiBeginTestRun, apiPostRunEvents } = await import('../../app/demo/api/reporter');
 const { getTestCase, getTestCaseStabilityTrend } = await import('#shared/handlers/test-cases');
+const { getTestRun } = await import('#shared/handlers/test-runs');
+const { isFlakyExecution } = await import('#shared/utils/test-counts');
 const { getProjectTestCases } = await import('#shared/handlers/projects');
 const { testCaseCache } = await import('../../server/utils/test-case-cache');
 const { testSuiteCache } = await import('../../server/utils/test-suite-cache');
@@ -68,6 +86,7 @@ let projectId: number;
 const PROJECT = 'final-attempts';
 
 beforeEach(async () => {
+  failing.settles = 0;
   db = drizzle(createClient({ url: ':memory:' }), { schema });
   await migrateToLatest(db);
   state.db = db;
@@ -125,6 +144,54 @@ async function testCaseId(title: string): Promise<number> {
     .from(schema.testCases)
     .where(eq(schema.testCases.title, title));
   return row!.id;
+}
+
+type Execution = ReturnType<typeof attempt> | Omit<ReturnType<typeof attempt>, 'attempts'>;
+
+/** A streamed run through the server's ingest or the demo's, and how to send it one execution. */
+const streams = {
+  server: async () => {
+    const { runId, streamToken } = await start({ body: { projectName: PROJECT, totalTests: 1 } });
+    const send = (tc: Execution) =>
+      events({ params: { id: String(runId) }, body: { streamToken, testCases: [{ type: 'complete', ...tc }] } });
+    return { runId: runId as number, send };
+  },
+  demo: async () => {
+    const run = { projectName: PROJECT, instanceId: 'ci-run-streamed' };
+    const { runId, setupToken } = await apiSetupTestRun(run);
+    const { streamToken } = await apiBeginTestRun(runId, { setupToken, totalTests: 1, ...run });
+    const send = (tc: Execution) =>
+      apiPostRunEvents(runId, { streamToken, testCases: [{ type: 'complete', ...tc } as never] });
+    return { runId, send };
+  },
+};
+
+/**
+ * Whether each page reads test `title` flaky in run `runId`, its only run: the test page header and the catalog
+ * (`flakyResultSql` on the stored final attempt), the run page (`isFlakyExecution` on the final attempt it lists)
+ * and the Trend tab (`finalAttemptsOfRuns`).
+ */
+async function flakyReadings(runId: number, title: string) {
+  const id = await testCaseId(title);
+  const header = await getTestCase(db as never, id);
+  const catalog = (await getProjectTestCases(db as never, projectId)).items.find((t: any) => t.id === id);
+  const run = await getTestRun(db as never, runId);
+  const [final] = run!.testCases
+    .filter((tc: any) => tc.testCaseId === id)
+    .sort((a: any, b: any) => (b.retries ?? 0) - (a.retries ?? 0));
+  const trend = await getTestCaseStabilityTrend(db as never, id, { days: 2, granularity: 'day' });
+  return {
+    header: header!.flakyRuns === 1,
+    recent: header!.recentFlakyRuns === 1,
+    catalog: catalog?.status === 'flaky',
+    runPage: isFlakyExecution(final),
+    trend: trend.buckets.filter((b) => b.totalRuns > 0).map((b) => b.flakyRate === 1),
+  };
+}
+
+/** Every page reading the test flaky, or none. */
+function readEverywhere(flaky: boolean) {
+  return { header: flaky, recent: flaky, catalog: flaky, runPage: flaky, trend: [flaky] };
 }
 
 describe('a batch', () => {
@@ -375,6 +442,91 @@ describe('a retry an older reporter sends without its attempt history', () => {
     await send(bare('pays', ['passed', 'passed']));
     expect((await histories('pays'))[1]).toHaveLength(2);
     expect(await getTestCase(db as never, await testCaseId('pays'))).toMatchObject({ totalRuns: 1, flakyRuns: 0 });
+  });
+
+  describe.each(['server', 'demo'] as const)('and stored before an earlier attempt, by the %s ingest', (ingest) => {
+    test('is given one once the earlier attempt is stored', async () => {
+      const { runId, send } = await streams[ingest]();
+      await send(bare('pays', ['passed', 'passed']));
+      await send(bare('pays', ['passed']));
+
+      expect(await histories('pays')).toEqual([
+        null,
+        [
+          { retry: 0, status: 'passed', duration: 100, startedAt: null },
+          { retry: 1, status: 'passed', duration: 100, startedAt: null },
+        ],
+      ]);
+      expect(await flakyReadings(runId, 'pays')).toEqual(readEverywhere(false));
+    });
+
+    test('has its history completed by an attempt stored between', async () => {
+      const { runId, send } = await streams[ingest]();
+      await send(bare('pays', ['passed']));
+      await send(bare('pays', ['passed', 'failed', 'passed']));
+      await send(bare('pays', ['passed', 'failed']));
+
+      expect((await histories('pays'))[2]).toEqual([
+        { retry: 0, status: 'passed', duration: 100, startedAt: null },
+        { retry: 1, status: 'failed', duration: 100, startedAt: null },
+        { retry: 2, status: 'passed', duration: 100, startedAt: null },
+      ]);
+      expect(await flakyReadings(runId, 'pays')).toEqual(readEverywhere(true));
+    });
+
+    test('keeps a history the reporter sent whole', async () => {
+      const { runId, send } = await streams[ingest]();
+      const whole = [
+        { retry: 0, status: 'failed', duration: 7, startedAt: null },
+        { retry: 1, status: 'passed', duration: 7, startedAt: null },
+      ];
+      await send(attempt('pays', ['failed', 'passed'], { attempts: whole }));
+      await send(bare('pays', ['failed']));
+
+      expect((await histories('pays'))[1]).toEqual(whole);
+      expect(await flakyReadings(runId, 'pays')).toEqual(readEverywhere(true));
+    });
+  });
+});
+
+describe('a batch sent again after its request failed past its insert', () => {
+  describe.each(['server', 'demo'] as const)('by the %s ingest', (ingest) => {
+    test('settles the final attempt it stored', async () => {
+      const { runId, send } = await streams[ingest]();
+      await send(attempt('pays', ['failed']));
+      failing.settles = 1;
+      await expect(send(attempt('pays', ['failed', 'passed']))).rejects.toThrow('SQLITE_BUSY');
+      await send(attempt('pays', ['failed', 'passed']));
+
+      expect(await finalFlags(runId)).toEqual(['pays chromium#0/0: earlier', 'pays chromium#0/1: final']);
+      expect(await getTestCase(db as never, await testCaseId('pays'))).toMatchObject({
+        totalRuns: 1,
+        passedRuns: 1,
+        failedRuns: 0,
+        flakyRuns: 1,
+      });
+      expect(await flakyReadings(runId, 'pays')).toEqual(readEverywhere(true));
+    });
+
+    test('completes the history of a later retry stored before it', async () => {
+      const bare = (statuses: string[]) => {
+        const { attempts: _history, ...tc } = attempt('pays', statuses);
+        return tc;
+      };
+      const { runId, send } = await streams[ingest]();
+      await send(bare(['passed']));
+      await send(bare(['passed', 'failed', 'passed']));
+      failing.settles = 1;
+      await expect(send(bare(['passed', 'failed']))).rejects.toThrow('SQLITE_BUSY');
+      await send(bare(['passed', 'failed']));
+
+      expect(await finalFlags(runId)).toEqual([
+        'pays chromium#0/0: earlier',
+        'pays chromium#0/1: earlier',
+        'pays chromium#0/2: final',
+      ]);
+      expect(await flakyReadings(runId, 'pays')).toEqual(readEverywhere(true));
+    });
   });
 });
 

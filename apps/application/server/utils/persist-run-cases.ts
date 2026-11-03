@@ -648,7 +648,7 @@ export async function persistRunCases(
     });
   }
 
-  await fillAttemptHistories(db, testRunId, runCasesRows);
+  const withoutHistory = await fillAttemptHistories(db, testRunId, runCasesRows);
   const insertRunCases = (rows: typeof runCasesRows) =>
     db.insert(testRunsCases).values(rows).onConflictDoNothing().returning({
       id: testRunsCases.id,
@@ -676,11 +676,8 @@ export async function persistRunCases(
   }
   const insertedCases = matchInsertedRunCases(runCasesRows, returnedRows);
   await uncountClustersOfSkippedRows(db, runCasesRows, insertedCases, countsOccurrences);
-  await settleFinalAttempts(
-    db,
-    testRunId,
-    insertedCases.map((r) => r.testCaseId),
-  );
+  // Every row of the batch, inserted or stored by an earlier request that failed past its insert.
+  await settleFinalAttempts(db, testRunId, runCasesRows, withoutHistory);
 
   const result = insertedCases.map((r) => ({
     id: r.id,

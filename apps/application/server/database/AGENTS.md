@@ -92,10 +92,12 @@ its own retries, as in Playwright, and a row without one reads `repeat_each_inde
 - **A test's own pages count its runs, one result per run, project and repetition: its final attempt.** In SQL through
   `shared/handlers/test-case-aggregates.ts` (`finalAttemptSql`, `testCaseAggregates`, `recentFlakySql`), on both
   dialects; in memory through `finalAttemptsOfRuns`. `tests/unit/test-case-results.test.ts`, `test-case-runs-pg.test.ts`.
-- **Every insert into `test_runs_cases` is followed by `settleFinalAttempts`** with the tests it wrote: a row is stored
-  as its result's final attempt (`final_attempt`), which `finalAttemptSql` reads, until a later attempt arrives
-  (`persistRunCases` and its demo mirror; the seed generator and the perf dataset write the flag themselves). A fixture
-  that inserts attempts directly sets `finalAttempt: false` on the earlier ones. `tests/unit/final-attempt.test.ts`.
-- **Every insert into `test_runs_cases` is preceded by `fillAttemptHistories`**: a retry that came without an attempt
-  history gets the one its stored and earlier attempts make, since `flakyResultSql` reads a row's verdict from the row
-  alone. `tests/unit/final-attempt.test.ts` fails on a file that inserts executions without it.
+- **Every insert into `test_runs_cases` is followed by `settleFinalAttempts`** with every row of its batch, inserted or
+  already stored, so a batch sent again repairs a request that failed past its insert: a row is stored as its result's
+  final attempt (`final_attempt`), which `finalAttemptSql` reads, until a later attempt arrives (`persistRunCases` and
+  its demo mirror; the seed generator and the perf dataset write the flag themselves). A fixture that inserts attempts
+  directly sets `finalAttempt: false` on the earlier ones. `tests/unit/final-attempt.test.ts`.
+- **Every insert into `test_runs_cases` is preceded by `fillAttemptHistories`**, whose rows without a history go to
+  `settleFinalAttempts`: a retry that came without an attempt history gets the one its stored and earlier attempts make,
+  completed by an earlier attempt stored after it, since `flakyResultSql` reads a row's verdict from the row alone.
+  `tests/unit/final-attempt.test.ts` fails on a file that inserts executions without it.
