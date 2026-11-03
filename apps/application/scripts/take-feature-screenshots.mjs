@@ -7661,7 +7661,7 @@ async function prSummaryMarkdown() {
         filePath: 'tests/cart.spec.ts',
         errorExcerpt: 'Timeout 5000ms exceeded waiting for getByTestId("cart-total")',
         executionId: 9050,
-        flakyOnDefaultBranch: { branch: 'main', flakinessRate: 0.2 },
+        flakyOnDefaultBranch: { branch: 'main', flakinessScore: 20 },
       },
     ],
     newClusters: [{ id: 12, signature: 'checkout Pay click times out', caseCount: 1 }],
