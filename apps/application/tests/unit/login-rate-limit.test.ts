@@ -1,6 +1,7 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 import type { H3Event } from 'h3';
 import { apiError } from '../../server/utils/api-error';
+import { rateLimitKeyCount } from '../../server/utils/rate-limit';
 
 /**
  * The login route's throttle: attempts sent together each take a slot before
@@ -122,6 +123,15 @@ describe('login throttle', () => {
     for (let i = 0; i < 8; i++) expect(await together([request(ip, username, auth.busy)])).toEqual([503]);
     const statuses = await together(Array.from({ length: 6 }, () => request(ip, username, 'wrong')));
     expect(statuses.filter((s) => s === 401)).toHaveLength(5);
+  });
+
+  test('checks refused as busy leave no key behind, whatever username they name', async () => {
+    const ip = `10.0.0.${address}`;
+    const before = rateLimitKeyCount();
+    for (let i = 0; i < 30; i++) {
+      expect(await together([request(ip, `someone${address}-${i}`, auth.busy)])).toEqual([503]);
+    }
+    expect(rateLimitKeyCount()).toBe(before);
   });
 
   test('a valid login gives its slots back', async () => {

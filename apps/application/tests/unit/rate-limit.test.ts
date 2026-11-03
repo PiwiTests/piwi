@@ -3,6 +3,8 @@ import type { H3Event } from 'h3';
 import {
   checkRateLimit,
   limitLookupMisses,
+  rateLimitKeyCount,
+  releaseRateLimit,
   resetRateLimit,
   rateLimitResetSeconds,
   rateLimitedError,
@@ -134,6 +136,36 @@ describe('limitLookupMisses', () => {
       );
     expect(await status(failing())).toBe(500);
     expect(await status(failing())).toBe(500);
+  });
+});
+
+describe('releaseRateLimit', () => {
+  test('gives a slot back, and removes a key that holds none', () => {
+    const before = rateLimitKeyCount();
+    expect(checkRateLimit('release:key', 2, WINDOW_MS)).toBe(true);
+    expect(checkRateLimit('release:key', 2, WINDOW_MS)).toBe(true);
+    expect(checkRateLimit('release:key', 2, WINDOW_MS)).toBe(false);
+    releaseRateLimit('release:key');
+    expect(rateLimitKeyCount()).toBe(before + 1);
+    expect(checkRateLimit('release:key', 2, WINDOW_MS)).toBe(true);
+    releaseRateLimit('release:key');
+    releaseRateLimit('release:key');
+    expect(rateLimitKeyCount()).toBe(before);
+  });
+
+  test('a lookup that finds what it looked up leaves no key behind', async () => {
+    const { event } = fakeEvent();
+    const before = rateLimitKeyCount();
+    for (let i = 0; i < 10; i++) {
+      await limitLookupMisses(
+        event,
+        `release:hit:${i}`,
+        { limit: 2, windowMs: WINDOW_MS },
+        async () => true,
+        (found) => !found,
+      );
+    }
+    expect(rateLimitKeyCount()).toBe(before);
   });
 });
 

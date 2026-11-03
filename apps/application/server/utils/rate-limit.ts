@@ -39,10 +39,16 @@ export function checkRateLimit(key: string, limit: number, windowMs: number): bo
   return true;
 }
 
-/** Give back one slot `checkRateLimit` took under `key`, for a request that turned out not to count. */
+/**
+ * Give back one slot `checkRateLimit` took under `key`, for a request that
+ * turned out not to count. A key left holding no slot is removed, so requests
+ * that never count leave nothing in the store.
+ */
 export function releaseRateLimit(key: string): void {
   const entry = store.get(key);
-  if (entry && entry.resetAt >= Date.now() && entry.count > 0) entry.count--;
+  if (!entry || entry.resetAt < Date.now()) return;
+  if (entry.count > 0) entry.count--;
+  if (entry.count === 0) store.delete(key);
 }
 
 /**
