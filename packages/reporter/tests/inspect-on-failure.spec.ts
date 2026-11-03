@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   environmentalSkipReason,
   inspectionGateFromTestInfo,
@@ -6,21 +6,7 @@ import {
   type InspectionGate,
 } from '../src/internal/capture/inspect-on-failure.js';
 import { resolveOptions, applyOptionsToEnv, PIWI_ENV_KEYS } from '../src/internal/config/env.js';
-
-/** Every variable `detectCi` reads, so a case sees only the ones it sets, whatever CI runs the suite. */
-const CI_KEYS = [
-  'CI',
-  'JENKINS_URL',
-  'GITHUB_ACTIONS',
-  'GITLAB_CI',
-  'CIRCLECI',
-  'TRAVIS',
-  'TF_BUILD',
-  'BITBUCKET_BUILD_NUMBER',
-  'TEAMCITY_VERSION',
-  'CODEBUILD_BUILD_ID',
-  'bamboo_buildKey',
-];
+import { withoutCi } from './_helpers.js';
 
 /** A gate that passes every check — each test flips exactly one field. */
 function openGate(overrides: Partial<InspectionGate> = {}): InspectionGate {
@@ -57,8 +43,9 @@ describe('shouldInspectOnFailure', () => {
 
   it('reads CI as detectCi does: a provider that sets no CI counts, CI=0 or false does not', () => {
     const testInfo = { status: 'failed', expectedStatus: 'passed', retry: 0, project: { use: { headless: false } } };
+    const saved = { ...process.env };
     const gateWith = (env: Record<string, string>) => {
-      for (const key of CI_KEYS) vi.stubEnv(key, env[key] ?? '');
+      Object.assign(withoutCi(process.env), env);
       return inspectionGateFromTestInfo(testInfo as never, 'true');
     };
     try {
@@ -69,7 +56,7 @@ describe('shouldInspectOnFailure', () => {
       expect(gateWith({ CI: 'false' }).ci).toBe(false);
       expect(shouldInspectOnFailure(gateWith({}))).toBe(true);
     } finally {
-      vi.unstubAllEnvs();
+      process.env = saved;
     }
   });
 

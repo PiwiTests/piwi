@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import { createRequire } from 'node:module';
 import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { startServer, type FakeServer } from './_helpers.js';
+import { startServer, type FakeServer, withoutCi } from './_helpers.js';
 import type { LocatorSnapshot } from '../src/internal/capture/locator-healing.js';
 
 /**
@@ -106,8 +106,9 @@ module.exports = defineConfig({
   write('tests/checkout.spec.cjs', spec);
 
   const env: NodeJS.ProcessEnv = { ...process.env };
-  for (const name of ['CI', 'PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_PAUSE_AT', 'PIWI_RUN_CHANNEL', 'PIWI_EDITOR_SEND'])
+  for (const name of ['PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_PAUSE_AT', 'PIWI_RUN_CHANNEL', 'PIWI_EDITOR_SEND'])
     delete env[name];
+  withoutCi(env);
   await new Promise<void>((resolve) => {
     execFile(
       process.execPath,

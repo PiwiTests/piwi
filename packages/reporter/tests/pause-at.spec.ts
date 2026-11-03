@@ -56,7 +56,7 @@ import {
 } from '../src/internal/capture/capture-fixtures.js';
 import { ATTACHMENT_NAMES } from '../src/internal/capture/attachments.js';
 import type { LocatorSnapshot } from '../src/internal/capture/locator-healing.js';
-import { jsonRes, startServer } from './_helpers.js';
+import { jsonRes, startServer, withoutCi } from './_helpers.js';
 
 const PROBE = { fn: probeElementAttrs, arg: CAPTURED_ATTRS_ARG };
 /** The capture fixtures' own folder: a frame there is this package's, never the test's. */
@@ -157,6 +157,24 @@ describe('stopCallSite', () => {
 });
 
 describe('the pause gate', () => {
+  it('reads CI as detectCi does: a provider that sets no CI counts, CI=0 or false does not', () => {
+    const saved = { ...process.env };
+    const ciWith = (env: Record<string, string>) => {
+      Object.assign(withoutCi(process.env), env);
+      return pauseGateFromTestInfo({ project: { use: { headless: false } } } as never).ci;
+    };
+    try {
+      expect(ciWith({ JENKINS_URL: 'https://jenkins.example' })).toBe(true);
+      expect(ciWith({ GITHUB_ACTIONS: 'true' })).toBe(true);
+      expect(ciWith({ CI: '1' })).toBe(true);
+      expect(ciWith({ CI: '0' })).toBe(false);
+      expect(ciWith({ CI: 'false' })).toBe(false);
+      expect(ciWith({})).toBe(false);
+    } finally {
+      process.env = saved;
+    }
+  });
+
   it('pauses a headed local run only, outside Playwright’s Inspector', () => {
     expect(pauseSkipReason({ ci: false, headless: false })).toBeNull();
     expect(pauseSkipReason({ ci: true, headless: false })).toMatch(/running under CI/);
@@ -984,7 +1002,7 @@ describe('breakpoints in the capture fixtures', () => {
   const env = { ...process.env };
   let log: ReturnType<typeof vi.spyOn>;
   beforeEach(() => {
-    delete process.env.CI;
+    withoutCi(process.env);
     delete process.env.PWDEBUG;
     delete process.env.PIWI_RECORD_CHANNEL;
     resetPauseLogs();

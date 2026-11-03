@@ -1,5 +1,6 @@
 ﻿import * as http from 'node:http';
 import { createRequire } from 'node:module';
+import { detectCi } from '../src/internal/support/ci.js';
 import { playwrightVersionAtLeast } from '../src/internal/support/playwright-version.js';
 
 export interface RecordedReq {
@@ -233,4 +234,13 @@ export function stubPlatform(platform: NodeJS.Platform): () => void {
   const real = Object.getOwnPropertyDescriptor(process, 'platform')!;
   Object.defineProperty(process, 'platform', { ...real, value: platform });
   return () => Object.defineProperty(process, 'platform', real);
+}
+
+/**
+ * Deletes from `env` every variable that makes `detectCi` see a CI job (`CI`, `GITHUB_ACTIONS`, `JENKINS_URL`…), so
+ * a run started with it counts as local whatever CI runs the suite. Returns `env`.
+ */
+export function withoutCi(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  for (const name of Object.keys(env)) if (detectCi({ [name]: env[name] })) delete env[name];
+  return env;
 }

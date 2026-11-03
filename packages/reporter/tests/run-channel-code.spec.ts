@@ -7,7 +7,7 @@ import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { formatRecordChannel, lineReader, parseHandoffToEditor } from '@piwitests/core/ide-recorder';
 import { parseRunToHub, type HubToRun, type RunToHub } from '@piwitests/core/run-channel';
-import { jsonRes, playwrightAtLeast, startServer, type FakeServer } from './_helpers.js';
+import { jsonRes, playwrightAtLeast, startServer, type FakeServer, withoutCi } from './_helpers.js';
 
 /**
  * Code from a stop, the worker's part, in real Playwright runs through the built package under a fake editor service:
@@ -683,7 +683,8 @@ module.exports = defineConfig({
     .flatMap((line, i) => (line.endsWith('// bp') ? [`tests/headed.spec.cjs:${i + 1}`] : []))
     .join(';');
   baseEnv = { ...process.env, PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: REF };
-  for (const name of ['CI', 'PWDEBUG', 'PIWI_DASHBOARD_URL']) delete baseEnv[name];
+  for (const name of ['PWDEBUG', 'PIWI_DASHBOARD_URL']) delete baseEnv[name];
+  withoutCi(baseEnv);
   const ran = await run(
     {
       ...baseEnv,
