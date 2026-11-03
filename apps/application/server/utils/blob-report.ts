@@ -25,6 +25,9 @@ import { dirnamePosix, isAbsolutePosix, joinPosix, normalizePosix, relativePosix
 import { classifyStatus, expectedFailureError, mergeAnnotations } from '#shared/status-classify';
 import { distinctRunCountsFromAttempts, normalizeTestCaseStatus } from '#shared/utils/test-counts';
 import { normalizeTestTags, parseTestMetadata } from '@piwitests/core/test-meta';
+import { MAX_RUN_ERRORS, runErrorOfReported } from '@piwitests/core/run-errors';
+import { boundTestOutput } from '@piwitests/core/test-output';
+import type { WireRunError } from '@piwitests/core/wire';
 import { joinErrorMessages, appendErrorLocation, locatedError } from '#shared/error-text';
 import type { TestAnnotation } from '#shared/types';
 import type { RunCaseInput } from './persist-run-cases';
@@ -88,6 +91,11 @@ export interface ParsedBlobReport {
   projectNames: string[];
   /** The commit and branch Playwright's git info recorded in the config metadata, when it did. */
   scm: BlobScm | null;
+  /**
+   * The errors Playwright reported outside any test (`onError`), as the reporter keeps them (`runErrorOfReported`):
+   * the first `MAX_RUN_ERRORS`, each text with what may be a secret hidden.
+   */
+  runErrors: WireRunError[];
   cases: ImportedRunCase[];
 }
 
@@ -144,6 +152,10 @@ interface ResultAccumulator {
   stepsById: Map<string, StepNode>;
   traces: BlobAttachmentRef[];
   attachments: BlobAttachmentRef[];
+  /** What the attempt wrote to stdout (`onStdIO`), in order: text, or bytes. */
+  stdout: Array<string | Uint8Array>;
+  /** What the attempt wrote to stderr (`onStdIO`), in order: text, or bytes. */
+  stderr: Array<string | Uint8Array>;
 }
 
 /** A test as declared in the `onProject` suite tree. */
@@ -368,6 +380,30 @@ function applyAttachments(acc: ResultAccumulator, attachments: unknown): void {
   }
 }
 
+/** The bytes a base64 chunk of output holds, or null when it is not base64. */
+function base64Bytes(data: string): Uint8Array | null {
+  try {
+    return Uint8Array.from(atob(data), (char) => char.charCodeAt(0));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * What an attempt wrote to one stream, as the reporter keeps it: its chunks joined in order, the bytes read as UTF-8
+ * (one stream, so a character split across two chunks stays whole), bounded and with what may be a secret hidden
+ * (`boundTestOutput`). Null when it wrote nothing but white space.
+ */
+function testOutputOf(chunks: Array<string | Uint8Array>): string | null {
+  if (chunks.length === 0) return null;
+  const decoder = new TextDecoder();
+  let text = '';
+  for (const chunk of chunks) {
+    text += typeof chunk === 'string' ? decoder.decode() + chunk : decoder.decode(chunk, { stream: true });
+  }
+  return boundTestOutput(text + decoder.decode());
+}
+
 /** Assemble the error text for an execution, matching the reporter's rules. */
 function buildErrorText(errors: unknown, resolver: PathResolver): string | null {
   if (!Array.isArray(errors)) return null;
@@ -406,6 +442,7 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
   const planned = new Map<string, PlannedTest>();
   const results = new Map<string, ResultAccumulator>();
   const cases: ImportedRunCase[] = [];
+  const runErrors: WireRunError[] = [];
   /** Each test's attempts in report order: the attempt history its cases carry, and the flaky count. */
   const attemptsByTest = new Map<
     string,
@@ -440,7 +477,26 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
         stepsById: new Map(),
         traces: [],
         attachments: [],
+        stdout: [],
+        stderr: [],
       });
+      continue;
+    }
+
+    if (method === 'onStdIO') {
+      // Output written outside a test's attempt (no result) belongs to no execution.
+      const acc = typeof params.resultId === 'string' ? results.get(params.resultId) : undefined;
+      const stream = params.type === 'stdout' ? acc?.stdout : params.type === 'stderr' ? acc?.stderr : undefined;
+      if (!stream || typeof params.data !== 'string') continue;
+      const chunk = params.isBase64 === true ? base64Bytes(params.data) : params.data;
+      if (chunk !== null) stream.push(chunk);
+      continue;
+    }
+
+    if (method === 'onError') {
+      if (runErrors.length >= MAX_RUN_ERRORS) continue;
+      const error = runErrorOfReported(record(params.error), (file) => resolver.fromAbsolute(file));
+      if (error) runErrors.push(error);
       continue;
     }
 
@@ -529,6 +585,8 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
           workerIndex: acc?.workerIndex ?? null,
           startedAt: acc?.startedAt ?? null,
           browser: plan?.browser ?? null,
+          stdout: testOutputOf(acc?.stdout ?? []),
+          stderr: testOutputOf(acc?.stderr ?? []),
         },
         traces: acc?.traces ?? [],
         attachments: acc?.attachments ?? [],
@@ -614,6 +672,7 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
     shard,
     projectNames,
     scm: readBlobScm(config.metadata),
+    runErrors,
     cases,
   };
 }

@@ -67,6 +67,7 @@ function report(cases: ImportedRunCase[]): ParsedBlobReport {
     shard: null,
     projectNames: ['chromium'],
     scm: null,
+    runErrors: [],
     cases,
   };
 }

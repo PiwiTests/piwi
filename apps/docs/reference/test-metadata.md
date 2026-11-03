@@ -294,7 +294,8 @@ its stack and the place it was thrown, named relative to the Playwright config's
 The first 20 go with the run's end, as its `runErrors`, each message and stack cut to 4,000 characters, with what may
 be a secret hidden as in a test's error: the text a fill typed, a credential in a URL, a cookie or a JSON field, a
 value shaped like a token. A sharded run adds each shard's to the others'. The run page shows them under its header,
-and the MCP `get_run` tool returns them as `runErrors`.
+and the MCP `get_run` tool returns them as `runErrors`. A [blob report you import](/guide/importing-runs) keeps them
+the same way.
 
 ### Test output
 
@@ -304,7 +305,8 @@ secret hidden, as above, colored or not, and the value it gives a name like a cr
 `API_KEY=…`), and past about 64 KB keeps its first and last lines, cut at a line break, with a line saying how many
 lines and characters were cut between them. The dashboard stores each stream once per project however many
 executions wrote it, and shows it on the execution's **Output** tab ([Failure evidence](/features/evidence)), in its
-[offline export](/features/offline-export) and through the MCP `get_test_run_case` tool.
+[offline export](/features/offline-export) and through the MCP `get_test_run_case` tool. An
+[imported blob report](/guide/importing-runs) keeps each attempt's output the same way.
 
 ### Hooks
 

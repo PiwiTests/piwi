@@ -3,6 +3,8 @@ import { parseBlobReport, BlobReportError, readBlobScm } from '../../server/util
 import { openArchive, ArchiveError } from '../../server/utils/archive-reader';
 import { buildZip } from '../../server/utils/trace-zip';
 import { buildBlobReport } from '../utils/blob-report-fixture';
+import { MAX_RUN_ERRORS } from '@piwitests/core/run-errors';
+import { MAX_TEST_OUTPUT_CHARS } from '@piwitests/core/test-output';
 
 /** The parser reads entries through an injected reader; on the server that is the ZIP. */
 const parse = (archive: Buffer) => parseBlobReport(openArchive(archive).readEntry);
@@ -433,5 +435,93 @@ describe('parseBlobReport on an archive older than Playwright 1.53', () => {
     const [failed] = parsed.cases;
     expect(failed!.traces.map((t) => t.name)).toEqual(['trace']);
     expect(failed!.attachments.map((a) => a.name)).toEqual(['screenshot', '_error-context-0']);
+  });
+});
+
+describe("a blob report's test output and its errors outside any test", () => {
+  test("keeps each attempt's output as the reporter does: in order, decoded as one stream, its secrets hidden", async () => {
+    // "café", its "é" split across two base64 chunks.
+    const cafe = Buffer.from('café ready\n', 'utf-8');
+    const parsed = await parse(
+      buildBlobReport({
+        outputOutsideTests: ['webServer listening on :3000\n'],
+        tests: [
+          {
+            testId: 't',
+            title: 'pays',
+            attempts: [
+              {
+                status: 'failed',
+                stdout: [
+                  'GET https://api.example.test/me?access_token=t0k3n-v4lue 200\n',
+                  { base64: cafe.subarray(0, 4).toString('base64') },
+                  { base64: cafe.subarray(4).toString('base64') },
+                ],
+                stderr: ['payment sandbox answered 502\n'],
+              },
+              { status: 'passed', stdout: [' \n'] },
+            ],
+          },
+        ],
+      }),
+    );
+
+    const [first, retry] = parsed.cases.map((entry) => entry.case);
+    expect(first!.stdout).toBe('GET https://api.example.test/me?access_token=<hidden> 200\ncafé ready\n');
+    expect(first!.stderr).toBe('payment sandbox answered 502\n');
+    expect(retry!.stdout).toBeNull();
+    expect(retry!.stderr).toBeNull();
+  });
+
+  test('bounds a long output as the reporter does, keeping its head and its tail', async () => {
+    const long = Array.from({ length: 10_000 }, (_, i) => `step ${i} of the checkout\n`);
+    const parsed = await parse(
+      buildBlobReport({ tests: [{ testId: 't', title: 'pays', attempts: [{ status: 'passed', stdout: long }] }] }),
+    );
+
+    const stdout = parsed.cases[0]!.case.stdout as string;
+    expect(stdout.length).toBeLessThanOrEqual(MAX_TEST_OUTPUT_CHARS);
+    expect(stdout.startsWith('step 0 of the checkout\n')).toBe(true);
+    expect(stdout).toMatch(/\[… \d+ lines \(\d+ characters\) of output cut …\]/);
+    expect(stdout.endsWith('step 9999 of the checkout\n')).toBe(true);
+  });
+
+  test('keeps the errors outside any test as the reporter does: hidden, placed from the config folder, the first ones', async () => {
+    const signIn = 'Error: global setup could not sign in at https://auth.example.test/login?token=s3cr3t-v4lue';
+    const parsed = await parse(
+      buildBlobReport({
+        rootDir: '/repo/tests',
+        configFile: '../playwright.config.ts',
+        runErrors: [
+          {
+            message: signIn,
+            stack: `${signIn}\n    at globalSetup (/repo/global-setup.ts:4:9)`,
+            location: { file: '/repo/global-setup.ts', line: 4, column: 9 },
+            snippet: '> 4 |   throw new Error(…)',
+            cause: { message: 'Error: connect ECONNREFUSED 127.0.0.1:3000' },
+          },
+          ...Array.from({ length: MAX_RUN_ERRORS + 5 }, (_, i) => ({ message: `Error: spec ${i} did not load` })),
+        ],
+        tests: [{ testId: 't', title: 'a', attempts: [{ status: 'passed' }] }],
+      }),
+    );
+
+    expect(parsed.runErrors).toHaveLength(MAX_RUN_ERRORS);
+    expect(parsed.runErrors[0]).toEqual({
+      message:
+        'Error: global setup could not sign in at https://auth.example.test/login?token=<hidden>\n[cause]: Error: connect ECONNREFUSED 127.0.0.1:3000',
+      stack: '    at globalSetup (/repo/global-setup.ts:4:9)',
+      location: { file: 'global-setup.ts', line: 4, column: 9 },
+    });
+    expect(parsed.runErrors[1]).toEqual({ message: 'Error: spec 0 did not load', stack: null, location: null });
+  });
+
+  test('a report with neither keeps no run error, and its executions no output', async () => {
+    const parsed = await parse(
+      buildBlobReport({ tests: [{ testId: 't', title: 'a', attempts: [{ status: 'passed' }] }] }),
+    );
+
+    expect(parsed.runErrors).toEqual([]);
+    expect(parsed.cases[0]!.case).toMatchObject({ stdout: null, stderr: null });
   });
 });

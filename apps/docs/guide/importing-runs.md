@@ -27,7 +27,7 @@ npx playwright test --reporter=blob
 It writes `blob-report/report.zip` (or `blob-report/report-<n>.zip` per shard). Those `.zip` files are what you upload —
 one archive per run.
 
-If you already keep blob reports as CI artifacts, download them; there is nothing to re-run.
+If you already keep blob reports as CI artifacts, download them: nothing to re-run.
 
 The blob format is internal to Playwright and versioned. Piwi reads versions **1 and 2**, which covers every Playwright
 release to date. An archive written in a format a given Piwi build does not know is refused outright, with the version
@@ -58,12 +58,12 @@ Before anything uploads, the page checks each archive and tells you where it sta
 | **Too large** | Bigger than this server accepts. Nothing is uploaded. |
 | **Not importable** | Not a `.zip`, or empty. |
 
-Click **Import N archives** to upload the ready ones, one at a time, with a progress bar each. Nothing is uploaded that
-the server would have rejected, and nothing that is already there is uploaded twice.
+Click **Import N archives** to upload the ready ones, one at a time. Nothing is uploaded that the server would have
+rejected, and nothing that is already there is uploaded twice.
 
 Importing is **idempotent**: an archive is identified by the SHA-256 of its bytes, so re-uploading one changes nothing.
-An interrupted batch is safe to simply repeat. An import that fails partway leaves no run behind, so the archive reads
-as ready again and the retry imports it in full.
+An interrupted batch is safe to repeat. An import that fails partway leaves no run behind, so the archive reads as ready
+again and the retry imports it in full.
 
 ## Importing trace files
 
@@ -93,9 +93,11 @@ reported as not importable and skipped; the rest of the batch is unaffected.
 
 Everything Playwright itself recorded comes across:
 
-- Test results — status, duration, timeout, retries, `--repeat-each` repetition, worker, start time, annotations
+- Test results — status, duration, timeout, retries, `--repeat-each` repetition, worker, start time, annotations,
+  stdout and stderr
 - Suite structure — spec file, `describe` nesting, Playwright project (browser) name
-- Errors, with full call logs, so failures **cluster exactly like reported ones**
+- Errors, with full call logs, so failures **cluster exactly like reported ones**, and the
+  [errors outside the tests](/reference/test-metadata#errors-outside-the-tests)
 - Steps, including their subtitles and capped, masked params (Playwright 1.63+), the slowest step and wasted-time totals
 - Traces, screenshots and videos — the trace viewer, call stack, network and DOM snapshot views all work
 - The failure-time page snapshot and source snippet, recovered from Playwright's `error-context` attachment
@@ -116,8 +118,8 @@ history, not at the top. An archive older than the project's newest run leaves t
 priority, locks and locator snapshots as they are, and wakes no snoozed cluster.
 
 Imports are also deliberately **silent**: they never send notifications, never trigger AI diagnosis, and never compute
-regression signals. Backfilling a year of history should not page your team about failures they fixed months ago, or
-label an old failure a new regression.
+regression signals. Backfilling a year of history should not page your team about failures fixed months ago, or label
+an old failure a new regression.
 
 ## Making history line up
 

@@ -32,6 +32,10 @@ export interface FixtureTest {
     expectedStatus?: 'passed' | 'failed';
     /** Attach a `trace` (zip), `screenshot` (png) or `error-context` (markdown). */
     attachments?: Array<{ name: string; contentType: string; body: string }>;
+    /** What the attempt wrote to stdout, chunk by chunk (`onStdIO`): text, or bytes Playwright writes as base64. */
+    stdout?: Array<string | { base64: string }>;
+    /** What the attempt wrote to stderr, as `stdout`. */
+    stderr?: Array<string | { base64: string }>;
   }>;
 }
 
@@ -48,7 +52,21 @@ export interface FixtureOptions {
   duration?: number;
   /** Put each attempt's attachments on its `onTestEnd` result, as Playwright wrote them before 1.53, not in `onAttach`. */
   attachmentsOnTestEnd?: boolean;
+  /** The errors Playwright reports outside any test (`onError`), as its `TestError`s, after `onBegin`. */
+  runErrors?: unknown[];
+  /** What the run wrote to stdout outside any test (`onStdIO` with no test), after `onBegin`. */
+  outputOutsideTests?: string[];
   tests: FixtureTest[];
+}
+
+/** One `onStdIO` event: a chunk an attempt wrote to one of its streams, or the run outside any test. */
+function stdioEvent(
+  type: 'stdout' | 'stderr',
+  chunk: string | { base64: string },
+  ids: { testId: string; resultId: string } | null,
+) {
+  const data = typeof chunk === 'string' ? { data: chunk, isBase64: false } : { data: chunk.base64, isBase64: true };
+  return { method: 'onStdIO', params: { ...ids, type, ...data } };
 }
 
 /** Build the archive bytes for a blob report describing `options.tests`. */
@@ -65,6 +83,8 @@ export function buildBlobReport(options: FixtureOptions): Buffer {
     startTime = 1_700_000_000_000,
     duration = 1234,
     attachmentsOnTestEnd = false,
+    runErrors = [],
+    outputOutsideTests = [],
     tests,
   } = options;
 
@@ -76,6 +96,8 @@ export function buildBlobReport(options: FixtureOptions): Buffer {
     },
     { method: 'onProject', params: { project: buildProject(projectName, file, tests) } },
     { method: 'onBegin' },
+    ...runErrors.map((error) => ({ method: 'onError', params: { error } })),
+    ...outputOutsideTests.map((chunk) => stdioEvent('stdout', chunk, null)),
   ];
 
   const resources: ZipEntry[] = [];
@@ -128,6 +150,11 @@ export function buildBlobReport(options: FixtureOptions): Buffer {
         resources.push({ name: path, data: Buffer.from(attachment.body, 'utf-8') });
         return { name: attachment.name, contentType: attachment.contentType, path };
       });
+
+      for (const chunk of attempt.stdout ?? [])
+        lines.push(stdioEvent('stdout', chunk, { testId: test.testId, resultId }));
+      for (const chunk of attempt.stderr ?? [])
+        lines.push(stdioEvent('stderr', chunk, { testId: test.testId, resultId }));
 
       if (attachments.length > 0 && !attachmentsOnTestEnd) {
         lines.push({ method: 'onAttach', params: { testId: test.testId, resultId, attachments } });

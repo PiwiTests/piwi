@@ -22,7 +22,7 @@ import type { DrizzleDB } from './db';
 import type { ImportedRunCase, ParsedBlobReport } from '../../server/utils/blob-report';
 import { resolveSpecPath, type ParsedTraceImport } from '../../server/utils/trace-import';
 import { resolveRunBranch } from '../../server/utils/run-branch';
-import { storedIdentity, storedTestIdentity } from '../../server/utils/storable-values';
+import { storableRunErrors, storedIdentity, storedTestIdentity } from '../../server/utils/storable-values';
 import { runCommit, runOrigin } from '../run-eligibility';
 import type { PersistRunCasesOptions } from '../../server/utils/persist-options';
 import { durationStats } from '../utils/stats';
@@ -316,6 +316,7 @@ export async function importBlobReportRun(
       branch: resolveRunBranch({ scm: parsed.scm }),
       label: input.label ?? null,
       playwrightVersion: parsed.playwrightVersion,
+      runErrors: storableRunErrors(parsed.runErrors),
       importHash,
       metadata: metadata as never,
       origin: runOrigin(metadata),
