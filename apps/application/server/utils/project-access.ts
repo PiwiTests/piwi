@@ -106,7 +106,8 @@ export async function holdsProjectPermission(
 
 /**
  * Parse and validate a numeric route param, throwing 400 if missing/invalid. The param is a positive integer written
- * plainly: `12`, never `012`, `12abc` or `12\..\x`, which `parseInt` would read as 12 (`parseRouteId`).
+ * plainly: `12`, never `012`, `12abc` or `12\..\x`, which `parseInt` would read as 12, and at most the largest
+ * `serial` id (`parseRouteId`).
  */
 export function requireRouteId(event: H3Event, paramName = 'id', label = 'ID'): number {
   const id = parseRouteId(getRouterParam(event, paramName));

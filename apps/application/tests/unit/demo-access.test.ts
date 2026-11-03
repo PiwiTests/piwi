@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import * as schema from '../../server/database/schema.sqlite';
 import { openTempDb, type TempDb } from './temp-db';
 import { InstanceRole, ProjectRole, can, type AccessSummary } from '#shared/permissions';
+import { MAX_SERIAL_ID } from '#shared/route-id';
 import { DEMO_GROUPS, DEMO_USERS, demoAccessFor } from '~~/app/demo/demo-users';
 
 /**
@@ -208,6 +209,12 @@ describe('the demo router reads the ids of a path as the server routes do', () =
     expect(await refusal(as(AVERY).get('/api/users/01/api-keys'))).toEqual(invalid);
     expect(await refusal(as(PRIYA).post('/api/projects/02/markers', marker))).toEqual(invalid);
     expect(await refusal(as(AVERY).get('/api/users/1/api-keys'))).toBeNull();
+  });
+
+  test('an id above the largest serial id is refused, and one at it is read', async () => {
+    const invalid = { statusCode: 400, message: 'Invalid ID' };
+    expect(await refusal(as(AVERY).get(`/api/users/${MAX_SERIAL_ID + 1}/api-keys`))).toEqual(invalid);
+    expect(await as(AVERY).get(`/api/users/${MAX_SERIAL_ID}/api-keys`)).toEqual({ items: [] });
   });
 
   test('an id with anything after its digits matches no route', async () => {

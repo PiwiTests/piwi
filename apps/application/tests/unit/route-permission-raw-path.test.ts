@@ -7,6 +7,7 @@ import * as h3 from 'h3';
 import * as schema from '../../server/database/schema.sqlite';
 import { openTempDb, type TempDb } from './temp-db';
 import { InstanceRole } from '#shared/permissions';
+import { MAX_SERIAL_ID } from '#shared/route-id';
 import { eq } from 'drizzle-orm';
 
 delete process.env.PIWI_DATABASE_URL;
@@ -159,11 +160,12 @@ describe('a route is held to its declared permission however the request spells 
 describe('a route id', () => {
   const idOf = (id: string) => requireRouteId({ context: { params: { id } } } as never, 'id', 'project ID');
 
-  test('is a positive integer written plainly', () => {
+  test('is a positive integer written plainly, up to the largest serial id', () => {
     expect(idOf('10')).toBe(10);
+    expect(idOf(String(MAX_SERIAL_ID))).toBe(MAX_SERIAL_ID);
   });
 
-  test.each(['10abc', '10\\..\\x', '010', '0', '-1', '1.5', '', '99999999999999999999'])(
+  test.each(['10abc', '10\\..\\x', '010', '0', '-1', '1.5', '', String(MAX_SERIAL_ID + 1), '99999999999999999999'])(
     'refuses %j with 400',
     (id) => {
       expect(() => idOf(id)).toThrowError(expect.objectContaining({ statusCode: 400 }));
@@ -196,12 +198,18 @@ describe('a route reads its numeric params as plain positive integers', () => {
     ['POST', '/api/test-runs/012/heartbeat'],
     ['GET', '/api/integrations/connections/12abc'],
     ['GET', '/api/integrations/connections/012'],
+    ['PATCH', `/api/tags/${MAX_SERIAL_ID + 1}`],
+    ['POST', `/api/test-runs/${MAX_SERIAL_ID + 1}/heartbeat`],
     ['GET', '/api/bug-reports/1/screenshots/1abc'],
     ['GET', '/api/bug-reports/1/screenshots/01'],
   ])('%s %s is refused with 400', async (method, target) => {
     const answer = await raw(method, target, method === 'GET' ? '' : '{}', adminKey);
     expect(answer.status).toBe(400);
     expect(JSON.parse(answer.body)).toMatchObject({ data: { errorCode: 'BAD_REQUEST' } });
+  });
+
+  test('an id at the largest serial id reaches the route, which finds no such row', async () => {
+    expect((await raw('PATCH', `/api/tags/${MAX_SERIAL_ID}`, '{}', adminKey)).status).toBe(404);
   });
 
   test('a 0-based index takes 0', async () => {

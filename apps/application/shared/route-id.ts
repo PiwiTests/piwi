@@ -3,11 +3,17 @@
  * router.
  */
 
-/** An id as a path writes it: a positive safe integer written plainly (`12`, never `012`, `12abc` or `0`), or null. */
+/** The largest id a PostgreSQL `serial` column (every table's id) holds, and so the largest a route takes. */
+export const MAX_SERIAL_ID = 2_147_483_647;
+
+/**
+ * An id as a path writes it: a positive integer written plainly (`12`, never `012`, `12abc` or `0`), at most
+ * {@link MAX_SERIAL_ID}, or null.
+ */
 export function parseRouteId(raw: string | null | undefined): number | null {
   if (!raw || !/^[1-9]\d*$/.test(raw)) return null;
   const id = Number(raw);
-  return Number.isSafeInteger(id) ? id : null;
+  return id <= MAX_SERIAL_ID ? id : null;
 }
 
 /** A 0-based position as a path writes it: `0` or an id (`parseRouteId`), or null. */
