@@ -41,7 +41,8 @@ design record these rules follow, with its measurements: [`adr/ci-workflows.md`]
 - **`.github/` and `commitlint.config.js` are owned by their maintainer** (`CODEOWNERS`): a change to either needs
   their review. The `commitlint` and `title` checks read the rules from the pull request's own `commitlint.config.js`.
 - **The `title` job installs what `commitlint.config.js` loads, from `package-lock.json`.** A package the config names
-  (an `extends`, a parser preset, a plugin) goes in `PACKAGES` of `scripts/commitlint-title.mjs`, or the job fails.
+  (an `extends`, a parser preset, a plugin, a formatter) goes in `PACKAGES` of `scripts/commitlint-title.mjs`, which
+  fails on a name it does not list.
 - **The GHCR image name is fixed.** It is `ghcr.io/piwitests/platform` (`REGISTRY` and `IMAGE_NAME` in
   `reusable-publish-container.yml`), never derived from `github.repository`: users pull it by that name, and a registry
   does not redirect when the repository is renamed.

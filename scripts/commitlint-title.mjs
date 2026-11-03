@@ -10,7 +10,8 @@
 //
 // <dir> receives a package.json naming the packages below at their locked versions, a
 // package-lock.json holding only the entries they resolve to, and title.config.mjs. A package
-// commitlint.config.js names (an extends, a parser preset, a plugin, a formatter) is listed here.
+// commitlint.config.js names (an extends, a parser preset, a plugin, a formatter) is listed in
+// PACKAGES, or the script fails.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -21,6 +22,16 @@ const PACKAGES = ['@commitlint/cli', '@commitlint/config-conventional', 'convent
 const root = path.resolve(import.meta.dirname, '..');
 const dir = process.argv[2];
 if (!dir) throw new Error('Usage: node scripts/commitlint-title.mjs <dir>');
+
+const config = pathToFileURL(path.join(root, 'commitlint.config.js')).href;
+const exported = (await import(config)).default;
+const loaded = typeof exported === 'function' ? await exported() : exported;
+const named = [...(loaded.extends ?? []), ...(loaded.plugins ?? []), loaded.parserPreset, loaded.formatter].filter(
+  (name) => typeof name === 'string' && !name.startsWith('.') && !path.isAbsolute(name),
+);
+for (const name of named) {
+  if (!PACKAGES.includes(name)) throw new Error(`commitlint.config.js loads ${name}, which PACKAGES does not list`);
+}
 
 const lock = JSON.parse(fs.readFileSync(path.join(root, 'package-lock.json'), 'utf8'));
 
@@ -49,7 +60,10 @@ for (const name of PACKAGES) {
 while (pending.length > 0) {
   const key = pending.pop();
   if (packages[key]) continue;
-  const entry = lock.packages[key];
+  // Every package of this tree is a dependency of the title install, whatever the workspace's graph flags it as.
+  const entry = { ...lock.packages[key] };
+  for (const flag of ['dev', 'optional', 'devOptional', 'peer']) delete entry[flag];
+  if (entry.link) throw new Error(`${key} is a workspace link`);
   packages[key] = entry;
   const optional = new Set([
     ...Object.keys(entry.optionalDependencies ?? {}),
@@ -90,9 +104,7 @@ fs.writeFileSync(
 );
 
 // A title is linted by the repository's rules without commitlint's default ignores (merges,
-// reverts, fixups, bare versions) and without the config's own ignores: the job exempts
-// Dependabot's pull requests itself.
-const config = pathToFileURL(path.join(root, 'commitlint.config.js')).href;
+// reverts, fixups, bare versions) and without the config's own ignores.
 fs.writeFileSync(
   path.join(dir, 'title.config.mjs'),
   `import base from ${JSON.stringify(config)};
