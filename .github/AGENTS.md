@@ -65,7 +65,9 @@ design record these rules follow, with its measurements: [`adr/ci-workflows.md`]
   (`release.yml` cancels its pull-request runs only, never a tag's). A reusable workflow has none: there
   `github.workflow` is the caller's name, so its group would collide with the caller's and cancel the run.
 - **Artifacts expire.** An explicit `retention-days` on every artifact: 1 day for the ones jobs hand to each other, 3
-  for `release.yml`'s server bundle, which **Re-run failed jobs** needs in the following days.
+  for `release.yml`'s server bundle, which **Re-run failed jobs** needs in the following days, and for `ci.yml`'s blob
+  reports, 7 for the packages a maintainer uploads to a store by hand when its publish fails (the packages and
+  installers of the `reusable-publish-*.yml`) and for the E2E reports, 14 for the perf and nightly results.
 - **Comments state the rule** the workflow follows, as everywhere in the repository (see the root `AGENTS.md`).
 
 ## Checking a change

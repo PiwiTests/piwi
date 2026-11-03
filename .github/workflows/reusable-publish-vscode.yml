@@ -62,6 +62,7 @@ jobs:
           path: apps/vscode/dist/piwi-${{ env.VERSION }}.vsix
           archive: false
           if-no-files-found: error
+          retention-days: 7
 
       # Each marketplace's step runs whether or not the one before it failed,
       # so one failure fails the job without holding back the other. A version a
