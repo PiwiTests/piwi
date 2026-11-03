@@ -409,6 +409,7 @@ import {
   apiLiveResourcesTestRun,
 } from './reporter';
 import { demoRunningCases } from './stuck-tests';
+import { runFinishedEventData, storedCaseEventData } from '~~/server/utils/run-stream-catch-up';
 import { apiCreateUserApiKey } from './users';
 import { apiGetDemoFile } from './files';
 import {
@@ -572,6 +573,14 @@ type DemoEntity =
  */
 async function assertDemoEntityScope(ctx: DemoCtx | undefined, entity: DemoEntity, id: number): Promise<number | null> {
   if (!ctx || isAdministrator(ctx.access)) return null;
+  const projectId = await demoEntityProjectId(entity, id);
+  if (projectId === null) throw demoHttpError(404, 'Not found');
+  assertDemoScope(ctx, projectId);
+  return projectId;
+}
+
+/** The project an entity belongs to, or null when it does not exist. */
+async function demoEntityProjectId(entity: DemoEntity, id: number): Promise<number | null> {
   const db = await getDemoDb();
   let projectId: number | null = null;
   if (entity === 'project') {
@@ -610,8 +619,6 @@ async function assertDemoEntityScope(ctx: DemoCtx | undefined, entity: DemoEntit
       .where(eq(testRunsCases.id, id));
     projectId = row?.projectId ?? null;
   }
-  if (projectId === null) throw demoHttpError(404, 'Not found');
-  assertDemoScope(ctx, projectId);
   return projectId;
 }
 
@@ -637,10 +644,10 @@ function assertDemoSelfOrAdmin(ctx: DemoCtx | undefined, userId: number): void {
   }
 }
 
-/** The entity kind `assertDemoEntityScope` resolves for each entity a link (or an issue) can target. */
 /** The entities an issue is drafted and filed for, as the server's issue routes accept them. */
 const ISSUE_ENTITY_TYPES: IssueEntityType[] = ['failure_cluster', 'test_runs_case', 'bug_report'];
 
+/** The entity kind `assertDemoEntityScope` resolves for each entity a link (or an issue) can target. */
 const LINK_TARGET_ENTITY: Record<string, DemoEntity> = {
   test_run: 'run',
   test_runs_case: 'execution',
@@ -659,6 +666,17 @@ async function assertDemoLinkTargetScope(
   // An unknown entity type is left to the handler's own validation.
   if (!entity || !Number.isInteger(entityId) || entityId <= 0) return;
   await assertDemoEntityScope(ctx, entity, entityId);
+}
+
+/**
+ * The issue routes' entity check, as the server's: 404 when the entity does not
+ * exist, whoever asks, then the route's permission on its project.
+ */
+async function assertDemoIssueEntity(ctx: DemoCtx | undefined, entityType: IssueEntityType, entityId: number) {
+  if ((await demoEntityProjectId(LINK_TARGET_ENTITY[entityType]!, entityId)) === null) {
+    throw demoHttpError(404, 'Entity not found');
+  }
+  await assertDemoLinkTargetScope(ctx, entityType, entityId);
 }
 
 /**
@@ -1944,14 +1962,26 @@ const routes: RouteEntry[] = [
   },
 
   // A run's stream: its live events go over a BroadcastChannel (`app/demo/run-events.ts`), so this answers only the
-  // catch-up the server's stream sends first for the tests still running, as one list.
+  // catch-up the server's stream sends first, as one list: an ended run's `run-finished`, else each stored execution
+  // and then each test still running.
   {
     method: 'GET',
     pattern: /^\/api\/test-runs\/(\d+)\/stream$/,
     handler: async (m, _b, _q, ctx) => {
-      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      const id = +m[1]!;
+      await assertDemoEntityScope(ctx, 'run', id);
+      const db = await getDemoDb();
+      const [run] = await db.select().from(testRuns).where(eq(testRuns.id, id));
+      if (!run) throw demoHttpError(404, 'Test run not found');
+      const event = (type: string, data: Record<string, unknown>) => ({ type, data, seq: 0, timestamp: Date.now() });
+      if (run.status !== 'running' && run.status !== 'finalizing') {
+        return { events: [event('run-finished', runFinishedEventData(run))] };
+      }
       return {
-        events: demoRunningCases(+m[1]!).map((data) => ({ type: 'test-begin', data, seq: 0, timestamp: Date.now() })),
+        events: [
+          ...(await storedCaseEventData(db, id)).map((data) => event('test-completed', data)),
+          ...demoRunningCases(id).map((data) => event('test-begin', data)),
+        ],
       };
     },
   },
@@ -3511,7 +3541,7 @@ const routes: RouteEntry[] = [
       if (!ISSUE_ENTITY_TYPES.includes(entityType) || !Number.isInteger(entityId) || entityId <= 0) {
         throw demoHttpError(400, 'entityType and entityId are required');
       }
-      await assertDemoLinkTargetScope(ctx, entityType, entityId);
+      await assertDemoIssueEntity(ctx, entityType, entityId);
       const draft = await demoIssueDraft(
         await getDemoDb(),
         entityType,
@@ -3535,13 +3565,13 @@ const routes: RouteEntry[] = [
         issueType?: string;
         fields?: unknown;
       };
-      await assertDemoLinkTargetScope(ctx, b.entityType, b.entityId);
+      if (!ISSUE_ENTITY_TYPES.includes(b.entityType) || !Number.isInteger(b.entityId) || b.entityId <= 0) {
+        throw demoHttpError(400, 'Invalid request body');
+      }
+      await assertDemoIssueEntity(ctx, b.entityType, b.entityId);
       // Like the server, a project's issues go through the connection it is bound to.
       if (b.connectionId !== getDemoProjectIntegration().connectionId) {
         throw demoHttpError(403, 'This project files its issues through the connection it is bound to');
-      }
-      if (!ISSUE_ENTITY_TYPES.includes(b.entityType) || !Number.isInteger(b.entityId) || b.entityId <= 0) {
-        throw demoHttpError(400, 'Invalid request body');
       }
       const created = await demoCreateIssue(await getDemoDb(), b.entityType, b.entityId, b.title, {
         issueType: b.issueType,

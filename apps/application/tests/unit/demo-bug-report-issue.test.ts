@@ -65,6 +65,17 @@ describe('the demo issue draft and create for a bug report', () => {
     await expect(draft('entityType=bug_report&entityId=99')).rejects.toMatchObject({ statusCode: 404 });
     await expect(draft('entityType=test_run&entityId=1')).rejects.toMatchObject({ statusCode: 400 });
     await expect(create({ entityType: 'bug_report', entityId: 99 })).rejects.toMatchObject({ statusCode: 404 });
+    // Before the required fields and the connection, as the server checks them.
+    await expect(
+      handleDemoRequest('/api/integrations/issues', 'POST', {
+        entityType: 'bug_report',
+        entityId: 99,
+        connectionId: 1,
+      }),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    await expect(
+      handleDemoRequest('/api/integrations/issues', 'POST', { entityType: 'test_run', entityId: 1 }),
+    ).rejects.toMatchObject({ statusCode: 400 });
   });
 
   test('links the filed issue to the bug report, and answers it again for a second create', async () => {

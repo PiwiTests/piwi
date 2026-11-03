@@ -487,8 +487,8 @@ function connectToDemoStream() {
     seedLiveFromPersisted(testRun.value.testCases);
   }
 
-  // The tests still running come from the service worker's catch-up, as the server's stream replays them; the live
-  // events heard meanwhile wait behind it, so a test that completed since is not shown running again.
+  // The service worker answers the catch-up the server's stream sends (the stored executions, then the tests still
+  // running); the live events heard meanwhile wait behind it, so a test that completed since is not shown running again.
   let heldEvents: Record<string, unknown>[] | null = [];
   const unsubscribe = subscribeDemoEvents((message) => {
     if (message.scope === 'run' && message.runId === Number(runId)) {

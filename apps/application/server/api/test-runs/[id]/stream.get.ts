@@ -1,5 +1,6 @@
-import { testRuns, testCases, testRunsCases, projects } from '../../../database/schema';
-import { asc, eq } from 'drizzle-orm';
+import { testRuns, projects } from '../../../database/schema';
+import { eq } from 'drizzle-orm';
+import { runFinishedEventData, storedCaseEventData } from '../../../utils/run-stream-catch-up';
 import { runEventBus } from '../../../utils/run-events';
 import { createSSEEndpoint } from '../../../utils/sse';
 import { liveViewRelay } from '../../../utils/live-view';
@@ -61,15 +62,7 @@ export default eventHandler(async (event) => {
     if (!isActive) {
       const finishedData = {
         type: 'run-finished',
-        data: {
-          status: testRun.status,
-          duration: testRun.duration,
-          totalTests: testRun.totalTests,
-          passedTests: testRun.passedTests,
-          failedTests: testRun.failedTests,
-          skippedTests: testRun.skippedTests,
-          didNotRunTests: testRun.didNotRunTests,
-        },
+        data: runFinishedEventData(testRun),
         seq: 1,
         timestamp: Date.now(),
       };
@@ -98,63 +91,8 @@ export default eventHandler(async (event) => {
     // Also send existing test cases for catch-up (error omitted — large field, not shown in stream view)
     (async () => {
       try {
-        const existingCases = await db
-          .select({
-            id: testRunsCases.id,
-            testCaseId: testRunsCases.testCaseId,
-            title: testCases.title,
-            externalId: testCases.externalId,
-            displayTitle: testCases.displayTitle,
-            status: testRunsCases.status,
-            duration: testRunsCases.duration,
-            filePath: testCases.filePath,
-            suitePath: testCases.suitePath,
-            line: testRunsCases.line,
-            column: testRunsCases.column,
-            workerIndex: testRunsCases.workerIndex,
-            shardIndex: testRunsCases.shardIndex,
-            browser: testRunsCases.browser,
-            retries: testRunsCases.retries,
-            attempts: testRunsCases.attempts,
-            repeatEachIndex: testRunsCases.repeatEachIndex,
-            didNotRunReason: testRunsCases.didNotRunReason,
-            expectedStatus: testRunsCases.expectedStatus,
-            blockedBy: testRunsCases.blockedBy,
-          })
-          .from(testRunsCases)
-          .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
-          .where(eq(testRunsCases.testRunId, id))
-          // Each test's attempts in order, so its latest one is replayed last.
-          .orderBy(asc(testRunsCases.retries), asc(testRunsCases.id));
-
-        for (const tc of existingCases) {
-          const location = tc.line && tc.column ? `${tc.filePath}:${tc.line}:${tc.column}` : tc.filePath;
-          const suitePath = tc.suitePath ? tc.suitePath.split('\x1f') : null;
-          const caseEvent = {
-            type: 'test-completed',
-            data: {
-              title: tc.title,
-              externalId: tc.externalId ?? null,
-              displayTitle: tc.displayTitle ?? null,
-              filePath: tc.filePath,
-              suitePath,
-              status: tc.status,
-              duration: tc.duration,
-              location,
-              workerIndex: tc.workerIndex ?? null,
-              browser: tc.browser ?? null,
-              retries: tc.retries ?? null,
-              attempts: tc.attempts ?? null,
-              repeatEachIndex: tc.repeatEachIndex,
-              didNotRunReason: tc.didNotRunReason ?? null,
-              expectedStatus: tc.expectedStatus ?? null,
-              blockedBy: tc.blockedBy ?? null,
-              executionId: tc.id,
-              testCaseId: tc.testCaseId,
-            },
-            seq: 0, // Catch-up events have seq 0
-            timestamp: Date.now(),
-          };
+        for (const data of await storedCaseEventData(db, id)) {
+          const caseEvent = { type: 'test-completed', data, seq: 0, timestamp: Date.now() }; // Catch-up events have seq 0
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(caseEvent)}\n\n`));
         }
 
