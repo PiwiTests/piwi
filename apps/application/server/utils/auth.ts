@@ -587,6 +587,33 @@ export async function requireAuth(event: H3Event, permission?: RoutePermission |
   return user;
 }
 
+/**
+ * Refuse (403) a request that `requireAuth` authenticated with an API key. Call
+ * it after `requireAuth`, on a change to the caller's own credentials or email.
+ */
+export function refuseApiKey(event: H3Event): void {
+  if (event.context.apiKeyId !== undefined) {
+    throw apiError({
+      statusCode: 403,
+      message: 'A signed-in session is required: an API key cannot change account credentials or create new ones',
+    });
+  }
+}
+
+/**
+ * `requireAuth` for a route that changes the caller's credentials or creates a
+ * credential (an API key, a connected client): the caller signs in with a
+ * session, never an API key (403). With authentication off, every caller passes.
+ */
+export async function requireSessionAuth(
+  event: H3Event,
+  permission?: RoutePermission | RoutePermission[],
+): Promise<User> {
+  const user = await requireAuth(event, permission);
+  refuseApiKey(event);
+  return user;
+}
+
 /** The signed-in user as `GET /api/auth/me` and `POST /api/auth/login` return them (`AuthUser`). */
 export async function authUserView(db: DrizzleDB, user: User) {
   const access = await getUserAccessCached(db, user);

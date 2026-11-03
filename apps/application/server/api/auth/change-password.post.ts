@@ -1,14 +1,15 @@
 import { eq } from 'drizzle-orm';
 import { getDatabase } from '../../database';
 import { users } from '../../database/schema';
-import { requireAuth, hashPassword, verifyPassword, revokeUserSessions, setUserSession } from '../../utils/auth';
+import { requireSessionAuth, hashPassword, verifyPassword, revokeUserSessions, setUserSession } from '../../utils/auth';
 import { z } from 'zod';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Auth'],
     summary: 'Change password',
-    description: 'Allows an authenticated user to change their own password by verifying their current password first.',
+    description:
+      'Allows a signed-in user to change their own password by verifying their current password first. Takes a signed-in session: a request with an API key is refused (403).',
     'x-required-permission': 'signed-in',
   },
 });
@@ -19,7 +20,7 @@ const schema = z.object({
 });
 
 export default eventHandler(async (event) => {
-  const currentUser = await requireAuth(event);
+  const currentUser = await requireSessionAuth(event);
 
   const body = await readBody(event);
   const parsed = schema.safeParse(body);

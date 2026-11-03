@@ -8,7 +8,7 @@ const stored = vi.hoisted(() => ({ keys: [] as Array<{ expiresAt: Date | null }>
 
 vi.mock('../../server/database', () => ({ getDatabase: async () => ({}) }));
 vi.mock('../../server/utils/auth', () => ({
-  requireAuth: async () => ({ id: 1 }),
+  requireSessionAuth: async () => ({ id: 1 }),
   getRequestAccess: async () => ADMIN_ACCESS,
   generateApiKey: () => ({ plaintext: 'pd_x', hash: 'h', prefix: 'pd_x' }),
 }));

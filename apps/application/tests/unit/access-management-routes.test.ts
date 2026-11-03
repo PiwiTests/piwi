@@ -275,4 +275,20 @@ describe('users writes', () => {
     expect(await status(patchUser({ params: { id: '2' }, body: { name: 'Q' } }))).toBe(403);
     expect(await status(patchUser({ params: { id: '3' }, body: { role: 'administrator' } }))).toBe(403);
   });
+
+  test("PATCH with an API key changes its own account's name, never its email", async () => {
+    state.caller = { ...sam, apiKey: true };
+    expect((await patchUser({ params: { id: '3' }, body: { name: 'Sammy' } })).user.name).toBe('Sammy');
+    expect(await status(patchUser({ params: { id: '3' }, body: { email: 'sam@example.com' } }))).toBe(403);
+    expect(await status(patchUser({ params: { id: '3' }, body: { email: null } }))).toBe(403);
+
+    state.caller = sam;
+    const { user } = await patchUser({ params: { id: '3' }, body: { email: 'sam@example.com' } });
+    expect(user.email).toBe('sam@example.com');
+
+    state.caller = { ...avery, apiKey: true };
+    expect(await status(patchUser({ params: { id: '1' }, body: { email: 'avery@example.org' } }))).toBe(403);
+    const managed = await patchUser({ params: { id: '3' }, body: { email: 'samuel@example.com' } });
+    expect(managed.user.email).toBe('samuel@example.com');
+  });
 });

@@ -30,6 +30,20 @@ health and version endpoints, the sign-in flows themselves, and live-run streami
 - Keys are sent as `Authorization: Bearer <key>` or `X-API-Key: <key>` headers.
 - Keys can be given an optional expiry date.
 
+## What a key cannot do
+
+A key acts for its owner everywhere except on the account's own credentials. These take a signed-in session, and a
+request with a key gets a 403:
+
+- creating an API key, for any account;
+- allowing a [browser extension](/features/extension-connection), an
+  [editor](/features/editor-connection) or an [MCP client](/features/mcp) to connect, which creates a key or a
+  connection for the account;
+- changing the account's password or its own email address, and disconnecting its OAuth provider.
+
+A leaked key therefore cannot mint the keys that would outlive its revocation, nor move the account's password reset
+to another address. An administrator's key still manages the other users, their email addresses included.
+
 ## Creating an API key
 
 Every signed-in user manages their own keys under **Settings → Account → API keys**. An administrator can also manage
