@@ -170,4 +170,34 @@ describe('refreshing a commit’s feedback once its coverage changed', () => {
       warnings.mockRestore();
     }
   });
+
+  test('leaves alone a run whose pull request a later push commented on under another form of the repository', async () => {
+    const D = 'd'.repeat(40);
+    await db.insert(schema.testRuns).values([
+      { id: 5, projectId: 1, status: 'passed', branch: 'fix', commit: D, startTime: new Date(), isFullRun: 1 },
+      {
+        id: 6,
+        projectId: 1,
+        status: 'passed',
+        branch: 'fix',
+        commit: 'e'.repeat(40),
+        startTime: new Date(),
+        isFullRun: 1,
+      },
+    ]);
+    await recordPrFeedbackPost(db as never, {
+      projectId: 1,
+      runId: 5,
+      repositoryUrl: 'https://ssh.github.com/acme/shop',
+      prNumber: 10,
+    });
+    await recordPrFeedbackPost(db as never, {
+      projectId: 1,
+      runId: 6,
+      repositoryUrl: 'https://github.com/Acme/Shop',
+      prNumber: 10,
+    });
+    await refreshCommitPrFeedback(db as never, 1, D);
+    expect(computeRunChangeCoverage).not.toHaveBeenCalled();
+  });
 });
