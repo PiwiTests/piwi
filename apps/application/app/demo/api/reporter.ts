@@ -10,7 +10,7 @@
  */
 
 import { resolveBrowserName } from '#shared/browser-name';
-import { eq, and, or, like, sql } from 'drizzle-orm';
+import { eq, and, or, sql } from 'drizzle-orm';
 import { getDemoDb } from '../db.client';
 import { checkDemoStuckTests, forgetDemoRun, noteDemoBegin, noteDemoComplete } from './stuck-tests';
 import { publishDemoGlobalEvent, publishDemoRunEvent } from '../run-events';
@@ -1102,6 +1102,18 @@ export async function apiLiveResourcesTestRun(
 }
 
 /** POST /api/test-runs/:id/finish (demo mode has no pending uploads) */
+/**
+ * What a finished run records beside its own row: its incident flag, its markers, its resource findings and its
+ * rollup. Written before the run is announced finished: the run page reads the run once on `run-finished`, and the
+ * demo has no reports poll to read it again.
+ */
+async function recordFinishedRun(db: DemoDb, id: number): Promise<void> {
+  await recordRunHealth(db, id).catch(() => {});
+  await syncAutoMarkersForRun(db, id).catch(() => {});
+  await recordRunResourceFindings(db, id).catch(() => {});
+  await upsertDailyRollup(db, id).catch(() => {});
+}
+
 export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
   const db = await getDemoDb();
 
@@ -1192,9 +1204,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
         })
         .where(eq(testRuns.id, id));
 
-      // Before the run is announced finished: the run page reads the run once on `run-finished`, and the demo has no
-      // reports poll to read it again, so its incident flag must be written by then.
-      await recordRunHealth(db, id).catch(() => {});
+      await recordFinishedRun(db, id);
 
       publishDemoRunEvent(id, {
         type: 'run-finished',
@@ -1212,10 +1222,6 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
 
       publishDemoGlobalEvent({ type: 'run-finished', runId: id, projectId: testRun.projectId, status: finalStatus });
       forgetDemoRun(id);
-
-      await syncAutoMarkersForRun(db, id).catch(() => {});
-      await recordRunResourceFindings(db, id).catch(() => {});
-      await upsertDailyRollup(db, id).catch(() => {});
       publishDemoGlobalEvent({ type: 'rollup-updated', runId: id, projectId: testRun.projectId });
     } else {
       publishDemoRunEvent(id, {
@@ -1294,8 +1300,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
     })
     .where(eq(testRuns.id, id));
 
-  // Before the run is announced finished, as for a sharded run above.
-  await recordRunHealth(db, id).catch(() => {});
+  await recordFinishedRun(db, id);
 
   publishDemoRunEvent(id, {
     type: 'run-finished',
@@ -1313,10 +1318,6 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
 
   publishDemoGlobalEvent({ type: 'run-finished', runId: id, projectId: testRun.projectId, status });
   forgetDemoRun(id);
-
-  await syncAutoMarkersForRun(db, id).catch(() => {});
-  await recordRunResourceFindings(db, id).catch(() => {});
-  await upsertDailyRollup(db, id).catch(() => {});
   publishDemoGlobalEvent({ type: 'rollup-updated', runId: id, projectId: testRun.projectId });
 
   return { success: true, runId: id, status };
@@ -1333,6 +1334,7 @@ export async function apiCancelStaleSimulatorRuns(body: { instanceId?: string })
   if (!body?.instanceId) return { success: true, cancelled: 0 };
 
   const db = await getDemoDb();
+  const shardPrefix = `${body.instanceId}|`;
 
   const cancelledRuns = await db
     .update(testRuns)
@@ -1340,7 +1342,10 @@ export async function apiCancelStaleSimulatorRuns(body: { instanceId?: string })
     .where(
       and(
         // A sharded simulation's shards carry the simulator's id and their run's label (`<id>|<label>`).
-        or(eq(testRuns.instanceId, body.instanceId), like(testRuns.instanceId, `${body.instanceId}|%`)),
+        or(
+          eq(testRuns.instanceId, body.instanceId),
+          sql`substr(${testRuns.instanceId}, 1, ${shardPrefix.length}) = ${shardPrefix}`,
+        ),
         or(eq(testRuns.status, 'running'), eq(testRuns.status, 'initializing'), eq(testRuns.status, 'finalizing')),
       ),
     )

@@ -117,13 +117,24 @@ export function useDemoSimulator() {
       // A run stopped from the banner says nothing of what its scenario shows.
       const result = ctl.stopped ? undefined : scenario.result;
       const link = result?.link;
-      const to = link ? await link.to(runId) : null;
       toast.add({
         title: `Simulated run #${runId} ${status}`,
         description: result?.text ?? 'Sent by an emulated Piwi reporter, straight into the in-browser database.',
         color: status === 'passed' ? 'success' : status === 'failed' ? 'error' : 'warning',
         icon: scenario.icon,
-        actions: link && to ? [{ label: link.label, to, color: 'neutral', variant: 'outline' }] : undefined,
+        // The page that shows the result is looked up when the visitor asks for it, so the toast never waits on it.
+        actions: link
+          ? [
+              {
+                label: link.label,
+                color: 'neutral',
+                variant: 'outline',
+                onClick: async () => {
+                  await navigateTo(await link.to(runId));
+                },
+              },
+            ]
+          : undefined,
       });
     } catch (error) {
       console.error('[Demo simulator] simulation failed', error);

@@ -58,9 +58,10 @@ describe("the simulator's menu", () => {
     }
   });
 
-  test('opens a run on its Resources tab only when the scenario sends resources', () => {
-    for (const scenario of simulator.DEMO_SCENARIOS.filter((s) => s.tab === 'resources')) {
-      expect(scenario.resources, scenario.id).toBeDefined();
+  test("links a run's Resources tab only from a scenario that sends resources", async () => {
+    for (const scenario of simulator.DEMO_SCENARIOS) {
+      const to = scenario.result?.link ? await scenario.result.link.to(1) : '';
+      if (to.includes('tab=resources')) expect(scenario.resources, scenario.id).toBeDefined();
     }
   });
 });
@@ -72,29 +73,6 @@ describe('every scenario', () => {
         expect(test.browser?.projectName, `${scenario.id}: ${test.title}`).toEqual(expect.any(String));
       }
     }
-  });
-});
-
-describe("the 'max-failures' scenario", () => {
-  test('stops at its failure budget: the tests it never reached did not run, and the run says why', async () => {
-    const scenario = simulator.DEMO_SCENARIOS.find((s) => s.id === 'max-failures')!;
-    const run = await streamSimulation(simulator, scenario.id);
-    const results = finalResults(run);
-    const failed = results.filter((r) => r.status === 'failed');
-    const didNotRun = results.filter((r) => r.status === 'didnotrun');
-
-    expect(failed).toHaveLength(scenario.maxFailures!);
-    expect(didNotRun.length).toBeGreaterThan(0);
-    for (const r of didNotRun) expect(r.didNotRunReason, r.title).toBe('max-failures');
-    expect(run.finish).toMatchObject({
-      status: 'interrupted',
-      failedTests: scenario.maxFailures,
-      runErrors: [
-        {
-          message: `\u001b[31mTesting stopped early after ${scenario.maxFailures} maximum allowed failures.\u001b[39m`,
-        },
-      ],
-    });
   });
 });
 

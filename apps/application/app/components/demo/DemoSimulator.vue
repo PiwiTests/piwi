@@ -16,6 +16,8 @@ const demoReady = useState('demoReady', () => false);
 /** From `sm` up the scenarios open in a popover under the button; below, in a sheet. */
 const wide = useMediaQuery('(min-width: 640px)');
 const pickerOpen = ref(false);
+// Crossing the breakpoint swaps the popover for the sheet: neither opens by itself.
+watch(wide, () => (pickerOpen.value = false));
 
 const INTRO = 'Watch a live run arrive, as if a Piwi reporter were streaming it from CI.';
 

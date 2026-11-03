@@ -135,8 +135,11 @@ export const DEMO_SCENARIO_GROUPS = [
 
 export type DemoScenarioGroupId = (typeof DEMO_SCENARIO_GROUPS)[number]['id'];
 
-/** The run page tabs a scenario can open its run on. */
-export type DemoScenarioTab = 'workers' | 'resources';
+/**
+ * The run page tabs a scenario can open its run on: ones the page lists while the run streams. Resources is listed only
+ * once the finish stored the run's report, so a scenario links to it from its result instead.
+ */
+export type DemoScenarioTab = 'workers';
 
 export interface DemoScenario {
   id: string;
@@ -1290,9 +1293,9 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     description: 'A login fixture leaves a browser context open in every test, and the machine runs short of CPU',
     icon: 'i-lucide-droplets',
     group: 'speed',
-    tab: 'resources',
     result: {
-      text: 'The Resources tab names the fixture that left a browser context open in every test.',
+      text: 'The run’s Resources tab names the fixture that left a browser context open in every test.',
+      link: { label: 'Open Resources', to: (runId) => `/test-runs/${runId}?tab=resources` },
     },
     speed: 2,
     workers: 4,
@@ -1826,15 +1829,15 @@ async function runSingleSimulation(
 
   const interrupted = ctl.stopped || completed < tests.length;
   const status = interrupted ? 'interrupted' : failedCount > 0 ? 'failed' : 'passed';
-  // A run cut short after failures stopped on its failure budget, which Playwright reports outside any test and the
-  // reporter sends as the run's error.
-  const stoppedOnFailures = interrupted && failedCount > 0;
+  // A run cut short by its failure budget, which Playwright reports outside any test and the reporter sends as the
+  // run's error. A run stopped from the banner is a plain interruption, whatever failed before.
+  const stoppedOnFailures = interrupted && !ctl.stopped && failedCount >= maxFailures;
 
   // The real reporter materializes tests that never ran (maxFailures, CI kill)
   // as `didnotrun` complete events so the run page shows what was planned but
   // never executed — mirror that before finishing the run.
   if (interrupted) {
-    // A run stopped for any other reason than its failure budget (a CI kill) is a plain interruption.
+    // A run stopped for any other reason than its failure budget (a CI kill, the banner's Stop) is a plain interruption.
     const unrunReason = stoppedOnFailures ? 'max-failures' : 'interrupted';
     const unrunTests = tests.slice(queueIndex);
     for (const t of unrunTests) {
