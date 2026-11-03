@@ -12,6 +12,9 @@ import {
   isGenericFailure,
 } from '#shared/error-fingerprint';
 import { errorFingerprintV4 } from '#shared/error-fingerprint-v4';
+import { FAILURE_STORIES } from '#shared/demo/failure-stories.mjs';
+import { HIDDEN_VALUE, hideSecretShapes, hideSecretsInError } from '@piwitests/core/mask';
+import { hiddenErrorText } from '../../server/utils/sanitize';
 
 describe('stripAnsi', () => {
   test('removes SGR color codes', () => {
@@ -261,6 +264,60 @@ describe('a generic failure', () => {
       generic("TypeError: Cannot read properties of undefined (reading 'id')\n---\nError: the order page broke"),
     ).toBe(false);
     expect(generic('Error: something broke')).toBe(false);
+  });
+});
+
+describe('a failure as ingest keeps it, its secrets hidden (`hiddenErrorText`)', () => {
+  const key = ['pd_', 'a3'.repeat(32)].join('');
+  const fingerprintOf = async (error: string) => (await computeErrorFingerprint(hiddenErrorText(error)!)).fingerprint;
+
+  test('that holds no credential fingerprints as it did', async () => {
+    // What version 5 stored for these, before a credential's shape was hidden in an error.
+    const STORED = [
+      [
+        'Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: 3\nReceived: 2\n    at tests/basic.spec.ts:12:5',
+        '98483b64c6e87c0ed2dea770bbc3515a68e00a70a01c71571267ea92d333da1a',
+      ],
+      [
+        'TimeoutError: locator.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByLabel(\'Password\')\n  - fill("hunter2")\n    at tests/login.spec.ts:20:7',
+        '6734fd28ff010ea335ac5ec8865a1b945bcad59f34c594e27dc0066e8121316c',
+      ],
+      [
+        'Error: 401 Unauthorized: token expired for session sk_live_short and Bearer abc\n    at tests/api.spec.ts:4:1',
+        'e05d3a642c9285281e891ce4a55a67d9af9ce941f6b946f590136b6a9dd82f7a',
+      ],
+    ] as const;
+    for (const [error, stored] of STORED) expect(await fingerprintOf(error), error).toBe(stored);
+    for (const story of FAILURE_STORIES) {
+      for (const { error } of story.failingCases) {
+        expect(hiddenErrorText(error), story.key).toBe(hideSecretsInError(error));
+        expect(hideSecretShapes(error), story.key).toBe(error);
+        expect(await fingerprintOf(error), story.key).toBe((await computeErrorFingerprint(error)).fingerprint);
+      }
+    }
+  });
+
+  test('that holds one where the masks take values out fingerprints as it did', async () => {
+    for (const error of [
+      `Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: "ok"\nReceived: "${key}"`,
+      `Error: the order was refused\nCall log:\n  - → POST https://api.test/orders ${key}`,
+      `Error: the order was refused\n    at login (tests/${key}/helpers.ts:3:5)\n    at tests/orders.spec.ts:9:1`,
+    ]) {
+      expect(hiddenErrorText(error), error).not.toContain(key);
+      expect(await fingerprintOf(error), error).toBe((await computeErrorFingerprint(error)).fingerprint);
+    }
+  });
+
+  test('that holds one in the message it hashes takes the fingerprint of its hidden text', async () => {
+    const token = (n: number) => ['Bearer ', `tok${n}`.padEnd(24, 'Q')].join('');
+    const one = `Error: 401 Unauthorized for ${token(1)}\n    at tests/api.spec.ts:4:1`;
+    const two = `Error: 401 Unauthorized for ${token(2)}\n    at tests/api.spec.ts:4:1`;
+    expect(await fingerprintOf(one)).not.toBe((await computeErrorFingerprint(one)).fingerprint);
+    // Two tokens no longer tell one failure apart.
+    expect(await fingerprintOf(one)).toBe(await fingerprintOf(two));
+    expect((await computeErrorFingerprint(hiddenErrorText(one)!)).signature).toBe(
+      `Error: <N> Unauthorized for ${HIDDEN_VALUE}`,
+    );
   });
 });
 

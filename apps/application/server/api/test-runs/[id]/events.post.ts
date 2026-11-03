@@ -9,7 +9,7 @@ import { mapWireCaseToRunCase } from '../../../utils/map-wire-case';
 import { resolveRepeatEachIndex, runningCaseKey } from '../../../utils/inserted-run-cases';
 import { mapStepEventsToRunEvents } from '../../../utils/map-step-events';
 import { authorizeStreamToken } from '../../../utils/stream-auth';
-import { hiddenErrorText } from '../../../utils/sanitize';
+import { hiddenErrorText, hiddenStepEventErrors } from '../../../utils/sanitize';
 import { wireCaseProblem } from '../../../utils/wire-case-problem';
 import type { StreamEventPayload } from '#shared/types';
 import { countFailedFromTally } from '#shared/utils/test-counts';
@@ -186,7 +186,7 @@ export default eventHandler(async (event) => {
         duration: tc.duration,
         location: tc.location,
         error: hiddenErrorText(tc.error),
-        stepEvents: tc.stepEvents ?? null,
+        stepEvents: hiddenStepEventErrors(tc.stepEvents),
         wastedTimeMs: tc.wastedTimeMs ?? null,
         workerIndex: tc.workerIndex ?? null,
         shardIndex: tc.shardIndex ?? null,

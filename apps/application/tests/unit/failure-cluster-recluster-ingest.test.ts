@@ -4,6 +4,7 @@ import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import type { DbClient } from '../../server/database';
+import { HIDDEN_VALUE } from '@piwitests/core/mask';
 import { migrateToLatest } from './temp-db';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set.
@@ -57,6 +58,25 @@ describe('a failure longer than the sample its cluster keeps', () => {
 
     expect(await reclusterFailureFingerprints(db as unknown as DbClient)).toEqual({ updated: 0, merged: 0 });
     expect(await ingestFailure(error)).toBe(clusterId);
+    expect(await db.$count(schema.failureClusters)).toBe(1);
+  });
+});
+
+/** A failure whose message names a bearer token, built from parts so no scanner reads it as a live one. */
+const refused = (token: string) =>
+  `Error: the order was refused for ${['Bearer ', token].join('')}\n    at tests/orders.spec.ts:9:1`;
+
+describe('a failure that holds a credential', () => {
+  test('fingerprints its hidden text at ingest and in the recluster, so another token joins its cluster', async () => {
+    const clusterId = await ingestFailure(refused('Zm9vYmFyYmF6cXV4MQ'));
+    expect(clusterId).not.toBeNull();
+    const [cluster] = await db.select().from(schema.failureClusters);
+    expect(cluster!.fingerprintSample).toBe(
+      `Error: the order was refused for ${HIDDEN_VALUE}\n    at tests/orders.spec.ts:9:1`,
+    );
+
+    expect(await reclusterFailureFingerprints(db as unknown as DbClient)).toEqual({ updated: 0, merged: 0 });
+    expect(await ingestFailure(refused('Zm9vYmFyYmF6cXV4Mg'))).toBe(clusterId);
     expect(await db.$count(schema.failureClusters)).toBe(1);
   });
 });

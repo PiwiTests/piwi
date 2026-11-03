@@ -4,12 +4,14 @@ import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import type { TestRunFinishPayload } from '#shared/types';
+import { HIDDEN_VALUE } from '@piwitests/core/mask';
 import { migrateToLatest } from './temp-db';
 
 /**
  * The demo's runs keep what the server's keep (`tests/unit/run-errors-ingest.test.ts`,
- * `tests/unit/test-output-ingest.test.ts`): a run's errors outside any test, a sharded run adding each shard's, and
- * what a test wrote to stdout and stderr, through `case_payloads`.
+ * `tests/unit/test-output-ingest.test.ts`, `tests/unit/error-credentials-ingest.test.ts`): a run's errors outside any
+ * test, a sharded run adding each shard's, what a test wrote to stdout and stderr, through `case_payloads`, and a
+ * test's error with a credential's shape hidden.
  */
 
 const state = vi.hoisted(() => ({ db: null as unknown }));
@@ -112,5 +114,36 @@ describe("the demo's run", () => {
     const detail = await getTestRunCase(db as never, execution!.id);
     expect(detail?.stdout).toBe('order 4521 created\n');
     expect(detail?.stderr).toBe('payment sandbox answered 502\n');
+  });
+
+  test('hides a credential’s shape in a test’s error, its steps’ and its hooks’ errors', async () => {
+    const key = ['pd_', 'a3'.repeat(32)].join('');
+    const error = `Error: 401 for ${key}\n\nReceived: "${key}"`;
+    const { runId, streamToken } = await beginRun();
+    await apiPostRunEvents(runId, {
+      streamToken,
+      testCases: [
+        {
+          type: 'complete',
+          title: 'signs in',
+          location: 'tests/signs-in.spec.ts:1:1',
+          status: 'failed',
+          duration: 10,
+          error,
+          steps: [{ title: 'Expect "toBe"', category: 'expect', duration: 1, error: { message: error } }],
+          stepEvents: [
+            { title: 'Before Hooks', category: 'hook', startedAt: 1, duration: 1, status: 'failed', error: key },
+          ],
+        },
+      ],
+    });
+    await apiFinishTestRun(runId, finishBody(streamToken));
+
+    const executions = await db.select().from(schema.testRunsCases).where(eq(schema.testRunsCases.testRunId, runId));
+    const clusters = await db.select().from(schema.failureClusters);
+    expect(JSON.stringify([executions, clusters])).not.toContain(key);
+    expect(executions[0]!.error).toBe(`Error: 401 for ${HIDDEN_VALUE}\n\nReceived: "${HIDDEN_VALUE}"`);
+    expect((executions[0]!.stepEvents as Array<{ error: string }>)[0]!.error).toBe(HIDDEN_VALUE);
+    expect(clusters[0]!.fingerprintSample).toBe(executions[0]!.error);
   });
 });
