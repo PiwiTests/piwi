@@ -481,7 +481,8 @@ On `onEnd`, the collected run is handed to `RunSubmitter`, which tries, in order
    get one multipart `/upload` carrying everything; when the dashboard answers that upload as a repeat of the run
    it holds from those results, with a token, the files and reports then go as in parts. Results refused as too
    large go on to rung 3,
-3. **plain JSON `/submit`**: last resort,
+3. **plain JSON `/submit`**: last resort; an answer that is a repeat of a run held from its results, with a token,
+   sends the files and reports as in parts too,
 4. **crash recovery**: on total failure, persist the payload to disk for the next run: one owner-only file per
    dashboard and project, replayed to that dashboard only and deleted once it took the run (or refused it as
    invalid).

@@ -462,6 +462,69 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
       ]);
     });
 
+    it('sends the files of the run its JSON submit is answered as a repeat of, after the one upload was refused', async () => {
+      const resultsBodies: any[] = [];
+      await runInParts((req, res) => {
+        if (req.url === '/api/test-runs/upload/results') {
+          // The dashboard holds the run from its results, but none of the three answers arrives.
+          resultsBodies.push(JSON.parse(req.body));
+          req.raw.socket?.destroy();
+        } else if (req.url === '/api/test-runs/upload') {
+          if (req.body.includes('name="runId"')) return jsonRes(res, 200, { success: true, runId: 21 });
+          jsonRes(res, 413, { message: 'Upload too large (max 1 MB)' });
+        } else if (req.url === '/api/test-runs/submit') {
+          // A repeat of the held run: a token for its files comes back.
+          jsonRes(res, 200, { success: true, runId: 21, projectId: 2, duplicate: true, streamToken: 'renewed-token' });
+        } else if (req.url === '/api/test-runs/21/case-files') {
+          jsonRes(res, 200, { success: true });
+        } else {
+          textRes(res, 404, 'nope');
+        }
+      });
+
+      expect(urlsHit(server)).toEqual([
+        '/api/test-runs/upload/results',
+        '/api/test-runs/upload/results',
+        '/api/test-runs/upload/results',
+        '/api/test-runs/upload',
+        '/api/test-runs/submit',
+        '/api/test-runs/21/case-files',
+        '/api/test-runs/21/case-files',
+        '/api/test-runs/upload',
+      ]);
+      const submitted = JSON.parse(server.requests.find((r) => r.url === '/api/test-runs/submit')!.body);
+      expect(submitted.deliveryKey).toBe(resultsBodies[0].deliveryKey);
+      const caseFiles = server.requests.filter((r) => r.url === '/api/test-runs/21/case-files');
+      expect(caseFiles.every((r) => r.body.includes('renewed-token'))).toBe(true);
+      expect(caseFiles.map((r) => r.body.includes('pays-SHOT'))).toEqual([true, false]);
+      expect(caseFiles[1]!.body).toContain('ships-SHOT');
+      const settle = server.requests.filter((r) => r.url === '/api/test-runs/upload')[1]!.body;
+      expect(settle).toMatch(/name="runId"\r\n\r\n21\r\n/);
+      expect(settle).toContain('name="report_custom"');
+    });
+
+    it("a repeat answer to the JSON submit without a token (an older dashboard's) ends the delivery there", async () => {
+      await runInParts((req, res) => {
+        if (req.url === '/api/test-runs/upload/results') {
+          textRes(res, 503, 'unavailable');
+        } else if (req.url === '/api/test-runs/upload') {
+          jsonRes(res, 413, { message: 'Upload too large (max 1 MB)' });
+        } else if (req.url === '/api/test-runs/submit') {
+          jsonRes(res, 200, { success: true, runId: 21, projectId: 2, duplicate: true });
+        } else {
+          textRes(res, 404, 'nope');
+        }
+      });
+
+      expect(urlsHit(server)).toEqual([
+        '/api/test-runs/upload/results',
+        '/api/test-runs/upload/results',
+        '/api/test-runs/upload/results',
+        '/api/test-runs/upload',
+        '/api/test-runs/submit',
+      ]);
+    });
+
     it('results refused as too large go on alone, never in an upload that carries the files too', async () => {
       await runInParts((req, res) => {
         if (req.url === '/api/test-runs/upload/results') {

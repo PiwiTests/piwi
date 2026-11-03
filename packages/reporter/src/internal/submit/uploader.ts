@@ -102,8 +102,8 @@ export interface HeldRun {
 
 /**
  * The run a repeated delivery's answer names as held `finalizing` until its files are in, with the new token they go
- * with: `/upload` answers so a repeat of a run its results went ahead for (`Uploader.uploadResults`). Null for any
- * other answer: a first delivery's, or a repeat's without a token (a run that settled, or an older dashboard).
+ * with: `/upload` and `/submit` answer so a repeat of a run its results went ahead for (`Uploader.uploadResults`). Null
+ * for any other answer: a first delivery's, or a repeat's without a token (a run that settled, or an older dashboard).
  */
 export function heldRepeat(response: any): HeldRun | null {
   const runId = response?.runId;

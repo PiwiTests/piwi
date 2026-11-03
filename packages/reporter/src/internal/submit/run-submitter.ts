@@ -254,7 +254,7 @@ export class RunSubmitter {
 
     if (!outcome.done) {
       if (fallbackReason) markSubmitFallback(run, 'submit', fallbackReason);
-      outcome = await this.tryUploadJSON(run, overallStatus, duration, auth);
+      outcome = await this.tryUploadJSON(run, overallStatus, duration, auth, reports);
     }
 
     if (!outcome.output) return null;
@@ -502,9 +502,8 @@ export class RunSubmitter {
   }
 
   /**
-   * Deliver the run in one multipart upload, under the delivery key its results went with. A dashboard that holds the
-   * run from those results (their answers were lost) answers it as a repeat with a new token, its files unread: they
-   * then go as `uploadInParts` sends them, and the reports settle the run. Any other answer is returned as it came.
+   * Deliver the run in one multipart upload, under the delivery key its results went with, and send the files of a
+   * run the dashboard answers it as a repeat of (`sendFilesOfHeldRepeat`). Any other answer is returned as it came.
    */
   private async uploadInOne(
     run: CollectedRun,
@@ -513,8 +512,22 @@ export class RunSubmitter {
     auth: string | null,
   ): Promise<any> {
     const response = await this.uploader.uploadWithFiles(payload, reports, run.options.uploadTraces, auth);
+    return (await this.sendFilesOfHeldRepeat(run, response, reports, auth)) ?? response;
+  }
+
+  /**
+   * When `response` answers a batch delivery as a repeat of the run the dashboard holds from its results (their
+   * answers were lost), with a new token, send that run's files and reports as `uploadInParts` does: the repeat left
+   * its own unread. Returns the held run, or null for any other answer, which needs nothing more.
+   */
+  private async sendFilesOfHeldRepeat(
+    run: CollectedRun,
+    response: unknown,
+    reports: FoundReport[],
+    auth: string | null,
+  ): Promise<HeldRun | null> {
     const held = heldRepeat(response);
-    if (!held) return response;
+    if (!held) return null;
     this.logger.info(`The dashboard holds run #${held.runId} from its results: sending its files.`);
     await this.sendFilesAndSettle(run, held, reports, auth);
     return held;
@@ -560,16 +573,22 @@ export class RunSubmitter {
     await this.uploader.uploadReportsAndSettle(run.options.projectName!, held.runId, reports, run.startTime, auth);
   }
 
+  /**
+   * Send the run's results as JSON, the last rung, and the files of a run the dashboard answers them as a repeat of
+   * (`sendFilesOfHeldRepeat`). Saves the recovery copy when the dashboard does not take them.
+   */
   private async tryUploadJSON(
     run: CollectedRun,
     overallStatus: string,
     duration: number,
     auth: string | null,
+    reports: FoundReport[],
   ): Promise<SubmitOutcome> {
     const payload = this.buildRunPayload(run, overallStatus, duration);
     try {
       const response = await this.uploader.uploadJSON(payload, auth);
       this.dropLocalCopies();
+      await this.sendFilesOfHeldRepeat(run, response, reports, auth);
       return { done: true, output: this.buildOutput(response?.runId, response?.projectId, run, overallStatus) };
     } catch (error) {
       if (error instanceof HttpError && error.status === 401 && !auth) return this.stopForMissingAuth(run, payload);
