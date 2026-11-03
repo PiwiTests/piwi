@@ -369,7 +369,7 @@ import {
   disableDemoWebhookToken,
 } from './integrations';
 import { canReadThroughConnection, CONNECTION_NOT_FOUND } from '#shared/integrations/connection-access';
-import type { ConnectionInput } from '#shared/integrations/types';
+import type { ConnectionInput, IssueEntityType } from '#shared/integrations/types';
 import type { ResolvedProjectIntegration } from '#shared/integrations/binding';
 import { toIssueLocale } from '#shared/integrations/messages';
 import {
@@ -637,6 +637,9 @@ function assertDemoSelfOrAdmin(ctx: DemoCtx | undefined, userId: number): void {
 }
 
 /** The entity kind `assertDemoEntityScope` resolves for each entity a link (or an issue) can target. */
+/** The entities an issue is drafted and filed for, as the server's issue routes accept them. */
+const ISSUE_ENTITY_TYPES: IssueEntityType[] = ['failure_cluster', 'test_runs_case', 'bug_report'];
+
 const LINK_TARGET_ENTITY: Record<string, DemoEntity> = {
   test_run: 'run',
   test_runs_case: 'execution',
@@ -3492,8 +3495,11 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/integrations\/issue-draft$/,
     permission: 'issue:create',
     handler: async (_, __, q, ctx) => {
-      const entityType = (q?.get('entityType') ?? '') as 'failure_cluster' | 'test_runs_case';
+      const entityType = (q?.get('entityType') ?? '') as IssueEntityType;
       const entityId = Number(q?.get('entityId') ?? 0);
+      if (!ISSUE_ENTITY_TYPES.includes(entityType) || !Number.isInteger(entityId) || entityId <= 0) {
+        throw demoHttpError(400, 'entityType and entityId are required');
+      }
       await assertDemoLinkTargetScope(ctx, entityType, entityId);
       const draft = await demoIssueDraft(
         await getDemoDb(),
@@ -3511,7 +3517,7 @@ const routes: RouteEntry[] = [
     permission: 'issue:create',
     handler: async (_, body, _q, ctx) => {
       const b = body as {
-        entityType: 'failure_cluster' | 'test_runs_case';
+        entityType: IssueEntityType;
         entityId: number;
         connectionId?: number;
         title?: string;
@@ -3523,10 +3529,15 @@ const routes: RouteEntry[] = [
       if (b.connectionId !== getDemoProjectIntegration().connectionId) {
         throw demoHttpError(403, 'This project files its issues through the connection it is bound to');
       }
-      return demoCreateIssue(await getDemoDb(), b.entityType, b.entityId, b.title, {
+      if (!ISSUE_ENTITY_TYPES.includes(b.entityType) || !Number.isInteger(b.entityId) || b.entityId <= 0) {
+        throw demoHttpError(400, 'Invalid request body');
+      }
+      const created = await demoCreateIssue(await getDemoDb(), b.entityType, b.entityId, b.title, {
         issueType: b.issueType,
         fields: b.fields,
       });
+      if (!created) throw demoHttpError(404, 'Entity or cluster unavailable');
+      return created;
     },
   },
   { method: 'GET', pattern: /^\/api\/integrations\/actions$/, handler: async () => demoIntegrationActions() },
