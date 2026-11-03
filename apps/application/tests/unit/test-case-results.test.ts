@@ -209,16 +209,16 @@ describe("a test's runs", () => {
     expect(specs.find((s) => s.prefix === 'tests/refund')).toMatchObject({ flakyRate: 1 });
   });
 
-  test('are the same on the Trend tab and in spec health', async () => {
+  test('are the same on the Trend tab and in spec health, the flaky rate over the runs that passed or failed', async () => {
     const trend = await getTestCaseStabilityTrend(runsDb as never, 10, { days: 2, granularity: 'day' });
     expect(trend.buckets.filter((b) => b.totalRuns > 0)).toMatchObject([
-      { totalRuns: 7, passRate: 0.8, flakyRate: 0.29, avgDuration: 450 },
+      { totalRuns: 7, passRate: 0.8, flakyRate: 0.4, avgDuration: 450 },
     ]);
     const { specs } = await getProjectSpecHealth(runsDb as never, 1, 30);
     expect(specs.find((s) => s.prefix === 'tests/checkout')).toEqual({
       prefix: 'tests/checkout',
       passRate: 0.83,
-      flakyRate: 0.38,
+      flakyRate: 0.5,
       failureCount: 1,
       testCount: 8,
       avgDuration: 400,

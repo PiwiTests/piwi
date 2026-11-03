@@ -30,7 +30,7 @@ import { getFlakeLabStepFacts, getFlakeSuspectResults, type FlakeSuspectResult }
 import { isPassiveCapabilityDeclined } from './capabilities';
 import { sanitizeExecutionResources } from '../resource-report';
 import { FAILED_STATUS_KEYS, finalAttempts, finalAttemptsOfRuns, isFailedStatus, ranTest } from '../utils/test-counts';
-import { passRate, passRatePercent } from '../utils/pass-rate';
+import { flakyRate, passRate, passRatePercent } from '../utils/pass-rate';
 import { finalAttemptSql, recentFlakySql, testCaseAggregates } from './test-case-aggregates';
 import { buildFailureTimeline, type FailureTimeline, type TimelineCallsite } from '../failure-timeline';
 import { timelineResources, type TimelineResources } from '../timeline-resources';
@@ -1551,7 +1551,7 @@ export interface TestCaseStabilityBucket {
   totalRuns: number;
   /** Passed runs over the runs that passed or failed, 0–1; null without either. */
   passRate: number | null;
-  /** Flaky runs (passed after an earlier attempt failed) over runs, 0–1; null without a run. */
+  /** Flaky runs (passed after an earlier attempt failed) over the runs that passed or failed, 0–1; null without either. */
   flakyRate: number | null;
   /** Average duration in ms of the bucket's runs that ran (neither skipped nor did not run); null without one. */
   avgDuration: number | null;
@@ -1619,7 +1619,6 @@ export async function getTestCaseStabilityTrend(
     if (row.duration != null && ranTest(row.status)) t.durations.push(row.duration);
     tally.set(key, t);
   }
-  const rate = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 100) / 100 : null);
   const round = (share: number | null) => (share === null ? null : Math.round(share * 100) / 100);
   return {
     testCaseId,
@@ -1630,7 +1629,7 @@ export async function getTestCaseStabilityTrend(
         date,
         totalRuns: t?.total ?? 0,
         passRate: t ? round(passRate(t)) : null,
-        flakyRate: t ? rate(t.flaky, t.total) : null,
+        flakyRate: t ? round(flakyRate(t)) : null,
         avgDuration:
           t && t.durations.length > 0 ? Math.round(t.durations.reduce((a, b) => a + b, 0) / t.durations.length) : null,
       };

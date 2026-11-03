@@ -47,7 +47,9 @@ const { data, pending, error, refresh } = await useAnalyticsWidget<AnalyticsProj
             >
               {{ spec.passRate === null ? '—' : `${Math.round(spec.passRate * 100)}%` }}
             </td>
-            <td class="py-1 px-2 text-right tabular-nums">{{ Math.round(spec.flakyRate * 100) }}%</td>
+            <td class="py-1 px-2 text-right tabular-nums">
+              {{ spec.flakyRate === null ? '—' : `${Math.round(spec.flakyRate * 100)}%` }}
+            </td>
             <td class="py-1 pl-2 text-right tabular-nums">{{ spec.testCount }}</td>
           </tr>
         </tbody>

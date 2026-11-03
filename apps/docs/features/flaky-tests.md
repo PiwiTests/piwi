@@ -101,7 +101,7 @@ Piwi ranks flaky tests by **impact** — derived from wasted CI minutes (retries
 
 ### Per-test stability trend
 
-The **Trend** tab of a test's page draws its pass rate, flaky rate and average duration over its
+The **Trend** tab of a test's page draws its pass rate, [flaky rate](/guide/concepts#flaky-rate) and average duration over its
 [runs](/guide/concepts#test-case) of the last 30, 90 or 365 days, one point per UTC day, week or month, with the project's timeline markers, so you can
 see whether a fix actually stuck. The same series is the MCP `get_test_stability_trend` tool.
 

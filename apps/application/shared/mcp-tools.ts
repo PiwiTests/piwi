@@ -550,7 +550,7 @@ export const MCP_TOOL_DEFS = [
     module: 'core',
     description: md(
       'Get the health of each area of a project’s suite over the last N days, grouped by spec-file prefix.',
-      'Each area has its pass rate, flaky rate, failure count, run count (`testCount`, one per run, test, Playwright project and repetition) and average duration. Use it to find the unhealthy parts of a suite.',
+      'Each area has its pass rate and flaky rate (both over the runs that passed or failed, null without one), failure count, run count (`testCount`, one per run, test, Playwright project and repetition) and average duration. Use it to find the unhealthy parts of a suite.',
     ),
     inputSchema: {
       type: 'object',

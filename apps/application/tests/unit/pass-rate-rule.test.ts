@@ -7,7 +7,7 @@ import { migrateToLatest } from './temp-db';
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the modules under test load.
 delete process.env.PIWI_DATABASE_URL;
-const { passRate, passRatePercent } = await import('../../shared/utils/pass-rate');
+const { flakyRate, passRate, passRatePercent } = await import('../../shared/utils/pass-rate');
 const { failedCountSql, passedCountSql, passRateSql } = await import('../../shared/utils/pass-rate-sql');
 
 describe('the pass rate', () => {
@@ -28,6 +28,19 @@ describe('the pass rate', () => {
   test('reads a missing or negative count as none', () => {
     expect(passRate({ passed: Number.NaN, failed: 1 })).toBe(0);
     expect(passRate({ passed: -1, failed: 0 })).toBeNull();
+  });
+});
+
+describe('the flaky rate', () => {
+  test('is the flaky results over the results that passed or failed, as the pass rate divides', () => {
+    // Four results passed, one of them on a retry, one failed; the skipped ones are in neither term.
+    expect(flakyRate({ flaky: 1, passed: 4, failed: 1 })).toBe(0.2);
+    expect(flakyRate({ flaky: 2, passed: 2, failed: 0 })).toBe(1);
+  });
+
+  test('has no value without a passed or failed result', () => {
+    expect(flakyRate({ flaky: 0, passed: 0, failed: 0 })).toBeNull();
+    expect(flakyRate({ flaky: 0, passed: 0, failed: 3 })).toBe(0);
   });
 });
 

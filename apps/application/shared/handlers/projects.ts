@@ -61,7 +61,7 @@ import {
 import { parseProjectRunScope, resolveProjectRunScope, type ProjectRunScope } from '../project-run-scope';
 import { eligibleRunSql } from '../run-eligibility';
 import { finalAttemptsOfRuns, isFailedStatus, ranTest } from '../utils/test-counts';
-import { passRate } from '../utils/pass-rate';
+import { flakyRate, passRate } from '../utils/pass-rate';
 import { finalAttemptSql, recentFlakySql, testCaseAggregates } from './test-case-aggregates';
 import { getHoldingVerifiedFixes } from './flake-verified';
 import { fixmeSkipPredicate } from '../utils/skip-kind';
@@ -1292,8 +1292,9 @@ function roundShare(share: number | null): number | null {
 
 /**
  * Group a project's recent test runs by spec-file prefix and compute pass rate
- * (null when none passed or failed), flaky rate, failure count, run count
- * (`testCount`) and the average duration of the runs that ran, over the last
+ * and flaky rate (both over the runs that passed or failed, null when none
+ * did), failure count, run count (`testCount`) and the average duration of the
+ * runs that ran, over the last
  * `days` days. A run is one result per run, test, Playwright project and
  * repetition, read from its final attempt (`finalAttemptsOfRuns`). Shared by
  * the spec-health widget and the MCP `get_spec_health` tool.
@@ -1356,7 +1357,7 @@ export async function getProjectSpecHealth(db: DrizzleDB, projectId: number, day
     .map(([prefix, data]) => ({
       prefix,
       passRate: roundShare(passRate({ passed: data.passCount, failed: data.failCount })),
-      flakyRate: data.testCount > 0 ? Math.round((data.flakyCount / data.testCount) * 100) / 100 : 0,
+      flakyRate: roundShare(flakyRate({ flaky: data.flakyCount, passed: data.passCount, failed: data.failCount })),
       failureCount: data.failCount,
       testCount: data.testCount,
       avgDuration:

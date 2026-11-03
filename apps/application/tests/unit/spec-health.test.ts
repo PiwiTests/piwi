@@ -55,6 +55,25 @@ describe('getProjectSpecHealth', () => {
     ]);
   });
 
+  test('divides the flaky runs by the runs that passed or failed, and has no flaky rate without one', async () => {
+    const first = await addRun();
+    await addExecution(first, 0, 'failed');
+    await addExecution(first, 1, 'passed');
+    await addExecution(await addRun(), 0, 'failed');
+    await addExecution(await addRun(), 0, 'skipped');
+    await db
+      .insert(schema.testCases)
+      .values({ id: 2, projectId: 1, filePath: 'tests/admin/off.spec.ts', title: 'off' });
+    await db.insert(schema.testRunsCases).values({ testRunId: first, testCaseId: 2, status: 'skipped' });
+
+    const { specs } = await getProjectSpecHealth(db as any, 1, 30);
+
+    expect(specs.map((s) => [s.prefix, s.passRate, s.flakyRate, s.testCount])).toEqual([
+      ['tests/admin', null, null, 1],
+      ['tests/cart', 0.5, 0.5, 3],
+    ]);
+  });
+
   test('counts the real runs behind a hundred newer lab runs', async () => {
     const real = await addRun();
     await addExecution(real, 0, 'passed');

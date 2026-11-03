@@ -102,6 +102,15 @@ passed or failed result there is no pass rate: the dashboard shows a dash, never
 Every pass rate follows this one rule: a run's, a project's, Home's, a test's, the
 [test pass rate metric](/reference/metrics) of Analytics and the quality reports, and a share link's README badge.
 
+### Flaky rate
+
+**A test's flaky runs over its runs that passed or failed**, the results the [pass rate](#pass-rate) divides by. A
+flaky run passed on a retry, so it is one of the passed runs; a skipped, did-not-run or interrupted run is in neither
+term. With no passed or failed run there is no flaky rate: the dashboard shows a dash.
+
+A file's or a spec directory's flaky rate divides its tests' runs the same way: the Trend tab of a test, the file
+headers of the project's Tests tab and the Spec health widget all follow this rule.
+
 ### Baseline (last green run)
 
 Several views answer "what changed?" — the Changes tab and run insights, the regression signals on a

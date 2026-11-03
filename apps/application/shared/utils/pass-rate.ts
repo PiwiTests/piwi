@@ -7,7 +7,8 @@
  * - A flaky result (passed on a retry) is passed.
  * - With no passed or failed result there is no rate: null, never 0 % or 100 %.
  *
- * `pass-rate-sql.ts` computes the same rule in a query.
+ * `pass-rate-sql.ts` computes the same rule in a query. A test's or a file's
+ * flaky rate (`flakyRate`) divides by the same results.
  */
 
 /** The two outcome counts a pass rate reads. `failed` holds the timed-out results too. */
@@ -35,4 +36,19 @@ export function passRatePercent(counts: PassRateCounts, decimals = 0): number | 
   if (decided === 0) return null;
   const scale = 10 ** decimals;
   return Math.round((passed * 100 * scale) / decided) / scale;
+}
+
+/** The counts a flaky rate reads: `flaky` holds the results that passed on a retry, which `passed` counts too. */
+export interface FlakyRateCounts extends PassRateCounts {
+  flaky: number;
+}
+
+/**
+ * The flaky rate of a test's or a file's results as a share from 0 to 1: the
+ * flaky results over the results that passed or failed, as the pass rate
+ * divides, or null with no passed or failed result.
+ */
+export function flakyRate(counts: FlakyRateCounts): number | null {
+  const decided = count(counts.passed) + count(counts.failed);
+  return decided > 0 ? count(counts.flaky) / decided : null;
 }
