@@ -92,3 +92,7 @@ its own retries, as in Playwright, and a row without one reads `repeat_each_inde
 - **A test's own pages count its runs, one result per run, project and repetition: its final attempt.** In SQL through
   `shared/handlers/test-case-aggregates.ts` (`finalAttemptSql`, `testCaseAggregates`, `recentFlakySql`), on both
   dialects; in memory through `finalAttemptsOfRuns`. `tests/unit/test-case-results.test.ts`, `test-case-runs-pg.test.ts`.
+- **Every insert into `test_runs_cases` is followed by `settleFinalAttempts`** with the tests it wrote: a row is stored
+  as its result's final attempt (`final_attempt`), which `finalAttemptSql` reads, until a later attempt arrives
+  (`persistRunCases` and its demo mirror; the seed generator and the perf dataset write the flag themselves). A fixture
+  that inserts attempts directly sets `finalAttempt: false` on the earlier ones. `tests/unit/final-attempt.test.ts`.

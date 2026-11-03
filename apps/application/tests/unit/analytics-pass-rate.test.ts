@@ -52,7 +52,7 @@ beforeAll(async () => {
     ]);
   await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'cart.spec.ts', title: 'pays' });
   await db.insert(schema.testRunsCases).values([
-    { testRunId: 2, testCaseId: 1, status: 'failed', retries: 0, browserName: 'chromium' },
+    { testRunId: 2, testCaseId: 1, status: 'failed', retries: 0, browserName: 'chromium', finalAttempt: false },
     { testRunId: 2, testCaseId: 1, status: 'passed', retries: 1, browserName: 'chromium' },
     { testRunId: 2, testCaseId: 1, status: 'skipped', retries: 0, browserName: 'webkit' },
   ]);

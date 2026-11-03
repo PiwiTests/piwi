@@ -79,12 +79,13 @@ describe("a test's runs", () => {
   type Attempt = [testRunId: number, browserName: string, retries: number, status: string, duration: number];
 
   /**
-   * The rows of a test's attempts, each with its attempt history as the reporter sends it: the attempts of its
-   * run, project and repetition up to it. `history: false` leaves it out, as a trace import does.
+   * The rows of the attempts of a test in one run, project and repetition, each with its attempt history as the
+   * reporter sends it: the attempts up to it. The last is the final attempt. `history: false` leaves the history
+   * out, as a trace import did.
    */
   function rows(testCaseId: number, attempts: Attempt[], opts: { repeatEachIndex?: number; history?: boolean } = {}) {
     const history: Array<{ retry: number; status: string }> = [];
-    return attempts.map(([testRunId, browserName, retries, status, duration]) => {
+    return attempts.map(([testRunId, browserName, retries, status, duration], i) => {
       history.push({ retry: retries, status });
       return {
         testRunId,
@@ -94,6 +95,7 @@ describe("a test's runs", () => {
         retries,
         status,
         duration,
+        finalAttempt: i === attempts.length - 1,
         attempts: opts.history === false ? null : history.map((a) => ({ ...a })),
         createdAt: new Date(NOON - 60 * 60_000 + testRunId * 60_000 + retries * 1000),
       };

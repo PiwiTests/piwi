@@ -58,7 +58,10 @@ describe.skipIf(!postgresUrl)("a test's runs on PostgreSQL", async () => {
       .values([1, 2, 3, 4].map((i) => ({ projectId, status: 'failed', startTime: new Date(Date.now() - i * 60_000) })))
       .returning();
     const [first, second, third, fourth] = runs.map((r) => r.id) as [number, number, number, number];
-    /** One test's attempts in one run, project and repetition, each with its history as the reporter sends it. */
+    /**
+     * One test's attempts in one run, project and repetition, each with its history as the reporter sends it; the
+     * last is the final attempt.
+     */
     const attempts = (
       testCaseId: number,
       testRunId: number,
@@ -74,6 +77,7 @@ describe.skipIf(!postgresUrl)("a test's runs on PostgreSQL", async () => {
         retries,
         status,
         duration,
+        finalAttempt: retries === outcomes.length - 1,
         attempts: outcomes.slice(0, retries + 1).map(([s], retry) => ({ retry, status: s })),
         createdAt: new Date(Date.now() - 3_600_000 + testRunId * 60_000 + retries * 1000),
       }));

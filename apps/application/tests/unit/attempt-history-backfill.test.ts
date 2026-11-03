@@ -39,7 +39,13 @@ beforeEach(async () => {
   await db
     .insert(schema.testRuns)
     .values([1, 2, 3, 4].map((id) => ({ id, projectId: 1, status: 'passed', startTime: new Date(T0 + id * 60_000) })));
-  const attempt = (testRunId: number, testCaseId: number, retries: number, status: string, attempts?: unknown) => ({
+  const attempt = (
+    testRunId: number,
+    testCaseId: number,
+    retries: number,
+    status: string,
+    extra: { attempts?: unknown; finalAttempt?: boolean } = {},
+  ) => ({
     testRunId,
     testCaseId,
     retries,
@@ -47,19 +53,21 @@ beforeEach(async () => {
     duration: 100 + retries,
     startedAt: T0 + testRunId * 60_000 + retries * 1000,
     browserName: 'chromium',
-    attempts: attempts ?? null,
+    attempts: null,
     createdAt: new Date(T0 + testRunId * 60_000 + retries * 1000),
+    ...extra,
   });
+  const earlier = { finalAttempt: false };
   const shipped = [{ retry: 0, status: 'passed', duration: 100, startedAt: null }];
   await db
     .insert(schema.testRunsCases)
     .values([
-      attempt(1, 1, 0, 'passed'),
+      attempt(1, 1, 0, 'passed', earlier),
       attempt(1, 1, 1, 'passed'),
-      attempt(2, 2, 0, 'failed'),
+      attempt(2, 2, 0, 'failed', earlier),
       attempt(2, 2, 1, 'passed'),
       attempt(3, 3, 1, 'passed'),
-      attempt(4, 4, 0, 'passed', shipped),
+      attempt(4, 4, 0, 'passed', { attempts: shipped }),
     ]);
 });
 

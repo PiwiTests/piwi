@@ -4,10 +4,10 @@
  * attempt (the highest retry) as `finalAttempts` (`shared/utils/test-counts.ts`)
  * reads the rows in memory, and flaky as `isFlakyExecution` reads that attempt.
  * On a test's own pages (its page and Trend tab, the catalog, selections, spec
- * health) each such result is one of its runs. A later attempt of a result is
- * looked up on the unique index of `test_runs_cases` (run, test, repetition,
- * retries, project); the flaky check reads the row alone, so a query costs no
- * lookup per execution for it.
+ * health) each such result is one of its runs. Each row stores whether it is
+ * its result's final attempt (`final_attempt`), which every write of
+ * `test_runs_cases` keeps through `settleFinalAttempts`; the flaky check reads
+ * the row alone, so a query costs no lookup per execution for either.
  */
 import { aliasedTable, and, eq, inArray, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { testRunsCases } from '../../server/database/schema';
@@ -32,9 +32,8 @@ function sameResult(other: Executions, row: Executions): SQL {
  * Whether the same run, test, project and repetition as `row` holds a later
  * attempt than `row`: one with more retries, or as many and a higher id. Only
  * a retry, or an attempt without a project (the one row the unique index lets
- * repeat), can be another row's later attempt, so the lookup reads only those:
- * PostgreSQL then hashes a few rows instead of every execution. The
- * `backfill_final_attempt` migrations hold the same SQL.
+ * repeat), can be another row's later attempt, so the lookup reads only those.
+ * The `backfill_final_attempt` migrations hold the same SQL.
  */
 function laterAttemptSql(row: Executions): SQL {
   return sql`EXISTS (
@@ -46,9 +45,9 @@ function laterAttemptSql(row: Executions): SQL {
     )`;
 }
 
-/** Whether `row` is the final attempt of its result: no later attempt of it is stored (`laterAttemptSql`). */
+/** Whether `row` is the final attempt of its result, as the row stores it (`settleFinalAttempts`). */
 export function finalAttemptSql(row: Executions = testRunsCases): SQL {
-  return sql`NOT ${laterAttemptSql(row)}`;
+  return sql`${row.finalAttempt} = true`;
 }
 
 /** How many tests one statement of `settleFinalAttempts` reads. */
@@ -76,7 +75,7 @@ export async function settleFinalAttempts(
         and(
           eq(testRunsCases.testRunId, testRunId),
           inArray(testRunsCases.testCaseId, tests.slice(i, i + SETTLE_CHUNK)),
-          sql`${testRunsCases.finalAttempt} = true`,
+          finalAttemptSql(),
           laterAttemptSql(testRunsCases),
         ),
       );
@@ -102,11 +101,10 @@ export async function settleFinalAttempts(
  * history is compared as text with its spaces taken out, since PostgreSQL
  * renders `jsonb` with a space after each colon and SQLite stores none. A
  * trace import stores each attempt with the history of the run's attempts
- * before it (`importTraceRun`), as the reporter does. A row stored without a
- * history is flaky when it passed on a retry, as `flakyFinalAttempts` reads a
- * final attempt with no earlier row, since this reads no other row;
- * `isFlakyExecution` is given one built from the run's stored attempts
- * (`withAttemptHistory`).
+ * before it (`importTraceRun`), as the reporter does, and a retry stored
+ * without one is given it at startup (`backfillAttemptHistories`). A retry
+ * left without a history has no earlier stored attempt: it is flaky when it
+ * passed, as `flakyFinalAttempts` reads a final attempt with no earlier row.
  */
 export function flakyResultSql(row: Executions = testRunsCases): SQL<boolean> {
   const history = sql`REPLACE(CAST(${row.attempts} AS TEXT), ' ', '')`;
@@ -162,20 +160,10 @@ const recent = aliasedTable(testRunsCases, RECENT);
  * How many of a test's last ten executions end a flaky run (`flakyResultSql`
  * on a final attempt), as a subquery: `testCaseId` names the test (a column of
  * the outer query, or an id) and `eligible`, over `test_runs_cases`, keeps the
- * executions the read counts. The ten are read first, so only the flaky
- * candidates among them look a later attempt up.
+ * executions the read counts.
  */
 export function recentFlakySql(testCaseId: SQLWrapper | number, eligible: SQL): SQL<number> {
-  const columns = [
-    testRunsCases.id,
-    testRunsCases.testRunId,
-    testRunsCases.testCaseId,
-    testRunsCases.repeatEachIndex,
-    testRunsCases.browserName,
-    testRunsCases.retries,
-    testRunsCases.status,
-    testRunsCases.attempts,
-  ];
+  const columns = [testRunsCases.retries, testRunsCases.status, testRunsCases.attempts, testRunsCases.finalAttempt];
   const latest = sql`SELECT ${sql.join(columns, sql`, `)}
       FROM ${testRunsCases}
       WHERE ${testRunsCases.testCaseId} = ${testCaseId}
