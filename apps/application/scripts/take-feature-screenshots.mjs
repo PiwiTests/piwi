@@ -5174,13 +5174,10 @@ const SCENES = [
         command.type === 'pausedPage' ? { image: { mime: 'image/jpeg', data: image, width: 1280, height: 800 } } : {},
       );
       await goto('/test-runs/2');
-      // As it starts the run, the tray notes the project's latest run: only a newer one is linked to it.
-      const baseline = page.waitForResponse((response) => new URL(response.url()).pathname.endsWith('/latest-run'));
       await page
         .getByRole('button', { name: /^Re-run \d+ failed tests?/ })
         .first()
         .click();
-      await baseline;
       const tray = page.getByRole('region', { name: 'Local runs' });
       await tray.waitFor();
       await page.waitForFunction(() => window.__hub?.open() === 1);
@@ -5221,6 +5218,7 @@ const SCENES = [
 
       // The run reports to the app with the reference the app gave it, and its test begins.
       const source = await (await page.request.get(`${base}/api/test-runs/2`)).json();
+      await page.waitForFunction(() => window.__runArgs?.originRef);
       const originRef = await page.evaluate(() => window.__runArgs?.originRef);
       const post = async (path, data) => {
         const res = await page.request.post(`${base}${path}`, { data });
@@ -7098,6 +7096,8 @@ const SCENES = [
       await rerun.click();
       const tray = page.getByRole('region', { name: 'Local runs' });
       await tray.waitFor();
+      // Output streams once the shell has started the run.
+      await page.waitForFunction(() => window.__runArgs);
       await page.evaluate((lines) => {
         for (const line of lines) window.__emitTauri('piwi:local-run', { id: 61, kind: 'stdout', line, code: null });
       }, COLORED_RUN_OUTPUT);

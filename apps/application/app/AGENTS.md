@@ -272,6 +272,9 @@ views are exempt only where a rule says so.
   it hears, once, and it says `show` only for the running runs whose **Hold failures** switch is on (off by default,
   on for a reproduction, `desktopHoldsByDefault`; never for a run nobody attends, `desktopHoldRefusal`), each by its
   steps' names (`hubRefs`); expanding a run or closing the tray changes none (`tests/desktop-run-view.spec.ts`).
+- **The client bundle never compiles code** (`eval`, `new Function`): the desktop build's CSP
+  (`server/utils/desktop-csp.ts`) has no `'unsafe-eval'`. Zod parses without its JIT (`plugins/00.zod-jitless.client.ts`,
+  `tests/unit/zod-jitless.test.ts`); a new dependency that evaluates code needs its switch, or another library.
 - **Anything opened outside `$fetch` carries `useRuntimeConfig().app.baseURL`** (`window.open`, an `href`, a download
   URL): the demo is served from `/demo/` and its service worker only intercepts that prefix, so a root-relative
   `/api/...` 404s there. `fileApiUrl` and `getTraceViewerUrl` do it.
