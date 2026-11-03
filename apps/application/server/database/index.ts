@@ -107,6 +107,23 @@ function backfillAnalyticsRollups(): void {
 }
 
 /**
+ * Give the retries stored without an attempt history one from their run's
+ * stored attempts (`backfillAttemptHistoriesOnce`), once per instance, without
+ * blocking startup; an interrupted backfill resumes at the next start.
+ */
+function backfillAttemptHistories(): void {
+  void (async () => {
+    try {
+      const { backfillAttemptHistoriesOnce } = await import('../utils/attempt-history-backfill');
+      const filled = await backfillAttemptHistoriesOnce(db as any);
+      if (filled) console.log(`[Database] Attempt-history backfill filled ${filled} execution(s)`);
+    } catch (err) {
+      console.error('[Database] Attempt-history backfill failed:', err);
+    }
+  })();
+}
+
+/**
  * Re-fingerprint the failure clusters (`reclusterFailureFingerprints`), after
  * giving a sample to the aliases stored without one (`backfillAliasSamples`),
  * which runs once per instance. Startup waits for both. A failure is logged,
@@ -164,6 +181,7 @@ async function openDatabase(): Promise<DB> {
           rewriteRouteKeys(db as any);
           backfillTraceResourceLinks();
           backfillAnalyticsRollups();
+          backfillAttemptHistories();
         } catch (error) {
           console.error('[Database] Migration error:', error);
           throw error;
@@ -216,6 +234,7 @@ async function openDatabase(): Promise<DB> {
           rewriteRouteKeys(db);
           backfillTraceResourceLinks();
           backfillAnalyticsRollups();
+          backfillAttemptHistories();
         } catch (error) {
           console.error('[Database] Migration error:', error);
           throw error;
