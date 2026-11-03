@@ -199,6 +199,29 @@ describe('streamMultipart', () => {
     expect(existsSync(String(written.path))).toBe(false);
   });
 
+  test('never runs beforeFiles for a request that failed before its first file part', async () => {
+    let calls = 0;
+    const beforeFiles = () => void calls++;
+    const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+    const many = buildMultipart(Array.from({ length: 5 }, (_, i) => ({ name: `f${i}`, value: 'x' })));
+    await expect(
+      streamMultipart(makeEvent(many), { maxTotalBytes: 1024, maxFields: 3, beforeFiles }),
+    ).rejects.toMatchObject({ statusCode: 413 });
+    await settle();
+
+    const req = new PassThrough() as PassThrough & { headers: Record<string, string> };
+    req.headers = { 'content-type': `multipart/form-data; boundary=${BOUNDARY}` };
+    req.write(`--${BOUNDARY}\r\nContent-Disposition: form-data; name="streamToken"\r\n\r\ntok\r\n`);
+    const parsing = streamMultipart({ node: { req } } as never, { maxTotalBytes: 1024, beforeFiles });
+    await vi.waitFor(() => expect(req.listenerCount('aborted')).toBe(1));
+    req.emit('aborted');
+    await expect(parsing).rejects.toMatchObject({ statusCode: 400 });
+    await settle();
+
+    expect(calls).toBe(0);
+  });
+
   test('runs beforeFiles once parsing ends when no file part arrives', async () => {
     let calls = 0;
     const body = buildMultipart([{ name: 'streamToken', value: 'tok' }]);

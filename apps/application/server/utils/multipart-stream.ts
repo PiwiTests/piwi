@@ -53,7 +53,7 @@ export interface StreamMultipartOptions {
    * written to disk (or once parsing ends when the request has no file part).
    * Throwing refuses the request before any file byte is stored, so a route
    * authenticated by a field (a stream token sent ahead of the files) checks
-   * it here.
+   * it here. It never runs for a request that already failed.
    */
   beforeFiles?: (fields: Map<string, string>) => Promise<void> | void;
 }
@@ -95,15 +95,17 @@ export async function streamMultipart(event: H3Event, options: StreamMultipartOp
   const fields = new Map<string, string>();
   const files: StreamedFile[] = [];
 
-  // The `beforeFiles` check, run at most once, on the fields read when it starts.
+  // Whether the request has failed or succeeded: nothing more is read, checked or written.
+  let settled = false;
+  // The `beforeFiles` check, run at most once, on the fields read when it starts, and never once the request settled.
   let gate: Promise<void> | undefined;
-  const passGate = () => (gate ??= (async () => options.beforeFiles?.(new Map(fields)))());
+  const passGate = () =>
+    settled ? Promise.resolve() : (gate ??= (async () => options.beforeFiles?.(new Map(fields)))());
   // One per file part, settled once its temp file is written and closed, or given up.
   const fileWrites: Promise<void>[] = [];
 
   try {
     await new Promise<void>((resolve, reject) => {
-      let settled = false;
       let bb: ReturnType<typeof busboy> | undefined;
       const fail = (error: unknown) => {
         if (settled) return;
