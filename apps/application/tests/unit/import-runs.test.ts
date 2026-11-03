@@ -14,6 +14,9 @@ const { importBlobReportRun, importTraceRun, findImportedRun } = await import('#
 const { persistRunCases } = await import('../../server/utils/persist-run-cases');
 const { testCaseCache } = await import('../../server/utils/test-case-cache');
 const { testSuiteCache } = await import('../../server/utils/test-suite-cache');
+const { getTestCase } = await import('#shared/handlers/test-cases');
+const { getProjectTestCases } = await import('#shared/handlers/projects');
+const { loadSelectionCatalog } = await import('#shared/handlers/selections');
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 type Port = Parameters<typeof importBlobReportRun>[1];
@@ -407,5 +410,55 @@ describe('the evidence and counters of an import', () => {
       { browserName: 'chromium', retries: 1 },
       { browserName: 'firefox', retries: 0 },
     ]);
+  });
+
+  test("a trace's retry carries the history of the run's attempts, which a test's pages read its flakiness from", async () => {
+    const attempt = (group: string, importHash: string, title: string, status: string) => ({
+      ...traceInput(group),
+      importHash,
+      parsed: { ...trace(title), case: { ...trace(title).case, status, browser: 'chromium' } },
+    });
+    // "pays" passed again on its retry; "refunds" failed, then passed.
+    await importTraceRun(db as never, port(), attempt('a'.repeat(64), '1'.repeat(64), 'pays', 'passed'));
+    await importTraceRun(db as never, port(), attempt('a'.repeat(64), '2'.repeat(64), 'pays', 'passed'));
+    await importTraceRun(db as never, port(), attempt('b'.repeat(64), '3'.repeat(64), 'refunds', 'failed'));
+    await importTraceRun(db as never, port(), attempt('b'.repeat(64), '4'.repeat(64), 'refunds', 'passed'));
+
+    const executions = await db
+      .select({ retries: schema.testRunsCases.retries, attempts: schema.testRunsCases.attempts })
+      .from(schema.testRunsCases)
+      .orderBy(schema.testRunsCases.id);
+    expect(executions.map((row) => row.attempts)).toMatchObject([
+      [{ retry: 0, status: 'passed' }],
+      [
+        { retry: 0, status: 'passed' },
+        { retry: 1, status: 'passed' },
+      ],
+      [{ retry: 0, status: 'failed' }],
+      [
+        { retry: 0, status: 'failed' },
+        { retry: 1, status: 'passed' },
+      ],
+    ]);
+
+    const cases = await db.select({ id: schema.testCases.id, title: schema.testCases.title }).from(schema.testCases);
+    const catalog = await getProjectTestCases(db as never, 1);
+    const selection = await loadSelectionCatalog(db as never, 1);
+    for (const [title, flaky] of [
+      ['pays', false],
+      ['refunds', true],
+    ] as const) {
+      const id = cases.find((c) => c.title === title)!.id;
+      const runs = flaky ? 1 : 0;
+      expect(await getTestCase(db as never, id), title).toMatchObject({ flakyRuns: runs, recentFlakyRuns: runs });
+      expect(
+        catalog.items.find((t: any) => t.id === id),
+        title,
+      ).toMatchObject({ status: flaky ? 'flaky' : 'passed', flakyRuns: runs });
+      expect(
+        selection.find((t) => t.id === id),
+        title,
+      ).toMatchObject({ flaky });
+    }
   });
 });

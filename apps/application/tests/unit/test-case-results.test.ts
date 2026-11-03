@@ -103,8 +103,8 @@ describe("a test's runs", () => {
   /**
    * "checks out" in three runs, with retries, `--repeat-each` and two Playwright
    * projects: ten attempts, seven runs. "pays" failed, then passed on its
-   * retry. "refunds" passed on a retry in a run imported without attempt
-   * histories, where its first attempt passed too.
+   * retry. "refunds" passed on a retry, stored without an attempt history or
+   * an earlier attempt.
    */
   beforeAll(async () => {
     runsDb = drizzle(createClient({ url: ':memory:' }), { schema });
@@ -152,14 +152,7 @@ describe("a test's runs", () => {
         [104, 'chromium', 0, 'failed', 10_000],
         [104, 'chromium', 1, 'passed', 100],
       ]),
-      ...rows(
-        12,
-        [
-          [105, 'chromium', 0, 'passed', 10_000],
-          [105, 'chromium', 1, 'passed', 100],
-        ],
-        { history: false },
-      ),
+      ...rows(12, [[105, 'chromium', 1, 'passed', 100]], { history: false }),
     ]);
   });
 
@@ -204,8 +197,16 @@ describe("a test's runs", () => {
     expect(selection.find((t) => t.id === 11)).toMatchObject({ totalRuns: 1, flaky: true, firstFailRank: null });
   });
 
-  test('read a pass on a retry with no attempt history as flaky, as a final attempt with no earlier row', async () => {
+  test('read a pass on a retry with no attempt history and no earlier attempt as flaky, on every page', async () => {
     expect(await getTestCase(runsDb as never, 12)).toMatchObject({ totalRuns: 1, flakyRuns: 1, recentFlakyRuns: 1 });
+    const catalog = await getProjectTestCases(runsDb as never, 1);
+    expect(catalog.items.find((t: any) => t.id === 12)).toMatchObject({ status: 'flaky', flakyRuns: 1 });
+    const selection = await loadSelectionCatalog(runsDb as never, 1);
+    expect(selection.find((t) => t.id === 12)).toMatchObject({ flaky: true });
+    const trend = await getTestCaseStabilityTrend(runsDb as never, 12, { days: 2, granularity: 'day' });
+    expect(trend.buckets.filter((b) => b.totalRuns > 0)).toMatchObject([{ totalRuns: 1, flakyRate: 1 }]);
+    const { specs } = await getProjectSpecHealth(runsDb as never, 1, 30);
+    expect(specs.find((s) => s.prefix === 'tests/refund')).toMatchObject({ flakyRate: 1 });
   });
 
   test('are the same on the Trend tab and in spec health', async () => {

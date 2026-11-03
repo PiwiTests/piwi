@@ -51,11 +51,13 @@ export function finalAttemptSql(row: Executions = testRunsCases): SQL {
  * final attempt, its own attempt last) holds an earlier attempt that failed or
  * timed out, or no earlier attempt: a history of one attempt is its own. The
  * history is compared as text with its spaces taken out, since PostgreSQL
- * renders `jsonb` with a space after each colon and SQLite stores none.
- * `isFlakyExecution` is also given, for a row that came without a history (a
- * trace import), one built from the run's stored attempts
- * (`withAttemptHistory`); this reads such a row as a pass on a retry, flaky,
- * as `flakyFinalAttempts` reads a final attempt with no earlier row.
+ * renders `jsonb` with a space after each colon and SQLite stores none. A
+ * trace import stores each attempt with the history of the run's attempts
+ * before it (`importTraceRun`), as the reporter does. A row stored without a
+ * history is flaky when it passed on a retry, as `flakyFinalAttempts` reads a
+ * final attempt with no earlier row, since this reads no other row;
+ * `isFlakyExecution` is given one built from the run's stored attempts
+ * (`withAttemptHistory`).
  */
 export function flakyResultSql(row: Executions = testRunsCases): SQL<boolean> {
   const history = sql`REPLACE(CAST(${row.attempts} AS TEXT), ' ', '')`;

@@ -15,7 +15,7 @@
  */
 
 import { RUN_ORIGIN_METADATA_KEY } from '@piwitests/core/wire';
-import { and, eq, gt, isNull, ne } from 'drizzle-orm';
+import { and, asc, eq, gt, isNull, ne } from 'drizzle-orm';
 import { resolveBrowserName } from '../browser-name';
 import { testRuns, testRunsCases, testCases, files, networkRequests } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
@@ -539,8 +539,19 @@ export async function importTraceRun(
 
     // A different trace for a test the run already has is a retry. Traces carry
     // no attempt index of their own, so it comes from how many attempts of this
-    // test the run already holds — which makes upload order the attempt order.
-    parsed.case.retries = await countPriorAttempts(db, projectId, run.id, parsed.case);
+    // test the run already holds — which makes upload order the attempt order —
+    // and its attempt history from those attempts, as the reporter sends one.
+    const prior = await priorAttempts(db, projectId, run.id, parsed.case);
+    parsed.case.retries = prior.length;
+    parsed.case.attempts = [
+      ...prior,
+      {
+        retry: prior.length,
+        status: parsed.case.status,
+        duration: parsed.case.duration ?? 0,
+        startedAt: parsed.case.startedAt ?? null,
+      },
+    ];
 
     const inserted = await port.persistRunCases(
       db,
@@ -637,13 +648,21 @@ async function recoverErrorContext(
   entry.case.testSource = evidence.testSource;
 }
 
-/** How many executions of this same test, in the same browser, the run already holds. */
-async function countPriorAttempts(
+/** One entry of an execution's attempt history (`test_runs_cases.attempts`). */
+interface AttemptEntry {
+  retry: number;
+  status: string;
+  duration: number;
+  startedAt: number | null;
+}
+
+/** The executions of this same test, in the same browser, the run already holds, as attempt history entries. */
+async function priorAttempts(
   db: DrizzleDB,
   projectId: number,
   testRunId: number,
   input: { filePath: string; suitePath?: string[] | null; title: string; browser?: unknown },
-): Promise<number> {
+): Promise<AttemptEntry[]> {
   // The names as the test's rows store them (`storedTestIdentity`).
   const stored = await storedTestIdentity(input);
   const existing = await db
@@ -659,12 +678,17 @@ async function countPriorAttempts(
     );
 
   const testCaseId = existing[0]?.id;
-  if (testCaseId === undefined) return 0;
+  if (testCaseId === undefined) return [];
 
   const projectName = resolveBrowserName(input.browser);
   const browserName = projectName === null ? null : await storedIdentity(projectName);
   const attempts = await db
-    .select({ id: testRunsCases.id })
+    .select({
+      retries: testRunsCases.retries,
+      status: testRunsCases.status,
+      duration: testRunsCases.duration,
+      startedAt: testRunsCases.startedAt,
+    })
     .from(testRunsCases)
     .where(
       and(
@@ -672,9 +696,15 @@ async function countPriorAttempts(
         eq(testRunsCases.testCaseId, testCaseId),
         browserName === null ? isNull(testRunsCases.browserName) : eq(testRunsCases.browserName, browserName),
       ),
-    );
+    )
+    .orderBy(asc(testRunsCases.retries), asc(testRunsCases.id));
 
-  return attempts.length;
+  return attempts.map((attempt) => ({
+    retry: attempt.retries ?? 0,
+    status: attempt.status,
+    duration: attempt.duration ?? 0,
+    startedAt: attempt.startedAt ?? null,
+  }));
 }
 
 /**

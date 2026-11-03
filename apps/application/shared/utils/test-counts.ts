@@ -234,7 +234,7 @@ interface StoredAttempt extends AttemptRow {
 }
 
 /**
- * A run's attempt rows, each without an attempt history (a trace import, a reporter that sent none) given one from
+ * A run's attempt rows, each stored without an attempt history (a reporter that sent none) given one from
  * the run's stored attempts of the same test, project and repetition up to it, so `isFlakyExecution` reads it as
  * `flakyFinalAttempts` reads the rows. A row with a history, or with no earlier stored attempt, is returned as is.
  */
