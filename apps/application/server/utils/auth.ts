@@ -44,11 +44,13 @@ interface ScryptCost {
   p: number;
 }
 
-/** The cost new password hashes use. */
+/** The cost new password hashes use, and the highest a stored hash may declare. */
 const SCRYPT_COST: ScryptCost = { log2N: 17, r: 8, p: 1 };
 /** The cost of a hash in the `salt:key` form, which carries no parameters: Node's scrypt defaults. */
 const UNENCODED_SCRYPT_COST: ScryptCost = { log2N: 14, r: 8, p: 1 };
 const SCRYPT_KEY_LENGTH = 64;
+/** The random bytes of a new hash's salt, stored as hex. */
+const SCRYPT_SALT_BYTES = 16;
 
 interface PasswordHash extends ScryptCost {
   salt: string;
@@ -60,7 +62,7 @@ const HEX = /^[0-9a-f]+$/;
 /**
  * Read a stored password hash: `scrypt$<log2N>$<r>$<p>$<salt>$<key>`, or the
  * `<salt>:<key>` form hashed at {@link UNENCODED_SCRYPT_COST}. Null for anything
- * else, including a cost outside the bounds a sign-in may spend.
+ * else. The cost it reads may lie outside {@link withinWrittenCost}.
  */
 function parsePasswordHash(hash: string): PasswordHash | null {
   const parts = hash.split('$');
@@ -76,12 +78,31 @@ function parsePasswordHash(hash: string): PasswordHash | null {
     cost = UNENCODED_SCRYPT_COST;
     [salt, key] = pair;
   }
-  const { log2N, r, p } = cost;
-  const inBounds = (n: number, min: number, max: number) => Number.isInteger(n) && n >= min && n <= max;
-  if (!inBounds(log2N, 10, 20) || !inBounds(r, 1, 32) || !inBounds(p, 1, 16)) return null;
-  if (!salt || !key || key.length % 2 !== 0 || !HEX.test(key) || !inBounds(key.length / 2, 16, 128)) return null;
+  if (![cost.log2N, cost.r, cost.p].every(Number.isInteger)) return null;
+  if (!salt || !key || key.length % 2 !== 0 || !HEX.test(key)) return null;
   return { ...cost, salt, key: Buffer.from(key, 'hex') };
 }
+
+/**
+ * Whether a stored hash stays within what {@link hashPassword} writes, the only
+ * hashes a password is checked against: N at most 2^17, r at most 8, p at most 1,
+ * a key of 16 to {@link SCRYPT_KEY_LENGTH} bytes and a salt no longer than
+ * {@link SCRYPT_SALT_BYTES} in hex. Every hash Piwi has written passes, the
+ * `salt:key` form at Node's defaults included.
+ */
+function withinWrittenCost({ log2N, r, p, salt, key }: PasswordHash): boolean {
+  const inBounds = (n: number, min: number, max: number) => n >= min && n <= max;
+  return (
+    inBounds(log2N, 10, SCRYPT_COST.log2N) &&
+    inBounds(r, 1, SCRYPT_COST.r) &&
+    inBounds(p, 1, SCRYPT_COST.p) &&
+    inBounds(key.length, 16, SCRYPT_KEY_LENGTH) &&
+    salt.length <= 2 * SCRYPT_SALT_BYTES
+  );
+}
+
+/** Whether this process has logged a stored hash outside {@link withinWrittenCost}. */
+let costlyHashLogged = false;
 
 /**
  * Every password hash and check of the process, two at a time: one at
@@ -126,19 +147,35 @@ async function deriveKey(
  * result. `event` is the request a busy server's 503 answers.
  */
 export async function hashPassword(event: H3Event, password: string): Promise<string> {
-  const salt = randomBytes(16).toString('hex');
+  const salt = randomBytes(SCRYPT_SALT_BYTES).toString('hex');
   const key = await deriveKey(event, password, salt, SCRYPT_COST, SCRYPT_KEY_LENGTH);
   const { log2N, r, p } = SCRYPT_COST;
   return `scrypt$${log2N}$${r}$${p}$${salt}$${key.toString('hex')}`;
 }
 
 /**
- * Whether `password` matches `hash`, in either stored form. `event` is the
- * request a busy server's 503 answers.
+ * Whether `password` matches `hash`, in either stored form. A hash outside
+ * {@link withinWrittenCost} never reaches scrypt and fails as a wrong password
+ * does; the first one a process meets logs a warning naming `userId`, the
+ * account it belongs to. `event` is the request a busy server's 503 answers.
  */
-export async function verifyPassword(event: H3Event, password: string, hash: string): Promise<boolean> {
+export async function verifyPassword(
+  event: H3Event,
+  password: string,
+  hash: string,
+  userId?: number,
+): Promise<boolean> {
   const parsed = parsePasswordHash(hash);
   if (!parsed) return false;
+  if (!withinWrittenCost(parsed)) {
+    if (!costlyHashLogged) {
+      costlyHashLogged = true;
+      console.warn(
+        `[auth] The stored password hash of user ${userId ?? 'unknown'} declares a scrypt cost above what Piwi writes: its password is refused until it is reset`,
+      );
+    }
+    return false;
+  }
   const key = await deriveKey(event, password, parsed.salt, parsed, parsed.key.length);
   return timingSafeEqual(key, parsed.key);
 }
@@ -149,6 +186,7 @@ export function passwordNeedsRehash(hash: string): boolean {
   return (
     !hash.startsWith('scrypt$') ||
     !parsed ||
+    !withinWrittenCost(parsed) ||
     parsed.log2N !== SCRYPT_COST.log2N ||
     parsed.r !== SCRYPT_COST.r ||
     parsed.p !== SCRYPT_COST.p
@@ -296,7 +334,7 @@ export async function verifyUser(event: H3Event, username: string, password: str
     return null;
   }
 
-  const valid = await verifyPassword(event, password, user.password);
+  const valid = await verifyPassword(event, password, user.password, user.id);
   if (!valid) {
     return null;
   }

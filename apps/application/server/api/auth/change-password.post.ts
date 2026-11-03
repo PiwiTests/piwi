@@ -58,7 +58,7 @@ export default eventHandler(async (event) => {
     for (const slot of taken) releaseRateLimit(slot);
   };
 
-  const valid = await verifyPassword(event, currentPassword, user.password).catch((error: unknown) => {
+  const valid = await verifyPassword(event, currentPassword, user.password, user.id).catch((error: unknown) => {
     giveBack();
     throw error;
   });
