@@ -24,14 +24,14 @@ or pick a better locator, which lands back on that line in the editor. The stop 
    Playwright names it, `Paused at login.spec.ts:42 · Click getByText('Pay now')`, and a locator call's element is
    highlighted.
 
-| Button | What it does |
-|---|---|
-| **Resume** (<kbd>Esc</kbd>) | Runs on to the next breakpoint |
-| **Step** | Pauses again before the next call that acts on, reads or checks the page, breakpoint or not |
-| **Pick a locator** | Opens Piwi's [element picker](/features/locator-healing#pick-a-replacement-locator-on-the-failing-page-local-runs): pick the element, choose stable parents, confirm a ranked locator; the bar comes back after |
-| **Record here** | Records what you do in the page into the editor, above the paused line: [Record from a pause](#record-from-a-pause) |
-| **Finish** | Runs on without pausing again in this test |
-| **End the test** | [Skips the rest of the test](./end-the-test) |
+| Button                      | What it does                                                                                                                                                                                                    |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Resume** (<kbd>Esc</kbd>) | Runs on to the next breakpoint                                                                                                                                                                                  |
+| **Step**                    | Pauses again before the next call that acts on, reads or checks the page, breakpoint or not                                                                                                                     |
+| **Pick a locator**          | Opens Piwi's [element picker](/features/locator-healing#pick-a-replacement-locator-on-the-failing-page-local-runs): pick the element, choose stable parents, confirm a ranked locator; the bar comes back after |
+| **Record here**             | Records what you do in the page into the editor, above the paused line: [Record from a pause](#record-from-a-pause)                                                                                             |
+| **Finish**                  | Runs on without pausing again in this test                                                                                                                                                                      |
+| **End the test**            | [Skips the rest of the test](./end-the-test)                                                                                                                                                                    |
 
 <figure>
   <img src="/screenshots/picker-pause.png" alt="A shop page in the browser, paused before a click on Checkout: the button highlighted, Piwi's pause bar at the top with Resume, Step, Pick a locator, Record here and Finish">
@@ -105,10 +105,10 @@ starts at the editor's breakpoints** under **Settings → Tools → Piwi** in a 
 
 ## Limits
 
-- **Headed and local only.** Under CI (`CI` set to anything but empty or `false`), or under Playwright's own debugger
-  (`--debug`, `--debug=cli`, `PWDEBUG`), the run ignores the breakpoints and says why once; so does a headless run
-  of yours with `PIWI_PAUSE_AT`. One Piwi starts stops with no bar, and the editor shows its page
-  ([A headless run](./editor-run-control#a-headless-run)).
+- **Headed and local only.** Under CI (a CI provider's variable such as `GITHUB_ACTIONS` or `JENKINS_URL`, or `CI` set
+  to anything but `false` or `0`), or under Playwright's own debugger (`--debug`, `--debug=cli`, `PWDEBUG`), the
+  run ignores the breakpoints and says why once; so does a headless run of yours with `PIWI_PAUSE_AT`. One Piwi starts
+  stops with no bar, and the editor shows its page ([A headless run](./editor-run-control#a-headless-run)).
 - **Only the calls Playwright's debugger stops at pause**: navigations, actions, key presses and mouse moves,
   assertions, `evaluate`, `waitForFunction`, screenshots and an element's reads (`textContent`, `inputValue`,
   `getAttribute`, `isVisible`, `count`). `waitForTimeout`, `waitForSelector`, `waitForURL`, `waitForEvent`, `title()`
