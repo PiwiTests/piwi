@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { errorMessage } from '../support/errors.js';
+import { readPrivateFile, writePrivateFile } from '../support/private-file.js';
 import { HttpError, deliveredRunId, type HttpClient } from '../transport/http-client.js';
 import { Logger } from '../support/logger.js';
 
@@ -59,38 +60,27 @@ export class CrashRecovery {
   /** Write the payload for a later retry, owner-only, replacing the file in one step. */
   save(payload: Record<string, unknown>): void {
     const file: RecoveryFile = { v: 1, serverUrl: this.serverUrl, payload };
-    const temp = `${this.filePath}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
     try {
-      fs.writeFileSync(temp, JSON.stringify(file), { encoding: 'utf8', flag: 'wx', mode: 0o600 });
-      fs.renameSync(temp, this.filePath);
+      writePrivateFile(this.filePath, JSON.stringify(file));
       this.logger.debug('Saved recovery data for later upload');
     } catch (error) {
-      fs.rmSync(temp, { force: true });
       this.logger.error(`Failed to save recovery data: ${errorMessage(error)}`);
     }
   }
 
   /**
    * The saved payload, or null when there is none, or when the file is not a
-   * regular file this user owns, or names another dashboard.
+   * regular file this user owns that no one else may write, or names another dashboard.
    */
   load(): Record<string, unknown> | null {
-    let fd: number;
     try {
-      fd = fs.openSync(this.filePath, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
-    } catch {
-      return null;
-    }
-    try {
-      const stat = fs.fstatSync(fd);
-      if (!stat.isFile() || (typeof process.getuid === 'function' && stat.uid !== process.getuid())) return null;
-      const file = JSON.parse(fs.readFileSync(fd, 'utf8')) as Partial<RecoveryFile> | null;
+      const read = readPrivateFile(this.filePath);
+      if (!read || !('text' in read)) return null;
+      const file = JSON.parse(read.text) as Partial<RecoveryFile> | null;
       if (file?.v !== 1 || file.serverUrl !== this.serverUrl) return null;
       return file.payload && typeof file.payload === 'object' ? file.payload : null;
     } catch {
       return null;
-    } finally {
-      fs.closeSync(fd);
     }
   }
 

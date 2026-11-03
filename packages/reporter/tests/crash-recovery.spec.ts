@@ -62,6 +62,13 @@ describe('the crash-recovery file', () => {
     fs.rmSync(path.dirname(target), { recursive: true, force: true });
   });
 
+  it.skipIf(process.platform === 'win32')('is never read when other users may write to it', () => {
+    const recovery = recoveryFor('http://a.example:3000');
+    recovery.save({ projectName, testCases: [] });
+    fs.chmodSync(recoveryFilePath('http://a.example:3000', projectName), 0o666);
+    expect(recovery.load()).toBeNull();
+  });
+
   it('is replayed to its own dashboard only, and deleted once the dashboard took the run', async () => {
     const bodies: any[] = [];
     server = await startServer((req, res) => {
