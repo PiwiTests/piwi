@@ -58,20 +58,19 @@ own config (we adopt a running app, we do not configure it):
   itself or on env the desktop was not launched with. Launch the desktop with
   the matching env (e.g. `PIWI_SHARE_LINKS_ENABLED=true`) for a fully green run.
 
-### Watch Mode
-
-```bash
-npx playwright test --watch
-```
-
 ## Configuration
 
 Tests are configured in `playwright.config.ts` at the project root. Key settings:
 
 - **baseURL**: `http://localhost:7494` (`shared/dev-server-port.mjs`; the running desktop app's loopback URL in `PIWI_DESKTOP_E2E` mode)
-- **webServer**: Automatically starts the dev server before tests (skipped in desktop mode — the app is already running)
+- **webServer**: starts the dev server locally (or reuses one already on port 7494), the production build (`.output`)
+  in CI, and the servers some specs need: authentication on and notifications in CI only, PostgreSQL when
+  `PIWI_POSTGRES_TEST_URL` is set, email when `PIWI_MAILPIT_URL` is set. A spec whose server is not started skips.
+  No server starts in desktop mode: the app is already running.
 - **retries**: 2 retries on CI, 0 locally
-- **workers**: 1 (serial execution — the suite uses static project names shared across tests, requiring sequential cleanup)
+- **workers**: `fullyParallel`, 2 workers on CI and 3 locally; CI also shards the suite (5 shards per storage and
+  database backend). Each spec creates its projects under static names from `#shared/test-project-names`, which the
+  global setup and teardown delete.
 
 ## Prerequisites
 
@@ -81,13 +80,13 @@ Tests are configured in `playwright.config.ts` at the project root. Key settings
    npm install
    ```
 
-2. Install Playwright browsers (if not already installed):
+2. Install Chromium for Playwright (if not already installed), the one browser the suite runs:
 
    ```bash
-   npx playwright install
+   npx playwright install chromium
    ```
 
-3. The dev server will start automatically when running tests
+3. The dev server starts automatically when running tests
 
 ## Writing New Tests
 
@@ -96,11 +95,18 @@ Follow these patterns when adding tests:
 ### API Tests
 
 ```typescript
-test('should do something', async ({ request }) => {
-  const response = await request.get('/api/endpoint');
-  expect(response.ok()).toBeTruthy();
-  const data = await response.json();
-  expect(data).toBeDefined();
+import { test, expect } from './fixtures';
+import { PROJECT } from '#shared/test-project-names';
+
+test('lists the project a run created', async ({ request }) => {
+  // A project name is registered in shared/test-project-names.ts, so the cleanup deletes it.
+  const submitted = await request.post('/api/test-runs/submit', {
+    data: { projectName: PROJECT.YOUR_KEY, status: 'passed', startTime: new Date().toISOString(), testCases: [] },
+  });
+  expect(submitted.ok()).toBeTruthy();
+
+  const { items } = await (await request.get('/api/projects')).json();
+  expect(items.map((p: { name: string }) => p.name)).toContain(PROJECT.YOUR_KEY);
 });
 ```
 
@@ -148,13 +154,12 @@ npx playwright show-trace trace.zip
 
 ## CI/CD Integration
 
-Tests are designed to run in CI environments:
+The `e2e` job of `.github/workflows/ci.yml` runs the suite on the production build, in shards, once per storage and
+database backend:
 
-- Automatic dev server startup
-- Retry failed tests
-- HTML report generation
-- Screenshot on failure
-- Video recording on failure
+- 2 retries per failing test, and the run stops after 12 failed attempts
+- a trace (with DOM, ARIA and screenshot snapshots) and a screenshot for each failure
+- a blob report per shard, which `npx playwright merge-reports` turns into one HTML report
 
 ## Best Practices
 
@@ -163,7 +168,8 @@ Tests are designed to run in CI environments:
 3. **Assertions**: Use meaningful expect() assertions
 4. **Selectors**: Prefer role-based selectors over CSS
 5. **Waiting**: Use built-in auto-waiting, avoid manual waits
-6. **Data**: Create test data dynamically, don't rely on existing data
+6. **Data**: Create the data a test reads, under a project name from `#shared/test-project-names`; never rely on data
+   another spec or a seed left
 7. **Fixtures**: Import `test` from `./fixtures` in all UI tests for automatic network and web vitals capture
 
 ## Troubleshooting
