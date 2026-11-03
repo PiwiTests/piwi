@@ -1,6 +1,6 @@
 /**
  * Whether a hostname names a machine only a local network can reach: loopback,
- * the private and link-local IPv4 ranges, a single-label name, or a `.local` /
+ * `0.0.0.0/8`, the private and link-local IPv4 ranges, a single-label name, or a `.local` /
  * `.internal` / `.localhost` name. A best-effort reading of the text for form
  * hints; the server's SSRF guard resolves the name and has the final word.
  */
@@ -13,7 +13,12 @@ export function looksPrivateHost(hostname: string): boolean {
     const a = Number(v4[1]);
     const b = Number(v4[2]);
     return (
-      a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254)
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 169 && b === 254)
     );
   }
   return !host.includes('.') && !host.includes(':');

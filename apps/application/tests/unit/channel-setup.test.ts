@@ -170,6 +170,7 @@ describe('looksPrivateHost', () => {
   test.each([
     'localhost',
     '127.0.0.1',
+    '0.0.0.0',
     '10.1.2.3',
     '172.20.0.1',
     '192.168.1.1',
