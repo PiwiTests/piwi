@@ -184,6 +184,37 @@ describe('Uploader.uploadWithFiles', () => {
   });
 });
 
+describe('a report over the upload limit in the upload that carries the whole run', () => {
+  it("is left out alone, and the tests' files still go", async () => {
+    const reportDir = path.join(tmpDir, 'big-report');
+    fs.mkdirSync(reportDir);
+    fs.writeFileSync(path.join(reportDir, 'index.html'), 'x'.repeat(16));
+    const screenshotFile = path.join(tmpDir, 'shot.png');
+    fs.writeFileSync(screenshotFile, 'PNG');
+
+    const { server, url, requests } = await startServer((_req, res) => jsonRes(res, 200, { runId: 1, projectId: 2 }));
+    try {
+      const fileHandler = new FileHandler(new Logger(false), 8);
+      const uploader = new Uploader(new HttpClient(url, new Logger(false)), fileHandler);
+      const testCase = {
+        type: 'complete',
+        title: 't',
+        location: 'l',
+        status: 'failed',
+        attachments: [{ name: 'screenshot', path: screenshotFile, contentType: 'image/png' }],
+      } as any;
+      const reports = uploader.findReports({ reports: [{ type: 'custom', dir: reportDir }] });
+
+      await uploader.uploadWithFiles(makePayload([testCase]), reports, false, null);
+
+      expect(requests[0]!.body).not.toContain('name="report_custom"');
+      expect(requests[0]!.body).toContain('name="attach_file_0"');
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+});
+
 describe('Uploader.findReports', () => {
   it("finds a report larger than an attachment may be, for the dashboard's upload limit to decide", () => {
     const reportDir = path.join(tmpDir, 'big-report');

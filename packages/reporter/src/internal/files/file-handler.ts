@@ -14,9 +14,10 @@ import {
 import type { CollectedTestCase, RawAttachment, TraceHashInfo } from '../../types.js';
 
 /**
- * Size ceiling for one uploadable attachment, path-backed or inline. Matches
- * the dashboard's default multipart upload limit, so a larger file could never
- * land anyway; it is skipped here with one warning instead of failing the upload.
+ * Size ceiling for one uploadable attachment, path-backed or inline, and for the
+ * files of a report sent in one upload with the run's other files. Matches the
+ * dashboard's default multipart upload limit, so a larger file could never land
+ * anyway; it is skipped here with one warning instead of failing the upload.
  */
 export const MAX_ATTACHMENT_BYTES = 500 * 1024 * 1024;
 
@@ -110,6 +111,19 @@ export class FileHandler {
       this.logger.warn(`Could not read the report in ${reportDir}: ${errorMessage(error)}`);
       return null;
     }
+  }
+
+  /**
+   * Whether a report's files together fit the upload limit (`maxAttachmentBytes`), for an upload that carries the
+   * report with the run's other files: one over it is left out of that upload, with one warning.
+   */
+  fitsOneUpload(report: { dir: string; files: ArchiveFile[] }): boolean {
+    const bytes = report.files.reduce((sum, file) => sum + file.size, 0);
+    if (bytes <= this.maxAttachmentBytes) return true;
+    this.logger.warn(
+      `Skipping the report in ${report.dir}: its files hold ${formatMiB(bytes)}, over the ${formatMiB(this.maxAttachmentBytes)} upload limit.`,
+    );
+    return false;
   }
 
   /**

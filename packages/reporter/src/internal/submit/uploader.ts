@@ -143,7 +143,8 @@ export class Uploader {
 
   /**
    * Submit test results as a multipart form with `reports` compressed, each test's attachments and, with
-   * `uploadTraces`, its traces; fails unless the answer names the run
+   * `uploadTraces`, its traces; fails unless the answer names the run. A report over the upload limit is left out
+   * alone (`FileHandler.fitsOneUpload`).
    */
   async uploadWithFiles(
     payload: RunPayload,
@@ -156,7 +157,10 @@ export class Uploader {
     form.append('testRun', JSON.stringify(serializeRun(payload, { includeTestCases: false })));
     form.append('testCases', JSON.stringify(payload.testCases.map((tc) => toWireTestCase(tc))));
 
-    await this.appendReportsToForm(form, reports);
+    await this.appendReportsToForm(
+      form,
+      reports.filter((report) => this.fileHandler.fitsOneUpload(report)),
+    );
     await this.appendFilesToForm(form, payload.testCases, uploadTraces);
 
     const response = await this.httpClient.postFormData('/api/test-runs/upload', form, auth);
