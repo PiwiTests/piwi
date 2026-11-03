@@ -8,7 +8,7 @@ defineRouteMeta({
     tags: ['Users'],
     summary: 'Delete a user',
     description:
-      'Deletes a user by ID, with their API keys, role bindings and group memberships. Refuses deleting your own account and the last administrator (400).',
+      'Deletes a user by ID, with their API keys, role bindings and group memberships, and revokes the share links they created. Refuses deleting your own account and the last administrator (400).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'users:manage',
   },

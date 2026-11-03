@@ -6,8 +6,9 @@ import {
   testRuns,
   roleBindings,
   groupMembers,
+  shareLinks,
 } from '../../server/database/schema';
-import { eq, and, ne, sql } from 'drizzle-orm';
+import { eq, and, isNull, ne, sql } from 'drizzle-orm';
 
 import { deleteAssistantConversationsOf } from './assistant';
 import { deleteAssistantNudgeDismissalsOf } from './assistant-nudges';
@@ -91,6 +92,11 @@ export async function deleteUserRecord(db: DrizzleDB, id: number) {
   // A user's assistant conversations and dismissed nudges are theirs alone, so they go with them.
   await deleteAssistantConversationsOf(db, id);
   await deleteAssistantNudgeDismissalsOf(db, id);
+  // A share link works only while its minter exists, and the delete clears `created_by`: their links are revoked.
+  await db
+    .update(shareLinks)
+    .set({ revokedAt: new Date() })
+    .where(and(eq(shareLinks.createdBy, id), isNull(shareLinks.revokedAt)));
   await db.delete(users).where(eq(users.id, id));
   return { success: true };
 }

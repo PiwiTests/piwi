@@ -93,9 +93,15 @@ the reader's address, since such a proxy fetches for many readers.
 
 - The token is a 256-bit random secret (`psl_` + 64 hex characters) — unguessable at any request rate. The server
   stores its SHA-256 hash and the first 8 hex characters, which the dialog shows as the link's prefix.
-- Everything a link serves is data its creator could already see: minting requires access to the execution, the
-  cluster, every project of the snapshot, or the dashboard, so a link is a narrower delegation of an existing
-  member's read access, never an escalation.
+- Everything a link serves is data its creator can see: minting requires access to the execution, the cluster,
+  every project of the snapshot, or the dashboard, so a link is a narrower delegation of an existing member's read
+  access, never an escalation.
+- A link works only while its creator can still read what it opens: the project of the execution or the cluster,
+  or every project of the snapshot (a live dashboard link follows its creator's access as
+  [described above](#live-dashboard-links)). Once they lose that access, the link answers 404 like an unknown link,
+  and works again if the access comes back. Deleting their account revokes their links. A link Piwi created itself,
+  in an issue an [automation rule](./issue-automation) filed, has no creator and follows no one's access. With
+  authentication off, every link works.
 - The rendered page is sandboxed into a unique origin and served with `noindex` and `Referrer-Policy: no-referrer`,
   so it cannot read dashboard cookies, call the API with credentials, or leak the URL through outbound links. The
   page is never cached; the two images may be, for five minutes.
