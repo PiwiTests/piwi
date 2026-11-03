@@ -192,7 +192,8 @@ export interface CreatePullRequestInput {
 }
 
 export abstract class ScmProvider {
-  abstract readonly provider: ScmProviderName;
+  /** The Git host, or null for a repository on a host Piwi has no client for (a local clone's only). */
+  abstract readonly provider: ScmProviderName | null;
   /** Canonical web URL of the repository (no trailing slash), for building links. */
   abstract readonly webUrl: string;
   protected readonly token: string | null;
@@ -352,22 +353,22 @@ export abstract class ScmProvider {
 
   /** The head commit SHA of a branch, or null when the branch does not exist. */
   async getBranchHead(_branch: string): Promise<string | null> {
-    throw new Error(`${this.provider} does not support reading a branch head`);
+    throw new Error(`${this.provider ?? "This repository's host"} does not support reading a branch head`);
   }
 
   /** Create a branch at `fromSha`. Throws on failure. */
   async createBranch(_name: string, _fromSha: string): Promise<void> {
-    throw new Error(`${this.provider} does not support creating branches`);
+    throw new Error(`${this.provider ?? "This repository's host"} does not support creating branches`);
   }
 
   /** Commit `files` onto `branch` as one commit; returns the new commit SHA. Throws on failure. */
   async commitFiles(_branch: string, _message: string, _files: ScmFileEdit[]): Promise<string> {
-    throw new Error(`${this.provider} does not support committing files`);
+    throw new Error(`${this.provider ?? "This repository's host"} does not support committing files`);
   }
 
   /** Open a pull/merge request; returns its number + URL. Throws on failure. */
   async createPullRequest(_input: CreatePullRequestInput): Promise<ScmPullRequest> {
-    throw new Error(`${this.provider} does not support opening pull requests`);
+    throw new Error(`${this.provider ?? "This repository's host"} does not support opening pull requests`);
   }
 
   // ── CI re-run (workflow / pipeline dispatch) ───────────────────────────────
@@ -389,7 +390,7 @@ export abstract class ScmProvider {
     _playwrightArgs: string,
     _request: RerunDispatchRequest = {},
   ): Promise<RerunDispatchResult> {
-    throw new Error(`${this.provider} does not support CI re-run`);
+    throw new Error(`${this.provider ?? "This repository's host"} does not support CI re-run`);
   }
 
   /**

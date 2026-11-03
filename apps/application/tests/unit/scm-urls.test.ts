@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { detectScmHost, commitUrl, compareUrl, fileUrl, branchUrl, isPlainRevision } from '#shared/scm-urls';
+import {
+  canonicalScmHostname,
+  detectScmHost,
+  commitUrl,
+  compareUrl,
+  fileUrl,
+  branchUrl,
+  isPlainRevision,
+} from '#shared/scm-urls';
 
 describe('scm-urls', () => {
   it('detects the host from the repository URL', () => {
@@ -9,6 +17,20 @@ describe('scm-urls', () => {
     expect(detectScmHost('https://git.acme.internal/acme/web')).toBeNull();
     expect(detectScmHost(null)).toBeNull();
     expect(detectScmHost('not a url')).toBeNull();
+  });
+
+  it('reads a Git host’s SSH alias as the host, and links to the host', () => {
+    expect(canonicalScmHostname('SSH.Bitbucket.org')).toBe('bitbucket.org');
+    expect(canonicalScmHostname('altssh.bitbucket.org')).toBe('bitbucket.org');
+    expect(canonicalScmHostname('ssh.github.com')).toBe('github.com');
+    expect(canonicalScmHostname('git.acme.internal')).toBe('git.acme.internal');
+    expect(detectScmHost('https://ssh.bitbucket.org/acme/web')).toBe('bitbucket');
+    expect(commitUrl('https://ssh.bitbucket.org/acme/web', 'abc123')).toBe(
+      'https://bitbucket.org/acme/web/commits/abc123',
+    );
+    expect(commitUrl('https://ssh.github.com:443/acme/web', 'abc123')).toBe(
+      'https://github.com/acme/web/commit/abc123',
+    );
   });
 
   it('links only http and https repository URLs', () => {

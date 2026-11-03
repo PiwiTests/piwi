@@ -34,8 +34,9 @@ in-app assistant).
   API hosts, and GitLab only on `gitlab.com` or a host listed in `PIWI_SCM_GITLAB_HOSTS`
   (`tests/unit/scm-token-host.test.ts`).
 - **A method added to `ScmProvider` is added to `LocalGitProvider` too** (`server/utils/scm/local-git.ts`). On the
-  desktop app with no SCM token, `createScmProvider` returns it for a project linked to a clone: it reads history with
-  git in that folder and wraps the host's provider for the rest. A read tries git first and falls back to the host;
+  desktop app with no SCM token, or for a host Piwi has no client for, `createScmProvider` returns it for a project
+  linked to a clone: it reads history with git in that folder and wraps the host's provider for the rest
+  (`NoHostProvider`, which finds nothing and writes nothing, for a host with none). A read tries git first and falls back to the host;
   anything else is passed to the host. Without the override, the base class's no-op default compiles and silently
   turns the feature off on the desktop app.
 

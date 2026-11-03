@@ -48,7 +48,8 @@ The [desktop app](/features/desktop) needs no token for the read features. When 
 remotes points at the run's remote URL), Piwi reads the commits, diffs and files with `git` in that folder, on your
 machine. A commit or branch the clone does not have is asked of the host as above, so run `git fetch` in the folder to
 see commits pushed since your last fetch. With a token set, the host is read instead, as on a server, and the write
-features always need one.
+features always need one. A repository on another host (a self-hosted Bitbucket or Gitea, a GitLab host not listed
+below) is read from the clone alone, token or not: what the clone does not have stays unavailable.
 
 ### Which repository
 
@@ -60,9 +61,10 @@ and source are not read, and nothing is written for it. A project admin can chan
 next run sets it again. With the instance-wide token, a link to a repository no readable project uses is unfurled as a
 public page, without the token.
 
-Supported hosts are `github.com`, `gitlab.com`, `bitbucket.org` and self-hosted GitLab. List each self-hosted GitLab
-host in [`PIWI_SCM_GITLAB_HOSTS`](/reference/configuration#integrations): Piwi sends the token only to a host you
-named. A run without a remote URL has nothing to diff.
+Supported hosts are `github.com`, `gitlab.com`, `bitbucket.org` and self-hosted GitLab. A remote on a host's SSH
+alias (`ssh.github.com`, `ssh.bitbucket.org`, `altssh.bitbucket.org`) names the same repository as on the host. List
+each self-hosted GitLab host in [`PIWI_SCM_GITLAB_HOSTS`](/reference/configuration#integrations): Piwi sends the token
+only to a host you named. A run without a remote URL has nothing to diff.
 
 ### Scopes
 
