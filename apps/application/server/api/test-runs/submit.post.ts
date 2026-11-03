@@ -5,7 +5,7 @@ import { mapWireCaseToRunCase } from '../../utils/map-wire-case';
 import { checkSubmitBody } from '../../utils/batch-payload';
 import { runEventBus } from '../../utils/run-events';
 import { deliverOnce, readDeliveryKey } from '../../utils/run-deliveries';
-import { createBatchRun } from '../../utils/batch-run';
+import { createBatchRun, renewHeldRunToken } from '../../utils/batch-run';
 import {
   addBatchShard,
   batchShardRun,
@@ -42,7 +42,7 @@ defineRouteMeta({
               deliveryKey: {
                 type: 'string',
                 description:
-                  'An id the client generates once for these results and sends with every attempt to deliver them (16 to 128 letters, digits, `-` or `_`). A delivery repeating a key the project already took stores nothing and answers with the run it went to, with `duplicate: true`.',
+                  'An id the client generates once for these results and sends with every attempt to deliver them (16 to 128 letters, digits, `-` or `_`). A delivery repeating a key the project already took stores nothing and answers with the run it went to, with `duplicate: true`; while that run waits `finalizing` for its files (its results went to `/api/test-runs/upload/results`), the answer carries a new `streamToken` for them, which takes the place of the one held before, as a repeat to that route does.',
               },
               runErrors: {
                 type: 'array',
@@ -81,7 +81,7 @@ export default eventHandler(async (event) => {
 
   // A repeated delivery (the reporter gave up waiting and sent the run again)
   // answers with the run its first delivery stored.
-  return deliverOnce(db, project.id, readDeliveryKey(body.deliveryKey), async () => {
+  const delivered = await deliverOnce(db, project.id, readDeliveryKey(body.deliveryKey), async () => {
     const shardTotal = body.shardTotal;
     const instanceId = body.instanceId || null;
     const isSharded = !!(shardTotal && shardTotal > 1);
@@ -118,4 +118,10 @@ export default eventHandler(async (event) => {
       projectId: project.id,
     };
   });
+  if (!('duplicate' in delivered)) return delivered;
+
+  // A repeat of a run `/upload/results` holds `finalizing` until its files are in answers, as a repeat there does,
+  // with a new token for them, which takes the place of the one it held.
+  const streamToken = await renewHeldRunToken(db, delivered.runId);
+  return streamToken ? { ...delivered, streamToken } : delivered;
 });
