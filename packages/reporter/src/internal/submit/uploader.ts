@@ -166,9 +166,10 @@ export class Uploader {
 
   /**
    * Send the run with its results and no file (`/api/test-runs/upload/results`), for the dashboard to hold it until
-   * its files follow. Returns the run and the token its files go with, or null when the dashboard took no run that
-   * way: an older one, which has no such route, or a request that failed, both of which then get the run in one
-   * upload (`uploadWithFiles`) under the same delivery key. A 401 is thrown: no upload goes without a credential.
+   * its files follow. Returns the run and the token its files go with, or null when the dashboard has no such route
+   * (an older one, 404 or 405) or answers without a token (a repeated delivery of a run that settled): the run then
+   * goes in one upload (`uploadWithFiles`) under the same delivery key. Any other failure is thrown, a refusal as too
+   * large (413) among them: an upload that carries the same results with the files would be refused too.
    */
   async uploadResults(payload: RunPayload, auth: string | null): Promise<HeldRun | null> {
     let response: any;
@@ -181,8 +182,8 @@ export class Uploader {
         { upload: true },
       );
     } catch (error) {
-      if (error instanceof HttpError && error.status === 401) throw error;
-      this.logger.debug(`The dashboard took no results ahead of the files (${errorMessage(error)}).`);
+      if (!(error instanceof HttpError && (error.status === 404 || error.status === 405))) throw error;
+      this.logger.debug(`The dashboard takes no results ahead of the files (${errorMessage(error)}).`);
       return null;
     }
     const runId = response?.runId;

@@ -350,6 +350,72 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
       expect(urlsHit(server)).not.toContain('/api/test-runs/submit');
     });
 
+    it('sends the results again when their answer was lost, and the files with the token the repeat carries', async () => {
+      const resultsBodies: any[] = [];
+      await runInParts((req, res) => {
+        if (req.url === '/api/test-runs/upload/results') {
+          resultsBodies.push(JSON.parse(req.body));
+          // The dashboard holds the run, but its answer never arrives; the repeat gets a new token for the files.
+          if (resultsBodies.length === 1) return req.raw.socket?.destroy();
+          jsonRes(res, 200, { success: true, runId: 21, projectId: 2, duplicate: true, streamToken: 'renewed-token' });
+        } else if (req.url === '/api/test-runs/21/case-files' || req.url === '/api/test-runs/upload') {
+          jsonRes(res, 200, { success: true, runId: 21 });
+        } else {
+          textRes(res, 404, 'nope');
+        }
+      });
+
+      expect(urlsHit(server)).toEqual([
+        '/api/test-runs/upload/results',
+        '/api/test-runs/upload/results',
+        '/api/test-runs/21/case-files',
+        '/api/test-runs/21/case-files',
+        '/api/test-runs/upload',
+      ]);
+      expect(resultsBodies[1].deliveryKey).toBe(resultsBodies[0].deliveryKey);
+      const caseFiles = server.requests.filter((r) => r.url === '/api/test-runs/21/case-files');
+      expect(caseFiles.every((r) => r.body.includes('renewed-token'))).toBe(true);
+      expect(server.requests.find((r) => r.url === '/api/test-runs/upload')!.body).toContain('name="report_custom"');
+    });
+
+    it('sends the run in one upload under the same key when no answer to its results ever came', async () => {
+      let uploadBody = '';
+      await runInParts((req, res) => {
+        if (req.url === '/api/test-runs/upload/results') {
+          textRes(res, 503, 'unavailable');
+        } else if (req.url === '/api/test-runs/upload') {
+          uploadBody = req.body;
+          jsonRes(res, 200, { success: true, runId: 11, projectId: 2 });
+        } else {
+          textRes(res, 404, 'nope');
+        }
+      });
+
+      expect(urlsHit(server)).toEqual([
+        '/api/test-runs/upload/results',
+        '/api/test-runs/upload/results',
+        '/api/test-runs/upload/results',
+        '/api/test-runs/upload',
+      ]);
+      const deliveryKey = JSON.parse(server.requests[0]!.body).deliveryKey;
+      expect(uploadBody).toContain(`"deliveryKey":"${deliveryKey}"`);
+      expect(uploadBody).toContain('pays-SHOT');
+    });
+
+    it('results refused as too large go on alone, never in an upload that carries the files too', async () => {
+      await runInParts((req, res) => {
+        if (req.url === '/api/test-runs/upload/results') {
+          jsonRes(res, 413, { message: 'Request body over 32 MB' });
+        } else if (req.url === '/api/test-runs/submit') {
+          jsonRes(res, 200, { success: true, runId: 12, projectId: 2 });
+        } else {
+          textRes(res, 404, 'nope');
+        }
+      });
+
+      expect(urlsHit(server)).toEqual(['/api/test-runs/upload/results', '/api/test-runs/submit']);
+    });
+
     it('a shard, whose run settles with its last shard, sends its results and files in one upload', async () => {
       await runInParts(
         (req, res) =>
@@ -608,9 +674,10 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
       liveFileUploads: false,
     });
     await runOneTest(failing, 'lost-run-test');
-    expect(fs.existsSync(recoveryFilePath(server.url, projectName)), 'expected a recovery file after the failed run').toBe(
-      true,
-    );
+    expect(
+      fs.existsSync(recoveryFilePath(server.url, projectName)),
+      'expected a recovery file after the failed run',
+    ).toBe(true);
     const mode = fs.statSync(recoveryFilePath(server.url, projectName)).mode & 0o777;
     if (process.platform !== 'win32') expect(mode, 'readable by its owner only').toBe(0o600);
 
@@ -633,7 +700,9 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     // A run delivered by its usual rung names no fallback.
     expect(second.metadata.ingestHealth).toBeUndefined();
     expect(titles, `submits: ${titles.join(', ')}`).toContain('second-run-test');
-    expect(fs.existsSync(recoveryFilePath(server.url, projectName)), 'recovery file is cleared after the retry').toBe(false);
+    expect(fs.existsSync(recoveryFilePath(server.url, projectName)), 'recovery file is cleared after the retry').toBe(
+      false,
+    );
   });
 
   it('buffer overflow drops results → skips /finish and re-sends the full run via /submit', async () => {
@@ -1226,7 +1295,10 @@ describe('the HTML report a run uploads', () => {
     const suite = fakeSuite();
     const test = fakeTestCase({ title: 'reported', parent: suite });
     suite.allTests = () => [test];
-    reporter.onBegin({ ...fakeConfig({ configFile: path.join(dir, 'playwright.config.ts') }), reporter: reporters }, suite);
+    reporter.onBegin(
+      { ...fakeConfig({ configFile: path.join(dir, 'playwright.config.ts') }), reporter: reporters },
+      suite,
+    );
     reporter.onTestBegin(test, fakeResult({ workerIndex: 0 }));
     reporter.onTestEnd(test, fakeResult({ status: 'passed', workerIndex: 0 }));
     report?.();

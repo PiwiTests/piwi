@@ -74,9 +74,7 @@ afterEach(() => {
 
 describe('Uploader.uploadJSON', () => {
   it('POSTs the serialized run (with test cases) to /api/test-runs/submit', async () => {
-    const { server, url, requests } = await startServer((_req, res) =>
-      jsonRes(res, 200, { runId: 7, projectId: 3 }),
-    );
+    const { server, url, requests } = await startServer((_req, res) => jsonRes(res, 200, { runId: 7, projectId: 3 }));
     try {
       const uploader = new Uploader(new HttpClient(url, new Logger(false)), new FileHandler(new Logger(false)));
       const payload = makePayload([{ type: 'complete', title: 't', location: 'l', status: 'passed' } as any]);
@@ -167,9 +165,7 @@ describe('Uploader.uploadWithFiles', () => {
     const traceFile = path.join(tmpDir, 'trace.zip');
     fs.writeFileSync(traceFile, 'TRACE-BYTES');
 
-    const { server, url, requests } = await startServer((_req, res) =>
-      jsonRes(res, 200, { runId: 1, projectId: 2 }),
-    );
+    const { server, url, requests } = await startServer((_req, res) => jsonRes(res, 200, { runId: 1, projectId: 2 }));
     try {
       const uploader = new Uploader(new HttpClient(url, new Logger(false)), new FileHandler(new Logger(false)));
       const testCase: CollectedTestCase = {
@@ -433,26 +429,30 @@ describe('Uploader.uploadResults', () => {
     }
   });
 
-  it('returns null from a dashboard that has no such route, or that names no token, and throws a 401', async () => {
-    for (const [status, answer, expected] of [
-      [404, { message: 'Page not found' }, null],
-      [200, { success: true, runId: 7, projectId: 3 }, null],
+  it('returns null from a dashboard that has no such route, or that names no token, and throws any other failure', async () => {
+    for (const [status, answer] of [
+      [404, { message: 'Page not found' }],
+      [405, { message: 'Method not allowed' }],
+      [200, { success: true, runId: 7, projectId: 3, duplicate: true }],
     ] as const) {
       const { server, url } = await startServer((_req, res) => jsonRes(res, status, answer));
       try {
         const uploader = new Uploader(new HttpClient(url, new Logger(false)), new FileHandler(new Logger(false)));
-        expect(await uploader.uploadResults(makePayload(), null)).toBe(expected);
+        expect(await uploader.uploadResults(makePayload(), null)).toBeNull();
       } finally {
         await new Promise<void>((r) => server.close(() => r()));
       }
     }
 
-    const { server, url } = await startServer((_req, res) => jsonRes(res, 401, { message: 'Unauthorized' }));
-    try {
-      const uploader = new Uploader(new HttpClient(url, new Logger(false)), new FileHandler(new Logger(false)));
-      await expect(uploader.uploadResults(makePayload(), null)).rejects.toMatchObject({ status: 401 });
-    } finally {
-      await new Promise<void>((r) => server.close(() => r()));
+    // A refusal as too large is no missing route: an upload carrying the same results with the files would go no better.
+    for (const status of [401, 413, 503]) {
+      const { server, url } = await startServer((_req, res) => jsonRes(res, status, { message: 'refused' }));
+      try {
+        const uploader = new Uploader(new HttpClient(url, new Logger(false)), new FileHandler(new Logger(false)));
+        await expect(uploader.uploadResults(makePayload(), null)).rejects.toMatchObject({ status });
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
     }
   });
 });
@@ -500,4 +500,3 @@ describe('Uploader.uploadReportsAndSettle', () => {
     }
   });
 });
-

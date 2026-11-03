@@ -19,8 +19,11 @@ import type { CollectedTestCase, SetupStep, FilterDetails, WireResourceReport, W
 /** Longest delay `setTimeout` supports; a larger one fires at once. */
 const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
 
-/** The waits before asking `/finish` again when its answer was lost: three tries in all. */
-const FINISH_RETRY_DELAYS_MS = [1000, 2000];
+/**
+ * The waits before sending `/finish`, or the results of a run uploaded in parts, again when its answer was lost: three
+ * tries in all.
+ */
+const RETRY_DELAYS_MS = [1000, 2000];
 
 /**
  * The part of the end-of-run budget the test files leave to what follows them: `/finish` and its repeats, or the
@@ -400,20 +403,32 @@ export class RunSubmitter {
    * which means the earlier request finished it. Throws when the run was not finished.
    */
   private async postFinish(runId: number, body: Record<string, unknown>, auth: string | null): Promise<void> {
-    for (let attempt = 0; ; attempt++) {
+    await this.askAgainWhenLost("The run's /finish", async (attempt) => {
       try {
         await this.httpClient.postJSON(`/api/test-runs/${runId}/finish`, body, auth);
-        return;
       } catch (error) {
         if (attempt > 0 && error instanceof HttpError && (error.status === 409 || error.status === 403)) {
           this.logger.debug(`Run #${runId} was finished by an earlier /finish whose answer was lost.`);
           return;
         }
-        const delay = FINISH_RETRY_DELAYS_MS[attempt];
+        throw error;
+      }
+    });
+  }
+
+  /**
+   * Make `request`, and make it again after each of `RETRY_DELAYS_MS` while its answer may have been lost
+   * (`answerMayBeLost`), the waits ending with the budget. `request` gets the number of the try, from 0. Throws the
+   * last failure.
+   */
+  private async askAgainWhenLost<T>(what: string, request: (attempt: number) => Promise<T>): Promise<T> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await request(attempt);
+      } catch (error) {
+        const delay = RETRY_DELAYS_MS[attempt];
         if (delay === undefined || this.httpClient.closed || !answerMayBeLost(error)) throw error;
-        this.logger.warn(
-          `The run's /finish failed (${errorMessage(error)}), perhaps after the dashboard took it: asking again.`,
-        );
+        this.logger.warn(`${what} failed (${errorMessage(error)}), perhaps after the dashboard took it: asking again.`);
         // The wait ends with the budget: a request after it fails at once.
         const wait = this.budget ? Math.min(delay, Math.max(this.budget.end - Date.now(), 0)) : delay;
         await new Promise((resolve) => setTimeout(resolve, wait));
@@ -446,8 +461,10 @@ export class RunSubmitter {
    * Deliver the run in parts, as a streamed run's files go: its results first, which the dashboard holds `finalizing`;
    * then each test's files, with the token its answer carries; then its reports, which settle the run (an upload
    * carrying none does when none went through). Each goes in a request of its own, so one the dashboard refuses as
-   * too large is left out alone. Null for a shard, whose run settles with its last shard, and when the dashboard took
-   * no results ahead of the files (an older one): both get the run in one upload.
+   * too large is left out alone. The results go again, under the same delivery key, when their answer may have been
+   * lost: the dashboard answers a repeat of a run it holds with a new token. Null for a shard, whose run settles with
+   * its last shard, when the dashboard took no results ahead of the files (an older one), and when every try at them
+   * failed with no answer or a server error: these get the run in one upload.
    */
   private async uploadInParts(
     run: CollectedRun,
@@ -456,7 +473,18 @@ export class RunSubmitter {
     auth: string | null,
   ): Promise<HeldRun | null> {
     if (run.shardInfo && run.shardInfo.total > 1) return null;
-    const held = await this.uploader.uploadResults(payload, auth);
+    let held: HeldRun | null;
+    try {
+      held = await this.askAgainWhenLost("The upload of the run's results", () =>
+        this.uploader.uploadResults(payload, auth),
+      );
+    } catch (error) {
+      if (this.httpClient.closed || !answerMayBeLost(error)) throw error;
+      this.logger.warn(
+        `The dashboard did not take the run's results (${errorMessage(error)}): sending the run in one upload.`,
+      );
+      return null;
+    }
     if (!held) return null;
 
     // The test files stop in time to leave the reports, and the settle, their share of the budget.

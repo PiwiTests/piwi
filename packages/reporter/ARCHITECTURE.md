@@ -475,8 +475,10 @@ On `onEnd`, the collected run is handed to `RunSubmitter`, which tries, in order
    results, which the dashboard holds `finalizing`), each test's files to `/case-files` with the token its answer
    carries (`uploadCaseFilesInTurn`, shared with streaming), then each report to `/upload` with `runId`, which
    settles the run (an upload carrying no report does when none went). A part refused as too large is left out
-   alone, a test's files sent apart first. A shard, whose run settles with its last shard, and a dashboard without
-   `/upload/results` get one multipart `/upload` carrying everything,
+   alone, a test's files sent apart first. Results whose answer may have been lost go again, as `/finish` does,
+   under the same delivery key: the dashboard answers a repeat of the run it holds with a new token. A shard, whose
+   run settles with its last shard, a dashboard without `/upload/results` (404) and results no answer ever came to
+   get one multipart `/upload` carrying everything; results refused as too large go on to rung 3,
 3. **plain JSON `/submit`**: last resort,
 4. **crash recovery**: on total failure, persist the payload to disk for the next run: one owner-only file per
    dashboard and project, replayed to that dashboard only and deleted once it took the run (or refused it as
