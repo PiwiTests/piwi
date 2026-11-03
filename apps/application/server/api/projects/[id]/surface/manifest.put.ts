@@ -5,13 +5,14 @@ import { projects } from '../../../../database/schema';
 import { requireProjectAccess, requireRouteId } from '../../../../utils/project-access';
 import { resolveRunBranchTag } from '../../../../utils/graph-ingest';
 import { ingestProjectManifest } from '../../../../utils/surface-manifest';
+import { manifestLimitError } from '#shared/graph';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Scenario gaps'],
     summary: 'Upload a project’s declared surface manifest',
     description:
-      'Stores a declared-surface manifest — the routes and pages the application says it exposes — as graph nodes with origin `manifest` (from the instrumentation `/__piwi/manifest` or a committed `piwi.manifest.json`) or `openapi`. A declared route or page no test reaches becomes a "declared, never hit" gap. Reach is observed reach, never instrumented coverage.',
+      'Stores a declared-surface manifest — the routes and pages the application says it exposes — as graph nodes with origin `manifest` (from the instrumentation `/__piwi/manifest` or a committed `piwi.manifest.json`) or `openapi`. A declared route or page no test reaches becomes a "declared, never hit" gap. Reach is observed reach, never instrumented coverage. Each pattern holds at most 2048 characters, and each of its segments at most 16 parameters: a manifest past either limit is refused with 400.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'run:submit',
   },
@@ -48,6 +49,8 @@ export default eventHandler(async (event) => {
   }
 
   const { source, manifest, branch: runBranch } = validation.data;
+  const limit = manifestLimitError(manifest);
+  if (limit) throw apiError({ statusCode: 400, message: limit });
 
   // Tag the manifest with the run's branch: canonical (null) on the default
   // branch, the branch name otherwise, so a pull-request route never lands on the

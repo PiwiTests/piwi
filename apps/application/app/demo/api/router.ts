@@ -237,7 +237,7 @@ import { getFeatureGraph, getFeatureMap, getFileTestMap, MAX_GRAPH_DEPTH } from 
 import { loadDetectorPrecision } from '#shared/handlers/detector-precision';
 import { parseGapIds } from '#shared/gap-ids';
 import { getMapHealth } from '#shared/handlers/map-health';
-import { parseRouteNodeKey } from '#shared/graph';
+import { manifestLimitError, parseRouteNodeKey } from '#shared/graph';
 import { ingestProjectManifest } from '~~/server/utils/surface-manifest';
 import type { AppManifest, ManifestSource } from '#shared/types';
 import {
@@ -2936,6 +2936,8 @@ const routes: RouteEntry[] = [
       const payload = (body ?? {}) as { source?: ManifestSource; manifest?: AppManifest };
       const source: ManifestSource = payload.source ?? 'committed';
       const manifest: AppManifest = payload.manifest ?? {};
+      const limit = manifestLimitError(manifest);
+      if (limit) throw demoHttpError(400, limit);
       const ingested = await ingestProjectManifest(await getDemoDb(), +m[1]!, manifest, source);
       return {
         success: ingested,

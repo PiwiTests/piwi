@@ -147,7 +147,9 @@ Both packages serve `/__piwi/manifest` outside production: the routes the server
 reporter fetches it from each `baseURL` and each other origin whose responses carry an instrumentation header, and
 uploads it with the run, so a route or page nothing reaches becomes a
 [declared, never hit](/features/scenario-gaps#declared-surface) gap. Any backend can commit a
-`piwi.manifest.json` next to the Playwright config. Turn the upload off with `uploadManifest: false`.
+`piwi.manifest.json` next to the Playwright config. Turn the upload off with `uploadManifest: false`. A pattern
+holds at most 2,048 characters and 16 parameters in one segment: Piwi refuses a manifest past either limit, and leaves
+such a path out of an OpenAPI document.
 
 - **ASP.NET Core** reads the application's endpoint table, so the manifest holds every route from the first run, hit
   or not: minimal APIs and route groups, controllers (attribute routes, conventional routes and areas) and SignalR
