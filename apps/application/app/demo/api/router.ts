@@ -158,7 +158,7 @@ import {
   apiSaveDashboard,
   apiSetDefaultDashboard,
 } from './dashboards';
-import { DEMO_CHANNEL } from './demo-channel';
+import { createDemoChannel, deleteDemoChannel, demoReportChannels, listDemoChannels } from './channels';
 import { apiPerfettoTestRun, apiPerfettoTestRunCase } from './perfetto';
 import {
   apiGetDemoTraceStacks,
@@ -4077,18 +4077,28 @@ let _nextSubId = 1;
 const _demoSubs: DemoSubscription[] = [];
 
 routes.push(
-  // Channels
+  // Channels — stored in the in-browser database
   {
     method: 'GET',
     pattern: /^\/api\/channels$/,
-    handler: () => Promise.resolve({ items: [DEMO_CHANNEL], canStoreSecrets: true }),
+    handler: async () => ({ items: await listDemoChannels(await getDemoDb()), canStoreSecrets: true }),
   },
   {
     method: 'POST',
     pattern: /^\/api\/channels$/,
-    handler: () => Promise.resolve({ success: true, channel: DEMO_CHANNEL }),
+    handler: async (_, body) => createDemoChannel(await getDemoDb(), body),
   },
-  { method: 'DELETE', pattern: /^\/api\/channels\/(\d+)$/, handler: () => Promise.resolve({ success: true }) },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/channels\/(\d+)$/,
+    handler: async (m) => {
+      const id = parseInt(m[1]!);
+      const result = await deleteDemoChannel(await getDemoDb(), id);
+      // Like the server, a channel's subscriptions go with it.
+      for (let i = _demoSubs.length - 1; i >= 0; i--) if (_demoSubs[i]!.channelId === id) _demoSubs.splice(i, 1);
+      return result;
+    },
+  },
   {
     method: 'POST',
     pattern: /^\/api\/channels\/(\d+)\/test$/,
@@ -4114,7 +4124,7 @@ routes.push(
   {
     method: 'POST',
     pattern: /^\/api\/subscriptions$/,
-    handler: (_, body) => {
+    handler: async (_, body) => {
       const b = body as {
         channelId?: number;
         projectId?: number | null;
@@ -4137,10 +4147,13 @@ routes.push(
       if (!digest.success) throw demoHttpError(400, 'Invalid request body');
       const mode = b.mode === 'digest' ? 'digest' : 'realtime';
       const digestAt = digest.data ?? null;
+      const channelId = b.channelId ?? 1;
+      const channel = (await listDemoChannels(await getDemoDb())).find((c) => c.id === channelId);
+      if (!channel) throw demoHttpError(404, 'Channel not found');
       const sub: DemoSubscription = {
         id: _nextSubId++,
         userId: null,
-        channelId: b.channelId ?? 1,
+        channelId,
         projectId: b.projectId ?? null,
         events,
         filters: filters.data ?? null,
@@ -4148,12 +4161,12 @@ routes.push(
         digestAt,
         mutedUntil: null,
         active: true,
-        channel: { id: DEMO_CHANNEL.id, name: DEMO_CHANNEL.name, type: DEMO_CHANNEL.type },
+        channel: { id: channel.id, name: channel.name, type: channel.type },
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
       _demoSubs.push(sub);
-      return Promise.resolve({ success: true, subscription: sub });
+      return { success: true, subscription: sub };
     },
   },
   {
@@ -4203,28 +4216,20 @@ routes.push(
 
 // Report schedules and snapshots — stored in the in-browser database; the demo
 // has no scheduler, so a schedule never fires by itself.
-const demoReportChannels = () => [
-  {
-    id: DEMO_CHANNEL.id,
-    name: DEMO_CHANNEL.name,
-    type: DEMO_CHANNEL.type,
-    userId: DEMO_CHANNEL.userId,
-    address: DEMO_CHANNEL.config.address,
-  },
-];
-
 routes.push(
   {
     method: 'GET',
     pattern: /^\/api\/reports\/schedules$/,
     permission: 'report:write',
-    handler: (_m, _b, _q, ctx) => apiListReportSchedules(demoReportChannels(), demoScope(ctx, 'report:write')),
+    handler: async (_m, _b, _q, ctx) =>
+      apiListReportSchedules(await demoReportChannels(await getDemoDb()), demoScope(ctx, 'report:write')),
   },
   {
     method: 'POST',
     pattern: /^\/api\/reports\/schedules$/,
     permission: 'report:write',
-    handler: (_m, body, _q, ctx) => apiCreateReportSchedule(body, demoReportChannels(), demoScope(ctx, 'report:write')),
+    handler: async (_m, body, _q, ctx) =>
+      apiCreateReportSchedule(body, await demoReportChannels(await getDemoDb()), demoScope(ctx, 'report:write')),
   },
   {
     method: 'POST',
@@ -4236,14 +4241,19 @@ routes.push(
     method: 'GET',
     pattern: /^\/api\/reports\/schedules\/(\d+)$/,
     permission: 'report:write',
-    handler: (m) => apiGetReportSchedule(+m[1]!, demoReportChannels()),
+    handler: async (m) => apiGetReportSchedule(+m[1]!, await demoReportChannels(await getDemoDb())),
   },
   {
     method: 'PATCH',
     pattern: /^\/api\/reports\/schedules\/(\d+)$/,
     permission: 'report:write',
-    handler: (m, body, _q, ctx) =>
-      apiUpdateReportSchedule(+m[1]!, body, demoReportChannels(), demoScope(ctx, 'report:write')),
+    handler: async (m, body, _q, ctx) =>
+      apiUpdateReportSchedule(
+        +m[1]!,
+        body,
+        await demoReportChannels(await getDemoDb()),
+        demoScope(ctx, 'report:write'),
+      ),
   },
   {
     method: 'DELETE',
