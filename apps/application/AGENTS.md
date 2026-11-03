@@ -103,11 +103,12 @@ the offline export are written once in `shared/` and differ only in the port eac
   and responsive rules of [`app/AGENTS.md`](app/AGENTS.md).
 - **Unit test**: `tests/unit/*.test.ts` (Vitest). One that needs a PostgreSQL server is named `*-pg.test.ts`, reads its
   URL from `PIWI_POSTGRES_TEST_URL` and skips without it; CI runs them once, in the E2E job's `s3 + postgres` cell,
-  and `tests/unit/postgres-test-files.test.ts` fails on any other file that reads the URL.
-  One that needs a migrated SQLite database gets it from `migrateToLatest` or `openTempDb` (`tests/unit/temp-db.ts`),
-  which replay the schema `tests/unit/global-setup.ts` migrates once per run: Drizzle's `migrate` is for the tests of
-  the migrations themselves.
-- **E2E test**: `tests/*.spec.ts` (Playwright), with any project name registered in `shared/test-project-names.ts`.
+  and `tests/unit/postgres-test-files.test.ts` fails on any other file that reads the URL. One that needs a migrated
+  SQLite database gets it from `migrateToLatest` or `openTempDb` (`tests/unit/temp-db.ts`), which replay the schema
+  `tests/unit/global-setup.ts` migrates once per run: Drizzle's `migrate` is for the tests of the migrations themselves.
+- **E2E test**: `tests/*.spec.ts` (Playwright), with any project name registered in `shared/test-project-names.ts` and
+  used as `PROJECT.<KEY>`. The cleanup deletes every registered name on the server the suite targets, so
+  `tests/unit/test-project-names.test.ts` fails on an entry no test uses and on the reporter's default project name.
 - **A test that needs an AI model** runs against a mock OpenAI-compatible server, as `tests/ai-diagnosis.spec.ts` does,
   so the main suite spends no tokens. Only `tests/live/` talks to a real service: `playwright.config.ts` ignores it, and
   each of its suites has its own config and script (`app:test:ai:live` and `app:test:assistant:live` need
