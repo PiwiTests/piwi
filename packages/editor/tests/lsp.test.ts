@@ -375,6 +375,7 @@ beforeAll(async () => {
         JSON.stringify({
           items: [
             {
+              // No failed count, as an older instance sends it: every run is in the pass rate.
               id: 3,
               title: 'removes a row',
               filePath: 'tests/rows.spec.ts',
@@ -414,12 +415,14 @@ beforeAll(async () => {
         JSON.stringify({
           items: [
             {
+              // Two skipped runs, in no pass rate.
               id: 1,
               title: 'pays',
               filePath: 'tests/checkout.spec.ts',
               status: 'passed',
-              totalRuns: 50,
+              totalRuns: 52,
               passedRuns: 48,
+              failedRuns: 2,
             },
           ],
         }),
