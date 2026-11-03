@@ -330,6 +330,7 @@ export interface ProjectOverview {
   label: string | null;
   tags: TagInfo[];
   totalFullRuns: number;
+  /** The newest of `recentRuns` that ran to its end (passed, failed or timed out); null without one. */
   latestFullRun: {
     id: number;
     status: string;

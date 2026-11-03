@@ -74,7 +74,7 @@ export const HELP_TOPICS = {
   // ── Home ──────────────────────────────────────────────────────────────
   'home.project-health': {
     title: 'Project health',
-    text: 'Every project at a glance — run history bars and a tendency badge so you can immediately see which project needs attention. Only full runs count, and a run in progress counts once it finishes.',
+    text: 'Every project at a glance — run history bars and a tendency badge so you can immediately see which project needs attention. Only full runs count, and a run in progress counts once it ran to its end: an interrupted or cancelled run shows in the bars and counts nowhere else.',
     doc: 'features/ui-overview#home',
   },
   'home.get-started': {
@@ -450,7 +450,7 @@ export const HELP_TOPICS = {
     text: [
       'Where the project stands within the page’s filters; each figure links to what it counts.',
       '',
-      '- **Runs** — the latest finished run, its age, and the pass rate of the last 20 finished runs.',
+      '- **Runs** — the latest run that ran to its end, its age, and the pass rate of the last 20 such runs; a run in progress, interrupted or cancelled is passed over.',
       '- **Failures** — the open failure clusters, the flaky tests and the quarantined ones.',
     ].join('\n'),
     doc: 'features/ui-overview#project-detail',

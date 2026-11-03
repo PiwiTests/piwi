@@ -49,6 +49,10 @@ Two things commonly surprise people:
 - **A run can be watched while it happens.** With streaming enabled (the default), the run row appears
   when the suite starts and fills in test by test, so a failure is browsable before CI finishes.
 
+A run **ran to its end** when it passed, failed or hit Playwright's global timeout. A project's health (Home's
+Project health table and stat strip, the project header) reads only such runs: a run still in progress, interrupted
+or cancelled shows in every list and in the trend bars with its status, and in none of those figures.
+
 ### Test case
 
 The **identity of a test across time**, keyed by project + file path (relative to the folder holding your

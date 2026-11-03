@@ -12,7 +12,7 @@ import type {
 import { RUN_STATUS_SERIES, legendOf } from '~/utils/chart';
 import { drillQueryKey, parseDrillQuery, type DrillScope } from '~/utils/analytics-drilldown';
 import { projectRunScopeQuery, runInProjectScope, type ProjectRunScope } from '#shared/project-run-scope';
-import { isRunFinished } from '#shared/project-health';
+import { ranToItsEnd } from '#shared/project-health';
 import { passRatePercent } from '#shared/utils/pass-rate';
 import { compareOrder } from '~/utils/run-compare';
 import { sortRows, type SortValue } from '~/utils/table-sort';
@@ -296,12 +296,12 @@ const PASS_RATE_RUNS = 20;
 const newestFirst = (a: TestRunSummary, b: TestRunSummary) =>
   new Date(b.startTime).getTime() - new Date(a.startTime).getTime();
 
-// A run still in progress has no outcome yet: the latest run is the newest finished one, else the one in progress,
-// and the pass rate reads finished runs only.
-const finishedRuns = computed(() => scopedRuns.value.filter((run) => isRunFinished(run.status)).sort(newestFirst));
-const latestRun = computed(() => finishedRuns.value[0] ?? [...scopedRuns.value].sort(newestFirst)[0] ?? null);
+// A run in progress, interrupted or cancelled has no outcome: the latest run is the newest one that ran to its end,
+// else the newest of any status, and the pass rate reads the runs that ran to their end only.
+const endedRuns = computed(() => scopedRuns.value.filter((run) => ranToItsEnd(run.status)).sort(newestFirst));
+const latestRun = computed(() => endedRuns.value[0] ?? [...scopedRuns.value].sort(newestFirst)[0] ?? null);
 
-const passRateRuns = computed(() => finishedRuns.value.slice(0, PASS_RATE_RUNS));
+const passRateRuns = computed(() => endedRuns.value.slice(0, PASS_RATE_RUNS));
 const passRate = computed(() => {
   let passed = 0;
   let failed = 0;

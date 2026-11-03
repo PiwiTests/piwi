@@ -2297,8 +2297,8 @@ export async function getProjectFlakyTestsWithVerified(
 
 /**
  * Each project with its last 20 full runs (its trend bars, oldest first), and
- * its latest finished full run and tendency (`projectHealth`), which leave out a
- * run still in progress.
+ * its latest full run that ran to its end and tendency (`projectHealth`), which
+ * pass over a run in progress, interrupted or cancelled.
  */
 export async function getProjectsOverview(db: DrizzleDB, scope: ProjectScope = 'all') {
   const { ids: projectIds, projects: allProjects } = await getProjects(db, scope);

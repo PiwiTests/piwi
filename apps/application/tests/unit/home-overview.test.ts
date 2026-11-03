@@ -54,6 +54,15 @@ describe('overviewInEnvironments', () => {
     expect(filtered!.latestFullRun).toMatchObject({ status: 'passed', passedTests: 10 });
   });
 
+  test('passes over an interrupted or cancelled run there, which the bars still show', () => {
+    const project = shop();
+    project.recentRuns.push(run('staging', 'interrupted', 1), run('staging', 'cancelled', 0));
+    const [filtered] = overviewInEnvironments([project], ['staging']);
+    expect(filtered!.latestFullRun).toMatchObject({ status: 'passed', passedTests: 10 });
+    expect(filtered!.tendency).toBe('passing');
+    expect(filtered!.recentRuns.map((r) => r.status)).toEqual(['passed', 'passed', 'interrupted', 'cancelled']);
+  });
+
   test('drops a project with no run there, and keeps every project as it is with no environment picked', () => {
     expect(overviewInEnvironments([shop()], ['qa'])).toEqual([]);
     const projects = [shop()];

@@ -44,7 +44,7 @@ first result, or with **New project**.
 ## Project detail
 
 `/projects/:id`: one project's history. The **header** names the project, its description and tags, and where it
-stands: the latest finished run and the [pass rate](/guide/concepts#pass-rate) of the last 20 finished runs, then the open clusters, flaky tests
+stands: the latest run that [ran to its end](/guide/concepts#test-run) and the [pass rate](/guide/concepts#pass-rate) of the last 20 such runs, then the open clusters, flaky tests
 and quarantined tests, each a link. The **Filters** block under it (environment, branch, full runs only) scopes the
 header and every tab that reads run history; with no branch picked it reads the
 [default branch](./branches#the-default-branch), and a note counts the runs it hides. The **More** menu holds Edit,
