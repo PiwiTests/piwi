@@ -10,7 +10,9 @@
  * successful `create-issue` writes the entity link and the result together, and
  * records on the link what Piwi wrote: an `update-issue` replaces the title and
  * description only while they still read that way, so an edit made in the
- * tracker is never overwritten.
+ * tracker is never overwritten. A body's share link is stored with its token
+ * redacted: a create mints the link as it sends the issue, and an update takes
+ * the token from the issue's description as the tracker returns it.
  *
  * A refusal no retry can change — Jira answering that the request itself is
  * wrong (a missing required field, a project the account cannot see), or a
@@ -59,6 +61,13 @@ import {
   type FieldValues,
 } from '#shared/integrations/fields';
 import { matchTransition } from '#shared/integrations/transitions';
+import {
+  carriesRedactedShareLink,
+  discardShareLink,
+  mintIssueShareLink,
+  shareTokenAmong,
+  withShareToken,
+} from './share-url';
 
 /** The snapshot a `create-issue` action carries — enough to retry deterministically. */
 export interface CreateIssueActionPayload {
@@ -81,7 +90,10 @@ export interface CreateIssueActionPayload {
   automatic?: AutomaticFiling | null;
   /** What the body carries, kept on the link so a description update carries the same. */
   include?: IssueIncludeOptions | null;
-  /** The share link the body carries, kept on the link so a description update reuses it. */
+  /**
+   * The share link the body carries, its token redacted: the link is created
+   * when the issue is sent, and its id kept on the issue's link with this URL.
+   */
   shareUrl?: string | null;
 }
 
@@ -103,10 +115,12 @@ export interface FiledIssueMeta {
   descriptionEdited?: boolean;
   /** Set when a rule filed the issue. */
   automatic?: AutomaticFiling | null;
-  /** The language, the include toggles and the share link the issue was filed with. */
+  /** The language, the include toggles and the share link the issue was filed with (its token redacted). */
   locale?: IssueLocale | null;
   include?: IssueIncludeOptions | null;
   shareUrl?: string | null;
+  /** The id of that share link, whose token a description update reads back from the issue. */
+  shareLinkId?: number | null;
 }
 
 /** A comment action's snapshot — the rendered body, keyed to an issue. */
@@ -353,6 +367,31 @@ async function readBackWritten(
   };
 }
 
+/**
+ * The share link a cluster's issue is sent with, created now in the name of the
+ * person who filed it, and its body pointing at it; null when the body carries
+ * none.
+ */
+async function issueShareLink(
+  db: DbClient,
+  action: IntegrationAction,
+  payload: CreateIssueActionPayload,
+): Promise<{ id: number; document: IssueDocument } | null> {
+  if (
+    payload.linkEntityType !== 'failure_cluster' ||
+    !payload.shareUrl ||
+    !carriesRedactedShareLink(payload.document)
+  ) {
+    return null;
+  }
+  const minted = await mintIssueShareLink(db, {
+    projectId: action.projectId,
+    clusterId: payload.linkEntityId,
+    createdBy: action.requestedBy ?? null,
+  });
+  return { id: minted.id, document: withShareToken(payload.document, minted.token) };
+}
+
 /** Perform one create-issue against the tracker and record the link + result. */
 async function applyCreateIssue(
   db: DbClient,
@@ -360,17 +399,24 @@ async function applyCreateIssue(
   action: IntegrationAction,
 ): Promise<CreateIssueResult> {
   const payload = action.payload as CreateIssueActionPayload;
-  const created = await tracker.createIssue({
-    projectKey: payload.projectKey,
-    issueType: payload.issueType,
-    title: payload.title,
-    body: payload.document,
-    labels: payload.labels,
-    assigneeId: payload.assigneeId ?? null,
-    priority: payload.priority ?? null,
-    componentId: payload.componentId ?? null,
-    fields: payload.fields,
-  });
+  const share = await issueShareLink(db, action, payload);
+  let created: Awaited<ReturnType<IssueTracker['createIssue']>>;
+  try {
+    created = await tracker.createIssue({
+      projectKey: payload.projectKey,
+      issueType: payload.issueType,
+      title: payload.title,
+      body: share?.document ?? payload.document,
+      labels: payload.labels,
+      assigneeId: payload.assigneeId ?? null,
+      priority: payload.priority ?? null,
+      componentId: payload.componentId ?? null,
+      fields: payload.fields,
+    });
+  } catch (err) {
+    if (share) await discardShareLink(db, share.id);
+    throw err;
+  }
   // The create response carries no status; read it back once so the chip shows a
   // status the moment the key exists (best-effort — the key still lands if not).
   const enriched = (await tracker.getIssue(created.key).catch(() => null)) ?? created;
@@ -383,6 +429,7 @@ async function applyCreateIssue(
     ...(payload.locale ? { locale: payload.locale } : {}),
     ...(payload.include ? { include: payload.include } : {}),
     ...(payload.shareUrl ? { shareUrl: payload.shareUrl } : {}),
+    ...(share ? { shareLinkId: share.id } : {}),
   };
 
   await db.transaction(async (tx) => {
@@ -488,7 +535,13 @@ async function applyUpdateIssue(
   }
 
   const nextDocumentDigest = await documentDigest(payload.document);
-  const body = nextDocumentDigest !== written.documentDigest ? payload.document : undefined;
+  let body = nextDocumentDigest !== written.documentDigest ? payload.document : undefined;
+  // The share link goes back as the issue carries it.
+  if (body && meta?.shareUrl && carriesRedactedShareLink(body)) {
+    const token = await shareTokenAmong(db, meta?.shareLinkId, current.links);
+    if (!token) return { skipped: 'the share link could not be read back from the issue' };
+    body = withShareToken(body, token);
+  }
   // A title changed in the tracker stays as it is.
   const title =
     payload.title != null && current.title === written.title && payload.title !== written.sourceTitle

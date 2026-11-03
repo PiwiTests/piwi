@@ -94,7 +94,8 @@ the reader's address, since such a proxy fetches for many readers.
 ## Security properties
 
 - The token is a 256-bit random secret (`psl_` + 64 hex characters) — unguessable at any request rate. The server
-  stores its SHA-256 hash and the first 8 hex characters, which the dialog shows as the link's prefix.
+  stores its SHA-256 hash and the first 8 hex characters, which the dialog shows as the link's prefix. What Piwi
+  records of an issue that carries a link keeps its URL with the token redacted.
 - Everything a link serves is data its creator can see: minting requires access to the execution, the cluster,
   every project of the snapshot, or the dashboard, so a link is a narrower delegation of an existing member's read
   access, never an escalation.

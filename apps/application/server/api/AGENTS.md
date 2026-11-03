@@ -136,6 +136,9 @@ The early check only proves the user holds the permission _somewhere_. The proje
   and the draft proposes none, a link is matched and read against that one alone, and the sync, the webhook, the
   policies and the outbox pass by a link or a write on another (`server/utils/integrations/bound-connection.ts`).
   `tests/unit/issue-create-routes.test.ts`, `tests/unit/issue-link-routes.test.ts`.
+- **No row keeps a share link's token**, only its hash (`share_links`): an issue body queued or filed with a share
+  link holds its URL with the token redacted, the link minted as the issue is sent and its token read back from the
+  issue for a rewrite (`server/utils/integrations/share-url.ts`, `tests/unit/integrations-share-link.test.ts`).
 - **An `issue:create` route under `integrations/connections/[id]/` calls `requireConnectionAccess` before its cache
   and the tracker**: `issue:create` on a project bound to the connection, `project:manage` anywhere or
   `connections:manage`, else the 404 of a missing connection. `tests/unit/connection-read-routes.test.ts`.
