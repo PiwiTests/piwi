@@ -24,6 +24,7 @@ import { runCommit, runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../utils/run-events';
 import { runFinalizeSideEffects } from '../../utils/run-finalize-side-effects';
 import { cancelInstanceRuns, cancelReplacedRun } from '../../utils/cancel-instance-runs';
+import { renewHeldRunToken } from '../../utils/batch-run';
 import { deliverOnce, readDeliveryKey, storeOrDiscardRun } from '../../utils/run-deliveries';
 import {
   addBatchShard,
@@ -63,7 +64,7 @@ defineRouteMeta({
               testRun: {
                 type: 'string',
                 description:
-                  'JSON-encoded test run data. Its `deliveryKey`, as on the submit endpoint, makes a repeated delivery answer with the run its first delivery stored, and its `replacesRun`, as there, cancels the run the reporter streamed before it fell back to this upload.',
+                  'JSON-encoded test run data. Its `deliveryKey`, as on the submit endpoint, makes a repeated delivery answer with the run its first delivery stored, with `duplicate: true` and its files unread; while that run waits `finalizing` for its files (its results went to `/api/test-runs/upload/results`), the answer carries a new `streamToken` for them, which takes the place of the one held before, as a repeat to that route does. Its `replacesRun`, as on the submit endpoint, cancels the run the reporter streamed before it fell back to this upload.',
               },
               testCases: { type: 'string', description: 'JSON-encoded test cases array' },
             },
@@ -258,7 +259,7 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
   // A repeated delivery (the reporter gave up waiting and sent the run again)
   // answers with the run its first delivery stored, its reports and traces unread.
   const deliveryKey = attachingToExistingRun ? null : readDeliveryKey(testRunData.deliveryKey);
-  return deliverOnce(db, project.id, deliveryKey, async () => {
+  const delivered = await deliverOnce(db, project.id, deliveryKey, async () => {
     // Create project directory in storage
     const projectPath = `project-${project.id}`;
     await storage.mkdir(projectPath);
@@ -591,4 +592,10 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
       reports: storedReports.map((r) => ({ type: r.type, label: r.label, path: r.path })),
     };
   });
+  if (!('duplicate' in delivered)) return delivered;
+
+  // A repeat of a run `/upload/results` holds `finalizing` until its files are in answers, as a repeat there does,
+  // with a new token for them, which takes the place of the one it held.
+  const streamToken = await renewHeldRunToken(db, delivered.runId);
+  return streamToken ? { ...delivered, streamToken } : delivered;
 }

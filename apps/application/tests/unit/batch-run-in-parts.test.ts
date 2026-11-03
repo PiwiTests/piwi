@@ -128,6 +128,21 @@ const sendReport = (runId: number, report = true) =>
     ]),
   );
 
+/** The whole run in one multipart upload, its files with it, as the reporter sends it when no results answer came. */
+const sendWholeRun = (overrides: Record<string, unknown> = {}) => {
+  const { projectName, testCases, ...run } = runResults(overrides);
+  return upload(
+    multipartEvent([
+      field('projectName', projectName),
+      field('testRun', run),
+      field('testCases', testCases),
+      field('attach_meta_0', [{ name: 'screenshot', contentType: 'image/png', originalName: 'pays.png' }]),
+      { name: 'attach_file_0', filename: 'pays.png', data: Buffer.from('pays screenshot') },
+      { name: 'report_custom', filename: 'report.txt', data: Buffer.from('the report') },
+    ]),
+  );
+};
+
 const runRow = async (runId: number) =>
   (await db.select().from(schema.testRuns).where(eq(schema.testRuns.id, runId)))[0]!;
 
@@ -222,6 +237,64 @@ describe('a batch run sent in parts: its results, then its files', () => {
 
     expect(again).toEqual({ success: true, runId: first.runId, projectId: first.projectId, duplicate: true });
     expect((await runRow(first.runId)).streamToken).toBeNull();
+  });
+
+  test('a repeat in one upload of the run its results hold answers with a new token, and its files go with that', async () => {
+    // The results are stored three times over, under one key, and none of the answers reaches the reporter.
+    const answers = [];
+    for (let i = 0; i < 3; i++) answers.push(await results({ body: runResults() }));
+    const runId = answers[0]!.runId;
+
+    const again = await sendWholeRun();
+
+    expect(again).toEqual({
+      success: true,
+      runId,
+      projectId: answers[0]!.projectId,
+      duplicate: true,
+      streamToken: expect.any(String),
+    });
+    expect(answers.map((a) => a.streamToken)).not.toContain(again.streamToken);
+    // The upload's own files are left unread, and the run waits for them.
+    expect(await db.select().from(schema.testRuns)).toHaveLength(1);
+    expect(await db.select().from(schema.files)).toHaveLength(0);
+    expect(state.written.size).toBe(0);
+    expect((await runRow(runId)).status).toBe('finalizing');
+    expect(runFinalizeSideEffects).not.toHaveBeenCalled();
+
+    await expect(sendScreenshot(runId, answers[2]!.streamToken, 'pays')).rejects.toMatchObject({ statusCode: 403 });
+    for (const title of ['pays', 'ships']) {
+      expect(await sendScreenshot(runId, again.streamToken, title)).toMatchObject({ success: true, attachments: 1 });
+    }
+    await sendReport(runId);
+
+    const run = await runRow(runId);
+    expect(run).toMatchObject({ status: 'failed', streamToken: null });
+    expect(run.metadata).toEqual({ ci: { provider: 'github' } });
+    expect(runFinalizeSideEffects).toHaveBeenCalledTimes(1);
+    const stored = await db.select().from(schema.files).where(eq(schema.files.testRunId, runId));
+    expect(stored.map((f) => f.type).sort()).toEqual(['attachment', 'attachment', 'report']);
+    const executions = await db.select().from(schema.testRunsCases).where(eq(schema.testRunsCases.testRunId, runId));
+    expect(executions).toHaveLength(2);
+  });
+
+  test('a repeat in one upload of a run that settled answers with the run, without a token', async () => {
+    const first = await results({ body: runResults() });
+    await sendReport(first.runId);
+
+    const again = await sendWholeRun();
+
+    expect(again).toEqual({ success: true, runId: first.runId, projectId: first.projectId, duplicate: true });
+    expect((await runRow(first.runId)).streamToken).toBeNull();
+    expect(runFinalizeSideEffects).toHaveBeenCalledTimes(1);
+  });
+
+  test('a repeat in one upload of a run it stored itself answers without a token', async () => {
+    const first = await sendWholeRun();
+    const again = await sendWholeRun();
+
+    expect(again).toEqual({ success: true, runId: first.runId, projectId: first.projectId, duplicate: true });
+    expect(await db.select().from(schema.testRuns)).toHaveLength(1);
   });
 
   test('refuses a shard, whose run settles with its last shard: its results and files go in one upload', async () => {

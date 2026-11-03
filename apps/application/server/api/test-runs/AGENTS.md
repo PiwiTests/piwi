@@ -75,7 +75,8 @@ How the server merges shards:
 - **The streaming routes authenticate with the run's stream token**, not `requireAuth`: `[id]/begin` (with the setup
   token `/setup` returned), then `events`, `heartbeat`, `live-resources`, `case-files` and `finish`. `/setup` and
   `/start` authenticate the caller and hand the token out, and so does `/upload/results` for a batch run it holds
-  `finalizing` until its files are in, its repeated delivery a new one in place of the first (`renewHeldRunToken`). A
+  `finalizing` until its files are in, its repeated delivery a new one in place of the first (`renewHeldRunToken`), as
+  a repeat of it to `/upload` does, its files unread (`tests/unit/batch-run-in-parts.test.ts`). A
   token is kept only as its digest (`streamTokenDigest`, `shardTokenDigest`): in `test_runs.stream_token`, in the
   in-memory run state (`runEventBus`, `server/utils/run-events.ts`) and, for a shard, in the run's
   `metadata.shardTokens`, which project members can read.
