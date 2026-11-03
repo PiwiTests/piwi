@@ -128,7 +128,7 @@ async function buildFailureEntries(
   projectId: number,
   rows: CaseRow[],
   newRegressionIds: Set<number>,
-  defaultBranchFlaky: Map<number, { branch: string; flakinessRate: number }>,
+  defaultBranchFlaky: Map<number, { branch: string; flakinessScore: number }>,
 ): Promise<{ newRegressions: PrFailureEntry[]; preExisting: PrFailureEntry[] }> {
   const clusterIds = [...new Set(rows.map((r) => r.failureClusterId).filter((id): id is number => id != null))];
   const clusterSignatures = new Map<number, string>();
@@ -271,7 +271,7 @@ export async function buildRunPrSummary(
   // doing. Skipped for runs already on the default branch (nothing to compare).
   const runBranch = run.branch ?? resolveRunBranch(run.metadata);
   const defaultBranch = await resolveDefaultBranch(db, project, run.metadata);
-  const defaultBranchFlaky = new Map<number, { branch: string; flakinessRate: number }>();
+  const defaultBranchFlaky = new Map<number, { branch: string; flakinessScore: number }>();
   if (runBranch && runBranch !== defaultBranch) {
     const flaky = await getProjectFlakyTests(
       db,
@@ -282,7 +282,7 @@ export async function buildRunPrSummary(
       defaultBranch,
     ).catch(() => []);
     for (const test of flaky) {
-      defaultBranchFlaky.set(test.testCaseId, { branch: defaultBranch, flakinessRate: Math.min(1, test.score / 100) });
+      defaultBranchFlaky.set(test.testCaseId, { branch: defaultBranch, flakinessScore: test.score });
     }
   }
 

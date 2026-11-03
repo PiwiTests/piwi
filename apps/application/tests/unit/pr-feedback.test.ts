@@ -155,6 +155,17 @@ describe('buildPrComment', () => {
     expect(body).toContain("💡 Try `getByRole('button', { name: 'Save' })` instead.");
   });
 
+  test("names a failure's flakiness score on the default branch, never as a share of runs", () => {
+    const body = buildPrComment(
+      summary({
+        failedTests: 1,
+        newRegressions: [entry({ flakyOnDefaultBranch: { branch: 'main', flakinessScore: 42 } })],
+      }),
+    );
+    expect(body).toContain('🎲 Also flaky on `main` (flakiness score 42/100) — likely not yours.');
+    expect(body).not.toContain('% of recent runs');
+  });
+
   test('shows owner and tags so a reader knows who to route it to', () => {
     const body = buildPrComment(
       summary({ failedTests: 1, newRegressions: [entry({ owner: '@checkout-team', tags: ['critical', 'smoke'] })] }),
