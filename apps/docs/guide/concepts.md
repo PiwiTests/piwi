@@ -115,6 +115,11 @@ term. With no passed or failed run there is no flaky rate: the dashboard shows a
 A file's or a spec directory's flaky rate divides its tests' runs the same way: the Trend tab of a test, the file
 headers of the project's Tests tab and the Spec health widget all follow this rule.
 
+Other numbers about flakiness divide differently and are not a flaky rate: the [flakiness score](#flakiness-score), a
+run's share of flaky tests (the `flakiness.spike` notification), and Flake Lab's **flaky N%**, shown beside a flaky
+test in an editor and on Home. That one is the share of the test's recent runs (those the flaky ranking reads, a
+skipped run included) in which it failed or passed on a retry.
+
 ### Baseline (last green run)
 
 Several views answer "what changed?" — the Changes tab and run insights, the regression signals on a
