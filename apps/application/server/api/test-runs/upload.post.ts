@@ -23,7 +23,7 @@ import { resolveRunBranch } from '../../utils/run-branch';
 import { runCommit, runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../utils/run-events';
 import { runFinalizeSideEffects } from '../../utils/run-finalize-side-effects';
-import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
+import { cancelInstanceRuns, cancelReplacedRun } from '../../utils/cancel-instance-runs';
 import { deliverOnce, readDeliveryKey, storeOrDiscardRun } from '../../utils/run-deliveries';
 import {
   addBatchShard,
@@ -63,7 +63,7 @@ defineRouteMeta({
               testRun: {
                 type: 'string',
                 description:
-                  'JSON-encoded test run data. Its `deliveryKey`, as on the submit endpoint, makes a repeated delivery answer with the run its first delivery stored.',
+                  'JSON-encoded test run data. Its `deliveryKey`, as on the submit endpoint, makes a repeated delivery answer with the run its first delivery stored, and its `replacesRun`, as there, cancels the run the reporter streamed before it fell back to this upload.',
               },
               testCases: { type: 'string', description: 'JSON-encoded test cases array' },
             },
@@ -565,6 +565,8 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
       await addBatchShard(db, testRun.id, batchShardTally(testRunData, testCasesData));
       if (!(await finalizeShardedRun(db, testRun.id, 'run-submitted'))) await publishShardProgress(db, testRun.id);
     } else if (!attachingToExistingRun) {
+      // Once stored, the run takes the place of the run its reporter streamed, which it names, finalizing too.
+      if (!(shardTotal && shardTotal > 1)) await cancelReplacedRun(db, project.id, testRunData.replacesRun);
       // A new run is announced once its executions and files are stored, as `/submit` announces one.
       runEventBus.publishGlobal({
         type: 'run-submitted',

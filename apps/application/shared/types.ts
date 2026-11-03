@@ -193,6 +193,11 @@ export interface TestRunSubmitPayload {
    * repeating a key the project already took answers with the run it went to and stores nothing.
    */
   deliveryKey?: string;
+  /**
+   * The run the reporter streamed before it fell back to this batch delivery, with that run's stream token: the
+   * delivery cancels it while it has not settled, a `finalizing` one too (`cancelReplacedRun`).
+   */
+  replacesRun?: { runId: number; streamToken: string };
 }
 
 // ── Streaming event payload ───────────────────────────────────────────────────

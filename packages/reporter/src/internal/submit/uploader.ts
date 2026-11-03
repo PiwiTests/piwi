@@ -65,6 +65,11 @@ export interface RunPayload {
    * stores a delivery it already took once: a slow upload the reporter gave up on, then sent again.
    */
   deliveryKey?: string;
+  /**
+   * The run this reporter streamed before it fell back to the batch delivery, with its stream token: the dashboard
+   * cancels it while it has not settled. Not for a shard, whose run the other shards share.
+   */
+  replacesRun?: { runId: number; streamToken: string };
 }
 
 /** Options controlling which reports to upload */

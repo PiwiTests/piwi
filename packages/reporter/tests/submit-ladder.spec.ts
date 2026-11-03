@@ -175,6 +175,8 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     expect(submitBody.testCases.length).toBe(1);
     expect('attachments' in submitBody.testCases[0]).toBe(false);
     expect('_filesUploaded' in submitBody.testCases[0]).toBe(false);
+    // No stream ran, so the batch replaces no run.
+    expect('replacesRun' in submitBody).toBe(false);
   });
 
   it('writes the CI output file with the submitted run identity', async () => {
@@ -1189,10 +1191,14 @@ describe('RunSubmitter local copies', () => {
     expect(fs.existsSync(recoveryFilePath(server.url, projectName))).toBe(false);
   });
 
-  it('falls back to the batch submit once every try at /finish failed', async () => {
+  it('falls back to the batch submit once every try at /finish failed, naming the run it streamed', async () => {
+    let submitBody: any;
     server = await startServer((req, res) => {
       if (req.url === '/api/test-runs/1/finish') return textRes(res, 503, 'unavailable');
-      if (req.url === '/api/test-runs/submit') return jsonRes(res, 200, { runId: 2 });
+      if (req.url === '/api/test-runs/submit') {
+        submitBody = JSON.parse(req.body);
+        return jsonRes(res, 200, { runId: 2 });
+      }
       textRes(res, 404, 'nope');
     });
     const sm = streamSession();
@@ -1205,6 +1211,25 @@ describe('RunSubmitter local copies', () => {
       '/api/test-runs/submit',
     ]);
     expect(submitted?.runId).toBe(2);
+    // The dashboard may hold the streamed run for its reports: the batch, proven by the run's token, replaces it.
+    expect(submitBody.replacesRun).toEqual({ runId: 1, streamToken: 'tok' });
+  });
+
+  it("a shard's batch names no run it replaces: the other shards share the run it streamed", async () => {
+    let submitBody: any;
+    server = await startServer((req, res) => {
+      if (req.url === '/api/test-runs/1/finish') return textRes(res, 404, 'run not found');
+      if (req.url === '/api/test-runs/submit') {
+        submitBody = JSON.parse(req.body);
+        return jsonRes(res, 200, { runId: 2 });
+      }
+      textRes(res, 404, 'nope');
+    });
+    const run = { ...collectedRun(server.url), shardInfo: { current: 1, total: 2 } };
+    await submitter(server.url, streamSession()).submit(run, { status: 'passed' } as any);
+
+    expect(submitBody.shardTotal).toBe(2);
+    expect('replacesRun' in submitBody).toBe(false);
   });
 
   it("sends the suite's setup steps with the batch submit a stream fell back to", async () => {

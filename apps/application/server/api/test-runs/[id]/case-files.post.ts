@@ -24,7 +24,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Upload trace and attachment files for a test case',
     description:
-      'Upload trace files and attachments for a specific test case during an active streaming run, or for a run uploaded in parts while it is finalizing (`/api/test-runs/upload/results`). Authenticated by the run stream token. Supports trace deduplication via SHA-256 hashing and is idempotent on retry.',
+      'Upload trace files and attachments for a specific test case during an active streaming run, or for a run held finalizing: one uploaded in parts (`/api/test-runs/upload/results`), or a streamed run whose `/finish` waits for its reports. Authenticated by the run stream token. Supports trace deduplication via SHA-256 hashing and is idempotent on retry.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     requestBody: {
       content: {
@@ -65,9 +65,9 @@ defineRouteMeta({
  * The reporter calls this as soon as a test finishes (after flushing the
  * matching `complete` event) so traces and attachments are viewable on the
  * test case page while the run is still going. Authenticated by the run's
- * stream token, like the events endpoint. A run uploaded in parts
- * (`upload/results`) takes each test's files here too, while it is held
- * `finalizing` with its token.
+ * stream token, like the events endpoint. A run held `finalizing` with its
+ * token takes each test's files here too: one uploaded in parts
+ * (`upload/results`), or a streamed run whose `/finish` waits for its reports.
  *
  * Multipart fields:
  *  - streamToken   — run stream token, sent before any file part
@@ -124,9 +124,8 @@ type CaseFilesRun = typeof testRuns.$inferSelect;
 /**
  * The run a case-files upload targets, once its stream token is checked: the
  * run's own token or, in a sharded run where every shard uploads its own case
- * files, one of its shard tokens. A run uploaded in parts takes its files with
- * its own token while it is finalizing; a streamed run's `/finish` drops its
- * token, so a finalizing streamed run takes none.
+ * files, one of its shard tokens. A run held `finalizing` takes its files with
+ * its own token until it settles (`settleFinalizingRun` drops the token).
  */
 async function authorizeCaseFilesRun(db: DbClient, id: number, streamToken: string | undefined): Promise<CaseFilesRun> {
   if (!streamToken) {

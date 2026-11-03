@@ -3,7 +3,7 @@ import { and, eq, isNotNull } from 'drizzle-orm';
 import { testRuns } from '../database/schema';
 import type { DbClient } from '../database';
 import { apiError } from './api-error';
-import { cancelInstanceRuns } from './cancel-instance-runs';
+import { cancelInstanceRuns, cancelReplacedRun } from './cancel-instance-runs';
 import { withPendingStatus } from './finalizing-runs';
 import { persistRunCases } from './persist-run-cases';
 import { mapWireCaseToRunCase } from './map-wire-case';
@@ -24,7 +24,8 @@ import type { TestRunSubmitPayload } from '#shared/types';
 /**
  * Create the run of a batch delivery that joins no sharded run (`/submit`, `/upload/results`): it replaces the
  * instance's run still in flight (`cancelInstanceRuns`), and its executions are stored, then its flaky count and
- * duration statistics. When the executions fail to store, the run is removed and the error goes on
+ * duration statistics. Once they are, it takes the place of the run its reporter streamed, which it names
+ * (`cancelReplacedRun`). When the executions fail to store, the run is removed and the error goes on
  * (`storeOrDiscardRun`).
  *
  * `awaitingFiles` holds the run `finalizing` until its files are in: the status the delivery sent waits in its
@@ -118,6 +119,7 @@ export async function createBatchRun(
     }
   }
 
+  if (!isSharded) await cancelReplacedRun(db, projectId, body.replacesRun);
   return testRun;
 }
 

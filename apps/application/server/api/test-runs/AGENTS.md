@@ -51,7 +51,9 @@ How a run is identified:
   because it narrows the tests itself and passes Playwright no `--shard`. The reporter reads both through
   `resolveShardInfo` (`packages/reporter/src/internal/support/shard-info.ts`) for `/setup`, `/start` and `/finish`. A
   run with no shard identity starts non-sharded and cancels every run of its instance id still initializing or
-  running, never a finalizing one, which holds all its results (`tests/unit/finalizing-runs.test.ts`).
+  running, never a finalizing one, which holds all its results (`tests/unit/finalizing-runs.test.ts`). A batch
+  delivery also cancels the run its reporter streamed, a finalizing one too, when it names it with that run's stream
+  token (`replacesRun`, `cancelReplacedRun`), which `/finish` leaves on a run it holds for its reports.
 
 How the server merges shards:
 
@@ -73,12 +75,14 @@ How the server merges shards:
 - **The streaming routes authenticate with the run's stream token**, not `requireAuth`: `[id]/begin` (with the setup
   token `/setup` returned), then `events`, `heartbeat`, `live-resources`, `case-files` and `finish`. `/setup` and
   `/start` authenticate the caller and hand the token out, and so does `/upload/results` for a batch run it holds
-  `finalizing` until its files are in, its repeated delivery a new one in place of the first (`renewHeldRunToken`). A token is kept only as its digest (`streamTokenDigest`, `shardTokenDigest`):
-  in `test_runs.stream_token`, in the in-memory run state (`runEventBus`, `server/utils/run-events.ts`) and, for a
-  shard, in the run's `metadata.shardTokens`, which project members can read.
-- **A run takes files only with a token of its own**: `case-files` takes those of a running run, or of a run
-  `/upload/results` holds `finalizing`, with its stream token, never with an API key, and `settleFinalizingRun`
-  drops the token (`tests/unit/batch-run-in-parts.test.ts`). An upload with `runId` attaches reports alone.
+  `finalizing` until its files are in, its repeated delivery a new one in place of the first (`renewHeldRunToken`). A
+  token is kept only as its digest (`streamTokenDigest`, `shardTokenDigest`): in `test_runs.stream_token`, in the
+  in-memory run state (`runEventBus`, `server/utils/run-events.ts`) and, for a shard, in the run's
+  `metadata.shardTokens`, which project members can read.
+- **A run takes files only with a token of its own**: `case-files` takes those of a running run, or of a run held
+  `finalizing` (by `/upload/results`, or by a `/finish` whose reports are on their way), with its stream token, never
+  with an API key, and `settleFinalizingRun` drops the token (`tests/unit/batch-run-in-parts.test.ts`). An upload
+  with `runId` attaches reports alone.
 - **A new streaming route authenticates with `authorizeStreamToken`** (`server/utils/stream-auth.ts`). It accepts the
   run's own token or any of its shard tokens, from the cache or the database (`validateAndReviveRun` with its
   `isShardToken` callback, which also revives an interrupted run). Never compare a token against the stored set

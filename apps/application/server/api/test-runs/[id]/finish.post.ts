@@ -180,12 +180,13 @@ export default eventHandler(async (event) => {
 
   if (hasPendingUploads) {
     // The reported status waits in the metadata, where it survives a restart,
-    // until the report upload or the stale-run sweep settles the run.
+    // until the report upload or the stale-run sweep settles the run. The run
+    // keeps its stream token until then, which a batch delivery its reporter
+    // falls back to names it with (`cancelReplacedRun`).
     const pendingMetadata = withPendingStatus(body.metadata ? reportedMetadata : testRun.metadata, status);
     const updateData: Record<string, unknown> = {
       status: 'finalizing',
       duration,
-      streamToken: null,
       // The stale-run sweep measures the wait for the report upload from here.
       updatedAt: new Date(),
       ...(body.totalTests !== undefined && { totalTests: body.totalTests }),

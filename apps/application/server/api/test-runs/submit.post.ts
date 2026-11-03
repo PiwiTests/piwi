@@ -50,6 +50,12 @@ defineRouteMeta({
                   'The errors Playwright reported outside any test (a global setup that threw, a spec that did not load, a worker fixture whose teardown threw), each `{ message, stack?, location? }`: the first 20 are kept, each message and stack cut to 4,000 characters, with what may be a secret hidden.',
                 items: { type: 'object' },
               },
+              replacesRun: {
+                type: 'object',
+                description:
+                  'The run the reporter streamed before it fell back to this delivery, `{ runId, streamToken }` with that run’s stream token. A run that is not sharded is cancelled while it has not settled, a `finalizing` run too, when the token is its own; otherwise the field is ignored, as it is for a shard.',
+                properties: { runId: { type: 'integer' }, streamToken: { type: 'string' } },
+              },
             },
             required: ['projectName', 'status', 'startTime'],
           },

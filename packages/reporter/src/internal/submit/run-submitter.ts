@@ -325,7 +325,18 @@ export class RunSubmitter {
       setupSteps: run.setupSteps,
       runErrors: run.runErrors,
       deliveryKey: this.deliveryKey,
+      replacesRun: this.streamedRun(run),
     };
+  }
+
+  /**
+   * The run this reporter streamed, which a batch delivery of the run replaces: its id and stream token. Undefined
+   * without one, and for a shard, whose run the other shards share.
+   */
+  private streamedRun(run: CollectedRun): RunPayload['replacesRun'] {
+    const sm = this.streamManager;
+    if (sm?.runId == null || !sm.token || (run.shardInfo && run.shardInfo.total > 1)) return undefined;
+    return { runId: sm.runId, streamToken: sm.token };
   }
 
   private async tryFinishStreaming(

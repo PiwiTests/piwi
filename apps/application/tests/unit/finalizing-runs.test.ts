@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
-import { eq } from 'drizzle-orm';
+import { eq, ne } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { apiError } from '../../server/utils/api-error';
 import { durationStats } from '#shared/utils/stats';
@@ -45,6 +45,7 @@ const uploadRoute = (await import('../../server/api/test-runs/upload.post')).def
 const upload = ({ parts }: { parts: MultipartPart[] }) => uploadRoute(multipartEvent(parts));
 const start = (await import('../../server/api/test-runs/start.post')).default as unknown as Handler;
 const submit = (await import('../../server/api/test-runs/submit.post')).default as unknown as Handler;
+const uploadResults = (await import('../../server/api/test-runs/upload/results.post')).default as unknown as Handler;
 const { settleFinalizingRun } = await import('../../server/utils/finalizing-runs');
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
@@ -188,5 +189,71 @@ describe('a finalizing run when another run of its instance starts', () => {
 
     await reportUpload();
     expect((await runRow()).status).toBe('passed');
+  });
+});
+
+describe('the batch upload a streamed run fell back to after its /finish', () => {
+  /** The run's results as a batch delivery sends them, naming the run it streamed with `replacesRun`. */
+  const batchRun = (replacesRun: unknown) => ({
+    projectName: 'finalizing-project',
+    instanceId: 'ci-42',
+    status: 'passed',
+    startTime: '2026-09-30T08:55:00Z',
+    totalTests: 1,
+    passedTests: 1,
+    testCases: [],
+    deliveryKey: 'delivery-key-of-the-batch-0001',
+    ...(replacesRun === undefined ? {} : { replacesRun }),
+  });
+
+  const deliveries: Array<[string, (body: Record<string, unknown>) => Promise<unknown>]> = [
+    ['/submit', (body) => submit({ body })],
+    ['/upload/results', (body) => uploadResults({ body })],
+    [
+      '/upload',
+      ({ testCases, ...testRun }) =>
+        upload({
+          parts: [field('projectName', 'finalizing-project'), field('testRun', testRun), field('testCases', testCases)],
+        }),
+    ],
+  ];
+
+  const otherRuns = () => db.select().from(schema.testRuns).where(ne(schema.testRuns.id, 1));
+
+  beforeEach(async () => {
+    await db.update(schema.testRuns).set({ instanceId: 'ci-42' }).where(eq(schema.testRuns.id, 1));
+  });
+
+  test.each(deliveries)(
+    'a batch through %s that names the run with its stream token replaces it, finalizing as it is',
+    async (_route, deliver) => {
+      // The dashboard holds the run for its reports, but the answer to its /finish never reaches the reporter.
+      await finishWithPendingUploads();
+
+      await deliver(batchRun({ runId: 1, streamToken: 'stream-token' }));
+
+      const replaced = await runRow();
+      expect(replaced.status).toBe('cancelled');
+      expect(replaced.streamToken).toBeNull();
+      expect(await otherRuns()).toHaveLength(1);
+      expect(runFinalizeSideEffects.mock.calls.map((call) => call[1])).not.toContain(1);
+    },
+  );
+
+  test.each(deliveries)('a batch through %s with another token leaves the run to settle', async (_route, deliver) => {
+    await finishWithPendingUploads();
+
+    await deliver(batchRun({ runId: 1, streamToken: 'another-token' }));
+    await deliver(batchRun(undefined));
+
+    expect((await runRow()).status).toBe('finalizing');
+  });
+
+  test('a batch never replaces a sharded run, which its other shards share', async () => {
+    await db.update(schema.testRuns).set({ shardTotal: 2, shardsFinished: 0 }).where(eq(schema.testRuns.id, 1));
+
+    await submit({ body: { ...batchRun({ runId: 1, streamToken: 'stream-token' }), instanceId: 'ci-43' } });
+
+    expect((await runRow()).status).toBe('running');
   });
 });

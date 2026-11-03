@@ -245,6 +245,7 @@ export function serializeRun(payload: RunPayload, opts: SerializeRunOptions): Re
   if (payload.setupSteps && payload.setupSteps.length > 0) body.setupSteps = payload.setupSteps;
   if (payload.runErrors && payload.runErrors.length > 0) body.runErrors = payload.runErrors;
   if (payload.deliveryKey) body.deliveryKey = payload.deliveryKey;
+  if (payload.replacesRun) body.replacesRun = payload.replacesRun;
   if (opts.includeTestCases) {
     body.testCases = payload.testCases.map((tc) => toWireTestCase(tc));
   }
