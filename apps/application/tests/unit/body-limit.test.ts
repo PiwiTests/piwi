@@ -1,5 +1,10 @@
 import { describe, test, expect, afterEach } from 'vitest';
-import { bodyLimitError, MAX_REQUEST_BODY_BYTES, readStreamWithin } from '../../server/utils/body-limit';
+import {
+  bodyLimitError,
+  MAX_REQUEST_BODY_BYTES,
+  MAX_SIGN_IN_BODY_BYTES,
+  readStreamWithin,
+} from '../../server/utils/body-limit';
 import { DEFAULT_MAX_SUBMIT_BYTES } from '#shared/upload-limits';
 
 const json = { method: 'POST', path: '/api/auth/login', contentType: 'application/json' };
@@ -36,6 +41,33 @@ describe('bodyLimitError', () => {
       bodyLimitError({ ...multipart, path: '/api/test-runs/12/case-files/extra', transferEncoding: 'chunked' })
         ?.statusCode,
     ).toBe(411);
+  });
+});
+
+describe('the routes that read a body before anyone is signed in', () => {
+  const paths = [
+    '/api/auth/login',
+    '/api/auth/setup',
+    '/api/auth/forgot-password',
+    '/api/auth/reset-password',
+    '/oauth/register',
+    '/oauth/token',
+    '/oauth/revoke',
+  ];
+
+  test('take up to 64 KiB, and a 413 past that', () => {
+    expect(MAX_SIGN_IN_BODY_BYTES).toBe(64 * 1024);
+    for (const path of paths) {
+      for (const sent of [path, `${path}/`, `${path}?next=/`]) {
+        expect(bodyLimitError({ ...json, path: sent, contentLength: String(64 * 1024) })).toBeNull();
+        expect(bodyLimitError({ ...json, path: sent, contentLength: String(64 * 1024 + 1) })).toEqual({
+          statusCode: 413,
+          message: 'Request body over 64 KB',
+        });
+      }
+      expect(bodyLimitError({ ...json, path, transferEncoding: 'chunked' })?.statusCode).toBe(411);
+    }
+    expect(bodyLimitError({ ...json, path: '/api/auth/change-password', contentLength: '100000' })).toBeNull();
   });
 });
 
