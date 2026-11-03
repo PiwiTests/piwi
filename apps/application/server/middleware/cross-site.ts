@@ -12,7 +12,6 @@ export default defineEventHandler((event) => {
     secFetchSite: getRequestHeader(event, 'sec-fetch-site'),
     origin: getRequestHeader(event, 'origin'),
     host: getRequestHeader(event, 'host'),
-    protocol: getRequestProtocol(event),
     siteUrl: configuredSiteUrl(event),
   });
   if (crossSite) throw apiError({ statusCode: 403, message: 'Cross-site requests are not accepted' });
