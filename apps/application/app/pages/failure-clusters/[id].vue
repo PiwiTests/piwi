@@ -32,8 +32,6 @@ import { buildNextStepChange } from '~/utils/next-step-change';
 
 const route = useRoute();
 const clusterId = parseInt(String(route.params.id));
-// Share links need the server; the public demo has no share-link routes.
-const isDemoMode = Boolean(useRuntimeConfig().public.demoMode);
 
 // What the viewer may do on the cluster's project, matching each action's route.
 const { can } = useAuth();
@@ -374,6 +372,7 @@ const {
   decide: decideClusterProjectCap,
 } = await useProjectCapabilities(cluster.value?.project?.id ?? 0);
 const { decide: decideClusterInstanceCap } = await useInstanceCapabilities();
+const offersShareLinks = await useShareLinksOffered();
 
 async function declineClusterFixtures(level: 'project' | 'instance') {
   if (level === 'project') await decideClusterProjectCap('fixtures', 'declined');
@@ -668,7 +667,7 @@ const breadcrumbItems = computed(() => [
         </template>
         <template #right>
           <ShareLinksModal
-            v-if="cluster && !isDemoMode"
+            v-if="cluster && offersShareLinks"
             :endpoint="`/api/failure-clusters/${cluster.id}/share-links`"
             :project-id="cluster.project?.id ?? null"
           />

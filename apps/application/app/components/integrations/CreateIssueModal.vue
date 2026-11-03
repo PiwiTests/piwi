@@ -197,6 +197,7 @@ const { can } = useAuth();
 const canBind = computed(() => (draft.value ? can('project:manage', draft.value.projectId) : false));
 /** A share link is public: only someone who may create one can put it in the ticket. */
 const canShareLink = computed(() => draft.value != null && can('share:create', draft.value.projectId));
+const { offered: offersShareLinks, load: loadShareLinks } = useShareLinksOfferedOnOpen();
 
 const canCreate = computed(
   () =>
@@ -343,6 +344,7 @@ watch(open, (isOpen) => {
     issueTypes.value = [];
     showAllCreate.value = false;
     void loadDraft();
+    void loadShareLinks();
   }
 });
 
@@ -611,6 +613,7 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
               <USwitch v-model="include.includeDiagnosis" label="Diagnosis" @update:model-value="refreshPreview" />
               <USwitch v-model="include.includePatch" label="Patch" @update:model-value="refreshPreview" />
               <USwitch
+                v-if="offersShareLinks"
                 v-model="include.includeShareLink"
                 label="Share link"
                 :disabled="!draft.linksBack || !canShareLink"

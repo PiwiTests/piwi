@@ -222,6 +222,7 @@ const {
   decide: decideProjectCap,
 } = await useProjectCapabilities(testCase.value?.testRun?.project?.id ?? 0);
 const { decide: decideInstanceCap } = await useInstanceCapabilities();
+const offersShareLinks = await useShareLinksOffered();
 
 // The evidence footer's decline controls: both write a `declined` decision, one
 // per level, and the resolver hides the sources everywhere on the next read.
@@ -796,7 +797,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
               <span class="hidden xl:inline">Test history</span>
             </NuxtLink>
             <ShareLinksModal
-              v-if="testCase && !isDemoMode"
+              v-if="testCase && offersShareLinks"
               :endpoint="`/api/test-run-cases/${testCase.id}/share-links`"
               :project-id="executionProjectId"
             />

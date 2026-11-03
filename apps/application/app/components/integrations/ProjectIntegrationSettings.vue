@@ -28,6 +28,7 @@ import type { TrackerSummary, TrackerProjectOption, TrackerIssueTypeOption } fro
 
 const props = defineProps<{ projectId: number }>();
 const toast = useToast();
+const { offered: offersShareLinks, load: loadShareLinks } = useShareLinksOfferedOnOpen();
 
 interface RouteForm {
   owner: string;
@@ -210,6 +211,7 @@ async function load() {
     const [binding, status] = await Promise.all([
       $fetch<ResolvedProjectIntegration>(`/api/projects/${props.projectId}/integrations`),
       $fetch<{ trackers: TrackerSummary[] }>(`/api/integrations/status`).catch(() => ({ trackers: [] })),
+      loadShareLinks(),
     ]);
     fromBinding(binding);
     connections.value = status.trackers ?? [];
@@ -357,7 +359,7 @@ const requiredFields = computed(() => requiredFieldsToAsk(screenFields.value));
           <div class="grid gap-2 sm:grid-cols-2">
             <USwitch v-model="form.include.includeDiagnosis" label="Diagnosis" />
             <USwitch v-model="form.include.includePatch" label="Suggested patch" />
-            <USwitch v-model="form.include.includeShareLink" label="Shareable report link" />
+            <USwitch v-if="offersShareLinks" v-model="form.include.includeShareLink" label="Shareable report link" />
           </div>
         </div>
 
