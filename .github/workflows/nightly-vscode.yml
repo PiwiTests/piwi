@@ -22,8 +22,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # The headless shell runs paused-page.spec.mjs, which opens the paused page in Chromium rather than in VS Code.
       - name: Set up the workspace
         uses: ./.github/actions/setup-workspace
+        with:
+          playwright: shell
 
       # Keyed by the file that pins the version: moving it downloads the new one.
       - name: Cache VS Code
