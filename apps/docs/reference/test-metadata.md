@@ -280,6 +280,20 @@ Each `didnotrun` case also carries **`didNotRunReason`**, so the dashboard can s
 
 The run-level counter `didNotRunTests` aggregates these, and the dashboard renders them as a distinct "Didn't run" segment/badge separate from skipped.
 
+### Test errors
+
+The reporter sends a failed test's errors as one text, with the call log Playwright writes. What may be a secret in it
+is written `<hidden>`:
+
+- the text a fill or a typing typed, and the value of a credential header a request's log writes;
+- the values an assertion quotes of a password field, or of a field whose locator names a secret (`Mot de passe`);
+- a credential's shape wherever it stands, colored or not: a JWT, a bearer token, a service's key such as `sk_live_…`,
+  `ghp_…` or `AKIA…`, a key or a token Piwi issues such as `pd_…`.
+
+Each step's error, and the error line of a hook or a fixture that failed, are hidden the same way. The dashboard hides
+them again as it stores a result, whatever sent it. An error that holds no secret is kept as it is, so it joins the
+[failure cluster](/features/failure-clusters) it did.
+
 ### Errors outside the tests
 
 The reporter keeps the errors Playwright reports beside the tests (its `onError`), each with its message, the frames of
@@ -292,7 +306,7 @@ its stack and the place it was thrown, named relative to the Playwright config's
 - the failure budget (`maxFailures`) that stopped the run.
 
 The first 20 go with the run's end, as its `runErrors`, each message and stack cut to 4,000 characters, with what may
-be a secret hidden as in a test's error: the text a fill typed, a credential in a URL, a cookie or a JSON field, a
+be a secret hidden as in a [test's error](#test-errors), and also a credential in a URL, a cookie or a JSON field, and a
 value shaped like a token. A sharded run adds each shard's to the others'. The run page shows them under its header,
 and the MCP `get_run` tool returns them as `runErrors`. A [blob report you import](/guide/importing-runs) keeps them
 the same way.

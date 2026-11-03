@@ -97,8 +97,8 @@ Some data is skipped at the source, so it never exists to leak:
   selection name elements, never values or selected text. A URL fragment's credentials are masked
   (`#access_token=[masked]`).
 - **Sensitive headers.** `Authorization`, `Cookie` and friends are masked server-side in Piwi's trace
-  network view, and token-shaped strings in URLs and bodies are masked too. The trace file is stored
-  as uploaded, so the trace viewer and a downloaded trace still show them.
+  network view, and token-shaped strings in URLs, bodies and [test errors](/reference/test-metadata#test-errors) are
+  masked too. The trace file is stored as uploaded, so the trace viewer and a downloaded trace still show them.
 - **Backend logs, in production.** The [backend-log integrations](./backend-logs) emit their header only
   in development and test environments by default.
 
