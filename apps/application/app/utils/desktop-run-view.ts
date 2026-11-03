@@ -1,6 +1,7 @@
 /**
  * The desktop app window's view of the Playwright runs its shell starts, the pure half: which run of the Local runs
- * tray a hub session is (`desktopRunRef`, `desktopRunOf`), what a worker says and which controls it takes, where a
+ * tray a hub session is (`desktopRunRef`, `desktopRunOf`), which worker runs a running row of a run's page
+ * (`desktopRowWorker`), what a worker says and which controls it takes, where a
  * stop stands, and what a code made at a stop or a locator picked reads as, to copy. The hub's shapes are
  * `@piwitests/core/run-hub`'s; the stop's place and error, a test's name and what a stop takes come from the Runs
  * window's own pure half (`apps/extension/src/shared/runs.ts`), which both surfaces share, as they share its live
@@ -10,6 +11,7 @@ import { LIVE_SHARE_MISSING } from '@piwitests/core/live-view';
 import type { HubAction, HubCodeAction, HubLive, HubSession, HubStop, HubWorker } from '@piwitests/core/run-hub';
 import type { StopCode } from '@piwitests/editor/run-host';
 import { UNATTENDED_RUN_SUFFIX, isUnattendedDesktopRun, type DesktopRunPick } from '#shared/desktop-runs';
+import { parseLocation } from '#shared/parse-location';
 import type { LocalRunKind } from '~/composables/useDesktopLocalRuns';
 import { runFile, stopError, stopIntents, stopPlace, testName } from '../../../extension/src/shared/runs';
 
@@ -110,6 +112,45 @@ export function desktopWorkerState(worker: HubWorker, root: string | null): stri
   if (worker.pausing) return 'Pausing before its next call…';
   if (worker.state === 'running') return 'Running';
   return 'Between tests';
+}
+
+/** A running row of a run's page, as far as finding the worker that runs its test goes. */
+interface DesktopRunRow {
+  status: string;
+  /** The test's own title. */
+  title: string;
+  /** `file:line:column` of its `test(…)` call, the file relative to its Playwright config's folder. */
+  location?: string | null;
+  /** Playwright's worker index. */
+  workerIndex?: number | null;
+}
+
+/** A worker of a live run, with its run. */
+export interface DesktopRowWorker {
+  session: HubSession;
+  worker: HubWorker;
+}
+
+/**
+ * The worker that runs a running row's test now, among the live runs that report to the row's run: the one the row
+ * names (Playwright's worker index), whose test is the row's by its own title, its spec and the line of its
+ * `test(…)` call. Null for a row that does not run, or whose worker runs another test now (its next one, before the
+ * row's end came).
+ */
+export function desktopRowWorker(sessions: readonly HubSession[], row: DesktopRunRow): DesktopRowWorker | null {
+  if (row.status !== 'running' || row.workerIndex == null || !row.location) return null;
+  const { filePath, line } = parseLocation(row.location);
+  if (line === null) return null;
+  for (const session of sessions) {
+    for (const worker of session.workers) {
+      const test = worker.test;
+      if (worker.worker !== row.workerIndex || !test) continue;
+      if (test.title.at(-1) !== row.title || test.line + 1 !== line) continue;
+      const file = runFile(test.uri, null);
+      if (file === filePath || file.endsWith(`/${filePath}`)) return { session, worker };
+    }
+  }
+  return null;
 }
 
 /** A worker's test, its `describe` blocks' titles then its own; null between tests. */

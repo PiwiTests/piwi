@@ -102,6 +102,8 @@ const liveNote = computed(() =>
     workers: Object.keys(liveWorkers.value).length,
   }),
 );
+// The live runs the desktop app started that report to this run: their running rows offer Pause and watch.
+const desktopSessions = useDesktopRunSessions(Number(runId));
 // The worker someone opened Watch on, and the execution of the row they opened it from: the view is that test's.
 const watching = ref<{ worker: number; shard: number | null; test: string; executionId: number } | null>(null);
 const watchOpen = ref(false);
@@ -1061,6 +1063,7 @@ const moreMenuItems = computed(() => {
             :live-resources="liveResources"
             :live-workers="liveWorkers"
             :live-note="liveNote"
+            :desktop-sessions="isLive ? desktopSessions : null"
             :cluster-meta="clusterMeta"
             :quarantined-case-ids="quarantinedCaseIds"
             :project-key="testRun?.projectId"

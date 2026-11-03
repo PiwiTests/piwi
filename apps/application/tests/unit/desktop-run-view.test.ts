@@ -12,6 +12,7 @@ import {
   desktopLiveText,
   desktopPickItem,
   desktopRunName,
+  desktopRowWorker,
   desktopRunOf,
   desktopRunRef,
   desktopShareOffered,
@@ -167,6 +168,48 @@ describe('a worker of a desktop run', () => {
     expect(desktopCodeActions(at, at.stop!)).toEqual(['assert-region', 'mock']);
     const none = workerOf({ state: 'stopped', stop: stopOf({ intents: ['view'] }) });
     expect(desktopCodeActions(none, none.stop!)).toEqual([]);
+  });
+});
+
+describe('the worker of a running row of the run page', () => {
+  // The row as the run's stream shows it: the test's own title, its spec relative to its config's folder and the
+  // 1-based line of its `test(…)` call, and Playwright's worker index.
+  const row = { status: 'running', title: 'pays', location: 'tests/checkout.spec.ts:3:7', workerIndex: 1 };
+  const first = workerOf();
+  const second = workerOf({
+    worker: 1,
+    parallelIndex: 1,
+    test: { ...workerOf().test!, id: 't2', title: ['checkout', 'pays'] },
+  });
+
+  test('is the worker the row names, running the row’s test', () => {
+    const session = sessionOf('desktop-7', [first, second]);
+    expect(desktopRowWorker([session], row)).toEqual({ session, worker: second });
+    // Among several runs, the one whose worker runs it.
+    const other = sessionOf('desktop-8', [workerOf({ test: { ...first.test!, title: ['cart', 'adds'] } })]);
+    expect(desktopRowWorker([other, session], row)?.session).toBe(session);
+  });
+
+  test('is none for a row that does not run, or whose worker runs another test now', () => {
+    const session = sessionOf('desktop-7', [first, second]);
+    expect(desktopRowWorker([session], { ...row, status: 'passed' })).toBeNull();
+    expect(desktopRowWorker([session], { ...row, workerIndex: null })).toBeNull();
+    expect(desktopRowWorker([session], { ...row, workerIndex: 4 })).toBeNull();
+    // The worker went on to its next test before the row's end came: another title, line or spec.
+    expect(desktopRowWorker([session], { ...row, title: 'refunds' })).toBeNull();
+    expect(desktopRowWorker([session], { ...row, location: 'tests/checkout.spec.ts:9:7' })).toBeNull();
+    expect(desktopRowWorker([session], { ...row, location: 'tests/cart.spec.ts:3:7' })).toBeNull();
+    expect(desktopRowWorker([sessionOf('desktop-7', [{ ...second, test: null, state: 'between' }])], row)).toBeNull();
+    expect(desktopRowWorker([], row)).toBeNull();
+  });
+
+  test('reads the spec of a run in any folder, a Windows one or one with spaces', () => {
+    const at = (uri: string, location = row.location) =>
+      desktopRowWorker([sessionOf('desktop-7', [{ ...second, test: { ...second.test!, uri } }])], { ...row, location });
+    expect(at('file:///C:/Users/dev/shop/tests/checkout.spec.ts')).not.toBeNull();
+    expect(at('file:///home/dev/shop/e2e/tests/checkout.spec.ts')).not.toBeNull();
+    expect(at('file:///home/dev/my%20shop/tests/pay%20now.spec.ts', 'tests/pay now.spec.ts:3:7')).not.toBeNull();
+    expect(at('file:///home/dev/shop/mytests/checkout.spec.ts')).toBeNull();
   });
 });
 
@@ -382,6 +425,28 @@ describe('the window’s stream of its runs', () => {
     expect(runs.state.roots['desktop-7']).toBe(ROOT);
     off();
     runs.want(false);
+  });
+
+  test('keeps Watch live for each worker through a new stream, until it is turned off or its run ends', async () => {
+    const runs = await hub();
+    runs.want(true);
+    const source = FakeSource.last!;
+    source.send({ type: 'hello', viewer: VIEWER });
+    source.send({ type: 'session', session: sessionOf('desktop-7', [workerOf(), workerOf({ worker: 1 })]) });
+    expect(runs.watchesLive('desktop-7', 0)).toBe(false);
+    runs.setWatchLive('desktop-7', 0, true);
+    runs.setWatchLive('desktop-7', 1, true);
+    runs.setWatchLive('desktop-7', 1, false);
+    expect([runs.watchesLive('desktop-7', 0), runs.watchesLive('desktop-7', 1)]).toEqual([true, false]);
+    // The stream opens again: the runs come again, Watch live with them.
+    source.send({ type: 'hello', viewer: VIEWER });
+    expect(runs.watchesLive('desktop-7', 0)).toBe(true);
+    source.send({ type: 'session', session: sessionOf('desktop-7', [], { ended: true }) });
+    expect(runs.watchesLive('desktop-7', 0)).toBe(false);
+    // The window stops listening: every run it showed is over, and so is their Watch live.
+    runs.setWatchLive('desktop-8', 0, true);
+    runs.want(false);
+    expect(runs.watchesLive('desktop-8', 0)).toBe(false);
   });
 
   test('passes a frame to who watches its view alone, keeping the latest one until the last one leaves', async () => {

@@ -73,8 +73,11 @@ const CODE: Record<'assert-region' | 'mock', { label: string; title: string; ico
 
 /** A command is on its way for this worker: the buttons wait for its answer. */
 const busy = ref(false);
-/** Watch live, left on: each next stop of this worker is watched too, until it is turned off. */
-const watchLive = ref(false);
+/** Watch live, kept by the window: on, each next stop of this worker is watched, until it is turned off. */
+const watchLive = computed({
+  get: () => hub.watchesLive(props.session.ref, props.worker.worker),
+  set: (on: boolean) => hub.setWatchLive(props.session.ref, props.worker.worker, on),
+});
 /** What the last command answered, or what a code made here came to, for the stop it was sent at. */
 const answer = ref<{ since: string | null; ok: boolean; text: string; locator: string | null; warnings: string[] }>();
 /** The responses the test kept, listed for Mock a request at the stop they were asked at. */

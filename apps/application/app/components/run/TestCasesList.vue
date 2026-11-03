@@ -7,6 +7,8 @@ import { liveResourcesByWorker, liveResourcesForCase, type LiveWorkerResources }
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
 import { liveWorkerKey, type LiveWorkerState } from '#shared/live-view';
 import type { LiveRowNote } from '~/utils/live-row-note';
+import type { HubSession } from '@piwitests/core/run-hub';
+import { desktopRowWorker, type DesktopRowWorker } from '~/utils/desktop-run-view';
 import { isFlakyExecution, summarizeRunCases } from '#shared/utils/test-counts';
 import { isFixmeSkip } from '#shared/utils/skip-kind';
 import { stripAnsi } from '#shared/error-parse';
@@ -47,6 +49,8 @@ const props = defineProps<{
   liveWorkers?: Record<string, LiveWorkerState> | null;
   /** What the run's running rows say where Watch would be: it is not shared live, or where its pages show. */
   liveNote?: LiveRowNote | null;
+  /** The live runs the desktop app started that report to this run: each running row of theirs offers Pause and watch. */
+  desktopSessions?: HubSession[] | null;
   clusterMeta?: RunClusterMeta | null;
   /** Stable test-case ids currently quarantined — marks the matching rows. */
   quarantinedCaseIds?: Set<number> | null;
@@ -106,6 +110,11 @@ function liveWorkerOf(tc: TestCaseResult): LiveWorkerState | null {
   const worker = key ? props.liveWorkers?.[key] : null;
   if (!key || !worker || currentExecutionOf.value.get(key)?.executionId !== tc.executionId) return null;
   return worker.paused?.test && worker.paused.test !== tc.title ? { ...worker, paused: null } : worker;
+}
+
+/** The row's worker in a run the desktop app started, while it runs the row's test. */
+function desktopWorkerOf(tc: TestCaseResult): DesktopRowWorker | null {
+  return props.desktopSessions?.length ? desktopRowWorker(props.desktopSessions, tc) : null;
 }
 
 const liveWorkerValues = computed(() => liveResourcesByWorker(props.liveResources));
@@ -1012,6 +1021,8 @@ defineExpose({ scrollToCase });
                       liveResourcesOf(item.tc) !== null,
                       liveWorkerOf(item.tc)?.paused?.call.title,
                       liveWorkerOf(item.tc) !== null,
+                      desktopWorkerOf(item.tc)?.worker.stop?.title,
+                      desktopWorkerOf(item.tc) !== null,
                       item.tc.status === 'running' ? liveNote : null,
                       showSuitePath,
                       item.tc.suitePath,
@@ -1047,6 +1058,7 @@ defineExpose({ scrollToCase });
                 :live-step="liveStep(item.tc)"
                 :live-resources="liveResourcesOf(item.tc)"
                 :live-worker="liveWorkerOf(item.tc)"
+                :desktop-worker="desktopWorkerOf(item.tc)"
                 :live-note="item.tc.status === 'running' ? liveNote : null"
                 :highlighted="highlightedCaseId === item.tc.executionId"
                 :indent="(item.depth ?? 0) * 16"
