@@ -444,6 +444,12 @@ jobs:
         working-directory: packages/reporter
         run: npm run reporter:test:integration:ai
 
+      # The capture fixtures in a real Playwright run, checked by tests/integration/verify-reporter.ts: what they
+      # attach, that capturing adds no step of its own, and what the resource ledger finds a worker left open.
+      - name: Test the capture fixtures (integration, drives a real browser)
+        working-directory: packages/reporter
+        run: npm run reporter:test:integration
+
       - name: Report coverage on the PR
         if: github.event_name == 'pull_request'
         uses: davelosert/vitest-coverage-report-action@8f86cfb56ed6d5613ea8cdc5259f207fbfd51ece # v2.13.1
