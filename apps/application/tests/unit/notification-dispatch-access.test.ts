@@ -4,8 +4,9 @@ import * as schema from '../../server/database/schema.sqlite';
 import { openTempDb, type TempDb } from './temp-db';
 
 /**
- * A delivery is queued, and a queued one sent, only while its subscriber and the owner of its personal channel can
- * still read the project its event is about.
+ * A delivery is queued, and a queued one sent, only while its subscription is active and not muted, and its
+ * subscriber and the owner of its personal channel can still read the project its event is about; a quality report,
+ * every project of its snapshot.
  */
 
 const slack = vi.hoisted(() => ({ bodies: [] as string[] }));
@@ -173,6 +174,123 @@ describe('a queued delivery', () => {
 
     expect(slack.bodies).toEqual([]);
     expect(await rowOf(id)).toMatchObject({ status: 'skipped' });
+  });
+});
+
+describe('a queued delivery whose subscription changed since', () => {
+  test('is dropped, digest or not, once the subscription is muted', async () => {
+    const digest = await subscribe('digest');
+    const realtime = await subscribe('realtime');
+    const ids = [await enqueue(digest, 1), await enqueue(digest, 2), await enqueue(realtime, 3)];
+    await db.update(schema.subscriptions).set({ mutedUntil: new Date(Date.now() + 60 * 60 * 1000) });
+
+    expect(await sweepOutbox(db as never)).toEqual({ sent: 0, failed: 0 });
+    expect(slack.bodies).toEqual([]);
+    for (const id of ids) {
+      expect(await rowOf(id)).toMatchObject({ status: 'skipped', attempts: 1, error: 'The subscription is muted' });
+    }
+  });
+
+  test('goes out once the mute has ended', async () => {
+    const id = await enqueue(await subscribe('realtime'), 1);
+    await db.update(schema.subscriptions).set({ mutedUntil: new Date(Date.now() - 1000) });
+
+    expect(await sweepOutbox(db as never)).toEqual({ sent: 1, failed: 0 });
+    expect(await rowOf(id)).toMatchObject({ status: 'sent' });
+  });
+
+  test('is dropped once the subscription is turned off', async () => {
+    const id = await enqueue(await subscribe('realtime'), 1);
+    await db.update(schema.subscriptions).set({ active: false });
+
+    expect(await sweepOutbox(db as never)).toEqual({ sent: 0, failed: 0 });
+    expect(slack.bodies).toEqual([]);
+    expect(await rowOf(id)).toMatchObject({ status: 'skipped', error: 'The subscription is no longer active' });
+  });
+});
+
+describe('a queued quality report', () => {
+  const OTHER_PROJECT = 11;
+
+  /** A webhook channel, the user's own or global, and a report of `projectIds` queued to it. */
+  async function queueReport(owner: number | null, projectIds: number[] | null): Promise<number> {
+    const [channel] = await db
+      .insert(schema.notificationChannels)
+      .values({ name: 'Hook', type: 'webhook', config: { url: 'https://hooks.example.test/piwi' }, userId: owner })
+      .returning({ id: schema.notificationChannels.id });
+    const [snapshot] = await db
+      .insert(schema.reportSnapshots)
+      .values({
+        dashboardRef: 'builtin:overview',
+        dashboardName: 'Overview',
+        projectIds,
+        periodFrom: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+        periodTo: new Date(),
+        bundle: { title: 'Weekly' },
+      })
+      .returning({ id: schema.reportSnapshots.id });
+    const [row] = await db
+      .insert(schema.notificationDeliveries)
+      .values({
+        subscriptionId: null,
+        channelId: channel!.id,
+        event: 'report.ready',
+        payload: { snapshotId: snapshot!.id, scheduleId: 1, periodEnd: '2026-11-01' },
+        dedupeKey: `report.ready:${snapshot!.id}:${channel!.id}`,
+        status: 'pending',
+        scheduledFor: new Date(Date.now() - 1000),
+      })
+      .returning({ id: schema.notificationDeliveries.id });
+    return row!.id;
+  }
+
+  beforeEach(async () => {
+    await db.insert(schema.projects).values({ id: OTHER_PROJECT, name: 'api' });
+  });
+
+  test('goes to a personal channel while its owner reads every project of the report', async () => {
+    const id = await queueReport(USER, [PROJECT]);
+
+    expect(await sweepOutbox(db as never)).toEqual({ sent: 1, failed: 0 });
+    expect(await rowOf(id)).toMatchObject({ status: 'sent' });
+  });
+
+  test('is dropped, never retried, once the owner of its personal channel cannot read a project of it', async () => {
+    const some = await queueReport(USER, [PROJECT, OTHER_PROJECT]);
+    const every = await queueReport(USER, null);
+
+    expect(await sweepOutbox(db as never)).toEqual({ sent: 0, failed: 0 });
+    expect(slack.bodies).toEqual([]);
+    for (const id of [some, every]) {
+      expect(await rowOf(id)).toMatchObject({
+        status: 'skipped',
+        attempts: 1,
+        error: 'The recipient can no longer read every project of the report',
+      });
+    }
+    await db.insert(schema.roleBindings).values({ userId: USER, projectId: OTHER_PROJECT, role: 'viewer' });
+    expect(await sweepOutbox(db as never)).toEqual({ sent: 0, failed: 0 });
+  });
+
+  test('goes to a global channel as it is', async () => {
+    const id = await queueReport(null, [PROJECT, OTHER_PROJECT]);
+
+    expect(await sweepOutbox(db as never)).toEqual({ sent: 1, failed: 0 });
+    expect(await rowOf(id)).toMatchObject({ status: 'sent' });
+  });
+
+  test('goes to a personal channel whatever its owner reads while authentication is off', async () => {
+    process.env.PIWI_AUTH_ENABLED = 'false';
+    vi.stubGlobal('useRuntimeConfig', () => ({ authEnabled: false }));
+    try {
+      const id = await queueReport(USER, [PROJECT, OTHER_PROJECT]);
+
+      expect(await sweepOutbox(db as never)).toEqual({ sent: 1, failed: 0 });
+      expect(await rowOf(id)).toMatchObject({ status: 'sent' });
+    } finally {
+      vi.unstubAllGlobals();
+      process.env.PIWI_AUTH_ENABLED = 'true';
+    }
   });
 });
 

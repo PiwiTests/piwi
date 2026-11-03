@@ -18,7 +18,8 @@ dashboard.
 2. A **subscription** links a channel to the events you care about, for every project or one, with filters and a
    delivery mode.
 3. When an event fires, Piwi matches the active subscriptions and writes each delivery to an outbox, which a scheduled
-   task sends with retries. A browser channel is delivered at once to every open dashboard tab.
+   task sends with retries. It drops a delivery whose subscription was muted or turned off since, or whose recipient
+   can no longer open its project. A browser channel is delivered at once to every open dashboard tab.
 
 ## Where it is
 
@@ -111,7 +112,7 @@ When the lookup fails (a private repository without a token, a host that exposes
 
 ### Global channels & subscriptions
 
-Admins can mark a channel **global** so it is available to all users, and mark a subscription **instance-wide** (from the project bell) so it delivers whoever is signed in: the way to route every failure to one team Slack channel. Global subscriptions must target a global channel. Other users see where a global webhook points, never its full URL. With authentication disabled, every channel and subscription is global.
+Admins can mark a channel **global** so it is available to all users, and mark a subscription **instance-wide** (from the project bell) so it delivers whoever is signed in: the way to route every failure to one team Slack channel. Global subscriptions must target a global channel. Other users see where a global webhook points, never its full URL.
 
 ## Subscriptions
 
@@ -137,8 +138,7 @@ The subscriptions REST API (see the [API docs](https://piwitests.dev/demo/docs))
   (a 0–1 rate) and `perfRegressionPct`. Lists hold up to 100 values of at most 256 characters; branch and environment
   patterns, up to 200 characters and 10 `*` each, 2,000 together.
 - **Mode**: `realtime`, sent as events happen, or `digest` with `digestAt` (`HH:MM`, UTC, from `00:00` to `23:59`),
-  held until then and sent as **one combined message** per email, Slack or Teams channel. Events of a project the
-  recipient can no longer open by then are dropped.
+  held until then and sent as **one combined message** per email, Slack or Teams channel.
 - **Mute**: `mutedUntil`, any time, without deleting the subscription.
 
 ## SMTP configuration
