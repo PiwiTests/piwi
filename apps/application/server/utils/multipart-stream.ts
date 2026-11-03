@@ -98,15 +98,20 @@ export async function streamMultipart(event: H3Event, options: StreamMultipartOp
   // The `beforeFiles` check, run at most once, on the fields read when it starts.
   let gate: Promise<void> | undefined;
   const passGate = () => (gate ??= (async () => options.beforeFiles?.(new Map(fields)))());
+  // One per file part, settled once its temp file is written and closed, or given up.
+  const fileWrites: Promise<void>[] = [];
 
   try {
     await new Promise<void>((resolve, reject) => {
       let settled = false;
+      let bb: ReturnType<typeof busboy> | undefined;
       const fail = (error: unknown) => {
         if (settled) return;
         settled = true;
         req.unpipe(bb);
         req.resume(); // drain the rest so the socket doesn't hang
+        // Ends the part being read, which ends its write: its temp file closes before `cleanup` removes it.
+        bb?.destroy();
         reject(error);
       };
       const succeed = () => {
@@ -115,7 +120,6 @@ export async function streamMultipart(event: H3Event, options: StreamMultipartOp
         resolve();
       };
 
-      let bb: ReturnType<typeof busboy>;
       try {
         bb = busboy({
           headers: req.headers,
@@ -132,7 +136,6 @@ export async function streamMultipart(event: H3Event, options: StreamMultipartOp
         return;
       }
 
-      const fileWrites: Promise<void>[] = [];
       let totalBytes = 0;
       let fieldBytes = 0;
       // Counted as the bytes arrive, so an oversized upload stops before it fills the disk.
@@ -156,6 +159,8 @@ export async function streamMultipart(event: H3Event, options: StreamMultipartOp
         // Nothing reads the part until the check passed: busboy, and the request
         // behind it, wait meanwhile.
         const write = passGate().then(async () => {
+          // The request failed while the check ran: nothing more is written.
+          if (settled) return;
           stream.on('data', (chunk: Buffer) => {
             streamedBytes += chunk.length;
             if (streamedBytes > options.maxTotalBytes) {
@@ -212,6 +217,7 @@ export async function streamMultipart(event: H3Event, options: StreamMultipartOp
       req.pipe(bb);
     });
   } catch (error) {
+    await Promise.allSettled(fileWrites);
     await cleanup();
     throw error;
   }
