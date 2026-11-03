@@ -30,8 +30,7 @@ interface HostAllowance {
  * `PIWI_ALLOWED_HOSTS` answers every host.
  */
 export function isAllowedHostWithoutAuth(host: string | null | undefined, allowance: HostAllowance = {}): boolean {
-  const entries = allowedHostEntries(allowance.allowedHosts);
-  if (entries.includes('*')) return true;
+  if (allowedHostEntries(allowance.allowedHosts).includes('*')) return true;
   if (host === undefined || host === null) return true;
   const value = host.trim().toLowerCase();
   const bracketed = BRACKETED_HOST.exec(value);
@@ -40,9 +39,19 @@ export function isAllowedHostWithoutAuth(host: string | null | undefined, allowa
   if (!name) return false;
   if (isIPv4(name) || !name.includes('.') || name.endsWith('.localhost')) return true;
   if (name === siteHostname(allowance.siteUrl)) return true;
-  return entries.some((entry) =>
-    entry.startsWith('.') ? name === entry.slice(1) || name.endsWith(entry) : name === entry,
-  );
+  return isListedHost(name, allowance.allowedHosts);
+}
+
+/**
+ * Whether `PIWI_ALLOWED_HOSTS` (`allowedHosts`) allows the host name `name`, given
+ * lowercased and without a port: a name it lists, the domain of an entry starting
+ * with a dot or a name under it, or any name for the entry `*`.
+ */
+export function isListedHost(name: string, allowedHosts: string | null | undefined): boolean {
+  return allowedHostEntries(allowedHosts).some((entry) => {
+    if (entry === '*') return true;
+    return entry.startsWith('.') ? name === entry.slice(1) || name.endsWith(entry) : name === entry;
+  });
 }
 
 /** The entries of `PIWI_ALLOWED_HOSTS`, lowercased and without a port: `*`, names and `.domains`; others are dropped. */

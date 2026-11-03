@@ -265,7 +265,7 @@ export const PIWI_ENV_VARS = {
     type: 'url',
     example: 'https://piwi.example.com',
     notes:
-      'When unset, links in emails point to http://localhost:3000 (on Fly.io, to https://<app>.fly.dev, from `FLY_APP_NAME`) and OAuth callback URLs are inferred from the request host — set it when running behind a reverse proxy. With authentication off, the dashboard answers only requests addressed to an IP address, a name with no dot (`localhost`, a container name), a name under `.localhost` or the host of this URL: set it to the address you open the dashboard at when that is a domain name, and list other names in `PIWI_ALLOWED_HOSTS` (see [Disabling authentication](/operate/authentication#disabling-authentication)).',
+      'When unset, links in emails point to http://localhost:3000 (on Fly.io, to https://<app>.fly.dev, from `FLY_APP_NAME`) and OAuth callback URLs are inferred from the request host — set it when running behind a reverse proxy. With authentication off, the dashboard answers only requests addressed to an IP address, a name with no dot (`localhost`, a container name), a name under `.localhost` or the host of this URL: set it to the address you open the dashboard at when that is a domain name, and list other names in `PIWI_ALLOWED_HOSTS` (see [Disabling authentication](/operate/authentication#disabling-authentication)). A write from a page served over plain HTTP, whose browser sends no `Sec-Fetch-Site`, is then accepted only from the address the request names, the host and port of this URL or a name `PIWI_ALLOWED_HOSTS` lists.',
   },
   PIWI_ALLOWED_HOSTS: {
     description:
@@ -277,7 +277,7 @@ export const PIWI_ENV_VARS = {
     relevantWhen: { PIWI_AUTH_ENABLED: 'false' },
     docs: 'operate/authentication#disabling-authentication',
     notes:
-      "Names are compared lowercased, without the port. The single entry `*` answers every host, which removes the protection against DNS rebinding: any web page on a domain that points at the server's address can then use the dashboard as an administrator.",
+      "Names are compared lowercased, without the port. With authentication off, a page at one of these names may also write when its browser sends no `Sec-Fetch-Site` (a page served over plain HTTP). The single entry `*` answers every host and accepts such a write from any page, which removes the protection against DNS rebinding: any web page on a domain that points at the server's address can then use the dashboard as an administrator.",
   },
   PIWI_SECRET_KEY: {
     description:

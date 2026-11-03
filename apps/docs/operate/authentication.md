@@ -154,18 +154,18 @@ set the other's address to one that receives mail.
 
 ### Changing a role
 
-Each row's **Role** column is an inline selector for the instance role: pick **Administrator** or **Member** to change it immediately, revoking the user's sessions. This is the only way to make an account an administrator, including accounts created through [OAuth](#oauth-google-github), which always start as a **Member** with no access. The **last remaining administrator cannot be demoted**, so an instance can never be left without one.
+Each row's **Role** column is an inline selector for the instance role: pick **Administrator** or **Member** to change it immediately, revoking the user's sessions. This is the only way to make an account an administrator, including accounts created through [OAuth](#oauth-google-github). The **last remaining administrator cannot be demoted**, so an instance can never be left without one.
 
 ## Disabling authentication
 
-Set `PIWI_AUTH_ENABLED=false`, or remove the variable, and restart the server. Every endpoint is then accessible
-without authentication.
+Set `PIWI_AUTH_ENABLED=false`, or remove the variable, and restart the server.
 
 With authentication off, the dashboard answers only requests whose `Host` header names an IP address, a name with no
 dot (`localhost`, a container name), a name under `.localhost`, the host of
 [`PIWI_SITE_URL`](/reference/configuration#general) or a name `PIWI_ALLOWED_HOSTS` lists (`host.docker.internal`, or
-`.example.lan` for a whole domain); any other gets a `403`. Its entry `*` turns the check off, and with it the
-protection against DNS rebinding.
+`.example.lan` for a whole domain); any other gets a `403`. Over plain HTTP, a write must also come from a page at the
+requested host, `PIWI_SITE_URL`'s or a listed one. The entry `*` of `PIWI_ALLOWED_HOSTS` turns both checks off, and
+with them the protection against DNS rebinding.
 
 ## Related
 

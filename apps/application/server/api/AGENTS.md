@@ -90,10 +90,10 @@ export default eventHandler(async (event) => {
 - **No response carries `test_runs.stream_token`**: a handler returning run rows selects `publicRunColumns()`
   (`shared/handlers/public-run.ts`).
 - **No CORS, and no cross-site writes.** `server/middleware/cross-site.ts` refuses any state-changing request whose
-  `Sec-Fetch-Site` is `cross-site` or `same-site`, or, without that header, whose `Origin` names neither the `Host`
-  header's host and port (any scheme) nor `PIWI_SITE_URL`'s origin (browser extensions excepted;
-  `tests/unit/cross-site.test.ts`), and no route sends
-  `Access-Control-Allow-Origin` except the trace archives the hosted trace viewer reads. Browser clients are
+  `Sec-Fetch-Site` is `cross-site` or `same-site` (browser extensions excepted), and, with authentication off only,
+  one without that header whose `Origin` is opaque or names neither the `Host` header's host and port nor
+  `PIWI_SITE_URL`'s (any scheme) nor a name `PIWI_ALLOWED_HOSTS` allows (`tests/unit/cross-site.test.ts`). No route
+  sends `Access-Control-Allow-Origin` except the trace archives the hosted trace viewer reads. Browser clients are
   same-origin pages or Piwi Picker's background worker; every other client (reporter, CLI, MCP, IDE clients) sends no
   browser metadata.
 
