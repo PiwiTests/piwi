@@ -506,6 +506,7 @@ export const testRunsCases = sqliteTable(
     failureClusterId: integer('failure_cluster_id').references(() => failureClusters.id), // set for failed rows with an error — groups rows sharing a fingerprint
     retries: integer('retries').default(0),
     repeatEachIndex: integer('repeat_each_index').notNull().default(0), // Playwright's repeatEachIndex: which `--repeat-each` repetition the row belongs to (0 without repeats)
+    finalAttempt: integer('final_attempt', { mode: 'boolean' }).notNull().default(true), // false once a later attempt of its run, test, project and repetition is stored (`settleFinalAttempts`): the row then decides nothing
     attempts: text('attempts', { mode: 'json' }), // Array of { retry, status, duration, startedAt } — per-attempt outcomes
     line: integer('line'), // line number in file
     column: integer('column'), // column number in file

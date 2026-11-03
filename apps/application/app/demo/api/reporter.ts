@@ -94,6 +94,7 @@ import { countFailedFromTally, sumFailedAndTimedOut } from '#shared/utils/test-c
 import { computeRunCountsFromRows } from '~~/server/utils/run-counts';
 import { syncAutoMarkersForRun } from '#shared/handlers/markers';
 import { recordRunHealth } from '#shared/handlers/run-health';
+import { settleFinalAttempts } from '#shared/handlers/test-case-aggregates';
 import { upsertDailyRollup } from '#shared/handlers/analytics/rollups';
 import { recordRunResourceFindings } from '#shared/handlers/resource-findings';
 import { joinSuitePath, SUITE_PATH_SEP } from '#shared/utils/suites';
@@ -852,6 +853,11 @@ export async function persistRunCases(
     }),
   );
   await uncountClustersOfSkippedRows(db, runCasesRows, insertedCases, countsOccurrences);
+  await settleFinalAttempts(
+    db,
+    testRunId,
+    insertedCases.map((r) => r.testCaseId),
+  );
 
   const result = insertedCases.map((r) => ({
     id: r.id,

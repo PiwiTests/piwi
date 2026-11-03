@@ -1030,6 +1030,20 @@
       "when": 1793692367894,
       "tag": "0146_backfill_cluster_announced",
       "breakpoints": true
+    },
+    {
+      "idx": 147,
+      "version": "6",
+      "when": 1793694618043,
+      "tag": "0147_slim_kronos",
+      "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "6",
+      "when": 1793694619613,
+      "tag": "0148_backfill_final_attempt",
+      "breakpoints": true
     }
   ]
 }

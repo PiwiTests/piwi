@@ -6485,6 +6485,23 @@ const ASSISTANT_MESSAGES = [
   },
 ];
 
+// ── Final attempts ─────────────────────────────────────────────────────────
+// Each execution stores whether it is the final attempt of its run, test,
+// project and repetition, as ingest keeps it (`settleFinalAttempts`): the
+// highest retry, the higher id of two with as many.
+{
+  const finalByResult = new Map();
+  for (const row of TEST_RUNS_CASES) {
+    const key = `${row.test_run_id}|${row.test_case_id}|${row.browser_name ?? ''}|${row.repeat_each_index ?? 0}`;
+    const final = finalByResult.get(key);
+    if (!final || row.retries > final.retries || (row.retries === final.retries && row.id > final.id)) {
+      finalByResult.set(key, row);
+    }
+  }
+  const finals = new Set(finalByResult.values());
+  for (const row of TEST_RUNS_CASES) row.final_attempt = finals.has(row) ? 1 : 0;
+}
+
 // ── Assemble SQL ───────────────────────────────────────────────────────────
 const lines = [
   '-- Piwi Dashboard demo seed',

@@ -9,10 +9,11 @@
  * retries, project); the flaky check reads the row alone, so a query costs no
  * lookup per execution for it.
  */
-import { aliasedTable, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
+import { aliasedTable, and, eq, inArray, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { testRunsCases } from '../../server/database/schema';
 import { failedCountSql, passedCountSql, passRateSql } from '../utils/pass-rate-sql';
 import { fixmeSkipPredicate } from '../utils/skip-kind';
+import type { DrizzleDB } from './db';
 
 type Executions = typeof testRunsCases;
 
@@ -28,20 +29,68 @@ function sameResult(other: Executions, row: Executions): SQL {
 }
 
 /**
- * Whether `row` is the final attempt of its result: no attempt of the same run,
- * test, project and repetition has more retries, nor as many and a higher id.
- * Only a retry, or an attempt without a project (the one row the unique index
- * lets repeat), can be another row's later attempt, so the lookup reads only
- * those: PostgreSQL then hashes a few rows instead of every execution.
+ * Whether the same run, test, project and repetition as `row` holds a later
+ * attempt than `row`: one with more retries, or as many and a higher id. Only
+ * a retry, or an attempt without a project (the one row the unique index lets
+ * repeat), can be another row's later attempt, so the lookup reads only those:
+ * PostgreSQL then hashes a few rows instead of every execution. The
+ * `backfill_final_attempt` migrations hold the same SQL.
  */
-export function finalAttemptSql(row: Executions = testRunsCases): SQL {
-  return sql`NOT EXISTS (
+function laterAttemptSql(row: Executions): SQL {
+  return sql`EXISTS (
       SELECT 1 FROM ${testRunsCases} AS ${sql.identifier(LATER)}
       WHERE (${later.retries} > 0 OR ${later.browserName} IS NULL)
         AND ${sameResult(later, row)}
         AND (COALESCE(${later.retries}, 0) > COALESCE(${row.retries}, 0)
           OR (COALESCE(${later.retries}, 0) = COALESCE(${row.retries}, 0) AND ${later.id} > ${row.id}))
     )`;
+}
+
+/** Whether `row` is the final attempt of its result: no later attempt of it is stored (`laterAttemptSql`). */
+export function finalAttemptSql(row: Executions = testRunsCases): SQL {
+  return sql`NOT ${laterAttemptSql(row)}`;
+}
+
+/** How many tests one statement of `settleFinalAttempts` reads. */
+const SETTLE_CHUNK = 500;
+
+/**
+ * Keep `final_attempt` right after rows of tests `testCaseIds` were added to
+ * run `testRunId`: each of their attempts with a later attempt of its result
+ * stored (`laterAttemptSql`) is no longer a final attempt. A row is stored as
+ * one, so an attempt stored after a later one is settled too. Every write of
+ * `test_runs_cases` calls it with the tests it wrote: `persistRunCases` on the
+ * server and in the demo.
+ */
+export async function settleFinalAttempts(
+  db: DrizzleDB,
+  testRunId: number,
+  testCaseIds: Iterable<number>,
+): Promise<void> {
+  const tests = [...new Set(testCaseIds)];
+  for (let i = 0; i < tests.length; i += SETTLE_CHUNK) {
+    const superseded = await db
+      .select({ id: testRunsCases.id })
+      .from(testRunsCases)
+      .where(
+        and(
+          eq(testRunsCases.testRunId, testRunId),
+          inArray(testRunsCases.testCaseId, tests.slice(i, i + SETTLE_CHUNK)),
+          sql`${testRunsCases.finalAttempt} = true`,
+          laterAttemptSql(testRunsCases),
+        ),
+      );
+    if (superseded.length === 0) continue;
+    await db
+      .update(testRunsCases)
+      .set({ finalAttempt: false })
+      .where(
+        inArray(
+          testRunsCases.id,
+          superseded.map((row) => row.id),
+        ),
+      );
+  }
 }
 
 /**

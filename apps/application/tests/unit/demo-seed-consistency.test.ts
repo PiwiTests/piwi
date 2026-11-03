@@ -590,6 +590,19 @@ describe('executions as the reporter stores them', () => {
     }
   });
 
+  test("every execution stores whether it is its result's final attempt, as ingest keeps it", () => {
+    const rows = q(`select id, final_attempt, exists (
+        select 1 from test_runs_cases later
+        where later.test_run_id = trc.test_run_id and later.test_case_id = trc.test_case_id
+          and later.repeat_each_index = trc.repeat_each_index
+          and coalesce(later.browser_name, '') = coalesce(trc.browser_name, '')
+          and (later.retries > trc.retries or (later.retries = trc.retries and later.id > trc.id))
+      ) as superseded
+      from test_runs_cases trc`);
+    expect(rows.filter((r) => r.superseded === 1).length).toBeGreaterThan(0);
+    for (const r of rows) expect(r.final_attempt, `trc ${r.id} final_attempt`).toBe(r.superseded === 1 ? 0 : 1);
+  });
+
   test('a test that did not run carries no steps, start time, worker or step events', () => {
     const rows = q(`select id, steps, started_at, worker_index, step_events, slowest_step
       from test_runs_cases where status = 'didnotrun'`);

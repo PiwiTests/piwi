@@ -41,6 +41,7 @@ import { displayTitleOf, externalIdOf, recordExternalIdDuplicates, type TestCase
 import { testSuiteCache } from './test-suite-cache';
 import { SUITE_PATH_SEP, joinSuitePath } from '#shared/utils/suites';
 import { assignFailureClusters, type PendingCluster } from '#shared/handlers/failure-cluster-ops';
+import { settleFinalAttempts } from '#shared/handlers/test-case-aggregates';
 import { upsertLocatorSnapshots } from './locator-healing';
 import { executionCreatedAt, type PersistRunCasesOptions } from './persist-options';
 import { recordIngestHealth, storedDrops, type ExecutionDrops } from './ingest-health';
@@ -674,6 +675,11 @@ export async function persistRunCases(
   }
   const insertedCases = matchInsertedRunCases(runCasesRows, returnedRows);
   await uncountClustersOfSkippedRows(db, runCasesRows, insertedCases, countsOccurrences);
+  await settleFinalAttempts(
+    db,
+    testRunId,
+    insertedCases.map((r) => r.testCaseId),
+  );
 
   const result = insertedCases.map((r) => ({
     id: r.id,
