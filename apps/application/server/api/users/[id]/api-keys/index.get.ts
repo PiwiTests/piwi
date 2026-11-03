@@ -2,6 +2,7 @@ import { getDatabase } from '../../../../database';
 import { listUserApiKeys } from '#shared/handlers/users';
 import { getRequestAccess, requireAuth } from '../../../../utils/auth';
 import { can } from '#shared/permissions';
+import { requireRouteId } from '../../../../utils/project-access';
 
 defineRouteMeta({
   openAPI: {
@@ -17,10 +18,7 @@ defineRouteMeta({
 export default eventHandler(async (event) => {
   const currentUser = await requireAuth(event);
 
-  const targetId = parseInt(getRouterParam(event, 'id') || '0');
-  if (!targetId) {
-    throw apiError({ statusCode: 400, message: 'Invalid user ID' });
-  }
+  const targetId = requireRouteId(event, 'id', 'user ID');
 
   // Non-administrators can only list their own keys
   if (!can(await getRequestAccess(event), 'users:manage') && currentUser.id !== targetId) {

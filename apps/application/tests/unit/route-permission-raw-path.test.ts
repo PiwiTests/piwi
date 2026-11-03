@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import net from 'node:net';
 import http from 'node:http';
+import { readdirSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import * as h3 from 'h3';
 import * as schema from '../../server/database/schema.sqlite';
 import { openTempDb, type TempDb } from './temp-db';
@@ -25,6 +27,10 @@ for (const name of [
   'getRouterParam',
   'readBody',
   'getQuery',
+  'getRequestURL',
+  'sendRedirect',
+  'setResponseHeader',
+  'setResponseStatus',
 ]) {
   vi.stubGlobal(name, (h3 as Record<string, unknown>)[name]);
 }
@@ -39,9 +45,22 @@ const putProjects = await load('/api/users/:id/projects', 'put', '../../server/a
 const deleteUser = await load('/api/users/:id', 'delete', '../../server/api/users/[id].delete.ts');
 const patchUser = await load('/api/users/:id', 'patch', '../../server/api/users/[id].patch.ts');
 const patchProject = await load('/api/projects/:id', 'patch', '../../server/api/projects/[id].patch.ts');
+const idRoutes = [
+  ['/api/tags/:id', 'patch', '../../server/api/tags/[id].patch.ts'],
+  ['/api/channels/:id', 'delete', '../../server/api/channels/[id].delete.ts'],
+  ['/api/subscriptions/:id', 'delete', '../../server/api/subscriptions/[id].delete.ts'],
+  ['/api/users/:id/api-keys/:keyId', 'delete', '../../server/api/users/[id]/api-keys/[keyId].delete.ts'],
+  ['/api/test-runs/:id/heartbeat', 'post', '../../server/api/test-runs/[id]/heartbeat.post.ts'],
+  ['/api/integrations/connections/:id', 'get', '../../server/api/integrations/connections/[id].get.ts'],
+  ['/api/bug-reports/:id/screenshots/:index', 'get', '../../server/api/bug-reports/[id]/screenshots/[index].get.ts'],
+  ['/test-runs/:id/locate', 'get', '../../server/routes/test-runs/[id]/locate.get.ts'],
+] as const;
+const idRouteHandlers: Array<Awaited<ReturnType<typeof load>>> = [];
+for (const [route, method, file] of idRoutes) idRouteHandlers.push(await load(route, method, file));
 const { generateApiKey } = await import('../../server/utils/auth');
 const { requireRouteId } = await import('../../server/utils/project-access');
 let viewerKey = '';
+let adminKey = '';
 
 let db: TempDb;
 let close: () => Promise<void>;
@@ -66,6 +85,9 @@ beforeAll(async () => {
   const vkey = generateApiKey();
   viewerKey = vkey.plaintext;
   await db.insert(schema.apiKeys).values({ userId: 4, name: 'ci', keyHash: vkey.hash, keyPrefix: vkey.prefix });
+  const akey = generateApiKey();
+  adminKey = akey.plaintext;
+  await db.insert(schema.apiKeys).values({ userId: 1, name: 'ci', keyHash: akey.hash, keyPrefix: akey.prefix });
 
   const app = h3.createApp();
   const router = h3.createRouter({ preemptive: true });
@@ -73,6 +95,7 @@ beforeAll(async () => {
   router.use('/api/users/:id', deleteUser, 'delete');
   router.use('/api/users/:id', patchUser, 'patch');
   router.use('/api/projects/:id', patchProject, 'patch');
+  for (const [i, [route, method]] of idRoutes.entries()) router.use(route, idRouteHandlers[i], method);
   app.use('/', router.handler);
   server = http.createServer(h3.toNodeListener(app));
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -124,9 +147,12 @@ describe('a route is held to its declared permission however the request spells 
     expect(project?.label).not.toBe('renamed');
   });
 
-  test("a route's own check still refuses a role change through a backslash path", async () => {
+  test('a role change through a backslash path is refused', async () => {
     const body = JSON.stringify({ role: 'administrator' });
-    expect((await raw('PATCH', '/api/users/2\\..\\..\\..\\x', body)).status).toBe(403);
+    // The route reads its id first, and a malformed id is refused before the route's own check.
+    expect([400, 403]).toContain((await raw('PATCH', '/api/users/2\\..\\..\\..\\x', body)).status);
+    const [user] = await db.select().from(schema.users).where(eq(schema.users.id, 2));
+    expect(user?.role).toBe(InstanceRole.MEMBER);
   });
 });
 
@@ -143,4 +169,49 @@ describe('a route id', () => {
       expect(() => idOf(id)).toThrowError(expect.objectContaining({ statusCode: 400 }));
     },
   );
+});
+
+describe('a route reads its numeric params as plain positive integers', () => {
+  test('no route reads a param with parseInt or Number', () => {
+    const loose = /\b(?:parseInt|Number)\(\s*getRouterParam\(|\+\s*getRouterParam\(/;
+    const offenders = ['server/api', 'server/routes'].flatMap((dir) => {
+      const root = fileURLToPath(new URL(`../../${dir}/`, import.meta.url));
+      return readdirSync(root, { recursive: true, encoding: 'utf8' })
+        .filter((file) => file.endsWith('.ts') && loose.test(readFileSync(root + file, 'utf8')))
+        .map((file) => `${dir}/${file}`);
+    });
+    expect(offenders).toEqual([]);
+  });
+
+  test.each([
+    ['PATCH', '/api/tags/12abc'],
+    ['PATCH', '/api/tags/012'],
+    ['DELETE', '/api/channels/12abc'],
+    ['DELETE', '/api/channels/012'],
+    ['DELETE', '/api/subscriptions/12abc'],
+    ['DELETE', '/api/subscriptions/012'],
+    ['DELETE', '/api/users/1/api-keys/12abc'],
+    ['DELETE', '/api/users/01/api-keys/1'],
+    ['POST', '/api/test-runs/12abc/heartbeat'],
+    ['POST', '/api/test-runs/012/heartbeat'],
+    ['GET', '/api/integrations/connections/12abc'],
+    ['GET', '/api/integrations/connections/012'],
+    ['GET', '/api/bug-reports/1/screenshots/1abc'],
+    ['GET', '/api/bug-reports/1/screenshots/01'],
+  ])('%s %s is refused with 400', async (method, target) => {
+    const answer = await raw(method, target, method === 'GET' ? '' : '{}', adminKey);
+    expect(answer.status).toBe(400);
+    expect(JSON.parse(answer.body)).toMatchObject({ data: { errorCode: 'BAD_REQUEST' } });
+  });
+
+  test('a 0-based index takes 0', async () => {
+    // Past the index, to the bug report it names, which does not exist.
+    expect((await raw('GET', '/api/bug-reports/1/screenshots/0', '', adminKey)).status).toBe(404);
+  });
+
+  test.each(['12abc', '012'])('a locate link to run %j says it names no run', async (id) => {
+    const answer = await raw('GET', `/test-runs/${id}/locate?file=a.spec.ts&title=pays`, '', adminKey);
+    expect(answer.status).toBe(404);
+    expect(answer.body).toContain('This link is missing the run');
+  });
 });

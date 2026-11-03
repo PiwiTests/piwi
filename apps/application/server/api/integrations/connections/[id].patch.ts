@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { getDatabase } from '../../../database';
 import { requireAuth } from '../../../utils/auth';
 import { getConnectionRow, updateConnection } from '../../../utils/integrations/connections';
+import { requireRouteId } from '../../../utils/project-access';
 
 defineRouteMeta({
   openAPI: {
@@ -23,8 +24,7 @@ const schema = z.object({
 
 export default eventHandler(async (event) => {
   await requireAuth(event);
-  const id = parseInt(getRouterParam(event, 'id') || '0');
-  if (!id) throw apiError({ statusCode: 400, message: 'Invalid connection ID' });
+  const id = requireRouteId(event, 'id', 'connection ID');
 
   const body = await readBody(event);
   const parsed = schema.safeParse(body);

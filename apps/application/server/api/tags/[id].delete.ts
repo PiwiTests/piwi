@@ -1,6 +1,7 @@
 import { getDatabase } from '../../database';
 import { deleteTag } from '#shared/handlers/tags';
 import { requireAuth } from '../../utils/auth';
+import { requireRouteId } from '../../utils/project-access';
 
 defineRouteMeta({
   openAPI: {
@@ -15,10 +16,7 @@ defineRouteMeta({
 export default eventHandler(async (event) => {
   await requireAuth(event);
 
-  const id = parseInt(getRouterParam(event, 'id') || '0');
-  if (!id) {
-    throw apiError({ statusCode: 400, message: 'Invalid tag ID' });
-  }
+  const id = requireRouteId(event, 'id', 'tag ID');
 
   try {
     const db = await getDatabase();

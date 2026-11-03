@@ -456,6 +456,7 @@ import { apiDeleteTestRun } from './test-runs';
 import { setRunIncident } from '#shared/handlers/run-health';
 import { parseSetRunIncident } from '#shared/run-incident';
 import { readRunCoverageGaps } from '#shared/run-coverage-gaps';
+import { parseRouteId } from '#shared/route-id';
 import {
   addBugReproduction,
   isReproductionRunAllowed,
@@ -4280,6 +4281,21 @@ routes.push(
   },
 );
 
+/** The groups of `pattern` written `(\d+)`, by their index in a match: the ids of its path. */
+function idGroupsOf(pattern: RegExp): number[] {
+  const source = pattern.source;
+  const groups: number[] = [];
+  let group = 0;
+  for (let i = 0; i < source.length; i++) {
+    if (source[i] === '\\') i++;
+    else if (source[i] === '(' && source[i + 1] !== '?') {
+      group++;
+      if (source.startsWith('(\\d+)', i)) groups.push(group);
+    }
+  }
+  return groups;
+}
+
 /**
  * Attempt to handle a request with the in-browser demo router.
  *
@@ -4299,6 +4315,10 @@ export async function handleDemoRequest(
     if (route.method !== method) continue;
     const m = path.match(route.pattern);
     if (m) {
+      // A path's ids read as the server routes read them (`requireRouteId`): `012` is refused, never read as 12.
+      if (idGroupsOf(route.pattern).some((group) => parseRouteId(m[group]) === null)) {
+        throw demoHttpError(400, 'Invalid ID');
+      }
       const access = await resolveDemoAccess(actingUserId);
       const permission = routePermissionList(route.permission);
       if (!passesEarlyCheck(access, permission)) throw demoHttpError(403, 'Insufficient permissions');

@@ -201,3 +201,16 @@ describe('the demo router holds each route to its permission', () => {
     expect((await as(NOAH).get('/api/auth/me')).user.access.projects).toEqual({ 4: [ProjectRole.VIEWER] });
   });
 });
+
+describe('the demo router reads the ids of a path as the server routes do', () => {
+  test('an id written with a leading zero is refused, as `requireRouteId` refuses it', async () => {
+    const invalid = { statusCode: 400, message: 'Invalid ID' };
+    expect(await refusal(as(AVERY).get('/api/users/01/api-keys'))).toEqual(invalid);
+    expect(await refusal(as(PRIYA).post('/api/projects/02/markers', marker))).toEqual(invalid);
+    expect(await refusal(as(AVERY).get('/api/users/1/api-keys'))).toBeNull();
+  });
+
+  test('an id with anything after its digits matches no route', async () => {
+    expect(await as(AVERY).get('/api/users/1abc/api-keys')).toBeUndefined();
+  });
+});

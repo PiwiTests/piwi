@@ -3,6 +3,7 @@ import { getDatabase } from '../../database';
 import { subscriptions } from '../../database/schema';
 import { getRequestAccess, requireAuth } from '../../utils/auth';
 import { isAdministrator } from '#shared/permissions';
+import { requireRouteId } from '../../utils/project-access';
 
 defineRouteMeta({
   openAPI: {
@@ -16,8 +17,7 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const user = await requireAuth(event);
-  const id = parseInt(getRouterParam(event, 'id') || '0');
-  if (!id) throw apiError({ statusCode: 400, message: 'Invalid subscription ID' });
+  const id = requireRouteId(event, 'id', 'subscription ID');
 
   const db = await getDatabase();
   const isAdmin = isAdministrator(await getRequestAccess(event));

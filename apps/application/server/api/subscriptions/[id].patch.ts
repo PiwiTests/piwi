@@ -7,6 +7,7 @@ import { NOTIFICATION_EVENTS } from '#shared/notification-events';
 import { digestAtSchema, subscriptionFiltersSchema } from '#shared/subscription-filters';
 import { isAdministrator } from '#shared/permissions';
 import { z } from 'zod';
+import { requireRouteId } from '../../utils/project-access';
 
 defineRouteMeta({
   openAPI: {
@@ -31,8 +32,7 @@ const schema = z.object({
 
 export default eventHandler(async (event) => {
   const user = await requireAuth(event);
-  const id = parseInt(getRouterParam(event, 'id') || '0');
-  if (!id) throw apiError({ statusCode: 400, message: 'Invalid subscription ID' });
+  const id = requireRouteId(event, 'id', 'subscription ID');
 
   const body = await readBody(event);
   const parsed = schema.safeParse(body);

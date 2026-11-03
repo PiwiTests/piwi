@@ -3,6 +3,7 @@ import { getDatabase } from '../../../../database';
 import { createUserApiKeyRecord } from '#shared/handlers/users';
 import { getRequestAccess, requireAuth, generateApiKey } from '../../../../utils/auth';
 import { can } from '#shared/permissions';
+import { requireRouteId } from '../../../../utils/project-access';
 
 defineRouteMeta({
   openAPI: {
@@ -23,10 +24,7 @@ const createKeySchema = z.object({
 export default eventHandler(async (event) => {
   const currentUser = await requireAuth(event);
 
-  const targetId = parseInt(getRouterParam(event, 'id') || '0');
-  if (!targetId) {
-    throw apiError({ statusCode: 400, message: 'Invalid user ID' });
-  }
+  const targetId = requireRouteId(event, 'id', 'user ID');
 
   // Non-administrators can only create keys for themselves
   if (!can(await getRequestAccess(event), 'users:manage') && currentUser.id !== targetId) {

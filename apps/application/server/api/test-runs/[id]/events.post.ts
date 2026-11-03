@@ -13,6 +13,7 @@ import { hiddenErrorText } from '../../../utils/sanitize';
 import { wireCaseProblem } from '../../../utils/wire-case-problem';
 import type { StreamEventPayload } from '#shared/types';
 import { countFailedFromTally } from '#shared/utils/test-counts';
+import { requireRouteId } from '../../../utils/project-access';
 
 defineRouteMeta({
   openAPI: {
@@ -51,14 +52,7 @@ function isStorableResult(runId: number, tc: StreamEventPayload): boolean {
 }
 
 export default eventHandler(async (event) => {
-  const id = parseInt(getRouterParam(event, 'id') || '0');
-
-  if (!id) {
-    throw apiError({
-      statusCode: 400,
-      message: 'Invalid test run ID',
-    });
-  }
+  const id = requireRouteId(event, 'id', 'test run ID');
 
   const contentLength = parseInt(getRequestHeader(event, 'content-length') ?? '0', 10);
   if (contentLength > MAX_EVENT_BATCH_BYTES) {

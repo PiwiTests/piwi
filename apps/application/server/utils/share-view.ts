@@ -25,6 +25,7 @@ import {
 } from '#shared/handlers/dashboards';
 import { loadSnapshotForDelivery } from '#shared/handlers/reports';
 import { dashboardScope } from '#shared/analytics/dashboards';
+import { parseRouteId } from '#shared/route-id';
 import { collectReportBundle } from '#shared/reports/collect';
 import type { ProjectAccess } from '#shared/handlers/analytics/common';
 import type { ReportBundle } from '#shared/reports/types';
@@ -227,12 +228,12 @@ export function requireShareLinksEnabled(): void {
 
 /** The saved dashboard id of a `dashboards/[id]/share-links` route; a built-in key is refused. */
 export function savedDashboardId(event: H3Event): number {
-  const raw = String(getRouterParam(event, 'id') ?? '');
-  if (!/^\d+$/.test(raw)) {
+  const id = parseRouteId(getRouterParam(event, 'id'));
+  if (id === null) {
     throw apiError({
       statusCode: 400,
       message: 'Only a saved dashboard has live dashboard links. Duplicate a built-in dashboard to share it.',
     });
   }
-  return Number(raw);
+  return id;
 }

@@ -5,6 +5,7 @@ import { testCases, testRuns, testRunsCases } from '../../../database/schema';
 import { getCurrentUser, isAuthEnabled } from '../../../utils/auth';
 import { canAccessProject } from '../../../utils/project-access';
 import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
+import { parseRouteId } from '#shared/route-id';
 import { storedIdentity, storedIdentityForms } from '../../../utils/storable-values';
 
 /**
@@ -24,7 +25,7 @@ export default eventHandler(async (event) => {
   setResponseHeader(event, 'Cache-Control', 'no-store');
   setResponseHeader(event, 'X-Robots-Tag', 'noindex, nofollow');
 
-  const runId = Number.parseInt(getRouterParam(event, 'id') ?? '', 10);
+  const runId = parseRouteId(getRouterParam(event, 'id'));
   const query = getQuery(event);
   const file = queryString(query.file);
   const title = queryString(query.title);
@@ -34,7 +35,7 @@ export default eventHandler(async (event) => {
   const wantedRetry = retry !== null && /^\d+$/.test(retry) ? Number(retry) : null;
   const wantedRepeat = repeat !== null && /^\d+$/.test(repeat) ? Number(repeat) : 0;
 
-  if (!Number.isInteger(runId) || runId <= 0 || !file || !title) {
+  if (runId === null || !file || !title) {
     return notFoundPage(event, 'This link is missing the run, spec file or test title it should point at.', null);
   }
 

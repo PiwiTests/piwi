@@ -22,6 +22,7 @@ import {
   withShardSetupTokens,
   withShardTokens,
 } from '../../../utils/shard-tokens';
+import { requireRouteId } from '../../../utils/project-access';
 
 defineRouteMeta({
   openAPI: {
@@ -51,14 +52,7 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  const id = parseInt(getRouterParam(event, 'id') || '0');
-
-  if (!id) {
-    throw apiError({
-      statusCode: 400,
-      message: 'Invalid test run ID',
-    });
-  }
+  const id = requireRouteId(event, 'id', 'test run ID');
 
   const body = await readBody(event);
 
