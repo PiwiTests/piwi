@@ -397,6 +397,8 @@ export const LOCAL_RUN_MAX_LINES = 2000;
  */
 const STOP_EXIT_FALLBACK_MS = 15_000;
 /** Finished runs kept in the tray; running ones are never dropped. */
+/** How long a run waits for its Piwi run baseline before it starts without one. */
+const BASELINE_TIMEOUT_MS = 10_000;
 const MAX_FINISHED = 15;
 /** The names on the hub kept per run: one per step of its plan. */
 const MAX_HUB_REFS = 20;
@@ -572,7 +574,8 @@ export function useDesktopLocalRuns() {
   async function drive(run: LocalRun) {
     try {
       await ensureListener();
-      const worst = run.kind === 'tests' ? await driveTests(run) : await driveSingle(run);
+      let worst: number | null = null;
+      if (!run.stopRequested) worst = run.kind === 'tests' ? await driveTests(run) : await driveSingle(run);
       if (run.stopRequested) {
         run.status = 'stopped';
       } else {
@@ -990,8 +993,8 @@ export function useDesktopLocalRuns() {
     runs.value = [run, ...runs.value];
     const tracked = runs.value[0]!;
     trayOpen.value = true;
-    void captureBaseline(tracked);
-    void drive(tracked);
+    if (localRunOriginKind(tracked.kind)) void captureBaseline(tracked).then(() => drive(tracked));
+    else void drive(tracked);
     return tracked;
   }
 
@@ -1107,13 +1110,17 @@ export function useDesktopLocalRuns() {
   }
 
   /**
-   * Record the project's newest Piwi run id before our process can report: the
-   * run this local process produced is newer (the reporter finds the app via
-   * `~/.piwi/desktop.json`).
+   * Record the project's newest Piwi run id. `spawn` awaits it before starting
+   * the process, so the run this local process produces (the reporter finds the
+   * app via `~/.piwi/desktop.json`) is newer than the baseline. A lookup that
+   * fails or takes longer than `BASELINE_TIMEOUT_MS` leaves no baseline: the run
+   * starts, without a Piwi link.
    */
   async function captureBaseline(run: LocalRun) {
     try {
-      const latest = await $fetch<{ id: number } | null>(`/api/projects/${run.projectId}/latest-run`);
+      const latest = await $fetch<{ id: number } | null>(`/api/projects/${run.projectId}/latest-run`, {
+        timeout: BASELINE_TIMEOUT_MS,
+      });
       run.piwiRunBaseline = latest?.id ?? 0;
     } catch {
       // Unknown baseline — this run just won't get a Piwi link.

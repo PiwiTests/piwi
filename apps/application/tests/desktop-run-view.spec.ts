@@ -635,10 +635,7 @@ test.describe('Desktop run live view', () => {
     });
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
-    // As it starts the run, the tray notes the project's latest run: only a newer one is linked to it.
-    const baseline = page.waitForResponse((response) => new URL(response.url()).pathname.endsWith('/latest-run'));
     await page.getByRole('button', { name: RERUN_FAILED }).click();
-    await baseline;
     await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
     await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
     // A run another window of the app started runs the same test on the same worker: no row of this run is its.
@@ -648,8 +645,8 @@ test.describe('Desktop run live view', () => {
     await page.evaluate((event) => window.__hub.send(event), session(RUNNING));
 
     // The run reports to this app with the reference the app gave it, and its test begins on worker 0.
+    await expect.poll(() => page.evaluate(() => window.__runArgs?.originRef)).toMatch(/^desktop:/);
     const originRef = await page.evaluate(() => window.__runArgs?.originRef);
-    expect(originRef).toMatch(/^desktop:/);
     const start = await retryPost(request, '/api/test-runs/start', {
       data: {
         projectName: PROJECT.DESKTOP_RUN_VIEW,

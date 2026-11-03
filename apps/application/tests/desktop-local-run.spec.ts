@@ -381,6 +381,7 @@ test.describe('Desktop local run', () => {
     await waitForHydration(page);
 
     await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await expect(tray(page).getByText('Running 0/1…', { exact: true })).toBeVisible();
     // Playwright's list reporter with FORCE_COLOR=1, as the shell runs it.
     await page.evaluate(() =>
       window.__piwiFakeTauri.emitLine(
@@ -526,6 +527,7 @@ test.describe('Desktop local run', () => {
     await waitForHydration(page);
 
     await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await expect(tray(page).getByText('Running 0/1…', { exact: true })).toBeVisible();
     await page.evaluate(() => window.__piwiFakeTauri.emitLine('Running 3 tests using 2 workers'));
     // The fake spawn already announced 1 test; the second announcement adds 3.
     await expect(tray(page).getByText('Running 0/4…', { exact: true })).toBeVisible();
