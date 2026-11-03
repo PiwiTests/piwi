@@ -195,25 +195,6 @@ export function coverageRowCounts(row: CoverageRow): string {
   return '';
 }
 
-/** Lines of normalized ranges `a` that are in no range of normalized ranges `b`, normalized. */
-export function subtractLineRanges(a: LineRange[], b: LineRange[]): LineRange[] {
-  const out: LineRange[] = [];
-  let j = 0;
-  for (const [start, end] of a) {
-    let from = start;
-    while (j < b.length && b[j]![1] < from) j++;
-    let k = j;
-    while (k < b.length && b[k]![0] <= end) {
-      const [bStart, bEnd] = b[k]!;
-      if (bStart > from) out.push([from, bStart - 1]);
-      from = Math.max(from, bEnd + 1);
-      k++;
-    }
-    if (from <= end) out.push([from, end]);
-  }
-  return out;
-}
-
 const NOT_NAMES = new Set([
   'if',
   'for',

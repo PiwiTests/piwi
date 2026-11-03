@@ -9,7 +9,7 @@
  */
 import { normalizeLineRanges, type CoverageFile } from '@piwitests/core/coverage';
 import type { ApiResponse } from '~~/types/api';
-import { subtractLineRanges } from '~/utils/coverage-view';
+import { subtractLineRanges } from '#shared/coverage-combine';
 
 type SourceResponse = ApiResponse<typeof import('~~/server/api/projects/[id]/source.get').default>;
 type RunCoverageResponse = ApiResponse<typeof import('~~/server/api/test-runs/[id]/coverage.get').default>;
