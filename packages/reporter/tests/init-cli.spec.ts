@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -17,6 +18,7 @@ beforeEach(() => {
 afterEach(() => {
   fs.rmSync(root, { recursive: true, force: true });
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
 
 const CONFIG = `import { defineConfig } from '@playwright/test'\n\nexport default defineConfig({\n  use: { trace: 'retain-on-failure' },\n})\n`;
@@ -67,6 +69,9 @@ describe('parseInitArgs', () => {
     const opts = parseInitArgs([], { PIWI_DASHBOARD_URL: 'https://piwi.example.com/', PIWI_API_KEY: 'pd_x' } as NodeJS.ProcessEnv, root);
     expect(opts.serverUrl).toBe('https://piwi.example.com');
     expect(opts.apiKey).toBe('pd_x');
+    expect(opts.apiKeyFromEnv).toBe(true);
+    const flag = parseInitArgs(['--api-key', 'pd_y'], { PIWI_API_KEY: 'pd_x' } as NodeJS.ProcessEnv, root);
+    expect(flag).toMatchObject({ apiKey: 'pd_y', apiKeyFromEnv: false });
   });
 
   it('resolves --skills all / none', () => {
@@ -178,6 +183,100 @@ describe('runInit', () => {
     await runInit(['--no-install', '--api-key', 'pd_secret'], EMPTY_ENV, root);
     expect(fs.readFileSync(path.join(root, '.env'), 'utf-8')).toContain('PIWI_API_KEY=pd_secret');
     expect(fs.readFileSync(path.join(root, '.gitignore'), 'utf-8')).toContain('.env');
+  });
+
+  it('writes no key into a .env git tracks, and says what to do instead', async () => {
+    scaffoldProject();
+    write('.env', 'BASE_URL=http://localhost:5173\n');
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: root, stdio: 'ignore' });
+    git('init', '-q');
+    git('add', '.env');
+    const logs = captureLogs();
+    expect(await runInit(['--no-install', '--no-skills', '--api-key', 'pd_secret'], EMPTY_ENV, root)).toBe(0);
+    expect(fs.readFileSync(path.join(root, '.env'), 'utf-8')).toBe('BASE_URL=http://localhost:5173\n');
+    expect(fs.existsSync(path.join(root, '.gitignore'))).toBe(false);
+    const output = logs.join('\n');
+    expect(output).not.toContain('pd_secret');
+    expect(output).toContain('! [manual] env .env — git tracks .env, so the API key is not written into it');
+    expect(output).toContain('set PIWI_API_KEY in the environment (in CI, as a secret)');
+    expect(output).toContain('`git rm --cached .env`');
+    // The rest of the setup goes on.
+    expect(fs.readFileSync(path.join(root, 'playwright.config.ts'), 'utf-8')).toContain('wrapConfig(');
+    expect(fs.readFileSync(path.join(root, '.env.example'), 'utf-8')).toContain('PIWI_API_KEY=');
+
+    // Without a key, the guidance does not send one into the tracked .env either.
+    logs.length = 0;
+    await runInit(['--no-install', '--no-skills'], EMPTY_ENV, root);
+    expect(logs.join('\n')).toContain('git tracks .env, so keep the key out of it');
+    expect(logs.join('\n')).not.toContain('put it in .env');
+
+    // With the key in the environment, as the manual step says, the step is done.
+    logs.length = 0;
+    await runInit(['--no-install', '--no-skills'], { PIWI_API_KEY: 'pd_secret' } as NodeJS.ProcessEnv, root);
+    expect(fs.readFileSync(path.join(root, '.env'), 'utf-8')).toBe('BASE_URL=http://localhost:5173\n');
+    expect(logs.join('\n')).toContain(
+      '= [already] env .env — PIWI_API_KEY is set in the environment, where the reporter reads it; git tracks .env',
+    );
+    expect(logs.join('\n')).not.toContain('[manual]');
+    expect(logs.join('\n')).not.toContain('pd_secret');
+
+    // Untracked, the key goes into it.
+    git('rm', '-q', '--cached', '.env');
+    await runInit(['--no-install', '--no-skills', '--api-key', 'pd_secret'], EMPTY_ENV, root);
+    expect(fs.readFileSync(path.join(root, '.env'), 'utf-8')).toContain('PIWI_API_KEY=pd_secret');
+    expect(fs.readFileSync(path.join(root, '.gitignore'), 'utf-8')).toContain('.env');
+  });
+
+  it('writes no key into the .env of a repository when git gives no answer, and one with no repository', async () => {
+    scaffoldProject();
+    write('.env', 'BASE_URL=http://localhost:5173\n');
+    // A .git git cannot open: it answers with an error, as it does for a repository it does not trust.
+    write('.git', `gitdir: ${path.join(root, 'missing')}\n`);
+    const logs = captureLogs();
+    expect(await runInit(['--no-install', '--no-skills', '--api-key', 'pd_secret'], EMPTY_ENV, root)).toBe(0);
+    expect(fs.readFileSync(path.join(root, '.env'), 'utf-8')).toBe('BASE_URL=http://localhost:5173\n');
+    expect(fs.existsSync(path.join(root, '.gitignore'))).toBe(false);
+    expect(logs.join('\n')).toContain(
+      '! [manual] env .env — git did not say whether it tracks .env, so the API key is not written into it',
+    );
+    expect(logs.join('\n')).toContain('make `git ls-files .env` work here');
+
+    // Without git to ask, the repository's .git alone keeps the key out.
+    fs.rmSync(path.join(root, '.git'));
+    execFileSync('git', ['init', '-q'], { cwd: root, stdio: 'ignore' });
+    vi.stubEnv('PATH', path.join(root, 'no-git-here'));
+    logs.length = 0;
+    await runInit(['--no-install', '--no-skills', '--api-key', 'pd_secret'], EMPTY_ENV, root);
+    expect(fs.readFileSync(path.join(root, '.env'), 'utf-8')).not.toContain('pd_secret');
+    expect(logs.join('\n')).toContain('git did not say whether it tracks .env');
+
+    // With no repository, the key goes into it.
+    fs.rmSync(path.join(root, '.git'), { recursive: true });
+    await runInit(['--no-install', '--no-skills', '--api-key', 'pd_secret'], EMPTY_ENV, root);
+    expect(fs.readFileSync(path.join(root, '.env'), 'utf-8')).toContain('PIWI_API_KEY=pd_secret');
+  });
+
+  it('writes no key through a .env that is a link', async () => {
+    write('shared.env', 'BASE_URL=http://localhost:5173\n');
+    const project = path.join(root, 'e2e');
+    write('e2e/package.json', JSON.stringify({ name: 'e2e' }));
+    write('e2e/playwright.config.ts', CONFIG);
+    try {
+      fs.symlinkSync(path.join('..', 'shared.env'), path.join(project, '.env'));
+    } catch {
+      return; // creating a link needs a privilege some systems do not grant
+    }
+    const logs = captureLogs();
+    expect(await runInit(['--no-install', '--no-skills', '--api-key', 'pd_secret'], EMPTY_ENV, project)).toBe(0);
+    expect(fs.readFileSync(path.join(root, 'shared.env'), 'utf-8')).toBe('BASE_URL=http://localhost:5173\n');
+    expect(fs.existsSync(path.join(project, '.gitignore'))).toBe(false);
+    expect(logs.join('\n')).toContain('! [manual] env .env — .env is a link, so the API key is not written into it');
+
+    // A hard link is another name of the same file.
+    fs.rmSync(path.join(project, '.env'));
+    fs.linkSync(path.join(root, 'shared.env'), path.join(project, '.env'));
+    await runInit(['--no-install', '--no-skills', '--api-key', 'pd_secret'], EMPTY_ENV, project);
+    expect(fs.readFileSync(path.join(root, 'shared.env'), 'utf-8')).toBe('BASE_URL=http://localhost:5173\n');
   });
 
   it('does not create a real .env when no key is given', async () => {

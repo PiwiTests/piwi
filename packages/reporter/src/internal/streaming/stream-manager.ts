@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import { errorMessage } from '../support/errors.js';
 import type { PiwiDashboardOptions, ShardInfo } from '../../public/options.js';
 import type { HttpClient } from '../transport/http-client.js';
-import { HttpError } from '../transport/http-client.js';
+import { HttpError, runTokenHeaders } from '../transport/http-client.js';
 import type { StreamBuffer } from './stream-buffer.js';
 import { BoundedEventQueue } from './bounded-queue.js';
 import type { CrashRecovery } from './crash-recovery.js';
@@ -16,7 +16,7 @@ import type { CollectedTestCase, StreamEvent, FilterDetails } from '../../types.
 
 /**
  * Largest `/events` request body the dashboard accepts (`MAX_EVENT_BATCH_BYTES`
- * in its events route); a larger one is refused with 413.
+ * in its `server/utils/body-limit.ts`); a larger one is refused with 413.
  */
 const SERVER_MAX_EVENT_BATCH_BYTES = 10 * 1024 * 1024;
 /** Room kept for the request envelope (`streamToken`, the `testCases` array) around the events. */
@@ -236,6 +236,8 @@ export class StreamManager {
               filterDetails,
             },
             this._auth,
+            undefined,
+            { headers: runTokenHeaders(setupInfo.setupToken) },
           );
         } catch (error) {
           // Stale setupInfo — the run was cancelled (e.g. by crash recovery submit).
@@ -309,7 +311,7 @@ export class StreamManager {
         if (this.pendingEvents.length > 0) this.flush();
       }
     } catch (error) {
-      if (error instanceof HttpError && (error.status === 401 || error.status === 403)) {
+      if (error instanceof HttpError && error.status === 401) {
         this.logger.warn(
           `Live streaming could not start: the dashboard at ${this.options.serverUrl} requires authentication. ` +
             `Set the reporter's \`apiKey\` option, or PIWI_API_KEY in the environment or in the .env file next to ` +
@@ -386,6 +388,8 @@ export class StreamManager {
           `/api/test-runs/${this._runId}/events`,
           { streamToken: this._token, testCases: chunk },
           this._auth,
+          undefined,
+          { headers: runTokenHeaders(this._token) },
         );
         this.noteWatched(response);
         this.retryCount = 0;

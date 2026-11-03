@@ -87,6 +87,19 @@ describe('dashboard definitions', () => {
     expect(() => defs.parseDashboardDefinition(definition([], { period: { kind: 'forever' } }))).toThrow(/period/);
   });
 
+  test('refuse file globs past the limits of a selection, in the scope or a widget override', () => {
+    const files = Array.from({ length: 101 }, (_, i) => `tests/${i}.spec.ts`);
+    expect(() => defs.parseDashboardDefinition(definition([], { tests: { files } }))).toThrow(
+      'Dashboard: tests.files must hold at most 100 globs',
+    );
+    const long = { tests: { files: [`tests/${'*'.repeat(495)}`] } };
+    expect(() => defs.parseDashboardDefinition(definition([{ ...metricWidget('m'), scope: long }]))).toThrow(
+      /tests\.files: a glob must be at most 500 characters/,
+    );
+    const within = defs.parseDashboardDefinition(definition([], { tests: { files: files.slice(0, 100) } }));
+    expect(within.scope.tests?.files).toHaveLength(100);
+  });
+
   test('keep only the keys a widget override sets', () => {
     const parsed = defs.parseDashboardDefinition(
       definition([{ ...metricWidget('week'), scope: { period: { kind: 'rolling', days: 7 }, browsers: ['webkit'] } }]),

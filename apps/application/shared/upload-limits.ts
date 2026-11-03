@@ -13,3 +13,14 @@ export const DEFAULT_MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
 /** Lowest and highest values `PIWI_IMPORT_MAX_BYTES` may set. */
 export const MIN_IMPORT_MAX_BYTES = 1024 * 1024;
 export const MAX_IMPORT_MAX_BYTES = 5 * 1024 * 1024 * 1024;
+
+/**
+ * Default ceiling for a run's results sent as one JSON document
+ * (`/api/test-runs/submit`, `/api/test-runs/upload/results`), which the server
+ * reads and parses in memory.
+ */
+export const DEFAULT_MAX_SUBMIT_BYTES = 256 * 1024 * 1024;
+
+/** Lowest and highest values `PIWI_SUBMIT_MAX_BYTES` may set: a JSON body is read into one string, which V8 caps near 512 MiB. */
+export const MIN_SUBMIT_MAX_BYTES = 1024 * 1024;
+export const MAX_SUBMIT_MAX_BYTES = 512 * 1024 * 1024;

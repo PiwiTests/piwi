@@ -18,8 +18,7 @@ const loading = computed(() => status.value === 'idle' || status.value === 'pend
 
 useHead({ title: () => `${snapshot.value?.title ?? 'Quality report'} - Piwi Dashboard` });
 
-// Share links need the server; the public demo has no share-link routes.
-const isDemoMode = Boolean(useRuntimeConfig().public.demoMode);
+const offersShareLinks = await useShareLinksOffered();
 
 const { download } = useDesktopDownload();
 const base = computed(() => (useRuntimeConfig().app?.baseURL ?? '/').replace(/\/$/, ''));
@@ -68,7 +67,11 @@ const deliveryLine = computed(() => {
           />
         </template>
         <template v-if="snapshot" #right>
-          <ShareLinksModal v-if="!isDemoMode" kind="report" :endpoint="`/api/reports/snapshots/${id}/share-links`" />
+          <ShareLinksModal
+            v-if="offersShareLinks"
+            kind="report"
+            :endpoint="`/api/reports/snapshots/${id}/share-links`"
+          />
           <UDropdownMenu :items="downloadItems" :content="{ align: 'end' }">
             <UButton
               color="neutral"

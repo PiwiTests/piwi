@@ -339,6 +339,38 @@ describe('requestMatchesRoute', () => {
   it('does not match a different path', () => {
     expect(requestMatchesRoute('POST', 'https://app.example.com/api/coupons', 'POST /api/orders')).toBe(false);
   });
+
+  it('matches what the regular expression the pattern stands for matches', () => {
+    // Each `:name` stands for `[^/]+`, every other character for itself.
+    const reference = (pattern: string) =>
+      new RegExp(`^${pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/:[A-Za-z0-9_]+/g, '[^/]+')}$`);
+    let state = 20261103;
+    const random = () => (state = (state * 1103515245 + 12345) % 2147483648) / 2147483648;
+    const text = (units: string[], max: number) =>
+      Array.from({ length: Math.floor(random() * (max + 1)) }, () => units[Math.floor(random() * units.length)]).join(
+        '',
+      );
+    let matched = 0;
+    for (let n = 0; n < 3000; n++) {
+      const pattern = `/${text(['a', 'b', '/', ':id', ':x_1', ':', '.', '-', '*', '\\'], 7)}`;
+      const path = `/${text(['a', 'b', '/', '.', '-', ':', '*', '\\', '\n'], 9)}`;
+      const expected = reference(pattern).test(path);
+      expect(requestMatchesRoute('GET', path, `GET ${pattern}`), `${pattern} against ${JSON.stringify(path)}`).toBe(
+        expected,
+      );
+      if (expected) matched++;
+    }
+    expect(matched).toBeGreaterThan(100);
+  });
+
+  it('matches a segment of many parameters in linear steps', () => {
+    const route = `GET /x/a${':p'.repeat(16)}-z`;
+    const started = performance.now();
+    expect(requestMatchesRoute('GET', `https://app.example.com/x/${'a'.repeat(29)}`, route)).toBe(false);
+    expect(requestMatchesRoute('GET', `https://app.example.com/x/${'a'.repeat(2000)}`, route)).toBe(false);
+    expect(requestMatchesRoute('GET', `https://app.example.com/x/${'a'.repeat(200)}-z`, route)).toBe(true);
+    expect(performance.now() - started).toBeLessThan(50);
+  });
 });
 
 describe('shouldAct (after first navigation, Nth match)', () => {

@@ -51,6 +51,9 @@ export interface RoleBindingView {
 
 // ── Users (`/api/users`) ──────────────────────────────────────────────────────
 
+/** The longest username an account is created with, and the longest a sign-in or a lookup by username takes. */
+export const USERNAME_MAX_LENGTH = 200;
+
 /** A user as administrators see them (`users:manage`). */
 export interface UserListItem {
   id: number;

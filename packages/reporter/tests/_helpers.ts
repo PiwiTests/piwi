@@ -224,3 +224,13 @@ export const PLAYWRIGHT_VERSION: string = (
 export function playwrightAtLeast(minimum: string): boolean {
   return playwrightVersionAtLeast(PLAYWRIGHT_VERSION, minimum);
 }
+
+/**
+ * Run as if on `platform` (`process.platform`) until the returned function puts the real one back. Node's own modules
+ * keep the host's behavior: `path` its separators, `os.tmpdir()` and `os.homedir()` the host's variables.
+ */
+export function stubPlatform(platform: NodeJS.Platform): () => void {
+  const real = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  Object.defineProperty(process, 'platform', { ...real, value: platform });
+  return () => Object.defineProperty(process, 'platform', real);
+}

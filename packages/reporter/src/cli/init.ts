@@ -16,6 +16,7 @@
  * workspace package that holds one, or the one the person picks when several
  * do; with nobody at a terminal to pick, it wires none and names them.
  */
+import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as readline from 'node:readline';
@@ -72,6 +73,8 @@ interface InitOptions {
   /** `--desktop-app`, as given: validated by `runInit`. */
   desktopApp: string | null;
   apiKey: string | null;
+  /** Whether `apiKey` is the environment's `PIWI_API_KEY`, with no `--api-key` given. */
+  apiKeyFromEnv: boolean;
   skillsDir: string;
   skillSlugs: ReadonlyArray<string>;
   install: boolean;
@@ -112,8 +115,9 @@ Options:
   --desktop-app <mode> Write desktopApp into the config: "prefer" sends local runs to the
                        Piwi desktop app while it runs, and CI runs to --server-url
   --api-key <key>      API key to write into .env (env PIWI_API_KEY), where the reporter
-                       reads it. Omit to keep it a .env.example placeholder you fill in
-                       yourself.
+                       reads it; never into a .env git tracks or cannot say it does not,
+                       nor through a link. Omit to keep it a .env.example placeholder you
+                       fill in yourself.
   --cwd <path>         Project root to operate on (default: current directory)
   --skills <list>      Comma-separated skills to install, or "all" / "none"
                        (default: ${WORKFLOW_SKILLS.join(', ')})
@@ -153,15 +157,18 @@ function resolveSkillSlugs(raw: string | undefined): ReadonlyArray<string> {
 export function parseInitArgs(argv: string[], env: NodeJS.ProcessEnv, cwd: string): InitOptions {
   const root = path.resolve(cwd, readOption(argv, '--cwd') ?? '.');
   const detected = detectProject(root);
+  const noServerUrl = argv.includes('--no-server-url');
+  const flagKey = readOption(argv, '--api-key');
   return {
     root,
-    serverUrl: argv.includes('--no-server-url')
+    serverUrl: noServerUrl
       ? ''
       : (readOption(argv, '--server-url') ?? env.PIWI_DASHBOARD_URL ?? DEFAULT_SERVER_URL).replace(/\/$/, ''),
     projectName: readOption(argv, '--project') ?? detected.suggestedProjectName,
     desktopApp: argv.includes('--desktop-app') ? (readOption(argv, '--desktop-app') ?? '') : null,
     // The desktop app needs no key, and a key with no URL keeps the reporter from finding it.
-    apiKey: argv.includes('--no-server-url') ? null : (readOption(argv, '--api-key') ?? env.PIWI_API_KEY ?? null),
+    apiKey: noServerUrl ? null : (flagKey ?? env.PIWI_API_KEY ?? null),
+    apiKeyFromEnv: !noServerUrl && flagKey === undefined && Boolean(env.PIWI_API_KEY),
     skillsDir: readOption(argv, '--skills-dir') ?? DEFAULT_SKILLS_DIR,
     skillSlugs: resolveSkillSlugs(readOption(argv, '--skills')),
     install: !argv.includes('--no-install'),
@@ -311,7 +318,69 @@ function stepFixtures(project: ProjectShape, opts: InitOptions): StepResult {
   };
 }
 
-function stepEnv(project: ProjectShape, opts: InitOptions): StepResult[] {
+/** Whether git tracks a file: `unknown` when git gave no answer in a folder a repository holds. */
+type GitTracking = 'tracked' | 'untracked' | 'unknown';
+
+/**
+ * Whether git tracks `file`, relative to `root`. Only git's own answer counts (`--error-unmatch` exits 0 or 1); when
+ * git gives none (missing, not startable, or refusing the repository, as it refuses one another user owns), it is
+ * `unknown` when `root` or a folder above it holds a `.git`, and `untracked` when none does.
+ */
+function gitTracking(root: string, file: string): GitTracking {
+  const { status } = spawnSync('git', ['ls-files', '--error-unmatch', '--', file], {
+    cwd: root,
+    stdio: 'ignore',
+    windowsHide: true,
+  });
+  if (status === 0) return 'tracked';
+  if (status === 1) return 'untracked';
+  return inRepository(root) ? 'unknown' : 'untracked';
+}
+
+/** Whether `dir` or a folder above it holds a `.git`: a repository's folder, or the file of a worktree or submodule. */
+function inRepository(dir: string): boolean {
+  for (let current = path.resolve(dir); ; current = path.dirname(current)) {
+    if (fs.existsSync(path.join(current, '.git'))) return true;
+    if (path.dirname(current) === current) return false;
+  }
+}
+
+/** Why `init` writes no API key into the project's `.env`, and what to do with the key instead. */
+interface EnvKeyBlock {
+  why: string;
+  instead: string;
+}
+
+const KEY_IN_ENVIRONMENT = 'set PIWI_API_KEY in the environment (in CI, as a secret)';
+
+/**
+ * What keeps the API key out of the `.env` in `root`, where a key written could be committed: git tracking it, git
+ * giving no answer, or a `.env` that is a link (symbolic or hard), whose other file git is not asked about. Null when
+ * nothing does.
+ */
+function envKeyBlock(root: string): EnvKeyBlock | null {
+  const tracking = gitTracking(root, '.env');
+  if (tracking === 'tracked') {
+    return {
+      why: 'git tracks .env',
+      instead: `${KEY_IN_ENVIRONMENT}, or untrack the file with \`git rm --cached .env\``,
+    };
+  }
+  if (tracking === 'unknown') {
+    return {
+      why: 'git did not say whether it tracks .env',
+      instead: `${KEY_IN_ENVIRONMENT}, or make \`git ls-files .env\` work here`,
+    };
+  }
+  const env = fs.lstatSync(path.join(root, '.env'), { throwIfNoEntry: false });
+  if (env && (env.isSymbolicLink() || env.nlink > 1)) {
+    return { why: '.env is a link', instead: `${KEY_IN_ENVIRONMENT}, or put a file of its own in place of the link` };
+  }
+  return null;
+}
+
+/** The `.env` steps; `envBlock` when the `.env` takes no key. */
+function stepEnv(project: ProjectShape, opts: InitOptions, envBlock: EnvKeyBlock | null): StepResult[] {
   const results: StepResult[] = [];
 
   // Committed template: URL and a placeholder for the key, never a real secret.
@@ -330,7 +399,21 @@ function stepEnv(project: ProjectShape, opts: InitOptions): StepResult[] {
 
   // Only write a real .env when a key was actually supplied — otherwise the
   // placeholder in .env.example is the thing to fill in.
-  if (opts.apiKey) {
+  if (opts.apiKey && envBlock && opts.apiKeyFromEnv) {
+    results.push({
+      step: 'env',
+      file: '.env',
+      status: 'already',
+      detail: `PIWI_API_KEY is set in the environment, where the reporter reads it; ${envBlock.why}, so no key is written into it`,
+    });
+  } else if (opts.apiKey && envBlock) {
+    results.push({
+      step: 'env',
+      file: '.env',
+      status: 'manual',
+      detail: `${envBlock.why}, so the API key is not written into it — ${envBlock.instead} and run init again`,
+    });
+  } else if (opts.apiKey) {
     const envPath = path.join(project.root, '.env');
     const entries: Array<[string, string]> = [['PIWI_API_KEY', opts.apiKey]];
     if (opts.serverUrl) entries.unshift(['PIWI_DASHBOARD_URL', opts.serverUrl]);
@@ -358,9 +441,14 @@ function stepEnv(project: ProjectShape, opts: InitOptions): StepResult[] {
 }
 
 /** Guidance the user acts on after the mechanical steps, tailored to what happened. */
-function nextSteps(opts: InitOptions, steps: StepResult[]): string[] {
+function nextSteps(opts: InitOptions, steps: StepResult[], envBlock: EnvKeyBlock | null): string[] {
   const out: string[] = [];
-  if (!opts.apiKey && opts.serverUrl) {
+  if (!opts.apiKey && opts.serverUrl && envBlock) {
+    out.push(
+      'If your dashboard has authentication on, create an API key (Settings → Account → API keys). ' +
+        `${envBlock.why}, so keep the key out of it: ${envBlock.instead}.`,
+    );
+  } else if (!opts.apiKey && opts.serverUrl) {
     out.push(
       'If your dashboard has authentication on, create an API key (Settings → Account → API keys) and ' +
         'put it in .env as PIWI_API_KEY: the reporter reads it from the .env next to your Playwright config. ' +
@@ -540,12 +628,13 @@ export async function runInit(
     project = detectProject(opts.root);
   }
   const steps: StepResult[] = [];
+  const envBlock = envKeyBlock(project.root);
 
   if (!opts.skillsOnly) {
     steps.push(stepInstallReporter(project, opts));
     steps.push(stepConfig(project, opts));
     steps.push(stepFixtures(project, opts));
-    steps.push(...stepEnv(project, opts));
+    steps.push(...stepEnv(project, opts, envBlock));
   }
 
   if (!opts.noSkills && opts.skillSlugs.length) {
@@ -561,7 +650,7 @@ export async function runInit(
     );
   }
 
-  printOutcome(opts, project, workspace, steps, nextSteps(opts, steps));
+  printOutcome(opts, project, workspace, steps, nextSteps(opts, steps, envBlock));
 
   // A tool failure (e.g. the install command erroring) is worth a non-zero exit;
   // `manual` steps are expected outcomes, not failures.

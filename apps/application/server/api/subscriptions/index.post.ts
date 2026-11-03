@@ -4,7 +4,7 @@ import { getRequestAccess, requireAuth, isAuthEnabled } from '../../utils/auth';
 import { getProjectScope, scopeAllows } from '../../utils/project-access';
 import { formatSubscription } from '../../utils/subscriptions';
 import { NOTIFICATION_EVENTS } from '#shared/notification-events';
-import { digestAtSchema, subscriptionFiltersSchema } from '#shared/subscription-filters';
+import { digestAtSchema, subscriptionFiltersError, subscriptionFiltersSchema } from '#shared/subscription-filters';
 import { isAdministrator } from '#shared/permissions';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
@@ -14,7 +14,7 @@ defineRouteMeta({
     tags: ['Notifications'],
     summary: 'Create a subscription',
     description:
-      'Creates a new subscription for the current user. Administrators can create global (instance-wide) subscriptions; with authentication disabled every subscription is global. Optional `filters` narrow what is delivered: `branches` and `environments` (exact names or `*` patterns such as `release/*`, matched against the run every run-scoped event comes from), `statuses`, `defaultBranchOnly`, `owners`, `flakinessThreshold` and `perfRegressionPct`.',
+      'Creates a new subscription for the current user. Administrators can create global (instance-wide) subscriptions; with authentication disabled every subscription is global. Optional `filters` narrow what is delivered: `branches` and `environments` (exact names or `*` patterns such as `release/*`, each of at most 200 characters and 10 `*` and all of them at most 2,000 characters together, matched against the run every run-scoped event comes from), `statuses`, `defaultBranchOnly`, `owners`, `flakinessThreshold` and `perfRegressionPct`.',
     'x-required-permission': 'signed-in',
   },
 });
@@ -34,7 +34,7 @@ export default eventHandler(async (event) => {
   const body = await readBody(event);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    throw apiError({ statusCode: 400, message: 'Invalid request body', data: parsed.error.issues });
+    throw apiError({ statusCode: 400, message: subscriptionFiltersError(parsed.error), data: parsed.error.issues });
   }
 
   const { channelId, projectId, events, filters, mode, digestAt, global: requestedGlobal } = parsed.data;

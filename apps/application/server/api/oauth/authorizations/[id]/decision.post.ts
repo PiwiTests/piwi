@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { getDatabase } from '../../../../database';
-import { requireAuth } from '../../../../utils/auth';
+import { requireSessionAuth } from '../../../../utils/auth';
 import { MCP_OAUTH_RATE_LIMITS } from '../../../../utils/mcp-oauth-helpers';
 import { decideAuthorization, requireMcpOAuthEnabled } from '../../../../utils/mcp-oauth';
 import { publicBaseUrl } from '../../../../utils/public-base-url';
@@ -11,7 +11,7 @@ defineRouteMeta({
     tags: ['MCP OAuth'],
     summary: 'Allow or deny an MCP client authorization request',
     description:
-      'Body: `{ allow }`. Answers `{ status, redirectTo }`: the client’s redirect URI with an authorization code, or with `error=access_denied`, for the consent page to open. Allowing lets the client redeem the code once, within five minutes, for tokens that act on the MCP server with the signed-in user’s role and project access; the connection is listed with the user’s API keys, named after the client, and revoked there. 404 for an unknown request, 409 when it was already answered, 410 when it expired; 404 when authentication is off.',
+      'Body: `{ allow }`. Answers `{ status, redirectTo }`: the client’s redirect URI with an authorization code, or with `error=access_denied`, for the consent page to open. Allowing lets the client redeem the code once, within five minutes, for tokens that act on the MCP server with the signed-in user’s role and project access; the connection is listed with the user’s API keys, named after the client, and revoked there. 404 for an unknown request, 409 when it was already answered, 410 when it expired; 404 when authentication is off. Takes a signed-in session: a request with an API key is refused (403).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
     'x-required-permission': 'signed-in',
   },
@@ -21,7 +21,7 @@ const bodySchema = z.object({ allow: z.boolean() });
 
 export default eventHandler(async (event) => {
   requireMcpOAuthEnabled(event);
-  const user = await requireAuth(event);
+  const user = await requireSessionAuth(event);
   const missKey = `mcp-oauth:miss:${user.id}:${rateLimitClientIp(event)}`;
   const parsed = bodySchema.safeParse(await readBody(event));
   if (!parsed.success) throw apiError({ statusCode: 400, message: 'Invalid request body', data: parsed.error.issues });

@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { MAX_TEST_OUTPUT_CHARS } from '@piwitests/core/test-output';
 import { PiwiDashboardReporter } from '../src/public/reporter.js';
 import { testOutputOf } from '../src/internal/collect/test-output.js';
 import { recoveryFilePath } from '../src/internal/streaming/crash-recovery.js';
+import { privateTempDir } from '../src/internal/support/private-file.js';
 import { hashForProject } from '../src/internal/support/instance-id.js';
 import {
   fakeConfig,
@@ -62,9 +62,9 @@ describe("an attempt's output on the wire", () => {
 
   function cleanup(): void {
     const hash = hashForProject(projectName);
-    for (const f of fs.readdirSync(os.tmpdir())) {
+    for (const f of fs.readdirSync(privateTempDir())) {
       if ((f.startsWith('piwi-dashboard-stream-') || f.startsWith('piwi-dashboard-setup-')) && f.includes(hash)) {
-        fs.rmSync(path.join(os.tmpdir(), f), { force: true });
+        fs.rmSync(path.join(privateTempDir(), f), { force: true });
       }
     }
     if (server) fs.rmSync(recoveryFilePath(server.url, projectName), { force: true });

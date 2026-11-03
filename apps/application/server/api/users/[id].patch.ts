@@ -1,6 +1,6 @@
 import { getDatabase } from '../../database';
 import { accessRefusal, updateUserAccount, updateUserSchema } from '#shared/handlers/project-access';
-import { getRequestAccess, isAuthEnabled, requireAuth, revokeUserSessions } from '../../utils/auth';
+import { getRequestAccess, isAuthEnabled, refuseApiKey, requireAuth, revokeUserSessions } from '../../utils/auth';
 import { requireRouteId } from '../../utils/project-access';
 
 defineRouteMeta({
@@ -8,7 +8,7 @@ defineRouteMeta({
     tags: ['Users'],
     summary: 'Update a user',
     description:
-      "Updates a user's name, email, instance role (`role`: `administrator` or `member`) or groups (`groupIds`, replacing the current ones). Administrators can update any user; anyone else only their own name and email (403 otherwise). Demoting the last administrator is refused (400), and so is an email another account already uses, in any letter case (409). Changing the email clears its verified flag. Changing the instance role signs the user out everywhere; group changes apply on their next request.",
+      "Updates a user's name, email, instance role (`role`: `administrator` or `member`) or groups (`groupIds`, replacing the current ones). Administrators can update any user; anyone else only their own name and email (403 otherwise). Demoting the last administrator is refused (400), and so is an email another account already uses, in any letter case (409). Changing the email clears its verified flag; changing one's own takes a signed-in session, and a request with an API key is refused (403). Changing the instance role signs the user out everywhere; group changes apply on their next request.",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'signed-in',
     requestBody: {
@@ -39,6 +39,8 @@ export default eventHandler(async (event) => {
   if (!parsed.success) {
     throw apiError({ statusCode: 400, message: 'Invalid request body', data: parsed.error.issues });
   }
+  // An account's email receives its password reset links: an API key cannot change its own account's.
+  if (parsed.data.email !== undefined && id === currentUser.id) refuseApiKey(event);
 
   try {
     const { user, instanceRoleChanged } = await updateUserAccount(

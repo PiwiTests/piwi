@@ -51,22 +51,23 @@ function link(base: string | null, path: string): string | null {
 }
 
 /**
- * Mints a share token for a cluster, or returns null when share links are off.
- * The server injects one that reads `server/utils/share-links`; the demo passes
- * none, so this module never imports `node:crypto` into the worker bundle.
+ * The share token a cluster's body carries, or null when share links are off:
+ * the server's stands in for the link created when the issue is sent
+ * (`server/utils/integrations/share-url`); the demo passes none, so this
+ * module never imports `node:crypto` into the worker bundle.
  */
 export type ShareTokenMinter = (projectId: number, clusterId: number) => Promise<string | null>;
 
 /** The builder options: the pure `IssueBuildOpts` plus the server-side minter. */
 export interface DocumentBuildOpts extends IssueBuildOpts {
   mintShareToken?: ShareTokenMinter | null;
-  /** The share link the issue already carries: a rebuilt body reuses it rather than minting another. */
+  /** The share link the issue already carries, its token redacted: a rebuilt body reuses it. */
   shareUrl?: string | null;
   /** Set when a rule files the issue: the body opens with what it counted. */
   automatic?: AutomaticFiling | null;
 }
 
-/** The cluster's share URL when the toggle is on: the one given, else a freshly minted one. */
+/** The cluster's share URL when the toggle is on: the one given, else one on the minter's token. */
 async function resolveShareUrl(projectId: number, clusterId: number, opts: DocumentBuildOpts): Promise<string | null> {
   if (!opts.includeShareLink) return null;
   if (opts.shareUrl !== undefined) return opts.shareUrl;
@@ -252,7 +253,7 @@ async function relatedTrackerIssues(
 
 export interface BuiltClusterIssue extends BuiltIssue {
   projectId: number;
-  /** The share link the body carries, when it carries one. */
+  /** The share link the body carries, when it carries one, on the minter's token. */
   shareUrl: string | null;
 }
 

@@ -1,4 +1,4 @@
-import { requireAuth, revokeUserSessions, setUserSession } from '../../../../utils/auth';
+import { requireSessionAuth, revokeUserSessions, setUserSession } from '../../../../utils/auth';
 import { unlinkProvider } from '../../../../utils/oauth';
 
 defineRouteMeta({
@@ -6,14 +6,14 @@ defineRouteMeta({
     tags: ['Auth'],
     summary: 'Disconnect an OAuth provider',
     description:
-      'Removes the OAuth provider link from the current user. Requires the account to have a password set so the user keeps a way to sign in.',
+      'Removes the OAuth provider link from the current user. Requires the account to have a password set so the user keeps a way to sign in. Takes a signed-in session: a request with an API key is refused (403).',
     parameters: [{ name: 'provider', in: 'path', required: true, schema: { type: 'string' } }],
     'x-required-permission': 'signed-in',
   },
 });
 
 export default eventHandler(async (event) => {
-  const user = await requireAuth(event);
+  const user = await requireSessionAuth(event);
 
   const provider = getRouterParam(event, 'provider');
   if (!provider) {

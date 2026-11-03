@@ -394,7 +394,7 @@ describe('ResourceLedger', () => {
     expect(metrics.dispose).toHaveBeenCalled();
   });
 
-  it('appends its shutdown census to the results file and stops listening', async () => {
+  it('appends its shutdown census to the results file, readable by its owner alone, and stops listening', async () => {
     const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-ledger-')), 'results.jsonl');
     const fake = fakePlaywright();
     const { ledger } = ledgerFor(fake, { resultsFile: file });
@@ -405,6 +405,7 @@ describe('ResourceLedger', () => {
     const census = JSON.parse(fs.readFileSync(file, 'utf8').trim()) as ResourceCensus;
     expect(census.test).toBeNull();
     expect(census.open.map((o) => o.id)).toEqual([1, 2]);
+    if (process.platform !== 'win32') expect(fs.statSync(file).mode & 0o777).toBe(0o600);
     expect(fake.listeners).toHaveLength(0);
   });
 });

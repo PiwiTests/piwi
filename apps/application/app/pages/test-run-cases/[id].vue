@@ -5,6 +5,8 @@ import type { AiStepIntent, ApiResponse, TestCaseHistoryPoint, TraceInfo } from 
 import { isPiwiAnnotation } from '@piwitests/core/test-meta';
 import { isExpectedFailurePassed } from '@piwitests/core/status-classify';
 import { renderAnsi } from '~/utils';
+import { richCopyLink, trackedIssueHtml } from '~/utils/rich-copy-html';
+import { escapeHtml } from '#shared/markdown-to-html';
 import { buildRetryCommand } from '~/utils/retry-command';
 import { fixturesActiveIn } from '~/utils/fixtures-active';
 import type { FailureVerdict } from '#shared/failure-verdict';
@@ -220,6 +222,7 @@ const {
   decide: decideProjectCap,
 } = await useProjectCapabilities(testCase.value?.testRun?.project?.id ?? 0);
 const { decide: decideInstanceCap } = await useInstanceCapabilities();
+const offersShareLinks = await useShareLinksOffered();
 
 // The evidence footer's decline controls: both write a `declined` decision, one
 // per level, and the resolver hides the sources everywhere on the next read.
@@ -508,7 +511,6 @@ function copyFailure() {
   const loc = tc.location ?? '';
   // eslint-disable-next-line no-control-regex
   const rawError = tc.error.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
-  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const clusterUrl = failureCluster.value ? `${origin}/failure-clusters/${failureCluster.value.id}` : null;
   const testCaseUrl = `${origin}/test-run-cases/${testCaseId}`;
   const stableUrl = testCase.value?.testCaseId ? `${origin}/test-cases/${testCase.value.testCaseId}` : null;
@@ -530,12 +532,10 @@ function copyFailure() {
     .join('\n');
 
   const html = [
-    `<p><strong>❌ Test failed: ${esc(title)}</strong>${loc ? `<br><code>${esc(loc)}</code>` : ''}</p>`,
-    issue
-      ? `<p>Tracked in <a href="${esc(issue.url)}">${esc(issue.key)}</a>${issue.status ? ` (${esc(issue.status)})` : ''}</p>`
-      : '',
+    `<p><strong>❌ Test failed: ${escapeHtml(title)}</strong>${loc ? `<br><code>${escapeHtml(loc)}</code>` : ''}</p>`,
+    issue ? trackedIssueHtml(issue) : '',
     `<p><strong>Error:</strong></p><pre>${renderAnsi(tc.error)}</pre>`,
-    `<p>🔗 ${clusterUrl ? `<a href="${clusterUrl}">View failure cluster</a> · ` : ''}<a href="${testCaseUrl}">Execution details</a>${stableUrl ? ` · <a href="${stableUrl}">Test history</a>` : ''}</p>`,
+    `<p>🔗 ${clusterUrl ? `${richCopyLink(clusterUrl, 'View failure cluster')} · ` : ''}${richCopyLink(testCaseUrl, 'Execution details')}${stableUrl ? ` · ${richCopyLink(stableUrl, 'Test history')}` : ''}</p>`,
   ].join('');
 
   copyRich(plain, html, { toast: 'Failure copied' });
@@ -797,7 +797,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
               <span class="hidden xl:inline">Test history</span>
             </NuxtLink>
             <ShareLinksModal
-              v-if="testCase && !isDemoMode"
+              v-if="testCase && offersShareLinks"
               :endpoint="`/api/test-run-cases/${testCase.id}/share-links`"
               :project-id="executionProjectId"
             />

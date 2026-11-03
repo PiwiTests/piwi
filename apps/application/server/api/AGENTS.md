@@ -31,9 +31,17 @@ record is `proposals/roles-and-groups.md`.
 
 - **Authentication is optional**, turned on by `PIWI_AUTH_ENABLED=true`. When it is off, `requireAuth()` returns a
   virtual administrator (`ADMIN_ACCESS`), so every endpoint keeps working and the UI allows everything.
+- **With authentication off, the server answers only an IP, `localhost` or `*.localhost` `Host`, the host of
+  `PIWI_SITE_URL` or a name `PIWI_ALLOWED_HOSTS` lists**, a container's name included
+  (`server/middleware/allowed-host.ts`, `isAllowedHostWithoutAuth`). It reads `Host` alone, never `X-Forwarded-Host`
+  (`tests/unit/allowed-host.test.ts`).
 - **With authentication on, a request signs in with a session cookie (the browser) or an API key** (`pd_` prefix, as a
   Bearer token or in `X-API-Key`). An API key carries its owner's access (instance role and project roles), nothing
   more and nothing less.
+- **A route that changes the caller's own credentials or email, or creates a credential, refuses an API key**: it
+  calls `requireSessionAuth` (or `refuseApiKey` after `requireAuth`), so a key never creates a key, connects a client
+  or changes its own account's credentials or email (`tests/unit/session-only-routes.test.ts`). An administrator's key
+  still manages other users and creates accounts with a password: it is as powerful as the administrator's password.
 - **`/mcp` also takes an OAuth access token** (`pdo_` prefix), from the authorization server MCP clients sign in
   through (`server/utils/mcp-oauth.ts`, the `/.well-known/*` and `/oauth/*` routes, design record `adr/mcp-oauth.md`).
   Only `requireMcpAuth` accepts it, never `requireAuth`, so the REST API refuses it: keep it that way. Each grant owns
@@ -84,8 +92,10 @@ export default eventHandler(async (event) => {
 - **No response carries `test_runs.stream_token`**: a handler returning run rows selects `publicRunColumns()`
   (`shared/handlers/public-run.ts`).
 - **No CORS, and no cross-site writes.** `server/middleware/cross-site.ts` refuses any state-changing request whose
-  `Sec-Fetch-Site` is `cross-site` or `same-site` (browser extensions excepted), and no route sends
-  `Access-Control-Allow-Origin` except the trace archives the hosted trace viewer reads. Browser clients are
+  `Sec-Fetch-Site` is `cross-site` or `same-site` (browser extensions excepted), and, with authentication off only,
+  one without that header whose `Origin` is opaque or names neither the `Host` header's host and port nor
+  `PIWI_SITE_URL`'s (any scheme) nor a name `PIWI_ALLOWED_HOSTS` names, `*` aside (`tests/unit/cross-site.test.ts`). No route
+  sends `Access-Control-Allow-Origin` except the trace archives the hosted trace viewer reads. Browser clients are
   same-origin pages or Piwi Picker's background worker; every other client (reporter, CLI, MCP, IDE clients) sends no
   browser metadata.
 
@@ -126,12 +136,18 @@ The early check only proves the user holds the permission _somewhere_. The proje
   and the draft proposes none, a link is matched and read against that one alone, and the sync, the webhook, the
   policies and the outbox pass by a link or a write on another (`server/utils/integrations/bound-connection.ts`).
   `tests/unit/issue-create-routes.test.ts`, `tests/unit/issue-link-routes.test.ts`.
+- **No row keeps a share link's token**, only its hash (`share_links`): an issue body queued or filed with a share
+  link holds its URL with the token redacted, the link minted as the issue is sent and its token read back from the
+  issue for a rewrite (`server/utils/integrations/share-url.ts`, `tests/unit/integrations-share-link.test.ts`).
 - **An `issue:create` route under `integrations/connections/[id]/` calls `requireConnectionAccess` before its cache
   and the tracker**: `issue:create` on a project bound to the connection, `project:manage` anywhere or
   `connections:manage`, else the 404 of a missing connection. `tests/unit/connection-read-routes.test.ts`.
 - **A notification addressed to one user (`targetUserId`) still needs their access to every project it is about**:
   `notifyFixAuthor` checks it before the email (`tests/unit/fix-author.test.ts`), the stream before delivering
-  (`tests/unit/notification-stream.test.ts`).
+  (`tests/unit/notification-stream.test.ts`). A subscriber's, and a personal channel's owner's, is checked when a
+  delivery is queued (`match.ts`) and again when the outbox sends it, digests included, with the subscription's mute
+  and active state, and a quality report's against every project of its snapshot (`undeliverableReason` in
+  `dispatch.ts`, `tests/unit/notification-dispatch-access.test.ts`).
 - **Changing a user's instance role, or signing out, bumps `sessionEpoch`** and so ends their sessions. Project role
   and group changes need no such step: access is loaded on every request.
 

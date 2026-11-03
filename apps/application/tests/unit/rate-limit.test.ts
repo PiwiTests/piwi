@@ -3,10 +3,13 @@ import type { H3Event } from 'h3';
 import {
   checkRateLimit,
   limitLookupMisses,
+  rateLimitKeyCount,
+  releaseRateLimit,
   resetRateLimit,
   rateLimitResetSeconds,
   rateLimitedError,
   rateLimitClientIp,
+  clientNetwork,
 } from '../../server/utils/rate-limit';
 
 const WINDOW_MS = 15 * 60 * 1000;
@@ -48,6 +51,31 @@ describe('checkRateLimit', () => {
     expect(checkRateLimit('check:expiry', 1, WINDOW_MS)).toBe(false);
     vi.advanceTimersByTime(WINDOW_MS + 1);
     expect(checkRateLimit('check:expiry', 1, WINDOW_MS)).toBe(true);
+  });
+});
+
+describe('the store', () => {
+  test('sweeps the ended windows when a new key arrives once it has grown, and keeps the live ones', async () => {
+    vi.resetModules();
+    const fresh = await import('../../server/utils/rate-limit');
+    for (let i = 0; i < 999; i++) fresh.checkRateLimit(`ended:${i}`, 1, 1000);
+    fresh.checkRateLimit('live', 1, WINDOW_MS);
+    vi.advanceTimersByTime(2000);
+    expect(fresh.rateLimitKeyCount()).toBe(1000);
+
+    fresh.checkRateLimit('new', 1, WINDOW_MS);
+    expect(fresh.rateLimitKeyCount()).toBe(2);
+    expect(fresh.checkRateLimit('live', 1, WINDOW_MS)).toBe(false);
+  });
+
+  test('stays bounded under a stream of keys that each end', async () => {
+    vi.resetModules();
+    const fresh = await import('../../server/utils/rate-limit');
+    for (let i = 0; i < 5000; i++) {
+      fresh.checkRateLimit(`stream:${i}`, 1, 1000);
+      vi.advanceTimersByTime(10);
+    }
+    expect(fresh.rateLimitKeyCount()).toBeLessThanOrEqual(1000);
   });
 });
 
@@ -109,6 +137,36 @@ describe('limitLookupMisses', () => {
       );
     expect(await status(failing())).toBe(500);
     expect(await status(failing())).toBe(500);
+  });
+});
+
+describe('releaseRateLimit', () => {
+  test('gives a slot back, and removes a key that holds none', () => {
+    const before = rateLimitKeyCount();
+    expect(checkRateLimit('release:key', 2, WINDOW_MS)).toBe(true);
+    expect(checkRateLimit('release:key', 2, WINDOW_MS)).toBe(true);
+    expect(checkRateLimit('release:key', 2, WINDOW_MS)).toBe(false);
+    releaseRateLimit('release:key');
+    expect(rateLimitKeyCount()).toBe(before + 1);
+    expect(checkRateLimit('release:key', 2, WINDOW_MS)).toBe(true);
+    releaseRateLimit('release:key');
+    releaseRateLimit('release:key');
+    expect(rateLimitKeyCount()).toBe(before);
+  });
+
+  test('a lookup that finds what it looked up leaves no key behind', async () => {
+    const { event } = fakeEvent();
+    const before = rateLimitKeyCount();
+    for (let i = 0; i < 10; i++) {
+      await limitLookupMisses(
+        event,
+        `release:hit:${i}`,
+        { limit: 2, windowMs: WINDOW_MS },
+        async () => true,
+        (found) => !found,
+      );
+    }
+    expect(rateLimitKeyCount()).toBe(before);
   });
 });
 
@@ -180,5 +238,52 @@ describe('rateLimitClientIp', () => {
     vi.stubEnv('PIWI_TRUST_PROXY', 'true');
     const { event } = fakeEvent({ remoteAddress: '203.0.113.9' });
     expect(rateLimitClientIp(event)).toBe('203.0.113.9');
+  });
+
+  test('warns once per process when X-Forwarded-For arrives without PIWI_TRUST_PROXY', async () => {
+    vi.resetModules();
+    const fresh = await import('../../server/utils/rate-limit');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      fresh.rateLimitClientIp(fakeEvent({ remoteAddress: '203.0.113.9' }).event);
+      expect(warn).not.toHaveBeenCalled();
+      fresh.rateLimitClientIp(fakeEvent({ remoteAddress: '203.0.113.9', forwardedFor: '198.51.100.7' }).event);
+      fresh.rateLimitClientIp(fakeEvent({ remoteAddress: '203.0.113.9', forwardedFor: '198.51.100.8' }).event);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0]![0]).toContain('PIWI_TRUST_PROXY');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('does not warn about X-Forwarded-For with PIWI_TRUST_PROXY set', async () => {
+    vi.resetModules();
+    const fresh = await import('../../server/utils/rate-limit');
+    vi.stubEnv('PIWI_TRUST_PROXY', 'true');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      fresh.rateLimitClientIp(fakeEvent({ remoteAddress: '127.0.0.1', forwardedFor: '198.51.100.7' }).event);
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
+describe('clientNetwork', () => {
+  test('reads an IPv6 address as its /64 network, however it is written', () => {
+    expect(clientNetwork('2001:db8:0:1::1')).toBe('2001:db8:0:1::/64');
+    expect(clientNetwork('2001:DB8:0000:0001:ffff:ffff:ffff:ffff')).toBe('2001:db8:0:1::/64');
+    expect(clientNetwork('2001:db8::1:2:3:4')).toBe('2001:db8:0:0::/64');
+    expect(clientNetwork('fe80::1%eth0')).toBe('fe80:0:0:0::/64');
+    expect(clientNetwork('::1')).toBe('0:0:0:0::/64');
+  });
+
+  test('keeps an IPv4 address, an IPv4-mapped one and a value that is no address as they are', () => {
+    expect(clientNetwork('198.51.100.7')).toBe('198.51.100.7');
+    expect(clientNetwork('::ffff:198.51.100.7')).toBe('::ffff:198.51.100.7');
+    expect(clientNetwork('::ffff:198.51.100.8')).toBe('::ffff:198.51.100.8');
+    expect(clientNetwork('unknown')).toBe('unknown');
+    expect(clientNetwork('[2001:db8::1]')).toBe('[2001:db8::1]');
   });
 });

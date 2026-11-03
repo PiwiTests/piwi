@@ -187,6 +187,19 @@ describe('POST /api/integrations/issues', () => {
     issueType: 'Bug',
   });
 
+  test('refuses a caller without credentials before the body is read', async () => {
+    state.caller = null;
+    let read = false;
+    const event = {
+      get body() {
+        read = true;
+        return body(CLUSTER[WEB], webJira);
+      },
+    };
+    expect(await refusal(createIssue(event))).toMatchObject({ statusCode: 401 });
+    expect(read).toBe(false);
+  });
+
   test('refuses a connection the project is not bound to, before anything is queued or sent', async () => {
     state.caller = robin;
     expect(await refusal(createIssue({ body: body(CLUSTER[WEB], billingJira) }))).toEqual({

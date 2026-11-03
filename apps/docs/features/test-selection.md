@@ -79,7 +79,7 @@ absent `include` starts from the whole suite. The predicates, all optional:
 | `ids` | the test-case id is one of these |
 | `tags` / `anyTags` | the test carries all / any of these tags |
 | `owner`, `priority`, `feature` | the `piwi:` annotation is one of these |
-| `files` | the file path matches one of these globs (`**`, `*`, `?`) |
+| `files` | the file path matches one of these globs (`**`, `*`, `?`): at most 100, each of up to 500 characters |
 | `suitePath`, `text` | the describe chain / title (or file) contains this substring |
 | `quarantined`, `flaky`, `neverRun` | the test is (or is not) in that state |
 | `minPassRate` / `maxPassRate` | the [pass rate](/guide/concepts#pass-rate) is within bounds (0–1); a test with none matches neither |

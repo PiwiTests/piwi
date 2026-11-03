@@ -16,6 +16,7 @@ import { eligibleExecutionSql } from '../run-eligibility';
 import { latestRunStatusSql } from './latest-run-status';
 import { finalAttemptSql, recentFlakySql, testCaseAggregates } from './test-case-aggregates';
 import { foldText } from '#shared/utils/fold-text';
+import { compileGlob, type GlobToken } from '@piwitests/core/glob';
 import {
   BUILTIN_SELECTIONS,
   getBuiltinSelection,
@@ -186,31 +187,45 @@ async function loadRecentFailRanks(db: DrizzleDB, projectId: number): Promise<Ma
 
 // ── Predicate evaluation ─────────────────────────────────────────────────────
 
-/** Convert a glob (`**`, `*`, `?`) to an anchored regex over a POSIX path. */
-function globToRegExp(glob: string): RegExp {
-  let re = '';
+/**
+ * A glob over a POSIX path as an anchored, case-insensitive matcher: `**` (and
+ * the `/` right after it) any run of characters but a line terminator, `*` a
+ * run within one segment, `?` one character of a segment. `compileGlob` matches
+ * in steps that grow with the glob's length times the path's, whatever the glob
+ * holds.
+ */
+function pathGlobMatcher(glob: string): (path: string) => boolean {
+  const tokens: GlobToken[] = [];
   for (let i = 0; i < glob.length; i++) {
     const c = glob[i]!;
     if (c === '*') {
       if (glob[i + 1] === '*') {
-        re += '.*';
+        tokens.push({ kind: 'run', slash: true });
         i++;
         if (glob[i + 1] === '/') i++;
       } else {
-        re += '[^/]*';
+        tokens.push({ kind: 'run', slash: false });
       }
     } else if (c === '?') {
-      re += '[^/]';
-    } else if ('\\^$.|+()[]{}'.includes(c)) {
-      re += '\\' + c;
+      tokens.push({ kind: 'one', slash: false });
     } else {
-      re += c;
+      tokens.push({ kind: 'char', char: c });
     }
   }
-  return new RegExp(`^${re}$`, 'i');
+  return compileGlob(tokens, true);
 }
 
-function matchesGroup(row: CatalogRow, group: SelectionPredicateGroup): boolean {
+/** A predicate group with its file globs compiled, once for every catalog row a resolve reads. */
+interface CompiledGroup {
+  group: SelectionPredicateGroup;
+  files?: Array<(path: string) => boolean>;
+}
+
+function compileGroups(groups: SelectionPredicateGroup[] | undefined): CompiledGroup[] {
+  return (groups ?? []).map((group) => ({ group, files: group.files?.map(pathGlobMatcher) }));
+}
+
+function matchesGroup(row: CatalogRow, { group, files }: CompiledGroup): boolean {
   if (group.ids && !group.ids.includes(row.id)) return false;
   if (group.tags) {
     const have = new Set(row.tags.map((t) => t.toLowerCase()));
@@ -223,9 +238,9 @@ function matchesGroup(row: CatalogRow, group: SelectionPredicateGroup): boolean 
   if (group.owner && !(row.owner && group.owner.includes(row.owner))) return false;
   if (group.priority && !(row.priority && group.priority.includes(row.priority as never))) return false;
   if (group.feature && !(row.feature && group.feature.includes(row.feature))) return false;
-  if (group.files) {
+  if (files) {
     const posix = row.filePath.replace(/\\/g, '/');
-    if (!group.files.some((g) => globToRegExp(g).test(posix))) return false;
+    if (!files.some((matches) => matches(posix))) return false;
   }
   if (group.suitePath && !foldText(row.suitePath).includes(foldText(group.suitePath))) return false;
   if (group.text) {
@@ -260,13 +275,12 @@ function matchesGroup(row: CatalogRow, group: SelectionPredicateGroup): boolean 
 }
 
 /** A test matches include when include is empty/absent, or it matches any include group. */
-function matchesInclude(row: CatalogRow, include: SelectionPredicateGroup[] | undefined): boolean {
-  if (!include || include.length === 0) return true;
+function matchesInclude(row: CatalogRow, include: CompiledGroup[]): boolean {
+  if (include.length === 0) return true;
   return include.some((group) => matchesGroup(row, group));
 }
 
-function matchesExclude(row: CatalogRow, exclude: SelectionPredicateGroup[] | undefined): boolean {
-  if (!exclude || exclude.length === 0) return false;
+function matchesExclude(row: CatalogRow, exclude: CompiledGroup[]): boolean {
   return exclude.some((group) => matchesGroup(row, group));
 }
 
@@ -373,9 +387,11 @@ export async function resolveSelectionDefinition(
   const warnings: SelectionWarning[] = [];
 
   // include → exclude
+  const include = compileGroups(definition.include);
+  const exclude = compileGroups(definition.exclude);
   const selected = new Map<number, CatalogRow>();
   for (const row of catalog) {
-    if (matchesInclude(row, definition.include) && !matchesExclude(row, definition.exclude)) {
+    if (matchesInclude(row, include) && !matchesExclude(row, exclude)) {
       selected.set(row.id, row);
     }
   }

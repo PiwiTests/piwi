@@ -4,7 +4,7 @@ import { subscriptions, notificationChannels } from '../../database/schema';
 import { getRequestAccess, requireAuth } from '../../utils/auth';
 import { formatSubscription } from '../../utils/subscriptions';
 import { NOTIFICATION_EVENTS } from '#shared/notification-events';
-import { digestAtSchema, subscriptionFiltersSchema } from '#shared/subscription-filters';
+import { digestAtSchema, subscriptionFiltersError, subscriptionFiltersSchema } from '#shared/subscription-filters';
 import { isAdministrator } from '#shared/permissions';
 import { z } from 'zod';
 import { requireRouteId } from '../../utils/project-access';
@@ -36,7 +36,7 @@ export default eventHandler(async (event) => {
 
   const body = await readBody(event);
   const parsed = schema.safeParse(body);
-  if (!parsed.success) throw apiError({ statusCode: 400, message: 'Invalid request body' });
+  if (!parsed.success) throw apiError({ statusCode: 400, message: subscriptionFiltersError(parsed.error) });
 
   const db = await getDatabase();
   const isAdmin = isAdministrator(await getRequestAccess(event));

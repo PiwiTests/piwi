@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { FormData, HttpClient } from '../src/internal/transport/http-client.js';
+import { FormData, HttpClient, runTokenHeaders } from '../src/internal/transport/http-client.js';
 import { Logger } from '../src/internal/support/logger.js';
 
 interface RecordedReq {
@@ -76,6 +76,48 @@ describe('HttpClient (against fake http.Server)', () => {
       }
     });
 
+    it("carries the server's own word on a refusal, on one bounded line", async () => {
+      const refusal = 'With authentication off, this dashboard answers only on its local addresses.\nAdd the name you use.';
+      const answers: Record<string, (res: http.ServerResponse) => void> = {
+        '/plain': (res) => {
+          res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+          res.end(refusal);
+        },
+        '/json': (res) => jsonRes(res, 403, { statusCode: 403, statusMessage: 'Forbidden', message: 'No access to this project' }),
+        '/status-message': (res) => jsonRes(res, 403, { statusMessage: 'Forbidden' }),
+        '/long': (res) => {
+          res.writeHead(403, { 'Content-Type': 'text/plain' });
+          res.end('x'.repeat(2000));
+        },
+        '/html': (res) => {
+          res.writeHead(403, { 'Content-Type': 'text/html' });
+          res.end('<html><body><h1>403 Forbidden</h1></body></html>');
+        },
+      };
+      const { server, url } = await startServer((req, res) => answers[req.url]!(res));
+      try {
+        const client = new HttpClient(url, new Logger(false));
+        await expect(client.postJSON('/plain', {}, null)).rejects.toThrow(
+          'Request failed with status 403: With authentication off, this dashboard answers only on its local addresses. Add the name you use.',
+        );
+        await expect(client.putJSON('/json', {}, null)).rejects.toThrow(
+          'Request failed with status 403: No access to this project',
+        );
+        await expect(client.postJSON('/status-message', {}, null)).rejects.toThrow(
+          'Request failed with status 403: Forbidden',
+        );
+        const long = await client.postJSON('/long', {}, null).catch((error: Error) => error.message);
+        expect(long).toBe(`Request failed with status 403: ${'x'.repeat(499)}…`);
+        const form = new FormData();
+        form.append('field', 'value');
+        await expect(client.postFormData('/plain', form, null)).rejects.toThrow(/status 403: With authentication off/);
+        const html = await client.postJSON('/html', {}, null).catch((error: Error) => error.message);
+        expect(html).toBe('Request failed with status 403');
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    });
+
     it('reads a character the answer splits across two chunks', async () => {
       const body = Buffer.from(JSON.stringify({ title: 'café ✓' }));
       const cut = body.indexOf(Buffer.from('é')) + 1;
@@ -118,6 +160,21 @@ describe('HttpClient (against fake http.Server)', () => {
         await client.postJSON('/api/x', {}, 'pd_secret123');
         expect(requests[0].headers['authorization']).toBe('Bearer pd_secret123');
         expect(requests[0].headers['cookie']).toBe(undefined);
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    });
+
+    it('sends a run token in its header beside the body, and none without one', async () => {
+      const { server, url, requests } = await startServer((_req, res) => jsonRes(res, 200, {}));
+      try {
+        const client = new HttpClient(url, new Logger(false));
+        await client.postJSON('/api/x', { streamToken: 'tok' }, null, undefined, { headers: runTokenHeaders('tok') });
+        await client.postJSON('/api/x', {}, null, undefined, { headers: runTokenHeaders(null) });
+        expect(requests[0].headers['x-piwi-run-token']).toBe('tok');
+        expect(requests[0].headers['content-type']).toBe('application/json');
+        expect(JSON.parse(requests[0].body)).toEqual({ streamToken: 'tok' });
+        expect(requests[1].headers['x-piwi-run-token']).toBe(undefined);
       } finally {
         await new Promise<void>((r) => server.close(() => r()));
       }

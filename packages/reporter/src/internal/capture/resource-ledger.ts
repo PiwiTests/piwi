@@ -10,6 +10,7 @@ import { callSitePath, framePath } from './locator-healing.js';
 import { internalCall, resolvePlaywrightPackageJson } from './quiet-capture.js';
 import { PageReader, WorkerMetrics, type PageMain, type TestMetrics } from './worker-metrics.js';
 import { roleOf } from '../support/system-readers.js';
+import { appendPrivateFile } from '../support/private-file.js';
 
 /**
  * The resource ledger: every browser, context, page and API request context a
@@ -693,7 +694,7 @@ export class ResourceLedger {
     const census = this.census(null);
     if (this.resultsFile) {
       try {
-        fs.appendFileSync(this.resultsFile, `${JSON.stringify(census)}\n`);
+        appendPrivateFile(this.resultsFile, `${JSON.stringify(census)}\n`);
       } catch {
         // The census of the worker's last test stands in.
       }
