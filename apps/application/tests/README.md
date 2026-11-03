@@ -174,9 +174,11 @@ database backend:
 
 ## Troubleshooting
 
-### Port Already in Use
+### A Server Already on Port 7494
 
-If port 7494 is in use, the tests will fail to start. Stop any running dev servers:
+Outside CI the suite reuses a server already listening on port 7494. One started with other settings (authentication
+on, another branch's build) makes the specs fail: stop it, or start the one you want with `npm run app:dev:bg`. To stop
+whatever holds the port:
 
 ```bash
 # Find and kill the process on port 7494

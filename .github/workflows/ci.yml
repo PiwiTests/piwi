@@ -645,7 +645,8 @@ jobs:
           docker exec -e PGPASSWORD=postgres postgres psql -h 127.0.0.1 -U postgres -c 'CREATE DATABASE playwright_main;'
 
       # The unit tests that need a PostgreSQL server (`*-pg.test.ts`), once per run: in the first shard of the s3 +
-      # postgres cell, the one a pull request and main both run. Each test creates and drops a database of its own.
+      # postgres cell, the one a pull request and main both run. Each file works in a database, schema or table of its own,
+      # named after its process, and drops it.
       - name: Run the PostgreSQL unit tests
         if: matrix.database == 'postgres' && matrix.storage == 's3' && matrix.shard == 1
         working-directory: apps/application

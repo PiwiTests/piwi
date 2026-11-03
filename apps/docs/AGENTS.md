@@ -34,6 +34,9 @@ by `docs:dev` and `docs:build`:
 - **A generator runs with only `apps/docs` installed**, since the docs workflows install nothing else. A package a
   registry imports at runtime, such as `zod`, is therefore a devDependency here, and the generator resolves it from here
   through a jiti alias (see `scripts/generate-mcp-tools.mjs`).
+- **`docs:gen` also runs on the root install alone**: the dashboard's unit test job runs it before the tests, with no
+  `apps/docs` install. A generator imports only Node, `jiti`, `typescript` and what the app's registries import; a
+  package only `apps/docs` installs breaks `Dashboard unit tests`.
 - **The band labels in `ANALYTICS_BANDS` are the headings of the Analytics widgets page**, and the in-app help links
   them: renaming one is a link change.
 - **Every reporter option has a JSDoc comment** stating its default: the Reporter options page is generated from those
