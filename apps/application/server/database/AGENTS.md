@@ -96,3 +96,6 @@ its own retries, as in Playwright, and a row without one reads `repeat_each_inde
   as its result's final attempt (`final_attempt`), which `finalAttemptSql` reads, until a later attempt arrives
   (`persistRunCases` and its demo mirror; the seed generator and the perf dataset write the flag themselves). A fixture
   that inserts attempts directly sets `finalAttempt: false` on the earlier ones. `tests/unit/final-attempt.test.ts`.
+- **Every insert into `test_runs_cases` is preceded by `fillAttemptHistories`**: a retry that came without an attempt
+  history gets the one its stored and earlier attempts make, since `flakyResultSql` reads a row's verdict from the row
+  alone. `tests/unit/final-attempt.test.ts` fails on a file that inserts executions without it.

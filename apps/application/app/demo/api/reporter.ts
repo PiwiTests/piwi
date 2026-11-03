@@ -94,7 +94,7 @@ import { countFailedFromTally, sumFailedAndTimedOut } from '#shared/utils/test-c
 import { computeRunCountsFromRows } from '~~/server/utils/run-counts';
 import { syncAutoMarkersForRun } from '#shared/handlers/markers';
 import { recordRunHealth } from '#shared/handlers/run-health';
-import { settleFinalAttempts } from '#shared/handlers/test-case-aggregates';
+import { fillAttemptHistories, settleFinalAttempts } from '#shared/handlers/test-case-aggregates';
 import { upsertDailyRollup } from '#shared/handlers/analytics/rollups';
 import { recordRunResourceFindings } from '#shared/handlers/resource-findings';
 import { joinSuitePath, SUITE_PATH_SEP } from '#shared/utils/suites';
@@ -837,6 +837,8 @@ export async function persistRunCases(
     wakeSnoozed: !options.keepSnoozed,
     countsOccurrences,
   });
+
+  await fillAttemptHistories(db, testRunId, runCasesRows);
 
   // ON CONFLICT DO NOTHING + the (run, case, repeat, retries, browser) unique
   // index keep this idempotent across batch retries, while each attempt,

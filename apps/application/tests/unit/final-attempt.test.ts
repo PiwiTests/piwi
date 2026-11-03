@@ -17,7 +17,9 @@ import { STORED_ATTEMPTS, expectedFinalFlags, finalAttemptBackfillSql } from './
  * Each execution stores whether it is the final attempt of its run, test, Playwright project and repetition
  * (`final_attempt`), which a test's pages read its runs from. Every path that writes executions keeps it right when a
  * later attempt arrives, and when an attempt arrives after a later one: a batch, a streamed run, the imports and the
- * demo's ingest. A migration gives the executions stored before it theirs.
+ * demo's ingest. A migration gives the executions stored before it theirs. A retry an older reporter sends without
+ * its attempt history is given the one its result's stored and earlier attempts make, which the catalog and the test
+ * page read its flakiness from.
  */
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
@@ -54,7 +56,8 @@ const events = (await import('../../server/api/test-runs/[id]/events.post')).def
 const { importBlobReportRun, importTraceRun } = await import('#shared/handlers/import-runs');
 const { persistRunCases } = await import('../../server/utils/persist-run-cases');
 const { apiSetupTestRun, apiBeginTestRun, apiPostRunEvents } = await import('../../app/demo/api/reporter');
-const { getTestCase } = await import('#shared/handlers/test-cases');
+const { getTestCase, getTestCaseStabilityTrend } = await import('#shared/handlers/test-cases');
+const { getProjectTestCases } = await import('#shared/handlers/projects');
 const { testCaseCache } = await import('../../server/utils/test-case-cache');
 const { testSuiteCache } = await import('../../server/utils/test-suite-cache');
 
@@ -294,6 +297,87 @@ describe("the demo's ingest", () => {
   });
 });
 
+describe('a retry an older reporter sends without its attempt history', () => {
+  /** One attempt as an older reporter sends it: no attempt history. */
+  function bare(title: string, statuses: string[]) {
+    const { attempts: _history, ...tc } = attempt(title, statuses);
+    return tc;
+  }
+
+  /** The stored attempt history of each execution of a test, in retry order. */
+  async function histories(title: string) {
+    const rows = await db
+      .select({ attempts: schema.testRunsCases.attempts })
+      .from(schema.testRunsCases)
+      .where(eq(schema.testRunsCases.testCaseId, await testCaseId(title)))
+      .orderBy(asc(schema.testRunsCases.retries));
+    return rows.map((row) => row.attempts);
+  }
+
+  test.each([
+    ['passed', false],
+    ['failed', true],
+  ])('after a first attempt that %s, in an earlier batch of a streamed run, reads flaky: %s', async (first, flaky) => {
+    const { runId, streamToken } = await start({ body: { projectName: PROJECT, totalTests: 1 } });
+    const send = (tc: ReturnType<typeof bare>) =>
+      events({ params: { id: String(runId) }, body: { streamToken, testCases: [{ type: 'complete', ...tc }] } });
+    await send(bare('pays', [first]));
+    await send(bare('pays', [first, 'passed']));
+
+    const id = await testCaseId('pays');
+    const runs = flaky ? 1 : 0;
+    expect(await getTestCase(db as never, id)).toMatchObject({ totalRuns: 1, flakyRuns: runs, recentFlakyRuns: runs });
+    const catalog = await getProjectTestCases(db as never, projectId);
+    expect(catalog.items.find((t: any) => t.id === id)).toMatchObject({
+      status: flaky ? 'flaky' : 'passed',
+      flakyRuns: runs,
+    });
+    const trend = await getTestCaseStabilityTrend(db as never, id, { days: 2, granularity: 'day' });
+    expect(trend.buckets.filter((b) => b.totalRuns > 0)).toMatchObject([{ totalRuns: 1, flakyRate: runs }]);
+  });
+
+  test("is given one from the batch's own earlier attempts, and a reported history is kept", async () => {
+    const { runId } = await submit({
+      body: {
+        projectName: PROJECT,
+        status: 'passed',
+        startTime: new Date().toISOString(),
+        testCases: [
+          bare('pays', ['passed']),
+          bare('pays', ['passed', 'passed']),
+          bare('ships', ['failed']),
+          attempt('ships', ['failed', 'passed'], {
+            attempts: [{ retry: 1, status: 'passed', duration: 7, startedAt: null }],
+          }),
+        ],
+        totalTests: 2,
+        passedTests: 2,
+      },
+    });
+    expect(runId).toBeGreaterThan(0);
+    expect(await histories('pays')).toEqual([
+      null,
+      [
+        { retry: 0, status: 'passed', duration: 100, startedAt: null },
+        { retry: 1, status: 'passed', duration: 100, startedAt: null },
+      ],
+    ]);
+    expect(await histories('ships')).toEqual([null, [{ retry: 1, status: 'passed', duration: 7, startedAt: null }]]);
+  });
+
+  test("is given one by the demo's ingest too", async () => {
+    const run = { projectName: PROJECT, instanceId: 'ci-run-2' };
+    const { runId, setupToken } = await apiSetupTestRun(run);
+    const { streamToken } = await apiBeginTestRun(runId, { setupToken, totalTests: 1, ...run });
+    const send = (tc: ReturnType<typeof bare>) =>
+      apiPostRunEvents(runId, { streamToken, testCases: [{ type: 'complete', ...tc } as never] });
+    await send(bare('pays', ['passed']));
+    await send(bare('pays', ['passed', 'passed']));
+    expect((await histories('pays'))[1]).toHaveLength(2);
+    expect(await getTestCase(db as never, await testCaseId('pays'))).toMatchObject({ totalRuns: 1, flakyRuns: 0 });
+  });
+});
+
 const APP_DIR = fileURLToPath(new URL('../..', import.meta.url));
 
 describe('the final-attempt backfill', () => {
@@ -333,12 +417,15 @@ function sourceFiles(dir: string): string[] {
 }
 
 describe('the code that writes executions', () => {
-  test('settles the final attempts of what it wrote', () => {
+  test('fills in the attempt histories and settles the final attempts of what it wrote', () => {
     const unsettled = ['server', 'shared', 'app/demo']
       .flatMap((dir) => sourceFiles(join(APP_DIR, dir)))
       .filter((file) => {
         const text = readFileSync(file, 'utf8');
-        return /\.insert\((?:schema\.)?testRunsCases\)/.test(text) && !text.includes('settleFinalAttempts(');
+        return (
+          /\.insert\((?:schema\.)?testRunsCases\)/.test(text) &&
+          !(text.includes('fillAttemptHistories(') && text.includes('settleFinalAttempts('))
+        );
       })
       .map((file) => relative(APP_DIR, file));
     expect(unsettled).toEqual([]);
