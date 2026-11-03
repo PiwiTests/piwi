@@ -152,7 +152,7 @@ import { getPageDiff } from '../page-diff';
 import { describePageDiff, formatPageDiffSummary } from '#shared/page-diff';
 import { inlineCasePayloads } from '../case-payloads';
 import { selectCaseScreenshots } from '../case-screenshots';
-import { failurePageScreenshot } from '#shared/file-classify';
+import { executionFailed, failurePageScreenshot } from '#shared/file-classify';
 import { createScmProvider } from '../scm';
 import { readProjectRepositoryUrl } from '../scm/project-repository';
 import { readChangeCoverage } from '../scm/change-coverage';
@@ -1165,7 +1165,12 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
     const allRows = await selectCaseScreenshots(db, id);
     if (allRows.length === 0) return { items: [] };
-    const atFailure = failurePageScreenshot(allRows, (r) => r.subtype);
+    const [execution] = await db
+      .select({ status: testRunsCases.status })
+      .from(testRunsCases)
+      .where(eq(testRunsCases.id, id))
+      .limit(1);
+    const atFailure = failurePageScreenshot(allRows, (r) => r.subtype, { failed: executionFailed(execution?.status) });
     const screenshotRows = withContent ? allRows.slice(0, 3) : allRows;
 
     const storage = getStorage();

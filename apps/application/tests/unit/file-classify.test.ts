@@ -3,6 +3,7 @@ import { FAILURE_SCREENSHOT_ATTACHMENT } from '@piwitests/core/wire';
 import {
   classifyEvidenceFile,
   contentTypeForPath,
+  executionFailed,
   failurePageFirst,
   failurePageScreenshot,
   isScreenshotFileRow,
@@ -186,6 +187,14 @@ describe('failurePageScreenshot / failurePageFirst', () => {
     expect(failurePageScreenshot([popup], name, { failed: false })).toBeNull();
     expect(failurePageFirst([listPage, popup], name, { failed: false })).toEqual([listPage, popup]);
     expect(failurePageScreenshot([listPage, failingPage], name, { failed: false })).toBe(failingPage);
+  });
+
+  test('every execution but a passed or skipped one failed, so an unknown status keeps the guess', () => {
+    for (const status of ['failed', 'timedout', 'timedOut', 'interrupted', null, undefined]) {
+      expect(executionFailed(status)).toBe(true);
+    }
+    expect(executionFailed('passed')).toBe(false);
+    expect(executionFailed('skipped')).toBe(false);
   });
 
   test('among several of Playwright’s own, none is the failing page and the order is kept', () => {
