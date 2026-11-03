@@ -75,6 +75,7 @@ import type {
 import type { AiAttachedImage } from './ai-provider';
 import { getStorage } from '../storage';
 import type { DbClient } from '../database';
+import { flakyResultSql } from '#shared/handlers/test-case-aggregates';
 
 type ScmCoverage = NonNullable<DiagnosisContextCoverage['scm']>;
 
@@ -1218,7 +1219,7 @@ function clusterTestCaseIds(db: DbClient, clusterId: number) {
 /**
  * Recurrence pattern + flakiness analysis for the cluster, over the executions
  * of its tests in the project's 30 most recent runs. A run is affected when it
- * holds a failure in the cluster or a retry pass of one of its tests.
+ * holds a failure in the cluster or a pass after a failed attempt of one of its tests.
  */
 export async function recurrenceFlakinessSection(db: DbClient, cluster: FailureCluster): Promise<string | null> {
   const rows = await db
@@ -1226,6 +1227,7 @@ export async function recurrenceFlakinessSection(db: DbClient, cluster: FailureC
       runId: testRunsCases.testRunId,
       status: testRunsCases.status,
       retries: testRunsCases.retries,
+      passedAfterFailure: testRunsCases.passedAfterFailure,
       clusterId: testRunsCases.failureClusterId,
     })
     .from(testRunsCases)
@@ -1243,7 +1245,7 @@ export async function recurrenceFlakinessSection(db: DbClient, cluster: FailureC
         ),
       ),
     );
-  const recentRuns = rows.filter((r) => r.clusterId === cluster.id || (r.status === 'passed' && (r.retries ?? 0) > 0));
+  const recentRuns = rows.filter((r) => r.clusterId === cluster.id || r.passedAfterFailure);
 
   if (recentRuns.length === 0) return null;
 
@@ -1258,7 +1260,7 @@ export async function recurrenceFlakinessSection(db: DbClient, cluster: FailureC
     g.total++;
     if (isFailedStatus(r.status) || r.status === 'interrupted') g.failed++;
     if ((r.retries ?? 0) > 0) g.retried++;
-    if ((r.retries ?? 0) > 0 && r.status === 'passed') g.passOnRetry = true;
+    if (r.passedAfterFailure) g.passOnRetry = true;
   }
 
   const affectedRuns = byRun.size;
@@ -2056,14 +2058,13 @@ export async function retryBehaviorSection(db: DbClient, cluster: FailureCluster
       and(
         inArray(testRunsCases.testCaseId, clusterTestCaseIds(db, cluster.id)),
         eq(testRunsCases.testRunId, cluster.lastSeenRunId),
-        eq(testRunsCases.status, 'passed'),
-        sql`${testRunsCases.retries} > 0`,
+        flakyResultSql(),
       ),
     )
     .limit(1);
 
   if (retryPassRows.length === 0) return null;
-  return `## Retry Behavior\nAt least one test in this cluster passed on retry in the last seen run (suggests flakiness).`;
+  return `## Retry Behavior\nAt least one test in this cluster passed on a retry after a failed attempt in the last seen run (suggests flakiness).`;
 }
 
 /**

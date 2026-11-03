@@ -3,6 +3,7 @@ import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { migrateToLatest } from './temp-db';
+import { withStoredVerdicts } from './stored-verdicts';
 
 // The schema barrel (server/database/schema.ts) picks the PostgreSQL schema at
 // import time when PIWI_DATABASE_URL is set, so clear it before the handler
@@ -63,7 +64,7 @@ describe('getSetupStatus', () => {
     await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'a' });
     const [runCase] = await db
       .insert(schema.testRunsCases)
-      .values({ testRunId: run!.id, testCaseId: 1, status: 'passed', duration: 1 })
+      .values(withStoredVerdicts({ testRunId: run!.id, testCaseId: 1, status: 'passed', duration: 1 }))
       .returning({ id: schema.testRunsCases.id });
     await db.insert(schema.networkRequests).values({
       testRunsCaseId: runCase!.id,
@@ -97,7 +98,7 @@ describe('getSetupStatus', () => {
     await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'a' });
     await db
       .insert(schema.testRunsCases)
-      .values({ testRunId: run!.id, testCaseId: 1, status: 'failed', duration: 1, ...evidence });
+      .values(withStoredVerdicts({ testRunId: run!.id, testCaseId: 1, status: 'failed', duration: 1, ...evidence }));
 
     expect((await activeIds(db)).has('fixtures')).toBe(active);
     expect((await getCapabilityEvidence(db, 1, { fresh: true })).fixtures).toBe(active);
@@ -112,7 +113,7 @@ describe('getSetupStatus', () => {
     await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'a' });
     const [runCase] = await db
       .insert(schema.testRunsCases)
-      .values({ testRunId: run!.id, testCaseId: 1, status: 'passed', duration: 1 })
+      .values(withStoredVerdicts({ testRunId: run!.id, testCaseId: 1, status: 'passed', duration: 1 }))
       .returning({ id: schema.testRunsCases.id });
     await db.insert(schema.networkRequests).values({
       testRunsCaseId: runCase!.id,
@@ -133,15 +134,21 @@ describe('getSetupStatus', () => {
       .values({ projectId: 1, status: 'passed', startTime: new Date(), duration: 1, totalTests: 1, passedTests: 1 })
       .returning({ id: schema.testRuns.id });
     await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'a' });
-    await db.insert(schema.testRunsCases).values({ testRunId: run!.id, testCaseId: 1, status: 'passed', retries: 0 });
+    await db
+      .insert(schema.testRunsCases)
+      .values(withStoredVerdicts({ testRunId: run!.id, testCaseId: 1, status: 'passed', retries: 0 }));
     expect((await activeIds(db)).has('flake-lab')).toBe(false);
 
     await db
       .insert(schema.testRunsCases)
-      .values({ testRunId: run!.id, testCaseId: 1, status: 'failed', retries: 0, browserName: 'webkit' });
+      .values(
+        withStoredVerdicts({ testRunId: run!.id, testCaseId: 1, status: 'failed', retries: 0, browserName: 'webkit' }),
+      );
     await db
       .insert(schema.testRunsCases)
-      .values({ testRunId: run!.id, testCaseId: 1, status: 'passed', retries: 1, browserName: 'webkit' });
+      .values(
+        withStoredVerdicts({ testRunId: run!.id, testCaseId: 1, status: 'passed', retries: 1, browserName: 'webkit' }),
+      );
     expect((await activeIds(db)).has('flake-lab')).toBe(true);
   });
 

@@ -4,6 +4,7 @@ import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { migrateToLatest } from './temp-db';
+import { withStoredVerdicts } from './stored-verdicts';
 
 // The schema barrel (server/database/schema.ts) picks the PostgreSQL schema at
 // import time when PIWI_DATABASE_URL is set, so clear it before the handler
@@ -102,27 +103,29 @@ beforeAll(async () => {
   await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'checkout.spec.ts', title: 'pays' });
   const insertedCases = await db
     .insert(schema.testRunsCases)
-    .values([
-      {
-        testRunId: failingRunId,
-        testCaseId: 1,
-        status: 'failed',
-        duration: 120_000,
-        wastedTimeMs: 60_000,
-        browserName: 'chromium',
-        isNewRegression: 1,
-      },
-      {
-        testRunId: failingRunId,
-        testCaseId: 1,
-        status: 'passed',
-        duration: 30_000,
-        retries: 1,
-        wastedTimeMs: 0,
-        browserName: 'webkit',
-        isNewFlaky: 1,
-      },
-    ])
+    .values(
+      withStoredVerdicts([
+        {
+          testRunId: failingRunId,
+          testCaseId: 1,
+          status: 'failed',
+          duration: 120_000,
+          wastedTimeMs: 60_000,
+          browserName: 'chromium',
+          isNewRegression: 1,
+        },
+        {
+          testRunId: failingRunId,
+          testCaseId: 1,
+          status: 'passed',
+          duration: 30_000,
+          retries: 1,
+          wastedTimeMs: 0,
+          browserName: 'webkit',
+          isNewFlaky: 1,
+        },
+      ]),
+    )
     .returning({ id: schema.testRunsCases.id });
 
   // Network requests captured on those executions — one slow shared endpoint.
@@ -580,17 +583,23 @@ describe('branch policy and test filters', () => {
     const onMain = await run(1, 3, { branch: 'main' });
     await run(1, 2);
     const onFeature = await run(1, 1, { branch: 'feature/x', status: 'failed', passedTests: 0, failedTests: 2 });
-    await fdb.insert(schema.testRunsCases).values([
-      { testRunId: onMain, testCaseId: 10, status: 'passed', duration: 1_000, browserName: 'chromium' },
-      { testRunId: onMain, testCaseId: 11, status: 'passed', duration: 1_000, browserName: 'webkit' },
-      { testRunId: onFeature, testCaseId: 10, status: 'failed', duration: 2_000, browserName: 'chromium' },
-      { testRunId: onFeature, testCaseId: 11, status: 'failed', duration: 2_000, browserName: 'webkit' },
-    ]);
+    await fdb.insert(schema.testRunsCases).values(
+      withStoredVerdicts([
+        { testRunId: onMain, testCaseId: 10, status: 'passed', duration: 1_000, browserName: 'chromium' },
+        { testRunId: onMain, testCaseId: 11, status: 'passed', duration: 1_000, browserName: 'webkit' },
+        { testRunId: onFeature, testCaseId: 10, status: 'failed', duration: 2_000, browserName: 'chromium' },
+        { testRunId: onFeature, testCaseId: 11, status: 'failed', duration: 2_000, browserName: 'webkit' },
+      ]),
+    );
     // Project 2 reports no branch: its runs count under the default-branch policy.
     const adminRun = await run(2, 2);
     await fdb
       .insert(schema.testRunsCases)
-      .values([{ testRunId: adminRun, testCaseId: 20, status: 'passed', duration: 500, browserName: 'chromium' }]);
+      .values(
+        withStoredVerdicts([
+          { testRunId: adminRun, testCaseId: 20, status: 'passed', duration: 500, browserName: 'chromium' },
+        ]),
+      );
     await backfillDailyRollups(fdb as any);
   });
 

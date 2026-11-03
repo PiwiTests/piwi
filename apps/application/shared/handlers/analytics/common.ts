@@ -421,6 +421,8 @@ export interface FilteredExecution {
   wastedTimeMs: number | null;
   isNewRegression: number | null;
   isNewFlaky: number | null;
+  /** Passed after an earlier attempt of its result failed or timed out (`passed_after_failure`). */
+  passedAfterFailure: boolean;
 }
 
 const RUN_BATCH = 400;
@@ -455,6 +457,7 @@ export async function fetchFilteredExecutions(
         wastedTimeMs: testRunsCases.wastedTimeMs,
         isNewRegression: testRunsCases.isNewRegression,
         isNewFlaky: testRunsCases.isNewFlaky,
+        passedAfterFailure: testRunsCases.passedAfterFailure,
       })
       .from(testRunsCases)
       .where(and(...conditions));

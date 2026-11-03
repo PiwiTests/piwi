@@ -1,6 +1,7 @@
 import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { projects, testCases, testRuns, testRunsCases } from '../../../server/database/schema';
 import type { DrizzleDB } from '../db';
+import { flakyResultSql } from '../test-case-aggregates';
 import type { AnalyticsScope } from '../../analytics/scope';
 import type { AnalyticsMover, AnalyticsMoverKind, AnalyticsMovers } from '../../analytics/types';
 import { MOVERS_MAX_ROWS, moversOptionsSchema } from '../../analytics/registry';
@@ -52,7 +53,7 @@ async function loadStability(
       projectId: testRuns.projectId,
       testCaseId: testRunsCases.testCaseId,
       executions: sql<number>`count(*)`,
-      flaky: sql<number>`sum(case when ${testRunsCases.status} = 'passed' and ${testRunsCases.retries} > 0 then 1 else 0 end)`,
+      flaky: sql<number>`sum(case when ${flakyResultSql()} then 1 else 0 end)`,
       avgPassedMs: sql<
         number | null
       >`avg(case when ${testRunsCases.status} = 'passed' then ${testRunsCases.duration} end)`,

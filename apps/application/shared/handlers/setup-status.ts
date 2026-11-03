@@ -59,6 +59,7 @@ import {
 } from '#shared/capabilities';
 
 import type { DrizzleDB } from './db';
+import { flakyResultSql } from './test-case-aggregates';
 
 /** Stable ids — the UI keys its copy off these. */
 export type SetupCapabilityId =
@@ -117,10 +118,10 @@ async function exists(db: DrizzleDB, query: Promise<unknown[]>): Promise<boolean
   return rows.length > 0;
 }
 
-// The conditions of the partial indexes `idx_trc_passed_aria`, `idx_trc_passed_retry` and
+// The conditions of the partial indexes `idx_trc_passed_aria`, `idx_trc_passed_after_failure` and
 // `idx_nr_server_traces` (server/database/schema.*.ts), spelled the same way.
 const PASSED_WITH_ARIA = sql`${testRunsCases.status} = 'passed' and (${testRunsCases.ariaSnapshotPayloadId} is not null or ${testRunsCases.ariaSnapshot} is not null)`;
-const PASSED_ON_RETRY = sql`${testRunsCases.status} = 'passed' and ${testRunsCases.retries} > 0`;
+const PASSED_AFTER_FAILURE = flakyResultSql();
 const SERVER_TRACE = sql`${networkRequests.serverTraces} is not null`;
 
 /**
@@ -395,7 +396,7 @@ function evidenceProbes(db: DrizzleDB, projectId?: number): Record<SetupCapabili
           ? db.select({ id: bugReports.id }).from(bugReports).where(eq(bugReports.projectId, pid)).limit(1)
           : db.select({ id: bugReports.id }).from(bugReports).limit(1),
       ),
-    // Flake suspects read from history: active once a test has passed on a retry.
+    // Flake suspects read from history: active once a test has passed after a failed attempt.
     'flake-lab': () =>
       exists(
         db,
@@ -404,9 +405,9 @@ function evidenceProbes(db: DrizzleDB, projectId?: number): Record<SetupCapabili
               .select({ id: testRunsCases.id })
               .from(testRunsCases)
               .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-              .where(and(eq(testRuns.projectId, pid), PASSED_ON_RETRY))
+              .where(and(eq(testRuns.projectId, pid), PASSED_AFTER_FAILURE))
               .limit(1)
-          : db.select({ id: testRunsCases.id }).from(testRunsCases).where(PASSED_ON_RETRY).limit(1),
+          : db.select({ id: testRunsCases.id }).from(testRunsCases).where(PASSED_AFTER_FAILURE).limit(1),
       ),
     // Resources: active once a reporter sent a run's resource report.
     resources: () =>
