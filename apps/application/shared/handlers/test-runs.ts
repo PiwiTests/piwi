@@ -40,11 +40,27 @@ type ProjectScope = 'all' | Set<number>;
  * ref (`PIWI_ORIGIN`, `PIWI_ORIGIN_REF`): the desktop app finds the run a local
  * process of its own produced.
  */
+/**
+ * The id and status of a project's most recent run, or with `origin` of its most recent run that origin and reference
+ * stamped; null when it has none. Throws `Project not found` for a project that does not exist.
+ */
 export async function getProjectLatestRun(
   db: DrizzleDB,
   projectId: number,
   origin: { kind: RunOriginKind; ref: string } | null = null,
 ) {
+  const latest = await findProjectLatestRun(db, projectId, origin);
+  if (latest) return latest;
+  const [project] = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, projectId));
+  if (!project) throw new Error('Project not found');
+  return null;
+}
+
+async function findProjectLatestRun(
+  db: DrizzleDB,
+  projectId: number,
+  origin: { kind: RunOriginKind; ref: string } | null,
+): Promise<{ id: number; status: string } | null> {
   if (origin) {
     const ref = parseRunOriginRef(origin.ref);
     if (!ref) return null;

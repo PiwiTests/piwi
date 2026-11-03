@@ -1077,11 +1077,16 @@ const routes: RouteEntry[] = [
       if (origin != null && (!isRunOriginKind(origin) || q?.get('ref') == null)) {
         throw demoHttpError(400, 'origin needs a known run origin and a ref');
       }
-      return getProjectLatestRun(
-        await getDemoDb(),
-        +m[1]!,
-        isRunOriginKind(origin) ? { kind: origin, ref: q!.get('ref')! } : null,
-      );
+      try {
+        return await getProjectLatestRun(
+          await getDemoDb(),
+          +m[1]!,
+          isRunOriginKind(origin) ? { kind: origin, ref: q!.get('ref')! } : null,
+        );
+      } catch (e) {
+        if ((e as Error)?.message === 'Project not found') throw demoHttpError(404, 'Project not found');
+        throw e;
+      }
     },
   },
   {
