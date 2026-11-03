@@ -86,8 +86,9 @@ its own retries, as in Playwright, and a row without one reads `repeat_each_inde
   `testOutcomes` or `decidesOutcome` (failed when one of its repetitions failed), and its flaky results with
   `flakyFinalAttempts` (all the rows) or `isFlakyExecution` (one row and its attempt history), never with
   `retries > 0`: a `describe.serial` retry runs tests that passed again. A query, and a reader of stored rows, reads
-  the verdict stored with each row instead: `passed_after_failure`, through `flakyResultSql`, which the partial index
-  `idx_trc_passed_after_failure` repeats.
+  the verdict stored with each result's final attempt instead (`passed_after_failure`, false on every earlier
+  attempt): through `flakyResultSql` in SQL, which the partial index `idx_trc_passed_after_failure` repeats, and by
+  selecting the column for `flakyFinalAttempts`.
 - **A test's attempts are the rows of one repetition.** Never take the highest retry across repetitions as its last
   attempt, nor a pass in one repetition as a retry pass of another. `lastAttempts` (`@piwitests/core/status-classify`)
   and the SQL of `latestRunStatusSql` (`shared/handlers/latest-run-status.ts`) follow the same rule.
@@ -102,7 +103,7 @@ its own retries, as in Playwright, and a row without one reads `repeat_each_inde
 - **Every insert into `test_runs_cases` is preceded by `fillAttemptHistories`**, whose rows without a history go to
   `settleFinalAttempts`: a retry that came without an attempt history gets the one its stored and earlier attempts make,
   and every row its verdict (`passed_after_failure`, `isFlakyExecution`), both completed by an earlier attempt stored
-  after it. A path that writes `attempts` again writes the verdict with it (`backfillAttemptHistories`); the seed
+  after it; `settleFinalAttempts` clears the verdict of an attempt a later one supersedes. A path that writes `attempts` again writes the verdict with it (`backfillAttemptHistories`); the seed
   generator and the perf dataset set it themselves, and a fixture that inserts executions directly through
   `withStoredVerdicts` (`tests/unit/stored-verdicts.ts`). `tests/unit/final-attempt.test.ts` fails on a file that
   inserts executions without `fillAttemptHistories`.

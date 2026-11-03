@@ -578,6 +578,16 @@ describe('the verdict each execution stores', () => {
       }
     });
 
+    test('of a pass between two failures of a serial group retried twice', async () => {
+      for (const history of [true, false]) {
+        const { runId, send } = await streams[ingest]();
+        for (const tc of attemptsOf(['failed', 'passed', 'failed'], history)) await send(tc);
+        expect(await verdicts(runId, 'pays')).toEqual(['0: false', '1: false', '2: false']);
+        expect(await flakyReadings(runId, 'pays')).toEqual(readEverywhere(false));
+        await db.delete(schema.testRuns).where(eq(schema.testRuns.id, runId));
+      }
+    });
+
     test('of a final attempt stored before its failed one', async () => {
       const { runId, send } = await streams[ingest]();
       const [first, retry] = attemptsOf(['failed', 'passed'], false);

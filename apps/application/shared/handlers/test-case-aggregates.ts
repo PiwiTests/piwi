@@ -84,15 +84,17 @@ function attemptOf(row: BatchAttempt): string {
  * batch of its executions (each row inserted, or stored already by a request
  * that failed past its insert):
  * - an attempt of their tests with a later attempt of its result stored
- *   (`laterAttemptSql`) is marked as not final. A row is stored as final, so
- *   an attempt stored after a later one is settled too;
+ *   (`laterAttemptSql`) is marked as not final, and its verdict cleared: only
+ *   a result's final attempt carries it. A row is stored as final, so an
+ *   attempt stored after a later one is settled too;
  * - a stored retry of a result `withoutHistory` holds an attempt of (the rows
  *   `fillAttemptHistories` found without a history: their reporter sends
  *   none, so the server built the result's stored histories) is given the
  *   history `withAttemptHistory` builds from the result's stored attempts
  *   when it lists more of them than the stored one, so an attempt stored
- *   after its retry completes the retry's history. A history the reporter
- *   sent whole lists every attempt and is kept, as is one the batch carries.
+ *   after its retry completes the retry's history, and its verdict with it.
+ *   A history the reporter sent whole lists every attempt and is kept, as is
+ *   one the batch carries.
  * Every write of `test_runs_cases` calls it after its insert with every row of
  * its batch, so sending a batch again repairs both: `persistRunCases` on the
  * server and in the demo. The stored attempts of the tests of
@@ -120,7 +122,7 @@ export async function settleFinalAttempts(
     if (superseded.length === 0) continue;
     await db
       .update(testRunsCases)
-      .set({ finalAttempt: false })
+      .set({ finalAttempt: false, passedAfterFailure: false })
       .where(
         inArray(
           testRunsCases.id,
@@ -155,6 +157,7 @@ async function completeAttemptHistories(
         duration: testRunsCases.duration,
         startedAt: testRunsCases.startedAt,
         attempts: testRunsCases.attempts,
+        finalAttempt: testRunsCases.finalAttempt,
       })
       .from(testRunsCases)
       .where(
@@ -172,7 +175,7 @@ async function completeAttemptHistories(
       if (attempts.length <= listed.get(row.id)!) continue;
       await db
         .update(testRunsCases)
-        .set({ attempts, passedAfterFailure: isFlakyExecution({ ...row, attempts }) })
+        .set({ attempts, passedAfterFailure: row.finalAttempt && isFlakyExecution({ ...row, attempts }) })
         .where(eq(testRunsCases.id, row.id));
     }
   }
@@ -205,7 +208,9 @@ function lacksHistory(attempts: unknown): boolean {
  * history keeps it. Then set each row's verdict (`passedAfterFailure`): it
  * passed after an earlier attempt failed or timed out, as `isFlakyExecution`
  * reads it with that history, which every reader of a stored execution takes
- * from the column. The stored attempts are read in one query, only when a
+ * from the column. A row is stored as its result's final attempt, and
+ * `settleFinalAttempts` clears the verdict of one a later attempt supersedes,
+ * so only a final attempt carries it. The stored attempts are read in one query, only when a
  * retry lacks a history. Returns the rows that came without a history, which
  * `settleFinalAttempts` completes the stored histories, and the verdicts, of
  * their results with. Every write of `test_runs_cases` calls it before its
@@ -266,11 +271,12 @@ async function fillMissingHistories(
 }
 
 /**
- * Whether `row`, the final attempt of its result, is flaky: it passed after an
+ * Whether `row` is the final attempt of a flaky result: it passed after an
  * earlier attempt failed or timed out, the verdict stored with it
  * (`passed_after_failure`, set by `fillAttemptHistories` and kept by
- * `settleFinalAttempts`). The partial index `idx_trc_passed_after_failure`
- * repeats the condition, so a query that spells it this way can use it.
+ * `settleFinalAttempts`, which clears it on an attempt a later one
+ * supersedes). The partial index `idx_trc_passed_after_failure` repeats the
+ * condition, so a query that spells it this way can use it.
  */
 export function flakyResultSql(row: Executions = testRunsCases): SQL<boolean> {
   return sql<boolean>`(${row.passedAfterFailure} = true)`;

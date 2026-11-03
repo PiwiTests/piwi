@@ -1,4 +1,4 @@
-import { isFlakyExecution, withAttemptHistory } from '#shared/utils/test-counts';
+import { finalAttempts, isFlakyExecution, withAttemptHistory } from '#shared/utils/test-counts';
 
 /** An execution a fixture inserts directly, as `withStoredVerdicts` reads it. */
 interface FixtureExecution {
@@ -9,13 +9,15 @@ interface FixtureExecution {
   repeatEachIndex?: number | null;
   browserName?: string | null;
   attempts?: unknown;
+  finalAttempt?: boolean;
   passedAfterFailure?: boolean;
 }
 
 /**
  * The executions a fixture inserts, each given the verdict ingest stores with it (`passedAfterFailure`, set by
- * `fillAttemptHistories`): `isFlakyExecution` over its attempt history, else over the history the given attempts of its
- * result make (`withAttemptHistory`). A row that sets its verdict keeps it. Returns the given objects.
+ * `fillAttemptHistories`): on a final attempt (its `finalAttempt`, else the last of its result among the given rows),
+ * `isFlakyExecution` over its attempt history, else over the history the given attempts of its result make
+ * (`withAttemptHistory`). A row that sets its verdict keeps it. Returns the given objects.
  */
 export function withStoredVerdicts<T extends FixtureExecution>(rows: T): T & { passedAfterFailure: boolean };
 export function withStoredVerdicts<T extends FixtureExecution>(rows: T[]): Array<T & { passedAfterFailure: boolean }>;
@@ -35,8 +37,10 @@ export function withStoredVerdicts<T extends FixtureExecution>(given: T | T[]) {
         attempts: Array.isArray(row.attempts) ? row.attempts : null,
       })),
     );
+    const last = new Set(finalAttempts(read));
     runRows.forEach((row, i) => {
-      row.passedAfterFailure ??= isFlakyExecution(read[i]!);
+      const final = row.finalAttempt ?? last.has(read[i]!);
+      row.passedAfterFailure ??= final && isFlakyExecution(read[i]!);
     });
   }
   return given;

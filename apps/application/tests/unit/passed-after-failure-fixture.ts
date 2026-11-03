@@ -22,7 +22,11 @@ function migrationSql(folder: string, name: string): string[] {
  * the settled runs' flaky counts and have the daily rollups computed again.
  */
 export function passedAfterFailureBackfillSql(folder: string): string[] {
-  return [...migrationSql(folder, 'backfill_passed_after_failure'), ...migrationSql(folder, 'recompute_flaky_rollups')];
+  return [
+    ...migrationSql(folder, 'backfill_passed_after_failure'),
+    ...migrationSql(folder, 'recompute_flaky_rollups'),
+    ...migrationSql(folder, 'clear_verdict_of_earlier_attempts'),
+  ];
 }
 
 /** The app setting whose absence has the daily rollups of every stored run computed again at startup. */
@@ -68,6 +72,9 @@ export const STORED_EXECUTIONS: StoredExecution[] = [
   ...result(1, 7, ['failed', 'failed'], true),
   ...result(1, 8, ['passed', 'failed', 'passed'], true),
   ...result(1, 9, ['skipped', 'passed'], true),
+  // A describe.serial group retried twice: its last attempt failed, so the pass between is no flaky result.
+  ...result(1, 14, ['failed', 'passed', 'failed'], true),
+  ...result(1, 15, ['failed', 'passed', 'failed'], false),
   // A retry stored alone: no earlier attempt at hand.
   {
     id: ++nextId,
@@ -171,8 +178,12 @@ export function finalAttemptFlags(): boolean[] {
   return STORED_EXECUTIONS.map((row) => finals.has(row));
 }
 
-/** Each of {@link STORED_EXECUTIONS}' verdict as the run page reads it: `isFlakyExecution` over `withAttemptHistory`. */
+/**
+ * Each of {@link STORED_EXECUTIONS}' verdict as the run page reads it, on a final attempt only: `isFlakyExecution` over
+ * `withAttemptHistory`.
+ */
 export function expectedVerdicts(): boolean[] {
+  const finals = finalAttemptFlags();
   const verdict = new Map<number, boolean>();
   for (const runId of new Set(STORED_EXECUTIONS.map((row) => row.testRunId))) {
     const rows = STORED_EXECUTIONS.filter((r) => r.testRunId === runId).map((row) => ({
@@ -181,7 +192,7 @@ export function expectedVerdicts(): boolean[] {
     }));
     for (const row of withAttemptHistory(rows)) verdict.set(row.id, isFlakyExecution(row));
   }
-  return STORED_EXECUTIONS.map((row) => verdict.get(row.id)!);
+  return STORED_EXECUTIONS.map((row, i) => finals[i]! && verdict.get(row.id)!);
 }
 
 /** Each run's flaky counter once the migration ran: run 1 recounted, the others as they were. */

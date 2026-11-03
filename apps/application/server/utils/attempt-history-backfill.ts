@@ -22,9 +22,9 @@ const MAX_HISTORY_ENTRIES = 30;
  * Give each retry stored without an attempt history (a trace import, an older
  * reporter) the history the run's stored attempts of its test, Playwright
  * project and repetition make, up to it, in the shape ingest stores
- * (`withAttemptHistory`), and the verdict that history gives it
- * (`passedAfterFailure`, `isFlakyExecution`), which every reader of a stored
- * execution takes from the column. A retry with no earlier stored attempt keeps no
+ * (`withAttemptHistory`), and, on a final attempt, the verdict that history
+ * gives it (`passedAfterFailure`, `isFlakyExecution`), which every reader of a
+ * stored execution takes from the column. A retry with no earlier stored attempt keeps no
  * history. Reads the executions in pages of {@link ATTEMPT_HISTORY_BACKFILL_PAGE}
  * from `after` (an execution id) and calls `onPage` with the last id of each
  * page done. Returns how many executions it gave a history.
@@ -69,6 +69,7 @@ export async function backfillAttemptHistories(
           duration: testRunsCases.duration,
           startedAt: testRunsCases.startedAt,
           attempts: testRunsCases.attempts,
+          finalAttempt: testRunsCases.finalAttempt,
         })
         .from(testRunsCases)
         .where(and(eq(testRunsCases.testRunId, testRunId), inArray(testRunsCases.testCaseId, [...tests])))
@@ -78,7 +79,10 @@ export async function backfillAttemptHistories(
         const history = row.attempts.slice(0, MAX_HISTORY_ENTRIES);
         await db
           .update(testRunsCases)
-          .set({ attempts: history, passedAfterFailure: isFlakyExecution({ ...row, attempts: history }) })
+          .set({
+            attempts: history,
+            passedAfterFailure: row.finalAttempt && isFlakyExecution({ ...row, attempts: history }),
+          })
           .where(
             and(
               eq(testRunsCases.id, row.id),

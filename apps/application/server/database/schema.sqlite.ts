@@ -507,7 +507,7 @@ export const testRunsCases = sqliteTable(
     retries: integer('retries').default(0),
     repeatEachIndex: integer('repeat_each_index').notNull().default(0), // Playwright's repeatEachIndex: which `--repeat-each` repetition the row belongs to (0 without repeats)
     finalAttempt: integer('final_attempt', { mode: 'boolean' }).notNull().default(true), // false once a later attempt of its run, test, project and repetition is stored (`settleFinalAttempts`): the row then decides nothing
-    passedAfterFailure: integer('passed_after_failure', { mode: 'boolean' }).notNull().default(false), // the verdict of the result this attempt ends: it passed after an earlier attempt failed or timed out (`isFlakyExecution`), set as it is stored (`fillAttemptHistories`)
+    passedAfterFailure: integer('passed_after_failure', { mode: 'boolean' }).notNull().default(false), // the verdict of a final attempt (`final_attempt`): its result passed after an earlier attempt failed or timed out (`isFlakyExecution`), set as it is stored (`fillAttemptHistories`) and cleared once a later attempt supersedes it (`settleFinalAttempts`)
     attempts: text('attempts', { mode: 'json' }), // Array of { retry, status, duration, startedAt } — per-attempt outcomes
     line: integer('line'), // line number in file
     column: integer('column'), // column number in file

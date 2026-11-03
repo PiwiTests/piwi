@@ -6499,10 +6499,11 @@ const ASSISTANT_MESSAGES = [
 }
 
 // ── Passed after a failure ─────────────────────────────────────────────────
-// Each execution stores whether it passed after an earlier attempt of its
+// Each final attempt stores whether it passed after an earlier attempt of its
 // result failed or timed out, as ingest sets it (`fillAttemptHistories`,
 // `isFlakyExecution`): the earlier entries of its attempt history, else the
 // earlier stored attempts of its result. A pass on a retry with neither is one.
+// An earlier attempt carries no verdict (`settleFinalAttempts`).
 {
   const unexpected = (status) => status === 'failed' || status === 'timedout' || status === 'timedOut';
   const byResult = new Map();
@@ -6515,7 +6516,7 @@ const ASSISTANT_MESSAGES = [
   for (const [key, rows] of byResult) {
     for (const row of rows) {
       const retries = row.retries ?? 0;
-      if (row.status !== 'passed' || retries === 0) {
+      if (row.status !== 'passed' || retries === 0 || !row.final_attempt) {
         row.passed_after_failure = 0;
         continue;
       }
