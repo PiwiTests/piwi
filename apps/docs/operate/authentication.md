@@ -160,13 +160,12 @@ Each row's **Role** column is an inline selector for the instance role: pick **A
 
 Set `PIWI_AUTH_ENABLED=false`, or remove the variable, and restart the server.
 
-With authentication off, the dashboard answers only requests whose `Host` header names an IP address, a name with no
-dot (`localhost`, a container name), a name under `.localhost`, the host of
-[`PIWI_SITE_URL`](/reference/configuration#general) or a name `PIWI_ALLOWED_HOSTS` lists (`host.docker.internal`, or
-`.example.lan` for a whole domain); any other gets a `403`. Over plain HTTP, a write must also come from the requested
-host, `PIWI_SITE_URL`'s or a listed one. The entry `*` of `PIWI_ALLOWED_HOSTS` turns the first check off, and with it
-the protection against DNS rebinding. Behind a [reverse proxy](./deployment#reverse-proxy-https), set `PIWI_SITE_URL`
-and forward the browser's `Host` header.
+With authentication off, the dashboard answers only requests whose `Host` header names an IP address, `localhost`, a
+name under `.localhost`, the host of [`PIWI_SITE_URL`](/reference/configuration#general) or a name `PIWI_ALLOWED_HOSTS`
+lists (a container's name such as `piwi`, `host.docker.internal`, or `.example.lan` for a whole domain); any other gets
+a `403`. Over plain HTTP, a write must also come from the requested host, `PIWI_SITE_URL`'s or a listed one. The entry
+`*` of `PIWI_ALLOWED_HOSTS` turns the first check off, and with it the protection against DNS rebinding. Behind a
+[reverse proxy](./deployment#reverse-proxy-https), set `PIWI_SITE_URL` and forward the browser's `Host` header.
 
 ## Related
 

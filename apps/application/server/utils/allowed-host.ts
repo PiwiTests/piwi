@@ -3,9 +3,9 @@ import { isIPv4, isIPv6 } from 'node:net';
 /** The text of the 403 a server with authentication off answers to a request for another host. */
 export const HOST_REFUSED_MESSAGE =
   'With authentication off, this dashboard answers only on its local addresses (an IP address, localhost, a name ' +
-  'with no dot such as a container name, a name under .localhost), the host set in PIWI_SITE_URL and the names ' +
-  'listed in PIWI_ALLOWED_HOSTS. Open it at one of those, add the name you use to PIWI_ALLOWED_HOSTS, or turn ' +
-  'authentication on (PIWI_AUTH_ENABLED=true).';
+  'under .localhost), the host set in PIWI_SITE_URL and the names listed in PIWI_ALLOWED_HOSTS. Open it at one of ' +
+  "those, list the name you use in PIWI_ALLOWED_HOSTS (a container's name too: PIWI_ALLOWED_HOSTS=piwi), or " +
+  'turn authentication on (PIWI_AUTH_ENABLED=true).';
 
 const BRACKETED_HOST = /^\[([^\]]+)\](?::\d{1,5})?$/;
 const NAMED_HOST = /^([a-z0-9._-]+)(?::\d{1,5})?$/;
@@ -22,10 +22,10 @@ interface HostAllowance {
 
 /**
  * Whether a server running with authentication off answers a request whose `Host`
- * header is `host`: an IP address (IPv6 in brackets), a name with no dot
- * (`localhost`, a container name), a name under `.localhost`, the host of
- * `PIWI_SITE_URL`, or a name `PIWI_ALLOWED_HOSTS` lists. Any other name is one a
- * browser reached through DNS, which may point a site's own name at this server.
+ * header is `host`: an IP address (IPv6 in brackets), `localhost`, a name under
+ * `.localhost`, the host of `PIWI_SITE_URL`, or a name `PIWI_ALLOWED_HOSTS` lists.
+ * Any other name, one with no dot such as a container's included, can be made to
+ * resolve to this server's address for a browser by whoever answers for that name.
  * A request with no `Host` comes from no browser and is answered. The entry `*` of
  * `PIWI_ALLOWED_HOSTS` answers every host.
  */
@@ -37,7 +37,7 @@ export function isAllowedHostWithoutAuth(host: string | null | undefined, allowa
   if (bracketed) return isIPv6(bracketed[1]!);
   const name = NAMED_HOST.exec(value)?.[1];
   if (!name) return false;
-  if (isIPv4(name) || !name.includes('.') || name.endsWith('.localhost')) return true;
+  if (isIPv4(name) || name === 'localhost' || name.endsWith('.localhost')) return true;
   if (name === siteHostname(allowance.siteUrl)) return true;
   return isListedHost(name, allowance.allowedHosts);
 }

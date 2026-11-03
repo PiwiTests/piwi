@@ -116,6 +116,11 @@ Run with:
 docker compose up -d
 ```
 
+With authentication off, a container that reaches the dashboard by its service name, such as a reporter in a
+Playwright container sending to `http://piwi-dashboard:3000`, gets a `403` until that name is in `PIWI_ALLOWED_HOSTS`:
+add `PIWI_ALLOWED_HOSTS=piwi-dashboard` to the dashboard's `environment`
+([why](./authentication#disabling-authentication)).
+
 ### Docker Compose with PostgreSQL
 
 For production deployments requiring a robust relational database:
@@ -234,7 +239,9 @@ spec:
 ```
 
 The Service stays inside the cluster: publish it through your Ingress with TLS, rather than as a plain-HTTP
-`LoadBalancer`, with the proxy settings of [Reverse proxy (HTTPS)](#reverse-proxy-https).
+`LoadBalancer`, with the proxy settings of [Reverse proxy (HTTPS)](#reverse-proxy-https). With authentication off, a
+pod that calls the Service by name needs that name in `PIWI_ALLOWED_HOSTS` (`piwi-dashboard`, or the full
+`piwi-dashboard.<namespace>.svc.cluster.local`); the probes call the pod's IP address and need nothing.
 
 ## npm / npx (quick local run)
 
@@ -314,7 +321,7 @@ server {
 }
 ```
 
-When auth is enabled, set `PIWI_SITE_URL` to the public HTTPS URL so email links and OAuth callbacks point at the right origin, and set `PIWI_TRUST_PROXY=true` (step 4 of the [production checklist](./production-checklist#before-you-expose-it)). With authentication off, set it too, and have the proxy forward the browser's `Host` header, as both examples do (Apache: `ProxyPreserveHost On`). The dashboard then refuses a request addressed to a domain name other than its host or one `PIWI_ALLOWED_HOSTS` lists; it reads that name from `Host` alone, so a proxy that sends its own local address instead lets every request through ([why](./authentication#disabling-authentication)).
+When auth is enabled, set `PIWI_SITE_URL` to the public HTTPS URL so email links and OAuth callbacks point at the right origin, and set `PIWI_TRUST_PROXY=true` (step 4 of the [production checklist](./production-checklist#before-you-expose-it)). With authentication off, set it too, and have the proxy forward the browser's `Host` header, as both examples do (Apache: `ProxyPreserveHost On`). The dashboard then refuses a request addressed to a name other than `localhost`, its host or one `PIWI_ALLOWED_HOSTS` lists; it reads that name from `Host` alone, so a proxy that sends its own local address instead lets every request through ([why](./authentication#disabling-authentication)).
 
 ## Resource requirements
 

@@ -12,13 +12,25 @@ describe('isAllowedHostWithoutAuth', () => {
     expect(isAllowedHostWithoutAuth('[fe80::1]:80')).toBe(true);
   });
 
-  test('answers a name with no dot and a name under .localhost', () => {
-    for (const host of ['localhost', 'localhost:7494', 'LOCALHOST:7494', 'piwi', 'piwi:3000', 'piwi_server', 'web-1']) {
+  test('answers localhost and a name under .localhost', () => {
+    for (const host of ['localhost', 'localhost:7494', 'LOCALHOST:7494', 'piwi.localhost', 'app.piwi.localhost:7494']) {
       expect(isAllowedHostWithoutAuth(host), host).toBe(true);
     }
-    for (const host of ['piwi.localhost', 'app.piwi.localhost:7494']) {
-      expect(isAllowedHostWithoutAuth(host), host).toBe(true);
+  });
+
+  test('refuses any other name with no dot, such as a container name, unless PIWI_ALLOWED_HOSTS lists it', () => {
+    const names = ['piwi', 'piwi:3000', 'PIWI', 'piwi_server', 'web-1', 'intranet', 'localhostx', '2130706433'];
+    for (const host of names) {
+      expect(isAllowedHostWithoutAuth(host), host).toBe(false);
     }
+    const allowedHosts = 'piwi, piwi_server,web-1';
+    for (const host of ['piwi', 'piwi:3000', 'PIWI', 'piwi_server', 'web-1:7494']) {
+      expect(isAllowedHostWithoutAuth(host, { allowedHosts }), host).toBe(true);
+    }
+    for (const host of ['intranet', 'piwi2', 'piwi.evil.example']) {
+      expect(isAllowedHostWithoutAuth(host, { allowedHosts }), host).toBe(false);
+    }
+    expect(isAllowedHostWithoutAuth('piwi:3000', { siteUrl: 'http://piwi:3000' })).toBe(true);
   });
 
   test('refuses any other name', () => {
@@ -164,6 +176,15 @@ describe('the allowed-host middleware', () => {
     vi.stubEnv('PIWI_ALLOWED_HOSTS', 'host.docker.internal');
     expect((await call({ host: 'host.docker.internal:3000' })).body).toBeUndefined();
     expect((await call({ host: 'rebound.example' })).body).toBe(HOST_REFUSED_MESSAGE);
+  });
+
+  test('refuses a container name until PIWI_ALLOWED_HOSTS lists it, naming that variable', async () => {
+    const { body, event } = await call({ host: 'piwi:3000' });
+    expect(event.status).toBe(403);
+    expect(body).toBe(HOST_REFUSED_MESSAGE);
+    expect(HOST_REFUSED_MESSAGE).toContain("a container's name too: PIWI_ALLOWED_HOSTS=piwi");
+    vi.stubEnv('PIWI_ALLOWED_HOSTS', 'piwi');
+    expect((await call({ host: 'piwi:3000' })).body).toBeUndefined();
   });
 
   test('passes every host when authentication is on', async () => {
