@@ -112,6 +112,7 @@ const PAGE_AREAS: readonly [RegExp, GuideAreaId][] = [
   [/^\/failure-clusters\//, 'clusters'],
   [/^\/test-cases\//, 'test-cases'],
   [/^\/(?:analytics|reports)(?:\/|$)/, 'analytics'],
+  [/^\/settings\/(?:connect|capabilities|mcp|api|companion-tools)$/, 'setup'],
   [/^\/settings(?:\/|$)/, 'settings'],
 ];
 

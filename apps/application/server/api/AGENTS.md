@@ -54,7 +54,7 @@ record is `proposals/roles-and-groups.md`.
 ### Per-route permissions are declared once, in the route meta
 
 A route's `defineRouteMeta` declares what it needs in `openAPI['x-required-permission']`. That one literal drives
-**both** the `/docs` display and the enforcement: `requireAuth(event)` reads it from the compiled route metas
+**both** the API reference's display (`/settings/api`) and the enforcement: `requireAuth(event)` reads it from the compiled route metas
 (`server/utils/route-required-permission.ts`, matched with rou3 exactly as Nitro dispatches).
 
 ```typescript
@@ -137,7 +137,7 @@ The early check only proves the user holds the permission _somewhere_. The proje
 
 ### OpenAPI annotations
 
-Every endpoint gets a `defineRouteMeta({ openAPI: … })` block: it feeds `/_openapi.json` and `/docs`, and it is the
+Every endpoint gets a `defineRouteMeta({ openAPI: … })` block: it feeds `/_openapi.json` and the API reference (`/settings/api`), and it is the
 only place endpoint documentation is written. A public endpoint declares `security: []`; every other one inherits the
 root-level `security: [{ bearerAuth: [] }, { sessionCookie: [] }]` of `nuxt.config.ts` (whose `meta` is cast `as any`
 on purpose, to allow those fields).

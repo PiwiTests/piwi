@@ -34,8 +34,8 @@ const manualSnippet = computed(
 <template>
   <SectionCard icon="i-lucide-upload" title="Send results to this app">
     <template #subtitle>
-      The reporter finds this app on its own while it runs, so the connect wizard above needs no URL and no token. These
-      are for the runs it cannot reach: tests running as another user or in a container.
+      The reporter finds this app on its own while it runs, so the connect wizard (Settings → Connect a suite) needs no
+      URL and no token. These are for the runs it cannot reach: tests running as another user or in a container.
     </template>
 
     <div class="space-y-4 text-sm">

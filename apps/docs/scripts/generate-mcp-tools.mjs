@@ -60,7 +60,7 @@ function moduleSection(module) {
     `## ${MODULE_TITLES[module] ?? module}`,
     '',
     // "N tools" is reserved for the total: the drift test holds every page to the real count.
-    [`${tools.length} of the ${MCP_TOOL_DEFS.length} tools.`, preset ? `Setup offers this module as **${preset.label}**: ${lowerFirst(preset.description)}` : '']
+    [`${tools.length} of the ${MCP_TOOL_DEFS.length} tools.`, preset ? `Settings → Capabilities offers this module as **${preset.label}**: ${lowerFirst(preset.description)}` : '']
       .filter(Boolean)
       .join(' '),
     '',

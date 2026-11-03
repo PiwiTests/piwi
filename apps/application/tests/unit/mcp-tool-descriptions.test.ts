@@ -19,7 +19,7 @@ describe('MCP tool descriptions', () => {
     expect(summary).toMatch(/\.$/);
     expect(summary, 'a second sentence').not.toMatch(/[.?!]\s+[A-Z`]/);
     expect(summary.length).toBeLessThanOrEqual(170);
-    // The `/mcp` page renders the summary as the row's muted line, inside its toggle button.
+    // Settings → MCP server renders the summary as the row's muted line, inside its toggle button.
     expect(summary).not.toMatch(/\]\(/);
     expect(summary).not.toContain('**');
   });

@@ -2,7 +2,7 @@
 /**
  * The tools that ship alongside the dashboard but install elsewhere — the
  * browser extension, the desktop app, the reporter CLI, MCP agent access, the
- * editor extensions and the IDE hand-off. Unlike the capability ladder above it, none of these leave
+ * editor extensions and the IDE hand-off. Unlike the capability ladder, none of these leave
  * evidence on the instance, so the card is informative rather than detected.
  */
 import {

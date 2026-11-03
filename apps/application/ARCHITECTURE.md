@@ -166,7 +166,7 @@ Each table's comment in `schema.sqlite.ts` says what a row is.
 ## Backend
 
 Nitro file-based routing: `server/api/` serves `/api/...`, and `server/routes/` serves the other paths. The generated
-**OpenAPI 3.1** spec at `/_openapi.json` and the in-app reference at `/docs` list every endpoint; this section only
+**OpenAPI 3.1** spec at `/_openapi.json` and the in-app reference at `/settings/api` list every endpoint; this section only
 gives the shape.
 
 ### Route families

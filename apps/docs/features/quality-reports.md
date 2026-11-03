@@ -145,7 +145,7 @@ quality report; unset, only minutes show. The cost is one instance-wide value.
 
 ## Turning reports off
 
-Quality reports are an optional [capability](/operate/capabilities#declining-a-capability). Declining it in Setup hides
+Quality reports are an optional [capability](/operate/capabilities#declining-a-capability). Declining it in **Settings → Capabilities** hides
 the *Export* and *Schedule…* actions and the *Quality reports* page, and drops `get_quality_report` from
 the MCP tools; the analytics page and the metric tools stay, since analytics is core. A schedule or a
 snapshot counts as use, so the capability stays on while one exists: delete them first.

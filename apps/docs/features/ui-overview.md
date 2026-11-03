@@ -145,8 +145,8 @@ an environment variable is shown read-only with the variable's name ([Configurat
 ## Setup
 
 The **Setup** section of Settings: **Connect a suite**, the
-[connect wizard](/guide/getting-started#_2-connect-your-suite), and **Capabilities**, which optional capabilities this
-instance uses ([Choose what you use](/operate/capabilities)), both for administrators; **MCP server**
+[connect wizard](/guide/getting-started#_2-connect-your-suite); **Capabilities**, for administrators, which optional
+capabilities this instance uses ([Choose what you use](/operate/capabilities)); **MCP server**
 ([MCP server](./mcp)); **API reference**, the instance's own OpenAPI reference; and **Companion tools**.
 
 ## Live demo

@@ -135,7 +135,7 @@ The app serves the [MCP server](/features/mcp) with local tools a hosted instanc
 `apply_locator_fix` (a recommended locator fix applied to the file, previewed by default), and the
 [run tools](./desktop-runs#for-agents) for the runs it starts. It registers as `piwi-desktop`, beside a hosted Piwi.
 
-**MCP server** settings detect Claude Code, Claude Desktop, Cursor, Opencode, VS Code, Windsurf and Gemini CLI, and
+**Settings → MCP server** detects Claude Code, Claude Desktop, Cursor, Opencode, VS Code, Windsurf and Gemini CLI, and
 connects each in one click, writing a `piwi-desktop` entry with the address and token into its config.
 It keeps a backup and rewrites only that entry, again when the port changes. Claude Desktop, which takes only
 local commands, is pointed at the app's built-in bridge (`piwi-desktop mcp-stdio`), so no token is copied; the app must

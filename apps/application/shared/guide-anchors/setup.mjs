@@ -13,7 +13,6 @@ export const SETUP_ANCHORS = [
     pages: ['/settings/connect'],
     describes:
       'Settings → Connect a suite: the steps that get a Playwright suite’s results to this instance, with one command, a coding agent or by hand.',
-    requires: { permission: 'settings:manage' },
     doc: 'features/ui-overview#setup',
     sample: { route: '/settings/connect' },
   },

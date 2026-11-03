@@ -217,13 +217,14 @@ const windsurfSnippet = computed(() =>
 <template>
   <CapabilityDeclinedGuard capability="mcp" label="MCP server">
     <div class="space-y-6" data-tour="mcp-page">
-      <UAlert
-        v-if="isDemo"
-        color="info"
-        icon="i-lucide-bot"
-        title="Feature preview"
-        description="The MCP endpoint is not active in this demo — it requires a real Piwi backend. The tools and client setup shown below reflect what your own deployment exposes."
-      />
+      <div v-if="isDemo" class="max-sm:px-4">
+        <UAlert
+          color="info"
+          icon="i-lucide-bot"
+          title="Feature preview"
+          description="The MCP endpoint is not active in this demo — it requires a real Piwi backend. The tools and client setup shown below reflect what your own deployment exposes."
+        />
+      </div>
 
       <!-- Desktop shell only: one-click writes into detected clients' config
          files (renders nothing without the IPC bridge). -->

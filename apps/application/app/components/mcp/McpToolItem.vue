@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * One tool of the `/mcp` page's catalog: its name and one-sentence summary, and
+ * One tool of the catalog on Settings → MCP server: its name and one-sentence summary, and
  * one click below, the rest of its Markdown description and its parameters.
  */
 import { toolDetails, toolParameters, toolPermissions, toolSummary, type McpToolDef } from '#shared/mcp-tools';

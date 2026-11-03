@@ -1340,10 +1340,11 @@ test.describe.serial('Reporter with authentication enabled', () => {
     await expect(footer.getByRole('button', { name: 'Not for this instance' })).toHaveCount(0);
     await expect(footer.getByRole('link', { name: 'Add fixtures' })).toHaveCount(0);
 
-    // The connect wizard and the capabilities are administrator-only: the Viewer is redirected away from them.
-    for (const path of ['/settings/connect', '/settings/capabilities']) {
-      await page.goto(`${AUTH_SERVER_URL}${path}`);
-      await expect(page).not.toHaveURL(`${AUTH_SERVER_URL}${path}`);
-    }
+    // The capabilities are administrator-only: the Viewer is redirected away from them. The connect wizard,
+    // which the evidence footer's sentence leads to, opens for anyone signed in.
+    await page.goto(`${AUTH_SERVER_URL}/settings/capabilities`);
+    await expect(page).not.toHaveURL(`${AUTH_SERVER_URL}/settings/capabilities`);
+    await page.goto(`${AUTH_SERVER_URL}/settings/connect`);
+    await expect(page.locator('[data-tour="get-started-wizard"]')).toBeVisible();
   });
 });

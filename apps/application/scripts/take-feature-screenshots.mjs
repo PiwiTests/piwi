@@ -7210,7 +7210,7 @@ const SCENES = [
       await request.patch(`${base}/api/capabilities`, { data: { decisions: { notifications: 'declined' } } });
     },
     route: '/settings/capabilities',
-    viewport: { width: 1280, height: 1600 },
+    viewport: { width: 1280, height: 3800 },
     async run({ page, shoot, settle }) {
       // Open the folded Declined group so the reconsider control shows.
       await page
@@ -7220,7 +7220,7 @@ const SCENES = [
         .catch(() => {});
       await settle();
       await shoot('wide', { of: '[data-shot="setup-ladder"]', pad: 12 });
-      await page.setViewportSize({ width: 400, height: 1800 });
+      await page.setViewportSize({ width: 400, height: 4900 });
       await settle();
       await shoot('narrow', { of: '[data-shot="setup-ladder"]', pad: 8 });
     },

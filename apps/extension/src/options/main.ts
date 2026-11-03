@@ -1397,7 +1397,7 @@ document.getElementById('desktop-pair-cancel')!.addEventListener('click', () => 
   pendingDesktopPairing?.abort();
 });
 
-/** Pair by hand: the address and the token pasted from the app's Setup page. */
+/** Pair by hand: the address and the token pasted from the app's Settings → Desktop app. */
 const desktopSaveBtn = document.getElementById('desktop-save') as HTMLButtonElement;
 desktopSaveBtn.addEventListener('click', () => {
   const url = desktopOrigin(desktopUrlEl.value);

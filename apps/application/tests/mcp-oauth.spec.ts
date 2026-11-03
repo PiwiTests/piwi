@@ -228,7 +228,7 @@ test.describe.serial('MCP OAuth, authentication on', () => {
 
   test('the MCP page tells a hosted instance to sign in, with no desktop wording', async ({ page }) => {
     await signIn(page);
-    await page.goto(`${AUTH_BASE}/mcp`);
+    await page.goto(`${AUTH_BASE}/settings/mcp`);
     const authentication = page.locator('[data-shot="mcp-authentication"]');
     await expect(authentication.getByText('A client signs in through OAuth')).toBeVisible();
     await expect(authentication.getByText('This app provides a local access token')).toHaveCount(0);

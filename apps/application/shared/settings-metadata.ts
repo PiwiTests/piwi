@@ -297,12 +297,13 @@ export const SETTINGS_PAGES: SettingsPageMeta[] = [
     ],
   },
   {
+    // The connect wizard, for anyone who reports a suite: its API-key step
+    // creates a key with the viewer's own access.
     id: 'connect',
     label: 'Connect a suite',
     icon: 'i-lucide-cable',
     to: '/settings/connect',
     group: 'setup',
-    permission: 'settings:manage',
     fields: [],
   },
   {
