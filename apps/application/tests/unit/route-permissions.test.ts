@@ -231,6 +231,26 @@ describe('route permissions', () => {
     expect(problems).toEqual([]);
   });
 
+  test('a route that declares a permission authenticates before it reads its body', () => {
+    const READS_BODY =
+      /\b(?:readBody|readRawBody|readMultipartFormData|readFormData|readValidatedBody|getRequestWebStream|readJsonBodyWithin|streamMultipart)(?:<[^()]*>)?\(/;
+    const AUTHENTICATES =
+      /\b(?:requireAuth|requireSessionAuth|requireProjectAccess|requireResolvedProjectAccess|requireMcpAuth|getRequestAccess|requireConnectionAccess)\(/;
+    const problems = routes
+      .filter((r) => r.permission)
+      .filter((r) => {
+        const handler = r.src.slice(Math.max(0, r.src.indexOf('eventHandler(')));
+        const body = handler.search(READS_BODY);
+        const auth = handler.search(AUTHENTICATES);
+        return body >= 0 && (auth < 0 || body < auth);
+      })
+      .map(
+        (r) =>
+          `${r.path}: reads its body before it authenticates — authenticate first, so a caller without credentials is refused before any body is read`,
+      );
+    expect(problems).toEqual([]);
+  });
+
   test('a write route narrows its project scope to the permission it needs', () => {
     const problems: string[] = [];
     for (const r of routes) {
