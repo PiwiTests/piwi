@@ -49,4 +49,11 @@ export function newerPostCases(setup: () => { db: DbClient; insertRuns: (ids: nu
     await post(projectId, 403, 'https://github.com/acme/shop', 9);
     expect(await hasNewer(402)).toBe(false);
   });
+
+  test('a post that names no pull request has none later', async () => {
+    const projectId = await setup().insertRuns([501, 502]);
+    await recordPrFeedbackPost(setup().db, { projectId, runId: 501, repositoryUrl: 'https://github.com/acme/shop' });
+    await post(projectId, 502, 'https://github.com/acme/shop', 11);
+    expect(await hasNewer(501)).toBe(false);
+  });
 }
