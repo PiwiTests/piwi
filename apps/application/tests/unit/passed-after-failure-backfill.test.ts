@@ -3,10 +3,11 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
-import { asc } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { migrateToLatest } from './temp-db';
 import {
+  ROLLUPS_BACKFILLED_KEY,
   STORED_EXECUTIONS,
   STORED_RUNS,
   expectedFlakyCounts,
@@ -18,7 +19,8 @@ import {
 /**
  * The migration that gives the executions stored before it their verdict (`passed_after_failure`): each reads as the
  * run page reads it, from its attempt history, else from the stored attempts of its result. It then recounts the
- * flaky counter of each settled run that stores executions.
+ * flaky counter of each settled run that stores executions, and has the daily rollups, which sum those counters,
+ * computed again.
  */
 
 const MIGRATIONS = join(fileURLToPath(new URL('../..', import.meta.url)), 'server/database/migrations');
@@ -49,6 +51,7 @@ describe('the passed-after-failure backfill', () => {
         passedAfterFailure: false,
       })),
     );
+    await db.insert(schema.appSettings).values({ key: ROLLUPS_BACKFILLED_KEY, value: '2026-10-01T00:00:00.000Z' });
     for (const row of STORED_EXECUTIONS.filter((r) => typeof r.attempts === 'string')) {
       await client.execute({
         sql: 'UPDATE test_runs_cases SET attempts = ? WHERE id = ?',
@@ -68,5 +71,10 @@ describe('the passed-after-failure backfill', () => {
       .from(schema.testRuns)
       .orderBy(asc(schema.testRuns.id));
     expect(runs.map((run) => run.flakyTests)).toEqual(expectedFlakyCounts());
+    const setting = await db
+      .select()
+      .from(schema.appSettings)
+      .where(eq(schema.appSettings.key, ROLLUPS_BACKFILLED_KEY));
+    expect(setting).toEqual([]);
   });
 });

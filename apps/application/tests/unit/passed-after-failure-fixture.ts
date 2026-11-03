@@ -7,15 +7,26 @@ import { finalAttempts, isFlakyExecution, withAttemptHistory } from '#shared/uti
  * (`passed-after-failure-backfill.test.ts`, `passed-after-failure-backfill-pg.test.ts`).
  */
 
-/** The SQL statements of the migration that sets `passed_after_failure` on the executions stored before it. */
-export function passedAfterFailureBackfillSql(folder: string): string[] {
+/** The SQL statements of the custom migration of `folder` whose tag ends with `_<name>`. */
+function migrationSql(folder: string, name: string): string[] {
   const journal = JSON.parse(readFileSync(join(folder, 'meta/_journal.json'), 'utf8')) as {
     entries: Array<{ tag: string }>;
   };
-  const entry = journal.entries.find((e) => e.tag.endsWith('_backfill_passed_after_failure'));
-  if (!entry) throw new Error(`no backfill_passed_after_failure migration in ${folder}`);
+  const entry = journal.entries.find((e) => e.tag.endsWith(`_${name}`));
+  if (!entry) throw new Error(`no ${name} migration in ${folder}`);
   return readFileSync(join(folder, `${entry.tag}.sql`), 'utf8').split('--> statement-breakpoint');
 }
+
+/**
+ * The SQL statements of the migrations that set `passed_after_failure` on the executions stored before them, recount
+ * the settled runs' flaky counts and have the daily rollups computed again.
+ */
+export function passedAfterFailureBackfillSql(folder: string): string[] {
+  return [...migrationSql(folder, 'backfill_passed_after_failure'), ...migrationSql(folder, 'recompute_flaky_rollups')];
+}
+
+/** The app setting whose absence has the daily rollups of every stored run computed again at startup. */
+export const ROLLUPS_BACKFILLED_KEY = 'analytics_rollups_backfilled_at';
 
 /** One stored execution: `attempts` is its history as stored, `null` for none, a string for text that is not JSON. */
 export interface StoredExecution {

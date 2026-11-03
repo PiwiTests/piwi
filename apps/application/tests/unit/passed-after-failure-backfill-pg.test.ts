@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { fileURLToPath } from 'node:url';
 import {
+  ROLLUPS_BACKFILLED_KEY,
   STORED_EXECUTIONS,
   STORED_RUNS,
   expectedFlakyCounts,
@@ -11,7 +12,7 @@ import {
 
 /**
  * The migration that gives the executions stored before it their verdict (`passed_after_failure`) on PostgreSQL, and
- * recounts the flaky counter of each settled run. Runs against `PIWI_POSTGRES_TEST_URL`, on temporary tables.
+ * recounts the flaky counter of each settled run and has the daily rollups computed again. Runs against `PIWI_POSTGRES_TEST_URL`, on temporary tables.
  */
 
 const postgresUrl = process.env.PIWI_POSTGRES_TEST_URL;
@@ -31,6 +32,8 @@ describe.skipIf(!postgresUrl)('the passed-after-failure backfill on PostgreSQL',
           repeat_each_index integer NOT NULL DEFAULT 0, retries integer DEFAULT 0, browser_name text,
           status text NOT NULL, attempts jsonb, final_attempt boolean NOT NULL DEFAULT true,
           passed_after_failure boolean NOT NULL DEFAULT false)`;
+      await session`CREATE TEMP TABLE app_settings (key text PRIMARY KEY, value jsonb)`;
+      await session`INSERT INTO app_settings (key, value) VALUES (${ROLLUPS_BACKFILLED_KEY}, '"2026-10-01"'::jsonb)`;
       for (const run of STORED_RUNS) {
         await session`INSERT INTO test_runs (id, status, flaky_tests) VALUES (${run.id}, ${run.status}, ${run.flakyTests})`;
       }
@@ -52,6 +55,7 @@ describe.skipIf(!postgresUrl)('the passed-after-failure backfill on PostgreSQL',
       expect(rows.map((row) => row.passed_after_failure)).toEqual(expectedVerdicts());
       const runs = await session<Array<{ flaky_tests: number }>>`SELECT flaky_tests FROM test_runs ORDER BY id`;
       expect(runs.map((run) => run.flaky_tests)).toEqual(expectedFlakyCounts());
+      expect(await session`SELECT key FROM app_settings`).toHaveLength(0);
     } finally {
       await session.end();
     }
