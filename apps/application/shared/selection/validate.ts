@@ -70,7 +70,7 @@ function validateGroup(group: unknown, where: string, errors: string[]): void {
         } else if (value.length === 0) {
           errors.push(`${where}.${key} must not be empty`);
         } else if (kind === 'globArray') {
-          validateGlobs(value, `${where}.${key}`, errors);
+          errors.push(...fileGlobsErrors(value, `${where}.${key}`));
         }
         break;
       case 'idArray':
@@ -106,11 +106,19 @@ function validateGroup(group: unknown, where: string, errors: string[]): void {
   }
 }
 
-function validateGlobs(globs: string[], where: string, errors: string[]): void {
+/** What a `files` list past its limits answers, one message per limit broken; empty within them. */
+export function fileGlobsErrors(globs: readonly string[], where: string): string[] {
+  const errors: string[] = [];
   if (globs.length > MAX_FILE_GLOBS) errors.push(`${where} must hold at most ${MAX_FILE_GLOBS} globs`);
   if (globs.some((glob) => glob.length > MAX_FILE_GLOB_LENGTH)) {
     errors.push(`${where}: a glob must be at most ${MAX_FILE_GLOB_LENGTH} characters`);
   }
+  return errors;
+}
+
+/** A `files` list read within its limits: its first 100 globs of at most 500 characters. */
+export function withinFileGlobLimits(globs: readonly string[]): string[] {
+  return globs.filter((glob) => glob.length <= MAX_FILE_GLOB_LENGTH).slice(0, MAX_FILE_GLOBS);
 }
 
 function validateIdArray(value: unknown, where: string, errors: string[]): void {

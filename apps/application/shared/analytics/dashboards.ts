@@ -9,7 +9,7 @@
  */
 import { z } from 'zod';
 import type { AnalyticsScope } from './scope';
-import { analyticsScopeToQuery, DEFAULT_ANALYTICS_SCOPE, parseAnalyticsScope } from './scope';
+import { analyticsScopeToQuery, DEFAULT_ANALYTICS_SCOPE, parseAnalyticsScope, scopeFilesErrors } from './scope';
 import { encodePeriod, type PeriodSpec } from './period';
 import {
   getAnalyticsWidget,
@@ -453,12 +453,16 @@ const STORED_SCOPE_KEYS = [
 function roundTripScope(raw: Record<string, unknown>, where: string): AnalyticsScope {
   const known: Record<string, unknown> = {};
   for (const key of STORED_SCOPE_KEYS) if (raw[key] !== undefined) known[key] = raw[key];
+  let query: Record<string, string>;
   let parsed: AnalyticsScope;
   try {
-    parsed = parseAnalyticsScope(analyticsScopeToQuery({ ...DEFAULT_ANALYTICS_SCOPE, ...known } as AnalyticsScope));
+    query = analyticsScopeToQuery({ ...DEFAULT_ANALYTICS_SCOPE, ...known } as AnalyticsScope);
+    parsed = parseAnalyticsScope(query);
   } catch {
     throw new DashboardDefinitionError(`${where}: the scope is not valid`);
   }
+  const filesErrors = scopeFilesErrors(query, 'tests.files');
+  if (filesErrors.length > 0) throw new DashboardDefinitionError(`${where}: ${filesErrors.join('; ')}`);
   if (known.period !== undefined && encodePeriod(parsed.period) !== encodePeriod(known.period as PeriodSpec)) {
     throw new DashboardDefinitionError(`${where}: the period is not valid`);
   }
