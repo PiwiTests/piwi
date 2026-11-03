@@ -510,7 +510,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_SHARE_LINK_MAX_TTL_DAYS: {
     description:
-      'Longest allowed share-link lifetime, in days. The creation dialog offers expiries up to this; 0 lifts the cap and allows links with no expiry, which work until they are revoked.',
+      'Longest allowed share-link lifetime, in days. The creation dialog offers expiries up to this; 0 lifts the cap and allows links with no expiry, which work until they are revoked or their creator loses access to what they open.',
     category: 'auth',
     type: 'number',
     default: '30',

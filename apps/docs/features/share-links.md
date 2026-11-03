@@ -28,7 +28,8 @@ On an execution page, a failure-cluster page or a report snapshot page, open **S
 **Download**); on a saved dashboard, open *Live dashboard links* in the dashboard's menu:
 
 1. Pick an expiry. The dialog offers lifetimes up to `PIWI_SHARE_LINK_MAX_TTL_DAYS` (30 days unless configured;
-   setting it to `0` lifts the cap and allows links with no expiry, which work until they are revoked).
+   setting it to `0` lifts the cap and allows links with no expiry, which work until they are revoked or their
+   creator loses access to what they open).
 2. **Copy the link immediately — it is shown only once.** The server stores a hash of the token, not the token, so
    there is no way to display the URL again later. Mint a new link instead.
 
@@ -99,9 +100,12 @@ the reader's address, since such a proxy fetches for many readers.
 - A link works only while its creator can still read what it opens: the project of the execution or the cluster,
   or every project of the snapshot (a live dashboard link follows its creator's access as
   [described above](#live-dashboard-links)). Once they lose that access, the link answers 404 like an unknown link,
-  and works again if the access comes back. Deleting their account revokes their links. A link Piwi created itself,
-  in an issue an [automation rule](./issue-automation) filed, has no creator and follows no one's access. With
-  authentication off, every link works.
+  and works again if the access comes back. Deleting their account revokes their links. With authentication off,
+  every link works.
+- An execution, cluster or report link with no creator is tied to no account, and works until it is revoked or
+  expires: one Piwi created itself, in an issue an [automation rule](./issue-automation) filed, one created while
+  authentication was off, and one whose creator was deleted before v0.65.0. An administrator revokes it in the
+  **Share** dialog of what it opens, which lists every link to it, whoever created it.
 - The rendered page is sandboxed into a unique origin and served with `noindex` and `Referrer-Policy: no-referrer`,
   so it cannot read dashboard cookies, call the API with credentials, or leak the URL through outbound links. The
   page is never cached; the two images may be, for five minutes.
