@@ -182,7 +182,7 @@ async function reclusterFailureClusters(target: DB): Promise<void> {
  */
 async function releaseUnannouncedClusterClaims(target: DB): Promise<void> {
   try {
-    const { releaseUnannouncedClusterClaimsOnce } = await import('../utils/notifications/run-notifications');
+    const { releaseUnannouncedClusterClaimsOnce } = await import('../utils/notifications/cluster-claims');
     const released = await releaseUnannouncedClusterClaimsOnce(target as any);
     if (released) console.log(`[Database] ${released} failure cluster(s) left for a run to announce`);
   } catch (err) {

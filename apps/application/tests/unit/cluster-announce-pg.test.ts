@@ -26,8 +26,8 @@ describe.skipIf(!postgresUrl)('cluster.new claims on PostgreSQL', async () => {
   const { migrate } = await import('drizzle-orm/postgres-js/migrator');
   const { eq } = await import('drizzle-orm');
   const schema = await import('../../server/database/schema.pg');
-  const { clustersToAnnounce, releaseUnannouncedClusterClaimsOnce } =
-    await import('../../server/utils/notifications/run-notifications');
+  const { clustersToAnnounce } = await import('../../server/utils/notifications/run-notifications');
+  const { releaseUnannouncedClusterClaimsOnce } = await import('../../server/utils/notifications/cluster-claims');
 
   const admin = postgres(postgresUrl!, { onnotice: () => {}, max: 1 });
   let client: ReturnType<typeof postgres>;

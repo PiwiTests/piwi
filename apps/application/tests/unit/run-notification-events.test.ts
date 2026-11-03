@@ -23,8 +23,8 @@ vi.mock('../../server/utils/notifications/emit', async () => {
 
 delete process.env.PIWI_DATABASE_URL;
 
-const { emitRunNotifications, clustersToAnnounce, releaseUnannouncedClusterClaimsOnce } =
-  await import('../../server/utils/notifications/run-notifications');
+const { emitRunNotifications, clustersToAnnounce } = await import('../../server/utils/notifications/run-notifications');
+const { releaseUnannouncedClusterClaimsOnce } = await import('../../server/utils/notifications/cluster-claims');
 const { eventSentences } = await import('../../shared/notifications/message-parts');
 
 let db: TempDb;
