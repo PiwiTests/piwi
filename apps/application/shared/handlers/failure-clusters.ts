@@ -170,8 +170,48 @@ const STATE_LINE_RUNS_SCANNED = 200;
 /** The most runs the state line counts a failure as not seen for. */
 const STATE_LINE_RUNS = 50;
 
-/** Statuses of an execution that never ran its test. */
-const NOT_RUN_STATUSES = ['skipped', 'didnotrun'];
+/** Statuses of an execution that never ran its test, or stopped it before its end. */
+const NOT_RUN_STATUSES = ['skipped', 'didnotrun', 'interrupted'];
+
+/** Statuses of a run that ran to its end: not stopped, cancelled or cut by the global timeout. */
+const RAN_TO_END_RUN_STATUSES = ['passed', 'failed'];
+
+/** The run error Playwright reports when `maxFailures` stops a run, as a `LIKE` pattern. */
+const MAX_FAILURES_STOP_PATTERN = '%Testing stopped early after % maximum allowed failures%';
+
+/**
+ * The runs of `runs` that reported every test of the whole suite: a run of the
+ * whole suite that ran to its end, and that `maxFailures` did not stop (no run
+ * error saying so, no execution it did not run for that reason).
+ */
+async function wholeSuiteReportedRunIds(
+  db: DrizzleDB,
+  runs: ReadonlyArray<{ id: number; isFullRun: number; status: string; didNotRunTests: number }>,
+): Promise<Set<number>> {
+  const ended = runs.filter((run) => run.isFullRun && RAN_TO_END_RUN_STATUSES.includes(run.status));
+  if (ended.length === 0) return new Set();
+  const stoppedByError = await db
+    .select({ id: testRuns.id })
+    .from(testRuns)
+    .where(
+      and(
+        inArray(
+          testRuns.id,
+          ended.map((run) => run.id),
+        ),
+        sql`cast(${testRuns.runErrors} as text) like ${MAX_FAILURES_STOP_PATTERN}`,
+      ),
+    );
+  const withUnrun = ended.filter((run) => run.didNotRunTests > 0).map((run) => run.id);
+  const stoppedByCount = withUnrun.length
+    ? await db
+        .selectDistinct({ id: testRunsCases.testRunId })
+        .from(testRunsCases)
+        .where(and(inArray(testRunsCases.testRunId, withUnrun), eq(testRunsCases.didNotRunReason, 'max-failures')))
+    : [];
+  const stopped = new Set([...stoppedByError, ...stoppedByCount].map((row) => row.id));
+  return new Set(ended.map((run) => run.id).filter((id) => !stopped.has(id)));
+}
 
 /**
  * The runs the cluster state counts, newest first: the run the cluster was last
@@ -179,12 +219,14 @@ const NOT_RUN_STATUSES = ['skipped', 'didnotrun'];
  * Such a run is eligible for fix verification (no lab run, bisect step,
  * reproduction or environment incident), finished, on the branch the cluster
  * last failed on or the default branch, holds no execution of the cluster, and
- * ran every test of the cluster it holds: one it holds only as skipped or not
- * run did not run. A partial run must also hold every test the cluster covers;
- * a run of the whole suite need not, since a test it does not hold no longer
- * exists, but it must hold an execution of some test. Any other run did not
- * skip the failure. Only the runs since the last one it was seen in are read:
- * the state counts those.
+ * ran every test of the cluster it holds: one it holds only as skipped, not
+ * run or interrupted did not run. A partial run must also hold every test the
+ * cluster covers; a run of the whole suite that reported every test need not,
+ * since a test it does not hold no longer exists, but it must hold an
+ * execution of some test. A run stopped before its end (interrupted,
+ * cancelled, timed out, or by `maxFailures`) is held to the partial run's
+ * rule. Any other run did not skip the failure. Only the runs since the last
+ * one it was seen in are read: the state counts those.
  */
 async function clusterStateRunIds(
   db: DrizzleDB,
@@ -193,7 +235,13 @@ async function clusterStateRunIds(
   affectedTests: number,
 ): Promise<number[]> {
   const runs = await db
-    .select({ id: testRuns.id, branch: testRuns.branch, isFullRun: testRuns.isFullRun })
+    .select({
+      id: testRuns.id,
+      branch: testRuns.branch,
+      isFullRun: testRuns.isFullRun,
+      status: testRuns.status,
+      didNotRunTests: testRuns.didNotRunTests,
+    })
     .from(testRuns)
     .where(
       and(
@@ -244,8 +292,9 @@ async function clusterStateRunIds(
         .groupBy(testRunsCases.testRunId)
     : [];
   const heldByRun = new Map(held.map((row) => [row.runId, row]));
+  const wholeSuite = await wholeSuiteReportedRunIds(db, onBranch);
   // A run of the whole suite holding none of the cluster's tests counts only when it recorded an execution at all.
-  const bare = onBranch.filter((run) => run.isFullRun && !heldByRun.has(run.id)).map((run) => run.id);
+  const bare = onBranch.filter((run) => wholeSuite.has(run.id) && !heldByRun.has(run.id)).map((run) => run.id);
   const recorded = new Set(
     bare.length
       ? (
@@ -267,7 +316,7 @@ async function clusterStateRunIds(
       if (!row) return recorded.has(run.id);
       if (Number(row.occurred) > 0) return false;
       const ran = Number(row.ran);
-      return ran >= Math.max(1, affectedTests) || (Boolean(run.isFullRun) && ran === Number(row.tests));
+      return ran >= Math.max(1, affectedTests) || (wholeSuite.has(run.id) && ran === Number(row.tests));
     })
     .map((run) => run.id);
   return [...skipped, ...(seenAt < 0 ? [] : [cluster.lastSeenRunId])].slice(0, STATE_LINE_RUNS);

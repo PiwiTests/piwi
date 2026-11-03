@@ -245,8 +245,9 @@ still applies at the fix's commit*, *stopped failing*, *regressed — the fix di
 they disagree the state line offers the one action that closes the gap, unless the Next line already offers it.
 *Not seen for N runs* counts the runs since the last failure that could have shown it: finished runs on its branch or
 the default branch (no lab run, bisect step, reproduction or environment incident) that ran its tests and did not fail
-with it. A test skipped or not run is one a run did not run, and a run of the whole suite counts even when a test of
-the cluster no longer exists. The failure of a cluster whose ticket is Done stopped once such a run came after its last
+with it. A test skipped, not run or interrupted is one a run did not run, and a run of the whole suite that ran to its
+end counts even when a test of the cluster no longer exists; one stopped early (interrupted, cancelled, timed out or
+cut short by `maxFailures`) counts only when it ran the cluster's tests. The failure of a cluster whose ticket is Done stopped once such a run came after its last
 failure. See [Failure clusters](/features/failure-clusters#the-state-line).
 
 ### Flakiness score

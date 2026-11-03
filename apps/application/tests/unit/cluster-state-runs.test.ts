@@ -17,7 +17,15 @@ let db: ReturnType<typeof drizzle<typeof schema>>;
 let runSeq = 0;
 
 async function insertRun(
-  opts: { branch?: string; origin?: string; isFullRun?: number; status?: string; incident?: boolean } = {},
+  opts: {
+    branch?: string;
+    origin?: string;
+    isFullRun?: number;
+    status?: string;
+    incident?: boolean;
+    runErrors?: Array<{ message: string }>;
+    didNotRunTests?: number;
+  } = {},
 ) {
   const id = ++runSeq;
   const origin = opts.origin ?? 'ci';
@@ -28,6 +36,8 @@ async function insertRun(
     startTime: new Date(Date.UTC(2026, 9, 1) + id * 3_600_000),
     branch: opts.branch ?? 'main',
     isFullRun: opts.isFullRun ?? 1,
+    runErrors: opts.runErrors ?? null,
+    didNotRunTests: opts.didNotRunTests ?? 0,
     origin,
     metadata: {
       piwiOrigin: { kind: origin },
@@ -78,6 +88,7 @@ beforeEach(async () => {
   await db.insert(schema.testCases).values([
     { id: 1, projectId: 1, filePath: 'tests/checkout.spec.ts', title: 'pays' },
     { id: 2, projectId: 1, filePath: 'tests/cart.spec.ts', title: 'adds an item' },
+    { id: 3, projectId: 1, filePath: 'tests/search.spec.ts', title: 'finds an item' },
   ]);
 });
 
@@ -156,6 +167,26 @@ describe("the state line's runs", () => {
     ]);
     const { clusterState } = (await getFailureCluster(db, 1))!;
     expect(clusterState.sentence).toMatch(/^Not seen for 3 runs/);
+  });
+
+  test('a whole-suite run stopped before its end is not one it skipped unless it ran the tests of the cluster', async () => {
+    const maxFailuresStop = { message: '\u001b[31mTesting stopped early after 1 maximum allowed failures.\u001b[39m' };
+    await seed([
+      { tests: [2], run: { status: 'interrupted' } },
+      { tests: [2], run: { status: 'cancelled' } },
+      { tests: [2], run: { status: 'timedout' } },
+      { tests: [2], run: { status: 'failed', runErrors: [maxFailuresStop] } },
+      { tests: [1], run: {}, status: 'interrupted' },
+    ]);
+    // `maxFailures` stopped it before test 1, which it does not hold: it ran test 2 alone.
+    const cut = await insertRun({ status: 'failed', didNotRunTests: 1 });
+    await db.insert(schema.testRunsCases).values([
+      { testRunId: cut, testCaseId: 2, status: 'failed' },
+      { testRunId: cut, testCaseId: 3, status: 'didnotrun', didNotRunReason: 'max-failures' },
+    ]);
+    const { clusterState, failureGoesOn } = (await getFailureCluster(db, 1))!;
+    expect(clusterState.kind).toBe('failing');
+    expect(failureGoesOn).toBe(true);
   });
 
   test('a partial run is one it skipped only when it ran every test of the cluster', async () => {
