@@ -408,7 +408,6 @@ const verifySummary = computed(() =>
 // ── Apply the same triage ─────────────────────────────────────────────────────
 const { applyingId, applyTriage } = useApplyClusterTriage({
   clusterId: () => clusterId,
-  currentNote: () => cluster.value?.triageNote,
   onApplied: () => refresh(),
 });
 

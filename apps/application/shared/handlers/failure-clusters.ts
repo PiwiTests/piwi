@@ -32,6 +32,7 @@ import {
   computeSnooze,
   DEFAULT_NEEDS_TICKET_AFTER_DAYS,
   isClusterStatus,
+  isTriageLineInput,
   isTriageNoteInput,
   type SnoozeOption,
 } from '../inbox-queues';
@@ -678,15 +679,23 @@ export async function getExecutionDiagnosis(db: DrizzleDB, testRunsCaseId: numbe
 /**
  * Set a cluster's triage status, its note, or both. The status is kept unless
  * one is given, and so is the note: a string replaces it (empty clears it),
- * `null` clears it. Null for an invalid status or note, or a missing cluster.
+ * `null` clears it, and `appendLine` joins it below the note as it is stored
+ * when the update runs (`appendedTriageNote`). Null for an invalid status or
+ * note, a note given both ways, or a missing cluster.
  */
 export async function patchClusterStatus(
   db: DrizzleDB,
   clusterId: number,
   status: string | undefined,
   triageNote?: string | null,
+  appendLine?: string,
 ) {
-  if ((status !== undefined && !isClusterStatus(status)) || !isTriageNoteInput(triageNote)) {
+  if (
+    (status !== undefined && !isClusterStatus(status)) ||
+    !isTriageNoteInput(triageNote) ||
+    !isTriageLineInput(appendLine) ||
+    (triageNote !== undefined && appendLine !== undefined)
+  ) {
     return null;
   }
 
@@ -696,7 +705,12 @@ export async function patchClusterStatus(
     .where(eq(failureClusters.id, clusterId));
   if (!cluster) return null;
 
-  const note = triageNote === undefined ? {} : { triageNote: triageNote?.trim() ? triageNote : null };
+  const note =
+    appendLine !== undefined
+      ? { triageNote: appendedTriageNote(appendLine) }
+      : triageNote === undefined
+        ? {}
+        : { triageNote: triageNote?.trim() ? triageNote : null };
   await db
     .update(failureClusters)
     .set({ ...(status === undefined ? {} : { status }), ...note, updatedAt: new Date() })

@@ -320,7 +320,6 @@ const nextStepSource = computed(() =>
 
 const { applyingId, applyTriage } = useApplyClusterTriage({
   clusterId: () => failureCluster.value?.id ?? null,
-  currentNote: () => (failureCluster.value as { triageNote?: string | null } | null)?.triageNote,
   onApplied: () => Promise.all([refresh(), refreshFixedBefore()]),
 });
 

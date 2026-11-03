@@ -21,6 +21,11 @@ export function isTriageNoteInput(value: unknown): value is string | null | unde
   return value === undefined || value === null || typeof value === 'string';
 }
 
+/** A line a request appends to a triage note: a string that is not blank; anything else is refused. */
+export function isTriageLineInput(value: unknown): value is string | undefined {
+  return value === undefined || (typeof value === 'string' && value.trim() !== '');
+}
+
 /** The inbox queues, in display order. `all` is the default. */
 export const INBOX_QUEUES = [
   'all',

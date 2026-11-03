@@ -317,6 +317,7 @@ import {
 import {
   CLUSTER_STATUSES,
   isClusterStatus,
+  isTriageLineInput,
   isTriageNoteInput,
   parseBulkIds,
   isSnoozeOption,
@@ -1471,15 +1472,21 @@ const routes: RouteEntry[] = [
     permission: 'triage:write',
     handler: async (m, body, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
-      const b = body as { status?: unknown; triageNote?: unknown };
+      const b = body as { status?: unknown; triageNote?: unknown; appendTriageNote?: unknown };
       if (b.status !== undefined && !isClusterStatus(b.status)) {
         throw demoHttpError(400, `Invalid status. Must be one of: ${CLUSTER_STATUSES.join(', ')}`);
       }
       if (!isTriageNoteInput(b.triageNote)) throw demoHttpError(400, 'triageNote must be a string or null');
-      if (b.status === undefined && b.triageNote === undefined) {
-        throw demoHttpError(400, 'Send a status, a triageNote or both');
+      if (!isTriageLineInput(b.appendTriageNote)) {
+        throw demoHttpError(400, 'appendTriageNote must be a non-empty string');
       }
-      return patchClusterStatus(await getDemoDb(), +m[1]!, b.status, b.triageNote);
+      if (b.triageNote !== undefined && b.appendTriageNote !== undefined) {
+        throw demoHttpError(400, 'Send a triageNote or an appendTriageNote, not both');
+      }
+      if (b.status === undefined && b.triageNote === undefined && b.appendTriageNote === undefined) {
+        throw demoHttpError(400, 'Send a status, a note or both');
+      }
+      return patchClusterStatus(await getDemoDb(), +m[1]!, b.status, b.triageNote, b.appendTriageNote);
     },
   },
   {

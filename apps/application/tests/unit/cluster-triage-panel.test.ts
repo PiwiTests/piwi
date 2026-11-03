@@ -68,17 +68,13 @@ describe("the Triage panel's request", () => {
 });
 
 describe('applying the triage of a cluster fixed before', () => {
-  test('sends the note alone, so the status stays as it is stored', async () => {
-    const { applyTriage } = useApplyClusterTriage({
-      clusterId: () => 7,
-      currentNote: () => 'Looking into it',
-      onApplied: () => {},
-    });
+  test('sends the line alone, which the server appends to the stored note, so the status stays as it is', async () => {
+    const { applyTriage } = useApplyClusterTriage({ clusterId: () => 7, onApplied: () => {} });
     await applyTriage({ clusterId: 3, triageNote: 'Fixed by the cart refactor' } as never);
     expect(requests).toEqual([
       {
         url: '/api/failure-clusters/7/status',
-        body: { triageNote: 'Looking into it\nSame as cluster #3: Fixed by the cart refactor' },
+        body: { appendTriageNote: 'Same as cluster #3: Fixed by the cart refactor' },
       },
     ]);
   });

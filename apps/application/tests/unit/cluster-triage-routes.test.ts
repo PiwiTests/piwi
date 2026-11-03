@@ -109,6 +109,21 @@ describe('PATCH /api/failure-clusters/:id/status', () => {
     expect(await triage()).toEqual({ status: 'resolved', triageNote: 'Fixed by the cart refactor' });
     await expect(patchStatus({ params: { id: '1' }, body: {} })).rejects.toMatchObject({ statusCode: 400 });
   });
+
+  test('appends a line to the note as it is stored, keeping a line Piwi added since the caller read it', async () => {
+    await db
+      .update(schema.failureClusters)
+      .set({ triageNote: 'Looking into it\nReopened automatically: failed again in run #9' });
+    await patchStatus({ params: { id: '1' }, body: { appendTriageNote: 'Same as cluster #3: Fixed by the refactor' } });
+    expect(await triage()).toEqual({
+      status: 'open',
+      triageNote:
+        'Looking into it\nReopened automatically: failed again in run #9\nSame as cluster #3: Fixed by the refactor',
+    });
+    for (const body of [{ appendTriageNote: '  ' }, { appendTriageNote: 'A line', triageNote: 'A note' }]) {
+      await expect(patchStatus({ params: { id: '1' }, body })).rejects.toMatchObject({ statusCode: 400 });
+    }
+  });
 });
 
 describe('PATCH /api/failure-clusters/:id/status in the demo', () => {
@@ -119,6 +134,20 @@ describe('PATCH /api/failure-clusters/:id/status in the demo', () => {
     await expect(handleDemoRequest('/api/failure-clusters/1/status', 'PATCH', {})).rejects.toMatchObject({
       statusCode: 400,
     });
+  });
+
+  test('appends a line to the note as it is stored', async () => {
+    await db.update(schema.failureClusters).set({ triageNote: null });
+    await handleDemoRequest('/api/failure-clusters/1/status', 'PATCH', { appendTriageNote: 'Same as cluster #3: x' });
+    expect(await note()).toBe('Same as cluster #3: x');
+    await handleDemoRequest('/api/failure-clusters/1/status', 'PATCH', { appendTriageNote: 'Same as cluster #4: y' });
+    expect(await note()).toBe('Same as cluster #3: x\nSame as cluster #4: y');
+    await expect(
+      handleDemoRequest('/api/failure-clusters/1/status', 'PATCH', {
+        appendTriageNote: 'A line',
+        triageNote: 'A note',
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
   });
 });
 
