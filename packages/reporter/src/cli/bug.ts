@@ -10,6 +10,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { originEnv } from '../internal/config/env.js';
+import { failureDetail } from '../internal/transport/http-client.js';
 import { connectionFolders, gitRoot, resolveCliConnection } from '../internal/support/connection.js';
 import { resolvePlaywrightCli, spawnPlaywright } from '../internal/support/playwright-spawn.js';
 
@@ -127,7 +128,12 @@ async function fetchBugSpec(
     throw new Error(`could not reach ${args.serverUrl} (${(e as Error).message})`);
   }
   if (res.status === 404) throw new Error(`no bug report #${args.id} on ${args.serverUrl}`);
-  if (res.status === 401 || res.status === 403) throw new Error(`the dashboard refused the API key (${res.status})`);
+  if (res.status === 401) throw new Error('the dashboard refused the API key (401)');
+  if (res.status === 403) {
+    const contentType = res.headers.get('content-type') ?? undefined;
+    const detail = failureDetail({ text: await res.text().catch(() => ''), headers: { 'content-type': contentType } });
+    throw new Error(`the dashboard refused the request (403)${detail ? `: ${detail}` : ''}`);
+  }
   if (!res.ok) throw new Error(`the dashboard answered ${res.status}`);
   const body = (await res.json()) as Partial<BugSpec>;
   if (typeof body.code !== 'string' || typeof body.path !== 'string') throw new Error('the dashboard sent no spec');

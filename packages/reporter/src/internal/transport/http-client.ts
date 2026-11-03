@@ -36,7 +36,7 @@ const FAILURE_DETAIL_MAX = 500;
  * The server's own word on a failed request, on one line of at most `FAILURE_DETAIL_MAX` characters: the `message`, or
  * else the `statusMessage`, of a JSON body, or a plain-text body. Null for any other body, such as a proxy's HTML page.
  */
-function failureDetail(res: HttpResponse): string | null {
+export function failureDetail(res: Pick<HttpResponse, 'text' | 'headers'>): string | null {
   let text: unknown = null;
   try {
     const body = JSON.parse(res.text) as { message?: unknown; statusMessage?: unknown } | null;
