@@ -53,13 +53,55 @@ describe('isAllowedHostWithoutAuth', () => {
 
   test('answers the host of PIWI_SITE_URL, whatever the port', () => {
     const siteUrl = 'https://Piwi.Example.com/dashboard';
-    expect(isAllowedHostWithoutAuth('piwi.example.com', siteUrl)).toBe(true);
-    expect(isAllowedHostWithoutAuth('piwi.example.com:443', siteUrl)).toBe(true);
-    expect(isAllowedHostWithoutAuth('PIWI.EXAMPLE.COM', siteUrl)).toBe(true);
-    expect(isAllowedHostWithoutAuth('other.example.com', siteUrl)).toBe(false);
-    expect(isAllowedHostWithoutAuth('example.com', siteUrl)).toBe(false);
-    expect(isAllowedHostWithoutAuth('piwi.example.com', 'not a url')).toBe(false);
-    expect(isAllowedHostWithoutAuth('piwi.example.com', '')).toBe(false);
+    expect(isAllowedHostWithoutAuth('piwi.example.com', { siteUrl })).toBe(true);
+    expect(isAllowedHostWithoutAuth('piwi.example.com:443', { siteUrl })).toBe(true);
+    expect(isAllowedHostWithoutAuth('PIWI.EXAMPLE.COM', { siteUrl })).toBe(true);
+    expect(isAllowedHostWithoutAuth('other.example.com', { siteUrl })).toBe(false);
+    expect(isAllowedHostWithoutAuth('example.com', { siteUrl })).toBe(false);
+    expect(isAllowedHostWithoutAuth('piwi.example.com', { siteUrl: 'not a url' })).toBe(false);
+    expect(isAllowedHostWithoutAuth('piwi.example.com', { siteUrl: '' })).toBe(false);
+  });
+
+  test('answers the names PIWI_ALLOWED_HOSTS lists, whatever the port', () => {
+    const allowedHosts = ' host.docker.internal , Piwi.Default.Svc.Cluster.Local:3000,piwi.lan ';
+    for (const host of [
+      'host.docker.internal',
+      'host.docker.internal:3000',
+      'HOST.DOCKER.INTERNAL',
+      'piwi.default.svc.cluster.local',
+      'piwi.default.svc.cluster.local:7494',
+      'piwi.lan:3000',
+    ]) {
+      expect(isAllowedHostWithoutAuth(host, { allowedHosts }), host).toBe(true);
+    }
+    for (const host of ['docker.internal', 'evil.host.docker.internal', 'piwi.lan.evil.example', 'evil.example']) {
+      expect(isAllowedHostWithoutAuth(host, { allowedHosts }), host).toBe(false);
+    }
+  });
+
+  test('answers a domain and every name under it for an entry starting with a dot', () => {
+    const allowedHosts = '.example.lan';
+    for (const host of ['example.lan', 'piwi.example.lan', 'a.b.example.lan:3000']) {
+      expect(isAllowedHostWithoutAuth(host, { allowedHosts }), host).toBe(true);
+    }
+    for (const host of ['evilexample.lan', 'example.lan.evil.example', 'other.lan']) {
+      expect(isAllowedHostWithoutAuth(host, { allowedHosts }), host).toBe(false);
+    }
+  });
+
+  test('answers every host for the entry *', () => {
+    for (const allowedHosts of ['*', ' * ', 'piwi.lan, *']) {
+      expect(isAllowedHostWithoutAuth('evil.example', { allowedHosts }), allowedHosts).toBe(true);
+      expect(isAllowedHostWithoutAuth('not a host', { allowedHosts }), allowedHosts).toBe(true);
+    }
+  });
+
+  test('ignores an entry that names no host', () => {
+    for (const allowedHosts of ['.', '..', 'evil..example', '.com.', 'evil.example.', '*.example.lan', 'a b', '']) {
+      for (const host of ['evil.example', 'evil.example.', 'x.example.lan', 'a.com.']) {
+        expect(isAllowedHostWithoutAuth(host, { allowedHosts }), `${allowedHosts} → ${host}`).toBe(false);
+      }
+    }
   });
 
   test('answers a request with no Host, which no browser sends', () => {
@@ -85,6 +127,7 @@ describe('the allowed-host middleware', () => {
       event.headers = headers;
     });
     vi.stubEnv('PIWI_SITE_URL', '');
+    vi.stubEnv('PIWI_ALLOWED_HOSTS', '');
   });
 
   afterEach(() => {
@@ -115,6 +158,12 @@ describe('the allowed-host middleware', () => {
     vi.stubEnv('PIWI_SITE_URL', '');
     vi.stubGlobal('useRuntimeConfig', () => ({ public: { siteUrl: 'https://piwi.example.com' } }));
     expect((await call({ host: 'piwi.example.com' })).body).toBeUndefined();
+  });
+
+  test('passes a name PIWI_ALLOWED_HOSTS lists', async () => {
+    vi.stubEnv('PIWI_ALLOWED_HOSTS', 'host.docker.internal');
+    expect((await call({ host: 'host.docker.internal:3000' })).body).toBeUndefined();
+    expect((await call({ host: 'rebound.example' })).body).toBe(HOST_REFUSED_MESSAGE);
   });
 
   test('passes every host when authentication is on', async () => {
