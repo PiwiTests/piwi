@@ -1,4 +1,4 @@
-import { describe, it, beforeEach, afterEach, expect } from 'vitest';
+import { describe, it, beforeEach, afterEach, expect, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -445,7 +445,7 @@ describe('readSetupInfo', () => {
   it('round-trips setup info and deletes the file', () => {
     const projectName = 'piwi-setup-roundtrip-' + Date.now();
     const file = getSetupFilePath(projectName);
-    fs.writeFileSync(file, JSON.stringify({ runId: 42, setupToken: 'tok', projectName }), 'utf8');
+    fs.writeFileSync(file, JSON.stringify({ runId: 42, setupToken: 'tok', projectName }), { mode: 0o600 });
     try {
       const info = readSetupInfo(projectName);
       expect(info).toEqual({ runId: 42, setupToken: 'tok', projectName });
@@ -477,12 +477,81 @@ describe('readSetupInfo', () => {
   it('returns null when projectName does not match', () => {
     const projectName = 'piwi-setup-mismatch-' + Date.now();
     const file = getSetupFilePath(projectName);
-    fs.writeFileSync(file, JSON.stringify({ runId: 1, setupToken: 't', projectName: 'other-project' }), 'utf8');
+    fs.writeFileSync(file, JSON.stringify({ runId: 1, setupToken: 't', projectName: 'other-project' }), {
+      mode: 0o600,
+    });
     try {
       expect(readSetupInfo(projectName)).toBe(null);
     } finally {
       if (fs.existsSync(file)) fs.unlinkSync(file);
     }
+  });
+});
+
+describe('a setup file this user did not write', () => {
+  const posix = process.platform !== 'win32';
+  let projectName: string;
+  let dir: string;
+  let warnings: string[];
+
+  beforeEach(() => {
+    projectName = `piwi-setup-planted-${process.pid}-${Math.random().toString(36).slice(2)}`;
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-setup-planted-'));
+    warnings = [];
+    vi.spyOn(console, 'warn').mockImplementation((line: string) => void warnings.push(line));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    fs.rmSync(getSetupFilePath(projectName), { force: true });
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** A registration of the project's, as another run would write it. */
+  const registration = () => JSON.stringify({ runId: 7, setupToken: 'theirs', projectName });
+
+  /** A symbolic link at the setup file's path to a registration; false where links cannot be made. */
+  function plantLink(): boolean {
+    const target = path.join(dir, 'setup.json');
+    fs.writeFileSync(target, registration(), { mode: 0o600 });
+    try {
+      fs.symlinkSync(target, getSetupFilePath(projectName));
+      return true;
+    } catch {
+      return false; // creating a link needs a privilege some systems do not grant
+    }
+  }
+
+  it('is ignored when it is a symbolic link, with one warning saying why', () => {
+    if (!plantLink()) return;
+    expect(peekSetupInfo(projectName)).toBe(null);
+    expect(readSetupInfo(projectName)).toBe(null);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('[Piwi Dashboard] Ignoring');
+    expect(warnings[0]).toContain('it is a symbolic link');
+  });
+
+  it.skipIf(!posix)('is ignored when other users may write to it', () => {
+    fs.writeFileSync(getSetupFilePath(projectName), registration(), { mode: 0o600 });
+    fs.chmodSync(getSetupFilePath(projectName), 0o620);
+    expect(readSetupInfo(projectName)).toBe(null);
+    expect(warnings.join('\n')).toContain('other users may write to it');
+  });
+
+  it.skipIf(!posix)('is ignored when another user owns it', () => {
+    fs.writeFileSync(getSetupFilePath(projectName), registration(), { mode: 0o600 });
+    vi.spyOn(process, 'getuid').mockReturnValue(process.getuid!() + 1);
+    expect(peekSetupInfo(projectName)).toBe(null);
+    expect(warnings.join('\n')).toContain('another user owns it');
+  });
+
+  it('is replaced by the global setup, never written through, and its own file is read', () => {
+    const linked = plantLink();
+    writeSetupInfo({ runId: 8, setupToken: 'ours', projectName });
+    if (linked) expect(JSON.parse(fs.readFileSync(path.join(dir, 'setup.json'), 'utf8')).runId).toBe(7);
+    if (posix) expect(fs.statSync(getSetupFilePath(projectName)).mode & 0o777).toBe(0o600);
+    expect(readSetupInfo(projectName)).toEqual({ runId: 8, setupToken: 'ours', projectName });
+    expect(warnings).toEqual([]);
   });
 });
 

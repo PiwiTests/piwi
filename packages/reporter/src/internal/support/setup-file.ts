@@ -2,6 +2,12 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import * as fs from 'node:fs';
 import { hashForProject } from './instance-id.js';
+import { Logger } from './logger.js';
+import { readPrivateFile, writePrivateFile } from './private-file.js';
+
+const logger = new Logger();
+/** The setup files a warning already named, so a run says once why it ignores one. */
+const warnedFiles = new Set<string>();
 
 /**
  * The temp file the global setup hands its registration to the reporter through, per project and per process.
@@ -26,20 +32,28 @@ export interface SetupInfo {
   liveViewLocal?: true;
 }
 
-/** Write this process's setup info file, readable by its owner alone. */
+/** Write this process's setup info file, readable by its owner alone, replacing whatever was at its path. */
 export function writeSetupInfo(info: SetupInfo): void {
-  const setupFile = getSetupFilePath(info.projectName);
-  fs.writeFileSync(setupFile, JSON.stringify(info), { mode: 0o600 });
+  writePrivateFile(getSetupFilePath(info.projectName), JSON.stringify(info));
 }
 
-/** Read this process's setup info file for the given project, and leave it in place. `null` when there is none. */
+/**
+ * Read this process's setup info file for the given project, and leave it in place. `null` when there is none, and
+ * when it is not a regular file this user owns that no one else may write (`readPrivateFile`), which one warning names.
+ */
 export function peekSetupInfo(projectName: string): SetupInfo | null {
   const setupFile = getSetupFilePath(projectName);
   try {
-    if (fs.existsSync(setupFile)) {
-      const info = JSON.parse(fs.readFileSync(setupFile, 'utf8'));
-      if (info.projectName === projectName) return info;
+    const read = readPrivateFile(setupFile);
+    if (read && 'untrusted' in read) {
+      if (!warnedFiles.has(setupFile)) {
+        warnedFiles.add(setupFile);
+        logger.warn(`Ignoring the global setup's run registration in ${setupFile}: ${read.untrusted}.`);
+      }
+      return null;
     }
+    const info = read ? JSON.parse(read.text) : null;
+    if (info?.projectName === projectName) return info;
   } catch {
     /* ignore */
   }
