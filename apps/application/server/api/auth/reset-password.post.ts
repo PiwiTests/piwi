@@ -43,7 +43,7 @@ export default eventHandler(async (event) => {
     throw apiError({ statusCode: 400, message: 'Invalid or expired token' });
   }
 
-  const hashedPassword = await hashPassword(password);
+  const hashedPassword = await hashPassword(event, password);
   const extraFields = validated.purpose === 'invite' ? { emailVerified: true } : {};
   // The write matches the address again: one changed since the validation sets nothing.
   const updated = await db

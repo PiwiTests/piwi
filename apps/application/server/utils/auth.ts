@@ -1,6 +1,6 @@
 import type { H3Event } from 'h3';
 import { apiError } from './api-error';
-import { useSession, updateSession, clearSession as h3ClearSession } from 'h3';
+import { useSession, updateSession, clearSession as h3ClearSession, setResponseHeader } from 'h3';
 import { getDatabase } from '../database';
 import { users, apiKeys, appSettings } from '../database/schema';
 import { and, eq, ne, notExists, sql } from 'drizzle-orm';
@@ -20,6 +20,7 @@ import { getUserAccess } from '#shared/handlers/role-bindings';
 import { getRouteRequiredPermissions } from './route-required-permission';
 import { hashToken } from './token-hash';
 import { bearerToken } from './bearer';
+import { createConcurrencyLimit } from './concurrency-limit';
 
 declare module 'h3' {
   interface H3EventContext {
@@ -81,25 +82,59 @@ function parsePasswordHash(hash: string): PasswordHash | null {
   return { ...cost, salt, key: Buffer.from(key, 'hex') };
 }
 
-/** scrypt's derived key of `password` at `cost`, with the memory bound the cost needs. */
-function deriveKey(password: string, salt: string, cost: ScryptCost, keyLength: number): Promise<Buffer> {
+/**
+ * Every password hash and check of the process, two at a time: one at
+ * {@link SCRYPT_COST} holds 128 MiB (128 · N · r bytes) while it runs. Up to 32
+ * more wait their turn in order; past that, the request is refused.
+ */
+const passwordHashing = createConcurrencyLimit(2, 32);
+const PASSWORD_HASHING_RETRY_AFTER_SEC = 5;
+
+/**
+ * scrypt's derived key of `password` at `cost`, with the memory bound the cost
+ * needs, run within {@link passwordHashing}. Refuses with 503 and a
+ * `Retry-After` header on `event` when too many hashes already wait.
+ */
+async function deriveKey(
+  event: H3Event,
+  password: string,
+  salt: string,
+  cost: ScryptCost,
+  keyLength: number,
+): Promise<Buffer> {
   const N = 2 ** cost.log2N;
-  return scryptAsync(password, salt, keyLength, { N, r: cost.r, p: cost.p, maxmem: 256 * N * cost.r });
+  const derived = passwordHashing(() =>
+    scryptAsync(password, salt, keyLength, { N, r: cost.r, p: cost.p, maxmem: 256 * N * cost.r }),
+  );
+  if (!derived) {
+    setResponseHeader(event, 'Retry-After', PASSWORD_HASHING_RETRY_AFTER_SEC);
+    throw apiError({
+      statusCode: 503,
+      message: 'The server is checking too many passwords at once. Try again in a few seconds.',
+    });
+  }
+  return derived;
 }
 
-/** Hash a password with scrypt at {@link SCRYPT_COST}, the cost encoded in the result. */
-export async function hashPassword(password: string): Promise<string> {
+/**
+ * Hash a password with scrypt at {@link SCRYPT_COST}, the cost encoded in the
+ * result. `event` is the request a busy server's 503 answers.
+ */
+export async function hashPassword(event: H3Event, password: string): Promise<string> {
   const salt = randomBytes(16).toString('hex');
-  const key = await deriveKey(password, salt, SCRYPT_COST, SCRYPT_KEY_LENGTH);
+  const key = await deriveKey(event, password, salt, SCRYPT_COST, SCRYPT_KEY_LENGTH);
   const { log2N, r, p } = SCRYPT_COST;
   return `scrypt$${log2N}$${r}$${p}$${salt}$${key.toString('hex')}`;
 }
 
-/** Whether `password` matches `hash`, in either stored form. */
-export async function verifyPassword(password: string, hash: string): Promise<boolean> {
+/**
+ * Whether `password` matches `hash`, in either stored form. `event` is the
+ * request a busy server's 503 answers.
+ */
+export async function verifyPassword(event: H3Event, password: string, hash: string): Promise<boolean> {
   const parsed = parsePasswordHash(hash);
   if (!parsed) return false;
-  const key = await deriveKey(password, parsed.salt, parsed, parsed.key.length);
+  const key = await deriveKey(event, password, parsed.salt, parsed, parsed.key.length);
   return timingSafeEqual(key, parsed.key);
 }
 
@@ -242,7 +277,7 @@ export async function revokeUserSessions(userId: number): Promise<number> {
 const DUMMY_PASSWORD_HASH = `scrypt$${SCRYPT_COST.log2N}$${SCRYPT_COST.r}$${SCRYPT_COST.p}$${'0'.repeat(32)}$${'0'.repeat(128)}`;
 
 // Verify user credentials and return user
-export async function verifyUser(username: string, password: string): Promise<User | null> {
+export async function verifyUser(event: H3Event, username: string, password: string): Promise<User | null> {
   const db = await getDatabase();
   const userResults = await db.select().from(users).where(eq(users.username, username));
   const user = userResults[0];
@@ -252,18 +287,18 @@ export async function verifyUser(username: string, password: string): Promise<Us
   // scrypt verification against a dummy hash, so login timing can't be used to
   // enumerate which usernames are registered.
   if (!user || !user.password) {
-    await verifyPassword(password, DUMMY_PASSWORD_HASH);
+    await verifyPassword(event, password, DUMMY_PASSWORD_HASH);
     return null;
   }
 
-  const valid = await verifyPassword(password, user.password);
+  const valid = await verifyPassword(event, password, user.password);
   if (!valid) {
     return null;
   }
 
   if (passwordNeedsRehash(user.password)) {
     // Rewrite the hash at the current cost, unless the password changed meanwhile.
-    const rehashed = await hashPassword(password);
+    const rehashed = await hashPassword(event, password);
     await db
       .update(users)
       .set({ password: rehashed })
@@ -296,9 +331,15 @@ export async function usernameTaken(username: string): Promise<boolean> {
   return existing.length > 0;
 }
 
-export async function createUser(username: string, password: string, role: InstanceRole, name?: string): Promise<User> {
+export async function createUser(
+  event: H3Event,
+  username: string,
+  password: string,
+  role: InstanceRole,
+  name?: string,
+): Promise<User> {
   const db = await getDatabase();
-  const hashedPassword = await hashPassword(password);
+  const hashedPassword = await hashPassword(event, password);
 
   const result = await db
     .insert(users)

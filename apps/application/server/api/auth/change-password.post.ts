@@ -38,12 +38,12 @@ export default eventHandler(async (event) => {
     throw apiError({ statusCode: 400, message: 'Cannot change password for OAuth-only accounts' });
   }
 
-  const valid = await verifyPassword(currentPassword, user.password);
+  const valid = await verifyPassword(event, currentPassword, user.password);
   if (!valid) {
     throw apiError({ statusCode: 400, message: 'Current password is incorrect' });
   }
 
-  const hashed = await hashPassword(newPassword);
+  const hashed = await hashPassword(event, newPassword);
   await db.update(users).set({ password: hashed, updatedAt: new Date() }).where(eq(users.id, user.id));
 
   // Revoke every existing session, then re-issue one for the current device so

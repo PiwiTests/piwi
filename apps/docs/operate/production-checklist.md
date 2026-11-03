@@ -27,7 +27,7 @@ Never leave the built-in development secrets in place on a real deployment.
 The defaults are conservative, so the checklist above is short. Without any extra work:
 
 - The container runs as a **non-root** user (`nodejs`, UID 1001).
-- Passwords are hashed with **scrypt** and per-password salts; login, initial-setup and password-reset endpoints are **rate-limited** per client address, returning `429` with `Retry-After`. Failed logins are also limited per account in 15 minutes: 5 from one address and 50 from all addresses together, so wrong passwords sent from other addresses do not stop the owner signing in until they pass 50.
+- Passwords are hashed with **scrypt** and per-password salts, two at a time (up to 32 more wait; past that the server answers `503` with `Retry-After`); login, initial-setup and password-reset endpoints are **rate-limited** per client address, returning `429` with `Retry-After`. Failed logins are also limited per account in 15 minutes: 5 from one address and 50 from all addresses together, so wrong passwords sent from other addresses do not stop the owner signing in until they pass 50.
 - **API keys** are stored only as SHA-256 hashes and shown once, at creation — a leaked database yields no usable key.
 - No other site can frame the dashboard: every response carries `X-Frame-Options: SAMEORIGIN` and
   `frame-ancestors 'self'`. Status badges and report charts are images, so a README or a wiki still shows them.

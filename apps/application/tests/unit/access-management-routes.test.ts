@@ -22,7 +22,7 @@ const state = vi.hoisted(
 vi.mock('../../server/database', () => ({ getDatabase: async () => state.db }));
 vi.mock('../../server/utils/auth', async () => ({
   ...(await import('./route-access')).authMock(state),
-  hashPassword: async (password: string) => `hashed:${password}`,
+  hashPassword: async (_event: unknown, password: string) => `hashed:${password}`,
   revokeUserSessions: async (userId: number) => {
     state.revoked.push(userId);
     return 1;

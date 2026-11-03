@@ -86,7 +86,7 @@ export default eventHandler(async (event) => {
   }
 
   try {
-    const user = await createUser(username, password, InstanceRole.ADMINISTRATOR, name);
+    const user = await createUser(event, username, password, InstanceRole.ADMINISTRATOR, name);
     await completeInitialSetup();
 
     return {

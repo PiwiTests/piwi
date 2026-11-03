@@ -47,7 +47,7 @@ export default eventHandler(async (event) => {
 
   try {
     // Without a password, a random one: the user sets their own from the invite email.
-    const hashedPassword = await hashPassword(password ?? randomBytes(32).toString('hex'));
+    const hashedPassword = await hashPassword(event, password ?? randomBytes(32).toString('hex'));
     const user = await createUserAccount(
       await getDatabase(),
       { username, password: hashedPassword, role: requestedInstanceRole(role), name, email, groupIds },

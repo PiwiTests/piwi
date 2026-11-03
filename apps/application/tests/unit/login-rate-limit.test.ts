@@ -14,6 +14,8 @@ const auth = vi.hoisted(() => ({
   /** Resolves every pending password check at once. */
   release: () => {},
   correct: 'right-password',
+  /** A password whose check the server refuses as too busy. */
+  busy: 'busy-password',
 }));
 
 vi.mock('../../server/database', () => ({ getDatabase: async () => ({}) }));
@@ -21,7 +23,7 @@ vi.mock('../../server/utils/auth', () => ({
   isAuthEnabled: () => true,
   authUserView: async () => ({ id: 1, username: 'ada', role: 'member' }),
   setUserSession: async () => {},
-  verifyUser: async (username: string, password: string) => {
+  verifyUser: async (_event: unknown, username: string, password: string) => {
     await new Promise<void>((resolve) => {
       const previous = auth.release;
       auth.release = () => {
@@ -29,6 +31,7 @@ vi.mock('../../server/utils/auth', () => ({
         resolve();
       };
     });
+    if (password === auth.busy) throw Object.assign(new Error('busy'), { statusCode: 503 });
     return password === auth.correct ? { id: 1, username, sessionEpoch: 0 } : null;
   },
 }));
@@ -111,6 +114,14 @@ describe('login throttle', () => {
     const statuses = await together(fromOne);
     expect(statuses.filter((s) => s === 401)).toHaveLength(5);
     expect(await together([request(`10.4.${address}.1`, username, 'wrong')])).toEqual([429]);
+  });
+
+  test('a check refused as busy gives its slots back', async () => {
+    const ip = `10.0.0.${address}`;
+    const username = `ada${address}`;
+    for (let i = 0; i < 8; i++) expect(await together([request(ip, username, auth.busy)])).toEqual([503]);
+    const statuses = await together(Array.from({ length: 6 }, () => request(ip, username, 'wrong')));
+    expect(statuses.filter((s) => s === 401)).toHaveLength(5);
   });
 
   test('a valid login gives its slots back', async () => {

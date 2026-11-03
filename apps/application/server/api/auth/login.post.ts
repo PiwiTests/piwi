@@ -72,7 +72,11 @@ export default eventHandler(async (event) => {
     taken.push(key);
   }
 
-  const user = await verifyUser(username, password);
+  // A check that throws (a busy server's 503) found no wrong password, so it gives its slots back.
+  const user = await verifyUser(event, username, password).catch((error: unknown) => {
+    for (const slot of taken) releaseRateLimit(slot);
+    throw error;
+  });
   if (!user) {
     throw apiError({
       statusCode: 401,

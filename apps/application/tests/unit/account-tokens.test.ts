@@ -19,7 +19,7 @@ vi.mock('../../server/utils/rate-limit', () => ({
 }));
 vi.mock('../../server/utils/auth', () => ({
   // Takes a few milliseconds, as the real scrypt hash does, so concurrent requests interleave around it.
-  hashPassword: async (password: string) => {
+  hashPassword: async (_event: unknown, password: string) => {
     await new Promise((resolve) => setTimeout(resolve, 5));
     return `hashed:${password}`;
   },
