@@ -3,6 +3,7 @@ import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { migrateToLatest } from './temp-db';
+import { withStoredVerdicts } from './stored-verdicts';
 
 // The schema barrel picks the PostgreSQL schema at import time when
 // PIWI_DATABASE_URL is set, so clear it before importing the helper.
@@ -53,7 +54,7 @@ beforeAll(async () => {
   // Run 2: a single failure, only to confirm run-scoping.
   add(2, 13, 'failed', 0);
 
-  await db.insert(schema.testRunsCases).values(rows);
+  await db.insert(schema.testRunsCases).values(withStoredVerdicts(rows));
 });
 
 describe('computeRunCountsFromRows', () => {

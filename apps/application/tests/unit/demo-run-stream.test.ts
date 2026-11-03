@@ -40,9 +40,11 @@ beforeAll(async () => {
     { id: 2, projectId: 1, status: 'passed', startTime: new Date(), totalTests: 1, passedTests: 1, duration: 900 },
     { id: 3, projectId: 1, status: 'initializing', startTime: new Date() },
   ]);
-  await db
-    .insert(schema.testRunsCases)
-    .values({ id: 10, testRunId: 1, testCaseId: 1, status: 'passed', duration: 800 });
+  await db.insert(schema.testRunsCases).values([
+    { id: 10, testRunId: 1, testCaseId: 1, status: 'passed', duration: 800 },
+    { id: 11, testRunId: 1, testCaseId: 2, status: 'failed', duration: 700, finalAttempt: false },
+    { id: 12, testRunId: 1, testCaseId: 2, status: 'passed', duration: 600, retries: 1, passedAfterFailure: true },
+  ]);
   noteDemoBegin(1, {
     title: 'removes an item',
     filePath: 'tests/cart.spec.ts',
@@ -65,9 +67,17 @@ describe('the demo run stream catch-up', () => {
     const { events } = await catchUp(1);
     expect(events.map((e) => [e.type, e.data.title])).toEqual([
       ['test-completed', 'adds an item'],
+      ['test-completed', 'removes an item'],
+      ['test-completed', 'removes an item'],
       ['test-begin', 'removes an item'],
     ]);
-    expect(events[0]!.data).toMatchObject({ executionId: 10, status: 'passed', location: 'tests/cart.spec.ts' });
+    expect(events[0]!.data).toMatchObject({
+      executionId: 10,
+      status: 'passed',
+      location: 'tests/cart.spec.ts',
+      passedAfterFailure: false,
+    });
+    expect(events[2]!.data).toMatchObject({ executionId: 12, retries: 1, passedAfterFailure: true });
   });
 
   test('answers an ended run’s run-finished alone', async () => {

@@ -6,17 +6,18 @@
  * On a test's own pages (its page and Trend tab, the catalog, selections, spec
  * health) each such result is one of its runs. Each row stores whether it is
  * its result's final attempt (`final_attempt`), which every write of
- * `test_runs_cases` keeps through `settleFinalAttempts`; the flaky check reads
- * the row alone, so a query costs no lookup per execution for either: a retry
- * that comes without an attempt history is given one as it is stored
- * (`fillAttemptHistories`), and completed when an earlier attempt is stored
- * after it (`settleFinalAttempts`).
+ * `test_runs_cases` keeps through `settleFinalAttempts`, and whether it passed
+ * after an earlier attempt failed (`passed_after_failure`), which every write
+ * sets through `fillAttemptHistories`, so a query costs no lookup per
+ * execution for either: a retry that comes without an attempt history is
+ * given one, and its verdict, as it is stored, both completed when an earlier
+ * attempt is stored after it (`settleFinalAttempts`).
  */
 import { aliasedTable, and, eq, inArray, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { testRunsCases } from '../../server/database/schema';
 import { failedCountSql, passedCountSql, passRateSql } from '../utils/pass-rate-sql';
 import { fixmeSkipPredicate } from '../utils/skip-kind';
-import { attemptKey, withAttemptHistory } from '../utils/test-counts';
+import { attemptKey, isFlakyExecution, withAttemptHistory } from '../utils/test-counts';
 import type { DrizzleDB } from './db';
 
 type Executions = typeof testRunsCases;
@@ -83,15 +84,17 @@ function attemptOf(row: BatchAttempt): string {
  * batch of its executions (each row inserted, or stored already by a request
  * that failed past its insert):
  * - an attempt of their tests with a later attempt of its result stored
- *   (`laterAttemptSql`) is marked as not final. A row is stored as final, so
- *   an attempt stored after a later one is settled too;
+ *   (`laterAttemptSql`) is marked as not final, and its verdict cleared: only
+ *   a result's final attempt carries it. A row is stored as final, so an
+ *   attempt stored after a later one is settled too;
  * - a stored retry of a result `withoutHistory` holds an attempt of (the rows
  *   `fillAttemptHistories` found without a history: their reporter sends
  *   none, so the server built the result's stored histories) is given the
  *   history `withAttemptHistory` builds from the result's stored attempts
  *   when it lists more of them than the stored one, so an attempt stored
- *   after its retry completes the retry's history. A history the reporter
- *   sent whole lists every attempt and is kept, as is one the batch carries.
+ *   after its retry completes the retry's history, and its verdict with it.
+ *   A history the reporter sent whole lists every attempt and is kept, as is
+ *   one the batch carries.
  * Every write of `test_runs_cases` calls it after its insert with every row of
  * its batch, so sending a batch again repairs both: `persistRunCases` on the
  * server and in the demo. The stored attempts of the tests of
@@ -119,7 +122,7 @@ export async function settleFinalAttempts(
     if (superseded.length === 0) continue;
     await db
       .update(testRunsCases)
-      .set({ finalAttempt: false })
+      .set({ finalAttempt: false, passedAfterFailure: false })
       .where(
         inArray(
           testRunsCases.id,
@@ -154,6 +157,7 @@ async function completeAttemptHistories(
         duration: testRunsCases.duration,
         startedAt: testRunsCases.startedAt,
         attempts: testRunsCases.attempts,
+        finalAttempt: testRunsCases.finalAttempt,
       })
       .from(testRunsCases)
       .where(
@@ -169,7 +173,10 @@ async function completeAttemptHistories(
       if ((row.retries ?? 0) === 0 || carried.has(attemptOf(row)) || !Array.isArray(row.attempts)) continue;
       const attempts = row.attempts.slice(0, MAX_HISTORY_ENTRIES);
       if (attempts.length <= listed.get(row.id)!) continue;
-      await db.update(testRunsCases).set({ attempts }).where(eq(testRunsCases.id, row.id));
+      await db
+        .update(testRunsCases)
+        .set({ attempts, passedAfterFailure: row.finalAttempt && isFlakyExecution({ ...row, attempts }) })
+        .where(eq(testRunsCases.id, row.id));
     }
   }
 }
@@ -184,6 +191,7 @@ interface NewAttempt {
   duration?: number | null;
   startedAt?: number | null;
   attempts?: unknown;
+  passedAfterFailure?: boolean;
 }
 
 /** Whether an execution came without an attempt history. */
@@ -196,13 +204,17 @@ function lacksHistory(attempts: unknown): boolean {
  * `testRunId`, that came without an attempt history (an older reporter) the
  * one `withAttemptHistory` builds from the attempts of its result up to it:
  * the run's stored attempts and the earlier ones of the batch, a stored
- * attempt counting once when the batch repeats it. `flakyResultSql` then reads
- * the row as the run page reads the run's rows. A row that came with a history
- * keeps it. The stored attempts are read in one query, only when a retry lacks
- * a history. Returns the rows that came without a history, which
- * `settleFinalAttempts` completes the stored histories of their results with.
- * Every write of `test_runs_cases` calls it before its insert:
- * `persistRunCases` on the server and in the demo.
+ * attempt counting once when the batch repeats it. A row that came with a
+ * history keeps it. Then set each row's verdict (`passedAfterFailure`): it
+ * passed after an earlier attempt failed or timed out, as `isFlakyExecution`
+ * reads it with that history, which every reader of a stored execution takes
+ * from the column. A row is stored as its result's final attempt, and
+ * `settleFinalAttempts` clears the verdict of one a later attempt supersedes,
+ * so only a final attempt carries it. The stored attempts are read in one query, only when a
+ * retry lacks a history. Returns the rows that came without a history, which
+ * `settleFinalAttempts` completes the stored histories, and the verdicts, of
+ * their results with. Every write of `test_runs_cases` calls it before its
+ * insert: `persistRunCases` on the server and in the demo.
  */
 export async function fillAttemptHistories(
   db: DrizzleDB,
@@ -211,7 +223,23 @@ export async function fillAttemptHistories(
 ): Promise<NewAttempt[]> {
   const withoutHistory = rows.filter((row) => lacksHistory(row.attempts));
   const missing = new Set(withoutHistory.filter((row) => (row.retries ?? 0) > 0));
-  if (missing.size === 0) return withoutHistory;
+  if (missing.size > 0) await fillMissingHistories(db, testRunId, rows, missing);
+  for (const row of rows) {
+    row.passedAfterFailure = isFlakyExecution({
+      ...row,
+      attempts: Array.isArray(row.attempts) ? row.attempts : null,
+    });
+  }
+  return withoutHistory;
+}
+
+/** The history part of `fillAttemptHistories`: `missing` are the retries of `rows` that came without one. */
+async function fillMissingHistories(
+  db: DrizzleDB,
+  testRunId: number,
+  rows: NewAttempt[],
+  missing: ReadonlySet<NewAttempt>,
+): Promise<void> {
   const stored = await db
     .select({
       testCaseId: testRunsCases.testCaseId,
@@ -240,33 +268,18 @@ export async function fillAttemptHistories(
     if (!row.source || !missing.has(row.source) || !Array.isArray(row.attempts)) continue;
     row.source.attempts = row.attempts.slice(0, MAX_HISTORY_ENTRIES);
   }
-  return withoutHistory;
 }
 
 /**
- * Whether `row`, the final attempt of its result, is flaky, as
- * `isFlakyExecution` reads it from the row alone: it passed on a retry, and
- * its attempt history (`attempts`, which the reporter sends complete with a
- * final attempt, its own attempt last) holds an earlier attempt that failed or
- * timed out, or no earlier attempt: a history of one attempt is its own. The
- * history is compared as text with its spaces taken out, since PostgreSQL
- * renders `jsonb` with a space after each colon and SQLite stores none. A
- * trace import stores each attempt with the history of the run's attempts
- * before it (`importTraceRun`), as the reporter does. A retry that comes
- * without one is given the one its result's stored attempts make
- * (`fillAttemptHistories`), completed by an earlier attempt stored after it
- * (`settleFinalAttempts`), and a retry stored without one by an earlier
- * version is given it at startup (`backfillAttemptHistories`). A retry left
- * without a history has no earlier attempt stored: it is flaky when it passed,
- * as `flakyFinalAttempts` reads a final attempt with no earlier row.
+ * Whether `row` is the final attempt of a flaky result: it passed after an
+ * earlier attempt failed or timed out, the verdict stored with it
+ * (`passed_after_failure`, set by `fillAttemptHistories` and kept by
+ * `settleFinalAttempts`, which clears it on an attempt a later one
+ * supersedes). The partial index `idx_trc_passed_after_failure` repeats the
+ * condition, so a query that spells it this way can use it.
  */
 export function flakyResultSql(row: Executions = testRunsCases): SQL<boolean> {
-  const history = sql`REPLACE(CAST(${row.attempts} AS TEXT), ' ', '')`;
-  return sql<boolean>`(${row.status} = 'passed' AND COALESCE(${row.retries}, 0) > 0 AND (
-      ${row.attempts} IS NULL
-      OR ${history} NOT LIKE '%"retry"%"retry"%'
-      OR ${history} LIKE '%"status":"failed"%'
-      OR ${history} LIKE '%"status":"timed%'))`;
+  return sql<boolean>`(${row.passedAfterFailure} = true)`;
 }
 
 /** Whether a run ran the test: neither skipped nor did not run. An average duration reads only those. */
@@ -317,7 +330,7 @@ const recent = aliasedTable(testRunsCases, RECENT);
  * executions the read counts.
  */
 export function recentFlakySql(testCaseId: SQLWrapper | number, eligible: SQL): SQL<number> {
-  const columns = [testRunsCases.retries, testRunsCases.status, testRunsCases.attempts, testRunsCases.finalAttempt];
+  const columns = [testRunsCases.passedAfterFailure, testRunsCases.finalAttempt];
   const latest = sql`SELECT ${sql.join(columns, sql`, `)}
       FROM ${testRunsCases}
       WHERE ${testRunsCases.testCaseId} = ${testCaseId}

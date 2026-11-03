@@ -277,7 +277,7 @@ async function executionPartition(
         for (const { run, execution } of list) {
           const t = new Date(run.startTime).getTime();
           if (t < from || (to < ctx.now && t >= to)) continue;
-          if (execution.status === 'passed' && (execution.retries ?? 0) > 0) {
+          if (execution.passedAfterFailure) {
             flaky.add(`${run.projectId}:${execution.testCaseId}`);
           }
         }

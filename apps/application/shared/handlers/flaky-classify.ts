@@ -8,7 +8,7 @@
  * passed on retry in it are classified (`classifyRunFlakyTests`), and a flaky
  * list read fills in the tests that still have none (`withFlakyRootCauses`).
  */
-import { eq, and, desc, gt, inArray } from 'drizzle-orm';
+import { eq, and, desc, inArray } from 'drizzle-orm';
 import { testCases, testRunsCases, testRuns, networkRequests } from '../../server/database/schema';
 import { classifyFlakyRootCause, type BrowserOutcomes, type FlakyRootCause } from '../flaky-classify';
 import { FAILED_STATUS_KEYS } from '../utils/test-counts';
@@ -16,6 +16,7 @@ import { getAttemptDiff } from './test-cases';
 import { notLabRun } from './probes';
 import { isOrderDependent } from './coverage-insights';
 import type { DrizzleDB } from './db';
+import { flakyResultSql } from './test-case-aggregates';
 
 /** How many recent flaky executions to diff for the attempt-diff network vote. */
 const ATTEMPT_DIFF_SAMPLE = 10;
@@ -139,14 +140,7 @@ async function classifyFromRecentAttempts(db: DrizzleDB, testCaseId: number, ord
     .select({ id: testRunsCases.id })
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-    .where(
-      and(
-        eq(testRunsCases.testCaseId, testCaseId),
-        eq(testRunsCases.status, 'passed'),
-        gt(testRunsCases.retries, 0),
-        notLabRun(testRuns.origin),
-      ),
-    )
+    .where(and(eq(testRunsCases.testCaseId, testCaseId), flakyResultSql(), notLabRun(testRuns.origin)))
     .orderBy(desc(testRunsCases.createdAt))
     .limit(ATTEMPT_DIFF_SAMPLE);
   for (const exec of flakyExecutions) {
@@ -187,14 +181,14 @@ async function classifyEach(db: DrizzleDB, projectId: number, testCaseIds: numbe
 }
 
 /**
- * Classify the tests that passed on retry in a finished run, so a category
+ * Classify the tests that passed after a failed attempt in a finished run, so a category
  * follows every new flake and stays current as the evidence grows.
  */
 export async function classifyRunFlakyTests(db: DrizzleDB, projectId: number, runId: number): Promise<void> {
   const flaky = await db
     .selectDistinct({ testCaseId: testRunsCases.testCaseId })
     .from(testRunsCases)
-    .where(and(eq(testRunsCases.testRunId, runId), eq(testRunsCases.status, 'passed'), gt(testRunsCases.retries, 0)))
+    .where(and(eq(testRunsCases.testRunId, runId), flakyResultSql()))
     .limit(FINALIZE_CLASSIFY_LIMIT);
   await classifyEach(
     db,

@@ -54,6 +54,8 @@ beforeEach(async () => {
     startedAt: T0 + testRunId * 60_000 + retries * 1000,
     browserName: 'chromium',
     attempts: null,
+    // The verdict a retry stored without its history reads: a pass on a retry with no earlier attempt at hand.
+    passedAfterFailure: status === 'passed' && retries > 0,
     createdAt: new Date(T0 + testRunId * 60_000 + retries * 1000),
     ...extra,
   });
@@ -83,7 +85,7 @@ async function histories(testCaseId: number) {
 
 describe('the attempt history backfill', () => {
   test('makes a retry after a pass read as not flaky in the catalog and on the test page, as on the run page', async () => {
-    // The run page builds the history from the run's rows; the SQL reads the row alone.
+    // The run page builds the history from the run's rows; the SQL reads the stored verdict alone.
     const runPage = await getTestRun(db as never, 1);
     expect(runPage!.testCases.find((tc: any) => tc.retries === 1)!.attempts).toHaveLength(2);
     expect(await getTestCase(db as never, 1)).toMatchObject({ flakyRuns: 1 });

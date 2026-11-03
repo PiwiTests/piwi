@@ -1,4 +1,4 @@
-import { eq, and, desc, or, lt, gt, inArray } from 'drizzle-orm';
+import { eq, and, desc, or, lt, inArray } from 'drizzle-orm';
 import {
   listProjects,
   getProjectFlakyTests,
@@ -225,6 +225,7 @@ import {
   uniqueCoverageSummary,
 } from './coverage-tools';
 import { parseImpactChanges, resolveImpact } from '../selection-impact';
+import { flakyResultSql } from '#shared/handlers/test-case-aggregates';
 import { parseUnifiedDiff } from '@piwitests/core/diff-anchors';
 import { diffImpactInput } from '@piwitests/core/suspect-lines';
 
@@ -678,7 +679,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     // JSON) are never loaded just to be discarded.
     const caseConditions = [eq(testRunsCases.testRunId, runId)];
     if (statusFilter === 'flaky') {
-      caseConditions.push(and(eq(testRunsCases.status, 'passed'), gt(testRunsCases.retries, 0))!);
+      caseConditions.push(flakyResultSql());
     } else if (statusFilter !== 'all') {
       caseConditions.push(inArray(testRunsCases.status, [...FAILED_STATUS_KEYS]));
     }
@@ -694,6 +695,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         status: testRunsCases.status,
         duration: testRunsCases.duration,
         retries: testRunsCases.retries,
+        passedAfterFailure: testRunsCases.passedAfterFailure,
         error: testRunsCases.error,
         clusterId: testRunsCases.failureClusterId,
         browser: testRunsCases.browser,
@@ -716,6 +718,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         status: c.status,
         duration: c.duration,
         retries: c.retries || null,
+        passedAfterFailure: c.passedAfterFailure || null,
         error: trunc(c.error, 400),
         clusterId: c.clusterId || null,
         browser: compactBrowser(c.browser),
@@ -884,6 +887,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
             status: testRunsCases.status,
             duration: testRunsCases.duration,
             retries: testRunsCases.retries,
+            passedAfterFailure: testRunsCases.passedAfterFailure,
             error: testRunsCases.error,
             startedAt: testRunsCases.startedAt,
           })
@@ -900,6 +904,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         status: e.status,
         duration: e.duration,
         retries: e.retries || null,
+        passedAfterFailure: e.passedAfterFailure || null,
         error: trunc(e.error, 400),
         startedAt: iso(e.startedAt),
       }),
@@ -1367,6 +1372,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       status: row.status,
       duration: row.duration,
       retries: row.retries || null,
+      passedAfterFailure: row.passedAfterFailure || null,
       headline: caseHeadline(row)?.headline ?? null,
       error: row.error, // full, untruncated
       clues: clues ? compactClues(clues) : null,

@@ -149,6 +149,7 @@ export async function getTestRun(
       error: testRunsCases.error,
       failureClusterId: testRunsCases.failureClusterId,
       retries: testRunsCases.retries,
+      passedAfterFailure: testRunsCases.passedAfterFailure,
       repeatEachIndex: testRunsCases.repeatEachIndex,
       attempts: testRunsCases.attempts,
       line: testRunsCases.line,
@@ -211,6 +212,7 @@ export async function getTestRun(
     error: tc.error,
     failureClusterId: tc.failureClusterId,
     retries: tc.retries,
+    passedAfterFailure: Boolean(tc.passedAfterFailure),
     repeatEachIndex: tc.repeatEachIndex,
     attempts: tc.attempts ?? null,
     slowestStep: tc.slowestStep,
@@ -644,25 +646,28 @@ export async function getFailureGroups(db: DrizzleDB, runId: number) {
   const allRows = await db
     .select({
       testCaseId: testRunsCases.testCaseId,
+      browserName: testRunsCases.browserName,
       repeatEachIndex: testRunsCases.repeatEachIndex,
       status: testRunsCases.status,
       retries: testRunsCases.retries,
       workerIndex: testRunsCases.workerIndex,
+      passedAfterFailure: testRunsCases.passedAfterFailure,
     })
     .from(testRunsCases)
     .where(eq(testRunsCases.testRunId, runId));
 
-  // A failed attempt passed on a retry when an attempt of the same `--repeat-each`
-  // repetition of the test passed: each repetition retries on its own.
-  const repetitionKey = (row: { testCaseId: number; repeatEachIndex: number }) =>
-    `${row.testCaseId}\x00${row.repeatEachIndex}`;
-  const passedRepetitions = new Set(allRows.filter((r: any) => r.status === 'passed').map(repetitionKey));
+  // A failed attempt passed on a retry when the final attempt of its result (the same test, Playwright project and
+  // `--repeat-each` repetition) passed after it (`passedAfterFailure`): each repetition retries on its own.
+  const repetitionKey = (row: { testCaseId: number; browserName: string | null; repeatEachIndex: number }) =>
+    `${row.testCaseId}\x00${row.browserName ?? ''}\x00${row.repeatEachIndex}`;
+  const passedRepetitions = new Set(allRows.filter((r) => r.passedAfterFailure).map(repetitionKey));
   const runWorkers = new Set(allRows.map((r: any) => r.workerIndex).filter((w: any) => w !== null));
 
   const clusteredRows = await db
     .select({
       executionId: testRunsCases.id,
       testCaseId: testRunsCases.testCaseId,
+      browserName: testRunsCases.browserName,
       repeatEachIndex: testRunsCases.repeatEachIndex,
       retries: testRunsCases.retries,
       workerIndex: testRunsCases.workerIndex,

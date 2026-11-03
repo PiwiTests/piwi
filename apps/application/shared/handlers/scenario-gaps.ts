@@ -1660,11 +1660,11 @@ function outcomeFlips(runs: readonly WindowOutcome[]): number {
 /** A test's outcome in one run, from its final attempts on every browser and repetition. */
 type WindowOutcome = 'passed' | 'flaky' | 'failed' | 'skipped' | 'did-not-run';
 
-/** The outcome of a test's final attempts in one run: a failure decides it, then a pass after a retry. */
-function windowOutcome(finals: ReadonlyArray<{ status: string; retries: number | null }>): WindowOutcome {
+/** The outcome of a test's final attempts in one run: a failure decides it, then a pass after a failed attempt. */
+function windowOutcome(finals: ReadonlyArray<{ status: string; passedAfterFailure: boolean }>): WindowOutcome {
   const statuses = finals.map((f) => f.status.toLowerCase());
   if (statuses.some((s) => isFailedStatus(s))) return 'failed';
-  if (finals.some((f) => f.status.toLowerCase() === 'passed' && (f.retries ?? 0) > 0)) return 'flaky';
+  if (finals.some((f) => f.passedAfterFailure)) return 'flaky';
   if (statuses.includes('passed')) return 'passed';
   return statuses.every((s) => s === 'skipped') ? 'skipped' : 'did-not-run';
 }
@@ -1677,6 +1677,7 @@ type AttemptOutcomeRow = {
   repeatEachIndex: number | null;
   retries: number | null;
   status: string;
+  passedAfterFailure: boolean;
 };
 
 /** Each test's outcome in every run of the window it ran in, newest run first. */
@@ -1697,6 +1698,7 @@ async function loadWindowOutcomes(
         repeatEachIndex: testRunsCases.repeatEachIndex,
         retries: testRunsCases.retries,
         status: testRunsCases.status,
+        passedAfterFailure: testRunsCases.passedAfterFailure,
       })
       .from(testRunsCases)
       .where(and(inArray(testRunsCases.testRunId, runIds), inArray(testRunsCases.testCaseId, ids.slice(i, i + 200))));

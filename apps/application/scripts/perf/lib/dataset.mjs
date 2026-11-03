@@ -497,6 +497,10 @@ export function* datasetBatches({ scale = 'large', now = new Date() } = {}) {
             failure_cluster_id: cluster?.id ?? null,
             retries: retry,
             final_attempt: retry === attempts.length - 1,
+            passed_after_failure:
+              retry === attempts.length - 1 &&
+              status === 'passed' &&
+              attempts.slice(0, retry).some((a) => typeof a !== 'string' || a === 'failed'),
             line: t.line,
             column: 3,
             steps: outcome === 'skipped' ? null : stepsFor(t, duration, [pIndex, r, t.index]),

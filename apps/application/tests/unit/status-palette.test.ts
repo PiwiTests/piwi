@@ -31,11 +31,11 @@ describe('statusPaletteKey', () => {
     expect(statusPaletteKey('finalizing')).toBe('running');
   });
 
-  test('reads a pass that needed a retry as flaky', () => {
-    expect(statusPaletteKey('passed', 1)).toBe('flaky');
-    expect(statusPaletteKey('passed', 0)).toBe('passed');
+  test('reads a pass after a failed attempt (its verdict) as flaky', () => {
+    expect(statusPaletteKey('passed', true)).toBe('flaky');
+    expect(statusPaletteKey('passed', false)).toBe('passed');
     expect(statusPaletteKey('passed', null)).toBe('passed');
-    expect(statusPaletteKey('failed', 2)).toBe('failed');
+    expect(statusPaletteKey('failed', true)).toBe('failed');
   });
 
   test('falls back to the neutral skipped entry', () => {
@@ -73,24 +73,24 @@ describe('STATUS_PALETTE', () => {
 
   test('statusPalette returns the entry for a raw status', () => {
     expect(statusPalette('timedout')).toBe(STATUS_PALETTE.failed);
-    expect(statusPalette('passed', 1)).toBe(STATUS_PALETTE.flaky);
+    expect(statusPalette('passed', true)).toBe(STATUS_PALETTE.flaky);
   });
 });
 
 describe('formatExecutionStatus', () => {
-  test('names a pass that needed a retry', () => {
-    expect(formatExecutionStatus('passed', 2)).toBe('passed on retry');
-    expect(formatExecutionStatus('passed', 0)).toBe('passed');
+  test('names a pass after a failed attempt', () => {
+    expect(formatExecutionStatus('passed', true)).toBe('passed on retry');
+    expect(formatExecutionStatus('passed', false)).toBe('passed');
     expect(formatExecutionStatus('timedout')).toBe('timed out');
   });
 });
 
 describe('statusChipLabel', () => {
   test('reads the execution status in sentence case', () => {
-    expect(statusChipLabel('passed', 1)).toBe('Passed on retry');
+    expect(statusChipLabel('passed', true)).toBe('Passed on retry');
     expect(statusChipLabel('passed')).toBe('Passed');
     expect(statusChipLabel('didnotrun')).toBe("Didn't run");
     expect(statusChipLabel('timedOut')).toBe('Timed out');
-    expect(statusChipLabel('failed', 1)).toBe('Failed');
+    expect(statusChipLabel('failed', true)).toBe('Failed');
   });
 });

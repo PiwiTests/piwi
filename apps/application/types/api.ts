@@ -1491,6 +1491,8 @@ export interface TestCaseHistoryPoint {
   duration: number | null;
   error: string | null;
   retries: number | null;
+  /** Passed after an earlier attempt of its result failed or timed out (`passed_after_failure`). */
+  passedAfterFailure: boolean;
   /** Per-attempt outcomes, oldest first. */
   attempts?: AttemptOutcome[] | null;
   /** The Playwright project of the attempt. */

@@ -5,6 +5,7 @@ import type { McpContext } from '../../server/utils/mcp/tools';
 import type { User } from '../../server/database/schema';
 import { InstanceRole, ProjectRole, buildAccessSummary } from '#shared/permissions';
 import { compileCodeowners, parseCodeowners } from '@piwitests/core/codeowners';
+import { withStoredVerdicts } from './stored-verdicts';
 
 /**
  * The situation sentence an agent reads names the owner the execution page
@@ -63,14 +64,16 @@ beforeAll(async () => {
     firstSeenRunId: 1,
     lastSeenRunId: 1,
   });
-  await db.insert(schema.testRunsCases).values({
-    id: 10,
-    testRunId: 1,
-    testCaseId: 1,
-    status: 'failed',
-    error: 'Error: card declined',
-    failureClusterId: 1,
-  });
+  await db.insert(schema.testRunsCases).values(
+    withStoredVerdicts({
+      id: 10,
+      testRunId: 1,
+      testCaseId: 1,
+      status: 'failed',
+      error: 'Error: card declined',
+      failureClusterId: 1,
+    }),
+  );
 });
 
 afterAll(async () => {
@@ -109,14 +112,16 @@ describe('whether the execution is the latest, as an agent reads it', () => {
       startTime: new Date('2026-09-02T10:00:00Z'),
       metadata: { scm: { remoteUrl: 'https://github.com/acme/shop.git', branch: 'main' } },
     });
-    await db.insert(schema.testRunsCases).values({
-      id: 11,
-      testRunId: 2,
-      testCaseId: 1,
-      status: 'failed',
-      error: 'Error: card declined',
-      failureClusterId: 1,
-    });
+    await db.insert(schema.testRunsCases).values(
+      withStoredVerdicts({
+        id: 11,
+        testRunId: 2,
+        testCaseId: 1,
+        status: 'failed',
+        error: 'Error: card declined',
+        failureClusterId: 1,
+      }),
+    );
     const result = (await tool('explain_failure')(db as never, { executionId: 10 }, viewer)) as { latest?: Latest };
     expect(result.latest).toEqual({ isLatest: false, executionId: 11, runId: 2, status: 'failed' });
     const newest = (await tool('explain_failure')(db as never, { executionId: 11 }, viewer)) as { latest?: Latest };
@@ -132,10 +137,12 @@ describe('a test that passed on retry, as an agent reads it', () => {
     await db
       .insert(schema.testRuns)
       .values({ id: 3, projectId: 1, status: 'passed', startTime: new Date('2026-09-03T10:00:00Z') });
-    await db.insert(schema.testRunsCases).values([
-      { id: 20, testRunId: 3, testCaseId: 2, status: 'failed', retries: 0, error: 'Error: card declined' },
-      { id: 21, testRunId: 3, testCaseId: 2, status: 'passed', retries: 1 },
-    ]);
+    await db.insert(schema.testRunsCases).values(
+      withStoredVerdicts([
+        { id: 20, testRunId: 3, testCaseId: 2, status: 'failed', retries: 0, error: 'Error: card declined' },
+        { id: 21, testRunId: 3, testCaseId: 2, status: 'passed', retries: 1 },
+      ]),
+    );
     const failed = (await tool('explain_failure')(db as never, { executionId: 20 }, viewer)) as {
       headline?: string;
       failedAttempt?: unknown;

@@ -610,7 +610,16 @@ export async function persistRunCases(
   input: RunCaseInput[],
   deduplicate?: boolean,
   options: PersistRunCasesOptions = {},
-): Promise<Array<{ id: number; status: string; testCaseId: number; inputIndex: number }>> {
+): Promise<
+  Array<{
+    id: number;
+    status: string;
+    testCaseId: number;
+    inputIndex: number;
+    passedAfterFailure: boolean;
+    attempts: unknown;
+  }>
+> {
   if (input.length === 0) return [];
   const cases = await Promise.all(input.map(storableRunCase));
 
@@ -886,6 +895,8 @@ export async function persistRunCases(
     status: r.status,
     testCaseId: r.testCaseId,
     inputIndex: rowInputIndices[r.rowIndex]!,
+    passedAfterFailure: runCasesRows[r.rowIndex]!.passedAfterFailure ?? false,
+    attempts: runCasesRows[r.rowIndex]!.attempts ?? null,
   }));
 
   const nrValues = buildNetworkRequestInsertValues(networkRequestBuilders, insertedCases, testRunId);
@@ -1039,10 +1050,11 @@ export async function apiPostRunEvents(
         // Mirrors the server: the attempt number and the attempt history up to it let
         // the live page tell a flaky pass (an earlier attempt failed) from another pass.
         retries: tc.retries ?? null,
-        attempts: tc.attempts ?? null,
+        attempts: persisted ? persisted.attempts : (tc.attempts ?? null),
         repeatEachIndex: resolveRepeatEachIndex(tc.repeatEachIndex),
         executionId: persisted?.id ?? null,
         testCaseId: persisted?.testCaseId ?? null,
+        passedAfterFailure: persisted?.passedAfterFailure ?? null,
       },
     });
   }

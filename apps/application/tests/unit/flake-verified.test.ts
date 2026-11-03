@@ -3,6 +3,7 @@ import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { migrateToLatest } from './temp-db';
+import { withStoredVerdicts } from './stored-verdicts';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the handler modules load.
@@ -53,32 +54,31 @@ describe('which experiment marks a test verified fixed', () => {
 });
 
 describe('when a test flakes again after the verification', () => {
-  const exec = (runId: number, hours: number, status: string, browserKey = 'chromium') => ({
+  const exec = (runId: number, hours: number, status: string, passedAfterFailure = false) => ({
     testCaseId: 1,
     runId,
     runStartedAt: at(hours),
-    browserKey,
+    browserKey: 'chromium',
     status,
+    passedAfterFailure,
   });
 
-  test('a failed and a passed attempt in one run and browser, started after it', () => {
-    expect(firstRetryPassAfter([exp2(1, 5, 'failed'), exp2(1, 5, 'passed')], at(4))).toEqual(at(5));
-    function exp2(runId: number, hours: number, status: string) {
-      return exec(runId, hours, status);
-    }
+  test('an attempt that passed after a failed one, in a run started after it', () => {
+    expect(firstRetryPassAfter([exec(1, 5, 'failed'), exec(1, 5, 'passed', true)], at(4))).toEqual(at(5));
   });
 
   test('a retry-pass in a run that started before it does not count', () => {
-    expect(firstRetryPassAfter([exec(1, 3, 'failed'), exec(1, 3, 'passed')], at(4))).toBeNull();
+    expect(firstRetryPassAfter([exec(1, 3, 'failed'), exec(1, 3, 'passed', true)], at(4))).toBeNull();
   });
 
-  test('a plain failure or pass is not a retry-pass, nor are attempts on two browsers', () => {
+  test('a plain failure or pass is not a retry-pass, nor is a pass on a retry after a pass', () => {
     expect(firstRetryPassAfter([exec(1, 5, 'failed'), exec(2, 6, 'passed')], at(4))).toBeNull();
-    expect(firstRetryPassAfter([exec(1, 5, 'failed', 'chromium'), exec(1, 5, 'passed', 'firefox')], at(4))).toBeNull();
+    expect(firstRetryPassAfter([exec(1, 5, 'passed'), exec(1, 5, 'failed')], at(4))).toBeNull();
+    expect(firstRetryPassAfter([exec(1, 5, 'passed'), exec(1, 5, 'passed')], at(4))).toBeNull();
   });
 
-  test('the earliest such run is reported, and a timed-out attempt counts as failed', () => {
-    const list = [exec(2, 8, 'timedout'), exec(2, 8, 'passed'), exec(1, 6, 'failed'), exec(1, 6, 'passed')];
+  test('the earliest such run is reported', () => {
+    const list = [exec(2, 8, 'timedout'), exec(2, 8, 'passed', true), exec(1, 6, 'failed'), exec(1, 6, 'passed', true)];
     expect(firstRetryPassAfter(list, at(4))).toEqual(at(6));
   });
 });
@@ -111,7 +111,7 @@ describe('verified fixes on the flaky ranking and in quarantine', () => {
     });
     await db
       .insert(schema.testRunsCases)
-      .values(retryPass ? [attempt('failed', 0), attempt('passed', 1)] : [attempt('passed', 0)]);
+      .values(withStoredVerdicts(retryPass ? [attempt('failed', 0), attempt('passed', 1)] : [attempt('passed', 0)]));
   }
 
   async function experiment(kind: 'reproduce' | 'verify', verdict: string, hours: number, commit = 'fix1234abcd') {
@@ -246,10 +246,12 @@ describe('verified fixes on the flaky ranking and in quarantine', () => {
       duration: 60_000,
       totalTests: 1,
     });
-    await db.insert(schema.testRunsCases).values([
-      { testRunId: runId, testCaseId: 1, status: 'failed', retries: 0, browser: { projectName: 'chromium' } },
-      { testRunId: runId, testCaseId: 1, status: 'passed', retries: 1, browser: { projectName: 'chromium' } },
-    ]);
+    await db.insert(schema.testRunsCases).values(
+      withStoredVerdicts([
+        { testRunId: runId, testCaseId: 1, status: 'failed', retries: 0, browser: { projectName: 'chromium' } },
+        { testRunId: runId, testCaseId: 1, status: 'passed', retries: 1, browser: { projectName: 'chromium' } },
+      ]),
+    );
     expect((await listQuarantine(db as never, 1)).entries[0]).toMatchObject({
       releaseProposed: false,
       releaseReason: null,

@@ -11,6 +11,7 @@ import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { eq } from 'drizzle-orm';
 import { migrateToLatest } from './temp-db';
+import { withStoredVerdicts } from './stored-verdicts';
 
 delete process.env.PIWI_DATABASE_URL;
 const gaps = await import('../../shared/handlers/scenario-gaps');
@@ -227,13 +228,15 @@ async function execution(opts: {
     resourceType?: string;
   }>;
 }) {
-  await db.insert(schema.testRunsCases).values({
-    id: opts.id,
-    testRunId: opts.runId,
-    testCaseId: opts.testCaseId,
-    status: opts.status ?? 'passed',
-    consoleLogs: (opts.console ?? []).map((c) => ({ ...c, timestamp: 0 })) as never,
-  });
+  await db.insert(schema.testRunsCases).values(
+    withStoredVerdicts({
+      id: opts.id,
+      testRunId: opts.runId,
+      testCaseId: opts.testCaseId,
+      status: opts.status ?? 'passed',
+      consoleLogs: (opts.console ?? []).map((c) => ({ ...c, timestamp: 0 })) as never,
+    }),
+  );
   for (const r of opts.requests ?? []) {
     await db.insert(schema.networkRequests).values({
       testRunsCaseId: opts.id,
@@ -449,13 +452,15 @@ describe('computeScenarioGaps — which tests are trusted', () => {
       origin: origin ?? 'ci',
     });
     for (const [k, a] of attempts.entries()) {
-      await db.insert(schema.testRunsCases).values({
-        id: id * 10 + k,
-        testRunId: id,
-        testCaseId: 1,
-        status: a.status,
-        retries: a.retries ?? 0,
-      });
+      await db.insert(schema.testRunsCases).values(
+        withStoredVerdicts({
+          id: id * 10 + k,
+          testRunId: id,
+          testCaseId: 1,
+          status: a.status,
+          retries: a.retries ?? 0,
+        }),
+      );
     }
   }
 
@@ -638,7 +643,7 @@ describe('computeScenarioGaps — passed with errors', () => {
     // Skipped on a second browser: not a failure.
     await db
       .insert(schema.testRunsCases)
-      .values({ id: 2, testRunId: 1, testCaseId: 1, status: 'skipped', browserName: 'webkit' });
+      .values(withStoredVerdicts({ id: 2, testRunId: 1, testCaseId: 1, status: 'skipped', browserName: 'webkit' }));
 
     await gaps.computeScenarioGaps(db, 1);
     const raised = await gaps.listScenarioGaps(db, 1, { detector: 'passed-with-errors' });

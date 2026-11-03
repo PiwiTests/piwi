@@ -42,7 +42,7 @@ export function useRunRetryCommand(testCases: MaybeRefOrGetter<TestCaseResult[] 
   const failedCases = computed<RetryCase[]>(() => casesWhere((tc) => isFailedStatus(tc.status)));
   const flakyCases = computed<RetryCase[]>(() => casesWhere(isFlakyExecution));
   const allCases = computed<RetryCase[]>(() =>
-    casesWhere((tc) => !['skipped', 'fixme'].includes(statusPaletteKey(tc.status, tc.retries))),
+    casesWhere((tc) => !['skipped', 'fixme'].includes(statusPaletteKey(tc.status))),
   );
 
   const command = computed(() => buildRetryCommand(failedCases.value, { mode: mode.value }));

@@ -25,7 +25,7 @@ const chartData = computed(() => {
     date: new Date(point.startTime),
     duration: point.duration ?? 0,
     status: point.status,
-    retries: point.retries,
+    passedAfterFailure: point.passedAfterFailure,
     runStatus: point.runStatus,
   }));
 });
@@ -49,7 +49,7 @@ function layout(plotWidth: number, plotHeight: number, yScale: (value: number) =
       barWidth: geo.barWidth,
       barY: plotHeight - barHeight,
       barHeight,
-      color: statusPalette(d.status, d.retries).color,
+      color: statusPalette(d.status, d.passedAfterFailure).color,
     };
   });
 }
@@ -146,9 +146,11 @@ const { data: tooltipData, pos: tooltipPos, show, move, hide } = useChartTooltip
       <div class="space-y-0.5">
         <div>
           Status:
-          <span class="font-medium capitalize" :class="statusPalette(tooltipData.status, tooltipData.retries).text">{{
-            formatExecutionStatus(tooltipData.status, tooltipData.retries)
-          }}</span>
+          <span
+            class="font-medium capitalize"
+            :class="statusPalette(tooltipData.status, tooltipData.passedAfterFailure).text"
+            >{{ formatExecutionStatus(tooltipData.status, tooltipData.passedAfterFailure) }}</span
+          >
         </div>
         <div>Duration: {{ tooltipData.duration }}ms</div>
         <div v-if="tooltipData.runStatus" class="text-gray-400 text-xs">

@@ -552,7 +552,11 @@ describe('Flake Lab verified fixes', () => {
     const retryPass = async (opts: { origin?: string; startTime: Date }) => {
       const run = await insertRun(opts);
       await insertCase(run, 1, 'failed', { browser: { projectName: 'chromium' } });
-      await insertCase(run, 1, 'passed', { browser: { projectName: 'chromium' } });
+      await insertCase(run, 1, 'passed', {
+        browser: { projectName: 'chromium' },
+        retries: 1,
+        passedAfterFailure: true,
+      });
       return run;
     };
     const before = await retryPass({ startTime: new Date(verifiedAt.getTime() - 60_000) });

@@ -3,6 +3,7 @@ import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { migrateToLatest } from './temp-db';
+import { withStoredVerdicts } from './stored-verdicts';
 
 delete process.env.PIWI_DATABASE_URL;
 const { runAnalyticsWidget } = await import('../../shared/handlers/analytics');
@@ -83,14 +84,16 @@ beforeAll(async () => {
     { id: 2, projectId: 1, filePath: 'cart.spec.ts', title: 'adds to cart', owner: 'team-cart' },
     { id: 3, projectId: 1, filePath: 'search.spec.ts', title: 'searches' },
   ]);
-  await db.insert(schema.testRunsCases).values([
-    // Test 1: stable before, flaky now and slower. Test 2: flaky before, stable now and faster.
-    { testRunId: previousRun, testCaseId: 1, status: 'passed', duration: 1000, retries: 0 },
-    { testRunId: previousRun, testCaseId: 2, status: 'passed', duration: 4000, retries: 1 },
-    { testRunId: currentRun, testCaseId: 1, status: 'passed', duration: 3000, retries: 1, wastedTimeMs: 60_000 },
-    { testRunId: currentRun, testCaseId: 2, status: 'passed', duration: 1000, retries: 0 },
-    { testRunId: currentRun, testCaseId: 3, status: 'failed', duration: 120_000, retries: 0 },
-  ]);
+  await db.insert(schema.testRunsCases).values(
+    withStoredVerdicts([
+      // Test 1: stable before, flaky now and slower. Test 2: flaky before, stable now and faster.
+      { testRunId: previousRun, testCaseId: 1, status: 'passed', duration: 1000, retries: 0 },
+      { testRunId: previousRun, testCaseId: 2, status: 'passed', duration: 4000, retries: 1 },
+      { testRunId: currentRun, testCaseId: 1, status: 'passed', duration: 3000, retries: 1, wastedTimeMs: 60_000 },
+      { testRunId: currentRun, testCaseId: 2, status: 'passed', duration: 1000, retries: 0 },
+      { testRunId: currentRun, testCaseId: 3, status: 'failed', duration: 120_000, retries: 0 },
+    ]),
+  );
   await db.insert(schema.quarantinedTests).values([
     { projectId: 1, testCaseId: 3, createdAt: daysAgo(10) },
     { projectId: 1, testCaseId: 2, createdAt: daysAgo(25), releasedAt: daysAgo(12) },

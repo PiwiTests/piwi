@@ -947,7 +947,7 @@ function seededExperiments(testCaseId?: number) {
 /** A test's executions, in the shape the retry-pass rule reads. */
 function seededExecutions(testCaseId: number) {
   return q(`
-    select trc.test_run_id, trc.status, trc.browser_name, tr.start_time
+    select trc.test_run_id, trc.status, trc.browser_name, trc.passed_after_failure, tr.start_time
     from test_runs_cases trc join test_runs tr on tr.id = trc.test_run_id
     where trc.test_case_id = ${testCaseId}
   `).map((r) => ({
@@ -956,6 +956,7 @@ function seededExecutions(testCaseId: number) {
     runStartedAt: new Date(Number(r.start_time) * 1000),
     browserKey: String(r.browser_name ?? ''),
     status: String(r.status),
+    passedAfterFailure: Number(r.passed_after_failure) === 1,
   }));
 }
 

@@ -335,8 +335,8 @@ const TONE_CLASSES: Record<StatusColorKey, string> = {
 };
 
 /** A status → the tone of a header's edge and tint. */
-function toneClass(value: unknown, retries?: number | null): string {
-  return TONE_CLASSES[statusTone(value, retries)];
+function toneClass(value: unknown, flaky?: boolean | null): string {
+  return TONE_CLASSES[statusTone(value, flaky)];
 }
 
 function httpClass(status: unknown): string {
@@ -666,8 +666,8 @@ function caseHero(exportCase: ExportCase, heading: 'h1' | 'h2'): RawHtml {
   const headline = caseHeadline(exportCase);
   const labels = caseLabels(exportCase);
   const title = heading === 'h1' ? html`<h1>${exportCase.title}</h1>` : html`<h2>${exportCase.title}</h2>`;
-  const retries = Number((exportCase.detail as Record<string, any>).retries ?? 0);
-  return html`<div class="hero ${toneClass(exportCase.status, retries)}">
+  const flaky = Boolean((exportCase.detail as Record<string, any>).passedAfterFailure);
+  return html`<div class="hero ${toneClass(exportCase.status, flaky)}">
     <div class="labels">
       <span class="badge ${statusClass(exportCase.status)}">${exportCase.status}</span>
       ${labels.map((label) => html`<span class="chip ${label.news ? 'new' : ''}">${label.text}</span>`)}

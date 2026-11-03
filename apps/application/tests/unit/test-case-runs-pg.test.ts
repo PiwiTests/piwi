@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { fileURLToPath } from 'node:url';
+import { withStoredVerdicts } from './stored-verdicts';
 
 /**
  * A test's runs counted on PostgreSQL: one result per run, Playwright project
@@ -82,35 +83,37 @@ describe.skipIf(!postgresUrl)("a test's runs on PostgreSQL", async () => {
         createdAt: new Date(Date.now() - 3_600_000 + testRunId * 60_000 + retries * 1000),
       }));
     // A non-final attempt lasts 10 s, so an average that read one would show it.
-    await db.insert(schema.testRunsCases).values([
-      ...attempts(checksOut, first, 'chromium', [
-        ['failed', 10_000],
-        ['passed', 200],
-      ]),
-      ...attempts(checksOut, first, 'firefox', [['timedout', 300]]),
-      ...attempts(checksOut, second, 'chromium', [['passed', 400]], 0),
-      ...attempts(
-        checksOut,
-        second,
-        'chromium',
-        [
+    await db.insert(schema.testRunsCases).values(
+      withStoredVerdicts([
+        ...attempts(checksOut, first, 'chromium', [
           ['failed', 10_000],
-          ['passed', 500],
-        ],
-        1,
-      ),
-      ...attempts(checksOut, second, 'chromium', [['skipped', 0]], 2),
-      // Retried with its serial group after a pass: not flaky.
-      ...attempts(checksOut, third, 'chromium', [
-        ['passed', 10_000],
-        ['passed', 600],
+          ['passed', 200],
+        ]),
+        ...attempts(checksOut, first, 'firefox', [['timedout', 300]]),
+        ...attempts(checksOut, second, 'chromium', [['passed', 400]], 0),
+        ...attempts(
+          checksOut,
+          second,
+          'chromium',
+          [
+            ['failed', 10_000],
+            ['passed', 500],
+          ],
+          1,
+        ),
+        ...attempts(checksOut, second, 'chromium', [['skipped', 0]], 2),
+        // Retried with its serial group after a pass: not flaky.
+        ...attempts(checksOut, third, 'chromium', [
+          ['passed', 10_000],
+          ['passed', 600],
+        ]),
+        ...attempts(checksOut, third, 'firefox', [['interrupted', 700]]),
+        ...attempts(pays, fourth, 'chromium', [
+          ['failed', 10_000],
+          ['passed', 100],
+        ]),
       ]),
-      ...attempts(checksOut, third, 'firefox', [['interrupted', 700]]),
-      ...attempts(pays, fourth, 'chromium', [
-        ['failed', 10_000],
-        ['passed', 100],
-      ]),
-    ]);
+    );
   });
 
   afterAll(async () => {

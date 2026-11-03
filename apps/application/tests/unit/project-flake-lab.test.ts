@@ -4,6 +4,7 @@ import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { migrateToLatest } from './temp-db';
+import { withStoredVerdicts } from './stored-verdicts';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the handler modules load.
@@ -90,7 +91,7 @@ describe('the project’s lab', () => {
     const rows = [1, 2, 3].flatMap((id) =>
       retryPassTests.includes(id) ? [attempt(id, 'failed', 0), attempt(id, 'passed', 1)] : [attempt(id, 'passed', 0)],
     );
-    await db.insert(schema.testRunsCases).values(rows);
+    await db.insert(schema.testRunsCases).values(withStoredVerdicts(rows));
   }
 
   /** A finished experiment with a control and one arm, the arm reproducing when the verdict says so. */

@@ -1146,7 +1146,7 @@ async function renderCase(
 
   if (caseOpts.label) b.label(caseOpts.label, 120);
   b.hero({
-    tone: statusTone(exportCase.status, Number(d.retries ?? 0)),
+    tone: statusTone(exportCase.status, Boolean(d.passedAfterFailure)),
     status: exportCase.status,
     labels: caseLabels(exportCase),
     title: exportCase.title,

@@ -122,6 +122,8 @@ interface StreakRow {
   runStartedAt: Date;
   status: string;
   retries: number | null;
+  /** Passed after an earlier attempt of its result failed or timed out (`passed_after_failure`). */
+  passedAfterFailure: boolean;
   repeatEachIndex: number;
   browserName: string | null;
 }
@@ -175,6 +177,7 @@ async function computeStreaks(
       runStartedAt: testRuns.startTime,
       status: testRunsCases.status,
       retries: testRunsCases.retries,
+      passedAfterFailure: testRunsCases.passedAfterFailure,
       repeatEachIndex: testRunsCases.repeatEachIndex,
       browserName: testRunsCases.browserName,
       runRank:
@@ -207,6 +210,7 @@ async function computeStreaks(
       runStartedAt: ranked.runStartedAt,
       status: ranked.status,
       retries: ranked.retries,
+      passedAfterFailure: ranked.passedAfterFailure,
       repeatEachIndex: ranked.repeatEachIndex,
       browserName: ranked.browserName,
       runRank: ranked.runRank,

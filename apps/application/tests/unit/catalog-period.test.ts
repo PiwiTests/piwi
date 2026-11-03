@@ -3,6 +3,7 @@ import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { migrateToLatest } from './temp-db';
+import { withStoredVerdicts } from './stored-verdicts';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the modules under test load.
@@ -40,14 +41,16 @@ beforeAll(async () => {
     })),
   );
   await db.insert(schema.testRunsCases).values(
-    EXECUTIONS.map((e, i) => ({
-      testRunId: i + 1,
-      testCaseId: 1,
-      status: e.status,
-      duration: e.duration,
-      retries: e.retries,
-      createdAt: new Date(NOW - e.daysAgo * DAY + i),
-    })),
+    withStoredVerdicts(
+      EXECUTIONS.map((e, i) => ({
+        testRunId: i + 1,
+        testCaseId: 1,
+        status: e.status,
+        duration: e.duration,
+        retries: e.retries,
+        createdAt: new Date(NOW - e.daysAgo * DAY + i),
+      })),
+    ),
   );
 });
 

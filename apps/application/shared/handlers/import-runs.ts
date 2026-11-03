@@ -722,6 +722,7 @@ async function rollUpTraceRun(db: DrizzleDB, testRunId: number, startTime: Date)
       browserName: testRunsCases.browserName,
       repeatEachIndex: testRunsCases.repeatEachIndex,
       retries: testRunsCases.retries,
+      passedAfterFailure: testRunsCases.passedAfterFailure,
       status: testRunsCases.status,
       duration: testRunsCases.duration,
       startedAt: testRunsCases.startedAt,

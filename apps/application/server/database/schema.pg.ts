@@ -540,6 +540,7 @@ export const testRunsCases = pgTable(
     retries: integer('retries').default(0),
     repeatEachIndex: integer('repeat_each_index').notNull().default(0), // Playwright's repeatEachIndex: which `--repeat-each` repetition the row belongs to (0 without repeats)
     finalAttempt: boolean('final_attempt').notNull().default(true), // false once a later attempt of its run, test, project and repetition is stored (`settleFinalAttempts`): the row then decides nothing
+    passedAfterFailure: boolean('passed_after_failure').notNull().default(false), // the verdict of a final attempt (`final_attempt`): its result passed after an earlier attempt failed or timed out (`isFlakyExecution`), set as it is stored (`fillAttemptHistories`) and cleared once a later attempt supersedes it (`settleFinalAttempts`)
     attempts: jsonb('attempts'), // Array of { retry, status, duration, startedAt } — per-attempt outcomes
     line: integer('line'), // line number in file
     column: integer('column'), // column number in file
@@ -644,9 +645,9 @@ export const testRunsCases = pgTable(
     passedAriaIdx: index('idx_trc_passed_aria')
       .on(table.testRunId)
       .where(sql`status = 'passed' AND (aria_snapshot_payload_id IS NOT NULL OR aria_snapshot IS NOT NULL)`),
-    passedRetryIdx: index('idx_trc_passed_retry')
+    passedAfterFailureIdx: index('idx_trc_passed_after_failure')
       .on(table.testRunId)
-      .where(sql`status = 'passed' AND retries > 0`),
+      .where(sql`passed_after_failure = true`),
     skippedIdx: index('idx_trc_skipped')
       .on(table.testRunId)
       .where(sql`status = 'skipped'`),

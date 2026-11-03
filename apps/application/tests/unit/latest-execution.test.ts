@@ -26,6 +26,7 @@ function row(overrides: Partial<NewerExecutionRow> & { runId: number }): NewerEx
     status: 'failed',
     repeatEachIndex: 0,
     retries: 0,
+    passedAfterFailure: false,
     browserName: 'chromium',
     failureClusterId: 1,
     startTime: new Date(T0 + overrides.runId * hour),
@@ -138,13 +139,13 @@ describe('summarizeNewerExecutions', () => {
 
   test("a repetition's retries are its own: a retry pass of one does not clear another's failure", () => {
     const repeated = [
-      row({ runId: 6, repeatEachIndex: 0, retries: 1, status: 'passed' }),
+      row({ runId: 6, repeatEachIndex: 0, retries: 1, status: 'passed', passedAfterFailure: true }),
       row({ runId: 6, repeatEachIndex: 0, retries: 0, status: 'failed' }),
       row({ runId: 6, repeatEachIndex: 1, retries: 0, status: 'failed' }),
     ];
     expect(summarizeNewerExecutions(current, repeated).newest).toMatchObject({ status: 'failed', retries: 0 });
     const flaky = [
-      row({ runId: 7, repeatEachIndex: 0, retries: 1, status: 'passed' }),
+      row({ runId: 7, repeatEachIndex: 0, retries: 1, status: 'passed', passedAfterFailure: true }),
       row({ runId: 7, repeatEachIndex: 0, retries: 0, status: 'failed' }),
       row({ runId: 7, repeatEachIndex: 1, retries: 0, status: 'passed' }),
     ];

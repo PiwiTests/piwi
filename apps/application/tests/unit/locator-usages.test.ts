@@ -4,6 +4,7 @@ import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { migrateToLatest } from './temp-db';
+import { withStoredVerdicts } from './stored-verdicts';
 
 delete process.env.PIWI_DATABASE_URL;
 const { upsertLocatorUsages, getExecutionLocators, getLocatorUsages, backfillLocatorUsages, getLocatorIndex } =
@@ -58,13 +59,15 @@ async function seedExecution(
 ): Promise<number> {
   const [row] = await db
     .insert(schema.testRunsCases)
-    .values({
-      testRunId: runId,
-      testCaseId,
-      status: opts.status ?? 'passed',
-      steps,
-      browserName: opts.browserName ?? 'chromium',
-    })
+    .values(
+      withStoredVerdicts({
+        testRunId: runId,
+        testCaseId,
+        status: opts.status ?? 'passed',
+        steps,
+        browserName: opts.browserName ?? 'chromium',
+      }),
+    )
     .returning({ id: schema.testRunsCases.id });
   return row!.id;
 }
@@ -411,7 +414,9 @@ describe('getLocatorIndex', () => {
   test('marks a pass after retries flaky and says when the chains were cut off', async () => {
     await seedCase(1, 'retried');
     const run = await seedRun({ metadata: { workingDir: '/work/shop' } });
-    await db.insert(schema.testRunsCases).values({ testRunId: run, testCaseId: 1, status: 'passed', retries: 1 });
+    await db
+      .insert(schema.testRunsCases)
+      .values(withStoredVerdicts({ testRunId: run, testCaseId: 1, status: 'passed', retries: 1 }));
     await upsertLocatorUsages(db as never, 1, [
       exec(run, [
         step(`Click ${PAY}`, PAY, 'pages/checkout.ts:20:5'),

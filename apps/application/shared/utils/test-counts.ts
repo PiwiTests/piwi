@@ -102,11 +102,18 @@ interface OutcomeRow {
   status: string;
   retries?: number | null;
   repeatEachIndex: number | null;
+  /** The stored verdict of the row (`passed_after_failure`), when it was read from the database. */
+  passedAfterFailure?: boolean | null;
 }
 
 /** A pass on a retry: how a final attempt reads as flaky when none of its earlier attempts is at hand. */
 function passedOnRetry(row: { status: string; retries?: number | null }): boolean {
   return row.status === 'passed' && (row.retries ?? 0) > 0;
+}
+
+/** Whether a final attempt is flaky as its row tells: its stored verdict, else a pass on a retry. */
+function storedVerdict(row: OutcomeRow): boolean {
+  return row.passedAfterFailure ?? passedOnRetry(row);
 }
 
 /** How strongly a repetition's final attempt speaks for its test: a failure first, then a flaky pass. */
@@ -119,12 +126,13 @@ function outcomeRank(row: { status: string }, flaky: boolean): number {
 /**
  * Whether `row` rather than `current` decides a test's outcome in a run, both being final attempts of its
  * repetitions: a failed one when any failed, else a flaky one, else the later repetition. `isFlaky` tells a flaky
- * final attempt (`flakyFinalAttempts`); without it, a pass on a retry reads as flaky.
+ * final attempt (`flakyFinalAttempts`); without it, a row's stored verdict (`passedAfterFailure`) does, and a row
+ * without one is flaky when it passed on a retry.
  */
 export function decidesOutcome<R extends OutcomeRow>(
   row: R,
   current: R | undefined,
-  isFlaky: (row: R) => boolean = passedOnRetry,
+  isFlaky: (row: R) => boolean = storedVerdict,
 ): boolean {
   if (!current) return true;
   const rank = outcomeRank(row, isFlaky(row));
@@ -152,11 +160,14 @@ export function testOutcomes<T extends AttemptRow & { status: string }>(rows: Re
 /**
  * The final attempts (`finalAttempts`) of a run's rows that are flaky: each passed after an earlier attempt of its
  * repetition failed or timed out (`isFlakyResult`). A retry that passed after attempts that passed, were skipped or
- * did not run (a `describe.serial` group retried for another test's failure) is not flaky. A final attempt none of
- * whose earlier attempts is among the rows (a payload of final attempts only) is flaky when it passed on a retry.
- * Pass every attempt row of the run; the returned rows are the given objects.
+ * did not run (a `describe.serial` group retried for another test's failure) is not flaky. A stored row's verdict
+ * (`passedAfterFailure`) decides it when the row carries one. A final attempt none of whose earlier attempts is among
+ * the rows (a payload of final attempts only) is read from its attempt history (`isFlakyExecution`): without one, it is
+ * flaky when it passed on a retry. Pass every attempt row of the run; the returned rows are the given objects.
  */
-export function flakyFinalAttempts<T extends AttemptRow & { status: string }>(rows: ReadonlyArray<T>): Set<T> {
+export function flakyFinalAttempts<T extends AttemptRow & FlakyRowExtras & { status: string }>(
+  rows: ReadonlyArray<T>,
+): Set<T> {
   const final = new Map(finalAttempts(rows).map((row) => [attemptKey(row), row]));
   const earlier = new Map<string, string[]>();
   for (const row of rows) {
@@ -170,9 +181,21 @@ export function flakyFinalAttempts<T extends AttemptRow & { status: string }>(ro
   const flaky = new Set<T>();
   for (const [key, row] of final) {
     const statuses = earlier.get(key);
-    if (statuses ? isFlakyResult(row.status, statuses) : passedOnRetry(row)) flaky.add(row);
+    const verdict =
+      typeof row.passedAfterFailure === 'boolean'
+        ? row.passedAfterFailure
+        : statuses
+          ? isFlakyResult(row.status, statuses)
+          : isFlakyExecution({ ...row, attempts: Array.isArray(row.attempts) ? row.attempts : null });
+    if (verdict) flaky.add(row);
   }
   return flaky;
+}
+
+/** What a row can carry beyond its attempt's identity for `flakyFinalAttempts`: its stored verdict, its history. */
+interface FlakyRowExtras {
+  passedAfterFailure?: boolean | null;
+  attempts?: unknown;
 }
 
 /**

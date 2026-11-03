@@ -85,6 +85,11 @@ whole group: the tests that passed before and a `test.fail()` test that failed a
 test that did not run behind the failure passes, none of them flaky. The last attempt decides: a test that
 passed, then failed on the group's retry, counts as failed, where Playwright's summary calls it flaky.
 
+Every view reads a result the same way: the run page and the run list, a test's history, status and Trend tab, the
+catalog, the analytics, the notifications, the exports and the MCP tools. Piwi stores the verdict with each result's
+last attempt as it ingests it, and gives the results and the flaky counts of runs stored by an earlier version theirs
+when it upgrades.
+
 A test is **interrupted** when the run's interruption (Ctrl+C, a crashed worker) cut it short. It counts in no
 outcome: neither passed, failed, skipped nor did not run, and in no pass rate. The dashboard, the exports and the
 notifications draw it in a neutral slate labelled *Interrupted*, and a count bar names the gap it leaves.

@@ -1326,6 +1326,7 @@ export async function getProjectSpecHealth(db: DrizzleDB, projectId: number, day
       status: testRunsCases.status,
       duration: testRunsCases.duration,
       retries: testRunsCases.retries,
+      passedAfterFailure: testRunsCases.passedAfterFailure,
     })
     .from(testRunsCases)
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
@@ -2037,6 +2038,7 @@ export async function getProjectFlakyTestsWithVerified(
       repeatEachIndex: testRunsCases.repeatEachIndex,
       duration: testRunsCases.duration,
       browser: testRunsCases.browser,
+      passedAfterFailure: testRunsCases.passedAfterFailure,
     })
     .from(testRunsCases)
     .where(
@@ -2081,9 +2083,8 @@ export async function getProjectFlakyTestsWithVerified(
         const sorted = group.rows.slice().sort((a: any, b: any) => (a.retries ?? 0) - (b.retries ?? 0));
         const maxRetryRow = sorted[sorted.length - 1];
         group.finalStatus = maxRetryRow?.status ?? 'unknown';
-        const hasFailed = group.rows.some((r: any) => isFailedStatus(r.status));
-        const hasPassed = group.rows.some((r: any) => r.status === 'passed');
-        group.retryPass = hasFailed && hasPassed;
+        // A retry pass: the final attempt passed after an earlier attempt failed or timed out.
+        group.retryPass = Boolean(maxRetryRow?.passedAfterFailure);
       }
     }
   }
