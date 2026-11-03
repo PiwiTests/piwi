@@ -303,7 +303,7 @@ server {
     location / {
         proxy_pass http://127.0.0.1:3000;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
+        proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
 
@@ -314,7 +314,7 @@ server {
 }
 ```
 
-When auth is enabled, set `PIWI_SITE_URL` to the public HTTPS URL so email links and OAuth callbacks point at the right origin, and set `PIWI_TRUST_PROXY=true` (step 4 of the [production checklist](./production-checklist#before-you-expose-it)). With authentication off, set it too: the dashboard refuses a request addressed to a domain name other than its host or one `PIWI_ALLOWED_HOSTS` lists ([why](./authentication#disabling-authentication)).
+When auth is enabled, set `PIWI_SITE_URL` to the public HTTPS URL so email links and OAuth callbacks point at the right origin, and set `PIWI_TRUST_PROXY=true` (step 4 of the [production checklist](./production-checklist#before-you-expose-it)). With authentication off, set it too, and have the proxy forward the browser's `Host` header, as both examples do (Apache: `ProxyPreserveHost On`). The dashboard then refuses a request addressed to a domain name other than its host or one `PIWI_ALLOWED_HOSTS` lists; it reads that name from `Host` alone, so a proxy that sends its own local address instead lets every request through ([why](./authentication#disabling-authentication)).
 
 ## Resource requirements
 

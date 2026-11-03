@@ -97,7 +97,7 @@ generic OpenID Connect or SAML sign-in.
 
 ### Restricting who can sign in (allowlists)
 
-By default any account at a configured provider can sign in (and a new **Member** account with no access is created). To restrict access:
+By default any account at a configured provider can sign in. To restrict access:
 
 - **`PIWI_OAUTH_ALLOWED_DOMAINS`** — comma-separated email domains (e.g. `example.com,acme.org`). Only **verified** provider emails in these domains may sign in. Applies to all providers.
 - **`PIWI_OAUTH_GITHUB_ALLOWED_ORGS`** — comma-separated GitHub org logins. The user must be a member of at least one. Enabling this requests the `read:org` scope so membership (including private) can be checked.
@@ -163,9 +163,10 @@ Set `PIWI_AUTH_ENABLED=false`, or remove the variable, and restart the server.
 With authentication off, the dashboard answers only requests whose `Host` header names an IP address, a name with no
 dot (`localhost`, a container name), a name under `.localhost`, the host of
 [`PIWI_SITE_URL`](/reference/configuration#general) or a name `PIWI_ALLOWED_HOSTS` lists (`host.docker.internal`, or
-`.example.lan` for a whole domain); any other gets a `403`. Over plain HTTP, a write must also come from a page at the
-requested host, `PIWI_SITE_URL`'s or a listed one. The entry `*` of `PIWI_ALLOWED_HOSTS` turns both checks off, and
-with them the protection against DNS rebinding.
+`.example.lan` for a whole domain); any other gets a `403`. Over plain HTTP, a write must also come from the requested
+host, `PIWI_SITE_URL`'s or a listed one. The entry `*` of `PIWI_ALLOWED_HOSTS` turns both checks off, and with them
+the protection against DNS rebinding. Behind a [reverse proxy](./deployment#reverse-proxy-https), set `PIWI_SITE_URL`
+and forward the browser's `Host` header.
 
 ## Related
 
