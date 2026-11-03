@@ -351,7 +351,16 @@ export async function persistRunCases(
   testRunId: number,
   input: RunCaseInput[],
   options: PersistRunCasesOptions = {},
-): Promise<Array<{ id: number; status: string; testCaseId: number; inputIndex: number; passedAfterFailure: boolean }>> {
+): Promise<
+  Array<{
+    id: number;
+    status: string;
+    testCaseId: number;
+    inputIndex: number;
+    passedAfterFailure: boolean;
+    attempts: unknown;
+  }>
+> {
   if (input.length === 0) return [];
 
   const limits = resolveIngestLimits();
@@ -686,6 +695,7 @@ export async function persistRunCases(
     testCaseId: r.testCaseId,
     inputIndex: rowInputIndices[r.rowIndex]!,
     passedAfterFailure: runCasesRows[r.rowIndex]!.passedAfterFailure ?? false,
+    attempts: runCasesRows[r.rowIndex]!.attempts ?? null,
   }));
 
   const nrValues = buildNetworkRequestInsertValues(networkRequestBuilders, insertedCases, testRunId);

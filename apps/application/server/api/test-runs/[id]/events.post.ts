@@ -197,10 +197,10 @@ export default eventHandler(async (event) => {
         shardIndex: tc.shardIndex ?? null,
         startedAt: tc.startedAt ?? null,
         browser: tc.browser ?? null,
-        // The attempt number and the attempt history up to it ride along so the
-        // live page can tell a flaky pass (an earlier attempt failed) from another pass.
+        // The attempt number and the attempt history up to it, as stored, ride along so
+        // the live page can tell a flaky pass (an earlier attempt failed) from another pass.
         retries: tc.retries ?? null,
-        attempts: tc.attempts ?? null,
+        attempts: persisted ? persisted.attempts : (tc.attempts ?? null),
         repeatEachIndex: resolveRepeatEachIndex(tc.repeatEachIndex),
         executionId: persisted?.id ?? null,
         testCaseId: persisted?.testCaseId ?? null,
