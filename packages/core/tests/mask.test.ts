@@ -6,12 +6,15 @@ import {
   hideTypedText,
   hideSecretsInError,
   hideSecretsInLog,
+  hideSecretsInOutput,
+  hideSecretShapes,
   holdsPersonalData,
   isSecretLocator,
   isSecretAutocomplete,
   isSecretName,
   isSecretValue,
   maskUrlFragment,
+  SECRET_SHAPE_STARTS,
 } from '../src/mask';
 import { extractErrorSignature } from '../src/error-signature';
 
@@ -165,6 +168,106 @@ describe('the credentials a mock, a list or a snapshot hides', () => {
     ]) {
       expect(hideSecretsInText(`the key ${value} works`), value).toBe(`the key ${HIDDEN_VALUE} works`);
     }
+  });
+
+  test('are hidden by the shape of a key or a token Piwi issues, and behind a color code', () => {
+    const hex = 'a3'.repeat(32);
+    const piwi = [
+      shaped('pd_', hex),
+      shaped('pdc_', hex),
+      shaped('pda_', hex),
+      shaped('pdo_', hex),
+      shaped('pdr_', hex),
+      shaped('mcps_', hex),
+      shaped('psl_', hex),
+      shaped('pwt_', hex),
+      shaped('pdl_', 'q3Zx-7_Lm0aBcDeFgHiJkLmNoPqRsTuVwXyZ012345'),
+    ];
+    for (const value of piwi) {
+      expect(isSecretValue(value), value).toBe(true);
+      expect(hideSecretsInText(`PIWI_API_KEY=${value} npx playwright test`), value).toBe(
+        `PIWI_API_KEY=${HIDDEN_VALUE} npx playwright test`,
+      );
+    }
+    // An id or a name that only starts like one stays.
+    for (const value of ['pd_report', 'psl_ab12', shaped('mcpc_', hex.slice(0, 32)), 'xpd_' + hex]) {
+      expect(hideSecretsInText(`see ${value}`), value).toBe(`see ${value}`);
+    }
+    const stripe = shaped('sk_live_', '4eC39HqLyjWDarjtT1zdp7dc');
+    expect(hideSecretsInText(`key \u001b[32m${stripe}\u001b[39m set`)).toBe(
+      `key \u001b[32m${HIDDEN_VALUE}\u001b[39m set`,
+    );
+    expect(hideSecretsInText(`\u001b[1m${shaped('pd_', hex)}`)).toBe(`\u001b[1m${HIDDEN_VALUE}`);
+  });
+
+  test('are hidden by their shape alone, and each starts with what a store looks for', () => {
+    const hex = 'a3'.repeat(32);
+    // One of each shape.
+    const examples = [
+      shaped('eyJhbGciOiJIUzI1NiJ9', '.', 'eyJzdWIiOiIxIn0', '.', 'c2lnbmF0dXJl'),
+      'bearer abcdefghijklmnop',
+      shaped('rk_test_', '4eC39HqLyjWDarjtT1zdp7dc'),
+      shaped('whsec_', 'MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw'),
+      shaped('sk-proj-', 'Sh1pab2-4fRG0leYtAzKkIi0IXT6lWbbYVUyNJ_g2_6XDO6lT3BlbkFJ'),
+      shaped('glpat-', '13ArbE5nyBCIwhIbdl4c'),
+      shaped('npm_', 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8'),
+      shaped('SK', '138277218d9c8f6bca66dcc5ad1d8bab'),
+      shaped('AKIA', 'IOSFODNN7EXAMPLE'),
+      shaped('AIza', 'SyD-9tSrke72PouQMnMX-a7eZSW0jkFMBWY'),
+      shaped('ghs_', '16C7e42F292c6912E7710c838347Ae178B4a'),
+      shaped('github_pat_', '11ABCDEFG0123456789_abcdefghij'),
+      shaped('xoxp-', '1234567890-abcdef'),
+      shaped('mcps_', hex),
+      shaped('pdl_', 'q3Zx-7_Lm0aBcDeFgHiJkLmNoPqRsTuVwXyZ012345'),
+    ];
+    const holdsStart = (text: string) =>
+      SECRET_SHAPE_STARTS.some(({ start, anyCase }) =>
+        anyCase ? text.toLowerCase().includes(start.toLowerCase()) : text.includes(start),
+      );
+    for (const value of examples) {
+      const count = { n: 0 };
+      expect(hideSecretShapes(`got ${value}, then \u001b[2m${value}`, count), value).toBe(
+        `got ${HIDDEN_VALUE}, then \u001b[2m${HIDDEN_VALUE}`,
+      );
+      expect(count.n, value).toBe(2);
+      expect(holdsStart(value), value).toBe(true);
+    }
+    // A name or a query value is left to the other rules of a text.
+    const named = 'see https://shop.test/reset?token=abc123 and {"password":"hunter2"}';
+    expect(hideSecretShapes(named)).toBe(named);
+  });
+
+  test('are hidden in a program’s output by the name it gives a value, quoted or after `=`', () => {
+    const output = [
+      "{ username: 'admin', password: 'Hunter2!pass' }",
+      "{ 'api-key': \"k3y-v4lue\", authToken: `t0k-3n`, code: 'ECONNREFUSED' }",
+      'PASSWORD=Hunter2!pass DB_PASS="s3 cret" HOME=/root',
+      'npx run --auth-token=abc123 --retries=2',
+      "{ dbPassword: \u001b[32m'Hunter2!pass'\u001b[39m }",
+      'Session: started for user admin, key=checkout',
+    ].join('\n');
+    const hidden = hideSecretsInOutput(output);
+    expect(hidden).not.toMatch(/Hunter2|k3y-v4lue|t0k-3n|s3 cret|abc123/);
+    expect(hidden.split('\n')).toEqual([
+      `{ username: 'admin', password: '${HIDDEN_VALUE}' }`,
+      `{ 'api-key': "${HIDDEN_VALUE}", authToken: \`${HIDDEN_VALUE}\`, code: 'ECONNREFUSED' }`,
+      `PASSWORD=${HIDDEN_VALUE} DB_PASS="${HIDDEN_VALUE}" HOME=/root`,
+      `npx run --auth-token=${HIDDEN_VALUE} --retries=2`,
+      `{ dbPassword: \u001b[32m'${HIDDEN_VALUE}'\u001b[39m }`,
+      `Session: started for user admin, key=${HIDDEN_VALUE}`,
+    ]);
+    expect(hideSecretsInOutput(hidden)).toBe(hidden);
+    // A URL keeps the parameters after a credential's.
+    expect(hideSecretsInOutput('GET /reset?token=abc123&lang=en')).toBe(`GET /reset?token=${HIDDEN_VALUE}&lang=en`);
+  });
+
+  test('take a time linear in the length of a program’s output', () => {
+    const started = Date.now();
+    hideSecretsInOutput(`password: '${'a'.repeat(200_000)}`);
+    hideSecretsInOutput(`${"token: 'a ".repeat(20_000)}`);
+    hideSecretsInOutput(`${'TOKEN='.repeat(40_000)}`);
+    hideSecretsInOutput(`${'\u001b[32m'.repeat(40_000)}m`);
+    expect(Date.now() - started).toBeLessThan(2000);
   });
 
   test('are hidden in a URL part by part, its host and its ids kept', () => {
@@ -385,6 +488,37 @@ describe('the secrets of an error, its fingerprint kept', () => {
     }
     expect(hideSecretsInError(errors[0]!)).toBe(errors[0]);
     expect(hideSecretsInError(errors[2]!)).toBe(errors[2]);
+  });
+
+  test('go by the shape of a credential anywhere in it: its message, its call log, its stack, colored or not', () => {
+    const key = shaped('pd_', 'a3'.repeat(32));
+    const jwt = shaped('eyJhbGciOiJIUzI1NiJ9', '.', 'eyJzdWIiOiIxIn0', '.', 'c2lnbmF0dXJlLXZhbHVl');
+    const error = [
+      `Error: expect(received).toBe(expected) // Object.is equality`,
+      '',
+      `Expected: "${shaped('pdc_', 'b4'.repeat(16))}"`,
+      `Received: "${key}"`,
+      `Error: 401 for Bearer ${jwt} with \u001b[31m${shaped('sk_live_', '4eC39HqLyjWDarjtT1zdp7dc')}\u001b[39m`,
+      'Call log:',
+      `  - → GET https://api.test/orders?key=${key}`,
+      `    at Object.login (tests/${shaped('pwt_', 'c5'.repeat(16))}/helpers.ts:3:5)`,
+    ].join('\n');
+    const hidden = hideSecretsInError(error);
+    expect(hidden).not.toMatch(/pd_|pdc_|pwt_|sk_live_|eyJ/);
+    expect(hidden).toBe(
+      [
+        `Error: expect(received).toBe(expected) // Object.is equality`,
+        '',
+        `Expected: "${HIDDEN_VALUE}"`,
+        `Received: "${HIDDEN_VALUE}"`,
+        `Error: 401 for Bearer ${HIDDEN_VALUE} with \u001b[31m${HIDDEN_VALUE}\u001b[39m`,
+        'Call log:',
+        `  - → GET https://api.test/orders?key=${HIDDEN_VALUE}`,
+        `    at Object.login (tests/${HIDDEN_VALUE}/helpers.ts:3:5)`,
+      ].join('\n'),
+    );
+    // Hidden again, it stays as it is.
+    expect(hideSecretsInError(hidden)).toBe(hidden);
   });
 
   test('take a time linear in the length of the text, for a long run of capitals too', () => {

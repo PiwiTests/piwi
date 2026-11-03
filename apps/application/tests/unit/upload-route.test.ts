@@ -109,6 +109,39 @@ describe('POST /api/test-runs/upload', () => {
     ]);
   });
 
+  test("cancels the instance's run still in flight, as a batch fallback of its stream replaces it", async () => {
+    const [project] = await db.insert(schema.projects).values({ name: 'upload-replaces' }).returning();
+    const [streamed] = await db
+      .insert(schema.testRuns)
+      .values({ projectId: project!.id, status: 'running', startTime: new Date(), instanceId: 'instance-1' })
+      .returning();
+
+    const { runId } = await upload({
+      parts: [
+        field('projectName', 'upload-replaces'),
+        field('testRun', {
+          status: 'passed',
+          startTime: '2026-09-30T10:00:00Z',
+          totalTests: 1,
+          passedTests: 1,
+          instanceId: 'instance-1',
+        }),
+        field('testCases', [
+          { title: 'pays', status: 'passed', location: 'tests/pay.spec.ts:3:1', browser: 'chromium' },
+        ]),
+      ],
+    });
+
+    const runs = await db
+      .select({ id: schema.testRuns.id, status: schema.testRuns.status })
+      .from(schema.testRuns)
+      .orderBy(schema.testRuns.id);
+    expect(runs).toEqual([
+      { id: streamed!.id, status: 'cancelled' },
+      { id: runId, status: 'passed' },
+    ]);
+  });
+
   test('refuses a run without a status or a valid start time before storing its report', async () => {
     const report = { name: 'report_custom', filename: 'report.txt', data: Buffer.from('report') };
     for (const testRun of [{ startTime: '2026-09-30T10:00:00Z' }, { status: 'passed', startTime: 'yesterday' }]) {

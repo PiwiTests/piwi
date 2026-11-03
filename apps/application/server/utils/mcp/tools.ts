@@ -35,6 +35,8 @@ import {
   listFlakeExperiments,
 } from '#shared/handlers/flake-lab';
 import { parseBisectResultBody } from '@piwitests/core/bisect';
+import { sanitizeRunErrors } from '@piwitests/core/run-errors';
+import { boundTestOutput } from '@piwitests/core/test-output';
 import { agentDiagnosisErrorMessage, parseAgentDiagnosis, type AgentDiagnosisTarget } from '#shared/agent-diagnosis';
 import { resolveAgentDiagnosisTarget } from '#shared/handlers/agent-diagnosis';
 import { PATCH_TRUNCATED_NOTE, storedPatchValidation } from '#shared/patch';
@@ -60,7 +62,16 @@ import {
   quarantineClusterTests,
   releaseClusterTests,
 } from '#shared/handlers/failure-clusters';
-import { BULK_TRIAGE_MAX, clusterInQueue, isInboxQueue, isSnoozeOption, parseBulkIds } from '#shared/inbox-queues';
+import {
+  BULK_TRIAGE_MAX,
+  CLUSTER_STATUSES,
+  clusterInQueue,
+  inboxIdentity,
+  isClusterStatus,
+  isInboxQueue,
+  isSnoozeOption,
+  parseBulkIds,
+} from '#shared/inbox-queues';
 import {
   getSuggestionProjectId,
   pendingSuggestionsForCluster,
@@ -150,7 +161,7 @@ const MAX_IMPACT_FILE_TESTS = 20;
 const MAX_PREDICTED_BREAKS = 50;
 import { getPageDiff } from '../page-diff';
 import { describePageDiff, formatPageDiffSummary } from '#shared/page-diff';
-import { inlineCasePayloads } from '../case-payloads';
+import { caseOutput, inlineCasePayloads } from '../case-payloads';
 import { selectCaseScreenshots } from '../case-screenshots';
 import { executionFailed, failurePageScreenshot } from '#shared/file-classify';
 import { createScmProvider } from '../scm';
@@ -203,7 +214,7 @@ import { stat, readFile, writeFile } from 'node:fs/promises';
 import { isAbsolute, resolve as resolvePath, relative as relativePath, basename } from 'node:path';
 import { importArchive } from '../import-archive';
 import { sanitizeFilename } from '../sanitize-filename';
-import { resolveMaxUploadBytes } from '../upload-limits';
+import { resolveMaxImportBytes } from '../upload-limits';
 import { formatBytes } from '#shared/utils/format-bytes';
 import { dropNulls } from './json';
 import { describePiwi, getReleaseNotes } from './about-piwi';
@@ -218,6 +229,9 @@ import { parseUnifiedDiff } from '@piwitests/core/diff-anchors';
 import { diffImpactInput } from '@piwitests/core/suspect-lines';
 
 // ── Token-optimization helpers ───────────────────────────────────────────────
+
+/** The most characters of each stream an execution wrote that `get_test_run_case` returns: its first and last lines. */
+const MCP_OUTPUT_CHARS = 8000;
 
 function trunc(s: string | null | undefined, max = 300): string | null {
   if (!s) return null;
@@ -652,6 +666,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         metadata: testRuns.metadata,
         playwrightVersion: testRuns.playwrightVersion,
         reporterVersion: testRuns.reporterVersion,
+        runErrors: testRuns.runErrors,
       })
       .from(testRuns)
       .innerJoin(projects, eq(testRuns.projectId, projects.id))
@@ -730,6 +745,15 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       commit: meta?.scm?.commit?.slice(0, 8) || null,
       playwrightVersion: run.playwrightVersion || null,
       reporterVersion: run.reporterVersion || null,
+      runErrors: (sanitizeRunErrors(run.runErrors) ?? []).map((e) =>
+        dropNulls({
+          message: trunc(e.message, 400),
+          stack: trunc(e.stack, 400),
+          filePath: e.location?.file ?? null,
+          line: e.location?.line ?? null,
+          column: e.location?.column ?? null,
+        }),
+      ),
       cases: paged.items,
       nextCursor: paged.nextCursor,
       filter: statusFilter,
@@ -1330,6 +1354,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const want = (k: string) => include === null || include.has(k);
 
     const evidence = want('aria') || want('source') ? await inlineCasePayloads(db, row) : row;
+    const output = want('output') ? await caseOutput(db, row) : null;
 
     // Deterministic clues ride alongside the error unless the caller opts out.
     const clues = want('clues') ? await getFailureClues(db, id).catch(() => null) : null;
@@ -1358,6 +1383,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       webVitals: want('webVitals') ? row.webVitals : null,
       ariaSnapshot: want('aria') ? trunc(evidence.ariaSnapshot, 8000) : null,
       testSource: want('source') ? evidence.testSource || null : null,
+      stdout: output?.stdout ? boundTestOutput(stripAnsi(output.stdout), MCP_OUTPUT_CHARS) : null,
+      stderr: output?.stderr ? boundTestOutput(stripAnsi(output.stderr), MCP_OUTPUT_CHARS) : null,
       testAnnotations: row.testAnnotations,
       locks: Array.isArray(row.locks) && row.locks.length ? (row.locks as string[]) : null,
       startedAt: iso(row.startedAt),
@@ -2313,7 +2340,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     // the same axis as the emitted cursor.
     const queue = params.queue as string | undefined;
     if (queue && isInboxQueue(queue) && queue !== 'all') {
-      const user = { name: ctx.user?.name ?? null, email: ctx.user?.email ?? null };
+      const user = inboxIdentity(ctx.user);
       const enriched = await getOpenFailureClusters(db, ctx.scope, 200);
       const mappedQueue = enriched
         .filter((c) => clusterInQueue(c, queue, { user, lastVisitMs: null }))
@@ -2482,8 +2509,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const id = numericParam(params.clusterId, 'clusterId');
     if ((await checkEntityScope(db, ctx, id, resolveClusterProjectId, 'triage:write')) === 'not-found') return null;
     const status = String(params.status ?? '');
-    if (!['open', 'resolved', 'ignored'].includes(status)) {
-      throw new Error('status must be one of: open, resolved, ignored');
+    if (!isClusterStatus(status)) {
+      throw new Error(`status must be one of: ${CLUSTER_STATUSES.join(', ')}`);
     }
     const note = typeof params.triageNote === 'string' ? params.triageNote : undefined;
     const result = await patchClusterStatus(db, id, status, note);
@@ -2582,8 +2609,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     let apply: (allowed: number[]) => Promise<{ updated: number; tests?: number; changed?: number }>;
     if (action === 'status') {
       const status = String(params.status ?? '');
-      if (!['open', 'resolved', 'ignored'].includes(status)) {
-        throw new Error('status must be one of: open, resolved, ignored');
+      if (!isClusterStatus(status)) {
+        throw new Error(`status must be one of: ${CLUSTER_STATUSES.join(', ')}`);
       }
       const note = typeof params.note === 'string' && params.note.trim() ? params.note : null;
       apply = async (allowed) => {
@@ -3514,7 +3541,7 @@ const DESKTOP_HANDLERS: Record<DesktopMcpToolName, McpToolHandler> = {
       throw new Error(`file not found: ${path}`);
     }
     if (!info.isFile()) throw new Error('not a file');
-    const maxBytes = resolveMaxUploadBytes();
+    const maxBytes = resolveMaxImportBytes();
     if (info.size > maxBytes) throw new Error(`archive too large (max ${formatBytes(maxBytes)})`);
 
     const data = await readFile(path);

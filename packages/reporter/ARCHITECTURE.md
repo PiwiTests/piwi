@@ -467,28 +467,51 @@ submit.
 
 On `onEnd`, the collected run is handed to `RunSubmitter`, which tries, in order:
 
-1. **streaming `/finish`**: when a streaming session is open (`internal/streaming/`),
-2. **multipart `/upload`**: when there are reports or traces to attach,
-3. **plain JSON `/submit`**: last resort,
+1. **streaming `/finish`**: when a streaming session is open (`internal/streaming/`). A `/finish` whose answer may
+   have been lost (no answer, a server error) is asked again, twice at most, before the ladder goes on: a repeat the
+   dashboard refuses as the run closed (409) or its token spent (403) means the first one finished the run,
+2. **the batch upload**: when reports or traces are asked for and the run has a file to attach (a report, a
+   trace or an attachment). It goes in parts, as a streamed run's files do: `/upload/results` (the run and its
+   results, which the dashboard holds `finalizing`), each test's files to `/case-files` with the token its answer
+   carries (`uploadCaseFilesInTurn`, shared with streaming), then each report to `/upload` with `runId`, which
+   settles the run (an upload carrying no report does when none went). A part refused as too large is left out
+   alone, a test's files sent apart first. Results whose answer may have been lost go again, as `/finish` does,
+   under the same delivery key: the dashboard answers a repeat of the run it holds with a new token. A shard, whose
+   run settles with its last shard, a dashboard without `/upload/results` (404) and results no answer ever came to
+   get one multipart `/upload` carrying everything; when the dashboard answers that upload as a repeat of the run
+   it holds from those results, with a token, the files and reports then go as in parts. Results refused as too
+   large go on to rung 3,
+3. **plain JSON `/submit`**: last resort; an answer that is a repeat of a run held from its results, with a token,
+   sends the files and reports as in parts too,
 4. **crash recovery**: on total failure, persist the payload to disk for the next run: one owner-only file per
    dashboard and project, replayed to that dashboard only and deleted once it took the run (or refused it as
    invalid).
 
 The ladder, including the stream drain and the remaining file uploads, runs within
 the `submitTimeout` budget: when it runs out, `HttpClient.close` fails every request
-in flight and every later one, so the ladder falls through to crash recovery.
+in flight and every later one, so the ladder falls through to crash recovery. The
+file uploads, live ones and their trace checks included, end earlier, at the budget minus
+`FINISH_RESERVE_MS` (a minute, or a quarter of a shorter budget), so a streamed run's
+`/finish`, or the reports that settle a run uploaded in parts, still go out.
 
 A 401 with no credential configured, or a failed login, stops the ladder at once: no other rung can succeed, so
 the run goes to crash recovery. Nothing in the ladder throws out of `onEnd`, since Playwright counts a reporter's
 error as a failure of the run. Every rung carries one `deliveryKey` per run, so a dashboard that stored a slow
-upload stores the `/submit` that follows it, or the recovery copy, once.
+upload stores the `/submit` that follows it, or the recovery copy, once. A batch rung that follows a stream names the
+streamed run with its token (`replacesRun`, never for a shard), and the dashboard cancels that run while it has not
+settled, one a `/finish` whose answer was lost holds `finalizing` too, so the run's results land in one run.
 
 A run delivered by a later rung than its first choice carries `metadata.ingestHealth.submitFallback`
 (`{ path: 'upload' | 'submit', reason }`), and a payload sent from crash recovery carries `{ path: 'recovery' }`,
-so the dashboard can say how the run arrived.
+so the dashboard can say how the run arrived. A stream the dashboard ends while it runs (a 409 to its events or its
+heartbeat: another run with the same run label started and cancelled it) sends nothing more, and the run skips rung 1
+for the batch, with the reason `run-ended`.
 
 All HTTP to the dashboard goes through `internal/transport/http-client.ts`, which throws `HttpError`
-(carrying `status`) so callers branch on `error.status`, never the message text.
+(carrying `status`) so callers branch on `error.status`, never the message text. A successful answer that is not
+JSON fails as well, naming its content type (a sign-in page or a proxy answering in the dashboard's place), and a
+batch delivery (`/submit`, `/upload`, the recovery replay) counts only when its answer names the run
+(`deliveredRunId`).
 
 ## Coverage (`internal/collect/test-coverage.ts`)
 
@@ -561,11 +584,14 @@ src/
                 blob-ids (the git blob of each covered file), source-checksums,
                 pause-events (the stops a test made, at the pause bar or in
                 the editor, as the `pause` step events the dashboard draws and
-                the step statistics leave out)
+                the step statistics leave out), run-errors (what the run keeps
+                of an error outside any test, from `onError`), test-output
+                (what it keeps of what an attempt wrote to stdout and stderr)
     manifest/   collect (the committed manifest, `/__piwi/manifest` per base URL or origin),
                 run-manifests (the instrumented origins the run reached beyond its base URLs,
                 fetched as each is first seen, uploaded once the run is submitted)
-    files/      file-handler, compression
+    files/      file-handler, compression, html-report (the folder the run's html
+                reporter writes its report to)
     capture/    capture-fixtures, locator-healing, attachments   ← runs in the worker
                 quiet-capture (keeps the capture out of the test's own steps,
                 trace and stack locations — Playwright internals, feature-detected)
@@ -614,7 +640,8 @@ src/
                 run-mode, test-paths, reporter-version, connection (the
                 commands' dashboard), playwright-spawn (how commands start
                 `playwright test` and package managers),
-                base-url-check (the `checkBaseUrl` check the global setup runs)
+                base-url-check (the `checkBaseUrl` check the global setup runs),
+                reporter-entry (whether a config's reporter entry is Piwi's)
   types/
     wire.ts        EXTERNAL server contract
     collected.ts   INTERNAL in-process model

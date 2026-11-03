@@ -70,5 +70,7 @@ export function mapWireCaseToRunCase(tc: WireCase): RunCaseInput {
     didNotRunReason: tc.didNotRunReason ?? null,
     expectedStatus: tc.expectedStatus ?? null,
     blockedBy: tc.blockedBy ?? null,
+    stdout: tc.stdout ?? null,
+    stderr: tc.stderr ?? null,
   };
 }

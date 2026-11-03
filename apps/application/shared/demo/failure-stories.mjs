@@ -2032,6 +2032,14 @@ export const FAILURE_STORIES = [
         message: 'Your session is about to expire. Stay signed in?',
       },
       pageStateDropKeys: ['quote'],
+      // The warning Node writes to stderr the first time the worker loads a
+      // dependency that still requires `punycode`: noise next to the failure,
+      // as most of what a test writes is.
+      outputOnFail: {
+        stderr:
+          '(node:48213) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.\n' +
+          '(Use `node --trace-deprecation ...` to show where the warning was created)\n',
+      },
       // The CVV the helper typed last still holds focus, caret after its three
       // digits, when the test timeout stops the Pay click.
       pageInteraction: {

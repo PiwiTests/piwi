@@ -43,7 +43,8 @@ When each event fires, and its payload, are in
 [Notification events & webhooks](/reference/notification-events). A
 [report schedule](./quality-reports#report-schedules) sends its report to the channels it names, with no subscription.
 A run from an editor, a bisect step, a reproduction, or a partial run from a developer's machine or the desktop app
-fires no run event and no new-cluster, flakiness or performance event ([run origin](/reference/test-metadata#run-origin)).
+fires no run event and no new-cluster, fixed, regressed, flakiness or performance event
+([run origin](/reference/test-metadata#run-origin)).
 
 ## Channels
 
@@ -133,9 +134,9 @@ The subscriptions REST API (see the [API docs](https://piwitests.dev/demo/docs))
 - **Filters**: `branches` and `environments` as above; for run events, status; **owner**, which applies to the
   `run.*` events, `flakiness.spike`, `perf.regression`, `cluster.new` and `test.stuck` and delivers them only when a
   test behind the event belongs to that team (see [Tags & ownership](/guide/concepts#tags-ownership)); `flakinessThreshold`
-  (a 0–1 rate) and `perfRegressionPct`.
-- **Mode**: `realtime`, sent as events happen, or `digest` with `digestAt` (`HH:MM`, UTC), held until then and sent as
-  **one combined message** per email, Slack or Teams channel.
+  (a 0–1 rate) and `perfRegressionPct`. Each list holds at most 100 values of up to 256 characters.
+- **Mode**: `realtime`, sent as events happen, or `digest` with `digestAt` (`HH:MM`, UTC, from `00:00` to `23:59`),
+  held until then and sent as **one combined message** per email, Slack or Teams channel.
 - **Mute**: `mutedUntil`, any time, without deleting the subscription.
 
 ## SMTP configuration

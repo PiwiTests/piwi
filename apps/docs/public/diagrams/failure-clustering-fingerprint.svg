@@ -83,9 +83,9 @@
   <text class="mono ink" x="370" y="200">waiting for getByRole('row',</text>
   <text class="mono ink" x="370" y="220">  { name: <tspan class="ac">&lt;STR&gt;</tspan> })</text>
   <path class="rule" d="M 370 240 L 600 240"/>
-  <text class="m" x="370" y="260">stack frame kept for display, never</text>
-  <text class="m" x="370" y="278">hashed, so one cause groups across</text>
-  <text class="m" x="370" y="296">spec files</text>
+  <text class="m" x="370" y="260">stack frame kept for display, and</text>
+  <text class="m" x="370" y="278">hashed only for a generic error, so</text>
+  <text class="m" x="370" y="296">one cause groups across spec files</text>
   <path class="acc" d="M 616 180 L 688 180" marker-end="url(#fca)"/>
   <text class="acct" x="653" y="170" text-anchor="middle">SHA-256</text>
 
@@ -110,7 +110,8 @@
 
   <!-- Masked tokens -->
   <text class="h" x="22" y="356">MASKED BEFORE HASHING</text>
-  <text class="l" x="22" y="380">numbers and timeouts · URLs · emails · UUIDs · hex hashes ·</text>
-  <text class="l" x="22" y="400">expected and received values · dynamic locator options ({ name: … })</text>
-  <text class="l" x="22" y="420">The locator’s own target stays, so it still tells causes apart.</text>
+  <text class="l" x="22" y="380">numbers and timeouts · URLs · emails · timestamps · UUIDs · hex hashes · ids ·</text>
+  <text class="l" x="22" y="400">machine paths · expected and received values · strict-mode element lists ·</text>
+  <text class="l" x="22" y="420">dynamic locator options ({ name: … })</text>
+  <text class="l" x="22" y="440">The locator’s own target stays, so it still tells causes apart.</text>
 </svg>

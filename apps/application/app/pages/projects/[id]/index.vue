@@ -12,6 +12,10 @@ import type {
 import { RUN_STATUS_SERIES, legendOf } from '~/utils/chart';
 import { drillQueryKey, parseDrillQuery, type DrillScope } from '~/utils/analytics-drilldown';
 import { projectRunScopeQuery, runInProjectScope, type ProjectRunScope } from '#shared/project-run-scope';
+import { ranToItsEnd } from '#shared/project-health';
+import { passRatePercent } from '#shared/utils/pass-rate';
+import { compareOrder } from '~/utils/run-compare';
+import { sortRows, type SortValue } from '~/utils/table-sort';
 import type { ProjectHeaderTarget } from '~/components/project/ProjectHeader.vue';
 import { COVERAGE_VIEW_KEYS } from '~/utils/coverage-tab';
 
@@ -19,12 +23,29 @@ const route = useRoute();
 const router = useRouter();
 const projectId = route.params.id as string;
 
+// === FILTERS (persisted per project) ===
+const filters = useProjectFilters(projectId);
+
+// === RUN SCOPE ===
+// The filters as the run scope every tab that reads run history follows: the
+// header and the runs table and chart, which the project's own request reads
+// within it, and the catalog, the failures, the Flake Lab and the performance
+// tab on the server.
+const runScope = computed<ProjectRunScope>(() => ({
+  environments: filters.value.environments,
+  branches: filters.value.branches,
+  allBranches: !!filters.value.allBranches,
+  fullRunsOnly: filters.value.fullRunsOnly,
+}));
+const runScopeQuery = computed(() => projectRunScopeQuery(runScope.value));
+
 // === MAIN PROJECT DATA ===
+// Its newest runs within the scope (`testRuns`), and the newest runs of any scope (`unscopedRuns`).
 const {
   data: project,
   error: projectError,
   refresh,
-} = await useFetch<ProjectWithTestRuns>(`/api/projects/${projectId}`);
+} = await useFetch<ProjectWithTestRuns>(`/api/projects/${projectId}`, { query: runScopeQuery });
 if (projectError.value) showPageLoadError(projectError.value, 'project');
 provideExternalIdUrl(() => project.value?.externalIdUrl);
 
@@ -76,9 +97,6 @@ async function handleDeleteProject() {
   }
 }
 
-// === FILTERS (persisted per project) ===
-const filters = useProjectFilters(projectId);
-
 // === DRILL-DOWN FROM ANALYTICS ===
 // A number on a dashboard links here with its scope: the filters and branch
 // policy it names replace the saved ones, and its period narrows the runs
@@ -115,40 +133,40 @@ const defaultBranch = computed(
 );
 const drillText = computed(() => drill.value?.period?.label ?? null);
 
+/** A run as the filters read it: a run of a list, or of `unscopedRuns`. */
+interface ScopedRun {
+  startTime: string | Date;
+  environment?: string | null;
+  branch?: string | null;
+  isFullRun?: boolean;
+  metadata?: { scm?: { branch?: string | null } } | null;
+}
+
 // A run's branch reads the scalar column, falling back to the SCM metadata for
 // runs reported before the branch column existed.
 function runBranch(run: { branch?: string | null; metadata?: { scm?: { branch?: string | null } } | null }) {
   return run.branch ?? run.metadata?.scm?.branch ?? null;
 }
 
+/** The newest runs of any scope: what the filters offer, and the runs they hide. */
+const recentRuns = computed<ScopedRun[]>(() => project.value?.unscopedRuns ?? project.value?.testRuns ?? []);
+
 const availableEnvironments = computed(() => {
   const envs = new Set<string>();
-  for (const run of project.value?.testRuns || []) if (run.environment) envs.add(run.environment);
+  for (const run of recentRuns.value) if (run.environment) envs.add(run.environment);
   return [...envs].sort();
 });
 
 const availableBranches = computed(() => {
   const branches = new Set<string>();
-  for (const run of project.value?.testRuns || []) {
+  for (const run of recentRuns.value) {
     const b = runBranch(run);
     if (b) branches.add(b);
   }
   return [...branches].sort();
 });
 
-// === RUN SCOPE ===
-// The filters as the run scope every tab that reads run history follows: the
-// header, the runs table and chart here, and the catalog, the failures, the
-// Flake Lab and the performance tab on the server.
-const runScope = computed<ProjectRunScope>(() => ({
-  environments: filters.value.environments,
-  branches: filters.value.branches,
-  allBranches: !!filters.value.allBranches,
-  fullRunsOnly: filters.value.fullRunsOnly,
-}));
-const runScopeQuery = computed(() => projectRunScopeQuery(runScope.value));
-
-function inScope(run: TestRunSummary, scope: ProjectRunScope = runScope.value): boolean {
+function inScope(run: ScopedRun, scope: ProjectRunScope = runScope.value): boolean {
   return runInProjectScope(
     { environment: run.environment, branch: runBranch(run), isFullRun: run.isFullRun },
     scope,
@@ -157,14 +175,15 @@ function inScope(run: TestRunSummary, scope: ProjectRunScope = runScope.value): 
 }
 
 /** The drill-down period from Analytics, which narrows the runs table and chart only. */
-function inDrillPeriod(run: TestRunSummary): boolean {
+function inDrillPeriod(run: Pick<ScopedRun, 'startTime'>): boolean {
   const period = drill.value?.period;
   if (!period) return true;
   const t = new Date(run.startTime).getTime();
   return t >= period.from && t < period.to;
 }
 
-const scopedRuns = computed(() => (project.value?.testRuns ?? []).filter((run) => inScope(run)));
+// The server lists the newest runs within the scope.
+const scopedRuns = computed(() => project.value?.testRuns ?? []);
 const filteredRuns = computed(() => scopedRuns.value.filter(inDrillPeriod));
 
 function resetFilters(): void {
@@ -194,13 +213,25 @@ const tableRuns = computed(() => (keptOnly.value ? filteredKeptRuns.value : filt
 
 // The table shows one page of runs at a time, so the page's HTML and its
 // hydration stay the same size however many runs are loaded; the chart above it
-// draws them all.
+// draws them all. The sort reads every run before the page is cut, and the
+// table and the mobile cards show the same page.
 const RUNS_PAGE_SIZE = 25;
 const runsPage = useViewState('runs:page', () => 1);
 const runsSorting = useViewState<SortingState>('runs:sorting', () => []);
+/** What each sortable column of the runs table sorts by. */
+const RUN_SORT_VALUES: Record<string, (run: TestRunSummary) => SortValue> = {
+  id: (run) => run.id,
+  status: (run) => run.status,
+  startTime: (run) => new Date(run.startTime).getTime(),
+  environment: (run) => run.environment,
+  duration: (run) => run.duration,
+};
+const sortedRuns = computed(() => sortRows(tableRuns.value, runsSorting.value, RUN_SORT_VALUES));
 const pagedRuns = computed(() =>
-  tableRuns.value.slice((runsPage.value - 1) * RUNS_PAGE_SIZE, runsPage.value * RUNS_PAGE_SIZE),
+  sortedRuns.value.slice((runsPage.value - 1) * RUNS_PAGE_SIZE, runsPage.value * RUNS_PAGE_SIZE),
 );
+// A new sort starts from its first page.
+watch(runsSorting, () => (runsPage.value = 1), { deep: true });
 // A narrower filter (or a deleted run) can leave the page past the last one.
 watch(tableRuns, (rows) => {
   const last = Math.max(1, Math.ceil(rows.length / RUNS_PAGE_SIZE));
@@ -211,7 +242,7 @@ watch(tableRuns, (rows) => {
 // reading hides — both are on by default, so without a note those runs look
 // missing.
 const hiddenRuns = computed(() => {
-  const runs = (keptOnly.value ? keptRunsData.value?.items : project.value?.testRuns) ?? [];
+  const runs: ScopedRun[] = (keptOnly.value ? keptRunsData.value?.items : recentRuns.value) ?? [];
   const scope = runScope.value;
   const withPartialRuns = { ...scope, fullRunsOnly: false };
   const withAllBranches = { ...scope, allBranches: true };
@@ -265,17 +296,20 @@ const PASS_RATE_RUNS = 20;
 const newestFirst = (a: TestRunSummary, b: TestRunSummary) =>
   new Date(b.startTime).getTime() - new Date(a.startTime).getTime();
 
-const latestRun = computed(() => [...scopedRuns.value].sort(newestFirst)[0] ?? null);
+// A run in progress, interrupted or cancelled has no outcome: the latest run is the newest one that ran to its end,
+// else the newest of any status, and the pass rate reads the runs that ran to their end only.
+const endedRuns = computed(() => scopedRuns.value.filter((run) => ranToItsEnd(run.status)).sort(newestFirst));
+const latestRun = computed(() => endedRuns.value[0] ?? [...scopedRuns.value].sort(newestFirst)[0] ?? null);
 
-const passRateRuns = computed(() => [...scopedRuns.value].sort(newestFirst).slice(0, PASS_RATE_RUNS));
+const passRateRuns = computed(() => endedRuns.value.slice(0, PASS_RATE_RUNS));
 const passRate = computed(() => {
   let passed = 0;
-  let total = 0;
+  let failed = 0;
   for (const r of passRateRuns.value) {
     passed += r.passedTests;
-    total += r.totalTests;
+    failed += r.failedTests;
   }
-  return total > 0 ? Math.round((passed / total) * 100) : null;
+  return passRatePercent({ passed, failed });
 });
 
 const {
@@ -566,13 +600,13 @@ async function onRunsDeleted(runIds: number[]) {
   await Promise.all([refresh(), refreshKeptRuns()]);
 }
 
-// Compare opens the newer run's Changes tab with the older run as its baseline.
+// Compare opens the newer run's Changes tab (by start time, `compareOrder`) with the older run as its baseline.
 function compareSelectedRuns() {
   if (selectedRunIds.value.length !== 2) return;
-  const [a, b] = selectedRunIds.value as [number, number];
-  const newer = Math.max(a, b);
-  const older = Math.min(a, b);
-  navigateTo(`/test-runs/${newer}?tab=changes&baseline=${older}`);
+  const [a, b] = selectedRunIds.value.map((id) => tableRuns.value.find((run) => run.id === id));
+  if (!a || !b) return;
+  const { newer, older } = compareOrder(a, b);
+  navigateTo(`/test-runs/${newer.id}?tab=changes&baseline=${older.id}`);
 }
 
 function scopeTooltip(run: TestRunSummary): string {
@@ -929,7 +963,7 @@ const moreMenuItems = computed(() => {
           :latest-run="latestRun"
           :pass-rate="passRate"
           :pass-rate-runs="passRateRuns.length"
-          :has-runs="(project?.testRuns?.length ?? 0) > 0"
+          :has-runs="recentRuns.length > 0"
           :failures="headerFailures"
           @open="openHeaderTarget"
         />
@@ -1076,6 +1110,7 @@ const moreMenuItems = computed(() => {
               <UTable
                 v-if="tableRuns.length > 0"
                 v-model:sorting="runsSorting"
+                :sorting-options="{ manualSorting: true }"
                 :data="pagedRuns"
                 :columns="runsColumns"
                 :ui="{
@@ -1193,6 +1228,7 @@ const moreMenuItems = computed(() => {
                       :fixme="row.original.fixmeTests ?? 0"
                       :flaky="row.original.flakyTests"
                       :did-not-run="row.original.didNotRunTests ?? 0"
+                      :interrupted="row.original.interruptedTests ?? 0"
                       :total="row.original.totalTests"
                     />
                     <DurationValue :ms="row.original.duration" class="text-xs text-gray-500" />
@@ -1233,15 +1269,12 @@ const moreMenuItems = computed(() => {
               />
             </div>
 
-            <div
-              v-if="tableRuns.length === 0 && project?.testRuns && project.testRuns.length > 0"
-              class="text-center py-8 text-gray-500"
-            >
+            <div v-if="tableRuns.length === 0 && recentRuns.length > 0" class="text-center py-8 text-gray-500">
               {{ keptOnly ? 'No kept runs match the current filters.' : 'No test runs match the current filters.' }}
             </div>
 
             <EmptyState
-              v-else-if="!project?.testRuns || project.testRuns.length === 0"
+              v-else-if="recentRuns.length === 0"
               icon="i-lucide-rocket"
               text="No test runs yet for this project."
             >

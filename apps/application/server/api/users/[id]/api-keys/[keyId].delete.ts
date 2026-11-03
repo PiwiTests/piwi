@@ -1,6 +1,7 @@
 import { getDatabase } from '../../../../database';
 import { deleteUserApiKeyRecord } from '#shared/handlers/users';
 import { getRequestAccess, requireAuth } from '../../../../utils/auth';
+import { requireRouteId } from '../../../../utils/project-access';
 import { can } from '#shared/permissions';
 
 defineRouteMeta({
@@ -19,12 +20,8 @@ defineRouteMeta({
 export default eventHandler(async (event) => {
   const currentUser = await requireAuth(event);
 
-  const targetId = parseInt(getRouterParam(event, 'id') || '0');
-  const keyId = parseInt(getRouterParam(event, 'keyId') || '0');
-
-  if (!targetId || !keyId) {
-    throw apiError({ statusCode: 400, message: 'Invalid user ID or key ID' });
-  }
+  const targetId = requireRouteId(event, 'id', 'user ID');
+  const keyId = requireRouteId(event, 'keyId', 'key ID');
 
   // Non-administrators can only revoke their own keys
   if (!can(await getRequestAccess(event), 'users:manage') && currentUser.id !== targetId) {

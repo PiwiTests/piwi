@@ -22,13 +22,13 @@ const STATUS_COLORS: Record<string, string> = {
   passed: 'good',
   failed: 'bad',
   timedout: 'terrible',
-  interrupted: 'yellow',
+  interrupted: 'grey',
   skipped: 'grey',
   didnotrun: 'grey',
 };
 
-/** Statuses that mark an execution as having failed. */
-const FAILED_STATUSES = new Set(['failed', 'timedout', 'interrupted']);
+/** Statuses that mark an execution as having failed; an interrupted one is in no outcome. */
+const FAILED_STATUSES = new Set(['failed', 'timedout']);
 
 function statusColor(status: string): string | undefined {
   return STATUS_COLORS[status.toLowerCase()];

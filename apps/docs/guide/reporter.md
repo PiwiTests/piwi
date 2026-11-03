@@ -51,13 +51,15 @@ export default wrapConfig(
     // no `screenshot` / `trace` needed: wrapConfig fills them in
   }),
   {
-    serverUrl: 'http://localhost:3000',
+    serverUrl: process.env.PIWI_DASHBOARD_URL || 'http://localhost:3000',
     projectName: 'my-project',
   },
 )
 ```
 
-The first argument is your Playwright config; the second is the [Piwi options](#configuration-options). On top of injecting the reporter, `wrapConfig`:
+The first argument is your Playwright config; the second is the [Piwi options](#configuration-options). An option set
+in the config wins over its `PIWI_*` variable, so the server URL reads `PIWI_DASHBOARD_URL` first, as `init` writes it:
+a CI job that sets the variable reports there. On top of injecting the reporter, `wrapConfig`:
 
 - Sets `screenshot: 'only-on-failure'` and `trace: { mode: 'retain-on-failure', snapshots: { dom: true, aria: true } }` on the **top-level** `use` block when each is unset (a value you set, `'off'` included, and per-project `use` blocks are kept). They unlock the DOM snapshot, full call stack, full network with bodies and the visual diff **without** the capture fixtures. The trace's aria snapshots feed the [Screen tab and the page diff](/features/evidence#aria-and-screen-snapshots). The `screen` snapshot kind stays opt-in; see [what `screen` adds per action](/operate/storage#trace-snapshots). Opt out with `defaultCapture: false` (or `PIWI_DEFAULT_CAPTURE=false`); the reporter logs one line at the start of the run naming whatever it defaulted.
 - Forwards the CI-gate option `failOnFlakyTests` into Playwright's native config so a flaky-only run exits non-zero locally.
@@ -74,7 +76,7 @@ export default defineConfig({
   reporter: [
     ['list'],
     ['@piwitests/reporter', {
-      serverUrl: 'http://localhost:3000',
+      serverUrl: process.env.PIWI_DASHBOARD_URL || 'http://localhost:3000',
       projectName: 'my-project',
     }],
   ],
@@ -108,7 +110,8 @@ wins, except `PIWI_VERBOSE`, which overrides even an explicit `verbose` outside 
 `PIWI_API_KEY` and `PIWI_PROJECT_NAME` also come from the config folder's
 [`.env`](/reference/reporter-options#values-from-env), below the environment. [Reporter options](/reference/reporter-options)
 lists every option with its default and its variable, and [Test metadata](/reference/test-metadata) what the reporter
-records on its own.
+records on its own, [errors outside the tests](/reference/test-metadata#errors-outside-the-tests),
+[what each test printed](/reference/test-metadata#test-output) and [hooks](/reference/test-metadata#hooks) included.
 
 ### Finding the desktop app automatically
 
@@ -141,7 +144,8 @@ A server that does not support streaming gets the batch upload instead.
 
 ### Disabling streaming
 
-`streaming: false` sends all results at the end of the run.
+`streaming: false` sends all results at the end of the run, then each test's files and each report in a request of
+their own.
 
 ### Tuning batch parameters
 
@@ -165,7 +169,8 @@ export default createGlobalSetup({}, async (config) => {
 ```
 
 Registration is best-effort: if the server is unreachable, the run is created when tests begin. Playwright's UI mode
-(`--ui`) skips registration, since it swaps the reporter out; your own setup still runs.
+(`--ui`) skips registration, since it swaps the reporter out, and so does a run with `streaming: false`, which the
+dashboard receives in one batch at its end; your own setup still runs.
 
 ## Multiple reports
 
@@ -179,7 +184,7 @@ export default defineConfig({
     ['monocart-reporter', { name: 'My Tests', outputFile: 'monocart-report/index.html' }],
     ['blob'],
     ['@piwitests/reporter', {
-      serverUrl: 'http://localhost:3000',
+      serverUrl: process.env.PIWI_DASHBOARD_URL || 'http://localhost:3000',
       projectName: 'my-project',
       reports: [
         { type: 'html' },
@@ -191,8 +196,10 @@ export default defineConfig({
 })
 ```
 
-`html` (`playwright-report/`) and `monocart` (`monocart-report/`) open in a new tab; `blob` (`blob-report/`) downloads
-as an archive. Any other type is accepted too, read from `dir` or else `<type>-report/`.
+`html` (the html reporter's folder, `playwright-report/` by default) and `monocart` (`monocart-report/`) open in a new
+tab; `blob` (`blob-report/`) downloads as an archive. Any other type is accepted too, read from `dir` or else
+`<type>-report/`. Reports are uploaded compressed, and one over the dashboard's upload limit
+([`PIWI_IMPORT_MAX_BYTES`](/reference/configuration#ingest-limits), 500 MB by default) is left out alone.
 
 ## With authentication enabled
 
@@ -212,11 +219,13 @@ through [`wrapConfig`](#installing-via-wrapconfig).
 [Capture fixtures → Troubleshooting](./capture-fixtures#troubleshooting).
 
 **Connection errors.** Check that `serverUrl` answers from where the tests run; `PIWI_VERBOSE=true` logs every
-request. A run the reporter could not deliver (dashboard down, no credential) is saved locally, owner-only, and sent
-to the same `serverUrl` on the project's next run, without traces or attachments; it never fails the Playwright run.
-An interrupted stream is retried, then sent as a batch.
-[`submitTimeout`](/reference/reporter-options#submittimeout) (15 minutes by default) bounds that end-of-run work, so
-an unresponsive dashboard does not hold the CI job.
+request. A run the reporter could not deliver (dashboard down, no credential, a sign-in page answering in its place)
+is saved locally, owner-only, and sent to the same `serverUrl` on the project's next run, without traces or
+attachments; it never fails the Playwright run. An interrupted stream is retried until it catches up. Live events the
+dashboard refuses, or has not taken two and a half minutes after they first failed, leave the live view so the later
+ones flow; when test results are among the events the dashboard never took, the run is sent again as a batch at its
+end. [`submitTimeout`](/reference/reporter-options#submittimeout) (15 minutes by default) bounds that end-of-run work,
+so an unresponsive dashboard does not hold the CI job.
 
 ## Related
 

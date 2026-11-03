@@ -10,13 +10,16 @@ import type { DbClient as DB } from '../database';
  * Authorize a streaming request by its stream token and return the run's `projectId`.
  *
  * Fast path: when the run is cached in memory (warm), validate the token against
- * the cached main/shard tokens with no DB round-trip. On a cache miss — server
- * restart, or an interrupted run being revived — it falls back to a full DB
- * lookup + `validateAndReviveRun`, then warms the cache so subsequent requests
- * skip the SELECT.
+ * the cached main/shard tokens with no DB round-trip. Only a running run is
+ * cached: every path that ends a run (its finish, its cancel by another run of
+ * its instance, the stale-run sweep) drops it. On a cache miss — server
+ * restart, an interrupted run being revived, a run that ended — it falls back
+ * to a full DB lookup + `validateAndReviveRun`, then warms the cache so
+ * subsequent requests skip the SELECT.
  *
- * Shared by the `events` and `heartbeat` endpoints, which need identical token
- * validation. Throws 404 if the run doesn't exist, 403 on an invalid token.
+ * Shared by the `events`, `heartbeat` and `live-resources` endpoints, which need
+ * identical token validation. Throws 404 if the run doesn't exist, 409 when it
+ * is no longer running, 403 on an invalid token.
  */
 export async function authorizeStreamToken(db: DB, runId: number, streamToken: string): Promise<{ projectId: number }> {
   const cachedState = runEventBus.getRunState(runId);

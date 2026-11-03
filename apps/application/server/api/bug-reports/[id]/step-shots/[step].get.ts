@@ -1,6 +1,7 @@
 import {
   requireResolvedProjectAccess,
   requireRouteId,
+  requireRouteIndex,
   resolveBugReportProjectId,
 } from '../../../../utils/project-access';
 import { apiError } from '../../../../utils/api-error';
@@ -24,10 +25,10 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'bug report ID');
-  const step = Number(getRouterParam(event, 'step'));
+  const step = requireRouteIndex(event, 'step', 'step');
   const { db } = await requireResolvedProjectAccess(event, id, resolveBugReportProjectId, 'Bug report');
   const report = await getBugReport(db, id);
-  const shot = Number.isInteger(step) ? report?.evidence.stepShots?.find((s) => s.step === step) : undefined;
+  const shot = report?.evidence.stepShots?.find((s) => s.step === step);
   if (!shot) throw apiError({ statusCode: 404, message: 'Step screenshot not found' });
   const path = bugReportFilePath(id, shot.file);
   const storage = getStorage();

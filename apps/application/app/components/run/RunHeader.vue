@@ -28,6 +28,8 @@ const props = defineProps<{
     fixmeTests?: number;
     didNotRunTests?: number;
     flakyTests?: number;
+    /** Tests the run's interruption cut short: in no outcome, known from the loaded cases only. */
+    interruptedTests?: number;
   } | null;
   allReports: ReportInfo[];
   totalWastedTime?: number;
@@ -51,6 +53,8 @@ const scm = computed(() => props.testRun?.metadata?.scm);
 const tags = computed(() => props.testRun?.metadata?.tags as string[] | undefined);
 const customData = computed(() => props.testRun?.metadata?.customData);
 const incident = computed(() => readRunIncident(props.testRun?.metadata));
+// The errors Playwright reported outside any test, which explain a failed run its tests do not.
+const runErrors = computed(() => props.testRun?.runErrors ?? []);
 // The seed of a run Playwright scheduled in random order (`--shuffle`).
 const shuffleSeed = computed(() => readShuffleSeed(props.testRun?.metadata));
 const { copy } = useCopy();
@@ -95,6 +99,7 @@ const total = computed(() => props.displayProgress?.totalTests ?? props.testRun?
 // segments while the run is still going instead of only at the end.
 const flaky = computed(() => props.displayProgress?.flakyTests ?? props.testRun?.flakyTests ?? 0);
 const didNotRun = computed(() => props.displayProgress?.didNotRunTests ?? props.testRun?.didNotRunTests ?? 0);
+const interrupted = computed(() => props.displayProgress?.interruptedTests ?? 0);
 
 // The first uploaded report is the run's headline artifact.
 const primaryReport = computed(() => props.allReports[0] ?? null);
@@ -523,15 +528,24 @@ function onLabelKeydown(e: KeyboardEvent) {
       </div>
     </template>
 
-    <template v-if="incident" #below>
-      <RunIncidentLine
-        variant="line"
-        :run-id="testRun.id"
-        :project-id="testRun.projectId"
-        :incident="incident"
-        :review="incidentReview"
-        @changed="emit('label-updated')"
-      />
+    <template v-if="runErrors.length || incident" #below>
+      <div class="space-y-3">
+        <RunErrors
+          v-if="runErrors.length"
+          :errors="runErrors"
+          :project-key="testRun.projectId"
+          :project-name="testRun.project?.name"
+        />
+        <RunIncidentLine
+          v-if="incident"
+          variant="line"
+          :run-id="testRun.id"
+          :project-id="testRun.projectId"
+          :incident="incident"
+          :review="incidentReview"
+          @changed="emit('label-updated')"
+        />
+      </div>
     </template>
 
     <template #count-bar>
@@ -542,6 +556,7 @@ function onLabelKeydown(e: KeyboardEvent) {
         :skipped="skipped"
         :fixme="fixme"
         :did-not-run="didNotRun"
+        :interrupted="interrupted"
         :total="total"
         :active-statuses="activeStatuses"
         @toggle-status="emit('toggle-status', $event)"

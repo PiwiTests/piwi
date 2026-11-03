@@ -86,10 +86,11 @@ export interface PrFailureEntry {
   owner?: string | null;
   /**
    * Set when this test is also flaky on the default branch, so the comment can
-   * exonerate a failure the change probably did not cause. `flakinessRate` is
-   * the test's flaky rate over recent default-branch runs (0–1).
+   * exonerate a failure the change probably did not cause. `flakinessScore` is
+   * the test's flakiness score on recent default-branch runs (1–100), as the
+   * flaky tests list ranks it.
    */
-  flakyOnDefaultBranch?: { branch: string; flakinessRate: number } | null;
+  flakyOnDefaultBranch?: { branch: string; flakinessScore: number } | null;
 }
 
 export interface PrSummaryInput {
@@ -500,8 +501,8 @@ function renderFailureList(entries: PrFailureEntry[], runUrl: string): string {
       line += `\n  💡 Try ${codeSpan(entry.suggestedLocator)} instead.`;
     }
     if (entry.flakyOnDefaultBranch) {
-      const pct = Math.round(entry.flakyOnDefaultBranch.flakinessRate * 100);
-      line += `\n  🎲 Also flaky on ${codeSpan(entry.flakyOnDefaultBranch.branch)} (~${pct}% of recent runs) — likely not yours.`;
+      const { branch, flakinessScore } = entry.flakyOnDefaultBranch;
+      line += `\n  🎲 Also flaky on ${codeSpan(branch)} (flakiness score ${flakinessScore}/100) — likely not yours.`;
     }
     if (entry.issue) {
       line += `\n  🎫 Tracked in [${escapeCell(entry.issue.key)}](${entry.issue.url}).`;

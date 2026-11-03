@@ -20,15 +20,21 @@ import { hideSecretsInError } from './mask';
  * the remaining entries. Joining them all ensures the call log survives, so the
  * locator can be extracted and the failure clustered correctly. The text a
  * fill or a typing typed, and what else may be a secret, is hidden in each (`hideSecretsInError`).
+ *
+ * A value thrown that is not an `Error` (`throw 'boom'`, `throw { code: 42 }`)
+ * has no message: Playwright gives it as `value`, the value inspected, which
+ * stands in for the message.
  */
-export function joinErrorMessages(errors: ReadonlyArray<{ message?: string }> | null | undefined): string | null {
+export function joinErrorMessages(
+  errors: ReadonlyArray<{ message?: string; value?: string }> | null | undefined,
+): string | null {
   if (!errors || errors.length === 0) return null;
 
   const seen = new Set<string>();
   const parts: string[] = [];
 
   for (const err of errors) {
-    const msg = err.message ?? '';
+    const msg = err.message || err.value || '';
     if (!msg) continue;
     const dedupeKey = msg.trim().slice(0, 200);
     if (seen.has(dedupeKey)) continue;

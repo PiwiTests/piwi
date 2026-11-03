@@ -375,6 +375,7 @@ beforeAll(async () => {
         JSON.stringify({
           items: [
             {
+              // No failed count, as an older instance sends it: every run is in the pass rate.
               id: 3,
               title: 'removes a row',
               filePath: 'tests/rows.spec.ts',
@@ -397,6 +398,25 @@ beforeAll(async () => {
         }),
       );
     }
+    if (u === '/api/projects/7/test-cases?limit=1000&file=tests%2Fskipped.spec.ts') {
+      // A test skipped on every run, and one with no run.
+      return res.end(
+        JSON.stringify({
+          items: [
+            {
+              id: 31,
+              title: 'pays',
+              filePath: 'tests/skipped.spec.ts',
+              status: 'skipped',
+              totalRuns: 3,
+              passedRuns: 0,
+              failedRuns: 0,
+            },
+            { id: 32, title: 'refunds', filePath: 'tests/skipped.spec.ts', status: 'passed', totalRuns: 0 },
+          ],
+        }),
+      );
+    }
     if (u === '/api/projects/7/test-cases?limit=1000&file=tests%2Funread.spec.ts') {
       // One test of one title, two of another, in describe blocks the spec builds at run time.
       return res.end(
@@ -414,12 +434,14 @@ beforeAll(async () => {
         JSON.stringify({
           items: [
             {
+              // Two skipped runs, in no pass rate.
               id: 1,
               title: 'pays',
               filePath: 'tests/checkout.spec.ts',
               status: 'passed',
-              totalRuns: 50,
+              totalRuns: 52,
               passedRuns: 48,
+              failedRuns: 2,
             },
           ],
         }),
@@ -1236,6 +1258,22 @@ describe('the Piwi language server', () => {
       }),
     ]);
     await client.sendNotification('textDocument/didClose', { textDocument: { uri: uri('tests/described.spec.ts') } });
+  });
+
+  test('gives no pass rate to a test with no passed or failed run', async () => {
+    const skipped = [
+      "import { test } from '@playwright/test';",
+      "test('pays', async () => {});",
+      "test('refunds', async () => {});",
+      '',
+    ].join('\n');
+    await open('tests/skipped.spec.ts', skipped);
+    const spec = (await client.sendRequest('piwi/fileSummary', { uri: uri('tests/skipped.spec.ts') })) as FileSummary;
+    expect(spec.lines.map((l) => [l.line, l.title])).toEqual([
+      [1, 'no pass rate (no passed or failed run) · skipped'],
+      [2, 'no pass rate (no passed or failed run)'],
+    ]);
+    await client.sendNotification('textDocument/didClose', { textDocument: { uri: uri('tests/skipped.spec.ts') } });
   });
 
   test('advises on the timeout of the only case of a title when its describe blocks do not read', async () => {

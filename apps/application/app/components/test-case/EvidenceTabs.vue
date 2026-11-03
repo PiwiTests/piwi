@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * One evidence card with content-level tabs — Timeline, Screen, Source,
- * Locators, Network, Console, State, Performance — each wrapping the evidence captured for
+ * Locators, Network, Console, Output, State, Performance — each wrapping the evidence captured for
  * an execution. A tab that lists items shows their count as plain text, an
  * empty tab is dimmed and still opens to state why it is empty, and the open
  * tab is marked in neutral tones: the primary color belongs to the page's
@@ -103,6 +103,10 @@ const consoleLogs = computed<{ type: string; text: string; timestamp?: number; l
   () => props.testCase?.consoleLogs ?? [],
 );
 const ariaSnapshot = computed<string | null>(() => props.testCase?.ariaSnapshot ?? null);
+// What the test wrote to stdout and stderr, as the reporter kept it.
+const stdout = computed<string | null>(() => props.testCase?.stdout ?? null);
+const stderr = computed<string | null>(() => props.testCase?.stderr ?? null);
+const hasOutput = computed(() => Boolean(stdout.value || stderr.value));
 const pageState = computed(() => props.testCase?.pageState ?? null);
 const attachments = computed(() => props.testCase?.attachments ?? []);
 const testSourceFrames = computed(() => props.testCase?.testSourceFrames ?? null);
@@ -230,6 +234,7 @@ const tabs = computed<TabDef[]>(() =>
         hasData: consoleLogs.value.length > 0,
         count: consoleLogs.value.length || null,
       },
+      { value: 'output', label: 'Output', icon: 'i-lucide-square-terminal', hasData: hasOutput.value, count: null },
       { value: 'state', label: 'State', icon: 'i-lucide-database', hasData: stateHasData.value, count: null },
       {
         value: 'performance',
@@ -242,9 +247,9 @@ const tabs = computed<TabDef[]>(() =>
   ).filter(
     (tab) =>
       tabShown(tab.value) &&
-      // Locators and Attempts only exist when there is something to list: a
-      // single attempt has nothing to compare.
-      ((tab.value !== 'locators' && tab.value !== 'attempts') || tab.hasData),
+      // Locators, Attempts and Output only exist when there is something to
+      // show: a single attempt has nothing to compare.
+      ((tab.value !== 'locators' && tab.value !== 'attempts' && tab.value !== 'output') || tab.hasData),
   ),
 );
 
@@ -733,6 +738,11 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
         <SectionCard v-else embedded title="">
           <EvidenceEmptyState :state="consoleState" compact />
         </SectionCard>
+      </div>
+
+      <!-- ── Output ───────────────────────────────────────────────── -->
+      <div v-else-if="activeTab === 'output'" class="scroll-mt-4" data-tour="evidence-output">
+        <TestOutputCard :stdout="stdout" :stderr="stderr" />
       </div>
 
       <!-- ── State ────────────────────────────────────────────────── -->

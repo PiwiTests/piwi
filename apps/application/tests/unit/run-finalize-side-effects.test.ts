@@ -9,6 +9,7 @@ const syncAutoMarkersForRun = vi.fn(() => Promise.resolve());
 const autoDiagnoseRun = vi.fn(() => Promise.resolve());
 const emitRunNotifications = vi.fn(() => Promise.resolve());
 const emitIncidentNotification = vi.fn(() => Promise.resolve());
+const clustersToAnnounce = vi.fn((_db: unknown, _id: number): Promise<number[]> => Promise.resolve([]));
 const recordRunHealth = vi.fn(
   (_db: unknown, _id: number): Promise<{ metadata: unknown; incident: unknown; flagged: boolean } | null> =>
     Promise.resolve(null),
@@ -26,6 +27,7 @@ vi.mock('../../server/utils/ai-diagnosis', () => ({ autoDiagnoseRun }));
 vi.mock('../../server/utils/notifications/run-notifications', () => ({
   emitRunNotifications,
   emitIncidentNotification,
+  clustersToAnnounce,
 }));
 vi.mock('#shared/handlers/run-health', () => ({ recordRunHealth }));
 vi.mock('../../server/utils/scm/pr-feedback', () => ({
@@ -220,7 +222,25 @@ describe('runFinalizeSideEffects', () => {
     expect(emitRunNotifications).not.toHaveBeenCalled();
     verified([]);
     await vi.waitFor(() => expect(runTrackerAutomation).toHaveBeenCalledWith(db, 42));
-    await vi.waitFor(() => expect(emitRunNotifications).toHaveBeenCalledWith(db, 42));
+    await vi.waitFor(() => expect(emitRunNotifications).toHaveBeenCalledWith(db, 42, { announce: [] }));
+  });
+
+  test('the clusters a run announces are read before fix verification, which may reopen one', async () => {
+    clustersToAnnounce.mockClear();
+    clustersToAnnounce.mockImplementationOnce(async () => {
+      expect(analyzeFinishedRunInBackground).not.toHaveBeenCalled();
+      return [7];
+    });
+    runFinalizeSideEffects(db, 42, { projectId: 1 });
+    await vi.waitFor(() => expect(emitRunNotifications).toHaveBeenCalledWith(db, 42, { announce: [7] }));
+    expect(clustersToAnnounce).toHaveBeenCalledWith(db, 42);
+  });
+
+  test('a run that sends no notifications reads no cluster to announce', async () => {
+    clustersToAnnounce.mockClear();
+    await runFinalizeSideEffects(db, 42, { projectId: 1, metadata: { piwiOrigin: { kind: 'editor' } } });
+    await vi.waitFor(() => expect(inferRunOutcomes).toHaveBeenCalledWith(db, 42));
+    expect(clustersToAnnounce).not.toHaveBeenCalled();
   });
 
   test('auto-heal starts once change coverage stored the run’s locator breaks', async () => {

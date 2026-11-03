@@ -408,8 +408,6 @@ const verifySummary = computed(() =>
 // ── Apply the same triage ─────────────────────────────────────────────────────
 const { applyingId, applyTriage } = useApplyClusterTriage({
   clusterId: () => clusterId,
-  status: () => cluster.value?.status,
-  currentNote: () => cluster.value?.triageNote,
   onApplied: () => refresh(),
 });
 
@@ -447,6 +445,10 @@ const nudgeFacts = computed(() => ({ diagnosed: Boolean(clusterDiagnosis.value),
 
 // ── Bulk actions (More menu) ─────────────────────────────────────────────────
 const quarantineAll = ref<{ trigger: () => void } | null>(null);
+// The cluster's tests not quarantined yet, past the listed page too; the listed ones preview their coverage loss.
+const pendingQuarantineCount = computed(() =>
+  Math.max(0, (cluster.value?.affectedTests ?? 0) - (cluster.value?.quarantinedTests ?? 0)),
+);
 const pendingQuarantine = computed(() => affectedCases.value.filter((c) => !c.quarantined));
 // What quarantining them leaves to no other trusted test, read when the menu opens, where the project records coverage.
 const pendingQuarantineIds = computed(() => pendingQuarantine.value.map((c) => c.testCaseId));
@@ -486,7 +488,7 @@ const moreMenuItems = computed<DropdownMenuItem[][]>(() => {
   }
 
   const testActions: DropdownMenuItem[] = [];
-  if (canQuarantine.value && pendingQuarantine.value.length > 0)
+  if (canQuarantine.value && pendingQuarantineCount.value > 0)
     testActions.push({
       label: 'Quarantine all affected tests',
       description: coverageLossPreview(quarantineLossFor(pendingQuarantineIds.value), 'quarantine')?.headline,
@@ -1041,8 +1043,10 @@ const breadcrumbItems = computed(() => [
     v-if="cluster && canQuarantine"
     ref="quarantineAll"
     hide-trigger
+    :cluster-id="cluster.id"
     :project-id="cluster.project?.id"
     :cases="cluster.affectedTestCases ?? []"
+    :pending-count="pendingQuarantineCount"
     :reason="`Quarantined from cluster #${cluster.id}`"
     @changed="refresh"
   />

@@ -79,6 +79,30 @@ describe('getSetupStatus', () => {
     expect(active.has('backend-logs')).toBe(false);
   });
 
+  // An import and Playwright's own error context store a console and an ARIA snapshot too; only the fixtures a page state.
+  test.each([
+    ['a page state', true, { pageState: { url: 'https://example.test/' } }],
+    [
+      'console entries and an ARIA snapshot',
+      false,
+      { consoleLogs: [{ type: 'error', text: 'boom', timestamp: 1 }], ariaSnapshot: '- heading "Shop"' },
+    ],
+    ['nothing the fixtures record', false, {}],
+  ] as const)('an execution with %s, and no request, reads the fixtures active: %s', async (_, active, evidence) => {
+    await db.insert(schema.projects).values({ id: 1, name: 'checkout' });
+    const [run] = await db
+      .insert(schema.testRuns)
+      .values({ projectId: 1, status: 'passed', startTime: new Date(), duration: 1, totalTests: 1, passedTests: 1 })
+      .returning({ id: schema.testRuns.id });
+    await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'a' });
+    await db
+      .insert(schema.testRunsCases)
+      .values({ testRunId: run!.id, testCaseId: 1, status: 'failed', duration: 1, ...evidence });
+
+    expect((await activeIds(db)).has('fixtures')).toBe(active);
+    expect((await getCapabilityEvidence(db, 1, { fresh: true })).fixtures).toBe(active);
+  });
+
   test('a network request carrying server traces activates the backend-logs capability', async () => {
     await db.insert(schema.projects).values({ id: 1, name: 'checkout' });
     const [run] = await db

@@ -228,6 +228,18 @@ export const EXECUTIONS_ANCHORS = [
     sample: { route: '/test-run-cases/37?evidence=console', expect: CHECKOUT_FAILURE },
   },
   {
+    id: 'evidence-output',
+    kind: 'tab',
+    pages: ['/test-run-cases/[id]', '/failure-clusters/[id]'],
+    reveal: [{ query: { evidence: 'output' } }],
+    describes:
+      'The Output tab: what the test wrote to stdout and stderr while it ran, its first and last lines, with what may be a secret hidden.',
+    shownWhen: 'When the test wrote to stdout or stderr.',
+    help: 'case.output',
+    doc: 'reference/test-metadata#test-output',
+    sample: { route: '/test-run-cases/37?evidence=output', expect: { ...CHECKOUT_FAILURE, output: true } },
+  },
+  {
     id: 'evidence-state',
     kind: 'tab',
     pages: ['/test-run-cases/[id]', '/failure-clusters/[id]'],

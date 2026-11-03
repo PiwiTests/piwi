@@ -4,8 +4,8 @@ import { apiError } from './api-error';
 /** Largest non-multipart request body the server reads. Uploads are multipart and carry their own limits. */
 export const MAX_REQUEST_BODY_BYTES = 32 * 1024 * 1024;
 
-// The reporter's batch submit carries a whole run as one JSON document.
-const UNCAPPED_PATHS = ['/api/test-runs/submit'];
+// The reporter's batch submit, and the results of a run it uploads in parts, carry a whole run as one JSON document.
+const UNCAPPED_PATHS = ['/api/test-runs/submit', '/api/test-runs/upload/results'];
 
 // Routes that parse a multipart body as a stream (`streamMultipart`), with caps
 // counted on the bytes read. Any other route buffers what it reads.

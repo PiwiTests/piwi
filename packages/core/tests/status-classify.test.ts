@@ -3,6 +3,7 @@ import {
   resolveUnrunReason,
   linkBlockedTests,
   classifyStatus,
+  expectedFailureError,
   resolveExpectedStatus,
   isExpectedFailurePassed,
   isFlakyResult,
@@ -68,6 +69,35 @@ describe('linkBlockedTests', () => {
     expect(cases[1]!.blockedBy).toBe('a.spec.ts:3:1');
   });
 
+  it('links a cascade to the failure of its own attempt, project and repetition', () => {
+    const cascade = { status: 'didnotrun', didNotRunReason: 'previous-failure', suitePath: ['Checkout'] };
+    const failed = { status: 'failed', suitePath: ['Checkout'] };
+    const chromium = { projectName: 'chromium' };
+    const firefox = { projectName: 'firefox' };
+    const cases: BlockableCase[] = [
+      // The first attempt of the serial group stops at s2; its retry, at s3.
+      { location: 'c.spec.ts:2:1', retries: 0, browser: chromium, ...failed },
+      { location: 'c.spec.ts:4:1', retries: 0, browser: chromium, ...cascade },
+      { location: 'c.spec.ts:3:1', retries: 1, browser: chromium, ...failed },
+      { location: 'c.spec.ts:4:1', retries: 1, browser: chromium, ...cascade },
+      // Another project, whose s2 passed and s3 failed.
+      { location: 'c.spec.ts:3:1', retries: 0, browser: firefox, ...failed },
+      { location: 'c.spec.ts:4:1', retries: 0, browser: firefox, ...cascade },
+      // A repetition whose own run of the group had no failure.
+      { location: 'c.spec.ts:4:1', retries: 0, repeatEachIndex: 1, browser: chromium, ...cascade },
+    ];
+    linkBlockedTests(cases);
+    expect(cases.map((c) => c.blockedBy ?? null)).toEqual([
+      null,
+      'c.spec.ts:2:1',
+      null,
+      'c.spec.ts:3:1',
+      null,
+      'c.spec.ts:3:1',
+      null,
+    ]);
+  });
+
   it('leaves blockedBy null when no failure shares the file', () => {
     const cases: BlockableCase[] = [
       { location: 'other.spec.ts:3:1', suitePath: ['X'], status: 'failed' },
@@ -97,6 +127,20 @@ describe('expected status', () => {
     expect(resolveExpectedStatus(undefined, [{ type: 'fail' }])).toBe('failed');
     expect(resolveExpectedStatus(null, [{ type: 'fail' }, { type: 'fixme' }])).toBe('skipped');
     expect(resolveExpectedStatus('bogus', null)).toBe('passed');
+  });
+
+  it('inverts pass and fail by the expected status Playwright reported, else by the annotations', () => {
+    // A `fail` annotation the test pushed itself, without `test.fail()`: Playwright still expects a pass.
+    const pushed = [{ type: 'fail', description: 'tracked in JIRA-12' }];
+    expect(classifyStatus('passed', pushed, 'passed')).toBe('passed');
+    expect(classifyStatus('failed', pushed, 'passed')).toBe('failed');
+    expect(expectedFailureError('passed', pushed, 'passed')).toBeNull();
+    expect(classifyStatus('passed', [{ type: 'fail' }], 'failed')).toBe('failed');
+    expect(classifyStatus('failed', [{ type: 'fail' }], 'failed')).toBe('passed');
+    expect(expectedFailureError('passed', [{ type: 'fail' }], 'failed')).toBe('Expected to fail, but passed.');
+    // No expected status: the annotations decide.
+    expect(classifyStatus('passed', pushed, null)).toBe('failed');
+    expect(classifyStatus('failed', [{ type: 'fail' }])).toBe('passed');
   });
 
   it('tells an expected failure that passed from every other row', () => {

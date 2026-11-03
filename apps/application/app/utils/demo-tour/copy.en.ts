@@ -83,7 +83,7 @@ export const EN_COPY = {
             wasted: 'The CI minutes its retries wasted, which set the order.',
             score: 'Its flaky score, from 0 to 100, from its retries and flips.',
             'top-suspect': 'Its top suspect: the condition its failures share most.',
-            quarantine: '**Quarantine** keeps the test running and reporting while the CI gate leaves it out.',
+            quarantine: '**Quarantined**: the test keeps running and reporting, but the CI gate leaves it out.',
           },
         },
         suspects: {

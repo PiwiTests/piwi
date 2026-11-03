@@ -24,6 +24,7 @@ import type {
   WireExecutionResources,
   WireNetworkRequest,
   WireResourceReport,
+  WireRunError,
 } from '@piwitests/core/wire';
 
 export type {
@@ -39,6 +40,7 @@ export type {
   WireExecutionResources,
   WireNetworkRequest,
   WireResourceReport,
+  WireRunError,
 };
 
 // ── Per-case wire shape ──────────────────────────────────────────────────────
@@ -116,12 +118,19 @@ export interface WireTestCase {
   coverage?: unknown;
   /** What the execution cost its worker and browsers, and what it found and left open (`piwi-resources`). */
   resources?: WireExecutionResources | null;
-  /** Why a `didnotrun` case never executed (`previous-failure`/`global-timeout`/`max-failures`/`interrupted`). */
+  /**
+   * Why a `didnotrun` case never executed
+   * (`previous-failure`/`dependency-failure`/`global-timeout`/`max-failures`/`interrupted`).
+   */
   didNotRunReason?: string | null;
   /** Playwright's `TestCase.expectedStatus`: `failed` for a `test.fail()` test. */
   expectedStatus?: string | null;
-  /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
+  /** For a `previous-failure` or `dependency-failure` case, the location of the failing test that blocked it. */
   blockedBy?: string | null;
+  /** What the attempt wrote to stdout, as `@piwitests/core/test-output` keeps it; null when it wrote nothing. */
+  stdout?: string | null;
+  /** What the attempt wrote to stderr, as `@piwitests/core/test-output` keeps it; null when it wrote nothing. */
+  stderr?: string | null;
 }
 
 // ── Stream events (discriminated union) ──────────────────────────────────────
@@ -192,12 +201,19 @@ export interface CompleteStreamEvent {
   coverage?: unknown;
   /** What the execution cost its worker and browsers, and what it found and left open (`piwi-resources`). */
   resources?: WireExecutionResources | null;
-  /** Why a `didnotrun` case never executed (`previous-failure`/`global-timeout`/`max-failures`/`interrupted`). */
+  /**
+   * Why a `didnotrun` case never executed
+   * (`previous-failure`/`dependency-failure`/`global-timeout`/`max-failures`/`interrupted`).
+   */
   didNotRunReason?: string | null;
   /** Playwright's `TestCase.expectedStatus`: `failed` for a `test.fail()` test. */
   expectedStatus?: string | null;
-  /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
+  /** For a `previous-failure` or `dependency-failure` case, the location of the failing test that blocked it. */
   blockedBy?: string | null;
+  /** What the attempt wrote to stdout, as `@piwitests/core/test-output` keeps it; null when it wrote nothing. */
+  stdout?: string | null;
+  /** What the attempt wrote to stderr, as `@piwitests/core/test-output` keeps it; null when it wrote nothing. */
+  stderr?: string | null;
 }
 
 export interface StepBeginStreamEvent {

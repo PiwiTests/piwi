@@ -1,7 +1,8 @@
 import { count, eq } from 'drizzle-orm';
 import { getDatabase } from '../database';
-import { testRuns } from '../database/schema';
+import { bugReports, testRuns } from '../database/schema';
 import { getStorage } from '../storage';
+import { bugReportStorageDir } from '#shared/handlers/bug-reports';
 import { deleteProjectData, type ProjectDeletionProgress } from '#shared/handlers/projects';
 import { apiError } from './api-error';
 import { testCaseCache } from './test-case-cache';
@@ -17,7 +18,8 @@ export function getProjectDeletionProgress(projectId: number): ProjectDeletionPr
 /**
  * Permanently delete a project and all its associated data.
  *
- * Deletes storage first (entire project-{id}/ directory), then clears DB rows
+ * Deletes storage first (the entire project-{id}/ directory, and the
+ * bug-reports/{id}/ directory of each of its bug reports), then clears DB rows
  * in FK order via `deleteProjectData`. Progress is readable through
  * `getProjectDeletionProgress` while it runs, and a second deletion of the same
  * project is refused with a 409 until the first one ends. Server-only: touches
@@ -38,7 +40,11 @@ export async function deleteProject(projectId: number): Promise<void> {
     progress.totalRuns = Number(runCount?.n ?? 0);
 
     // Delete all project files in one shot — covers reports, blobs, trace-resources
-    await getStorage().deleteDirectory(`project-${projectId}`);
+    const storage = getStorage();
+    await storage.deleteDirectory(`project-${projectId}`);
+    // A bug report's screenshots live in a folder of its own.
+    const reports = await db.select({ id: bugReports.id }).from(bugReports).where(eq(bugReports.projectId, projectId));
+    for (const report of reports) await storage.deleteDirectory(bugReportStorageDir(report.id));
 
     await deleteProjectData(db, projectId, (next) => Object.assign(progress, next));
 

@@ -1,0 +1,1 @@
+ALTER TABLE "test_runs" ADD COLUMN "run_errors" jsonb;

@@ -1,0 +1,1 @@
+ALTER TABLE `test_runs_cases` ADD `final_attempt` integer DEFAULT true NOT NULL;

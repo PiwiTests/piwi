@@ -14,3 +14,9 @@ export function safeStorageSegment(name: string): string | null {
   if (/[/\\]/.test(name) || name.includes(String.fromCharCode(0))) return null;
   return name;
 }
+
+/** Whether a stored file's relative path could leave the storage root: absolute, or with a `..` segment
+ * under either separator. A name that merely holds two dots (`step-2..json`) is no way out. */
+export function escapesStorageRoot(path: string): boolean {
+  return path.startsWith('/') || path.startsWith('\\') || path.split(/[\\/]/).includes('..');
+}

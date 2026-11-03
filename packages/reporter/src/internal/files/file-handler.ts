@@ -3,7 +3,7 @@ import * as os from 'node:os';
 import { errorMessage } from '../support/errors.js';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
-import { compressDirectory } from './compression.js';
+import { listArchiveFiles, writeArchive, type ArchiveFile } from './compression.js';
 import { Logger } from '../support/logger.js';
 import {
   ATTACHMENT_NAMES,
@@ -14,11 +14,18 @@ import {
 import type { CollectedTestCase, RawAttachment, TraceHashInfo } from '../../types.js';
 
 /**
- * Size ceiling for one uploadable attachment, path-backed or inline. Matches
- * the dashboard's default multipart upload limit, so a larger file could never
- * land anyway; it is skipped here with one warning instead of failing the upload.
+ * Size ceiling for one uploadable attachment, path-backed or inline, and for the
+ * files of a report sent in one upload with the run's other files. Matches the
+ * dashboard's default multipart upload limit, so a larger file could never land
+ * anyway; it is skipped here with one warning instead of failing the upload.
  */
 export const MAX_ATTACHMENT_BYTES = 500 * 1024 * 1024;
+
+/**
+ * How much earlier than the run's start a file's time may read and still be the run's: some file systems keep whole
+ * seconds.
+ */
+const FILE_TIME_LEEWAY_MS = 2000;
 
 /** File extension for the content types a test commonly attaches inline. */
 const BODY_EXTENSIONS: Record<string, string> = {
@@ -51,8 +58,9 @@ export interface UploadableAttachment {
 export class FileHandler {
   /** Temp files written for body-only attachments, keyed by attachment so repeated lookups reuse one file. */
   private readonly bodyFiles = new WeakMap<RawAttachment, string>();
-  private bodyDir: string | null = null;
-  private bodyFileCount = 0;
+  /** The temp folder of the files staged for the uploads: body-only attachments and report archives. */
+  private stagedDir: string | null = null;
+  private stagedCount = 0;
   /** Attachments already reported as oversized, so each one warns once per run. */
   private readonly oversizedWarned = new Set<string>();
 
@@ -61,18 +69,26 @@ export class FileHandler {
     private readonly maxAttachmentBytes: number = MAX_ATTACHMENT_BYTES,
   ) {}
 
-  /** Locate a Playwright HTML report directory containing `index.html`. Optionally override the search path. */
-  findHTMLReportDirectory(customDir?: string): string | null {
-    const possibleDirs = customDir
-      ? [customDir, path.join(process.cwd(), customDir)]
-      : ['playwright-report', './playwright-report', path.join(process.cwd(), 'playwright-report')];
-
-    for (const reportDir of possibleDirs) {
-      if (fs.existsSync(reportDir) && fs.statSync(reportDir).isDirectory()) {
-        if (fs.existsSync(path.join(reportDir, 'index.html'))) return reportDir;
-      }
+  /**
+   * The folder of the HTML report the run's html reporter wrote: `report.folder` when its `index.html` was written
+   * since `report.since` (ms). Null when the run has no html reporter, or the folder holds no report, or an earlier
+   * run's.
+   */
+  findHTMLReport(report: { folder: string; since: number } | null | undefined): string | null {
+    if (!report) return null;
+    let written: number;
+    try {
+      written = fs.statSync(path.join(report.folder, 'index.html')).mtimeMs;
+    } catch {
+      return null;
     }
-    return null;
+    if (written < report.since - FILE_TIME_LEEWAY_MS) {
+      this.logger.info(
+        `The HTML report in ${report.folder} predates this run, so it is not uploaded: list the html reporter before Piwi's, so it writes this run's report before Piwi reads it.`,
+      );
+      return null;
+    }
+    return report.folder;
   }
 
   /** Check if `dir` exists and is a directory; also checks `path.join(process.cwd(), dir)` */
@@ -84,11 +100,44 @@ export class FileHandler {
     return null;
   }
 
-  /** Gzip-compress an entire report directory into a single buffer. Returns `null` on failure. */
-  async compressReportDirectory(reportDir: string): Promise<Buffer | null> {
+  /**
+   * The files of a report folder, or null when it cannot be read. A report of any size is listed: the dashboard's
+   * upload limit, which its operator sets, decides whether the upload that carries it is taken.
+   */
+  listReport(reportDir: string): ArchiveFile[] | null {
     try {
-      return (await compressDirectory(reportDir)) || null;
+      return listArchiveFiles(reportDir);
     } catch (error) {
+      this.logger.warn(`Could not read the report in ${reportDir}: ${errorMessage(error)}`);
+      return null;
+    }
+  }
+
+  /**
+   * Whether a report's files together fit the upload limit (`maxAttachmentBytes`), for an upload that carries the
+   * report with the run's other files: one over it is left out of that upload, with one warning.
+   */
+  fitsOneUpload(report: { dir: string; files: ArchiveFile[] }): boolean {
+    const bytes = report.files.reduce((sum, file) => sum + file.size, 0);
+    if (bytes <= this.maxAttachmentBytes) return true;
+    this.logger.warn(
+      `Skipping the report in ${report.dir}: its files hold ${formatMiB(bytes)}, over the ${formatMiB(this.maxAttachmentBytes)} upload limit.`,
+    );
+    return false;
+  }
+
+  /**
+   * The gzip-compressed archive of a report's files, streamed into a temp file that `cleanupBodyAttachments`
+   * deletes. Returns its path, or `null` on failure.
+   */
+  async compressReport(reportDir: string, files: ArchiveFile[]): Promise<string | null> {
+    let target: string | null = null;
+    try {
+      target = path.join(this.stagingDir(), `${++this.stagedCount}-report.gz`);
+      await writeArchive(files, target);
+      return target;
+    } catch (error) {
+      if (target) fs.rmSync(target, { force: true });
       this.logger.warn(`Failed to compress report directory ${reportDir}: ${errorMessage(error)}`);
       return null;
     }
@@ -125,15 +174,18 @@ export class FileHandler {
     return result;
   }
 
-  /** Delete the temp files written for body-only attachments. Call once the run's uploads are done. */
+  /**
+   * Delete the temp files staged for the uploads: those written for body-only attachments, and the report archives.
+   * Call once the run's uploads are done.
+   */
   cleanupBodyAttachments(): void {
-    if (!this.bodyDir) return;
+    if (!this.stagedDir) return;
     try {
-      fs.rmSync(this.bodyDir, { recursive: true, force: true });
+      fs.rmSync(this.stagedDir, { recursive: true, force: true });
     } catch (error) {
-      this.logger.debug(`Could not remove temp attachments at ${this.bodyDir}: ${errorMessage(error)}`);
+      this.logger.debug(`Could not remove temp attachments at ${this.stagedDir}: ${errorMessage(error)}`);
     }
-    this.bodyDir = null;
+    this.stagedDir = null;
   }
 
   private resolvePathAttachment(a: RawAttachment, testCase: CollectedTestCase): UploadableAttachment | null {
@@ -159,11 +211,14 @@ export class FileHandler {
       return null;
     }
     const contentType = a.contentType || 'application/octet-stream';
-    const originalName = `${safeFileName(a.name || 'attachment')}${BODY_EXTENSIONS[contentType] ?? ''}`;
+    const baseName = safeFileName(a.name || 'attachment');
+    const extension = BODY_EXTENSIONS[contentType] ?? '';
+    // A name that already ends in its type's extension (`notes.txt`) keeps it once.
+    const originalName = baseName.toLowerCase().endsWith(extension) ? baseName : `${baseName}${extension}`;
     let filePath = this.bodyFiles.get(a);
     if (!filePath) {
       try {
-        filePath = path.join(this.bodyAttachmentDir(), `${++this.bodyFileCount}-${originalName}`);
+        filePath = path.join(this.stagingDir(), `${++this.stagedCount}-${originalName}`);
         fs.writeFileSync(filePath, body);
         this.bodyFiles.set(a, filePath);
       } catch (error) {
@@ -174,9 +229,9 @@ export class FileHandler {
     return { name: a.name || 'attachment', path: filePath, contentType, originalName };
   }
 
-  private bodyAttachmentDir(): string {
-    if (!this.bodyDir) this.bodyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-dashboard-attachments-'));
-    return this.bodyDir;
+  private stagingDir(): string {
+    if (!this.stagedDir) this.stagedDir = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-dashboard-attachments-'));
+    return this.stagedDir;
   }
 
   private warnOversized(a: RawAttachment, testCase: CollectedTestCase, size: number): void {
@@ -298,18 +353,23 @@ export class FileHandler {
     };
   }
 
-  /** Ask the server which trace hashes it already has, returning the set of hashes that are missing */
+  /**
+   * Ask the server which trace hashes it already has, returning the set of hashes that are missing: all of them when
+   * it does not say. `signal` ends the check, and once it is aborted no check is made.
+   */
   async checkMissingTraces(
-    httpClient: { postJSON(path: string, payload: any, auth?: string | null): Promise<any> },
+    httpClient: { postJSON(path: string, payload: any, auth?: string | null, signal?: AbortSignal): Promise<any> },
     projectName: string,
     traceHashMap: Map<number, { hash: string }>,
     auth: string | null,
+    signal?: AbortSignal,
   ): Promise<Set<string>> {
     if (traceHashMap.size === 0) return new Set();
     const hashes = [...traceHashMap.values()].map((h) => h.hash);
+    if (signal?.aborted) return new Set(hashes);
 
     try {
-      const response = await httpClient.postJSON('/api/traces/check', { projectName, hashes }, auth);
+      const response = await httpClient.postJSON('/api/traces/check', { projectName, hashes }, auth, signal);
       const missing = Array.isArray(response.missing) ? response.missing : hashes;
       return new Set(missing);
     } catch {

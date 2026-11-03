@@ -265,6 +265,7 @@ const OUTCOME_COLORS: Record<Exclude<HistoryOutcome, null>, string> = {
   failed: STATUS_COLORS.failed.fill,
   skipped: STATUS_COLORS.skipped.fill,
   didnotrun: STATUS_COLORS.didnotrun.fill,
+  interrupted: STATUS_COLORS.interrupted.fill,
 };
 
 // ── Code ──────────────────────────────────────────────────────────────────────

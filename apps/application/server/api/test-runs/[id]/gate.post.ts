@@ -2,10 +2,11 @@ import { and, eq } from 'drizzle-orm';
 import { getDatabase } from '../../../database';
 import { failureClusters, projects, testCases, testRuns, testRunsCases } from '../../../database/schema';
 import { requireAuth } from '../../../utils/auth';
-import { holdsProjectPermission, requireProjectPermission } from '../../../utils/project-access';
+import { holdsProjectPermission, requireProjectPermission, requireRouteId } from '../../../utils/project-access';
 import { computeRunInsights } from '#shared/handlers/run-insights';
 import { evaluateGatePolicy, isEmptyPolicy, type GateFacts, type GatePolicy } from '@piwitests/core/gate';
 import { parseTagFilter } from '#shared/utils/tag-filter';
+import { attemptKey } from '#shared/utils/test-counts';
 import { getQuarantinedCaseIds } from '#shared/handlers/quarantine';
 import { getSelection, resolveSelectionDefinition } from '#shared/handlers/selections';
 import { readChangeCoverage } from '../../../utils/scm/change-coverage';
@@ -71,8 +72,7 @@ function optionalCount(value: unknown): number | undefined {
 }
 
 export default eventHandler(async (event) => {
-  const id = parseInt(getRouterParam(event, 'id') || '0');
-  if (!id) throw apiError({ statusCode: 400, message: 'Invalid test run ID' });
+  const id = requireRouteId(event, 'id', 'test run ID');
 
   await requireAuth(event);
   const db = await getDatabase();
@@ -123,6 +123,7 @@ export default eventHandler(async (event) => {
     .select({
       id: testRunsCases.id,
       testCaseId: testRunsCases.testCaseId,
+      browserName: testRunsCases.browserName,
       repeatEachIndex: testRunsCases.repeatEachIndex,
       status: testRunsCases.status,
       tags: testRunsCases.tags,
@@ -138,16 +139,14 @@ export default eventHandler(async (event) => {
   // attempt passed, so a flaky-but-recovered test does not trip a required tag
   // — `maxNewFlaky` is the rule for that, and conflating the two would make
   // `requireTags` impossible to satisfy on any suite with retries enabled. Each
-  // `--repeat-each` repetition retries on its own: a failed repetition stays
-  // failed whatever the others did.
-  const repetitionKey = (row: { testCaseId: number; repeatEachIndex: number }) =>
-    `${row.testCaseId}\x00${row.repeatEachIndex}`;
+  // Playwright project and each `--repeat-each` repetition retries on its own
+  // (`attemptKey`): a failure in one stays failed whatever the others did.
   const passedRepetitions = new Set<string>();
   for (const row of caseRows) {
-    if (row.status === 'passed') passedRepetitions.add(repetitionKey(row));
+    if (row.status === 'passed') passedRepetitions.add(attemptKey(row));
   }
   const failedForGood = (row: (typeof caseRows)[number]) =>
-    FAIL_STATUSES.includes(row.status) && !passedRepetitions.has(repetitionKey(row));
+    FAIL_STATUSES.includes(row.status) && !passedRepetitions.has(attemptKey(row));
 
   // A quarantined test still ran and still reported — it is only excluded from
   // the verdict. Counting it would defeat the point; hiding that it failed

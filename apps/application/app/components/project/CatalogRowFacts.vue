@@ -20,6 +20,7 @@ defineProps<{ tc: TestCaseWithStats }>();
       :fixme="tc.fixmeRuns ?? 0"
       :flaky="tc.flakyRuns"
       :did-not-run="tc.didNotRunRuns"
+      :interrupted="tc.interruptedRuns ?? 0"
       :total="tc.totalRuns"
     />
   </div>

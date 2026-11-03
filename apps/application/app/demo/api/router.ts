@@ -38,7 +38,7 @@ import {
   type RoutePermission,
 } from '#shared/permissions';
 import { NOTIFICATION_EVENTS } from '#shared/notification-events';
-import { subscriptionFiltersSchema } from '#shared/subscription-filters';
+import { digestAtSchema, subscriptionFiltersSchema } from '#shared/subscription-filters';
 import { MARKER_CATEGORY_IDS } from '#shared/marker-categories';
 import { getUserAccess } from '#shared/handlers/role-bindings';
 import { createGroup, deleteGroup, setGroupMembers, updateGroup } from '#shared/handlers/groups';
@@ -210,10 +210,8 @@ import { createTestFunctionSchema, updateTestFunctionSchema } from '#shared/test
 import {
   addQuarantine,
   dismissQuarantineProposal,
-  listQuarantine,
-  markDismissedProposals,
+  getProjectQuarantine,
   releaseQuarantine,
-  RELEASE_AFTER_CONSECUTIVE_PASSES,
 } from '#shared/handlers/quarantine';
 import { isQuarantineProposal, normalizeDismissReason } from '#shared/quarantine-proposals';
 import {
@@ -316,7 +314,14 @@ import {
   getClusterOccurrenceTrend,
   CLUSTER_TREND_DEFAULT_DAYS,
 } from '#shared/handlers/failure-clusters';
-import { parseBulkIds, isSnoozeOption } from '#shared/inbox-queues';
+import {
+  CLUSTER_STATUSES,
+  isClusterStatus,
+  isTriageLineInput,
+  isTriageNoteInput,
+  parseBulkIds,
+  isSnoozeOption,
+} from '#shared/inbox-queues';
 import { getClusterCommits, getClusterCommitDiff, getClusterBranches } from './scm';
 import { getDemoSourceAtBlob } from '../demo-scm';
 import { getTimeoutThresholds } from '~~/server/utils/timeout-thresholds';
@@ -370,6 +375,7 @@ import { toIssueLocale } from '#shared/integrations/messages';
 import {
   getTestRun,
   getRecentTestRuns,
+  countRunsLast24h,
   patchTestRun,
   parseTestRunPatch,
   getNetworkRequests,
@@ -450,6 +456,7 @@ import { apiDeleteTestRun } from './test-runs';
 import { setRunIncident } from '#shared/handlers/run-health';
 import { parseSetRunIncident } from '#shared/run-incident';
 import { readRunCoverageGaps } from '#shared/run-coverage-gaps';
+import { parseRouteId } from '#shared/route-id';
 import {
   addBugReproduction,
   isReproductionRunAllowed,
@@ -849,7 +856,7 @@ const routes: RouteEntry[] = [
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       const rawLimit = Number(q?.get('limit'));
       const runLimit = Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : undefined;
-      const project = await getProject(await getDemoDb(), +m[1]!, { runLimit });
+      const project = await getProject(await getDemoDb(), +m[1]!, { runLimit, scope: parseProjectRunScope(q) });
       if (!project) return project;
       const { scmToken: _scm, ...rest } = project as { scmToken?: string | null } & typeof project;
       return rest;
@@ -1163,7 +1170,13 @@ const routes: RouteEntry[] = [
   {
     method: 'GET',
     pattern: /^\/api\/test-runs\/recent$/,
-    handler: async (_, __, ___, ctx) => ({ items: await getRecentTestRuns(await getDemoDb(), ctx?.scope) }),
+    handler: async (_, __, ___, ctx) => {
+      const db = await getDemoDb();
+      return {
+        items: await getRecentTestRuns(db, ctx?.scope),
+        runsLast24h: await countRunsLast24h(db, ctx?.scope),
+      };
+    },
   },
   {
     method: 'GET',
@@ -1460,8 +1473,21 @@ const routes: RouteEntry[] = [
     permission: 'triage:write',
     handler: async (m, body, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
-      const b = body as { status?: string; triageNote?: string | null };
-      return patchClusterStatus(await getDemoDb(), +m[1]!, b.status ?? '', b.triageNote);
+      const b = body as { status?: unknown; triageNote?: unknown; appendTriageNote?: unknown };
+      if (b.status !== undefined && !isClusterStatus(b.status)) {
+        throw demoHttpError(400, `Invalid status. Must be one of: ${CLUSTER_STATUSES.join(', ')}`);
+      }
+      if (!isTriageNoteInput(b.triageNote)) throw demoHttpError(400, 'triageNote must be a string or null');
+      if (!isTriageLineInput(b.appendTriageNote)) {
+        throw demoHttpError(400, 'appendTriageNote must be a non-empty string');
+      }
+      if (b.triageNote !== undefined && b.appendTriageNote !== undefined) {
+        throw demoHttpError(400, 'Send a triageNote or an appendTriageNote, not both');
+      }
+      if (b.status === undefined && b.triageNote === undefined && b.appendTriageNote === undefined) {
+        throw demoHttpError(400, 'Send a status, a note or both');
+      }
+      return patchClusterStatus(await getDemoDb(), +m[1]!, b.status, b.triageNote, b.appendTriageNote);
     },
   },
   {
@@ -1492,8 +1518,9 @@ const routes: RouteEntry[] = [
     permission: 'quarantine:write',
     handler: async (m, body, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
-      const b = (body ?? {}) as { reason?: string };
-      return quarantineClusterTests(await getDemoDb(), +m[1]!, { reason: b.reason });
+      const b = (body ?? {}) as { reason?: unknown };
+      const reason = typeof b.reason === 'string' ? b.reason.slice(0, 500) : undefined;
+      return quarantineClusterTests(await getDemoDb(), +m[1]!, { reason });
     },
   },
   {
@@ -1684,8 +1711,9 @@ const routes: RouteEntry[] = [
     permission: 'triage:write',
     handler: async (m, body, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
-      const b = body as { testCaseIds: number[]; triageNote?: string };
-      return extractClusterCases(await getDemoDb(), +m[1]!, b.testCaseIds, b.triageNote);
+      const b = body as { testCaseIds: number[]; triageNote?: unknown };
+      if (!isTriageNoteInput(b.triageNote)) throw demoHttpError(400, 'triageNote must be a string');
+      return extractClusterCases(await getDemoDb(), +m[1]!, b.testCaseIds, b.triageNote ?? undefined);
     },
   },
   {
@@ -2694,22 +2722,14 @@ const routes: RouteEntry[] = [
     },
   },
 
-  // Quarantine. The demo has no CI to gate, so candidates are omitted — the
-  // proposal query is derived from flaky analysis and would only add work the
-  // browser cannot act on.
+  // Quarantine, with the candidates the flaky analysis proposes unless `?candidates=false`.
   {
     method: 'GET',
     pattern: /^\/api\/projects\/(\d+)\/quarantine$/,
-    handler: async (m, _b, _q, ctx) => {
+    handler: async (m, _b, query, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      const db = await getDemoDb();
-      const { entries, debt } = await listQuarantine(db, +m[1]!);
-      return {
-        entries: (await markDismissedProposals(db, +m[1]!, entries, [])).entries,
-        debt,
-        candidates: [],
-        releaseAfterConsecutivePasses: RELEASE_AFTER_CONSECUTIVE_PASSES,
-      };
+      const flag = query?.get('candidates');
+      return getProjectQuarantine(await getDemoDb(), +m[1]!, { candidates: flag !== 'false' && flag !== '0' });
     },
   },
   {
@@ -4083,13 +4103,18 @@ routes.push(
         digestAt?: string | null;
       };
       const events = b.events ?? [];
-      if (events.length === 0 || events.some((e) => !(NOTIFICATION_EVENTS as readonly string[]).includes(e))) {
+      if (
+        events.length === 0 ||
+        events.length > NOTIFICATION_EVENTS.length ||
+        events.some((e) => !(NOTIFICATION_EVENTS as readonly string[]).includes(e))
+      ) {
         throw demoHttpError(400, 'events must contain at least one valid event');
       }
       const filters = subscriptionFiltersSchema.optional().safeParse(b.filters);
-      if (!filters.success) throw demoHttpError(400, 'Invalid request body');
+      const digest = digestAtSchema.optional().safeParse(b.digestAt);
+      if (!filters.success || !digest.success) throw demoHttpError(400, 'Invalid request body');
       const mode = b.mode === 'digest' ? 'digest' : 'realtime';
-      const digestAt = typeof b.digestAt === 'string' && /^\d{1,2}:\d{2}$/.test(b.digestAt) ? b.digestAt : null;
+      const digestAt = digest.data ?? null;
       const sub: DemoSubscription = {
         id: _nextSubId++,
         userId: null,
@@ -4117,7 +4142,11 @@ routes.push(
       if (!sub) throw demoHttpError(404, 'Subscription not found');
       const b = body as Partial<DemoSubscription>;
       if (b.events) {
-        if (b.events.length === 0 || b.events.some((e) => !(NOTIFICATION_EVENTS as readonly string[]).includes(e))) {
+        if (
+          b.events.length === 0 ||
+          b.events.length > NOTIFICATION_EVENTS.length ||
+          b.events.some((e) => !(NOTIFICATION_EVENTS as readonly string[]).includes(e))
+        ) {
           throw demoHttpError(400, 'events must contain at least one valid event');
         }
         sub.events = b.events;
@@ -4128,7 +4157,11 @@ routes.push(
         if (!filters.success) throw demoHttpError(400, 'Invalid request body');
         sub.filters = filters.data;
       }
-      if (b.digestAt !== undefined) sub.digestAt = b.digestAt;
+      if (b.digestAt !== undefined) {
+        const digest = digestAtSchema.nullable().safeParse(b.digestAt);
+        if (!digest.success) throw demoHttpError(400, 'Invalid request body');
+        sub.digestAt = digest.data;
+      }
       if (b.mutedUntil !== undefined) sub.mutedUntil = b.mutedUntil;
       if (b.active !== undefined) sub.active = b.active;
       sub.updatedAt = new Date().toISOString();
@@ -4248,6 +4281,21 @@ routes.push(
   },
 );
 
+/** The groups of `pattern` written `(\d+)`, by their index in a match: the ids of its path. */
+function idGroupsOf(pattern: RegExp): number[] {
+  const source = pattern.source;
+  const groups: number[] = [];
+  let group = 0;
+  for (let i = 0; i < source.length; i++) {
+    if (source[i] === '\\') i++;
+    else if (source[i] === '(' && source[i + 1] !== '?') {
+      group++;
+      if (source.startsWith('(\\d+)', i)) groups.push(group);
+    }
+  }
+  return groups;
+}
+
 /**
  * Attempt to handle a request with the in-browser demo router.
  *
@@ -4267,6 +4315,10 @@ export async function handleDemoRequest(
     if (route.method !== method) continue;
     const m = path.match(route.pattern);
     if (m) {
+      // A path's ids read as the server routes read them (`requireRouteId`): `012` is refused, never read as 12.
+      if (idGroupsOf(route.pattern).some((group) => parseRouteId(m[group]) === null)) {
+        throw demoHttpError(400, 'Invalid ID');
+      }
       const access = await resolveDemoAccess(actingUserId);
       const permission = routePermissionList(route.permission);
       if (!passesEarlyCheck(access, permission)) throw demoHttpError(403, 'Insufficient permissions');

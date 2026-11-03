@@ -233,7 +233,11 @@ const projectsToAdd = computed(() =>
     .map((project) => ({ label: project.label || project.name, value: project.id })),
 );
 
+// The modal shows the roles of the user it was last opened for: each opening counts itself and an older answer is
+// dropped, so Save never writes one user's roles to another.
+let rolesRequest = 0;
 async function openRolesModal(user: UserListItem) {
+  const asked = ++rolesRequest;
   rolesUser.value = user;
   isRolesModalOpen.value = true;
   rolesLoading.value = true;
@@ -242,15 +246,17 @@ async function openRolesModal(user: UserListItem) {
       $fetch<{ items: ProjectMenuItem[] }>('/api/projects/menu'),
       $fetch<UserProjectRolesResponse>(`/api/users/${user.id}/projects`),
     ]);
+    if (asked !== rolesRequest) return;
     projectsList.value = menu.items;
     allProjectsChoice.value = roles.allProjects ?? NO_PROJECT_ROLE;
     projectRoles.value = roles.projects.map((entry) => ({ ...entry }));
     inheritedGroups.value = roles.groups;
   } catch (error: unknown) {
+    if (asked !== rolesRequest) return;
     toast.add({ title: 'Couldn’t load project roles', description: errorMessage(error), color: 'error' });
     isRolesModalOpen.value = false;
   } finally {
-    rolesLoading.value = false;
+    if (asked === rolesRequest) rolesLoading.value = false;
   }
 }
 

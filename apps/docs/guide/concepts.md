@@ -49,6 +49,10 @@ Two things commonly surprise people:
 - **A run can be watched while it happens.** With streaming enabled (the default), the run row appears
   when the suite starts and fills in test by test, so a failure is browsable before CI finishes.
 
+A run **ran to its end** when it passed, failed or hit Playwright's global timeout. A project's health (Home's
+Project health table and stat strip, the project header) reads only such runs: a run still in progress, interrupted
+or cancelled shows in every list and in the trend bars with its status, and in none of those figures.
+
 ### Test case
 
 The **identity of a test across time**, keyed by project + file path (relative to the folder holding your
@@ -59,6 +63,10 @@ A test case is browser-independent: `login.spec.ts › signs in` is one test cas
 Chromium, Firefox, or all five projects in your matrix.
 
 This is the object at `/test-cases/:id` — pass rate, duration trend, and the list of every execution.
+
+On a test's own pages (its page and Trend tab, the project's Tests tab, selections and spec health), a **run** of the
+test is one result per run, Playwright project and `--repeat-each` repetition: its final attempt. A retry is never a
+run of its own, and a test that failed, then passed on its retry, is one flaky run.
 
 ### Execution
 
@@ -77,12 +85,40 @@ whole group: the tests that passed before and a `test.fail()` test that failed a
 test that did not run behind the failure passes, none of them flaky. The last attempt decides: a test that
 passed, then failed on the group's retry, counts as failed, where Playwright's summary calls it flaky.
 
+A test is **interrupted** when the run's interruption (Ctrl+C, a crashed worker) cut it short. It counts in no
+outcome: neither passed, failed, skipped nor did not run, and in no pass rate. The dashboard, the exports and the
+notifications draw it in a neutral slate labelled *Interrupted*, and a count bar names the gap it leaves.
+
 This is the object at `/test-run-cases/:id` — the error, steps, trace, screenshots, console, network,
 Web Vitals, and (for a failure) the diagnosis view. When the docs say *execution* or *test-run case*,
 this is what they mean; when they say *test case*, they mean the identity above it.
 
 The distinction matters in practice: "this test is flaky" is a statement about a **test case**, and
 "here is the stack trace" is a statement about one **execution**.
+
+### Pass rate
+
+**The passed results over the results that passed or failed.** A timed-out result counts as failed. A skipped,
+did-not-run or interrupted result is in neither term, so a suite that skips tests by design, or a run stopped
+halfway, is rated on the tests that ran to an outcome. A flaky result, passed on a retry, counts as passed. With no
+passed or failed result there is no pass rate: the dashboard shows a dash, never 0% or 100%.
+
+Every pass rate follows this one rule: a run's, a project's, Home's, a test's, the
+[test pass rate metric](/reference/metrics) of Analytics and the quality reports, and a share link's README badge.
+
+### Flaky rate
+
+**A test's flaky runs over its runs that passed or failed**, the results the [pass rate](#pass-rate) divides by. A
+flaky run passed on a retry, so it is one of the passed runs; a skipped, did-not-run or interrupted run is in neither
+term. With no passed or failed run there is no flaky rate: the dashboard shows a dash.
+
+A file's or a spec directory's flaky rate divides its tests' runs the same way: the Trend tab of a test, the file
+headers of the project's Tests tab and the Spec health widget all follow this rule.
+
+Other numbers about flakiness divide differently and are not a flaky rate: the [flakiness score](#flakiness-score), a
+run's share of flaky tests (the `flakiness.spike` notification), and Flake Lab's **flaky N%**, shown beside a flaky
+test in an editor and on Home. That one is the share of the test's recent runs (those the flaky ranking reads, a
+skipped run included) in which it failed or passed on a retry.
 
 ### Baseline (last green run)
 
@@ -168,15 +204,31 @@ A public repository's CODEOWNERS is read without a token; a private one needs an
 ### Error fingerprint & failure cluster
 
 When an execution fails, Piwi hashes a normalized form of its error — error type, message with the
-volatile parts masked out (timeouts, numbers, UUIDs, URLs, expected/received values), and the locator
-with its dynamic arguments masked. That hash is the **error fingerprint**.
+volatile parts masked out, and the locator with its dynamic arguments masked. That hash is the
+**error fingerprint**. The masks take out what changes from one occurrence to the next:
+
+- timeouts and other numbers, UUIDs, hashes, and ids glued to an underscore (`order_5f3a9c1e2b`);
+- URLs, emails and timestamps (`2026-05-01T10:30:00Z`);
+- the folders of a path under a home folder, a CI workspace or a Windows drive
+  (`/home/runner/work/shop/fixtures/user.json` reads `<PATH>/user.json`), and the random end of a temporary
+  folder's name (`playwright_chromiumdev_profile-Xo8n2p`);
+- an assertion's expected and received values, and the list of elements a strict-mode violation prints;
+- dynamic locator options, such as the `{ name: '…' }` of a table row.
 
 Every failed execution sharing a fingerprint joins one **failure cluster**. Fifty red tests caused by
 one broken endpoint become one cluster you triage once, with a status (open / resolved / ignored) and
 a note.
 
-Fingerprints deliberately **ignore the failing stack frame**, so the same root cause reached from six
-different spec files stays one cluster. Full detail:
+Two clusters can also merge into one ([semantic merging](/features/ai-diagnosis#semantic-merging-optional)). A merge
+never buries a live failure: the survivor ends open when either cluster was open and not snoozed, takes the other's
+assignee when it has none and its note, and keeps its fix attempts, tracker history and dismissed pairs.
+
+Fingerprints **ignore the failing stack frame** when the error says what failed, so the same root cause
+reached from six different spec files, through a shared helper or page object, stays one cluster. A
+**generic** error says nothing of its own: it names no locator, and its message is an `expect(…)` matcher
+whose values are all masked, a test timeout, or a bare `TypeError` or `ReferenceError` line. Unrelated
+tests fail with the same generic error, so its fingerprint also hashes the file of its failing stack frame:
+the spec file, or the helper it failed in. Full detail:
 [Failure clustering & AI diagnosis](/features/ai-diagnosis).
 
 ### Story
@@ -212,8 +264,13 @@ Where a **failure cluster** stands, said in one sentence with one verb next to a
 failing*, *not seen for N runs — still open*, *fixed and verified — still open*, *fixed, but the diagnosed patch
 still applies at the fix's commit*, *stopped failing*, *regressed — the fix did not hold*, *resolved*, *ignored*,
 *snoozed* or *all tests quarantined*. It reconciles the human triage status with the machine-observed verdict; when
-they disagree the state line offers the one action that closes the gap, unless the Next line already offers it. See
-[Failure clusters](/features/failure-clusters#the-state-line).
+they disagree the state line offers the one action that closes the gap, unless the Next line already offers it.
+*Not seen for N runs* counts the runs since the last failure that could have shown it: finished runs on its branch or
+the default branch (no lab run, bisect step, reproduction or environment incident) that ran its tests and did not fail
+with it. A test skipped, not run or interrupted is one a run did not run, and a run of the whole suite that ran to its
+end counts even when a test of the cluster no longer exists; one stopped early (interrupted, cancelled, timed out or
+cut short by `maxFailures`) counts only when it ran the cluster's tests. The failure of a cluster whose ticket is Done stopped once such a run came after its last
+failure. See [Failure clusters](/features/failure-clusters#the-state-line).
 
 ### Flakiness score
 

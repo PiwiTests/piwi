@@ -26,17 +26,20 @@ const defaultBranch = computed(
   () => props.project.effectiveDefaultBranch || props.project.defaultBranch?.trim() || 'main',
 );
 
+// The environments and branches of the project's newest runs, of any scope: the page lists its own within its filters.
+const recentRuns = computed<Array<{ environment: string | null; branch: string | null }>>(() =>
+  props.project.unscopedRuns
+    ? props.project.unscopedRuns
+    : props.project.testRuns.map((run) => ({
+        environment: run.environment ?? null,
+        branch: run.branch ?? run.metadata?.scm?.branch ?? null,
+      })),
+);
 const availableEnvironments = computed(() =>
-  [...new Set(props.project.testRuns.map((run) => run.environment).filter((env): env is string => !!env))].sort(),
+  [...new Set(recentRuns.value.map((run) => run.environment).filter((env): env is string => !!env))].sort(),
 );
 const availableBranches = computed(() =>
-  [
-    ...new Set(
-      props.project.testRuns
-        .map((run) => run.branch ?? run.metadata?.scm?.branch)
-        .filter((branch): branch is string => !!branch),
-    ),
-  ].sort(),
+  [...new Set(recentRuns.value.map((run) => run.branch).filter((branch): branch is string => !!branch))].sort(),
 );
 
 const pageFilters = useProjectFilters(props.project.id);

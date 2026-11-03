@@ -38,6 +38,7 @@ const title = computed(() => {
   if (run.flakyTests) counts.push(`${run.flakyTests} flaky`);
   if (run.skippedTests) counts.push(`${run.skippedTests} skipped`);
   if (run.didNotRunTests) counts.push(`${run.didNotRunTests} did not run`);
+  if (run.interruptedTests) counts.push(`${run.interruptedTests} interrupted`);
   lines.push(`${run.totalTests} tests: ${counts.join(', ')}`);
   if (run.duration != null) lines.push(`Duration: ${formatLongDuration(run.duration)}`);
   const scm = run.metadata?.scm;

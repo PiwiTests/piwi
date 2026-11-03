@@ -131,7 +131,8 @@ const SCHEMA = journal.entries
 
 // ── Fingerprints (real algorithm mirror) ───────────────────────────────────
 // One fingerprint per story; every per-case error variant of a story MUST hash
-// identically (frames are not part of the hash), or the seed aborts.
+// identically (a frame is part of the hash only for a generic error), or the
+// seed aborts.
 
 const storyFingerprints = new Map();
 for (const story of FAILURE_STORIES) {
@@ -2340,24 +2341,89 @@ const INCIDENT_MARKERS = [];
   });
 }
 
+// ── Errors outside the tests (post-processing, rng-free) ────────────────────
+// The newest checkout run its failure budget stopped (`maxFailures`, its last
+// tests did not run): Playwright said so outside any test, and the global
+// teardown, which still ran, threw. The reporter sends both as the run's
+// errors outside any test (`onError`), each as `sanitizeRunErrors` keeps it.
+{
+  const target = TEST_RUNS.filter((r) => r.project_id === 1 && r.status === 'interrupted' && !incidentRunIds.has(r.id))
+    .sort((a, b) => a.id - b.id)
+    .at(0);
+  if (!target) throw new Error('No checkout run stopped by its failure budget can carry errors outside its tests');
+  target.run_errors = JSON.stringify([
+    {
+      message: `\u001b[31mTesting stopped early after ${target.failed_tests} maximum allowed failures.\u001b[39m`,
+      stack: null,
+      location: null,
+    },
+    {
+      message: 'Error: global teardown could not delete the test tenant ci-checkout-7f3a: 409 Conflict (open orders)',
+      stack: [
+        '    at deleteTenant (/home/runner/work/shop/shop/tests/support/tenants.ts:31:11)',
+        '    at async globalTeardown (/home/runner/work/shop/shop/tests/global-teardown.ts:8:3)',
+      ].join('\n'),
+      location: { file: 'tests/support/tenants.ts', line: 31, column: 11 },
+    },
+  ]);
+}
+
+// ── Test output (post-processing, rng-free) ─────────────────────────────────
+// What a story's failing attempt wrote to stdout and stderr, stored through
+// case_payloads as the server stores it, on each execution that still fails
+// with the story's error.
+{
+  const outputPayloadId = (projectId, content, createdAt) => {
+    if (!content) return null;
+    const key = `${projectId}\x00output\x00${content}`;
+    if (!casePayloadIds.has(key)) {
+      const id = CASE_PAYLOADS.length + 1;
+      CASE_PAYLOADS.push({
+        id,
+        project_id: projectId,
+        hash: createHash('sha256').update(content).digest('hex'),
+        content,
+        size: content.length,
+        created_at: createdAt,
+      });
+      casePayloadIds.set(key, id);
+    }
+    return casePayloadIds.get(key);
+  };
+  const runStart = new Map(TEST_RUNS.map((r) => [r.id, r.start_time]));
+  for (const row of TEST_RUNS_CASES) {
+    const entry = storyByCaseId.get(row.test_case_id);
+    const output = entry?.story.evidence.outputOnFail;
+    if (!output || row.status !== 'failed' || row.error !== entry.failingCase.error) continue;
+    const createdAt = runStart.get(row.test_run_id);
+    const stdout = outputPayloadId(entry.story.projectId, output.stdout, createdAt);
+    const stderr = outputPayloadId(entry.story.projectId, output.stderr, createdAt);
+    if (stdout) row.stdout_payload_id = stdout;
+    if (stderr) row.stderr_payload_id = stderr;
+  }
+}
+
 // ── Regression / new-flaky signals ──────────────────────────────────────────
-// Mirror the server's computeRegressionSignals: walk each case's final
-// executions (one per run: an earlier attempt of a retried test is not one) in
-// chronological order; a failure right after a pass is a new regression, and a
-// retry-pass right after a clean pass is newly flaky.
+// Mirror the server's computeRegressionSignals: walk each test's final
+// executions in each Playwright project (one per run: an earlier attempt of a
+// retried test is not one) in chronological order; a failure right after a
+// pass is a new regression, and a retry-pass right after a clean pass is newly
+// flaky. A partial run gets its signals but is no one's baseline.
 {
   const retried = new Set(
     TEST_RUNS_CASES.filter((trc) => trc.retries > 0).map((trc) => `${trc.test_run_id}:${trc.test_case_id}`),
   );
-  const byCase = new Map();
+  const partialRunIds = new Set(TEST_RUNS.filter((run) => run.is_full_run === 0).map((run) => run.id));
+  const byTest = new Map();
   for (const trc of TEST_RUNS_CASES) {
     // An environment incident gets no regression signals and is no one's baseline.
     if (incidentRunIds.has(trc.test_run_id)) continue;
     if (trc.retries === 0 && retried.has(`${trc.test_run_id}:${trc.test_case_id}`)) continue;
-    if (!byCase.has(trc.test_case_id)) byCase.set(trc.test_case_id, []);
-    byCase.get(trc.test_case_id).push(trc);
+    const key = `${trc.test_case_id}:${trc.browser_name}`;
+    if (!byTest.has(key)) byTest.set(key, []);
+    byTest.get(key).push(trc);
   }
-  for (const rows of byCase.values()) {
+  for (const rows of byTest.values()) {
     rows.sort((a, b) => a.started_at - b.started_at);
     let prev = null;
     for (const trc of rows) {
@@ -2368,8 +2434,31 @@ const INCIDENT_MARKERS = [];
           trc.is_new_flaky = 1;
         }
       }
-      prev = trc;
+      if (!partialRunIds.has(trc.test_run_id)) prev = trc;
     }
+  }
+}
+
+// ── Interrupted tests (post-processing, rng-free) ───────────────────────────
+// When a run is interrupted, the test in flight is cut short: Playwright reports
+// it `interrupted`, an outcome of none (neither passed, failed, skipped nor did
+// not run), and the tests after it never run. In each interrupted run the first
+// of its unreached tests becomes that test, so the run page's count bar names
+// the gap it leaves ("1 interrupted") and the history strips draw it neutral.
+{
+  const interruptedRuns = new Map(TEST_RUNS.filter((run) => run.status === 'interrupted').map((run) => [run.id, run]));
+  const firstUnreached = new Map();
+  for (const row of TEST_RUNS_CASES) {
+    if (!interruptedRuns.has(row.test_run_id) || row.status !== 'didnotrun') continue;
+    const known = firstUnreached.get(row.test_run_id);
+    if (!known || row.id < known.id) firstUnreached.set(row.test_run_id, row);
+  }
+  for (const [runId, row] of firstUnreached) {
+    row.status = 'interrupted';
+    row.did_not_run_reason = null;
+    row.blocked_by = null;
+    row.attempts = JSON.stringify([{ retry: 0, status: 'interrupted', duration: 0, startedAt: null }]);
+    interruptedRuns.get(runId).did_not_run_tests -= 1;
   }
 }
 
@@ -2690,7 +2779,7 @@ function buildClusterFix(story, stats) {
 // model+recipe tag and near-parallel vectors, so their cosine clears the memory
 // threshold even though their error text differs. Everything else uses the
 // deterministic fingerprint path with no vector.
-const DEMO_EMBED_TAG = 'text-embedding-3-small#v2';
+const DEMO_EMBED_TAG = 'text-embedding-3-small#v3';
 const DEMO_CLUSTER_EMBEDDINGS = {
   10: [0.91, 0.12, 0.44, 0.21, 0.68, 0.33, 0.52, 0.6],
   9: [0.62, 0.4, 0.52, 0.34, 0.5, 0.48, 0.47, 0.44],
@@ -2720,6 +2809,8 @@ for (const story of FAILURE_STORIES) {
     occurrences: stats.occurrences || 1,
     ...buildClusterFix(story, stats),
     ...(embedding ? { embedding: JSON.stringify(embedding), embedding_model: DEMO_EMBED_TAG } : {}),
+    // Announced by the CI run that first failed into it.
+    announced_at: createdAt,
     created_at: createdAt,
     updated_at: updatedAt,
   });
@@ -2793,21 +2884,41 @@ const MERGE_SUGGESTIONS = [
 ];
 
 // ── Demo quarantine ───────────────────────────────────────────────────────
-// Three entries covering the states the tab exists to distinguish: one that has
-// earned its way out, one part-way through its streak, and one still failing.
-// Without all three the exit ramp looks like a list that only grows.
+// Every entry was quarantined on Apr 20 and keeps the project's newest run of
+// that moment. The runs that started since count toward its release, once per
+// run, which gives the tab the states it exists to tell apart: the search test
+// passed in every one and has earned its way out, the pagination test holds a
+// fix the Flake Lab verified (the experiments below), and the other two are
+// part-way back, the discount code test still flaking. Without them the exit
+// ramp looks like a list that only grows.
 const QUARANTINED_TESTS = [];
 {
-  // Runs after the anchor count toward the streak; 4 seeded passes land the
-  // entry at "4 / 5" — part-way through the exit ramp, not yet ready.
-  const PARTIAL_QUARANTINE_STREAK_RUNS = 4;
-  const quarantineSpec = [
-    { projectId: 1, streakState: 'ready', reason: 'Times out on CI only — see cluster 1' },
-    { projectId: 2, streakState: 'partial', reason: 'Search index warm-up races the assertion' },
-    { projectId: 3, streakState: 'failing', reason: 'Pagination flakes under parallel load' },
-  ];
+  const quarantinedAt = ts('2025-04-20T09:00:00');
+  /** The project's newest run that started before the quarantine. */
+  const newestRunBefore = (projectId) =>
+    TEST_RUNS.filter((run) => run.project_id === projectId && run.start_time < quarantinedAt).reduce(
+      (newest, run) => (newest && newest.start_time >= run.start_time ? newest : run),
+      null,
+    )?.id ?? null;
+  const quarantine = (projectId, testCaseId, reason, source) =>
+    QUARANTINED_TESTS.push({
+      id: QUARANTINED_TESTS.length + 1,
+      project_id: projectId,
+      test_case_id: testCaseId,
+      reason,
+      source,
+      quarantined_at_run_id: newestRunBefore(projectId),
+      created_by: null,
+      created_at: quarantinedAt,
+      released_at: null,
+      released_reason: null,
+    });
 
-  let qId = 1;
+  const quarantineSpec = [
+    { projectId: 1, reason: 'Times out on CI only — see cluster 1', source: 'proposed' },
+    { projectId: 2, reason: 'Search index warm-up races the assertion', source: 'manual' },
+    { projectId: 3, reason: 'Pagination flakes under parallel load', source: 'manual' },
+  ];
   for (const spec of quarantineSpec) {
     const flaky = FLAKY_CASES[spec.projectId];
     if (!flaky) continue;
@@ -2815,54 +2926,23 @@ const QUARANTINED_TESTS = [];
     const caseDef = proj?.cases.find((candidate) => candidate.title === flaky.title);
     if (!caseDef) continue;
     const caseId = caseIdByKey.get(`${spec.projectId}\x00${caseDef.file}\x00${caseDef.title}`);
-    if (!caseId) continue;
-
-    // The streak counts executions on runs after the anchor (id > anchor), and
-    // ids descend as time advances in the seed, so an anchor on the newest run
-    // makes every seeded execution count (release-ready) and an anchor on the
-    // oldest run counts none (still failing). The partial entry anchors a few
-    // runs short of the oldest so only a handful of passes accumulate.
-    const anchorRunId =
-      spec.streakState === 'failing'
-        ? (oldestRunByProject[spec.projectId] ?? null)
-        : spec.streakState === 'partial'
-          ? Number(oldestRunByProject[spec.projectId]) - PARTIAL_QUARANTINE_STREAK_RUNS || null
-          : (newestRunByProject[spec.projectId] ?? null);
-
-    QUARANTINED_TESTS.push({
-      id: qId++,
-      project_id: spec.projectId,
-      test_case_id: caseId,
-      reason: spec.reason,
-      source: spec.streakState === 'ready' ? 'proposed' : 'manual',
-      quarantined_at_run_id: anchorRunId,
-      created_by: null,
-      created_at: ts('2025-04-20T09:00:00'),
-      released_at: null,
-      released_reason: null,
-    });
+    if (caseId) quarantine(spec.projectId, caseId, spec.reason, spec.source);
   }
 
   // A quarantined test whose cluster's fix has verified — the inbox's
   // "Quarantine ready" queue: the failures stopped, so the quarantine is safe to
-  // lift. Anchored at that cluster's newest run so the demo shows it release-ready.
+  // lift.
   {
     const story = FAILURE_STORIES.find((s) => s.clusterId === 10);
     const failing = story?.failingCases?.[0];
     const caseId = story && failing && caseIdByKey.get(`${story.projectId}\x00${story.specFile}\x00${failing.title}`);
     if (caseId) {
-      QUARANTINED_TESTS.push({
-        id: qId++,
-        project_id: story.projectId,
-        test_case_id: caseId,
-        reason: 'Held while the pagination fix was verified; the fix landed and held.',
-        source: 'manual',
-        quarantined_at_run_id: newestRunByProject[story.projectId] ?? null,
-        created_by: null,
-        created_at: ts('2025-04-20T09:00:00'),
-        released_at: null,
-        released_reason: null,
-      });
+      quarantine(
+        story.projectId,
+        caseId,
+        'Held while the pagination fix was verified; the fix landed and held.',
+        'manual',
+      );
     }
   }
 }
@@ -4607,7 +4687,8 @@ function seedCoverageReports(story, run, fragmentIdOf) {
     triage_note: null,
     first_seen_run_id: id,
     last_seen_run_id: id,
-    occurrences: 1,
+    // A run from an editor joins its failures to their clusters without counting them as occurrences.
+    occurrences: 0,
     created_at: startTime,
     updated_at: startTime,
   });
@@ -5315,8 +5396,8 @@ const REBASE_SQL = [
   `UPDATE coverage_executable SET created_at = created_at + ${D};`,
   `UPDATE coverage_reports SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE coverage_daily SET day = date(day, printf('%+d days', ${D} / 86400)), commit_seen_at = commit_seen_at + ${D}, computed_at = computed_at + ${D};`,
-  // fix_landed_at is nullable; NULL + delta stays NULL, so no guard is needed.
-  `UPDATE failure_clusters SET created_at = created_at + ${D}, updated_at = updated_at + ${D}, fix_landed_at = fix_landed_at + ${D};`,
+  // fix_landed_at and announced_at are nullable; NULL + delta stays NULL, so no guard is needed.
+  `UPDATE failure_clusters SET created_at = created_at + ${D}, updated_at = updated_at + ${D}, fix_landed_at = fix_landed_at + ${D}, announced_at = announced_at + ${D};`,
   `UPDATE test_run_resource_reports SET updated_at = updated_at + ${D};`,
   `UPDATE resource_findings SET first_seen_at = first_seen_at + ${D}, last_seen_at = last_seen_at + ${D}, created_at = created_at + ${D}, updated_at = updated_at + ${D}, fixed_at = fixed_at + ${D};`,
   `UPDATE quarantined_tests SET created_at = created_at + ${D}, released_at = released_at + ${D};`,
@@ -6403,6 +6484,23 @@ const ASSISTANT_MESSAGES = [
     created_at: ASKED_AT_MS + 9000,
   },
 ];
+
+// ── Final attempts ─────────────────────────────────────────────────────────
+// Each execution stores whether it is the final attempt of its run, test,
+// project and repetition, as ingest keeps it (`settleFinalAttempts`): the
+// highest retry, the higher id of two with as many.
+{
+  const finalByResult = new Map();
+  for (const row of TEST_RUNS_CASES) {
+    const key = `${row.test_run_id}|${row.test_case_id}|${row.browser_name ?? ''}|${row.repeat_each_index ?? 0}`;
+    const final = finalByResult.get(key);
+    if (!final || row.retries > final.retries || (row.retries === final.retries && row.id > final.id)) {
+      finalByResult.set(key, row);
+    }
+  }
+  const finals = new Set(finalByResult.values());
+  for (const row of TEST_RUNS_CASES) row.final_attempt = finals.has(row) ? 1 : 0;
+}
 
 // ── Assemble SQL ───────────────────────────────────────────────────────────
 const lines = [

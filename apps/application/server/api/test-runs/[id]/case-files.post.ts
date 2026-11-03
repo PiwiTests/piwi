@@ -1,11 +1,11 @@
 import { readFile } from 'node:fs/promises';
 import { getDatabase, type DbClient } from '../../../database';
 import { testRuns, testCases, testRunsCases, files } from '../../../database/schema';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, isNull } from 'drizzle-orm';
 import { runEventBus } from '../../../utils/run-events';
 import { parseLocation } from '#shared/parse-location';
 import { validateAndReviveRun } from '../../../utils/revive-run';
-import { matchesShardToken, readShardTokensFromMeta } from '../../../utils/shard-tokens';
+import { matchesShardToken, matchesStreamToken, readShardTokensFromMeta } from '../../../utils/shard-tokens';
 import { upsertTraceBlob, upsertTraceFile, findTraceBlob } from '../../../utils/trace-blobs';
 import { deriveTraceEvidence } from '../../../utils/trace-fallback-evidence';
 import { recordIngestHealth } from '../../../utils/ingest-health';
@@ -13,18 +13,50 @@ import { resolveRepeatEachIndex } from '../../../utils/inserted-run-cases';
 import { attachmentStoragePaths } from '../../../utils/attachment-paths';
 import { getStorage } from '../../../storage';
 import { joinSuitePath } from '#shared/utils/suites';
+import { storedIdentity, storedTestIdentity } from '../../../utils/storable-values';
 import { sanitizeFilename } from '../../../utils/sanitize-filename';
 import { streamMultipart } from '../../../utils/multipart-stream';
 import { resolveMaxUploadBytes } from '../../../utils/upload-limits';
 import { formatBytes } from '#shared/utils/format-bytes';
+import { requireRouteId } from '../../../utils/project-access';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Runs'],
     summary: 'Upload trace and attachment files for a test case',
     description:
-      'Upload trace files and attachments for a specific test case during an active streaming run. Authenticated by the run stream token. Supports trace deduplication via SHA-256 hashing and is idempotent on retry.',
+      'Upload trace files and attachments for a specific test case during an active streaming run, or for a run held finalizing: one uploaded in parts (`/api/test-runs/upload/results`), or a streamed run whose `/finish` waits for its reports. Authenticated by the run stream token. Supports trace deduplication via SHA-256 hashing and is idempotent on retry.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+    requestBody: {
+      content: {
+        'multipart/form-data': {
+          schema: {
+            type: 'object',
+            properties: {
+              streamToken: { type: 'string', description: 'The run stream token, sent before any file part.' },
+              testCase: {
+                type: 'string',
+                description:
+                  'JSON `{ title, location, retries, repeatEachIndex, suitePath, projectName }` naming the execution the files belong to. `projectName` is the Playwright project it ran in (null for none); without the key, the latest execution of the test with these retries and repetition is taken, whatever its project.',
+              },
+              trace: { type: 'string', format: 'binary', description: 'A trace ZIP.' },
+              trace_hash: {
+                type: 'string',
+                description:
+                  'SHA-256 of the trace, checked against it; without a trace part, names a trace the project already stores.',
+              },
+              attach_meta: { type: 'string', description: 'JSON array of `{ name, contentType, originalName }`.' },
+              attach_file: {
+                type: 'string',
+                format: 'binary',
+                description: 'An attachment, in the order of `attach_meta`.',
+              },
+            },
+            required: ['streamToken', 'testCase'],
+          },
+        },
+      },
+    },
   },
 });
 
@@ -34,11 +66,15 @@ defineRouteMeta({
  * The reporter calls this as soon as a test finishes (after flushing the
  * matching `complete` event) so traces and attachments are viewable on the
  * test case page while the run is still going. Authenticated by the run's
- * stream token, like the events endpoint.
+ * stream token, like the events endpoint. A run held `finalizing` with its
+ * token takes each test's files here too: one uploaded in parts
+ * (`upload/results`), or a streamed run whose `/finish` waits for its reports.
  *
  * Multipart fields:
  *  - streamToken   — run stream token, sent before any file part
- *  - testCase      — JSON { title, location, retries, repeatEachIndex, suitePath } identifying the run case
+ *  - testCase      — JSON { title, location, retries, repeatEachIndex, suitePath, projectName } identifying the
+ *                    run case; `projectName` is the Playwright project it ran in (`browser_name`, null for none),
+ *                    and without the key the test's latest execution with those retries and repetition is taken
  *  - trace         — optional trace ZIP file
  *  - trace_hash    — optional SHA-256 of the trace, checked against it; without a file,
  *                    names a trace the project already stores. The server hashes a
@@ -47,14 +83,7 @@ defineRouteMeta({
  *  - attach_file   — attachment files, in the same order as attach_meta
  */
 export default eventHandler(async (event) => {
-  const id = parseInt(getRouterParam(event, 'id') || '0');
-
-  if (!id) {
-    throw apiError({
-      statusCode: 400,
-      message: 'Invalid test run ID',
-    });
-  }
+  const id = requireRouteId(event, 'id', 'test run ID');
 
   const maxUploadBytes = resolveMaxUploadBytes();
   const contentLength = parseInt(getRequestHeader(event, 'content-length') ?? '0', 10);
@@ -89,7 +118,8 @@ type CaseFilesRun = typeof testRuns.$inferSelect;
 /**
  * The run a case-files upload targets, once its stream token is checked: the
  * run's own token or, in a sharded run where every shard uploads its own case
- * files, one of its shard tokens.
+ * files, one of its shard tokens. A run held `finalizing` takes its files with
+ * its own token until it settles (`settleFinalizingRun` drops the token).
  */
 async function authorizeCaseFilesRun(db: DbClient, id: number, streamToken: string | undefined): Promise<CaseFilesRun> {
   if (!streamToken) {
@@ -105,6 +135,13 @@ async function authorizeCaseFilesRun(db: DbClient, id: number, streamToken: stri
       statusCode: 404,
       message: 'Test run not found',
     });
+  }
+
+  if (testRun.status === 'finalizing' && testRun.streamToken) {
+    if (!matchesStreamToken(testRun.streamToken, streamToken)) {
+      throw apiError({ statusCode: 403, message: 'Invalid stream token' });
+    }
+    return testRun;
   }
 
   const isSharded = !!(testRun.shardTotal && testRun.shardTotal > 1);
@@ -123,7 +160,14 @@ async function handleCaseFiles(
   const { fields } = multipart;
 
   let caseInfo:
-    | { title?: string; location?: string; retries?: number; repeatEachIndex?: number; suitePath?: string[] | null }
+    | {
+        title?: string;
+        location?: string;
+        retries?: number;
+        repeatEachIndex?: number;
+        suitePath?: string[] | null;
+        projectName?: string | null;
+      }
     | undefined;
   const rawCase = fields.get('testCase');
   if (rawCase !== undefined) {
@@ -158,18 +202,22 @@ async function handleCaseFiles(
   const traceStreamed = multipart.files.find((f) => f.field === 'trace');
   const attachmentStreamed = multipart.files.filter((f) => f.field === 'attach_file');
 
-  if (!caseInfo?.title || !caseInfo?.location) {
+  // Playwright accepts an empty title.
+  if (typeof caseInfo?.title !== 'string' || !caseInfo?.location) {
     throw apiError({
       statusCode: 400,
       message: 'Missing required testCase fields: title, location',
     });
   }
 
-  // Locate the run case row the reporter streamed earlier
-  const { filePath } = parseLocation(caseInfo.location);
+  // Locate the run case row the reporter streamed earlier, by its test's identity as it is stored
+  const stored = await storedTestIdentity({
+    filePath: parseLocation(caseInfo.location).filePath,
+    suitePath: caseInfo.suitePath,
+    title: caseInfo.title,
+  });
   const retries = caseInfo.retries ?? 0;
   const repeatEachIndex = resolveRepeatEachIndex(caseInfo.repeatEachIndex);
-  const suitePath = caseInfo.suitePath ? joinSuitePath(caseInfo.suitePath) : '';
 
   const sharedCases = await db
     .select({ id: testCases.id })
@@ -177,12 +225,21 @@ async function handleCaseFiles(
     .where(
       and(
         eq(testCases.projectId, testRun.projectId),
-        eq(testCases.filePath, filePath),
-        eq(testCases.suitePath, suitePath),
-        eq(testCases.title, caseInfo.title),
+        eq(testCases.filePath, stored.filePath),
+        eq(testCases.suitePath, joinSuitePath(stored.suitePath)),
+        eq(testCases.title, stored.title),
       ),
     );
   const sharedCase = sharedCases[0];
+
+  // The Playwright project the execution ran in, when the reporter names it: each project runs the test.
+  const { projectName } = caseInfo;
+  const inProject =
+    typeof projectName === 'string'
+      ? eq(testRunsCases.browserName, await storedIdentity(projectName))
+      : projectName === null
+        ? isNull(testRunsCases.browserName)
+        : undefined;
 
   const runCaseRows = sharedCase
     ? await db
@@ -194,6 +251,7 @@ async function handleCaseFiles(
             eq(testRunsCases.testCaseId, sharedCase.id),
             eq(testRunsCases.retries, retries),
             eq(testRunsCases.repeatEachIndex, repeatEachIndex),
+            inProject,
           ),
         )
         .orderBy(desc(testRunsCases.id))

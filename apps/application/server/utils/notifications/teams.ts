@@ -130,6 +130,7 @@ const CHART_COLORS: Record<StatusColorKey, string> = {
   fixme: 'neutral',
   didnotrun: 'warning',
   running: 'categoricalBlue',
+  interrupted: 'neutral',
 };
 
 /** The code languages a Teams `CodeBlock` colors, by the name `languageForPath` gives. */

@@ -13,6 +13,10 @@ Rules for the Nitro routes (`server/api/`, `server/routes/`) and the authorizati
   and other blockers refuse such requests, and the page then shows nothing. The analytics routes live under
   `/api/widgets`, `/api/dashboards` and `/api/rollups`; `tests/unit/blocked-request-words.test.ts` checks the routes
   and the app's requests.
+- **A numeric route param is read with `requireRouteId`** (`requireRouteIndex` for a 0-based position, `parseRouteId`
+  of `#shared/route-id` for a route whose refusal is not a 400), never with `parseInt` or `Number`, which read `12abc`
+  as 12 and pass an id above PostgreSQL's `serial` (`tests/unit/route-permission-raw-path.test.ts`). The demo router
+  refuses its `(\d+)` captures the same way (`tests/unit/demo-access.test.ts`).
 - **An endpoint the demo serves too gets its demo handler**; `npm run app:check:demo` compares the route patterns. See
   [`app/demo/AGENTS.md`](../../app/demo/AGENTS.md).
 - **A settings route returns whether a secret is set, never its value** (an API key, an SCM token, the SMTP password):

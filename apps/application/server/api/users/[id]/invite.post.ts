@@ -4,6 +4,7 @@ import { users } from '../../../database/schema';
 import { requireAuth } from '../../../utils/auth';
 import { mintAccountToken } from '../../../utils/account-tokens';
 import { isEmailConfigured, sendEmail, renderInviteEmail } from '../../../utils/email';
+import { requireRouteId } from '../../../utils/project-access';
 
 defineRouteMeta({
   openAPI: {
@@ -18,8 +19,7 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const admin = await requireAuth(event);
-  const id = parseInt(getRouterParam(event, 'id') || '0');
-  if (!id) throw apiError({ statusCode: 400, message: 'Invalid user ID' });
+  const id = requireRouteId(event, 'id', 'user ID');
 
   const db = await getDatabase();
   const userRows = await db.select().from(users).where(eq(users.id, id));

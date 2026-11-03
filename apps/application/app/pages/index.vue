@@ -2,6 +2,9 @@
 import type { FilterBarState } from '~/components/shared/FilterBar.vue';
 import type { OpenFailureCluster, ProjectOverview, TestRunForChart } from '~~/types/api';
 import { errorMessage } from '~/utils';
+import { overviewInEnvironments, runsInFilters } from '~/utils/home-overview';
+import { passRatePercent } from '#shared/utils/pass-rate';
+import type { RecentRunCount } from '#shared/handlers/test-runs';
 import type { FlakeLabInboxItem } from '#shared/handlers/flake-lab';
 
 // `lazy` so client-side navigation to Home is instant — the page renders a
@@ -18,13 +21,11 @@ const {
   transform: (r: { items: ProjectOverview[] }) => r.items,
 });
 const {
-  data: recentTestRuns,
+  data: recentAnswer,
   error: recentRunsError,
   refresh: refreshRecentRuns,
-} = useFetch('/api/test-runs/recent', {
-  lazy: true,
-  transform: (r: { items: TestRunForChart[] }) => r.items,
-});
+} = useFetch<{ items: TestRunForChart[]; runsLast24h?: RecentRunCount[] }>('/api/test-runs/recent', { lazy: true });
+const recentTestRuns = computed(() => recentAnswer.value?.items);
 
 // Open failure clusters across the visible projects — the "Open failures" card. The clusters seen only in
 // developers' own runs stay out unless the viewer asks for them.
@@ -131,18 +132,8 @@ const filteredRecentRuns = computed(() => {
   return runs;
 });
 
-const filteredOverview = computed(() => {
-  let projects = overview.value ?? [];
-  if (filters.value.environments.length > 0) {
-    projects = projects
-      .map((p) => ({
-        ...p,
-        recentRuns: p.recentRuns.filter((r) => matchesEnv(r.environment)),
-      }))
-      .filter((p) => p.recentRuns.length > 0);
-  }
-  return projects;
-});
+// The environment filter reaches the bars and every figure read from them: failing now, the pass rate, the tendency.
+const filteredOverview = computed(() => overviewInEnvironments(overview.value ?? [], filters.value.environments));
 
 // ── Stat strip ────────────────────────────────────────────────────────────────
 
@@ -152,18 +143,18 @@ const overviewStats = computed(() => {
   const failingNow = projects.filter((p) => p.tendency === 'failing').length;
   const flakyNow = projects.filter((p) => p.tendency === 'flaky').length;
 
-  let totalPassed = 0;
-  let totalTests = 0;
+  let passed = 0;
+  let failed = 0;
   for (const p of projects) {
     if (p.latestFullRun) {
-      totalPassed += p.latestFullRun.passedTests;
-      totalTests += p.latestFullRun.totalTests;
+      passed += p.latestFullRun.passedTests;
+      failed += p.latestFullRun.failedTests;
     }
   }
-  const avgPassRate = totalTests > 0 ? Math.round((totalPassed / totalTests) * 100) : null;
+  const avgPassRate = passRatePercent({ passed, failed });
 
-  const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
-  const runs24h = filteredRecentRuns.value.filter((r) => new Date(r.startTime).getTime() > oneDayAgo).length;
+  // Every run of the last 24 hours within the filters, not only the ones the activity list holds.
+  const runs24h = runsInFilters(recentAnswer.value?.runsLast24h ?? [], filters.value);
 
   return { totalProjects, failingNow, flakyNow, avgPassRate, runs24h };
 });
@@ -248,21 +239,6 @@ const filtersSummary = computed(() =>
     hidden: hiddenPartialRunsCount.value > 0 ? [hiddenRunsPhrase(hiddenPartialRunsCount.value, 'partial')] : [],
   }),
 );
-
-// ── Activity list ────────────────────────────────────────────────────────────
-
-function statusBorderClass(status: string): string {
-  switch (statusPaletteKey(status)) {
-    case 'passed':
-      return 'border-l-status-passed';
-    case 'failed':
-      return 'border-l-status-failed';
-    case 'running':
-      return 'border-l-status-running';
-    default:
-      return 'border-l-status-skipped';
-  }
-}
 
 // Coming back to Home scrolls it to where the user left it.
 useViewScroll(() => dashboardPanelBody('home'));
@@ -442,7 +418,7 @@ useViewScroll(() => dashboardPanelBody('home'));
                 :key="run.id"
                 :to="`/test-runs/${run.id}`"
                 class="flex items-center gap-3 py-3 pl-3 border-l-2 hover:bg-gray-50 dark:hover:bg-gray-800/60 rounded-r transition-colors"
-                :class="statusBorderClass(run.status)"
+                :class="statusPalette(run.status).edge"
               >
                 <RunStatusBadge :status="run.status" />
                 <div class="flex-1 min-w-0">
@@ -450,7 +426,9 @@ useViewScroll(() => dashboardPanelBody('home'));
                   <div class="text-xs text-gray-400">Run #{{ run.id }} · {{ formatRelativeTime(run.startTime) }}</div>
                 </div>
                 <div class="text-right tabular-nums shrink-0">
-                  <div :class="passRateTextClass(passRate(run))">{{ passRate(run) }}%</div>
+                  <div :class="passRateTextClass(runPassRate(run))">
+                    {{ runPassRate(run) !== null ? `${runPassRate(run)}%` : '—' }}
+                  </div>
                   <DurationValue v-if="run.duration" :ms="run.duration" class="block text-xs text-gray-400" />
                 </div>
               </NuxtLink>

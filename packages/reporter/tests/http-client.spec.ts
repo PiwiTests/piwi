@@ -76,15 +76,36 @@ describe('HttpClient (against fake http.Server)', () => {
       }
     });
 
-    it('resolves to {} when the response body is not JSON', async () => {
+    it('reads a character the answer splits across two chunks', async () => {
+      const body = Buffer.from(JSON.stringify({ title: 'café ✓' }));
+      const cut = body.indexOf(Buffer.from('é')) + 1;
       const { server, url } = await startServer((_req, res) => {
-        res.writeHead(200, { 'Content-Type': 'text/plain' });
-        res.end('not json');
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.write(body.subarray(0, cut));
+        setTimeout(() => res.end(body.subarray(cut)), 30);
       });
       try {
         const client = new HttpClient(url, new Logger(false));
-        const out = await client.postJSON('/api/x', {}, null);
-        expect(out).toEqual({});
+        await expect(client.postJSON('/api/x', {}, null)).resolves.toEqual({ title: 'café ✓' });
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    });
+
+    it('rejects a 2xx answer that is not JSON, naming its content type', async () => {
+      const { server, url } = await startServer((_req, res) => {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end('<!doctype html><title>Sign in</title>');
+      });
+      try {
+        const client = new HttpClient(url, new Logger(false));
+        await expect(client.postJSON('/api/x', {}, null)).rejects.toThrow(
+          'The answer to /api/x is not JSON (text/html; charset=utf-8)',
+        );
+        const form = new FormData();
+        form.append('field', 'value');
+        await expect(client.postFormData('/api/upload', form, null)).rejects.toThrow(/not JSON \(text\/html/);
+        await expect(client.putJSON('/api/put', {}, null)).rejects.toThrow(/not JSON \(text\/html/);
       } finally {
         await new Promise<void>((r) => server.close(() => r()));
       }
@@ -217,6 +238,24 @@ describe('HttpClient (against fake http.Server)', () => {
     });
   });
 
+  describe('postJSON of a run', () => {
+    it('waits for a slow answer past the JSON timeout, up to the upload timeout', async () => {
+      const { server, url } = await startServer((_req, res) => {
+        setTimeout(() => jsonRes(res, 200, { runId: 7 }), 300);
+      });
+      try {
+        const client = new HttpClient(url, new Logger(false), 100, 2000);
+        await expect(client.postJSON('/api/results', {}, null, undefined, { upload: true })).resolves.toEqual({
+          runId: 7,
+        });
+      } finally {
+        (server as any).closeAllConnections?.();
+        server.close();
+        await new Promise<void>((r) => server.on('close', () => r()));
+      }
+    });
+  });
+
   describe('postFormData', () => {
     it('waits for a slow answer past the JSON timeout, up to the upload timeout', async () => {
       const { server, url } = await startServer((_req, res) => {
@@ -228,6 +267,31 @@ describe('HttpClient (against fake http.Server)', () => {
         form.append('field', 'value');
         await expect(client.postFormData('/api/upload', form, null)).resolves.toEqual({ runId: 7 });
         await expect(client.postJSON('/api/submit', {}, null)).rejects.toThrow(/timed out after 100ms/);
+      } finally {
+        (server as any).closeAllConnections?.();
+        server.close();
+        await new Promise<void>((r) => server.on('close', () => r()));
+      }
+    });
+
+    it('ends an upload when its signal aborts, in flight or before it starts', async () => {
+      const { server, url, requests } = await startServer(() => {
+        // never respond
+      });
+      try {
+        const client = new HttpClient(url, new Logger(false));
+        const controller = new AbortController();
+        const form = new FormData();
+        form.append('field', 'value');
+        const pending = client.postFormData('/api/upload', form, null, controller.signal);
+        await expect.poll(() => requests.length).toBe(1);
+        controller.abort(new Error('no time left'));
+        await expect(pending).rejects.toThrow('no time left');
+
+        const later = new FormData();
+        later.append('field', 'value');
+        await expect(client.postFormData('/api/upload', later, null, controller.signal)).rejects.toThrow('no time left');
+        expect(requests).toHaveLength(1);
       } finally {
         (server as any).closeAllConnections?.();
         server.close();
@@ -296,6 +360,21 @@ describe('HttpClient (against fake http.Server)', () => {
         (server as any).closeAllConnections?.();
         server.close();
         await new Promise<void>((r) => server.on('close', () => r()));
+      }
+    });
+  });
+
+  describe('serverUrl', () => {
+    it('sends nothing to an address that is not a whole http:// or https:// URL', async () => {
+      const { server, url, requests } = await startServer((_req, res) => jsonRes(res, 200, { ok: true }));
+      try {
+        const request = (serverUrl: string) => new HttpClient(serverUrl, new Logger(false)).postJSON('/api/x', {}, null);
+        await expect(request(url.replace('http:', 'ftp:'))).rejects.toThrow('is not an http:// or https:// URL');
+        await expect(request('localhost:3000')).rejects.toThrow('is not an http:// or https:// URL');
+        await expect(request('piwi.example.com')).rejects.toThrow('"piwi.example.com" is not a URL');
+        expect(requests).toHaveLength(0);
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
       }
     });
   });

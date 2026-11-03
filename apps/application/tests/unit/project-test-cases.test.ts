@@ -24,9 +24,9 @@ interface RunCaseSeed {
   createdAt: Date;
 }
 
+/** A test case and its executions, each the one attempt of the test in a run of its own. */
 async function seedCase(
   projectId: number,
-  runId: number,
   filePath: string,
   suitePath: string,
   title: string,
@@ -38,8 +38,12 @@ async function seedCase(
     .returning({ id: schema.testCases.id });
   const caseId = inserted[0]!.id;
   for (const rc of runCases) {
+    const [run] = await db
+      .insert(schema.testRuns)
+      .values({ projectId, status: rc.status === 'passed' ? 'passed' : 'failed', startTime: rc.createdAt })
+      .returning({ id: schema.testRuns.id });
     await db.insert(schema.testRunsCases).values({
-      testRunId: runId,
+      testRunId: run!.id,
       testCaseId: caseId,
       status: rc.status,
       retries: rc.retries ?? 0,
@@ -56,39 +60,37 @@ beforeAll(async () => {
 
   await db.insert(schema.projects).values({ id: 1, name: 'catalog-project' });
   await db.insert(schema.projects).values({ id: 2, name: 'other-project' });
-  await db.insert(schema.testRuns).values({ id: 1, projectId: 1, status: 'failed', startTime: new Date(now) });
-  await db.insert(schema.testRuns).values({ id: 2, projectId: 2, status: 'passed', startTime: new Date(now) });
 
   // Flaky: latest 10 executions contain a retry-pass; one plain failure.
-  await seedCase(1, 1, 'auth/login.spec.ts', 'Auth\x1fLogin', 'login works', [
+  await seedCase(1, 'auth/login.spec.ts', 'Auth\x1fLogin', 'login works', [
     { status: 'passed', createdAt: at(1), duration: 900 },
     { status: 'passed', retries: 2, createdAt: at(2), duration: 1100 },
     { status: 'failed', createdAt: at(3), duration: 2000 },
     { status: 'passed', createdAt: at(4), duration: 1000 },
   ]);
   // Timed out (raw camelCase spelling) on the latest execution.
-  await seedCase(1, 1, 'shop/checkout.spec.ts', '', 'checkout total updates', [
+  await seedCase(1, 'shop/checkout.spec.ts', '', 'checkout total updates', [
     { status: 'timedOut', createdAt: at(1), duration: 30000 },
     { status: 'passed', createdAt: at(60), duration: 800 },
   ]);
   // Stale: only execution happened 40 days ago.
-  await seedCase(1, 1, 'legacy/old.spec.ts', '', 'legacy flow still boots', [
+  await seedCase(1, 'legacy/old.spec.ts', '', 'legacy flow still boots', [
     { status: 'passed', createdAt: new Date(now - 40 * DAY_MS), duration: 500 },
   ]);
   // Skipped only: never executed for real.
-  await seedCase(1, 1, 'auth/sso.spec.ts', '', 'sso round trip', [
+  await seedCase(1, 'auth/sso.spec.ts', '', 'sso round trip', [
     { status: 'skipped', createdAt: at(5), duration: 0 },
     { status: 'skipped', createdAt: at(90), duration: 0 },
   ]);
   // No executions at all.
-  await seedCase(1, 1, 'wip/new.spec.ts', '', 'brand new case', []);
+  await seedCase(1, 'wip/new.spec.ts', '', 'brand new case', []);
   // didnotrun on the latest execution; zero-duration rows must not drag the average.
-  await seedCase(1, 1, 'shop/cart.spec.ts', 'Shop\x1fCart', 'cart badge count', [
+  await seedCase(1, 'shop/cart.spec.ts', 'Shop\x1fCart', 'cart badge count', [
     { status: 'didnotrun', createdAt: at(1), duration: 0 },
     { status: 'passed', createdAt: at(2), duration: 400 },
   ]);
   // Different project: must never leak into project 1 results.
-  await seedCase(2, 2, 'auth/login.spec.ts', '', 'login works', [{ status: 'passed', createdAt: at(1) }]);
+  await seedCase(2, 'auth/login.spec.ts', '', 'login works', [{ status: 'passed', createdAt: at(1) }]);
 });
 
 describe('getProjectTestCases', () => {

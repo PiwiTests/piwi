@@ -63,6 +63,8 @@ const testCasePayloadFixture = {
   blockedBy: null,
   resources: null,
   coverage: { v: 1, files: [{ path: 'src/Web/Program.cs', runtime: 'server', functions: [[10, 12]] }] },
+  stdout: 'order 4521 created\n',
+  stderr: null,
 } satisfies TestCasePayload;
 
 const streamEventPayloadFixture = {
@@ -110,6 +112,8 @@ const streamEventPayloadFixture = {
   blockedBy: null,
   resources: null,
   coverage: { v: 1, files: [{ path: 'src/Web/Program.cs', runtime: 'server', functions: [[10, 12]] }] },
+  stdout: 'order 4521 created\n',
+  stderr: null,
 } satisfies StreamEventPayload;
 
 const wireTestCaseFixture = {
@@ -157,6 +161,8 @@ const wireTestCaseFixture = {
   blockedBy: null,
   resources: null,
   coverage: { v: 1, files: [{ path: 'src/Web/Program.cs', runtime: 'server', functions: [[10, 12]] }] },
+  stdout: 'order 4521 created\n',
+  stderr: null,
 } satisfies WireTestCase;
 
 describe('wire ↔ shared per-case contract drift guard', () => {

@@ -82,7 +82,7 @@ export const DE_COPY = {
             wasted: 'Die CI-Minuten, die seine Wiederholungen gekostet haben; sie bestimmen die Reihenfolge.',
             score: 'Sein Instabilitäts-Score von 0 bis 100, aus Wiederholungen und Statuswechseln.',
             'top-suspect': 'Sein Hauptverdacht: die Bedingung, die seine Fehlschläge am häufigsten teilen.',
-            quarantine: '**Quarantine** lässt den Test weiterlaufen und berichten, aber das CI-Gate ignoriert ihn.',
+            quarantine: '**Quarantined**: Der Test läuft weiter und berichtet, aber das CI-Gate ignoriert ihn.',
           },
         },
         suspects: {

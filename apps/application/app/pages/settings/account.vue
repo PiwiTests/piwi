@@ -103,7 +103,7 @@ async function saveName() {
   } catch (e) {
     toast.add({
       title: 'Failed to update display name',
-      description: String((e as Error)?.message ?? e),
+      description: errorMessage(e),
       color: 'error',
     });
   } finally {
@@ -118,7 +118,7 @@ async function saveEmail() {
     await refresh();
     toast.add({ title: 'Email updated', color: 'success' });
   } catch (e) {
-    toast.add({ title: 'Failed to update email', description: String((e as Error)?.message ?? e), color: 'error' });
+    toast.add({ title: 'Failed to update email', description: errorMessage(e), color: 'error' });
   } finally {
     savingEmail.value = false;
   }
@@ -132,7 +132,7 @@ async function sendVerification() {
   } catch (e) {
     toast.add({
       title: 'Failed to send verification',
-      description: String((e as Error)?.message ?? e),
+      description: errorMessage(e),
       color: 'error',
     });
   } finally {
@@ -160,7 +160,7 @@ async function changePassword() {
     confirmPassword.value = '';
     toast.add({ title: 'Password changed', color: 'success' });
   } catch (e) {
-    toast.add({ title: 'Failed to change password', description: String((e as Error)?.message ?? e), color: 'error' });
+    toast.add({ title: 'Failed to change password', description: errorMessage(e), color: 'error' });
   } finally {
     changingPassword.value = false;
   }

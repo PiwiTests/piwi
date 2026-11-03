@@ -25,7 +25,13 @@ import { HEAL_COMMIT_TRAILER } from '#shared/commit-trailers';
 import type { HealActionPayload, HealActionResult } from '#shared/auto-heal';
 import type { ScmProvider, ScmFileEdit } from '../scm/ScmProvider';
 import type { DbClient } from '../../database';
-import { claimOutboxRows, nextAttempt, OUTBOX_MAX_ATTEMPTS, OUTBOX_SWEEPABLE_STATUSES } from '../outbox';
+import {
+  claimOutboxRows,
+  failAbandonedOutboxRows,
+  nextAttempt,
+  OUTBOX_MAX_ATTEMPTS,
+  OUTBOX_SWEEPABLE_STATUSES,
+} from '../outbox';
 
 const MAX_ATTEMPTS = OUTBOX_MAX_ATTEMPTS;
 
@@ -116,13 +122,14 @@ export async function applyHealAction(
 
 /**
  * Process queued heal actions that are due now, including a claimed one whose
- * lease ran out. Each is claimed first and skipped when another sweep holds it.
- * Mirrors the notifications sweeper.
+ * lease ran out. Each is claimed first and skipped when another sweep holds it;
+ * one whose last allowed attempt never finished is given up first. Mirrors the
+ * notifications sweeper.
  */
 export async function sweepHealActions(db: DbClient): Promise<{ opened: number; failed: number; skipped: number }> {
   const now = new Date();
   let opened = 0;
-  let failed = 0;
+  let failed = await failAbandonedOutboxRows(db, healActions, { updatedAt: now });
   let skipped = 0;
 
   const settings = await getAutoHealSettings(db);

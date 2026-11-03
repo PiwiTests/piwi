@@ -82,10 +82,10 @@ absent `include` starts from the whole suite. The predicates, all optional:
 | `files` | the file path matches one of these globs (`**`, `*`, `?`) |
 | `suitePath`, `text` | the describe chain / title (or file) contains this substring |
 | `quarantined`, `flaky`, `neverRun` | the test is (or is not) in that state |
-| `minPassRate` / `maxPassRate` | pass rate over executed runs is within bounds (0–1) |
+| `minPassRate` / `maxPassRate` | the [pass rate](/guide/concepts#pass-rate) is within bounds (0–1); a test with none matches neither |
 | `minAvgDurationMs` / `maxAvgDurationMs` | average duration is within bounds |
 | `lastStatus` | the latest execution's status is one of these |
-| `failedInLastRuns` | the test failed within its last _N_ executions (N ≤ 25) |
+| `failedInLastRuns` | the test failed within its last _N_ [runs](/guide/concepts#test-case) (N ≤ 25); a pass on a retry is no failure |
 
 An unknown predicate is a validation error, so a typo never widens the set.
 

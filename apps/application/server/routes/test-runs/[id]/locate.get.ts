@@ -1,10 +1,12 @@
 import type { H3Event } from 'h3';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { getDatabase } from '../../../database';
 import { testCases, testRuns, testRunsCases } from '../../../database/schema';
 import { getCurrentUser, isAuthEnabled } from '../../../utils/auth';
 import { canAccessProject } from '../../../utils/project-access';
 import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
+import { parseRouteId } from '#shared/route-id';
+import { storedIdentity, storedIdentityForms } from '../../../utils/storable-values';
 
 /**
  * Resolve an execution from what the reporter knows before the server assigns
@@ -23,7 +25,7 @@ export default eventHandler(async (event) => {
   setResponseHeader(event, 'Cache-Control', 'no-store');
   setResponseHeader(event, 'X-Robots-Tag', 'noindex, nofollow');
 
-  const runId = Number.parseInt(getRouterParam(event, 'id') ?? '', 10);
+  const runId = parseRouteId(getRouterParam(event, 'id'));
   const query = getQuery(event);
   const file = queryString(query.file);
   const title = queryString(query.title);
@@ -33,7 +35,7 @@ export default eventHandler(async (event) => {
   const wantedRetry = retry !== null && /^\d+$/.test(retry) ? Number(retry) : null;
   const wantedRepeat = repeat !== null && /^\d+$/.test(repeat) ? Number(repeat) : 0;
 
-  if (!Number.isInteger(runId) || runId <= 0 || !file || !title) {
+  if (runId === null || !file || !title) {
     return notFoundPage(event, 'This link is missing the run, spec file or test title it should point at.', null);
   }
 
@@ -49,6 +51,13 @@ export default eventHandler(async (event) => {
     return notFoundPage(event, `Run #${runId} does not exist, or it was deleted.`, null);
   }
 
+  // The names the test's rows can store: without its describe path, a long file or title may be stored whole or
+  // shortened (`storedIdentityForms`).
+  const [storedFiles, storedTitles, storedBrowser] = await Promise.all([
+    storedIdentityForms(file),
+    storedIdentityForms(title),
+    browser === null ? null : storedIdentity(browser),
+  ]);
   const candidates = await db
     .select({
       id: testRunsCases.id,
@@ -59,9 +68,15 @@ export default eventHandler(async (event) => {
     })
     .from(testRunsCases)
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
-    .where(and(eq(testRunsCases.testRunId, runId), eq(testCases.filePath, file), eq(testCases.title, title)));
+    .where(
+      and(
+        eq(testRunsCases.testRunId, runId),
+        inArray(testCases.filePath, storedFiles),
+        inArray(testCases.title, storedTitles),
+      ),
+    );
 
-  const match = pickExecution(candidates, wantedRetry, browser, wantedRepeat);
+  const match = pickExecution(candidates, wantedRetry, storedBrowser, wantedRepeat);
   if (!match) {
     return notFoundPage(event, `Run #${runId} has no execution of "${title}" in ${file}.`, runId);
   }

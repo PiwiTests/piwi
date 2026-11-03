@@ -20,8 +20,8 @@ The **Export** button sits on a test-case execution (`/test-run-cases/:id`), on 
 
 | Format | What you get |
 |--------|--------------|
-| **HTML** | One file. Screenshots and video are embedded as `data:` URIs; error, steps, console, network, ARIA snapshot, test source and the AI diagnosis are all inline. Double-click it. |
-| **ZIP** | `report.html` plus the raw artifacts on disk — full-size video, reconstructed `trace.zip` archives, console and network logs — and `data.json` with everything the report shows, machine-readable. |
+| **HTML** | One file. Screenshots and video are embedded as `data:` URIs; error, steps, console, what the test wrote to stdout and stderr, network, ARIA snapshot, test source and the AI diagnosis are all inline. Double-click it. |
+| **ZIP** | `report.html` plus the raw artifacts on disk — full-size video, reconstructed `trace.zip` archives, console and network logs, `stdout.txt` and `stderr.txt` — and `data.json` with everything the report shows, machine-readable. |
 | **PDF** | A formatted document generated directly — no browser print dialog, so it is identical on the web app, the desktop app and the demo. Screenshots embed; video and trace archives can't live in a PDF, so they're listed as omitted (use ZIP to keep them). |
 | **Markdown / JSON** | Text only, for pasting into an issue or feeding an agent. |
 
@@ -85,8 +85,7 @@ execution is a slice on its worker's thread, with its hooks, fixtures and steps 
 start time, and a slice colored by outcome (green passed, red failed). A failing execution adds an
 instant marker at the moment it failed. Every slice carries its details in the event arguments —
 source location, step params, tags, locks, annotations, status, error message, and links back to the
-execution and its attachments on the dashboard. Suite-level `beforeAll`/`afterAll` setup steps appear
-on their worker's thread too.
+execution and its attachments on the dashboard.
 
 Open it by dragging the downloaded `.json` onto [ui.perfetto.dev](https://ui.perfetto.dev), or use
 **Open trace file** there. Timestamps are relative to the first event, so a run always starts at zero.

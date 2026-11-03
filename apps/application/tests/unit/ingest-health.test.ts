@@ -3,7 +3,13 @@ import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
-import { addIngestHealth, carryIngestHealth, describeIngestHealth, readIngestHealth } from '../../shared/ingest-health';
+import {
+  addIngestHealth,
+  carryIngestHealth,
+  describeIngestHealth,
+  readIngestHealth,
+  reporterIngestHealth,
+} from '../../shared/ingest-health';
 import { migrateToLatest } from './temp-db';
 
 delete process.env.PIWI_DATABASE_URL;
@@ -154,6 +160,13 @@ describe('describeIngestHealth', () => {
       'Delivered by the batch upload instead of the live stream: finishing the live stream failed',
     ]);
     expect(describeIngestHealth(null)).toEqual([]);
+  });
+
+  test('names the run a later run with the same run label ended while it streamed', () => {
+    const metadata = { ingestHealth: { submitFallback: { path: 'submit', reason: 'run-ended' } } };
+    expect(describeIngestHealth(readIngestHealth(reporterIngestHealth(metadata)))).toEqual([
+      'Delivered by the plain JSON submit, without its traces and reports: another run with the same run label ended its live run',
+    ]);
   });
 
   test('addIngestHealth drops zero counts', () => {

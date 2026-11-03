@@ -16,6 +16,7 @@ import type { Permission } from '#shared/permissions';
 import { EXTRACT_RULES } from './test-function-extract-prompt';
 import { DESCRIBE_PIWI_TOPICS } from '#shared/piwi-ecosystem';
 import { REPORT_LANGUAGES } from './reports/languages';
+import { CLUSTER_STATUSES } from './inbox-queues';
 
 export interface PaginatedResponse<T> {
   items: T[];
@@ -199,7 +200,7 @@ export const MCP_TOOL_DEFS = [
     module: 'core',
     description: md(
       'Get a test run’s summary and its test cases (by default only the failed ones), each with its status, truncated error and failure cluster.',
-      'A case’s `executionId` is what `explain_failure` and the other execution tools take.',
+      'A case’s `executionId` is what `explain_failure` and the other execution tools take. `runErrors` lists the errors Playwright reported outside any test, each with its truncated `message` and `stack` and its `filePath`, `line` and `column`: a global setup that threw, a spec file that did not load (`No tests found` too), a web server that did not start, a worker fixture whose teardown threw. They explain a failed run with no failed test.',
     ),
     inputSchema: {
       type: 'object',
@@ -260,6 +261,7 @@ export const MCP_TOOL_DEFS = [
     description: md(
       'Get a test case with its pass and fail stats, its flakiness metrics and its recent executions.',
       'Takes the stable `testCaseId`, not a per-run `executionId`.',
+      'Its `stats` count runs: one result per run, Playwright project and `--repeat-each` repetition, read from its final attempt, so a retry is never a run of its own and a pass on a retry is one flaky run. `recentFlaky` counts the flaky runs among its last 10 executions.',
     ),
     inputSchema: {
       type: 'object',
@@ -290,7 +292,7 @@ export const MCP_TOOL_DEFS = [
         projectId: { type: 'number', description: 'Project ID' },
         status: {
           type: 'string',
-          enum: ['open', 'resolved', 'ignored'],
+          enum: [...CLUSTER_STATUSES],
           description: 'Filter by triage status (default: all statuses)',
         },
         pageSize: { type: 'number', description: 'Results per page (default 10, max 50)' },
@@ -451,8 +453,8 @@ export const MCP_TOOL_DEFS = [
     name: 'get_test_run_case',
     module: 'core',
     description: md(
-      'Get one execution in full: a one-line failure headline, the untruncated error, steps, console logs, web vitals and the ARIA snapshot.',
-      '`include` fetches only the heavy parts you need; the error, status and summary always come back. For a failure, `explain_failure` adds the locator fix, the diagnosis context and the situation, with a shorter error and ARIA snapshot.',
+      'Get one execution in full: a one-line failure headline, the untruncated error, steps, console logs, web vitals, the ARIA snapshot and the test’s stdout and stderr.',
+      '`include` fetches only the heavy parts you need; the error, status and summary always come back. `stdout` and `stderr` (`include: output`) hold the first and last lines the test printed, at most 8,000 characters each, with a line naming what was cut between them. For a failure, `explain_failure` adds the locator fix, the diagnosis context and the situation, with a shorter error and ARIA snapshot.',
     ),
     inputSchema: {
       type: 'object',
@@ -463,7 +465,7 @@ export const MCP_TOOL_DEFS = [
         },
         include: {
           type: 'array',
-          items: { type: 'string', enum: ['steps', 'console', 'webVitals', 'aria', 'source'] },
+          items: { type: 'string', enum: ['steps', 'console', 'webVitals', 'aria', 'source', 'output'] },
           description:
             'Optional: which heavy blobs to include (default: all). The error, status, and summary are always returned.',
         },
@@ -532,6 +534,7 @@ export const MCP_TOOL_DEFS = [
     description: md(
       'Compare a run with its baseline, to answer what changed and whether a fix worked.',
       'It returns the pass-rate delta, new regressions, recurrences, recovered tests, new flaky tests, the biggest performance improvements and regressions, worker imbalance and newly opened clusters.',
+      'A pass rate (`passRate`, `baselinePassRate`) is the passed tests over the tests that passed or failed, in percent, and is absent when none did.',
       'The baseline is the last passing run in the same environment, on the same branch, else the branch it forked from, else any branch; when no earlier full run passed, it is the last failed run, found the same way. `baseline` says why it was chosen.',
     ),
     inputSchema: {
@@ -552,7 +555,7 @@ export const MCP_TOOL_DEFS = [
     module: 'core',
     description: md(
       'Get the health of each area of a project’s suite over the last N days, grouped by spec-file prefix.',
-      'Each area has its pass rate, flaky rate, failure count, execution count (`testCount`) and average duration. Use it to find the unhealthy parts of a suite.',
+      'Each area has its pass rate and flaky rate (both over the runs that passed or failed, null without one), failure count, run count (`testCount`, one per run, test, Playwright project and repetition) and average duration. Use it to find the unhealthy parts of a suite.',
     ),
     inputSchema: {
       type: 'object',
@@ -883,7 +886,7 @@ export const MCP_TOOL_DEFS = [
     module: 'workflow',
     description: md(
       'List a project’s whole test catalog, with each test’s pass, fail and flaky counts, average duration and last status.',
-      'The bulk companion of `get_test_case`; it pages by `offset`, not by cursor.',
+      'The bulk companion of `get_test_case`; it pages by `offset`, not by cursor. The counts are of runs, as in `get_test_case`.',
     ),
     inputSchema: {
       type: 'object',
@@ -1059,7 +1062,7 @@ export const MCP_TOOL_DEFS = [
     inputSchema: {
       type: 'object',
       properties: {
-        status: { type: 'string', enum: ['open', 'resolved', 'ignored'], description: 'Triage status (default: open)' },
+        status: { type: 'string', enum: [...CLUSTER_STATUSES], description: 'Triage status (default: open)' },
         queue: {
           type: 'string',
           enum: ['mine', 'needs-ticket', 'regressions', 'fix-didnt-hold', 'quarantine-ready', 'merge-suggestions'],
@@ -1117,7 +1120,7 @@ export const MCP_TOOL_DEFS = [
       type: 'object',
       properties: {
         clusterId: { type: 'number', description: 'Cluster ID' },
-        status: { type: 'string', enum: ['open', 'resolved', 'ignored'], description: 'New triage status' },
+        status: { type: 'string', enum: [...CLUSTER_STATUSES], description: 'New triage status' },
         triageNote: {
           type: 'string',
           description: 'Optional note replacing the triage note; omitted keeps the current one',
@@ -1232,7 +1235,7 @@ export const MCP_TOOL_DEFS = [
         },
         status: {
           type: 'string',
-          enum: ['open', 'resolved', 'ignored'],
+          enum: [...CLUSTER_STATUSES],
           description: 'With action status: the new status',
         },
         note: { type: 'string', description: 'With action status: the triage note saved on each cluster' },
@@ -1345,7 +1348,7 @@ export const MCP_TOOL_DEFS = [
         '`quarantine`: for a quarantine candidate, one of the costliest flaky tests by the CI minutes their flakiness wastes, which the flaky list marks proposed',
         '`release`: for a quarantined test whose passing streak or verified fix earned its way out (`list_open_clusters` with queue `quarantine-ready` finds their clusters)',
       ],
-      'It records the proposal as rejected, with your optional `reason`; nothing else changes, so the test stays out of quarantine, or in it. Dismissing the same proposal again records nothing more, and a dismissed quarantine proposal counts again once a newer run arrives. Fails when the test has no such proposal.',
+      'It records the proposal as rejected, with your optional `reason`; nothing else changes, so the test stays out of quarantine, or in it. Dismissing the same proposal again records nothing more, and a dismissed quarantine proposal counts again once a newer run of those the candidates read arrives (a finished run on the default branch, or on none, that is no lab, bisect or reproduction run). Fails when the test has no such proposal.',
       'Requires `quarantine:write` (Maintainer and above on the project).',
     ),
     inputSchema: {

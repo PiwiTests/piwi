@@ -29,7 +29,8 @@ On boot, before any request can touch the database (requests that need it wait f
    [A database that ran another build](#a-database-that-ran-another-build)).
 2. **Failure clusters are re-fingerprinted** if the fingerprint algorithm changed in this release.
    This is non-destructive: existing clusters are updated in place, and clusters that now collide are
-   merged rather than dropped, so your triage statuses and notes survive.
+   merged into the one first seen earliest rather than dropped, so your triage statuses and notes
+   survive. Clusters merged earlier stay merged, and tests moved to a cluster of their own stay there.
 
 Step 2 logs an error and continues if it fails. **Step 1 does not.** If a migration fails, the
 process keeps running but every database call fails with the migration error and `GET /api/health`
@@ -177,7 +178,9 @@ leaves an old file behind: in Task Manager's **Details** tab, end the `node.exe`
 **Open file location** is that folder, then choose **Retry**.
 
 **Failure clusters look reorganized.** Expected after a fingerprint-algorithm change: clusters that now
-share a root cause have merged. Triage state is carried across the merge.
+share a root cause have merged. Triage state is carried across the merge. A cluster that held unrelated
+failures under one [generic error](/guide/concepts#error-fingerprint-failure-cluster) keeps them, and their next
+failures join a cluster per file they fail in.
 
 ## Related
 - [Backup & restore](./backup-restore) — what to back up and how

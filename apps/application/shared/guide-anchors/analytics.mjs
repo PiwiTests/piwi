@@ -189,7 +189,7 @@ export const ANALYTICS_ANCHORS = [
     kind: 'block',
     pages: DASHBOARD_PAGES,
     describes:
-      'The Pass rate heatmap: the pass rate of each project per day or wider bucket, green from 90%, amber from 50%, red below and gray without runs.',
+      'The Pass rate heatmap: the pass rate of each project per day or wider bucket, green from 90%, amber from 50%, red below, gray when no test passed or failed.',
     shownWhen: 'When the dashboard holds it, as Overview does.',
     help: 'analytics.heatmap',
     doc: 'reference/analytics-widgets#where-things-stand',

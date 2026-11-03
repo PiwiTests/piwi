@@ -4,8 +4,9 @@
  * With run filters only, the totals are always read from the daily rollups,
  * for every window. With a test filter they are always counted from the
  * matching executions, final attempt per test and browser, so a pass rate
- * "for @critical" is critical tests passed over critical tests run. One code
- * path per number and per filter kind, never "rollups for long windows".
+ * "for @critical" is critical tests passed over critical tests that passed or
+ * failed. One code path per number and per filter kind, never "rollups for
+ * long windows".
  */
 
 import type { DrizzleDB } from '../db';

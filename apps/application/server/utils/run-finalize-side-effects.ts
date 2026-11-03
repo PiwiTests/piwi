@@ -4,7 +4,7 @@ import { runTrackerAutomation } from './integrations/automation';
 import type { DbClient } from '../database';
 import { computeRegressionSignals } from './compute-regression-signals';
 import { autoDiagnoseRun } from './ai-diagnosis';
-import { emitIncidentNotification, emitRunNotifications } from './notifications/run-notifications';
+import { clustersToAnnounce, emitIncidentNotification, emitRunNotifications } from './notifications/run-notifications';
 import { analyzeFinishedRunInBackground, postRunPrFeedbackInBackground } from './scm/pr-feedback';
 import { maybeEnqueueHealActionInBackground } from './heal/policy';
 import { syncAutoMarkersForRun } from '#shared/handlers/markers';
@@ -119,11 +119,20 @@ export async function runFinalizeSideEffects(
     }
     return rollup;
   }
+  const notifies = isEligibleRun(current, 'notifications');
+  // The clusters the run announces are read before its verdicts: fix verification reopens a cluster a person
+  // resolved, which the run announces as regressed. Read again when sending them if this read fails.
+  const announce = notifies
+    ? await clustersToAnnounce(db, id).catch((e) => {
+        console.error('[notifications] clustersToAnnounce failed', e);
+        return undefined;
+      })
+    : undefined;
   const analysis = analyzeFinishedRunInBackground(db, id);
   void analysis.coverage.then(() =>
     inferRunOutcomes(db, id).catch((e) => console.error('[outcomes] inferRunOutcomes failed', e)),
   );
-  if (!isEligibleRun(current, 'notifications')) return rollup;
+  if (!notifies) return rollup;
   autoDiagnoseRun(db, run.projectId, id).catch((e) => console.error('[ai-diagnosis] autoDiagnoseRun failed', e));
   // The issues the project's rules file go out first, so the run's notifications name them. They
   // wait for fix verification: a regression's reopen transition is then queued, and a rule does not
@@ -134,7 +143,9 @@ export async function runFinalizeSideEffects(
         .catch((e) => console.error('[integrations] runTrackerAutomation failed', e))
     : Promise.resolve();
   void filing.then(() =>
-    emitRunNotifications(db, id).catch((e) => console.error('[notifications] emitRunNotifications failed', e)),
+    emitRunNotifications(db, id, { announce }).catch((e) =>
+      console.error('[notifications] emitRunNotifications failed', e),
+    ),
   );
   // Healing's diff-rename step reads the locator breaks change coverage stores.
   void postRunPrFeedbackInBackground(db, id, analysis).then(() => maybeEnqueueHealActionInBackground(db, id));

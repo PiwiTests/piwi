@@ -16,7 +16,7 @@
  * (`analyzeFinishedRunInBackground`); the posting reads its result.
  */
 import { testTextLabel } from '#shared/utils/test-label';
-import { flakyFinalAttempts } from '#shared/utils/test-counts';
+import { finalAttempts, flakyFinalAttempts } from '#shared/utils/test-counts';
 import { and, desc, eq, inArray, max } from 'drizzle-orm';
 import {
   bugReports,
@@ -128,7 +128,7 @@ async function buildFailureEntries(
   projectId: number,
   rows: CaseRow[],
   newRegressionIds: Set<number>,
-  defaultBranchFlaky: Map<number, { branch: string; flakinessRate: number }>,
+  defaultBranchFlaky: Map<number, { branch: string; flakinessScore: number }>,
 ): Promise<{ newRegressions: PrFailureEntry[]; preExisting: PrFailureEntry[] }> {
   const clusterIds = [...new Set(rows.map((r) => r.failureClusterId).filter((id): id is number => id != null))];
   const clusterSignatures = new Map<number, string>();
@@ -252,7 +252,14 @@ export async function buildRunPrSummary(
   );
   const flakyRows = [...flakyFinalAttempts(caseRows)];
   const quarantinedIds = await getQuarantinedCaseIds(db, run.projectId).catch(() => new Set<number>());
-  const quarantinedFailures = failingRows.filter((row) => quarantinedIds.has(row.testCaseId)).length;
+  // In the unit of the run's `failedTests`, which it is subtracted from: one final attempt per test, project and
+  // repetition, so a quarantined test's retries never cancel another test's failure.
+  const quarantinedFailures = finalAttempts(caseRows).filter(
+    (row) =>
+      FAIL_STATUSES.includes(row.status) &&
+      !isExpectedFailurePassed(row.status, row.expectedStatus) &&
+      quarantinedIds.has(row.testCaseId),
+  ).length;
 
   // `computeRunInsights` owns the baseline comparison; reuse it rather than
   // re-deriving "new versus pre-existing" with a second, divergent rule.
@@ -264,7 +271,7 @@ export async function buildRunPrSummary(
   // doing. Skipped for runs already on the default branch (nothing to compare).
   const runBranch = run.branch ?? resolveRunBranch(run.metadata);
   const defaultBranch = await resolveDefaultBranch(db, project, run.metadata);
-  const defaultBranchFlaky = new Map<number, { branch: string; flakinessRate: number }>();
+  const defaultBranchFlaky = new Map<number, { branch: string; flakinessScore: number }>();
   if (runBranch && runBranch !== defaultBranch) {
     const flaky = await getProjectFlakyTests(
       db,
@@ -275,7 +282,7 @@ export async function buildRunPrSummary(
       defaultBranch,
     ).catch(() => []);
     for (const test of flaky) {
-      defaultBranchFlaky.set(test.testCaseId, { branch: defaultBranch, flakinessRate: Math.min(1, test.score / 100) });
+      defaultBranchFlaky.set(test.testCaseId, { branch: defaultBranch, flakinessScore: test.score });
     }
   }
 

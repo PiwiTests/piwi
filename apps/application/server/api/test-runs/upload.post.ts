@@ -18,11 +18,14 @@ import { mapWireCaseToRunCase } from '../../utils/map-wire-case';
 import { deriveTraceEvidence } from '../../utils/trace-fallback-evidence';
 import { recordIngestHealth } from '../../utils/ingest-health';
 import { sanitizeMetadata } from '../../utils/sanitize';
+import { checkUploadRun } from '../../utils/batch-payload';
 import { resolveRunBranch } from '../../utils/run-branch';
 import { runCommit, runOrigin } from '#shared/run-eligibility';
 import { runEventBus } from '../../utils/run-events';
 import { runFinalizeSideEffects } from '../../utils/run-finalize-side-effects';
-import { deliverOnce, readDeliveryKey } from '../../utils/run-deliveries';
+import { cancelInstanceRuns, cancelReplacedRun } from '../../utils/cancel-instance-runs';
+import { renewHeldRunToken } from '../../utils/batch-run';
+import { deliverOnce, readDeliveryKey, storeOrDiscardRun } from '../../utils/run-deliveries';
 import {
   addBatchShard,
   batchShardRun,
@@ -42,13 +45,14 @@ import { applyReporterKeep } from '#shared/handlers/run-keep';
 import { sanitizeResourceReport } from '#shared/resource-report';
 import { saveResourceReportPart } from '#shared/handlers/resource-reports';
 import type { TestCasePayload, TestRunSubmitPayload } from '#shared/types';
+import { storableRunErrors } from '../../utils/storable-values';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Runs'],
     summary: 'Upload test results with reports, traces, and attachments',
     description:
-      'Upload Playwright test run results as multipart form data, including HTML reports, trace files, and other attachments. Supports both new runs and attaching files to existing streaming runs.',
+      'Upload Playwright test run results as multipart form data, including HTML reports, trace files, and other attachments. Supports both new runs and attaching files to existing streaming runs. For a new run, a `testRun` or `testCases` field of the wrong type answers 400 naming the first such field.',
     'x-required-permission': 'run:submit',
     requestBody: {
       content: {
@@ -60,7 +64,7 @@ defineRouteMeta({
               testRun: {
                 type: 'string',
                 description:
-                  'JSON-encoded test run data. Its `deliveryKey`, as on the submit endpoint, makes a repeated delivery answer with the run its first delivery stored.',
+                  'JSON-encoded test run data. Its `deliveryKey`, as on the submit endpoint, makes a repeated delivery answer with the run its first delivery stored, with `duplicate: true` and its files unread; while that run waits `finalizing` for its files (its results went to `/api/test-runs/upload/results`), the answer carries a new `streamToken` for them, which takes the place of the one held before, as a repeat to that route does. Its `replacesRun`, as on the submit endpoint, cancels the run the reporter streamed before it fell back to this upload.',
               },
               testCases: { type: 'string', description: 'JSON-encoded test cases array' },
             },
@@ -219,16 +223,8 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
       message: 'Missing required fields: projectName, testRun',
     });
   }
-  // A run this upload creates needs a status and a start time, checked before anything is stored.
-  if (!existingTestRunId) {
-    const startTime: unknown = testRunData.startTime;
-    if (!testRunData.status || typeof testRunData.status !== 'string' || startTime == null || startTime === '') {
-      throw apiError({ statusCode: 400, message: 'Missing required testRun fields: status, startTime' });
-    }
-    if (Number.isNaN(new Date(startTime as string | number).getTime())) {
-      throw apiError({ statusCode: 400, message: 'Invalid testRun startTime' });
-    }
-  }
+  // A run this upload creates is checked, with its test cases, before anything is stored.
+  if (!existingTestRunId) checkUploadRun(testRunData, testCasesData);
 
   const db = await getDatabase();
   const scope = await getProjectScope(db, user as any, 'run:submit');
@@ -263,7 +259,7 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
   // A repeated delivery (the reporter gave up waiting and sent the run again)
   // answers with the run its first delivery stored, its reports and traces unread.
   const deliveryKey = attachingToExistingRun ? null : readDeliveryKey(testRunData.deliveryKey);
-  return deliverOnce(db, project.id, deliveryKey, async () => {
+  const delivered = await deliverOnce(db, project.id, deliveryKey, async () => {
     // Create project directory in storage
     const projectPath = `project-${project.id}`;
     await storage.mkdir(projectPath);
@@ -333,7 +329,10 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
       if (incomingResources) await saveResourceReportPart(db, run.id, incomingResources);
       await applyReporterKeep(db, run.id, testRunData.keep);
     } else {
-      // Create a new test run (standard batch upload)
+      // Create a new test run (standard batch upload). Like `/submit`, it replaces the instance's run still in flight:
+      // the stream that fell back to this upload, or a run registered for it, which would otherwise wait until the
+      // stale-run sweep marks it interrupted.
+      await cancelInstanceRuns(db, project.id, instanceId, undefined, !!(shardTotal && shardTotal > 1));
       const metadata = sanitizeMetadata(testRunData.metadata || null);
       const testRunResult = await db
         .insert(testRuns)
@@ -358,6 +357,8 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
           reporterVersion: testRunData.reporterVersion || null,
           isFullRun: testRunData.isFullRun !== false ? 1 : 0,
           filterDetails: testRunData.filterDetails || null,
+          ...(testRunData.setupSteps && { setupSteps: testRunData.setupSteps }),
+          runErrors: storableRunErrors(testRunData.runErrors),
         })
         .returning();
 
@@ -378,13 +379,6 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
       };
       if (incomingResources) await saveResourceReportPart(db, resultTestRun.id, incomingResources);
       await applyReporterKeep(db, resultTestRun.id, testRunData.keep);
-
-      runEventBus.publishGlobal({
-        type: 'run-submitted',
-        runId: resultTestRun.id,
-        projectId: resultTestRun.projectId,
-        status: resultTestRun.status,
-      });
     }
 
     // Store all reports once the run exists, and collect their metadata. Reports
@@ -457,12 +451,10 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
     if (!attachingToExistingRun && testCasesData && testCasesData.length > 0) {
       // Traces and attachments are keyed by the index of their case in the
       // upload; a duplicate case the insert skipped has no execution to link to.
-      const insertedRunCases = await persistRunCases(
-        db,
-        project.id,
-        testRun.id,
-        testCasesData.map(mapWireCaseToRunCase),
-      );
+      const persist = () => persistRunCases(db, project.id, testRun.id, testCasesData.map(mapWireCaseToRunCase));
+      // A run this upload created is removed when its executions fail to store; a shard's run, which holds the
+      // other shards' executions, stays.
+      const insertedRunCases = isBatchShard ? await persist() : await storeOrDiscardRun(db, testRun.id, persist);
       const executionByIndex = new Map(insertedRunCases.map((row) => [row.inputIndex, row]));
 
       // Store trace files linked to their test run case, in the project's
@@ -574,6 +566,15 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
       await addBatchShard(db, testRun.id, batchShardTally(testRunData, testCasesData));
       if (!(await finalizeShardedRun(db, testRun.id, 'run-submitted'))) await publishShardProgress(db, testRun.id);
     } else if (!attachingToExistingRun) {
+      // Once stored, the run takes the place of the run its reporter streamed, which it names, finalizing too.
+      if (!(shardTotal && shardTotal > 1)) await cancelReplacedRun(db, project.id, testRunData.replacesRun);
+      // A new run is announced once its executions and files are stored, as `/submit` announces one.
+      runEventBus.publishGlobal({
+        type: 'run-submitted',
+        runId: testRun.id,
+        projectId: testRun.projectId,
+        status: testRun.status,
+      });
       // For new (non-streaming) runs, fire the finalize side effects after cases are
       // persisted — probe-aware, so a probe-stamped upload stays silent.
       await runFinalizeSideEffects(db, testRun.id, {
@@ -591,4 +592,10 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
       reports: storedReports.map((r) => ({ type: r.type, label: r.label, path: r.path })),
     };
   });
+  if (!('duplicate' in delivered)) return delivered;
+
+  // A repeat of a run `/upload/results` holds `finalizing` until its files are in answers, as a repeat there does,
+  // with a new token for them, which takes the place of the one it held.
+  const streamToken = await renewHeldRunToken(db, delivered.runId);
+  return streamToken ? { ...delivered, streamToken } : delivered;
 }

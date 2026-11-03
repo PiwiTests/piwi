@@ -3,9 +3,13 @@ import * as os from 'node:os';
 import * as fs from 'node:fs';
 import { hashForProject } from './instance-id.js';
 
-/** Return the temp-file path used to exchange setup info between globalSetup and the reporter instance */
-export function getSetupFilePath(projectName: string): string {
-  return path.join(os.tmpdir(), `piwi-dashboard-setup-${hashForProject(projectName)}.json`);
+/**
+ * The temp file the global setup hands its registration to the reporter through, per project and per process.
+ * Playwright runs the global setup and the reporters in one process, its runner's, so a run reads its own
+ * registration alone, whatever other run of the project the machine runs meanwhile.
+ */
+export function getSetupFilePath(projectName: string, pid: number = process.pid): string {
+  return path.join(os.tmpdir(), `piwi-dashboard-setup-${hashForProject(projectName)}-${pid}.json`);
 }
 
 /** Information saved by the global setup for the reporter instance to consume */
@@ -22,13 +26,13 @@ export interface SetupInfo {
   liveViewLocal?: true;
 }
 
-/** Write the setup info file, readable by its owner alone. */
+/** Write this process's setup info file, readable by its owner alone. */
 export function writeSetupInfo(info: SetupInfo): void {
   const setupFile = getSetupFilePath(info.projectName);
   fs.writeFileSync(setupFile, JSON.stringify(info), { mode: 0o600 });
 }
 
-/** Read the setup info file for the given project, and leave it in place. Returns `null` when no file exists. */
+/** Read this process's setup info file for the given project, and leave it in place. `null` when there is none. */
 export function peekSetupInfo(projectName: string): SetupInfo | null {
   const setupFile = getSetupFilePath(projectName);
   try {
@@ -42,7 +46,7 @@ export function peekSetupInfo(projectName: string): SetupInfo | null {
   return null;
 }
 
-/** Read and delete the setup info file for the given project. Returns `null` when no file exists. */
+/** Read and delete this process's setup info file for the given project. `null` when there is none. */
 export function readSetupInfo(projectName: string): SetupInfo | null {
   const info = peekSetupInfo(projectName);
   try {

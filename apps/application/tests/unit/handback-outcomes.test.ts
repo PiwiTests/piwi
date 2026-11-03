@@ -260,7 +260,16 @@ describe('merge suggestions', () => {
 });
 
 describe('quarantine proposals', () => {
+  // Quarantined at T0, so the runs `insertRun` dates after it count toward a release.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'], now: T0 });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   test('quarantining a proposed test applies the proposal; a manual quarantine is no hand-back', async () => {
+    flaky.tests = [{ testCaseId: 1, title: 'pays', filePath: 'tests/checkout.spec.ts', score: 60, wastedCiMinutes: 4 }];
     await insertRun();
     await addQuarantine(db as never, 1, 1, { source: 'proposed', createdBy: 7 });
     await addQuarantine(db as never, 1, 2, { source: 'manual', createdBy: 7 });
@@ -268,6 +277,16 @@ describe('quarantine proposals', () => {
     expect(rows.map((r) => [r.subjectId, r.suggestionKey, r.outcome, r.channel, r.actorUserId])).toEqual([
       [1, 'quarantine', 'applied', 'ui', 7],
     ]);
+  });
+
+  test('a quarantine said to apply a proposal is manual when the test is no candidate', async () => {
+    flaky.tests = [];
+    await insertRun();
+    await addQuarantine(db as never, 1, 1, { source: 'proposed', createdBy: 7 });
+
+    const [entry] = await db.select().from(schema.quarantinedTests);
+    expect(entry).toMatchObject({ testCaseId: 1, source: 'manual' });
+    expect(await listOutcomes(db as never, { kind: 'quarantine-proposal' })).toEqual([]);
   });
 
   test('releasing a test whose streak earned it applies the release proposal; an early release does not', async () => {

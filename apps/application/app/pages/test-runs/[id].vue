@@ -11,9 +11,11 @@ import type {
 } from '~~/types/api';
 import type { LiveStepsByWorker } from '~/utils/live-steps';
 import { liveRowNote } from '~/utils/live-row-note';
+import { runSummaryText } from '~/utils/run-summary';
 import { NO_WORKER_GRACE_MS } from '~/utils/run-live-view-status';
 import { subscribeDemoEvents } from '~/demo/run-events';
 import { useRunEvents, useRunStart, useRunStream } from '~/composables/useRunStream';
+import { useReportsPoll } from '~/composables/useReportsPoll';
 import { summarizeRunCases } from '#shared/utils/test-counts';
 import { applyLiveResourcesToParts } from '#shared/live-resources';
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
@@ -322,7 +324,9 @@ function flushPendingEvents() {
             // The attempt said to be stuck ended.
             stuck: null,
             duration: d.duration,
-            error: d.error,
+            // A live event always carries the attempt's error, null on a pass; the stream's catch-up of the persisted
+            // cases leaves it out, so the error the page loaded stays.
+            error: d.error !== undefined ? d.error : existing.error,
             stepEvents: d.stepEvents ?? existing.stepEvents,
             wastedTimeMs: d.wastedTimeMs ?? existing.wastedTimeMs,
             workerIndex: d.workerIndex ?? existing.workerIndex,
@@ -446,22 +450,14 @@ function flushPendingEvents() {
   }
 }
 
-function pollForReports(attempts = 0): void {
-  // The reporter may upload HTML/Monocart reports and traces AFTER the run
-  // finishes. Poll for a few iterations so they appear without a manual
-  // refresh. We keep polling a fixed number of times regardless of whether
-  // some files already arrived, because uploads land in several batches
-  // (report directory, then per-case traces/attachments) — stopping at the
-  // first file would miss the rest.
+// The reporter may upload HTML/Monocart reports and traces after the run
+// finishes: the page reads the run again a few times so they appear without a
+// manual refresh, and stops when it leaves.
+const reportsPoll = useReportsPoll(refresh);
+
+function pollForReports(): void {
   if (isDemoMode) return; // demo mode has no file uploads
-  if (attempts >= 5) return;
-  setTimeout(
-    async () => {
-      await refresh();
-      pollForReports(attempts + 1);
-    },
-    1500 * (attempts + 1),
-  );
+  reportsPoll.start();
 }
 
 function enqueueEvent(event: Record<string, unknown>) {
@@ -605,6 +601,10 @@ watch(displayTestCases, (val) => {
     rafId = null;
   });
 });
+onUnmounted(() => {
+  if (rafId !== null) cancelAnimationFrame(rafId);
+  rafId = null;
+});
 
 // Display progress: the header counts, the count bar and the grouped list are
 // all derived from the same de-duplicated case list (one row per test, its
@@ -628,6 +628,7 @@ const displayProgress = computed(() => {
       fixmeTests: s.fixme,
       didNotRunTests: s.didNotRun,
       flakyTests: s.flaky,
+      interruptedTests: s.interrupted,
     };
   }
   return {
@@ -638,6 +639,7 @@ const displayProgress = computed(() => {
     fixmeTests: 0,
     didNotRunTests: testRun.value.didNotRunTests ?? 0,
     flakyTests: testRun.value.flakyTests ?? 0,
+    interruptedTests: 0,
   };
 });
 
@@ -687,29 +689,24 @@ const runToDelete = computed(() => [{ id: Number(runId), keptAt: testRun.value?.
 function buildRunSummary(): string {
   const run = testRun.value;
   if (!run) return '';
-  const statusEmoji =
-    run.status === 'passed' ? '✅' : run.status === 'failed' ? '❌' : run.status === 'running' ? '🔄' : '⚠️';
-  const label = run.label ? ` — ${run.label}` : '';
-  const project = run.project?.label ?? run.project?.name ?? '';
   // Count from the same source as the header so the copied summary matches what
   // is on screen; fall back to the stored columns when the cases aren't loaded.
   const p = displayProgress.value;
-  const total = p?.totalTests ?? run.totalTests ?? 0;
-  const passed = p?.passedTests ?? run.passedTests ?? 0;
-  const failed = p?.failedTests ?? run.failedTests ?? 0;
-  const skipped = p?.skippedTests ?? run.skippedTests ?? 0;
-  const fixme = p?.fixmeTests ?? 0;
-  const flaky = p?.flakyTests ?? run.flakyTests ?? 0;
-  const didNotRun = p?.didNotRunTests ?? run.didNotRunTests ?? 0;
-  const flakyPart = flaky > 0 ? ` · ${flaky} passed on retry` : '';
-  const didNotRunPart = didNotRun > 0 ? ` · ${didNotRun} didn't run` : '';
-  const fixmePart = fixme > 0 ? ` (${fixme} fixme)` : '';
-  return [
-    `*Run #${run.id}*${label}`,
-    `Status: ${statusEmoji} ${run.status} | Project: ${project}`,
-    `Tests: ${total} total · ${passed} passed · ${failed} failed · ${skipped} skipped${fixmePart}${didNotRunPart}${flakyPart}`,
-    `Duration: ${formatDuration(run.duration)}`,
-  ].join('\n');
+  return runSummaryText({
+    id: run.id,
+    status: run.status,
+    label: run.label,
+    project: run.project?.label ?? run.project?.name ?? '',
+    duration: run.duration,
+    total: p?.totalTests ?? run.totalTests ?? 0,
+    passed: p?.passedTests ?? run.passedTests ?? 0,
+    failed: p?.failedTests ?? run.failedTests ?? 0,
+    skipped: p?.skippedTests ?? run.skippedTests ?? 0,
+    fixme: p?.fixmeTests ?? 0,
+    flaky: p?.flakyTests ?? run.flakyTests ?? 0,
+    didNotRun: p?.didNotRunTests ?? run.didNotRunTests ?? 0,
+    interrupted: p?.interruptedTests ?? 0,
+  });
 }
 
 // Test-cases filter state — lifted here so it survives tab switches, and kept

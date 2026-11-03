@@ -72,6 +72,10 @@ the offline export are written once in `shared/` and differ only in the port eac
 - **The app runs with no variable set.** The one thing it refuses without configuration is storing a secret (an AI key,
   an SCM token, a webhook secret): without `PIWI_SECRET_KEY`, the key of their AES-256-GCM encryption, the save answers
   409 (`server/utils/crypto.ts`).
+- **Every pass rate is one rule: passed results over the results that passed or failed**, null with neither (a run's,
+  a test's, analytics', a report's, MCP's): `passRate` / `passRatePercent` (`shared/utils/pass-rate.ts`) in memory,
+  `passRateSql` and its counts (`shared/utils/pass-rate-sql.ts`) in a query. A test's or a file's flaky rate divides
+  its flaky results by the same results: `flakyRate`, beside `passRate`. `tests/unit/pass-rate-rule.test.ts`.
 - **The demo mirrors every feature.** A new database column, API response field or visible UI change updates the seed
   generator, the demo handlers (`app/demo/api/`), the simulator, the docs and, when a tour stop shows the screen, the
   tour; then run `npm run app:seed:demo`. The five places and their checks:

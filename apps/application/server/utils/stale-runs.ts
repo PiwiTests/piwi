@@ -1,4 +1,4 @@
-import { eq, and, lt, or, isNull, isNotNull, not, notInArray, sql } from 'drizzle-orm';
+import { eq, and, lt, ne, or, isNull, isNotNull, not, notInArray, sql } from 'drizzle-orm';
 import { testRuns } from '../database/schema';
 import type { DbClient } from '../database';
 import { runEventBus } from './run-events';
@@ -7,7 +7,7 @@ import { computeRunCountsFromRows } from './run-counts';
 import { recomputeRollupCells } from '#shared/handlers/analytics/rollups';
 import { dayKey } from '#shared/handlers/analytics/common';
 import { emitRunInterrupted } from './notifications/run-notifications';
-import { readShardTokensFromMeta } from './shard-tokens';
+import { readShardSetupTokens, readShardTokensFromMeta } from './shard-tokens';
 
 // A live reporter sends a heartbeat (~every 15s) during idle gaps, so an active
 // run's `updatedAt` never goes quiet for long. This timeout must stay comfortably
@@ -22,6 +22,13 @@ export const STALE_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes without activity →
 // after another, or as batch submissions). Such a run counts as stale only once
 // quiet for this long.
 export const SHARD_WAIT_MS = 60 * 60 * 1000;
+
+// A run waits in `initializing` from its global setup's `/setup` until its
+// reporter's `/begin`, and nothing reaches it meanwhile: a user's global setup
+// (seeding a database, building the app) can take far longer than a heartbeat
+// gap. Such a run, and a running sharded run with a shard still in its global
+// setup, counts as stale only once quiet for this long.
+export const GLOBAL_SETUP_WAIT_MS = 60 * 60 * 1000;
 
 /** A sharded run delivered by batch submissions: it never had a stream token. */
 const awaitsBatchShards = sql`(${testRuns.streamToken} is null and coalesce(${testRuns.shardTotal}, 0) > 1)`;
@@ -57,6 +64,19 @@ async function streamedRunsAwaitingShards(db: DbClient, threshold: Date): Promis
 }
 
 /**
+ * The running sharded runs quiet since `threshold` with a shard still in its
+ * global setup: its `/setup` handed it a setup token its `/begin` has not spent
+ * yet (`readShardSetupTokens`).
+ */
+async function shardedRunsInSetup(db: DbClient, threshold: Date): Promise<number[]> {
+  const runs = await db
+    .select({ id: testRuns.id, metadata: testRuns.metadata })
+    .from(testRuns)
+    .where(and(eq(testRuns.status, 'running'), quietSince(threshold), sql`coalesce(${testRuns.shardTotal}, 0) > 1`));
+  return runs.filter((run) => readShardSetupTokens(run.metadata).length > 0).map((run) => run.id);
+}
+
+/**
  * Settle every `finalizing` run quiet for `FINALIZING_TIMEOUT_MS` — its report
  * upload never arrived — to the status its reporter sent to `/finish`, with the
  * finish-time side effects the upload would have fired (see
@@ -78,8 +98,9 @@ export async function settleStaleFinalizingRuns(db: DbClient, now = Date.now()):
 /**
  * Mark every initializing or running run with no activity for
  * `STALE_TIMEOUT_MS` (`SHARD_WAIT_MS` for a sharded run waiting for shards that
- * have not started) as `interrupted` — its reporter was killed or lost its
- * connection before reporting the end. Each reaped run gets its counters
+ * have not started, `GLOBAL_SETUP_WAIT_MS` for a run, or a shard of a sharded
+ * run, still in its global setup) as `interrupted` — its reporter was killed or
+ * lost its connection before reporting the end. Each reaped run gets its counters
  * reconciled and its end announced on its own stream and on the global
  * lifecycle stream, like a run that finished normally, a `run.interrupted`
  * notification sent, and its day's rollup recomputed, since an interrupted run
@@ -88,7 +109,9 @@ export async function settleStaleFinalizingRuns(db: DbClient, now = Date.now()):
 export async function interruptStaleRuns(db: DbClient, now = Date.now()): Promise<number[]> {
   const staleThreshold = new Date(now - STALE_TIMEOUT_MS);
   const shardWaitThreshold = new Date(now - SHARD_WAIT_MS);
+  const globalSetupThreshold = new Date(now - GLOBAL_SETUP_WAIT_MS);
   const awaitingShards = await streamedRunsAwaitingShards(db, staleThreshold);
+  const shardsInSetup = await shardedRunsInSetup(db, staleThreshold);
 
   const staleRuns = await db
     .update(testRuns)
@@ -100,6 +123,10 @@ export async function interruptStaleRuns(db: DbClient, now = Date.now()): Promis
       and(
         or(eq(testRuns.status, 'running'), eq(testRuns.status, 'initializing')),
         quietSince(staleThreshold),
+        or(ne(testRuns.status, 'initializing'), quietSince(globalSetupThreshold)),
+        shardsInSetup.length > 0
+          ? or(notInArray(testRuns.id, shardsInSetup), quietSince(globalSetupThreshold))
+          : undefined,
         or(not(awaitsBatchShards), quietSince(shardWaitThreshold)),
         awaitingShards.length > 0
           ? or(notInArray(testRuns.id, awaitingShards), quietSince(shardWaitThreshold))

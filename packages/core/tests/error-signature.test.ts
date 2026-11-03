@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { extractErrorSignature, maskSelector, maskVolatile } from '../src/error-signature';
+import { extractErrorSignature, maskPaths, maskSelector, maskVolatile } from '../src/error-signature';
 import * as core from '../src/index';
 
 describe('extractErrorSignature', () => {
@@ -53,6 +53,67 @@ describe('extractErrorSignature', () => {
 
   test('is exported from the package entry', () => {
     expect(core.extractErrorSignature).toBe(extractErrorSignature);
+  });
+});
+
+describe('volatile text masking', () => {
+  test("masks a strict-mode violation's element list, so its length and its elements do not count", () => {
+    const violation = (elements: string[]) =>
+      [
+        "Error: locator.click: Error: strict mode violation: getByRole('button') resolved to " +
+          `${elements.length} elements:`,
+        ...elements.map((element, i) => `    ${i + 1}) ${element}`),
+      ].join('\n');
+    const two = violation([
+      "<button class=\"primary\">Pay</button> aka getByRole('button', { name: 'Pay' })",
+      "<button>Pay later</button> aka getByTestId('pay-later')",
+    ]);
+    const many = violation([
+      '<button id="b1">Pay</button> aka locator(\'#b1\')',
+      "<button>Cancel</button> aka getByRole('button', { name: 'Cancel' })",
+      "<button>Help</button> aka getByText('Help')",
+      '...',
+    ]);
+    expect(maskVolatile(two)).toBe(
+      "Error: locator.click: Error: strict mode violation: getByRole('button') resolved to <N> elements:",
+    );
+    expect(extractErrorSignature(many).normalizedMessage).toBe(extractErrorSignature(two).normalizedMessage);
+  });
+
+  test('masks an ISO timestamp whole, its time of day included', () => {
+    expect(maskVolatile('Error: booking expired at 2026-05-01T10:30:00Z')).toBe(
+      'Error: booking expired at <TIMESTAMP>',
+    );
+    expect(maskVolatile('Error: booking expired at 2026-05-02T17:05:42.120+02:00')).toBe(
+      'Error: booking expired at <TIMESTAMP>',
+    );
+  });
+
+  test('masks an id glued to an underscore, and keeps a word ending in a number', () => {
+    expect(maskVolatile('Error: order_5f3a9c1e2b not found')).toBe('Error: order_<ID> not found');
+    expect(maskVolatile('Error: no customer cus_4QFJrkXyZ8aB2m')).toBe('Error: no customer cus_<ID>');
+    expect(maskVolatile('Error: field_label12 is required')).toBe('Error: field_label12 is required');
+  });
+
+  test("masks the random suffix of a temporary folder's name", () => {
+    expect(maskVolatile('Error: profile /tmp/playwright_chromiumdev_profile-Xo8n2p is locked')).toBe(
+      'Error: profile /tmp/playwright_chromiumdev_profile-<TMP> is locked',
+    );
+    expect(maskVolatile('Error: /tmp/test-results/page-object')).toBe('Error: /tmp/test-results/page-object');
+  });
+
+  test('masks the folders of an absolute path under a home, a CI workspace or a Windows drive', () => {
+    const opened = (path: string) => maskVolatile(`Error: ENOENT: no such file or directory, open '${path}'`);
+    const masked = "Error: ENOENT: no such file or directory, open '<PATH>/user.json'";
+    expect(opened('/home/runner/work/shop/shop/fixtures/user.json')).toBe(masked);
+    expect(opened('/Users/alice/code/shop/fixtures/user.json')).toBe(masked);
+    expect(opened('C:\\Users\\alice\\shop\\fixtures\\user.json')).toBe(masked);
+    expect(opened('/__w/shop/shop/fixtures/user.json')).toBe(masked);
+    // A path of the app's own, or relative, says something about the failure.
+    expect(opened('/srv/shop/fixtures/user.json')).toBe(
+      "Error: ENOENT: no such file or directory, open '/srv/shop/fixtures/user.json'",
+    );
+    expect(maskPaths('tests/home/settings.spec.ts')).toBe('tests/home/settings.spec.ts');
   });
 });
 

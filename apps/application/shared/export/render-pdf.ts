@@ -56,6 +56,7 @@ import {
   fmtStepDuration,
   hasDiagnosis,
   OMISSION_REASONS,
+  outputStreams,
   projectLabel,
   runFacts,
   runFailureGroups,
@@ -1229,6 +1230,11 @@ async function renderCase(
       ]),
       [1, 6],
     );
+  }
+
+  for (const stream of outputStreams(d)) {
+    b.section(`Output (${stream.name})`);
+    b.codeBlock(stream.text);
   }
 
   const requests = (d.networkRequests ?? []) as Record<string, any>[];

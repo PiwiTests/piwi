@@ -49,7 +49,8 @@ else on the cited tab, else on **Screen** when a screenshot or video exists, els
 - **Network**: the requests, API calls through Playwright's `request` fixture included, with inline
   [backend logs](/guide/backend-logs); one with no response shows the browser's error (`net::ERR_CONNECTION_RESET`). **Console**: the console output.
   **State**: the app state at test end and the environment diff against the last green run. **Performance**:
-  performance hints and Web Vitals.
+  performance hints and Web Vitals. **Output**: what the test wrote to stdout and stderr
+  ([Test output](/reference/test-metadata#test-output)).
 
 Below the evidence sit the folded [**More ways to fix**](./fix-plans#more-ways-to-fix) toolbox and a **history** strip
 of this test's recent executions. A test that **passed on retry** leads with its failed attempt's error, opens on
@@ -61,9 +62,8 @@ Web Vitals, ARIA, focus and alternative-locator data come from the [capture fixt
 
 A **clue** is a one-line finding a deterministic rule draws from the evidence already captured, with no model
 involved. Each carries a **strength** (strong, medium or weak) and a **citation** that opens and marks the evidence it
-came from; the **Most likely** line leads with their strong or medium story, else a completed diagnosis, else a weak
-story or the strongest one, and marks the rows and tabs it cites. The AI diagnosis receives the clues as evidence.
-Every rule is on [Clue rules](/reference/clues).
+came from; the **Most likely** line marks the rows and tabs it cites. [Clue rules](/reference/clues) gives every rule,
+how **Most likely** picks among them and what the AI diagnosis receives.
 
 ### Attempts
 
@@ -150,7 +150,7 @@ server, with or without [authentication](/operate/authentication). The hosted
 
 ## The test case page
 
-`/test-cases/:id` is the other axis: not one attempt, but the test's whole life. Total runs, pass rate, average duration
+`/test-cases/:id` is the other axis: not one attempt, but the test's whole life. Total [runs](/guide/concepts#test-case), [pass rate](/guide/concepts#pass-rate), average duration
 and last run, a duration trend, a status-history strip, and the recent executions, each linking back to its execution.
 A flaky test adds a **Flakiness** tab with its [suspects](./flaky-tests#suspects).
 

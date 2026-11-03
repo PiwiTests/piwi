@@ -1,0 +1,1 @@
+ALTER TABLE `failure_cluster_aliases` ADD `fingerprint_sample` text;

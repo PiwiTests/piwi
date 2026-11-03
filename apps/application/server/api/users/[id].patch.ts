@@ -1,6 +1,7 @@
 import { getDatabase } from '../../database';
 import { accessRefusal, updateUserAccount, updateUserSchema } from '#shared/handlers/project-access';
 import { getRequestAccess, isAuthEnabled, requireAuth, revokeUserSessions } from '../../utils/auth';
+import { requireRouteId } from '../../utils/project-access';
 
 defineRouteMeta({
   openAPI: {
@@ -32,8 +33,7 @@ export default eventHandler(async (event) => {
   // Any signed-in user may call it for themselves; the handler decides who may change what.
   const currentUser = await requireAuth(event);
 
-  const id = parseInt(getRouterParam(event, 'id') || '0');
-  if (!id) throw apiError({ statusCode: 400, message: 'Invalid user ID' });
+  const id = requireRouteId(event, 'id', 'user ID');
 
   const parsed = updateUserSchema.safeParse(await readBody(event));
   if (!parsed.success) {

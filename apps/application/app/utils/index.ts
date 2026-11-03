@@ -6,6 +6,7 @@ import { formatDistanceToNow, formatDuration as formatDurationLib, intervalToDur
 import { TEST_PRIORITIES, type TestPriority } from '@piwitests/core/test-meta';
 import { formatAbsolute } from '#shared/i18n/locale-format';
 import { foldText } from '#shared/utils/fold-text';
+import { passRatePercent } from '#shared/utils/pass-rate';
 import { activeLocalePrefs } from './locale-format';
 import { statusPalette, statusPaletteKey } from './status-palette';
 
@@ -164,9 +165,12 @@ export function prettyDateFormat(
   return formatAbsolute(date, { locale: prefs.locale, timeZone: prefs.timeZone, dateOnly: options.dateOnly });
 }
 
+/** How long ago `date` was ("5 minutes ago"), or `'N/A'` for empty or invalid input. */
 export function formatRelativeTime(date: string | Date | number | null | undefined): string {
   if (!date) return 'N/A';
-  return formatDistanceToNow(new Date(date), { addSuffix: true, locale: activeLocalePrefs().dateFnsLocale });
+  const value = new Date(date);
+  if (Number.isNaN(value.getTime())) return 'N/A';
+  return formatDistanceToNow(value, { addSuffix: true, locale: activeLocalePrefs().dateFnsLocale });
 }
 
 /** CI time a flaky test wasted, in minutes: seconds under a minute, so a small cost never reads as zero. */
@@ -258,7 +262,8 @@ export function getBrowserHexColor(browserName?: string | null): string {
 
 /**
  * Badge color for a test or run status, on the same hues as the test outcome
- * palette (`status-palette.ts`): timed-out and interrupted read as failed.
+ * palette (`status-palette.ts`): timed-out reads as failed, interrupted as
+ * neutral.
  */
 export function getStatusColor(status: string): BadgeColor {
   switch (statusPaletteKey(status)) {
@@ -292,8 +297,9 @@ export function getStatusIcon(status: string): string {
       return 'i-lucide-check-circle-2';
     case 'failed':
     case 'timedout':
-    case 'interrupted':
       return 'i-lucide-x-circle';
+    case 'interrupted':
+      return 'i-lucide-circle-pause';
     case 'flaky':
       return 'i-lucide-shuffle';
     case 'didnotrun':
@@ -367,6 +373,8 @@ export function formatDidNotRunReason(reason?: string | null): string {
   switch (reason) {
     case 'previous-failure':
       return 'Blocked by an earlier failure';
+    case 'dependency-failure':
+      return 'Blocked by a failed project dependency';
     case 'global-timeout':
       return 'Global timeout reached';
     case 'max-failures':
@@ -858,9 +866,9 @@ export function copyPreview(text: string | null | undefined, max = 120): string 
 /** Nuxt UI `color` union shared by `UBadge` / `UButton` call sites (`flaky` is registered in nuxt.config.ts). */
 export type BadgeColor = 'error' | 'neutral' | 'primary' | 'success' | 'warning' | 'secondary' | 'info' | 'flaky';
 
-/** Pass rate (0–100) for a single run, guarding against divide-by-zero. */
-export function passRate(run: { passedTests: number; totalTests: number }): number {
-  return run.totalTests > 0 ? Math.round((run.passedTests / run.totalTests) * 100) : 0;
+/** A run's pass rate in whole percent (`passRatePercent`): null when none of its tests passed or failed. */
+export function runPassRate(run: { passedTests: number; failedTests: number }): number | null {
+  return passRatePercent({ passed: run.passedTests, failed: run.failedTests });
 }
 
 /** Badge color for an HTTP method (network request rows). */

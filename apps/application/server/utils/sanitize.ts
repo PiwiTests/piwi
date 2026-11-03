@@ -266,10 +266,24 @@ export function capText(text: string | null | undefined, maxChars: number): stri
 
 /**
  * A case's error as it is stored, kept as its cluster's sample and sent to a run's live page: what may be a secret
- * hidden (`hideSecretsInError`), before any cap cuts it. Its fingerprint reads the error as it came.
+ * hidden (`hideSecretsInError`: a credential's shape anywhere in it, a typed text, a credential header, a secret
+ * field's value), before any cap cuts it. Its fingerprint reads it capped as its cluster's sample is.
  */
 export function hiddenErrorText(error: unknown): string | null {
   return typeof error === 'string' ? hideSecretsInError(error) : null;
+}
+
+/**
+ * A case's hook and fixture step events as they are stored and sent to a run's live page: each failed one's error line
+ * with what may be a secret hidden (`hideSecretsInError`). Anything else is returned as it is.
+ */
+export function hiddenStepEventErrors(events: unknown): unknown {
+  if (!Array.isArray(events)) return events ?? null;
+  return events.map((event) =>
+    event && typeof event === 'object' && typeof (event as { error?: unknown }).error === 'string'
+      ? { ...event, error: hideSecretsInError((event as { error: string }).error) }
+      : event,
+  );
 }
 
 /**

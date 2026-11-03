@@ -132,8 +132,15 @@ describe('summarizeRunCases', () => {
       flaky: 3,
       fixme: 0,
       running: 3,
+      interrupted: 0,
     });
     expect(s.passed + s.failed + s.skipped + s.didNotRun + s.running).toBe(s.total);
+  });
+
+  test('counts an interrupted case in no outcome, as the gap the buckets leave, named', () => {
+    const s = summarizeRunCases([{ status: 'passed' }, { status: 'interrupted' }, { status: 'didnotrun' }]);
+    expect(s).toMatchObject({ total: 3, passed: 1, failed: 0, skipped: 0, didNotRun: 1, interrupted: 1 });
+    expect(s.passed + s.failed + s.skipped + s.didNotRun + s.running + s.interrupted).toBe(s.total);
   });
 
   test('counts a test.fixme() skip as skipped and fixme, and ignores fixme on other statuses', () => {
@@ -164,6 +171,7 @@ describe('summarizeRunCases', () => {
       flaky: 0,
       fixme: 0,
       running: 0,
+      interrupted: 0,
     });
   });
 });

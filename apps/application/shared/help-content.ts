@@ -74,7 +74,7 @@ export const HELP_TOPICS = {
   // ── Home ──────────────────────────────────────────────────────────────
   'home.project-health': {
     title: 'Project health',
-    text: 'Every project at a glance — run history bars and a tendency badge so you can immediately see which project needs attention. Only full runs count.',
+    text: 'Every project at a glance — run history bars and a tendency badge so you can immediately see which project needs attention. Only full runs count, and a run in progress counts once it ran to its end: an interrupted or cancelled run shows in the bars and counts nowhere else.',
     doc: 'features/ui-overview#home',
   },
   'home.get-started': {
@@ -136,7 +136,7 @@ export const HELP_TOPICS = {
   },
   'analytics.heatmap': {
     title: 'Pass rate heatmap',
-    text: 'Each cell is the aggregate pass rate of one project over one time bucket — green at 90% or more, amber from 50%, red below 50%, gray means no runs. A cell is one UTC day, or a wider bucket on long periods.',
+    text: 'Each cell is the pass rate of one project over one time bucket (its tests that passed over those that passed or failed): green at 90% or more, amber from 50%, red below 50%, gray when no test passed or failed. A cell is one UTC day, or a wider bucket on long periods.',
   },
   'analytics.ci-time': {
     title: 'CI time',
@@ -198,7 +198,7 @@ export const HELP_TOPICS = {
   },
   'analytics.browser-matrix': {
     title: 'Browser matrix',
-    text: 'Pass rate per project × browser, so a suite that is green on one browser but failing on another (a browser-specific bug) stands out immediately.',
+    text: 'Pass rate per project × browser, so a suite that is green on one browser but failing on another (a browser-specific bug) stands out immediately. A test that passed on a retry counts as passed, and a skipped one in neither term.',
   },
   'chart.export': {
     title: 'Chart export',
@@ -450,7 +450,7 @@ export const HELP_TOPICS = {
     text: [
       'Where the project stands within the page’s filters; each figure links to what it counts.',
       '',
-      '- **Runs** — the latest run, its age, and the pass rate of the last 20 runs.',
+      '- **Runs** — the latest run that ran to its end, its age, and the pass rate of the last 20 such runs; a run in progress, interrupted or cancelled is passed over.',
       '- **Failures** — the open failure clusters, the flaky tests and the quarantined ones.',
     ].join('\n'),
     doc: 'features/ui-overview#project-detail',
@@ -469,7 +469,7 @@ export const HELP_TOPICS = {
   },
   'project.test-cases': {
     title: 'Tests',
-    text: 'Every distinct test in the project with its executed-only pass rate, result breakdown and average duration across runs, in file order. Words search the title, describe blocks and file; qualifiers such as file:, describe:, tag: or owner: search one field, and a leading - excludes. Filter by status, and group by file, or by file and describe block, to see each one’s numbers. Tests not run within the selected age window are hidden by default (last 30 days) — pick "All time" to see obsolete ones. Click a test to see its full history.',
+    text: 'Every distinct test in the project with its pass rate (passed over passed and failed runs), result breakdown and average duration across runs, a run being one result per run, Playwright project and repetition, in file order. Words search the title, describe blocks and file; qualifiers such as file:, describe:, tag: or owner: search one field, and a leading - excludes. Filter by status, and group by file, or by file and describe block, to see each one’s numbers. Tests not run within the selected age window are hidden by default (last 30 days) — pick "All time" to see obsolete ones. Click a test to see its full history.',
     doc: 'reference/test-search',
   },
   'project.members': {
@@ -489,7 +489,7 @@ export const HELP_TOPICS = {
   },
   'case.stability-trend': {
     title: 'Stability trend',
-    text: 'This test’s pass rate, flaky rate (passed only on a retry) and average duration over time, one point per day, week or month in UTC, with the project’s timeline markers. Probe runs are left out. A gap is a bucket where the test did not run.',
+    text: 'This test’s pass rate, flaky rate (passed only on a retry) and average duration over time, one point per day, week or month in UTC, with the project’s timeline markers; a run is one result per run, Playwright project and repetition. Probe runs are left out. A gap is a bucket where the test did not run.',
     doc: 'features/flaky-tests#per-test-stability-trend',
   },
   'cluster.occurrence-trend': {
@@ -638,6 +638,11 @@ export const HELP_TOPICS = {
     text: 'What the dashboard left out or rebuilt while storing this run: steps and console entries over the ingest caps, traces it could not store, evidence rebuilt from a trace, and the fallback the reporter took when its usual way of sending the run failed. A missing step or console line may be one of these, not something the test skipped.',
     doc: 'features/ui-overview#test-run-detail',
     envVars: ['PIWI_INGEST_MAX_STEPS', 'PIWI_INGEST_MAX_CONSOLE_ENTRIES'],
+  },
+  'run.errors': {
+    title: 'Errors outside the tests',
+    text: 'What Playwright reported beside the tests, which fails a run whatever its tests did: a global setup that threw, a spec file that did not load (`No tests found` too), a web server that did not start, a worker fixture whose teardown threw, the failure budget (`maxFailures`) that stopped the run. The reporter keeps the first 20, each message and stack cut to 4,000 characters, with what may be a secret hidden.',
+    doc: 'reference/test-metadata#errors-outside-the-tests',
   },
   'run.externalIdDuplicates': {
     title: 'Duplicate external IDs',
@@ -931,6 +936,11 @@ export const HELP_TOPICS = {
     title: 'Console output',
     text: 'Browser console messages logged while this test ran — often the first clue for a JavaScript error behind a failure. An empty card says which of three things it means: not captured (add the capture fixtures — links to /setup), captured but the page logged nothing, or not applicable. When a trace but no fixtures were present, the entries are recovered from the trace and marked "derived from the trace".',
     doc: 'guide/capture-fixtures',
+  },
+  'case.output': {
+    title: 'Output',
+    text: 'What the test wrote to stdout and stderr while it ran: its own `console.log` lines, a library’s warnings. The reporter keeps the first and the last lines of each, about 64 KB, with what may be a secret hidden; the line between them says how much was cut.',
+    doc: 'reference/test-metadata#test-output',
   },
   'case.network': {
     title: 'Network requests',

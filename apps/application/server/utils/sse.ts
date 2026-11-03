@@ -9,6 +9,12 @@ export function createSSEEndpoint(
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     start(controller) {
+      // A client that left while the handler awaited its checks fired `close` before the listener below exists:
+      // subscribing it would keep its listener and heartbeat for the life of the process.
+      if (event.node.req.destroyed) {
+        controller.close();
+        return;
+      }
       const unsubscribe = onSubscribe(controller, encoder) ?? (() => {});
 
       const heartbeatInterval = setInterval(() => {

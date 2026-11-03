@@ -152,3 +152,33 @@ describe('subscriptionFiltersSchema', () => {
     expect(subscriptionFiltersSchema.parse({ owners: ['a'], unknown: 1 })).toEqual({ owners: ['a'] });
   });
 });
+
+describe('subscription input bounds', () => {
+  const patch = (id: number, body: unknown) => updateSubscription({ params: { id: String(id) }, body });
+  const createDigest = (digestAt: string) =>
+    createSubscription({ body: { channelId, events: ['run.failed'], mode: 'digest', digestAt } });
+
+  test('takes a digest time only as a time of day', async () => {
+    await expect(createDigest('23:59')).resolves.toBeTruthy();
+    await expect(createDigest('9:05')).resolves.toBeTruthy();
+    for (const digestAt of ['99:99', '24:00', '12:60', '7']) {
+      await expect(createDigest(digestAt)).rejects.toMatchObject({ statusCode: 400 });
+    }
+    const { subscription } = await createDigest('08:30');
+    await expect(patch(subscription.id, { digestAt: '25:00' })).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  test('refuses filter lists and values past their caps', async () => {
+    const many = Array.from({ length: 101 }, (_, i) => `team-${i}`);
+    await expect(create({ owners: many })).rejects.toMatchObject({ statusCode: 400 });
+    await expect(create({ branches: many })).rejects.toMatchObject({ statusCode: 400 });
+    await expect(create({ statuses: many })).rejects.toMatchObject({ statusCode: 400 });
+    await expect(create({ environments: ['x'.repeat(257)] })).rejects.toMatchObject({ statusCode: 400 });
+    await expect(create({ owners: many.slice(0, 100) })).resolves.toBeTruthy();
+  });
+
+  test('refuses an event list longer than the events there are', async () => {
+    const events = Array.from({ length: 1000 }, () => 'run.failed');
+    await expect(createSubscription({ body: { channelId, events } })).rejects.toMatchObject({ statusCode: 400 });
+  });
+});

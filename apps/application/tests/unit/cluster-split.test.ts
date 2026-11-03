@@ -30,15 +30,17 @@ let tmpDir: string;
 let client: ReturnType<typeof createClient>;
 let runSeq = 0;
 
-async function seedRun(): Promise<number> {
+async function seedRun(startTime?: Date): Promise<number> {
   const id = ++runSeq;
-  await db.insert(schema.testRuns).values({ id, projectId: 1, status: 'failed', startTime: new Date(id * 1000) });
+  await db
+    .insert(schema.testRuns)
+    .values({ id, projectId: 1, status: 'failed', startTime: startTime ?? new Date(id * 1000) });
   return id;
 }
 
 /** Ingest one run where each given test fails with ERROR, as persistRunCases does. */
-async function ingestFailures(testCaseIds: number[]): Promise<Map<number, number | null>> {
-  const runId = await seedRun();
+async function ingestFailures(testCaseIds: number[], startTime?: Date): Promise<Map<number, number | null>> {
+  const runId = await seedRun(startTime);
   const fp = await computeErrorFingerprint(ERROR);
   const pending = new Map([[fp.fingerprint, { fp, sampleError: ERROR, count: testCaseIds.length }]]);
   const rows = testCaseIds.map((testCaseId) => ({
@@ -120,6 +122,17 @@ describe('moving tests to a new cluster', () => {
     expect(moved.map((r) => r.failureClusterId)).toEqual([newId]);
   });
 
+  test('a cluster split from an announced one is announced too', async () => {
+    const first = await ingestFailures([1, 2]);
+    const sourceId = first.get(1)!;
+    const announcedAt = new Date('2026-10-01T00:00:00Z');
+    await db.update(schema.failureClusters).set({ announcedAt });
+
+    const result = await extractClusterCases(db as never, sourceId, [2], null);
+
+    expect((await readCluster(result!.clusterId!))!.announcedAt).toEqual(announcedAt);
+  });
+
   test('later failures of a moved test join the new cluster, the others the source', async () => {
     const sourceId = (await ingestFailures([1, 2])).get(1)!;
     const newId = (await extractClusterCases(db as never, sourceId, [2]))!.clusterId!;
@@ -169,6 +182,19 @@ describe('moving tests to a new cluster', () => {
     await mergeFailureClusters(dbc as never, otherId, newId);
 
     expect((await ingestFailures([2])).get(2)).toBe(otherId);
+  });
+
+  test('each cluster is then seen in the runs of the failures it holds, in the order they started', async () => {
+    const sourceId = (await ingestFailures([1, 2])).get(1)!;
+    await ingestFailures([2]);
+    // Run 3 was imported from before run 1.
+    await ingestFailures([2], new Date(0));
+    expect(await readCluster(sourceId)).toMatchObject({ firstSeenRunId: 3, lastSeenRunId: 2, occurrences: 4 });
+
+    const newId = (await extractClusterCases(db as never, sourceId, [2]))!.clusterId!;
+
+    expect(await readCluster(sourceId)).toMatchObject({ firstSeenRunId: 1, lastSeenRunId: 1, occurrences: 1 });
+    expect(await readCluster(newId)).toMatchObject({ firstSeenRunId: 3, lastSeenRunId: 2, occurrences: 3 });
   });
 
   test('returns no cluster when none of the tests failed in the source', async () => {

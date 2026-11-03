@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, vi } from 'vitest';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
@@ -21,27 +21,57 @@ async function seedCase(title: string): Promise<number> {
   return id;
 }
 
-/** One run recording `status` for `testCaseId`. Returns the run id. */
-async function seedExecution(testCaseId: number, status: string, metadata: object | null = null): Promise<number> {
+type Attempt = { status: string; retries?: number; browserName?: string; repeatEachIndex?: number };
+
+/**
+ * One run recording `attempts` of `testCaseId`, started a minute after anything seeded before it (a quarantine made
+ * meanwhile included), unless `startTime` says otherwise. Returns the run id.
+ */
+async function seedRun(
+  testCaseId: number,
+  attempts: Attempt[],
+  opts: { metadata?: object | null; startTime?: Date } = {},
+): Promise<number> {
   const runId = ++runSeq;
+  vi.setSystemTime(Date.now() + 60_000);
+  const metadata = opts.metadata ?? null;
   await db.insert(schema.testRuns).values({
     id: runId,
     projectId: 1,
-    status: status === 'passed' ? 'passed' : 'failed',
-    startTime: new Date(Date.now() - (1000 - runId) * 60_000),
+    status: attempts.some((a) => a.status !== 'passed') ? 'failed' : 'passed',
+    startTime: opts.startTime ?? new Date(),
     metadata,
     origin: runOrigin(metadata),
   });
-  await db.insert(schema.testRunsCases).values({ testRunId: runId, testCaseId, status });
+  await db.insert(schema.testRunsCases).values(
+    attempts.map((a) => ({
+      testRunId: runId,
+      testCaseId,
+      status: a.status,
+      retries: a.retries ?? 0,
+      browserName: a.browserName ?? 'chromium',
+      repeatEachIndex: a.repeatEachIndex ?? 0,
+    })),
+  );
   return runId;
 }
 
+/** One run recording `status` for `testCaseId`. Returns the run id. */
+async function seedExecution(testCaseId: number, status: string, metadata: object | null = null): Promise<number> {
+  return seedRun(testCaseId, [{ status }], { metadata });
+}
+
 beforeEach(async () => {
+  vi.useFakeTimers({ toFake: ['Date'], now: Date.UTC(2026, 9, 1) });
   db = drizzle(createClient({ url: ':memory:' }), { schema });
   await migrateToLatest(db);
   await db.insert(schema.projects).values({ id: 1, name: 'quarantine-project' });
   runSeq = 0;
   caseSeq = 0;
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('addQuarantine', () => {
@@ -80,7 +110,7 @@ describe('addQuarantine', () => {
 });
 
 describe('release streaks', () => {
-  test('counts only executions recorded after the quarantine', async () => {
+  test('counts only runs started after the quarantine', async () => {
     const caseId = await seedCase('wobbly');
     // A long green history before quarantining must not count — the reason the
     // test was quarantined is that its history is untrustworthy.
@@ -133,7 +163,7 @@ describe('release streaks', () => {
     expect(entries[0]!.releaseProposed).toBe(false);
   });
 
-  test('counts the streak back from the newest execution, not the oldest', async () => {
+  test('counts the streak back from the newest run, not the oldest', async () => {
     const caseId = await seedCase('wobbly');
     await addQuarantine(db, 1, caseId);
     await seedExecution(caseId, 'passed');
@@ -143,6 +173,81 @@ describe('release streaks', () => {
 
     const { entries } = await listQuarantine(db, 1);
     expect(entries[0]!.consecutivePasses).toBe(2);
+  });
+
+  // An older report imported after the quarantine gets a newer run id, but it ran before.
+  test('a run reported after the quarantine but started before it does not count', async () => {
+    const caseId = await seedCase('wobbly');
+    const anHourAgo = new Date(Date.now() - 3_600_000);
+    await addQuarantine(db, 1, caseId);
+    for (let i = 0; i < RELEASE_AFTER_CONSECUTIVE_PASSES; i++) {
+      await seedRun(caseId, [{ status: 'passed' }], { startTime: anHourAgo });
+    }
+
+    const { entries } = await listQuarantine(db, 1);
+    expect(entries[0]).toMatchObject({ consecutivePasses: 0, runsSinceQuarantine: 0, releaseProposed: false });
+  });
+
+  test('counts a run once, whatever its projects and repetitions', async () => {
+    const caseId = await seedCase('wobbly');
+    await addQuarantine(db, 1, caseId);
+    // Five browser projects, each with `--repeat-each 5`.
+    const browsers = ['chromium', 'firefox', 'webkit', 'mobile-chrome', 'mobile-safari'];
+    await seedRun(
+      caseId,
+      browsers.flatMap((browserName) =>
+        [0, 1, 2, 3, 4].map((repeatEachIndex) => ({ status: 'passed', browserName, repeatEachIndex })),
+      ),
+    );
+
+    const { entries } = await listQuarantine(db, 1);
+    expect(entries[0]).toMatchObject({ consecutivePasses: 1, runsSinceQuarantine: 1, releaseProposed: false });
+  });
+
+  test('a run fails when one of its projects or repetitions failed', async () => {
+    const caseId = await seedCase('wobbly');
+    await addQuarantine(db, 1, caseId);
+    await seedExecution(caseId, 'passed');
+    await seedRun(caseId, [
+      { status: 'passed', browserName: 'chromium' },
+      { status: 'failed', browserName: 'firefox' },
+    ]);
+    await seedExecution(caseId, 'passed');
+    expect((await listQuarantine(db, 1)).entries[0]!.consecutivePasses).toBe(1);
+
+    await seedRun(caseId, [
+      { status: 'passed', repeatEachIndex: 0 },
+      { status: 'failed', repeatEachIndex: 1 },
+    ]);
+    expect((await listQuarantine(db, 1)).entries[0]!.consecutivePasses).toBe(0);
+  });
+
+  test('a pass on a retry resets the streak, and the run counts once', async () => {
+    const caseId = await seedCase('wobbly');
+    await addQuarantine(db, 1, caseId);
+    for (let i = 0; i < RELEASE_AFTER_CONSECUTIVE_PASSES; i++) await seedExecution(caseId, 'passed');
+    await seedRun(caseId, [
+      { status: 'failed', retries: 0 },
+      { status: 'passed', retries: 1 },
+    ]);
+
+    const { entries } = await listQuarantine(db, 1);
+    expect(entries[0]).toMatchObject({
+      consecutivePasses: 0,
+      runsSinceQuarantine: RELEASE_AFTER_CONSECUTIVE_PASSES + 1,
+      releaseProposed: false,
+    });
+  });
+
+  test('a run that skipped the test in one project counts as a pass when it passed in the others', async () => {
+    const caseId = await seedCase('wobbly');
+    await addQuarantine(db, 1, caseId);
+    await seedRun(caseId, [
+      { status: 'passed', browserName: 'chromium' },
+      { status: 'skipped', browserName: 'webkit' },
+    ]);
+
+    expect((await listQuarantine(db, 1)).entries[0]!.consecutivePasses).toBe(1);
   });
 
   // A skip proves nothing either way — counting it would manufacture a release,
@@ -192,7 +297,44 @@ describe('streak queries', () => {
     select.mockRestore();
   });
 
-  test('scans at most the newest executions of each test', async () => {
+  test('reads the streaks of a thousand quarantined tests', async () => {
+    const ids = Array.from({ length: 1_000 }, (_, i) => i + 1);
+    await db
+      .insert(schema.testCases)
+      .values(ids.map((id) => ({ id, projectId: 1, filePath: 'tests/a.spec.ts', title: `test ${id}` })));
+    caseSeq = ids.length;
+    await db.insert(schema.quarantinedTests).values(ids.map((testCaseId) => ({ projectId: 1, testCaseId })));
+    await seedExecution(1, 'passed');
+
+    const { entries } = await listQuarantine(db, 1);
+    expect(entries).toHaveLength(1_000);
+    expect(entries.find((entry) => entry.testCaseId === 1)!.runsSinceQuarantine).toBe(1);
+  });
+
+  test('reads the runs after each quarantine, and looks the test up in each by run and test', async () => {
+    const caseId = await seedCase('indexed');
+    await addQuarantine(db, 1, caseId);
+    await seedExecution(caseId, 'passed');
+    const statements: Array<{ query: string; params: unknown[] }> = [];
+    const logged = drizzle(db.$client, {
+      schema,
+      logger: { logQuery: (query, params) => statements.push({ query, params }) },
+    });
+
+    await listQuarantine(logged, 1);
+    const streak = statements.find((statement) => statement.query.includes('run_rank'))!;
+    const plan = await db.$client.execute({ sql: `EXPLAIN QUERY PLAN ${streak.query}`, args: streak.params as never });
+    const details = plan.rows.map((row) => String(row.detail));
+
+    expect(details).toContain(
+      'SEARCH test_runs USING INDEX idx_test_runs_project_start (project_id=? AND start_time>?)',
+    );
+    expect(details).toContain(
+      'SEARCH test_runs_cases USING INDEX idx_test_runs_cases_run_browser (test_run_id=? AND test_case_id=?)',
+    );
+  });
+
+  test('scans at most the newest runs of each test', async () => {
     const caseId = await seedCase('long-history');
     await addQuarantine(db, 1, caseId);
     await seedExecution(caseId, 'failed');
@@ -223,6 +365,27 @@ describe('debt', () => {
     // exercised yet is unknown, not broken.
     expect(debt.stillFailing).toBe(1);
     expect(debt.readyToRelease).toBe(0);
+  });
+
+  test('counts as still failing only a test that failed in the newest run that ran it', async () => {
+    const skippedOnly = await seedCase('skipped since quarantine');
+    const failedThenSkipped = await seedCase('failed, then skipped');
+    const flakyLast = await seedCase('failed, then passed on a retry');
+    for (const caseId of [skippedOnly, failedThenSkipped, flakyLast]) await addQuarantine(db, 1, caseId);
+
+    await seedExecution(skippedOnly, 'skipped');
+    await seedExecution(skippedOnly, 'didnotrun');
+    await seedExecution(failedThenSkipped, 'failed');
+    await seedExecution(failedThenSkipped, 'skipped');
+    await seedExecution(flakyLast, 'failed');
+    await seedRun(flakyLast, [
+      { status: 'failed', retries: 0 },
+      { status: 'passed', retries: 1 },
+    ]);
+
+    const { debt } = await listQuarantine(db, 1);
+    // A test that never ran since is unknown, and one that last passed on a retry is flaky, not broken.
+    expect(debt.stillFailing).toBe(1);
   });
 });
 

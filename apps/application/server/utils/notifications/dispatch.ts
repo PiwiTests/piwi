@@ -6,7 +6,13 @@ import { safeFetch } from '../safe-fetch';
 import type { NotificationEvent, NotificationPayload } from '#shared/notification-events';
 import { renderEventSubject } from '#shared/notification-events';
 import type { LibSQLDatabase } from 'drizzle-orm/libsql';
-import { claimOutboxRows, nextAttempt, OUTBOX_MAX_ATTEMPTS, OUTBOX_SWEEPABLE_STATUSES } from '../outbox';
+import {
+  claimOutboxRows,
+  failAbandonedOutboxRows,
+  nextAttempt,
+  OUTBOX_MAX_ATTEMPTS,
+  OUTBOX_SWEEPABLE_STATUSES,
+} from '../outbox';
 import { REPORT_READY_EVENT, type ReportReadyPayload } from '#shared/notification-events';
 import {
   loadReportForDelivery,
@@ -161,22 +167,30 @@ async function sendSingle(db: Db, d: DeliveryRow, c: ChannelRow) {
   } else throw new Error(`Unknown channel type: ${c.type}`);
 }
 
+function digestItems(rows: DeliveryRow[]): DigestItem[] {
+  return rows.map((d) => ({ event: d.event as NotificationEvent, payload: (d.payload ?? {}) as NotificationPayload }));
+}
+
+/** The digest of a batch of rows as its channel type draws it, without sending it. */
+function renderDigest(c: ChannelRow, rows: DeliveryRow[]) {
+  const items = digestItems(rows);
+  if (c.type === 'personal_email' || c.type === 'email') return renderDigestEmail(items);
+  if (c.type === 'slack') return slackDigestMessage(items, siteBase());
+  if (c.type === 'teams') return teamsDigestMessage(items, siteBase());
+  throw new Error(`Digest not supported for channel type: ${c.type}`);
+}
+
 /** Deliver a batch of digest-mode rows through one channel as one message. */
 async function sendDigest(db: Db, c: ChannelRow, rows: DeliveryRow[]) {
-  const items: DigestItem[] = rows.map((d) => ({
-    event: d.event as NotificationEvent,
-    payload: (d.payload ?? {}) as NotificationPayload,
-  }));
-
   if (c.type === 'personal_email' || c.type === 'email') {
     if (!isEmailConfigured()) throw new Error('SMTP not configured');
     const to = await resolveEmailAddress(db, c);
-    const { subject, html, text } = renderDigestEmail(items);
+    const { subject, html, text } = renderDigestEmail(digestItems(rows));
     await sendEmail({ to, subject, html, text });
   } else if (c.type === 'slack') {
-    await sendSlackDigest((c.config ?? {}) as Record<string, unknown>, items);
+    await sendSlackDigest((c.config ?? {}) as Record<string, unknown>, digestItems(rows));
   } else if (c.type === 'teams') {
-    await postToTeams((c.config ?? {}) as Record<string, unknown>, teamsDigestMessage(items, siteBase()));
+    await postToTeams((c.config ?? {}) as Record<string, unknown>, teamsDigestMessage(digestItems(rows), siteBase()));
   } else {
     throw new Error(`Digest not supported for channel type: ${c.type}`);
   }
@@ -245,7 +259,8 @@ export function sweepOutbox(db: Db): Promise<SweepResult> {
 
 /**
  * Send the deliveries that are due now (scheduledFor <= now, attempts < MAX):
- * `pending` ones, and `processing` ones whose claim's lease has run out.
+ * `pending` ones, and `processing` ones whose claim's lease has run out. A
+ * delivery whose last allowed attempt never finished is given up first.
  *
  * Email and Slack deliveries queued by a digest-mode subscription batch into
  * one message per channel; every other delivery (realtime, webhook, browser)
@@ -255,7 +270,7 @@ export function sweepOutbox(db: Db): Promise<SweepResult> {
 async function sweepDue(db: Db): Promise<SweepResult> {
   const now = new Date();
   let sent = 0;
-  let failed = 0;
+  let failed = await failAbandonedOutboxRows(db, notificationDeliveries);
 
   const due = await db
     .select({ d: notificationDeliveries, c: notificationChannels, mode: subscriptions.mode })
@@ -312,10 +327,21 @@ async function sweepDue(db: Db): Promise<SweepResult> {
       notificationDeliveries,
       group.map((g) => g.d.id),
     );
-    const rows = group.map((g) => g.d).filter((d) => claimed.has(d.id));
+    const channel = group[0]!.c;
+    // A row whose payload cannot be drawn fails on its own; the rest of the batch still goes out.
+    const rows: DeliveryRow[] = [];
+    for (const d of group.map((g) => g.d).filter((row) => claimed.has(row.id))) {
+      try {
+        renderDigest(channel, [d]);
+        rows.push(d);
+      } catch (err) {
+        await markFailed(db, [d], err, now);
+        failed++;
+      }
+    }
     if (rows.length === 0) continue;
     try {
-      await sendDigest(db, group[0]!.c, rows);
+      await sendDigest(db, channel, rows);
       await markSent(db, rows, now);
       sent += rows.length;
     } catch (err) {

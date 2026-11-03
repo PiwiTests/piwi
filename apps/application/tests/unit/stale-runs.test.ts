@@ -13,8 +13,14 @@ vi.mock('../../server/utils/run-finalize-side-effects', () => ({ runFinalizeSide
 // The schema barrel picks the PostgreSQL schema at import time when
 // PIWI_DATABASE_URL is set, so clear it before importing the helper.
 delete process.env.PIWI_DATABASE_URL;
-const { interruptStaleRuns, settleStaleFinalizingRuns, STALE_TIMEOUT_MS, FINALIZING_TIMEOUT_MS, SHARD_WAIT_MS } =
-  await import('../../server/utils/stale-runs');
+const {
+  interruptStaleRuns,
+  settleStaleFinalizingRuns,
+  STALE_TIMEOUT_MS,
+  FINALIZING_TIMEOUT_MS,
+  SHARD_WAIT_MS,
+  GLOBAL_SETUP_WAIT_MS,
+} = await import('../../server/utils/stale-runs');
 const { runEventBus } = await import('../../server/utils/run-events');
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
@@ -23,8 +29,11 @@ const stale = new Date(now - STALE_TIMEOUT_MS - 60_000);
 const fresh = new Date(now - 10_000);
 const abandoned = new Date(now - FINALIZING_TIMEOUT_MS - 60_000);
 const shardsGone = new Date(now - SHARD_WAIT_MS - 60_000);
+const setupGone = new Date(now - GLOBAL_SETUP_WAIT_MS - 60_000);
 
-// Runs 1–2 are in flight and quiet past the timeout; run 3 is finalizing and
+// Runs 1–2 are in flight and quiet past the timeout, run 2 still in its global
+// setup (initializing) past the wait for its reporter to begin it, which run 13
+// is within; run 3 is finalizing and
 // quiet past it too, but still within the wait for its report upload; run 4 is
 // in flight but active; run 5 is quiet but already finished. Runs 6–7 are
 // finalizing and their report upload never came: run 6 kept the status its
@@ -54,7 +63,7 @@ beforeAll(async () => {
   });
   await db.insert(schema.testRuns).values([
     run(1, 1, 'running', stale),
-    run(2, 2, 'initializing', stale),
+    run(2, 2, 'initializing', setupGone),
     run(3, 1, 'finalizing', stale),
     run(4, 1, 'running', fresh),
     run(5, 1, 'passed', stale),
@@ -69,6 +78,7 @@ beforeAll(async () => {
     { ...run(10, 2, 'running', stale), shardTotal: 2, shardsFinished: 1, metadata: {} },
     { ...run(11, 2, 'running', stale), shardTotal: 2, shardsFinished: 1, metadata: { shardTokens: ['digest-11'] } },
     { ...run(12, 2, 'running', shardsGone), shardTotal: 2, shardsFinished: 1, metadata: {} },
+    run(13, 2, 'initializing', stale),
   ]);
   await db.insert(schema.testCases).values([{ id: 1, projectId: 1, title: 'test 1', filePath: 'a.spec.ts' }]);
   await db
@@ -122,6 +132,7 @@ describe('interruptStaleRuns', () => {
     expect(byId.get(9)?.status).toBe('interrupted');
     expect(byId.get(10)?.status).toBe('running');
     for (const id of [11, 12]) expect(byId.get(id)?.status).toBe('interrupted');
+    expect(byId.get(13)?.status).toBe('initializing');
   });
 
   test('leaves nothing to announce once every stale run is reaped', async () => {

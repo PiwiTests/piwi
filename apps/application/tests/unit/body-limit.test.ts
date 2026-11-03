@@ -13,7 +13,7 @@ describe('bodyLimitError', () => {
     expect(bodyLimitError({ ...json, contentLength: '1024' })).toBeNull();
   });
 
-  test('multipart uploads, bodiless requests and the batch submit are left to their routes', () => {
+  test('multipart uploads, bodiless requests and the batch results are left to their routes', () => {
     const multipart = { method: 'POST', contentType: 'multipart/form-data; boundary=x', transferEncoding: 'chunked' };
     for (const path of [
       '/api/test-runs/upload',
@@ -25,9 +25,9 @@ describe('bodyLimitError', () => {
     }
     expect(bodyLimitError({ method: 'DELETE', path: '/api/links/1' })).toBeNull();
     expect(bodyLimitError({ method: 'GET', path: '/api/projects', transferEncoding: 'chunked' })).toBeNull();
-    expect(
-      bodyLimitError({ ...json, path: '/api/test-runs/submit', contentLength: String(MAX_REQUEST_BODY_BYTES * 4) }),
-    ).toBeNull();
+    for (const path of ['/api/test-runs/submit', '/api/test-runs/upload/results']) {
+      expect(bodyLimitError({ ...json, path, contentLength: String(MAX_REQUEST_BODY_BYTES * 4) })).toBeNull();
+    }
   });
 
   test('a multipart body sent to a route that buffers it follows the same rules as any other body', () => {

@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import { testRuns } from '../database/schema';
 import { apiError } from './api-error';
 import type { DbClient } from '../database';
@@ -6,7 +6,16 @@ import { durationStats } from '#shared/utils/stats';
 import { computeRunCountsFromRows } from './run-counts';
 import { runEventBus } from './run-events';
 import { runFinalizeSideEffects } from './run-finalize-side-effects';
-import { readShardDurations, recordShardEnd, shardSpan, withShardDurations, type ShardReport } from './shard-spans';
+import {
+  hasShardEnded,
+  readShardDurations,
+  readShardSpans,
+  recordShardEnd,
+  shardedRunStatus,
+  shardSpan,
+  withShardDurations,
+  type ShardReport,
+} from './shard-spans';
 import { cancelInstanceRuns } from './cancel-instance-runs';
 import { withInstanceRunLock } from './ingest-locks';
 import { sanitizeMetadata } from './sanitize';
@@ -14,13 +23,15 @@ import { resolveRunBranch } from './run-branch';
 import { runCommit, runOrigin } from '#shared/run-eligibility';
 import { flakyFinalAttempts, sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { resolveBrowserName } from '#shared/browser-name';
-import type { TestCasePayload, TestRunSubmitPayload } from '#shared/types';
+import type { TestCasePayload, TestRunSubmitPayload, WireRunError } from '#shared/types';
+import { storableRunErrors } from './storable-values';
 
 /**
- * The initializing or running sharded run of a project instance, which another
- * shard of the same instance joins rather than starting a run of its own.
+ * The initializing or running sharded run of a project instance, split into
+ * `shardTotal` shards, which another shard of the same instance and shard
+ * count joins rather than starting a run of its own.
  */
-export async function findActiveShardedRun(db: DbClient, projectId: number, instanceId: string) {
+export async function findActiveShardedRun(db: DbClient, projectId: number, instanceId: string, shardTotal: number) {
   const [run] = await db
     .select()
     .from(testRuns)
@@ -29,7 +40,7 @@ export async function findActiveShardedRun(db: DbClient, projectId: number, inst
         eq(testRuns.projectId, projectId),
         eq(testRuns.instanceId, instanceId),
         or(eq(testRuns.status, 'running'), eq(testRuns.status, 'initializing')),
-        gt(testRuns.shardTotal, 1),
+        eq(testRuns.shardTotal, shardTotal),
       ),
     )
     .orderBy(testRuns.id)
@@ -50,6 +61,10 @@ export interface BatchShardTally {
   shard: ShardReport;
   /** The shard's test durations. */
   durations: unknown[];
+  /** The shard's suite-level hook/fixture steps, when it sent them. */
+  setupSteps: BatchRunBody['setupSteps'];
+  /** The shard's errors outside any test, as the run stores them (`storableRunErrors`). */
+  runErrors: WireRunError[] | null;
 }
 
 /** The run-level fields of a batch submission, as `/submit` and the `testRun` field of `/upload` carry them. */
@@ -90,8 +105,16 @@ export function batchShardTally(body: BatchRunBody, testCases: ReadonlyArray<Bat
     skippedTests: body.skippedTests ?? 0,
     didNotRunTests: body.didNotRunTests ?? 0,
     flakyTests: countFlakyBatchCases(testCases),
-    shard: { shardIndex: body.shardIndex, startTime: body.startTime, duration: body.duration, metadata: body.metadata },
+    shard: {
+      shardIndex: body.shardIndex,
+      startTime: body.startTime,
+      duration: body.duration,
+      metadata: body.metadata,
+      status: body.status,
+    },
     durations: testCases.map((tc) => tc.duration),
+    setupSteps: body.setupSteps,
+    runErrors: storableRunErrors(body.runErrors),
   };
 }
 
@@ -102,7 +125,7 @@ export function batchShardTally(body: BatchRunBody, testCases: ReadonlyArray<Bat
  */
 export function batchShardRun(db: DbClient, projectId: number, instanceId: string, body: BatchRunBody) {
   return withInstanceRunLock(projectId, instanceId, async () => {
-    const active = await findActiveShardedRun(db, projectId, instanceId);
+    const active = await findActiveShardedRun(db, projectId, instanceId, body.shardTotal!);
     if (active) return active;
 
     await cancelInstanceRuns(db, projectId, instanceId, undefined, true);
@@ -143,15 +166,18 @@ export function batchShardRun(db: DbClient, projectId: number, instanceId: strin
 
 /**
  * Count a shard of a batch submission into its run, once its executions are
- * stored: the counters add up, the shard's span joins the run's
- * (`recordShardEnd`), and the shard counts as finished.
+ * stored: the counters add up, the shard's span, suite setup steps and errors
+ * outside any test join the run's (`recordShardEnd`), and the shard counts as
+ * finished. A shard whose end the run already holds (its `/finish` answer was
+ * lost, and its reporter fell back to the batch upload) counts once.
  */
 export async function addBatchShard(db: DbClient, runId: number, tally: BatchShardTally): Promise<void> {
+  const span = shardSpan(tally.shard, Date.now());
   await recordShardEnd(
     db,
     runId,
-    shardSpan(tally.shard, Date.now()),
-    (metadata) => withShardDurations(metadata, tally.durations),
+    span,
+    (metadata) => (hasShardEnded(metadata, span.shardIndex) ? null : withShardDurations(metadata, tally.durations)),
     {
       updatedAt: new Date(),
       totalTests: sql`${testRuns.totalTests} + ${tally.totalTests}`,
@@ -162,13 +188,16 @@ export async function addBatchShard(db: DbClient, runId: number, tally: BatchSha
       flakyTests: sql`${testRuns.flakyTests} + ${tally.flakyTests}`,
       shardsFinished: sql`${testRuns.shardsFinished} + 1`,
     },
+    tally.setupSteps ?? [],
+    tally.runErrors ?? [],
   );
 }
 
 /**
  * Settle a sharded run once every shard reported: its counters from its stored
- * executions, its status from them, its duration statistics from every shard's
- * durations, then the finalize side effects. The write applies only to a run
+ * executions, its status from them and its shards' statuses
+ * (`shardedRunStatus`), its duration statistics from every shard's durations,
+ * then the finalize side effects. The write applies only to a run
  * still running with every shard finished, so of shards finishing at once
  * exactly one settles the run and runs the side effects.
  *
@@ -185,7 +214,7 @@ export async function finalizeShardedRun(
   if (!run || run.shardTotal == null || (run.shardsFinished ?? 0) < run.shardTotal) return null;
 
   const counts = await computeRunCountsFromRows(db, runId);
-  const status = counts.failedTests > 0 ? 'failed' : 'passed';
+  const status = shardedRunStatus(readShardSpans(run.metadata), counts.failedTests);
   const stats = durationStats(readShardDurations(run.metadata));
   // The planned total (summed across shards), or the distinct rows when a shard planned none.
   const totalTests = Math.max(run.totalTests ?? 0, counts.totalTests);

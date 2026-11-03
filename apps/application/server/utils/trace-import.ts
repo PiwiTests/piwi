@@ -214,10 +214,12 @@ export async function parseTraceArchive(
   const monotonicTime = anchor.monotonicTime ?? 0;
   const duration = parsed.traceEndTime > monotonicTime ? Math.round(parsed.traceEndTime - monotonicTime) : 0;
 
-  // A trace records one attempt. It failed if the runner logged an error, or if
-  // an action carried one — `timeoutFallback` alone is not failure, since a
-  // passing trace also ends on its last action.
-  const errorText = buildTraceErrorText(parsed);
+  // A trace records one attempt. The runner logs the errors the test ended
+  // with, so with its context those decide: an action error the test caught
+  // (`click().catch(() => {})`) is no failure. A trace recorded without the
+  // runner failed when an action carried an error — `timeoutFallback` alone is
+  // not failure, since a passing trace also ends on its last action.
+  const errorText = buildTraceErrorText(parsed, runnerContext !== undefined);
   const status = errorText ? (isTimeout(errorText) ? 'timedOut' : 'failed') : 'passed';
 
   const metrics = collectStepMetrics(stepsFromActions(parsed, wallTime, monotonicTime));
@@ -255,13 +257,14 @@ function isTimeout(errorText: string): boolean {
 }
 
 /**
- * Assemble the error text, preferring the runner's `error` events (which carry
- * the call log) and falling back to the failing action's own error.
+ * Assemble the error text from the runner's `error` events (which carry the
+ * call log). A trace the runner did not record (`fromRunner` false) falls back
+ * to the failing action's own error.
  */
-function buildTraceErrorText(parsed: ParsedTraceData): string | null {
+function buildTraceErrorText(parsed: ParsedTraceData, fromRunner: boolean): string | null {
   const messages = parsed.errors.map((error) => ({ message: error.message }));
 
-  if (messages.length === 0 && parsed.failingAction?.error?.message && !parsed.timeoutFallback) {
+  if (!fromRunner && messages.length === 0 && parsed.failingAction?.error?.message && !parsed.timeoutFallback) {
     messages.push({ message: parsed.failingAction.error.message });
   }
 

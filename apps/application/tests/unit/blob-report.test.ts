@@ -3,6 +3,8 @@ import { parseBlobReport, BlobReportError, readBlobScm } from '../../server/util
 import { openArchive, ArchiveError } from '../../server/utils/archive-reader';
 import { buildZip } from '../../server/utils/trace-zip';
 import { buildBlobReport } from '../utils/blob-report-fixture';
+import { MAX_RUN_ERRORS } from '@piwitests/core/run-errors';
+import { MAX_TEST_OUTPUT_CHARS } from '@piwitests/core/test-output';
 
 /** The parser reads entries through an injected reader; on the server that is the ZIP. */
 const parse = (archive: Buffer) => parseBlobReport(openArchive(archive).readEntry);
@@ -43,11 +45,12 @@ describe('parseBlobReport', () => {
     expect(parsed.duration).toBe(4321);
     expect(parsed.projectNames).toEqual(['chromium']);
 
-    // Three executions: one pass plus the failure and its retry.
-    expect(parsed.totalTests).toBe(3);
+    // Two tests, as Playwright counts them: one pass, and one whose retry turned green, so it counts as passed and
+    // flaky, never as failed. The three executions stay three cases.
+    expect(parsed.cases).toHaveLength(3);
+    expect(parsed.totalTests).toBe(2);
     expect(parsed.passedTests).toBe(2);
-    expect(parsed.failedTests).toBe(1);
-    // The retry turned green, so the test counts as flaky.
+    expect(parsed.failedTests).toBe(0);
     expect(parsed.flakyTests).toBe(1);
 
     const passed = parsed.cases[0]!.case;
@@ -192,6 +195,25 @@ describe('parseBlobReport', () => {
     expect(parsed.failedTests).toBe(1);
   });
 
+  test('inverts only a test Playwright expected to fail, not one that pushed a fail annotation itself', async () => {
+    const parsed = await parse(
+      buildBlobReport({
+        tests: [
+          {
+            testId: 't-annotated',
+            title: 'notes a known bug',
+            attempts: [{ status: 'passed', annotations: [{ type: 'fail' }], expectedStatus: 'passed' }],
+          },
+        ],
+      }),
+    );
+
+    const annotated = parsed.cases[0]!.case;
+    expect(annotated.status).toBe('passed');
+    expect(annotated.error).toBeNull();
+    expect(parsed.failedTests).toBe(0);
+  });
+
   test('carries step metrics and splits attachments from traces', async () => {
     const parsed = await parse(
       buildBlobReport({
@@ -326,5 +348,180 @@ describe('readBlobScm', () => {
   test('is null when the config metadata records no revision', () => {
     expect(readBlobScm({})).toBeNull();
     expect(readBlobScm(undefined)).toBeNull();
+  });
+});
+
+describe('parseBlobReport counters', () => {
+  test('count each test once, by its last attempt, and each --repeat-each repetition apart', async () => {
+    const parsed = await parse(
+      buildBlobReport({
+        runStatus: 'failed',
+        tests: [
+          {
+            testId: 't-broken',
+            title: 'always fails',
+            attempts: [
+              { status: 'failed', errorMessage: 'Error: boom' },
+              { status: 'failed', errorMessage: 'Error: boom' },
+              { status: 'timedOut', errorMessage: 'Test timeout of 30000ms exceeded.' },
+            ],
+          },
+          { testId: 't-rep-0', title: 'repeated', repeatEachIndex: 0, attempts: [{ status: 'passed' }] },
+          { testId: 't-rep-1', title: 'repeated', repeatEachIndex: 1, attempts: [{ status: 'passed' }] },
+        ],
+      }),
+    );
+
+    expect(parsed.cases).toHaveLength(5);
+    expect(parsed.totalTests).toBe(3);
+    expect(parsed.passedTests).toBe(2);
+    expect(parsed.failedTests).toBe(1);
+    expect(parsed.flakyTests).toBe(0);
+  });
+
+  test('count a test the run stopped in no bucket, as the stored rows and the run page do', async () => {
+    const parsed = await parse(
+      buildBlobReport({
+        runStatus: 'interrupted',
+        tests: [
+          { testId: 't-pass', title: 'passes', attempts: [{ status: 'passed' }] },
+          {
+            testId: 't-stop',
+            title: 'stopped',
+            attempts: [{ status: 'interrupted', errorMessage: 'Error: Test ended.' }],
+          },
+        ],
+      }),
+    );
+
+    expect(parsed).toMatchObject({
+      totalTests: 2,
+      passedTests: 1,
+      failedTests: 0,
+      skippedTests: 0,
+      didNotRunTests: 0,
+      flakyTests: 0,
+    });
+  });
+});
+
+describe('parseBlobReport on an archive older than Playwright 1.53', () => {
+  test("reads each result's attachments from its end event", async () => {
+    const parsed = await parse(
+      buildBlobReport({
+        playwrightVersion: '1.52.0',
+        attachmentsOnTestEnd: true,
+        runStatus: 'failed',
+        tests: [
+          {
+            testId: 't-fail',
+            title: 'fails',
+            attempts: [
+              {
+                status: 'failed',
+                errorMessage: 'Error: boom',
+                attachments: [
+                  { name: 'trace', contentType: 'application/zip', body: 'trace bytes' },
+                  { name: 'screenshot', contentType: 'image/png', body: 'png bytes' },
+                  { name: '_error-context-0', contentType: 'text/markdown', body: '# Page snapshot' },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    const [failed] = parsed.cases;
+    expect(failed!.traces.map((t) => t.name)).toEqual(['trace']);
+    expect(failed!.attachments.map((a) => a.name)).toEqual(['screenshot', '_error-context-0']);
+  });
+});
+
+describe("a blob report's test output and its errors outside any test", () => {
+  test("keeps each attempt's output as the reporter does: in order, decoded as one stream, its secrets hidden", async () => {
+    // "café", its "é" split across two base64 chunks.
+    const cafe = Buffer.from('café ready\n', 'utf-8');
+    const parsed = await parse(
+      buildBlobReport({
+        outputOutsideTests: ['webServer listening on :3000\n'],
+        tests: [
+          {
+            testId: 't',
+            title: 'pays',
+            attempts: [
+              {
+                status: 'failed',
+                stdout: [
+                  'GET https://api.example.test/me?access_token=t0k3n-v4lue 200\n',
+                  { base64: cafe.subarray(0, 4).toString('base64') },
+                  { base64: cafe.subarray(4).toString('base64') },
+                ],
+                stderr: ['payment sandbox answered 502\n'],
+              },
+              { status: 'passed', stdout: [' \n'] },
+            ],
+          },
+        ],
+      }),
+    );
+
+    const [first, retry] = parsed.cases.map((entry) => entry.case);
+    expect(first!.stdout).toBe('GET https://api.example.test/me?access_token=<hidden> 200\ncafé ready\n');
+    expect(first!.stderr).toBe('payment sandbox answered 502\n');
+    expect(retry!.stdout).toBeNull();
+    expect(retry!.stderr).toBeNull();
+  });
+
+  test('bounds a long output as the reporter does, keeping its head and its tail', async () => {
+    const long = Array.from({ length: 10_000 }, (_, i) => `step ${i} of the checkout\n`);
+    const parsed = await parse(
+      buildBlobReport({ tests: [{ testId: 't', title: 'pays', attempts: [{ status: 'passed', stdout: long }] }] }),
+    );
+
+    const stdout = parsed.cases[0]!.case.stdout as string;
+    expect(stdout.length).toBeLessThanOrEqual(MAX_TEST_OUTPUT_CHARS);
+    expect(stdout.startsWith('step 0 of the checkout\n')).toBe(true);
+    expect(stdout).toMatch(/\[… \d+ lines \(\d+ characters\) of output cut …\]/);
+    expect(stdout.endsWith('step 9999 of the checkout\n')).toBe(true);
+  });
+
+  test('keeps the errors outside any test as the reporter does: hidden, placed from the config folder, the first ones', async () => {
+    const signIn = 'Error: global setup could not sign in at https://auth.example.test/login?token=s3cr3t-v4lue';
+    const parsed = await parse(
+      buildBlobReport({
+        rootDir: '/repo/tests',
+        configFile: '../playwright.config.ts',
+        runErrors: [
+          {
+            message: signIn,
+            stack: `${signIn}\n    at globalSetup (/repo/global-setup.ts:4:9)`,
+            location: { file: '/repo/global-setup.ts', line: 4, column: 9 },
+            snippet: '> 4 |   throw new Error(…)',
+            cause: { message: 'Error: connect ECONNREFUSED 127.0.0.1:3000' },
+          },
+          ...Array.from({ length: MAX_RUN_ERRORS + 5 }, (_, i) => ({ message: `Error: spec ${i} did not load` })),
+        ],
+        tests: [{ testId: 't', title: 'a', attempts: [{ status: 'passed' }] }],
+      }),
+    );
+
+    expect(parsed.runErrors).toHaveLength(MAX_RUN_ERRORS);
+    expect(parsed.runErrors[0]).toEqual({
+      message:
+        'Error: global setup could not sign in at https://auth.example.test/login?token=<hidden>\n[cause]: Error: connect ECONNREFUSED 127.0.0.1:3000',
+      stack: '    at globalSetup (/repo/global-setup.ts:4:9)',
+      location: { file: 'global-setup.ts', line: 4, column: 9 },
+    });
+    expect(parsed.runErrors[1]).toEqual({ message: 'Error: spec 0 did not load', stack: null, location: null });
+  });
+
+  test('a report with neither keeps no run error, and its executions no output', async () => {
+    const parsed = await parse(
+      buildBlobReport({ tests: [{ testId: 't', title: 'a', attempts: [{ status: 'passed' }] }] }),
+    );
+
+    expect(parsed.runErrors).toEqual([]);
+    expect(parsed.cases[0]!.case).toMatchObject({ stdout: null, stderr: null });
   });
 });

@@ -94,8 +94,11 @@ export interface FailureSource {
   snippet: string;
 }
 
-/** A test's outcome in one run: a status key of `STATUS_COLORS`, or null when the run did not report the test. */
-export type HistoryOutcome = 'passed' | 'flaky' | 'failed' | 'skipped' | 'didnotrun' | null;
+/**
+ * A test's outcome in one run: a status key of `STATUS_COLORS` (`interrupted` when the run's interruption cut it
+ * short, in no outcome), or null when the run did not report the test.
+ */
+export type HistoryOutcome = 'passed' | 'flaky' | 'failed' | 'skipped' | 'didnotrun' | 'interrupted' | null;
 
 /** A single failing test embedded in a run notification for debugging context. */
 export interface TopFailure {
@@ -158,6 +161,8 @@ export interface RunFinishedPayload extends RunScope {
   flakyTests: number;
   skippedTests?: number;
   didNotRunTests?: number;
+  /** Tests the run's interruption cut short: in no outcome, so in none of the counts above. */
+  interruptedTests?: number;
   isDefaultBranch?: boolean;
   flakinessRate?: number; // 0-1
   /** Duration of the run in milliseconds. */
@@ -202,6 +207,8 @@ export interface ClusterNewPayload extends RunScope {
   runId: number;
   sampleErrorExcerpt?: string;
   affectedCases?: number;
+  /** The earlier run the cluster first appeared in, which sent no notification of it; absent when it is `runId`. */
+  firstSeenRunId?: number;
   /** The tracker issue the cluster is known by, named in the message when set. */
   knownIssue?: { key: string; url: string };
   /** Distinct owners of the tests that failed into the cluster in this run, resolved as for {@link RunFinishedPayload}. */

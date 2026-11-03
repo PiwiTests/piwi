@@ -3,10 +3,14 @@ import { renderNotificationEmailAt, renderDigestEmailAt } from '#shared/notifica
 import { codeBlock, outcomeBar } from '#shared/notifications/email-blocks';
 import {
   historySentence,
+  historySquares,
+  historyText,
   percent,
   runSegments,
+  runStatusKey,
   sourceIsTestFile,
   testHistorySentence,
+  testHistorySquares,
 } from '#shared/notifications/message-parts';
 import { durationShort } from '#shared/relative-time';
 import type { RunFinishedPayload, RunHistoryEntry } from '#shared/notification-events';
@@ -259,6 +263,16 @@ describe('the email blocks', () => {
     ]);
   });
 
+  test('a run names its interrupted tests apart from the ones it never reported', () => {
+    const counts = { totalTests: 10, passedTests: 6, failedTests: 0, flakyTests: 0, didNotRunTests: 1 };
+    expect(runSegments({ ...counts, interruptedTests: 2 })).toEqual([
+      { key: 'passed', label: 'passed', count: 6 },
+      { key: 'didnotrun', label: "didn't run", count: 1 },
+      { key: 'interrupted', label: 'interrupted', count: 2 },
+      { key: 'fixme', label: 'not reported', count: 1 },
+    ]);
+  });
+
   test('the outcome bar gives a tiny share a visible width', () => {
     const bar = outcomeBar(runSegments({ passedTests: 999, failedTests: 1, flakyTests: 0 }), 1000);
     const widths = [...bar.matchAll(/<td width="([\d.]+)%"/g)].map((m) => Number(m[1]));
@@ -295,6 +309,17 @@ describe('the email blocks', () => {
     expect(sentence(['skipped', 'didnotrun', 'failed'])).toEqual({ text: 'No earlier result here', isNew: false });
     expect(sentence([null, null, 'failed'])).toEqual({ text: 'No earlier result here', isNew: false });
     expect(sentence(['failed', 'passed'])).toBeNull();
+    expect(sentence(['interrupted', 'passed', 'failed'])).toEqual({
+      text: 'Passed the previous time it ran',
+      isNew: true,
+    });
+  });
+
+  test('an interrupted run or test is drawn in no outcome, neither failed nor did not run', () => {
+    expect(runStatusKey('interrupted')).toBe('interrupted');
+    expect(historySquares(history(['passed', 'interrupted', 'failed']))).toBe('🟩⬜🟥');
+    expect(historyText(history(['passed', 'interrupted', 'failed']))).toMatch(/^Last 3 runs: ✓ - ✗/);
+    expect(testHistorySquares(['passed', 'interrupted', 'failed'])).toBe('🟩⬜🟥');
   });
 
   test('the code block drops the shared indentation and the caret row, and marks the failing line', () => {

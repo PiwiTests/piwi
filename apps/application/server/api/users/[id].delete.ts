@@ -1,6 +1,7 @@
 import { getDatabase } from '../../database';
 import { accessRefusal, deleteUserAccount } from '#shared/handlers/project-access';
 import { requireAuth, isAuthEnabled } from '../../utils/auth';
+import { requireRouteId } from '../../utils/project-access';
 
 defineRouteMeta({
   openAPI: {
@@ -16,13 +17,7 @@ defineRouteMeta({
 export default eventHandler(async (event) => {
   const currentUser = await requireAuth(event);
 
-  const id = parseInt(getRouterParam(event, 'id') || '0');
-  if (!id) {
-    throw apiError({
-      statusCode: 400,
-      message: 'Invalid user ID',
-    });
-  }
+  const id = requireRouteId(event, 'id', 'user ID');
 
   try {
     // The lockout guards are only meaningful when authentication is enabled.

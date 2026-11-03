@@ -65,6 +65,8 @@ test.describe('Flake-lab runs', () => {
       data: { testCaseId: paysId, reason: 'flaky on CI' },
     });
     expect(quarantined.ok()).toBeTruthy();
+    // The runs below start after the quarantine, so the streak reads them.
+    clock = Date.now();
 
     await submit(
       request,

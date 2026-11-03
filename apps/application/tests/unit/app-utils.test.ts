@@ -29,6 +29,7 @@ import {
   copyPreview,
   reportIcon,
   getBrowserIcon,
+  runPassRate,
 } from '../../app/utils/index';
 
 describe('formatBytes', () => {
@@ -136,6 +137,11 @@ describe('formatRelativeTime', () => {
   test('renders a past date with an "ago" suffix', () => {
     expect(formatRelativeTime(new Date(Date.now() - 60_000))).toContain('ago');
   });
+
+  test('returns N/A for a value that is no date, rather than throwing', () => {
+    expect(formatRelativeTime('not a date')).toBe('N/A');
+    expect(formatRelativeTime(new Date(Number.NaN))).toBe('N/A');
+  });
 });
 
 describe('getStatusColor', () => {
@@ -150,14 +156,27 @@ describe('getStatusColor', () => {
     expect(getStatusColor('never-run')).toBe('neutral');
   });
 
-  test('reads timed-out and interrupted as failed, like the run counters', () => {
+  test('reads timed-out as failed, like the run counters, and interrupted as neutral, in no outcome', () => {
     expect(getStatusColor('timedout')).toBe('error');
     expect(getStatusColor('timedOut')).toBe('error');
-    expect(getStatusColor('interrupted')).toBe('error');
+    expect(getStatusColor('interrupted')).toBe('neutral');
+    expect(getStatusIcon('interrupted')).toBe('i-lucide-circle-pause');
   });
 
   test('falls back to neutral for unknown statuses', () => {
     expect(getStatusColor('whatever')).toBe('neutral');
+  });
+});
+
+describe('runPassRate', () => {
+  test('reads the passed tests of a run over the ones that passed or failed', () => {
+    // 1 passed and 26 did not run: the run stopped, its one decided test passed.
+    expect(runPassRate({ passedTests: 1, failedTests: 0 })).toBe(100);
+    expect(runPassRate({ passedTests: 7, failedTests: 3 })).toBe(70);
+  });
+
+  test('has none when no test passed or failed', () => {
+    expect(runPassRate({ passedTests: 0, failedTests: 0 })).toBeNull();
   });
 });
 

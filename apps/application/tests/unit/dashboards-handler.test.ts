@@ -333,6 +333,18 @@ describe('saved dashboards', () => {
     expect(await dashboards.getInstanceDefaultDashboard(db as any)).toBeNull();
   });
 
+  test('a saved dashboard is read by its id written plainly, as a route reads one', async () => {
+    const d = await dashboards.createDashboard(db as any, { name: 'Plain', visibility: 'shared' }, admin);
+    expect((await dashboards.getDashboard(db as any, String(d.id), admin, 'all')).name).toBe('Plain');
+    for (const ref of [`0${d.id}`, `${d.id}abc`, '99999999999999999999']) {
+      await expect(dashboards.getDashboard(db as any, ref, admin, 'all')).rejects.toMatchObject({ statusCode: 404 });
+    }
+    await expect(dashboards.setInstanceDefaultDashboard(db as any, '99999999999999999999')).rejects.toMatchObject({
+      statusCode: 400,
+      message: 'Unknown dashboard',
+    });
+  });
+
   test('a shared dashboard nobody opened for 90 days is unused', async () => {
     const d = await dashboards.createDashboard(db as any, { name: 'Old', visibility: 'shared' }, admin);
     await db

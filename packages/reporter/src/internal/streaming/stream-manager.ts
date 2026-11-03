@@ -6,7 +6,7 @@ import { HttpError } from '../transport/http-client.js';
 import type { StreamBuffer } from './stream-buffer.js';
 import { BoundedEventQueue } from './bounded-queue.js';
 import type { CrashRecovery } from './crash-recovery.js';
-import type { Uploader } from '../submit/uploader.js';
+import { uploadCaseFilesInTurn, type Uploader } from '../submit/uploader.js';
 import type { FileHandler } from '../files/file-handler.js';
 import { Logger } from '../support/logger.js';
 import { createLimiter } from '../support/limiter.js';
@@ -23,10 +23,16 @@ const SERVER_MAX_EVENT_BATCH_BYTES = 10 * 1024 * 1024;
 const EVENT_ENVELOPE_BYTES = 1024;
 /** Byte budget for the events of one `/events` request, well under the server's limit. */
 const MAX_EVENT_REQUEST_BYTES = 4 * 1024 * 1024;
-/** Uploads in a row without any response after which `uploadRemaining` gives up. */
-const MAX_UPLOAD_CONNECTION_FAILURES = 3;
+/**
+ * How long the request of the oldest events may keep failing, for want of an answer or with a server error, from its
+ * first failure, before they are set aside so the later ones flow: two and a half minutes, about ten retries of the
+ * back-off. An outage shorter than that sets nothing aside, however many sends fail in it.
+ */
+const EVENT_FAILURE_GRACE_MS = 150_000;
 /** The least a heartbeat waits once activity put it off: pending events flush first. */
 const MIN_HEARTBEAT_WAIT_MS = 250;
+/** Longest delay `setTimeout` supports; a larger one fires at once. */
+const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
 
 /**
  * Manages the streaming protocol: queues events (begin / complete), flushes
@@ -53,6 +59,13 @@ export class StreamManager {
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly maxRetryDelay = 30000;
   /**
+   * When the request of the oldest events first failed since the dashboard last took one (ms since the epoch), the
+   * start of `EVENT_FAILURE_GRACE_MS`; null while none failed.
+   */
+  private headFailingSince: number | null = null;
+  /** Whether events were set aside yet: the first time warns, the later ones are logged at debug level. */
+  private setAsideWarned = false;
+  /**
    * Idle heartbeat: while the run is open but no events are flowing (e.g. a single
    * long test, or `beforeAll` setup), a periodic ping keeps the server's activity
    * timestamp fresh so the stale-run reaper can tell a live run from a crashed one.
@@ -78,8 +91,12 @@ export class StreamManager {
   private watched: boolean | null = null;
   /** Tracks cases whose files have already been uploaded live, so `uploadRemaining` can skip them. */
   private readonly uploadedCaseFiles = new WeakSet<CollectedTestCase>();
+  /** Ends every file upload, live or not, in flight or still to start: aborted at `uploadRemaining`'s deadline. */
+  private readonly fileUploads = new AbortController();
   /** Set when a test-result event left the live stream undelivered: too large to send, or still queued when the drain gave up. */
   private resultsUndelivered = false;
+  /** Set when the dashboard refused the run's events or heartbeat as the run is no longer running (`endRun`). */
+  private ended = false;
 
   private _enabled = false;
   private _runId: number | null = null;
@@ -91,9 +108,17 @@ export class StreamManager {
   get enabled(): boolean {
     return this._enabled;
   }
-  /** Server-assigned run ID (`null` until the stream opens) */
+  /** Server-assigned run ID (`null` until the stream opens, and once the dashboard ended the run) */
   get runId(): number | null {
-    return this._runId;
+    return this.ended ? null : this._runId;
+  }
+  /**
+   * Whether the dashboard ended the run while it streamed: it refused an events or heartbeat request with 409, as it
+   * does once another run with the same run label started. Nothing more is streamed, and the run goes whole in the
+   * end-of-run batch upload, which re-sends it from the reporter's own collection.
+   */
+  get runEnded(): boolean {
+    return this.ended;
   }
   /** Stream authentication token (`null` until the stream opens) */
   get token(): string | null {
@@ -304,6 +329,7 @@ export class StreamManager {
   // then prepended to the main queue so it arrives before the matching complete event.
   /** Queue a test-case `begin` event. Held in a pre-start buffer if the stream is not yet open, then prepended so it arrives before the matching `complete` event. */
   queueBeginEvent(event: StreamEvent): void {
+    if (this.ended) return;
     if (this._enabled && this._runId) {
       this.queueEvent(event);
     } else {
@@ -314,9 +340,10 @@ export class StreamManager {
   /**
    * Queue a test-case event. Triggers an immediate flush when the batch size is
    * reached, otherwise schedules a timer-based flush. A step event is dropped
-   * while nobody watches the run.
+   * while nobody watches the run, and every event once the dashboard ended it.
    */
   queueEvent(event: StreamEvent): void {
+    if (this.ended) return;
     if (this.watched === false && (event.type === 'step-begin' || event.type === 'step-end')) return;
     this.pendingEvents.enqueue(event);
 
@@ -344,8 +371,12 @@ export class StreamManager {
 
   // Post the events in order, in requests of at most `MAX_EVENT_REQUEST_BYTES`.
   // A request the server refuses as too large (413) is split in half and resent;
-  // a single event it still refuses leaves the live stream. On any other failure
-  // the unsent events go back to the head of the queue and a retry is scheduled.
+  // a single event it still refuses leaves the live stream. A request it refuses
+  // as the run is no longer running (409) ends the stream (`endRun`). A request
+  // it refuses with another client error (except 408 and 429), or one still
+  // failing `EVENT_FAILURE_GRACE_MS` after its first failure, is set aside so the
+  // later ones flow. On any other failure the unsent events go back to the head
+  // of the queue and a retry is scheduled.
   private async sendEvents(events: StreamEvent[]): Promise<boolean> {
     const chunks = this.chunkEvents(events);
     while (chunks.length > 0) {
@@ -358,8 +389,13 @@ export class StreamManager {
         );
         this.noteWatched(response);
         this.retryCount = 0;
+        this.headFailingSince = null;
         this.lastActivityAt = Date.now();
       } catch (error) {
+        if (endsRun(error)) {
+          this.endRun(error);
+          return false;
+        }
         if (error instanceof HttpError && error.status === 413) {
           if (chunk.length > 1) {
             const half = Math.ceil(chunk.length / 2);
@@ -367,6 +403,11 @@ export class StreamManager {
           } else {
             this.dropOversized(chunk[0]);
           }
+          continue;
+        }
+        // Once the time budget closed the client, the drain stops: no failure counts.
+        if (refusesEvents(error) || (!this.httpClient.closed && this.failingPastGrace())) {
+          this.setAside(chunk, error);
           continue;
         }
         this.pendingEvents.prepend(chunk.concat(...chunks));
@@ -412,6 +453,32 @@ export class StreamManager {
       );
     } else {
       this.logger.debug(`Dropped a ${event.type} event for "${event.title}" that is too large to stream.`);
+    }
+  }
+
+  // Whether the request of the oldest events, failing now, has kept failing for
+  // `EVENT_FAILURE_GRACE_MS` since its first failure.
+  private failingPastGrace(): boolean {
+    const now = Date.now();
+    this.headFailingSince ??= now;
+    return now - this.headFailingSince >= EVENT_FAILURE_GRACE_MS;
+  }
+
+  // Leave events the dashboard did not take out of the live stream, so the later
+  // ones flow. A test result among them sends the run through the end-of-run
+  // batch upload, which carries the full run (see `lostResults`).
+  private setAside(events: StreamEvent[], error: unknown): void {
+    this.headFailingSince = null;
+    const results = events.some((event) => event.type === 'complete');
+    if (results) this.resultsUndelivered = true;
+    const message =
+      `The dashboard did not take ${events.length} live event(s) (${errorMessage(error)}): they are left out of the live view` +
+      (results ? `, and the end-of-run upload carries their results.` : '.');
+    if (this.setAsideWarned) {
+      this.logger.debug(message);
+    } else {
+      this.setAsideWarned = true;
+      this.logger.warn(message);
     }
   }
 
@@ -492,9 +559,37 @@ export class StreamManager {
       this.noteWatched(response);
       this.lastActivityAt = Date.now();
     } catch (error) {
+      if (endsRun(error)) {
+        this.endRun(error);
+        return;
+      }
       this.logger.debug(`Heartbeat failed: ${errorMessage(error)}`);
     }
     this.scheduleHeartbeat();
+  }
+
+  /**
+   * The dashboard refused the run's events or heartbeat as the run is no longer running, as it does once another run
+   * with the same run label started. Nothing more is streamed to it, its queued and buffered events are dropped, and
+   * the submitter delivers the run whole with the end-of-run batch upload (`runEnded`).
+   */
+  private endRun(error: unknown): void {
+    if (this.ended) return;
+    this.logger.warn(
+      `The dashboard ended live run #${this._runId} (${errorMessage(error)}), as it does once another run with the ` +
+        `same run label starts: give each parallel job its own runLabel. The results are sent in one batch at the end.`,
+    );
+    this.ended = true;
+    this._enabled = false;
+    this.stopHeartbeat();
+    this.clearRetryTimer();
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
+    this.pendingEvents.clear();
+    this.pendingBeginEvents.clear();
+    this.streamBuffer.clear();
   }
 
   /** Stop the idle heartbeat permanently (called when the run is wrapping up). */
@@ -645,6 +740,7 @@ export class StreamManager {
               tc,
               this.options.uploadTraces,
               this._auth,
+              this.fileUploads.signal,
             ),
           );
           this.uploadedCaseFiles.add(tc);
@@ -664,42 +760,64 @@ export class StreamManager {
 
   /**
    * Wait for all live uploads to settle, then upload files for any test cases
-   * that weren't uploaded live. Stops after `MAX_UPLOAD_CONNECTION_FAILURES`
-   * uploads in a row got no response at all.
+   * that weren't uploaded live (`uploadCaseFilesInTurn`). Stops at `deadline`
+   * (ms since the epoch), which also ends the uploads in flight, live ones
+   * included.
    */
-  async uploadRemaining(testCases: CollectedTestCase[]): Promise<void> {
+  async uploadRemaining(testCases: CollectedTestCase[], deadline: number | null = null): Promise<void> {
+    let stop: ReturnType<typeof setTimeout> | null = null;
+    if (deadline !== null) {
+      const wait = deadline - Date.now();
+      if (wait <= 0) this.stopFileUploads();
+      else stop = setTimeout(() => this.stopFileUploads(), Math.min(wait, MAX_TIMER_DELAY_MS));
+    }
+    try {
+      await this.uploadRemainingFiles(testCases);
+    } finally {
+      if (stop) clearTimeout(stop);
+    }
+  }
+
+  private async uploadRemainingFiles(testCases: CollectedTestCase[]): Promise<void> {
     if (this.liveUploadPromises.length > 0) {
       await Promise.allSettled(this.liveUploadPromises);
       this.liveUploadPromises = [];
     }
     if (!this._enabled || !this._runId || !this._token) return;
 
-    let connectionFailures = 0;
-    for (const tc of testCases) {
-      if (this.uploadedCaseFiles.has(tc)) continue;
-      try {
-        const uploaded = await this.uploader.uploadCaseFiles(
-          this.options.projectName!,
-          this._runId,
-          this._token,
-          tc,
-          this.options.uploadTraces,
-          this._auth,
-        );
-        if (uploaded) this.uploadedCaseFiles.add(tc);
-        connectionFailures = 0;
-      } catch (error) {
-        this.logger.warn(`Failed to upload files for "${tc.title}": ${errorMessage(error)}`);
-        // Any HTTP status means the dashboard answered; only a request that got
-        // no response (refused, reset, timed out) counts toward giving up.
-        connectionFailures = error instanceof HttpError ? 0 : connectionFailures + 1;
-        if (connectionFailures >= MAX_UPLOAD_CONNECTION_FAILURES) {
-          this.logger.warn(`The dashboard stopped responding — skipping the file uploads of the remaining tests.`);
-          return;
-        }
-      }
-    }
+    await uploadCaseFilesInTurn(
+      this.uploader,
+      this.logger,
+      {
+        projectName: this.options.projectName!,
+        runId: this._runId,
+        streamToken: this._token,
+        uploadTraces: this.options.uploadTraces,
+        auth: this._auth,
+      },
+      testCases,
+      this.fileUploads.signal,
+      { skip: (tc) => this.uploadedCaseFiles.has(tc), uploaded: (tc) => this.uploadedCaseFiles.add(tc) },
+    );
   }
+
+  /** End every file upload, in flight or still to start, so the run's `/finish` keeps its share of the budget. */
+  private stopFileUploads(): void {
+    this.fileUploads.abort(new Error('The end-of-run time budget is kept for finishing the run'));
+  }
+}
+
+/** The dashboard's answer for a run that is no longer running: it was cancelled, or it ended otherwise. */
+function endsRun(error: unknown): boolean {
+  return error instanceof HttpError && error.status === 409;
+}
+
+/**
+ * A refusal of a request of events that no retry changes: a client error other than a timeout (408) or a rate
+ * limit (429).
+ */
+function refusesEvents(error: unknown): boolean {
+  return error instanceof HttpError && error.status >= 400 && error.status < 500 && ![408, 429].includes(error.status);
 }
 
 // UTF-8 size of the event's JSON, the unit the server's limit counts, plus one

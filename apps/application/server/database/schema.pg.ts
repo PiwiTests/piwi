@@ -115,6 +115,7 @@ export const testRuns = pgTable(
     origin: text('origin').notNull().default('local'), // What launched the run, `runOrigin(metadata)`, written with every metadata write; read by the eligibility rule
     commit: text('commit_sha'), // The run's commit, `runCommit(metadata)` (metadata.scm.commit), written with every metadata write; null when the run names none
     setupSteps: jsonb('setup_steps'), // Array of suite-level hook/fixture steps (beforeAll/afterAll) for the timeline
+    runErrors: jsonb('run_errors'), // WireRunError[]: errors Playwright reported outside any test (global setup, a spec that did not load, a worker's teardown), at most 20; null when none
     label: text('label'), // Optional human-readable label (e.g. "v2.3.1 release")
     streamToken: text('stream_token'), // Token for authenticating streaming updates
     instanceId: text('instance_id'), // Unique identifier for the reporter instance that created this run
@@ -240,7 +241,7 @@ export const quarantinedTests = pgTable(
       .references(() => testCases.id, { onDelete: 'cascade' }),
     reason: text('reason'),
     source: text('source').notNull().default('manual'), // 'manual' | 'proposed'
-    /** Run id at quarantine time — passes are counted from after this run. */
+    /** The project's newest run at quarantine time; the release streak reads the runs that start after `created_at`. */
     quarantinedAtRunId: integer('quarantined_at_run_id'),
     createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { mode: 'date' })
@@ -273,7 +274,7 @@ export const failureClusters = pgTable(
     errorType: text('error_type'), // 'timeout', 'assertion', 'strict-mode', 'navigation', 'crash', 'unknown'
     selector: text('selector'), // locator extracted from the error, if any
     sampleError: text('sample_error'), // one error, its secrets hidden (`hiddenErrorText`), kept for display; refreshed to a better exemplar as the cluster recurs
-    fingerprintSample: text('fingerprint_sample'), // immutable error captured at creation, its secrets hidden in a way that leaves its fingerprint the same; re-fingerprinting on a version bump reads this so a display-sample refresh can't move the fingerprint source (null on rows created before this column — recluster falls back to sample_error)
+    fingerprintSample: text('fingerprint_sample'), // immutable error captured at creation, the text its fingerprint was computed from; re-fingerprinting on a version bump reads this so a display-sample refresh can't move the fingerprint source (null on rows created before this column — recluster falls back to sample_error)
     // Run ids are intentionally NOT foreign keys: runs are deleted independently
     // and clusters must survive them (stale ids are tolerated)
     firstSeenRunId: integer('first_seen_run_id').notNull(),
@@ -302,6 +303,9 @@ export const failureClusters = pgTable(
     snoozedUntil: timestamp('snoozed_until', { mode: 'date' }), // hidden from queues until this instant; null when not snoozed
     snoozeMode: text('snooze_mode'), // 'until' (wake at snoozedUntil) | 'until-recurs' (wake at snoozedUntil OR a new occurrence)
     assignee: text('assignee'), // person this cluster is assigned to (name or email); overrides the derived owner
+    // When a run that sends notifications decided the cluster's `cluster.new`, claimed by that one run: it announced
+    // the cluster then, or found it triaged or snoozed. Null until then; clusters older than the column read as decided.
+    announcedAt: timestamp('announced_at', { mode: 'date' }),
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -328,6 +332,7 @@ export const failureClusterAliases = pgTable(
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
     fingerprint: text('fingerprint').notNull(),
+    fingerprintSample: text('fingerprint_sample'), // the error `fingerprint` was computed from (see schema.sqlite.ts)
     clusterId: integer('cluster_id')
       .notNull()
       .references(() => failureClusters.id, { onDelete: 'cascade' }),
@@ -534,6 +539,7 @@ export const testRunsCases = pgTable(
     failureClusterId: integer('failure_cluster_id').references(() => failureClusters.id), // set for failed rows with an error — groups rows sharing a fingerprint
     retries: integer('retries').default(0),
     repeatEachIndex: integer('repeat_each_index').notNull().default(0), // Playwright's repeatEachIndex: which `--repeat-each` repetition the row belongs to (0 without repeats)
+    finalAttempt: boolean('final_attempt').notNull().default(true), // false once a later attempt of its run, test, project and repetition is stored (`settleFinalAttempts`): the row then decides nothing
     attempts: jsonb('attempts'), // Array of { retry, status, duration, startedAt } — per-attempt outcomes
     line: integer('line'), // line number in file
     column: integer('column'), // column number in file
@@ -564,6 +570,8 @@ export const testRunsCases = pgTable(
     locatorPagesPayloadId: integer('locator_pages_payload_id').references(() => casePayloads.id), // Content-addressed list of the page each locator call ran on (piwi-locator-pages)
     codeReachPayloadId: integer('code_reach_payload_id').references(() => casePayloads.id), // Content-addressed list of the source files the test executed (piwi-code-reach)
     coveragePayloadId: integer('coverage_payload_id').references(() => casePayloads.id), // Content-addressed list of the coverage fragments the execution recorded (coverage_fragments ids)
+    stdoutPayloadId: integer('stdout_payload_id').references(() => casePayloads.id), // Content-addressed text the attempt wrote to stdout, bounded and with its secrets hidden
+    stderrPayloadId: integer('stderr_payload_id').references(() => casePayloads.id), // Content-addressed text the attempt wrote to stderr, bounded and with its secrets hidden
     browser: jsonb('browser'), // Playwright project/browser config: { projectName, browserName, channel, viewport }
     browserName: text('browser_name'), // Scalar browser identity (projectName) for index efficiency
     testAnnotations: jsonb('test_annotations'), // Array<{ type, description? }> — runtime test marks (@fixme, @slow …)
@@ -575,9 +583,9 @@ export const testRunsCases = pgTable(
     startedAt: bigint('started_at', { mode: 'number' }), // Unix timestamp in ms when the test started (exceeds 32-bit int range)
     isNewRegression: integer('is_new_regression'), // boolean: passed in baseline, failed in this run
     isNewFlaky: integer('is_new_flaky'), // boolean: no retries in baseline, retry-pass in this run
-    didNotRunReason: text('did_not_run_reason'), // Why a 'didnotrun' case never executed: 'previous-failure' | 'global-timeout' | 'max-failures' | 'interrupted'
+    didNotRunReason: text('did_not_run_reason'), // Why a 'didnotrun' case never executed: 'previous-failure' | 'dependency-failure' | 'global-timeout' | 'max-failures' | 'interrupted'
     expectedStatus: text('expected_status'), // Playwright's expectedStatus: 'passed' | 'failed' | 'timedOut' | 'skipped' | 'interrupted'
-    blockedBy: text('blocked_by'), // For a 'previous-failure' cascade, the location (file:line:col) of the failing test that blocked it
+    blockedBy: text('blocked_by'), // For a 'previous-failure' or 'dependency-failure' case, the location (file:line:col) of the failing test that blocked it
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -623,6 +631,12 @@ export const testRunsCases = pgTable(
     coveragePayloadIdx: index('idx_trc_coverage_payload')
       .on(table.coveragePayloadId)
       .where(sql`coverage_payload_id IS NOT NULL`),
+    stdoutPayloadIdx: index('idx_trc_stdout_payload')
+      .on(table.stdoutPayloadId)
+      .where(sql`stdout_payload_id IS NOT NULL`),
+    stderrPayloadIdx: index('idx_trc_stderr_payload')
+      .on(table.stderrPayloadId)
+      .where(sql`stderr_payload_id IS NOT NULL`),
     // Partial indexes over the few rows the capability probes and the run list
     // look for, so finding one, or proving there is none, never reads every
     // execution. A query uses one only when it repeats the condition with

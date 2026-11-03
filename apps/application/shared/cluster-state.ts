@@ -69,35 +69,28 @@ export interface ClusterStateProject {
   /** The project's run ids, newest first (by start time). */
   runIdsNewestFirst: number[];
   /**
-   * Whether the failure goes on (`failureGoesOn`). A Done ticket is reconciled
-   * only once it stopped; unset reads as going on.
+   * Whether the failure goes on: no run since its last occurrence could have
+   * shown it (`clusterFailureGoesOn`). A Done ticket is reconciled only once it
+   * stopped; unset reads as going on.
    */
   failureGoesOn?: boolean;
   now?: Date;
 }
 
-/** A run as the failure-goes-on rule reads it: its id and its start time. */
+/** A run as run order reads it: its id and its start time. */
 export interface RunPoint {
   id: number;
   startTime: string | Date | number | null;
 }
 
 /**
- * Whether a cluster's failure goes on: it was last seen in the project's latest
- * finished run or in a later one, or no run has finished yet. A run still in
- * progress never counts as one the failure skipped. Runs are ordered by start
- * time, then by id when two started in the same second.
+ * Whether run `a` started after run `b`: by start time, then by id when two
+ * started in the same second. A run with no known start time sorts first.
  */
-export function failureGoesOn(
-  lastSeen: RunPoint | null | undefined,
-  latestFinished: RunPoint | null | undefined,
-): boolean {
-  if (!latestFinished) return true;
-  if (!lastSeen) return false;
-  if (lastSeen.id === latestFinished.id) return true;
-  const seen = toEpochMs(lastSeen.startTime) ?? -Infinity;
-  const finished = toEpochMs(latestFinished.startTime) ?? -Infinity;
-  return seen > finished || (seen === finished && lastSeen.id > latestFinished.id);
+export function runStartedAfter(a: RunPoint, b: RunPoint): boolean {
+  const aStart = toEpochMs(a.startTime) ?? -Infinity;
+  const bStart = toEpochMs(b.startTime) ?? -Infinity;
+  return aStart > bStart || (aStart === bStart && a.id > b.id);
 }
 
 /**
@@ -226,9 +219,9 @@ export function computeClusterState(cluster: ClusterStateCluster, project: Clust
   // Every test parked in quarantine: the cluster stays open until they are released.
   if (cluster.affectedTests > 0 && cluster.quarantinedTests >= cluster.affectedTests) {
     t(
-      `All ${cluster.affectedTests} test${cluster.affectedTests === 1 ? ' is' : 's are'} quarantined; the cluster stays open until ${
-        cluster.affectedTests === 1 ? 'it is' : 'they are'
-      } released.`,
+      cluster.affectedTests === 1
+        ? 'Its only test is quarantined; the cluster stays open until the test is released.'
+        : `All ${cluster.affectedTests} tests are quarantined; the cluster stays open until they are released.`,
     );
     return done('quarantined', 'release');
   }

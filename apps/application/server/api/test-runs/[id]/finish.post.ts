@@ -1,4 +1,4 @@
-import { sql, eq } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { getDatabase, type DbClient } from '../../../database';
 import { testRuns } from '../../../database/schema';
 import { runEventBus } from '../../../utils/run-events';
@@ -19,13 +19,15 @@ import { computeRunCountsFromRows } from '../../../utils/run-counts';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 import { sanitizeResourceReport } from '#shared/resource-report';
 import { saveResourceReportPart } from '#shared/handlers/resource-reports';
+import { storableRunErrors } from '../../../utils/storable-values';
+import { requireRouteId } from '../../../utils/project-access';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Runs'],
     summary: 'Finish a streaming test run',
     description:
-      'Finalize a streaming test run by setting its final status and calculating performance metrics. Supports pending uploads mode where reports are uploaded asynchronously after finishing. For sharded runs, the run finishes only after all shards report; test counters come from the streamed events, and the run lasts from the start of its first shard to the end of its last shard. A shard runs from its `startTime` for its `duration`, or until its `/finish` arrives when it sends no `duration`; with no `startTime`, or one that puts its end more than a day from its `/finish`, it ends when its `/finish` arrives. The flaky count is read from the attempts the run stored.',
+      'Finalize a streaming test run by setting its final status and calculating performance metrics. Supports pending uploads mode where reports are uploaded asynchronously after finishing. For sharded runs, the run finishes only after all shards report; test counters come from the streamed events, and the run lasts from the start of its first shard to the end of its last shard. A shard runs from its `startTime` for its `duration`, or until its `/finish` arrives when it sends no `duration`; with no `startTime`, or one that puts its end more than a day from its `/finish`, it ends when its `/finish` arrives. The flaky count is read from the attempts the run stored. A sharded run takes the most severe `status` its shards sent, as `playwright merge-reports` does (`failed`, then `timedout`, then `interrupted`), and is `failed` when a test failed.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     requestBody: {
       content: {
@@ -42,6 +44,28 @@ defineRouteMeta({
               flakyTests: { type: 'integer' },
               shardIndex: { type: 'integer' },
               shardTotal: { type: 'integer' },
+              runErrors: {
+                type: 'array',
+                description:
+                  'The errors Playwright reported outside any test (a global setup that threw, a spec that did not load, a worker fixture whose teardown threw): the first 20 are kept, each message and stack cut to 4,000 characters, with what may be a secret hidden. A shard adds its own to the run’s.',
+                items: {
+                  type: 'object',
+                  properties: {
+                    message: { type: 'string' },
+                    stack: { type: 'string', nullable: true },
+                    location: {
+                      type: 'object',
+                      nullable: true,
+                      properties: {
+                        file: { type: 'string' },
+                        line: { type: 'integer' },
+                        column: { type: 'integer' },
+                      },
+                    },
+                  },
+                  required: ['message'],
+                },
+              },
             },
             required: ['streamToken'],
           },
@@ -52,14 +76,7 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  const id = parseInt(getRouterParam(event, 'id') || '0');
-
-  if (!id) {
-    throw apiError({
-      statusCode: 400,
-      message: 'Invalid test run ID',
-    });
-  }
+  const id = requireRouteId(event, 'id', 'test run ID');
 
   const body = await readBody(event);
 
@@ -116,8 +133,24 @@ export default eventHandler(async (event) => {
 
   const incomingResources = sanitizeResourceReport(body.resourceReport);
   if (incomingResources) await saveResourceReportPart(db, id, incomingResources);
+  const runErrors = storableRunErrors(body.runErrors);
 
   // ── Non-sharded run (existing behaviour) ─────────────────────────────────
+
+  // One /finish settles the run. A request the reporter sends again while this
+  // one runs finds the run settled, changes nothing and answers its status.
+  const settleRun = async (updateData: Record<string, unknown>): Promise<boolean> => {
+    const [settled] = await db
+      .update(testRuns)
+      .set(updateData)
+      .where(and(eq(testRuns.id, id), inArray(testRuns.status, ['running', 'interrupted'])))
+      .returning({ id: testRuns.id });
+    return settled !== undefined;
+  };
+  const settledAnswer = async () => {
+    const [current] = await db.select({ status: testRuns.status }).from(testRuns).where(eq(testRuns.id, id));
+    return { success: true, runId: id, status: current?.status ?? status };
+  };
 
   // Fold timed-out into failed for both the DB write and the live SSE events.
   // Preserve the "use body value when provided, else keep existing DB value"
@@ -141,12 +174,13 @@ export default eventHandler(async (event) => {
 
   if (hasPendingUploads) {
     // The reported status waits in the metadata, where it survives a restart,
-    // until the report upload or the stale-run sweep settles the run.
+    // until the report upload or the stale-run sweep settles the run. The run
+    // keeps its stream token until then, which a batch delivery its reporter
+    // falls back to names it with (`cancelReplacedRun`).
     const pendingMetadata = withPendingStatus(body.metadata ? reportedMetadata : testRun.metadata, status);
     const updateData: Record<string, unknown> = {
       status: 'finalizing',
       duration,
-      streamToken: null,
       // The stale-run sweep measures the wait for the report upload from here.
       updatedAt: new Date(),
       ...(body.totalTests !== undefined && { totalTests: body.totalTests }),
@@ -165,11 +199,12 @@ export default eventHandler(async (event) => {
       ...(body.playwrightVersion && { playwrightVersion: body.playwrightVersion }),
       ...(body.reporterVersion && { reporterVersion: body.reporterVersion }),
       ...(body.setupSteps && { setupSteps: body.setupSteps }),
+      ...(runErrors && { runErrors }),
       ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
       ...(body.filterDetails !== undefined && { filterDetails: body.filterDetails ?? null }),
     };
 
-    await db.update(testRuns).set(updateData).where(eq(testRuns.id, id));
+    if (!(await settleRun(updateData))) return settledAnswer();
 
     runEventBus.clearRunState(id);
 
@@ -211,11 +246,12 @@ export default eventHandler(async (event) => {
       ...(body.playwrightVersion && { playwrightVersion: body.playwrightVersion }),
       ...(body.reporterVersion && { reporterVersion: body.reporterVersion }),
       ...(body.setupSteps && { setupSteps: body.setupSteps }),
+      ...(runErrors && { runErrors }),
       ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
       ...(body.filterDetails !== undefined && { filterDetails: body.filterDetails ?? null }),
     };
 
-    await db.update(testRuns).set(updateData).where(eq(testRuns.id, id));
+    if (!(await settleRun(updateData))) return settledAnswer();
 
     runEventBus.publish(id, {
       type: 'run-finished',
@@ -252,21 +288,29 @@ export default eventHandler(async (event) => {
 
 /**
  * One shard of a sharded run reports its end. The shard's token leaves the
- * run's shard tokens in the same write that records its test durations and its
- * span and sets the run's start and duration from its shards' spans
- * (`recordShardEnd`), so a replayed `/finish` finds the token gone and changes
- * nothing. The run's test counters
- * are not touched: every case (synthesized didnotrun ones included) arrives as
- * a streamed event, which the events endpoint already counted. Only flakyTests
- * adds up here, since the events tally has no flaky notion. The run settles
- * once every shard finished.
+ * run's shard tokens in the same write that records its test durations, its
+ * span, its suite setup steps and its errors outside any test, and sets the
+ * run's start and duration from its shards' spans (`recordShardEnd`), so a
+ * replayed `/finish` finds the token gone and changes nothing. The run's test
+ * counters are not touched: every case (synthesized didnotrun ones included)
+ * arrives as a streamed event, which the events endpoint already counted. Only
+ * flakyTests adds up here, since the events tally has no flaky notion. The run
+ * settles once every shard finished.
  */
 async function finishShard(db: DbClient, id: number, body: Record<string, any>) {
   const span = shardSpan(body, Date.now());
-  const recorded = await recordShardEnd(db, id, span, (metadata) => {
-    const remaining = withoutShardToken(metadata, body.streamToken);
-    return remaining && withShardDurations(remaining, Array.isArray(body.durations) ? body.durations : []);
-  });
+  const recorded = await recordShardEnd(
+    db,
+    id,
+    span,
+    (metadata) => {
+      const remaining = withoutShardToken(metadata, body.streamToken);
+      return remaining && withShardDurations(remaining, Array.isArray(body.durations) ? body.durations : []);
+    },
+    {},
+    Array.isArray(body.setupSteps) ? body.setupSteps : [],
+    storableRunErrors(body.runErrors) ?? [],
+  );
   runEventBus.removeShardToken(id, body.streamToken);
 
   if (!recorded) {

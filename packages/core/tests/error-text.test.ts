@@ -23,7 +23,7 @@ describe('the error of a timed-out test', () => {
     const text = joinErrorMessages([timeout, click])!;
     const placed = appendErrorLocation(text, { file: 'tests/sign-in.spec.ts', line: 7, column: 54 });
     expect(placed.endsWith('\n    at tests/sign-in.spec.ts:7:54')).toBe(true);
-    // The fingerprint hashes the type, the message and the locator; the top frame is for display.
+    // The signature is the type, the message and the locator; the top frame stays apart from it.
     const { topFrameFile, ...hashed } = extractErrorSignature(placed);
     const { topFrameFile: before, ...hashedBefore } = extractErrorSignature(text);
     expect(hashed).toEqual(hashedBefore);
@@ -52,5 +52,18 @@ describe('the error text of a test', () => {
   test('fingerprints as it did: the signature reads the message ahead of the call log', () => {
     const text = joinErrorMessages([{ message: fillError }])!;
     expect(extractErrorSignature(text)).toEqual(extractErrorSignature(fillError));
+  });
+});
+
+describe('the error of a test that threw a value that is not an Error', () => {
+  // As Playwright lists `throw 'boom'` and `throw { code: 42 }`: no message, the value inspected.
+  test('keeps the value as its text', () => {
+    expect(joinErrorMessages([{ value: "'payment declined'" }])).toBe("'payment declined'");
+    expect(joinErrorMessages([{ value: '{ code: 42 }' }, { value: '{ code: 42 }' }])).toBe('{ code: 42 }');
+  });
+
+  test('prefers the message when there is one', () => {
+    expect(joinErrorMessages([{ message: 'Error: boom', value: 'ignored' }])).toBe('Error: boom');
+    expect(joinErrorMessages([{}])).toBeNull();
   });
 });

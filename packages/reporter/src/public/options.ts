@@ -23,7 +23,10 @@ export interface PiwiDashboardOptions {
   // ── Connection ─────────────────────────────────────────────────────────────
   /** Explicitly enable or disable the reporter. Defaults to `true` when `serverUrl` is set. Set to `false` to disable even if `serverUrl` is provided. */
   enabled?: boolean;
-  /** URL of the Piwi Dashboard server */
+  /**
+   * URL of the Piwi Dashboard server: a whole `http://` or `https://` address. Any other value leaves the reporter
+   * off, with a warning.
+   */
   serverUrl?: string;
   /**
    * When results go to the Piwi desktop app running on this machine instead.
@@ -44,17 +47,23 @@ export interface PiwiDashboardOptions {
   /**
    * Time budget (ms) for the reporter's end-of-run work: delivering the last
    * live events, uploading the remaining traces and attachments, and submitting
-   * the run. When it runs out, the reporter stops waiting for the dashboard and
-   * saves the run's results locally; the next run for the project uploads them,
-   * without traces or attachments. Defaults to `900000` (15 minutes). Set to `0`
-   * for no limit. Can also be set with `PIWI_SUBMIT_TIMEOUT`.
+   * the run. The uploads stop a minute before it ends (a quarter of a shorter
+   * budget), so a streamed run is still finished. When it runs out, the
+   * reporter stops waiting for the dashboard and saves the run's results
+   * locally; the next run for the project uploads them, without traces or
+   * attachments. Defaults to `900000` (15 minutes). Set to `0` for no limit.
+   * Can also be set with `PIWI_SUBMIT_TIMEOUT`, in milliseconds too: a value
+   * that is not a number (`15m`) is ignored, with a warning.
    */
   submitTimeout?: number;
 
   // ── What gets uploaded ─────────────────────────────────────────────────────
   /** Upload trace files to the dashboard. Defaults to `true`. */
   uploadTraces?: boolean;
-  /** Upload the Playwright HTML report. Defaults to `true`. */
+  /**
+   * Upload the HTML report Playwright's `html` reporter writes during the run, from its `outputFolder` (or
+   * `PLAYWRIGHT_HTML_OUTPUT_DIR`); a report an earlier run left there is never uploaded. Defaults to `true`.
+   */
   uploadReport?: boolean;
   /** Upload each test's trace and attachments as soon as the test finishes (streaming mode only). Defaults to `true`. */
   liveFileUploads?: boolean;
@@ -324,7 +333,14 @@ export interface PiwiDashboardOptions {
   pickLocatorOnFailure?: boolean;
 
   // ── Streaming ──────────────────────────────────────────────────────────────
-  /** Enable live streaming of results (falls back to batch if unsupported). Defaults to `true`. */
+  /**
+   * Enable live streaming of results (falls back to batch if unsupported). An
+   * interrupted stream is retried until it catches up. Live events the
+   * dashboard refuses, or has not taken two and a half minutes after they first
+   * failed, leave the live view so the later ones flow; when test results are
+   * among the events the dashboard never took, the run is sent again as a batch
+   * at its end. Defaults to `true`.
+   */
   streaming?: boolean;
   /**
    * Number of queued events that triggers a send during streaming: test starts

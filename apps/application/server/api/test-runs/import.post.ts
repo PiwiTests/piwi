@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { requireAuth } from '../../utils/auth';
 import { streamMultipart } from '../../utils/multipart-stream';
 import { sanitizeFilename } from '../../utils/sanitize-filename';
-import { resolveMaxUploadBytes } from '../../utils/upload-limits';
+import { resolveMaxImportBytes } from '../../utils/upload-limits';
 import { importArchive } from '../../utils/import-archive';
 import { formatBytes } from '#shared/utils/format-bytes';
 
@@ -40,7 +40,7 @@ defineRouteMeta({
 export default eventHandler(async (event) => {
   const user = await requireAuth(event);
 
-  const maxUploadBytes = resolveMaxUploadBytes();
+  const maxUploadBytes = resolveMaxImportBytes();
   const contentLength = parseInt(getRequestHeader(event, 'content-length') ?? '0', 10);
   if (contentLength > maxUploadBytes) {
     throw apiError({ statusCode: 413, message: `Archive too large (max ${formatBytes(maxUploadBytes)})` });

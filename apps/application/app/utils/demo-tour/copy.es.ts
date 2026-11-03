@@ -83,7 +83,7 @@ export const ES_COPY = {
             score: 'Su puntuación de inestabilidad, de 0 a 100, según sus reintentos y alternancias.',
             'top-suspect': 'Su principal sospechoso: la condición que más comparten sus fallos.',
             quarantine:
-              '**Quarantine** mantiene la prueba en ejecución y con resultados, pero el control de la CI la ignora.',
+              '**Quarantined**: la prueba sigue en ejecución y con resultados, pero el control de la CI la ignora.',
           },
         },
         suspects: {

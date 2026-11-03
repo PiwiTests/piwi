@@ -1,6 +1,6 @@
 # TYPE piwi_test_pass_rate_percent gauge
 # UNIT piwi_test_pass_rate_percent percent
-# HELP piwi_test_pass_rate_percent Test pass rate, last 7 days: Tests passed divided by tests run, summed over the runs of the period.
+# HELP piwi_test_pass_rate_percent Test pass rate, last 7 days: Tests passed divided by tests passed or failed (timed out included), summed over the runs of the period. Skipped, did-not-run and interrupted tests count in neither, and a pass on a retry counts as passed.
 piwi_test_pass_rate_percent{project="checkout",project_id="1"} 97.8
 piwi_test_pass_rate_percent{project="search",project_id="2"} 99.4
 # TYPE piwi_runs gauge

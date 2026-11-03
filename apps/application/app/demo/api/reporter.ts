@@ -24,13 +24,18 @@ import {
 } from '~~/server/database/schema.sqlite';
 import { parseLocation } from '#shared/parse-location';
 import { mapWireCaseToRunCase } from '~~/server/utils/map-wire-case';
+import { wireCaseProblem } from '~~/server/utils/wire-case-problem';
 import { mapStepEventsToRunEvents } from '~~/server/utils/map-step-events';
 import {
   buildNetworkRequestItems,
   buildNetworkRequestInsertValues,
   type NetworkRequestBuilder,
 } from '~~/server/utils/network-request-helpers';
-import { matchInsertedRunCases, resolveRepeatEachIndex } from '~~/server/utils/inserted-run-cases';
+import {
+  matchInsertedRunCases,
+  resolveRepeatEachIndex,
+  uncountClustersOfSkippedRows,
+} from '~~/server/utils/inserted-run-cases';
 import { upsertLocatorSnapshots } from '~~/server/utils/locator-healing';
 import { executionCreatedAt, type PersistRunCasesOptions } from '~~/server/utils/persist-options';
 import { carryIngestHealth } from '#shared/ingest-health';
@@ -57,9 +62,11 @@ import {
 } from '~~/server/utils/coverage';
 import { sanitizeCoverage, type CoverageCapture } from '@piwitests/core/coverage';
 import { hideTypedText } from '@piwitests/core/mask';
+import { sanitizeTestOutput } from '@piwitests/core/test-output';
 import { upsertCasePayloads } from '~~/server/utils/case-payloads';
+import { int32, int64, storableRunCase, storableRunErrors } from '~~/server/utils/storable-values';
 import { resolveRunBranch } from '~~/server/utils/run-branch';
-import { runCommit, runOrigin } from '#shared/run-eligibility';
+import { isEligibleRun, runCommit, runOrigin } from '#shared/run-eligibility';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 import type { LocatorSnapshot } from '#shared/locator-healing.types';
 import {
@@ -70,6 +77,7 @@ import {
   capConsoleLogs,
   capErrorText,
   hiddenErrorText,
+  hiddenStepEventErrors,
   capSourceFrames,
   capText,
   sanitizeAiUsage,
@@ -87,6 +95,7 @@ import { countFailedFromTally, sumFailedAndTimedOut } from '#shared/utils/test-c
 import { computeRunCountsFromRows } from '~~/server/utils/run-counts';
 import { syncAutoMarkersForRun } from '#shared/handlers/markers';
 import { recordRunHealth } from '#shared/handlers/run-health';
+import { fillAttemptHistories, settleFinalAttempts } from '#shared/handlers/test-case-aggregates';
 import { upsertDailyRollup } from '#shared/handlers/analytics/rollups';
 import { recordRunResourceFindings } from '#shared/handlers/resource-findings';
 import { joinSuitePath, SUITE_PATH_SEP } from '#shared/utils/suites';
@@ -111,7 +120,15 @@ import { sanitizeLiveResources } from '#shared/live-resources';
 import { demoHttpError } from './http-error';
 import { sanitizeExecutionResources, sanitizeResourceReport } from '#shared/resource-report';
 import { saveResourceReportPart } from '#shared/handlers/resource-reports';
-import { readShardDurations, recordShardEnd, shardSpan, withShardDurations } from '~~/server/utils/shard-spans';
+import {
+  readShardDurations,
+  readShardSpans,
+  recordShardEnd,
+  shardedRunStatus,
+  shardSpan,
+  withShardDurations,
+} from '~~/server/utils/shard-spans';
+import { updateRunMetadata } from '~~/server/utils/run-metadata';
 
 type DemoDb = Awaited<ReturnType<typeof getDemoDb>>;
 
@@ -277,7 +294,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload, scope: 'all' | 
         ),
       );
 
-    const existingShardedRun = existingRuns.find((r) => r.shardTotal && r.shardTotal > 1);
+    const existingShardedRun = existingRuns.find((r) => r.shardTotal === shardTotal);
     if (existingShardedRun) {
       const setupToken = randomToken();
       const tokens = demoShardTokens.get(existingShardedRun.id) ?? new Set();
@@ -446,6 +463,8 @@ export async function apiBeginTestRun(
         reporterVersion: body.reporterVersion || (testRun.reporterVersion as string | null),
         isFullRun: body.isFullRun !== false ? 1 : 0,
         filterDetails: body.filterDetails ?? (testRun.filterDetails as Record<string, unknown> | null),
+        // The run's last activity is its begin (server behavior).
+        updatedAt: new Date(),
       })
       .where(eq(testRuns.id, id));
 
@@ -454,17 +473,16 @@ export async function apiBeginTestRun(
     // Subsequent shard in a sharded run: register the per-shard stream token
     // in memory and in the run's stored metadata (so a service-worker restart
     // mid-run keeps accepting the shard's events), and add the shard's slice
-    // of the planned suite to the run's total.
+    // of the planned suite to the run's total. What its metadata tells that the
+    // run's does not yet (the commit, the branch) joins the run's (server behavior).
     const tokens = demoShardTokens.get(id) ?? new Set();
     tokens.add(streamToken);
     demoShardTokens.set(id, tokens);
     await persistDemoShardToken(db, id, streamToken, testRun.metadata as Record<string, unknown> | null);
-    if (body.totalTests) {
-      await db
-        .update(testRuns)
-        .set({ totalTests: sql`${testRuns.totalTests} + ${body.totalTests}` })
-        .where(eq(testRuns.id, id));
-    }
+    await updateRunMetadata(db, id, (stored) => ({ ...sanitizeMetadata(body.metadata), ...stored }), {
+      ...(body.totalTests ? { totalTests: sql`${testRuns.totalTests} + ${body.totalTests}` } : {}),
+      branch: sql`COALESCE(${testRuns.branch}, ${resolveRunBranch(body.metadata)})`,
+    });
   } else {
     // Already running — the caller keeps streaming on the stored token.
     return {
@@ -530,6 +548,10 @@ export interface RunCaseInput {
   didNotRunReason?: string | null;
   expectedStatus?: string | null;
   blockedBy?: string | null;
+  /** What the attempt wrote to stdout, stored through case_payloads (server behavior). */
+  stdout?: unknown;
+  /** What the attempt wrote to stderr, stored through case_payloads (server behavior). */
+  stderr?: unknown;
 }
 
 /**
@@ -585,11 +607,12 @@ export async function persistRunCases(
   db: DemoDb,
   projectId: number,
   testRunId: number,
-  cases: RunCaseInput[],
+  input: RunCaseInput[],
   deduplicate?: boolean,
   options: PersistRunCasesOptions = {},
 ): Promise<Array<{ id: number; status: string; testCaseId: number; inputIndex: number }>> {
-  if (cases.length === 0) return [];
+  if (input.length === 0) return [];
+  const cases = await Promise.all(input.map(storableRunCase));
 
   const suiteIdMap = await resolveSuites(db, projectId, cases);
 
@@ -603,7 +626,7 @@ export async function persistRunCases(
       title: c.title,
       externalId,
       displayTitle: displayTitleOf(c, externalId),
-      line: c.line,
+      line: int32(c.line),
     };
   });
   const resolved = await resolveTestCases(db, projectId, testRunId, await loadTestCaseIndex(db, projectId), claims, {
@@ -645,13 +668,25 @@ export async function persistRunCases(
   // like the server, so a rebuild of the index keeps them.
   const rowLocatorPages: Array<string | null> = [];
   const rowCodeReach: Array<string | null> = [];
+  // What each row's attempt wrote to stdout and stderr, stored through case_payloads like the server.
+  const rowStdout: Array<string | null> = [];
+  const rowStderr: Array<string | null> = [];
   const perCaseReach: CodeReachCase[] = [];
   const rowCoverage: Array<CoverageCapture | null> = [];
   const caseMetaSnapshots = new Map<number, CaseMetaSnapshot>();
+  // The rows of the batch already stored, by an earlier request that failed past its insert: settled with the rest.
+  const storedRows: Array<{
+    testCaseId: number;
+    browserName: string | null;
+    repeatEachIndex: number;
+    retries: number;
+    status: string;
+    attempts: unknown;
+  }> = [];
 
   for (let i = 0; i < cases.length; i++) {
     const c = cases[i]!;
-    // Hidden once for all it is kept as; its fingerprint reads the error as it came.
+    // Hidden once for all it is kept as.
     const error = hiddenErrorText(c.error);
     const caseId = resolved.caseIds[i];
     if (caseId === undefined) continue;
@@ -665,8 +700,18 @@ export async function persistRunCases(
     caseMetaSnapshots.set(caseId, { tags, locks, meta: testMeta, displayTitle: resolved.displayTitles[i] ?? null });
 
     if (deduplicate && existingRunCaseSet) {
-      const rowKey = `${caseId}::${resolveRepeatEachIndex(c.repeatEachIndex)}::${c.retries ?? 0}::${resolveBrowserName(c.browser) ?? ''}`;
-      if (existingRunCaseSet.has(rowKey)) continue;
+      const rowKey = `${caseId}::${resolveRepeatEachIndex(c.repeatEachIndex)}::${int32(c.retries) ?? 0}::${resolveBrowserName(c.browser) ?? ''}`;
+      if (existingRunCaseSet.has(rowKey)) {
+        storedRows.push({
+          testCaseId: caseId,
+          browserName: resolveBrowserName(c.browser),
+          repeatEachIndex: resolveRepeatEachIndex(c.repeatEachIndex),
+          retries: int32(c.retries) ?? 0,
+          status: c.status,
+          attempts: c.attempts,
+        });
+        continue;
+      }
     }
 
     let fingerprint: ErrorFingerprint | null = null;
@@ -675,19 +720,17 @@ export async function persistRunCases(
       c.error &&
       c.status !== 'passed' &&
       c.status !== 'skipped' &&
+      c.status !== 'interrupted' &&
       !isExpectedFailurePassed(c.status, expectedStatus)
     ) {
-      fingerprint = await computeErrorFingerprint(c.error);
+      // The sample a new cluster keeps, which the fingerprint reads, as the server does.
+      const sample = capText(error, DEFAULT_INGEST_LIMITS.sampleErrorChars)!;
+      fingerprint = await computeErrorFingerprint(sample);
       const pending = pendingClusters.get(fingerprint.fingerprint);
       if (pending) {
         pending.count++;
       } else {
-        // The fingerprint was computed from the error as it came; its secrets hidden leave it the same.
-        pendingClusters.set(fingerprint.fingerprint, {
-          fp: fingerprint,
-          sampleError: capText(error, DEFAULT_INGEST_LIMITS.sampleErrorChars)!,
-          count: 1,
-        });
+        pendingClusters.set(fingerprint.fingerprint, { fp: fingerprint, sampleError: sample, count: 1 });
       }
     }
     rowFingerprints.push(fingerprint);
@@ -703,6 +746,8 @@ export async function persistRunCases(
     rowCoverage.push(coverage);
     const reached = sanitizeCodeReach(c.codeReach);
     rowCodeReach.push(reached ? JSON.stringify(reached) : null);
+    rowStdout.push(sanitizeTestOutput(c.stdout));
+    rowStderr.push(sanitizeTestOutput(c.stderr));
     if (coverage) perCaseReach.push(...codeReachOfCoverage(caseId, testRunId, coverage));
     else if (reached) perCaseReach.push({ testCaseId: caseId, runId: testRunId, files: reached });
     perCaseUsages.push({
@@ -726,17 +771,17 @@ export async function persistRunCases(
       testRunId,
       testCaseId: caseId,
       status: c.status,
-      duration: c.duration ?? null,
+      duration: int32(c.duration),
       error: capErrorText(error, DEFAULT_INGEST_LIMITS.errorChars),
-      retries: c.retries ?? 0,
+      retries: int32(c.retries) ?? 0,
       repeatEachIndex: resolveRepeatEachIndex(c.repeatEachIndex),
       attempts: capArray(c.attempts, 30),
-      line: c.line,
-      column: c.column,
+      line: int32(c.line),
+      column: int32(c.column),
       steps: cappedSteps,
-      stepEvents: capArray(c.stepEvents, DEFAULT_INGEST_LIMITS.stepEvents),
+      stepEvents: hiddenStepEventErrors(capArray(c.stepEvents, DEFAULT_INGEST_LIMITS.stepEvents)),
       slowestStep: typeof c.slowestStep === 'string' ? hideTypedText(c.slowestStep) : null,
-      slowestStepDuration: c.slowestStepDuration ?? null,
+      slowestStepDuration: int32(c.slowestStepDuration),
       webVitals: sanitizeWebVitals(c.webVitals as Record<string, unknown> | null | undefined) ?? null,
       pageState: sanitizePageState(c.pageState),
       aiUsage: sanitizeAiUsage(c.aiUsage),
@@ -758,12 +803,12 @@ export async function persistRunCases(
       testMeta,
       browser: c.browser ?? null,
       browserName: resolveBrowserName(c.browser),
-      timeout: c.timeout ?? null,
-      wastedTimeMs: c.wastedTimeMs ?? null,
+      timeout: int32(c.timeout),
+      wastedTimeMs: int32(c.wastedTimeMs),
       resources: sanitizeExecutionResources(c.resources),
-      workerIndex: c.workerIndex ?? null,
-      shardIndex: c.shardIndex ?? null,
-      startedAt: c.startedAt ?? null,
+      workerIndex: int32(c.workerIndex),
+      shardIndex: int32(c.shardIndex),
+      startedAt: int64(c.startedAt),
       didNotRunReason: c.didNotRunReason ?? null,
       expectedStatus,
       blockedBy: c.blockedBy ?? null,
@@ -775,7 +820,10 @@ export async function persistRunCases(
     networkRequestBuilders.push({ items: nrItems });
   }
 
-  if (runCasesRows.length === 0) return [];
+  if (runCasesRows.length === 0) {
+    await settleFinalAttempts(db, testRunId, storedRows, await fillAttemptHistories(db, testRunId, storedRows));
+    return [];
+  }
 
   const rowFragments = await upsertCoverageFragments(db, projectId, rowCoverage);
   const rowCoveragePayload = rowFragments.map((fragments, i) =>
@@ -789,6 +837,8 @@ export async function persistRunCases(
     ...rowLocatorPages,
     ...rowCodeReach,
     ...rowCoveragePayload,
+    ...rowStdout,
+    ...rowStderr,
   ]);
   runCasesRows.forEach((row, i) => {
     const content = rowLocatorPages[i];
@@ -797,11 +847,22 @@ export async function persistRunCases(
     row.codeReachPayloadId = reach ? (pagePayloadIds.get(reach) ?? null) : null;
     const coverage = rowCoveragePayload[i];
     row.coveragePayloadId = coverage ? (pagePayloadIds.get(coverage) ?? null) : null;
+    const stdout = rowStdout[i];
+    row.stdoutPayloadId = stdout ? (pagePayloadIds.get(stdout) ?? null) : null;
+    const stderr = rowStderr[i];
+    row.stderrPayloadId = stderr ? (pagePayloadIds.get(stderr) ?? null) : null;
   });
 
+  // Whether the run's failures count as occurrences of their clusters (server behavior).
+  const [run] = await db.select({ metadata: testRuns.metadata }).from(testRuns).where(eq(testRuns.id, testRunId));
+  const countsOccurrences = isEligibleRun({ metadata: run?.metadata }, 'cluster-occurrences');
   await assignFailureClusters(db, projectId, testRunId, pendingClusters, runCasesRows, rowFingerprints, {
     wakeSnoozed: !options.keepSnoozed,
+    countsOccurrences,
   });
+
+  const batch = [...runCasesRows, ...storedRows];
+  const withoutHistory = await fillAttemptHistories(db, testRunId, batch);
 
   // ON CONFLICT DO NOTHING + the (run, case, repeat, retries, browser) unique
   // index keep this idempotent across batch retries, while each attempt,
@@ -817,6 +878,8 @@ export async function persistRunCases(
       browserName: testRunsCases.browserName,
     }),
   );
+  await uncountClustersOfSkippedRows(db, runCasesRows, insertedCases, countsOccurrences);
+  await settleFinalAttempts(db, testRunId, batch, withoutHistory);
 
   const result = insertedCases.map((r) => ({
     id: r.id,
@@ -871,10 +934,15 @@ export async function apiPostRunEvents(
   await validateAndReviveDemoRun(db, testRun, body.streamToken, !!isValidShardToken);
 
   const testCaseEvents = Array.isArray(body.testCases) ? body.testCases : [body.testCase];
-  const validEvents = testCaseEvents.filter((tc): tc is StreamEventPayload => Boolean(tc && tc.title));
+  // Playwright accepts an empty title (server behavior).
+  const validEvents = testCaseEvents.filter((tc): tc is StreamEventPayload =>
+    Boolean(tc && typeof tc.title === 'string'),
+  );
 
   const beginEvents = validEvents.filter((tc) => tc.type === 'begin');
-  const completeEvents = validEvents.filter((tc) => tc.type === 'complete');
+  const results = validEvents.filter((tc) => tc.type === 'complete');
+  // A result whose fields the database cannot hold is left out, and the rest of the batch stored (server behavior).
+  const completeEvents = results.filter((tc) => wireCaseProblem(tc) === null);
   const stepRunEvents = mapStepEventsToRunEvents(validEvents);
 
   for (const tc of beginEvents) {
@@ -894,7 +962,7 @@ export async function apiPostRunEvents(
     publishDemoRunEvent(id, { type: 'test-begin', data: beginData });
     noteDemoBegin(id, beginData);
   }
-  for (const tc of completeEvents) noteDemoComplete(id, tc);
+  for (const tc of results) noteDemoComplete(id, tc);
 
   // Step events publish in batch order through the helper the server's events
   // handler (server/api/test-runs/[id]/events.post.ts) uses.
@@ -962,7 +1030,7 @@ export async function apiPostRunEvents(
         duration: tc.duration,
         location: tc.location,
         error: hiddenErrorText(tc.error),
-        stepEvents: tc.stepEvents ?? null,
+        stepEvents: hiddenStepEventErrors(tc.stepEvents),
         wastedTimeMs: tc.wastedTimeMs ?? null,
         workerIndex: tc.workerIndex ?? null,
         shardIndex: tc.shardIndex ?? null,
@@ -1064,21 +1132,20 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       {
         updatedAt: new Date(),
         status: 'running',
-        // `totalTests` is the planned total set at /begin; the per-status
-        // counters track live progress and are recomputed distinctly once all
-        // shards finish.
-        passedTests: sql`${testRuns.passedTests} + ${body.passedTests ?? 0}`,
-        failedTests: sql`${testRuns.failedTests} + ${sumFailedAndTimedOut(body.failedTests, body.timedOutTests)}`,
-        skippedTests: sql`${testRuns.skippedTests} + ${body.skippedTests ?? 0}`,
-        didNotRunTests: sql`${testRuns.didNotRunTests} + ${body.didNotRunTests ?? 0}`,
+        // The run's test counters are left as they are: every case arrives as a
+        // streamed event, which the events endpoint counted, and they are
+        // recomputed distinctly once all shards finish. Only flakyTests adds up
+        // here (server behavior).
         flakyTests: sql`${testRuns.flakyTests} + ${flakyTests}`,
         shardsFinished: sql`${testRuns.shardsFinished} + 1`,
         // The first shard to report a branch names the run's branch.
         branch: sql`COALESCE(${testRuns.branch}, ${resolveRunBranch(body.metadata)})`,
-        ...(body.setupSteps && { setupSteps: body.setupSteps }),
         ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
         ...(body.filterDetails !== undefined && { filterDetails: body.filterDetails ?? null }),
       },
+      // This shard's suite setup steps and errors outside any test join the other shards' (server behavior).
+      Array.isArray(body.setupSteps) ? body.setupSteps : [],
+      storableRunErrors(body.runErrors) ?? [],
     );
 
     // This shard is done — drop its token so it cannot send more events.
@@ -1102,7 +1169,9 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       // events counted attempts), so a flaky-only sharded run reads as passed —
       // mirrors the server's finish handler.
       const counts = await computeRunCountsFromRows(db, id);
-      finalStatus = counts.failedTests > 0 ? 'failed' : 'passed';
+      finalStatus = shardedRunStatus(readShardSpans(updatedRun.metadata), counts.failedTests);
+      // The planned total (summed across shards), or the distinct rows when a shard planned none.
+      const totalTests = Math.max(updatedRun.totalTests ?? 0, counts.totalTests);
 
       const stats = durationStats(readShardDurations(updatedRun.metadata));
 
@@ -1111,7 +1180,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
         .set({
           status: finalStatus,
           streamToken: null,
-          totalTests: counts.totalTests,
+          totalTests,
           passedTests: counts.passedTests,
           failedTests: counts.failedTests,
           skippedTests: counts.skippedTests,
@@ -1128,7 +1197,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
         data: {
           status: finalStatus,
           duration: updatedRun.duration,
-          totalTests: counts.totalTests,
+          totalTests,
           passedTests: counts.passedTests,
           failedTests: counts.failedTests,
           skippedTests: counts.skippedTests,
@@ -1190,6 +1259,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
   const reportedMetadata = body.metadata
     ? carryExternalIdDuplicates(carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata), testRun.metadata)
     : null;
+  const runErrors = storableRunErrors(body.runErrors);
 
   await db
     .update(testRuns)
@@ -1215,6 +1285,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       ...(body.playwrightVersion && { playwrightVersion: body.playwrightVersion }),
       ...(body.reporterVersion && { reporterVersion: body.reporterVersion }),
       ...(body.setupSteps && { setupSteps: body.setupSteps }),
+      ...(runErrors && { runErrors }),
       ...(body.isFullRun !== undefined && { isFullRun: body.isFullRun !== false ? 1 : 0 }),
       ...(body.filterDetails !== undefined && { filterDetails: body.filterDetails ?? null }),
     })

@@ -8,6 +8,10 @@ import {
   wakeOnRecurrence,
   personIsUser,
   isMine,
+  inboxIdentity,
+  showsSnoozedBack,
+  moveInboxFocus,
+  keepInboxFocus,
   effectiveAssignee,
   isNewSince,
   clusterInQueue,
@@ -96,6 +100,14 @@ describe('mine / user match', () => {
     expect(isMine({ assignee: null, owner: { name: 'ada' } }, user)).toBe(true);
     expect(isMine({ assignee: 'bob', owner: { name: 'carol' } }, user)).toBe(false);
     expect(isMine({ assignee: 'ada' }, null)).toBe(false);
+  });
+
+  it("is one identity everywhere: the signed-in user's name, username and email", () => {
+    const signedIn = inboxIdentity({ name: 'Ada Lovelace', username: 'ada', email: 'ada@example.com' });
+    for (const assignee of ['Ada Lovelace', 'ada', 'ada@example.com']) {
+      expect(isMine({ assignee }, signedIn), assignee).toBe(true);
+    }
+    expect(inboxIdentity(null)).toBeNull();
   });
 
   it('prefers the assignee over the owner for the effective owner line', () => {
@@ -206,5 +218,41 @@ describe('groupIncidentClusters', () => {
   it('leaves an inbox with no incident as it is', () => {
     const clusters = [{ id: 1, projectId: 1, incidentRun: null }];
     expect(groupIncidentClusters(clusters)).toEqual({ clusters, incidents: [] });
+  });
+});
+
+describe('the keyboard focus', () => {
+  it('moves by row from the focused cluster, starting at the first row', () => {
+    expect(moveInboxFocus([5, 3, 9], null, 1)).toBe(5);
+    expect(moveInboxFocus([5, 3, 9], null, -1)).toBe(5);
+    expect(moveInboxFocus([5, 3, 9], 5, 1)).toBe(3);
+    expect(moveInboxFocus([5, 3, 9], 9, 1)).toBe(9);
+    expect(moveInboxFocus([5, 3, 9], 5, -1)).toBe(5);
+    expect(moveInboxFocus([], null, 1)).toBeNull();
+  });
+
+  it('stays on its cluster when the list reorders, and takes the row in its place when it leaves', () => {
+    // A run event reloads the list newest first: cluster 3 moved to the top.
+    expect(keepInboxFocus([3, 5, 9], [5, 3, 9], 5)).toBe(5);
+    // Cluster 5 was resolved: the row now in its place is focused.
+    expect(keepInboxFocus([3, 9], [3, 5, 9], 5)).toBe(9);
+    expect(keepInboxFocus([3], [3, 9], 9)).toBe(3);
+    expect(keepInboxFocus([], [9], 9)).toBeNull();
+    expect(keepInboxFocus([3, 9], [3, 9], null)).toBeNull();
+  });
+});
+
+describe('the "snoozed, back" badge', () => {
+  const back = { snoozeMode: 'until-recurs', snoozedUntil: null, lastSeenAt: '2026-10-02T10:00:00Z' };
+
+  it('shows while the cluster is new since the viewer last looked, and then goes', () => {
+    expect(showsSnoozedBack(back, Date.parse('2026-10-01T10:00:00Z'))).toBe(true);
+    expect(showsSnoozedBack(back, null)).toBe(true);
+    expect(showsSnoozedBack(back, Date.parse('2026-10-03T10:00:00Z'))).toBe(false);
+  });
+
+  it('never shows on a cluster that did not come back from an until-it-recurs snooze', () => {
+    expect(showsSnoozedBack({ ...back, snoozeMode: null }, null)).toBe(false);
+    expect(showsSnoozedBack({ ...back, snoozedUntil: '9999-01-01T00:00:00Z' }, null)).toBe(false);
   });
 });

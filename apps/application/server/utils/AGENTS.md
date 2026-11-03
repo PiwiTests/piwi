@@ -43,17 +43,29 @@ in-app assistant).
 
 - **The grouping key is `computeErrorFingerprint`** (`shared/error-fingerprint.ts`): a hash of the error type, the
   normalized message and the masked locator, from `extractErrorSignature` (`@piwitests/core/error-signature`, shared
-  with the reporter's flake mode). **The top stack frame is not hashed** (it is kept as `topFrameFile` for display), so
-  one root cause reached from several spec files groups into one cluster. A new volatile token is masked in
-  `maskVolatile` (message) or `maskSelector` (locator), both in `packages/core/src/error-signature.ts`.
+  with the reporter's flake mode). A new volatile token is masked in `maskVolatile` (message) or `maskSelector`
+  (locator), both in `packages/core/src/error-signature.ts`.
+- **The top stack frame is hashed only for a generic failure** (`isGenericFailure`: no locator, and a matcher whose
+  values are all masked, a test timeout or a bare `TypeError`/`ReferenceError` line), as `topFrameFile` through
+  `maskPaths`. Any other failure groups across spec files, so one root cause reached through a shared helper or page
+  object stays one cluster (`tests/unit/error-fingerprint.test.ts`).
 - **A normalization change bumps `FINGERPRINT_VERSION`** and makes the same change to
   `shared/demo/demo-fingerprint.mjs#computeDemoFingerprint`, regex for regex: the seed generator runs under plain Node,
   which cannot load the TypeScript module, and `tests/unit/demo-seed-consistency.test.ts` compares the two. Then run
-  `npm run app:seed:demo`.
+  `npm run app:seed:demo`. `shared/error-fingerprint-v4.ts` stays as it is: the aliases stored without a sample hold
+  version 4 fingerprints, which `backfillAliasSamples` matches with it.
+- **A change to `maskVolatile` or `condenseErrorText` also bumps `EMBEDDING_INPUT_VERSION`**
+  (`server/utils/cluster-similarity.ts`): they shape the text embedded for cluster similarity, and the bump re-embeds
+  the stored vectors. `tests/unit/cluster-similarity.test.ts` pins that text.
 - **A version bump keeps triage state.** At startup, `reclusterFailureFingerprints()`
   (`shared/handlers/failure-cluster-recluster.ts`) computes each cluster's fingerprint again from its stored
-  `fingerprintSample` (`sampleError` for older rows), and updates it in place or merges it into the cluster it now
-  matches (`mergeFailureClusters()`).
+  `fingerprintSample` (`sampleError` for older rows), then each alias's from the sample it keeps, moves the per-test
+  routes with them, and merges two clusters a recomputed fingerprint joins (`mergeFailureClusters()`). Ingest hashes
+  the text a new cluster keeps as `fingerprintSample`, so the recluster reads what ingest read.
+- **Hiding more of a test's error also hides it in the stored samples, before the recluster.** Ingest hashes the error
+  as `hiddenErrorText` leaves it, and a sample stored earlier keeps the old text, so its cluster would fork: a pass like
+  `hideSecretShapesInClusterSamples` (`error-secrets-backfill.ts`, under a setting of its own) runs once at startup
+  ahead of `reclusterFailureFingerprints` (`tests/unit/failure-cluster-recluster-ingest.test.ts`).
 
 ## Locator healing
 

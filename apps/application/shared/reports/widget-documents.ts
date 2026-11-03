@@ -279,8 +279,8 @@ export const WIDGET_DOCUMENTS: Record<AnalyticsWidgetId, Mapper> = {
         rows: health.specs.map((spec) =>
           row({
             spec: spec.prefix,
-            pass: num(ctx, spec.passRate * 100, 'percent', 0),
-            flaky: num(ctx, spec.flakyRate * 100, 'percent', 0),
+            pass: num(ctx, spec.passRate === null ? null : spec.passRate * 100, 'percent', 0),
+            flaky: num(ctx, spec.flakyRate === null ? null : spec.flakyRate * 100, 'percent', 0),
             tests: num(ctx, spec.testCount, 'count'),
           }),
         ),

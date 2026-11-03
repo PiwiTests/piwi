@@ -38,7 +38,7 @@ npx @piwitests/reporter init --server-url <dashboard-url> --project <name> --jso
 
 ### Finishing `manual` steps
 
-- **config** marked `manual`: the config is not a plain `export default defineConfig(...)`. Add `import { wrapConfig } from '@piwitests/reporter'` and wrap the exported config: `export default wrapConfig(defineConfig({ ... }), { serverUrl, projectName })`.
+- **config** marked `manual`: the config is not a plain `export default defineConfig(...)`. Add `import { wrapConfig } from '@piwitests/reporter'` and wrap the exported config: `export default wrapConfig(defineConfig({ ... }), { serverUrl, projectName })`. At a workspace root where several packages hold a Playwright config, the `detail` names them instead: run `init` again with `--cwd <package>` for each package to wire.
 - **fixtures** marked `manual`: a fixtures file already exists. Merge Piwi in: `import { piwiFixtures } from '@piwitests/reporter'` and compose them into the existing `base.extend(...)` (or use `extendPiwiFixtures(base)`).
 
 ### Rewire the specs to the fixtures

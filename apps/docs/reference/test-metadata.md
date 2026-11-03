@@ -71,14 +71,16 @@ What each origin feeds:
 
 - **Flake Lab and probe runs** feed nothing: they replay tests under conditions Piwi injected.
 - **Bisect steps and reproductions** run at a commit chosen to investigate a failure. They stay out of baselines, fix
-  verification, flaky scores, selections, change coverage, the stored locators and test metadata, and the bug-report
-  lifecycle, and have no outbound effect: no [notification](/features/notifications#events), no
+  verification, flaky scores, selections, change coverage, the stored locators and test metadata, the bug-report
+  lifecycle and a failure cluster's occurrences (its count, its last seen run, the wake of a snooze), and have no
+  outbound effect: no [notification](/features/notifications#events), no
   [pull-request comment or commit status](/features/pr-feedback), no automatic AI diagnosis or auto-heal, and no
   [automatic write to an issue tracker](/features/issue-automation#the-runs-that-write).
 - **`piwi bug` runs** do not move the bug report they were written for.
-- **Local runs** (`local`, `desktop`, `editor`, `preflight`) count like CI runs, with two exceptions. An editor's CI
+- **Local runs** (`local`, `desktop`, `editor`, `preflight`) count like CI runs, with three exceptions. An editor's CI
   failures come from the newest complete CI run on the branch, and a local run stands in only while the branch has
-  none. An `editor` run, or a `local` or `desktop` run of part of the suite, fires no run, new-cluster, flakiness or
+  none. An `editor` run's failures join their clusters without counting as occurrences. An `editor` run, or a `local`
+  or `desktop` run of part of the suite, fires no run, new-cluster, fixed, regressed, flakiness or
   performance [notification](/features/notifications#events), posts no
   [pull-request comment or commit status](/features/pr-feedback), starts no automatic AI diagnosis or auto-heal, and
   writes nothing to an [issue tracker](/features/issue-automation#the-runs-that-write) on its own.
@@ -261,18 +263,72 @@ Together with the test's duration history this drives the **Timeout opportunitie
 The reporter distinguishes two outcomes that Playwright both reports as `skipped`:
 
 - **`skipped`** — an intentional skip via `test.skip()` / `test.fixme()` (static, conditional, or runtime). These always carry a `skip`/`fixme` annotation, so the skip reason (when provided) is preserved in `testAnnotations` and shown on the test case. The annotation also decides the grey the status bars draw: a `fixme` skip is counted apart from a plain `skip` (it stays part of `skippedTests`), so a test switched off as known broken does not blend into the deliberate skips.
-- **`didnotrun`** — a test that never actually executed. This covers two cases:
+- **`didnotrun`** — a test that never actually executed. This covers three cases:
   - a test skipped as a side effect of an **earlier failure in a `describe.serial` group** (Playwright reports it as `skipped` with no annotation; the reporter reclassifies it);
-  - a test that Playwright **never started because the run was cut short** (no `onTestEnd` fires for these — the reporter materializes them from the planned test list so they still appear, with zero duration and no error).
+  - a test of a project whose **[project dependency](https://playwright.dev/docs/test-projects#dependencies) failed**, such as the tests that need a `setup` project's login (Playwright runs none of them);
+  - a test that Playwright **never started because the run was cut short** (no `onTestEnd` fires for these or the previous case — the reporter materializes them from the planned test list so they still appear, with zero duration and no error).
+
+  A test declared skipped (`test.skip()`, `test.fixme()`, a skipped `describe`) is `skipped` even when the run stopped before reaching it.
 
 Each `didnotrun` case also carries **`didNotRunReason`**, so the dashboard can say _why_ a test never ran rather than just that it didn't:
 
 - `previous-failure` — skipped because an earlier test (or hook) in its serial group failed, or because a `beforeAll` hook failed, which skips the rest of its group in any mode. The reporter also records **`blockedBy`**, the location of the failing test that blocked it — so the did-not-run case links to its cause, names the hook when the failure happened in one, and the failing test lists the downstream tests it stopped from running.
+- `dependency-failure` — not run because a test failed in a project its project depends on (`dependencies`), directly or through another project. `blockedBy` holds the location of that failing test, as for `previous-failure`.
 - `global-timeout` — the run's `globalTimeout` elapsed before the test could start.
 - `max-failures` — the run reached its configured `maxFailures` budget.
 - `interrupted` — the run was otherwise cut short (a worker crash or a cancellation).
 
 The run-level counter `didNotRunTests` aggregates these, and the dashboard renders them as a distinct "Didn't run" segment/badge separate from skipped.
+
+### Test errors
+
+The reporter sends a failed test's errors as one text, with the call log Playwright writes. What may be a secret in it
+is written `<hidden>`:
+
+- the text a fill or a typing typed, and the value of a credential header a request's log writes;
+- the values an assertion quotes of a password field, or of a field whose locator names a secret (`Mot de passe`);
+- a credential's shape wherever it stands, colored or not: a JWT, a bearer token, a service's key such as `sk_live_…`,
+  `ghp_…` or `AKIA…`, a key or a token Piwi issues such as `pd_…`.
+
+Each step's error, and the error line of a hook or a fixture that failed, are hidden the same way. The dashboard hides
+them again as it stores a result, whatever sent it. An error that holds no secret is kept as it is, so it joins the
+[failure cluster](/features/failure-clusters) it did. An error stored before the dashboard hid a credential's shape
+has it hidden at the first start of the version that does, its failure cluster kept.
+
+### Errors outside the tests
+
+The reporter keeps the errors Playwright reports beside the tests (its `onError`), each with its message, the frames of
+its stack and the place it was thrown, named relative to the Playwright config's folder:
+
+- a global setup or global teardown that threw;
+- a spec file that did not load: a syntax error, an import that failed, a `test()` call where none is allowed. `No
+  tests found` and a web server that did not start come the same way, before any test runs, and the run then has none;
+- a worker fixture whose teardown threw, with the tests the worker ran;
+- the failure budget (`maxFailures`) that stopped the run.
+
+The first 20 go with the run's end, as its `runErrors`, each message and stack cut to 4,000 characters, with what may
+be a secret hidden as in a [test's error](#test-errors), and also a credential in a URL, a cookie or a JSON field, and a
+value shaped like a token. A sharded run adds each shard's to the others'. The run page shows them under its header,
+and the MCP `get_run` tool returns them as `runErrors`. A [blob report you import](/guide/importing-runs) keeps them
+the same way.
+
+### Test output
+
+The reporter keeps what each attempt wrote to stdout and stderr (`TestResult.stdout` and `stderr`): the test's
+`console.log` lines and what the code it ran printed, text or bytes read as UTF-8. Each stream has what may be a
+secret hidden, as above, colored or not, and the value it gives a name like a credential's (`password: '…'`,
+`API_KEY=…`), and past about 64 KB keeps its first and last lines, cut at a line break, with a line saying how many
+lines and characters were cut between them. The dashboard stores each stream once per project however many
+executions wrote it, and shows it on the execution's **Output** tab ([Failure evidence](/features/evidence)), in its
+[offline export](/features/offline-export) and through the MCP `get_test_run_case` tool. An
+[imported blob report](/guide/importing-runs) keeps each attempt's output the same way.
+
+### Hooks
+
+Playwright 1.59 and later give every hook step to a test: a `beforeAll` or `afterAll` hook and the setup of a worker
+fixture are steps of the test they ran for. The run's timeline draws them inside that test's bar, as its setup and
+teardown sections, never on a lane of their own. A worker fixture that throws as its worker shuts down, after its last
+test, is one of the [errors outside the tests](#errors-outside-the-tests).
 
 ## With custom metadata
 

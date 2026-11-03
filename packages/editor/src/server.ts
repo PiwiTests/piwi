@@ -660,7 +660,7 @@ export function commandFolder(context: PiwiContext): string {
 }
 
 /**
- * The Flake Lab lines above a flaky test: its flaky rate and top suspect, which
+ * The Flake Lab lines above a flaky test: its flaky N% and top suspect, which
  * open its Flakiness tab, then the `piwi flake` commands it can run, each through
  * `piwi.runCommand` in the config's folder and reporting to the instance the
  * context reads. With `desktop`, while the desktop app runs beside a team
@@ -2858,8 +2858,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       )) {
         if (!found) continue;
         const i = call.line;
-        const runs = found.totalRuns ?? 0;
         const passed = found.passedRuns ?? 0;
+        // The pass rate's runs: those that passed or failed; every run from an instance that sends no failed count.
+        const runs = found.failedRuns == null ? (found.totalRuns ?? 0) : passed + found.failedRuns;
+        const passRate = runs > 0 ? `passed ${passed}/${runs}` : 'no pass rate (no passed or failed run)';
         const status = fixed
           ? ` · ${fixedLabel(context, fixed)}`
           : found.status && found.status !== 'passed'
@@ -2888,7 +2890,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         const endLine = call.endLine;
         out.push({
           line: i,
-          title: `passed ${passed}/${runs}${status}${quarantine}${flakiness}${selectionsText}`,
+          title: `${passRate}${status}${quarantine}${flakiness}${selectionsText}`,
           command: {
             title: 'Open in dashboard',
             command: 'piwi.openInDashboard',

@@ -12,7 +12,7 @@ import type { StatusPaletteKey } from './status-palette';
 
 export interface TabRunIndicator {
   /** The outcome the badge is painted in (a `--color-status-*` token). */
-  status: Extract<StatusPaletteKey, 'running' | 'failed' | 'passed'>;
+  status: Extract<StatusPaletteKey, 'running' | 'failed' | 'passed' | 'interrupted'>;
   /** Share of the suite done, 0–1, drawn as a pie; `null` draws a full dot (size unknown, or a finished run). */
   fraction: number | null;
   /** What leads the tab title, e.g. "Running 7/12 · 2 failed". */
@@ -40,14 +40,15 @@ export function liveRunTabIndicator(counts: TabRunCounts): TabRunIndicator {
 /**
  * What the tab shows once the watched run ends with `status`, and for how long,
  * or `null` to restore the plain favicon at once (a cancelled run). A pass shows
- * the passed color; interrupted and timed-out runs count as failed.
+ * the passed color, an interrupted run the neutral one of no outcome, and a
+ * timed-out run counts as failed.
  */
 export function finishedRunTabIndicator(status: string): { indicator: TabRunIndicator; durationMs: number } | null {
   const flash = finishedRunFlash(status);
   if (!flash) return null;
   return {
     indicator: {
-      status: status === 'passed' ? 'passed' : 'failed',
+      status: status === 'passed' || status === 'interrupted' ? status : 'failed',
       fraction: null,
       label: flash.progress.label ?? 'Run finished',
     },

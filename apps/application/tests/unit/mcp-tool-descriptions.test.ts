@@ -70,7 +70,10 @@ describe('toolParameters', () => {
 
   test('names an array by its item type and a union by its members', () => {
     const include = toolParameters(byName('get_test_run_case')).find((p) => p.name === 'include')!;
-    expect(include).toMatchObject({ type: 'string[]', values: ['steps', 'console', 'webVitals', 'aria', 'source'] });
+    expect(include).toMatchObject({
+      type: 'string[]',
+      values: ['steps', 'console', 'webVitals', 'aria', 'source', 'output'],
+    });
     const receiver = toolParameters(byName('create_test_function')).find((p) => p.name === 'receiver')!;
     expect(receiver.type).toBe('string or null');
   });

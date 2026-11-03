@@ -256,4 +256,57 @@ describe('verified fixes on the flaky ranking and in quarantine', () => {
       verifiedFix: null,
     });
   });
+
+  /** One run where test 1 fails on its only attempt, started `msAfter` ms after `from`. */
+  async function seedFailedRun(from: number, msAfter: number) {
+    const runId = ++runSeq;
+    await db.insert(schema.testRuns).values({
+      id: runId,
+      projectId: 1,
+      status: 'failed',
+      startTime: new Date(from + msAfter),
+      duration: 60_000,
+      totalTests: 1,
+    });
+    await db.insert(schema.testRunsCases).values({
+      testRunId: runId,
+      testCaseId: 1,
+      status: 'failed',
+      retries: 0,
+      browserName: 'chromium',
+      browser: { projectName: 'chromium' },
+    });
+  }
+
+  test('a failure after the verification withdraws the release proposal', async () => {
+    await addQuarantine(db as never, 1, 1, { reason: 'flaky' });
+    const quarantinedAt = await verifyAfterNow();
+    await seedFailedRun(quarantinedAt, 60_000);
+
+    const { entries, debt } = await listQuarantine(db as never, 1);
+    expect(entries[0]).toMatchObject({ releaseProposed: false, releaseReason: null, verifiedFix: null });
+    // One test cannot be both ready to release and still failing.
+    expect(debt).toMatchObject({ readyToRelease: 0, stillFailing: 1 });
+  });
+
+  test('a failure between the quarantine and the verification leaves the release proposed', async () => {
+    await addQuarantine(db as never, 1, 1, { reason: 'flaky' });
+    const quarantinedAt = Date.now();
+    await seedFailedRun(quarantinedAt, 1_000);
+    await db.insert(schema.flakeExperiments).values({
+      projectId: 1,
+      testCaseId: 1,
+      kind: 'verify',
+      verdict: 'verified',
+      commit: 'fix1234abcd',
+      source: 'cli',
+      createdAt: new Date(quarantinedAt + 60_000),
+      finishedAt: new Date(quarantinedAt + 120_000),
+    });
+
+    expect((await listQuarantine(db as never, 1)).entries[0]).toMatchObject({
+      releaseProposed: true,
+      releaseReason: 'verified-fix',
+    });
+  });
 });

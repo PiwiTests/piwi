@@ -40,6 +40,50 @@ interface HttpResponse {
   headers: http.IncomingHttpHeaders;
 }
 
+/**
+ * The JSON body of a successful answer. A body that is not JSON (a sign-in page, a proxy's or a captive portal's
+ * page) is not the dashboard's answer, so the request fails, naming the content type that came back.
+ */
+function parseAnswer(pathname: string, res: HttpResponse): any {
+  try {
+    return JSON.parse(res.text);
+  } catch {
+    const contentType = res.headers['content-type'] || 'no content type';
+    throw new Error(
+      `The answer to ${pathname} is not JSON (${contentType}): check that serverUrl is the dashboard's address and that no sign-in page or proxy answers in its place.`,
+    );
+  }
+}
+
+/**
+ * The run a delivery's answer names. An answer that names none did not come from the dashboard, so the run was not
+ * delivered.
+ */
+export function deliveredRunId(answer: unknown, pathname: string): number | string {
+  const runId = (answer as { runId?: unknown } | null)?.runId;
+  if (typeof runId === 'number' || (typeof runId === 'string' && runId !== '')) return runId;
+  throw new Error(
+    `The answer to ${pathname} names no run: check that serverUrl is the dashboard's address and that no proxy answers in its place.`,
+  );
+}
+
+/**
+ * Why `serverUrl` cannot be the dashboard's address: it must be a whole `http://` or `https://` URL. Null when it
+ * can.
+ */
+export function serverUrlProblem(serverUrl: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(serverUrl);
+  } catch {
+    return `serverUrl "${serverUrl}" is not a URL: give the dashboard's whole address, such as https://piwi.example.com.`;
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    return `serverUrl "${serverUrl}" is not an http:// or https:// URL: give the dashboard's whole address, such as https://piwi.example.com.`;
+  }
+  return null;
+}
+
 /** Options for the unified `request()` core. */
 interface HttpRequestOptions {
   headers?: Record<string, string | number>;
@@ -50,6 +94,13 @@ interface HttpRequestOptions {
   auth?: string | null;
   /** Socket inactivity timeout for this request, in ms; the client's own by default. */
   timeout?: number;
+  /** Ends the request, in flight or not sent yet, with the signal's reason. */
+  signal?: AbortSignal;
+}
+
+/** The error a request ended by `signal` fails with. */
+function abortError(signal: AbortSignal): Error {
+  return signal.reason instanceof Error ? signal.reason : new Error('The request was cancelled');
 }
 
 /**
@@ -72,9 +123,9 @@ export class HttpClient {
    * @param logger    Prefixed logger for verbose diagnostics.
    * @param timeout   Socket inactivity timeout in ms (default 30s), so a hung
    *                  server fails fast rather than stalling the reporter.
-   * @param uploadTimeout Socket inactivity timeout of a multipart upload in ms
-   *                  (default 10 min): the dashboard answers one only once it
-   *                  has stored every report and trace in it.
+   * @param uploadTimeout Socket inactivity timeout of a multipart upload, or of
+   *                  a run's results sent as JSON, in ms (default 10 min): the
+   *                  dashboard answers one only once it has stored all of it.
    */
   constructor(
     private readonly serverUrl: string,
@@ -193,8 +244,18 @@ export class HttpClient {
     }
   }
 
-  /** Send a JSON POST request. `auth` can be an API key (prefix `pd_`) or a session cookie string. */
-  async postJSON(pathname: string, payload: unknown, auth?: string | null): Promise<any> {
+  /**
+   * Send a JSON POST request. `auth` can be an API key (prefix `pd_`) or a session cookie string. Resolves to the
+   * answer's JSON; an answer that is not JSON fails, and `signal` ends the request. With `upload`, the answer may come
+   * as late as a multipart upload's: the body is a run's results, which the dashboard stores before it answers.
+   */
+  async postJSON(
+    pathname: string,
+    payload: unknown,
+    auth?: string | null,
+    signal?: AbortSignal,
+    { upload = false }: { upload?: boolean } = {},
+  ): Promise<any> {
     const body = JSON.stringify(payload);
     const res = await this.request('POST', pathname, {
       headers: {
@@ -203,19 +264,17 @@ export class HttpClient {
       },
       body,
       auth,
+      signal,
+      ...(upload && { timeout: this.uploadTimeout }),
     });
     if (res.status < 200 || res.status >= 300) {
       this.logger.debugError(`Response: ${res.text}`);
       throw new HttpError(res.status);
     }
-    try {
-      return JSON.parse(res.text);
-    } catch {
-      return {};
-    }
+    return parseAnswer(pathname, res);
   }
 
-  /** Send a JSON PUT request. Used for the declared-surface manifest upload. */
+  /** Send a JSON PUT request. Used for the declared-surface manifest upload. An answer that is not JSON fails. */
   async putJSON(pathname: string, payload: unknown, auth?: string | null): Promise<any> {
     const body = JSON.stringify(payload);
     const res = await this.request('PUT', pathname, {
@@ -230,17 +289,16 @@ export class HttpClient {
       this.logger.debugError(`Response: ${res.text}`);
       throw new HttpError(res.status);
     }
-    try {
-      return JSON.parse(res.text);
-    } catch {
-      return {};
-    }
+    return parseAnswer(pathname, res);
   }
 
-  /** Send a multipart form-data POST request. Used for report and trace uploads. */
-  async postFormData(pathname: string, form: FormData, auth?: string | null): Promise<any> {
+  /**
+   * Send a multipart form-data POST request. Used for report and trace uploads. An answer that is not JSON fails, and
+   * `signal` ends the upload.
+   */
+  async postFormData(pathname: string, form: FormData, auth?: string | null, signal?: AbortSignal): Promise<any> {
     const headers = form.getHeaders() as Record<string, string>;
-    const res = await this.request('POST', pathname, { headers, form, auth, timeout: this.uploadTimeout });
+    const res = await this.request('POST', pathname, { headers, form, auth, timeout: this.uploadTimeout, signal });
     if (res.status < 200 || res.status >= 300) {
       this.logger.debugError(`Response: ${res.text}`);
       const detail = parseErrorMessage(res.text);
@@ -249,18 +307,27 @@ export class HttpClient {
         detail ? `Request failed with status ${res.status}: ${detail}` : `Request failed with status ${res.status}`,
       );
     }
-    try {
-      return JSON.parse(res.text);
-    } catch {
-      return {};
-    }
+    return parseAnswer(pathname, res);
   }
 
-  /** Unified request core: transport, headers, auth, response accumulation, timeout. */
+  /**
+   * Unified request core: transport, headers, auth, response accumulation, timeout. Nothing is sent to a `serverUrl`
+   * that is not an `http://` or `https://` URL.
+   */
   private request(method: string, pathname: string, opts: HttpRequestOptions): Promise<HttpResponse> {
     return new Promise((resolve, reject) => {
       if (this.closedReason !== null) {
         reject(new Error(this.closedReason));
+        return;
+      }
+      const problem = serverUrlProblem(this.serverUrl);
+      if (problem) {
+        reject(new Error(problem));
+        return;
+      }
+      const signal = opts.signal;
+      if (signal?.aborted) {
+        reject(abortError(signal));
         return;
       }
       const url = new URL(pathname, this.serverUrl);
@@ -277,12 +344,17 @@ export class HttpClient {
           headers,
         },
         (res) => {
-          let data = '';
-          res.on('data', (chunk: string) => {
-            data += chunk;
+          // Decoded once whole: a character can span two chunks.
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => {
+            chunks.push(chunk);
           });
           res.on('end', () => {
-            resolve({ status: res.statusCode ?? 0, text: data, headers: res.headers });
+            resolve({
+              status: res.statusCode ?? 0,
+              text: Buffer.concat(chunks).toString('utf8'),
+              headers: res.headers,
+            });
           });
           // A connection dropped after the headers closes the response without
           // `end`; an incomplete body is a failed request, not a pending one.
@@ -296,7 +368,12 @@ export class HttpClient {
       );
 
       this.inFlight.add(req);
-      req.on('close', () => this.inFlight.delete(req));
+      const onAbort = () => req.destroy(abortError(signal!));
+      signal?.addEventListener('abort', onAbort, { once: true });
+      req.on('close', () => {
+        this.inFlight.delete(req);
+        signal?.removeEventListener('abort', onAbort);
+      });
       req.on('error', reject);
       const timeout = opts.timeout ?? this.timeout;
       req.setTimeout(timeout, () => {

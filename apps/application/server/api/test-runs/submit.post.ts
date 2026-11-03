@@ -1,27 +1,21 @@
-import { eq } from 'drizzle-orm';
 import { getDatabase } from '../../database';
-import { testRuns } from '../../database/schema';
 import { requireAuth } from '../../utils/auth';
 import { persistRunCases } from '../../utils/persist-run-cases';
 import { mapWireCaseToRunCase } from '../../utils/map-wire-case';
-import { sanitizeMetadata } from '../../utils/sanitize';
-import { resolveRunBranch } from '../../utils/run-branch';
-import { runCommit, runOrigin } from '#shared/run-eligibility';
+import { checkSubmitBody } from '../../utils/batch-payload';
 import { runEventBus } from '../../utils/run-events';
 import { deliverOnce, readDeliveryKey } from '../../utils/run-deliveries';
+import { createBatchRun, renewHeldRunToken } from '../../utils/batch-run';
 import {
   addBatchShard,
   batchShardRun,
   batchShardTally,
-  countFlakyBatchCases,
   finalizeShardedRun,
   publishShardProgress,
 } from '../../utils/sharded-runs';
-import { cancelInstanceRuns } from '../../utils/cancel-instance-runs';
 import { runFinalizeSideEffects } from '../../utils/run-finalize-side-effects';
 import { getProjectScope } from '../../utils/project-access';
 import { resolveIngestProject } from '../../utils/ingest-project';
-import { sumFailedAndTimedOut } from '#shared/utils/test-counts';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 import { sanitizeResourceReport } from '#shared/resource-report';
 import { saveResourceReportPart } from '#shared/handlers/resource-reports';
@@ -32,7 +26,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Submit test results as JSON',
     description:
-      'Submit Playwright test run results as a JSON payload. Creates or updates a project, test run, and test cases. Supports sharded runs via shardIndex / shardTotal.',
+      'Submit Playwright test run results as a JSON payload. Creates or updates a project, test run, and test cases. Supports sharded runs via shardIndex / shardTotal. A body whose run or test case fields have the wrong type answers 400 naming the first such field.',
     'x-required-permission': 'run:submit',
     requestBody: {
       content: {
@@ -41,14 +35,26 @@ defineRouteMeta({
             type: 'object',
             properties: {
               projectName: { type: 'string' },
-              status: { type: 'string' },
+              status: { type: 'string', enum: ['passed', 'failed', 'timedout', 'interrupted'] },
               startTime: { type: 'string', format: 'date-time' },
               shardIndex: { type: 'integer' },
               shardTotal: { type: 'integer' },
               deliveryKey: {
                 type: 'string',
                 description:
-                  'An id the client generates once for these results and sends with every attempt to deliver them (16 to 128 letters, digits, `-` or `_`). A delivery repeating a key the project already took stores nothing and answers with the run it went to, with `duplicate: true`.',
+                  'An id the client generates once for these results and sends with every attempt to deliver them (16 to 128 letters, digits, `-` or `_`). A delivery repeating a key the project already took stores nothing and answers with the run it went to, with `duplicate: true`; while that run waits `finalizing` for its files (its results went to `/api/test-runs/upload/results`), the answer carries a new `streamToken` for them, which takes the place of the one held before, as a repeat to that route does.',
+              },
+              runErrors: {
+                type: 'array',
+                description:
+                  'The errors Playwright reported outside any test (a global setup that threw, a spec that did not load, a worker fixture whose teardown threw), each `{ message, stack?, location? }`: the first 20 are kept, each message and stack cut to 4,000 characters, with what may be a secret hidden.',
+                items: { type: 'object' },
+              },
+              replacesRun: {
+                type: 'object',
+                description:
+                  'The run the reporter streamed before it fell back to this delivery, `{ runId, streamToken }` with that run’s stream token. A run that is not sharded is cancelled while it has not settled, a `finalizing` run too, when the token is its own; otherwise the field is ignored, as it is for a shard.',
+                properties: { runId: { type: 'integer' }, streamToken: { type: 'string' } },
               },
             },
             required: ['projectName', 'status', 'startTime'],
@@ -64,14 +70,7 @@ export default eventHandler(async (event) => {
   const user = await requireAuth(event);
 
   const body = await readBody<TestRunSubmitPayload>(event);
-
-  // Validate required fields
-  if (!body.projectName || !body.status || !body.startTime) {
-    throw apiError({
-      statusCode: 400,
-      message: 'Missing required fields: projectName, status, startTime',
-    });
-  }
+  checkSubmitBody(body);
 
   const incomingResources = sanitizeResourceReport(body.resourceReport);
 
@@ -82,7 +81,7 @@ export default eventHandler(async (event) => {
 
   // A repeated delivery (the reporter gave up waiting and sent the run again)
   // answers with the run its first delivery stored.
-  return deliverOnce(db, project.id, readDeliveryKey(body.deliveryKey), async () => {
+  const delivered = await deliverOnce(db, project.id, readDeliveryKey(body.deliveryKey), async () => {
     const shardTotal = body.shardTotal;
     const instanceId = body.instanceId || null;
     const isSharded = !!(shardTotal && shardTotal > 1);
@@ -102,72 +101,7 @@ export default eventHandler(async (event) => {
     }
 
     // A run of its own: not sharded, or sharded with no instance id to join its shards by
-    await cancelInstanceRuns(db, project.id, instanceId, undefined, isSharded);
-
-    const metadata = sanitizeMetadata(body.metadata || null);
-    const testRunResult = await db
-      .insert(testRuns)
-      .values({
-        projectId: project.id,
-        status: body.status,
-        startTime: new Date(body.startTime),
-        duration: body.duration || null,
-        totalTests: body.totalTests || 0,
-        passedTests: body.passedTests || 0,
-        failedTests: sumFailedAndTimedOut(body.failedTests, body.timedOutTests),
-        skippedTests: body.skippedTests || 0,
-        didNotRunTests: body.didNotRunTests || 0,
-        environment: body.environment || null,
-        branch: resolveRunBranch(body.metadata),
-        label: body.label || null,
-        metadata,
-        origin: runOrigin(metadata),
-        commit: runCommit(metadata),
-        instanceId,
-        playwrightVersion: body.playwrightVersion || null,
-        reporterVersion: body.reporterVersion || null,
-        shardTotal: isSharded ? shardTotal : null,
-        shardIndex: isSharded ? (body.shardIndex ?? null) : null,
-        shardsFinished: isSharded ? 0 : undefined,
-        isFullRun: body.isFullRun !== false ? 1 : 0,
-        filterDetails: body.filterDetails ?? null,
-      })
-      .returning();
-
-    const testRun = testRunResult[0];
-
-    if (!testRun) {
-      throw apiError({
-        statusCode: 500,
-        message: 'Failed to create test run',
-      });
-    }
-    if (incomingResources) await saveResourceReportPart(db, testRun.id, incomingResources);
-    await applyReporterKeep(db, testRun.id, body.keep);
-
-    // Insert test cases if provided and calculate flaky tests
-    let flakyTestCount = 0;
-    if (testCases.length > 0) {
-      flakyTestCount = countFlakyBatchCases(testCases);
-
-      await persistRunCases(db, project.id, testRun.id, testCases.map(mapWireCaseToRunCase));
-    }
-
-    // Update test run with flaky test count if any were found
-    if (flakyTestCount > 0) {
-      await db.update(testRuns).set({ flakyTests: flakyTestCount }).where(eq(testRuns.id, testRun.id));
-    }
-
-    // Compute and store performance summary (avgTestDuration, p90TestDuration)
-    if (testCases.length > 0) {
-      const stats = durationStats(testCases.map((tc) => tc.duration));
-      if (stats) {
-        await db
-          .update(testRuns)
-          .set({ avgTestDuration: stats.avg, p90TestDuration: stats.p90 })
-          .where(eq(testRuns.id, testRun.id));
-      }
-    }
+    const testRun = await createBatchRun(db, project.id, body);
 
     runEventBus.publishGlobal({ type: 'run-submitted', runId: testRun.id, projectId: project.id, status: body.status });
 
@@ -184,4 +118,10 @@ export default eventHandler(async (event) => {
       projectId: project.id,
     };
   });
+  if (!('duplicate' in delivered)) return delivered;
+
+  // A repeat of a run `/upload/results` holds `finalizing` until its files are in answers, as a repeat there does,
+  // with a new token for them, which takes the place of the one it held.
+  const streamToken = await renewHeldRunToken(db, delivered.runId);
+  return streamToken ? { ...delivered, streamToken } : delivered;
 });

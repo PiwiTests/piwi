@@ -12,6 +12,7 @@ import type {
   TestSourceFrame,
   TestStepEventHook,
   WireExecutionResources,
+  WireRunError,
 } from '#shared/types';
 import type { ScmProviderName } from '#shared/scm-urls';
 import type { StuckAttempt } from '#shared/stuck-tests';
@@ -281,6 +282,8 @@ export interface ProjectWithStats {
     /** `test.fixme()` skips — a subset of `skippedTests`. */
     fixmeTests?: number;
     didNotRunTests: number;
+    /** Results the run's interruption cut short: in none of the other counts, the gap they leave named. */
+    interruptedTests?: number;
     flakyTests: number;
     totalTests: number;
     reports?: ReportInfo[];
@@ -305,7 +308,17 @@ export interface ProjectOverviewRun {
   flakyTests: number;
   totalTests: number;
   startTime: string | Date;
+  duration?: number | null;
   environment?: string | null;
+}
+
+/** A run of a project with the fields its run scope reads: what the project page's filters offer and hide. */
+export interface ProjectUnscopedRun {
+  id: number;
+  startTime: string | Date;
+  environment: string | null;
+  branch: string | null;
+  isFullRun: boolean;
 }
 
 /**
@@ -317,6 +330,7 @@ export interface ProjectOverview {
   label: string | null;
   tags: TagInfo[];
   totalFullRuns: number;
+  /** The newest of `recentRuns` that ran to its end (passed, failed or timed out); null without one. */
   latestFullRun: {
     id: number;
     status: string;
@@ -382,7 +396,10 @@ export interface OpenFailureCluster {
    * CI: work in progress, which the team's inbox leaves out unless asked.
    */
   seenOnlyLocally: boolean;
-  /** Set when the cluster first appeared in a run flagged as an environment incident. */
+  /**
+   * Set when the cluster first appeared in a run flagged as an environment
+   * incident and has not failed since in a run that counts and is no incident.
+   */
   incidentRun: InboxIncidentRun | null;
 }
 
@@ -406,7 +423,10 @@ export interface ProjectWithTestRuns {
   tags?: TagInfo[];
   createdAt: Date;
   updatedAt: Date;
+  /** The most recent runs, within the run scope the request named. */
   testRuns: TestRunSummary[];
+  /** With a run scope: the most recent runs of any scope, with the fields the scope reads. */
+  unscopedRuns?: ProjectUnscopedRun[];
   diagnosisInstructions?: string | null;
   aiLanguage?: string | null;
   hasScmToken?: boolean;
@@ -500,6 +520,8 @@ export interface TestRunSummary {
   /** `test.fixme()` skips — a subset of `skippedTests`. */
   fixmeTests?: number;
   didNotRunTests: number;
+  /** Results the run's interruption cut short: in none of the other counts, the gap they leave named. */
+  interruptedTests?: number;
   flakyTests: number;
   avgTestDuration?: number | null;
   p90TestDuration?: number | null;
@@ -547,6 +569,8 @@ export interface TestRunDetails {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   metadata?: any | null;
   setupSteps?: SetupStepEvent[] | null;
+  /** The errors Playwright reported outside any test: a global setup that threw, a spec that did not load. */
+  runErrors?: WireRunError[] | null;
   environment?: string | null;
   label?: string | null;
   playwrightVersion?: string | null;
@@ -603,6 +627,8 @@ export interface TestRunForChart {
   /** `test.fixme()` skips — a subset of `skippedTests`. */
   fixmeTests?: number;
   didNotRunTests: number;
+  /** Results the run's interruption cut short: in none of the other counts, the gap they leave named. */
+  interruptedTests?: number;
   flakyTests: number;
   totalTests: number;
   duration?: number | null;
@@ -1025,14 +1051,19 @@ export interface TestCaseResult {
   didNotRunReason?: DidNotRunReason | null;
   /** Playwright's expected status: `failed` for a `test.fail()` test. */
   expectedStatus?: string | null;
-  /** For a `previous-failure` cascade, the location of the failing test that blocked it. */
+  /** For a `previous-failure` or `dependency-failure` case, the location of the failing test that blocked it. */
   blockedBy?: string | null;
   /** A running test that has run far longer than it usually does (`#shared/stuck-tests`). */
   stuck?: StuckAttempt | null;
 }
 
 /** Why a `didnotrun` case never executed — mirrors the reporter's taxonomy. */
-export type DidNotRunReason = 'previous-failure' | 'global-timeout' | 'max-failures' | 'interrupted';
+export type DidNotRunReason =
+  | 'previous-failure'
+  | 'dependency-failure'
+  | 'global-timeout'
+  | 'max-failures'
+  | 'interrupted';
 
 /** A lightweight reference to another execution in the same run (cause ↔ effect linking). */
 export interface BlockedCaseRef {
@@ -1139,6 +1170,8 @@ export interface FailureClusterDetail extends ClusterResolutionFields {
   firstSeenAt: string | Date | null;
   occurrences: number;
   affectedTests: number;
+  /** How many of those tests are quarantined, beyond the listed `affectedTestCases` too. */
+  quarantinedTests: number;
   lastSeenRunStatus: string | null;
   lastSeenAt: string | Date | null;
   /** The execution in the last-seen run — the cluster's latest occurrence, or null when none loads. */
@@ -1220,10 +1253,13 @@ export interface ProjectFailureCluster extends ClusterResolutionFields {
 
 /**
  * Test case with statistics - one item of GET /api/projects/[id]/test-cases.
- * `failedRuns` includes timed-out runs; `status` is the derived category the
+ * Its counts are of runs: one result per run, Playwright project and
+ * `--repeat-each` repetition, read from its final attempt. `failedRuns`
+ * includes timed-out runs; `status` is the derived category the
  * status filter operates on (flaky wins over the last run's status, timeouts
  * count as failed, `never-run` when the case has no executions). `passRate`
- * is over executed runs only (0..1), null when nothing executed.
+ * is the passed runs over the runs that passed or failed (0..1), null when
+ * none did.
  */
 export interface TestCaseWithStats {
   id: number;
@@ -1250,6 +1286,8 @@ export interface TestCaseWithStats {
   /** Runs skipped by `test.fixme()` — a subset of `skippedRuns`. */
   fixmeRuns?: number;
   didNotRunRuns: number;
+  /** Runs the run's interruption cut short: in no outcome and no pass rate. */
+  interruptedRuns?: number;
   flakyRuns: number;
   recentFlakyRuns?: number;
   passRate: number | null;
@@ -1283,6 +1321,7 @@ export interface AuthUser {
   username: string;
   role: InstanceRole;
   name?: string | null;
+  email?: string | null;
   avatarUrl?: string | null;
   /** The instance role and the project roles held, own and through groups; `can()` in `#shared/permissions` reads it. */
   access: AccessSummary;
@@ -1454,6 +1493,10 @@ export interface TestCaseHistoryPoint {
   retries: number | null;
   /** Per-attempt outcomes, oldest first. */
   attempts?: AttemptOutcome[] | null;
+  /** The Playwright project of the attempt. */
+  browserName?: string | null;
+  /** The `--repeat-each` repetition of the attempt. */
+  repeatEachIndex?: number | null;
   startTime: string | Date;
   runStatus: string;
 }

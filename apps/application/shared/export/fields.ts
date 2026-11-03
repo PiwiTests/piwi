@@ -78,15 +78,16 @@ export function caseFacts(exportCase: ExportCase): Fact[] {
 
 /**
  * A test's, a run's or a cluster's status as the outcome color it is drawn in, as the dashboard's `statusPaletteKey`
- * draws it: timed-out and interrupted read as failed, a pass on a retry as flaky, a run in progress as running, an
- * open cluster as failed and a resolved one as passed, and any other status as skipped.
+ * draws it: timed-out reads as failed, interrupted as its neutral own, a pass on a retry as flaky, a run in progress
+ * as running, an open cluster as failed and a resolved one as passed, and any other status as skipped.
  */
 export function statusTone(value: unknown, retries?: number | null): StatusColorKey {
   const v = String(value ?? '')
     .toLowerCase()
     .replace(/[^a-z]/g, '');
   if (v === 'passed') return (retries ?? 0) > 0 ? 'flaky' : 'passed';
-  if (v === 'failed' || v === 'timedout' || v === 'interrupted' || v === 'open') return 'failed';
+  if (v === 'failed' || v === 'timedout' || v === 'open') return 'failed';
+  if (v === 'interrupted') return 'interrupted';
   if (v === 'resolved') return 'passed';
   if (v === 'flaky') return 'flaky';
   if (v === 'fixme') return 'fixme';
@@ -127,6 +128,7 @@ export function runTestsByOutcome(
     flakyTests: Number(run.flakyTests ?? 0),
     skippedTests: Number(run.skippedTests ?? 0),
     didNotRunTests: Number(run.didNotRunTests ?? 0),
+    interruptedTests: Number(run.interruptedTests ?? 0),
   });
   return { segments, total };
 }
@@ -382,4 +384,11 @@ export const OMISSION_REASONS: Record<string, string> = {
 /** One console entry as a single line, shared by both renderers and the ZIP log. */
 export function consoleLine(entry: Record<string, any>): string {
   return `[${entry.type ?? 'log'}] ${entry.text ?? ''}`;
+}
+
+/** Each stream an execution's test wrote to, stdout then stderr, as plain text: shared by the renderers and the ZIP. */
+export function outputStreams(detail: Record<string, any>): Array<{ name: 'stdout' | 'stderr'; text: string }> {
+  return (['stdout', 'stderr'] as const).flatMap((name) =>
+    typeof detail[name] === 'string' && detail[name] ? [{ name, text: stripAnsi(detail[name]) }] : [],
+  );
 }

@@ -3,7 +3,7 @@
  * and demo reporter implementations.
  */
 
-import { eq, ne, and, or, inArray, sql, isNull, count, type AnyColumn, type SQL } from 'drizzle-orm';
+import { eq, ne, and, or, inArray, sql, isNull, count, asc, desc, type AnyColumn, type SQL } from 'drizzle-orm';
 import {
   testRuns,
   testRunsCases,
@@ -14,9 +14,13 @@ import {
   failureDiagnoses,
   failureDiagnosisVersions,
   entityLinks,
+  handbackOutcomes,
+  integrationActions,
+  mcpToolCalls,
 } from '../../server/database/schema';
 import { preferExemplar } from '../prefer-exemplar';
-import { wakeOnRecurrence } from '../inbox-queues';
+import { isCurrentlySnoozed, wakeOnRecurrence, type SnoozeState } from '../inbox-queues';
+import { eligibleRunSql, isEligibleRun } from '../run-eligibility';
 import type { DrizzleDB } from './db';
 
 /** Per-fingerprint accumulator for the batch being persisted. */
@@ -27,6 +31,7 @@ export interface PendingCluster {
     errorType: string | null;
     selector: string | null;
   };
+  /** The text `fp` was computed from; a cluster created for it keeps it as both its samples. */
   sampleError: string;
   count: number;
 }
@@ -42,12 +47,31 @@ export function isSplitFingerprint(fingerprint: string): boolean {
   return fingerprint.startsWith(SPLIT_FINGERPRINT_PREFIX);
 }
 
+/** How a batch of failures bumps the clusters it joins. */
+interface BumpOptions {
+  /** False leaves an "until it recurs" snooze in place. */
+  wakeSnoozed?: boolean;
+  /** Whether the run's failures count as occurrences; read from the run when unset. */
+  countsOccurrences?: boolean;
+}
+
+/**
+ * Whether run `testRunId`'s failures count as occurrences of their clusters
+ * (the `cluster-occurrences` use). A run that is not stored counts.
+ */
+async function runCountsOccurrences(db: DrizzleDB, testRunId: number): Promise<boolean> {
+  const [run] = await db.select({ metadata: testRuns.metadata }).from(testRuns).where(eq(testRuns.id, testRunId));
+  return !run || isEligibleRun(run, 'cluster-occurrences');
+}
+
 /**
  * Set `failureClusterId` on a batch's rows: a test moved out of a cluster
  * follows its route for that fingerprint; every other row goes through
  * {@link getOrCreateFailureClusters}. `fingerprints[i]` belongs to `rows[i]`.
  * Routed rows are taken out of `pending` before the clusters are bumped.
- * `wakeSnoozed` applies to routed clusters as to the others.
+ * `wakeSnoozed` applies to routed clusters as to the others. A run whose
+ * failures do not count as occurrences (from an editor, a bisect step, a
+ * reproduction) joins them to their clusters without bumping them.
  */
 export async function assignFailureClusters(
   db: DrizzleDB,
@@ -56,10 +80,14 @@ export async function assignFailureClusters(
   pending: Map<string, PendingCluster>,
   rows: Array<{ testCaseId: number; failureClusterId?: number | null }>,
   fingerprints: Array<{ fingerprint: string } | null>,
-  options: { wakeSnoozed?: boolean } = {},
+  options: BumpOptions = {},
 ): Promise<void> {
-  const routed = await routeMovedTests(db, projectId, testRunId, pending, rows, fingerprints, options);
-  const clusterIds = await getOrCreateFailureClusters(db, projectId, testRunId, pending, options);
+  const bump = {
+    ...options,
+    countsOccurrences: options.countsOccurrences ?? (await runCountsOccurrences(db, testRunId)),
+  };
+  const routed = await routeMovedTests(db, projectId, testRunId, pending, rows, fingerprints, bump);
+  const clusterIds = await getOrCreateFailureClusters(db, projectId, testRunId, pending, bump);
   rows.forEach((row, i) => {
     const fingerprint = fingerprints[i];
     if (fingerprint) row.failureClusterId = routed.get(i) ?? clusterIds.get(fingerprint.fingerprint) ?? null;
@@ -84,6 +112,15 @@ function seenInRun(testRunId: number) {
   };
 }
 
+/**
+ * The `updatedAt` a new occurrence or a merge writes: an open cluster's moves,
+ * and a resolved or ignored cluster's stays at the moment it was triaged, which
+ * reopening it on a recurrence and the analytics read.
+ */
+function touchedByOccurrence(status: string | null | undefined): { updatedAt?: Date } {
+  return status === 'open' ? { updatedAt: new Date() } : {};
+}
+
 /** Row index → cluster for the rows whose test has a route for its fingerprint; bumps each routed cluster. */
 async function routeMovedTests(
   db: DrizzleDB,
@@ -92,7 +129,7 @@ async function routeMovedTests(
   pending: Map<string, PendingCluster>,
   rows: Array<{ testCaseId: number }>,
   fingerprints: Array<{ fingerprint: string } | null>,
-  options: { wakeSnoozed?: boolean },
+  options: BumpOptions,
 ): Promise<Map<number, number>> {
   const routedRows = new Map<number, number>();
   if (pending.size === 0) return routedRows;
@@ -126,10 +163,12 @@ async function routeMovedTests(
     p.count--;
     if (p.count === 0) pending.delete(fingerprint);
   });
+  if (options.countsOccurrences === false) return routedRows;
 
   const clusters = await db
     .select({
       id: failureClusters.id,
+      status: failureClusters.status,
       snoozedUntil: failureClusters.snoozedUntil,
       snoozeMode: failureClusters.snoozeMode,
     })
@@ -142,7 +181,7 @@ async function routeMovedTests(
         .set({
           ...seenInRun(testRunId),
           occurrences: sql`${failureClusters.occurrences} + ${countByCluster.get(cluster.id)!}`,
-          updatedAt: new Date(),
+          ...touchedByOccurrence(cluster.status),
           ...(options.wakeSnoozed !== false
             ? (wakeOnRecurrence({ snoozedUntil: cluster.snoozedUntil, snoozeMode: cluster.snoozeMode }) ?? {})
             : {}),
@@ -157,7 +196,8 @@ async function routeMovedTests(
  * Move the given tests' executions out of a cluster into a new cluster, and
  * route their later failures with any fingerprint leading to the source
  * cluster (its own and its aliases) to the new one. The pair is recorded as a
- * rejected merge, so reconciliation never folds it back.
+ * rejected merge, so reconciliation never folds it back. Both clusters' seen
+ * runs and occurrences are then recomputed from the executions each holds.
  * Returns null when the cluster does not exist, and no cluster when none of
  * the tests has an execution in it.
  */
@@ -175,6 +215,7 @@ export async function splitFailureCluster(
       errorType: failureClusters.errorType,
       selector: failureClusters.selector,
       sampleError: failureClusters.sampleError,
+      announcedAt: failureClusters.announcedAt,
     })
     .from(failureClusters)
     .where(eq(failureClusters.id, sourceId));
@@ -216,6 +257,8 @@ export async function splitFailureCluster(
         lastSeenRunId: Math.max(...runIds),
         occurrences: moved.length,
         triageNote: triageNote || null,
+        // Split from a cluster already announced, it is not new.
+        announcedAt: source.announcedAt,
       })
       .returning({ id: failureClusters.id });
     const newId = created!.id;
@@ -266,7 +309,8 @@ export async function splitFailureCluster(
     return newId;
   });
 
-  await recomputeClusterOccurrences(db, sourceId);
+  await recomputeClusterBounds(db, sourceId);
+  await recomputeClusterBounds(db, clusterId);
   return { clusterId, testCount: movedTests.length };
 }
 
@@ -277,18 +321,21 @@ export async function splitFailureCluster(
  * before or after them; new ones start at this run. Insert races with
  * concurrent streaming batches are resolved via the unique
  * (projectId, fingerprint) index + onConflictDoNothing. With `wakeSnoozed`
- * false, a recurrence leaves an "until it recurs" snooze in place.
+ * false, a recurrence leaves an "until it recurs" snooze in place. A run whose
+ * failures do not count as occurrences (`cluster-occurrences`) leaves existing
+ * clusters as they are, and a cluster it creates counts none.
  */
 export async function getOrCreateFailureClusters(
   db: DrizzleDB,
   projectId: number,
   testRunId: number,
   pending: Map<string, PendingCluster>,
-  options: { wakeSnoozed?: boolean } = {},
+  options: BumpOptions = {},
 ): Promise<Map<string, number>> {
   const wakeSnoozed = options.wakeSnoozed !== false;
   const ids = new Map<string, number>();
   if (pending.size === 0) return ids;
+  const counts = options.countsOccurrences ?? (await runCountsOccurrences(db, testRunId));
 
   // Bump a re-hit cluster: count the occurrences, move its first and last seen
   // runs to this run when it started before or after them, and refresh
@@ -296,22 +343,22 @@ export async function getOrCreateFailureClusters(
   // to this occurrence when it is a better one. The fingerprint and the frozen
   // fingerprintSample are deliberately left untouched, so refreshing the display
   // can never destabilize re-fingerprinting.
-  const bumpExisting = (
+  const bumpExisting = async (
     clusterId: number,
     p: PendingCluster,
-    currentSampleError: string | null,
-    snooze?: { snoozedUntil: Date | null; snoozeMode: string | null },
-  ) =>
-    db
+    current: { sampleError: string | null; status: string; snoozedUntil: Date | null; snoozeMode: string | null },
+  ) => {
+    if (!counts) return;
+    await db
       .update(failureClusters)
       .set({
         ...seenInRun(testRunId),
         occurrences: sql`${failureClusters.occurrences} + ${p.count}`,
-        updatedAt: new Date(),
+        ...touchedByOccurrence(current.status),
         // A fresh occurrence wakes an "until it recurs" snooze — the cluster
         // returns to the inbox (its "snoozed, back" marker is the surviving mode).
-        ...(snooze && wakeSnoozed ? (wakeOnRecurrence(snooze) ?? {}) : {}),
-        ...(preferExemplar(currentSampleError ?? '', p.sampleError)
+        ...(wakeSnoozed ? (wakeOnRecurrence(current) ?? {}) : {}),
+        ...(preferExemplar(current.sampleError ?? '', p.sampleError)
           ? {
               sampleError: p.sampleError,
               signature: p.fp.signature,
@@ -326,12 +373,14 @@ export async function getOrCreateFailureClusters(
           : {}),
       })
       .where(eq(failureClusters.id, clusterId));
+  };
 
   const existing = await db
     .select({
       id: failureClusters.id,
       fingerprint: failureClusters.fingerprint,
       sampleError: failureClusters.sampleError,
+      status: failureClusters.status,
       snoozedUntil: failureClusters.snoozedUntil,
       snoozeMode: failureClusters.snoozeMode,
     })
@@ -343,10 +392,7 @@ export async function getOrCreateFailureClusters(
       const p = pending.get(cluster.fingerprint);
       if (!p) return;
       ids.set(cluster.fingerprint, cluster.id);
-      await bumpExisting(cluster.id, p, cluster.sampleError, {
-        snoozedUntil: cluster.snoozedUntil,
-        snoozeMode: cluster.snoozeMode,
-      });
+      await bumpExisting(cluster.id, p, cluster);
     }),
   );
 
@@ -359,6 +405,7 @@ export async function getOrCreateFailureClusters(
         fingerprint: failureClusterAliases.fingerprint,
         clusterId: failureClusterAliases.clusterId,
         sampleError: failureClusters.sampleError,
+        status: failureClusters.status,
         snoozedUntil: failureClusters.snoozedUntil,
         snoozeMode: failureClusters.snoozeMode,
       })
@@ -372,7 +419,7 @@ export async function getOrCreateFailureClusters(
         const p = pending.get(a.fingerprint);
         if (!p || ids.has(a.fingerprint)) return;
         ids.set(a.fingerprint, a.clusterId);
-        await bumpExisting(a.clusterId, p, a.sampleError, { snoozedUntil: a.snoozedUntil, snoozeMode: a.snoozeMode });
+        await bumpExisting(a.clusterId, p, a);
       }),
     );
   }
@@ -390,15 +437,14 @@ export async function getOrCreateFailureClusters(
           errorType: p.fp.errorType,
           selector: p.fp.selector,
           sampleError: p.sampleError,
-          // Immutable fingerprint source: seeded from the same error as the
-          // display sample, its secrets hidden in a way that leaves its
-          // fingerprint the same (`hideSecretsInError`), but never refreshed, so
-          // re-fingerprinting on a version bump stays independent of later
-          // exemplar refreshes.
+          // Immutable fingerprint source: the text the fingerprint was computed
+          // from, which the display sample starts as, never refreshed, so
+          // re-fingerprinting on a version bump reads what ingest read whatever
+          // exemplar the display sample moves to.
           fingerprintSample: p.sampleError,
           firstSeenRunId: testRunId,
           lastSeenRunId: testRunId,
-          occurrences: p.count,
+          occurrences: counts ? p.count : 0,
         })
         .onConflictDoNothing()
         .returning({ id: failureClusters.id });
@@ -412,6 +458,7 @@ export async function getOrCreateFailureClusters(
         .select({
           id: failureClusters.id,
           sampleError: failureClusters.sampleError,
+          status: failureClusters.status,
           snoozedUntil: failureClusters.snoozedUntil,
           snoozeMode: failureClusters.snoozeMode,
         })
@@ -419,10 +466,7 @@ export async function getOrCreateFailureClusters(
         .where(and(eq(failureClusters.projectId, projectId), eq(failureClusters.fingerprint, fingerprint)));
       if (winner[0]) {
         ids.set(fingerprint, winner[0].id);
-        await bumpExisting(winner[0].id, p, winner[0].sampleError, {
-          snoozedUntil: winner[0].snoozedUntil,
-          snoozeMode: winner[0].snoozeMode,
-        });
+        await bumpExisting(winner[0].id, p, winner[0]);
       }
     }),
   );
@@ -430,15 +474,63 @@ export async function getOrCreateFailureClusters(
   return ids;
 }
 
+/** The triage fields the merge policy reads from both clusters. */
+interface MergedTriage extends SnoozeState {
+  status: string;
+}
+
+/**
+ * The survivor's status and snooze once the victim merged into it. A live
+ * failure is never buried: when either cluster is open and not snoozed, the
+ * survivor ends open, its resolved or ignored status, or its snooze, cleared;
+ * otherwise it keeps its status and snooze.
+ */
+export function mergedTriage(survivor: MergedTriage, victim: MergedTriage, now: Date = new Date()) {
+  const live = (c: MergedTriage) => c.status === 'open' && !isCurrentlySnoozed(c, now);
+  return {
+    ...(live(survivor) || !live(victim)
+      ? {}
+      : {
+          status: 'open',
+          ...(isCurrentlySnoozed(survivor, now) ? { snoozedUntil: null, snoozeMode: null } : {}),
+        }),
+  };
+}
+
+/**
+ * SQL: the survivor's assignee once the victim merged into it: its own, else
+ * the victim's. It reads the assignee of the row the UPDATE changes, so an
+ * assignment made meanwhile is kept.
+ */
+function mergedAssignee(victimAssignee: string | null): SQL {
+  const assignee = failureClusters.assignee;
+  return sql`case when trim(coalesce(${assignee}, '')) <> '' then ${assignee} else cast(${victimAssignee} as text) end`;
+}
+
+/**
+ * SQL: the survivor's triage note once the victim merged into it, the
+ * victim's note appended below it when the survivor's does not hold it already
+ * (`appendedTriageNote`). It reads the note of the row the UPDATE changes, so
+ * an edit or a line Piwi added meanwhile is kept.
+ */
+function mergedTriageNote(victimNote: string): SQL {
+  const note = sql`coalesce(${failureClusters.triageNote}, '')`;
+  return sql`case when replace(${note}, cast(${victimNote} as text), '') = ${note} then ${appendedTriageNote(victimNote)} else ${failureClusters.triageNote} end`;
+}
+
 /**
  * Merge one failure cluster into another. The `survivorId` cluster keeps its
- * triage state (status, notes, manual base commit) and absorbs the victim:
- * all linked test-run cases and diagnoses are re-pointed, occurrence counts
- * are summed and the seen-run bounds widened to cover both, then the victim
- * row is deleted.
+ * manual base commit, takes the status `mergedTriage` gives it, the victim's
+ * assignee when it has none and the victim's note when it lacks it, and absorbs
+ * the victim: all linked test-run cases and diagnoses are re-pointed, with the
+ * victim's links, fix attempts, its tracker writes and agent calls, and the
+ * merges a person or the adjudicator decided against; occurrence counts are
+ * summed and the seen-run bounds widened to cover both, then the victim row is
+ * deleted.
  *
  * Used by the re-fingerprinting backfill (when two distinct clusters map onto
- * the same fingerprint), cluster reconciliation and approved merge suggestions.
+ * the same fingerprint), cluster reconciliation and approved merge suggestions,
+ * which apply the policy to the clusters' triage at the moment they merge.
  */
 export async function mergeFailureClusters(db: DrizzleDB, survivorId: number, victimId: number): Promise<void> {
   if (survivorId === victimId) return;
@@ -486,33 +578,107 @@ export async function mergeFailureClusters(db: DrizzleDB, survivorId: number, vi
       .set({ clusterId: survivorId })
       .where(eq(failureDiagnosisVersions.clusterId, victimId));
 
+    // The victim's history follows it: the fix attempts reported on it, what
+    // Piwi wrote to its tracker issue, and what agents did to it.
+    await tx
+      .update(handbackOutcomes)
+      .set({ subjectId: survivorId })
+      .where(
+        and(
+          eq(handbackOutcomes.kind, 'fix-attempt'),
+          eq(handbackOutcomes.subjectType, 'cluster'),
+          eq(handbackOutcomes.subjectId, victimId),
+        ),
+      );
+    await tx
+      .update(integrationActions)
+      .set({ entityId: survivorId })
+      .where(and(eq(integrationActions.entityType, 'failure_cluster'), eq(integrationActions.entityId, victimId)));
+    await tx
+      .update(mcpToolCalls)
+      .set({ subjectId: survivorId })
+      .where(and(eq(mcpToolCalls.subjectType, 'cluster'), eq(mcpToolCalls.subjectId, victimId)));
+
     // Combine the two clusters' aggregates.
+    const triageFields = {
+      status: failureClusters.status,
+      assignee: failureClusters.assignee,
+      triageNote: failureClusters.triageNote,
+      snoozedUntil: failureClusters.snoozedUntil,
+      snoozeMode: failureClusters.snoozeMode,
+    };
     const [survivor] = await tx
       .select({
+        ...triageFields,
         occurrences: failureClusters.occurrences,
         firstSeenRunId: failureClusters.firstSeenRunId,
         lastSeenRunId: failureClusters.lastSeenRunId,
+        announcedAt: failureClusters.announcedAt,
       })
       .from(failureClusters)
       .where(eq(failureClusters.id, survivorId));
     const [victim] = await tx
       .select({
+        ...triageFields,
         projectId: failureClusters.projectId,
         fingerprint: failureClusters.fingerprint,
+        fingerprintSample: failureClusters.fingerprintSample,
+        sampleError: failureClusters.sampleError,
         occurrences: failureClusters.occurrences,
         firstSeenRunId: failureClusters.firstSeenRunId,
         lastSeenRunId: failureClusters.lastSeenRunId,
+        announcedAt: failureClusters.announcedAt,
       })
       .from(failureClusters)
       .where(eq(failureClusters.id, victimId));
 
+    // A merge decided against with the victim (a person's rejection, a split, the
+    // adjudicator's "no") holds for the survivor, which carries its failures.
+    if (victim) {
+      const decided = await tx
+        .select()
+        .from(clusterMergeSuggestions)
+        .where(
+          and(
+            inArray(clusterMergeSuggestions.status, ['rejected', 'declined']),
+            or(eq(clusterMergeSuggestions.clusterAId, victimId), eq(clusterMergeSuggestions.clusterBId, victimId)),
+          ),
+        );
+      for (const pair of decided) {
+        const otherId = pair.clusterAId === victimId ? pair.clusterBId : pair.clusterAId;
+        if (otherId === survivorId) continue;
+        await tx
+          .insert(clusterMergeSuggestions)
+          .values({
+            projectId: pair.projectId,
+            clusterAId: Math.min(survivorId, otherId),
+            clusterBId: Math.max(survivorId, otherId),
+            score: pair.score,
+            method: pair.method,
+            llmConfidence: pair.llmConfidence,
+            llmReason: pair.llmReason,
+            status: pair.status,
+          })
+          .onConflictDoNothing();
+      }
+    }
+
     // Record the victim's fingerprint → survivor so future failures with that
     // fingerprint attach to the survivor, and re-home any aliases that pointed
-    // at the victim (keeps chained merges consistent).
+    // at the victim (keeps chained merges consistent). The alias keeps the
+    // error the fingerprint was computed from, so a version bump computes it
+    // again as it does the clusters'.
     if (victim) {
       await tx
         .insert(failureClusterAliases)
-        .values({ projectId: victim.projectId, fingerprint: victim.fingerprint, clusterId: survivorId })
+        .values({
+          projectId: victim.projectId,
+          fingerprint: victim.fingerprint,
+          fingerprintSample: isSplitFingerprint(victim.fingerprint)
+            ? null
+            : (victim.fingerprintSample ?? victim.sampleError),
+          clusterId: survivorId,
+        })
         .onConflictDoNothing();
       await tx
         .update(failureClusterAliases)
@@ -526,13 +692,20 @@ export async function mergeFailureClusters(db: DrizzleDB, survivorId: number, vi
       .where(eq(failureClusterTestRoutes.clusterId, victimId));
 
     if (survivor && victim) {
+      const triage = mergedTriage(survivor, victim);
+      const victimNote = victim.triageNote?.trim();
       await tx
         .update(failureClusters)
         .set({
+          ...triage,
+          assignee: mergedAssignee(victim.assignee),
+          ...(victimNote ? { triageNote: mergedTriageNote(victimNote) } : {}),
           occurrences: (survivor.occurrences ?? 0) + (victim.occurrences ?? 0),
           firstSeenRunId: Math.min(survivor.firstSeenRunId, victim.firstSeenRunId),
           lastSeenRunId: Math.max(survivor.lastSeenRunId, victim.lastSeenRunId),
-          updatedAt: new Date(),
+          // Announced when either was: the failures it carries are not new.
+          ...(survivor.announcedAt == null && victim.announcedAt ? { announcedAt: victim.announcedAt } : {}),
+          ...touchedByOccurrence(triage.status ?? survivor.status),
         })
         .where(eq(failureClusters.id, survivorId));
     }
@@ -542,25 +715,88 @@ export async function mergeFailureClusters(db: DrizzleDB, survivorId: number, vi
 }
 
 /**
+ * SQL: a cluster's triage note with a line appended below it: what a person
+ * wrote stays, trimmed, and an empty note becomes the line. It reads the note
+ * of the row the UPDATE changes, so an edit made meanwhile is kept.
+ */
+export function appendedTriageNote(line: string): SQL {
+  const note = failureClusters.triageNote;
+  return sql`case when trim(coalesce(${note}, '')) = '' then cast(${line} as text) else trim(${note}) || cast(${`\n${line}`} as text) end`;
+}
+
+/**
+ * Move a cluster from triage status `from` to `to`, with a line Piwi writes
+ * appended to its note, in one conditional UPDATE: nothing changes when the
+ * status differs from `from` (a person triaged it meanwhile), and the line
+ * joins the note as it is stored at that moment. `where` narrows the
+ * condition. True when the cluster moved.
+ */
+export async function transitionClusterStatus(
+  db: DrizzleDB,
+  clusterId: number,
+  move: { from: string; to: string; line: string; where?: SQL },
+): Promise<boolean> {
+  const moved = await db
+    .update(failureClusters)
+    .set({ status: move.to, triageNote: appendedTriageNote(move.line), updatedAt: new Date() })
+    .where(and(eq(failureClusters.id, clusterId), eq(failureClusters.status, move.from), move.where))
+    .returning({ id: failureClusters.id });
+  return moved.length > 0;
+}
+
+/**
  * Recompute a cluster's occurrence counter from the test-run-cases still
- * linked to it. Must run after the case rows have actually been deleted or
- * unlinked (not before), otherwise the count still includes rows that are
- * about to disappear.
+ * linked to it, in the runs whose failures count as occurrences
+ * (`cluster-occurrences`). Must run after the case rows have actually been
+ * deleted or unlinked (not before), otherwise the count still includes rows
+ * that are about to disappear.
  */
 export async function recomputeClusterOccurrences(db: DrizzleDB, clusterId: number): Promise<number> {
   const [row] = await db
     .select({ count: count() })
     .from(testRunsCases)
-    .where(eq(testRunsCases.failureClusterId, clusterId));
+    .innerJoin(testRuns, eq(testRuns.id, testRunsCases.testRunId))
+    .where(and(eq(testRunsCases.failureClusterId, clusterId), eligibleRunSql('cluster-occurrences')));
   const occurrences = Number(row?.count ?? 0);
 
-  await db.update(failureClusters).set({ occurrences, updatedAt: new Date() }).where(eq(failureClusters.id, clusterId));
+  await db.update(failureClusters).set({ occurrences }).where(eq(failureClusters.id, clusterId));
+  // Only an open cluster's `updatedAt` moves (`touchedByOccurrence`): a resolved or ignored one keeps its triage time.
+  await db
+    .update(failureClusters)
+    .set({ updatedAt: new Date() })
+    .where(and(eq(failureClusters.id, clusterId), eq(failureClusters.status, 'open')));
 
   return occurrences;
 }
 
 /**
- * Cancel stale in-progress runs for a given project + instanceId.
+ * Recompute a cluster's first and last seen runs and its occurrences from the
+ * executions still linked to it, in the runs whose failures count as
+ * occurrences (`cluster-occurrences`): the earliest and the latest of those
+ * runs by start time, then by id. With none left, the seen runs stay.
+ */
+export async function recomputeClusterBounds(db: DrizzleDB, clusterId: number): Promise<void> {
+  const seen = (first: boolean) =>
+    db
+      .select({ runId: testRuns.id })
+      .from(testRunsCases)
+      .innerJoin(testRuns, eq(testRuns.id, testRunsCases.testRunId))
+      .where(and(eq(testRunsCases.failureClusterId, clusterId), eligibleRunSql('cluster-occurrences')))
+      .orderBy(...(first ? [asc(testRuns.startTime), asc(testRuns.id)] : [desc(testRuns.startTime), desc(testRuns.id)]))
+      .limit(1);
+  const [[firstSeen], [lastSeen]] = await Promise.all([seen(true), seen(false)]);
+  if (firstSeen && lastSeen) {
+    await db
+      .update(failureClusters)
+      .set({ firstSeenRunId: firstSeen.runId, lastSeenRunId: lastSeen.runId })
+      .where(eq(failureClusters.id, clusterId));
+  }
+  await recomputeClusterOccurrences(db, clusterId);
+}
+
+/**
+ * Cancel stale in-progress runs for a given project + instanceId: the ones initializing or running. A finalizing
+ * run is left alone: it holds every result of its run and settles once its files are in, or by the stale-run sweep.
  * Returns the cancelled runs so callers can publish their own lifecycle events.
  */
 export async function cancelInstanceRuns(
@@ -575,7 +811,7 @@ export async function cancelInstanceRuns(
   const conditions = [
     eq(testRuns.projectId, projectId),
     eq(testRuns.instanceId, instanceId),
-    or(eq(testRuns.status, 'running'), eq(testRuns.status, 'initializing'), eq(testRuns.status, 'finalizing')),
+    or(eq(testRuns.status, 'running'), eq(testRuns.status, 'initializing')),
   ];
 
   if (excludeRunId !== undefined) {

@@ -21,10 +21,11 @@ type Storage = ReturnType<typeof getStorage>;
  * `TraceBlobManifest`). We fetch each pooled file once and rebuild a complete
  * ZIP, with every entry under its original name, that the trace viewer can open.
  *
- * Returns null when the slim ZIP or the manifest cannot be parsed, so the caller
- * can fall back to the stored bytes. A pooled file that is gone is left out with
- * a warning; a pooled file that exists but cannot be read throws, so a passing
- * storage error is never served, or cached, as the complete trace.
+ * Returns null when the manifest is gone, or the slim ZIP or the manifest cannot
+ * be parsed, so the caller can fall back to the stored bytes. A pooled file that
+ * is gone is left out with a warning; the manifest or a pooled file that exists
+ * but cannot be read throws, so a passing storage error is never served, or
+ * cached, as the complete trace.
  */
 export async function reconstructTraceZip(
   storage: Storage,
@@ -32,10 +33,18 @@ export async function reconstructTraceZip(
   manifestPath: string,
   projectPrefix: string, // e.g. "project-1/"
 ): Promise<Buffer | null> {
+  let rawManifest: Buffer;
+  try {
+    rawManifest = await storage.readFile(manifestPath);
+  } catch (error) {
+    if (await storage.exists(manifestPath)) throw error;
+    console.warn(`[TraceZip] Missing manifest: ${manifestPath}`);
+    return null;
+  }
   let manifest: TraceBlobManifest;
   let slimEntries: ZipEntry[];
   try {
-    manifest = parseTraceManifest(await storage.readFile(manifestPath));
+    manifest = parseTraceManifest(rawManifest);
     slimEntries = await parseZip(slimZipData);
   } catch (err) {
     console.warn(`[TraceZip] Reconstruction failed: ${err}`);
@@ -79,8 +88,8 @@ export async function reconstructTraceZip(
 
 /**
  * A stored file's bytes as users get them: a slim trace blob comes back as the
- * complete archive, any other file as stored. Throws when the pool cannot be
- * read (see {@link reconstructTraceZip}).
+ * complete archive, any other file as stored. Throws when the manifest or the
+ * pool cannot be read (see {@link reconstructTraceZip}).
  */
 export async function resolveStoredTrace(storage: Storage, path: string, data: Buffer): Promise<Buffer> {
   if (!path.endsWith('.zip') || !path.includes('/blobs/')) return data;

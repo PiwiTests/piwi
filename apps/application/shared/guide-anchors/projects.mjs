@@ -223,8 +223,9 @@ export const PROJECTS_ANCHORS = [
       },
       {
         id: 'quarantine',
-        describes: 'Quarantine: keeps the test running and reporting while the CI gate leaves it out.',
-        shownWhen: 'When the user can quarantine the project’s tests.',
+        describes:
+          'Quarantine, or the mark of a test already quarantined: it keeps running and reporting while the CI gate leaves it out.',
+        shownWhen: 'When the user can quarantine the project’s tests, or the test is quarantined.',
       },
       {
         id: 'top-suspect',
@@ -245,7 +246,7 @@ export const PROJECTS_ANCHORS = [
     reveal: [{ query: { tab: 'flaky-tests' } }],
     describes:
       'The Quarantine button of a flaky test, which keeps it running but out of the CI gate’s verdict; hovering it previews the lines no other trusted test runs.',
-    shownWhen: 'When a test of the project flaked in its recent runs.',
+    shownWhen: 'When a test of the project flaked in its recent runs and is not quarantined yet.',
     requires: { permission: 'quarantine:write' },
     help: 'quarantine.coverage-loss',
     doc: 'features/coverage-insights#what-quarantining-or-deleting-tests-leaves-uncovered',

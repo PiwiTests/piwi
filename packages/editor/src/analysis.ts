@@ -914,7 +914,7 @@ export interface FlakeLabLens {
 }
 
 /**
- * The lens above a flaky test: its flaky rate and the suspect it is shown with,
+ * The lens above a flaky test: Flake Lab's flaky N% and the suspect it is shown with,
  * then "Reproduce this flake", and "Verify the flake fix" once the lab
  * reproduced it, when the instance's next command is a verification. Null when
  * the test is off the flaky ranking with nothing to verify, or its fix holds.

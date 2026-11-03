@@ -91,7 +91,7 @@ It reruns the reproducing arm and its control for enough runs that a failure at 
 shown with 95% confidence (`⌈ln 0.05 / ln(1 − rate)⌉`, at least 5), and stops at the first matching failure. With
 none, the fix is **verified**. The verify experiment appears on the Flakiness tab next to the one it verifies, and the
 test reads [verified fixed](./flaky-tests#verified-fixed): off the flaky ranking until it retry-passes again, and a
-quarantined test is proposed for release at once.
+quarantined test is proposed for release at once, until it fails again.
 
 **Exit codes:** `0` an arm reproduced the failure (`verify`: the fix held) · `1` nothing reproduced (`verify`: it
 still fails, or too few runs passed to say) · `2` error.
@@ -117,12 +117,12 @@ and every other comparison between runs.
 
 ## From the editor and the failure pages
 
-- **In the [editor](./editors#the-tests-behind-each-line)**, a flaky test's line shows its flaky rate and top suspect
-  ("flaky 18% · top suspect: GET /api/cart slower (reproduced 7 of 10)"), with **Reproduce this flake** and, once
-  reproduced, **Verify the flake fix**, run in a terminal against the instance the editor reads. Beside a team
-  instance, **Reproduce this flake in the desktop app** (also on a failure with an untested suspect) runs the
-  instance's plan in the [desktop app](./desktop#jobs-from-your-editor) once you confirm it; **Share on …** records
-  the results on the instance, as run from `desktop`.
+- **In the [editor](./editors#the-tests-behind-each-line)**, a flaky test's line shows the share of its recent runs in
+  which it failed or passed on a retry, and its top suspect ("flaky 18% · top suspect: GET /api/cart slower (reproduced
+  7 of 10)"), with **Reproduce this flake** and, once reproduced, **Verify the flake fix**, run in a terminal against
+  the instance the editor reads. Beside a team instance, **Reproduce this flake in the desktop app** (also on a failure
+  with an untested suspect) runs the instance's plan in the [desktop app](./desktop#jobs-from-your-editor) once you
+  confirm it; **Share on …** records the results on the instance, as run from `desktop`.
 - **On a flaky failure's page**, the next step reproduces it under the top untested suspect, then verifies the fix.
 - **Home** lists the tests waiting for a verify, then those whose top suspect is untested.
 

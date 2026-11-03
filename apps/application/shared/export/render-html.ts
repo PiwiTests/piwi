@@ -39,6 +39,7 @@ import {
   fmtStepDuration,
   hasDiagnosis,
   OMISSION_REASONS,
+  outputStreams,
   projectLabel,
   runFacts,
   runFailureGroups,
@@ -142,11 +143,11 @@ p { margin:.4rem 0; }
 }
 .chip.new { color:var(--fail); border-color:currentColor; font-weight:650; }
 
-/* Matches getStatusColor in app/utils: timed-out and interrupted read as failed, didn't run as a warning. */
-.s-failed, .s-timedout, .s-interrupted, .s-error, .s-open { color:var(--fail); }
+/* Matches getStatusColor in app/utils: timed-out reads as failed, interrupted as neutral, didn't run as a warning. */
+.s-failed, .s-timedout, .s-error, .s-open { color:var(--fail); }
 .s-passed, .s-resolved { color:var(--pass); }
 .s-flaky { color:var(--flaky); }
-.s-skipped, .s-log, .s-debug, .s-ignored { color:var(--skip); }
+.s-skipped, .s-interrupted, .s-log, .s-debug, .s-ignored { color:var(--skip); }
 .s-didnotrun, .s-warning, .s-warn { color:var(--warn); }
 .s-info { color:var(--info); }
 .tag { font-weight:650; }
@@ -330,6 +331,7 @@ const TONE_CLASSES: Record<StatusColorKey, string> = {
   fixme: 't-skip',
   didnotrun: 't-warn',
   running: 't-info',
+  interrupted: 't-skip',
 };
 
 /** A status → the tone of a header's edge and tint. */
@@ -619,6 +621,17 @@ function renderConsole(logs: unknown): RawHtml {
   </div>`;
 }
 
+/** What the test wrote to stdout and to stderr, each stream under its name, as plain text. */
+function renderOutput(detail: Record<string, any>): RawHtml {
+  return joinHtml(
+    outputStreams(detail).map(
+      (stream) =>
+        html`<h3 class="file">${stream.name}</h3>
+          <pre class="hljs"><code>${stream.text}</code></pre>`,
+    ),
+  );
+}
+
 function renderNetwork(requests: unknown): RawHtml {
   if (!Array.isArray(requests) || !requests.length) return raw('');
   const rows = (requests as Record<string, any>[]).map(
@@ -729,6 +742,7 @@ function renderCase(exportCase: ExportCase, opts: RenderOptions, caseOpts: CaseO
   const count = (v: unknown) => (Array.isArray(v) ? v.length : undefined);
   parts.push(details('Steps', renderSteps(d.steps, d.pauses), { open: true, count: count(d.steps) }));
   parts.push(details('Console', renderConsole(d.consoleLogs), { count: count(d.consoleLogs) }));
+  parts.push(details('Output', renderOutput(d)));
   parts.push(details('Network', renderNetwork(d.networkRequests), { count: count(d.networkRequests) }));
   if (d.testSource) {
     parts.push(

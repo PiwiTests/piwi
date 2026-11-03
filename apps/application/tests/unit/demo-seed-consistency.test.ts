@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { computeErrorFingerprint } from '#shared/error-fingerprint';
 import { resolveHealingForCase } from '~~/server/utils/locator-healing';
+import { embeddingModelTag } from '~~/server/utils/cluster-similarity';
 import { validatePatch } from '#shared/patch';
 import { allDemoSourceFiles, getDemoChangesSince, getDemoDefaultRange } from '~~/app/demo/demo-scm';
 import {
@@ -26,6 +27,7 @@ import { WEB_DASHBOARD_PROJECT_ID, webDashboardRequests } from '#shared/demo/dem
 import { resourceFingerprint } from '#shared/resource-fingerprint.mjs';
 import type { WireResourceFinding } from '#shared/types';
 import { GATEWAY_STATUSES, classifyRunHealth } from '#shared/handlers/run-health';
+import { isEligibleRun } from '#shared/run-eligibility';
 import { runBaseUrls } from '#shared/graph';
 import { TOUR_PROFILES } from '~/utils/demo-tour/profiles';
 import { GUIDE_ANCHORS } from '#shared/guide-anchors/index.mjs';
@@ -112,6 +114,13 @@ describe('fingerprint mirror parity (demo mirror vs the real algorithm)', () => 
     "Error: strict mode violation: getByRole('row', { name: 'Alice' }) resolved to 2 elements:\n    1) <tr>…</tr> aka getByRole('row', { name: 'Alice', exact: true })",
     "Error: expect(locator).toBeVisible() failed\n\nLocator: getByRole('row', { name: 'Bob' })\nExpected: visible\nReceived: <element(s) not found>\nTimeout: 5000ms\n\nCall log:\n  - waiting for getByRole('row', { name: 'Bob' })\n    at tests/x.spec.ts:3:3",
     'Some completely unstructured error with no recognizable shape at all',
+    "Error: locator.click: Error: strict mode violation: getByRole('button') resolved to 3 elements:\n    1) <button>Pay</button> aka getByRole('button', { name: 'Pay' })\n    2) <button>Later</button> aka getByTestId('later')\n    ...\n\nCall log:\n  - waiting for getByRole('button')",
+    'Error: booking order_5f3a9c1e2b expired at 2026-05-01T10:30:00.120Z for cus_4QFJrkXyZ8aB2m, field_label12 kept',
+    "Error: ENOENT: no such file or directory, open '/home/runner/work/shop/shop/fixtures/user.json'",
+    "Error: ENOENT: no such file or directory, open 'C:\\Users\\alice\\shop\\fixtures\\user.json'",
+    'Error: browserType.launch: profile /tmp/playwright_chromiumdev_profile-Xo8n2p is locked',
+    'Test timeout of 30000ms exceeded.\n    at /Users/alice/shop/tests/cart.spec.ts:4:1',
+    "TypeError: Cannot read properties of undefined (reading 'id')\n    at C:\\Users\\alice\\shop\\tests\\orders.spec.ts:20:15",
   ];
 
   for (const [i, err] of corpus.entries()) {
@@ -301,11 +310,27 @@ describe('cluster ↔ case ↔ file coherence', () => {
   });
 
   test('cluster occurrences and first/last run ids are internally consistent', () => {
+    // Occurrences count the executions of the runs whose failures count as occurrences, as the server does.
+    const counting = new Set(
+      q('select id, metadata, is_full_run, status from test_runs')
+        .filter((run) =>
+          isEligibleRun(
+            {
+              metadata: JSON.parse((run.metadata as string) ?? 'null'),
+              isFullRun: run.is_full_run as number,
+              status: run.status as string,
+            },
+            'cluster-occurrences',
+          ),
+        )
+        .map((run) => run.id as number),
+    );
     const clusters = q('select id, occurrences, first_seen_run_id, last_seen_run_id from failure_clusters');
     for (const c of clusters) {
-      const trcCount = q(`select count(*) as n from test_runs_cases where failure_cluster_id = ${c.id as number}`)[0]!
-        .n as number;
-      expect(trcCount, `cluster ${c.id} occurrences`).toBe(c.occurrences);
+      const occurrences = q(`select test_run_id from test_runs_cases where failure_cluster_id = ${c.id as number}`)
+        .map((r) => r.test_run_id as number)
+        .filter((runId) => counting.has(runId)).length;
+      expect(occurrences, `cluster ${c.id} occurrences`).toBe(c.occurrences);
       expect(c.first_seen_run_id, `cluster ${c.id} first_seen_run_id`).not.toBeNull();
       expect(c.last_seen_run_id, `cluster ${c.id} last_seen_run_id`).not.toBeNull();
     }
@@ -565,6 +590,19 @@ describe('executions as the reporter stores them', () => {
     }
   });
 
+  test("every execution stores whether it is its result's final attempt, as ingest keeps it", () => {
+    const rows = q(`select id, final_attempt, exists (
+        select 1 from test_runs_cases later
+        where later.test_run_id = trc.test_run_id and later.test_case_id = trc.test_case_id
+          and later.repeat_each_index = trc.repeat_each_index
+          and coalesce(later.browser_name, '') = coalesce(trc.browser_name, '')
+          and (later.retries > trc.retries or (later.retries = trc.retries and later.id > trc.id))
+      ) as superseded
+      from test_runs_cases trc`);
+    expect(rows.filter((r) => r.superseded === 1).length).toBeGreaterThan(0);
+    for (const r of rows) expect(r.final_attempt, `trc ${r.id} final_attempt`).toBe(r.superseded === 1 ? 0 : 1);
+  });
+
   test('a test that did not run carries no steps, start time, worker or step events', () => {
     const rows = q(`select id, steps, started_at, worker_index, step_events, slowest_step
       from test_runs_cases where status = 'didnotrun'`);
@@ -723,6 +761,13 @@ describe('cluster 9 (assertion-captured healing) coherence', () => {
     expect(healing.reason).toBe('The locator resolved; this is not a locator problem.');
     expect(healing.recommendation).toBeNull();
     expect(healing.failingLocator?.method).toBe('getByRole');
+  });
+});
+
+describe('cluster embeddings', () => {
+  test('the seeded vectors carry the model tag the server writes today', () => {
+    const tags = q(`select distinct embedding_model from failure_clusters where embedding is not null`);
+    expect(tags).toEqual([{ embedding_model: embeddingModelTag('text-embedding-3-small') }]);
   });
 });
 
@@ -950,6 +995,8 @@ const EXPECT_KEYS = new Set([
   'lab',
   'resources',
   'incident',
+  'runErrors',
+  'output',
   'coverageGap',
   'gaps',
   'suspects',
@@ -1026,6 +1073,19 @@ function expectHoldsInSeed(label: string, route: string, want: DemoExampleExpect
       `select json_extract(metadata, '$.incident.rule') as rule from test_runs where id = ${want.run!.id}`,
     );
     expect(row?.rule, `${label}: the run is flagged as an incident`).toBeTruthy();
+  }
+  if (want.runErrors) {
+    expect(want.run, `${label}: runErrors needs a run`).toBeTruthy();
+    const [row] = q(`select run_errors as errors from test_runs where id = ${want.run!.id}`);
+    const errors = row?.errors ? (JSON.parse(String(row.errors)) as Array<{ message: string }>) : [];
+    expect(errors.length, `${label}: the run holds errors outside its tests`).toBeGreaterThan(0);
+  }
+  if (want.output) {
+    expect(want.execution, `${label}: output needs an execution`).toBeTruthy();
+    const [row] = q(
+      `select stdout_payload_id as stdout, stderr_payload_id as stderr from test_runs_cases where id = ${want.execution!.id}`,
+    );
+    expect(row?.stdout ?? row?.stderr, `${label}: the execution holds what its test wrote`).toBeTruthy();
   }
   if (want.coverageGap) {
     expect(want.run, `${label}: coverageGap needs a run`).toBeTruthy();

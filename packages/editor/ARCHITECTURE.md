@@ -412,7 +412,7 @@ that stack shows the message and the call chain.
 
 A flaky test's line also carries the Flake Lab lines (`flakeLabLines`, from `GET /api/projects/:id/flake-lab`):
 
-- its flaky rate and top suspect;
+- its flaky N% (the share of its recent runs that failed or passed on a retry) and top suspect;
 - the `piwi flake` commands, run through `piwi.runCommand`. A command carries `--server-url` only when, run from the
   config's folder, it would find another instance or none (`withServerUrl`);
 - while the desktop app runs beside a team instance, the reproduction as a desktop job (`piwi.desktopJob`, kind

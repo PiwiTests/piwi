@@ -30,6 +30,7 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'POST /api/auth/setup', // initial admin setup (server only)
   'POST /api/test-runs/submit', // bulk result submission (no server in demo)
   'POST /api/test-runs/upload', // multipart upload (no server in demo)
+  'POST /api/test-runs/upload/results', // a run's results ahead of its files (no server in demo)
   'POST /api/test-runs/start', // alternate streaming start (server only)
   'POST /api/test-runs/:id/case-files', // file upload during live run (server only)
   'DELETE /api/tests/cleanup', // test-suite cleanup hook (server only)

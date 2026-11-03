@@ -43,6 +43,22 @@ describe('FileHandler.findAllAttachments', () => {
     expect(fs.existsSync(found!.path)).toBe(false);
   });
 
+  it("adds the type's extension only to a name that does not end in it", () => {
+    const handler = new FileHandler(logger);
+    const tc = testCase([
+      { name: 'notes.txt', contentType: 'text/plain', body: Buffer.from('a') },
+      { name: 'Order.JSON', contentType: 'application/json', body: Buffer.from('{}') },
+      { name: 'order', contentType: 'application/json', body: Buffer.from('{}') },
+    ]);
+
+    expect(handler.findAllAttachments(tc).map((a) => a.originalName)).toEqual([
+      'notes.txt',
+      'Order.JSON',
+      'order.json',
+    ]);
+    handler.cleanupBodyAttachments();
+  });
+
   it('reuses one temp file across repeated lookups of the same attachment', () => {
     const handler = new FileHandler(logger);
     const tc = testCase([{ name: 'note', contentType: 'text/plain', body: Buffer.from('hello') }]);
@@ -96,5 +112,51 @@ describe('FileHandler.findAllAttachments', () => {
 
   it('defaults to the dashboard upload ceiling', () => {
     expect(MAX_ATTACHMENT_BYTES).toBe(500 * 1024 * 1024);
+  });
+});
+
+describe('FileHandler.listReport', () => {
+  it("lists a report's files", () => {
+    fs.writeFileSync(path.join(tmpDir, 'index.html'), '<html>');
+    expect(new FileHandler(logger).listReport(tmpDir)?.map((file) => file.name)).toEqual(['index.html']);
+  });
+
+  it("lists a report whatever its size: the dashboard's upload limit, which it sets, decides", async () => {
+    const handler = new FileHandler(logger, 8);
+    fs.writeFileSync(path.join(tmpDir, 'index.html'), Buffer.alloc(5));
+    fs.writeFileSync(path.join(tmpDir, 'data.js'), Buffer.alloc(5));
+
+    const names = handler.listReport(tmpDir)?.map((file) => file.name);
+    expect(names?.sort()).toEqual(['data.js', 'index.html']);
+    expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+describe('FileHandler.checkMissingTraces', () => {
+  it('asks nothing once the signal is aborted, and takes every trace as missing', async () => {
+    const postJSON = vi.fn(async () => ({ missing: [] }));
+    const missing = await new FileHandler(logger).checkMissingTraces(
+      { postJSON },
+      'proj',
+      new Map([[0, { hash: 'abc' }]]),
+      null,
+      AbortSignal.abort(),
+    );
+    expect(postJSON).not.toHaveBeenCalled();
+    expect([...missing]).toEqual(['abc']);
+  });
+});
+
+describe('FileHandler.compressReport', () => {
+  it('writes the archive to a temp file that cleanupBodyAttachments deletes', async () => {
+    const handler = new FileHandler(logger);
+    fs.writeFileSync(path.join(tmpDir, 'index.html'), '<html>report</html>');
+
+    const archive = await handler.compressReport(tmpDir, handler.listReport(tmpDir)!);
+    expect(archive && path.dirname(archive).startsWith(os.tmpdir())).toBe(true);
+    expect(fs.readFileSync(archive!).subarray(0, 2)).toEqual(Buffer.from([0x1f, 0x8b]));
+
+    handler.cleanupBodyAttachments();
+    expect(fs.existsSync(archive!)).toBe(false);
   });
 });

@@ -346,6 +346,8 @@ describe('toWireTestCase', () => {
       'slowestStepDuration',
       'startedAt',
       'status',
+      'stderr',
+      'stdout',
       'stepEvents',
       'steps',
       'suiteConfig',
@@ -421,6 +423,30 @@ describe('serializeRun', () => {
     expect(serializeRun({ ...makePayload(), deliveryKey: 'key-1' }, { includeTestCases: true }).deliveryKey).toBe(
       'key-1',
     );
+  });
+
+  it("carries the suite's setup steps when the run has some, as /finish does", () => {
+    const step = {
+      title: 'beforeAll hook',
+      category: 'hook',
+      startedAt: 1_700_000_000_000,
+      duration: 12,
+      status: 'passed',
+      location: 'tests/a.spec.ts:3:1',
+      workerIndex: 0,
+    };
+    expect(serializeRun({ ...makePayload(), setupSteps: [step] }, { includeTestCases: false }).setupSteps).toEqual([
+      step,
+    ]);
+    expect('setupSteps' in serializeRun({ ...makePayload(), setupSteps: [] }, { includeTestCases: false })).toBe(false);
+  });
+
+  it('carries the errors Playwright reported outside any test when the run has some, as /finish does', () => {
+    const error = { message: 'Error: No tests found', stack: null, location: null };
+    expect(serializeRun({ ...makePayload(), runErrors: [error] }, { includeTestCases: true }).runErrors).toEqual([
+      error,
+    ]);
+    expect('runErrors' in serializeRun({ ...makePayload(), runErrors: [] }, { includeTestCases: true })).toBe(false);
   });
 
   it('sends keep: true only when the run asked to be kept', () => {

@@ -130,9 +130,12 @@ const KEPT_CONSOLE_TYPES = new Set(['warning', 'error', 'assert']);
 /**
  * Project a parsed trace's console events into the stored shape.
  *
- * Trace timestamps are monotonic offsets in older traces and wall-clock in
- * newer ones; anything too small to be an epoch is rebased onto the execution's
- * start so the entries sort against the rest of the timeline.
+ * A console event's time too small to be an epoch is the worker's monotonic
+ * clock: it goes onto the wall clock through the anchor a `context-options`
+ * header records (its `wallTime` at its `monotonicTime`, the browser context's
+ * first), else, in a trace that records none, it is taken as an offset from the
+ * execution's start. Either way the entries sort against the rest of the
+ * timeline.
  */
 export function consoleLogsFromTrace(
   parsed: ParsedTraceData | null,
@@ -140,12 +143,22 @@ export function consoleLogsFromTrace(
 ): ImportedConsoleEntry[] | null {
   if (!parsed?.consoleEntries?.length) return null;
 
+  const anchored = (context: ParsedTraceData['contexts'][number]) =>
+    typeof context.wallTime === 'number' && typeof context.monotonicTime === 'number';
+  const anchor =
+    parsed.contexts.find((context) => context.origin === 'library' && anchored(context)) ??
+    parsed.contexts.find(anchored);
+  const wallClock = (monotonic: number): number | null => {
+    if (anchor) return anchor.wallTime! + (monotonic - anchor.monotonicTime!);
+    return startedAt ? startedAt + monotonic : null;
+  };
+
   const entries: ImportedConsoleEntry[] = [];
   for (const entry of parsed.consoleEntries) {
     if (!KEPT_CONSOLE_TYPES.has(entry.type)) continue;
 
     const raw = entry.timestamp ?? 0;
-    const timestamp = Math.round(raw > 0 && raw < 1e12 && startedAt ? startedAt + raw : raw);
+    const timestamp = Math.round((raw > 0 && raw < 1e12 ? wallClock(raw) : null) ?? raw);
 
     entries.push({
       type: entry.type,

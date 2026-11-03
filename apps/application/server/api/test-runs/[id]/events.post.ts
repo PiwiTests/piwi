@@ -9,16 +9,18 @@ import { mapWireCaseToRunCase } from '../../../utils/map-wire-case';
 import { resolveRepeatEachIndex, runningCaseKey } from '../../../utils/inserted-run-cases';
 import { mapStepEventsToRunEvents } from '../../../utils/map-step-events';
 import { authorizeStreamToken } from '../../../utils/stream-auth';
-import { hiddenErrorText } from '../../../utils/sanitize';
+import { hiddenErrorText, hiddenStepEventErrors } from '../../../utils/sanitize';
+import { wireCaseProblem } from '../../../utils/wire-case-problem';
 import type { StreamEventPayload } from '#shared/types';
 import { countFailedFromTally } from '#shared/utils/test-counts';
+import { requireRouteId } from '../../../utils/project-access';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Runs'],
     summary: 'Submit test case events for a streaming run',
     description:
-      "Submit test case begin, complete and step lifecycle events for an active streaming test run. Requires the stream token. Supports both single and batch event submission for real-time progress updates. Test-attached step events (step-begin/step-end) are streamed to subscribers in the order submitted, without persistence; suite-level hook events keep the timeline shape. The response's `watched` is true while anyone has the run's live stream open; the reporter sends step events only then.",
+      "Submit test case begin, complete and step lifecycle events for an active streaming test run. Requires the stream token. Supports both single and batch event submission for real-time progress updates. Test-attached step events (step-begin/step-end) are streamed to subscribers in the order submitted, without persistence; suite-level hook events keep the timeline shape. The response's `watched` is true while anyone has the run's live stream open; the reporter sends step events only then. A `complete` event with a field of the wrong type is left out, and the rest of the batch stored.",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     requestBody: {
       content: {
@@ -40,15 +42,17 @@ defineRouteMeta({
 
 const MAX_EVENT_BATCH_BYTES = 10 * 1024 * 1024; // 10 MB
 
-export default eventHandler(async (event) => {
-  const id = parseInt(getRouterParam(event, 'id') || '0');
+/** Whether a streamed result can be stored; one that cannot leaves the run's running tests and is logged. */
+function isStorableResult(runId: number, tc: StreamEventPayload): boolean {
+  const problem = wireCaseProblem(tc);
+  if (!problem) return true;
+  runEventBus.clearRunningCase(runId, runningCaseKey(tc));
+  console.warn(`[events] Run #${runId}: left out the result of "${tc.title}", whose ${problem} cannot be stored`);
+  return false;
+}
 
-  if (!id) {
-    throw apiError({
-      statusCode: 400,
-      message: 'Invalid test run ID',
-    });
-  }
+export default eventHandler(async (event) => {
+  const id = requireRouteId(event, 'id', 'test run ID');
 
   const contentLength = parseInt(getRequestHeader(event, 'content-length') ?? '0', 10);
   if (contentLength > MAX_EVENT_BATCH_BYTES) {
@@ -72,11 +76,15 @@ export default eventHandler(async (event) => {
   // Process test cases (supports single or batch)
   const testCaseEvents = Array.isArray(body.testCases) ? body.testCases : [body.testCase];
 
-  const validEvents = testCaseEvents.filter((tc: { title?: string }) => tc && tc.title);
+  // Playwright accepts an empty title.
+  const validEvents = testCaseEvents.filter((tc: { title?: unknown }) => tc && typeof tc.title === 'string');
 
-  // Split into begin and complete events; step events keep their batch order
+  // Split into begin and complete events; step events keep their batch order. A result whose fields the database
+  // cannot hold is left out, so it fails neither the batch nor the reporter's retries of it.
   const beginEvents = validEvents.filter((tc: { type?: string }) => tc.type === 'begin');
-  const completeEvents = validEvents.filter((tc: { type?: string }) => tc.type === 'complete');
+  const completeEvents = validEvents.filter(
+    (tc: StreamEventPayload) => tc.type === 'complete' && isStorableResult(id, tc),
+  );
   const stepRunEvents = mapStepEventsToRunEvents(validEvents);
 
   // What each running case's last event in the batch is: a retry's begin may follow its previous attempt's complete,
@@ -178,7 +186,7 @@ export default eventHandler(async (event) => {
         duration: tc.duration,
         location: tc.location,
         error: hiddenErrorText(tc.error),
-        stepEvents: tc.stepEvents ?? null,
+        stepEvents: hiddenStepEventErrors(tc.stepEvents),
         wastedTimeMs: tc.wastedTimeMs ?? null,
         workerIndex: tc.workerIndex ?? null,
         shardIndex: tc.shardIndex ?? null,

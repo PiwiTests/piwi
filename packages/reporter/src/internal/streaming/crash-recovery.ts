@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { errorMessage } from '../support/errors.js';
-import { HttpError, type HttpClient } from '../transport/http-client.js';
+import { HttpError, deliveredRunId, type HttpClient } from '../transport/http-client.js';
 import { Logger } from '../support/logger.js';
 
 /** What the recovery file holds: the run, and the dashboard it is for. */
@@ -123,7 +123,7 @@ export class CrashRecovery {
     data.metadata = { ...metadata, ingestHealth: { submitFallback: { path: 'recovery' } } };
 
     try {
-      await httpClient.postJSON('/api/test-runs/submit', data, auth);
+      deliveredRunId(await httpClient.postJSON('/api/test-runs/submit', data, auth), '/api/test-runs/submit');
       this.logger.info('Successfully uploaded saved test data');
       this.clear();
     } catch (error) {

@@ -106,9 +106,10 @@ Each table's comment in `schema.sqlite.ts` says what a row is.
 ### Tables worth a note
 
 - **`case_payloads`**: content-addressed storage for large per-execution text: `aria_snapshot` (and its JSON form),
-  `test_source`, `test_source_frames`, the page inventory, the locator pages, the code reach and the list of coverage
-  fragments. One row per unique content per project (SHA-256 `hash`, unique `(project_id, hash)`), referenced from
-  `test_runs_cases.*_payload_id`. See the rule in `server/database/AGENTS.md`.
+  `test_source`, `test_source_frames`, the page inventory, the locator pages, the code reach, the list of coverage
+  fragments and what an attempt wrote to stdout and stderr. One row per unique content per project (SHA-256 `hash`,
+  unique `(project_id, hash)`), referenced from `test_runs_cases.*_payload_id`. See the rule in
+  `server/database/AGENTS.md`.
 - **`locator_snapshots`**: one row per locator call site (`test_case_id` + `location`), upserted on each run with the
   latest element attributes and the ranked alternatives computed in advance. Unique index on
   `(test_case_id, location)`; the `last_seen_run_id` foreign key is `ON DELETE set null`.
@@ -173,8 +174,9 @@ gives the shape.
 Each entry names folders under `server/api/`.
 
 - **`test-runs/`**: the reporter's routes and the run page.
-  - Batch ingest: `submit` (JSON), `upload` (multipart), `import` and `import/check` (a historical blob report or
-    trace).
+  - Batch ingest: `submit` (JSON), `upload` (multipart), `upload/results` (a run's results ahead of its files, which
+    then go to `[id]/case-files` and an `upload` with `runId`), `import` and `import/check` (a historical blob report
+    or trace).
   - The streaming protocol: `setup`, `start`, `[id]/begin`, `[id]/events`, `[id]/heartbeat`, `[id]/case-files`,
     `[id]/finish`, and `[id]/live-resources`: a watched run's CPU, memory and open pages, held in memory by
     `server/utils/run-events.ts` until the run ends and merged by `shared/live-resources.ts`.

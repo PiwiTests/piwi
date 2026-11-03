@@ -66,6 +66,23 @@ describe('describeDidNotRun', () => {
     expect(fixture.text).toBe('Skipped because the "db" fixture failed while running adds the item to the cart.');
   });
 
+  test('a failed project dependency links the test that failed there, and says what it does to its dependents', () => {
+    const d = describeDidNotRun({ reason: 'dependency-failure', blockedByCase: BLOCKER });
+    expect(d.text).toBe(
+      "Skipped because adds the item to the cart failed in a project this test's project depends on.",
+    );
+    expect(d.parts.find((p) => p.kind === 'test')).toEqual({
+      kind: 'test',
+      text: 'adds the item to the cart',
+      id: 7,
+      href: '/test-run-cases/7',
+    });
+    expect(d.note).toBe('When a project fails, Playwright runs no test of the projects that depend on it.');
+    expect(describeDidNotRun({ reason: 'dependency-failure' }).text).toBe(
+      "Skipped because a project this test's project depends on failed.",
+    );
+  });
+
   test('an earlier failure with no blocker found', () => {
     expect(describeDidNotRun({ reason: 'previous-failure' })).toEqual({
       text: 'Skipped because an earlier test in its serial group failed.',

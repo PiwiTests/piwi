@@ -52,9 +52,10 @@ function* batches<T>(items: T[], size = ID_BATCH_SIZE): Generator<T[]> {
 }
 
 /**
- * Runs deleted per transaction: each slice archives, deletes and recomputes its own runs, so the rollups
- * are exact at every commit, and a first purge of years of history never holds SQLite's write lock (or a
- * long PostgreSQL transaction) for the whole aggregation while runs keep arriving.
+ * Runs deleted per slice: each slice reads, deletes and recomputes its own runs (one transaction archives,
+ * deletes and recomputes them), so the rollups are exact at every commit, a first purge of years of history
+ * never holds SQLite's write lock (or a long PostgreSQL transaction) for the whole aggregation while runs keep
+ * arriving, and the executions held in memory at once are one slice's.
  */
 const PURGE_SLICE_RUNS = 100;
 
@@ -92,7 +93,7 @@ export async function deleteRunsByIds(
 ): Promise<DeleteRunsResult> {
   if (runIds.length === 0) return { deletedRuns: 0, deletedCases: 0 };
 
-  const runs: { id: number; projectId: number; startTime: Date }[] = [];
+  const runs: DoomedRun[] = [];
   for (const batch of batches(runIds)) {
     runs.push(
       ...(await db
@@ -102,6 +103,44 @@ export async function deleteRunsByIds(
     );
   }
   if (runs.length === 0) return { deletedRuns: 0, deletedCases: 0 };
+
+  // A project's day in as few slices as possible, so each day is recomputed about once.
+  const ordered = [...runs].sort(
+    (a, b) => a.projectId - b.projectId || new Date(a.startTime).getTime() - new Date(b.startTime).getTime(),
+  );
+  const affectedClusterIds = new Set<number>();
+  let deletedCases = 0;
+  for (const slice of batches(ordered, options.sliceRuns ?? PURGE_SLICE_RUNS)) {
+    deletedCases += await deleteRunSlice(db, slice, options, affectedClusterIds);
+  }
+
+  for (const clusterId of affectedClusterIds) {
+    await recomputeClusterOccurrences(db, clusterId);
+  }
+
+  return { deletedRuns: runs.length, deletedCases };
+}
+
+interface DoomedRun {
+  id: number;
+  projectId: number;
+  startTime: Date;
+}
+
+/**
+ * Delete one slice of {@link deleteRunsByIds}: the runs' files, blobs, storage
+ * directories and dependent rows, then the runs and their executions in one
+ * transaction with their days' rollups, then their graph rows and the payloads
+ * nothing references any more. Adds the clusters the executions belonged to to
+ * `affectedClusterIds`, recomputed once every slice is gone. Returns how many
+ * executions went.
+ */
+async function deleteRunSlice(
+  db: DbClient,
+  runs: DoomedRun[],
+  options: { archiveRollups?: boolean },
+  affectedClusterIds: Set<number>,
+): Promise<number> {
   const presentRunIds = runs.map((r) => r.id);
 
   const runsCases: { id: number; failureClusterId: number | null }[] = [];
@@ -114,7 +153,7 @@ export async function deleteRunsByIds(
     );
   }
   const caseIds = runsCases.map((c) => c.id);
-  const affectedClusterIds = [...new Set(runsCases.filter((c) => c.failureClusterId).map((c) => c.failureClusterId!))];
+  for (const c of runsCases) if (c.failureClusterId) affectedClusterIds.add(c.failureClusterId);
 
   // Content-addressed payloads referenced by the doomed rows — candidates for
   // GC once the rows are gone (other runs may still reference them).
@@ -130,6 +169,8 @@ export async function deleteRunsByIds(
         locatorPages: testRunsCases.locatorPagesPayloadId,
         codeReach: testRunsCases.codeReachPayloadId,
         coverage: testRunsCases.coveragePayloadId,
+        stdout: testRunsCases.stdoutPayloadId,
+        stderr: testRunsCases.stderrPayloadId,
       })
       .from(testRunsCases)
       .where(inArray(testRunsCases.id, batch));
@@ -142,6 +183,8 @@ export async function deleteRunsByIds(
       if (ref.locatorPages != null) candidatePayloadIds.add(ref.locatorPages);
       if (ref.codeReach != null) candidatePayloadIds.add(ref.codeReach);
       if (ref.coverage != null) candidatePayloadIds.add(ref.coverage);
+      if (ref.stdout != null) candidatePayloadIds.add(ref.stdout);
+      if (ref.stderr != null) candidatePayloadIds.add(ref.stderr);
     }
   }
 
@@ -217,25 +260,18 @@ export async function deleteRunsByIds(
     await db.update(handbackOutcomes).set({ runId: null }).where(inArray(handbackOutcomes.runId, batch));
   }
 
-  // A project's day in as few slices as possible, so each day is recomputed about once.
-  const ordered = [...runs].sort(
-    (a, b) => a.projectId - b.projectId || new Date(a.startTime).getTime() - new Date(b.startTime).getTime(),
-  );
-  for (const slice of batches(ordered, options.sliceRuns ?? PURGE_SLICE_RUNS)) {
-    const sliceIds = slice.map((run) => run.id);
-    const touchedDays = slice.map((run) => ({ projectId: run.projectId, day: dayKey(run.startTime) }));
-    await db.transaction(async (tx) => {
-      const txDb = tx as unknown as DrizzleDB;
-      if (options.archiveRollups) await archiveRunsIntoRollups(txDb, sliceIds);
-      for (const batch of batches(sliceIds)) {
-        await tx.delete(testRunsCases).where(inArray(testRunsCases.testRunId, batch));
-      }
-      for (const batch of batches(sliceIds)) {
-        await tx.delete(testRuns).where(inArray(testRuns.id, batch));
-      }
-      await recomputeRollupCells(txDb, touchedDays);
-    });
-  }
+  const touchedDays = runs.map((run) => ({ projectId: run.projectId, day: dayKey(run.startTime) }));
+  await db.transaction(async (tx) => {
+    const txDb = tx as unknown as DrizzleDB;
+    if (options.archiveRollups) await archiveRunsIntoRollups(txDb, presentRunIds);
+    for (const batch of batches(presentRunIds)) {
+      await tx.delete(testRunsCases).where(inArray(testRunsCases.testRunId, batch));
+    }
+    for (const batch of batches(presentRunIds)) {
+      await tx.delete(testRuns).where(inArray(testRuns.id, batch));
+    }
+    await recomputeRollupCells(txDb, touchedDays);
+  });
 
   // Graph nodes/edges whose newest evidence was a deleted run, per project, so
   // the feature-graph tables never point at runs that no longer exist.
@@ -254,11 +290,7 @@ export async function deleteRunsByIds(
     await db.delete(casePayloads).where(and(inArray(casePayloads.id, batch), payloadUnreferenced())!);
   }
 
-  for (const clusterId of affectedClusterIds) {
-    await recomputeClusterOccurrences(db, clusterId);
-  }
-
-  return { deletedRuns: presentRunIds.length, deletedCases: caseIds.length };
+  return caseIds.length;
 }
 
 /**
@@ -348,6 +380,8 @@ function payloadUnreferenced(): SQL {
     AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.locatorPagesPayloadId} = ${casePayloads.id})
     AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.codeReachPayloadId} = ${casePayloads.id})
     AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.coveragePayloadId} = ${casePayloads.id})
+    AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.stdoutPayloadId} = ${casePayloads.id})
+    AND NOT EXISTS (SELECT 1 FROM ${testRunsCases} WHERE ${testRunsCases.stderrPayloadId} = ${casePayloads.id})
     AND NOT EXISTS (SELECT 1 FROM ${coverageReports} WHERE ${coverageReports.inventoryPayloadId} = ${casePayloads.id})`;
 }
 

@@ -23,6 +23,7 @@ import {
   type RoutePermission,
 } from '#shared/permissions';
 import type { User } from '../database/schema';
+import { parseRouteId, parseRouteIndex } from '#shared/route-id';
 
 export type DrizzleDB = DbClient;
 
@@ -103,11 +104,22 @@ export async function holdsProjectPermission(
   return permissions.some((permission) => can(access, permission, projectId));
 }
 
-/** Parse and validate a numeric route param, throwing 400 if missing/invalid. */
+/**
+ * Parse and validate a numeric route param, throwing 400 if missing/invalid. The param is a positive integer written
+ * plainly: `12`, never `012`, `12abc` or `12\..\x`, which `parseInt` would read as 12, and at most the largest
+ * `serial` id (`parseRouteId`).
+ */
 export function requireRouteId(event: H3Event, paramName = 'id', label = 'ID'): number {
-  const id = parseInt(getRouterParam(event, paramName) || '0');
-  if (!id) throw apiError({ statusCode: 400, message: `Invalid ${label}` });
+  const id = parseRouteId(getRouterParam(event, paramName));
+  if (id === null) throw apiError({ statusCode: 400, message: `Invalid ${label}` });
   return id;
+}
+
+/** Parse and validate a 0-based position of a route (`0`, `12`, never `012`), throwing 400 if missing/invalid. */
+export function requireRouteIndex(event: H3Event, paramName: string, label: string): number {
+  const index = parseRouteIndex(getRouterParam(event, paramName));
+  if (index === null) throw apiError({ statusCode: 400, message: `Invalid ${label}` });
+  return index;
 }
 
 /**

@@ -252,6 +252,29 @@ describe('every shard of a run goes through global setup', () => {
     expect(await readRun(one.runId)).toMatchObject({ status: 'running', passedTests: 1 });
   });
 
+  test('a shard joins only the run of shards as many as its own', async () => {
+    const ofTwo = await setupShard(1, { ...SHARDS, shardTotal: 2 });
+    const ofThree = await setupShard(1, { ...SHARDS, shardTotal: 3 });
+    expect(ofThree.runId).not.toBe(ofTwo.runId);
+    expect((await setupShard(2, { ...SHARDS, shardTotal: 3 })).runId).toBe(ofThree.runId);
+
+    const started = await start({ body: { projectName: PROJECT, ...SHARDS, shardTotal: 4, shardIndex: 1 } });
+    expect([ofTwo.runId, ofThree.runId]).not.toContain(started.runId);
+    const submitted = await submit({
+      body: {
+        projectName: PROJECT,
+        ...SHARDS,
+        shardTotal: 5,
+        shardIndex: 1,
+        status: 'passed',
+        startTime: '2026-10-31T23:00:00.000Z',
+        testCases: [{ title: 'pays', location: 'tests/pays.spec.ts:1:1', status: 'passed' }],
+      },
+    });
+    expect([ofTwo.runId, ofThree.runId, started.runId]).not.toContain(submitted.runId);
+    expect((await readRun(ofTwo.runId)).status).toBe('initializing');
+  });
+
   test('a cancelled run turns a shard away, so its reporter starts a new run', async () => {
     const one = await setupShard(1);
     const two = await setupShard(2);
@@ -264,6 +287,77 @@ describe('every shard of a run goes through global setup', () => {
 
     await expect(beginShard(two.runId, two.setupToken, 2)).rejects.toMatchObject({ statusCode: 409 });
     expect((await readRun(one.runId)).totalTests).toBe(1);
+  });
+});
+
+describe('a run whose global setup takes long', () => {
+  test('waits past the stale-run timeout for its reporter to begin it', async () => {
+    const registered = await setup({ body: { projectName: PROJECT, instanceId: 'local-1' } });
+
+    expect(await interruptStaleRuns(db, Date.now() + 10 * 60_000)).toEqual([]);
+    const began = await begin({
+      params: { id: String(registered.runId) },
+      body: { setupToken: registered.setupToken },
+    });
+
+    expect(began.runId).toBe(registered.runId);
+    expect((await readRun(registered.runId)).status).toBe('running');
+    expect(await db.select().from(schema.testRuns)).toHaveLength(1);
+  });
+
+  test('stays running once begun, until the sweep after its first heartbeat would be due', async () => {
+    const registered = await setup({ body: { projectName: PROJECT, instanceId: 'local-1' } });
+    const beganAt = Date.now() + 10 * 60_000;
+    await at(new Date(beganAt).toISOString(), () =>
+      begin({ params: { id: String(registered.runId) }, body: { setupToken: registered.setupToken } }),
+    );
+
+    // The begun reporter has sent only `begin` events, which write nothing to the run.
+    expect(await interruptStaleRuns(db, beganAt + 30_000)).toEqual([]);
+    expect((await readRun(registered.runId)).status).toBe('running');
+  });
+
+  test('of a shard keeps its run waiting after the shards that began ended', async () => {
+    const one = await setupShard(1);
+    const tokenOne = await beginShard(one.runId, one.setupToken, 1);
+    await finishShard(one.runId, tokenOne, [10], { duration: 60_000 });
+
+    const two = await setupShard(2);
+    expect(await interruptStaleRuns(db, Date.now() + 5 * 60_000)).toEqual([]);
+
+    const tokenTwo = await beginShard(two.runId, two.setupToken, 2);
+    await finishShard(one.runId, tokenTwo, [30], { duration: 30_000 });
+    expect(await readRun(one.runId)).toMatchObject({ status: 'passed', shardsFinished: 2 });
+  });
+
+  test('of a shard keeps its run waiting while another shard runs it, until that shard begins', async () => {
+    const one = await setupShard(1);
+    const two = await setupShard(2);
+    await beginShard(two.runId, two.setupToken, 2);
+    expect(await interruptStaleRuns(db, Date.now() + 5 * 60_000)).toEqual([]);
+
+    await beginShard(one.runId, one.setupToken, 1);
+    expect((await readRun(one.runId)).metadata).not.toHaveProperty('shardSetupTokens');
+    // Both shards began: a run quiet past the timeout lost its reporters.
+    expect(await interruptStaleRuns(db, Date.now() + 5 * 60_000)).toEqual([one.runId]);
+  });
+
+  test("of a shard that joins a run takes the branch and commit the run's first shard did not send", async () => {
+    const one = await setupShard(1);
+    const two = await setupShard(2);
+    const scm = { branch: 'feature/pay', commit: '9f2c4e1a7b' };
+    await begin({
+      params: { id: String(one.runId) },
+      body: { setupToken: one.setupToken, totalTests: 1, ...SHARDS, shardIndex: 1 },
+    });
+    await begin({
+      params: { id: String(two.runId) },
+      body: { setupToken: two.setupToken, totalTests: 1, metadata: { scm }, ...SHARDS, shardIndex: 2 },
+    });
+
+    const run = await readRun(one.runId);
+    expect(run).toMatchObject({ branch: 'feature/pay', commit: '9f2c4e1a7b', totalTests: 2 });
+    expect((run.metadata as Record<string, unknown>).scm).toEqual(scm);
   });
 });
 
@@ -354,6 +448,44 @@ describe('shards that reach the server at once', () => {
   });
 });
 
+describe("a sharded run's status", () => {
+  test.each([
+    [['passed', 'timedout'], 'timedout'],
+    [['interrupted', 'passed'], 'interrupted'],
+    [['interrupted', 'timedout'], 'timedout'],
+    [['timedout', 'failed'], 'failed'],
+    [['passed', 'passed'], 'passed'],
+  ])('settles from shards that reported %j as Playwright merges them: %s', async (statuses, settled) => {
+    const { runId, tokens } = await beginAllShards();
+    await streamCase(runId, tokens[0]!, 'pays', 1);
+    await streamCase(runId, tokens[1]!, 'adds', 2);
+
+    await finishShard(runId, tokens[0]!, [10], { duration: 1000, status: statuses[0] });
+    await finishShard(runId, tokens[1]!, [30], { duration: 1000, status: statuses[1] });
+
+    expect(await readRun(runId)).toMatchObject({ status: settled, passedTests: 2, failedTests: 0 });
+    expect(vi.mocked(runFinalizeSideEffects).mock.calls[0]![2]).toMatchObject({ status: settled });
+  });
+
+  test('settles a batch-delivered run from the status each shard sent', async () => {
+    const shard = (shardIndex: number, status: string) => ({
+      projectName: PROJECT,
+      ...SHARDS,
+      shardIndex,
+      status,
+      startTime: '2026-10-31T23:00:00.000Z',
+      totalTests: 1,
+      passedTests: 1,
+      testCases: [{ title: `test ${shardIndex}`, location: 'tests/a.spec.ts:1:1', status: 'passed', duration: 10 }],
+    });
+
+    const { runId } = await submit({ body: shard(1, 'interrupted') });
+    await submit({ body: shard(2, 'passed') });
+
+    expect(await readRun(runId)).toMatchObject({ status: 'interrupted', passedTests: 2 });
+  });
+});
+
 describe("a sharded run's duration", () => {
   const spans = async (runId: number) => (await readRun(runId)).metadata as Record<string, unknown>;
 
@@ -378,6 +510,7 @@ describe("a sharded run's duration", () => {
         endTime: '2026-11-01T02:42:29.000Z',
         duration: 13_290_000,
         workers: 1,
+        status: 'passed',
       },
       {
         shardIndex: 2,
@@ -385,6 +518,7 @@ describe("a sharded run's duration", () => {
         endTime: '2026-11-01T03:13:44.000Z',
         duration: 1_810_000,
         workers: 3,
+        status: 'passed',
       },
     ]);
   });
@@ -566,6 +700,85 @@ describe('a sharded run delivered by batch submissions', () => {
 
     expect(shards[1]!.runId).toBe(shards[0]!.runId);
     expect(await readRun(shards[0]!.runId)).toMatchObject({ status: 'passed', passedTests: 2 });
+    expect(runFinalizeSideEffects).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("a sharded run's suite setup steps", () => {
+  /** The `beforeAll` hook one shard ran on its worker 0. */
+  const hookOf = (shardIndex: number) => ({
+    title: `beforeAll hook of shard ${shardIndex}`,
+    category: 'hook',
+    startedAt: 1_793_000_000_000 + shardIndex,
+    duration: 1200,
+    status: 'passed',
+    workerIndex: 0,
+  });
+
+  test("are stored from a shard's /finish", async () => {
+    const setupSteps = [
+      { title: 'beforeAll hook', category: 'hook', startedAt: 1_793_000_000_000, duration: 1200, status: 'passed' },
+    ];
+    const { runId, tokens } = await beginAllShards();
+
+    await finishShard(runId, tokens[0]!, [10], { duration: 1000, setupSteps });
+
+    expect((await readRun(runId)).setupSteps).toEqual(setupSteps);
+  });
+
+  test("are every shard's, from shards that finish one after another or at once", async () => {
+    const { runId, tokens } = await beginAllShards(3);
+
+    await finishShard(runId, tokens[0]!, [10], { duration: 1000, setupSteps: [hookOf(1)] });
+    await Promise.all([
+      finishShard(runId, tokens[1]!, [20], { duration: 1000, setupSteps: [hookOf(2)] }),
+      finishShard(runId, tokens[2]!, [30], { duration: 1000, setupSteps: [hookOf(3)] }),
+    ]);
+
+    const run = await readRun(runId);
+    expect(run.status).toBe('passed');
+    expect(run.setupSteps).toHaveLength(3);
+    expect(run.setupSteps).toEqual(expect.arrayContaining([hookOf(1), hookOf(2), hookOf(3)]));
+  });
+
+  test('are added once from a /finish sent again', async () => {
+    const { runId, tokens } = await beginAllShards();
+
+    // The first shard's token is also the run's main stream token, so it still opens /finish.
+    await finishShard(runId, tokens[0]!, [10], { duration: 1000, setupSteps: [hookOf(1)] });
+    await finishShard(runId, tokens[0]!, [10], { duration: 1000, setupSteps: [hookOf(1)] });
+
+    expect((await readRun(runId)).setupSteps).toEqual([hookOf(1)]);
+  });
+});
+
+describe('a shard that reports its end twice', () => {
+  test('counts once when its /finish answer was lost and its batch upload follows', async () => {
+    const { runId, tokens } = await beginAllShards();
+    await streamCase(runId, tokens[0]!, 'pays', 1);
+    await finishShard(runId, tokens[0]!, [10], { shardIndex: 1, duration: 1000 });
+
+    // The reporter of shard 1 never saw the answer, and falls back to the batch rung.
+    await submit({
+      body: {
+        projectName: PROJECT,
+        ...SHARDS,
+        shardIndex: 1,
+        status: 'passed',
+        startTime: '2026-10-31T23:00:00.000Z',
+        totalTests: 1,
+        passedTests: 1,
+        testCases: [
+          { title: 'pays', location: 'tests/pays.spec.ts:1:1', status: 'passed', duration: 10, shardIndex: 1 },
+        ],
+      },
+    });
+    expect(await readRun(runId)).toMatchObject({ status: 'running', shardsFinished: 1 });
+    expect(runFinalizeSideEffects).not.toHaveBeenCalled();
+
+    await streamCase(runId, tokens[1]!, 'adds', 2);
+    await finishShard(runId, tokens[1]!, [30], { shardIndex: 2, duration: 1000 });
+    expect(await readRun(runId)).toMatchObject({ status: 'passed', shardsFinished: 2, passedTests: 2 });
     expect(runFinalizeSideEffects).toHaveBeenCalledTimes(1);
   });
 });

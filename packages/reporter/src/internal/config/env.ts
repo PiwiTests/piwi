@@ -251,6 +251,13 @@ export function normalizeBoolEnv(env: NodeJS.ProcessEnv = process.env): void {
 /** How an env var's string value coerces into its option value. */
 type EnvKind = 'string' | 'number' | 'bool';
 
+/** A number variable's value: a finite number, 0 or more, as the option takes it; `undefined` for anything else. */
+function readNumber(val: string): number | undefined {
+  const trimmed = val.trim();
+  const number = Number(trimmed);
+  return trimmed !== '' && Number.isFinite(number) && number >= 0 ? number : undefined;
+}
+
 /**
  * Declarative env → option fallback table. `resolveOptions` walks this instead
  * of repeating ~15 near-identical merge lines, so adding an env-backed option
@@ -258,7 +265,9 @@ type EnvKind = 'string' | 'number' | 'bool';
  *
  * Guard semantics:
  *  - `string` / `number`: a *truthy* env value fills the option, so an empty
- *    string is ignored.
+ *    string is ignored. A `number` value that is not a number of 0 or more
+ *    (`PIWI_SUBMIT_TIMEOUT=15m`) is ignored too, and named by
+ *    `ignoredEnvValues`, so the option keeps its default.
  *  - `bool`: any *defined* env value fills it (via `readBool`), so
  *    `PIWI_STREAMING=false` actually disables streaming.
  *
@@ -337,6 +346,19 @@ export function desktopAppMode(option: unknown, envValue: string | undefined): D
 let desktopDiscovered = false;
 let desktopReplacedServerUrl: string | null = null;
 let dotEnvUse: DotEnvUse | null = null;
+let ignoredEnv: IgnoredEnvValue[] = [];
+
+/** A variable whose value `resolveOptions` could not read, and the default the option kept. */
+export interface IgnoredEnvValue {
+  name: string;
+  value: string;
+  fallback: unknown;
+}
+
+/** The variables the last `resolveOptions` call could not read, so their options kept their defaults. */
+export function ignoredEnvValues(): readonly IgnoredEnvValue[] {
+  return ignoredEnv;
+}
 
 /**
  * Whether the last `resolveOptions` call took its server URL and API key from
@@ -385,13 +407,18 @@ export function resolveOptions(raw: Record<string, any>, configDir?: string): Pi
   const env = process.env;
   const mergedRaw: Record<string, any> = { ...raw };
 
+  ignoredEnv = [];
   for (const spec of ENV_FALLBACK_SPECS) {
     if (mergedRaw[spec.option] !== undefined) continue;
     const value = env[spec.env];
     if (spec.kind === 'bool') {
       if (value !== undefined) mergedRaw[spec.option] = readBool(value);
+    } else if (value && spec.kind === 'number') {
+      const number = readNumber(value);
+      if (number === undefined) ignoredEnv.push({ name: spec.env, value, fallback: DEFAULTS[spec.option] });
+      else mergedRaw[spec.option] = number;
     } else if (value) {
-      mergedRaw[spec.option] = spec.kind === 'number' ? Number(value) : value;
+      mergedRaw[spec.option] = value;
     }
   }
 

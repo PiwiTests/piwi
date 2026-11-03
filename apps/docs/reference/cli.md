@@ -44,6 +44,12 @@ Wire a Playwright project up to a dashboard. It installs the reporter as a dev d
 
 The `.env` it writes sits next to the Playwright config, where `npx playwright test` reads it: the reporter takes `PIWI_DASHBOARD_URL`, `PIWI_API_KEY` and `PIWI_PROJECT_NAME` from it for whatever the config and the environment leave unset, so the config needs no dotenv loading ([Values from `.env`](/reference/reporter-options#values-from-env)). The file stays out of git; in CI, set the same variables as secrets.
 
+In a monorepo, run `init` in the package that holds the Playwright config, or point `--cwd` at it: every step then applies to that package, with the package manager its workspace's root names (the `packageManager` field or the lockfile). Run at the root of a workspace (`workspaces` in `package.json`, as npm, Yarn and Bun declare one, or a `pnpm-workspace.yaml`) that holds no Playwright config of its own, `init` looks for the workspace packages that hold one:
+
+- **One**: it wires that package, and says which.
+- **Several**: in a terminal, it lists them and asks which one to wire. In CI, without a terminal or with `--json`, it wires none, names them, and asks you to run it again with `--cwd <package>`; the JSON plan lists them under `workspace.packages`.
+- **None**: it reports the missing config, as in any other folder.
+
 ```bash
 npx @piwitests/reporter init --server-url http://localhost:3000 --project my-project
 ```

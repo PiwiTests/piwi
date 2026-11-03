@@ -3829,6 +3829,15 @@ const SCENES = [
     outputWidth: 1376,
   },
   {
+    name: 'evidence-output',
+    description: 'Failing execution: the Output tab of its evidence, what the test wrote to stderr',
+    // Execution 37's test wrote Node's deprecation warning to stderr.
+    route: '/test-run-cases/37?evidence=output',
+    viewport: { width: 1280, height: 1200 },
+    of: '[data-shot="evidence-card"]',
+    pad: 12,
+  },
+  {
     name: 'run-timeline',
     description: 'Per-worker run timeline: hook sections over each test, wasted waits switched on (dark)',
     tags: ['docs'],
@@ -4308,6 +4317,23 @@ const SCENES = [
       await settle();
       await shoot('details');
     },
+  },
+  {
+    name: 'run-errors',
+    description:
+      'Run page of a run with errors outside its tests: the failure budget that stopped it and its global teardown, under the facts line, wide then narrow',
+    // Seeded run #4 stopped at its failure budget, and its global teardown threw.
+    route: '/test-runs/4',
+    viewport: { width: 1280, height: 900 },
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="run-errors"]').waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('wide', { of: '[data-shot="run-header"]', pad: 8 });
+      await page.setViewportSize({ width: 390, height: 1400 });
+      await settle();
+      await shoot('narrow', { of: '[data-shot="run-header"]', pad: 8 });
+    },
+    outputs: ['run-errors-wide.png', 'run-errors-narrow.png'],
   },
   // Seeded run #63's backend restarted halfway through: the run header flags its
   // coverage, Details says what the backend lost, and its commit's combined
@@ -7635,7 +7661,7 @@ async function prSummaryMarkdown() {
         filePath: 'tests/cart.spec.ts',
         errorExcerpt: 'Timeout 5000ms exceeded waiting for getByTestId("cart-total")',
         executionId: 9050,
-        flakyOnDefaultBranch: { branch: 'main', flakinessRate: 0.2 },
+        flakyOnDefaultBranch: { branch: 'main', flakinessScore: 20 },
       },
     ],
     newClusters: [{ id: 12, signature: 'checkout Pay click times out', caseCount: 1 }],
