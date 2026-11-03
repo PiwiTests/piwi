@@ -38,7 +38,7 @@ import {
   type RoutePermission,
 } from '#shared/permissions';
 import { NOTIFICATION_EVENTS } from '#shared/notification-events';
-import { digestAtSchema, subscriptionFiltersSchema } from '#shared/subscription-filters';
+import { digestAtSchema, subscriptionFiltersError, subscriptionFiltersSchema } from '#shared/subscription-filters';
 import { MARKER_CATEGORY_IDS } from '#shared/marker-categories';
 import { getUserAccess } from '#shared/handlers/role-bindings';
 import { createGroup, deleteGroup, setGroupMembers, updateGroup } from '#shared/handlers/groups';
@@ -4112,7 +4112,8 @@ routes.push(
       }
       const filters = subscriptionFiltersSchema.optional().safeParse(b.filters);
       const digest = digestAtSchema.optional().safeParse(b.digestAt);
-      if (!filters.success || !digest.success) throw demoHttpError(400, 'Invalid request body');
+      if (!filters.success) throw demoHttpError(400, subscriptionFiltersError(filters.error));
+      if (!digest.success) throw demoHttpError(400, 'Invalid request body');
       const mode = b.mode === 'digest' ? 'digest' : 'realtime';
       const digestAt = digest.data ?? null;
       const sub: DemoSubscription = {
@@ -4154,7 +4155,7 @@ routes.push(
       if (b.mode !== undefined) sub.mode = b.mode === 'digest' ? 'digest' : 'realtime';
       if (b.filters !== undefined) {
         const filters = subscriptionFiltersSchema.nullable().safeParse(b.filters);
-        if (!filters.success) throw demoHttpError(400, 'Invalid request body');
+        if (!filters.success) throw demoHttpError(400, subscriptionFiltersError(filters.error));
         sub.filters = filters.data;
       }
       if (b.digestAt !== undefined) {

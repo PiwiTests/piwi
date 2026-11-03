@@ -3,6 +3,7 @@ import { describeFailureText } from '#shared/describe-failure';
 import { parseSourceSnippet } from '#shared/source-snippet';
 import { splitSuitePath } from '#shared/utils/suites';
 import { formatTestSearchValue } from '#shared/test-search';
+import { globMatcher } from '@piwitests/core/glob';
 
 /** All notification event keys supported by the subscription system. */
 export const NOTIFICATION_EVENTS = [
@@ -584,16 +585,11 @@ export const OWNER_SCOPED_EVENTS: ReadonlySet<NotificationEvent> = new Set<Notif
 /**
  * Whether a branch or environment name matches one of the patterns: an exact
  * name, or a pattern where `*` matches any run of characters, `/` included.
+ * Case matters. Matched by `globMatcher`, in steps that grow with the pattern's
+ * length times the name's, whatever the pattern holds.
  */
 export function matchesNamePattern(name: string, patterns: string[]): boolean {
-  return patterns.some((pattern) => {
-    if (!pattern.includes('*')) return pattern === name;
-    const source = pattern
-      .split('*')
-      .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&'))
-      .join('.*');
-    return new RegExp(`^${source}$`).test(name);
-  });
+  return patterns.some((pattern) => (pattern.includes('*') ? globMatcher(pattern)(name) : pattern === name));
 }
 
 /** Whether an event/payload passes a subscription's delivery filters. */

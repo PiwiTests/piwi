@@ -204,6 +204,25 @@ describe('matchesNamePattern', () => {
     expect(matchesNamePattern('release-2x4', ['release-2.4*'])).toBe(false);
     expect(matchesNamePattern('release-2.4.1', ['release-2.4*'])).toBe(true);
     expect(matchesNamePattern('env(a)', ['env(*)'])).toBe(true);
+    expect(matchesNamePattern('rc1', ['rc?*'])).toBe(false);
+    expect(matchesNamePattern('rc?1', ['rc?*'])).toBe(true);
+  });
+
+  test('case matters and the pattern names the whole name', () => {
+    expect(matchesNamePattern('Release/1', ['release/*'])).toBe(false);
+    expect(matchesNamePattern('hotfix/release/1', ['release/*'])).toBe(false);
+    expect(matchesNamePattern('release/1-old', ['*1'])).toBe(false);
+  });
+
+  test('answers at once for a pattern a regular expression backtracks on', () => {
+    // The fastest of three runs: a pause of the machine slows one of them, a backtracking matcher all three.
+    let fastest = Infinity;
+    for (let i = 0; i < 3; i++) {
+      const started = performance.now();
+      expect(matchesNamePattern('e'.repeat(26), ['*e*e*e*e*e*e*e*e*e*e*e*e*!'])).toBe(false);
+      fastest = Math.min(fastest, performance.now() - started);
+    }
+    expect(fastest).toBeLessThan(50);
   });
 });
 
