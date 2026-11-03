@@ -23,14 +23,14 @@ import {
   withShardTokens,
 } from '../../../utils/shard-tokens';
 import { requireRouteId } from '../../../utils/project-access';
-import { requireRunExists } from '../../../utils/stream-auth';
+import { requireStreamingRun } from '../../../utils/stream-auth';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Runs'],
     summary: 'Transition test run from initializing to running',
     description:
-      'Begins a streaming test run by transitioning it from "initializing" to "running" status. Requires the setup token returned by the setup endpoint, which it accepts once. Supports sharded runs: every shard begins with its own setup token, and a shard beginning a run another shard already began joins it with a stream token of its own, adding what its `metadata` names that the run lacks, such as the branch and commit. A run that does not exist answers 404 before the body is read.',
+      'Begins a streaming test run by transitioning it from "initializing" to "running" status. Requires the setup token returned by the setup endpoint, which it accepts once. Supports sharded runs: every shard begins with its own setup token, and a shard beginning a run another shard already began joins it with a stream token of its own, adding what its `metadata` names that the run lacks, such as the branch and commit. A run that does not exist answers 404, and one that cannot begin (neither initializing nor running, nor an interrupted sharded run) 409, before the body is read.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     requestBody: {
       content: {
@@ -55,7 +55,7 @@ defineRouteMeta({
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'test run ID');
   const db = await getDatabase();
-  await requireRunExists(db, id);
+  await requireStreamingRun(db, id, 'begin');
 
   const body = await readBody(event);
 

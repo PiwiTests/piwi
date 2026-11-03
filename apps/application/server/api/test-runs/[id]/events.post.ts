@@ -8,7 +8,7 @@ import { persistRunCases, type RunCaseInput } from '../../../utils/persist-run-c
 import { mapWireCaseToRunCase } from '../../../utils/map-wire-case';
 import { resolveRepeatEachIndex, runningCaseKey } from '../../../utils/inserted-run-cases';
 import { mapStepEventsToRunEvents } from '../../../utils/map-step-events';
-import { authorizeStreamToken, requireRunExists } from '../../../utils/stream-auth';
+import { authorizeStreamToken, requireStreamingRun } from '../../../utils/stream-auth';
 import { hiddenErrorText, hiddenStepEventErrors } from '../../../utils/sanitize';
 import { wireCaseProblem } from '../../../utils/wire-case-problem';
 import type { StreamEventPayload } from '#shared/types';
@@ -20,7 +20,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Submit test case events for a streaming run',
     description:
-      "Submit test case begin, complete and step lifecycle events for an active streaming test run. Requires the stream token. Supports both single and batch event submission for real-time progress updates. Test-attached step events (step-begin/step-end) are streamed to subscribers in the order submitted, without persistence; suite-level hook events keep the timeline shape. The response's `watched` is true while anyone has the run's live stream open; the reporter sends step events only then. A `complete` event with a field of the wrong type is left out, and the rest of the batch stored. The body takes up to 10 MB (413 past it); a run that does not exist answers 404 before it is read.",
+      "Submit test case begin, complete and step lifecycle events for an active streaming test run. Requires the stream token. Supports both single and batch event submission for real-time progress updates. Test-attached step events (step-begin/step-end) are streamed to subscribers in the order submitted, without persistence; suite-level hook events keep the timeline shape. The response's `watched` is true while anyone has the run's live stream open; the reporter sends step events only then. A `complete` event with a field of the wrong type is left out, and the rest of the batch stored. The body takes up to 10 MB (413 past it); a run that does not exist answers 404, and one that is neither running nor interrupted 409, before it is read.",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     requestBody: {
       content: {
@@ -53,7 +53,7 @@ export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'test run ID');
   const db = await getDatabase();
   // The body-limit middleware holds the batch to MAX_EVENT_BATCH_BYTES (server/utils/body-limit.ts).
-  await requireRunExists(db, id);
+  await requireStreamingRun(db, id, 'events');
 
   const body = await readBody(event);
 

@@ -46,19 +46,35 @@ const routes: Record<string, Route> = {
   'live-resources': (await import('../../server/api/test-runs/[id]/live-resources.post')).default as unknown as Route,
 };
 const { StreamManager } = await import('../../../../packages/reporter/src/internal/streaming/stream-manager');
+const { runEventBus } = await import('../../server/utils/run-events');
+const { validateAndReviveRun } = await import('../../server/utils/revive-run');
 
+type Db = ReturnType<typeof drizzle<typeof schema>>;
+let db: Db;
+let projectId = 0;
 let runId = 0;
 
+/** A run of the test's project in `status`, sharded in two when `sharded`. */
+async function insertRun(status: string, sharded = false): Promise<number> {
+  const [run] = await db
+    .insert(schema.testRuns)
+    .values({
+      projectId,
+      status,
+      startTime: new Date('2026-11-03T08:00:00Z'),
+      ...(sharded ? { shardTotal: 2, shardsFinished: 0 } : {}),
+    })
+    .returning();
+  return run!.id;
+}
+
 beforeEach(async () => {
-  const db = drizzle(createClient({ url: ':memory:' }), { schema });
+  db = drizzle(createClient({ url: ':memory:' }), { schema });
   await migrateToLatest(db);
   state.db = db;
   const [project] = await db.insert(schema.projects).values({ name: 'stream-route-bodies' }).returning();
-  const [run] = await db
-    .insert(schema.testRuns)
-    .values({ projectId: project!.id, status: 'running', startTime: new Date('2026-11-03T08:00:00Z') })
-    .returning();
-  runId = run!.id;
+  projectId = project!.id;
+  runId = await insertRun('running');
   readBody.mockClear();
 });
 
@@ -81,6 +97,75 @@ describe('a streaming route that reads its token from the body', () => {
     });
     expect(readBody).toHaveBeenCalledTimes(1);
   });
+});
+
+describe('a run the route does not take', () => {
+  const STATUSES = [
+    'initializing',
+    'running',
+    'finalizing',
+    'interrupted',
+    'cancelled',
+    'passed',
+    'failed',
+    'timedout',
+  ];
+  /** Whether the route takes a run in `status`, as its own check after the body reads it. */
+  const takes = (route: string, status: string, sharded: boolean) =>
+    route === 'begin'
+      ? status === 'initializing' || status === 'running' || (sharded && status === 'interrupted')
+      : status === 'running' || status === 'interrupted';
+
+  test.each(Object.keys(routes))(
+    '%s refuses it with the 409 it answers after reading the body, without reading it',
+    async (name) => {
+      for (const sharded of [false, true]) {
+        for (const status of STATUSES) {
+          const id = await insertRun(status, sharded);
+          readBody.mockClear();
+          const answer = routes[name]!({ params: { id: String(id) }, body: {} });
+          if (takes(name, status, sharded)) {
+            // The body is read, and its missing token refused.
+            await expect(answer, `${status}, sharded: ${sharded}`).rejects.toMatchObject({ statusCode: 401 });
+            expect(readBody).toHaveBeenCalledTimes(1);
+          } else {
+            await expect(answer, `${status}, sharded: ${sharded}`).rejects.toMatchObject({
+              statusCode: 409,
+              message:
+                name === 'begin'
+                  ? 'Test run cannot be transitioned to running state'
+                  : 'Test run is not in running state',
+            });
+            expect(readBody).not.toHaveBeenCalled();
+          }
+        }
+      }
+    },
+  );
+
+  test('the refusal is the one the stream token check gives a run in that status', async () => {
+    for (const status of STATUSES.filter((status) => !takes('events', status, false))) {
+      await expect(
+        validateAndReviveRun(db as never, runId, { status, streamToken: 'token' }, 'token'),
+      ).rejects.toMatchObject({ statusCode: 409, message: 'Test run is not in running state' });
+    }
+  });
+
+  test.each(['events', 'live-resources'])(
+    '%s reads the body of a run in the run cache, which the stream token check trusts',
+    async (name) => {
+      const id = await insertRun('passed');
+      runEventBus.cacheRunState(id, { streamToken: 'sha256:x', projectId });
+      try {
+        await expect(routes[name]!({ params: { id: String(id) }, body: {} })).rejects.toMatchObject({
+          statusCode: 401,
+        });
+        expect(readBody).toHaveBeenCalledTimes(1);
+      } finally {
+        runEventBus.clearRunState(id);
+      }
+    },
+  );
 });
 
 describe('the largest batch of events the reporter sends', () => {

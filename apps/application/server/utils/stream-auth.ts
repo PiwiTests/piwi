@@ -6,14 +6,31 @@ import { validateAndReviveRun } from './revive-run';
 import { matchesShardToken, matchesStreamToken, readShardTokensFromMeta } from './shard-tokens';
 import type { DbClient as DB } from '../database';
 
+/** The streaming routes whose token travels in the body. */
+export type BodyTokenRoute = 'begin' | 'events' | 'finish' | 'live-resources';
+
 /**
- * Refuse a streaming request for a run that does not exist (404, as its route answers), before the route reads the
- * body that carries its token: a run in the run cache exists, any other is looked up by its id alone.
+ * Refuse a streaming request before its route reads the body that carries its token, with the answer the route gives
+ * once it read it: 404 for a run that does not exist, 409 for one the route does not take. `begin` takes an
+ * initializing or running run, or an interrupted sharded one; the others take a running or interrupted run, and
+ * `events` and `live-resources` any run in the run cache, which `authorizeStreamToken` trusts.
  */
-export async function requireRunExists(db: DB, runId: number): Promise<void> {
-  if (runEventBus.getRunState(runId)) return;
-  const [run] = await db.select({ id: testRuns.id }).from(testRuns).where(eq(testRuns.id, runId)).limit(1);
+export async function requireStreamingRun(db: DB, runId: number, route: BodyTokenRoute): Promise<void> {
+  if ((route === 'events' || route === 'live-resources') && runEventBus.getRunState(runId)) return;
+  const [run] = await db
+    .select({ status: testRuns.status, shardTotal: testRuns.shardTotal })
+    .from(testRuns)
+    .where(eq(testRuns.id, runId))
+    .limit(1);
   if (!run) throw apiError({ statusCode: 404, message: 'Test run not found' });
+  if (route === 'begin') {
+    const sharded = !!(run.shardTotal && run.shardTotal > 1);
+    if (run.status === 'initializing' || run.status === 'running' || (sharded && run.status === 'interrupted')) return;
+    throw apiError({ statusCode: 409, message: 'Test run cannot be transitioned to running state' });
+  }
+  if (run.status !== 'running' && run.status !== 'interrupted') {
+    throw apiError({ statusCode: 409, message: 'Test run is not in running state' });
+  }
 }
 
 /**
