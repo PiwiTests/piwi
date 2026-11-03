@@ -79,6 +79,8 @@ export function rateLimitedError(
   return apiError({ statusCode: 429, message });
 }
 
+let warnedUntrustedProxy = false;
+
 /**
  * Client address used in rate-limit keys.
  *
@@ -87,13 +89,22 @@ export function rateLimitedError(
  * switches to the last `X-Forwarded-For` entry (the one appended by the proxy in
  * front of Piwi, which clients cannot forge). Only set it when such a proxy is
  * actually in front of the server: trusted, the header is client-controlled on
- * direct connections, which would let a caller pick its own bucket.
+ * direct connections, which would let a caller pick its own bucket. The first
+ * request that carries the header while it is unset logs a warning, once per
+ * process.
  */
 export function rateLimitClientIp(event: H3Event): string {
+  const forwarded = getRequestHeader(event, 'x-forwarded-for');
   if (process.env.PIWI_TRUST_PROXY === 'true') {
-    const forwarded = getRequestHeader(event, 'x-forwarded-for');
     const lastHop = forwarded?.split(',').at(-1)?.trim();
     if (lastHop) return lastHop;
+  } else if (forwarded && !warnedUntrustedProxy) {
+    warnedUntrustedProxy = true;
+    console.warn(
+      '[rate-limit] A request carries X-Forwarded-For but PIWI_TRUST_PROXY is not set, so the per-client rate ' +
+        "limits (sign-in, password reset, setup) key on the connecting address. Behind a reverse proxy that is the proxy's, " +
+        'and every client shares one bucket: set PIWI_TRUST_PROXY=true when a reverse proxy you run is in front of Piwi.',
+    );
   }
   return getRequestIP(event) ?? 'unknown';
 }

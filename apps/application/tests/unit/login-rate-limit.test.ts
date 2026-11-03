@@ -4,8 +4,10 @@ import { apiError } from '../../server/utils/api-error';
 
 /**
  * The login route's throttle: attempts sent together each take a slot before
- * the password is checked, so no more than the account's limit is ever tried
- * in one window, and a valid login gives its slots back.
+ * the password is checked, so no more than an account's limit from one address,
+ * or its ceiling across addresses, is ever tried in one window, failures from
+ * other addresses leave the owner's own below the ceiling, and a valid login
+ * gives its slots back.
  */
 
 const auth = vi.hoisted(() => ({
@@ -82,6 +84,33 @@ describe('login throttle', () => {
     const statuses = await together(Array.from({ length: 30 }, (_, i) => request(ip, `user${address}-${i}`, 'wrong')));
     expect(statuses.filter((s) => s === 401)).toHaveLength(20);
     expect(statuses.filter((s) => s === 429)).toHaveLength(10);
+  });
+
+  test('wrong passwords from other addresses do not lock the owner out', async () => {
+    const username = `ada${address}`;
+    const elsewhere = Array.from({ length: 15 }, (_, i) => request(`10.1.${address}.${i % 3}`, username, 'wrong'));
+    expect(await together(elsewhere)).toEqual(Array.from({ length: 15 }, () => 401));
+    expect(await together([request(`10.0.0.${address}`, username, auth.correct)])).toEqual([200]);
+  });
+
+  test("an account's failures from every address together stop at fifty", async () => {
+    const username = `ada${address}`;
+    const spread = Array.from({ length: 55 }, (_, i) => request(`10.2.${address}.${i % 11}`, username, 'wrong'));
+    const statuses = await together(spread);
+    expect(statuses.filter((s) => s === 401)).toHaveLength(50);
+    expect(statuses.filter((s) => s === 429)).toHaveLength(5);
+    expect(await together([request(`10.0.0.${address}`, username, auth.correct)])).toEqual([429]);
+  });
+
+  test("a valid login gives back its slot of the account's ceiling", async () => {
+    const username = `ada${address}`;
+    const spread = Array.from({ length: 45 }, (_, i) => request(`10.3.${address}.${i % 9}`, username, 'wrong'));
+    expect(await together(spread)).toEqual(Array.from({ length: 45 }, () => 401));
+    expect(await together([request(`10.0.0.${address}`, username, auth.correct)])).toEqual([200]);
+    const fromOne = Array.from({ length: 6 }, () => request(`10.4.${address}.0`, username, 'wrong'));
+    const statuses = await together(fromOne);
+    expect(statuses.filter((s) => s === 401)).toHaveLength(5);
+    expect(await together([request(`10.4.${address}.1`, username, 'wrong')])).toEqual([429]);
   });
 
   test('a valid login gives its slots back', async () => {

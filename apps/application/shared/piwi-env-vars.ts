@@ -513,6 +513,7 @@ export const PIWI_ENV_VARS = {
     type: 'boolean',
     default: 'false',
     since: '0.26.0',
+    notes: 'While it is unset, the server logs a warning the first time a request carries X-Forwarded-For.',
   },
 
   // ── OAuth ────────────────────────────────────────────────────────────────

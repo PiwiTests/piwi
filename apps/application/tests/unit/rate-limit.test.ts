@@ -181,4 +181,33 @@ describe('rateLimitClientIp', () => {
     const { event } = fakeEvent({ remoteAddress: '203.0.113.9' });
     expect(rateLimitClientIp(event)).toBe('203.0.113.9');
   });
+
+  test('warns once per process when X-Forwarded-For arrives without PIWI_TRUST_PROXY', async () => {
+    vi.resetModules();
+    const fresh = await import('../../server/utils/rate-limit');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      fresh.rateLimitClientIp(fakeEvent({ remoteAddress: '203.0.113.9' }).event);
+      expect(warn).not.toHaveBeenCalled();
+      fresh.rateLimitClientIp(fakeEvent({ remoteAddress: '203.0.113.9', forwardedFor: '198.51.100.7' }).event);
+      fresh.rateLimitClientIp(fakeEvent({ remoteAddress: '203.0.113.9', forwardedFor: '198.51.100.8' }).event);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0]![0]).toContain('PIWI_TRUST_PROXY');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('does not warn about X-Forwarded-For with PIWI_TRUST_PROXY set', async () => {
+    vi.resetModules();
+    const fresh = await import('../../server/utils/rate-limit');
+    vi.stubEnv('PIWI_TRUST_PROXY', 'true');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      fresh.rateLimitClientIp(fakeEvent({ remoteAddress: '127.0.0.1', forwardedFor: '198.51.100.7' }).event);
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
 });
