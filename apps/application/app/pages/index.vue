@@ -242,21 +242,6 @@ const filtersSummary = computed(() =>
   }),
 );
 
-// ── Activity list ────────────────────────────────────────────────────────────
-
-function statusBorderClass(status: string): string {
-  switch (statusPaletteKey(status)) {
-    case 'passed':
-      return 'border-l-status-passed';
-    case 'failed':
-      return 'border-l-status-failed';
-    case 'running':
-      return 'border-l-status-running';
-    default:
-      return 'border-l-status-skipped';
-  }
-}
-
 // Coming back to Home scrolls it to where the user left it.
 useViewScroll(() => dashboardPanelBody('home'));
 </script>
@@ -435,7 +420,7 @@ useViewScroll(() => dashboardPanelBody('home'));
                 :key="run.id"
                 :to="`/test-runs/${run.id}`"
                 class="flex items-center gap-3 py-3 pl-3 border-l-2 hover:bg-gray-50 dark:hover:bg-gray-800/60 rounded-r transition-colors"
-                :class="statusBorderClass(run.status)"
+                :class="statusPalette(run.status).edge"
               >
                 <RunStatusBadge :status="run.status" />
                 <div class="flex-1 min-w-0">

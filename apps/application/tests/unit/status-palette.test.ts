@@ -51,7 +51,13 @@ describe('STATUS_PALETTE', () => {
       expect(entry.color).toBe(`var(--color-status-${key})`);
       expect(entry.bg).toBe(`bg-status-${key}`);
       expect(entry.ring).toBe(`ring-status-${key}`);
+      expect(entry.edge).toBe(`border-l-status-${key}`);
     }
+  });
+
+  test('edges an interrupted run in its own slate, apart from the skipped grey', () => {
+    expect(statusPalette('interrupted').edge).toBe('border-l-status-interrupted');
+    expect(statusPalette('interrupted').edge).not.toBe(STATUS_PALETTE.skipped.edge);
   });
 
   test('every entry has a row tint, light and dark', () => {
