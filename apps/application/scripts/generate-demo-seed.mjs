@@ -2779,7 +2779,7 @@ function buildClusterFix(story, stats) {
 // model+recipe tag and near-parallel vectors, so their cosine clears the memory
 // threshold even though their error text differs. Everything else uses the
 // deterministic fingerprint path with no vector.
-const DEMO_EMBED_TAG = 'text-embedding-3-small#v2';
+const DEMO_EMBED_TAG = 'text-embedding-3-small#v3';
 const DEMO_CLUSTER_EMBEDDINGS = {
   10: [0.91, 0.12, 0.44, 0.21, 0.68, 0.33, 0.52, 0.6],
   9: [0.62, 0.4, 0.52, 0.34, 0.5, 0.48, 0.47, 0.44],

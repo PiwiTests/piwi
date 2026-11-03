@@ -54,6 +54,9 @@ in-app assistant).
   which cannot load the TypeScript module, and `tests/unit/demo-seed-consistency.test.ts` compares the two. Then run
   `npm run app:seed:demo`. `shared/error-fingerprint-v4.ts` stays as it is: the aliases stored without a sample hold
   version 4 fingerprints, which `backfillAliasSamples` matches with it.
+- **A change to `maskVolatile` or `condenseErrorText` also bumps `EMBEDDING_INPUT_VERSION`**
+  (`server/utils/cluster-similarity.ts`): they shape the text embedded for cluster similarity, and the bump re-embeds
+  the stored vectors. `tests/unit/cluster-similarity.test.ts` pins that text.
 - **A version bump keeps triage state.** At startup, `reclusterFailureFingerprints()`
   (`shared/handlers/failure-cluster-recluster.ts`) computes each cluster's fingerprint again from its stored
   `fingerprintSample` (`sampleError` for older rows), then each alias's from the sample it keeps, moves the per-test

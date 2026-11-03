@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { computeErrorFingerprint } from '#shared/error-fingerprint';
 import { resolveHealingForCase } from '~~/server/utils/locator-healing';
+import { embeddingModelTag } from '~~/server/utils/cluster-similarity';
 import { validatePatch } from '#shared/patch';
 import { allDemoSourceFiles, getDemoChangesSince, getDemoDefaultRange } from '~~/app/demo/demo-scm';
 import {
@@ -747,6 +748,13 @@ describe('cluster 9 (assertion-captured healing) coherence', () => {
     expect(healing.reason).toBe('The locator resolved; this is not a locator problem.');
     expect(healing.recommendation).toBeNull();
     expect(healing.failingLocator?.method).toBe('getByRole');
+  });
+});
+
+describe('cluster embeddings', () => {
+  test('the seeded vectors carry the model tag the server writes today', () => {
+    const tags = q(`select distinct embedding_model from failure_clusters where embedding is not null`);
+    expect(tags).toEqual([{ embedding_model: embeddingModelTag('text-embedding-3-small') }]);
   });
 });
 
