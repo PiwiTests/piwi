@@ -259,6 +259,12 @@ describe('users writes', () => {
     expect(await status(createUser({ body: { username: 'kim', role: 'member' } }))).toBe(403);
   });
 
+  test('POST takes a username of 200 characters at most', async () => {
+    state.caller = avery;
+    expect(await status(createUser({ body: { username: 'r'.repeat(201), role: 'member' } }))).toBe(400);
+    expect(await status(createUser({ body: { username: 'r'.repeat(200), role: 'member' } }))).toBe(200);
+  });
+
   test('PATCH revokes sessions on an instance role change only, and keeps the last administrator', async () => {
     state.caller = avery;
     expect(await status(patchUser({ params: { id: '1' }, body: { role: 'member' } }))).toBe(400);

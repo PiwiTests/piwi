@@ -134,6 +134,14 @@ describe('login throttle', () => {
     expect(rateLimitKeyCount()).toBe(before);
   });
 
+  test('a username longer than any account can hold is refused before it names a key', async () => {
+    const ip = `10.0.0.${address}`;
+    const before = rateLimitKeyCount();
+    expect(await together([request(ip, 'a'.repeat(201), 'wrong')])).toEqual([400]);
+    expect(rateLimitKeyCount()).toBe(before);
+    expect(await together([request(ip, 'a'.repeat(200), 'wrong')])).toEqual([401]);
+  });
+
   test('a valid login gives its slots back', async () => {
     const ip = `10.0.0.${address}`;
     const username = `ada${address}`;

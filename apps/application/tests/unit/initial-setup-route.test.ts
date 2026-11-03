@@ -88,6 +88,11 @@ describe('first-admin setup without a token', () => {
     expect(await setup(request())).toMatchObject({ success: true });
   });
 
+  test('takes a username of 200 characters at most', async () => {
+    await expect(setup(request({ username: 'a'.repeat(201) }))).rejects.toMatchObject({ statusCode: 400 });
+    expect(await setup(request({ username: 'a'.repeat(200) }))).toMatchObject({ success: true });
+  });
+
   test('a request whose body arrives after another setup finished creates no administrator', async () => {
     let bodyRequested!: () => void;
     const requested = new Promise<void>((resolve) => (bodyRequested = resolve));

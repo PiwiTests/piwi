@@ -1,4 +1,5 @@
 import { InstanceRole } from '#shared/permissions';
+import { USERNAME_MAX_LENGTH } from '#shared/project-access';
 import {
   createUser,
   isAuthEnabled,
@@ -23,7 +24,7 @@ defineRouteMeta({
 });
 
 const createAdminSchema = z.object({
-  username: z.string().min(3),
+  username: z.string().min(3).max(USERNAME_MAX_LENGTH),
   password: z.string().min(8),
   name: z.string().optional(),
   setupToken: z.string().optional(),

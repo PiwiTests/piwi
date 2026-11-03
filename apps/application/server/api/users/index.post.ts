@@ -17,7 +17,7 @@ defineRouteMeta({
           schema: {
             type: 'object',
             properties: {
-              username: { type: 'string', description: 'At least 3 characters' },
+              username: { type: 'string', description: '3 to 200 characters' },
               password: { type: 'string', description: 'At least 8 characters' },
               name: { type: 'string' },
               email: { type: 'string', format: 'email' },

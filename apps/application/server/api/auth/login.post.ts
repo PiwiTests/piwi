@@ -7,6 +7,7 @@ import {
   releaseRateLimit,
   resetRateLimit,
 } from '../../utils/rate-limit';
+import { USERNAME_MAX_LENGTH } from '#shared/project-access';
 import { z } from 'zod';
 
 const WINDOW_MS = 15 * 60 * 1000;
@@ -21,8 +22,9 @@ defineRouteMeta({
   },
 });
 
+// A username longer than any account's is refused before it names a rate-limit key.
 const loginSchema = z.object({
-  username: z.string().min(1),
+  username: z.string().min(1).max(USERNAME_MAX_LENGTH),
   password: z.string().min(1),
 });
 
