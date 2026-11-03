@@ -21,13 +21,14 @@
  * Each merge alias is then recomputed the same way from the sample it keeps,
  * so the failures a merge sent to a cluster keep reaching it. Per-test routes
  * keyed by a changed fingerprint, a cluster's or an alias's, move to the new
- * one. A cluster made by moving tests out of another has no computed
+ * one, or for a generic failure to those the routed test's own errors carry.
+ * A cluster made by moving tests out of another has no computed
  * fingerprint and is left as-is, as is an alias with no sample.
  *
  * Runs once on startup after migrations; safe to run repeatedly.
  */
 
-import { eq, and, asc, gt, inArray, isNull, isNotNull } from 'drizzle-orm';
+import { eq, and, asc, desc, gt, inArray, isNull, isNotNull } from 'drizzle-orm';
 import {
   failureClusters,
   failureClusterAliases,
@@ -35,7 +36,7 @@ import {
   testRuns,
   testRunsCases,
 } from '../../server/database/schema';
-import { computeErrorFingerprint, type ErrorFingerprint } from '../error-fingerprint';
+import { computeErrorFingerprint, isGenericFailure, type ErrorFingerprint } from '../error-fingerprint';
 import { errorFingerprintV4 } from '../error-fingerprint-v4';
 import { isSplitFingerprint, mergeFailureClusters } from './failure-cluster-ops';
 import type { DrizzleDB } from './db';
@@ -45,6 +46,9 @@ export const ALIAS_SAMPLES_BACKFILLED_SETTING = 'failure_cluster_alias_samples_b
 
 /** How many executions of a cluster {@link backfillAliasSamples} reads at a time. */
 const BACKFILL_PAGE_SIZE = 200;
+
+/** How many of a routed test's most recent executions {@link routedTestFingerprints} reads. */
+const ROUTED_TEST_ERROR_LIMIT = 50;
 
 /**
  * The errors an alias of cluster `clusterId` may have been computed from: the
@@ -119,18 +123,68 @@ export async function backfillAliasSamples(db: DrizzleDB): Promise<number> {
   return found;
 }
 
-/** Move a project's per-test routes from one fingerprint to another; a route already on the new one wins. */
-async function renameRouteFingerprint(db: DrizzleDB, projectId: number, from: string, to: string): Promise<void> {
+/**
+ * The fingerprints a routed test's failures carry, for a generic failure
+ * `fp` hashes with the file it failed in: those of the test's errors in the
+ * route's cluster that share `fp`'s signature, from its most recent
+ * executions. Empty when none of them does.
+ */
+async function routedTestFingerprints(
+  db: DrizzleDB,
+  testCaseId: number,
+  clusterId: number,
+  fp: ErrorFingerprint,
+): Promise<string[]> {
+  const rows = await db
+    .select({ error: testRunsCases.error })
+    .from(testRunsCases)
+    .where(
+      and(
+        eq(testRunsCases.failureClusterId, clusterId),
+        eq(testRunsCases.testCaseId, testCaseId),
+        isNotNull(testRunsCases.error),
+      ),
+    )
+    .orderBy(desc(testRunsCases.id))
+    .limit(ROUTED_TEST_ERROR_LIMIT);
+  const fingerprints = new Set<string>();
+  for (const error of new Set(rows.map((row) => row.error))) {
+    if (!error) continue;
+    const own = await computeErrorFingerprint(error);
+    const sameSignature =
+      own.errorType === fp.errorType && own.normalizedMessage === fp.normalizedMessage && own.selector === fp.selector;
+    if (sameSignature) fingerprints.add(own.fingerprint);
+  }
+  return [...fingerprints];
+}
+
+/**
+ * Move a project's per-test routes from one fingerprint to the one `fp`
+ * computed; a route already on the new one wins. A generic failure's
+ * fingerprint holds the file it failed in, so each routed test takes the
+ * fingerprints of its own errors, and `fp`'s when none is stored.
+ */
+async function renameRouteFingerprint(
+  db: DrizzleDB,
+  projectId: number,
+  from: string,
+  fp: ErrorFingerprint,
+): Promise<void> {
   const where = and(eq(failureClusterTestRoutes.projectId, projectId), eq(failureClusterTestRoutes.fingerprint, from));
   const routes = await db
     .select({ testCaseId: failureClusterTestRoutes.testCaseId, clusterId: failureClusterTestRoutes.clusterId })
     .from(failureClusterTestRoutes)
     .where(where);
   if (routes.length === 0) return;
-  await db
-    .insert(failureClusterTestRoutes)
-    .values(routes.map((r) => ({ projectId, fingerprint: to, testCaseId: r.testCaseId, clusterId: r.clusterId })))
-    .onConflictDoNothing();
+  const generic = isGenericFailure(fp);
+  const values: Array<typeof failureClusterTestRoutes.$inferInsert> = [];
+  for (const { testCaseId, clusterId } of routes) {
+    const own = generic ? await routedTestFingerprints(db, testCaseId, clusterId, fp) : [];
+    for (const fingerprint of own.length ? own : [fp.fingerprint]) {
+      values.push({ projectId, fingerprint, testCaseId, clusterId });
+    }
+  }
+  await db.insert(failureClusterTestRoutes).values(values).onConflictDoNothing();
   await db.delete(failureClusterTestRoutes).where(where);
 }
 
@@ -238,7 +292,7 @@ export async function reclusterFailureFingerprints(db: DrizzleDB): Promise<{ upd
       await rewriteClusterFingerprint(db, id, cluster.projectId, fp);
       updated++;
     }
-    await renameRouteFingerprint(db, cluster.projectId, cluster.fingerprint, fp.fingerprint);
+    await renameRouteFingerprint(db, cluster.projectId, cluster.fingerprint, fp);
   }
 
   // Then the aliases, from the sample each keeps; one with none, or with a
@@ -279,7 +333,7 @@ export async function reclusterFailureFingerprints(db: DrizzleDB): Promise<{ upd
       // The survivor reaches the fingerprint through the cluster or alias that has it.
       await db.delete(failureClusterAliases).where(eq(failureClusterAliases.id, id));
     }
-    await renameRouteFingerprint(db, alias.projectId, fingerprint, fp.fingerprint);
+    await renameRouteFingerprint(db, alias.projectId, fingerprint, fp);
     updated++;
   }
 

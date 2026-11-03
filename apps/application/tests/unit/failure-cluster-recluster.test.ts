@@ -252,6 +252,52 @@ describe('a fingerprint version bump', () => {
     expect(await reclusterFailureFingerprints(dbc)).toEqual({ updated: 0, merged: 0 });
   });
 
+  test("keeps a test moved out of a generic failure's cluster in its own, from the file of its errors", async () => {
+    const timeoutIn = (file: string) => `Test timeout of 30000ms exceeded.\n    at ${file}:4:1`;
+    const leakIn = (file: string) =>
+      `TypeError: Cannot read properties of undefined (reading 'id')\n    at ${file}:9:3`;
+    await db.insert(schema.testCases).values({ id: 3, projectId: 1, filePath: 'tests/search.spec.ts', title: 'finds' });
+    await seedRun(1, new Date('2026-10-01T10:00:00Z'));
+    // Version 4 hashed no file: one cluster for each failure, its samples from tests/welcome.spec.ts. Test 3
+    // moved out of it into a cluster of its own, which holds its errors from tests/search.spec.ts.
+    const a = await seedCluster({
+      fingerprint: await errorFingerprintV4(timeoutIn('tests/welcome.spec.ts')),
+      sampleError: timeoutIn('tests/welcome.spec.ts'),
+      fingerprintSample: timeoutIn('tests/welcome.spec.ts'),
+    });
+    const moved = await seedCluster({ fingerprint: 'split:moved', sampleError: null, fingerprintSample: null });
+    const v4Fingerprints = [
+      await errorFingerprintV4(timeoutIn('tests/welcome.spec.ts')),
+      await errorFingerprintV4(leakIn('tests/welcome.spec.ts')),
+    ];
+    await db.insert(schema.failureClusterAliases).values({
+      projectId: 1,
+      fingerprint: v4Fingerprints[1]!,
+      fingerprintSample: leakIn('tests/welcome.spec.ts'),
+      clusterId: a,
+    });
+    await db
+      .insert(schema.failureClusterTestRoutes)
+      .values(v4Fingerprints.map((fingerprint) => ({ projectId: 1, fingerprint, testCaseId: 3, clusterId: moved })));
+    await db.insert(schema.testRunsCases).values(
+      [timeoutIn('tests/search.spec.ts'), leakIn('tests/search.spec.ts')].map((error, retries) => ({
+        testRunId: 1,
+        testCaseId: 3,
+        status: 'failed',
+        retries,
+        error,
+        failureClusterId: moved,
+      })),
+    );
+
+    expect(await reclusterFailureFingerprints(dbc)).toEqual({ updated: 2, merged: 0 });
+
+    expect(await clusterJoined(3, timeoutIn('tests/search.spec.ts'), 1)).toBe(moved);
+    expect(await clusterJoined(3, leakIn('tests/search.spec.ts'), 1)).toBe(moved);
+    expect(await clusterJoined(1, timeoutIn('tests/welcome.spec.ts'), 1)).toBe(a);
+    expect(await db.$count(schema.failureClusters)).toBe(2);
+  });
+
   test('merges the clusters an alias and a cluster both lead to, the one first seen earlier keeping its triage', async () => {
     await seedRun(1, new Date('2026-10-01T10:00:00Z'));
     await seedRun(2, new Date('2026-10-02T10:00:00Z'));
