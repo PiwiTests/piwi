@@ -408,6 +408,7 @@ import {
   apiHeartbeatTestRun,
   apiLiveResourcesTestRun,
 } from './reporter';
+import { demoRunningCases } from './stuck-tests';
 import { apiCreateUserApiKey } from './users';
 import { apiGetDemoFile } from './files';
 import {
@@ -1942,8 +1943,18 @@ const routes: RouteEntry[] = [
     handler: (_, body) => apiPutLocale(body as Parameters<typeof apiPutLocale>[0]),
   },
 
-  // Test-run streaming (no-op in demo mode; only terminal-status runs exist)
-  { method: 'GET', pattern: /^\/api\/test-runs\/(\d+)\/stream$/, handler: () => Promise.resolve({ ok: true }) },
+  // A run's stream: its live events go over a BroadcastChannel (`app/demo/run-events.ts`), so this answers only the
+  // catch-up the server's stream sends first for the tests still running, as one list.
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-runs\/(\d+)\/stream$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      return {
+        events: demoRunningCases(+m[1]!).map((data) => ({ type: 'test-begin', data, seq: 0, timestamp: Date.now() })),
+      };
+    },
+  },
 
   // Notification SSE (handled via BroadcastChannel in demo mode)
   { method: 'GET', pattern: /^\/api\/notifications\/stream$/, handler: () => Promise.resolve({ ok: true }) },

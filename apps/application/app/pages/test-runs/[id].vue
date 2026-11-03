@@ -487,11 +487,24 @@ function connectToDemoStream() {
     seedLiveFromPersisted(testRun.value.testCases);
   }
 
-  demoUnsubscribe = subscribeDemoEvents((message) => {
+  // The tests still running come from the service worker's catch-up, as the server's stream replays them; the live
+  // events heard meanwhile wait behind it, so a test that completed since is not shown running again.
+  let heldEvents: Record<string, unknown>[] | null = [];
+  const unsubscribe = subscribeDemoEvents((message) => {
     if (message.scope === 'run' && message.runId === Number(runId)) {
-      enqueueEvent(message.event as unknown as Record<string, unknown>);
+      const event = message.event as unknown as Record<string, unknown>;
+      if (heldEvents) heldEvents.push(event);
+      else enqueueEvent(event);
     }
   });
+  demoUnsubscribe = unsubscribe;
+  void $fetch<{ events?: Record<string, unknown>[] }>(`/api/test-runs/${runId}/stream`)
+    .catch(() => ({ events: [] }))
+    .then((catchUp) => {
+      if (demoUnsubscribe !== unsubscribe) return;
+      for (const event of [...(catchUp.events ?? []), ...(heldEvents ?? [])]) enqueueEvent(event);
+      heldEvents = null;
+    });
 }
 
 function connectToStream() {
