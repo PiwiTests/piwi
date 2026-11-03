@@ -196,18 +196,16 @@ describe('backfillAliasSamples on a cluster with many executions', () => {
       ...Array.from({ length: ALIAS_SAMPLE_CANDIDATE_LIMIT }, (_, n) => errorOf(n)),
       recentError,
     ];
-    await db
-      .insert(schema.testRunsCases)
-      .values(
-        errors.map((error, retries) => ({
-          testRunId: 1,
-          testCaseId: 1,
-          status: 'failed',
-          retries,
-          error,
-          failureClusterId: id,
-        })),
-      );
+    await db.insert(schema.testRunsCases).values(
+      errors.map((error, retries) => ({
+        testRunId: 1,
+        testCaseId: 1,
+        status: 'failed',
+        retries,
+        error,
+        failureClusterId: id,
+      })),
+    );
     await db.insert(schema.failureClusterAliases).values([
       { projectId: 1, fingerprint: await errorFingerprintV4(oldError), clusterId: id },
       { projectId: 1, fingerprint: await errorFingerprintV4(recentError), clusterId: id },
