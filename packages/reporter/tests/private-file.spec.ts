@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { execFileSync, spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -12,6 +13,7 @@ import {
 } from '../src/internal/support/aria-sampling.js';
 import { appendPrivateFile, readPrivateFile, writePrivateFile } from '../src/internal/support/private-file.js';
 import type { CompleteStreamEvent } from '../src/types/wire.js';
+import type * as NodeFs from 'node:fs';
 
 const projectName = 'piwi-private-file-' + process.pid;
 const streamFile = (runId: number) =>
@@ -136,6 +138,44 @@ describe('a private temp file', () => {
     expect(() => appendPrivateFile(file, 'census\n')).toThrow();
     expect(fs.readFileSync(target, 'utf8')).toBe('untouched');
     expect(readPrivateFile(file)).toEqual({ untrusted: 'it is a symbolic link' });
+  });
+
+  it('is never appended through a symbolic link where the open cannot refuse one, as on Windows', async () => {
+    const file = path.join(dir, 'results.jsonl');
+    const target = plantLink(file, 'untouched');
+    if (!target) return;
+    vi.resetModules();
+    vi.doMock('node:fs', async () => {
+      const actual = await vi.importActual<typeof NodeFs>('node:fs');
+      const constants = { ...actual.constants, O_NOFOLLOW: undefined, O_NONBLOCK: undefined };
+      return { ...actual, constants, default: { ...actual, constants } };
+    });
+    try {
+      const windows = await import('../src/internal/support/private-file.js');
+      expect(() => windows.appendPrivateFile(file, 'census\n')).toThrow(/symbolic link/);
+      expect(fs.readFileSync(target, 'utf8')).toBe('untouched');
+    } finally {
+      vi.doUnmock('node:fs');
+      vi.resetModules();
+    }
+  });
+
+  it.skipIf(!posix)('is never opened when it is a named pipe, so an append never waits for a reader', () => {
+    const file = path.join(dir, 'results.jsonl');
+    execFileSync('mkfifo', [file]);
+    // A reader that opens late releases an append waiting for one, so a wait fails the test instead of hanging it.
+    const lateReader =
+      "const fs = require('node:fs'); setTimeout(() => { fs.openSync(process.argv[1], fs.constants.O_RDONLY | " +
+      'fs.constants.O_NONBLOCK); setInterval(() => {}, 1000); }, 2000);';
+    const reader = spawn(process.execPath, ['-e', lateReader, file], { stdio: 'ignore' });
+    try {
+      const started = Date.now();
+      expect(() => appendPrivateFile(file, 'census\n')).toThrow(/not a regular file/);
+      expect(Date.now() - started).toBeLessThan(1000);
+      expect(readPrivateFile(file)).toEqual({ untrusted: 'it is not a regular file' });
+    } finally {
+      reader.kill();
+    }
   });
 
   it.skipIf(!posix)('is never appended to under another name', () => {

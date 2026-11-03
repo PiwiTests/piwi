@@ -45,8 +45,9 @@ What the package does to a user's run, process by process.
   and `PIWI_PROJECT_NAME` are also read from the `.env` in the Playwright config's
   folder, below the environment, by the reporter and the global setup alike.
 - `piwi-*` testInfo attachment names (`internal/capture/attachments.ts`), temp files in
-  `os.tmpdir()` (owner-only, never written through a link and read back only when this
-  user owns them: `internal/support/private-file.ts`, or a `fs.mkdtempSync` folder), and
+  `os.tmpdir()` (owner-only, never written through a link nor waited on as a named pipe,
+  and read back only when this user owns them, a check Windows skips, its temp folder
+  being the user's own: `internal/support/private-file.ts`, or a `fs.mkdtempSync` folder), and
   `[Piwi Dashboard]`-prefixed logs (`internal/support/logger.ts`).
 
 **In each test worker** (the capture fixtures)

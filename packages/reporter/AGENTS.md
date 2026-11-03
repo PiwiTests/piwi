@@ -142,8 +142,9 @@ responsibilities.
   `internal/submit/run-submitter.ts`, `/start` and `/begin` in `internal/streaming/stream-manager.ts`, so a run-level
   field the server reads while streaming is added there too.
 - **A file in the shared temp directory goes through `internal/support/private-file.ts`** (`writePrivateFile`,
-  `appendPrivateFile`, `readPrivateFile`), or lives in a `fs.mkdtempSync` folder: owner-only, never written through a
-  link, read back only when this user owns it; owner and mode checks are no-ops on Windows (`tests/private-file.spec.ts`).
+  `appendPrivateFile`, `readPrivateFile`), or lives in a `fs.mkdtempSync` folder: owner-only, its path checked before
+  it is opened, never written through a link nor waited on as a named pipe, read back only when this user owns it. On
+  Windows the owner and mode checks are no-ops and only that path check refuses a link (`tests/private-file.spec.ts`).
 - **Playwright from the floor up.** The lower bound of the peer range on `@playwright/test` is the oldest Playwright
   the reporter supports: an API added after it is feature-checked, and a spec that needs it skips itself below that
   version (`playwrightAtLeast`, `tests/_helpers.ts`). CI's `reporter-floor` job runs the suite on the floor
