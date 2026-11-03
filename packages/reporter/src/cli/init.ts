@@ -113,8 +113,8 @@ Options:
   --desktop-app <mode> Write desktopApp into the config: "prefer" sends local runs to the
                        Piwi desktop app while it runs, and CI runs to --server-url
   --api-key <key>      API key to write into .env (env PIWI_API_KEY), where the reporter
-                       reads it; never into a .env git tracks. Omit to keep it a
-                       .env.example placeholder you fill in yourself.
+                       reads it; never into a .env git tracks or cannot say it does not.
+                       Omit to keep it a .env.example placeholder you fill in yourself.
   --cwd <path>         Project root to operate on (default: current directory)
   --skills <list>      Comma-separated skills to install, or "all" / "none"
                        (default: ${WORKFLOW_SKILLS.join(', ')})
@@ -312,23 +312,61 @@ function stepFixtures(project: ProjectShape, opts: InitOptions): StepResult {
   };
 }
 
+/** Whether git tracks a file: `unknown` when git gave no answer in a folder a repository holds. */
+type GitTracking = 'tracked' | 'untracked' | 'unknown';
+
 /**
- * Whether git tracks `file`, relative to `root`, in the repository holding it: false when git is missing or `root` is
- * in no repository.
+ * Whether git tracks `file`, relative to `root`. Only git's own answer counts (`--error-unmatch` exits 0 or 1); when
+ * git gives none (missing, not startable, or refusing the repository, as it refuses one another user owns), it is
+ * `unknown` when `root` or a folder above it holds a `.git`, and `untracked` when none does.
  */
-function gitTracks(root: string, file: string): boolean {
-  return (
-    spawnSync('git', ['ls-files', '--error-unmatch', '--', file], { cwd: root, stdio: 'ignore', windowsHide: true })
-      .status === 0
-  );
+function gitTracking(root: string, file: string): GitTracking {
+  const { status } = spawnSync('git', ['ls-files', '--error-unmatch', '--', file], {
+    cwd: root,
+    stdio: 'ignore',
+    windowsHide: true,
+  });
+  if (status === 0) return 'tracked';
+  if (status === 1) return 'untracked';
+  return inRepository(root) ? 'unknown' : 'untracked';
 }
 
-/** What to do with the API key when git tracks `.env`, where a key written would be committed. */
-const TRACKED_ENV_ADVICE =
-  'set PIWI_API_KEY in the environment (in CI, as a secret), or untrack the file with `git rm --cached .env`';
+/** Whether `dir` or a folder above it holds a `.git`: a repository's folder, or the file of a worktree or submodule. */
+function inRepository(dir: string): boolean {
+  for (let current = path.resolve(dir); ; current = path.dirname(current)) {
+    if (fs.existsSync(path.join(current, '.git'))) return true;
+    if (path.dirname(current) === current) return false;
+  }
+}
 
-/** The `.env` steps; `envTracked` when git tracks the `.env`, which then takes no key. */
-function stepEnv(project: ProjectShape, opts: InitOptions, envTracked: boolean): StepResult[] {
+/** Why `init` writes no API key into the project's `.env`, and what to do with the key instead. */
+interface EnvKeyBlock {
+  why: string;
+  instead: string;
+}
+
+const KEY_IN_ENVIRONMENT = 'set PIWI_API_KEY in the environment (in CI, as a secret)';
+
+/** What keeps the API key out of the `.env` in `root`, where a key written could be committed; null when nothing does. */
+function envKeyBlock(root: string): EnvKeyBlock | null {
+  switch (gitTracking(root, '.env')) {
+    case 'tracked':
+      return {
+        why: 'git tracks .env',
+        instead: `${KEY_IN_ENVIRONMENT}, or untrack the file with \`git rm --cached .env\``,
+      };
+    case 'unknown':
+      return {
+        why: 'git did not say whether it tracks .env',
+        instead: `${KEY_IN_ENVIRONMENT}, or make \`git ls-files .env\` work here`,
+      };
+    case 'untracked':
+      return null;
+  }
+}
+
+/** The `.env` steps; `envBlock` when the `.env` takes no key. */
+function stepEnv(project: ProjectShape, opts: InitOptions, envBlock: EnvKeyBlock | null): StepResult[] {
   const results: StepResult[] = [];
 
   // Committed template: URL and a placeholder for the key, never a real secret.
@@ -347,12 +385,12 @@ function stepEnv(project: ProjectShape, opts: InitOptions, envTracked: boolean):
 
   // Only write a real .env when a key was actually supplied — otherwise the
   // placeholder in .env.example is the thing to fill in.
-  if (opts.apiKey && envTracked) {
+  if (opts.apiKey && envBlock) {
     results.push({
       step: 'env',
       file: '.env',
       status: 'manual',
-      detail: `git tracks .env, so the API key is not written into it — ${TRACKED_ENV_ADVICE} and run init again`,
+      detail: `${envBlock.why}, so the API key is not written into it — ${envBlock.instead} and run init again`,
     });
   } else if (opts.apiKey) {
     const envPath = path.join(project.root, '.env');
@@ -382,12 +420,12 @@ function stepEnv(project: ProjectShape, opts: InitOptions, envTracked: boolean):
 }
 
 /** Guidance the user acts on after the mechanical steps, tailored to what happened. */
-function nextSteps(opts: InitOptions, steps: StepResult[], envTracked: boolean): string[] {
+function nextSteps(opts: InitOptions, steps: StepResult[], envBlock: EnvKeyBlock | null): string[] {
   const out: string[] = [];
-  if (!opts.apiKey && opts.serverUrl && envTracked) {
+  if (!opts.apiKey && opts.serverUrl && envBlock) {
     out.push(
       'If your dashboard has authentication on, create an API key (Settings → Account → API keys). ' +
-        `git tracks .env, so keep the key out of it: ${TRACKED_ENV_ADVICE}.`,
+        `${envBlock.why}, so keep the key out of it: ${envBlock.instead}.`,
     );
   } else if (!opts.apiKey && opts.serverUrl) {
     out.push(
@@ -569,13 +607,13 @@ export async function runInit(
     project = detectProject(opts.root);
   }
   const steps: StepResult[] = [];
-  const envTracked = gitTracks(project.root, '.env');
+  const envBlock = envKeyBlock(project.root);
 
   if (!opts.skillsOnly) {
     steps.push(stepInstallReporter(project, opts));
     steps.push(stepConfig(project, opts));
     steps.push(stepFixtures(project, opts));
-    steps.push(...stepEnv(project, opts, envTracked));
+    steps.push(...stepEnv(project, opts, envBlock));
   }
 
   if (!opts.noSkills && opts.skillSlugs.length) {
@@ -591,7 +629,7 @@ export async function runInit(
     );
   }
 
-  printOutcome(opts, project, workspace, steps, nextSteps(opts, steps, envTracked));
+  printOutcome(opts, project, workspace, steps, nextSteps(opts, steps, envBlock));
 
   // A tool failure (e.g. the install command erroring) is worth a non-zero exit;
   // `manual` steps are expected outcomes, not failures.

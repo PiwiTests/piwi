@@ -18,6 +18,7 @@ beforeEach(() => {
 afterEach(() => {
   fs.rmSync(root, { recursive: true, force: true });
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
 
 const CONFIG = `import { defineConfig } from '@playwright/test'\n\nexport default defineConfig({\n  use: { trace: 'retain-on-failure' },\n})\n`;
@@ -211,6 +212,35 @@ describe('runInit', () => {
     await runInit(['--no-install', '--no-skills', '--api-key', 'pd_secret'], EMPTY_ENV, root);
     expect(fs.readFileSync(path.join(root, '.env'), 'utf-8')).toContain('PIWI_API_KEY=pd_secret');
     expect(fs.readFileSync(path.join(root, '.gitignore'), 'utf-8')).toContain('.env');
+  });
+
+  it('writes no key into the .env of a repository when git gives no answer, and one with no repository', async () => {
+    scaffoldProject();
+    write('.env', 'BASE_URL=http://localhost:5173\n');
+    // A .git git cannot open: it answers with an error, as it does for a repository it does not trust.
+    write('.git', `gitdir: ${path.join(root, 'missing')}\n`);
+    const logs = captureLogs();
+    expect(await runInit(['--no-install', '--no-skills', '--api-key', 'pd_secret'], EMPTY_ENV, root)).toBe(0);
+    expect(fs.readFileSync(path.join(root, '.env'), 'utf-8')).toBe('BASE_URL=http://localhost:5173\n');
+    expect(fs.existsSync(path.join(root, '.gitignore'))).toBe(false);
+    expect(logs.join('\n')).toContain(
+      '! [manual] env .env — git did not say whether it tracks .env, so the API key is not written into it',
+    );
+    expect(logs.join('\n')).toContain('make `git ls-files .env` work here');
+
+    // Without git to ask, the repository's .git alone keeps the key out.
+    fs.rmSync(path.join(root, '.git'));
+    execFileSync('git', ['init', '-q'], { cwd: root, stdio: 'ignore' });
+    vi.stubEnv('PATH', path.join(root, 'no-git-here'));
+    logs.length = 0;
+    await runInit(['--no-install', '--no-skills', '--api-key', 'pd_secret'], EMPTY_ENV, root);
+    expect(fs.readFileSync(path.join(root, '.env'), 'utf-8')).not.toContain('pd_secret');
+    expect(logs.join('\n')).toContain('git did not say whether it tracks .env');
+
+    // With no repository, the key goes into it.
+    fs.rmSync(path.join(root, '.git'), { recursive: true });
+    await runInit(['--no-install', '--no-skills', '--api-key', 'pd_secret'], EMPTY_ENV, root);
+    expect(fs.readFileSync(path.join(root, '.env'), 'utf-8')).toContain('PIWI_API_KEY=pd_secret');
   });
 
   it('does not create a real .env when no key is given', async () => {
