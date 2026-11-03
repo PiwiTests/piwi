@@ -413,7 +413,14 @@ describe('createScmProvider on the desktop app', () => {
         .update(schema.projects)
         .set({ scmToken: encryptSecret('token', getEncryptionKey()) })
         .where(eq(schema.projects.id, PROJECT_ID));
-      expect(await createScmProvider(INTERNAL_REMOTE, db, PROJECT_ID)).toBeInstanceOf(LocalGitProvider);
+      const withToken = await createScmProvider(INTERNAL_REMOTE, db, PROJECT_ID);
+      expect(withToken).toBeInstanceOf(LocalGitProvider);
+      // What the clone lacks is asked of no host: the token goes nowhere.
+      const fetchSpy = vi.spyOn(globalThis, 'fetch');
+      expect(await withToken!.fetchBlob('e'.repeat(40))).toBeNull();
+      expect(await withToken!.listCommits(10, 'release/9')).toEqual([]);
+      expect(await withToken!.fetchFileAtRef('README.md', 'f'.repeat(40))).toBeNull();
+      expect(fetchSpy).not.toHaveBeenCalled();
     });
 
     test('serves a file at a blob from the linked clone', async () => {
@@ -428,7 +435,8 @@ describe('createScmProvider on the desktop app', () => {
     test('has no provider outside the desktop app', async () => {
       delete process.env.PIWI_DESKTOP_TOKEN;
       expect(await createScmProvider(INTERNAL_REMOTE, db, PROJECT_ID)).toBeNull();
-      expect(await getSourceAtBlob(db, PROJECT_ID, { path: 'README.md', blob: 'a'.repeat(40) })).toBeNull();
+      const blob = git('rev-parse', `${sha.third}:README.md`);
+      expect(await getSourceAtBlob(db, PROJECT_ID, { path: 'README.md', blob })).toBeNull();
     });
   });
 });
