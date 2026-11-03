@@ -1,3 +1,4 @@
+import { inArray } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import * as schema from '../../server/database/schema.sqlite';
 import { openTempDb, type TempDb } from './temp-db';
@@ -156,15 +157,41 @@ describe('emitRunNotifications', () => {
   test('a run that did not run to its end announces no cluster, and has announced none', async () => {
     await addRun(1, { status: 'cancelled' });
     await addRun(2, { status: 'interrupted' });
-    await addRun(3, { status: 'running' });
-    await addRun(4, { status: 'failed' });
+    await addRun(3, { status: 'failed' });
     await addCluster(7, 1);
-    await addFailures([1, 7], [2, 7], [3, 7], [4, 7]);
+    await addFailures([1, 7], [2, 7], [3, 7]);
 
     await emitRunNotifications(db as never, 2);
     expect(announced()).toEqual([]);
-    await emitRunNotifications(db as never, 4);
+    await emitRunNotifications(db as never, 3);
     expect(announced().map((e) => [e.payload.clusterId, e.payload.firstSeenRunId])).toEqual([[7, 1]]);
+  });
+
+  test('a cluster two overlapping runs fail into is announced once, by the earlier run', async () => {
+    // Run 2 ends while run 1, where the cluster first appeared, is still running; a local run of the
+    // whole suite still running counts too.
+    await addRun(1, { status: 'running' });
+    await addRun(2, { status: 'failed' });
+    await addRun(3, { status: 'running', origin: 'local', metadata: {} });
+    await addRun(4, { status: 'failed' });
+    await addCluster(7, 1);
+    await addCluster(8, 3);
+    await addFailures([1, 7], [2, 7], [3, 8], [4, 8]);
+
+    await emitRunNotifications(db as never, 2);
+    await emitRunNotifications(db as never, 4);
+    expect(announced()).toEqual([]);
+
+    await db
+      .update(schema.testRuns)
+      .set({ status: 'failed' })
+      .where(inArray(schema.testRuns.id, [1, 3]));
+    await emitRunNotifications(db as never, 1);
+    await emitRunNotifications(db as never, 3);
+    expect(announced().map((e) => [e.payload.clusterId, e.payload.firstSeenRunId])).toEqual([
+      [7, undefined],
+      [8, undefined],
+    ]);
   });
 
   test('says which run a cluster first appeared in when that run did not announce it', async () => {

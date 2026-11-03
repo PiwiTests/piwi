@@ -1,5 +1,5 @@
 import { testTextLabel } from '#shared/utils/test-label';
-import { eq, and, count, lt, desc, inArray, isNotNull, isNull, ne, or } from 'drizzle-orm';
+import { eq, and, count, lt, desc, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 
 /** Failures scanned for ownership; well past what any comment or digest lists. */
 const OWNER_LOOKUP_LIMIT = 200;
@@ -24,7 +24,7 @@ import { inlineCasePayloads } from '../case-payloads';
 import { FAILED_STATUS_KEYS, isFailedStatus, testKey, testOutcomes } from '#shared/utils/test-counts';
 import { describeCluster } from '#shared/describe-cluster';
 import { looksFixedTests } from '#shared/status-classify';
-import { eligibleRunSql, isEligibleRun, runCommit } from '#shared/run-eligibility';
+import { eligibleRunSql, isEligibleRun, runCommit, UNFINISHED_RUN_STATUSES } from '#shared/run-eligibility';
 import { commitUrl } from '#shared/scm-urls';
 import { safeHttpUrl } from '#shared/utils/safe-url';
 import { parseSourceSnippet } from '#shared/source-snippet';
@@ -559,9 +559,10 @@ export async function emitIncidentNotification(db: DbClient, runId: number): Pro
 const ANNOUNCING_RUN_STATUSES = ['passed', 'failed', 'timedout'];
 
 /**
- * Whether a run before `runId` that announces clusters (one that ran to its end
- * and sends notifications; an import never sends any) failed into the cluster,
- * and so announced it.
+ * Whether a run before `runId` that sends notifications (an import never sends
+ * any) failed into the cluster, and so announced it or announces it when it
+ * ends: one that ran to its end, or one still unfinished, judged as if it
+ * finished.
  */
 async function announcedBefore(db: DbClient, clusterId: number, runId: number): Promise<boolean> {
   const [earlier] = await db
@@ -572,8 +573,18 @@ async function announcedBefore(db: DbClient, clusterId: number, runId: number): 
       and(
         eq(testRunsCases.failureClusterId, clusterId),
         lt(testRunsCases.testRunId, runId),
-        inArray(testRuns.status, ANNOUNCING_RUN_STATUSES),
-        eligibleRunSql('notifications'),
+        or(
+          and(inArray(testRuns.status, ANNOUNCING_RUN_STATUSES), eligibleRunSql('notifications')),
+          and(
+            inArray(testRuns.status, [...UNFINISHED_RUN_STATUSES]),
+            eligibleRunSql('notifications', {
+              origin: testRuns.origin,
+              metadata: testRuns.metadata,
+              isFullRun: testRuns.isFullRun,
+              status: sql`'passed'`,
+            }),
+          ),
+        ),
         ne(testRuns.origin, 'import'),
       ),
     )
@@ -584,7 +595,8 @@ async function announcedBefore(db: DbClient, clusterId: number, runId: number): 
 /**
  * The clusters run `runId` announces with `cluster.new`, when it ran to its
  * end: those it failed into that are open and not snoozed, whose first seen
- * run is still stored, and that no earlier run announcing clusters failed into.
+ * run is still stored, and that no earlier run announcing clusters failed into,
+ * whether it ended or is still unfinished.
  * The finalize step reads them before the run's verdicts, which may reopen a
  * cluster a person resolved: the run announces that one as regressed.
  */
