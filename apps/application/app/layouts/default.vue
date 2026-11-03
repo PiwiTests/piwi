@@ -94,8 +94,10 @@ useNotificationStream();
 // caller of useDashboard(); without it the shortcuts never register.
 useDashboard();
 
-const { canSeeAdmin } = useAuth();
 const { isHidden: capHidden, state: capState } = await useInstanceCapabilities();
+// The settings pages this viewer may open, for the command palette: Setup, the
+// MCP server and the API reference live there, off the sidebar.
+const settingsNav = await useSettingsNav();
 
 // Extract current project ID from route (if viewing a project page)
 const currentProjectId = computed(() => {
@@ -217,44 +219,6 @@ const links = computed(() => {
       target: '_blank',
     },
   ];
-  // The MCP server link follows the `mcp` capability: a declined instance drops
-  // it from the sidebar and the command palette alike.
-  if (!capHidden('mcp')) {
-    bottomLinks.unshift({
-      label: 'MCP server',
-      icon: 'i-lucide-bot',
-      to: '/mcp',
-      'data-tour': 'nav-mcp',
-      onSelect: () => {
-        open.value = false;
-      },
-    });
-  }
-  // Setup is admin-only: it configures how results reach this instance and, in
-  // the desktop build, exposes the local access token. Hiding the link also
-  // removes it from the command palette, which is built from these same items.
-  if (canSeeAdmin.value) {
-    bottomLinks.unshift({
-      label: 'Setup',
-      icon: 'i-lucide-rocket',
-      to: '/setup',
-      'data-tour': 'nav-setup',
-      onSelect: () => {
-        open.value = false;
-      },
-    });
-  }
-  bottomLinks.unshift({
-    label: 'API Docs',
-    icon: 'i-lucide-book-open',
-    to: '/docs',
-    'data-tour': 'nav-api-docs',
-    // `/docs` is a normal Nuxt page in every mode — it renders the API reference
-    // in-app from the generated OpenAPI spec, so ordinary client navigation works.
-    onSelect: () => {
-      open.value = false;
-    },
-  });
   return [
     [
       {
@@ -349,6 +313,19 @@ const groups = computed<CommandPaletteGroup[]>(() => {
       id: 'links',
       label: 'Go to',
       items: links.value.flat().map((item) => toCommandPaletteItem(item)),
+    },
+    {
+      id: 'settings',
+      label: 'Settings',
+      items: settingsNav.value.flat().map((item) => ({
+        id: `settings-${item.to}`,
+        label: item.label as string,
+        icon: item.icon,
+        to: item.to,
+        onSelect: () => {
+          open.value = false;
+        },
+      })),
     },
     ...authoredGuides.paletteGroups(),
     {

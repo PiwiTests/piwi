@@ -642,7 +642,7 @@ defineExpose({
     <!-- MCP link -->
     <div class="pt-1 text-center">
       <NuxtLink
-        to="/mcp"
+        to="/settings/mcp"
         class="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-primary transition-colors"
       >
         <UIcon name="i-lucide-bot" class="size-3" />

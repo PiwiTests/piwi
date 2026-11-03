@@ -65,7 +65,7 @@ curl -X POST "$PIWI_DASHBOARD_URL/api/projects/<projectId>/markers" -H "Authoriz
 
 ## API
 
-Markers can also be managed through the REST API. See the interactive [API docs](https://piwitests.dev/demo/docs) for request and response shapes.
+Markers can also be managed through the REST API. See the interactive [API docs](https://piwitests.dev/demo/settings/api) for request and response shapes.
 
 ## Related
 

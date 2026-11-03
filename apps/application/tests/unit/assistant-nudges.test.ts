@@ -104,18 +104,18 @@ describe('the nudge registry', () => {
 
 describe('Setup with undecided capabilities', () => {
   test('offers a question while a capability is undecided', () => {
-    const picked = pickNudge('/setup', { undecided: 4 }, viewer());
+    const picked = pickNudge('/settings/capabilities', { undecided: 4 }, viewer());
     expect(picked?.id).toBe('undecided-capabilities');
     expect(picked?.offer.kind).toBe('question');
   });
 
   test('does not show once every capability is decided or in use', () => {
-    expect(pickNudge('/setup', { undecided: 0 }, viewer())).toBeNull();
+    expect(pickNudge('/settings/capabilities', { undecided: 0 }, viewer())).toBeNull();
   });
 
   test('needs an AI model to ask, and the Setup page’s permission', () => {
-    expect(pickNudge('/setup', { undecided: 4 }, viewer({ canAsk: false }))).toBeNull();
-    expect(pickNudge('/setup', { undecided: 4 }, viewer({ holds: () => false }))).toBeNull();
+    expect(pickNudge('/settings/capabilities', { undecided: 4 }, viewer({ canAsk: false }))).toBeNull();
+    expect(pickNudge('/settings/capabilities', { undecided: 4 }, viewer({ holds: () => false }))).toBeNull();
   });
 });
 
@@ -200,7 +200,7 @@ describe('who a nudge is offered to', () => {
   });
 
   test('only on its own page', () => {
-    expect(pickNudge('/setup', { undecided: 3 }, viewer())?.page).toBe('/setup');
+    expect(pickNudge('/settings/capabilities', { undecided: 3 }, viewer())?.page).toBe('/settings/capabilities');
     expect(execution({ isTimeout: true })?.page).toBe('/test-run-cases/[id]');
   });
 });

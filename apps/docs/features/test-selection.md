@@ -56,7 +56,7 @@ Two selections exist for every project with no setup:
 
 ## Defining a selection
 
-Save a selection through the dashboard or the [API](https://piwitests.dev/demo/docs). The `definition` is declarative
+Save a selection through the dashboard or the [API](https://piwitests.dev/demo/settings/api). The `definition` is declarative
 JSON: OR-ed `include` groups, minus OR-ed `exclude` groups, then pins, a budget and a limit — applied in that order.
 
 ```jsonc

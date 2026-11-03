@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * "What do you want Piwi for?" — the coarse capability presets, shown on the
- * Setup page and in the Home wizard. Seeing why tests fail is always on; the
+ * "What do you want Piwi for?" — the coarse capability presets, shown on
+ * Settings → Capabilities and in the Home wizard. Seeing why tests fail is always on; the
  * other three modules are opt-out checkboxes. Unchecking a module declines
  * every capability in it at instance level; re-checking clears those decisions.
  * A module whose capabilities are only partly declined shows indeterminate.

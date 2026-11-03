@@ -27,7 +27,7 @@ const REPOSITORY = 'https://github.com/piwitests/piwi';
 export const PROJECT_LINKS = {
   docs: 'https://piwitests.dev',
   demo: 'https://piwitests.dev/demo/',
-  apiReference: 'https://piwitests.dev/demo/docs',
+  apiReference: 'https://piwitests.dev/demo/settings/api',
   repository: REPOSITORY,
   releases: `${REPOSITORY}/releases`,
   changelog: `${REPOSITORY}/blob/main/CHANGELOG.md`,
@@ -177,8 +177,8 @@ export const ECOSYSTEM_PIECES: EcosystemPiece[] = [
     id: 'api',
     name: 'REST API',
     summary:
-      'Everything the dashboard does, over HTTP with `pd_` API keys (a Bearer or `X-API-Key` header). Each instance serves its own OpenAPI reference at `/docs` (the spec is `/_openapi.json`).',
-    get: 'Your dashboard’s `/docs` page (the demo’s is at https://piwitests.dev/demo/docs).',
+      'Everything the dashboard does, over HTTP with `pd_` API keys (a Bearer or `X-API-Key` header). Each instance serves its own OpenAPI reference at `/settings/api` (the spec is `/_openapi.json`).',
+    get: 'Your dashboard’s **Settings → API reference** page (the demo’s is at https://piwitests.dev/demo/settings/api).',
     when: 'Scripting against Piwi outside the reporter and the MCP server.',
     needs: [],
     doc: 'operate/api-keys#using-the-api-key-in-raw-http-calls',
@@ -355,7 +355,7 @@ export const SETUP_DECISIONS: SetupDecision[] = [
       },
       {
         option: 'Decline a capability',
-        when: 'Declining one on the Setup page, or a whole module in its presets, drops the tools that depend on it for every client; tools that need no capability stay.',
+        when: 'Declining one on Settings → Capabilities, or a whole module in its presets, drops the tools that depend on it for every client; tools that need no capability stay.',
       },
     ],
     doc: 'features/mcp#what-it-provides',

@@ -86,6 +86,9 @@ one does: [`ARCHITECTURE.md`](../ARCHITECTURE.md).
 
 ## Settings surface
 
+- **The sidebar holds what people open every day; a page opened to connect or set something up is a settings page.**
+  The connect wizard, the capabilities, the MCP server, the API reference and the companion tools are the Setup
+  section of `SETTINGS_PAGES`; the desktop app's own wiring is a `desktopOnly` page. Never a sidebar link.
 - **A settings page or field is an entry of `SETTINGS_PAGES`** (`shared/settings-metadata.ts`, which `useSettingsNav`
   and the assistant's `explain_setting` read). To add a field: (1) its env var in `shared/piwi-env-vars.ts`, (2) its
   `HELP_TOPICS` entry with `envVars`, (3) its `fields` entry in `SETTINGS_PAGES`, (4) render it with `SettingsField`,

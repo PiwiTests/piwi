@@ -160,7 +160,7 @@ export const EN_COPY = {
         },
         setup: {
           title: 'What is switched on',
-          body: "**What's switched on** reads this instance’s data, not its config, to show which capabilities are in use, and what each of the others needs, such as a repository token or an AI provider. The steps above it connect a suite.",
+          body: "**What's switched on** reads this instance’s data, not its config, to show which capabilities are in use, and what each of the others needs, such as a repository token or an AI provider.",
         },
         simulate: {
           title: 'Watch a run stream in',

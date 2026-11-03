@@ -397,7 +397,7 @@ export default defineNuxtConfig({
         // Override with `security: []` on auth endpoints (login, oauth, ai/status).
         security: [{ bearerAuth: [] }, { sessionCookie: [] }],
       } as any,
-      // The reference UI is rendered in-app by app/pages/docs.vue from the
+      // The reference UI is rendered in-app by app/pages/settings/api.vue from the
       // generated /_openapi.json — self-contained (no CDN), and it also covers the
       // static demo where no live server exists. Disabling Nitro's built-in Scalar
       // and Swagger routes here avoids them colliding with that page.
@@ -525,6 +525,13 @@ export default defineNuxtConfig({
         }
       };
       stamp(pages);
+      // Redirects that keep `/setup`, `/mcp` and `/docs` links working. Page
+      // routes only: `POST /mcp` is the MCP server's.
+      pages.push(
+        { name: 'setup-redirect', path: '/setup', redirect: '/settings/connect' },
+        { name: 'mcp-redirect', path: '/mcp', redirect: '/settings/mcp' },
+        { name: 'docs-redirect', path: '/docs', redirect: '/settings/api' },
+      );
     },
     'nitro:build:public-assets': (nitro) => {
       // Copy migrations folders to output during build

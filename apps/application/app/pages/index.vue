@@ -484,8 +484,9 @@ useViewScroll(() => dashboardPanelBody('home'));
         </div>
 
         <!-- Empty instance: the setup wizard is the one actionable step. Once
-             projects exist it moves to /setup, which stays reachable from the
-             sidebar — the steps past "install the reporter" must not vanish. -->
+             projects exist it moves to Settings → Connect a suite, which stays
+             reachable from the user menu and the command palette — the steps
+             past "install the reporter" must not vanish. -->
         <GetStartedWizard v-if="!hasProjects" show-capability-step />
       </div>
     </template>

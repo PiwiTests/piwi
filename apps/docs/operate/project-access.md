@@ -26,7 +26,7 @@ apart.
 
 ## What each role can do
 
-Each row is one permission. The **Permission** column is how the [API docs](https://piwitests.dev/demo/docs) name
+Each row is one permission. The **Permission** column is how the [API docs](https://piwitests.dev/demo/settings/api) name
 each endpoint's requirement (`x-required-permission`), so a script author can tell which role a call needs. In the app,
 **Settings → Roles** shows the same table to every signed-in user.
 
@@ -92,7 +92,7 @@ Roles are granted from four places, which all edit the same grants:
 - **Settings → Groups** for who belongs to each group; its roles are set on the grid or in a project's Members.
 
 Scripts read and change the same grants, called role bindings, through the API; see the
-[API docs](https://piwitests.dev/demo/docs).
+[API docs](https://piwitests.dev/demo/settings/api).
 
 ## Permission grid
 

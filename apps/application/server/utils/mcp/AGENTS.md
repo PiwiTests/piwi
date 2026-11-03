@@ -47,7 +47,7 @@ A description is Markdown written for the agent, built with `md()` in `shared/mc
 array of strings per bulleted list), or a plain string when one sentence says it all.
 
 - **The first paragraph is one sentence** saying what the tool returns or does, with no bold and no link:
-  `toolSummary` makes it the muted line of the tool's row on the `/mcp` page (the rest and the parameters show once the
+  `toolSummary` makes it the muted line of the tool's row on Settings → MCP server (the rest and the parameters show once the
   row is opened) and of the generated docs table.
 - **Then:** when to use the tool (and what to prefer), the result fields an agent needs to read the answer, and the
   edge cases. Never what the input schema's parameter descriptions already say (paging, defaults, filters).
@@ -72,5 +72,5 @@ page-content block. Change what they do or say in `packages/editor/src/run-agent
 **`describe_piwi` and `get_release_notes` answer only from what the docs say** (`server/utils/mcp/about-piwi.ts`): the
 docs pages and `CHANGELOG.md`, bundled as Nitro server assets (`nitro.serverAssets` in `nuxt.config.ts`; the
 Dockerfile copies both in), and the registries the docs site renders. Never write prose for the tool. How this instance
-is configured (storage, retention, capability states) is the deployment's shape: like the Setup page, it is shown to
+is configured (storage, retention, capability states) is the deployment's shape: like Settings → Capabilities, it is shown to
 administrators only.

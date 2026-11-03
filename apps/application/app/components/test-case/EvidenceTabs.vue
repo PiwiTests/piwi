@@ -795,7 +795,7 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
       <p class="leading-relaxed">
         Network, console, state and performance are not captured for this project.
         <template v-if="canDecide">
-          <NuxtLink to="/setup" :class="SENTENCE_LINK_CLASS">Add fixtures</NuxtLink>
+          <NuxtLink to="/settings/connect" :class="SENTENCE_LINK_CLASS">Add fixtures</NuxtLink>
           <span aria-hidden="true"> · </span>
           <button type="button" :class="SENTENCE_LINK_CLASS" @click="emit('decline-fixtures', 'project')">
             Not for this project

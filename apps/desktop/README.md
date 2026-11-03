@@ -75,7 +75,7 @@ channel, so a per-user install pulls a per-user update.
    Picker's bug reports (`.piwibug`, the app's own file type, associated in
    `tauri.conf.json` with a macOS exported type) through
    `/api/desktop/import-bug-report`.
-6. The dashboard's /mcp page can write the `piwi-desktop` MCP entry into detected
+6. The dashboard's Settings → MCP server page can write the `piwi-desktop` MCP entry into detected
    clients' config files (`src-tauri/src/mcp_clients.rs`): strict-JSON merge
    of one key with a backup next to the file, and a startup pass that rewrites
    entries whose URL/token drifted after a port change.
@@ -244,7 +244,7 @@ The `.exe`'s welcome page asks for the port the dashboard listens on
 The confirmed port goes to `installer.json` in the app data folder, which the
 app moves into `settings.json` on its next start. Silent and passive installs,
 the updater's among them, skip the page and keep the setting. Everywhere else,
-the Setup page's **Desktop app** card changes the port. Ports below 1024 and the
+the **Desktop app** card of Settings → Desktop app changes the port. Ports below 1024 and the
 ones browsers refuse (6000, 10080…) are not accepted.
 
 ## Signing

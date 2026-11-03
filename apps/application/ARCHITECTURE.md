@@ -166,7 +166,7 @@ Each table's comment in `schema.sqlite.ts` says what a row is.
 ## Backend
 
 Nitro file-based routing: `server/api/` serves `/api/...`, and `server/routes/` serves the other paths. The generated
-**OpenAPI 3.1** spec at `/_openapi.json` and the in-app reference at `/docs` list every endpoint; this section only
+**OpenAPI 3.1** spec at `/_openapi.json` and the in-app reference at `/settings/api` list every endpoint; this section only
 gives the shape.
 
 ### Route families
@@ -451,9 +451,10 @@ The files of `app/pages/`:
 - `/analytics` (the viewer's default dashboard), `/analytics/d/[id]` (one dashboard, `?tv=1` for TV mode) and
   `/analytics/dashboards` (the list).
 - `/reports` and `/reports/[id]`: quality report schedules and snapshots.
-- `/setup`: the connect wizard and the optional capabilities.
-- `/settings/*`: the settings pages.
-- `/docs` (the in-app API reference) and `/mcp` (the MCP server and its tools).
+- `/settings/*`: the settings pages, from `SETTINGS_PAGES`. Its Setup section holds `/settings/connect` (the connect
+  wizard), `/settings/capabilities` (the optional capabilities), `/settings/mcp` (the MCP server and its tools),
+  `/settings/api` (the in-app API reference) and `/settings/companion-tools`; `/settings/desktop` is the desktop
+  build's own wiring. `/setup`, `/mcp` and `/docs` redirect to them (`pages:extend` in `nuxt.config.ts`).
 - `/extension/connect` and `/oauth/consent`: where a signed-in user answers a connection request.
 - `/login`, `/forgot-password`, `/reset-password`: public pages with no layout.
 
@@ -543,7 +544,7 @@ The components of `app/components/` live in domain subfolders. They are all auto
 | `notifications/`     | Notification channels and subscription scope                                                                                                                                                                                    |
 | `reports/`           | Quality reports: the schedule form and list, previews, snapshots                                                                                                                                                                |
 | `assistant/`         | The assistant's panel (`AssistantPanel`, docked or over the page; `AssistantPanelBody`), its input (`AssistantInput`, `AssistantUsage`), messages and blocks, on `useAssistant`; a page's nudge, `AssistantNudge`               |
-| `guides/`, `mcp/`    | The authored guides list; one MCP tool on the `/mcp` page                                                                                                                                                                       |
+| `guides/`, `mcp/`    | The authored guides list; one MCP tool on Settings → MCP server                                                                                                                                                                 |
 | `home/`              | The home page's cards (open failures, the Flake Lab inbox)                                                                                                                                                                      |
 | `layout/`            | The app shell: user menu, sidebar status badges, the get-started wizard and its setup steps                                                                                                                                     |
 | `settings/`          | The settings pages' panels                                                                                                                                                                                                      |

@@ -153,7 +153,7 @@ If that request fails, the set stays empty and **nothing is sampled**. Turn it o
 - **Data missing for some specs only** — those specs import `test` from `@playwright/test` instead of your fixtures file.
 - **No fixture data at all**: check that `collectPerformanceMetrics` is not `false`, and that tests leave `about:blank`.
 - **ARIA snapshot or locator healing missing**: the same causes, or `captureLocators` is off.
-- **An evidence card says "not captured"**: that project has never had the fixtures active; the in-app `/setup` checklist, which each empty card links, says what to switch on. A card that reads *nothing happened* means the fixtures ran and this execution produced nothing. With an uploaded trace, the console, network and ARIA cards are recovered from it and marked *derived from the trace*.
+- **An evidence card says "not captured"**: that project has never had the fixtures active; the in-app connect wizard, which each empty card links (**Settings → Connect a suite**), shows the fixtures to add. A card that reads *nothing happened* means the fixtures ran and this execution produced nothing. With an uploaded trace, the console, network and ARIA cards are recovered from it and marked *derived from the trace*.
 
 ## Try it
 

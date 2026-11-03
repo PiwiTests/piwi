@@ -91,7 +91,7 @@ Playwright run creates the project.
 For each commit, the dashboard counts every suite that ran the code: the reports uploaded for it, and `e2e`, the run
 coverage of the commit's complete Playwright runs (never a partial, probe or flake-lab run; a run narrowed only by
 `--project`, or cut short by `--max-failures`, still counts as complete). The totals are recomputed seconds after each upload or run; read them with the
-[API](https://piwitests.dev/demo/docs) or the MCP `get_coverage_summary` tool.
+[API](https://piwitests.dev/demo/settings/api) or the MCP `get_coverage_summary` tool.
 
 - **One set of executable lines per file version.** Tools disagree on which lines can run, so every suite counts on
   the same lines: the span table's, from [server coverage](./server-coverage) or
@@ -178,7 +178,7 @@ A project's coverage scope decides which files count: include and exclude patter
 the syntax CODEOWNERS uses. With no include pattern every file counts; an exclude wins. The defaults leave out tests,
 build output (`bin/`, `obj/`, `dist/`, `.next/`, `.nuxt/`, `.output/`, `.svelte-kit/`) and generated sources; a folder
 pattern matches at any depth. Set it in the project's **Settings › Coverage**, or with the
-[API](https://piwitests.dev/demo/docs) (`coverageScope`). The upload sends only the files in scope, and the commit's
+[API](https://piwitests.dev/demo/settings/api) (`coverageScope`). The upload sends only the files in scope, and the commit's
 inventory: its tracked files in scope and their blob ids.
 
 ## Areas

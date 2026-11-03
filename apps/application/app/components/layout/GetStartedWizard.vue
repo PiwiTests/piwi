@@ -11,8 +11,8 @@ import {
 import { CARD_ICON_CLASS, SEGMENTED_SELECTED_CLASS, SENTENCE_LINK_CLASS } from '~/utils';
 
 /**
- * Connect a Playwright suite: the first thing an empty instance shows, and the
- * top of Setup. The choices above the paths (project name, where local runs go,
+ * Connect a Playwright suite: the first thing an empty instance shows, and
+ * Settings → Connect a suite. The choices above the paths (project name, where local runs go,
  * the API key) rewrite every snippet below them; each path ends in the same
  * setup, `wrapConfig` plus the capture fixtures, which is what `init` writes.
  */
@@ -20,8 +20,8 @@ const props = withDefaults(
   defineProps<{
     /**
      * Include the optional "What do you want Piwi for?" capability step. Only
-     * the Home placement sets this; the Setup page owns that question through
-     * its own presets card, so the wizard omits the step there.
+     * the Home placement sets this; Settings → Capabilities owns that question
+     * through its own presets card, so the wizard omits the step elsewhere.
      */
     showCapabilityStep?: boolean;
   }>(),
@@ -328,7 +328,7 @@ const showCapabilities = computed(() => canSeeAdmin.value && props.showCapabilit
       <section v-if="showCapabilities" class="space-y-3 border-t border-default pt-6">
         <p class="text-sm text-highlighted leading-relaxed">
           Optional: tell Piwi which features your team will use and it hides the rest. Skip it and nothing is stored;
-          Setup asks again any time.
+          Settings → Capabilities asks again any time.
         </p>
         <CapabilityPresets />
       </section>

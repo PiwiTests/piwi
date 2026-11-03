@@ -1,5 +1,5 @@
 /**
- * Capability detection for the Setup page.
+ * Capability detection for Settings → Capabilities (the capability ladder).
  *
  * Piwi's optional capabilities (capture fixtures, locator healing, AI diagnosis,
  * notifications, …) are each enabled somewhere else — a reporter option, a

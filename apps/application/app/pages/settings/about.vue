@@ -158,24 +158,16 @@ const dbBackendLabel = computed(() => {
     </SectionCard>
 
     <!-- Desktop shell only (renders nothing without the IPC bridge). Updates stay
-         here next to the version they act on; connecting the reporter and MCP
-         clients moved to /setup, which is where "how do I hook this up" lives. -->
+         here next to the version they act on; the rest of the desktop app's
+         wiring is on Settings → Desktop app. -->
     <DesktopUpdateCard :current-version="appVersion" />
-
-    <UAlert
-      v-if="isDesktop"
-      icon="i-lucide-rocket"
-      color="neutral"
-      variant="subtle"
-      title="Connecting the reporter and AI clients"
-      description="The URL and access token for this local instance, the data location, and background-service control are on the Setup page."
-      :actions="[{ label: 'Open Setup', to: '/setup', color: 'neutral', variant: 'solid', size: 'xs' }]"
-    />
 
     <SectionCard icon="i-lucide-book-open" title="Resources">
       <div class="flex flex-wrap items-center gap-x-6 gap-y-3 text-sm">
         <DocLink to="">Documentation</DocLink>
-        <ULink to="/docs" class="inline-flex items-center gap-1 text-primary hover:underline"> API reference </ULink>
+        <ULink to="/settings/api" class="inline-flex items-center gap-1 text-primary hover:underline">
+          API reference
+        </ULink>
         <ULink
           to="https://github.com/piwitests/piwi"
           target="_blank"

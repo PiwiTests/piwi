@@ -60,7 +60,7 @@ function moduleSection(module) {
     `## ${MODULE_TITLES[module] ?? module}`,
     '',
     // "N tools" is reserved for the total: the drift test holds every page to the real count.
-    [`${tools.length} of the ${MCP_TOOL_DEFS.length} tools.`, preset ? `Setup offers this module as **${preset.label}**: ${lowerFirst(preset.description)}` : '']
+    [`${tools.length} of the ${MCP_TOOL_DEFS.length} tools.`, preset ? `Settings → Capabilities offers this module as **${preset.label}**: ${lowerFirst(preset.description)}` : '']
       .filter(Boolean)
       .join(' '),
     '',
@@ -87,12 +87,12 @@ editLink: false
 # MCP tools
 
 The [MCP server](/features/mcp) serves ${MCP_TOOL_DEFS.length} tools. Each belongs to one **module**, the groups the
-Setup page asks about, and \`?modules=\` on the MCP URL narrows the list to some of them. A tool with a
+Capabilities settings page asks about, and \`?modules=\` on the MCP URL narrows the list to some of them. A tool with a
 **capability** leaves \`tools/list\` and \`tools/call\` when an administrator declines that capability for the
 instance; a tool without one is always served.
 
 Each entry here is the summary line of the description the server sends to the agent, and the names of its
-parameters. The **MCP server** page of the dashboard (\`/mcp\`) lists the same catalog with each tool's whole
+parameters. **Settings → MCP server** in the dashboard lists the same catalog with each tool's whole
 description and each parameter's, and leaves out the tools of declined capabilities.
 
 ${CAPABILITY_MODULES.map(moduleSection).filter(Boolean).join('\n')}

@@ -43,14 +43,14 @@ why the snippet creates `.data` with the right owner; see
 it. [Deployment](/operate/deployment) covers Docker Compose, PostgreSQL and Kubernetes.
 
 With the desktop app, keep it running: a reporter with no server configured finds it by itself. Its URL and access
-token, for when you need them, are on its **Setup** page under **Send results to this app**.
+token, for when you need them, are in its **Settings → Desktop app** under **Send results to this app**.
 
 Your test project is unaffected by these requirements: Node 22 is the dashboard's requirement, not your suite's. Want
 to look around first? The [live demo](https://piwitests.dev/demo/) runs in your browser on seeded data.
 
 ## 2. Connect your suite
 
-The dashboard's connect wizard, on **Home** while it has no project and on **Setup** after, builds every snippet below
+The dashboard's connect wizard, on **Home** while it has no project and on **Settings → Connect a suite** after, builds every snippet below
 from your project name and its own URL, and offers three ways to the same setup: one command, a prompt for a coding
 agent, or the steps by hand.
 Each ends in [`wrapConfig`](./reporter#installing-via-wrapconfig) around your config and the
@@ -92,10 +92,10 @@ Then import `test` from the fixtures file in your specs, the one change `init` l
 import { test, expect } from './fixtures'
 ```
 
-A coding agent can do both: the **Coding agent** path on **Setup** gives it a prompt that runs `init --json`, finishes
+A coding agent can do both: the **Coding agent** path on **Connect a suite** gives it a prompt that runs `init --json`, finishes
 the steps it reports as `manual` and moves the specs onto the fixtures.
 
-If authentication is on, pass an [API key](/operate/api-keys) as `PIWI_API_KEY`; **Setup** creates one in place. When
+If authentication is on, pass an [API key](/operate/api-keys) as `PIWI_API_KEY`; **Connect a suite** creates one in place. When
 developers run the [desktop app](/features/desktop) and CI reports to a shared dashboard, add `--desktop-app prefer`:
 [local runs then land in the app](./reporter#local-runs-to-the-desktop-app-ci-to-a-team-server). To wire the reporter
 in by hand, or to send one run without editing your config, see [Reporter](./reporter).

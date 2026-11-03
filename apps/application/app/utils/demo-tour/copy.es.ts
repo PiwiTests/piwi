@@ -160,7 +160,7 @@ export const ES_COPY = {
         },
         setup: {
           title: 'Qué está activado',
-          body: "**What's switched on** lee los datos de esta instancia, no su configuración, para mostrar qué funciones están en uso y qué necesita cada una de las demás, como un token del repositorio o un proveedor de IA. Los pasos de arriba conectan una suite.",
+          body: "**What's switched on** lee los datos de esta instancia, no su configuración, para mostrar qué funciones están en uso y qué necesita cada una de las demás, como un token del repositorio o un proveedor de IA.",
         },
         simulate: {
           title: 'Mira cómo llega un run en directo',

@@ -141,12 +141,12 @@ quality report; unset, only minutes show. The cost is one instance-wide value.
 - The [MCP server](./mcp) offers `get_quality_report` (the bundle), `get_metric_trend` (one metric over
   time) and `compare_periods` (the headline numbers over two periods).
 - The REST API renders a report for a dashboard, format, language and analytics scope, keeps one as a snapshot,
-  manages schedules and reads snapshots. See the [API docs](https://piwitests.dev/demo/docs), or `/docs` on your
+  manages schedules and reads snapshots. See the [API docs](https://piwitests.dev/demo/settings/api), or `/settings/api` on your
   instance.
 
 ## Turning reports off
 
-Quality reports are an optional [capability](/operate/capabilities#declining-a-capability). Declining it in Setup hides
+Quality reports are an optional [capability](/operate/capabilities#declining-a-capability). Declining it in **Settings → Capabilities** hides
 the *Export* and *Schedule…* actions and the *Quality reports* page, and drops `get_quality_report` from
 the MCP tools; the analytics page and the metric tools stay, since analytics is core. A schedule or a
 snapshot counts as use, so the capability stays on while one exists: delete them first.

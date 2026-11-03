@@ -10,7 +10,7 @@
  * Kept free of server-only imports so the browser and the demo can import it.
  * The `SetupCapabilityId` and `FeatureNeed` references are type-only, so no
  * server code (Drizzle, the schema) rides along into those bundles. Detection
- * queries live in `shared/handlers/`; the copy for the Setup ladder lives in
+ * queries live in `shared/handlers/`; the copy for the capability ladder lives in
  * `app/utils/setup-capabilities.ts`.
  */
 import type { SetupCapabilityId } from '#shared/handlers/setup-status';
@@ -73,7 +73,7 @@ export interface CapabilityDef {
   follows?: CapabilityId;
   /** The desktop build never offers it: every surface hides it there (`capabilityHidden`). */
   hiddenOnDesktop?: boolean;
-  /** Release that introduced it; the Setup ladder marks entries newer than the instance's first run. */
+  /** Release that introduced it; the capability ladder marks entries newer than the instance's first run. */
   since: string;
   doc: string;
 }
@@ -337,7 +337,7 @@ export function capabilitiesForModule(module: CapabilityModule): CapabilityId[] 
 }
 
 /**
- * One preset the Home wizard and the Setup page offer under
+ * One preset the Home wizard and Settings → Capabilities offer under
  * "What do you want Piwi for?". `core` is always on and shown without a toggle;
  * the rest are the optional modules a team can decline in one click.
  */

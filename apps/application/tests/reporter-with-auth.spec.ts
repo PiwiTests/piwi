@@ -752,7 +752,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
     });
     expect(login.ok()).toBeTruthy();
 
-    await page.goto(`${AUTH_SERVER_URL}/setup`);
+    await page.goto(`${AUTH_SERVER_URL}/settings/connect`);
     await waitForHydration(page);
     const wizard = page.locator('[data-tour="get-started-wizard"]');
     await wizard.getByRole('textbox', { name: 'Project name' }).fill(PROJECT.SETUP_CONNECT_KEY);
@@ -1340,8 +1340,11 @@ test.describe.serial('Reporter with authentication enabled', () => {
     await expect(footer.getByRole('button', { name: 'Not for this instance' })).toHaveCount(0);
     await expect(footer.getByRole('link', { name: 'Add fixtures' })).toHaveCount(0);
 
-    // Setup is administrator-only: the Viewer is redirected away from it.
-    await page.goto(`${AUTH_SERVER_URL}/setup`);
-    await expect(page).not.toHaveURL(`${AUTH_SERVER_URL}/setup`);
+    // The capabilities are administrator-only: the Viewer is redirected away from them. The connect wizard,
+    // which the evidence footer's sentence leads to, opens for anyone signed in.
+    await page.goto(`${AUTH_SERVER_URL}/settings/capabilities`);
+    await expect(page).not.toHaveURL(`${AUTH_SERVER_URL}/settings/capabilities`);
+    await page.goto(`${AUTH_SERVER_URL}/settings/connect`);
+    await expect(page.locator('[data-tour="get-started-wizard"]')).toBeVisible();
   });
 });

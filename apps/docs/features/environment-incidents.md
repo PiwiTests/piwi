@@ -110,7 +110,7 @@ The rules can miss an outage or flag a real regression. Anyone who can upload or
   again: its regression signals are computed, and it feeds flaky scores and baselines from then on.
 
 Either decision is kept on the run, and finalizing the run again (a late shard, a report upload) never overrides it.
-The run page says who decided. The same action is in the [API reference](https://piwitests.dev/demo/docs), and an
+The run page says who decided. The same action is in the [API reference](https://piwitests.dev/demo/settings/api), and an
 agent makes it with the MCP tool [`set_run_incident`](/reference/mcp-tools#set_run_incident), which needs a key whose
 owner may make the same change in the dashboard and is kept in the [write log](./mcp).
 

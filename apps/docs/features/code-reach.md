@@ -135,7 +135,7 @@ test to copy.
   pages' [What changed](./failure-clusters#the-cluster-page), in the [AI diagnosis](./ai-diagnosis#scm-grounded-context)
   and the [fix plan](./fix-plans).
 
-The [API](https://piwitests.dev/demo/docs) (`/docs` on your instance) serves the tests reaching a file and a branch's map.
+The [API](https://piwitests.dev/demo/settings/api) (`/settings/api` on your instance) serves the tests reaching a file and a branch's map.
 
 ## Limits
 

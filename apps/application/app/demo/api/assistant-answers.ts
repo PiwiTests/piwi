@@ -1277,8 +1277,12 @@ async function answerAbout(w: AnswerWriter): Promise<DemoAnswer> {
       route: `/test-runs/${latest.id}`,
       label: 'Ask what changed in the newest run',
     });
-  if (offered('/setup'))
-    w.block('navigate', { id: 'open-setup', route: '/setup', label: 'See what this instance has switched on' });
+  if (offered('/settings/capabilities'))
+    w.block('navigate', {
+      id: 'open-setup',
+      route: '/settings/capabilities',
+      label: 'See what this instance has switched on',
+    });
   return w.done('about');
 }
 

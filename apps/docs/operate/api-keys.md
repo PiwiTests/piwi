@@ -17,7 +17,7 @@ projects if CI should create projects from a new project name), and a key for it
 delete or change anything.
 
 With authentication on, every endpoint needs a session cookie or an API key whose owner holds the permission the
-endpoint declares (listed per endpoint in the [API docs](https://piwitests.dev/demo/docs)). The exceptions are the
+endpoint declares (listed per endpoint in the [API docs](https://piwitests.dev/demo/settings/api)). The exceptions are the
 health and version endpoints, the sign-in flows themselves, and live-run streaming, which uses per-run stream tokens.
 
 ## Security properties

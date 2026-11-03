@@ -17,7 +17,7 @@ import { describeScmStatus } from '~/utils/scm-status';
 
 /** The facts each page a nudge shows on hands it, by the page's pattern of `app/pages`; all loaded by the page already. */
 export interface NudgePageFacts {
-  '/setup': {
+  '/settings/capabilities': {
     /** Optional capabilities with neither data nor a decision (the core rows aside). */
     undecided: number;
   };
@@ -66,7 +66,7 @@ const FIXTURE_BACKED_SECTIONS = new Set<string>(['networkRequests', 'serverLogs'
 export const NUDGES: readonly Nudge[] = [
   {
     id: 'undecided-capabilities',
-    page: '/setup',
+    page: '/settings/capabilities',
     when: ({ undecided }) => undecided > 0,
     offer: {
       kind: 'question',

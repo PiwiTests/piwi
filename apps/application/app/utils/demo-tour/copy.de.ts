@@ -159,7 +159,7 @@ export const DE_COPY = {
         },
         setup: {
           title: 'Was eingeschaltet ist',
-          body: "**What's switched on** liest die Daten dieser Instanz, nicht ihre Konfiguration, um zu zeigen, welche Funktionen genutzt werden und was jede andere braucht, etwa ein Repository-Token oder einen KI-Anbieter. Die Schritte darüber verbinden eine Suite.",
+          body: "**What's switched on** liest die Daten dieser Instanz, nicht ihre Konfiguration, um zu zeigen, welche Funktionen genutzt werden und was jede andere braucht, etwa ein Repository-Token oder einen KI-Anbieter.",
         },
         simulate: {
           title: 'Einen Lauf live verfolgen',

@@ -11,8 +11,8 @@ let router: RouterContext<RoutePermission[]> | undefined;
 
 /**
  * The permissions the current route requires, from its `x-required-permission`
- * OpenAPI meta — the single source of truth, also surfaced in the `/docs`
- * reference. Empty when the route declares none (public or token-authenticated),
+ * OpenAPI meta — the single source of truth, also surfaced in the API
+ * reference (`/settings/api`). Empty when the route declares none (public or token-authenticated),
  * leaving `requireAuth` to enforce sign-in only.
  */
 export function getRouteRequiredPermissions(event: H3Event): RoutePermission[] {

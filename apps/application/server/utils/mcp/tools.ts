@@ -484,7 +484,7 @@ function missingFieldsForAgent(missing: { id: string; name: string }[], screen: 
 // ── Tool handlers ────────────────────────────────────────────────────────────
 //
 // Keyed by tool name. The catalog (name/description/inputSchema) lives in
-// `shared/mcp-tools.ts` so both this server and `app/pages/mcp.vue` render the
+// `shared/mcp-tools.ts` so both this server and `app/pages/settings/mcp.vue` render the
 // same list; here we attach the DB-backed behavior. The record is keyed by
 // `McpToolName` (derived from MCP_TOOL_DEFS), so TypeScript rejects a handler
 // whose name isn't a declared tool, and a declared tool with no handler.

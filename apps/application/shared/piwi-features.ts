@@ -115,7 +115,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         title: 'Import past runs',
         summary: 'Backfill history from existing Playwright JSON/blob reports so trends start with a past, not empty.',
         needs: ['admin'],
-        where: 'Setup; ingest API',
+        where: 'project page → Import; ingest API',
         doc: 'guide/importing-runs',
       },
       {
@@ -580,7 +580,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'A Model Context Protocol server that gives coding agents read access to your runs, failures and diagnoses.',
         needs: [],
-        where: 'MCP server (`/mcp`)',
+        where: 'Settings → MCP server',
         doc: 'features/mcp',
       },
       {

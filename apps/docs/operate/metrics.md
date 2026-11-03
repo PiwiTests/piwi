@@ -62,7 +62,7 @@ UTC day, environment, branch and run kind, with the history retention deleted st
 curl -H "Authorization: Bearer pd_your_api_key" "https://piwi.example.com/api/rollups?format=csv&period=this-year" -o rollups.csv
 ```
 
-The column list and every parameter are in the API reference (`/docs` on your instance).
+The column list and every parameter are in the API reference (`/settings/api` on your instance).
 
 ## Related
 - [Analytics](/features/analytics): the metrics, the scope and the periods

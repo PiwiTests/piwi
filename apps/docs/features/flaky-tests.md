@@ -133,7 +133,7 @@ and [`set_test_quarantine`](/reference/mcp-tools#set_test_quarantine).
 
 The gate always states how many failures quarantine excluded, and `--max-quarantined` sets a ceiling on the list.
 
-Manage it from the **Quarantine** view of the project's **Failures** tab, or over the REST API (see the [API docs](https://piwitests.dev/demo/docs)).
+Manage it from the **Quarantine** view of the project's **Failures** tab, or over the REST API (see the [API docs](https://piwitests.dev/demo/settings/api)).
 
 ## Regression signals
 

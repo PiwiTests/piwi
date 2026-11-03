@@ -1353,7 +1353,7 @@ const showMe: LiveQuestion[] = [
     topic: 'show-me',
     question: 'Show me which capabilities this instance uses.',
     tools: GUIDE_TOOLS,
-    facts: [docs('operate/capabilities', 'Setup')],
+    facts: [docs('operate/capabilities', 'Capabilities')],
     blocks: ['guide'],
     anchors: ['setup-ladder', 'capability-presets'],
   },

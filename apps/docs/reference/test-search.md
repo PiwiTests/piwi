@@ -78,7 +78,7 @@ tab opens in File order. In the *File + Describe* grouping, a describe block kee
 around it. Outside that grouping, a test's describe blocks are named before its title: `Checkout › pays by card`.
 
 The test catalog's `q` API parameter and the `query` argument of the MCP `get_project_test_catalog` tool take the same
-language ([API docs](https://piwitests.dev/demo/docs), [MCP tools](/reference/mcp-tools)).
+language ([API docs](https://piwitests.dev/demo/settings/api), [MCP tools](/reference/mcp-tools)).
 
 ## Related
 

@@ -28,7 +28,7 @@ async function openHint(page: Page, name: string) {
 
 test.describe('Inline help (HelpHint)', () => {
   test('MCP page help icon opens a popover with a docs link', async ({ page }) => {
-    await page.goto('/mcp');
+    await page.goto('/settings/mcp');
 
     await openHint(page, 'Help: What it provides');
 

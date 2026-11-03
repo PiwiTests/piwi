@@ -112,8 +112,9 @@ export const PAGE_TOOLS: Readonly<Record<string, readonly McpToolName[]>> = {
   '/analytics/dashboards': ['list_dashboards', 'get_dashboard'],
   '/reports': ['get_quality_report', 'list_dashboards'],
   '/reports/[id]': ['get_quality_report'],
-  '/setup': ['get_release_notes'],
-  '/mcp': ['get_release_notes'],
+  '/settings/connect': ['get_release_notes'],
+  '/settings/capabilities': ['get_release_notes'],
+  '/settings/mcp': ['get_release_notes'],
   '/settings/about': ['get_release_notes'],
 };
 

@@ -197,7 +197,7 @@ export const ASSISTANT_ACTIONS: { readonly [K in AssistantActionId]: AssistantAc
     id: 'decide-capability',
     label: 'Decide a capability',
     description:
-      'Decline an optional capability for the whole instance (its pages and nudges go), or reconsider a declined one, as on the Setup page.',
+      'Decline an optional capability for the whole instance (its pages and nudges go), or reconsider a declined one, as on Settings → Capabilities.',
     method: 'PATCH',
     route: '/api/capabilities',
     permission: 'settings:manage',

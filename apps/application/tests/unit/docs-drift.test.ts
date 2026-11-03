@@ -351,7 +351,7 @@ describe('no endpoint paths in prose', () => {
       .filter((path) => !ALLOWED.has(path) && isPiwiEndpoint(path));
     expect(
       paths,
-      `${page} names Piwi endpoints in prose: link the [API docs](https://piwitests.dev/demo/docs) instead (apps/docs/AGENTS.md, "The API reference")`,
+      `${page} names Piwi endpoints in prose: link the [API docs](https://piwitests.dev/demo/settings/api) instead (apps/docs/AGENTS.md, "The API reference")`,
     ).toEqual([]);
   });
 });
@@ -819,7 +819,7 @@ describe('demo examples', () => {
     const handLinks = docsPages.flatMap((page) =>
       [...read(page).matchAll(/piwitests\.dev\/demo\/([^)\s"'`>]*)/g)]
         .map((m) => m[1]!)
-        .filter((path) => path !== '' && path !== 'docs')
+        .filter((path) => path !== '' && path !== 'settings/api')
         .map((path) => `${page}: /demo/${path}`),
     );
     expect(handLinks).toEqual([]);

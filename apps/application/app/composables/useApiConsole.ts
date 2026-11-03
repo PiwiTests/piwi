@@ -11,7 +11,7 @@ function dropPersistedToken() {
 }
 
 /**
- * Shared state for the `/docs` "Try it out" console.
+ * Shared state for the API reference's (`/settings/api`) "Try it out" console.
  *
  * The bearer token is entered once and reused across every operation's console
  * for the rest of the browser tab's session: it lives in sessionStorage, so it

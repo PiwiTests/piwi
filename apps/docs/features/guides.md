@@ -57,7 +57,7 @@ popover, and pointing at a line enlarges its number on the page.
 | **Build a dashboard** | Save the widgets and filters a team watches | Everyone |
 | **Set retention** | See what runs take up, delete old ones, keep the ones that matter | Administrators |
 
-A guide about a capability your instance declined on the Setup page ([Choose what you
+A guide about a capability your instance declined in **Settings → Capabilities** ([Choose what you
 use](/operate/capabilities#declining-a-capability)) is not listed. With authentication off, every guide is listed for
 everyone, as every page is.
 
@@ -78,7 +78,7 @@ Three pages suggest a guide, or a question for the [assistant](./assistant), whe
 
 | Page | When | Offers |
 |---|---|---|
-| Setup | A capability is neither in use nor declined | **Ask**: which of them your runs would use, and what each one needs |
+| Settings → Capabilities | A capability is neither in use nor declined | **Ask**: which of them your runs would use, and what each one needs |
 | A failure cluster | Its diagnosis read no commits, and no SCM token is set for the project or the instance | **Show me**: Add the SCM token |
 | An execution | It timed out, or its leading clue comes from the network, the server logs or the console, and the project has not decided on the capture fixtures | **Show me**: Add the capture fixtures |
 
@@ -86,7 +86,7 @@ A fixed rule over what the page already shows decides; no AI model is called. A 
 and a browser at most three a week. **Don't show again** hides one for good: the dismissal is kept on the server for
 your account, so it stays hidden in every browser, and with authentication off it is hidden for every visitor. A
 suggestion whose guide is not listed for you does not show. A question needs the assistant and an AI model to answer
-it, so declining the assistant or AI on the Setup page turns the Setup suggestion off; the two that offer a guide need
+it, so declining the assistant or AI in **Settings → Capabilities** turns that page's suggestion off; the two that offer a guide need
 no model and keep showing, and **Don't show again** still hides them.
 
 ## Related
