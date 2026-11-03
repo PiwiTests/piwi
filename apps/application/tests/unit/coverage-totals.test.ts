@@ -395,6 +395,64 @@ describe('combined coverage of a commit', () => {
     expect(coverage.combined.totals).toMatchObject({ knownFunctions: 2, runFunctions: 1 });
   });
 
+  test('counts a browser file recorded by line on its own executable lines, none of them undetermined', async () => {
+    await run(60, COMMIT_1);
+    await storeRunCoverage(db as never, 60, 1, [
+      {
+        path: 'src/Pay.vue',
+        runtime: 'browser',
+        blob: BLOB_C,
+        functions: [[5, 10]],
+        lines: [
+          [5, 6],
+          [9, 11],
+        ],
+        executable: [[5, 13]],
+        allFunctions: [
+          [5, 10],
+          [11, 13],
+        ],
+      },
+    ]);
+    const coverage = (await loadCommitCoverage(db as never, 1, COMMIT_1))!;
+    const pay = coverage.combined.files.find((f) => f.path === 'src/Pay.vue')!;
+    expect(pay).toMatchObject({
+      reference: 'span-table',
+      executable: [[5, 13]],
+      executed: [
+        [5, 6],
+        [9, 11],
+      ],
+    });
+    expect(pay.classes.undetermined).toEqual([]);
+    expect(pay.classes.none).toEqual([
+      [7, 8],
+      [12, 13],
+    ]);
+    expect(coverage.combined.totals).toMatchObject({
+      executableLines: 9,
+      executedLines: 5,
+      undeterminedLines: 0,
+      knownFunctions: 2,
+      runFunctions: 1,
+    });
+    // The executable lines are the file version's: they stay with the version.
+    const versions = await db.select().from(schema.coverageExecutable);
+    expect(versions.map((v) => [v.runtime, v.path, v.lines])).toEqual([['browser', 'src/Pay.vue', '5-13']]);
+
+    // A run of the same commit recording functions only keeps its undetermined lines, outside the lines that ran.
+    await run(61, COMMIT_1);
+    await storeRunCoverage(db as never, 61, 1, [
+      { path: 'src/Pay.vue', runtime: 'browser', blob: BLOB_C, functions: [[11, 13]] },
+    ]);
+    invalidateCommitCoverage(1, COMMIT_1);
+    const both = (await loadCommitCoverage(db as never, 1, COMMIT_1))!;
+    expect(both.combined.files.find((f) => f.path === 'src/Pay.vue')!.classes).toMatchObject({
+      undetermined: [[12, 13]],
+      none: [[7, 8]],
+    });
+  });
+
   test('recounts every commit computed under another scope or other areas, and drops the trend of a removed area', async () => {
     await updateProject(db as never, 1, { coverageAreas: [{ name: 'front', include: ['src/'] }] });
     await upload({ inventory, files: [{ path: 'src/cart.ts', blob: BLOB_B, executable: [[1, 4]], lines: [[1, 1]] }] });

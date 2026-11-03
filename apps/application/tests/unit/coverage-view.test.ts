@@ -140,6 +140,23 @@ describe('coverage rows', () => {
     expect(coverageSummary(groups)).toBe('Ran 3 browser files (3 functions).');
   });
 
+  test('browser files recorded by line count their lines', () => {
+    const browser: CoverageCapture = {
+      v: 1,
+      files: [
+        { path: 'src/a.vue', runtime: 'browser', blob: 'a'.repeat(40), functions: [[1, 4]], lines: [[1, 2]] },
+        { path: 'src/b.vue', runtime: 'browser', blob: 'b'.repeat(40), functions: [[1, 4]], lines: [[1, 4]] },
+      ],
+    };
+    const groups = coverageGroups(browser);
+    expect(groups.browser.map((r) => [r.file.path, r.granularity])).toEqual([
+      ['src/b.vue', 'lines'],
+      ['src/a.vue', 'lines'],
+    ]);
+    expect(groups.browser.map(coverageRowCounts)).toEqual(['4 lines, 1 function', '2 lines, 1 function']);
+    expect(coverageSummary(groups)).toBe('Ran 2 browser files (6 lines).');
+  });
+
   test('marks the files the suspect lines name, then the files the range changed', () => {
     const groups = coverageGroups(capture, suspects);
     const marks = Object.fromEntries([...groups.server, ...groups.browser].map((r) => [r.file.path, r.mark]));

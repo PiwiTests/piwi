@@ -1,10 +1,14 @@
+import { canonicalScmHostname } from '#shared/scm-urls';
+
 /** Documented last-resort default branch when nothing else resolves one. */
 export const FALLBACK_DEFAULT_BRANCH = 'main';
 
 /**
  * Normalize a git remote URL (SSH or HTTPS, with or without a `.git` suffix or
  * embedded credentials) into a clean `https://host/owner/repo` form the SCM
- * providers can parse. An SSH or `git://` remote reads over https on its host.
+ * providers can parse. An SSH or `git://` remote reads over https on its host,
+ * and a Git host's SSH alias (`ssh.bitbucket.org`, `ssh.github.com`) becomes
+ * the host itself.
  * Returns null when there is nothing to normalize, and for a URL of any other
  * scheme (`file:`, `javascript:`…), which is never a repository link.
  *
@@ -22,11 +26,18 @@ export function normalizeGitUrl(remoteUrl: string | null | undefined): string | 
   try {
     const parsed = new URL(url);
     if (parsed.protocol === 'ssh:' || parsed.protocol === 'git:') {
-      return parsed.hostname ? `https://${parsed.hostname}${parsed.pathname}`.replace(/\/$/, '') : null;
+      return parsed.hostname
+        ? `https://${canonicalScmHostname(parsed.hostname)}${parsed.pathname}`.replace(/\/$/, '')
+        : null;
     }
     if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
     parsed.username = '';
     parsed.password = '';
+    const canonical = canonicalScmHostname(parsed.hostname);
+    if (canonical !== parsed.hostname) {
+      parsed.hostname = canonical;
+      parsed.port = '';
+    }
     return parsed.toString().replace(/\/$/, '');
   } catch {
     return null;

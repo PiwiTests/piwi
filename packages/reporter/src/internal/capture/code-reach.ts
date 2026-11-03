@@ -29,8 +29,12 @@
  *   against the roots.
  *
  * A file counts when a function starting in it ran, not counting a script's
- * top-level code. Paths go out relative to the repository root; files outside
- * it and under `node_modules` are dropped, and so are the scripts React
+ * top-level code. With `coverage.browser: 'lines'`, V8 records block coverage
+ * (`detailed`, with call counts), each read's ran offsets added up per script
+ * version, and each file also gets its executable lines and those that ran,
+ * through the same map (`scriptLines` of `@piwitests/core/code-reach`).
+ * Paths go out relative to the repository root; files outside it and under
+ * `node_modules` are dropped, and so are the scripts React
  * evaluates in development to replay server component stacks
  * (`about://React/Server/…`), which stand for code that ran on the server. Decoded maps, resolved paths and the
  * length and line starts of the scripts they are read against are cached per worker by script URL, for the latest
@@ -42,15 +46,19 @@ import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import type { CDPSession, Page } from '@playwright/test';
 import {
+  executedOffsets,
   finalizeCodeReach,
   knownFunctionLines,
   reachedFunctionLines,
+  scriptLines,
   scriptRan,
   scriptText,
+  unionOffsets,
   type JsCoverageEntry,
+  type OffsetRange,
   type ScriptText,
 } from '@piwitests/core/code-reach';
-import type { LineRange } from '@piwitests/core/coverage';
+import { normalizeLineRanges, type LineRange } from '@piwitests/core/coverage';
 import {
   decodeDataUrl,
   decodeSourceMap,
@@ -61,6 +69,7 @@ import {
 import {
   browserCoverageInWorker,
   browserFunctionsInWorker,
+  browserLinesInWorker,
   cssCoverageInWorker,
 } from '../collect/coverage-settings.js';
 import { internalCall } from './quiet-capture.js';
@@ -106,6 +115,8 @@ export interface CoveredScript extends JsCoverageEntry {
   hash?: string;
   /** The address of the page's document as it parsed the script, whose origin's roots it falls back on. */
   pageUrl?: string;
+  /** With block coverage, the offsets of the script that ran in any read. */
+  executed?: OffsetRange[];
 }
 
 /**
@@ -269,6 +280,21 @@ export function relativeToRepo(file: string, repoRoot: string): string {
   return path.relative(repoRoot, file).split(path.sep).join('/');
 }
 
+/** Query parameters a dev server adds to a module served as it is written: cache stamps, an import marker. */
+const SERVED_AS_WRITTEN_PARAMS = new Set(['t', 'v', 'import']);
+
+/**
+ * Whether a module served by path is the file as written, not a part of it the server generates (a component's
+ * style block, `App.vue?vue&type=style&index=0&lang.css`): its URL has no query but the server's cache stamps.
+ */
+function servedAsWritten(url: string): boolean {
+  try {
+    return [...new URL(url).searchParams.keys()].every((key) => SERVED_AS_WRITTEN_PARAMS.has(key));
+  } catch {
+    return false;
+  }
+}
+
 /** A script's version: V8's content hash when known, else a hash of its source. */
 function scriptVersion(entry: CoveredScript): string {
   return (
@@ -328,7 +354,9 @@ async function resolveScript(
   const file = fileForUrl(entry.url, roots, bases);
   const lookup = await loadMap(entry, fetchMap);
   let resolution: ScriptResolution;
-  const text = entry.source === undefined ? undefined : scriptText(entry.source);
+  // A module read without a map counts the lines holding code at line granularity: keep where each line's code is.
+  const code = !!file && !lookup && browserLinesInWorker() && servedAsWritten(entry.url);
+  const text = entry.source === undefined ? undefined : scriptText(entry.source, { code });
   if (file) resolution = { kind: 'file', file, lookup, text };
   else resolution = lookup ? { kind: 'map', lookup, files: [], text } : { kind: 'none' };
   if (text) scriptCache.set(entry.url, version, resolution);
@@ -363,22 +391,30 @@ export interface ResolvedFunctions {
    * in it, run or not; empty otherwise.
    */
   known: Map<string, LineRange[]>;
+  /**
+   * With `lines`, every file a script with block coverage resolves to, with the lines that ran in it, its top-level
+   * code's included, whether a function of it ran or not; empty otherwise.
+   */
+  lines: Map<string, LineRange[]>;
+  /** With `lines`, the same files with their executable lines; empty otherwise. */
+  executable: Map<string, LineRange[]>;
 }
 
 /**
  * The repository-relative files the covered scripts reached, each with the
  * start and end line of every function that ran in it (none when the lines are
  * not known: a script whose source was not read); with `known`, also every
- * function the scripts declare, run or not.
+ * function the scripts declare, run or not; with `lines`, the executable lines
+ * of the files scripts with block coverage resolve to, and those that ran.
  */
 export async function resolveCodeReachFunctions(
   entries: CoveredScript[],
   roots: CodeReachRoots,
   fetchMap: MapFetcher,
   pageUrl?: string,
-  options: { known?: boolean } = {},
+  options: { known?: boolean; lines?: boolean } = {},
 ): Promise<ResolvedFunctions> {
-  return resolveFunctions(entries, roots, fetchMap, pageUrl, options.known === true);
+  return resolveFunctions(entries, roots, fetchMap, pageUrl, options.known === true, options.lines === true);
 }
 
 /** The files the covered scripts reached, repository-relative, with the line ranges of their functions that ran. */
@@ -388,7 +424,7 @@ async function resolveReach(
   fetchMap: MapFetcher,
   pageUrl: string | undefined,
 ): Promise<Map<string, LineRange[]>> {
-  return (await resolveFunctions(entries, roots, fetchMap, pageUrl, false)).reached;
+  return (await resolveFunctions(entries, roots, fetchMap, pageUrl, false, false)).reached;
 }
 
 /**
@@ -403,9 +439,16 @@ async function resolveFunctions(
   fetchMap: MapFetcher,
   pageUrl: string | undefined,
   withKnown: boolean,
+  withLines: boolean,
 ): Promise<ResolvedFunctions> {
   const files = new Map<string, LineRange[]>();
   const known = new Map<string, LineRange[]>();
+  const lines = new Map<string, LineRange[]>();
+  const executable = new Map<string, LineRange[]>();
+  const addLines = (into: Map<string, LineRange[]>, file: string, ranges: LineRange[]) => {
+    const path = relativeToRepo(file, roots.repoRoot);
+    into.set(path, normalizeLineRanges([...(into.get(path) ?? []), ...ranges]));
+  };
   const addTo = (into: Map<string, LineRange[]>, file: string, functions: LineRange[]) => {
     const path = relativeToRepo(file, roots.repoRoot);
     const listed = into.get(path);
@@ -453,6 +496,21 @@ async function resolveFunctions(
         if (file) add(file, functions);
       }
     }
+    // A module with no map counts its own lines only when it is the file as written.
+    const ownLines =
+      resolution.kind === 'map' ||
+      (resolution.kind === 'file' && (!!resolution.lookup || servedAsWritten(covered.url)));
+    if (withLines && covered.executed && resolution.kind !== 'none' && ownLines) {
+      const text = textOf(covered, resolution);
+      const lookup = resolution.lookup;
+      for (const [index, sourceLines] of scriptLines(covered, covered.executed, lookup, text)) {
+        // A module's own map names the module itself; a bundle's, the sources it was built from.
+        const file = resolution.kind === 'file' ? resolution.file : mapFile(resolution, index);
+        if (!file) continue;
+        addLines(executable, file, sourceLines.executable);
+        addLines(lines, file, sourceLines.lines);
+      }
+    }
     if (!withKnown || resolution.kind === 'none') continue;
     const version = scriptVersion(covered);
     let listed = knownCache.get(covered.url, version);
@@ -474,7 +532,7 @@ async function resolveFunctions(
     }
     for (const [file, functions] of listed.files) addTo(known, file, functions);
   }
-  return { reached: files, known };
+  return { reached: files, known, lines, executable };
 }
 
 /** A map fetcher through the page's request context, bounded in size and time. */
@@ -521,6 +579,8 @@ export interface RanScript {
   functions: CoveredScript['functions'];
   /** The functions above by their range, for the next read to merge into. */
   byRange: Map<string, CoveredScript['functions'][number]>;
+  /** With block coverage, the offsets that ran in any read. */
+  executed?: OffsetRange[];
 }
 
 /** A style sheet a page added while the capture ran, as `CSS.styleSheetAdded` describes it. */
@@ -563,8 +623,10 @@ interface CoverageCapture {
   sources: Map<string, Promise<string | null>>;
   /** What ran since the capture started, by script version: each read is merged in as it arrives. */
   ran: Map<string, RanScript>;
-  /** Whether the functions that did not run are kept too, for `coverage.browser: 'functions'`. */
+  /** Whether the functions that did not run are kept too, for `coverage.browser: 'functions'` and `'lines'`. */
   keepIdle: boolean;
+  /** Whether V8 records block coverage, whose ran offsets are kept, for `coverage.browser: 'lines'`. */
+  blocks: boolean;
   /** The reads taken as documents were left, not merged yet. */
   reading: Set<Promise<void>>;
   /** The address of the page's current document. */
@@ -639,7 +701,7 @@ function onPaused(
   if (read) {
     // Merged before the page resumes, against its scripts as it knows them now.
     const merging = read.then(([coverage]) =>
-      mergeCoverageRead(capture.ran, capture.scripts, coverage, capture.keepIdle),
+      mergeCoverageRead(capture.ran, capture.scripts, coverage, capture.keepIdle, capture.blocks),
     );
     capture.reading.add(merging);
     void merging.finally(() => capture.reading.delete(merging));
@@ -781,13 +843,16 @@ async function readCssUsage(page: Page, cdp: CDPSession, css: CssCapture): Promi
  * read saw it run: V8 lists every function it knows at every read, and a later
  * read that saw it run raises the count of one an earlier read saw idle;
  * without, only the functions a read saw run. Functions keep the order of their
- * first read, so a script's top-level function stays its first.
+ * first read, so a script's top-level function stays its first, and keep their
+ * whole range only. With `blocks`, the offsets each read saw run are added up
+ * (`executedOffsets`): V8 counts afresh from each read.
  */
 export function mergeCoverageRead(
   ran: Map<string, RanScript>,
   scripts: ReadonlyMap<string, ParsedScript>,
   read: readonly ScriptCoverage[],
   keepIdle = true,
+  blocks = false,
 ): void {
   for (const covered of read) {
     const script = scripts.get(covered.scriptId);
@@ -798,6 +863,7 @@ export function mergeCoverageRead(
       known = { script, functions: [], byRange: new Map() };
       ran.set(key, known);
     }
+    if (blocks) known.executed = unionOffsets(known.executed ?? [], executedOffsets(covered.functions));
     for (const fn of covered.functions) {
       const whole = fn.ranges[0];
       if (!whole) continue;
@@ -808,7 +874,7 @@ export function mergeCoverageRead(
         if (whole.count > 0 && seen.ranges[0]!.count <= 0) seen.ranges[0]!.count = whole.count;
         continue;
       }
-      const copy = { ...fn, ranges: fn.ranges.map((r) => ({ ...r })) };
+      const copy = { ...fn, ranges: [{ ...whole }] };
       known.byRange.set(range, copy);
       known.functions.push(copy);
     }
@@ -834,6 +900,7 @@ export async function startCodeReach(page: Page): Promise<boolean> {
   // Scripts record unless only the style sheets are asked for.
   const withCss = cssCoverageInWorker();
   const js = browserCoverageInWorker() || !withCss;
+  const blocks = js && browserLinesInWorker();
   let cdp: CDPSession | null = null;
   try {
     cdp = await internalCall(page, () => page.context().newCDPSession(page));
@@ -845,6 +912,7 @@ export async function startCodeReach(page: Page): Promise<boolean> {
       sources: new Map(),
       ran: new Map(),
       keepIdle: browserFunctionsInWorker(),
+      blocks,
       reading: new Set(),
       pageUrl: page.url(),
     };
@@ -866,7 +934,7 @@ export async function startCodeReach(page: Page): Promise<boolean> {
         ...(js
           ? [
               capture.cdp.send('Profiler.enable'),
-              capture.cdp.send('Profiler.startPreciseCoverage', { callCount: false, detailed: false }),
+              capture.cdp.send('Profiler.startPreciseCoverage', { callCount: blocks, detailed: blocks }),
             ]
           : []),
         // The style sheets' rule usage records nothing without the DOM and CSS domains. A failure there leaves the
@@ -931,10 +999,11 @@ export async function stopPageCoverage(page: Page): Promise<PageCoverage> {
       await cdp.send('Profiler.stopPreciseCoverage');
       return taken.result as ScriptCoverage[];
     });
-    mergeCoverageRead(capture.ran, capture.scripts, last, capture.keepIdle);
+    mergeCoverageRead(capture.ran, capture.scripts, last, capture.keepIdle, capture.blocks);
     const entries: CoveredScript[] = [];
-    for (const [key, { script, functions }] of capture.ran) {
+    for (const [key, { script, functions, executed }] of capture.ran) {
       const entry: CoveredScript = { url: script.url, hash: script.hash, functions, pageUrl: script.pageUrl };
+      if (executed) entry.executed = executed;
       const source = await capture.sources.get(key);
       if (source != null) entry.source = source;
       entries.push(entry);

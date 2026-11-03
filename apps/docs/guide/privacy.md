@@ -31,7 +31,7 @@ Every outbound connection Piwi can make:
 
 The reporter sends your instance what its options switch on. [Code reach](/features/code-reach) and
 [server coverage](/features/server-coverage), off by default, send repository-relative paths; line numbers and
-blob ids only with `coverage.browser: 'functions'` or `coverage.server: 'functions'` or `'lines'`. `piwi coverage
+blob ids only with `coverage.browser: 'functions'` or `'lines'`, or `coverage.server: 'functions'` or `'lines'`. `piwi coverage
 upload` adds the commit's tracked paths. Source code and hit counts never leave.
 
 Two rows need no setting: anonymous git-host reads for runs that report a public-host remote, and a

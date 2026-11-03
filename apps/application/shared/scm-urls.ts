@@ -13,6 +13,23 @@
 export type ScmProviderName = 'github' | 'gitlab' | 'bitbucket';
 
 /**
+ * Host names a Git host serves SSH on besides its own (SSH over port 443, an
+ * alternate SSH host), with the host they stand for. A remote on one of them
+ * names the same repository as on the host itself.
+ */
+const SSH_HOST_ALIASES: Record<string, string> = {
+  'ssh.github.com': 'github.com',
+  'ssh.bitbucket.org': 'bitbucket.org',
+  'altssh.bitbucket.org': 'bitbucket.org',
+};
+
+/** A host name in lower case, with a Git host's SSH alias replaced by the host it stands for. */
+export function canonicalScmHostname(hostname: string): string {
+  const host = hostname.toLowerCase();
+  return SSH_HOST_ALIASES[host] ?? host;
+}
+
+/**
  * The SCM provider a repository URL points at, or null when the host is not one
  * Piwi links to or the URL is not `http:` or `https:`, so no other scheme ever
  * becomes a link. Same hostname rules as the server's `detectScmProvider`.
@@ -20,8 +37,9 @@ export type ScmProviderName = 'github' | 'gitlab' | 'bitbucket';
 export function detectScmHost(repositoryUrl: string | null | undefined): ScmProviderName | null {
   if (!repositoryUrl) return null;
   try {
-    const { protocol, hostname } = new URL(repositoryUrl);
-    if (protocol !== 'https:' && protocol !== 'http:') return null;
+    const url = new URL(repositoryUrl);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
+    const hostname = canonicalScmHostname(url.hostname);
     if (hostname === 'github.com' || hostname.endsWith('.github.com')) return 'github';
     if (hostname === 'gitlab.com' || hostname.includes('gitlab')) return 'gitlab';
     if (hostname === 'bitbucket.org') return 'bitbucket';
@@ -45,11 +63,17 @@ export function shortCommit(commit: string): string {
   return /^[0-9a-f]{8,40}$/i.test(commit) ? commit.slice(0, 7) : commit;
 }
 
-/** Base repository URL without a trailing slash, or null when the host is unknown. */
+/**
+ * Base repository URL without a trailing slash, on the host itself when the URL
+ * names an SSH alias of it, or null when the host is unknown.
+ */
 function repoBase(repositoryUrl: string): { host: ScmProviderName; base: string } | null {
   const host = detectScmHost(repositoryUrl);
   if (!host) return null;
-  return { host, base: repositoryUrl.replace(/\/$/, '') };
+  const url = new URL(repositoryUrl);
+  const canonical = canonicalScmHostname(url.hostname);
+  const base = canonical === url.hostname ? repositoryUrl : `${url.protocol}//${canonical}${url.pathname}`;
+  return { host, base: base.replace(/\/$/, '') };
 }
 
 /** Deep link to a single commit, or null when the host is unknown. */

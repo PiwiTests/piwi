@@ -9,7 +9,8 @@
  * - The **`e2e` suite** is the union of the run coverage of the commit's
  *   complete Playwright runs (no lab run, no partial run), per runtime: server
  *   files with their executed lines, browser files with the functions that ran
- *   and every function known in their version. A run whose server coverage is
+ *   and every function known in their version, and their executed lines at
+ *   `coverage.browser: 'lines'`. A run whose server coverage is
  *   incomplete (a backend restarted or was unreachable) joins the union: it
  *   adds only lines that ran, against executable lines a span table gives per
  *   file version. The suite is incomplete when every run is.
@@ -23,7 +24,8 @@
  *   inventory names; without an inventory nothing is carried. An `e2e` suite
  *   carried forward is the union of that commit's complete runs.
  * - The **span table** of each file version is `coverage_executable`'s server
- *   lines.
+ *   lines, else its browser lines (a browser file's at `coverage.browser:
+ *   'lines'`).
  * - A commit's branch is the default branch ('') when any of its reports or
  *   runs ran there.
  * - Off the default branch, per suite only the report of the commit whose
@@ -114,22 +116,23 @@ function runFileToSuiteFile(file: RunCoverageFile): SuiteFile {
     lines: file.lines ?? [],
     functions: file.functions ?? [],
     allFunctions: file.allFunctions ?? [],
-    // A browser file names the functions that ran; a server file at `lines`, its lines too.
-    linesRecorded: file.runtime === 'server' && (file.lines?.length ?? 0) > 0,
+    // A file names the functions that ran; a server file at `lines`, and a browser file at `lines`, its lines too.
+    linesRecorded: (file.lines?.length ?? 0) > 0,
   };
 }
 
 /**
  * The run coverage of several runs, united per runtime and path: an `e2e`
  * suite. A file the server and the browser both ran stays two entries, so the
- * browser's functions keep their undetermined lines beside the server's lines.
+ * browser's functions keep their undetermined lines beside the server's lines,
+ * and so does a file that runs recorded by line and runs by function only.
  */
 function runSuiteFiles(runs: RunCoverageFile[][]): SuiteFile[] {
   const byFile = new Map<string, SuiteFile>();
   for (const files of runs) {
     for (const file of files) {
-      const key = `${file.runtime}\0${file.path}`;
       const next = runFileToSuiteFile(file);
+      const key = `${file.runtime}\0${file.path}\0${next.linesRecorded}`;
       const known = byFile.get(key);
       if (!known) {
         byFile.set(key, next);
@@ -144,7 +147,6 @@ function runSuiteFiles(runs: RunCoverageFile[][]): SuiteFile[] {
         lines: normalizeLineRanges([...known.lines, ...next.lines]),
         functions: normalizeFunctionRanges([...known.functions, ...next.functions]),
         allFunctions: normalizeFunctionRanges([...known.allFunctions, ...next.allFunctions]),
-        linesRecorded: known.linesRecorded || next.linesRecorded,
       });
     }
   }
@@ -317,9 +319,11 @@ export async function loadCommitCoverage(
     });
   }
 
+  // A version's server lines win over its browser lines: the backend's instrumentation names its lines itself.
   const spanTable = new Map<string, LineRange[]>();
   for (const v of versions.values()) {
-    if (v.runtime === 'server' && v.lines.length > 0) spanTable.set(`${v.path}\0${v.blob}`, v.lines);
+    const key = `${v.path}\0${v.blob}`;
+    if (v.lines.length > 0 && (v.runtime === 'server' || !spanTable.has(key))) spanTable.set(key, v.lines);
   }
 
   const combined = combineCoverage({ inventory, inScope: compileCoverageScope(scope), spanTable, suites });

@@ -17,6 +17,7 @@ export const ATTACHMENT_NAMES = {
   codeReach: 'piwi-code-reach',
   browserCoverage: 'piwi-browser-coverage',
   browserFunctions: 'piwi-browser-functions',
+  browserLines: 'piwi-browser-lines',
   cssCoverage: 'piwi-css-coverage',
   cssRules: 'piwi-css-rules',
   serverCoverageRequests: 'piwi-server-coverage-requests',
@@ -56,7 +57,7 @@ export function isPiwiAttachment(attachment: { name: string; contentType?: strin
 /**
  * The last of `attachments` that `isPiwiAttachment` accepts for `name`. A
  * reader of an attachment the fixtures write more than once
- * (`piwi-browser-functions`, `piwi-css-rules`) goes through every match with
+ * (`piwi-browser-functions`, `piwi-browser-lines`, `piwi-css-rules`) goes through every match with
  * `isPiwiAttachment` instead.
  */
 export function findPiwiAttachment<T extends { name: string; contentType?: string }>(

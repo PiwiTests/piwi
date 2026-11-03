@@ -394,6 +394,33 @@ describe('mergeCoverageRead', () => {
     expect(ranOf(ran)).toEqual([['http://a/pay.js', ['', 'pay']]]);
   });
 
+  it('adds up the offsets each read saw run with block coverage', () => {
+    const ran = new Map<string, RanScript>();
+    const scripts = new Map<string, ParsedScript>([['1', { url: 'http://a/pay.js', hash: 'p' }]]);
+    const pay = (count: number, blockCount: number) => ({
+      functionName: 'pay',
+      isBlockCoverage: true,
+      ranges: [
+        { startOffset: 10, endOffset: 40, count },
+        { startOffset: 20, endOffset: 30, count: blockCount },
+      ],
+    });
+    // The first read runs the page's top level and `pay` without its block, the second only the block.
+    mergeCoverageRead(ran, scripts, [{ scriptId: '1', functions: [fn('', 0, 100, 1), pay(1, 0)] }], true, true);
+    expect([...ran.values()][0]!.executed).toEqual([
+      [0, 20],
+      [30, 100],
+    ]);
+    mergeCoverageRead(ran, scripts, [{ scriptId: '1', functions: [fn('', 0, 100, 0), pay(1, 1)] }], true, true);
+    expect([...ran.values()][0]!.executed).toEqual([[0, 100]]);
+    // A function keeps its whole range only.
+    expect([...ran.values()][0]!.functions.map((f) => f.ranges.length)).toEqual([1, 1]);
+    // Without block coverage, no offsets are kept.
+    const plain = new Map<string, RanScript>();
+    mergeCoverageRead(plain, scripts, [{ scriptId: '1', functions: [fn('', 0, 100, 1)] }]);
+    expect([...plain.values()][0]!.executed).toBeUndefined();
+  });
+
   it('reads a script id against the scripts the page knew as the read was taken', () => {
     // A cross-site navigation starts a renderer that numbers its scripts afresh.
     const ran = new Map<string, RanScript>();
@@ -669,4 +696,150 @@ describe('on production builds', () => {
       ]);
     });
   }
+});
+
+describe('at line granularity, in Chromium', () => {
+  let browser: Browser | null = null;
+  let server: http.Server;
+  let url = '';
+  let lineDir = '';
+  const saved = process.env.PIWI_COVERAGE_BROWSER;
+
+  beforeAll(async () => {
+    lineDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-reach-lines-')));
+    const put = (file: string, text: string) => {
+      const full = path.join(lineDir, file);
+      fs.mkdirSync(path.dirname(full), { recursive: true });
+      fs.writeFileSync(full, text);
+    };
+    put('index.html', '<button id="pay">Pay</button><script type="module" src="/src/main.js"></script>');
+    put(
+      'src/main.js',
+      "import { pay } from './components/Pay.vue';\nimport { plain } from './plain.js';\n" +
+        "import './components/Pay.vue?vue&type=style&index=0&lang.css';\n" +
+        "document.querySelector('#pay').addEventListener('click', () => {\n  pay(false);\n  plain(false);\n});\n",
+    );
+    // A module served by path with no map: its own lines count.
+    put(
+      'src/plain.js',
+      "export function plain(ok) {\n  if (ok) {\n    return 'big';\n  }\n  return 'small';\n}\n" +
+        'export function unused() {\n  return 0;\n}\n',
+    );
+    // A Vue component on disk, and the module a dev server serves for it: its script, with an inline map to the
+    // component's lines, then code the server adds that maps to nothing.
+    const script =
+      "export function pay(ok) {\n  if (ok) {\n    document.body.dataset.big = 'yes';\n  }\n" +
+      "  document.body.dataset.paid = 'yes';\n}\nexport function idle() {\n  return 1;\n}\n";
+    put('src/components/Pay.vue', `<template>\n  <button>Pay</button>\n</template>\n<script>\n${script}</script>\n`);
+    const mappings = ['AAIA', ...Array.from({ length: 8 }, () => 'AACA'), ''].join(';');
+    const inline = Buffer.from(JSON.stringify({ version: 3, sources: ['/src/components/Pay.vue'], mappings })).toString(
+      'base64',
+    );
+    put(
+      'served/src/components/Pay.vue',
+      `${script}window.__hotReload = true;\n//# sourceMappingURL=data:application/json;base64,${inline}\n`,
+    );
+    server = http.createServer((req, res) => {
+      if (req.url?.includes('type=style')) {
+        // A component's style block, as a dev server serves it: generated code, with no map.
+        res.setHeader('Content-Type', 'text/javascript');
+        res.end('export default "";\nfunction prune() {\n  return 1;\n}\nwindow.__prune = prune;\n');
+        return;
+      }
+      const pathname = (req.url ?? '/').split('?')[0]!;
+      const served = path.join(lineDir, 'served', pathname);
+      const isFile = (file: string) => fs.existsSync(file) && fs.statSync(file).isFile();
+      const file = isFile(served) ? served : path.join(lineDir, pathname === '/' ? 'index.html' : pathname);
+      if (!isFile(file)) {
+        res.statusCode = 404;
+        res.end();
+        return;
+      }
+      res.setHeader('Content-Type', file.endsWith('.html') ? 'text/html' : 'text/javascript');
+      res.end(fs.readFileSync(file));
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/`;
+    try {
+      browser = await chromium.launch();
+    } catch {
+      browser = null;
+    }
+  });
+
+  afterAll(async () => {
+    if (saved === undefined) delete process.env.PIWI_COVERAGE_BROWSER;
+    else process.env.PIWI_COVERAGE_BROWSER = saved;
+    await browser?.close();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    fs.rmSync(lineDir, { recursive: true, force: true });
+  });
+
+  it('records the lines that ran and the executable lines, through a component’s map and without a map', async (ctx) => {
+    if (!browser) return ctx.skip();
+    process.env.PIWI_COVERAGE_BROWSER = 'lines';
+    const page = await browser.newPage();
+    expect(await startCodeReach(page)).toBe(true);
+    await page.goto(url);
+    await page.click('#pay');
+    await page.waitForFunction("document.body.dataset.paid === 'yes'");
+    const entries = (await stopCodeReach(page)) ?? [];
+    await page.close();
+    const resolved = await resolveCodeReachFunctions(
+      entries,
+      { roots: [lineDir], repoRoot: lineDir },
+      async () => null,
+      url,
+      {
+        known: true,
+        lines: true,
+      },
+    );
+    // The component counts the lines its script maps to, not the code the server adds nor its style block's module:
+    // the `if` block that did not run and `idle` are executable lines that did not run. The modules with no map count
+    // the lines holding code inside their functions, `main.js` its click handler's.
+    expect(Object.fromEntries(resolved.executable)).toEqual({
+      'src/components/Pay.vue': [[5, 13]],
+      'src/main.js': [[4, 7]],
+      'src/plain.js': [[1, 9]],
+    });
+    expect(Object.fromEntries(resolved.lines)).toEqual({
+      'src/components/Pay.vue': [
+        [5, 6],
+        [9, 11],
+      ],
+      'src/main.js': [[4, 7]],
+      'src/plain.js': [
+        [1, 2],
+        [5, 6],
+      ],
+    });
+    // The functions keep their own granularity.
+    expect(resolved.reached.get('src/plain.js')).toEqual([[1, 6]]);
+  });
+
+  it('records no lines without `coverage.browser: lines`', async (ctx) => {
+    if (!browser) return ctx.skip();
+    process.env.PIWI_COVERAGE_BROWSER = 'functions';
+    const page = await browser.newPage();
+    expect(await startCodeReach(page)).toBe(true);
+    await page.goto(url);
+    await page.click('#pay');
+    await page.waitForFunction("document.body.dataset.paid === 'yes'");
+    const entries = (await stopCodeReach(page)) ?? [];
+    await page.close();
+    expect(entries.some((entry) => entry.executed)).toBe(false);
+    const resolved = await resolveCodeReachFunctions(
+      entries,
+      { roots: [lineDir], repoRoot: lineDir },
+      async () => null,
+      url,
+      {
+        known: true,
+        lines: true,
+      },
+    );
+    expect(resolved.lines.size).toBe(0);
+    expect(resolved.reached.has('src/plain.js')).toBe(true);
+  });
 });

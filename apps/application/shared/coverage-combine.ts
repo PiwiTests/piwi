@@ -11,7 +11,8 @@
  *    ratios share one denominator; a line a tool marks outside them is ignored.
  * 2. **Executed**: a reference line ran when any suite ran it.
  * 3. **Undetermined**: reference lines no suite ran, inside a function a suite
- *    that records functions only (the browser end-to-end suite) ran, and not
+ *    that records functions only (the browser end-to-end suite at
+ *    `coverage.browser: 'functions'`) ran, and not
  *    inside a function nested in it that the suite reports as not run. Shown
  *    next to the ratio, never added to it.
  * 4. **Functions**: every function a suite knows, matched across suites by its
@@ -50,7 +51,10 @@ export interface SuiteFile {
   functions: LineRange[];
   /** Every function the suite knows in the file, run or not. */
   allFunctions: LineRange[];
-  /** False when the suite records functions only (the browser): its unrun lines in a function that ran are undetermined. */
+  /**
+   * False when the suite records functions only (the browser at `coverage.browser: 'functions'`): its unrun lines in
+   * a function that ran are undetermined.
+   */
   linesRecorded: boolean;
 }
 

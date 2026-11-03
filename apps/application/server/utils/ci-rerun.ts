@@ -146,7 +146,7 @@ async function dispatchRerunOf(
   if (!repositoryUrl || !provider) throw new Error('No supported repository to dispatch to');
 
   const scm = await createScmProvider(repositoryUrl, db, input.projectId);
-  if (!scm) throw new Error('Could not build an SCM client for this repository');
+  if (!scm?.provider) throw new Error('Could not build an SCM client for this repository');
 
   const cases = input.cases;
   const args = buildRetryArgs(cases);
@@ -451,7 +451,7 @@ export async function runFlakeLabInCi(
   const settings = flakeLabRerunSettings(await getCiRerunSettings(db, tc.projectId), availability.provider)!;
   try {
     const scm = await createScmProvider(repositoryUrl!, db, tc.projectId);
-    if (!scm) throw new Error('Could not build an SCM client for this repository');
+    if (!scm?.provider) throw new Error('Could not build an SCM client for this repository');
     const args = flakeLabCiArgs(testCaseId, kind);
     const id = randomBytes(8).toString('hex');
     const ref = await rerunRef(db, runId);

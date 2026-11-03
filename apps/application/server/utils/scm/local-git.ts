@@ -29,7 +29,7 @@ import { splitGitDiff } from './diff-text';
 import { TtlCache } from '../ttl-cache';
 import { desktopLinkedFolder } from '../desktop-links';
 import type { CiRerunSettings } from '#shared/ci-rerun';
-import type { ScmProviderName } from '#shared/scm-urls';
+import { canonicalScmHostname, type ScmProviderName } from '#shared/scm-urls';
 
 // The demo's service worker bundles this module through `createScmProvider` and
 // has no `process`: read it inside functions only, never at module level.
@@ -153,7 +153,8 @@ function parseRecords(out: string): string[][] {
 /**
  * The repository a remote URL names, as lower-cased `host/path`: the same for
  * its HTTPS, SSH and scp-like (`git@host:owner/repo`) forms, with or without a
- * user, credentials or a `.git` suffix. Null for a URL with no host, such as a
+ * user, credentials or a `.git` suffix, and on a Git host's SSH alias
+ * (`ssh.bitbucket.org`) as on the host. Null for a URL with no host, such as a
  * local path.
  */
 export function remoteKey(url: string): string | null {
@@ -169,7 +170,7 @@ export function remoteKey(url: string): string | null {
       .replace(/^\/+|\/+$/g, '')
       .replace(/\.git$/, '')
       .toLowerCase();
-    return parsed.hostname && path ? `${parsed.hostname.toLowerCase()}/${path}` : null;
+    return parsed.hostname && path ? `${canonicalScmHostname(parsed.hostname)}/${path}` : null;
   } catch {
     return null;
   }
@@ -204,15 +205,69 @@ async function matchingRemote(root: string, repositoryUrl: string): Promise<stri
 const remoteCache = new TtlCache<string | null>(60 * 1000);
 
 /**
+ * The host's side of a {@link LocalGitProvider} for a repository on a host Piwi
+ * has no client for: every read finds nothing, and every write throws.
+ */
+export class NoHostProvider extends ScmProvider {
+  readonly provider = null;
+
+  constructor(readonly webUrl: string) {
+    super(null);
+  }
+
+  async listBranches(): Promise<string[]> {
+    return [];
+  }
+
+  async listCommits(): Promise<ScmCommitDetail[]> {
+    return [];
+  }
+
+  async fetchChanges(): Promise<ScmChanges | null> {
+    return null;
+  }
+
+  async fetchCommitDiff(): Promise<ScmChanges | null> {
+    return null;
+  }
+
+  async getCommitAuthor(): Promise<ScmCommitAuthor | null> {
+    return null;
+  }
+
+  async probeError(): Promise<string | null> {
+    return "Piwi has no client for this repository's host.";
+  }
+
+  async fetchFileAtRef(): Promise<ScmFileContent | null> {
+    return null;
+  }
+
+  async fetchTree(): Promise<string[] | null> {
+    return null;
+  }
+
+  async fetchIssue(): Promise<ScmEntityRef | null> {
+    return null;
+  }
+
+  async fetchPullRequest(): Promise<ScmEntityRef | null> {
+    return null;
+  }
+}
+
+/**
  * On the desktop app, a provider that reads the project's history with git in
  * the folder linked to the project, when that folder is a clone of
- * `repositoryUrl`. Null outside the desktop app, without a linked folder, or
- * when no remote of the clone points at the repository.
+ * `repositoryUrl`. `hosted` is the host's provider it falls back to; without
+ * one (a host Piwi has no client for), the clone is the only source. Null
+ * outside the desktop app, without a linked folder, or when no remote of the
+ * clone points at the repository.
  */
 export async function localGitProvider(
   projectId: number,
   repositoryUrl: string,
-  hosted: ScmProvider,
+  hosted: ScmProvider | null,
 ): Promise<LocalGitProvider | null> {
   const folder = desktopLinkedFolder(projectId);
   const root = folder ? findRepoRoot(folder) : null;
@@ -223,7 +278,7 @@ export async function localGitProvider(
     remote = await matchingRemote(root, repositoryUrl);
     remoteCache.set(key, remote);
   }
-  return remote ? new LocalGitProvider(root, remote, hosted) : null;
+  return remote ? new LocalGitProvider(root, remote, hosted ?? new NoHostProvider(repositoryUrl)) : null;
 }
 
 /** git's status letters in the hosts' words; a copy is a new file, anything else a modification. */
@@ -288,7 +343,7 @@ function parseNumstat(out: string): Array<{ additions: number; deletions: number
  * write and every issue or pull-request lookup goes to `hosted`.
  */
 export class LocalGitProvider extends ScmProvider {
-  readonly provider: ScmProviderName;
+  readonly provider: ScmProviderName | null;
   readonly webUrl: string;
 
   constructor(
@@ -488,9 +543,10 @@ export class LocalGitProvider extends ScmProvider {
 
   async probeError(branch?: string): Promise<string | null> {
     const where = `the folder linked to this project (${this.root})`;
-    return branch
+    if (!branch) return `No commits found in ${where}.`;
+    return this.provider
       ? `Branch '${branch}' is not in ${where}. Fetch it there, or set an SCM token in Settings → AI to read it from the host.`
-      : `No commits found in ${where}.`;
+      : `Branch '${branch}' is not in ${where}. Fetch it there; Piwi reads no host for this repository (a self-hosted GitLab goes in PIWI_SCM_GITLAB_HOSTS).`;
   }
 
   async fetchFileAtRef(path: string, ref: string): Promise<ScmFileContent | null> {

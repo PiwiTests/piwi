@@ -17,6 +17,7 @@ import { migrateToLatest } from './temp-db';
 // so clear it before the SCM index (which imports the barrel) loads.
 delete process.env.PIWI_DATABASE_URL;
 const { createScmProvider } = await import('../../server/utils/scm');
+const { getSourceAtBlob, clearSourceAtBlobCache } = await import('../../server/utils/source-at-blob');
 
 const REPO_URL = 'https://github.com/acme/shop';
 const DESKTOP_TOKEN = 'pd_local_git_test';
@@ -78,6 +79,10 @@ beforeAll(() => {
 
   git('branch', 'feature/pay', sha.second);
   git('remote', 'add', 'origin', 'git@github.com:Acme/Shop.git');
+  // The same repository as two other hosts would name it: on Bitbucket's SSH
+  // alias, and on a host Piwi has no client for.
+  git('remote', 'add', 'bitbucket', 'git@ssh.bitbucket.org:acme/shop.git');
+  git('remote', 'add', 'internal', 'git@git.example.internal:acme/shop.git');
   git('update-ref', 'refs/remotes/origin/main', sha.second);
   git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main');
 });
@@ -128,6 +133,12 @@ describe('remoteKey', () => {
     }
   });
 
+  test('names a repository on a Git host’s SSH alias as on the host', () => {
+    expect(remoteKey('git@ssh.bitbucket.org:Acme/Shop.git')).toBe('bitbucket.org/acme/shop');
+    expect(remoteKey('ssh://git@altssh.bitbucket.org:443/acme/shop.git')).toBe('bitbucket.org/acme/shop');
+    expect(remoteKey('ssh://git@ssh.github.com:443/acme/shop.git')).toBe('github.com/acme/shop');
+  });
+
   test('a local path names no repository', () => {
     expect(remoteKey('/srv/git/shop.git')).toBeNull();
     expect(remoteKey('../shop')).toBeNull();
@@ -160,6 +171,34 @@ describe('localGitProvider', () => {
     const local = await provider();
     expect(local.provider).toBe('github');
     expect(local.commitUrl(sha.first)).toBe(`https://github.com/acme/shop/commit/${sha.first}`);
+  });
+});
+
+describe('localGitProvider for a host Piwi has no client for', () => {
+  const INTERNAL_URL = 'https://git.example.internal/acme/shop';
+
+  test('reads the clone alone, with no host and no links', async () => {
+    const local = await localGitProvider(PROJECT_ID, INTERNAL_URL, null);
+    expect(local).toBeInstanceOf(LocalGitProvider);
+    expect(local!.provider).toBeNull();
+    expect(local!.commitUrl(sha.first)).toBeNull();
+    expect(await local!.fetchBlob(git('rev-parse', `${sha.first}:README.md`))).toBe('shop\n');
+    expect((await local!.listCommits(10)).map((c) => c.sha)).toEqual([sha.third, sha.second, sha.first]);
+  });
+
+  test('finds nothing the clone does not have, and writes nothing', async () => {
+    const local = (await localGitProvider(PROJECT_ID, INTERNAL_URL, null))!;
+    expect(await local.fetchBlob('e'.repeat(40))).toBeNull();
+    expect(await local.fetchChanges(sha.first, 'f'.repeat(40))).toBeNull();
+    expect(await local.listCommits(10, 'release/9')).toEqual([]);
+    expect(await local.probeError('release/9')).not.toMatch(/token/);
+    await expect(local.createBranch('heal', sha.first)).rejects.toThrow(/does not support/);
+  });
+
+  test('reads a remote on a Git host’s SSH alias for the host’s repository', async () => {
+    const local = await localGitProvider(PROJECT_ID, 'https://bitbucket.org/acme/shop', null);
+    expect(local).toBeInstanceOf(LocalGitProvider);
+    expect(await local!.fetchBlob(git('rev-parse', `${sha.second}:README.md`))).toBe('shop\nnow with a cart\n');
   });
 });
 
@@ -337,5 +376,67 @@ describe('createScmProvider on the desktop app', () => {
   test('keeps the host outside the desktop app', async () => {
     delete process.env.PIWI_DESKTOP_TOKEN;
     expect(await createScmProvider(REPO_URL, db, PROJECT_ID)).toBeInstanceOf(GitHubProvider);
+  });
+
+  test('reads a linked clone of a repository on a Git host’s SSH alias', async () => {
+    await db
+      .update(schema.projects)
+      .set({ repositoryUrl: 'https://bitbucket.org/acme/shop' })
+      .where(eq(schema.projects.id, PROJECT_ID));
+    const local = await createScmProvider('git@ssh.bitbucket.org:acme/shop.git', db, PROJECT_ID);
+    expect(local).toBeInstanceOf(LocalGitProvider);
+    expect(local!.provider).toBe('bitbucket');
+  });
+
+  describe('for a host Piwi has no client for', () => {
+    const INTERNAL_REMOTE = 'git@git.example.internal:acme/shop.git';
+
+    beforeEach(async () => {
+      clearSourceAtBlobCache();
+      await db
+        .update(schema.projects)
+        .set({ repositoryUrl: 'https://git.example.internal/acme/shop' })
+        .where(eq(schema.projects.id, PROJECT_ID));
+      await db.insert(schema.testRuns).values({
+        id: 1,
+        projectId: PROJECT_ID,
+        status: 'passed',
+        startTime: new Date(),
+        metadata: { scm: { remoteUrl: INTERNAL_REMOTE, commit: sha.third } },
+      });
+    });
+
+    test('reads the linked clone, with or without a token', async () => {
+      expect(await createScmProvider(INTERNAL_REMOTE, db, PROJECT_ID)).toBeInstanceOf(LocalGitProvider);
+      vi.stubEnv('PIWI_SECRET_KEY', 'local-git-test-secret-key-0123456789abcdef');
+      await db
+        .update(schema.projects)
+        .set({ scmToken: encryptSecret('token', getEncryptionKey()) })
+        .where(eq(schema.projects.id, PROJECT_ID));
+      const withToken = await createScmProvider(INTERNAL_REMOTE, db, PROJECT_ID);
+      expect(withToken).toBeInstanceOf(LocalGitProvider);
+      // What the clone lacks is asked of no host: the token goes nowhere.
+      const fetchSpy = vi.spyOn(globalThis, 'fetch');
+      expect(await withToken!.fetchBlob('e'.repeat(40))).toBeNull();
+      expect(await withToken!.listCommits(10, 'release/9')).toEqual([]);
+      expect(await withToken!.fetchFileAtRef('README.md', 'f'.repeat(40))).toBeNull();
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    test('serves a file at a blob from the linked clone', async () => {
+      const blob = git('rev-parse', `${sha.third}:README.md`);
+      expect(await getSourceAtBlob(db, PROJECT_ID, { path: 'README.md', blob })).toEqual({
+        path: 'README.md',
+        blob,
+        content: 'shop\nnow with a cart\n',
+      });
+    });
+
+    test('has no provider outside the desktop app', async () => {
+      delete process.env.PIWI_DESKTOP_TOKEN;
+      expect(await createScmProvider(INTERNAL_REMOTE, db, PROJECT_ID)).toBeNull();
+      const blob = git('rev-parse', `${sha.third}:README.md`);
+      expect(await getSourceAtBlob(db, PROJECT_ID, { path: 'README.md', blob })).toBeNull();
+    });
   });
 });

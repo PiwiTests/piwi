@@ -15,6 +15,7 @@ vi.mock('../../server/utils/scm', () => ({
   detectScmProvider: (url: string | null) => (url?.includes('gitlab') ? 'gitlab' : url ? 'github' : null),
   resolveScmToken: async () => 'token',
   createScmProvider: async () => ({
+    provider: 'gitlab',
     dispatchRerun: async (settings: unknown, args: string, request: Record<string, unknown>) => {
       dispatched.push({ args, request, settings });
       return { url: 'https://ci.example/runs', ref: request.ref ?? 'main', ...answer };

@@ -94,10 +94,11 @@ coverage of the commit's complete Playwright runs (never a partial, probe or fla
 [API](https://piwitests.dev/demo/docs) or the MCP `get_coverage_summary` tool.
 
 - **One set of executable lines per file version.** Tools disagree on which lines can run, so every suite counts on
-  the same lines: the span table's, from [server coverage](./server-coverage), when a run recorded them for that
-  version of the file; otherwise the reports' own. A line a tool marks outside them is ignored.
-- **Undetermined lines.** The browser suite records functions, not lines: an unrun line whose innermost function it
-  ran is undetermined, shown beside the ratio, never counted as run.
+  the same lines: the span table's, from [server coverage](./server-coverage) or
+  [browser lines](./code-reach#what-it-records), when a run recorded them for that version of the file; otherwise the
+  reports' own. A line a tool marks outside them is ignored.
+- **Undetermined lines.** At `coverage.browser: 'functions'`, the browser suite records functions, not lines: an unrun
+  line whose innermost function it ran is undetermined, shown beside the ratio, never counted as run.
 - **Functions** count across suites by start line: one ran when any suite ran a function starting there.
 - **Classes of lines.** Each executable line is unit only, end to end only (what the Playwright suite alone
   protects), both, none, or undetermined.
