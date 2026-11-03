@@ -357,9 +357,15 @@ const videos = computed(() =>
       name: att.name || att.path.split('/').pop() || att.path,
     })),
 );
+// Only a failed execution has a page at the failure, or a failing action to diff the page across.
+const executionFailed = computed(() => status.value !== 'passed' && status.value !== 'skipped');
 const screenExtraViews = computed(() => [
   { value: 'visual-diff', label: 'Visual diff', shown: visualDiffAvailable.value },
-  { value: 'page-diff', label: 'Page diff', shown: pageDiffAvailable.value || traceDiffAvailable.value },
+  {
+    value: 'page-diff',
+    label: 'Page diff',
+    shown: pageDiffAvailable.value || (executionFailed.value && traceDiffAvailable.value),
+  },
   { value: 'video', label: 'Video', shown: videos.value.length > 0 },
 ]);
 
@@ -620,6 +626,7 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
             :aria-derived="ariaDerived"
             :extra-views="screenExtraViews"
             :error="testCase?.error ?? null"
+            :failed="executionFailed"
             :subject="imageSubject"
           >
             <template #visual-diff>
@@ -635,6 +642,7 @@ defineExpose({ canLocate, revealSection, selectTab: (t: TabValue) => (activeTab.
             <template #page-diff>
               <div class="space-y-4">
                 <TracePageDiffCard
+                  v-if="executionFailed"
                   embedded
                   :test-runs-case-id="testRunsCaseId"
                   @available="traceDiffAvailable = $event"
