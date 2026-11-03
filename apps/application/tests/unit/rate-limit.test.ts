@@ -9,6 +9,7 @@ import {
   rateLimitResetSeconds,
   rateLimitedError,
   rateLimitClientIp,
+  clientNetwork,
 } from '../../server/utils/rate-limit';
 
 const WINDOW_MS = 15 * 60 * 1000;
@@ -266,5 +267,23 @@ describe('rateLimitClientIp', () => {
     } finally {
       warn.mockRestore();
     }
+  });
+});
+
+describe('clientNetwork', () => {
+  test('reads an IPv6 address as its /64 network, however it is written', () => {
+    expect(clientNetwork('2001:db8:0:1::1')).toBe('2001:db8:0:1::/64');
+    expect(clientNetwork('2001:DB8:0000:0001:ffff:ffff:ffff:ffff')).toBe('2001:db8:0:1::/64');
+    expect(clientNetwork('2001:db8::1:2:3:4')).toBe('2001:db8:0:0::/64');
+    expect(clientNetwork('fe80::1%eth0')).toBe('fe80:0:0:0::/64');
+    expect(clientNetwork('::1')).toBe('0:0:0:0::/64');
+  });
+
+  test('keeps an IPv4 address, an IPv4-mapped one and a value that is no address as they are', () => {
+    expect(clientNetwork('198.51.100.7')).toBe('198.51.100.7');
+    expect(clientNetwork('::ffff:198.51.100.7')).toBe('::ffff:198.51.100.7');
+    expect(clientNetwork('::ffff:198.51.100.8')).toBe('::ffff:198.51.100.8');
+    expect(clientNetwork('unknown')).toBe('unknown');
+    expect(clientNetwork('[2001:db8::1]')).toBe('[2001:db8::1]');
   });
 });

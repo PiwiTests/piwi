@@ -21,6 +21,7 @@ import { getRouteRequiredPermissions } from './route-required-permission';
 import { hashToken } from './token-hash';
 import { bearerToken } from './bearer';
 import { createConcurrencyLimit } from './concurrency-limit';
+import { clientNetwork, rateLimitClientIp } from './rate-limit';
 
 declare module 'h3' {
   interface H3EventContext {
@@ -85,15 +86,18 @@ function parsePasswordHash(hash: string): PasswordHash | null {
 /**
  * Every password hash and check of the process, two at a time: one at
  * {@link SCRYPT_COST} holds 128 MiB (128 · N · r bytes) while it runs. Up to 32
- * more wait their turn in order; past that, the request is refused.
+ * more wait their turn in order; past that, the request is refused. One client
+ * (its address, an IPv6 one by its /64 network: {@link clientNetwork}) holds at
+ * most 4 of those places, running or waiting; past them, its request is refused.
  */
-const passwordHashing = createConcurrencyLimit(2, 32);
+const passwordHashing = createConcurrencyLimit(2, 32, 4);
 const PASSWORD_HASHING_RETRY_AFTER_SEC = 5;
 
 /**
  * scrypt's derived key of `password` at `cost`, with the memory bound the cost
- * needs, run within {@link passwordHashing}. Refuses with 503 and a
- * `Retry-After` header on `event` when too many hashes already wait.
+ * needs, run within {@link passwordHashing} under the share of `event`'s
+ * client. Refuses with 503 and a `Retry-After` header on `event` when too many
+ * hashes already wait, or the client already holds its share.
  */
 async function deriveKey(
   event: H3Event,
@@ -103,8 +107,9 @@ async function deriveKey(
   keyLength: number,
 ): Promise<Buffer> {
   const N = 2 ** cost.log2N;
-  const derived = passwordHashing(() =>
-    scryptAsync(password, salt, keyLength, { N, r: cost.r, p: cost.p, maxmem: 256 * N * cost.r }),
+  const derived = passwordHashing(
+    () => scryptAsync(password, salt, keyLength, { N, r: cost.r, p: cost.p, maxmem: 256 * N * cost.r }),
+    clientNetwork(rateLimitClientIp(event)),
   );
   if (!derived) {
     setResponseHeader(event, 'Retry-After', PASSWORD_HASHING_RETRY_AFTER_SEC);

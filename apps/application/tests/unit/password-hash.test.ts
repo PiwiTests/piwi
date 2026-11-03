@@ -12,8 +12,11 @@ vi.mock('../../server/database', () => ({ getDatabase: async () => state.db }));
 
 const { hashPassword, verifyPassword, passwordNeedsRehash, verifyUser } = await import('../../server/utils/auth');
 
-/** The request a busy server's 503 would answer. */
-const event = { context: {}, node: { req: { headers: {} }, res: { setHeader: () => {} } } } as unknown as H3Event;
+/** The request a busy server's 503 would answer, from the client whose share its hashes count against. */
+const event = {
+  context: {},
+  node: { req: { headers: {}, socket: { remoteAddress: '192.0.2.10' } }, res: { setHeader: () => {} } },
+} as unknown as H3Event;
 
 /** A hash in the `salt:key` form, at Node's default scrypt cost. */
 function unencodedHash(password: string, salt = 'a1'.repeat(16)): string {

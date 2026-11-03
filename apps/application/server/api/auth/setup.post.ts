@@ -10,7 +10,7 @@ import {
   setupTokenMatches,
   usernameTaken,
 } from '../../utils/auth';
-import { checkRateLimit, rateLimitClientIp, rateLimitedError } from '../../utils/rate-limit';
+import { checkRateLimit, rateLimitClientIp, rateLimitedError, releaseRateLimit } from '../../utils/rate-limit';
 import { z } from 'zod';
 
 defineRouteMeta({
@@ -100,7 +100,9 @@ export default eventHandler(async (event) => {
       },
     };
   } catch (err) {
-    // Roll back the claim so a transient failure doesn't permanently lock setup.
+    // Roll back the claim so a transient failure (a busy server's 503) doesn't permanently lock setup, and give
+    // back the request's rate-limit slot.
+    releaseRateLimit(rateKey);
     await releaseInitialSetup();
     throw err;
   }

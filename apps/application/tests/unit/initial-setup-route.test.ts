@@ -9,12 +9,21 @@ import { migrateToLatest } from './temp-db';
 /**
  * First-admin setup through its routes: it stays open while no administrator
  * exists, and with `PIWI_SETUP_TOKEN` set the form says it needs the token and
- * the setup refuses a request without it.
+ * the setup refuses a request without it. A setup a busy server refuses takes
+ * no rate-limit slot.
  */
 
 delete process.env.PIWI_DATABASE_URL;
-const state = vi.hoisted(() => ({ db: null as unknown }));
+const state = vi.hoisted(() => ({ db: null as unknown, hashBusy: false }));
 vi.mock('../../server/database', () => ({ getDatabase: async () => state.db }));
+vi.mock('../../server/utils/auth', async (importOriginal) => {
+  const auth = await importOriginal<typeof import('../../server/utils/auth')>();
+  return {
+    ...auth,
+    createUser: (...args: Parameters<typeof auth.createUser>) =>
+      state.hashBusy ? Promise.reject(Object.assign(new Error('busy'), { statusCode: 503 })) : auth.createUser(...args),
+  };
+});
 
 vi.stubGlobal('defineRouteMeta', () => {});
 vi.stubGlobal('eventHandler', (handler: unknown) => handler);
@@ -121,5 +130,16 @@ describe('first-admin setup without a token', () => {
       .from(schema.users)
       .where(eq(schema.users.role, 'administrator'));
     expect(administrators).toEqual([{ username: 'admin' }]);
+  });
+});
+
+describe('first-admin setup on a busy server', () => {
+  beforeEach(() => vi.stubEnv('PIWI_SETUP_TOKEN', ''));
+
+  test('a setup refused while the server is busy gives back its rate-limit slot', async () => {
+    state.hashBusy = true;
+    for (let i = 0; i < 6; i++) await expect(setup(request())).rejects.toMatchObject({ statusCode: 503 });
+    state.hashBusy = false;
+    expect(await setup(request())).toMatchObject({ success: true, user: { role: 'administrator' } });
   });
 });

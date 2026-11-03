@@ -30,7 +30,7 @@ function isBlockedIpv4(ip: string): boolean {
  * The eight 16-bit groups of an IPv6 address `isIP` accepted, or null: the `::`
  * run expanded, a dotted-quad tail read as its two groups, a zone id dropped.
  */
-function ipv6Groups(ip: string): number[] | null {
+export function ipv6Groups(ip: string): number[] | null {
   let host = ip.split('%')[0]!;
   const dotted = /(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
   if (dotted) {

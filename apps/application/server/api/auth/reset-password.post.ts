@@ -4,7 +4,7 @@ import { users } from '../../database/schema';
 import { claimAccountToken, releaseAccountToken } from '../../utils/account-tokens';
 import { hashPassword, revokeUserSessions } from '../../utils/auth';
 import { clearUserSession } from '../../utils/auth';
-import { checkRateLimit, rateLimitClientIp, rateLimitedError } from '../../utils/rate-limit';
+import { checkRateLimit, rateLimitClientIp, rateLimitedError, releaseRateLimit } from '../../utils/rate-limit';
 import { z } from 'zod';
 
 defineRouteMeta({
@@ -43,8 +43,10 @@ export default eventHandler(async (event) => {
     throw apiError({ statusCode: 400, message: 'Invalid or expired token' });
   }
 
-  // A hash refused or failed (the server busy, 503) sets nothing: the token stays usable.
+  // A hash refused or failed (the server busy, 503) sets nothing: the token stays usable, and the request gives
+  // back its rate-limit slot.
   const hashedPassword = await hashPassword(event, password).catch(async (error: unknown) => {
+    releaseRateLimit(rateKey);
     await releaseAccountToken(db, validated.tokenId);
     throw error;
   });

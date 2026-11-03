@@ -10,12 +10,13 @@ import { migrateToLatest } from './temp-db';
 // so clear it before the modules under test load.
 delete process.env.PIWI_DATABASE_URL;
 
-const state = vi.hoisted(() => ({ db: null as unknown, hashBusy: false }));
+const state = vi.hoisted(() => ({ db: null as unknown, hashBusy: false, released: [] as string[] }));
 vi.mock('../../server/database', () => ({ getDatabase: async () => state.db }));
 vi.mock('../../server/utils/rate-limit', () => ({
   checkRateLimit: () => true,
   rateLimitClientIp: () => 'test',
   rateLimitedError: () => new Error('rate limited'),
+  releaseRateLimit: (key: string) => state.released.push(key),
 }));
 vi.mock('../../server/utils/auth', () => ({
   // Takes a few milliseconds, as the real scrypt hash does, so concurrent requests interleave around it.
@@ -156,12 +157,14 @@ describe('POST /api/auth/reset-password', () => {
     },
   );
 
-  test('a reset refused while the server is busy leaves its token usable', async () => {
+  test('a reset refused while the server is busy leaves its token usable and gives back its rate-limit slot', async () => {
     const token = await mintAccountToken(db, 1, 'reset', ALICE);
     state.hashBusy = true;
+    state.released.length = 0;
     await expect(resetPassword({ body: { token, password: 'new-password' } })).rejects.toMatchObject({
       statusCode: 503,
     });
+    expect(state.released).toEqual(['reset:test']);
     state.hashBusy = false;
 
     expect(await resetPassword({ body: { token, password: 'new-password' } })).toEqual({ success: true });

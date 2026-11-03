@@ -1,6 +1,8 @@
 import type { H3Event } from 'h3';
 import { apiError } from './api-error';
 import { getRequestHeader, getRequestIP, setResponseHeader } from 'h3';
+import { isIP } from 'node:net';
+import { ipv6Groups } from './safe-fetch';
 
 const store = new Map<string, { count: number; resetAt: number }>();
 
@@ -154,9 +156,26 @@ export function rateLimitClientIp(event: H3Event): string {
     warnedUntrustedProxy = true;
     console.warn(
       '[rate-limit] A request carries X-Forwarded-For but PIWI_TRUST_PROXY is not set, so the per-client rate ' +
-        "limits (sign-in, password reset, setup) key on the connecting address. Behind a reverse proxy that is the proxy's, " +
+        "limits (sign-in, password reset, setup, concurrent password checks) key on the connecting address. Behind a reverse proxy that is the proxy's, " +
         'and every client shares one bucket: set PIWI_TRUST_PROXY=true when a reverse proxy you run is in front of Piwi.',
     );
   }
   return getRequestIP(event) ?? 'unknown';
+}
+
+/**
+ * The client an address counts as when one client may hold many addresses: an
+ * IPv6 address by its /64 network (`2001:db8:0:1::/64`), the block one host or
+ * site is commonly given; an IPv4-mapped IPv6 address, an IPv4 address and a
+ * value that is no address as they are.
+ */
+export function clientNetwork(address: string): string {
+  const groups = isIP(address) === 6 ? ipv6Groups(address.toLowerCase()) : null;
+  if (!groups) return address;
+  const ipv4Mapped = groups.slice(0, 5).every((group) => group === 0) && groups[5] === 0xffff;
+  if (ipv4Mapped) return address;
+  return `${groups
+    .slice(0, 4)
+    .map((group) => group.toString(16))
+    .join(':')}::/64`;
 }
