@@ -566,7 +566,9 @@ const ANNOUNCING_RUN_STATUSES = ['passed', 'failed', 'timedout'];
  * not a channel is subscribed, and the first to end is that run. It announces
  * the clusters it claimed that are open and not snoozed and whose first seen
  * run is still stored; a cluster it claims and does not announce (triaged,
- * snoozed, or its first run deleted) is no longer new to a later run.
+ * snoozed, or its first run deleted) is no longer new to a later run. The
+ * claim and the read of the clusters' first runs are one transaction: when
+ * either fails, nothing is claimed, and the next call claims them again.
  * The finalize step claims them before the run's verdicts, which may reopen a
  * cluster a person resolved: the run announces that one as regressed.
  */
@@ -589,37 +591,41 @@ export async function clustersToAnnounce(db: DbClient, runId: number, now: Date 
   ) {
     return [];
   }
-  const claimed = await db
-    .update(failureClusters)
-    .set({ announcedAt: now })
-    .where(
-      and(
-        eq(failureClusters.projectId, run.projectId),
-        isNull(failureClusters.announcedAt),
-        inArray(
-          failureClusters.id,
-          db
-            .selectDistinct({ id: testRunsCases.failureClusterId })
-            .from(testRunsCases)
-            .where(and(eq(testRunsCases.testRunId, runId), isNotNull(testRunsCases.failureClusterId))),
+  return db.transaction(async (tx) => {
+    const claimed = await tx
+      .update(failureClusters)
+      .set({ announcedAt: now })
+      .where(
+        and(
+          eq(failureClusters.projectId, run.projectId),
+          isNull(failureClusters.announcedAt),
+          inArray(
+            failureClusters.id,
+            tx
+              .selectDistinct({ id: testRunsCases.failureClusterId })
+              .from(testRunsCases)
+              .where(and(eq(testRunsCases.testRunId, runId), isNotNull(testRunsCases.failureClusterId))),
+          ),
         ),
-      ),
-    )
-    .returning({
-      id: failureClusters.id,
-      status: failureClusters.status,
-      snoozedUntil: failureClusters.snoozedUntil,
-      snoozeMode: failureClusters.snoozeMode,
-      firstSeenRunId: failureClusters.firstSeenRunId,
-    });
-  const open = claimed.filter((cluster) => cluster.status === 'open' && !isCurrentlySnoozed(cluster, now));
-  const firstRunIds = [...new Set(open.map((cluster) => cluster.firstSeenRunId))];
-  const stored = new Set(
-    firstRunIds.length
-      ? (await db.select({ id: testRuns.id }).from(testRuns).where(inArray(testRuns.id, firstRunIds))).map((r) => r.id)
-      : [],
-  );
-  return open.filter((cluster) => stored.has(cluster.firstSeenRunId)).map((cluster) => cluster.id);
+      )
+      .returning({
+        id: failureClusters.id,
+        status: failureClusters.status,
+        snoozedUntil: failureClusters.snoozedUntil,
+        snoozeMode: failureClusters.snoozeMode,
+        firstSeenRunId: failureClusters.firstSeenRunId,
+      });
+    const open = claimed.filter((cluster) => cluster.status === 'open' && !isCurrentlySnoozed(cluster, now));
+    const firstRunIds = [...new Set(open.map((cluster) => cluster.firstSeenRunId))];
+    const stored = new Set(
+      firstRunIds.length
+        ? (await tx.select({ id: testRuns.id }).from(testRuns).where(inArray(testRuns.id, firstRunIds))).map(
+            (r) => r.id,
+          )
+        : [],
+    );
+    return open.filter((cluster) => stored.has(cluster.firstSeenRunId)).map((cluster) => cluster.id);
+  });
 }
 
 /**

@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import * as schema from '../../server/database/schema.sqlite';
+import { configureSqliteConnections } from '../../server/database/sqlite-connections';
 import { openTempDb, type TempDb } from './temp-db';
 
 /** Which events a finished run sends, from `emitRunNotifications`, and the deliveries they queue. */
@@ -66,6 +67,28 @@ function migrationSql(name: string): string {
   return readFileSync(`${folder}/${entry.tag}.sql`, 'utf8');
 }
 
+/** `client`, whose first read after an update fails as a locked database does, in a transaction too. */
+function failingReadAfterClaim<T extends object>(client: T, state = { updated: false, failed: false }): T {
+  return new Proxy(client, {
+    get(target, key) {
+      const value = Reflect.get(target, key) as unknown;
+      if (typeof value !== 'function') return value;
+      if (key === 'update') state.updated = true;
+      if (key === 'select' && state.updated && !state.failed) {
+        state.failed = true;
+        return () => {
+          throw new Error('SQLITE_BUSY: database is locked');
+        };
+      }
+      if (key === 'transaction') {
+        return (run: (tx: object) => Promise<unknown>, config?: unknown) =>
+          value.call(target, (tx: object) => run(failingReadAfterClaim(tx, state)), config);
+      }
+      return value.bind(target);
+    },
+  });
+}
+
 const editorRun: RunValues = {
   status: 'failed',
   origin: 'editor',
@@ -105,6 +128,8 @@ async function addFailures(...pairs: Array<[testRunId: number, failureClusterId:
 beforeEach(async () => {
   emitted.length = 0;
   ({ db, close } = await openTempDb());
+  // Configured as the server configures its client: writes wait for an open transaction.
+  await configureSqliteConnections(db.$client);
   await db.insert(schema.projects).values({ id: 1, name: 'shop', defaultBranch: 'main' });
   await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'tests/pay.spec.ts', title: 'pays' });
 });
@@ -252,6 +277,17 @@ describe('emitRunNotifications', () => {
 
     const [first, second] = await Promise.all([clustersToAnnounce(db as never, 1), clustersToAnnounce(db as never, 2)]);
     expect([...first!, ...second!]).toEqual([7]);
+  });
+
+  test('a claim whose read fails is claimed again when the run sends its notifications', async () => {
+    await addRun(1, editorRun);
+    await addRun(2, { status: 'failed' });
+    await addCluster(7, 1);
+    await addFailures([1, 7], [2, 7]);
+
+    await expect(clustersToAnnounce(failingReadAfterClaim(db) as never, 2)).rejects.toThrow('SQLITE_BUSY');
+    await emitRunNotifications(db as never, 2);
+    expect(announcedBy()).toEqual([[7, 2]]);
   });
 
   test('a run whose notifications would not announce a cluster claims none', async () => {
