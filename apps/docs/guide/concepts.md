@@ -219,6 +219,10 @@ Every failed execution sharing a fingerprint joins one **failure cluster**. Fift
 one broken endpoint become one cluster you triage once, with a status (open / resolved / ignored) and
 a note.
 
+Two clusters can also merge into one ([semantic merging](/features/ai-diagnosis#semantic-merging-optional)). A merge
+never buries a live failure: the survivor ends open when either cluster was open and not snoozed, takes the other's
+assignee when it has none and its note, and keeps its fix attempts, tracker history and dismissed pairs.
+
 Fingerprints **ignore the failing stack frame** when the error says what failed, so the same root cause
 reached from six different spec files, through a shared helper or page object, stays one cluster. A
 **generic** error says nothing of its own: it names no locator, and its message is an `expect(…)` matcher
