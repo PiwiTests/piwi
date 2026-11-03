@@ -1597,6 +1597,7 @@ export async function getTestCaseStabilityTrend(
       status: testRunsCases.status,
       duration: testRunsCases.duration,
       retries: testRunsCases.retries,
+      passedAfterFailure: testRunsCases.passedAfterFailure,
       startTime: testRuns.startTime,
       runMetadata: testRuns.metadata,
     })

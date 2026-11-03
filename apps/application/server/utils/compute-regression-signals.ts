@@ -62,6 +62,7 @@ export async function computeRegressionSignals(db: DB, runId: number): Promise<v
       repeatEachIndex: testRunsCases.repeatEachIndex,
       status: testRunsCases.status,
       retries: testRunsCases.retries,
+      passedAfterFailure: testRunsCases.passedAfterFailure,
     })
     .from(testRunsCases)
     .where(eq(testRunsCases.testRunId, baselineRun.id));
@@ -81,6 +82,7 @@ export async function computeRegressionSignals(db: DB, runId: number): Promise<v
       repeatEachIndex: testRunsCases.repeatEachIndex,
       status: testRunsCases.status,
       retries: testRunsCases.retries,
+      passedAfterFailure: testRunsCases.passedAfterFailure,
     })
     .from(testRunsCases)
     .where(eq(testRunsCases.testRunId, runId));

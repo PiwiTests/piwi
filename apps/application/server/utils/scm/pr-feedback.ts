@@ -211,6 +211,7 @@ export async function buildRunPrSummary(
       expectedStatus: testRunsCases.expectedStatus,
       testMeta: testRunsCases.testMeta,
       retries: testRunsCases.retries,
+      passedAfterFailure: testRunsCases.passedAfterFailure,
       repeatEachIndex: testRunsCases.repeatEachIndex,
       browserName: testRunsCases.browserName,
       duration: testRunsCases.duration,

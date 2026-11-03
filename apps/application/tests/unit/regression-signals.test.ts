@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { openTempDb, type TempDb } from './temp-db';
+import { withStoredVerdicts } from './stored-verdicts';
 
 delete process.env.PIWI_DATABASE_URL;
 
@@ -33,16 +34,20 @@ describe('computeRegressionSignals', () => {
       const batch = ids.slice(i, i + 400);
       await db
         .insert(schema.testRunsCases)
-        .values(batch.map((id) => ({ testRunId: 1, testCaseId: id, status: 'passed', retries: 0 })));
+        .values(
+          withStoredVerdicts(batch.map((id) => ({ testRunId: 1, testCaseId: id, status: 'passed', retries: 0 }))),
+        );
       // Every third test fails, the next one fails then passes on retry, the last one passes.
       await db.insert(schema.testRunsCases).values(
-        batch.flatMap((id) =>
-          id % 3 === 2
-            ? [
-                { testRunId: 2, testCaseId: id, status: 'failed', retries: 0 },
-                { testRunId: 2, testCaseId: id, status: 'passed', retries: 1 },
-              ]
-            : [{ testRunId: 2, testCaseId: id, status: id % 3 === 1 ? 'failed' : 'passed', retries: 0 }],
+        withStoredVerdicts(
+          batch.flatMap((id) =>
+            id % 3 === 2
+              ? [
+                  { testRunId: 2, testCaseId: id, status: 'failed', retries: 0 },
+                  { testRunId: 2, testCaseId: id, status: 'passed', retries: 1 },
+                ]
+              : [{ testRunId: 2, testCaseId: id, status: id % 3 === 1 ? 'failed' : 'passed', retries: 0 }],
+          ),
         ),
       );
     }
@@ -72,11 +77,13 @@ describe('computeRegressionSignals', () => {
       { id: 1, projectId: 1, status: 'passed', startTime: new Date('2026-10-01T10:00:00Z'), branch: 'main' },
       { id: 2, projectId: 1, status: 'failed', startTime: new Date('2026-10-02T10:00:00Z'), branch: 'main' },
     ]);
-    await db.insert(schema.testRunsCases).values([
-      { testRunId: 1, testCaseId: 1, status: 'passed', retries: 0 },
-      { testRunId: 2, testCaseId: 1, status: 'failed', retries: 0 },
-      { testRunId: 2, testCaseId: 1, status: 'timedout', retries: 1 },
-    ]);
+    await db.insert(schema.testRunsCases).values(
+      withStoredVerdicts([
+        { testRunId: 1, testCaseId: 1, status: 'passed', retries: 0 },
+        { testRunId: 2, testCaseId: 1, status: 'failed', retries: 0 },
+        { testRunId: 2, testCaseId: 1, status: 'timedout', retries: 1 },
+      ]),
+    );
 
     await computeRegressionSignals(db as never, 2);
 
@@ -97,20 +104,22 @@ describe('computeRegressionSignals', () => {
       { id: 1, projectId: 1, status: 'passed', startTime: new Date('2026-10-01T10:00:00Z'), branch: 'main' },
       { id: 2, projectId: 1, status: 'passed', startTime: new Date('2026-10-02T10:00:00Z'), branch: 'main' },
     ]);
-    await db.insert(schema.testRunsCases).values([
-      { testRunId: 1, testCaseId: 1, status: 'passed', retries: 0 },
-      { testRunId: 1, testCaseId: 2, status: 'passed', retries: 0 },
-      // The baseline re-ran this test with its serial group: it stays stable there.
-      { testRunId: 1, testCaseId: 3, status: 'passed', retries: 0 },
-      { testRunId: 1, testCaseId: 3, status: 'passed', retries: 1 },
-      // A describe.serial group retried for test 3's failure runs its siblings again.
-      { testRunId: 2, testCaseId: 1, status: 'passed', retries: 0 },
-      { testRunId: 2, testCaseId: 1, status: 'passed', retries: 1 },
-      { testRunId: 2, testCaseId: 2, status: 'didnotrun', retries: 0 },
-      { testRunId: 2, testCaseId: 2, status: 'passed', retries: 1 },
-      { testRunId: 2, testCaseId: 3, status: 'failed', retries: 0 },
-      { testRunId: 2, testCaseId: 3, status: 'passed', retries: 1 },
-    ]);
+    await db.insert(schema.testRunsCases).values(
+      withStoredVerdicts([
+        { testRunId: 1, testCaseId: 1, status: 'passed', retries: 0 },
+        { testRunId: 1, testCaseId: 2, status: 'passed', retries: 0 },
+        // The baseline re-ran this test with its serial group: it stays stable there.
+        { testRunId: 1, testCaseId: 3, status: 'passed', retries: 0 },
+        { testRunId: 1, testCaseId: 3, status: 'passed', retries: 1 },
+        // A describe.serial group retried for test 3's failure runs its siblings again.
+        { testRunId: 2, testCaseId: 1, status: 'passed', retries: 0 },
+        { testRunId: 2, testCaseId: 1, status: 'passed', retries: 1 },
+        { testRunId: 2, testCaseId: 2, status: 'didnotrun', retries: 0 },
+        { testRunId: 2, testCaseId: 2, status: 'passed', retries: 1 },
+        { testRunId: 2, testCaseId: 3, status: 'failed', retries: 0 },
+        { testRunId: 2, testCaseId: 3, status: 'passed', retries: 1 },
+      ]),
+    );
 
     await computeRegressionSignals(db as never, 2);
 
@@ -135,15 +144,17 @@ describe('computeRegressionSignals', () => {
       { id: 4, projectId: 1, status: 'passed', startTime: day(4), branch: 'main', origin: 'bisect' },
       { id: 5, projectId: 1, status: 'failed', startTime: day(5), branch: 'main' },
     ]);
-    await db.insert(schema.testRunsCases).values([
-      { testRunId: 1, testCaseId: 1, status: 'passed' },
-      { testRunId: 1, testCaseId: 2, status: 'passed' },
-      { testRunId: 2, testCaseId: 2, status: 'passed' },
-      { testRunId: 3, testCaseId: 2, status: 'passed' },
-      { testRunId: 4, testCaseId: 2, status: 'passed' },
-      { testRunId: 5, testCaseId: 1, status: 'failed' },
-      { testRunId: 5, testCaseId: 2, status: 'passed' },
-    ]);
+    await db.insert(schema.testRunsCases).values(
+      withStoredVerdicts([
+        { testRunId: 1, testCaseId: 1, status: 'passed' },
+        { testRunId: 1, testCaseId: 2, status: 'passed' },
+        { testRunId: 2, testCaseId: 2, status: 'passed' },
+        { testRunId: 3, testCaseId: 2, status: 'passed' },
+        { testRunId: 4, testCaseId: 2, status: 'passed' },
+        { testRunId: 5, testCaseId: 1, status: 'failed' },
+        { testRunId: 5, testCaseId: 2, status: 'passed' },
+      ]),
+    );
 
     await computeRegressionSignals(db as never, 5);
 
@@ -162,12 +173,14 @@ describe('computeRegressionSignals', () => {
     ]);
     // `test.fail(browserName === 'firefox')`: the test passes in firefox too since the bug was fixed, and
     // that unexpected pass is stored as a failure, run after run.
-    await db.insert(schema.testRunsCases).values([
-      { testRunId: 1, testCaseId: 1, status: 'passed', browserName: 'chromium' },
-      { testRunId: 1, testCaseId: 1, status: 'failed', expectedStatus: 'failed', browserName: 'firefox' },
-      { testRunId: 2, testCaseId: 1, status: 'passed', browserName: 'chromium' },
-      { testRunId: 2, testCaseId: 1, status: 'failed', expectedStatus: 'failed', browserName: 'firefox' },
-    ]);
+    await db.insert(schema.testRunsCases).values(
+      withStoredVerdicts([
+        { testRunId: 1, testCaseId: 1, status: 'passed', browserName: 'chromium' },
+        { testRunId: 1, testCaseId: 1, status: 'failed', expectedStatus: 'failed', browserName: 'firefox' },
+        { testRunId: 2, testCaseId: 1, status: 'passed', browserName: 'chromium' },
+        { testRunId: 2, testCaseId: 1, status: 'failed', expectedStatus: 'failed', browserName: 'firefox' },
+      ]),
+    );
 
     await computeRegressionSignals(db as never, 2);
 

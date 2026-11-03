@@ -145,6 +145,7 @@ export async function computeRunInsights(
       status: testRunsCases.status,
       duration: testRunsCases.duration,
       retries: testRunsCases.retries,
+      passedAfterFailure: testRunsCases.passedAfterFailure,
       workerIndex: testRunsCases.workerIndex,
       title: testCases.title,
       filePath: testCases.filePath,
@@ -275,6 +276,7 @@ export async function computeRunInsights(
       status: testRunsCases.status,
       duration: testRunsCases.duration,
       retries: testRunsCases.retries,
+      passedAfterFailure: testRunsCases.passedAfterFailure,
     })
     .from(testRunsCases)
     .where(eq(testRunsCases.testRunId, baselineRun.id));

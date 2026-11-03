@@ -179,6 +179,21 @@ describe('a submitted --repeat-each run', () => {
     expect(groups[0]!.cases[0]).toMatchObject({ passedOnRetry: false, executionId: hard.id });
   });
 
+  test('a case is passed on retry when its result passed after it, in its own Playwright project', async () => {
+    const flaky = await submitRun([result(0, 'failed', 0), result(0, 'passed', 1)], { totalTests: 1, passedTests: 1 });
+    const [group] = await getFailureGroups(db as never, flaky.runId);
+    expect(group).toMatchObject({ flaky: true });
+    expect(group!.cases[0]).toMatchObject({ passedOnRetry: true });
+
+    const otherProject = { ...result(0, 'passed', 0), browser: { projectName: 'firefox' } };
+    const split = await submitRun([result(0, 'failed', 0), otherProject], { totalTests: 2, passedTests: 1 });
+    expect(await getFailureGroups(db as never, split.runId)).toMatchObject([{ flaky: false }]);
+
+    // A describe.serial group retried for another test: the earlier pass does not make the final failure flaky.
+    const serial = await submitRun([result(0, 'passed', 0), result(0, 'failed', 1)], { totalTests: 1, failedTests: 1 });
+    expect(await getFailureGroups(db as never, serial.runId)).toMatchObject([{ flaky: false }]);
+  });
+
   test('a failure cluster is not flaky because another repetition passed', async () => {
     const { runId } = await submitRun(REPEATED, { totalTests: 3, passedTests: 2, failedTests: 1 });
     const groups = await getFailureGroups(db as never, runId);

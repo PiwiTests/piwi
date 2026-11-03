@@ -246,10 +246,12 @@ describe('verified fixes on the flaky ranking and in quarantine', () => {
       duration: 60_000,
       totalTests: 1,
     });
-    await db.insert(schema.testRunsCases).values([
-      { testRunId: runId, testCaseId: 1, status: 'failed', retries: 0, browser: { projectName: 'chromium' } },
-      { testRunId: runId, testCaseId: 1, status: 'passed', retries: 1, browser: { projectName: 'chromium' } },
-    ]);
+    await db.insert(schema.testRunsCases).values(
+      withStoredVerdicts([
+        { testRunId: runId, testCaseId: 1, status: 'failed', retries: 0, browser: { projectName: 'chromium' } },
+        { testRunId: runId, testCaseId: 1, status: 'passed', retries: 1, browser: { projectName: 'chromium' } },
+      ]),
+    );
     expect((await listQuarantine(db as never, 1)).entries[0]).toMatchObject({
       releaseProposed: false,
       releaseReason: null,

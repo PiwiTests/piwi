@@ -1326,6 +1326,7 @@ export async function getProjectSpecHealth(db: DrizzleDB, projectId: number, day
       status: testRunsCases.status,
       duration: testRunsCases.duration,
       retries: testRunsCases.retries,
+      passedAfterFailure: testRunsCases.passedAfterFailure,
     })
     .from(testRunsCases)
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))

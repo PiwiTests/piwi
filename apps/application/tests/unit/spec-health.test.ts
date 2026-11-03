@@ -3,6 +3,7 @@ import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { migrateToLatest } from './temp-db';
+import { withStoredVerdicts } from './stored-verdicts';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the handler modules load.
@@ -30,7 +31,9 @@ async function addRun(): Promise<number> {
 async function addExecution(testRunId: number, retries: number, status: string): Promise<void> {
   await db
     .insert(schema.testRunsCases)
-    .values({ testRunId, testCaseId: 1, status, retries, duration: 1_000, browserName: 'chromium' });
+    .values(
+      withStoredVerdicts({ testRunId, testCaseId: 1, status, retries, duration: 1_000, browserName: 'chromium' }),
+    );
 }
 
 describe('getProjectSpecHealth', () => {
@@ -64,7 +67,9 @@ describe('getProjectSpecHealth', () => {
     await db
       .insert(schema.testCases)
       .values({ id: 2, projectId: 1, filePath: 'tests/admin/off.spec.ts', title: 'off' });
-    await db.insert(schema.testRunsCases).values({ testRunId: first, testCaseId: 2, status: 'skipped' });
+    await db
+      .insert(schema.testRunsCases)
+      .values(withStoredVerdicts({ testRunId: first, testCaseId: 2, status: 'skipped' }));
 
     const { specs } = await getProjectSpecHealth(db as any, 1, 30);
 
