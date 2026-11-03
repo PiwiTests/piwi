@@ -76,6 +76,20 @@ describe('every scenario', () => {
   });
 });
 
+describe('every attempt', () => {
+  test('carries a fixme annotation only when skipped, as Playwright adds it only to a test it skips', () => {
+    for (const scenario of simulator.DEMO_SCENARIOS) {
+      for (const test of scenario.tests()) {
+        for (const attempt of test.attempts) {
+          if (attempt.status === 'skipped') continue;
+          const types = (attempt.testAnnotations ?? []).map((a) => a.type);
+          expect(types, `${scenario.id}: ${test.title}`).not.toContain('fixme');
+        }
+      }
+    }
+  });
+});
+
 describe("the 'staging-down' scenario", () => {
   test("fails every test on its first navigation to the staging host, as the seeded incident run's tests fail", async () => {
     const run = await streamSimulation(simulator, 'staging-down');

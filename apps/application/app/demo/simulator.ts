@@ -934,7 +934,6 @@ function withPayTimeouts(tests: SimTest[]): SimTest[] {
           i === 0 && CLUSTER1_STORY.evidence.dialogOnFail
             ? [{ ...CLUSTER1_STORY.evidence.dialogOnFail, closedAt: times.dialogClosedAt }]
             : undefined,
-        testAnnotations: [{ type: 'fixme', description: `Known issue — see cluster ${CLUSTER1_STORY.clusterId}` }],
         testSource: buildTestSource(CLUSTER1_STORY, failingCase, CHECKOUT_TESTS[i]!.declLine),
         testSourceFrames: buildSourceFrames(failingCase),
         stdout: CLUSTER1_STORY.evidence.outputOnFail?.stdout ?? null,
@@ -1054,7 +1053,6 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
           duration: vary(4800),
           error: NEW_STRICT_MODE_ERROR,
           ariaSnapshot: STRICT_MODE_ARIA_SNAPSHOT,
-          testAnnotations: [{ type: 'fixme', description: 'Duplicate test IDs — needs unique data-testid' }],
         },
       ];
       return tests;
@@ -1279,7 +1277,6 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
           duration: vary(10400, 0.05),
           error: failingCase.error,
           ariaSnapshot: CLUSTER2_STORY.aria ?? undefined,
-          testAnnotations: [{ type: 'fixme', description: `Known issue — see cluster ${CLUSTER2_STORY.clusterId}` }],
           testSource: buildTestSource(CLUSTER2_STORY, failingCase, CHECKOUT_TESTS[i]!.declLine),
           testSourceFrames: buildSourceFrames(failingCase),
         },
@@ -1342,7 +1339,6 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
           status: 'failed',
           duration: vary(5200),
           error: ENV_DRIFT_ERROR,
-          testAnnotations: [{ type: 'fixme', description: 'Dark-mode visibility regression — see environment diff' }],
         },
       ];
       return tests;

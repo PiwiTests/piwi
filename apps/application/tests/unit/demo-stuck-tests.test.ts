@@ -6,7 +6,13 @@ import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { STUCK_FLOOR_MS } from '../../shared/stuck-tests';
 import type { DemoEventMessage } from '../../app/demo/run-events';
-import { checkDemoStuckTests, forgetDemoRun, noteDemoBegin, noteDemoComplete } from '../../app/demo/api/stuck-tests';
+import {
+  checkDemoStuckTests,
+  demoRunningCases,
+  forgetDemoRun,
+  noteDemoBegin,
+  noteDemoComplete,
+} from '../../app/demo/api/stuck-tests';
 
 /**
  * The demo's stuck check: the server's rule and history, run on the time a demo run's events reached, since the
@@ -80,5 +86,27 @@ describe('the demo’s stuck check', () => {
     await checkDemoStuckTests(db as never, RUN, [{ startedAt: begin.startedAt + 10 * 60_000 }]);
     await delivered();
     expect(messages).toEqual([]);
+  });
+
+  test('replays the running tests to a page that connects later, a stuck one with its mark', async () => {
+    const other = { ...begin, title: 'should show the cart', location: 'tests/checkout/checkout.spec.ts:40:3' };
+    noteDemoBegin(RUN.id, begin);
+    noteDemoBegin(RUN.id, { ...other, startedAt: begin.startedAt + 2 * 60_000 });
+    expect(demoRunningCases(RUN.id).map((c) => [c.title, c.stuck ?? null])).toEqual([
+      [begin.title, null],
+      [other.title, null],
+    ]);
+
+    await checkDemoStuckTests(db as never, RUN, [{ startedAt: begin.startedAt + 3 * 60_000 }]);
+    await checkDemoStuckTests(db as never, RUN, [{ startedAt: begin.startedAt + 5 * 60_000 }]);
+    expect(demoRunningCases(RUN.id).find((c) => c.title === begin.title)?.stuck).toEqual({
+      elapsedMs: 5 * 60_000,
+      usualMs: 7000,
+    });
+
+    noteDemoComplete(RUN.id, begin);
+    expect(demoRunningCases(RUN.id).map((c) => c.title)).toEqual([other.title]);
+    forgetDemoRun(RUN.id);
+    expect(demoRunningCases(RUN.id)).toEqual([]);
   });
 });
