@@ -9,19 +9,27 @@
 import { useTraceSnapshots } from '~/composables/useTraceSnapshots';
 import type { LightboxImage, LightboxSubject } from '~/utils/lightbox';
 
-const props = defineProps<{
-  testRunsCaseId: number;
-  /** The execution's error, shown beside the enlarged failing step. */
-  error?: string | null;
-  /** The test, named in the enlarged screenshot's details. */
-  subject?: LightboxSubject | null;
-}>();
+const props = withDefaults(
+  defineProps<{
+    testRunsCaseId: number;
+    /** The execution's error, shown beside the enlarged failing step. */
+    error?: string | null;
+    /** The execution failed: only a failed execution has a failing step to mark. */
+    failed?: boolean;
+    /** The test, named in the enlarged screenshot's details. */
+    subject?: LightboxSubject | null;
+  }>(),
+  { failed: true },
+);
 
 const { steps, hasScreen, snapshotUrl } = useTraceSnapshots(() => props.testRunsCaseId);
 
-// One frame per step that recorded a before screenshot, in trace order.
+// One frame per step that recorded a before screenshot, in trace order. With no failing action the trace
+// names the last step, so a frame is marked failed only when the execution failed.
 const frames = computed(() =>
-  steps.value.filter((s) => s.screen.before).map((s) => ({ ...s, src: snapshotUrl(s.callId, 'screen', 'before') })),
+  steps.value
+    .filter((s) => s.screen.before)
+    .map((s) => ({ ...s, failed: props.failed && s.failed, src: snapshotUrl(s.callId, 'screen', 'before') })),
 );
 
 // The same list, shaped for the lightbox (a frame's index addresses it there).

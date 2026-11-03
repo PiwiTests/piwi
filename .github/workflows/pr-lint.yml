@@ -4,7 +4,7 @@ name: PR lint
 # run on a commit is a real one: a job skipped on some events would read as passed over a failure of the same name.
 on:
   pull_request:
-    types: [opened, edited, synchronize, reopened]
+    types: [opened, edited, synchronize, reopened, labeled, unlabeled]
 
 permissions:
   contents: read
@@ -33,37 +33,40 @@ jobs:
       - name: Lint the commits of the pull request
         run: npx commitlint --from "${{ github.event.pull_request.base.sha }}" --to "${{ github.event.pull_request.head.sha }}" --verbose
 
-  # The title becomes the commit subject on main when a pull request is squash-merged.
+  # The title becomes the commit subject on main when a pull request is squash-merged, so it follows
+  # commitlint.config.js like every commit, without commitlint's default ignores (merges, reverts, fixups, bare
+  # versions).
   title:
     name: title
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    permissions:
-      pull-requests: read
     steps:
-      - name: Lint the title
-        uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Node alone: the lint step installs the packages commitlint.config.js loads.
+      - name: Set up Node
+        uses: ./.github/actions/setup-workspace
         with:
-          types: |
-            feat
-            fix
-            perf
-            docs
-            chore
-            ci
-            refactor
-            test
-            build
-            style
-            revert
-          requireScope: false
-          subjectPattern: ^(?![A-Z]).+$
-          subjectPatternError: "Subject must start lowercase (Conventional Commits)."
-          # Dependabot labels its pull requests `dependencies` and titles them itself, a capitalised "Bump" included.
-          ignoreLabels: |
-            dependencies
+          install: 'false'
+
+      # Dependabot titles its pull requests itself, a capitalized "Bump" included: a pull request it opened, or one
+      # labelled `dependencies`, is not linted. The labels are the event's, so adding the label runs the job again.
+      # scripts/commitlint-title.mjs writes, outside the workspace, a manifest of the packages commitlint.config.js
+      # loads, a lockfile of their dependencies cut from package-lock.json, and a title config that loads the repository's.
+      - name: Lint the title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          DEPENDENCIES: ${{ github.event.pull_request.user.login == 'dependabot[bot]' || contains(github.event.pull_request.labels.*.name, 'dependencies') }}
+        run: |
+          if [ "$DEPENDENCIES" = "true" ]; then
+            echo "A Dependabot pull request: the title is not linted."
+            exit 0
+          fi
+          dir="$RUNNER_TEMP/commitlint"
+          node scripts/commitlint-title.mjs "$dir"
+          npm ci --prefix "$dir" --ignore-scripts --prefer-offline --no-audit --fund=false
+          printf '%s\n' "$TITLE" | "$dir/node_modules/.bin/commitlint" --config "$dir/title.config.mjs" --verbose
 
   actionlint:
     name: actionlint

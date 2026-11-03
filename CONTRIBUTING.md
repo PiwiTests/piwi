@@ -104,9 +104,9 @@ BREAKING CHANGE: unverified accounts can no longer sign in.
 
 1. **Local `commit-msg` hook** (husky + commitlint) — runs on every `git commit` after `npm install`. Bypassable with `--no-verify`; treat it as convenience, not a gate.
 2. **`commitlint` check** (the `PR lint` workflow) — lints every commit in a PR's range on push.
-3. **`title` check** (the `PR lint` workflow) — lints the PR title itself, since that's what becomes the squash-merge commit subject. This is the check that actually gates `main`.
+3. **`title` check** (the `PR lint` workflow) — lints the PR title itself with the same `commitlint.config.js`, since that's what becomes the squash-merge commit subject. commitlint's default ignores do not apply to it: a `Merge …`, `Revert "…"` or `fixup! …` title fails, although such a commit passes. This is the check that actually gates `main`.
 
-Dependabot's commits and pull requests (labelled `dependencies`) are exempt from both checks: it writes its own messages and capitalises "Bump" in some of them.
+Dependabot's commits and pull requests (opened by Dependabot or labelled `dependencies`) are exempt from both checks: it writes its own messages and capitalises "Bump" in some of them.
 
 ## Releases
 

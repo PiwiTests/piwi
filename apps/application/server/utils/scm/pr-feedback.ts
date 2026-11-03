@@ -17,7 +17,7 @@
  */
 import { testTextLabel } from '#shared/utils/test-label';
 import { finalAttempts, flakyFinalAttempts } from '#shared/utils/test-counts';
-import { and, desc, eq, inArray, max } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import {
   bugReports,
   failureClusters,
@@ -60,7 +60,7 @@ import {
   type PrSummaryInput,
 } from '#shared/pr-feedback';
 import { computeRunChangeCoverage, type RunChangeCoverage } from './change-coverage';
-import { readPrFeedbackPost, recordPrFeedbackPost, runPrNumber } from './pr-feedback-posts';
+import { hasNewerPostOnPullRequest, readPrFeedbackPost, recordPrFeedbackPost, runPrNumber } from './pr-feedback-posts';
 import { computeScenarioGaps } from '#shared/handlers/scenario-gaps';
 import { resolveProjectStates } from '#shared/handlers/capabilities';
 import { resolveRunBranchTagFromStored } from '../graph-ingest';
@@ -615,13 +615,7 @@ export async function refreshRunPrFeedback(db: DbClient, runId: number): Promise
   try {
     const post = await readPrFeedbackPost(db, runId);
     if (!post) return;
-    if (post.prNumber != null) {
-      const [newest] = await db
-        .select({ runId: max(prFeedbackPosts.runId) })
-        .from(prFeedbackPosts)
-        .where(and(eq(prFeedbackPosts.repositoryUrl, post.repositoryUrl), eq(prFeedbackPosts.prNumber, post.prNumber)));
-      if (newest?.runId != null && newest.runId > runId) return;
-    }
+    if (await hasNewerPostOnPullRequest(db, post)) return;
     const change = await computeRunChangeCoverage(db, runId);
     await postRunPrFeedback(db, runId, post.fixes, change?.pr ?? null, change?.locatorBreaks ?? null);
   } catch (e) {

@@ -106,6 +106,7 @@ jobs:
           path: ${{ env.PLUGIN_ARCHIVE }}
           archive: false
           if-no-files-found: error
+          retention-days: 7
 
       # publishPlugin uploads the signed archive when the signing secrets are
       # set, and the built one otherwise.

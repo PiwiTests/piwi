@@ -70,6 +70,7 @@ import StepStatusMark from './StepStatusMark.vue';
 import StepParams from './StepParams.vue';
 import TimelineDuration from './TimelineDuration.vue';
 import TimelineTypeFilter from './TimelineTypeFilter.vue';
+import { executionFailed } from '#shared/file-classify';
 import { resolveLocationRoot, stepLocations, stripLocationRoot } from '#shared/locator-chain';
 import { timelinePauseSpans, type TimelinePause } from '#shared/failure-timeline';
 import type { StepFailureRole, StepPhase } from '#shared/step-tree';
@@ -104,7 +105,7 @@ const props = defineProps<{
   hasError?: boolean;
   /** The execution's error text — tells the step that failed the test from an error it caught. */
   error?: string | null;
-  /** Execution status — a did-not-run row shows a neutral step marker. */
+  /** Execution status — a did-not-run row shows a neutral step marker, and only a failed one marks a filmstrip step failed. */
   status?: string | null;
   /** The test's project-relative file — step locations read relative to the project it shows. */
   testFilePath?: string | null;
@@ -1162,7 +1163,12 @@ function revealItem(item: TimelineItem) {
       </p>
 
       <!-- Filmstrip: the page before each step, from this run's trace screen snapshots. -->
-      <TraceFilmstrip :test-runs-case-id="testRunsCaseId" :error="error" :subject="subject" />
+      <TraceFilmstrip
+        :test-runs-case-id="testRunsCaseId"
+        :error="error"
+        :failed="executionFailed(status)"
+        :subject="subject"
+      />
 
       <!-- Estimated-positions note -->
       <p v-if="showAxis && data?.estimated" class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
