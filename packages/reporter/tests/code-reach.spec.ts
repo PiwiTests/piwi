@@ -716,6 +716,7 @@ describe('at line granularity, in Chromium', () => {
     put(
       'src/main.js',
       "import { pay } from './components/Pay.vue';\nimport { plain } from './plain.js';\n" +
+        "import './components/Pay.vue?vue&type=style&index=0&lang.css';\n" +
         "document.querySelector('#pay').addEventListener('click', () => {\n  pay(false);\n  plain(false);\n});\n",
     );
     // A module served by path with no map: its own lines count.
@@ -739,6 +740,12 @@ describe('at line granularity, in Chromium', () => {
       `${script}window.__hotReload = true;\n//# sourceMappingURL=data:application/json;base64,${inline}\n`,
     );
     server = http.createServer((req, res) => {
+      if (req.url?.includes('type=style')) {
+        // A component's style block, as a dev server serves it: generated code, with no map.
+        res.setHeader('Content-Type', 'text/javascript');
+        res.end('export default "";\nfunction prune() {\n  return 1;\n}\nwindow.__prune = prune;\n');
+        return;
+      }
       const pathname = (req.url ?? '/').split('?')[0]!;
       const served = path.join(lineDir, 'served', pathname);
       const isFile = (file: string) => fs.existsSync(file) && fs.statSync(file).isFile();
@@ -788,12 +795,12 @@ describe('at line granularity, in Chromium', () => {
         lines: true,
       },
     );
-    // The component counts the lines its script maps to, not the code the server adds: the `if` block that did not run
-    // and `idle` are executable lines that did not run. The modules with no map count the lines holding code inside
-    // their functions, `main.js` its click handler's.
+    // The component counts the lines its script maps to, not the code the server adds nor its style block's module:
+    // the `if` block that did not run and `idle` are executable lines that did not run. The modules with no map count
+    // the lines holding code inside their functions, `main.js` its click handler's.
     expect(Object.fromEntries(resolved.executable)).toEqual({
       'src/components/Pay.vue': [[5, 13]],
-      'src/main.js': [[3, 6]],
+      'src/main.js': [[4, 7]],
       'src/plain.js': [[1, 9]],
     });
     expect(Object.fromEntries(resolved.lines)).toEqual({
@@ -801,7 +808,7 @@ describe('at line granularity, in Chromium', () => {
         [5, 6],
         [9, 11],
       ],
-      'src/main.js': [[3, 6]],
+      'src/main.js': [[4, 7]],
       'src/plain.js': [
         [1, 2],
         [5, 6],

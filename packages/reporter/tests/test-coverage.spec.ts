@@ -211,6 +211,35 @@ describe('coverageSettings', () => {
   });
 });
 
+describe('browserFunctionCoverage', () => {
+  it('gives the lines what the functions leave of the range cap, a file whose lines do not fit going without them', () => {
+    const functions = new Map<string, Array<[number, number]>>([
+      ['src/a.ts', [[1, 4]]],
+      ['src/b.ts', [[1, 4]]],
+    ]);
+    const lines = (count: number) => Array.from({ length: count }, (_, i) => [3 * i + 1, 3 * i + 1] as [number, number]);
+    const coverage = browserFunctionCoverage(
+      functions,
+      new Map([
+        ['src/a.ts', lines(MAX_COVERAGE_RANGES - 3)],
+        ['src/b.ts', lines(2)],
+      ]),
+    )!;
+    expect(coverage.incomplete).toBe(true);
+    expect(coverage.files.map((f) => [f.path, f.functions?.length, f.lines?.length])).toEqual([
+      ['src/a.ts', 1, MAX_COVERAGE_RANGES - 3],
+      ['src/b.ts', 1, undefined],
+    ]);
+    expect(browserFunctionCoverage(functions, new Map([['src/b.ts', lines(2)]]))).toEqual({
+      v: 1,
+      files: [
+        { path: 'src/a.ts', runtime: 'browser', functions: [[1, 4]] },
+        { path: 'src/b.ts', runtime: 'browser', functions: [[1, 4]], lines: [[1, 1], [4, 4]] },
+      ],
+    });
+  });
+});
+
 describe('newBrowserLines', () => {
   it('names the executable lines and the lines that ran of each file once per worker', () => {
     const sentExecutable = new Map<string, Set<string>>();

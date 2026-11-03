@@ -322,21 +322,26 @@ export function scriptLines(
   }
   const code = read.code ?? (entry.source !== undefined ? scriptText(entry.source, { code: true }).code : undefined);
   if (!code) return out;
-  /** Each executable line, with the offsets of its code inside the outermost function holding it. */
-  const executable = new Map<number, OffsetRange>();
+  /** Each executable line, with the offsets of its code inside each function holding part of it. */
+  const executable = new Map<number, OffsetRange[]>();
   for (const range of executedFunctionRanges(entry, read.length, true)) {
     const first = offsetToPosition(starts, range.start).line;
     const last = offsetToPosition(starts, Math.max(range.start, range.end - 1)).line;
     for (let line = first; line <= last; line++) {
-      if (code.starts[line]! < 0 || executable.has(line)) continue;
+      if (code.starts[line]! < 0) continue;
       // A function may start or end mid-line: the line's code before or after it is the code around it.
       const from = Math.max(starts[line]! + code.starts[line]!, range.start);
       const to = Math.min(starts[line]! + code.ends[line]!, range.end);
-      if (from < to) executable.set(line, [from, to]);
+      if (from >= to) continue;
+      const parts = executable.get(line);
+      if (parts) parts.push([from, to]);
+      else executable.set(line, [[from, to]]);
     }
   }
   const ran: number[] = [];
-  for (const [line, [from, to]] of executable) if (ranBetween(executed, from, to)) ran.push(line);
+  for (const [line, parts] of executable) {
+    if (parts.some(([from, to]) => ranBetween(executed, from, to))) ran.push(line);
+  }
   if (executable.size > 0) out.set(-1, { executable: toLineRanges(executable.keys()), lines: toLineRanges(ran) });
   return out;
 }

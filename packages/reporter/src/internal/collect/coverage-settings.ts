@@ -91,20 +91,30 @@ export function browserLinesInWorker(): boolean {
  * A test's browser coverage at function granularity, from the files code reach
  * resolved and the line ranges of their functions that ran, and at line
  * granularity the lines that ran in those files: paths normalized, ranges
- * merged, capped as any coverage is. Null when no file remains.
+ * merged, capped as any coverage is. The lines take what the functions leave
+ * of the range cap, file by file; a file whose lines do not fit goes without
+ * them, and the capture is incomplete. Null when no file remains.
  */
 export function browserFunctionCoverage(
   files: ReadonlyMap<string, LineRange[]>,
   lines?: ReadonlyMap<string, LineRange[]>,
 ): CoverageCapture | null {
+  const entries = [...files].map(([path, functions]) => ({ path, functions: normalizeFunctionRanges(functions) }));
+  let budget = MAX_COVERAGE_RANGES - entries.reduce((n, entry) => n + entry.functions.length, 0);
+  let incomplete = false;
   return sanitizeCoverage({
     v: 1,
-    files: [...files].map(([path, functions]) => ({
-      path,
-      runtime: 'browser',
-      functions,
-      ...(lines?.get(path)?.length ? { lines: lines.get(path) } : {}),
-    })),
+    files: entries.map(({ path, functions }) => {
+      const ran = normalizeLineRanges(lines?.get(path) ?? []);
+      if (ran.length === 0) return { path, runtime: 'browser', functions };
+      if (ran.length > budget) {
+        incomplete = true;
+        return { path, runtime: 'browser', functions };
+      }
+      budget -= ran.length;
+      return { path, runtime: 'browser', functions, lines: ran };
+    }),
+    ...(incomplete ? { incomplete: true } : {}),
   });
 }
 

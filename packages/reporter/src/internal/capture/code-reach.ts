@@ -280,6 +280,21 @@ export function relativeToRepo(file: string, repoRoot: string): string {
   return path.relative(repoRoot, file).split(path.sep).join('/');
 }
 
+/** Query parameters a dev server adds to a module served as it is written: cache stamps, an import marker. */
+const SERVED_AS_WRITTEN_PARAMS = new Set(['t', 'v', 'import']);
+
+/**
+ * Whether a module served by path is the file as written, not a part of it the server generates (a component's
+ * style block, `App.vue?vue&type=style&index=0&lang.css`): its URL has no query but the server's cache stamps.
+ */
+function servedAsWritten(url: string): boolean {
+  try {
+    return [...new URL(url).searchParams.keys()].every((key) => SERVED_AS_WRITTEN_PARAMS.has(key));
+  } catch {
+    return false;
+  }
+}
+
 /** A script's version: V8's content hash when known, else a hash of its source. */
 function scriptVersion(entry: CoveredScript): string {
   return (
@@ -340,7 +355,8 @@ async function resolveScript(
   const lookup = await loadMap(entry, fetchMap);
   let resolution: ScriptResolution;
   // A module read without a map counts the lines holding code at line granularity: keep where each line's code is.
-  const text = entry.source === undefined ? undefined : scriptText(entry.source, { code: !!file && !lookup });
+  const code = !!file && !lookup && browserLinesInWorker() && servedAsWritten(entry.url);
+  const text = entry.source === undefined ? undefined : scriptText(entry.source, { code });
   if (file) resolution = { kind: 'file', file, lookup, text };
   else resolution = lookup ? { kind: 'map', lookup, files: [], text } : { kind: 'none' };
   if (text) scriptCache.set(entry.url, version, resolution);
@@ -480,7 +496,11 @@ async function resolveFunctions(
         if (file) add(file, functions);
       }
     }
-    if (withLines && covered.executed && resolution.kind !== 'none') {
+    // A module with no map counts its own lines only when it is the file as written.
+    const ownLines =
+      resolution.kind === 'map' ||
+      (resolution.kind === 'file' && (!!resolution.lookup || servedAsWritten(covered.url)));
+    if (withLines && covered.executed && resolution.kind !== 'none' && ownLines) {
       const text = textOf(covered, resolution);
       const lookup = resolution.lookup;
       for (const [index, sourceLines] of scriptLines(covered, covered.executed, lookup, text)) {

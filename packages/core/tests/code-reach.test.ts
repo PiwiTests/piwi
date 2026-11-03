@@ -307,6 +307,30 @@ describe('block coverage at line granularity', () => {
     ]);
   });
 
+  test('without a map, a line ran when any function holding code on it ran', () => {
+    const two = 'const a = () => 1, b = () => 2;\nb();\n';
+    const callbacks: JsCoverageEntry = {
+      url: 'http://localhost:5173/src/two.js',
+      source: two,
+      functions: [
+        { functionName: '', isBlockCoverage: true, ranges: [{ startOffset: 0, endOffset: two.length, count: 1 }] },
+        {
+          functionName: 'a',
+          isBlockCoverage: true,
+          ranges: [{ startOffset: two.indexOf('()'), endOffset: two.indexOf(','), count: 0 }],
+        },
+        {
+          functionName: 'b',
+          isBlockCoverage: true,
+          ranges: [{ startOffset: two.indexOf('() => 2'), endOffset: two.indexOf(';'), count: 1 }],
+        },
+      ],
+    };
+    expect([...scriptLines(callbacks, executedOffsets(callbacks.functions), null)]).toEqual([
+      [-1, { executable: [[1, 1]], lines: [[1, 1]] }],
+    ]);
+  });
+
   test('is empty without the script source', () => {
     expect(scriptLines({ ...entry, source: undefined }, [], null).size).toBe(0);
   });
