@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as http from 'node:http';
-import { Uploader, type RunPayload } from '../src/internal/submit/uploader.js';
+import { Uploader, heldRepeat, type RunPayload } from '../src/internal/submit/uploader.js';
 import { FileHandler } from '../src/internal/files/file-handler.js';
 import { HttpClient } from '../src/internal/transport/http-client.js';
 import { Logger } from '../src/internal/support/logger.js';
@@ -484,6 +484,27 @@ describe('Uploader.uploadResults', () => {
       } finally {
         await new Promise<void>((r) => server.close(() => r()));
       }
+    }
+  });
+});
+
+describe('heldRepeat', () => {
+  it('reads the run a repeated delivery is held for, with the token its files go with', () => {
+    expect(
+      heldRepeat({ success: true, runId: 21, projectId: 2, duplicate: true, streamToken: 'renewed-token' }),
+    ).toEqual({ runId: 21, projectId: 2, streamToken: 'renewed-token' });
+  });
+
+  it("is null for a first delivery's answer, and for a repeat's without a token", () => {
+    for (const answer of [
+      { success: true, runId: 21, projectId: 2, reports: [] },
+      { success: true, runId: 21, projectId: 2, duplicate: true },
+      { success: true, runId: 21, projectId: 2, duplicate: true, streamToken: '' },
+      { success: true, runId: 21, projectId: 2, streamToken: 'renewed-token' },
+      { success: true, runId: '21', projectId: 2, duplicate: true, streamToken: 'renewed-token' },
+      null,
+    ]) {
+      expect(heldRepeat(answer)).toBeNull();
     }
   });
 });

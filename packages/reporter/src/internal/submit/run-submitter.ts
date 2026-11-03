@@ -4,7 +4,7 @@ import type { PiwiDashboardOptions, ShardInfo } from '../../public/options.js';
 import { errorMessage } from '../support/errors.js';
 import type { HttpClient } from '../transport/http-client.js';
 import { HttpError } from '../transport/http-client.js';
-import { uploadCaseFilesInTurn } from './uploader.js';
+import { heldRepeat, uploadCaseFilesInTurn } from './uploader.js';
 import type { Uploader, RunPayload, ReportOptions, FoundReport, HeldRun } from './uploader.js';
 import type { CrashRecovery } from '../streaming/crash-recovery.js';
 import type { StreamManager } from '../streaming/stream-manager.js';
@@ -458,7 +458,7 @@ export class RunSubmitter {
     try {
       const response =
         (await this.uploadInParts(run, payload, reports, auth)) ??
-        (await this.uploader.uploadWithFiles(payload, reports, run.options.uploadTraces, auth));
+        (await this.uploadInOne(run, payload, reports, auth));
       this.dropLocalCopies();
       return { done: true, output: this.buildOutput(response?.runId, response?.projectId, run, overallStatus) };
     } catch (error) {
@@ -475,7 +475,7 @@ export class RunSubmitter {
    * too large is left out alone. The results go again, under the same delivery key, when their answer may have been
    * lost: the dashboard answers a repeat of a run it holds with a new token. Null for a shard, whose run settles with
    * its last shard, when the dashboard took no results ahead of the files (an older one), and when every try at them
-   * failed with no answer or a server error: these get the run in one upload.
+   * failed with no answer or a server error: these get the run in one upload (`uploadInOne`).
    */
   private async uploadInParts(
     run: CollectedRun,
@@ -497,7 +497,39 @@ export class RunSubmitter {
       return null;
     }
     if (!held) return null;
+    await this.sendFilesAndSettle(run, held, reports, auth);
+    return held;
+  }
 
+  /**
+   * Deliver the run in one multipart upload, under the delivery key its results went with. A dashboard that holds the
+   * run from those results (their answers were lost) answers it as a repeat with a new token, its files unread: they
+   * then go as `uploadInParts` sends them, and the reports settle the run. Any other answer is returned as it came.
+   */
+  private async uploadInOne(
+    run: CollectedRun,
+    payload: RunPayload,
+    reports: FoundReport[],
+    auth: string | null,
+  ): Promise<any> {
+    const response = await this.uploader.uploadWithFiles(payload, reports, run.options.uploadTraces, auth);
+    const held = heldRepeat(response);
+    if (!held) return response;
+    this.logger.info(`The dashboard holds run #${held.runId} from its results: sending its files.`);
+    await this.sendFilesAndSettle(run, held, reports, auth);
+    return held;
+  }
+
+  /**
+   * Send each test's files to the run the dashboard holds `finalizing`, with its token, then its reports, which settle
+   * it (an upload carrying none does when none went through).
+   */
+  private async sendFilesAndSettle(
+    run: CollectedRun,
+    held: HeldRun,
+    reports: FoundReport[],
+    auth: string | null,
+  ): Promise<void> {
     // The test files stop in time to leave the reports, and the settle, their share of the budget.
     const files = new AbortController();
     const deadline = this.filesDeadline();
@@ -526,7 +558,6 @@ export class RunSubmitter {
       if (stop) clearTimeout(stop);
     }
     await this.uploader.uploadReportsAndSettle(run.options.projectName!, held.runId, reports, run.startTime, auth);
-    return held;
   }
 
   private async tryUploadJSON(

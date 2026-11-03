@@ -404,6 +404,64 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
       expect(uploadBody).toContain('pays-SHOT');
     });
 
+    it('sends the files of the run the one upload is answered as a repeat of, with its token, and settles it', async () => {
+      const resultsBodies: any[] = [];
+      await runInParts((req, res) => {
+        if (req.url === '/api/test-runs/upload/results') {
+          // The dashboard holds the run from its results, but none of the three answers arrives.
+          resultsBodies.push(JSON.parse(req.body));
+          req.raw.socket?.destroy();
+        } else if (req.url === '/api/test-runs/upload') {
+          if (req.body.includes('name="runId"')) return jsonRes(res, 200, { success: true, runId: 21 });
+          // A repeat of the held run: its files are left unread, and a token for them comes back.
+          jsonRes(res, 200, { success: true, runId: 21, projectId: 2, duplicate: true, streamToken: 'renewed-token' });
+        } else if (req.url === '/api/test-runs/21/case-files') {
+          jsonRes(res, 200, { success: true });
+        } else {
+          textRes(res, 404, 'nope');
+        }
+      });
+
+      expect(urlsHit(server)).toEqual([
+        '/api/test-runs/upload/results',
+        '/api/test-runs/upload/results',
+        '/api/test-runs/upload/results',
+        '/api/test-runs/upload',
+        '/api/test-runs/21/case-files',
+        '/api/test-runs/21/case-files',
+        '/api/test-runs/upload',
+      ]);
+      const [whole, settle] = server.requests.filter((r) => r.url === '/api/test-runs/upload');
+      expect(whole!.body).toContain(`"deliveryKey":"${resultsBodies[0].deliveryKey}"`);
+      expect(whole!.body).not.toContain('name="runId"');
+      const caseFiles = server.requests.filter((r) => r.url === '/api/test-runs/21/case-files');
+      expect(caseFiles.every((r) => r.body.includes('renewed-token'))).toBe(true);
+      expect(caseFiles.map((r) => r.body.includes('pays-SHOT'))).toEqual([true, false]);
+      expect(caseFiles[1]!.body).toContain('ships-SHOT');
+      expect(settle!.body).toMatch(/name="runId"\r\n\r\n21\r\n/);
+      expect(settle!.body).toContain('name="report_custom"');
+      expect(urlsHit(server)).not.toContain('/api/test-runs/submit');
+    });
+
+    it("a repeat answer to the one upload without a token (an older dashboard's) ends the delivery there", async () => {
+      await runInParts((req, res) => {
+        if (req.url === '/api/test-runs/upload/results') {
+          textRes(res, 503, 'unavailable');
+        } else if (req.url === '/api/test-runs/upload') {
+          jsonRes(res, 200, { success: true, runId: 21, projectId: 2, duplicate: true });
+        } else {
+          textRes(res, 404, 'nope');
+        }
+      });
+
+      expect(urlsHit(server)).toEqual([
+        '/api/test-runs/upload/results',
+        '/api/test-runs/upload/results',
+        '/api/test-runs/upload/results',
+        '/api/test-runs/upload',
+      ]);
+    });
+
     it('results refused as too large go on alone, never in an upload that carries the files too', async () => {
       await runInParts((req, res) => {
         if (req.url === '/api/test-runs/upload/results') {
