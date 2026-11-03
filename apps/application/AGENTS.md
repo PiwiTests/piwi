@@ -102,7 +102,8 @@ the offline export are written once in `shared/` and differ only in the port eac
 - **Component**: a Vue file in the matching `app/components/` subfolder, with a name unique in the app; follow the reuse
   and responsive rules of [`app/AGENTS.md`](app/AGENTS.md).
 - **Unit test**: `tests/unit/*.test.ts` (Vitest). One that needs a PostgreSQL server is named `*-pg.test.ts`, reads its
-  URL from `PIWI_POSTGRES_TEST_URL` and skips without it; CI runs them once, in the E2E job's `s3 + postgres` cell.
+  URL from `PIWI_POSTGRES_TEST_URL` and skips without it; CI runs them once, in the E2E job's `s3 + postgres` cell,
+  and `tests/unit/postgres-test-files.test.ts` fails on any other file that reads the URL.
   One that needs a migrated SQLite database gets it from `migrateToLatest` or `openTempDb` (`tests/unit/temp-db.ts`),
   which replay the schema `tests/unit/global-setup.ts` migrates once per run: Drizzle's `migrate` is for the tests of
   the migrations themselves.
