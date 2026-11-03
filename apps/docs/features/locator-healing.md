@@ -54,7 +54,7 @@ elements of the same role.
   <figcaption>Every stored match is checked against the failing page before anything is recommended.</figcaption>
 </figure>
 
-A single **recommended fix** is highlighted. It keeps your locator *style* where that style is stable enough, and only
+A single **recommended fix** is highlighted. It keeps your locator _style_ where that style is stable enough, and only
 otherwise escalates to the sturdiest alternative or advises adding a `data-testid`. When the stored accessible name is
 provably gone from the failing page, name-based alternatives, the failing locator included, stay listed but are never
 recommended.
@@ -77,7 +77,7 @@ failure cluster pages; a cluster whose next step replaces the locator shows it u
 ## Use it
 
 Copy the recommended fix, or another alternative, and change the line the panel names. With an uploaded trace,
-**Pick from trace** opens the failure in the dashboard's [trace viewer](./evidence#trace-viewer), whose *Pick locator*
+**Pick from trace** opens the failure in the dashboard's [trace viewer](./evidence#trace-viewer), whose _Pick locator_
 tool works on the recorded page snapshots, so a CI failure nobody watched can still be picked visually. A replacement
 you confirmed with a picker shows a **Your pick** badge and becomes the recommended fix.
 
@@ -99,9 +99,10 @@ PIWI_INSPECT_ON_FAIL=true npx playwright test --headed
 $env:PIWI_INSPECT_ON_FAIL='true'; npx playwright test --headed
 ```
 
-Both local options need a **headed** browser (`--headed` or `headless: false`), never activate under CI (`CI` set to
-anything but empty or `false`), skip expected failures (`test.fail()`), and with retries configured open only on the
-final attempt. The run waits while the overlay is open (the test timeout is lifted), so prefer `--workers=1`.
+Both local options need a **headed** browser (`--headed` or `headless: false`), never activate under CI (a CI
+provider's variable such as `GITHUB_ACTIONS` or `JENKINS_URL`, or `CI` set to anything but `false` or `0`), skip
+expected failures (`test.fail()`), and with retries configured open only on the final attempt. The run waits while the
+overlay is open (the test timeout is lifted), so prefer `--workers=1`.
 
 ## Pick a replacement locator on the failing page (local runs)
 
@@ -143,8 +144,8 @@ CI, like the options above. The editor extensions set both from your [breakpoint
 
 - Healing runs only when the locator **never resolved**, matched nothing, or matched several elements. When it resolved
   and the step failed afterwards (`element is not enabled`, a wrong count, a hidden element) or the page failed to
-  load, the panel says *The locator resolved; this is not a locator problem* (for a page that failed to load, *The page
-  failed to navigate before any locator ran*), because a locator that found its element needs no rewrite.
+  load, the panel says _The locator resolved; this is not a locator problem_ (for a page that failed to load, _The page
+  failed to navigate before any locator ran_), because a locator that found its element needs no rewrite.
 - Suggestions need a passing run captured with the fixtures; until then only the ARIA fallback applies. An Enter that
   submits at once can leave its field unread.
 - Capture reads each call site once per test, rarely twice. Negated assertions, absence checks (`toBeHidden`,

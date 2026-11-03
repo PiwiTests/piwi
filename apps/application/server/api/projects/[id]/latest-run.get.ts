@@ -8,7 +8,7 @@ defineRouteMeta({
     tags: ['Projects'],
     summary: 'Get latest run info for a project',
     description:
-      'Returns the id and status of the most recent test run for the project. With `origin` and `ref`, the most recent run whose launcher stamped that origin and reference (`PIWI_ORIGIN`, `PIWI_ORIGIN_REF`), or null.',
+      'Returns the id and status of the most recent test run for the project. With `origin` and `ref`, the most recent run whose launcher stamped that origin and reference (`PIWI_ORIGIN`, `PIWI_ORIGIN_REF`), or null. 404 for a project that does not exist.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { name: 'origin', in: 'query', required: false, schema: { type: 'string' }, description: 'A run origin kind' },
@@ -29,5 +29,11 @@ export default eventHandler(async (event) => {
   }
 
   const db = await getDatabase();
-  return getProjectLatestRun(db, id, isRunOriginKind(origin) ? { kind: origin, ref: String(ref) } : null);
+  try {
+    return await getProjectLatestRun(db, id, isRunOriginKind(origin) ? { kind: origin, ref: String(ref) } : null);
+  } catch (e) {
+    if ((e as Error)?.message === 'Project not found')
+      throw apiError({ statusCode: 404, message: 'Project not found' });
+    throw e;
+  }
 });

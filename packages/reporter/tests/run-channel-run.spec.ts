@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { formatRecordChannel, lineReader } from '@piwitests/core/ide-recorder';
 import { parseRunToHub, type HubToRun, type PausedImage, type RunToHub } from '@piwitests/core/run-channel';
 import { collectStepMetrics, unpausedDuration } from '@piwitests/core/step-analysis';
-import { startServer, type FakeServer } from './_helpers.js';
+import { startServer, type FakeServer, withoutCi } from './_helpers.js';
 import { pauseStepEvents, readPauses } from '../src/internal/collect/pause-events.js';
 
 /**
@@ -366,8 +366,9 @@ module.exports = defineConfig({
       .flatMap((name) => (lines[`${name} bp`] ?? []).map((line) => `tests/${name}.spec.cjs:${line}`))
       .join(';'),
   };
-  for (const name of ['CI', 'PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_RECORD_CHANNEL', 'PIWI_EDITOR_SEND'])
+  for (const name of ['PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_RECORD_CHANNEL', 'PIWI_EDITOR_SEND'])
     delete env[name];
+  withoutCi(env);
   await new Promise<void>((resolve) => {
     execFile(
       process.execPath,

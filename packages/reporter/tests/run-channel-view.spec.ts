@@ -16,7 +16,7 @@ import {
 import { parseRunToHub, type HubToRun, type RunToHub } from '@piwitests/core/run-channel';
 import { MAX_VIEW_FPS, MAX_VIEW_FRAME, type ViewInput } from '@piwitests/core/run-view';
 import { PICK_AT_NEEDS } from '../src/internal/capture/pick-at.js';
-import { jsonRes, playwrightAtLeast, startServer, type FakeServer } from './_helpers.js';
+import { jsonRes, playwrightAtLeast, startServer, type FakeServer, withoutCi } from './_helpers.js';
 
 /**
  * The live view of a stopped page, the input played on it and Pick on the image, in a real Playwright run through the
@@ -639,7 +639,8 @@ module.exports = defineConfig({
       breakpoints('firefox.spec.cjs', FIREFOX_SPEC(server.url)),
     ].join(';'),
   };
-  for (const name of ['CI', 'PWDEBUG', 'PIWI_DASHBOARD_URL']) delete env[name];
+  for (const name of ['PWDEBUG', 'PIWI_DASHBOARD_URL']) delete env[name];
+  withoutCi(env);
   await new Promise<void>((resolve) => {
     execFile(
       process.execPath,

@@ -392,6 +392,13 @@ jobs:
       - name: Install the full Chromium build
         run: npx playwright install chromium --no-shell
 
+      # The reference pages the docs build writes from the app's registries (gitignored): docs-drift.test.ts checks the
+      # MCP tools and the in-app links against them, and fails under CI on a missing one. The generators run on the
+      # root install.
+      - name: Generate the docs reference pages
+        working-directory: apps/docs
+        run: npm run docs:gen
+
       # Vitest's default worker count, one fewer than the cores: the main process serves the workers' imports.
       - name: Test
         working-directory: apps/application
@@ -443,6 +450,12 @@ jobs:
       - name: Test the AI steps (integration, drives a real browser)
         working-directory: packages/reporter
         run: npm run reporter:test:integration:ai
+
+      # The capture fixtures in a real Playwright run, checked by tests/integration/verify-reporter.ts: what they
+      # attach, that capturing adds no step of its own, and what the resource ledger finds a worker left open.
+      - name: Test the capture fixtures (integration, drives a real browser)
+        working-directory: packages/reporter
+        run: npm run reporter:test:integration
 
       - name: Report coverage on the PR
         if: github.event_name == 'pull_request'
@@ -632,7 +645,8 @@ jobs:
           docker exec -e PGPASSWORD=postgres postgres psql -h 127.0.0.1 -U postgres -c 'CREATE DATABASE playwright_main;'
 
       # The unit tests that need a PostgreSQL server (`*-pg.test.ts`), once per run: in the first shard of the s3 +
-      # postgres cell, the one a pull request and main both run. Each test creates and drops a database of its own.
+      # postgres cell, the one a pull request and main both run. Each file works in a database, schema or table of its own,
+      # named after its process, and drops it.
       - name: Run the PostgreSQL unit tests
         if: matrix.database == 'postgres' && matrix.storage == 's3' && matrix.shard == 1
         working-directory: apps/application

@@ -27,7 +27,7 @@ import {
   type LineRange,
 } from '@piwitests/core/coverage';
 
-import { innermostRunLines } from './coverage-combine';
+import { innermostRunLines, subtractLineRanges } from './coverage-combine';
 
 export type { CoverageRuntime, LineRange } from '@piwitests/core/coverage';
 
@@ -67,23 +67,6 @@ export const FAILURES_FOLLOW_MIN_SHARE = 0.9;
 export const MAX_LOSS_TESTS = 50;
 
 // ── Range helpers ────────────────────────────────────────────────────────────
-
-/** The lines of normalized ranges `a` that are not in normalized ranges `b`, as normalized ranges. */
-export function subtractLineRanges(a: LineRange[], b: LineRange[]): LineRange[] {
-  const out: LineRange[] = [];
-  let j = 0;
-  for (const [start, end] of a) {
-    let cursor = start;
-    while (j < b.length && b[j]![1] < cursor) j++;
-    for (let k = j; k < b.length && b[k]![0] <= end && cursor <= end; k++) {
-      const [bStart, bEnd] = b[k]!;
-      if (bStart > cursor) out.push([cursor, bStart - 1]);
-      cursor = Math.max(cursor, bEnd + 1);
-    }
-    if (cursor <= end) out.push([cursor, end]);
-  }
-  return out;
-}
 
 /** The union of several lists of line ranges, normalized. */
 export function unionLineRanges(...lists: Array<LineRange[] | undefined>): LineRange[] {

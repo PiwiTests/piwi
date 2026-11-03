@@ -39,8 +39,9 @@ The release process, seen from a maintainer, is in [`CONTRIBUTING.md`](../CONTRI
   covers. A change to `.github/workflows/`, `.github/actions/` or `.node-version` runs them all.
 - A change to a JavaScript workspace (`js`) runs the five check jobs at once:
   - `Format, lint and typecheck`: oxfmt, oxlint and the type check of every workspace, then knip;
-  - `Dashboard unit tests`, with the coverage comment;
-  - `Reporter tests`, under `xvfb-run`, then the AI steps' integration run, with the coverage comment;
+  - `Dashboard unit tests`, on the docs reference pages it generates first, with the coverage comment;
+  - `Reporter tests`, under `xvfb-run`, then the integration runs of the AI steps and of the capture fixtures, with the
+    coverage comment;
   - `Reporter tests (Playwright floor)`: the same suite on the oldest Playwright the reporter supports
     (`scripts/playwright-floor.mjs --install`), where a spec that needs a later version skips itself, on an Ubuntu
     that Playwright has Chromium builds for (24.04);

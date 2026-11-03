@@ -92,11 +92,11 @@ async function ingestFailure(
   expect(finish.ok()).toBeTruthy();
 
   const run = (await (await request.get(`/api/test-runs/${runId}`)).json()) as {
-    testCases: Array<{ id: number; status: string; failureClusterId?: number }>;
+    testCases: Array<{ executionId: number; status: string; failureClusterId?: number }>;
   };
   const failed = run.testCases.find((c) => c.status === 'failed');
   expect(failed?.failureClusterId).toBeTruthy();
-  return { clusterId: failed!.failureClusterId!, testRunsCaseId: failed!.id };
+  return { clusterId: failed!.failureClusterId!, testRunsCaseId: failed!.executionId };
 }
 
 /** Assert a live diagnosis came back complete and inside the schema's vocabulary. */

@@ -7,7 +7,7 @@ import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { formatRecordChannel, lineReader } from '@piwitests/core/ide-recorder';
 import { parseRunToHub, type HubToRun, type RunToHub } from '@piwitests/core/run-channel';
-import { playwrightAtLeast, startServer, type FakeServer } from './_helpers.js';
+import { playwrightAtLeast, startServer, type FakeServer, withoutCi } from './_helpers.js';
 
 /**
  * End the test in a real Playwright run, through the built package: a fake editor service on the run channel answers
@@ -266,7 +266,8 @@ module.exports = defineConfig({
     PIWI_ORIGIN_REF: REF,
     PIWI_PAUSE_AT: breakpoints.join(';'),
   };
-  for (const name of ['CI', 'PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_RECORD_CHANNEL', 'PIWI_EDITOR_SEND']) delete env[name];
+  for (const name of ['PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_RECORD_CHANNEL', 'PIWI_EDITOR_SEND']) delete env[name];
+  withoutCi(env);
   await new Promise<void>((resolve) => {
     execFile(
       process.execPath,

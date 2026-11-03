@@ -12,7 +12,7 @@ import {
   type PauseBarArg,
   type PauseChoice,
 } from '@piwitests/picker-dom';
-import { isCi } from './inspect-on-failure.js';
+import { detectCi } from '../support/ci.js';
 import { pickLocator, unlessEnded, type PickedLocator, type PickerProbe } from './pick-on-failure.js';
 import { internalCall } from './quiet-capture.js';
 import { PIWI_LOCAL_DEBUG_ENV } from '../config/env.js';
@@ -189,8 +189,8 @@ export function placeLine(place: Place, cwd: string = process.cwd()): string {
 
 /** Everything the pause gate reads, as plain values. */
 export interface PauseGate {
-  /** Raw `CI` env value. Anything except unset/empty/`'false'` counts as CI. */
-  ci: string | undefined;
+  /** Whether the run is a CI job, as `detectCi` reads the environment. */
+  ci: boolean;
   /**
    * The test's `headless` fixture, which `test.use`, `launchOptions.headless` and `--headed` set, else
    * `testInfo.project.use.headless`: must be explicitly `false` (headed).
@@ -212,7 +212,7 @@ export function pauseGateFromTestInfo(testInfo: TestInfo, headless?: unknown): P
   // A Playwright internal, feature-checked: the one place the worker sees `--debug=cli`.
   const debug = (testInfo as unknown as ConfigInternal)._configInternal?.configCLIOverrides?.debug;
   return {
-    ci: process.env.CI,
+    ci: detectCi(process.env),
     headless: headless !== undefined ? headless : use.headless,
     pwdebug: process.env.PWDEBUG,
     debug,
@@ -231,7 +231,7 @@ export function mayPause(gate: PauseGate): boolean {
 
 /** Why a run with breakpoints does not pause; null when it does. */
 export function pauseSkipReason(gate: PauseGate): string | null {
-  if (isCi(gate.ci)) return 'running under CI — breakpoints pause local runs only';
+  if (gate.ci) return 'running under CI — breakpoints pause local runs only';
   if (gate.headless !== false && !gate.channel)
     return 'the browser is headless — re-run with --headed (or set use: { headless: false })';
   if (gate.pwdebug && !['0', 'false', 'console'].includes(gate.pwdebug))

@@ -1,8 +1,17 @@
+import * as fs from 'node:fs';
 import { defineConfig } from '@playwright/test';
 
 // The workers inherit it: the capture fixtures keep the `X-Piwi-Coverage`
 // request ids the fixture server names, as with server coverage on.
 process.env.PIWI_COVERAGE_SERVER = 'lines';
+
+// The browser the run launches: `PLAYWRIGHT_CHROMIUM_EXECUTABLE` when set, as for the dashboard's suite, then the plain
+// Chromium a sandbox pre-installs instead of the headless shell this package's peer resolves. Anywhere else (CI
+// included) Playwright finds the browser `npx playwright install` provided.
+const SANDBOX_CHROMIUM = '/opt/pw-browsers/chromium';
+const executablePath =
+  process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?.trim() ||
+  (fs.existsSync(SANDBOX_CHROMIUM) ? SANDBOX_CHROMIUM : undefined);
 
 /**
  * Standalone Playwright project for the capture-fixtures integration spec.
@@ -26,13 +35,6 @@ export default defineConfig({
   reporter: [['./verify-reporter.ts'], ['line']],
   use: {
     headless: true,
-    launchOptions: {
-      // This package's @playwright/test peer resolves to a browser revision
-      // this sandbox doesn't have pre-installed (only the regular chromium
-      // binary is, not the separate chrome-headless-shell variant that
-      // `headless: true` otherwise resolves to). Point at the pre-installed
-      // binary directly instead of downloading a new one.
-      executablePath: '/opt/pw-browsers/chromium',
-    },
+    launchOptions: { executablePath },
   },
 });

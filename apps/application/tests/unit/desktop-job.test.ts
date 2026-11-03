@@ -390,6 +390,10 @@ describe('linking a local run by its origin reference', () => {
     expect(await getProjectLatestRun(db, 1, { kind: 'reproduce', ref: '7' })).toEqual({ id: 12, status: 'failed' });
     expect(await getProjectLatestRun(db, 1, { kind: 'desktop', ref: 'desktop:none' })).toBeNull();
     expect(await getProjectLatestRun(db, 1, { kind: 'desktop', ref: '%' })).toBeNull();
+    await db.insert(schema.projects).values({ id: 2, name: 'empty' });
+    expect(await getProjectLatestRun(db, 2)).toBeNull();
+    await expect(getProjectLatestRun(db, 3)).rejects.toThrow('Project not found');
+    await expect(getProjectLatestRun(db, 3, { kind: 'desktop', ref: mine })).rejects.toThrow('Project not found');
   });
 
   it('stamps a test run as desktop, a reproduction and a repro request as reproduce, and links no lab session', () => {

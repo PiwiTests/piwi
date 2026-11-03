@@ -1,16 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import {
   environmentalSkipReason,
+  inspectionGateFromTestInfo,
   shouldInspectOnFailure,
   type InspectionGate,
 } from '../src/internal/capture/inspect-on-failure.js';
 import { resolveOptions, applyOptionsToEnv, PIWI_ENV_KEYS } from '../src/internal/config/env.js';
+import { withoutCi } from './_helpers.js';
 
 /** A gate that passes every check — each test flips exactly one field. */
 function openGate(overrides: Partial<InspectionGate> = {}): InspectionGate {
   return {
     enabled: 'true',
-    ci: undefined,
+    ci: false,
     status: 'failed',
     expectedStatus: 'passed',
     headless: false,
@@ -36,13 +38,26 @@ describe('shouldInspectOnFailure', () => {
   });
 
   it('never opens under CI, even when enabled', () => {
-    expect(shouldInspectOnFailure(openGate({ ci: 'true' }))).toBe(false);
-    expect(shouldInspectOnFailure(openGate({ ci: '1' }))).toBe(false);
+    expect(shouldInspectOnFailure(openGate({ ci: true }))).toBe(false);
   });
 
-  it('tolerates CI explicitly set to false or empty', () => {
-    expect(shouldInspectOnFailure(openGate({ ci: 'false' }))).toBe(true);
-    expect(shouldInspectOnFailure(openGate({ ci: '' }))).toBe(true);
+  it('reads CI as detectCi does: a provider that sets no CI counts, CI=0 or false does not', () => {
+    const testInfo = { status: 'failed', expectedStatus: 'passed', retry: 0, project: { use: { headless: false } } };
+    const saved = { ...process.env };
+    const gateWith = (env: Record<string, string>) => {
+      Object.assign(withoutCi(process.env), env);
+      return inspectionGateFromTestInfo(testInfo as never, 'true');
+    };
+    try {
+      expect(gateWith({ JENKINS_URL: 'https://jenkins.example' }).ci).toBe(true);
+      expect(gateWith({ TEAMCITY_VERSION: '2025.03' }).ci).toBe(true);
+      expect(gateWith({ CI: '1' }).ci).toBe(true);
+      expect(gateWith({ CI: '0' }).ci).toBe(false);
+      expect(gateWith({ CI: 'false' }).ci).toBe(false);
+      expect(shouldInspectOnFailure(gateWith({}))).toBe(true);
+    } finally {
+      process.env = saved;
+    }
   });
 
   it('requires an explicitly headed browser', () => {
@@ -90,8 +105,8 @@ describe('environmentalSkipReason', () => {
   });
 
   it('explains a CI skip, and CI wins over headless', () => {
-    expect(environmentalSkipReason(openGate({ ci: 'true' }))).toMatch(/CI/);
-    expect(environmentalSkipReason(openGate({ ci: 'true', headless: true }))).toMatch(/CI/);
+    expect(environmentalSkipReason(openGate({ ci: true }))).toMatch(/CI/);
+    expect(environmentalSkipReason(openGate({ ci: true, headless: true }))).toMatch(/CI/);
   });
 
   it('stays silent when the only reason to skip is a pending retry', () => {

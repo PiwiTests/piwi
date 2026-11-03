@@ -30,6 +30,7 @@ import { parseSendPayload } from '@piwitests/core/editor-send';
 import { DesktopRuns } from '../../server/utils/desktop-runs';
 import { desktopPicksToken } from '../../server/utils/desktop-access';
 import type { DesktopRunEvent } from '#shared/desktop-runs';
+import { detectCi } from '../../../../packages/reporter/src/internal/support/ci';
 
 const requireHere = createRequire(import.meta.url);
 const reporter = path.resolve(import.meta.dirname, '../../../../packages/reporter/dist/index.js');
@@ -228,7 +229,9 @@ function runPlaywright(spec: string, extra: NodeJS.ProcessEnv): { exited: Promis
     PIWI_DESKTOP_CONFIG: path.join(project, 'no-desktop.json'),
     ...extra,
   };
-  for (const name of ['CI', 'PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_API_KEY', 'PIWI_PAUSE_AT']) delete env[name];
+  for (const name of ['PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_API_KEY', 'PIWI_PAUSE_AT']) delete env[name];
+  // A run the desktop shell starts is local: no variable a CI provider sets is left.
+  for (const name of Object.keys(env)) if (detectCi({ [name]: env[name] })) delete env[name];
   if (!extra.PIWI_EDITOR_SEND) delete env.PIWI_EDITOR_SEND;
   let output = '';
   const exited = new Promise<number | null>((resolve) => {

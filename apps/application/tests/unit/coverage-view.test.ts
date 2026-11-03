@@ -7,7 +7,6 @@ import {
   coverageRowCounts,
   coverageSummary,
   functionNameAt,
-  subtractLineRanges,
 } from '~/utils/coverage-view';
 import { FAILURE_STORIES, sourceText } from '#shared/demo/failure-stories.mjs';
 import { getDemoSourceAtBlob } from '~~/app/demo/demo-scm';
@@ -178,45 +177,6 @@ describe('coverage rows', () => {
       query: { file: 'api/Users/UsersEndpoints.cs', line: '35' },
     });
     expect(coverageFileRoute(5, 'src/pages/users.vue', null).query).toEqual({ file: 'src/pages/users.vue' });
-  });
-});
-
-describe('lines that did not run', () => {
-  test('are the executable lines no executed range holds', () => {
-    expect(
-      subtractLineRanges(
-        [
-          [17, 17],
-          [21, 25],
-          [35, 42],
-          [51, 52],
-        ],
-        [
-          [21, 25],
-          [35, 36],
-          [39, 42],
-        ],
-      ),
-    ).toEqual([
-      [17, 17],
-      [37, 38],
-      [51, 52],
-    ]);
-    expect(subtractLineRanges([[1, 10]], [])).toEqual([[1, 10]]);
-    expect(subtractLineRanges([[1, 10]], [[1, 10]])).toEqual([]);
-    expect(
-      subtractLineRanges(
-        [[1, 10]],
-        [
-          [0, 3],
-          [5, 5],
-          [9, 12],
-        ],
-      ),
-    ).toEqual([
-      [4, 4],
-      [6, 8],
-    ]);
   });
 });
 

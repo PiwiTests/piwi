@@ -7,7 +7,7 @@ import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { formatRecordChannel, lineReader } from '@piwitests/core/ide-recorder';
 import { parseRunToHub, type HubToRun, type PausedImage, type RunToHub } from '@piwitests/core/run-channel';
-import { startServer, type FakeServer } from './_helpers.js';
+import { startServer, type FakeServer, withoutCi } from './_helpers.js';
 import { readPauses } from '../src/internal/collect/pause-events.js';
 
 /**
@@ -314,8 +314,9 @@ module.exports = defineConfig({
 /** Run Playwright in a run's project, with `env` on top of this process's environment. */
 async function execute(run: Run, env: NodeJS.ProcessEnv): Promise<void> {
   const full: NodeJS.ProcessEnv = { ...process.env, PIWI_PAUSE_AT: pauseAt(run), ...env };
-  for (const name of ['CI', 'PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_RECORD_CHANNEL', 'PIWI_EDITOR_SEND'])
+  for (const name of ['PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_RECORD_CHANNEL', 'PIWI_EDITOR_SEND'])
     delete full[name];
+  withoutCi(full);
   if (!env.PIWI_RUN_CHANNEL) delete full.PIWI_RUN_CHANNEL;
   await new Promise<void>((resolve) => {
     execFile(

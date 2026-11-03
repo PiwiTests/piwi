@@ -11,7 +11,6 @@ import {
   nearestTest,
   parseTargetLines,
   reachOfTargets,
-  subtractLineRanges,
   varyingCode,
   type CoverageDivergenceAnswer,
   type VariationExecution,
@@ -29,29 +28,6 @@ const capture = (files: CoverageFile[], incomplete = false): CoverageCapture =>
   incomplete ? { v: 1, files, incomplete: true } : { v: 1, files };
 
 describe('range helpers', () => {
-  test('subtracts ranges', () => {
-    expect(
-      subtractLineRanges(
-        [
-          [1, 10],
-          [20, 30],
-        ],
-        [
-          [3, 4],
-          [8, 22],
-          [25, 25],
-        ],
-      ),
-    ).toEqual([
-      [1, 2],
-      [5, 7],
-      [23, 24],
-      [26, 30],
-    ]);
-    expect(subtractLineRanges([[1, 5]], [])).toEqual([[1, 5]]);
-    expect(subtractLineRanges([[1, 5]], [[1, 9]])).toEqual([]);
-  });
-
   test('parses target lines', () => {
     expect(parseTargetLines('57-59, 63,58')).toEqual([
       [57, 59],

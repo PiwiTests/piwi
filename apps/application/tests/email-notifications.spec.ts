@@ -19,6 +19,7 @@ import { test, expect } from './fixtures';
 import { ProjectRole } from '#shared/permissions';
 import { MailpitClient } from './utils/mailpit';
 import { createMember } from './utils/access';
+import { PROJECT } from '#shared/test-project-names';
 
 // All tests in this file share one Mailpit inbox — must run serially.
 test.describe.configure({ mode: 'serial' });
@@ -356,7 +357,7 @@ test.describe.serial('Notification dispatch', () => {
     const runRes = await apiPost(
       '/api/test-runs/submit',
       {
-        projectName: 'NotifyTestProject',
+        projectName: PROJECT.NOTIFY_EMAIL,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 1000,
@@ -413,7 +414,7 @@ test.describe.serial('Notification dispatch', () => {
     const runRes = await apiPost(
       '/api/test-runs/submit',
       {
-        projectName: 'NotifyTestProject',
+        projectName: PROJECT.NOTIFY_EMAIL,
         status: 'failed',
         startTime: new Date().toISOString(),
         duration: 2000,
@@ -441,7 +442,7 @@ test.describe.serial('Notification dispatch', () => {
 
   test('deduplication: same run does not produce duplicate deliveries', async () => {
     const runPayload = {
-      projectName: 'NotifyTestProject',
+      projectName: PROJECT.NOTIFY_EMAIL,
       status: 'passed',
       startTime: new Date().toISOString(),
       duration: 1000,
@@ -480,7 +481,7 @@ test.describe.serial('Notification dispatch', () => {
     const runRes = await apiPost(
       '/api/test-runs/submit',
       {
-        projectName: 'NotifyTestProject',
+        projectName: PROJECT.NOTIFY_EMAIL,
         status: 'passed',
         startTime: new Date().toISOString(),
         duration: 1000,

@@ -57,6 +57,63 @@ describe('subtractLineRanges', () => {
       [5, 6],
     ]);
     expect(subtractLineRanges([[1, 3]], [[1, 3]])).toEqual([]);
+    expect(subtractLineRanges([[1, 5]], [[1, 9]])).toEqual([]);
+  });
+
+  test('leaves the executable lines no executed range holds, whatever the executed ranges overhang', () => {
+    expect(
+      subtractLineRanges(
+        [
+          [17, 17],
+          [21, 25],
+          [35, 42],
+          [51, 52],
+        ],
+        [
+          [21, 25],
+          [35, 36],
+          [39, 42],
+        ],
+      ),
+    ).toEqual([
+      [17, 17],
+      [37, 38],
+      [51, 52],
+    ]);
+    expect(
+      subtractLineRanges(
+        [[1, 10]],
+        [
+          [0, 3],
+          [5, 5],
+          [9, 12],
+        ],
+      ),
+    ).toEqual([
+      [4, 4],
+      [6, 8],
+    ]);
+  });
+
+  test('lets one range of the second cut across two of the first', () => {
+    expect(
+      subtractLineRanges(
+        [
+          [1, 10],
+          [20, 30],
+        ],
+        [
+          [3, 4],
+          [8, 22],
+          [25, 25],
+        ],
+      ),
+    ).toEqual([
+      [1, 2],
+      [5, 7],
+      [23, 24],
+      [26, 30],
+    ]);
   });
 });
 
