@@ -50,6 +50,26 @@ describe('globMatcher', () => {
     expect(globMatcher('Main*', { ignoreCase: true })('mAIN-x')).toBe(true);
   });
 
+  test('ignoreCase compares letters as the i flag of a regular expression does', () => {
+    // An upper case of one character, never one that turns a character outside ASCII into one inside.
+    expect(globMatcher('ς', { ignoreCase: true })('σ')).toBe(true);
+    expect(globMatcher('µ', { ignoreCase: true })('Μ')).toBe(true);
+    expect(globMatcher('k', { ignoreCase: true })('\u212A')).toBe(false);
+    expect(globMatcher('ß', { ignoreCase: true })('ẞ')).toBe(false);
+    expect(globMatcher('s', { ignoreCase: true })('ſ')).toBe(false);
+  });
+
+  test('a wildcard that takes a / takes no line terminator, one that does not takes them', () => {
+    for (const terminator of ['\n', '\r', '\u2028', '\u2029']) {
+      expect(globMatcher('a*b')(`a${terminator}b`)).toBe(false);
+      expect(globMatcher('a?b', { questionMark: true })(`a${terminator}b`)).toBe(false);
+      expect(globMatcher('a**b', { segments: true })(`a${terminator}b`)).toBe(false);
+      expect(globMatcher('a*b', { segments: true })(`a${terminator}b`)).toBe(true);
+      expect(globMatcher('a?b', { segments: true, questionMark: true })(`a${terminator}b`)).toBe(true);
+      expect(globMatcher(`a${terminator}b`)(`a${terminator}b`)).toBe(true);
+    }
+  });
+
   test('compileGlob matches the tokens it is given', () => {
     const matches = compileGlob([
       { kind: 'char', char: 'a' },
@@ -69,7 +89,7 @@ describe('globMatcher', () => {
     const pick = <T>(items: readonly T[]) => items[random(items.length)]!;
     const escape = (char: string) => char.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
     // The regular expression each syntax stands for, built character by character.
-    const regexOf = (pattern: string, segments: boolean, questionMark: boolean) => {
+    const regexOf = (pattern: string, segments: boolean, questionMark: boolean, ignoreCase: boolean) => {
       let source = '';
       for (let i = 0; i < pattern.length; i++) {
         const char = pattern[i]!;
@@ -80,19 +100,28 @@ describe('globMatcher', () => {
         else if (char === '?' && questionMark) source += segments ? '[^/]' : '.';
         else source += escape(char);
       }
-      return new RegExp(`^${source}$`);
+      return new RegExp(`^${source}$`, ignoreCase ? 'i' : '');
     };
-    const patternChars = ['a', 'b', '/', '*', '*', '?', '.'];
-    const textChars = ['a', 'b', '/', '?', '.'];
+    // Letters whose case the i flag folds its own way (the Kelvin sign, the final sigma, the sharp s, the long s,
+    // the micro sign), and the line terminators a `.` never takes.
+    const letters = ['a', 'B', 'k', 'K', '\u212A', 'σ', 'ς', 'Σ', 'ß', 'ẞ', 's', 'ſ', 'µ', 'μ'];
+    const terminators = ['\n', '\r', '\u2028', '\u2029'];
+    const patternChars = [...letters, ...terminators, '/', '*', '*', '*', '?', '.'];
+    const textChars = [...letters, ...terminators, 'a', 'a', '/', '?', '.'];
     for (const segments of [false, true]) {
       for (const questionMark of [false, true]) {
-        for (let i = 0; i < 1500; i++) {
-          const pattern = Array.from({ length: random(7) }, () => pick(patternChars)).join('');
-          const regex = regexOf(pattern, segments, questionMark);
-          const matches = globMatcher(pattern, { segments, questionMark });
-          for (let j = 0; j < 8; j++) {
-            const text = Array.from({ length: random(8) }, () => pick(textChars)).join('');
-            expect(matches(text), `${pattern} on ${text} (${segments}, ${questionMark})`).toBe(regex.test(text));
+        for (const ignoreCase of [false, true]) {
+          for (let i = 0; i < 1500; i++) {
+            const pattern = Array.from({ length: random(7) }, () => pick(patternChars)).join('');
+            const regex = regexOf(pattern, segments, questionMark, ignoreCase);
+            const matches = globMatcher(pattern, { segments, questionMark, ignoreCase });
+            for (let j = 0; j < 8; j++) {
+              const text = Array.from({ length: random(8) }, () => pick(textChars)).join('');
+              const syntax = JSON.stringify({ segments, questionMark, ignoreCase });
+              expect(matches(text), `${JSON.stringify(pattern)} on ${JSON.stringify(text)} ${syntax}`).toBe(
+                regex.test(text),
+              );
+            }
           }
         }
       }
