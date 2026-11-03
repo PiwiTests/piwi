@@ -309,7 +309,7 @@ export class StreamManager {
         if (this.pendingEvents.length > 0) this.flush();
       }
     } catch (error) {
-      if (error instanceof HttpError && (error.status === 401 || error.status === 403)) {
+      if (error instanceof HttpError && error.status === 401) {
         this.logger.warn(
           `Live streaming could not start: the dashboard at ${this.options.serverUrl} requires authentication. ` +
             `Set the reporter's \`apiKey\` option, or PIWI_API_KEY in the environment or in the .env file next to ` +

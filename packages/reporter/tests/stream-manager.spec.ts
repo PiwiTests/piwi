@@ -960,3 +960,47 @@ describe('StreamManager end-of-run bounds', () => {
     expect(sm.lostResults).toBe(true);
   });
 });
+
+describe('StreamManager start refused', () => {
+  beforeEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  /** What the manager warns when the dashboard answers its `/start` with `error`. */
+  async function warningFor(error: Error): Promise<string> {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const http = {
+      async postJSON() {
+        throw error;
+      },
+      async resolveAuth() {
+        return null;
+      },
+    };
+    const sm = new StreamManager(
+      http as any,
+      new StreamBuffer(projectName),
+      new CrashRecovery(RECOVERY_SERVER, projectName),
+      {} as any,
+      new FileHandler(),
+      makeOptions(),
+    );
+    sm.start(new Date().toISOString(), {}, 'instance');
+    await sm.startPromise;
+    expect(sm.enabled).toBe(false);
+    return warn.mock.calls.flat().join('\n');
+  }
+
+  it('asks for an API key when the dashboard wants one (401)', async () => {
+    expect(await warningFor(new HttpError(401))).toContain("Set the reporter's `apiKey` option");
+  });
+
+  it("prints the dashboard's own reason for a 403, not the API key advice", async () => {
+    const refusal = 'Request failed with status 403: With authentication off, this dashboard answers only on its local addresses.';
+    const warning = await warningFor(new HttpError(403, refusal));
+    expect(warning).toContain(refusal);
+    expect(warning).not.toContain('apiKey');
+  });
+});

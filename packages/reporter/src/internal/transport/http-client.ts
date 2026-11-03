@@ -6,17 +6,6 @@ import { Logger } from '../support/logger.js';
 
 export { FormData };
 
-/** Pull a human-readable `message` field out of a JSON error response body, if present. */
-function parseErrorMessage(text: string): string | undefined {
-  try {
-    const parsed: unknown = JSON.parse(text);
-    const message = (parsed as { message?: unknown } | null)?.message;
-    return typeof message === 'string' ? message : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 /**
  * An HTTP response with a non-2xx status. Carries the numeric `status` so
  * callers can branch on a specific code (401, 404, 409, 422, …) via
@@ -38,6 +27,33 @@ interface HttpResponse {
   status: number;
   text: string;
   headers: http.IncomingHttpHeaders;
+}
+
+/** The most characters of the server's word on a failed request that its `HttpError` carries. */
+const FAILURE_DETAIL_MAX = 500;
+
+/**
+ * The server's own word on a failed request, on one line of at most `FAILURE_DETAIL_MAX` characters: the `message`, or
+ * else the `statusMessage`, of a JSON body, or a plain-text body. Null for any other body, such as a proxy's HTML page.
+ */
+function failureDetail(res: HttpResponse): string | null {
+  let text: unknown = null;
+  try {
+    const body = JSON.parse(res.text) as { message?: unknown; statusMessage?: unknown } | null;
+    text = typeof body?.message === 'string' ? body.message : body?.statusMessage;
+  } catch {
+    if (/^text\/plain\b/i.test(res.headers['content-type'] ?? '')) text = res.text;
+  }
+  if (typeof text !== 'string') return null;
+  const line = text.replace(/[\p{Cc}\s]+/gu, ' ').trim();
+  if (!line) return null;
+  return line.length > FAILURE_DETAIL_MAX ? `${line.slice(0, FAILURE_DETAIL_MAX - 1)}…` : line;
+}
+
+/** The error of an answer with a non-2xx status: it names the status, and the server's word on it when there is one. */
+function failedRequest(res: HttpResponse): HttpError {
+  const detail = failureDetail(res);
+  return new HttpError(res.status, `Request failed with status ${res.status}${detail ? `: ${detail}` : ''}`);
 }
 
 /**
@@ -269,7 +285,7 @@ export class HttpClient {
     });
     if (res.status < 200 || res.status >= 300) {
       this.logger.debugError(`Response: ${res.text}`);
-      throw new HttpError(res.status);
+      throw failedRequest(res);
     }
     return parseAnswer(pathname, res);
   }
@@ -287,7 +303,7 @@ export class HttpClient {
     });
     if (res.status < 200 || res.status >= 300) {
       this.logger.debugError(`Response: ${res.text}`);
-      throw new HttpError(res.status);
+      throw failedRequest(res);
     }
     return parseAnswer(pathname, res);
   }
@@ -301,11 +317,7 @@ export class HttpClient {
     const res = await this.request('POST', pathname, { headers, form, auth, timeout: this.uploadTimeout, signal });
     if (res.status < 200 || res.status >= 300) {
       this.logger.debugError(`Response: ${res.text}`);
-      const detail = parseErrorMessage(res.text);
-      throw new HttpError(
-        res.status,
-        detail ? `Request failed with status ${res.status}: ${detail}` : `Request failed with status ${res.status}`,
-      );
+      throw failedRequest(res);
     }
     return parseAnswer(pathname, res);
   }
