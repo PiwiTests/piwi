@@ -11,17 +11,24 @@ import type { WireRunError } from './wire';
 /** The most errors outside any test a run keeps: the first ones, which the later ones usually follow from. */
 export const MAX_RUN_ERRORS = 20;
 
-/** The most characters kept of a run error's message, and of its stack. */
+/** The most characters kept of a run error's message, and of its stack, the marker of a cut text included. */
 export const MAX_RUN_ERROR_CHARS = 4000;
 
 /** The longest file path a run error's location keeps. */
 const MAX_LOCATION_FILE_CHARS = 1000;
 
-/** `text` with what may be a secret hidden, cut to {@link MAX_RUN_ERROR_CHARS} with a marker naming what was cut. */
+/** The marker that ends a cut text, naming how many characters were cut. */
+const cutMarker = (cut: number) => `\n[truncated ${cut} chars]`;
+
+/**
+ * `text` with what may be a secret hidden, cut with a marker naming what was cut so that the two fit
+ * {@link MAX_RUN_ERROR_CHARS}. A text that fits is kept whole, so a stored text read again stays as it is.
+ */
 function storedText(text: string): string {
   const hidden = hideSecretsInText(hideSecretsInError(text));
   if (hidden.length <= MAX_RUN_ERROR_CHARS) return hidden;
-  return `${hidden.slice(0, MAX_RUN_ERROR_CHARS)}\n[truncated ${hidden.length - MAX_RUN_ERROR_CHARS} chars]`;
+  const kept = MAX_RUN_ERROR_CHARS - cutMarker(hidden.length).length;
+  return hidden.slice(0, kept) + cutMarker(hidden.length - kept);
 }
 
 function lineOrColumn(value: unknown): number | null {

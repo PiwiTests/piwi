@@ -38,11 +38,35 @@ describe('an error of a run outside any test', () => {
     expect(error?.message).not.toContain('correct horse');
   });
 
-  test('cuts a long message and a long stack, saying how much', () => {
+  test('cuts a long message and a long stack to the limit, their marker included, saying how much', () => {
     const error = sanitizeRunError({ message: 'x'.repeat(MAX_RUN_ERROR_CHARS + 500), stack: 'y'.repeat(9000) })!;
-    expect(error.message.startsWith('x'.repeat(MAX_RUN_ERROR_CHARS))).toBe(true);
-    expect(error.message.endsWith('\n[truncated 500 chars]')).toBe(true);
-    expect(error.stack!.length).toBeLessThan(MAX_RUN_ERROR_CHARS + 40);
+    for (const [text, char, length] of [
+      [error.message, 'x', MAX_RUN_ERROR_CHARS + 500],
+      [error.stack!, 'y', 9000],
+    ] as const) {
+      expect(text.length).toBeLessThanOrEqual(MAX_RUN_ERROR_CHARS);
+      const [, kept, cut] = /^([xy]+)\n\[truncated (\d+) chars\]$/.exec(text)!;
+      expect(kept).toBe(char.repeat(kept!.length));
+      expect(kept!.length + Number(cut)).toBe(length);
+    }
+  });
+
+  test('keeps a text that fits the limit whole, so a stored error read again stays as it is', () => {
+    const atLimit = sanitizeRunError({ message: 'x'.repeat(MAX_RUN_ERROR_CHARS) })!;
+    expect(atLimit.message).toBe('x'.repeat(MAX_RUN_ERROR_CHARS));
+
+    const reported = runErrorOfReported(
+      {
+        message: `Error: login failed with token=s3cr3t-v4lue ${'x'.repeat(5000)}`,
+        stack: `Error: login failed\n${'    at login (/repo/global-setup.ts:4:9)\n'.repeat(300)}`,
+        location: { file: '/repo/global-setup.ts', line: 4, column: 9 },
+      },
+      (file) => file.replace('/repo/', ''),
+    )!;
+    expect(reported.message).toMatch(/\n\[truncated \d+ chars\]$/);
+    expect(reported.stack).toMatch(/\n\[truncated \d+ chars\]$/);
+    expect(sanitizeRunError(reported)).toEqual(reported);
+    expect(sanitizeRunErrors([reported])).toEqual([reported]);
   });
 
   test('needs a message; a stack, a location and their parts are each kept only when valid', () => {
