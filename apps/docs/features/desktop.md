@@ -154,8 +154,8 @@ verified against the project's signing key.
   [Docker image](/operate/deployment).
 - **Local runs need the checkout**: a linked folder with Playwright installed, and `git` and your package manager for
   reproduce, bisect (one repository) and the lab.
-- **No public address**: no [pull-request feedback](/features/pr-feedback), [auto-heal](/features/auto-heal) or Jira
-  webhook, and email only with SMTP set.
+- **No public address**: no [pull-request feedback](/features/pr-feedback), [auto-heal](/features/auto-heal),
+  [share links](/features/share-links) or Jira webhook; email only with SMTP set.
 
 ## Related
 

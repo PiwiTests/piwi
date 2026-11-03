@@ -23,7 +23,7 @@ import type { AutomaticFiling } from '#shared/integrations/automation';
 import { DEFAULT_LOCALE, type IssueLocale } from '#shared/integrations/messages';
 import type { IssueIncludeOptions } from '#shared/integrations/types';
 import { buildBugReportIssue, buildClusterIssue, buildExecutionIssue } from './documents';
-import { clusterShareTokenMinter } from './share-url';
+import { redactedShareTokenMinter } from './share-url';
 import {
   enqueueOrReplaceAction,
   findActionByKey,
@@ -147,16 +147,12 @@ export async function createIssue(db: DbClient, params: CreateIssueParams): Prom
 
   const include = { ...DEFAULT_ISSUE_OPTS, ...(params.include ?? {}) };
   const locale = params.locale ?? DEFAULT_LOCALE;
-  // A filing asked again before it was done keeps the share link of its first attempt.
-  const prior = await findActionByKey(db, createIssueKey('failure_cluster', target.clusterId, params.connectionId));
-  const priorShareUrl =
-    prior && prior.status !== 'done' ? (prior.payload as CreateIssueActionPayload | null)?.shareUrl : null;
+  // The body carries the share link redacted: the link is created when the issue is sent.
   const opts = {
     ...include,
     locale,
     siteUrl: params.siteUrl,
-    mintShareToken: clusterShareTokenMinter(db, params.requestedBy ?? null),
-    ...(priorShareUrl ? { shareUrl: priorShareUrl } : {}),
+    mintShareToken: redactedShareTokenMinter,
     automatic: params.automatic ?? null,
   };
   const built =
@@ -233,6 +229,7 @@ interface IssueToFile {
   linkEntityType: CreateIssueActionPayload['linkEntityType'];
   linkEntityId: number;
   include: CreateIssueActionPayload['include'];
+  /** The share link the body carries, its token redacted. */
   shareUrl: string | null;
 }
 

@@ -1,11 +1,29 @@
 import type { H3Event } from 'h3';
 import { apiError } from './api-error';
 import { getRequestHeader, getRequestIP, setResponseHeader } from 'h3';
+import { isIP } from 'node:net';
+import { ipv6Groups } from './safe-fetch';
 
 const store = new Map<string, { count: number; resetAt: number }>();
 
+/** The store's size below which no sweep of ended windows runs. */
+const SWEEP_FLOOR = 1000;
+/** The size at which the next new key sweeps the ended windows: twice what the last sweep kept, at least the floor. */
+let sweepAt = SWEEP_FLOOR;
+
+/** Drop every key whose window has ended. */
+function sweepEndedWindows(now: number): void {
+  for (const [key, entry] of store) {
+    if (entry.resetAt < now) store.delete(key);
+  }
+  sweepAt = Math.max(SWEEP_FLOOR, store.size * 2);
+}
+
 /**
  * Simple in-memory rate limiter. Returns true if the request is allowed.
+ * A new key first sweeps the ended windows once the store has grown to
+ * `sweepAt`, so it never holds more than the floor or twice the keys the last
+ * sweep kept.
  * @param key       Unique key (e.g. IP + endpoint)
  * @param limit     Max requests per window
  * @param windowMs  Window duration in ms
@@ -14,6 +32,7 @@ export function checkRateLimit(key: string, limit: number, windowMs: number): bo
   const now = Date.now();
   const entry = store.get(key);
   if (!entry || entry.resetAt < now) {
+    if (!entry && store.size >= sweepAt) sweepEndedWindows(now);
     store.set(key, { count: 1, resetAt: now + windowMs });
     return true;
   }
@@ -22,10 +41,40 @@ export function checkRateLimit(key: string, limit: number, windowMs: number): bo
   return true;
 }
 
-/** Give back one slot `checkRateLimit` took under `key`, for a request that turned out not to count. */
+/**
+ * Give back one slot `checkRateLimit` took under `key`, for a request that
+ * turned out not to count. A key left holding no slot is removed, so requests
+ * that never count leave nothing in the store.
+ */
 export function releaseRateLimit(key: string): void {
   const entry = store.get(key);
-  if (entry && entry.resetAt >= Date.now() && entry.count > 0) entry.count--;
+  if (!entry || entry.resetAt < Date.now()) return;
+  if (entry.count > 0) entry.count--;
+  if (entry.count === 0) store.delete(key);
+}
+
+/**
+ * Take one slot of each bucket in turn, before the check they limit runs, so
+ * requests sent together count as well. The first full bucket refuses with a
+ * 429 carrying `message`, and the slots taken before it are given back.
+ * Returns the keys taken, for the caller to give back when its request turns
+ * out not to count.
+ */
+export function takeRateLimitSlots(
+  event: H3Event,
+  buckets: readonly (readonly [key: string, limit: number])[],
+  windowMs: number,
+  message: string,
+): string[] {
+  const taken: string[] = [];
+  for (const [key, limit] of buckets) {
+    if (!checkRateLimit(key, limit, windowMs)) {
+      for (const slot of taken) releaseRateLimit(slot);
+      throw rateLimitedError(event, [key], message);
+    }
+    taken.push(key);
+  }
+  return taken;
 }
 
 /**
@@ -58,6 +107,11 @@ export function resetRateLimit(key: string): void {
   store.delete(key);
 }
 
+/** How many keys the limiter holds, ended windows not swept yet included. */
+export function rateLimitKeyCount(): number {
+  return store.size;
+}
+
 /** Seconds until `key`'s current window expires — 0 when no window is active. */
 export function rateLimitResetSeconds(key: string): number {
   const entry = store.get(key);
@@ -79,6 +133,8 @@ export function rateLimitedError(
   return apiError({ statusCode: 429, message });
 }
 
+let warnedUntrustedProxy = false;
+
 /**
  * Client address used in rate-limit keys.
  *
@@ -87,13 +143,39 @@ export function rateLimitedError(
  * switches to the last `X-Forwarded-For` entry (the one appended by the proxy in
  * front of Piwi, which clients cannot forge). Only set it when such a proxy is
  * actually in front of the server: trusted, the header is client-controlled on
- * direct connections, which would let a caller pick its own bucket.
+ * direct connections, which would let a caller pick its own bucket. The first
+ * request that carries the header while it is unset logs a warning, once per
+ * process.
  */
 export function rateLimitClientIp(event: H3Event): string {
+  const forwarded = getRequestHeader(event, 'x-forwarded-for');
   if (process.env.PIWI_TRUST_PROXY === 'true') {
-    const forwarded = getRequestHeader(event, 'x-forwarded-for');
     const lastHop = forwarded?.split(',').at(-1)?.trim();
     if (lastHop) return lastHop;
+  } else if (forwarded && !warnedUntrustedProxy) {
+    warnedUntrustedProxy = true;
+    console.warn(
+      '[rate-limit] A request carries X-Forwarded-For but PIWI_TRUST_PROXY is not set, so the per-client rate ' +
+        "limits (sign-in, password reset, setup, concurrent password checks) key on the connecting address. Behind a reverse proxy that is the proxy's, " +
+        'and every client shares one bucket: set PIWI_TRUST_PROXY=true when a reverse proxy you run is in front of Piwi.',
+    );
   }
   return getRequestIP(event) ?? 'unknown';
+}
+
+/**
+ * The client an address counts as when one client may hold many addresses: an
+ * IPv6 address by its /64 network (`2001:db8:0:1::/64`), the block one host or
+ * site is commonly given; an IPv4-mapped IPv6 address, an IPv4 address and a
+ * value that is no address as they are.
+ */
+export function clientNetwork(address: string): string {
+  const groups = isIP(address) === 6 ? ipv6Groups(address.toLowerCase()) : null;
+  if (!groups) return address;
+  const ipv4Mapped = groups.slice(0, 5).every((group) => group === 0) && groups[5] === 0xffff;
+  if (ipv4Mapped) return address;
+  return `${groups
+    .slice(0, 4)
+    .map((group) => group.toString(16))
+    .join(':')}::/64`;
 }

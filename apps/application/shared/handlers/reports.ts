@@ -27,6 +27,7 @@ import {
   analyticsScopeToQuery,
   DEFAULT_ANALYTICS_SCOPE,
   parseAnalyticsScope,
+  scopeFilesErrors,
   type AnalyticsScope,
 } from '../analytics/scope';
 import {
@@ -174,8 +175,13 @@ export function parseScheduleBody<T>(schema: z.ZodType<T>, body: unknown): T {
   return parsed.data;
 }
 
-/** The filters a schedule keeps from a scope: its period comes from the cadence, its comparison from the schedule. */
+/**
+ * The filters a schedule keeps from a scope: its period comes from the cadence, its comparison from the schedule.
+ * A `files` list past the limits of a selection's is refused.
+ */
 export function scheduleFilters(query: Record<string, string>): Partial<AnalyticsScope> {
+  const filesErrors = scopeFilesErrors(query, 'scope.files');
+  if (filesErrors.length > 0) throw new ReportScheduleError(400, `Invalid schedule: ${filesErrors.join('; ')}`);
   const scope = parseAnalyticsScope(query);
   const keep: Partial<AnalyticsScope> = {
     defaultBranchOnly: scope.defaultBranchOnly,

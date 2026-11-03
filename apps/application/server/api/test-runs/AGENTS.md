@@ -88,6 +88,16 @@ How the server merges shards:
   run's own token or any of its shard tokens, from the cache or the database (`validateAndReviveRun` with its
   `isShardToken` callback, which also revives an interrupted run). Never compare a token against the stored set
   directly: `matchesShardToken` and `matchesStreamToken` refuse a presented digest.
+- **A streaming route whose token is in its body refuses what it can before it reads the body**: `begin`, `events`,
+  `finish` and `live-resources` call `requireStreamingRun` (`server/utils/stream-auth.ts`) first, which answers the 404
+  of a missing run, the 409 of one the route does not take and the 401 or 403 of the token header as the route does
+  after reading the body, and the body-limit middleware holds the body to the route's cap (`server/utils/body-limit.ts`,
+  10 MB for `events`, 32 MB for the others; `tests/unit/stream-route-bodies.test.ts`, `tests/unit/body-limit.test.ts`).
+- **The reporter sends those routes' token twice, in the body and in `X-Piwi-Run-Token`** (`RUN_TOKEN_HEADER`,
+  `@piwitests/core/wire`): its setup token to `begin`, its stream token to the others. The header is required of a
+  run whose `reporter_version` (from `/setup`, `/start` or `begin`) is 0.65.0 or later (`sendsRunTokenHeader`); the
+  token of an older or unknown reporter's run is checked in the body alone. Keep the body's token checked too: an
+  older dashboard reads only it.
 - **A path that ends a run drops its cached state** (`runEventBus.cleanup`), as `/finish`, the stale-run sweep and
   `cancelInstanceRuns` do: `authorizeStreamToken` trusts the cache without reading the run's status, so a run left in
   it takes events after it ended (`tests/unit/cancelled-run-stream.test.ts`).

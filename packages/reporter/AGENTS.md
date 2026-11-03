@@ -22,8 +22,8 @@ responsibilities.
      (`terminal-<pid>-<time>`) of the editor whose workspace holds it (`internal/config/editors.ts`: never under CI,
      Playwright's debugger or UI mode, nor with `PIWI_EDITOR=off`, and only with a terminal or a test runner unless
      `PIWI_EDITOR=on`), with one line saying so;
-   - `piwi-*` attachment names (`internal/capture/attachments.ts`), temp files in `os.tmpdir()`, and
-     `[Piwi Dashboard]`-prefixed log output;
+   - `piwi-*` attachment names (`internal/capture/attachments.ts`), temp files in `os.tmpdir()` (the private ones
+     in `%LOCALAPPDATA%\piwi\tmp` on Windows, `privateTempDir`), and `[Piwi Dashboard]`-prefixed log output;
    - the `__piwiProbeElement` global the capture fixtures install into every instrumented page
      (`internal/capture/capture-fixtures.ts`), and the `beforeunload` listener code reach adds to each document of a
      covered page, in its own isolated world (`internal/capture/code-reach.ts`);
@@ -141,6 +141,16 @@ responsibilities.
   streaming routes build their own run bodies: `/setup` in `public/global-setup.ts`, `/finish` in
   `internal/submit/run-submitter.ts`, `/start` and `/begin` in `internal/streaming/stream-manager.ts`, so a run-level
   field the server reads while streaming is added there too.
+- **A streaming request carries its run's token twice**: in its body and in the `RUN_TOKEN_HEADER` header
+  (`runTokenHeaders`, `internal/transport/http-client.ts`), the setup token to `/begin`, the stream token to `/events`,
+  `/finish` and `/live-resources`. The dashboard refuses a run of this reporter (the `reporterVersion` `/setup` and
+  `/start` send, 0.65.0 and later) without the header, and an older dashboard reads the body's: drop neither.
+- **A private temp file goes through `internal/support/private-file.ts`**: in `privateTempDir()`, never `os.tmpdir()`
+  itself (on Windows, `%LOCALAPPDATA%\piwi\tmp`: a service account's `os.tmpdir()` is shared), written and read with
+  `writePrivateFile`, `appendPrivateFile` and `readPrivateFile`; or it lives in a `fs.mkdtempSync` folder. Owner-only,
+  its path checked before it is opened, never written through a link nor waited on as a named pipe, read back only
+  when this user owns it; on Windows the owner and mode checks are no-ops and only that path check refuses a link
+  (`tests/private-file.spec.ts`).
 - **Playwright from the floor up.** The lower bound of the peer range on `@playwright/test` is the oldest Playwright
   the reporter supports: an API added after it is feature-checked, and a spec that needs it skips itself below that
   version (`playwrightAtLeast`, `tests/_helpers.ts`). CI's `reporter-floor` job runs the suite on the floor

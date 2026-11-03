@@ -42,7 +42,8 @@ vi.stubGlobal('getRequestHeader', (event: FakeEvent, name: string) => event.head
 // Authentication is on through PIWI_AUTH_ENABLED, which wins over the runtime config.
 vi.stubGlobal('useRuntimeConfig', () => ({ authEnabled: false }));
 
-const { generateApiKey, getRequestAccess, requireAuth } = await import('../../server/utils/auth');
+const { generateApiKey, getRequestAccess, refuseApiKey, requireAuth, requireSessionAuth } =
+  await import('../../server/utils/auth');
 const { getProjectScope, requireProjectAccess, requireResolvedProjectAccess } =
   await import('../../server/utils/project-access');
 
@@ -159,6 +160,38 @@ describe('requireAuth', () => {
     expect(await statusOf(requireAuth(event(as(2)), 'signed-in'))).toBe('ok');
     state.route = [];
     expect(await statusOf(requireAuth(event(as(2)), ['run:delete']))).toEqual(insufficient);
+  });
+});
+
+describe('requireSessionAuth', () => {
+  const sessionRequired = {
+    statusCode: 403,
+    message: 'A signed-in session is required: an API key cannot change account credentials or create new ones',
+  };
+
+  test("refuses an API key, even an administrator's", async () => {
+    state.route = ['signed-in'];
+    expect(await statusOf(requireSessionAuth(event(as(2))))).toEqual(sessionRequired);
+    expect(await statusOf(requireSessionAuth(event(as(1))))).toEqual(sessionRequired);
+  });
+
+  test('refuses an API key after requireAuth accepted it', async () => {
+    const e = as(2);
+    await requireAuth(event(e));
+    expect(() => refuseApiKey(event(e))).toThrow(expect.objectContaining(sessionRequired));
+  });
+
+  test('asks a caller without credentials to sign in (401)', async () => {
+    expect(await statusOf(requireSessionAuth(event({ headers: {}, context: {} })))).toEqual({
+      statusCode: 401,
+      message: 'Authentication required',
+    });
+  });
+
+  test('lets every caller through when authentication is off', async () => {
+    delete process.env.PIWI_AUTH_ENABLED;
+    const user = await requireSessionAuth(event({ headers: {}, context: {} }));
+    expect(user.role).toBe(InstanceRole.ADMINISTRATOR);
   });
 });
 

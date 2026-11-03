@@ -2,20 +2,10 @@ import * as https from 'node:https';
 import * as http from 'node:http';
 import { URL } from 'node:url';
 import FormData from 'form-data';
+import { RUN_TOKEN_HEADER } from '@piwitests/core/wire';
 import { Logger } from '../support/logger.js';
 
 export { FormData };
-
-/** Pull a human-readable `message` field out of a JSON error response body, if present. */
-function parseErrorMessage(text: string): string | undefined {
-  try {
-    const parsed: unknown = JSON.parse(text);
-    const message = (parsed as { message?: unknown } | null)?.message;
-    return typeof message === 'string' ? message : undefined;
-  } catch {
-    return undefined;
-  }
-}
 
 /**
  * An HTTP response with a non-2xx status. Carries the numeric `status` so
@@ -38,6 +28,33 @@ interface HttpResponse {
   status: number;
   text: string;
   headers: http.IncomingHttpHeaders;
+}
+
+/** The most characters of the server's word on a failed request that its `HttpError` carries. */
+const FAILURE_DETAIL_MAX = 500;
+
+/**
+ * The server's own word on a failed request, on one line of at most `FAILURE_DETAIL_MAX` characters: the `message`, or
+ * else the `statusMessage`, of a JSON body, or a plain-text body. Null for any other body, such as a proxy's HTML page.
+ */
+export function failureDetail(res: Pick<HttpResponse, 'text' | 'headers'>): string | null {
+  let text: unknown = null;
+  try {
+    const body = JSON.parse(res.text) as { message?: unknown; statusMessage?: unknown } | null;
+    text = typeof body?.message === 'string' ? body.message : body?.statusMessage;
+  } catch {
+    if (/^text\/plain\b/i.test(res.headers['content-type'] ?? '')) text = res.text;
+  }
+  if (typeof text !== 'string') return null;
+  const line = text.replace(/[\p{Cc}\s]+/gu, ' ').trim();
+  if (!line) return null;
+  return line.length > FAILURE_DETAIL_MAX ? `${line.slice(0, FAILURE_DETAIL_MAX - 1)}…` : line;
+}
+
+/** The error of an answer with a non-2xx status: it names the status, and the server's word on it when there is one. */
+function failedRequest(res: HttpResponse): HttpError {
+  const detail = failureDetail(res);
+  return new HttpError(res.status, `Request failed with status ${res.status}${detail ? `: ${detail}` : ''}`);
 }
 
 /**
@@ -82,6 +99,14 @@ export function serverUrlProblem(serverUrl: string): string | null {
     return `serverUrl "${serverUrl}" is not an http:// or https:// URL: give the dashboard's whole address, such as https://piwi.example.com.`;
   }
   return null;
+}
+
+/**
+ * The header that carries a streaming run's token (`RUN_TOKEN_HEADER`), for a request that also carries it in its
+ * body; none without a token.
+ */
+export function runTokenHeaders(token: string | null | undefined): Record<string, string> {
+  return token ? { [RUN_TOKEN_HEADER]: token } : {};
 }
 
 /** Options for the unified `request()` core. */
@@ -248,17 +273,19 @@ export class HttpClient {
    * Send a JSON POST request. `auth` can be an API key (prefix `pd_`) or a session cookie string. Resolves to the
    * answer's JSON; an answer that is not JSON fails, and `signal` ends the request. With `upload`, the answer may come
    * as late as a multipart upload's: the body is a run's results, which the dashboard stores before it answers.
+   * `headers` go with the request beside its own.
    */
   async postJSON(
     pathname: string,
     payload: unknown,
     auth?: string | null,
     signal?: AbortSignal,
-    { upload = false }: { upload?: boolean } = {},
+    { upload = false, headers = {} }: { upload?: boolean; headers?: Record<string, string> } = {},
   ): Promise<any> {
     const body = JSON.stringify(payload);
     const res = await this.request('POST', pathname, {
       headers: {
+        ...headers,
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(body),
       },
@@ -269,7 +296,7 @@ export class HttpClient {
     });
     if (res.status < 200 || res.status >= 300) {
       this.logger.debugError(`Response: ${res.text}`);
-      throw new HttpError(res.status);
+      throw failedRequest(res);
     }
     return parseAnswer(pathname, res);
   }
@@ -287,7 +314,7 @@ export class HttpClient {
     });
     if (res.status < 200 || res.status >= 300) {
       this.logger.debugError(`Response: ${res.text}`);
-      throw new HttpError(res.status);
+      throw failedRequest(res);
     }
     return parseAnswer(pathname, res);
   }
@@ -301,11 +328,7 @@ export class HttpClient {
     const res = await this.request('POST', pathname, { headers, form, auth, timeout: this.uploadTimeout, signal });
     if (res.status < 200 || res.status >= 300) {
       this.logger.debugError(`Response: ${res.text}`);
-      const detail = parseErrorMessage(res.text);
-      throw new HttpError(
-        res.status,
-        detail ? `Request failed with status ${res.status}: ${detail}` : `Request failed with status ${res.status}`,
-      );
+      throw failedRequest(res);
     }
     return parseAnswer(pathname, res);
   }

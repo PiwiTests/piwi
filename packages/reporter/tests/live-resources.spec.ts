@@ -86,7 +86,7 @@ describe('LiveResources', () => {
   });
 
   it('posts every point first, then only the points read since the last post', async () => {
-    const { live, samples, censuses, posts, stream } = setup();
+    const { live, samples, censuses, posts, stream, httpClient } = setup();
     censuses.push(census(0, 4242, STARTED_AT + 1500, { born: [page(1, STARTED_AT + 1200)], open: [{ id: 1 } as any] }));
     await live.tick();
     expect(posts[0]).toMatchObject({
@@ -108,6 +108,8 @@ describe('LiveResources', () => {
       },
     });
     expect(stream.noteWatched).toHaveBeenCalledWith({ watched: true });
+    // The stream token goes in the run token header too.
+    expect(vi.mocked(httpClient.postJSON).mock.calls[0]?.[4]).toEqual({ headers: { 'X-Piwi-Run-Token': 'tok' } });
 
     samples.cpuPct.push([3000, 70]);
     samples.workers[0]!.cpuCores.push([3000, 1.5]);

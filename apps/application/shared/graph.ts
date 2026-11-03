@@ -6,6 +6,7 @@
  */
 
 import type { AppManifest, ManifestSource } from '#shared/types';
+import { compileGlob, type GlobToken } from '@piwitests/core/glob';
 import { PATH_ANCHOR_HOST, pageKey as pageNodeKey } from '@piwitests/core/page-key';
 import {
   filePageTarget,
@@ -646,7 +647,7 @@ export function buildManifestGraph(
 type DeclaredSegment =
   | { kind: 'literal'; text: string }
   | { kind: 'param'; accepts: 'any' | 'number' | 'uuid'; optional: boolean }
-  | { kind: 'mixed'; regex: RegExp }
+  | { kind: 'mixed'; matches: (observed: string) => boolean }
   | { kind: 'catch-all'; min: number };
 
 /** A declared pattern read for matching, with the segment counts a path needs to match it. */
@@ -674,6 +675,43 @@ const PARAM_SEGMENT = /^(?::(.+)|\*|\{([^{}]+)\}|\[\[([^\]]+)\]\]|\[([^\]]+)\])$
 /** The parameters of a segment mixing literals and parameters. */
 const MIXED_PARAM = /(\{[^{}]*\}|\[\[[^\][]*\]\]|\[[^\][]*\])/;
 
+/** The most characters a declared route or page pattern holds. */
+export const MAX_DECLARED_PATTERN_LENGTH = 2048;
+
+/** The most parameters one segment of a declared pattern holds (`{name}.{ext}` holds two). */
+export const MAX_SEGMENT_PARAMETERS = 16;
+
+/**
+ * The limit a declared pattern exceeds, as a sentence naming it; null within
+ * both. A manifest upload refuses such a pattern, an OpenAPI document leaves it
+ * out, and {@link createDeclaredMatcher} skips a stored one.
+ */
+export function declaredPatternLimitError(pattern: string): string | null {
+  if (pattern.length > MAX_DECLARED_PATTERN_LENGTH) {
+    return `A declared pattern holds at most ${MAX_DECLARED_PATTERN_LENGTH} characters`;
+  }
+  for (const segment of pathSegments(declaredPath(pattern))) {
+    if ((segment.split(MIXED_PARAM).length - 1) / 2 > MAX_SEGMENT_PARAMETERS) {
+      return `A segment of a declared pattern holds at most ${MAX_SEGMENT_PARAMETERS} parameters`;
+    }
+  }
+  return null;
+}
+
+/** The first limit a manifest's patterns exceed, naming the pattern; null when every one is within them. */
+export function manifestLimitError(manifest: AppManifest): string | null {
+  for (const list of ['routes', 'pages'] as const) {
+    const value: unknown = manifest[list];
+    const entries: unknown[] = Array.isArray(value) ? value : [];
+    for (let i = 0; i < entries.length; i++) {
+      const pattern = (entries[i] as { pattern?: unknown } | null)?.pattern;
+      const error = typeof pattern === 'string' ? declaredPatternLimitError(pattern) : null;
+      if (error) return `${error}: ${list}[${i}].pattern`;
+    }
+  }
+  return null;
+}
+
 /** A segment compared without case or percent-encoding, as routers match it. */
 function comparableSegment(segment: string): string {
   try {
@@ -686,10 +724,6 @@ function comparableSegment(segment: string): string {
 /** A literal segment as an observed key holds it: `2024` collapses to `:id`, a uuid to `:uuid`. */
 function observedLiteral(segment: string): string {
   return comparableSegment(pageNodeKey(`/${segment}`)?.slice(1) || segment);
-}
-
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /** A parameter's name, constraint names and whether it may be left out: `{id:int?}` is `id`, `[int]`, optional. */
@@ -725,20 +759,28 @@ function compileDeclaredSegment(segment: string, last: boolean): DeclaredSegment
   }
   if (MIXED_PARAM.test(segment)) {
     // A literal mixing parameters (`v{version}`, `{name}.{ext?}`): each parameter takes one
-    // or more characters, and a last optional one may be left out with the literal before it.
+    // or more characters but a line terminator (a regular expression's `.+`), and a last
+    // optional one may be left out with the literal before it. `compileGlob` matches in
+    // steps that grow with the segment's length times the pattern's.
     const parts = segment.split(MIXED_PARAM);
-    const pieces: string[] = [];
+    const tokens: GlobToken[] = [];
+    let shortened: GlobToken[] | null = null;
+    let literalStart = 0;
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i]!;
       if (i % 2 === 0) {
-        pieces.push(escapeRegExp(comparableSegment(part)));
+        literalStart = tokens.length;
+        const text = comparableSegment(part);
+        for (let c = 0; c < text.length; c++) tokens.push({ kind: 'char', char: text[c]! });
         continue;
       }
       const optional = part.startsWith('[[') || parameterParts(part.slice(1, -1)).optional;
-      if (optional && i === parts.length - 2 && parts[i + 1] === '') pieces.push(`(?:${pieces.pop() ?? ''}.+)?`);
-      else pieces.push('.+');
+      if (optional && i === parts.length - 2 && parts[i + 1] === '') shortened = tokens.slice(0, literalStart);
+      tokens.push({ kind: 'one', slash: true }, { kind: 'run', slash: true });
     }
-    return { kind: 'mixed', regex: new RegExp(`^${pieces.join('')}$`) };
+    const whole = compileGlob(tokens);
+    const short = shortened ? compileGlob(shortened) : null;
+    return { kind: 'mixed', matches: (observed) => whole(observed) || (short?.(observed) ?? false) };
   }
   return { kind: 'literal', text: observedLiteral(segment) };
 }
@@ -766,7 +808,7 @@ function segmentRank(declared: DeclaredSegment, observed: string): number {
     case 'literal':
       return observed === declared.text ? 4 : -1;
     case 'mixed':
-      return declared.regex.test(observed) ? 3 : -1;
+      return declared.matches(observed) ? 3 : -1;
     case 'param':
       if (declared.accepts === 'any') return 1;
       if (declared.accepts === 'number') return observed === ':id' || NUMBER_SEGMENT.test(observed) ? 2 : -1;
@@ -859,6 +901,7 @@ export function createDeclaredMatcher(nodes: DeclaredSurfaceNode[]): (kind: stri
     let group = groups.get(groupKey);
     if (!group) groups.set(groupKey, (group = { byFirst: new Map(), rest: [] }));
     for (const source of declaredPatternsOf(node.kind, node.key, node.attrs)) {
+      if (declaredPatternLimitError(source)) continue;
       const pattern = compileDeclaredPattern(source);
       const first = pattern.segments[0];
       if (first?.kind === 'literal') {

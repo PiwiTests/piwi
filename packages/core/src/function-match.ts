@@ -15,6 +15,7 @@
  * `ROADMAP.md`'s grounded-diagnosis precedent for why).
  */
 import type { RecordedStep, StepAction } from './recording';
+import { globMatcher } from './glob';
 
 export interface FunctionParam {
   name: string;
@@ -92,24 +93,13 @@ function paramArgKey(source: Pick<FunctionParamSource, 'param' | 'path'>): strin
 }
 
 /**
- * Splits on the literal `**` separator first so escaping/single-`*` handling
- * never needs an intermediate placeholder character to tell a glob `**` apart
- * from a literal `*`.
+ * Whether a `**`/`*` glob pattern matches a whole URL — `null` matches
+ * everything. `**` matches any run of characters, `*` a run within one path
+ * segment, and every other character itself, `?` included: a URL pattern that
+ * names a query string (`**\/search?tab=orders`) is entirely ordinary. Case
+ * matters. `globMatcher` matches in steps that grow with the pattern's length
+ * times the URL's, whatever the pattern holds.
  *
- * `?` belongs in the escaped set even though it is not glob syntax here: a URL
- * pattern that names a query string (`**\/search?tab=orders`) is entirely
- * ordinary, and as a regex quantifier `?` would make it match nothing at all.
- */
-function globToRegExp(glob: string): RegExp {
-  const escaped = glob
-    .split('**')
-    .map((part) => part.replace(/[.?+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/]*'))
-    .join('.*');
-  return new RegExp(`^${escaped}$`);
-}
-
-/**
- * Whether a `**`/`*` glob pattern matches a URL — `null` matches everything.
  * Exported (not just used internally for a catalog entry's own `urlPattern`
  * gate) so any other "which of these applies to this URL" decision uses the
  * exact same wildcard syntax instead of a second hand-rolled matcher — the
@@ -117,11 +107,7 @@ function globToRegExp(glob: string): RegExp {
  */
 export function urlMatches(pattern: string | null, url: string): boolean {
   if (!pattern) return true;
-  try {
-    return globToRegExp(pattern).test(url);
-  } catch {
-    return true;
-  }
+  return globMatcher(pattern, { segments: true })(url);
 }
 
 /** The bits of an element (recorded or live) a pattern target is scored against — deliberately narrower than `RecordedTarget` so a live-DOM scan (no locator alternatives, no tag name) can build one just as easily as a recording can. */

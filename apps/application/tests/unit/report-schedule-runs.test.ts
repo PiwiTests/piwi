@@ -153,6 +153,23 @@ describe('report schedules', () => {
     ]);
   });
 
+  test('refuses file globs past the limits of a selection, naming the limit', async () => {
+    const files = Array.from({ length: 101 }, (_, i) => `tests/${i}.spec.ts`).join(',');
+    await expect(createWeekly({ scope: { files } })).rejects.toMatchObject({
+      statusCode: 400,
+      message: 'Invalid schedule: scope.files must hold at most 100 globs',
+    });
+    const view = await createWeekly({ scope: { files: 'tests/a.spec.ts' } });
+    const ctx = { actor: admin, channels: await channels(), access: 'all' as const, timeZone: 'UTC', now: NOW };
+    const patch = reports.parseScheduleBody(reports.reportSchedulePatchSchema, {
+      scope: { files: `tests/${'*'.repeat(495)}` },
+    });
+    await expect(reports.updateReportSchedule(db as any, view.id, patch, ctx)).rejects.toMatchObject({
+      statusCode: 400,
+      message: 'Invalid schedule: scope.files: a glob must be at most 500 characters',
+    });
+  });
+
   test('a partial update keeps the scope and the comparison it does not name', async () => {
     // `.partial()` keeps a field's `.default()`: the PATCH schema must not bring `scope` or `comparison` back.
     expect(reports.reportSchedulePatchSchema.parse({ active: false })).toEqual({ active: false });

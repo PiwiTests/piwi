@@ -15,6 +15,7 @@ import { wrapConfig } from '../src/public/config-wrapper.js';
 import { createGlobalSetup } from '../src/public/global-setup.js';
 import { PiwiDashboardReporter } from '../src/public/reporter.js';
 import { getSetupFilePath } from '../src/internal/support/setup-file.js';
+import { getReporterVersion } from '../src/internal/support/reporter-version.js';
 import type { PiwiDashboardOptions } from '../src/public/options.js';
 import { startServer, jsonRes, fakeConfig, fakeSuite, type FakeServer } from './_helpers.js';
 
@@ -471,6 +472,9 @@ describe("the config folder's .env", () => {
     // The reporter begins the run the global setup registered, under the same project.
     expect(request('/api/test-runs/7/begin')?.headers.authorization).toBe('Bearer pd_dotenv');
     expect(JSON.parse(request('/api/test-runs/7/begin')!.body).setupToken).toBe('setup-tok');
+    // The setup token goes in the run token header too: the dashboard asks for it by the version `/setup` names.
+    expect(request('/api/test-runs/7/begin')?.headers['x-piwi-run-token']).toBe('setup-tok');
+    expect(JSON.parse(request('/api/test-runs/setup')!.body).reporterVersion).toBe(getReporterVersion());
   });
 });
 

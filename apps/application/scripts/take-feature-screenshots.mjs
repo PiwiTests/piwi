@@ -1420,11 +1420,13 @@ async function prepareTeamSlackChannel({ base, request }) {
 
 /**
  * The server the harness boots runs as a configured instance: a public address,
- * so no screen shows the missing-PIWI_SITE_URL warnings (the caller's own value
- * wins), and never the caller's own Jira: the scenes connect their own.
+ * so no screen shows the missing-PIWI_SITE_URL warnings, and share links on, so
+ * the pages show their Share button (the caller's own value wins for both), and
+ * never the caller's own Jira: the scenes connect their own.
  */
 const SCENE_SERVER_ENV = {
   PIWI_SITE_URL: process.env.PIWI_SITE_URL ?? 'https://piwi.example.com',
+  PIWI_SHARE_LINKS_ENABLED: process.env.PIWI_SHARE_LINKS_ENABLED ?? 'true',
   PIWI_JIRA_BASE_URL: '',
   PIWI_JIRA_EMAIL: '',
   PIWI_JIRA_API_TOKEN: '',
@@ -2586,8 +2588,8 @@ const SCENES = [
       await shoot();
     },
   })),
-  // The share scenes need share links on: run them with PIWI_SHARE_LINKS_ENABLED=true (the harness's own
-  // server inherits the environment), or against a --url server that has it.
+  // The share scenes need share links on, as the harness's own server has them: against a --url server, give it
+  // PIWI_SHARE_LINKS_ENABLED=true.
   ...[
     { name: 'report-share-link', width: 1280, height: 900 },
     { name: 'report-share-link-mobile', width: 375, height: 1000 },

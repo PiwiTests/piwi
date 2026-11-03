@@ -36,6 +36,11 @@ defineRouteMeta({
               instanceId: { type: 'string' },
               shardIndex: { type: 'integer' },
               shardTotal: { type: 'integer' },
+              reporterVersion: {
+                type: 'string',
+                description:
+                  'The reporter’s version. From 0.65.0 the run’s `events`, `finish` and `live-resources` carry its token in the `X-Piwi-Run-Token` header too, and a request without it is refused.',
+              },
             },
             required: ['projectName'],
           },

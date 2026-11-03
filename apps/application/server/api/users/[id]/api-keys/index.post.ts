@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { getDatabase } from '../../../../database';
 import { createUserApiKeyRecord } from '#shared/handlers/users';
-import { getRequestAccess, requireAuth, generateApiKey } from '../../../../utils/auth';
+import { getRequestAccess, requireSessionAuth, generateApiKey } from '../../../../utils/auth';
 import { can } from '#shared/permissions';
 import { requireRouteId } from '../../../../utils/project-access';
 
@@ -10,7 +10,7 @@ defineRouteMeta({
     tags: ['Users'],
     summary: 'Create an API key for a user',
     description:
-      'Creates a new API key for a user. The plaintext key is returned once and cannot be retrieved again. Accepts name and optional expiresAt in the request body; an expiry in the past is refused (400). The key carries its owner’s access: their instance role and project roles. Anyone but an administrator can only create keys for themselves.',
+      'Creates a new API key for a user. The plaintext key is returned once and cannot be retrieved again. Accepts name and optional expiresAt in the request body; an expiry in the past is refused (400). The key carries its owner’s access: their instance role and project roles. Anyone but an administrator can only create keys for themselves. Takes a signed-in session: a request with an API key is refused (403).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'signed-in',
   },
@@ -22,7 +22,7 @@ const createKeySchema = z.object({
 });
 
 export default eventHandler(async (event) => {
-  const currentUser = await requireAuth(event);
+  const currentUser = await requireSessionAuth(event);
 
   const targetId = requireRouteId(event, 'id', 'user ID');
 

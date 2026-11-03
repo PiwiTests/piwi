@@ -1,4 +1,5 @@
 import { pauseSpans, unpausedDuration } from '@piwitests/core/step-analysis';
+import { globMatcher } from '@piwitests/core/glob';
 import type { TestStepEvent } from '../types';
 
 /**
@@ -45,24 +46,20 @@ export function resolveStoredWastedPatterns(stored: { value: string[] } | null |
   return { patterns: [...DEFAULT_WASTED_WAIT_PATTERNS], isDefault: true };
 }
 
-/** Convert a single glob pattern (`*` and `?` wildcards) to an anchored, case-insensitive RegExp. */
-function globToRegExp(pattern: string): RegExp {
-  const escaped = pattern
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*/g, '.*')
-    .replace(/\?/g, '.');
-  return new RegExp(`^${escaped}$`, 'i');
-}
-
-/** Cache compiled patterns so repeated calls within a request don't re-compile. */
-const regexCache = new Map<string, RegExp>();
-function compile(pattern: string): RegExp {
-  let re = regexCache.get(pattern);
-  if (!re) {
-    re = globToRegExp(pattern);
-    regexCache.set(pattern, re);
+/**
+ * A glob pattern (`*` any run of characters, `?` one) as an anchored,
+ * case-insensitive matcher, compiled once per pattern. `globMatcher` matches in
+ * steps that grow with the pattern's length times the text's, whatever the
+ * pattern holds.
+ */
+const matcherCache = new Map<string, (text: string) => boolean>();
+function compile(pattern: string): (text: string) => boolean {
+  let matches = matcherCache.get(pattern);
+  if (!matches) {
+    matches = globMatcher(pattern, { questionMark: true, ignoreCase: true });
+    matcherCache.set(pattern, matches);
   }
-  return re;
+  return matches;
 }
 
 /**
@@ -81,8 +78,8 @@ export function isWastedWait(
   const title = wait.title ?? '';
   const location = wait.location ?? '';
   for (const pattern of patterns) {
-    const re = compile(pattern);
-    if (re.test(title) || (location && re.test(location))) return true;
+    const matches = compile(pattern);
+    if (matches(title) || (location && matches(location))) return true;
   }
   return false;
 }

@@ -44,6 +44,8 @@ Wire a Playwright project up to a dashboard. It installs the reporter as a dev d
 
 The `.env` it writes sits next to the Playwright config, where `npx playwright test` reads it: the reporter takes `PIWI_DASHBOARD_URL`, `PIWI_API_KEY` and `PIWI_PROJECT_NAME` from it for whatever the config and the environment leave unset, so the config needs no dotenv loading ([Values from `.env`](/reference/reporter-options#values-from-env)). The file stays out of git; in CI, set the same variables as secrets.
 
+When git already tracks that `.env`, adding it to `.gitignore` would not untrack it, so `init` writes no API key into it: the `env` step is reported as `manual`, and the rest of the setup goes on. Set `PIWI_API_KEY` in the environment (in CI, as a secret), or untrack the file with `git rm --cached .env` and run `init` again. The same goes for a `.env` in a repository git gives no answer about (git missing, or refusing a repository another user owns): make `git ls-files .env` work there, or set the key in the environment. Nor does `init` write the key through a `.env` that is a link (symbolic or hard) to another file: put a file of its own in its place. With `PIWI_API_KEY` set in the environment and no `--api-key`, such a `.env` needs no key, and `init` reports the step as done.
+
 In a monorepo, run `init` in the package that holds the Playwright config, or point `--cwd` at it: every step then applies to that package, with the package manager its workspace's root names (the `packageManager` field or the lockfile). Run at the root of a workspace (`workspaces` in `package.json`, as npm, Yarn and Bun declare one, or a `pnpm-workspace.yaml`) that holds no Playwright config of its own, `init` looks for the workspace packages that hold one:
 
 - **One**: it wires that package, and says which.
@@ -60,7 +62,7 @@ npx @piwitests/reporter init --server-url http://localhost:3000 --project my-pro
 | `--no-server-url` | Write no URL into the config: the reporter finds the [desktop app](/features/desktop) running on the machine, or reads `PIWI_DASHBOARD_URL` |
 | `--project <name>` | Project name to report under (default: your package/folder name) |
 | `--desktop-app <mode>` | Write [`desktopApp`](/guide/reporter#local-runs-to-the-desktop-app-ci-to-a-team-server) into the config: `prefer` sends local runs to the desktop app while it runs, and CI runs to `--server-url`; `fallback` or `off` |
-| `--api-key <key>` | API key to write into `.env` (env `PIWI_API_KEY`), where the reporter reads it. Omit to leave a `.env.example` placeholder you fill in yourself |
+| `--api-key <key>` | API key to write into `.env` (env `PIWI_API_KEY`), where the reporter reads it; never into a `.env` git tracks or cannot say it does not, nor through a link. Omit to leave a `.env.example` placeholder you fill in yourself |
 | `--cwd <path>` | Project root to operate on (default: current directory) |
 | `--skills <list>` | Comma-separated skills to install, or `all` / `none` (default: the six workflow skills) |
 | `--skills-dir <path>` | Directory to install skills into (default: `.claude/skills`) |

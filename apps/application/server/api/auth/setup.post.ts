@@ -1,4 +1,5 @@
 import { InstanceRole } from '#shared/permissions';
+import { USERNAME_MAX_LENGTH } from '#shared/project-access';
 import {
   createUser,
   isAuthEnabled,
@@ -9,7 +10,7 @@ import {
   setupTokenMatches,
   usernameTaken,
 } from '../../utils/auth';
-import { checkRateLimit, rateLimitClientIp, rateLimitedError } from '../../utils/rate-limit';
+import { checkRateLimit, rateLimitClientIp, rateLimitedError, releaseRateLimit } from '../../utils/rate-limit';
 import { z } from 'zod';
 
 defineRouteMeta({
@@ -23,7 +24,7 @@ defineRouteMeta({
 });
 
 const createAdminSchema = z.object({
-  username: z.string().min(3),
+  username: z.string().min(3).max(USERNAME_MAX_LENGTH),
   password: z.string().min(8),
   name: z.string().optional(),
   setupToken: z.string().optional(),
@@ -42,13 +43,6 @@ export default eventHandler(async (event) => {
     throw rateLimitedError(event, [rateKey]);
   }
 
-  if (!(await needsInitialSetup())) {
-    throw apiError({
-      statusCode: 400,
-      message: 'An administrator already exists. This endpoint is only for initial setup.',
-    });
-  }
-
   const body = await readBody(event);
   const validation = createAdminSchema.safeParse(body);
 
@@ -61,6 +55,15 @@ export default eventHandler(async (event) => {
   }
 
   const { username, password, name, setupToken } = validation.data;
+
+  // Checked once the body has arrived, so a request that took long to send it
+  // sees an administrator another setup created meanwhile.
+  if (!(await needsInitialSetup())) {
+    throw apiError({
+      statusCode: 400,
+      message: 'An administrator already exists. This endpoint is only for initial setup.',
+    });
+  }
 
   if (!setupTokenMatches(setupToken)) {
     throw apiError({
@@ -75,7 +78,7 @@ export default eventHandler(async (event) => {
 
   // Two concurrent setup requests can both pass the needsInitialSetup() check
   // above. claimInitialSetup() lets exactly one of them create the
-  // administrator; the rest are rejected.
+  // administrator, and none once an administrator exists; the rest are rejected.
   if (!(await claimInitialSetup())) {
     throw apiError({
       statusCode: 400,
@@ -84,7 +87,7 @@ export default eventHandler(async (event) => {
   }
 
   try {
-    const user = await createUser(username, password, InstanceRole.ADMINISTRATOR, name);
+    const user = await createUser(event, username, password, InstanceRole.ADMINISTRATOR, name);
     await completeInitialSetup();
 
     return {
@@ -97,7 +100,9 @@ export default eventHandler(async (event) => {
       },
     };
   } catch (err) {
-    // Roll back the claim so a transient failure doesn't permanently lock setup.
+    // Roll back the claim so a transient failure (a busy server's 503) doesn't permanently lock setup, and give
+    // back the request's rate-limit slot.
+    releaseRateLimit(rateKey);
     await releaseInitialSetup();
     throw err;
   }

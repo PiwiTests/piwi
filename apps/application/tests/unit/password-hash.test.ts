@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { scryptSync } from 'node:crypto';
 import { eq } from 'drizzle-orm';
+import type { H3Event } from 'h3';
 import * as schema from '../../server/database/schema.sqlite';
 import { openTempDb, type TempDb } from './temp-db';
 
@@ -11,6 +12,12 @@ vi.mock('../../server/database', () => ({ getDatabase: async () => state.db }));
 
 const { hashPassword, verifyPassword, passwordNeedsRehash, verifyUser } = await import('../../server/utils/auth');
 
+/** The request a busy server's 503 would answer, from the client whose share its hashes count against. */
+const event = {
+  context: {},
+  node: { req: { headers: {}, socket: { remoteAddress: '192.0.2.10' } }, res: { setHeader: () => {} } },
+} as unknown as H3Event;
+
 /** A hash in the `salt:key` form, at Node's default scrypt cost. */
 function unencodedHash(password: string, salt = 'a1'.repeat(16)): string {
   return `${salt}:${scryptSync(password, salt, 64).toString('hex')}`;
@@ -18,17 +25,17 @@ function unencodedHash(password: string, salt = 'a1'.repeat(16)): string {
 
 describe('password hashes', () => {
   test('a new hash carries its scrypt cost and verifies', async () => {
-    const hash = await hashPassword('correct horse');
+    const hash = await hashPassword(event, 'correct horse');
     expect(hash).toMatch(/^scrypt\$17\$8\$1\$[0-9a-f]{32}\$[0-9a-f]{128}$/);
-    expect(await verifyPassword('correct horse', hash)).toBe(true);
-    expect(await verifyPassword('wrong horse', hash)).toBe(false);
+    expect(await verifyPassword(event, 'correct horse', hash)).toBe(true);
+    expect(await verifyPassword(event, 'wrong horse', hash)).toBe(false);
     expect(passwordNeedsRehash(hash)).toBe(false);
   });
 
   test('a hash in the salt:key form verifies at the default cost and needs a rehash', async () => {
     const hash = unencodedHash('old password');
-    expect(await verifyPassword('old password', hash)).toBe(true);
-    expect(await verifyPassword('other', hash)).toBe(false);
+    expect(await verifyPassword(event, 'old password', hash)).toBe(true);
+    expect(await verifyPassword(event, 'other', hash)).toBe(false);
     expect(passwordNeedsRehash(hash)).toBe(true);
   });
 
@@ -36,7 +43,7 @@ describe('password hashes', () => {
     const salt = 'b2'.repeat(16);
     const key = scryptSync('pw', salt, 64, { N: 2 ** 12, r: 8, p: 1 }).toString('hex');
     const hash = `scrypt$12$8$1$${salt}$${key}`;
-    expect(await verifyPassword('pw', hash)).toBe(true);
+    expect(await verifyPassword(event, 'pw', hash)).toBe(true);
     expect(passwordNeedsRehash(hash)).toBe(true);
   });
 
@@ -48,7 +55,7 @@ describe('password hashes', () => {
       `scrypt$30$8$1$${'0'.repeat(32)}$${'0'.repeat(128)}`,
       'scrypt$17$8$1$salt$zz',
     ]) {
-      expect(await verifyPassword('pw', hash)).toBe(false);
+      expect(await verifyPassword(event, 'pw', hash)).toBe(false);
       expect(passwordNeedsRehash(hash)).toBe(true);
     }
   });
@@ -72,12 +79,12 @@ describe('signing in', () => {
     const legacy = unencodedHash('s3cret');
     await db.insert(schema.users).values({ id: 1, username: 'lee', password: legacy, role: 'member' });
 
-    expect(await verifyUser('lee', 'wrong')).toBeNull();
+    expect(await verifyUser(event, 'lee', 'wrong')).toBeNull();
     expect(await storedHash()).toBe(legacy);
 
-    expect((await verifyUser('lee', 's3cret'))?.id).toBe(1);
+    expect((await verifyUser(event, 'lee', 's3cret'))?.id).toBe(1);
     const rehashed = await storedHash();
     expect(rehashed).toMatch(/^scrypt\$17\$8\$1\$/);
-    expect(await verifyPassword('s3cret', rehashed!)).toBe(true);
+    expect(await verifyPassword(event, 's3cret', rehashed!)).toBe(true);
   });
 });

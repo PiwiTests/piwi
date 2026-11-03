@@ -3,7 +3,7 @@ import type { FullResult } from '@playwright/test/reporter';
 import type { PiwiDashboardOptions, ShardInfo } from '../../public/options.js';
 import { errorMessage } from '../support/errors.js';
 import type { HttpClient } from '../transport/http-client.js';
-import { HttpError } from '../transport/http-client.js';
+import { HttpError, runTokenHeaders } from '../transport/http-client.js';
 import { heldRepeat, uploadCaseFilesInTurn } from './uploader.js';
 import type { Uploader, RunPayload, ReportOptions, FoundReport, HeldRun } from './uploader.js';
 import type { CrashRecovery } from '../streaming/crash-recovery.js';
@@ -416,7 +416,9 @@ export class RunSubmitter {
   private async postFinish(runId: number, body: Record<string, unknown>, auth: string | null): Promise<void> {
     await this.askAgainWhenLost("The run's /finish", async (attempt) => {
       try {
-        await this.httpClient.postJSON(`/api/test-runs/${runId}/finish`, body, auth);
+        await this.httpClient.postJSON(`/api/test-runs/${runId}/finish`, body, auth, undefined, {
+          headers: runTokenHeaders(typeof body.streamToken === 'string' ? body.streamToken : null),
+        });
       } catch (error) {
         if (attempt > 0 && error instanceof HttpError && (error.status === 409 || error.status === 403)) {
           this.logger.debug(`Run #${runId} was finished by an earlier /finish whose answer was lost.`);

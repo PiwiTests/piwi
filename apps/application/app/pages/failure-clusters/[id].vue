@@ -18,6 +18,8 @@ import { fixPlanToMarkdown } from '#shared/fix-plan-markdown';
 import type { FixSectionKey } from '~/utils/fix-sections';
 import type { RerunInfo } from '~/composables/useCiRerun';
 import { renderAnsi } from '~/utils';
+import { richCopyLink, trackedIssueHtml } from '~/utils/rich-copy-html';
+import { escapeHtml } from '#shared/markdown-to-html';
 import { stripAnsi } from '~/utils/text-format';
 import { coverageLossPreview } from '~/utils/coverage-insights';
 import { clusterSectionLocatorKey } from '~/composables/useClusterSectionLocator';
@@ -30,8 +32,6 @@ import { buildNextStepChange } from '~/utils/next-step-change';
 
 const route = useRoute();
 const clusterId = parseInt(String(route.params.id));
-// Share links need the server; the public demo has no share-link routes.
-const isDemoMode = Boolean(useRuntimeConfig().public.demoMode);
 
 // What the viewer may do on the cluster's project, matching each action's route.
 const { can } = useAuth();
@@ -255,7 +255,6 @@ function copyCluster() {
   const c = cluster.value;
   if (!c) return;
   const url = window.location.href;
-  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
   const meta = [
     errorTypeLabel.value,
@@ -286,17 +285,15 @@ function copyCluster() {
   ].join('\n');
 
   const html = [
-    `<p><strong>❌ Failure cluster</strong>: ${esc(clusterName.value)}</p>`,
-    clusterName.value !== c.signature ? `<p><code>${esc(c.signature)}</code></p>` : '',
-    `<p><em>${esc(meta)}</em></p>`,
-    issue
-      ? `<p>Tracked in <a href="${esc(issue.url)}">${esc(issue.key)}</a>${issue.status ? ` (${esc(issue.status)})` : ''}</p>`
-      : '',
+    `<p><strong>❌ Failure cluster</strong>: ${escapeHtml(clusterName.value)}</p>`,
+    clusterName.value !== c.signature ? `<p><code>${escapeHtml(c.signature)}</code></p>` : '',
+    `<p><em>${escapeHtml(meta)}</em></p>`,
+    issue ? trackedIssueHtml(issue) : '',
     c.sampleError ? `<p><strong>Sample error:</strong></p><pre>${renderAnsi(c.sampleError)}</pre>` : '',
     aiSummary
-      ? `<p><strong>AI diagnosis</strong> (${esc(c.diagnosis?.category ?? 'unknown')}, ${esc(c.diagnosis?.confidence ?? '?')} confidence):<br>${esc(c.diagnosis!.summary!)}</p>`
+      ? `<p><strong>AI diagnosis</strong> (${escapeHtml(c.diagnosis?.category ?? 'unknown')}, ${escapeHtml(c.diagnosis?.confidence ?? '?')} confidence):<br>${escapeHtml(c.diagnosis!.summary!)}</p>`
       : '',
-    `<p>🔗 <a href="${url}">View failure cluster</a></p>`,
+    `<p>🔗 ${richCopyLink(url, 'View failure cluster')}</p>`,
   ].join('');
 
   copyRich(plain, html, { toast: 'Failure cluster copied' });
@@ -375,6 +372,7 @@ const {
   decide: decideClusterProjectCap,
 } = await useProjectCapabilities(cluster.value?.project?.id ?? 0);
 const { decide: decideClusterInstanceCap } = await useInstanceCapabilities();
+const offersShareLinks = await useShareLinksOffered();
 
 async function declineClusterFixtures(level: 'project' | 'instance') {
   if (level === 'project') await decideClusterProjectCap('fixtures', 'declined');
@@ -669,7 +667,7 @@ const breadcrumbItems = computed(() => [
         </template>
         <template #right>
           <ShareLinksModal
-            v-if="cluster && !isDemoMode"
+            v-if="cluster && offersShareLinks"
             :endpoint="`/api/failure-clusters/${cluster.id}/share-links`"
             :project-id="cluster.project?.id ?? null"
           />

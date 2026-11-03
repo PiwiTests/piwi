@@ -39,6 +39,10 @@ const schema = z.object({
 });
 
 export default eventHandler(async (event): Promise<CreateIssueResponse> => {
+  // The permission gate comes before the body is read and the entity looked up,
+  // so a member who holds `issue:create` on no project learns nothing about
+  // which ids exist.
+  const user = await requireAuth(event);
   const body = await readBody(event);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
@@ -46,9 +50,6 @@ export default eventHandler(async (event): Promise<CreateIssueResponse> => {
   }
   const input = parsed.data;
 
-  // The permission gate comes before the entity lookup, so a member who holds
-  // `issue:create` on no project learns nothing about which ids exist.
-  const user = await requireAuth(event);
   const db = await getDatabase();
   const projectId = await resolveLinkEntityProjectId(db, input.entityType, input.entityId);
   if (!projectId) throw apiError({ statusCode: 404, message: 'Entity not found' });

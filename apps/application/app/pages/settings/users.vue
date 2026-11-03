@@ -2,13 +2,14 @@
 import { z } from 'zod';
 import type { TableColumn } from '@nuxt/ui';
 import { INSTANCE_ROLE_LABELS, InstanceRole, ProjectRole } from '#shared/permissions';
-import type {
-  GroupsListResponse,
-  UserListItem,
-  UserProjectRolesResponse,
-  UsersListResponse,
-  UserSummary,
-  UserWriteResponse,
+import {
+  USERNAME_MAX_LENGTH,
+  type GroupsListResponse,
+  type UserListItem,
+  type UserProjectRolesResponse,
+  type UsersListResponse,
+  type UserSummary,
+  type UserWriteResponse,
 } from '#shared/project-access';
 import type { ApiResponse, ProjectMenuItem } from '~~/types/api';
 
@@ -83,7 +84,10 @@ const columns: TableColumn<UserListItem>[] = [
 // ── Add user ────────────────────────────────────────────────────────────────
 const isAddUserModalOpen = ref(false);
 const addUserSchema = z.object({
-  username: z.string().min(3, 'Username must be at least 3 characters'),
+  username: z
+    .string()
+    .min(3, 'Username must be at least 3 characters')
+    .max(USERNAME_MAX_LENGTH, `Username must be at most ${USERNAME_MAX_LENGTH} characters`),
   password: z
     .union([z.string().min(8, 'Password must be at least 8 characters'), z.literal('').transform(() => undefined)])
     .optional(),

@@ -5,6 +5,7 @@ import * as os from 'node:os';
 import { PiwiDashboardReporter } from '../src/public/reporter.js';
 import { RunSubmitter, type CollectedRun } from '../src/internal/submit/run-submitter.js';
 import { HttpClient } from '../src/internal/transport/http-client.js';
+import { privateTempDir } from '../src/internal/support/private-file.js';
 import { Uploader } from '../src/internal/submit/uploader.js';
 import { CrashRecovery, recoveryFilePath } from '../src/internal/streaming/crash-recovery.js';
 import { FileHandler } from '../src/internal/files/file-handler.js';
@@ -28,7 +29,7 @@ const SETUP_PREFIX = 'piwi-dashboard-setup-';
 function cleanupProjectArtifacts(projectName: string, server?: FakeServer): void {
   // Stream-buffer files are keyed by a sha1 hash of the project name, so match
   // on the hash rather than the raw name; a recovery file by the server too.
-  const tmp = os.tmpdir();
+  const tmp = privateTempDir();
   const hash = hashForProject(projectName);
   for (const f of fs.readdirSync(tmp)) {
     if (f.startsWith(STREAM_PREFIX) || f.startsWith(SETUP_PREFIX)) {
@@ -98,14 +99,17 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
   it('streaming success path: /start → /events → /finish', async () => {
     let eventsBody: any;
     let finishBody: any;
+    const tokenHeaders: Record<string, unknown> = {};
     server = await startServer((req, res) => {
       if (req.url === '/api/test-runs/start') {
         jsonRes(res, 200, { runId: 1, streamToken: 'tok-123' });
       } else if (req.url === '/api/test-runs/1/events') {
         eventsBody = JSON.parse(req.body);
+        tokenHeaders.events = req.headers['x-piwi-run-token'];
         jsonRes(res, 200, {});
       } else if (req.url === '/api/test-runs/1/finish') {
         finishBody = JSON.parse(req.body);
+        tokenHeaders.finish = req.headers['x-piwi-run-token'];
         jsonRes(res, 200, {});
       } else if (req.url === '/api/auth/me') {
         jsonRes(res, 200, {});
@@ -135,6 +139,8 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     // finish body carries the run status + counters
     expect(finishBody.status).toBe('passed');
     expect(finishBody.streamToken).toBe('tok-123');
+    // The stream token goes in the run token header of events and finish too.
+    expect(tokenHeaders).toEqual({ events: 'tok-123', finish: 'tok-123' });
     expect(finishBody.totalTests).toBe(1);
     expect(finishBody.passedTests).toBe(1);
     // and the run's start, which with its duration places a shard in its sharded run

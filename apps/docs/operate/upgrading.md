@@ -167,6 +167,10 @@ the logs for `Migration error`. The schema is mid-flight or incompatible; restor
 `Migration history repair failed`, the database ran another build and could not be brought in line
 automatically ([details](#a-database-that-ran-another-build)); it was left as it was.
 
+**Every page answers `403` and lists the dashboard's local addresses.** With authentication off, name the hosts
+clients use, a container's name included, in `PIWI_SITE_URL` or `PIWI_ALLOWED_HOSTS`, or turn authentication on
+([why](./authentication#disabling-authentication)).
+
 **The dashboard loads but data looks wrong.** Don't downgrade — restore the backup instead, then
 report what you saw. Downgrading on a migrated database compounds the problem.
 

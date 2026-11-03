@@ -34,7 +34,8 @@ What a Member can do inside a project comes from the **project roles** granted t
 
    <<< @/snippets/secret.sh{bash}
 
-2. Restart the server. It refuses to start with authentication on and no `PIWI_AUTH_SECRET`.
+2. Restart the server. It refuses to start with authentication on and no `PIWI_AUTH_SECRET`, or one shorter than 32
+   characters.
 
 ## Initial setup
 
@@ -96,7 +97,7 @@ generic OpenID Connect or SAML sign-in.
 
 ### Restricting who can sign in (allowlists)
 
-By default any account at a configured provider can sign in (and a new **Member** account with no access is created). To restrict access:
+By default any account at a configured provider can sign in. To restrict access:
 
 - **`PIWI_OAUTH_ALLOWED_DOMAINS`** — comma-separated email domains (e.g. `example.com,acme.org`). Only **verified** provider emails in these domains may sign in. Applies to all providers.
 - **`PIWI_OAUTH_GITHUB_ALLOWED_ORGS`** — comma-separated GitHub org logins. The user must be a member of at least one. Enabling this requests the `read:org` scope so membership (including private) can be checked.
@@ -153,12 +154,18 @@ set the other's address to one that receives mail.
 
 ### Changing a role
 
-Each row's **Role** column is an inline selector for the instance role: pick **Administrator** or **Member** to change it immediately, revoking the user's sessions. This is the only way to make an account an administrator, including accounts created through [OAuth](#oauth-google-github), which always start as a **Member** with no access. The **last remaining administrator cannot be demoted**, so an instance can never be left without one.
+Each row's **Role** column is an inline selector for the instance role: pick **Administrator** or **Member** to change it immediately, revoking the user's sessions. This is the only way to make an account an administrator, including accounts created through [OAuth](#oauth-google-github). The **last remaining administrator cannot be demoted**, so an instance can never be left without one.
 
 ## Disabling authentication
 
-Set `PIWI_AUTH_ENABLED=false`, or remove the variable, and restart the server. Every endpoint is then accessible
-without authentication.
+Set `PIWI_AUTH_ENABLED=false`, or remove the variable, and restart the server.
+
+With authentication off, the dashboard answers only requests whose `Host` header names an IP address, `localhost`, a
+name under `.localhost`, the host of [`PIWI_SITE_URL`](/reference/configuration#general) or a name `PIWI_ALLOWED_HOSTS`
+lists (a container's name such as `piwi`, `host.docker.internal`, or `.example.lan` for a whole domain); any other gets
+a `403`. Over plain HTTP, a write must also come from the requested host, `PIWI_SITE_URL`'s or a listed one. The entry
+`*` of `PIWI_ALLOWED_HOSTS` turns the first check off, and with it the protection against DNS rebinding. Behind a
+[reverse proxy](./deployment#reverse-proxy-https), set `PIWI_SITE_URL` and forward the browser's `Host` header.
 
 ## Related
 

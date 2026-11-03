@@ -173,6 +173,20 @@ describe('runBug', () => {
     expect(String(error.mock.calls[0]?.[0])).toContain('not in a git repository');
   });
 
+  it('names a refused key on 401 and the reason the dashboard gives on 403', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{"message":"Unauthorized"}', { status: 401 })));
+    expect(await runBug(['37'], { PIWI_DASHBOARD_URL: 'https://dash.example' })).toBe(2);
+    expect(String(error.mock.calls[0]?.[0])).toContain('refused the API key (401)');
+
+    const reason = 'With authentication off, this dashboard answers only on its local addresses';
+    const plain = { status: 403, headers: { 'content-type': 'text/plain; charset=utf-8' } };
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(reason, plain)));
+    expect(await runBug(['37'], { PIWI_DASHBOARD_URL: 'https://dash.example' })).toBe(2);
+    expect(String(error.mock.calls[1]?.[0])).toContain(`refused the request (403): ${reason}`);
+    expect(String(error.mock.calls[1]?.[0])).not.toContain('API key');
+  });
+
   it('fails on a report the dashboard does not have', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 404 })));
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);

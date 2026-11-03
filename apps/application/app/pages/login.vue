@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { safeReturnPath } from '#shared/return-path';
+import { USERNAME_MAX_LENGTH } from '#shared/project-access';
 
 const { login } = useAuth();
 const router = useRouter();
@@ -60,6 +61,10 @@ async function handleSetup() {
   // hints instead of a generic "Invalid request body" error.
   if (setupState.username.length < 3) {
     setupError.value = 'Username must be at least 3 characters';
+    return;
+  }
+  if (setupState.username.length > USERNAME_MAX_LENGTH) {
+    setupError.value = `Username must be at most ${USERNAME_MAX_LENGTH} characters`;
     return;
   }
   if (setupState.password.length < 8) {

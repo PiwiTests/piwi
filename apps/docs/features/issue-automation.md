@@ -97,7 +97,8 @@ Each of these is a switch in **Keep the ticket honest**, off by default, and a d
   a run in which the failure failed again, and when a diagnosis completes. The rewrite keeps the language, the toggles
   and the share link the issue was filed with, and changes the title only on an issue a rule filed. Before writing,
   Piwi reads the description back: once someone has edited it in the tracker, Piwi never replaces it again, and the
-  activity list says so. A rewrite that would change nothing is not sent.
+  activity list says so. A rewrite that would change nothing is not sent. Piwi keeps no copy of a share link's token:
+  it takes the link from the issue's description, and skips a rewrite that cannot find it there.
 
 ## What an automatic issue says
 

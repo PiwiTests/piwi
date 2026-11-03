@@ -128,6 +128,12 @@ describe('primaryOwnerForPath', () => {
   test('is null when nothing matches', () => {
     expect(primaryOwnerForPath(compile('/docs/ @writers'), 'tests/a.spec.ts')).toBeNull();
   });
+
+  test('answers at once for a rule a regular expression backtracks on', () => {
+    const started = performance.now();
+    expect(primaryOwnerForPath(compile(`${'*a'.repeat(8)}*b @team`), 'a'.repeat(40))).toBeNull();
+    expect(performance.now() - started).toBeLessThan(500);
+  });
 });
 
 describe('path patterns', () => {
@@ -149,7 +155,8 @@ describe('path patterns', () => {
     };
     const pick = <T>(items: T[]) => items[random(items.length)]!;
     const patternSegments = ['a', 'b', 'ab', '*', '**', 'a*', '*b', '?', 'a?b', '*a*', ''];
-    const pathSegments = ['a', 'b', 'ab', 'aab', 'ba', 'abb', ''];
+    // With the line terminators, which the expression's `.*` never takes and its `[^/]` does.
+    const pathSegments = ['a', 'b', 'ab', 'aab', 'ba', 'abb', '', '\n', 'a\r', '\u2028b', 'a\u2029b'];
     for (let i = 0; i < 3000; i++) {
       const segments = Array.from({ length: 1 + random(4) }, () => pick(patternSegments));
       const pattern = `${pick(['', '/'])}${segments.join('/')}${pick(['', '/'])}`;
@@ -157,7 +164,7 @@ describe('path patterns', () => {
       const matches = pathPatternMatcher(pattern);
       for (let j = 0; j < 10; j++) {
         const path = Array.from({ length: 1 + random(5) }, () => pick(pathSegments)).join('/');
-        expect(matches(path), `${pattern} on ${path}`).toBe(regex.test(path));
+        expect(matches(path), `${pattern} on ${JSON.stringify(path)}`).toBe(regex.test(path));
       }
     }
   });

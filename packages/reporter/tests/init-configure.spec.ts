@@ -130,6 +130,16 @@ describe('upsertEnvKeys', () => {
     expect(text).toBe(existing);
   });
 
+  it('recognizes a key set with export, or with spaces around the =', () => {
+    const existing = 'export PIWI_API_KEY=pd_existing\nPIWI_DASHBOARD_URL = http://x\n';
+    const { text, added } = upsertEnvKeys(existing, [
+      ['PIWI_DASHBOARD_URL', 'http://y'],
+      ['PIWI_API_KEY', 'pd_new'],
+    ]);
+    expect(added).toEqual([]);
+    expect(text).toBe(existing);
+  });
+
   it('appends a newline before adding when the file lacks one', () => {
     const { text } = upsertEnvKeys('EXISTING=1', [['PIWI_DASHBOARD_URL', 'http://x']]);
     expect(text).toBe('EXISTING=1\nPIWI_DASHBOARD_URL=http://x\n');

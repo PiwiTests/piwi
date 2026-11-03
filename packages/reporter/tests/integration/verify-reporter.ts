@@ -1,9 +1,9 @@
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import type { FullConfig, FullResult, Reporter, TestCase, TestResult, TestStep } from '@playwright/test/reporter';
 import { RunSampler } from '../../src/internal/collect/process-sampler.js';
 import { CoverageCollection } from '../../src/internal/collect/test-coverage.js';
+import { privateTempDir } from '../../src/internal/support/private-file.js';
 import type { CollectedTestCase } from '../../src/types/collected.js';
 import type { ResourceCensus } from '../../src/internal/capture/resource-ledger.js';
 import { PIWI_RESOURCES_RESULTS_ENV } from '../../src/internal/config/env.js';
@@ -75,7 +75,7 @@ export default class VerifyCaptureReporter implements Reporter {
   private apiCoverage: Array<{ title: string; testCase: CollectedTestCase }> = [];
   private censuses: ResourceCensus[] = [];
   private censusByTitle = new Map<string, ResourceCensus>();
-  private resourcesFile = path.join(os.tmpdir(), `piwi-resources-verify-${process.pid}.jsonl`);
+  private resourcesFile = path.join(privateTempDir(), `piwi-resources-verify-${process.pid}.jsonl`);
 
   private sampler: RunSampler | null = null;
 
