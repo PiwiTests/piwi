@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { getDatabase } from '../../database';
 import { users } from '../../database/schema';
-import { validateAccountToken, consumeAccountToken } from '../../utils/account-tokens';
+import { claimAccountToken } from '../../utils/account-tokens';
 import { hashPassword, revokeUserSessions } from '../../utils/auth';
 import { clearUserSession } from '../../utils/auth';
 import { checkRateLimit, rateLimitClientIp, rateLimitedError } from '../../utils/rate-limit';
@@ -37,9 +37,8 @@ export default eventHandler(async (event) => {
   const { token, password } = parsed.data;
   const db = await getDatabase();
 
-  // Accept both 'reset' and 'invite' tokens
-  let validated = await validateAccountToken(db, token, 'reset');
-  if (!validated) validated = await validateAccountToken(db, token, 'invite');
+  // A reset or an invite token, used up before the slow hashing: a second request with it finds it used.
+  const validated = await claimAccountToken(db, token, ['reset', 'invite']);
   if (!validated) {
     throw apiError({ statusCode: 400, message: 'Invalid or expired token' });
   }
@@ -53,8 +52,6 @@ export default eventHandler(async (event) => {
     .where(and(eq(users.id, validated.userId), eq(users.email, validated.email)))
     .returning({ id: users.id });
   if (!updated.length) throw apiError({ statusCode: 400, message: 'Invalid or expired token' });
-
-  await consumeAccountToken(db, validated.tokenId);
 
   // Revoke every existing session for this account so a stolen session cannot
   // outlive the reset, then clear the current cookie for good measure.

@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { eq, and, gt } from 'drizzle-orm';
+import { eq, and, exists, gt, inArray, isNull } from 'drizzle-orm';
 import type { LibSQLDatabase } from 'drizzle-orm/libsql';
 import { accountTokens, users } from '../database/schema';
 import { hashToken } from './token-hash';
@@ -72,6 +72,48 @@ export async function validateAccountToken(
     );
 
   if (!row || row.usedAt || !row.email || row.email !== row.accountEmail) return null;
+
+  return { userId: row.userId, purpose: row.purpose as TokenPurpose, tokenId: row.id, email: row.email };
+}
+
+/**
+ * Validate a token of one of `purposes` and mark it used, in one conditional
+ * statement: of several requests holding the same token, only one gets it.
+ * Returns null when the token is unknown, expired or used, or when the account
+ * no longer holds the address it was sent to, which leaves the token unused.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function claimAccountToken(
+  db: LibSQLDatabase<any>,
+  token: string,
+  purposes: TokenPurpose[],
+): Promise<ValidatedToken | null> {
+  const now = new Date();
+  const [row] = await db
+    .update(accountTokens)
+    .set({ usedAt: now })
+    .where(
+      and(
+        eq(accountTokens.tokenHash, hashToken(token)),
+        inArray(accountTokens.purpose, purposes),
+        isNull(accountTokens.usedAt),
+        gt(accountTokens.expiresAt, now),
+        exists(
+          db
+            .select({ id: users.id })
+            .from(users)
+            .where(and(eq(users.id, accountTokens.userId), eq(users.email, accountTokens.email))),
+        ),
+      ),
+    )
+    .returning({
+      id: accountTokens.id,
+      userId: accountTokens.userId,
+      purpose: accountTokens.purpose,
+      email: accountTokens.email,
+    });
+
+  if (!row?.email) return null;
 
   return { userId: row.userId, purpose: row.purpose as TokenPurpose, tokenId: row.id, email: row.email };
 }
