@@ -5186,47 +5186,45 @@ const SCENES = [
       await page.evaluate(() => window.__hub.send({ type: 'hello', viewer: 'f'.repeat(32) }));
       await page.evaluate((event) => window.__hub.send(event), session(running));
 
-      // The run reports to the app with the reference the app gave it, and its test begins its click on Pay now.
+      // The run reports to the app with the reference the app gave it, and its test begins.
       const source = await (await page.request.get(`${base}/api/test-runs/2`)).json();
       const originRef = await page.evaluate(() => window.__runArgs?.originRef);
-      const started = await (
-        await page.request.post(`${base}/api/test-runs/start`, {
-          data: {
-            projectName: source.project.name,
-            startTime: new Date().toISOString(),
-            metadata: { piwiOrigin: { kind: 'desktop', ref: originRef } },
-          },
-        })
-      ).json();
+      const post = async (path, data) => {
+        const res = await page.request.post(`${base}${path}`, { data });
+        if (!res.ok()) throw new Error(`POST ${path} answered ${res.status()}`);
+        return res.json();
+      };
+      const started = await post('/api/test-runs/start', {
+        projectName: source.project.name,
+        startTime: new Date().toISOString(),
+        metadata: { piwiOrigin: { kind: 'desktop', ref: originRef } },
+      });
       try {
-        await page.request.post(`${base}/api/test-runs/${started.runId}/events`, {
-          data: {
-            streamToken: started.streamToken,
-            testCases: [
-              {
-                type: 'begin',
-                title: 'pays with a saved card',
-                location: 'tests/checkout.spec.ts:11:3',
-                workerIndex: 0,
-                startedAt: Date.now(),
-                browser: { projectName: 'chromium' },
-              },
-              {
-                type: 'step-begin',
-                title: 'Fill',
-                subtitle: "getByLabel('Card number')",
-                location: 'tests/checkout.spec.ts:16:5',
-                stepCategory: 'pw:api',
-                parentTitle: 'pays with a saved card',
-                workerIndex: 0,
-                startedAt: Date.now(),
-              },
-            ],
-          },
-        });
+        const begin = {
+          type: 'begin',
+          title: 'pays with a saved card',
+          location: 'tests/checkout.spec.ts:11:3',
+          workerIndex: 0,
+          startedAt: Date.now(),
+          browser: { projectName: 'chromium' },
+        };
+        await post(`/api/test-runs/${started.runId}/events`, { streamToken: started.streamToken, testCases: [begin] });
         await tray.getByRole('link', { name: `Live in Piwi — Run #${started.runId}` }).click({ timeout: 60_000 });
         const watch = page.getByRole('button', { name: 'Pause and watch' });
         await watch.waitFor({ timeout: 60_000 });
+        // Its step reaches the pages open as it streams: the run's page, now.
+        const step = {
+          type: 'step-begin',
+          title: 'Fill',
+          subtitle: "getByLabel('Card number')",
+          location: 'tests/checkout.spec.ts:16:5',
+          stepCategory: 'pw:api',
+          parentTitle: 'pays with a saved card',
+          workerIndex: 0,
+          startedAt: Date.now(),
+        };
+        await post(`/api/test-runs/${started.runId}/events`, { streamToken: started.streamToken, testCases: [step] });
+        await page.locator('[data-testid="live-step"]:visible').first().waitFor({ timeout: 30_000 });
         await settle();
         await shoot();
         await page.setViewportSize({ width: 390, height: 844 });

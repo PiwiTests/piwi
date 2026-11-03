@@ -54,7 +54,7 @@ to the windows that watch that stop, the app's and Piwi Picker's Runs window, an
 
 **Pause and watch**, on a running test of the run's page in the app (**Live in Piwi** on the run in the tray), pauses
 the test as **Pause** does, with **Watch live** on for its worker: the tray opens at the stop, the page live. The row
-then says where the test stopped, with **Show its page** to open the tray again.
+then says where the test stopped, with **Show its page** to open the tray on it again.
 
 **Pick on the image** (Playwright 1.60 or later), or a `Shift`+click on the image or the view, names the element under
 the pointer: its locator shows under the test, with **Copy**.

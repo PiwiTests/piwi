@@ -223,7 +223,9 @@ onBeforeUnmount(() => {
 <template>
   <li
     ref="root"
-    class="rounded-md border border-default p-2 space-y-2"
+    class="rounded-md border border-default p-2 space-y-2 focus-visible:outline-2 focus-visible:outline-primary"
+    tabindex="-1"
+    :data-worker="desktopWorkerKey(session.ref, worker.worker)"
     :data-state="worker.state"
     :data-failed="failed || undefined"
     data-shot="desktop-run-worker"

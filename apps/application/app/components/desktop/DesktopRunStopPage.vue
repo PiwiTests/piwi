@@ -87,7 +87,7 @@ let unlisten: (() => void) | null = null;
 /** A frame waiting while the one before decodes: the latest alone. */
 let nextFrame: Extract<DesktopFrame, { data: string }> | null = null;
 let decoding = false;
-const visible = ref(true);
+const visible = ref(import.meta.client ? !document.hidden : true);
 
 const live = computed(() => view.value?.since === props.stop.since && ['starting', 'on'].includes(view.value.status));
 const framed = computed(() => live.value && !!view.value?.viewport);
@@ -358,9 +358,7 @@ function followStop(): void {
   if (!pickable.value) picking.value = false;
 }
 
-watch(() => [props.stop.since, canView.value, visible.value, watchLive.value] as const, followStop, {
-  immediate: true,
-});
+watch(() => [props.stop.since, canView.value, visible.value] as const, followStop, { immediate: true });
 // The stream opened again: every view of the one before ended with it.
 watch(
   () => hub.state.epoch,
