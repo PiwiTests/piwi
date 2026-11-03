@@ -18,21 +18,30 @@ if (config.public.demoMode) {
     document.documentElement.style.removeProperty('--demo-banner-height');
   });
 }
+
+const DEPLOY_URL = 'https://github.com/piwitests/piwi';
 </script>
 
 <template>
   <Teleport v-if="config.public.demoMode" to="body">
     <div ref="banner" class="demo-banner">
       <div class="demo-banner-inner">
-        <span>
+        <!-- On a phone the sentence fits one line, so the controls fit the next. -->
+        <span class="max-sm:hidden">
           ⚠️ <strong>Demo mode</strong> — sample data running in your browser.
-          <a href="https://github.com/piwitests/piwi" target="_blank" class="underline">Deploy your own instance</a>
+          <a :href="DEPLOY_URL" target="_blank" class="underline">Deploy your own instance</a>
           for live data.
         </span>
-        <LazyDemoTourButton v-if="config.public.demoTour" />
-        <DemoUserSwitcher />
-        <DemoSimulator />
-        <DemoResetButton />
+        <span class="text-xs sm:hidden">
+          <strong>Demo</strong> · sample data in your browser ·
+          <a :href="DEPLOY_URL" target="_blank" class="underline">Deploy your own</a>
+        </span>
+        <div class="demo-banner-controls">
+          <LazyDemoTourButton v-if="config.public.demoTour" />
+          <DemoUserSwitcher />
+          <DemoSimulator />
+          <DemoResetButton />
+        </div>
       </div>
     </div>
   </Teleport>
@@ -54,12 +63,38 @@ if (config.public.demoMode) {
   border-bottom: 1px solid #fcd34d;
 }
 
-.demo-banner-inner {
+.demo-banner-inner,
+.demo-banner-controls {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 0.375rem 1rem;
+}
+
+.demo-banner-controls {
+  gap: 0.375rem;
+}
+
+@media (max-width: 639.98px) {
+  .demo-banner {
+    padding: 0.375rem 0.75rem;
+  }
+
+  .demo-banner-inner {
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .demo-banner-controls {
+    width: 100%;
+  }
+}
+
+@media (min-width: 640px) {
+  .demo-banner-controls {
+    display: contents;
+  }
 }
 
 .dark .demo-banner {

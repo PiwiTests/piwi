@@ -48,6 +48,9 @@ import {
   authoredBeforeEachMs,
   storyEvidenceTimes,
   storyCoverageFiles,
+  INCIDENT_HOST,
+  incidentUrl,
+  incidentNavigationError,
 } from '../shared/demo/failure-stories.mjs';
 import { demoTestMeta, demoTags, demoLocks, demoExternalId, buildAiUsage } from '../shared/demo/demo-test-meta.mjs';
 import { computeDemoFingerprint } from '../shared/demo/demo-fingerprint.mjs';
@@ -2232,7 +2235,6 @@ const RESOURCE_OCCURRENCES = [];
 // incident flag the server's classifier writes (`metadata.incident`, rule
 // `host-unreachable`) and one auto `incident` marker, and is left out of flaky
 // scores, baselines and regression signals. Its failures join no cluster.
-const INCIDENT_HOST = 'staging.checkout.example.com';
 const INCIDENT_PASSED_CASES = 1;
 const incidentRunIds = new Set();
 const INCIDENT_MARKERS = [];
@@ -2264,14 +2266,10 @@ const INCIDENT_MARKERS = [];
   }
   for (const row of failing) {
     const caseDef = caseById.get(row.test_case_id);
-    const path = `/${caseDef.file.replace(/^tests\//, '').replace(/\.spec\.ts$/, '')}`;
-    const url = `https://${INCIDENT_HOST}${path}`;
+    const url = incidentUrl(caseDef.file);
     row.status = 'failed';
     row.duration = 120 + (row.id % 7) * 15;
-    row.error =
-      `Error: page.goto: net::ERR_CONNECTION_REFUSED at ${url}\n` +
-      `Call log:\n  - navigating to "${url}", waiting until "load"\n\n` +
-      `    at ${caseDef.file}:${caseDef.declLine}:${caseDef.declColumn}`;
+    row.error = incidentNavigationError(caseDef);
     row.attempts = JSON.stringify([{ retry: 0, status: 'failed', duration: row.duration, startedAt: row.started_at }]);
     // The page never loaded: no steps past the navigation, no page evidence.
     row.steps = [];

@@ -2214,6 +2214,37 @@ const SCENES = [
     outputs: ['assistant-demo-wide.png', 'assistant-demo-blocks.png', 'assistant-demo-phone.png'],
   },
   {
+    name: 'demo-simulator',
+    mode: 'demo',
+    description:
+      'The live demo’s run simulator: its scenarios grouped by what they show, in a popover under the banner at 1280 px, and at 390 px the banner on two rows and the scenarios in a sheet from the bottom of the screen',
+    route: '/',
+    viewport: { width: 1280, height: 860 },
+    async run({ page, shoot, settle }) {
+      // The demo's guided tour asks a first-time visitor their role; this scene is about the simulator.
+      await page.evaluate(() =>
+        localStorage.setItem('piwi-demo-tour', JSON.stringify({ decision: 'dismissed', decidedAt: Date.now() })),
+      );
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      const launcher = page.getByRole('button', { name: 'Simulate a test run' });
+      // The launcher is disabled until the in-browser database has loaded.
+      await launcher.and(page.locator(':enabled')).waitFor({ timeout: 90_000 });
+      await launcher.click();
+      await page.locator('[data-shot="demo-simulator-menu"]').waitFor();
+      await settle();
+      await shoot('wide');
+      await page.keyboard.press('Escape');
+      await page.setViewportSize({ width: 390, height: 844 });
+      await settle();
+      await shoot('banner');
+      await launcher.click();
+      await page.locator('[data-shot="demo-simulator-sheet"]').waitFor();
+      await settle();
+      await shoot('phone');
+    },
+    outputs: ['demo-simulator-wide.png', 'demo-simulator-banner.png', 'demo-simulator-phone.png'],
+  },
+  {
     name: 'assistant-proposal',
     description:
       'A change the assistant proposes, in the panel on the fixed answer: the card with Apply and Dismiss, then the same card applied, at 1280 and 390 px',

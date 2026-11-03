@@ -3058,7 +3058,8 @@ const routes: RouteEntry[] = [
       const nodeParam = (query?.get('node') ?? '').trim();
       const sep = nodeParam.indexOf(':');
       if (sep <= 0) throw demoHttpError(400, 'node must be "kind:key"');
-      const rawDepth = Number(query?.get('depth'));
+      const depthParam = query?.get('depth');
+      const rawDepth = depthParam ? Number(depthParam) : NaN;
       const depth = Number.isFinite(rawDepth) ? Math.min(MAX_GRAPH_DEPTH, Math.max(1, rawDepth)) : 2;
       return getFeatureGraph(
         await getDemoDb(),
@@ -3091,7 +3092,9 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/projects\/(\d+)\/gaps$/,
     handler: async (m, _b, query, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      // An absent parameter is no filter: `Number(null)` would read it as 0.
       const num = (v: string | null | undefined) => {
+        if (v == null || v === '') return undefined;
         const n = Number(v);
         return Number.isFinite(n) ? n : undefined;
       };

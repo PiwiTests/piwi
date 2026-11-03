@@ -125,6 +125,9 @@ owner may make the same change in the dashboard and is kept in the [write log](.
 
 ## Try it in the demo
 
+The [live demo](https://piwitests.dev/demo/) holds an incident run, and its run simulator streams one: pick
+**Staging down** in **Simulate a test run**, and the run is flagged as it finishes.
+
 <DemoExamples />
 
 ## Related

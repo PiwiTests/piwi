@@ -4,7 +4,7 @@ import { streamSimulation, type StreamedRun } from './demo-simulator-harness';
 
 /**
  * A simulated run cut short sends what the reporter sends for a real one: the tests in flight end `interrupted`, in no
- * outcome, the rest did not run, and a run stopped on its failure budget carries Playwright's error outside any test.
+ * outcome, the rest did not run, and a run stopped at its failure budget carries Playwright's error outside any test.
  */
 
 let simulator: typeof import('~~/app/demo/simulator');
@@ -71,20 +71,14 @@ describe('a simulated run cut short', () => {
     expect(run.finish).not.toHaveProperty('runErrors');
   });
 
-  test("sends Playwright's run error when the run stopped on its failures", async () => {
-    const ctl: SimulationController = { stopped: false };
-    const run = await streamSimulation(simulator, 'failures', {
-      ctl,
-      hooks: {
-        onProgress: (_completed, failed) => {
-          if (failed > 0) ctl.stopped = true;
-        },
-      },
-    });
+  test("sends Playwright's run error when the run stopped at its failure budget", async () => {
+    const scenario = simulator.DEMO_SCENARIOS.find((s) => s.id === 'max-failures')!;
+    const run = await streamSimulation(simulator, scenario.id);
     const results = finalResults(run);
     const failed = withStatus(results, 'failed').length;
 
-    expect(failed).toBeGreaterThan(0);
+    expect(failed).toBe(scenario.maxFailures);
+    expect(withStatus(results, 'didnotrun').length).toBeGreaterThan(0);
     for (const r of withStatus(results, 'didnotrun')) expect(r.didNotRunReason, r.title).toBe('max-failures');
     expect(run.finish).toMatchObject({
       status: 'interrupted',
@@ -99,6 +93,25 @@ describe('a simulated run cut short', () => {
         },
       ],
     });
+  });
+
+  test('reads a run stopped from the banner after a failure as a plain interruption', async () => {
+    const ctl: SimulationController = { stopped: false };
+    const run = await streamSimulation(simulator, 'failures', {
+      ctl,
+      hooks: {
+        onProgress: (_completed, failed) => {
+          if (failed > 0) ctl.stopped = true;
+        },
+      },
+    });
+    const results = finalResults(run);
+
+    expect(withStatus(results, 'failed').length).toBeGreaterThan(0);
+    expect(withStatus(results, 'didnotrun').length).toBeGreaterThan(0);
+    for (const r of withStatus(results, 'didnotrun')) expect(r.didNotRunReason, r.title).toBe('interrupted');
+    expect(run.finish).toMatchObject({ status: 'interrupted' });
+    expect(run.finish).not.toHaveProperty('runErrors');
   });
 
   test('ends a stuck test interrupted when the run is stopped during its wait', async () => {
