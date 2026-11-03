@@ -234,23 +234,24 @@ function projectReader(db: Db): (userId: number, projectId: unknown) => Promise<
 }
 
 /**
- * Why a delivery may no longer be sent, or null, decided when it is sent: a
- * subscription's delivery goes only while its subscriber can still read the
- * project the event is about, a delivery with no subscription only while the
- * owner of its personal channel can. A global subscription, a global channel
- * and a quality report name no reader; with authentication off, everyone reads
- * every project. Removing a subscription, or its user, removes its deliveries
- * (foreign keys).
+ * Why a delivery may no longer be sent, or null, decided when it is sent: it
+ * goes only while its subscriber, and the owner of its channel when the
+ * channel is personal, can still read the project the event is about. A
+ * global subscription, a global channel and a quality report name no reader;
+ * with authentication off, everyone reads every project. Removing a
+ * subscription, or its user, removes its deliveries (foreign keys).
  */
 async function undeliverableReason(
   row: { d: DeliveryRow & { subscriptionId: number | null }; c: ChannelRow; subscriberId: number | null },
   canRead: (userId: number, projectId: unknown) => Promise<boolean>,
 ): Promise<string | null> {
   if (row.d.event === REPORT_READY_EVENT) return null;
-  const reader = row.d.subscriptionId != null ? row.subscriberId : row.c.userId;
-  if (reader == null) return null;
   const projectId = (row.d.payload as { projectId?: unknown } | null)?.projectId;
-  return (await canRead(reader, projectId)) ? null : 'The recipient can no longer read the project';
+  const readers = [row.d.subscriptionId != null ? row.subscriberId : null, row.c.userId];
+  for (const reader of readers) {
+    if (reader != null && !(await canRead(reader, projectId))) return 'The recipient can no longer read the project';
+  }
+  return null;
 }
 
 /** Record a failed attempt; a rate-limited one (Slack's 429) retries after the wait it asked for. */

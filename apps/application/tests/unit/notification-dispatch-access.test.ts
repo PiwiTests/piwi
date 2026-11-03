@@ -3,7 +3,10 @@ import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { openTempDb, type TempDb } from './temp-db';
 
-/** A queued delivery is sent only while its subscriber can still read the project its event is about. */
+/**
+ * A delivery is queued, and a queued one sent, only while its subscriber and the owner of its personal channel can
+ * still read the project its event is about.
+ */
 
 const slack = vi.hoisted(() => ({ bodies: [] as string[] }));
 
@@ -23,10 +26,12 @@ afterAll(() => {
 });
 
 const { sweepOutbox } = await import('../../server/utils/notifications/dispatch');
+const { matchAndEnqueue } = await import('../../server/utils/notifications/match');
 
 let db: TempDb;
 let close: () => Promise<void>;
 const USER = 1;
+const ADMIN = 2;
 const PROJECT = 10;
 
 const run = (runId: number) => ({
@@ -83,7 +88,10 @@ async function rowOf(id: number) {
 beforeEach(async () => {
   slack.bodies = [];
   ({ db, close } = await openTempDb());
-  await db.insert(schema.users).values({ id: USER, username: 'vera', password: '', role: 'member' });
+  await db.insert(schema.users).values([
+    { id: USER, username: 'vera', password: '', role: 'member' },
+    { id: ADMIN, username: 'ada', password: '', role: 'administrator' },
+  ]);
   await db.insert(schema.projects).values({ id: PROJECT, name: 'web' });
   await db.insert(schema.roleBindings).values({ userId: USER, projectId: PROJECT, role: 'viewer' });
 });
@@ -134,6 +142,20 @@ describe('a queued delivery', () => {
     expect(await db.select().from(schema.notificationDeliveries)).toEqual([]);
   });
 
+  test("on another user's subscription to a personal channel follows the access of the channel owner too", async () => {
+    const target = await subscribe('realtime');
+    await db
+      .update(schema.subscriptions)
+      .set({ userId: ADMIN })
+      .where(eq(schema.subscriptions.id, target.subscriptionId));
+    const id = await enqueue(target, 1);
+    await db.delete(schema.roleBindings).where(eq(schema.roleBindings.userId, USER));
+
+    expect(await sweepOutbox(db as never)).toEqual({ sent: 0, failed: 0 });
+    expect(slack.bodies).toEqual([]);
+    expect(await rowOf(id)).toMatchObject({ status: 'skipped', error: 'The recipient can no longer read the project' });
+  });
+
   test('to a personal channel with no subscription follows the access of the channel owner', async () => {
     const [channel] = await db
       .insert(schema.notificationChannels)
@@ -151,5 +173,19 @@ describe('a queued delivery', () => {
 
     expect(slack.bodies).toEqual([]);
     expect(await rowOf(id)).toMatchObject({ status: 'skipped' });
+  });
+});
+
+describe('queuing an event', () => {
+  test("on another user's subscription to a personal channel needs the channel owner's access too", async () => {
+    const target = await subscribe('realtime');
+    await db
+      .update(schema.subscriptions)
+      .set({ userId: ADMIN })
+      .where(eq(schema.subscriptions.id, target.subscriptionId));
+
+    expect(await matchAndEnqueue(db as never, 'run.failed', run(1) as never)).toBe(1);
+    await db.delete(schema.roleBindings).where(eq(schema.roleBindings.userId, USER));
+    expect(await matchAndEnqueue(db as never, 'run.failed', run(2) as never)).toBe(0);
   });
 });
