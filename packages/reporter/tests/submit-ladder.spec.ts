@@ -98,14 +98,17 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
   it('streaming success path: /start → /events → /finish', async () => {
     let eventsBody: any;
     let finishBody: any;
+    const tokenHeaders: Record<string, unknown> = {};
     server = await startServer((req, res) => {
       if (req.url === '/api/test-runs/start') {
         jsonRes(res, 200, { runId: 1, streamToken: 'tok-123' });
       } else if (req.url === '/api/test-runs/1/events') {
         eventsBody = JSON.parse(req.body);
+        tokenHeaders.events = req.headers['x-piwi-run-token'];
         jsonRes(res, 200, {});
       } else if (req.url === '/api/test-runs/1/finish') {
         finishBody = JSON.parse(req.body);
+        tokenHeaders.finish = req.headers['x-piwi-run-token'];
         jsonRes(res, 200, {});
       } else if (req.url === '/api/auth/me') {
         jsonRes(res, 200, {});
@@ -135,6 +138,8 @@ describe('PiwiDashboardReporter submit/fallback ladder', () => {
     // finish body carries the run status + counters
     expect(finishBody.status).toBe('passed');
     expect(finishBody.streamToken).toBe('tok-123');
+    // The stream token goes in the run token header of events and finish too.
+    expect(tokenHeaders).toEqual({ events: 'tok-123', finish: 'tok-123' });
     expect(finishBody.totalTests).toBe(1);
     expect(finishBody.passedTests).toBe(1);
     // and the run's start, which with its duration places a shard in its sharded run

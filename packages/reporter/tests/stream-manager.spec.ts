@@ -599,7 +599,7 @@ describe('StreamManager request sizing', () => {
   }
 
   function makeManager(
-    postJSON: (url: string, body: any) => Promise<any>,
+    postJSON: (url: string, body: any, auth?: unknown, signal?: unknown, opts?: any) => Promise<any>,
     buffer = new StreamBuffer(projectName),
   ): StreamManager {
     const http = {
@@ -639,6 +639,19 @@ describe('StreamManager request sizing', () => {
     expect(bodySizes.length).toBeGreaterThan(1);
     for (const size of bodySizes) expect(size).toBeLessThan(SERVER_LIMIT);
     expect(sm.lostResults).toBe(false);
+  });
+
+  it('sends the stream token in the run token header beside the body', async () => {
+    const sent: Array<{ body: any; headers: Record<string, string> | undefined }> = [];
+    const sm = makeManager(async (_url, body, _auth?: unknown, _signal?: unknown, opts?: any) => {
+      sent.push({ body, headers: opts?.headers });
+      return {};
+    });
+    sm.queueEvent(completeEvent('a'));
+    await sm.drain();
+    expect(sent).toEqual([
+      { body: expect.objectContaining({ streamToken: 'tok' }), headers: { 'X-Piwi-Run-Token': 'tok' } },
+    ]);
   });
 
   it('splits a batch the server refuses as too large and still delivers every event', async () => {

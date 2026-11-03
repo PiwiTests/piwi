@@ -141,6 +141,10 @@ responsibilities.
   streaming routes build their own run bodies: `/setup` in `public/global-setup.ts`, `/finish` in
   `internal/submit/run-submitter.ts`, `/start` and `/begin` in `internal/streaming/stream-manager.ts`, so a run-level
   field the server reads while streaming is added there too.
+- **A streaming request carries its run's token twice**: in its body and in the `RUN_TOKEN_HEADER` header
+  (`runTokenHeaders`, `internal/transport/http-client.ts`), the setup token to `/begin`, the stream token to `/events`,
+  `/finish` and `/live-resources`. The dashboard refuses a run of this reporter (the `reporterVersion` `/setup` and
+  `/start` send, 0.65.0 and later) without the header, and an older dashboard reads the body's: drop neither.
 - **A file in the shared temp directory goes through `internal/support/private-file.ts`** (`writePrivateFile`,
   `appendPrivateFile`, `readPrivateFile`), or lives in a `fs.mkdtempSync` folder: owner-only, its path checked before
   it is opened, never written through a link nor waited on as a named pipe, read back only when this user owns it. On

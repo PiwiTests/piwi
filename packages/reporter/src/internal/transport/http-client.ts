@@ -2,6 +2,7 @@ import * as https from 'node:https';
 import * as http from 'node:http';
 import { URL } from 'node:url';
 import FormData from 'form-data';
+import { RUN_TOKEN_HEADER } from '@piwitests/core/wire';
 import { Logger } from '../support/logger.js';
 
 export { FormData };
@@ -98,6 +99,14 @@ export function serverUrlProblem(serverUrl: string): string | null {
     return `serverUrl "${serverUrl}" is not an http:// or https:// URL: give the dashboard's whole address, such as https://piwi.example.com.`;
   }
   return null;
+}
+
+/**
+ * The header that carries a streaming run's token (`RUN_TOKEN_HEADER`), for a request that also carries it in its
+ * body; none without a token.
+ */
+export function runTokenHeaders(token: string | null | undefined): Record<string, string> {
+  return token ? { [RUN_TOKEN_HEADER]: token } : {};
 }
 
 /** Options for the unified `request()` core. */
@@ -264,17 +273,19 @@ export class HttpClient {
    * Send a JSON POST request. `auth` can be an API key (prefix `pd_`) or a session cookie string. Resolves to the
    * answer's JSON; an answer that is not JSON fails, and `signal` ends the request. With `upload`, the answer may come
    * as late as a multipart upload's: the body is a run's results, which the dashboard stores before it answers.
+   * `headers` go with the request beside its own.
    */
   async postJSON(
     pathname: string,
     payload: unknown,
     auth?: string | null,
     signal?: AbortSignal,
-    { upload = false }: { upload?: boolean } = {},
+    { upload = false, headers = {} }: { upload?: boolean; headers?: Record<string, string> } = {},
   ): Promise<any> {
     const body = JSON.stringify(payload);
     const res = await this.request('POST', pathname, {
       headers: {
+        ...headers,
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(body),
       },

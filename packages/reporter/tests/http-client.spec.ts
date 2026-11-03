@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { FormData, HttpClient } from '../src/internal/transport/http-client.js';
+import { FormData, HttpClient, runTokenHeaders } from '../src/internal/transport/http-client.js';
 import { Logger } from '../src/internal/support/logger.js';
 
 interface RecordedReq {
@@ -160,6 +160,21 @@ describe('HttpClient (against fake http.Server)', () => {
         await client.postJSON('/api/x', {}, 'pd_secret123');
         expect(requests[0].headers['authorization']).toBe('Bearer pd_secret123');
         expect(requests[0].headers['cookie']).toBe(undefined);
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    });
+
+    it('sends a run token in its header beside the body, and none without one', async () => {
+      const { server, url, requests } = await startServer((_req, res) => jsonRes(res, 200, {}));
+      try {
+        const client = new HttpClient(url, new Logger(false));
+        await client.postJSON('/api/x', { streamToken: 'tok' }, null, undefined, { headers: runTokenHeaders('tok') });
+        await client.postJSON('/api/x', {}, null, undefined, { headers: runTokenHeaders(null) });
+        expect(requests[0].headers['x-piwi-run-token']).toBe('tok');
+        expect(requests[0].headers['content-type']).toBe('application/json');
+        expect(JSON.parse(requests[0].body)).toEqual({ streamToken: 'tok' });
+        expect(requests[1].headers['x-piwi-run-token']).toBe(undefined);
       } finally {
         await new Promise<void>((r) => server.close(() => r()));
       }
