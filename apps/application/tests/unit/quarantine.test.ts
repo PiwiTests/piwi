@@ -311,6 +311,29 @@ describe('streak queries', () => {
     expect(entries.find((entry) => entry.testCaseId === 1)!.runsSinceQuarantine).toBe(1);
   });
 
+  test('reads the runs after each quarantine, and looks the test up in each by run and test', async () => {
+    const caseId = await seedCase('indexed');
+    await addQuarantine(db, 1, caseId);
+    await seedExecution(caseId, 'passed');
+    const statements: Array<{ query: string; params: unknown[] }> = [];
+    const logged = drizzle(db.$client, {
+      schema,
+      logger: { logQuery: (query, params) => statements.push({ query, params }) },
+    });
+
+    await listQuarantine(logged, 1);
+    const streak = statements.find((statement) => statement.query.includes('run_rank'))!;
+    const plan = await db.$client.execute({ sql: `EXPLAIN QUERY PLAN ${streak.query}`, args: streak.params as never });
+    const details = plan.rows.map((row) => String(row.detail));
+
+    expect(details).toContain(
+      'SEARCH test_runs USING INDEX idx_test_runs_project_start (project_id=? AND start_time>?)',
+    );
+    expect(details).toContain(
+      'SEARCH test_runs_cases USING INDEX idx_test_runs_cases_run_browser (test_run_id=? AND test_case_id=?)',
+    );
+  });
+
   test('scans at most the newest runs of each test', async () => {
     const caseId = await seedCase('long-history');
     await addQuarantine(db, 1, caseId);

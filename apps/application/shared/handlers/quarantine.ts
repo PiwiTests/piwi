@@ -19,7 +19,7 @@
 import { and, asc, desc, eq, gt, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { quarantinedTests, testCases, testRuns, testRunsCases } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
-import { eligibleExecutionInProject } from '../run-eligibility';
+import { eligibleRunSql } from '../run-eligibility';
 import { getHoldingVerifiedFixes, type VerifiedFix } from './flake-verified';
 import { newestFlakyRunId } from './projects';
 import { finalAttempts, flakyFinalAttempts, isFailedStatus } from '../utils/test-counts';
@@ -151,14 +151,24 @@ function runOutcome(rows: StreakRow[]): 'passed' | 'flaky' | 'failed' | null {
  * and an environment incident fails every test at once, so none of them counts
  * toward or breaks a streak.
  *
- * One query for the whole list, whatever its length: the executions are joined
- * to the project's active quarantines (one test's alone when `testCaseId` is
- * given), each test's runs are ranked newest-first with a window function, and
- * the executions of the first `STREAK_SCAN_LIMIT` of each are read back. The
- * project's runs the use leaves out are listed once for it
- * (`eligibleExecutionInProject`).
+ * One query for the whole list, whatever its length: each of the project's
+ * active quarantines (one test's alone when `testCaseId` is given) reads the
+ * project's runs that started after it from the project's start-time index,
+ * from `since` (the earliest of `entries`) on, and looks its executions up in
+ * each run by run and test; each test's runs are ranked newest-first with a
+ * window function, and the executions of the first `STREAK_SCAN_LIMIT` of each
+ * are read back. The cross join keeps the quarantines as SQLite's outer loop,
+ * and the runs inside it, so the lookup reads only that test's executions. No
+ * query runs for an empty list.
  */
-async function computeStreaks(db: DrizzleDB, projectId: number, testCaseId?: number): Promise<Map<number, Streak>> {
+async function computeStreaks(
+  db: DrizzleDB,
+  projectId: number,
+  entries: ReadonlyArray<{ createdAt: Date | string | number }>,
+  testCaseId?: number,
+): Promise<Map<number, Streak>> {
+  if (entries.length === 0) return new Map();
+  const since = new Date(entries.reduce((earliest, entry) => Math.min(earliest, toMs(entry.createdAt)), Infinity));
   const ranked = db
     .select({
       testCaseId: testRunsCases.testCaseId,
@@ -172,16 +182,21 @@ async function computeStreaks(db: DrizzleDB, projectId: number, testCaseId?: num
           'run_rank',
         ),
     })
-    .from(testRunsCases)
-    .innerJoin(testRuns, eq(testRuns.id, testRunsCases.testRunId))
-    .innerJoin(quarantinedTests, eq(quarantinedTests.testCaseId, testRunsCases.testCaseId))
+    .from(quarantinedTests)
+    .crossJoin(testRuns)
+    .innerJoin(
+      testRunsCases,
+      and(eq(testRunsCases.testRunId, testRuns.id), eq(testRunsCases.testCaseId, quarantinedTests.testCaseId)),
+    )
     .where(
       and(
         eq(quarantinedTests.projectId, projectId),
         isNull(quarantinedTests.releasedAt),
         testCaseId != null ? eq(quarantinedTests.testCaseId, testCaseId) : undefined,
+        eq(testRuns.projectId, projectId),
+        gt(testRuns.startTime, since),
         gt(testRuns.startTime, quarantinedTests.createdAt),
-        eligibleExecutionInProject('flakiness', projectId, testRunsCases.testRunId),
+        eligibleRunSql('flakiness'),
       ),
     )
     .as('ranked');
@@ -248,7 +263,7 @@ async function releaseProposals(
   entries: Array<{ testCaseId: number; createdAt: Date | string | number }>,
   testCaseId?: number,
 ): Promise<Map<number, ReleaseProgress>> {
-  const streaks = await computeStreaks(db, projectId, testCaseId);
+  const streaks = await computeStreaks(db, projectId, entries, testCaseId);
   const fixes = await getHoldingVerifiedFixes(
     db,
     entries.map((entry) => entry.testCaseId),
