@@ -51,6 +51,7 @@ const caseFiles = (await import('../../server/api/test-runs/[id]/case-files.post
 const upload = (await import('../../server/api/test-runs/upload.post')).default as unknown as Route;
 const submit = (await import('../../server/api/test-runs/submit.post')).default as unknown as Route;
 const { runFinalizeSideEffects } = await import('../../server/utils/run-finalize-side-effects');
+const { settleStaleFinalizingRuns, FINALIZING_TIMEOUT_MS } = await import('../../server/utils/stale-runs');
 const { testCaseCache } = await import('../../server/utils/test-case-cache');
 const { testSuiteCache } = await import('../../server/utils/test-suite-cache');
 
@@ -271,6 +272,21 @@ describe('a batch run sent in parts: its results, then its files', () => {
     await sendReport(first.runId);
     expect((await runRow(first.runId)).status).toBe('failed');
     expect(runFinalizeSideEffects).toHaveBeenCalledTimes(1);
+  });
+
+  test('a repeated delivery restarts the wait of the run it holds, so the sweep leaves its new token the full time', async () => {
+    const first = await results({ body: runResults() });
+    const resultsStored = new Date(Date.now() - FINALIZING_TIMEOUT_MS + 30_000);
+    await db.update(schema.testRuns).set({ updatedAt: resultsStored }).where(eq(schema.testRuns.id, first.runId));
+
+    const again = await results({ body: runResults() });
+
+    expect(await settleStaleFinalizingRuns(db, Date.now() + 60_000)).toEqual([]);
+    expect((await runRow(first.runId)).status).toBe('finalizing');
+    expect(await sendScreenshot(first.runId, again.streamToken, 'pays')).toMatchObject({
+      success: true,
+      attachments: 1,
+    });
   });
 
   test('a repeated delivery of a run that settled answers with the run, without a token', async () => {

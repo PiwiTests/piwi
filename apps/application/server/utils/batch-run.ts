@@ -125,14 +125,15 @@ export async function createBatchRun(
 
 /**
  * A new stream token for a run a batch delivery holds `finalizing` until its files are in (`createBatchRun` with
- * `awaitingFiles`), which takes the place of the token it held. Null when the run holds none: it settled, or no
+ * `awaitingFiles`), which takes the place of the token it held. It counts as the run's activity, so the stale-run
+ * sweep waits its full time for the files the new token brings. Null when the run holds none: it settled, or no
  * delivery held it.
  */
 export async function renewHeldRunToken(db: DbClient, runId: number): Promise<string | null> {
   const streamToken = randomBytes(32).toString('hex');
   const renewed = await db
     .update(testRuns)
-    .set({ streamToken: streamTokenDigest(streamToken) })
+    .set({ streamToken: streamTokenDigest(streamToken), updatedAt: new Date() })
     .where(and(eq(testRuns.id, runId), eq(testRuns.status, 'finalizing'), isNotNull(testRuns.streamToken)))
     .returning({ id: testRuns.id });
   return renewed.length > 0 ? streamToken : null;
