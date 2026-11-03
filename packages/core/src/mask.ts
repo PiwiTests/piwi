@@ -58,9 +58,11 @@ export function maskUrlFragment(hash: string): string {
  * - **By shape, anywhere**: a value with a credential's strong signal (`SECRET_SHAPES`: a JWT, `Bearer …`, `Basic` with
  *   the base64 of `user:password`, a PEM private key, the value a `Set-Cookie:` or `Cookie:` line sets, a key with a
  *   service's prefix: `sk_live_`, `sk-proj-`, `glpat-`, `ghp_`, `github_pat_`, `xoxb-`, `npm_`, `whsec_`, `AKIA`,
- *   `AIza`, Twilio's `SK` and 32 hex digits), and a random token (`looksRandom`): 40 characters or more of base64 or
- *   base64url, upper and lower case letters and digits mixed, 4 bits of entropy a character or more, at most a fifth
- *   of its letters in runs of six of one case (the words of an identifier), and not the base64 of text.
+ *   `AIza`, Twilio's `SK` and 32 hex digits, and a key or a token Piwi issues: `pd_`, `pdc_`, `pda_`, `pdo_`, `pdr_`,
+ *   `mcps_`, `psl_` or `pwt_` and hex digits, `pdl_` and base64url), a color code before it or not, and a random token
+ *   (`looksRandom`): 40 characters or more of base64 or base64url, upper and lower case letters and digits mixed, 4
+ *   bits of entropy a character or more, at most a fifth of its letters in runs of six of one case (the words of an
+ *   identifier), and not the base64 of text.
  * - **In a URL, part by part** (`hideSecretsInUrl`): never its scheme, host or port; its password; a query or fragment
  *   value named or shaped like a credential; a path segment only when it is itself shaped like one.
  *
@@ -168,7 +170,10 @@ export function isSecretName(name: string): boolean {
 /** The names read last, and whether each is a credential's: a body or a query repeats its names. */
 const namesRead = new Map<string, boolean>();
 
-/** The shapes of a credential with a strong signal, found anywhere in a text: a JWT, a bearer token, a service's key. */
+/**
+ * The shapes of a credential with a strong signal, found anywhere in a text: a JWT, a bearer token, a service's key, a
+ * key or a token Piwi issues.
+ */
 const SECRET_SHAPES: readonly RegExp[] = [
   /\beyJ[\w-]{5,}\.[\w-]{5,}\.[\w-]*/g,
   /\bBearer(?:\s+|%20)[\w.~+/-]{8,}=*/gi,
@@ -183,7 +188,19 @@ const SECRET_SHAPES: readonly RegExp[] = [
   /\bgh[opsu]_[A-Za-z0-9]{20,}/g,
   /\bgithub_pat_\w{20,}/g,
   /\bxox[abprs]-[\w-]{8,}/g,
+  // Piwi's: an API key or the desktop app's token, an extension's device code, an MCP client's secret, authorization
+  // code, access and refresh tokens, a share link's and an assistant turn's token; a live view's key.
+  /\b(?:pd[acor]?|mcps|psl|pwt)_[0-9a-f]{32,}/g,
+  /\bpdl_[\w-]{40,}/g,
 ];
+
+/**
+ * The same shapes right after a color code (`\u001b[32msk_live_…`), whose `m` would join the shape's first word, the
+ * code kept apart.
+ */
+const COLORED_SHAPES: readonly RegExp[] = SECRET_SHAPES.map(
+  (re) => new RegExp(`(\\u001b\\[[\\d;]*m)${re.source.replace(/^\\b/, '')}`, re.flags),
+);
 
 /** The same shapes, each matching a whole value. */
 const WHOLE_SHAPES: readonly RegExp[] = SECRET_SHAPES.map(
@@ -424,6 +441,9 @@ function hideInText(text: string, count: { n: number }): string {
   );
   out = out.replace(BASIC, (all, encoded: string) => (isBasicCredential(encoded) ? hide() : all));
   for (const shape of SECRET_SHAPES) out = out.replace(shape, () => hide());
+  if (out.includes('\u001b[')) {
+    for (const shape of COLORED_SHAPES) out = out.replace(shape, (_all, color: string) => `${color}${hide()}`);
+  }
   // A run with slashes, neither `+` nor padding in it, is a path: each part is read on its own.
   return out.replace(TOKEN_RUN, (run) =>
     run.includes('/') && !/[+=]/.test(run)
@@ -688,6 +708,46 @@ export function hideSecretsInError(text: string): string {
     out += CALL_LOG + hideSecretsInLog(text.slice(start, end), secretField);
     from = end;
   }
+}
+
+/**
+ * A value a program's output gives a name: quoted after a colon or `=` (`password: 'hunter2'`, as Node prints an
+ * object, `"apiKey": "…"`, `PASSWORD="…"`), a color code before it or not.
+ */
+const NAMED_QUOTED =
+  // eslint-disable-next-line no-control-regex -- matches the ESC byte of a color code
+  /(?<![\w$])(['"]?)([A-Za-z_$][\w$.-]{0,127})\1([ \t]*[:=][ \t]*(?:\u001b\[[\d;]*m)*)(['"`])((?:(?!\4)[^\\\r\n]|\\.){1,4096})\4/g;
+
+/** A value a program's output gives a name after `=`, up to a space or a quote: `PASSWORD=hunter2`, `--api-key=…`. */
+const NAMED_BARE =
+  // eslint-disable-next-line no-control-regex -- matches the ESC byte of a color code
+  /(?<![\w$.])([A-Za-z_][\w.-]{0,127})(=(?:\u001b\[[\d;]*m)*)([^\s'"`<>\u001b]{1,4096})/g;
+
+/**
+ * Whether one of a name's words is a credential's (`PIWI_API_KEY`, `dbPassword`, `--auth-token`): `isSecretName`
+ * without OAuth's `code` and a `pin`, which in a program's output name an error's code (`code: 'ECONNREFUSED'`) and a
+ * test's data more often than a secret.
+ */
+function hasSecretWord(name: string): boolean {
+  return nameWords(name).some((word) => SECRET_WORDS.has(word));
+}
+
+/**
+ * `text`, what a program wrote (a test's stdout or stderr), with what may be a secret written as {@link HIDDEN_VALUE}:
+ * what {@link hideSecretsInError} and {@link hideSecretsInText} hide, and a value given a name one of whose words is a
+ * credential's, quoted after a colon or `=` (`password: 'hunter2'`, `token: "…"`), or after `=` up to a space
+ * (`PIWI_API_KEY=…`, `--password=…`). An unquoted value after a colon (`Session: started`) stays. Pure.
+ */
+export function hideSecretsInOutput(text: string): string {
+  return hideSecretsInText(hideSecretsInError(text))
+    .replace(NAMED_QUOTED, (all, quote: string, name: string, between: string, mark: string, value: string) =>
+      value !== HIDDEN_VALUE && hasSecretWord(name)
+        ? `${quote}${name}${quote}${between}${mark}${HIDDEN_VALUE}${mark}`
+        : all,
+    )
+    .replace(NAMED_BARE, (all, name: string, equals: string) =>
+      hasSecretWord(name) ? `${name}${equals}${HIDDEN_VALUE}` : all,
+    );
 }
 
 /**

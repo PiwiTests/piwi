@@ -1,20 +1,16 @@
 /**
  * What one attempt of a test wrote to one of its streams (Playwright's `TestResult.stdout` or `stderr`), as the
- * reporter sends it and the dashboard stores it: what may be a secret hidden as in the error text of a test
- * (`hideSecretsInError`), and credentials anywhere in it (`hideSecretsInText`); past {@link MAX_TEST_OUTPUT_CHARS},
- * its first and its last lines, with a line naming what was cut between them.
+ * reporter sends it and the dashboard stores it: what may be a secret hidden (`hideSecretsInOutput`: as in the error
+ * text of a test, credentials anywhere in it, and a value given a name like a credential's); past
+ * {@link MAX_TEST_OUTPUT_CHARS}, its first and its last lines, with a line naming what was cut between them.
  */
-import { hideSecretsInError, hideSecretsInText } from './mask';
+import { hideSecretsInOutput } from './mask';
 
 /** The most characters kept of one stream an attempt wrote: about half from its start, half from its end. */
 export const MAX_TEST_OUTPUT_CHARS = 64 * 1024;
 
 /** The part of the budget left for the line that names what was cut. */
 const CUT_LINE_ROOM = 100;
-
-function hidden(text: string): string {
-  return hideSecretsInText(hideSecretsInError(text));
-}
 
 /** The first `chars` characters of `text`, ending after a line break when that keeps half of them or more. */
 function headOf(text: string, chars: number): string {
@@ -56,9 +52,9 @@ export function boundTestOutput(text: string, max: number = MAX_TEST_OUTPUT_CHAR
   if (!text.trim()) return null;
   const window = 2 * max;
   const long = text.length > 2 * window;
-  const start = hidden(long ? text.slice(0, window) : text);
+  const start = hideSecretsInOutput(long ? text.slice(0, window) : text);
   if (!long && start.length <= max) return start;
-  const end = long ? hidden(text.slice(text.length - window)) : start;
+  const end = long ? hideSecretsInOutput(text.slice(text.length - window)) : start;
   const half = Math.max(1, Math.floor((max - CUT_LINE_ROOM) / 2));
   const head = headOf(start, half);
   const tail = tailOf(end, half);

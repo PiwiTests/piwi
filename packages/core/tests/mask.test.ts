@@ -6,6 +6,7 @@ import {
   hideTypedText,
   hideSecretsInError,
   hideSecretsInLog,
+  hideSecretsInOutput,
   holdsPersonalData,
   isSecretLocator,
   isSecretAutocomplete,
@@ -165,6 +166,69 @@ describe('the credentials a mock, a list or a snapshot hides', () => {
     ]) {
       expect(hideSecretsInText(`the key ${value} works`), value).toBe(`the key ${HIDDEN_VALUE} works`);
     }
+  });
+
+  test('are hidden by the shape of a key or a token Piwi issues, and behind a color code', () => {
+    const hex = 'a3'.repeat(32);
+    const piwi = [
+      shaped('pd_', hex),
+      shaped('pdc_', hex),
+      shaped('pda_', hex),
+      shaped('pdo_', hex),
+      shaped('pdr_', hex),
+      shaped('mcps_', hex),
+      shaped('psl_', hex),
+      shaped('pwt_', hex),
+      shaped('pdl_', 'q3Zx-7_Lm0aBcDeFgHiJkLmNoPqRsTuVwXyZ012345'),
+    ];
+    for (const value of piwi) {
+      expect(isSecretValue(value), value).toBe(true);
+      expect(hideSecretsInText(`PIWI_API_KEY=${value} npx playwright test`), value).toBe(
+        `PIWI_API_KEY=${HIDDEN_VALUE} npx playwright test`,
+      );
+    }
+    // An id or a name that only starts like one stays.
+    for (const value of ['pd_report', 'psl_ab12', shaped('mcpc_', hex.slice(0, 32)), 'xpd_' + hex]) {
+      expect(hideSecretsInText(`see ${value}`), value).toBe(`see ${value}`);
+    }
+    const stripe = shaped('sk_live_', '4eC39HqLyjWDarjtT1zdp7dc');
+    expect(hideSecretsInText(`key \u001b[32m${stripe}\u001b[39m set`)).toBe(
+      `key \u001b[32m${HIDDEN_VALUE}\u001b[39m set`,
+    );
+    expect(hideSecretsInText(`\u001b[1m${shaped('pd_', hex)}`)).toBe(`\u001b[1m${HIDDEN_VALUE}`);
+  });
+
+  test('are hidden in a program’s output by the name it gives a value, quoted or after `=`', () => {
+    const output = [
+      "{ username: 'admin', password: 'Hunter2!pass' }",
+      "{ 'api-key': \"k3y-v4lue\", authToken: `t0k-3n`, code: 'ECONNREFUSED' }",
+      'PASSWORD=Hunter2!pass DB_PASS="s3 cret" HOME=/root',
+      'npx run --auth-token=abc123 --retries=2',
+      "{ dbPassword: \u001b[32m'Hunter2!pass'\u001b[39m }",
+      'Session: started for user admin, key=checkout',
+    ].join('\n');
+    const hidden = hideSecretsInOutput(output);
+    expect(hidden).not.toMatch(/Hunter2|k3y-v4lue|t0k-3n|s3 cret|abc123/);
+    expect(hidden.split('\n')).toEqual([
+      `{ username: 'admin', password: '${HIDDEN_VALUE}' }`,
+      `{ 'api-key': "${HIDDEN_VALUE}", authToken: \`${HIDDEN_VALUE}\`, code: 'ECONNREFUSED' }`,
+      `PASSWORD=${HIDDEN_VALUE} DB_PASS="${HIDDEN_VALUE}" HOME=/root`,
+      `npx run --auth-token=${HIDDEN_VALUE} --retries=2`,
+      `{ dbPassword: \u001b[32m'${HIDDEN_VALUE}'\u001b[39m }`,
+      `Session: started for user admin, key=${HIDDEN_VALUE}`,
+    ]);
+    expect(hideSecretsInOutput(hidden)).toBe(hidden);
+    // A URL keeps the parameters after a credential's.
+    expect(hideSecretsInOutput('GET /reset?token=abc123&lang=en')).toBe(`GET /reset?token=${HIDDEN_VALUE}&lang=en`);
+  });
+
+  test('take a time linear in the length of a program’s output', () => {
+    const started = Date.now();
+    hideSecretsInOutput(`password: '${'a'.repeat(200_000)}`);
+    hideSecretsInOutput(`${"token: 'a ".repeat(20_000)}`);
+    hideSecretsInOutput(`${'TOKEN='.repeat(40_000)}`);
+    hideSecretsInOutput(`${'\u001b[32m'.repeat(40_000)}m`);
+    expect(Date.now() - started).toBeLessThan(2000);
   });
 
   test('are hidden in a URL part by part, its host and its ids kept', () => {
@@ -385,6 +449,9 @@ describe('the secrets of an error, its fingerprint kept', () => {
     }
     expect(hideSecretsInError(errors[0]!)).toBe(errors[0]);
     expect(hideSecretsInError(errors[2]!)).toBe(errors[2]);
+    // A key's shape is hidden in other texts, never in an error's message.
+    const keyed = `Error: 401 with ${shaped('pd_', 'a3'.repeat(32))}`;
+    expect(hideSecretsInError(keyed)).toBe(keyed);
   });
 
   test('take a time linear in the length of the text, for a long run of capitals too', () => {

@@ -33,6 +33,24 @@ describe('what a test wrote to a stream', () => {
     expect(kept).not.toContain('correct horse');
   });
 
+  test('has the values hidden that a program names like a credential, and the keys Piwi issues', () => {
+    const key = ['pd_', 'a3'.repeat(32)].join('');
+    const kept = boundTestOutput(
+      [
+        "{ username: 'admin', password: 'Hunter2!pass' }",
+        'PASSWORD=Hunter2!pass',
+        `{ PIWI_API_KEY: '${key}', HOME: '/root' }`,
+        `PIWI_API_KEY=${key}`,
+        `\u001b[32m${['sk_live_', '4eC39HqLyjWDarjtT1zdp7dc'].join('')}\u001b[39m`,
+      ].join('\n'),
+    )!;
+    expect(kept).not.toMatch(/Hunter2|a3a3|sk_live_/);
+    expect(kept).toContain("username: 'admin', password: '<hidden>'");
+    expect(kept).toContain("HOME: '/root'");
+    expect(kept).toContain('\u001b[32m<hidden>\u001b[39m');
+    expect(boundTestOutput(kept)).toBe(kept);
+  });
+
   test('past the budget, keeps its first and its last lines, and says what was cut between them', () => {
     const text = lines(5000);
     const kept = boundTestOutput(text)!;
