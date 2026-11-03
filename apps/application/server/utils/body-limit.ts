@@ -1,11 +1,13 @@
 import { getRequestWebStream, type H3Event } from 'h3';
 import { apiError } from './api-error';
+import { resolveMaxSubmitBytes } from './upload-limits';
 
 /** Largest non-multipart request body the server reads. Uploads are multipart and carry their own limits. */
 export const MAX_REQUEST_BODY_BYTES = 32 * 1024 * 1024;
 
-// The reporter's batch submit, and the results of a run it uploads in parts, carry a whole run as one JSON document.
-const UNCAPPED_PATHS = ['/api/test-runs/submit', '/api/test-runs/upload/results'];
+// The reporter's batch submit, and the results of a run it uploads in parts, carry a whole run as one JSON document:
+// up to `PIWI_SUBMIT_MAX_BYTES` (`resolveMaxSubmitBytes`).
+const SUBMIT_PATHS = ['/api/test-runs/submit', '/api/test-runs/upload/results'];
 
 // Routes that parse a multipart body as a stream (`streamMultipart`), with caps
 // counted on the bytes read. Any other route buffers what it reads.
@@ -18,12 +20,31 @@ const STREAMED_MULTIPART_PATHS = [
 
 const BODY_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
+/** The path Nitro's router dispatches a request on: its query left out, and one trailing `/`. */
+function routePath(path: string): string {
+  return path.split('?')[0]!.replace(/(.)\/$/, '$1');
+}
+
+/** The largest body a route reads, and what a larger one answers. */
+function bodyLimitFor(path: string): { maxBytes: number; message: string } {
+  if (SUBMIT_PATHS.includes(path)) {
+    const maxBytes = resolveMaxSubmitBytes();
+    return {
+      maxBytes,
+      message: `Request body over ${Math.floor(maxBytes / 1024 / 1024)} MB: PIWI_SUBMIT_MAX_BYTES sets the limit on a run's results`,
+    };
+  }
+  return { maxBytes: MAX_REQUEST_BODY_BYTES, message: `Request body over ${MAX_REQUEST_BODY_BYTES / 1024 / 1024} MB` };
+}
+
 /**
  * Why a request body must be refused before any route reads it, or null. A
  * body has to declare its size, since h3 buffers it whole: a chunked one (no
- * `Content-Length`) gets 411, one over {@link MAX_REQUEST_BODY_BYTES} gets 413.
- * Routes that check `Content-Length` against a smaller limit can then rely on
- * it. A multipart body sent to a route that streams it is left to that route.
+ * `Content-Length`) gets 411, one over its route's limit gets 413: a run's
+ * results sent as JSON take up to `PIWI_SUBMIT_MAX_BYTES`, any other body
+ * {@link MAX_REQUEST_BODY_BYTES}. Routes that check `Content-Length` against a
+ * smaller limit can then rely on it. A multipart body sent to a route that
+ * streams it is left to that route.
  */
 export function bodyLimitError(request: {
   method: string;
@@ -33,7 +54,7 @@ export function bodyLimitError(request: {
   transferEncoding?: string | null;
 }): { statusCode: 411 | 413; message: string } | null {
   if (!BODY_METHODS.has(request.method.toUpperCase())) return null;
-  const path = request.path.split('?')[0]!;
+  const path = routePath(request.path);
   const multipart = (request.contentType ?? '').toLowerCase().startsWith('multipart/form-data');
   if (multipart && STREAMED_MULTIPART_PATHS.some((route) => route.test(path))) return null;
   if (request.contentLength == null || request.contentLength === '') {
@@ -42,9 +63,8 @@ export function bodyLimitError(request: {
       : null;
   }
   const length = Number(request.contentLength);
-  if (Number.isFinite(length) && length > MAX_REQUEST_BODY_BYTES && !UNCAPPED_PATHS.includes(path)) {
-    return { statusCode: 413, message: `Request body over ${MAX_REQUEST_BODY_BYTES / 1024 / 1024} MB` };
-  }
+  const limit = bodyLimitFor(path);
+  if (Number.isFinite(length) && length > limit.maxBytes) return { statusCode: 413, message: limit.message };
   return null;
 }
 

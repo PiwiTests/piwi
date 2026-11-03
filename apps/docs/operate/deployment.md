@@ -278,7 +278,7 @@ isolates the environment.
 
 ## Reverse proxy (HTTPS)
 
-Always put a TLS-terminating reverse proxy in front of the dashboard for anything beyond localhost. Two working examples — mind the **upload size** (trace/report uploads can reach hundreds of MB) and **SSE streaming** (live runs and browser notifications use long-lived `text/event-stream` responses that must not be buffered).
+Always put a TLS-terminating reverse proxy in front of the dashboard for anything beyond localhost. Two working examples — mind the **upload size** (trace/report uploads can reach hundreds of MB, and a run's results sent as one JSON document up to [`PIWI_SUBMIT_MAX_BYTES`](/reference/configuration#ingest-limits), 256 MB by default) and **SSE streaming** (live runs and browser notifications use long-lived `text/event-stream` responses that must not be buffered).
 
 **Caddy** (automatic HTTPS):
 

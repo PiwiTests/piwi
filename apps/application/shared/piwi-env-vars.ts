@@ -1069,6 +1069,16 @@ export const PIWI_ENV_VARS = {
     max: 5 * 1024 * 1024 * 1024,
     since: '0.19.0',
   },
+  PIWI_SUBMIT_MAX_BYTES: {
+    description:
+      "Max size of a run's results sent as one JSON document, in bytes: the reporter's batch submit and the results it sends ahead of a run's files. A larger body is refused (413) before it is read. The server reads and parses the document in memory, so this bounds what one delivery costs it.",
+    category: 'ingest',
+    type: 'number',
+    default: String(256 * 1024 * 1024),
+    min: 1024 * 1024,
+    max: 512 * 1024 * 1024,
+    since: '0.65.0',
+  },
   // ── Offline export limits ───────────────────────────────────────────────
   PIWI_EXPORT_MAX_INLINE_BYTES: {
     description:

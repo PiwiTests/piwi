@@ -15,6 +15,14 @@ import { CONTEXT_LIMIT_FIELDS, DEFAULT_CONTEXT_LIMITS } from '#shared/ai-context
 import { DEFAULT_INGEST_LIMITS, INGEST_LIMIT_FIELDS } from '#shared/ingest-limits';
 import { DEFAULT_WASTED_WAIT_PATTERNS } from '#shared/utils/wasted-waits';
 import {
+  DEFAULT_MAX_SUBMIT_BYTES,
+  DEFAULT_MAX_UPLOAD_BYTES,
+  MAX_IMPORT_MAX_BYTES,
+  MAX_SUBMIT_MAX_BYTES,
+  MIN_IMPORT_MAX_BYTES,
+  MIN_SUBMIT_MAX_BYTES,
+} from '#shared/upload-limits';
+import {
   DEFAULT_INTEGRATIONS_SYNC_MINUTES,
   MIN_INTEGRATIONS_SYNC_MINUTES,
   MAX_INTEGRATIONS_SYNC_MINUTES,
@@ -235,6 +243,19 @@ describe('PIWI_ENV_VARS registry', () => {
       expect(meta!.min, `${field.envVar} min`).toBe(field.min);
       expect(meta!.max, `${field.envVar} max`).toBe(field.max);
     }
+  });
+
+  test('registry defaults and clamps for the upload and submit limits match the code constants', () => {
+    expect(PIWI_ENV_VARS.PIWI_IMPORT_MAX_BYTES).toMatchObject({
+      default: String(DEFAULT_MAX_UPLOAD_BYTES),
+      min: MIN_IMPORT_MAX_BYTES,
+      max: MAX_IMPORT_MAX_BYTES,
+    });
+    expect(PIWI_ENV_VARS.PIWI_SUBMIT_MAX_BYTES).toMatchObject({
+      default: String(DEFAULT_MAX_SUBMIT_BYTES),
+      min: MIN_SUBMIT_MAX_BYTES,
+      max: MAX_SUBMIT_MAX_BYTES,
+    });
   });
 
   test('registry default for wasted-wait patterns matches the code constant', () => {
