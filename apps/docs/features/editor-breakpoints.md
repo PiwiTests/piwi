@@ -105,17 +105,17 @@ starts at the editor's breakpoints** under **Settings → Tools → Piwi** in a 
 
 ## Limits
 
-- **Headed and local only.** Under CI (a CI provider's variable such as `GITHUB_ACTIONS` or `JENKINS_URL`, or `CI` set
-  to anything but `false` or `0`), or under Playwright's own debugger (`--debug`, `--debug=cli`, `PWDEBUG`), the
-  run ignores the breakpoints and says why once; so does a headless run of yours with `PIWI_PAUSE_AT`. One Piwi starts
-  stops with no bar, and the editor shows its page ([A headless run](./editor-run-control#a-headless-run)).
+- **Headed and local only.** Under CI (a provider's variable such as `GITHUB_ACTIONS`, or `CI` not `false` or `0`) or
+  Playwright's debugger (`--debug`, `PWDEBUG`), the run ignores breakpoints, saying why once, as does a headless
+  run of yours with `PIWI_PAUSE_AT`; one Piwi starts stops with no bar, and the editor shows its page
+  ([A headless run](./editor-run-control#a-headless-run)).
 - **Only the calls Playwright's debugger stops at pause**: navigations, actions, key presses and mouse moves,
   assertions, `evaluate`, `waitForFunction`, screenshots and an element's reads (`textContent`, `inputValue`,
   `getAttribute`, `isVisible`, `count`). `waitForTimeout`, `waitForSelector`, `waitForURL`, `waitForEvent`, `title()`
   and `ariaSnapshot()` never do, so a breakpoint on such a line, on a helper call or on a line with no Playwright call
   does nothing. A breakpoint in a page object method pauses every test that calls it.
-- **A run with breakpoints stops before every call** and lets those off your lines go on at once, which costs about a
-  millisecond a call.
+- **A run with breakpoints stops before every call** and lets those off your lines go on at once, at about a millisecond
+  a call.
 - **The paused call lasts as long as you looked** at the page, in Playwright's trace, its HTML report and the
   dashboard's steps; only the statistics leave it out.
 - **A call the test ended under runs** as the bar goes away, during teardown, when the test fails under the bar or does
