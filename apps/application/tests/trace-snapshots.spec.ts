@@ -199,7 +199,20 @@ test.describe('Trace screen snapshots of a passing test', () => {
     await retryPost(request, `/api/test-runs/${runId}/events`, {
       data: {
         streamToken,
-        testCases: [{ type: 'complete', ...PASSING, status: 'passed', duration: 2000 }],
+        testCases: [
+          {
+            type: 'complete',
+            ...PASSING,
+            status: 'passed',
+            duration: 2000,
+            // The Timeline tab lists a passing execution's steps, and shows its filmstrip with them.
+            steps: [
+              { title: 'Navigate to "data:text/html"', category: 'navigation', duration: 40, startTime: 0 },
+              { title: 'Fill "a@b.test"', category: 'input', duration: 20, startTime: 50 },
+              { title: 'Click "Pay now"', category: 'click', duration: 30, startTime: 80 },
+            ],
+          },
+        ],
       },
     });
 
