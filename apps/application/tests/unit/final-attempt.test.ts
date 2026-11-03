@@ -329,6 +329,7 @@ describe('an import', () => {
       shard: null,
       projectNames: ['chromium'],
       scm: null,
+      runErrors: [],
       cases: [execution(1, 'passed'), execution(0, 'failed')],
     };
     const { runId } = await importBlobReportRun(db as never, port, {
