@@ -603,6 +603,12 @@ describe('executions as the reporter stores them', () => {
     for (const r of rows) expect(r.final_attempt, `trc ${r.id} final_attempt`).toBe(r.superseded === 1 ? 0 : 1);
   });
 
+  test('only a skipped execution carries a fixme annotation, as Playwright adds it only to a test it skips', () => {
+    const rows = q(`select id from test_runs_cases
+      where status != 'skipped' and test_annotations like '%"type":"fixme"%'`);
+    expect(rows.map((r) => r.id)).toEqual([]);
+  });
+
   test('a test that did not run carries no steps, start time, worker or step events', () => {
     const rows = q(`select id, steps, started_at, worker_index, step_events, slowest_step
       from test_runs_cases where status = 'didnotrun'`);

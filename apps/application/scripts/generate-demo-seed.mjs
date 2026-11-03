@@ -1355,14 +1355,12 @@ for (const proj of DEMO_PROJECTS) {
       const evidenceTimes = failure ? storyEvidenceTimes(story, failure.step) : null;
       const slowestStep = steps.length > 0 ? steps.reduce((a, b) => (a.duration > b.duration ? a : b)) : null;
 
-      // Test annotations — failures link to their cluster, the designated slow
-      // case is always marked slow (so timeout hygiene can surface it as a stale
-      // test.slow() once its durations no longer justify the tripled budget),
-      // and one checkout case carries a smoke marker.
+      // Test annotations — the designated slow case is always marked slow (so
+      // timeout hygiene can surface it as a stale test.slow() once its durations
+      // no longer justify the tripled budget), and one checkout case carries a
+      // smoke marker.
       let testAnnotations = null;
-      if (isFailedCase && story) {
-        testAnnotations = [{ type: 'fixme', description: `Known issue — see cluster ${story.clusterId}` }];
-      } else if (flakyCaseId && caseId === flakyCaseId) {
+      if (flakyCaseId && caseId === flakyCaseId) {
         testAnnotations = [{ type: 'slow' }];
       } else if (proj.id === 1 && j === 0) {
         testAnnotations = [{ type: 'smoke' }];
