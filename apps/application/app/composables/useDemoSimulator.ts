@@ -39,6 +39,11 @@ const state = reactive<DemoSimulatorState>({
 let controller: SimulationController | null = null;
 let staleRunsCancelled = false;
 
+/** A simulated run's page, on the tab its scenario is about. */
+function runPath(runId: number, scenario: DemoScenario | null): string {
+  return scenario?.tab ? `/test-runs/${runId}?tab=${scenario.tab}` : `/test-runs/${runId}`;
+}
+
 export function useDemoSimulator() {
   const toast = useToast();
   // Simulated runs are uploads to the demo's e2e-checkout project, so they take
@@ -87,7 +92,8 @@ export function useDemoSimulator() {
     state.completed = 0;
     state.failed = 0;
     state.total = 0;
-    controller = { stopped: false };
+    const ctl: SimulationController = { stopped: false };
+    controller = ctl;
 
     try {
       const { runId, status } = await runSimulation(
@@ -97,7 +103,7 @@ export function useDemoSimulator() {
             state.runId = runId;
             state.projectId = projectId;
             // Bring the visitor to the run page so they watch it arrive live
-            navigateTo(`/test-runs/${runId}`);
+            navigateTo(runPath(runId, scenario));
           },
           onProgress: (completed, failed, total) => {
             state.completed = completed;
@@ -105,14 +111,19 @@ export function useDemoSimulator() {
             state.total = total;
           },
         },
-        controller,
+        ctl,
       );
 
+      // A run stopped from the banner says nothing of what its scenario shows.
+      const result = ctl.stopped ? undefined : scenario.result;
+      const link = result?.link;
+      const to = link ? await link.to(runId) : null;
       toast.add({
         title: `Simulated run #${runId} ${status}`,
-        description: 'Sent by an emulated Piwi reporter, straight into the in-browser database.',
+        description: result?.text ?? 'Sent by an emulated Piwi reporter, straight into the in-browser database.',
         color: status === 'passed' ? 'success' : status === 'failed' ? 'error' : 'warning',
         icon: scenario.icon,
+        actions: link && to ? [{ label: link.label, to, color: 'neutral', variant: 'outline' }] : undefined,
       });
     } catch (error) {
       console.error('[Demo simulator] simulation failed', error);
@@ -131,5 +142,5 @@ export function useDemoSimulator() {
     }
   }
 
-  return { state, scenarios: DEMO_SCENARIOS, canSimulate, start, stop, cancelStaleRuns };
+  return { state, scenarios: DEMO_SCENARIOS, canSimulate, start, stop, cancelStaleRuns, runPath };
 }

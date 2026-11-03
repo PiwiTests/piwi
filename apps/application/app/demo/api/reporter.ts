@@ -10,7 +10,7 @@
  */
 
 import { resolveBrowserName } from '#shared/browser-name';
-import { eq, and, or, sql } from 'drizzle-orm';
+import { eq, and, or, like, sql } from 'drizzle-orm';
 import { getDemoDb } from '../db.client';
 import { checkDemoStuckTests, forgetDemoRun, noteDemoBegin, noteDemoComplete } from './stuck-tests';
 import { publishDemoGlobalEvent, publishDemoRunEvent } from '../run-events';
@@ -1192,6 +1192,10 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
         })
         .where(eq(testRuns.id, id));
 
+      // Before the run is announced finished: the run page reads the run once on `run-finished`, and the demo has no
+      // reports poll to read it again, so its incident flag must be written by then.
+      await recordRunHealth(db, id).catch(() => {});
+
       publishDemoRunEvent(id, {
         type: 'run-finished',
         data: {
@@ -1209,7 +1213,6 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       publishDemoGlobalEvent({ type: 'run-finished', runId: id, projectId: testRun.projectId, status: finalStatus });
       forgetDemoRun(id);
 
-      await recordRunHealth(db, id).catch(() => {});
       await syncAutoMarkersForRun(db, id).catch(() => {});
       await recordRunResourceFindings(db, id).catch(() => {});
       await upsertDailyRollup(db, id).catch(() => {});
@@ -1291,6 +1294,9 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
     })
     .where(eq(testRuns.id, id));
 
+  // Before the run is announced finished, as for a sharded run above.
+  await recordRunHealth(db, id).catch(() => {});
+
   publishDemoRunEvent(id, {
     type: 'run-finished',
     data: {
@@ -1308,7 +1314,6 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
   publishDemoGlobalEvent({ type: 'run-finished', runId: id, projectId: testRun.projectId, status });
   forgetDemoRun(id);
 
-  await recordRunHealth(db, id).catch(() => {});
   await syncAutoMarkersForRun(db, id).catch(() => {});
   await recordRunResourceFindings(db, id).catch(() => {});
   await upsertDailyRollup(db, id).catch(() => {});
@@ -1334,7 +1339,8 @@ export async function apiCancelStaleSimulatorRuns(body: { instanceId?: string })
     .set({ status: 'cancelled', streamToken: null, updatedAt: new Date() })
     .where(
       and(
-        eq(testRuns.instanceId, body.instanceId),
+        // A sharded simulation's shards carry the simulator's id and their run's label (`<id>|<label>`).
+        or(eq(testRuns.instanceId, body.instanceId), like(testRuns.instanceId, `${body.instanceId}|%`)),
         or(eq(testRuns.status, 'running'), eq(testRuns.status, 'initializing'), eq(testRuns.status, 'finalizing')),
       ),
     )

@@ -2922,6 +2922,40 @@ export const SIMULATOR_ERRORS = {
   emailLabelRenamed: FAILURE_STORIES[1].failingCases[0].error,
 };
 
+// ── Environment incident ────────────────────────────────────────────────────
+// The staging host that refuses every connection in the seeded incident run
+// and in the simulator's "Staging down" scenario: both build the error of a
+// test that failed there from these, so a live incident reads like the seeded one.
+
+/** The host the demo's environment incident cannot reach. */
+export const INCIDENT_HOST = 'staging.checkout.example.com';
+
+/**
+ * The staging page a checkout spec file opens first: the file's path without `tests/` and `.spec.ts`.
+ *
+ * @param {string} file
+ * @returns {string}
+ */
+export function incidentUrl(file) {
+  return `https://${INCIDENT_HOST}/${file.replace(/^tests\//, '').replace(/\.spec\.ts$/, '')}`;
+}
+
+/**
+ * The error of a test whose first navigation found the staging host refusing connections, as Playwright reports it,
+ * with the test's declaration as its frame.
+ *
+ * @param {{ file: string, declLine: number, declColumn: number }} test
+ * @returns {string}
+ */
+export function incidentNavigationError(test) {
+  const url = incidentUrl(test.file);
+  return (
+    `Error: page.goto: net::ERR_CONNECTION_REFUSED at ${url}\n` +
+    `Call log:\n  - navigating to "${url}", waiting until "load"\n\n` +
+    `    at ${test.file}:${test.declLine}:${test.declColumn}`
+  );
+}
+
 /** Story lookup by cluster id. */
 export function storyByClusterId(clusterId) {
   return FAILURE_STORIES.find((s) => s.clusterId === clusterId) ?? null;

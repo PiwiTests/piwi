@@ -59,6 +59,11 @@ app.
 - **Fixed thresholds.** Two minutes and three times the longest pass are the same for every project.
 - **No history, no verdict.** A test with fewer than two passing executions on its browser is never said to be stuck.
 
+## Try it in the demo
+
+In the [live demo](https://piwitests.dev/demo/), pick **Stuck test** in **Simulate a test run**: the PayPal checkout
+waits on a payment that never answers, and its row carries the **Stuck?** badge once it runs past its usual time.
+
 ## Related
 
 - [Live view of a run](./live-view): watch a stuck test's page and what it waits for

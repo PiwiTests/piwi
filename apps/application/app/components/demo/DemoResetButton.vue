@@ -14,15 +14,19 @@ function confirmReset() {
 </script>
 
 <template>
-  <UPopover v-model:open="confirmOpen">
+  <UPopover v-model:open="confirmOpen" :content="{ collisionPadding: 8 }" :ui="{ content: 'z-[70]' }">
+    <!-- An icon alone on a phone, where the banner's controls share one row. -->
     <UButton
       size="xs"
       color="warning"
       variant="outline"
       icon="i-lucide-refresh-cw"
-      label="Reset data"
+      aria-label="Reset data"
+      title="Reset data"
       :loading="isResetting"
-    />
+    >
+      <span class="max-sm:hidden">Reset data</span>
+    </UButton>
 
     <template #content>
       <div class="p-3 w-72 flex flex-col gap-3">

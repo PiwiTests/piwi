@@ -316,6 +316,9 @@ export declare const SIMULATOR_ERRORS: {
   checkoutPayTimeoutPaypal: string;
   emailLabelRenamed: string;
 };
+export declare const INCIDENT_HOST: string;
+export declare function incidentUrl(file: string): string;
+export declare function incidentNavigationError(test: { file: string; declLine: number; declColumn: number }): string;
 
 export declare function renderSnippet(
   lines: string[],

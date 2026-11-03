@@ -14,6 +14,8 @@ const { demoUsers, currentDemoUserId, setDemoUser, refreshDemoAccess } = useAuth
 onMounted(refreshDemoAccess);
 
 const current = computed(() => demoUsers.find((u) => u.id === currentDemoUserId.value) ?? demoUsers[0]);
+/** The persona's name without the role in parentheses, which a phone's banner has no room for. */
+const shortName = computed(() => current.value?.name.replace(/\s*\(.*\)$/, ''));
 
 function personaItem(u: (typeof demoUsers)[number]): DropdownMenuItem {
   return {
@@ -51,8 +53,12 @@ const items = computed<DropdownMenuItem[][]>(() =>
       data-tour="demo-personas"
       icon="i-lucide-user-round-cog"
       trailing-icon="i-lucide-chevrons-up-down"
-      :label="`Acting as: ${current?.name}`"
+      :aria-label="`Acting as: ${current?.name}`"
       :title="`Switch demo user — currently ${current?.name}: ${current?.description}`"
-    />
+      :ui="{ leadingIcon: 'max-sm:hidden' }"
+    >
+      <span class="sm:hidden">{{ shortName }}</span>
+      <span class="max-sm:hidden">Acting as: {{ current?.name }}</span>
+    </UButton>
   </UDropdownMenu>
 </template>
