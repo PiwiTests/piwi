@@ -1,9 +1,8 @@
 import * as path from 'node:path';
-import * as os from 'node:os';
 import * as fs from 'node:fs';
 import { hashForProject } from './instance-id.js';
 import { Logger } from './logger.js';
-import { readPrivateFile, writePrivateFile } from './private-file.js';
+import { privateTempDir, readPrivateFile, writePrivateFile } from './private-file.js';
 
 const logger = new Logger();
 /** The setup files a warning already named, so a run says once why it ignores one. */
@@ -15,7 +14,7 @@ const warnedFiles = new Set<string>();
  * registration alone, whatever other run of the project the machine runs meanwhile.
  */
 export function getSetupFilePath(projectName: string, pid: number = process.pid): string {
-  return path.join(os.tmpdir(), `piwi-dashboard-setup-${hashForProject(projectName)}-${pid}.json`);
+  return path.join(privateTempDir(), `piwi-dashboard-setup-${hashForProject(projectName)}-${pid}.json`);
 }
 
 /** Information saved by the global setup for the reporter instance to consume */

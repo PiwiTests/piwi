@@ -1,9 +1,8 @@
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { errorMessage } from '../support/errors.js';
-import { readPrivateFile, writePrivateFile } from '../support/private-file.js';
+import { legacyPrivateTempDir, privateTempDir, readPrivateFile, writePrivateFile } from '../support/private-file.js';
 import { HttpError, deliveredRunId, type HttpClient } from '../transport/http-client.js';
 import { Logger } from '../support/logger.js';
 
@@ -19,14 +18,14 @@ function recoveryServer(serverUrl: string): string {
   return serverUrl.replace(/\/+$/, '');
 }
 
-/** The recovery file of a project on one dashboard, in the temp directory. */
-export function recoveryFilePath(serverUrl: string, projectName: string): string {
+/** The recovery file of a project on one dashboard, in `dir`: by default the reporter's private folder. */
+export function recoveryFilePath(serverUrl: string, projectName: string, dir: string = privateTempDir()): string {
   const key = crypto
     .createHash('sha256')
     .update(`${recoveryServer(serverUrl)}\n${projectName}`)
     .digest('hex')
     .slice(0, 16);
-  return path.join(os.tmpdir(), `piwi-dashboard-recovery-${key}.json`);
+  return path.join(dir, `piwi-dashboard-recovery-${key}.json`);
 }
 
 /** An answer of the dashboard that refuses the run itself, which no later try can change. */
@@ -42,6 +41,8 @@ function refusesRun(error: unknown): boolean {
 export class CrashRecovery {
   private readonly serverUrl: string;
   private readonly filePath: string;
+  /** Where an older reporter kept this file, on Windows (`legacyPrivateTempDir`); `null` elsewhere. */
+  private readonly legacyPath: string | null;
 
   /**
    * @param serverUrl   The dashboard the run is for: the file is kept for it and replayed to it only.
@@ -55,6 +56,9 @@ export class CrashRecovery {
   ) {
     this.serverUrl = recoveryServer(serverUrl);
     this.filePath = recoveryFilePath(serverUrl, projectName);
+    const legacyDir = legacyPrivateTempDir();
+    const legacyPath = legacyDir ? recoveryFilePath(serverUrl, projectName, legacyDir) : null;
+    this.legacyPath = legacyPath !== this.filePath ? legacyPath : null;
   }
 
   /** Write the payload for a later retry, owner-only, replacing the file in one step. */
@@ -71,16 +75,43 @@ export class CrashRecovery {
   /**
    * The saved payload, or null when there is none, or when the file is not a
    * regular file this user owns that no one else may write, or names another dashboard.
+   * Without a file of its own, it takes the one an older reporter left (`adoptLegacyFile`).
    */
   load(): Record<string, unknown> | null {
+    this.adoptLegacyFile();
+    return this.readPayload(this.filePath);
+  }
+
+  /** The payload of the recovery file at `file`, under the checks `load` names. */
+  private readPayload(file: string): Record<string, unknown> | null {
     try {
-      const read = readPrivateFile(this.filePath);
+      const read = readPrivateFile(file);
       if (!read || !('text' in read)) return null;
-      const file = JSON.parse(read.text) as Partial<RecoveryFile> | null;
-      if (file?.v !== 1 || file.serverUrl !== this.serverUrl) return null;
-      return file.payload && typeof file.payload === 'object' ? file.payload : null;
+      const saved = JSON.parse(read.text) as Partial<RecoveryFile> | null;
+      if (saved?.v !== 1 || saved.serverUrl !== this.serverUrl) return null;
+      return saved.payload && typeof saved.payload === 'object' ? saved.payload : null;
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * Move the recovery file an older reporter left in the shared temp folder on Windows into the private folder, when
+   * the private folder holds none and it passes the checks `load` names, then delete it there: it is replayed from
+   * the private folder from then on. A file that fails them stays where it is.
+   */
+  private adoptLegacyFile(): void {
+    if (!this.legacyPath) return;
+    try {
+      if (fs.lstatSync(this.filePath, { throwIfNoEntry: false })) return;
+      const payload = this.readPayload(this.legacyPath);
+      if (!payload) return;
+      const file: RecoveryFile = { v: 1, serverUrl: this.serverUrl, payload };
+      writePrivateFile(this.filePath, JSON.stringify(file));
+      fs.rmSync(this.legacyPath, { force: true });
+      this.logger.debug(`Moved the saved test data of an older reporter from ${this.legacyPath}`);
+    } catch (error) {
+      this.logger.debug(`Saved test data of an older reporter left in ${this.legacyPath}: ${errorMessage(error)}`);
     }
   }
 

@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { hashForProject, computeInstanceId } from '../src/internal/support/instance-id.js';
 import { getSetupFilePath, peekSetupInfo, readSetupInfo, writeSetupInfo } from '../src/internal/support/setup-file.js';
+import { privateTempDir } from '../src/internal/support/private-file.js';
 import { resolveRunLabel } from '../src/internal/support/ci.js';
 import { readSourceSnippet, collectSourceFrames } from '../src/internal/support/source-snippet.js';
 import { createLimiter } from '../src/internal/support/limiter.js';
@@ -65,9 +66,9 @@ describe('hashForProject', () => {
 });
 
 describe('getSetupFilePath', () => {
-  it('lives in os.tmpdir() and embeds the project hash', () => {
+  it('lives in the private temp folder and embeds the project hash', () => {
     const p = getSetupFilePath('my-project');
-    expect(path.dirname(p)).toBe(os.tmpdir());
+    expect(path.dirname(p)).toBe(privateTempDir());
     const base = path.basename(p);
     expect(base.startsWith('piwi-dashboard-setup-'), base).toBeTruthy();
     expect(base.includes(hashForProject('my-project'))).toBeTruthy();

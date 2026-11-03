@@ -46,9 +46,12 @@ What the package does to a user's run, process by process.
   folder, below the environment, by the reporter and the global setup alike.
 - `piwi-*` testInfo attachment names (`internal/capture/attachments.ts`), temp files in
   `os.tmpdir()` (owner-only, never written through a link nor waited on as a named pipe,
-  and read back only when this user owns them, a check Windows skips, its temp folder
-  being the user's own: `internal/support/private-file.ts`, or a `fs.mkdtempSync` folder), and
-  `[Piwi Dashboard]`-prefixed logs (`internal/support/logger.ts`).
+  and read back only when this user owns them, a check Windows skips: `internal/support/private-file.ts`,
+  or a `fs.mkdtempSync` folder), and `[Piwi Dashboard]`-prefixed logs (`internal/support/logger.ts`).
+  On Windows the private files (the setup file, the stream buffer, the recovery file, the
+  workers' resource census, the ARIA sample set) live in `%LOCALAPPDATA%\piwi\tmp` instead
+  (`privateTempDir`), a folder of this user's alone, whatever account runs the tests; a
+  recovery file an older reporter left in `os.tmpdir()` is moved there on the next run.
 
 **In each test worker** (the capture fixtures)
 
@@ -638,8 +641,8 @@ src/
                 page, the results file; lab (the command line's side of an arm)
     support/    logger, limiter, ci, ci-output, failure-links, run-url, instance-id,
                 system-readers (`/proc`, cgroup and `ps` readers),
-                cli-filters, setup-file, private-file (the temp files: owner-only,
-                checked before they are read), source-snippet, worker-index, errors,
+                cli-filters, setup-file, private-file (the temp files and their
+                folder: owner-only, checked before they are read), source-snippet, worker-index, errors,
                 selection-client, selection-env, shard-info, aria-sampling,
                 run-mode, test-paths, reporter-version, connection (the
                 commands' dashboard), playwright-spawn (how commands start

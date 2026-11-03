@@ -1,10 +1,10 @@
 import { describe, it, beforeEach, afterEach, expect, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import * as os from 'node:os';
 import { StreamManager } from '../src/internal/streaming/stream-manager.js';
 import { StreamBuffer } from '../src/internal/streaming/stream-buffer.js';
 import { CrashRecovery, recoveryFilePath } from '../src/internal/streaming/crash-recovery.js';
+import { privateTempDir } from '../src/internal/support/private-file.js';
 import { FileHandler } from '../src/internal/files/file-handler.js';
 import { hashForProject } from '../src/internal/support/instance-id.js';
 import { HttpError } from '../src/internal/transport/http-client.js';
@@ -16,7 +16,7 @@ const projectHash = hashForProject(projectName);
 const RECOVERY_SERVER = 'http://localhost:3000';
 
 function cleanup(): void {
-  const tmp = os.tmpdir();
+  const tmp = privateTempDir();
   for (const f of fs.readdirSync(tmp)) {
     if (f.startsWith(`piwi-dashboard-stream-${projectHash}`)) {
       try {
@@ -290,7 +290,9 @@ describe('StreamManager run-scoped buffer', () => {
     const buffer = new StreamBuffer(projectName);
     buffer.append([completeEvent('unbound')]);
     expect(buffer.load()).toEqual([]);
-    expect(fs.readdirSync(os.tmpdir()).some((f) => f.startsWith(`piwi-dashboard-stream-${projectHash}`))).toBe(false);
+    expect(fs.readdirSync(privateTempDir()).some((f) => f.startsWith(`piwi-dashboard-stream-${projectHash}`))).toBe(
+      false,
+    );
   });
 
   it("discardBuffered deletes the run's buffer file", () => {
@@ -316,7 +318,7 @@ describe('StreamManager run-scoped buffer', () => {
     const fresh = new StreamBuffer(projectName);
     fresh.bindRun(2);
     fresh.append([completeEvent('fresh')]);
-    const staleFile = path.join(os.tmpdir(), `piwi-dashboard-stream-${projectHash}-1.jsonl`);
+    const staleFile = path.join(privateTempDir(), `piwi-dashboard-stream-${projectHash}-1.jsonl`);
     const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000);
     fs.utimesSync(staleFile, threeHoursAgo, threeHoursAgo);
 

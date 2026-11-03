@@ -1,9 +1,8 @@
 import * as path from 'node:path';
-import * as os from 'node:os';
 import * as fs from 'node:fs';
 import type { TestInfo } from '@playwright/test';
 import { hashForProject } from './instance-id.js';
-import { readPrivateFile, writePrivateFile } from './private-file.js';
+import { privateTempDir, readPrivateFile, writePrivateFile } from './private-file.js';
 import { configDirFromConfig, relativeTestPath } from './test-paths.js';
 
 /**
@@ -26,7 +25,7 @@ export function ariaSampleIdentity(filePath: string, title: string): string {
 
 /** Temp-file path holding the sample set, keyed by project so runs don't collide. */
 function getAriaSampleFilePath(projectName: string): string {
-  return path.join(os.tmpdir(), `piwi-dashboard-aria-sample-${hashForProject(projectName)}.json`);
+  return path.join(privateTempDir(), `piwi-dashboard-aria-sample-${hashForProject(projectName)}.json`);
 }
 
 /** Write the set of due test identities for a project. Best-effort; swallows IO errors. */

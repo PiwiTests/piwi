@@ -1,8 +1,7 @@
 import * as path from 'node:path';
-import * as os from 'node:os';
 import * as fs from 'node:fs';
 import { hashForProject } from '../support/instance-id.js';
-import { appendPrivateFile, readPrivateFile } from '../support/private-file.js';
+import { appendPrivateFile, privateTempDir, readPrivateFile } from '../support/private-file.js';
 import type { StreamEvent } from '../../types.js';
 
 /**
@@ -21,7 +20,7 @@ export class StreamBuffer {
 
   /** Scope the buffer to a run. Until then the buffer is empty and appends are dropped. */
   bindRun(runId: number): void {
-    this.filePath = path.join(os.tmpdir(), `${this.prefix}-${runId}.jsonl`);
+    this.filePath = path.join(privateTempDir(), `${this.prefix}-${runId}.jsonl`);
   }
 
   /** Append one or more events to the on-disk buffer */
@@ -64,7 +63,7 @@ export class StreamBuffer {
 
   /** Remove this project's buffer files older than `maxAgeMs` (default 2 hours). Used on startup to discard orphaned data. */
   clearStale(maxAgeMs: number = 7200000): void {
-    const dir = os.tmpdir();
+    const dir = privateTempDir();
     let names: string[];
     try {
       names = fs.readdirSync(dir).filter((name) => name.startsWith(this.prefix));

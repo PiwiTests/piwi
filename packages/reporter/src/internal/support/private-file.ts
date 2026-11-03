@@ -1,16 +1,43 @@
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
 /**
- * The files the reporter keeps in the shared temp directory: created readable and writable by their owner alone,
- * never written through a symbolic link, and read back only when they are a regular file this user owns that no one
- * else may write. Each path is checked (`lstat`) before it is opened, and what was opened is checked again; the open
- * neither follows a link (`O_NOFOLLOW`) nor waits for the other end of a named pipe (`O_NONBLOCK`).
+ * The files the reporter keeps in its temp folder (`privateTempDir`): created readable and writable by their owner
+ * alone, never written through a symbolic link, and read back only when they are a regular file this user owns that no
+ * one else may write. Each path is checked (`lstat`) before it is opened, and what was opened is checked again; the
+ * open neither follows a link (`O_NOFOLLOW`) nor waits for the other end of a named pipe (`O_NONBLOCK`).
  *
  * Windows has neither flag, nor file owners and mode bits: there the `lstat` alone refuses a link, a link made between
- * it and the open is followed, and the owner and mode checks are skipped. Its `os.tmpdir()` is the user's own folder,
- * but for a service's.
+ * it and the open is followed, and the owner and mode checks are skipped. The files live there in a folder of this
+ * user's profile, which other users of the machine may not enter, whatever account the run uses.
  */
+
+/**
+ * The folder the reporter keeps its private files in: `os.tmpdir()` on Linux and macOS; on Windows, `piwi\tmp` in
+ * this user's local application data folder (`%LOCALAPPDATA%`, else `AppData\Local` in the home folder), created on
+ * first use. Every process of a run (the global setup, the workers, the reporter) runs as one user, so all of them
+ * find the same folder.
+ */
+export function privateTempDir(): string {
+  if (process.platform !== 'win32') return os.tmpdir();
+  const dir = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'piwi', 'tmp');
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+  } catch {
+    // A file that cannot be written there fails where it is written.
+  }
+  return dir;
+}
+
+/**
+ * The folder an older reporter kept its private files in where `privateTempDir` is another one: `os.tmpdir()` on
+ * Windows, `null` elsewhere.
+ */
+export function legacyPrivateTempDir(): string | null {
+  return process.platform === 'win32' ? os.tmpdir() : null;
+}
 
 const NO_FOLLOW = fs.constants.O_NOFOLLOW ?? 0;
 const NO_WAIT = fs.constants.O_NONBLOCK ?? 0;

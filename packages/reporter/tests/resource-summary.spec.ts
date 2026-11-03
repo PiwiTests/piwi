@@ -6,7 +6,16 @@ import { PiwiDashboardReporter } from '../src/public/reporter.js';
 import { PIWI_RESOURCES_RESULTS_ENV } from '../src/internal/config/env.js';
 import { ATTACHMENT_NAMES } from '../src/internal/capture/attachments.js';
 import type { ResourceCensus } from '../src/internal/capture/resource-ledger.js';
-import { startServer, jsonRes, fakeConfig, fakeSuite, fakeTestCase, fakeResult, type FakeServer } from './_helpers.js';
+import {
+  startServer,
+  jsonRes,
+  fakeConfig,
+  fakeSuite,
+  fakeTestCase,
+  fakeResult,
+  stubPlatform,
+  type FakeServer,
+} from './_helpers.js';
 
 const SPEC = path.resolve('tests/cart.spec.ts');
 
@@ -86,6 +95,31 @@ describe('the resource summary', () => {
     expect(lines).toContain(
       '  leaked   context     tests/cart.spec.ts:4 · 1 test · open until the worker shut down (2.0 s past its test)',
     );
+  });
+
+  it("names the workers' shutdown file in the private temp folder, on Windows in this user's own", async () => {
+    const local = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-resources-local-'));
+    const realPlatform = stubPlatform('win32');
+    vi.stubEnv('LOCALAPPDATA', local);
+    try {
+      const shutdown: ResourceCensus = {
+        ...leakyCensus(),
+        at: 3000,
+        test: null,
+        born: [],
+        open: [],
+        closed: [{ id: 1, at: 3000, phase: 'worker', test: null }],
+      };
+      const census = Buffer.from(JSON.stringify(leakyCensus()));
+      const attachments = [{ name: ATTACHMENT_NAMES.resources, contentType: 'application/json', body: census }];
+      const lines = await run({}, fakeResult({ attachments }), shutdown);
+      expect(path.dirname(process.env[PIWI_RESOURCES_RESULTS_ENV]!)).toBe(path.join(local, 'piwi', 'tmp'));
+      expect(lines.some((line) => line.includes('open until the worker shut down'))).toBe(true);
+    } finally {
+      realPlatform();
+      vi.unstubAllEnvs();
+      fs.rmSync(local, { recursive: true, force: true });
+    }
   });
 
   it('counts probable leaks from the steps of a test that ran without the fixtures', async () => {

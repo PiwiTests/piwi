@@ -1,11 +1,11 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { CrashRecovery, recoveryFilePath } from '../src/internal/streaming/crash-recovery.js';
 import { HttpClient } from '../src/internal/transport/http-client.js';
 import { Logger } from '../src/internal/support/logger.js';
-import { jsonRes, startServer, textRes, type FakeServer } from './_helpers.js';
+import { jsonRes, startServer, stubPlatform, textRes, type FakeServer } from './_helpers.js';
 
 const projectName = 'piwi-recovery-' + process.pid;
 const logger = new Logger(false);
@@ -119,5 +119,109 @@ describe('the crash-recovery file', () => {
     status = 400;
     await recovery.tryUpload(new HttpClient(server.url, logger));
     expect(recovery.load()).toBeNull();
+  });
+});
+
+describe("an older reporter's recovery file on Windows", () => {
+  let server: FakeServer | null = null;
+  let bodies: any[];
+  let status: number;
+  /** This user's local application data folder, and the shared temp folder an older reporter wrote to. */
+  let local: string;
+  let shared: string;
+  let realPlatform: () => void;
+
+  beforeEach(async () => {
+    local = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-recovery-local-'));
+    shared = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-recovery-shared-'));
+    bodies = [];
+    status = 200;
+    server = await startServer((req, res) => {
+      if (status !== 200) return textRes(res, status, 'no');
+      bodies.push(JSON.parse(req.body));
+      jsonRes(res, 200, { runId: bodies.length });
+    });
+    realPlatform = stubPlatform('win32');
+    vi.stubEnv('LOCALAPPDATA', local);
+    for (const name of ['TMPDIR', 'TEMP', 'TMP']) vi.stubEnv(name, shared);
+  });
+
+  afterEach(async () => {
+    realPlatform();
+    vi.unstubAllEnvs();
+    await server?.close();
+    server = null;
+    fs.rmSync(local, { recursive: true, force: true });
+    fs.rmSync(shared, { recursive: true, force: true });
+  });
+
+  /** Leave a recovery file in the shared temp folder, as an older reporter did. */
+  function leaveLegacyFile(payload: Record<string, unknown>): string {
+    const file = recoveryFilePath(server!.url, projectName, shared);
+    fs.writeFileSync(file, JSON.stringify({ v: 1, serverUrl: server!.url, payload }), { mode: 0o600 });
+    return file;
+  }
+
+  it('is replayed once, then deleted from the shared temp folder', async () => {
+    const legacy = leaveLegacyFile({ projectName, testCases: [], label: 'left' });
+    const recovery = new CrashRecovery(server!.url, projectName, logger);
+
+    await recovery.tryUpload(new HttpClient(server!.url, logger));
+    await recovery.tryUpload(new HttpClient(server!.url, logger));
+
+    expect(bodies.map((body) => body.label)).toEqual(['left']);
+    expect(fs.existsSync(legacy)).toBe(false);
+    expect(fs.existsSync(recoveryFilePath(server!.url, projectName))).toBe(false);
+  });
+
+  it('moves into the private folder when the replay fails, and is replayed from there', async () => {
+    const legacy = leaveLegacyFile({ projectName, testCases: [], label: 'left' });
+    const recovery = new CrashRecovery(server!.url, projectName, logger);
+
+    status = 503;
+    await recovery.tryUpload(new HttpClient(server!.url, logger));
+    expect(fs.existsSync(legacy)).toBe(false);
+    expect(path.dirname(recoveryFilePath(server!.url, projectName))).toBe(path.join(local, 'piwi', 'tmp'));
+    expect(recovery.load()).toMatchObject({ label: 'left' });
+
+    status = 200;
+    await recovery.tryUpload(new HttpClient(server!.url, logger));
+    expect(bodies.map((body) => body.label)).toEqual(['left']);
+    expect(recovery.load()).toBeNull();
+  });
+
+  it('waits for the next run while the private folder holds a file of its own', async () => {
+    const legacy = leaveLegacyFile({ projectName, testCases: [], label: 'left' });
+    const recovery = new CrashRecovery(server!.url, projectName, logger);
+    recovery.save({ projectName, testCases: [], label: 'own' });
+
+    await recovery.tryUpload(new HttpClient(server!.url, logger));
+    expect(fs.existsSync(legacy)).toBe(true);
+    await recovery.tryUpload(new HttpClient(server!.url, logger));
+    await recovery.tryUpload(new HttpClient(server!.url, logger));
+
+    expect(bodies.map((body) => body.label)).toEqual(['own', 'left']);
+    expect(fs.existsSync(legacy)).toBe(false);
+  });
+
+  it('stays where it is when it names another dashboard or is a symbolic link', async () => {
+    const legacy = recoveryFilePath(server!.url, projectName, shared);
+    const elsewhere = JSON.stringify({ v: 1, serverUrl: 'http://other.example', payload: { projectName } });
+    fs.writeFileSync(legacy, elsewhere, { mode: 0o600 });
+    const recovery = new CrashRecovery(server!.url, projectName, logger);
+    await recovery.tryUpload(new HttpClient(server!.url, logger));
+    expect(fs.readFileSync(legacy, 'utf8')).toBe(elsewhere);
+
+    fs.rmSync(legacy);
+    const target = path.join(local, 'run.json');
+    fs.writeFileSync(target, JSON.stringify({ v: 1, serverUrl: server!.url, payload: { projectName } }));
+    try {
+      fs.symlinkSync(target, legacy);
+    } catch {
+      return; // creating a link needs a privilege some systems do not grant
+    }
+    await recovery.tryUpload(new HttpClient(server!.url, logger));
+    expect(fs.lstatSync(legacy).isSymbolicLink()).toBe(true);
+    expect(bodies).toEqual([]);
   });
 });

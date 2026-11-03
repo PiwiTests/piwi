@@ -5,6 +5,7 @@ import * as os from 'node:os';
 import { PiwiDashboardReporter } from '../src/public/reporter.js';
 import { RunSubmitter, type CollectedRun } from '../src/internal/submit/run-submitter.js';
 import { HttpClient } from '../src/internal/transport/http-client.js';
+import { privateTempDir } from '../src/internal/support/private-file.js';
 import { Uploader } from '../src/internal/submit/uploader.js';
 import { CrashRecovery, recoveryFilePath } from '../src/internal/streaming/crash-recovery.js';
 import { FileHandler } from '../src/internal/files/file-handler.js';
@@ -28,7 +29,7 @@ const SETUP_PREFIX = 'piwi-dashboard-setup-';
 function cleanupProjectArtifacts(projectName: string, server?: FakeServer): void {
   // Stream-buffer files are keyed by a sha1 hash of the project name, so match
   // on the hash rather than the raw name; a recovery file by the server too.
-  const tmp = os.tmpdir();
+  const tmp = privateTempDir();
   const hash = hashForProject(projectName);
   for (const f of fs.readdirSync(tmp)) {
     if (f.startsWith(STREAM_PREFIX) || f.startsWith(SETUP_PREFIX)) {
