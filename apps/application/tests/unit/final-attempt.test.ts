@@ -613,6 +613,25 @@ describe('the verdict each execution stores', () => {
     expect(run!.flakyTests).toBe(flaky ? 1 : 0);
   });
 
+  test.each(VERDICT_CASES)(
+    'by a batch of final attempts only, with their history: %s',
+    async (_name, statuses, flaky) => {
+      const { runId } = await submit({
+        body: {
+          projectName: PROJECT,
+          status: 'passed',
+          startTime: new Date().toISOString(),
+          testCases: [attempt('pays', statuses)],
+          totalTests: 1,
+          passedTests: 1,
+        },
+      });
+      expect(await verdicts(runId, 'pays')).toEqual([`1: ${flaky}`]);
+      const [run] = await db.select().from(schema.testRuns).where(eq(schema.testRuns.id, runId));
+      expect(run!.flakyTests).toBe(flaky ? 1 : 0);
+    },
+  );
+
   test.each(VERDICT_CASES)('by a blob import: %s', async (_name, statuses, flaky) => {
     const { runId } = await importBlobReportRun(db as never, importPort, {
       projectId,

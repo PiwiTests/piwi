@@ -160,11 +160,14 @@ export function testOutcomes<T extends AttemptRow & { status: string }>(rows: Re
 /**
  * The final attempts (`finalAttempts`) of a run's rows that are flaky: each passed after an earlier attempt of its
  * repetition failed or timed out (`isFlakyResult`). A retry that passed after attempts that passed, were skipped or
- * did not run (a `describe.serial` group retried for another test's failure) is not flaky. A final attempt none of
- * whose earlier attempts is among the rows (a payload of final attempts only) is flaky when it passed on a retry.
- * Pass every attempt row of the run; the returned rows are the given objects.
+ * did not run (a `describe.serial` group retried for another test's failure) is not flaky. A stored row's verdict
+ * (`passedAfterFailure`) decides it when the row carries one. A final attempt none of whose earlier attempts is among
+ * the rows (a payload of final attempts only) is read from its attempt history (`isFlakyExecution`): without one, it is
+ * flaky when it passed on a retry. Pass every attempt row of the run; the returned rows are the given objects.
  */
-export function flakyFinalAttempts<T extends AttemptRow & { status: string }>(rows: ReadonlyArray<T>): Set<T> {
+export function flakyFinalAttempts<T extends AttemptRow & FlakyRowExtras & { status: string }>(
+  rows: ReadonlyArray<T>,
+): Set<T> {
   const final = new Map(finalAttempts(rows).map((row) => [attemptKey(row), row]));
   const earlier = new Map<string, string[]>();
   for (const row of rows) {
@@ -178,9 +181,21 @@ export function flakyFinalAttempts<T extends AttemptRow & { status: string }>(ro
   const flaky = new Set<T>();
   for (const [key, row] of final) {
     const statuses = earlier.get(key);
-    if (statuses ? isFlakyResult(row.status, statuses) : passedOnRetry(row)) flaky.add(row);
+    const verdict =
+      typeof row.passedAfterFailure === 'boolean'
+        ? row.passedAfterFailure
+        : statuses
+          ? isFlakyResult(row.status, statuses)
+          : isFlakyExecution({ ...row, attempts: Array.isArray(row.attempts) ? row.attempts : null });
+    if (verdict) flaky.add(row);
   }
   return flaky;
+}
+
+/** What a row can carry beyond its attempt's identity for `flakyFinalAttempts`: its stored verdict, its history. */
+interface FlakyRowExtras {
+  passedAfterFailure?: boolean | null;
+  attempts?: unknown;
 }
 
 /**

@@ -623,7 +623,7 @@ export async function getTestRunCase(
     fromAttempt: failedAttempt ? { retry: failedAttempt.retries ?? 0, executionId: failedAttempt.id } : null,
   });
   // A pass after a failure is one with or without its failed attempt stored:
-  // the policy reads it from the stored verdict alone when there is no verdict.
+  // without a failure verdict, the policy reads it from `passedAfterFailure`.
   const why = verdict?.why ?? (passedOnRetry ? 'passed-on-retry' : null);
 
   // The situation lines and the single next step, built from the verdict and

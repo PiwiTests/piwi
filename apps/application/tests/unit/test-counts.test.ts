@@ -390,6 +390,32 @@ describe('flaky results', () => {
   });
 });
 
+describe('flakyFinalAttempts on stored rows and lone final attempts', () => {
+  const final = (status: string, extra: Record<string, unknown> = {}) => ({
+    testCaseId: 1,
+    browserName: 'chromium',
+    repeatEachIndex: 0,
+    retries: 1,
+    status,
+    ...extra,
+  });
+
+  test('takes the verdict a stored row carries over its earlier rows', () => {
+    const earlier = { ...final('failed'), retries: 0 };
+    expect(flakyFinalAttempts([earlier, final('passed', { passedAfterFailure: false })]).size).toBe(0);
+    const passedEarlier = { ...final('passed'), retries: 0 };
+    expect(flakyFinalAttempts([passedEarlier, final('passed', { passedAfterFailure: true })]).size).toBe(1);
+  });
+
+  test('reads a final attempt with no earlier row from its attempt history', () => {
+    const history = (...statuses: string[]) => statuses.map((status, retry) => ({ retry, status }));
+    expect(flakyFinalAttempts([final('passed', { attempts: history('passed', 'passed') })]).size).toBe(0);
+    expect(flakyFinalAttempts([final('passed', { attempts: history('didnotrun', 'passed') })]).size).toBe(0);
+    expect(flakyFinalAttempts([final('passed', { attempts: history('timedOut', 'passed') })]).size).toBe(1);
+    expect(flakyFinalAttempts([final('passed')]).size).toBe(1);
+  });
+});
+
 describe('decidesOutcome', () => {
   const final = (status: string, retries: number, repeatEachIndex: number, passedAfterFailure?: boolean) => ({
     status,

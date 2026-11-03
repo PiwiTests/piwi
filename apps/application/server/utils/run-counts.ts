@@ -22,6 +22,7 @@ export async function computeRunCountsFromRows(db: DrizzleDB, runId: number) {
       repeatEachIndex: testRunsCases.repeatEachIndex,
       retries: testRunsCases.retries,
       status: testRunsCases.status,
+      passedAfterFailure: testRunsCases.passedAfterFailure,
     })
     .from(testRunsCases)
     .where(eq(testRunsCases.testRunId, runId));

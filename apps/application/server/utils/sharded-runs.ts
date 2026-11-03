@@ -72,12 +72,15 @@ type BatchRunBody = Omit<TestRunSubmitPayload, 'projectName' | 'testCases'>;
 
 /** A batch's test cases, one per attempt, as the reporter sends them; every field may be missing. */
 type BatchCase = Partial<
-  Pick<TestCasePayload, 'title' | 'location' | 'suitePath' | 'browser' | 'repeatEachIndex' | 'retries' | 'status'>
+  Pick<
+    TestCasePayload,
+    'title' | 'location' | 'suitePath' | 'browser' | 'repeatEachIndex' | 'retries' | 'status' | 'attempts'
+  >
 > & { duration?: unknown };
 
 /**
  * How many of a batch's test results are flaky (`flakyFinalAttempts`): its cases are the attempts of each test,
- * told apart by title, location, describe path and browser, and grouped by repetition.
+ * told apart by title, location, describe path and browser, and grouped by repetition, each with its attempt history.
  */
 export function countFlakyBatchCases(testCases: ReadonlyArray<BatchCase>): number {
   const testIds = new Map<string, number>();
@@ -91,6 +94,7 @@ export function countFlakyBatchCases(testCases: ReadonlyArray<BatchCase>): numbe
       repeatEachIndex: tc.repeatEachIndex ?? 0,
       retries: Number(tc.retries ?? 0),
       status: String(tc.status ?? ''),
+      attempts: tc.attempts ?? null,
     };
   });
   return flakyFinalAttempts(rows).size;

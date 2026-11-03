@@ -78,7 +78,7 @@ describe('STATUS_PALETTE', () => {
 });
 
 describe('formatExecutionStatus', () => {
-  test('names a pass that needed a retry', () => {
+  test('names a pass after a failed attempt', () => {
     expect(formatExecutionStatus('passed', true)).toBe('passed on retry');
     expect(formatExecutionStatus('passed', false)).toBe('passed');
     expect(formatExecutionStatus('timedout')).toBe('timed out');
