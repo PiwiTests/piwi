@@ -487,11 +487,24 @@ function connectToDemoStream() {
     seedLiveFromPersisted(testRun.value.testCases);
   }
 
-  demoUnsubscribe = subscribeDemoEvents((message) => {
+  // The service worker answers the catch-up the server's stream sends (the stored executions, then the tests still
+  // running); the live events heard meanwhile wait behind it, so a test that completed since is not shown running again.
+  let heldEvents: Record<string, unknown>[] | null = [];
+  const unsubscribe = subscribeDemoEvents((message) => {
     if (message.scope === 'run' && message.runId === Number(runId)) {
-      enqueueEvent(message.event as unknown as Record<string, unknown>);
+      const event = message.event as unknown as Record<string, unknown>;
+      if (heldEvents) heldEvents.push(event);
+      else enqueueEvent(event);
     }
   });
+  demoUnsubscribe = unsubscribe;
+  void $fetch<{ events?: Record<string, unknown>[] }>(`/api/test-runs/${runId}/stream`)
+    .catch(() => ({ events: [] }))
+    .then((catchUp) => {
+      if (demoUnsubscribe !== unsubscribe) return;
+      for (const event of [...(catchUp.events ?? []), ...(heldEvents ?? [])]) enqueueEvent(event);
+      heldEvents = null;
+    });
 }
 
 function connectToStream() {
@@ -569,9 +582,8 @@ function disconnectStream() {
 }
 
 // A run shown as initializing is refetched once it starts, and then streams.
-// The demo's run events replay nothing on connect, so in demo mode the page
-// already listens while the run initializes, for the tests that begin before
-// the refetch lands.
+// In demo mode the page already listens while the run initializes, for the
+// tests that begin before the refetch lands.
 useRunStart(Number(runId), () => testRun.value?.status, refresh);
 const shouldStream = computed(() => isLive.value || (isDemoMode && testRun.value?.status === 'initializing'));
 

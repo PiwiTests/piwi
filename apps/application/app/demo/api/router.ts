@@ -158,7 +158,7 @@ import {
   apiSaveDashboard,
   apiSetDefaultDashboard,
 } from './dashboards';
-import { DEMO_CHANNEL } from './demo-channel';
+import { createDemoChannel, deleteDemoChannel, demoReportChannels, listDemoChannels } from './channels';
 import { apiPerfettoTestRun, apiPerfettoTestRunCase } from './perfetto';
 import {
   apiGetDemoTraceStacks,
@@ -369,7 +369,7 @@ import {
   disableDemoWebhookToken,
 } from './integrations';
 import { canReadThroughConnection, CONNECTION_NOT_FOUND } from '#shared/integrations/connection-access';
-import type { ConnectionInput } from '#shared/integrations/types';
+import type { ConnectionInput, IssueEntityType } from '#shared/integrations/types';
 import type { ResolvedProjectIntegration } from '#shared/integrations/binding';
 import { toIssueLocale } from '#shared/integrations/messages';
 import {
@@ -408,6 +408,9 @@ import {
   apiHeartbeatTestRun,
   apiLiveResourcesTestRun,
 } from './reporter';
+import { demoRunningCases } from './stuck-tests';
+import { UNFINISHED_RUN_STATUSES } from '#shared/run-eligibility';
+import { runFinishedEventData, storedCaseEventData } from '~~/server/utils/run-stream-catch-up';
 import { apiCreateUserApiKey } from './users';
 import { apiGetDemoFile } from './files';
 import {
@@ -571,6 +574,14 @@ type DemoEntity =
  */
 async function assertDemoEntityScope(ctx: DemoCtx | undefined, entity: DemoEntity, id: number): Promise<number | null> {
   if (!ctx || isAdministrator(ctx.access)) return null;
+  const projectId = await demoEntityProjectId(entity, id);
+  if (projectId === null) throw demoHttpError(404, 'Not found');
+  assertDemoScope(ctx, projectId);
+  return projectId;
+}
+
+/** The project an entity belongs to, or null when it does not exist. */
+async function demoEntityProjectId(entity: DemoEntity, id: number): Promise<number | null> {
   const db = await getDemoDb();
   let projectId: number | null = null;
   if (entity === 'project') {
@@ -609,8 +620,6 @@ async function assertDemoEntityScope(ctx: DemoCtx | undefined, entity: DemoEntit
       .where(eq(testRunsCases.id, id));
     projectId = row?.projectId ?? null;
   }
-  if (projectId === null) throw demoHttpError(404, 'Not found');
-  assertDemoScope(ctx, projectId);
   return projectId;
 }
 
@@ -636,6 +645,9 @@ function assertDemoSelfOrAdmin(ctx: DemoCtx | undefined, userId: number): void {
   }
 }
 
+/** The entities an issue is drafted and filed for, as the server's issue routes accept them. */
+const ISSUE_ENTITY_TYPES: IssueEntityType[] = ['failure_cluster', 'test_runs_case', 'bug_report'];
+
 /** The entity kind `assertDemoEntityScope` resolves for each entity a link (or an issue) can target. */
 const LINK_TARGET_ENTITY: Record<string, DemoEntity> = {
   test_run: 'run',
@@ -655,6 +667,17 @@ async function assertDemoLinkTargetScope(
   // An unknown entity type is left to the handler's own validation.
   if (!entity || !Number.isInteger(entityId) || entityId <= 0) return;
   await assertDemoEntityScope(ctx, entity, entityId);
+}
+
+/**
+ * The issue routes' entity check, as the server's: 404 when the entity does not
+ * exist, whoever asks, then the route's permission on its project.
+ */
+async function assertDemoIssueEntity(ctx: DemoCtx | undefined, entityType: IssueEntityType, entityId: number) {
+  if ((await demoEntityProjectId(LINK_TARGET_ENTITY[entityType]!, entityId)) === null) {
+    throw demoHttpError(404, 'Entity not found');
+  }
+  await assertDemoLinkTargetScope(ctx, entityType, entityId);
 }
 
 /**
@@ -1939,8 +1962,31 @@ const routes: RouteEntry[] = [
     handler: (_, body) => apiPutLocale(body as Parameters<typeof apiPutLocale>[0]),
   },
 
-  // Test-run streaming (no-op in demo mode; only terminal-status runs exist)
-  { method: 'GET', pattern: /^\/api\/test-runs\/(\d+)\/stream$/, handler: () => Promise.resolve({ ok: true }) },
+  // A run's stream: its live events go over a BroadcastChannel (`app/demo/run-events.ts`), so this answers only the
+  // catch-up the server's stream sends first, as one list: an ended run's `run-finished`, else each stored execution
+  // and then each test still running.
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-runs\/(\d+)\/stream$/,
+    handler: async (m, _b, _q, ctx) => {
+      const id = +m[1]!;
+      await assertDemoEntityScope(ctx, 'run', id);
+      const db = await getDemoDb();
+      const [run] = await db.select().from(testRuns).where(eq(testRuns.id, id));
+      if (!run) throw demoHttpError(404, 'Test run not found');
+      const event = (type: string, data: Record<string, unknown>) => ({ type, data, seq: 0, timestamp: Date.now() });
+      // An initializing run is still to come: the demo's run page listens to it before its tests begin.
+      if (!(UNFINISHED_RUN_STATUSES as readonly string[]).includes(run.status)) {
+        return { events: [event('run-finished', runFinishedEventData(run))] };
+      }
+      return {
+        events: [
+          ...(await storedCaseEventData(db, id)).map((data) => event('test-completed', data)),
+          ...demoRunningCases(id).map((data) => event('test-begin', data)),
+        ],
+      };
+    },
+  },
 
   // Notification SSE (handled via BroadcastChannel in demo mode)
   { method: 'GET', pattern: /^\/api\/notifications\/stream$/, handler: () => Promise.resolve({ ok: true }) },
@@ -3492,9 +3538,12 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/integrations\/issue-draft$/,
     permission: 'issue:create',
     handler: async (_, __, q, ctx) => {
-      const entityType = (q?.get('entityType') ?? '') as 'failure_cluster' | 'test_runs_case';
+      const entityType = (q?.get('entityType') ?? '') as IssueEntityType;
       const entityId = Number(q?.get('entityId') ?? 0);
-      await assertDemoLinkTargetScope(ctx, entityType, entityId);
+      if (!ISSUE_ENTITY_TYPES.includes(entityType) || !Number.isInteger(entityId) || entityId <= 0) {
+        throw demoHttpError(400, 'entityType and entityId are required');
+      }
+      await assertDemoIssueEntity(ctx, entityType, entityId);
       const draft = await demoIssueDraft(
         await getDemoDb(),
         entityType,
@@ -3511,22 +3560,27 @@ const routes: RouteEntry[] = [
     permission: 'issue:create',
     handler: async (_, body, _q, ctx) => {
       const b = body as {
-        entityType: 'failure_cluster' | 'test_runs_case';
+        entityType: IssueEntityType;
         entityId: number;
         connectionId?: number;
         title?: string;
         issueType?: string;
         fields?: unknown;
       };
-      await assertDemoLinkTargetScope(ctx, b.entityType, b.entityId);
+      if (!ISSUE_ENTITY_TYPES.includes(b.entityType) || !Number.isInteger(b.entityId) || b.entityId <= 0) {
+        throw demoHttpError(400, 'Invalid request body');
+      }
+      await assertDemoIssueEntity(ctx, b.entityType, b.entityId);
       // Like the server, a project's issues go through the connection it is bound to.
       if (b.connectionId !== getDemoProjectIntegration().connectionId) {
         throw demoHttpError(403, 'This project files its issues through the connection it is bound to');
       }
-      return demoCreateIssue(await getDemoDb(), b.entityType, b.entityId, b.title, {
+      const created = await demoCreateIssue(await getDemoDb(), b.entityType, b.entityId, b.title, {
         issueType: b.issueType,
         fields: b.fields,
       });
+      if (!created) throw demoHttpError(404, 'Entity or cluster unavailable');
+      return created;
     },
   },
   { method: 'GET', pattern: /^\/api\/integrations\/actions$/, handler: async () => demoIntegrationActions() },
@@ -4066,18 +4120,28 @@ let _nextSubId = 1;
 const _demoSubs: DemoSubscription[] = [];
 
 routes.push(
-  // Channels
+  // Channels — stored in the in-browser database
   {
     method: 'GET',
     pattern: /^\/api\/channels$/,
-    handler: () => Promise.resolve({ items: [DEMO_CHANNEL], canStoreSecrets: true }),
+    handler: async () => ({ items: await listDemoChannels(await getDemoDb()), canStoreSecrets: true }),
   },
   {
     method: 'POST',
     pattern: /^\/api\/channels$/,
-    handler: () => Promise.resolve({ success: true, channel: DEMO_CHANNEL }),
+    handler: async (_, body) => createDemoChannel(await getDemoDb(), body),
   },
-  { method: 'DELETE', pattern: /^\/api\/channels\/(\d+)$/, handler: () => Promise.resolve({ success: true }) },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/channels\/(\d+)$/,
+    handler: async (m) => {
+      const id = parseInt(m[1]!);
+      const result = await deleteDemoChannel(await getDemoDb(), id);
+      // Like the server, a channel's subscriptions go with it.
+      for (let i = _demoSubs.length - 1; i >= 0; i--) if (_demoSubs[i]!.channelId === id) _demoSubs.splice(i, 1);
+      return result;
+    },
+  },
   {
     method: 'POST',
     pattern: /^\/api\/channels\/(\d+)\/test$/,
@@ -4103,7 +4167,7 @@ routes.push(
   {
     method: 'POST',
     pattern: /^\/api\/subscriptions$/,
-    handler: (_, body) => {
+    handler: async (_, body) => {
       const b = body as {
         channelId?: number;
         projectId?: number | null;
@@ -4126,10 +4190,13 @@ routes.push(
       if (!digest.success) throw demoHttpError(400, 'Invalid request body');
       const mode = b.mode === 'digest' ? 'digest' : 'realtime';
       const digestAt = digest.data ?? null;
+      const channelId = b.channelId ?? 1;
+      const channel = (await listDemoChannels(await getDemoDb())).find((c) => c.id === channelId);
+      if (!channel) throw demoHttpError(404, 'Channel not found');
       const sub: DemoSubscription = {
         id: _nextSubId++,
         userId: null,
-        channelId: b.channelId ?? 1,
+        channelId,
         projectId: b.projectId ?? null,
         events,
         filters: filters.data ?? null,
@@ -4137,12 +4204,12 @@ routes.push(
         digestAt,
         mutedUntil: null,
         active: true,
-        channel: { id: DEMO_CHANNEL.id, name: DEMO_CHANNEL.name, type: DEMO_CHANNEL.type },
+        channel: { id: channel.id, name: channel.name, type: channel.type },
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
       _demoSubs.push(sub);
-      return Promise.resolve({ success: true, subscription: sub });
+      return { success: true, subscription: sub };
     },
   },
   {
@@ -4192,28 +4259,20 @@ routes.push(
 
 // Report schedules and snapshots — stored in the in-browser database; the demo
 // has no scheduler, so a schedule never fires by itself.
-const demoReportChannels = () => [
-  {
-    id: DEMO_CHANNEL.id,
-    name: DEMO_CHANNEL.name,
-    type: DEMO_CHANNEL.type,
-    userId: DEMO_CHANNEL.userId,
-    address: DEMO_CHANNEL.config.address,
-  },
-];
-
 routes.push(
   {
     method: 'GET',
     pattern: /^\/api\/reports\/schedules$/,
     permission: 'report:write',
-    handler: (_m, _b, _q, ctx) => apiListReportSchedules(demoReportChannels(), demoScope(ctx, 'report:write')),
+    handler: async (_m, _b, _q, ctx) =>
+      apiListReportSchedules(await demoReportChannels(await getDemoDb()), demoScope(ctx, 'report:write')),
   },
   {
     method: 'POST',
     pattern: /^\/api\/reports\/schedules$/,
     permission: 'report:write',
-    handler: (_m, body, _q, ctx) => apiCreateReportSchedule(body, demoReportChannels(), demoScope(ctx, 'report:write')),
+    handler: async (_m, body, _q, ctx) =>
+      apiCreateReportSchedule(body, await demoReportChannels(await getDemoDb()), demoScope(ctx, 'report:write')),
   },
   {
     method: 'POST',
@@ -4225,14 +4284,19 @@ routes.push(
     method: 'GET',
     pattern: /^\/api\/reports\/schedules\/(\d+)$/,
     permission: 'report:write',
-    handler: (m) => apiGetReportSchedule(+m[1]!, demoReportChannels()),
+    handler: async (m) => apiGetReportSchedule(+m[1]!, await demoReportChannels(await getDemoDb())),
   },
   {
     method: 'PATCH',
     pattern: /^\/api\/reports\/schedules\/(\d+)$/,
     permission: 'report:write',
-    handler: (m, body, _q, ctx) =>
-      apiUpdateReportSchedule(+m[1]!, body, demoReportChannels(), demoScope(ctx, 'report:write')),
+    handler: async (m, body, _q, ctx) =>
+      apiUpdateReportSchedule(
+        +m[1]!,
+        body,
+        await demoReportChannels(await getDemoDb()),
+        demoScope(ctx, 'report:write'),
+      ),
   },
   {
     method: 'DELETE',

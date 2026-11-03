@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { resolveBrowserName } from '#shared/browser-name';
 import { runningTestHistory, type RunningTestHistory } from '#shared/handlers/stuck-tests';
-import { STUCK_FLOOR_MS, stuckAttempt, testStuckEventData } from '#shared/stuck-tests';
+import { STUCK_FLOOR_MS, stuckAttempt, testStuckEventData, type StuckAttempt } from '#shared/stuck-tests';
 import { projects } from '~~/server/database/schema';
 import { runningCaseKey } from '~~/server/utils/inserted-run-cases';
 import type { getDemoDb } from '../db.client';
@@ -20,7 +20,7 @@ interface DemoAttempt {
   begin: Record<string, unknown>;
   startedAt: number;
   history?: RunningTestHistory;
-  stuck: boolean;
+  stuck: StuckAttempt | null;
 }
 
 /** Each live demo run's running tests, the latest time its events reached, and whether a check of it is under way. */
@@ -46,13 +46,25 @@ export function noteDemoBegin(runId: number, begin: Record<string, unknown>): vo
   runOf(runId).attempts.set(runningCaseKey(begin as Parameters<typeof runningCaseKey>[0]), {
     begin,
     startedAt: begin.startedAt,
-    stuck: false,
+    stuck: null,
   });
 }
 
 /** A test of the run completed. */
 export function noteDemoComplete(runId: number, tc: Parameters<typeof runningCaseKey>[0]): void {
   runs.get(runId)?.attempts.delete(runningCaseKey(tc));
+}
+
+/**
+ * The begin payloads of the run's running tests, for a page that connects mid-run, as the server's stream replays
+ * them: one said to be stuck carries it (`stuck`), with how long it has run at the latest time the run's events reached.
+ */
+export function demoRunningCases(runId: number): Record<string, unknown>[] {
+  const run = runs.get(runId);
+  if (!run) return [];
+  return [...run.attempts.values()].map(({ begin, startedAt, stuck }) =>
+    stuck ? { ...begin, stuck: { ...stuck, elapsedMs: Math.max(stuck.elapsedMs, run.now - startedAt) } } : begin,
+  );
 }
 
 /** The run ended: its running tests are forgotten. */
@@ -101,7 +113,7 @@ async function checkAttempts(db: DemoDb, run: { id: number; projectId: number },
     });
     const stuck = stuckAttempt(elapsedMs, attempt.history.passingDurations);
     if (!stuck) continue;
-    attempt.stuck = true;
+    attempt.stuck = stuck;
     publishDemoRunEvent(run.id, { type: 'test-stuck', data: testStuckEventData(begin, stuck) });
     const [project] = await db
       .select({ name: projects.name, label: projects.label })
