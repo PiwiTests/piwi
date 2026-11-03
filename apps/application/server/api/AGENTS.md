@@ -139,7 +139,8 @@ The early check only proves the user holds the permission _somewhere_. The proje
   `connections:manage`, else the 404 of a missing connection. `tests/unit/connection-read-routes.test.ts`.
 - **A notification addressed to one user (`targetUserId`) still needs their access to every project it is about**:
   `notifyFixAuthor` checks it before the email (`tests/unit/fix-author.test.ts`), the stream before delivering
-  (`tests/unit/notification-stream.test.ts`).
+  (`tests/unit/notification-stream.test.ts`). The outbox checks a subscriber's again when it sends a queued delivery,
+  digests included (`undeliverableReason` in `dispatch.ts`, `tests/unit/notification-dispatch-access.test.ts`).
 - **Changing a user's instance role, or signing out, bumps `sessionEpoch`** and so ends their sessions. Project role
   and group changes need no such step: access is loaded on every request.
 

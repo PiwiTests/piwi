@@ -137,7 +137,8 @@ The subscriptions REST API (see the [API docs](https://piwitests.dev/demo/docs))
   (a 0–1 rate) and `perfRegressionPct`. Each list holds at most 100 values of up to 256 characters, and a branch or
   environment pattern at most 200 characters and 10 `*`.
 - **Mode**: `realtime`, sent as events happen, or `digest` with `digestAt` (`HH:MM`, UTC, from `00:00` to `23:59`),
-  held until then and sent as **one combined message** per email, Slack or Teams channel.
+  held until then and sent as **one combined message** per email, Slack or Teams channel. Events of a project the
+  subscriber can no longer open by then are dropped.
 - **Mute**: `mutedUntil`, any time, without deleting the subscription.
 
 ## SMTP configuration
