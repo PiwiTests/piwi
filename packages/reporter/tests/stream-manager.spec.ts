@@ -1,10 +1,10 @@
 import { describe, it, beforeEach, afterEach, expect, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import * as os from 'node:os';
 import { StreamManager } from '../src/internal/streaming/stream-manager.js';
 import { StreamBuffer } from '../src/internal/streaming/stream-buffer.js';
 import { CrashRecovery, recoveryFilePath } from '../src/internal/streaming/crash-recovery.js';
+import { privateTempDir } from '../src/internal/support/private-file.js';
 import { FileHandler } from '../src/internal/files/file-handler.js';
 import { hashForProject } from '../src/internal/support/instance-id.js';
 import { HttpError } from '../src/internal/transport/http-client.js';
@@ -16,7 +16,7 @@ const projectHash = hashForProject(projectName);
 const RECOVERY_SERVER = 'http://localhost:3000';
 
 function cleanup(): void {
-  const tmp = os.tmpdir();
+  const tmp = privateTempDir();
   for (const f of fs.readdirSync(tmp)) {
     if (f.startsWith(`piwi-dashboard-stream-${projectHash}`)) {
       try {
@@ -290,7 +290,9 @@ describe('StreamManager run-scoped buffer', () => {
     const buffer = new StreamBuffer(projectName);
     buffer.append([completeEvent('unbound')]);
     expect(buffer.load()).toEqual([]);
-    expect(fs.readdirSync(os.tmpdir()).some((f) => f.startsWith(`piwi-dashboard-stream-${projectHash}`))).toBe(false);
+    expect(fs.readdirSync(privateTempDir()).some((f) => f.startsWith(`piwi-dashboard-stream-${projectHash}`))).toBe(
+      false,
+    );
   });
 
   it("discardBuffered deletes the run's buffer file", () => {
@@ -316,7 +318,7 @@ describe('StreamManager run-scoped buffer', () => {
     const fresh = new StreamBuffer(projectName);
     fresh.bindRun(2);
     fresh.append([completeEvent('fresh')]);
-    const staleFile = path.join(os.tmpdir(), `piwi-dashboard-stream-${projectHash}-1.jsonl`);
+    const staleFile = path.join(privateTempDir(), `piwi-dashboard-stream-${projectHash}-1.jsonl`);
     const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000);
     fs.utimesSync(staleFile, threeHoursAgo, threeHoursAgo);
 
@@ -599,7 +601,7 @@ describe('StreamManager request sizing', () => {
   }
 
   function makeManager(
-    postJSON: (url: string, body: any) => Promise<any>,
+    postJSON: (url: string, body: any, auth?: unknown, signal?: unknown, opts?: any) => Promise<any>,
     buffer = new StreamBuffer(projectName),
   ): StreamManager {
     const http = {
@@ -639,6 +641,19 @@ describe('StreamManager request sizing', () => {
     expect(bodySizes.length).toBeGreaterThan(1);
     for (const size of bodySizes) expect(size).toBeLessThan(SERVER_LIMIT);
     expect(sm.lostResults).toBe(false);
+  });
+
+  it('sends the stream token in the run token header beside the body', async () => {
+    const sent: Array<{ body: any; headers: Record<string, string> | undefined }> = [];
+    const sm = makeManager(async (_url, body, _auth?: unknown, _signal?: unknown, opts?: any) => {
+      sent.push({ body, headers: opts?.headers });
+      return {};
+    });
+    sm.queueEvent(completeEvent('a'));
+    await sm.drain();
+    expect(sent).toEqual([
+      { body: expect.objectContaining({ streamToken: 'tok' }), headers: { 'X-Piwi-Run-Token': 'tok' } },
+    ]);
   });
 
   it('splits a batch the server refuses as too large and still delivers every event', async () => {
@@ -958,5 +973,49 @@ describe('StreamManager end-of-run bounds', () => {
     // The drain's back-off alone would take over a minute.
     await sm.drain();
     expect(sm.lostResults).toBe(true);
+  });
+});
+
+describe('StreamManager start refused', () => {
+  beforeEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  /** What the manager warns when the dashboard answers its `/start` with `error`. */
+  async function warningFor(error: Error): Promise<string> {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const http = {
+      async postJSON() {
+        throw error;
+      },
+      async resolveAuth() {
+        return null;
+      },
+    };
+    const sm = new StreamManager(
+      http as any,
+      new StreamBuffer(projectName),
+      new CrashRecovery(RECOVERY_SERVER, projectName),
+      {} as any,
+      new FileHandler(),
+      makeOptions(),
+    );
+    sm.start(new Date().toISOString(), {}, 'instance');
+    await sm.startPromise;
+    expect(sm.enabled).toBe(false);
+    return warn.mock.calls.flat().join('\n');
+  }
+
+  it('asks for an API key when the dashboard wants one (401)', async () => {
+    expect(await warningFor(new HttpError(401))).toContain("Set the reporter's `apiKey` option");
+  });
+
+  it("prints the dashboard's own reason for a 403, not the API key advice", async () => {
+    const refusal = 'Request failed with status 403: With authentication off, this dashboard answers only on its local addresses.';
+    const warning = await warningFor(new HttpError(403, refusal));
+    expect(warning).toContain(refusal);
+    expect(warning).not.toContain('apiKey');
   });
 });

@@ -1,8 +1,21 @@
-import { describe, test, expect, beforeEach } from 'vitest';
+import { describe, test, expect, beforeEach, vi } from 'vitest';
 import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { migrateToLatest } from './temp-db';
+
+// Counts the file globs compiled, the real matcher behind them.
+const glob = vi.hoisted(() => ({ compiled: 0 }));
+vi.mock('@piwitests/core/glob', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@piwitests/core/glob')>();
+  return {
+    ...actual,
+    compileGlob: (...args: Parameters<typeof actual.compileGlob>) => {
+      glob.compiled++;
+      return actual.compileGlob(...args);
+    },
+  };
+});
 
 delete process.env.PIWI_DATABASE_URL;
 const {
@@ -98,6 +111,30 @@ describe('predicate matching', () => {
       include: [{ priority: ['critical'], files: ['tests/checkout/**'] }],
     });
     expect(r.tests.map((t) => t.testCaseId)).toEqual([crit]);
+  });
+
+  test('file globs ignore case, and answer at once for a glob a regular expression backtracks on', async () => {
+    await seedCase('deep', { filePath: `tests/${'a'.repeat(30)}.spec.ts` });
+    const login = await seedCase('login', { filePath: 'Tests/Login.spec.ts' });
+    const started = performance.now();
+    const r = await resolveSelectionDefinition(db, 1, {
+      include: [{ files: [`tests/${'*a'.repeat(8)}*!`, 'tests/l?gin.spec.ts'] }],
+    });
+    expect(r.tests.map((t) => t.testCaseId)).toEqual([login]);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
+  test('compiles each file glob once per resolve, whatever the number of tests', async () => {
+    const tests = await Promise.all(
+      Array.from({ length: 6 }, (_, i) => seedCase(`t${i}`, { filePath: `tests/t${i}.spec.ts` })),
+    );
+    glob.compiled = 0;
+    const r = await resolveSelectionDefinition(db, 1, {
+      include: [{ files: ['tests/t1*', 'tests/t2*'] }, { files: ['**/t3.spec.ts'] }],
+      exclude: [{ files: ['tests/t2.*'] }],
+    });
+    expect(r.tests.map((t) => t.testCaseId).sort()).toEqual([tests[1], tests[3]]);
+    expect(glob.compiled).toBe(4);
   });
 
   test('exclude removes matched tests', async () => {
@@ -415,6 +452,9 @@ describe('built-ins and CRUD', () => {
     await expect(
       createSelection(db, 1, { key: 'bad', name: 'x', definition: { include: [{ nope: 1 }] } as never }),
     ).rejects.toThrow(/Invalid definition/);
+    await expect(
+      createSelection(db, 1, { key: 'long', name: 'x', definition: { include: [{ files: ['*'.repeat(501)] }] } }),
+    ).rejects.toMatchObject({ statusCode: 400, message: expect.stringMatching(/at most 500 characters/) });
 
     await createSelection(db, 1, { key: 'dup', name: 'x', definition: {} });
     await expect(createSelection(db, 1, { key: 'dup', name: 'y', definition: {} })).rejects.toThrow(/already exists/);

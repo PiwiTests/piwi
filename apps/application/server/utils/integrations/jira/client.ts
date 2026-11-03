@@ -1,5 +1,5 @@
 import type { IssueDocument } from '#shared/integrations/document';
-import { adfPlainText, renderAdf } from '#shared/integrations/render-adf';
+import { adfLinkHrefs, adfPlainText, renderAdf } from '#shared/integrations/render-adf';
 import { DEFAULT_EXPORT_MAX_INLINE_BYTES } from '#shared/export/limits';
 import type {
   CreateIssueInput,
@@ -521,7 +521,11 @@ export class JiraClient implements IssueTracker {
       const data = await this.request<{ fields?: { summary?: string | null; description?: unknown } }>(
         `/rest/api/3/issue/${encodeURIComponent(key)}?fields=summary,description`,
       );
-      return { title: data.fields?.summary ?? null, description: adfPlainText(data.fields?.description) };
+      return {
+        title: data.fields?.summary ?? null,
+        description: adfPlainText(data.fields?.description),
+        links: adfLinkHrefs(data.fields?.description),
+      };
     } catch (err) {
       if (err instanceof JiraError && err.status === 404) return null;
       throw err;

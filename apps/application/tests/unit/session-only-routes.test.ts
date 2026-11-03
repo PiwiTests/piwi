@@ -1,0 +1,143 @@
+import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { apiError } from '../../server/utils/api-error';
+import type { User } from '../../server/database/schema';
+import { buildAccessSummary, InstanceRole } from '#shared/permissions';
+import { recordRouteMeta, underRoutePermission, type RouteAccessState, type RouteCaller } from './route-access';
+
+/**
+ * The routes that change the caller's credentials or create a credential take
+ * a signed-in session: called with an API key, each refuses (403) before it
+ * acts, and called with a session, it acts.
+ */
+
+const state = vi.hoisted(
+  () => ({ db: null, caller: null, routePermission: [], acted: [] }) as RouteAccessState & { acted: string[] },
+);
+vi.mock('../../server/database', () => ({
+  // change-password reads the caller's row: a stored password the mocked check accepts.
+  getDatabase: async () => ({
+    select: () => ({ from: () => ({ where: async () => [{ id: 7, password: 'stored-hash' }] }) }),
+    update: () => ({
+      set: () => ({
+        where: async () => {
+          state.acted.push('password');
+        },
+      }),
+    }),
+  }),
+}));
+vi.mock('../../server/utils/auth', async () => ({
+  ...(await import('./route-access')).authMock(state),
+  generateApiKey: () => ({ plaintext: 'pd_new', hash: 'hash', prefix: 'new' }),
+  hashPassword: async (password: string) => `hashed:${password}`,
+  verifyPassword: async () => true,
+  revokeUserSessions: async () => 1,
+  setUserSession: async () => {
+    state.acted.push('session');
+  },
+}));
+vi.mock('#shared/handlers/users', () => ({
+  createUserApiKeyRecord: async () => {
+    state.acted.push('api-key');
+  },
+}));
+vi.mock('../../server/utils/oauth', () => ({
+  unlinkProvider: async () => {
+    state.acted.push('unlink');
+  },
+}));
+vi.mock('../../server/utils/rate-limit', () => ({
+  limitLookupMisses: async (_event: unknown, _key: string, _limit: unknown, lookup: () => Promise<unknown>) => lookup(),
+  rateLimitClientIp: () => 'test',
+  takeRateLimitSlots: () => [],
+  releaseRateLimit: () => {},
+}));
+vi.mock('../../server/utils/extension-connect', () => ({
+  CONNECT_RATE_LIMITS: { lookupMiss: { limit: 10, windowMs: 1000 } },
+  decideDeviceConnect: async () => {
+    state.acted.push('extension-connect');
+    return 'approved';
+  },
+}));
+vi.mock('../../server/utils/mcp-oauth-helpers', () => ({
+  MCP_OAUTH_RATE_LIMITS: { lookupMiss: { limit: 10, windowMs: 1000 } },
+}));
+vi.mock('../../server/utils/mcp-oauth', () => ({
+  requireMcpOAuthEnabled: () => {},
+  decideAuthorization: async () => {
+    state.acted.push('mcp-oauth');
+    return { status: 'approved', redirectTo: 'http://localhost/callback?code=x' };
+  },
+}));
+vi.mock('../../server/utils/public-base-url', () => ({ publicBaseUrl: () => 'http://localhost' }));
+
+interface FakeEvent {
+  body?: unknown;
+  params?: Record<string, string>;
+}
+
+vi.stubGlobal('defineRouteMeta', (meta: { openAPI?: Record<string, unknown> }) => recordRouteMeta(state, meta));
+vi.stubGlobal('eventHandler', (handler: unknown) => handler);
+vi.stubGlobal('readBody', async (event: FakeEvent) => event.body);
+vi.stubGlobal('getRouterParam', (event: FakeEvent, name: string) => event.params?.[name]);
+vi.stubGlobal('apiError', apiError);
+
+type Handler = (event: FakeEvent) => Promise<unknown>;
+
+async function loadRoute(path: string): Promise<Handler> {
+  return underRoutePermission(state, (await import(path)).default as Handler);
+}
+
+const ROUTES: Array<{ name: string; handler: Handler; event: FakeEvent; acts: string }> = [
+  {
+    name: 'POST /api/users/:id/api-keys',
+    handler: await loadRoute('../../server/api/users/[id]/api-keys/index.post'),
+    event: { params: { id: '7' }, body: { name: 'CI' } },
+    acts: 'api-key',
+  },
+  {
+    name: 'POST /api/auth/change-password',
+    handler: await loadRoute('../../server/api/auth/change-password.post'),
+    event: { body: { currentPassword: 'current-password', newPassword: 'new-password' } },
+    acts: 'password',
+  },
+  {
+    name: 'POST /api/auth/oauth/:provider/unlink',
+    handler: await loadRoute('../../server/api/auth/oauth/[provider]/unlink.post'),
+    event: { params: { provider: 'github' } },
+    acts: 'unlink',
+  },
+  {
+    name: 'POST /api/extension/connect/decision',
+    handler: await loadRoute('../../server/api/extension/connect/decision.post'),
+    event: { body: { userCode: 'BCDF-GHJK', allow: true } },
+    acts: 'extension-connect',
+  },
+  {
+    name: 'POST /api/oauth/authorizations/:id/decision',
+    handler: await loadRoute('../../server/api/oauth/authorizations/[id]/decision.post'),
+    event: { params: { id: 'request' }, body: { allow: true } },
+    acts: 'mcp-oauth',
+  },
+];
+
+const user = { id: 7, role: InstanceRole.MEMBER, username: 'robin', name: null } as unknown as User;
+const signedIn: RouteCaller = { user, access: buildAccessSummary(InstanceRole.MEMBER, []) };
+
+beforeEach(() => {
+  state.acted = [];
+});
+
+describe.each(ROUTES)('$name', ({ handler, event, acts }) => {
+  test('refuses an API key before it acts', async () => {
+    state.caller = { ...signedIn, apiKey: true };
+    await expect(handler(event)).rejects.toMatchObject({ statusCode: 403 });
+    expect(state.acted).toEqual([]);
+  });
+
+  test('acts for a signed-in session', async () => {
+    state.caller = signedIn;
+    await handler(event);
+    expect(state.acted).toContain(acts);
+  });
+});

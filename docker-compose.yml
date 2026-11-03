@@ -30,6 +30,10 @@ services:
       # Public URL used in email links and OAuth callbacks:
       # PIWI_SITE_URL: "https://piwi.example.com"
 
+      # With authentication off, another container that reaches the dashboard
+      # by this service's name (http://piwi:3000) needs the name listed here:
+      # PIWI_ALLOWED_HOSTS: "piwi"
+
       # PostgreSQL instead of SQLite (uncomment the db service below too):
       # PIWI_DATABASE_URL: "postgres://piwi:piwi@db:5432/piwi"
       {}

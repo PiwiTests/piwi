@@ -5,7 +5,7 @@ import { notLabRun } from '../probes';
 import { getSelection, loadSelectionCatalog, resolveSelectionDefinition } from '../selections';
 import type { SelectionDefinition } from '../../selection/types';
 import { distinctRunCountsFromAttempts } from '../../utils/test-counts';
-import { hasTestFilter, type AnalyticsScope } from '../../analytics/scope';
+import { hasTestFilter, testsWithinLimits, type AnalyticsScope } from '../../analytics/scope';
 import {
   resolveComparison,
   resolvePeriod,
@@ -263,7 +263,7 @@ async function resolveTestFilter(
       }
       definitions.push(selection.definition);
     }
-    if (scope.tests) definitions.push({ include: [scope.tests] });
+    if (scope.tests) definitions.push({ include: [testsWithinLimits(scope.tests)] });
 
     const catalog = await loadSelectionCatalog(db, projectId, { withFailRanks: true });
     const sets: Set<number>[] = [];

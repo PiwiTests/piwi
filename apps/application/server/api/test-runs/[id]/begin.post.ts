@@ -23,14 +23,26 @@ import {
   withShardTokens,
 } from '../../../utils/shard-tokens';
 import { requireRouteId } from '../../../utils/project-access';
+import { requireStreamingRun } from '../../../utils/stream-auth';
+import { RUN_TOKEN_HEADER } from '@piwitests/core/wire';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Runs'],
     summary: 'Transition test run from initializing to running',
     description:
-      'Begins a streaming test run by transitioning it from "initializing" to "running" status. Requires the setup token returned by the setup endpoint, which it accepts once. Supports sharded runs: every shard begins with its own setup token, and a shard beginning a run another shard already began joins it with a stream token of its own, adding what its `metadata` names that the run lacks, such as the branch and commit.',
-    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+      'Begins a streaming test run by transitioning it from "initializing" to "running" status. Requires the setup token returned by the setup endpoint, which it accepts once. Supports sharded runs: every shard begins with its own setup token, and a shard beginning a run another shard already began joins it with a stream token of its own, adding what its `metadata` names that the run lacks, such as the branch and commit. A run that does not exist answers 404, and one that cannot begin (neither initializing nor running, nor an interrupted sharded run) 409, before the body is read.',
+    parameters: [
+      { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
+      {
+        name: 'X-Piwi-Run-Token',
+        in: 'header',
+        required: false,
+        description:
+          'The setup token of the body, checked before the body is read. A run set up by reporter 0.65.0 or later needs it: 401 without it, 403 for one that is not the run’s.',
+        schema: { type: 'string' },
+      },
+    ],
     requestBody: {
       content: {
         'application/json': {
@@ -53,6 +65,8 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'test run ID');
+  const db = await getDatabase();
+  await requireStreamingRun(db, id, 'begin', getRequestHeader(event, RUN_TOKEN_HEADER));
 
   const body = await readBody(event);
 
@@ -64,7 +78,6 @@ export default eventHandler(async (event) => {
     });
   }
 
-  const db = await getDatabase();
   const [instance] = await db
     .select({ projectId: testRuns.projectId, instanceId: testRuns.instanceId })
     .from(testRuns)

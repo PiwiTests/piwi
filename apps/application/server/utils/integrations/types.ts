@@ -77,6 +77,8 @@ export interface UpdateIssueInput {
 export interface IssueText {
   title: string | null;
   description: string;
+  /** Where the description's links point, in order; absent when the tracker cannot say. */
+  links?: string[];
 }
 
 export interface TrackerSearch {

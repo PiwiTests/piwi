@@ -81,6 +81,14 @@ describe('the new keys', () => {
     expect(scope.tests).toEqual({ tags: ['smoke'] });
   });
 
+  test('reads at most 100 file globs of at most 500 characters, dropping the rest', () => {
+    const many = Array.from({ length: 120 }, (_, i) => `tests/${i}.spec.ts`);
+    expect(parseAnalyticsScope({ files: many.join(',') }).tests).toEqual({ files: many.slice(0, 100) });
+    const long = `tests/${'*'.repeat(495)}`;
+    expect(parseAnalyticsScope({ files: `${long},a.spec.ts` }).tests).toEqual({ files: ['a.spec.ts'] });
+    expect(parseAnalyticsScope({ files: long }).tests).toBeUndefined();
+  });
+
   test('tz and locale travel with widget requests only', () => {
     const scope = parseAnalyticsScope({ tz: 'Europe/Paris', locale: 'fr-FR' });
     expect(scope.timeZone).toBe('Europe/Paris');

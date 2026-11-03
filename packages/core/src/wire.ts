@@ -395,6 +395,14 @@ export interface WireResourceTimeline {
 }
 
 /**
+ * The request header a reporter sends a streaming run's token in, besides the
+ * body: its setup token to `/api/test-runs/:id/begin`, its stream token to
+ * `events`, `finish` and `live-resources`. The dashboard checks it before it
+ * reads the body.
+ */
+export const RUN_TOKEN_HEADER = 'X-Piwi-Run-Token';
+
+/**
  * What a reporter posts to `/api/test-runs/:id/live-resources` while someone
  * has the run open, beside its `streamToken`: the resources it measured since
  * its last post, so the run's timeline draws them as the run goes. The run's

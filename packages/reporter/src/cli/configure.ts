@@ -154,7 +154,8 @@ export function fixturesContents(): string {
 
 /**
  * Add each `KEY=value` line that is not already present. Existing keys are left
- * untouched (a value already set by the user is never overwritten).
+ * untouched (a value already set by the user is never overwritten), in each form
+ * `@piwitests/core/dotenv` reads: `KEY=`, `KEY =` and `export KEY=`.
  */
 export function upsertEnvKeys(
   existing: string,
@@ -166,7 +167,7 @@ export function upsertEnvKeys(
   let text = existing;
   const added: string[] = [];
   for (const [key, value] of entries) {
-    if (new RegExp(`^\\s*${key}=`, 'm').test(text)) continue;
+    if (new RegExp(`^\\s*(?:export\\s+)?${key}\\s*=`, 'm').test(text)) continue;
     if (text.length && !text.endsWith('\n')) text += '\n';
     text += `${key}=${value}\n`;
     added.push(key);

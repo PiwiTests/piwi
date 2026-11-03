@@ -30,6 +30,21 @@ health and version endpoints, the sign-in flows themselves, and live-run streami
 - Keys are sent as `Authorization: Bearer <key>` or `X-API-Key: <key>` headers.
 - Keys can be given an optional expiry date.
 
+## What a key cannot do
+
+A key acts for its owner everywhere except on the account's own credentials. These take a signed-in session, and a
+request with a key gets a 403:
+
+- creating an API key, for any account;
+- allowing a [browser extension](/features/extension-connection), an
+  [editor](/features/editor-connection) or an [MCP client](/features/mcp) to connect, which creates a key or a
+  connection for the account;
+- changing the account's password or its own email address, and disconnecting its OAuth provider.
+
+A key therefore cannot create keys or change its own account's credentials, nor move the account's password reset to
+another address. An administrator's key still manages the other users, their email addresses included, and creates
+accounts with a password, so it is as powerful as the administrator's password: keep it with the same care.
+
 ## Creating an API key
 
 Every signed-in user manages their own keys under **Settings → Account → API keys**. An administrator can also manage
@@ -56,8 +71,9 @@ Click the trash icon next to the key, in the same place you created it. The key 
 ## Using the API key in the reporter
 
 The reporter reads the key from `PIWI_API_KEY`, in the environment or in the `.env` beside the Playwright config
-(`init --api-key` writes it), so the config needs no change: store the key as a CI secret under that name. To read it from
-another variable, pass it in the [`wrapConfig`](/guide/reporter#installing-via-wrapconfig) options:
+(`init --api-key` writes it there, unless git tracks that file or cannot say whether it does, or the file is a link),
+so the config needs no change: store the key as a CI secret under that name. To read it from another variable, pass it
+in the [`wrapConfig`](/guide/reporter#installing-via-wrapconfig) options:
 
 ```typescript
 // playwright.config.ts

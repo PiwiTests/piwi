@@ -6,7 +6,7 @@ import type {
 } from '@piwitests/core/wire';
 import { errorMessage } from '../support/errors.js';
 import { Logger } from '../support/logger.js';
-import { HttpError, type HttpClient } from '../transport/http-client.js';
+import { HttpError, runTokenHeaders, type HttpClient } from '../transport/http-client.js';
 import type { ResourceCensus } from '../capture/resource-ledger.js';
 import type { RunSampler } from '../collect/process-sampler.js';
 import {
@@ -185,6 +185,8 @@ export class LiveResources {
         `/api/test-runs/${runId}/live-resources`,
         { streamToken: token, ...draft.post },
         this.stream.auth,
+        undefined,
+        { headers: runTokenHeaders(token) },
       )) as WireLiveResourcesAnswer | null;
       if (answer?.declined) {
         this.logger.debug('The project declined resources: live resources are not sent.');

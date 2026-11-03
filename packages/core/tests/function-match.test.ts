@@ -229,6 +229,13 @@ describe('urlMatches', () => {
     expect(urlMatches('https://shop.test/ab?c', 'https://shop.test/abc')).toBe(false);
   });
 
+  test('answers at once for a pattern a regular expression backtracks on', () => {
+    const started = performance.now();
+    expect(urlMatches(`https://x.test/${'*a'.repeat(8)}*!`, `https://x.test/${'a'.repeat(40)}`)).toBe(false);
+    expect(urlMatches(`**${'**a'.repeat(8)}!`, `https://x.test/${'a/'.repeat(20)}`)).toBe(false);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
   test('every regex metacharacter in a pattern stays literal', () => {
     expect(urlMatches('https://shop.test/a+b', 'https://shop.test/a+b')).toBe(true);
     expect(urlMatches('https://shop.test/a+b', 'https://shop.test/aab')).toBe(false);

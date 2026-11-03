@@ -57,10 +57,10 @@ export async function matchAndEnqueue(
   const now = new Date();
 
   // Re-check project access at delivery time so a subscription never leaks a
-  // project the subscriber cannot reach, including one the user was removed
-  // from after subscribing.
+  // project its subscriber, or the owner of its personal channel, cannot reach,
+  // including one the user was removed from after subscribing.
   const accessByUser = new Map<number, boolean>();
-  const subscriberCanAccess = async (userId: number): Promise<boolean> => {
+  const userCanAccess = async (userId: number): Promise<boolean> => {
     const cached = accessByUser.get(userId);
     if (cached !== undefined) return cached;
     const [u] = await db.select().from(users).where(eq(users.id, userId));
@@ -71,8 +71,10 @@ export async function matchAndEnqueue(
 
   for (const { sub, channel } of rows) {
     // Global subscriptions (userId null) are admin-managed and span every
-    // project; per-user subscriptions re-check the subscriber's access.
-    if (sub.userId != null && !(await subscriberCanAccess(sub.userId))) continue;
+    // project; per-user subscriptions re-check the subscriber's access, and a
+    // personal channel its owner's.
+    if (sub.userId != null && !(await userCanAccess(sub.userId))) continue;
+    if (channel.userId != null && !(await userCanAccess(channel.userId))) continue;
 
     // Email goes only to an address its owner proved they hold.
     if (!(await emailDestinationVerified(db, channel))) continue;

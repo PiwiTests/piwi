@@ -81,6 +81,20 @@ describe('validateSelectionDefinition', () => {
     expect(validateSelectionDefinition({ pins: { extra: [1] } }).valid).toBe(false);
   });
 
+  test('holds a files list to 100 globs of at most 500 characters, and names the limit', () => {
+    const glob = (length: number) => `tests/${'*'.repeat(length - 6)}`;
+    expect(validateSelectionDefinition({ include: [{ files: [glob(500)] }] }).valid).toBe(true);
+    expect(validateSelectionDefinition({ include: [{ files: Array.from({ length: 100 }, () => glob(500)) }] })).toEqual(
+      { valid: true, errors: [] },
+    );
+    expect(validateSelectionDefinition({ exclude: [{ files: ['a', glob(501)] }] }).errors).toEqual([
+      'exclude[0].files: a glob must be at most 500 characters',
+    ]);
+    expect(
+      validateSelectionDefinition({ include: [{ files: Array.from({ length: 101 }, () => 'a') }] }).errors,
+    ).toEqual(['include[0].files must hold at most 100 globs']);
+  });
+
   test('collects every problem, not just the first', () => {
     const result = validateSelectionDefinition({ include: [{ tag: ['a'], nope: 1 }], limit: 0 });
     expect(result.errors.length).toBeGreaterThanOrEqual(3);

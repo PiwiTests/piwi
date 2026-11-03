@@ -6,6 +6,7 @@ import { MAX_RUN_ERRORS } from '@piwitests/core/run-errors';
 import { PiwiDashboardReporter } from '../src/public/reporter.js';
 import { runErrorOf } from '../src/internal/collect/run-errors.js';
 import { recoveryFilePath } from '../src/internal/streaming/crash-recovery.js';
+import { privateTempDir } from '../src/internal/support/private-file.js';
 import { hashForProject } from '../src/internal/support/instance-id.js';
 import {
   fakeConfig,
@@ -75,9 +76,9 @@ describe('the errors of a run outside its tests', () => {
 
   function cleanup(): void {
     const hash = hashForProject(projectName);
-    for (const f of fs.readdirSync(os.tmpdir())) {
+    for (const f of fs.readdirSync(privateTempDir())) {
       if ((f.startsWith('piwi-dashboard-stream-') || f.startsWith('piwi-dashboard-setup-')) && f.includes(hash)) {
-        fs.rmSync(path.join(os.tmpdir(), f), { force: true });
+        fs.rmSync(path.join(privateTempDir(), f), { force: true });
       }
     }
     if (server) fs.rmSync(recoveryFilePath(server.url, projectName), { force: true });

@@ -629,6 +629,17 @@ describe('branch policy and test filters', () => {
     expect(ctx.notes.join(' ')).toMatch(/admin has no selection "checkout"/);
   });
 
+  test('a stored scope past the file glob limits reads its first 100 globs of at most 500 characters', async () => {
+    const { getAnalyticsContext } = await import('../../shared/handlers/analytics/common');
+    const base = parseAnalyticsScope({ days: '30', allBranches: 'true' });
+    const testsOf = async (files: string[]) =>
+      (await getAnalyticsContext(fdb as any, { ...base, tests: { files } })).testFilter?.testCaseIds?.get(1);
+    // The 101st glob is not read.
+    expect(await testsOf([...Array.from({ length: 100 }, () => 'none.spec.ts'), 'pay.spec.ts'])).toEqual(new Set());
+    // Nor a glob over 500 characters: with no glob left, the scope filters no file.
+    expect(await testsOf([`pay.spec.ts${'*'.repeat(490)}`])).toEqual(new Set([10, 11]));
+  });
+
   test('a browser filter narrows the executions', async () => {
     const webkit = await portfolioOf({ allBranches: 'true', browsers: 'webkit' }, 1);
     expect(webkit.passRate).toBe(50);

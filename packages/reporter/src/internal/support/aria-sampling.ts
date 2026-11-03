@@ -1,8 +1,8 @@
 import * as path from 'node:path';
-import * as os from 'node:os';
 import * as fs from 'node:fs';
 import type { TestInfo } from '@playwright/test';
 import { hashForProject } from './instance-id.js';
+import { privateTempDir, readPrivateFile, writePrivateFile } from './private-file.js';
 import { configDirFromConfig, relativeTestPath } from './test-paths.js';
 
 /**
@@ -14,7 +14,8 @@ import { configDirFromConfig, relativeTestPath } from './test-paths.js';
  * newest green snapshot is stale or missing) and writes the answer to a temp
  * file. Each worker reads that file once and keeps the set in memory, so the
  * per-test decision costs nothing. When the file is absent — an old server, a
- * failed call, sampling switched off — the set is null and nothing is sampled.
+ * failed call, sampling switched off — or not this user's (`private-file.ts`),
+ * the set is null and nothing is sampled.
  */
 
 /** Stable identity for a test, matching how the server keys a test case. */
@@ -24,13 +25,13 @@ export function ariaSampleIdentity(filePath: string, title: string): string {
 
 /** Temp-file path holding the sample set, keyed by project so runs don't collide. */
 function getAriaSampleFilePath(projectName: string): string {
-  return path.join(os.tmpdir(), `piwi-dashboard-aria-sample-${hashForProject(projectName)}.json`);
+  return path.join(privateTempDir(), `piwi-dashboard-aria-sample-${hashForProject(projectName)}.json`);
 }
 
 /** Write the set of due test identities for a project. Best-effort; swallows IO errors. */
 export function writeAriaSampleFile(projectName: string, identities: string[]): void {
   try {
-    fs.writeFileSync(getAriaSampleFilePath(projectName), JSON.stringify({ projectName, identities }));
+    writePrivateFile(getAriaSampleFilePath(projectName), JSON.stringify({ projectName, identities }));
   } catch {
     /* a sample set that cannot be written simply means no sampling this run */
   }
@@ -54,9 +55,10 @@ export function loadAriaSampleSet(projectName: string): Set<string> | null {
   if (cachedSets.has(projectName)) return cachedSets.get(projectName)!;
   let set: Set<string> | null = null;
   try {
-    const raw = fs.readFileSync(getAriaSampleFilePath(projectName), 'utf8');
-    const parsed = JSON.parse(raw) as { projectName?: string; identities?: unknown };
-    if (parsed.projectName === projectName && Array.isArray(parsed.identities)) {
+    const read = readPrivateFile(getAriaSampleFilePath(projectName));
+    const parsed =
+      read && 'text' in read ? (JSON.parse(read.text) as { projectName?: string; identities?: unknown }) : null;
+    if (parsed?.projectName === projectName && Array.isArray(parsed.identities)) {
       set = new Set(parsed.identities.filter((x): x is string => typeof x === 'string'));
     }
   } catch {

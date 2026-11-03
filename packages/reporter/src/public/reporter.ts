@@ -1,5 +1,4 @@
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import type {
   FullConfig,
@@ -51,6 +50,7 @@ import { readSelectionStamp } from '../internal/support/selection-env.js';
 import { resolveShardInfo } from '../internal/support/shard-info.js';
 import { isListMode } from '../internal/support/run-mode.js';
 import { peekSetupInfo, readSetupInfo } from '../internal/support/setup-file.js';
+import { privateTempDir, readPrivateFile } from '../internal/support/private-file.js';
 import { LIVE_VIEW_ENV, formatLiveViewEnv, formatLiveViewMissing } from '@piwitests/core/live-view';
 import { ciLiveViewNote } from '../internal/streaming/live-view-note.js';
 import { RUN_CHANNEL_ENV } from '@piwitests/core/run-channel';
@@ -402,7 +402,7 @@ export class PiwiDashboardReporter {
     // Workers inherit the environment when they start, after this hook: the
     // shutdown census of each one lands in this file, read back in `onEnd`.
     if (this.options.captureResources !== false) {
-      this.resourcesFile = path.join(os.tmpdir(), `piwi-resources-${process.pid}-${Date.now()}.jsonl`);
+      this.resourcesFile = path.join(privateTempDir(), `piwi-resources-${process.pid}-${Date.now()}.jsonl`);
       process.env[PIWI_RESOURCES_RESULTS_ENV] = this.resourcesFile;
       try {
         this.sampler = new RunSampler({ outputDirs: (config.projects ?? []).map((project) => project.outputDir) });
@@ -1038,7 +1038,8 @@ export class PiwiDashboardReporter {
     const censuses = [...this.resourceCensuses];
     if (this.resourcesFile) {
       try {
-        censuses.push(...parseResourceResults(fs.readFileSync(this.resourcesFile, 'utf8')));
+        const read = readPrivateFile(this.resourcesFile);
+        if (read && 'text' in read) censuses.push(...parseResourceResults(read.text));
         fs.rmSync(this.resourcesFile, { force: true });
       } catch {
         // No worker wrote one: their last tests' censuses stand in.

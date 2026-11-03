@@ -27,31 +27,61 @@ function isBlockedIpv4(ip: string): boolean {
 }
 
 /**
- * The IPv4 address embedded in an IPv4-mapped/-compatible IPv6, or null. Handles
- * both the dotted-quad tail (`::ffff:127.0.0.1`) and the hex-hextet form
- * (`::ffff:7f00:1`) — the latter is what a raw `::ffff:7f00:1` literal or a
- * canonicalized address looks like.
+ * The eight 16-bit groups of an IPv6 address `isIP` accepted, or null: the `::`
+ * run expanded, a dotted-quad tail read as its two groups, a zone id dropped.
  */
-function embeddedIpv4(host: string): string | null {
-  const dotted = host.match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
-  if (dotted) return dotted[1]!;
-  // ::ffff:HHHH:HHHH or the ::ffff:0:HHHH:HHHH ("IPv4-compatible") spelling.
-  const hex = host.match(/^::ffff:(?:0:)?([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
-  if (hex) {
-    const hi = parseInt(hex[1]!, 16);
-    const lo = parseInt(hex[2]!, 16);
-    return `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+export function ipv6Groups(ip: string): number[] | null {
+  let host = ip.split('%')[0]!;
+  const dotted = /(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (dotted) {
+    const [a, b, c, d] = dotted.slice(1).map(Number) as [number, number, number, number];
+    host = `${host.slice(0, dotted.index)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
   }
+  const halves = host.split('::');
+  if (halves.length > 2) return null;
+  const read = (part: string | undefined) => (part ? part.split(':').map((group) => parseInt(group, 16)) : []);
+  const head = read(halves[0]);
+  const tail = read(halves[1]);
+  const missing = 8 - head.length - tail.length;
+  if (halves.length === 1 ? missing !== 0 : missing < 1) return null;
+  const groups = [...head, ...Array<number>(halves.length === 1 ? 0 : missing).fill(0), ...tail];
+  return groups.every((group) => Number.isInteger(group) && group >= 0 && group <= 0xffff) ? groups : null;
+}
+
+/** The IPv4 address two groups of an IPv6 address carry, high group first. */
+function ipv4FromGroups(high: number, low: number): string {
+  return `${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`;
+}
+
+/**
+ * The IPv4 address an IPv6 address stands for, or null: IPv4-compatible
+ * (`::/96`, which holds `::` and `::1`), IPv4-mapped (`::ffff:0:0/96`),
+ * IPv4-translated (`::ffff:0:0:0/96`), NAT64 well-known (`64:ff9b::/96`) and
+ * 6to4 (`2002::/16`).
+ */
+function embeddedIpv4(groups: number[]): string | null {
+  const [g0, g1, g2, g3, g4, g5, g6, g7] = groups as [number, number, number, number, number, number, number, number];
+  const zeroUpTo = (end: number) => groups.slice(0, end).every((group) => group === 0);
+  if (zeroUpTo(6)) return ipv4FromGroups(g6, g7);
+  if (zeroUpTo(5) && g5 === 0xffff) return ipv4FromGroups(g6, g7);
+  if (zeroUpTo(4) && g4 === 0xffff && g5 === 0) return ipv4FromGroups(g6, g7);
+  if (g0 === 0x64 && g1 === 0xff9b && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0) return ipv4FromGroups(g6, g7);
+  if (g0 === 0x2002) return ipv4FromGroups(g1, g2);
   return null;
 }
 
 function isBlockedIpv6(ip: string): boolean {
-  const host = ip.toLowerCase().replace(/^\[|\]$/g, '');
-  if (host === '::1' || host === '::') return true; // loopback / unspecified
-  if (host.startsWith('fe80') || host.startsWith('fc') || host.startsWith('fd')) return true; // link-local / ULA
-  const v4 = embeddedIpv4(host); // IPv4-mapped/-compatible (dotted or hex form)
-  if (v4) return isBlockedIpv4(v4);
-  return false;
+  const groups = ipv6Groups(ip.toLowerCase().replace(/^\[|\]$/g, ''));
+  if (!groups) return true;
+  const [g0, g1, g2] = groups as [number, number, number];
+  if ((g0 & 0xfe00) === 0xfc00) return true; // unique local (fc00::/7)
+  if ((g0 & 0xffc0) === 0xfe80) return true; // link-local (fe80::/10)
+  if ((g0 & 0xffc0) === 0xfec0) return true; // site-local (fec0::/10)
+  if ((g0 & 0xff00) === 0xff00) return true; // multicast (ff00::/8)
+  // Local-use NAT64 (64:ff9b:1::/48): not globally reachable, and where its IPv4 address sits depends on the network.
+  if (g0 === 0x64 && g1 === 0xff9b && g2 === 1) return true;
+  const v4 = embeddedIpv4(groups);
+  return v4 !== null && isBlockedIpv4(v4);
 }
 
 /** Whether an IP literal is in a private / loopback / link-local / reserved range. */

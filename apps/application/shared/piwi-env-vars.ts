@@ -265,7 +265,19 @@ export const PIWI_ENV_VARS = {
     type: 'url',
     example: 'https://piwi.example.com',
     notes:
-      'When unset, links in emails point to http://localhost:3000 (on Fly.io, to https://<app>.fly.dev, from `FLY_APP_NAME`) and OAuth callback URLs are inferred from the request host — set it when running behind a reverse proxy.',
+      "When unset, links in emails point to http://localhost:3000 (on Fly.io, to https://<app>.fly.dev, from `FLY_APP_NAME`) and OAuth callback URLs are inferred from the request host — set it when running behind a reverse proxy. With authentication off, the dashboard answers only requests addressed to an IP address, `localhost`, a name under `.localhost` or the host of this URL: set it to the address you open the dashboard at when that is a name other than `localhost`, and list other names, a container's name included, in `PIWI_ALLOWED_HOSTS` (see [Disabling authentication](/operate/authentication#disabling-authentication)). A write from a page served over plain HTTP, whose browser sends no `Sec-Fetch-Site`, is then accepted only from the address the request names, the host and port of this URL or a name `PIWI_ALLOWED_HOSTS` lists. A reverse proxy in front must forward the `Host` header the browser sent (nginx `proxy_set_header Host $http_host;`, Apache `ProxyPreserveHost On`), since the host check reads that header alone.",
+  },
+  PIWI_ALLOWED_HOSTS: {
+    description:
+      'Comma-separated host names the dashboard also answers with authentication off, beside its local addresses (an IP address, `localhost`, a name under `.localhost`) and the host of PIWI_SITE_URL: a container name another container reaches it by (`piwi`), `host.docker.internal` for a reporter in a container, a Kubernetes service name, a LAN name. An entry starting with a dot (`.example.lan`) allows that domain and every name under it.',
+    category: 'general',
+    type: 'list',
+    example: 'host.docker.internal,.example.lan',
+    since: '0.65.0',
+    relevantWhen: { PIWI_AUTH_ENABLED: 'false' },
+    docs: 'operate/authentication#disabling-authentication',
+    notes:
+      "Names are compared lowercased, without the port. With authentication off, a page at one of these names may also write when its browser sends no `Sec-Fetch-Site` (a page served over plain HTTP). The single entry `*` answers every host, which removes the protection against DNS rebinding: any web page on a domain that points at the server's address can then use the dashboard as an administrator. It never lets a page at another host write.",
   },
   PIWI_SECRET_KEY: {
     description:
@@ -463,12 +475,13 @@ export const PIWI_ENV_VARS = {
     default: 'false',
   },
   PIWI_AUTH_SECRET: {
-    description: 'Secret used to sign/encrypt session cookies. Required when PIWI_AUTH_ENABLED is true.',
+    description:
+      'Secret used to sign/encrypt session cookies, at least 32 characters. Required when PIWI_AUTH_ENABLED is true.',
     category: 'auth',
     secret: true,
     relevantWhen: { PIWI_AUTH_ENABLED: 'true' },
     requiredWhen: { PIWI_AUTH_ENABLED: 'true' },
-    notes: 'The server refuses to start when auth is enabled and this is unset.',
+    notes: 'The server refuses to start when auth is enabled and this is unset or shorter than 32 characters.',
   },
   PIWI_SETUP_TOKEN: {
     description:
@@ -497,7 +510,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_SHARE_LINK_MAX_TTL_DAYS: {
     description:
-      'Longest allowed share-link lifetime, in days. The creation dialog offers expiries up to this; 0 lifts the cap and allows links with no expiry.',
+      'Longest allowed share-link lifetime, in days. The creation dialog offers expiries up to this; 0 lifts the cap and allows links with no expiry, which work until they are revoked or their creator loses access to what they open.',
     category: 'auth',
     type: 'number',
     default: '30',
@@ -513,6 +526,7 @@ export const PIWI_ENV_VARS = {
     type: 'boolean',
     default: 'false',
     since: '0.26.0',
+    notes: 'While it is unset, the server logs a warning the first time a request carries X-Forwarded-For.',
   },
 
   // ── OAuth ────────────────────────────────────────────────────────────────
@@ -1054,6 +1068,16 @@ export const PIWI_ENV_VARS = {
     min: 1024 * 1024,
     max: 5 * 1024 * 1024 * 1024,
     since: '0.19.0',
+  },
+  PIWI_SUBMIT_MAX_BYTES: {
+    description:
+      "Max size of a run's results sent as one JSON document, in bytes: the reporter's batch submit and the results it sends ahead of a run's files. A larger body is refused (413) before it is read. The server reads and parses the document in memory, so this bounds what one delivery costs it.",
+    category: 'ingest',
+    type: 'number',
+    default: String(256 * 1024 * 1024),
+    min: 1024 * 1024,
+    max: 512 * 1024 * 1024,
+    since: '0.65.0',
   },
   // ── Offline export limits ───────────────────────────────────────────────
   PIWI_EXPORT_MAX_INLINE_BYTES: {

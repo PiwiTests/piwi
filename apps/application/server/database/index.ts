@@ -191,6 +191,22 @@ async function releaseUnannouncedClusterClaims(target: DB): Promise<void> {
 }
 
 /**
+ * Redact the share tokens the integration actions and the issue links stored
+ * (`redactStoredShareTokensOnce`), once per instance. Startup waits for it, so
+ * no action is sent from a body that still holds one. A failure is logged, and
+ * the next start tries again.
+ */
+async function redactStoredShareTokens(target: DB): Promise<void> {
+  try {
+    const { redactStoredShareTokensOnce } = await import('../utils/integrations/share-url');
+    const redacted = await redactStoredShareTokensOnce(target as any);
+    if (redacted) console.log(`[Database] Share tokens redacted in ${redacted} stored row(s)`);
+  } catch (err) {
+    console.error('[Database] Redacting stored share tokens failed:', err);
+  }
+}
+
+/**
  * Open the database and bring its schema up to date, once per process: the
  * callers that arrive while it is still opening (the startup plugins, the first
  * requests) share the same connection and the same migration run.
@@ -223,6 +239,7 @@ async function openDatabase(): Promise<DB> {
           console.log('[Database] PostgreSQL migrations completed successfully');
           await reclusterFailureClusters(db);
           await releaseUnannouncedClusterClaims(db);
+          await redactStoredShareTokens(db);
           rewriteRouteKeys(db as any);
           backfillTraceResourceLinks();
           backfillAnalyticsRollups();
@@ -278,6 +295,7 @@ async function openDatabase(): Promise<DB> {
           console.log('[Database] SQLite migrations completed successfully');
           await reclusterFailureClusters(db);
           await releaseUnannouncedClusterClaims(db);
+          await redactStoredShareTokens(db);
           rewriteRouteKeys(db);
           backfillTraceResourceLinks();
           backfillAnalyticsRollups();

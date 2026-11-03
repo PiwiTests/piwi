@@ -1,5 +1,11 @@
 import { and, eq, inArray, lte, lt } from 'drizzle-orm';
-import { notificationDeliveries, notificationChannels, subscriptions, users } from '../../database/schema';
+import {
+  notificationDeliveries,
+  notificationChannels,
+  reportSnapshots,
+  subscriptions,
+  users,
+} from '../../database/schema';
 import { sendEmail, renderNotificationEmail, renderDigestEmail, isEmailConfigured, type DigestItem } from '../email';
 import { decryptSecret, getEncryptionKey } from '../crypto';
 import { safeFetch } from '../safe-fetch';
@@ -23,10 +29,12 @@ import {
   snapshotUrl,
 } from '../reports/deliver';
 import { deliveredShareUrl } from '../reports/context';
+import { canReadSnapshot } from '#shared/handlers/reports';
 import { teamsDigestMessage, teamsEventMessage, teamsReportMessage } from './teams';
 import { slackDigestMessage, slackEventMessage } from './slack-message';
 import { postSlackMessage, slackRetryAfterMs, storedSlackDestination } from './slack-api';
 import { emailDestinationVerified } from './email-verified';
+import { getProjectScope, scopeAllows, type DrizzleDB, type ProjectScope } from '../project-access';
 
 const MAX_ATTEMPTS = OUTBOX_MAX_ATTEMPTS;
 
@@ -205,6 +213,90 @@ async function markSent(db: Db, rows: DeliveryRow[], now: Date) {
   }
 }
 
+/** Give up on rows that may no longer be sent, keeping why; the claim counted the attempt. */
+async function markSkipped(db: Db, rows: DeliveryRow[], reason: string) {
+  for (const d of rows) {
+    await db
+      .update(notificationDeliveries)
+      .set({ status: 'skipped', attempts: (d.attempts ?? 0) + 1, error: reason })
+      .where(eq(notificationDeliveries.id, d.id));
+  }
+}
+
+/** Each user's project access, loaded once; null for a user who no longer exists. */
+function accessLoader(db: Db): (userId: number) => Promise<ProjectScope | null> {
+  const scopes = new Map<number, Promise<ProjectScope | null>>();
+  return (userId) => {
+    let scope = scopes.get(userId);
+    if (!scope) {
+      scope = (async () => {
+        const [user] = await db.select().from(users).where(eq(users.id, userId));
+        return user ? getProjectScope(db as unknown as DrizzleDB, user) : null;
+      })();
+      scopes.set(userId, scope);
+    }
+    return scope;
+  };
+}
+
+type AccessOf = ReturnType<typeof accessLoader>;
+
+/** A due row as the sweep reads it: the delivery, its channel, and its subscription's state. */
+interface DueRow {
+  d: DeliveryRow & { subscriptionId: number | null };
+  c: ChannelRow;
+  subscriberId: number | null;
+  subscriptionActive: boolean | null;
+  subscriptionMutedUntil: Date | null;
+}
+
+/**
+ * Why a quality report may no longer be sent to a personal channel: its owner
+ * can no longer read every project of the snapshot. A global channel (an
+ * address or a webhook the schedule names) names no reader, and a snapshot
+ * that is gone fails when it is sent.
+ */
+async function reportUndeliverableReason(db: Db, row: DueRow, accessOf: AccessOf): Promise<string | null> {
+  if (row.c.userId == null) return null;
+  const snapshotId = (row.d.payload as Partial<ReportReadyPayload> | null)?.snapshotId;
+  if (typeof snapshotId !== 'number') return null;
+  const [snapshot] = await db
+    .select({ projectIds: reportSnapshots.projectIds })
+    .from(reportSnapshots)
+    .where(eq(reportSnapshots.id, snapshotId));
+  if (!snapshot) return null;
+  const access = await accessOf(row.c.userId);
+  return access !== null && canReadSnapshot(snapshot.projectIds, access)
+    ? null
+    : 'The recipient can no longer read every project of the report';
+}
+
+/**
+ * Why a delivery may no longer be sent, or null, decided when it is sent: its
+ * subscription must still be active and not muted, and it goes only while its
+ * subscriber, and the owner of its channel when the channel is personal, can
+ * still read the project the event is about (every project of the snapshot,
+ * for a quality report). A global subscription and a global channel name no
+ * reader; with authentication off, everyone reads every project. Removing a
+ * subscription, or its user, removes its deliveries (foreign keys).
+ */
+async function undeliverableReason(db: Db, row: DueRow, accessOf: AccessOf, now: Date): Promise<string | null> {
+  if (row.d.subscriptionId != null) {
+    if (row.subscriptionActive === false) return 'The subscription is no longer active';
+    if (row.subscriptionMutedUntil && row.subscriptionMutedUntil > now) return 'The subscription is muted';
+  }
+  if (row.d.event === REPORT_READY_EVENT) return reportUndeliverableReason(db, row, accessOf);
+  const projectId = (row.d.payload as { projectId?: unknown } | null)?.projectId;
+  const readers = [row.d.subscriptionId != null ? row.subscriberId : null, row.c.userId];
+  for (const reader of readers) {
+    if (reader == null) continue;
+    const access = await accessOf(reader);
+    if (access === null || !scopeAllows(access, projectId as number))
+      return 'The recipient can no longer read the project';
+  }
+  return null;
+}
+
 /** Record a failed attempt; a rate-limited one (Slack's 429) retries after the wait it asked for. */
 async function markFailed(db: Db, rows: DeliveryRow[], err: unknown, now: Date) {
   const message = err instanceof Error ? err.message : String(err);
@@ -273,7 +365,14 @@ async function sweepDue(db: Db): Promise<SweepResult> {
   let failed = await failAbandonedOutboxRows(db, notificationDeliveries);
 
   const due = await db
-    .select({ d: notificationDeliveries, c: notificationChannels, mode: subscriptions.mode })
+    .select({
+      d: notificationDeliveries,
+      c: notificationChannels,
+      mode: subscriptions.mode,
+      subscriberId: subscriptions.userId,
+      subscriptionActive: subscriptions.active,
+      subscriptionMutedUntil: subscriptions.mutedUntil,
+    })
     .from(notificationDeliveries)
     .innerJoin(notificationChannels, eq(notificationDeliveries.channelId, notificationChannels.id))
     .leftJoin(subscriptions, eq(notificationDeliveries.subscriptionId, subscriptions.id))
@@ -308,9 +407,16 @@ async function sweepDue(db: Db): Promise<SweepResult> {
     }
   }
 
-  for (const { d, c } of singles) {
+  const accessOf = accessLoader(db);
+  for (const row of singles) {
+    const { d, c } = row;
     const claimed = await claimOutboxRows(db, notificationDeliveries, [d.id]);
     if (!claimed.has(d.id)) continue;
+    const reason = await undeliverableReason(db, row, accessOf, now);
+    if (reason) {
+      await markSkipped(db, [d], reason);
+      continue;
+    }
     try {
       await sendSingle(db, d, c);
       await markSent(db, [d], now);
@@ -330,7 +436,13 @@ async function sweepDue(db: Db): Promise<SweepResult> {
     const channel = group[0]!.c;
     // A row whose payload cannot be drawn fails on its own; the rest of the batch still goes out.
     const rows: DeliveryRow[] = [];
-    for (const d of group.map((g) => g.d).filter((row) => claimed.has(row.id))) {
+    for (const row of group.filter((g) => claimed.has(g.d.id))) {
+      const { d } = row;
+      const reason = await undeliverableReason(db, row, accessOf, now);
+      if (reason) {
+        await markSkipped(db, [d], reason);
+        continue;
+      }
       try {
         renderDigest(channel, [d]);
         rows.push(d);

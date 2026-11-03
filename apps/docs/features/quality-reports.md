@@ -91,7 +91,8 @@ reports** page starts an empty one. A Contributor or above on the project, or an
 
 **Run now** sends the last complete period straight away; **Preview**, in the form, shows that report
 before you save, as its email and as the full report, and sends nothing. **Mute** keeps the snapshots
-and sends nothing; **Pause** stops the schedule. Each firing uses its owner's current roles. A **global**
+and sends nothing; **Pause** stops the schedule. Each firing uses its owner's current roles, and a report to someone's
+own channel is dropped once they can no longer open every project it covers. A **global**
 schedule covers every project, goes to global channels and needs an administrator.
 
 <figure>

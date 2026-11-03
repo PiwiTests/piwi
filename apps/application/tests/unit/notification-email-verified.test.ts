@@ -1,10 +1,12 @@
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import * as schema from '../../server/database/schema.sqlite';
 import { openTempDb, type TempDb } from './temp-db';
 
 /** Notification email goes only to verified addresses: a tested email channel, a verified account email. */
 
 delete process.env.PIWI_DATABASE_URL;
+// Authentication off: every user reads every project, so project access plays no part.
+vi.stubGlobal('useRuntimeConfig', () => ({ authEnabled: false }));
 
 const { matchAndEnqueue } = await import('../../server/utils/notifications/match');
 
@@ -25,7 +27,7 @@ beforeEach(async () => {
     { id: 4, name: 'Una', type: 'personal_email', config: {}, userId: 2, verified: true },
     { id: 5, name: 'Slack', type: 'slack', config: { webhookUrl: 'https://hooks.slack.com/x' }, verified: false },
   ]);
-  // Global subscriptions, so the subscriber's project access plays no part.
+  // Global subscriptions, so no subscriber's access is checked.
   await db
     .insert(schema.subscriptions)
     .values([1, 2, 3, 4, 5].map((channelId) => ({ channelId, events: ['run.finished'] })));

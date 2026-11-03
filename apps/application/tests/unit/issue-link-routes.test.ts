@@ -255,6 +255,19 @@ describe('POST /api/links', () => {
     expect(link).toMatchObject({ key: 'WEB-5', connectionId: null, title: null });
     expect(sent).toEqual([]);
   });
+
+  test('a caller without credentials is refused before the body is read', async () => {
+    state.caller = null;
+    let read = false;
+    const event = {
+      get body() {
+        read = true;
+        return { entityType: 'failure_cluster', entityId: CLUSTER[WEB], url: WEB_5 };
+      },
+    };
+    await expect(createLink(event)).rejects.toMatchObject({ statusCode: 401 });
+    expect(read).toBe(false);
+  });
 });
 
 describe('the link_issue MCP tool', () => {

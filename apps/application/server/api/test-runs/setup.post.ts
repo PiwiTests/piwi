@@ -33,6 +33,11 @@ defineRouteMeta({
               instanceId: { type: 'string' },
               shardIndex: { type: 'integer' },
               shardTotal: { type: 'integer' },
+              reporterVersion: {
+                type: 'string',
+                description:
+                  'The reporter’s version. From 0.65.0 the run’s `begin`, `events`, `finish` and `live-resources` carry its token in the `X-Piwi-Run-Token` header too, and a request without it is refused.',
+              },
               liveView: {
                 type: 'boolean',
                 description: 'Ask for a live view key, which a project with the live view on gives',

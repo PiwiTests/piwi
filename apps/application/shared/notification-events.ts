@@ -3,6 +3,7 @@ import { describeFailureText } from '#shared/describe-failure';
 import { parseSourceSnippet } from '#shared/source-snippet';
 import { splitSuitePath } from '#shared/utils/suites';
 import { formatTestSearchValue } from '#shared/test-search';
+import { globMatcher } from '@piwitests/core/glob';
 
 /** All notification event keys supported by the subscription system. */
 export const NOTIFICATION_EVENTS = [
@@ -581,19 +582,34 @@ export const OWNER_SCOPED_EVENTS: ReadonlySet<NotificationEvent> = new Set<Notif
   'test.stuck',
 ]);
 
+/** The most compiled branch and environment patterns kept, the least recently used dropped first. */
+const MAX_CACHED_NAME_PATTERNS = 500;
+const namePatternMatchers = new Map<string, (name: string) => boolean>();
+
+/** A `*` pattern's matcher, compiled once while it stays among the most recently used. */
+function namePatternMatcher(pattern: string): (name: string) => boolean {
+  let matches = namePatternMatchers.get(pattern);
+  if (matches) {
+    namePatternMatchers.delete(pattern);
+  } else {
+    matches = globMatcher(pattern);
+    if (namePatternMatchers.size >= MAX_CACHED_NAME_PATTERNS) {
+      namePatternMatchers.delete(namePatternMatchers.keys().next().value!);
+    }
+  }
+  namePatternMatchers.set(pattern, matches);
+  return matches;
+}
+
 /**
  * Whether a branch or environment name matches one of the patterns: an exact
- * name, or a pattern where `*` matches any run of characters, `/` included.
+ * name, or a pattern where `*` matches any run of characters but a line
+ * terminator, `/` included. Case matters. Matched by `globMatcher`, in steps
+ * that grow with the pattern's length times the name's, whatever the pattern
+ * holds.
  */
 export function matchesNamePattern(name: string, patterns: string[]): boolean {
-  return patterns.some((pattern) => {
-    if (!pattern.includes('*')) return pattern === name;
-    const source = pattern
-      .split('*')
-      .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&'))
-      .join('.*');
-    return new RegExp(`^${source}$`).test(name);
-  });
+  return patterns.some((pattern) => (pattern.includes('*') ? namePatternMatcher(pattern)(name) : pattern === name));
 }
 
 /** Whether an event/payload passes a subscription's delivery filters. */

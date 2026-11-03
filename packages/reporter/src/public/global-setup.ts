@@ -17,6 +17,7 @@ import { configDirFromConfig } from '../internal/support/test-paths.js';
 import { lookupProjectId, uploadManifest } from '../internal/manifest/run-manifests.js';
 import { baseUrlsFromConfig } from '../internal/collect/server-coverage.js';
 import { isPiwiReporterModule } from '../internal/support/reporter-entry.js';
+import { getReporterVersion } from '../internal/support/reporter-version.js';
 
 /**
  * Create a Playwright `globalSetup` function that registers a test run on the
@@ -198,6 +199,8 @@ async function registerRun(
       instanceId: computeInstanceId(opts.projectName!, resolveRunLabel(opts.runLabel, shard !== null)),
       shardIndex: shard?.current,
       shardTotal: shard?.total,
+      // The dashboard reads from it whether the run's `/begin` carries its setup token in a header too.
+      reporterVersion: getReporterVersion(),
       // A key for the run's live view: the instance hands one out only for a project that turned it on, and the
       // desktop app none. A CI run's workers stream with it at once; a run outside CI sends nothing with it until a
       // person shares the run.

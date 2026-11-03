@@ -51,6 +51,19 @@ describe('claimInitialSetup', () => {
     expect(await claimInitialSetup(db)).toBe(false);
   });
 
+  test('no claim succeeds while an administrator exists', async () => {
+    await db.insert(schema.users).values({ username: 'admin', password: 'x', role: 'administrator' });
+    expect(await claimInitialSetup(db)).toBe(false);
+  });
+
+  test('a finished setup is not taken over while its administrator exists', async () => {
+    expect(await claimInitialSetup(db)).toBe(true);
+    await db.insert(schema.users).values({ username: 'admin', password: 'x', role: 'administrator' });
+    await completeInitialSetup(db);
+    const results = await Promise.all(Array.from({ length: 8 }, () => claimInitialSetup(db)));
+    expect(results.filter(Boolean)).toHaveLength(0);
+  });
+
   test('releasing a claim lets setup be retried', async () => {
     expect(await claimInitialSetup(db)).toBe(true);
     await releaseInitialSetup(db);

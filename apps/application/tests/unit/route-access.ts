@@ -27,6 +27,8 @@ import {
 export interface RouteCaller {
   user: User;
   access: AccessSummary;
+  /** Signed in with an API key rather than a session. */
+  apiKey?: boolean;
 }
 
 export interface RouteAccessState {
@@ -76,6 +78,10 @@ async function requireAuth(state: RouteAccessState, permission?: RoutePermission
   return user;
 }
 
+function refuseApiKey(state: RouteAccessState) {
+  if (caller(state).apiKey) throw apiError({ statusCode: 403, message: 'A signed-in session is required' });
+}
+
 function requireProjectPermission(
   state: RouteAccessState,
   projectId: number,
@@ -99,6 +105,12 @@ async function requireProjectAccess(
 export function authMock(state: RouteAccessState) {
   return {
     requireAuth: (_event: unknown, permission?: RoutePermission | RoutePermission[]) => requireAuth(state, permission),
+    requireSessionAuth: async (_event: unknown, permission?: RoutePermission | RoutePermission[]) => {
+      const user = await requireAuth(state, permission);
+      refuseApiKey(state);
+      return user;
+    },
+    refuseApiKey: () => refuseApiKey(state),
     getRequestAccess: async () => caller(state).access,
     isAuthEnabled: () => true,
   };
