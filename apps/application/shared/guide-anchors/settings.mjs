@@ -7,10 +7,22 @@ export const SETTINGS_ANCHORS = [
     kind: 'page',
     pages: ['/settings'],
     describes:
-      'The Settings menu beside every settings page: the Instance and Analysis pages you may open, then About.',
+      'The Settings menu beside every settings page: the Instance, Analysis and Setup pages you may open, then About.',
     shownWhen: 'On a wide screen; a narrow one picks the page from a list above it instead.',
     doc: 'features/ui-overview#settings',
     sample: { route: '/settings' },
+  },
+
+  // Desktop app
+  {
+    id: 'desktop-settings-page',
+    kind: 'page',
+    pages: ['/settings/desktop'],
+    describes:
+      'Settings → Desktop app: this app’s address and access token, Piwi Picker pairing, where its data lives and its background service.',
+    requires: { permission: 'settings:manage', desktop: true },
+    doc: 'features/desktop',
+    sample: { route: '/settings/desktop', surface: 'desktop' },
   },
 
   // Account

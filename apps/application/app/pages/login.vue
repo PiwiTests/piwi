@@ -334,7 +334,7 @@ definePageMeta({
         GitHub
       </a>
       <span>·</span>
-      <NuxtLink to="/docs" class="flex items-center gap-1.5 hover:text-default transition-colors">
+      <NuxtLink to="/settings/api" class="flex items-center gap-1.5 hover:text-default transition-colors">
         <UIcon name="i-lucide-book-open" class="size-4" />
         API Docs
       </NuxtLink>

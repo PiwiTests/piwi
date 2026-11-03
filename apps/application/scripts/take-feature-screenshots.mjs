@@ -1699,13 +1699,13 @@ function markersPanelScene(width, suffix) {
   };
 }
 
-/** The connect wizard on Setup: each of its three paths, then local runs sent to the desktop app. */
+/** The connect wizard on Settings → Connect a suite: each of its three paths, then local runs sent to the desktop app. */
 function setupConnectScene(width, suffix) {
   return {
     name: `setup-connect${suffix}`,
-    description: `Connect wizard on Setup: one command, a coding agent, by hand, and the desktop-app switch, at ${width} px`,
+    description: `Connect wizard on Settings → Connect a suite: one command, a coding agent, by hand, and the desktop-app switch, at ${width} px`,
     tags: ['desktop'],
-    route: '/setup',
+    route: '/settings/connect',
     viewport: { width, height: 2400 },
     async run({ page, settle, shoot }) {
       const wizard = '[data-shot="get-started-wizard"]';
@@ -2251,7 +2251,7 @@ const SCENES = [
       const clusterId = 3;
       await routeNudgeScene(page, clusterId);
       const pages = [
-        ['setup', '/setup'],
+        ['setup', '/settings/capabilities'],
         ['cluster', `/failure-clusters/${clusterId}`],
         ['failure', `/test-run-cases/${nudgeExecId}`],
       ];
@@ -4204,7 +4204,7 @@ const SCENES = [
     description: 'MCP page: the client setup card, one tab per agent with the command or config that connects it',
     tags: ['docs'],
     out: 'docs',
-    route: '/mcp',
+    route: '/settings/mcp',
     viewport: { width: 1280, height: 1000 },
     of: '[data-shot="mcp-client-setup"]',
     pad: 12,
@@ -5996,14 +5996,56 @@ const SCENES = [
   },
   {
     name: 'setup-companion-tools',
-    description: 'Setup page: the companion-tools card below the capability ladder',
-    route: '/setup',
+    description: 'Settings → Companion tools: the tools that install outside the dashboard',
+    route: '/settings/companion-tools',
     viewport: { width: 1280, height: 2600 },
     of: '[data-shot="companion-tools"]',
     pad: 12,
   },
   setupConnectScene(1280, ''),
   setupConnectScene(390, '-phone'),
+  ...[
+    { name: 'settings-setup', width: 1280, height: 900 },
+    { name: 'settings-setup-phone', width: 390, height: 844 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Capabilities under the Setup section of the Settings menu (a select below lg), at ${width} px`,
+    route: '/settings/capabilities',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="setup-ladder"]').waitFor({ timeout: 90_000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  {
+    name: 'settings-setup-user-menu',
+    description:
+      'The user menu with its Setup submenu open: Connect a suite, Capabilities, MCP server, API reference, Companion tools',
+    route: '/projects',
+    viewport: { width: 1280, height: 900 },
+    async run({ page, shoot, settle }) {
+      await page.getByRole('button', { name: 'Configuration' }).click();
+      await page.getByRole('menuitem', { name: 'Setup' }).hover();
+      await page.getByRole('menuitem', { name: 'Connect a suite' }).waitFor({ timeout: 15_000 });
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'settings-desktop',
+    description:
+      'Settings → Desktop app (desktop app), the first page of Settings there: the address and token, Piwi Picker pairing, the data location and the background service',
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/settings/desktop',
+    viewport: { width: 1280, height: 1000 },
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="desktop-service"]').waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot();
+    },
+  },
   {
     name: 'home-empty-connect',
     description:
@@ -6055,7 +6097,7 @@ const SCENES = [
     out: 'docs',
     outputs: ['setup-connect-desktop.png'],
     mode: 'desktop',
-    route: '/setup',
+    route: '/settings/connect',
     viewport: { width: 1280, height: 2400 },
     async run({ page, settle, shoot }) {
       const wizard = '[data-shot="get-started-wizard"]';
@@ -6071,12 +6113,12 @@ const SCENES = [
   {
     name: 'desktop-service-card',
     description:
-      'Setup → Desktop app (desktop app): run in background, start on login and the server port, saved while the server still listens on another, then a new port being typed',
+      'Settings → Desktop app (desktop app): run in background, start on login and the server port, saved while the server still listens on another, then a new port being typed',
     tags: ['desktop'],
     mode: 'desktop',
     serverPort: 4100,
     activePort: 51234,
-    route: '/setup',
+    route: '/settings/desktop',
     viewport: { width: 1280, height: 2400 },
     async run({ page, settle, shoot }) {
       const card = '[data-shot="desktop-service"]';
@@ -6244,7 +6286,7 @@ const SCENES = [
     description: 'MCP page: one tool opened, its Markdown description and parameters',
     tags: ['docs'],
     out: 'docs',
-    route: '/mcp',
+    route: '/settings/mcp',
     viewport: { width: 1280, height: 2400 },
     of: '[data-shot="mcp-tool-get_fix_plan"]',
     pad: 12,
@@ -6261,7 +6303,7 @@ const SCENES = [
     description: 'MCP page: the agent-skills section with the install command',
     tags: ['docs'],
     out: 'docs',
-    route: '/mcp',
+    route: '/settings/mcp',
     viewport: { width: 1280, height: 2400 },
     of: '[data-shot="mcp-agent-skills"]',
     pad: 12,
@@ -6271,7 +6313,7 @@ const SCENES = [
     description: 'MCP page (desktop app): the local-only tools a hosted instance cannot offer',
     tags: ['desktop'],
     mode: 'desktop',
-    route: '/mcp',
+    route: '/settings/mcp',
     viewport: { width: 1000, height: 1000 },
     of: '[data-shot="mcp-desktop-tools"]',
     pad: 12,
@@ -6279,7 +6321,7 @@ const SCENES = [
   {
     name: 'mcp-tool-modules',
     description: 'MCP page: the tool catalog grouped by module with the Core tools only switch',
-    route: '/mcp',
+    route: '/settings/mcp',
     viewport: { width: 1280, height: 6200 },
     of: '[data-shot="mcp-tool-modules"]',
     pad: 12,
@@ -6756,7 +6798,7 @@ const SCENES = [
     description: 'A repro request from Piwi Picker, waiting in the desktop window for the developer (desktop shell)',
     tags: ['desktop'],
     mode: 'desktop',
-    route: '/setup',
+    route: '/settings/connect',
     viewport: { width: 1280, height: 1000 },
     link: { path: '/home/dev/shop', exists: true },
     async run({ page, shoot, settle }) {
@@ -7167,7 +7209,7 @@ const SCENES = [
     async prepare({ base, request }) {
       await request.patch(`${base}/api/capabilities`, { data: { decisions: { notifications: 'declined' } } });
     },
-    route: '/setup',
+    route: '/settings/capabilities',
     viewport: { width: 1280, height: 1600 },
     async run({ page, shoot, settle }) {
       // Open the folded Declined group so the reconsider control shows.
@@ -7240,7 +7282,7 @@ const SCENES = [
     name: 'mcp-client-auth',
     description:
       'MCP page with authentication on: client setup signs in through OAuth, with the Use an API key switch. Pass --url of an auth-enabled server and PIWI_SCREENS_LOGIN=<username>:<password>',
-    route: '/mcp',
+    route: '/settings/mcp',
     viewport: { width: 1280, height: 1400 },
     of: '[data-shot="mcp-client-setup"]',
     pad: 12,

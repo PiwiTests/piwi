@@ -337,7 +337,7 @@ export function capabilitiesForModule(module: CapabilityModule): CapabilityId[] 
 }
 
 /**
- * One preset the Home wizard and the Setup page offer under
+ * One preset the Home wizard and Settings → Capabilities offer under
  * "What do you want Piwi for?". `core` is always on and shown without a toggle;
  * the rest are the optional modules a team can decline in one click.
  */

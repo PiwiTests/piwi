@@ -140,7 +140,7 @@ quality report; unset, only minutes show. The cost is one instance-wide value.
 - The [MCP server](./mcp) offers `get_quality_report` (the bundle), `get_metric_trend` (one metric over
   time) and `compare_periods` (the headline numbers over two periods).
 - The REST API renders a report for a dashboard, format, language and analytics scope, keeps one as a snapshot,
-  manages schedules and reads snapshots. See the [API docs](https://piwitests.dev/demo/docs), or `/docs` on your
+  manages schedules and reads snapshots. See the [API docs](https://piwitests.dev/demo/settings/api), or `/settings/api` on your
   instance.
 
 ## Turning reports off

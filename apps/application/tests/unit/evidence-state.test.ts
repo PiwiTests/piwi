@@ -14,13 +14,13 @@ describe('resolveEvidenceState', () => {
     if (s.state === 'present') expect(s.derivedFromTrace).toBe(true);
   });
 
-  test('no data and no fixtures — not captured, links to /setup', () => {
+  test('no data and no fixtures — not captured, links to the connect wizard', () => {
     const s = resolveEvidenceState('console', { hasData: false, fixturesActive: false });
     expect(s.state).toBe('not-captured');
     if (s.state === 'not-captured') {
       expect(s.description).toContain('not captured for this project');
       expect(s.description).toContain('add the capture fixtures');
-      expect(s.to).toBe('/setup');
+      expect(s.to).toBe('/settings/connect');
       expect(s.toLabel).toBeTruthy();
     }
   });

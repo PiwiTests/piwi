@@ -244,7 +244,7 @@ The `.exe`'s welcome page asks for the port the dashboard listens on
 The confirmed port goes to `installer.json` in the app data folder, which the
 app moves into `settings.json` on its next start. Silent and passive installs,
 the updater's among them, skip the page and keep the setting. Everywhere else,
-the Setup page's **Desktop app** card changes the port. Ports below 1024 and the
+the **Desktop app** card of Settings → Desktop app changes the port. Ports below 1024 and the
 ones browsers refuse (6000, 10080…) are not accepted.
 
 ## Signing

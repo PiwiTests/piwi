@@ -8,7 +8,7 @@
  * version, offline. The structured topics come from the registries the docs
  * site renders (feature catalog, ecosystem, env vars), so the tools say nothing
  * the docs do not. How this instance is configured is deployment shape, not
- * test data: like the Setup page, it is shown to administrators only.
+ * test data: like Settings → Capabilities, it is shown to administrators only.
  */
 import { MCP_TOOL_DEFS, DESKTOP_MCP_TOOL_DEFS, type McpToolDef } from '#shared/mcp-tools';
 import { desktopRunTools } from './run-tools';

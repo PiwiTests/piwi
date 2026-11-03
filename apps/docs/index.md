@@ -144,7 +144,7 @@ JUnit, pytest and Cypress results, or you only ever debug on your own machine,
 - [MCP server](/features/mcp): your test history as tools a coding agent can call
 - [Agent skills](/features/agent-skills): the failure-fixing workflow, installed into your project
 - [Piwi CLI](/reference/cli): `init`, `gate`, `select`, `probe` and `report`
-- [API docs](https://piwitests.dev/demo/docs): every endpoint, rendered from the dashboard's own OpenAPI spec
+- [API docs](https://piwitests.dev/demo/settings/api): every endpoint, rendered from the dashboard's own OpenAPI spec
 
 Everything Piwi does, with what each feature needs, is on [All features](/reference/features).
 

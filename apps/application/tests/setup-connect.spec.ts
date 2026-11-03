@@ -4,7 +4,7 @@ import { waitForHydration } from './utils';
 
 test.describe('Connect wizard', () => {
   test('the choices rewrite every path, and each path ends in wrapConfig and the fixtures', async ({ page }) => {
-    await page.goto('/setup');
+    await page.goto('/settings/connect');
     await waitForHydration(page);
     const wizard = page.locator('[data-tour="get-started-wizard"]');
     await expect(wizard.getByRole('heading', { name: 'Connect your Playwright suite' })).toBeVisible();
@@ -51,7 +51,7 @@ test.describe('Connect wizard', () => {
       await route.fulfill({ response, json: { items } });
     });
     const stream = page.waitForResponse((response) => response.url().includes('/api/stream'));
-    await page.goto('/setup');
+    await page.goto('/settings/connect');
     await waitForHydration(page);
     const status = page.locator('[data-shot="setup-run-status"]');
     await expect(status).toContainText('Waiting for the first run');

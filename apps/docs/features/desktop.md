@@ -48,7 +48,7 @@ the app, the machine does not go to sleep on its own, and a run that fails while
 icon or flashes the taskbar button. In the background, [notifications](/features/notifications#browser) arrive as OS notifications,
 with no setup, and an unread count on the dock icon or the tray tooltip.
 
-It listens on port 3000, or the one set in the `.exe` installer or on **Setup → Desktop app** (`serverPort` in
+It listens on port 3000, or the one set in the `.exe` installer or in **Settings → Desktop app** (`serverPort` in
 `settings.json`), a free one when taken.
 
 ## Sending results to it
@@ -57,15 +57,15 @@ While the app runs, the reporter finds it by itself: a config with only a `proje
 address and token the app writes to `~/.piwi/desktop.json` only when nothing else sets a server, so a CI job is never
 redirected ([details](/guide/reporter#finding-the-desktop-app-automatically)). A suite that reports to a shared dashboard sends
 its local runs here with
-[`desktopApp: 'prefer'`](/guide/reporter#local-runs-to-the-desktop-app-ci-to-a-team-server), which the snippets on
-**Setup** carry once you turn on **CI reports to a team server**.
+[`desktopApp: 'prefer'`](/guide/reporter#local-runs-to-the-desktop-app-ci-to-a-team-server), which the
+**Connect a suite** snippets carry once you turn on **CI reports to a team server**.
 
 <figure>
   <img src="/screenshots/setup-connect-desktop.png" alt="The connect wizard in the desktop app: the one init command with no server URL, the fixtures import and the test command, and the CI reports to a team server switch, off">
   <figcaption>The desktop app's connect wizard: no URL to set.</figcaption>
 </figure>
 
-When the tests run as another user or in a container, **Setup → Send results to this app** gives the
+When the tests run as another user or in a container, **Settings → Desktop app** gives the
 address and the token to configure by hand. Keep the token in `PIWI_API_KEY`.
 
 A dashboard link opened in your browser opens in the app, and its tab closes. A `piwi://open/<page>` link opens its
@@ -135,7 +135,7 @@ The app serves the [MCP server](/features/mcp) with local tools a hosted instanc
 `apply_locator_fix` (a recommended locator fix applied to the file, previewed by default), and the
 [run tools](./desktop-runs#for-agents) for the runs it starts. It registers as `piwi-desktop`, beside a hosted Piwi.
 
-The **MCP server** page detects Claude Code, Claude Desktop, Cursor, Opencode, VS Code, Windsurf and Gemini CLI, and
+**MCP server** settings detect Claude Code, Claude Desktop, Cursor, Opencode, VS Code, Windsurf and Gemini CLI, and
 connects each in one click, writing a `piwi-desktop` entry with the address and token into its config.
 It keeps a backup and rewrites only that entry, again when the port changes. Claude Desktop, which takes only
 local commands, is pointed at the app's built-in bridge (`piwi-desktop mcp-stdio`), so no token is copied; the app must

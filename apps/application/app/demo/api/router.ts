@@ -3629,7 +3629,7 @@ const routes: RouteEntry[] = [
   },
 
   // Setup status — the same evidence probes as the server, run against the
-  // in-browser demo DB, so the Setup page's checklist reflects the seeded data.
+  // in-browser demo DB, so the capability ladder reflects the seeded data.
   {
     method: 'GET',
     pattern: /^\/api\/setup-status$/,

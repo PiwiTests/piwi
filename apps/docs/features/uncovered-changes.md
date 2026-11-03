@@ -112,7 +112,7 @@ coverage's part and stay either way.
 The [`get_change_coverage`](/reference/mcp-tools#get_change_coverage) MCP tool returns the same join for a run or for
 an explicit base and head commit, grouped by ticket, without recording anything: each file's `reach`, its `lines`
 when the coverage counts them, and the files not counted. The [write-the-missing-test](/features/agent-skills) skill
-takes it from there. The REST endpoint is in the [API docs](https://piwitests.dev/demo/docs).
+takes it from there. The REST endpoint is in the [API docs](https://piwitests.dev/demo/settings/api).
 
 ## The gate flags
 

@@ -49,7 +49,7 @@ function tagAnchor(tag: string): string {
 </script>
 
 <template>
-  <div class="max-w-4xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+  <div class="space-y-6 max-sm:px-4">
     <!-- Overview -->
     <header class="space-y-3">
       <div class="flex flex-wrap items-center gap-2">

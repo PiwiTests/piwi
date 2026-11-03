@@ -80,7 +80,7 @@ export function toolDetails(description: string): string {
   return at === -1 ? '' : description.slice(at + 2).trim();
 }
 
-/** One top-level argument of a tool, as the `/mcp` page lists it. */
+/** One top-level argument of a tool, as Settings → MCP server lists it. */
 export interface McpToolParameter {
   name: string;
   /** The JSON Schema type, e.g. `number`, `string or null`, `number[]`. */

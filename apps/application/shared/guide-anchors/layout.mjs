@@ -51,33 +51,6 @@ export const LAYOUT_ANCHORS = [
     sample: { route: '/projects' },
   },
   {
-    id: 'nav-api-docs',
-    kind: 'nav',
-    pages: ['*'],
-    describes: 'The sidebar’s API Docs link: this instance’s own OpenAPI reference of every REST endpoint.',
-    doc: 'features/ui-overview#settings',
-    sample: { route: '/projects' },
-  },
-  {
-    id: 'nav-setup',
-    kind: 'nav',
-    pages: ['*'],
-    describes: 'The sidebar’s Setup link: how results reach this instance, and which optional capabilities it uses.',
-    requires: { permission: 'settings:manage' },
-    doc: 'features/ui-overview#setup',
-    sample: { route: '/projects' },
-  },
-  {
-    id: 'nav-mcp',
-    kind: 'nav',
-    pages: ['*'],
-    describes:
-      'The sidebar’s MCP server link: the configuration that connects Claude Code, Cursor or another MCP client to this instance.',
-    requires: { capability: 'mcp' },
-    doc: 'features/mcp',
-    sample: { route: '/projects' },
-  },
-  {
     id: 'nav-documentation',
     kind: 'nav',
     pages: ['*'],

@@ -135,7 +135,7 @@ reopens as its ticket moves into and out of Done.
 
 For the exact verdict and a trace, the [desktop app](./desktop) runs a report's steps with Playwright in your project.
 Pair it once: in the extension's settings, under **Desktop app**, click **Pair**, then **Allow** in the app's window,
-which shows the same code. The address is on the app's **Setup** page, under **Connect Piwi Picker**
+which shows the same code. The address is in the app's **Settings → Desktop app**, under **Connect Piwi Picker**
 (`http://127.0.0.1:3000` by default); **Pair by hand** takes the token shown there.
 The token goes only to an app that proves it holds it.
 

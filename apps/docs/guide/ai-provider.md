@@ -41,7 +41,7 @@ When a run finishes and `PIWI_AI_AUTO_DIAGNOSE` is on, the `PIWI_AI_AUTO_DIAGNOS
 
 A diagnosis streams: the model's reasoning appears in a live panel as it arrives, with a stage indicator (*Researching patterns* while a
 [research model](#model-roles) pre-analyzes the failure, when one is configured, then *Diagnosing root cause*), and turns
-into the result card when it completes. The [API docs](https://piwitests.dev/demo/docs), or `/docs` on your
+into the result card when it completes. The [API docs](https://piwitests.dev/demo/settings/api), or `/settings/api` on your
 instance, describe the streaming protocol.
 
 To be told when a diagnosis finishes without watching the panel, turn on **Settings → AI → Diagnosis notifications**: a per-browser preference that shows a browser notification on completion once you grant the permission.

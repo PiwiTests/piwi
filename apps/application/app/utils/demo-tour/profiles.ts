@@ -60,7 +60,7 @@ export const TOUR_PROFILES: readonly TourProfile[] = [
         align: 'start',
         doc: 'features/code-reach#on-the-execution-page',
       },
-      { id: 'mcp', route: '/mcp', anchor: 'mcp-setup', side: 'bottom', align: 'start', doc: 'features/mcp' },
+      { id: 'mcp', route: '/settings/mcp', anchor: 'mcp-setup', side: 'bottom', align: 'start', doc: 'features/mcp' },
       {
         id: 'simulate',
         anchor: 'demo-simulator',
@@ -228,7 +228,7 @@ export const TOUR_PROFILES: readonly TourProfile[] = [
       },
       {
         id: 'setup',
-        route: '/setup',
+        route: '/settings/capabilities',
         anchor: 'setup-ladder',
         side: 'bottom',
         align: 'start',

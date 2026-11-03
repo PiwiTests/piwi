@@ -525,6 +525,13 @@ export default defineNuxtConfig({
         }
       };
       stamp(pages);
+      // The former addresses of the pages that moved into Settings, kept for
+      // bookmarks and links. Page routes only: `POST /mcp` is the MCP server's.
+      pages.push(
+        { name: 'setup-redirect', path: '/setup', redirect: '/settings/connect' },
+        { name: 'mcp-redirect', path: '/mcp', redirect: '/settings/mcp' },
+        { name: 'docs-redirect', path: '/docs', redirect: '/settings/api' },
+      );
     },
     'nitro:build:public-assets': (nitro) => {
       // Copy migrations folders to output during build

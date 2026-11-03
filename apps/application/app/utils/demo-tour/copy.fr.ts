@@ -161,7 +161,7 @@ export const FR_COPY = {
         },
         setup: {
           title: 'Ce qui est activé',
-          body: "**What's switched on** lit les données de cette instance, et non sa configuration, pour montrer les fonctionnalités en service et ce qu’il faut à chacune des autres, comme un jeton de dépôt ou un fournisseur d’IA. Les étapes au-dessus connectent une suite.",
+          body: "**What's switched on** lit les données de cette instance, et non sa configuration, pour montrer les fonctionnalités en service et ce qu’il faut à chacune des autres, comme un jeton de dépôt ou un fournisseur d’IA.",
         },
         simulate: {
           title: 'Regardez un run arriver en direct',

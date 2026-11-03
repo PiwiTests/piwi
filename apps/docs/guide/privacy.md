@@ -48,8 +48,8 @@ context before it's sent, and cap its size. See
 - **Traces.** The Playwright trace viewer is bundled and served by your own instance at
   `/trace-viewer/`. Opening a trace from Piwi never uploads it anywhere — unlike sending a colleague to
   the hosted `trace.playwright.dev`.
-- **The API reference.** `/docs` is rendered in-app from your instance's own OpenAPI spec, with no
-  third-party CDN, so it works offline.
+- **The API reference.** It is rendered in-app from your instance's own OpenAPI spec, with no third-party CDN, so it
+  works offline.
 - **Screenshots, videos, HTML reports.** Stored on your disk or your S3 bucket, served by your instance.
 - **HTML report execution.** Reports run with scripts enabled inside a CSP sandbox with a unique opaque origin. Piwi
   provides the report with an in-memory Web Storage facade so Playwright's settings UI works; it is discarded with the

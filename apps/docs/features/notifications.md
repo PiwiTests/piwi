@@ -128,7 +128,7 @@ empty list matches every run. The filters apply to every event that comes from a
 
 ### Through the API
 
-The subscriptions REST API (see the [API docs](https://piwitests.dev/demo/docs)) adds:
+The subscriptions REST API (see the [API docs](https://piwitests.dev/demo/settings/api)) adds:
 
 - **Scope**: all projects (`projectId: null`, for a user who can access every project), or a single project.
 - **Filters**: `branches` and `environments` as above; for run events, status; **owner**, which applies to the

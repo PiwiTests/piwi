@@ -129,12 +129,6 @@ of its own above the affected tests and their evidence
 ([Failure clusters & the inbox](./failure-clusters#the-cluster-page)). The **More ways to fix** toolbox holds the
 other sections and the [fix plan](./fix-plans); the occurrence chart and the activity fold to one line each below it.
 
-## Setup
-
-`/setup`, administrators only: the [connect wizard](/guide/getting-started#_2-connect-your-suite) and a checklist of
-which optional capabilities this instance actually uses, judged from the data it holds
-([Choose what you use](/operate/capabilities)).
-
 ## Settings
 
 `/settings`: your **Account** and connected accounts ([OAuth](/operate/authentication#oauth-google-github)),
@@ -145,11 +139,15 @@ which optional capabilities this instance actually uses, judged from the data it
 **Auto-heal** ([Auto-heal PRs](./auto-heal)), **Integrations** ([Integrations](/operate/integrations)),
 **Performance** (wasted-time patterns and timeout hygiene), **AI** ([AI provider](/guide/ai-provider)),
 **Notifications** ([Notifications & alerts](./notifications)) and **Localization**
-([Localization](/operate/localization)). A setting backed by an environment variable is shown read-only with the
-variable's name ([Configuration reference](/reference/configuration)).
+([Localization](/operate/localization)), and in the [desktop app](./desktop) **Desktop app** first. A setting backed by
+an environment variable is shown read-only with the variable's name ([Configuration reference](/reference/configuration)).
 
-The sidebar also links the **MCP server** setup page, `/mcp` ([MCP server](./mcp)), and the **API docs**, `/docs`, the
-instance's own OpenAPI reference.
+## Setup
+
+The **Setup** section of Settings: **Connect a suite**, the
+[connect wizard](/guide/getting-started#_2-connect-your-suite), and **Capabilities**, which optional capabilities this
+instance uses ([Choose what you use](/operate/capabilities)), both for administrators; **MCP server**
+([MCP server](./mcp)); **API reference**, the instance's own OpenAPI reference; and **Companion tools**.
 
 ## Live demo
 

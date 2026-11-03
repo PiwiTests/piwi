@@ -10,7 +10,7 @@ lang: en-US
 
 The dashboard serves a **Model Context Protocol (MCP) server** at `/mcp` from its own process, with nothing to
 install. Any MCP client (Claude Code, Cursor, VS Code Copilot, Claude Desktop, Gemini CLI) can query your test
-results, failure clusters and AI diagnoses, and triage them. The **MCP server** page in the dashboard has a live setup
+results, failure clusters and AI diagnoses, and triage them. **Settings → MCP server** in the dashboard has a live setup
 guide for this instance.
 
 ## What it provides
@@ -33,7 +33,7 @@ message (one whose SCM or AI provider is not configured returns `{ error }`).
   <figcaption>One tool on the MCP server page, opened: what it does and the parameters it takes.</figcaption>
 </figure>
 
-**Modules.** Every tool belongs to one module, `core`, `workflow`, `healing` or `agents`, the groups the Setup page
+**Modules.** Every tool belongs to one module, `core`, `workflow`, `healing` or `agents`, the groups **Settings → Capabilities**
 asks about. Declining a capability drops the tools that depend on it. Append `?modules=core` (comma-separated) to the
 MCP URL to narrow the list further; narrowing never re-enables a declined tool.
 
@@ -48,7 +48,7 @@ the project they act on, and `get_instance_stats` needs an administrator.
 
 **The write log.** Every call of a write tool is logged with the API key that made it, the tool, what it acted on and
 the result; read tools never are. A cluster's **Activity** section shows the calls on it, the log is pruned after
-`PIWI_RETENTION_NOTIFICATION_DAYS`, and declining the **Agent write log** capability on the Setup page keeps none.
+`PIWI_RETENTION_NOTIFICATION_DAYS`, and declining the **Agent write log** capability in **Settings → Capabilities** keeps none.
 
 **Transport.** Streamable HTTP: JSON-RPC 2.0 over `POST /mcp`, with no SSE or WebSocket. Protocol versions
 `2025-06-18`, `2025-03-26` and `2024-11-05` are supported.
@@ -67,7 +67,7 @@ revoking it there disconnects the client at its next request.
 
 Claude Code (`/mcp`, then **Authenticate**), Cursor, VS Code, Gemini CLI, Opencode and Claude Desktop through
 `mcp-remote` sign in this way. The instance is its own authorization server: clients register on their own (dynamic
-client registration), PKCE is required, and the API reference (`/docs` in your instance) lists the endpoints under
+client registration), PKCE is required, and the API reference (`/settings/api` in your instance) lists the endpoints under
 **MCP OAuth**.
 
 A client that cannot sign in sends an API key instead, the same `pd_` keys as the REST API, created in **Settings →

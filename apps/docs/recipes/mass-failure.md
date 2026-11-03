@@ -73,7 +73,7 @@ by cluster with the worker correlation included, and `get_test_case_context` pul
 single failure — steps, console, network, SCM diff. No install; the server is part of the dashboard.
 
 **From a script.** The same grouping is available over the REST API if you'd rather post a summary into
-your own channel — see the [API docs](https://piwitests.dev/demo/docs).
+your own channel — see the [API docs](https://piwitests.dev/demo/settings/api).
 
 **Before anyone opens anything.** Subscribe to the `cluster.new` [notification](/features/notifications) event
 instead of `run.failed`: you hear once when a genuinely new root cause appears, not on every red build,

@@ -121,7 +121,7 @@ checks its target lines this way until they run.
 ## For agents
 
 Three read-only MCP tools, listed with the rest on [MCP tools](/reference/mcp-tools), carry these answers. They
-belong to the `core` module and depend on the **Coverage** capability: declining it for the instance on the Setup page
+belong to the `core` module and depend on the **Coverage** capability: declining it for the instance in **Settings → Capabilities**
 drops them.
 For a project with no coverage, each answers one sentence saying how to turn it on.
 
@@ -132,7 +132,7 @@ For a project with no coverage, each answers one sentence saying how to turn it 
   that explains them.
 - `get_coverage_loss`: what quarantining, skipping or deleting tests would leave uncovered.
 
-The same answers are in the dashboard's API; see the [API docs](https://piwitests.dev/demo/docs) (`/docs` on your
+The same answers are in the dashboard's API; see the [API docs](https://piwitests.dev/demo/settings/api) (`/settings/api` on your
 instance).
 
 ## Limits

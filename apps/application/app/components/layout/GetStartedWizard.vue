@@ -20,8 +20,8 @@ const props = withDefaults(
   defineProps<{
     /**
      * Include the optional "What do you want Piwi for?" capability step. Only
-     * the Home placement sets this; the Setup page owns that question through
-     * its own presets card, so the wizard omits the step there.
+     * the Home placement sets this; Settings → Capabilities owns that question
+     * through its own presets card, so the wizard omits the step elsewhere.
      */
     showCapabilityStep?: boolean;
   }>(),

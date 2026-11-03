@@ -75,7 +75,8 @@ afterAll(() => {
 const PAGES = [
   '/',
   '/projects',
-  '/setup',
+  '/settings/connect',
+  '/settings/capabilities',
   '/projects/[id]',
   '/test-runs/[id]',
   '/test-run-cases/[id]',

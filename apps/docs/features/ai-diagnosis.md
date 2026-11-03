@@ -114,7 +114,7 @@ deterministic locator edits.
 ## Diagnoses written by an agent
 
 A coding agent can record its own diagnosis on a cluster, or on one failure, with the MCP tool `record_diagnosis`, in
-the same JSON a model returns here. On one failure, the [REST API](https://piwitests.dev/demo/docs) records it too.
+the same JSON a model returns here. On one failure, the [REST API](https://piwitests.dev/demo/settings/api) records it too.
 It needs no AI provider, its patch is validated against the failing commit's source when
 [source control](/guide/source-control) is connected, and the panel shows it as **written by an agent** with the
 model it named. It replaces the current diagnosis, which stays in the history. Declining the **Agent diagnoses**

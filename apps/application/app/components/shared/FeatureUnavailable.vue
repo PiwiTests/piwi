@@ -17,7 +17,7 @@ const props = withDefaults(
     icon?: string;
     /** Docs page (+ optional `#anchor`) for the setup instructions. */
     doc?: string;
-    /** In-app route that switches it on, when one exists. Defaults to /setup; pass `""` to hide the action. */
+    /** In-app route that switches it on, when one exists. Defaults to Settings → Capabilities; pass `""` to hide the action. */
     to?: string;
     toLabel?: string;
     padded?: boolean;
@@ -27,7 +27,7 @@ const props = withDefaults(
      */
     compact?: boolean;
   }>(),
-  { icon: 'i-lucide-plug-zap', to: '/setup', toLabel: 'How to enable', padded: true, compact: false },
+  { icon: 'i-lucide-plug-zap', to: '/settings/capabilities', toLabel: 'How to enable', padded: true, compact: false },
 );
 </script>
 

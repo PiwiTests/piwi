@@ -1000,7 +1000,7 @@ const breadcrumbItems = computed(() => [
               <UIcon name="i-lucide-bot" class="size-3 shrink-0" />
               The diagnosis, edits, failing tests, owner and verify command in one document —
               <code class="font-mono">get_fix_plan</code> returns the same to your AI agent via the
-              <NuxtLink to="/mcp" class="text-primary hover:underline">MCP server</NuxtLink>.
+              <NuxtLink to="/settings/mcp" class="text-primary hover:underline">MCP server</NuxtLink>.
             </p>
           </template>
         </Toolbox>

@@ -91,7 +91,7 @@ A run whose reporter sent findings shows a **Resources** tab:
 - the **costliest tests**, by the CPU of their worker and browser processes, with the pages each found already open.
 
 The execution page's Performance tab shows what that one test cost and what it left open. A project that declines the
-**Resources** capability on the Setup page hides both, and the reporter's summary stays as it is.
+**Resources** capability in **Settings → Capabilities** hides both, and the reporter's summary stays as it is.
 
 <figure>
   <img src="/screenshots/run-resources.png" alt="A run's Resources tab: counts of leaked, never-used, piling-up and left-running resources, the four findings, each with the fixture, file or test behind it, the machine's CPU, memory and disk, and the costliest tests">
