@@ -22,6 +22,7 @@ import { saveResourceReportPart } from '#shared/handlers/resource-reports';
 import { storableRunErrors } from '../../../utils/storable-values';
 import { requireRouteId } from '../../../utils/project-access';
 import { requireStreamingRun } from '../../../utils/stream-auth';
+import { RUN_TOKEN_HEADER } from '@piwitests/core/wire';
 
 defineRouteMeta({
   openAPI: {
@@ -29,7 +30,17 @@ defineRouteMeta({
     summary: 'Finish a streaming test run',
     description:
       'Finalize a streaming test run by setting its final status and calculating performance metrics. Supports pending uploads mode where reports are uploaded asynchronously after finishing. For sharded runs, the run finishes only after all shards report; test counters come from the streamed events, and the run lasts from the start of its first shard to the end of its last shard. A shard runs from its `startTime` for its `duration`, or until its `/finish` arrives when it sends no `duration`; with no `startTime`, or one that puts its end more than a day from its `/finish`, it ends when its `/finish` arrives. The flaky count is read from the attempts the run stored. A sharded run takes the most severe `status` its shards sent, as `playwright merge-reports` does (`failed`, then `timedout`, then `interrupted`), and is `failed` when a test failed. A run that does not exist answers 404, and one that is neither running nor interrupted 409, before the body is read.',
-    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+    parameters: [
+      { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
+      {
+        name: 'X-Piwi-Run-Token',
+        in: 'header',
+        required: false,
+        description:
+          'The stream token of the body, checked before the body is read. A run of reporter 0.65.0 or later needs it: 401 without it, 403 for one that is not the run’s.',
+        schema: { type: 'string' },
+      },
+    ],
     requestBody: {
       content: {
         'application/json': {
@@ -79,7 +90,7 @@ defineRouteMeta({
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'test run ID');
   const db = await getDatabase();
-  await requireStreamingRun(db, id, 'finish');
+  await requireStreamingRun(db, id, 'finish', getRequestHeader(event, RUN_TOKEN_HEADER));
 
   const body = await readBody(event);
 
