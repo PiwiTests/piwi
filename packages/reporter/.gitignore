@@ -4,13 +4,5 @@ dist/
 .DS_Store
 # Transient artifacts authored by the AI-step integration E2E (tests/integration/ai/run.mjs)
 tests/integration/ai/.ai-e2e-artifacts/
-# Transient Playwright project written by tests/flake-run.spec.ts
-tests/.flake-run-*/
-# Transient Playwright project written by tests/flake-cli-run.spec.ts
-tests/.flake-cli-run-*/
-# Transient Playwright projects written by tests/live-view.spec.ts
-tests/.live-view-*/
-# Transient Playwright project written by tests/navigating-action-run.spec.ts
-tests/.navigating-action-run-*/
-# Transient Playwright project written by tests/esm-call-sites-run.spec.ts
-tests/.esm-call-sites-run */
+# Transient Playwright projects the real-run specs write (a tests/ dot-folder named after the spec and the pid)
+tests/.*/
