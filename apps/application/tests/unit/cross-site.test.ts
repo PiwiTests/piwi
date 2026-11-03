@@ -106,8 +106,10 @@ describe('isCrossSiteWrite', () => {
       expect(write('http://evil.example', behindProxy)).toBe(true);
     });
 
-    test('is allowed from any parsable origin for the entry * of PIWI_ALLOWED_HOSTS', () => {
-      expect(write('http://evil.example', { host: '127.0.0.1:3000', allowedHosts: '*' })).toBe(false);
+    test('is refused from another origin whatever the entry * of PIWI_ALLOWED_HOSTS', () => {
+      expect(write('http://evil.example', { host: '127.0.0.1:3000', allowedHosts: '*' })).toBe(true);
+      expect(write('http://evil.example', { host: '127.0.0.1:3000', allowedHosts: '*, evil.example' })).toBe(false);
+      expect(write('http://localhost:7494', { allowedHosts: '*' })).toBe(false);
       expect(write('null', { allowedHosts: '*' })).toBe(true);
       expect(write('not an origin', { allowedHosts: '*' })).toBe(true);
     });

@@ -39,8 +39,8 @@ function isOwnHost(origin: URL, host: string | null | undefined): boolean {
  * a plain-HTTP address that is not a loopback one) is judged by its `Origin`. It
  * is accepted when its host and port are those of the `Host` header or of
  * `PIWI_SITE_URL` (`siteUrl`), whatever the scheme, or when `PIWI_ALLOWED_HOSTS`
- * (`allowedHosts`) allows its host name (`*` allows any); any other origin, an
- * opaque or unparsable one included, is another site.
+ * (`allowedHosts`) names its host name (its entry `*` names none); any other
+ * origin, an opaque or unparsable one included, is another site.
  */
 export function isCrossSiteWrite(request: {
   method: string;
@@ -64,5 +64,5 @@ export function isCrossSiteWrite(request: {
   if (isOwnHost(from, request.host)) return false;
   const site = request.siteUrl ? parseOrigin(request.siteUrl) : null;
   if (site?.host === from.host) return false;
-  return !isListedHost(from.hostname, request.allowedHosts);
+  return !isListedHost(from.hostname, request.allowedHosts, { wildcard: false });
 }

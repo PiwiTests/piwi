@@ -277,7 +277,7 @@ export const PIWI_ENV_VARS = {
     relevantWhen: { PIWI_AUTH_ENABLED: 'false' },
     docs: 'operate/authentication#disabling-authentication',
     notes:
-      "Names are compared lowercased, without the port. With authentication off, a page at one of these names may also write when its browser sends no `Sec-Fetch-Site` (a page served over plain HTTP). The single entry `*` answers every host and accepts such a write from any page, which removes the protection against DNS rebinding: any web page on a domain that points at the server's address can then use the dashboard as an administrator.",
+      "Names are compared lowercased, without the port. With authentication off, a page at one of these names may also write when its browser sends no `Sec-Fetch-Site` (a page served over plain HTTP). The single entry `*` answers every host, which removes the protection against DNS rebinding: any web page on a domain that points at the server's address can then use the dashboard as an administrator. It never lets a page at another host write.",
   },
   PIWI_SECRET_KEY: {
     description:

@@ -45,11 +45,16 @@ export function isAllowedHostWithoutAuth(host: string | null | undefined, allowa
 /**
  * Whether `PIWI_ALLOWED_HOSTS` (`allowedHosts`) allows the host name `name`, given
  * lowercased and without a port: a name it lists, the domain of an entry starting
- * with a dot or a name under it, or any name for the entry `*`.
+ * with a dot or a name under it, or any name for the entry `*` unless `wildcard`
+ * is false.
  */
-export function isListedHost(name: string, allowedHosts: string | null | undefined): boolean {
+export function isListedHost(
+  name: string,
+  allowedHosts: string | null | undefined,
+  { wildcard = true }: { wildcard?: boolean } = {},
+): boolean {
   return allowedHostEntries(allowedHosts).some((entry) => {
-    if (entry === '*') return true;
+    if (entry === '*') return wildcard;
     return entry.startsWith('.') ? name === entry.slice(1) || name.endsWith(entry) : name === entry;
   });
 }

@@ -164,7 +164,7 @@ With authentication off, the dashboard answers only requests whose `Host` header
 dot (`localhost`, a container name), a name under `.localhost`, the host of
 [`PIWI_SITE_URL`](/reference/configuration#general) or a name `PIWI_ALLOWED_HOSTS` lists (`host.docker.internal`, or
 `.example.lan` for a whole domain); any other gets a `403`. Over plain HTTP, a write must also come from the requested
-host, `PIWI_SITE_URL`'s or a listed one. The entry `*` of `PIWI_ALLOWED_HOSTS` turns both checks off, and with them
+host, `PIWI_SITE_URL`'s or a listed one. The entry `*` of `PIWI_ALLOWED_HOSTS` turns the first check off, and with it
 the protection against DNS rebinding. Behind a [reverse proxy](./deployment#reverse-proxy-https), set `PIWI_SITE_URL`
 and forward the browser's `Host` header.
 
