@@ -1,14 +1,22 @@
 import { testTextLabel } from '#shared/utils/test-label';
-import { eq, and, count, lt, desc, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
+import { eq, and, count, lt, desc, inArray, isNotNull, isNull, like, ne, or } from 'drizzle-orm';
 
 /** Failures scanned for ownership; well past what any comment or digest lists. */
 const OWNER_LOOKUP_LIMIT = 200;
 /** Prior runs fetched per project when looking for same-branch baseline runs. */
 const BASELINE_FETCH_LIMIT = 25;
-import { projects, testRuns, failureClusters, testRunsCases, testCases } from '../../database/schema';
+import {
+  projects,
+  testRuns,
+  failureClusters,
+  testRunsCases,
+  testCases,
+  notificationDeliveries,
+} from '../../database/schema';
 import { emitNotification } from './emit';
 import {
   buildTopFailures,
+  clusterNewDedupeKeyPrefix,
   errorExcerpt,
   computePerfBaseline,
   truncateExcerpt,
@@ -24,7 +32,7 @@ import { inlineCasePayloads } from '../case-payloads';
 import { FAILED_STATUS_KEYS, isFailedStatus, testKey, testOutcomes } from '#shared/utils/test-counts';
 import { describeCluster } from '#shared/describe-cluster';
 import { looksFixedTests } from '#shared/status-classify';
-import { eligibleRunSql, isEligibleRun, runCommit, UNFINISHED_RUN_STATUSES } from '#shared/run-eligibility';
+import { eligibleRunSql, isEligibleRun, runCommit } from '#shared/run-eligibility';
 import { commitUrl } from '#shared/scm-urls';
 import { safeHttpUrl } from '#shared/utils/safe-url';
 import { parseSourceSnippet } from '#shared/source-snippet';
@@ -559,10 +567,10 @@ export async function emitIncidentNotification(db: DbClient, runId: number): Pro
 const ANNOUNCING_RUN_STATUSES = ['passed', 'failed', 'timedout'];
 
 /**
- * Whether a run before `runId` that sends notifications (an import never sends
- * any) failed into the cluster, and so announced it or announces it when it
- * ends: one that ran to its end, or one still unfinished, judged as if it
- * finished.
+ * Whether a run before `runId` that ran to its end and sends notifications (an
+ * import never sends any) failed into the cluster: that run announced it, or
+ * found it already announced or triaged. A run still unfinished counts for
+ * nothing, since it may yet end cancelled or interrupted.
  */
 async function announcedBefore(db: DbClient, clusterId: number, runId: number): Promise<boolean> {
   const [earlier] = await db
@@ -573,18 +581,8 @@ async function announcedBefore(db: DbClient, clusterId: number, runId: number): 
       and(
         eq(testRunsCases.failureClusterId, clusterId),
         lt(testRunsCases.testRunId, runId),
-        or(
-          and(inArray(testRuns.status, ANNOUNCING_RUN_STATUSES), eligibleRunSql('notifications')),
-          and(
-            inArray(testRuns.status, [...UNFINISHED_RUN_STATUSES]),
-            eligibleRunSql('notifications', {
-              origin: testRuns.origin,
-              metadata: testRuns.metadata,
-              isFullRun: testRuns.isFullRun,
-              status: sql`'passed'`,
-            }),
-          ),
-        ),
+        inArray(testRuns.status, ANNOUNCING_RUN_STATUSES),
+        eligibleRunSql('notifications'),
         ne(testRuns.origin, 'import'),
       ),
     )
@@ -593,10 +591,26 @@ async function announcedBefore(db: DbClient, clusterId: number, runId: number): 
 }
 
 /**
+ * Whether the outbox records a `cluster.new` of the cluster, on any channel and
+ * in any state: some run announced it. A run whose notifications reach no
+ * channel records none.
+ */
+async function clusterNewQueued(db: DbClient, clusterId: number): Promise<boolean> {
+  const [queued] = await db
+    .select({ id: notificationDeliveries.id })
+    .from(notificationDeliveries)
+    .where(like(notificationDeliveries.dedupeKey, `${clusterNewDedupeKeyPrefix(clusterId)}%`))
+    .limit(1);
+  return queued !== undefined;
+}
+
+/**
  * The clusters run `runId` announces with `cluster.new`, when it ran to its
  * end: those it failed into that are open and not snoozed, whose first seen
- * run is still stored, and that no earlier run announcing clusters failed into,
- * whether it ended or is still unfinished.
+ * run is still stored, and that no earlier run that ran to its end and
+ * announces clusters failed into. `emitRunNotifications` then leaves out a
+ * cluster the outbox records as announced, which a later run that ended first
+ * did.
  * The finalize step reads them before the run's verdicts, which may reopen a
  * cluster a person resolved: the run announces that one as regressed.
  */
@@ -646,7 +660,8 @@ export async function clustersToAnnounce(db: DbClient, runId: number, now: Date 
  * Emit run.finished / run.failed / run.failed.default_branch notifications for a completed run,
  * plus flakiness.spike / perf.regression when the run qualifies, and cluster.new
  * for the clusters it announces: `announce`, as the finalize step read them
- * before the run's verdicts, else `clustersToAnnounce` now.
+ * before the run's verdicts, else `clustersToAnnounce` now, less those the
+ * outbox records as announced.
  * Call this after the run status is finalized.
  */
 export async function emitRunNotifications(
@@ -718,8 +733,12 @@ export async function emitRunNotifications(
 
     // cluster.new for each cluster the run announces: a cluster first seen by an
     // editor run, a partial local run or an import is announced by the first run
-    // that sends notifications, naming the run it first appeared in.
-    const announce = opts.announce ?? (await clustersToAnnounce(db, runId));
+    // that sends notifications, naming the run it first appeared in. One the
+    // outbox already records was announced by another run, read just before sending.
+    const announce: number[] = [];
+    for (const id of opts.announce ?? (await clustersToAnnounce(db, runId))) {
+      if (!(await clusterNewQueued(db, id))) announce.push(id);
+    }
     const announcedClusters = announce.length
       ? await db
           .select({
