@@ -128,6 +128,12 @@ describe('primaryOwnerForPath', () => {
   test('is null when nothing matches', () => {
     expect(primaryOwnerForPath(compile('/docs/ @writers'), 'tests/a.spec.ts')).toBeNull();
   });
+
+  test('answers at once for a rule a regular expression backtracks on', () => {
+    const started = performance.now();
+    expect(primaryOwnerForPath(compile(`${'*a'.repeat(8)}*b @team`), 'a'.repeat(40))).toBeNull();
+    expect(performance.now() - started).toBeLessThan(500);
+  });
 });
 
 describe('path patterns', () => {

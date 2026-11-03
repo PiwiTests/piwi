@@ -166,13 +166,13 @@ export function pathPatternMatcher(pattern: string): (path: string) => boolean {
   };
 }
 
-/** Rules with their compiled matchers, so a file list is matched in one pass. */
+/** Rules with their compiled matchers ({@link pathPatternMatcher}), so a file list is matched in one pass. */
 export interface CompiledCodeowners {
-  rules: Array<CodeownersRule & { regex: RegExp }>;
+  rules: Array<CodeownersRule & { matches: (path: string) => boolean }>;
 }
 
 export function compileCodeowners(rules: CodeownersRule[]): CompiledCodeowners {
-  return { rules: rules.map((rule) => ({ ...rule, regex: pathPatternToRegExp(rule.pattern) })) };
+  return { rules: rules.map((rule) => ({ ...rule, matches: pathPatternMatcher(rule.pattern) })) };
 }
 
 /**
@@ -184,7 +184,7 @@ export function ownersForPath(compiled: CompiledCodeowners, filePath: string): s
   const normalized = filePath.replace(/^\.?\//, '');
   for (let i = compiled.rules.length - 1; i >= 0; i--) {
     const rule = compiled.rules[i]!;
-    if (rule.regex.test(normalized)) return rule.owners;
+    if (rule.matches(normalized)) return rule.owners;
   }
   return [];
 }

@@ -100,6 +100,17 @@ describe('predicate matching', () => {
     expect(r.tests.map((t) => t.testCaseId)).toEqual([crit]);
   });
 
+  test('file globs ignore case, and answer at once for a glob a regular expression backtracks on', async () => {
+    await seedCase('deep', { filePath: `tests/${'a'.repeat(30)}.spec.ts` });
+    const login = await seedCase('login', { filePath: 'Tests/Login.spec.ts' });
+    const started = performance.now();
+    const r = await resolveSelectionDefinition(db, 1, {
+      include: [{ files: [`tests/${'*a'.repeat(8)}*!`, 'tests/l?gin.spec.ts'] }],
+    });
+    expect(r.tests.map((t) => t.testCaseId)).toEqual([login]);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
   test('exclude removes matched tests', async () => {
     const keep = await seedCase('keep', { tags: ['smoke'] });
     await seedCase('drop', { tags: ['smoke'], filePath: 'tests/experimental/x.spec.ts' });

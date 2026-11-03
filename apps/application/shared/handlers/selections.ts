@@ -16,6 +16,7 @@ import { eligibleExecutionSql } from '../run-eligibility';
 import { latestRunStatusSql } from './latest-run-status';
 import { finalAttemptSql, recentFlakySql, testCaseAggregates } from './test-case-aggregates';
 import { foldText } from '#shared/utils/fold-text';
+import { compileGlob, type GlobToken } from '@piwitests/core/glob';
 import {
   BUILTIN_SELECTIONS,
   getBuiltinSelection,
@@ -186,28 +187,31 @@ async function loadRecentFailRanks(db: DrizzleDB, projectId: number): Promise<Ma
 
 // ── Predicate evaluation ─────────────────────────────────────────────────────
 
-/** Convert a glob (`**`, `*`, `?`) to an anchored regex over a POSIX path. */
-function globToRegExp(glob: string): RegExp {
-  let re = '';
+/**
+ * A glob over a POSIX path as an anchored, case-insensitive matcher: `**` (and
+ * the `/` right after it) any run of characters, `*` a run within one segment,
+ * `?` one character of a segment. `compileGlob` matches in steps that grow with
+ * the glob's length times the path's, whatever the glob holds.
+ */
+function pathGlobMatcher(glob: string): (path: string) => boolean {
+  const tokens: GlobToken[] = [];
   for (let i = 0; i < glob.length; i++) {
     const c = glob[i]!;
     if (c === '*') {
       if (glob[i + 1] === '*') {
-        re += '.*';
+        tokens.push({ kind: 'run', slash: true });
         i++;
         if (glob[i + 1] === '/') i++;
       } else {
-        re += '[^/]*';
+        tokens.push({ kind: 'run', slash: false });
       }
     } else if (c === '?') {
-      re += '[^/]';
-    } else if ('\\^$.|+()[]{}'.includes(c)) {
-      re += '\\' + c;
+      tokens.push({ kind: 'one', slash: false });
     } else {
-      re += c;
+      tokens.push({ kind: 'char', char: c });
     }
   }
-  return new RegExp(`^${re}$`, 'i');
+  return compileGlob(tokens, true);
 }
 
 function matchesGroup(row: CatalogRow, group: SelectionPredicateGroup): boolean {
@@ -225,7 +229,7 @@ function matchesGroup(row: CatalogRow, group: SelectionPredicateGroup): boolean 
   if (group.feature && !(row.feature && group.feature.includes(row.feature))) return false;
   if (group.files) {
     const posix = row.filePath.replace(/\\/g, '/');
-    if (!group.files.some((g) => globToRegExp(g).test(posix))) return false;
+    if (!group.files.some((g) => pathGlobMatcher(g)(posix))) return false;
   }
   if (group.suitePath && !foldText(row.suitePath).includes(foldText(group.suitePath))) return false;
   if (group.text) {
