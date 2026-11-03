@@ -158,32 +158,31 @@ describe('stopCallSite', () => {
 
 describe('the pause gate', () => {
   it('pauses a headed local run only, outside Playwright’s Inspector', () => {
-    expect(pauseSkipReason({ ci: undefined, headless: false })).toBeNull();
-    expect(pauseSkipReason({ ci: 'false', headless: false })).toBeNull();
-    expect(pauseSkipReason({ ci: 'true', headless: false })).toMatch(/running under CI/);
-    expect(pauseSkipReason({ ci: undefined, headless: true })).toMatch(/headless/);
-    expect(pauseSkipReason({ ci: undefined, headless: undefined })).toMatch(/headless/);
-    expect(pauseSkipReason({ ci: undefined, headless: false, pwdebug: '1' })).toMatch(/PWDEBUG/);
+    expect(pauseSkipReason({ ci: false, headless: false })).toBeNull();
+    expect(pauseSkipReason({ ci: true, headless: false })).toMatch(/running under CI/);
+    expect(pauseSkipReason({ ci: false, headless: true })).toMatch(/headless/);
+    expect(pauseSkipReason({ ci: false, headless: undefined })).toMatch(/headless/);
+    expect(pauseSkipReason({ ci: false, headless: false, pwdebug: '1' })).toMatch(/PWDEBUG/);
     for (const pwdebug of ['', '0', 'false', 'console']) {
-      expect(pauseSkipReason({ ci: undefined, headless: false, pwdebug })).toBeNull();
+      expect(pauseSkipReason({ ci: false, headless: false, pwdebug })).toBeNull();
     }
   });
 
   it('pauses a headless run too while the run connection to the editor is open, never under CI or a debugger', () => {
-    expect(pauseSkipReason({ ci: undefined, headless: true, channel: true })).toBeNull();
-    expect(pauseSkipReason({ ci: undefined, headless: undefined, channel: true })).toBeNull();
-    expect(pauseSkipReason({ ci: undefined, headless: true, channel: false })).toMatch(/headless/);
-    expect(pauseSkipReason({ ci: '1', headless: true, channel: true })).toMatch(/running under CI/);
-    expect(pauseSkipReason({ ci: undefined, headless: true, channel: true, pwdebug: '1' })).toMatch(/PWDEBUG/);
-    expect(pauseSkipReason({ ci: undefined, headless: true, channel: true, debug: 'cli' })).toMatch(/--debug=cli/);
+    expect(pauseSkipReason({ ci: false, headless: true, channel: true })).toBeNull();
+    expect(pauseSkipReason({ ci: false, headless: undefined, channel: true })).toBeNull();
+    expect(pauseSkipReason({ ci: false, headless: true, channel: false })).toMatch(/headless/);
+    expect(pauseSkipReason({ ci: true, headless: true, channel: true })).toMatch(/running under CI/);
+    expect(pauseSkipReason({ ci: false, headless: true, channel: true, pwdebug: '1' })).toMatch(/PWDEBUG/);
+    expect(pauseSkipReason({ ci: false, headless: true, channel: true, debug: 'cli' })).toMatch(/--debug=cli/);
   });
 
   it('never pauses under --debug, --debug=cli included, which sets no PWDEBUG', () => {
-    expect(pauseSkipReason({ ci: undefined, headless: false, debug: 'cli' })).toBe(
+    expect(pauseSkipReason({ ci: false, headless: false, debug: 'cli' })).toBe(
       "Playwright's debugger runs the test (--debug=cli) — run without --debug",
     );
-    expect(pauseSkipReason({ ci: undefined, headless: false, debug: 'inspector' })).toMatch(/--debug=inspector/);
-    expect(pauseSkipReason({ ci: undefined, headless: false, debug: undefined })).toBeNull();
+    expect(pauseSkipReason({ ci: false, headless: false, debug: 'inspector' })).toMatch(/--debug=inspector/);
+    expect(pauseSkipReason({ ci: false, headless: false, debug: undefined })).toBeNull();
     const testInfo = {
       project: { use: { headless: false } },
       _configInternal: { configCLIOverrides: { debug: 'cli' } },
