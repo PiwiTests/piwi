@@ -12,6 +12,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import type { PiwiConnection } from '@piwitests/core/dotenv';
+import { isFlakyResult } from '@piwitests/core/status-classify';
 import { parseRunOrigin, RUN_ORIGIN_METADATA_KEY } from '@piwitests/core/wire';
 import type { PiwiContext } from './context.js';
 import type { BranchFailures, CatalogCase, RunDetails } from './piwi-client.js';
@@ -82,12 +83,25 @@ const streamKey = (connection: PiwiConnection) => `${connection.serverUrl}\n${co
 /** A run of an instance: its id is the instance's. */
 const runKey = (connection: PiwiConnection, runId: number) => `${connection.serverUrl}\n${runId}`;
 
+/**
+ * Whether a test's end passed after an earlier attempt failed or timed out: the verdict the instance stored
+ * (`passedAfterFailure`), else, from an instance that sends none, its attempt history (`isFlakyResult`), else a pass on
+ * a retry.
+ */
+function passedAfterFailure(data: Record<string, unknown>): boolean {
+  if (typeof data.passedAfterFailure === 'boolean') return data.passedAfterFailure;
+  const retries = typeof data.retries === 'number' ? data.retries : 0;
+  const earlier = (Array.isArray(data.attempts) ? (data.attempts as Array<{ retry?: unknown; status?: unknown }>) : [])
+    .filter((a) => (typeof a?.retry === 'number' ? a.retry : 0) < retries)
+    .map((a) => (typeof a?.status === 'string' ? a.status : null));
+  return earlier.length > 0 ? isFlakyResult('passed', earlier) : retries > 0;
+}
+
 /** A test's end as the gutter shows it: a pass after a failed attempt is flaky; null for an outcome it does not show. */
 function endedStatus(data: Record<string, unknown>): LiveTestStatus | null {
-  const retries = typeof data.retries === 'number' ? data.retries : 0;
   switch (data.status) {
     case 'passed':
-      return retries > 0 ? 'flaky' : 'passed';
+      return passedAfterFailure(data) ? 'flaky' : 'passed';
     case 'failed':
     case 'timedOut':
     case 'interrupted':

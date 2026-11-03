@@ -2619,13 +2619,32 @@ describe('runs as they happen', () => {
     expect(began.liveTests).toEqual([{ testCaseId: 1, status: 'running' }]);
     expect(await testLine()).toMatchObject({ line: 2, status: 'running' });
 
-    // It passes on its second attempt: flaky.
+    // It passes again on a retry of its serial group: the instance says no attempt failed, so it passed.
     pushRunEvent(60, 'test-completed', {
       title: 'pays',
       filePath: 'tests/checkout.spec.ts',
       testCaseId: 1,
       status: 'passed',
       retries: 1,
+      passedAfterFailure: false,
+      browser: 'chromium',
+    });
+    await waitFor(() =>
+      statuses[statuses.length - 1]?.contexts[0]?.liveTests?.[0]?.status === 'passed' ? true : undefined,
+    );
+
+    // It passes on its third attempt, after a failed one, as an older instance's attempt history tells: flaky.
+    pushRunEvent(60, 'test-completed', {
+      title: 'pays',
+      filePath: 'tests/checkout.spec.ts',
+      testCaseId: 1,
+      status: 'passed',
+      retries: 2,
+      attempts: [
+        { retry: 0, status: 'passed' },
+        { retry: 1, status: 'failed' },
+        { retry: 2, status: 'passed' },
+      ],
       browser: 'chromium',
     });
     await waitFor(() =>
