@@ -49,6 +49,8 @@ vi.mock('../../server/utils/oauth', () => ({
 vi.mock('../../server/utils/rate-limit', () => ({
   limitLookupMisses: async (_event: unknown, _key: string, _limit: unknown, lookup: () => Promise<unknown>) => lookup(),
   rateLimitClientIp: () => 'test',
+  takeRateLimitSlots: () => [],
+  releaseRateLimit: () => {},
 }));
 vi.mock('../../server/utils/extension-connect', () => ({
   CONNECT_RATE_LIMITS: { lookupMiss: { limit: 10, windowMs: 1000 } },

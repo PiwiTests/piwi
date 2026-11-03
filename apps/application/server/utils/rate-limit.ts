@@ -52,6 +52,30 @@ export function releaseRateLimit(key: string): void {
 }
 
 /**
+ * Take one slot of each bucket in turn, before the check they limit runs, so
+ * requests sent together count as well. The first full bucket refuses with a
+ * 429 carrying `message`, and the slots taken before it are given back.
+ * Returns the keys taken, for the caller to give back when its request turns
+ * out not to count.
+ */
+export function takeRateLimitSlots(
+  event: H3Event,
+  buckets: readonly (readonly [key: string, limit: number])[],
+  windowMs: number,
+  message: string,
+): string[] {
+  const taken: string[] = [];
+  for (const [key, limit] of buckets) {
+    if (!checkRateLimit(key, limit, windowMs)) {
+      for (const slot of taken) releaseRateLimit(slot);
+      throw rateLimitedError(event, [key], message);
+    }
+    taken.push(key);
+  }
+  return taken;
+}
+
+/**
  * Run a lookup under a limit on the lookups that miss (an unknown code or id),
  * with 429 past it. Each request takes a slot before the lookup runs, so
  * concurrent requests cannot all pass the check, and gives it back unless

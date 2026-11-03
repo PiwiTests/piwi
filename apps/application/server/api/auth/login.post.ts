@@ -1,12 +1,6 @@
 import { getDatabase } from '../../database';
 import { authUserView, verifyUser, setUserSession, isAuthEnabled } from '../../utils/auth';
-import {
-  checkRateLimit,
-  rateLimitClientIp,
-  rateLimitedError,
-  releaseRateLimit,
-  resetRateLimit,
-} from '../../utils/rate-limit';
+import { rateLimitClientIp, releaseRateLimit, resetRateLimit, takeRateLimitSlots } from '../../utils/rate-limit';
 import { USERNAME_MAX_LENGTH } from '#shared/project-access';
 import { z } from 'zod';
 
@@ -60,19 +54,16 @@ export default eventHandler(async (event) => {
   // source, so failures from elsewhere never lock the owner out below it. Every
   // attempt takes its slots before the password is checked, so attempts sent
   // together count as well; a refused attempt gives back the slots it took.
-  const buckets: [key: string, limit: number][] = [
-    [ipKey, 20],
-    [accountAddressKey, 5],
-    [accountKey, 50],
-  ];
-  const taken: string[] = [];
-  for (const [key, limit] of buckets) {
-    if (!checkRateLimit(key, limit, WINDOW_MS)) {
-      for (const slot of taken) releaseRateLimit(slot);
-      throw rateLimitedError(event, [key], 'Too many failed attempts. Please wait before trying again.');
-    }
-    taken.push(key);
-  }
+  const taken = takeRateLimitSlots(
+    event,
+    [
+      [ipKey, 20],
+      [accountAddressKey, 5],
+      [accountKey, 50],
+    ],
+    WINDOW_MS,
+    'Too many failed attempts. Please wait before trying again.',
+  );
 
   // A check that throws (a busy server's 503) found no wrong password, so it gives its slots back.
   const user = await verifyUser(event, username, password).catch((error: unknown) => {
