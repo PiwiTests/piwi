@@ -1,8 +1,11 @@
 import { describe, test, expect, afterEach } from 'vitest';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   bodyLimitError,
   MAX_REQUEST_BODY_BYTES,
-  MAX_SIGN_IN_BODY_BYTES,
+  MAX_OPEN_ROUTE_BODY_BYTES,
   readStreamWithin,
 } from '../../server/utils/body-limit';
 import { DEFAULT_MAX_SUBMIT_BYTES } from '#shared/upload-limits';
@@ -44,7 +47,7 @@ describe('bodyLimitError', () => {
   });
 });
 
-describe('the routes that read a body before anyone is signed in', () => {
+describe('the routes that read a body before checking any credential', () => {
   const paths = [
     '/api/auth/login',
     '/api/auth/setup',
@@ -53,10 +56,14 @@ describe('the routes that read a body before anyone is signed in', () => {
     '/oauth/register',
     '/oauth/token',
     '/oauth/revoke',
+    '/api/extension/connect',
+    '/api/extension/connect/token',
+    '/api/desktop/picker-pairings',
+    '/api/test-runs/12/heartbeat',
   ];
 
   test('take up to 64 KiB, and a 413 past that', () => {
-    expect(MAX_SIGN_IN_BODY_BYTES).toBe(64 * 1024);
+    expect(MAX_OPEN_ROUTE_BODY_BYTES).toBe(64 * 1024);
     for (const path of paths) {
       for (const sent of [path, `${path}/`, `${path}?next=/`]) {
         expect(bodyLimitError({ ...json, path: sent, contentLength: String(64 * 1024) })).toBeNull();
@@ -68,6 +75,76 @@ describe('the routes that read a body before anyone is signed in', () => {
       expect(bodyLimitError({ ...json, path, transferEncoding: 'chunked' })?.statusCode).toBe(411);
     }
     expect(bodyLimitError({ ...json, path: '/api/auth/change-password', contentLength: '100000' })).toBeNull();
+    expect(bodyLimitError({ ...json, path: '/api/extension/connect/decision', contentLength: '100000' })).toBeNull();
+    expect(bodyLimitError({ ...json, path: '/api/test-runs/12/events', contentLength: '100000' })).toBeNull();
+  });
+
+  /**
+   * The routes that declare no `x-required-permission` (open to anyone, or
+   * authenticated by a token of their own) and read a body, but take a larger
+   * one than the open routes' cap, or read it only once a credential checked
+   * out. Every other such route is under the cap. Keys are paths relative to
+   * the app directory.
+   */
+  const LARGER_OR_AFTER_CREDENTIAL: Record<string, string> = {
+    'server/api/assistant/conversations/[id]/mcp.post.ts':
+      'Reads its body after the bearer token of a running answer, from this machine only.',
+    'server/api/integrations/jira/webhook/[token].post.ts':
+      "Reads its body after the token in its path names a connection; a Jira issue's payload can pass 64 KiB.",
+    'server/api/test-runs/[id]/begin.post.ts':
+      "Carries the run's metadata and filter details, which can pass 64 KiB, with the setup token in the body.",
+    'server/api/test-runs/[id]/case-files.post.ts': 'A multipart upload, streamed under caps of its own.',
+    'server/api/test-runs/[id]/events.post.ts': 'A batch of test events, up to its own 10 MB limit.',
+    'server/api/test-runs/[id]/finish.post.ts':
+      "Carries the run's closing data (hook steps, errors, metadata), which can pass 64 KiB.",
+    'server/api/test-runs/[id]/live-resources.post.ts':
+      'A post that resets the series carries every point of the run so far, which can pass 64 KiB.',
+    'server/api/test-runs/[id]/live-view.post.ts':
+      "Reads its body after the run's live view key, up to its own limit on a message.",
+    'server/routes/mcp.post.ts': 'Reads its body after `requireMcpAuth`.',
+  };
+
+  const appDir = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+  const READS_BODY =
+    /\b(?:readBody|readRawBody|readOAuthParams|readMultipartFormData|readFormData|readValidatedBody|getRequestWebStream|readJsonBodyWithin|streamMultipart)(?:<[^()]*>)?\(/;
+
+  /** Every route file that takes a body (any method but GET), relative to the app directory. */
+  function bodyRouteFiles(): string[] {
+    const files: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const path = join(dir, name);
+        if (statSync(path).isDirectory()) walk(path);
+        else if (/\.(?:post|put|patch|delete)\.ts$/.test(name)) files.push(relative(appDir, path));
+      }
+    };
+    for (const dir of ['server/api', 'server/routes']) walk(join(appDir, dir));
+    return files.sort();
+  }
+
+  /** The request a route file answers: its method, and its path with `12` for each parameter. */
+  function routeRequest(file: string): { method: string; path: string } {
+    const [, route, method] = file.match(/^server(?:\/routes)?(\/.*?)(?:\/index)?\.(post|put|patch|delete)\.ts$/)!;
+    return { method: method!.toUpperCase(), path: route!.replace(/\[[^\]]+\]/g, '12') };
+  }
+
+  test('every route that reads a body before any credential is under the cap, or listed with its reason', () => {
+    const open = bodyRouteFiles().filter((file) => {
+      const src = readFileSync(join(appDir, file), 'utf8');
+      return !src.includes('x-required-permission') && READS_BODY.test(src);
+    });
+    expect(open.length).toBeGreaterThan(10);
+    const uncapped = open
+      .filter((file) => !(file in LARGER_OR_AFTER_CREDENTIAL))
+      .filter((file) => {
+        const request = { ...routeRequest(file), contentType: 'application/json' };
+        return bodyLimitError({ ...request, contentLength: String(MAX_OPEN_ROUTE_BODY_BYTES + 1) })?.statusCode !== 413;
+      });
+    expect(
+      uncapped,
+      'Add these routes to OPEN_ROUTE_PATHS in server/utils/body-limit.ts, or to LARGER_OR_AFTER_CREDENTIAL with the reason',
+    ).toEqual([]);
+    expect(Object.keys(LARGER_OR_AFTER_CREDENTIAL).filter((file) => !open.includes(file))).toEqual([]);
   });
 });
 

@@ -5,23 +5,23 @@ import { resolveMaxSubmitBytes } from './upload-limits';
 /** Largest non-multipart request body the server reads. Uploads are multipart and carry their own limits. */
 export const MAX_REQUEST_BODY_BYTES = 32 * 1024 * 1024;
 
-/** Largest body read by a route that takes requests from anyone, signed in or not. */
-export const MAX_SIGN_IN_BODY_BYTES = 64 * 1024;
+/** Largest body read by a route that reads it before checking any credential. */
+export const MAX_OPEN_ROUTE_BODY_BYTES = 64 * 1024;
 
 // The reporter's batch submit, and the results of a run it uploads in parts, carry a whole run as one JSON document:
 // up to `PIWI_SUBMIT_MAX_BYTES` (`resolveMaxSubmitBytes`).
 const SUBMIT_PATHS = ['/api/test-runs/submit', '/api/test-runs/upload/results'];
 
-// The routes that read a body from anyone, signed in or not: sign-in, the first administrator, the password reset, and
-// the OAuth registration, token and revocation endpoints of MCP clients.
-const SIGN_IN_PATHS = [
-  '/api/auth/login',
-  '/api/auth/setup',
-  '/api/auth/forgot-password',
-  '/api/auth/reset-password',
-  '/oauth/register',
-  '/oauth/token',
-  '/oauth/revoke',
+// The routes that read a small body before checking any credential: sign-in, the first administrator, the password
+// reset, the OAuth registration, token and revocation endpoints of MCP clients, the connect request of Piwi Picker and
+// the editors and its poll, the desktop app's pairing request, and a streaming run's heartbeat, whose body carries its
+// stream token.
+const OPEN_ROUTE_PATHS = [
+  /^\/api\/auth\/(?:login|setup|forgot-password|reset-password)$/,
+  /^\/oauth\/(?:register|token|revoke)$/,
+  /^\/api\/extension\/connect(?:\/token)?$/,
+  /^\/api\/desktop\/picker-pairings$/,
+  /^\/api\/test-runs\/[^/]+\/heartbeat$/,
 ];
 
 // Routes that parse a multipart body as a stream (`streamMultipart`), with caps
@@ -49,8 +49,8 @@ function bodyLimitFor(path: string): { maxBytes: number; message: string } {
       message: `Request body over ${Math.floor(maxBytes / 1024 / 1024)} MB: PIWI_SUBMIT_MAX_BYTES sets the limit on a run's results`,
     };
   }
-  if (SIGN_IN_PATHS.includes(path)) {
-    return { maxBytes: MAX_SIGN_IN_BODY_BYTES, message: `Request body over ${MAX_SIGN_IN_BODY_BYTES / 1024} KB` };
+  if (OPEN_ROUTE_PATHS.some((route) => route.test(path))) {
+    return { maxBytes: MAX_OPEN_ROUTE_BODY_BYTES, message: `Request body over ${MAX_OPEN_ROUTE_BODY_BYTES / 1024} KB` };
   }
   return { maxBytes: MAX_REQUEST_BODY_BYTES, message: `Request body over ${MAX_REQUEST_BODY_BYTES / 1024 / 1024} MB` };
 }
@@ -59,8 +59,8 @@ function bodyLimitFor(path: string): { maxBytes: number; message: string } {
  * Why a request body must be refused before any route reads it, or null. A
  * body has to declare its size, since h3 buffers it whole: a chunked one (no
  * `Content-Length`) gets 411, one over its route's limit gets 413: a run's
- * results sent as JSON take up to `PIWI_SUBMIT_MAX_BYTES`, a route that takes
- * a body from anyone {@link MAX_SIGN_IN_BODY_BYTES}, any other body
+ * results sent as JSON take up to `PIWI_SUBMIT_MAX_BYTES`, a route that reads
+ * a body before any credential {@link MAX_OPEN_ROUTE_BODY_BYTES}, any other body
  * {@link MAX_REQUEST_BODY_BYTES}. Routes that check `Content-Length` against a
  * smaller limit can then rely on it. A multipart body sent to a route that
  * streams it is left to that route.
