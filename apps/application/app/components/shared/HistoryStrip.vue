@@ -46,15 +46,15 @@ const stripLabelId = useId();
         <UTooltip
           v-for="point in strip"
           :key="point.id"
-          :text="`Execution in run #${point.runId}: ${formatExecutionStatus(point.status, point.retries)}`"
+          :text="`Execution in run #${point.runId}: ${formatExecutionStatus(point.status, point.passedAfterFailure)}`"
         >
           <NuxtLink
             :to="`/test-run-cases/${point.id}`"
-            :aria-label="`Execution in run #${point.runId}: ${formatExecutionStatus(point.status, point.retries)}`"
+            :aria-label="`Execution in run #${point.runId}: ${formatExecutionStatus(point.status, point.passedAfterFailure)}`"
             :aria-current="point.id === currentId ? 'true' : undefined"
             class="size-3.5 rounded-sm inline-block transition-opacity hover:opacity-80 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             :class="[
-              statusPalette(point.status, point.retries).bg,
+              statusPalette(point.status, point.passedAfterFailure).bg,
               point.id === currentId ? CURRENT_ITEM_RING_CLASS : '',
             ]"
           />

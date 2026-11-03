@@ -336,14 +336,14 @@ export function formatStatusLabel(status: string): string {
   return status;
 }
 
-/** Status label for one execution: a pass that needed a retry reads "passed on retry". */
-export function formatExecutionStatus(status: string, retries?: number | null): string {
-  return statusPaletteKey(status, retries) === 'flaky' ? 'passed on retry' : formatStatusLabel(status);
+/** Status label for one execution: a pass after a failed attempt (`flaky`, its verdict) reads "passed on retry". */
+export function formatExecutionStatus(status: string, flaky?: boolean | null): string {
+  return statusPaletteKey(status, flaky) === 'flaky' ? 'passed on retry' : formatStatusLabel(status);
 }
 
 /** The status chip's label: the execution's status in sentence case ("Passed on retry", "Didn't run"). */
-export function statusChipLabel(status: string, retries?: number | null): string {
-  const label = formatExecutionStatus(status, retries);
+export function statusChipLabel(status: string, flaky?: boolean | null): string {
+  const label = formatExecutionStatus(status, flaky);
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 

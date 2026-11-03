@@ -125,14 +125,15 @@ export const STATUS_PALETTE: Record<StatusPaletteKey, StatusPaletteEntry> = {
  * Palette key for a raw test or run status. Timed-out counts as failed (the run
  * counters fold it the same way); interrupted is an outcome of none, in its
  * neutral entry, as the counters leave it out of every bucket; an unknown or
- * cancelled status reads as neutral, like skipped. Pass an execution's
- * `retries` to color a pass that needed a retry as flaky, the way the run
- * counters count it.
+ * cancelled status reads as neutral, like skipped. Pass an execution's verdict
+ * (`flaky`: it passed after an earlier attempt failed or timed out, its stored
+ * `passedAfterFailure` or `isFlakyExecution`) to color it as flaky, the way the
+ * run counters count it.
  */
-export function statusPaletteKey(status: string | null | undefined, retries?: number | null): StatusPaletteKey {
+export function statusPaletteKey(status: string | null | undefined, flaky?: boolean | null): StatusPaletteKey {
   switch (status) {
     case 'passed':
-      return (retries ?? 0) > 0 ? 'flaky' : 'passed';
+      return flaky ? 'flaky' : 'passed';
     case 'failed':
     case 'timedout':
     case 'timedOut':
@@ -155,6 +156,6 @@ export function statusPaletteKey(status: string | null | undefined, retries?: nu
 }
 
 /** Palette entry for a raw test or run status (see `statusPaletteKey`). */
-export function statusPalette(status: string | null | undefined, retries?: number | null): StatusPaletteEntry {
-  return STATUS_PALETTE[statusPaletteKey(status, retries)];
+export function statusPalette(status: string | null | undefined, flaky?: boolean | null): StatusPaletteEntry {
+  return STATUS_PALETTE[statusPaletteKey(status, flaky)];
 }

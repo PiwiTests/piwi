@@ -279,9 +279,8 @@ const hasNoEvidence = computed(
 const showFixturesFooter = computed(() => fixturesState.value === 'undecided');
 
 function computeDefault(): TabValue {
-  // A pass that needed a retry leads with what differed between its attempts.
-  const retries = Number(props.testCase?.retries ?? 0);
-  if (status.value === 'passed' && retries > 0 && hasMultipleAttempts.value) return 'attempts';
+  // A pass after a failed attempt leads with what differed between its attempts.
+  if (status.value === 'passed' && props.testCase?.passedAfterFailure && hasMultipleAttempts.value) return 'attempts';
   // A passing execution has no failure to lead with — open on the Timeline.
   if (!hasError.value) return 'timeline';
 

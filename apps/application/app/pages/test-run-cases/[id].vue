@@ -69,7 +69,9 @@ const isProblem = computed(() => {
   const s = testCase.value?.status;
   return s === 'failed' || s === 'timedout' || s === 'timedOut' || s === 'didnotrun';
 });
-const isPassedOnRetry = computed(() => statusPaletteKey(testCase.value?.status, testCase.value?.retries) === 'flaky');
+const isPassedOnRetry = computed(
+  () => statusPaletteKey(testCase.value?.status, testCase.value?.passedAfterFailure) === 'flaky',
+);
 
 // The deterministic clues and the story that chains them: Most likely chooses
 // between them and the cluster's diagnosis, folds every clue under its
@@ -394,7 +396,7 @@ const quarantined = computed(() => Boolean((testCase.value as { quarantined?: bo
 
 // The situation block's edge, in this execution's outcome color.
 const statusEdge = computed(() =>
-  testCase.value ? statusPalette(testCase.value.status, testCase.value.retries).color : null,
+  testCase.value ? statusPalette(testCase.value.status, testCase.value.passedAfterFailure).color : null,
 );
 
 /**
@@ -833,7 +835,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
           <!-- Line 1: identity kicker — status, the test's title path (file › describe › title), marks, quarantine -->
           <template #identity>
             <div class="flex flex-wrap items-center gap-x-2 gap-y-1" data-tour="execution-heading">
-              <StatusChip :status="testCase?.status ?? ''" :retries="testCase?.retries" class="shrink-0" />
+              <StatusChip :status="testCase?.status ?? ''" :flaky="testCase?.passedAfterFailure" class="shrink-0" />
               <!-- The path in the meta style, the title in the body style -->
               <TestTitlePath
                 data-shot="test-title-path"

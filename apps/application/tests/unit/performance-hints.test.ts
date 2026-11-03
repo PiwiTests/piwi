@@ -50,7 +50,7 @@ describe('getPerformanceHints', () => {
   });
 
   test('flags a passed test that needed retries (flaky)', () => {
-    const hints = getPerformanceHints({ status: 'passed', retries: 2, steps: [] });
+    const hints = getPerformanceHints({ status: 'passed', retries: 2, passedAfterFailure: true, steps: [] });
     expect(hints).toHaveLength(1);
     expect(hints[0]).toMatchObject({ type: 'warning', message: 'Flaky test — passed after retries' });
     expect(hints[0]!.details).toContain('2 retries');
@@ -58,6 +58,10 @@ describe('getPerformanceHints', () => {
 
   test('does not flag retries on a failed test', () => {
     expect(getPerformanceHints({ status: 'failed', retries: 2, steps: [] })).toEqual([]);
+  });
+
+  test('does not flag a pass on a retry after attempts that passed', () => {
+    expect(getPerformanceHints({ status: 'passed', retries: 1, passedAfterFailure: false, steps: [] })).toEqual([]);
   });
 
   test('flags a slow assertion (> 2s), picking the slowest one', () => {
@@ -76,6 +80,7 @@ describe('getPerformanceHints', () => {
     const hints = getPerformanceHints({
       status: 'passed',
       retries: 1,
+      passedAfterFailure: true,
       steps: [{ title: 'page.goto', duration: 4000, category: 'navigation' }],
     });
     expect(hints.map((h) => h.message).sort()).toEqual([

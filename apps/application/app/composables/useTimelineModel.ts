@@ -7,6 +7,7 @@ import { pauseSpans, pausedOverlap } from '#shared/step-analysis';
 import { formatTimelineTime } from '~/utils/timeline';
 import type { TestStepEventHook } from '#shared/types';
 import { testAttemptKey } from '~/utils/test-attempts';
+import { isFlakyExecution } from '#shared/utils/test-counts';
 
 /**
  * What a timeline bar represents; drives rendering, filtering and header counts.
@@ -54,8 +55,10 @@ export interface TimelineItem {
   parentTitle?: string | null;
   /** Lock names this execution held — test bars only (best effort). */
   locks?: string[] | null;
-  /** Retries the execution needed — test bars only; a pass after a retry reads as flaky. */
+  /** Retries the execution needed — test bars only. */
   retries?: number | null;
+  /** Passed after an earlier attempt failed or timed out (`isFlakyExecution`) — test bars only. */
+  flaky?: boolean;
   /**
    * The bars of every attempt of this test in the run, first attempt first —
    * test bars of a test that ran more than once only, one array shared by them.
@@ -611,6 +614,7 @@ export function useTimelineModel(props: TimelineModelInput): {
             rowIndex: baseLane,
             locks: tc.locks ?? null,
             retries: tc.retries ?? null,
+            flaky: isFlakyExecution(tc),
             reportedDuration: duration - reported >= UNCOUNTED_HOOK_TIME_MS ? reported : null,
             ...(pausedMs > 0 ? { pausedMs } : {}),
             expanded: expanded?.has(tc.executionId) ?? false,

@@ -10,6 +10,8 @@ interface PerformanceHint {
 interface TestCaseData {
   duration?: number | null;
   retries?: number | null;
+  /** Passed after an earlier attempt failed or timed out (`passed_after_failure`). */
+  passedAfterFailure?: boolean | null;
   status?: string;
   steps?: Array<{ title: string; duration: number; category: string; startTime?: number | null }> | null;
   /** The test's stops at Piwi's pause bar, in epoch ms: a step's time stopped is left out of its hint. */
@@ -64,7 +66,7 @@ export function getPerformanceHints(testCase: TestCaseData): PerformanceHint[] {
   }
 
   // Unstable locator (flaky test)
-  if (testCase.status === 'passed' && (testCase.retries || 0) > 0) {
+  if (testCase.status === 'passed' && testCase.passedAfterFailure) {
     hints.push({
       type: 'warning',
       message: 'Flaky test — passed after retries',
