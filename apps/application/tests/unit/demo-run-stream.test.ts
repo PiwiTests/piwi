@@ -38,6 +38,7 @@ beforeAll(async () => {
   await db.insert(schema.testRuns).values([
     { id: 1, projectId: 1, status: 'running', startTime: new Date() },
     { id: 2, projectId: 1, status: 'passed', startTime: new Date(), totalTests: 1, passedTests: 1, duration: 900 },
+    { id: 3, projectId: 1, status: 'initializing', startTime: new Date() },
   ]);
   await db
     .insert(schema.testRunsCases)
@@ -76,6 +77,10 @@ describe('the demo run stream catch-up', () => {
         data: expect.objectContaining({ status: 'passed', duration: 900 }),
       }),
     ]);
+  });
+
+  test('sends no run-finished for a run still initializing, which the demo run page listens to', async () => {
+    expect((await catchUp(3)).events).toEqual([]);
   });
 
   test('answers 404 for a run that does not exist', async () => {

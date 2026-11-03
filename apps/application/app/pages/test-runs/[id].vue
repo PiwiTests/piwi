@@ -582,9 +582,8 @@ function disconnectStream() {
 }
 
 // A run shown as initializing is refetched once it starts, and then streams.
-// The demo's run events replay nothing on connect, so in demo mode the page
-// already listens while the run initializes, for the tests that begin before
-// the refetch lands.
+// In demo mode the page already listens while the run initializes, for the
+// tests that begin before the refetch lands.
 useRunStart(Number(runId), () => testRun.value?.status, refresh);
 const shouldStream = computed(() => isLive.value || (isDemoMode && testRun.value?.status === 'initializing'));
 

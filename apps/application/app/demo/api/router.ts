@@ -409,6 +409,7 @@ import {
   apiLiveResourcesTestRun,
 } from './reporter';
 import { demoRunningCases } from './stuck-tests';
+import { UNFINISHED_RUN_STATUSES } from '#shared/run-eligibility';
 import { runFinishedEventData, storedCaseEventData } from '~~/server/utils/run-stream-catch-up';
 import { apiCreateUserApiKey } from './users';
 import { apiGetDemoFile } from './files';
@@ -1974,7 +1975,8 @@ const routes: RouteEntry[] = [
       const [run] = await db.select().from(testRuns).where(eq(testRuns.id, id));
       if (!run) throw demoHttpError(404, 'Test run not found');
       const event = (type: string, data: Record<string, unknown>) => ({ type, data, seq: 0, timestamp: Date.now() });
-      if (run.status !== 'running' && run.status !== 'finalizing') {
+      // An initializing run is still to come: the demo's run page listens to it before its tests begin.
+      if (!(UNFINISHED_RUN_STATUSES as readonly string[]).includes(run.status)) {
         return { events: [event('run-finished', runFinishedEventData(run))] };
       }
       return {
