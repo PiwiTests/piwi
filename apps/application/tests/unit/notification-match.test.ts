@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'vitest';
+import { describe, test, expect, vi } from 'vitest';
 import {
   buildNotificationDedupeKey,
   passesSubscriptionFilters,
@@ -12,6 +12,19 @@ import {
   type DiagnosisCompletedPayload,
   type AutoHealPrOpenedPayload,
 } from '#shared/notification-events';
+
+// Counts the patterns compiled, the real matcher behind them.
+const glob = vi.hoisted(() => ({ compiled: [] as string[] }));
+vi.mock('@piwitests/core/glob', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@piwitests/core/glob')>();
+  return {
+    ...actual,
+    globMatcher: (...args: Parameters<typeof actual.globMatcher>) => {
+      glob.compiled.push(args[0]);
+      return actual.globMatcher(...args);
+    },
+  };
+});
 
 const runPayload: RunFinishedPayload = {
   runId: 7,
@@ -212,6 +225,20 @@ describe('matchesNamePattern', () => {
     expect(matchesNamePattern('Release/1', ['release/*'])).toBe(false);
     expect(matchesNamePattern('hotfix/release/1', ['release/*'])).toBe(false);
     expect(matchesNamePattern('release/1-old', ['*1'])).toBe(false);
+  });
+
+  test('compiles a pattern once, and keeps a bounded number of them', () => {
+    glob.compiled = [];
+    for (let i = 0; i < 3; i++) {
+      expect(matchesNamePattern('cache/1', ['cache-main', 'cache-hotfix/*', 'cache/*'])).toBe(true);
+    }
+    expect(glob.compiled).toEqual(['cache-hotfix/*', 'cache/*']);
+
+    // Many more patterns than the cache keeps push the first out: it is compiled again.
+    for (let i = 0; i < 2000; i++) matchesNamePattern('x', [`cache-${i}-*`]);
+    glob.compiled = [];
+    expect(matchesNamePattern('cache/1', ['cache/*'])).toBe(true);
+    expect(glob.compiled).toEqual(['cache/*']);
   });
 
   test('answers at once for a pattern a regular expression backtracks on', () => {

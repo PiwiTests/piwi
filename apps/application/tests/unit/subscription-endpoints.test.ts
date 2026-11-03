@@ -5,7 +5,11 @@ import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { apiError } from '../../server/utils/api-error';
 import { passesSubscriptionFilters, type RunFinishedPayload } from '#shared/notification-events';
-import { NAME_PATTERN_LIMITS, subscriptionFiltersSchema } from '#shared/subscription-filters';
+import {
+  NAME_PATTERN_LIMITS,
+  NAME_PATTERNS_TOTAL_LIMIT,
+  subscriptionFiltersSchema,
+} from '#shared/subscription-filters';
 import { migrateToLatest } from './temp-db';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
@@ -189,6 +193,23 @@ describe('subscription input bounds', () => {
         body: { filters: { branches: ['*'.repeat(11)] } },
       }),
     ).rejects.toMatchObject(refused);
+  });
+
+  test('refuses branch and environment patterns over 2,000 characters together, saying so', async () => {
+    const refused = { statusCode: 400, message: NAME_PATTERNS_TOTAL_LIMIT };
+    // Patterns of 200 characters each.
+    const patterns = (count: number, prefix: string) =>
+      Array.from({ length: count }, (_, i) => `${prefix}${i}-*`.padEnd(200, 'x'));
+    await expect(create({ branches: patterns(10, 'b') })).resolves.toBeTruthy();
+    await expect(create({ branches: patterns(6, 'b'), environments: patterns(5, 'e') })).rejects.toMatchObject(refused);
+    const { subscription } = await create({ branches: ['main'] });
+    await expect(
+      updateSubscription({
+        params: { id: String(subscription.id) },
+        body: { filters: { branches: patterns(5, 'b'), environments: patterns(6, 'e') } },
+      }),
+    ).rejects.toMatchObject(refused);
+    expect(await storedFilters(subscription.id)).toEqual({ branches: ['main'] });
   });
 
   test('refuses an event list longer than the events there are', async () => {

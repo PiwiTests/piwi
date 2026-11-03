@@ -14,7 +14,7 @@ defineRouteMeta({
     tags: ['Notifications'],
     summary: 'Create a subscription',
     description:
-      'Creates a new subscription for the current user. Administrators can create global (instance-wide) subscriptions; with authentication disabled every subscription is global. Optional `filters` narrow what is delivered: `branches` and `environments` (exact names or `*` patterns such as `release/*`, each of at most 200 characters and 10 `*`, matched against the run every run-scoped event comes from), `statuses`, `defaultBranchOnly`, `owners`, `flakinessThreshold` and `perfRegressionPct`.',
+      'Creates a new subscription for the current user. Administrators can create global (instance-wide) subscriptions; with authentication disabled every subscription is global. Optional `filters` narrow what is delivered: `branches` and `environments` (exact names or `*` patterns such as `release/*`, each of at most 200 characters and 10 `*` and all of them at most 2,000 characters together, matched against the run every run-scoped event comes from), `statuses`, `defaultBranchOnly`, `owners`, `flakinessThreshold` and `perfRegressionPct`.',
     'x-required-permission': 'signed-in',
   },
 });

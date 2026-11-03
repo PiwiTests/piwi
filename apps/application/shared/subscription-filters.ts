@@ -15,6 +15,12 @@ const MAX_NAME_PATTERN_STARS = 10;
 /** What a refused branch or environment pattern answers. */
 export const NAME_PATTERN_LIMITS = `A branch or environment pattern holds at most ${MAX_NAME_PATTERN_LENGTH} characters and ${MAX_NAME_PATTERN_STARS} "*"`;
 
+/** The most characters the branch and environment patterns of one subscription hold together. */
+const MAX_NAME_PATTERNS_TOTAL = 2000;
+
+/** What a subscription whose branch and environment patterns are too long together answers. */
+export const NAME_PATTERNS_TOTAL_LIMIT = `The branch and environment patterns of a subscription hold at most ${MAX_NAME_PATTERNS_TOTAL} characters together`;
+
 /** Branch or environment names, each an exact name or a `*` pattern. */
 const namePatterns = z
   .array(
@@ -28,21 +34,29 @@ const namePatterns = z
   .max(MAX_FILTER_VALUES);
 
 /** The delivery filters a subscription stores, as the create and update endpoints validate them. */
-export const subscriptionFiltersSchema = z.object({
-  branches: namePatterns.optional(),
-  environments: namePatterns.optional(),
-  statuses: filterValues.optional(),
-  defaultBranchOnly: z.boolean().optional(),
-  owners: filterValues.optional(),
-  flakinessThreshold: z.number().min(0).max(1).optional(),
-  perfRegressionPct: z.number().min(0).optional(),
-}) satisfies z.ZodType<SubscriptionFilters>;
+export const subscriptionFiltersSchema = z
+  .object({
+    branches: namePatterns.optional(),
+    environments: namePatterns.optional(),
+    statuses: filterValues.optional(),
+    defaultBranchOnly: z.boolean().optional(),
+    owners: filterValues.optional(),
+    flakinessThreshold: z.number().min(0).max(1).optional(),
+    perfRegressionPct: z.number().min(0).optional(),
+  })
+  .refine(
+    (filters) =>
+      [...(filters.branches ?? []), ...(filters.environments ?? [])].reduce((sum, p) => sum + p.length, 0) <=
+      MAX_NAME_PATTERNS_TOTAL,
+    NAME_PATTERNS_TOTAL_LIMIT,
+  ) satisfies z.ZodType<SubscriptionFilters>;
+
+/** The refusals that name a limit, answered as they are. */
+const LIMIT_MESSAGES: ReadonlySet<string> = new Set([NAME_PATTERN_LIMITS, NAME_PATTERNS_TOTAL_LIMIT]);
 
 /** The message a subscription body `subscriptionFiltersSchema` refused answers with. */
 export function subscriptionFiltersError(error: z.ZodError): string {
-  return error.issues.some((issue) => issue.message === NAME_PATTERN_LIMITS)
-    ? NAME_PATTERN_LIMITS
-    : 'Invalid request body';
+  return error.issues.find((issue) => LIMIT_MESSAGES.has(issue.message))?.message ?? 'Invalid request body';
 }
 
 /** When a digest subscription sends: a time of day, `HH:MM` (or `H:MM`), in UTC. */

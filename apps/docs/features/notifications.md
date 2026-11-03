@@ -134,8 +134,8 @@ The subscriptions REST API (see the [API docs](https://piwitests.dev/demo/docs))
 - **Filters**: `branches` and `environments` as above; for run events, status; **owner**, which applies to the
   `run.*` events, `flakiness.spike`, `perf.regression`, `cluster.new` and `test.stuck` and delivers them only when a
   test behind the event belongs to that team (see [Tags & ownership](/guide/concepts#tags-ownership)); `flakinessThreshold`
-  (a 0–1 rate) and `perfRegressionPct`. Each list holds at most 100 values of up to 256 characters, and a branch or
-  environment pattern at most 200 characters and 10 `*`.
+  (a 0–1 rate) and `perfRegressionPct`. Lists hold up to 100 values of at most 256 characters; branch and environment
+  patterns, up to 200 characters and 10 `*` each, 2,000 together.
 - **Mode**: `realtime`, sent as events happen, or `digest` with `digestAt` (`HH:MM`, UTC, from `00:00` to `23:59`),
   held until then and sent as **one combined message** per email, Slack or Teams channel. Events of a project the
   subscriber can no longer open by then are dropped.
