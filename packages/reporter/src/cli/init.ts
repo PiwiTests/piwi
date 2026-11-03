@@ -113,8 +113,9 @@ Options:
   --desktop-app <mode> Write desktopApp into the config: "prefer" sends local runs to the
                        Piwi desktop app while it runs, and CI runs to --server-url
   --api-key <key>      API key to write into .env (env PIWI_API_KEY), where the reporter
-                       reads it; never into a .env git tracks or cannot say it does not.
-                       Omit to keep it a .env.example placeholder you fill in yourself.
+                       reads it; never into a .env git tracks or cannot say it does not,
+                       nor through a link. Omit to keep it a .env.example placeholder you
+                       fill in yourself.
   --cwd <path>         Project root to operate on (default: current directory)
   --skills <list>      Comma-separated skills to install, or "all" / "none"
                        (default: ${WORKFLOW_SKILLS.join(', ')})
@@ -347,22 +348,30 @@ interface EnvKeyBlock {
 
 const KEY_IN_ENVIRONMENT = 'set PIWI_API_KEY in the environment (in CI, as a secret)';
 
-/** What keeps the API key out of the `.env` in `root`, where a key written could be committed; null when nothing does. */
+/**
+ * What keeps the API key out of the `.env` in `root`, where a key written could be committed: git tracking it, git
+ * giving no answer, or a `.env` that is a link (symbolic or hard), whose other file git is not asked about. Null when
+ * nothing does.
+ */
 function envKeyBlock(root: string): EnvKeyBlock | null {
-  switch (gitTracking(root, '.env')) {
-    case 'tracked':
-      return {
-        why: 'git tracks .env',
-        instead: `${KEY_IN_ENVIRONMENT}, or untrack the file with \`git rm --cached .env\``,
-      };
-    case 'unknown':
-      return {
-        why: 'git did not say whether it tracks .env',
-        instead: `${KEY_IN_ENVIRONMENT}, or make \`git ls-files .env\` work here`,
-      };
-    case 'untracked':
-      return null;
+  const tracking = gitTracking(root, '.env');
+  if (tracking === 'tracked') {
+    return {
+      why: 'git tracks .env',
+      instead: `${KEY_IN_ENVIRONMENT}, or untrack the file with \`git rm --cached .env\``,
+    };
   }
+  if (tracking === 'unknown') {
+    return {
+      why: 'git did not say whether it tracks .env',
+      instead: `${KEY_IN_ENVIRONMENT}, or make \`git ls-files .env\` work here`,
+    };
+  }
+  const env = fs.lstatSync(path.join(root, '.env'), { throwIfNoEntry: false });
+  if (env && (env.isSymbolicLink() || env.nlink > 1)) {
+    return { why: '.env is a link', instead: `${KEY_IN_ENVIRONMENT}, or put a file of its own in place of the link` };
+  }
+  return null;
 }
 
 /** The `.env` steps; `envBlock` when the `.env` takes no key. */

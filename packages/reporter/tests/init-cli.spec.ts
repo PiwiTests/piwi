@@ -243,6 +243,29 @@ describe('runInit', () => {
     expect(fs.readFileSync(path.join(root, '.env'), 'utf-8')).toContain('PIWI_API_KEY=pd_secret');
   });
 
+  it('writes no key through a .env that is a link', async () => {
+    write('shared.env', 'BASE_URL=http://localhost:5173\n');
+    const project = path.join(root, 'e2e');
+    write('e2e/package.json', JSON.stringify({ name: 'e2e' }));
+    write('e2e/playwright.config.ts', CONFIG);
+    try {
+      fs.symlinkSync(path.join('..', 'shared.env'), path.join(project, '.env'));
+    } catch {
+      return; // creating a link needs a privilege some systems do not grant
+    }
+    const logs = captureLogs();
+    expect(await runInit(['--no-install', '--no-skills', '--api-key', 'pd_secret'], EMPTY_ENV, project)).toBe(0);
+    expect(fs.readFileSync(path.join(root, 'shared.env'), 'utf-8')).toBe('BASE_URL=http://localhost:5173\n');
+    expect(fs.existsSync(path.join(project, '.gitignore'))).toBe(false);
+    expect(logs.join('\n')).toContain('! [manual] env .env — .env is a link, so the API key is not written into it');
+
+    // A hard link is another name of the same file.
+    fs.rmSync(path.join(project, '.env'));
+    fs.linkSync(path.join(root, 'shared.env'), path.join(project, '.env'));
+    await runInit(['--no-install', '--no-skills', '--api-key', 'pd_secret'], EMPTY_ENV, project);
+    expect(fs.readFileSync(path.join(root, 'shared.env'), 'utf-8')).toBe('BASE_URL=http://localhost:5173\n');
+  });
+
   it('does not create a real .env when no key is given', async () => {
     scaffoldProject();
     await runInit(['--no-install'], EMPTY_ENV, root);
