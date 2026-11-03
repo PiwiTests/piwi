@@ -314,7 +314,7 @@ server {
 }
 ```
 
-When auth is enabled, set `PIWI_SITE_URL` to the public HTTPS URL so email links and OAuth callbacks point at the right origin, and set `PIWI_TRUST_PROXY=true` (step 4 of the [production checklist](./production-checklist#before-you-expose-it)).
+When auth is enabled, set `PIWI_SITE_URL` to the public HTTPS URL so email links and OAuth callbacks point at the right origin, and set `PIWI_TRUST_PROXY=true` (step 4 of the [production checklist](./production-checklist#before-you-expose-it)). With authentication off, set it too: the dashboard refuses a request addressed to a domain name other than its host ([why](./authentication#disabling-authentication)).
 
 ## Resource requirements
 

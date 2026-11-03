@@ -265,7 +265,7 @@ export const PIWI_ENV_VARS = {
     type: 'url',
     example: 'https://piwi.example.com',
     notes:
-      'When unset, links in emails point to http://localhost:3000 (on Fly.io, to https://<app>.fly.dev, from `FLY_APP_NAME`) and OAuth callback URLs are inferred from the request host — set it when running behind a reverse proxy.',
+      'When unset, links in emails point to http://localhost:3000 (on Fly.io, to https://<app>.fly.dev, from `FLY_APP_NAME`) and OAuth callback URLs are inferred from the request host — set it when running behind a reverse proxy. With authentication off, the dashboard answers only requests addressed to an IP address, a name with no dot (`localhost`, a container name), a name under `.localhost` or the host of this URL: set it to the address you open the dashboard at when that is a domain name (see [Disabling authentication](/operate/authentication#disabling-authentication)).',
   },
   PIWI_SECRET_KEY: {
     description:

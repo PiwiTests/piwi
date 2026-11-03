@@ -31,6 +31,9 @@ record is `proposals/roles-and-groups.md`.
 
 - **Authentication is optional**, turned on by `PIWI_AUTH_ENABLED=true`. When it is off, `requireAuth()` returns a
   virtual administrator (`ADMIN_ACCESS`), so every endpoint keeps working and the UI allows everything.
+- **With authentication off, the server answers only a local `Host` or the host of `PIWI_SITE_URL`**
+  (`server/middleware/allowed-host.ts`, `isAllowedHostWithoutAuth`), reading `Host` alone, never `X-Forwarded-Host`.
+  `tests/unit/allowed-host.test.ts`.
 - **With authentication on, a request signs in with a session cookie (the browser) or an API key** (`pd_` prefix, as a
   Bearer token or in `X-API-Key`). An API key carries its owner's access (instance role and project roles), nothing
   more and nothing less.

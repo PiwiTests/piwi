@@ -160,6 +160,11 @@ Each row's **Role** column is an inline selector for the instance role: pick **A
 Set `PIWI_AUTH_ENABLED=false`, or remove the variable, and restart the server. Every endpoint is then accessible
 without authentication.
 
+With authentication off, the dashboard answers only requests whose `Host` header names an IP address, a name with no
+dot (`localhost`, a container name), a name under `.localhost` or the host of
+[`PIWI_SITE_URL`](/reference/configuration#general); any other gets a `403`. To open it under a domain name, directly
+or through a [reverse proxy](./deployment#reverse-proxy-https), set `PIWI_SITE_URL` to that address.
+
 ## Related
 
 - [Access, roles and groups](./project-access): project roles, groups and the permission grid
