@@ -28,7 +28,7 @@
  * Runs once on startup after migrations; safe to run repeatedly.
  */
 
-import { eq, and, asc, desc, gt, inArray, isNull, isNotNull } from 'drizzle-orm';
+import { eq, and, asc, desc, inArray, isNull, isNotNull } from 'drizzle-orm';
 import {
   failureClusters,
   failureClusterAliases,
@@ -44,17 +44,18 @@ import type { DrizzleDB } from './db';
 /** The app setting that records that {@link backfillAliasSamples} ran on this instance. */
 export const ALIAS_SAMPLES_BACKFILLED_SETTING = 'failure_cluster_alias_samples_backfilled_at';
 
-/** How many executions of a cluster {@link backfillAliasSamples} reads at a time. */
-const BACKFILL_PAGE_SIZE = 200;
+/** How many of a cluster's most recent executions {@link backfillAliasSamples} reads. */
+export const ALIAS_SAMPLE_CANDIDATE_LIMIT = 500;
 
 /** How many of a routed test's most recent executions {@link routedTestFingerprints} reads. */
 const ROUTED_TEST_ERROR_LIMIT = 50;
 
 /**
  * The errors an alias of cluster `clusterId` may have been computed from: the
- * cluster's own samples, then its executions' errors, oldest first. A merge
- * moves the absorbed cluster's executions to the survivor, so they hold the
- * errors that made its fingerprint.
+ * cluster's own samples, then the errors of its most recent executions
+ * (`ALIAS_SAMPLE_CANDIDATE_LIMIT`), newest first. A merge moves the absorbed
+ * cluster's executions to the survivor, so they hold the errors that made its
+ * fingerprint, and a failure that recurs since holds them again.
  */
 async function* aliasSampleCandidates(db: DrizzleDB, clusterId: number): AsyncGenerator<string> {
   const [cluster] = await db
@@ -62,30 +63,24 @@ async function* aliasSampleCandidates(db: DrizzleDB, clusterId: number): AsyncGe
     .from(failureClusters)
     .where(eq(failureClusters.id, clusterId));
   for (const sample of new Set([cluster?.fingerprintSample, cluster?.sampleError])) if (sample) yield sample;
-  let after = 0;
-  for (;;) {
-    const page = await db
-      .select({ id: testRunsCases.id, error: testRunsCases.error })
-      .from(testRunsCases)
-      .where(
-        and(eq(testRunsCases.failureClusterId, clusterId), gt(testRunsCases.id, after), isNotNull(testRunsCases.error)),
-      )
-      .orderBy(asc(testRunsCases.id))
-      .limit(BACKFILL_PAGE_SIZE);
-    for (const error of new Set(page.map((row) => row.error))) if (error) yield error;
-    if (page.length < BACKFILL_PAGE_SIZE) return;
-    after = page[page.length - 1]!.id;
-  }
+  const recent = await db
+    .select({ error: testRunsCases.error })
+    .from(testRunsCases)
+    .where(and(eq(testRunsCases.failureClusterId, clusterId), isNotNull(testRunsCases.error)))
+    .orderBy(desc(testRunsCases.id))
+    .limit(ALIAS_SAMPLE_CANDIDATE_LIMIT);
+  for (const error of new Set(recent.map((row) => row.error))) if (error) yield error;
 }
 
 /**
  * Give each alias stored without a sample the error its fingerprint was
- * computed from: among its cluster's samples and executions, the first whose
- * fingerprint, by the algorithm that wrote the alias (`FINGERPRINT_VERSION` 4,
- * the last before aliases kept their sample), is the alias's. An alias with no
- * match keeps a null sample, and {@link reclusterFailureFingerprints} leaves it
- * as it is. Run at startup before the recluster. Returns the number of aliases
- * given a sample.
+ * computed from: among its cluster's samples and most recent executions, the
+ * first whose fingerprint, by the algorithm that wrote the alias
+ * (`FINGERPRINT_VERSION` 4, the last before aliases kept their sample), is the
+ * alias's. An alias with no match keeps a null sample, and
+ * {@link reclusterFailureFingerprints} leaves it as it is. Run at startup,
+ * which waits for it, before the recluster: it reads a bounded number of
+ * executions per cluster. Returns the number of aliases given a sample.
  */
 export async function backfillAliasSamples(db: DrizzleDB): Promise<number> {
   const aliases = await db

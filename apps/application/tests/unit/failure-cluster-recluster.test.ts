@@ -18,7 +18,7 @@ declare global {
 // clear it before the modules under test are loaded so they bind to SQLite.
 delete process.env.PIWI_DATABASE_URL;
 
-const { backfillAliasSamples, reclusterFailureFingerprints } =
+const { ALIAS_SAMPLE_CANDIDATE_LIMIT, backfillAliasSamples, reclusterFailureFingerprints } =
   await import('../../shared/handlers/failure-cluster-recluster');
 const { assignFailureClusters } = await import('../../shared/handlers/failure-cluster-ops');
 const { computeErrorFingerprint } = await import('../../shared/error-fingerprint');
@@ -177,6 +177,49 @@ describe('backfillAliasSamples', () => {
       { fingerprint: victimFingerprint, fingerprintSample: victimError },
       { fingerprint: 'fingerprint-no-error-has', fingerprintSample: null },
     ]);
+  });
+});
+
+describe('backfillAliasSamples on a cluster with many executions', () => {
+  test('reads only its most recent executions, finding an alias whose failure recurs among them', async () => {
+    const errorOf = (n: number) => `Error: broken step ${'abcdefghij'[n % 10]!.repeat(1 + Math.floor(n / 10))}`;
+    const oldError =
+      "TimeoutError: locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByTestId('old')";
+    const recentError =
+      "TimeoutError: locator.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for getByTestId('new')";
+    const id = await seedCluster({ fingerprint: 'fp-survivor', sampleError: null, fingerprintSample: null });
+    await db.insert(schema.testRuns).values({ id: 1, projectId: 1, status: 'failed', startTime: new Date() });
+    await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'tests/pay.spec.ts', title: 'pays' });
+    // The oldest execution holds the only error of one alias; the newest that of the other.
+    const errors = [
+      oldError,
+      ...Array.from({ length: ALIAS_SAMPLE_CANDIDATE_LIMIT }, (_, n) => errorOf(n)),
+      recentError,
+    ];
+    await db
+      .insert(schema.testRunsCases)
+      .values(
+        errors.map((error, retries) => ({
+          testRunId: 1,
+          testCaseId: 1,
+          status: 'failed',
+          retries,
+          error,
+          failureClusterId: id,
+        })),
+      );
+    await db.insert(schema.failureClusterAliases).values([
+      { projectId: 1, fingerprint: await errorFingerprintV4(oldError), clusterId: id },
+      { projectId: 1, fingerprint: await errorFingerprintV4(recentError), clusterId: id },
+    ]);
+
+    expect(await backfillAliasSamples(dbc)).toBe(1);
+
+    const aliases = await db
+      .select({ fingerprintSample: schema.failureClusterAliases.fingerprintSample })
+      .from(schema.failureClusterAliases)
+      .orderBy(schema.failureClusterAliases.id);
+    expect(aliases).toEqual([{ fingerprintSample: null }, { fingerprintSample: recentError }]);
   });
 });
 
