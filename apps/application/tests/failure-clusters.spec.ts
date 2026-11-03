@@ -370,10 +370,11 @@ test.describe.serial('Failure clustering', () => {
     expect(stillResolved!.status).toBe('resolved');
     expect(stillResolved!.triageNote).toBe('Investigated — flaky test infrastructure');
 
-    // One that started after it and fails it again reopens it, its note kept.
+    // One that started after it and fails it again reopens it, its note kept. The finish-time side effects that
+    // reopen it run once the submit has answered.
     const after = await submitRun(request, cases, new Date(Date.now() + 5_000));
+    await expect.poll(async () => (await groupsOf(after.runId))[0]?.status).toBe('open');
     const [reopened] = await groupsOf(after.runId);
-    expect(reopened!.status).toBe('open');
     expect(reopened!.triageNote).toContain('Investigated — flaky test infrastructure');
   });
 
