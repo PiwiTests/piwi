@@ -1,4 +1,5 @@
-import { eq } from 'drizzle-orm';
+import { randomBytes } from 'node:crypto';
+import { and, eq, isNotNull } from 'drizzle-orm';
 import { testRuns } from '../database/schema';
 import type { DbClient } from '../database';
 import { apiError } from './api-error';
@@ -118,4 +119,19 @@ export async function createBatchRun(
   }
 
   return testRun;
+}
+
+/**
+ * A new stream token for a run a batch delivery holds `finalizing` until its files are in (`createBatchRun` with
+ * `awaitingFiles`), which takes the place of the token it held. Null when the run holds none: it settled, or no
+ * delivery held it.
+ */
+export async function renewHeldRunToken(db: DbClient, runId: number): Promise<string | null> {
+  const streamToken = randomBytes(32).toString('hex');
+  const renewed = await db
+    .update(testRuns)
+    .set({ streamToken: streamTokenDigest(streamToken) })
+    .where(and(eq(testRuns.id, runId), eq(testRuns.status, 'finalizing'), isNotNull(testRuns.streamToken)))
+    .returning({ id: testRuns.id });
+  return renewed.length > 0 ? streamToken : null;
 }

@@ -190,12 +190,38 @@ describe('a batch run sent in parts: its results, then its files', () => {
     expect(state.written.size).toBe(0);
   });
 
-  test('a repeated delivery answers with the run its first one held, without a token', async () => {
+  test('a repeated delivery answers with the run its first one held, and a new token in place of the first', async () => {
     const first = await results({ body: runResults() });
     const again = await results({ body: runResults() });
 
-    expect(again).toEqual({ success: true, runId: first.runId, projectId: first.projectId, duplicate: true });
+    expect(again).toEqual({
+      success: true,
+      runId: first.runId,
+      projectId: first.projectId,
+      duplicate: true,
+      streamToken: expect.any(String),
+    });
+    expect(again.streamToken).not.toBe(first.streamToken);
     expect(await db.select().from(schema.testRuns)).toHaveLength(1);
+
+    await expect(sendScreenshot(first.runId, first.streamToken, 'pays')).rejects.toMatchObject({ statusCode: 403 });
+    expect(await sendScreenshot(first.runId, again.streamToken, 'pays')).toMatchObject({
+      success: true,
+      attachments: 1,
+    });
+    await sendReport(first.runId);
+    expect((await runRow(first.runId)).status).toBe('failed');
+    expect(runFinalizeSideEffects).toHaveBeenCalledTimes(1);
+  });
+
+  test('a repeated delivery of a run that settled answers with the run, without a token', async () => {
+    const first = await results({ body: runResults() });
+    await sendReport(first.runId);
+
+    const again = await results({ body: runResults() });
+
+    expect(again).toEqual({ success: true, runId: first.runId, projectId: first.projectId, duplicate: true });
+    expect((await runRow(first.runId)).streamToken).toBeNull();
   });
 
   test('refuses a shard, whose run settles with its last shard: its results and files go in one upload', async () => {
