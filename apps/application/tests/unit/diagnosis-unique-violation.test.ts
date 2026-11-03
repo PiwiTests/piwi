@@ -5,7 +5,7 @@ import { sql, type SQL } from 'drizzle-orm';
 import { isUniqueViolation } from '~~/server/utils/db-errors';
 
 // The DB-level diagnosis claim converts a unique-index violation (a concurrent
-// instance won the race) into a 409, so this detector recognises that violation
+// instance won the race) into a 409, so this detector recognizes that violation
 // across both supported drivers, and takes no other error for one: that would
 // mask a real failure as "already running".
 

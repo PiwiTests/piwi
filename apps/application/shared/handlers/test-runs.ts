@@ -35,14 +35,9 @@ import { publicRunColumns } from './public-run';
 type ProjectScope = 'all' | Set<number>;
 
 /**
- * The most recent test run for a project (id + status only), or null if none.
- * With `origin`, the most recent one its launcher stamped with that kind and
- * ref (`PIWI_ORIGIN`, `PIWI_ORIGIN_REF`): the desktop app finds the run a local
- * process of its own produced.
- */
-/**
- * The id and status of a project's most recent run, or with `origin` of its most recent run that origin and reference
- * stamped; null when it has none. Throws `Project not found` for a project that does not exist.
+ * The most recent test run for a project (id + status only), or null when it has none. With `origin`, the most recent
+ * one its launcher stamped with that kind and ref (`PIWI_ORIGIN`, `PIWI_ORIGIN_REF`): the desktop app finds the run a
+ * local process of its own produced. Throws `Project not found` for a project that does not exist.
  */
 export async function getProjectLatestRun(
   db: DrizzleDB,
@@ -110,7 +105,7 @@ export async function getTestRun(
     .select({ id: testRuns.id, status: testRuns.status })
     .from(testRuns)
     .where(eq(testRuns.projectId, testRun.projectId))
-    // Rank by start_time (see getProjectLatestRun) so the "Newer run" pill points
+    // Rank by start_time (as findProjectLatestRun does) so the "Newer run" pill points
     // at the chronologically newest run, not MAX(id).
     .orderBy(desc(testRuns.startTime), desc(testRuns.id))
     .limit(1);
