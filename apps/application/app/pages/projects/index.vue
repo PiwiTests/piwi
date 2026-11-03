@@ -381,6 +381,7 @@ function statusFilterText(project: ProjectWithStats): string {
               :fixme="row.original.latestRun.fixmeTests ?? 0"
               :flaky="row.original.latestRun.flakyTests"
               :did-not-run="row.original.latestRun.didNotRunTests ?? 0"
+              :interrupted="row.original.latestRun.interruptedTests ?? 0"
               :total="row.original.latestRun.totalTests"
             />
             <span v-else class="text-xs text-gray-600 italic">No data</span>

@@ -7,6 +7,7 @@ import {
   formatTickDate,
   legendOf,
   niceTicks,
+  runStatusCounts,
   stackSegments,
   timeToOrdinalX,
 } from '../../app/utils/chart';
@@ -92,7 +93,15 @@ describe('legendOf', () => {
   });
 
   test('run-status series stack with failed on the baseline', () => {
-    expect(RUN_STATUS_SERIES.map((s) => s.key)).toEqual(['failed', 'flaky', 'skipped', 'fixme', 'didNotRun', 'passed']);
+    expect(RUN_STATUS_SERIES.map((s) => s.key)).toEqual([
+      'failed',
+      'flaky',
+      'skipped',
+      'fixme',
+      'didNotRun',
+      'interrupted',
+      'passed',
+    ]);
   });
 
   test('run-status series take the test outcome palette colors', () => {
@@ -102,8 +111,48 @@ describe('legendOf', () => {
       'var(--color-status-skipped)',
       'var(--color-status-fixme)',
       'var(--color-status-didnotrun)',
+      'var(--color-status-interrupted)',
       'var(--color-status-passed)',
     ]);
+  });
+
+  test('names the interrupted gap in the legend', () => {
+    expect(legendOf(RUN_STATUS_SERIES)).toContainEqual({
+      color: 'var(--color-status-interrupted)',
+      label: 'Interrupted',
+    });
+  });
+});
+
+describe('runStatusCounts', () => {
+  const sum = (counts: Record<string, number>) => Object.values(counts).reduce((a, b) => a + b, 0);
+
+  test('puts each test of a run in one series, so the series add up to its total', () => {
+    // A Ctrl+C run: one test passed, one was cut short, the other 25 never ran.
+    const cut = {
+      passedTests: 1,
+      failedTests: 0,
+      skippedTests: 0,
+      didNotRunTests: 25,
+      interruptedTests: 1,
+      flakyTests: 0,
+    };
+    expect(runStatusCounts(cut)).toMatchObject({ passed: 1, interrupted: 1, didNotRun: 25 });
+    expect(sum(runStatusCounts(cut))).toBe(27);
+  });
+
+  test('carves flaky out of passed and fixme out of skipped', () => {
+    const run = { passedTests: 10, failedTests: 2, skippedTests: 4, fixmeTests: 1, didNotRunTests: 0, flakyTests: 3 };
+    expect(runStatusCounts(run)).toEqual({
+      failed: 2,
+      flaky: 3,
+      skipped: 3,
+      fixme: 1,
+      didNotRun: 0,
+      interrupted: 0,
+      passed: 7,
+    });
+    expect(sum(runStatusCounts(run))).toBe(16);
   });
 });
 

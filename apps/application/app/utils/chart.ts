@@ -11,7 +11,8 @@ export interface ChartSeries<K extends string = string> {
 /**
  * Run-status series, in stacking order — failed sits on the baseline so red is
  * comparable across bars, and passed carries the bulk on top. `skipped` is the
- * plain `test.skip()` share and `fixme` the `test.fixme()` one, in two greys.
+ * plain `test.skip()` share and `fixme` the `test.fixme()` one, in two greys,
+ * and `interrupted` the gap the tests an interruption cut short leave.
  */
 export const RUN_STATUS_SERIES = [
   { key: 'failed', color: STATUS_PALETTE.failed.color, label: 'Failed' },
@@ -19,8 +20,40 @@ export const RUN_STATUS_SERIES = [
   { key: 'skipped', color: STATUS_PALETTE.skipped.color, label: 'Skipped' },
   { key: 'fixme', color: STATUS_PALETTE.fixme.color, label: 'Fixme' },
   { key: 'didNotRun', color: STATUS_PALETTE.didnotrun.color, label: "Didn't run" },
+  { key: 'interrupted', color: STATUS_PALETTE.interrupted.color, label: 'Interrupted' },
   { key: 'passed', color: STATUS_PALETTE.passed.color, label: 'Passed' },
 ] as const satisfies readonly ChartSeries[];
+
+/** A run's counters, as a run list row carries them. */
+interface RunCounts {
+  passedTests?: number | null;
+  failedTests?: number | null;
+  skippedTests?: number | null;
+  fixmeTests?: number | null;
+  didNotRunTests?: number | null;
+  interruptedTests?: number | null;
+  flakyTests?: number | null;
+}
+
+/**
+ * A run's tests per `RUN_STATUS_SERIES` key, each test in one series, so they
+ * add up to the run's total: flaky is carved out of passed (the counters count
+ * a pass on a retry in both) and fixme out of skipped the same way.
+ */
+export function runStatusCounts(run: RunCounts): Record<(typeof RUN_STATUS_SERIES)[number]['key'], number> {
+  const flaky = run.flakyTests || 0;
+  const skipped = run.skippedTests || 0;
+  const fixme = Math.min(run.fixmeTests || 0, skipped);
+  return {
+    failed: run.failedTests || 0,
+    flaky,
+    skipped: skipped - fixme,
+    fixme,
+    didNotRun: run.didNotRunTests || 0,
+    interrupted: run.interruptedTests || 0,
+    passed: Math.max(0, (run.passedTests || 0) - flaky),
+  };
+}
 
 /** Duration series of the project performance trend. */
 export const RUN_DURATION_SERIES = [

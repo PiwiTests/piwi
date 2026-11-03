@@ -110,6 +110,41 @@ async function fixmeTestsByRunId(
   return out;
 }
 
+interface RunCounters {
+  id: number;
+  totalTests?: number | null;
+  passedTests?: number | null;
+  failedTests?: number | null;
+  skippedTests?: number | null;
+  didNotRunTests?: number | null;
+}
+
+/** The tests a run counted in none of its outcome counters: its total less its passed, failed, skipped and didn't run. */
+function outcomeGap(run: RunCounters): number {
+  const counted = (run.passedTests ?? 0) + (run.failedTests ?? 0) + (run.skippedTests ?? 0) + (run.didNotRunTests ?? 0);
+  return Math.max(0, (run.totalTests ?? 0) - counted);
+}
+
+/**
+ * Results each run's interruption cut short, for runs whose counters leave a gap: in no outcome, so the counters
+ * leave them out, and the status bars and the trend chart name the gap they leave. Each result counts once, from its
+ * final attempt (`finalAttemptSql`) as the counters read every outcome, and never past the run's gap, so a bar's
+ * segments never add up to more than its total. Counted in one grouped query; a run missing from the map has none.
+ */
+async function interruptedTestsByRunId(db: DrizzleDB, runs: ReadonlyArray<RunCounters>): Promise<Map<number, number>> {
+  const gaps = new Map(runs.map((r) => [r.id, outcomeGap(r)]));
+  const runIds = runs.filter((r) => gaps.get(r.id)! > 0).map((r) => r.id);
+  const out = new Map<number, number>();
+  if (runIds.length === 0) return out;
+  const rows: Array<{ testRunId: number; n: number }> = await db
+    .select({ testRunId: testRunsCases.testRunId, n: count() })
+    .from(testRunsCases)
+    .where(and(inArray(testRunsCases.testRunId, runIds), eq(testRunsCases.status, 'interrupted'), finalAttemptSql()))
+    .groupBy(testRunsCases.testRunId);
+  for (const r of rows) out.set(r.testRunId, Math.min(Number(r.n), gaps.get(r.testRunId)!));
+  return out;
+}
+
 // ─── listProjects ────────────────────────────────────────────────
 
 async function getProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
@@ -217,9 +252,14 @@ export async function listProjects(db: DrizzleDB, scope: ProjectScope = 'all') {
       ? await db.select(publicRunColumns()).from(testRuns).where(inArray(testRuns.id, latestRunIds))
       : [];
   const fixmeByRunId = await fixmeTestsByRunId(db, latestRuns);
+  const interruptedByRunId = await interruptedTestsByRunId(db, latestRuns);
   const latestRunByProjectId = new Map<number, any>();
   for (const r of latestRuns) {
-    latestRunByProjectId.set(r.projectId, { ...r, fixmeTests: fixmeByRunId.get(r.id) ?? 0 });
+    latestRunByProjectId.set(r.projectId, {
+      ...r,
+      fixmeTests: fixmeByRunId.get(r.id) ?? 0,
+      interruptedTests: interruptedByRunId.get(r.id) ?? 0,
+    });
   }
 
   // 3. Total test cases per project (batched GROUP BY)
@@ -363,6 +403,7 @@ async function toRunSummaries(db: DrizzleDB, runs: any[]) {
       : [];
 
   const fixmeByRunId = await fixmeTestsByRunId(db, runs);
+  const interruptedByRunId = await interruptedTestsByRunId(db, runs);
 
   const browsersByRunId = new Map<number, string[]>();
   for (const row of browserRows) {
@@ -383,6 +424,7 @@ async function toRunSummaries(db: DrizzleDB, runs: any[]) {
       reports: reportsByRunId.get(r.id) ?? [],
       browsers: browsersByRunId.get(r.id) ?? [],
       fixmeTests: fixmeByRunId.get(r.id) ?? 0,
+      interruptedTests: interruptedByRunId.get(r.id) ?? 0,
     };
   });
 }

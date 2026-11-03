@@ -282,6 +282,8 @@ export interface ProjectWithStats {
     /** `test.fixme()` skips — a subset of `skippedTests`. */
     fixmeTests?: number;
     didNotRunTests: number;
+    /** Results the run's interruption cut short: in none of the other counts, the gap they leave named. */
+    interruptedTests?: number;
     flakyTests: number;
     totalTests: number;
     reports?: ReportInfo[];
@@ -517,6 +519,8 @@ export interface TestRunSummary {
   /** `test.fixme()` skips — a subset of `skippedTests`. */
   fixmeTests?: number;
   didNotRunTests: number;
+  /** Results the run's interruption cut short: in none of the other counts, the gap they leave named. */
+  interruptedTests?: number;
   flakyTests: number;
   avgTestDuration?: number | null;
   p90TestDuration?: number | null;
@@ -622,6 +626,8 @@ export interface TestRunForChart {
   /** `test.fixme()` skips — a subset of `skippedTests`. */
   fixmeTests?: number;
   didNotRunTests: number;
+  /** Results the run's interruption cut short: in none of the other counts, the gap they leave named. */
+  interruptedTests?: number;
   flakyTests: number;
   totalTests: number;
   duration?: number | null;

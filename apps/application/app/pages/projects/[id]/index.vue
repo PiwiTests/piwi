@@ -1228,6 +1228,7 @@ const moreMenuItems = computed(() => {
                       :fixme="row.original.fixmeTests ?? 0"
                       :flaky="row.original.flakyTests"
                       :did-not-run="row.original.didNotRunTests ?? 0"
+                      :interrupted="row.original.interruptedTests ?? 0"
                       :total="row.original.totalTests"
                     />
                     <DurationValue :ms="row.original.duration" class="text-xs text-gray-500" />
