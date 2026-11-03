@@ -204,6 +204,8 @@ export default eventHandler(async (event) => {
         repeatEachIndex: resolveRepeatEachIndex(tc.repeatEachIndex),
         executionId: persisted?.id ?? null,
         testCaseId: persisted?.testCaseId ?? null,
+        // Its verdict as stored: it passed after an earlier attempt failed or timed out.
+        passedAfterFailure: persisted?.passedAfterFailure ?? null,
       },
     });
   }

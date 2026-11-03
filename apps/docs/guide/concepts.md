@@ -7,8 +7,8 @@ lang: en-US
 # Core concepts
 
 Piwi reuses Playwright's vocabulary where it can, but a dashboard that keeps history needs a few
-distinctions Playwright doesn't have to make — most importantly between *a test* and *one run of that
-test*. This page defines the words the rest of the documentation and the UI use.
+distinctions Playwright doesn't have to make — most importantly between _a test_ and _one run of that
+test_. This page defines the words the rest of the documentation and the UI use.
 
 ## The object model
 
@@ -44,7 +44,7 @@ git metadata, and every execution inside it.
 Two things commonly surprise people:
 
 - **Shards merge into one run.** Ten `--shard` jobs produce one run, not ten. The reporter derives a
-  stable *run label* from your CI's pipeline ID and every shard submits against it; the run stays
+  stable _run label_ from your CI's pipeline ID and every shard submits against it; the run stays
   `running` until the last shard finishes. See [CI & sharding](./ci).
 - **A run can be watched while it happens.** With streaming enabled (the default), the run row appears
   when the suite starts and fills in test by test, so a failure is browsable before CI finishes.
@@ -85,13 +85,18 @@ whole group: the tests that passed before and a `test.fail()` test that failed a
 test that did not run behind the failure passes, none of them flaky. The last attempt decides: a test that
 passed, then failed on the group's retry, counts as failed, where Playwright's summary calls it flaky.
 
+Every view reads a result the same way: the run page and the run list, a test's history, status and Trend tab, the
+catalog, the analytics, the notifications, the exports and the MCP tools. Piwi stores each execution's verdict as it
+ingests it, and gives the executions and the flaky counts of runs stored by an earlier version theirs when it
+upgrades.
+
 A test is **interrupted** when the run's interruption (Ctrl+C, a crashed worker) cut it short. It counts in no
 outcome: neither passed, failed, skipped nor did not run, and in no pass rate. The dashboard, the exports and the
-notifications draw it in a neutral slate labelled *Interrupted*, and a count bar names the gap it leaves.
+notifications draw it in a neutral slate labelled _Interrupted_, and a count bar names the gap it leaves.
 
 This is the object at `/test-run-cases/:id` — the error, steps, trace, screenshots, console, network,
-Web Vitals, and (for a failure) the diagnosis view. When the docs say *execution* or *test-run case*,
-this is what they mean; when they say *test case*, they mean the identity above it.
+Web Vitals, and (for a failure) the diagnosis view. When the docs say _execution_ or _test-run case_,
+this is what they mean; when they say _test case_, they mean the identity above it.
 
 The distinction matters in practice: "this test is flaky" is a statement about a **test case**, and
 "here is the stack trace" is a statement about one **execution**.
@@ -170,11 +175,11 @@ environment so a staging suite's noise doesn't blend into production's numbers.
 A **test run** whose failures come from the environment under test being down or broken (staging refusing
 connections, a host that no longer resolves, a crashing browser), not from the tests or the code. Piwi flags it when
 the run finishes, or a person marks it, and leaves it out of flaky scores, baselines, fix verification and the CI
-gate, which answers *inconclusive*. See [Environment incidents](/features/environment-incidents).
+gate, which answers _inconclusive_. See [Environment incidents](/features/environment-incidents).
 
 ### Tags & ownership
 
-Two ways to say what a test *is*, both declared in the spec file and both read by the reporter.
+Two ways to say what a test _is_, both declared in the spec file and both read by the reporter.
 
 **Tags** come from Playwright itself — `@smoke` in a title or the `{ tag: [...] }` option. Piwi stores them with the
 leading `@` stripped, on the execution (what that run saw) and on the test case (the latest declaration). They are how
@@ -235,7 +240,7 @@ the spec file, or the helper it failed in. Full detail:
 
 The **one explanation** a failure page leads with. When several [clues](/features/evidence#clues)
 (deterministic, rule-based findings) form a known combination, Piwi chains them into a single sentence —
-*"the Pay button stayed disabled because POST /api/checkout/quote was still in flight"* — at the strongest
+_"the Pay button stayed disabled because POST /api/checkout/quote was still in flight"_ — at the strongest
 member's strength, with every clue folded under it. When no combination matches, the story is the strongest
 clue alone. A cluster's completed [AI diagnosis](/features/ai-diagnosis) leads instead of a weak story or a lone
 clue, never instead of a strong or medium story, by one rule on the execution and the cluster page.
@@ -260,12 +265,12 @@ The policy and its ordering are on [Fix plans](/features/fix-plans#the-next-step
 
 ### Cluster state
 
-Where a **failure cluster** stands, said in one sentence with one verb next to a colored dot: *still
-failing*, *not seen for N runs — still open*, *fixed and verified — still open*, *fixed, but the diagnosed patch
-still applies at the fix's commit*, *stopped failing*, *regressed — the fix did not hold*, *resolved*, *ignored*,
-*snoozed* or *all tests quarantined*. It reconciles the human triage status with the machine-observed verdict; when
+Where a **failure cluster** stands, said in one sentence with one verb next to a colored dot: _still
+failing_, _not seen for N runs — still open_, _fixed and verified — still open_, _fixed, but the diagnosed patch
+still applies at the fix's commit_, _stopped failing_, _regressed — the fix did not hold_, _resolved_, _ignored_,
+_snoozed_ or _all tests quarantined_. It reconciles the human triage status with the machine-observed verdict; when
 they disagree the state line offers the one action that closes the gap, unless the Next line already offers it.
-*Not seen for N runs* counts the runs since the last failure that could have shown it: finished runs on its branch or
+_Not seen for N runs_ counts the runs since the last failure that could have shown it: finished runs on its branch or
 the default branch (no lab run, bisect step, reproduction or environment incident) that ran its tests and did not fail
 with it. A test skipped, not run or interrupted is one a run did not run, and a run of the whole suite that ran to its
 end counts even when a test of the cluster no longer exists; one stopped early (interrupted, cancelled, timed out or
@@ -317,9 +322,9 @@ MCP tools and quality reports all print the same definition, so a number means t
 it appears.
 
 An **analytics dashboard** is a named arrangement of analytics widgets in bands, with a default scope.
-*The dashboard* on its own means the Piwi web app; on the Analytics pages, where the context is clear, an analytics
-dashboard is simply called a dashboard. The Analytics page is the built-in *Overview* dashboard; *Executive*,
-*Engineering*, *Team* and *Gaps digest* are the built-in dashboards meant for reports. Anyone can save a dashboard of
+_The dashboard_ on its own means the Piwi web app; on the Analytics pages, where the context is clear, an analytics
+dashboard is simply called a dashboard. The Analytics page is the built-in _Overview_ dashboard; _Executive_,
+_Engineering_, _Team_ and _Gaps digest_ are the built-in dashboards meant for reports. Anyone can save a dashboard of
 their own, private or shared, and a dashboard never grants access to a project. See [Dashboards](/features/dashboards).
 
 A **quality report** is an analytics dashboard rendered as a document (PDF, HTML, Markdown, Excel, CSV or JSON) for a
@@ -342,7 +347,7 @@ request never shows up as missing on the default branch. See [Scenario gaps & th
 A test **reaches** a route or a page when a real run observes it doing so: a request to the route, or a locator call
 on the page or the test ending there. A control or a link is reached when one of the test's locators names it, or when
 triage records a covering test for it. Reach is measured from runs, never from instrumented code coverage, which is
-why the docs and the dashboard say *observed reach* rather than *coverage*.
+why the docs and the dashboard say _observed reach_ rather than _coverage_.
 The reach of a test flaky or failing in the default branch's recent runs, quarantined or skipped does not count as
 trusted.
 
@@ -390,7 +395,7 @@ route handler to its coverage. Neither fails a build.
 ### Uncovered change
 
 A changed file of a pull request that no test reached, in the run or the project's last 30 runs, and no suite ran a
-changed line of. One rule decides it for the pull-request comment, the gate, MCP and the *changed, unreached* gap; a
+changed line of. One rule decides it for the pull-request comment, the gate, MCP and the _changed, unreached_ gap; a
 file nothing can observe, outside the coverage scope or deleted is counted apart. **Patch coverage** is the same
 question by line: the share of the changed lines that ran. See [Uncovered changes](/features/uncovered-changes).
 
@@ -415,8 +420,8 @@ use a locator, and it feeds [Who uses a locator](/features/locator-usage) and
 ### Locator break
 
 A locator of the index that a change stops matching: the diff removes or renames a string one of its calls finds the
-element by, under Playwright's text rules. *Likely* when the string was an attribute value, tag text or a
-translation; *possible* when it was a bare quoted string. [Locator preflight](/features/preflight) lists them.
+element by, under Playwright's text rules. _Likely_ when the string was an attribute value, tag text or a
+translation; _possible_ when it was a bare quoted string. [Locator preflight](/features/preflight) lists them.
 
 ### Page key
 
@@ -430,8 +435,8 @@ URL pattern: without the site's, with the tests' in front.
 ### Brittle locator
 
 A locator a test uses that breaks on a change unrelated to what the test checks: a position, a styling class, the
-document structure, a generated id. Piwi judges each locator of the index with named rules as *brittle*, *watch* or
-*stable*; see [Locator stability rules](/reference/locator-stability). Not to be confused with the *fragile*
+document structure, a generated id. Piwi judges each locator of the index with named rules as _brittle_, _watch_ or
+_stable_; see [Locator stability rules](/reference/locator-stability). Not to be confused with the _fragile_
 [gap class](#gap-class), which is about the tests reaching a node, not a locator.
 
 ### Scenario gap
@@ -455,8 +460,8 @@ the injected failure) and **degraded** (it handled it badly).
 
 ### Detector
 
-A rule that reads the Test Map and the run history and reports one kind of gap, such as *declared, never hit* or
-*single covering test*. Each gap names the detector that raised it; [Gap detectors & exposure](/reference/gap-detectors)
+A rule that reads the Test Map and the run history and reports one kind of gap, such as _declared, never hit_ or
+_single covering test_. Each gap names the detector that raised it; [Gap detectors & exposure](/reference/gap-detectors)
 lists them all.
 
 ### Exposure
@@ -477,7 +482,7 @@ regression signal ever counts it. See [Probes](/features/probes).
 
 The routes and pages the application says it has, from the instrumentation's route manifest, a committed
 `piwi.manifest.json` or an OpenAPI document, as opposed to the ones tests reached. A declared route nothing reaches
-is a *declared, never hit* gap.
+is a _declared, never hit_ gap.
 
 ### Page inventory
 
@@ -514,18 +519,19 @@ the union of every role they hold there, directly or through their groups. See
 
 ## Where each concept lives in the UI
 
-| Concept | URL | Docs |
-|---|---|---|
-| Project | `/projects/:id` | [UI overview](/features/ui-overview#project-detail) |
-| Test run | `/test-runs/:id` | [UI overview](/features/ui-overview#test-run-detail) |
-| Test case | `/test-cases/:id` | [Failure evidence](/features/evidence#the-test-case-page) |
-| Execution | `/test-run-cases/:id` | [Failure evidence](/features/evidence#one-execution-diagnosis-first) |
-| Failure cluster | `/failure-clusters/:id` | [Failure clusters & the inbox](/features/failure-clusters) |
-| Cross-project view | `/analytics` | [Analytics](/features/analytics) |
-| Quality report | *Export* on `/analytics` and `/projects/:id` | [Quality reports](/features/quality-reports) |
-| Report schedule, report snapshot | `/reports`, `/reports/:id` | [Quality reports](/features/quality-reports#report-schedules) |
+| Concept                          | URL                                          | Docs                                                                 |
+| -------------------------------- | -------------------------------------------- | -------------------------------------------------------------------- |
+| Project                          | `/projects/:id`                              | [UI overview](/features/ui-overview#project-detail)                  |
+| Test run                         | `/test-runs/:id`                             | [UI overview](/features/ui-overview#test-run-detail)                 |
+| Test case                        | `/test-cases/:id`                            | [Failure evidence](/features/evidence#the-test-case-page)            |
+| Execution                        | `/test-run-cases/:id`                        | [Failure evidence](/features/evidence#one-execution-diagnosis-first) |
+| Failure cluster                  | `/failure-clusters/:id`                      | [Failure clusters & the inbox](/features/failure-clusters)           |
+| Cross-project view               | `/analytics`                                 | [Analytics](/features/analytics)                                     |
+| Quality report                   | _Export_ on `/analytics` and `/projects/:id` | [Quality reports](/features/quality-reports)                         |
+| Report schedule, report snapshot | `/reports`, `/reports/:id`                   | [Quality reports](/features/quality-reports#report-schedules)        |
 
 ## Related
+
 - [Getting started](./getting-started) — get results flowing in
 - [UI overview](/features/ui-overview) — a map of every page
 - [Reporter](./reporter) — how each of these objects gets populated

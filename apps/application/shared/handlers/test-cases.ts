@@ -118,6 +118,7 @@ export async function getTestCase(db: DrizzleDB, id: number) {
         duration: testRunsCases.duration,
         error: testRunsCases.error,
         retries: testRunsCases.retries,
+        passedAfterFailure: testRunsCases.passedAfterFailure,
         attempts: testRunsCases.attempts,
         workerIndex: testRunsCases.workerIndex,
         browser: testRunsCases.browser,
@@ -204,6 +205,7 @@ export async function getTestCaseHistory(db: DrizzleDB, testCaseId: number) {
       duration: testRunsCases.duration,
       error: testRunsCases.error,
       retries: testRunsCases.retries,
+      passedAfterFailure: testRunsCases.passedAfterFailure,
       attempts: testRunsCases.attempts,
       browserName: testRunsCases.browserName,
       repeatEachIndex: testRunsCases.repeatEachIndex,
@@ -242,6 +244,7 @@ export async function getNewerExecutions(
       status: testRunsCases.status,
       repeatEachIndex: testRunsCases.repeatEachIndex,
       retries: testRunsCases.retries,
+      passedAfterFailure: testRunsCases.passedAfterFailure,
       browserName: testRunsCases.browserName,
       failureClusterId: testRunsCases.failureClusterId,
       startTime: testRuns.startTime,
@@ -312,11 +315,11 @@ export async function getTestRunCase(
       }))
     : null;
 
-  // A pass that needed a retry has no error of its own: its headline, steps and
-  // `why` come from the last failed attempt of the same run, test, browser and
-  // repetition.
+  // A pass after a failed attempt has no error of its own: its headline, steps
+  // and `why` come from the last failed attempt of the same run, test, browser
+  // and repetition.
   const retries = trc.retries ?? 0;
-  const passedOnRetry = trc.status === 'passed' && retries > 0;
+  const passedOnRetry = trc.status === 'passed' && trc.passedAfterFailure;
   const failedSibling = passedOnRetry
     ? (siblingRows as Array<{ id: number; retries: number | null; status: string }>)
         .filter((r) => (r.retries ?? 0) < retries && isFailedStatus(r.status))
@@ -607,7 +610,7 @@ export async function getTestRunCase(
     error: verdictError,
     steps: failedAttempt ? failedAttempt.steps : trc.steps,
     status: trc.status,
-    retries: trc.retries,
+    passedAfterFailure: trc.passedAfterFailure,
     isNewRegression: trc.isNewRegression,
     isNewFlaky: trc.isNewFlaky,
     runId: trc.testRunId,
@@ -619,8 +622,8 @@ export async function getTestRunCase(
     owner: testCase?.owner || (codeOwner ? { name: codeOwner, source: 'codeowners' } : null),
     fromAttempt: failedAttempt ? { retry: failedAttempt.retries ?? 0, executionId: failedAttempt.id } : null,
   });
-  // A retry pass is one with or without its failed attempt stored: the policy
-  // reads it from the status alone when there is no verdict.
+  // A pass after a failure is one with or without its failed attempt stored:
+  // the policy reads it from the stored verdict alone when there is no verdict.
   const why = verdict?.why ?? (passedOnRetry ? 'passed-on-retry' : null);
 
   // The situation lines and the single next step, built from the verdict and
@@ -762,6 +765,7 @@ export async function getTestRunCase(
     duration: trc.duration,
     error: trc.error,
     retries: trc.retries,
+    passedAfterFailure: Boolean(trc.passedAfterFailure),
     attempts,
     steps: trc.steps,
     testSource: evidence.testSource,

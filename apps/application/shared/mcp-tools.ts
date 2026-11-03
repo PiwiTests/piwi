@@ -200,7 +200,7 @@ export const MCP_TOOL_DEFS = [
     module: 'core',
     description: md(
       'Get a test run’s summary and its test cases (by default only the failed ones), each with its status, truncated error and failure cluster.',
-      'A case’s `executionId` is what `explain_failure` and the other execution tools take. `runErrors` lists the errors Playwright reported outside any test, each with its truncated `message` and `stack` and its `filePath`, `line` and `column`: a global setup that threw, a spec file that did not load (`No tests found` too), a web server that did not start, a worker fixture whose teardown threw. They explain a failed run with no failed test.',
+      'A case’s `executionId` is what `explain_failure` and the other execution tools take, and `passedAfterFailure: true` marks a case that passed after an earlier attempt failed or timed out (a flaky result; a retry that passed again after a pass is not one). `runErrors` lists the errors Playwright reported outside any test, each with its truncated `message` and `stack` and its `filePath`, `line` and `column`: a global setup that threw, a spec file that did not load (`No tests found` too), a web server that did not start, a worker fixture whose teardown threw. They explain a failed run with no failed test.',
     ),
     inputSchema: {
       type: 'object',
@@ -210,7 +210,7 @@ export const MCP_TOOL_DEFS = [
           type: 'string',
           enum: ['failed', 'flaky', 'all'],
           description:
-            'Which test cases to include (default: "failed" — only failed+timedOut; "flaky" — only flaky; "all" — every case)',
+            'Which test cases to include (default: "failed" — only failed+timedOut; "flaky" — only those that passed after an earlier attempt failed or timed out; "all" — every case)',
         },
         pageSize: { type: 'number', description: 'Cases per page (default 10, max 50)' },
         cursor: { type: 'string', description: 'Opaque cursor from a previous response for the next page of cases' },

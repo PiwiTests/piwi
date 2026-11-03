@@ -99,7 +99,8 @@ export interface FailureVerdictInput {
   error: string | null | undefined;
   steps?: unknown;
   status: string;
-  retries?: number | null;
+  /** Passed after an earlier attempt of its result failed or timed out (`passed_after_failure`). */
+  passedAfterFailure?: boolean | number | null;
   /** Stored as 0/1 in SQLite, so numbers are accepted alongside booleans. */
   isNewRegression?: boolean | number | null;
   isNewFlaky?: boolean | number | null;
@@ -128,7 +129,7 @@ export interface FailureVerdictInput {
   owner?: string | VerdictOwner | null;
   /**
    * The attempt `error` and `steps` were read from, when it is not the
-   * execution `status` and `retries` describe (a retry pass's failed attempt).
+   * execution `status` describes (the failed attempt of a pass after a failure).
    */
   fromAttempt?: VerdictAttempt | null;
 }
@@ -138,7 +139,7 @@ const INFRASTRUCTURE_KINDS = new Set<ParsedErrorKind>(['crash', 'navigation']);
 
 function classifyWhy(input: FailureVerdictInput, kind: ParsedErrorKind): FailureWhy | null {
   if (input.isNewRegression) return 'new-regression';
-  if (input.status === 'passed' && (input.retries ?? 0) > 0) return 'passed-on-retry';
+  if (input.status === 'passed' && input.passedAfterFailure) return 'passed-on-retry';
   if (input.isNewFlaky) return 'new-flaky';
   if (
     INFRASTRUCTURE_KINDS.has(kind) ||

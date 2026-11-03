@@ -165,10 +165,10 @@ async function loadRunHistory(
 }
 
 /** A test's outcome in a run, from its deciding attempt there (`testOutcomes`). */
-function historyOutcome(row: { status: string; retries: number | null } | undefined): HistoryOutcome {
+function historyOutcome(row: { status: string; passedAfterFailure: boolean } | undefined): HistoryOutcome {
   if (!row) return null;
   if (isFailedStatus(row.status)) return 'failed';
-  if (row.status === 'passed') return (row.retries ?? 0) > 0 ? 'flaky' : 'passed';
+  if (row.status === 'passed') return row.passedAfterFailure ? 'flaky' : 'passed';
   if (row.status === 'skipped' || row.status === 'didnotrun') return row.status;
   if (row.status === 'interrupted') return 'interrupted';
   return null;
@@ -190,6 +190,7 @@ async function loadTestHistories(
       repeatEachIndex: testRunsCases.repeatEachIndex,
       retries: testRunsCases.retries,
       status: testRunsCases.status,
+      passedAfterFailure: testRunsCases.passedAfterFailure,
     })
     .from(testRunsCases)
     .where(

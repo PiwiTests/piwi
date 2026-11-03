@@ -550,8 +550,7 @@ export async function getFailureCluster(
         .select({
           error: testRunsCases.error,
           steps: testRunsCases.steps,
-          status: testRunsCases.status,
-          retries: testRunsCases.retries,
+          passedAfterFailure: testRunsCases.passedAfterFailure,
         })
         .from(testRunsCases)
         .where(eq(testRunsCases.id, latestOccurrence.id)),
@@ -566,10 +565,10 @@ export async function getFailureCluster(
         ),
       }).kind;
     }
-    // The latest occurrence passed on a retry, or its test's history both fails and
+    // The latest occurrence passed after a failed attempt, or its test's history both fails and
     // passes: the Flake Lab may hold the next step.
     const testCaseId = latestOccurrence.testCaseId;
-    const retryPassed = execRow?.status === 'passed' && (execRow.retries ?? 0) > 0;
+    const retryPassed = Boolean(execRow?.passedAfterFailure);
     if (
       testCaseId != null &&
       (retryPassed || (await mayHaveFlakeSuspects(db, testCaseId).catch(() => false))) &&

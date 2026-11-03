@@ -43,6 +43,7 @@ function newer(
       runId: runIds[0] ?? 2,
       status: 'failed',
       retries: 0,
+      passedAfterFailure: false,
       at: MINUTES_AGO,
       sameRun: false,
       sameCluster: true,
@@ -244,7 +245,12 @@ describe('the latest line', () => {
     const one = (newest: Partial<NonNullable<LatestExecution['newest']>>) =>
       buildSituation(base({ latest: newer([], { runId: 62, ...newest }) })).latest!.text;
     expect(one({ status: 'passed' })).toBe('Not the latest: passed in run #62, 53 minutes ago');
-    expect(one({ status: 'passed', retries: 1 })).toBe('Not the latest: passed on retry in run #62, 53 minutes ago');
+    expect(one({ status: 'passed', retries: 1, passedAfterFailure: true })).toBe(
+      'Not the latest: passed on retry in run #62, 53 minutes ago',
+    );
+    expect(one({ status: 'passed', retries: 1, passedAfterFailure: false })).toBe(
+      'Not the latest: passed in run #62, 53 minutes ago',
+    );
     expect(one({ status: 'skipped' })).toBe('Not the latest: was skipped in run #62, 53 minutes ago');
     expect(one({ status: 'didnotrun' })).toBe('Not the latest: did not run in run #62, 53 minutes ago');
   });

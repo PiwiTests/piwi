@@ -6,6 +6,7 @@ import * as schema from '../../server/database/schema.sqlite';
 import { MCP_TOOLS } from '../../server/utils/mcp/tools';
 import { ADMIN_ACCESS } from '#shared/permissions';
 import { migrateToLatest } from './temp-db';
+import { withStoredVerdicts } from './stored-verdicts';
 
 delete process.env.PIWI_DATABASE_URL;
 const gaps = await import('../../shared/handlers/scenario-gaps');
@@ -526,7 +527,7 @@ describe('computeScenarioGaps', () => {
     await db.insert(schema.testCases).values({ id: 2, projectId: 1, filePath: 'tests/x.spec.ts', title: 'x' });
     const [exec] = await db
       .insert(schema.testRunsCases)
-      .values({ testRunId: 1, testCaseId: 2, status: 'passed', createdAt: new Date(++clock) })
+      .values(withStoredVerdicts({ testRunId: 1, testCaseId: 2, status: 'passed', createdAt: new Date(++clock) }))
       .returning({ id: schema.testRunsCases.id });
     await db.insert(schema.graphNodes).values([
       {
@@ -608,7 +609,7 @@ describe('computeScenarioGaps', () => {
     // A later run's test reaches the route the handler serves.
     await db
       .insert(schema.testRunsCases)
-      .values({ testRunId: 1, testCaseId: 1, status: 'passed', createdAt: new Date() });
+      .values(withStoredVerdicts({ testRunId: 1, testCaseId: 1, status: 'passed', createdAt: new Date() }));
     await seedReach(1, 'route', 'GET /api/orders/:id', 1);
     await gaps.computeScenarioGaps(db, 1);
 
@@ -622,7 +623,7 @@ describe('computeScenarioGaps', () => {
     await seedRun(1);
     await db
       .insert(schema.testRunsCases)
-      .values({ testRunId: 1, testCaseId: 1, status: 'passed', createdAt: new Date() });
+      .values(withStoredVerdicts({ testRunId: 1, testCaseId: 1, status: 'passed', createdAt: new Date() }));
     const gap = (key: string, status = 'open') => ({
       projectId: 1,
       detector: 'changed-unreached',
@@ -748,7 +749,7 @@ describe('computeScenarioGaps', () => {
     await db.insert(schema.testCases).values({ id: 2, projectId: 1, filePath: 'tests/x.spec.ts', title: 'x' });
     const [exec] = await db
       .insert(schema.testRunsCases)
-      .values({ testRunId: 1, testCaseId: 2, status: 'passed', createdAt: new Date(++clock) })
+      .values(withStoredVerdicts({ testRunId: 1, testCaseId: 2, status: 'passed', createdAt: new Date(++clock) }))
       .returning({ id: schema.testRunsCases.id });
 
     // A first-party route the graph holds as a node, seen only with success.
@@ -790,11 +791,11 @@ describe('computeScenarioGaps', () => {
 
     const [realExec] = await db
       .insert(schema.testRunsCases)
-      .values({ testRunId: 1, testCaseId: 2, status: 'passed', createdAt: new Date(++clock) })
+      .values(withStoredVerdicts({ testRunId: 1, testCaseId: 2, status: 'passed', createdAt: new Date(++clock) }))
       .returning({ id: schema.testRunsCases.id });
     const [probeExec] = await db
       .insert(schema.testRunsCases)
-      .values({ testRunId: 2, testCaseId: 2, status: 'failed', createdAt: new Date(++clock) })
+      .values(withStoredVerdicts({ testRunId: 2, testCaseId: 2, status: 'failed', createdAt: new Date(++clock) }))
       .returning({ id: schema.testRunsCases.id });
 
     await db.insert(schema.graphNodes).values({
@@ -835,7 +836,7 @@ describe('computeScenarioGaps', () => {
     await db.insert(schema.testCases).values({ id: 2, projectId: 1, filePath: 'tests/x.spec.ts', title: 'x' });
     const [exec] = await db
       .insert(schema.testRunsCases)
-      .values({ testRunId: 1, testCaseId: 2, status: 'passed', createdAt: new Date(++clock) })
+      .values(withStoredVerdicts({ testRunId: 1, testCaseId: 2, status: 'passed', createdAt: new Date(++clock) }))
       .returning({ id: schema.testRunsCases.id });
     await db.insert(schema.graphNodes).values({
       projectId: 1,
@@ -930,10 +931,12 @@ describe('computeScenarioGaps', () => {
     await seedRun(1);
     await db.insert(schema.testCases).values({ id: 2, projectId: 1, filePath: 'tests/b.spec.ts', title: 'b' });
     // Test 2 passed only after a retry in the run: flaky lately.
-    await db.insert(schema.testRunsCases).values([
-      { testRunId: 1, testCaseId: 2, status: 'failed', retries: 0 },
-      { testRunId: 1, testCaseId: 2, status: 'passed', retries: 1 },
-    ]);
+    await db.insert(schema.testRunsCases).values(
+      withStoredVerdicts([
+        { testRunId: 1, testCaseId: 2, status: 'failed', retries: 0 },
+        { testRunId: 1, testCaseId: 2, status: 'passed', retries: 1 },
+      ]),
+    );
     await seedReach(1, 'route', 'POST /api/orders', 1);
     await seedReach(2, 'route', 'POST /api/orders', 1);
     for (const [testCaseId, outcome] of [
@@ -964,7 +967,7 @@ describe('computeScenarioGaps', () => {
       .values({ id: 2, projectId: 1, filePath: 'tests/x.spec.ts', title: 'x', feature: 'Orders' });
     const [exec] = await db
       .insert(schema.testRunsCases)
-      .values({ testRunId: 1, testCaseId: 2, status: 'passed', createdAt: new Date(++clock) })
+      .values(withStoredVerdicts({ testRunId: 1, testCaseId: 2, status: 'passed', createdAt: new Date(++clock) }))
       .returning({ id: schema.testRunsCases.id });
     await db.insert(schema.graphNodes).values({
       projectId: 1,

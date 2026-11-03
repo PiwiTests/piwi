@@ -174,7 +174,8 @@ describe('the facts an export states', () => {
       'didnotrun',
       'running',
     ]);
-    expect(statusTone('passed', 2)).toBe('flaky');
+    expect(statusTone('passed', true)).toBe('flaky');
+    expect(statusTone('passed', false)).toBe('passed');
     expect(tones(['skipped', 'unknown', 'cancelled', ''])).toEqual(['skipped', 'skipped', 'skipped', 'skipped']);
   });
 

@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import {
+  decidesOutcome,
   countFailedFromTally,
   distinctRunCountsFromAttempts,
   flakyFinalAttempts,
@@ -386,6 +387,36 @@ describe('flaky results', () => {
 
     const reported = { ...rows[1]!, attempts: [{ retry: 0, status: 'failed' }] };
     expect(withAttemptHistory([rows[0]!, reported])[1]).toBe(reported);
+  });
+});
+
+describe('decidesOutcome', () => {
+  const final = (status: string, retries: number, repeatEachIndex: number, passedAfterFailure?: boolean) => ({
+    status,
+    retries,
+    repeatEachIndex,
+    ...(passedAfterFailure === undefined ? {} : { passedAfterFailure }),
+  });
+
+  test('takes a flaky repetition over a plain pass, as the stored verdict tells it', () => {
+    const flaky = final('passed', 1, 0, true);
+    const plain = final('passed', 0, 1, false);
+    expect(decidesOutcome(flaky, plain)).toBe(true);
+    expect(decidesOutcome(plain, flaky)).toBe(false);
+  });
+
+  test('reads a retry that passed after passes as a plain pass when its verdict says so', () => {
+    const serialRetry = final('passed', 1, 0, false);
+    const later = final('passed', 0, 1, false);
+    expect(decidesOutcome(later, serialRetry)).toBe(true);
+  });
+
+  test('reads a pass on a retry as flaky when the row carries no verdict', () => {
+    expect(decidesOutcome(final('passed', 1, 0), final('passed', 0, 1))).toBe(true);
+  });
+
+  test('takes a failure over any pass', () => {
+    expect(decidesOutcome(final('failed', 1, 0), final('passed', 1, 1, true))).toBe(true);
   });
 });
 
