@@ -133,12 +133,12 @@ test.describe.serial('Failure clustering', () => {
   let firstRunId: number | null = null;
   let projectId: number | null = null;
 
-  async function submitRun(request: APIRequestContext, cases: object[]) {
+  async function submitRun(request: APIRequestContext, cases: object[], startTime = new Date()) {
     const response = await request.post('/api/test-runs/submit', {
       data: {
         projectName: PROJECT.FAILURE_CLUSTERS,
         status: 'failed',
-        startTime: new Date().toISOString(),
+        startTime: startTime.toISOString(),
         duration: 60000,
         totalTests: cases.length,
         passedTests: 1,
@@ -349,7 +349,7 @@ test.describe.serial('Failure clustering', () => {
   });
 
   test('failure-groups endpoint exposes cluster status', async ({ request }) => {
-    const { runId } = await submitRun(request, [
+    const cases = [
       {
         title: 'login via header',
         status: 'failed',
@@ -358,13 +358,23 @@ test.describe.serial('Failure clustering', () => {
         error: loginTimeout(30000),
       },
       { title: 'homepage loads', status: 'passed', duration: 900, location: 'tests/home.spec.ts:5:5' },
-    ]);
+    ];
+    type Group = { status: string; triageNote: string | null };
+    const groupsOf = async (runId: number): Promise<Group[]> =>
+      (await (await request.get(`/api/test-runs/${runId}/failure-groups`)).json()).items;
 
-    const groupsRes = await request.get(`/api/test-runs/${runId}/failure-groups`);
-    const groups: Array<{ status: string; triageNote: string | null }> = (await groupsRes.json()).items;
-    expect(groups[0]).toBeDefined();
-    expect(groups[0].status).toBe('resolved');
-    expect(groups[0].triageNote).toBe('Investigated — flaky test infrastructure');
+    // A run that started before the cluster was resolved leaves it resolved.
+    const before = await submitRun(request, cases, new Date(Date.now() - 60_000));
+    const [stillResolved] = await groupsOf(before.runId);
+    expect(stillResolved).toBeDefined();
+    expect(stillResolved!.status).toBe('resolved');
+    expect(stillResolved!.triageNote).toBe('Investigated — flaky test infrastructure');
+
+    // One that started after it and fails it again reopens it, its note kept.
+    const after = await submitRun(request, cases, new Date(Date.now() + 5_000));
+    const [reopened] = await groupsOf(after.runId);
+    expect(reopened!.status).toBe('open');
+    expect(reopened!.triageNote).toContain('Investigated — flaky test infrastructure');
   });
 
   test('a known-issue link pins to the cluster and surfaces in the detail and the list', async ({ request }) => {
