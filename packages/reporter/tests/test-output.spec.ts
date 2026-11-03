@@ -25,6 +25,14 @@ describe('what an attempt wrote to a stream', () => {
     );
   });
 
+  it('keeps a character whole when its bytes are split across two chunks', () => {
+    const euro = Buffer.from('€');
+    expect(testOutputOf([Buffer.from('total 12,50 '), euro.subarray(0, 1), euro.subarray(1), Buffer.from('\n')])).toBe(
+      'total 12,50 €\n',
+    );
+    expect(testOutputOf([euro.subarray(0, 2), 'text\n'])).toBe('\ufffdtext\n');
+  });
+
   it('is null when the attempt wrote nothing, or only white space', () => {
     expect(testOutputOf(undefined)).toBeNull();
     expect(testOutputOf([])).toBeNull();
