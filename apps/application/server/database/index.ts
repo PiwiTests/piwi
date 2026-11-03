@@ -124,10 +124,31 @@ function backfillAttemptHistories(): void {
 }
 
 /**
+ * Hide each credential's shape in the test errors stored before ingest hid
+ * them (`hideSecretShapesInStoredErrorsOnce`): the executions' errors, their
+ * steps' and hooks' errors, the runs' errors. Once per instance, without
+ * blocking startup; an interrupted pass resumes at the next start.
+ */
+function hideSecretsInStoredErrors(): void {
+  void (async () => {
+    try {
+      const { hideSecretShapesInStoredErrorsOnce } = await import('../utils/error-secrets-backfill');
+      const hidden = await hideSecretShapesInStoredErrorsOnce(db as any);
+      if (hidden) console.log(`[Database] Credentials hidden in ${hidden} stored error(s)`);
+    } catch (err) {
+      console.error('[Database] Hiding credentials in stored errors failed:', err);
+    }
+  })();
+}
+
+/**
  * Re-fingerprint the failure clusters (`reclusterFailureFingerprints`), after
  * giving a sample to the aliases stored without one (`backfillAliasSamples`),
- * which runs once per instance. Startup waits for both. A failure is logged,
- * and the next start tries again.
+ * then hiding each credential's shape in the clusters' and aliases' samples
+ * (`hideSecretShapesInClusterSamples`), each once per instance. Startup waits
+ * for all three, so a sample that changed is fingerprinted again before ingest
+ * fingerprints the same failure. A failure is logged, and the next start tries
+ * again.
  */
 async function reclusterFailureClusters(target: DB): Promise<void> {
   try {
@@ -136,6 +157,13 @@ async function reclusterFailureClusters(target: DB): Promise<void> {
       const found = await backfillAliasSamples(target);
       await setAppSetting(target, ALIAS_SAMPLES_BACKFILLED_SETTING, new Date().toISOString());
       if (found > 0) console.log(`[Database] Failure-cluster alias backfill found ${found} sample(s)`);
+    }
+    const { CLUSTER_SAMPLE_SECRETS_SETTING, hideSecretShapesInClusterSamples } =
+      await import('../utils/error-secrets-backfill');
+    if (!(await getAppSetting(target, CLUSTER_SAMPLE_SECRETS_SETTING))) {
+      const hidden = await hideSecretShapesInClusterSamples(target);
+      await setAppSetting(target, CLUSTER_SAMPLE_SECRETS_SETTING, new Date().toISOString());
+      if (hidden > 0) console.log(`[Database] Credentials hidden in ${hidden} failure-cluster sample(s)`);
     }
     const { updated, merged } = await reclusterFailureFingerprints(target);
     if (updated || merged) {
@@ -199,6 +227,7 @@ async function openDatabase(): Promise<DB> {
           backfillTraceResourceLinks();
           backfillAnalyticsRollups();
           backfillAttemptHistories();
+          hideSecretsInStoredErrors();
         } catch (error) {
           console.error('[Database] Migration error:', error);
           throw error;
@@ -253,6 +282,7 @@ async function openDatabase(): Promise<DB> {
           backfillTraceResourceLinks();
           backfillAnalyticsRollups();
           backfillAttemptHistories();
+          hideSecretsInStoredErrors();
         } catch (error) {
           console.error('[Database] Migration error:', error);
           throw error;

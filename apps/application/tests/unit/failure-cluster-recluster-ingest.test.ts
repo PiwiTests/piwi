@@ -20,6 +20,8 @@ const { persistRunCases } = await import('../../server/utils/persist-run-cases')
 const { testCaseCache } = await import('../../server/utils/test-case-cache');
 const { testSuiteCache } = await import('../../server/utils/test-suite-cache');
 const { reclusterFailureFingerprints } = await import('../../shared/handlers/failure-cluster-recluster');
+const { hideSecretShapesInClusterSamples } = await import('../../server/utils/error-secrets-backfill');
+const { computeErrorFingerprint } = await import('../../shared/error-fingerprint');
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 let db: Db;
@@ -77,6 +79,60 @@ describe('a failure that holds a credential', () => {
 
     expect(await reclusterFailureFingerprints(db as unknown as DbClient)).toEqual({ updated: 0, merged: 0 });
     expect(await ingestFailure(refused('Zm9vYmFyYmF6cXV4Mg'))).toBe(clusterId);
+    expect(await db.$count(schema.failureClusters)).toBe(1);
+  });
+
+  test('stored before ingest hid it: the upgrade hides it, fingerprints its cluster again and keeps its triage', async () => {
+    // Two clusters stored by an earlier version, one per token, both ignored: the token was part of what they hashed.
+    const runs = await db
+      .insert(schema.testRuns)
+      .values(
+        [1, 2].map((i) => ({ projectId, status: 'failed', startTime: new Date(Date.UTC(2026, 9, i)), metadata: {} })),
+      )
+      .returning();
+    const stored = async (token: string, run: number, triage: Partial<typeof schema.failureClusters.$inferInsert>) => {
+      const sample = refused(token);
+      const fp = await computeErrorFingerprint(sample);
+      const [row] = await db
+        .insert(schema.failureClusters)
+        .values({
+          projectId,
+          fingerprint: fp.fingerprint,
+          signature: fp.signature,
+          errorType: fp.errorType,
+          sampleError: sample,
+          fingerprintSample: sample,
+          firstSeenRunId: run,
+          lastSeenRunId: run,
+          ...triage,
+        })
+        .returning();
+      return row!;
+    };
+    const first = await stored('Zm9vYmFyYmF6cXV4MQ', runs[0]!.id, { status: 'ignored', triageNote: 'sandbox outage' });
+    await stored('Zm9vYmFyYmF6cXV4Mg', runs[1]!.id, { status: 'ignored' });
+
+    expect(await hideSecretShapesInClusterSamples(db as never)).toBe(2);
+    // The first takes the new fingerprint; the second, which now has it too, merges into the first, and the alias the
+    // merge records of its old fingerprint goes, since no failure computes it any more.
+    expect(await reclusterFailureFingerprints(db as unknown as DbClient)).toEqual({ updated: 2, merged: 1 });
+    expect(await db.$count(schema.failureClusterAliases)).toBe(0);
+
+    const clusters = await db.select().from(schema.failureClusters);
+    expect(clusters).toHaveLength(1);
+    const hidden = `Error: the order was refused for ${HIDDEN_VALUE}\n    at tests/orders.spec.ts:9:1`;
+    expect(clusters[0]).toMatchObject({
+      id: first.id,
+      status: 'ignored',
+      triageNote: 'sandbox outage',
+      sampleError: hidden,
+      fingerprintSample: hidden,
+      fingerprint: (await computeErrorFingerprint(hidden)).fingerprint,
+      signature: `Error: the order was refused for ${HIDDEN_VALUE}`,
+    });
+
+    // The failure that recurs, with a third token, joins it.
+    expect(await ingestFailure(refused('Zm9vYmFyYmF6cXV4Mw'))).toBe(first.id);
     expect(await db.$count(schema.failureClusters)).toBe(1);
   });
 });

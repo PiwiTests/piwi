@@ -292,7 +292,8 @@ is written `<hidden>`:
 
 Each step's error, and the error line of a hook or a fixture that failed, are hidden the same way. The dashboard hides
 them again as it stores a result, whatever sent it. An error that holds no secret is kept as it is, so it joins the
-[failure cluster](/features/failure-clusters) it did.
+[failure cluster](/features/failure-clusters) it did. An error stored before the dashboard hid a credential's shape
+has it hidden at the first start of the version that does, its failure cluster kept.
 
 ### Errors outside the tests
 

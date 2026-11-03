@@ -62,6 +62,10 @@ in-app assistant).
   `fingerprintSample` (`sampleError` for older rows), then each alias's from the sample it keeps, moves the per-test
   routes with them, and merges two clusters a recomputed fingerprint joins (`mergeFailureClusters()`). Ingest hashes
   the text a new cluster keeps as `fingerprintSample`, so the recluster reads what ingest read.
+- **Hiding more of a test's error also hides it in the stored samples, before the recluster.** Ingest hashes the error
+  as `hiddenErrorText` leaves it, and a sample stored earlier keeps the old text, so its cluster would fork: a pass like
+  `hideSecretShapesInClusterSamples` (`error-secrets-backfill.ts`, under a setting of its own) runs once at startup
+  ahead of `reclusterFailureFingerprints` (`tests/unit/failure-cluster-recluster-ingest.test.ts`).
 
 ## Locator healing
 

@@ -167,6 +167,11 @@ export function withShardDurations(metadata: MetadataObject, durations: unknown[
 /** Shards of one run record their ends one at a time. */
 const shardEndLock = createKeyedLock<number>();
 
+/** Run `task` while no shard of run `runId` records its end (`recordShardEnd`): a rewrite of the run's errors. */
+export function whileNoShardEnds<T>(runId: number, task: () => Promise<T>): Promise<T> {
+  return shardEndLock(runId, task);
+}
+
 /** The suite setup steps and the errors outside any test a run holds. */
 async function readShardAdditions(
   db: DrizzleDB,
