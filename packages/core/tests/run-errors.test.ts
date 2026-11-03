@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'vitest';
-import { MAX_RUN_ERROR_CHARS, MAX_RUN_ERRORS, sanitizeRunError, sanitizeRunErrors } from '../src/run-errors';
+import {
+  MAX_RUN_ERROR_CHARS,
+  MAX_RUN_ERRORS,
+  runErrorOfReported,
+  sanitizeRunError,
+  sanitizeRunErrors,
+} from '../src/run-errors';
 
 describe('an error of a run outside any test', () => {
   // As Playwright 1.64 reports a global setup that threw.
@@ -69,5 +75,41 @@ describe("a run's errors outside any test", () => {
     expect(sanitizeRunErrors([{ message: ' ' }, null])).toBeNull();
     expect(sanitizeRunErrors({ message: 'boom' })).toBeNull();
     expect(sanitizeRunErrors(undefined)).toBeNull();
+  });
+});
+
+describe('an error Playwright reported outside any test', () => {
+  const fromConfig = (file: string) => file.replace('/repo/', '');
+
+  test('keeps its message with its causes, the frames of its stack, and its place named by the caller', () => {
+    expect(
+      runErrorOfReported(
+        {
+          message: 'TypeError: fetch failed',
+          stack: 'TypeError: fetch failed\n    at globalSetup (/repo/global-setup.ts:4:9)',
+          cause: { message: 'Error: connect ECONNREFUSED', cause: { value: '{ code: 42 }' } },
+          location: { file: '/repo/global-setup.ts', line: 4, column: 9 },
+        },
+        fromConfig,
+      ),
+    ).toEqual({
+      message: 'TypeError: fetch failed\n[cause]: Error: connect ECONNREFUSED\n[cause]: { code: 42 }',
+      stack: '    at globalSetup (/repo/global-setup.ts:4:9)',
+      location: { file: 'global-setup.ts', line: 4, column: 9 },
+    });
+  });
+
+  test('reads only the fields of the expected type, as a blob report read back may hold any', () => {
+    expect(runErrorOfReported({ message: 42, value: "'declined'", location: 'here' }, fromConfig)).toEqual({
+      message: "'declined'",
+      stack: null,
+      location: null,
+    });
+    expect(runErrorOfReported({ stack: 'Error: boom\n    at x (/a.ts:1:1)', cause: 'no' }, fromConfig)?.message).toBe(
+      'Error: boom',
+    );
+    expect(
+      runErrorOfReported({ message: '', location: { file: '/repo/a.ts', line: 1, column: 1 } }, fromConfig),
+    ).toBeNull();
   });
 });

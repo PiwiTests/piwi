@@ -53,6 +53,61 @@ export function sanitizeRunError(value: unknown): WireRunError | null {
   };
 }
 
+/**
+ * An error as Playwright reports one (its `TestError`), live or read back from a blob report: the fields a run error is
+ * made of, each read only when it has the expected type.
+ */
+export interface ReportedError {
+  message?: unknown;
+  value?: unknown;
+  stack?: unknown;
+  cause?: unknown;
+  location?: unknown;
+}
+
+/** How many causes of an error its message names, as Playwright's terminal reporters write them (`[cause]: …`). */
+const MAX_CAUSES = 3;
+
+/** The lines of a stack before its first frame: its message. */
+const FIRST_FRAME = /^\s*at\s/m;
+
+function textOf(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function reportedError(value: unknown): ReportedError | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as ReportedError) : null;
+}
+
+/** An error's message: its own, the value thrown when it was not an `Error`, else the head of its stack. */
+function messageOf(error: ReportedError): string {
+  const own = textOf(error.message) || textOf(error.value);
+  if (own) return own;
+  const stack = textOf(error.stack);
+  const frame = FIRST_FRAME.exec(stack);
+  return (frame ? stack.slice(0, frame.index) : stack).trim();
+}
+
+/**
+ * An error Playwright reported outside any test (`onError`), as the run keeps it ({@link sanitizeRunError}): its
+ * message with its causes after it, the frames of its stack, and the place it was thrown, its file named by
+ * `fileName` (relative to the Playwright config's folder, as test files are). Null for an error with no message. Pure.
+ */
+export function runErrorOfReported(error: ReportedError, fileName: (file: string) => string): WireRunError | null {
+  let message = messageOf(error);
+  let cause = reportedError(error.cause);
+  for (let depth = 0; cause && depth < MAX_CAUSES; depth++, cause = reportedError(cause.cause)) {
+    const said = messageOf(cause);
+    if (said) message += `\n[cause]: ${said}`;
+  }
+  const stack = textOf(error.stack);
+  const frame = FIRST_FRAME.exec(stack);
+  const at = reportedError(error.location) as { file?: unknown; line?: unknown; column?: unknown } | null;
+  const location =
+    at && typeof at.file === 'string' && at.file ? { file: fileName(at.file), line: at.line, column: at.column } : null;
+  return sanitizeRunError({ message, stack: frame ? stack.slice(frame.index).trimEnd() : null, location });
+}
+
 /** A run's errors read from untrusted input, as they are kept: the first {@link MAX_RUN_ERRORS}; null for none. Pure. */
 export function sanitizeRunErrors(value: unknown): WireRunError[] | null {
   if (!Array.isArray(value)) return null;
