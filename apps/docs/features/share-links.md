@@ -28,7 +28,7 @@ On an execution page, a failure-cluster page or a report snapshot page, open **S
 **Download**); on a saved dashboard, open *Live dashboard links* in the dashboard's menu:
 
 1. Pick an expiry. The dialog offers lifetimes up to `PIWI_SHARE_LINK_MAX_TTL_DAYS` (30 days unless configured;
-   setting it to `0` lifts the cap and allows links with no expiry).
+   setting it to `0` lifts the cap and allows links with no expiry, which work until they are revoked).
 2. **Copy the link immediately — it is shown only once.** The server stores a hash of the token, not the token, so
    there is no way to display the URL again later. Mint a new link instead.
 
