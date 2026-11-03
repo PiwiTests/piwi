@@ -212,9 +212,13 @@ export function providerLabel(provider: string | null | undefined, baseUrl?: str
 
 /** Whether a base URL points at this machine or a private network, so the evidence stays there (`looksPrivateHost`). */
 export function isPrivateUrl(url: string | null | undefined): boolean {
+  let parsed: URL;
   try {
-    return looksPrivateHost(new URL(url ?? '').hostname);
+    parsed = new URL(url ?? '');
   } catch {
     return false;
   }
+  // `host:8000/v1` typed without a scheme parses as the scheme `host:` with no host at all.
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+  return looksPrivateHost(parsed.hostname);
 }

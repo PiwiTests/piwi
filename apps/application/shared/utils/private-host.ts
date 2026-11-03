@@ -6,6 +6,7 @@
  */
 export function looksPrivateHost(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (!host) return false;
   if (host === '::1' || host === 'localhost') return true;
   if (['.localhost', '.local', '.internal'].some((suffix) => host.endsWith(suffix))) return true;
   const v4 = host.match(/^(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/);

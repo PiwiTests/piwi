@@ -38,6 +38,9 @@ describe('provider tiles', () => {
     expect(isPrivateUrl('https://api.openai.com/v1')).toBe(false);
     expect(isPrivateUrl('not a url')).toBe(false);
     expect(isPrivateUrl(null)).toBe(false);
+    expect(isPrivateUrl('api.openai.com:443/v1')).toBe(false);
+    expect(isPrivateUrl('my-vllm.example.com:8000/v1')).toBe(false);
+    expect(isPrivateUrl('mailto:me@example.com')).toBe(false);
   });
 });
 
