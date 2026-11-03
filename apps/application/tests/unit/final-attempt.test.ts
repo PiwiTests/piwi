@@ -4,7 +4,7 @@ import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { apiError } from '../../server/utils/api-error';
 import { durationStats } from '#shared/utils/stats';
@@ -268,17 +268,41 @@ describe('a streamed run', () => {
   });
 });
 
-describe('an import', () => {
-  type Port = Parameters<typeof importBlobReportRun>[1];
-  const port: Port = {
-    persistRunCases: (database, project, testRunId, cases, options) =>
-      persistRunCases(database as never, project, testRunId, cases as never, options),
-    storeFile: async ({ entryName }) => ({ path: `stored/${entryName}`, size: 1 }),
-    readTraceConsole: async () => null,
-    parseErrorContext: () => ({ ariaSnapshot: null, testSource: null }),
-    publishRunSubmitted: () => {},
-    publishRollupUpdated: () => {},
+/** The import port of the server, storing nothing but the executions. */
+const importPort: Parameters<typeof importBlobReportRun>[1] = {
+  persistRunCases: (database, project, testRunId, cases, options) =>
+    persistRunCases(database as never, project, testRunId, cases as never, options),
+  storeFile: async ({ entryName }) => ({ path: `stored/${entryName}`, size: 1 }),
+  readTraceConsole: async () => null,
+  parseErrorContext: () => ({ ariaSnapshot: null, testSource: null }),
+  publishRunSubmitted: () => {},
+  publishRollupUpdated: () => {},
+};
+
+/** A parsed blob report of one passed run holding `cases`. */
+function blobReport(cases: ImportedRunCase[]): ParsedBlobReport {
+  return {
+    blobVersion: 2,
+    playwrightVersion: '1.55.0',
+    startTime: new Date('2026-09-30T10:00:00Z'),
+    duration: 1000,
+    status: 'passed',
+    totalTests: 1,
+    passedTests: 1,
+    failedTests: 0,
+    skippedTests: 0,
+    didNotRunTests: 0,
+    flakyTests: 1,
+    shard: null,
+    projectNames: ['chromium'],
+    scm: null,
+    runErrors: [],
+    cases,
   };
+}
+
+describe('an import', () => {
+  const port = importPort;
 
   test("of a trace makes the run's earlier trace of its test an earlier attempt", async () => {
     const trace = (importHash: string, status: string): Parameters<typeof importTraceRun>[2] => ({
@@ -314,24 +338,7 @@ describe('an import', () => {
       traces: [],
       attachments: [],
     });
-    const parsed: ParsedBlobReport = {
-      blobVersion: 2,
-      playwrightVersion: '1.55.0',
-      startTime: new Date('2026-09-30T10:00:00Z'),
-      duration: 1000,
-      status: 'passed',
-      totalTests: 1,
-      passedTests: 1,
-      failedTests: 0,
-      skippedTests: 0,
-      didNotRunTests: 0,
-      flakyTests: 1,
-      shard: null,
-      projectNames: ['chromium'],
-      scm: null,
-      runErrors: [],
-      cases: [execution(1, 'passed'), execution(0, 'failed')],
-    };
+    const parsed = blobReport([execution(1, 'passed'), execution(0, 'failed')]);
     const { runId } = await importBlobReportRun(db as never, port, {
       projectId,
       parsed,
@@ -528,6 +535,128 @@ describe('a batch sent again after its request failed past its insert', () => {
       ]);
       expect(await flakyReadings(runId, 'pays')).toEqual(readEverywhere(true));
     });
+  });
+});
+
+/** Each execution of test `title` in run `runId` as `<retry>: <passed after a failure>`, in retry order. */
+async function verdicts(runId: number, title: string): Promise<string[]> {
+  const rows = await db
+    .select({ retries: schema.testRunsCases.retries, verdict: schema.testRunsCases.passedAfterFailure })
+    .from(schema.testRunsCases)
+    .where(and(eq(schema.testRunsCases.testRunId, runId), eq(schema.testRunsCases.testCaseId, await testCaseId(title))))
+    .orderBy(asc(schema.testRunsCases.retries));
+  return rows.map((r) => `${r.retries}: ${r.verdict}`);
+}
+
+/** The attempts of one test as a run reports them, and whether its result passed after a failure. */
+const VERDICT_CASES: Array<[string, string[], boolean]> = [
+  ['a serial group retried for another test, passed twice', ['passed', 'passed'], false],
+  ['a test that did not run, then passed', ['didnotrun', 'passed'], false],
+  ['a test skipped, then passed', ['skipped', 'passed'], false],
+  ['a test that failed, then passed', ['failed', 'passed'], true],
+  ['a test that timed out, then passed', ['timedOut', 'passed'], true],
+];
+
+describe('the verdict each execution stores', () => {
+  /** Each attempt of `statuses`, with its history up to it, or without one as an older reporter sends it. */
+  const attemptsOf = (statuses: string[], history: boolean) =>
+    statuses.map((_, retry) => {
+      const tc = attempt('pays', statuses.slice(0, retry + 1));
+      if (history) return tc;
+      const { attempts: _history, ...bare } = tc;
+      return bare;
+    });
+
+  describe.each(['server', 'demo'] as const)('by the %s ingest of a streamed run', (ingest) => {
+    test.each(VERDICT_CASES)('%s, with or without its history', async (_name, statuses, flaky) => {
+      for (const history of [true, false]) {
+        const { runId, send } = await streams[ingest]();
+        for (const tc of attemptsOf(statuses, history)) await send(tc);
+        expect(await verdicts(runId, 'pays')).toEqual(['0: false', `1: ${flaky}`]);
+        expect(await flakyReadings(runId, 'pays')).toEqual(readEverywhere(flaky));
+        await db.delete(schema.testRuns).where(eq(schema.testRuns.id, runId));
+      }
+    });
+
+    test('of a final attempt stored before its failed one', async () => {
+      const { runId, send } = await streams[ingest]();
+      const [first, retry] = attemptsOf(['failed', 'passed'], false);
+      await send(retry!);
+      await send(first!);
+      expect(await verdicts(runId, 'pays')).toEqual(['0: false', '1: true']);
+    });
+
+    test('of a retry stored before an earlier attempt that passed', async () => {
+      const { runId, send } = await streams[ingest]();
+      const [first, retry] = attemptsOf(['passed', 'passed'], false);
+      await send(retry!);
+      expect(await verdicts(runId, 'pays')).toEqual(['1: true']);
+      await send(first!);
+      expect(await verdicts(runId, 'pays')).toEqual(['0: false', '1: false']);
+      expect(await flakyReadings(runId, 'pays')).toEqual(readEverywhere(false));
+    });
+  });
+
+  test.each(VERDICT_CASES)('by a batch: %s', async (_name, statuses, flaky) => {
+    const { runId } = await submit({
+      body: {
+        projectName: PROJECT,
+        status: 'passed',
+        startTime: new Date().toISOString(),
+        testCases: attemptsOf(statuses, false),
+        totalTests: 1,
+        passedTests: 1,
+      },
+    });
+    expect(await verdicts(runId, 'pays')).toEqual(['0: false', `1: ${flaky}`]);
+    const [run] = await db.select().from(schema.testRuns).where(eq(schema.testRuns.id, runId));
+    expect(run!.flakyTests).toBe(flaky ? 1 : 0);
+  });
+
+  test.each(VERDICT_CASES)('by a blob import: %s', async (_name, statuses, flaky) => {
+    const { runId } = await importBlobReportRun(db as never, importPort, {
+      projectId,
+      parsed: blobReport(
+        statuses.map((status, retries) => ({
+          case: {
+            title: 'pays',
+            filePath: 'tests/checkout.spec.ts',
+            status,
+            retries,
+            line: 10,
+            column: 5,
+            browser: 'chromium',
+          },
+          traces: [],
+          attachments: [],
+        })),
+      ),
+      readEntry: async (name: string) => new TextEncoder().encode(name),
+      importHash: 'c'.repeat(64),
+      source: 'report.zip',
+    });
+    expect(await verdicts(runId, 'pays')).toEqual(['0: false', `1: ${flaky}`]);
+  });
+
+  test.each(VERDICT_CASES)('by a trace import: %s', async (_name, statuses, flaky) => {
+    let runId = 0;
+    for (const [i, status] of statuses.entries()) {
+      ({ runId } = await importTraceRun(db as never, importPort, {
+        projectId,
+        parsed: {
+          case: { title: 'pays', filePath: 'checkout.spec.ts', status, line: 10, column: 5, browser: 'chromium' },
+          startedAt: Date.parse('2026-09-30T10:00:00Z') + i * 1000,
+          duration: 500,
+          playwrightVersion: '1.55.0',
+          rawFilePath: 'checkout.spec.ts',
+        } satisfies ParsedTraceImport,
+        bytes: new TextEncoder().encode(`trace ${i}`),
+        importHash: String(i + 1).repeat(64),
+        importGroup: 'd'.repeat(64),
+        source: 'trace.zip',
+      }));
+    }
+    expect(await verdicts(runId, 'pays')).toEqual(['0: false', `1: ${flaky}`]);
   });
 });
 

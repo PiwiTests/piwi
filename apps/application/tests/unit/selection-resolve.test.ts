@@ -3,6 +3,7 @@ import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { migrateToLatest } from './temp-db';
+import { withStoredVerdicts } from './stored-verdicts';
 
 // Counts the file globs compiled, the real matcher behind them.
 const glob = vi.hoisted(() => ({ compiled: 0 }));
@@ -69,15 +70,17 @@ async function seedExecution(
 ): Promise<void> {
   const runId = ++runSeq;
   await db.insert(schema.testRuns).values({ id: runId, projectId: 1, status: 'passed', startTime: new Date(++clock) });
-  await db.insert(schema.testRunsCases).values({
-    testRunId: runId,
-    testCaseId,
-    status,
-    duration: opts.duration ?? null,
-    line: opts.line ?? null,
-    retries: opts.retries ?? 0,
-    createdAt: new Date(++clock),
-  });
+  await db.insert(schema.testRunsCases).values(
+    withStoredVerdicts({
+      testRunId: runId,
+      testCaseId,
+      status,
+      duration: opts.duration ?? null,
+      line: opts.line ?? null,
+      retries: opts.retries ?? 0,
+      createdAt: new Date(++clock),
+    }),
+  );
 }
 
 beforeEach(async () => {

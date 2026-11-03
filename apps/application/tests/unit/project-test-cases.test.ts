@@ -3,6 +3,7 @@ import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { migrateToLatest } from './temp-db';
+import { withStoredVerdicts } from './stored-verdicts';
 
 // The schema barrel (server/database/schema.ts) picks the PostgreSQL schema at
 // import time when PIWI_DATABASE_URL is set, so clear it before the handler
@@ -42,14 +43,16 @@ async function seedCase(
       .insert(schema.testRuns)
       .values({ projectId, status: rc.status === 'passed' ? 'passed' : 'failed', startTime: rc.createdAt })
       .returning({ id: schema.testRuns.id });
-    await db.insert(schema.testRunsCases).values({
-      testRunId: run!.id,
-      testCaseId: caseId,
-      status: rc.status,
-      retries: rc.retries ?? 0,
-      duration: rc.duration === undefined ? 1000 : rc.duration,
-      createdAt: rc.createdAt,
-    });
+    await db.insert(schema.testRunsCases).values(
+      withStoredVerdicts({
+        testRunId: run!.id,
+        testCaseId: caseId,
+        status: rc.status,
+        retries: rc.retries ?? 0,
+        duration: rc.duration === undefined ? 1000 : rc.duration,
+        createdAt: rc.createdAt,
+      }),
+    );
   }
   return caseId;
 }

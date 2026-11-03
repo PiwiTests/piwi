@@ -3,6 +3,7 @@ import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { migrateToLatest } from './temp-db';
+import { withStoredVerdicts } from './stored-verdicts';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the handler modules load.
@@ -37,17 +38,19 @@ beforeAll(async () => {
       startTime: new Date(NOON - (i + 1) * 60_000),
     })),
   );
-  await db.insert(schema.testRunsCases).values([
-    ...statuses.map((status, i) => ({
-      testRunId: i + 1,
-      testCaseId: 1,
-      status,
-      duration: 1000,
-      browserName: 'chromium',
-      createdAt: new Date(NOON - (i + 1) * 60_000),
-    })),
-    { testRunId: 1, testCaseId: 2, status: 'skipped', duration: 0, browserName: 'chromium' },
-  ]);
+  await db.insert(schema.testRunsCases).values(
+    withStoredVerdicts([
+      ...statuses.map((status, i) => ({
+        testRunId: i + 1,
+        testCaseId: 1,
+        status,
+        duration: 1000,
+        browserName: 'chromium',
+        createdAt: new Date(NOON - (i + 1) * 60_000),
+      })),
+      { testRunId: 1, testCaseId: 2, status: 'skipped', duration: 0, browserName: 'chromium' },
+    ]),
+  );
 });
 
 describe('the pass rate of a test', () => {
@@ -126,36 +129,38 @@ describe("a test's runs", () => {
       })),
     );
     // A non-final attempt lasts 10 s, so an average that read one would show it.
-    await runsDb.insert(schema.testRunsCases).values([
-      // Flaky in chromium, timed out in firefox.
-      ...rows(10, [
-        [101, 'chromium', 0, 'failed', 10_000],
-        [101, 'chromium', 1, 'passed', 200],
+    await runsDb.insert(schema.testRunsCases).values(
+      withStoredVerdicts([
+        // Flaky in chromium, timed out in firefox.
+        ...rows(10, [
+          [101, 'chromium', 0, 'failed', 10_000],
+          [101, 'chromium', 1, 'passed', 200],
+        ]),
+        ...rows(10, [[101, 'firefox', 0, 'timedout', 300]]),
+        // Three repetitions: passed, flaky, skipped.
+        ...rows(10, [[102, 'chromium', 0, 'passed', 400]], { repeatEachIndex: 0 }),
+        ...rows(
+          10,
+          [
+            [102, 'chromium', 0, 'failed', 10_000],
+            [102, 'chromium', 1, 'passed', 500],
+          ],
+          { repeatEachIndex: 1 },
+        ),
+        ...rows(10, [[102, 'chromium', 0, 'skipped', 0]], { repeatEachIndex: 2 }),
+        // Retried with its serial group after a pass: not flaky. Interrupted in firefox.
+        ...rows(10, [
+          [103, 'chromium', 0, 'passed', 10_000],
+          [103, 'chromium', 1, 'passed', 600],
+        ]),
+        ...rows(10, [[103, 'firefox', 0, 'interrupted', 700]]),
+        ...rows(11, [
+          [104, 'chromium', 0, 'failed', 10_000],
+          [104, 'chromium', 1, 'passed', 100],
+        ]),
+        ...rows(12, [[105, 'chromium', 1, 'passed', 100]], { history: false }),
       ]),
-      ...rows(10, [[101, 'firefox', 0, 'timedout', 300]]),
-      // Three repetitions: passed, flaky, skipped.
-      ...rows(10, [[102, 'chromium', 0, 'passed', 400]], { repeatEachIndex: 0 }),
-      ...rows(
-        10,
-        [
-          [102, 'chromium', 0, 'failed', 10_000],
-          [102, 'chromium', 1, 'passed', 500],
-        ],
-        { repeatEachIndex: 1 },
-      ),
-      ...rows(10, [[102, 'chromium', 0, 'skipped', 0]], { repeatEachIndex: 2 }),
-      // Retried with its serial group after a pass: not flaky. Interrupted in firefox.
-      ...rows(10, [
-        [103, 'chromium', 0, 'passed', 10_000],
-        [103, 'chromium', 1, 'passed', 600],
-      ]),
-      ...rows(10, [[103, 'firefox', 0, 'interrupted', 700]]),
-      ...rows(11, [
-        [104, 'chromium', 0, 'failed', 10_000],
-        [104, 'chromium', 1, 'passed', 100],
-      ]),
-      ...rows(12, [[105, 'chromium', 1, 'passed', 100]], { history: false }),
-    ]);
+    );
   });
 
   test('are one result per run, project and repetition on its page', async () => {

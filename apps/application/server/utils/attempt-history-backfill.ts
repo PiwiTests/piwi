@@ -1,6 +1,6 @@
 import { and, asc, eq, gt, inArray, sql } from 'drizzle-orm';
 import { testRunsCases } from '../database/schema';
-import { withAttemptHistory } from '#shared/utils/test-counts';
+import { isFlakyExecution, withAttemptHistory } from '#shared/utils/test-counts';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { getAppSetting, setAppSetting } from './app-settings';
 
@@ -22,9 +22,9 @@ const MAX_HISTORY_ENTRIES = 30;
  * Give each retry stored without an attempt history (a trace import, an older
  * reporter) the history the run's stored attempts of its test, Playwright
  * project and repetition make, up to it, in the shape ingest stores
- * (`withAttemptHistory`): the SQL of `test-case-aggregates.ts`, which reads a
- * final attempt's verdict from its row alone, then reads it as the run page
- * reads the run's rows. A retry with no earlier stored attempt keeps no
+ * (`withAttemptHistory`), and the verdict that history gives it
+ * (`passedAfterFailure`, `isFlakyExecution`), which every reader of a stored
+ * execution takes from the column. A retry with no earlier stored attempt keeps no
  * history. Reads the executions in pages of {@link ATTEMPT_HISTORY_BACKFILL_PAGE}
  * from `after` (an execution id) and calls `onPage` with the last id of each
  * page done. Returns how many executions it gave a history.
@@ -75,9 +75,10 @@ export async function backfillAttemptHistories(
         .orderBy(asc(testRunsCases.id));
       for (const row of withAttemptHistory(attempts)) {
         if (!wanted.has(row.id) || !Array.isArray(row.attempts) || row.attempts.length === 0) continue;
+        const history = row.attempts.slice(0, MAX_HISTORY_ENTRIES);
         await db
           .update(testRunsCases)
-          .set({ attempts: row.attempts.slice(0, MAX_HISTORY_ENTRIES) })
+          .set({ attempts: history, passedAfterFailure: isFlakyExecution({ ...row, attempts: history }) })
           .where(
             and(
               eq(testRunsCases.id, row.id),
