@@ -118,6 +118,12 @@ export async function claimAccountToken(
   return { userId: row.userId, purpose: row.purpose as TokenPurpose, tokenId: row.id, email: row.email };
 }
 
+/** Give back a token `claimAccountToken` took, for a request that failed before it set anything. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function releaseAccountToken(db: LibSQLDatabase<any>, tokenId: number): Promise<void> {
+  await db.update(accountTokens).set({ usedAt: null }).where(eq(accountTokens.id, tokenId));
+}
+
 /** Mark a token as used (single-use enforcement). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function consumeAccountToken(db: LibSQLDatabase<any>, tokenId: number): Promise<void> {

@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { getDatabase } from '../../database';
 import { users } from '../../database/schema';
-import { claimAccountToken } from '../../utils/account-tokens';
+import { claimAccountToken, releaseAccountToken } from '../../utils/account-tokens';
 import { hashPassword, revokeUserSessions } from '../../utils/auth';
 import { clearUserSession } from '../../utils/auth';
 import { checkRateLimit, rateLimitClientIp, rateLimitedError } from '../../utils/rate-limit';
@@ -43,7 +43,11 @@ export default eventHandler(async (event) => {
     throw apiError({ statusCode: 400, message: 'Invalid or expired token' });
   }
 
-  const hashedPassword = await hashPassword(event, password);
+  // A hash refused or failed (the server busy, 503) sets nothing: the token stays usable.
+  const hashedPassword = await hashPassword(event, password).catch(async (error: unknown) => {
+    await releaseAccountToken(db, validated.tokenId);
+    throw error;
+  });
   const extraFields = validated.purpose === 'invite' ? { emailVerified: true } : {};
   // The write matches the address again: one changed since the validation sets nothing.
   const updated = await db

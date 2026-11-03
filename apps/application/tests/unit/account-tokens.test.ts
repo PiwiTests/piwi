@@ -10,7 +10,7 @@ import { migrateToLatest } from './temp-db';
 // so clear it before the modules under test load.
 delete process.env.PIWI_DATABASE_URL;
 
-const state = vi.hoisted(() => ({ db: null as unknown }));
+const state = vi.hoisted(() => ({ db: null as unknown, hashBusy: false }));
 vi.mock('../../server/database', () => ({ getDatabase: async () => state.db }));
 vi.mock('../../server/utils/rate-limit', () => ({
   checkRateLimit: () => true,
@@ -21,6 +21,7 @@ vi.mock('../../server/utils/auth', () => ({
   // Takes a few milliseconds, as the real scrypt hash does, so concurrent requests interleave around it.
   hashPassword: async (_event: unknown, password: string) => {
     await new Promise((resolve) => setTimeout(resolve, 5));
+    if (state.hashBusy) throw Object.assign(new Error('busy'), { statusCode: 503 });
     return `hashed:${password}`;
   },
   revokeUserSessions: async () => 0,
@@ -55,6 +56,7 @@ beforeEach(async () => {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
   await migrateToLatest(db);
   state.db = db;
+  state.hashBusy = false;
   await db.insert(schema.users).values({ id: 1, username: 'alice', password: 'old', role: 'member', email: ALICE });
 });
 
@@ -153,6 +155,19 @@ describe('POST /api/auth/reset-password', () => {
       expect(await account()).toMatchObject({ password: `hashed:${succeeded[0]}` });
     },
   );
+
+  test('a reset refused while the server is busy leaves its token usable', async () => {
+    const token = await mintAccountToken(db, 1, 'reset', ALICE);
+    state.hashBusy = true;
+    await expect(resetPassword({ body: { token, password: 'new-password' } })).rejects.toMatchObject({
+      statusCode: 503,
+    });
+    state.hashBusy = false;
+
+    expect(await resetPassword({ body: { token, password: 'new-password' } })).toEqual({ success: true });
+
+    expect(await account()).toMatchObject({ password: 'hashed:new-password' });
+  });
 
   test('an expired token sets no password', async () => {
     const token = await mintAccountToken(db, 1, 'reset', ALICE);
