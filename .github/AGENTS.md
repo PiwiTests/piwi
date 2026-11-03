@@ -38,7 +38,8 @@ design record these rules follow, with its measurements: [`adr/ci-workflows.md`]
   publishes with `vsce publish --oidc` and no token, so renaming either workflow file or the environment means updating
   the publisher's Trusted Publishing policy. Every run of `release.yml` can mint an OIDC token: the policy's
   environment, which deploys from `v*` tags only, is what keeps a pull request's run from publishing.
-- **`.github/` is owned by its maintainer** (`CODEOWNERS`): a change here needs their review.
+- **`.github/` and `commitlint.config.js` are owned by their maintainer** (`CODEOWNERS`): a change to either needs
+  their review. The `commitlint` and `title` checks read the rules from the pull request's own `commitlint.config.js`.
 - **The GHCR image name is fixed.** It is `ghcr.io/piwitests/platform` (`REGISTRY` and `IMAGE_NAME` in
   `reusable-publish-container.yml`), never derived from `github.repository`: users pull it by that name, and a registry
   does not redirect when the repository is renamed.
