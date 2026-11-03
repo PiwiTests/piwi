@@ -73,6 +73,8 @@ interface InitOptions {
   /** `--desktop-app`, as given: validated by `runInit`. */
   desktopApp: string | null;
   apiKey: string | null;
+  /** Whether `apiKey` is the environment's `PIWI_API_KEY`, with no `--api-key` given. */
+  apiKeyFromEnv: boolean;
   skillsDir: string;
   skillSlugs: ReadonlyArray<string>;
   install: boolean;
@@ -155,15 +157,18 @@ function resolveSkillSlugs(raw: string | undefined): ReadonlyArray<string> {
 export function parseInitArgs(argv: string[], env: NodeJS.ProcessEnv, cwd: string): InitOptions {
   const root = path.resolve(cwd, readOption(argv, '--cwd') ?? '.');
   const detected = detectProject(root);
+  const noServerUrl = argv.includes('--no-server-url');
+  const flagKey = readOption(argv, '--api-key');
   return {
     root,
-    serverUrl: argv.includes('--no-server-url')
+    serverUrl: noServerUrl
       ? ''
       : (readOption(argv, '--server-url') ?? env.PIWI_DASHBOARD_URL ?? DEFAULT_SERVER_URL).replace(/\/$/, ''),
     projectName: readOption(argv, '--project') ?? detected.suggestedProjectName,
     desktopApp: argv.includes('--desktop-app') ? (readOption(argv, '--desktop-app') ?? '') : null,
     // The desktop app needs no key, and a key with no URL keeps the reporter from finding it.
-    apiKey: argv.includes('--no-server-url') ? null : (readOption(argv, '--api-key') ?? env.PIWI_API_KEY ?? null),
+    apiKey: noServerUrl ? null : (flagKey ?? env.PIWI_API_KEY ?? null),
+    apiKeyFromEnv: !noServerUrl && flagKey === undefined && Boolean(env.PIWI_API_KEY),
     skillsDir: readOption(argv, '--skills-dir') ?? DEFAULT_SKILLS_DIR,
     skillSlugs: resolveSkillSlugs(readOption(argv, '--skills')),
     install: !argv.includes('--no-install'),
@@ -394,7 +399,14 @@ function stepEnv(project: ProjectShape, opts: InitOptions, envBlock: EnvKeyBlock
 
   // Only write a real .env when a key was actually supplied — otherwise the
   // placeholder in .env.example is the thing to fill in.
-  if (opts.apiKey && envBlock) {
+  if (opts.apiKey && envBlock && opts.apiKeyFromEnv) {
+    results.push({
+      step: 'env',
+      file: '.env',
+      status: 'already',
+      detail: `PIWI_API_KEY is set in the environment, where the reporter reads it; ${envBlock.why}, so no key is written into it`,
+    });
+  } else if (opts.apiKey && envBlock) {
     results.push({
       step: 'env',
       file: '.env',

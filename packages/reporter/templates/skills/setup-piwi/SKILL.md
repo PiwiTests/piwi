@@ -28,7 +28,7 @@ npx @piwitests/reporter init --server-url <dashboard-url> --project <name> --jso
 ```
 
 - Preview first with `--dry-run` if you want to see the plan before anything is written.
-- `--api-key <key>` also writes the key and the URL into `.env` and adds `.env` to `.gitignore`. When git tracks `.env`, or cannot say whether it does, or `.env` is a link, it writes no key and reports the `env` step as `manual`: never put the key into that file yourself.
+- `--api-key <key>` also writes the key and the URL into `.env` and adds `.env` to `.gitignore`. When git tracks `.env`, or cannot say whether it does, or `.env` is a link, it writes no key and reports the `env` step as `manual`: never put the key into that file yourself. Have the user set `PIWI_API_KEY` in the environment instead (in CI, as a secret): that finishes the step, and `init` run again without `--api-key` leaves nothing `manual` for it.
 - `--skills none` installs no skills; `--skills-dir <path>` installs them where your agent reads skills from.
 - `--json` prints a `steps[]` array and the `nextSteps` to tell the user. Read it. Each step has a `status`:
   - `created` / `updated` / `already` — done, nothing more to do.

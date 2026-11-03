@@ -69,6 +69,9 @@ describe('parseInitArgs', () => {
     const opts = parseInitArgs([], { PIWI_DASHBOARD_URL: 'https://piwi.example.com/', PIWI_API_KEY: 'pd_x' } as NodeJS.ProcessEnv, root);
     expect(opts.serverUrl).toBe('https://piwi.example.com');
     expect(opts.apiKey).toBe('pd_x');
+    expect(opts.apiKeyFromEnv).toBe(true);
+    const flag = parseInitArgs(['--api-key', 'pd_y'], { PIWI_API_KEY: 'pd_x' } as NodeJS.ProcessEnv, root);
+    expect(flag).toMatchObject({ apiKey: 'pd_y', apiKeyFromEnv: false });
   });
 
   it('resolves --skills all / none', () => {
@@ -206,6 +209,16 @@ describe('runInit', () => {
     await runInit(['--no-install', '--no-skills'], EMPTY_ENV, root);
     expect(logs.join('\n')).toContain('git tracks .env, so keep the key out of it');
     expect(logs.join('\n')).not.toContain('put it in .env');
+
+    // With the key in the environment, as the manual step says, the step is done.
+    logs.length = 0;
+    await runInit(['--no-install', '--no-skills'], { PIWI_API_KEY: 'pd_secret' } as NodeJS.ProcessEnv, root);
+    expect(fs.readFileSync(path.join(root, '.env'), 'utf-8')).toBe('BASE_URL=http://localhost:5173\n');
+    expect(logs.join('\n')).toContain(
+      '= [already] env .env — PIWI_API_KEY is set in the environment, where the reporter reads it; git tracks .env',
+    );
+    expect(logs.join('\n')).not.toContain('[manual]');
+    expect(logs.join('\n')).not.toContain('pd_secret');
 
     // Untracked, the key goes into it.
     git('rm', '-q', '--cached', '.env');
