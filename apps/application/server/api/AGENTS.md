@@ -38,8 +38,9 @@ record is `proposals/roles-and-groups.md`.
   Bearer token or in `X-API-Key`). An API key carries its owner's access (instance role and project roles), nothing
   more and nothing less.
 - **A route that changes the caller's own credentials or email, or creates a credential, refuses an API key**: it
-  calls `requireSessionAuth` (or `refuseApiKey` after `requireAuth`), so a key never mints keys, connects a client or
-  moves its account's password reset elsewhere (`tests/unit/session-only-routes.test.ts`).
+  calls `requireSessionAuth` (or `refuseApiKey` after `requireAuth`), so a key never creates a key, connects a client
+  or changes its own account's credentials or email (`tests/unit/session-only-routes.test.ts`). An administrator's key
+  still manages other users and creates accounts with a password: it is as powerful as the administrator's password.
 - **`/mcp` also takes an OAuth access token** (`pdo_` prefix), from the authorization server MCP clients sign in
   through (`server/utils/mcp-oauth.ts`, the `/.well-known/*` and `/oauth/*` routes, design record `adr/mcp-oauth.md`).
   Only `requireMcpAuth` accepts it, never `requireAuth`, so the REST API refuses it: keep it that way. Each grant owns

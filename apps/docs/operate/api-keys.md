@@ -41,8 +41,9 @@ request with a key gets a 403:
   connection for the account;
 - changing the account's password or its own email address, and disconnecting its OAuth provider.
 
-A leaked key therefore cannot mint the keys that would outlive its revocation, nor move the account's password reset
-to another address. An administrator's key still manages the other users, their email addresses included.
+A key therefore cannot create keys or change its own account's credentials, nor move the account's password reset to
+another address. An administrator's key still manages the other users, their email addresses included, and creates
+accounts with a password, so it is as powerful as the administrator's password: keep it with the same care.
 
 ## Creating an API key
 
