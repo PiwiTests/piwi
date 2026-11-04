@@ -187,3 +187,47 @@ describe('settleStaleFinalizingRuns', () => {
     expect(runFinalizeSideEffects).not.toHaveBeenCalled();
   });
 });
+
+describe('after a server restart', () => {
+  // The server was down for ten minutes and has just started: its runs went quiet only because no reporter
+  // could reach it. Run 100 is in flight, run 101 still in its global setup, run 102 waits for its report upload.
+  const downSince = new Date(now - 10 * 60_000);
+  beforeAll(async () => {
+    const run = (id: number, status: string, updatedAt: Date) => ({
+      id,
+      projectId: 1,
+      status,
+      startTime: setupGone,
+      createdAt: setupGone,
+      updatedAt,
+      streamToken: `token-${id}`,
+    });
+    await db
+      .insert(schema.testRuns)
+      .values([
+        run(100, 'running', downSince),
+        run(101, 'initializing', setupGone),
+        { ...run(102, 'finalizing', abandoned), streamToken: null, metadata: { pendingStatus: 'passed' } },
+      ]);
+  });
+
+  const statusOf = async (id: number) =>
+    (await db.select().from(schema.testRuns).where(eq(schema.testRuns.id, id)))[0]?.status;
+
+  test('reaps no run until the server has been reachable for the timeout', async () => {
+    expect(await interruptStaleRuns(db, now, now - 30_000)).toEqual([]);
+    expect(await statusOf(100)).toBe('running');
+
+    // Up for the stale timeout: a run quiet since then is reaped, a run in its global setup still waits its hour.
+    expect(await interruptStaleRuns(db, now, now - STALE_TIMEOUT_MS - 1_000)).toEqual([100]);
+    expect(await statusOf(101)).toBe('initializing');
+    expect(await interruptStaleRuns(db, now, now - GLOBAL_SETUP_WAIT_MS - 1_000)).toEqual([101]);
+  });
+
+  test('settles no finalizing run until the server has been reachable for the upload wait', async () => {
+    expect(await settleStaleFinalizingRuns(db, now, now - 60_000)).toEqual([]);
+    expect(await statusOf(102)).toBe('finalizing');
+    expect(await settleStaleFinalizingRuns(db, now, now - FINALIZING_TIMEOUT_MS - 1_000)).toEqual([102]);
+    expect(await statusOf(102)).toBe('passed');
+  });
+});
