@@ -1,7 +1,7 @@
 name: Performance
 
 # Measures the dashboard's heaviest pages (the projects list, every tab of a project, the test-run page, a failed
-# execution's page with a large trace) on the pull request's build and on its base commit's, against the same dataset
+# execution's page with a large trace, the Overview analytics dashboard with and without a test filter) on the pull request's build and on its base commit's, against the same dataset
 # in PostgreSQL, and writes the comparison: render and load times, the SQL each request runs, and every regression past
 # its threshold. The suite is apps/application/scripts/perf.
 # The pages are split across the `measure` jobs, which run at once: each measures both builds in turn on its own pages

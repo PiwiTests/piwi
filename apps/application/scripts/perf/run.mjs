@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
  * Performance regression suite for the dashboard's heaviest pages: the
- * projects list, every tab of a project, the test-run page, and a failed
- * execution's page with a large trace.
+ * projects list, every tab of a project, the test-run page, a failed
+ * execution's page with a large trace, and the Overview analytics dashboard
+ * with and without a test filter.
  *
  * Each target is a production build (`.output`). The first one migrates a
  * fresh database and the dataset is written into it (`lib/dataset.mjs`), then
