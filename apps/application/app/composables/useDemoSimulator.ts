@@ -6,7 +6,7 @@ import {
   type DemoScenario,
   type SimulationController,
 } from '~/demo/simulator';
-import { holdSimulatorPage, liveSimulatorPages } from '~/demo/simulator-instance';
+import { holdSimulatorPage } from '~/demo/simulator-instance';
 
 /**
  * Shared state for the demo run simulator (see app/demo/simulator.ts).
@@ -54,16 +54,13 @@ export function useDemoSimulator() {
 
   /**
    * Cancel runs orphaned by a closed or reloaded page (their reporter loop died with the page, so they would stay
-   * 'running' forever). A run another open tab is streaming is left alone; a browser that cannot list the open pages
-   * cancels nothing.
+   * 'running' forever). A run another open tab is streaming is left alone.
    */
   async function cancelStaleRuns(): Promise<void> {
     if (staleRunsCancelled) return;
     staleRunsCancelled = true;
     try {
-      const livePages = await liveSimulatorPages();
-      if (!livePages) return;
-      await $fetch('/api/demo/cancel-stale-runs', { method: 'POST', body: { livePages } });
+      await $fetch('/api/demo/cancel-stale-runs', { method: 'POST' });
     } catch {
       // Non-critical cleanup — ignore
     }

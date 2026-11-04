@@ -1,7 +1,8 @@
 /**
  * The page load a simulated run belongs to. Each page load streams its runs under its own instance id
- * (`demo-simulator:<page>`, a shard adding `|<label>`) and holds a Web Lock named after its page for as long as it is
- * open, so any tab can tell the runs a live page is still streaming from the runs a closed or reloaded page left behind.
+ * (`demo-simulator:<page>`, a shard adding `|<label>`) and, from its first simulation on, holds a Web Lock named after
+ * its page for as long as it is open, so the service worker can tell the runs a live page is still streaming from the
+ * runs a closed or reloaded page left behind. Web Locks are shared by the origin's pages and its service worker.
  */
 
 export const DEMO_SIMULATOR_INSTANCE_ID = 'demo-simulator';
@@ -48,9 +49,9 @@ export function holdSimulatorPage(): Promise<boolean> {
   return pageLock;
 }
 
-/** The page loads open in any tab of the demo, this one included, or null where the browser cannot tell. */
+/** The page loads open in any tab of the demo that hold their lock, or null where the browser cannot tell. */
 export async function liveSimulatorPages(): Promise<string[] | null> {
-  if (!(await holdSimulatorPage())) return null;
+  if (typeof navigator === 'undefined' || !navigator.locks) return null;
   try {
     const { held = [] } = await navigator.locks.query();
     return held.flatMap((lock) =>

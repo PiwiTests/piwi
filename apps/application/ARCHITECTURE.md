@@ -763,8 +763,9 @@ divergence through `coverageDivergenceContext` (`#shared/handlers/coverage-insig
   `spaLoadingTemplate`, removed on `app:suspense:resolve`).
 - The run simulator (`DemoSimulator.vue` + `app/demo/simulator.ts`) replays the reporter's streaming protocol against
   the in-browser endpoints; its live updates go over a BroadcastChannel (`app/demo/run-events.ts`). Each page load
-  streams under its own instance id and holds a Web Lock while open (`app/demo/simulator-instance.ts`), so the
-  clean-up on mount (`POST /api/demo/cancel-stale-runs`) cancels only the runs of a page that is gone.
+  streams under its own instance id and, from its first simulation, holds a Web Lock while open
+  (`app/demo/simulator-instance.ts`); the clean-up on mount (`POST /api/demo/cancel-stale-runs`) reads the held locks
+  in the service worker and cancels only the runs of a page that is gone.
 - The tour's prompt is a toast (`DemoTourPrompt`, hosted by `DemoTour`) asking a first-time visitor what they do: a
   role starts its tour, **Later** asks again a day later (`TOUR_SNOOZE_MS`), **×** never again, and the banner's
   **Guided tour** button (`DemoTourButton`) reopens it. The decision is stored under `localStorage['piwi-demo-tour']`

@@ -1,12 +1,11 @@
-import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 import * as schema from '../../server/database/schema.sqlite';
 import { openTempDb, type TempDb } from './temp-db';
 
 /**
  * The demo's clean-up of the runs a closed or reloaded page cut off mid-simulation: it cancels the simulator's runs
- * whose page load is gone, a sharded simulation's shards included (`<id>|<label>`), and leaves the runs a page still
- * open is streaming, finished runs and every run the simulator did not send.
+ * whose page load holds no lock any more, a sharded simulation's shards included (`<id>|<label>`), and leaves the runs
+ * a page still open is streaming, finished runs and every run the simulator did not send.
  */
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
@@ -20,7 +19,8 @@ vi.mock('~~/app/demo/db.client', async (importOriginal) => ({
 }));
 
 const { apiCancelStaleSimulatorRuns } = await import('~~/app/demo/api/reporter');
-const { simulatorInstanceId, simulatorPageOf } = await import('~~/app/demo/simulator-instance');
+const { holdSimulatorPage, liveSimulatorPages, simulatorInstanceId, simulatorPageOf } =
+  await import('~~/app/demo/simulator-instance');
 
 let db: TempDb;
 let close: () => Promise<void>;
@@ -36,41 +36,57 @@ const RUNS: Array<{ id: number; instanceId: string; status: string }> = [
   { id: 8, instanceId: 'demo-simulator', status: 'running' },
 ];
 
+/** The locks the browser reports as held, as `navigator.locks.query()` lists them. */
+function stubHeldLocks(names: string[] | null) {
+  vi.stubGlobal(
+    'navigator',
+    names ? { locks: { query: async () => ({ held: names.map((name) => ({ name })) }) } } : {},
+  );
+}
+const pageLocks = (...pages: string[]) => pages.map((page) => `piwi-demo-simulator-page:${page}`);
+
 beforeAll(async () => {
   ({ db, close } = await openTempDb());
   state.db = db;
   await db.insert(schema.projects).values({ id: 1, name: 'shop' });
+});
+
+beforeEach(async () => {
+  await db.delete(schema.testRuns);
   await db
     .insert(schema.testRuns)
     .values(RUNS.map((r) => ({ ...r, projectId: 1, isFullRun: true, startTime: new Date() })));
 });
 
+afterEach(() => vi.unstubAllGlobals());
 afterAll(() => close());
 
-const statusOf = async (id: number) =>
-  (await db.select({ status: schema.testRuns.status }).from(schema.testRuns).where(eq(schema.testRuns.id, id)))[0]
-    ?.status;
-
-const statusesOf = (ids: number[]) => Promise.all(ids.map(statusOf));
+const statusesOf = async (ids: number[]) => {
+  const rows = await db.select({ id: schema.testRuns.id, status: schema.testRuns.status }).from(schema.testRuns);
+  return ids.map((id) => rows.find((row) => row.id === id)?.status);
+};
 
 describe("the demo's stale simulator runs", () => {
-  test('cancels nothing without the list of open pages', async () => {
-    expect(await apiCancelStaleSimulatorRuns({})).toMatchObject({ cancelled: 0 });
-    expect(await apiCancelStaleSimulatorRuns({ livePages: 'open' })).toMatchObject({ cancelled: 0 });
+  test('cancels nothing where the browser cannot list the held locks', async () => {
+    stubHeldLocks(null);
+    expect(await apiCancelStaleSimulatorRuns()).toMatchObject({ cancelled: 0 });
+    vi.stubGlobal('navigator', { locks: { query: () => Promise.reject(new Error('denied')) } });
+    expect(await apiCancelStaleSimulatorRuns()).toMatchObject({ cancelled: 0 });
     expect(await statusesOf([1, 2, 6, 7, 8])).toEqual(['running', 'initializing', 'running', 'finalizing', 'running']);
   });
 
   test("cancels the unfinished runs and shards of the pages that are gone, and leaves the open page's", async () => {
-    expect(await apiCancelStaleSimulatorRuns({ livePages: ['open', ''] })).toMatchObject({ cancelled: 3 });
+    stubHeldLocks([...pageLocks('open'), 'another-lock']);
+    expect(await apiCancelStaleSimulatorRuns()).toMatchObject({ cancelled: 3 });
     expect(await statusesOf([1, 2, 8])).toEqual(['cancelled', 'cancelled', 'cancelled']);
     expect(await statusesOf([6, 7])).toEqual(['running', 'finalizing']);
     expect(await statusesOf([3, 4, 5])).toEqual(['passed', 'running', 'running']);
   });
 
-  test('cancels the runs of a page once it is gone', async () => {
-    expect(await apiCancelStaleSimulatorRuns({ livePages: [] })).toMatchObject({ cancelled: 2 });
-    expect(await statusesOf([6, 7])).toEqual(['cancelled', 'cancelled']);
-    expect(await statusesOf([4, 5])).toEqual(['running', 'running']);
+  test('cancels the runs of every page once none holds its lock', async () => {
+    stubHeldLocks([]);
+    expect(await apiCancelStaleSimulatorRuns()).toMatchObject({ cancelled: 5 });
+    expect(await statusesOf([3, 4, 5])).toEqual(['passed', 'running', 'running']);
   });
 });
 
@@ -85,8 +101,21 @@ describe("a simulated run's page load", () => {
     expect(simulatorPageOf(null)).toBeNull();
   });
 
-  test("is this page's own for the runs it sends", () => {
-    expect(simulatorPageOf(simulatorInstanceId())).toMatch(/^[a-z0-9]+-[a-z0-9]+$/);
-    expect(simulatorInstanceId()).toBe(simulatorInstanceId());
+  test('lists only the pages holding a simulator lock', async () => {
+    stubHeldLocks([...pageLocks('a', 'b'), 'another-lock']);
+    expect(await liveSimulatorPages()).toEqual(['a', 'b']);
+  });
+
+  test('holds the lock named after the page its runs report', async () => {
+    const request = vi.fn((_name: string, hold: () => Promise<never>) => {
+      void hold();
+      return new Promise<void>(() => {});
+    });
+    vi.stubGlobal('navigator', { locks: { request } });
+    expect(await holdSimulatorPage()).toBe(true);
+    expect(request).toHaveBeenCalledOnce();
+    expect(request.mock.calls[0]![0]).toBe(`piwi-demo-simulator-page:${simulatorPageOf(simulatorInstanceId())}`);
+    expect(await holdSimulatorPage()).toBe(true);
+    expect(request).toHaveBeenCalledOnce();
   });
 });

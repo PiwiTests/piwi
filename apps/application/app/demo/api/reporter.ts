@@ -11,7 +11,7 @@
 
 import { resolveBrowserName } from '#shared/browser-name';
 import { eq, and, or, sql, inArray } from 'drizzle-orm';
-import { DEMO_SIMULATOR_INSTANCE_ID, simulatorPageOf } from '../simulator-instance';
+import { DEMO_SIMULATOR_INSTANCE_ID, liveSimulatorPages, simulatorPageOf } from '../simulator-instance';
 import { getDemoDb } from '../db.client';
 import { checkDemoStuckTests, forgetDemoRun, noteDemoBegin, noteDemoComplete } from './stuck-tests';
 import { publishDemoGlobalEvent, publishDemoRunEvent } from '../run-events';
@@ -1340,12 +1340,13 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
  * POST /api/demo/cancel-stale-runs — demo-only endpoint.
  *
  * Cancels the simulator's runs left in a non-terminal state by a page that is gone (closed or reloaded mid-run, so no
- * finish call ever arrived). `livePages` lists the page loads still open (`simulatorPageOf`): their runs are left
- * alone. Called by the simulator UI on mount.
+ * finish call ever arrived). The runs of a page still holding its lock (`liveSimulatorPages`) are left alone, and a
+ * browser that cannot list the locks cancels nothing. Called by the simulator UI on mount.
  */
-export async function apiCancelStaleSimulatorRuns(body: { livePages?: unknown }) {
-  if (!Array.isArray(body?.livePages)) return { success: true, cancelled: 0 };
-  const livePages = new Set(body.livePages.filter((page): page is string => typeof page === 'string' && page !== ''));
+export async function apiCancelStaleSimulatorRuns() {
+  const pages = await liveSimulatorPages();
+  if (!pages) return { success: true, cancelled: 0 };
+  const livePages = new Set(pages);
 
   const db = await getDemoDb();
   const prefix = DEMO_SIMULATOR_INSTANCE_ID;
