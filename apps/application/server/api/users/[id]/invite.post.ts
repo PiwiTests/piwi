@@ -31,7 +31,7 @@ export default eventHandler(async (event) => {
     throw apiError({ statusCode: 503, errorCode: 'SMTP_NOT_CONFIGURED', message: 'SMTP is not configured' });
 
   const token = await mintAccountToken(db, user.id, 'invite', user.email);
-  const { html, text } = renderInviteEmail(token, admin.name || admin.username);
+  const { html, text } = renderInviteEmail(token, user.username, admin.name || admin.username);
 
   try {
     await sendEmail({ to: user.email, subject: "You've been invited to Piwi Dashboard", html, text });
