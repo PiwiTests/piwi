@@ -97,7 +97,7 @@ import { regressFixAttempts, verifyFixAttempts } from './fix-attempts';
 import { recordIncidentalCatch } from './incidental-catch';
 import { transitionClusterStatus } from '#shared/handlers/failure-cluster-ops';
 import type { DbClient } from '../database';
-import { testKey, testOutcomes } from '#shared/utils/test-counts';
+import { isPassedOrFailedStatus, testKey, testOutcomes } from '#shared/utils/test-counts';
 
 const FAIL_STATUSES = ['failed', 'timedOut', 'timedout'];
 
@@ -491,7 +491,7 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
   const passedCaseIds = new Set<number>();
   const ranCaseIds = new Set<number>();
   for (const outcome of testOutcomes(caseRows)) {
-    if (outcome.status !== 'passed' && !FAIL_STATUSES.includes(outcome.status)) continue;
+    if (!isPassedOrFailedStatus(outcome.status)) continue;
     outcomeByTest.set(testKey(outcome), outcome.status);
     ranCaseIds.add(outcome.testCaseId);
     if (outcome.status === 'passed') passedCaseIds.add(outcome.testCaseId);
