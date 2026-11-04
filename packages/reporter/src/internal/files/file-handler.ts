@@ -379,16 +379,22 @@ export class FileHandler {
 }
 
 /**
- * Attachment name reduced to characters safe in a file name, holding no `..` and neither starting nor ending in `.`
- * or `-`, so the extension the caller appends never forms `..` (`expired one.` gives `expired-one`).
+ * Longest base name a body attachment is staged and stored under. The name is ASCII, so this is its byte count: with
+ * its extension and the staging prefix, it stays within the 255-byte file-name limit of common file systems.
+ */
+const MAX_BASE_NAME_LENGTH = 200;
+
+/**
+ * Attachment name reduced to characters safe in a file name, holding no `..`, neither starting nor ending in `.` or
+ * `-`, and at most `MAX_BASE_NAME_LENGTH` long, so the extension the caller appends never forms `..` (`expired one.`
+ * gives `expired-one`).
  */
 function safeFileName(name: string): string {
-  return (
-    name
-      .replace(/[^\w.-]+/g, '-')
-      .replace(/\.{2,}/g, '.')
-      .replace(/^[-.]+|[-.]+$/g, '') || 'attachment'
-  );
+  const safe = name
+    .replace(/[^\w.-]+/g, '-')
+    .replace(/\.{2,}/g, '.')
+    .replace(/^[-.]+/, '');
+  return safe.slice(0, MAX_BASE_NAME_LENGTH).replace(/[-.]+$/, '') || 'attachment';
 }
 
 function formatMiB(bytes: number): string {

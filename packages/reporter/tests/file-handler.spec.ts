@@ -80,6 +80,32 @@ describe('FileHandler.findAllAttachments', () => {
     handler.cleanupBodyAttachments();
   });
 
+  it('stages a long title under a name cut to 200 characters, with no trailing dot or dash', () => {
+    const handler = new FileHandler(logger);
+    const png = { contentType: 'image/png', body: Buffer.from('png') };
+    const step =
+      'Step 4: Fill the registration form with a valid email, a password of twelve characters and accept the ' +
+      'terms | Expected: The submit button turns enabled, the inline validation messages disappear, the summary ' +
+      'panel lists the email and the progress bar reads two of three steps done.';
+    const tc = testCase([
+      { name: step, ...png },
+      { name: `${'x'.repeat(199)}. ${'y'.repeat(100)}`, ...png },
+    ]);
+
+    try {
+      const found = handler.findAllAttachments(tc);
+      expect(found.map((a) => a.originalName)).toEqual([
+        'Step-4-Fill-the-registration-form-with-a-valid-email-a-password-of-twelve-characters-and-accept-the-terms-' +
+          'Expected-The-submit-button-turns-enabled-the-inline-validation-messages-disappear-the-summary.png',
+        `${'x'.repeat(199)}.png`,
+      ]);
+      for (const a of found) expect(fs.readFileSync(a.path).toString()).toBe('png');
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      handler.cleanupBodyAttachments();
+    }
+  });
+
   it('reuses one temp file across repeated lookups of the same attachment', () => {
     const handler = new FileHandler(logger);
     const tc = testCase([{ name: 'note', contentType: 'text/plain', body: Buffer.from('hello') }]);
