@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { DiagnoseImage } from '~/composables/useClusterDiagnosis';
 import { formatRelativeTime } from '~/utils';
-import { failurePageFirst } from '#shared/file-classify';
+import { diagnosisImageOrder, takeInTurns } from '~/utils/diagnosis-screenshots';
 
 interface AffectedCase {
   recentTestRunsCaseId: number;
@@ -50,53 +50,62 @@ async function blobToBase64(blob: Blob): Promise<{ data: string; mediaType: stri
 const screenshots = ref<ScreenshotItem[]>([]);
 const loading = ref(false);
 
+interface CaseDetail {
+  attachments: Array<{ path: string; contentType: string | null; name: string | null }>;
+  status: string;
+  retries: number;
+  browser: string | null;
+  testRun: { startTime: string | null } | null;
+}
+
 async function loadScreenshots() {
   if (!props.affectedTestCases.length) return;
   loading.value = true;
   screenshots.value = [];
   const results: ScreenshotItem[] = [];
 
-  for (const tc of props.affectedTestCases) {
-    if (results.length >= MAX_SCREENSHOTS) break;
-    try {
-      const detail = await $fetch<{
-        attachments: Array<{ path: string; contentType: string | null; name: string | null }>;
-        status: string;
-        retries: number;
-        browser: string | null;
-        testRun: { startTime: string | null } | null;
-      }>(`/api/test-run-cases/${tc.recentTestRunsCaseId}`);
-      const images = (detail.attachments ?? []).filter((att) => isImageFile(att.path, att.contentType));
-      // The page the test failed on first, so the image limit keeps it.
-      for (const att of failurePageFirst(images, (a) => a.name)) {
-        if (results.length >= MAX_SCREENSHOTS) break;
-        const imgName = att.name || att.path.split('/').pop() || 'screenshot';
-        const url = fileApiUrl(att.path, att.contentType, config.app?.baseURL, true);
-        try {
-          const res = await fetch(url);
-          if (!res.ok) continue;
-          const blob = await res.blob();
-          const { data, mediaType } = await blobToBase64(blob);
-          results.push({
-            src: `data:${mediaType};base64,${data}`,
-            data,
-            mediaType,
-            name: imgName,
-            selected: true,
-            caseTitle: tc.title,
-            status: detail.status,
-            retries: detail.retries,
-            browser: detail.browser,
-            startTime: detail.testRun?.startTime ?? null,
-          });
-        } catch {
-          // skip images that fail to fetch
-        }
+  // Each affected test's images, the page it failed on first and then the
+  // newest first, taken in turn across the tests until the limit is reached:
+  // each test's first image before any test's second. The tests' details are
+  // fetched MAX_SCREENSHOTS at a time, and the next ones only while slots are left.
+  await takeInTurns(
+    props.affectedTestCases,
+    async (tc) => {
+      try {
+        const detail = await $fetch<CaseDetail>(`/api/test-run-cases/${tc.recentTestRunsCaseId}`);
+        const images = (detail.attachments ?? []).filter((att) => isImageFile(att.path, att.contentType));
+        return diagnosisImageOrder(images, (a) => a.name).map((att) => ({ tc, detail, att }));
+      } catch {
+        return []; // skip cases that fail to fetch
       }
-    } catch {
-      // skip cases that fail to fetch
-    }
-  }
+    },
+    async ({ tc, detail, att }) => {
+      const imgName = att.name || att.path.split('/').pop() || 'screenshot';
+      const url = fileApiUrl(att.path, att.contentType, config.app?.baseURL, true);
+      try {
+        const res = await fetch(url);
+        if (!res.ok) return false;
+        const blob = await res.blob();
+        const { data, mediaType } = await blobToBase64(blob);
+        results.push({
+          src: `data:${mediaType};base64,${data}`,
+          data,
+          mediaType,
+          name: imgName,
+          selected: true,
+          caseTitle: tc.title,
+          status: detail.status,
+          retries: detail.retries,
+          browser: detail.browser,
+          startTime: detail.testRun?.startTime ?? null,
+        });
+        return true;
+      } catch {
+        return false; // skip images that fail to fetch
+      }
+    },
+    MAX_SCREENSHOTS,
+  );
 
   screenshots.value = results;
   loading.value = false;
