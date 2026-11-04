@@ -12,9 +12,14 @@ export interface PublicImage {
 /** Redirects followed while they stay on the allowed hosts. */
 const MAX_REDIRECTS = 3;
 
-/** Whether an answer says the image is unavailable for now (rate limit, outage, credentials), not missing. */
+/** Whether an answer to a credentialed request says the image is unavailable for now (rate limit, outage, credentials), not missing. */
 export function isTransientImageStatus(status: number): boolean {
-  return status === 401 || status === 403 || status === 408 || status === 429 || status >= 500;
+  return status === 401 || status === 403 || isBusyStatus(status);
+}
+
+/** Whether a host is busy or down: a request with no credentials gets a 401 or 403 only for an image it will never serve. */
+function isBusyStatus(status: number): boolean {
+  return status === 408 || status === 429 || status >= 500;
 }
 
 /**
@@ -42,9 +47,10 @@ export async function fetchPublicImage(
       current = new URL(location, current).toString();
       continue;
     }
-    if (isTransientImageStatus(response.status)) throw new Error(`image host answered ${response.status}`);
+    if (isBusyStatus(response.status)) throw new Error(`image host answered ${response.status}`);
     const mime = response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() ?? '';
     if (!response.ok || !mime.startsWith('image/')) return null;
+    if (Number(response.headers.get('content-length') ?? 0) > maxBytes) return null;
     const bytes = new Uint8Array(await response.arrayBuffer());
     return bytes.byteLength > maxBytes ? null : { bytes, mime };
   }

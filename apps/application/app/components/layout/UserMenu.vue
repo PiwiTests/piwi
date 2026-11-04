@@ -18,6 +18,11 @@ defineProps<{
 const colorMode = useColorMode();
 const themeColors = useThemeColors();
 const config = useRuntimeConfig();
+// The picture loads in the browser only, so a failed load shows the user icon: a server-rendered image can fail before the page listens.
+const mounted = ref(false);
+onMounted(() => {
+  mounted.value = true;
+});
 const { authState, logout } = useAuth();
 const settingsNav = await useSettingsNav();
 const { openSettings: openIdeSettings } = useOpenInIde();
@@ -41,11 +46,13 @@ const appearances = [
 
 const user = computed(() => {
   if (config.public.authEnabled && authState.value.authenticated && authState.value.user) {
-    const avatarUrl = authState.value.user.avatarUrl;
+    const avatarUrl = mounted.value ? authState.value.user.avatarUrl : null;
     return {
       name: authState.value.user.name || authState.value.user.username,
       icon: avatarUrl ? undefined : 'i-lucide-user',
-      avatar: avatarUrl ? { src: avatarUrl } : undefined,
+      avatar: avatarUrl
+        ? { src: profilePictureSrc(config.app.baseURL, avatarUrl), alt: '', icon: 'i-lucide-user' }
+        : undefined,
       role: authState.value.user.role,
     };
   }
