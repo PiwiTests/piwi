@@ -44,6 +44,40 @@ function quietSince(threshold: Date) {
 }
 
 /**
+ * Since when reporters could reach the server, for the sweeps' `reachableSince`:
+ * from the moment its database was `ready`, restarted by a sweep that `failed`
+ * and by one that begins more than two intervals after the one before (the
+ * process was paused or asleep). `beginSweep` returns it, null until ready.
+ */
+export function createReachability(intervalMs: number) {
+  let since: number | null = null;
+  let lastSweepAt = 0;
+  return {
+    ready(now: number) {
+      since = now;
+      lastSweepAt = now;
+    },
+    beginSweep(now: number): number | null {
+      if (since !== null && now - lastSweepAt > 2 * intervalMs) since = now;
+      lastSweepAt = now;
+      return since;
+    },
+    failed(now: number) {
+      since = now;
+    },
+  };
+}
+
+/**
+ * The moment a run must have been quiet since to have been quiet for `ms` at
+ * `now`. Quiet time counts from `reachableSince` at the earliest: until the
+ * server has been reachable for `ms`, no run has been quiet for it.
+ */
+function quietFor(ms: number, now: number, reachableSince: number): Date {
+  return now - reachableSince >= ms ? new Date(now - ms) : new Date(0);
+}
+
+/**
  * The streamed sharded runs quiet since `threshold` that wait for shards not
  * started yet: some of their shards finished, and no shard token is left in
  * their metadata, so none of their shards is running.
@@ -80,13 +114,14 @@ async function shardedRunsInSetup(db: DbClient, threshold: Date): Promise<number
  * Settle every `finalizing` run quiet for `FINALIZING_TIMEOUT_MS` — its report
  * upload never arrived — to the status its reporter sent to `/finish`, with the
  * finish-time side effects the upload would have fired (see
- * `settleFinalizingRun`). Returns the settled ids.
+ * `settleFinalizingRun`). Quiet time counts from `reachableSince` at the
+ * earliest (`quietFor`). Returns the settled ids.
  */
-export async function settleStaleFinalizingRuns(db: DbClient, now = Date.now()): Promise<number[]> {
+export async function settleStaleFinalizingRuns(db: DbClient, now = Date.now(), reachableSince = 0): Promise<number[]> {
   const staleRuns = await db
     .select({ id: testRuns.id, projectId: testRuns.projectId, metadata: testRuns.metadata })
     .from(testRuns)
-    .where(and(eq(testRuns.status, 'finalizing'), quietSince(new Date(now - FINALIZING_TIMEOUT_MS))));
+    .where(and(eq(testRuns.status, 'finalizing'), quietSince(quietFor(FINALIZING_TIMEOUT_MS, now, reachableSince))));
 
   const settled: number[] = [];
   for (const run of staleRuns) {
@@ -104,12 +139,13 @@ export async function settleStaleFinalizingRuns(db: DbClient, now = Date.now()):
  * reconciled and its end announced on its own stream and on the global
  * lifecycle stream, like a run that finished normally, a `run.interrupted`
  * notification sent, and its day's rollup recomputed, since an interrupted run
- * counts as a failed one. Returns the reaped ids.
+ * counts as a failed one. Quiet time counts from `reachableSince` at the
+ * earliest (`quietFor`). Returns the reaped ids.
  */
-export async function interruptStaleRuns(db: DbClient, now = Date.now()): Promise<number[]> {
-  const staleThreshold = new Date(now - STALE_TIMEOUT_MS);
-  const shardWaitThreshold = new Date(now - SHARD_WAIT_MS);
-  const globalSetupThreshold = new Date(now - GLOBAL_SETUP_WAIT_MS);
+export async function interruptStaleRuns(db: DbClient, now = Date.now(), reachableSince = 0): Promise<number[]> {
+  const staleThreshold = quietFor(STALE_TIMEOUT_MS, now, reachableSince);
+  const shardWaitThreshold = quietFor(SHARD_WAIT_MS, now, reachableSince);
+  const globalSetupThreshold = quietFor(GLOBAL_SETUP_WAIT_MS, now, reachableSince);
   const awaitingShards = await streamedRunsAwaitingShards(db, staleThreshold);
   const shardsInSetup = await shardedRunsInSetup(db, staleThreshold);
 
