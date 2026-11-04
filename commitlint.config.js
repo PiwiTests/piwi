@@ -1,7 +1,20 @@
+// Dependabot's sign-off trailer, optionally followed by the co-author line a squash merge of its pull request adds.
+const DEPENDABOT_TRAILERS =
+  /\n\nSigned-off-by: dependabot\[bot\] <support@github\.com>(?:\nCo-authored-by: dependabot\[bot\] <[^>\n]+>)?$/;
+
 export default {
   extends: ['@commitlint/config-conventional'],
-  // Dependabot's commits are merged as Dependabot writes them, a capitalised "Bump" included.
-  ignores: [(message) => message.includes('Signed-off-by: dependabot[bot]')],
+  // Dependabot's commits are merged as Dependabot writes them, a capitalized "Bump" included: a message that ends with
+  // Dependabot's trailers is not linted. Line endings are normalized and git's `#` comment lines dropped first.
+  ignores: [
+    (message) =>
+      DEPENDABOT_TRAILERS.test(
+        message
+          .replace(/\r\n/g, '\n')
+          .replace(/^#.*(?:\n|$)/gm, '')
+          .trimEnd(),
+      ),
+  ],
   rules: {
     'type-enum': [
       2,
