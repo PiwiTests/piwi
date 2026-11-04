@@ -2,9 +2,9 @@
  * The test filters analytics resolved in the last seconds, so the widgets of
  * one dashboard page, each asked for in its own request, resolve a filter
  * once. Kept per database, selection key, inline predicates, browsers and
- * allowed projects, for `TEST_FILTER_MEMO_TTL_MS`; a finished run drops the
- * filters that read its project, and a change to a selection the filters of
- * its project.
+ * allowed projects, for `TEST_FILTER_MEMO_TTL_MS`. A finished, deleted or
+ * incident-flagged run, a change to a selection or to a quarantine, and a
+ * merge of two tests drop the filters that read their project.
  */
 import { TtlCache } from '../../../server/utils/ttl-cache';
 import type { AnalyticsScope } from '../../analytics/scope';
@@ -85,7 +85,7 @@ export function memoizedTestFilter(
   return entry.pending;
 }
 
-/** Drop the memoized filters that read a project: one of its runs finished, or one of its selections changed. */
+/** Drop the memoized filters that read a project, after a write that changes what they resolve to. */
 export function dropProjectTestFilters(projectId: number): number {
   return memo.deleteWhere((entry) => entry.projects === 'all' || entry.projects.includes(projectId));
 }

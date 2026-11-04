@@ -27,6 +27,7 @@ import { listOutcomes, recordOutcome } from '../../server/utils/outcomes';
 import { proposeQuarantineCandidates } from '../../server/utils/quarantine-candidates';
 import type { HandbackActor } from '../handback-outcomes';
 import { normalizeDismissReason, type QuarantineProposal } from '#shared/quarantine-proposals';
+import { dropProjectTestFilters } from './analytics/test-filter-memo';
 
 /** Consecutive passing runs after which release is proposed. */
 export const RELEASE_AFTER_CONSECUTIVE_PASSES = 5;
@@ -438,6 +439,7 @@ export async function addQuarantine(
       runId: latestRun?.id ?? null,
     });
   }
+  dropProjectTestFilters(projectId);
   return { created: true };
 }
 
@@ -492,6 +494,7 @@ export async function releaseQuarantine(
       at: releasedAt,
     });
   }
+  dropProjectTestFilters(projectId);
   return { released: true };
 }
 

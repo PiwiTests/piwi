@@ -236,8 +236,8 @@ async function projectsWithKnownBranch(db: DrizzleDB, projectIds: number[]): Pro
 }
 
 /**
- * The test filter of a scope, per project (`memoizedTestFilter` keeps it for a
- * few seconds): a selection key resolves to that
+ * The test filter of a scope, per project (`memoizedTestFilter` keeps it for
+ * `TEST_FILTER_MEMO_TTL_MS`): a selection key resolves to that
  * project's selection with that key (a project without it is left out and
  * named in the notes), inline predicates resolve as an ad-hoc selection, and
  * both together intersect. A test filter means the tests that match it today,

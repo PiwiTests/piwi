@@ -11,6 +11,7 @@ const { clearTestFilterMemo, dropProjectTestFilters, memoizedTestFilter } =
   await import('../../shared/handlers/analytics/test-filter-memo');
 const { createSelection, updateSelection } = await import('../../shared/handlers/selections');
 const { parseAnalyticsScope } = await import('../../shared/analytics/scope');
+const { addQuarantine, releaseQuarantine } = await import('../../shared/handlers/quarantine');
 
 /**
  * The analytics test filter is resolved once for the widget requests of one
@@ -89,6 +90,14 @@ describe('the analytics test filter memo', () => {
     expect(ids(await resolved({ sel: 'mine', projects: '1' }))).toEqual({ 1: [11] });
     await updateSelection(db, 1, 'mine', { definition: { include: [{ text: 'holds' }] } });
     expect(ids(await resolved({ sel: 'mine', projects: '1' }))).toEqual({ 1: [12] });
+  });
+
+  test('a quarantine added or released in a project it reads resolves it again', async () => {
+    expect(ids(await resolved({ sel: 'quarantine-free', projects: '1' }))).toEqual({ 1: [11, 12] });
+    await addQuarantine(db, 1, 11);
+    expect(ids(await resolved({ sel: 'quarantine-free', projects: '1' }))).toEqual({ 1: [12] });
+    await releaseQuarantine(db, 1, 11);
+    expect(ids(await resolved({ sel: 'quarantine-free', projects: '1' }))).toEqual({ 1: [11, 12] });
   });
 
   test('the selection, the predicates, the browsers and the allowed projects each make their own key', async () => {

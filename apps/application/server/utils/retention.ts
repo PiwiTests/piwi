@@ -39,6 +39,7 @@ import { archiveRunsIntoRollups, recomputeRollupCells } from '#shared/handlers/a
 import { dayKey } from '#shared/handlers/analytics/common';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { deleteDashboardRows } from '#shared/handlers/dashboards';
+import { dropProjectTestFilters } from '#shared/handlers/analytics/test-filter-memo';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -117,6 +118,7 @@ export async function deleteRunsByIds(
   for (const clusterId of affectedClusterIds) {
     await recomputeClusterOccurrences(db, clusterId);
   }
+  for (const projectId of new Set(runs.map((run) => run.projectId))) dropProjectTestFilters(projectId);
 
   return { deletedRuns: runs.length, deletedCases };
 }

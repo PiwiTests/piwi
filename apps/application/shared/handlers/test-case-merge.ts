@@ -23,6 +23,7 @@ import {
   testRunsCases,
 } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
+import { dropProjectTestFilters } from './analytics/test-filter-memo';
 
 export type MergeTestCasesError = 'not-found' | 'same-case' | 'other-project' | 'ran-together';
 
@@ -203,5 +204,6 @@ export async function mergeTestCases(db: DrizzleDB, targetId: number, sourceId: 
     return moved;
   });
 
+  dropProjectTestFilters(target.projectId);
   return { ok: true, targetId, sourceId, projectId: target.projectId, executionsMoved };
 }
