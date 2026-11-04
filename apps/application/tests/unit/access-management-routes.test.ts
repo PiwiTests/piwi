@@ -63,6 +63,7 @@ const patchUser = await loadRoute('../../server/api/users/[id].patch');
 const listGroups = await loadRoute('../../server/api/groups/index.get');
 const getMembers = await loadRoute('../../server/api/projects/[id]/members.get');
 const putMembers = await loadRoute('../../server/api/projects/[id]/members.put');
+const removeUserPicture = await loadRoute('../../server/api/users/[id]/avatar.delete');
 
 const asUser = (id: number, role: string) => ({ id, role, username: `user${id}`, name: null }) as unknown as User;
 const caller = (id: number, role: InstanceRole, ...grants: { projectId: number | null; role: ProjectRole }[]) =>
@@ -296,5 +297,17 @@ describe('users writes', () => {
     expect(await status(patchUser({ params: { id: '1' }, body: { email: 'avery@example.org' } }))).toBe(403);
     const managed = await patchUser({ params: { id: '3' }, body: { email: 'samuel@example.com' } });
     expect(managed.user.email).toBe('samuel@example.com');
+  });
+});
+
+describe("removing a user's profile picture", () => {
+  test('is an administrator’s: a member is refused, even for their own account', async () => {
+    state.caller = sam;
+    expect(await status(removeUserPicture({ params: { id: '3' } }))).toBe(403);
+    state.caller = quinn;
+    expect(await status(removeUserPicture({ params: { id: '3' } }))).toBe(403);
+    state.caller = avery;
+    expect(await removeUserPicture({ params: { id: '3' } })).toEqual({ removed: false });
+    expect(await status(removeUserPicture({ params: { id: '99' } }))).toBe(404);
   });
 });

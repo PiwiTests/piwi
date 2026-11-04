@@ -52,8 +52,14 @@ beforeEach(async () => {
 
 const ASSIGNED_AT = 1_700_000_000_000;
 
+/** Users as the schema before the data migration holds them: the columns added since are not there yet. */
 async function addUsers(...rows: [id: number, username: string, role: string][]) {
-  await db.insert(schema.users).values(rows.map(([id, username, role]) => ({ id, username, password: '', role })));
+  for (const [id, username, role] of rows) {
+    await client.execute({
+      sql: "INSERT INTO users (id, username, password, role, created_at, updated_at) VALUES (?, ?, '', ?, ?, ?)",
+      args: [id, username, role, ASSIGNED_AT / 1000, ASSIGNED_AT / 1000],
+    });
+  }
 }
 
 /** Projects as the schema before the data migration holds them: the columns added since are not there yet. */

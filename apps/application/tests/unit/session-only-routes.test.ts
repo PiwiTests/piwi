@@ -70,6 +70,20 @@ vi.mock('../../server/utils/mcp-oauth', () => ({
   },
 }));
 vi.mock('../../server/utils/public-base-url', () => ({ publicBaseUrl: () => 'http://localhost' }));
+vi.mock('../../server/utils/profile-picture', () => ({
+  saveProfilePicture: async () => {
+    state.acted.push('picture');
+    return 'avatars/7/picture.webp';
+  },
+  removeProfilePicture: async () => {
+    state.acted.push('picture-removed');
+    return true;
+  },
+}));
+vi.mock('h3', async (original) => ({
+  ...(await original<typeof import('h3')>()),
+  getRequestWebStream: () => undefined,
+}));
 
 interface FakeEvent {
   body?: unknown;
@@ -106,6 +120,18 @@ const ROUTES: Array<{ name: string; handler: Handler; event: FakeEvent; acts: st
     handler: await loadRoute('../../server/api/auth/oauth/[provider]/unlink.post'),
     event: { params: { provider: 'github' } },
     acts: 'unlink',
+  },
+  {
+    name: 'PUT /api/auth/avatar',
+    handler: await loadRoute('../../server/api/auth/avatar.put'),
+    event: {},
+    acts: 'picture',
+  },
+  {
+    name: 'DELETE /api/auth/avatar',
+    handler: await loadRoute('../../server/api/auth/avatar.delete'),
+    event: {},
+    acts: 'picture-removed',
   },
   {
     name: 'POST /api/extension/connect/decision',
