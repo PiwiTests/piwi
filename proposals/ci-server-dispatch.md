@@ -50,7 +50,7 @@ then links to the build the run recorded.
 
 ## Decisions
 
-Proposed; to be settled with the maintainer and the issue's author.
+Taken with the maintainer on 2026-11-04; the shape is to be confirmed with the issue's author.
 
 | #   | Decision                                                                                                                                                                                                                                                                                    |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -63,6 +63,10 @@ Proposed; to be settled with the maintainer and the issue's author.
 | D7  | **The job reads the arguments from an environment variable, through the Piwi CLI**: `npx @piwitests/reporter rerun` runs `playwright test` with the arguments of `PIWI_RERUN_ARGS`, parsed without a shell. No `eval`, no Groovy interpolation of a parameter into `sh`.                    |
 | D8  | **Parameter names default to the environment variables the reporter reads**: `PIWI_RERUN_ARGS` and `PIWI_ORIGIN_REF`. Jenkins, TeamCity, Buildkite and Azure Pipelines expose a build parameter as an environment variable, so the job only declares them.                                  |
 | D9  | **A matched dispatch links to the build the run recorded** (`ci.buildUrl`), for every provider. Before the match it links to what the CI answered, or to the job's page.                                                                                                                    |
+| D10 | **On the desktop app, a project's base URL may reach a private address without `PIWI_CI_SERVER_HOSTS`.** Its server binds 127.0.0.1 only, and its one user is the operator.                                                                                                                 |
+| D11 | **One instance CI server, set by environment variables.** Several servers are per-project overrides; no named connections and no admin page in this plan.                                                                                                                                   |
+| D12 | **The Jenkins job field takes a `{branch}` segment for a multibranch pipeline**, encoded as Jenkins names branch jobs.                                                                                                                                                                      |
+| D13 | **Jenkins authenticates with a user and an API token only**, never the "Trigger builds remotely" token, which sits in a query string that access logs keep.                                                                                                                                 |
 
 ## Design
 
@@ -126,8 +130,9 @@ the host or the port.
 | **Custom**          | Any `POST` or `PUT` the form describes                                                                                            | None, Basic, Bearer or one header           | A JSON pointer, a header or a template | Whatever the request names                                          |
 
 Each request shape is checked against the CI's API documentation while its preset is built, and pinned by a unit test.
-The Jenkins job field takes the folder path as Jenkins shows it (`polaris/e2e`) and becomes `job/polaris/job/e2e`. A
-multibranch job names its branch job in the path: see [Open questions](#open-questions).
+The Jenkins job field takes the folder path as Jenkins shows it (`polaris/e2e`) and becomes `job/polaris/job/e2e`. For a
+multibranch pipeline, a `{branch}` segment stands for the branch job (`polaris/e2e/{branch}`), encoded as Jenkins names
+it: `feature/x` becomes `job/feature%252Fx` (D12).
 
 A Jenkinsfile that receives a re-run:
 
@@ -211,8 +216,8 @@ and **Customize**. The repository blocks stay as they are under _Repository host
 - **MCP.** `rerun_cluster_in_ci` calls `rerunClusterInCi`: unchanged.
 - **Demo.** The seed gives one project a Jenkins target, and the demo's rerun handlers answer for it with a job link,
   as they do for the repository blocks.
-- **Desktop.** Same code. Whether the desktop app needs `PIWI_CI_SERVER_HOSTS` is an
-  [open question](#open-questions).
+- **Desktop.** Same code, except that a project's base URL may reach a private address without
+  `PIWI_CI_SERVER_HOSTS` (D10).
 
 ## Security
 
@@ -226,7 +231,8 @@ The question was whether a per-project base URL is safe. It is with D5 and D6; w
 2. **Reaching the internal network (SSRF).** A CI server usually lives on a private network, so the webhook rule
    (public addresses only) would refuse the main use case, and allowing any private address would let a project admin
    use Piwi to send requests into the network. D6 allows a private address only on a host the operator named; any other
-   host goes through `safeFetch`, which checks every resolved address at connect.
+   host goes through `safeFetch`, which checks every resolved address at connect. The desktop app is the exception
+   (D10): its server binds 127.0.0.1 only, and its one user is both the operator and the only project admin.
 3. **Reading answers.** An answer is never echoed. The dispatch keeps the status and the fields the preset reads (a
    link, a build number). An error shows the status and, for a JSON answer, its `message` field, cut to 200 characters.
 4. **Headers.** A custom header name must be a token and is refused when it is `Host`, `Content-Length`,
@@ -302,25 +308,12 @@ PR 2 and PR 3 are the size a contributor can take; the issue's author offered to
 - **A CI server behind single sign-on redirects to a login page.** The dispatch fails with the 3xx status, and the docs
   say to use the server's API URL and an API token.
 
-## Open questions
-
-1. **The desktop app.** Its one user is the operator and the only project admin, and setting environment variables for
-   a desktop app is awkward. Should a project's base URL reach a private address there without `PIWI_CI_SERVER_HOSTS`?
-   Proposed: yes, on the desktop build only.
-2. **One instance CI server, or several named ones** (connections, as the issue tracker layer has)? Proposed: one now;
-   per-project overrides cover several servers.
-3. **An admin settings page for the instance values**, beside the variables. Proposed: variables first; a page with
-   env-managed fields later, if asked.
-4. **Jenkins multibranch jobs** name the branch job in the path, encoded twice (`feature/x` is `job/feature%252Fx`).
-   Proposed: a `{branch}` segment in the Jenkins job field, encoded that way.
-5. **Jenkins' "Trigger builds remotely" token** (`?token=…`) needs no user, but sits in a query string that access logs
-   keep. Proposed: API token only.
-
 ## Not in this plan
 
 - **The Bitbucket toggles.** On a Bitbucket project, **Commit status** and **Gate status** save but post nothing, as
   `features/pr-feedback.md` says, and the settings form does not say it (the issue's side note). A separate UI fix.
 - **Pull-request feedback through the CI server.** Commit statuses and comments stay on the repository host.
+- **Named CI server connections and an admin page for the instance values** (D11). Either can follow if a team asks.
 - **Polling the CI for a build's status.** Piwi learns the outcome from the run the reporter sends.
 - **Other features over the generic request** (auto-heal, notifications, which have webhooks).
 
