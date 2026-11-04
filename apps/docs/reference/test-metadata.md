@@ -94,9 +94,9 @@ run keeps the configuration of the shard that began it, and each shard's own wor
 
 ### Browser configuration per test case
 
-The reporter automatically captures each test case's Playwright project configuration — `projectName`, `browserName`, `channel`, `viewport`, and the rendering options `colorScheme`, `reducedMotion`, `forcedColors` and `contrast` (Playwright 1.63's standalone contrast option) — via `test.parent.project()`. This is stored in the `browser` field of every test case result and feeds the [environment diff](/features/evidence#one-execution-diagnosis-first) that compares a failing execution against its last passing one.
+The reporter automatically captures each test case's Playwright project configuration — `projectName`, `browserName` (a `devices` preset's `defaultBrowserType` when the project sets none), `channel`, `viewport`, and the rendering options `colorScheme`, `reducedMotion`, `forcedColors` and `contrast` (Playwright 1.63's standalone contrast option) — via `test.parent.project()`. This is stored in the `browser` field of every test case result and feeds the [environment diff](/features/evidence#one-execution-diagnosis-first) that compares a failing execution against its last passing one.
 
-In the dashboard UI, every row of a run's Tests tab shows the browser icon, and `browser:chromium` in its [search](/reference/test-search) narrows the list to one project.
+In the dashboard UI, every row of a run's Tests tab shows the browser icon (from the channel, else the engine, else the project name), and `browser:<project name>` in its [search](/reference/test-search) narrows the list to one project.
 
 ### Suite hierarchy (describe blocks)
 

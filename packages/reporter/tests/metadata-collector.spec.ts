@@ -151,6 +151,32 @@ describe('MetadataCollector.getBrowserConfig', () => {
     expect(cfg?.viewport).toEqual({ width: 1280, height: 720 });
   });
 
+  it('names the engine a devices preset sets as defaultBrowserType', () => {
+    const mc = new MetadataCollector();
+    const project = {
+      name: 'Polaris',
+      use: { defaultBrowserType: 'chromium', viewport: { width: 1280, height: 720 } },
+    };
+    const test = { parent: { project: () => project } } as any;
+    const cfg = mc.getBrowserConfig(test);
+    expect(cfg?.projectName).toBe('Polaris');
+    expect(cfg?.browserName).toBe('chromium');
+  });
+
+  it('prefers an explicit browserName over the preset default', () => {
+    const mc = new MetadataCollector();
+    const project = { name: 'Polaris', use: { browserName: 'firefox', defaultBrowserType: 'chromium' } };
+    const test = { parent: { project: () => project } } as any;
+    expect(mc.getBrowserConfig(test)?.browserName).toBe('firefox');
+  });
+
+  it('leaves browserName out when the project names no engine', () => {
+    const mc = new MetadataCollector();
+    const project = { name: 'Polaris', use: {} };
+    const test = { parent: { project: () => project } } as any;
+    expect(mc.getBrowserConfig(test)).not.toHaveProperty('browserName');
+  });
+
   it('returns null when no project() is found within the depth limit', () => {
     const mc = new MetadataCollector();
     const test = { parent: { parent: { parent: undefined } } } as any;

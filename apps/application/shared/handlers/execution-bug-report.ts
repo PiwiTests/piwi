@@ -187,7 +187,7 @@ export async function getExecutionBugReport(db: DrizzleDB, id: number): Promise<
     console: consoleEntries(row.consoleLogs),
     requests: requests.map((r) => ({ method: r.method, url: r.url ?? '', status: r.status, time: r.startTime })),
     viewport: browser?.viewport ?? null,
-    browser: browser?.browserName ?? browser?.projectName ?? null,
+    browser: browser?.projectName ?? browser?.browserName ?? null,
     time: typeof row.startedAt === 'number' ? row.startedAt : null,
     screenshot: screenshotPath != null,
   });

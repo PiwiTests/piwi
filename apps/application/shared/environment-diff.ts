@@ -39,6 +39,12 @@ export interface EnvironmentDiffEntry {
 
 const INFORMATIONAL_KEYS = new Set(['workerIndex', 'shardIndex']);
 
+/**
+ * Keys whose null means not recorded rather than unset. The baseline is the same Playwright project, so a browser
+ * engine one side did not record is not a different engine.
+ */
+const UNRECORDED_WHEN_NULL_KEYS = new Set(['browserName']);
+
 const KEY_LABELS: Record<string, string> = {
   playwrightVersion: 'Playwright version',
   reporterVersion: 'Reporter version',
@@ -138,7 +144,8 @@ export function renderEnvironmentDiffMarkdown(result: {
 /**
  * Diff two environment snapshots, returning only the keys whose values differ.
  * A key missing on one side (null) still counts as a difference when the other
- * side has a value — a newly-set locale is exactly the kind of drift to surface.
+ * side has a value — a newly-set locale is exactly the kind of drift to surface —
+ * except a key one side may not have recorded (`UNRECORDED_WHEN_NULL_KEYS`).
  */
 export function computeEnvironmentDiff(
   failing: Record<string, string | null>,
@@ -150,6 +157,7 @@ export function computeEnvironmentDiff(
     const p = baseline[key] ?? null;
     if (f === p) continue;
     if (f === null && p === null) continue;
+    if ((f === null || p === null) && UNRECORDED_WHEN_NULL_KEYS.has(key)) continue;
     entries.push({
       key,
       label: KEY_LABELS[key] ?? key,

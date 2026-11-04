@@ -44,6 +44,8 @@ export interface FixtureOptions {
   rootDir?: string;
   configFile?: string;
   projectName?: string;
+  /** The project's resolved `use` options. */
+  projectUse?: Record<string, unknown>;
   playwrightVersion?: string;
   blobVersion?: number;
   shard?: { current: number; total: number } | null;
@@ -76,6 +78,7 @@ export function buildBlobReport(options: FixtureOptions): Buffer {
     rootDir = '/repo/tests',
     configFile = '../playwright.config.ts',
     projectName = 'chromium',
+    projectUse = {},
     playwrightVersion = '1.61.1',
     blobVersion = 2,
     shard = null,
@@ -94,7 +97,7 @@ export function buildBlobReport(options: FixtureOptions): Buffer {
       method: 'onConfigure',
       params: { config: { configFile, rootDir, version: playwrightVersion, shard, metadata: {}, workers: 1 } },
     },
-    { method: 'onProject', params: { project: buildProject(projectName, file, tests) } },
+    { method: 'onProject', params: { project: buildProject(projectName, file, tests, projectUse) } },
     { method: 'onBegin' },
     ...runErrors.map((error) => ({ method: 'onError', params: { error } })),
     ...outputOutsideTests.map((chunk) => stdioEvent('stdout', chunk, null)),
@@ -205,7 +208,7 @@ export function buildBlobReport(options: FixtureOptions): Buffer {
 }
 
 /** Nest the tests under their describe blocks inside one file suite. */
-function buildProject(projectName: string, file: string, tests: FixtureTest[]) {
+function buildProject(projectName: string, file: string, tests: FixtureTest[], use: Record<string, unknown>) {
   const fileSuite: Record<string, unknown> = {
     title: file,
     location: { file, line: 1, column: 1 },
@@ -236,7 +239,7 @@ function buildProject(projectName: string, file: string, tests: FixtureTest[]) {
     });
   }
 
-  return { name: projectName, timeout: 30000, retries: 1, suites: [fileSuite], use: {} };
+  return { name: projectName, timeout: 30000, retries: 1, suites: [fileSuite], use };
 }
 
 export interface TraceFixtureOptions {

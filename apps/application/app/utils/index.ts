@@ -2,6 +2,7 @@ import { h } from 'vue';
 import { UIcon } from '#components';
 import type { Column } from '@tanstack/vue-table';
 import type { CommitListItem } from '~~/types/api';
+import type { BrowserConfig } from '#shared/types';
 import { formatDistanceToNow, formatDuration as formatDurationLib, intervalToDuration } from 'date-fns';
 import { TEST_PRIORITIES, type TestPriority } from '@piwitests/core/test-meta';
 import { formatAbsolute } from '#shared/i18n/locale-format';
@@ -238,7 +239,17 @@ export function reportIcon(type: string): string {
 }
 
 /**
- * Map a browser project name to a recognizable icon.
+ * The name a browser's icon and color are picked from: its channel (`chrome`, `msedge`), else its engine
+ * (`chromium`, `firefox`, `webkit`), else its Playwright project name when neither is recorded.
+ */
+export function browserIconName(
+  browser: Pick<BrowserConfig, 'projectName' | 'browserName' | 'channel'> | null | undefined,
+): string | null {
+  return browser?.channel || browser?.browserName || browser?.projectName || null;
+}
+
+/**
+ * Map a browser name to a recognizable icon.
  */
 export function getBrowserIcon(browserName?: string | null): string {
   if (!browserName) return 'i-lucide-globe';

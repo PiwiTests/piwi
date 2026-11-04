@@ -7,8 +7,8 @@ const props = defineProps<{
 }>();
 
 const name = computed(() => props.browser?.projectName ?? null);
-const icon = computed(() => getBrowserIcon(name.value));
-const hexColor = computed(() => getBrowserHexColor(name.value));
+const icon = computed(() => getBrowserIcon(browserIconName(props.browser)));
+const hexColor = computed(() => getBrowserHexColor(browserIconName(props.browser)));
 
 const iconSizeClass = computed(() => (props.size === 'sm' ? 'size-3.5' : props.size === 'lg' ? 'size-5' : 'size-4'));
 
