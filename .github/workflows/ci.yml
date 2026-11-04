@@ -5,6 +5,7 @@ name: CI
 # version runs them all. A pull request runs the dashboard E2E suite on two backends and the package smoke test on
 # Linux; main runs every backend and every system, and the JetBrains Plugin Verifier on every IDE. The extension,
 # VS Code and desktop suites and the container image check run on pull requests only.
+# perf-comment.yml follows this workflow by its name (`workflows: [CI]`).
 on:
   pull_request:
   push:
@@ -995,15 +996,13 @@ jobs:
           path: base/apps/application/.output
           key: perf-base-output-v1-${{ steps.base.outputs.sha }}
 
-  # The heaviest pages measured on this build and on the base commit's, posted as a comment on the pull request.
+  # The heaviest pages measured on this build and on the base commit's, posted as a comment on the pull request by
+  # perf-comment.yml once this run completes.
   perf:
     name: Performance
     needs: [changes, build, perf-base]
     if: needs.changes.outputs.app == 'true' && github.event_name == 'pull_request'
     uses: ./.github/workflows/reusable-perf.yml
-    permissions:
-      contents: read
-      pull-requests: write
 
   # The one check branch protection requires: it fails when any job above failed or was cancelled, and passes when
   # each one passed or was skipped because the change does not touch its area.

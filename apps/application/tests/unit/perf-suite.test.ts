@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { getTableConfig } from 'drizzle-orm/sqlite-core';
 import * as sqliteSchema from '../../server/database/schema.sqlite';
@@ -233,6 +234,15 @@ describe('performance report', () => {
     expect(md).toContain('### Regressions');
     expect(md).toContain('Project › Runs');
     expect(md).toContain('163 → 24');
+  });
+
+  it('is the report perf-comment.yml posts: the same marker, after the workflow it follows', () => {
+    const workflows = new URL('../../../../.github/workflows/', import.meta.url);
+    const comment = readFileSync(new URL('perf-comment.yml', workflows), 'utf8');
+    const ci = readFileSync(new URL('ci.yml', workflows), 'utf8');
+    expect(comment).toContain(`const marker = '${COMMENT_MARKER}';`);
+    expect(comment).toContain('workflows: [CI]');
+    expect(ci.startsWith('name: CI\n')).toBe(true);
   });
 
   it('stays under the size GitHub accepts for a comment', () => {

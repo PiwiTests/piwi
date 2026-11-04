@@ -13,7 +13,8 @@ The release process, seen from a maintainer, is in [`CONTRIBUTING.md`](../CONTRI
 | `workflows/reusable-e2e-vscode.yml`        | called by `ci.yml`, on demand                | the VS Code extension's integration suite                                                                    |
 | `workflows/reusable-jetbrains.yml`         | called by `ci.yml`, on demand                | the JetBrains plugin's tests, build and Plugin Verifier runs (2 IDEs on PRs, 4 on `main` and on demand)      |
 | `workflows/reusable-e2e-desktop.yml`       | called by `ci.yml`, on demand                | the desktop shell's Rust tests and E2E smoke test, on macOS, from `ci.yml`'s build                           |
-| `workflows/reusable-perf.yml`              | called by `ci.yml`                           | the performance suite on the pull request's build and its base commit's, reported as a PR comment            |
+| `workflows/reusable-perf.yml`              | called by `ci.yml`                           | the performance suite on the pull request's build and its base commit's, in the job summary and an artifact  |
+| `workflows/perf-comment.yml`               | completed `ci.yml` runs of pull requests     | posts the performance comparison as one comment on the pull request, forks included                          |
 | `workflows/pr-lint.yml`                    | pull requests                                | `commitlint` (every commit), `title` (the PR title) and `actionlint`                                         |
 | `workflows/docs.yml`                       | pushes to `main` that change them, on demand | builds the docs and the demo and deploys them to GitHub Pages                                                |
 | `workflows/release-please.yml`             | pushes to `main`                             | the release PR, and the tag once it merges; the previous release stays GitHub's latest                       |
@@ -69,7 +70,12 @@ The release process, seen from a maintainer, is in [`CONTRIBUTING.md`](../CONTRI
   when it runs on `main`. When the base commit has none, the `perf-base` job builds it alongside the pull request's own
   build, cached for the pull request's runs only.
 - The pages are split across two `measure` jobs that run at once. Each measures both builds on its own pages, so every
-  comparison is made on one machine. A `report` job joins their results into the comment.
+  comparison is made on one machine. A `report` job joins their results into the job summary and the `perf-results`
+  artifact.
+- `perf-comment.yml` posts that report on the pull request once the `ci.yml` run completes. It runs from the default
+  branch with a token that may comment, which the run of a pull request from a fork never has, and runs nothing of
+  the pull request: it reads the artifact, and comments only while the measured commit is the pull request's head. A
+  fork's report goes under a note saying the fork's own run wrote it, with its mentions made inert.
 - A regression is reported in the comment without failing the job: the jobs fail only when the suite cannot run.
 
 ## The container image
