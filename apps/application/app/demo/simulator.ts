@@ -34,8 +34,7 @@ import { demoExternalId, demoLocks, demoTags, demoTestMeta, buildAiUsage } from 
 import { demoExecutionResources, demoResourceReport } from '#shared/demo/demo-resources.mjs';
 import { isFlakyResult } from '#shared/status-classify';
 import type { TestRunDetails } from '~~/types/api';
-
-export const DEMO_SIMULATOR_INSTANCE_ID = 'demo-simulator';
+import { simulatorInstanceId } from './simulator-instance';
 
 /** Project from the demo seed (scripts/generate-demo-seed.mjs) */
 const DEMO_PROJECT_NAME = 'e2e-checkout';
@@ -1486,7 +1485,7 @@ async function runSingleSimulation(
   const tests = scenario.tests();
   const startTime = new Date();
   const runLabel = shardOverride?.runLabel;
-  const instanceId = runLabel ? `${DEMO_SIMULATOR_INSTANCE_ID}|${runLabel}` : DEMO_SIMULATOR_INSTANCE_ID;
+  const instanceId = runLabel ? `${simulatorInstanceId()}|${runLabel}` : simulatorInstanceId();
 
   const setup = await $fetch<{ runId: number; projectId: number; setupToken: string }>('/api/test-runs/setup', {
     method: 'POST',
