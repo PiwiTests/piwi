@@ -643,22 +643,37 @@ describe('branch policy and test filters', () => {
       await import('../../shared/handlers/analytics/common');
     const ctx = await getAnalyticsContext(fdb as any, parseAnalyticsScope({ days: '30', allBranches: 'true' }));
     const runs = await fetchContextRuns(fdb as any, ctx, ctx.period.from.getTime(), ctx.now);
-    const read = async (tests: number[]) =>
+    const read = async (byProject: Array<[number, number[]]>) =>
       (
         await fetchFilteredExecutions(
           fdb as any,
-          { ...ctx, testFilter: { testCaseIds: new Map([[1, new Set(tests)]]), browsers: null } },
+          {
+            ...ctx,
+            testFilter: { testCaseIds: new Map(byProject.map(([p, tests]) => [p, new Set(tests)])), browsers: null },
+          },
           runs,
         )
       )
-        .map((e) => `${e.testRunId}:${e.testCaseId}`)
+        .map((e) => `${e.testCaseId}@${runs.find((r) => r.id === e.testRunId)!.projectId}`)
         .sort();
-    const named = await read([10]);
-    // `pays` ran on main and on the feature branch; the admin project is not in the filter.
-    expect(named).toHaveLength(2);
+    // One query reads the runs of both projects: it names the filtered tests of each.
+    const named = await read([
+      [1, [10]],
+      [2, [20]],
+    ]);
+    // `pays` ran on main and on the feature branch, `logs in` once in the admin project.
+    expect(named).toEqual(['10@1', '10@1', '20@2']);
     // Past 500 tests the query names none of them, and the rows are kept in memory alone.
-    expect(await read([10, ...Array.from({ length: 600 }, (_, i) => 1000 + i)])).toEqual(named);
-    expect(await read([])).toEqual([]);
+    const many = Array.from({ length: 600 }, (_, i) => 1000 + i);
+    expect(
+      await read([
+        [1, [10, ...many]],
+        [2, [20]],
+      ]),
+    ).toEqual(named);
+    // A project the filter leaves out reads nothing, even when its test ids are those of another project.
+    expect(await read([[1, [10, 20]]])).toEqual(['10@1', '10@1']);
+    expect(await read([[1, []]])).toEqual([]);
   });
 
   test('a stored scope past the file glob limits reads its first 100 globs of at most 500 characters', async () => {

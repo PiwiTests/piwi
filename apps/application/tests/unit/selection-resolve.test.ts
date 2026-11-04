@@ -386,6 +386,10 @@ describe('the least catalog a definition needs', () => {
       withFailRanks: false,
       withAggregates: true,
     });
+    expect(catalogNeeds([{ budget: { rankBy: 'recentFailure' } }])).toEqual({
+      withFailRanks: true,
+      withAggregates: true,
+    });
   });
 
   /** A project whose tests each answer a different predicate. */
@@ -432,11 +436,17 @@ describe('the least catalog a definition needs', () => {
       { include: [group] },
       { exclude: [group] },
     ]);
-    definitions.push({ budget: { maxTotalDurationMs: 1000 } }, { budget: { rankBy: 'slowest' }, limit: 2 });
+    definitions.push(
+      { budget: { maxTotalDurationMs: 1000 } },
+      { budget: { rankBy: 'slowest' }, limit: 2 },
+      { budget: { rankBy: 'recentFailure' }, limit: 2 },
+    );
 
     const ids = (r: Awaited<ReturnType<typeof resolveSelectionDefinition>>) => r.tests.map((x) => x.testCaseId);
+    // The whole catalog carries every fact, whatever the definition reads.
+    const wholeCatalog = await loadSelectionCatalog(db, 1, { withFailRanks: true, withAggregates: true });
     for (const definition of definitions) {
-      const whole = await resolveSelectionDefinition(db, 1, definition);
+      const whole = await resolveSelectionDefinition(db, 1, definition, { catalog: wholeCatalog });
       const catalog = await loadSelectionCatalog(db, 1, catalogNeeds([definition]));
       const least = await resolveSelectionDefinition(db, 1, definition, { catalog });
       expect(ids(least), JSON.stringify(definition)).toEqual(ids(whole));

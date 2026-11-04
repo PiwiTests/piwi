@@ -408,9 +408,12 @@ export interface ResolveOptions {
   order?: SelectionRankBy;
   /**
    * A catalog already loaded by the caller, reused instead of querying again.
-   * It must carry what the definition reads (`catalogNeeds`), or fail ranks
-   * and aggregates so any definition resolves correctly. Analytics resolves
-   * many selections against one shared catalog.
+   * It must carry what the resolution reads: fail ranks for
+   * `failedInLastRuns` and a `recentFailure` budget or `order`, the
+   * aggregates for a rate, a duration, `neverRun`, a budget, a `shard` and the
+   * estimate. `catalogNeeds` names what the definitions alone read, for a
+   * caller that keeps the resolved ids. Analytics resolves many selections
+   * against one shared catalog.
    */
   catalog?: CatalogRow[];
 }
