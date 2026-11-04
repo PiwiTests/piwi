@@ -24,6 +24,15 @@ describe('commitlint.config.js ignores', () => {
     expect(ignored(`${DEPENDABOT}\n`)).toBe(true);
   });
 
+  test('skips a squash-merged Dependabot commit, a CRLF message and one followed by git comment lines', () => {
+    const coAuthor = 'Co-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>';
+    expect(ignored(`${DEPENDABOT}\n${coAuthor}\n`)).toBe(true);
+    expect(ignored(`${DEPENDABOT}\n`.replace(/\n/g, '\r\n'))).toBe(true);
+    expect(ignored(`${DEPENDABOT}\n\n# Please enter the commit message for your changes.\n#\n# On branch main\n`)).toBe(
+      true,
+    );
+  });
+
   test('lints a message that mentions the trailer outside its last line', () => {
     expect(ignored('Whatever Bad header.\n\nquoting Signed-off-by: dependabot[bot] in the body\n')).toBe(false);
     expect(ignored('Signed-off-by: dependabot[bot] <support@github.com>')).toBe(false);
