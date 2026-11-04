@@ -527,6 +527,22 @@ describe('verifyClusterFixes — Playwright projects', () => {
     expect(await landedIn(clusterId)).toBeNull();
   });
 
+  test('a pass at the failing commit in another project is no flake evidence', async () => {
+    const failing = await insertRun('failed', 'e1e1001');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2, 'webkit');
+
+    const chromiumJob = await insertRun('passed', 'e1e1001', { isFullRun: false });
+    await insertCase(chromiumJob, 'passed', null, 2, 'chromium');
+    await verifyClusterFixes(db, chromiumJob);
+    expect((await cluster(clusterId)).flakeEvidenceRunId).toBeNull();
+
+    const webkitRerun = await insertRun('passed', 'e1e1001', { isFullRun: false });
+    await insertCase(webkitRerun, 'passed', null, 2, 'webkit');
+    await verifyClusterFixes(db, webkitRerun);
+    expect((await cluster(clusterId)).flakeEvidenceRunId).toBe(webkitRerun);
+  });
+
   test('a failure whose project is unknown is answered by a pass in any project', async () => {
     const failing = await insertRun('failed', 'e2e2001');
     const clusterId = await insertCluster({ firstSeenRunId: failing });
