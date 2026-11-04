@@ -75,6 +75,8 @@ export interface RunMetadata {
   } | null;
   /** What launched the run (`PIWI_ORIGIN`); read through `runOrigin` in `#shared/run-eligibility`. */
   piwiOrigin?: RunOrigin | null;
+  /** The launcher's name for the run (`PIWI_RUN_REF`); read through `runLauncherRef` in `#shared/run-eligibility`. */
+  piwiRunRef?: string | null;
   htmlReport?: {
     projects?: Array<{ use?: { browserName?: string | null; baseURL?: string | null } | null }>;
   } | null;

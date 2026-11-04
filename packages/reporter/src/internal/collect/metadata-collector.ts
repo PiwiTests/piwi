@@ -5,7 +5,14 @@ import { errorMessage } from '../support/errors.js';
 import type { FullConfig, Suite, TestCase } from '@playwright/test/reporter';
 import { Logger } from '../support/logger.js';
 import type { SuiteConfigEntry } from '../../types.js';
-import { isRunOriginKind, parseRunOriginRef, RUN_ORIGIN_METADATA_KEY, type RunOrigin } from '@piwitests/core/wire';
+import {
+  isRunOriginKind,
+  parseRunOriginRef,
+  RUN_ORIGIN_METADATA_KEY,
+  RUN_REF_METADATA_KEY,
+  type RunOrigin,
+} from '@piwitests/core/wire';
+import { RUN_REF_ENV } from '@piwitests/core/run-channel';
 import { PIWI_ORIGIN_ENV } from '../config/env.js';
 import { configDirFromConfig } from '../support/test-paths.js';
 import { detectCi } from '../support/ci.js';
@@ -138,6 +145,16 @@ export function resolveRunOrigin(env: Env, warn?: (message: string) => void): Ru
   return ref === undefined ? { kind } : { kind, ref };
 }
 
+/**
+ * The launcher's name for the run itself (`PIWI_RUN_REF`), when a launcher started the run (`PIWI_ORIGIN` names a
+ * known kind) and the name is a valid ref; undefined otherwise.
+ */
+export function resolveRunRef(env: Env): string | undefined {
+  const kind = env[PIWI_ORIGIN_ENV.kind]?.trim();
+  if (!kind || !isRunOriginKind(kind)) return undefined;
+  return parseRunOriginRef(env[RUN_REF_ENV]);
+}
+
 /** Strip a leading `refs/heads/` a provider may prefix onto a branch variable. */
 function normalizeRef(ref: string): string {
   return ref.replace(/^refs\/heads\//, '');
@@ -162,6 +179,8 @@ export class MetadataCollector {
       workingDir: configDirFromConfig(config),
       [RUN_ORIGIN_METADATA_KEY]: resolveRunOrigin(process.env, (message) => this.logger.warn(message)),
     };
+    const runRef = resolveRunRef(process.env);
+    if (runRef) metadata[RUN_REF_METADATA_KEY] = runRef;
 
     if (options.projectDescription) metadata.projectDescription = options.projectDescription;
     if (options.relatedIssue) metadata.relatedIssue = options.relatedIssue;

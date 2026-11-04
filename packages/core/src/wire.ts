@@ -500,6 +500,12 @@ export interface RunOrigin {
 /** The run-metadata key holding the {@link RunOrigin}. */
 export const RUN_ORIGIN_METADATA_KEY = 'piwiOrigin';
 
+/**
+ * The run-metadata key holding the launcher's name for the run itself (`PIWI_RUN_REF`), a string read by
+ * {@link parseRunOriginRef}, beside the origin's `ref`, which names what the run was launched for.
+ */
+export const RUN_REF_METADATA_KEY = 'piwiRunRef';
+
 /** The longest `ref` kept. */
 export const RUN_ORIGIN_REF_MAX_LENGTH = 200;
 

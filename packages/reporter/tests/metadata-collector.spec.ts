@@ -3,6 +3,7 @@ import type { FullConfig } from '@playwright/test/reporter';
 import {
   MetadataCollector,
   resolveRunOrigin,
+  resolveRunRef,
   resolveScmBaseBranch,
   resolveScmBranch,
   resolveScmPrNumber,
@@ -364,6 +365,20 @@ describe('the run origin', () => {
       else process.env.PIWI_ORIGIN = saved.origin;
       if (saved.ref !== undefined) process.env.PIWI_ORIGIN_REF = saved.ref;
     }
+  });
+});
+
+describe('resolveRunRef', () => {
+  it("is the launcher's name for the run, beside the shared origin ref", () => {
+    expect(resolveRunRef({ PIWI_ORIGIN: 'reproduce', PIWI_ORIGIN_REF: '42', PIWI_RUN_REF: 'desktop-7' })).toBe('desktop-7');
+    expect(resolveRunRef({ PIWI_ORIGIN: 'bisect', PIWI_RUN_REF: 'desktop-8-unattended' })).toBe('desktop-8-unattended');
+  });
+
+  it('is undefined without a launcher, or with a name it cannot store', () => {
+    expect(resolveRunRef({ PIWI_RUN_REF: 'terminal-12-34' })).toBeUndefined();
+    expect(resolveRunRef({ PIWI_ORIGIN: 'nightly', PIWI_RUN_REF: 'desktop-7' })).toBeUndefined();
+    expect(resolveRunRef({ PIWI_ORIGIN: 'desktop', PIWI_RUN_REF: 'a b' })).toBeUndefined();
+    expect(resolveRunRef({ PIWI_ORIGIN: 'desktop' })).toBeUndefined();
   });
 });
 
