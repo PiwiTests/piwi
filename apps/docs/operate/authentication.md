@@ -6,7 +6,7 @@ lang: en-US
 
 # Authentication
 
-The dashboard supports optional sign-in with role-based access control. Authentication is **disabled by default**: every endpoint then behaves as a single administrator. Turn it on before anyone else can reach the instance; the [production checklist](./production-checklist) lists the rest of what to set.
+Sign-in, with role-based access control, is **disabled by default**: every endpoint then behaves as a single administrator. Turn it on before anyone else can reach the instance; the [production checklist](./production-checklist) lists the rest of what to set.
 
 ## Roles
 
@@ -100,13 +100,13 @@ generic OpenID Connect or SAML sign-in.
 By default any account at a configured provider can sign in. To restrict access:
 
 - **`PIWI_OAUTH_ALLOWED_DOMAINS`** — comma-separated email domains (e.g. `example.com,acme.org`). Only **verified** provider emails in these domains may sign in. Applies to all providers.
-- **`PIWI_OAUTH_GITHUB_ALLOWED_ORGS`** — comma-separated GitHub org logins. The user must be a member of at least one. Enabling this requests the `read:org` scope so membership (including private) can be checked.
+- **`PIWI_OAUTH_GITHUB_ALLOWED_ORGS`** — comma-separated GitHub org logins. The user must belong to at least one; it requests the `read:org` scope to check membership, private included.
 
 Rejected sign-ins are returned to the login page with an explanatory message.
 
 ### Account linking
 
-A first sign-in with a provider either links an existing account or creates a new one. Email addresses are compared ignoring case, so `Bob@corp.com` and `bob@corp.com` are the same address, and an address belongs to at most one account.
+A first provider sign-in links an existing account or creates one. Email addresses are compared ignoring case, so `Bob@corp.com` and `bob@corp.com` are the same address, and an address belongs to at most one account.
 
 - If a user with the same **verified** email exists (and isn't already linked to a *different* provider), the existing account is linked to the provider. Linking needs proof on both sides: the provider must assert the email is verified, **and** the local account must have verified it too (through the verification link, an accepted invite, or an earlier provider sign-in). This stops an address someone typed into their own profile from capturing another person's sign-in.
 - If the matching account has **not** verified the address, the sign-in is refused with an explanatory message instead of being linked. The account's owner signs in with its password (or accepts their invite first) and connects the provider from **Settings → Account**.
@@ -121,10 +121,10 @@ The dashboard does not keep the provider's tokens: the access token is used once
 
 ### Connecting / disconnecting a provider
 
-Signed-in users can link a provider explicitly from **Settings → Account → Connected accounts**:
+Signed-in users link a provider from **Settings → Account → Connected accounts**:
 
-- **Connect** starts the OAuth flow in "link" mode and attaches the provider identity to the current account (rather than creating a new one). A provider identity already linked to another account is refused. An account without an email address takes the provider's, unless another account already uses it.
-- **Disconnect** removes the link. It's only allowed when the account also has a password set, so a provider-only user can't lock themselves out.
+- **Connect** starts the OAuth flow in "link" mode and attaches the provider identity to the current account instead of creating one. A provider identity already linked to another account is refused. An account without an email address takes the provider's, unless another account already uses it.
+- **Disconnect** removes the link, only when the account has a password, so a provider-only user can't lock themselves out.
 
 ## User management
 
@@ -132,6 +132,9 @@ Administrators manage accounts under **Settings → Users** (`/settings/users`).
 username, an instance role, an optional display name and email, and a password. Without one, the row's **Send invite email**
 button mails the user a link to set their own. Each row shows the user's instance role and the
 [groups](./project-access#groups) they belong to.
+
+**Settings → Account** takes a profile picture: PNG, JPEG or WebP, under 1 MB, at most 1000×1000 pixels. It replaces
+the provider's; administrators can remove it.
 
 An email address belongs to one account, ignoring letter case: creating or editing an account with an address another
 account already uses is refused, and **Forgot password?** finds the account whatever the case typed. An upgrade that
