@@ -132,6 +132,20 @@ describe('runBug', () => {
     expect(fs.readFileSync(out, 'utf-8')).toBe('mine');
   });
 
+  it.skipIf(process.platform === 'win32')('exits 2, not "the bug may be fixed", when a signal stops Playwright', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(SPEC), { status: 200 })));
+    const cli = path.join(dir, 'node_modules', 'playwright');
+    fs.mkdirSync(cli, { recursive: true });
+    fs.writeFileSync(path.join(cli, 'package.json'), JSON.stringify({ name: 'playwright', exports: { './cli': './cli.js' } }));
+    fs.writeFileSync(path.join(cli, 'cli.js'), "process.kill(process.pid, 'SIGTERM');\nsetTimeout(() => {}, 10000);\n");
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const out = path.join(dir, 'tests', 'bugs', 'coupon.spec.ts');
+    expect(await runBug(['37', '--out', out], { PIWI_DASHBOARD_URL: 'https://dash.example' }, dir)).toBe(2);
+    const said = errors.mock.calls.map((call) => String(call[0])).join('\n');
+    expect(said).toContain('piwi bug: Playwright was stopped by SIGTERM');
+    expect(said).not.toContain('may be fixed');
+  });
+
   it('--write puts the spec in the bugs folder from the repository root, whatever the working directory', async () => {
     execFileSync('git', ['init', '-q'], { cwd: dir });
     const web = path.join(dir, 'apps', 'web');

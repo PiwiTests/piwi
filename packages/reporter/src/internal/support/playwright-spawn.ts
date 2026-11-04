@@ -7,10 +7,21 @@
 import { spawn, spawnSync, type StdioOptions } from 'node:child_process';
 import * as fs from 'node:fs';
 import { createRequire } from 'node:module';
+import * as os from 'node:os';
 import * as path from 'node:path';
 
 /** The exit code a command that could not start Playwright returns. */
 const COULD_NOT_START = 2;
+
+/**
+ * The exit code of a child that ended with `code` or was stopped by `signal`: its own code, else 128 plus the signal's
+ * number as a shell reports it (143 for `SIGTERM`, 137 for `SIGKILL`), else {@link COULD_NOT_START}.
+ */
+export function childExitCode(code: number | null, signal: NodeJS.Signals | null): number {
+  if (code !== null) return code;
+  const number = signal ? os.constants.signals[signal] : undefined;
+  return number === undefined ? COULD_NOT_START : 128 + number;
+}
 
 /** The Playwright CLI the project in `cwd` resolves, or null. */
 export function resolvePlaywrightCli(cwd: string = process.cwd()): string | null {
@@ -110,7 +121,10 @@ export function spawnPlaywright(
       console.error(`${label}: could not start Playwright — ${err.message}`);
       done(COULD_NOT_START);
     });
-    child.on('exit', (code) => done(code ?? COULD_NOT_START));
+    child.on('exit', (code, signal) => {
+      if (signal) console.error(`${label}: Playwright was stopped by ${signal}`);
+      done(childExitCode(code, signal));
+    });
   });
 }
 

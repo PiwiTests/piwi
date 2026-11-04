@@ -548,6 +548,8 @@ export const HELP_TOPICS = {
       '- **GitLab** — a pipeline, recognized by its pipeline id.',
       '- **Bitbucket** — a custom pipeline, recognized by its build number.',
       '',
+      'On GitLab and Bitbucket, set the variable name to `PIWI_RERUN_ARGS` and run `npx @piwitests/reporter rerun` in the job: it reads the quoted arguments without a shell. It fails while the variable is unset, so give a GitLab job an empty default.',
+      '',
       'The run it starts is recorded as a CI re-run when it finishes. Uses the project’s SCM token (which needs write scope) and is off until you fill in your provider’s block. The optional Flake Lab block names a workflow that runs `piwi flake` for one flaky test, from its next step.',
     ].join('\n'),
     doc: 'features/pr-feedback#re-run-from-the-dashboard',

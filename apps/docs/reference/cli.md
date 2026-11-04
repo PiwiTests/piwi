@@ -1,6 +1,6 @@
 ---
 title: Piwi CLI
-description: "Every command and flag of the piwi CLI that ships with @piwitests/reporter: init, skills, gate, report, coverage, select, run, probe, flake, ai, codegen, preflight and bug."
+description: "Every command and flag of the piwi CLI that ships with @piwitests/reporter: init, skills, gate, report, coverage, select, run, rerun, probe, flake, ai, codegen, preflight and bug."
 lang: en-US
 ---
 
@@ -27,6 +27,7 @@ npx @piwitests/reporter <command> [options]
 | [`coverage`](#coverage) | Upload another tool's coverage report of a commit, for [combined coverage](/features/combined-coverage) |
 | [`select`](#select-run) | Print the Playwright args for a saved test selection |
 | [`run`](#select-run) | Run a saved test selection with `playwright test` |
+| [`rerun`](#rerun) | Run the tests a [CI re-run](/features/pr-feedback#re-run-from-the-dashboard) from the dashboard asked for |
 | [`probe`](#probe) | Run the dashboard's probe plan and record what the suite noticed |
 | [`flake`](#flake) | Make a flaky test fail on demand under its suspects' conditions, then verify the fix |
 | [`ai`](#ai) | Manage committed natural-language AI-step artifacts |
@@ -203,7 +204,8 @@ npx @piwitests/reporter run smoke -- --workers=4
 npx @piwitests/reporter run impact --base origin/main
 ```
 
-**Exit codes:** `0` ok · `1` the test run failed (`run` only) · `2` could not resolve.
+**Exit codes:** `0` ok · `1` the test run failed (`run` only) · `128` plus the signal's number when the runner stops
+Playwright (`run` only; `143` for `SIGTERM`) · `2` could not resolve, or Playwright could not start.
 
 | Flag | Description |
 |---|---|
@@ -233,6 +235,28 @@ no `--shard` of its own, since the resolved tests are already the shard's. A `se
 arguments to `playwright test` sets `PIWI_SHARD` itself, to the same `i/n` it gave `--shard`.
 
 When `run` spawns Playwright and the target config has **no Piwi reporter**, it appends `--add-reporter @piwitests/reporter` so the run still reaches the dashboard — provided the installed Playwright is **1.63 or later** (the version that added the flag; it appends to the configured reporters rather than replacing them). It logs one line naming what it added. On older Playwright it logs that the reporter is not configured and runs as before. This trial append gives you results, traces and screenshots but not the [capture fixtures](/guide/capture-fixtures) or [`wrapConfig`](/guide/reporter#installing-via-wrapconfig) defaults — wire the reporter into the config (via [`init`](#init)) for the full set. A config that already lists the reporter is left untouched.
+
+## `rerun`
+
+Run the tests a [CI re-run](/features/pr-feedback#re-run-from-the-dashboard) dispatched from the dashboard asked for,
+in a GitLab or Bitbucket job. The dashboard hands the job its Playwright arguments in the `PIWI_RERUN_ARGS` variable,
+each one double-quoted (`"tests/login.spec.ts:10" --project="chromium"`). `rerun` splits them as they were quoted,
+without reading them through a shell, and starts `playwright test` with them, followed by any arguments given on its
+own command line, after an optional `--`. The same command works on Linux, macOS and Windows runners.
+
+```bash
+npx @piwitests/reporter rerun --workers=2
+```
+
+`PIWI_RERUN_ARGS` set and empty runs the whole suite. Unset, the command fails instead: the job did not receive the
+variable, and running everything would hide it.
+
+| Flag | Description |
+|---|---|
+| `-h`, `--help` | Show help (as the first argument only; any other argument goes to `playwright test`) |
+
+**Exit codes:** Playwright's own · `128` plus the signal's number when the runner stops Playwright (`143` for
+`SIGTERM`) · `2` `PIWI_RERUN_ARGS` is unset or holds a quote left open, or Playwright could not start.
 
 ## `probe`
 
@@ -424,8 +448,8 @@ npx @piwitests/reporter bug 37 --write
 | `-h`, `--help` | Show help |
 
 **Exit codes:** `0` printed or written, and when run, the test failed on the bug as `test.fail()` expects · `1` the run
-did not: the bug may be fixed, or a step no longer matches the page · `2` the report could not be read or the file
-could not be written.
+did not: the bug may be fixed, or a step no longer matches the page · `2` the report could not be read, the file
+could not be written, or Playwright could not start or was stopped by a signal.
 
 ## Related
 

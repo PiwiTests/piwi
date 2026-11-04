@@ -208,7 +208,7 @@ async function removeToken() {
                   />
                   <UInput
                     v-model="state.ciRerun.gitlab.variableName"
-                    placeholder="variable name, e.g. PW_ARGS"
+                    placeholder="variable name, e.g. PIWI_RERUN_ARGS"
                     aria-label="GitLab variable name"
                     class="font-mono"
                   />
@@ -225,7 +225,7 @@ async function removeToken() {
                   />
                   <UInput
                     v-model="state.ciRerun.bitbucket.variableName"
-                    placeholder="variable name, e.g. PW_ARGS"
+                    placeholder="variable name, e.g. PIWI_RERUN_ARGS"
                     aria-label="Bitbucket variable name"
                     class="font-mono"
                   />

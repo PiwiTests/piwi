@@ -20,17 +20,17 @@ describe('resolveCiRerunSettings', () => {
     const resolved = resolveCiRerunSettings({
       enabled: true,
       github: { workflow: 'e2e.yml', ref: '', inputName: 'args' },
-      gitlab: { ref: 'main', variableName: 'PW_ARGS' },
+      gitlab: { ref: 'main', variableName: 'PIWI_RERUN_ARGS' },
     });
     expect(resolved.github).toBeUndefined();
-    expect(resolved.gitlab).toEqual({ ref: 'main', variableName: 'PW_ARGS' });
+    expect(resolved.gitlab).toEqual({ ref: 'main', variableName: 'PIWI_RERUN_ARGS' });
   });
 });
 
 describe('hasRerunTarget', () => {
   const settings = resolveCiRerunSettings({
     enabled: true,
-    gitlab: { ref: 'main', variableName: 'PW_ARGS' },
+    gitlab: { ref: 'main', variableName: 'PIWI_RERUN_ARGS' },
   });
 
   test('true only when enabled and a target exists for the provider', () => {

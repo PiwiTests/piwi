@@ -43,7 +43,7 @@ async function seed(remoteUrl: string) {
     ciRerun: {
       enabled: true,
       github: { workflow: 'e2e.yml', ref: 'main', inputName: 'args', dispatchIdInput: 'piwi_dispatch' },
-      gitlab: { ref: 'main', variableName: 'PW_ARGS' },
+      gitlab: { ref: 'main', variableName: 'PIWI_RERUN_ARGS' },
     },
   });
   await db.insert(schema.testCases).values([
