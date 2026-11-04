@@ -74,7 +74,8 @@ The release process, seen from a maintainer, is in [`CONTRIBUTING.md`](../CONTRI
   artifact.
 - `perf-comment.yml` posts that report on the pull request once the `ci.yml` run completes. It runs from the default
   branch with a token that may comment, which the run of a pull request from a fork never has, and runs nothing of
-  the pull request: it reads the artifact, and comments only while the measured commit is the pull request's head.
+  the pull request: it reads the artifact, and comments only while the measured commit is the pull request's head. A
+  fork's report goes under a note saying the fork's own run wrote it, with its mentions made inert.
 - A regression is reported in the comment without failing the job: the jobs fail only when the suite cannot run.
 
 ## The container image

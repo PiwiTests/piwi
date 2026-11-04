@@ -5,7 +5,8 @@ name: Performance comment
 # run of a pull request from a fork only gets a read-only one. It reads the report from that run's `perf-results`
 # artifact and runs nothing of the pull request. The artifact is the pull request's to write, so the comment goes only
 # to an open pull request whose head is still the commit the run measured (the one the artifact names, else the only
-# one), and an artifact that holds no report GitHub can post is skipped with a warning.
+# one), an artifact that holds no report GitHub can post is skipped with a warning, and a fork's report is posted under
+# a note saying it comes from the fork's own run, with its mentions made inert.
 on:
   workflow_run:
     workflows: [CI]
@@ -92,10 +93,15 @@ jobs:
             const issue_number =
               named !== null ? (candidates.includes(named) ? named : null) : candidates.length === 1 ? candidates[0] : null;
             if (issue_number === null) return core.info(`No open pull request measured by this run has ${run.head_sha} as its head.`);
-            const body = read('perf/report.md');
-            if (!body?.startsWith(marker) || body.length > maxComment) {
-              return core.warning('perf/report.md is not a performance report GitHub can post.');
-            }
+            const report = read('perf/report.md');
+            if (!report?.startsWith(marker)) return core.warning('perf/report.md is not a performance report.');
+            // A fork's report is what its own code wrote: the comment says so, and no mention in it notifies anyone.
+            const fromFork = run.head_repository.full_name !== `${context.repo.owner}/${context.repo.repo}`;
+            const body = fromFork
+              ? `${marker}\n> [!NOTE]\n> Written by this pull request's own CI run, from a fork.\n` +
+                report.slice(marker.length).replace(/(^|\W)@(?=\w)/g, '$1@\u200b')
+              : report;
+            if (body.length > maxComment) return core.warning('perf/report.md is too long for a comment.');
             const comments = await github.paginate(github.rest.issues.listComments, { ...context.repo, issue_number, per_page: 100 });
             const mine = comments.find((c) => c.user?.login === 'github-actions[bot]' && c.body?.startsWith(marker));
             if (mine) await github.rest.issues.updateComment({ ...context.repo, comment_id: mine.id, body });
