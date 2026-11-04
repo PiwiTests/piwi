@@ -16,7 +16,6 @@ describe('diagnosisImageOrder', () => {
     const ordered = diagnosisImageOrder(
       [...steps.slice(0, 3), { name: 'piwi-failure-screenshot' }, ...steps.slice(3)],
       name,
-      true,
     );
     expect(ordered[0]).toEqual({ name: 'piwi-failure-screenshot' });
     expect(ordered[1]).toEqual({ name: 'Step 10: Open alerts' });
