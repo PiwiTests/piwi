@@ -23,11 +23,15 @@ const OUTCOMES: Record<number, string[]> = {
   4: ['passed', 'timedout', 'passed', 'skipped', 'timedout'],
   // Two Playwright projects: a run counts as failed when either failed, whatever the other did.
   5: ['skipped', 'passed', 'skipped', 'passed', 'skipped'],
+  // A run whose first attempt failed after a minute and whose retry was skipped: no result, and no wasted time.
+  6: ['retried', 'failed', 'passed', 'failedThenSkipped', 'passed'],
 };
 
 // Test 5's results on a second Playwright project, `firefox`.
 const FIREFOX_OUTCOMES: Record<number, string[]> = {
   5: ['failed', 'skipped', 'timedOut', 'skipped', 'failed'],
+  // A pass where `chromium` had no result, and no result where `chromium` passed.
+  6: ['passed', 'passed', 'passed', 'passed', 'failedThenSkipped'],
 };
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
@@ -62,6 +66,19 @@ beforeAll(async () => {
     ] as const) {
       for (const [id, statuses] of Object.entries(outcomes)) {
         const status = statuses[index]!;
+        if (status === 'failedThenSkipped') {
+          const attempt = {
+            testRunId: run!.id,
+            testCaseId: Number(id),
+            browserName: project,
+            browser: { projectName: project },
+          };
+          await db.insert(schema.testRunsCases).values([
+            { ...attempt, status: 'failed', retries: 0, duration: 60_000 },
+            { ...attempt, status: 'skipped', retries: 1, duration: 0 },
+          ]);
+          continue;
+        }
         await db.insert(schema.testRunsCases).values({
           testRunId: run!.id,
           testCaseId: Number(id),
@@ -104,5 +121,11 @@ describe('getProjectFlakyTests counts only the runs a test passed or failed in',
     const flaky = await getProjectFlakyTests(db as any, 1, 20);
     const test5 = flaky.find((t) => t.testCaseId === 5);
     expect(test5).toMatchObject({ totalRuns: 5, failedRuns: 3, alternations: 4, score: 40 });
+  });
+
+  test("a run or a project with no result adds none of its failed attempts' time to the wasted CI minutes", async () => {
+    const flaky = await getProjectFlakyTests(db as any, 1, 20);
+    const test6 = flaky.find((t) => t.testCaseId === 6);
+    expect(test6).toMatchObject({ totalRuns: 5, retryPassRuns: 1, avgFailedDurationMs: 2_000, wastedCiMinutes: 0.03 });
   });
 });

@@ -2130,7 +2130,15 @@ export async function getProjectFlakyTestsWithVerified(
         if (isFailedStatus(group.finalStatus)) runFinalFailed = true;
         if (isPassedOrFailedStatus(group.finalStatus)) runPassedOrFailed = true;
         if (group.retryPass) runRetryPass = true;
+      }
 
+      // A run where the test neither passed nor failed (skipped, did not run,
+      // interrupted) is no result: it is not counted, never makes a flip and
+      // adds nothing to the wasted time; nor does a Playwright project of a
+      // counted run where it had no result.
+      if (!runPassedOrFailed) continue;
+      for (const [, group] of byBrowser) {
+        if (!isPassedOrFailedStatus(group.finalStatus)) continue;
         for (const row of group.rows) {
           if (row.id > latestRunsCaseId) latestRunsCaseId = row.id;
           if (isFailedStatus(row.status) && row.duration != null) {
@@ -2138,10 +2146,6 @@ export async function getProjectFlakyTestsWithVerified(
           }
         }
       }
-
-      // A run where the test neither passed nor failed (skipped, did not run,
-      // interrupted) is no result: it is not counted and never makes a flip.
-      if (!runPassedOrFailed) continue;
       totalRuns++;
       if (runFinalFailed) failedRuns++;
       if (runRetryPass) {
