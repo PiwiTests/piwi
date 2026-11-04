@@ -104,6 +104,41 @@ describe.skipIf(!postgresUrl)('final attempts on PostgreSQL', async () => {
     expect(await getTestCase(db as never, pays!.id)).toMatchObject({ totalRuns: 1, flakyRuns: 1 });
   });
 
+  test('ingest completes the history and the verdict of a retry stored before an earlier attempt that came with one', async () => {
+    const [run] = await db
+      .insert(schema.testRuns)
+      .values({ projectId, status: 'running', startTime: new Date() })
+      .returning();
+    const store = (tc: ReturnType<typeof attempt>) => persistRunCases(db as never, projectId, run!.id, [tc]);
+    await store({ ...attempt('ships', ['passed', 'passed']), attempts: null });
+    await store(attempt('ships', ['passed']));
+
+    const rows = await db
+      .select({
+        retries: schema.testRunsCases.retries,
+        attempts: schema.testRunsCases.attempts,
+        passedAfterFailure: schema.testRunsCases.passedAfterFailure,
+      })
+      .from(schema.testRunsCases)
+      .where(eq(schema.testRunsCases.testRunId, run!.id))
+      .orderBy(asc(schema.testRunsCases.retries));
+    expect(rows).toEqual([
+      {
+        retries: 0,
+        attempts: [{ retry: 0, status: 'passed', duration: 100, startedAt: null }],
+        passedAfterFailure: false,
+      },
+      {
+        retries: 1,
+        attempts: [
+          { retry: 0, status: 'passed', duration: 100, startedAt: null },
+          { retry: 1, status: 'passed', duration: 100, startedAt: null },
+        ],
+        passedAfterFailure: false,
+      },
+    ]);
+  });
+
   test('the migration marks the executions stored before it as finalAttempts reads them', async () => {
     const session = postgres(postgresUrl!, { onnotice: () => {}, max: 1 });
     try {

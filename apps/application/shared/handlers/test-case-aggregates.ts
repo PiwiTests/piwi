@@ -50,6 +50,15 @@ function laterAttemptSql(row: Executions): SQL {
     )`;
 }
 
+/** Whether the result `row` is an attempt of holds a stored retry. */
+function storedRetrySql(row: Executions): SQL {
+  return sql`EXISTS (
+      SELECT 1 FROM ${testRunsCases} AS ${sql.identifier(LATER)}
+      WHERE ${later.retries} > 0
+        AND ${sameResult(later, row)}
+    )`;
+}
+
 /** Whether `row` is the final attempt of its result, as the row stores it (`settleFinalAttempts`). */
 export function finalAttemptSql(row: Executions = testRunsCases): SQL {
   return sql`${row.finalAttempt} = true`;
@@ -87,18 +96,17 @@ function attemptOf(row: BatchAttempt): string {
  *   (`laterAttemptSql`) is marked as not final, and its verdict cleared: only
  *   a result's final attempt carries it. A row is stored as final, so an
  *   attempt stored after a later one is settled too;
- * - a stored retry of a result `withoutHistory` holds an attempt of (the rows
- *   `fillAttemptHistories` found without a history: their reporter sends
- *   none, so the server built the result's stored histories) is given the
+ * - a stored retry of a result `rows` holds an attempt of is given the
  *   history `withAttemptHistory` builds from the result's stored attempts
  *   when it lists more of them than the stored one, so an attempt stored
- *   after its retry completes the retry's history, and its verdict with it.
- *   A history the reporter sent whole lists every attempt and is kept, as is
- *   one the batch carries.
+ *   after its retry completes the retry's history, and its verdict with it,
+ *   whether that attempt came with a history or not (`withoutHistory`, the
+ *   rows `fillAttemptHistories` found without one). A history the reporter
+ *   sent whole lists every attempt and is kept, as is one the batch carries.
  * Every write of `test_runs_cases` calls it after its insert with every row of
  * its batch, so sending a batch again repairs both: `persistRunCases` on the
- * server and in the demo. The stored attempts of the tests of
- * `withoutHistory` are read once, `SETTLE_CHUNK` tests per statement.
+ * server and in the demo. The stored attempts of the results of `rows` that
+ * hold a stored retry are read once, `SETTLE_CHUNK` tests per statement.
  */
 export async function settleFinalAttempts(
   db: DrizzleDB,
@@ -140,11 +148,10 @@ async function completeAttemptHistories(
   rows: ReadonlyArray<BatchAttempt>,
   withoutHistory: ReadonlyArray<BatchAttempt>,
 ): Promise<void> {
-  if (withoutHistory.length === 0) return;
-  const results = new Set(withoutHistory.map(resultOf));
+  const results = new Set(rows.map(resultOf));
   const bare = new Set(withoutHistory);
   const carried = new Set(rows.filter((row) => !bare.has(row)).map(attemptOf));
-  const tests = [...new Set(withoutHistory.map((row) => row.testCaseId))];
+  const tests = [...new Set(rows.map((row) => row.testCaseId))];
   for (let i = 0; i < tests.length; i += SETTLE_CHUNK) {
     const stored = await db
       .select({
@@ -164,6 +171,7 @@ async function completeAttemptHistories(
         and(
           eq(testRunsCases.testRunId, testRunId),
           inArray(testRunsCases.testCaseId, tests.slice(i, i + SETTLE_CHUNK)),
+          storedRetrySql(testRunsCases),
         ),
       );
     const ofResults = stored.filter((row) => results.has(resultOf(row)));
@@ -212,8 +220,9 @@ function lacksHistory(attempts: unknown): boolean {
  * `settleFinalAttempts` clears the verdict of one a later attempt supersedes,
  * so only a final attempt carries it. The stored attempts are read in one query, only when a
  * retry lacks a history. Returns the rows that came without a history, which
- * `settleFinalAttempts` completes the stored histories, and the verdicts, of
- * their results with. Every write of `test_runs_cases` calls it before its
+ * `settleFinalAttempts` tells apart from the histories the batch carries when
+ * it completes the stored histories, and the verdicts, of their results.
+ * Every write of `test_runs_cases` calls it before its
  * insert: `persistRunCases` on the server and in the demo.
  */
 export async function fillAttemptHistories(
