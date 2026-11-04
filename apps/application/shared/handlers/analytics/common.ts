@@ -2,7 +2,7 @@ import { and, eq, gte, inArray, isNotNull, lt, ne, type SQL } from 'drizzle-orm'
 import { markers, projects, testRuns, testRunsCases, projectTags, tags } from '../../../server/database/schema';
 import type { DrizzleDB } from '../db';
 import { notLabRun } from '../probes';
-import { getSelection, loadSelectionCatalog, resolveSelectionDefinition } from '../selections';
+import { catalogNeeds, getSelection, loadSelectionCatalog, resolveSelectionDefinition } from '../selections';
 import type { SelectionDefinition } from '../../selection/types';
 import { distinctRunCountsFromAttempts } from '../../utils/test-counts';
 import { hasTestFilter, testsWithinLimits, type AnalyticsScope } from '../../analytics/scope';
@@ -265,7 +265,7 @@ async function resolveTestFilter(
     }
     if (scope.tests) definitions.push({ include: [testsWithinLimits(scope.tests)] });
 
-    const catalog = await loadSelectionCatalog(db, projectId, { withFailRanks: true });
+    const catalog = await loadSelectionCatalog(db, projectId, catalogNeeds(definitions));
     const sets: Set<number>[] = [];
     for (const definition of definitions) {
       const resolved = await resolveSelectionDefinition(db, projectId, definition, { catalog });
@@ -427,10 +427,16 @@ export interface FilteredExecution {
 
 const RUN_BATCH = 400;
 
+/** The most test ids one query of `fetchFilteredExecutions` binds; a larger filter is applied in memory alone. */
+const MAX_BOUND_TEST_IDS = 500;
+
 /**
- * The executions of the given runs that match the context's test filter.
- * Filtering happens in memory against the resolved test ids, so a selection of
- * any size costs no bound variables.
+ * The executions of the given runs that match the context's test filter, read
+ * `RUN_BATCH` runs per query. A query also names the matching tests of its
+ * runs' projects when they are at most `MAX_BOUND_TEST_IDS`, so a small
+ * selection reads only its own executions; every row is then checked in
+ * memory against its project's tests, so a selection of any size binds a
+ * bounded number of variables.
  */
 export async function fetchFilteredExecutions(
   db: DrizzleDB,
@@ -444,6 +450,14 @@ export async function fetchFilteredExecutions(
   for (let i = 0; i < ids.length; i += RUN_BATCH) {
     const batch = ids.slice(i, i + RUN_BATCH);
     const conditions: SQL[] = [inArray(testRunsCases.testRunId, batch)];
+    if (filter?.testCaseIds) {
+      const tests = new Set<number>();
+      for (const projectId of new Set(batch.map((id) => projectOf.get(id)!))) {
+        for (const testCaseId of filter.testCaseIds.get(projectId) ?? []) tests.add(testCaseId);
+      }
+      if (tests.size === 0) continue;
+      if (tests.size <= MAX_BOUND_TEST_IDS) conditions.push(inArray(testRunsCases.testCaseId, [...tests]));
+    }
     if (filter?.browsers) conditions.push(inArray(testRunsCases.browserName, filter.browsers));
     const rows: FilteredExecution[] = await db
       .select({
