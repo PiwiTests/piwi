@@ -26,8 +26,9 @@ suite runs; unset, the command fails rather than run it.
 Options:
   -h, --help    Show this help (as the first argument only)
 
-Exit codes: Playwright's own, or 2 when ${RERUN_ARGS_ENV} is unset or cannot
-be read, or Playwright cannot start.
+Exit codes: Playwright's own, 128 plus the signal's number when the runner
+stops Playwright (143 for SIGTERM), or 2 when ${RERUN_ARGS_ENV} is unset or
+cannot be read, or Playwright cannot start.
 `.trim();
 
 export async function runRerun(argv: string[], env: NodeJS.ProcessEnv = process.env): Promise<number> {

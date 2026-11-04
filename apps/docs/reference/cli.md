@@ -254,8 +254,8 @@ variable, and running everything would hide it.
 |---|---|
 | `-h`, `--help` | Show help (as the first argument only; any other argument goes to `playwright test`) |
 
-**Exit codes:** Playwright's own · `2` `PIWI_RERUN_ARGS` is unset or holds a quote left open, or Playwright could not
-start.
+**Exit codes:** Playwright's own · `128` plus the signal's number when the runner stops Playwright (`143` for
+`SIGTERM`) · `2` `PIWI_RERUN_ARGS` is unset or holds a quote left open, or Playwright could not start.
 
 ## `probe`
 
