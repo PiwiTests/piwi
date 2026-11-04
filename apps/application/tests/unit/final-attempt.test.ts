@@ -12,7 +12,9 @@ import type { ImportedRunCase, ParsedBlobReport } from '../../server/utils/blob-
 import type { ParsedTraceImport } from '../../server/utils/trace-import';
 import { migrateToLatest } from './temp-db';
 import {
-  REPEATED_ATTEMPT,
+  HISTORIES,
+  REPEATED_ATTEMPTS,
+  REPEATED_HISTORY,
   STORED_ATTEMPTS,
   dedupeExecutionsSql,
   expectedFinalFlags,
@@ -794,8 +796,22 @@ describe('the final-attempt backfill', () => {
 });
 
 describe('the migration that deletes repeated executions without a project', () => {
-  test('keeps the final one of each, then builds the unique index', async () => {
+  test('keeps the last one of each with its history listing each attempt once, then builds the unique index', async () => {
     const { client, migrated } = await storedAttemptsDb();
+    await migrated
+      .update(schema.testRunsCases)
+      .set({ attempts: HISTORIES.stored })
+      .where(eq(schema.testRunsCases.id, REPEATED_HISTORY + 1));
+    await migrated.insert(schema.networkRequests).values(
+      STORED_ATTEMPTS.map((row, i) => ({
+        testRunsCaseId: i + 1,
+        testRunId: row.testRunId,
+        method: 'GET',
+        status: 200,
+      })),
+    );
+    // The migrator runs with foreign keys off: no cascade deletes what referenced a deleted execution.
+    await client.execute('PRAGMA foreign_keys = OFF');
     const { dedupe, uniqueIndex } = dedupeExecutionsSql(MIGRATIONS);
     await client.executeMultiple(dedupe);
     await client.executeMultiple(uniqueIndex);
@@ -806,11 +822,23 @@ describe('the migration that deletes repeated executions without a project', () 
       .orderBy(asc(schema.testRunsCases.id));
     const kept = expectedFinalFlags()
       .map((finalAttempt, i) => ({ id: i + 1, finalAttempt }))
-      .filter((_, i) => i !== REPEATED_ATTEMPT);
+      .filter((_, i) => !REPEATED_ATTEMPTS.includes(i));
     expect(rows).toEqual(kept);
-    await expect(
-      migrated.insert(schema.testRunsCases).values({ ...STORED_ATTEMPTS[REPEATED_ATTEMPT]!, status: 'passed' }),
-    ).rejects.toThrow();
+    const requests = await migrated
+      .select({ id: schema.networkRequests.testRunsCaseId })
+      .from(schema.networkRequests)
+      .orderBy(asc(schema.networkRequests.testRunsCaseId));
+    expect(requests.map((r) => ({ id: r.id }))).toEqual(kept.map(({ id }) => ({ id })));
+    const [history] = await migrated
+      .select({ attempts: schema.testRunsCases.attempts })
+      .from(schema.testRunsCases)
+      .where(eq(schema.testRunsCases.id, REPEATED_HISTORY + 1));
+    expect(history!.attempts).toEqual(HISTORIES.deduped);
+    for (const i of REPEATED_ATTEMPTS) {
+      await expect(
+        migrated.insert(schema.testRunsCases).values({ ...STORED_ATTEMPTS[i]!, status: 'passed' }),
+      ).rejects.toThrow();
+    }
   });
 });
 

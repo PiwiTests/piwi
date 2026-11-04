@@ -67,6 +67,7 @@ beforeAll(async () => {
     .values({
       testRunId: 1,
       testCaseId: 1,
+      repeatEachIndex: 1,
       status: 'failed',
       error: ERROR,
       ariaSnapshot: ARIA,

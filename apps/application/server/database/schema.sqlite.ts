@@ -567,7 +567,6 @@ export const testRunsCases = sqliteTable(
     testCaseCreatedIdx: index('idx_test_runs_cases_case_created').on(table.testCaseId, table.createdAt),
     failureClusterIdIdx: index('idx_test_runs_cases_failure_cluster_id').on(table.failureClusterId),
     // An execution without a project (`browser_name` NULL) is unique too: the index reads it as ''.
-    // A CASE, not COALESCE: drizzle-kit's SQLite generator splits an index expression on its commas.
     runCaseBrowserUnique: uniqueIndex('idx_test_runs_cases_run_browser').on(
       table.testRunId,
       table.testCaseId,

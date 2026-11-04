@@ -65,10 +65,11 @@ beforeAll(async () => {
     })),
   );
   await db.insert(schema.testRunsCases).values(
-    Object.values(CLUSTERS).map((id) => ({
+    Object.values(CLUSTERS).map((id, i) => ({
       id: 100 + id,
       testRunId: 1,
       testCaseId: 1,
+      repeatEachIndex: i,
       status: 'failed',
       error: `Error: ${id}`,
       failureClusterId: id,

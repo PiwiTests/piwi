@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import { fileURLToPath } from 'node:url';
 import {
-  REPEATED_ATTEMPT,
+  HISTORIES,
+  REPEATED_ATTEMPTS,
+  REPEATED_HISTORY,
   STORED_ATTEMPTS,
   dedupeExecutionsSql,
   expectedFinalFlags,
@@ -183,7 +185,7 @@ describe.skipIf(!postgresUrl)('final attempts on PostgreSQL', async () => {
       await session`CREATE TEMP TABLE test_runs_cases (
           id integer PRIMARY KEY, test_run_id integer NOT NULL, test_case_id integer NOT NULL,
           repeat_each_index integer NOT NULL DEFAULT 0, retries integer DEFAULT 0, browser_name text,
-          final_attempt boolean NOT NULL DEFAULT true)`;
+          final_attempt boolean NOT NULL DEFAULT true, attempts jsonb)`;
       for (const [i, row] of STORED_ATTEMPTS.entries()) {
         await session`INSERT INTO test_runs_cases (id, test_run_id, test_case_id, repeat_each_index, retries, browser_name)
           VALUES (${i + 1}, ${row.testRunId}, ${row.testCaseId}, ${row.repeatEachIndex}, ${row.retries}, ${row.browserName})`;
@@ -194,6 +196,7 @@ describe.skipIf(!postgresUrl)('final attempts on PostgreSQL', async () => {
       >`SELECT final_attempt FROM test_runs_cases ORDER BY id`;
       expect(rows.map((row) => row.final_attempt)).toEqual(expectedFinalFlags());
 
+      await session`UPDATE test_runs_cases SET attempts = ${session.json(HISTORIES.stored)} WHERE id = ${REPEATED_HISTORY + 1}`;
       const { dedupe, uniqueIndex } = dedupeExecutionsSql(MIGRATIONS);
       await session.unsafe(dedupe);
       await session.unsafe(uniqueIndex);
@@ -203,13 +206,19 @@ describe.skipIf(!postgresUrl)('final attempts on PostgreSQL', async () => {
       expect(kept).toEqual(
         expectedFinalFlags()
           .map((final_attempt, i) => ({ id: i + 1, final_attempt }))
-          .filter((_, i) => i !== REPEATED_ATTEMPT),
+          .filter((_, i) => !REPEATED_ATTEMPTS.includes(i)),
       );
-      const repeated = STORED_ATTEMPTS[REPEATED_ATTEMPT]!;
-      await expect(
-        session`INSERT INTO test_runs_cases (id, test_run_id, test_case_id, repeat_each_index, retries, browser_name)
-          VALUES (100, ${repeated.testRunId}, ${repeated.testCaseId}, ${repeated.repeatEachIndex}, ${repeated.retries}, NULL)`,
-      ).rejects.toThrow(/idx_test_runs_cases_run_browser/);
+      const [history] = await session<
+        Array<{ attempts: unknown }>
+      >`SELECT attempts FROM test_runs_cases WHERE id = ${REPEATED_HISTORY + 1}`;
+      expect(history!.attempts).toEqual(HISTORIES.deduped);
+      for (const i of REPEATED_ATTEMPTS) {
+        const repeated = STORED_ATTEMPTS[i]!;
+        await expect(
+          session`INSERT INTO test_runs_cases (id, test_run_id, test_case_id, repeat_each_index, retries, browser_name)
+            VALUES (${100 + i}, ${repeated.testRunId}, ${repeated.testCaseId}, ${repeated.repeatEachIndex}, ${repeated.retries}, ${repeated.browserName})`,
+        ).rejects.toThrow(/idx_test_runs_cases_run_browser/);
+      }
     } finally {
       await session.end();
     }

@@ -40,8 +40,24 @@ export function dedupeExecutionsSql(folder: string): { dedupe: string; uniqueInd
   return { dedupe: sql, uniqueIndex };
 }
 
-/** The index of the row of {@link STORED_ATTEMPTS} that repeats a later one, which the dedupe migration deletes. */
-export const REPEATED_ATTEMPT = 7;
+/** The indexes of the rows of {@link STORED_ATTEMPTS} that repeat a later one, which the dedupe migration deletes. */
+export const REPEATED_ATTEMPTS = [7, 10];
+
+/** The index of the row of {@link STORED_ATTEMPTS} stored with a history that lists a repeated attempt twice. */
+export const REPEATED_HISTORY = 12;
+
+/** The history the row at {@link REPEATED_HISTORY} is stored with, and the one the dedupe migration leaves it. */
+export const HISTORIES = {
+  stored: [
+    { retry: 0, status: 'failed', duration: 100, startedAt: null },
+    { retry: 0, status: 'failed', duration: 100, startedAt: null },
+    { retry: 1, status: 'passed', duration: 100, startedAt: null },
+  ],
+  deduped: [
+    { retry: 0, status: 'failed', duration: 100, startedAt: null },
+    { retry: 1, status: 'passed', duration: 100, startedAt: null },
+  ],
+};
 
 /** Executions of every shape a result's attempts take: retries, projects, repetitions, a row without a project. */
 export const STORED_ATTEMPTS: Array<{
@@ -61,6 +77,9 @@ export const STORED_ATTEMPTS: Array<{
   { testRunId: 1, testCaseId: 2, browserName: null, repeatEachIndex: 0, retries: 0 },
   { testRunId: 1, testCaseId: 2, browserName: null, repeatEachIndex: 0, retries: 0 },
   { testRunId: 2, testCaseId: 1, browserName: 'chromium', repeatEachIndex: 0, retries: 0 },
+  { testRunId: 2, testCaseId: 2, browserName: '', repeatEachIndex: 0, retries: 0 },
+  { testRunId: 2, testCaseId: 2, browserName: null, repeatEachIndex: 0, retries: 0 },
+  { testRunId: 2, testCaseId: 2, browserName: null, repeatEachIndex: 0, retries: 1 },
 ];
 
 /** Whether each of {@link STORED_ATTEMPTS}, in order, is the final attempt of its result as `finalAttempts` reads them. */
