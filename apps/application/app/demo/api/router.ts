@@ -1181,7 +1181,7 @@ const routes: RouteEntry[] = [
   {
     method: 'POST',
     pattern: /^\/api\/demo\/cancel-stale-runs$/,
-    handler: (_, body) => apiCancelStaleSimulatorRuns(body as Parameters<typeof apiCancelStaleSimulatorRuns>[0]),
+    handler: () => apiCancelStaleSimulatorRuns(),
   },
   {
     method: 'POST',

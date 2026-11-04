@@ -1,12 +1,12 @@
 import { computed, reactive } from 'vue';
 import {
   DEMO_SCENARIOS,
-  DEMO_SIMULATOR_INSTANCE_ID,
   DEMO_PROJECT_ID,
   runSimulation,
   type DemoScenario,
   type SimulationController,
 } from '~/demo/simulator';
+import { holdSimulatorPage } from '~/demo/simulator-instance';
 
 /**
  * Shared state for the demo run simulator (see app/demo/simulator.ts).
@@ -53,17 +53,14 @@ export function useDemoSimulator() {
   const canSimulate = computed(() => can('run:submit', DEMO_PROJECT_ID));
 
   /**
-   * Cancel runs orphaned by a page reload mid-simulation (their reporter
-   * loop died with the page, so they would stay 'running' forever).
+   * Cancel runs orphaned by a closed or reloaded page (their reporter loop died with the page, so they would stay
+   * 'running' forever). A run another open tab is streaming is left alone.
    */
   async function cancelStaleRuns(): Promise<void> {
     if (staleRunsCancelled) return;
     staleRunsCancelled = true;
     try {
-      await $fetch('/api/demo/cancel-stale-runs', {
-        method: 'POST',
-        body: { instanceId: DEMO_SIMULATOR_INSTANCE_ID },
-      });
+      await $fetch('/api/demo/cancel-stale-runs', { method: 'POST' });
     } catch {
       // Non-critical cleanup — ignore
     }
@@ -96,6 +93,8 @@ export function useDemoSimulator() {
     controller = ctl;
 
     try {
+      // Other tabs see this page's runs as live only while it holds its lock.
+      await holdSimulatorPage();
       const { runId, status } = await runSimulation(
         scenario,
         {

@@ -10,7 +10,8 @@
  */
 
 import { resolveBrowserName } from '#shared/browser-name';
-import { eq, and, or, sql } from 'drizzle-orm';
+import { eq, and, or, sql, inArray } from 'drizzle-orm';
+import { DEMO_SIMULATOR_INSTANCE_ID, liveSimulatorPages, simulatorPageOf } from '../simulator-instance';
 import { getDemoDb } from '../db.client';
 import { checkDemoStuckTests, forgetDemoRun, noteDemoBegin, noteDemoComplete } from './stuck-tests';
 import { publishDemoGlobalEvent, publishDemoRunEvent } from '../run-events';
@@ -1338,26 +1339,40 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
 /**
  * POST /api/demo/cancel-stale-runs — demo-only endpoint.
  *
- * Cancels runs left in a non-terminal state by an aborted simulation (e.g.
- * the page was reloaded mid-run, so no finish call ever arrived). Called by
- * the simulator UI on mount.
+ * Cancels the simulator's runs left in a non-terminal state by a page that is gone (closed or reloaded mid-run, so no
+ * finish call ever arrived). The runs of a page still holding its lock (`liveSimulatorPages`) are left alone, and a
+ * browser that cannot list the locks cancels nothing. Called by the simulator UI on mount.
  */
-export async function apiCancelStaleSimulatorRuns(body: { instanceId?: string }) {
-  if (!body?.instanceId) return { success: true, cancelled: 0 };
+export async function apiCancelStaleSimulatorRuns() {
+  const pages = await liveSimulatorPages();
+  if (!pages) return { success: true, cancelled: 0 };
+  const livePages = new Set(pages);
 
   const db = await getDemoDb();
-  const shardPrefix = `${body.instanceId}|`;
+  const prefix = DEMO_SIMULATOR_INSTANCE_ID;
+  const unfinished = await db
+    .select({ id: testRuns.id, instanceId: testRuns.instanceId })
+    .from(testRuns)
+    .where(
+      and(
+        sql`substr(${testRuns.instanceId}, 1, ${prefix.length}) = ${prefix}`,
+        or(eq(testRuns.status, 'running'), eq(testRuns.status, 'initializing'), eq(testRuns.status, 'finalizing')),
+      ),
+    );
+  const staleIds = unfinished
+    .filter((run) => {
+      const page = simulatorPageOf(run.instanceId);
+      return page !== null && !livePages.has(page);
+    })
+    .map((run) => run.id);
+  if (!staleIds.length) return { success: true, cancelled: 0 };
 
   const cancelledRuns = await db
     .update(testRuns)
     .set({ status: 'cancelled', streamToken: null, updatedAt: new Date() })
     .where(
       and(
-        // A sharded simulation's shards carry the simulator's id and their run's label (`<id>|<label>`).
-        or(
-          eq(testRuns.instanceId, body.instanceId),
-          sql`substr(${testRuns.instanceId}, 1, ${shardPrefix.length}) = ${shardPrefix}`,
-        ),
+        inArray(testRuns.id, staleIds),
         or(eq(testRuns.status, 'running'), eq(testRuns.status, 'initializing'), eq(testRuns.status, 'finalizing')),
       ),
     )
