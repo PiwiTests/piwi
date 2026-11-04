@@ -130,8 +130,8 @@ Signed-in users can link a provider explicitly from **Settings → Account → C
 
 Administrators manage accounts under **Settings → Users** (`/settings/users`). **Add user** creates one with a
 username, an instance role, an optional display name and email, and a password. Without one, the row's **Send invite email**
-button mails the user a link to set their own. Each row shows the user's instance role and the
-[groups](./project-access#groups) they belong to.
+button mails the user a link to set their own. Each row shows the user's instance role and
+[groups](./project-access#groups).
 
 An email address belongs to one account, ignoring letter case: creating or editing an account with an address another
 account already uses is refused, and **Forgot password?** finds the account whatever the case typed. An upgrade that
@@ -146,7 +146,8 @@ links already sent are refused: send a new one to the new address.
 
 Invitations, address verification and **Forgot password?** send email, so they need
 [SMTP](/features/notifications#smtp-configuration). Without it, invites and verification links are refused, and
-**Forgot password?** says a link was sent but sends nothing.
+**Forgot password?** says a link was sent but sends nothing. Invite and reset emails name the sign-in
+username.
 
 No administrator can set another account's password: a locked-out account recovers through **Forgot password?**, which
 needs SMTP and an email address on the account. Give every administrator an email address, or keep two, so one can
