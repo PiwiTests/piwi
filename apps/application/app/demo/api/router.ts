@@ -381,6 +381,7 @@ import {
   getNetworkRequests,
   getFailureGroups,
   getProjectLatestRun,
+  parseLatestRunNames,
 } from '#shared/handlers/test-runs';
 import { computeRunInsights } from '#shared/handlers/run-insights';
 import { isAnalyticsWidgetId, runAnalyticsWidget } from '#shared/handlers/analytics';
@@ -1100,11 +1101,14 @@ const routes: RouteEntry[] = [
       if (origin != null && (!isRunOriginKind(origin) || q?.get('ref') == null)) {
         throw demoHttpError(400, 'origin needs a known run origin and a ref');
       }
+      const names = q?.getAll('run') ?? [];
+      const runs = parseLatestRunNames(names.length > 0 ? names : undefined);
+      if (runs === null) throw demoHttpError(400, 'run needs up to 64 valid run names');
       try {
         return await getProjectLatestRun(
           await getDemoDb(),
           +m[1]!,
-          isRunOriginKind(origin) ? { kind: origin, ref: q!.get('ref')! } : null,
+          isRunOriginKind(origin) ? { kind: origin, ref: q!.get('ref')!, runs } : null,
         );
       } catch (e) {
         if ((e as Error)?.message === 'Project not found') throw demoHttpError(404, 'Project not found');
