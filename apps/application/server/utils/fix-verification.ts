@@ -438,6 +438,18 @@ interface FailedIn {
 }
 
 /**
+ * The names of the Playwright projects a run's config lists
+ * (`metadata.htmlReport.projects[].name`), including those a `--project`
+ * filter left out; null when the run's metadata carries none.
+ */
+export function configuredProjectNames(meta: RunMetadata | null): Set<string> | null {
+  const names = (meta?.htmlReport?.projects ?? [])
+    .map((project) => project?.name)
+    .filter((name): name is string => typeof name === 'string');
+  return names.length > 0 ? new Set(names) : null;
+}
+
+/**
  * Record fixes and regressions for one finished run. Returns the fixes that
  * landed, so the pull-request comment can report them.
  */
@@ -501,19 +513,28 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
     if (row.clusterId != null && FAIL_STATUSES.includes(row.status)) clustersSeenNow.add(row.clusterId);
   }
 
+  // The Playwright projects this run's config lists, whether or not it ran
+  // them; null when the run did not send them.
+  const configuredProjects = configuredProjectNames(meta);
+
   // What this run shows about one affected test: it `holds` when it passed in
   // each project it last failed in that this run ran, it is `unproven` when
   // this run did not run it at all or it did not pass in one of those
   // projects, and it is `silent` when this run ran it only in other projects
-  // (another CI job's, or one the test never failed in). A failure whose
-  // project is unknown is answered by a pass in any project.
+  // (another CI job's, or one the test never failed in). Only the projects
+  // this run's config lists count; a failure whose project is unknown, or
+  // whose projects this run's config all leaves out, is answered by a pass in
+  // any project.
   const verdictHere = (testCaseId: number, failedIn: FailedIn): 'holds' | 'unproven' | 'silent' => {
     if (!ranCaseIds.has(testCaseId)) return 'unproven';
-    const ran = [...failedIn.projects].filter((browserName) => outcomeByTest.has(testKey({ testCaseId, browserName })));
+    const listed = [...failedIn.projects].filter(
+      (browserName) => configuredProjects == null || configuredProjects.has(browserName),
+    );
+    const ran = listed.filter((browserName) => outcomeByTest.has(testKey({ testCaseId, browserName })));
     if (ran.some((browserName) => outcomeByTest.get(testKey({ testCaseId, browserName })) !== 'passed')) {
       return 'unproven';
     }
-    if (failedIn.anyProject) return passedCaseIds.has(testCaseId) ? 'holds' : 'unproven';
+    if (failedIn.anyProject || listed.length === 0) return passedCaseIds.has(testCaseId) ? 'holds' : 'unproven';
     return ran.length > 0 ? 'holds' : 'silent';
   };
 

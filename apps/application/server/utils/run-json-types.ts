@@ -76,7 +76,10 @@ export interface RunMetadata {
   /** What launched the run (`PIWI_ORIGIN`); read through `runOrigin` in `#shared/run-eligibility`. */
   piwiOrigin?: RunOrigin | null;
   htmlReport?: {
-    projects?: Array<{ use?: { browserName?: string | null; baseURL?: string | null } | null }>;
+    projects?: Array<{
+      name?: string | null;
+      use?: { browserName?: string | null; baseURL?: string | null } | null;
+    }>;
   } | null;
 }
 

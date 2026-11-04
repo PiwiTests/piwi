@@ -129,7 +129,8 @@ long the cluster was open. Three verdicts:
 | **Diagnosis verified** | The commits since the last failing run touched a file the [suggested patch](./ai-diagnosis#what-a-diagnosis-contains) named. |
 | **Regressed** | A fix was recorded, and the cluster is failing again. |
 
-**A fix needs every affected test to pass** in the Playwright projects it last failed in that the run ran (a `--grep`
+**A fix needs every affected test to pass** in the Playwright projects it last failed in
+([still configured](/guide/concepts#cluster-state)) that the run ran (a `--grep`
 over the affected tests is enough) in a run that could carry one: started after the last failing run, at another commit
 (a pass at the failing commit, such as a CI retry, is flake evidence, and the state line says so), on the branch the
 cluster last failed on or the default branch, so a green pull-request branch leaves a cluster failing on `main` open.

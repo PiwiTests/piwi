@@ -57,7 +57,13 @@ const REMOTE = 'https://github.com/acme/shop.git';
 async function insertRun(
   status: 'passed' | 'failed',
   commit: string,
-  opts: { isFullRun?: boolean; branch?: string; origin?: string; startedHoursBefore?: number } = {},
+  opts: {
+    isFullRun?: boolean;
+    branch?: string;
+    origin?: string;
+    startedHoursBefore?: number;
+    configuredProjects?: string[];
+  } = {},
 ) {
   const id = ++runSeq;
   const branch = opts.branch ?? 'main';
@@ -74,6 +80,9 @@ async function insertRun(
     metadata: {
       scm: { commit, remoteUrl: REMOTE, branch },
       ...(opts.origin ? { piwiOrigin: { kind: opts.origin } } : {}),
+      ...(opts.configuredProjects
+        ? { htmlReport: { projects: opts.configuredProjects.map((name) => ({ name, use: { browserName: name } })) } }
+        : {}),
     },
   });
   return id;
@@ -552,6 +561,69 @@ describe('verifyClusterFixes — Playwright projects', () => {
     await insertCase(green, 'passed', null, 2, 'chromium');
     await verifyClusterFixes(db, green);
     expect(await landedIn(clusterId)).toBe(green);
+  });
+
+  test('a project the config no longer lists is answered by a pass in any project', async () => {
+    const failing = await insertRun('failed', 'eaea001', { configuredProjects: ['chromium', 'webkit'] });
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2, 'webkit');
+    await insertCase(failing, 'passed', null, 2, 'chromium');
+
+    const green = await insertRun('passed', 'eaea002', { configuredProjects: ['chromium'] });
+    await insertCase(green, 'passed', null, 2, 'chromium');
+    await verifyClusterFixes(db, green);
+    expect(await landedIn(clusterId)).toBe(green);
+  });
+
+  test('a project the config still lists but the run left out records nothing', async () => {
+    const failing = await insertRun('failed', 'ebeb001', {
+      isFullRun: false,
+      configuredProjects: ['chromium', 'webkit'],
+    });
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2, 'webkit');
+
+    const chromiumJob = await insertRun('passed', 'ebeb002', {
+      isFullRun: false,
+      configuredProjects: ['chromium', 'webkit'],
+    });
+    await insertCase(chromiumJob, 'passed', null, 2, 'chromium');
+    await verifyClusterFixes(db, chromiumJob);
+    expect(await landedIn(clusterId)).toBeNull();
+  });
+
+  test('a project the config no longer lists does not excuse one it still lists', async () => {
+    const failing = await insertRun('failed', 'eded001', { configuredProjects: ['chromium', 'firefox', 'webkit'] });
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2, 'webkit');
+    await insertCase(failing, 'failed', clusterId, 2, 'firefox');
+
+    const chromiumJob = await insertRun('passed', 'eded002', {
+      isFullRun: false,
+      configuredProjects: ['chromium', 'firefox'],
+    });
+    await insertCase(chromiumJob, 'passed', null, 2, 'chromium');
+    await verifyClusterFixes(db, chromiumJob);
+    expect(await landedIn(clusterId)).toBeNull();
+
+    const firefoxJob = await insertRun('passed', 'eded002', {
+      isFullRun: false,
+      configuredProjects: ['chromium', 'firefox'],
+    });
+    await insertCase(firefoxJob, 'passed', null, 2, 'firefox');
+    await verifyClusterFixes(db, firefoxJob);
+    expect(await landedIn(clusterId)).toBe(firefoxJob);
+  });
+
+  test('a run that lists no configured projects records nothing from another project', async () => {
+    const failing = await insertRun('failed', 'ecec001', { configuredProjects: ['chromium', 'webkit'] });
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2, 'webkit');
+
+    const green = await insertRun('passed', 'ecec002');
+    await insertCase(green, 'passed', null, 2, 'chromium');
+    await verifyClusterFixes(db, green);
+    expect(await landedIn(clusterId)).toBeNull();
   });
 });
 
