@@ -94,8 +94,16 @@ async function insertCluster(opts: { status?: string; triageNote?: string | null
   return id;
 }
 
-async function insertCase(runId: number, status: 'passed' | 'failed', clusterId: number | null, testCaseId = 1) {
-  await db.insert(schema.testRunsCases).values({ testRunId: runId, testCaseId, status, failureClusterId: clusterId });
+async function insertCase(
+  runId: number,
+  status: 'passed' | 'failed',
+  clusterId: number | null,
+  testCaseId = 1,
+  browserName: string | null = null,
+) {
+  await db
+    .insert(schema.testRunsCases)
+    .values({ testRunId: runId, testCaseId, status, failureClusterId: clusterId, browserName });
 }
 
 async function markSeen(clusterId: number, runId: number) {
