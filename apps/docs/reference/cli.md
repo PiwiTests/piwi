@@ -204,7 +204,8 @@ npx @piwitests/reporter run smoke -- --workers=4
 npx @piwitests/reporter run impact --base origin/main
 ```
 
-**Exit codes:** `0` ok · `1` the test run failed (`run` only) · `2` could not resolve.
+**Exit codes:** `0` ok · `1` the test run failed (`run` only) · `128` plus the signal's number when the runner stops
+Playwright (`run` only; `143` for `SIGTERM`) · `2` could not resolve, or Playwright could not start.
 
 | Flag | Description |
 |---|---|
