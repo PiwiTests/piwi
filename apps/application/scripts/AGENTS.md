@@ -61,9 +61,9 @@ A change to what a page loads or renders is measured with the performance suite 
 It runs two production builds against one large dataset and compares the server render, the full load in Chromium,
 the API calls and the SQL each request runs, for the projects list, every project tab, the test-run page, a failed
 execution's page carrying the whole history and a large Playwright 1.63 trace (`scripts/perf/lib/trace.mjs`, uploaded
-through the real import), and the Overview analytics dashboard with and without a test filter. CI runs it on every pull request against the base commit, on two machines (`--shard k/n`,
-joined by `report.mjs`), and posts the comparison as a comment. Every option is in the header of
-`scripts/perf/run.mjs`. Locally:
+through the real import), and the Overview analytics dashboard with and without a test filter. CI runs it on every
+pull request against the base commit, on two machines (`--shard k/n`, joined by `report.mjs`), and posts the comparison
+as a comment. Every option is in the header of `scripts/perf/run.mjs`. Locally:
 
 ```bash
 npm run app:build                                     # the build to measure, in .output
