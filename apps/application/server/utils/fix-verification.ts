@@ -81,7 +81,7 @@ import { notifyFixAuthor } from './notifications/fix-author';
 import { parseUnifiedDiff, patchInCode, stripAbPrefix, validatePatch } from '#shared/patch';
 import type { FixAuthor, HealPrRef, NotificationEvent, NotificationPayload } from '#shared/notification-events';
 import type { RunMetadata } from './run-json-types';
-import { eligibleRunSql, isEligibleRun } from '#shared/run-eligibility';
+import { eligibleExecutionInProject, isEligibleRun } from '#shared/run-eligibility';
 import { runStartedAfter, type RunPoint } from '#shared/cluster-state';
 import { resolveRunBranch } from './run-branch';
 import { resolveDefaultBranch } from './scm/default-branch';
@@ -770,7 +770,7 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
       browserName: testRunsCases.browserName,
       runId: testRunsCases.testRunId,
       runStartTime: testRuns.startTime,
-      runEligible: sql<number>`CASE WHEN ${eligibleRunSql('fix-verification')} THEN 1 ELSE 0 END`,
+      runEligible: sql<number>`CASE WHEN ${eligibleExecutionInProject('fix-verification', run.projectId, testRunsCases.testRunId)} THEN 1 ELSE 0 END`,
     })
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
