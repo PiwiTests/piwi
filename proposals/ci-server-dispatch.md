@@ -65,7 +65,7 @@ Taken with the maintainer on 2026-11-04; the shape is to be confirmed with the i
 | D3  | **Presets in the first cut: Jenkins and Custom.** TeamCity, Buildkite, CircleCI and Azure Pipelines follow as one registry entry and one test each.                                                                                                                                         |
 | D4  | **The base URL and credential are the instance's by default, and a project may override both.** Instance: `PIWI_CI_SERVER_URL`, `PIWI_CI_SERVER_USER`, `PIWI_CI_SERVER_TOKEN`. Project: a base URL in `ciRerun.ciServer.baseUrl`, a user name beside it, a token in a new encrypted column. |
 | D5  | **A credential is sent only to URLs under the base URL it was saved with** (see [Security](#security)).                                                                                                                                                                                     |
-| D6  | **A private address is reached only on a host the operator named**: the host of `PIWI_CI_SERVER_URL` and those listed in `PIWI_CI_SERVER_HOSTS`. Any other host goes through `safeFetch`.                                                                                                   |
+| D6  | **A private address is reached only on a place the operator named**: the host and port of `PIWI_CI_SERVER_URL`, and the entries of `PIWI_CI_SERVER_HOSTS` (a host, any port, or `host:port`). Any other host goes through the public-only lookup.                                          |
 | D7  | **The job reads the arguments from an environment variable, through the Piwi CLI**: `npx @piwitests/reporter rerun` runs `playwright test` with the arguments of `PIWI_RERUN_ARGS`, parsed without a shell. No `eval`, no Groovy interpolation of a parameter into `sh`.                    |
 | D8  | **Parameter names default to the environment variables the reporter reads**: `PIWI_RERUN_ARGS` and `PIWI_ORIGIN_REF`. Jenkins, TeamCity, Buildkite and Azure Pipelines expose a build parameter as an environment variable, so the job only declares them.                                  |
 | D9  | **A matched dispatch links to the build the run recorded** (`ci.buildUrl`), for every provider. Before the match it links to what the CI answered, or to the job's page.                                                                                                                    |
@@ -115,7 +115,7 @@ type CiServerAuth = "none" | "basic" | "bearer" | { header: string };
 
 `ciRerun` gains `via` and `ciServer`; both are in the JSON column, so only the token needs a migration. Placeholders:
 `{{args}}` (the Playwright arguments, or `flake 12` for Flake Lab), `{{dispatchId}}`, `{{ref}}` (the run's branch,
-else the target's `ref` field) and `{{commit}}`. A preset is `(fields) => CiRequestTemplate`, and **Customize** in
+else the target's `ref` field), `{{commit}}` and `{{branchJob}}` (the ref as Jenkins names a multibranch branch job). A preset is `(fields) => CiRequestTemplate`, and **Customize** in
 the form copies a preset's template into Custom, so what a preset sends is never hidden. The form also shows the request
 a dispatch would send, with sample values and the credential masked.
 
@@ -180,10 +180,11 @@ the whole suite. Set and empty, it runs the whole suite. The GitLab and Bitbucke
 | Base URL      | `PIWI_CI_SERVER_URL`                                      | `ciRerun.ciServer.baseUrl`                                                           |
 | User          | `PIWI_CI_SERVER_USER`                                     | `ciRerun.ciServer.user`                                                              |
 | Token         | `PIWI_CI_SERVER_TOKEN` (secret)                           | `projects.ci_server_token`: `{ url, token }`, encrypted, PATCH field `ciServerToken` |
-| Private hosts | `PIWI_CI_SERVER_HOSTS`: exact host names, comma-separated | None                                                                                 |
+| Private hosts | `PIWI_CI_SERVER_HOSTS`: host[:port] list, comma-separated | None                                                                                 |
 
 A dispatch uses the project's base URL when set, else the instance's. It sends the first credential whose saved URL
-the request's URL starts with: the project's, then the instance's. A project that overrides the base URL to another
+holds the request's URL: the project's, then the instance's. The instance's goes only with a preset's request, whose
+shape the preset fixes; a Custom request carries the project's own token or none. A project that overrides the base URL to another
 server and saves no token sends none. The project token is stored with the base URL it was saved for, so moving the
 base URL elsewhere leaves it unsent; the form says so and asks for it again. The project GET returns
 `hasCiServerToken` and the URL the token is bound to, never the token.
@@ -232,15 +233,18 @@ The question was whether a per-project base URL is safe. It is with D5 and D6; w
 1. **Sending the instance credential elsewhere.** If the instance token followed any base URL a project admin types,
    any project admin could point it at a server they own and read it. D5 binds every credential to the URL it was
    saved with: the instance token goes only under `PIWI_CI_SERVER_URL`, a project token only under the URL saved with
-   it. The request URL cannot leave the base URL: templates fill encoded segments and values only, the check runs on
-   the URL after normalization, and no redirect is followed.
+   it. The instance token also goes only with a preset's request, whose shape the preset fixes, so a Custom template
+   cannot use it for any other request under its URL. The request URL cannot leave the base URL: templates fill
+   encoded segments and values only, a path value whose slashes would hold a `.` or `..` segment is refused, the check
+   runs on the URL after normalization, and no redirect is followed.
 2. **Reaching the internal network (SSRF).** A CI server usually lives on a private network, so the webhook rule
    (public addresses only) would refuse the main use case, and allowing any private address would let a project admin
-   use Piwi to send requests into the network. D6 allows a private address only on a host the operator named; any other
-   host goes through `safeFetch`, which checks every resolved address at connect. The desktop app is the exception
+   use Piwi to send requests into the network. D6 allows a private address only on a place the operator named, port
+   included for the host of `PIWI_CI_SERVER_URL`; any other host goes through the public-only lookup, which checks
+   every resolved address at connect. The desktop app is the exception
    (D10): its server binds 127.0.0.1 only, and its one user is both the operator and the only project admin.
-3. **Reading answers.** An answer is never echoed. The dispatch keeps the status and the fields the preset reads (a
-   link, a build number). An error shows the status and, for a JSON answer, its `message` field, cut to 200 characters.
+3. **Reading answers.** An answer is never echoed. The dispatch keeps the status and the fields the preset reads: a
+   link, only when it is an absolute http(s) URL or a root path, and a build number, only when it is digits. An error shows the status and, for a JSON answer, its `message` field, cut to 200 characters.
 4. **Headers.** A custom header name must be a token and is refused when it is `Host`, `Content-Length`,
    `Transfer-Encoding`, `Connection`, `Cookie` or `Authorization`: the credential goes through `auth`.
 5. **Values from runs.** The branch and the arguments come from run data a reporter token can send. They fill encoded
