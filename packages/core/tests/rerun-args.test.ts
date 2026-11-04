@@ -10,8 +10,12 @@ describe('splitRerunArgs', () => {
     ]);
   });
 
-  test('splits bare words on any whitespace and ignores what surrounds them', () => {
+  test('splits bare words and ignores the blanks around them', () => {
     expect(splitRerunArgs('  --workers=1\t-x\n tests/a.spec.ts  ')).toEqual(['--workers=1', '-x', 'tests/a.spec.ts']);
+  });
+
+  test('splits only on a space, a tab or a line break', () => {
+    expect(splitRerunArgs('a\u00a0b\r\nc')).toEqual(['a\u00a0b', 'c']);
   });
 
   test('expands nothing', () => {

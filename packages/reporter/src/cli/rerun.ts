@@ -2,11 +2,12 @@
  * `piwi rerun` — run the tests a CI re-run from the dashboard asked for.
  *
  * The dashboard hands the job its Playwright arguments in `PIWI_RERUN_ARGS`,
- * each one double-quoted. A shell that expands the variable keeps the quotes,
- * so this command splits them itself and starts `playwright test` with those
- * words, then the ones on its own command line, with no shell on any platform.
+ * each one double-quoted. This command splits the variable into those words
+ * and starts `playwright test` with them, then the ones on its own command
+ * line, with no shell on any platform.
  */
-import { RERUN_ARGS_ENV, splitRerunArgs } from '@piwitests/core/rerun-args';
+import { splitRerunArgs } from '@piwitests/core/rerun-args';
+import { RERUN_ARGS_ENV } from '../internal/config/env.js';
 import { spawnPlaywright } from '../internal/support/playwright-spawn.js';
 
 const EXIT_ERROR = 2;

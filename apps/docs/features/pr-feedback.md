@@ -129,15 +129,33 @@ jobs:
       - run: npx playwright test ${{ inputs.args }}
 ```
 
-On GitLab and Bitbucket, name the variable `PIWI_RERUN_ARGS` and run [`rerun`](/reference/cli#rerun) in the test
-job or `custom:` pipeline: it reads the quoted arguments without a shell.
+On GitLab and Bitbucket, set the variable name to `PIWI_RERUN_ARGS` and run [`rerun`](/reference/cli#rerun), which
+reads the quoted arguments without a shell (unset, it fails):
 
-```yaml
+::: code-group
+
+```yaml [GitLab]
 e2e:
+  variables:
+    PIWI_RERUN_ARGS: "" # empty runs the whole suite; a re-run sets it
   script:
     - npm ci
     - npx @piwitests/reporter rerun
 ```
+
+```yaml [Bitbucket]
+pipelines:
+  custom:
+    rerun:
+      - variables:
+          - name: PIWI_RERUN_ARGS
+      - step:
+          script:
+            - npm ci
+            - npx @piwitests/reporter rerun
+```
+
+:::
 
 GitHub's `workflow_dispatch` returns no run id, so the link goes to the
 workflow's runs page filtered to the branch; GitLab and Bitbucket link straight to the pipeline.

@@ -7,11 +7,11 @@
 /** The environment variable a CI job receives the re-run's Playwright arguments in. */
 export const RERUN_ARGS_ENV = 'PIWI_RERUN_ARGS';
 
-const WHITESPACE = /\s/;
+const WHITESPACE = /[ \t\r\n]/;
 
 /**
- * The words of `text`, split as a shell splits double-quoted arguments with no escapes: whitespace outside quotes
- * separates words, a pair of double quotes keeps what it holds as it is (whitespace included), and quoted and bare
+ * The words of `text`, split as a shell splits double-quoted arguments with no escapes: a space, tab or line break
+ * outside quotes separates words, a pair of double quotes keeps what it holds as it is (whitespace included), and quoted and bare
  * parts that touch make one word (`--project="chromium"` is `--project=chromium`). Nothing is expanded: `$`, `` ` ``
  * and `\` are plain characters. Throws on a quote left open.
  */

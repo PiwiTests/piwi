@@ -169,6 +169,9 @@ export const PIWI_ORIGIN_ENV = {
   ref: 'PIWI_ORIGIN_REF',
 } as const;
 
+/** The CI job's Playwright arguments of a re-run dispatched from the dashboard, which `piwi rerun` reads. */
+export { RERUN_ARGS_ENV } from '@piwitests/core/rerun-args';
+
 /** The environment a launcher adds to the Playwright process it starts, naming itself as the run's origin. */
 export function originEnv(kind: string, ref?: string | number): Record<string, string> {
   return ref === undefined
