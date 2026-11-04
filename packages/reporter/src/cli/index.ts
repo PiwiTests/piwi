@@ -20,6 +20,7 @@ import { runSelect, runRun } from './select.js';
 import { runPreflight } from './preflight.js';
 import { runProbe } from './probe.js';
 import { runQualityReport } from './quality-report.js';
+import { runRerun } from './rerun.js';
 import { findTemplatesDir, runSkills } from './skills.js';
 
 const USAGE = `
@@ -36,6 +37,7 @@ Commands:
   coverage  Upload a unit-test (or other) coverage report of a commit (coverage upload)
   select    Print the Playwright args for a saved test selection
   run       Run a saved test selection with playwright test
+  rerun     Run the tests a CI re-run from the dashboard asked for (PIWI_RERUN_ARGS)
   probe     Run the dashboard's probe plan and record what the suite noticed
   flake     Make a flaky test fail on demand under its suspects' conditions, then verify the fix
   ai        Manage committed natural-language AI-step artifacts
@@ -66,6 +68,8 @@ async function main(): Promise<number> {
       return runSelect(rest);
     case 'run':
       return runRun(rest);
+    case 'rerun':
+      return runRerun(rest);
     case 'probe':
       return runProbe(rest);
     case 'flake':
