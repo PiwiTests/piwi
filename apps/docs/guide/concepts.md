@@ -275,7 +275,8 @@ the default branch (no lab run, bisect step, reproduction or environment inciden
 with it. A test skipped, not run or interrupted is one a run did not run, and a run of the whole suite that ran to its
 end counts even when a test of the cluster no longer exists; one stopped early (interrupted, cancelled, timed out or
 cut short by `maxFailures`) counts only when it ran the cluster's tests. The failure of a cluster whose ticket is Done stopped once such a run came after its last
-failure. See [Failure clusters](/features/failure-clusters#the-state-line).
+failure. A cluster whose tests all last failed only in a Playwright project since removed or renamed is never recorded fixed:
+resolve it by hand. See [Failure clusters](/features/failure-clusters#the-state-line).
 
 ### Flakiness score
 

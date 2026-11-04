@@ -68,6 +68,7 @@ async function insertRun(
     // Each run starts an hour after the one before it, unless it started earlier and finished late.
     startTime: new Date(Date.UTC(2026, 0, 1) + (id - (opts.startedHoursBefore ?? 0)) * 3_600_000),
     isFullRun: opts.isFullRun === false ? 0 : 1,
+    ...(opts.origin ? { origin: opts.origin } : {}),
     environment: 'staging',
     branch,
     metadata: {
@@ -94,8 +95,16 @@ async function insertCluster(opts: { status?: string; triageNote?: string | null
   return id;
 }
 
-async function insertCase(runId: number, status: 'passed' | 'failed', clusterId: number | null, testCaseId = 1) {
-  await db.insert(schema.testRunsCases).values({ testRunId: runId, testCaseId, status, failureClusterId: clusterId });
+async function insertCase(
+  runId: number,
+  status: 'passed' | 'failed',
+  clusterId: number | null,
+  testCaseId = 1,
+  browserName: string | null = null,
+) {
+  await db
+    .insert(schema.testRunsCases)
+    .values({ testRunId: runId, testCaseId, status, failureClusterId: clusterId, browserName });
 }
 
 async function markSeen(clusterId: number, runId: number) {
@@ -387,6 +396,162 @@ describe('classifyQuietRun', () => {
   test('unknown commits and branches on both sides are not compared', () => {
     expect(classifyQuietRun({ ...base, runCommit: null })).toBe('fix');
     expect(classifyQuietRun({ ...base, runBranch: null, failedBranch: null, defaultBranch: null })).toBe('fix');
+  });
+});
+
+describe('verifyClusterFixes — Playwright projects', () => {
+  const landedIn = async (clusterId: number) => (await cluster(clusterId)).fixLandedRunId;
+
+  test('a run of another project records nothing; a pass in the project it failed in records the fix', async () => {
+    const failing = await insertRun('failed', 'e0e0001');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2, 'webkit');
+    await insertCase(failing, 'passed', null, 2, 'chromium');
+
+    const chromiumJob = await insertRun('passed', 'e0e0002', { isFullRun: false });
+    await insertCase(chromiumJob, 'passed', null, 2, 'chromium');
+    await verifyClusterFixes(db, chromiumJob);
+    expect(await landedIn(clusterId)).toBeNull();
+    expect(emitted.filter((e) => e.event === 'cluster.fixed' && e.payload.clusterId === clusterId)).toEqual([]);
+
+    const webkitJob = await insertRun('passed', 'e0e0002', { isFullRun: false });
+    await insertCase(webkitJob, 'passed', null, 2, 'webkit');
+    await verifyClusterFixes(db, webkitJob);
+    expect(await landedIn(clusterId)).toBe(webkitJob);
+  });
+
+  test('one CI job per project: the job of the project the test last failed in records the fix', async () => {
+    const chromiumFailing = await insertRun('failed', 'e3e3001', { isFullRun: false });
+    const clusterId = await insertCluster({ firstSeenRunId: chromiumFailing });
+    await insertCase(chromiumFailing, 'failed', clusterId, 2, 'chromium');
+    const webkitFailing = await insertRun('failed', 'e3e3001', { isFullRun: false });
+    await insertCase(webkitFailing, 'failed', clusterId, 2, 'webkit');
+    await markSeen(clusterId, webkitFailing);
+
+    const chromiumJob = await insertRun('passed', 'e3e3002', { isFullRun: false });
+    await insertCase(chromiumJob, 'passed', null, 2, 'chromium');
+    await verifyClusterFixes(db, chromiumJob);
+    expect(await landedIn(clusterId)).toBeNull();
+
+    const webkitJob = await insertRun('passed', 'e3e3002', { isFullRun: false });
+    await insertCase(webkitJob, 'passed', null, 2, 'webkit');
+    await verifyClusterFixes(db, webkitJob);
+    expect(await landedIn(clusterId)).toBe(webkitJob);
+  });
+
+  test('one CI job per project: a job that ran every test records the fix of tests that failed in different jobs', async () => {
+    const chromiumFailing = await insertRun('failed', 'e8e8001', { isFullRun: false });
+    const clusterId = await insertCluster({ firstSeenRunId: chromiumFailing });
+    await insertCase(chromiumFailing, 'failed', clusterId, 1, 'chromium');
+    await insertCase(chromiumFailing, 'passed', null, 2, 'chromium');
+    const webkitFailing = await insertRun('failed', 'e8e8001', { isFullRun: false });
+    await insertCase(webkitFailing, 'passed', null, 1, 'webkit');
+    await insertCase(webkitFailing, 'failed', clusterId, 2, 'webkit');
+    await markSeen(clusterId, webkitFailing);
+
+    const chromiumJob = await insertRun('passed', 'e8e8002', { isFullRun: false });
+    await insertCase(chromiumJob, 'passed', null, 1, 'chromium');
+    await insertCase(chromiumJob, 'passed', null, 2, 'chromium');
+    await verifyClusterFixes(db, chromiumJob);
+    expect(await landedIn(clusterId)).toBe(chromiumJob);
+  });
+
+  test('a project the test failed in before its latest failing run says nothing', async () => {
+    const chromiumFailing = await insertRun('failed', 'e6e6001');
+    const clusterId = await insertCluster({ firstSeenRunId: chromiumFailing });
+    await insertCase(chromiumFailing, 'failed', clusterId, 2, 'chromium');
+    const webkitFailing = await insertRun('failed', 'e6e6002');
+    await insertCase(webkitFailing, 'passed', null, 2, 'chromium');
+    await insertCase(webkitFailing, 'failed', clusterId, 2, 'webkit');
+    await markSeen(clusterId, webkitFailing);
+
+    const chromiumJob = await insertRun('passed', 'e6e6003', { isFullRun: false });
+    await insertCase(chromiumJob, 'passed', null, 2, 'chromium');
+    await verifyClusterFixes(db, chromiumJob);
+    expect(await landedIn(clusterId)).toBeNull();
+  });
+
+  test('a reproduction of one project does not narrow the projects a fix must pass in', async () => {
+    const failing = await insertRun('failed', 'e9e9001');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'passed', null, 2, 'chromium');
+    await insertCase(failing, 'failed', clusterId, 2, 'webkit');
+    const reproduction = await insertRun('failed', 'e9e9001', { isFullRun: false, origin: 'reproduce' });
+    await insertCase(reproduction, 'failed', clusterId, 2, 'chromium');
+
+    const chromiumJob = await insertRun('passed', 'e9e9002', { isFullRun: false });
+    await insertCase(chromiumJob, 'passed', null, 2, 'chromium');
+    await verifyClusterFixes(db, chromiumJob);
+    expect(await landedIn(clusterId)).toBeNull();
+  });
+
+  test('a project where the test was skipped says nothing', async () => {
+    const failing = await insertRun('failed', 'e7e7001');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2, 'chromium');
+    await insertCase(failing, 'failed', clusterId, 2, 'webkit');
+
+    const green = await insertRun('passed', 'e7e7002');
+    await insertCase(green, 'passed', null, 2, 'chromium');
+    await db
+      .insert(schema.testRunsCases)
+      .values({ testRunId: green, testCaseId: 2, status: 'skipped', browserName: 'webkit' });
+    await verifyClusterFixes(db, green);
+    expect(await landedIn(clusterId)).toBe(green);
+  });
+
+  test('a project the test failed in that no longer runs says nothing', async () => {
+    const failing = await insertRun('failed', 'e4e4001');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2, 'chromium');
+    await insertCase(failing, 'failed', clusterId, 2, 'firefox');
+
+    const green = await insertRun('passed', 'e4e4002');
+    await insertCase(green, 'passed', null, 2, 'chromium');
+    await verifyClusterFixes(db, green);
+    expect(await landedIn(clusterId)).toBe(green);
+  });
+
+  test('a failed repetition in the project it failed in records nothing', async () => {
+    const failing = await insertRun('failed', 'e5e5001');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2, 'webkit');
+
+    // `--repeat-each=2`: the first repetition passed, the second failed with another error.
+    const repeated = await insertRun('failed', 'e5e5002');
+    await db.insert(schema.testRunsCases).values([
+      { testRunId: repeated, testCaseId: 2, status: 'passed', browserName: 'webkit', repeatEachIndex: 0 },
+      { testRunId: repeated, testCaseId: 2, status: 'failed', browserName: 'webkit', repeatEachIndex: 1 },
+    ]);
+    await verifyClusterFixes(db, repeated);
+    expect(await landedIn(clusterId)).toBeNull();
+  });
+
+  test('a pass at the failing commit in another project is no flake evidence', async () => {
+    const failing = await insertRun('failed', 'e1e1001');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2, 'webkit');
+
+    const chromiumJob = await insertRun('passed', 'e1e1001', { isFullRun: false });
+    await insertCase(chromiumJob, 'passed', null, 2, 'chromium');
+    await verifyClusterFixes(db, chromiumJob);
+    expect((await cluster(clusterId)).flakeEvidenceRunId).toBeNull();
+
+    const webkitRerun = await insertRun('passed', 'e1e1001', { isFullRun: false });
+    await insertCase(webkitRerun, 'passed', null, 2, 'webkit');
+    await verifyClusterFixes(db, webkitRerun);
+    expect((await cluster(clusterId)).flakeEvidenceRunId).toBe(webkitRerun);
+  });
+
+  test('a failure whose project is unknown is answered by a pass in any project', async () => {
+    const failing = await insertRun('failed', 'e2e2001');
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2, null);
+
+    const green = await insertRun('passed', 'e2e2002');
+    await insertCase(green, 'passed', null, 2, 'chromium');
+    await verifyClusterFixes(db, green);
+    expect(await landedIn(clusterId)).toBe(green);
   });
 });
 

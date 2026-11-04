@@ -69,7 +69,7 @@
  * Every step is best-effort — the run is already stored, and SCM being
  * unreachable must never turn into an ingest error.
  */
-import { and, desc, eq, inArray, isNotNull, isNull, lt, ne, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import { failureClusters, failureDiagnoses, healActions, projects, testRuns, testRunsCases } from '../database/schema';
 import { createScmProvider } from './scm';
 import type { ScmChanges, ScmCommit } from './scm/ScmProvider';
@@ -81,7 +81,7 @@ import { notifyFixAuthor } from './notifications/fix-author';
 import { parseUnifiedDiff, patchInCode, stripAbPrefix, validatePatch } from '#shared/patch';
 import type { FixAuthor, HealPrRef, NotificationEvent, NotificationPayload } from '#shared/notification-events';
 import type { RunMetadata } from './run-json-types';
-import { isEligibleRun } from '#shared/run-eligibility';
+import { eligibleExecutionInProject, isEligibleRun } from '#shared/run-eligibility';
 import { runStartedAfter, type RunPoint } from '#shared/cluster-state';
 import { resolveRunBranch } from './run-branch';
 import { resolveDefaultBranch } from './scm/default-branch';
@@ -97,6 +97,7 @@ import { regressFixAttempts, verifyFixAttempts } from './fix-attempts';
 import { recordIncidentalCatch } from './incidental-catch';
 import { transitionClusterStatus } from '#shared/handlers/failure-cluster-ops';
 import type { DbClient } from '../database';
+import { isPassedOrFailedStatus, testKey, testOutcomes } from '#shared/utils/test-counts';
 
 const FAIL_STATUSES = ['failed', 'timedOut', 'timedout'];
 
@@ -425,6 +426,18 @@ async function emitClusterOutcome(db: DbClient, event: NotificationEvent, payloa
 }
 
 /**
+ * The Playwright projects a cluster's test failed in at its latest failing run
+ * (`run`), a run fix verification reads when the test failed in one
+ * (`eligible`); `anyProject` when a failure there named none.
+ */
+interface FailedIn {
+  run: RunPoint;
+  eligible: boolean;
+  projects: Set<string>;
+  anyProject: boolean;
+}
+
+/**
  * Record fixes and regressions for one finished run. Returns the fixes that
  * landed, so the pull-request comment can report them.
  */
@@ -439,10 +452,13 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
 
   // A partial run can still verify a cluster — but only by the same rule a full
   // run is held to below: every test the cluster covers ran in this run and
-  // passed. A `--grep` that re-ran exactly the affected tests then closes the
-  // cluster; one that skipped even one of them still does not, because a test
-  // that did not execute has not been shown to pass. There is no separate
-  // `isFullRun` gate: the per-cluster check is the honest one either way.
+  // passed in each Playwright project it last failed in that the run ran, and
+  // at least one of them ran in one of those projects. A `--grep` that re-ran
+  // exactly the affected tests then closes the cluster; one that skipped even
+  // one of them, or a `--project` run of a project none of them failed in,
+  // still does not, because a test that did not execute has not been shown to
+  // pass. There is no separate `isFullRun` gate: the per-cluster check is the
+  // honest one either way.
 
   const meta = (run.metadata as RunMetadata | null) ?? null;
   const currentCommit = meta?.scm?.commit ?? null;
@@ -455,24 +471,51 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
   // failure, and a regression only after the fix.
   const thisRun: RunPoint = { id: runId, startTime: run.startTime };
 
-  // What this run saw, per test case: any pass, and any failure.
+  // What this run saw: each test's outcome in each Playwright project, and the
+  // clusters that failed.
   const caseRows = await db
     .select({
       testCaseId: testRunsCases.testCaseId,
+      browserName: testRunsCases.browserName,
+      repeatEachIndex: testRunsCases.repeatEachIndex,
+      retries: testRunsCases.retries,
+      passedAfterFailure: testRunsCases.passedAfterFailure,
       status: testRunsCases.status,
       clusterId: testRunsCases.failureClusterId,
     })
     .from(testRunsCases)
     .where(eq(testRunsCases.testRunId, runId));
 
+  // A skipped or unrun outcome is no outcome: the test was not shown to pass or fail.
+  const outcomeByTest = new Map<string, string>();
   const passedCaseIds = new Set<number>();
-  const executedCaseIds = new Set<number>();
+  const ranCaseIds = new Set<number>();
+  for (const outcome of testOutcomes(caseRows)) {
+    if (!isPassedOrFailedStatus(outcome.status)) continue;
+    outcomeByTest.set(testKey(outcome), outcome.status);
+    ranCaseIds.add(outcome.testCaseId);
+    if (outcome.status === 'passed') passedCaseIds.add(outcome.testCaseId);
+  }
   const clustersSeenNow = new Set<number>();
   for (const row of caseRows) {
-    executedCaseIds.add(row.testCaseId);
-    if (row.status === 'passed') passedCaseIds.add(row.testCaseId);
     if (row.clusterId != null && FAIL_STATUSES.includes(row.status)) clustersSeenNow.add(row.clusterId);
   }
+
+  // What this run shows about one affected test: it `holds` when it passed in
+  // each project it last failed in that this run ran, it is `unproven` when
+  // this run did not run it at all or it did not pass in one of those
+  // projects, and it is `silent` when this run ran it only in other projects
+  // (another CI job's, or one the test never failed in). A failure whose
+  // project is unknown is answered by a pass in any project.
+  const verdictHere = (testCaseId: number, failedIn: FailedIn): 'holds' | 'unproven' | 'silent' => {
+    if (!ranCaseIds.has(testCaseId)) return 'unproven';
+    const ran = [...failedIn.projects].filter((browserName) => outcomeByTest.has(testKey({ testCaseId, browserName })));
+    if (ran.some((browserName) => outcomeByTest.get(testKey({ testCaseId, browserName })) !== 'passed')) {
+      return 'unproven';
+    }
+    if (failedIn.anyProject) return passedCaseIds.has(testCaseId) ? 'holds' : 'unproven';
+    return ran.length > 0 ? 'holds' : 'silent';
+  };
 
   const [project] = await db
     .select({ name: projects.name, label: projects.label, defaultBranch: projects.defaultBranch })
@@ -721,16 +764,41 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
 
   const candidateIds = candidates.map((cluster) => cluster.id);
   const affected = await db
-    .select({ clusterId: testRunsCases.failureClusterId, testCaseId: testRunsCases.testCaseId })
+    .select({
+      clusterId: testRunsCases.failureClusterId,
+      testCaseId: testRunsCases.testCaseId,
+      browserName: testRunsCases.browserName,
+      runId: testRunsCases.testRunId,
+      runStartTime: testRuns.startTime,
+      runEligible: sql<number>`CASE WHEN ${eligibleExecutionInProject('fix-verification', run.projectId, testRunsCases.testRunId)} THEN 1 ELSE 0 END`,
+    })
     .from(testRunsCases)
+    .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
     .where(inArray(testRunsCases.failureClusterId, candidateIds));
 
-  const casesByCluster = new Map<number, Set<number>>();
+  // Per cluster, its tests and the Playwright projects each one failed in at
+  // its latest failing run. A reproduction, a lab arm or a bisect step runs the
+  // projects it was asked to, so its failures name the projects only of a test
+  // that failed in no other run.
+  const casesByCluster = new Map<number, Map<number, FailedIn>>();
   for (const row of affected) {
     if (row.clusterId == null) continue;
-    let set = casesByCluster.get(row.clusterId);
-    if (!set) casesByCluster.set(row.clusterId, (set = new Set()));
-    set.add(row.testCaseId);
+    let tests = casesByCluster.get(row.clusterId);
+    if (!tests) casesByCluster.set(row.clusterId, (tests = new Map()));
+    const failedRun: RunPoint = { id: row.runId, startTime: row.runStartTime };
+    const eligible = Number(row.runEligible) === 1;
+    let failedIn = tests.get(row.testCaseId);
+    if (
+      !failedIn ||
+      (eligible && !failedIn.eligible) ||
+      (eligible === failedIn.eligible && runStartedAfter(failedRun, failedIn.run))
+    ) {
+      tests.set(row.testCaseId, (failedIn = { run: failedRun, eligible, projects: new Set(), anyProject: false }));
+    } else if (failedIn.run.id !== failedRun.id) {
+      continue;
+    }
+    if (row.browserName) failedIn.projects.add(row.browserName);
+    else failedIn.anyProject = true;
   }
 
   // The commit the cluster last failed at — the "from" end of the diff that
@@ -782,16 +850,10 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
       const clusterCases = casesByCluster.get(cluster.id);
       if (!clusterCases || clusterCases.size === 0) continue;
 
-      // Every affected test must have run here and passed. One unexecuted test
-      // is enough to say nothing.
-      let allGreen = true;
-      for (const caseId of clusterCases) {
-        if (!executedCaseIds.has(caseId) || !passedCaseIds.has(caseId)) {
-          allGreen = false;
-          break;
-        }
-      }
-      if (!allGreen) continue;
+      // No affected test may be unproven here, and at least one must hold.
+      // One test that did not run is enough to say nothing.
+      const verdicts = [...clusterCases].map(([caseId, failedIn]) => verdictHere(caseId, failedIn));
+      if (verdicts.includes('unproven') || !verdicts.includes('holds')) continue;
 
       // A run that started before the cluster's last failure ran before it: its
       // passes say nothing about whether the failure stopped. A deleted last
@@ -910,7 +972,7 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
         projectId: run.projectId,
         runId,
         clusterId: cluster.id,
-        caseIds: [...clusterCases],
+        caseIds: [...clusterCases.keys()],
         diagnosedFiles: verification === 'diagnosis-verified' ? files : [],
         changedFiles: changes && !changes.filesTruncated ? changes.files.map((file) => file.filename) : null,
       }).catch((e) => console.error('[fix-verification] incidental catch failed', e));
