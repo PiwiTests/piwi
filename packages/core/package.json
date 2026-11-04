@@ -68,6 +68,7 @@
     "./flake-plan": "./src/flake-plan.ts",
     "./flake-verdict": "./src/flake-verdict.ts",
     "./skill-stamp": "./src/skill-stamp.ts",
+    "./hash": "./src/hash.ts",
     "./page-interaction": "./src/page-interaction.ts",
     "./run-errors": "./src/run-errors.ts",
     "./test-output": "./src/test-output.ts"

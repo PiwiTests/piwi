@@ -32,4 +32,8 @@ describe('skill stamps', () => {
     expect(classifyInstalledSkill(older.replace('Old steps.', 'My own steps.'), current)).toBe('edited');
     expect(classifyInstalledSkill(SKILL, current)).toBe('unstamped');
   });
+
+  it('hashes a skill to the same 16 hex characters across releases', () => {
+    expect(skillContentHash('---\nname: piwi\npiwi-version: 1.0.0\n---\n# Piwi\n')).toBe('b3067d002c26410a');
+  });
 });

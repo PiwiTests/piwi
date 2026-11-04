@@ -4,6 +4,7 @@ import {
   parseCodeowners,
   type CompiledCodeowners,
 } from '@piwitests/core/codeowners';
+import { fnv1a32 } from '@piwitests/core/hash';
 import type { CiRerunSettings } from '#shared/ci-rerun';
 import { PATCH_TRUNCATED_NOTE } from '#shared/patch';
 
@@ -122,16 +123,6 @@ export function truncatePatch(patch: string): string {
   return `${patch.slice(0, MAX_PATCH_PER_FILE)}\n${PATCH_TRUNCATED_NOTE}`;
 }
 
-/** FNV-1a 32-bit hash → 8 hex chars. Stable, dependency-free, good enough to namespace cache keys by token. */
-export function shortHash(input: string): string {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < input.length; i++) {
-    h ^= input.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return (h >>> 0).toString(16).padStart(8, '0');
-}
-
 /** An open pull request / merge request the run's branch belongs to. */
 export interface ScmPullRequest {
   /** Number on GitHub / Bitbucket, `iid` on GitLab. */
@@ -206,7 +197,7 @@ export abstract class ScmProvider {
 
   constructor(token: string | null) {
     this.token = token;
-    this.keyPrefix = token ? shortHash(token) : 'anon';
+    this.keyPrefix = token ? fnv1a32(token) : 'anon';
   }
 
   protected makeHeaders(): Record<string, string> {
