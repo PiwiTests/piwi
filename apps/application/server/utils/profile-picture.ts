@@ -34,6 +34,15 @@ export function hasAcceptedSignature(bytes: Uint8Array): boolean {
   );
 }
 
+/** The image library, loaded on the first upload; a 503 when the server has none. */
+async function loadSharp() {
+  try {
+    return (await import('sharp')).default;
+  } catch {
+    throw apiError({ statusCode: 503, message: 'This server cannot read images, so it cannot store a picture' });
+  }
+}
+
 /**
  * An uploaded picture as it is stored: checked from its bytes alone (PNG, JPEG
  * or WebP, at most {@link PROFILE_PICTURE_MAX_BYTES} bytes and at most
@@ -48,12 +57,7 @@ export async function normalizeProfilePicture(input: Buffer): Promise<Buffer> {
   }
   if (!hasAcceptedSignature(input)) throw apiError({ statusCode: 400, message: WRONG_FORMAT });
 
-  let sharp: typeof import('sharp');
-  try {
-    sharp = (await import('sharp')).default;
-  } catch {
-    throw apiError({ statusCode: 503, message: 'This server cannot read images, so it cannot store a picture' });
-  }
+  const sharp = await loadSharp();
 
   // The header alone gives the format and the size: no pixel limit applies to reading it.
   let format: string | undefined;
