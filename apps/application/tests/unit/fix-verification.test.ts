@@ -592,6 +592,29 @@ describe('verifyClusterFixes — Playwright projects', () => {
     expect(await landedIn(clusterId)).toBeNull();
   });
 
+  test('a project the config no longer lists does not excuse one it still lists', async () => {
+    const failing = await insertRun('failed', 'eded001', { configuredProjects: ['chromium', 'firefox', 'webkit'] });
+    const clusterId = await insertCluster({ firstSeenRunId: failing });
+    await insertCase(failing, 'failed', clusterId, 2, 'webkit');
+    await insertCase(failing, 'failed', clusterId, 2, 'firefox');
+
+    const chromiumJob = await insertRun('passed', 'eded002', {
+      isFullRun: false,
+      configuredProjects: ['chromium', 'firefox'],
+    });
+    await insertCase(chromiumJob, 'passed', null, 2, 'chromium');
+    await verifyClusterFixes(db, chromiumJob);
+    expect(await landedIn(clusterId)).toBeNull();
+
+    const firefoxJob = await insertRun('passed', 'eded002', {
+      isFullRun: false,
+      configuredProjects: ['chromium', 'firefox'],
+    });
+    await insertCase(firefoxJob, 'passed', null, 2, 'firefox');
+    await verifyClusterFixes(db, firefoxJob);
+    expect(await landedIn(clusterId)).toBe(firefoxJob);
+  });
+
   test('a run that lists no configured projects records nothing from another project', async () => {
     const failing = await insertRun('failed', 'ecec001', { configuredProjects: ['chromium', 'webkit'] });
     const clusterId = await insertCluster({ firstSeenRunId: failing });

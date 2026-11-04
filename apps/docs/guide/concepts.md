@@ -277,9 +277,10 @@ end counts even when a test of the cluster no longer exists; one stopped early (
 cut short by `maxFailures`) counts only when it ran the cluster's tests. The failure of a cluster whose ticket is Done stopped once such a run came after its last
 failure. A fix is verified in the Playwright projects the cluster's tests last failed in: a run that left such a
 project out but still lists it in its config (another CI job runs it) says nothing, and a project the run's config no
-longer lists (removed or renamed) is answered by a pass in any project. A CI that gives each job its own Playwright
-config file lists only that job's projects, so a cluster that failed in another job's project is recorded fixed by any
-job where its tests pass: give the jobs one config and select each job's projects with `--project`. See [Failure clusters](/features/failure-clusters#the-state-line).
+longer lists (removed or renamed) does not count, and a test that last failed only in such projects is answered by a
+pass in any project. A CI whose jobs each load a different project list (one config file per job, or a list built from
+an environment variable) makes another job's project look removed, so a cluster that failed there is recorded fixed by
+any job where its tests pass: give the jobs one list and select each job's projects with `--project`. See [Failure clusters](/features/failure-clusters#the-state-line).
 
 ### Flakiness score
 
