@@ -37,6 +37,7 @@ import {
 } from '../run-incident';
 import { FAILED_STATUS_KEYS } from '../utils/test-counts';
 import type { DrizzleDB } from './db';
+import { dropProjectTestFilters } from './analytics/test-filter-memo';
 
 /** The thresholds the classifier applies, in one place. */
 export const INCIDENT_THRESHOLDS = {
@@ -633,6 +634,7 @@ export async function setRunIncident(
     meta[INCIDENT_RUN_METADATA_KEY] = incident;
     await writeMetadata(db, run.id, meta);
     await addIncidentMarker(db, run, incident);
+    dropProjectTestFilters(run.projectId);
     return { runId: run.id, incident, review };
   }
 
@@ -641,5 +643,6 @@ export async function setRunIncident(
   await db
     .delete(markers)
     .where(and(eq(markers.runId, run.id), eq(markers.category, 'incident'), eq(markers.source, 'auto')));
+  dropProjectTestFilters(run.projectId);
   return { runId: run.id, incident: null, review };
 }

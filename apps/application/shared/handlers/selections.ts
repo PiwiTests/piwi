@@ -12,6 +12,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { testCases, testRunsCases, testSelections } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 import { getQuarantinedCaseIds } from './quarantine';
+import { dropProjectTestFilters } from './analytics/test-filter-memo';
 import { eligibleExecutionInProject } from '../run-eligibility';
 import { latestRunStatusSql } from './latest-run-status';
 import { finalAttemptSql, recentFlakySql, testCaseAggregates } from './test-case-aggregates';
@@ -168,40 +169,29 @@ export async function loadSelectionCatalog(
  * Recency rank of each test's most recent failure within its last
  * `MAX_FAILED_IN_LAST_RUNS` runs (1 = the latest run), a run being one result
  * per run, Playwright project and repetition (`finalAttemptSql`): a pass on a
- * retry is not a failure. Computed with a window function in one pass, only
- * when a definition actually needs it.
+ * retry is not a failure. Each test reads only its latest results, through the
+ * `(test_case_id, created_at)` index, numbered newest first; loaded only when a
+ * definition needs it.
  */
 async function loadRecentFailRanks(db: DrizzleDB, projectId: number): Promise<Map<number, number>> {
-  const ranked = db.$with('ranked').as(
-    db
-      .select({
-        testCaseId: testRunsCases.testCaseId,
-        status: testRunsCases.status,
-        rn: sql<number>`ROW_NUMBER() OVER (PARTITION BY ${testRunsCases.testCaseId} ORDER BY ${testRunsCases.createdAt} DESC, ${testRunsCases.id} DESC)`.as(
-          'rn',
-        ),
-      })
-      .from(testRunsCases)
-      .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
-      .where(
-        and(
-          eq(testCases.projectId, projectId),
-          eligibleExecutionInProject('selection-catalog', projectId, testRunsCases.testRunId),
-          finalAttemptSql(),
-        ),
-      ),
-  );
+  const latest = sql`SELECT ${testRunsCases.status} AS status, ${testRunsCases.createdAt} AS created_at, ${testRunsCases.id} AS id
+      FROM ${testRunsCases}
+      WHERE ${testRunsCases.testCaseId} = ${testCases.id}
+        AND ${eligibleExecutionInProject('selection-catalog', projectId, testRunsCases.testRunId)}
+        AND ${finalAttemptSql()}
+      ORDER BY ${testRunsCases.createdAt} DESC, ${testRunsCases.id} DESC
+      LIMIT ${sql.raw(String(MAX_FAILED_IN_LAST_RUNS))}`;
+  const numbered = sql`SELECT status, ROW_NUMBER() OVER (ORDER BY created_at DESC, id DESC) AS rn FROM (${latest}) latest`;
+  const rank = sql<
+    number | null
+  >`(SELECT MIN(rn) FROM (${numbered}) numbered WHERE status IN ('failed', 'timedOut', 'timedout'))`;
 
-  const rows: any[] = await db
-    .with(ranked)
-    .select({ testCaseId: ranked.testCaseId, rank: sql<number>`MIN(${ranked.rn})` })
-    .from(ranked)
-    .where(
-      and(sql`${ranked.status} IN ('failed', 'timedOut', 'timedout')`, sql`${ranked.rn} <= ${MAX_FAILED_IN_LAST_RUNS}`),
-    )
-    .groupBy(ranked.testCaseId);
+  const rows: { testCaseId: number; rank: number | null }[] = await db
+    .select({ testCaseId: testCases.id, rank })
+    .from(testCases)
+    .where(eq(testCases.projectId, projectId));
 
-  return new Map(rows.map((r) => [Number(r.testCaseId), Number(r.rank)]));
+  return new Map(rows.filter((r) => r.rank != null).map((r) => [Number(r.testCaseId), Number(r.rank)]));
 }
 
 // ── Predicate evaluation ─────────────────────────────────────────────────────
@@ -674,6 +664,7 @@ export async function createSelection(
       updatedAt: now,
     })
     .returning();
+  dropProjectTestFilters(projectId);
   return rowToSelection(row);
 }
 
@@ -719,6 +710,7 @@ export async function updateSelection(
     .set(updates)
     .where(and(eq(testSelections.projectId, projectId), eq(testSelections.key, key)))
     .returning();
+  dropProjectTestFilters(projectId);
   return rowToSelection(row);
 }
 
@@ -727,5 +719,6 @@ export async function deleteSelection(db: DrizzleDB, projectId: number, key: str
     .delete(testSelections)
     .where(and(eq(testSelections.projectId, projectId), eq(testSelections.key, key)))
     .returning({ id: testSelections.id });
+  dropProjectTestFilters(projectId);
   return { deleted: rows.length > 0 };
 }
