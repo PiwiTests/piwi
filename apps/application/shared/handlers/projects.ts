@@ -60,7 +60,7 @@ import {
 } from './project-run-scope';
 import { parseProjectRunScope, resolveProjectRunScope, type ProjectRunScope } from '../project-run-scope';
 import { eligibleRunSql } from '../run-eligibility';
-import { finalAttemptsOfRuns, isFailedStatus, ranTest } from '../utils/test-counts';
+import { finalAttemptsOfRuns, isPassedOrFailedStatus, isFailedStatus, ranTest } from '../utils/test-counts';
 import { flakyRate, passRate } from '../utils/pass-rate';
 import { finalAttemptSql, recentFlakySql, testCaseAggregates } from './test-case-aggregates';
 import { getHoldingVerifiedFixes } from './flake-verified';
@@ -2122,14 +2122,23 @@ export async function getProjectFlakyTestsWithVerified(
       const byBrowser = byRun.get(run.id);
       if (!byBrowser) continue;
 
-      totalRuns++;
+      let runPassedOrFailed = false;
       let runFinalFailed = false;
       let runRetryPass = false;
 
       for (const [, group] of byBrowser) {
         if (isFailedStatus(group.finalStatus)) runFinalFailed = true;
+        if (isPassedOrFailedStatus(group.finalStatus)) runPassedOrFailed = true;
         if (group.retryPass) runRetryPass = true;
+      }
 
+      // A run where the test neither passed nor failed (skipped, did not run,
+      // interrupted) is no result: it is not counted, never makes a flip and
+      // adds nothing to the wasted time; nor does a Playwright project of a
+      // counted run where it had no result.
+      if (!runPassedOrFailed) continue;
+      for (const [, group] of byBrowser) {
+        if (!isPassedOrFailedStatus(group.finalStatus)) continue;
         for (const row of group.rows) {
           if (row.id > latestRunsCaseId) latestRunsCaseId = row.id;
           if (isFailedStatus(row.status) && row.duration != null) {
@@ -2137,7 +2146,7 @@ export async function getProjectFlakyTestsWithVerified(
           }
         }
       }
-
+      totalRuns++;
       if (runFinalFailed) failedRuns++;
       if (runRetryPass) {
         retryPassRuns++;
