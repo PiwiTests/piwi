@@ -1,3 +1,5 @@
+import { fetchPublicImage, type PublicImage } from '../../public-image';
+
 /**
  * Jira's icons — an issue type's, a project's avatar — are served by the site
  * behind its own sign-in, so a browser that is not signed in to Jira cannot
@@ -41,11 +43,6 @@ export function isJiraIconPath(path: string): boolean {
     return false;
   }
   return resolved === pathname && ICON_PATH.test(pathname);
-}
-
-/** Whether an answer says the icon is unavailable for now (rate limit, outage, credentials), not missing. */
-export function isTransientIconStatus(status: number): boolean {
-  return status === 401 || status === 403 || status === 408 || status === 429 || status >= 500;
 }
 
 /**
@@ -96,37 +93,12 @@ export function jiraAvatar(url: string | null | undefined, siteUrl: string): str
   return jiraIconPath(url, siteUrl);
 }
 
-/** Gravatar redirects to the initials Atlassian draws for a person with none: followed this many times. */
-const MAX_AVATAR_REDIRECTS = 3;
-
 /**
  * A person's avatar from a public avatar host, with no credentials, following
- * redirects only while they stay on those hosts. Null when it is not an image,
- * is too large, or leaves them; throws when the host cannot answer for now.
+ * redirects only while they stay on those hosts (Gravatar redirects to the
+ * initials Atlassian draws for a person with none). Null when it is not an
+ * image, is too large, or leaves them; throws when the host cannot answer for now.
  */
-export async function fetchExternalAvatar(
-  url: string,
-  timeoutMs = 10_000,
-): Promise<{ bytes: Uint8Array; mime: string } | null> {
-  let current = url;
-  for (let hop = 0; hop <= MAX_AVATAR_REDIRECTS; hop++) {
-    if (!isExternalAvatarUrl(current)) return null;
-    const response = await fetch(current, {
-      redirect: 'manual',
-      headers: { Accept: 'image/*' },
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get('location');
-      if (!location) return null;
-      current = new URL(location, current).toString();
-      continue;
-    }
-    if (isTransientIconStatus(response.status)) throw new Error(`avatar host answered ${response.status}`);
-    const mime = response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() ?? '';
-    if (!response.ok || !mime.startsWith('image/')) return null;
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    return bytes.byteLength > MAX_ICON_BYTES ? null : { bytes, mime };
-  }
-  return null;
+export async function fetchExternalAvatar(url: string, timeoutMs = 10_000): Promise<PublicImage | null> {
+  return fetchPublicImage(url, isExternalAvatarUrl, { maxBytes: MAX_ICON_BYTES, timeoutMs });
 }
