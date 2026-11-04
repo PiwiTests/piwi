@@ -1386,6 +1386,19 @@ test.describe.serial('Reporter with authentication enabled', () => {
     expect(picture.headers()['cache-control']).toBe('private, max-age=31536000, immutable');
     await expect(page.locator(`img[src$="/api/auth/avatar?v=${me.user.avatarVersion}"]`).first()).toBeVisible();
 
+    // Removing asks first; a cancel keeps the picture.
+    await card.getByRole('button', { name: 'Remove picture' }).click();
+    const confirm = page.getByRole('dialog', { name: 'Remove profile picture' });
+    await confirm.getByRole('button', { name: 'Cancel' }).click();
+    await expect(card.getByRole('button', { name: 'Remove picture' })).toBeVisible();
+    await card.getByRole('button', { name: 'Remove picture' }).click();
+    await confirm.getByRole('button', { name: 'Remove picture' }).click();
+    await expect(page.getByText('Profile picture removed', { exact: true })).toBeVisible();
+    await expect(card.getByRole('button', { name: 'Remove picture' })).toHaveCount(0);
+
+    await card.getByLabel('Profile picture file').setInputFiles({ name: 'me.png', mimeType: 'image/png', buffer: png });
+    await expect(card.getByRole('button', { name: 'Remove picture' })).toBeVisible();
+
     await loginAs(request, 'admin', 'adminpassword123');
     const removed = await request.delete(`${AUTH_SERVER_URL}/api/users/${me.user.id}/avatar`);
     expect(await removed.json()).toEqual({ removed: true });

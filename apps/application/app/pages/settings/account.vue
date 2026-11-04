@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { PROFILE_PICTURE_ACCEPT, PROFILE_PICTURE_BYTE_LIMIT } from '#shared/profile-picture';
+import { PROFILE_PICTURE_ACCEPT, PROFILE_PICTURE_MAX_BYTES, PROFILE_PICTURE_TOO_HEAVY } from '#shared/profile-picture';
 import type { ApiResponse } from '~~/types/api';
 const toast = useToast();
 const route = useRoute();
@@ -69,8 +69,8 @@ async function uploadPicture(event: Event) {
   const file = input.files?.[0];
   input.value = '';
   if (!file) return;
-  if (file.size >= PROFILE_PICTURE_BYTE_LIMIT) {
-    toast.add({ title: 'Picture too large', description: 'Choose a picture under 1 MB.', color: 'error' });
+  if (file.size > PROFILE_PICTURE_MAX_BYTES) {
+    toast.add({ title: 'Picture too large', description: PROFILE_PICTURE_TOO_HEAVY, color: 'error' });
     return;
   }
   savingPicture.value = true;
@@ -89,14 +89,20 @@ async function uploadPicture(event: Event) {
   }
 }
 
+const isRemovePictureConfirmOpen = ref(false);
+
 async function removePicture() {
+  isRemovePictureConfirmOpen.value = false;
+  if (savingPicture.value) return;
   savingPicture.value = true;
   try {
-    await $fetch<ApiResponse<typeof import('~~/server/api/auth/avatar.delete').default>>('/api/auth/avatar', {
-      method: 'DELETE',
-    });
+    const { removed } = await $fetch<ApiResponse<typeof import('~~/server/api/auth/avatar.delete').default>>(
+      '/api/auth/avatar',
+      { method: 'DELETE' },
+    );
     await Promise.all([refresh(), fetchUser()]);
-    toast.add({ title: 'Profile picture removed', color: 'success' });
+    if (removed) toast.add({ title: 'Profile picture removed', color: 'success' });
+    else toast.add({ title: 'Nothing removed: your profile picture had already changed', color: 'neutral' });
   } catch (e) {
     toast.add({ title: 'Failed to remove profile picture', description: errorMessage(e), color: 'error' });
   } finally {
@@ -265,6 +271,7 @@ const authEnabled = computed(() => config.public.authEnabled);
         icon="i-lucide-image"
         title="Profile picture"
         help="account.profile-picture"
+        data-shot="account-profile-picture"
         data-tour="account-profile-picture"
       >
         <div class="flex flex-wrap items-center gap-4">
@@ -293,7 +300,7 @@ const authEnabled = computed(() => config.public.authEnabled);
                 color="neutral"
                 variant="ghost"
                 :disabled="savingPicture"
-                @click="removePicture"
+                @click="isRemovePictureConfirmOpen = true"
               >
                 Remove picture
               </UButton>
@@ -494,5 +501,24 @@ const authEnabled = computed(() => config.public.authEnabled);
         <ApiKeysManager :user-id="me.user.id" />
       </SectionCard>
     </template>
+
+    <ClientOnly>
+      <UModal
+        :open="isRemovePictureConfirmOpen"
+        title="Remove profile picture"
+        @update:open="isRemovePictureConfirmOpen = $event"
+      >
+        <template #body>
+          <p>
+            Remove the picture you uploaded? It is deleted from this server, so showing it again means uploading it
+            again.
+          </p>
+        </template>
+        <template #footer>
+          <UButton color="neutral" variant="ghost" label="Cancel" @click="isRemovePictureConfirmOpen = false" />
+          <UButton color="error" label="Remove picture" icon="i-lucide-image-off" @click="removePicture" />
+        </template>
+      </UModal>
+    </ClientOnly>
   </div>
 </template>

@@ -1101,6 +1101,15 @@ async function signInForScene({ base, request }) {
   if (!res.ok()) throw new Error(`signing in as ${login.slice(0, separator)} failed (${res.status()}): ${hint}`);
 }
 
+/** `prepare` step after `signInForScene`: uploads a plain square as the signed-in user's profile picture. */
+async function uploadScenePicture({ base, request }) {
+  const png = await sharp({ create: { width: 256, height: 256, channels: 3, background: '#7c3aed' } })
+    .png()
+    .toBuffer();
+  const res = await request.put(`${base}/api/auth/avatar`, { headers: { 'Content-Type': 'image/png' }, data: png });
+  if (!res.ok()) throw new Error(`uploading the profile picture failed (${res.status()}): ${await res.text()}`);
+}
+
 /** Ticks the row checkboxes of the `count` newest runs in project 1's runs list that are not kept. */
 async function selectNewestRuns(page, count) {
   const kept = await (await page.request.get(new URL('/api/projects/1/kept-runs', page.url()).href)).json();
@@ -3173,6 +3182,52 @@ const SCENES = [
       await page.locator('[data-shot="users-table"]').waitFor({ timeout: 90000 });
       await settle();
       await shoot();
+    },
+  })),
+  ...[
+    { name: 'settings-account-picture', width: 1280 },
+    { name: 'settings-account-picture-mobile', width: 390 },
+  ].map(({ name, width }) => ({
+    name,
+    description: `Settings → Account → Profile picture with an uploaded picture, its Upload and Remove buttons, at ${width} px. It exists with authentication on: pass --url of an auth-enabled server and PIWI_SCREENS_LOGIN=<username>:<password>`,
+    async prepare({ base, request }) {
+      await signInForScene({ base, request });
+      await uploadScenePicture({ base, request });
+    },
+    route: '/settings/account',
+    viewport: { width, height: 900 },
+    of: '[data-shot="account-profile-picture"]',
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="account-profile-picture"] img').waitFor({ timeout: 15000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'settings-users-remove-picture', width: 1280, height: 900 },
+    { name: 'settings-users-remove-picture-mobile', width: 390, height: 2000 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Users with the signed-in administrator's uploaded picture: the Remove profile picture row action and the confirmation it opens, at ${width} px. It exists with authentication on: pass --url of an auth-enabled server and PIWI_SCREENS_LOGIN=<username>:<password> of an administrator`,
+    async prepare({ base, request }) {
+      await signInForScene({ base, request });
+      await uploadScenePicture({ base, request });
+    },
+    route: '/settings/users',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      await page.locator('[data-shot="users-table"]').waitFor({ timeout: 90000 });
+      await settle();
+      await shoot('table', { of: '[data-shot="users-table"]' });
+      const username = (process.env.PIWI_SCREENS_LOGIN ?? '').split(':')[0];
+      await page
+        .getByRole('button', { name: `Remove the profile picture of ${username}`, exact: true })
+        .filter({ visible: true })
+        .first()
+        .click();
+      await page.getByRole('dialog', { name: 'Remove profile picture' }).waitFor();
+      await settle();
+      await shoot('confirm', { of: '[role="dialog"]', pad: 0 });
     },
   })),
   ...[

@@ -320,17 +320,29 @@ async function handleInviteUser(user: UserListItem) {
 
 // ── Profile picture ─────────────────────────────────────────────────────────
 const removingPictureUserId = ref<number | null>(null);
+const pictureToRemove = ref<UserListItem | null>(null);
 
-async function handleRemovePicture(user: UserListItem) {
+async function confirmRemovePicture() {
+  const user = pictureToRemove.value;
+  pictureToRemove.value = null;
+  if (!user) return;
   removingPictureUserId.value = user.id;
   try {
-    await $fetch<ApiResponse<typeof import('~~/server/api/users/[id]/avatar.delete').default>>(
+    const { removed } = await $fetch<ApiResponse<typeof import('~~/server/api/users/[id]/avatar.delete').default>>(
       `/api/users/${user.id}/avatar`,
       { method: 'DELETE' },
     );
-    patchUserRow(user.id, { avatarUploaded: false });
+    if (removed) {
+      patchUserRow(user.id, { avatarUploaded: false });
+      toast.add({ title: 'Profile picture removed', color: 'success' });
+    } else {
+      await refresh();
+      toast.add({
+        title: `Nothing removed: the profile picture of ${user.username} had already changed`,
+        color: 'neutral',
+      });
+    }
     if (user.id === authState.value.user?.id) await fetchUser();
-    toast.add({ title: 'Profile picture removed', color: 'success' });
   } catch (e) {
     toast.add({
       title: 'Failed to remove profile picture',
@@ -393,7 +405,7 @@ async function handleRemovePicture(user: UserListItem) {
               @invite="handleInviteUser(user)"
               @project-roles="openRolesModal(user)"
               @api-keys="openApiKeysModal(user)"
-              @remove-picture="handleRemovePicture(user)"
+              @remove-picture="pictureToRemove = user"
               @delete="handleDeleteUser(user)"
             />
           </div>
@@ -491,7 +503,7 @@ async function handleRemovePicture(user: UserListItem) {
               @invite="handleInviteUser(row.original)"
               @project-roles="openRolesModal(row.original)"
               @api-keys="openApiKeysModal(row.original)"
-              @remove-picture="handleRemovePicture(row.original)"
+              @remove-picture="pictureToRemove = row.original"
               @delete="handleDeleteUser(row.original)"
             />
           </template>
@@ -603,6 +615,27 @@ async function handleRemovePicture(user: UserListItem) {
       <template #footer>
         <UButton color="neutral" variant="ghost" label="Cancel" @click="isDeleteUserConfirmOpen = false" />
         <UButton color="error" label="Delete user" icon="i-lucide-trash-2" @click="confirmDeleteUser" />
+      </template>
+    </UModal>
+  </ClientOnly>
+
+  <!-- Profile picture removal confirmation -->
+  <ClientOnly>
+    <UModal
+      :open="pictureToRemove !== null"
+      title="Remove profile picture"
+      @update:open="(open: boolean) => !open && (pictureToRemove = null)"
+    >
+      <template #body>
+        <p>
+          Remove the picture <strong>{{ pictureToRemove?.username }}</strong> uploaded? It is deleted from this server,
+          so showing it again means they upload it again.
+        </p>
+      </template>
+
+      <template #footer>
+        <UButton color="neutral" variant="ghost" label="Cancel" @click="pictureToRemove = null" />
+        <UButton color="error" label="Remove picture" icon="i-lucide-image-off" @click="confirmRemovePicture" />
       </template>
     </UModal>
   </ClientOnly>
