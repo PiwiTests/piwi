@@ -378,9 +378,17 @@ export class FileHandler {
   }
 }
 
-/** Attachment name reduced to characters safe in a file name. */
+/**
+ * Attachment name reduced to characters safe in a file name, holding no `..` and neither starting nor ending in `.`
+ * or `-`, so the extension the caller appends never forms `..` (`expired one.` gives `expired-one`).
+ */
 function safeFileName(name: string): string {
-  return name.replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') || 'attachment';
+  return (
+    name
+      .replace(/[^\w.-]+/g, '-')
+      .replace(/\.{2,}/g, '.')
+      .replace(/^[-.]+|[-.]+$/g, '') || 'attachment'
+  );
 }
 
 function formatMiB(bytes: number): string {

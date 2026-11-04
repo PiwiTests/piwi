@@ -48,6 +48,10 @@ const handler = (await import('../../server/api/files/[...path].get')).default;
 const VIDEO = Buffer.from(Array.from({ length: 1000 }, (_, i) => i % 251));
 const SECRET = Buffer.from('project 2 only');
 const BLOB = 'a'.repeat(64);
+const STEP_SHOTS = [
+  'Step-13-Click-Generate-new-code-Expected-The-new-code-is-not-the-expired-one..png',
+  'Step-3-Read-the-dialog-as-it-starts-Expected-It-shows-Generating-code...-..png',
+];
 
 const reader = {
   user: { id: 5, username: 'rae', role: InstanceRole.MEMBER } as User,
@@ -82,6 +86,8 @@ beforeAll(async () => {
   mkdirSync(join(storageDir, 'project-2'), { recursive: true });
   writeFileSync(join(storageDir, 'project-1/run-7/42/video.webm'), VIDEO);
   writeFileSync(join(storageDir, 'project-1/run-7/42/step-2..json'), '{"step":2}');
+  // Stored names that hold `..` before the extension, from step titles that end in `.` or hold `...`.
+  for (const name of STEP_SHOTS) writeFileSync(join(storageDir, `project-1/run-7/42/${name}`), name);
   // A slim trace blob whose manifest does not parse.
   mkdirSync(join(storageDir, 'project-1/blobs'), { recursive: true });
   writeFileSync(join(storageDir, `project-1/blobs/${BLOB}.zip`), 'slim');
@@ -168,6 +174,15 @@ describe('the path checks', () => {
     expect(answer.body.toString()).toBe('{"step":2}');
   });
 
+  test('serve a step screenshot whose name ends in a dot or holds an ellipsis', async () => {
+    for (const name of STEP_SHOTS) {
+      const answer = await get(`/api/files/project-1/run-7/42/${name}`);
+      expect(answer.status, name).toBe(200);
+      expect(answer.headers['content-type'], name).toBe('image/png');
+      expect(answer.body.toString(), name).toBe(name);
+    }
+  });
+
   test("refuse another project's file to a reader of this one", async () => {
     expect((await get('/api/files/project-2/secret.txt')).status).toBe(403);
   });
@@ -185,11 +200,21 @@ describe('the path checks', () => {
     }
   });
 
+  test('refuse an absolute path with 403', async () => {
+    for (const path of ['/api/files//project-2/secret.txt', '/api/files/\\project-2\\secret.txt']) {
+      const answer = await get(path);
+      expect(answer.status, path).toBe(403);
+      expect(answer.body.includes(SECRET), path).toBe(false);
+    }
+  });
+
   test('refuse a way out spelled with percent-encoded dots, slashes or backslashes', async () => {
     for (const path of [
       '/api/files/project-1/%2e%2e/project-2/secret.txt',
       '/api/files/project-1/..%2Fproject-2/secret.txt',
       '/api/files/project-1/run-7/..%5C..%5Cproject-2%5Csecret.txt',
+      '/api/files/project-1/%252e%252e/project-2/secret.txt',
+      '/api/files/project-1/..%252Fproject-2/secret.txt',
     ]) {
       const answer = await get(path);
       expect([403, 404], path).toContain(answer.status);
