@@ -31,7 +31,7 @@ export function isFailedStatus(status: string | null | undefined): boolean {
  * Whether a per-case status is a result a pass rate counts: passed, failed or
  * timed out. Skipped, did-not-run and interrupted are not.
  */
-export function isDecidedStatus(status: string | null | undefined): boolean {
+export function isPassedOrFailedStatus(status: string | null | undefined): boolean {
   return status === 'passed' || isFailedStatus(status);
 }
 

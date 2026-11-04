@@ -60,7 +60,7 @@ import {
 } from './project-run-scope';
 import { parseProjectRunScope, resolveProjectRunScope, type ProjectRunScope } from '../project-run-scope';
 import { eligibleRunSql } from '../run-eligibility';
-import { finalAttemptsOfRuns, isDecidedStatus, isFailedStatus, ranTest } from '../utils/test-counts';
+import { finalAttemptsOfRuns, isPassedOrFailedStatus, isFailedStatus, ranTest } from '../utils/test-counts';
 import { flakyRate, passRate } from '../utils/pass-rate';
 import { finalAttemptSql, recentFlakySql, testCaseAggregates } from './test-case-aggregates';
 import { getHoldingVerifiedFixes } from './flake-verified';
@@ -2122,13 +2122,13 @@ export async function getProjectFlakyTestsWithVerified(
       const byBrowser = byRun.get(run.id);
       if (!byBrowser) continue;
 
-      let runDecided = false;
+      let runPassedOrFailed = false;
       let runFinalFailed = false;
       let runRetryPass = false;
 
       for (const [, group] of byBrowser) {
         if (isFailedStatus(group.finalStatus)) runFinalFailed = true;
-        if (isDecidedStatus(group.finalStatus)) runDecided = true;
+        if (isPassedOrFailedStatus(group.finalStatus)) runPassedOrFailed = true;
         if (group.retryPass) runRetryPass = true;
 
         for (const row of group.rows) {
@@ -2141,7 +2141,7 @@ export async function getProjectFlakyTestsWithVerified(
 
       // A run where the test neither passed nor failed (skipped, did not run,
       // interrupted) is no result: it is not counted and never makes a flip.
-      if (!runDecided) continue;
+      if (!runPassedOrFailed) continue;
       totalRuns++;
       if (runFinalFailed) failedRuns++;
       if (runRetryPass) {
