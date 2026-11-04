@@ -16,6 +16,7 @@ import {
 import type { AnalyticsTagInfo } from '../../analytics/types';
 import { branchPolicyCondition, defaultBranchPolicy, type BranchPolicy } from './branch-policy';
 import { resolveStoredDefaultBranches } from '../../../server/utils/scm/stored-default-branch';
+import { memoizedTestFilter } from './test-filter-memo';
 
 export type ProjectAccess = 'all' | Set<number>;
 
@@ -116,7 +117,14 @@ async function resolveAnalyticsContext(
   const comparison = resolveComparison(scope.comparison, scope.period, period, resolveCtx);
 
   const branchPolicy = await resolveBranchPolicy(db, scope, allowed);
-  const testFilter = await resolveTestFilter(db, scope, allowed, notes);
+  const memoized = hasTestFilter(scope)
+    ? await memoizedTestFilter(db, scope, allowed, async () => {
+        const filterNotes: string[] = [];
+        return { filter: await resolveTestFilter(db, scope, allowed, filterNotes), notes: filterNotes };
+      })
+    : null;
+  const testFilter = memoized?.filter ?? null;
+  if (memoized) notes.push(...memoized.notes);
   if (testFilter?.testCaseIds) {
     allowed = [...testFilter.testCaseIds.keys()];
   }
@@ -228,7 +236,8 @@ async function projectsWithKnownBranch(db: DrizzleDB, projectIds: number[]): Pro
 }
 
 /**
- * The test filter of a scope, per project: a selection key resolves to that
+ * The test filter of a scope, per project (`memoizedTestFilter` keeps it for a
+ * few seconds): a selection key resolves to that
  * project's selection with that key (a project without it is left out and
  * named in the notes), inline predicates resolve as an ad-hoc selection, and
  * both together intersect. A test filter means the tests that match it today,

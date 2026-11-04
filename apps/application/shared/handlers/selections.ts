@@ -12,6 +12,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { testCases, testRunsCases, testSelections } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 import { getQuarantinedCaseIds } from './quarantine';
+import { dropProjectTestFilters } from './analytics/test-filter-memo';
 import { eligibleExecutionInProject } from '../run-eligibility';
 import { latestRunStatusSql } from './latest-run-status';
 import { finalAttemptSql, recentFlakySql, testCaseAggregates } from './test-case-aggregates';
@@ -663,6 +664,7 @@ export async function createSelection(
       updatedAt: now,
     })
     .returning();
+  dropProjectTestFilters(projectId);
   return rowToSelection(row);
 }
 
@@ -708,6 +710,7 @@ export async function updateSelection(
     .set(updates)
     .where(and(eq(testSelections.projectId, projectId), eq(testSelections.key, key)))
     .returning();
+  dropProjectTestFilters(projectId);
   return rowToSelection(row);
 }
 
@@ -716,5 +719,6 @@ export async function deleteSelection(db: DrizzleDB, projectId: number, key: str
     .delete(testSelections)
     .where(and(eq(testSelections.projectId, projectId), eq(testSelections.key, key)))
     .returning({ id: testSelections.id });
+  dropProjectTestFilters(projectId);
   return { deleted: rows.length > 0 };
 }
