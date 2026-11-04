@@ -2,7 +2,8 @@
 /**
  * The per-user actions of Settings → Users, shared by the table and the phone
  * card list: send an invite, edit the user's project roles, manage their API
- * keys, delete them. The page owns what each one does.
+ * keys, remove their uploaded profile picture, delete them. The page owns what
+ * each one does.
  */
 import { InstanceRole } from '#shared/permissions';
 import type { UserListItem } from '#shared/project-access';
@@ -14,9 +15,16 @@ defineProps<{
   /** Whether the viewer may manage this user's API keys (their own, or anyone's for an administrator). */
   canManageKeys: boolean;
   inviting?: boolean;
+  removingPicture?: boolean;
 }>();
 
-const emit = defineEmits<{ invite: []; 'project-roles': []; 'api-keys': []; delete: [] }>();
+const emit = defineEmits<{
+  invite: [];
+  'project-roles': [];
+  'api-keys': [];
+  'remove-picture': [];
+  delete: [];
+}>();
 </script>
 
 <template>
@@ -51,6 +59,17 @@ const emit = defineEmits<{ invite: []; 'project-roles': []; 'api-keys': []; dele
       title="Manage API keys"
       aria-label="Manage API keys"
       @click="emit('api-keys')"
+    />
+    <UButton
+      v-if="canManage && user.avatarUploaded"
+      icon="i-lucide-image-off"
+      color="neutral"
+      variant="ghost"
+      size="sm"
+      title="Remove profile picture"
+      :aria-label="`Remove the profile picture of ${user.username}`"
+      :loading="removingPicture"
+      @click="emit('remove-picture')"
     />
     <UButton
       v-if="canManage"

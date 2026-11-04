@@ -31,7 +31,18 @@ export const SETTINGS_ANCHORS = [
     kind: 'page',
     pages: ['/settings/account'],
     describes:
-      'Settings → Account: your display name, email address, password and API keys, which you manage once authentication is on.',
+      'Settings → Account: your profile picture, display name, email address, password and API keys, once authentication is on.',
+    doc: 'operate/authentication#user-management',
+    sample: { route: '/settings/account' },
+  },
+  {
+    id: 'account-profile-picture',
+    kind: 'field',
+    pages: ['/settings/account'],
+    describes:
+      "The Profile picture card: upload a picture shown in place of your sign-in provider's, or remove the one you uploaded.",
+    shownWhen: 'When authentication is on.',
+    help: 'account.profile-picture',
     doc: 'operate/authentication#user-management',
     sample: { route: '/settings/account' },
   },
@@ -157,7 +168,7 @@ export const SETTINGS_ANCHORS = [
     kind: 'field',
     pages: ['/settings/users'],
     describes:
-      'A user’s actions in the Users table: send an invite, edit their project roles, manage their API keys or delete them.',
+      'A user’s actions in the Users table: send an invite, edit their project roles, manage their API keys, remove their profile picture or delete them.',
     shownWhen: 'When the instance has at least one user.',
     requires: { permission: 'users:manage' },
     help: 'settings.api-keys',

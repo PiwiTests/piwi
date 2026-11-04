@@ -46,12 +46,12 @@ const appearances = [
 
 const user = computed(() => {
   if (config.public.authEnabled && authState.value.authenticated && authState.value.user) {
-    const avatarUrl = mounted.value ? authState.value.user.avatarUrl : null;
+    const avatarVersion = mounted.value ? authState.value.user.avatarVersion : null;
     return {
       name: authState.value.user.name || authState.value.user.username,
-      icon: avatarUrl ? undefined : 'i-lucide-user',
-      avatar: avatarUrl
-        ? { src: profilePictureSrc(config.app.baseURL, avatarUrl), alt: '', icon: 'i-lucide-user' }
+      icon: avatarVersion ? undefined : 'i-lucide-user',
+      avatar: avatarVersion
+        ? { src: profilePictureSrc(config.app.baseURL, avatarVersion), alt: '', icon: 'i-lucide-user' }
         : undefined,
       role: authState.value.user.role,
     };
