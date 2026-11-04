@@ -16,11 +16,11 @@ const USAGE = `
 piwi rerun — run the tests a CI re-run from the dashboard asked for
 
 Usage:
-  npx @piwitests/reporter rerun [playwright args]
+  npx @piwitests/reporter rerun [--] [playwright args]
 
 Runs playwright test with the arguments of ${RERUN_ARGS_ENV}, split as the
 dashboard quoted them and never read by a shell, followed by the arguments
-given here. Declare ${RERUN_ARGS_ENV} in the CI job: set and empty, the whole
+given here (after an optional --). Declare ${RERUN_ARGS_ENV} in the CI job: set and empty, the whole
 suite runs; unset, the command fails rather than run it.
 
 Options:
@@ -50,5 +50,6 @@ export async function runRerun(argv: string[], env: NodeJS.ProcessEnv = process.
     console.error(`piwi rerun: ${RERUN_ARGS_ENV} cannot be read: ${(e as Error).message}.`);
     return EXIT_ERROR;
   }
-  return spawnPlaywright([...words, ...argv], env, { command: 'piwi rerun' });
+  const extra = argv[0] === '--' ? argv.slice(1) : argv;
+  return spawnPlaywright([...words, ...extra], env, { command: 'piwi rerun' });
 }

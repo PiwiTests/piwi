@@ -242,7 +242,7 @@ Run the tests a [CI re-run](/features/pr-feedback#re-run-from-the-dashboard) dis
 in a GitLab or Bitbucket job. The dashboard hands the job its Playwright arguments in the `PIWI_RERUN_ARGS` variable,
 each one double-quoted (`"tests/login.spec.ts:10" --project="chromium"`). `rerun` splits them as they were quoted,
 without reading them through a shell, and starts `playwright test` with them, followed by any arguments given on its
-own command line. The same command works on Linux, macOS and Windows runners.
+own command line, after an optional `--`. The same command works on Linux, macOS and Windows runners.
 
 ```bash
 npx @piwitests/reporter rerun --workers=2
@@ -448,8 +448,8 @@ npx @piwitests/reporter bug 37 --write
 | `-h`, `--help` | Show help |
 
 **Exit codes:** `0` printed or written, and when run, the test failed on the bug as `test.fail()` expects · `1` the run
-did not: the bug may be fixed, or a step no longer matches the page · `2` the report could not be read or the file
-could not be written.
+did not: the bug may be fixed, or a step no longer matches the page · `2` the report could not be read, the file
+could not be written, or Playwright could not start or was stopped by a signal.
 
 ## Related
 

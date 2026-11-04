@@ -25,6 +25,12 @@ describe('piwi rerun', () => {
     );
   });
 
+  it('takes its own arguments after an optional --', async () => {
+    const env = { PIWI_RERUN_ARGS: '"tests/a.spec.ts"' };
+    expect(await runRerun(['--', '--workers=1'], env)).toBe(0);
+    expect(spawnPlaywright).toHaveBeenCalledWith(['tests/a.spec.ts', '--workers=1'], env, { command: 'piwi rerun' });
+  });
+
   it("exits with Playwright's code", async () => {
     spawnPlaywright.mockResolvedValueOnce(1);
     expect(await runRerun([], { PIWI_RERUN_ARGS: '"tests/a.spec.ts"' })).toBe(1);
