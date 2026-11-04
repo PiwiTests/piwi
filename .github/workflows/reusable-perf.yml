@@ -120,15 +120,18 @@ jobs:
           merge-multiple: true
           path: perf
 
-      # Fails when a shard's results are missing, rather than reporting on part of the pages.
+      # Fails when a shard's results are missing, rather than reporting on part of the pages. `pull-request` names the
+      # pull request the report is for, which perf-comment.yml needs when two open pull requests share a head commit.
       - name: Join the results and write the report
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          PULL_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           shards=()
           for file in perf/results-*.json; do shards+=(--results "$file"); done
           node apps/application/scripts/perf/report.mjs "${shards[@]}" \
             --merged perf/results.json --out perf/report.md --run-url "${RUN_URL}"
+          echo "${PULL_NUMBER}" > perf/pull-request
 
       - name: Upload the results
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

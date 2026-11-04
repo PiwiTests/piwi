@@ -1,5 +1,6 @@
 name: CI
 
+# perf-comment.yml follows this workflow by its name.
 # Every check of a pull request and of main, behind one required check: CI result. The `changes` job reads which
 # areas the change touches, and each job runs for the areas it covers; a change to the workflows or to the Node
 # version runs them all. A pull request runs the dashboard E2E suite on two backends and the package smoke test on

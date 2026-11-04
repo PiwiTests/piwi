@@ -3,8 +3,9 @@ name: Performance comment
 # Posts a pull request's performance comparison (reusable-perf.yml) as one comment on it, updated on every push. It
 # runs once ci.yml's run of the pull request has completed, from the default branch, with a token that may comment: the
 # run of a pull request from a fork only gets a read-only one. It reads the report from that run's `perf-results`
-# artifact and runs nothing of the pull request. The comment goes to the open pull request whose head is the commit the
-# run measured, and to none once that pull request has moved to another commit.
+# artifact and runs nothing of the pull request. The artifact is the pull request's to write, so the comment goes only
+# to an open pull request whose head is still the commit the run measured, the one the artifact names when several
+# have it, and a report that is not one is skipped with a warning.
 on:
   workflow_run:
     workflows: [CI]
@@ -33,18 +34,37 @@ jobs:
 
     steps:
       # A run that did not measure (no change to the app, a failed build) has no report.
-      - name: Find the pull request and its report
-        id: find
+      - name: Look for the report
+        id: report
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
-            const run = context.payload.workflow_run;
             const { data } = await github.rest.actions.listWorkflowRunArtifacts({
               ...context.repo,
-              run_id: run.id,
+              run_id: context.payload.workflow_run.id,
               name: 'perf-results',
             });
             if (data.total_count === 0) return core.info('This run has no performance report.');
+            core.setOutput('found', 'true');
+
+      - name: Download the report
+        if: steps.report.outputs.found
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: perf-results
+          path: perf
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      # The marker must match COMMENT_MARKER in apps/application/scripts/perf/lib/markdown.mjs (perf-suite.test.ts).
+      - name: Comment on the pull request
+        if: steps.report.outputs.found
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('node:fs');
+            const marker = '<!-- piwi-perf-report -->';
+            const run = context.payload.workflow_run;
             const owner = run.head_repository?.owner?.login;
             if (!owner) return core.info('The head repository of this run no longer exists.');
             const pulls = await github.paginate(github.rest.pulls.list, {
@@ -53,32 +73,13 @@ jobs:
               head: `${owner}:${run.head_branch}`,
               per_page: 100,
             });
-            const pull = pulls.find((p) => p.head.sha === run.head_sha);
-            if (!pull) return core.info(`No open pull request has ${run.head_sha} as its head.`);
-            core.setOutput('number', String(pull.number));
-
-      - name: Download the report
-        if: steps.find.outputs.number
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: perf-results
-          path: perf
-          run-id: ${{ github.event.workflow_run.id }}
-          github-token: ${{ github.token }}
-
-      - name: Comment on the pull request
-        if: steps.find.outputs.number
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        env:
-          PULL_NUMBER: ${{ steps.find.outputs.number }}
-        with:
-          script: |
-            const fs = require('node:fs');
-            const marker = '<!-- piwi-perf-report -->';
+            const candidates = pulls.filter((p) => p.head.sha === run.head_sha).map((p) => p.number);
+            const named = fs.existsSync('perf/pull-request') ? Number(fs.readFileSync('perf/pull-request', 'utf8').trim()) : NaN;
+            const issue_number = candidates.includes(named) ? named : candidates.length === 1 ? candidates[0] : null;
+            if (issue_number == null) return core.info(`No single open pull request has ${run.head_sha} as its head.`);
             const body = fs.readFileSync('perf/report.md', 'utf8');
-            if (!body.startsWith(marker)) return core.setFailed('perf/report.md does not start with the report marker.');
-            const issue_number = Number(process.env.PULL_NUMBER);
+            if (!body.startsWith(marker)) return core.warning('perf/report.md does not start with the report marker.');
             const comments = await github.paginate(github.rest.issues.listComments, { ...context.repo, issue_number, per_page: 100 });
-            const mine = comments.find((c) => c.user?.type === 'Bot' && c.body?.startsWith(marker));
+            const mine = comments.find((c) => c.user?.login === 'github-actions[bot]' && c.body?.startsWith(marker));
             if (mine) await github.rest.issues.updateComment({ ...context.repo, comment_id: mine.id, body });
             else await github.rest.issues.createComment({ ...context.repo, issue_number, body });
