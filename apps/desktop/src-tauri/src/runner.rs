@@ -670,8 +670,9 @@ fn bundled_run_channel(port: u16, token: String, nonce: &str) -> Option<(String,
 
 /// The environment naming the bundled server as run `id`'s hub, and as where
 /// its tests' picks go ([`crate::hub_env::hub_env`]), read from the server as
-/// the run starts. `attended`: whether a person attends the run, whose
-/// failures the server may then hold for them.
+/// the run starts; the run's name alone when the server names no hub.
+/// `attended`: whether a person attends the run, whose failures the server may
+/// then hold for them.
 pub(crate) async fn bundled_hub_env(
     app: &AppHandle,
     id: u32,
@@ -682,7 +683,7 @@ pub(crate) async fn bundled_hub_env(
             app.try_state::<crate::mcp_clients::ServerInfo>(),
             app.try_state::<crate::LaunchNonce>(),
         ) else {
-            return Vec::new();
+            return crate::hub_env::hub_env(None, None, id, attended);
         };
         (server.port, server.token.clone(), nonce.0.clone())
     };
@@ -691,12 +692,8 @@ pub(crate) async fn bundled_hub_env(
             .await
             .ok()
             .flatten();
-    match found {
-        Some((channel, picks)) => {
-            crate::hub_env::hub_env(Some(channel.as_str()), picks.as_deref(), id, attended)
-        }
-        None => Vec::new(),
-    }
+    let (channel, picks) = found.unzip();
+    crate::hub_env::hub_env(channel.as_deref(), picks.flatten().as_deref(), id, attended)
 }
 
 /// Run `playwright test <args>` for `project_id` in its linked folder, using the
