@@ -122,8 +122,8 @@ headers of the project's Tests tab and the Spec health widget all follow this ru
 
 Other numbers about flakiness divide differently and are not a flaky rate: the [flakiness score](#flakiness-score), a
 run's share of flaky tests (the `flakiness.spike` notification), and Flake Lab's **flaky N%**, shown beside a flaky
-test in an editor and on Home. That one is the share of the test's recent runs (those the flaky ranking reads, a
-skipped run included) in which it failed or passed on a retry.
+test in an editor and on Home. That one is the share of the test's recent runs that passed or failed (those the
+flaky ranking reads) in which it failed or passed on a retry.
 
 ### Baseline (last green run)
 
@@ -284,7 +284,8 @@ A test case's **composite score** from two signals — retry passes (weighted 60
 across runs (40%), shown next to its overall failure rate — plus a **root-cause class** (timing, network, assertion,
 environment, order, other) and an **impact ranking** in wasted CI minutes. It's a property of the test case,
 computed over its execution history, which is why a test needs a few runs of history before it can be
-called flaky. See [Flaky tests](/features/flaky-tests).
+called flaky. Only the runs where the test passed or failed count: a skipped, did-not-run or interrupted result is
+neither a run nor a flip, so a test that never passed is never flaky. See [Flaky tests](/features/flaky-tests).
 
 ### Flake experiment
 

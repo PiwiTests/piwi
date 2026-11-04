@@ -116,8 +116,8 @@ and every other comparison between runs.
 
 ## From the editor and the failure pages
 
-- **In the [editor](./editors#the-tests-behind-each-line)**, a flaky test's line shows the share of its recent runs in
-  which it failed or passed on a retry, and its top suspect ("flaky 18% · top suspect: GET /api/cart slower (reproduced
+- **In the [editor](./editors#the-tests-behind-each-line)**, a flaky test's line shows the share of its recent passed or
+  failed runs in which it failed or passed on a retry, and its top suspect ("flaky 18% · top suspect: GET /api/cart slower (reproduced
   7 of 10)"), with **Reproduce this flake** and, once reproduced, **Verify the flake fix**, run in a terminal against
   the instance the editor reads. Beside a team instance, **Reproduce this flake in the desktop app** (also on a failure
   with an untested suspect) runs the instance's plan in the [desktop app](./desktop#jobs-from-your-editor) once you

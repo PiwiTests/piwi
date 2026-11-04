@@ -19,7 +19,8 @@ import { ATLASSIAN_API_GATEWAY } from '#shared/integrations/jira-setup';
 import type { TrackerField } from '#shared/integrations/fields';
 import type { TrackerIssueOption } from '#shared/integrations/types';
 import { jiraFieldToTrackerField, type JiraCreateMetaField } from './fields';
-import { isJiraIconPath, isTransientIconStatus, jiraAvatar, jiraIconPath, MAX_ICON_BYTES } from './icons';
+import { isJiraIconPath, jiraAvatar, jiraIconPath, MAX_ICON_BYTES } from './icons';
+import { isTransientImageStatus } from '../../public-image';
 import { createHash } from 'node:crypto';
 
 const JIRA_TIMEOUT_MS = 10_000;
@@ -412,7 +413,7 @@ export class JiraClient implements IssueTracker {
       headers: { Authorization: this.authHeader(), Accept: 'image/*' },
       signal: AbortSignal.timeout(this.timeoutMs),
     }));
-    if (isTransientIconStatus(response.status)) throw await toJiraError(response, 'Jira icon request failed');
+    if (isTransientImageStatus(response.status)) throw await toJiraError(response, 'Jira icon request failed');
     const mime = response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() ?? '';
     if (!response.ok || !mime.startsWith('image/')) return null;
     const bytes = new Uint8Array(await response.arrayBuffer());

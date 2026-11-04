@@ -989,7 +989,7 @@ export interface FlakeLabTest {
   lastExperimentAt: string | null;
   experiments: number;
   verifiedFix: VerifiedFix | null;
-  /** Share of the runs read in which it failed at least once (failed, or passed on a retry); null off the ranking. */
+  /** Share of the runs read where it passed or failed in which it failed at least once (failed, or passed on a retry); null off the ranking. */
   flakeRate: number | null;
   /**
    * With `suspects`, on the first tests that need a step: the suspect it is shown with (see

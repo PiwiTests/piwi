@@ -95,6 +95,16 @@ describe('computeEnvironmentDiff', () => {
     expect(diff).toEqual([{ key: 'channel', label: 'Browser channel', failing: 'chrome', baseline: null }]);
   });
 
+  test('a browser engine recorded on one side only is not a change', () => {
+    const unrecorded = snapshot({ browser: { ...browser, browserName: null } });
+    expect(computeEnvironmentDiff(snapshot(), unrecorded)).toEqual([]);
+    expect(computeEnvironmentDiff(unrecorded, snapshot())).toEqual([]);
+    const firefox = snapshot({ browser: { ...browser, browserName: 'firefox' } });
+    expect(computeEnvironmentDiff(firefox, snapshot())).toEqual([
+      { key: 'browserName', label: 'Browser', failing: 'firefox', baseline: 'chromium' },
+    ]);
+  });
+
   test('viewport changes are formatted as WxH', () => {
     const failing = snapshot({ browser: { ...browser, viewport: { width: 375, height: 667 } } });
     const diff = computeEnvironmentDiff(failing, snapshot());

@@ -28,6 +28,7 @@ import {
   renderAnsi,
   copyPreview,
   reportIcon,
+  browserIconName,
   getBrowserIcon,
   runPassRate,
 } from '../../app/utils/index';
@@ -485,5 +486,19 @@ describe('icon helpers', () => {
     expect(getBrowserIcon('firefox')).toBe('i-simple-icons-firefoxbrowser');
     expect(getBrowserIcon('webkit')).toBe('i-simple-icons-safari');
     expect(getBrowserIcon(null)).toBe('i-lucide-globe');
+  });
+
+  test('browserIconName reads the channel, then the engine, then the project name', () => {
+    expect(browserIconName({ projectName: 'Polaris', browserName: 'chromium' })).toBe('chromium');
+    expect(browserIconName({ projectName: 'Polaris', browserName: 'chromium', channel: 'msedge' })).toBe('msedge');
+    expect(browserIconName({ projectName: 'webkit' })).toBe('webkit');
+    expect(browserIconName({ projectName: 'Polaris', browserName: null, channel: null })).toBe('Polaris');
+    expect(browserIconName(null)).toBeNull();
+    expect(getBrowserIcon(browserIconName({ projectName: 'Polaris', browserName: 'chromium' }))).toBe(
+      'i-simple-icons-googlechrome',
+    );
+    expect(getBrowserIcon(browserIconName({ projectName: 'Edge', browserName: 'chromium', channel: 'msedge' }))).toBe(
+      'i-simple-icons-microsoftedge',
+    );
   });
 });

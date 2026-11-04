@@ -5,6 +5,7 @@ import { createTracker } from '../../../../utils/integrations/connections';
 import { requireConnectionAccess } from '../../../../utils/integrations/connection-access';
 import { fetchExternalAvatar, isExternalAvatarUrl, isJiraIconPath } from '../../../../utils/integrations/jira/icons';
 import { iconCache } from '../../../../utils/integrations/picker-cache';
+import { PUBLIC_IMAGE_HEADERS } from '../../../../utils/public-image';
 import { CONNECTION_NOT_FOUND } from '#shared/integrations/connection-access';
 
 defineRouteMeta({
@@ -44,12 +45,11 @@ export default eventHandler(async (event) => {
   }
   if (!icon) throw apiError({ statusCode: 404, message: 'Icon not found' });
 
+  // Jira serves most icons as SVG: the headers keep one opened on its own from running a script here.
   setResponseHeaders(event, {
     'Content-Type': icon.mime,
     'Cache-Control': 'private, max-age=86400',
-    'X-Content-Type-Options': 'nosniff',
-    // Jira serves most icons as SVG: opened on its own, one never runs a script here.
-    'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+    ...PUBLIC_IMAGE_HEADERS,
   });
   return Buffer.from(icon.bytes);
 });

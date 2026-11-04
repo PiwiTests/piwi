@@ -27,7 +27,7 @@ Every outbound connection Piwi can make:
 | Your SMTP server | Only if you configure [email notifications](/features/notifications) | Notification and account emails |
 | Slack or your webhook URLs | Only for subscriptions you create | The event payload (run status, cluster, test names, file paths, short error excerpts) |
 | Your S3 endpoint | Only if you switch [storage](/operate/storage) to S3 | Trace files, HTML reports, attachments |
-| Google / GitHub | Only if you enable [OAuth sign-in](/operate/authentication#oauth-google-github) | The standard OAuth exchange |
+| Google / GitHub | Only if you enable [OAuth sign-in](/operate/authentication#oauth-google-github) | OAuth exchange and profile picture |
 
 The reporter sends your instance what its options switch on. [Code reach](/features/code-reach) and
 [server coverage](/features/server-coverage), off by default, send repository-relative paths; line numbers and

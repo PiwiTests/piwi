@@ -212,7 +212,9 @@ export class MetadataCollector {
         if (project) {
           const use = project.use ?? {};
           const config: Record<string, any> = { projectName: project.name };
-          if (use.browserName) config.browserName = use.browserName;
+          // A `devices` preset names the engine as `defaultBrowserType`, which Playwright's `browserName` defaults to.
+          const browserName = use.browserName ?? use.defaultBrowserType;
+          if (browserName) config.browserName = browserName;
           if (use.channel) config.channel = use.channel;
           if (use.viewport) config.viewport = { width: use.viewport.width, height: use.viewport.height };
           if (use.deviceScaleFactor != null) config.deviceScaleFactor = use.deviceScaleFactor;

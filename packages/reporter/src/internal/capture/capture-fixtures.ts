@@ -3920,7 +3920,8 @@ export const piwiFixtures: Fixtures<
           project: testInfo.project.name,
         });
         if (role) {
-          const browserName = (testInfo.project.use as { browserName?: string } | undefined)?.browserName ?? null;
+          const use = testInfo.project.use as { browserName?: string; defaultBrowserType?: string } | undefined;
+          const browserName = use?.browserName ?? use?.defaultBrowserType ?? null;
           sink.flake = { plan, role, startedAt: Date.now(), browserName, conditions: null };
         }
       }
