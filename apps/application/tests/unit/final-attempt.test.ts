@@ -499,6 +499,24 @@ describe('a retry an older reporter sends without its attempt history', () => {
       expect(await flakyReadings(runId, 'pays')).toEqual(readEverywhere(false));
     });
 
+    test.each([
+      ['whole', ['failed', 'passed'], undefined],
+      ['in part', ['passed', 'passed'], [{ retry: 1, status: 'passed', duration: 7, startedAt: null }]],
+    ])(
+      'keeps a history the reporter sent %s once an earlier attempt that came with one is stored',
+      async (_name, statuses, sent) => {
+        const { runId, send } = await streams[ingest]();
+        const retry = attempt('pays', statuses, sent ? { attempts: sent } : {});
+        await send(retry);
+        const before = await verdicts(runId, 'pays');
+        await send(attempt('pays', statuses.slice(0, 1)));
+        await send(attempt('pays', statuses.slice(0, 1)));
+
+        expect((await histories('pays')).at(-1)).toEqual(retry.attempts);
+        expect(await verdicts(runId, 'pays')).toEqual(['0: false', ...before]);
+      },
+    );
+
     test('keeps a history the reporter sent whole', async () => {
       const { runId, send } = await streams[ingest]();
       const whole = [

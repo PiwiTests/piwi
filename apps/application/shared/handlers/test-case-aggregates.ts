@@ -50,7 +50,7 @@ function laterAttemptSql(row: Executions): SQL {
     )`;
 }
 
-/** Whether the result `row` is an attempt of holds a stored retry. */
+/** Whether a retry (`retries` above 0) of the same result as `row` is stored. */
 function storedRetrySql(row: Executions): SQL {
   return sql`EXISTS (
       SELECT 1 FROM ${testRunsCases} AS ${sql.identifier(LATER)}
@@ -99,10 +99,13 @@ function attemptOf(row: BatchAttempt): string {
  * - a stored retry of a result `rows` holds an attempt of is given the
  *   history `withAttemptHistory` builds from the result's stored attempts
  *   when it lists more of them than the stored one, so an attempt stored
- *   after its retry completes the retry's history, and its verdict with it,
- *   whether that attempt came with a history or not (`withoutHistory`, the
- *   rows `fillAttemptHistories` found without one). A history the reporter
- *   sent whole lists every attempt and is kept, as is one the batch carries.
+ *   after its retry completes the retry's history, and its verdict with it.
+ *   A retry stored with a history keeps it unless the batch holds an attempt
+ *   of its result without one (`withoutHistory`, the rows
+ *   `fillAttemptHistories` found without a history: their reporter sends
+ *   none, so the server built the result's stored histories). A history the
+ *   reporter sent whole lists every attempt and is kept, as is one the batch
+ *   carries.
  * Every write of `test_runs_cases` calls it after its insert with every row of
  * its batch, so sending a batch again repairs both: `persistRunCases` on the
  * server and in the demo. The stored attempts of the results of `rows` that
@@ -150,6 +153,7 @@ async function completeAttemptHistories(
 ): Promise<void> {
   const results = new Set(rows.map(resultOf));
   const bare = new Set(withoutHistory);
+  const bareResults = new Set(withoutHistory.map(resultOf));
   const carried = new Set(rows.filter((row) => !bare.has(row)).map(attemptOf));
   const tests = [...new Set(rows.map((row) => row.testCaseId))];
   for (let i = 0; i < tests.length; i += SETTLE_CHUNK) {
@@ -180,7 +184,8 @@ async function completeAttemptHistories(
     for (const row of rebuilt) {
       if ((row.retries ?? 0) === 0 || carried.has(attemptOf(row)) || !Array.isArray(row.attempts)) continue;
       const attempts = row.attempts.slice(0, MAX_HISTORY_ENTRIES);
-      if (attempts.length <= listed.get(row.id)!) continue;
+      const stored = listed.get(row.id)!;
+      if (attempts.length <= stored || (stored > 0 && !bareResults.has(resultOf(row)))) continue;
       await db
         .update(testRunsCases)
         .set({ attempts, passedAfterFailure: row.finalAttempt && isFlakyExecution({ ...row, attempts }) })
@@ -222,8 +227,8 @@ function lacksHistory(attempts: unknown): boolean {
  * retry lacks a history. Returns the rows that came without a history, which
  * `settleFinalAttempts` tells apart from the histories the batch carries when
  * it completes the stored histories, and the verdicts, of their results.
- * Every write of `test_runs_cases` calls it before its
- * insert: `persistRunCases` on the server and in the demo.
+ * Every write of `test_runs_cases` calls it before its insert:
+ * `persistRunCases` on the server and in the demo.
  */
 export async function fillAttemptHistories(
   db: DrizzleDB,
