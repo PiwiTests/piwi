@@ -27,9 +27,10 @@ design record these rules follow, with its measurements: [`adr/ci-workflows.md`]
   it. A job that calls a reusable workflow grants the permissions its jobs ask for: a called job asking for more fails
   the run. `id-token: write` only where a step uses it (npm provenance, Visual Studio Marketplace Trusted Publishing).
 - **A pull request from a fork runs `ci.yml` with a read-only token.** A comment that must reach those pull requests
-  goes in an artifact, posted by a `workflow_run` workflow that reads it and runs nothing of the pull request
-  (`perf-comment.yml`, which finds `ci.yml` by its `name`). The coverage comments of `app-unit` and `reporter` post
-  from `ci.yml`, so they reach same-repository pull requests only.
+  goes in an artifact, posted by a `workflow_run` workflow (`perf-comment.yml`, which finds `ci.yml` by its `name`)
+  that checks out nothing, interpolates no artifact or head field into a script, and posts only on an open pull
+  request whose head is the measured commit. The coverage comments of `app-unit` and `reporter` post from `ci.yml`,
+  so they reach same-repository pull requests only.
 - **Publish only from a release tag.** A publishing step runs when `github.ref` is a `v*` tag (`TAG_BUILD`), or `main`
   for the `edge` image. Anywhere else the workflow builds and packs, so a pull request can run it.
 - **Publishing secrets reach a release tag only.** A `reusable-publish-*.yml` declares the secrets it uses
@@ -88,4 +89,5 @@ design record these rules follow, with its measurements: [`adr/ci-workflows.md`]
   every target builds and packs, and nothing is published.
 - **The other workflows never run on a pull request** (`docs.yml`, `edge.yml`, `release-please.yml`,
   `release-notes.yml`, `live-jira.yml`, `nightly-vscode.yml`, `nightly-showcase.yml`, and `perf-comment.yml`, which
-  runs from the default branch only): actionlint is the only check a change to them gets before it merges.
+  runs from the default branch only): actionlint is the only check a change to them gets before it merges, with
+  `perf-suite.test.ts` for `perf-comment.yml`'s marker and the workflow name it follows.

@@ -1,11 +1,11 @@
 name: CI
 
-# perf-comment.yml follows this workflow by its name.
 # Every check of a pull request and of main, behind one required check: CI result. The `changes` job reads which
 # areas the change touches, and each job runs for the areas it covers; a change to the workflows or to the Node
 # version runs them all. A pull request runs the dashboard E2E suite on two backends and the package smoke test on
 # Linux; main runs every backend and every system, and the JetBrains Plugin Verifier on every IDE. The extension,
 # VS Code and desktop suites and the container image check run on pull requests only.
+# perf-comment.yml follows this workflow by its name (`workflows: [CI]`).
 on:
   pull_request:
   push:
@@ -1003,8 +1003,6 @@ jobs:
     needs: [changes, build, perf-base]
     if: needs.changes.outputs.app == 'true' && github.event_name == 'pull_request'
     uses: ./.github/workflows/reusable-perf.yml
-    permissions:
-      contents: read
 
   # The one check branch protection requires: it fails when any job above failed or was cancelled, and passes when
   # each one passed or was skipped because the change does not touch its area.

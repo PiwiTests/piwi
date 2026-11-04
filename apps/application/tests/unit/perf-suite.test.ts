@@ -236,9 +236,13 @@ describe('performance report', () => {
     expect(md).toContain('163 → 24');
   });
 
-  it('starts with the marker perf-comment.yml finds its comment by', () => {
-    const workflow = readFileSync(new URL('../../../../.github/workflows/perf-comment.yml', import.meta.url), 'utf8');
-    expect(workflow).toContain(`const marker = '${COMMENT_MARKER}';`);
+  it('is the report perf-comment.yml posts: the same marker, after the workflow it follows', () => {
+    const workflows = new URL('../../../../.github/workflows/', import.meta.url);
+    const comment = readFileSync(new URL('perf-comment.yml', workflows), 'utf8');
+    const ci = readFileSync(new URL('ci.yml', workflows), 'utf8');
+    expect(comment).toContain(`const marker = '${COMMENT_MARKER}';`);
+    expect(comment).toContain('workflows: [CI]');
+    expect(ci.startsWith('name: CI\n')).toBe(true);
   });
 
   it('stays under the size GitHub accepts for a comment', () => {
