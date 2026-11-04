@@ -82,8 +82,9 @@ merge keeps the branch's history as stable as it can:
 ## `test_runs_cases`: one row per attempt, project and repetition
 
 A row is one attempt of a test, in one Playwright project and one `--repeat-each` repetition: the unique key is
-`(test_run_id, test_case_id, repeat_each_index, retries, browser_name)`. A repetition is a test result of its own with
-its own retries, as in Playwright, and a row without one reads `repeat_each_index` 0.
+`(test_run_id, test_case_id, repeat_each_index, retries, browser_name)`, with a NULL `browser_name` (an execution
+without a project) read as `''`, so a batch sent again stores no row twice. A repetition is a test result of its own
+with its own retries, as in Playwright, and a row without one reads `repeat_each_index` 0.
 
 - **Read the rows through `shared/utils/test-counts.ts`**: a run's counters with `distinctRunCountsFromAttempts` (each
   repetition counts once), each repetition's last attempt with `finalAttempts`, a test's outcome in a run with

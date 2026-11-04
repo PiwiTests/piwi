@@ -101,9 +101,10 @@ async function seedRun(seed: RunSeed): Promise<number> {
     .returning({ id: schema.testRuns.id });
   if (seed.cases?.length) {
     await db.insert(schema.testRunsCases).values(
-      seed.cases.map((c) => ({
+      seed.cases.map((c, i) => ({
         testRunId: row!.id,
         testCaseId: 1,
+        repeatEachIndex: i,
         status: c.status,
         duration: c.duration,
         wastedTimeMs: c.wastedTimeMs ?? 0,

@@ -160,6 +160,7 @@ describe('run_execution_diagnosis', () => {
       id: 2,
       testRunId: 1,
       testCaseId: 1,
+      repeatEachIndex: 1,
       status: 'failed',
       error: 'Error: page crashed',
     });
@@ -171,7 +172,9 @@ describe('run_execution_diagnosis', () => {
   });
 
   test('refuses an execution that did not fail, without calling the model', async () => {
-    await db.insert(schema.testRunsCases).values({ id: 3, testRunId: 1, testCaseId: 1, status: 'passed' });
+    await db
+      .insert(schema.testRunsCases)
+      .values({ id: 3, testRunId: 1, testCaseId: 1, repeatEachIndex: 1, status: 'passed' });
     await expect(tool('run_execution_diagnosis')(db as never, { executionId: 3 }, maintainer)).rejects.toThrow(
       'Execution 3 did not fail: there is nothing to diagnose',
     );

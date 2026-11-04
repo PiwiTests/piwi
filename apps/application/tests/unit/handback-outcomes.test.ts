@@ -70,10 +70,14 @@ async function insertRun(opts: { origin?: string; status?: string; startTime?: D
   return id;
 }
 
+/** The project an execution's `browser` names, which ingest stores as its `browserName`. */
+const projectOf = (extra: Record<string, unknown>) =>
+  (extra.browser as { projectName?: string } | undefined)?.projectName ?? null;
+
 async function insertCase(runId: number, testCaseId: number, status: string, extra: Record<string, unknown> = {}) {
   const [row] = await db
     .insert(schema.testRunsCases)
-    .values({ testRunId: runId, testCaseId, status, ...extra })
+    .values({ testRunId: runId, testCaseId, status, browserName: projectOf(extra), ...extra })
     .returning({ id: schema.testRunsCases.id });
   return row!.id;
 }

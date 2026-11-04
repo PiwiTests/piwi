@@ -551,7 +551,7 @@ describe('move_tests_to_new_cluster', () => {
   beforeEach(async () => {
     await db
       .insert(schema.testRunsCases)
-      .values({ testRunId: 1, testCaseId: 2, status: 'failed', failureClusterId: 1 });
+      .values({ testRunId: 1, testCaseId: 2, repeatEachIndex: 1, status: 'failed', failureClusterId: 1 });
     await db.update(schema.failureClusters).set({ occurrences: 2 }).where(eq(schema.failureClusters.id, 1));
   });
 

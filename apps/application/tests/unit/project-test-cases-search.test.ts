@@ -50,6 +50,7 @@ async function seedCase(seed: CaseSeed): Promise<void> {
   await db.insert(schema.testRunsCases).values({
     testRunId: 1,
     testCaseId: inserted[0]!.id,
+    repeatEachIndex: 1,
     status: 'passed',
     duration: 100,
     line: at.line + 500,
