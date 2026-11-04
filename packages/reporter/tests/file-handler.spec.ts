@@ -59,6 +59,27 @@ describe('FileHandler.findAllAttachments', () => {
     handler.cleanupBodyAttachments();
   });
 
+  it('names a title that ends in a dot or holds an ellipsis without a `..`', () => {
+    const handler = new FileHandler(logger);
+    const png = { contentType: 'image/png', body: Buffer.from('png') };
+    const tc = testCase([
+      { name: 'Step 13: Click Generate new code | Expected: The new code is not the expired one.', ...png },
+      { name: 'Step 3: Read the dialog as it starts | Expected: It shows "Generating code...".', ...png },
+      { name: 'build v1...v2 diff', contentType: 'text/plain', body: Buffer.from('a') },
+      { name: '..', contentType: 'application/octet-stream', body: Buffer.from('a') },
+      { name: '.env', contentType: 'text/plain', body: Buffer.from('a') },
+    ]);
+
+    expect(handler.findAllAttachments(tc).map((a) => a.originalName)).toEqual([
+      'Step-13-Click-Generate-new-code-Expected-The-new-code-is-not-the-expired-one.png',
+      'Step-3-Read-the-dialog-as-it-starts-Expected-It-shows-Generating-code.png',
+      'build-v1.v2-diff.txt',
+      'attachment',
+      'env.txt',
+    ]);
+    handler.cleanupBodyAttachments();
+  });
+
   it('reuses one temp file across repeated lookups of the same attachment', () => {
     const handler = new FileHandler(logger);
     const tc = testCase([{ name: 'note', contentType: 'text/plain', body: Buffer.from('hello') }]);
