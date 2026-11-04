@@ -110,7 +110,9 @@ test.beforeAll(() => selectors.register('tag', () => ({
   queryAll: (root, name) => Array.from(root.querySelectorAll(name)),
 })));
 // A window just opened has no image to take until it shows a frame: its first contentful paint, which Chromium marks
-// once that frame is shown.
+// once that frame is shown, as the display server takes it: a test that waits for it, and the setup of its window, has
+// \`PAINT_TIMEOUT\`.
+const PAINT_TIMEOUT = 15_000;
 const painted = (page) => page.evaluate(() => new Promise((resolve) => new PerformanceObserver((list, observer) => {
   if (!list.getEntriesByName('first-contentful-paint').length) return;
   observer.disconnect();
@@ -142,28 +144,31 @@ test('checks an element', async ({ page }) => {
   await page.goto('${base}/a');
   await page.keyboard.press('Tab'); // bp
 });
-test('takes every outline down', async ({ page }) => {
-  await page.goto('${base}/a');
-  await painted(page);
-  const before = await page.screenshot({ caret: 'initial' });
-  await expect(page.getByTestId('go')).toBeVisible(); // bp
-  const styled = await page.evaluate(() => document.querySelectorAll('input[style], textarea[style], [contenteditable][style]').length);
-  const glass = await glassIn(page);
-  const after = await page.screenshot({ caret: 'initial' });
-  test.info().annotations.push({ type: 'same', description: String(before.equals(after)) });
-  test.info().annotations.push({ type: 'styled', description: String(styled) });
-  test.info().annotations.push({ type: 'glass', description: String(glass) });
-});
-test('keeps the test’s own highlight', async ({ page }) => {
-  await page.goto('${base}/a');
-  await page.getByTestId('go').highlight();
-  await painted(page);
-  const before = await page.screenshot({ caret: 'initial' });
-  await page.keyboard.press('Shift'); // bp
-  await expect(page.getByTestId('go')).toBeVisible(); // bp
-  const after = await page.screenshot({ caret: 'initial' });
-  test.info().annotations.push({ type: 'same', description: String(before.equals(after)) });
-  test.info().annotations.push({ type: 'glass', description: String(await glassIn(page)) });
+test.describe(() => {
+  test.describe.configure({ timeout: PAINT_TIMEOUT });
+  test('takes every outline down', async ({ page }) => {
+    await page.goto('${base}/a');
+    await painted(page);
+    const before = await page.screenshot({ caret: 'initial' });
+    await expect(page.getByTestId('go')).toBeVisible(); // bp
+    const styled = await page.evaluate(() => document.querySelectorAll('input[style], textarea[style], [contenteditable][style]').length);
+    const glass = await glassIn(page);
+    const after = await page.screenshot({ caret: 'initial' });
+    test.info().annotations.push({ type: 'same', description: String(before.equals(after)) });
+    test.info().annotations.push({ type: 'styled', description: String(styled) });
+    test.info().annotations.push({ type: 'glass', description: String(glass) });
+  });
+  test('keeps the test’s own highlight', async ({ page }) => {
+    await page.goto('${base}/a');
+    await page.getByTestId('go').highlight();
+    await painted(page);
+    const before = await page.screenshot({ caret: 'initial' });
+    await page.keyboard.press('Shift'); // bp
+    await expect(page.getByTestId('go')).toBeVisible(); // bp
+    const after = await page.screenshot({ caret: 'initial' });
+    test.info().annotations.push({ type: 'same', description: String(before.equals(after)) });
+    test.info().annotations.push({ type: 'glass', description: String(await glassIn(page)) });
+  });
 });
 test('keeps the test’s own highlight through a new document', async ({ page }) => {
   await page.goto('${base}/a');

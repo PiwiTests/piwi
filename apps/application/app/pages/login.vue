@@ -16,6 +16,12 @@ const state = reactive({
 const loading = ref(false);
 const error = ref('');
 
+// The account a password was just set for: `/reset-password` hands its username over in the history entry's state.
+onMounted(() => {
+  const handedOver = (window.history.state as { username?: unknown } | null)?.username;
+  if (typeof handedOver === 'string' && !state.username) state.username = handedOver;
+});
+
 // Where to land after signing in: a same-origin path handed over by a link
 // that needed a session first (the reporter's per-failure links), else home.
 function redirectTarget(): string {

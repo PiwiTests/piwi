@@ -35,18 +35,17 @@ function sameResult(other: Executions, row: Executions): SQL {
 
 /**
  * Whether the same run, test, project and repetition as `row` holds a later
- * attempt than `row`: one with more retries, or as many and a higher id. Only
- * a retry, or an attempt without a project (the one row the unique index lets
- * repeat), can be another row's later attempt, so the lookup reads only those.
- * The `backfill_final_attempt` migrations hold the same SQL.
+ * attempt than `row`: one with more retries. The unique index
+ * `idx_test_runs_cases_run_browser` stores each attempt once, an attempt
+ * without a project included, so only a retry can be another row's later
+ * attempt.
  */
 function laterAttemptSql(row: Executions): SQL {
   return sql`EXISTS (
       SELECT 1 FROM ${testRunsCases} AS ${sql.identifier(LATER)}
-      WHERE (${later.retries} > 0 OR ${later.browserName} IS NULL)
+      WHERE ${later.retries} > 0
         AND ${sameResult(later, row)}
-        AND (COALESCE(${later.retries}, 0) > COALESCE(${row.retries}, 0)
-          OR (COALESCE(${later.retries}, 0) = COALESCE(${row.retries}, 0) AND ${later.id} > ${row.id}))
+        AND ${later.retries} > COALESCE(${row.retries}, 0)
     )`;
 }
 

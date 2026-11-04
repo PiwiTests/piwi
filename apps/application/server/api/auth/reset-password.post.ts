@@ -12,7 +12,7 @@ defineRouteMeta({
     tags: ['Auth'],
     summary: 'Reset password using token',
     description:
-      'Validates a single-use reset/invite token, sets the new password, and invalidates existing sessions. A token sent to an address the account no longer holds is refused (400).',
+      'Validates a single-use reset/invite token, sets the new password, and invalidates existing sessions. Returns the username of the account, for the sign-in form. A token sent to an address the account no longer holds is refused (400).',
     security: [],
   },
 });
@@ -56,7 +56,7 @@ export default eventHandler(async (event) => {
     .update(users)
     .set({ password: hashedPassword, updatedAt: new Date(), ...extraFields })
     .where(and(eq(users.id, validated.userId), eq(users.email, validated.email)))
-    .returning({ id: users.id });
+    .returning({ id: users.id, username: users.username });
   if (!updated.length) throw apiError({ statusCode: 400, message: 'Invalid or expired token' });
 
   // Revoke every existing session for this account so a stolen session cannot
@@ -65,5 +65,5 @@ export default eventHandler(async (event) => {
   await clearUserSession(event).catch(() => {});
 
   console.info('[auth/reset-password] Password reset for user %d', validated.userId);
-  return { success: true };
+  return { success: true, username: updated[0]!.username };
 });

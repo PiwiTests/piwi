@@ -17,6 +17,8 @@ import { resolvePlaywrightCli, spawnPlaywright } from '../internal/support/playw
 const EXIT_OK = 0;
 const EXIT_RUN_FAILED = 1;
 const EXIT_ERROR = 2;
+/** The lowest exit code of a Playwright stopped by a signal, as `spawnPlaywright` reports it. */
+const STOPPED_BY_SIGNAL = 128;
 const REQUEST_TIMEOUT_MS = 30_000;
 
 const USAGE = `
@@ -40,8 +42,9 @@ Options:
 
 Exit codes: 0 printed or written (and, when run, the test behaved as its
 test.fail() expects: the bug reproduces), 1 the run did not (the bug may be
-fixed, or a step no longer matches the page), 2 the report could not be read
-or the file could not be written.
+fixed, or a step no longer matches the page), 2 the report could not be read,
+the file could not be written, or Playwright could not start or was stopped
+by a signal.
 `.trim();
 
 export interface BugArgs {
@@ -223,6 +226,7 @@ export async function runBug(
 
   const code = await runPlaywright(file, cwd, args.id, env);
   if (code === EXIT_ERROR && !resolvePlaywrightCli(cwd)) return EXIT_ERROR;
+  if (code >= STOPPED_BY_SIGNAL) return EXIT_ERROR;
   if (code === 0) {
     console.error(
       args.mode === 'commit'

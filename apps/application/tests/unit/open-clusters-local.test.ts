@@ -58,6 +58,7 @@ async function cluster(projectId: number, signature: string, runIds: number[]): 
     await db.insert(schema.testRunsCases).values({
       testRunId,
       testCaseId: projectId,
+      repeatEachIndex: row!.id,
       status: 'failed',
       error: signature,
       failureClusterId: row!.id,

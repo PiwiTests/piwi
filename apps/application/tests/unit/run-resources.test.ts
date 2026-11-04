@@ -297,7 +297,7 @@ describe('getRunResourceTimeline', () => {
     const leaky = demoExecutionResources({ seq: 2, durationMs: 9000, openAtStart: 3, leaky: true });
     await db.insert(schema.testRunsCases).values([
       { id: 11, testRunId: 7, testCaseId: 1, status: 'passed', resources: leaky },
-      { id: 12, testRunId: 7, testCaseId: 1, status: 'passed' },
+      { id: 12, testRunId: 7, testCaseId: 1, repeatEachIndex: 1, status: 'passed' },
     ]);
     const { executions } = (await getRunResourceTimeline(db as any, 7))!;
     const roles = Object.values(leaky.roles!);

@@ -11,11 +11,11 @@
  */
 import { test, expect } from './fixtures';
 import type { APIRequestContext } from '@playwright/test';
-import { spawn, type ChildProcess } from 'node:child_process';
-import { createWriteStream, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { PROJECT } from '#shared/test-project-names';
 import type { AssistantConversation, AssistantStatus } from '#shared/assistant';
+import { startSpawnedServer, type SpawnedServer } from './utils/spawned-server';
 
 const PORT = 3104;
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -25,61 +25,7 @@ const recordPath = join(tempDir, 'fake-claude-record.json');
 
 test.describe.configure({ mode: 'serial' });
 
-let server: ChildProcess | null = null;
-
-/** CI runs the production output it built; locally a dev server compiles on demand. */
-function startServer(): ChildProcess {
-  rmSync(tempDir, { recursive: true, force: true });
-  mkdirSync(join(tempDir, 'storage'), { recursive: true });
-  const [command, args] = process.env.CI
-    ? ['node', ['.output/server/index.mjs']]
-    : ['npx', ['nuxt', 'dev', '--port', String(PORT)]];
-  const child = spawn(command, args, {
-    env: {
-      ...process.env,
-      NITRO_PORT: String(PORT),
-      PORT: String(PORT),
-      PIWI_DESKTOP_TOKEN: DESKTOP_TOKEN,
-      PIWI_CLAUDE_CLI_PATH: resolve('tests', 'fixtures', 'fake-claude.mjs'),
-      CLAUDE_FAKE_RECORD: recordPath,
-      PIWI_DATABASE_PATH: join(tempDir, 'piwi.db'),
-      PIWI_DATABASE_URL: '',
-      PIWI_STORAGE_TYPE: 'local',
-      PIWI_STORAGE_PATH: join(tempDir, 'storage'),
-      PIWI_BUILD_DIR: join(tempDir, 'nuxt-build'),
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
-    detached: process.platform !== 'win32',
-  });
-  const log = createWriteStream(join(tempDir, 'server.log'));
-  child.stdout?.pipe(log);
-  child.stderr?.pipe(log);
-  return child;
-}
-
-async function waitForServer(timeoutMs: number) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (server && server.exitCode !== null) throw new Error(`The server exited; see ${join(tempDir, 'server.log')}`);
-    try {
-      if ((await fetch(`${BASE}/api/health`)).ok) return;
-    } catch {
-      // Not listening yet.
-    }
-    await new Promise((r) => setTimeout(r, 1000));
-  }
-  throw new Error(`The server did not answer within ${timeoutMs / 1000} s; see ${join(tempDir, 'server.log')}`);
-}
-
-function stopServer() {
-  if (!server?.pid || server.exitCode !== null) return;
-  try {
-    if (process.platform === 'win32') server.kill();
-    else process.kill(-server.pid, 'SIGTERM');
-  } catch {
-    // Already gone.
-  }
-}
+let server: SpawnedServer | null = null;
 
 /** The events of a Server-Sent Events body, in order. */
 function parseEvents(body: string): Array<{ event: string; data: any }> {
@@ -97,14 +43,22 @@ test.describe('Assistant with the Claude Code CLI', () => {
 
   test.beforeAll(async ({ playwright }) => {
     test.setTimeout(6 * 60_000);
-    server = startServer();
-    await waitForServer(5 * 60_000);
+    server = startSpawnedServer({
+      port: PORT,
+      tempDir,
+      env: {
+        PIWI_DESKTOP_TOKEN: DESKTOP_TOKEN,
+        PIWI_CLAUDE_CLI_PATH: resolve('tests', 'fixtures', 'fake-claude.mjs'),
+        CLAUDE_FAKE_RECORD: recordPath,
+      },
+    });
+    await server.ready(5 * 60_000);
     api = await playwright.request.newContext({ baseURL: BASE, extraHTTPHeaders: { 'x-piwi-token': DESKTOP_TOKEN } });
   });
 
   test.afterAll(async () => {
     await api?.dispose();
-    stopServer();
+    await server?.stop();
   });
 
   test('one CLI run answers through the endpoint and token minted for the answer', async ({ playwright }) => {

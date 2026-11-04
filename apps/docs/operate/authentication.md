@@ -130,8 +130,8 @@ Signed-in users link a provider from **Settings → Account → Connected accoun
 
 Administrators manage accounts under **Settings → Users** (`/settings/users`). **Add user** creates one with a
 username, an instance role, an optional display name and email, and a password. Without one, the row's **Send invite email**
-button mails the user a link to set their own. Each row shows the user's instance role and the
-[groups](./project-access#groups) they belong to.
+button mails the user a link to set their own. Each row shows the user's instance role and
+[groups](./project-access#groups).
 
 **Settings → Account** takes a profile picture: PNG, JPEG or WebP, under 1 MB, at most 1000×1000 pixels. It replaces
 the provider's; administrators can remove it.
@@ -143,13 +143,14 @@ finds such duplicates stops until an administrator fixes them: see
 
 A link Piwi emails, to verify an address, accept an invite or reset a password, works only while the account still
 holds the address it was sent to. Once the address changes, by its owner, an administrator or a provider sign-in, the
-links already sent are refused: send a new one to the new address.
+links already sent are refused: resend to the new address.
 
 ### Email and account recovery
 
 Invitations, address verification and **Forgot password?** send email, so they need
 [SMTP](/features/notifications#smtp-configuration). Without it, invites and verification links are refused, and
-**Forgot password?** says a link was sent but sends nothing.
+**Forgot password?** says a link was sent but sends nothing. Invite and reset emails name the sign-in
+username.
 
 No administrator can set another account's password: a locked-out account recovers through **Forgot password?**, which
 needs SMTP and an email address on the account. Give every administrator an email address, or keep two, so one can

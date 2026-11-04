@@ -123,7 +123,9 @@ describe('getExecutionBugReport', () => {
   });
 
   test('a passing execution’s only screenshot is not the failure screenshot', async () => {
-    await db.insert(schema.testRunsCases).values([{ id: 8, testRunId: 1, testCaseId: 1, status: 'passed' }]);
+    await db
+      .insert(schema.testRunsCases)
+      .values([{ id: 8, testRunId: 1, testCaseId: 1, repeatEachIndex: 1, status: 'passed' }]);
     await db
       .insert(schema.files)
       .values([

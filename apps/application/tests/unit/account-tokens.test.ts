@@ -124,7 +124,10 @@ describe('POST /api/auth/reset-password', () => {
   test('an invite accepted at the address it was sent to sets the password and verifies the address', async () => {
     const token = await mintAccountToken(db, 1, 'invite', ALICE);
 
-    expect(await resetPassword({ body: { token, password: 'new-password' } })).toEqual({ success: true });
+    expect(await resetPassword({ body: { token, password: 'new-password' } })).toEqual({
+      success: true,
+      username: 'alice',
+    });
 
     expect(await account()).toMatchObject({ password: 'hashed:new-password', emailVerified: true });
   });
@@ -167,7 +170,10 @@ describe('POST /api/auth/reset-password', () => {
     expect(state.released).toEqual(['reset:test']);
     state.hashBusy = false;
 
-    expect(await resetPassword({ body: { token, password: 'new-password' } })).toEqual({ success: true });
+    expect(await resetPassword({ body: { token, password: 'new-password' } })).toEqual({
+      success: true,
+      username: 'alice',
+    });
 
     expect(await account()).toMatchObject({ password: 'hashed:new-password' });
   });
@@ -215,7 +221,10 @@ describe('POST /api/auth/reset-password', () => {
     });
     await changeEmail(ALICE);
 
-    expect(await resetPassword({ body: { token, password: 'new-password' } })).toEqual({ success: true });
+    expect(await resetPassword({ body: { token, password: 'new-password' } })).toEqual({
+      success: true,
+      username: 'alice',
+    });
 
     expect(await account()).toMatchObject({ password: 'hashed:new-password' });
   });
