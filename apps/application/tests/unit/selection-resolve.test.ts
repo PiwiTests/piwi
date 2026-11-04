@@ -4,6 +4,7 @@ import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { migrateToLatest } from './temp-db';
 import { withStoredVerdicts } from './stored-verdicts';
+import type { SelectionDefinition, SelectionPredicateGroup } from '../../shared/selection';
 
 // Counts the file globs compiled, the real matcher behind them.
 const glob = vi.hoisted(() => ({ compiled: 0 }));
@@ -28,6 +29,8 @@ const {
   updateSelection,
   deleteSelection,
   SelectionError,
+  loadSelectionCatalog,
+  catalogNeeds,
 } = await import('../../shared/handlers/selections');
 const { addQuarantine } = await import('../../shared/handlers/quarantine');
 
@@ -362,6 +365,104 @@ describe('fail-fast order', () => {
     expect(failFast.tests.map((t) => t.testCaseId)).toEqual([broken, flaky, reliable]);
     // Same tests, different order → identical hash.
     expect(failFast.resolvedHash).toBe(plain.resolvedHash);
+  });
+});
+
+describe('the least catalog a definition needs', () => {
+  test('loads the history aggregates and the fail ranks only for a definition that reads them', () => {
+    expect(catalogNeeds([{ include: [{ lastStatus: ['failed'] }] }])).toEqual({
+      withFailRanks: false,
+      withAggregates: false,
+    });
+    expect(catalogNeeds([{ include: [{ failedInLastRuns: 3 }] }])).toEqual({
+      withFailRanks: true,
+      withAggregates: false,
+    });
+    expect(catalogNeeds([{ include: [{ tags: ['smoke'] }], budget: { rankBy: 'priority' } }])).toEqual({
+      withFailRanks: false,
+      withAggregates: true,
+    });
+    expect(catalogNeeds([{ include: [{ tags: ['smoke'] }] }, { exclude: [{ neverRun: true }] }])).toEqual({
+      withFailRanks: false,
+      withAggregates: true,
+    });
+  });
+
+  /** A project whose tests each answer a different predicate. */
+  async function seedMixedProject() {
+    const solid = await seedCase('solid', { tags: ['smoke'], owner: 'team-a', priority: 'high', feature: 'cart' });
+    await seedExecution(solid, 'passed', { duration: 100, line: 11 });
+    await seedExecution(solid, 'passed', { duration: 100, line: 12 });
+    const flaky = await seedCase('flaky', { suitePath: 'Checkout', filePath: 'tests/checkout.spec.ts' });
+    await seedExecution(flaky, 'failed', { duration: 5000, line: 21 });
+    await seedExecution(flaky, 'passed', { retries: 1, duration: 5000, line: 22 });
+    const broken = await seedCase('broken', { tags: ['auth'] });
+    await seedExecution(broken, 'passed', { duration: 800, line: 31 });
+    await seedExecution(broken, 'failed', { duration: 800, line: 32 });
+    const quarantined = await seedCase('quarantined');
+    await seedExecution(quarantined, 'passed', { duration: 300, line: 41 });
+    await addQuarantine(db, 1, quarantined);
+    const fresh = await seedCase('fresh');
+    return { solid, flaky, broken, quarantined, fresh };
+  }
+
+  test('resolves every predicate to the same tests as the whole catalog', async () => {
+    const t = await seedMixedProject();
+    const examples: Record<keyof SelectionPredicateGroup, SelectionPredicateGroup> = {
+      ids: { ids: [t.solid, t.fresh] },
+      tags: { tags: ['smoke'] },
+      anyTags: { anyTags: ['smoke', 'auth'] },
+      owner: { owner: ['team-a'] },
+      priority: { priority: ['high'] },
+      feature: { feature: ['cart'] },
+      files: { files: ['tests/checkout*'] },
+      suitePath: { suitePath: 'check' },
+      text: { text: 'brok' },
+      quarantined: { quarantined: true },
+      flaky: { flaky: true },
+      minPassRate: { minPassRate: 1 },
+      maxPassRate: { maxPassRate: 0.5 },
+      minAvgDurationMs: { minAvgDurationMs: 1000 },
+      maxAvgDurationMs: { maxAvgDurationMs: 500 },
+      lastStatus: { lastStatus: ['failed'] },
+      failedInLastRuns: { failedInLastRuns: 1 },
+      neverRun: { neverRun: true },
+    };
+    const definitions: SelectionDefinition[] = Object.values(examples).flatMap((group) => [
+      { include: [group] },
+      { exclude: [group] },
+    ]);
+    definitions.push({ budget: { maxTotalDurationMs: 1000 } }, { budget: { rankBy: 'slowest' }, limit: 2 });
+
+    const ids = (r: Awaited<ReturnType<typeof resolveSelectionDefinition>>) => r.tests.map((x) => x.testCaseId);
+    for (const definition of definitions) {
+      const whole = await resolveSelectionDefinition(db, 1, definition);
+      const catalog = await loadSelectionCatalog(db, 1, catalogNeeds([definition]));
+      const least = await resolveSelectionDefinition(db, 1, definition, { catalog });
+      expect(ids(least), JSON.stringify(definition)).toEqual(ids(whole));
+      // Each example keeps some tests and leaves others out, so a fact the least catalog lacks shows.
+      expect(ids(whole).length, JSON.stringify(definition)).toBeGreaterThan(0);
+      expect(ids(whole).length, JSON.stringify(definition)).toBeLessThan(5);
+    }
+  });
+
+  test('without the aggregates, each test keeps its latest status and line, flakiness, quarantine and fail rank', async () => {
+    await seedMixedProject();
+    const facts = (rows: Awaited<ReturnType<typeof loadSelectionCatalog>>) =>
+      rows
+        .map((r) => ({
+          id: r.id,
+          lastStatus: r.lastStatus,
+          lastLine: r.lastLine,
+          flaky: r.flaky,
+          quarantined: r.quarantined,
+          firstFailRank: r.firstFailRank,
+        }))
+        .sort((a, b) => a.id - b.id);
+    const whole = await loadSelectionCatalog(db, 1, { withFailRanks: true });
+    const least = await loadSelectionCatalog(db, 1, { withFailRanks: true, withAggregates: false });
+    expect(facts(least)).toEqual(facts(whole));
+    expect(new Set(facts(whole).map((r) => r.lastLine)).size).toBe(5);
   });
 });
 

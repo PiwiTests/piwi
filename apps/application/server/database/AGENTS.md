@@ -67,6 +67,10 @@ merge keeps the branch's history as stable as it can:
   stepped once, it frees a single page and holds the write lock until the statement is garbage-collected, and every
   write on another connection fails with `SQLITE_BUSY` meanwhile (`reclaimSpace`, `server/utils/retention.ts`).
   `executeMultiple` waits for an open transaction, as writes do (`server/database/sqlite-connections.ts`).
+- **A select from one table renders the columns of its fields' own `sql` without their table**, so a correlated
+  subquery written there compares the subquery's own columns. Nest the subquery in a `sql` of its own (as
+  `latestRunStatusSql` and `loadSelectionCatalog`'s `lastLine` do) or spell the outer column out;
+  `tests/unit/selection-resolve.test.ts` reads the catalog both ways.
 - **Dates are Unix timestamps in SQLite**, in seconds (`mode: 'timestamp'`) or in milliseconds
   (`mode: 'timestamp_ms'`) depending on the column: check its mode before comparing it in raw SQL.
 - **Large per-case text goes through `case_payloads`** (content-addressed, deduplicated per project), never a new

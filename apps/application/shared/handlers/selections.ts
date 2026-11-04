@@ -12,7 +12,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { testCases, testRunsCases, testSelections } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 import { getQuarantinedCaseIds } from './quarantine';
-import { eligibleExecutionSql } from '../run-eligibility';
+import { eligibleExecutionInProject } from '../run-eligibility';
 import { latestRunStatusSql } from './latest-run-status';
 import { finalAttemptSql, recentFlakySql, testCaseAggregates } from './test-case-aggregates';
 import { foldText } from '#shared/utils/fold-text';
@@ -63,6 +63,20 @@ export interface CatalogRow {
 
 // ── Catalog loading ──────────────────────────────────────────────────────────
 
+/** What `loadSelectionCatalog` reads beyond each test's own fields, its quarantine and its latest status. */
+export interface CatalogOptions {
+  /** Each test's recency rank of its newest failure (`firstFailRank`), which `failedInLastRuns` and a `recentFailure` ranking read. */
+  withFailRanks: boolean;
+  /**
+   * The aggregates over each test's whole history: `totalRuns`, `passRate`,
+   * `avgDurationMs` and `neverRun`, which read every execution of the test.
+   * Loaded unless false; without them the rows read 0 runs, null rates and
+   * durations and `neverRun` false, so only a caller that keeps the resolved
+   * ids alone, for definitions `catalogNeeds` says read none of them, skips them.
+   */
+  withAggregates?: boolean;
+}
+
 /**
  * Load every test in a project with the per-case aggregates a selection reads,
  * over its runs: one result per run, Playwright project and repetition, read
@@ -73,49 +87,54 @@ export interface CatalogRow {
 export async function loadSelectionCatalog(
   db: DrizzleDB,
   projectId: number,
-  opts: { withFailRanks: boolean } = { withFailRanks: false },
+  opts: CatalogOptions = { withFailRanks: false },
 ): Promise<CatalogRow[]> {
-  const aggregates = testCaseAggregates();
-  const recentFlaky = recentFlakySql(testCases.id, eligibleExecutionSql('selection-catalog', testRunsCases.testRunId));
+  const withAggregates = opts.withAggregates !== false;
+  const eligible = () => eligibleExecutionInProject('selection-catalog', projectId, testRunsCases.testRunId);
+  const recentFlaky = recentFlakySql(testCases.id, eligible());
   // The latest run's status: failed when one of the test's repetitions failed there.
-  const lastStatus = latestRunStatusSql(eligibleExecutionSql('selection-catalog', testRunsCases.testRunId));
-  const lastLine = sql<number | null>`(
-      SELECT ${testRunsCases.line}
+  const lastStatus = latestRunStatusSql(eligible());
+  // A nested `sql` keeps its columns qualified: a single-table select renders the columns of its own fields without
+  // their table, which inside the subquery would name the execution's own `id`.
+  const latestLine = sql`SELECT ${testRunsCases.line}
       FROM ${testRunsCases}
-      WHERE ${testRunsCases.testCaseId} = ${testCases.id} AND ${eligibleExecutionSql('selection-catalog', testRunsCases.testRunId)}
+      WHERE ${testRunsCases.testCaseId} = ${testCases.id} AND ${eligible()}
       ORDER BY ${testRunsCases.createdAt} DESC
-      LIMIT 1
-    )`;
+      LIMIT 1`;
+  const lastLine = sql<number | null>`(${latestLine})`;
 
-  const rows: any[] = await db
-    .select({
-      id: testCases.id,
-      filePath: testCases.filePath,
-      suitePath: testCases.suitePath,
-      title: testCases.title,
-      tags: testCases.tags,
-      locks: testCases.locks,
-      owner: testCases.owner,
-      priority: testCases.priority,
-      feature: testCases.feature,
-      totalRuns: aggregates.totalRuns,
-      recentFlakyRuns: recentFlaky,
-      passRate: aggregates.passRate,
-      avgDuration: aggregates.avgDuration,
-      lastStatus,
-      lastLine,
-    })
-    .from(testCases)
-    .leftJoin(
-      testRunsCases,
-      and(
-        eq(testCases.id, testRunsCases.testCaseId),
-        eligibleExecutionSql('selection-catalog', testRunsCases.testRunId),
-        finalAttemptSql(),
-      ),
-    )
-    .where(eq(testCases.projectId, projectId))
-    .groupBy(testCases.id, testCases.filePath, testCases.suitePath, testCases.title);
+  const fields = {
+    id: testCases.id,
+    filePath: testCases.filePath,
+    suitePath: testCases.suitePath,
+    title: testCases.title,
+    tags: testCases.tags,
+    locks: testCases.locks,
+    owner: testCases.owner,
+    priority: testCases.priority,
+    feature: testCases.feature,
+    recentFlakyRuns: recentFlaky,
+    lastStatus,
+    lastLine,
+  };
+  const inProject = eq(testCases.projectId, projectId);
+  let rows: any[];
+  if (withAggregates) {
+    const aggregates = testCaseAggregates();
+    rows = await db
+      .select({
+        ...fields,
+        totalRuns: aggregates.totalRuns,
+        passRate: aggregates.passRate,
+        avgDuration: aggregates.avgDuration,
+      })
+      .from(testCases)
+      .leftJoin(testRunsCases, and(eq(testCases.id, testRunsCases.testCaseId), eligible(), finalAttemptSql()))
+      .where(inProject)
+      .groupBy(testCases.id, testCases.filePath, testCases.suitePath, testCases.title);
+  } else {
+    rows = await db.select(fields).from(testCases).where(inProject);
+  }
 
   const quarantined = await getQuarantinedCaseIds(db, projectId);
   const failRanks = opts.withFailRanks ? await loadRecentFailRanks(db, projectId) : new Map<number, number>();
@@ -139,7 +158,7 @@ export async function loadSelectionCatalog(
       lastStatus: row.lastStatus ?? null,
       lastLine: row.lastLine != null ? Number(row.lastLine) : null,
       quarantined: quarantined.has(row.id),
-      neverRun: totalRuns === 0,
+      neverRun: withAggregates && totalRuns === 0,
       firstFailRank: failRanks.get(row.id) ?? null,
     } satisfies CatalogRow;
   });
@@ -167,7 +186,7 @@ async function loadRecentFailRanks(db: DrizzleDB, projectId: number): Promise<Ma
       .where(
         and(
           eq(testCases.projectId, projectId),
-          eligibleExecutionSql('selection-catalog', testRunsCases.testRunId),
+          eligibleExecutionInProject('selection-catalog', projectId, testRunsCases.testRunId),
           finalAttemptSql(),
         ),
       ),
@@ -346,6 +365,33 @@ function definitionNeedsFailRanks(def: SelectionDefinition): boolean {
   return def.budget?.rankBy === 'recentFailure';
 }
 
+/** Whether a definition reads the aggregates over a test's history: a rate, a duration, `neverRun`, or a budget. */
+function definitionNeedsAggregates(def: SelectionDefinition): boolean {
+  if (def.budget) return true;
+  const groups = [...(def.include ?? []), ...(def.exclude ?? [])];
+  return groups.some(
+    (g) =>
+      g.minPassRate !== undefined ||
+      g.maxPassRate !== undefined ||
+      g.minAvgDurationMs !== undefined ||
+      g.maxAvgDurationMs !== undefined ||
+      g.neverRun !== undefined,
+  );
+}
+
+/**
+ * The least catalog that resolves these definitions to the same tests:
+ * fail ranks and history aggregates only when one of them reads them. A
+ * resolution against it gives the right ids, not the durations of the
+ * estimate or the shards.
+ */
+export function catalogNeeds(definitions: SelectionDefinition[]): CatalogOptions {
+  return {
+    withFailRanks: definitions.some(definitionNeedsFailRanks),
+    withAggregates: definitions.some(definitionNeedsAggregates),
+  };
+}
+
 export interface ResolveOptions {
   key?: string | null;
   version?: number | null;
@@ -362,8 +408,9 @@ export interface ResolveOptions {
   order?: SelectionRankBy;
   /**
    * A catalog already loaded by the caller, reused instead of querying again.
-   * It must carry fail ranks (`withFailRanks: true`) so any definition resolves
-   * correctly. Analytics resolves many selections against one shared catalog.
+   * It must carry what the definition reads (`catalogNeeds`), or fail ranks
+   * and aggregates so any definition resolves correctly. Analytics resolves
+   * many selections against one shared catalog.
    */
   catalog?: CatalogRow[];
 }

@@ -638,6 +638,29 @@ describe('branch policy and test filters', () => {
     expect(ctx.notes.join(' ')).toMatch(/admin has no selection "checkout"/);
   });
 
+  test('a test filter reads the same executions whether its query names the tests or not', async () => {
+    const { getAnalyticsContext, fetchContextRuns, fetchFilteredExecutions } =
+      await import('../../shared/handlers/analytics/common');
+    const ctx = await getAnalyticsContext(fdb as any, parseAnalyticsScope({ days: '30', allBranches: 'true' }));
+    const runs = await fetchContextRuns(fdb as any, ctx, ctx.period.from.getTime(), ctx.now);
+    const read = async (tests: number[]) =>
+      (
+        await fetchFilteredExecutions(
+          fdb as any,
+          { ...ctx, testFilter: { testCaseIds: new Map([[1, new Set(tests)]]), browsers: null } },
+          runs,
+        )
+      )
+        .map((e) => `${e.testRunId}:${e.testCaseId}`)
+        .sort();
+    const named = await read([10]);
+    // `pays` ran on main and on the feature branch; the admin project is not in the filter.
+    expect(named).toHaveLength(2);
+    // Past 500 tests the query names none of them, and the rows are kept in memory alone.
+    expect(await read([10, ...Array.from({ length: 600 }, (_, i) => 1000 + i)])).toEqual(named);
+    expect(await read([])).toEqual([]);
+  });
+
   test('a stored scope past the file glob limits reads its first 100 globs of at most 500 characters', async () => {
     const { getAnalyticsContext } = await import('../../shared/handlers/analytics/common');
     const base = parseAnalyticsScope({ days: '30', allBranches: 'true' });
