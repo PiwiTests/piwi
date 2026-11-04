@@ -1,5 +1,8 @@
-/** An uploaded profile picture weighs less than this many bytes (1 MB). */
-export const PROFILE_PICTURE_BYTE_LIMIT = 1_000_000;
+/** The most an uploaded profile picture may weigh, in bytes: under 1 MB. */
+export const PROFILE_PICTURE_MAX_BYTES = 999_999;
+
+/** Why an upload over {@link PROFILE_PICTURE_MAX_BYTES} is refused, in the browser and on the server. */
+export const PROFILE_PICTURE_TOO_HEAVY = 'The picture must weigh less than 1 MB';
 
 /** The widest and tallest an uploaded profile picture may be, in pixels. */
 export const PROFILE_PICTURE_MAX_SIDE = 1000;

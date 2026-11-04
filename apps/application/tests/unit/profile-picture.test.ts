@@ -18,15 +18,19 @@ const state = vi.hoisted(() => ({
   caller: null as null | { id: number },
   authEnabled: true,
   apiKey: false,
+  writeDelayMs: 0,
 }));
 
 vi.mock('../../server/database', () => ({ getDatabase: async () => state.db }));
 vi.mock('../../server/storage', () => ({
   getStorage: () => ({
-    writeFile: async (path: string, data: Buffer) => void state.files.set(path, Buffer.from(data)),
+    writeFile: async (path: string, data: Buffer) => {
+      if (state.writeDelayMs) await new Promise((resolve) => setTimeout(resolve, state.writeDelayMs));
+      state.files.set(path, Buffer.from(data));
+    },
     readFile: async (path: string) => {
       const data = state.files.get(path);
-      if (!data) throw new Error(`no file at ${path}`);
+      if (!data) throw Object.assign(new Error(`no file at ${path}`), { code: 'ENOENT' });
       return data;
     },
     exists: async (path: string) => state.files.has(path),
@@ -50,6 +54,9 @@ vi.mock('../../server/utils/auth', () => {
     isAuthEnabled: () => state.authEnabled,
   };
 });
+vi.mock('../../server/utils/user-avatar', () => ({
+  oauthAvatar: async () => ({ bytes: new Uint8Array([1, 2, 3]), mime: 'image/png' }),
+}));
 vi.mock('h3', async (original) => ({
   ...(await original<typeof import('h3')>()),
   getRequestWebStream: (event: FakeEvent) => event.stream,
@@ -71,7 +78,7 @@ vi.stubGlobal('setResponseHeaders', (event: FakeEvent, headers: Record<string, s
 });
 vi.stubGlobal('apiError', apiError);
 
-const { normalizeProfilePicture, removeProfilePicture, saveProfilePicture } =
+const { hasAcceptedSignature, normalizeProfilePicture, removeProfilePicture, saveProfilePicture } =
   await import('../../server/utils/profile-picture');
 type Handler = (event: FakeEvent) => Promise<unknown>;
 const uploadRoute = (await import('../../server/api/auth/avatar.put')).default as unknown as Handler;
@@ -85,7 +92,10 @@ let db: Db;
 
 const GITHUB = 'https://avatars.githubusercontent.com/u/583231?v=4';
 
-function image(width: number, height: number, format: 'png' | 'jpeg' | 'webp' | 'gif' = 'png', red = 120) {
+const WRONG_FORMAT = 'The picture must be a PNG, JPEG or WebP image';
+const TOO_LARGE = 'The picture must be at most 1000 × 1000 pixels';
+
+function image(width: number, height: number, format: 'png' | 'jpeg' | 'webp' | 'gif' | 'tiff' = 'png', red = 120) {
   return sharp({ create: { width, height, channels: 3, background: { r: red, g: 40, b: 200 } } })
     .toFormat(format)
     .toBuffer();
@@ -116,6 +126,7 @@ beforeEach(async () => {
   state.caller = { id: 1 };
   state.authEnabled = true;
   state.apiKey = false;
+  state.writeDelayMs = 0;
   await db.insert(schema.users).values([
     { id: 1, username: 'alice', password: 'x', role: 'administrator', avatarUrl: GITHUB },
     { id: 2, username: 'bob', password: 'x', role: 'member' },
@@ -140,24 +151,35 @@ describe('normalizeProfilePicture', () => {
     expect(metadata.xmp).toBeUndefined();
   });
 
-  test('refuses an SVG, a GIF and bytes that are no image', async () => {
+  test('refuses an SVG, a GIF, a TIFF and bytes that are no image, from their first bytes', async () => {
     const svg = Buffer.from(
       '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><script>x()</script></svg>',
     );
-    for (const input of [svg, await image(10, 10, 'gif'), Buffer.from('not an image')]) {
-      await expect(normalizeProfilePicture(input)).rejects.toMatchObject({ statusCode: 400 });
+    const refused = [svg, await image(10, 10, 'gif'), await image(10, 10, 'tiff'), Buffer.from('not an image')];
+    for (const input of refused) {
+      expect(hasAcceptedSignature(input)).toBe(false);
+      await expect(normalizeProfilePicture(input)).rejects.toMatchObject({ statusCode: 400, message: WRONG_FORMAT });
+    }
+    for (const format of ['png', 'jpeg', 'webp'] as const) {
+      expect(hasAcceptedSignature(await image(10, 10, format))).toBe(true);
     }
   });
 
-  test('refuses a picture wider or taller than 1000 pixels, however few bytes it weighs', async () => {
-    await expect(normalizeProfilePicture(await image(1001, 10))).rejects.toMatchObject({ statusCode: 400 });
-    await expect(normalizeProfilePicture(await image(10, 1001))).rejects.toMatchObject({ statusCode: 400 });
-    await expect(normalizeProfilePicture(await image(8000, 8000))).rejects.toMatchObject({ statusCode: 400 });
+  test('refuses a picture wider or taller than 1000 pixels by its size, however few bytes it weighs', async () => {
+    for (const input of [
+      await image(1001, 10),
+      await image(10, 1001),
+      await image(1200, 1200, 'jpeg'),
+      await image(8000, 8000),
+    ]) {
+      await expect(normalizeProfilePicture(input)).rejects.toMatchObject({ statusCode: 400, message: TOO_LARGE });
+    }
     await expect(normalizeProfilePicture(await image(1000, 1000))).resolves.toBeInstanceOf(Buffer);
   });
 
   test('refuses an empty upload and one of 1 MB or more', async () => {
     await expect(normalizeProfilePicture(Buffer.alloc(0))).rejects.toMatchObject({ statusCode: 400 });
+    await expect(normalizeProfilePicture(Buffer.alloc(999_999))).rejects.toMatchObject({ message: WRONG_FORMAT });
     await expect(normalizeProfilePicture(Buffer.alloc(1_000_000))).rejects.toMatchObject({ statusCode: 413 });
   });
 });
@@ -165,7 +187,7 @@ describe('normalizeProfilePicture', () => {
 describe('saveProfilePicture and removeProfilePicture', () => {
   test('a new picture replaces the stored one, file and row', async () => {
     const first = await saveProfilePicture(db, 2, await image(100, 100));
-    expect(first).toMatch(/^avatars\/2\/[0-9a-f]{64}-[0-9a-f]{16}\.webp$/);
+    expect(first).toMatch(/^avatars\/2\/[0-9a-f]{16}\.webp$/);
     expect([...state.files.keys()]).toEqual([first]);
 
     const second = await saveProfilePicture(db, 2, await image(300, 200, 'jpeg', 10));
@@ -181,6 +203,15 @@ describe('saveProfilePicture and removeProfilePicture', () => {
     expect(second).not.toBe(first);
     expect(await avatarKeyOf(2)).toBe(second);
     expect([...state.files.keys()]).toEqual([second]);
+  });
+
+  test('parallel uploads leave only the file the row names', async () => {
+    state.writeDelayMs = 20;
+    const bytes = await image(40, 40);
+    const keys = await Promise.all([1, 2, 3].map(() => saveProfilePicture(db, 2, bytes)));
+    const kept = await avatarKeyOf(2);
+    expect(keys).toContain(kept);
+    expect([...state.files.keys()]).toEqual([kept]);
   });
 
   test('removing deletes the row and the file, and says whether there was one', async () => {
@@ -242,6 +273,19 @@ describe('the profile picture routes', () => {
     await uploadRoute({ stream: streamOf(await image(50, 50)) });
     expect(await removeRoute({})).toEqual({ removed: true });
     expect(state.files.size).toBe(0);
+    await expect(avatarRoute({})).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  test("a stored picture whose file is gone gives way to the provider's, never cached", async () => {
+    const key = await saveProfilePicture(db, 1, await image(50, 50));
+    state.files.delete(key);
+    const [user] = await db.select().from(schema.users).where(eq(schema.users.id, 1));
+    const event: FakeEvent = { query: { v: accountPictureVersion(user!)! } };
+    expect([...((await avatarRoute(event)) as Buffer)]).toEqual([1, 2, 3]);
+    expect(event.headers).toMatchObject({ 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
+
+    state.caller = { id: 2 };
+    state.files.delete(await saveProfilePicture(db, 2, await image(50, 50)));
     await expect(avatarRoute({})).rejects.toMatchObject({ statusCode: 404 });
   });
 

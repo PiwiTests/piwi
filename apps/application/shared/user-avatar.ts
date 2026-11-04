@@ -10,8 +10,8 @@ export function profilePictureVersion(avatarUrl: string): string {
 }
 
 /**
- * The version of a picture the user uploaded: its file name, which holds the
- * picture's SHA-256 and a random part, so no other picture ever has it.
+ * The version of a picture the user uploaded: its file name, random and never
+ * used twice, so no other picture ever has it.
  */
 export function uploadedPictureVersion(avatarKey: string): string {
   return avatarKey.slice(avatarKey.lastIndexOf('/') + 1).replace(/\.webp$/, '');
