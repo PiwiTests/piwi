@@ -221,7 +221,7 @@ export interface FlakeLabEntry {
   flaky: boolean;
   /** The condition that last reproduced it. */
   reproducedBy: string | null;
-  /** Share of the runs read in which it failed at least once; absent from an older instance. */
+  /** Share of the runs read where it passed or failed in which it failed at least once; absent from an older instance. */
   flakeRate?: number | null;
   /** The suspect it is shown with; absent from an older instance or past the instance's limit. */
   suspect?: { id: string; label: string; standing: string; lab: string } | null;
