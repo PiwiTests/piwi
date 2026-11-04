@@ -386,8 +386,16 @@ describe('linking a local run by its origin reference', () => {
       ].map((row) => ({ ...row, origin: runOrigin(row.metadata) })),
     );
     expect(await getProjectLatestRun(db, 1)).toEqual({ id: 13, status: 'failed' });
-    expect(await getProjectLatestRun(db, 1, { kind: 'desktop', ref: mine })).toEqual({ id: 10, status: 'passed' });
-    expect(await getProjectLatestRun(db, 1, { kind: 'reproduce', ref: '7' })).toEqual({ id: 12, status: 'failed' });
+    expect(await getProjectLatestRun(db, 1, { kind: 'desktop', ref: mine })).toEqual({
+      id: 10,
+      status: 'passed',
+      name: null,
+    });
+    expect(await getProjectLatestRun(db, 1, { kind: 'reproduce', ref: '7' })).toEqual({
+      id: 12,
+      status: 'failed',
+      name: null,
+    });
     expect(await getProjectLatestRun(db, 1, { kind: 'desktop', ref: 'desktop:none' })).toBeNull();
     expect(await getProjectLatestRun(db, 1, { kind: 'desktop', ref: '%' })).toBeNull();
     await db.insert(schema.projects).values({ id: 2, name: 'empty' });
