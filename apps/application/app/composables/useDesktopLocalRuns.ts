@@ -34,6 +34,7 @@ import { desktopJobVerdict, flakeLabJobReport, localRunOriginKind, newLocalRunRe
 import { desktopRunRef } from '~/utils/desktop-run-view';
 import { stripAnsi } from '~/utils/text-format';
 import type { ReproRequestView } from '#shared/desktop-repro';
+import { UNATTENDED_RUN_SUFFIX } from '#shared/desktop-runs';
 import type { FlakeLabJobReport } from '@piwitests/core/desktop-job';
 
 export type LocalRunStatus = 'running' | 'passed' | 'failed' | 'stopped' | 'error';
@@ -1130,22 +1131,39 @@ export function useDesktopLocalRuns() {
   /**
    * Match local processes to the Piwi runs they produced: the newest run the
    * reporter recorded with this run's origin and reference, newer than the
-   * baseline, so runs going at once never take each other's. Driven by the
-   * shared SSE stream (the tray subscribes), so the link appears as soon as the
-   * reporter checks in.
+   * baseline, under one of the names its steps gave the run (`hubRefs`, which
+   * the reporter records from `PIWI_RUN_REF`). Runs going at once for the same
+   * cluster, bug report or job share the reference and never take each other's:
+   * each finds its own by name, and a run the reporter recorded no name for is
+   * linked only to a local run no other one with that reference overlaps.
+   * Driven by the shared SSE stream (the tray subscribes), so the link appears
+   * as soon as the reporter checks in.
    */
   async function correlatePiwiRuns() {
+    const until = (run: LocalRun) => run.finishedAt ?? Date.now();
+    const sharesReference = (a: LocalRun, b: LocalRun) =>
+      a.projectId === b.projectId &&
+      a.originRef === b.originRef &&
+      localRunOriginKind(a.kind) === localRunOriginKind(b.kind) &&
+      a.startedAt <= until(b) &&
+      b.startedAt <= until(a);
     const cutoff = Date.now() - 2 * 60_000;
     for (const run of runs.value) {
       if (run.piwiRunId != null || run.piwiRunBaseline == null) continue;
       if (run.status !== 'running' && (run.finishedAt ?? 0) < cutoff) continue;
       const origin = localRunOriginKind(run.kind);
       if (!origin || !run.originRef) continue;
+      const names = run.hubRefs.flatMap((ref) => [ref, `${ref}${UNATTENDED_RUN_SUFFIX}`]);
       try {
-        const latest = await $fetch<{ id: number } | null>(`/api/projects/${run.projectId}/latest-run`, {
-          query: { origin, ref: run.originRef },
-        });
-        if (latest && latest.id > run.piwiRunBaseline) run.piwiRunId = latest.id;
+        const latest = await $fetch<{ id: number; name?: string | null } | null>(
+          `/api/projects/${run.projectId}/latest-run`,
+          {
+            query: names.length > 0 ? { origin, ref: run.originRef, run: names } : { origin, ref: run.originRef },
+          },
+        );
+        if (!latest || latest.id <= run.piwiRunBaseline) continue;
+        if (latest.name == null && runs.value.some((other) => other !== run && sharesReference(other, run))) continue;
+        run.piwiRunId = latest.id;
       } catch {
         // Server briefly unavailable — the next stream event retries.
       }

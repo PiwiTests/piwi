@@ -29,7 +29,14 @@
 
 import { and, eq, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { FLAKE_LAB_RUN_METADATA_KEY } from '@piwitests/core/flake-plan';
-import { parseRunOrigin, RUN_ORIGIN_KINDS, RUN_ORIGIN_METADATA_KEY, type RunOriginKind } from '@piwitests/core/wire';
+import {
+  parseRunOrigin,
+  parseRunOriginRef,
+  RUN_ORIGIN_KINDS,
+  RUN_ORIGIN_METADATA_KEY,
+  RUN_REF_METADATA_KEY,
+  type RunOriginKind,
+} from '@piwitests/core/wire';
 import { testRuns } from '../server/database/schema';
 import { INCIDENT_RUN_METADATA_KEY } from './run-incident';
 
@@ -290,6 +297,11 @@ export function runCommit(metadata: unknown): string | null {
 /** What a run was launched for (a dispatch, a cluster, a bug report), when its origin names it. */
 export function runOriginRef(metadata: unknown): string | null {
   return parseRunOrigin(record(metadata)?.[RUN_ORIGIN_METADATA_KEY])?.ref ?? null;
+}
+
+/** The launcher's name for the run itself (`PIWI_RUN_REF`), when the reporter recorded one. */
+export function runLauncherRef(metadata: unknown): string | null {
+  return parseRunOriginRef(record(metadata)?.[RUN_REF_METADATA_KEY]) ?? null;
 }
 
 /**

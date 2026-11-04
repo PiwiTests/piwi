@@ -23,7 +23,7 @@ import type { EndpointSummary, DiagnosisCompact } from '../../types/api';
 
 import type { DrizzleDB } from './db';
 import { parseRunOriginRef, type RunOriginKind } from '@piwitests/core/wire';
-import { runOrigin, runOriginIs, runOriginRef } from '#shared/run-eligibility';
+import { runLauncherRef, runOrigin, runOriginIs, runOriginRef } from '#shared/run-eligibility';
 import { clusterKnownIssues } from './known-issues';
 import { keepRun, releaseRun } from './run-keep';
 import { notLabRun } from './probes';
@@ -34,16 +34,36 @@ import { publicRunColumns } from './public-run';
 
 type ProjectScope = 'all' | Set<number>;
 
+/** The origin kind and ref a launcher stamped a run with, and the names it may have given the run itself. */
+export interface LatestRunOrigin {
+  kind: RunOriginKind;
+  ref: string;
+  runs?: readonly string[];
+}
+
+/** The most launcher names one latest-run lookup takes. */
+export const MAX_LATEST_RUN_NAMES = 64;
+
+/**
+ * The launcher names a latest-run lookup's `run` query gives (one value or several), each a valid ref; undefined when
+ * it gives none, null when one is not a ref or there are more than {@link MAX_LATEST_RUN_NAMES}.
+ */
+export function parseLatestRunNames(value: unknown): string[] | null | undefined {
+  if (value === undefined) return undefined;
+  const values = Array.isArray(value) ? value : [value];
+  if (values.length > MAX_LATEST_RUN_NAMES) return null;
+  const names = values.map((v) => (typeof v === 'string' ? parseRunOriginRef(v) : undefined));
+  return names.every((name): name is string => name !== undefined) ? names : null;
+}
+
 /**
  * The most recent test run for a project (id + status only), or null when it has none. With `origin`, the most recent
  * one its launcher stamped with that kind and ref (`PIWI_ORIGIN`, `PIWI_ORIGIN_REF`): the desktop app finds the run a
- * local process of its own produced. Throws `Project not found` for a project that does not exist.
+ * local process of its own produced, and `name`, the launcher's name for the run (`PIWI_RUN_REF`), null when the
+ * reporter recorded none. With `origin.runs`, a run its launcher named matches only under one of those names; a run
+ * the reporter recorded no name for still matches. Throws `Project not found` for a project that does not exist.
  */
-export async function getProjectLatestRun(
-  db: DrizzleDB,
-  projectId: number,
-  origin: { kind: RunOriginKind; ref: string } | null = null,
-) {
+export async function getProjectLatestRun(db: DrizzleDB, projectId: number, origin: LatestRunOrigin | null = null) {
   const latest = await findProjectLatestRun(db, projectId, origin);
   if (latest) return latest;
   const [project] = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, projectId));
@@ -54,8 +74,8 @@ export async function getProjectLatestRun(
 async function findProjectLatestRun(
   db: DrizzleDB,
   projectId: number,
-  origin: { kind: RunOriginKind; ref: string } | null,
-): Promise<{ id: number; status: string } | null> {
+  origin: LatestRunOrigin | null,
+): Promise<{ id: number; status: string; name?: string | null } | null> {
   if (origin) {
     const ref = parseRunOriginRef(origin.ref);
     if (!ref) return null;
@@ -70,8 +90,13 @@ async function findProjectLatestRun(
       )
       .orderBy(desc(testRuns.startTime), desc(testRuns.id))
       .limit(20);
-    const found = rows.find((r) => runOrigin(r.metadata) === origin.kind && runOriginRef(r.metadata) === ref);
-    return found ? { id: found.id, status: found.status } : null;
+    const runs = origin.runs ? new Set(origin.runs) : null;
+    const found = rows.find((r) => {
+      if (runOrigin(r.metadata) !== origin.kind || runOriginRef(r.metadata) !== ref) return false;
+      const named = runLauncherRef(r.metadata);
+      return !runs || named === null || runs.has(named);
+    });
+    return found ? { id: found.id, status: found.status, name: runLauncherRef(found.metadata) } : null;
   }
   const rows = await db
     .select({ id: testRuns.id, status: testRuns.status })

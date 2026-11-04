@@ -117,6 +117,12 @@ describe('sanitizeMetadata', () => {
     expect(sanitizeMetadata({ piwiOrigin: { kind: 'nightly' }, scm: {} })).toEqual({ scm: {} });
   });
 
+  test("keeps the launcher's name for the run only when it reads as a ref", () => {
+    expect(sanitizeMetadata({ piwiRunRef: ' desktop-7 ' })).toEqual({ piwiRunRef: 'desktop-7' });
+    expect(sanitizeMetadata({ piwiRunRef: 'a b', scm: {} })).toEqual({ scm: {} });
+    expect(sanitizeMetadata({ piwiRunRef: { name: 'desktop-7' } })).toEqual({});
+  });
+
   test('returns null for empty input', () => {
     expect(sanitizeMetadata(null)).toBeNull();
   });

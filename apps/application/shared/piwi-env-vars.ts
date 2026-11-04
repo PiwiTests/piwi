@@ -30,10 +30,10 @@
  * Note: the reporter package (`reporter/src/internal/config/env.ts`) has its
  * own `PIWI_ENV_KEYS` map for the vars it reads in CI — those overlap with the
  * ingestion vars here but are owned by the reporter, not this registry. So are
- * `PIWI_ORIGIN` and `PIWI_ORIGIN_REF`, which a launcher sets on the Playwright
- * process to stamp the run's origin: the app reads them only as the run's
- * `piwiOrigin` metadata (`shared/run-eligibility.ts`), and the test metadata
- * reference documents them.
+ * `PIWI_ORIGIN`, `PIWI_ORIGIN_REF` and `PIWI_RUN_REF`, which a launcher sets on
+ * the Playwright process to stamp the run's origin and name: the app reads them
+ * only as the run's `piwiOrigin` and `piwiRunRef` metadata
+ * (`shared/run-eligibility.ts`), and the test metadata reference documents them.
  */
 
 import {
