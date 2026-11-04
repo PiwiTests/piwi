@@ -1086,6 +1086,13 @@
       "when": 1793743585117,
       "tag": "0154_clear_verdict_of_earlier_attempts",
       "breakpoints": true
+    },
+    {
+      "idx": 155,
+      "version": "7",
+      "when": 1793825521593,
+      "tag": "0155_foamy_hellcat",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,1 @@
+ALTER TABLE "projects" ADD COLUMN "ci_server_token" text;

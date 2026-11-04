@@ -298,7 +298,7 @@ export async function getTestRun(
 
   let projectPublic;
   if (project) {
-    const { scmToken: _scmToken, ...projectRest } = project;
+    const { scmToken: _scmToken, ciServerToken: _ciServerToken, ...projectRest } = project;
     projectPublic = { ...projectRest, latestRunId, latestRunStatus };
   }
 
