@@ -466,10 +466,8 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
     .where(eq(testRunsCases.testRunId, runId));
 
   const passedCaseIds = new Set<number>();
-  const executedCaseIds = new Set<number>();
   const clustersSeenNow = new Set<number>();
   for (const row of caseRows) {
-    executedCaseIds.add(row.testCaseId);
     if (row.status === 'passed') passedCaseIds.add(row.testCaseId);
     if (row.clusterId != null && FAIL_STATUSES.includes(row.status)) clustersSeenNow.add(row.clusterId);
   }
@@ -782,16 +780,9 @@ export async function verifyClusterFixes(db: DbClient, runId: number): Promise<V
       const clusterCases = casesByCluster.get(cluster.id);
       if (!clusterCases || clusterCases.size === 0) continue;
 
-      // Every affected test must have run here and passed. One unexecuted test
+      // Every affected test must have passed here. One test that did not run
       // is enough to say nothing.
-      let allGreen = true;
-      for (const caseId of clusterCases) {
-        if (!executedCaseIds.has(caseId) || !passedCaseIds.has(caseId)) {
-          allGreen = false;
-          break;
-        }
-      }
-      if (!allGreen) continue;
+      if (![...clusterCases].every((caseId) => passedCaseIds.has(caseId))) continue;
 
       // A run that started before the cluster's last failure ran before it: its
       // passes say nothing about whether the failure stopped. A deleted last
