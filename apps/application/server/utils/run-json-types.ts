@@ -79,7 +79,7 @@ export interface RunMetadata {
     projects?: Array<{
       name?: string | null;
       use?: { browserName?: string | null; baseURL?: string | null } | null;
-    } | null>;
+    }>;
   } | null;
 }
 
