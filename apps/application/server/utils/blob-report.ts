@@ -255,6 +255,10 @@ function collectPlannedTests(
   for (const key of ['browserName', 'channel', 'viewport', 'locale', 'timezoneId', 'userAgent'] as const) {
     if (use[key] !== undefined) browser[key] = use[key];
   }
+  // A `devices` preset names the engine as `defaultBrowserType`, which Playwright's `browserName` defaults to.
+  if (browser.browserName === undefined && use.defaultBrowserType !== undefined) {
+    browser.browserName = use.defaultBrowserType;
+  }
   const projectTimeout = typeof project.timeout === 'number' ? project.timeout : null;
 
   // v2 nests everything under `entries`; older archives split `suites`/`tests`.

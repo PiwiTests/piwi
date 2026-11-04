@@ -10,6 +10,22 @@ import { MAX_TEST_OUTPUT_CHARS } from '@piwitests/core/test-output';
 const parse = (archive: Buffer) => parseBlobReport(openArchive(archive).readEntry);
 
 describe('parseBlobReport', () => {
+  test("names the engine a project's devices preset sets, beside an explicit browserName", async () => {
+    const tests = [{ testId: 't', title: 'opens', line: 1, attempts: [{ status: 'passed', duration: 10 }] }];
+    const preset = await parse(
+      buildBlobReport({ projectName: 'Polaris', projectUse: { defaultBrowserType: 'webkit' }, tests }),
+    );
+    expect(preset.cases[0]!.case.browser).toEqual({ projectName: 'Polaris', browserName: 'webkit' });
+    const explicit = await parse(
+      buildBlobReport({
+        projectName: 'Polaris',
+        projectUse: { browserName: 'firefox', defaultBrowserType: 'webkit' },
+        tests,
+      }),
+    );
+    expect(explicit.cases[0]!.case.browser).toEqual({ projectName: 'Polaris', browserName: 'firefox' });
+  });
+
   test('maps a run and its executions onto the ingest shape', async () => {
     const parsed = await parse(
       buildBlobReport({
