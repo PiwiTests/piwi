@@ -16,6 +16,7 @@ delete process.env.PIWI_DATABASE_URL;
 const {
   interruptStaleRuns,
   settleStaleFinalizingRuns,
+  createReachability,
   STALE_TIMEOUT_MS,
   FINALIZING_TIMEOUT_MS,
   SHARD_WAIT_MS,
@@ -229,5 +230,30 @@ describe('after a server restart', () => {
     expect(await statusOf(102)).toBe('finalizing');
     expect(await settleStaleFinalizingRuns(db, now, now - FINALIZING_TIMEOUT_MS - 1_000)).toEqual([102]);
     expect(await statusOf(102)).toBe('passed');
+  });
+});
+
+describe('createReachability', () => {
+  const interval = 30_000;
+
+  test('counts from the moment the database is ready', () => {
+    const reachability = createReachability(interval);
+    expect(reachability.beginSweep(1_000)).toBeNull();
+    reachability.ready(5_000);
+    expect(reachability.beginSweep(5_000 + interval)).toBe(5_000);
+    expect(reachability.beginSweep(5_000 + 2 * interval)).toBe(5_000);
+  });
+
+  test('starts again after a sweep that failed or began far behind its schedule', () => {
+    const reachability = createReachability(interval);
+    reachability.ready(0);
+    expect(reachability.beginSweep(interval)).toBe(0);
+    reachability.failed(interval + 500);
+    expect(reachability.beginSweep(2 * interval)).toBe(interval + 500);
+
+    // Asleep for ten minutes: the next sweep begins long after the one before.
+    const wake = 2 * interval + 10 * 60_000;
+    expect(reachability.beginSweep(wake)).toBe(wake);
+    expect(reachability.beginSweep(wake + interval)).toBe(wake);
   });
 });

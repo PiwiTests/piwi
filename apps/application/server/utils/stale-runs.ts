@@ -44,6 +44,31 @@ function quietSince(threshold: Date) {
 }
 
 /**
+ * Since when reporters could reach the server, for the sweeps' `reachableSince`:
+ * from the moment its database was `ready`, restarted by a sweep that `failed`
+ * and by one that begins more than two intervals after the one before (the
+ * process was paused or asleep). `beginSweep` returns it, null until ready.
+ */
+export function createReachability(intervalMs: number) {
+  let since: number | null = null;
+  let lastSweepAt = 0;
+  return {
+    ready(now: number) {
+      since = now;
+      lastSweepAt = now;
+    },
+    beginSweep(now: number): number | null {
+      if (since !== null && now - lastSweepAt > 2 * intervalMs) since = now;
+      lastSweepAt = now;
+      return since;
+    },
+    failed(now: number) {
+      since = now;
+    },
+  };
+}
+
+/**
  * The moment a run must have been quiet since to have been quiet for `ms` at
  * `now`. Quiet time counts from `reachableSince` at the earliest: until the
  * server has been reachable for `ms`, no run has been quiet for it.
