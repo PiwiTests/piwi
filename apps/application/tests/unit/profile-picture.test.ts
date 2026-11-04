@@ -33,6 +33,7 @@ vi.mock('../../server/storage', () => ({
       if (!data) throw Object.assign(new Error(`no file at ${path}`), { code: 'ENOENT' });
       return data;
     },
+    readFileIfExists: async (path: string) => state.files.get(path) ?? null,
     exists: async (path: string) => state.files.has(path),
     deleteFile: async (path: string) => void state.files.delete(path),
     deleteDirectory: async (path: string) => {
@@ -106,6 +107,25 @@ function streamOf(bytes: Uint8Array): ReadableStream<Uint8Array> {
     start(controller) {
       controller.enqueue(bytes);
       controller.close();
+    },
+  });
+}
+
+/** `db` with `beforeSwap` run before each update an upload sends, as another request would between its read and its swap. */
+function racingDb(beforeSwap: () => Promise<void>): Db {
+  return new Proxy(db, {
+    get(target, prop, receiver) {
+      if (prop !== 'update') return Reflect.get(target, prop, receiver);
+      return (table: typeof schema.users) => ({
+        set: (values: Partial<typeof schema.users.$inferInsert>) => ({
+          where: (condition: Parameters<ReturnType<ReturnType<Db['update']>['set']>['where']>[0]) => ({
+            returning: async (fields: { id: typeof schema.users.id }) => {
+              await beforeSwap();
+              return target.update(table).set(values).where(condition).returning(fields);
+            },
+          }),
+        }),
+      });
     },
   });
 }
@@ -214,6 +234,32 @@ describe('saveProfilePicture and removeProfilePicture', () => {
     expect([...state.files.keys()]).toEqual([kept]);
   });
 
+  test('an upload that loses every swap deletes its file and answers 409', async () => {
+    let other = 0;
+    const racing = racingDb(async () => {
+      await db
+        .update(schema.users)
+        .set({ avatarKey: `avatars/2/other-${other++}.webp` })
+        .where(eq(schema.users.id, 2));
+    });
+    await expect(saveProfilePicture(racing, 2, await image(40, 40))).rejects.toMatchObject({ statusCode: 409 });
+    expect(other).toBe(5);
+    expect(state.files.size).toBe(0);
+  });
+
+  test('an upload racing a removal swaps from the removed key to none and keeps only its file', async () => {
+    const first = await saveProfilePicture(db, 2, await image(40, 40));
+    let removed: boolean | undefined;
+    const racing = racingDb(async () => {
+      removed ??= await removeProfilePicture(db, 2);
+    });
+    const second = await saveProfilePicture(racing, 2, await image(60, 60));
+    expect(removed).toBe(true);
+    expect(await avatarKeyOf(2)).toBe(second);
+    expect([...state.files.keys()]).toEqual([second]);
+    expect(second).not.toBe(first);
+  });
+
   test('removing deletes the row and the file, and says whether there was one', async () => {
     await saveProfilePicture(db, 2, await image(100, 100));
     expect(await removeProfilePicture(db, 2)).toBe(true);
@@ -276,13 +322,18 @@ describe('the profile picture routes', () => {
     await expect(avatarRoute({})).rejects.toMatchObject({ statusCode: 404 });
   });
 
-  test("a stored picture whose file is gone gives way to the provider's, never cached", async () => {
+  test("a stored picture whose file is gone gives way to the provider's, never cached, and is forgotten", async () => {
     const key = await saveProfilePicture(db, 1, await image(50, 50));
     state.files.delete(key);
     const [user] = await db.select().from(schema.users).where(eq(schema.users.id, 1));
     const event: FakeEvent = { query: { v: accountPictureVersion(user!)! } };
     expect([...((await avatarRoute(event)) as Buffer)]).toEqual([1, 2, 3]);
     expect(event.headers).toMatchObject({ 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
+    expect(await avatarKeyOf(1)).toBeNull();
+
+    const provider: FakeEvent = { query: { v: accountPictureVersion({ avatarKey: null, avatarUrl: GITHUB })! } };
+    await avatarRoute(provider);
+    expect(provider.headers?.['Cache-Control']).toBe('private, max-age=3600');
 
     state.caller = { id: 2 };
     state.files.delete(await saveProfilePicture(db, 2, await image(50, 50)));

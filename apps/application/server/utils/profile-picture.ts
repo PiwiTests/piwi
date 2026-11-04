@@ -176,24 +176,20 @@ export async function removeProfilePicture(db: DrizzleDB, userId: number): Promi
   return true;
 }
 
-/** Whether a storage read failed because the file is not there (local disk or S3). */
-function isMissingFile(error: unknown): boolean {
-  const e = error as { code?: string; name?: string; $metadata?: { httpStatusCode?: number } } | null;
-  return (
-    e?.code === 'ENOENT' ||
-    e?.code === 'ENOTDIR' ||
-    e?.name === 'NoSuchKey' ||
-    e?.name === 'NotFound' ||
-    e?.$metadata?.httpStatusCode === 404
-  );
-}
-
 /** A stored picture as the avatar route serves it; null when its file is gone. Throws when storage cannot answer. */
 export async function readStoredProfilePicture(key: string): Promise<PublicImage | null> {
-  try {
-    return { bytes: new Uint8Array(await getStorage().readFile(key)), mime: 'image/webp' };
-  } catch (error) {
-    if (isMissingFile(error)) return null;
-    throw error;
-  }
+  const bytes = await getStorage().readFileIfExists(key);
+  return bytes ? { bytes: new Uint8Array(bytes), mime: 'image/webp' } : null;
+}
+
+/**
+ * Forget an uploaded picture whose file is gone from storage, so the account
+ * shows its provider's picture under a cacheable version again. Clears the key
+ * only while the row still names it: a newer upload is kept.
+ */
+export async function forgetMissingProfilePicture(db: DrizzleDB, userId: number, key: string): Promise<void> {
+  await db
+    .update(users)
+    .set({ avatarKey: null, updatedAt: new Date() })
+    .where(and(eq(users.id, userId), eq(users.avatarKey, key)));
 }
