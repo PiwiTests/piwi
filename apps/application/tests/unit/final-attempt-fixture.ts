@@ -7,15 +7,41 @@ import { finalAttempts } from '#shared/utils/test-counts';
  * (`final-attempt.test.ts`, `final-attempt-pg.test.ts`).
  */
 
-/** The SQL of the migration that sets `final_attempt` on the executions stored before it, in `folder`. */
-export function finalAttemptBackfillSql(folder: string): string {
+/** The journal tags of the migrations in `folder`, in the order they run. */
+function migrationTags(folder: string): string[] {
   const journal = JSON.parse(readFileSync(join(folder, 'meta/_journal.json'), 'utf8')) as {
     entries: Array<{ tag: string }>;
   };
-  const entry = journal.entries.find((e) => e.tag.endsWith('_backfill_final_attempt'));
-  if (!entry) throw new Error(`no backfill_final_attempt migration in ${folder}`);
-  return readFileSync(join(folder, `${entry.tag}.sql`), 'utf8');
+  return journal.entries.map((e) => e.tag);
 }
+
+/** The SQL of the migration of `folder` whose tag ends with `suffix`, and of the migration after it. */
+function migrationSql(folder: string, suffix: string): { sql: string; next: string } {
+  const tags = migrationTags(folder);
+  const i = tags.findIndex((tag) => tag.endsWith(suffix));
+  if (i < 0) throw new Error(`no ${suffix} migration in ${folder}`);
+  const read = (tag: string | undefined) => (tag ? readFileSync(join(folder, `${tag}.sql`), 'utf8') : '');
+  return { sql: read(tags[i]), next: read(tags[i + 1]) };
+}
+
+/** The SQL of the migration that sets `final_attempt` on the executions stored before it, in `folder`. */
+export function finalAttemptBackfillSql(folder: string): string {
+  return migrationSql(folder, '_backfill_final_attempt').sql;
+}
+
+/**
+ * The SQL of the migration that deletes the repeated executions without a project, in `folder`, then the statement
+ * of the migration after it that builds the unique index those repeats would break.
+ */
+export function dedupeExecutionsSql(folder: string): { dedupe: string; uniqueIndex: string } {
+  const { sql, next } = migrationSql(folder, '_dedupe_executions_without_project');
+  const uniqueIndex = next.split('--> statement-breakpoint').find((s) => s.includes('CREATE UNIQUE INDEX'));
+  if (!uniqueIndex) throw new Error(`no unique index after the dedupe migration in ${folder}`);
+  return { dedupe: sql, uniqueIndex };
+}
+
+/** The index of the row of {@link STORED_ATTEMPTS} that repeats a later one, which the dedupe migration deletes. */
+export const REPEATED_ATTEMPT = 7;
 
 /** Executions of every shape a result's attempts take: retries, projects, repetitions, a row without a project. */
 export const STORED_ATTEMPTS: Array<{

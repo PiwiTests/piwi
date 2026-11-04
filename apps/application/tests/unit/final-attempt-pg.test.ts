@@ -1,6 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import { fileURLToPath } from 'node:url';
-import { STORED_ATTEMPTS, expectedFinalFlags, finalAttemptBackfillSql } from './final-attempt-fixture';
+import {
+  REPEATED_ATTEMPT,
+  STORED_ATTEMPTS,
+  dedupeExecutionsSql,
+  expectedFinalFlags,
+  finalAttemptBackfillSql,
+} from './final-attempt-fixture';
 
 /**
  * Each execution's `final_attempt` on PostgreSQL: set by the migration on the
@@ -104,6 +110,37 @@ describe.skipIf(!postgresUrl)('final attempts on PostgreSQL', async () => {
     expect(await getTestCase(db as never, pays!.id)).toMatchObject({ totalRuns: 1, flakyRuns: 1 });
   });
 
+  test('ingest stores an execution without a project sent again once, and lists it once in the history of its retry', async () => {
+    const [run] = await db
+      .insert(schema.testRuns)
+      .values({ projectId, status: 'running', startTime: new Date() })
+      .returning();
+    const bare = (statuses: string[]) => ({ ...attempt('ships', statuses), browser: null, attempts: null });
+    const store = (tc: ReturnType<typeof bare>) => persistRunCases(db as never, projectId, run!.id, [tc as never]);
+    await store(bare(['failed']));
+    await store(bare(['failed']));
+    await store(bare(['failed', 'passed']));
+
+    const rows = await db
+      .select({
+        retries: schema.testRunsCases.retries,
+        browserName: schema.testRunsCases.browserName,
+        finalAttempt: schema.testRunsCases.finalAttempt,
+        attempts: schema.testRunsCases.attempts,
+      })
+      .from(schema.testRunsCases)
+      .where(eq(schema.testRunsCases.testRunId, run!.id))
+      .orderBy(asc(schema.testRunsCases.retries));
+    expect(rows.map(({ attempts: _history, ...row }) => row)).toEqual([
+      { retries: 0, browserName: null, finalAttempt: false },
+      { retries: 1, browserName: null, finalAttempt: true },
+    ]);
+    expect((rows[1]!.attempts as Array<{ retry: number; status: string }>).map((a) => [a.retry, a.status])).toEqual([
+      [0, 'failed'],
+      [1, 'passed'],
+    ]);
+  });
+
   test('ingest completes the history and the verdict of a retry stored before an earlier attempt that came with one', async () => {
     const [run] = await db
       .insert(schema.testRuns)
@@ -139,7 +176,7 @@ describe.skipIf(!postgresUrl)('final attempts on PostgreSQL', async () => {
     ]);
   });
 
-  test('the migration marks the executions stored before it as finalAttempts reads them', async () => {
+  test('the migrations mark the executions stored before them as finalAttempts reads them, and delete the repeats', async () => {
     const session = postgres(postgresUrl!, { onnotice: () => {}, max: 1 });
     try {
       // A temporary table of the same name is the one the migration's UPDATE reaches in this session.
@@ -156,6 +193,23 @@ describe.skipIf(!postgresUrl)('final attempts on PostgreSQL', async () => {
         Array<{ final_attempt: boolean }>
       >`SELECT final_attempt FROM test_runs_cases ORDER BY id`;
       expect(rows.map((row) => row.final_attempt)).toEqual(expectedFinalFlags());
+
+      const { dedupe, uniqueIndex } = dedupeExecutionsSql(MIGRATIONS);
+      await session.unsafe(dedupe);
+      await session.unsafe(uniqueIndex);
+      const kept = await session<
+        Array<{ id: number; final_attempt: boolean }>
+      >`SELECT id, final_attempt FROM test_runs_cases ORDER BY id`;
+      expect(kept).toEqual(
+        expectedFinalFlags()
+          .map((final_attempt, i) => ({ id: i + 1, final_attempt }))
+          .filter((_, i) => i !== REPEATED_ATTEMPT),
+      );
+      const repeated = STORED_ATTEMPTS[REPEATED_ATTEMPT]!;
+      await expect(
+        session`INSERT INTO test_runs_cases (id, test_run_id, test_case_id, repeat_each_index, retries, browser_name)
+          VALUES (100, ${repeated.testRunId}, ${repeated.testCaseId}, ${repeated.repeatEachIndex}, ${repeated.retries}, NULL)`,
+      ).rejects.toThrow(/idx_test_runs_cases_run_browser/);
     } finally {
       await session.end();
     }
