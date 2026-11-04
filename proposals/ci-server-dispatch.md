@@ -6,9 +6,15 @@ hand, whatever hosts the code. It answers [PiwiTests/piwi#1062](https://github.c
 on Bitbucket and Jenkins, and adopts the issue's alternative (a generic trigger) with the Jenkins-specific advantages
 kept in the Jenkins preset.
 
-**Status.** Proposed 2026-11-04. Nothing is built. The arguments' quoting defect found while researching it (see
-[Defects found](#defects-found-while-researching-this-plan)) is PR 1 of the [Delivery](#delivery) and can ship on its
-own.
+**Status.** Proposed 2026-11-04. PR 1 of the [Delivery](#delivery), `npx @piwitests/reporter rerun`, shipped in
+[#1092](https://github.com/PiwiTests/piwi/pull/1092) and fixes the [quoting
+defect](#defects-found-while-researching-this-plan). PR 2, the engine, is built: the `ci-server` target with the
+Jenkins and Custom presets and the renderer (`shared/ci-server.ts`), the credential binding, the private-host rule and
+the send (`server/utils/ci-server-dispatch.ts`), the `ci_server_token` column with `ciServerToken` on
+`PATCH /api/projects/:id`, the four `PIWI_CI_SERVER_*` variables, and availability, dispatch, record and matching in
+`server/utils/ci-rerun.ts`, with the link to the recorded build for every provider. It is reachable through the API
+only. PR 3 (the settings form, the dispatch label and link, the demo, the docs and the help topic) remains, then PR 4
+(the other presets) and the optional PR 5 (Check).
 
 **Summary.** Today a dispatch goes through the repository host: the project's SCM token starts a GitHub workflow, a
 GitLab pipeline or a Bitbucket custom pipeline, and the host of the run's repository picks which one. A team whose CI

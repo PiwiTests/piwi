@@ -430,6 +430,10 @@ export interface ProjectWithTestRuns {
   diagnosisInstructions?: string | null;
   aiLanguage?: string | null;
   hasScmToken?: boolean;
+  /** Whether a CI server token is stored for the project. */
+  hasCiServerToken?: boolean;
+  /** The base URL the stored CI server token may be sent under; the token goes nowhere else. */
+  ciServerTokenUrl?: string | null;
   /** The repository the project's SCM calls read: pinned by its first run that names one, or set by a project admin. */
   repositoryUrl?: string | null;
   defaultBranch?: string | null;
@@ -474,6 +478,10 @@ export interface ProjectDetails {
   description?: string | null;
   diagnosisInstructions?: string | null;
   hasScmToken: boolean;
+  /** Whether a CI server token is stored for the project. */
+  hasCiServerToken?: boolean;
+  /** The base URL the stored CI server token may be sent under; the token goes nowhere else. */
+  ciServerTokenUrl?: string | null;
   defaultBranch?: string | null;
   /** Provider-specific "re-run from the dashboard" config (secrets excluded). */
   ciRerun?: import('#shared/ci-rerun').CiRerunSettings | null;
