@@ -2,11 +2,12 @@ name: Performance
 
 # Measures the dashboard's heaviest pages (the projects list, every tab of a project, the test-run page, a failed
 # execution's page with a large trace) on the pull request's build and on its base commit's, against the same dataset
-# in PostgreSQL, and posts the comparison as one comment on the pull request, updated on every push: render and load
-# times, the SQL each request runs, and every regression past its threshold. The suite is apps/application/scripts/perf.
+# in PostgreSQL, and writes the comparison: render and load times, the SQL each request runs, and every regression past
+# its threshold. The suite is apps/application/scripts/perf.
 # The pages are split across the `measure` jobs, which run at once: each measures both builds in turn on its own pages
-# (`run.mjs --shard`), so every comparison is made on one machine, and the `report` job joins their results. The base
-# commit's build is the one ci.yml's `perf-base` job cached.
+# (`run.mjs --shard`), so every comparison is made on one machine, and the `report` job joins their results into the job
+# summary and the `perf-results` artifact, which perf-comment.yml posts on the pull request. The base commit's build is
+# the one ci.yml's `perf-base` job cached.
 # A regression is reported, not enforced: the jobs fail only when the suite itself cannot run.
 on:
   workflow_call:
@@ -102,11 +103,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
-    permissions:
-      contents: read
-      # Posts and updates the comparison comment.
-      pull-requests: write
-
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -143,18 +139,3 @@ jobs:
 
       - name: Write the job summary
         run: cat perf/report.md >> "$GITHUB_STEP_SUMMARY"
-
-      # A pull request from a fork gets a read-only token: the report stays in the job summary and the artifact.
-      - name: Comment on the pull request
-        continue-on-error: true
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        with:
-          script: |
-            const fs = require('node:fs');
-            const marker = '<!-- piwi-perf-report -->';
-            const body = fs.readFileSync('perf/report.md', 'utf8');
-            const issue_number = context.payload.pull_request.number;
-            const comments = await github.paginate(github.rest.issues.listComments, { ...context.repo, issue_number, per_page: 100 });
-            const mine = comments.find((c) => c.user?.type === 'Bot' && c.body?.startsWith(marker));
-            if (mine) await github.rest.issues.updateComment({ ...context.repo, comment_id: mine.id, body });
-            else await github.rest.issues.createComment({ ...context.repo, issue_number, body });

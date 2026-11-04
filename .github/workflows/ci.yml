@@ -995,7 +995,8 @@ jobs:
           path: base/apps/application/.output
           key: perf-base-output-v1-${{ steps.base.outputs.sha }}
 
-  # The heaviest pages measured on this build and on the base commit's, posted as a comment on the pull request.
+  # The heaviest pages measured on this build and on the base commit's, posted as a comment on the pull request by
+  # perf-comment.yml once this run completes.
   perf:
     name: Performance
     needs: [changes, build, perf-base]
@@ -1003,7 +1004,6 @@ jobs:
     uses: ./.github/workflows/reusable-perf.yml
     permissions:
       contents: read
-      pull-requests: write
 
   # The one check branch protection requires: it fails when any job above failed or was cancelled, and passes when
   # each one passed or was skipped because the change does not touch its area.
