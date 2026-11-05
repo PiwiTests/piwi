@@ -3,6 +3,9 @@ import { LIVE_SHARE_MISSING, LIVE_SHARE_UNKNOWN } from '@piwitests/core/live-vie
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
 import { MAX_VIEW_EVENTS } from '@piwitests/core/run-view';
 import {
+  heldUntilWatched,
+  laneFrameNow,
+  laneWatchOf,
   pageHintOf,
   pagePoint,
   parseRunsRequest,
@@ -253,14 +256,14 @@ describe('Share live, as the worker reads it', () => {
 });
 
 describe('where a run says its tests’ pages show', () => {
-  const editorHub = { desktop: false };
+  const editorHub = { desktop: false, lanes: false };
   const viewing = { intents: ['view' as const] };
 
   it('is said while the run goes on and no test of it stands stopped, by the hub that runs it', () => {
     expect(pageHintOf(run('r1', [worker(viewing)]), editorHub)).toBe('editor');
     expect(pageHintOf(run('r1', [worker({ ...viewing, state: 'between' })]), editorHub)).toBe('editor');
     expect(pageHintOf(run('r1', [worker({ ...viewing, pausing: true })]), editorHub)).toBe('editor');
-    expect(pageHintOf(run('r1', [worker(viewing)]), { desktop: true })).toBe('desktop');
+    expect(pageHintOf(run('r1', [worker(viewing)]), { desktop: true, lanes: false })).toBe('desktop');
     expect(pageHintOf(run('r1', [worker(viewing)]), undefined)).toBe('editor');
   });
 
@@ -283,6 +286,14 @@ describe('where a run says its tests’ pages show', () => {
     };
     expect(pageHintOf(run('r1', [worker({ ...viewing, test })]), editorHub)).toBeNull();
     expect(pageHintOf(run('r1', [worker({ ...viewing, test }), worker(viewing)]), editorHub)).toBe('editor');
+  });
+
+  it('is not said where a worker can be watched while it runs, which its row says, but by a hub that cannot', () => {
+    const watching = worker({ intents: ['view', 'watch'] });
+    expect(pageHintOf(run('r1', [watching]), { desktop: false, lanes: true })).toBeNull();
+    expect(pageHintOf(run('r1', [watching]), editorHub)).toBe('editor');
+    // An older reporter, at a hub that shows lanes: its stops alone show here.
+    expect(pageHintOf(run('r1', [worker(viewing)]), { desktop: true, lanes: true })).toBe('desktop');
   });
 });
 
@@ -320,7 +331,7 @@ describe('what a stop takes from the window', () => {
     const state: RunsState = {
       discovery: 'found',
       desktop: 'unpaired',
-      hubs: [{ id: hub, connected: true, client: null, desktop: false }],
+      hubs: [{ id: hub, connected: true, client: null, desktop: false, lanes: false }],
       runs: [
         {
           hub,
@@ -364,5 +375,117 @@ describe('a point on an image of a stopped page', () => {
       y: 199.99,
     });
     expect(pagePoint({ x: 1, y: 1 }, { width: 0, height: 50 }, { width: 400, height: 200 })).toBeNull();
+  });
+});
+
+describe('Watch, as the worker reads it', () => {
+  const command = { type: 'command', id: 7, hub: 'ws://127.0.0.1:1/piwi/hub', ref: 'r-1', worker: null, since: null };
+
+  it('names the run and its lane alone, and whether to watch it', () => {
+    expect(parseRunsRequest({ ...command, what: 'watch', lane: 2, on: true })).toEqual({
+      ...command,
+      what: 'watch',
+      lane: 2,
+      on: true,
+    });
+    expect(parseRunsRequest({ ...command, what: 'watch', lane: 0, on: false })).toMatchObject({ lane: 0, on: false });
+    for (const bad of [
+      { ...command, what: 'watch', on: true },
+      { ...command, what: 'watch', lane: 1 },
+      { ...command, what: 'watch', lane: -1, on: true },
+      { ...command, what: 'watch', lane: 1.5, on: true },
+      { ...command, what: 'watch', lane: '1', on: true },
+      { ...command, what: 'watch', lane: 1, on: 'yes' },
+      { ...command, what: 'watch', lane: 1, on: true, worker: 1 },
+      { ...command, what: 'watch', lane: 1, on: true, since: 's1' },
+      { ...command, what: 'watch', lane: 1, on: true, events: [] },
+      // Only Watch names a lane.
+      { ...command, what: 'share', lane: 1, on: true },
+      { ...command, worker: 0, since: 's1', what: 'view', lane: 1, on: true },
+    ]) {
+      expect(parseRunsRequest(bad), JSON.stringify(bad)).toBeNull();
+    }
+  });
+});
+
+describe('a lane watched while it runs', () => {
+  it('can be at a hub that shows lanes, for a reporter that lists watch; an older reporter is told to update', () => {
+    expect(laneWatchOf({ lanes: true }, worker({ intents: ['view', 'watch'] }))).toBe('watch');
+    expect(laneWatchOf({ lanes: true }, worker({ intents: ['view'] }))).toBe('outdated');
+    // A hub that predates it: a stop's own view alone, and nothing said.
+    expect(laneWatchOf({ lanes: false }, worker({ intents: ['view', 'watch'] }))).toBeNull();
+    expect(laneWatchOf(undefined, worker({ intents: ['watch'] }))).toBeNull();
+  });
+
+  it('shows where its worker stands now: the stop it stands at, else its running test, from that worker alone', () => {
+    const test = { id: 't1', title: ['pays'], uri: 'file:///x.ts', line: 0, project: '', retry: 0, cannotPause: null };
+    const running = worker({ worker: 3, test });
+    const frame = (over: Partial<{ worker: number; test: string | null; since: string | null }> = {}) => ({
+      worker: 3,
+      test: 't1',
+      since: null,
+      ...over,
+    });
+    expect(laneFrameNow(frame(), running)).toBe(true);
+    // Taken at a stop the test went on from, or in the test before it.
+    expect(laneFrameNow(frame({ since: 's1' }), running)).toBe(false);
+    expect(laneFrameNow(frame({ test: 't0' }), running)).toBe(false);
+    // A newer service's state reads as running.
+    expect(laneFrameNow(frame(), { ...running, state: 'other' })).toBe(true);
+    // Between two tests, none does.
+    expect(laneFrameNow(frame(), { ...running, state: 'between', test: null })).toBe(false);
+    // At a stop, a frame of that stop alone.
+    const stopped = { ...running, state: 'stopped' as const, stop: stop('s2') };
+    expect(laneFrameNow(frame({ since: 's2' }), stopped)).toBe(true);
+    expect(laneFrameNow(frame({ since: 's1' }), stopped)).toBe(false);
+    expect(laneFrameNow(frame(), stopped)).toBe(false);
+    // The worker Playwright started in the lane in place of the one that sent it.
+    expect(laneFrameNow(frame(), { ...running, worker: 4 })).toBe(false);
+    expect(laneFrameNow(frame(), undefined)).toBe(false);
+  });
+
+  it('holds the actions in the test’s window at a headless stop the window does not watch, saying to watch first', () => {
+    const takes = worker({ intents: ['pick', 'record', 'assert', 'mock', 'view', 'input', 'pick-at', 'watch'] });
+    const unwatched = { ...stop('s1'), intents: ['mock' as const, 'view' as const, 'pick-at' as const] };
+    expect(heldUntilWatched(takes, unwatched, true)).toEqual(['pick', 'record', 'assert']);
+    // Watched, the stop takes them; a stop the bar shows takes them anyway.
+    expect(
+      heldUntilWatched(takes, { ...unwatched, intents: [...unwatched.intents, 'pick', 'record', 'assert'] }, true),
+    ).toEqual([]);
+    expect(heldUntilWatched(takes, { ...unwatched, bar: true }, true)).toEqual([]);
+    // Nothing to watch, a reporter that takes none of them, or a service that predates stop.intents: none held.
+    expect(heldUntilWatched(takes, unwatched, false)).toEqual([]);
+    expect(heldUntilWatched(worker({ intents: ['mock', 'view'] }), unwatched, true)).toEqual([]);
+    expect(heldUntilWatched(takes, stop('s1'), true)).toEqual([]);
+  });
+
+  it('makes the window that watches it a viewer of its stop: the input and, headless, the actions in the test’s window', () => {
+    const hub = 'ws://127.0.0.1:1/piwi/hub';
+    const all = ['pick', 'record', 'mock', 'view', 'input', 'pick-at'] as const;
+    const state: RunsState = {
+      discovery: 'found',
+      desktop: 'unpaired',
+      hubs: [{ id: hub, connected: true, client: null, desktop: false, lanes: true }],
+      runs: [
+        {
+          hub,
+          session: {
+            ...run('r1', []).session,
+            workers: [
+              worker({ worker: 5, parallelIndex: 1, state: 'stopped', stop: { ...stop('s1'), intents: [...all] } }),
+            ],
+          },
+        },
+      ],
+    };
+    const lanes: number[] = [];
+    const watched = stateForViewer(state, (_view, lane) => {
+      lanes.push(lane);
+      return lane === 1;
+    });
+    expect(lanes).toEqual([1]);
+    expect(watched.runs[0]!.session.workers[0]!.stop?.intents).toEqual([...all]);
+    const other = stateForViewer(state, (_view, lane) => lane === 0);
+    expect(other.runs[0]!.session.workers[0]!.stop?.intents).toEqual(['mock', 'view', 'pick-at']);
   });
 });

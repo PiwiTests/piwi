@@ -3,7 +3,8 @@
  * service's hub (`background/run-hubs.ts`), and the runs the paired desktop app's shell started, from the hub its
  * server is, and what the window and the worker say to each other through their port (`RUNS_PORT`). The window makes no network call and never sees a hub's token: it reads this state and sends the
  * controls, which the worker passes on. What a hub sends is data from another program: shown as text, an image or a
- * frame of a live view as an image, never as markup. A frame is kept in memory, the latest one alone, never stored.
+ * frame of a live view or of a watched lane as an image, never as markup. A frame is kept in memory, the latest one
+ * alone, never stored.
  */
 import { LIVE_SHARE_MISSING, LIVE_SHARE_UNKNOWN, type LiveViewMissing } from '@piwitests/core/live-view';
 import type {
@@ -69,6 +70,8 @@ export interface RunsHub {
   client: string | null;
   /** The paired desktop app's hub, of the runs its shell starts, rather than an editor's. */
   desktop: boolean;
+  /** It shows a lane of a run while it runs (`lanes` among the features it welcomed the worker with). */
+  lanes: boolean;
 }
 
 /** A run of a hub; `session.ended` for one that ended, kept a while with its last workers. */
@@ -91,7 +94,7 @@ export interface RunsState {
  * Record, the check panel's Assert, a region's Assert a region), the requests its test kept or the one to mock; an
  * image of the stopped page; or its live view: watching it (`view`), the input played on it (`input`), and the locator
  * of the element under a point of an image of it (`pick-at`); or the run shared live on the team instance, or no more
- * (`share`, Share live).
+ * (`share`, Share live); or a lane of the run watched while it runs, through its tests and stops (`watch`, Watch).
  */
 export type RunsWhat =
   | HubControlAction
@@ -103,7 +106,8 @@ export type RunsWhat =
   | 'view'
   | 'input'
   | 'pick-at'
-  | 'share';
+  | 'share'
+  | 'watch';
 
 const WHATS: readonly string[] = [
   'pause',
@@ -122,6 +126,7 @@ const WHATS: readonly string[] = [
   'input',
   'pick-at',
   'share',
+  'watch',
 ];
 
 /** The commands that name a worker and a stop's live view: the frames come to the window that watches it alone. */
@@ -146,8 +151,13 @@ export type RunsRequest =
       what: RunsWhat;
       /** For `mock` alone: the kept response to mock, the `id` of one of those `requests` listed. */
       request?: number;
-      /** For `view`: start watching the stop's live view, or stop; for `share`: share the run live, or stop. */
+      /**
+       * For `view`: start watching the stop's live view, or stop; for `share`: share the run live, or stop; for `watch`:
+       * start watching the lane, or stop.
+       */
       on?: boolean;
+      /** For `watch` alone: the lane, Playwright's `parallelIndex`. */
+      lane?: number;
       /** For `input` alone: the events to play on the page, in CSS pixels of its viewport. */
       events?: ViewInput[];
       /** For `pick-at` alone: the point of an image of the page, in CSS pixels of its viewport. */
@@ -206,6 +216,23 @@ export interface RunsView {
  */
 export type RunsFrame = RunsView & ({ width: number; height: number; data: string } | { refused: string });
 
+/** A lane of a run, as the window and the worker name it: the hub, the run, and Playwright's `parallelIndex`. */
+export interface RunsLane {
+  hub: string;
+  ref: string;
+  lane: number;
+}
+
+/**
+ * A frame of a lane the window watches: the page of the worker `worker` running the test `test` (Playwright's id) or
+ * standing at the stop `since` names (null while the test runs), as a frame of a stop's live view carries it; or the
+ * hub's sentence saying why the lane sends none now (`refused`), until a frame comes again.
+ */
+export type RunsLaneFrame = RunsLane & { worker: number; since: string | null } & (
+    | { test: string; width: number; height: number; data: string }
+    | { test: string | null; refused: string }
+  );
+
 /** What the worker sends the window. */
 export type RunsEvent =
   | { type: 'state'; state: RunsState }
@@ -213,7 +240,10 @@ export type RunsEvent =
   | ({ type: 'code' } & RunsCode)
   | ({ type: 'frame' } & RunsFrame)
   /** A live view the window watched ended without the window asking: its hub's connection was lost. */
-  | ({ type: 'view-ended' } & RunsView);
+  | ({ type: 'view-ended' } & RunsView)
+  | ({ type: 'lane-frame' } & RunsLaneFrame)
+  /** A lane the window watched is no longer watched without the window asking: its hub's connection was lost. */
+  | ({ type: 'lane-ended' } & RunsLane);
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -240,28 +270,35 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
       if (since !== null && (typeof since !== 'string' || !since || since.length > 64)) return null;
       if (typeof what !== 'string' || !WHATS.includes(what)) return null;
       if ((what === 'image' || VIEW_WHATS.includes(what)) && worker === null) return null;
-      // Share live names the run alone.
-      if (what === 'share' && (worker !== null || since !== null)) return null;
+      // Share live names the run alone, and Watch the run and its lane.
+      if ((what === 'share' || what === 'watch') && (worker !== null || since !== null)) return null;
       // Every control but Pause names the stop it answers, so a click made twice does not answer the next one.
-      if (what !== 'pause' && what !== 'image' && what !== 'share' && since === null) return null;
+      if (!['pause', 'image', 'share', 'watch'].includes(what) && since === null) return null;
       const command = { type: 'command', id, hub, ref, worker, since, what: what as RunsWhat } as const;
       // Each field belongs to one command alone: Mock a request names the response, a view whether it is on, an input
-      // its events, a pick on the image its point.
+      // its events, a pick on the image its point, Watch the lane and whether it is on.
       const own: Record<string, readonly string[]> = {
         mock: ['request'],
         view: ['on'],
         share: ['on'],
+        watch: ['lane', 'on'],
         input: ['events'],
         'pick-at': ['x', 'y'],
       };
       const fields = own[what] ?? [];
-      if (['request', 'on', 'events', 'x', 'y'].some((f) => !fields.includes(f) && value[f] !== undefined)) return null;
+      if (['request', 'on', 'lane', 'events', 'x', 'y'].some((f) => !fields.includes(f) && value[f] !== undefined)) {
+        return null;
+      }
       switch (what) {
         case 'mock':
           return isIndex(value.request) && value.request > 0 ? { ...command, request: value.request } : null;
         case 'view':
         case 'share':
           return typeof value.on === 'boolean' ? { ...command, on: value.on } : null;
+        case 'watch':
+          return typeof value.on === 'boolean' && isIndex(value.lane)
+            ? { ...command, lane: value.lane, on: value.on }
+            : null;
         case 'input': {
           const events = readViewInput(value.events);
           return typeof events === 'string' ? null : { ...command, events };
@@ -294,11 +331,56 @@ export function stopIntents(worker: Pick<HubWorker, 'intents'>, stop: Pick<HubSt
 }
 
 /**
- * The state as one window reads it: the background worker's single connection to a hub watches every stop a window
- * watches, so a stop the window does not watch itself takes from it what it takes from a connection that does not
- * watch: no input, and at a stop no pause bar shows, none of the actions in the test's window.
+ * The actions in the test's window a stop no pause bar shows takes from this window once it watches the stop (`view`,
+ * or its worker's lane), while it does not: those the worker's reporter takes, shown held, saying to watch first. None
+ * at a stop the bar shows, at one the window watches, at one that cannot be watched (`watchable`: the stop takes
+ * `view`, or its lane can be watched), and from a service that predates `stop.intents`.
  */
-export function stateForViewer(state: RunsState, watches: (view: RunsView) => boolean): RunsState {
+export function heldUntilWatched(
+  worker: Pick<HubWorker, 'intents'>,
+  stop: Pick<HubStop, 'bar' | 'intents'>,
+  watchable: boolean,
+): Array<(typeof IN_WINDOW)[number]> {
+  if (stop.bar || !stop.intents || !watchable) return [];
+  const taken = stop.intents;
+  return IN_WINDOW.filter((what) => worker.intents.includes(what) && !taken.includes(what));
+}
+
+/**
+ * Whether a worker's lane can be watched while it runs (Watch): `watch` at a hub whose features list `lanes`, the
+ * worker's reporter listing `watch`; `outdated` for a reporter that does not, at such a hub; null at a hub that
+ * predates it, where a stop's own view (`view`) is all there is.
+ */
+export function laneWatchOf(
+  hub: Pick<RunsHub, 'lanes'> | undefined,
+  worker: Pick<HubWorker, 'intents'>,
+): 'watch' | 'outdated' | null {
+  if (!hub?.lanes) return null;
+  return worker.intents.includes('watch') ? 'watch' : 'outdated';
+}
+
+/**
+ * Whether a frame of a lane shows where its worker stands now: sent by that worker, of the stop it stands at, or, while
+ * it runs, of its running test. Another one (taken before a Step, a Resume, a test that ended, or by the worker
+ * Playwright replaced) shows dimmed until the next frame comes.
+ */
+export function laneFrameNow(
+  frame: { worker: number; test: string | null; since: string | null },
+  worker: Pick<HubWorker, 'worker' | 'state' | 'test' | 'stop'> | undefined,
+): boolean {
+  if (!worker || frame.worker !== worker.worker) return false;
+  if (worker.state === 'stopped') return !!worker.stop && frame.since === worker.stop.since;
+  if (worker.state === 'between') return false;
+  return frame.since === null && !!worker.test && frame.test === worker.test.id;
+}
+
+/**
+ * The state as one window reads it: the background worker's single connection to a hub watches every stop and lane a
+ * window watches, so a stop the window does not watch itself (`watches`: its live view, or the lane of its worker,
+ * Playwright's `parallelIndex`) takes from it what it takes from a connection that does not watch: no input, and at a
+ * stop no pause bar shows, none of the actions in the test's window.
+ */
+export function stateForViewer(state: RunsState, watches: (view: RunsView, lane: number) => boolean): RunsState {
   return {
     ...state,
     runs: state.runs.map(({ hub, session }) => ({
@@ -307,9 +389,8 @@ export function stateForViewer(state: RunsState, watches: (view: RunsView) => bo
         ...session,
         workers: session.workers.map((worker) => {
           const { stop } = worker;
-          if (!stop?.intents || watches({ hub, ref: session.ref, worker: worker.worker, since: stop.since })) {
-            return worker;
-          }
+          const at = { hub, ref: session.ref, worker: worker.worker };
+          if (!stop?.intents || watches({ ...at, since: stop.since }, worker.parallelIndex)) return worker;
           const intents = stop.intents.filter(
             (what) =>
               what !== 'input' &&
@@ -367,11 +448,16 @@ export function shareRefusalOf(refused: string): LiveViewMissing | 'unknown' | n
 /**
  * Whether a run says where its tests' pages show: a live run none of whose workers stands stopped, with a worker whose
  * reporter shows a stopped page live (`view`) and whose test can stop. `desktop` for a run of the desktop app's hub,
- * which sets no breakpoints; null when there is nothing to say.
+ * which sets no breakpoints; null when there is nothing to say, and for a run with a worker whose lane can be watched
+ * while it runs, whose row says it (Watch).
  */
-export function pageHintOf(run: RunsRun, hub: Pick<RunsHub, 'desktop'> | undefined): 'editor' | 'desktop' | null {
+export function pageHintOf(
+  run: RunsRun,
+  hub: Pick<RunsHub, 'desktop' | 'lanes'> | undefined,
+): 'editor' | 'desktop' | null {
   const { session } = run;
   if (session.ended || session.workers.some((worker) => worker.state === 'stopped')) return null;
+  if (session.workers.some((worker) => laneWatchOf(hub, worker) === 'watch')) return null;
   const stops = session.workers.some((worker) => worker.intents.includes('view') && !worker.test?.cannotPause);
   if (!stops) return null;
   return hub?.desktop ? 'desktop' : 'editor';

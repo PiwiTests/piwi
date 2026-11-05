@@ -140,8 +140,9 @@ each rule below ends with the section to read there.
   meanwhile, and `on: false` as the last leaves (`run-hubs.test.ts`, `runs.spec.ts`). (see "A connection per hub")
 - **A stop's buttons follow what it takes from this window (`stopIntents`: `stop.intents`, else, from an older service,
   the worker's where the bar shows and no live view); a frame is kept in memory, the latest one alone, never stored;
-  input goes to the hub only for a stop the window watches itself** (`RunHubs.view`, `stateForViewer`,
-  `run-hubs.test.ts`, `runs.spec.ts`). (see "The Runs window" and "A connection per hub")
+  input goes to the hub only for a stop the window watches itself, through its view or its lane** (`RunHubs.view`,
+  `RunHubs.watchLane`, `stateForViewer`, `run-hubs.test.ts`, `runs.spec.ts`). (see "The Runs window" and "A
+  connection per hub")
 - **Escape, the function keys and the browser's shortcuts never reach a stopped page through the live view, and Tab
   leaves it unless a click took the keyboard** (`keyOnView`, `view-input.test.ts`). (see "The Runs window")
 - **No code from a stop comes to the Runs window:** it goes to the editor, which writes it, or to the desktop app's

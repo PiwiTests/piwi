@@ -1,9 +1,10 @@
 /**
  * One connection to an editor service's hub (`@piwitests/core/run-hub`), from the background worker alone: the
  * WebSocket the editor's live endpoint named, `hello` with its token, `subscribe` once welcomed, then each run as the
- * hub pushes it, what each code written at a stop came to, and the frames of the live views it watches. Every message
- * is read with `parseHubMessage`, field by field; one it cannot read is left aside, as a newer hub's would be. A command waits for the answer of its `id`, and
- * is answered by the worker itself when the connection closes or the hub stays silent. The hub sends `keepalive` every
+ * hub pushes it, what each code written at a stop came to, and the frames of the live views and lanes it watches.
+ * Every message is read with `parseHubMessage`, field by field; one it cannot read is left aside, as a newer hub's
+ * would be. A command waits for the answer of its `id`, and is answered by the worker itself when the connection
+ * closes or the hub stays silent. The hub sends `keepalive` every
  * `keepaliveMs`: a connection that hears nothing for two of them and a bit is closed as silent.
  */
 import {
@@ -14,6 +15,8 @@ import {
   type HubCommand,
   type HubFrameMessage,
   type HubFrameRefusal,
+  type HubLaneFrameMessage,
+  type HubLaneFrameRefusal,
   type HubSession,
   type HubWelcome,
   type LiveHub,
@@ -71,6 +74,8 @@ export interface HubConnectionEvents {
   code(code: HubCodeMessage): void;
   /** A frame of a stop's live view the connection watches, or why none comes. */
   frame(frame: HubFrameMessage | HubFrameRefusal): void;
+  /** A frame of a lane the connection watches (`watch`), or why none comes. */
+  laneFrame(frame: HubLaneFrameMessage | HubLaneFrameRefusal): void;
   /** The other live hubs of the machine, as the hub names them each time they change: no token. */
   peers(hubs: PeerHub[]): void;
   /** The connection closed by itself; `sessions` still holds the runs it had. */
@@ -199,6 +204,8 @@ export class HubConnection {
         return this.events.code(message);
       case 'frame':
         return this.events.frame(message);
+      case 'lane-frame':
+        return this.events.laneFrame(message);
       case 'peers':
         return this.events.peers(message.hubs);
       case 'session': {

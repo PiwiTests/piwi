@@ -6680,6 +6680,30 @@
   "runs_liveHint": {
     "message": "Tus clics, la rueda y tus teclas sobre la vista van a la página del test. Esc devuelve las teclas a esta ventana; Mayús+clic elige un locator."
   },
+  "runs_watch": {
+    "message": "Ver"
+  },
+  "runs_watchTitle": {
+    "message": "Mostrar la página del test mientras se ejecuta, a través de sus paradas y sus siguientes tests: en una parada, tus clics y teclas sobre ella van a la página"
+  },
+  "runs_pauseWatch": {
+    "message": "Pausar y ver"
+  },
+  "runs_pauseWatchTitle": {
+    "message": "Detener el test antes de su próxima llamada y mostrar su página"
+  },
+  "runs_watchOutdated": {
+    "message": "Actualiza el reporter para ver un test en curso"
+  },
+  "runs_watchToUse": {
+    "message": "Ver para usar"
+  },
+  "runs_laneRunning": {
+    "message": "En curso…"
+  },
+  "runs_laneAltLast": {
+    "message": "La página del test, tal como se vio por última vez"
+  },
   "runs_pickAt": {
     "message": "Elegir en la imagen"
   },
