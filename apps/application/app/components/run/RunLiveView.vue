@@ -15,6 +15,7 @@ import {
   parseLiveViewerMessage,
   type LiveCall,
   type LiveCallLog,
+  type LiveTestOutcome,
 } from '#shared/live-view';
 import { stallWatch, STREAM_RECONNECT_STALL_MS } from '~/utils/stream-stall';
 
@@ -22,6 +23,8 @@ const props = defineProps<{
   runId: number;
   worker: number;
   shard: number | null;
+  /** The worker's lane, from a reporter that says it: the view then follows the lane through its next tests. */
+  slot?: number | null;
   /** The title of the test whose row the view was opened from. */
   test: string;
   /** Piwi project id + name, for the IDE opener of each call's place. */
@@ -47,6 +50,22 @@ const callAt = ref(0);
 const now = ref(Date.now());
 const notice = ref(WAITING);
 const ended = ref(false);
+/** Whether the view follows the worker's lane, which a reporter that says it lets it. */
+const follows = computed(() => typeof props.slot === 'number');
+/** Whether the view goes on with the lane's next test, else ends with its test (**This test only**). */
+const followNext = ref(true);
+/** The test the view shows now: the row's, then each next test of the lane. */
+const watchedTest = ref(props.test);
+/** How the test the view showed last ended, while the lane's next test has not begun. */
+const outcome = ref<LiveTestOutcome | null>(null);
+/** The view goes on with `test`, the lane's next one, when it follows the lane; false when it does not. */
+function nextTest(test: string): boolean {
+  if (!follows.value || !followNext.value) return false;
+  watchedTest.value = test;
+  outcome.value = null;
+  log.value = null;
+  return true;
+}
 let source: EventSource | null = null;
 let viewOpen = false;
 /** Says so when the view's stream has not been open for a while, through its reconnections. */
@@ -70,6 +89,7 @@ function connect(): void {
   ended.value = false;
   const query = new URLSearchParams({ worker: String(props.worker) });
   if (props.shard !== null) query.set('shard', String(props.shard));
+  if (follows.value) query.set('slot', String(props.slot));
   const opening = new EventSource(
     `${baseURL.replace(/\/$/, '')}/api/test-runs/${props.runId}/live-view/watch?${query}`,
   );
@@ -85,14 +105,20 @@ function connect(): void {
     const message = parseLiveViewerMessage(String(event.data));
     if (!message) return;
     if (message.type === 'frame') {
-      // The worker went on to its next test: the one watched ended.
-      if (message.test !== null && message.test !== props.test) return end(LIVE_VIEW_END_TEXT['test-ended']);
+      // The worker went on to its next test: a view of its lane goes on with it, a view of one test ends.
+      if (message.test !== null && message.test !== watchedTest.value && !nextTest(message.test)) {
+        return end(LIVE_VIEW_END_TEXT['test-ended']);
+      }
+      // A frame after the test ended is of the lane's next test, of the same title.
+      if (outcome.value && follows.value) outcome.value = null;
       image.value = `data:image/jpeg;base64,${message.data}`;
       call.value = message.call;
       callAt.value = Date.now();
       notice.value = '';
     } else if (message.type === 'call-log') {
-      if (message.test !== null && message.test !== props.test) return end(LIVE_VIEW_END_TEXT['test-ended']);
+      if (message.test !== null && message.test !== watchedTest.value && !nextTest(message.test)) {
+        return end(LIVE_VIEW_END_TEXT['test-ended']);
+      }
       const before = log.value;
       log.value = message.log;
       logAt.value = Date.now();
@@ -102,7 +128,12 @@ function connect(): void {
       }
     } else if (message.type === 'refused') {
       notice.value = message.message;
+    } else if (message.type === 'test-ended') {
+      outcome.value = message.outcome;
+      // This test only: the view ends with its test.
+      if (!followNext.value) end(LIVE_VIEW_END_TEXT['test-ended']);
     } else {
+      if (message.outcome) outcome.value = message.outcome;
       end(LIVE_VIEW_END_TEXT[message.reason]);
     }
   };
@@ -228,7 +259,22 @@ const overlay = computed(() => {
   return { viewport: shown.viewport, box, point, radius: Math.max(6, width / 120) };
 });
 
-const name = computed(() => liveWorkerName({ shard: props.shard, worker: props.worker }));
+const name = computed(() =>
+  liveWorkerName({ shard: props.shard, worker: props.worker, ...(follows.value ? { slot: props.slot! } : {}) }),
+);
+const OUTCOME_VERBS: Record<LiveTestOutcome['status'], string> = {
+  passed: 'passed',
+  failed: 'failed',
+  timedOut: 'timed out',
+  skipped: 'was skipped',
+  interrupted: 'was interrupted',
+};
+/** How the test the view showed ended, in words. */
+const outcomeText = computed(() => {
+  const shown = outcome.value;
+  if (!shown) return '';
+  return `${shown.test ?? watchedTest.value} ${OUTCOME_VERBS[shown.status]} in ${formatLongDuration(shown.ms)}`;
+});
 const title = computed(() => `${name.value.charAt(0).toUpperCase()}${name.value.slice(1)} · live`);
 const alt = computed(
   () => `The page ${name.value} is on${shownCall.value ? `, at ${shownCall.value.title}` : ''}, as the test sees it`,
@@ -236,8 +282,16 @@ const alt = computed(
 </script>
 
 <template>
-  <UModal v-model:open="open" :title="title" :description="test" :ui="{ content: 'sm:max-w-3xl' }">
+  <UModal v-model:open="open" :title="title" :description="watchedTest" :ui="{ content: 'sm:max-w-3xl' }">
     <template #body>
+      <UCheckbox
+        v-if="follows && !ended"
+        v-model="followNext"
+        label="Follow the worker's next test"
+        size="sm"
+        class="mb-2"
+        data-testid="live-follow"
+      />
       <figure class="space-y-2" data-testid="live-view">
         <div class="relative aspect-[16/10] w-full overflow-hidden rounded-md border border-default bg-elevated">
           <img
@@ -290,6 +344,16 @@ const alt = computed(
             {{ notice }}
           </p>
         </div>
+        <p v-if="outcome" class="text-sm text-highlighted" data-testid="live-outcome">
+          <UIcon
+            :name="getStatusIcon(outcome.status === 'timedOut' ? 'timedout' : outcome.status)"
+            :class="getStatusTextClass(outcome.status === 'timedOut' ? 'timedout' : outcome.status)"
+            class="mr-1 size-4 align-text-bottom"
+          />{{ outcomeText
+          }}<template v-if="follows && followNext && !ended"
+            ><span class="text-muted"> · waiting for the worker's next test</span></template
+          >
+        </p>
         <figcaption class="min-h-4 text-xs text-muted" data-testid="live-call">
           <template v-if="shownCall">
             At <span class="font-mono">{{ shownCall.title }}</span

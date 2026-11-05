@@ -6,19 +6,31 @@
 import {
   readLiveCall,
   readLiveCallLog,
+  readLiveTestOutcome,
   readLiveTestTitle,
   type LiveCall,
   type LiveCallLog,
   type LiveStop,
+  type LiveTestOutcome,
   type LiveWorkerId,
 } from '@piwitests/core/live-view';
 
-export { liveWorkerKey, type LiveCall, type LiveCallLog, type LiveStop } from '@piwitests/core/live-view';
+export {
+  liveWorkerKey,
+  type LiveCall,
+  type LiveCallLog,
+  type LiveStop,
+  type LiveTestOutcome,
+} from '@piwitests/core/live-view';
 
-/** A worker of a live run as the run page knows it: whether it is connected, and its test's stop while it holds. */
+/**
+ * A worker of a live run as the run page knows it: its lane (`slot`, from a reporter that says it), whether it is
+ * connected, and its test's stop while it holds.
+ */
 export interface LiveWorkerState {
   shard: number | null;
   worker: number;
+  slot?: number;
   connected: boolean;
   paused: LiveStop | null;
 }
@@ -34,9 +46,13 @@ export interface LiveViewRunState {
   enabled: boolean;
 }
 
-/** How the run page names a worker: its index, and its shard in a sharded run. */
+/**
+ * How the run page names a worker: by its lane, counted from 1 (`worker 2`), which a worker Playwright starts again
+ * after a failure keeps, else by its index from a reporter that does not say its lane; and its shard in a sharded run.
+ */
 export function liveWorkerName(id: LiveWorkerId): string {
-  return id.shard === null ? `worker ${id.worker}` : `worker ${id.worker} of shard ${id.shard}`;
+  const name = id.slot === undefined ? `worker ${id.worker}` : `worker ${id.slot + 1}`;
+  return id.shard === null ? name : `${name} of shard ${id.shard}`;
 }
 
 /**
@@ -54,8 +70,10 @@ export type LiveViewerMessage =
   | { type: 'call-log'; log: LiveCallLog; test: string | null }
   /** Why no frame shows now. */
   | { type: 'refused'; message: string }
-  /** The view ended: the stream closes after it. */
-  | { type: 'end'; reason: LiveViewEnd };
+  /** The test ended, how when its worker says (`outcome`): a view that follows the worker's lane stays for the next. */
+  | { type: 'test-ended'; outcome: LiveTestOutcome | null }
+  /** The view ended, with how its test ended when that is why: the stream closes after it. */
+  | { type: 'end'; reason: LiveViewEnd; outcome?: LiveTestOutcome | null };
 
 const ENDS: readonly string[] = ['test-ended', 'worker-left', 'run-ended', 'off', 'replaced', 'unshared'];
 
@@ -84,8 +102,15 @@ export function parseLiveViewerMessage(data: string): LiveViewerMessage | null {
     }
     case 'refused':
       return typeof message.message === 'string' ? { type: 'refused', message: message.message.slice(0, 500) } : null;
-    case 'end':
-      return ENDS.includes(message.reason as string) ? { type: 'end', reason: message.reason as LiveViewEnd } : null;
+    case 'test-ended':
+      return { type: 'test-ended', outcome: readLiveTestOutcome(message.outcome) };
+    case 'end': {
+      if (!ENDS.includes(message.reason as string)) return null;
+      const outcome = readLiveTestOutcome(message.outcome);
+      return outcome
+        ? { type: 'end', reason: message.reason as LiveViewEnd, outcome }
+        : { type: 'end', reason: message.reason as LiveViewEnd };
+    }
     default:
       return null;
   }

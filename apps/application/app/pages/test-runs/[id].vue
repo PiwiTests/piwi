@@ -131,13 +131,21 @@ const desktopSessions = useDesktopRunSessions(() => ({
   kind: runOrigin(testRun.value?.metadata),
   ref: runOriginRef(testRun.value?.metadata),
 }));
-// The worker someone opened Watch on, and the execution of the row they opened it from: the view is that test's.
-const watching = ref<{ worker: number; shard: number | null; test: string; executionId: number } | null>(null);
+// The worker someone opened Watch on, its lane, and the execution of the row they opened it from: the view starts
+// on that test, and follows the lane's next tests when the worker says its lane.
+const watching = ref<{
+  worker: number;
+  shard: number | null;
+  slot: number | null;
+  test: string;
+  executionId: number;
+} | null>(null);
 const watchOpen = ref(false);
 function watchWorker(worker: LiveWorkerState, testCase: TestCaseResult) {
   watching.value = {
     worker: worker.worker,
     shard: worker.shard,
+    slot: worker.slot ?? null,
     test: testCase.title,
     executionId: testCase.executionId,
   };
@@ -1282,6 +1290,7 @@ const moreMenuItems = computed(() => {
       :run-id="Number(runId)"
       :worker="watching.worker"
       :shard="watching.shard"
+      :slot="watching.slot"
       :test="watching.test"
       :project-key="testRun?.projectId"
       :project-name="testRun?.project?.name"

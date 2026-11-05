@@ -23,6 +23,7 @@ import {
   type LiveViewAddress,
   type LiveWorkerId,
   type WorkerToInstance,
+  type LiveTestOutcome,
 } from '@piwitests/core/live-view';
 import { hideSecretsInText, hideTypedText } from '@piwitests/core/mask';
 import type { RunLiveState } from '@piwitests/core/run-channel';
@@ -231,7 +232,7 @@ export function liveViewState(): RunLiveState {
  * one, only once the run is shared (`shareLiveView`). Returns at once, whether it named one. Never throws.
  */
 export function openLiveView(
-  worker: Pick<WorkerInfo, 'workerIndex' | 'config'>,
+  worker: Pick<WorkerInfo, 'workerIndex' | 'config'> & { parallelIndex?: number },
   env: NodeJS.ProcessEnv = process.env,
   ci = detectCi(env),
 ): boolean {
@@ -250,7 +251,12 @@ export function openLiveView(
   const client = secure ? https : http;
   link = {
     address,
-    id: { shard: resolveShardInfo(worker.config, env)?.current ?? null, worker: worker.workerIndex },
+    id: {
+      shard: resolveShardInfo(worker.config, env)?.current ?? null,
+      worker: worker.workerIndex,
+      // The lane, which a worker Playwright starts again after a failure keeps, so a view follows it.
+      ...(typeof worker.parallelIndex === 'number' ? { slot: worker.parallelIndex } : {}),
+    },
     client,
     // The stream, and a frame, a call log and a stop or an end in flight at once: none waits behind another.
     agent: new client.Agent({ keepAlive: true, maxSockets: 4 }),
@@ -349,13 +355,15 @@ export function liveViewPage(page: Page): void {
   if (link.viewers > 0 && active(link)) startView();
 }
 
-/** The test ended: its view stops, and the people watching hear it ended. */
-export async function liveViewTestEnded(): Promise<void> {
+/** The test ended (`status`, Playwright's): its view stops, and the people watching hear how it ended. */
+export async function liveViewTestEnded(status?: LiveTestOutcome['status']): Promise<void> {
   if (!running) return;
+  const ended = running;
   running = null;
+  const outcome = status ? { test: ended.title, status, ms: Math.max(0, Date.now() - ended.began) } : null;
   await stopView();
   const own = link;
-  if (own && own.viewers > 0 && active(own)) void post(own, { type: 'ended', ...own.id });
+  if (own && own.viewers > 0 && active(own)) void post(own, { type: 'ended', ...own.id, outcome });
 }
 
 /**
@@ -399,6 +407,7 @@ function connect(own: Link): void {
   const url = new URL(own.address.url);
   url.searchParams.set('worker', String(own.id.worker));
   if (own.id.shard !== null) url.searchParams.set('shard', String(own.id.shard));
+  if (own.id.slot !== undefined) url.searchParams.set('slot', String(own.id.slot));
   let openedAt: number | null = null;
   let dropped = false;
   /**

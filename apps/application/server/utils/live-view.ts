@@ -5,8 +5,10 @@ import {
   LIVE_FRAME_FPS,
   LIVE_VIEW_KEY_PREFIX,
   isLiveViewKey,
+  liveLaneKey,
   liveWorkerKey,
   type LiveStop,
+  type LiveTestOutcome,
   type InstanceToWorker,
   type LiveWorkerId,
   type WorkerToInstance,
@@ -49,6 +51,10 @@ export const MAX_RELAYED_CALL_LOGS = LIVE_CALL_LOGS_PER_SECOND * 2;
 export const LIVE_KEY_TTL_MS = 24 * 60 * 60 * 1000;
 /** The most viewers one person holds in one run: a further one replaces their oldest. */
 export const MAX_LIVE_VIEWERS_PER_PERSON = 4;
+/** How long a viewer who follows a lane waits for its worker to start again, as Playwright does after a failure. */
+export const LANE_WAIT_MS = 30_000;
+/** What a viewer who follows a lane sees while its worker starts again. */
+export const LANE_RESTARTING = 'The worker is starting again after its test failed.';
 /** The most keys held, of every run: the expired go first, then the oldest of the project that holds the most. */
 export const MAX_LIVE_KEYS = 5000;
 /** The most keys of one project: its expired go first, then its oldest. */
@@ -88,6 +94,8 @@ interface Viewer {
   person: number | null;
   /** When it came, in the order of all viewers. */
   since: number;
+  /** The lane it follows (`liveLaneKey`), through the lane's tests and its worker's restarts; null for one worker's test. */
+  lane: string | null;
 }
 
 interface WorkerLink {
@@ -103,6 +111,10 @@ interface WorkerLink {
 interface RunLive {
   projectId: number;
   workers: Map<string, WorkerLink>;
+  /** The worker that holds each lane now, by `liveLaneKey`. */
+  lanes: Map<string, WorkerLink>;
+  /** The viewers of a lane whose worker left, waiting `LANE_WAIT_MS` for one to start in it again. */
+  waiting: Map<string, { viewers: Set<Viewer>; timer: ReturnType<typeof setTimeout> }>;
 }
 
 /** What a run's workers sent, the posts refused included: the run page's and the tests' check that nothing went. */
@@ -212,7 +224,12 @@ export class LiveViewRelay {
     if (!before && (known?.workers.size ?? 0) >= MAX_LIVE_WORKERS_PER_RUN) {
       return { status: 429, message: `A run has ${MAX_LIVE_WORKERS_PER_RUN} workers in its live view at most.` };
     }
-    const run = known ?? { projectId: entry.projectId, workers: new Map<string, WorkerLink>() };
+    const run = known ?? {
+      projectId: entry.projectId,
+      workers: new Map<string, WorkerLink>(),
+      lanes: new Map<string, WorkerLink>(),
+      waiting: new Map(),
+    };
     this.runs.set(entry.runId, run);
     entry.streamed = true;
     const sink = open();
@@ -231,6 +248,7 @@ export class LiveViewRelay {
       before.viewers.clear();
       before.sink.close();
     }
+    if (id.slot !== undefined) this.takeLane(run, link, liveLaneKey({ shard: id.shard, slot: id.slot }));
     sink.onClose(() => this.disconnectWorker(entry.runId, key, link));
     // The elements to mask go before anyone watches: the latest a project admin set here, else the route's read.
     const locators = this.projectMasks.get(entry.projectId) ?? masks;
@@ -268,7 +286,7 @@ export class LiveViewRelay {
         this.publish(runId, { ...link.id, connected: true, paused: message.stop });
         return null;
       case 'ended':
-        this.endViewers(link, 'test-ended');
+        this.testEnded(link, message.outcome ?? null);
         return null;
       case 'unshared':
         this.endViewers(link, 'unshared');
@@ -288,19 +306,22 @@ export class LiveViewRelay {
     person: number | null = null,
   ): LiveViewRefusal | null {
     const run = this.runs.get(runId);
-    const link = run?.workers.get(liveWorkerKey(id));
+    // A viewer who names the worker's lane follows it; one who names the worker alone watches its test.
+    const lane = id.slot === undefined ? null : liveLaneKey({ shard: id.shard, slot: id.slot });
+    const link = lane !== null ? run?.lanes.get(lane) : run?.workers.get(liveWorkerKey(id));
     if (!run || !link) return { status: 404, message: 'This worker is not in the live view of the run.' };
-    const all: Array<{ worker: WorkerLink; viewer: Viewer }> = [];
+    const all: Array<{ worker: WorkerLink | null; viewer: Viewer }> = [];
     for (const worker of run.workers.values()) for (const viewer of worker.viewers) all.push({ worker, viewer });
+    for (const { viewers } of run.waiting.values()) for (const viewer of viewers) all.push({ worker: null, viewer });
     const own = person === null ? [] : all.filter(({ viewer }) => viewer.person === person);
     own.sort((a, b) => a.viewer.since - b.viewer.since);
     const replaced = own.length >= MAX_LIVE_VIEWERS_PER_PERSON ? own[0]! : null;
     if (!replaced && all.length >= MAX_LIVE_VIEWERS_PER_RUN) {
       return { status: 429, message: `${MAX_LIVE_VIEWERS_PER_RUN} people at most watch one run at a time.` };
     }
-    if (replaced) this.endViewer(replaced.worker, replaced.viewer, 'replaced');
+    if (replaced) this.endViewer(run, replaced.worker, replaced.viewer, 'replaced');
     const sink = open();
-    const viewer: Viewer = { sink, pending: new Map(), person, since: this.viewersCame++ };
+    const viewer: Viewer = { sink, pending: new Map(), person, since: this.viewersCame++, lane };
     link.viewers.add(viewer);
     sink.onDrain(() => {
       for (const [type, waiting] of viewer.pending) {
@@ -310,9 +331,13 @@ export class LiveViewRelay {
       }
     });
     sink.onClose(() => {
-      // The link the viewer watches now, should its worker have opened its stream again.
-      const current = this.runs.get(runId)?.workers.get(liveWorkerKey(id));
-      if (current?.viewers.delete(viewer)) current.sink.send({ type: 'viewers', count: current.viewers.size });
+      // The link the viewer watches now: its worker may have opened its stream again, or another taken its lane.
+      const now = this.runs.get(runId);
+      if (!now) return;
+      for (const current of now.workers.values()) {
+        if (current.viewers.delete(viewer)) current.sink.send({ type: 'viewers', count: current.viewers.size });
+      }
+      for (const { viewers } of now.waiting.values()) viewers.delete(viewer);
     });
     link.sink.send({ type: 'viewers', count: link.viewers.size });
     return null;
@@ -392,6 +417,7 @@ export class LiveViewRelay {
       link.sink.close();
       this.publish(runId, { ...link.id, connected: false, paused: null });
     }
+    for (const lane of run.waiting.keys()) this.stopWaiting(run, lane, reason);
   }
 
   /** A key opens nothing more, remembered with why until it would have expired. */
@@ -447,12 +473,73 @@ export class LiveViewRelay {
     }
   }
 
-  /** One viewer of the worker hears why its view ended, and its stream closes; the worker hears how many are left. */
-  private endViewer(link: WorkerLink, viewer: Viewer, reason: LiveViewEnd): void {
-    link.viewers.delete(viewer);
+  /**
+   * One viewer of the worker (or waiting for its lane's worker, `link` null) hears why its view ended, and its stream
+   * closes; the worker hears how many are left.
+   */
+  private endViewer(run: RunLive, link: WorkerLink | null, viewer: Viewer, reason: LiveViewEnd): void {
+    if (link) link.viewers.delete(viewer);
+    for (const { viewers } of run.waiting.values()) viewers.delete(viewer);
     viewer.sink.send({ type: 'end', reason } satisfies LiveViewerMessage);
     viewer.sink.close();
+    link?.sink.send({ type: 'viewers', count: link.viewers.size });
+  }
+
+  /**
+   * The worker's test ended (`outcome`, when it says how): the viewers of its test alone hear their view ended, and
+   * those who follow its lane hear how the test ended and stay for the next one.
+   */
+  private testEnded(link: WorkerLink, outcome: LiveTestOutcome | null): void {
+    if (!link.viewers.size) return;
+    for (const viewer of [...link.viewers]) {
+      if (viewer.lane !== null) {
+        viewer.sink.send({ type: 'test-ended', outcome } satisfies LiveViewerMessage);
+        continue;
+      }
+      link.viewers.delete(viewer);
+      viewer.sink.send({
+        type: 'end',
+        reason: 'test-ended',
+        ...(outcome ? { outcome } : {}),
+      } satisfies LiveViewerMessage);
+      viewer.sink.close();
+    }
     link.sink.send({ type: 'viewers', count: link.viewers.size });
+  }
+
+  /**
+   * `link` holds the lane `lane` from now on: the viewers who follow the lane leave the worker that held it before, and
+   * those who waited for it come, the worker hearing how many watch.
+   */
+  private takeLane(run: RunLive, link: WorkerLink, lane: string): void {
+    const before = run.lanes.get(lane);
+    run.lanes.set(lane, link);
+    if (before && before !== link) {
+      for (const viewer of [...before.viewers]) {
+        if (viewer.lane !== lane) continue;
+        before.viewers.delete(viewer);
+        link.viewers.add(viewer);
+      }
+      before.sink.send({ type: 'viewers', count: before.viewers.size });
+    }
+    const waiting = run.waiting.get(lane);
+    if (waiting) {
+      clearTimeout(waiting.timer);
+      run.waiting.delete(lane);
+      for (const viewer of waiting.viewers) link.viewers.add(viewer);
+    }
+  }
+
+  /** The viewers waiting for the lane's worker stop waiting: their view ends with `reason`. */
+  private stopWaiting(run: RunLive, lane: string, reason: LiveViewEnd): void {
+    const waiting = run.waiting.get(lane);
+    if (!waiting) return;
+    clearTimeout(waiting.timer);
+    run.waiting.delete(lane);
+    for (const viewer of waiting.viewers) {
+      viewer.sink.send({ type: 'end', reason } satisfies LiveViewerMessage);
+      viewer.sink.close();
+    }
   }
 
   /** The worker's viewers hear why their view ended, and their streams close; the worker hears nobody watches. */
@@ -471,9 +558,24 @@ export class LiveViewRelay {
     const run = this.runs.get(runId);
     if (run?.workers.get(key) !== link) return;
     run.workers.delete(key);
+    const lane = link.id.slot === undefined ? null : liveLaneKey({ shard: link.id.shard, slot: link.id.slot });
+    if (lane !== null && run.lanes.get(lane) === link) {
+      run.lanes.delete(lane);
+      // The viewers who follow the lane wait for the worker Playwright starts in it again.
+      const followers = [...link.viewers].filter((viewer) => viewer.lane === lane);
+      if (followers.length) {
+        for (const viewer of followers) {
+          link.viewers.delete(viewer);
+          viewer.sink.send({ type: 'refused', message: LANE_RESTARTING } satisfies LiveViewerMessage);
+        }
+        const timer = setTimeout(() => this.stopWaiting(run, lane, 'worker-left'), LANE_WAIT_MS);
+        timer.unref?.();
+        run.waiting.set(lane, { viewers: new Set(followers), timer });
+      }
+    }
     this.endViewers(link, 'worker-left');
     this.publish(runId, { ...link.id, connected: false, paused: null });
-    if (!run.workers.size) this.runs.delete(runId);
+    if (!run.workers.size && !run.waiting.size) this.runs.delete(runId);
   }
 
   private countsOf(runId: number): LiveViewCounts {

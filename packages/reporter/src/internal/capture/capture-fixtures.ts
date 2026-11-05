@@ -3949,7 +3949,7 @@ export const piwiFixtures: Fixtures<
         sink.ending = true;
         await endShownStops(sink, 'ended');
         await awaitReleasedCalls(sink);
-        await liveViewTestEnded();
+        await liveViewTestEnded(testInfo.status);
         showRunChannel();
         currentSink = null;
         // A pause the editor asked that no call of this test took stops the next test's first call.

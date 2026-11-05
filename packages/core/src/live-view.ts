@@ -172,10 +172,30 @@ export interface LiveCall {
   line: number | null;
 }
 
-/** A worker of a run: its shard (null in a run that is not sharded) and Playwright's worker index. */
+/**
+ * A worker of a run: its shard (null in a run that is not sharded), Playwright's worker index, and its lane (`slot`,
+ * Playwright's `parallelIndex`, which a worker started again after a failure keeps; absent from an older reporter).
+ */
 export interface LiveWorkerId {
   shard: number | null;
   worker: number;
+  slot?: number;
+}
+
+/** How a test a worker ran ended: its title, Playwright's status and how long it ran, in ms. */
+export interface LiveTestOutcome {
+  test: string | null;
+  status: 'passed' | 'failed' | 'timedOut' | 'skipped' | 'interrupted';
+  ms: number;
+}
+
+const OUTCOME_STATUSES: readonly string[] = ['passed', 'failed', 'timedOut', 'skipped', 'interrupted'];
+
+/** A test's outcome, checked field by field; null when it is not one. */
+export function readLiveTestOutcome(value: unknown): LiveTestOutcome | null {
+  if (!isObject(value) || !OUTCOME_STATUSES.includes(value.status as string)) return null;
+  if (!isInt(value.ms, 0, 7 * 24 * 3_600_000)) return null;
+  return { test: readLiveTestTitle(value.test), status: value.status as LiveTestOutcome['status'], ms: value.ms };
 }
 
 /** The title of a test a message names, cut short; null for none. */
@@ -285,8 +305,8 @@ export type WorkerToInstance =
   | (LiveWorkerId & { type: 'stop'; stop: LiveStop | null })
   /** The call the worker's test is in, as Playwright logs it, and the test's title, as a frame names it. */
   | (LiveWorkerId & { type: 'call-log'; log: LiveCallLog; test: string | null })
-  /** The test the viewers watched ended, or none runs: their view closes. */
-  | (LiveWorkerId & { type: 'ended' })
+  /** The test the viewers watched ended, how when the worker knows (`outcome`), or none runs. */
+  | (LiveWorkerId & { type: 'ended'; outcome?: LiveTestOutcome | null })
   /** The person who shared the run stopped sharing it: the viewers' views close, and the worker's stream after them. */
   | (LiveWorkerId & { type: 'unshared' });
 
@@ -304,18 +324,26 @@ function wholeNumber(value: unknown): number {
   return typeof value === 'string' && /^\d{1,6}$/.test(value) ? Number(value) : Number.NaN;
 }
 
-/** A worker's shard and index, from a message or a query: null when either is not one. */
-export function readLiveWorkerId(shard: unknown, worker: unknown): LiveWorkerId | null {
+/** A worker's shard, index and lane, from a message or a query: null when the shard or the index is not one. */
+export function readLiveWorkerId(shard: unknown, worker: unknown, slot?: unknown): LiveWorkerId | null {
   const shardValue = shard === null || shard === undefined || shard === '' ? null : wholeNumber(shard);
   const workerValue = wholeNumber(worker);
   if (shardValue !== null && !isInt(shardValue, 1, 10_000)) return null;
   if (!isInt(workerValue, 0, 100_000)) return null;
-  return { shard: shardValue, worker: workerValue };
+  const slotValue = wholeNumber(slot);
+  return isInt(slotValue, 0, 10_000)
+    ? { shard: shardValue, worker: workerValue, slot: slotValue }
+    : { shard: shardValue, worker: workerValue };
 }
 
 /** The key the instance files a worker under: `<shard>:<worker>`, the shard empty in a run that is not sharded. */
 export function liveWorkerKey(id: LiveWorkerId): string {
   return `${id.shard ?? ''}:${id.worker}`;
+}
+
+/** The key of a worker's lane, its shard and its slot (`<shard>#<slot>`), which a restarted worker keeps. */
+export function liveLaneKey(lane: { shard: number | null; slot: number }): string {
+  return `${lane.shard ?? ''}#${lane.slot}`;
 }
 
 const STOP_REASONS: readonly string[] = ['breakpoint', 'step', 'pause', 'run-to', 'page-pause', 'failure', 'other'];
@@ -447,7 +475,7 @@ export function isLiveFrameData(data: unknown): data is string {
 /** A message a worker posted, checked field by field; why not, as a sentence, when it is not one this version reads. */
 export function readWorkerToInstance(value: unknown): WorkerToInstance | string {
   if (!isObject(value)) return 'The message is not an object.';
-  const id = readLiveWorkerId(value.shard, value.worker);
+  const id = readLiveWorkerId(value.shard, value.worker, value.slot);
   if (!id) return 'The message names no worker: a worker index, and a shard from 1 when the run is sharded.';
   switch (value.type) {
     case 'frame': {
@@ -474,8 +502,10 @@ export function readWorkerToInstance(value: unknown): WorkerToInstance | string 
         ? { type: 'call-log', ...id, log, test: readLiveTestTitle(value.test) }
         : 'A call log names its call, its status and its lines.';
     }
-    case 'ended':
-      return { type: 'ended', ...id };
+    case 'ended': {
+      const outcome = readLiveTestOutcome(value.outcome);
+      return outcome ? { type: 'ended', ...id, outcome } : { type: 'ended', ...id };
+    }
     case 'unshared':
       return { type: 'unshared', ...id };
     default:
