@@ -147,7 +147,7 @@ export async function streamMultipart(event: H3Event, options: StreamMultipartOp
       let streamedBytes = 0;
 
       bb.on('file', (field: string, stream: NodeJS.ReadableStream, info: busboy.FileInfo) => {
-        const { filename } = info;
+        const filename = info.filename ?? '';
         // Reserve this part's arrival slot now; writes flush out of order, so
         // filling the slot on completion keeps `files` in the order parts arrived.
         const index = fileWrites.length;
