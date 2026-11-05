@@ -19,6 +19,7 @@ type CaseLike = {
   title: string;
   status: string;
   workerIndex: number | null;
+  parallelIndex?: number | null;
   shardIndex?: number | null;
   startedAt?: number | null;
   duration?: number | null;
@@ -524,6 +525,87 @@ describe('useTimelineModel', () => {
     expect(runLocks.value).toEqual(['api', 'db']);
     expect(timelineData.value.find((d) => d.key === 't1')!.locks).toEqual(['db', 'api']);
     expect(timelineData.value.find((d) => d.key === 't3')!.locks).toBeNull();
+  });
+});
+
+describe('the lanes a reporter names', () => {
+  /** A test run by worker process `workerIndex` on lane `parallelIndex`, from `startedAt` for `duration`. */
+  const ran = (
+    executionId: number,
+    workerIndex: number,
+    parallelIndex: number | undefined,
+    startedAt: number | null,
+    duration = 500,
+    extra: Partial<CaseLike> = {},
+  ): CaseLike => ({
+    executionId,
+    title: `T${executionId}`,
+    status: 'passed',
+    workerIndex,
+    ...(parallelIndex !== undefined ? { parallelIndex } : {}),
+    startedAt,
+    duration,
+    ...extra,
+  });
+  const lanes = (cases: CaseLike[]) => model(cases).workerRows.value.map((r) => [r.shardIndex, r.slot, r.processes]);
+
+  test('puts a replacement worker process on the lane it took, whatever freed up last', () => {
+    // Process 0 fails on lane 0 and Playwright starts process 2 there; lane 1 freed up later, which timing alone picks.
+    const cases = [ran(1, 0, 0, 1000, 500, { status: 'failed' }), ran(2, 1, 1, 1000, 600), ran(3, 2, 0, 1700, 400)];
+    expect(lanes(cases)).toEqual([
+      [null, 0, [0, 2]],
+      [null, 1, [1]],
+    ]);
+    expect(lanes(cases.map(({ parallelIndex: _lane, ...rest }) => rest))).toEqual([
+      [null, 0, [0]],
+      [null, 1, [1, 2]],
+    ]);
+    const { timelineData } = model(cases);
+    const restart = timelineData.value.find((d) => d.kind === 'restart')!;
+    expect([restart.slot, restart.start, restart.duration]).toEqual([0, 500, 200]);
+    expect(timelineData.value.find((d) => d.key === 't3')!.slot).toBe(0);
+  });
+
+  test('orders lanes by their number, not by when they started', () => {
+    expect(lanes([ran(1, 0, 1, 1000), ran(2, 1, 0, 1200)])).toEqual([
+      [null, 0, [1]],
+      [null, 1, [0]],
+    ]);
+  });
+
+  test('numbers the lanes of each shard from its own first', () => {
+    expect(
+      lanes([
+        ran(1, 0, 0, 1000, 500, { shardIndex: 2 }),
+        ran(2, 1, 1, 1000, 500, { shardIndex: 1 }),
+        ran(3, 0, 0, 1000, 500, { shardIndex: 1 }),
+      ]),
+    ).toEqual([
+      [1, 0, [0]],
+      [1, 1, [1]],
+      [2, 0, [0]],
+    ]);
+  });
+
+  test('works the lanes out from the timing in a shard where a process names none', () => {
+    expect(lanes([ran(1, 0, 1, 1000), ran(2, 1, undefined, 1200)])).toEqual([
+      [null, 0, [0]],
+      [null, 1, [1]],
+    ]);
+  });
+
+  test("packs a lane's processes one after another when no test carries a start", () => {
+    const { timelineData, workerRows } = model([
+      ran(1, 0, 0, null, 500, { status: 'failed' }),
+      ran(2, 1, 1, null, 800),
+      ran(3, 2, 0, null, 300),
+    ]);
+    expect(workerRows.value.map((r) => [r.slot, r.processes])).toEqual([
+      [0, [0, 2]],
+      [1, [1]],
+    ]);
+    const bar = (key: string) => timelineData.value.find((d) => d.key === key)!;
+    expect([bar('t3').rowIndex, bar('t3').start]).toEqual([bar('t1').rowIndex, 500]);
   });
 });
 

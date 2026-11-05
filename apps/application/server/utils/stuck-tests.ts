@@ -74,6 +74,7 @@ export async function checkStuckTests(db: DbClient, now = Date.now()): Promise<n
       ...(browserName ? { browserName } : {}),
       ...(typeof data.repeatEachIndex === 'number' ? { repeatEachIndex: data.repeatEachIndex } : {}),
       ...(typeof data.workerIndex === 'number' ? { workerIndex: data.workerIndex } : {}),
+      ...(typeof data.parallelIndex === 'number' ? { parallelIndex: data.parallelIndex } : {}),
       ...(typeof data.shardIndex === 'number' ? { shardIndex: data.shardIndex } : {}),
       startedAt,
       ...stuck,

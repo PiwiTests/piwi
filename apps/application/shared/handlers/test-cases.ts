@@ -802,6 +802,7 @@ export async function getTestRunCase(
     ariaSnapshot: evidence.ariaSnapshot,
     evidenceSources: trc.evidenceSources,
     workerIndex: trc.workerIndex,
+    parallelIndex: trc.parallelIndex ?? null,
     shardIndex: trc.shardIndex,
     browser: trc.browser,
     isNewRegression: trc.isNewRegression ?? null,

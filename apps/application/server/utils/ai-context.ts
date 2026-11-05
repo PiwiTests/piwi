@@ -76,6 +76,7 @@ import type { AiAttachedImage } from './ai-provider';
 import { getStorage } from '../storage';
 import type { DbClient } from '../database';
 import { flakyResultSql } from '#shared/handlers/test-case-aggregates';
+import { shownWorkerNumber } from '#shared/worker-lane';
 
 type ScmCoverage = NonNullable<DiagnosisContextCoverage['scm']>;
 
@@ -450,6 +451,7 @@ async function loadExecutionRow(db: DbClient, where: SQL) {
       evidenceSources: testRunsCases.evidenceSources,
       testAnnotations: testRunsCases.testAnnotations,
       workerIndex: testRunsCases.workerIndex,
+      parallelIndex: testRunsCases.parallelIndex,
       shardIndex: testRunsCases.shardIndex,
       testCaseId: testRunsCases.testCaseId,
       browserName: testRunsCases.browserName,
@@ -601,11 +603,10 @@ export function runContextSection(rep: RepresentativeRow): string | null {
   const sp = rep.testSuitePath;
   if (sp) lines.push(`- Describe path: ${sp.split('\x1f').join(' › ')}`);
 
-  if (rep.workerIndex != null) {
+  const worker = shownWorkerNumber(rep);
+  if (worker != null) {
     const shard = rep.shardIndex != null ? `, shard ${rep.shardIndex}` : '';
-    lines.push(
-      `- Parallel worker #${rep.workerIndex}${shard} — consider a race if peers on the same worker also failed`,
-    );
+    lines.push(`- Parallel worker ${worker}${shard} — consider a race if peers on the same worker also failed`);
   }
 
   if (rep.flakyRootCause) {

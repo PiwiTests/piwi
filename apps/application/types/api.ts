@@ -1037,7 +1037,10 @@ export interface TestCaseResult {
   aiUsage?: { entries: string[]; intents?: AiStepIntent[] } | null;
   consoleLogs?: ConsoleEntry[] | null;
   ariaSnapshot?: string | null;
+  /** Playwright's `workerIndex`: the worker process, new at every start. */
   workerIndex?: number | null;
+  /** The worker's lane (Playwright's `parallelIndex`), shown from 1 as `Worker N`; null from an older reporter. */
+  parallelIndex?: number | null;
   shardIndex?: number | null;
   startedAt?: number;
   browser?: {

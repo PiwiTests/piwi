@@ -8,6 +8,7 @@ import { formatTimelineTime } from '~/utils/timeline';
 import type { TestStepEventHook } from '#shared/types';
 import { testAttemptKey } from '~/utils/test-attempts';
 import { isFlakyExecution } from '#shared/utils/test-counts';
+import { workerLane } from '#shared/worker-lane';
 
 /**
  * What a timeline bar represents; drives rendering, filtering and header counts.
@@ -46,7 +47,7 @@ export interface TimelineItem {
   status: string;
   /** Playwright's `workerIndex`: the worker process, which is new after every restart. */
   workerIndex: number;
-  /** The lane's worker number (Playwright's parallel slot, from 0), shown from 1 as `Worker N`, as Watch names it. */
+  /** The lane's worker number (Playwright's `parallelIndex`, from 0), shown from 1 as `Worker N`, as Watch names it. */
   slot?: number;
   start: number;
   duration: number;
@@ -98,7 +99,7 @@ export interface TimelineItem {
 /** One worker lane: its identity, plus the flat lane band it occupies (base lane + span, in row units). */
 export interface WorkerRow {
   shardIndex: number | null;
-  /** The worker number shown on the lane: its slot within the shard, 0 first. */
+  /** The lane's worker number within the shard, from 0 (Playwright's `parallelIndex`), shown from 1 as `Worker N`. */
   slot: number;
   /** The worker processes (`workerIndex`) that ran on the lane, one after another. */
   processes: number[];
@@ -222,6 +223,8 @@ export interface TimelineModelInput {
 interface WorkerProcess {
   shardIndex: number | null;
   workerIndex: number;
+  /** The lane the process ran on (Playwright's `parallelIndex`), when its cases say it. */
+  lane: number | null;
   cases: TestCaseResult[];
   /** Wall-clock span of its timed cases in epoch ms, or null when none carries a start. */
   span: { start: number; end: number } | null;
@@ -255,8 +258,8 @@ function caseSpan(tc: TestCaseResult): { start: number; end: number } | null {
 
 /**
  * Group test cases by worker process, keyed by (shardIndex, workerIndex) — two
- * shards may have overlapping worker indices. Cases without a usable worker
- * index are skipped.
+ * shards may have overlapping worker indices — with the lane its cases name.
+ * Cases without a usable worker index are skipped.
  */
 function groupByProcess(testCases: TestCaseResult[]): WorkerProcess[] {
   const byKey = new Map<string, WorkerProcess>();
@@ -267,10 +270,11 @@ function groupByProcess(testCases: TestCaseResult[]): WorkerProcess[] {
     const key = `${shardIndex ?? 'null'}|${workerIndex}`;
     let process = byKey.get(key);
     if (!process) {
-      process = { shardIndex, workerIndex, cases: [], span: null };
+      process = { shardIndex, workerIndex, lane: null, cases: [], span: null };
       byKey.set(key, process);
     }
     process.cases.push(tc);
+    process.lane ??= workerLane(tc.parallelIndex);
     const span = caseSpan(tc);
     if (span) {
       process.span = process.span
@@ -286,10 +290,10 @@ function groupByProcess(testCases: TestCaseResult[]): WorkerProcess[] {
  * replaces a worker process after a failed test (and starts one for another
  * project or different worker options) with a new `workerIndex`, in the slot
  * the old one left — so a lane holds processes that ran one after another.
- * Each process joins the lane that freed up last before it started, or opens a
- * new lane when every lane is still busy. Without timestamps each process keeps
- * its own lane, numbered by its index. Lanes are ordered by shard (shardless
- * last), then by when they started.
+ * Lanes are ordered by shard (shardless last). A shard whose processes all
+ * name their lane (`parallelIndex`, from a reporter that sends it) puts each on
+ * it, in lane order; otherwise its lanes are worked out from the timing
+ * (`packLanes`).
  */
 function layOutLanes(processes: WorkerProcess[], timed: boolean): WorkerLane[] {
   const byShard = new Map<number | null, WorkerProcess[]>();
@@ -303,34 +307,62 @@ function layOutLanes(processes: WorkerProcess[], timed: boolean): WorkerLane[] {
   const lanes: WorkerLane[] = [];
   for (const shardIndex of shards) {
     const shardProcesses = byShard.get(shardIndex)!;
-    if (!timed) {
-      for (const process of [...shardProcesses].sort((a, b) => a.workerIndex - b.workerIndex)) {
-        lanes.push({ shardIndex, slot: process.workerIndex, processes: [process] });
-      }
-      continue;
-    }
-    const ordered = [...shardProcesses].sort(
-      (a, b) => (a.span?.start ?? Infinity) - (b.span?.start ?? Infinity) || a.workerIndex - b.workerIndex,
+    lanes.push(
+      ...(shardProcesses.every((process) => process.lane !== null)
+        ? namedLanes(shardIndex, shardProcesses)
+        : packLanes(shardIndex, shardProcesses, timed)),
     );
-    const open: Array<{ lane: WorkerLane; end: number }> = [];
-    for (const process of ordered) {
-      let best: { lane: WorkerLane; end: number } | null = null;
-      if (process.span) {
-        for (const candidate of open) {
-          if (candidate.end <= process.span.start && (!best || candidate.end > best.end)) best = candidate;
-        }
-      }
-      if (best) {
-        best.lane.processes.push(process);
-        best.end = process.span!.end;
-      } else {
-        const lane: WorkerLane = { shardIndex, slot: open.length, processes: [process] };
-        open.push({ lane, end: process.span?.end ?? Infinity });
-      }
-    }
-    lanes.push(...open.map(({ lane }) => lane));
   }
   return lanes;
+}
+
+/** The order processes ran in: by their first start, then by `workerIndex` (Playwright numbers them as it starts them). */
+function byStart(a: WorkerProcess, b: WorkerProcess): number {
+  return (a.span?.start ?? Infinity) - (b.span?.start ?? Infinity) || a.workerIndex - b.workerIndex;
+}
+
+/** A shard's lanes from the lane each process names, in lane order, each lane's processes in the order they ran. */
+function namedLanes(shardIndex: number | null, processes: WorkerProcess[]): WorkerLane[] {
+  const bySlot = new Map<number, WorkerLane>();
+  for (const process of [...processes].sort(byStart)) {
+    const slot = process.lane!;
+    const lane = bySlot.get(slot);
+    if (lane) lane.processes.push(process);
+    else bySlot.set(slot, { shardIndex, slot, processes: [process] });
+  }
+  return [...bySlot.values()].sort((a, b) => a.slot - b.slot);
+}
+
+/**
+ * A shard's lanes worked out from the timing, for processes that do not name
+ * their lane: each process joins the lane that freed up last before it
+ * started, or opens a new lane when every lane is still busy, and lanes are
+ * ordered by when they started. Without timestamps each process keeps its own
+ * lane, numbered by its index.
+ */
+function packLanes(shardIndex: number | null, processes: WorkerProcess[], timed: boolean): WorkerLane[] {
+  if (!timed) {
+    return [...processes]
+      .sort((a, b) => a.workerIndex - b.workerIndex)
+      .map((process) => ({ shardIndex, slot: process.workerIndex, processes: [process] }));
+  }
+  const open: Array<{ lane: WorkerLane; end: number }> = [];
+  for (const process of [...processes].sort(byStart)) {
+    let best: { lane: WorkerLane; end: number } | null = null;
+    if (process.span) {
+      for (const candidate of open) {
+        if (candidate.end <= process.span.start && (!best || candidate.end > best.end)) best = candidate;
+      }
+    }
+    if (best) {
+      best.lane.processes.push(process);
+      best.end = process.span!.end;
+    } else {
+      const lane: WorkerLane = { shardIndex, slot: open.length, processes: [process] };
+      open.push({ lane, end: process.span?.end ?? Infinity });
+    }
+  }
+  return open.map(({ lane }) => lane);
 }
 
 /** Empty stretch of a lane from which it is marked as idle time. */
@@ -579,6 +611,8 @@ export function useTimelineModel(props: TimelineModelInput): {
       const baseLane = rows[i]!.baseLane;
       const slot = lane.slot;
       const rowItems: TimelineItem[] = [];
+      // Fallback mode packs a lane's cases one after another, its processes in the order they ran.
+      let cursor = 0;
 
       for (const process of lane.processes) {
         const workerIndex = process.workerIndex;
@@ -587,7 +621,6 @@ export function useTimelineModel(props: TimelineModelInput): {
         const cases = absolute
           ? process.cases
           : [...process.cases].sort((a, b) => (toMs(a.startedAt) ?? 0) - (toMs(b.startedAt) ?? 0));
-        let cursor = 0;
 
         for (const tc of cases) {
           const stepEvents = (tc.stepEvents ?? []) as TestStepEvent[];

@@ -9,6 +9,7 @@ import { parseSourceSnippet } from '#shared/source-snippet';
 import type { StatusColorKey } from '#shared/status-colors';
 import { safeHttpUrl } from '#shared/utils/safe-url';
 import { STUCK_FACTOR, STUCK_FLOOR_MS, STUCK_HISTORY } from '#shared/stuck-tests';
+import { shownWorkerNumber } from '#shared/worker-lane';
 import {
   clusterOutcome,
   failureTargetPath,
@@ -700,7 +701,12 @@ export function eventFacts(event: NotificationEvent, payload: NotificationPayloa
     }
     case 'test.stuck': {
       const p = payload as TestStuckPayload;
-      const where = [p.browserName, p.workerIndex != null ? `worker ${p.workerIndex}` : null].filter(Boolean);
+      const worker = shownWorkerNumber(p);
+      const where = [
+        p.browserName,
+        p.shardIndex != null ? `shard ${p.shardIndex}` : null,
+        worker != null ? `worker ${worker}` : null,
+      ].filter(Boolean);
       return [
         runFact(links, p),
         ...(p.location ? [{ label: 'Test', value: p.location, code: true }] : []),

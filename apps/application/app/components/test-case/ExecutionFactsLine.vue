@@ -19,6 +19,7 @@ import { useResizeObserver } from '@vueuse/core';
 import type { AttemptOutcome, EntityLinkInfo, TestCaseHistoryPoint } from '~~/types/api';
 import type { LinkEntityType } from '#shared/handlers/links';
 import { safeHttpUrl } from '#shared/utils/safe-url';
+import { shownWorkerNumber } from '#shared/worker-lane';
 import { failurePlace } from '~/utils/ide-links';
 
 const props = defineProps<{
@@ -316,7 +317,7 @@ defineExpose({ revealRawError });
               <div class="space-y-1">
                 <p class="text-xs font-medium text-muted uppercase tracking-wide">Execution</p>
                 <p class="tabular-nums">
-                  Worker {{ testCase?.workerIndex ?? '—'
+                  Worker {{ (testCase && shownWorkerNumber(testCase)) ?? '—'
                   }}<template v-if="testCase?.shardIndex != null"> · Shard {{ testCase.shardIndex }}</template> ·
                   {{ stepsCount }} steps
                 </p>

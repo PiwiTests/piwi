@@ -82,6 +82,8 @@ export interface CollectedTestCase {
   /** One entry per attempt up to and including this one: `{ retry, status, duration, startedAt }`. */
   attempts?: Array<{ retry: number; status: string; duration: number; startedAt: number | null }> | null;
   workerIndex?: number | null;
+  /** The worker's lane: Playwright's `parallelIndex`, kept by a worker Playwright starts again in the same slot. */
+  parallelIndex?: number | null;
   shardIndex?: number | null;
   startedAt?: number | null;
   /** Raw Playwright attachments — never sent on the wire. */

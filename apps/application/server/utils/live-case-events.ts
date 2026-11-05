@@ -11,6 +11,7 @@ import {
 import { DEFAULT_INGEST_LIMITS } from '#shared/ingest-limits';
 import { parseLocation } from '#shared/parse-location';
 import type { StreamEventPayload } from '#shared/types';
+import { workerLane } from '#shared/worker-lane';
 import { resolveRepeatEachIndex } from './inserted-run-cases';
 import { hiddenErrorText, hiddenStepEventErrors } from './sanitize';
 import { displayTitleOf, externalIdOf } from './test-case-match';
@@ -22,9 +23,10 @@ function count(value: unknown): number | null {
 
 /**
  * The `test-begin` run event a streamed `begin` publishes, which the stream's catch-up replays while the test runs:
- * where the test is, who runs it, which attempt begins (`retries`, null from a reporter that does not say) of how many
- * allowed, and what the run page's search reads (tags, locks, metadata). Pure, so the server's events route and the
- * demo's ingest share it; `now` stands in for a start the reporter did not send.
+ * where the test is, who runs it (its worker process, and its lane: `parallelIndex`), which attempt begins (`retries`)
+ * of how many allowed, and what the run page's search reads (tags, locks, metadata). A field a reporter does not send,
+ * or sends in the wrong shape, is null. Pure, so the server's events route and the demo's ingest share it; `now` stands
+ * in for a start the reporter did not send.
  */
 export function testBeginData(
   tc: StreamEventPayload,
@@ -37,6 +39,7 @@ export function testBeginData(
     suitePath: tc.suitePath ?? null,
     location: tc.location,
     workerIndex: tc.workerIndex ?? null,
+    parallelIndex: workerLane(tc.parallelIndex),
     shardIndex: tc.shardIndex ?? null,
     startedAt: typeof tc.startedAt === 'number' ? tc.startedAt : now,
     browser: tc.browser ?? null,
@@ -92,6 +95,7 @@ export function testCompletedData(
     stepEvents: hiddenStepEventErrors(tc.stepEvents),
     wastedTimeMs: tc.wastedTimeMs ?? null,
     workerIndex: tc.workerIndex ?? null,
+    parallelIndex: workerLane(tc.parallelIndex),
     shardIndex: tc.shardIndex ?? null,
     startedAt: tc.startedAt ?? null,
     browser: tc.browser ?? null,

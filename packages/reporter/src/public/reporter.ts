@@ -45,7 +45,7 @@ import { computeInstanceId } from '../internal/support/instance-id.js';
 import { getReporterVersion } from '../internal/support/reporter-version.js';
 import { collectSourceFrames, extractFailingLine, readSourceSnippet } from '../internal/support/source-snippet.js';
 import { detectCi, resolveRunLabel } from '../internal/support/ci.js';
-import { workerIndexOf } from '../internal/support/worker-index.js';
+import { parallelIndexOf, workerIndexOf } from '../internal/support/worker-index.js';
 import { detectCliFileFilters, detectCliGrep, detectCliNarrowingFlags } from '../internal/support/cli-filters.js';
 import { readSelectionStamp } from '../internal/support/selection-env.js';
 import { resolveShardInfo } from '../internal/support/shard-info.js';
@@ -647,6 +647,7 @@ export class PiwiDashboardReporter {
       maxRetries: test.retries ?? 0,
       repeatEachIndex: test.repeatEachIndex,
       workerIndex: workerIndexOf(result),
+      parallelIndex: parallelIndexOf(result),
       shardIndex: this.shardInfo?.current ?? null,
       browser: this.metadataCollector.getBrowserConfig(test) || undefined,
       suitePath,
@@ -850,6 +851,7 @@ export class PiwiDashboardReporter {
       repeatEachIndex: test.repeatEachIndex,
       attempts: attempts.map((a) => ({ ...a })),
       workerIndex: workerIndexOf(result),
+      parallelIndex: parallelIndexOf(result),
       shardIndex: this.shardInfo?.current ?? null,
       startedAt: result.startTime ? result.startTime.getTime() : null,
       attachments: result.attachments || [],

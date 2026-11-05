@@ -8,7 +8,7 @@ import { privateTempDir } from '../src/internal/support/private-file.js';
 import { resolveRunLabel } from '../src/internal/support/ci.js';
 import { readSourceSnippet, collectSourceFrames } from '../src/internal/support/source-snippet.js';
 import { createLimiter } from '../src/internal/support/limiter.js';
-import { workerIndexOf } from '../src/internal/support/worker-index.js';
+import { parallelIndexOf, workerIndexOf } from '../src/internal/support/worker-index.js';
 import { detectCliFileFilters, detectCliGrep, detectCliNarrowingFlags } from '../src/internal/support/cli-filters.js';
 
 const CI_KEYS = [
@@ -573,6 +573,22 @@ describe('workerIndexOf', () => {
 
   it('returns null when both are null', () => {
     expect(workerIndexOf({ workerIndex: null, parallelIndex: null })).toBe(null);
+  });
+});
+
+describe('parallelIndexOf', () => {
+  it("returns the worker's lane, 0 included", () => {
+    expect(parallelIndexOf({ workerIndex: 5, parallelIndex: 1 })).toBe(1);
+    expect(parallelIndexOf({ workerIndex: 5, parallelIndex: 0 })).toBe(0);
+  });
+
+  it('returns null without a non-negative integer', () => {
+    expect(parallelIndexOf({ workerIndex: 5 })).toBe(null);
+    expect(parallelIndexOf({ parallelIndex: -1 })).toBe(null);
+    expect(parallelIndexOf({ parallelIndex: 1.5 })).toBe(null);
+    expect(parallelIndexOf({ parallelIndex: '1' })).toBe(null);
+    expect(parallelIndexOf(null)).toBe(null);
+    expect(parallelIndexOf(undefined)).toBe(null);
   });
 });
 
