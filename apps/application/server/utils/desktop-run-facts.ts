@@ -33,8 +33,8 @@ const MAX_KEPT_RUNS = 200;
 
 /**
  * Reads each run's facts once, for one stream: every message of a run waits on the same read, so they keep their
- * order. A run still initializing has no metadata yet, and a read that failed or found no run names nothing: neither
- * is kept, so the run's next message reads again.
+ * order. A run still initializing, or one whose reporter never wrote its metadata (it never began), names nothing,
+ * and neither does a read that failed or found no run: none is kept, so the run's next message reads again.
  */
 export function desktopRunFactsReader(
   read: (runId: number) => Promise<DesktopRunRow>,
@@ -45,7 +45,7 @@ export function desktopRunFactsReader(
     if (known) return known;
     const facts = read(runId).then(
       (row) => {
-        if (!row || row.status === 'initializing') {
+        if (!row || row.status === 'initializing' || row.metadata == null) {
           kept.delete(runId);
           return null;
         }

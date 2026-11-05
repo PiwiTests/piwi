@@ -16,8 +16,10 @@
  * user's attention. A step of a job of the Local runs tray (a reproduction, a
  * bisect, a Flake Lab session, as the stream names it: `job`) shows as progress
  * alone: its end flashes nothing, and the job's verdict flashes once its process
- * ends (`finishedJobFlash`). A local run stopped from the app, and a job once it
- * ends, leave the bar with their own runs alone (`runsOfLocalRun`).
+ * ends (`finishedJobFlash`); so does a run whose stream names nothing of what
+ * launched it. A local run stopped from the app, and a job once it ends, leave
+ * the bar with their own runs alone (`runsOfLocalRun`), heard from the store as
+ * each one ends (`onRunEnded`), before the tray can drop it.
  *
  * Activates only inside the shell (the IPC bridge is present); the shared web
  * build has no bridge and this no-ops.
@@ -179,9 +181,12 @@ export default defineNuxtPlugin(() => {
         const run = msg.runId == null ? undefined : active.get(msg.runId);
         if (!run) break;
         active.delete(msg.runId!);
-        // A job's step has no outcome of its own: its job's verdict flashes once the job ends.
-        const job = liveRunFacts(msg)?.job ?? run.job;
-        if (!job) lastFinished = finishedRunFlash(msg.type === 'run-finished' ? (msg.status ?? 'passed') : 'cancelled');
+        // A job's step has no outcome of its own: its job's verdict flashes once the job ends. Neither has a run
+        // nothing names, one that never began.
+        const facts = liveRunFacts(msg) ?? liveRunFacts(run);
+        if (facts && !facts.job) {
+          lastFinished = finishedRunFlash(msg.type === 'run-finished' ? (msg.status ?? 'passed') : 'cancelled');
+        }
         pushUpdate();
         break;
       }
@@ -197,7 +202,7 @@ export default defineNuxtPlugin(() => {
   // ones it can stop — best-effort, and never allowed to break the progress
   // stream above.
   try {
-    const { runs, stopRun } = useDesktopLocalRuns();
+    const { runs, stopRun, onRunEnded } = useDesktopLocalRuns();
 
     // The Windows taskbar thumbnail toolbar's "Stop" button reaches the
     // dashboard as this event.
@@ -227,25 +232,17 @@ export default defineNuxtPlugin(() => {
     // own runs leave the bar once the process is gone; so do a job's, whose
     // verdict then flashes. Every other run stays: an editor's, CI's, another
     // local run's.
-    const ended = new Set<number>();
-    watch(
-      () => runs.value.map((run) => run.finishedAt),
-      () => {
-        let changed = false;
-        for (const run of runs.value) {
-          if (run.finishedAt == null || ended.has(run.key)) continue;
-          ended.add(run.key);
-          if (run.status !== 'stopped' && run.kind === 'tests') continue;
-          for (const id of runsOfLocalRun(active, run)) changed = active.delete(id) || changed;
-          const flash = run.kind === 'tests' ? null : finishedJobFlash({ ...run, kind: run.kind });
-          if (flash) {
-            lastFinished = flash;
-            changed = true;
-          }
-        }
-        if (changed) pushUpdate();
-      },
-    );
+    onRunEnded((run) => {
+      if (run.status !== 'stopped' && run.kind === 'tests') return;
+      let changed = false;
+      for (const id of runsOfLocalRun(active, run, runs.value)) changed = active.delete(id) || changed;
+      const flash = run.kind === 'tests' ? null : finishedJobFlash({ ...run, kind: run.kind });
+      if (flash) {
+        lastFinished = flash;
+        changed = true;
+      }
+      if (changed) pushUpdate();
+    });
   } catch {
     // Local-run store unavailable at init — progress still works.
   }

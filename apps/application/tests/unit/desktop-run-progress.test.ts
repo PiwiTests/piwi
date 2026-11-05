@@ -235,15 +235,19 @@ describe('runsOfLocalRun', () => {
     ...over,
   });
   const owner = (over: Partial<LocalRunOwner> = {}): LocalRunOwner => ({
+    key: 1,
     kind: 'tests',
     projectId: '1',
     originRef: 'desktop:a1',
     hubRefs: ['desktop-7', 'desktop-8'],
     piwiRunBaseline: 4,
+    flakeTestCaseId: null,
+    startedAt: 1000,
+    finishedAt: 5000,
     ...over,
   });
 
-  test('picks the runs its own steps reported, leaving every other run of the project', () => {
+  test('picks the runs its own steps reported, leaving every other run of the project that began', () => {
     const active = new Map<number, LiveRun>([
       [4, live()], // before the local process was spawned
       [7, live()],
@@ -252,30 +256,68 @@ describe('runsOfLocalRun', () => {
       [10, live({ origin: 'ci', originRef: null, name: null })], // a CI run
       [11, live({ originRef: 'desktop:b2', name: 'desktop-9' })], // another local run of the window
       [12, live({ projectId: 2 })], // another project
-      [13, live({ ...NO_LIVE_RUN_FACTS })], // not begun yet: nothing says whose it is
     ]);
-    expect(runsOfLocalRun(active, owner())).toEqual([7, 8]);
+    expect(runsOfLocalRun(active, owner(), [])).toEqual([7, 8]);
+  });
+
+  test('also takes a run of its project that never began, stopped in its global setup, whose origin nothing names', () => {
+    const active = new Map<number, LiveRun>([
+      [3, live({ ...NO_LIVE_RUN_FACTS })], // before the baseline
+      [7, live({ ...NO_LIVE_RUN_FACTS, status: 'initializing', total: 0, done: 0 })],
+      [8, live({ ...NO_LIVE_RUN_FACTS, projectId: 2 })], // another project
+      [9, live({ origin: 'ci', originRef: null, name: null })],
+    ]);
+    expect(runsOfLocalRun(active, owner(), [])).toEqual([7]);
+    // A bisect's step whose setup failed leaves its job too.
+    expect(runsOfLocalRun(active, owner({ kind: 'bisect', originRef: '42', hubRefs: ['desktop-6'] }), [])).toEqual([7]);
   });
 
   test('tells two runs of one reference apart by the names their steps gave them', () => {
     const active = new Map<number, LiveRun>([
       [7, live({ origin: 'reproduce', originRef: '42', name: 'desktop-7' })],
       [8, live({ origin: 'reproduce', originRef: '42', name: 'desktop-9' })],
-      // A reporter that recorded no name: its origin and reference alone.
+      // A reporter that recorded no name: its origin and reference alone, while no other run shares them.
       [9, live({ origin: 'reproduce', originRef: '42', name: null })],
       // A step nobody attends carries the mark the shell gives it.
       [10, live({ origin: 'bisect', originRef: '42', name: 'desktop-6-unattended', job: true })],
     ]);
-    expect(runsOfLocalRun(active, owner({ kind: 'reproduce', originRef: '42', hubRefs: ['desktop-7'] }))).toEqual([
-      7, 9,
-    ]);
-    expect(runsOfLocalRun(active, owner({ kind: 'bisect', originRef: '42', hubRefs: ['desktop-6'] }))).toEqual([10]);
+    const reproduction = owner({ kind: 'reproduce', originRef: '42', hubRefs: ['desktop-7'] });
+    expect(runsOfLocalRun(active, reproduction, [reproduction])).toEqual([7, 9]);
+    const bisect = owner({ kind: 'bisect', originRef: '42', hubRefs: ['desktop-6'] });
+    expect(runsOfLocalRun(active, bisect, [reproduction, bisect])).toEqual([10]);
   });
 
-  test('picks nothing without a baseline, or for a run whose runs record no origin of its own', () => {
+  test('leaves a run with no name when another run of the tray goes on under the same reference', () => {
+    const active = new Map<number, LiveRun>([
+      [7, live({ origin: 'reproduce', originRef: '42', name: null })],
+      [8, live({ origin: 'reproduce', originRef: '42', name: null })],
+    ]);
+    const first = owner({ key: 1, kind: 'reproduce', originRef: '42', hubRefs: ['desktop-7'] });
+    const second = owner({ key: 2, kind: 'reproduce', originRef: '42', hubRefs: ['desktop-9'], finishedAt: null });
+    expect(runsOfLocalRun(active, first, [first, second])).toEqual([]);
+    // One that ended before the other started shares nothing with it.
+    const earlier = owner({ key: 3, kind: 'reproduce', originRef: '42', startedAt: 0, finishedAt: 900 });
+    expect(runsOfLocalRun(active, first, [first, earlier])).toEqual([7, 8]);
+  });
+
+  test('takes the lab runs of a bisect that runs a Flake Lab arm at each step', () => {
+    const lab = { origin: 'flake-lab', originRef: 'local-4242', name: null, job: true };
+    const active = new Map<number, LiveRun>([
+      [7, live(lab)],
+      [8, live({ ...lab, projectId: 2 })],
+      [9, live({ origin: 'bisect', originRef: '42', name: 'desktop-6-unattended', job: true })],
+    ]);
+    const bisect = owner({ kind: 'bisect', originRef: '42', hubRefs: ['desktop-6'], flakeTestCaseId: 12 });
+    expect(runsOfLocalRun(active, bisect, [bisect])).toEqual([7]);
+    // A Flake Lab session of the tray going on at once in the project could have started them.
+    const session = owner({ key: 2, kind: 'flake', originRef: 'flake:x', piwiRunBaseline: null, finishedAt: null });
+    expect(runsOfLocalRun(active, bisect, [bisect, session])).toEqual([]);
+  });
+
+  test('picks nothing without a baseline, nor a run that began under another origin', () => {
     const active = new Map<number, LiveRun>([[7, live()]]);
-    expect(runsOfLocalRun(active, owner({ piwiRunBaseline: null }))).toEqual([]);
-    expect(runsOfLocalRun(active, owner({ kind: 'flake' }))).toEqual([]);
-    expect(runsOfLocalRun(active, owner({ piwiRunBaseline: 7 }))).toEqual([]);
+    expect(runsOfLocalRun(active, owner({ piwiRunBaseline: null }), [])).toEqual([]);
+    expect(runsOfLocalRun(active, owner({ kind: 'flake' }), [])).toEqual([]);
+    expect(runsOfLocalRun(active, owner({ piwiRunBaseline: 7 }), [])).toEqual([]);
   });
 });

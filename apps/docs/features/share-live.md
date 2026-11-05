@@ -36,6 +36,15 @@ its project has the live view off, the reporter's global setup did not register 
 as it started. A sharing that stops on its own says why (the live view turned off, or the instance stopped answering), and **Share live** shows again: shared again, the run streams once the instance answers with its live view
 on, a restarted instance taking the run's key back. A run the instance no longer holds live cannot be shared again.
 
+## From the desktop app
+
+A run that reports to the [desktop app](./desktop-runs) itself (a reproduction, a bisect, a **Re-run** in a folder
+that names no instance, a run your editor started) cannot be shared: the app hands out no live view key, since no
+teammate reaches it. Its tray offers no **Share live** for it, the app's project settings have no **Live view**
+section, and on the run's page its running tests offer [**Pause and watch**](./desktop-runs#watch-live) where
+**Watch** would be. A run your editor started says **See its page at a stop** there: its page shows where the editor
+steers it.
+
 ## Related
 
 - [Live view of a run](./live-view): what a teammate sees, what is sent and what is kept

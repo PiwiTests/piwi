@@ -42,7 +42,7 @@ import {
 } from '~/utils/desktop-run-view';
 
 const store = useDesktopLocalRuns();
-const { runs, trayOpen, shownWorker, activeCount, holds } = store;
+const { runs, trayOpen, shownWorker, activeCount, holds, trayMounts } = store;
 const toast = useToast();
 
 const available = ref(false);
@@ -87,9 +87,13 @@ function heardStop(session: HubSession, worker: HubWorker) {
 
 let stopListening: (() => void) | null = null;
 onMounted(() => {
+  trayMounts.value++;
   stopListening = hub.onStop(heardStop);
 });
-onBeforeUnmount(() => stopListening?.());
+onBeforeUnmount(() => {
+  trayMounts.value--;
+  stopListening?.();
+});
 
 // This component is mounted once in the layout, which makes it the natural
 // owner of the store's Piwi-run correlation: every server run event (the

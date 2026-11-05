@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { nextTick, ref, watch } from 'vue';
+import { ref, watch } from 'vue';
 
 /**
  * The desktop shell's OS progress (`plugins/desktop-run-progress.client.ts`), driven as the window drives it: the
- * messages of the desktop event stream, and the Local runs tray's runs as their processes end. What it asks the shell
- * to show is each `desktop_set_run_progress` it sends; a red `error` without `failing` is the failed end the shell
- * asks for the user's attention on.
+ * messages of the desktop event stream, and the Local runs tray's runs as the store says each one ends
+ * (`onRunEnded`). What it asks the shell to show is each `desktop_set_run_progress` it sends; a red `error` without
+ * `failing` is the failed end the shell asks for the user's attention on.
  */
 
 interface Shown {
@@ -24,6 +24,8 @@ interface TrayRun {
   originRef: string | null;
   hubRefs: string[];
   piwiRunBaseline: number | null;
+  flakeTestCaseId: number | null;
+  startedAt: number;
   finishedAt: number | null;
   exitCode: number | null;
   phase: string | null;
@@ -34,6 +36,7 @@ interface TrayRun {
 async function plugin() {
   const shown: Shown[] = [];
   let emit: (message: Record<string, unknown>) => void = () => {};
+  const ended = new Set<(run: TrayRun) => void>();
   const runs = ref<TrayRun[]>([]);
   vi.stubGlobal('defineNuxtPlugin', (setup: unknown) => setup);
   vi.stubGlobal('watch', watch);
@@ -47,10 +50,26 @@ async function plugin() {
     emit = listener;
     return () => {};
   });
-  vi.stubGlobal('useDesktopLocalRuns', () => ({ runs, stopRun: async () => {} }));
+  vi.stubGlobal('useDesktopLocalRuns', () => ({
+    runs,
+    stopRun: async () => {},
+    onRunEnded: (listener: (run: TrayRun) => void) => {
+      ended.add(listener);
+      return () => ended.delete(listener);
+    },
+  }));
   const setup = (await import('../../app/plugins/desktop-run-progress.client')).default as unknown as () => void;
   setup();
-  return { shown, runs, emit: (message: Record<string, unknown>) => emit(message) };
+  return {
+    shown,
+    runs,
+    emit: (message: Record<string, unknown>) => emit(message),
+    /** The store says the run ended, with these fields set. */
+    end: (run: TrayRun, over: Partial<TrayRun>) => {
+      Object.assign(run, { finishedAt: Date.now(), ...over });
+      for (const listener of ended) listener(run);
+    },
+  };
 }
 
 /** What the messages of a run say of what launched it, once it began. */
@@ -65,6 +84,8 @@ function trayRun(over: Partial<TrayRun>): TrayRun {
     originRef: 'desktop:a1',
     hubRefs: ['desktop-7'],
     piwiRunBaseline: 4,
+    flakeTestCaseId: null,
+    startedAt: Date.now() - 1000,
     finishedAt: null,
     exitCode: null,
     phase: null,
@@ -80,6 +101,8 @@ const failedEnds = (shown: Shown[]) => shown.filter((s) => s.state === 'error' &
 /** An outcome shown once nothing runs. */
 const flashes = (shown: Shown[]) => shown.filter((s) => s.state !== 'none' && !s.label?.startsWith('Running'));
 
+const NOTHING = { state: 'none', fraction: null, label: null, failing: false };
+
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.resetModules();
@@ -87,7 +110,7 @@ afterEach(() => {
 
 describe('the OS progress of a job of the Local runs tray', () => {
   test('shows a bisect’s steps as progress, each bad one with no flash, and flashes its verdict once', async () => {
-    const { shown, runs, emit } = await plugin();
+    const { shown, runs, emit, end } = await plugin();
     emit({ type: 'snapshot', runs: [] });
     runs.value = [trayRun({ kind: 'bisect', originRef: '37', hubRefs: ['desktop-6'] })];
 
@@ -99,49 +122,53 @@ describe('the OS progress of a job of the Local runs tray', () => {
       // A bad step: its failure turns nothing red.
       expect(shown.at(-1)).toEqual({ state: 'normal', fraction: 1, label: 'Running 2/2…', failing: false });
       emit({ type: 'run-finished', runId, status: 'failed', ...BISECT_STEP });
-      expect(shown.at(-1), `step ${index + 1}`).toEqual({ state: 'none', fraction: null, label: null, failing: false });
+      expect(shown.at(-1), `step ${index + 1}`).toEqual(NOTHING);
     }
     expect(failedEnds(shown)).toEqual([]);
 
     // The bisect names its first bad commit and its process ends: one flash.
-    Object.assign(runs.value[0]!, {
-      status: 'passed',
-      exitCode: 0,
-      finishedAt: Date.now(),
-      bisect: { firstBad: { sha: 'abcdef1234567' } },
-    });
-    await nextTick();
+    end(runs.value[0]!, { status: 'passed', exitCode: 0, bisect: { firstBad: { sha: 'abcdef1234567' } } });
     expect(flashes(shown)).toEqual([{ state: 'normal', fraction: 1, label: 'Bisect found abcdef1', failing: false }]);
   });
 
   test('flashes a reproduction that reproduced once, red, when its process ends, never at its run’s end', async () => {
-    const { shown, runs, emit } = await plugin();
+    const { shown, runs, emit, end } = await plugin();
     const step = { projectId: 1, origin: 'reproduce', originRef: '42', name: 'desktop-3', job: true };
     runs.value = [trayRun({ kind: 'reproduce', originRef: '42', hubRefs: ['desktop-3'] })];
     emit({ type: 'run-started', runId: 9, ...step });
     emit({ type: 'run-finished', runId: 9, status: 'failed', ...step });
     expect(failedEnds(shown)).toEqual([]);
-    Object.assign(runs.value[0]!, { status: 'failed', exitCode: 1, phase: 'test', finishedAt: Date.now() });
-    await nextTick();
+    end(runs.value[0]!, { status: 'failed', exitCode: 1, phase: 'test' });
     expect(failedEnds(shown)).toEqual([{ state: 'error', fraction: 1, label: 'Reproduced', failing: false }]);
   });
 
   test('flashes its verdict even while its own step is still finalizing on the server', async () => {
-    const { shown, runs, emit } = await plugin();
+    const { shown, runs, emit, end } = await plugin();
     runs.value = [trayRun({ kind: 'bisect', originRef: '37', hubRefs: ['desktop-6'] })];
     emit({ type: 'run-started', runId: 5, ...BISECT_STEP });
     emit({ type: 'run-finalizing', runId: 5, status: 'failed', ...BISECT_STEP });
-    Object.assign(runs.value[0]!, {
-      status: 'failed',
-      exitCode: 1,
-      finishedAt: Date.now(),
-      bisect: { firstBad: null },
-    });
-    await nextTick();
+    end(runs.value[0]!, { status: 'failed', exitCode: 1, bisect: { firstBad: null } });
     expect(shown.at(-1)).toEqual({ state: 'error', fraction: 1, label: 'Bisect did not finish', failing: false });
     // Its step's end, heard later, changes nothing.
     emit({ type: 'run-finished', runId: 5, status: 'failed', ...BISECT_STEP });
     expect(shown.at(-1)?.label).toBe('Bisect did not finish');
+  });
+
+  test('flashes its verdict when a step whose global setup failed never began', async () => {
+    const { shown, runs, emit, end } = await plugin();
+    runs.value = [trayRun({ kind: 'bisect', originRef: '37', hubRefs: ['desktop-6'] })];
+    emit({ type: 'run-initializing', runId: 5, projectId: 1 });
+    end(runs.value[0]!, { status: 'failed', exitCode: 1, bisect: { firstBad: null } });
+    expect(shown.at(-1)).toEqual({ state: 'error', fraction: 1, label: 'Bisect did not finish', failing: false });
+  });
+
+  test('flashes the verdict of a job the tray has already dropped, as the store says it ended', async () => {
+    const { shown, runs, end } = await plugin();
+    const bisect = trayRun({ kind: 'bisect', originRef: '37', hubRefs: ['desktop-6'] });
+    // Fifteen newer runs ended first: the tray keeps no more, and drops the bisect as it ends.
+    runs.value = [];
+    end(bisect, { status: 'passed', exitCode: 0, bisect: { firstBad: { sha: 'abcdef1234567' } } });
+    expect(flashes(shown)).toEqual([{ state: 'normal', fraction: 1, label: 'Bisect found abcdef1', failing: false }]);
   });
 
   test('still flashes a run that is no job, an editor’s or CI’s, as its outcome', async () => {
@@ -151,12 +178,21 @@ describe('the OS progress of a job of the Local runs tray', () => {
     emit({ type: 'run-finished', runId: 11, status: 'failed', ...ci });
     expect(failedEnds(shown)).toEqual([{ state: 'error', fraction: 1, label: 'Run failed', failing: false }]);
   });
+
+  test('flashes nothing for a run nothing names, one that never began, when the server ends it', async () => {
+    const { shown, emit } = await plugin();
+    emit({ type: 'run-initializing', runId: 12, projectId: 1 });
+    emit({ type: 'run-finished', runId: 12, projectId: 1, status: 'interrupted' });
+    expect(flashes(shown)).toEqual([]);
+    expect(shown.at(-1)).toEqual(NOTHING);
+  });
 });
 
 describe('a local run stopped from the app', () => {
+  const counts = { totalTests: 10, passedTests: 1, failedTests: 0, skippedTests: 0, didNotRunTests: 0 };
+
   test('takes its own runs off the bar, and leaves an editor’s, CI’s and another local run’s', async () => {
-    const { shown, runs, emit } = await plugin();
-    const counts = { totalTests: 10, passedTests: 1, failedTests: 0, skippedTests: 0, didNotRunTests: 0 };
+    const { shown, runs, emit, end } = await plugin();
     const own = { projectId: 1, origin: 'desktop', originRef: 'desktop:a1', name: 'desktop-7', job: false };
     const editor = { projectId: 1, origin: 'editor', originRef: 'editor:x', name: null, job: false };
     const other = { projectId: 1, origin: 'desktop', originRef: 'desktop:b2', name: 'desktop-8', job: false };
@@ -176,8 +212,28 @@ describe('a local run stopped from the app', () => {
     expect(shown.at(-1)?.label).toBe('Running 4/40 · 4 runs');
 
     // Its process had to be killed: its run never reports its end.
-    Object.assign(runs.value[0]!, { status: 'stopped', finishedAt: Date.now() });
-    await nextTick();
+    end(runs.value[0]!, { status: 'stopped' });
     expect(shown.at(-1)?.label).toBe('Running 3/30 · 3 runs');
+  });
+
+  test('takes off its run stopped in its global setup, which never began', async () => {
+    const { shown, runs, emit, end } = await plugin();
+    const ci = { projectId: 1, origin: 'ci', originRef: null, name: null, job: false };
+    runs.value = [trayRun({})];
+    emit({ type: 'run-initializing', runId: 5, projectId: 1 });
+    emit({ type: 'run-progress', runId: 6, ...counts, ...ci });
+    end(runs.value[0]!, { status: 'stopped' });
+    expect(shown.at(-1)?.label).toBe('Running 1/10…');
+  });
+
+  test('takes off the lab runs of a stopped bisect that runs a Flake Lab arm at each step', async () => {
+    const { shown, runs, emit, end } = await plugin();
+    const lab = { projectId: 1, origin: 'flake-lab', originRef: 'local-4242', name: null, job: true };
+    const editor = { projectId: 1, origin: 'editor', originRef: 'editor:x', name: null, job: false };
+    runs.value = [trayRun({ kind: 'bisect', originRef: '37', hubRefs: ['desktop-6'], flakeTestCaseId: 12 })];
+    emit({ type: 'run-progress', runId: 5, ...counts, ...lab });
+    emit({ type: 'run-progress', runId: 6, ...counts, ...editor });
+    end(runs.value[0]!, { status: 'stopped' });
+    expect(shown.at(-1)?.label).toBe('Running 1/10…');
   });
 });

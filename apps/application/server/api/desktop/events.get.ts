@@ -44,16 +44,23 @@ export default eventHandler(async (event) => {
         .where(eq(testRuns.id, runId));
       return row;
     });
-    const sendRun = (runId: number, payload: Record<string, unknown>) => {
-      void factsOf(runId).then((facts) => send(facts ? { ...payload, ...facts } : payload));
+    // The runs' messages heard before the snapshot is sent wait for it, in their order: a run that ended meanwhile
+    // ends after the snapshot that may still hold it.
+    let held: Array<() => void> | null = [];
+    const sendRun = (runId: number, payload: Record<string, unknown>, facts = true) => {
+      const deliver = () => {
+        if (!facts) return send(payload);
+        void factsOf(runId).then((told) => send(told ? { ...payload, ...told } : payload));
+      };
+      if (held) held.push(deliver);
+      else deliver();
     };
 
-    // Subscribe first so no event is missed while the snapshot query runs; the
-    // client upserts by run id, so a run appearing in both reconciles cleanly.
+    // Subscribe first so no event is missed while the snapshot query runs.
     const unsubscribeLifecycle = runEventBus.subscribeGlobal((globalEvent: GlobalRunEvent) => {
       if (!scopeAllows(scope, globalEvent.projectId)) return;
-      if (globalEvent.type === 'run-initializing' || globalEvent.type === 'rollup-updated') send(globalEvent);
-      else sendRun(globalEvent.runId, { ...globalEvent });
+      const bare = globalEvent.type === 'run-initializing' || globalEvent.type === 'rollup-updated';
+      sendRun(globalEvent.runId, { ...globalEvent }, !bare);
     });
     const unsubscribeProgress = runEventBus.subscribeRunProgress((progress) => {
       if (!scopeAllows(scope, progress.projectId)) return;
@@ -85,6 +92,9 @@ export default eventHandler(async (event) => {
       } catch {
         // A failed snapshot just means no initial runs; deltas still stream.
       }
+      const waiting = held ?? [];
+      held = null;
+      for (const deliver of waiting) deliver();
     })();
 
     // The hub's live runs, so a window that reloads finds out whether its runs still go on.
