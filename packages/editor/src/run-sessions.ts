@@ -206,6 +206,8 @@ export type AgentAnswer<T> = T & { answered: boolean };
 const NO_ANSWER_YET = 'The test did not answer.';
 /** How long an action the page did not answer in time may still answer, once it was played. */
 const LATE_ANSWER_MS = 60_000;
+/** The most lanes of a run watched at once: a run's workers, and a few more Playwright may start. */
+const MAX_WATCHED_LANES = 64;
 
 /** The service's refusal of an agent's request about an element, in its own words: no element, no locator. */
 function noElement(message: string): AgentAnswer<RefLocatorAnswer> {
@@ -343,8 +345,11 @@ interface Worker {
   takes: Set<RunTake>;
   features: Set<RunFeature>;
   reporter: string;
-  /** Its lane view is on, or asked on, for the viewers of its lane. */
-  laneOn: boolean;
+  /**
+   * Its lane view while its lane has viewers: the worker's answer to starting it, which every viewer waiting for it
+   * shares, and whether it started. Null when nobody watches the lane.
+   */
+  lane: { started: Promise<IntentAnswer>; on: boolean } | null;
   /** The requests waiting for the worker's answer, by what they ask. */
   requests: Map<number, { what: Asked; settle(value: Answered): void }>;
   /** An agent asked the worker to stop (Pause, Step, Run to), and it has not stopped since, nor anyone asked otherwise. */
@@ -562,7 +567,7 @@ export class RunSessions {
       takes: new Set(attach.takes),
       features: new Set(attach.features ?? []),
       reporter: attach.reporter,
-      laneOn: false,
+      lane: null,
       requests: new Map(),
       view: null,
       askedBy: null,
@@ -587,7 +592,7 @@ export class RunSessions {
     if (session.share !== null && worker.takes.has('share')) this.send(worker, { type: 'share', on: session.share });
     // A worker Playwright starts in a lane someone watches shows it from its first test.
     if (session.lanes.get(worker.parallelIndex)?.size && worker.features.has('view-lane')) {
-      void this.turnLane(worker, true);
+      void this.startLane(worker);
     }
     this.changed(session);
     this.options.heard?.(attach.ref, worker.index, { type: 'joined' }, session.root);
@@ -840,7 +845,8 @@ export class RunSessions {
   private watching(worker: Worker, viewer: Viewer | null): boolean {
     if (!viewer || !worker.stop) return false;
     if (worker.view?.stop === worker.stop.id && worker.view.viewers.has(viewer)) return true;
-    return worker.laneOn && !!this.laneOf(worker)?.has(viewer);
+    // The lane shows a stop of its running test alone: one outside a test is no frame of it.
+    return !!worker.lane?.on && !!worker.test && !!this.laneOf(worker)?.has(viewer);
   }
 
   /** The viewers of a worker's lane; undefined when nobody watches it. */
@@ -851,9 +857,15 @@ export class RunSessions {
     return undefined;
   }
 
-  /** Whether `viewer` watches the lane `lane` of the run `ref`. */
-  watchingLane(viewer: Viewer, ref: string, lane: number): boolean {
-    return !!this.sessions.get(ref)?.lanes.get(lane)?.has(viewer);
+  /**
+   * Whether a lane's frame still goes to `viewer`: it watches the lane, the frame's worker is connected, and the stop
+   * the frame shows (`since`) is the one that worker stands at; a frame of a test running names none.
+   */
+  laneFrameGoes(viewer: Viewer, frame: Pick<LaneViewFrame, 'ref' | 'lane' | 'worker' | 'since'>): boolean {
+    const session = this.sessions.get(frame.ref);
+    const worker = session?.workers.get(frame.worker);
+    if (!session?.lanes.get(frame.lane)?.has(viewer) || !worker?.lane) return false;
+    return frame.since === null || worker.stop?.view.since === frame.since;
   }
 
   /**
@@ -879,29 +891,53 @@ export class RunSessions {
         message: 'Update the reporter to watch a running test: this one shows a stopped test alone.',
       };
     }
+    // As many lanes as the run has workers, and a few more Playwright may start: a lane past them is no lane.
+    if (!session.lanes.has(lane) && session.lanes.size >= MAX_WATCHED_LANES) {
+      return { ok: false, message: `This run has no worker ${lane + 1} to watch.` };
+    }
     const viewers = session.lanes.get(lane) ?? new Set<Viewer>();
     session.lanes.set(lane, viewers);
     const came = !viewers.has(viewer);
     viewers.add(viewer);
-    if (!worker) return { ok: true, message: `You watch worker ${lane + 1} from its next test.` };
+    const next = { ok: true, message: `You watch worker ${lane + 1} from its next test.` };
+    if (!worker) return next;
+    const own = worker.lane;
     // A viewer that comes to a lane view on: the worker sends the frame it sent last again.
-    const answer = await this.turnLane(worker, true, came && worker.laneOn);
+    if (own?.on && came) void this.ask(worker, 'view-lane', undefined, { on: true });
+    const answer = await (own ? own.started : this.startLane(worker));
     if (answer.ok || !session.lanes.get(lane)?.has(viewer)) return answer;
+    // A worker that left before it answered: the viewer watches the next one Playwright starts in the lane.
+    if (session.workers.get(worker.index) !== worker && !session.ended) return next;
     this.unwatchLane(session, lane, viewer);
     return answer;
   }
 
-  /** Ask a worker to turn its lane view on or off; `again` asks a view on for the latest frame once more. */
-  private async turnLane(worker: Worker, on: boolean, again = false): Promise<IntentAnswer> {
-    if (on === worker.laneOn && !again)
-      return { ok: true, message: on ? 'The live view is on.' : 'The live view is off.' };
-    worker.laneOn = on;
-    const answer = ((await this.ask(worker, 'view-lane', undefined, { on })) as IntentAnswer | null) ?? {
-      ok: false,
-      message: 'The test did not answer.',
-    };
-    if (on && !answer.ok && worker.laneOn) worker.laneOn = false;
-    return answer;
+  /**
+   * Ask a worker to start its lane view, once for every viewer waiting: an answer it gave too late, or a refusal, has it
+   * stop the view again, so a view no viewer was told of never stays on.
+   */
+  private startLane(worker: Worker): Promise<IntentAnswer> {
+    if (worker.lane) return worker.lane.started;
+    const started = (this.ask(worker, 'view-lane', undefined, { on: true }) as Promise<IntentAnswer | null>).then(
+      (answer) => {
+        const said = answer ?? { ok: false, message: 'The test did not answer.' };
+        if (worker.lane?.started !== started) return said;
+        if (said.ok) worker.lane.on = true;
+        else {
+          worker.lane = null;
+          this.stopLane(worker);
+        }
+        return said;
+      },
+    );
+    worker.lane = { started, on: false };
+    return started;
+  }
+
+  /** Have a worker stop its lane view, whatever it answers. */
+  private stopLane(worker: Worker): void {
+    if (!worker.socket.destroyed)
+      this.send(worker, { type: 'request', request: ++this.lastRequest, what: 'view-lane', on: false });
   }
 
   /** A viewer stops watching a lane: the last one to go has its worker stop the lane view. */
@@ -910,7 +946,9 @@ export class RunSessions {
     if (!viewers?.delete(viewer) || viewers.size) return;
     session.lanes.delete(lane);
     for (const worker of session.workers.values()) {
-      if (worker.parallelIndex === lane && worker.laneOn) void this.turnLane(worker, false);
+      if (worker.parallelIndex !== lane || !worker.lane) continue;
+      worker.lane = null;
+      this.stopLane(worker);
     }
   }
 
@@ -1422,7 +1460,7 @@ export class RunSessions {
       case 'lane-frame': {
         // A frame of the worker's lane, for its lane's viewers alone, or why none comes.
         const viewers = session.lanes.get(worker.parallelIndex);
-        if (!viewers?.size || !worker.laneOn) return;
+        if (!viewers?.size || !worker.lane) return;
         const since = message.stop !== null && worker.stop?.id === message.stop ? worker.stop.view.since : null;
         const at = { ref: session.ref, lane: worker.parallelIndex, worker: worker.index, since };
         const frame: LaneViewFrame =
@@ -1506,7 +1544,7 @@ export class RunSessions {
    */
   private closeWorker(worker: Worker): void {
     worker.view = null;
-    worker.laneOn = false;
+    worker.lane = null;
     worker.socket.destroy();
     for (const asked of worker.requests.values()) asked.settle(null);
     worker.requests.clear();

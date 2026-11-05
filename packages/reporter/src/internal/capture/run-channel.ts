@@ -548,9 +548,15 @@ export function viewEnded(stop: number): AbortSignal {
   return ended.signal;
 }
 
-/** Whether a viewer watches the stop `stop`: its own view, or the lane view while the worker stands at it. */
+/**
+ * Whether a viewer watches the stop `stop`: its own view, or the lane view while the worker stands at it in a test,
+ * whose frames show it.
+ */
 function watched(stop: number): boolean {
-  return held?.stop === stop && (view?.stop === stop || (laneView !== null && laneAt().stop === stop));
+  const lane = laneAt();
+  return (
+    held?.stop === stop && (view?.stop === stop || (laneView !== null && lane.stop === stop && lane.test !== null))
+  );
 }
 
 /** What was driven through a view ends, unless a viewer still watches the stop held. */
