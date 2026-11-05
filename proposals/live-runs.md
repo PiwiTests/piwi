@@ -38,7 +38,9 @@ test** off keeps it to its test, and a view hidden for 10 minutes closes; the vi
 worker by its lane from 1. Built from the rest of P1: **Watch** sits at each row's end and opens the view docked
 beside the run page (a sheet on a phone), resizable, full screen, with a click to zoom and **Zoom to the element**;
 the view lists the lane's earlier tests, keeps a failed call's error with its outcome and says the run's verdict as the
-run ends; `?watch=<shard>.<worker>` opens it and names the lane while it is open; a view that does not open says why;
+run ends; `?watch=<shard>.<worker>` opens it and names the lane while it is open, and `test.stuck` links to it; a
+view that does not open says why; the reporter sends each test's lane, which the dashboard stores, so the Timeline
+places each worker on its real lane and every MCP tool says `worker: N`;
 the header's primary action is decided once the run has ended; frames carry the worker's time, so the caption names
 the step begun after the image. The later phases are proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the

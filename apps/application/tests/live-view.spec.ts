@@ -421,6 +421,8 @@ test.describe('Live view of a run', () => {
       expect(await liveWorkers(request, runId)).toEqual({
         enabled: false,
         workers: [],
+        viewers: 0,
+        maxViewers: 16,
         received: { requests: 0, frames: 0, bytes: 0 },
       });
       const refused = await request.get(`/api/test-runs/${runId}/live-view/watch?worker=0`);

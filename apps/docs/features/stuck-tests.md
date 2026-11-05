@@ -44,7 +44,8 @@ A page opened after the test was said to be stuck shows it too: the dashboard ke
 `test.stuck` fires once per attempt, through the channels of the project's
 [subscriptions](./notifications#subscriptions) that chose it. Its message names the test, how long it has run against
 its usual time, the run with its branch and environment, the browser and worker, and the test's owner. Its button opens
-the run with its **Tests** tab searched for the test. The payload is on
+the run with its **Tests** tab searched for the test, and the [live view](./live-view#watch-a-worker) of its worker
+where the project has it on. The payload is on
 [Notification events & webhooks](/reference/notification-events#payload-fields-by-event).
 
 The branch, environment, owner and **Default branch only** filters apply to it. A run that sends no notification sends

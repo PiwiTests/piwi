@@ -120,6 +120,8 @@ describe('watching a worker', () => {
     expect(await workers(event(30))).toEqual({
       enabled: false,
       workers: [],
+      viewers: 0,
+      maxViewers: 16,
       received: { requests: 0, frames: 0, bytes: 0 },
     });
     expect(await refusal(watch, event(10, { worker: '0' }))).toBe(403);
