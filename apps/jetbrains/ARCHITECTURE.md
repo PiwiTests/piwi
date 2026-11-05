@@ -407,8 +407,9 @@ worker slot (`parallelIndex`, which a worker restarted after a failure keeps) th
 last took the focus, or that a control answered last. A file that never opened counts as none. Without it, the editor
 in use is left alone (`PiwiRunSessions.reveal`): a file open in an editor already keeps its caret, so the actions
 still act on the stop at the caret, and while an editor shows a file, another stays closed, the stop drawn when it
-opens; the platform opens no file without selecting it (`FileEditorOpenOptions` is internal). With no editor shown,
-it opens with `navigate(false)`. It is drawn as the execution point:
+opens, and counts as shown as an open file does; the platform opens no file without selecting it
+(`FileEditorOpenOptions` is internal). With no editor shown, it opens with `navigate(false)`. It is drawn as the
+execution point:
 
 - a range highlighter on the document's markup model in `PIWI_EXECUTION_POINT` (**Line a run is stopped at** in
   `PiwiColorSettingsPage.kt`, falling back on `DebuggerColors.EXECUTIONPOINT_ATTRIBUTES`), with
@@ -455,8 +456,9 @@ VSCode keymaps' `F5`, `Debug`; NetBeans' `F4`, `EditSource`) runs Piwi's while i
 **The paused page.** A stop with no pause bar asks `piwi/pausedPage` and shows the JPEG (`Glue.pausedImageBytes`, at
 most `Glue.MAX_IMAGE_DATA`, decoded only within `Glue.decodableImage`) in the **Paused Page** tab of the Piwi tool
 window. The tab keeps the stop it shows while that stop is held (`Glue.StopsShown`). Once it went on after a Step or
-a Run to Caret from the IDE, the tab says so and waits for that slot's next stop, `Glue.RESERVED_MILLIS` at most;
-otherwise it opens the first new stop no pause bar shows, else the first such stop held. **Show the Paused Page**
+a Run to Caret from the IDE, the tab says so and waits for that slot's next stop while a worker holds the slot,
+`Glue.RESERVED_MILLIS` at most (`waitsUntil`: an `Alarm` draws again then); otherwise it opens the first new stop no
+pause bar shows, else the first such stop held. **Show the Paused Page**
 moves it to the stop chosen. Where its worker takes `pick-at` and the image names its viewport
 (`Glue.picksOnImage`), a click on the image picks the element under it (`piwi/pickAt`, the point scaled to the page's
 CSS pixels by `Glue.pagePoint`), its locator going where a pick goes, the answer said under the image.

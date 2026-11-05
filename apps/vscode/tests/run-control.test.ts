@@ -425,7 +425,8 @@ describe('what the editor shows of the stops', () => {
     let now = 0;
     const push = (...workers: RunWorker[]) => {
       now += 100;
-      const change = shown.changed(stopsOf(sessionsOf(session('ed-1', workers))), now);
+      const sessions = sessionsOf(session('ed-1', workers));
+      const change = shown.changed(sessions, stopsOf(sessions), now);
       const opened = change.open
         .filter((stop) => !unopened.includes(stop.stop.line))
         .map((stop) => {
@@ -442,7 +443,7 @@ describe('what the editor shows of the stops', () => {
     const wait = (ms: number) => {
       now += ms;
     };
-    return { shown, push, answer, wait };
+    return { shown, push, answer, wait, now: () => now };
   };
 
   test('opens the first stop with the focus, and its page', () => {
@@ -487,14 +488,27 @@ describe('what the editor shows of the stops', () => {
     expect(lone.push(at(0, 4)).page).toEqual([0, 4]);
   });
 
-  test('waits for a stepped worker’s next stop no longer than RESERVED_MS', () => {
-    const { push, answer, wait } = editor();
-    push(at(0, 3), worker(1, 'running'), worker(2, 'running'));
-    push(at(0, 3), at(1, 5), worker(2, 'running'));
+  test('stops waiting for a stepped worker’s next stop once its worker left the run', () => {
+    const { push, answer } = editor();
+    push(at(0, 3), worker(1, 'running'));
+    push(at(0, 3), at(1, 5));
     answer('step', 0, 3);
-    expect(push(worker(0, 'running'), at(1, 5), worker(2, 'running')).page).toBeNull();
+    expect(push(worker(0, 'running'), at(1, 5)).page).toBeNull();
+    expect(push(at(1, 5))).toEqual({ opened: [], page: [1, 5] });
+  });
+
+  test('waits for a stepped worker’s next stop RESERVED_MS at most, saying when to ask again', () => {
+    const { shown, push, answer, wait, now } = editor();
+    push(at(0, 3), worker(1, 'running'));
+    push(at(0, 3), at(1, 5));
+    expect(shown.waitsUntil()).toBeNull();
+    answer('step', 0, 3);
+    expect(shown.waitsUntil()).toBe(now() + RESERVED_MS);
+    expect(push(worker(0, 'running'), at(1, 5)).page).toBeNull();
+    // Asked again when the wait is over, with no push since: the stop held takes the view.
     wait(RESERVED_MS);
-    expect(push(worker(0, 'running'), at(1, 5), at(2, 7)).page).toEqual([2, 7]);
+    expect(push(worker(0, 'running'), at(1, 5)).page).toEqual([1, 5]);
+    expect(shown.waitsUntil()).toBeNull();
   });
 
   test('gives the focus to the first stop a Pause brings, its other stops coming in later pushes', () => {

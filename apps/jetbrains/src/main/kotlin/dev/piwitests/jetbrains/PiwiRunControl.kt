@@ -195,6 +195,9 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     private var pageRelease = false
     private val pageInputAlarm = Alarm(Alarm.ThreadToUse.SWING_THREAD, this)
 
+    /** Draws again once the Paused Page tab stops waiting for a slot's next stop (`Glue.StopsShown.waitsUntil`). */
+    private val waitAlarm = Alarm(Alarm.ThreadToUse.SWING_THREAD, this)
+
     private val breakpointsQueued = AtomicBoolean()
 
     /** The IDE's breakpoints as the service last heard them (`piwi/setBreakpoints`), as text; under [lock]. */
@@ -524,7 +527,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         refreshed.retainAll(stops.mapNotNull { it.stop.uri }.toSet())
         val shownPage = livePage()
         if (shownPage == null) shownStops.view(null)
-        val show = shownStops.changed(stops)
+        val show = shownStops.changed(sessions, stops)
+        wakeWhenWaited()
         show.open.forEach { unopened.add(Glue.stopKey(it)) }
         val byKey = stops.associateBy(Glue::stopKey)
         for (key in unopened.toList()) {
@@ -532,7 +536,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             val file = fileOf(stop.stop.uri) ?: continue
             unopened.remove(key)
             val focus = shownStops.focusFor(stop)
-            if (reveal(stop, file, focus)) shownStops.opened(stop, focus)
+            reveal(stop, file, focus)
+            shownStops.opened(stop, focus)
         }
         for (stop in stops) {
             val key = Glue.stopKey(stop)
@@ -561,21 +566,26 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     }
 
     /**
-     * Open a stop's file at its line; whether it is open. With the focus, as the debugger does. Without it, the editor in
-     * use is left alone: a file open in an editor already keeps its caret, and while an editor shows a file, another
-     * stays closed, the stop drawn in it when it opens (the platform opens no file without selecting it); with no editor
-     * shown, it opens without the focus. On the event thread.
+     * Open a stop's file at its line. With the focus, as the debugger does. Without it, the editor in use is left alone:
+     * a file open in an editor already keeps its caret, and while an editor shows a file, another stays closed, the stop
+     * drawn in it when it opens (the platform opens no file without selecting it), and counts as shown all the same;
+     * with no editor shown, it opens without the focus. On the event thread.
      */
-    private fun reveal(stop: Glue.ShownStop, file: VirtualFile, focus: Boolean): Boolean {
+    private fun reveal(stop: Glue.ShownStop, file: VirtualFile, focus: Boolean) {
         val descriptor = OpenFileDescriptor(project, file, stop.stop.line, stop.stop.character ?: 0)
         val manager = FileEditorManager.getInstance(project)
         when {
             focus -> descriptor.navigate(true)
-            manager.isFileOpen(file) -> return true
-            manager.selectedFiles.isNotEmpty() -> return false
+            manager.isFileOpen(file) || manager.selectedFiles.isNotEmpty() -> return
             else -> descriptor.navigate(false)
         }
-        return true
+    }
+
+    /** Draw again once the Paused Page tab stops waiting for a slot's next stop. On the event thread. */
+    private fun wakeWhenWaited() {
+        waitAlarm.cancelAllRequests()
+        val until = shownStops.waitsUntil() ?: return
+        waitAlarm.addRequest({ draw() }, (until - System.currentTimeMillis()).coerceAtLeast(0).toInt())
     }
 
     private fun toolWindow() = ToolWindowManager.getInstance(project).getToolWindow(PiwiFailuresToolWindowFactory.ID)
@@ -825,6 +835,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     fun answer(stop: Glue.ShownStop, action: String, place: EditorBreakpoint? = null) {
         control(RunControlParams(stop.ref, stop.worker, action, place, stop.stop.since)) {
             shownStops.answered(stop, action)
+            wakeWhenWaited()
         }
     }
 
