@@ -2,10 +2,13 @@
 /**
  * Project settings → Source control: the repository, its token and default branch,
  * whether quarantined failures fail the commit status, whether the gate verdict
- * gets a commit status of its own, the CI re-run target per
- * provider with its optional Flake Lab target, and where the specs generated from bug reports go. The token is write-only: a blank field keeps the stored one.
+ * gets a commit status of its own, where a CI re-run dispatches (the repository
+ * host's target per provider with its optional Flake Lab target, or a CI
+ * server), and where the specs generated from bug reports go. The tokens are
+ * write-only: a blank field keeps the stored one.
  */
 import type { ProjectWithTestRuns } from '~~/types/api';
+import { ciServerFormState, ciServerTargetFromForm } from '~/utils/ci-server-form';
 
 const props = defineProps<{ project: ProjectWithTestRuns; showGeneratedSpecs: boolean }>();
 const emit = defineEmits<{ saved: [] }>();
@@ -20,6 +23,8 @@ const { state, dirty } = useStoredForm(() => {
     gateStatus: props.project.gateStatus === true,
     ciRerun: {
       enabled: ci?.enabled ?? false,
+      via: ci?.via === 'ci-server' ? ('ci-server' as const) : ('repository' as const),
+      ciServer: ciServerFormState(ci?.ciServer),
       github: {
         workflow: ci?.github?.workflow ?? '',
         ref: ci?.github?.ref ?? '',
@@ -48,19 +53,44 @@ const { state, dirty } = useStoredForm(() => {
 });
 const scmToken = ref('');
 const hasToken = computed(() => Boolean(props.project.hasScmToken));
+const ciServerToken = ref('');
+const viaItems = [
+  {
+    label: 'Repository host',
+    value: 'repository',
+    description: 'A GitHub workflow, or a GitLab or Bitbucket pipeline',
+  },
+  { label: 'CI server', value: 'ci-server', description: 'One request to Jenkins, or a request you write' },
+];
+const toast = useToast();
 
 const { saving, save } = useProjectPatch(() => props.project.id);
 
+/** The CI server form shows, and its token is sent, only while CI re-run is on and dispatches through it. */
+const ciServerActive = computed(() => state.value.ciRerun.enabled && state.value.ciRerun.via === 'ci-server');
+
 async function submit() {
+  const { ciServer: ciServerForm, via, ...repositoryTargets } = state.value.ciRerun;
+  const ciServer = ciServerTargetFromForm(ciServerForm, { instanceUrl: props.project.ciServerInstanceUrl ?? null });
+  if (ciServerActive.value && ciServer.error) {
+    toast.add({ title: 'CI server not saved', description: ciServer.error, color: 'warning' });
+    return;
+  }
+  // A hidden form that cannot be saved keeps the stored target.
+  const ciServerTarget = ciServer.target ?? props.project.ciRerun?.ciServer ?? null;
   const stored = await save(
     {
       scmToken: scmToken.value.trim() || undefined,
+      ciServerToken: (ciServerActive.value && ciServerToken.value.trim()) || undefined,
       repositoryUrl: state.value.repositoryUrl.trim() || null,
       defaultBranch: state.value.defaultBranch || null,
       quarantineFailsStatus: state.value.quarantineFailsStatus,
       gateStatus: state.value.gateStatus,
-      // The form does not edit the CI server target: it is sent back as stored.
-      ciRerun: { ...state.value.ciRerun, via: props.project.ciRerun?.via, ciServer: props.project.ciRerun?.ciServer },
+      ciRerun: {
+        ...repositoryTargets,
+        ...(via === 'ci-server' ? { via } : {}),
+        ...(ciServerTarget ? { ciServer: ciServerTarget } : {}),
+      },
       generatedSpecs: {
         testImport: state.value.generatedSpecs.testImport.trim() || null,
         bugsFolder: state.value.generatedSpecs.bugsFolder.trim() || null,
@@ -70,11 +100,16 @@ async function submit() {
   );
   if (!stored) return;
   scmToken.value = '';
+  ciServerToken.value = '';
   emit('saved');
 }
 
 async function removeToken() {
   if (await save({ scmToken: null }, 'SCM token removed')) emit('saved');
+}
+
+async function removeCiServerToken() {
+  if (await save({ ciServerToken: null }, 'CI server token removed')) emit('saved');
 }
 </script>
 
@@ -161,14 +196,33 @@ async function removeToken() {
         <UFormField
           name="ciRerun"
           data-tour="project-ci-rerun"
-          description="Let Maintainers, Project admins and administrators re-run a cluster's affected tests, or one test, in CI from their pages, using the SCM token above. Off by default; fill in the block for your provider."
+          description="Let Maintainers, Project admins and administrators re-run a cluster's affected tests, or one test, in CI from their pages: through the repository host with the SCM token above, or through your CI server. Off by default."
         >
           <template #label>
             <span class="inline-flex items-center gap-1">CI re-run <HelpHint topic="project.ci-rerun" /></span>
           </template>
           <div class="space-y-3">
             <USwitch v-model="state.ciRerun.enabled" label="Enable re-run from the dashboard" />
-            <div v-if="state.ciRerun.enabled" class="space-y-4 rounded-md border border-default p-3">
+            <URadioGroup
+              v-if="state.ciRerun.enabled"
+              v-model="state.ciRerun.via"
+              :items="viaItems"
+              orientation="horizontal"
+              legend="Dispatch through"
+              data-testid="ci-rerun-via"
+            />
+            <div v-if="ciServerActive" class="rounded-md border border-default p-3">
+              <CiServerTargetFields
+                v-model="state.ciRerun.ciServer"
+                v-model:token="ciServerToken"
+                :instance-url="project.ciServerInstanceUrl ?? null"
+                :has-token="Boolean(project.hasCiServerToken)"
+                :token-url="project.ciServerTokenUrl ?? null"
+                :saving="saving"
+                @remove-token="removeCiServerToken"
+              />
+            </div>
+            <div v-else-if="state.ciRerun.enabled" class="space-y-4 rounded-md border border-default p-3">
               <div class="space-y-2">
                 <p class="text-xs text-muted">GitHub — workflow_dispatch</p>
                 <div class="grid gap-2 sm:grid-cols-3">
@@ -305,7 +359,12 @@ async function removeToken() {
 
       <template #footer>
         <div class="flex justify-end">
-          <UButton type="submit" icon="i-lucide-check" :loading="saving" :disabled="!dirty && !scmToken.trim()">
+          <UButton
+            type="submit"
+            icon="i-lucide-check"
+            :loading="saving"
+            :disabled="!dirty && !scmToken.trim() && !(ciServerActive && ciServerToken.trim())"
+          >
             Save changes
           </UButton>
         </div>

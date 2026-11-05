@@ -22,6 +22,7 @@ import { decryptSecret, encryptSecret, getEncryptionKey } from './crypto';
 import { assertPublicHttpUrl, publicOnlyLookup } from './safe-fetch';
 import { isDesktopRuntime } from './ai-claude-cli';
 import {
+  ciAuthHeaderProblem,
   ciServerRequestTemplate,
   isUnderBaseUrl,
   normalizeCiServerBaseUrl,
@@ -148,9 +149,6 @@ export function credentialFor(
   return candidates.find((c): c is CiServerCredential => !!c && isUnderBaseUrl(c.url, requestUrl)) ?? null;
 }
 
-const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
-const TRANSPORT_HEADERS = new Set(['host', 'content-length', 'transfer-encoding', 'connection', 'cookie']);
-
 function authHeader(auth: CiServerAuth, credential: CiServerCredential | null): [string, string] | null {
   if (!credential || auth === 'none') return null;
   if (/[\r\n\0]/.test(credential.token) || /[\r\n\0]/.test(credential.user ?? '')) {
@@ -161,9 +159,8 @@ function authHeader(auth: CiServerAuth, credential: CiServerCredential | null): 
     return ['Authorization', `Basic ${Buffer.from(pair, 'utf8').toString('base64')}`];
   }
   if (auth === 'bearer') return ['Authorization', `Bearer ${credential.token}`];
-  if (!HEADER_NAME.test(auth.header) || TRANSPORT_HEADERS.has(auth.header.toLowerCase())) {
-    throw new Error(`The credential header ${auth.header} cannot be set`);
-  }
+  const problem = ciAuthHeaderProblem(auth);
+  if (problem) throw new Error(problem);
   return [auth.header, credential.token];
 }
 
