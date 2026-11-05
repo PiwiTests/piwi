@@ -260,9 +260,9 @@ function compactBrowser(browser: unknown): string | null {
 }
 
 /**
- * The worker an execution ran on, as a tool reports it: `worker`, its lane from 1 (`Worker 2` on the run page), and
- * its shard in a sharded run. A result that carries no lane (an older reporter's) gives Playwright's `workerIndex`, the
- * worker process, in place of `worker`.
+ * The worker an execution ran on, as a tool reports it: `worker`, its lane from 1 (`Worker 2` on the run page), its
+ * shard in a sharded run, and Playwright's `workerIndex`, the worker process, which tells two tests of one lane apart
+ * across a restart. A result that carries no lane (an older reporter's) has no `worker`.
  */
 function executionWorker(row: {
   workerIndex: number | null;
@@ -271,7 +271,8 @@ function executionWorker(row: {
 }): { worker?: number; workerIndex?: number | null; shardIndex: number | null } {
   const worker = workerNumber(row.parallelIndex);
   return {
-    ...(worker !== null ? { worker } : { workerIndex: row.workerIndex ?? null }),
+    ...(worker !== null ? { worker } : {}),
+    workerIndex: row.workerIndex ?? null,
     shardIndex: row.shardIndex ?? null,
   };
 }

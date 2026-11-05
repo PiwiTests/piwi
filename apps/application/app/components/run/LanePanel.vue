@@ -26,6 +26,7 @@ import {
 import { stepLabel } from '@piwitests/core/step-analysis';
 import type { ApiResponse } from '~~/types/api';
 import type { LiveStepInfo } from '~/utils/live-steps';
+import { stepAfterFrame } from '~/utils/live-caption';
 import { liveViewRefusalText } from '~/utils/live-view-refusal';
 import { stallWatch, STREAM_RECONNECT_STALL_MS } from '~/utils/stream-stall';
 
@@ -41,6 +42,8 @@ const props = defineProps<{
   verdict?: string | null;
   /** The step the run page last heard the worker is on, which the caption names when it began after the image. */
   step?: LiveStepInfo | null;
+  /** Whether the panel takes the focus as it opens, and gives it back as it closes: when someone asked for it. */
+  takeFocus?: boolean;
   /** Piwi project id + name, for the IDE opener of each call's place. */
   projectKey?: string | number | null;
   projectName?: string | null;
@@ -53,8 +56,14 @@ const STALLED =
 
 const image = ref<string | null>(null);
 const call = ref<LiveCall | null>(null);
-/** When the page looked as the image shows, in the worker's clock, from a reporter that says it. */
+/** When the page looked as the image shows, from a reporter that says it: the browser's paint time, at most the worker's. */
 const frameAt = ref(0);
+/** The element the test waited on last, in its viewport: **Zoom to the element** keeps to it between two calls. */
+const lastTarget = ref<{ box: Box; viewport: { width: number; height: number } } | null>(null);
+/** How the image is zoomed: not at all, twice around a point of it (fractions of its frame), or to the element. */
+const zoom = ref<{ kind: 'point'; x: number; y: number } | { kind: 'element' } | null>(null);
+/** Whether the panel covers the whole window. */
+const fullscreen = ref(false);
 /** The call log the worker sent last, and when it came, which its time running counts on from. */
 const log = ref<LiveCallLog | null>(null);
 const logAt = ref(0);
@@ -110,6 +119,9 @@ function connect(): void {
   ended.value = false;
   endReason.value = null;
   canRetry.value = false;
+  frameAt.value = 0;
+  lastTarget.value = null;
+  zoom.value = null;
   const query = new URLSearchParams({ worker: String(props.worker) });
   if (props.shard !== null) query.set('shard', String(props.shard));
   if (follows.value) query.set('slot', String(props.slot));
@@ -135,7 +147,13 @@ function connect(): void {
         return end(LIVE_VIEW_END_TEXT['test-ended'], 'test-ended');
       }
       // A frame after the test ended is of the lane's next test, of the same title.
-      if (outcome.value && follows.value) outcome.value = null;
+      // A frame after the test ended is of the lane's next test, of the same title: a retry starts afresh.
+      if (outcome.value && follows.value) {
+        outcome.value = null;
+        log.value = null;
+        lastTarget.value = null;
+        if (zoom.value?.kind === 'element') zoom.value = null;
+      }
       image.value = `data:image/jpeg;base64,${message.data}`;
       call.value = message.call;
       frameAt.value = message.at ?? 0;
@@ -255,7 +273,9 @@ watch(visibility, (state) => {
   if (state !== 'hidden' || ended.value) return;
   hiddenTimer = setTimeout(() => {
     hiddenTimer = null;
-    if (!ended.value) end('The view closed after 10 minutes in a hidden tab.');
+    if (ended.value) return;
+    end('The view closed after 10 minutes in a hidden tab.');
+    canRetry.value = true;
   }, HIDDEN_CLOSE_MS);
 });
 
@@ -277,15 +297,8 @@ const currentLog = computed(() => {
   if (!shown || shown.status === 'running' || !call.value || callAt.value <= endedAt.value) return shown;
   return sameCall(call.value, shown.call) ? shown : null;
 });
-/**
- * The worker's step, when it began after the image was taken: a page that does not change sends no image, so the step
- * says where its test is.
- */
-const laterStep = computed(() => {
-  const step = props.step;
-  if (!step?.startedAt || !frameAt.value || step.startedAt <= frameAt.value) return null;
-  return !step.parentTitle || step.parentTitle === watchedTest.value ? step : null;
-});
+/** The worker's step, when it began after the image was taken: a page that does not change sends no image. */
+const laterStep = computed(() => stepAfterFrame(props.step, frameAt.value, watchedTest.value));
 /** The call shown: the call log's, fresher than an image's, else the step that began after the image, else its call. */
 const shownCall = computed<LiveCall | null>(
   () =>
@@ -347,14 +360,10 @@ const overlay = computed(() => {
   const point = at && at.x >= 0 && at.x <= width && at.y >= 0 && at.y <= height ? at : null;
   return { viewport: shown.viewport, box, point, radius: Math.max(6, width / 120) };
 });
-/** The element the test waited on last, in its viewport: **Zoom to the element** keeps to it between two calls. */
-const lastTarget = ref<{ box: Box; viewport: { width: number; height: number } } | null>(null);
 watch(overlay, (drawn) => {
   if (drawn?.box) lastTarget.value = { box: drawn.box, viewport: drawn.viewport };
 });
 
-/** How the image is zoomed: not at all, twice around a point of it (fractions of its frame), or to the element. */
-const zoom = ref<{ kind: 'point'; x: number; y: number } | { kind: 'element' } | null>(null);
 const frameBox = ref<HTMLElement | null>(null);
 const { width: frameWidth, height: frameHeight } = useElementSize(frameBox);
 /** The image's zoom as a CSS transform of what it draws, the overlay included. */
@@ -401,15 +410,25 @@ watch(lastTarget, (target) => {
 
 /** The docked panel's width, in rem: what it starts at and the range a drag keeps it in. */
 const LANE_PANEL_WIDTH = { min: 20, initial: 32, max: 72 } as const;
-/** Whether the panel covers the whole window. */
-const fullscreen = ref(false);
-/** From 640 px up the panel docks beside the page; below, it is a sheet over it. */
-const docked = useMediaQuery('(min-width: 640px)');
+/** From 1024 px up the panel docks beside the page, at most half its room; below, it is a sheet over it. */
+const docked = useMediaQuery('(min-width: 1024px)');
 const width = useLocalStorage<number>('piwi-lane-panel-width', LANE_PANEL_WIDTH.initial, { initOnMounted: true });
 const { shown: dockedWidth, maxWidth } = useDockedPanelWidth(width, LANE_PANEL_WIDTH);
-/** The docked panel takes the focus as it opens, so the keyboard reaches it, and Escape closes it. */
+/**
+ * The docked panel opened from a row's Watch takes the focus, so the keyboard reaches it and Escape closes it, and
+ * gives it back to what held it as it closes.
+ */
 const aside = useTemplateRef<HTMLElement>('aside');
-watch(aside, (panel) => panel?.focus({ preventScroll: true }));
+let focusedBefore: HTMLElement | null = null;
+watch(aside, (panel) => {
+  if (panel && props.takeFocus) {
+    focusedBefore = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    panel.focus({ preventScroll: true });
+  } else if (!panel && focusedBefore) {
+    if (focusedBefore.isConnected) focusedBefore.focus({ preventScroll: true });
+    focusedBefore = null;
+  }
+});
 function onKeydown(event: KeyboardEvent): void {
   if (event.key !== 'Escape') return;
   if (fullscreen.value) fullscreen.value = false;
@@ -637,7 +656,7 @@ const [DefineBody, ReuseBody] = createReusableTemplate();
     ref="aside"
     tabindex="-1"
     class="flex h-full shrink-0 flex-col border-l border-default bg-default outline-none"
-    :class="fullscreen ? 'fixed inset-0 z-50' : 'relative max-w-[50vw]'"
+    :class="fullscreen ? 'fixed inset-0 z-50' : 'relative max-w-[50%]'"
     :style="fullscreen ? undefined : { width: `${dockedWidth}rem` }"
     :aria-label="title"
     data-testid="lane-panel"

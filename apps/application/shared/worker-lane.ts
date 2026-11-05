@@ -24,7 +24,8 @@ export function workerNumber(parallelIndex: unknown): number | null {
  * a result that carries no lane; null with neither.
  */
 export function shownWorkerNumber(execution: { parallelIndex?: unknown; workerIndex?: number | null }): number | null {
-  return workerNumber(execution.parallelIndex) ?? execution.workerIndex ?? null;
+  const process = execution.workerIndex;
+  return workerNumber(execution.parallelIndex) ?? (typeof process === 'number' && process >= 0 ? process : null);
 }
 
 /** An execution as the worker order reads it. */

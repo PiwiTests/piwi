@@ -69,8 +69,8 @@ responsibilities.
      as the run's origin) opened in the background by the `piwiResources` worker fixture, outside CI only while the
      run channel shares the run (`share`, **Share live**, the state told back as `live`), and dropped quietly after
      bounded retries: only while the instance says someone watches does it post frames of the test's page, through
-     the screencast helper the editor's view shares (`page-view.ts`), each with its call (through `hideSecretsInText`)
-     and its test, and the call's log while the test is of a CI run and nothing may pause it (`mayPause`;
+     the screencast helper the editor's view shares (`page-view.ts`), each with its call (through `hideSecretsInText`),
+     its test and when its page looked so, and the call's log while the test is of a CI run and nothing may pause it (`mayPause`;
      `live-call-log.ts`: the context's call stream turned on through `context.debugger._enable()`, which stays on, and a
      listener on the worker's Playwright instrumentation); it always posts its test's stops (`showStop`). Each frame
      has the page's secret fields (`SECRET_FIELD_SELECTOR`) and the project's `masks` painted over before it goes, read

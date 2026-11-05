@@ -121,7 +121,7 @@ export function toolParameters(tool: Pick<McpToolDef, 'inputSchema'>): McpToolPa
 
 /** How an execution's worker reads, in the descriptions of the tools that report it. */
 const EXECUTION_WORKER =
-  '`worker` is the lane the execution ran on, from 1 as the run page names it (**Worker 2**), the same for a worker Playwright started again after a failure; in a sharded run it counts within the shard `shardIndex` names. A result from a reporter that sends no lane has no `worker`, and `workerIndex` in its place: Playwright’s worker process, new at every start.';
+  '`worker` is the lane the execution ran on, from 1 as the run page names it (**Worker 2**), the same for a worker Playwright started again after a failure; in a sharded run it counts within the shard `shardIndex` names. `workerIndex` is Playwright’s worker process, new at every start, so two executions of one lane with different processes ran across a restart. A result from a reporter that sends no lane has no `worker`.';
 
 /** The analytics scope, as the report and metric tools take it (the analytics page's URL keys). */
 const ANALYTICS_SCOPE_PROPERTIES = {

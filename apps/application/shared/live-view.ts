@@ -92,7 +92,8 @@ export type LiveViewEnd = 'test-ended' | 'worker-left' | 'run-ended' | 'off' | '
 export type LiveViewerMessage =
   /**
    * A frame of the test's page, a JPEG in base64, the call it was taken at, the title of its test and, from a reporter
-   * that says it, when the page looked so, in epoch milliseconds of the worker's clock (`at`).
+   * that says it, when the page looked so, in epoch milliseconds (`at`): the browser's paint time, at most the worker's
+   * clock.
    */
   | { type: 'frame'; data: string; call: LiveCall | null; test: string | null; at?: number }
   /** The call the test is in, as Playwright logs it, in a CI run, and the title of its test. */

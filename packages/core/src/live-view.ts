@@ -299,7 +299,7 @@ export type InstanceToWorker = { type: 'viewers'; count: number } | { type: 'mas
 export type WorkerToInstance =
   /**
    * A frame of the test's page, a JPEG in base64, the call it was taken at, the test's title and, from a reporter that
-   * says it, when the page looked so, in epoch milliseconds of the worker's clock (`at`).
+   * says it, when the page looked so, in epoch milliseconds (`at`): the browser's paint time, at most the worker's clock.
    */
   | (LiveWorkerId & { type: 'frame'; data: string; call: LiveCall | null; test: string | null; at?: number })
   /** Why no frame goes: the sentence the viewers see in place of the view. */
