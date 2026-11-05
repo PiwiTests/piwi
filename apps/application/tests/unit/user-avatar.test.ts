@@ -117,6 +117,19 @@ describe('accountPictureSrc', () => {
     expect(accountPictureSrc('/', { id: 7, avatarVersion: null }, 7)).toBeUndefined();
     expect(accountPictureSrc('/', null, 7)).toBeUndefined();
   });
+
+  test("takes the version a page fetched itself over the auth state's", () => {
+    const signedIn = { id: 7, avatarVersion: 'old' };
+    expect(accountPictureSrc('/', signedIn, 7, 'new')).toBe('/api/auth/avatar?v=new');
+    expect(accountPictureSrc('/', signedIn, 7, null)).toBeUndefined();
+    expect(accountPictureSrc('/', signedIn, 7, undefined)).toBe('/api/auth/avatar?v=old');
+    expect(accountPictureSrc('/', { id: 7, avatarVersion: null }, 7, 'new')).toBe('/api/auth/avatar?v=new');
+  });
+
+  test('trusts a fetched version over an auth state left by another account', () => {
+    expect(accountPictureSrc('/', { id: 7, avatarVersion: 'a' }, 8, 'b')).toBe('/api/auth/avatar?v=b');
+    expect(accountPictureSrc('/', null, 8, 'b')).toBe('/api/auth/avatar?v=b');
+  });
 });
 
 describe('accountPictureVersion', () => {

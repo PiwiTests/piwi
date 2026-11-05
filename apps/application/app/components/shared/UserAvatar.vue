@@ -2,14 +2,16 @@
 /**
  * An account's avatar: the signed-in account's profile picture when it has one
  * (the only picture the instance serves), else the account's initials on a
- * color picked from its id (`#shared/user-avatar`). It sits beside the
- * account's name, so screen readers skip it.
+ * color picked from its id (`#shared/user-avatar`). Screen readers skip it:
+ * the name beside it, or the page it stands on, says whose it is.
  */
 import type { AvatarProps } from '@nuxt/ui';
 import { accountInitials, letterAvatarColor } from '#shared/user-avatar';
 
 const props = defineProps<{
   account: { id: number; name: string | null; username: string };
+  /** The picture version of the account `GET /api/auth/me` answered, as the page fetched it; without it, the auth state's. */
+  avatarVersion?: string | null;
   size?: AvatarProps['size'];
 }>();
 
@@ -22,7 +24,9 @@ onMounted(() => {
 });
 
 const picture = computed(() =>
-  mounted.value ? accountPictureSrc(config.app.baseURL, authState.value.user, props.account.id) : undefined,
+  mounted.value
+    ? accountPictureSrc(config.app.baseURL, authState.value.user, props.account.id, props.avatarVersion)
+    : undefined,
 );
 const initials = computed(() => accountInitials(props.account));
 const colors = computed(() => {

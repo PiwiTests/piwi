@@ -271,7 +271,7 @@ const authEnabled = computed(() => config.public.authEnabled);
         data-tour="account-profile-picture"
       >
         <div class="flex flex-wrap items-center gap-4">
-          <UserAvatar :account="me.user" size="3xl" />
+          <UserAvatar :account="me.user" :avatar-version="me.user.avatarVersion" size="3xl" />
           <div class="min-w-0 flex-1 space-y-2">
             <p class="text-xs text-muted">
               {{
