@@ -620,7 +620,9 @@ function startLaneView(): IntentAnswer {
   laneView = subscribeLane({
     ...VIEW_FRAMES,
     busy: framesBackedUp,
-    send: (frame) =>
+    send: (frame) => {
+      // A frame of the lane names its test: a stop held outside one shows on its own view alone.
+      if (frame.test === null) return;
       tellHub({
         type: 'lane-frame',
         test: frame.test,
@@ -628,7 +630,8 @@ function startLaneView(): IntentAnswer {
         width: frame.width,
         height: frame.height,
         data: frame.data.toString('base64'),
-      }),
+      });
+    },
     refuse: (why, at) => tellHub({ type: 'lane-frame', test: at.test, stop: at.stop, refused: why ?? TOO_HEAVY }),
   });
   return { ok: true, message: 'The live view is on.' };

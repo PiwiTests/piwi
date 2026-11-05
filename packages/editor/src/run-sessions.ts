@@ -586,7 +586,9 @@ export class RunSessions {
     // A worker that comes later follows the sharing as a person left it.
     if (session.share !== null && worker.takes.has('share')) this.send(worker, { type: 'share', on: session.share });
     // A worker Playwright starts in a lane someone watches shows it from its first test.
-    if (session.lanes.get(worker.parallelIndex)?.size) void this.turnLane(worker, true);
+    if (session.lanes.get(worker.parallelIndex)?.size && worker.features.has('view-lane')) {
+      void this.turnLane(worker, true);
+    }
     this.changed(session);
     this.options.heard?.(attach.ref, worker.index, { type: 'joined' }, session.root);
     return (line) => this.read(own, worker, line);

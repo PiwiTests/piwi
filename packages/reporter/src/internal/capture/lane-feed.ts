@@ -21,9 +21,12 @@ import { openPageView, type PageFrame, type PageView } from './page-view.js';
 /** How long closing the view may take before the test goes on without waiting for it. */
 const CLOSE_MS = 1000;
 
-/** A frame of the lane: the page's, the test it shows, and the stop the worker stands at (null while it runs). */
-export interface LaneFrame extends PageFrame {
-  test: string;
+/**
+ * A frame of the lane: the page's, the test it shows (null for a stop held outside a test), and the stop the worker
+ * stands at (null while it runs).
+ */
+interface LaneFrame extends PageFrame {
+  test: string | null;
   stop: number | null;
 }
 
@@ -149,11 +152,11 @@ export function laneAt(): LaneAt {
 }
 
 /** The page shown now: the stop's, else the running test's; null between two tests or with none open. */
-export function lanePageShown(): Page | null {
+function lanePageShown(): Page | null {
   const open = (page: Page | null): Page | null => (page && !page.isClosed() ? page : null);
-  if (!test) return null;
   const own = open(stop?.page ?? null);
   if (own) return own;
+  if (!test) return null;
   return open(test.fixture) ?? test.seen.find((page) => !page.isClosed()) ?? null;
 }
 
@@ -276,8 +279,8 @@ function openView(page: Page, options: Asked, mask: SecretFieldMask, live: () =>
     live,
     screen: (frame) => mask.screen(frame),
     send: (frame) => {
-      if (!live() || !test) return;
-      const framed: LaneFrame = { ...frame, test: test.id, stop: stop?.id ?? null };
+      if (!live()) return;
+      const framed: LaneFrame = { ...frame, test: test?.id ?? null, stop: stop?.id ?? null };
       for (const subscriber of subscribers) subscriber.pacer.offer(framed);
     },
     refuse: (why) => {
