@@ -1335,7 +1335,7 @@ export const PIWI_ENV_VARS = {
     category: 'integrations',
     type: 'url',
     example: 'https://jenkins.example.com/',
-    since: '0.66.0',
+    since: '0.67.0',
     docs: 'features/ci-rerun',
   },
   PIWI_CI_SERVER_USER: {
@@ -1343,7 +1343,7 @@ export const PIWI_ENV_VARS = {
       'User name the instance CI server token belongs to, paired with it as an HTTP Basic credential (Jenkins).',
     category: 'integrations',
     example: 'piwi-bot',
-    since: '0.66.0',
+    since: '0.67.0',
     relevantWhen: { PIWI_CI_SERVER_URL: '*' },
   },
   PIWI_CI_SERVER_TOKEN: {
@@ -1351,7 +1351,7 @@ export const PIWI_ENV_VARS = {
       "API token of the instance's CI server, sent only to URLs under PIWI_CI_SERVER_URL. Give it to a CI user allowed to build only the jobs Piwi should start. Never returned by the API.",
     category: 'integrations',
     secret: true,
-    since: '0.66.0',
+    since: '0.67.0',
     relevantWhen: { PIWI_CI_SERVER_URL: '*' },
   },
   PIWI_CI_SERVER_HOSTS: {
@@ -1360,7 +1360,7 @@ export const PIWI_ENV_VARS = {
     category: 'integrations',
     type: 'list',
     example: 'jenkins.internal:8080',
-    since: '0.66.0',
+    since: '0.67.0',
     docs: 'features/ci-rerun',
   },
   PIWI_JIRA_BASE_URL: {

@@ -300,7 +300,13 @@ describe('persistRunCases green-sample dedupe', () => {
       .returning({ id: schema.testRuns.id });
     await persistRunCases(db, 1, run[0]!.id, [
       { title: 'pays', filePath: 'tests/checkout.spec.ts', status: 'passed', ariaSnapshot: GREEN_ARIA },
-      { title: 'pays', filePath: 'tests/checkout.spec.ts', status: 'failed', ariaSnapshot: FAILING_ARIA },
+      {
+        title: 'pays',
+        filePath: 'tests/checkout.spec.ts',
+        status: 'failed',
+        repeatEachIndex: 1,
+        ariaSnapshot: FAILING_ARIA,
+      },
     ]);
     const rows = await db.select().from(schema.testRunsCases);
     const failing = rows.find((r) => r.status === 'failed')!;

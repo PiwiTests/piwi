@@ -11,7 +11,15 @@ import { durationStats } from '#shared/utils/stats';
 import type { ImportedRunCase, ParsedBlobReport } from '../../server/utils/blob-report';
 import type { ParsedTraceImport } from '../../server/utils/trace-import';
 import { migrateToLatest } from './temp-db';
-import { STORED_ATTEMPTS, expectedFinalFlags, finalAttemptBackfillSql } from './final-attempt-fixture';
+import {
+  HISTORIES,
+  REPEATED_ATTEMPTS,
+  REPEATED_HISTORY,
+  STORED_ATTEMPTS,
+  dedupeExecutionsSql,
+  expectedFinalFlags,
+  finalAttemptBackfillSql,
+} from './final-attempt-fixture';
 
 /**
  * Each execution stores whether it is the final attempt of its run, test, Playwright project and repetition
@@ -573,6 +581,32 @@ describe('a batch sent again after its request failed past its insert', () => {
   });
 });
 
+describe('an execution without a project sent again', () => {
+  describe.each(['server', 'demo'] as const)('by the %s ingest', (ingest) => {
+    test('is stored once, and listed once in the history of its retry', async () => {
+      const bare = (statuses: string[]) => {
+        const { attempts: _history, browser: _project, ...tc } = attempt('pays', statuses);
+        return tc;
+      };
+      const { runId, send } = await streams[ingest]();
+      await send(bare(['failed']));
+      await send(bare(['failed']));
+      await send(bare(['failed', 'passed']));
+
+      expect(await finalFlags(runId)).toEqual(['pays null#0/0: earlier', 'pays null#0/1: final']);
+      const [retry] = await db
+        .select({ attempts: schema.testRunsCases.attempts })
+        .from(schema.testRunsCases)
+        .where(and(eq(schema.testRunsCases.testRunId, runId), eq(schema.testRunsCases.retries, 1)));
+      expect((retry!.attempts as Array<{ retry: number; status: string }>).map((a) => [a.retry, a.status])).toEqual([
+        [0, 'failed'],
+        [1, 'passed'],
+      ]);
+      expect(await flakyReadings(runId, 'pays')).toEqual(readEverywhere(true));
+    });
+  });
+});
+
 /** Each execution of test `title` in run `runId` as `<retry>: <passed after a failure>`, in retry order. */
 async function verdicts(runId: number, title: string): Promise<string[]> {
   const rows = await db
@@ -726,30 +760,85 @@ describe('the verdict each execution stores', () => {
 
 const APP_DIR = fileURLToPath(new URL('../..', import.meta.url));
 
+const MIGRATIONS = join(APP_DIR, 'server/database/migrations');
+
+/** A migrated database holding {@link STORED_ATTEMPTS}, its repeated execution without a project included. */
+async function storedAttemptsDb() {
+  const client = createClient({ url: ':memory:' });
+  const migrated = drizzle(client, { schema });
+  await migrateToLatest(migrated);
+  // The rows a database held before the migration that deletes the repeats.
+  await client.execute('DROP INDEX `idx_test_runs_cases_run_browser`');
+  await migrated.insert(schema.projects).values({ id: 1, name: 'backfill' });
+  await migrated.insert(schema.testCases).values([
+    { id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'a' },
+    { id: 2, projectId: 1, filePath: 'b.spec.ts', title: 'b' },
+  ]);
+  await migrated
+    .insert(schema.testRuns)
+    .values([1, 2].map((id) => ({ id, projectId: 1, status: 'passed', startTime: new Date() })));
+  await migrated
+    .insert(schema.testRunsCases)
+    .values(STORED_ATTEMPTS.map((row, i) => ({ ...row, id: i + 1, status: 'passed', finalAttempt: true })));
+  await client.executeMultiple(finalAttemptBackfillSql(MIGRATIONS));
+  return { client, migrated };
+}
+
 describe('the final-attempt backfill', () => {
   test('marks the executions stored before it as finalAttempts reads them', async () => {
-    const client = createClient({ url: ':memory:' });
-    const migrated = drizzle(client, { schema });
-    await migrateToLatest(migrated);
-    await migrated.insert(schema.projects).values({ id: 1, name: 'backfill' });
-    await migrated.insert(schema.testCases).values([
-      { id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'a' },
-      { id: 2, projectId: 1, filePath: 'b.spec.ts', title: 'b' },
-    ]);
-    await migrated
-      .insert(schema.testRuns)
-      .values([1, 2].map((id) => ({ id, projectId: 1, status: 'passed', startTime: new Date() })));
-    await migrated
-      .insert(schema.testRunsCases)
-      .values(STORED_ATTEMPTS.map((row, i) => ({ ...row, id: i + 1, status: 'passed', finalAttempt: true })));
-
-    await client.executeMultiple(finalAttemptBackfillSql(join(APP_DIR, 'server/database/migrations')));
-
+    const { migrated } = await storedAttemptsDb();
     const rows = await migrated
       .select({ finalAttempt: schema.testRunsCases.finalAttempt })
       .from(schema.testRunsCases)
       .orderBy(asc(schema.testRunsCases.id));
     expect(rows.map((row) => row.finalAttempt)).toEqual(expectedFinalFlags());
+  });
+});
+
+describe('the migration that deletes repeated executions without a project', () => {
+  test('keeps the last one of each with its history listing each attempt once, then builds the unique index', async () => {
+    const { client, migrated } = await storedAttemptsDb();
+    await migrated
+      .update(schema.testRunsCases)
+      .set({ attempts: HISTORIES.stored })
+      .where(eq(schema.testRunsCases.id, REPEATED_HISTORY + 1));
+    await migrated.insert(schema.networkRequests).values(
+      STORED_ATTEMPTS.map((row, i) => ({
+        testRunsCaseId: i + 1,
+        testRunId: row.testRunId,
+        method: 'GET',
+        status: 200,
+      })),
+    );
+    // The migrator runs with foreign keys off: no cascade deletes what referenced a deleted execution.
+    await client.execute('PRAGMA foreign_keys = OFF');
+    const { dedupe, uniqueIndex } = dedupeExecutionsSql(MIGRATIONS);
+    await client.executeMultiple(dedupe);
+    await client.executeMultiple(uniqueIndex);
+
+    const rows = await migrated
+      .select({ id: schema.testRunsCases.id, finalAttempt: schema.testRunsCases.finalAttempt })
+      .from(schema.testRunsCases)
+      .orderBy(asc(schema.testRunsCases.id));
+    const kept = expectedFinalFlags()
+      .map((finalAttempt, i) => ({ id: i + 1, finalAttempt }))
+      .filter((_, i) => !REPEATED_ATTEMPTS.includes(i));
+    expect(rows).toEqual(kept);
+    const requests = await migrated
+      .select({ id: schema.networkRequests.testRunsCaseId })
+      .from(schema.networkRequests)
+      .orderBy(asc(schema.networkRequests.testRunsCaseId));
+    expect(requests.map((r) => ({ id: r.id }))).toEqual(kept.map(({ id }) => ({ id })));
+    const [history] = await migrated
+      .select({ attempts: schema.testRunsCases.attempts })
+      .from(schema.testRunsCases)
+      .where(eq(schema.testRunsCases.id, REPEATED_HISTORY + 1));
+    expect(history!.attempts).toEqual(HISTORIES.deduped);
+    for (const i of REPEATED_ATTEMPTS) {
+      await expect(
+        migrated.insert(schema.testRunsCases).values({ ...STORED_ATTEMPTS[i]!, status: 'passed' }),
+      ).rejects.toThrow();
+    }
   });
 });
 

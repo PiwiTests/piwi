@@ -45,7 +45,15 @@ beforeAll(async () => {
   await db.insert(schema.testRunsCases).values([
     { id: 10, testRunId: 1, testCaseId: 1, status: 'failed', error: 'Error: card declined', failureClusterId: 1 },
     { id: 11, testRunId: 1, testCaseId: 2, status: 'failed', error: 'Error: card declined', failureClusterId: 1 },
-    { id: 12, testRunId: 1, testCaseId: 1, status: 'failed', error: 'Error: transfer refused', failureClusterId: 2 },
+    {
+      id: 12,
+      testRunId: 1,
+      testCaseId: 1,
+      repeatEachIndex: 1,
+      status: 'failed',
+      error: 'Error: transfer refused',
+      failureClusterId: 2,
+    },
   ]);
   // Cluster 1 has its own diagnosis and an execution's; cluster 2 only an execution's.
   await db.insert(schema.failureDiagnoses).values([
