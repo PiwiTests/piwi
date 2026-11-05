@@ -377,10 +377,11 @@ export function laneFrameNow(
 /**
  * The state as one window reads it: the background worker's single connection to a hub watches every stop and lane a
  * window watches, so a stop the window does not watch itself (`watches`: its live view, or the lane of its worker,
- * Playwright's `parallelIndex`) takes from it what it takes from a connection that does not watch: no input, and at a
- * stop no pause bar shows, none of the actions in the test's window.
+ * Playwright's `parallelIndex`, null for a worker that runs no test, whose stop no lane shows) takes from it what it
+ * takes from a connection that does not watch: no input, and at a stop no pause bar shows, none of the actions in the
+ * test's window.
  */
-export function stateForViewer(state: RunsState, watches: (view: RunsView, lane: number) => boolean): RunsState {
+export function stateForViewer(state: RunsState, watches: (view: RunsView, lane: number | null) => boolean): RunsState {
   return {
     ...state,
     runs: state.runs.map(({ hub, session }) => ({
@@ -390,7 +391,8 @@ export function stateForViewer(state: RunsState, watches: (view: RunsView, lane:
         workers: session.workers.map((worker) => {
           const { stop } = worker;
           const at = { hub, ref: session.ref, worker: worker.worker };
-          if (!stop?.intents || watches({ ...at, since: stop.since }, worker.parallelIndex)) return worker;
+          const lane = worker.test ? worker.parallelIndex : null;
+          if (!stop?.intents || watches({ ...at, since: stop.since }, lane)) return worker;
           const intents = stop.intents.filter(
             (what) =>
               what !== 'input' &&

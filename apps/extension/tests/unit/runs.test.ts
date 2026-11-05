@@ -459,33 +459,34 @@ describe('a lane watched while it runs', () => {
     expect(heldUntilWatched(takes, stop('s1'), true)).toEqual([]);
   });
 
-  it('makes the window that watches it a viewer of its stop: the input and, headless, the actions in the test’s window', () => {
+  it('makes the window that watches it a viewer of the stops of its tests: the input and, headless, the actions in the test’s window', () => {
     const hub = 'ws://127.0.0.1:1/piwi/hub';
     const all = ['pick', 'record', 'mock', 'view', 'input', 'pick-at'] as const;
-    const state: RunsState = {
+    const test = { id: 't1', title: ['pays'], uri: 'file:///x.ts', line: 0, project: '', retry: 0, cannotPause: null };
+    const stopped = worker({
+      worker: 5,
+      parallelIndex: 1,
+      state: 'stopped',
+      test,
+      stop: { ...stop('s1'), intents: [...all] },
+    });
+    const state = (workers: HubWorker[]): RunsState => ({
       discovery: 'found',
       desktop: 'unpaired',
       hubs: [{ id: hub, connected: true, client: null, desktop: false, lanes: true }],
-      runs: [
-        {
-          hub,
-          session: {
-            ...run('r1', []).session,
-            workers: [
-              worker({ worker: 5, parallelIndex: 1, state: 'stopped', stop: { ...stop('s1'), intents: [...all] } }),
-            ],
-          },
-        },
-      ],
-    };
-    const lanes: number[] = [];
-    const watched = stateForViewer(state, (_view, lane) => {
+      runs: [{ hub, session: { ...run('r1', []).session, workers } }],
+    });
+    const lanes: Array<number | null> = [];
+    const watched = stateForViewer(state([stopped]), (_view, lane) => {
       lanes.push(lane);
       return lane === 1;
     });
     expect(lanes).toEqual([1]);
     expect(watched.runs[0]!.session.workers[0]!.stop?.intents).toEqual([...all]);
-    const other = stateForViewer(state, (_view, lane) => lane === 0);
+    const other = stateForViewer(state([stopped]), (_view, lane) => lane === 0);
     expect(other.runs[0]!.session.workers[0]!.stop?.intents).toEqual(['mock', 'view', 'pick-at']);
+    // A stop outside a test, which no lane shows: watching the lane makes no viewer of it.
+    const outside = stateForViewer(state([{ ...stopped, test: null }]), (_view, lane) => lane === 1);
+    expect(outside.runs[0]!.session.workers[0]!.stop?.intents).toEqual(['mock', 'view', 'pick-at']);
   });
 });

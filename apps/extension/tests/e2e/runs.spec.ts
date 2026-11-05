@@ -932,6 +932,14 @@ async function answerImage(worker: FakeWorker, data: string): Promise<void> {
   await answerNext(worker, 'image', { mime: 'image/jpeg', data, ...VIEWPORT });
 }
 
+/** The Runs window hides (`true`) or shows again, as the browser says it when it is minimized and back. */
+async function setHidden(runs: Page, hidden: boolean): Promise<void> {
+  await runs.evaluate((value) => {
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => value });
+    document.dispatchEvent(new Event('visibilitychange'));
+  }, hidden);
+}
+
 /** A point of an image, as a fraction of its content box. */
 async function at(image: ReturnType<Page['locator']>, fx: number, fy: number): Promise<{ x: number; y: number }> {
   const size = await image.evaluate((img: HTMLImageElement) => ({ w: img.clientWidth, h: img.clientHeight }));
@@ -1660,6 +1668,27 @@ test.describe('watching a running test', () => {
         await expect(card.getByRole('button', { name: 'Watch', exact: true })).toBeFocused();
         expect(heardRequests(run.worker, 'view')).toEqual([]);
 
+        // Watched again once the window shows: the frame before is the page as last seen, dimmed and taking no input,
+        // until a frame of this watch comes.
+        const lanes = () => heardRequests(run.worker, 'view-lane').map((r) => r.on);
+        await setHidden(runs, true);
+        await expect.poll(lanes).toEqual([true, false]);
+        await answerLane(run.worker, false);
+        await setHidden(runs, false);
+        await expect.poll(lanes).toEqual([true, false, true]);
+        await answerLane(run.worker);
+        const seen = card.getByRole('img', { name: 'The test’s page, as last seen' });
+        await expect(seen).toHaveClass(/\bstale\b/);
+        await expect(seen).not.toHaveAttribute('tabindex');
+        await expect(card.locator('.live-badge')).toHaveCount(0);
+        const played = input.events.length;
+        await seen.click({ position: await at(seen, 0.5, 0.5) });
+        await runs.waitForTimeout(300);
+        expect(input.events).toHaveLength(played);
+        sendLaneFrame(run.worker, 'pays', 1, before);
+        await expect(live).toHaveAttribute('src', `data:image/jpeg;base64,${before}`);
+        await expect(live).not.toHaveClass(/\bstale\b/);
+
         // A Step: the stop's frame stays, dimmed and marked as running, until the next one comes.
         await card.getByRole('button', { name: 'Step' }).click();
         expect(await run.worker.next('control', 1)).toMatchObject({ action: 'step', stop: 1 });
@@ -1670,7 +1699,7 @@ test.describe('watching a running test', () => {
         await expect(card.getByRole('button', { name: 'Pick', exact: true })).toHaveCount(0);
         sendLaneFrame(run.worker, 'pays', null, before);
         await expect(card.getByRole('img', { name: 'Live view of the test’s page', exact: true })).toBeVisible();
-        expect(heardRequests(run.worker, 'view-lane').map((r) => r.on)).toEqual([true]);
+        expect(lanes()).toEqual([true, false, true]);
       } finally {
         input.stop();
         await endRun(run);
@@ -1715,6 +1744,9 @@ test.describe('watching a running test', () => {
         await expect.poll(lanes).toEqual([true, false, true]);
         await expect(card.getByRole('button', { name: 'Watch', exact: true })).toHaveAttribute('aria-pressed', 'true');
         await answerLane(run.worker);
+        // The frame of the watch before shows dimmed, as the page last seen, until one of this watch comes.
+        await expect(card.getByRole('img', { name: 'The test’s page, as last seen' })).toHaveClass(/\bstale\b/);
+        await expect(card.locator('.live-badge')).toHaveText('Running…');
         sendLaneFrame(run.worker, 'pays', null, before);
         await expect(card.locator('img.live:not(.stale)')).toBeVisible();
 
@@ -1772,6 +1804,112 @@ test.describe('watching a running test', () => {
         await endRun(run);
       }
     } finally {
+      await context.close();
+    }
+  });
+
+  test('a refusal to watch shows under the row while its test runs, its stops included, and goes with the test', async () => {
+    const { context, extensionId } = await pairedExtension(editor);
+    try {
+      const runs = await openRuns(context, extensionId);
+      const run = await startLaneRun(editor, 'pays');
+      try {
+        const card = liveRun(runs);
+        const watch = card.getByRole('button', { name: 'Watch', exact: true });
+        await watch.click();
+        const refused = 'This test has no page to show.';
+        await answerNext(run.worker, 'view-lane', { ok: false, message: refused });
+        const note = card.locator('.view-note');
+        await expect(note).toHaveText(refused);
+        await expect(watch).toHaveAttribute('aria-pressed', 'false');
+        await expect(runs.locator('#announce')).toHaveText(refused);
+        // A stop of the test, and the test going on: the refusal stays.
+        stopAtCheckout(run.worker, 1);
+        await expect(card.getByText('Stopped at a breakpoint')).toBeVisible();
+        await expect(note).toHaveText(refused);
+        run.worker.send({ type: 'running', stop: 1 });
+        await expect(card.getByText('Running')).toBeVisible();
+        await expect(note).toHaveText(refused);
+        // The test ends: it goes with it.
+        run.worker.send({ type: 'test-end', testId: 'id-pays', status: 'passed', pausedMs: 0 });
+        await expect(card.getByText('Between tests')).toBeVisible();
+        await expect(card.getByText(refused)).toHaveCount(0);
+        await expect(card.locator('figure')).toHaveCount(0);
+      } finally {
+        await endRun(run);
+      }
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('a watched lane’s stop outside a test, which the lane does not show, has Watch live', async () => {
+    const { context, extensionId } = await pairedExtension(editor);
+    try {
+      const runs = await openRuns(context, extensionId);
+      const { before } = await shopFrames(context);
+      const run = await startLaneRun(editor, 'pays');
+      try {
+        const card = liveRun(runs);
+        await card.getByRole('button', { name: 'Watch', exact: true }).click();
+        await answerLane(run.worker);
+        sendLaneFrame(run.worker, 'pays', null, before);
+        await expect(card.locator('img.live:not(.stale)')).toBeVisible();
+        // The test ends, and the worker stops after it, in a fixture's teardown.
+        run.worker.send({ type: 'test-end', testId: 'id-pays', status: 'failed', pausedMs: 0 });
+        await expect(card.getByText('Between tests')).toBeVisible();
+        stopAtCheckout(run.worker, 1, { bar: false });
+        await expect(card.getByText('Stopped at a breakpoint')).toBeVisible();
+        // Its own view, Watch live, and the actions in the test's window held until it is watched.
+        const live = card.getByRole('button', { name: 'Watch live' });
+        await expect(live).toBeVisible();
+        await expect(card.getByRole('button', { name: 'Watch', exact: true })).toHaveCount(0);
+        await expectWatchToUse(card);
+        await answerImage(run.worker, before);
+        await live.click();
+        expect(await answerView(run.worker)).toMatchObject({ what: 'view', stop: 1, on: true });
+        sendFrame(run.worker, 1, before);
+        await expect(
+          card.getByRole('img', { name: 'Live view of the test’s page: keys and clicks go to the page' }),
+        ).toBeVisible();
+      } finally {
+        await endRun(run);
+      }
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('a watched lane whose hub is lost says so once, and is not asked again until the hub answers', async () => {
+    const desktop = await startDesktop(editor.dir);
+    const { context, extensionId } = await pairedExtension(null, { desktop });
+    const worker = laneWorker(editor, desktop.channel, 'desktop-lane', 0);
+    try {
+      const runs = await openRuns(context, extensionId);
+      const { before } = await shopFrames(context);
+      worker.begin('pays');
+      const card = runs.getByRole('region', { name: path.basename(editor.dir) });
+      await card.getByRole('button', { name: 'Watch', exact: true }).click();
+      await answerLane(worker);
+      sendLaneFrame(worker, 'pays', null, before);
+      await expect(card.locator('img.live:not(.stale)')).toBeVisible();
+      // Each sentence the window reads out, as it is set.
+      await runs.evaluate(() => {
+        const announce = document.getElementById('announce')!;
+        const said: string[] = [];
+        (window as unknown as { said: string[] }).said = said;
+        new MutationObserver(() => {
+          if (announce.textContent) said.push(announce.textContent);
+        }).observe(announce, { childList: true, characterData: true, subtree: true });
+      });
+      const said = () => runs.evaluate(() => (window as unknown as { said: string[] }).said);
+      const lost = 'The connection to the editor was lost: the live view starts again once it is back.';
+      await desktop.close();
+      await expect.poll(said).toContain(lost);
+      await runs.waitForTimeout(1500);
+      expect((await said()).filter((text) => text === lost)).toHaveLength(1);
+    } finally {
+      worker.socket.destroy();
       await context.close();
     }
   });

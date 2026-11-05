@@ -487,10 +487,20 @@ interface LaneView extends RunsLane, ViewSurface {
   status: 'idle' | 'starting' | 'on' | 'ended' | 'refused';
   /** Why it ended or was refused. */
   note: string;
-  /** Where the frame drawn was taken: its worker, its test and its stop (null while the test ran). */
-  shown: { worker: number; test: string; since: string | null } | null;
-  /** The latest frame not drawn yet, while another one decodes: the others are dropped. */
+  /**
+   * How many times the hub was asked to watch it: an answer to an earlier ask is dropped, and a frame that came in one
+   * shows only as the frame before, dimmed and taking no input, until one of the latest ask comes.
+   */
+  asks: number;
+  /** Its hub's connection was lost: it is asked again once the hub was away and answers again. */
+  waitAway: boolean;
+  /** Where its worker stood when the hub refused it, its worker and its test: the refusal shows until it moves on. */
+  refusedAt: string | null;
+  /** Where the frame drawn was taken: its worker, its test and its stop (null while the test ran), and in which ask. */
+  shown: { worker: number; test: string; since: string | null; ask: number } | null;
+  /** The latest frame not drawn yet, while another one decodes, and the ask it came in: the others are dropped. */
   next: LaneImageFrame | null;
+  nextAsk: number;
   decoding: boolean;
   /** The hub's sentence saying why the lane sends no frame now, shown in place of its image until one comes. */
   refused: string;
@@ -762,10 +772,14 @@ function startLane(run: RunsRun, worker: HubWorker): void {
     lane: worker.parallelIndex,
     status: 'idle',
     note: '',
+    asks: 0,
+    waitAway: false,
+    refusedAt: null,
     img: element('img', 'live'),
     viewport: null,
     shown: null,
     next: null,
+    nextAsk: 0,
     decoding: false,
     refused: '',
     refusals: 0,
@@ -796,21 +810,34 @@ function askLane(slot: string, lane: LaneView): void {
     return;
   }
   lane.status = 'starting';
-  void command(lane.hub, lane.ref, null, 'watch', null, { lane: lane.lane, on: true }).then((answer) => {
-    if (lanes.get(slot) !== lane || lane.status !== 'starting') return;
+  const ask = ++lane.asks;
+  const watch = (on: boolean) => command(lane.hub, lane.ref, null, 'watch', null, { lane: lane.lane, on });
+  void watch(true).then((answer) => {
+    if (lanes.get(slot) !== lane || lane.asks !== ask || lane.status !== 'starting') return;
     if (answer.ok) {
       lane.status = 'on';
     } else {
       stopInput(lane);
+      // The worker may still watch it for this window, which dropped the ask: it stops.
+      if (answer.failure === 'timeout') void watch(false);
       // A lane asked as its hub's connection was lost ends as the loss does, to be asked again once it answers.
       const lost = answer.failure === 'offline';
       lane.status = lost ? 'ended' : 'refused';
       lane.note = lost ? t('runs_liveLost') : failureText(answer);
+      lane.waitAway = lost;
+      lane.refusedAt = lost || !state ? null : lanePlace(state, lane);
       lane.next = null;
       announce(lane.note);
     }
     render();
   });
+}
+
+/** Where a lane's worker stands in a state, as a refusal of the lane is kept by: its worker and its test. */
+function lanePlace(current: RunsState, lane: RunsLane): string {
+  const run = current.runs.find((r) => r.hub === lane.hub && r.session.ref === lane.ref && !r.session.ended);
+  const worker = run?.session.workers.find((w) => w.parallelIndex === lane.lane);
+  return worker ? `${worker.worker}|${worker.test?.id ?? ''}` : '';
 }
 
 /** The window no longer watches a lane: the hub hears it (`tell`) while it was on. */
@@ -831,12 +858,26 @@ function idleLane(lane: LaneView, tell: boolean): void {
   lane.next = null;
 }
 
-/** Watches again each lane Watch left on that is not watched now: once the window shows, and once its hub answers. */
+/**
+ * Watches again each lane Watch left on that is not watched now: once the window shows, and once its hub answers
+ * again after its connection was lost. A lane the hub refused is let go once its worker, or the test it runs,
+ * changes.
+ */
 function resumeLanes(current: RunsState): void {
   for (const [slot, lane] of lanes) {
+    if (lane.status === 'refused') {
+      if (lanePlace(current, lane) !== lane.refusedAt) endLane(slot, false);
+      continue;
+    }
     if (lane.status !== 'idle' && lane.status !== 'ended') continue;
+    const connected = current.hubs.some((hub) => hub.id === lane.hub && hub.connected);
+    // The loss is heard before the state that shows the hub away: the hub answers again only after that one.
+    if (lane.waitAway) {
+      if (!connected) lane.waitAway = false;
+      continue;
+    }
     const live = current.runs.some((r) => r.hub === lane.hub && r.session.ref === lane.ref && !r.session.ended);
-    if (live && current.hubs.some((hub) => hub.id === lane.hub && hub.connected)) askLane(slot, lane);
+    if (live && connected) askLane(slot, lane);
   }
 }
 
@@ -859,6 +900,7 @@ function heardLaneFrame(frame: RunsLaneFrame): void {
   }
   if (!isViewFrameData(frame.data)) return;
   lane.next = frame;
+  lane.nextAsk = lane.asks;
   if (!lane.decoding) void drawLane(slot, lane);
 }
 
@@ -866,6 +908,7 @@ async function drawLane(slot: string, lane: LaneView): Promise<void> {
   lane.decoding = true;
   while (lane.next && lanes.get(slot) === lane) {
     const frame = lane.next;
+    const ask = lane.nextAsk;
     const refusals = lane.refusals;
     lane.next = null;
     const src = `data:image/jpeg;base64,${frame.data}`;
@@ -878,9 +921,10 @@ async function drawLane(slot: string, lane: LaneView): Promise<void> {
       continue;
     }
     if (lanes.get(slot) !== lane || !isLive(lane)) break;
-    if (lane.refusals !== refusals) continue;
-    const shown = { worker: frame.worker, test: frame.test, since: frame.since };
-    // Drawn again when the frame shows another place, or the first one, or once the hub said why none came.
+    if (lane.refusals !== refusals || lane.asks !== ask) continue;
+    const shown = { worker: frame.worker, test: frame.test, since: frame.since, ask };
+    // Drawn again when the frame shows another place or comes in another ask, or the first one, or once the hub said
+    // why none came.
     const moved = JSON.stringify(shown) !== JSON.stringify(lane.shown) || !lane.viewport || !!lane.refused;
     lane.img.src = src;
     lane.viewport = { width: frame.width, height: frame.height };
@@ -898,6 +942,7 @@ function heardLaneEnded(ended: RunsLane): void {
   idleLane(lane, false);
   lane.status = 'ended';
   lane.note = t('runs_liveLost');
+  lane.waitAway = true;
   announce(lane.note);
   render();
 }
@@ -1283,8 +1328,10 @@ function forgetGone(current: RunsState): void {
   for (const [slot, { hub, run }] of watchLive) {
     if (!liveRuns.has(`${hub}|${run}`) && connected(hub)) watchLive.delete(slot);
   }
+  // A lane lasts while its run does, and while its hub is named: until the hubs are first found, none is.
   for (const [slot, lane] of lanes) {
-    if (!liveRuns.has(`${lane.hub}|${lane.ref}`) && connected(lane.hub)) endLane(slot, false);
+    const gone = !named(lane.hub) && current.discovery !== 'searching';
+    if (gone || (!liveRuns.has(`${lane.hub}|${lane.ref}`) && connected(lane.hub))) endLane(slot, false);
   }
   for (const key of picking) if (!at.get(key)) picking.delete(key);
   for (const [key, list] of requestLists) if (at.get(key) !== list.since) requestLists.delete(key);
@@ -1961,22 +2008,24 @@ function renderWorker(
     }
   }
   if (!ended) {
-    // A worker whose lane can be watched shows it, and its stops, through Watch; another one a stop's own view.
+    // A worker whose lane can be watched shows it, and the stops of its tests, through Watch; another one, and a stop
+    // outside a test, which no lane shows, a stop's own view.
     const can = laneWatchOf(hub, worker);
     const lane = can === 'watch' ? lanes.get(slotKey(run.hub, run.session.ref, worker.parallelIndex)) : undefined;
+    const byLane = can === 'watch' && (!stop || !!worker.test);
     let page: HTMLElement | null = null;
     if (stop && where) {
       const stopShown = { title: stop.title, where, reason: stop.reason, error: stop.error ?? null };
       parts.push(part(`${key}|stop`, stopShown, () => stopView(stop, where)));
       if (!away) wantImage(run, worker, stop);
-      page = can === 'watch' ? renderLanePage(run, worker, stop, away) : renderPage(run, worker, stop, away);
-    } else if (can === 'watch') {
+      page = byLane ? renderLanePage(run, worker, stop, away) : renderPage(run, worker, stop, away);
+    } else if (byLane) {
       page = renderLanePage(run, worker, null, away);
     }
     const since = stop?.since ?? null;
     const list = stop ? requestLists.get(key) : undefined;
     const listed = list?.since === since ? list : undefined;
-    const watchable = can === 'watch' || (!!stop && stopIntents(worker, stop).includes('view'));
+    const watchable = byLane || (!!stop && stopIntents(worker, stop).includes('view'));
     const untilWatched: Control[] = stop ? heldUntilWatched(worker, stop, watchable) : [];
     const controls = controlsOf(worker, stop, untilWatched);
     const running: RunningLane | null =
@@ -2204,8 +2253,10 @@ function renderLanePage(run: RunsRun, worker: HubWorker, stop: HubStop | null, a
   const kept = images.get(key);
   const still = stop && kept?.since === stop.since ? kept : undefined;
   const live = isLive(lane);
-  // Whether the frame drawn shows where the worker stands now: its running test, or the stop it is the live view of.
-  const now = live && !lane.refused && !!lane.viewport && !!lane.shown && laneFrameNow(lane.shown, worker);
+  // Whether the frame drawn shows where the worker stands now, in this watch: its running test, or the stop it is the
+  // live view of.
+  const now =
+    live && !lane.refused && !!lane.viewport && lane.shown?.ask === lane.asks && laneFrameNow(lane.shown, worker);
   const viewing = now && stop ? stop.since : null;
   if (lane) {
     if (lane.inputSince !== viewing) {

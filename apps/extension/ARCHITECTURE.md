@@ -839,8 +839,9 @@ starts again once the hub answers.
 - It sends `hello` with the hub's token, then `subscribe` once the hub welcomed it. Each `session` the hub pushes is
   kept by its ref. The hub reads as connected to the windows only once the runs live at `subscribe` were heard
   (`heardRuns`): a window forgets Watch live for a worker a connected hub no longer has, so a reconnection, the
-  worker's restart included, must not show a connected hub without its runs. `RunHubs` keeps an ended run ten minutes with its last workers (`keepEnded`, five at most), so the
-  window still names its tests.
+  worker's restart included, must not show a connected hub without its runs. `RunHubs` keeps an ended run ten minutes
+  with its last workers (`keepEnded`, five at most), so the window still names its tests; one whose ref runs again is
+  not listed while the new run lives, which the window keys by the same hub and ref.
 - It sends `follow` with `on: true` while a Runs window is open (`RunHubs.listen`): as the first window's port
   connects, on each connection that opens meanwhile (a reconnection included), and `on: false` as the last one leaves.
   Only that holds a failure no pause bar shows for the person watching: the worker, subscribed with no window open,
@@ -861,17 +862,22 @@ starts again once the hub answers.
   `lanes` among its `features` (`RunsHub.lanes`, kept while the hub is away). The connection watches a lane while any
   window does (`RunHubs.watchLane`, by `slotKey`): the hub hears `watch` with `on: true` as each window asks, and
   `on: false` as the last one stops or closes; a run that ended ends its lanes (`prune`, once the hub told its runs).
-  The hub follows the lane through its tests, its stops and the worker Playwright starts in its place.
+  The hub follows the lane through its tests, its stops and the worker Playwright starts in its place. An ask the hub
+  does not answer in time takes the window off, and the hub hears `on: false` when no other window watches the lane.
 - Each `lane-frame` goes to the windows that watch its lane (`RunsLaneFrame`), paced as a stop's frames are, the latest
   one kept in memory alone for a window that comes to it. A frame names the worker, the test and the stop (`since`,
-  null while the test runs) it shows; at a stop it shows, the windows that watch the lane are viewers of that stop.
+  null while the test runs) it shows; at a stop of a test (the worker runs one), the windows that watch the lane are
+  viewers of that stop. The lane shows no stop outside a test.
 - A connection lost, or closed as the hubs change, ends the views and lanes it carried: each window that watched one
   hears `view-ended` (`RunsViewer.ended`) or `lane-ended` (`RunsViewer.laneEnded`).
-- A window's `input` goes on only for a stop it watches itself, through the stop's view or its worker's lane, else the
-  worker answers `unwatched`; `pick-at` from any window, its answer's `locator` passed on.
+- A window's `input` goes on only for a stop it watches itself, through the stop's view or its worker's lane (`viewerOf`),
+  else the worker answers `unwatched`; so do Pick, Record, Assert and Assert a region at a stop no pause bar shows;
+  `pick-at` from any window, its answer's `locator` passed on.
 - The state each window gets is the hub's as one connection hears it, narrowed to the window (`stateForViewer`): the
   worker's one connection watches every stop and lane a window does, so a stop another window watches takes from this
-  one no input and, headless, none of the actions in the test's window.
+  one no input and, headless, none of the actions in the test's window. A window that stops watching a view or a lane,
+  or is taken off one, gets the state again at once: while another window still watches, the hub sends nothing that
+  would bring it.
 - Every message goes through `parseHubMessage`; one it cannot read is ignored. A run is read without a worker or a
   `live` it cannot read, and a worker state of a newer service reads as `other`, shown as running.
 - A command gets the next `id` and waits for the answer of that `id`. When the connection is closed, or the answer
@@ -955,15 +961,19 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
   Watching is kept by run and slot (`slotKey`, the `lanes` map of `LaneView`), so the worker Playwright starts in its
   place keeps it; it ends when the person turns it off or the run ends. A hidden window watches nothing (`watch` with
   `on: false`, the lane `idle`), and watches again as it shows; so does a window whose port to the worker went down,
-  once it is back (`resumeLanes`). A lane whose hub's connection was lost shows as ended, with why, and is watched again
-  once the hub answers. A refusal of `watch` shows its sentence under the row, read out, Watch unpressed. For a worker
-  whose reporter lacks `watch`, at such a hub, Watch is held, its tooltip saying to update the reporter; its stops keep
-  Watch live.
+  once it is back (`resumeLanes`). Each ask is counted (`asks`): an answer to an earlier one is dropped, and one the
+  worker does not answer in time is followed by `on: false`. A lane whose hub's connection was lost shows as ended,
+  with why, read out once, and is watched again once the hub was away and answers again (`waitAway`: the loss comes
+  before the state that shows the hub away). A lane of a hub no longer named is let go, its image with it, but before
+  the hubs are first found (`searching`). A refusal of `watch` shows its sentence under the row, read out, Watch
+  unpressed, until the lane's worker or its test changes (`refusedAt`). For a worker whose reporter lacks `watch`, at
+  such a hub, Watch is held, its tooltip saying to update the reporter; its stops keep Watch live, and so does a stop
+  outside a test, which no lane shows.
 - A lane's frames are drawn in one image for the lane (decoded aside first, the latest waiting, the others dropped),
-  live with the **Live** badge while the frame shows where the worker stands now (`laneFrameNow`: that worker, at the
-  stop it stands at, else running the test it runs). Another one (taken before a Step, a Resume, the end of a test, or
-  by the worker Playwright replaced) stays, dimmed (`.stale`) and, while the worker is not stopped, marked
-  **Running…**, until the next one comes; at a stop with no frame of it yet, the stop's image shows if it came. Why
+  live with the **Live** badge while the frame, of the latest ask, shows where the worker stands now (`laneFrameNow`:
+  that worker, at the stop it stands at, else running the test it runs). Another one (taken before a Step, a Resume,
+  the end of a test, by the worker Playwright replaced, or before the window watched the lane again) stays, dimmed
+  (`.stale`), taking no input and, while the worker is not stopped, marked **Running…**, until the next one comes; at a stop with no frame of it yet, the stop's image shows if it came. Why
   the lane sends no frame (`refused`) shows in place of its image, read out, until a frame comes. At a stop its frame
   shows, the image is the stop's live view: input, Pick on the image and the actions in the test's window work as
   with Watch live, Escape giving the keyboard back to Watch. A watched lane that stops is scrolled into view
@@ -1032,7 +1042,9 @@ The run shortcut is the command `run-pause-resume` (`RUN_COMMAND` in `src/shared
   at ten a second, input refused to a window that does not watch, a stop that ended, a connection lost, and the state
   narrowed to each window; and the lanes: `lanes` read from `welcome` and kept while the hub is away, `watch` as each
   window asks and as the last one leaves, the lane's frames to the windows that watch it alone, paced, a refusal, input
-  from a window that watches the lane, a run that ended, and a connection lost.
+  from a window that watches the lane, a run that ended, and a connection lost; the state sent again to a window that
+  stops watching a view or a lane, the actions in the test's window refused to it, no viewer of a stop outside a
+  test, `watch` turned off after an ask not answered in time; and a run of a ref that runs again listed once.
 - `view-input.test.ts` covers which keys go to the page and as what, and the input's batches: coalesced moves, double
   and triple clicks, drags, the wheel, texts joined, the bound, the rate, a refusal and `dispose`.
 - `editor-pairing.test.ts` checks Send to editor's proof against a JetBrains IDE's routes, and the pairing's address
@@ -1064,9 +1076,11 @@ The run shortcut is the command `run-pause-resume` (`RUN_COMMAND` in `src/shared
   an older service (`olderEditor`, a WebSocket server of the spec's own) showing the window as before. Watch, with a
   fake worker whose reporter lists `view-lane` (`startLaneRun`, `laneWorker`) answering `view-lane` and sending
   `lane-frame`s: a running test's frames, the last one dimmed between tests; Pause and watch, the stop brought into a
-  short window, its frames taking a click and Pick with no `view` asked, dimmed across a Step; a refusal, a hidden
-  window and a closed one; the worker Playwright starts in the lane and the extension's worker restarting; and a
-  reporter without `watch`, told to update, its stops keeping Watch live.
+  short window, its frames taking a click and Pick with no `view` asked, the frame before dimmed and taking no input
+  once watched again, dimmed across a Step; a refusal, a hidden window and a closed one; the worker Playwright starts in
+  the lane and the extension's worker restarting; a refusal of `watch` going with its test; a stop outside a test,
+  with Watch live; the desktop app's hub lost, said once; and a reporter without `watch`, told to update, its stops
+  keeping Watch live.
 - `i18n.spec.ts` checks the window in French and German, the list open and the live view on, nothing clipping.
 - `docs-screenshots.spec.ts` captures `picker-runs.png` the same way: the page's image without the pause bar, as the
   reporter takes it; and `picker-runs-live.png`, a headless stop watched live, the picker in its frame.
