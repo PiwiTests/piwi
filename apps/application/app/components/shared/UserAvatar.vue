@@ -21,11 +21,9 @@ onMounted(() => {
   mounted.value = true;
 });
 
-const picture = computed(() => {
-  const signedIn = authState.value.user;
-  if (!mounted.value || !signedIn?.avatarVersion || signedIn.id !== props.account.id) return undefined;
-  return profilePictureSrc(config.app.baseURL, signedIn.avatarVersion);
-});
+const picture = computed(() =>
+  mounted.value ? accountPictureSrc(config.app.baseURL, authState.value.user, props.account.id) : undefined,
+);
 const initials = computed(() => accountInitials(props.account));
 const colors = computed(() => {
   const color = letterAvatarColor(props.account.id);

@@ -42,8 +42,8 @@ export interface LetterAvatarColor {
 /**
  * The letter avatars' hues, from Tailwind's palette: shade 200 behind shade 800
  * on a light page, shade 800 behind shade 100 on a dark page. No hue is a test
- * outcome's, a near twin of one, or the violet accent, so an avatar never reads
- * as a status or as the primary action.
+ * outcome's or a status color's, and none is violet, the accent, or its
+ * neighbors indigo and purple, so an avatar never reads as the primary action.
  */
 export const LETTER_AVATAR_COLORS: readonly LetterAvatarColor[] = [
   {
@@ -71,11 +71,6 @@ export const LETTER_AVATAR_COLORS: readonly LetterAvatarColor[] = [
     light: { background: '#b8e6fe', text: '#00598a' },
     dark: { background: '#00598a', text: '#dff2fe' },
   },
-  {
-    hue: 'indigo',
-    light: { background: '#c6d2ff', text: '#372aac' },
-    dark: { background: '#372aac', text: '#e0e7ff' },
-  },
 ];
 
 /**
@@ -87,22 +82,22 @@ export function letterAvatarColor(accountId: number): LetterAvatarColor {
   return LETTER_AVATAR_COLORS[((hash ^ (hash >>> 16)) >>> 0) % LETTER_AVATAR_COLORS.length]!;
 }
 
-/** The first letter or digit of a word, with any accent that follows it. */
-const FIRST_CHARACTER = /[\p{L}\p{N}]\p{M}*/u;
+/** The first letter or digit of a word: one code point, its accent composed by NFC. */
+const FIRST_CHARACTER = /[\p{L}\p{N}]/u;
 
 function initialsOf(text: string): string | null {
   const trimmed = text.trim();
   const at = trimmed.indexOf('@');
   const local = at > 0 && !/\s/.test(trimmed) ? trimmed.slice(0, at) : trimmed;
-  const words = local
+  const initials = local
     .normalize('NFC')
+    .toUpperCase()
     .replace(/\([^)]*\)|\[[^\]]*\]/g, ' ')
     .split(/[\s._+-]+/)
     .map((word) => word.match(FIRST_CHARACTER)?.[0])
     .filter((initial): initial is string => Boolean(initial));
-  if (words.length === 0) return null;
-  const initials = words.length === 1 ? words[0]! : words[0]! + words[words.length - 1]!;
-  return initials.toUpperCase();
+  if (initials.length === 0) return null;
+  return initials.length === 1 ? initials[0]! : initials[0]! + initials[initials.length - 1]!;
 }
 
 /**

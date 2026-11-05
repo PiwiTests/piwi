@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { isOAuthAvatarUrl, oauthAvatar } from '../../server/utils/user-avatar';
-import { profilePictureSrc } from '../../app/utils/user-avatar';
+import { accountPictureSrc, profilePictureSrc } from '../../app/utils/user-avatar';
 import {
   LETTER_AVATAR_COLORS,
   accountInitials,
@@ -109,6 +109,16 @@ describe('profilePictureSrc', () => {
   });
 });
 
+describe('accountPictureSrc', () => {
+  test("is the signed-in account's own picture, on its own avatar only", () => {
+    const signedIn = { id: 7, avatarVersion: '1xgtbvx' };
+    expect(accountPictureSrc('/', signedIn, 7)).toBe('/api/auth/avatar?v=1xgtbvx');
+    expect(accountPictureSrc('/', signedIn, 8)).toBeUndefined();
+    expect(accountPictureSrc('/', { id: 7, avatarVersion: null }, 7)).toBeUndefined();
+    expect(accountPictureSrc('/', null, 7)).toBeUndefined();
+  });
+});
+
 describe('accountPictureVersion', () => {
   const KEY = `avatars/7/${'0a'.repeat(32)}-1122334455667788.webp`;
 
@@ -159,6 +169,12 @@ describe('accountInitials', () => {
     expect(initials('e\u0301lodie')).toBe('É');
     expect(initials('王小明')).toBe('王');
     expect(initials('Ольга Петрова')).toBe('ОП');
+    expect(initials('प्रिया शर्मा')).toBe('पश');
+  });
+
+  test('keeps one character per word when uppercasing gives more', () => {
+    expect(initials('ß straße')).toBe('SS');
+    expect(initials('ﬁona')).toBe('F');
   });
 
   test('is null when nothing holds a letter or a digit', () => {
@@ -168,8 +184,8 @@ describe('accountInitials', () => {
 });
 
 describe('letterAvatarColor', () => {
-  test('gives an account the same color every time', () => {
-    for (const id of [1, 2, 42, 9001]) expect(letterAvatarColor(id)).toBe(letterAvatarColor(id));
+  test('gives an account the same color on every screen and every visit', () => {
+    expect([1, 2, 4, 6].map((id) => letterAvatarColor(id).hue)).toEqual(['teal', 'orange', 'sky', 'lime']);
   });
 
   test('spreads accounts over every color', () => {

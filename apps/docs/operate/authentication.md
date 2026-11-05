@@ -63,12 +63,12 @@ administrator first. The [one-click deploy templates](./one-click-deploy) genera
 
 ## Logging in
 
-Sign in at `/login`. A session is an encrypted cookie that lasts 7 days. It is marked `Secure`, so browser sign-in needs HTTPS, except on `localhost`. Signing out ends every session of the account, in every browser.
+Sign in at `/login`. A session is an encrypted cookie that lasts 7 days. It is marked `Secure`, so browser sign-in needs HTTPS, except on `localhost`. Signing out ends the account's sessions in every browser.
 
 ## OAuth (Google, GitHub)
 
-Users can sign in with Google or GitHub instead of a username and password. No other provider, generic OpenID Connect or SAML,
-is supported.
+Users can sign in with Google or GitHub instead of a username and password. There is no other provider, nor generic OpenID
+Connect or SAML sign-in.
 
 ### Configuring OAuth
 
@@ -134,7 +134,7 @@ button mails the user a link to set their own. Each row shows the user's instanc
 [groups](./project-access#groups).
 
 **Settings → Account** takes a profile picture: PNG, JPEG or WebP, under 1 MB, at most 1000×1000 pixels. It replaces
-the provider's; administrators can remove it. An account without one shows its initials in its own color.
+the provider's; administrators can remove it. Only its owner sees it; others see the account's initials.
 
 An email address belongs to one account, ignoring letter case: creating or editing an account with an address another
 account already uses is refused, and **Forgot password?** finds the account whatever the case typed. An upgrade that
