@@ -215,7 +215,7 @@ async function childOrigin(
 }
 
 /** `run`'s answer, or undefined once `ms` passed, `run` left to settle on its own. */
-async function within<T>(run: Promise<T>, ms: number): Promise<T | undefined> {
+export async function within<T>(run: Promise<T>, ms: number): Promise<T | undefined> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
@@ -358,7 +358,7 @@ function shrink(image: Image, width: number, height: number): Image {
 }
 
 /** `frame` with `boxes` painted over, at most `size` and at `quality`. */
-function paintBoxes(
+export function paintBoxes(
   jpeg: JpegJs,
   frame: PageFrame,
   boxes: Box[],

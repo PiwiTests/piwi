@@ -49,7 +49,7 @@ import { locatorOn } from './chain-locator.js';
 import { keptRequests, keptResponse } from './kept-responses.js';
 import { jpegSize, maskSecretFields, maskedImage } from './live-mask.js';
 import { liveViewState, onLiveViewChange, shareLiveView } from './live-view.js';
-import { openPageView, viewportOf } from './page-view.js';
+import { openPageView, pauseBarBand, viewportOf } from './page-view.js';
 import { PICK_AT_SINCE } from './pick-at.js';
 import { highlightAtStop, type PauseAnswer } from './pause-at.js';
 import { internalCall } from './quiet-capture.js';
@@ -66,8 +66,9 @@ import { internalCall } from './quiet-capture.js';
  * the editor answers with `attached`, naming the service when it is not the editor (`host`: the desktop app, which the
  * worker's lines name then, `runHost`); an editor that predates it says nothing, and no failure is held for it. For a
  * viewer outside the page, it shows the stopped page's live view (`view`: the page's screencast, its frames sent at
- * most `MAX_VIEW_FPS` a second, the latest one when the connection is backed up, the latest sent kept in memory for a
- * viewer that comes later until the view ends, never stored), plays the viewer's input
+ * most `MAX_VIEW_FPS` a second, a headed stop's pause bar painted over in them, the latest one when the connection is
+ * backed up, the latest sent kept in memory for a viewer that comes later until the view ends, never stored), plays
+ * the viewer's input
  * on it as trusted input (`input`: `page.mouse`, `page.keyboard`, at most `MAX_VIEW_EVENT_RATE` events a second, what
  * it holds down let go before the test goes on), and sends the locator of the element under a point of an image of
  * the page where a pick goes (`pick-at`, `pick-at.ts`). The view ends with its stop, before the test goes on, and as
@@ -215,6 +216,8 @@ interface InputState {
   playing: Promise<unknown>;
   waiting: number;
   buttons: Set<ViewButton>;
+  /** The buttons pressed on the pause bar's band, whose presses and releases are not played. */
+  barButtons: Set<ViewButton>;
   keys: Set<string>;
 }
 
@@ -224,6 +227,7 @@ function freshInput(): InputState {
     playing: Promise.resolve(),
     waiting: 0,
     buttons: new Set(),
+    barButtons: new Set(),
     keys: new Set(),
   };
 }
@@ -686,10 +690,13 @@ function playInput(holding: HeldStop, events: ViewInput[]): Promise<IntentAnswer
   own.waiting++;
   const played = own.playing
     .then(async (): Promise<IntentAnswer> => {
+      // The views paint the pause bar over: a press there would reach a button the viewer cannot see.
+      const band = await pauseBarBand(page);
       for (const [i, event] of events.entries()) {
         if (held !== holding || input !== own || view?.stop !== holding.stop || page.isClosed()) {
           return { ok: false, message: i ? `The stop ended after ${i} of the events.` : WENT_ON };
         }
+        if (onPauseBar(event, band, own)) continue;
         try {
           await internalCall(page, () => playEvent(page, event, own));
         } catch (error) {
@@ -705,6 +712,18 @@ function playInput(holding: HeldStop, events: ViewInput[]): Promise<IntentAnswer
     .finally(() => own.waiting--);
   own.playing = played.catch(() => undefined);
   return played;
+}
+
+/**
+ * Whether `event` presses or clicks within the pause bar's band (`band`, its bottom edge), or releases a button pressed
+ * there: such an event is not played.
+ */
+function onPauseBar(event: ViewInput, band: number | null, own: InputState): boolean {
+  if (event.type !== 'mouse') return false;
+  if (event.action === 'up') return own.barButtons.delete(event.button);
+  if (band === null || event.y >= band || (event.action !== 'down' && event.action !== 'click')) return false;
+  if (event.action === 'down') own.barButtons.add(event.button);
+  return true;
 }
 
 /** Play one event on the page as trusted input, keeping what it holds down. */

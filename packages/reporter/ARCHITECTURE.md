@@ -239,6 +239,14 @@ What the package does to a user's run, process by process.
   memory until the view ends, and sent again as the view is asked again (a viewer that
   comes later, which a still page paints no other frame for); none is stored nor attached. Where the screencast cannot start (the test
   runs its own), an image of the page goes twice a second.
+- At a headed stop, every view of its page, this one and the instance's live view, paints the pause bar over in each
+  frame, as the image of the stop leaves it out (`page-view.ts`): `pauseHere` tells the page's views as it draws the
+  bar and once it is down (`pauseBarShows`), and the first frame that may show it has the bar's bottom edge read, once,
+  through an internal call. The band from the viewport's top to that edge is painted gray across the frame, after the
+  instance's masks, with the `jpeg-js` of `live-mask.ts` (`paintBoxes`). A frame the page painted after the bar came
+  down goes as it is (one that names no time, before Playwright 1.61, once the bar has been down a second), and so
+  does one whose bar is not read within a second, or with no `jpeg-js`. A painted frame holds the next one back as long
+  again as its paint took.
 - `input` plays a viewer's mouse, wheel, key and text events (`@piwitests/core/run-view`:
   Playwright's key names alone, nothing evaluated) with `page.mouse` and `page.keyboard`
   through internal calls: trusted input that reaches whatever is at the point, Piwi's
@@ -390,7 +398,8 @@ What the package does to a user's run, process by process.
   frame over 192 KB replaced by an image at quality 30. One post is in flight at a time,
   the latest frame alone waiting; each frame carries the call the runner's steps say the
   test is on (`callInProgress`, its title through `hideSecretsInText`) and the test's
-  title. Nobody watching, no screencast runs and no frame goes.
+  title, a headed stop's pause bar painted over as in the editor's view. Nobody watching, no screencast runs and no
+  frame goes.
 - In a CI run alone, while anyone watches a test nothing may pause (`mayPause`: no
   `PIWI_PAUSE_AT`, `PWDEBUG` or `--debug`), the worker also follows the call its test is in
   (`live-call-log.ts`): it listens to the context's call stream, then turns it on
