@@ -464,8 +464,13 @@ function flushPendingEvents() {
   }
 }
 
-/** The run ended: the page leaves its live state, reads the run again and waits for its reports. */
+/** The run ended: the page leaves its live state, reads the run again and waits for its reports, once. */
 function onRunEnded(): void {
+  if (liveRunEnded.value) return;
+  // Events still waiting for the batch are of the run that ended.
+  pendingEvents = [];
+  if (debounceTimer) clearTimeout(debounceTimer);
+  debounceTimer = null;
   isFinalizing.value = false;
   liveRunEnded.value = true;
   liveSteps.value = {};
@@ -531,6 +536,8 @@ function connectToDemoStream() {
 
 function connectToStream() {
   if (!import.meta.client) return;
+  // A run that streams again is live again: its next end runs as the first did.
+  liveRunEnded.value = false;
 
   if (isDemoMode) {
     connectToDemoStream();
@@ -726,7 +733,7 @@ useRunEvents((event) => {
   // own stream always hears the end.
   if (event.type === 'run-cancelled') refresh();
   else if (isDemoMode || liveViewConnected.value) return;
-  else if (event.type === 'run-finished') onRunEnded();
+  else if (event.type === 'run-finished' || event.type === 'run-submitted') onRunEnded();
   else if (event.type === 'run-finalizing') refresh();
 });
 const visibility = useDocumentVisibility();

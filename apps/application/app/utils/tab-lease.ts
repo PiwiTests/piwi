@@ -86,7 +86,8 @@ export function holdInOneTab(options: TabLeaseOptions, host: TabLeaseHost = brow
     if (stopped || claiming) return;
     const lease = read();
     if (holding) {
-      if (lease && lease.id !== id) {
+      // Another tab's lease that has gone stale is no claim: this tab took it, or holds over a storage that refused it.
+      if (lease && lease.id !== id && host.now() - lease.at < staleMs) {
         holding = false;
         options.lost();
         return;
@@ -95,7 +96,7 @@ export function holdInOneTab(options: TabLeaseOptions, host: TabLeaseHost = brow
       return;
     }
     if (lease && lease.id !== id && host.now() - lease.at < staleMs) return;
-    // A storage that refuses the claim refuses every tab's: each holds the lease, as without a storage.
+    // A storage that refuses the claim leaves no lease to agree on: this tab holds it, as without a storage.
     if (!write()) {
       holding = true;
       options.held();

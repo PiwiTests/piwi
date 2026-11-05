@@ -9,17 +9,6 @@ export const STREAM_STALL_MS = 5_000;
 export const STREAM_RECONNECT_STALL_MS = 10_000;
 
 /**
- * Calls `stalled` when `isOpen` still says no after `ms`, whatever the stream went through meanwhile (reconnections, a
- * new stream after an error answer); the returned function cancels the check.
- */
-export function onStreamStall(isOpen: () => boolean, stalled: () => void, ms: number = STREAM_STALL_MS): () => void {
-  const timer = setTimeout(() => {
-    if (!isOpen()) stalled();
-  }, ms);
-  return () => clearTimeout(timer);
-}
-
-/**
  * Watches a stream that should be open. `arm` starts a check while the stream is not open and none runs, which calls
  * `stalled` once if it still is not after `ms`; `disarm` cancels it.
  */
