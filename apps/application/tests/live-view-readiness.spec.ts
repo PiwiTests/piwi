@@ -96,8 +96,9 @@ test('explains each readiness gate and updates when the project changes', async 
 
     await setting(false);
     await expect(readiness).toHaveAttribute('data-state', 'disabled');
+    // Turned on again, the running run's key opens its view again.
     await setting(true);
-    await expect(readiness).toHaveAttribute('data-state', 'unavailable');
+    await expect(readiness).toHaveAttribute('data-state', 'waiting');
   } finally {
     closeWorker();
     for (const run of runs) {

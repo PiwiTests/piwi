@@ -624,10 +624,11 @@ function flushPendingEvents() {
       liveWorkers.value = next;
     } else if (parsed.type === 'live-view') {
       const state = data as unknown as LiveViewRunState;
-      liveViewKeyed.value = state.keyed === true;
+      // A key opens the run's live view only while the project has it on.
+      liveViewKeyed.value = state.keyed === true && state.enabled !== false;
       liveViewState.value = state;
       // Catch-up starts with the view state and then its current workers.
-      if (parsed.seq === 0 || !state.keyed) liveWorkers.value = {};
+      if (parsed.seq === 0 || !liveViewKeyed.value) liveWorkers.value = {};
     } else if (parsed.type === 'resources') {
       liveResources.value = applyLiveResourcesToParts(liveResources.value, data as unknown as WireLiveResources);
     } else if (parsed.type === 'run-finalizing') {
