@@ -9,6 +9,8 @@ export interface RerunInfo {
   hasToken: boolean;
   lastDispatch: {
     provider: string;
+    /** The CI server preset, for a `ci-server` dispatch. */
+    preset?: string;
     url: string;
     args: string;
     at: number;
@@ -16,6 +18,20 @@ export interface RerunInfo {
     /** How many tests it re-ran. */
     tests?: number;
   } | null;
+}
+
+const DISPATCH_TARGETS: Record<string, string> = {
+  github: 'GitHub Actions',
+  gitlab: 'GitLab CI',
+  bitbucket: 'Bitbucket Pipelines',
+  jenkins: 'Jenkins',
+  custom: 'the CI server',
+};
+
+/** Where a re-run was dispatched, for its "dispatched to Jenkins" line. */
+export function rerunDispatchTarget(dispatch: NonNullable<RerunInfo['lastDispatch']>): string {
+  const key = dispatch.provider === 'ci-server' ? (dispatch.preset ?? 'custom') : dispatch.provider;
+  return DISPATCH_TARGETS[key] ?? 'CI';
 }
 
 /** What a last re-run ran, for its "Last re-run of 3 tests" line: ` of N tests`, or nothing when it was not recorded. */

@@ -70,6 +70,8 @@ export interface RunMetadata {
     provider?: string | null;
     pipelineId?: string | null;
     buildNumber?: string | null;
+    /** The build's page (Jenkins' `BUILD_URL`). */
+    buildUrl?: string | null;
     /** The CI's own repository, `owner/repo` (GitHub Actions, Bitbucket Pipelines). */
     repository?: string | null;
   } | null;

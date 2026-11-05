@@ -1,0 +1,1 @@
+ALTER TABLE `projects` ADD `ci_server_token` text;

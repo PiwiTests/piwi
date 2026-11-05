@@ -182,6 +182,18 @@ const PROJECTS = [
     description: 'Integration tests for REST API endpoints',
     created_at: ts('2025-02-15'),
     updated_at: ts('2025-04-25T07:15:00'),
+    // Re-runs go to a Jenkins job, so its failure pages offer Re-run in CI and
+    // the Source control settings show the CI server form.
+    ci_rerun: {
+      enabled: true,
+      via: 'ci-server',
+      ciServer: {
+        preset: 'jenkins',
+        baseUrl: 'https://jenkins.example.com/',
+        user: 'piwi-bot',
+        rerun: { job: 'api/integration', ref: 'main' },
+      },
+    },
   },
   {
     id: 3,

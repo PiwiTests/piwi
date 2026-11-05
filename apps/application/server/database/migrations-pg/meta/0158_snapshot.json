@@ -1,5 +1,5 @@
 {
-  "id": "13a322d2-5b8c-44b3-af19-85f8f7f53223",
+  "id": "391edecb-5799-4fe0-8112-ba6806dcf75a",
   "prevId": "80aa4199-78a3-44ec-be79-44e5c0b5873f",
   "version": "7",
   "dialect": "postgresql",
@@ -9049,6 +9049,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "ci_server_token": {
+          "name": "ci_server_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "repository_url": {
           "name": "repository_url",
           "type": "text",
@@ -12723,12 +12729,6 @@
         },
         "worker_index": {
           "name": "worker_index",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "parallel_index": {
-          "name": "parallel_index",
           "type": "integer",
           "primaryKey": false,
           "notNull": false

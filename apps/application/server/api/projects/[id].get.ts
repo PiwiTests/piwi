@@ -3,13 +3,14 @@ import { getProject } from '#shared/handlers/projects';
 import { parseProjectRunScope } from '#shared/project-run-scope';
 import { optionalIntQuery } from '../../utils/query-params';
 import { requireProjectAccess, requireRouteId } from '../../utils/project-access';
+import { instanceCiServer, openCiServerToken } from '../../utils/ci-server-dispatch';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Projects'],
     summary: 'Get project details',
     description:
-      'Returns the project with its most recent runs (`testRuns`). With a run scope (any of `environments`, `branches` or `allBranches`), `testRuns` holds the most recent runs within it, and `unscopedRuns` the most recent runs of any scope with their environment, branch and run kind.',
+      'Returns the project with its most recent runs (`testRuns`). With a run scope (any of `environments`, `branches` or `allBranches`), `testRuns` holds the most recent runs within it, and `unscopedRuns` the most recent runs of any scope with their environment, branch and run kind. No token is returned: `hasScmToken` and `hasCiServerToken` say whether one is stored, `ciServerTokenUrl` names the base URL the CI server token may be sent under, and `ciServerInstanceUrl` the instance’s CI server.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       {
@@ -64,8 +65,12 @@ export default eventHandler(async (event) => {
   const db = await getDatabase();
   try {
     const result = await getProject(db, id, { runLimit, scope: parseProjectRunScope(getQuery(event)) });
-    const { scmToken: _scm, ...rest } = result;
-    return rest;
+    const { scmToken: _scm, ciServerToken, ...rest } = result;
+    return {
+      ...rest,
+      ciServerTokenUrl: openCiServerToken(ciServerToken)?.url ?? null,
+      ciServerInstanceUrl: instanceCiServer().url,
+    };
   } catch (e: any) {
     if (e?.message === 'Project not found') {
       throw apiError({ statusCode: 404, message: 'Project not found' });
