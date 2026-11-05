@@ -19,6 +19,7 @@ import {
   liveHubsHere,
   loopbackPort,
   onLoopback,
+  oneStartAtATime,
   sendPairing,
   startSendListener,
   takeSavedPort,
@@ -390,6 +391,40 @@ describe('the saved port, held by another window', () => {
       take.dispose();
       await (running as SendListener | null)?.close();
     }
+  });
+
+  test('is not taken over a listener a run’s pairing started meanwhile on another port', async () => {
+    const other = { port: 1, url: 'http://127.0.0.1:1/piwi/send', close: async () => {} } as unknown as SendListener;
+    const started: SendListener[] = [];
+    const take = takeSavedPort({
+      saved: () => ({ port: 2, token: TOKEN }),
+      listener: () => null,
+      listen: async () => other,
+      started: (l) => void started.push(l),
+      everyMs: 1_000_000,
+    });
+    await take.ready;
+    take.dispose();
+    expect(started).toEqual([]);
+  });
+
+  test('starts one listener at a time, a start asked meanwhile getting the one on its way', async () => {
+    let starts = 0;
+    let finish: (l: SendListener) => void = () => {};
+    const listen = oneStartAtATime((port) => {
+      starts++;
+      return new Promise<SendListener>((resolve) => {
+        finish = (l) => resolve({ ...l, port } as SendListener);
+      });
+    });
+    const first = listen(5);
+    const second = listen(0);
+    finish({} as SendListener);
+    expect(await first).toBe(await second);
+    expect(starts).toBe(1);
+    // Once it answered, the next start is a start of its own.
+    void listen(6);
+    expect(starts).toBe(2);
   });
 
   test('is never tried without a pairing saved', async () => {

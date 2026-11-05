@@ -193,6 +193,22 @@ export function sendPairing(options: {
   };
 }
 
+/**
+ * Starts listeners one at a time: a start asked while another is on its way waits for that one, and gets its
+ * listener, whatever port it asked.
+ */
+export function oneStartAtATime(
+  start: (port: number) => Promise<SendListener>,
+): (port: number) => Promise<SendListener> {
+  let starting: Promise<SendListener> | null = null;
+  return (port) => {
+    starting ??= start(port).finally(() => {
+      starting = null;
+    });
+    return starting;
+  };
+}
+
 /** How often a window with no listener tries the saved port, which another window may hold. */
 export const SAVED_PORT_RETRY_MS = 10_000;
 
@@ -219,7 +235,8 @@ export function takeSavedPort(options: {
       const { port, token } = await options.saved();
       if (!port || !token || options.listener()) return;
       const listener = await options.listen(port);
-      options.started?.(listener);
+      // A start already on its way for a run's pairing may have answered on another port.
+      if (listener.port === port) options.started?.(listener);
     } catch {
       // Another window holds it still.
     } finally {

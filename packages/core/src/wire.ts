@@ -561,17 +561,32 @@ export const RUN_INTERACTIVE_CLIENT_MAX_LENGTH = 200;
 
 const HUB_RUN_REF = /^[\w-]{1,64}$/;
 
+/** A control character (C0, DEL, C1), a line or paragraph separator, or a bidirectional mark. */
+function isControlOrMark(code: number): boolean {
+  return (
+    code < 0x20 ||
+    (code >= 0x7f && code <= 0x9f) ||
+    code === 0x061c ||
+    code === 0x200e ||
+    code === 0x200f ||
+    code === 0x2028 ||
+    code === 0x2029 ||
+    (code >= 0x202a && code <= 0x202e) ||
+    (code >= 0x2066 && code <= 0x2069)
+  );
+}
+
 /**
  * A {@link RunInteractive} read from untrusted input, rebuilt as `{ client, ref }`, or null when its `ref` is not a
  * hub's name for a run. A `client` that is not text of at most {@link RUN_INTERACTIVE_CLIENT_MAX_LENGTH} characters
- * without control characters (C0, DEL, C1) and bidirectional marks reads as null.
+ * without control characters (C0, DEL, C1), line or paragraph separators and bidirectional marks reads as null.
  */
 export function parseRunInteractive(value: unknown): RunInteractive | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const { client, ref } = value as { client?: unknown; ref?: unknown };
   if (typeof ref !== 'string' || !HUB_RUN_REF.test(ref)) return null;
   const name = typeof client === 'string' ? client.trim() : '';
-  const oneLine = !/[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/.test(name);
+  const oneLine = ![...name].some((char) => isControlOrMark(char.codePointAt(0)!));
   const readable = name.length > 0 && name.length <= RUN_INTERACTIVE_CLIENT_MAX_LENGTH && oneLine;
   return { client: readable ? name : null, ref };
 }

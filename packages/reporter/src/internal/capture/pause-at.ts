@@ -908,7 +908,7 @@ export async function pauseHere(
       highlight = point.target.highlight();
       await within(highlight.shown, HIGHLIGHT_MS);
     }
-    // The bar and the terminal name the call without the text it types: a video, a trace or a log keeps both.
+    // The bar and the terminal name the call without the text it types.
     const call = hideSecretsInText(hideTypedText(point.call));
     const arg: PauseBarArg = {
       place: pausePlace(point.location),

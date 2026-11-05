@@ -49,6 +49,8 @@ describe('parseRunInteractive', () => {
       'Code\nInjected',
       'Code\u0000',
       'Code\u0085',
+      'Code\u2028Injected',
+      'Code\u061c',
       'Code\u202eedoC',
     ]) {
       expect(parseRunInteractive({ client, ref: 'ed-1' }), JSON.stringify(client)).toEqual({

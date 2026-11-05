@@ -211,19 +211,15 @@ export function runChannelRef(env: NodeJS.ProcessEnv): string | null {
   return ref && /^[\w-]{1,64}$/.test(ref) ? ref : null;
 }
 
-/** The end of the ref the desktop app names a run nobody attends by (`desktop-<id>-unattended`). */
-const UNATTENDED_REF_SUFFIX = '-unattended';
-
 /**
  * The hub that steers the run, as the run's `piwiInteractive` metadata names it: a run whose workers connect to a hub
  * (`runChannelRef`) is interactive. Its client is the editor the run follows, by its discovery file's name (`editor`
  * when the file gives none), else the launcher `PIWI_ORIGIN` names, null when nothing names one. Null for a run that
- * follows no hub, and for a run the desktop app starts unattended.
+ * follows no hub.
  */
 export function runInteractive(env: NodeJS.ProcessEnv, followed: FollowedEditor | null): RunInteractive | null {
   const ref = runChannelRef(env);
-  // A run the desktop app starts for nobody to attend (a Flake Lab, a bisect step) holds no stop for anyone.
-  if (!ref || ref.endsWith(UNATTENDED_REF_SUFFIX)) return null;
+  if (!ref) return null;
   const origin = env[PIWI_ORIGIN_ENV.kind]?.trim();
   const client = followed ? (followed.editor.client ?? 'editor') : isRunOriginKind(origin) ? origin : null;
   return { client, ref };

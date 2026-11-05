@@ -71,9 +71,9 @@ describe('the hub a run follows', () => {
     expect(runInteractive(terminalRun, null)).toEqual({ client: null, ref: 'terminal-41-1730000000000' });
     expect(runInteractive({ PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: 'ed-1' }, null)).toBeNull();
     expect(runInteractive({ PIWI_ORIGIN: 'desktop', PIWI_RUN_REF: 'desktop-7' }, null)).toBeNull();
-    // A run the desktop app starts for nobody to attend (a lab, a bisect step) is steered by no one.
-    const unattended = { PIWI_RUN_CHANNEL: CHANNEL, PIWI_ORIGIN: 'bisect', PIWI_RUN_REF: 'desktop-9-unattended' };
-    expect(runInteractive(unattended, null)).toBeNull();
+    // A run the desktop app starts unattended still takes a person's Pause from its window.
+    const unattended = { PIWI_RUN_CHANNEL: CHANNEL, PIWI_ORIGIN: 'desktop', PIWI_RUN_REF: 'desktop-9-unattended' };
+    expect(runInteractive(unattended, null)).toEqual({ client: 'desktop', ref: 'desktop-9-unattended' });
   });
 });
 

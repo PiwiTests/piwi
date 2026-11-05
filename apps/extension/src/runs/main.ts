@@ -515,8 +515,12 @@ function hubAnswers(hub: string): boolean {
   return !!state?.hubs.some((h) => h.id === hub && h.connected);
 }
 
-/** Asks the hub for a stop's live view; its frames take the image's place once the first one is drawn. */
+/**
+ * Asks the hub for a stop's live view; its frames take the image's place once the first one is drawn. Nothing while
+ * the port to the worker is down: Watch live left on starts it once the worker is back.
+ */
 function startView(run: RunsRun, worker: number, stop: HubStop): void {
+  if (!port) return;
   const key = workerKey(run.hub, run.session.ref, { worker });
   endView(key, false);
   const view: LiveView = {
@@ -995,9 +999,10 @@ function forgetGone(current: RunsState): void {
   }
   for (const key of images.keys()) if (!at.get(key)) images.delete(key);
   const connected = (hub: string) => current.hubs.some((h) => h.id === hub && h.connected);
+  const named = (hub: string) => current.hubs.some((h) => h.id === hub);
   for (const [key, view] of views) {
     if (at.get(key) === view.since) continue;
-    if (!at.has(key) && view.status === 'ended' && !connected(view.hub)) continue;
+    if (!at.has(key) && view.status === 'ended' && !connected(view.hub) && named(view.hub)) continue;
     endView(key, false);
   }
   // A slot's Watch live lasts while its run does: a worker Playwright starts in its place keeps it.

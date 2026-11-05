@@ -484,8 +484,11 @@ describe('a run steered over the run channel', () => {
       ['step', mark('headed', 'step-here'), true],
       ['run-to', mark('headed', 'run-to'), true],
     ]);
-    // The text a fill types stays in the worker: the editor hears the call without it.
+    // The text a fill types stays in the worker: the editor hears the call without it, and so do the terminal and
+    // the pause bar.
     expect(stops.slice(0, 2).map((s) => callOf(s.title))).toEqual([`Fill "${HIDDEN_VALUE}"`, 'Click']);
+    expect(output).toContain(`before Fill "${HIDDEN_VALUE}"`);
+    expect(output).not.toMatch(/Paused at [^\n]* before Fill "one"/);
     expect(stops[0]).toMatchObject({ locator: "locator('input')" });
     // Every stop ends with the editor's answer, and the bar it showed came down (the test checks it).
     const ended = heardIn('steered').filter((m) => m.type === 'running');
@@ -522,7 +525,7 @@ describe('a run steered over the run channel', () => {
     const result = test('headless');
     expect(result.duration).toBeLessThan(TIMEOUT_MS);
     const pauses = readPauses(Buffer.from(result.pauses ?? ''));
-    expect(pauses.map((p) => [p.reason, callOf(p.title)])).toEqual([['breakpoint', 'Fill "h"']]);
+    expect(pauses.map((p) => [p.reason, callOf(p.title)])).toEqual([['breakpoint', `Fill "${HIDDEN_VALUE}"`]]);
     // The held call keeps its clock; the step statistics leave the stop out of it.
     const fill = allSteps(result.steps).find((s) => callOf(s.title) === 'Fill "h"')!;
     expect(fill.duration).toBeGreaterThanOrEqual(HOLD_MS - 50);
@@ -572,7 +575,7 @@ describe('a run steered over the run channel', () => {
     expect(stopsIn('connection closes').map(where)).toEqual([['breakpoint', mark('headless', 'bp', 3), false]]);
     expect(output).toContain('[piwi] The connection to the editor closed: the test goes on.');
     const pauses = readPauses(Buffer.from(test('connection closes').pauses ?? ''));
-    expect(pauses.map((p) => [p.reason, callOf(p.title)])).toEqual([['breakpoint', 'Fill "z"']]);
+    expect(pauses.map((p) => [p.reason, callOf(p.title)])).toEqual([['breakpoint', `Fill "${HIDDEN_VALUE}"`]]);
   });
 
   it('lists the stops the editor answered in piwi-pauses, and as pause step events, with their reasons', () => {

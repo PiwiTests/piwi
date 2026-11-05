@@ -475,7 +475,10 @@ export interface SecretFieldMaskOptions {
   masks(): readonly string[] | null;
   /** The JPEG quality of an image painted over, or taken in a frame's place. */
   quality: number;
-  /** The quality of an image taken in a frame's place when one at `quality` is longer than `maxBytes`. */
+  /**
+   * The quality of an image taken in a frame's place, or of a frame painted over, when one at `quality` is longer than
+   * `maxBytes`.
+   */
   lightQuality?: number;
   /** The longest image that goes, in bytes of JPEG. */
   maxBytes: number;

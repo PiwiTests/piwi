@@ -185,6 +185,7 @@ import {
   liveHubsHere,
   loopbackPort,
   onLoopback,
+  oneStartAtATime,
   sendPairing,
   startSendListener,
   takeSavedPort,
@@ -858,14 +859,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     return address;
   };
   const hubOf = (params: HubParams) => lc.sendRequest<HubResult>(HUB_REQUEST, params);
-  /** The listener starting now: a pairing asked while another start is on its way waits for that one. */
-  let listening: Promise<SendListener> | null = null;
-  const listen = (port: number): Promise<SendListener> => {
-    listening ??= startListener(port).finally(() => {
-      listening = null;
-    });
-    return listening;
-  };
   const startListener = async (port: number) => {
     sendListener = await startSendListener({
       port,
@@ -882,6 +875,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     });
     return sendListener;
   };
+  // A pairing asked while another start is on its way waits for that one.
+  const listen = oneStartAtATime(startListener);
   // Another window may hold the port: that window keeps the pairing, and this one takes the port once it lets it go.
   // A remote window forwards it again, as it was.
   const savedPort = takeSavedPort({

@@ -89,7 +89,7 @@ import {
 import type { FlakePlan } from '@piwitests/core/flake-plan';
 import { joinErrorMessages } from '@piwitests/core/error-text';
 import { finalizeCodeReach } from '@piwitests/core/code-reach';
-import { SECRET_AUTOCOMPLETE, hideSecretsInText, maskUrlFragment } from '@piwitests/core/mask';
+import { SECRET_AUTOCOMPLETE, hideSecretsInText, hideTypedText, maskUrlFragment } from '@piwitests/core/mask';
 import { environmentalSkipReason, inspectionGateFromTestInfo, shouldInspectOnFailure } from './inspect-on-failure.js';
 import {
   applyPickToSnapshots,
@@ -1832,13 +1832,15 @@ interface FailureStop {
 async function showStop(
   sink: CaptureSink,
   context: BrowserContext,
-  title: string,
+  calledAs: string,
   location: string,
   reason: StopReason,
   call: LocatorCall | undefined,
   of: StopPage,
   failure: FailureStop | null = null,
 ): Promise<PauseAnswer | undefined> {
+  // Every surface names the stopped call without the text it types: the terminal, the bar, the hub, `piwi-pauses`.
+  const title = hideSecretsInText(hideTypedText(calledAs));
   const testInfo = sink.testInfo;
   const page = stopBarPage(sink, context, of);
   const guessed = !('page' in of);

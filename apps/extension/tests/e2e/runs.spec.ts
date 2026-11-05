@@ -1563,11 +1563,13 @@ test.describe('the desktop app’s runs', () => {
       await expect(runs.locator('#hubs > p')).toHaveText(['Following 1 editor window', 'Following the desktop app']);
       await desktop.close();
       await expect(runs.locator('#hubs > p').nth(1)).toHaveText('Connecting to the desktop app again…');
-      // Found again, the app answers nothing: its line says so, the editor's stays.
-      await expect(runs.locator('#hubs > p')).toHaveText(
-        ['Following 1 editor window', 'The desktop app does not answer: open it to follow the runs it starts.'],
-        { timeout: 15_000 },
-      );
+      // Found again, the app answers nothing: its line says so, with the button it names, the editor's stays.
+      const line = runs.locator('#hubs > p').nth(1);
+      await expect(line).toContainText('The desktop app does not answer: open it to follow the runs it starts.', {
+        timeout: 15_000,
+      });
+      await expect(line.getByRole('button', { name: 'Look again' })).toBeVisible();
+      await expect(runs.locator('#hubs > p').first()).toHaveText('Following 1 editor window');
     } finally {
       await context.close();
     }

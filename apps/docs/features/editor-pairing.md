@@ -18,7 +18,8 @@ The editor listens on the loopback interface only, answers only a request addres
 its port, and accepts one only with the token. Before Piwi Picker sends the token, the editor proves it holds it, so
 another program that took the port is sent nothing; the settings ask for that proof as they open and after
 **Pair**. With several VS Code windows open, the one holding the paired port receives; when it closes, another open
-window takes the port within seconds.
+window takes the port within seconds, unless every other one already listens on a port of its own for a run it
+started meanwhile.
 
 Piwi Picker's background worker reaches the editor's services on `127.0.0.1` only once the paired port proves it holds
 the pairing's token ([how the pieces connect](./editor-run-control#how-it-works)), as the desktop app proves it holds
