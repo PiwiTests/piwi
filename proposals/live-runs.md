@@ -35,8 +35,12 @@ per page view and the list follows the newest row only in run order. Built from 
 sends its lane (`parallelIndex`), and how its test ended; a view opened on it follows the lane through its next tests and
 the worker Playwright starts in it again, waiting 30 s for it, says how each test ended, and **Follow the worker's next
 test** off keeps it to its test, and a view hidden for 10 minutes closes; the view, the rows and the Timeline name a
-worker by its lane from 1. The rest of P1 (the docked panel, **Worker N** in MCP, the deep link, the refusals, the
-header's primary action, the caption's step) and the later phases are proposed. The bugs the analysis
+worker by its lane from 1. Built from the rest of P1: **Watch** sits at each row's end and opens the view docked
+beside the run page (a sheet on a phone), resizable, full screen, with a click to zoom and **Zoom to the element**;
+the view lists the lane's earlier tests, keeps a failed call's error with its outcome and says the run's verdict as the
+run ends; `?watch=<shard>.<worker>` opens it and names the lane while it is open; a view that does not open says why;
+the header's primary action is decided once the run has ended; frames carry the worker's time, so the caption names
+the step begun after the image. The later phases are proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app

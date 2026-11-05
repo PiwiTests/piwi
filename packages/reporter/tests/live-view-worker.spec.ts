@@ -196,6 +196,7 @@ describe("the worker's live view connection", () => {
     });
     const framed = posts.find((p) => p.type === 'frame' && 'data' in p);
     // No read of the secret fields came before the first frame: an image taken between two reads goes in its place.
+    // It says when the page looked so, in the worker's clock.
     expect(framed).toEqual({
       type: 'frame',
       shard: null,
@@ -203,6 +204,7 @@ describe("the worker's live view connection", () => {
       data: Buffer.from('shot').toString('base64'),
       call: HIDDEN_CALL,
       test: 'pays',
+      at: expect.any(Number),
     });
 
     await liveViewTestEnded();
