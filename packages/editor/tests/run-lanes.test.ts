@@ -17,7 +17,8 @@ import {
   type HubMessage,
   type HubSession,
 } from '@piwitests/core/run-hub';
-import type { RunSession } from '../src/protocol';
+import { ClientLaneView } from '../src/client-page-view';
+import type { LaneFrame, RunSession } from '../src/protocol';
 import { RunSessions, type LaneViewFrame, type Viewer } from '../src/run-sessions';
 import { FakeWorker, last, service, waitFor, writeRunWorkspace, type Service } from './run-fixtures';
 
@@ -131,6 +132,18 @@ const laneFrame = (test: string, stop: number | null, data = '/9j/AA=='): RunToH
   data,
 });
 
+/** The worker stops at `stop`, headless, before a click of its test. */
+const stopAt = (w: { read(message: RunToHub): void }, stop: number) =>
+  w.read({
+    type: 'stopped',
+    stop,
+    reason: 'pause',
+    title: 'Click',
+    place: { file: 'tests/a.spec.ts', line: 4 },
+    locator: null,
+    bar: false,
+  });
+
 describe('a lane watched in the run sessions', () => {
   test('starts with its first viewer and stops with its last, its frames to its viewers alone', async () => {
     const { sessions, join } = harness();
@@ -233,17 +246,6 @@ describe('a lane watched in the run sessions', () => {
 });
 
 describe('a lane view the worker answers late, or never', () => {
-  const stopAt = (w: { read(message: RunToHub): void }, stop: number) =>
-    w.read({
-      type: 'stopped',
-      stop,
-      reason: 'pause',
-      title: 'Click',
-      place: { file: 'tests/a.spec.ts', line: 4 },
-      locator: null,
-      bar: false,
-    });
-
   test('is turned off again once its start was given up, and an answer that comes too late starts nothing', async () => {
     const { sessions, join } = harness(80);
     const w = join(0, 0);
@@ -332,6 +334,67 @@ describe('a lane view the worker answers late, or never', () => {
     expect(sessions.laneFrameGoes(a, { ...atStop, since: null })).toBe(true);
     w.socket.destroy();
     await waitFor(() => (sessions.laneFrameGoes(a, { ...atStop, since: null }) ? undefined : true));
+  });
+});
+
+describe('a lane the editor client watches', () => {
+  const inputs = (w: { heard(): HubToRun[] }) =>
+    w.heard().filter((m): m is Extract<HubToRun, { what: 'input' }> => m.type === 'request' && m.what === 'input');
+
+  test('sends its frames with their test and stop, and takes its input at a stop of the lane alone', async () => {
+    const { sessions, sent, join } = harness();
+    const w = join(0, 0);
+    const frames: LaneFrame[] = [];
+    const client = new ClientLaneView(sessions, async (frame) => void frames.push(frame));
+    expect(await watch(w, client.watch({ ref: 'ed-1', lane: 0, on: true }))).toMatchObject({ ok: true });
+    w.read(laneFrame('t0', null));
+    expect(await waitFor(() => last(frames))).toEqual({
+      ref: 'ed-1',
+      lane: 0,
+      worker: 0,
+      test: 't0',
+      since: null,
+      data: '/9j/AA==',
+      width: 800,
+      height: 600,
+    });
+    // While the test runs, no stop takes its input.
+    expect(client.takes({ ref: 'ed-1', worker: 0, since: 'x', events: [] })).toBe(false);
+    stopAt(w, 1);
+    const since = await waitFor(() => last(sent)?.workers[0]?.stop?.since);
+    w.read(laneFrame('t0', 1, '/9j/BB=='));
+    await waitFor(() => (last(frames)?.since === since ? true : undefined));
+    expect(client.takes({ ref: 'ed-1', worker: 0, since, events: [] })).toBe(true);
+    expect(client.takes({ ref: 'ed-1', worker: 1, since, events: [] })).toBe(false);
+    const played = client.input({
+      ref: 'ed-1',
+      worker: 0,
+      since,
+      events: [{ type: 'mouse', action: 'down', x: 3, y: 4, button: 'left' }],
+    });
+    const asked = await waitFor(() => inputs(w)[0]);
+    w.read({ type: 'answer', request: asked.request, what: 'input', value: { ok: true, message: 'Played.' } });
+    expect(await played).toMatchObject({ ok: true });
+    // Leaving lets go of the button held down there, and stops the lane view.
+    client.dispose();
+    expect(inputs(w)[1]).toMatchObject({ events: [{ type: 'mouse', action: 'up', x: 3, y: 4, button: 'left' }] });
+    expect(w.asked(false)).toHaveLength(1);
+    expect(await client.input({ ref: 'ed-1', worker: 0, since, events: [] })).toMatchObject({ ok: false });
+  });
+
+  test('watches one lane at a time, and ends with the run', async () => {
+    const { sessions, join } = harness();
+    const first = join(0, 0);
+    const second = join(1, 1);
+    const client = new ClientLaneView(sessions, async () => {});
+    await watch(first, client.watch({ ref: 'ed-1', lane: 0, on: true }));
+    await watch(second, client.watch({ ref: 'ed-1', lane: 1, on: true }));
+    expect(first.asked(false)).toHaveLength(1);
+    expect(sessions.watchesLane(client.viewer, 'ed-1', 1)).toBe(true);
+    sessions.commandEnded('ed-1');
+    client.changed();
+    expect(sessions.watchesLane(client.viewer, 'ed-1', 1)).toBe(false);
+    expect(await client.watch({ ref: 'ed-1', lane: -1, on: true })).toMatchObject({ ok: false });
   });
 });
 

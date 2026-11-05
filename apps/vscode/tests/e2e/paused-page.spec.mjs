@@ -5,7 +5,7 @@ import { pausedPageHtml } from '../../src/run-control.ts';
 
 test.use({ launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH } });
 
-async function preview(page) {
+async function preview(page, extra = {}, image = 'The page of the paused test') {
   await page.setViewportSize({ width: 800, height: 540 });
   await page.setContent(
     '<body style="font:24px sans-serif;background:#fff;padding:32px"><h2>Checkout</h2><p>Canvas tote · €24.00</p><label>Coupon <input value="SUMMER"></label><p><button>Pay now</button></p></body>',
@@ -16,6 +16,7 @@ async function preview(page) {
     caption: 'Paused · Fill coupon · checkout.spec.ts:12',
     pick: { shown: 7 },
     live: { shown: 7, on: false, input: true, interacting: false, clickCounts: true },
+    ...extra,
   };
   await page.addInitScript(() => {
     window.addEventListener('DOMContentLoaded', () => {
@@ -43,7 +44,7 @@ async function preview(page) {
   await expect.poll(() => page.evaluate(() => window.messages.some((m) => m.type === 'ready'))).toBe(true);
   const state = async () => page.evaluate((view) => window.postMessage({ type: 'state', view }, '*'), view);
   await state();
-  await expect(page.getByRole('img', { name: 'The page of the paused test' })).toBeVisible();
+  await expect(page.getByRole('img', { name: image })).toBeVisible();
   return { view, state };
 }
 
@@ -156,4 +157,38 @@ test('Escape cancels queued input and a double click keeps its click count', asy
   // Past the batch interval: a cancelled down must not arrive after the release.
   await page.waitForTimeout(100);
   expect(await page.evaluate(() => window.messages.filter((m) => m.type === 'input'))).toEqual([]);
+});
+
+test('the worker panel watches its slot, dims an image of what the worker left, and takes input at a stop alone', async ({
+  page,
+}) => {
+  const image = "The page of the worker's test";
+  const { view, state } = await preview(
+    page,
+    {
+      caption: 'Worker 2 · Running · checkout › pays',
+      lane: true,
+      stale: false,
+      pick: null,
+      live: { shown: 7, on: true, input: false, interacting: false, clickCounts: true },
+    },
+    image,
+  );
+  await expect(page.getByLabel('Watch', { exact: true })).toBeChecked();
+  await expect(page.getByLabel('Interact', { exact: true })).toBeDisabled();
+  await expect(page.getByText('Watch shows the page of the test this worker runs', { exact: false })).toBeHidden();
+  await expect(page.getByRole('img', { name: image })).not.toHaveClass(/stale/);
+  // The worker stopped: the image of its test running stays, dimmed, and Interact is offered.
+  view.caption = "Worker 2 · Paused · Click getByRole('button') · checkout.spec.ts:12";
+  view.stale = true;
+  view.live.input = true;
+  await state();
+  await expect(page.getByText(view.caption, { exact: true })).toBeVisible();
+  await expect(page.getByRole('img', { name: image })).toHaveClass(/stale/);
+  await expect(page.getByLabel('Interact', { exact: true })).toBeEnabled();
+  view.stale = false;
+  await state();
+  await expect(page.getByRole('img', { name: image })).not.toHaveClass(/stale/);
+  await page.getByLabel('Watch', { exact: true }).uncheck();
+  expect(await page.evaluate(() => window.messages)).toContainEqual({ type: 'view', shown: 7, on: false });
 });

@@ -1475,6 +1475,8 @@ export interface RunWorker {
   stop: RunStop | null;
   /** What its reporter takes at a stop. */
   takes: RunTake[];
+  /** Its reporter shows its page while its test runs: `piwi/laneView` watches its slot. */
+  watchable: boolean;
   /**
    * A Pause reached it and it has not stopped yet: it stops before its test's next call that Playwright's debugger
    * stops at (a long call, a `waitForTimeout`, finishes first), or the next test's first one. A client shows
@@ -1699,6 +1701,33 @@ export type PageFrame = Omit<PageViewParams, 'on'> &
 export const PAGE_VIEW_REQUEST = 'piwi/pageView';
 export const PAGE_INPUT_REQUEST = 'piwi/pageInput';
 export const PAGE_FRAME_NOTIFICATION = 'piwi/pageFrame';
+
+/**
+ * `piwi/laneView`: the editor watches a worker's slot of a run (`lane`, its `RunWorker.parallelIndex`), running or
+ * stopped, through its existing connection: the page of the test the worker there runs, of its stop while it stands at
+ * one, through its tests and the worker Playwright starts in its place, until it stops watching (`on: false`) or the
+ * run ends. One lane at a time: watching another stops the first. Refused for a worker whose reporter does not show it
+ * (`RunWorker.watchable`). At a stop of the lane's running test, `piwi/pageInput` takes the editor's input as from a
+ * viewer of that stop.
+ */
+export interface LaneViewParams {
+  ref: string;
+  lane: number;
+  on: boolean;
+}
+
+/**
+ * `piwi/laneFrame` (notification, server to client): a transient JPEG of the lane the editor watches, of the worker
+ * `worker` while its test `test` (Playwright's id) runs, or at the stop `since` names; or why its page has no frame now
+ * (`refused`). Never stored; a frame of a test or a stop the lane left is not sent.
+ */
+export type LaneFrame = { ref: string; lane: number; worker: number; test: string | null; since: string | null } & (
+  | { data: string; width: number; height: number }
+  | { refused: string }
+);
+
+export const LANE_VIEW_REQUEST = 'piwi/laneView';
+export const LANE_FRAME_NOTIFICATION = 'piwi/laneFrame';
 
 /**
  * `piwi/pickAt`: Pick on the image, at the stop `since` names, of the run's one stopped worker or `worker`: the element

@@ -1013,6 +1013,12 @@ export class RunSessions {
     }
   }
 
+  /** Whether `viewer` watches the lane `lane` of the run `ref`, which ends with the run. */
+  watchesLane(viewer: Viewer, ref: string, lane: number): boolean {
+    const session = this.sessions.get(ref);
+    return !!session && !session.ended && !!session.lanes.get(lane)?.has(viewer);
+  }
+
   /** Whether `viewer` watches the live view of the stop `since` names, of the run's worker `workerIndex`. */
   viewing(viewer: Viewer, ref: string, workerIndex: number, since: string): boolean {
     const worker = this.sessions.get(ref)?.workers.get(workerIndex);
@@ -1670,6 +1676,7 @@ export class RunSessions {
           stop: worker.stop?.view ?? null,
           pausing: worker.pausing,
           takes: [...worker.takes],
+          watchable: worker.features.has('view-lane'),
         })),
       ended: session.ended,
       ...(session.terminal ? { terminal: true } : {}),

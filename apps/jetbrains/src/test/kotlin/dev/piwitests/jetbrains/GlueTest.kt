@@ -691,6 +691,41 @@ class GlueTest {
     }
 
     @Test
+    fun `the workers a Worker tab can watch, and what it says of its slot`() {
+        val sessions = mapOf(
+            "ed-1" to session(
+                "ed-1",
+                RunWorker(0, 0, "running", runTest(), watchable = true),
+                RunWorker(1, 1, "stopped", runTest(), stopAt(specUri, 5), watchable = true),
+                RunWorker(2, 2, "running", runTest()),
+                RunWorker(3, 3, "between", watchable = true),
+            ),
+        )
+        assertEquals(
+            listOf("Worker 1 · running checkout › pays", "Worker 2 · stopped in checkout › pays", "Worker 4 · between tests"),
+            Glue.watchableWorkers(sessions).map { it.label },
+        )
+        assertEquals(listOf(0, 3), Glue.watchableWorkers(sessions, pausable = true).map { it.worker })
+        assertTrue(Glue.runControls(sessions).watchable)
+        assertFalse(Glue.runControls(mapOf("ed-2" to session("ed-2", RunWorker(0, 0, "running", runTest())))).watchable)
+        val stops = Glue.stopsOf(sessions)
+        assertEquals("Worker 1 · the run ended.", Glue.laneShown(null, 0, stops).caption)
+        assertEquals("Worker 6 · starting…", Glue.laneShown(sessions["ed-1"], 5, stops).caption)
+        assertEquals("Worker 4 · between tests", Glue.laneShown(sessions["ed-1"], 3, stops).caption)
+        assertEquals("Worker 1 · Running · checkout › pays", Glue.laneShown(sessions["ed-1"], 0, stops).caption)
+        val stopped = Glue.laneShown(sessions["ed-1"], 1, stops)
+        assertEquals(stops.single(), stopped.stop)
+        assertEquals("Worker 2 · Paused · Fill \"WELCOME10\" getByLabel('Coupon') · checkout.spec.ts:6", stopped.caption)
+        val running = sessions["ed-1"]!!.workers!![0]
+        assertTrue(Glue.frameIsCurrent(LaneFrame("ed-1", 0, 0, "t1", null), running))
+        assertFalse(Glue.frameIsCurrent(LaneFrame("ed-1", 0, 0, "t2", null), running))
+        assertFalse(Glue.frameIsCurrent(LaneFrame("ed-1", 0, 4, "t1", null), running))
+        val worker = sessions["ed-1"]!!.workers!![1]
+        assertFalse(Glue.frameIsCurrent(LaneFrame("ed-1", 1, 1, "t1", null), worker))
+        assertTrue(Glue.frameIsCurrent(LaneFrame("ed-1", 1, 1, "t1", worker.stop!!.since), worker))
+    }
+
+    @Test
     fun `a stop says what is about to run, with the attempt after the first`() {
         assertEquals("Paused · Fill \"WELCOME10\" getByLabel('Coupon')", Glue.pausedText(stopAt(specUri, 5), runTest()))
         assertEquals("Paused · Fill \"WELCOME10\" getByLabel('Coupon') · attempt 2", Glue.pausedText(stopAt(specUri, 5), runTest(retry = 1)))

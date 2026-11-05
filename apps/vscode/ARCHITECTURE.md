@@ -369,6 +369,16 @@ and typing, batched through the Runs window's input helper. Escape releases held
 Shift+click still picks. Help is collapsed. Hiding, closing, switching stops or resuming ends the watch. The panel
 remembers Watch live until closed, but each watch starts with Interact off.
 
+**The worker panel.** **Piwi: Watch a worker's test** (`piwi.watchWorker`), **Piwi: Pause and watch a worker's test**
+(`piwi.pauseAndWatch`, which then sends `pause` to that worker) and a click on the run's progress in the status bar
+open **Piwi: worker N** (`src/worker-panel.ts`) on a worker whose reporter shows its running test
+(`RunWorker.watchable`, `watchableWorkers`). It watches the worker's lane with `piwi/laneView` and draws
+`piwi/laneFrame` with the paused page's HTML and script (`pausedPageHtml` with `lane`), its caption from `laneShown`
+and its image dimmed (`stale`) while it is not of what the worker does now (`frameIsCurrent`). At a stop of its lane,
+Interact and the pick on a click name that stop, as on the paused page, and a headless stop of that lane opens no
+paused page. The watch ends while the panel is hidden and starts again as it shows (`pausedPageViewChange`); a new
+stop starts with Interact off.
+
 **Breakpoints during a run.** The breakpoints `breakpointsForRun` gives go to each live run as they change
 (`vscode.debug.onDidChangeBreakpoints`, the `piwi.breakpoints` setting) with `piwi/setRunBreakpoints`, as lines of the
 run's code (`runPlaces`). A breakpoint the run was given, known by `vscode.Breakpoint.id`, keeps its line while it only

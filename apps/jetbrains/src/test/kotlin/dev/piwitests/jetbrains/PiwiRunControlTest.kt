@@ -54,6 +54,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
     private val breakpoints = CopyOnWriteArrayList<SetRunBreakpointsParams>()
     private val editorBreakpoints = CopyOnWriteArrayList<SetBreakpointsParams>()
     private val pages = CopyOnWriteArrayList<PausedPageParams>()
+    private val lanes = CopyOnWriteArrayList<LaneViewParams>()
     private val ended = CopyOnWriteArrayList<CommandEndedParams>()
     private val started = CopyOnWriteArrayList<StopActionParams>()
     private val listed = CopyOnWriteArrayList<StopRequestsParams>()
@@ -97,6 +98,11 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             override fun pageView(params: PageViewParams) = RunControlResult(true, "Watching.")
 
             override fun pageInput(params: PageInputParams) = RunControlResult(true, "Played.")
+
+            override fun laneView(params: LaneViewParams): RunControlResult {
+                lanes += params
+                return RunControlResult(true, "Watching.")
+            }
 
             override fun pickAt(params: PickAtParams): PickAtResult {
                 picks += params
@@ -672,6 +678,30 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             hear(RunSession("ed-2", ended = true))
             assertEquals("The run ended.", sessions.shown().pageCaption)
             assertNull(sessions.shown().pageImage)
+        } finally {
+            ToolWindowManager.getInstance(project).unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
+        }
+    }
+
+    /**
+     * Watch a Worker's Test opens the Worker tab on a worker whose reporter shows its running test, its caption following
+     * the worker through its stop and the run's end.
+     */
+    fun testAWorkersTestIsWatchedInTheWorkerTab() {
+        val window = ToolWindowManager.getInstance(project).registerToolWindow(RegisterToolWindowTask.notClosable(PiwiFailuresToolWindowFactory.ID))
+        try {
+            val spec = file("tests/coupon.spec.ts", coupon)
+            hear(RunSession("ed-7", base.path, listOf(RunWorker(0, 1, "running", test(), watchable = true))))
+            assertEquals(listOf("Worker 2 · running pays"), Glue.watchableWorkers(sessions.sessions).map { it.label })
+            sessions.showWorker("ed-7", 1)
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertEquals("Worker 2", window.contentManager.selectedContent?.displayName)
+            assertEquals("Worker 2 · Running · pays", sessions.shown().workerCaption)
+            val stop = RunStop("pause", "Click getByRole('button', { name: 'Apply' })", uri(spec), 5, 4, null, true, "2026-10-25T10:00:07.000Z")
+            hear(RunSession("ed-7", base.path, listOf(RunWorker(0, 1, "stopped", test(), stop, watchable = true))))
+            assertEquals("Worker 2 · Paused · Click getByRole('button', { name: 'Apply' }) · coupon.spec.ts:6", sessions.shown().workerCaption)
+            hear(RunSession("ed-7", ended = true))
+            assertEquals("Worker 2 · the run ended.", sessions.shown().workerCaption)
         } finally {
             ToolWindowManager.getInstance(project).unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
         }

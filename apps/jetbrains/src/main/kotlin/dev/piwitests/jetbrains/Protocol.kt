@@ -729,6 +729,8 @@ data class RunWorker(
     val stop: RunStop? = null,
     val pausing: Boolean = false,
     val takes: List<String>? = null,
+    /** Its reporter shows its page while its test runs: `piwi/laneView` watches its slot. */
+    val watchable: Boolean = false,
 )
 
 /**
@@ -849,6 +851,28 @@ data class PageInput(
 data class PageInputParams(val ref: String, val worker: Int, val since: String, val events: List<PageInput>, val release: Boolean = false)
 
 data class PageFrame(val ref: String, val worker: Int, val since: String, val data: String? = null, val width: Int? = null, val height: Int? = null, val refused: String? = null)
+
+/**
+ * `piwi/laneView`: the IDE watches a worker's slot of a run (`lane`, its `RunWorker.parallelIndex`), running or stopped,
+ * through its tests and the worker Playwright starts in its place, until `on` is false or the run ends; one at a time.
+ */
+data class LaneViewParams(val ref: String, val lane: Int, val on: Boolean)
+
+/**
+ * `piwi/laneFrame`: a frame of the slot the IDE watches, of the worker `worker` while its test `test` runs, or at the
+ * stop `since` names; or why it has none now (`refused`).
+ */
+data class LaneFrame(
+    val ref: String,
+    val lane: Int,
+    val worker: Int,
+    val test: String? = null,
+    val since: String? = null,
+    val data: String? = null,
+    val width: Int? = null,
+    val height: Int? = null,
+    val refused: String? = null,
+)
 
 /**
  * `piwi/pickAt`: the element under the point `x`, `y` of the page stopped at `since` (CSS pixels of its viewport: a
@@ -1057,6 +1081,9 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/pageInput")
     fun pageInput(params: PageInputParams): CompletableFuture<RunControlResult?>
+
+    @JsonRequest("piwi/laneView")
+    fun laneView(params: LaneViewParams): CompletableFuture<RunControlResult?>
 
     @JsonRequest("piwi/pickAt")
     fun pickAt(params: PickAtParams): CompletableFuture<PickAtResult?>

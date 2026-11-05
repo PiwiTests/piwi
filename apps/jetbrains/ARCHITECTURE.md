@@ -446,6 +446,13 @@ enabled only while they apply, and from the keyboard only while no debug session
 `ActionPromoter`) puts them first among the actions a key runs: a keymap that gives the key to another action too (the
 VSCode keymaps' `F5`, `Debug`; NetBeans' `F4`, `EditSource`) runs Piwi's while it applies, the other once it does not.
 
+**The Worker tab.** **Tools → Piwi → Watch a Worker's Test** (`WatchWorkerAction`) and **Pause and Watch a Worker's
+Test** (`PauseAndWatchAction`) open a **Worker N** tab of the Piwi tool window (`PiwiRunSessions.showWorker`) on a
+worker whose reporter shows its running test (`Glue.watchableWorkers`). It watches the worker's lane with
+`piwi/laneView`, decodes `piwi/laneFrame` as the paused page decodes its frames, and says what the worker does
+(`Glue.laneShown`). It only watches: a headless stop of its lane opens the Paused Page, which takes the input. The
+watch ends while the tab is hidden and starts again as it shows.
+
 **The paused page.** A stop with no pause bar asks `piwi/pausedPage` and shows the JPEG (`Glue.pausedImageBytes`, at
 most `Glue.MAX_IMAGE_DATA`, decoded only within `Glue.decodableImage`) in the **Paused Page** tab of the Piwi tool
 window, again at each such stop. Where its worker takes `pick-at` and the image names its viewport

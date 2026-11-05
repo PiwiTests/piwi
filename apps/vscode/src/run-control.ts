@@ -4,7 +4,8 @@
  * each stopped worker stands, what the controls and the code actions offer in each state, the line shown above a
  * stop, the stop a control acts on, the breakpoints sent to each run as they change, the page a stop shows as an
  * image, the responses Mock a request lists, the count of the locator at the cursor, the code a stop sends to write,
- * a run shared live on the team instance (Share live: what it sends, how it stands), and the edits of the documents
+ * a run shared live on the team instance (Share live: what it sends, how it stands), the workers a panel can watch
+ * while their test runs and what the panel says of one, and the edits of the documents
  * since a run started, which map a line of the run's code to the document as it stands
  * and back.
  */
@@ -18,6 +19,7 @@ import type {
   RunStop,
   RunTake,
   RunTest,
+  RunWorker,
   SetRunBreakpointsParams,
   StopActionKind,
   StopBindResult,
@@ -277,10 +279,101 @@ export const RUN_COMMANDS = {
   assertRegion: 'piwi.assertRegionAtStop',
   mock: 'piwi.mockAtStop',
   code: 'piwi.codeAtStop',
+  watch: 'piwi.watchWorker',
+  pauseAndWatch: 'piwi.pauseAndWatch',
   share: 'piwi.shareWithPlaywright',
   shareLive: 'piwi.shareRunLive',
   stopSharing: 'piwi.stopSharingRun',
 } as const;
+
+/** A worker a panel can watch while its test runs: its run, Playwright's worker index, its slot (`lane`), and its words. */
+export interface WatchTarget {
+  ref: string;
+  worker: number;
+  lane: number;
+  label: string;
+  description: string;
+}
+
+/** What the worker in a slot is called: `Worker 2` for parallel index 1, as the service says it. */
+export function workerName(lane: number): string {
+  return `Worker ${lane + 1}`;
+}
+
+/**
+ * The workers of the live runs whose reporter shows their page while their test runs (`RunWorker.watchable`), in
+ * their order; `pausable` keeps those a Pause can stop now (Pause and watch).
+ */
+export function watchableWorkers(sessions: Sessions, pausable = false): WatchTarget[] {
+  return [...sessions.values()].flatMap((s) =>
+    s.workers
+      .filter((w) => w.watchable && (!pausable || canPauseWorker(w)))
+      .map((w) => ({
+        ref: s.ref,
+        worker: w.worker,
+        lane: w.parallelIndex,
+        label: workerName(w.parallelIndex),
+        description: !w.test
+          ? 'between tests'
+          : `${w.state === 'stopped' ? 'stopped in' : 'running'} ${w.test.title.join(' › ')}`,
+      })),
+  );
+}
+
+/** Whether a Pause can stop a worker now: it runs or is between tests, no Pause reached it, and its test can stop. */
+function canPauseWorker(worker: RunWorker): boolean {
+  return worker.state !== 'stopped' && !worker.pausing && !worker.test?.cannotPause;
+}
+
+/** The workers a command's target names (a status bar item, a quick pick), or every one it may take. */
+export function watchTargetsFor(targets: readonly WatchTarget[], arg: RunTarget | null): WatchTarget[] {
+  if (!arg) return [...targets];
+  return targets.filter((t) => t.ref === arg.ref && (arg.worker === undefined || t.worker === arg.worker));
+}
+
+/** What the worker panel says of its slot, from its run's session: the worker there now, its stop, and a caption. */
+export interface LaneShown {
+  /** The worker in the slot now; null while Playwright starts the next one, and once the run ended. */
+  worker: RunWorker | null;
+  /** The stop it stands at, at its line in the document now; null while it runs. */
+  stop: ShownStop | null;
+  caption: string;
+}
+
+/**
+ * What the worker panel watching the slot `lane` of a run shows above the image: the run ended, the slot's worker is
+ * starting or between tests, its test runs (or a Pause reached it), or where it stopped, from `stops` (the stops at
+ * their lines now).
+ */
+export function laneShown(session: RunSession | undefined, lane: number, stops: readonly ShownStop[]): LaneShown {
+  const name = workerName(lane);
+  if (!session || session.ended) return { worker: null, stop: null, caption: `${name} · the run ended.` };
+  const worker = session.workers.find((w) => w.parallelIndex === lane) ?? null;
+  if (!worker) return { worker: null, stop: null, caption: `${name} · starting…` };
+  if (!worker.test) return { worker, stop: null, caption: `${name} · between tests` };
+  const title = worker.test.title.join(' › ');
+  const stop = stops.find((s) => s.ref === session.ref && s.worker === worker.worker) ?? null;
+  if (!stop) return { worker, stop: null, caption: `${name} · ${worker.pausing ? 'Pausing' : 'Running'} · ${title}` };
+  const file = decodeURIComponent(stop.stop.uri.slice(stop.stop.uri.lastIndexOf('/') + 1));
+  const said = pausedText(stop.stop, stop.test, stop.terminal, stop.runner);
+  return { worker, stop, caption: `${name} · ${said} · ${file}:${stop.stop.line + 1}` };
+}
+
+/**
+ * Whether a frame of a slot shows what its worker does now: the same worker, its running test, and the stop it stands
+ * at (none while it runs). A frame that does not stays shown, dimmed, until the next one comes.
+ */
+export function frameIsCurrent(
+  frame: { worker: number; test: string | null; since: string | null },
+  worker: RunWorker | null,
+): boolean {
+  return (
+    !!worker &&
+    frame.worker === worker.worker &&
+    frame.test === (worker.test?.id ?? null) &&
+    frame.since === (worker.stop?.since ?? null)
+  );
+}
 
 /** A run of the sessions that its reporter can share live on the team instance, and how it stands there. */
 export interface LiveRun {
@@ -344,12 +437,13 @@ export function progressItem(sessions: Sessions): ControlItem | null {
   ];
   const tests = total === 1 ? 'test' : 'tests';
   const outcomes = [failed ? `${failed} failed` : '', flaky ? `${flaky} flaky` : ''].filter(Boolean).join(', ');
+  const watchable = watchableWorkers(sessions).length > 0;
   return {
     text: `$(beaker) ${done} of ${total}${failed ? ` · $(error) ${failed}` : ''}`,
     tooltip:
       `Piwi: ${told.length === 1 ? 'the run' : `${told.length} runs`} ran ${done} of ${total} ${tests}` +
-      `${outcomes ? `: ${outcomes}` : ''}.`,
-    command: null,
+      `${outcomes ? `: ${outcomes}` : ''}.${watchable ? " Click to watch a worker's test." : ''}`,
+    command: watchable ? RUN_COMMANDS.watch : null,
   };
 }
 
@@ -529,6 +623,8 @@ export interface ControlState {
   shareable: boolean;
   /** A run is shared live on the team instance: Stop sharing. */
   liveShared: boolean;
+  /** A worker's reporter shows its page while its test runs: Watch a worker. */
+  watchable: boolean;
 }
 
 export function controlState(sessions: Sessions): ControlState {
@@ -537,13 +633,14 @@ export function controlState(sessions: Sessions): ControlState {
   return {
     active: sessions.size > 0,
     stoppable: [...sessions.values()].some((s) => !s.terminal),
-    pausable: workers.some((w) => w.state !== 'stopped' && !w.pausing && !w.test?.cannotPause),
+    pausable: workers.some(canPauseWorker),
     pausing: workers.some((w) => w.pausing),
     stopped: workers.some((w) => w.state === 'stopped'),
     endable: stopsOf(sessions).some(canEnd),
     actions: STOP_ACTIONS.filter((a) => offered.has(a.action)).map((a) => a.action),
     shareable: stopsOf(sessions).some(canShare),
     liveShared: liveRunsOf(sessions).some((r) => r.live.shared),
+    watchable: watchableWorkers(sessions).length > 0,
   };
 }
 
@@ -924,8 +1021,12 @@ export interface PausedPageView {
   pick?: { shown: number } | null;
   /** What the last pick on the image came to: the locator sent to the editor, or why there is none. */
   note?: string | null;
-  /** Local live preview controls, bound to this panel's stop. */
+  /** Local live preview controls, bound to this panel's stop, or to its worker's slot (`lane`). */
   live?: { shown: number; on: boolean; input: boolean; interacting: boolean; clickCounts: boolean };
+  /** The panel watches a worker's slot, running or stopped, not one stop. */
+  lane?: boolean;
+  /** The image shows what the worker did before: a test or a stop it left, until the next image comes. */
+  stale?: boolean;
 }
 
 /** Whether a click on an image of a stop picks there: its worker takes `pick-at`, and the image names its viewport. */
@@ -1014,12 +1115,14 @@ export function pausedPageHtml(view: PausedPageView, nonce: string, scriptUri?: 
     '<head>',
     '<meta charset="UTF-8">',
     `<meta http-equiv="Content-Security-Policy" content="${csp}">`,
-    `<style nonce="${nonce}">body{margin:0;padding:8px 12px;font:13px var(--vscode-font-family);color:var(--vscode-foreground)}p{margin:0 0 8px}.hint,.note{color:var(--vscode-descriptionForeground)}img{max-width:100%;border:1px solid var(--vscode-panel-border)}img.pick{cursor:crosshair}img:focus{outline:2px solid var(--vscode-focusBorder)}.tools{display:flex;gap:12px;margin-bottom:8px}details{margin:8px 0;color:var(--vscode-descriptionForeground)}[hidden]{display:none!important}</style>`,
+    `<style nonce="${nonce}">body{margin:0;padding:8px 12px;font:13px var(--vscode-font-family);color:var(--vscode-foreground)}p{margin:0 0 8px}.hint,.note{color:var(--vscode-descriptionForeground)}img{max-width:100%;border:1px solid var(--vscode-panel-border)}img.pick{cursor:crosshair}img.stale{opacity:.5}img:focus{outline:2px solid var(--vscode-focusBorder)}.tools{display:flex;gap:12px;margin-bottom:8px}details{margin:8px 0;color:var(--vscode-descriptionForeground)}[hidden]{display:none!important}</style>`,
     '</head>',
     '<body>',
     `<p${live ? ' id="caption"' : ''}>${escapeHtml(view.caption)}</p>`,
     live
-      ? `<div class="tools"><label><input id="live" type="checkbox"> Watch live</label><label${live.input ? '' : ' hidden'}><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the preview works</summary><p>Watch live updates the page while this test is paused. Interact sends clicks, scrolling and typing to the page. Escape releases the keyboard; Shift+click picks a locator. Nothing is stored or shared with the team.</p></details>`
+      ? view.lane
+        ? `<div class="tools"><label><input id="live" type="checkbox"> Watch</label><label><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the view works</summary><p>Watch shows the page of the test this worker runs, a few images a second, through its tests and stops. At a stop, Interact sends clicks, scrolling and typing to the page. Escape releases the keyboard; Shift+click picks a locator. Nothing is stored or shared with the team.</p></details>`
+        : `<div class="tools"><label><input id="live" type="checkbox"> Watch live</label><label${live.input ? '' : ' hidden'}><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the preview works</summary><p>Watch live updates the page while this test is paused. Interact sends clicks, scrolling and typing to the page. Escape releases the keyboard; Shift+click picks a locator. Nothing is stored or shared with the team.</p></details>`
       : '',
     pick && !live ? `<p class="hint">${escapeHtml(PICK_HINT)}</p>` : '',
     live
@@ -1028,7 +1131,7 @@ export function pausedPageHtml(view: PausedPageView, nonce: string, scriptUri?: 
         ? `<p class="note" role="status">${escapeHtml(view.note)}</p>`
         : '',
     live
-      ? `<img id="page" tabindex="0"${src ? ` src="${src}"` : ' hidden'} alt="The page of the paused test" data-shown="${live.shown}" data-click-counts="${live.clickCounts}">`
+      ? `<img id="page" tabindex="0"${src ? ` src="${src}"` : ' hidden'}${view.stale ? ' class="stale"' : ''} alt="${view.lane ? "The page of the worker's test" : 'The page of the paused test'}" data-shown="${live.shown}" data-click-counts="${live.clickCounts}">`
       : src
         ? `<img${pick ? ' class="pick" id="page"' : ''} src="${src}" alt="The page of the paused test">`
         : '',

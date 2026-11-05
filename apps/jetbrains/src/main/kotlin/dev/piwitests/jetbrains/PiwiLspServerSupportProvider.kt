@@ -247,6 +247,11 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
         project.getServiceIfCreated(PiwiRunSessions::class.java)?.frame(frame)
     }
 
+    @JsonNotification("piwi/laneFrame")
+    fun laneFrame(frame: LaneFrame) {
+        project.getServiceIfCreated(PiwiRunSessions::class.java)?.laneFrame(frame)
+    }
+
     /** The code made at a stop, from here or Piwi Picker: written above the stopped line. */
     @JsonNotification("piwi/stopCode")
     fun stopCode(code: StopCode) {

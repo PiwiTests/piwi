@@ -201,6 +201,7 @@ describe('a run’s session, with a client that answers stops', () => {
             stop: null,
             pausing: false,
             takes: ['pick', 'record'],
+            watchable: false,
           },
         ],
         ended: false,
