@@ -4,6 +4,8 @@ export interface RunLiveViewReadiness {
   desktop: boolean;
   demo: boolean;
   connected: boolean;
+  /** The run's stream has stayed unopened for `STREAM_STALL_MS`. */
+  stalled?: boolean;
   state: LiveViewRunState | null;
   ci: boolean;
   workers: number;
@@ -21,6 +23,7 @@ export const NO_WORKER_GRACE_MS = 10_000;
 export function runLiveViewStatus(run: RunLiveViewReadiness) {
   if (run.desktop) return { kind: 'desktop', label: 'Local preview at a pause' };
   if (run.demo) return { kind: 'demo', label: 'Demo progress' };
+  if (!run.connected && run.stalled) return { kind: 'stalled', label: 'Live updates stalled' };
   if (!run.connected || !run.state) return { kind: 'checking', label: 'Live view connecting' };
   if (!run.state.enabled) return { kind: 'disabled', label: 'Live view off' };
   if (run.workers > 0) return { kind: 'available', label: 'Live view available' };

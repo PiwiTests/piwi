@@ -15,6 +15,11 @@ import { subscribeDemoEvents } from '~/demo/run-events';
  *   server-side keep-alive. On tab focus it reconnects and immediately
  *   refreshes all subscribers so missed events are caught up.
  *
+ * A late first connection:
+ *   A run that starts between the page's data and its first connection is
+ *   never heard. When that connection opens more than LATE_OPEN_MS after the
+ *   page began loading, the subscribers refresh once.
+ *
  * Error answers:
  *   The browser reconnects a dropped stream by itself, but gives up on one
  *   whose reconnection gets an error answer (a proxy's 502 while the instance
@@ -111,6 +116,10 @@ let reopenDelay = REOPEN_MIN_MS;
 let reopenTimer: ReturnType<typeof setTimeout> | null = null;
 /** Set while a connection reopened after an error answer has not opened yet: its subscribers refresh once it does. */
 let refreshOnOpen = false;
+/** How long after the page began loading its first connection may open without the subscribers refreshing. */
+const LATE_OPEN_MS = 1_500;
+/** Whether no connection of this page has opened yet, nor has the tab come back into view (which refreshes). */
+let firstOpen = true;
 
 function openEventSource() {
   if (sharedEventSource || demoMode) return;
@@ -122,7 +131,9 @@ function openEventSource() {
   // reconnection.
   source.onopen = () => {
     reopenDelay = REOPEN_MIN_MS;
-    if (refreshOnOpen) {
+    const late = firstOpen && performance.now() > LATE_OPEN_MS;
+    firstOpen = false;
+    if (refreshOnOpen || late) {
       refreshOnOpen = false;
       for (const fn of subscribers) fn();
     }
@@ -180,6 +191,7 @@ function handleVisibilityChange() {
     }
   } else if (subscribers.size > 0 || eventListeners.size > 0) {
     // Tab is visible again — reconnect and immediately refresh to catch up on missed events
+    firstOpen = false;
     openEventSource();
     for (const fn of subscribers) fn();
   }

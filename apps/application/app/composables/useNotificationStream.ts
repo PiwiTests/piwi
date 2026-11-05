@@ -28,13 +28,13 @@ if (import.meta.client) {
 }
 let _cookie: ReturnType<typeof useBrowserNotificationCookie> | null = null;
 
-let _diagnosisActive: ReturnType<typeof useDiagnosisNotification>['active'] | null = null;
+let _diagnosisEnabled: ReturnType<typeof useDiagnosisNotification>['enabled'] | null = null;
 
 function handleEvent(data: NotificationEventData) {
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
   if (document.visibilityState === 'visible' && _windowFocused) return;
 
-  if (data.type === 'diagnosis.completed' && _diagnosisActive && !_diagnosisActive.value) {
+  if (data.type === 'diagnosis.completed' && _diagnosisEnabled && !_diagnosisEnabled.value) {
     return;
   }
 
@@ -98,6 +98,26 @@ function connectDemo() {
   });
 }
 
+/** The Web Lock whose holder, one tab of the browser, keeps the notification stream. */
+const STREAM_LOCK = 'piwi-notification-stream';
+
+/**
+ * Open the stream in one tab of the browser: the one that holds `STREAM_LOCK`, which passes to another tab when the
+ * holder closes. Every tab would show the same notifications (each notification's tag replaces the last), and each
+ * stream holds one of the six connections a browser opens to an address over HTTP/1.1. A browser without Web Locks
+ * opens it in every tab.
+ */
+function connectInOneTab() {
+  if (!('locks' in navigator)) {
+    connectLive();
+    return;
+  }
+  void navigator.locks.request(STREAM_LOCK, () => {
+    connectLive();
+    return new Promise<never>(() => {});
+  });
+}
+
 const REOPEN_MIN_MS = 2_000;
 const REOPEN_MAX_MS = 30_000;
 let reopenDelay = REOPEN_MIN_MS;
@@ -132,14 +152,15 @@ function connectLive() {
 
 /**
  * Show the server's notification events as browser notifications while the tab is hidden or unfocused. In the
- * desktop app the shell shows them itself, from its server's stream, so the page does not.
+ * desktop app the shell shows them itself, from its server's stream, so the page does not. One tab of the browser
+ * holds the stream (`connectInOneTab`), and it reads the permission and the diagnosis switch as they are now, since
+ * another tab may have changed them.
  */
 export function useNotificationStream() {
   if (!import.meta.client || started || useIsDesktop()) return;
   started = true;
 
-  const { active } = useDiagnosisNotification();
-  _diagnosisActive = active;
+  _diagnosisEnabled = useDiagnosisNotification().enabled;
 
   const config = useRuntimeConfig();
   _router = useRouter();
@@ -155,7 +176,7 @@ export function useNotificationStream() {
     if (config.public.demoMode) {
       connectDemo();
     } else {
-      connectLive();
+      connectInOneTab();
     }
   });
 }

@@ -13,6 +13,7 @@ import type { LiveStepsByWorker } from '~/utils/live-steps';
 import { liveRowNote } from '~/utils/live-row-note';
 import { runSummaryText } from '~/utils/run-summary';
 import { NO_WORKER_GRACE_MS } from '~/utils/run-live-view-status';
+import { onStreamStall } from '~/utils/stream-stall';
 import { subscribeDemoEvents } from '~/demo/run-events';
 import { useRunEvents, useRunStart, useRunStream } from '~/composables/useRunStream';
 import { useReportsPoll } from '~/composables/useReportsPoll';
@@ -84,6 +85,9 @@ const liveViewKeyed = ref(false);
 // The stream's last `live-view` state, and whether the stream is open: the toolbar's status reads both.
 const liveViewState = ref<LiveViewRunState | null>(null);
 const liveViewConnected = ref(false);
+// The stream has stayed unopened for `STREAM_STALL_MS`: the toolbar says so, with Retry.
+const liveStreamStalled = ref(false);
+let cancelStallCheck: (() => void) | null = null;
 // The run finished on the stream: its status leaves the toolbar before the refetched run says so.
 const liveRunEnded = ref(false);
 // Whether a worker of the run's view connected since the page opened, and whether tests have run for
@@ -526,9 +530,14 @@ function connectToStream() {
 
   const source = new EventSource(`${baseURL}/api/test-runs/${runId}/stream`);
   eventSource = source;
+  cancelStallCheck?.();
+  cancelStallCheck = onStreamStall(source, () => {
+    if (eventSource === source) liveStreamStalled.value = true;
+  });
 
   source.onopen = () => {
     liveViewConnected.value = true;
+    liveStreamStalled.value = false;
     liveViewState.value = null;
     reopenDelay = STREAM_REOPEN_MIN_MS;
   };
@@ -569,6 +578,9 @@ function reopenStream() {
 
 function disconnectStream() {
   liveViewConnected.value = false;
+  liveStreamStalled.value = false;
+  cancelStallCheck?.();
+  cancelStallCheck = null;
   if (reopenTimer) clearTimeout(reopenTimer);
   reopenTimer = null;
   if (eventSource) {
@@ -579,6 +591,14 @@ function disconnectStream() {
     demoUnsubscribe();
     demoUnsubscribe = null;
   }
+}
+
+// Retry, from the toolbar of a stalled stream: the run is refetched and its stream opened anew.
+async function retryStream() {
+  disconnectStream();
+  reopenDelay = STREAM_REOPEN_MIN_MS;
+  await refresh();
+  if (shouldStream.value) connectToStream();
 }
 
 // A run shown as initializing is refetched once it starts, and then streams.
@@ -1099,11 +1119,13 @@ const moreMenuItems = computed(() => {
                   desktop: isDesktop,
                   demo: isDemoMode,
                   connected: liveViewConnected,
+                  stalled: liveStreamStalled,
                   state: liveViewState,
                   ci: !!testRun.metadata?.ci,
                   workers: Object.keys(liveWorkers).length,
                   testsWithoutWorkers: testsRanLong && !liveWorkerSeen,
                 }"
+                @retry="retryStream"
               />
             </template>
           </TestCasesList>

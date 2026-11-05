@@ -187,6 +187,7 @@ export const PROJECT = {
   RUN_LABEL: 'run-label-test',
   RUN_LOCATE: 'run-locate-test',
   RUN_PAGE_FILTERS: 'run-page-filters-test',
+  RUN_PAGE_TABS: 'run-page-tabs-test',
   RUN_SKIP_KINDS: 'run-skip-kinds-test',
   RUN_TAB_INDICATOR: 'run-tab-indicator-test',
   RUN_TIMELINE_HOOKS: 'run-timeline-hooks-test',

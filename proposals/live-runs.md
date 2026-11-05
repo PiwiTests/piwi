@@ -8,7 +8,12 @@ every test, your own running test cannot be seen without broadcasting it to the 
 worker by its own name, and a few ordinary conditions break the live page without a word. This plan names what breaks,
 proposes one model of a live run that every tool renders, and adds ways to watch a test besides its pixels.
 
-**Status.** Proposed 2026-11-05, against `main` at v0.66.0 (`e82b429f`). Nothing is built. The bugs the analysis
+**Status.** Proposed 2026-11-05, against `main` at v0.66.0 (`e82b429f`). Built from P0: the connection budget of
+#1106. One tab of the browser holds the notification stream (a Web Lock), which opens at once with a comment; a run
+page, or a live view, whose stream has not opened within 5 s says so, with **Retry** on the run page; a list whose
+first connection opens late refreshes. The run page keeps its stream while its tab is hidden, since the tab shows the
+run's progress; carrying the run's and the view's streams on one connection is left until a measurement asks for it.
+The rest is proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app

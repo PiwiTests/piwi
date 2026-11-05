@@ -6,6 +6,7 @@ const props = defineProps<{
   readiness: RunLiveViewReadiness;
   projectId: number;
 }>();
+const emit = defineEmits<{ retry: [] }>();
 const { can } = useAuth();
 const status = computed(() => runLiveViewStatus(props.readiness));
 </script>
@@ -18,7 +19,11 @@ const status = computed(() => runLiveViewStatus(props.readiness));
     :data-state="status.kind"
   >
     <span role="status" aria-live="polite">{{ status.label }}</span>
-    <HelpHint v-if="status.kind === 'desktop'" topic="run.live-desktop" />
+    <template v-if="status.kind === 'stalled'">
+      <UButton size="xs" color="neutral" variant="link" class="p-0" @click="emit('retry')">Retry</UButton>
+      <HelpHint topic="run.live-stalled" />
+    </template>
+    <HelpHint v-else-if="status.kind === 'desktop'" topic="run.live-desktop" />
     <HelpHint v-else-if="status.kind === 'demo'" topic="run.live-view-demo" />
     <HelpHint v-else-if="status.kind === 'unshared'" topic="run.live-unshared" />
     <HelpHint v-else-if="status.kind === 'no-workers'" topic="run.live-no-workers" />

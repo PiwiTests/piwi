@@ -16,6 +16,7 @@ import {
   type LiveCall,
   type LiveCallLog,
 } from '#shared/live-view';
+import { onStreamStall } from '~/utils/stream-stall';
 
 const props = defineProps<{
   runId: number;
@@ -30,6 +31,8 @@ const props = defineProps<{
 const open = defineModel<boolean>('open', { required: true });
 
 const WAITING = 'Waiting for the first image of the page…';
+const STALLED =
+  'The view’s connection has not opened. Over plain HTTP a browser opens at most six connections to one address, and other Piwi tabs may hold them: close some, or serve Piwi over HTTP/2.';
 const UNAVAILABLE =
   'This worker’s live view is not available now: its test may have ended, or as many people as a run allows watch it.';
 
@@ -45,6 +48,7 @@ const now = ref(Date.now());
 const notice = ref(WAITING);
 const ended = ref(false);
 let source: EventSource | null = null;
+let cancelStallCheck: (() => void) | null = null;
 
 const baseURL = useRuntimeConfig().app.baseURL;
 
@@ -59,7 +63,16 @@ function connect(): void {
   ended.value = false;
   const query = new URLSearchParams({ worker: String(props.worker) });
   if (props.shard !== null) query.set('shard', String(props.shard));
-  source = new EventSource(`${baseURL.replace(/\/$/, '')}/api/test-runs/${props.runId}/live-view/watch?${query}`);
+  const opening = new EventSource(
+    `${baseURL.replace(/\/$/, '')}/api/test-runs/${props.runId}/live-view/watch?${query}`,
+  );
+  source = opening;
+  cancelStallCheck = onStreamStall(opening, () => {
+    if (source === opening && !image.value) notice.value = STALLED;
+  });
+  opening.onopen = () => {
+    if (notice.value === STALLED) notice.value = WAITING;
+  };
   source.onmessage = (event) => {
     const message = parseLiveViewerMessage(String(event.data));
     if (!message) return;
@@ -98,6 +111,8 @@ function end(why: string): void {
 }
 
 function disconnect(): void {
+  cancelStallCheck?.();
+  cancelStallCheck = null;
   source?.close();
   source = null;
 }
