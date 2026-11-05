@@ -353,6 +353,16 @@ describe('the text a fill, a typing or an insert types', () => {
     expect(hideTypedText(`Fill "abc" getByLabel('x')" getByLabel('Password')`)).toBe(
       `Fill "${HIDDEN_VALUE}" getByLabel('Password')`,
     );
+    const locator = `getByRole('textbox', { name: 'Card "main" number' })`;
+    expect(hideTypedText(`Fill "4242" getByLabel('x')" 4242" ${locator}`)).toBe(`Fill "${HIDDEN_VALUE}" ${locator}`);
+  });
+
+  test('reads a long title in time that grows with its length, not its square', () => {
+    // Every `" ` starts a locator that never closes: each one read to the end would take seconds.
+    const title = `Fill "${'getByText(/[" '.repeat(20_000)}`;
+    const started = performance.now();
+    expect(hideTypedText(title).startsWith(`Fill "${HIDDEN_VALUE}"`)).toBe(true);
+    expect(performance.now() - started).toBeLessThan(1000);
   });
 
   test('runs to the last quote and space before a describe() label or a locator cut short', () => {

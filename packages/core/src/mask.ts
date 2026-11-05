@@ -522,14 +522,20 @@ export function hideTypedText(title: string): string {
   return end >= start ? `${title.slice(0, start)}${HIDDEN_VALUE}${title.slice(end)}` : `${typing[0]}${HIDDEN_VALUE}"`;
 }
 
+/** The longest locator a typed call's title is read for: Playwright cuts the one it appends at 200 characters. */
+const MAX_TITLE_LOCATOR = 1000;
+
 /**
  * Where the typed text ends in a title that goes on after it. Playwright writes the text unescaped, so its own quotes
- * cannot tell: the end is the last `" ` followed by a whole locator (`tryParseLocatorChain`), which keeps a locator
- * that quotes a name (`getByRole('textbox', { name: 'Card "main" number' })`) whole. When none is followed by one (a
- * `describe()` label, a locator cut short with `…`), it is the last `" `; -1 without one.
+ * cannot tell: the end is the last `" ` followed by a whole locator (`tryParseLocatorChain`) of at most
+ * `MAX_TITLE_LOCATOR` characters, which keeps a locator that quotes a name
+ * (`getByRole('textbox', { name: 'Card "main" number' })`) whole. When none is followed by one (a `describe()` label, a
+ * locator cut short with `…`), it is the last `" `; -1 without one. Its time grows with the title's length, not its
+ * square.
  */
 function typedTextEnd(title: string, start: number): number {
-  for (let at = title.lastIndexOf('" '); at >= start; at = title.lastIndexOf('" ', at - 1)) {
+  const from = Math.max(start, title.length - MAX_TITLE_LOCATOR - 2);
+  for (let at = title.lastIndexOf('" '); at >= from; at = title.lastIndexOf('" ', at - 1)) {
     if (tryParseLocatorChain(title.slice(at + 2))) return at;
   }
   return title.lastIndexOf('" ');
