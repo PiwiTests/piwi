@@ -53,7 +53,20 @@ retries, its count reset by a steady stream, and the run's log says once when it
 relayed through the global setup's process; each key's digest is stored with its run, so a restarted instance takes a
 running run's key back, and the setting turned off and on again; **Share live** works again after either; a Project
 admin turns the live view on from a running run's status, which then says it starts with the next run. P2 is built;
-its run links stay with P5. The later phases are proposed. The bugs the analysis
+its run links stay with P5. Built from P3, ahead of the rest of it (#1110's first three items, RW3, RW4): Piwi Picker's
+Runs window asks the editor for its hubs again every minute while open, the fallback P3 keeps (the hubs' peer push
+from `~/.piwi/editors` is not built), and offers **Look again** with no run; a lost hub's runs stay grayed, as the hub
+told them last, until it answers again, and their live views restart; Watch live is kept by run and slot. Built from
+P3's D3 (#1110's fifth item): a headed stop's pause bar is painted over in every live frame of its page, in the
+editor's view and the team's alike, and a viewer's press on that band reaches none of its buttons; masking the local
+view's secret fields and the rest of D3 remain. #1110's editor focus has a stopgap ahead of P4: in both editors a new
+stop takes the focus only while no other stop is shown, and the paused page keeps a stop still held until it goes on
+or another is chosen; P4's per-worker tabs replace it. Built for #1111, from P3 and P6 (DK8, DK13 in part, DK14,
+DK20, DK19 in part): the desktop window holds its hub stream from a plugin at window start, outside the layouts, so a
+reload re-attaches to the hub's running runs (its run registry is not rebuilt) and TV mode keeps the stream and the
+output windows; stopping a local run removes only its own runs from the OS progress; a run nobody attends ends
+without the "Run failed" flash or a call for attention; and the Windows thumbnail's Open restores a minimized window
+while its Stop is disabled with no local run running, but still stops every run. The later phases are proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app
