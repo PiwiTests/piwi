@@ -1,20 +1,35 @@
 /**
  * The desktop window's event stream (`GET /api/desktop/events`), on a migrated database and the real run event bus:
  * what each run's messages say of what launched it once it began (`server/utils/desktop-run-facts.ts`), so the window
- * shows a job's steps as progress alone and finds its own processes' runs.
+ * shows a job's steps as progress alone and finds its own processes' runs, and how many runs the hub of the runs the
+ * desktop shell starts has live, so a window that reloads takes its stream again.
  */
 import { EventEmitter } from 'node:events';
-import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { openTempDb, type TempDb } from './temp-db';
 import { desktopRunFacts, desktopRunFactsReader } from '../../server/utils/desktop-run-facts';
 
-const state = vi.hoisted(() => ({ db: null as unknown }));
+const state = vi.hoisted(() => ({
+  db: null as unknown,
+  live: 0,
+  listeners: new Set<(live: number) => void>(),
+}));
 
 vi.mock('../../server/utils/auth', () => ({ requireAuth: async () => ({}) }));
 vi.mock('../../server/database', () => ({ getDatabase: async () => state.db }));
 vi.mock('../../server/utils/project-access', () => ({ getProjectScope: async () => 'all', scopeAllows: () => true }));
+vi.mock('../../server/utils/desktop-runs', () => ({
+  desktopRuns: () =>
+    Promise.resolve({
+      liveRunCount: () => state.live,
+      onLiveRunCount: (listener: (live: number) => void) => {
+        state.listeners.add(listener);
+        return () => state.listeners.delete(listener);
+      },
+    }),
+}));
 
 const BISECT = { piwiOrigin: { kind: 'bisect', ref: '37' }, piwiRunRef: 'desktop-6-unattended' };
 const CI = { piwiOrigin: { kind: 'ci' }, ci: { provider: 'github' } };
@@ -56,6 +71,10 @@ beforeAll(async () => {
     { id: 5, projectId: 1, status: 'running', startTime: new Date(), metadata: BISECT, origin: 'bisect' },
     { id: 6, projectId: 1, status: 'initializing', startTime: new Date(), metadata: null },
   ]);
+});
+
+afterEach(() => {
+  state.live = 0;
 });
 
 afterAll(async () => {
@@ -102,6 +121,16 @@ describe('the desktop event stream', () => {
       expect.objectContaining({ type: 'run-progress', failedTests: 1, origin: 'bisect', originRef: '37', job: true }),
       expect.objectContaining({ type: 'run-finished', status: 'failed', name: 'desktop-6-unattended', job: true }),
     ]);
+  });
+
+  test('says how many runs the hub has live as it opens, then each time it changes, until it ends', async () => {
+    state.live = 2;
+    const stream = await openStream();
+    await vi.waitFor(() => expect(stream.messages).toContainEqual({ type: 'hub-runs', live: 2 }));
+    for (const listener of state.listeners) listener(0);
+    await vi.waitFor(() => expect(stream.messages).toContainEqual({ type: 'hub-runs', live: 0 }));
+    stream.end();
+    expect(state.listeners.size).toBe(0);
   });
 });
 

@@ -35,8 +35,9 @@ run nobody attends never holds one, and its switch says so: a Flake Lab run, a b
 </figure>
 
 The tray opens at each stop: a headless test waits for you there. While the window is in the background, the system
-tells you of a failure or a `page.pause()`, never of a step or a pause you asked for. When no run of the app is going
-on, the window stops listening, and a stop goes on at once.
+tells you of a failure or a `page.pause()`, never of a step or a pause you asked for. The window listens on every
+page, an analytics dashboard in TV mode included, and again as soon as it reloads while a run of the app goes on.
+When no run of the app is going on, the window stops listening, and a stop goes on at once.
 
 ## Its output
 
