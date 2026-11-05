@@ -59,6 +59,63 @@ describe('FileHandler.findAllAttachments', () => {
     handler.cleanupBodyAttachments();
   });
 
+  it('names a title that ends in a dot or holds an ellipsis without a `..`', () => {
+    const handler = new FileHandler(logger);
+    const png = { contentType: 'image/png', body: Buffer.from('png') };
+    const tc = testCase([
+      { name: 'Step 13: Click Generate new code | Expected: The new code is not the expired one.', ...png },
+      { name: 'Step 3: Read the dialog as it starts | Expected: It shows "Generating code...".', ...png },
+      { name: 'build v1...v2 diff', contentType: 'text/plain', body: Buffer.from('a') },
+      { name: '..', contentType: 'application/octet-stream', body: Buffer.from('a') },
+      { name: '.env', contentType: 'text/plain', body: Buffer.from('a') },
+    ]);
+
+    expect(handler.findAllAttachments(tc).map((a) => a.originalName)).toEqual([
+      'Step-13-Click-Generate-new-code-Expected-The-new-code-is-not-the-expired-one.png',
+      'Step-3-Read-the-dialog-as-it-starts-Expected-It-shows-Generating-code.png',
+      'build-v1.v2-diff.txt',
+      'attachment',
+      'env.txt',
+    ]);
+    handler.cleanupBodyAttachments();
+  });
+
+  it('stages a long title under a 200-character name that keeps its extension and stays apart from another', () => {
+    const handler = new FileHandler(logger);
+    const png = { contentType: 'image/png', body: Buffer.from('png') };
+    const step =
+      'Step 4: Fill the registration form with a valid email, a password of twelve characters and accept the ' +
+      'terms | Expected: The submit button turns enabled, the inline validation messages disappear, the summary ' +
+      'panel lists the email and the progress bar reads two of three steps done.';
+    const gif =
+      'Step 7: Drag the card from To do to Done | Expected: The card moves, keeps its labels and assignee, the ' +
+      'board saves the new order and both column counters update without a reload of the page or the board.gif';
+    const tc = testCase([
+      { name: step, ...png },
+      { name: gif, contentType: 'image/gif', body: Buffer.from('png') },
+      { name: 'x'.repeat(300), ...png },
+      { name: `${'x'.repeat(299)}y`, ...png },
+      { name: `${'x'.repeat(190)}. ${'y'.repeat(100)}`, ...png },
+    ]);
+
+    try {
+      const found = handler.findAllAttachments(tc);
+      expect(found.map((a) => a.originalName)).toEqual([
+        'Step-4-Fill-the-registration-form-with-a-valid-email-a-password-of-twelve-characters-and-accept-the-terms-' +
+          'Expected-The-submit-button-turns-enabled-the-inline-validation-messages-disappear-the-354f5545.png',
+        'Step-7-Drag-the-card-from-To-do-to-Done-Expected-The-card-moves-keeps-its-labels-and-assignee-the-board-' +
+          'saves-the-new-order-and-both-column-counters-update-without-a-reload-of-the-page-or-88c74cd5.gif',
+        `${'x'.repeat(191)}-0d4e2ca9.png`,
+        `${'x'.repeat(191)}-d71979b4.png`,
+        `${'x'.repeat(190)}-49e06af3.png`,
+      ]);
+      for (const a of found) expect(fs.readFileSync(a.path).toString()).toBe('png');
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      handler.cleanupBodyAttachments();
+    }
+  });
+
   it('reuses one temp file across repeated lookups of the same attachment', () => {
     const handler = new FileHandler(logger);
     const tc = testCase([{ name: 'note', contentType: 'text/plain', body: Buffer.from('hello') }]);

@@ -381,7 +381,7 @@ describe('report_fix_attempt', () => {
     });
     const [other] = await db
       .insert(schema.testRunsCases)
-      .values({ testRunId: 1, testCaseId: 1, status: 'failed', failureClusterId: 2 })
+      .values({ testRunId: 1, testCaseId: 1, repeatEachIndex: 1, status: 'failed', failureClusterId: 2 })
       .returning({ id: schema.testRunsCases.id });
     const recorded = (await tool('record_diagnosis')(
       db as never,

@@ -568,12 +568,13 @@ export const testRunsCases = sqliteTable(
     // per-case recency sorts used by history/flakiness queries.
     testCaseCreatedIdx: index('idx_test_runs_cases_case_created').on(table.testCaseId, table.createdAt),
     failureClusterIdIdx: index('idx_test_runs_cases_failure_cluster_id').on(table.failureClusterId),
+    // An execution without a project (`browser_name` NULL) is unique too: the index reads it as ''.
     runCaseBrowserUnique: uniqueIndex('idx_test_runs_cases_run_browser').on(
       table.testRunId,
       table.testCaseId,
       table.repeatEachIndex,
       table.retries,
-      table.browserName,
+      sql`(CASE WHEN ${table.browserName} IS NULL THEN '' ELSE ${table.browserName} END)`,
     ),
     // Partial indexes back the payload-GC reachability probes; populated on
     // failures only, so the hot insert path pays almost nothing for them.

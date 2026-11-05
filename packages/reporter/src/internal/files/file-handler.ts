@@ -378,9 +378,29 @@ export class FileHandler {
   }
 }
 
-/** Attachment name reduced to characters safe in a file name. */
+/**
+ * Longest base name a body attachment is staged and stored under. The name is ASCII, so this is its byte count: with
+ * its extension and the staging prefix, it stays within the 255-byte file-name limit of common file systems.
+ */
+const MAX_BASE_NAME_LENGTH = 200;
+
+/**
+ * Attachment name reduced to characters safe in a file name, holding no `..` and neither starting nor ending in `.`
+ * or `-`, so the extension the caller appends never forms `..` (`expired one.` gives `expired-one`). A name longer
+ * than `MAX_BASE_NAME_LENGTH` keeps its head, then the first 8 hex digits of the full name's SHA-256, so two long
+ * names stay apart, then its own extension (`.gif`), which the dashboard serves the file by.
+ */
 function safeFileName(name: string): string {
-  return name.replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') || 'attachment';
+  const safe =
+    name
+      .replace(/[^\w.-]+/g, '-')
+      .replace(/\.{2,}/g, '.')
+      .replace(/^[-.]+|[-.]+$/g, '') || 'attachment';
+  if (safe.length <= MAX_BASE_NAME_LENGTH) return safe;
+  const extension = /\.[A-Za-z0-9]{1,8}$/.exec(safe)?.[0] ?? '';
+  const hash = crypto.createHash('sha256').update(name).digest('hex').slice(0, 8);
+  const head = safe.slice(0, MAX_BASE_NAME_LENGTH - extension.length - hash.length - 1).replace(/[-.]+$/, '');
+  return `${head}-${hash}${extension}`;
 }
 
 function formatMiB(bytes: number): string {

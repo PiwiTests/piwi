@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from 'vitest';
+import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { fileURLToPath } from 'node:url';
 import { seedFailRanksFixture } from './fail-ranks-fixture';
 
@@ -26,6 +26,17 @@ describe.skipIf(!postgresUrl)('firstFailRank on PostgreSQL', async () => {
 
   const admin = postgres(postgresUrl!, { onnotice: () => {}, max: 1 });
   let client: ReturnType<typeof postgres> | undefined;
+  let db: ReturnType<typeof drizzle<typeof schema>>;
+
+  beforeAll(async () => {
+    await admin.unsafe(`DROP DATABASE IF EXISTS ${databaseName}`);
+    await admin.unsafe(`CREATE DATABASE ${databaseName}`);
+    client = postgres(process.env.PIWI_DATABASE_URL!, { onnotice: () => {}, max: 4 });
+    db = drizzle(client, { schema });
+    await migrate(db, {
+      migrationsFolder: fileURLToPath(new URL('../../server/database/migrations-pg', import.meta.url)),
+    });
+  });
 
   afterAll(async () => {
     await client?.end();
@@ -34,13 +45,6 @@ describe.skipIf(!postgresUrl)('firstFailRank on PostgreSQL', async () => {
   });
 
   test('ranks the newest failure among the latest results of eligible runs', async () => {
-    await admin.unsafe(`DROP DATABASE IF EXISTS ${databaseName}`);
-    await admin.unsafe(`CREATE DATABASE ${databaseName}`);
-    client = postgres(process.env.PIWI_DATABASE_URL!, { onnotice: () => {}, max: 4 });
-    const db = drizzle(client, { schema });
-    await migrate(db, {
-      migrationsFolder: fileURLToPath(new URL('../../server/database/migrations-pg', import.meta.url)),
-    });
     const fixture = await seedFailRanksFixture(db, schema);
 
     const catalog = await loadSelectionCatalog(db as never, fixture.projectId, {
