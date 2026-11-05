@@ -110,11 +110,12 @@ class RunEventBus {
   private liveResourcesDeclined = new Map<number, boolean>();
   /**
    * Each live run's latest step event per worker (`liveStepKey`), so whoever opens the run while a test is in a step
-   * sees it, as the first person to open it does. A worker's next step replaces it; the run's go on cleanup.
+   * sees it, as the first person to open it does. A worker's next step replaces it, its test's end or an answer that
+   * nobody watches drops it, and the run's go on cleanup.
    */
   private liveSteps = new Map<number, Map<string, StepRunEvent>>();
-  /** When the last global run lifecycle event was published: `/api/stream` tells each new connection. */
-  private lastGlobalEventAt: number | null = null;
+  /** When each project's last global run lifecycle event was published: `/api/stream` tells each new connection. */
+  private lastGlobalEventAt = new Map<number, number>();
 
   constructor() {
     // Allow many concurrent listeners (one per SSE connection)
@@ -302,13 +303,20 @@ class RunEventBus {
    * Broadcast a global run lifecycle event to all dashboard subscribers.
    */
   publishGlobal(event: GlobalRunEvent): void {
-    this.lastGlobalEventAt = Date.now();
+    this.lastGlobalEventAt.set(event.projectId, Date.now());
     this.globalEmitter.emit('global', event);
   }
 
-  /** When the last global run lifecycle event was published since this server started, or null for none. */
-  lastGlobalEvent(): number | null {
-    return this.lastGlobalEventAt;
+  /**
+   * When the last global run lifecycle event of a project `allows` was published since this server started, or null
+   * for none.
+   */
+  lastGlobalEvent(allows: (projectId: number) => boolean): number | null {
+    let last: number | null = null;
+    for (const [projectId, at] of this.lastGlobalEventAt) {
+      if (allows(projectId) && (last === null || at > last)) last = at;
+    }
+    return last;
   }
 
   /**

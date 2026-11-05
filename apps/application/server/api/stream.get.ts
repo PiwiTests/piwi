@@ -9,7 +9,7 @@ defineRouteMeta({
     tags: ['Stream'],
     summary: 'Server-sent events stream',
     description:
-      "Subscribes to global run events (status changes, case updates) over SSE. The stream starts with a comment line once it is subscribed: every event published after it arrives. Its first event, `{ type: 'stream-open', lastEventAt }`, says when this server last published a run event (milliseconds since the epoch, null for none since it started).",
+      "Subscribes to global run events (status changes, case updates) over SSE. The stream starts with a comment line once it is subscribed: every event published after it arrives. Its first event, `{ type: 'stream-open', lastEventAt }`, says when this server last published a run event of a project the caller may read (milliseconds since the epoch, null for none since it started).",
     'x-required-permission': 'project:read',
   },
 });
@@ -36,7 +36,8 @@ export default eventHandler(async (event) => {
     // from the first moment it misses no event (`useRunEvents`' `onOpen`). Then when the last event went out, so a
     // page whose data is older than it reads that data again (`useRunStream`).
     controller.enqueue(encoder.encode(': subscribed\n\n'));
-    const opened = { type: 'stream-open', lastEventAt: runEventBus.lastGlobalEvent() };
+    const lastEventAt = runEventBus.lastGlobalEvent((projectId) => scopeAllows(scope, projectId));
+    const opened = { type: 'stream-open', lastEventAt };
     controller.enqueue(encoder.encode(`data: ${JSON.stringify(opened)}\n\n`));
     return unsubscribe;
   });

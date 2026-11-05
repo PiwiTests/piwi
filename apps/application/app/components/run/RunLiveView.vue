@@ -16,7 +16,7 @@ import {
   type LiveCall,
   type LiveCallLog,
 } from '#shared/live-view';
-import { onStreamStall } from '~/utils/stream-stall';
+import { stallWatch, STREAM_RECONNECT_STALL_MS } from '~/utils/stream-stall';
 
 const props = defineProps<{
   runId: number;
@@ -49,18 +49,13 @@ const notice = ref(WAITING);
 const ended = ref(false);
 let source: EventSource | null = null;
 let viewOpen = false;
-let cancelStallCheck: (() => void) | null = null;
-/** Say so when the view's stream has not been open for `STREAM_STALL_MS`, through its reconnections. */
-function watchForStall(): void {
-  if (cancelStallCheck || viewOpen) return;
-  cancelStallCheck = onStreamStall(
-    () => viewOpen,
-    () => {
-      cancelStallCheck = null;
-      if (source) notice.value = STALLED;
-    },
-  );
-}
+/** Says so when the view's stream has not been open for a while, through its reconnections. */
+const streamStall = stallWatch(
+  () => viewOpen,
+  () => {
+    if (source) notice.value = STALLED;
+  },
+);
 
 const baseURL = useRuntimeConfig().app.baseURL;
 
@@ -80,11 +75,10 @@ function connect(): void {
   );
   source = opening;
   viewOpen = false;
-  watchForStall();
+  streamStall.arm();
   opening.onopen = () => {
     viewOpen = true;
-    cancelStallCheck?.();
-    cancelStallCheck = null;
+    streamStall.disarm();
     if (notice.value === STALLED) notice.value = image.value ? '' : WAITING;
   };
   source.onmessage = (event) => {
@@ -114,7 +108,7 @@ function connect(): void {
   };
   source.onerror = () => {
     viewOpen = false;
-    if (source?.readyState === EventSource.CONNECTING) watchForStall();
+    if (source?.readyState === EventSource.CONNECTING) streamStall.arm(STREAM_RECONNECT_STALL_MS);
     // A stream the instance refused, or one that cannot open again, is closed for good.
     if (source?.readyState === EventSource.CLOSED) end(image.value ? LIVE_VIEW_END_TEXT['worker-left'] : UNAVAILABLE);
   };
@@ -127,8 +121,7 @@ function end(why: string): void {
 }
 
 function disconnect(): void {
-  cancelStallCheck?.();
-  cancelStallCheck = null;
+  streamStall.disarm();
   source?.close();
   source = null;
 }
