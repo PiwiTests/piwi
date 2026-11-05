@@ -15,7 +15,10 @@
  * naming the stream (`viewer`); `show` says which runs hold their failures (the tray's **Hold failures**), so a failure
  * no pause bar shows is held in them, and is said again as the stream opens again; `watch` says which lanes the window
  * shows now: those watched that a listener shows while the window is not hidden, said again as the stream opens again.
- * **Share live** asks what it sends the first time in this session of the app (`shareAsks`).
+ * Each time the window shows a lane again, its view goes up (`laneView`): a frame of an earlier view, the one kept
+ * included, is the page as it last showed. A run the stream does not list as it opens (`listed`) ended meanwhile: what
+ * the window kept of it goes. **Share live** asks what it sends the first time in this session of the app
+ * (`shareAsks`).
  */
 import {
   parseHubMessage,
@@ -36,7 +39,7 @@ import {
   type DesktopRunPick,
 } from '#shared/desktop-runs';
 import { errorMessage } from '~/utils';
-import { desktopLaneKey, desktopViewKey, desktopWorkerKey } from '~/utils/desktop-run-view';
+import { desktopLaneKey, desktopLaneRun, desktopViewKey, desktopWorkerKey } from '~/utils/desktop-run-view';
 
 /** A code made at a stop, or a locator picked, in the order they came, each with the number it came as. */
 export type DesktopKept =
@@ -77,6 +80,8 @@ interface HubState {
   lanes: Record<string, number[]>;
   /** Why the hub would not show a lane the window asked to watch, by `desktopLaneKey`, until it is asked again. */
   laneRefusals: Record<string, string>;
+  /** How many times the window told the hub to show each lane, by `desktopLaneKey`: the view its frames belong to. */
+  laneViews: Record<string, number>;
 }
 
 /** How long the window waits before it opens a stream the server refused (no hub, too many windows) again. */
@@ -92,6 +97,7 @@ const state = reactive<HubState>({
   watchLive: {},
   lanes: {},
   laneRefusals: {},
+  laneViews: {},
 });
 
 let source: EventSource | null = null;
@@ -106,9 +112,15 @@ let told = new Set<string>();
 const frameListeners = new Map<string, Set<(frame: DesktopFrame) => void>>();
 /** The latest frame of each view a listener asked for, in memory alone, until the view ends. */
 const latestFrames = new Map<string, DesktopFrame>();
-const laneListeners = new Map<string, Set<(frame: DesktopLaneFrame) => void>>();
-/** The latest frame of each lane the window watches, in memory alone, until the lane is no longer watched. */
-const latestLaneFrames = new Map<string, Extract<DesktopLaneFrame, { data: string }>>();
+/** Hears a frame of a lane, and the view of the lane it came in (`laneView`). */
+export type DesktopLaneListener = (frame: DesktopLaneFrame, view: number) => void;
+
+const laneListeners = new Map<string, Set<DesktopLaneListener>>();
+/**
+ * The latest frame of each lane the window watches, with the view it came in, in memory alone, until the lane is no
+ * longer watched.
+ */
+const latestLaneFrames = new Map<string, { frame: Extract<DesktopLaneFrame, { data: string }>; view: number }>();
 /** The lanes the server was told the window watches, on this stream, by `desktopLaneKey`. */
 let lanesTold = new Map<string, { ref: string; lane: number }>();
 /** A change of the lanes the window shows waits for the end of the tick: a listener that comes back changes none. */
@@ -155,6 +167,17 @@ function heard(text: string): void {
       if (typeof pick?.locator === 'string') keep({ type: 'pick', pick });
       return;
     }
+    case 'listed': {
+      // Every run live as the stream opened came before: a run the window kept that did not come ended meanwhile.
+      const kept = [
+        ...Object.keys(state.lanes),
+        ...Object.keys(state.watchLive),
+        ...heardAt.keys(),
+        ...Object.keys(state.laneRefusals).map(desktopLaneRun),
+      ];
+      for (const ref of new Set(kept)) if (!state.sessions[ref]) forgetRun(ref);
+      return;
+    }
     case 'notice':
       // A sentence about a run (a stop that went on, a code not made): the tray shows it as a toast.
       if (typeof value.message === 'string') {
@@ -186,8 +209,9 @@ function heard(text: string): void {
     const { type: _type, ...frame } = message;
     if (!watchesLane(frame.ref, frame.lane)) return;
     const key = desktopLaneKey(frame.ref, frame.lane);
-    if ('data' in frame) latestLaneFrames.set(key, frame);
-    for (const listener of laneListeners.get(key) ?? []) listener(frame);
+    const view = state.laneViews[key] ?? 0;
+    if ('data' in frame) latestLaneFrames.set(key, { frame, view });
+    for (const listener of laneListeners.get(key) ?? []) listener(frame, view);
   }
 }
 
@@ -195,10 +219,7 @@ function heardSession(session: HubSession): void {
   state.roots[session.ref] = session.root;
   if (session.ended) {
     delete state.sessions[session.ref];
-    heardAt.delete(session.ref);
-    delete state.watchLive[session.ref];
-    for (const lane of state.lanes[session.ref] ?? []) forgetLane(session.ref, lane);
-    delete state.lanes[session.ref];
+    forgetRun(session.ref);
     return;
   }
   state.sessions[session.ref] = session;
@@ -210,6 +231,17 @@ function heardSession(session: HubSession): void {
     heard.set(worker.worker, since);
     for (const listener of stopListeners) listener(session, worker);
   }
+}
+
+/** A run ended: what the window kept to watch it goes, its lanes' frames and refusals with them. */
+function forgetRun(ref: string): void {
+  heardAt.delete(ref);
+  delete state.watchLive[ref];
+  for (const lane of state.lanes[ref] ?? []) forgetLane(ref, lane);
+  delete state.lanes[ref];
+  for (const key of Object.keys(state.laneRefusals)) if (desktopLaneRun(key) === ref) delete state.laneRefusals[key];
+  for (const key of Object.keys(state.laneViews)) if (desktopLaneRun(key) === ref) delete state.laneViews[key];
+  for (const key of [...lanesTold.keys()]) if (desktopLaneRun(key) === ref) lanesTold.delete(key);
 }
 
 function keep(item: Extract<DesktopRunEvent, { type: 'stop-code' | 'pick' }>): void {
@@ -263,6 +295,7 @@ function close(): void {
     watchLive: {},
     lanes: {},
     laneRefusals: {},
+    laneViews: {},
   });
 }
 
@@ -332,15 +365,19 @@ async function tellLanes(): Promise<Map<string, DesktopRunAnswer>> {
     ...[...lanesTold].filter(([key]) => !shown.has(key)).map(([key, at]) => ({ key, ...at, on: false })),
   ];
   for (const { key, ref, lane, on } of changes) {
-    if (on) lanesTold.set(key, { ref, lane });
-    else lanesTold.delete(key);
+    if (on) {
+      lanesTold.set(key, { ref, lane });
+      state.laneViews[key] = (state.laneViews[key] ?? 0) + 1;
+    } else lanesTold.delete(key);
   }
   await Promise.all(
     changes.map(async ({ key, ref, lane, on }) => {
-      const answer = await command({ type: 'watch', ref, lane, on });
+      const { answer, reached } = await send({ type: 'watch', ref, lane, on });
       answers.set(key, answer);
       if (!on || answer.ok || viewer !== stream) return;
       lanesTold.delete(key);
+      // A command that never reached the hub leaves the lane watched: it is said again as the stream opens again.
+      if (!reached) return;
       setLane(ref, lane, false);
       state.laneRefusals[key] = answer.message;
     }),
@@ -348,17 +385,26 @@ async function tellLanes(): Promise<Map<string, DesktopRunAnswer>> {
   return answers;
 }
 
-/** A command of the window's, answered as the hub answers it; one that never reached the hub says why. */
-async function command(body: Record<string, unknown>): Promise<DesktopRunAnswer> {
-  if (!viewer) return { ok: false, message: 'The window is not connected to the runs: it connects again in a moment.' };
+/** A command of the window's, as the hub answered it (`reached`), or why it never reached the hub. */
+async function send(body: Record<string, unknown>): Promise<{ answer: DesktopRunAnswer; reached: boolean }> {
+  if (!viewer) {
+    const message = 'The window is not connected to the runs: it connects again in a moment.';
+    return { answer: { ok: false, message }, reached: false };
+  }
   try {
-    return await $fetch<HubAnswer>('/api/desktop/runs/commands', {
+    const answer = await $fetch<HubAnswer>('/api/desktop/runs/commands', {
       method: 'POST',
       body: { ...body, id: nextId++, viewer },
     });
+    return { answer, reached: true };
   } catch (error) {
-    return { ok: false, message: errorMessage(error, 'The desktop app did not answer.') };
+    return { answer: { ok: false, message: errorMessage(error, 'The desktop app did not answer.') }, reached: false };
   }
+}
+
+/** A command of the window's, answered as the hub answers it; one that never reached the hub says why. */
+async function command(body: Record<string, unknown>): Promise<DesktopRunAnswer> {
+  return (await send(body)).answer;
 }
 
 export function useDesktopRunHub() {
@@ -400,6 +446,10 @@ export function useDesktopRunHub() {
     },
     /** Whether the window watches a lane of a run (Playwright's `parallelIndex`): its page shows as its test runs. */
     watchesLane,
+    /** The view of a lane the window shows now: a frame of an earlier one is the page as it last showed. */
+    laneView(ref: string, lane: number): number {
+      return state.laneViews[desktopLaneKey(ref, lane)] ?? 0;
+    },
     /**
      * Watches a lane of a run, or stops, for the window, until its run ends: the hub hears it while a listener shows
      * the lane (`onLaneFrame`). Answers what the hub said, once it was told.
@@ -411,17 +461,17 @@ export function useDesktopRunHub() {
       return (await tellLanesSoon()).get(key) ?? { ok: true, message: '' };
     },
     /**
-     * Hears the frames of a lane the window watches, the latest one at once when one came; returns the unsubscribe.
-     * While a listener hears it, the window shows the lane, and the hub sends its frames.
+     * Hears the frames of a lane the window watches, each with the view it came in, the latest one at once when one
+     * came; returns the unsubscribe. While a listener hears it, the window shows the lane, and the hub sends its frames.
      */
-    onLaneFrame(ref: string, lane: number, listener: (frame: DesktopLaneFrame) => void): () => void {
+    onLaneFrame(ref: string, lane: number, listener: DesktopLaneListener): () => void {
       const key = desktopLaneKey(ref, lane);
       const listeners = laneListeners.get(key) ?? new Set();
       laneListeners.set(key, listeners);
       listeners.add(listener);
       void tellLanesSoon();
       const latest = latestLaneFrames.get(key);
-      if (latest) listener(latest);
+      if (latest) listener(latest.frame, latest.view);
       return () => {
         listeners.delete(listener);
         if (listeners.size === 0) laneListeners.delete(key);

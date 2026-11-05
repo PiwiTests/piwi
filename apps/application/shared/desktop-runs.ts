@@ -58,6 +58,8 @@ export type DesktopRunEvent =
    * the window.
    */
   | HubSessionMessage
+  /** Once, after every run live as the stream opened: a run the window kept that is not among them ended meanwhile. */
+  | { type: 'listed' }
   /** A frame of a stop the window watches (`view`), or why its view sends none now. */
   | HubFrameMessage
   | HubFrameRefusal

@@ -630,6 +630,20 @@ describe('the window', () => {
     expect(heard).toEqual([1, 0]);
   });
 
+  it('hears that every run live as its stream opened was sent, after them', async () => {
+    const worker = new Worker(folder).attach('desktop-17');
+    worker.begin();
+    await waitFor(() => runs.sessions.current().some((s) => s.ref === 'desktop-17'));
+    const window = await openWindow();
+    const listed = window.events.findIndex((e) => e.type === 'listed');
+    const run = window.events.findIndex((e) => e.type === 'session' && e.session.ref === 'desktop-17');
+    expect(run).toBeGreaterThan(0);
+    expect(listed).toBeGreaterThan(run);
+    expect(window.events.filter((e) => e.type === 'listed')).toHaveLength(1);
+    window.close();
+    worker.socket.destroy();
+  });
+
   it('names its stream, and refuses a command of a stream that is not open or that is no command', async () => {
     const window = await openWindow();
     expect(window.events[0]).toEqual({ type: 'hello', viewer: window.viewer });

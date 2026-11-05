@@ -132,6 +132,11 @@ export function desktopLaneKey(ref: string, lane: number): string {
   return `${ref}|lane ${lane}`;
 }
 
+/** The run a lane's key names (`desktopLaneKey`). */
+export function desktopLaneRun(key: string): string {
+  return key.slice(0, key.lastIndexOf('|lane '));
+}
+
 /** What a running worker says in place of **Watch** when its reporter shows a stopped test alone. */
 export const DESKTOP_WATCH_NEEDS_UPDATE = 'Update the reporter to watch a running test.';
 
@@ -171,6 +176,8 @@ export interface DesktopRunInputTarget {
 export interface DesktopLiveImageHandle {
   /** Shows a JPEG frame once decoded, the latest alone waiting meanwhile; `shown` runs as it shows. */
   draw(frame: { width: number; height: number; data: string }, shown?: () => void): void;
+  /** Shows none of the frames waiting or decoding: the image keeps the one it shows. */
+  drop(): void;
   /** Shows nothing, and drops the frame waiting. */
   clear(): void;
   /** Gives the image the keyboard. */

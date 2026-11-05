@@ -437,7 +437,8 @@ export class DesktopRuns {
 
   /**
    * A window's stream opens: it is a peer of the hub, subscribed at once, and hears first the id its commands name
-   * it by, then the codes and the picks kept, then each run. Null while the hub does not listen, or past `MAX_WINDOWS`.
+   * it by, then the codes and the picks kept, then each run, then that every run live was listed (`listed`). Null while
+   * the hub does not listen, or past `MAX_WINDOWS`.
    */
   async openWindow(sink: DesktopRunSink): Promise<{ viewer: string; close(): void } | null> {
     if (!this.hub || this.windows.size >= MAX_WINDOWS) return null;
@@ -463,6 +464,7 @@ export class DesktopRuns {
     sink.send({ type: 'hello', viewer });
     for (const kept of this.kept) sink.send(kept);
     await window.peer.command({ type: 'subscribe', id: 1 });
+    if (this.windows.get(viewer) === window) sink.send({ type: 'listed' });
     return { viewer, close: () => this.closeWindow(viewer) };
   }
 

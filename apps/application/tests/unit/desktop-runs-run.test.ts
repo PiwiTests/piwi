@@ -462,6 +462,10 @@ describe.skipIf(!runnable)('a run the desktop shell starts', () => {
       });
       const stop = await waitFor(() => (lastWorker()?.state === 'stopped' ? lastWorker()?.stop : undefined));
       await waitFor(() => lastWorker()?.stop?.intents?.includes('input'));
+      // A frame of the stop comes though the page paints nothing new: the window shows the stop from the lane alone.
+      expect(await waitFor(() => laneFrames().find((e) => e.since === stop.since))).toMatchObject({
+        test: running.test!.id,
+      });
       expect(
         await send({
           type: 'input',
@@ -474,10 +478,6 @@ describe.skipIf(!runnable)('a run the desktop shell starts', () => {
           ],
         }),
       ).toMatchObject({ ok: true });
-      // The click repaints the stopped page: its frame comes, of the stop.
-      expect(await waitFor(() => laneFrames().find((e) => e.since === stop.since))).toMatchObject({
-        test: running.test!.id,
-      });
       expect(
         await send({ type: 'runControl', ref: REF, worker: running.worker, action: 'resume', since: stop.since }),
       ).toMatchObject({ ok: true });

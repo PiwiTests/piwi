@@ -4,10 +4,11 @@
  * (`watch`). **Watch** shows the page of the lane's running test as it paints, and of each stop it comes to, through
  * its tests and the workers Playwright starts in it, until it is turned off or the run ends (the run page's **Watch**
  * and **Pause and watch** turn it on too, through `useDesktopRunHub`). The frames are drawn into one image
- * (`DesktopRunLiveImage`), which keeps the last one across a Step, a Resume and between two tests, dimmed and marked
- * as running, until the next. At a stop, the image of the stopped page shows at once, and the stop takes the clicks,
- * the keys and **Pick on the image** on the image as it does on a stop watched live: the window watches the stop
- * through the lane.
+ * (`DesktopRunLiveImage`), which keeps the last one, dimmed and marked as running, until a frame of the page as it is
+ * now comes: across a Step, a Resume and between two tests, as the tray opens again or the window shows again (a frame
+ * of an earlier view of the lane), and while the lane says why it sends none. At a stop of a test, the stop takes the
+ * clicks, the keys and **Pick on the image** on the image as it does on a stop watched live: the window watches the
+ * stop through the lane. Turned off, Watch live goes off for the worker too.
  */
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
 import { isViewFrameData } from '@piwitests/core/run-view';
@@ -17,7 +18,6 @@ import {
   desktopLaneKey,
   desktopRunStop,
   desktopStopTakes,
-  isDesktopRunImage,
   type DesktopLaneAt,
   type DesktopLiveImageHandle,
 } from '~/utils/desktop-run-view';
@@ -49,30 +49,43 @@ const takes = computed(() => (stop.value ? desktopStopTakes(props.worker, stop.v
 // ── The frames ────────────────────────────────────────────────────────────────────────────────────────────────────
 
 const liveImage = useTemplateRef<DesktopLiveImageHandle>('liveImage');
-/** Where the image shown stands: the worker that sent it, its test and its stop. */
-const shown = ref<DesktopLaneAt | null>(null);
+/** Where the image shown stands: the worker that sent it, its test, its stop, and the view of the lane it came in. */
+const shown = ref<(DesktopLaneAt & { view: number }) | null>(null);
 /** Why the lane sends no frame now, where it stood as it said so. */
 const refused = ref<(DesktopLaneAt & { text: string }) | null>(null);
-/** The image shows the page as it is now: the stop the worker stands at, else the test it runs. */
-const current = computed(() => !!shown.value && desktopLaneFrameCurrent(shown.value, props.worker));
+/** How many times the lane said why it sends no frame: a frame drawn before the last time clears none of it. */
+let refusals = 0;
+/** The image shows the page as it is now: the stop the worker stands at, else the test it runs, in this view. */
+const current = computed(
+  () =>
+    !!shown.value &&
+    shown.value.view === hub.laneView(runRef.value, lane.value) &&
+    desktopLaneFrameCurrent(shown.value, props.worker),
+);
+/** Why the lane sends no frame of the page as it is now. */
+const refusedNow = computed(() =>
+  refused.value && desktopLaneFrameCurrent(refused.value, props.worker) ? refused.value.text : null,
+);
+/** The image is the page as it is now, and frames of it come. */
+const live = computed(() => current.value && !refusedNow.value);
 /** Pick on the image is on: the next click on it names the element under the pointer. */
 const picking = ref(false);
 let unlisten: (() => void) | null = null;
-/** The stop whose image was asked last. */
-let askedAt: string | null = null;
-/** Why the stop's image did not come, for the stop it was asked at. */
-const stillRefused = ref<{ since: string; text: string } | null>(null);
 
-function heard(frame: DesktopLaneFrame): void {
+function heard(frame: DesktopLaneFrame, view: number): void {
   const at: DesktopLaneAt = { worker: frame.worker, test: frame.test, since: frame.since };
   if ('refused' in frame) {
+    refusals++;
     refused.value = { ...at, text: frame.refused };
+    // A frame waiting, or decoding, came before: the image stays as it is, dimmed.
+    liveImage.value?.drop();
     return;
   }
   if (!isViewFrameData(frame.data)) return;
+  const seen = refusals;
   liveImage.value?.draw(frame, () => {
-    shown.value = at;
-    refused.value = null;
+    shown.value = { ...at, view };
+    if (refusals === seen) refused.value = null;
   });
 }
 
@@ -86,7 +99,6 @@ function listen(on: boolean): void {
   }
   shown.value = null;
   refused.value = null;
-  askedAt = null;
   picking.value = false;
   liveImage.value?.clear();
 }
@@ -97,26 +109,6 @@ onBeforeUnmount(() => {
   unlisten?.();
   unlisten = null;
 });
-
-/**
- * The image of a stopped page, asked once per stop: it shows until a frame of the stop comes, as a page that does not
- * paint sends none.
- */
-async function askStill(since: string): Promise<void> {
-  askedAt = since;
-  const { worker } = props.worker;
-  const test = props.worker.test?.id ?? null;
-  const answer = await hub.command({ type: 'pausedPage', ref: runRef.value, worker });
-  const image = answer.ok ? answer.image : null;
-  if (!image || image.mime !== 'image/jpeg' || !isDesktopRunImage(image.data) || !image.width || !image.height) {
-    stillRefused.value = { since, text: answer.ok ? 'The test has no image of this page.' : answer.message };
-    return;
-  }
-  if (!watched.value || stop.value?.since !== since || shown.value?.since === since) return;
-  liveImage.value?.draw({ width: image.width, height: image.height, data: image.data }, () => {
-    if (shown.value?.since !== since) shown.value = { worker, test, since };
-  });
-}
 
 // ── At a stop ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -150,13 +142,6 @@ async function pickAt(point: { x: number; y: number }): Promise<void> {
   emit('said', answer, { picked: true });
 }
 
-watch(
-  () => [watched.value, stop.value?.since ?? null] as const,
-  ([on, since]) => {
-    if (on && since && askedAt !== since && shown.value?.since !== since) void askStill(since);
-  },
-  { immediate: true },
-);
 watch(pickable, (can) => {
   if (!can) picking.value = false;
 });
@@ -173,23 +158,22 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onEscape));
 const watchButton = ref<{ $el: HTMLElement } | null>(null);
 
 function toggle(): void {
-  void hub.setLaneWatch(runRef.value, lane.value, !watched.value);
+  const on = !watched.value;
+  // Watch off watches the worker no more, at its stops either.
+  if (!on) hub.setWatchLive(runRef.value, props.worker.worker, false);
+  void hub.setLaneWatch(runRef.value, lane.value, on);
 }
 
-const alt = computed(() =>
-  inputTarget.value
-    ? 'The page, live: clicks and keys go to it'
-    : current.value
-      ? 'The page, live'
-      : 'The page as it last showed',
-);
+/** What the image is: live while frames of the page as it is now come, and whether it takes the clicks and keys. */
+const alt = computed(() => {
+  const what = live.value ? 'The page, live' : 'The page as it last showed';
+  return inputTarget.value ? `${what}: clicks and keys go to it` : what;
+});
 
 const note = computed((): { icon?: string; text: string } | null => {
   if (!watched.value) return refusedLane.value ? { icon: 'i-lucide-triangle-alert', text: refusedLane.value } : null;
-  const why = refused.value && desktopLaneFrameCurrent(refused.value, props.worker) ? refused.value.text : null;
-  if (why) return { icon: 'i-lucide-triangle-alert', text: why };
+  if (refusedNow.value) return { icon: 'i-lucide-triangle-alert', text: refusedNow.value };
   if (current.value) return null;
-  if (stop.value && stillRefused.value?.since === stop.value.since) return { text: stillRefused.value.text };
   if (stop.value) return { icon: 'i-lucide-clock', text: 'Taking an image of the page…' };
   if (props.worker.state === 'between') return shown.value ? null : { text: 'The page shows as the next test starts.' };
   return shown.value ? null : { icon: 'i-lucide-clock', text: 'Starting the live view…' };
@@ -206,6 +190,7 @@ const note = computed((): { icon?: string; text: string } | null => {
     <div class="flex flex-wrap gap-1.5">
       <UButton
         ref="watchButton"
+        data-focus="page:watch"
         size="xs"
         color="neutral"
         variant="outline"
@@ -239,8 +224,8 @@ const note = computed((): { icon?: string; text: string } | null => {
       v-model:picking="picking"
       :alt="alt"
       :input="inputTarget"
-      :dimmed="!current"
-      :mark="current ? 'Live' : stop ? null : 'Running…'"
+      :dimmed="!live"
+      :mark="live ? 'Live' : stop ? null : 'Running…'"
       @pick="pickAt"
       @said="emit('said', $event, {})"
       @leave="watchButton?.$el?.focus()"

@@ -54,7 +54,7 @@ const viewport = ref<{ width: number; height: number } | null>(null);
 /** A frame waiting while the one before decodes: the latest alone. */
 let next: { frame: { width: number; height: number; data: string }; shown?: () => void } | null = null;
 let decoding = false;
-/** Goes up as the image is cleared: a frame decoding for the image before is not shown. */
+/** Goes up as the frames waiting are dropped: one decoding before is not shown. */
 let generation = 0;
 
 function draw(frame: { width: number; height: number; data: string }, shown?: () => void): void {
@@ -87,15 +87,21 @@ async function drawFrames(): Promise<void> {
   if (next) void drawFrames();
 }
 
-function clear(): void {
+/** The frame waiting, and one decoding, are not shown: the image keeps the one it shows. */
+function drop(): void {
   generation++;
   next = null;
+}
+
+function clear(): void {
+  drop();
   viewport.value = null;
   img.value?.removeAttribute('src');
 }
 
 defineExpose({
   draw,
+  drop,
   clear,
   focus: () => img.value?.focus({ preventScroll: true }),
   viewport,
@@ -248,8 +254,7 @@ function onPaste(event: ClipboardEvent): void {
 }
 
 onBeforeUnmount(() => {
-  generation++;
-  next = null;
+  drop();
   stopInput();
 });
 </script>

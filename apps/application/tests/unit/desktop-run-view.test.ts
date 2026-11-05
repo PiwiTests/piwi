@@ -760,6 +760,125 @@ describe('the window’s stream of its runs', () => {
     runs.want(false);
   });
 
+  test('numbers each view of a lane: a frame heard before the lane is shown again, the one kept included, is older', async () => {
+    const changed: Array<() => void> = [];
+    const page = {
+      hidden: false,
+      addEventListener: (type: string, listener: () => void) => {
+        if (type === 'visibilitychange') changed.push(listener);
+      },
+    };
+    vi.stubGlobal('document', page);
+    const runs = await hub();
+    runs.want(true);
+    const source = FakeSource.last!;
+    source.send({ type: 'hello', viewer: VIEWER });
+    await runs.setLaneWatch('desktop-7', 0, true);
+    const views: number[] = [];
+    const off = runs.onLaneFrame('desktop-7', 0, (_frame, view) => views.push(view));
+    await vi.waitFor(() => expect(lanesSaid()).toHaveLength(1));
+    expect(runs.laneView('desktop-7', 0)).toBe(1);
+    const frame = {
+      type: 'lane-frame',
+      ref: 'desktop-7',
+      lane: 0,
+      worker: 0,
+      test: 't',
+      since: null,
+      width: 800,
+      height: 600,
+      data: '/9j/AA==',
+    };
+    source.send(frame);
+    expect(views).toEqual([1]);
+
+    // Hidden, then shown again: the lane is shown in a new view, and the frame from before belongs to the one before.
+    page.hidden = true;
+    for (const listener of changed) listener();
+    await vi.waitFor(() => expect(lanesSaid()).toHaveLength(2));
+    page.hidden = false;
+    for (const listener of changed) listener();
+    await vi.waitFor(() => expect(lanesSaid()).toHaveLength(3));
+    expect(runs.laneView('desktop-7', 0)).toBe(2);
+    off();
+    // The tray opens again: the kept frame comes at once, of the view it was heard in.
+    const kept: number[] = [];
+    const again = runs.onLaneFrame('desktop-7', 0, (_frame, view) => kept.push(view));
+    expect(kept).toEqual([1]);
+    source.send(frame);
+    expect(kept).toEqual([1, 2]);
+    again();
+    runs.want(false);
+  });
+
+  test('keeps a lane watched when its command never reached the hub, and says it again on the next stream', async () => {
+    answer = (body) => (body.type === 'watch' ? new Error('fetch failed') : { type: 'answer', ok: true, message: '' });
+    const runs = await hub();
+    runs.want(true);
+    const source = FakeSource.last!;
+    source.send({ type: 'hello', viewer: VIEWER });
+    runs.onLaneFrame('desktop-7', 0, () => {});
+    const said = await runs.setLaneWatch('desktop-7', 0, true);
+    expect(said).toMatchObject({ ok: false });
+    // No refusal of the hub: the lane stays watched, and no reason shows.
+    expect(runs.watchesLane('desktop-7', 0)).toBe(true);
+    expect(runs.state.laneRefusals).toEqual({});
+    answer = () => ({ type: 'answer', ok: true, message: '' });
+    const before = lanesSaid().length;
+    source.send({ type: 'hello', viewer: 'b'.repeat(32) });
+    await vi.waitFor(() => expect(lanesSaid()).toHaveLength(before + 1));
+    expect(posted.at(-1)).toMatchObject({ type: 'watch', ref: 'desktop-7', lane: 0, on: true, viewer: 'b'.repeat(32) });
+    runs.want(false);
+  });
+
+  test('forgets what it kept of a run once it ends, or once a new stream does not list it', async () => {
+    answer = (body) =>
+      body.type === 'watch' && body.ref === 'desktop-8'
+        ? { type: 'answer', ok: false, message: 'This run has no worker 1 to watch.' }
+        : { type: 'answer', ok: true, message: '' };
+    const runs = await hub();
+    runs.want(true);
+    const source = FakeSource.last!;
+    source.send({ type: 'hello', viewer: VIEWER });
+    source.send({ type: 'session', session: sessionOf('desktop-7', [workerOf()]) });
+    source.send({ type: 'session', session: sessionOf('desktop-8', [workerOf()]) });
+    runs.onLaneFrame('desktop-8', 0, () => {});
+    await runs.setLaneWatch('desktop-8', 0, true);
+    expect(runs.state.laneRefusals['desktop-8|lane 0']).toBe('This run has no worker 1 to watch.');
+    // A run that ends: its refusal goes with it.
+    source.send({ type: 'session', session: sessionOf('desktop-8', [], { ended: true }) });
+    expect(runs.state.laneRefusals).toEqual({});
+
+    answer = () => ({ type: 'answer', ok: true, message: '' });
+    await runs.setLaneWatch('desktop-7', 0, true);
+    runs.setWatchLive('desktop-7', 0, true);
+    const off = runs.onLaneFrame('desktop-7', 0, () => {});
+    source.send({
+      type: 'lane-frame',
+      ref: 'desktop-7',
+      lane: 0,
+      worker: 0,
+      test: 't',
+      since: null,
+      width: 800,
+      height: 600,
+      data: '/9j/AA==',
+    });
+    off();
+    // A new stream lists every run live but desktop-7, which ended while the stream was down: what was kept of it goes.
+    source.send({ type: 'hello', viewer: VIEWER });
+    source.send({ type: 'session', session: sessionOf('desktop-9', [workerOf()]) });
+    expect(runs.watchesLane('desktop-7', 0)).toBe(true);
+    source.send({ type: 'listed' });
+    expect(runs.watchesLane('desktop-7', 0)).toBe(false);
+    expect(runs.watchesLive('desktop-7', 0)).toBe(false);
+    expect(runs.laneView('desktop-7', 0)).toBe(0);
+    const kept: unknown[] = [];
+    runs.onLaneFrame('desktop-7', 0, (f) => kept.push(f))();
+    expect(kept).toEqual([]);
+    runs.want(false);
+  });
+
   test('keeps the codes and the picks to copy, the latest twenty, and what a code came to by worker', async () => {
     const runs = await hub();
     runs.want(true);

@@ -2,8 +2,9 @@
 /**
  * Desktop shell only: one worker of a run the shell started, as the bundled server, its hub, tells it. Its test and
  * where it stands; **Watch**, where its reporter shows its lane while a test runs, which shows its page as it runs and
- * at each stop until it is turned off (`DesktopRunLaneView`), or why it cannot; at a stop, the call about to run and
- * its place (a failure's error in their place), its page (`DesktopRunStopPage`, while its lane is not watched),
+ * at each stop of a test until it is turned off (`DesktopRunLaneView`), or why it cannot; at a stop, the call about to
+ * run and its place (a failure's error in their place), its page (`DesktopRunStopPage`, while its lane is not watched
+ * or the stop is outside a test, with why the hub would not show the lane),
  * **Resume**, **Step**, **Finish** and **End the test**, which ends it there, skipped, where its reporter takes it
  * (Resume alone at a failure), and the code actions the stop takes from the window: **Assert a region** and **Mock a
  * request**, whose code comes to the window to copy; **Pause** while it runs. Every control but Pause names the stop
@@ -18,6 +19,7 @@ import type { DesktopRunAnswer } from '~/composables/useDesktopRunHub';
 import {
   DESKTOP_WATCH_NEEDS_UPDATE,
   desktopCodeActions,
+  desktopLaneKey,
   desktopRunStop,
   desktopSteering,
   desktopStopError,
@@ -48,9 +50,18 @@ const metaText = computed(() => desktopWorkerMeta(props.worker));
 const failed = computed(() => stop.value?.reason === 'failure');
 /** Its reporter shows its lane while a test runs: Watch shows the page then, and at each stop. */
 const watchable = computed(() => desktopWatchesLane(props.worker));
-/** The lane's page shows, or Watch offers it: while it runs, or at a stop while the window watches the lane. */
+/**
+ * The lane's page shows, or Watch offers it: while it runs, or at a stop of a test while the window watches the lane.
+ * A stop outside a test is no frame of the lane: its own page shows it.
+ */
 const laneShown = computed(
-  () => watchable.value && (!stop.value || hub.watchesLane(props.session.ref, props.worker.parallelIndex)),
+  () =>
+    watchable.value &&
+    (!stop.value || (!!props.worker.test && hub.watchesLane(props.session.ref, props.worker.parallelIndex))),
+);
+/** Why the hub would not show the worker's lane, the last time the window asked. */
+const laneRefused = computed(
+  () => hub.state.laneRefusals[desktopLaneKey(props.session.ref, props.worker.parallelIndex)] ?? null,
 );
 
 const STEER: Record<DesktopSteer, { label: string; title: string; icon: string }> = {
@@ -219,7 +230,7 @@ function restoreFocus(): void {
   lending = false;
 }
 
-watch([steering, codeActions], restoreFocus, { flush: 'post' });
+watch([steering, codeActions, laneShown], restoreFocus, { flush: 'post' });
 onMounted(() => {
   document.addEventListener('focusin', heardFocus);
   document.addEventListener('pointerdown', heardPress, true);
@@ -293,6 +304,7 @@ onBeforeUnmount(() => {
       :stop="stop"
       :takes="takes"
       :busy="busy"
+      :lane-refused="laneRefused"
       v-model:watch-live="watchLive"
       @said="heardPage"
       @picking="busy = $event"

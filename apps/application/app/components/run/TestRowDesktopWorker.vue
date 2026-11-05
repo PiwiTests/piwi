@@ -3,8 +3,8 @@
  * A running test's worker in a run the desktop shell started, on its row of the run page, as the runs' hub tells it.
  * While the test runs, **Watch**, where its reporter shows its lane while a test runs, opens the Local runs tray on
  * the worker with its lane watched: its page shows there as it runs, and at each stop. **Pause and watch** stops it
- * before its next call that acts on or checks the page, its lane watched, or Watch live on for its worker where its
- * reporter shows a stopped test alone: the tray, which opens at the stop, shows its page live there. At a stop, where
+ * before its next call that acts on or checks the page, with Watch live on for its worker and its lane watched where
+ * its reporter shows it: the tray, which opens at the stop, shows its page live there. At a stop, where
  * the test stands, and **Show its page**, which opens the tray on the worker and moves the focus there. A test that
  * never stops says why. The tray steers the stop; this row only asks for it.
  */
@@ -68,9 +68,10 @@ async function watchLane(): Promise<void> {
 
 async function pauseAndWatch(): Promise<void> {
   if (pausing.value) return;
-  // The worker stays watched whatever the hub answers: a test that stopped meanwhile is watched at that stop.
+  // The worker stays watched whatever the hub answers: a test that stopped meanwhile is watched at that stop, through
+  // its lane where its reporter shows it, else, or once the hub would not show the lane, through Watch live.
+  hub.setWatchLive(props.session.ref, props.worker.worker, true);
   if (desktopWatchesLane(props.worker)) void hub.setLaneWatch(props.session.ref, props.worker.parallelIndex, true);
-  else hub.setWatchLive(props.session.ref, props.worker.worker, true);
   busy.value = true;
   const answer = await hub.command({
     type: 'runControl',

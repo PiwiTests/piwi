@@ -6,7 +6,7 @@
  * the keys go to the page when the stop takes the window's input) and stays on for the worker's next stops until it is
  * turned off (the run page's **Pause and watch** turns it on too, through `useDesktopRunHub`); **Pick on the image**,
  * or a Shift+click on the image or the view, names the element under the pointer. The view ends with the stop, as the
- * window hides, and when it is turned off.
+ * window hides, and when it is turned off. Why the hub would not show the worker's lane shows under the image.
  */
 import type { HubAction, HubImage, HubStop } from '@piwitests/core/run-hub';
 import { isViewFrameData } from '@piwitests/core/run-view';
@@ -26,6 +26,8 @@ const props = defineProps<{
   takes: readonly HubAction[];
   /** A command for this worker is on its way: a pick waits for it. */
   busy: boolean;
+  /** Why the hub would not show the worker's lane (**Watch**), when it would not. */
+  laneRefused?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -240,6 +242,7 @@ const note = computed((): { icon?: string; text: string } | null => {
       <UButton
         v-if="canView"
         ref="liveButton"
+        data-focus="page:watch"
         size="xs"
         color="neutral"
         variant="outline"
@@ -287,6 +290,10 @@ const note = computed((): { icon?: string; text: string } | null => {
     <p v-if="note" class="flex items-center gap-1.5 text-xs text-muted">
       <UIcon v-if="note.icon" :name="note.icon" class="size-3.5 shrink-0" />
       {{ note.text }}
+    </p>
+    <p v-if="laneRefused" class="flex items-center gap-1.5 text-xs text-muted" data-testid="desktop-lane-refused">
+      <UIcon name="i-lucide-triangle-alert" class="size-3.5 shrink-0" />
+      {{ laneRefused }}
     </p>
   </figure>
 </template>

@@ -629,9 +629,7 @@ test.describe('Desktop run live view', () => {
   }) => {
     const image = await jpeg(page);
     await installBridge(page);
-    const commands = await playHub(page, (command) =>
-      command.type === 'pausedPage' ? { image: { mime: 'image/jpeg', data: image, width: 640, height: 400 } } : {},
-    );
+    const commands = await playHub(page);
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
     await page.getByRole('button', { name: RERUN_FAILED }).click();
@@ -669,12 +667,13 @@ test.describe('Desktop run live view', () => {
     await expect(live).not.toHaveAttribute('data-stale');
     await expect(lane.getByText('Live', { exact: true })).toBeVisible();
 
-    // A stop: the image of the stopped page comes, and the stop takes the clicks on it through the lane, with no view
-    // of its own; Watch live is not offered, the lane shows the stop.
+    // A stop: the lane's frame of the stopped page comes, and the stop takes the clicks on it through the lane, with no
+    // view of its own; Watch live is not offered, the lane shows the stop.
     const atStop = { ...stopped('s1', { intents: ['mock', 'view', 'input', 'pick-at'] }), intents: WATCHABLE.intents };
     await page.evaluate((event) => window.__hub.send(event), session(atStop));
     await expect(worker.getByText('Paused', { exact: true })).toBeVisible();
-    await expect.poll(() => commands.filter((c) => c.type === 'pausedPage')).toHaveLength(1);
+    await expect(lane.getByText('Taking an image of the page…')).toBeVisible();
+    await frame('s1');
     const view = lane.getByRole('img', { name: 'The page, live: clicks and keys go to it' });
     await expect(view).toBeVisible();
     await expect(worker.getByRole('button')).toHaveText([
@@ -734,6 +733,119 @@ test.describe('Desktop run live view', () => {
     );
   });
 
+  test('keeps the keyboard on the worker and the image honest as its lane stops, hides, refuses and leaves a test', async ({
+    page,
+  }) => {
+    const image = await jpeg(page);
+    await installBridge(page);
+    let refuse = false;
+    const commands = await playHub(page, (command) =>
+      command.type === 'watch' && command.on && refuse
+        ? { ok: false, message: 'This run has no worker 1 to watch.' }
+        : {},
+    );
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
+    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    const send = (event: unknown) => page.evaluate((e) => window.__hub.send(e), event);
+    await send(session(WATCHABLE));
+    const worker = tray(page).locator('[data-shot="desktop-run-worker"]');
+    const lane = worker.locator('[data-shot="desktop-run-lane"]');
+    const watch = worker.getByRole('button', { name: 'Watch', exact: true });
+    const watchLive = worker.getByRole('button', { name: 'Watch live' });
+    const live = lane.getByRole('img', { name: 'The page, live', exact: true });
+    const lastShown = lane.getByRole('img', { name: 'The page as it last showed' });
+    const intents = ['mock', 'view', 'input', 'pick-at'];
+    const atStop = (since: string, test: typeof TEST | null = TEST) =>
+      session({ ...stopped(since, { intents }), intents: WATCHABLE.intents, test });
+    const frame = (since: string | null) =>
+      send({
+        type: 'lane-frame',
+        ref: REF,
+        lane: 0,
+        worker: 0,
+        test: 't1',
+        since,
+        width: 640,
+        height: 400,
+        data: image,
+      });
+    const lastWatch = () => commands.filter((c) => c.type === 'watch').at(-1);
+    const setHidden = (hidden: boolean) =>
+      page.evaluate((on) => {
+        Object.defineProperty(document, 'hidden', { configurable: true, get: () => on });
+        document.dispatchEvent(new Event('visibilitychange'));
+      }, hidden);
+
+    // Watch has the keyboard as the running test stops: Watch live, in its place at the stop, takes it.
+    await watch.focus();
+    await send(atStop('s1'));
+    await expect(watchLive).toBeFocused();
+
+    // Watched, the running test's page shows live.
+    await send(session(WATCHABLE));
+    await watch.click();
+    await expect.poll(lastWatch).toMatchObject({ ref: REF, lane: 0, on: true });
+    await frame(null);
+    await expect(live).toBeVisible();
+
+    // The window hidden, then shown again: the image is the page as it last showed until a frame of the lane comes.
+    await setHidden(true);
+    await expect.poll(lastWatch).toMatchObject({ on: false });
+    await setHidden(false);
+    await expect.poll(lastWatch).toMatchObject({ on: true });
+    await expect(lastShown).toHaveAttribute('data-stale', 'true');
+    await expect(lane.getByText('Running…', { exact: true })).toBeVisible();
+    await frame(null);
+    await expect(live).not.toHaveAttribute('data-stale');
+
+    // Why the lane sends no frame stays, the image dimmed, though a frame was on its way as it came.
+    await page.evaluate(
+      ({ ref, data }) => {
+        const at = { type: 'lane-frame', ref, lane: 0, worker: 0, test: 't1', since: null };
+        window.__hub.send({ ...at, width: 640, height: 400, data });
+        window.__hub.send({ ...at, refused: 'Each image of the page is too long.' });
+      },
+      { ref: REF, data: image },
+    );
+    const tooLong = lane.getByText('Each image of the page is too long.');
+    await expect(tooLong).toBeVisible();
+    await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 300)));
+    await expect(tooLong).toBeVisible();
+    await expect(lastShown).toHaveAttribute('data-stale', 'true');
+    await frame(null);
+    await expect(live).toBeVisible();
+    await expect(tooLong).toHaveCount(0);
+
+    // A stop outside a test: the lane sends no frame of it, so the stop's own page shows it, with Watch live.
+    await send(atStop('s2', null));
+    await expect(watchLive).toBeVisible();
+    await expect(lane).toHaveCount(0);
+
+    // A stop of a test shows in the lane. Watch, turned off there, gives the keyboard to Watch live, which stays off.
+    await send(session(WATCHABLE));
+    await send(atStop('s3'));
+    await frame('s3');
+    await expect(lane.getByRole('img', { name: 'The page, live: clicks and keys go to it' })).toBeVisible();
+    await watch.focus();
+    await page.keyboard.press('Enter');
+    await expect(watchLive).toBeFocused();
+    await expect(watchLive).toHaveAttribute('aria-pressed', 'false');
+    await expect.poll(lastWatch).toMatchObject({ on: false });
+
+    // A lane the hub would not show says why, while the test runs and at its next stop, where Watch live is offered.
+    refuse = true;
+    await send(session(WATCHABLE));
+    await watch.click();
+    await expect(lane.getByText('This run has no worker 1 to watch.')).toBeVisible();
+    await expect(watch).toHaveAttribute('aria-pressed', 'false');
+    await send(atStop('s4'));
+    await expect(worker.getByTestId('desktop-lane-refused')).toHaveText('This run has no worker 1 to watch.');
+    await expect(watchLive).toBeVisible();
+  });
+
   test('pauses a running test from its row on the run’s page, and shows its page live at the stop', async ({
     page,
     request,
@@ -741,7 +853,11 @@ test.describe('Desktop run live view', () => {
     await installBridge(page);
     // The first pause meets a test that has just stopped.
     let stoppedAlready = true;
+    let refuseWatch = false;
     const commands = await playHub(page, (command) => {
+      if (command.type === 'watch' && command.on && refuseWatch) {
+        return { ok: false, message: 'This run has no worker 1 to watch.' };
+      }
       if (command.type !== 'runControl' || !stoppedAlready) return {};
       stoppedAlready = false;
       return { ok: false, message: 'The test is stopped already.' };
@@ -844,8 +960,24 @@ test.describe('Desktop run live view', () => {
           [REF, 's1', true],
         ]);
 
-      // A reporter that shows the lane while the test runs: Watch, on the row, opens the tray on the worker with its
-      // lane watched.
+      // A reporter that shows the lane while the test runs, whose lane the hub would not show: Pause and watch shows the
+      // stop live all the same, and the tray says why the lane does not show.
+      refuseWatch = true;
+      await tray(page).getByRole('button', { name: 'Close local runs' }).click();
+      await page.evaluate((event) => window.__hub.send(event), session(WATCHABLE));
+      await page.getByRole('button', { name: 'Pause and watch: checkout › pays', exact: true }).click();
+      await page.evaluate(
+        (event) => window.__hub.send(event),
+        session({ ...stopped('s2', { intents: ['mock', 'view', 'input', 'pick-at'] }), intents: WATCHABLE.intents }),
+      );
+      await expect(tray(page).getByTestId('desktop-lane-refused')).toHaveText('This run has no worker 1 to watch.');
+      await expect(tray(page).getByRole('button', { name: 'Watch live' })).toHaveAttribute('aria-pressed', 'true');
+      await expect
+        .poll(() => commands.filter((c) => c.type === 'view').at(-1))
+        .toMatchObject({ ref: REF, since: 's2', on: true });
+      refuseWatch = false;
+
+      // Watch, on the row, opens the tray on the worker with its lane watched.
       await tray(page).getByRole('button', { name: 'Close local runs' }).click();
       await page.evaluate((event) => window.__hub.send(event), session(WATCHABLE));
       const watchLane = page.getByRole('button', { name: 'Watch: checkout › pays', exact: true });
@@ -860,8 +992,8 @@ test.describe('Desktop run live view', () => {
         'true',
       );
       await expect
-        .poll(() => commands.filter((c) => c.type === 'watch'))
-        .toEqual([expect.objectContaining({ ref: REF, lane: 0, on: true, viewer: VIEWER })]);
+        .poll(() => commands.filter((c) => c.type === 'watch').at(-1))
+        .toMatchObject({ ref: REF, lane: 0, on: true, viewer: VIEWER });
 
       // A test that never stops says why, in place of Pause and watch.
       const never = "Playwright's Inspector runs the test (PWDEBUG) — run without --debug";
