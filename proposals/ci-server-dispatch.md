@@ -240,8 +240,10 @@ The question was whether a per-project base URL is safe. It is with D5 and D6; w
    cannot use it for any other request under its URL. The request URL cannot leave the base URL: templates fill
    encoded segments and values only, a path value whose slashes would hold a `.` or `..` segment is refused, the check
    runs on the URL after normalization, and no redirect is followed. A base URL or a path segment that climbs once a
-   server decodes it, any number of times (`..%2F`, `%252e%252e`, `..;` as Tomcat reads it), is refused too: a proxy
-   that decodes before routing would otherwise take a token bound to `/job/qa/` to `/job/prod/`.
+   server decodes it (`..%2F`, `%252e%252e`, `..;` as Tomcat reads it, `%u002e`, a decoded `?`, `#` or NUL, or more
+   than three levels of encoding) is refused too: a proxy that decodes before routing would otherwise take a token
+   bound to `/job/qa/` to `/job/prod/`. A stored target whose base URL fails this rule does not dispatch at all, rather
+   than fall back to the instance's server.
 2. **Reaching the internal network (SSRF).** A CI server usually lives on a private network, so the webhook rule
    (public addresses only) would refuse the main use case, and allowing any private address would let a project admin
    use Piwi to send requests into the network. D6 allows a private address only on a place the operator named, port
@@ -260,8 +262,9 @@ The question was whether a per-project base URL is safe. It is with D5 and D6; w
    to a CI user whose build permission covers only the jobs Piwi should start, or `PIWI_CI_SERVER_URL` should name
    their folder.
 7. **Permissions and secrets.** Configuring is `project:manage`, dispatching is `run:control`, the instance values are
-   the operator's: the instance URL and a token's bound URL are returned only to a project admin. Tokens are encrypted
-   with `PIWI_SECRET_KEY` (409 without it) and never returned.
+   the operator's: `ciServerInstanceUrl`, and `ciServerTokenUrl`, which may name the instance URL, are returned only
+   to a project admin. A project's own target (`ciRerun`) stays readable by its readers, like the repository targets.
+   Tokens are encrypted with `PIWI_SECRET_KEY` (409 without it) and never returned.
 
 ## Delivery
 

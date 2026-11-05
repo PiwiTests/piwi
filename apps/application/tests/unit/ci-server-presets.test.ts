@@ -237,6 +237,21 @@ describe('a path segment that climbs once decoded', () => {
     }
   });
 
+  test('reads a decoded "?", "#" or NUL as the end of a part, and %uXXXX as a character', () => {
+    for (const segment of ['..%3F', '..%23x', '..%00', '%u002e%u002e', '..%253Fx']) {
+      expect(segmentClimbsWhenDecoded(segment), segment).toBe(true);
+    }
+    expect(segmentClimbsWhenDecoded('what%3F')).toBe(false);
+  });
+
+  test('counts a segment still encoded after three decoding passes as climbing, at once', () => {
+    expect(segmentClimbsWhenDecoded(`%${'25'.repeat(2)}41`)).toBe(false);
+    expect(segmentClimbsWhenDecoded(`%${'25'.repeat(3)}41`)).toBe(true);
+    const started = performance.now();
+    expect(segmentClimbsWhenDecoded(`%${'25'.repeat(200_000)}41`)).toBe(true);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
   test('is refused in a base URL', () => {
     expect(normalizeCiServerBaseUrl('https://jenkins.example.com/job/qa/..%2F..%2Fjob%2Fprod/')).toBeNull();
     expect(normalizeCiServerBaseUrl('https://jenkins.example.com/job/qa/..;/..;/job/prod')).toBeNull();
@@ -283,6 +298,22 @@ describe('a target sent to be saved', () => {
     expect(ciServerTargetProblem({ preset: 'jenkins', baseUrl: '  ', rerun })).toBeNull();
     expect(ciServerTargetProblem({ preset: 'jenkins', baseUrl: 42, rerun })).toMatch(/http\(s\)/);
     expect(ciServerTargetProblem({ preset: 'jenkins', baseUrl: null, rerun })).toBeNull();
+  });
+
+  test('a stored target whose base URL cannot be used does not resolve, so it never falls back to the instance', () => {
+    expect(
+      resolveCiServerTarget({
+        preset: 'jenkins',
+        baseUrl: 'https://jenkins.example.com/job/a/..;/',
+        rerun: { job: 'e2e' },
+      }),
+    ).toBeNull();
+    expect(
+      resolveCiServerTarget({ preset: 'jenkins', baseUrl: 'jenkins-team-b.corp', rerun: { job: 'e2e' } }),
+    ).toBeNull();
+    expect(resolveCiServerTarget({ preset: 'jenkins', baseUrl: '', rerun: { job: 'e2e' } })).toMatchObject({
+      preset: 'jenkins',
+    });
   });
 
   test('is refused when its base URL path climbs once decoded', () => {

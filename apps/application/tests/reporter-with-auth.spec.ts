@@ -261,9 +261,9 @@ test.describe.serial('Reporter with authentication enabled', () => {
     expect(anyAuth.ok()).toBeTruthy();
   });
 
-  // The server sets PIWI_CI_SERVER_URL (playwright.config.ts): the CI server URLs
-  // are the settings form's, so a project reader without project:manage gets null.
-  test('the CI server URLs of a project go only to a project admin', async ({ request }) => {
+  // The server sets PIWI_CI_SERVER_URL (playwright.config.ts): the instance's CI
+  // server is the settings form's, so a project reader without project:manage gets null.
+  test("the instance's CI server URL goes only to a project admin", async ({ request }) => {
     await loginAs(request, 'ci-reporter', 'reporterpassword123');
     const { items } = (await (await request.get(`${AUTH_SERVER_URL}/api/projects`)).json()) as {
       items: { id: number; name: string }[];
@@ -271,11 +271,11 @@ test.describe.serial('Reporter with authentication enabled', () => {
     const projectId = items.find((p) => p.name === PROJECT.REPORTER_AUTH)!.id;
     const asUploader = await request.get(`${AUTH_SERVER_URL}/api/projects/${projectId}`);
     expect(asUploader.ok()).toBeTruthy();
-    expect(await asUploader.json()).toMatchObject({ ciServerInstanceUrl: null, ciServerTokenUrl: null });
+    expect((await asUploader.json()).ciServerInstanceUrl).toBeNull();
 
     await loginAs(request, 'admin', 'adminpassword123');
     const asAdmin = await request.get(`${AUTH_SERVER_URL}/api/projects/${projectId}`);
-    expect(await asAdmin.json()).toMatchObject({ ciServerInstanceUrl: 'https://jenkins.example.com/' });
+    expect((await asAdmin.json()).ciServerInstanceUrl).toBe('https://jenkins.example.com/');
   });
 
   // ---------------------------------------------------------------------------

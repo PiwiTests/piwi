@@ -75,12 +75,11 @@ export function ciServerHosts(): Array<{ host: string; port: string | null }> {
   if (instance) places.push(hostAndPort(new URL(instance)));
   for (const entry of (process.env.PIWI_CI_SERVER_HOSTS ?? '').split(',')) {
     const name = entry.trim();
-    if (!name) continue;
+    // A host or `host:port` alone: an entry with a path, query, fragment, user or empty port allows nothing.
+    if (!name || /[/?#\\@\s]/.test(name) || name.endsWith(':')) continue;
     try {
-      const url = new URL(`http://${name}`);
-      if (url.pathname !== '/' || url.username || url.search) continue;
       // `URL` drops a port equal to the scheme's default, so `host:80` reads its port from the entry.
-      const place = hostAndPort(url);
+      const place = hostAndPort(new URL(`http://${name}`));
       places.push({ host: place.host, port: /:\d+$/.test(name) ? place.port : null });
     } catch {
       // An entry that is not a host name allows nothing.
