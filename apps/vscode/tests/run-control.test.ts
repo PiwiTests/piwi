@@ -14,6 +14,7 @@ import {
   CaretCounts,
   EditLog,
   MAX_IMAGE_DATA,
+  RESERVED_MS,
   StopsShown,
   asideColumn,
   breakpointUpdates,
@@ -411,19 +412,20 @@ describe('a stop', () => {
 });
 
 describe('what the editor shows of the stops', () => {
-  /** Worker `index` of `ed-1` stopped headless at `line`. */
-  const at = (index: number, line: number, extra: Partial<RunStop> = {}) =>
-    worker(index, 'stopped', { stop: { ...stopAt(spec, line, false), ...extra } });
+  /** Worker `index` of `ed-1`, in slot `slot`, stopped headless at `line`. */
+  const at = (index: number, line: number, extra: Partial<RunStop> = {}, slot = index) =>
+    worker(index, 'stopped', { parallelIndex: slot, stop: { ...stopAt(spec, line, false), ...extra } });
   /**
-   * The pushes of run `ed-1` as the service sends them, through `StopsShown` as the extension takes them: each new
-   * stop's file opened in its turn (none for a line in `unopened`), and the page the view opens shown there. Each push
-   * says which workers' files opened with the focus or without, and the page opened, as `[worker, line]`.
+   * The pushes of run `ed-1` as the service sends them, 100 ms apart, through `StopsShown` as the extension takes them:
+   * each new stop's file opened in its turn (none for a line in `unopened`), and the page the view opens shown there.
+   * Each push says which workers' files opened with the focus or without, and the page opened, as `[worker, line]`.
    */
   const editor = (unopened: number[] = []) => {
     const shown = new StopsShown();
+    let now = 0;
     const push = (...workers: RunWorker[]) => {
-      const sessions = sessionsOf(session('ed-1', workers));
-      const change = shown.changed(sessions, stopsOf(sessions));
+      now += 100;
+      const change = shown.changed(stopsOf(sessionsOf(session('ed-1', workers))), now);
       const opened = change.open
         .filter((stop) => !unopened.includes(stop.stop.line))
         .map((stop) => {
@@ -434,7 +436,13 @@ describe('what the editor shows of the stops', () => {
       if (change.page) shown.view(change.page);
       return { opened, page: change.page && [change.page.worker, change.page.stop.line] };
     };
-    return { shown, push };
+    /** A control from the editor answers the stop of worker `index` at `line`. */
+    const answer = (action: 'resume' | 'step', index: number, line: number) =>
+      shown.answered(stopsOf(sessionsOf(session('ed-1', [at(index, line)])))[0]!, action, now);
+    const wait = (ms: number) => {
+      now += ms;
+    };
+    return { shown, push, answer, wait };
   };
 
   test('opens the first stop with the focus, and its page', () => {
@@ -442,19 +450,51 @@ describe('what the editor shows of the stops', () => {
     expect(push(at(0, 3), worker(1, 'running'))).toEqual({ opened: [[0, true]], page: [0, 3] });
   });
 
-  test('opens another worker’s stop without the focus, and keeps the view on the worker it shows', () => {
+  test('opens another worker’s stop without the focus, and keeps the view on the stop it shows', () => {
     const { push } = editor();
     push(at(0, 3), worker(1, 'running'));
     expect(push(at(0, 3), at(1, 5))).toEqual({ opened: [[1, false]], page: null });
   });
 
-  test('keeps the view and the focus on a worker stepped while another is held, through the push where it runs', () => {
+  test('waits for the next stop of a worker stepped from the editor, through the push where it runs', () => {
+    const { push, answer } = editor();
+    push(at(0, 3), worker(1, 'running'));
+    push(at(0, 3), at(1, 5));
+    answer('step', 0, 3);
+    expect(push(worker(0, 'running'), at(1, 5))).toEqual({ opened: [], page: null });
+    expect(push(at(0, 4), at(1, 5))).toEqual({ opened: [[0, true]], page: [0, 4] });
+  });
+
+  test('hands the view to a stop held once the worker it shows is resumed, then follows that one’s Step', () => {
+    const { push, answer } = editor();
+    push(at(0, 3), worker(1, 'running'));
+    push(at(0, 3), at(1, 5));
+    answer('resume', 0, 3);
+    expect(push(worker(0, 'running'), at(1, 5))).toEqual({ opened: [], page: [1, 5] });
+    answer('step', 1, 5);
+    expect(push(worker(0, 'running'), worker(1, 'running'))).toEqual({ opened: [], page: null });
+    expect(push(worker(0, 'running'), at(1, 6))).toEqual({ opened: [[1, true]], page: [1, 6] });
+  });
+
+  test('hands the view on after a control from elsewhere, and opens a lone worker’s next stop', () => {
     const { push } = editor();
     push(at(0, 3), worker(1, 'running'));
     push(at(0, 3), at(1, 5));
-    // The Step: the worker runs, in a push of its own, then stops at the next call.
-    expect(push(worker(0, 'running'), at(1, 5))).toEqual({ opened: [], page: null });
-    expect(push(at(0, 4), at(1, 5))).toEqual({ opened: [[0, true]], page: [0, 4] });
+    expect(push(worker(0, 'running'), at(1, 5)).page).toEqual([1, 5]);
+    const lone = editor();
+    lone.push(at(0, 3));
+    expect(lone.push(worker(0, 'running')).page).toBeNull();
+    expect(lone.push(at(0, 4)).page).toEqual([0, 4]);
+  });
+
+  test('waits for a stepped worker’s next stop no longer than RESERVED_MS', () => {
+    const { push, answer, wait } = editor();
+    push(at(0, 3), worker(1, 'running'), worker(2, 'running'));
+    push(at(0, 3), at(1, 5), worker(2, 'running'));
+    answer('step', 0, 3);
+    expect(push(worker(0, 'running'), at(1, 5), worker(2, 'running')).page).toBeNull();
+    wait(RESERVED_MS);
+    expect(push(worker(0, 'running'), at(1, 5), at(2, 7)).page).toEqual([2, 7]);
   });
 
   test('gives the focus to the first stop a Pause brings, its other stops coming in later pushes', () => {
@@ -465,12 +505,20 @@ describe('what the editor shows of the stops', () => {
   });
 
   test('moves the focus to the worker a control answered', () => {
-    const { shown, push } = editor();
+    const { push, answer } = editor();
     push(at(0, 3), worker(1, 'running'));
     push(at(0, 3), at(1, 5));
-    shown.answered({ ref: 'ed-1', worker: 1, stop: stopAt(spec, 5, false), test: runTest(), takes: [] });
+    answer('resume', 1, 5);
     push(at(0, 3), worker(1, 'running'));
     expect(push(at(0, 3), at(1, 6))).toEqual({ opened: [[1, true]], page: null });
+  });
+
+  test('keeps the focus on the slot of a worker restarted after a failure', () => {
+    const { push, answer } = editor();
+    push(at(0, 3, { reason: 'failure' }), at(1, 5));
+    answer('resume', 0, 3);
+    push(at(1, 5));
+    expect(push(at(2, 4, {}, 0), at(1, 5))).toEqual({ opened: [[2, true]], page: null });
   });
 
   test('counts a stop whose file never opened as none shown', () => {
@@ -479,18 +527,12 @@ describe('what the editor shows of the stops', () => {
     expect(push(at(0, 3), at(1, 5)).opened).toEqual([[1, true]]);
   });
 
-  test('hands the view to the first stop held once its worker left the run', () => {
-    const { push } = editor();
-    push(at(0, 3), worker(1, 'running'));
-    push(at(0, 3), at(1, 5));
-    expect(push(at(1, 5))).toEqual({ opened: [], page: [1, 5] });
-  });
-
   test('opens no page at a stop with a pause bar, and a new stop’s page in a view that is closed', () => {
     const { shown, push } = editor();
     expect(push(at(0, 3, { bar: true }), worker(1, 'running')).page).toBeNull();
-    push(at(0, 3, { bar: true }), at(1, 5));
+    expect(push(at(0, 3, { bar: true }), at(1, 5)).page).toEqual([1, 5]);
     shown.view(null);
+    expect(push(at(0, 3, { bar: true }), at(1, 5)).page).toBeNull();
     expect(push(at(0, 3, { bar: true }), at(1, 5), at(2, 7)).page).toEqual([2, 7]);
   });
 
@@ -507,8 +549,8 @@ describe('what the editor shows of the stops', () => {
 });
 
 describe('the stop a control acts on', () => {
-  const one: ShownStop = { ref: 'ed-1', worker: 0, stop: stopAt(spec, 5), test: runTest(), takes: [] };
-  const two: ShownStop = { ref: 'ed-1', worker: 1, stop: stopAt(pageObject, 8), test: runTest(), takes: [] };
+  const one: ShownStop = { ref: 'ed-1', worker: 0, slot: 0, stop: stopAt(spec, 5), test: runTest(), takes: [] };
+  const two: ShownStop = { ref: 'ed-1', worker: 1, slot: 1, stop: stopAt(pageObject, 8), test: runTest(), takes: [] };
 
   test('is the only one, wherever the caret is', () => {
     expect(stopsFor([one], { uri: pageObject, line: 1 })).toEqual([one]);
@@ -826,6 +868,7 @@ const ALL_TAKES: RunTake[] = ['pick', 'record', 'assert', 'assert-region', 'requ
 const shown = (stop: RunStop, takes: RunTake[] = ALL_TAKES, test: RunTest | null = runTest()): ShownStop => ({
   ref: 'ed-1',
   worker: 0,
+  slot: 0,
   stop,
   test,
   takes,

@@ -524,7 +524,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         refreshed.retainAll(stops.mapNotNull { it.stop.uri }.toSet())
         val shownPage = livePage()
         if (shownPage == null) shownStops.view(null)
-        val show = shownStops.changed(sessions, stops)
+        val show = shownStops.changed(stops)
         show.open.forEach { unopened.add(Glue.stopKey(it)) }
         val byKey = stops.associateBy(Glue::stopKey)
         for (key in unopened.toList()) {
@@ -532,8 +532,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             val file = fileOf(stop.stop.uri) ?: continue
             unopened.remove(key)
             val focus = shownStops.focusFor(stop)
-            reveal(stop, file, focus)
-            shownStops.opened(stop, focus)
+            if (reveal(stop, file, focus)) shownStops.opened(stop, focus)
         }
         for (stop in stops) {
             val key = Glue.stopKey(stop)
@@ -562,18 +561,21 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     }
 
     /**
-     * Open a stop's file at its line. With the focus, as the debugger does. Without it, the editor in use is left alone:
-     * a file open in an editor already keeps its caret, the stop drawn there, and another opens in a tab beside the file
-     * in front, which stays in front. On the event thread.
+     * Open a stop's file at its line; whether it is open. With the focus, as the debugger does. Without it, the editor in
+     * use is left alone: a file open in an editor already keeps its caret, and while an editor shows a file, another
+     * stays closed, the stop drawn in it when it opens (the platform opens no file without selecting it); with no editor
+     * shown, it opens without the focus. On the event thread.
      */
-    private fun reveal(stop: Glue.ShownStop, file: VirtualFile, focus: Boolean) {
+    private fun reveal(stop: Glue.ShownStop, file: VirtualFile, focus: Boolean): Boolean {
         val descriptor = OpenFileDescriptor(project, file, stop.stop.line, stop.stop.character ?: 0)
-        if (focus) return descriptor.navigate(true)
         val manager = FileEditorManager.getInstance(project)
-        if (manager.isFileOpen(file)) return
-        val front = manager.selectedFiles.firstOrNull()
-        descriptor.navigate(false)
-        if (front != null) manager.openFile(front, false)
+        when {
+            focus -> descriptor.navigate(true)
+            manager.isFileOpen(file) -> return true
+            manager.selectedFiles.isNotEmpty() -> return false
+            else -> descriptor.navigate(false)
+        }
+        return true
     }
 
     private fun toolWindow() = ToolWindowManager.getInstance(project).getToolWindow(PiwiFailuresToolWindowFactory.ID)
@@ -821,7 +823,9 @@ class PiwiRunSessions(private val project: Project) : Disposable {
      * event thread, saying why not.
      */
     fun answer(stop: Glue.ShownStop, action: String, place: EditorBreakpoint? = null) {
-        control(RunControlParams(stop.ref, stop.worker, action, place, stop.stop.since)) { shownStops.answered(stop) }
+        control(RunControlParams(stop.ref, stop.worker, action, place, stop.stop.since)) {
+            shownStops.answered(stop, action)
+        }
     }
 
     /** Pause every run started here: each of its workers stops before its next call. */

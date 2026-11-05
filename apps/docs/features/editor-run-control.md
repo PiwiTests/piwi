@@ -75,7 +75,7 @@ has none.
 
 A run Piwi starts with breakpoints is headed, with a pause bar. Without breakpoints it follows your config, headless
 by default. A headless stop opens **Piwi: paused page** beside VS Code's editor, or **Paused Page** in the JetBrains
-Piwi tool window, unless the tab follows another worker. **Piwi: Show the paused page** (**Tools → Piwi → Show the
+Piwi tool window, unless the tab holds another stop. **Piwi: Show the paused page** (**Tools → Piwi → Show the
 Paused Page**) opens it at any stop.
 
 <figure>

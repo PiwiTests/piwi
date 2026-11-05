@@ -5,22 +5,22 @@
  * **Finish** and **End the test** while a worker is stopped, in the status bar beside the run's progress, in the
  * palette and with keys that apply only then (the `piwi.runActive`, `piwi.runPausable` and `piwi.runStopped` context
  * keys; End the test has no key). A stop opens its file at its line, leaving the editor in use alone but for the first
- * stop and those of the worker the person is on (`StopsShown`), marked as the execution point (an arrow in the gutter
- * and the line's background), with a CodeLens above it saying what is about to run, or how the test failed, and
+ * stop and those of the worker slot the person is on (`StopsShown`), marked as the execution point (an arrow in the
+ * gutter and the line's background), with a CodeLens above it saying what is about to run, or how the test failed, and
  * offering the controls and the code actions its worker takes there (Pick a locator, Record here, Assert, Assert a
  * region, Mock a request: `piwi/stopAction`, each in the palette while a stop offers it, the `piwi.runCan…` context
  * keys), which its hover offers too; a stop no pause bar shows (a headless run's) shows an image of its page in a
- * webview beside the editor, which follows one worker at a time, and where a click picks the element under it
- * (`piwi/pickAt`) when its worker takes it. The code a stop makes (`piwi/stopCode`) is written as one workspace edit in
- * its document, opened when it is not; while a test is stopped, the end of the cursor's line in its file says how many
- * elements the locator there matches on the stopped page (`piwi/locatorAtCaret`). The editor's breakpoints go to each
- * live run as they change (`piwi/setRunBreakpoints`), and to the service as they stand, which a run a terminal starts
- * takes (`piwi/setBreakpoints`). A run's lines are those of the documents as they stood when it started: the edits
- * since (`EditLog`) bring a stop to the line it stands on now, and a breakpoint or the cursor's line back to the run's.
- * A stop's browser is shared with Playwright's own tools only when asked, each time, after a warning (`piwi/stopBind`).
- * **Share live** shares a run on the team instance its reporter reports to (`piwi/shareRun`), after a warning the first
- * time in this window, and **Stop sharing** ends it; the status bar says how a shared run stands and offers it to a run
- * that can be shared. The pure half is `run-control.ts`.
+ * webview beside the editor, which keeps the stop it shows while that stop is held, and where a click picks the
+ * element under it (`piwi/pickAt`) when its worker takes it. The code a stop makes (`piwi/stopCode`) is written as one
+ * workspace edit in its document, opened when it is not; while a test is stopped, the end of the cursor's line in its
+ * file says how many elements the locator there matches on the stopped page (`piwi/locatorAtCaret`). The editor's
+ * breakpoints go to each live run as they change (`piwi/setRunBreakpoints`), and to the service as they stand, which a
+ * run a terminal starts takes (`piwi/setBreakpoints`). A run's lines are those of the documents as they stood when it
+ * started: the edits since (`EditLog`) bring a stop to the line it stands on now, and a breakpoint or the cursor's line
+ * back to the run's. A stop's browser is shared with Playwright's own tools only when asked, each time, after a warning
+ * (`piwi/stopBind`). **Share live** shares a run on the team instance its reporter reports to (`piwi/shareRun`), after
+ * a warning the first time in this window, and **Stop sharing** ends it; the status bar says how a shared run stands
+ * and offers it to a run that can be shared. The pure half is `run-control.ts`.
  */
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
@@ -355,43 +355,46 @@ export function registerRunControl(
   };
 
   /**
-   * Show a stop's file at its line; true once it shows. With the focus, as a debugger does: where the file shows
-   * already, else in the active group, unless the paused page view is its editor. Without it, the editor in use is left
-   * alone: a file that shows already keeps its selection, the stop drawn there, and another opens in a group that is
-   * neither the active one nor the paused page view's (`asideColumn`).
+   * Show a stop's file at its line, with the focus when `focus` asks for it and its wait is not over (`late`); whether
+   * it took the focus, once it shows. With the focus, as a debugger does: where the file shows already, else in the active group, unless
+   * the paused page view is its editor. Without it, the editor in use is left alone: a file that shows already keeps
+   * its selection, the stop drawn there, and another opens in a group that is neither the active one nor the paused
+   * page view's (`asideColumn`).
    */
-  const reveal = async (stop: ShownStop, focus: boolean): Promise<boolean> => {
-    const showing = vscode.window.visibleTextEditors.find((e) => e.document.uri.toString() === stop.stop.uri);
-    if (showing && !focus) return true;
+  const reveal = async (stop: ShownStop, focus: boolean, late: () => boolean): Promise<boolean> => {
     const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(stop.stop.uri));
+    const focused = focus && !late();
+    const showing = vscode.window.visibleTextEditors.find((e) => e.document === document);
+    if (showing && !focused) return false;
     const at = document.validatePosition(new vscode.Position(stop.stop.line, stop.stop.character ?? 0));
     const aside = () => asideColumn(vscode.window.tabGroups.all, panel?.visible ? panel.viewColumn : undefined);
     await vscode.window.showTextDocument(document, {
       selection: new vscode.Range(at, at),
       preview: false,
-      preserveFocus: !focus,
-      viewColumn: showing?.viewColumn ?? (focus && !panel?.active ? undefined : aside()),
+      preserveFocus: !focused,
+      viewColumn: showing?.viewColumn ?? (focused && !panel?.active ? undefined : aside()),
     });
-    return true;
+    return focused;
   };
 
   /**
-   * Open a stop's file in its turn, unless it went on meanwhile, with the focus as `StopsShown` decides then; a file
-   * that does not show within `OPEN_MS` counts as not open, and the next stop's turn comes.
+   * Open a stop's file in its turn, unless it went on meanwhile, with the focus as `StopsShown` decides then. The next
+   * stop's turn comes once the file shows, or after `OPEN_MS`: a file that shows later takes no focus, and counts as
+   * open once it shows.
    */
   const openStop = async (heard: ShownStop) => {
     const stop = stops().find((s) => stopKey(s) === stopKey(heard));
     if (!stop) return;
-    const focus = stopsShown.focusFor(stop);
+    const started = Date.now();
+    const shown = reveal(stop, stopsShown.focusFor(stop), () => Date.now() - started >= OPEN_MS)
+      .then((focused) => stopsShown.opened(stop, focused))
+      .catch(() => undefined);
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const late = new Promise<boolean>((resolve) => {
-      timer = setTimeout(() => resolve(false), OPEN_MS);
+    const waited = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, OPEN_MS);
     });
-    try {
-      if (await Promise.race([reveal(stop, focus), late])) stopsShown.opened(stop, focus);
-    } finally {
-      clearTimeout(timer);
-    }
+    await Promise.race([shown, waited]);
+    clearTimeout(timer);
   };
 
   const showPage = (view: PausedPageView) => {
@@ -499,7 +502,7 @@ export function registerRunControl(
         pageShows = null;
         stopsShown.view(null);
       });
-    } else {
+    } else if (!panel.visible) {
       panel.reveal(vscode.ViewColumn.Beside, true);
     }
     const file = decodeURIComponent(stop.stop.uri.slice(stop.stop.uri.lastIndexOf('/') + 1));
@@ -591,7 +594,7 @@ export function registerRunControl(
     drawControls();
     drawStops();
     caretMoved();
-    const show = stopsShown.changed(sessions, now);
+    const show = stopsShown.changed(now);
     for (const stop of show.open) revealing = revealing.then(() => openStop(stop)).catch(() => undefined);
     if (show.page) void openPage(show.page);
     else if (panel && pageStop && !keys.has(pageStop)) {
@@ -664,7 +667,7 @@ export function registerRunControl(
     const params: RunControlParams = { ref: stop.ref, worker: stop.worker, action, since: stop.stop.since };
     if (!(await control(place ? { ...params, place } : params))) return;
     answered();
-    stopsShown.answered(stop);
+    stopsShown.answered(stop, action);
   };
 
   /**

@@ -13,6 +13,7 @@ import type {
   LocatorAtCaretParams,
   LocatorAtCaretResult,
   PausedImage,
+  RunControlAction,
   RunLive,
   RunSession,
   RunStop,
@@ -187,13 +188,15 @@ export function spelledSession(session: RunSession, spell: (uri: string) => stri
 }
 
 /**
- * A worker stopped: its run, the worker, where it stands, the test it runs, what its reporter takes there, and whether
- * its run was started in a terminal (`RunSession.terminal`), and of those by the editor's own test runner
+ * A worker stopped: its run, the worker and its slot (`RunWorker.parallelIndex`, which the worker Playwright starts in
+ * its place after a failure keeps), where it stands, the test it runs, what its reporter takes there, and whether its
+ * run was started in a terminal (`RunSession.terminal`), and of those by the editor's own test runner
  * (`RunSession.runner`).
  */
 export interface ShownStop {
   ref: string;
   worker: number;
+  slot: number;
   stop: RunStop;
   test: RunTest | null;
   takes: readonly RunTake[];
@@ -210,6 +213,7 @@ export function stopsOf(sessions: Sessions): ShownStop[] {
             {
               ref: s.ref,
               worker: w.worker,
+              slot: w.parallelIndex,
               stop: w.stop,
               test: w.test,
               takes: w.takes ?? [],
@@ -227,12 +231,15 @@ export function stopKey(stop: ShownStop): string {
   return `${stop.ref}\0${stop.worker}\0${stop.stop.since}`;
 }
 
-/** What tells a worker from another: its run and its index. */
-function workerKey(stop: { ref: string; worker: number }): string {
-  return `${stop.ref}\0${stop.worker}`;
+/** What tells a worker's slot from another: its run and its slot. */
+function slotKey(stop: ShownStop): string {
+  return `${stop.ref}\0${stop.slot}`;
 }
 
-/** What a change of the sessions shows: the stops new to the editor, and a page. */
+/** How long the paused page view waits for the next stop of a worker stepped or run to the cursor from the editor. */
+export const RESERVED_MS = 10_000;
+
+/** What a change of the stops shows: the stops new to the editor, and a page. */
 export interface StopsChange {
   /** The stops new to the editor, in order: each opens its file at its line in its turn (`focusFor`, `opened`). */
   open: ShownStop[];
@@ -241,27 +248,30 @@ export interface StopsChange {
 }
 
 /**
- * What the editor shows of the stops as the sessions change, each stop once.
+ * What the editor shows of the stops as they change, each stop once.
  *
  * - A new stop opens its file at its line. It takes the focus, decided as it opens (`focusFor`), only while no other
- *   stop held has its file open (`opened`), or as a stop of the worker the person is on: the one whose stop last took
+ *   stop held has its file open (`opened`), or as a stop of the slot the person is on: the one whose stop last took
  *   the focus, or whose stop a control answered last (`answered`).
- * - The paused page view belongs to the worker of the stop it shows or showed last (`view`). While that worker is in
- *   the sessions, running or between tests, the view opens that worker's next stop no pause bar shows, and no other.
- *   Once the worker left, the view opens the first new such stop, else the first such stop held; a view that is closed
- *   or shows none opens the first new such stop.
+ * - The paused page view keeps the stop it shows (`view`) while that stop is held. Once it went on after a Step or a
+ *   Run to the cursor from the editor, the view waits for that slot's next stop, `RESERVED_MS` at most; otherwise it
+ *   opens the first new stop no pause bar shows, else the first such stop held. A view that is closed opens the first
+ *   new such stop.
  */
 export class StopsShown {
   /** The stops heard, and those whose file opened, by `stopKey`. */
   private readonly heard = new Set<string>();
   private readonly files = new Set<string>();
   private held = new Set<string>();
+  /** The stop the paused page view shows, or showed last; null while it is closed. */
   private viewed: ShownStop | null = null;
-  /** The worker the person is on, by `workerKey`. */
+  /** The slot whose next stop the view waits for, by `slotKey`, and until when. */
+  private reserved: { slot: string; until: number } | null = null;
+  /** The slot the person is on, by `slotKey`. */
   private followed: string | null = null;
 
-  /** The sessions changed, with their stops at the lines they stand on now (`stops`, in order). */
-  changed(sessions: Sessions, stops: readonly ShownStop[]): StopsChange {
+  /** The stops changed: those held now, at the lines they stand on (`stops`, in order). */
+  changed(stops: readonly ShownStop[], now = Date.now()): StopsChange {
     this.held = new Set(stops.map(stopKey));
     for (const key of [...this.heard]) if (!this.held.has(key)) this.heard.delete(key);
     for (const key of [...this.files]) if (!this.held.has(key)) this.files.delete(key);
@@ -269,12 +279,17 @@ export class StopsShown {
     for (const stop of open) this.heard.add(stopKey(stop));
     const headless = (s: ShownStop) => !s.stop.bar;
     const viewed = this.viewed;
-    if (viewed && sessions.get(viewed.ref)?.workers.some((w) => w.worker === viewed.worker)) {
-      const next = stops.find((s) => workerKey(s) === workerKey(viewed));
-      return { open, page: next && headless(next) && stopKey(next) !== stopKey(viewed) ? next : null };
+    if (!viewed) return { open, page: open.find(headless) ?? null };
+    if (this.held.has(stopKey(viewed))) return { open, page: null };
+    if (this.reserved && this.reserved.until <= now) this.reserved = null;
+    const slot = this.reserved?.slot === slotKey(viewed) ? this.reserved.slot : null;
+    if (slot) {
+      const next = stops.find((s) => slotKey(s) === slot);
+      if (!next) return { open, page: null };
+      this.reserved = null;
+      if (headless(next)) return { open, page: next };
     }
-    this.viewed = null;
-    return { open, page: open.find(headless) ?? (viewed ? stops.find(headless) : undefined) ?? null };
+    return { open, page: open.find(headless) ?? stops.find(headless) ?? null };
   }
 
   /** The paused page view shows `stop`'s page; null once it is closed. */
@@ -284,19 +299,24 @@ export class StopsShown {
 
   /** Whether `stop`'s file, opening now, takes the focus. */
   focusFor(stop: ShownStop): boolean {
-    return workerKey(stop) === this.followed || [...this.files].every((key) => key === stopKey(stop));
+    return slotKey(stop) === this.followed || [...this.files].every((key) => key === stopKey(stop));
   }
 
   /** `stop`'s file opened, with the focus or without it. */
   opened(stop: ShownStop, focus: boolean): void {
     if (!this.held.has(stopKey(stop))) return;
     this.files.add(stopKey(stop));
-    if (focus) this.followed = workerKey(stop);
+    if (focus) this.followed = slotKey(stop);
   }
 
-  /** A control answered `stop`: the person is on its worker. */
-  answered(stop: ShownStop): void {
-    this.followed = workerKey(stop);
+  /**
+   * A control from the editor answered `stop` (`action`): the person is on its slot, and after a Step or a Run to the
+   * cursor the view waits for its next stop.
+   */
+  answered(stop: ShownStop, action: RunControlAction, now = Date.now()): void {
+    this.followed = slotKey(stop);
+    if (action === 'step' || action === 'run-to') this.reserved = { slot: slotKey(stop), until: now + RESERVED_MS };
+    else if (this.reserved?.slot === slotKey(stop)) this.reserved = null;
   }
 }
 

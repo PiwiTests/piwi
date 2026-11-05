@@ -403,10 +403,12 @@ test runner`, and the Run tool window's Stop ends it.
 
 **A stop.** A stop opens its file at its line once (`Glue.stopKey`, `Glue.StopsShown`), at the line it stands on
 now. It takes the focus, decided as it opens, only while no other stop held has its file open, or as a stop of the
-worker the person is on (the one whose stop last took the focus, or that a control answered last); a file that never
-opened counts as none. Without it, the editor in use is left alone (`PiwiRunSessions.reveal`): a file open in an
-editor already keeps its caret, so the actions still act on the stop at the caret, and another opens in a tab with
-`navigate(false)`, the file in front selected again. It is drawn as the execution point:
+worker slot (`parallelIndex`, which a worker restarted after a failure keeps) the person is on: the one whose stop
+last took the focus, or that a control answered last. A file that never opened counts as none. Without it, the editor
+in use is left alone (`PiwiRunSessions.reveal`): a file open in an editor already keeps its caret, so the actions
+still act on the stop at the caret, and while an editor shows a file, another stays closed, the stop drawn when it
+opens; the platform opens no file without selecting it (`FileEditorOpenOptions` is internal). With no editor shown,
+it opens with `navigate(false)`. It is drawn as the execution point:
 
 - a range highlighter on the document's markup model in `PIWI_EXECUTION_POINT` (**Line a run is stopped at** in
   `PiwiColorSettingsPage.kt`, falling back on `DebuggerColors.EXECUTIONPOINT_ATTRIBUTES`), with
@@ -452,12 +454,12 @@ VSCode keymaps' `F5`, `Debug`; NetBeans' `F4`, `EditSource`) runs Piwi's while i
 
 **The paused page.** A stop with no pause bar asks `piwi/pausedPage` and shows the JPEG (`Glue.pausedImageBytes`, at
 most `Glue.MAX_IMAGE_DATA`, decoded only within `Glue.decodableImage`) in the **Paused Page** tab of the Piwi tool
-window. The tab follows the worker of the stop it shows (`Glue.StopsShown`): while that worker is in the run,
-running or between tests, it says its test went on and opens its next stop, and no other worker's; once that worker
-left the run, it opens the first stop held that no pause bar shows. **Show the Paused Page** moves it to the stop
-chosen. Where its worker takes `pick-at` and the image names its viewport (`Glue.picksOnImage`), a click on the image
-picks the element under it (`piwi/pickAt`, the point scaled to the page's CSS pixels by `Glue.pagePoint`), its locator
-going where a pick goes, the answer said under the image.
+window. The tab keeps the stop it shows while that stop is held (`Glue.StopsShown`). Once it went on after a Step or
+a Run to Caret from the IDE, the tab says so and waits for that slot's next stop, `Glue.RESERVED_MILLIS` at most;
+otherwise it opens the first new stop no pause bar shows, else the first such stop held. **Show the Paused Page**
+moves it to the stop chosen. Where its worker takes `pick-at` and the image names its viewport
+(`Glue.picksOnImage`), a click on the image picks the element under it (`piwi/pickAt`, the point scaled to the page's
+CSS pixels by `Glue.pagePoint`), its locator going where a pick goes, the answer said under the image.
 
 For a stop taking `view`, **Watch live** subscribes through `piwi/pageView` on the existing LSP connection. Frames
 (`piwi/pageFrame`) decode off the event thread, with one decode in flight and only the latest waiting frame. Native
