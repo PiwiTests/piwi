@@ -158,6 +158,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/live-view',
       },
       {
+        title: 'Share a run live',
+        summary:
+          'Let a teammate watch a run on your machine from its page on the team instance: Share live from VS Code, a JetBrains IDE, the Runs window or the desktop app, and stop it the same way.',
+        needs: ['fixtures'],
+        where: 'VS Code, JetBrains IDEs, Runs window, desktop app → Share live',
+        doc: 'features/share-live',
+      },
+      {
         title: 'Stuck tests',
         summary:
           'A running test that has run far longer than its passing runs took is marked Stuck? on its run page, and a test.stuck notification goes out once per attempt, whoever watches.',

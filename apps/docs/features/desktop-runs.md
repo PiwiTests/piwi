@@ -85,8 +85,8 @@ A run that reports to your team's Piwi instance, as a **Re-run** in a folder who
 names it does, can be shared there for a teammate to watch from its page, in a project whose live view is on: **Share
 live**, above the run's workers, any time while it runs. The first time since the app started, it says what goes out and
 to whom, and waits for your yes. Shared, the run says where and how many views are open, with **Copy the run page's
-link** and **Stop sharing**. A run that cannot be shared says why: [Share a run from your
-machine](./live-view#share-a-run-from-your-machine).
+link** and **Stop sharing**. A run that cannot be shared says why: [Share a run
+live](./share-live).
 
 A run that reports to the app itself (a reproduction, a bisect, a **Re-run** in a folder that names no instance, a run
 your editor started) cannot be shared: the app hands out no live view key, since no teammate reaches it. The tray

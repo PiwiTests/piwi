@@ -15,7 +15,7 @@ export interface LiveStepInfo {
   status?: string | null;
   /** Owning test's title — pins the step to the right running row. */
   parentTitle?: string | null;
-  /** When the step began, in epoch milliseconds of the worker's clock. */
+  /** When the step began, in epoch milliseconds of the worker's wall clock. */
   startedAt?: number | null;
 }
 

@@ -36,7 +36,7 @@ sends its lane (`parallelIndex`), and how its test ended; a view opened on it fo
 the worker Playwright starts in it again, waiting 30 s for it, says how each test ended, and **Follow the worker's next
 test** off keeps it to its test, and a view hidden for 10 minutes closes; the view, the rows and the Timeline name a
 worker by its lane from 1. Built from the rest of P1: **Watch** sits at each row's end and opens the view docked
-beside the run page (a sheet on a phone), resizable, full screen, with a click to zoom and **Zoom to the element**;
+beside the run page (a sheet below 1024 px), resizable, full screen, with a click to zoom and **Zoom to the element**;
 the view lists the lane's earlier tests, keeps a failed call's error with its outcome and says the run's verdict as the
 run ends; `?watch=<shard>.<worker>` opens it and names the lane while it is open, and `test.stuck` links to it; a
 view that does not open says why; the reporter sends each test's lane, which the dashboard stores, so the Timeline

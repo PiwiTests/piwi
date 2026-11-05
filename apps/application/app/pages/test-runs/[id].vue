@@ -25,6 +25,7 @@ import {
   liveWatchAddress,
   liveWorkerKey,
   parseLiveWatchAddress,
+  type LiveLane,
   type LiveViewRunState,
   type LiveWorkerState,
 } from '#shared/live-view';
@@ -170,7 +171,14 @@ const watching = ref<{
   executionId: number | null;
 } | null>(null);
 const watchOpen = ref(false);
+/** Whether the view opened from a row's Watch, which gives it the focus; the page's address opens it without. */
+const watchAsked = ref(false);
+// The lane a `?watch=` address names, until a worker of it joins the run's live view: the view then opens on it.
+const watchAddress = ref<LiveLane | null>(null);
 function watchWorker(worker: LiveWorkerState, testCase: TestCaseResult | null) {
+  // Watch on a row replaces a lane the address still waits for.
+  if (testCase) watchAddress.value = null;
+  watchAsked.value = testCase !== null;
   watching.value = {
     worker: worker.worker,
     shard: worker.shard,
@@ -180,34 +188,65 @@ function watchWorker(worker: LiveWorkerState, testCase: TestCaseResult | null) {
   };
   watchOpen.value = true;
 }
-/** The step the watched worker is on: of the worker now in the view's lane, which a restart changes. */
+/** The worker in a lane: the newest Playwright started in it, the one the instance serves its views from. */
+function laneWorker(lane: LiveLane): LiveWorkerState | null {
+  let found: LiveWorkerState | null = null;
+  for (const worker of Object.values(liveWorkers.value)) {
+    if (worker.shard !== lane.shard || worker.slot !== lane.slot) continue;
+    if (!found || worker.worker > found.worker) found = worker;
+  }
+  return found;
+}
+/** The step the watched worker is on: of the worker now in the view's lane, none while the lane has none. */
 const watchedStep = computed(() => {
   const shown = watching.value;
   if (!shown) return null;
-  const now =
-    shown.slot === undefined
-      ? null
-      : Object.values(liveWorkers.value).find((w) => w.shard === shown.shard && w.slot === shown.slot);
-  return liveSteps.value[liveWorkerKey(now ?? shown)] ?? null;
+  const now = shown.slot === undefined ? shown : laneWorker({ shard: shown.shard, slot: shown.slot });
+  return now ? (liveSteps.value[liveWorkerKey(now)] ?? null) : null;
 });
-// The lane a `?watch=` address names, until a worker of it joins the run's live view: the view then opens on it.
-const watchAddress = ref(parseLiveWatchAddress(route.query.watch));
-watch(liveWorkers, (workers) => {
+/** Whether the run is over, so no lane of it is waited for. */
+const runOver = computed(
+  () =>
+    liveRunEnded.value ||
+    (!!testRun.value && !['running', 'initializing', 'finalizing'].includes(testRun.value.status)),
+);
+/** Open the view of the lane the address waits for, once a worker of it is in the run's live view. */
+function openAddressed(): void {
   const lane = watchAddress.value;
-  if (!lane) return;
-  const worker = Object.values(workers).find((w) => w.shard === lane.shard && w.slot === lane.slot);
+  const worker = lane ? laneWorker(lane) : null;
   if (!worker) return;
   watchAddress.value = null;
   watchWorker(worker, null);
+}
+// An address that names a lane, as the page opens or as a link reaches the page already open, opens its view.
+watch(
+  () => route.query.watch,
+  (value) => {
+    const lane = parseLiveWatchAddress(value);
+    const shown = watching.value;
+    // The address of the view open now, which the page wrote itself.
+    if (!lane || (watchOpen.value && shown?.shard === lane.shard && shown.slot === lane.slot)) return;
+    watchAddress.value = runOver.value ? null : lane;
+    openAddressed();
+  },
+  { immediate: true },
+);
+watch(liveWorkers, openAddressed);
+watch(runOver, (over) => {
+  if (over) watchAddress.value = null;
 });
-// The page's address names the lane the view follows while it is open, so it can be shared; one that waits for its
-// lane stays.
-watch([watchOpen, watching], ([isOpen, shown]) => {
+/** The page's address names the lane the view follows while it is open, so it can be shared, and a lane it waits for. */
+function syncAddress(): void {
   if (!import.meta.client || watchAddress.value) return;
+  const shown = watching.value;
   const address =
-    isOpen && shown?.slot !== undefined ? liveWatchAddress({ shard: shown.shard, slot: shown.slot }) : undefined;
+    watchOpen.value && shown?.slot !== undefined
+      ? liveWatchAddress({ shard: shown.shard, slot: shown.slot })
+      : undefined;
   if (route.query.watch !== address) void replaceQuery(router, { watch: address });
-});
+}
+watch([watchOpen, watching, watchAddress], syncAddress);
+onMounted(syncAddress);
 let eventSource: EventSource | null = null;
 
 // Combined test cases: from server data + live stream. Includes every attempt
@@ -1186,7 +1225,7 @@ const moreMenuItems = computed(() => {
 <template>
   <!-- The run page, and the live view docked beside it while someone watches a worker. -->
   <div class="flex min-h-0 min-w-0 flex-1">
-    <UDashboardPanel id="test-run-detail">
+    <UDashboardPanel id="test-run-detail" :ui="{ root: 'lg:not-last:border-e-0' }">
       <template #header>
         <!-- The breadcrumb's current crumb is the page title; a navbar title would repeat it. -->
         <UDashboardNavbar>
@@ -1257,6 +1296,7 @@ const moreMenuItems = computed(() => {
               :display-progress="displayProgress"
               :all-reports="allReports"
               :finalizing="isFinalizing"
+              :live-cases="isLive ? dedupedDisplayCases : null"
               :active-statuses="testCaseActiveStatuses"
               :total-wasted-time="totalWastedTime"
               @toggle-status="handleFilterStatus"
@@ -1365,6 +1405,7 @@ const moreMenuItems = computed(() => {
         v-if="watching"
         :key="`${liveWorkerKey(watching)}:${watching.executionId}`"
         v-model:open="watchOpen"
+        :take-focus="watchAsked"
         :run-id="Number(runId)"
         :worker="watching.worker"
         :shard="watching.shard"

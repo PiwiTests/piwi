@@ -609,7 +609,7 @@ export const HELP_TOPICS = {
       '- **Piwi Picker** — **Share live** under the run’s name, in the Runs window.',
       '- **Desktop app** — **Share live** above the run’s workers, in the Local runs tray.',
     ].join('\n'),
-    doc: 'features/live-view#share-a-run-from-your-machine',
+    doc: 'features/share-live',
   },
   'run.live-stalled': {
     title: 'Live updates stalled',

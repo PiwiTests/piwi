@@ -105,7 +105,7 @@ the test; a condition is not read, so a conditional breakpoint stops at each pas
 **Share live** lets a teammate watch the run from its page on your team's instance: **Piwi: Share the run live on the
 team instance** in VS Code, **Tools → Piwi → Share the Run Live** in a JetBrains IDE, any time. It first says what goes
 out and to whom (once a VS Code window, once a JetBrains project); shared, the status bar counts its views, until
-**Stop sharing**: [Share a run from your machine](./live-view#share-a-run-from-your-machine).
+**Stop sharing**: [Share a run live](./share-live).
 
 ## How it works
 

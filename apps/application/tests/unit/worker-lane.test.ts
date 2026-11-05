@@ -116,6 +116,8 @@ describe('a worker lane', () => {
     expect(shownWorkerNumber({ workerIndex: 5, parallelIndex: 1 })).toBe(2);
     expect(shownWorkerNumber({ workerIndex: 5 })).toBe(5);
     expect(shownWorkerNumber({ workerIndex: null, parallelIndex: null })).toBeNull();
+    // A test Playwright never ran carries -1 for both.
+    expect(shownWorkerNumber({ workerIndex: -1, parallelIndex: -1 })).toBeNull();
   });
 
   test('orders executions by shard, then lane, then worker process', () => {
@@ -179,7 +181,7 @@ describe('the worker an MCP tool reports', () => {
     const run = (await getRun(db as never, { runId }, ctx)) as { cases: Array<Record<string, unknown>> };
     const byTitle = new Map(run.cases.map((c) => [c.title, c]));
     expect(byTitle.get('pays')).toMatchObject({ worker: 2, shardIndex: 2 });
-    expect('workerIndex' in byTitle.get('pays')!).toBe(false);
+    expect(byTitle.get('pays')).toMatchObject({ workerIndex: 4 });
     expect(byTitle.get('refunds')).toMatchObject({ workerIndex: 5 });
     expect('worker' in byTitle.get('refunds')!).toBe(false);
     expect('shardIndex' in byTitle.get('refunds')!).toBe(false);
@@ -189,7 +191,7 @@ describe('the worker an MCP tool reports', () => {
       string,
       unknown
     >;
-    expect([pays.worker, pays.shardIndex, 'workerIndex' in pays]).toEqual([2, 2, false]);
+    expect([pays.worker, pays.shardIndex, pays.workerIndex]).toEqual([2, 2, 4]);
     const refunds = (await getCase(db as never, { executionId: byTitle.get('refunds')!.executionId }, ctx)) as Record<
       string,
       unknown
