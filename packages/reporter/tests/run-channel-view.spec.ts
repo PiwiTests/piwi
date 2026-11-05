@@ -43,6 +43,17 @@ const TEST_TIMEOUT_MS = 1500;
 /** How long the editor watches an animated page, to count its frames. */
 const WATCH_MS = 1500;
 const requireHere = createRequire(import.meta.url);
+/** Playwright's own JPEG decoder, for the pixels of an image the view sent. */
+const jpeg = (
+  createRequire(requireHere.resolve('playwright-core/package.json'))('playwright-core/lib/utilsBundle') as {
+    jpegjs: {
+      decode(
+        data: Buffer,
+        options: { useTArray: true; formatAsRGBA: true },
+      ): { width: number; height: number; data: Uint8Array };
+    };
+  }
+).jpegjs;
 const FIREFOX = (() => {
   try {
     const { firefox } = requireHere('@playwright/test') as { firefox: { executablePath(): string } };
@@ -159,7 +170,18 @@ test('picked on a sharper image', async ({ page }) => {
   await page.goto('${base}/still');
   await expect(page.locator('#go')).toBeVisible(); // bp
 });
+test('watched with a secret field', async ({ page }) => {
+  await page.goto('${base}/secret');
+  await expect(page.locator('#go')).toBeVisible(); // bp
+});
 `;
+
+/** Where the secret field stands on its page, in CSS pixels, a solid green no image may show. */
+const SECRET_BOX = { x: 40, y: 200, width: 300, height: 60 };
+/** A page with a password field, at `SECRET_BOX`, its value typed in. */
+const SECRET = `<!doctype html><meta charset="utf-8"><style>body { margin: 0; background: #fff }
+#secret { position: absolute; left: ${SECRET_BOX.x}px; top: ${SECRET_BOX.y}px; width: ${SECRET_BOX.width}px; height: ${SECRET_BOX.height}px; box-sizing: border-box; border: 0; padding: 0 8px; background: #0c0; color: #00f; font: 32px sans-serif }</style>
+<button id="go" style="position:absolute;left:10px;top:10px">Go</button><input type="password" id="secret" value="hunter2">`;
 
 /**
  * A page of noise, which no JPEG makes small: at 1280 by 720 its frames are over the view's limit, a lighter image
@@ -435,8 +457,13 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
       answers.push(await view(true));
       await watch(HOLD_MS);
       answers.push(await view(false));
+    } else if (test === 'watched with a secret field') {
+      images[test] = (await ask(connection, { what: 'image' })) as unknown as { data: string } | null;
+      answers.push(await view(true));
+      await watch(800);
+      answers.push(await view(false));
     } else if (test === 'picked on a sharper image') {
-      // The image is in device pixels; the point goes in CSS pixels of the page, as the image's viewport names them.
+      // The point goes in CSS pixels of the page, as the image's viewport names them, whatever the image's size.
       const image = (await ask(connection, { what: 'image' })) as unknown as {
         width: number;
         height: number;
@@ -573,6 +600,7 @@ beforeAll(async () => {
     }
     res.writeHead(200, { 'content-type': 'text/html' });
     if (url.pathname === '/noisy') return res.end(NOISY(1280, 720));
+    if (url.pathname === '/secret') return res.end(SECRET);
     if (url.pathname === '/noisier') return res.end(NOISY(1920, 1080));
     res.end(PAGE(url.pathname === '/animated'));
   });
@@ -695,6 +723,7 @@ describe('the live view of a stopped page', () => {
       ['watched at a headed stop', 'passed', []],
       ['recorded on video while watched', 'passed', []],
       ['picked on a sharper image', 'passed', []],
+      ['watched with a secret field', 'passed', []],
       ['watched on a page too heavy for its frames', 'passed', []],
       ['watched on a page too heavy for a lighter image', 'passed', []],
       ...(FIREFOX ? [['watched in Firefox', 'passed', []]] : []),
@@ -856,17 +885,43 @@ describe('the live view of a stopped page', () => {
     expect(jpegSize(seen.lastJpeg!)).toEqual({ width: 800, height: 512 });
   });
 
-  it('sends an image in device pixels that names the viewport in CSS pixels', () => {
-    // Twice the viewport's CSS pixels: the device scale factor.
-    expect(sharp.natural).toEqual({ width: 2000, height: 1280 });
+  it('sends an image at the viewport’s size in CSS pixels, whatever the device scale factor', () => {
+    // The viewport's CSS pixels, a device scale factor of 2 left out.
+    expect(sharp.natural).toEqual({ width: 1000, height: 640 });
     // The view names the same viewport, whatever its frames' own size.
     const seen = watched['picked on a sharper image']!;
     expect(seen.firstJpeg && jpegSize(seen.firstJpeg)).toEqual({ width: 1000, height: 640 });
   });
 
   it.runIf(PICKS_AT)('maps a point of such an image to the page through the viewport it names', () => {
-    expect(sharp.clicked!.x).toBeCloseTo(sharp.sent!.x * 2);
+    expect(sharp.clicked!.x).toBeCloseTo(sharp.sent!.x);
     expect(said['picked on a sharper image']).toEqual([PICKED_AT, ON]);
+  });
+
+  it('paints a secret field over in the stop’s image and in every frame of its view', () => {
+    const decoded: Buffer[] = [Buffer.from(images['watched with a secret field']!.data, 'base64')];
+    const seen = watched['watched with a secret field']!;
+    expect(seen.frames).toBeGreaterThan(0);
+    decoded.push(seen.firstJpeg!, seen.lastJpeg!);
+    for (const data of decoded) {
+      const image = jpeg.decode(data, { useTArray: true, formatAsRGBA: true });
+      const scale = image.width / 1000;
+      let green = 0;
+      let sum = 0;
+      let n = 0;
+      for (let y = Math.ceil(SECRET_BOX.y * scale); y < Math.floor((SECRET_BOX.y + SECRET_BOX.height) * scale); y++) {
+        for (let x = Math.ceil(SECRET_BOX.x * scale); x < Math.floor((SECRET_BOX.x + SECRET_BOX.width) * scale); x++) {
+          const i = (y * image.width + x) * 4;
+          const [r, g, b] = [image.data[i]!, image.data[i + 1]!, image.data[i + 2]!];
+          if ((g > 160 && r < 100 && b < 100) || (b > 160 && r < 100 && g < 100)) green++;
+          sum += g;
+          n++;
+        }
+      }
+      expect(green).toBe(0);
+      // The paint's gray, the field's green gone.
+      expect(Math.abs(sum / n - 96)).toBeLessThan(30);
+    }
   });
 
   it('shows a lighter image of a page whose frames are too long, and says once why none goes when it is too', () => {

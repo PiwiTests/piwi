@@ -1,7 +1,7 @@
 import * as net from 'node:net';
 import type { Browser, Page, WorkerInfo } from '@playwright/test';
 import { RECORD_CHANNEL_ENV, lineReader, parseRecordChannel } from '@piwitests/core/ide-recorder';
-import { hideSecretsInText } from '@piwitests/core/mask';
+import { hideSecretsInText, hideTypedText } from '@piwitests/core/mask';
 import {
   MAX_RUN_EVENT_RATE,
   RUN_CHANNEL_ENV,
@@ -48,6 +48,7 @@ import { getReporterVersion } from '../support/reporter-version.js';
 import { bindBrowser } from './agent-page.js';
 import { locatorOn } from './chain-locator.js';
 import { keptRequests, keptResponse } from './kept-responses.js';
+import { jpegSize, maskSecretFields, maskedImage } from './live-mask.js';
 import { liveViewState, onLiveViewChange, shareLiveView } from './live-view.js';
 import { openPageView, viewportOf } from './page-view.js';
 import { PICK_AT_SINCE } from './pick-at.js';
@@ -497,7 +498,8 @@ export function holdStop(
     type: 'stopped',
     stop: id,
     reason: stop.reason,
-    title: stop.title,
+    // The text the stopped call types stays in the worker, as on every surface.
+    title: hideSecretsInText(hideTypedText(stop.title)),
     place: stop.place,
     locator: stop.locator,
     bar: stop.bar,
@@ -622,6 +624,13 @@ function startView(holding: HeldStop): Promise<IntentAnswer> {
  * stops as its page closes. Null when the page cannot be read.
  */
 async function openView(page: Page, stop: number): Promise<View | null> {
+  // The page's secret fields and the pause bar are painted over in each frame, or the frame does not go.
+  const mask = maskSecretFields(page, {
+    masks: () => [],
+    quality: VIEW_QUALITY,
+    lightQuality: LIGHT_QUALITY,
+    maxBytes: MAX_VIEW_FRAME,
+  });
   const opened = await openPageView(page, {
     size: viewSize,
     quality: VIEW_QUALITY,
@@ -629,12 +638,13 @@ async function openView(page: Page, stop: number): Promise<View | null> {
     maxFrameBytes: MAX_VIEW_FRAME,
     lightQuality: LIGHT_QUALITY,
     shotMs: SHOT_MS,
-    busy: () => !!socket && socket.writableLength > MAX_FRAME_BACKLOG,
+    busy: () => (!!socket && socket.writableLength > MAX_FRAME_BACKLOG) || mask.resting,
     // Once its stop began to end, no frame of it goes.
     live: () => held?.stop === stop,
+    screen: (frame) => mask.screen(frame),
     send: (frame) =>
       tellHub({ type: 'frame', stop, width: frame.width, height: frame.height, data: frame.data.toString('base64') }),
-    refuse: () => tellHub({ type: 'frame', stop, refused: TOO_HEAVY }),
+    refuse: (why) => tellHub({ type: 'frame', stop, refused: why ?? TOO_HEAVY }),
   });
   if (!opened) return null;
   const onClose = () => {
@@ -980,18 +990,30 @@ async function bindAt(at: HeldStop | null, on: boolean): Promise<BindAnswer> {
 }
 
 /**
- * An image of a stopped page, without the pause bar, with its viewport in CSS pixels (which `pick-at` names a point
- * in, whatever the image's size); null when there is no page or it cannot be taken.
+ * An image of a stopped page, without the pause bar, its secret fields painted over (`maskedImage`), at its viewport's
+ * size in CSS pixels (which `pick-at` names a point in); null when there is no page, it cannot be taken, or it is not
+ * of the viewport's shape.
  */
 async function imageOf(page: Page | null): Promise<PausedImage | null> {
   if (!page || page.isClosed()) return null;
   try {
-    const shot = await internalCall(page, () =>
-      page.screenshot({ type: 'jpeg', quality: 60, style: BAR_HIDDEN, timeout: 5000 }),
-    );
+    const shot = await maskedImage(page, { quality: 60, style: BAR_HIDDEN, timeout: 5000 });
+    if (!shot) return null;
     const viewport = await viewportOf(page);
+    const size = jpegSize(shot);
+    if (viewport && (!size || !sameShape(size, viewport))) return null;
     return { mime: 'image/jpeg', data: shot.toString('base64'), ...viewport };
   } catch {
     return null;
   }
+}
+
+/** Whether an image has a viewport's shape: their widths over their heights within 2 %. */
+export function sameShape(
+  image: { width: number; height: number },
+  viewport: { width: number; height: number },
+): boolean {
+  if (image.height <= 0 || viewport.height <= 0) return false;
+  const shape = viewport.width / viewport.height;
+  return Math.abs(image.width / image.height - shape) <= shape * 0.02;
 }

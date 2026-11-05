@@ -9,7 +9,7 @@ import { internalCall, resolvePlaywrightPackageJson } from './quiet-capture.js';
 /**
  * The live view's images with the page's secret fields painted over, in the worker, before an image leaves it: the
  * fields of `SECRET_FIELD_SELECTOR` (a password field, and a one-time code or a card's number or security code by its
- * `autocomplete`) and the project's own locators (`masks`), in every frame of the page. Each image the view would send
+ * `autocomplete`), Piwi's pause bar at a stop, and the project's own locators (`masks`), in every frame of the page. Each image the view would send
  * comes here first (`page-view.ts`'s `screen`). The boxes of those elements, and the viewport's size, are read through
  * `internalCall` just after it, and compared with a read made just before the page showed it: a frame whose two reads
  * find no element, and the viewport the frame names, goes as it is; one whose two reads find the same boxes goes with
@@ -111,8 +111,11 @@ export function jpegCodec(): JpegJs | null {
 }
 
 /** The masked elements of `frame`: its secret fields and the project's locators, as one locator. */
+/** The elements every live view paints over: the secret fields, and Piwi's pause bar at a stop. */
+const MASKED_SELECTOR = `${SECRET_FIELD_SELECTOR}, #__piwi-pause-bar`;
+
 function maskedIn(frame: Frame, masks: readonly string[]): Locator {
-  let locator = frame.locator(SECRET_FIELD_SELECTOR);
+  let locator = frame.locator(MASKED_SELECTOR);
   for (const source of masks) {
     const own = locatorOn(frame, source);
     if (!own) throw new Error(`The locator ${source} cannot be built.`);
@@ -314,7 +317,7 @@ function sameBoxes(a: Box[], b: Box[]): boolean {
 }
 
 /** A JPEG's size in pixels, from its frame header; null when it has none. */
-function jpegSize(data: Buffer): { width: number; height: number } | null {
+export function jpegSize(data: Buffer): { width: number; height: number } | null {
   for (let i = 2; i + 9 < data.length;) {
     if (data[i] !== 0xff) return null;
     const marker = data[i + 1]!;
@@ -433,8 +436,8 @@ async function secretBoxes(page: Page): Promise<Omit<Read, 'began' | 'ended'> | 
 }
 
 /**
- * An image of `page`'s viewport with its secret fields (`SECRET_FIELD_SELECTOR`, in every frame) painted over in the
- * image itself, never in the page, so the test's own highlights stay as they are: taken between two reads of their
+ * An image of `page`'s viewport, at its size in CSS pixels, with its secret fields (`SECRET_FIELD_SELECTOR`, in every
+ * frame) painted over in the image itself, never in the page, so the test's own highlights stay as they are: taken between two reads of their
  * boxes (`secretBoxes`), through `internalCall`, which must agree. Null when they do not, when the page cannot be read
  * or is zoomed in, and when a field shows and there is no `jpeg-js` to paint with. `style` applies while the image is
  * taken.
@@ -449,6 +452,7 @@ export async function maskedImage(
     page.screenshot({
       type: 'jpeg',
       quality: options.quality,
+      scale: 'css',
       timeout: options.timeout,
       ...(options.style ? { style: options.style } : {}),
     }),
@@ -474,6 +478,8 @@ export interface SecretFieldMaskOptions {
   masks(): readonly string[] | null;
   /** The JPEG quality of an image painted over, or taken in a frame's place. */
   quality: number;
+  /** The quality of an image taken in a frame's place when one at `quality` is longer than `maxBytes`. */
+  lightQuality?: number;
   /** The longest image that goes, in bytes of JPEG. */
   maxBytes: number;
 }
@@ -555,9 +561,15 @@ export function maskSecretFields(page: Page, options: SecretFieldMaskOptions): S
       // No read brackets the frame: a screenshot taken between two reads goes in its place.
       if (page.isClosed()) return null;
       const at = Date.now();
-      const shot = await internalCall(page, () =>
-        page.screenshot({ type: 'jpeg', quality: options.quality, scale: 'css', caret: 'initial', timeout: 5000 }),
-      ).catch(() => null);
+      const take = (quality: number) =>
+        internalCall(page, () =>
+          page.screenshot({ type: 'jpeg', quality, scale: 'css', caret: 'initial', timeout: 5000 }),
+        ).catch(() => null);
+      let shot = await take(options.quality);
+      // A page too heavy for an image at the view's quality goes at the lighter one, as the view's own images do.
+      if (shot && shot.length > options.maxBytes && options.lightQuality !== undefined) {
+        shot = await take(options.lightQuality);
+      }
       if (!shot) return null;
       const again = await read();
       if (typeof again === 'string' || !again) return again;

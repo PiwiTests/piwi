@@ -158,8 +158,13 @@ What the package does to a user's run, process by process.
   or, for a stop whose page the worker cannot tell, any page of its context closed) ends
   the same way with or without a bar, and the editor gets `running`.
 - The editor can ask for an image of the stopped page: a JPEG screenshot without the
-  pause bar, taken through an internal call. It gets none for a stop whose page the
-  worker cannot tell (a navigation or a key press in a context with several pages).
+  pause bar, at the viewport's size in CSS pixels, its secret fields painted over
+  (`maskedImage`), taken through an internal call. It gets none for a stop whose page the
+  worker cannot tell (a navigation or a key press in a context with several pages), and
+  none of another shape than the viewport's. The live view's frames are painted over as
+  the instance's are (`maskSecretFields`), the pause bar's box with the secret fields,
+  and the titles of the stops and calls the run channel tells go through `hideTypedText`
+  and `hideSecretsInText`.
 - At a stop the bar shows, the editor can start the bar's **Pick a locator** or **Record
   here** (an intent: a `request` with `what: 'pick' | 'record'` that names the stop).
   `BarIntents` (`pause-at.ts`) hands it to the bar, which takes it as a click on its own

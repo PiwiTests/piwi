@@ -6,6 +6,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { formatRecordChannel, lineReader } from '@piwitests/core/ide-recorder';
+import { HIDDEN_VALUE } from '@piwitests/core/mask';
 import { parseRunToHub, type HubToRun, type PausedImage, type RunToHub } from '@piwitests/core/run-channel';
 import { collectStepMetrics, unpausedDuration } from '@piwitests/core/step-analysis';
 import { startServer, type FakeServer, withoutCi } from './_helpers.js';
@@ -483,7 +484,8 @@ describe('a run steered over the run channel', () => {
       ['step', mark('headed', 'step-here'), true],
       ['run-to', mark('headed', 'run-to'), true],
     ]);
-    expect(stops.slice(0, 2).map((s) => callOf(s.title))).toEqual(['Fill "one"', 'Click']);
+    // The text a fill types stays in the worker: the editor hears the call without it.
+    expect(stops.slice(0, 2).map((s) => callOf(s.title))).toEqual([`Fill "${HIDDEN_VALUE}"`, 'Click']);
     expect(stops[0]).toMatchObject({ locator: "locator('input')" });
     // Every stop ends with the editor's answer, and the bar it showed came down (the test checks it).
     const ended = heardIn('steered').filter((m) => m.type === 'running');
