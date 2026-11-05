@@ -31,6 +31,7 @@ import { isPassiveCapabilityDeclined } from './capabilities';
 import { hasResourceReport } from './resource-reports';
 import { getLocatorHealingBatch } from '../../server/utils/locator-healing';
 import { publicRunColumns } from './public-run';
+import { workerKey } from '#shared/worker-lane';
 
 type ProjectScope = 'all' | Set<number>;
 
@@ -644,6 +645,9 @@ interface GroupCase {
   filePath: string;
   retries: number;
   workerIndex: number | null;
+  /** The worker's lane (Playwright's `parallelIndex`); null from an older reporter. */
+  parallelIndex: number | null;
+  shardIndex: number | null;
   passedOnRetry: boolean;
 }
 
@@ -661,6 +665,7 @@ interface FailureGroup {
   firstSeenAt: Date | null;
   occurrences: number;
   flaky: boolean;
+  /** All of the group's tests, two or more, failed on one worker (a lane in its shard), in a run that used several. */
   workerCorrelated: boolean;
   cases: GroupCase[];
   diagnosis: DiagnosisCompact | null;
@@ -678,6 +683,8 @@ export async function getFailureGroups(db: DrizzleDB, runId: number) {
       status: testRunsCases.status,
       retries: testRunsCases.retries,
       workerIndex: testRunsCases.workerIndex,
+      parallelIndex: testRunsCases.parallelIndex,
+      shardIndex: testRunsCases.shardIndex,
       passedAfterFailure: testRunsCases.passedAfterFailure,
     })
     .from(testRunsCases)
@@ -688,7 +695,7 @@ export async function getFailureGroups(db: DrizzleDB, runId: number) {
   const repetitionKey = (row: { testCaseId: number; browserName: string | null; repeatEachIndex: number }) =>
     `${row.testCaseId}\x00${row.browserName ?? ''}\x00${row.repeatEachIndex}`;
   const passedRepetitions = new Set(allRows.filter((r) => r.passedAfterFailure).map(repetitionKey));
-  const runWorkers = new Set(allRows.map((r: any) => r.workerIndex).filter((w: any) => w !== null));
+  const runWorkers = new Set(allRows.map(workerKey).filter((key) => key !== null));
 
   const clusteredRows = await db
     .select({
@@ -698,6 +705,8 @@ export async function getFailureGroups(db: DrizzleDB, runId: number) {
       repeatEachIndex: testRunsCases.repeatEachIndex,
       retries: testRunsCases.retries,
       workerIndex: testRunsCases.workerIndex,
+      parallelIndex: testRunsCases.parallelIndex,
+      shardIndex: testRunsCases.shardIndex,
       title: testCases.title,
       filePath: testCases.filePath,
       clusterId: failureClusters.id,
@@ -766,6 +775,8 @@ export async function getFailureGroups(db: DrizzleDB, runId: number) {
         existing.retries = row.retries ?? 0;
         existing.executionId = row.executionId;
         existing.workerIndex = row.workerIndex;
+        existing.parallelIndex = row.parallelIndex;
+        existing.shardIndex = row.shardIndex;
       }
     } else {
       g.caseById.set(row.testCaseId, {
@@ -775,6 +786,8 @@ export async function getFailureGroups(db: DrizzleDB, runId: number) {
         filePath: row.filePath,
         retries: row.retries ?? 0,
         workerIndex: row.workerIndex,
+        parallelIndex: row.parallelIndex,
+        shardIndex: row.shardIndex,
         passedOnRetry,
       });
     }
@@ -784,7 +797,7 @@ export async function getFailureGroups(db: DrizzleDB, runId: number) {
   for (const group of groups.values()) {
     const { caseById, ...rest } = group;
     const cases = [...caseById.values()].sort((a, b) => a.title.localeCompare(b.title));
-    const caseWorkers = new Set(cases.map((c) => c.workerIndex).filter((w) => w !== null));
+    const caseWorkers = new Set(cases.map(workerKey).filter((key) => key !== null));
 
     result.push({
       ...rest,

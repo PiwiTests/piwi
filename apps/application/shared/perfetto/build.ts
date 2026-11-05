@@ -3,10 +3,11 @@
  * in ui.perfetto.dev and Chrome's `chrome://tracing`.
  *
  * Pure and node-free, so the demo reuses it. One process per shard, one thread
- * per worker; each execution is a complete slice whose hooks, fixtures and steps
- * nest under it by start time, and the moment a failing execution failed is an
- * instant event on the same thread. Timestamps are microseconds relative to the
- * earliest event, matching Playwright's own `perfetto` reporter.
+ * per worker, named by its lane from 1 as the run page names it; each
+ * execution is a complete slice whose hooks, fixtures and steps nest under it
+ * by start time, and the moment a failing execution failed is an instant event
+ * on the same thread. Timestamps are microseconds relative to the earliest
+ * event, matching Playwright's own `perfetto` reporter.
  */
 import type {
   PerfettoBuildOptions,
@@ -16,6 +17,7 @@ import type {
   PerfettoTrace,
   TraceEvent,
 } from './types';
+import { shownWorkerNumber, workerNumber } from '../worker-lane';
 
 /** Chrome trace color names keyed by execution/step status. */
 const STATUS_COLORS: Record<string, string> = {
@@ -51,8 +53,14 @@ function pidOf(ex: { shardIndex?: number | null }): number {
   return ex.shardIndex != null && Number.isFinite(ex.shardIndex) ? ex.shardIndex : 0;
 }
 
-/** The thread id for a worker within its process. */
-function tidOf(ex: { workerIndex?: number | null }): number {
+/**
+ * The thread id for a worker within its process: the number the run page names it by (`Worker 2`), its lane from 1,
+ * else the worker process of a result without a lane; a test that never ran keeps the worker index Playwright gives
+ * it (-1), on a thread of its own, and one with none is on 0.
+ */
+function tidOf(ex: { parallelIndex?: number | null; workerIndex?: number | null }): number {
+  const shown = shownWorkerNumber(ex);
+  if (shown !== null) return shown;
   return ex.workerIndex != null && Number.isFinite(ex.workerIndex) ? ex.workerIndex : 0;
 }
 
@@ -83,8 +91,8 @@ export function buildPerfettoTrace(input: PerfettoRunInput, options: PerfettoBui
   const tracks = new Set<string>();
   /** Process id → its shard index (null when unsharded). */
   const shardByPid = new Map<number, number | null>();
-  /** Worker index → the smallest process id that ran it (for setup steps). */
-  const pidByWorker = new Map<number, number>();
+  /** Worker process (`workerIndex`) → its track in the first shard that ran it (for setup steps). */
+  const trackByWorkerIndex = new Map<number, { pid: number; tid: number }>();
 
   const registerTrack = (pid: number, tid: number) => {
     tracks.add(`${pid}:${tid}`);
@@ -133,6 +141,8 @@ export function buildPerfettoTrace(input: PerfettoRunInput, options: PerfettoBui
     else if (ex.filePath) args.location = ex.filePath;
     if (ex.testCaseId != null) args.testId = ex.testCaseId;
     args.executionId = ex.executionId;
+    const worker = workerNumber(ex.parallelIndex);
+    if (worker != null) args.worker = worker;
     if (ex.workerIndex != null) args.workerIndex = ex.workerIndex;
     if (ex.shardIndex != null) args.shardIndex = ex.shardIndex;
     if (ex.retries) args.retry = ex.retries;
@@ -152,8 +162,8 @@ export function buildPerfettoTrace(input: PerfettoRunInput, options: PerfettoBui
     const tid = tidOf(ex);
     shardByPid.set(pid, ex.shardIndex ?? null);
     if (ex.workerIndex != null) {
-      const existing = pidByWorker.get(ex.workerIndex);
-      if (existing == null || pid < existing) pidByWorker.set(ex.workerIndex, pid);
+      const existing = trackByWorkerIndex.get(ex.workerIndex);
+      if (existing == null || pid < existing.pid) trackByWorkerIndex.set(ex.workerIndex, { pid, tid });
     }
     registerTrack(pid, tid);
 
@@ -205,12 +215,12 @@ export function buildPerfettoTrace(input: PerfettoRunInput, options: PerfettoBui
     }
   }
 
-  // Suite-level setup steps carry a worker but no shard: place each on the
-  // lowest process id that ran that worker, matching the workers timeline.
+  // Suite-level setup steps carry a worker process but no shard or lane: place
+  // each on the thread that process ran on, in the first shard that ran it,
+  // matching the workers timeline.
   for (const step of input.setupSteps ?? []) {
     if (step.workerIndex == null || !Number.isFinite(step.workerIndex)) continue;
-    const tid = step.workerIndex;
-    const pid = pidByWorker.get(step.workerIndex) ?? 0;
+    const { pid, tid } = trackByWorkerIndex.get(step.workerIndex) ?? { pid: 0, tid: step.workerIndex };
     shardByPid.set(pid, shardByPid.get(pid) ?? null);
     registerTrack(pid, tid);
     const start = num(step.startedAt, num(input.run.startTime, 0));

@@ -2,7 +2,8 @@ import { eq } from 'drizzle-orm';
 import { resolveBrowserName } from '#shared/browser-name';
 import { runningTestHistory, type RunningTestHistory } from '#shared/handlers/stuck-tests';
 import { STUCK_FLOOR_MS, stuckAttempt, testStuckEventData, type StuckAttempt } from '#shared/stuck-tests';
-import { projects } from '~~/server/database/schema';
+import { isEligibleRun } from '#shared/run-eligibility';
+import { projects, testRuns } from '~~/server/database/schema';
 import { runningCaseKey } from '~~/server/utils/inserted-run-cases';
 import { keepBatchSteps, type KeptLiveStep, type StepRunEvent } from '~~/server/utils/map-step-events';
 import type { StreamEventPayload } from '#shared/types';
@@ -131,6 +132,12 @@ async function checkAttempts(db: DemoDb, run: { id: number; projectId: number },
     if (!stuck) continue;
     attempt.stuck = stuck;
     publishDemoRunEvent(run.id, { type: 'test-stuck', data: testStuckEventData(begin, stuck) });
+    // The notification follows the server's rule: none for a run started on a developer's machine.
+    const [runRow] = await db
+      .select({ metadata: testRuns.metadata, isFullRun: testRuns.isFullRun, status: testRuns.status })
+      .from(testRuns)
+      .where(eq(testRuns.id, run.id));
+    if (!runRow || !isEligibleRun(runRow, 'stuck-notifications')) continue;
     const [project] = await db
       .select({ name: projects.name, label: projects.label })
       .from(projects)

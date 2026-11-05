@@ -25,6 +25,7 @@ function snapshot(overrides: Parameters<typeof buildEnvironmentSnapshot>[0] = {}
     scmBranch: 'main',
     browser,
     workerIndex: 2,
+    parallelIndex: 1,
     shardIndex: null,
     ...overrides,
   });
@@ -37,7 +38,7 @@ describe('buildEnvironmentSnapshot', () => {
     expect(snap.viewport).toBe('1280x720');
     expect(snap.isMobile).toBe('no');
     expect(snap.javaScriptEnabled).toBe('yes');
-    expect(snap.workerIndex).toBe('2');
+    expect(snap.worker).toBe('2');
     expect(snap.shardIndex).toBeNull();
     expect(snap.channel).toBeNull();
   });
@@ -111,13 +112,23 @@ describe('computeEnvironmentDiff', () => {
     expect(diff).toEqual([{ key: 'viewport', label: 'Viewport', failing: '375x667', baseline: '1280x720' }]);
   });
 
-  test('worker and shard index changes are flagged informational', () => {
-    const failing = snapshot({ workerIndex: 5, shardIndex: 1 });
+  test('names the worker by its lane from 1, else by the worker process of a result without a lane', () => {
+    expect(snapshot({ workerIndex: 7, parallelIndex: 0 }).worker).toBe('1');
+    expect(snapshot({ workerIndex: 7, parallelIndex: null }).worker).toBe('7');
+    expect(snapshot({ workerIndex: null, parallelIndex: null }).worker).toBeNull();
+  });
+
+  test('a worker Playwright started again in the same lane is not a change', () => {
+    expect(computeEnvironmentDiff(snapshot({ workerIndex: 5 }), snapshot())).toEqual([]);
+  });
+
+  test('worker and shard changes are flagged informational', () => {
+    const failing = snapshot({ parallelIndex: 3, shardIndex: 1 });
     const diff = computeEnvironmentDiff(failing, snapshot());
-    expect(diff).toHaveLength(2);
-    for (const entry of diff) {
-      expect(entry.informational).toBe(true);
-    }
+    expect(diff).toEqual([
+      { key: 'worker', label: 'Worker', failing: '4', baseline: '2', informational: true },
+      { key: 'shardIndex', label: 'Shard index', failing: '1', baseline: null, informational: true },
+    ]);
   });
 
   test('keys present in neither snapshot never appear', () => {

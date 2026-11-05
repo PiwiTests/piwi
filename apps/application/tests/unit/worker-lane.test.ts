@@ -6,7 +6,7 @@ import * as schema from '../../server/database/schema.sqlite';
 import { apiError } from '../../server/utils/api-error';
 import { durationStats } from '#shared/utils/stats';
 import { InstanceRole, ADMIN_ACCESS } from '#shared/permissions';
-import { compareWorkers, shownWorkerNumber, workerLane, workerNumber } from '#shared/worker-lane';
+import { compareWorkers, shownWorkerNumber, workerKey, workerLane, workerNumber } from '#shared/worker-lane';
 import { DashboardLinks, eventFacts } from '#shared/notifications/message-parts';
 import type { User } from '../../server/database/schema';
 import { migrateToLatest } from './temp-db';
@@ -118,6 +118,18 @@ describe('a worker lane', () => {
     expect(shownWorkerNumber({ workerIndex: null, parallelIndex: null })).toBeNull();
     // A test Playwright never ran carries -1 for both.
     expect(shownWorkerNumber({ workerIndex: -1, parallelIndex: -1 })).toBeNull();
+  });
+
+  test('tells workers apart by shard and lane, else by shard and worker process', () => {
+    expect(workerKey({ shardIndex: 1, parallelIndex: 0, workerIndex: 0 })).toBe(
+      workerKey({ shardIndex: 1, parallelIndex: 0, workerIndex: 3 }),
+    );
+    expect(workerKey({ shardIndex: 1, parallelIndex: 0, workerIndex: 0 })).not.toBe(
+      workerKey({ shardIndex: 2, parallelIndex: 0, workerIndex: 0 }),
+    );
+    expect(workerKey({ workerIndex: 0 })).not.toBe(workerKey({ workerIndex: 3 }));
+    expect(workerKey({ parallelIndex: 0 })).not.toBe(workerKey({ workerIndex: 0 }));
+    expect(workerKey({ workerIndex: -1, parallelIndex: -1 })).toBeNull();
   });
 
   test('orders executions by shard, then lane, then worker process', () => {

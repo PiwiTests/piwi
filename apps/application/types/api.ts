@@ -1106,6 +1106,9 @@ export interface FailureGroupCase {
   filePath: string;
   retries: number;
   workerIndex: number | null;
+  /** The worker's lane (Playwright's `parallelIndex`); null from an older reporter. */
+  parallelIndex: number | null;
+  shardIndex: number | null;
   passedOnRetry: boolean;
 }
 
@@ -1126,6 +1129,7 @@ export interface FailureGroup {
   firstSeenAt: string | null;
   occurrences: number;
   flaky: boolean;
+  /** All of the group's tests, two or more, failed on one worker (a lane in its shard), in a run that used several. */
   workerCorrelated: boolean;
   cases: FailureGroupCase[];
   diagnosis: DiagnosisCompact | null;

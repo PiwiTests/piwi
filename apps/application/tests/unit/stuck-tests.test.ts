@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { eq } from 'drizzle-orm';
 import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
 import { migrate } from 'drizzle-orm/libsql/migrator';
@@ -7,12 +8,12 @@ import * as schema from '../../server/database/schema.sqlite';
 import { STUCK_FLOOR_MS, stuckAttempt, stuckThresholdMs } from '../../shared/stuck-tests';
 
 delete process.env.PIWI_DATABASE_URL;
-/** What each `test.stuck` notification the check sent says of its attempt. */
+/** What each `test.stuck` notification the check sent says. */
 const notices = vi.hoisted(() => [] as Array<Record<string, unknown>>);
-vi.mock('../../server/utils/notifications/run-notifications', async (importOriginal) => ({
+vi.mock('../../server/utils/notifications/emit', async (importOriginal) => ({
   ...(await importOriginal<object>()),
-  emitTestStuck: async (_db: unknown, _runId: number, notice: Record<string, unknown>) => {
-    notices.push(notice);
+  emitNotification: async (_db: unknown, event: string, payload: Record<string, unknown>) => {
+    if (event === 'test.stuck') notices.push(payload);
   },
 }));
 const { checkStuckTests } = await import('../../server/utils/stuck-tests');
@@ -77,7 +78,14 @@ beforeEach(async () => {
       browserName: 'chromium',
     });
   }
-  await db.insert(schema.testRuns).values({ id: LIVE_RUN, projectId: 1, status: 'running', startTime: new Date(now) });
+  await db.insert(schema.testRuns).values({
+    id: LIVE_RUN,
+    projectId: 1,
+    status: 'running',
+    startTime: new Date(now),
+    origin: 'ci',
+    metadata: { piwiOrigin: { kind: 'ci' } },
+  });
   runEventBus.cleanup(LIVE_RUN);
   notices.length = 0;
 });
@@ -118,7 +126,22 @@ describe('the stuck check of a live run', () => {
     expect(runEventBus.getRunningCases(LIVE_RUN)[0]).toMatchObject({
       stuck: { elapsedMs: 5 * 60_000 + 30_000, usualMs: 8000 },
     });
+    expect(notices.map((n) => [n.runId, n.testTitle, n.origin])).toEqual([[LIVE_RUN, 'pays with PayPal', 'ci']]);
   });
+
+  test.each(['local', 'desktop', 'editor', 'preflight', 'bug'])(
+    "a %s run's long attempt is marked Stuck? and sends no test.stuck",
+    async (kind) => {
+      await db
+        .update(schema.testRuns)
+        .set({ origin: kind, metadata: { piwiOrigin: { kind } } })
+        .where(eq(schema.testRuns.id, LIVE_RUN));
+      runEventBus.recordRunningCase(LIVE_RUN, 'k', begin());
+      const events = await stuckEvents(() => checkStuckTests(db as never, now));
+      expect(events.map((e) => e.title)).toEqual(['pays with PayPal']);
+      expect(notices).toEqual([]);
+    },
+  );
 
   test("names the attempt's worker process and lane in its notification", async () => {
     runEventBus.recordRunningCase(LIVE_RUN, 'k', begin({ workerIndex: 4, parallelIndex: 1, shardIndex: 2 }));

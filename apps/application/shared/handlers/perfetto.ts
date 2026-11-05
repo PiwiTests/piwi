@@ -28,6 +28,7 @@ const EXECUTION_COLUMNS = {
   steps: testRunsCases.steps,
   stepEvents: testRunsCases.stepEvents,
   workerIndex: testRunsCases.workerIndex,
+  parallelIndex: testRunsCases.parallelIndex,
   shardIndex: testRunsCases.shardIndex,
   startedAt: testRunsCases.startedAt,
   tags: testRunsCases.tags,
@@ -50,6 +51,7 @@ type ExecutionRow = {
   steps: unknown;
   stepEvents: unknown;
   workerIndex: number | null;
+  parallelIndex: number | null;
   shardIndex: number | null;
   startedAt: number | null;
   tags: unknown;
@@ -69,6 +71,7 @@ function toExecution(row: ExecutionRow, attachments?: PerfettoExecution['attachm
     location,
     status: row.status,
     workerIndex: row.workerIndex,
+    parallelIndex: row.parallelIndex,
     shardIndex: row.shardIndex,
     startedAt: row.startedAt,
     duration: row.duration,

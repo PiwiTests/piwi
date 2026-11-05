@@ -541,6 +541,7 @@ export const MCP_TOOL_DEFS = [
       'Compare a run with its baseline, to answer what changed and whether a fix worked.',
       'It returns the pass-rate delta, new regressions, recurrences, recovered tests, new flaky tests, the biggest performance improvements and regressions, worker imbalance and newly opened clusters.',
       'A pass rate (`passRate`, `baselinePassRate`) is the passed tests over the tests that passed or failed, in percent, and is absent when none did.',
+      '`workerImbalance` counts the run’s test results per worker: `worker` is its lane from 1 as the run page names it (**Worker 2**), the same for a worker Playwright started again after a failure, within the shard `shardIndex` names in a sharded run; a result from a reporter that sends no lane counts under its worker process, `workerIndex`, with no `worker`. `workerImbalanceWarning` names the busiest worker and the least busy one when it ran at least 1.5 times as many tests (`Worker 2 of shard 3 ran 2× more tests than worker 1 of shard 1`).',
       'The baseline is the last passing run in the same environment, on the same branch, else the branch it forked from, else any branch; when no earlier full run passed, it is the last failed run, found the same way. `baseline` says why it was chosen.',
     ),
     inputSchema: {
@@ -742,6 +743,7 @@ export const MCP_TOOL_DEFS = [
     description: md(
       'Get one run’s failures grouped by failure cluster, with each group’s affected tests and worker correlation.',
       'The run-scoped counterpart of `list_clusters`.',
+      '`workerCorrelated: true` marks a group whose two or more tests all failed on one worker, its lane in one shard (**Worker 2** on the run page, whichever processes Playwright started in it), in a run that used several: a sign of something that worker holds, such as a worker-scoped fixture’s state, rather than of the app. An account or a database picked by `parallelIndex` is shared by that lane in every shard, which the flag does not join.',
     ),
     inputSchema: {
       type: 'object',
