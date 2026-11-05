@@ -7,6 +7,7 @@ import { PROJECT } from '#shared/test-project-names';
 import { InstanceRole, ProjectRole } from '#shared/permissions';
 import { waitForHydration } from './utils';
 import { createMember } from './utils/access';
+import sharp from 'sharp';
 
 function safeRmSync(path: string, options?: Parameters<typeof rmSync>[1]) {
   try {
@@ -1346,5 +1347,65 @@ test.describe.serial('Reporter with authentication enabled', () => {
     await expect(page).not.toHaveURL(`${AUTH_SERVER_URL}/settings/capabilities`);
     await page.goto(`${AUTH_SERVER_URL}/settings/connect`);
     await expect(page.locator('[data-tour="get-started-wizard"]')).toBeVisible();
+  });
+
+  test('a member uploads a profile picture, sees it in the user menu, and an administrator removes it', async ({
+    page,
+    request,
+  }) => {
+    await page.goto(`${AUTH_SERVER_URL}/login`);
+    await page.getByRole('textbox', { name: 'Username*' }).fill('ci-user');
+    await page.getByRole('textbox', { name: 'Password*', exact: true }).fill('userpassword123');
+    await page.getByRole('button', { name: 'Login' }).click();
+    await page.waitForURL(`${AUTH_SERVER_URL}/`);
+
+    // An SVG is refused whatever its declared type.
+    const svg = await page.request.put(`${AUTH_SERVER_URL}/api/auth/avatar`, {
+      headers: { 'Content-Type': 'image/png' },
+      data: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'),
+    });
+    expect(svg.status()).toBe(400);
+
+    await page.goto(`${AUTH_SERVER_URL}/settings/account`);
+    await waitForHydration(page);
+    const card = page.locator('[data-tour="account-profile-picture"]');
+    await expect(card.getByRole('button', { name: 'Remove picture' })).toHaveCount(0);
+    const png = await sharp({ create: { width: 64, height: 64, channels: 3, background: '#7c3aed' } })
+      .png()
+      .toBuffer();
+    await card.getByLabel('Profile picture file').setInputFiles({ name: 'me.png', mimeType: 'image/png', buffer: png });
+    await expect(page.getByText('Profile picture updated', { exact: true })).toBeVisible();
+    await expect(card.getByRole('button', { name: 'Remove picture' })).toBeVisible();
+
+    const me = (await (await page.request.get(`${AUTH_SERVER_URL}/api/auth/me`)).json()) as {
+      user: { id: number; avatarVersion: string; avatarUploaded: boolean };
+    };
+    expect(me.user.avatarUploaded).toBe(true);
+    const picture = await page.request.get(`${AUTH_SERVER_URL}/api/auth/avatar?v=${me.user.avatarVersion}`);
+    expect(picture.headers()['content-type']).toBe('image/webp');
+    expect(picture.headers()['cache-control']).toBe('private, max-age=31536000, immutable');
+    await expect(page.locator(`img[src$="/api/auth/avatar?v=${me.user.avatarVersion}"]`).first()).toBeVisible();
+
+    // Removing asks first; a cancel keeps the picture.
+    await card.getByRole('button', { name: 'Remove picture' }).click();
+    const confirm = page.getByRole('dialog', { name: 'Remove profile picture' });
+    await confirm.getByRole('button', { name: 'Cancel' }).click();
+    await expect(card.getByRole('button', { name: 'Remove picture' })).toBeVisible();
+    await card.getByRole('button', { name: 'Remove picture' }).click();
+    await confirm.getByRole('button', { name: 'Remove picture' }).click();
+    await expect(page.getByText('Profile picture removed', { exact: true })).toBeVisible();
+    await expect(card.getByRole('button', { name: 'Remove picture' })).toHaveCount(0);
+
+    await card.getByLabel('Profile picture file').setInputFiles({ name: 'me.png', mimeType: 'image/png', buffer: png });
+    await expect(card.getByRole('button', { name: 'Remove picture' })).toBeVisible();
+
+    await loginAs(request, 'admin', 'adminpassword123');
+    const removed = await request.delete(`${AUTH_SERVER_URL}/api/users/${me.user.id}/avatar`);
+    expect(await removed.json()).toEqual({ removed: true });
+    const after = (await (await page.request.get(`${AUTH_SERVER_URL}/api/auth/me`)).json()) as {
+      user: { avatarVersion: string | null; avatarUploaded: boolean };
+    };
+    expect(after.user).toMatchObject({ avatarVersion: null, avatarUploaded: false });
+    expect((await page.request.get(`${AUTH_SERVER_URL}/api/auth/avatar`)).status()).toBe(404);
   });
 });

@@ -210,6 +210,7 @@ function toUserListItem(row: UserRow, groupIds: number[]): UserListItem {
     email: row.email,
     emailVerified: row.emailVerified,
     oauthProvider: row.oauthProvider,
+    avatarUploaded: row.avatarKey !== null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

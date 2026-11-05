@@ -616,6 +616,8 @@ rule):
 - **Domain widgets**
   - `RunStatusBadge`, `StatusChip` (status icon and label in one badge, for detail summaries), `TestStatusBar`,
     `TagBadge` / `TagsSelect`, `BrowserBadge`, `MarkerBadge` / `MarkerForm`.
+  - `UserAvatar`: an account's avatar beside its name, the signed-in account's picture or else its initials on a color
+    picked from its id (`accountInitials` and `letterAvatarColor` in `shared/user-avatar.ts`).
   - `ZoomableImage` (an image opened by click or keyboard, with an "Enlarge" hint on hover) drives
     `ScreenshotLightbox` (full screen, keyboard navigation, an actual-size zoom toggle for large captures, and a
     details panel naming the test, the step and the error raised on the page; `LightboxImage` in

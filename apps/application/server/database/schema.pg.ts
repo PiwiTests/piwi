@@ -1304,6 +1304,7 @@ export const users = pgTable(
     email: text('email'), // Email address (nullable; OAuth callback can populate it)
     emailVerified: intBoolean('email_verified').notNull().default(INT_BOOLEAN_FALSE),
     avatarUrl: text('avatar_url'), // Avatar from OAuth provider
+    avatarKey: text('avatar_key'), // Storage key of the picture the user uploaded; wins over avatarUrl
     oauthProvider: text('oauth_provider'), // 'google', 'github', etc.
     oauthProviderId: text('oauth_provider_id'), // User ID from the OAuth provider
     // Incremented to revoke all of a user's existing sessions (password change/reset, role change, unlink).
