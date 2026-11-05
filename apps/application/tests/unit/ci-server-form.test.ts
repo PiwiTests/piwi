@@ -174,7 +174,13 @@ describe('ciServerRequestPreview', () => {
     const state = jenkinsForm();
     expect(
       ciServerRequestPreview({ ...state, rerun: { ...state.rerun, job: '' } }, 'rerun', { instanceUrl: null }),
-    ).toEqual({ text: null, url: null, credential: null, error: 'Jenkins needs the job to re-run.' });
+    ).toEqual({
+      text: null,
+      url: null,
+      credential: null,
+      carriesAuth: null,
+      error: 'Jenkins needs the job to re-run.',
+    });
   });
 });
 
@@ -229,20 +235,57 @@ describe('the preview and the server send the same credential', () => {
     instance: { url: `${BASE}job/qa/`, user: 'piwi-bot', token: 'instance-secret' },
   };
 
-  function both(state: CiServerFormState, opts: { instanceUrl: string | null; tokenUrl: string | null }) {
-    const preview = ciServerRequestPreview(state, 'rerun', { ...opts, branch: 'main' });
+  function both(
+    state: CiServerFormState,
+    opts: { instanceUrl: string | null; tokenUrl: string | null; typedToken?: boolean },
+    kind: 'rerun' | 'flakeLab' = 'rerun',
+  ) {
+    const preview = ciServerRequestPreview(state, kind, { ...opts, branch: 'main' });
     const target = ciServerTargetFromForm(state, { instanceUrl: opts.instanceUrl }).target;
     if (!target || !preview.url) throw new Error('the form did not resolve');
+    const baseUrl = target.baseUrl ?? opts.instanceUrl!;
+    // A typed token is saved with the base URL in effect, as the project update seals it.
+    const tokenUrl = opts.typedToken ? baseUrl : opts.tokenUrl;
     const server = prepareCiServerRequest({
       target,
-      kind: 'rerun',
-      baseUrl: target.baseUrl ?? opts.instanceUrl!,
-      values: { args: 'a', dispatchId: 'd', ref: 'main', commit: '' },
-      projectToken: opts.tokenUrl ? { url: opts.tokenUrl, token: 'project-secret' } : null,
+      kind,
+      baseUrl,
+      values: { args: kind === 'flakeLab' ? 'flake 12' : 'a', dispatchId: 'd', ref: 'main', commit: '' },
+      projectToken: tokenUrl ? { url: tokenUrl, token: 'project-secret' } : null,
       instanceCredential: opts.instanceUrl ? { ...credentials.instance, url: opts.instanceUrl } : null,
     });
     return { preview: preview.credential, server: server.credential ?? 'none' };
   }
+
+  test('with a typed token, which replaces the stored one', () => {
+    expect(
+      both(jenkinsForm(), { instanceUrl: null, tokenUrl: 'https://other.example.com/', typedToken: true }),
+    ).toEqual({
+      preview: 'project',
+      server: 'project',
+    });
+  });
+
+  test('with a Custom request whose auth is none, or a header', () => {
+    const custom = customizeCiServerForm(jenkinsForm());
+    const json = JSON.parse(custom.customJson);
+    const none = { ...custom, customJson: JSON.stringify({ ...json, auth: 'none' }) };
+    expect(both(none, { instanceUrl: BASE, tokenUrl: BASE })).toEqual({ preview: 'none', server: 'none' });
+    expect(ciServerRequestPreview(none, 'rerun', { instanceUrl: BASE, tokenUrl: BASE }).carriesAuth).toBe(false);
+    const header = { ...custom, customJson: JSON.stringify({ ...json, auth: { header: 'X-Token' } }) };
+    expect(both(header, { instanceUrl: BASE, tokenUrl: BASE })).toEqual({ preview: 'project', server: 'project' });
+    expect(both(header, { instanceUrl: BASE, tokenUrl: null })).toEqual({ preview: 'none', server: 'none' });
+  });
+
+  test('for a Flake Lab job outside the folder a token is bound to', () => {
+    const state = jenkinsForm({
+      rerun: { job: 'qa/e2e', ref: 'main', argsParameter: '', dispatchParameter: '' },
+      flakeLab: { job: 'lab/flake', ref: '', argsParameter: '', dispatchParameter: '' },
+    });
+    const opts = { instanceUrl: null, tokenUrl: `${BASE}job/qa/` };
+    expect(both(state, opts)).toEqual({ preview: 'project', server: 'project' });
+    expect(both(state, opts, 'flakeLab')).toEqual({ preview: 'none', server: 'none' });
+  });
 
   test('with an instance token bound to a folder, for a job inside it under a root base URL', () => {
     const state = jenkinsForm({ rerun: { job: 'qa/e2e', ref: 'main', argsParameter: '', dispatchParameter: '' } });

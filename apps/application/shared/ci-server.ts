@@ -295,6 +295,8 @@ export function ciServerTargetProblem(input: unknown): string | null {
   if (!target) {
     return 'The CI server target cannot dispatch: it needs a known preset and its required fields';
   }
+  const authProblem = target.custom ? ciAuthHeaderProblem(target.custom.auth) : null;
+  if (authProblem) return `${authProblem}.`;
   if (sendsFlakeLab(input) && !ciServerRequestTemplate(target, 'flakeLab')) {
     return 'The CI server Flake Lab request cannot dispatch: it needs its required fields';
   }

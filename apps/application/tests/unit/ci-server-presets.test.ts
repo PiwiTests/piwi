@@ -244,6 +244,11 @@ describe('a target sent to be saved', () => {
     ).toMatch(/Flake Lab/);
   });
 
+  test('is refused when its credential header cannot be set', () => {
+    const custom = { preset: 'custom', custom: { auth: { header: 'Host' }, rerun: { method: 'POST', path: 'build' } } };
+    expect(ciServerTargetProblem(custom)).toBe('The credential header Host cannot be set.');
+  });
+
   test('is refused when it cannot dispatch', () => {
     const cannot = [
       { preset: 'jenkins', rerun: {} },

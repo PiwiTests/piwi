@@ -6,7 +6,12 @@
  * write-only: a blank field keeps the stored one, which is sent only under the
  * base URL it was saved with.
  */
-import { CI_SERVER_PRESET_REGISTRY, DEFAULT_ARGS_PARAMETER, normalizeCiServerBaseUrl } from '#shared/ci-server';
+import {
+  CI_SERVER_PRESET_REGISTRY,
+  DEFAULT_ARGS_PARAMETER,
+  isUnderBaseUrl,
+  normalizeCiServerBaseUrl,
+} from '#shared/ci-server';
 import {
   ciServerRequestPreview,
   ciServerTokenState,
@@ -44,6 +49,8 @@ const tokenState = computed(() =>
   props.hasToken ? ciServerTokenState(preview.value.url ?? effectiveBaseUrl.value, props.tokenUrl) : 'none',
 );
 const tokenDescription = computed(() => {
+  const request = preview.value;
+  if (request.carriesAuth === false) return 'This request carries no credential: its auth is none.';
   if (tokenState.value === 'bound') {
     return `A token is stored for ${props.tokenUrl} and sent only under it. Leave empty to keep it.`;
   }
@@ -53,9 +60,11 @@ const tokenDescription = computed(() => {
   if (state.value.preset === 'custom') {
     return 'Sent with every request. A Custom request never carries the instance token.';
   }
-  return props.instanceUrl
-    ? 'Leave empty to use the instance token, sent only under the instance CI server URL.'
-    : 'The instance has no CI server, so no token is sent unless one is entered here.';
+  if (!props.instanceUrl) return 'The instance has no CI server, so no token is sent unless one is entered here.';
+  if (request.url && !isUnderBaseUrl(props.instanceUrl, request.url)) {
+    return `This request is not under the instance CI server URL (${props.instanceUrl}), so no token is sent unless one is entered here.`;
+  }
+  return 'Leave empty to use the instance token, sent only under the instance CI server URL.';
 });
 
 /** The parameter the Flake Lab job reads its arguments from, as the hint names it. */
@@ -166,7 +175,7 @@ function customize() {
           <code class="font-mono">flake 12</code> or <code class="font-mono">flake verify 12</code>, which it passes to
           <code class="font-mono">npx @piwitests/reporter</code>.
           <DocLink to="features/ci-rerun#flake-lab-on-jenkins" no-icon :class="SENTENCE_LINK_CLASS"
-            >The Jenkinsfile</DocLink
+            >See the Jenkinsfile.</DocLink
           >
         </p>
         <div class="grid gap-2 sm:grid-cols-2">
@@ -174,7 +183,7 @@ function customize() {
             v-model="state.flakeLab.job"
             placeholder="job, e.g. polaris/flake-lab"
             aria-label="Jenkins Flake Lab job"
-            class="font-mono"
+            class="font-mono sm:col-span-2"
           />
           <UInput
             v-model="state.flakeLab.argsParameter"

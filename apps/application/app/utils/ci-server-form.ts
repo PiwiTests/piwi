@@ -153,7 +153,8 @@ export function ciServerPreviewCredential(
 
 /**
  * The request a dispatch would send, as text with the credential masked, its
- * URL and the credential it carries, or why it cannot be built. Its headers are
+ * URL, the credential it carries and whether its auth sends one at all, or why
+ * it cannot be built. Its headers are
  * set as the server sets them: `Accept`, the body's `Content-Type`, the
  * template's headers, then the credential, each replacing an earlier one of the
  * same name.
@@ -163,9 +164,9 @@ export function ciServerRequestPreview(
   kind: 'rerun' | 'flakeLab',
   opts: CiServerPreviewOptions,
 ):
-  | { text: string; url: string; credential: CiServerPreviewCredential; error: null }
-  | { text: null; url: null; credential: null; error: string } {
-  const fail = (error: string) => ({ text: null, url: null, credential: null, error }) as const;
+  | { text: string; url: string; credential: CiServerPreviewCredential; carriesAuth: boolean; error: null }
+  | { text: null; url: null; credential: null; carriesAuth: null; error: string } {
+  const fail = (error: string) => ({ text: null, url: null, credential: null, carriesAuth: null, error }) as const;
   const resolved = ciServerTargetFromForm(state, { instanceUrl: opts.instanceUrl });
   if (!resolved.target) return fail(resolved.error);
   const spec = ciServerRequestTemplate(resolved.target, kind);
@@ -188,14 +189,16 @@ export function ciServerRequestPreview(
     setHeader('Accept', 'application/json');
     if (request.body) setHeader('Content-Type', request.body.contentType);
     for (const [name, value] of request.headers) setHeader(name, value);
-    const credential = ciServerPreviewCredential(resolved.target.preset, request.url, baseUrl, opts);
     const authName = spec.auth === 'none' ? null : typeof spec.auth === 'object' ? spec.auth.header : 'Authorization';
+    const credential = authName
+      ? ciServerPreviewCredential(resolved.target.preset, request.url, baseUrl, opts)
+      : 'none';
     if (authName && credential !== 'none') {
       setHeader(authName, credential === 'instance' ? '•••••••• (the instance token, when it sets one)' : '••••••••');
     }
     const lines = [`${request.method} ${request.url}`, ...headers.map(([name, value]) => `${name}: ${value}`)];
     if (request.body) lines.push('', request.body.text);
-    return { text: lines.join('\n'), url: request.url, credential, error: null };
+    return { text: lines.join('\n'), url: request.url, credential, carriesAuth: authName !== null, error: null };
   } catch (e) {
     return fail(e instanceof CiTemplateError ? e.message : 'The request cannot be built.');
   }
