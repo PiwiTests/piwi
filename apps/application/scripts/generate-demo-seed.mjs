@@ -82,8 +82,14 @@ const DEFAULT_DEMO_USER = DEMO_USERS.find((u) => u.id === 1);
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
+/**
+ * Seconds since the epoch of an ISO date or date-time. A date-time with no
+ * offset reads as UTC, as a date alone does, so the seed is the same in every
+ * time zone.
+ */
 function ts(isoDate) {
-  return Math.floor(new Date(isoDate).getTime() / 1000);
+  const utc = /T[^Z+-]*$/.test(isoDate) ? `${isoDate}Z` : isoDate;
+  return Math.floor(new Date(utc).getTime() / 1000);
 }
 
 function q(v) {

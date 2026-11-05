@@ -57,11 +57,11 @@ function q(sql: string): Row[] {
 // tracked public/demo/seed.sql — another test file's beforeAll regenerates
 // concurrently (vitest runs files in parallel) and would otherwise race on
 // the same path, producing a torn read and a SQL parse error.
-function regenerate(outDir: string): string {
+function regenerate(outDir: string, env: NodeJS.ProcessEnv = {}): string {
   execFileSync('node', ['scripts/generate-demo-seed.mjs'], {
     cwd: rootDir,
     stdio: 'ignore',
-    env: { ...process.env, PIWI_DEMO_SEED_OUTPUT_DIR: outDir },
+    env: { ...process.env, ...env, PIWI_DEMO_SEED_OUTPUT_DIR: outDir },
   });
   return readFileSync(join(outDir, 'seed.sql'), 'utf-8');
 }
@@ -88,9 +88,9 @@ afterAll(() => {
 });
 
 describe('demo seed generation is deterministic', () => {
-  test('regenerating without source changes produces the same content hash', () => {
-    const before = regenerate(tempOutDir());
-    const after = regenerate(tempOutDir());
+  test('regenerating without source changes produces the same content, in any time zone', () => {
+    const before = regenerate(tempOutDir(), { TZ: 'Pacific/Kiritimati' });
+    const after = regenerate(tempOutDir(), { TZ: 'America/Los_Angeles' });
     // Compare content only, excluding the timestamp comment line (see the
     // generator's own hash-stability comment).
     const strip = (s: string) =>
