@@ -122,6 +122,13 @@ pipeline {
 }
 ```
 
+**Check the jobs** reads each Jenkins job the form names, the re-run's and Flake Lab's, without starting it, and says
+whether it declares the parameters a dispatch sends. Jenkins drops a parameter its job does not declare, so a re-run
+would then fail (`rerun` needs `PIWI_RERUN_ARGS`) or never be matched to its dispatch. A Pipeline job declares the
+parameters of its Jenkinsfile on its first build: run a new job once, then check it. Check reads the form as it is,
+unsaved fields included, with the credential a dispatch would carry; a token you just typed goes only once saved. A
+multibranch pipeline is checked on its default branch.
+
 ### Flake Lab on Jenkins
 
 The preset's Flake Lab job receives `flake 12` or `flake verify 12` in its arguments parameter and hands it to the
@@ -226,7 +233,8 @@ dispatch, and running exactly the dispatched spec files.
 ## Limits
 
 - A dispatch is one request: Piwi does not poll the CI for the build's state, it waits for the run to report.
-- The demo records a CI server dispatch without sending it, and links to the job's page.
+- The demo records a CI server dispatch without sending it, and links to the job's page. Its Check sends nothing
+  either: it answers as a job that declares the default parameters.
 
 ## Related
 

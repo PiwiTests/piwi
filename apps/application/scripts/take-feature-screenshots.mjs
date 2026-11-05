@@ -2774,6 +2774,25 @@ const SCENES = [
     of: '[data-shot="project-settings"]',
   })),
   ...[
+    { name: 'project-ci-server-check', width: 1280, height: 1600 },
+    { name: 'project-ci-server-check-mobile', width: 375, height: 2400 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Project → Settings → Source control: Check the jobs on the Jenkins target, and what it found, at ${width} px`,
+    mode: 'demo',
+    route: '/projects/2?tab=settings&section=source-control',
+    viewport: { width, height },
+    of: '[data-shot="ci-server-target"]',
+    async run({ page, shoot, settle }) {
+      const form = page.locator('[data-shot="ci-server-target"]');
+      await form.getByRole('button', { name: 'Check the jobs' }).click();
+      await form.getByTestId('ci-server-check').locator('dd').first().waitFor({ timeout: 30000 });
+      await form.scrollIntoViewIfNeeded();
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
     { name: 'project-live-view-settings', width: 1280, height: 800 },
     { name: 'project-live-view-settings-mobile', width: 375, height: 1100 },
   ].map(({ name, width, height }) => ({

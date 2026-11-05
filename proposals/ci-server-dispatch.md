@@ -15,7 +15,10 @@ the send (`server/utils/ci-server-dispatch.ts`), the `ci_server_token` column wi
 `server/utils/ci-rerun.ts`, with the link to the recorded build for every provider. PR 3 is built: the CI server form
 in the project's Source control settings with its request preview, the _dispatched to Jenkins_ line on the cluster and
 execution pages, the demo's Jenkins project, the [Re-run in CI](../apps/docs/features/ci-rerun.md) page and the help
-topic. PR 4 (the other presets) and the optional PR 5 (Check) remain.
+topic. PR 5 is built: **Check the jobs** in the form reads each Jenkins job the target names, without starting it,
+with the credential a dispatch would carry, and names the parameters it does not declare
+(`ciServerCheckPlans` in `shared/ci-server.ts`, `checkCiServerTarget` in `server/utils/ci-server-dispatch.ts`). PR 4
+(the other presets) remains.
 
 **Summary.** Today a dispatch goes through the repository host: the project's SCM token starts a GitHub workflow, a
 GitLab pipeline or a Bitbucket custom pipeline, and the host of the run's repository picks which one. A team whose CI
