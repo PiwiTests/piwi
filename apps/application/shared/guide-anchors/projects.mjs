@@ -515,9 +515,9 @@ export const PROJECTS_ANCHORS = [
     pages: ['/projects/[id]'],
     reveal: [{ query: { tab: 'settings', section: 'source-control' } }],
     describes:
-      'The CI re-run setting: the GitHub workflow or the GitLab or Bitbucket pipeline that re-runs a cluster’s tests from its page, or a Flake Lab experiment.',
+      'The CI re-run setting: the repository’s workflow or pipeline, or the Jenkins job or CI server request, that re-runs a cluster’s tests or a Flake Lab experiment.',
     help: 'project.ci-rerun',
-    doc: 'features/pr-feedback#re-run-from-the-dashboard',
+    doc: 'features/ci-rerun',
     sample: { route: '/projects/1?tab=settings&section=source-control', expect: PROJECT_1 },
   },
   {

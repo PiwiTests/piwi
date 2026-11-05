@@ -12,9 +12,10 @@ defect](#defects-found-while-researching-this-plan). PR 2, the engine, is built:
 Jenkins and Custom presets and the renderer (`shared/ci-server.ts`), the credential binding, the private-host rule and
 the send (`server/utils/ci-server-dispatch.ts`), the `ci_server_token` column with `ciServerToken` on
 `PATCH /api/projects/:id`, the four `PIWI_CI_SERVER_*` variables, and availability, dispatch, record and matching in
-`server/utils/ci-rerun.ts`, with the link to the recorded build for every provider. It is reachable through the API
-only. PR 3 (the settings form, the dispatch label and link, the demo, the docs and the help topic) remains, then PR 4
-(the other presets) and the optional PR 5 (Check).
+`server/utils/ci-rerun.ts`, with the link to the recorded build for every provider. PR 3 is built: the CI server form
+in the project's Source control settings with its request preview, the _dispatched to Jenkins_ line on the cluster and
+execution pages, the demo's Jenkins project, the [Re-run in CI](../apps/docs/features/ci-rerun.md) page and the help
+topic. PR 4 (the other presets) and the optional PR 5 (Check) remain.
 
 **Summary.** Today a dispatch goes through the repository host: the project's SCM token starts a GitHub workflow, a
 GitLab pipeline or a Bitbucket custom pipeline, and the host of the run's repository picks which one. A team whose CI
@@ -291,9 +292,9 @@ PR 2 and PR 3 are the size a contributor can take; the issue's author offered to
 
 ## Documentation
 
-- `features/pr-feedback.md#re-run-from-the-dashboard`: a _CI server_ row and the Jenkinsfile. The page is near its
-  1,500-word budget, so the per-CI examples go to `guide/ci.md` (a Jenkins section beside GitHub Actions and GitLab
-  CI) and the feature page links them.
+- `features/ci-rerun.md`: the re-run section of `features/pr-feedback.md` becomes its own page, _Re-run in CI_, with
+  the CI server, the Jenkinsfile, the placeholders and the credential and host rules. Both pages stay within the
+  1,500-word budget, and `guide/ci.md` is at it.
 - `features/flake-lab.md#run-it-in-ci`: the Flake Lab fields.
 - The configuration reference is generated from the four new variables.
 - `HELP_TOPICS['project.ci-rerun']`: the CI server option.

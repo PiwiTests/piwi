@@ -214,8 +214,9 @@ url }`, with `url` the per-test link the log prints.
 
 ## Pull-request feedback
 
-Piwi can post a summary comment and a commit status on the pull request, and re-run a failure cluster's tests in CI:
-see [Pull-request feedback & re-run](/features/pr-feedback).
+Piwi can post a summary comment and a commit status on the pull request: see
+[Pull-request feedback](/features/pr-feedback). To re-run a failure cluster's tests in CI, see
+[Re-run in CI](/features/ci-rerun).
 
 ## Blocking a merge
 
@@ -291,6 +292,6 @@ sent.
 ## Related
 
 - [Reporter](./reporter): setup, streaming and authentication
-- [Pull-request feedback & re-run](/features/pr-feedback): the result on the pull request
+- [Pull-request feedback](/features/pr-feedback): the result on the pull request
 - [Test tags](/reference/test-metadata#test-tags): what `--require-tag` matches on
 - [API keys](/operate/api-keys): the key CI uses

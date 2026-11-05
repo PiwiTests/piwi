@@ -308,11 +308,20 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/issue-automation',
       },
       {
-        title: 'Pull-request feedback & re-run',
-        summary: 'A summary of the failures on the branch posted to the PR, and a re-run triggered from the dashboard.',
+        title: 'Pull-request feedback',
+        summary:
+          'A summary of the failures on the branch posted to the PR, and a commit status for the run and the gate.',
         needs: ['scm'],
         where: 'Settings → Pull requests',
         doc: 'features/pr-feedback',
+      },
+      {
+        title: 'Re-run in CI',
+        summary:
+          'A cluster’s affected tests re-run in CI from its page: a GitHub, GitLab or Bitbucket pipeline, or a Jenkins job or any CI server one request reaches.',
+        needs: [],
+        where: 'Project → Settings → Source control → CI re-run',
+        doc: 'features/ci-rerun',
       },
       {
         title: 'CI merge gate',
