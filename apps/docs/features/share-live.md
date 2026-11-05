@@ -33,7 +33,9 @@ editor or the desktop app stops it too.
 
 A run that cannot be shared says why: it reports to no instance or to the desktop app, its project has the live view
 off, or the reporter's global setup did not register it. A sharing that stops on its own says why (the live view turned
-off, the instance restarted or stopped answering), and **Share live** shows again.
+off, the instance restarted or stopped answering), and **Share live** shows again: shared again, the run streams once
+the instance answers with its live view on, a restarted instance taking the run's key back. A run the instance no
+longer holds live cannot be shared again.
 
 ## Related
 

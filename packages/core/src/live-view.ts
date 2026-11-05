@@ -144,17 +144,18 @@ export const LIVE_SHARE_UNKNOWN =
   'This run cannot be shared live: the Piwi reporter gave its workers no live view key.';
 
 /**
- * Why a worker's shared stream was given up, by the instance's answer: the setting turned off (404), the key no longer
- * taken (401, 403: the instance started again, or gave the key up), the run no longer live (410), the run held as
- * interrupted after the retries (409); and the instance that did not answer after them.
+ * Why a worker's shared stream was given up, by the instance's answer: the setting turned off (404) and the key not
+ * taken (401), which the setting turned on again or a new try may lift; the key refused (403), the run no longer live
+ * (410), the run held as interrupted after the retries (409); and the instance that did not answer after them.
  */
 export function liveShareRefusal(status: number | null): string {
   switch (status) {
     case 404:
-      return "Sharing stopped: the project's live view was turned off on the instance.";
+      return "Sharing stopped: the project's live view was turned off on the instance. Share the run again once it is back on.";
     case 401:
+      return "Sharing stopped: the instance does not take this run's live view key now. Share the run again to try once more.";
     case 403:
-      return "Sharing stopped: the instance no longer takes this run's live view key (it started again, or gave the key up).";
+      return "Sharing stopped: the instance refuses this run's live view key.";
     case 410:
       return 'Sharing stopped: the run is no longer live on the instance.';
     case 409:

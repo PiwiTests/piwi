@@ -28,7 +28,9 @@ import {
 import { hideSecretsInText, hideTypedText } from '@piwitests/core/mask';
 import type { RunLiveState } from '@piwitests/core/run-channel';
 import { fitViewSize } from '@piwitests/core/run-view';
+import { PIWI_RUN_LOG_ENV } from '../config/env.js';
 import { detectCi } from '../support/ci.js';
+import { printRunLine } from '../support/run-log.js';
 import { resolveShardInfo } from '../support/shard-info.js';
 import { followCallLog } from './live-call-log.js';
 import { maskSecretFields } from './live-mask.js';
@@ -54,15 +56,20 @@ import { openPageView, type PageFrame, type PageView } from './page-view.js';
  * it opens, since the instance forgets a stream's stop as it closes. In a CI run, while someone watches, it also posts
  * the call its test is in as Playwright logs it (`call-log`, `live-call-log.ts`), a few a second at most, the latest
  * again for a viewer that comes later. Every call named goes through
- * `hideSecretsInText`. A test never waits on any of it: a connection that fails is tried again a few times, then given
- * up until a person shares the run again, and a refused key gives it up at once, for the worker's life. The key is out
- * of the worker's environment from the connection's opening to its close (`hideKey`).
+ * `hideSecretsInText`. A test never waits on any of it: a connection that fails is tried again a few times, then, in a
+ * CI run, every 30 to 60 seconds while the worker lasts, the run's log saying once that the view is lost and once that
+ * it is back (`printRunLine`); outside CI, it is given up until a person shares the run again. A key the instance does
+ * not take now (401), or a project with the live view off (404), skips the quick retries: an instance started again,
+ * or the setting turned on again, takes the key back. A key refused (403), or a run no longer live (410), gives it up
+ * at once, for the worker's life. The key is out of the worker's environment from the connection's opening to its
+ * close (`hideKey`).
  */
 
-/** How long the worker waits before it opens its stream again, after each failure in a row; then it gives up. */
+/** How long the worker waits before it opens its stream again, after each failure in a row. */
 const RETRY_MS = [1000, 2000, 4000, 8000, 16000];
-/** How many times a worker opens its stream again over its life, at most. */
-const MAX_RECONNECTS = 20;
+/** Past those, in a CI run: the least wait before the stream opens again, and the most added to it at random. */
+const SLOW_RETRY_MS = 30_000;
+const SLOW_RETRY_JITTER_MS = 30_000;
 /** A stream open this long counts as working: the next failure starts the retries again. */
 const STEADY_MS = 30_000;
 /** How long the stream may stay silent: the instance writes a comment every 15 seconds. */
@@ -80,8 +87,13 @@ const SHOT_MS = 1000;
 const LOG_SPACING_MS = Math.ceil(1000 / LIVE_CALL_LOGS_PER_SECOND);
 /** How long ending the view may take before the test goes on without waiting for it. */
 const VIEW_END_MS = 1000;
-/** The statuses that give the connection up: the key or the run is no longer one, or the instance has no live view. */
-const GIVE_UP = new Set([401, 403, 404, 410]);
+/** The statuses that give the connection up for the worker's life: the key refused, or the run no longer live. */
+const GIVE_UP = new Set([403, 410]);
+/**
+ * The statuses an instance started again, or the project's live view turned on again, lifts: the key unknown, the
+ * live view off.
+ */
+const NOT_NOW = new Set([401, 404]);
 
 const TOO_HEAVY =
   `This page is too heavy for the live view: each image of it is over ${MAX_LIVE_FRAME / 1024} KB, ` +
@@ -96,16 +108,20 @@ interface Link {
   agent: http.Agent;
   stream: http.ClientRequest | null;
   timer: ReturnType<typeof setTimeout> | null;
+  /** The failures in a row since a stream last stayed open `STEADY_MS`. */
   retries: number;
-  reconnects: number;
   /** The worker ended: nothing opens any more. */
   ended: boolean;
-  /** Why the instance no longer takes the key, as a person reads it: nothing opens any more. */
+  /** Why the instance will not take the key again, as a person reads it: nothing opens any more. */
   refused: string | null;
   /** Whether the stream is wanted: from the start in a CI run, while a person shares the run outside one. */
   sharing: boolean;
-  /** Why the sharing stopped though nobody asked: the instance did not answer after the retries. */
+  /** Why the sharing stopped though nobody asked: the instance did not answer after the retries, or took no key. */
   lost: string | null;
+  /** A CI run's: the file the global setup reads the worker's lines from for the run's log (`PIWI_RUN_LOG`). */
+  runLog: string | null;
+  /** The run's log says the view is lost: the next stream that opens says it is back. */
+  dark: boolean;
   /** The instance's latest answer that opened no stream, since one last opened: what the retries end on. */
   answered: number | null;
   viewers: number;
@@ -265,12 +281,13 @@ export function openLiveView(
     stream: null,
     timer: null,
     retries: 0,
-    reconnects: 0,
     ended: false,
     refused: null,
     sharing: ci,
     ci,
     lost: null,
+    runLog: ci ? env[PIWI_RUN_LOG_ENV] || null : null,
+    dark: false,
     answered: null,
     viewers: 0,
     states: Promise.resolve(),
@@ -306,9 +323,10 @@ export function closeLiveView(): void {
 }
 
 /**
- * A person shares the run from now on (`on`): the stream opens, its retries counted afresh; or stops sharing it: the
- * view stops, the viewers hear why their view ends (`unshared`), and the stream closes, so nothing more goes to the
- * instance. Each one waits for the one before. Nothing happens for a worker without a key the instance takes.
+ * A person shares the run from now on (`on`): the stream opens, its retries counted afresh, after a sharing that
+ * stopped on its own too; or stops sharing it: the view stops, the viewers hear why their view ends (`unshared`), and
+ * the stream closes, so nothing more goes to the instance. Each one waits for the one before. Nothing happens for a
+ * worker without a key, or whose key the instance refused for good.
  */
 export function shareLiveView(on: boolean): Promise<void> {
   const turn = shareTurn.then(() => (on ? startSharing() : stopSharing()));
@@ -323,7 +341,6 @@ function startSharing(): void {
   own.lost = null;
   own.answered = null;
   own.retries = 0;
-  own.reconnects = 0;
   connect(own);
   changed();
 }
@@ -406,7 +423,7 @@ function postState(own: Link, message: WorkerToInstance): void {
     });
 }
 
-/** Open the stream, and open it again after a failure a few times, waiting longer each time. */
+/** Open the stream, and open it again after a failure (`retry`). */
 function connect(own: Link): void {
   if (!active(own)) return;
   const url = new URL(own.address.url);
@@ -429,14 +446,7 @@ function connect(own: Link): void {
     if (openedAt !== null && Date.now() - openedAt >= STEADY_MS) own.retries = 0;
     if (status !== null) own.answered = status;
     if (status !== null && GIVE_UP.has(status)) return void refuse(own, status);
-    if (own.retries >= RETRY_MS.length || own.reconnects >= MAX_RECONNECTS) return void giveUp(own);
-    const wait = RETRY_MS[own.retries++]!;
-    own.reconnects++;
-    own.timer = setTimeout(() => {
-      own.timer = null;
-      connect(own);
-    }, wait);
-    own.timer.unref?.();
+    retry(own, status !== null && NOT_NOW.has(status));
   };
   const request = own.client.request(url, {
     method: 'GET',
@@ -460,6 +470,10 @@ function connect(own: Link): void {
     }
     openedAt = Date.now();
     own.answered = null;
+    if (own.dark) {
+      own.dark = false;
+      printRunLine(own.runLog, `${workerName(own.id)}: live view back.`);
+    }
     // The instance forgets a stream's stop as it closes: a stream opened again hears it again.
     if (own.stop) postState(own, { type: 'stop', ...own.id, stop: own.stop });
     response.setEncoding('utf8');
@@ -487,10 +501,66 @@ function connect(own: Link): void {
   request.end();
 }
 
-/** The instance refused the key (`status`): nothing more is tried for the worker's life, and the run says why. */
+/**
+ * Open the stream again after a failure: soon, a few times, waiting longer each time; past them, in a CI run, every
+ * 30 to 60 seconds while the worker lasts, the run's log saying once that the view is lost; outside CI, the sharing
+ * stops. A key the instance does not take now (`notNow`: a 401 or 404) skips the quick retries.
+ */
+function retry(own: Link, notNow: boolean): void {
+  if (!notNow && own.retries < RETRY_MS.length) return void later(own, RETRY_MS[own.retries++]!);
+  if (!own.ci) return void giveUp(own);
+  goDark(own, 'Trying again every 30 to 60 s while the run lasts.');
+  later(own, SLOW_RETRY_MS + Math.random() * SLOW_RETRY_JITTER_MS);
+}
+
+/** The run's log says once that the worker's view is lost, why, and what follows (`next`), until it is back. */
+function goDark(own: Link, next: string): void {
+  if (own.dark) return;
+  own.dark = true;
+  printRunLine(own.runLog, `${workerName(own.id)}: live view lost: ${lostCause(own.answered)}. ${next}`);
+}
+
+/** Open the stream `wait` milliseconds from now. */
+function later(own: Link, wait: number): void {
+  own.timer = setTimeout(() => {
+    own.timer = null;
+    connect(own);
+  }, wait);
+  own.timer.unref?.();
+}
+
+/** The worker as the run page names it: by its lane, from 1, and its shard. */
+function workerName(id: LiveWorkerId): string {
+  const worker = `Worker ${id.slot === undefined ? id.worker : id.slot + 1}`;
+  return id.shard === null ? worker : `${worker} of shard ${id.shard}`;
+}
+
+/** What the instance last answered (`status`; null for nothing), as the run's log says why the view is lost. */
+function lostCause(status: number | null): string {
+  switch (status) {
+    case null:
+      return 'the instance did not answer';
+    case 401:
+      return "the instance does not take the run's live view key now";
+    case 404:
+      return "the project's live view is off";
+    case 403:
+      return "the instance refuses the run's live view key";
+    case 409:
+      return 'the instance holds the run as interrupted';
+    case 410:
+      return 'the run is no longer live on the instance';
+    default:
+      return `the instance answered ${status}`;
+  }
+}
+
+/** The instance refused the key for good (`status`): nothing more is tried for the worker's life; the run says why. */
 function refuse(own: Link, status: number): void {
   if (own.refused !== null) return;
   own.refused = liveShareRefusal(status);
+  own.answered = status;
+  if (own.ci) goDark(own, 'It stays off for this worker.');
   own.viewers = 0;
   own.stream?.destroy();
   own.agent.destroy();
@@ -499,8 +569,9 @@ function refuse(own: Link, status: number): void {
 }
 
 /**
- * The retries are over: the sharing stops, saying what the instance last answered (nothing, or that the run is
- * interrupted), and its stream closes; a person may share the run again.
+ * The retries are over, or the instance took no key: the sharing stops, saying what the instance last answered
+ * (nothing, that the run is interrupted, the key unknown or the live view off), and its stream closes; a person may
+ * share the run again.
  */
 function giveUp(own: Link): void {
   own.sharing = false;
@@ -696,6 +767,8 @@ function send(own: Link, message: WorkerToInstance): Promise<number | null> {
       if (settled) return;
       settled = true;
       if (status !== null && GIVE_UP.has(status)) refuse(own, status);
+      // The stream opens again, and hears from the instance whether it takes the key.
+      else if (status !== null && NOT_NOW.has(status)) own.stream?.destroy();
       resolve(status);
     };
     const request = own.client.request(own.address.url, {

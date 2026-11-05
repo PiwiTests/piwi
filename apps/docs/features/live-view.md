@@ -37,7 +37,17 @@ setup. A CI job is told by its provider's variable (`GITHUB_ACTIONS`, `GITLAB_CI
 
 A CI run without a view logs why instead.
 
-Turning it off ends every view at once; a run that started while it was off stays without one.
+Turning it off ends every view at once; a run that started while it was off stays without one. Turned on again, a
+run that had a view and still runs gets it back.
+
+A CI run's workers keep their view through an outage of the dashboard or its restart: each tries again after 1, 2, 4,
+8 and 16 seconds, then every 30 to 60 seconds while the run lasts. A worker whose view stays out that long says so
+once in the run's log, and once more as it is back, outside any test's output:
+
+```text
+[Piwi Dashboard] Worker 2: live view lost: the instance answered 503. Trying again every 30 to 60 s while the run lasts.
+[Piwi Dashboard] Worker 2: live view back.
+```
 
 ## Check availability
 
