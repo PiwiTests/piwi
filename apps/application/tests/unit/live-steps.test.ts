@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest';
 import { stepLabel } from '@piwitests/core/step-analysis';
-import { liveStepForCase, type LiveStepsByWorker } from '../../app/utils/live-steps';
+import { captionCall, liveStepForCase, liveStepOf, type LiveStepsByWorker } from '../../app/utils/live-steps';
 import type { TestCaseResult } from '../../types/api';
 
 function makeCase(overrides: Partial<TestCaseResult>): TestCaseResult {
@@ -77,4 +77,34 @@ test('a live step keeps its subtitle, and the label composes both', () => {
   const live = liveStepForCase(withSubtitle, makeCase({}));
   expect(live?.subtitle).toBe("getByRole('button', { name: 'Pay' })");
   expect(stepLabel(live!)).toBe("Click getByRole('button', { name: 'Pay' })");
+});
+
+test('finds a watched worker’s step in its test, by shard and worker, else by worker alone', () => {
+  const sharded: LiveStepsByWorker = {
+    '2:0': { title: 'Fill', category: 'pw:api', parentTitle: 'pays by card' },
+    ':1': { title: 'Click', category: 'pw:api', parentTitle: 'searches' },
+  };
+  expect(liveStepOf(sharded, { shard: 2, worker: 0, test: 'pays by card' })?.title).toBe('Fill');
+  expect(liveStepOf(sharded, { shard: 1, worker: 0, test: 'pays by card' })).toBeNull();
+  expect(liveStepOf(sharded, { shard: 3, worker: 1, test: 'searches' })?.title).toBe('Click');
+  expect(liveStepOf(sharded, { shard: 2, worker: 0, test: 'another test' })).toBeNull();
+});
+
+test('a live view’s caption names the call log’s call, else the step newer than the image, else the image’s', () => {
+  const framed = { title: "Fill getByLabel('Card')", file: 'tests/pay.spec.ts', line: 11 };
+  const logged = { title: "Click getByRole('button')", file: 'tests/pay.spec.ts', line: 12 };
+  const step = { title: 'Click', subtitle: "getByRole('button', { name: 'Pay' })", category: 'pw:api' };
+  const view = { logged: null, framed, framedAt: 1_000, step, stepAt: 2_000 };
+
+  expect(captionCall({ ...view, logged })).toBe(logged);
+  expect(captionCall(view)).toEqual({ title: "Click getByRole('button', { name: 'Pay' })", file: null, line: null });
+  // The image came after the step: it names what the page shows.
+  expect(captionCall({ ...view, stepAt: 500 })).toBe(framed);
+  // The step is the image's call: the image's place stays, with its link.
+  expect(
+    captionCall({ ...view, framed: { ...framed, title: "Click getByRole('button', { name: 'Pay' })" } })?.file,
+  ).toBe('tests/pay.spec.ts');
+  // A hook or a fixture is no call an image is taken at.
+  expect(captionCall({ ...view, step: { title: 'beforeEach hook', category: 'hook' } })).toBe(framed);
+  expect(captionCall({ ...view, framed: null, step: null })).toBeNull();
 });

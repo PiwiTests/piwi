@@ -381,6 +381,8 @@ describe('isCaptureStep', () => {
   test('recognizes the capture’s attachments and its probes through the reporter bundle', () => {
     expect(isCaptureStep({ title: 'Attach "piwi-locators"' })).toBe(true);
     expect(isCaptureStep({ title: 'Fixture "piwiCapture"', category: 'fixture' })).toBe(true);
+    expect(isCaptureStep({ title: 'Fixture "piwiResources"', category: 'fixture' })).toBe(true);
+    expect(isCaptureStep({ title: 'Fixture "piwiResourcesOfMine"', category: 'fixture' })).toBe(false);
     expect(isCaptureStep({ title: 'Fixture "page"', category: 'fixture' })).toBe(false);
     expect(isCaptureStep({ title: 'Attach "screenshot"' })).toBe(false);
     expect(

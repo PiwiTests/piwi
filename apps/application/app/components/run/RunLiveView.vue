@@ -17,6 +17,7 @@ import {
   type LiveCallLog,
 } from '#shared/live-view';
 import { stallWatch, STREAM_RECONNECT_STALL_MS } from '~/utils/stream-stall';
+import { captionCall, type LiveStepInfo } from '~/utils/live-steps';
 
 const props = defineProps<{
   runId: number;
@@ -27,6 +28,8 @@ const props = defineProps<{
   /** Piwi project id + name, for the IDE opener of each call's place. */
   projectKey?: string | number | null;
   projectName?: string | null;
+  /** The step the worker is on in the test, from the run's stream. */
+  step?: LiveStepInfo | null;
 }>();
 const open = defineModel<boolean>('open', { required: true });
 
@@ -174,8 +177,22 @@ const currentLog = computed(() => {
   if (!shown || shown.status === 'running' || !call.value || callAt.value <= endedAt.value) return shown;
   return sameCall(call.value, shown.call) ? shown : null;
 });
-/** The call shown: the call log's, fresher than an image's, else the image's. */
-const shownCall = computed(() => currentLog.value?.call ?? call.value);
+/** When the worker's step last changed on this page, for the caption to tell it from an older image. */
+const stepAt = ref(0);
+watch(
+  () => props.step,
+  () => (stepAt.value = Date.now()),
+);
+/** The call shown: the call log's, fresher than an image's, else the worker's step when newer, else the image's. */
+const shownCall = computed(() =>
+  captionCall({
+    logged: currentLog.value?.call ?? null,
+    framed: call.value,
+    framedAt: callAt.value,
+    step: props.step ?? null,
+    stepAt: stepAt.value,
+  }),
+);
 /** How long the running call has run, counted on between two call logs, or how long the call that ended took. */
 const callMs = computed(() => {
   const shown = currentLog.value;

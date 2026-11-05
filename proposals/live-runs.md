@@ -22,7 +22,11 @@ forward once the dashboard first says nobody watches, and sends the steps its te
 opens the run, in one request; step events name their shard, and the run page files each step by shard and worker;
 while anyone watches, the instance keeps each worker's latest step until its test completes and replays it to whoever
 opens the run later, as the demo does. `parallelIndex` and the
-retry on step events come with P1, which reads them. The rest is proposed. The bugs the analysis
+retry on step events come with P1, which reads them. Built from P0's step hygiene: Piwi's own fixtures (`piwiCapture`,
+`piwiResources`) and the steps inside them stay out of the stream, `test.step` streams, the live view's caption names its call
+with the call's target and follows the worker's step when it is newer than the image, and a run's Tests tab says
+**Global setup** (then **Starting N tests**) with the time since the run began, until its first test. The caption shows
+a step without its place, and a `test.step` streams as a step of its own, not as the parent of the calls inside it. The rest is proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app

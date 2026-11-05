@@ -41,6 +41,8 @@ const props = defineProps<{
   /** Planned suite size — the "N / total completed" denominator while live, so
    *  it counts toward the whole run, not just the tests seen so far. */
   total?: number | null;
+  /** When the run began, while it waits for its first test: the empty list says what it is doing. */
+  waitingSince?: string | Date | null;
   /** Worker index → current step, rendered inline on the matching running rows. */
   liveSteps?: LiveStepsByWorker | null;
   /** What the run's reporters measured so far; each running row shows its worker's last values. */
@@ -1085,6 +1087,8 @@ defineExpose({ scrollToCase });
         </template>
       </ClientOnly>
     </div>
+
+    <RunBeforeFirstTest v-else-if="testCases.length === 0 && waitingSince" :since="waitingSince" :total="total" />
 
     <EmptyState v-else-if="testCases.length === 0" icon="i-lucide-beaker" text="No tests recorded for this run." />
 

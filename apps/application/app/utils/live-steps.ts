@@ -1,5 +1,6 @@
+import { stepLabel } from '@piwitests/core/step-analysis';
 import type { TestCaseResult } from '~~/types/api';
-import { liveWorkerKey } from '#shared/live-view';
+import { liveWorkerKey, type LiveCall } from '#shared/live-view';
 
 /**
  * The step a worker is currently on, from the run stream's transient
@@ -32,12 +33,44 @@ export function liveStepForCase(
   steps: LiveStepsByWorker | null | undefined,
   testCase: TestCaseResult,
 ): LiveStepInfo | null {
-  if (!steps || testCase.status !== 'running' || testCase.workerIndex == null) return null;
-  const worker = testCase.workerIndex;
+  if (testCase.status !== 'running' || testCase.workerIndex == null) return null;
+  return liveStepOf(steps, { shard: testCase.shardIndex ?? null, worker: testCase.workerIndex, test: testCase.title });
+}
+
+/** The step a worker is on in its test `test`, by shard and worker, else by worker alone. Null for none. */
+export function liveStepOf(
+  steps: LiveStepsByWorker | null | undefined,
+  at: { shard: number | null; worker: number; test: string },
+): LiveStepInfo | null {
+  if (!steps) return null;
   const step =
-    steps[liveWorkerKey({ shard: testCase.shardIndex ?? null, worker })] ??
-    steps[liveWorkerKey({ shard: null, worker })];
+    steps[liveWorkerKey({ shard: at.shard, worker: at.worker })] ??
+    steps[liveWorkerKey({ shard: null, worker: at.worker })];
   if (!step) return null;
-  if (step.parentTitle && step.parentTitle !== testCase.title) return null;
+  if (step.parentTitle && step.parentTitle !== at.test) return null;
   return step;
+}
+
+/** The step categories a live view's caption names, the kinds of call an image is taken at. */
+const CAPTION_CATEGORIES = new Set(['pw:api', 'expect', 'test.step']);
+
+/**
+ * The call a live view's caption names: the call log's while it is of the call the test is in; else the worker's
+ * step, when it reached the page after the last image and the image names another call (a page that does not change
+ * sends no image); else the image's call.
+ */
+export function captionCall(view: {
+  logged: LiveCall | null;
+  framed: LiveCall | null;
+  framedAt: number;
+  step: LiveStepInfo | null;
+  stepAt: number;
+}): LiveCall | null {
+  if (view.logged) return view.logged;
+  const { step } = view;
+  if (step && CAPTION_CATEGORIES.has(step.category ?? '') && view.stepAt > view.framedAt) {
+    const title = stepLabel(step);
+    if (title && view.framed?.title !== title) return { title, file: null, line: null };
+  }
+  return view.framed;
 }
