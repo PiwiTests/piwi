@@ -173,12 +173,11 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
 
     /**
-     * The stops shown (`Glue.stopsToShow`), those whose file opens once found, in order, with whether it takes the
-     * focus, and what is drawn of each, by `Glue.stopKey`; the files of stops refreshed from disk once, by URI. On the
-     * event thread.
+     * What the IDE shows of the stops (`Glue.StopsShown`), the stops whose file opens once found, in order, and what is
+     * drawn of each, by `Glue.stopKey`; the files of stops refreshed from disk once, by URI. On the event thread.
      */
-    private val revealed = HashSet<String>()
-    private val unopened = LinkedHashMap<String, Boolean>()
+    private val shownStops = Glue.StopsShown()
+    private val unopened = LinkedHashSet<String>()
     private val drawn = HashMap<String, DrawnStop>()
     private val refreshed = HashSet<String>()
 
@@ -512,31 +511,29 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     }
 
     /**
-     * Draw each stop at the line it stands on now: a new stop's file opened at its line, with the focus only while no
-     * other stop is shown, its execution point and an inlay in each editor of its file; a stop no pause bar shows, its
-     * page in the Paused Page tab unless the tab shows a stop still held, whether its file is found or not
-     * (`Glue.stopsToShow`). A file the IDE has not read yet is looked for on disk off the event thread, then drawn.
-     * What a stop that went on drew goes. On the event thread.
+     * Draw each stop at the line it stands on now: a new stop's file opened at its line once found, with the focus as
+     * `Glue.StopsShown` decides then (`reveal`), its execution point and an inlay in each editor of its file; the page
+     * `Glue.StopsShown` gives in the Paused Page tab, whether its file is found or not. A file the IDE has not read yet
+     * is looked for on disk off the event thread, then drawn. What a stop that went on drew goes. On the event thread.
      */
     private fun draw() {
         val stops = stops()
         val keys = stops.map(Glue::stopKey).toSet()
         for (key in drawn.keys - keys) drawn.remove(key)?.dispose()
-        revealed.retainAll(keys)
-        unopened.keys.retainAll(keys)
+        unopened.retainAll(keys)
         refreshed.retainAll(stops.mapNotNull { it.stop.uri }.toSet())
         val shownPage = livePage()
-        val show = Glue.stopsToShow(stops, revealed, pageStop?.takeIf { shownPage != null })
-        for (reveal in show.reveal) {
-            revealed.add(Glue.stopKey(reveal.stop))
-            unopened[Glue.stopKey(reveal.stop)] = reveal.focus
-        }
+        if (shownPage == null) shownStops.view(null)
+        val show = shownStops.changed(sessions, stops)
+        show.open.forEach { unopened.add(Glue.stopKey(it)) }
         val byKey = stops.associateBy(Glue::stopKey)
-        for ((key, focus) in unopened.entries.toList()) {
+        for (key in unopened.toList()) {
             val stop = byKey[key] ?: continue
             val file = fileOf(stop.stop.uri) ?: continue
             unopened.remove(key)
-            OpenFileDescriptor(project, file, stop.stop.line, stop.stop.character ?: 0).navigate(focus)
+            val focus = shownStops.focusFor(stop)
+            reveal(stop, file, focus)
+            shownStops.opened(stop, focus)
         }
         for (stop in stops) {
             val key = Glue.stopKey(stop)
@@ -562,6 +559,21 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             (shownPage.component as PausedPagePanel).ended("The test went on.")
         }
         if (shownPage != null && pageStop == null && sessions.isEmpty()) (shownPage.component as PausedPagePanel).ended("The run ended.")
+    }
+
+    /**
+     * Open a stop's file at its line. With the focus, as the debugger does. Without it, the editor in use is left alone:
+     * a file open in an editor already keeps its caret, the stop drawn there, and another opens in a tab beside the file
+     * in front, which stays in front. On the event thread.
+     */
+    private fun reveal(stop: Glue.ShownStop, file: VirtualFile, focus: Boolean) {
+        val descriptor = OpenFileDescriptor(project, file, stop.stop.line, stop.stop.character ?: 0)
+        if (focus) return descriptor.navigate(true)
+        val manager = FileEditorManager.getInstance(project)
+        if (manager.isFileOpen(file)) return
+        val front = manager.selectedFiles.firstOrNull()
+        descriptor.navigate(false)
+        if (front != null) manager.openFile(front, false)
     }
 
     private fun toolWindow() = ToolWindowManager.getInstance(project).getToolWindow(PiwiFailuresToolWindowFactory.ID)
@@ -627,6 +639,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         stopPageView()
         val key = Glue.stopKey(stop)
         pageStop = key
+        shownStops.view(stop)
         val window = toolWindow() ?: return
         val content = livePage() ?: ContentFactory.getInstance()
             .createContent(PausedPagePanel(), PAUSED_PAGE, false)
@@ -808,7 +821,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
      * event thread, saying why not.
      */
     fun answer(stop: Glue.ShownStop, action: String, place: EditorBreakpoint? = null) {
-        control(RunControlParams(stop.ref, stop.worker, action, place, stop.stop.since))
+        control(RunControlParams(stop.ref, stop.worker, action, place, stop.stop.since)) { shownStops.answered(stop) }
     }
 
     /** Pause every run started here: each of its workers stops before its next call. */
@@ -816,12 +829,14 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         sessions.keys.forEach { control(RunControlParams(it, action = "pause")) }
     }
 
-    private fun control(params: RunControlParams) {
+    /** Send a control off the event thread, saying why not; `answered` runs on the event thread once the run took it. */
+    private fun control(params: RunControlParams, answered: () -> Unit = {}) {
         ApplicationManager.getApplication().executeOnPooledThread {
             val result = remote.control(params)
             when {
                 result == null -> PiwiCommands.notify(project, "The editor service did not answer.", NotificationType.WARNING)
                 !result.ok -> PiwiCommands.notify(project, result.message ?: "The run did not take it.")
+                else -> ApplicationManager.getApplication().invokeLater({ answered() }, gone)
             }
         }
     }

@@ -1,10 +1,10 @@
 /**
  * The runs the editor started, as the extension shows and steers them, with no VS Code API, so it is tested without
  * an editor: the sessions kept from `piwi/runSessionChanged` (the latest of each ref, one that ended dropped), where
- * each stopped worker stands, what a new stop opens (its file, with the focus or without, and its page), what the
- * controls and the code actions offer in each state, the line shown above a stop, the stop a control acts on, the
- * breakpoints sent to each run as they change, the page a stop shows as an image, the responses Mock a request lists,
- * the count of the locator at the cursor, the code a stop sends to write, a run shared live on the team instance
+ * each stopped worker stands, what a new stop opens and where (its file, with the focus or without, and its page),
+ * what the controls and the code actions offer in each state, the line shown above a stop, the stop a control acts on,
+ * the breakpoints sent to each run as they change, the page a stop shows as an image, the responses Mock a request
+ * lists, the count of the locator at the cursor, the code a stop sends to write, a run shared live on the team instance
  * (Share live: what it sends, how it stands), and the edits of the documents since a run started, which map a line of
  * the run's code to the document as it stands and back.
  */
@@ -227,39 +227,86 @@ export function stopKey(stop: ShownStop): string {
   return `${stop.ref}\0${stop.worker}\0${stop.stop.since}`;
 }
 
-/** What the editor shows of the stops after a change: the new stops' files, and a page. */
-export interface StopsToShow {
-  /** The stops new to the editor, each opened at its line with the focus or without it, in the order to open them. */
-  reveal: { stop: ShownStop; focus: boolean }[];
+/** What tells a worker from another: its run and its index. */
+function workerKey(stop: { ref: string; worker: number }): string {
+  return `${stop.ref}\0${stop.worker}`;
+}
+
+/** What a change of the sessions shows: the stops new to the editor, and a page. */
+export interface StopsChange {
+  /** The stops new to the editor, in order: each opens its file at its line in its turn (`focusFor`, `opened`). */
+  open: ShownStop[];
   /** The stop whose page the paused page view opens; null leaves the view as it is. */
   page: ShownStop | null;
 }
 
 /**
- * What the editor shows of the stops held after a change (`stops`, in order), each stop once (`revealed`: the keys of
- * those shown before). A new stop opens its file at its line without the focus, but for one: while no stop shown
- * before is held, the first new stop takes it, opened last so its file is in front. A stop of another worker thus
- * never takes the focus from the one in use. The paused page view keeps the stop it shows (`pageStop`, null while it
- * is closed or shows none) while that stop is held; else it opens the page of the first new stop no pause bar shows,
- * or, once its own stop went on, of the first such stop held.
+ * What the editor shows of the stops as the sessions change, each stop once.
+ *
+ * - A new stop opens its file at its line. It takes the focus, decided as it opens (`focusFor`), only while no other
+ *   stop held has its file open (`opened`), or as a stop of the worker the person is on: the one whose stop last took
+ *   the focus, or whose stop a control answered last (`answered`).
+ * - The paused page view belongs to the worker of the stop it shows or showed last (`view`). While that worker is in
+ *   the sessions, running or between tests, the view opens that worker's next stop no pause bar shows, and no other.
+ *   Once the worker left, the view opens the first new such stop, else the first such stop held; a view that is closed
+ *   or shows none opens the first new such stop.
  */
-export function stopsToShow(
-  stops: readonly ShownStop[],
-  revealed: ReadonlySet<string>,
-  pageStop: string | null,
-): StopsToShow {
-  const held = new Set(stops.map(stopKey));
-  const shown = [...revealed].some((key) => held.has(key));
-  const fresh = stops.filter((s) => !revealed.has(stopKey(s)));
-  const headless = (s: ShownStop) => !s.stop.bar;
-  const page =
-    pageStop !== null && held.has(pageStop)
-      ? null
-      : (fresh.find(headless) ?? (pageStop !== null ? stops.find(headless) : undefined) ?? null);
-  const reveal = fresh.map((stop) => ({ stop, focus: false }));
-  const [first, ...others] = reveal;
-  if (shown || !first) return { reveal, page };
-  return { reveal: [...others, { ...first, focus: true }], page };
+export class StopsShown {
+  /** The stops heard, and those whose file opened, by `stopKey`. */
+  private readonly heard = new Set<string>();
+  private readonly files = new Set<string>();
+  private held = new Set<string>();
+  private viewed: ShownStop | null = null;
+  /** The worker the person is on, by `workerKey`. */
+  private followed: string | null = null;
+
+  /** The sessions changed, with their stops at the lines they stand on now (`stops`, in order). */
+  changed(sessions: Sessions, stops: readonly ShownStop[]): StopsChange {
+    this.held = new Set(stops.map(stopKey));
+    for (const key of [...this.heard]) if (!this.held.has(key)) this.heard.delete(key);
+    for (const key of [...this.files]) if (!this.held.has(key)) this.files.delete(key);
+    const open = stops.filter((s) => !this.heard.has(stopKey(s)));
+    for (const stop of open) this.heard.add(stopKey(stop));
+    const headless = (s: ShownStop) => !s.stop.bar;
+    const viewed = this.viewed;
+    if (viewed && sessions.get(viewed.ref)?.workers.some((w) => w.worker === viewed.worker)) {
+      const next = stops.find((s) => workerKey(s) === workerKey(viewed));
+      return { open, page: next && headless(next) && stopKey(next) !== stopKey(viewed) ? next : null };
+    }
+    this.viewed = null;
+    return { open, page: open.find(headless) ?? (viewed ? stops.find(headless) : undefined) ?? null };
+  }
+
+  /** The paused page view shows `stop`'s page; null once it is closed. */
+  view(stop: ShownStop | null): void {
+    this.viewed = stop;
+  }
+
+  /** Whether `stop`'s file, opening now, takes the focus. */
+  focusFor(stop: ShownStop): boolean {
+    return workerKey(stop) === this.followed || [...this.files].every((key) => key === stopKey(stop));
+  }
+
+  /** `stop`'s file opened, with the focus or without it. */
+  opened(stop: ShownStop, focus: boolean): void {
+    if (!this.held.has(stopKey(stop))) return;
+    this.files.add(stopKey(stop));
+    if (focus) this.followed = workerKey(stop);
+  }
+
+  /** A control answered `stop`: the person is on its worker. */
+  answered(stop: ShownStop): void {
+    this.followed = workerKey(stop);
+  }
+}
+
+/**
+ * The column a stop's file opens in to leave the editor in use alone: the first group that is neither the active one
+ * nor the paused page view's (`pageColumn`), else a new group at the right, the ninth at most.
+ */
+export function asideColumn(groups: readonly { viewColumn: number; isActive: boolean }[], pageColumn?: number): number {
+  const free = groups.find((g) => !g.isActive && g.viewColumn !== pageColumn);
+  return free?.viewColumn ?? Math.min(9, Math.max(0, ...groups.map((g) => g.viewColumn)) + 1);
 }
 
 /**

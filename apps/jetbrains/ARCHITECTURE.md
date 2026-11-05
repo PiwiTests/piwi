@@ -401,9 +401,12 @@ stops say `run in a terminal` (`Glue.pausedText`), and it has no Stop, its proce
 (`RunSession.runner`), whose reporter follows the IDE as one in a terminal does: its stops say `run by the editor's
 test runner`, and the Run tool window's Stop ends it.
 
-**A stop.** A stop opens its file at its line once (`Glue.stopKey`, `Glue.stopsToShow`), at the line it stands on
-now. While no other stop is shown, the first of the new stops takes the focus, opened last so its file is in front;
-another worker's stop opens without it (`navigate(false)`). It is drawn as the execution point:
+**A stop.** A stop opens its file at its line once (`Glue.stopKey`, `Glue.StopsShown`), at the line it stands on
+now. It takes the focus, decided as it opens, only while no other stop held has its file open, or as a stop of the
+worker the person is on (the one whose stop last took the focus, or that a control answered last); a file that never
+opened counts as none. Without it, the editor in use is left alone (`PiwiRunSessions.reveal`): a file open in an
+editor already keeps its caret, so the actions still act on the stop at the caret, and another opens in a tab with
+`navigate(false)`, the file in front selected again. It is drawn as the execution point:
 
 - a range highlighter on the document's markup model in `PIWI_EXECUTION_POINT` (**Line a run is stopped at** in
   `PiwiColorSettingsPage.kt`, falling back on `DebuggerColors.EXECUTIONPOINT_ATTRIBUTES`), with
@@ -416,8 +419,8 @@ another worker's stop opens without it (`navigate(false)`). It is drawn as the e
   them in the editors of its own project (`StopInlay.controlAt`, the hand cursor over one).
 
 A stop in a file the VFS has not loaded is looked for on disk off the event thread, once
-(`refreshAndFindFileByNioFile`), and its file opens once found (`unopened`), with the focus or without as decided when
-it was heard; its Paused Page shows meanwhile.
+(`refreshAndFindFileByNioFile`), and its file opens once found (`unopened`), the focus decided then; its Paused Page
+shows meanwhile.
 
 **Edits since the run started.** A run's lines are the documents as they stood when it started (`started`, else when
 first heard, a rerun under the ref of a run that ended included). `Glue.EditLog` keeps the edits that move lines while a run is live or starting (a `DocumentListener` on
@@ -449,11 +452,12 @@ VSCode keymaps' `F5`, `Debug`; NetBeans' `F4`, `EditSource`) runs Piwi's while i
 
 **The paused page.** A stop with no pause bar asks `piwi/pausedPage` and shows the JPEG (`Glue.pausedImageBytes`, at
 most `Glue.MAX_IMAGE_DATA`, decoded only within `Glue.decodableImage`) in the **Paused Page** tab of the Piwi tool
-window, again at each such stop, unless the tab shows a stop still held: another worker's stop shows there once that
-stop goes on (the first such stop held), or on **Show the Paused Page** (`Glue.stopsToShow`). Where its worker takes
-`pick-at` and the image names its viewport (`Glue.picksOnImage`), a click on the image picks the element under it
-(`piwi/pickAt`, the point scaled to the page's CSS pixels by `Glue.pagePoint`), its locator going where a pick goes,
-the answer said under the image.
+window. The tab follows the worker of the stop it shows (`Glue.StopsShown`): while that worker is in the run,
+running or between tests, it says its test went on and opens its next stop, and no other worker's; once that worker
+left the run, it opens the first stop held that no pause bar shows. **Show the Paused Page** moves it to the stop
+chosen. Where its worker takes `pick-at` and the image names its viewport (`Glue.picksOnImage`), a click on the image
+picks the element under it (`piwi/pickAt`, the point scaled to the page's CSS pixels by `Glue.pagePoint`), its locator
+going where a pick goes, the answer said under the image.
 
 For a stop taking `view`, **Watch live** subscribes through `piwi/pageView` on the existing LSP connection. Frames
 (`piwi/pageFrame`) decode off the event thread, with one decode in flight and only the latest waiting frame. Native
