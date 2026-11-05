@@ -89,6 +89,10 @@ edit.
 ### Code
 
 - **Keep it simple.** This is a deliberately AI-friendly codebase: obvious code beats clever code.
+- **Before 1.0, a breaking change is acceptable** when it makes the product right (an API or MCP response shape, a
+  default, an option): mark it with a `BREAKING CHANGE:` footer, which bumps the minor version before 1.0
+  ([`CONTRIBUTING.md`](CONTRIBUTING.md)). What freezes at 1.0 is listed in
+  [`proposals/1.0-stabilization.md`](proposals/1.0-stabilization.md).
 - Full TypeScript; Nuxt 4 conventions and Nuxt UI components in the app.
 - **American English** spelling throughout ("initialize", "organize", "color").
 - **Extract a shared component/helper** when the same block exceeds ~10 lines and appears more than once.

@@ -8,8 +8,9 @@
  *   stored beside it. A template cannot leave its base URL (`renderCiRequest`),
  *   and no redirect is followed.
  * - The instance token goes only with a preset's request, whose shape the preset
- *   fixes (Jenkins: a job's `buildWithParameters`). A Custom request carries the
- *   project's own token or none.
+ *   fixes (Jenkins: a job's `buildWithParameters`, and the read of the job's
+ *   parameters Check sends). A Custom request carries the project's own token or
+ *   none.
  * - A private address is reached only on a place the operator named (the host
  *   and port of `PIWI_CI_SERVER_URL`, and the entries of `PIWI_CI_SERVER_HOSTS`),
  *   or on the desktop app. Any other host must resolve to public addresses only, checked when the
@@ -23,12 +24,17 @@ import { assertPublicHttpUrl, publicOnlyLookup } from './safe-fetch';
 import { isDesktopRuntime } from './ai-claude-cli';
 import {
   ciAuthHeaderProblem,
+  CI_SERVER_HTTPS_PROBLEM,
+  ciServerCheckFinding,
+  ciServerCheckPlans,
   ciServerRequestTemplate,
+  CI_SERVER_PRESET_REGISTRY,
   isUnderBaseUrl,
   normalizeCiServerBaseUrl,
   readCiServerAnswer,
   renderCiRequest,
   type CiServerAuth,
+  type CiServerCheckResult,
   type CiServerTarget,
   type CiTemplateValues,
 } from '#shared/ci-server';
@@ -110,7 +116,7 @@ export function ciServerBaseUrlProblem(baseUrl: string | null): string | null {
   const url = normalizeCiServerBaseUrl(baseUrl);
   if (!url) return 'No CI server is configured for this project.';
   if (url.startsWith('https:') || mayReachPrivateAddress(url)) return null;
-  return 'The CI server URL must use https, or its host must be listed in PIWI_CI_SERVER_HOSTS.';
+  return CI_SERVER_HTTPS_PROBLEM;
 }
 
 /** A project's CI server token, sealed with the base URL it may be sent under. */
@@ -167,7 +173,8 @@ function authHeader(auth: CiServerAuth, credential: CiServerCredential | null): 
 
 /** A request ready to send, with its credential, and the one it carries. */
 export interface OutgoingCiRequest {
-  method: 'POST' | 'PUT';
+  /** `GET` only for the read Check sends; a dispatch is a `POST` or a `PUT`. */
+  method: 'POST' | 'PUT' | 'GET';
   url: string;
   headers: Record<string, string>;
   body: string | null;
@@ -195,10 +202,7 @@ export function prepareCiServerRequest(input: {
       input.kind === 'flakeLab' ? 'No Flake Lab request is configured' : 'No re-run request is configured',
     );
   const rendered = renderCiRequest(input.baseUrl, spec.template, input.values);
-  const project = input.projectToken
-    ? { url: input.projectToken.url, user: input.target.user ?? null, token: input.projectToken.token }
-    : null;
-  const instance = input.target.preset === 'custom' ? null : input.instanceCredential;
+  const { project, instance } = credentialCandidates(input.target, input.projectToken, input.instanceCredential);
   const credential = credentialFor(rendered.url, [project, instance]);
   const headers: Record<string, string> = {};
   const setHeader = (name: string, value: string) => {
@@ -325,4 +329,114 @@ export async function dispatchToCiServer(
     json: parseJson(answer.text),
   });
   return { url: fields.link, buildNumber: fields.buildNumber };
+}
+
+/** A credential pair the project and the instance offer, the project's first. */
+function credentialCandidates(
+  target: CiServerTarget,
+  projectToken: { url: string; token: string } | null,
+  instanceCredential: CiServerCredential | null,
+): { project: CiServerCredential | null; instance: CiServerCredential | null } {
+  return {
+    project: projectToken ? { url: projectToken.url, user: target.user ?? null, token: projectToken.token } : null,
+    instance: target.preset === 'custom' ? null : instanceCredential,
+  };
+}
+
+/**
+ * The read Check sends for a job: a GET of `url`, with the credential a
+ * dispatch under the same URL would carry, chosen on the request's URL as
+ * `prepareCiServerRequest` chooses it.
+ */
+export function prepareCiServerCheck(input: {
+  target: CiServerTarget;
+  url: string;
+  projectToken: { url: string; token: string } | null;
+  instanceCredential: CiServerCredential | null;
+}): OutgoingCiRequest {
+  if (input.target.preset === 'custom') throw new Error('A Custom request cannot be checked');
+  const { project, instance } = credentialCandidates(input.target, input.projectToken, input.instanceCredential);
+  const credential = credentialFor(input.url, [project, instance]);
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  const auth = authHeader(CI_SERVER_PRESET_REGISTRY[input.target.preset].auth, credential);
+  if (auth) headers[auth[0]] = auth[1];
+  return {
+    method: 'GET',
+    url: input.url,
+    headers,
+    body: null,
+    credential: !credential || !auth ? null : credential === project ? 'project' : 'instance',
+  };
+}
+
+/** What a non-2xx answer to Check means, for the user. */
+function checkAnswerMessage(answer: CiServerAnswer, sentCredential: boolean): string {
+  if (answer.status === 401) {
+    return sentCredential
+      ? 'The CI server refused the credential (401): check the user and the API token.'
+      : 'The CI server asks for a credential (401): set the user and an API token.';
+  }
+  if (answer.status === 403) {
+    return sentCredential
+      ? 'The CI server answered 403: the user cannot read this job.'
+      : 'The CI server answered 403 to a request without a credential: set the user and an API token for a URL that holds this job.';
+  }
+  if (answer.status === 404) {
+    return sentCredential
+      ? 'No job at this path, or the user cannot see it (404).'
+      : 'No job at this path, or the CI server hides it from a request without a credential (404).';
+  }
+  return `${ciServerAnswerError(answer).message}.`;
+}
+
+/**
+ * Check a target before its first dispatch: read each of its jobs (the
+ * re-run's, and Flake Lab's when set) and say whether it declares the
+ * parameters a dispatch sends, since Jenkins drops one a job does not declare.
+ * Nothing is started, and only what was found is returned, never the answer.
+ */
+export async function checkCiServerTarget(
+  db: DbClient,
+  projectId: number,
+  target: CiServerTarget,
+): Promise<CiServerCheckResult[]> {
+  const baseUrl = ciServerBaseUrl(target);
+  const problem = ciServerBaseUrlProblem(baseUrl);
+  if (problem || !baseUrl) {
+    return [
+      { kind: 'rerun', ok: false, missing: [], message: problem ?? 'No CI server is configured for this project.' },
+    ];
+  }
+  const projectToken = await projectCiServerToken(db, projectId);
+  const instanceCredential = instanceCiServer().credential;
+  const results: CiServerCheckResult[] = [];
+  for (const plan of ciServerCheckPlans(target, baseUrl)) {
+    if ('error' in plan) {
+      results.push({ kind: plan.kind, ok: false, missing: [], message: plan.error });
+      continue;
+    }
+    try {
+      const request = prepareCiServerCheck({ target, url: plan.url, projectToken, instanceCredential });
+      const answer = await sendCiServerRequest(request);
+      if (answer.status < 200 || answer.status >= 300) {
+        results.push({
+          kind: plan.kind,
+          ok: false,
+          missing: [],
+          message: checkAnswerMessage(answer, !!request.credential),
+        });
+        continue;
+      }
+      results.push(ciServerCheckFinding(plan, parseJson(answer.text)));
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : String(e);
+      results.push({
+        kind: plan.kind,
+        ok: false,
+        missing: [],
+        message: `The CI server could not be reached: ${reason}.`,
+      });
+    }
+  }
+  return results;
 }

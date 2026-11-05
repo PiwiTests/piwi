@@ -79,7 +79,7 @@ export interface RunMetadata {
   piwiOrigin?: RunOrigin | null;
   /** The launcher's name for the run (`PIWI_RUN_REF`); read through `runLauncherRef` in `#shared/run-eligibility`. */
   piwiRunRef?: string | null;
-  /** The local hub that steers the run (`RunInteractive`); read through `isInteractiveRun` in `#shared/run-eligibility`. */
+  /** The local hub that steers the run (`RunInteractive`), kept as `parseRunInteractive` reads it. */
   piwiInteractive?: RunInteractive | null;
   htmlReport?: {
     projects?: Array<{

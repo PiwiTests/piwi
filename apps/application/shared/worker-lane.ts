@@ -36,6 +36,18 @@ interface WorkerOf {
 }
 
 /**
+ * What tells a run's workers apart: the shard and the lane, so a worker Playwright starts again in its slot stays one
+ * worker, else the shard and the worker process for a result that carries no lane; null with neither.
+ */
+export function workerKey(execution: WorkerOf): string | null {
+  const shard = execution.shardIndex ?? '';
+  const lane = workerLane(execution.parallelIndex);
+  if (lane !== null) return `${shard}:${lane}`;
+  const process = execution.workerIndex;
+  return typeof process === 'number' && process >= 0 ? `${shard}:process ${process}` : null;
+}
+
+/**
  * The order of executions by their worker: by shard, then by lane, then by worker process (`workerIndex`), so a lane's
  * processes follow one another. An execution without a lane, from a reporter that sends none, goes by its process
  * alone, and one without a worker (a test that never ran) goes first in its shard.

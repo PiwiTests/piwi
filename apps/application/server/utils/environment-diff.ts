@@ -51,6 +51,7 @@ function selectExecutionEnvironment(db: DrizzleDB, where: ReturnType<typeof and>
       browser: testRunsCases.browser,
       browserName: testRunsCases.browserName,
       workerIndex: testRunsCases.workerIndex,
+      parallelIndex: testRunsCases.parallelIndex,
       shardIndex: testRunsCases.shardIndex,
       runId: testRuns.id,
       runEnvironment: testRuns.environment,
@@ -88,6 +89,7 @@ function toSnapshot(row: ExecutionEnvironmentRow) {
     scmBranch: meta?.scm?.branch ?? null,
     browser: (row.browser as BrowserConfig | null) ?? null,
     workerIndex: row.workerIndex,
+    parallelIndex: row.parallelIndex,
     shardIndex: row.shardIndex,
   });
 }

@@ -56,9 +56,8 @@ admin turns the live view on from a running run's status, which then says it sta
 its run links stay with P5. Built from P3's notification of #1109: a run whose workers connect to a hub's run channel
 says so at `/begin` (or `/start`) as `piwiInteractive: { client, ref }` in its metadata, beside `piwiOrigin` (the
 client is the editor's name from its discovery file, else the launcher `PIWI_ORIGIN` names), so its later requests
-carry it too; the instance sends no `test.stuck` for it, by the `test-stuck` use of
-`run-eligibility.ts`, whose comment states the outbound effects of complete `local`, `desktop` and `editor` runs. Its
-long test is still marked **Stuck?**, until Stuck? reads stop state. Built from the rest of P3: an unknown worker state reads as `other` and an unreadable worker or `live` is left out, the run kept; `welcome` and
+carry it too; its `test.stuck` follows the `stuck-notifications` use, which sends none for any run started on a
+developer's machine. Its long test is still marked **Stuck?**, until Stuck? reads stop state. Built from the rest of P3: an unknown worker state reads as `other` and an unreadable worker or `live` is left out, the run kept; `welcome` and
 the desktop app's live answer list a hub's `features` (`peers`); each hub names the other live hubs of
 `~/.piwi/editors` to its subscribed connections, without their tokens, and the Runs window asks the paired editor
 again for one it holds no token for, and every minute while it is open; a VS Code window takes the pairing port once
@@ -79,7 +78,10 @@ wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a 
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app
 shell slips) and #1112 (the default trace's ARIA snapshots slow large pages). The phases below fix the first six: P0
 to P3 most of them, and the rest later (#1108's run links and #1109's Stuck? mark in P5, #1110's editor focus in P4,
-#1111's stopped state and thumbnail in P6). #1112 is left to its own fix. Nothing
+#1111's stopped state and thumbnail in P6). #1109's notification is fixed already: no run started on a developer's
+machine (a terminal, the desktop app, an editor, `piwi preflight --run`, `piwi bug --write`) sends `test.stuck`, the
+`stuck-notifications` use of `run-eligibility.ts`. #1112 is fixed on its own: the default trace takes no ARIA
+snapshots. Nothing
 here is on [`ROADMAP.md`](../ROADMAP.md) yet. It revises parts of [`live-view-next.md`](live-view-next.md) and extends
 decisions of [`run-control.md`](../adr/run-control.md); [Changes to other plans](#changes-to-other-plans) lists them.
 The contracts it adds are entry D63 of [`1.0-stabilization.md`](1.0-stabilization.md).
@@ -279,7 +281,7 @@ bytes, worker time and privacy, and produced only while a viewer subscribes to i
 | Page events | Console errors, uncaught errors, failed requests, requests pending long ("POST /api/checkout pending 17 s"), the backend's logged errors | `run-events.ts` listeners, turned on for any watcher | Small, capped | Lane view, the editors' output, a Runs window ticker |
 | Pixels | The page as it paints, with the action point and the element's box drawn by the viewer | `page.screencast` through `page-view.ts` | 15 to 40 KB an image; 10/s local, 4/s team; 2/s while a masked field shows | A focused lane view |
 | Crop to the target | The element the call waits on, sharp, with a margin | The viewer crops the frame around the box the worker already sends | Free | Phones, narrow windows, hovers |
-| Text (ARIA) | The page as roles and names: searchable, copyable, the target node marked, change since the last call | The trace's `aria/<callId>-<phase>.json` (written by `wrapConfig`'s trace), else `ariaSnapshot` on request | A few KB; 120 to 300 ms on a heavy page if taken | Phones, agents, screen readers |
+| Text (ARIA) | The page as roles and names: searchable, copyable, the target node marked, change since the last call | The trace's `aria/<callId>-<phase>.json` (written when the project's trace sets `snapshots.aria`; `wrapConfig`'s does not), else `ariaSnapshot` on request | A few KB, hundreds of KB on a heavy page; 120 to 300 ms there if taken | Phones, agents, screen readers |
 | Filmstrip | One thumbnail per finished call of the current test, for a late joiner | Locally the trace's `screencast/*.jpeg`; for the team the view's own masked frames, taken only while someone watches, kept in the worker's memory | No capture locally | A strip under the view |
 | Lanes at a glance | A bar per attempt per lane, the usual duration as a ghost, Stuck?, tiles of every lane at 1 fps | Lane state, the last ten passes per test | One query a run; tiles at 1/s | The run page, the desktop run page |
 | The DOM at each call | Inspect and pick a locator on a running test | Locally Playwright's trace viewer on the test's growing trace; for the team [live-view-next Part 4](live-view-next.md) | File reads | A hand-off locally |
@@ -287,8 +289,8 @@ bytes, worker time and privacy, and produced only while a viewer subscribes to i
 | Terminal | One start line with the link, stop and stuck lines, OSC 8 links, OSC 9;4 progress (error after a failure, warning while a test waits) | The reporter's main process | None | Terminals, CI logs |
 | OS presence | Running, failing or waiting for you on the taskbar, Dock and tray; one flash per job | The desktop app, fed from every local run | None | The desktop app |
 
-Two of these come free from what Playwright already records under `wrapConfig`'s trace (the ARIA files and the
-screencast JPEGs), and Playwright's trace viewer opens a test's growing trace as a live view
+The screencast JPEGs come free from what Playwright already records under `wrapConfig`'s trace, the ARIA files only
+under a trace that sets `snapshots.aria`, and Playwright's trace viewer opens a test's growing trace as a live view
 (`npx playwright show-trace <outputDir>/.playwright-artifacts-<workerIndex>/traces/<name>.json`, where `<name>` is the
 test's id, with `-retry<k>` for a retry and `-recording<N>` for each recording after the worker's first; the viewer
 builds that `.json` over the growing `<name>.trace`). Others were weighed and left
@@ -337,7 +339,7 @@ A person learns one model, and every surface renders it.
 | D10 | **Peers name hubs, never their tokens.** A hub tells its clients of the other hubs in `~/.piwi/editors`; the desktop hub is named without the desktop token, and Piwi Picker pairs with the desktop app through its own **Allow**. | The desktop token opens the app's whole API; handing it on would skip the user's consent. |
 | D11 | **Features, not versions.** `run-attach`, the hub's `welcome` and the desktop's live answer carry `features: string[]`; readers treat an unknown state as `other`. Lenient readers ship a release before any new state. | Six release trains (two marketplaces, a browser store, the desktop updater, npm, the instance) update independently, and `RUN_TAKES` is at its 16-entry cap (`packages/core/src/run-channel.ts:127-146`). |
 | D12 | **`follow` splits into `presence` and `hold`.** `presence` says a window shows the run and turns events on; `hold` is the run's policy with who set it. The desktop hub's `show`, which means Hold failures today, keeps that meaning. | A hidden Runs window holding every failure (RW19) comes from one word meaning two things. |
-| D13 | **A run that a hub steers is `interactive` at `/begin`.** Its stops reach the instance as text; Stuck? leaves stopped time out; `test.stuck` and the run's outbound effects follow one stated policy for local runs. | A developer's pause is not a hang (IO11), applying run-control D10. |
+| D13 | **A run that a hub steers is `interactive` at `/begin`.** Its stops reach the instance as text; Stuck? leaves stopped time out; the run's outbound effects follow one stated policy for local runs, as `test.stuck` already does (`stuck-notifications`). | A developer's pause is not a hang (IO11), applying run-control D10. |
 | D14 | **Pixels relayed by the instance stay for CI and shared runs only**; local watching never needs a key or a team instance. | Watching your own run must work offline and with the desktop app. |
 
 ## Architecture
@@ -514,7 +516,7 @@ The fixes of #1108 but its run links (P5).
 
 ### P3. Local tools that tolerate each other and never page the team
 
-The fixes of #1109's notification, of #1110 but its editor focus (P4), and of most of #1111.
+The fixes of #1110 but its editor focus (P4), and of most of #1111.
 
 - An unknown worker state reads as `other`; an unreadable field is dropped, not the session. `features` in
   `run-attach`, `welcome` and the desktop's live answer. This ships a release before any new state.
@@ -524,14 +526,13 @@ The fixes of #1109's notification, of #1110 but its editor focus (P4), and of mo
 - The Runs window shows one status line per paired tool, a broken pairing included; an unproven pairing stops
   retrying after a bounded backoff, and a 404 reads as "not an editor"; the popup's Runs tile names the window; a
   request the worker drops times out and frees its buttons.
-- A run that follows a hub sends `interactive {client, ref}` at `/begin`: Stuck? never notifies for it, and
-  `run-eligibility.ts` states and tests the policy for complete local runs.
+- A run that follows a hub sends `interactive {client, ref}` at `/begin` (D13).
 - The local stop view is masked like the team's, the pause bar's box included (D3); the stop image is taken at CSS
   scale and its aspect checked.
 - The desktop app opens its hub stream from a plugin at window start, outside the default layout, and rehydrates it
   after a reload; stopping one run removes only its own progress; a bisect's steps flash once, on the job's verdict.
-- **Verification**: an extension test with a second hub appearing after the first; a server test that an interactive
-  run's long attempt sends no `test.stuck`; the showcase compares the stop image with a screenshot of the page.
+- **Verification**: an extension test with a second hub appearing after the first; the showcase compares the stop image
+  with a screenshot of the page.
 - Addresses IO4, IO10, IO11, IO21, RW3, RW4, RW11, RW12, RW23, RW25, DK8, DK13, DK14, DK20, F5, F7.
 
 ### P4. Watch your own running test, on your machine
@@ -729,8 +730,8 @@ runs the performance check.
   folder's layout, the screencast's first-client rule. Each is feature-checked with a named fallback and covered by
   the reporter's floor job, and the view says which layers are unavailable.
 - **Piped runs that now appear** in an IDE may surprise people; the start line says why and how to opt out.
-- **#1112 may remove a free layer.** If the default trace stops taking ARIA snapshots, the Text layer takes
-  `ariaSnapshot` on request (120 to 300 ms on a heavy page), and only the screencast JPEGs come free.
+- **The default trace takes no ARIA snapshots** (#1112). Unless a project's trace sets `snapshots.aria`, the Text
+  layer takes `ariaSnapshot` on request (120 to 300 ms on a heavy page), and only the screencast JPEGs come free.
 - **Scope.** Twelve phases across every app. Each later phase is usable alone.
 
 ## Open questions

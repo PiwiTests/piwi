@@ -48,11 +48,11 @@ the run with its **Tests** tab searched for the test, and the [live view](./live
 where the project has it on. The payload is on
 [Notification events & webhooks](/reference/notification-events#payload-fields-by-event).
 
-The branch, environment, owner and **Default branch only** filters apply to it. A run that sends no notification sends
-none: a run from an editor, a bisect step, a reproduction, or a partial run from a developer's machine or the desktop
-app. Nor does a run an editor or the desktop app steers, whose tests stop at someone's breakpoints: one either of them
-started, or one [started in a terminal](./terminal-runs) that follows an editor. Its long test is still marked
-**Stuck?** on the run page.
+The branch, environment, owner and **Default branch only** filters apply to it. A run started on a developer's machine
+sends none, complete or not: a run from a terminal, the desktop app, an editor, `piwi preflight --run` or
+`piwi bug --write` is marked **Stuck?** on its run page and notifies nobody, since its test may be stopped at a
+breakpoint. A bisect step or a reproduction sends none either. A CI job the reporter does not detect as CI records its
+runs as `local`: set `PIWI_ORIGIN=ci` on it ([run origin](/reference/test-metadata#run-origin)).
 
 ## Limits
 

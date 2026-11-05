@@ -122,11 +122,12 @@ With an uploaded trace (`trace: 'retain-on-failure'` or `'on-first-retry'`), two
 
 ### Aria and screen snapshots
 
-A Playwright trace can record the page's **aria tree** and a **screenshot** before and after every action
-(`trace: { snapshots: { dom, aria, screen } }`; [`wrapConfig`](/guide/reporter#installing-via-wrapconfig) turns `aria`
-on, `screen` stays [opt-in](/operate/storage#trace-snapshots)). Then the Screenshot view sets the page **before the
-failing action** beside the one at the failure, and the Timeline tab adds a **filmstrip** of the page before each
-step. The [in-execution page diff](#page-diff) reads the same snapshots.
+A Playwright 1.63 trace can record the page's **aria tree** and a **screenshot** before and after every action
+(`trace.snapshots.aria` and `.screen`), both off in [`wrapConfig`](/guide/reporter#installing-via-wrapconfig)'s trace
+([their cost](/reference/reporter-options#defaultcapture)). Screenshots set the page **before the failing
+action** beside the one at the failure in the Screenshot view, and add a **filmstrip** of the page before each step to
+the Timeline tab. Aria trees show the page at the failing action in the Accessibility tree view, and add the
+[in-execution page diff](#page-diff).
 
 ### Recovered from the trace without the fixtures
 

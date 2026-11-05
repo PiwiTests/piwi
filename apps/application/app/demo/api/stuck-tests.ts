@@ -1,9 +1,9 @@
 import { eq } from 'drizzle-orm';
 import { resolveBrowserName } from '#shared/browser-name';
-import { isEligibleRun } from '#shared/run-eligibility';
 import { runningTestHistory, type RunningTestHistory } from '#shared/handlers/stuck-tests';
 import { STUCK_FLOOR_MS, stuckAttempt, testStuckEventData, type StuckAttempt } from '#shared/stuck-tests';
-import { projects } from '~~/server/database/schema';
+import { isEligibleRun } from '#shared/run-eligibility';
+import { projects, testRuns } from '~~/server/database/schema';
 import { runningCaseKey } from '~~/server/utils/inserted-run-cases';
 import { keepBatchSteps, type KeptLiveStep, type StepRunEvent } from '~~/server/utils/map-step-events';
 import type { StreamEventPayload } from '#shared/types';
@@ -89,22 +89,13 @@ export function forgetDemoRun(runId: number): void {
   runs.delete(runId);
 }
 
-/** The fields of a demo run its stuck check reads. */
-interface DemoStuckRun {
-  id: number;
-  projectId: number;
-  metadata?: unknown;
-  isFullRun?: number | boolean | null;
-}
-
 /**
  * Check the run's running tests at the latest time its events reached, `events` included, and tell each one stuck
- * once: on the run's stream (`test-stuck`) and, for a run that sends it as the server's does (`emitTestStuck`), as a
- * `test.stuck` notification.
+ * once: on the run's stream (`test-stuck`) and as a `test.stuck` notification.
  */
 export async function checkDemoStuckTests(
   db: DemoDb,
-  run: DemoStuckRun,
+  run: { id: number; projectId: number },
   events: ReadonlyArray<{ startedAt?: unknown; duration?: unknown }>,
 ): Promise<void> {
   const state = runs.get(run.id);
@@ -123,9 +114,7 @@ export async function checkDemoStuckTests(
   }
 }
 
-async function checkAttempts(db: DemoDb, run: DemoStuckRun, state: DemoRun): Promise<void> {
-  // A full run counts as complete while it runs, a partial one never.
-  const notifies = isEligibleRun({ ...run, status: 'passed' }, 'test-stuck');
+async function checkAttempts(db: DemoDb, run: { id: number; projectId: number }, state: DemoRun): Promise<void> {
   for (const attempt of state.attempts.values()) {
     const elapsedMs = state.now - attempt.startedAt;
     if (attempt.stuck || elapsedMs < STUCK_FLOOR_MS) continue;
@@ -143,7 +132,12 @@ async function checkAttempts(db: DemoDb, run: DemoStuckRun, state: DemoRun): Pro
     if (!stuck) continue;
     attempt.stuck = stuck;
     publishDemoRunEvent(run.id, { type: 'test-stuck', data: testStuckEventData(begin, stuck) });
-    if (!notifies) continue;
+    // The notification follows the server's rule: none for a run started on a developer's machine.
+    const [runRow] = await db
+      .select({ metadata: testRuns.metadata, isFullRun: testRuns.isFullRun, status: testRuns.status })
+      .from(testRuns)
+      .where(eq(testRuns.id, run.id));
+    if (!runRow || !isEligibleRun(runRow, 'stuck-notifications')) continue;
     const [project] = await db
       .select({ name: projects.name, label: projects.label })
       .from(projects)

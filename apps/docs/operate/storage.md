@@ -183,7 +183,7 @@ backend. What happens to them is automatic and needs no configuration:
 - **Failure evidence is stored once.** The ARIA snapshot, source snippet and stack frames of a failure are stored
   once per project and shared by every execution that fails the same way.
 
-The one capture choice that visibly changes storage growth is the `screen` trace snapshot, below.
+The capture choices that visibly change storage growth are the trace's `screen` snapshots and, on a large page, its `aria` snapshots, below.
 
 ## Trace snapshots
 
@@ -191,8 +191,8 @@ A Playwright 1.63 trace can record an **aria tree** and a **screenshot** before 
 
 The two kinds cost very differently:
 
-- **`aria`** adds one small JSON tree per action per phase — a few hundred bytes each, negligible next to the trace it rides in. [`wrapConfig`](/guide/reporter#installing-via-wrapconfig) turns it on by default on Playwright 1.63+.
-- **`screen`** adds a **PNG per action per phase** — by far the trace's biggest cost, growing with the page size and the number of actions. It stays **opt-in**: enable it only when you want the filmstrip and the before/after screenshots, and pair it with [data retention](#data-retention) so the extra bytes are swept. Enable it with `use: { trace: { mode: 'retain-on-failure', snapshots: { dom: true, aria: true, screen: true } } }`.
+- **`aria`** adds one JSON tree per action per phase: a few hundred bytes on a small page, hundreds of kilobytes on a large one, where ten clicks on a 1,000-row table made the trace three times bigger. Each tree also takes hundreds of milliseconds to record on such a page, on every attempt. It is **opt-in**, off in the trace [`wrapConfig`](/guide/reporter#installing-via-wrapconfig) sets: [`defaultCapture`](/reference/reporter-options#defaultcapture) gives the measured cost and the setting.
+- **`screen`** adds a **PNG per action per phase** — by far the trace's biggest cost, growing with the page size and the number of actions. It stays **opt-in**: enable it only when you want the filmstrip and the before/after screenshots, and pair it with [data retention](#data-retention) so the extra bytes are swept. Enable it with `use: { trace: { mode: 'retain-on-failure', snapshots: { dom: true, screen: true } } }`.
 
 Identical screenshots, common between consecutive actions and across runs, are stored once in the shared pool.
 
