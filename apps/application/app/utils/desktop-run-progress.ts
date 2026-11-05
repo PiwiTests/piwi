@@ -258,12 +258,44 @@ function sharesOrigin(a: LocalRunOwner, b: LocalRunOwner): boolean {
 }
 
 /**
+ * The tracked runs of a local run's project numbered above its baseline that have not begun (a run's global setup
+ * goes before its reporter names what launched it), once its process is gone: its own, as one whose global setup
+ * failed or that was stopped there. A run above the baseline of another run of the tray still going on in the project
+ * (`runs`) could be that one's, and stays. A terminal's or an editor's run in its global setup goes too.
+ */
+export function unbegunRunsOf(
+  active: ReadonlyMap<number, LiveRun>,
+  owner: LocalRunOwner,
+  runs: readonly LocalRunOwner[],
+): number[] {
+  const baseline = owner.piwiRunBaseline;
+  if (baseline == null) return [];
+  const others = runs.filter(
+    (other) =>
+      other.key !== owner.key &&
+      other.projectId === owner.projectId &&
+      other.finishedAt == null &&
+      other.piwiRunBaseline != null,
+  );
+  const ids: number[] = [];
+  for (const [id, run] of active) {
+    if (run.origin !== null || id <= baseline || run.projectId == null) continue;
+    if (String(run.projectId) !== owner.projectId) continue;
+    if (others.some((other) => other.piwiRunBaseline! < id)) continue;
+    ids.push(id);
+  }
+  return ids;
+}
+
+/**
  * The tracked runs a local process produced, once it is gone, among the runs of its project numbered above its
  * baseline: those that record its origin and reference, under one of the names its steps gave them, as the run it
- * links to is found (`correlatePiwiRuns`). A run whose reporter recorded no name is its own only while no other run of
- * the tray (`runs`) goes on under the same origin and reference. A run that has not begun names no origin yet: it goes
- * too, and comes back with its next message if it was another's. An editor's, CI's or a terminal's run that has begun
- * is never one of them.
+ * links to is found (`correlatePiwiRuns`), and those that have not begun (`unbegunRunsOf`). A run whose reporter
+ * recorded no name is its own only while no other run of the tray (`runs`) goes on under the same origin and
+ * reference. A lab run, of a Flake Lab session or of a bisect that runs a Flake Lab arm at each step, is found by its
+ * origin alone (`flake-lab`), its reference naming the lab's experiment: a `piwi flake` going on at once in the
+ * project from a terminal or an editor, which records no name either, is taken with it. Any other run of an editor,
+ * CI or a terminal that has begun is never one of them.
  */
 export function runsOfLocalRun(
   active: ReadonlyMap<number, LiveRun>,
@@ -275,17 +307,14 @@ export function runsOfLocalRun(
   const recorded = recordedOrigin(owner);
   const names = new Set(owner.hubRefs.flatMap((ref) => [ref, `${ref}${UNATTENDED_RUN_SUFFIX}`]));
   const shared = runs.some((other) => sharesOrigin(owner, other));
-  const ids: number[] = [];
+  const ids = unbegunRunsOf(active, owner, runs);
   for (const [id, run] of active) {
-    if (id <= baseline || run.projectId == null || String(run.projectId) !== owner.projectId) continue;
-    if (run.origin === null) {
-      ids.push(id);
-      continue;
-    }
+    if (run.origin === null || id <= baseline || run.projectId == null) continue;
+    if (String(run.projectId) !== owner.projectId) continue;
     if (!recorded || run.origin !== recorded.origin) continue;
     if (recorded.ref !== null && run.originRef !== recorded.ref) continue;
     if (run.name === null ? shared : !names.has(run.name)) continue;
     ids.push(id);
   }
-  return ids;
+  return ids.sort((a, b) => a - b);
 }

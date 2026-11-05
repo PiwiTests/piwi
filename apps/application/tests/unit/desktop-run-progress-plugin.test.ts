@@ -226,6 +226,33 @@ describe('a local run stopped from the app', () => {
     expect(shown.at(-1)?.label).toBe('Running 1/10…');
   });
 
+  test('takes off the lab runs of a stopped Flake Lab session, its `piwi flake` killed', async () => {
+    const { shown, runs, emit, end } = await plugin();
+    const lab = { projectId: 1, origin: 'flake-lab', originRef: 'local-4242', name: null, job: true };
+    const ci = { projectId: 1, origin: 'ci', originRef: null, name: null, job: false };
+    runs.value = [trayRun({ kind: 'flake', originRef: 'flake:x', hubRefs: ['desktop-6'] })];
+    emit({ type: 'run-progress', runId: 5, ...counts, ...lab });
+    emit({ type: 'run-progress', runId: 6, ...counts, ...ci });
+    end(runs.value[0]!, { status: 'stopped' });
+    expect(shown.at(-1)?.label).toBe('Running 1/10…');
+  });
+
+  test('keeps a run it took off off for a minute, whatever late progress of it comes', async () => {
+    const { shown, runs, emit, end } = await plugin();
+    const own = { projectId: 1, origin: 'desktop', originRef: 'desktop:a1', name: 'desktop-7', job: false };
+    runs.value = [trayRun({})];
+    emit({ type: 'run-progress', runId: 5, ...counts, ...own });
+    end(runs.value[0]!, { status: 'stopped' });
+    expect(shown.at(-1)).toEqual(NOTHING);
+    // Its last progress, read late, and its end the server's sweep sends: nothing shows.
+    emit({ type: 'run-progress', runId: 5, ...counts, passedTests: 2, ...own });
+    emit({ type: 'run-started', runId: 5, ...own });
+    emit({ type: 'snapshot', runs: [{ id: 5, status: 'running', totalTests: 10, ...own }] });
+    emit({ type: 'run-finished', runId: 5, status: 'interrupted', ...own });
+    expect(shown.at(-1)).toEqual(NOTHING);
+    expect(flashes(shown)).toEqual([]);
+  });
+
   test('takes off the lab runs of a stopped bisect that runs a Flake Lab arm at each step', async () => {
     const { shown, runs, emit, end } = await plugin();
     const lab = { projectId: 1, origin: 'flake-lab', originRef: 'local-4242', name: null, job: true };
@@ -235,5 +262,21 @@ describe('a local run stopped from the app', () => {
     emit({ type: 'run-progress', runId: 6, ...counts, ...editor });
     end(runs.value[0]!, { status: 'stopped' });
     expect(shown.at(-1)?.label).toBe('Running 1/10…');
+  });
+});
+
+describe('a local run that ended on its own', () => {
+  test('takes off the runs of its project that never began, as its own whose global setup failed', async () => {
+    const { shown, runs, emit, end } = await plugin();
+    const own = { projectId: 1, origin: 'desktop', originRef: 'desktop:a1', name: 'desktop-7', job: false };
+    const counts = { totalTests: 10, passedTests: 1, failedTests: 0, skippedTests: 0, didNotRunTests: 0 };
+    runs.value = [trayRun({})];
+    emit({ type: 'run-initializing', runId: 5, projectId: 1 });
+    emit({ type: 'run-progress', runId: 6, ...counts, ...own });
+    end(runs.value[0]!, { status: 'failed', exitCode: 1 });
+    // Its run that began stays until its own end, which flashes.
+    expect(shown.at(-1)?.label).toBe('Running 1/10…');
+    emit({ type: 'run-finished', runId: 6, status: 'failed', ...own });
+    expect(failedEnds(shown)).toEqual([{ state: 'error', fraction: 1, label: 'Run failed', failing: false }]);
   });
 });
