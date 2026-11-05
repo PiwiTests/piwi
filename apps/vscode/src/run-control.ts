@@ -1,12 +1,12 @@
 /**
  * The runs the editor started, as the extension shows and steers them, with no VS Code API, so it is tested without
  * an editor: the sessions kept from `piwi/runSessionChanged` (the latest of each ref, one that ended dropped), where
- * each stopped worker stands, what the controls and the code actions offer in each state, the line shown above a
- * stop, the stop a control acts on, the breakpoints sent to each run as they change, the page a stop shows as an
- * image, the responses Mock a request lists, the count of the locator at the cursor, the code a stop sends to write,
- * a run shared live on the team instance (Share live: what it sends, how it stands), and the edits of the documents
- * since a run started, which map a line of the run's code to the document as it stands
- * and back.
+ * each stopped worker stands, what a new stop opens (its file, with the focus or without, and its page), what the
+ * controls and the code actions offer in each state, the line shown above a stop, the stop a control acts on, the
+ * breakpoints sent to each run as they change, the page a stop shows as an image, the responses Mock a request lists,
+ * the count of the locator at the cursor, the code a stop sends to write, a run shared live on the team instance
+ * (Share live: what it sends, how it stands), and the edits of the documents since a run started, which map a line of
+ * the run's code to the document as it stands and back.
  */
 import type {
   EditorBreakpoint,
@@ -225,6 +225,41 @@ export function stopsOf(sessions: Sessions): ShownStop[] {
 /** What tells a stop from another: its run, its worker and when it stopped. */
 export function stopKey(stop: ShownStop): string {
   return `${stop.ref}\0${stop.worker}\0${stop.stop.since}`;
+}
+
+/** What the editor shows of the stops after a change: the new stops' files, and a page. */
+export interface StopsToShow {
+  /** The stops new to the editor, each opened at its line with the focus or without it, in the order to open them. */
+  reveal: { stop: ShownStop; focus: boolean }[];
+  /** The stop whose page the paused page view opens; null leaves the view as it is. */
+  page: ShownStop | null;
+}
+
+/**
+ * What the editor shows of the stops held after a change (`stops`, in order), each stop once (`revealed`: the keys of
+ * those shown before). A new stop opens its file at its line without the focus, but for one: while no stop shown
+ * before is held, the first new stop takes it, opened last so its file is in front. A stop of another worker thus
+ * never takes the focus from the one in use. The paused page view keeps the stop it shows (`pageStop`, null while it
+ * is closed or shows none) while that stop is held; else it opens the page of the first new stop no pause bar shows,
+ * or, once its own stop went on, of the first such stop held.
+ */
+export function stopsToShow(
+  stops: readonly ShownStop[],
+  revealed: ReadonlySet<string>,
+  pageStop: string | null,
+): StopsToShow {
+  const held = new Set(stops.map(stopKey));
+  const shown = [...revealed].some((key) => held.has(key));
+  const fresh = stops.filter((s) => !revealed.has(stopKey(s)));
+  const headless = (s: ShownStop) => !s.stop.bar;
+  const page =
+    pageStop !== null && held.has(pageStop)
+      ? null
+      : (fresh.find(headless) ?? (pageStop !== null ? stops.find(headless) : undefined) ?? null);
+  const reveal = fresh.map((stop) => ({ stop, focus: false }));
+  const [first, ...others] = reveal;
+  if (shown || !first) return { reveal, page };
+  return { reveal: [...others, { ...first, focus: true }], page };
 }
 
 /**

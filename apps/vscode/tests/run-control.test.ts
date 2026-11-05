@@ -50,6 +50,7 @@ import {
   stopPick,
   stopsFor,
   stopsOf,
+  stopsToShow,
   targetStop,
   timeText,
   withSession,
@@ -59,6 +60,7 @@ import {
   type RunBreakpoint,
   type RunBreakpoints,
   type ShownStop,
+  type StopsToShow,
   type TextChange,
 } from '../src/run-control';
 
@@ -405,6 +407,68 @@ describe('a stop', () => {
       label: '$(debug-pause) Paused · Fill "WELCOME10" getByLabel(\'Coupon\')',
       description: 'checkout › pays · checkout.page.ts:9 · worker 3',
     });
+  });
+});
+
+describe('what a change of the stops shows', () => {
+  /** Worker `worker` of `ed-1` stopped at `line`, headless unless `bar`. */
+  const at = (worker: number, line: number, bar = false): ShownStop => ({
+    ref: 'ed-1',
+    worker,
+    stop: stopAt(spec, line, bar),
+    test: runTest(),
+    takes: [],
+  });
+  const keys = (...stops: ShownStop[]) => new Set(stops.map(stopKey));
+  const opened = (show: StopsToShow) => show.reveal.map((r) => [r.stop.worker, r.focus]);
+  const one = at(0, 5);
+  const two = at(1, 6);
+
+  test('opens the first stop with the focus, and its page', () => {
+    const show = stopsToShow([one], new Set(), null);
+    expect(opened(show)).toEqual([[0, true]]);
+    expect(show.page).toBe(one);
+  });
+
+  test('opens a stop of another worker without the focus, and leaves the page of a stop still held', () => {
+    const show = stopsToShow([one, two], keys(one), stopKey(one));
+    expect(opened(show)).toEqual([[1, false]]);
+    expect(show.page).toBeNull();
+    expect(stopsToShow([one, two], keys(one, two), stopKey(one))).toEqual({ reveal: [], page: null });
+  });
+
+  test('gives the focus to the first stop a Pause brings, opened last, and the page to the first headless one', () => {
+    const headed = at(2, 7, true);
+    const show = stopsToShow([headed, one, two], new Set(), null);
+    expect(opened(show)).toEqual([
+      [0, false],
+      [1, false],
+      [2, true],
+    ]);
+    expect(show.page).toBe(one);
+  });
+
+  test('takes the focus again once no stop shown is held, as at the next stop of a worker stepped alone', () => {
+    const stepped = at(0, 8);
+    expect(stopsToShow([stepped], keys(one), stopKey(one))).toEqual({
+      reveal: [{ stop: stepped, focus: true }],
+      page: stepped,
+    });
+    // Another worker held: the stepped worker's stop opens without the focus, and takes the page its last stop had.
+    expect(stopsToShow([two, stepped], keys(one, two), stopKey(one))).toEqual({
+      reveal: [{ stop: stepped, focus: false }],
+      page: stepped,
+    });
+  });
+
+  test('opens the page of a stop held once the stop the view showed went on, and none of a stop with a bar', () => {
+    expect(stopsToShow([two], keys(two), stopKey(one))).toEqual({ reveal: [], page: two });
+    expect(stopsToShow([at(1, 6, true)], keys(at(1, 6, true)), stopKey(one)).page).toBeNull();
+  });
+
+  test('opens a new stop’s page in a view that is closed or shows none, and no page without a new stop', () => {
+    expect(stopsToShow([one, two], keys(one), null).page).toBe(two);
+    expect(stopsToShow([one, two], keys(one, two), null).page).toBeNull();
   });
 });
 

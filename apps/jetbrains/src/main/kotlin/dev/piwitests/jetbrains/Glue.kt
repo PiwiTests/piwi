@@ -1418,6 +1418,37 @@ object Glue {
     /** What tells a stop from another: its run, its worker and when it stopped. */
     fun stopKey(stop: ShownStop): String = "${stop.ref}\u0000${stop.worker}\u0000${stop.stop.since}"
 
+    /** A new stop whose file opens at its line, with the focus or without it. */
+    data class StopReveal(val stop: ShownStop, val focus: Boolean)
+
+    /**
+     * What the IDE shows of the stops after a change: the new stops' files, in the order to open them, and the stop
+     * whose page the Paused Page tab opens (null leaves the tab as it is).
+     */
+    data class StopsToShow(val reveal: List<StopReveal>, val page: ShownStop?)
+
+    /**
+     * What the IDE shows of the stops held after a change (`stops`, in order), each stop once (`revealed`: the keys of
+     * those shown before). A new stop opens its file at its line without the focus, but for one: while no stop shown
+     * before is held, the first new stop takes it, opened last so its file is in front. A stop of another worker thus
+     * never takes the focus from the one in use. The Paused Page tab keeps the stop it shows (`pageStop`, null while it
+     * is closed or shows none) while that stop is held; else it opens the page of the first new stop no pause bar
+     * shows, or, once its own stop went on, of the first such stop held.
+     */
+    fun stopsToShow(stops: List<ShownStop>, revealed: Set<String>, pageStop: String?): StopsToShow {
+        val held = stops.map(::stopKey).toSet()
+        val shown = revealed.any { it in held }
+        val fresh = stops.filter { stopKey(it) !in revealed }
+        val headless = { s: ShownStop -> !s.stop.bar }
+        val page = when {
+            pageStop != null && pageStop in held -> null
+            else -> fresh.firstOrNull(headless) ?: stops.firstOrNull(headless)?.takeIf { pageStop != null }
+        }
+        val reveal = fresh.map { StopReveal(it, false) }
+        if (shown || reveal.isEmpty()) return StopsToShow(reveal, page)
+        return StopsToShow(reveal.drop(1) + reveal.first().copy(focus = true), page)
+    }
+
     /**
      * The line above a stop: what is about to run, `Paused · Fill "MORNING10" getByLabel('Coupon code') · attempt 2`,
      * or, at a failure, how the test failed, `Failed · Timed out 5000ms waiting for getByRole('button') · attempt 2`, in

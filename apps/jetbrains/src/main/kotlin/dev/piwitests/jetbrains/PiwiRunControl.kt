@@ -173,11 +173,12 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
 
     /**
-     * The stops whose file was opened at their line, whose page was shown, and what is drawn of each, by
-     * `Glue.stopKey`; the files of stops refreshed from disk once, by URI. On the event thread.
+     * The stops shown (`Glue.stopsToShow`), those whose file opens once found, in order, with whether it takes the
+     * focus, and what is drawn of each, by `Glue.stopKey`; the files of stops refreshed from disk once, by URI. On the
+     * event thread.
      */
     private val revealed = HashSet<String>()
-    private val paged = HashSet<String>()
+    private val unopened = LinkedHashMap<String, Boolean>()
     private val drawn = HashMap<String, DrawnStop>()
     private val refreshed = HashSet<String>()
 
@@ -511,27 +512,39 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     }
 
     /**
-     * Draw each stop at the line it stands on now: its file opened at its line the first time, its execution point and
-     * an inlay in each editor of its file; a stop no pause bar shows, its page in the Paused Page tab, whether its file
-     * is found or not. A file the IDE has not read yet is looked for on disk off the event thread, then drawn. What a
-     * stop that went on drew goes. On the event thread.
+     * Draw each stop at the line it stands on now: a new stop's file opened at its line, with the focus only while no
+     * other stop is shown, its execution point and an inlay in each editor of its file; a stop no pause bar shows, its
+     * page in the Paused Page tab unless the tab shows a stop still held, whether its file is found or not
+     * (`Glue.stopsToShow`). A file the IDE has not read yet is looked for on disk off the event thread, then drawn.
+     * What a stop that went on drew goes. On the event thread.
      */
     private fun draw() {
         val stops = stops()
         val keys = stops.map(Glue::stopKey).toSet()
         for (key in drawn.keys - keys) drawn.remove(key)?.dispose()
         revealed.retainAll(keys)
-        paged.retainAll(keys)
+        unopened.keys.retainAll(keys)
         refreshed.retainAll(stops.mapNotNull { it.stop.uri }.toSet())
+        val shownPage = livePage()
+        val show = Glue.stopsToShow(stops, revealed, pageStop?.takeIf { shownPage != null })
+        for (reveal in show.reveal) {
+            revealed.add(Glue.stopKey(reveal.stop))
+            unopened[Glue.stopKey(reveal.stop)] = reveal.focus
+        }
+        val byKey = stops.associateBy(Glue::stopKey)
+        for ((key, focus) in unopened.entries.toList()) {
+            val stop = byKey[key] ?: continue
+            val file = fileOf(stop.stop.uri) ?: continue
+            unopened.remove(key)
+            OpenFileDescriptor(project, file, stop.stop.line, stop.stop.character ?: 0).navigate(focus)
+        }
         for (stop in stops) {
             val key = Glue.stopKey(stop)
             val file = fileOf(stop.stop.uri)
-            if (file == null) refresh(stop.stop.uri)
-            if (file != null && revealed.add(key)) {
-                OpenFileDescriptor(project, file, stop.stop.line, stop.stop.character ?: 0).navigate(true)
+            if (file == null) {
+                refresh(stop.stop.uri)
+                continue
             }
-            if (!stop.stop.bar && paged.add(key)) showPage(stop)
-            if (file == null) continue
             val document = FileDocumentManager.getInstance().getDocument(file) ?: continue
             if (stop.stop.line < 0 || stop.stop.line >= document.lineCount) continue
             val shown = drawn.getOrPut(key) { DrawnStop(highlight(document, stop)) }
@@ -541,8 +554,9 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                     ?.let { shown.inlays[editor] = it }
             }
         }
-        val shownPage = livePage()
-        if (shownPage != null && pageStop != null && pageStop !in keys) {
+        if (show.page != null) {
+            showPage(show.page)
+        } else if (shownPage != null && pageStop != null && pageStop !in keys) {
             stopPageView()
             pageStop = null
             (shownPage.component as PausedPagePanel).ended("The test went on.")

@@ -118,6 +118,9 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   the stop's `since`; Run to Caret and the breakpoints map the editor's lines back through `Glue.EditLog`
   (`Glue.runPlaces` for the breakpoints). Checked by `GlueTest` and `PiwiRunControlTest`.
   ([Run control](ARCHITECTURE.md#run-control))
+- **A new stop takes the focus only while no other stop is shown, and never takes the Paused Page tab from a stop
+  still held** (`Glue.stopsToShow`), as in the VS Code extension: another worker's stop opens its file with
+  `navigate(false)`. Checked by `GlueTest`. ([Run control](ARCHITECTURE.md#run-control))
 - **The code a stop makes is written in one `WriteCommandAction` in an editor, once the service knows the document,
   and only into the version the service placed it in.** A file no editor shows is opened first and written once its
   `LspServer.getDocumentVersion` is known (`whenOpened`, an `Alarm` on the event thread, three seconds at most), so the

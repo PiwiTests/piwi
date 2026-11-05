@@ -60,6 +60,10 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **A run's controls are the exception: they take the debugger's keys, only while they apply and no debug session
   runs** (`!inDebugMode` in `contributes.keybindings`). **Pause** has no default key: a key bound for as long as a
   test runs takes one from the workbench. ([Keybindings](ARCHITECTURE.md#keybindings))
+- **A new stop takes the focus only while no other stop is shown, and never takes the paused page view from a stop
+  still held** (`stopsToShow`), as in the JetBrains plugin: another worker's stop opens its file with `preserveFocus`,
+  never over the view. Checked by `tests/run-control.test.ts` ("what a change of the stops shows").
+  ([Run control](ARCHITECTURE.md#run-control))
 - **One undo step per recording.** The first write of the block opens an undo stop and the later ones join it
   (`undoStopBefore: false`), so one Undo after Stop removes the block and its imports.
   ([Undo during a recording](ARCHITECTURE.md#undo-during-a-recording))
@@ -110,8 +114,8 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **The paused page webview runs scripts only by the style's nonce, for picking or a capable stop's live preview.**
   Its document takes images from `data:` only. Live input requires Watch live and the separate Interact opt-in, and
   messages name the shown stop: checked by `tests/run-control.test.ts` and `tests/e2e/paused-page.spec.mjs`. Only a
-  change of the panel's visibility, its closing or a new stop ends or restarts its watch, never a focus change
-  (`pausedPageViewChange`, checked by `tests/run-control.test.ts`).
+  change of the panel's visibility, its closing or another stop shown in it ends or restarts its watch, never a focus
+  change (`pausedPageViewChange`, checked by `tests/run-control.test.ts`).
   ([Run control](ARCHITECTURE.md#run-control))
 
 ## Workflow

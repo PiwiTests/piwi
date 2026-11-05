@@ -4,15 +4,16 @@
  * **Pause** while a run is live and **Stop** while one this window started is, **Resume**, **Step**, **Run to cursor**,
  * **Finish** and **End the test** while a worker is stopped, in the status bar beside the run's progress, in the
  * palette and with keys that apply only then (the `piwi.runActive`, `piwi.runPausable` and `piwi.runStopped` context
- * keys; End the test has no key). A stop opens its file at its line, marked as the execution point (an arrow in the
- * gutter and the line's background), with a CodeLens above it saying what is about to run, or how the test failed, and
- * offering the controls and the code actions its worker takes there (Pick a locator, Record here, Assert, Assert a
- * region, Mock a request: `piwi/stopAction`, each in the palette while a stop offers it, the `piwi.runCan…` context
- * keys), which its hover offers too; a stop no pause bar shows (a headless run's) shows an image of its page in a
- * webview beside the editor, where a click picks the element under it (`piwi/pickAt`) when its worker takes it. The
- * code a stop makes (`piwi/stopCode`) is written as one workspace edit in its document, opened when it is not; while a
- * test is stopped, the end of the cursor's line in its file says how many elements the locator there matches on the
- * stopped page (`piwi/locatorAtCaret`). The editor's breakpoints go to each live run as they change
+ * keys; End the test has no key). A stop opens its file at its line, taking the focus only while no other stop is
+ * shown, marked as the execution point (an arrow in the gutter and the line's background), with a CodeLens above it
+ * saying what is about to run, or how the test failed, and offering the controls and the code actions its worker takes
+ * there (Pick a locator, Record here, Assert, Assert a region, Mock a request: `piwi/stopAction`, each in the palette
+ * while a stop offers it, the `piwi.runCan…` context keys), which its hover offers too; a stop no pause bar shows (a
+ * headless run's) shows an image of its page in a webview beside the editor (unless the webview shows a stop still
+ * held), where a click picks the element under it (`piwi/pickAt`) when its worker takes it. The code a stop makes
+ * (`piwi/stopCode`) is written as one workspace edit in its document, opened when it is not; while a test is stopped,
+ * the end of the cursor's line in its file says how many elements the locator there matches on the stopped page
+ * (`piwi/locatorAtCaret`). The editor's breakpoints go to each live run as they change
  * (`piwi/setRunBreakpoints`), and to the service as they stand, which a run a terminal starts takes
  * (`piwi/setBreakpoints`). A run's lines are those of the documents as they stood when it started: the edits since
  * (`EditLog`) bring a stop to the line it stands on now, and a breakpoint or the cursor's line back to the run's. A
@@ -99,6 +100,7 @@ import {
   stopPick,
   stopsFor,
   stopsOf,
+  stopsToShow,
   targetStop,
   writtenLines,
   type CaretShown,
@@ -196,8 +198,9 @@ export function registerRunControl(
   const edits = new EditLog();
   /** A stop was answered moments ago: `F5` waits for the next one (`piwi.runResumed`). */
   let resumed: ReturnType<typeof setTimeout> | null = null;
-  /** The stops whose file was opened at their line: each is revealed once. */
+  /** The stops whose file was opened at their line: each is revealed once, one after the other (`revealing`). */
   const revealed = new Set<string>();
+  let revealing: Promise<void> = Promise.resolve();
   /** The lines drawn as an execution point, by file. */
   const drawn = new Map<string, number[]>();
   const lensesChanged = new vscode.EventEmitter<void>();
@@ -347,11 +350,23 @@ export function registerRunControl(
     lensesChanged.fire();
   };
 
-  /** Open a stop's file at its line, once per stop. */
-  const reveal = async (stop: ShownStop) => {
+  /**
+   * Open a stop's file at its line, with the focus or without it (`stopsToShow`). Without it, the file never opens over
+   * the paused page view: while the view is the active editor, it opens in a group of text editors.
+   */
+  const reveal = async (stop: ShownStop, focus: boolean) => {
     const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(stop.stop.uri));
     const at = document.validatePosition(new vscode.Position(stop.stop.line, stop.stop.character ?? 0));
-    await vscode.window.showTextDocument(document, { selection: new vscode.Range(at, at), preview: false });
+    const viewColumn =
+      !focus && panel?.active
+        ? (vscode.window.visibleTextEditors[0]?.viewColumn ?? vscode.ViewColumn.Beside)
+        : undefined;
+    await vscode.window.showTextDocument(document, {
+      selection: new vscode.Range(at, at),
+      preview: false,
+      preserveFocus: !focus,
+      viewColumn,
+    });
   };
 
   const showPage = (view: PausedPageView) => {
@@ -539,6 +554,10 @@ export function registerRunControl(
     });
   };
 
+  /**
+   * The stops changed: each new stop opens its file at its line, with the focus only while no other stop is shown, and
+   * the paused page view opens a stop's page unless the stop it shows is still held (`stopsToShow`).
+   */
   const changed = () => {
     const now = stops();
     const keys = new Set(now.map(stopKey));
@@ -546,14 +565,13 @@ export function registerRunControl(
     drawControls();
     drawStops();
     caretMoved();
-    for (const stop of now) {
-      const key = stopKey(stop);
-      if (revealed.has(key)) continue;
-      revealed.add(key);
-      void reveal(stop).catch(() => undefined);
-      if (!stop.stop.bar) void openPage(stop);
+    const show = stopsToShow(now, revealed, pageStop);
+    for (const { stop, focus } of show.reveal) {
+      revealed.add(stopKey(stop));
+      revealing = revealing.then(() => reveal(stop, focus)).catch(() => undefined);
     }
-    if (panel && pageStop && !keys.has(pageStop)) {
+    if (show.page) void openPage(show.page);
+    else if (panel && pageStop && !keys.has(pageStop)) {
       stopPageView();
       pageStop = null;
       pageShows = null;
