@@ -11,7 +11,7 @@ import { getStorage } from '../storage';
 import { getProjectScope } from './project-access';
 import { resolveIngestProject } from './ingest-project';
 import { resolveMaxImportBytes } from './upload-limits';
-import { sanitizeFilename } from './sanitize-filename';
+import { attachmentFileName } from './sanitize-filename';
 import { persistRunCases } from './persist-run-cases';
 import { upsertTraceBlob } from './trace-blobs';
 import { deleteRunStorageDir, gcTraceBlobs } from './delete-run-files';
@@ -173,7 +173,7 @@ function createServerImportPort(): ImportPort {
 
         const dir = `project-${projectId}/run-${testRunId}/${testRunsCaseId}`;
         await storage.mkdir(dir);
-        const path = `${dir}/${sanitizeFilename(entryName.split('/').pop() || 'attachment')}`;
+        const path = `${dir}/${attachmentFileName(entryName.split('/').pop() ?? '')}`;
         await storage.writeFile(path, data);
         return { path: path.replace(/\\/g, '/'), size: data.length };
       } catch (error) {
