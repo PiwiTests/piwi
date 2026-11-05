@@ -24,7 +24,10 @@
  * sends them only when it ran the whole suite. A finished run's analysis (fix
  * verification, change coverage, the hand-back outcomes) does not follow that
  * rule: each step reads the run under its own use. A run from an editor does
- * not make a failure cluster recur either (`cluster-occurrences`).
+ * not make a failure cluster recur either (`cluster-occurrences`). No run
+ * started on a developer's machine (a local run, `piwi preflight --run`,
+ * `piwi bug --write`) sends `test.stuck`, complete or not
+ * (`stuck-notifications`).
  */
 
 import { and, eq, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
@@ -64,6 +67,12 @@ export const LOCAL_RUN_ORIGINS = ['local', 'desktop', 'editor'] as const satisfi
 
 const LAB_AND_INVESTIGATION: readonly RunOriginKind[] = [...LAB_RUN_ORIGINS, ...INVESTIGATION_RUN_ORIGINS];
 
+/**
+ * The origins of runs started on a developer's machine: their own runs (`LOCAL_RUN_ORIGINS`), `piwi preflight --run`
+ * and `piwi bug --write`.
+ */
+const DEVELOPER_MACHINE_RUN_ORIGINS: readonly RunOriginKind[] = [...LOCAL_RUN_ORIGINS, 'preflight', 'bug'];
+
 /** What a use reads runs for. */
 export type RunUse =
   | 'baseline'
@@ -79,6 +88,7 @@ export type RunUse =
   | 'auto-heal'
   | 'bug-lifecycle'
   | 'notifications'
+  | 'stuck-notifications'
   | 'tracker'
   | 'cluster-occurrences'
   | 'run-health';
@@ -205,6 +215,16 @@ export const RUN_USES: Record<RunUse, RunUseRule> = {
     excludesIncidents: true,
     completeOnly: false,
     completeOnlyFor: ['local', 'desktop'],
+    excludesHistoricalImports: false,
+  },
+  /**
+   * The `test.stuck` notification of a live run's running attempt: the runs of `notifications` but those started on a
+   * developer's machine. The run page's **Stuck?** mark reads no use.
+   */
+  'stuck-notifications': {
+    excludes: [...LAB_AND_INVESTIGATION, ...DEVELOPER_MACHINE_RUN_ORIGINS],
+    excludesIncidents: true,
+    completeOnly: false,
     excludesHistoricalImports: false,
   },
   /**

@@ -41,6 +41,17 @@ const EXCLUDED: Record<RunUse, string[]> = {
   'auto-heal': ['flake-lab', 'probe', 'bisect', 'reproduce'],
   'bug-lifecycle': ['bug', 'flake-lab', 'probe', 'bisect', 'reproduce'],
   notifications: ['flake-lab', 'probe', 'bisect', 'reproduce', 'editor'],
+  'stuck-notifications': [
+    'flake-lab',
+    'probe',
+    'bisect',
+    'reproduce',
+    'local',
+    'desktop',
+    'editor',
+    'preflight',
+    'bug',
+  ],
   tracker: ['flake-lab', 'probe', 'bisect', 'reproduce', 'editor'],
   'cluster-occurrences': ['flake-lab', 'probe', 'bisect', 'reproduce', 'editor'],
   'run-health': ['flake-lab', 'probe'],
@@ -58,6 +69,7 @@ const EXCLUDES_INCIDENTS: RunUse[] = [
   'test-map',
   'auto-heal',
   'notifications',
+  'stuck-notifications',
   'tracker',
 ];
 
@@ -129,12 +141,14 @@ describe('the run eligibility table', () => {
     }
   });
 
-  test('a complete local run counts wherever a CI run does, but an editor run never notifies, writes to a tracker or makes a cluster recur', () => {
+  test('a complete local run counts wherever a CI run does but in test.stuck, and an editor run never notifies, writes to a tracker or makes a cluster recur', () => {
     const outbound: RunUse[] = ['notifications', 'tracker', 'cluster-occurrences'];
     for (const use of USES) {
       for (const kind of ['local', 'desktop', 'editor']) {
         const eligible = isEligibleRun({ metadata: { piwiOrigin: { kind } } }, use);
-        expect(eligible, `${use} ${kind}`).toBe(!outbound.includes(use) || kind !== 'editor');
+        expect(eligible, `${use} ${kind}`).toBe(
+          use !== 'stuck-notifications' && (!outbound.includes(use) || kind !== 'editor'),
+        );
       }
     }
   });
@@ -160,6 +174,25 @@ describe('a developer’s runs and notifications', () => {
   test('a run with no origin stamp reads as local', () => {
     expect(isEligibleRun({ metadata: { scm: { branch: 'main' } }, ...partial }, 'notifications')).toBe(false);
     expect(isEligibleRun({ metadata: { scm: { branch: 'main' } }, ...full }, 'notifications')).toBe(true);
+  });
+
+  test('no run started on a developer’s machine sends test.stuck, complete or not', () => {
+    const running = [
+      { isFullRun: 1, status: 'running' },
+      { isFullRun: 0, status: 'running' },
+    ];
+    for (const shape of running) {
+      for (const kind of ['local', 'desktop', 'editor', 'preflight', 'bug']) {
+        const metadata = { piwiOrigin: { kind } };
+        expect(isEligibleRun({ metadata, ...shape }, 'stuck-notifications'), kind).toBe(false);
+      }
+      expect(isEligibleRun({ metadata: { scm: { branch: 'main' } }, ...shape }, 'stuck-notifications')).toBe(false);
+      for (const kind of ['ci', 'ci-rerun']) {
+        const metadata = { piwiOrigin: { kind } };
+        expect(isEligibleRun({ metadata, ...shape }, 'stuck-notifications'), kind).toBe(true);
+      }
+      expect(isEligibleRun({ metadata: { ci: { provider: 'Jenkins' } }, ...shape }, 'stuck-notifications')).toBe(true);
+    }
   });
 
   test('a partial CI run still feeds them', () => {

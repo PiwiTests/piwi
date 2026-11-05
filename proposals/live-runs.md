@@ -59,7 +59,9 @@ wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a 
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app
 shell slips) and #1112 (the default trace's ARIA snapshots slow large pages). The phases below fix the first six: P0
 to P3 most of them, and the rest later (#1108's run links and #1109's Stuck? mark in P5, #1110's editor focus in P4,
-#1111's stopped state and thumbnail in P6). #1112 is left to its own fix. Nothing
+#1111's stopped state and thumbnail in P6). #1109's notification is fixed already: no run started on a developer's
+machine (a terminal, the desktop app, an editor, `piwi preflight --run`, `piwi bug --write`) sends `test.stuck`, the
+`stuck-notifications` use of `run-eligibility.ts`. #1112 is left to its own fix. Nothing
 here is on [`ROADMAP.md`](../ROADMAP.md) yet. It revises parts of [`live-view-next.md`](live-view-next.md) and extends
 decisions of [`run-control.md`](../adr/run-control.md); [Changes to other plans](#changes-to-other-plans) lists them.
 The contracts it adds are entry D63 of [`1.0-stabilization.md`](1.0-stabilization.md).
@@ -494,7 +496,7 @@ The fixes of #1108 but its run links (P5).
 
 ### P3. Local tools that tolerate each other and never page the team
 
-The fixes of #1109's notification, of #1110 but its editor focus (P4), and of most of #1111.
+The fixes of #1110 but its editor focus (P4), and of most of #1111.
 
 - An unknown worker state reads as `other`; an unreadable field is dropped, not the session. `features` in
   `run-attach`, `welcome` and the desktop's live answer. This ships a release before any new state.
@@ -504,14 +506,13 @@ The fixes of #1109's notification, of #1110 but its editor focus (P4), and of mo
 - The Runs window shows one status line per paired tool, a broken pairing included; an unproven pairing stops
   retrying after a bounded backoff, and a 404 reads as "not an editor"; the popup's Runs tile names the window; a
   request the worker drops times out and frees its buttons.
-- A run that follows a hub sends `interactive {client, ref}` at `/begin`: Stuck? never notifies for it, and
-  `run-eligibility.ts` states and tests the policy for complete local runs.
+- A run that follows a hub sends `interactive {client, ref}` at `/begin` (D13).
 - The local stop view is masked like the team's, the pause bar's box included (D3); the stop image is taken at CSS
   scale and its aspect checked.
 - The desktop app opens its hub stream from a plugin at window start, outside the default layout, and rehydrates it
   after a reload; stopping one run removes only its own progress; a bisect's steps flash once, on the job's verdict.
-- **Verification**: an extension test with a second hub appearing after the first; a server test that an interactive
-  run's long attempt sends no `test.stuck`; the showcase compares the stop image with a screenshot of the page.
+- **Verification**: an extension test with a second hub appearing after the first; the showcase compares the stop image
+  with a screenshot of the page.
 - Addresses IO4, IO10, IO11, IO21, RW3, RW4, RW11, RW12, RW23, RW25, DK8, DK13, DK14, DK20, F5, F7.
 
 ### P4. Watch your own running test, on your machine

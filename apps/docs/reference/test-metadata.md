@@ -79,13 +79,14 @@ What each origin feeds:
   [pull-request comment or commit status](/features/pr-feedback), no automatic AI diagnosis or auto-heal, and no
   [automatic write to an issue tracker](/features/issue-automation#the-runs-that-write).
 - **`piwi bug` runs** do not move the bug report they were written for.
-- **Local runs** (`local`, `desktop`, `editor`, `preflight`) count like CI runs, with three exceptions. An editor's CI
+- **Local runs** (`local`, `desktop`, `editor`, `preflight`) count like CI runs, with four exceptions. An editor's CI
   failures come from the newest complete CI run on the branch, and a local run stands in only while the branch has
   none. An `editor` run's failures join their clusters without counting as occurrences. An `editor` run, or a `local`
   or `desktop` run of part of the suite, fires no run, new-cluster, fixed, regressed, flakiness or
   performance [notification](/features/notifications#events), posts no
   [pull-request comment or commit status](/features/pr-feedback), starts no automatic AI diagnosis or auto-heal, and
-  writes nothing to an [issue tracker](/features/issue-automation#the-runs-that-write) on its own.
+  writes nothing to an [issue tracker](/features/issue-automation#the-runs-that-write) on its own. No local run, and
+  no `piwi bug` run, sends [`test.stuck`](/features/stuck-tests#the-notification), complete or not.
 - **Partial runs** (a `--grep`, a file filter, a selection, `--last-failed`, `--only-changed` or `--test-list`) never count for change
   coverage, which asks whether a file was reached in the recent runs, nor as a commit's end-to-end coverage.
 
