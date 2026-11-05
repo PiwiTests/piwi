@@ -704,6 +704,72 @@ class GlueTest {
         assertEquals("Piwi: 2 tests paused", Glue.runControlStatus(Glue.runControls(sessions), stops))
     }
 
+    /** Worker `worker` of `ed-1` stopped at `line`, headless unless `bar`. */
+    private fun stoppedAt(worker: Int, line: Int, bar: Boolean = false) = Glue.ShownStop("ed-1", worker, stopAt(specUri, line, bar), runTest())
+
+    private fun keys(vararg stops: Glue.ShownStop) = stops.map(Glue::stopKey).toSet()
+
+    private fun opened(show: Glue.StopsToShow) = show.reveal.map { it.stop.worker to it.focus }
+
+    @Test
+    fun `a change of the stops opens the first stop with the focus, and its page`() {
+        val one = stoppedAt(0, 5)
+        val show = Glue.stopsToShow(listOf(one), emptySet(), null)
+        assertEquals(listOf(0 to true), opened(show))
+        assertSame(one, show.page)
+    }
+
+    @Test
+    fun `a change of the stops opens a stop of another worker without the focus, and leaves the page of a stop still held`() {
+        val one = stoppedAt(0, 5)
+        val two = stoppedAt(1, 6)
+        val show = Glue.stopsToShow(listOf(one, two), keys(one), Glue.stopKey(one))
+        assertEquals(listOf(1 to false), opened(show))
+        assertNull(show.page)
+        assertEquals(Glue.StopsToShow(emptyList(), null), Glue.stopsToShow(listOf(one, two), keys(one, two), Glue.stopKey(one)))
+    }
+
+    @Test
+    fun `a change of the stops gives the focus to the first stop a Pause brings, opened last, and the page to the first headless one`() {
+        val one = stoppedAt(0, 5)
+        val show = Glue.stopsToShow(listOf(stoppedAt(2, 7, bar = true), one, stoppedAt(1, 6)), emptySet(), null)
+        assertEquals(listOf(0 to false, 1 to false, 2 to true), opened(show))
+        assertSame(one, show.page)
+    }
+
+    @Test
+    fun `a change of the stops takes the focus again once no stop shown is held, as at the next stop of a worker stepped alone`() {
+        val one = stoppedAt(0, 5)
+        val two = stoppedAt(1, 6)
+        val stepped = stoppedAt(0, 8)
+        assertEquals(
+            Glue.StopsToShow(listOf(Glue.StopReveal(stepped, true)), stepped),
+            Glue.stopsToShow(listOf(stepped), keys(one), Glue.stopKey(one)),
+        )
+        // Another worker held: the stepped worker's stop opens without the focus, and takes the page its last stop had.
+        assertEquals(
+            Glue.StopsToShow(listOf(Glue.StopReveal(stepped, false)), stepped),
+            Glue.stopsToShow(listOf(two, stepped), keys(one, two), Glue.stopKey(one)),
+        )
+    }
+
+    @Test
+    fun `a change of the stops opens the page of a stop held once the stop the tab showed went on, and none of a stop with a bar`() {
+        val one = stoppedAt(0, 5)
+        val two = stoppedAt(1, 6)
+        assertEquals(Glue.StopsToShow(emptyList(), two), Glue.stopsToShow(listOf(two), keys(two), Glue.stopKey(one)))
+        val headed = stoppedAt(1, 6, bar = true)
+        assertNull(Glue.stopsToShow(listOf(headed), keys(headed), Glue.stopKey(one)).page)
+    }
+
+    @Test
+    fun `a change of the stops opens a new stop's page in a tab that is closed or shows none, and no page without a new stop`() {
+        val one = stoppedAt(0, 5)
+        val two = stoppedAt(1, 6)
+        assertSame(two, Glue.stopsToShow(listOf(one, two), keys(one), null).page)
+        assertNull(Glue.stopsToShow(listOf(one, two), keys(one, two), null).page)
+    }
+
     @Test
     fun `a control at the caret acts on the stop at its line, else on the only one, else asks`() {
         val one = Glue.ShownStop("ed-1", 0, stopAt(specUri, 5), runTest())

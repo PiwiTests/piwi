@@ -63,9 +63,9 @@ stopped at**. The mark goes when the test goes on (from the editor or the bar), 
   <figcaption>A run paused before it types the coupon.</figcaption>
 </figure>
 
-With several workers stopped, each has its own mark, and the controls above a line act on its worker; a key or command
-acts on the one at the cursor's line, else asks which. A control answers the stop it was shown for: when the test went
-on meanwhile, it says so and asks nothing.
+With several workers stopped, each has its own mark, the first alone taking focus, and the controls above a line
+act on its worker; a key or command acts on the one at the cursor's line, else asks which. A control answers the stop
+it was shown for: when the test went on meanwhile, it says so and asks nothing.
 
 The run's code is your files as they stood when it started. The mark follows lines you add or remove above it, and
 **Run to cursor** in an edited file runs to the run's line for the cursor's; on a line written since, it says the test
@@ -75,7 +75,8 @@ has none.
 
 A run Piwi starts with breakpoints is headed, with a pause bar. Without breakpoints it follows your config, headless
 by default. A headless stop opens **Piwi: paused page** beside VS Code's editor, or **Paused Page** in the JetBrains
-Piwi tool window. **Piwi: Show the paused page** (**Tools → Piwi → Show the Paused Page**) opens it at any stop.
+Piwi tool window, unless the tab shows another held stop. **Piwi: Show the paused page** (**Tools → Piwi → Show the
+Paused Page**) opens it at any stop.
 
 <figure>
   <img src="/screenshots/vscode-run-control-paused-page.png" alt="VS Code: a headless test paused before it clicks Apply, and beside the editor the Piwi: paused page tab showing the cart page with the coupon typed in">

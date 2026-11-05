@@ -401,8 +401,9 @@ stops say `run in a terminal` (`Glue.pausedText`), and it has no Stop, its proce
 (`RunSession.runner`), whose reporter follows the IDE as one in a terminal does: its stops say `run by the editor's
 test runner`, and the Run tool window's Stop ends it.
 
-**A stop.** A stop opens its file at its line once (`Glue.stopKey`), at the line it stands on now. It is drawn as the
-execution point:
+**A stop.** A stop opens its file at its line once (`Glue.stopKey`, `Glue.stopsToShow`), at the line it stands on
+now. While no other stop is shown, the first of the new stops takes the focus, opened last so its file is in front;
+another worker's stop opens without it (`navigate(false)`). It is drawn as the execution point:
 
 - a range highlighter on the document's markup model in `PIWI_EXECUTION_POINT` (**Line a run is stopped at** in
   `PiwiColorSettingsPage.kt`, falling back on `DebuggerColors.EXECUTIONPOINT_ATTRIBUTES`), with
@@ -415,7 +416,8 @@ execution point:
   them in the editors of its own project (`StopInlay.controlAt`, the hand cursor over one).
 
 A stop in a file the VFS has not loaded is looked for on disk off the event thread, once
-(`refreshAndFindFileByNioFile`); its Paused Page shows meanwhile.
+(`refreshAndFindFileByNioFile`), and its file opens once found (`unopened`), with the focus or without as decided when
+it was heard; its Paused Page shows meanwhile.
 
 **Edits since the run started.** A run's lines are the documents as they stood when it started (`started`, else when
 first heard, a rerun under the ref of a run that ended included). `Glue.EditLog` keeps the edits that move lines while a run is live or starting (a `DocumentListener` on
@@ -447,9 +449,11 @@ VSCode keymaps' `F5`, `Debug`; NetBeans' `F4`, `EditSource`) runs Piwi's while i
 
 **The paused page.** A stop with no pause bar asks `piwi/pausedPage` and shows the JPEG (`Glue.pausedImageBytes`, at
 most `Glue.MAX_IMAGE_DATA`, decoded only within `Glue.decodableImage`) in the **Paused Page** tab of the Piwi tool
-window, again at each such stop. Where its worker takes `pick-at` and the image names its viewport
-(`Glue.picksOnImage`), a click on the image picks the element under it (`piwi/pickAt`, the point scaled to the page's
-CSS pixels by `Glue.pagePoint`), its locator going where a pick goes, the answer said under the image.
+window, again at each such stop, unless the tab shows a stop still held: another worker's stop shows there once that
+stop goes on (the first such stop held), or on **Show the Paused Page** (`Glue.stopsToShow`). Where its worker takes
+`pick-at` and the image names its viewport (`Glue.picksOnImage`), a click on the image picks the element under it
+(`piwi/pickAt`, the point scaled to the page's CSS pixels by `Glue.pagePoint`), its locator going where a pick goes,
+the answer said under the image.
 
 For a stop taking `view`, **Watch live** subscribes through `piwi/pageView` on the existing LSP connection. Frames
 (`piwi/pageFrame`) decode off the event thread, with one decode in flight and only the latest waiting frame. Native
@@ -458,7 +462,8 @@ coalesced pointer moves, and a release only after the input queued before it. A 
 click with its count, a left click waiting 250 ms for a second one, and a drag once the pointer moves 4 pixels, as the
 Runs window's `ViewInputBatcher` sends them. While interacting, the image takes the Undo, Redo and Select All
 shortcuts for the page (a shortcut set registered on it, which the IDE runs before its keymap). Escape releases held
-input; Shift+click picks. Hiding, closing or resuming ends the watch.
+input; Shift+click picks. Hiding, closing, resuming or showing another stop ends the watch; another worker's new stop
+does not.
 Watch live is remembered within the tab, while each watch resets Interact. No Picker pairing or port forwarding is
 needed for the panel, and older reporters keep the still image.
 

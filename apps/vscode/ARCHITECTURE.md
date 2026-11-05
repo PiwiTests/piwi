@@ -336,7 +336,10 @@ as an information message. The commands show in the status bar beside the run's 
 palette and on keys while they apply: the context keys `piwi.runActive`, `piwi.runPausable` and `piwi.runStopped`, and
 `piwi.runResumed` for two seconds after an answer (`RESUMED_KEY_MS`). The keys: [Keybindings](#keybindings).
 
-**A stop.** A stop opens its file at its line once (`stopKey`). It is drawn as the execution point:
+**A stop.** A stop opens its file at its line once (`stopKey`, `stopsToShow`). While no other stop is shown, the first
+of the new stops takes the focus, opened last so its file is in front; another worker's stop opens without it
+(`preserveFocus`), and never over the paused page view: while the view is the active editor, it opens in a group of
+text editors. It is drawn as the execution point:
 `media/execution-point.svg` in the gutter, and the line's background in `piwi.executionPointBackground` (the debugger's
 stack frame color by default), with a hover that holds the controls. A CodeLens above it reads `pausedText`
 (`Paused · <title> · attempt N`, the attempt on a retry only) after `$(debug-pause)`, then Resume, Step, Run to cursor,
@@ -354,20 +357,22 @@ read change by change in the document after them all (`linesAbove`), so the mark
 
 **The paused page.** A stop with no pause bar (`bar: false`) asks `piwi/pausedPage` and shows the JPEG in the
 **Piwi: paused page** webview beside the editor, again at each such stop and on **Piwi: Show the paused page**
-(`piwi.showPausedPage`). The webview takes images from `data:` only (`img-src data:`) and its one style by nonce
-(`pausedPageHtml`). Where its worker takes `pick-at` and the image names its viewport (`picksOnImage`), a click on the
-image picks the element under it: a script by the same nonce, the webview's only one, posts the click's offset and the
-size the image is shown at, with which image it was on (`imageClickOf`); the extension maps it to the page's CSS pixels
-(`pagePoint`) and asks `piwi/pickAt`, the locator going where a pick goes and the answer said under the caption. A
-click on an image the view no longer shows picks nothing.
+(`piwi.showPausedPage`). A view showing a stop still held keeps it (`stopsToShow`): another worker's stop shows there
+once that stop goes on (the first such stop held), or when the person chooses it. The webview takes images from
+`data:` only (`img-src data:`) and its one style by nonce (`pausedPageHtml`). Where its worker takes `pick-at` and the
+image names its viewport (`picksOnImage`), a click on the image picks the element under it: a script by the same
+nonce, the webview's only one, posts the click's offset and the size the image is shown at, with which image it was on
+(`imageClickOf`); the extension maps it to the page's CSS pixels (`pagePoint`) and asks `piwi/pickAt`, the locator
+going where a pick goes and the answer said under the caption. A click on an image the view no longer shows picks
+nothing.
 
 When the stop takes `view`, the compact **Watch live** checkbox starts `piwi/pageView`; the service delivers
 `piwi/pageFrame` through the existing language-client connection. `paused-page-client.ts` is bundled into
 `dist/paused-page.js`, loaded by nonce from the panel's only local resource root. State updates use messages without
 replacing the document, preserving focus. **Interact** is a separate opt-in for `piwi/pageInput`: clicks, scrolling
 and typing, batched through the Runs window's input helper. Escape releases held input and focuses Watch live;
-Shift+click still picks. Help is collapsed. Hiding, closing, switching stops or resuming ends the watch. The panel
-remembers Watch live until closed, but each watch starts with Interact off.
+Shift+click still picks. Help is collapsed. Hiding, closing, switching stops or resuming ends the watch; another
+worker's new stop does not. The panel remembers Watch live until closed, but each watch starts with Interact off.
 
 **Breakpoints during a run.** The breakpoints `breakpointsForRun` gives go to each live run as they change
 (`vscode.debug.onDidChangeBreakpoints`, the `piwi.breakpoints` setting) with `piwi/setRunBreakpoints`, as lines of the
