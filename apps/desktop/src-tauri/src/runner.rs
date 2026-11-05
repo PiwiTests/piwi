@@ -781,12 +781,6 @@ pub async fn desktop_run_local_tests(
     Ok(id)
 }
 
-/// Stop a running local process as Ctrl+C would in a terminal (see
-/// `interrupt.rs`): Playwright stops its workers and the reporter still sends
-/// the run's end. A process still running `STOP_GRACE` later — or asked to stop
-/// a second time, or one that cannot be interrupted — is killed with its process
-/// tree (the test may have spawned browsers or a webServer).
-///
 /// The ids of the local runs the shell is running, as the tray lists them. The
 /// dashboard window holds the stream of its runs' hub while there is any, after
 /// a reload too, when its own list of runs starts empty.
@@ -797,6 +791,12 @@ pub fn desktop_local_runs(app: AppHandle) -> Vec<u32> {
         .unwrap_or_default()
 }
 
+/// Stop a running local process as Ctrl+C would in a terminal (see
+/// `interrupt.rs`): Playwright stops its workers and the reporter still sends
+/// the run's end. A process still running `STOP_GRACE` later — or asked to stop
+/// a second time, or one that cannot be interrupted — is killed with its process
+/// tree (the test may have spawned browsers or a webServer).
+///
 /// For a reproduce/bisect job the stop flag is raised first, so its driver
 /// starts no further step once the current child exits, then resets any bisect
 /// and removes the worktree. A run that already exited is a no-op.

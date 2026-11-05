@@ -25,8 +25,10 @@
  *
  * A run's output can move to a separate window of the app
  * (`DesktopRunOutputWindow`), which stays open when the tray closes, and
- * closes with the run's entry, with this component, and when the dashboard
- * window loads another page.
+ * closes with the run's entry, with this component (the window's next tray, an
+ * error page's, opens it again), and when the dashboard window loads another
+ * page. What the person chose on each run (Hold failures, its separate window,
+ * expanded) is kept in the runs store, for every tray of the window.
  */
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
 import { isUnattendedDesktopRun } from '#shared/desktop-runs';
@@ -39,16 +41,31 @@ import {
 } from '~/composables/useDesktopLocalRuns';
 import {
   desktopHoldRefusal,
-  desktopHoldsByDefault,
+  desktopRunHolds,
   desktopRunName,
   desktopRunOf,
   desktopStopPlace,
   desktopWorkerKey,
   desktopWorkerTest,
+  type DesktopRunChoices,
 } from '~/utils/desktop-run-view';
 
 const store = useDesktopLocalRuns();
-const { runs, trayOpen, shownWorker, activeCount } = store;
+const { runs, trayOpen, shownWorker, activeCount, choices } = store;
+
+/**
+ * One kind of choice on every run, as a ref the tray reads and replaces: kept in the store, so every tray of the window
+ * (an error page's too) shows the runs as the person left them, and says `show` for the same runs.
+ */
+function choiceRef(kind: keyof DesktopRunChoices) {
+  return computed({
+    get: () => choices.value[kind],
+    set: (value: Record<number, boolean>) => {
+      choices.value = { ...choices.value, [kind]: value };
+    },
+  });
+}
+
 const toast = useToast();
 
 const available = ref(false);
@@ -123,7 +140,7 @@ onBeforeUnmount(() => {
 useRunStream(() => store.correlatePiwiRuns());
 
 /** Manual expand/collapse choices; unset falls back to the default below. */
-const expandedByKey = ref<Record<number, boolean>>({});
+const expandedByKey = choiceRef('expanded');
 
 function isExpanded(run: LocalRun): boolean {
   return expandedByKey.value[run.key] ?? (run.status === 'running' || run.key === runs.value[0]?.key);
@@ -146,7 +163,7 @@ watch(shownWorker, async (shown) => {
 });
 
 /** The runs whose output shows in a separate window instead of the tray. */
-const separateByKey = ref<Record<number, boolean>>({});
+const separateByKey = choiceRef('separate');
 const separateRuns = computed(() => runs.value.filter((run) => separateByKey.value[run.key]));
 
 function setSeparate(run: LocalRun, on: boolean) {
@@ -169,8 +186,8 @@ function separateClosed(run: LocalRun, opened: boolean) {
   }
 }
 
-/** Each run's Hold failures choice; unset falls back to its kind's (`desktopHoldsByDefault`). */
-const holdByKey = ref<Record<number, boolean>>({});
+/** Each run's Hold failures choice; unset falls back to its kind's (`desktopRunHolds`). */
+const holdByKey = choiceRef('hold');
 
 /** Why a run holds no failure whatever is chosen: one nobody attends, by its kind or as the hub names its steps. */
 function holdRefusal(run: LocalRun): string | null {
@@ -182,7 +199,7 @@ function holdRefusal(run: LocalRun): string | null {
 }
 
 function holdsFailures(run: LocalRun): boolean {
-  return !holdRefusal(run) && (holdByKey.value[run.key] ?? desktopHoldsByDefault(run));
+  return desktopRunHolds(run, choices.value, !!holdRefusal(run));
 }
 
 function setHold(run: LocalRun, on: boolean) {

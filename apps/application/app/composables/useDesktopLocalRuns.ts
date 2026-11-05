@@ -31,7 +31,7 @@ import { commitUrl } from '#shared/scm-urls';
 import { specRunVerdict, type SpecRunResult, type SpecRunVerdict } from '@piwitests/core/bug-report';
 import type { PiwiSteps } from '@piwitests/core/steps';
 import { desktopJobVerdict, flakeLabJobReport, localRunOriginKind, newLocalRunRef } from '~/utils/desktop-job';
-import { desktopRunRef } from '~/utils/desktop-run-view';
+import { desktopRunRef, type DesktopRunChoices } from '~/utils/desktop-run-view';
 import { stripAnsi } from '~/utils/text-format';
 import type { ReproRequestView } from '#shared/desktop-repro';
 import { UNATTENDED_RUN_SUFFIX } from '#shared/desktop-runs';
@@ -449,6 +449,12 @@ export function useDesktopLocalRuns() {
   const trayOpen = useState<boolean>('desktop-local-runs-tray', () => false);
   /** A worker of a hub's run the tray is asked to show (`showWorker`), until the tray has shown it. */
   const shownWorker = useState<{ ref: string; worker: number } | null>('desktop-local-runs-shown-worker', () => null);
+  /** What the person chose on each run in the tray, kept for the window whichever tray shows it. */
+  const choices = useState<DesktopRunChoices>('desktop-local-runs-choices', () => ({
+    hold: {},
+    separate: {},
+    expanded: {},
+  }));
   const optionsByProject = useState<Record<string, SavedLocalRunOptions>>('desktop-local-run-options', () => ({}));
   if (import.meta.client) {
     toastApi = useToast();
@@ -1370,6 +1376,7 @@ export function useDesktopLocalRuns() {
   return {
     runs,
     trayOpen,
+    choices,
     shownWorker,
     showWorker,
     activeCount,

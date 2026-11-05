@@ -273,7 +273,8 @@ views are exempt only where a rule says so.
   the window, so the Local runs tray, in `app.vue` and `error.vue`, opens on each stop once, one heard before it
   mounted included, and says `show` only for the running runs whose **Hold failures** switch is on (off by default, on
   for a reproduction, `desktopHoldsByDefault`; never for a run nobody attends, `desktopHoldRefusal`), each by its
-  steps' names (`hubRefs`); expanding a run, closing the tray or TV mode changes none (`tests/desktop-run-view.spec.ts`).
+  steps' names (`hubRefs`); expanding a run, closing the tray, TV mode or an error page changes none: the choices live
+  in the runs store (`choices`; `tests/desktop-run-view.spec.ts`, `tests/unit/desktop-run-choices.test.ts`).
 - **Every raw `<form>` carries `method="post"`**, so a submit before hydration sends its fields in the body to the
   page's own URL, never in the query string (`UForm` renders it itself). `tests/unit/form-method-post.test.ts` names any
   `<form>` without it.

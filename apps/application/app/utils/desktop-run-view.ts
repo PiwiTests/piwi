@@ -73,6 +73,31 @@ export function desktopHoldsByDefault(run: Pick<DesktopHoldRun, 'kind'>): boolea
   return run.kind === 'reproduce';
 }
 
+/**
+ * What the person chose on each run of the Local runs tray, by its key, kept for the window: every tray of it (the
+ * app's, an error page's) reads the same choices.
+ */
+export interface DesktopRunChoices {
+  /** Hold failures; unset falls back to its kind's (`desktopHoldsByDefault`). */
+  hold: Record<number, boolean>;
+  /** Its output in a separate window. */
+  separate: Record<number, boolean>;
+  /** Expanded or collapsed; unset falls back to the tray's default. */
+  expanded: Record<number, boolean>;
+}
+
+/**
+ * Whether a run of the tray holds its failures: never for one the hold is `refused` (nobody attends it), else as the
+ * person chose, else as its kind does.
+ */
+export function desktopRunHolds(
+  run: Pick<DesktopHoldRun, 'kind'> & { key: number },
+  choices: Pick<DesktopRunChoices, 'hold'>,
+  refused: boolean,
+): boolean {
+  return !refused && (choices.hold[run.key] ?? desktopHoldsByDefault(run));
+}
+
 /** Names a worker of a run, for what the window keeps of it (its answer, its image, its view). */
 export function desktopWorkerKey(ref: string, worker: number): string {
   return `${ref}|${worker}`;
