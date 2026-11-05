@@ -6,6 +6,7 @@ import {
   type NotificationEventData,
 } from '#shared/notifications/browser-message';
 import { subscribeDemoEvents } from '~/demo/run-events';
+import { holdInOneTab } from '~/utils/tab-lease';
 import { useDiagnosisNotification } from './useDiagnosisNotification';
 import { useBrowserNotificationCookie } from './useBrowserNotificationCookie';
 
@@ -98,29 +99,26 @@ function connectDemo() {
   });
 }
 
-/** The Web Lock whose holder, one tab of the browser, keeps the notification stream. */
-const STREAM_LOCK = 'piwi-notification-stream';
-
 /**
- * Open the stream in one tab of the browser: the one that holds `STREAM_LOCK`, which passes to another tab when the
- * holder closes. Every tab would show the same notifications (each notification's tag replaces the last), and each
- * stream holds one of the six connections a browser opens to an address over HTTP/1.1. A browser without Web Locks
- * opens it in every tab.
+ * Open the stream in one tab of the browser, the one holding the lease of `piwi-notification-stream` (`holdInOneTab`),
+ * and close it in a tab that lost it. Every tab would show the same notifications (each notification's tag replaces
+ * the last), and each stream holds one of the six connections a browser opens to an address over HTTP/1.1.
  */
 function connectInOneTab() {
-  if (!('locks' in navigator)) {
-    connectLive();
-    return;
-  }
-  void navigator.locks.request(STREAM_LOCK, () => {
-    connectLive();
-    return new Promise<never>(() => {});
-  });
+  holdInOneTab({ key: 'piwi-notification-stream', held: connectLive, lost: disconnectLive });
+}
+
+function disconnectLive() {
+  if (reopenTimer) clearTimeout(reopenTimer);
+  reopenTimer = null;
+  sharedSource?.close();
+  sharedSource = null;
 }
 
 const REOPEN_MIN_MS = 2_000;
 const REOPEN_MAX_MS = 30_000;
 let reopenDelay = REOPEN_MIN_MS;
+let reopenTimer: ReturnType<typeof setTimeout> | null = null;
 
 function connectLive() {
   const source = new EventSource('/api/notifications/stream');
@@ -145,7 +143,10 @@ function connectLive() {
     if (source.readyState !== EventSource.CLOSED || sharedSource !== source) return;
     source.close();
     sharedSource = null;
-    setTimeout(connectLive, reopenDelay);
+    reopenTimer = setTimeout(() => {
+      reopenTimer = null;
+      connectLive();
+    }, reopenDelay);
     reopenDelay = Math.min(reopenDelay * 2, REOPEN_MAX_MS);
   };
 }

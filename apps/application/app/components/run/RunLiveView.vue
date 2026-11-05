@@ -32,7 +32,7 @@ const open = defineModel<boolean>('open', { required: true });
 
 const WAITING = 'Waiting for the first image of the page…';
 const STALLED =
-  'The view’s connection has not opened. Over plain HTTP a browser opens at most six connections to one address, and other Piwi tabs may hold them: close some, or serve Piwi over HTTP/2.';
+  'The view’s connection has not opened: the instance does not answer, or, over HTTP/1.1, other Piwi tabs hold the six connections a browser opens to one address. Close some, or serve Piwi over HTTP/2.';
 const UNAVAILABLE =
   'This worker’s live view is not available now: its test may have ended, or as many people as a run allows watch it.';
 
@@ -48,7 +48,19 @@ const now = ref(Date.now());
 const notice = ref(WAITING);
 const ended = ref(false);
 let source: EventSource | null = null;
+let viewOpen = false;
 let cancelStallCheck: (() => void) | null = null;
+/** Say so when the view's stream has not been open for `STREAM_STALL_MS`, through its reconnections. */
+function watchForStall(): void {
+  if (cancelStallCheck || viewOpen) return;
+  cancelStallCheck = onStreamStall(
+    () => viewOpen,
+    () => {
+      cancelStallCheck = null;
+      if (source) notice.value = STALLED;
+    },
+  );
+}
 
 const baseURL = useRuntimeConfig().app.baseURL;
 
@@ -67,11 +79,13 @@ function connect(): void {
     `${baseURL.replace(/\/$/, '')}/api/test-runs/${props.runId}/live-view/watch?${query}`,
   );
   source = opening;
-  cancelStallCheck = onStreamStall(opening, () => {
-    if (source === opening && !image.value) notice.value = STALLED;
-  });
+  viewOpen = false;
+  watchForStall();
   opening.onopen = () => {
-    if (notice.value === STALLED) notice.value = WAITING;
+    viewOpen = true;
+    cancelStallCheck?.();
+    cancelStallCheck = null;
+    if (notice.value === STALLED) notice.value = image.value ? '' : WAITING;
   };
   source.onmessage = (event) => {
     const message = parseLiveViewerMessage(String(event.data));
@@ -99,6 +113,8 @@ function connect(): void {
     }
   };
   source.onerror = () => {
+    viewOpen = false;
+    if (source?.readyState === EventSource.CONNECTING) watchForStall();
     // A stream the instance refused, or one that cannot open again, is closed for good.
     if (source?.readyState === EventSource.CLOSED) end(image.value ? LIVE_VIEW_END_TEXT['worker-left'] : UNAVAILABLE);
   };

@@ -9,11 +9,14 @@ worker by its own name, and a few ordinary conditions break the live page withou
 proposes one model of a live run that every tool renders, and adds ways to watch a test besides its pixels.
 
 **Status.** Proposed 2026-11-05, against `main` at v0.66.0 (`e82b429f`). Built from P0: the connection budget of
-#1106. One tab of the browser holds the notification stream (a Web Lock), which opens at once with a comment; a run
-page, or a live view, whose stream has not opened within 5 s says so, with **Retry** on the run page; a list whose
-first connection opens late refreshes. The run page keeps its stream while its tab is hidden, since the tab shows the
-run's progress; carrying the run's and the view's streams on one connection is left until a measurement asks for it.
-The rest is proposed. The bugs the analysis
+#1106. One tab of the browser holds the notification stream, through a lease in `localStorage` (Web Locks exist only
+on secure origins, and the limit bites on plain HTTP), and that stream opens at once with a comment. A run page or a
+live view whose stream has not been open for 5 s says so, through its reconnections, with **Retry** on the run page,
+which opens a new stream without refetching the run. A list whose first connection opens after a run event it missed
+(`/api/stream` says when the last went out, read against the server's render time) refreshes once hydrated. The
+execution page closes its stream while its tab is hidden. The run page keeps its stream while hidden, since its tab
+shows the run's progress; carrying the run's and the view's streams on one connection is left until a measurement asks
+for it. The rest is proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app

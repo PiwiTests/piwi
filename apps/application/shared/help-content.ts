@@ -614,12 +614,12 @@ export const HELP_TOPICS = {
   'run.live-stalled': {
     title: 'Live updates stalled',
     text: [
-      'This page has not opened its live connection for 5 seconds. Its results are as of its last load. Two causes:',
+      'This page has had no live connection for 5 seconds: its results are as of the last time it had one. Two causes:',
       '',
-      '- **No connection left** — over plain HTTP a browser opens at most six connections to one address, and other Piwi tabs hold them. Close some, or serve Piwi over HTTPS through a proxy that speaks HTTP/2, which has no such limit.',
-      '- **The instance does not answer** — it is restarting, or a proxy in front of it fails.',
+      '- **No connection left** — over HTTP/1.1 (plain HTTP, or HTTPS without HTTP/2) a browser opens at most six connections to one address, and other Piwi pages hold them: the pages of running runs and their tests, in other tabs and windows. Close some, or serve Piwi through a proxy that speaks HTTP/2, which has no such limit.',
+      '- **The instance does not answer** — it is restarting, or a proxy in front of it refuses the connection.',
       '',
-      '**Retry** loads the run again and opens a new connection.',
+      '**Retry** opens a new connection.',
     ].join('\n'),
     doc: 'operate/deployment#reverse-proxy-https',
   },

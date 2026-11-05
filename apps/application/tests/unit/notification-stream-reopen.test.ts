@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
  */
 
 vi.mock('../../app/composables/useDiagnosisNotification', () => ({
-  useDiagnosisNotification: () => ({ active: { value: true } }),
+  useDiagnosisNotification: () => ({ enabled: { value: true } }),
 }));
 vi.mock('../../app/composables/useBrowserNotificationCookie', () => ({
   useBrowserNotificationCookie: () => ({ isEventSubscribed: () => true }),

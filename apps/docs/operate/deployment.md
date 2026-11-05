@@ -322,7 +322,7 @@ server {
 }
 ```
 
-Serve the dashboard over HTTP/2 when people keep several tabs open. Over plain HTTP a browser opens at most six connections to one address, and each open Piwi tab holds a live stream or two: a run page that finds none left says **Live updates stalled**. Caddy speaks HTTP/2 by default; nginx needs `http2 on`, as below.
+Serve the dashboard over HTTP/2 when people keep several tabs open. Over HTTP/1.1, plain HTTP or HTTPS without HTTP/2, a browser opens at most six connections to one address, and each Piwi page that follows a running run holds one: a run page that finds none left says **Live updates stalled**. Caddy speaks HTTP/2 by default; nginx needs `http2 on`, as above.
 
 When auth is enabled, set `PIWI_SITE_URL` to the public HTTPS URL so email links and OAuth callbacks point at the right origin, and set `PIWI_TRUST_PROXY=true` (step 4 of the [production checklist](./production-checklist#before-you-expose-it)). With authentication off, set it too, and have the proxy forward the browser's `Host` header, as both examples do (Apache: `ProxyPreserveHost On`). The dashboard then refuses a request addressed to a name other than `localhost`, its host or one `PIWI_ALLOWED_HOSTS` lists; it reads that name from `Host` alone, so a proxy that sends its own local address instead lets every request through ([why](./authentication#disabling-authentication)).
 

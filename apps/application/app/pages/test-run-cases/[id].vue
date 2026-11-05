@@ -677,6 +677,19 @@ watch(
   { immediate: true },
 );
 onUnmounted(disconnectRunStream);
+// A hidden tab holds no stream: each holds one of the six connections a browser opens to an address over HTTP/1.1.
+// Shown again, the page reads the execution and its traces, for what came meanwhile, and listens again.
+const visibility = useDocumentVisibility();
+watch(visibility, (state) => {
+  if (!runIsActive.value) return;
+  if (state === 'hidden') {
+    disconnectRunStream();
+    return;
+  }
+  refresh();
+  refreshTraces();
+  connectToRunStream();
+});
 
 // ── Section locator ─────────────────────────────────────────────────────────
 // A clue or diagnosis citation reveals the evidence it came from: the evidence

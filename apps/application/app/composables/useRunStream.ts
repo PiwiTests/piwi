@@ -16,9 +16,10 @@ import { subscribeDemoEvents } from '~/demo/run-events';
  *   refreshes all subscribers so missed events are caught up.
  *
  * A late first connection:
- *   A run that starts between the page's data and its first connection is
- *   never heard. When that connection opens more than LATE_OPEN_MS after the
- *   page began loading, the subscribers refresh once.
+ *   A run event published between the server render and the first
+ *   connection is never heard. The connection's first event says when the
+ *   server last published one: when it is later than the server render, the
+ *   subscribers refresh once, after hydration.
  *
  * Error answers:
  *   The browser reconnects a dropped stream by itself, but gives up on one
@@ -116,10 +117,20 @@ let reopenDelay = REOPEN_MIN_MS;
 let reopenTimer: ReturnType<typeof setTimeout> | null = null;
 /** Set while a connection reopened after an error answer has not opened yet: its subscribers refresh once it does. */
 let refreshOnOpen = false;
-/** How long after the page began loading its first connection may open without the subscribers refreshing. */
-const LATE_OPEN_MS = 1_500;
 /** Whether no connection of this page has opened yet, nor has the tab come back into view (which refreshes). */
 let firstOpen = true;
+/** When the server rendered the page, by the server's clock, which the stream's `lastEventAt` is read against. */
+let renderedAt: number | null = null;
+let nuxtApp: ReturnType<typeof useNuxtApp> | null = null;
+
+/** Refresh every subscriber, once the app has hydrated: a refetch while it hydrates answers with its loaded data. */
+function refreshAfterHydration() {
+  if (nuxtApp?.isHydrating) {
+    nuxtApp.hooks.hookOnce('app:suspense:resolve', refreshAfterHydration);
+    return;
+  }
+  for (const fn of subscribers) fn();
+}
 
 function openEventSource() {
   if (sharedEventSource || demoMode) return;
@@ -131,10 +142,9 @@ function openEventSource() {
   // reconnection.
   source.onopen = () => {
     reopenDelay = REOPEN_MIN_MS;
-    const late = firstOpen && performance.now() > LATE_OPEN_MS;
-    firstOpen = false;
-    if (refreshOnOpen || late) {
+    if (refreshOnOpen) {
       refreshOnOpen = false;
+      firstOpen = false;
       for (const fn of subscribers) fn();
     }
     notifyOpenListeners();
@@ -143,6 +153,12 @@ function openEventSource() {
   source.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data);
+      if (data?.type === 'stream-open') {
+        const late = firstOpen && typeof data.lastEventAt === 'number' && renderedAt !== null;
+        if (late && data.lastEventAt >= renderedAt!) refreshAfterHydration();
+        firstOpen = false;
+        return;
+      }
       notifySubscribers(data.type);
       if (data && typeof data.type === 'string') notifyEventListeners(data);
     } catch {
@@ -208,6 +224,10 @@ function ensureConnection() {
   }
 
   demoMode = Boolean(useRuntimeConfig().public.demoMode);
+  if (!nuxtApp) {
+    nuxtApp = useNuxtApp();
+    renderedAt = useRenderedAt().value;
+  }
   if (demoMode) {
     if (demoUnsubscribe) return;
     demoUnsubscribe = subscribeDemoEvents((message) => {
