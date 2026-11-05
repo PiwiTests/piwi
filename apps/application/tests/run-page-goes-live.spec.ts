@@ -314,7 +314,7 @@ test('a retry reads as one while it runs, the list stays put, and its tags are s
       retries: 0,
       workerIndex: 1,
     });
-    await expect(page.locator('span[title="searches"]:visible')).toHaveCount(1);
+    await expect(page.locator(':is(a, span)[title="searches"]:visible')).toHaveCount(1);
     await expect(page.locator('[data-tour="run-tests-group-by"]')).toContainText('None');
     // One batch of the reporter carries a test's failed attempt and its retry's begin: one row, the retry's.
     const batch = await request.post(`/api/test-runs/${runId}/events`, {
@@ -345,13 +345,13 @@ test('a retry reads as one while it runs, the list stays put, and its tags are s
     });
     expect(batch.ok()).toBeTruthy();
     await expect(page.locator('[data-testid="live-retry"]:visible')).toHaveText(['Retry 1 of 2']);
-    await expect(page.locator('span[title="pays by card"]:visible')).toHaveCount(1);
+    await expect(page.locator(':is(a, span)[title="pays by card"]:visible')).toHaveCount(1);
 
     // A row that streamed in answers the search's qualifiers.
     await page.getByRole('combobox', { name: 'Search tests' }).fill('tag:smoke');
     await expect(page.getByRole('option', { name: 'tag:smoke 1' })).toBeVisible();
     await expect(page.locator('[data-testid="live-retry"]:visible')).toHaveText(['Retry 1 of 2']);
-    await expect(page.locator('span[title="searches"]:visible')).toHaveCount(0);
+    await expect(page.locator(':is(a, span)[title="searches"]:visible')).toHaveCount(0);
   } finally {
     await request.post(`/api/test-runs/${runId}/finish`, { data: { streamToken, status: 'failed', totalTests: 2 } });
   }
