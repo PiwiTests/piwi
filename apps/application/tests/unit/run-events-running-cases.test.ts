@@ -118,9 +118,16 @@ describe('runEventBus live steps', () => {
     ]);
   });
 
-  test('keeps no step without a worker', () => {
+  test('keeps no step without a worker, nor one of no test (a hook, as the timeline draws it)', () => {
     const runId = track(9102);
-    runEventBus.noteLiveSteps(runId, [step('step-begin', 'Click', null, null)], 'tok');
+    runEventBus.noteLiveSteps(
+      runId,
+      [
+        step('step-begin', 'Click', null, null),
+        { ...step('step-begin', 'beforeAll hook', 0, null), parentTitle: null },
+      ],
+      'tok',
+    );
     expect(runEventBus.getLiveSteps(runId)).toEqual([]);
   });
 
@@ -142,9 +149,13 @@ describe('runEventBus live steps', () => {
     expect(titles(runId)).toEqual(['Fill', 'Navigate']);
   });
 
-  test('forgets the step a reporter sent without its shard when its sharded test completes', () => {
+  test('forgets the step a reporter sent without its shard when its sharded test completes, not another’s', () => {
     const runId = track(9107);
-    runEventBus.noteLiveSteps(runId, [step('step-begin', 'Click', 0, null), complete('the test', 0, 2)], 'tok');
+    runEventBus.noteLiveSteps(runId, [step('step-begin', 'Click', 0, null)], 'shard-2');
+    // Another shard's worker 0 completes a test of the same title: shard 2's step stays.
+    runEventBus.noteLiveSteps(runId, [complete('the test', 0, 1)], 'shard-1');
+    expect(runEventBus.getLiveSteps(runId)).toHaveLength(1);
+    runEventBus.noteLiveSteps(runId, [complete('the test', 0, 2)], 'shard-2');
     expect(runEventBus.getLiveSteps(runId)).toEqual([]);
   });
 

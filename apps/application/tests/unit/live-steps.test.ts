@@ -1,12 +1,6 @@
 import { test, expect } from 'vitest';
 import { stepLabel } from '@piwitests/core/step-analysis';
-import {
-  captionCall,
-  liveStepForCase,
-  liveStepOf,
-  STILL_PAGE_MS,
-  type LiveStepsByWorker,
-} from '../../app/utils/live-steps';
+import { liveStepForCase, liveStepOf, type LiveStepsByWorker } from '../../app/utils/live-steps';
 import type { TestCaseResult } from '../../types/api';
 
 function makeCase(overrides: Partial<TestCaseResult>): TestCaseResult {
@@ -94,31 +88,4 @@ test('finds a watched worker’s step in its test, by shard and worker, else by 
   expect(liveStepOf(sharded, { shard: 1, worker: 0, test: 'pays by card' })).toBeNull();
   expect(liveStepOf(sharded, { shard: 3, worker: 1, test: 'searches' })?.title).toBe('Click');
   expect(liveStepOf(sharded, { shard: 2, worker: 0, test: 'another test' })).toBeNull();
-});
-
-test('a live view’s caption names the call log’s call, else the step newer than the image, else the image’s', () => {
-  const framed = { title: "Fill getByLabel('Card')", file: 'tests/pay.spec.ts', line: 11 };
-  const logged = { title: "Click getByRole('button')", file: 'tests/pay.spec.ts', line: 12 };
-  const step = { title: 'Click', subtitle: "getByRole('button', { name: 'Pay' })", category: 'pw:api' };
-  const view = { logged: null, framed, framedAt: 1_000, step, stepAt: 1_000 + STILL_PAGE_MS + 1 };
-
-  expect(captionCall({ ...view, logged })).toBe(logged);
-  expect(captionCall(view)).toEqual({ title: "Click getByRole('button', { name: 'Pay' })", file: null, line: null });
-  // The step reached the page soon after the image: it may be one the image has gone past, delayed by its batch.
-  expect(captionCall({ ...view, stepAt: 1_000 + STILL_PAGE_MS })).toBe(framed);
-  expect(captionCall({ ...view, stepAt: 500 })).toBe(framed);
-  // A step known before any image is named at once.
-  expect(captionCall({ ...view, framed: null, framedAt: 0 })?.title).toBe("Click getByRole('button', { name: 'Pay' })");
-  // Its credentials and typed text are hidden, as an image's call has them.
-  const navigate = { title: 'Navigate to "/login?token=abcd1234efgh5678ijkl"', category: 'pw:api' };
-  expect(captionCall({ ...view, step: navigate })?.title).not.toContain('abcd1234efgh5678ijkl');
-  const fill = { title: 'Fill "hunter2"', subtitle: "getByLabel('Password')", category: 'pw:api' };
-  expect(captionCall({ ...view, step: fill })?.title).not.toContain('hunter2');
-  // The step is the image's call: the image's place stays, with its link.
-  expect(
-    captionCall({ ...view, framed: { ...framed, title: "Click getByRole('button', { name: 'Pay' })" } })?.file,
-  ).toBe('tests/pay.spec.ts');
-  // A hook or a fixture is no call an image is taken at.
-  expect(captionCall({ ...view, step: { title: 'beforeEach hook', category: 'hook' } })).toBe(framed);
-  expect(captionCall({ ...view, framed: null, step: null })).toBeNull();
 });

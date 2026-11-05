@@ -43,6 +43,8 @@ const props = defineProps<{
   total?: number | null;
   /** When the run began, while it waits for its first test: the empty list says what it is doing. */
   waitingSince?: string | Date | null;
+  /** Whether the page hears the run's events, so no test began that it would show. */
+  hearsRun?: boolean;
   /** Worker index → current step, rendered inline on the matching running rows. */
   liveSteps?: LiveStepsByWorker | null;
   /** What the run's reporters measured so far; each running row shows its worker's last values. */
@@ -1091,7 +1093,11 @@ defineExpose({ scrollToCase });
       </ClientOnly>
     </div>
 
-    <RunBeforeFirstTest v-else-if="testCases.length === 0 && waitingSince" :since="waitingSince" :total="total" />
+    <RunBeforeFirstTest
+      v-else-if="testCases.length === 0 && waitingSince"
+      :since="waitingSince"
+      :run="{ initializing: !isLive, heard: hearsRun === true, total }"
+    />
 
     <EmptyState v-else-if="testCases.length === 0" icon="i-lucide-beaker" text="No tests recorded for this run." />
 

@@ -54,7 +54,7 @@ A running run's **Tests** tab says **Live view available**, or what is missing, 
 ## Watch a worker
 
 On the run page's **Tests** tab, **Watch** beside a running test opens its worker's view: the test's page as the
-browser paints it, headless or not, under it the call the image was taken at (`Click getByRole('button', { name: 'Pay' }) · checkout.spec.ts:30`). A still page sends no new image: the caption follows its steps.
+browser paints it, headless or not, under it the call the image was taken at (`Click getByRole('button', { name: 'Pay' }) · checkout.spec.ts:30`). A still page sends no new image.
 
 In a CI run, the view follows that call: how long it has run, Playwright's log of it as a failed call's error
 prints it, and while it waits, what its locator matches (no element yet, several, or one not enabled), outlined on the

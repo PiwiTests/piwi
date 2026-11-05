@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { beforeFirstTestText } from '~/utils/run-before-tests';
+import { beforeFirstTestText, type BeforeFirstTest } from '~/utils/run-before-tests';
 
 /** A run's Tests list before its first test: its global setup, or its tests starting, and for how long. */
 const props = defineProps<{
   /** When the run began. */
   since: string | Date;
-  /** The tests the run plans, known once its global setup ended. */
-  total?: number | null;
+  /** Where the run stands, as the page knows it. */
+  run: BeforeFirstTest;
 }>();
 
 // The time counts once mounted, so the server and the browser render the same text.
@@ -20,7 +20,7 @@ onBeforeUnmount(() => {
   if (clock) clearInterval(clock);
 });
 const text = computed(() =>
-  beforeFirstTestText(props.total, now.value === null ? null : now.value - new Date(props.since).getTime()),
+  beforeFirstTestText(props.run, now.value === null ? null : now.value - new Date(props.since).getTime()),
 );
 </script>
 

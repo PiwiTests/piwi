@@ -111,8 +111,8 @@ class RunEventBus {
   private liveResourcesDeclined = new Map<number, boolean>();
   /**
    * Each live run's latest step event per worker (`liveStepKey`), so whoever opens the run while a test is in a step
-   * sees it, as the first person to open it does. A worker's next step replaces it, its test's end or an answer that
-   * nobody watches drops it, and the run's go on cleanup.
+   * sees it, as the first person to open it does. A worker's next step replaces it; its test's end, or the answer to
+   * its reporter that nobody watches, drops it; the run's go on cleanup.
    */
   private liveSteps = new Map<number, Map<string, KeptLiveStep>>();
   /** When each project's last global run lifecycle event was published: `/api/stream` tells each new connection. */
