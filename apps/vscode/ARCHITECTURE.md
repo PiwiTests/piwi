@@ -337,13 +337,14 @@ palette and on keys while they apply: the context keys `piwi.runActive`, `piwi.r
 `piwi.runResumed` for two seconds after an answer (`RESUMED_KEY_MS`). The keys: [Keybindings](#keybindings).
 
 **A stop.** A stop opens its file at its line once (`stopKey`, `StopsShown`), one after the other, each waited for
-`OPEN_MS` at most, and none that went on before its turn. It takes the focus, decided as it opens, only while no other
-stop held has its file open, or as a stop of the worker the person is on (the one whose stop last took the focus, or
-that a control answered last); a file that never opened counts as none. With the focus, it opens as a debugger's
-does, never over the paused page view. Without it, the editor in use is left alone: a file that shows already keeps
-its selection, so the keys still act on the stop at the cursor, and another opens with `preserveFocus` in a group that
-is neither the active one nor the view's, else in a new one at the right (`asideColumn`). It is drawn as the execution
-point:
+`OPEN_MS` at most (a file that shows later takes no focus), and none that went on before its turn. It takes the
+focus, decided as it opens, only while no other stop held has its file open, or as a stop of the worker slot
+(`parallelIndex`, which a worker restarted after a failure keeps) the person is on: the one whose stop last took the
+focus, or that a control answered last. A file that never opened counts as none. With the focus, it opens as a
+debugger's does, never over the paused page view. Without it, the editor in use is left alone: a file that shows
+already keeps its selection, so the keys still act on the stop at the cursor, and another opens with `preserveFocus`
+in a group that is neither the active one nor the view's, else in a new one at the right (`asideColumn`). It is drawn
+as the execution point:
 `media/execution-point.svg` in the gutter, and the line's background in `piwi.executionPointBackground` (the debugger's
 stack frame color by default), with a hover that holds the controls. A CodeLens above it reads `pausedText`
 (`Paused · <title> · attempt N`, the attempt on a retry only) after `$(debug-pause)`, then Resume, Step, Run to cursor,
@@ -361,10 +362,10 @@ read change by change in the document after them all (`linesAbove`), so the mark
 
 **The paused page.** A stop with no pause bar (`bar: false`) asks `piwi/pausedPage` and shows the JPEG in the
 **Piwi: paused page** webview beside the editor, again at each such stop and on **Piwi: Show the paused page**
-(`piwi.showPausedPage`). The view follows the worker of the stop it shows (`StopsShown`): while that worker is in the
-run, running or between tests, it says its test went on and opens its next stop, and no other worker's; once that
-worker left the run, it opens the first stop held that no pause bar shows. **Piwi: Show the paused page** moves it to
-the stop chosen. The webview takes images from
+(`piwi.showPausedPage`). The view keeps the stop it shows while that stop is held (`StopsShown`). Once it went on
+after a Step or a Run to the cursor from the editor, the view says so and waits for that slot's next stop,
+`RESERVED_MS` at most; otherwise it opens the first new stop no pause bar shows, else the first such stop held. A view
+already shown stays in its group. The webview takes images from
 `data:` only (`img-src data:`) and its one style by nonce (`pausedPageHtml`). Where its worker takes `pick-at` and the
 image names its viewport (`picksOnImage`), a click on the image picks the element under it: a script by the same
 nonce, the webview's only one, posts the click's offset and the size the image is shown at, with which image it was on
