@@ -4,8 +4,10 @@
  * Custom request), the base URL and credential, the preset's fields for the
  * re-run and for Flake Lab, and the request a dispatch would send. The token is
  * write-only: a blank field keeps the stored one, which is sent only under the
- * base URL it was saved with.
+ * base URL it was saved with. Check reads the Jenkins jobs, unsaved fields
+ * included, and says whether each declares the parameters a dispatch sends.
  */
+import type { ApiResponse } from '~~/types/api';
 import {
   CI_SERVER_PRESET_REGISTRY,
   DEFAULT_ARGS_PARAMETER,
@@ -15,11 +17,15 @@ import {
 import {
   ciServerRequestPreview,
   ciServerTokenState,
+  ciServerTargetFromForm,
   customizeCiServerForm,
   type CiServerFormState,
 } from '~/utils/ci-server-form';
 
+type CheckResponse = ApiResponse<typeof import('~~/server/api/projects/[id]/ci-server-check.post').default>;
+
 const props = defineProps<{
+  projectId: number;
   /** The instance's `PIWI_CI_SERVER_URL`, or null when it sets none. */
   instanceUrl: string | null;
   hasToken: boolean;
@@ -78,10 +84,50 @@ const flakeLabPreview = computed(() =>
 function customize() {
   state.value = customizeCiServerForm(state.value);
 }
+
+const checking = ref(false);
+const checkResults = ref<CheckResponse['results'] | null>(null);
+const checkError = ref<string | null>(null);
+/** True when a token was typed but not saved: Check sent the stored credentials without it. */
+const typedTokenNotUsed = ref(false);
+/** Moves on every edit and every check, so an answer to an older form is dropped. */
+let checkGeneration = 0;
+watch(
+  [state, token, () => props.hasToken, () => props.tokenUrl],
+  () => {
+    checkGeneration++;
+    checkResults.value = null;
+    checkError.value = null;
+  },
+  { deep: true },
+);
+
+async function check() {
+  const generation = ++checkGeneration;
+  const resolved = ciServerTargetFromForm(state.value, { instanceUrl: props.instanceUrl });
+  checkResults.value = null;
+  checkError.value = resolved.error;
+  if (!resolved.target) return;
+  checking.value = true;
+  typedTokenNotUsed.value = Boolean(token.value.trim());
+  try {
+    const answer = await $fetch<CheckResponse>(`/api/projects/${props.projectId}/ci-server-check`, {
+      method: 'POST',
+      body: { ciServer: resolved.target },
+    });
+    if (generation === checkGeneration) checkResults.value = answer.results;
+  } catch (e) {
+    if (generation === checkGeneration) checkError.value = errorMessage(e, 'The check failed.');
+  } finally {
+    checking.value = false;
+  }
+}
+
+const CHECK_LABELS = { rerun: 'Re-run job', flakeLab: 'Flake Lab job' } as const;
 </script>
 
 <template>
-  <div class="space-y-3" data-testid="ci-server-target">
+  <div class="space-y-3" data-testid="ci-server-target" data-shot="ci-server-target">
     <div class="grid gap-2 sm:grid-cols-2">
       <UFormField label="CI server" name="ciServerPreset">
         <USelect v-model="state.preset" :items="presetItems" class="w-full" aria-label="CI server preset" />
@@ -199,9 +245,33 @@ function customize() {
           />
         </div>
       </div>
-      <UButton size="xs" color="neutral" variant="outline" icon="i-lucide-code" @click="customize">
-        Customize the request
-      </UButton>
+      <div class="flex flex-wrap gap-2">
+        <UButton
+          size="xs"
+          color="neutral"
+          variant="outline"
+          :loading="checking"
+          title="Read the jobs, without starting them, to see whether they declare the parameters a dispatch sends"
+          @click="check"
+        >
+          Check the jobs
+        </UButton>
+        <UButton size="xs" color="neutral" variant="outline" icon="i-lucide-code" @click="customize">
+          Customize the request
+        </UButton>
+      </div>
+      <div class="space-y-1 text-xs" aria-live="polite" data-testid="ci-server-check">
+        <p v-if="checkError" class="text-error">{{ checkError }}</p>
+        <dl v-if="checkResults" class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+          <template v-for="result in checkResults" :key="result.kind">
+            <dt class="text-muted">{{ CHECK_LABELS[result.kind] }}</dt>
+            <dd :class="result.ok ? 'text-muted' : 'text-error'">{{ result.message }}</dd>
+          </template>
+        </dl>
+        <p v-if="checkResults && typedTokenNotUsed" class="text-muted">
+          Checked with the stored credentials: save to check with the token you entered.
+        </p>
+      </div>
     </template>
 
     <template v-else>

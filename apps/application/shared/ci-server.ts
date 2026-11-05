@@ -13,6 +13,10 @@
  * live in `server/utils/ci-server-dispatch.ts`.
  */
 
+/** Why a base URL cannot be dispatched to on a host no private address may be reached on. */
+export const CI_SERVER_HTTPS_PROBLEM =
+  'The CI server URL must use https, or its host must be listed in PIWI_CI_SERVER_HOSTS.';
+
 /** The presets a CI server target may name. */
 export const CI_SERVER_PRESETS = ['jenkins', 'custom'] as const;
 export type CiServerPreset = (typeof CI_SERVER_PRESETS)[number];
@@ -86,6 +90,51 @@ export interface CiServerPresetDefinition {
   flakeLabFields: CiServerPresetField[];
   /** The request for these resolved fields, or null when they cannot form one. */
   template: (fields: Record<string, string>) => CiRequestTemplate | null;
+  /** What Check reads to see whether the job takes the request; absent, the preset has no Check. */
+  check?: CiServerCheckDefinition;
+}
+
+/** A GET under the base URL, which reads a job without starting it. */
+export interface CiServerCheckRequest {
+  /** Relative to the base URL, with the same placeholders as a dispatch's path. */
+  path: string;
+  query: [name: string, value: string][];
+}
+
+/** How a preset checks a job: the request it reads, the parameters the job must declare, and how to read them. */
+export interface CiServerCheckDefinition {
+  request: (fields: Record<string, string>) => CiServerCheckRequest | null;
+  /** The parameters a dispatch sends, which the job must declare. */
+  required: (fields: Record<string, string>) => string[];
+  /** The parameters the answer says the job declares, or null when it does not describe a job. */
+  declared: (json: unknown) => string[] | null;
+}
+
+/** What Check found for one request: the re-run's or Flake Lab's. */
+export interface CiServerCheckResult {
+  kind: 'rerun' | 'flakeLab';
+  /** True when the job declares every parameter a dispatch sends. */
+  ok: boolean;
+  /** The parameters a dispatch sends that the job does not declare. */
+  missing: string[];
+  /** What was found, or why the job could not be read, for the user. */
+  message: string;
+}
+
+/**
+ * The parameters a Jenkins job's JSON (read with `tree=property[parameterDefinitions[name]]`)
+ * declares: none for a job that takes no parameters, null when the answer is not a job.
+ */
+export function jenkinsDeclaredParameters(json: unknown): string[] | null {
+  if (!isRecord(json) || !('property' in json)) return null;
+  const names: string[] = [];
+  for (const property of Array.isArray(json.property) ? json.property : []) {
+    const definitions = isRecord(property) ? property.parameterDefinitions : null;
+    for (const definition of Array.isArray(definitions) ? definitions : []) {
+      if (isRecord(definition) && typeof definition.name === 'string') names.push(definition.name);
+    }
+  }
+  return names;
 }
 
 /** The parameter names a Jenkins job declares by default: the environment variables the reporter reads. */
@@ -140,6 +189,19 @@ export const CI_SERVER_PRESET_REGISTRY: Record<Exclude<CiServerPreset, 'custom'>
         },
         link: { template: `${jobPath}/` },
       };
+    },
+    check: {
+      request: (fields) => {
+        const jobPath = jenkinsJobPath(fields.job ?? '');
+        return jobPath
+          ? { path: `${jobPath}/api/json`, query: [['tree', 'property[parameterDefinitions[name]]']] }
+          : null;
+      },
+      required: (fields) => [
+        fields.argsParameter || DEFAULT_ARGS_PARAMETER,
+        fields.dispatchParameter || DEFAULT_DISPATCH_PARAMETER,
+      ],
+      declared: jenkinsDeclaredParameters,
     },
   },
 };
@@ -540,6 +602,73 @@ export function renderCiRequest(
     body = { contentType: 'application/x-www-form-urlencoded', text: form.toString() };
   }
   return { method: template.method, url: url.href, headers, body };
+}
+
+/** The read-only request Check sends for one of a target's jobs, and what its answer must declare. */
+export interface CiServerCheckPlan {
+  kind: 'rerun' | 'flakeLab';
+  url: string;
+  required: string[];
+  declared: (json: unknown) => string[] | null;
+}
+
+/**
+ * What Check reads for a target: the re-run's job, and Flake Lab's when the
+ * target has one. A plan that cannot be built is the reason, for the user. A
+ * multibranch job is read on the target's default branch.
+ */
+export function ciServerCheckPlans(
+  target: CiServerTarget,
+  baseUrl: string,
+): Array<CiServerCheckPlan | { kind: 'rerun' | 'flakeLab'; error: string }> {
+  const kinds: Array<'rerun' | 'flakeLab'> = target.flakeLab ? ['rerun', 'flakeLab'] : ['rerun'];
+  if (target.preset === 'custom') {
+    return [{ kind: 'rerun', error: 'A Custom request names no job to read, so it cannot be checked.' }];
+  }
+  const definition = CI_SERVER_PRESET_REGISTRY[target.preset];
+  const check = definition.check;
+  const ref = target.rerun.ref ?? '';
+  return kinds.map((kind) => {
+    const fields = (kind === 'rerun' ? target.rerun : target.flakeLab) ?? {};
+    const request = check?.request(fields);
+    if (!check || !request) return { kind, error: `${definition.label} has no check for this job.` };
+    if (request.path.includes('{{branchJob}}') && !ref) {
+      return { kind, error: 'A multibranch job is checked on its default branch: fill in Default branch.' };
+    }
+    try {
+      const vars = placeholderValues({ args: '', dispatchId: '', ref, commit: '' });
+      const url = urlUnder(baseUrl, request.path, vars);
+      for (const [name, value] of request.query) url.searchParams.append(name, fillText(value, vars));
+      return { kind, url: url.href, required: check.required(fields), declared: check.declared };
+    } catch (e) {
+      return { kind, error: e instanceof Error ? e.message : 'The check request cannot be built.' };
+    }
+  });
+}
+
+/** The result of a job's answer: whether it declares every parameter the plan requires. */
+export function ciServerCheckFinding(plan: CiServerCheckPlan, json: unknown): CiServerCheckResult {
+  const declared = plan.declared(json);
+  if (!declared) {
+    return {
+      kind: plan.kind,
+      ok: false,
+      missing: [],
+      message: 'The answer does not describe a job: is the path a folder, or a multibranch pipeline without /{branch}?',
+    };
+  }
+  const missing = plan.required.filter((name) => !declared.includes(name));
+  if (missing.length === 0) {
+    return { kind: plan.kind, ok: true, missing, message: `The job declares ${plan.required.join(' and ')}.` };
+  }
+  return {
+    kind: plan.kind,
+    ok: false,
+    missing,
+    message:
+      `The job does not declare ${missing.join(' or ')}, so it would drop ${missing.length > 1 ? 'them' : 'it'}. ` +
+      'A Pipeline job declares the parameters of its Jenkinsfile on its first build: run it once, then check again.',
+  };
 }
 
 /** The value at an RFC 6901 JSON pointer, or undefined. */

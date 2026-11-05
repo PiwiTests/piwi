@@ -220,6 +220,7 @@ async function removeCiServerToken() {
               <CiServerTargetFields
                 v-model="state.ciRerun.ciServer"
                 v-model:token="ciServerToken"
+                :project-id="project.id"
                 :instance-url="project.ciServerInstanceUrl ?? null"
                 :has-token="Boolean(project.hasCiServerToken)"
                 :token-url="project.ciServerTokenUrl ?? null"

@@ -9,8 +9,15 @@ import { eq } from 'drizzle-orm';
 import { failureClusters, projects, users } from '~~/server/database/schema.sqlite';
 import { resolveCiRerunSettings, type CiRerunSettings, type ClusterRerunDispatch } from '#shared/ci-rerun';
 import {
+  CI_SERVER_HTTPS_PROBLEM,
+  ciServerCheckFinding,
+  ciServerCheckPlans,
   ciServerRequestTemplate,
   ciServerTargetProblem,
+  DEFAULT_ARGS_PARAMETER,
+  DEFAULT_DISPATCH_PARAMETER,
+  resolveCiServerTarget,
+  type CiServerCheckResult,
   isUnderBaseUrl,
   normalizeCiServerBaseUrl,
   readCiServerAnswer,
@@ -66,7 +73,7 @@ function prepare(
   const spec = target ? ciServerRequestTemplate(target, 'rerun') : null;
   if (!target || !spec || !target.baseUrl) return { error: NO_TARGET };
   if (!target.baseUrl.startsWith('https:')) {
-    return { error: 'The CI server URL must use https, or its host must be listed in PIWI_CI_SERVER_HOSTS.' };
+    return { error: CI_SERVER_HTTPS_PROBLEM };
   }
   try {
     const { url } = renderCiRequest(target.baseUrl, spec.template, values);
@@ -186,6 +193,33 @@ export function assertDemoCiServerTarget(body: { ciRerun?: unknown } | null): vo
   if (sent == null) return;
   const problem = ciServerTargetProblem(sent);
   if (problem) throw demoHttpError(400, problem);
+}
+
+/** The answer the demo's Jenkins jobs give Check: each declares the reporter's default parameters. */
+const DEMO_JOB_JSON = {
+  property: [{ parameterDefinitions: [{ name: DEFAULT_ARGS_PARAMETER }, { name: DEFAULT_DISPATCH_PARAMETER }] }],
+};
+
+/**
+ * `POST /api/projects/:id/ci-server-check` in the demo: the server's checks up
+ * to the request, then the answer of a job that declares the default
+ * parameters, so a renamed parameter shows as missing. Nothing is sent.
+ */
+export function demoCiServerCheck(body: { ciServer?: unknown } | null): { results: CiServerCheckResult[] } {
+  const problem = ciServerTargetProblem(body?.ciServer);
+  const target = problem ? null : resolveCiServerTarget(body?.ciServer);
+  if (!target) throw demoHttpError(400, problem ?? 'Invalid CI server target');
+  if (!target.baseUrl) return { results: [{ kind: 'rerun', ok: false, missing: [], message: NO_TARGET }] };
+  if (!target.baseUrl.startsWith('https:')) {
+    return { results: [{ kind: 'rerun', ok: false, missing: [], message: CI_SERVER_HTTPS_PROBLEM }] };
+  }
+  return {
+    results: ciServerCheckPlans(target, target.baseUrl).map((plan) =>
+      'error' in plan
+        ? { kind: plan.kind, ok: false, missing: [], message: plan.error }
+        : ciServerCheckFinding(plan, DEMO_JOB_JSON),
+    ),
+  };
 }
 
 /**

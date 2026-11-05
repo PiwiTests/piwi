@@ -477,6 +477,7 @@ import {
 import { apiCheckDemoImport, apiDemoImport } from './import';
 import {
   assertDemoCiServerTarget,
+  demoCiServerCheck,
   demoCiServerTokenMarker,
   demoCiServerTokenUrl,
   demoClusterRerunInfo,
@@ -1154,6 +1155,15 @@ const routes: RouteEntry[] = [
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       const days = Math.min(90, Math.max(1, parseInt(q?.get('days') || '30')));
       return getProjectAiStepCoverage(await getDemoDb(), +m[1]!, days);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/ci-server-check$/,
+    permission: 'project:manage',
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return demoCiServerCheck(body as { ciServer?: unknown } | null);
     },
   },
   {
