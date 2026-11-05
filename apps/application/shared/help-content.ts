@@ -1307,7 +1307,7 @@ export const HELP_TOPICS = {
   },
   'account.profile-picture': {
     title: 'Profile picture',
-    text: "Shown in the user menu in place of your sign-in provider's picture. PNG, JPEG or WebP, under 1 MB and at most 1000 × 1000 pixels: the server stores it as a small square, without the photo's metadata (such as its location), and serves it from this instance.",
+    text: "Shown to you in place of your sign-in provider's picture, in the user menu and beside your name in Settings; other people see your initials. PNG, JPEG or WebP, under 1 MB and at most 1000 × 1000 pixels: the server stores it as a small square, without the photo's metadata (such as its location), and serves it from this instance.",
     doc: 'operate/authentication#user-management',
   },
   'account.connected-accounts': {

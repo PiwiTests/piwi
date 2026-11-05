@@ -15,7 +15,7 @@ const props = defineProps<{
 
 const config = useRuntimeConfig();
 const { authState } = useAuth();
-// The picture loads in the browser only, so a failed load shows the initials: a server-rendered image can fail before the page listens.
+// The picture renders after mount, so a picture that fails to load falls back to the initials.
 const mounted = ref(false);
 onMounted(() => {
   mounted.value = true;

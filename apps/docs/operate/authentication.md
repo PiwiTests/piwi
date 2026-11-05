@@ -117,7 +117,7 @@ The new account stores the provider's email, unverified unless the provider veri
 
 Each later sign-in updates the account's name, avatar and email from the provider. The email stays as it is when the provider sends none, or one another account already uses.
 
-Piwi keeps no provider token: the access token reads the profile once, then is discarded. OAuth is not available in demo mode.
+Piwi keeps no provider token: the access token serves the sign-in only, then is discarded. OAuth is not available in demo mode.
 
 ### Connecting / disconnecting a provider
 
