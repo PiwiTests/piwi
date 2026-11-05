@@ -396,9 +396,7 @@ describe('the hub Piwi Picker reaches', () => {
       runChannel: null,
       recorderBundle: null,
     });
-    const named = await waitFor(() =>
-      picker.messages.find((m) => m.type === 'peers' && m.hubs.length === 1),
-    );
+    const named = await waitFor(() => picker.messages.find((m) => m.type === 'peers' && m.hubs.length === 1));
     expect(named).toEqual({
       type: 'peers',
       hubs: [

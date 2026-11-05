@@ -58,8 +58,18 @@ says so at `/begin` (or `/start`) as `piwiInteractive: { client, ref }` in its m
 client is the editor's name from its discovery file, else the launcher `PIWI_ORIGIN` names), so its later requests
 carry it too; the instance sends no `test.stuck` for it, by the `test-stuck` use of
 `run-eligibility.ts`, whose comment states the outbound effects of complete `local`, `desktop` and `editor` runs. Its
-long test is still marked **Stuck?**, until Stuck? reads stop state. The rest of P3 and the later phases are
-proposed. The bugs the analysis
+long test is still marked **Stuck?**, until Stuck? reads stop state. Built from the rest of P3 but the desktop app's:
+an unknown worker state reads as `other` and an unreadable worker or `live` is left out, the run kept; `welcome` and
+the desktop app's live answer list a hub's `features` (`peers`); each hub names the other live hubs of
+`~/.piwi/editors` to its subscribed connections, without their tokens, and the Runs window asks the paired editor
+again for one it holds no token for, and every minute while it is open; a VS Code window takes the pairing port once
+the window holding it closes; a lost hub's runs stay grayed, as last heard, and Watch live, kept by run and slot,
+starts again once it answers; the Runs window says how each paired tool stands, retries an unproven pairing four
+times, reads a proofless 404 as no editor, and frees a command's buttons after 25 s; the popup keeps a muted Runs tile
+while a paired tool does not answer; and the local live view and stop image are masked as the team's, the pause bar
+included, the image at CSS scale and of the viewport's shape, every call's and stop's title through `hideTypedText`.
+`features` stays out of `run-attach`, whose `takes` already lists what a worker does: P4's lane view is one more
+entry there. The rest of P3 and the later phases are proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app
