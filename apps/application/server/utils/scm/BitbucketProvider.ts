@@ -27,6 +27,7 @@ import { TtlCache } from '../ttl-cache';
 import { splitGitDiff } from './diff-text';
 import { isValidGitRef, encodeGitRef, encodePathSegments } from './refs';
 import type { CiRerunSettings } from '#shared/ci-rerun';
+import { HEAL_PR_MARKER } from '#shared/heal-pr';
 
 /** Turn a non-2xx Bitbucket response into an Error carrying the API's own message. */
 async function bitbucketError(res: Response, action: string): Promise<Error> {
@@ -656,7 +657,8 @@ export class BitbucketProvider extends ScmProvider {
       headers: { ...this.makeHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({
         title: input.title,
-        summary: { raw: input.body },
+        // The auto-heal marker is hidden the way a comment's is: Bitbucket shows an HTML comment as text.
+        summary: { raw: input.body.split(HEAL_PR_MARKER).join(bitbucketCommentMarker(HEAL_PR_MARKER)) },
         source: { branch: { name: input.head } },
         destination: { branch: { name: input.base } },
       }),

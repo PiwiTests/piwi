@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { BitbucketProvider, bitbucketCommentMarker } from '../../server/utils/scm/BitbucketProvider';
 import { PR_COMMENT_MARKER } from '#shared/pr-feedback';
-import { HEAL_BRANCH_VERIFIED_MARKER } from '#shared/heal-pr';
+import { HEAL_BRANCH_VERIFIED_MARKER, HEAL_PR_MARKER } from '#shared/heal-pr';
 
 const API = 'https://api.bitbucket.org/2.0/repositories/acme/shop';
 const HIDDEN = '[//]: # (piwi-dashboard:run-summary)';
@@ -177,5 +177,25 @@ describe('the commit status', () => {
     expect(await provider(null).postCommitStatus('abc1234', { ...status, state: 'success' })).toBe(false);
     expect(calls).toEqual([]);
     expect(await provider().postCommitStatus('abc1234', { ...status, state: 'success' })).toBe(false);
+  });
+});
+
+describe('the auto-heal pull request', () => {
+  test('opens with its marker hidden in the description', async () => {
+    const calls = mockFetch([
+      { json: { id: 9, links: { html: { href: 'https://bitbucket.org/acme/shop/pull-requests/9' } } } },
+    ]);
+    const opened = await provider().createPullRequest({
+      title: 'Heal 1 locator',
+      body: `${HEAL_PR_MARKER}\n## Piwi healed 1 broken locator in 1 file`,
+      head: 'piwi/heal-1',
+      base: 'main',
+      draft: false,
+    });
+    expect(opened).toEqual({ number: 9, url: 'https://bitbucket.org/acme/shop/pull-requests/9' });
+    expect(calls[0]).toMatchObject({ url: `${API}/pullrequests`, method: 'POST' });
+    expect((calls[0]!.body as { summary: { raw: string } }).summary.raw).toBe(
+      '[//]: # (piwi-dashboard:auto-heal)\n## Piwi healed 1 broken locator in 1 file',
+    );
   });
 });
