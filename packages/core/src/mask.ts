@@ -5,6 +5,8 @@
  * flattens them, and the server re-masks the same values on ingest.
  */
 
+import { tryParseLocatorChain } from './locator-chain';
+
 const DATA_URI_RE = /\bdata:[a-z0-9.+-]+\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+/gi;
 const JWT_RE = /\beyJ[\w-]{10,}\.[\w-]{5,}\.[\w-]{5,}\b/g;
 const LONG_HEX_RE = /\b[0-9a-f]{32,}\b/gi;
@@ -509,15 +511,34 @@ const TYPED_TITLE = /^(?:Fill|Type|Insert) "/;
 /**
  * A call's title with the text it types written as {@link HIDDEN_VALUE}: Playwright writes that text in the title of a
  * fill, a typing or an insert (`Fill "…"`, and `Fill "…" getByLabel('Password')` with the locator it appends), and it
- * may be a secret the test reads from its environment. The text runs to the title's last quote, or to the last quote
- * before the locator; the call's verb and its locator stay. Any other title is returned as it is. Pure.
+ * may be a secret the test reads from its environment. The text runs to the title's last quote, or to the quote before
+ * the locator (`typedTextEnd`); the call's verb and its locator stay. Any other title is returned as it is. Pure.
  */
 export function hideTypedText(title: string): string {
   const typing = TYPED_TITLE.exec(title);
   if (!typing) return title;
   const start = typing[0].length;
-  const end = title.endsWith('"') ? title.length - 1 : title.lastIndexOf('" ');
+  const end = title.endsWith('"') ? title.length - 1 : typedTextEnd(title, start);
   return end >= start ? `${title.slice(0, start)}${HIDDEN_VALUE}${title.slice(end)}` : `${typing[0]}${HIDDEN_VALUE}"`;
+}
+
+/** The longest locator a typed call's title is read for: Playwright cuts the one it appends at 200 characters. */
+const MAX_TITLE_LOCATOR = 1000;
+
+/**
+ * Where the typed text ends in a title that goes on after it. Playwright writes the text unescaped, so its own quotes
+ * cannot tell: the end is the last `" ` followed by a whole locator (`tryParseLocatorChain`) of at most
+ * `MAX_TITLE_LOCATOR` characters, which keeps a locator that quotes a name
+ * (`getByRole('textbox', { name: 'Card "main" number' })`) whole. When none is followed by one (a `describe()` label, a
+ * locator cut short with `…`), it is the last `" `; -1 without one. Its time grows with the title's length, not its
+ * square.
+ */
+function typedTextEnd(title: string, start: number): number {
+  const from = Math.max(start, title.length - MAX_TITLE_LOCATOR - 2);
+  for (let at = title.lastIndexOf('" '); at >= from; at = title.lastIndexOf('" ', at - 1)) {
+    if (tryParseLocatorChain(title.slice(at + 2))) return at;
+  }
+  return title.lastIndexOf('" ');
 }
 
 /**

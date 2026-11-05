@@ -250,7 +250,7 @@ async function confirmDelete() {
     >
       <template #body>
         <LoadingState v-if="formLoading" text="Loading the group…" />
-        <form v-else class="space-y-5" data-shot="group-form" @submit.prevent="saveForm">
+        <form v-else class="space-y-5" data-shot="group-form" method="post" @submit.prevent="saveForm">
           <UFormField label="Name" name="name" required>
             <UInput v-model="form.name" placeholder="QA, Product owners, CI…" class="w-full" />
           </UFormField>

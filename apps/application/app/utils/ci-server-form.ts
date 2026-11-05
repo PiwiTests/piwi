@@ -12,6 +12,7 @@ import {
   normalizeCiServerBaseUrl,
   renderCiRequest,
   resolveCiServerTarget,
+  urlPathClimbs,
   type CiServerPreset,
   type CiServerTarget,
 } from '#shared/ci-server';
@@ -70,7 +71,10 @@ export function ciServerTargetFromForm(
   opts?: { instanceUrl: string | null },
 ): { target: CiServerTarget; error: null } | { target: null; error: string } {
   if (state.baseUrl.trim() && !normalizeCiServerBaseUrl(state.baseUrl)) {
-    return { target: null, error: 'The base URL must be an http(s) URL, without a query.' };
+    const error = urlPathClimbs(state.baseUrl)
+      ? 'The base URL path cannot hold a segment that climbs once decoded, such as ..%2F.'
+      : 'The base URL must be an http(s) URL, without a query.';
+    return { target: null, error };
   }
   let custom: unknown;
   if (state.preset === 'custom') {

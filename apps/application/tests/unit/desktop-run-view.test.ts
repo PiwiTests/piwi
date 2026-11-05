@@ -137,6 +137,8 @@ describe('a worker of a desktop run', () => {
     expect(desktopSteering(running)).toEqual(['pause']);
     expect(desktopSteering(workerOf({ pausing: true }))).toEqual([]);
     expect(desktopSteering(workerOf({ state: 'between' }))).toEqual([]);
+    // A state of a newer service reads as running.
+    expect(desktopWorkerState(workerOf({ state: 'other' }), ROOT)).toBe('Running');
 
     const stopped = workerOf({ state: 'stopped', stop: stopOf({ reason: 'page-pause' }) });
     expect(desktopWorkerState(stopped, ROOT)).toBe('Stopped at page.pause()');

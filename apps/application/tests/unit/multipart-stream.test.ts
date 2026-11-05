@@ -134,6 +134,18 @@ describe('streamMultipart', () => {
     expect(readFileSync(attachments[1]!.path).toString()).toBe('B');
   });
 
+  test('keeps a file part whose name busboy empties, in its place among the others', async () => {
+    const body = buildMultipart([
+      { name: 'attach_file', filename: '..', data: Buffer.from('dots') },
+      { name: 'attach_file', filename: 'shot.png', data: Buffer.from('png') },
+    ]);
+    const result = (last = await streamMultipart(makeEvent(body), { maxTotalBytes: 1024 }));
+    const attachments = result.files.filter((f) => f.field === 'attach_file');
+    expect(attachments.map((a) => a.filename)).toEqual(['', 'shot.png']);
+    expect(readFileSync(attachments[0]!.path).toString()).toBe('dots');
+    expect(readFileSync(attachments[1]!.path).toString()).toBe('png');
+  });
+
   test('refuses too many fields, and fields over their total size', async () => {
     const many = buildMultipart(Array.from({ length: 5 }, (_, i) => ({ name: `f${i}`, value: 'x' })));
     await expect(streamMultipart(makeEvent(many), { maxTotalBytes: 1024, maxFields: 3 })).rejects.toMatchObject({

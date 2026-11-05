@@ -48,10 +48,15 @@ const handler = (await import('../../server/api/files/[...path].get')).default;
 const VIDEO = Buffer.from(Array.from({ length: 1000 }, (_, i) => i % 251));
 const SECRET = Buffer.from('project 2 only');
 const BLOB = 'a'.repeat(64);
-const STEP_SHOTS = [
-  'Step-13-Click-Generate-new-code-Expected-The-new-code-is-not-the-expired-one..png',
-  'Step-3-Read-the-dialog-as-it-starts-Expected-It-shows-Generating-code...-..png',
-];
+/**
+ * Stored names that hold `..` but are no `..` segment, each with the type it is served as: a step's file, and
+ * screenshots named after step titles that end in `.` or hold `...`.
+ */
+const TWO_DOT_NAMES: Record<string, string> = {
+  'step-2..json': 'application/json',
+  'Step-13-Click-Generate-new-code-Expected-The-new-code-is-not-the-expired-one..png': 'image/png',
+  'Step-3-Read-the-dialog-as-it-starts-Expected-It-shows-Generating-code...-..png': 'image/png',
+};
 
 const reader = {
   user: { id: 5, username: 'rae', role: InstanceRole.MEMBER } as User,
@@ -85,9 +90,7 @@ beforeAll(async () => {
   mkdirSync(join(storageDir, 'project-1/run-7/42'), { recursive: true });
   mkdirSync(join(storageDir, 'project-2'), { recursive: true });
   writeFileSync(join(storageDir, 'project-1/run-7/42/video.webm'), VIDEO);
-  writeFileSync(join(storageDir, 'project-1/run-7/42/step-2..json'), '{"step":2}');
-  // Stored names that hold `..` before the extension, from step titles that end in `.` or hold `...`.
-  for (const name of STEP_SHOTS) writeFileSync(join(storageDir, `project-1/run-7/42/${name}`), name);
+  for (const name of Object.keys(TWO_DOT_NAMES)) writeFileSync(join(storageDir, `project-1/run-7/42/${name}`), name);
   // A slim trace blob whose manifest does not parse.
   mkdirSync(join(storageDir, 'project-1/blobs'), { recursive: true });
   writeFileSync(join(storageDir, `project-1/blobs/${BLOB}.zip`), 'slim');
@@ -169,16 +172,10 @@ describe('a stored trace', () => {
 
 describe('the path checks', () => {
   test('serve a name that holds two dots, which is no way up', async () => {
-    const answer = await get('/api/files/project-1/run-7/42/step-2..json');
-    expect(answer.status).toBe(200);
-    expect(answer.body.toString()).toBe('{"step":2}');
-  });
-
-  test('serve a step screenshot whose name ends in a dot or holds an ellipsis', async () => {
-    for (const name of STEP_SHOTS) {
+    for (const [name, type] of Object.entries(TWO_DOT_NAMES)) {
       const answer = await get(`/api/files/project-1/run-7/42/${name}`);
       expect(answer.status, name).toBe(200);
-      expect(answer.headers['content-type'], name).toBe('image/png');
+      expect(answer.headers['content-type'], name).toBe(type);
       expect(answer.body.toString(), name).toBe(name);
     }
   });
@@ -208,16 +205,19 @@ describe('the path checks', () => {
     }
   });
 
+  // h3 decodes the request's path once before routing, all but `%2F` and `%25`: an encoded dot or backslash reaches
+  // the route's guard decoded, while an encoded slash or a double-encoded dot stays part of a name no file has.
   test('refuse a way out spelled with percent-encoded dots, slashes or backslashes', async () => {
-    for (const path of [
-      '/api/files/project-1/%2e%2e/project-2/secret.txt',
-      '/api/files/project-1/..%2Fproject-2/secret.txt',
-      '/api/files/project-1/run-7/..%5C..%5Cproject-2%5Csecret.txt',
-      '/api/files/project-1/%252e%252e/project-2/secret.txt',
-      '/api/files/project-1/..%252Fproject-2/secret.txt',
-    ]) {
+    for (const [path, status] of [
+      ['/api/files/project-1/%2e%2e/project-2/secret.txt', 403],
+      ['/api/files/project-1/run-7/%2E%2E%5C..%5Cproject-2%5Csecret.txt', 403],
+      ['/api/files/project-1/run-7/..%5C..%5Cproject-2%5Csecret.txt', 403],
+      ['/api/files/project-1/..%2Fproject-2/secret.txt', 404],
+      ['/api/files/project-1/%252e%252e/project-2/secret.txt', 404],
+      ['/api/files/project-1/..%252Fproject-2/secret.txt', 404],
+    ] as const) {
       const answer = await get(path);
-      expect([403, 404], path).toContain(answer.status);
+      expect(answer.status, path).toBe(status);
       expect(answer.body.includes(SECRET), path).toBe(false);
     }
   });

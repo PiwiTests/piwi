@@ -201,6 +201,7 @@ const envSnippet = computed(() =>
     class="rounded-lg border border-default p-3 sm:p-4 space-y-5"
     data-shot="jira-connection-form"
     data-tour="jira-connection-form"
+    method="post"
     @submit.prevent="submit"
   >
     <p class="text-sm font-semibold text-highlighted">

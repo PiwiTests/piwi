@@ -272,6 +272,9 @@ views are exempt only where a rule says so.
   it hears, once, and it says `show` only for the running runs whose **Hold failures** switch is on (off by default,
   on for a reproduction, `desktopHoldsByDefault`; never for a run nobody attends, `desktopHoldRefusal`), each by its
   steps' names (`hubRefs`); expanding a run or closing the tray changes none (`tests/desktop-run-view.spec.ts`).
+- **Every raw `<form>` carries `method="post"`**, so a submit before hydration sends its fields in the body to the
+  page's own URL, never in the query string (`UForm` renders it itself). `tests/unit/form-method-post.test.ts` names any
+  `<form>` without it.
 - **The client bundle never compiles code** (`eval`, `new Function`): the desktop build's CSP
   (`server/utils/desktop-csp.ts`) has no `'unsafe-eval'`. Zod parses without its JIT (`plugins/00.zod-jitless.client.ts`,
   `tests/unit/zod-jitless.test.ts`); a new dependency that evaluates code needs its switch, or another library.

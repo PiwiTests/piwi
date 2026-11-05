@@ -184,7 +184,8 @@ The token field is write-only: leave it empty to keep the stored token. A token 
 when it is saved and sent only to URLs under it, so changing the base URL asks for the token again. A project without
 a base URL uses the instance's CI server (`PIWI_CI_SERVER_URL`), and one without a token the instance's
 (`PIWI_CI_SERVER_USER`, `PIWI_CI_SERVER_TOKEN`): it goes only with a preset's request under that URL, never with a
-Custom one.
+Custom one. A base URL or a request path is refused when a segment would climb once a server decodes it (`..%2F`,
+`..;`), so a token bound to a folder stays in it.
 
 A request never follows a redirect, and a link from the answer is kept only when it is an `http(s)` URL or a path from
 the base URL's root (`/queue/item/12/`). A CI server

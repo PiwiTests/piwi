@@ -57,7 +57,7 @@ async function save() {
 <template>
   <UModal v-model:open="open" title="Rename dashboard">
     <template #body>
-      <form class="space-y-4" data-testid="rename-dashboard" @submit.prevent="save">
+      <form class="space-y-4" data-testid="rename-dashboard" method="post" @submit.prevent="save">
         <UFormField label="Name" required>
           <UInput
             v-model="name"

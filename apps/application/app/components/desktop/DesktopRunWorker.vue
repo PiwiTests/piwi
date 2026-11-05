@@ -237,7 +237,7 @@ onBeforeUnmount(() => {
             ? 'i-lucide-circle-x'
             : stop
               ? 'i-lucide-circle-pause'
-              : worker.state === 'running'
+              : worker.state === 'running' || worker.state === 'other'
                 ? 'i-lucide-circle-play'
                 : 'i-lucide-circle-dot'
         "
