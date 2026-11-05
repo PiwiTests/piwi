@@ -24,6 +24,7 @@ const memberItems = computed(() => {
   return sortProjectAccessUsers(users).map((user) => ({
     label: projectAccessUserName(user),
     value: user.id,
+    account: { id: user.id, name: user.name, username: user.username },
   }));
 });
 
@@ -265,7 +266,11 @@ async function confirmDelete() {
               placeholder="No members"
               :search-input="{ placeholder: 'Filter users…' }"
               class="w-full"
-            />
+            >
+              <template #item-leading="{ item }">
+                <UserAvatar :account="item.account" size="2xs" />
+              </template>
+            </USelectMenu>
           </UFormField>
         </form>
       </template>

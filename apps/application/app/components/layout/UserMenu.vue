@@ -18,11 +18,6 @@ defineProps<{
 const colorMode = useColorMode();
 const themeColors = useThemeColors();
 const config = useRuntimeConfig();
-// The picture loads in the browser only, so a failed load shows the user icon: a server-rendered image can fail before the page listens.
-const mounted = ref(false);
-onMounted(() => {
-  mounted.value = true;
-});
 const { authState, logout } = useAuth();
 const settingsNav = await useSettingsNav();
 const { openSettings: openIdeSettings } = useOpenInIde();
@@ -44,16 +39,16 @@ const appearances = [
   { label: 'Dark', icon: 'i-lucide-moon', preference: 'dark' },
 ];
 
-const user = computed(() => {
+const user = computed<{
+  name: string;
+  icon?: string;
+  account?: { id: number; name: string | null; username: string };
+}>(() => {
   if (config.public.authEnabled && authState.value.authenticated && authState.value.user) {
-    const avatarVersion = mounted.value ? authState.value.user.avatarVersion : null;
+    const account = authState.value.user;
     return {
-      name: authState.value.user.name || authState.value.user.username,
-      icon: avatarVersion ? undefined : 'i-lucide-user',
-      avatar: avatarVersion
-        ? { src: profilePictureSrc(config.app.baseURL, avatarVersion), alt: '', icon: 'i-lucide-user' }
-        : undefined,
-      role: authState.value.user.role,
+      name: account.name || account.username,
+      account: { id: account.id, name: account.name ?? null, username: account.username },
     };
   }
   return {
@@ -255,11 +250,10 @@ const items = computed<DropdownMenuItem[][]>(() => {
     <UButton
       data-shot="user-menu"
       data-tour="user-menu"
-      v-bind="{
-        ...user,
-        label: collapsed ? undefined : user?.name,
-        trailingIcon: collapsed ? undefined : 'i-lucide-chevrons-up-down',
-      }"
+      :icon="user.icon"
+      :label="collapsed ? undefined : user.name"
+      :trailing-icon="collapsed ? undefined : 'i-lucide-chevrons-up-down'"
+      :aria-label="collapsed ? user.name : undefined"
       color="neutral"
       variant="ghost"
       block
@@ -268,7 +262,11 @@ const items = computed<DropdownMenuItem[][]>(() => {
       :ui="{
         trailingIcon: 'text-dimmed',
       }"
-    />
+    >
+      <template v-if="user.account" #leading>
+        <UserAvatar :account="user.account" size="2xs" />
+      </template>
+    </UButton>
 
     <template #chip-leading="{ item }">
       <div class="inline-flex items-center justify-center shrink-0 size-5">

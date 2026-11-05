@@ -1,7 +1,15 @@
+import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { isOAuthAvatarUrl, oauthAvatar } from '../../server/utils/user-avatar';
 import { profilePictureSrc } from '../../app/utils/user-avatar';
-import { accountPictureVersion, profilePictureVersion, uploadedPictureVersion } from '../../shared/user-avatar';
+import {
+  LETTER_AVATAR_COLORS,
+  accountInitials,
+  accountPictureVersion,
+  letterAvatarColor,
+  profilePictureVersion,
+  uploadedPictureVersion,
+} from '../../shared/user-avatar';
 
 const GITHUB = 'https://avatars.githubusercontent.com/u/583231?v=4';
 const GOOGLE = 'https://lh3.googleusercontent.com/a/ACg8ocJ=s96-c';
@@ -112,5 +120,93 @@ describe('accountPictureVersion', () => {
 
   test('matches the version the upload route answers', () => {
     expect(accountPictureVersion({ avatarKey: KEY, avatarUrl: null })).toBe(uploadedPictureVersion(KEY));
+  });
+});
+
+describe('accountInitials', () => {
+  const initials = (name: string | null, username = 'someone') => accountInitials({ name, username });
+
+  test('takes the first and last words of the display name', () => {
+    expect(initials('Jane Doe')).toBe('JD');
+    expect(initials('jane van der Berg')).toBe('JB');
+    expect(initials('Jean-Luc Picard')).toBe('JP');
+  });
+
+  test('falls back to the username when the display name is empty or blank', () => {
+    expect(initials(null, 'jane.doe')).toBe('JD');
+    expect(initials('', 'ci-uploader')).toBe('CU');
+    expect(initials('   ', 'jane_doe')).toBe('JD');
+  });
+
+  test('gives one letter for a name in one word', () => {
+    expect(initials('Avery')).toBe('A');
+    expect(initials(null, 'root')).toBe('R');
+  });
+
+  test('leaves out a part in parentheses or brackets', () => {
+    expect(initials('Avery (Admin)')).toBe('A');
+    expect(initials('Jane Doe [contractor]')).toBe('JD');
+    expect(initials('(Admin)', 'jane.doe')).toBe('JD');
+  });
+
+  test('reads an email address only before its @', () => {
+    expect(initials(null, 'jane.doe@example.com')).toBe('JD');
+    expect(initials('jane.doe@example.com')).toBe('JD');
+  });
+
+  test('keeps accents and scripts other than Latin', () => {
+    expect(initials('élodie Ørsted')).toBe('ÉØ');
+    expect(initials('e\u0301lodie')).toBe('É');
+    expect(initials('王小明')).toBe('王');
+    expect(initials('Ольга Петрова')).toBe('ОП');
+  });
+
+  test('is null when nothing holds a letter or a digit', () => {
+    expect(initials('---', '...')).toBeNull();
+    expect(initials('(Admin)', '___')).toBeNull();
+  });
+});
+
+describe('letterAvatarColor', () => {
+  test('gives an account the same color every time', () => {
+    for (const id of [1, 2, 42, 9001]) expect(letterAvatarColor(id)).toBe(letterAvatarColor(id));
+  });
+
+  test('spreads accounts over every color', () => {
+    const used = new Set(Array.from({ length: 60 }, (_, i) => letterAvatarColor(i + 1).hue));
+    expect(used.size).toBe(LETTER_AVATAR_COLORS.length);
+  });
+
+  /** WCAG 2 contrast ratio of two `#rrggbb` colors. */
+  function contrast(a: string, b: string): number {
+    const luminance = (hex: string) => {
+      const [r, g, bl] = [1, 3, 5].map((i) => {
+        const c = Number.parseInt(hex.slice(i, i + 2), 16) / 255;
+        return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r! + 0.7152 * g! + 0.0722 * bl!;
+    };
+    const [high, low] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    return (high! + 0.05) / (low! + 0.05);
+  }
+
+  test('every tint meets WCAG AA contrast in the light and the dark theme', () => {
+    for (const color of LETTER_AVATAR_COLORS) {
+      expect(contrast(color.light.background, color.light.text), `${color.hue} light`).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(color.dark.background, color.dark.text), `${color.hue} dark`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  test('uses no hue of a test outcome, a status color or the accent', () => {
+    const css = readFileSync(new URL('../../app/assets/css/main.css', import.meta.url), 'utf8');
+    const config = readFileSync(new URL('../../app/app.config.ts', import.meta.url), 'utf8');
+    const statusHues = [...css.matchAll(/--color-status-[\w-]+:\s*var\(--color-([a-z]+)-\d+\)/g)].map((m) => m[1]);
+    const configHues = [...config.matchAll(/^\s+(?:primary|success|error|warning|flaky|info): '([a-z]+)'/gm)].map(
+      (m) => m[1],
+    );
+    expect(statusHues.length).toBeGreaterThan(0);
+    expect(configHues).toContain('violet');
+    const reserved = new Set([...statusHues, ...configHues]);
+    for (const color of LETTER_AVATAR_COLORS) expect(reserved.has(color.hue), color.hue).toBe(false);
   });
 });
