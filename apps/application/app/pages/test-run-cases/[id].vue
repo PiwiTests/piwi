@@ -639,7 +639,7 @@ const moreMenuItems = computed<DropdownMenuItem[][]>(() => {
 const isDemoMode = Boolean(useRuntimeConfig().public.demoMode);
 let eventSource: EventSource | null = null;
 function connectToRunStream() {
-  if (!import.meta.client || isDemoMode || eventSource) return;
+  if (!import.meta.client || isDemoMode || eventSource || document.visibilityState === 'hidden') return;
   const runId = testCase.value?.testRun?.id;
   if (!runId) return;
   eventSource = new EventSource(`/api/test-runs/${runId}/stream`);
@@ -677,6 +677,16 @@ watch(
   { immediate: true },
 );
 onUnmounted(disconnectRunStream);
+// A hidden tab holds no stream. Shown again, the page reads the execution and its traces, whose files may have come
+// meanwhile, and listens again: the stream says at once when the run ended meanwhile.
+const visibility = useDocumentVisibility();
+watch(visibility, (state) => {
+  if (!runIsActive.value) return;
+  if (state === 'hidden') return disconnectRunStream();
+  refresh();
+  refreshTraces();
+  connectToRunStream();
+});
 
 // ── Section locator ─────────────────────────────────────────────────────────
 // A clue or diagnosis citation reveals the evidence it came from: the evidence

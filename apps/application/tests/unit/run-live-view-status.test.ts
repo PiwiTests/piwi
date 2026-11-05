@@ -18,6 +18,12 @@ describe('live-view readiness', () => {
     expect(runLiveViewStatus(run({ demo: true, connected: false, state: null })).kind).toBe('demo');
   });
 
+  test('a stream that stayed unopened says it stalled, and an open one never does', () => {
+    expect(runLiveViewStatus(run({ connected: false, state: null, stalled: true })).kind).toBe('stalled');
+    expect(runLiveViewStatus(run({ stalled: true })).kind).toBe('waiting');
+    expect(runLiveViewStatus(run({ desktop: true, connected: false, stalled: true })).kind).toBe('desktop');
+  });
+
   test('does not claim readiness from workers left over from a disconnected stream', () => {
     expect(runLiveViewStatus(run({ connected: false, workers: 2 })).kind).toBe('checking');
     expect(runLiveViewStatus(run({ state: null, workers: 2 })).kind).toBe('checking');

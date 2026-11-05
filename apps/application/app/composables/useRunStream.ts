@@ -15,6 +15,12 @@ import { subscribeDemoEvents } from '~/demo/run-events';
  *   server-side keep-alive. On tab focus it reconnects and immediately
  *   refreshes all subscribers so missed events are caught up.
  *
+ * A late first connection:
+ *   A run event published between the server render and the first
+ *   connection is never heard. The connection's first event says when the
+ *   server last published one: when it is later than the server render, the
+ *   subscribers refresh once, after hydration.
+ *
  * Error answers:
  *   The browser reconnects a dropped stream by itself, but gives up on one
  *   whose reconnection gets an error answer (a proxy's 502 while the instance
@@ -111,6 +117,20 @@ let reopenDelay = REOPEN_MIN_MS;
 let reopenTimer: ReturnType<typeof setTimeout> | null = null;
 /** Set while a connection reopened after an error answer has not opened yet: its subscribers refresh once it does. */
 let refreshOnOpen = false;
+/** Whether no connection of this page has opened yet, nor has the tab come back into view (which refreshes). */
+let firstOpen = true;
+/** When the server rendered the page, by the server's clock, which the stream's `lastEventAt` is read against. */
+let renderedAt: number | null = null;
+let nuxtApp: ReturnType<typeof useNuxtApp> | null = null;
+
+/** Refresh every subscriber, once the app has hydrated: a refetch while it hydrates answers with its loaded data. */
+function refreshAfterHydration() {
+  if (nuxtApp?.isHydrating) {
+    nuxtApp.hooks.hookOnce('app:suspense:resolve', refreshAfterHydration);
+    return;
+  }
+  for (const fn of subscribers) fn();
+}
 
 function openEventSource() {
   if (sharedEventSource || demoMode) return;
@@ -124,6 +144,7 @@ function openEventSource() {
     reopenDelay = REOPEN_MIN_MS;
     if (refreshOnOpen) {
       refreshOnOpen = false;
+      firstOpen = false;
       for (const fn of subscribers) fn();
     }
     notifyOpenListeners();
@@ -132,6 +153,12 @@ function openEventSource() {
   source.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data);
+      if (data?.type === 'stream-open') {
+        const late = firstOpen && typeof data.lastEventAt === 'number' && renderedAt !== null;
+        if (late && data.lastEventAt >= renderedAt!) refreshAfterHydration();
+        firstOpen = false;
+        return;
+      }
       notifySubscribers(data.type);
       if (data && typeof data.type === 'string') notifyEventListeners(data);
     } catch {
@@ -180,6 +207,7 @@ function handleVisibilityChange() {
     }
   } else if (subscribers.size > 0 || eventListeners.size > 0) {
     // Tab is visible again — reconnect and immediately refresh to catch up on missed events
+    firstOpen = false;
     openEventSource();
     for (const fn of subscribers) fn();
   }
@@ -196,6 +224,10 @@ function ensureConnection() {
   }
 
   demoMode = Boolean(useRuntimeConfig().public.demoMode);
+  if (!nuxtApp) {
+    nuxtApp = useNuxtApp();
+    renderedAt = useRenderedAt().value;
+  }
   if (demoMode) {
     if (demoUnsubscribe) return;
     demoUnsubscribe = subscribeDemoEvents((message) => {

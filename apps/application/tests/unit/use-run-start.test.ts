@@ -64,6 +64,7 @@ function stubBrowser(demoMode = false) {
   vi.stubGlobal('EventSource', FakeSource);
   vi.stubGlobal('useRuntimeConfig', () => ({ public: { demoMode } }));
   vi.stubGlobal('useNuxtApp', () => nuxtApp);
+  vi.stubGlobal('useRenderedAt', () => ({ value: 0 }));
   vi.stubGlobal('window', { addEventListener: () => {} });
   vi.stubGlobal('document', {
     get visibilityState() {

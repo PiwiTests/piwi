@@ -107,6 +107,8 @@ class RunEventBus {
   private liveResources = new Map<number, RunResourceTimelinePart[]>();
   /** Whether each live run's project declined the resources capability, read once per run. */
   private liveResourcesDeclined = new Map<number, boolean>();
+  /** When each project's last global run lifecycle event was published: `/api/stream` tells each new connection. */
+  private lastGlobalEventAt = new Map<number, number>();
 
   constructor() {
     // Allow many concurrent listeners (one per SSE connection)
@@ -263,7 +265,20 @@ class RunEventBus {
    * Broadcast a global run lifecycle event to all dashboard subscribers.
    */
   publishGlobal(event: GlobalRunEvent): void {
+    this.lastGlobalEventAt.set(event.projectId, Date.now());
     this.globalEmitter.emit('global', event);
+  }
+
+  /**
+   * When the last global run lifecycle event of a project `allows` was published since this server started, or null
+   * for none.
+   */
+  lastGlobalEvent(allows: (projectId: number) => boolean): number | null {
+    let last: number | null = null;
+    for (const [projectId, at] of this.lastGlobalEventAt) {
+      if (allows(projectId) && (last === null || at > last)) last = at;
+    }
+    return last;
   }
 
   /**

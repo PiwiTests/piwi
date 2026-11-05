@@ -611,6 +611,18 @@ export const HELP_TOPICS = {
     ].join('\n'),
     doc: 'features/live-view#share-a-run-from-your-machine',
   },
+  'run.live-stalled': {
+    title: 'Live updates stalled',
+    text: [
+      'This page has had no live connection for a few seconds: its results are as of the last time it had one. Two causes:',
+      '',
+      '- **No connection left** — over HTTP/1.1 (plain HTTP, or HTTPS without HTTP/2) a browser opens at most six connections to one address, and other Piwi pages hold them: the pages of running runs and their tests, in other tabs and windows. Close some, or serve Piwi through a proxy that speaks HTTP/2, which has no such limit.',
+      '- **The instance does not answer** — it is restarting, or a proxy in front of it refuses the connection.',
+      '',
+      '**Retry** opens a new connection.',
+    ].join('\n'),
+    doc: 'operate/deployment#reverse-proxy-https',
+  },
   'run.live-desktop': {
     title: 'Live view of a local run',
     text: [

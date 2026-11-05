@@ -1,4 +1,4 @@
-import { describe, test, expect, afterEach } from 'vitest';
+import { describe, test, expect, afterEach, vi } from 'vitest';
 import { runEventBus } from '../../server/utils/run-events';
 
 // The singleton bus is shared across tests, so each test uses its own run IDs
@@ -69,5 +69,30 @@ describe('runEventBus running cases', () => {
     runEventBus.cleanup(runId);
 
     expect(runEventBus.getRunningCases(runId)).toEqual([]);
+  });
+});
+
+describe('runEventBus last global event', () => {
+  test('says when the last run event of a project the caller may read went out', () => {
+    runEventBus.publishGlobal({ type: 'run-started', runId: 9201, projectId: 9201 });
+    const readable = runEventBus.lastGlobalEvent((projectId) => projectId === 9201);
+    expect(readable).toEqual(expect.any(Number));
+    expect(runEventBus.lastGlobalEvent((projectId) => projectId === 9202)).toBeNull();
+  });
+
+  test('says the latest of the projects the caller may read, never one of another project', () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_000_000);
+      runEventBus.publishGlobal({ type: 'run-started', runId: 9211, projectId: 9211 });
+      vi.setSystemTime(2_000_000);
+      runEventBus.publishGlobal({ type: 'run-started', runId: 9212, projectId: 9212 });
+      vi.setSystemTime(3_000_000);
+      runEventBus.publishGlobal({ type: 'run-started', runId: 9213, projectId: 9213 });
+      expect(runEventBus.lastGlobalEvent((projectId) => projectId === 9211 || projectId === 9212)).toBe(2_000_000);
+      expect(runEventBus.lastGlobalEvent((projectId) => projectId === 9211)).toBe(1_000_000);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
