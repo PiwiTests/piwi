@@ -199,7 +199,7 @@ export class FileHandler {
       name: a.name || 'attachment',
       path: path.resolve(a.path),
       contentType: a.contentType || 'application/octet-stream',
-      originalName: path.basename(a.path).replace(/\.{2,}/g, '.'),
+      originalName: pathAttachmentName(a.path),
     };
   }
 
@@ -213,8 +213,8 @@ export class FileHandler {
     const contentType = a.contentType || 'application/octet-stream';
     const baseName = safeFileName(a.name || 'attachment');
     const extension = BODY_EXTENSIONS[contentType] ?? '';
-    // A name that already ends in its type's extension (`notes.txt`) keeps it once.
-    const originalName = baseName.toLowerCase().endsWith(extension) ? baseName : `${baseName}${extension}`;
+    // A name whose extension is already its type's (`notes.txt`) keeps it once; `.png` is a name without one.
+    const originalName = path.extname(baseName).toLowerCase() === extension ? baseName : `${baseName}${extension}`;
     let filePath = this.bodyFiles.get(a);
     if (!filePath) {
       try {
@@ -383,6 +383,18 @@ export class FileHandler {
  * its extension and the staging prefix, it stays within the 255-byte file-name limit of common file systems.
  */
 const MAX_BASE_NAME_LENGTH = 200;
+
+/**
+ * A path attachment's file name, its runs of dots collapsed so it never holds `..`, and its extension kept where
+ * `path.extname` reads it, which the dashboard serves the file by (`shots/a..png` gives `a.png`, `..png` gives
+ * `.png.png`).
+ */
+function pathAttachmentName(file: string): string {
+  const base = path.basename(file);
+  const name = base.replace(/\.{2,}/g, '.');
+  const extension = path.extname(base);
+  return path.extname(name) === extension ? name : `${name}${extension}`;
+}
 
 /**
  * Attachment name reduced to characters safe in a file name, holding no `..`, not starting with `-` and not ending in

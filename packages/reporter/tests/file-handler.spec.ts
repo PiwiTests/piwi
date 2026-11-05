@@ -87,7 +87,7 @@ describe('FileHandler.findAllAttachments', () => {
       'build-v1.v2-diff.txt',
       'attachment',
       '.env.txt',
-      '.png',
+      '.png.png',
       'v1.txt',
     ]);
   });
@@ -161,6 +161,12 @@ describe('FileHandler.findAllAttachments', () => {
       contentType: 'image/png',
       originalName: 'The new code is not the expired one.png',
     });
+
+    // A name of dots and an extension keeps one `path.extname` reads, which the dashboard serves the file by.
+    const dotted = path.join(tmpDir, '..png');
+    fs.writeFileSync(dotted, 'png');
+    const [named] = handler.findAllAttachments(testCase([{ name: 'dots', contentType: 'image/png', path: dotted }]));
+    expect(named?.originalName).toBe('.png.png');
   });
 
   it('skips a body above the size limit and warns once per attachment', () => {
