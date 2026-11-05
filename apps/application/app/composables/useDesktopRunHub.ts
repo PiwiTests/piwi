@@ -1,10 +1,10 @@
 /**
  * Desktop shell only: the window's side of the hub the bundled server is for the Playwright runs the shell starts
  * (`server/utils/desktop-runs.ts`). One stream for the whole window (`GET /api/desktop/runs/events`), opened only
- * while the window wants it (`want`): while a run of the Local runs tray runs, or the hub still has a live run. While
- * it is open the window is a surface that answers stops, so a headless stop waits for it: the tray shows every stop
- * it hears (`onStop`), once, a stream that opens again included, and the stop waits there; closed, nobody here answers
- * and such a stop goes on at once, unless Piwi Picker follows the runs.
+ * while the window wants it (`want`, from `plugins/desktop-run-hub.client.ts`): while a run of the Local runs tray
+ * runs, or the hub still has a live run. While it is open the window is a surface that answers stops, so a headless
+ * stop waits for it: the tray shows every stop it hears (`onStop`), once, a stream that opens again included, and the
+ * stop waits there; closed, nobody here answers and such a stop goes on at once, unless Piwi Picker follows the runs.
  *
  * What it keeps: each live run as the hub last told it, what each code made at a stop came to, the codes and the
  * locators picked, to copy, and the workers whose **Watch live** is on, which the tray and the run page both turn on.

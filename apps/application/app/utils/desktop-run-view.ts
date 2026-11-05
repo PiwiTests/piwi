@@ -73,6 +73,50 @@ export function desktopHoldsByDefault(run: Pick<DesktopHoldRun, 'kind'>): boolea
   return run.kind === 'reproduce';
 }
 
+/** A run of the tray, as far as showing it live goes: its hold, its state and its steps' names on the hub. */
+export interface DesktopShownRun extends DesktopHoldRun {
+  key: number;
+  status: string;
+  hubRefs: readonly string[];
+}
+
+/**
+ * Why a run of the tray holds no failure whatever the person chooses: one nobody attends, by its kind
+ * (`desktopHoldRefusal`) or as the hub names its steps (`sessions`, the hub's live runs); null for one that can.
+ */
+export function desktopRunHoldRefusal(run: DesktopShownRun, sessions: readonly HubSession[]): string | null {
+  const refused = desktopHoldRefusal(run);
+  if (refused) return refused;
+  const unattended = sessions.some(
+    (session) => isUnattendedDesktopRun(session.ref) && run.hubRefs.includes(desktopRunOf(session.ref)),
+  );
+  return unattended ? 'Nobody attends a run of this kind: it goes on past each failure.' : null;
+}
+
+/** Whether a run of the tray holds its failures: the person's choice (`chosen`), else its kind's, when it can. */
+export function desktopRunHolds(
+  run: DesktopShownRun,
+  chosen: boolean | undefined,
+  sessions: readonly HubSession[],
+): boolean {
+  return !desktopRunHoldRefusal(run, sessions) && (chosen ?? desktopHoldsByDefault(run));
+}
+
+/**
+ * The runs the window shows live, so a failure no pause bar shows is held in them: the running ones whose Hold
+ * failures is on (`holds`, each run's choice by its key), by each step's name as the step starts, before its workers
+ * connect, so a failure right after they do waits too. Opening or closing the tray, or a run's part of it, changes
+ * nothing.
+ */
+export function desktopShownRefs(
+  runs: readonly DesktopShownRun[],
+  holds: Readonly<Record<number, boolean>>,
+  sessions: readonly HubSession[],
+): string[] {
+  const held = runs.filter((run) => run.status === 'running' && desktopRunHolds(run, holds[run.key], sessions));
+  return [...new Set(held.flatMap((run) => run.hubRefs))].sort();
+}
+
 /** Names a worker of a run, for what the window keeps of it (its answer, its image, its view). */
 export function desktopWorkerKey(ref: string, worker: number): string {
   return `${ref}|${worker}`;
@@ -223,6 +267,13 @@ export function desktopWorkerMeta(worker: HubWorker): string | null {
 /** Where a stop stands, relative to the run's folder: `tests/checkout.spec.ts:5`. */
 export function desktopStopPlace(stop: Pick<HubStop, 'uri' | 'line'>, root: string | null): string {
   return stopPlace(stop, root);
+}
+
+/** What the window says of a stop it hears: the test, and where it failed or stopped. */
+export function desktopStopSaid(session: HubSession, worker: HubWorker, stop: HubStop): string {
+  const test = desktopWorkerTest(worker) ?? desktopRunName(session);
+  const place = desktopStopPlace(stop, session.root);
+  return stop.reason === 'failure' ? `${test} failed at ${place}.` : `${test} stopped at ${place}.`;
 }
 
 /** The error a failure's stop names, its lines kept. */

@@ -13,14 +13,18 @@ import {
   desktopPickItem,
   desktopRunName,
   desktopRowWorker,
+  desktopRunHoldRefusal,
+  desktopRunHolds,
   desktopRunOf,
   desktopRunRef,
   desktopSessionsOfRun,
   desktopShareOffered,
   desktopShareWarning,
+  desktopShownRefs,
   desktopSteering,
   desktopStopLink,
   desktopStopPlace,
+  desktopStopSaid,
   desktopWorkerMeta,
   desktopWorkerState,
   isDesktopRunImage,
@@ -128,6 +132,48 @@ describe('a worker of a desktop run', () => {
     expect(desktopHoldsByDefault({ kind: 'reproduce' })).toBe(true);
     for (const kind of ['tests', 'repro', 'bisect', 'flake'] as const)
       expect(desktopHoldsByDefault({ kind })).toBe(false);
+  });
+
+  test('is shown live while it runs with Hold failures on, by its steps’ names, whatever the tray shows', () => {
+    const entry = (key: number, kind: 'tests' | 'reproduce' | 'bisect', hubRefs: string[], status = 'running') => ({
+      key,
+      kind,
+      status,
+      steps: [{ args: ['tests/a.spec.ts:3'] }],
+      hubRefs,
+    });
+    const tests = entry(1, 'tests', ['desktop-3', 'desktop-4']);
+    const reproduce = entry(2, 'reproduce', ['desktop-5']);
+    const bisect = entry(3, 'bisect', ['desktop-6']);
+    const done = entry(4, 'reproduce', ['desktop-2'], 'passed');
+    const runs = [tests, reproduce, bisect, done];
+    // A reproduction holds from its start; a run of tests once the person turns it on.
+    expect(desktopShownRefs(runs, {}, [])).toEqual(['desktop-5']);
+    expect(desktopShownRefs(runs, { 1: true, 2: false }, [])).toEqual(['desktop-3', 'desktop-4']);
+    // A bisect never holds, whatever is chosen; a run that ended is shown no more.
+    expect(desktopShownRefs(runs, { 3: true, 4: true }, [])).toEqual(['desktop-5']);
+    expect(desktopRunHolds(bisect, true, [])).toBe(false);
+    // The hub names a step nobody attends (a run repeating its tests): it holds nothing, and says why.
+    const unattended = [sessionOf('desktop-4-unattended', [workerOf()])];
+    expect(desktopRunHoldRefusal(tests, unattended)).toBe(
+      'Nobody attends a run of this kind: it goes on past each failure.',
+    );
+    expect(desktopShownRefs(runs, { 1: true }, unattended)).toEqual(['desktop-5']);
+    expect(desktopRunHoldRefusal(reproduce, unattended)).toBeNull();
+  });
+
+  test('says each stop it hears with its test and its place', () => {
+    const session = sessionOf('desktop-7', []);
+    expect(desktopStopSaid(session, workerOf(), stopOf({ reason: 'page-pause' }))).toBe(
+      'checkout › pays stopped at tests/checkout.spec.ts:5.',
+    );
+    expect(desktopStopSaid(session, workerOf(), stopOf({ reason: 'failure' }))).toBe(
+      'checkout › pays failed at tests/checkout.spec.ts:5.',
+    );
+    // Between tests, the run's name.
+    expect(desktopStopSaid(session, workerOf({ test: null }), stopOf())).toBe(
+      'Shop stopped at tests/checkout.spec.ts:5.',
+    );
   });
 
   test('says where it stands, with Pause while it runs and Resume, Step and Finish at a stop', () => {

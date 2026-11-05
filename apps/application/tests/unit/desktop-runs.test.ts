@@ -15,6 +15,7 @@ import { parsePairing } from '@piwitests/core/editor-send';
 import { lineReader, parseRecordChannel } from '@piwitests/core/ide-recorder';
 import { LIVE_SHARE_MISSING } from '@piwitests/core/live-view';
 import { parseHubToRun, type HubToRun, type RunTake, type RunToHub } from '@piwitests/core/run-channel';
+import { writeDiscovery } from '@piwitests/editor/discovery';
 import type { ToolResult } from '@piwitests/editor/run-host';
 import {
   parseHubMessage,
@@ -47,6 +48,8 @@ const SPEC =
 
 let folder = '';
 let worktree = '';
+/** The editors' discovery folder the hub names its peers from. */
+let editors = '';
 let runs: DesktopRuns;
 let channel: { path: string; token: string };
 
@@ -248,6 +251,8 @@ async function paired(): Promise<Picker> {
 beforeAll(async () => {
   folder = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-desktop-runs-')));
   worktree = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-desktop-worktree-')));
+  editors = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-desktop-editors-')));
+  fs.chmodSync(editors, 0o700);
   fs.mkdirSync(path.join(folder, 'tests'));
   fs.writeFileSync(path.join(folder, 'tests', 'checkout.spec.ts'), SPEC);
   fs.mkdirSync(path.join(worktree, 'tests'));
@@ -262,6 +267,8 @@ beforeAll(async () => {
     lingerMs: 50,
     requestMs: 2000,
     agentIdleMs: AGENT_IDLE_MS,
+    editorsDir: editors,
+    peersMs: 50,
   });
   channel = parseRecordChannel(runs.runChannel!)!;
 });
@@ -270,6 +277,7 @@ afterAll(() => {
   runs?.close();
   fs.rmSync(folder, { recursive: true, force: true });
   fs.rmSync(worktree, { recursive: true, force: true });
+  fs.rmSync(editors, { recursive: true, force: true });
 });
 
 describe('the run channel the shell names in a run', () => {
@@ -368,8 +376,46 @@ describe('the hub Piwi Picker reaches', () => {
         client: DESKTOP_HUB_CLIENT,
         roots: [folder],
         startedAt: expect.stringMatching(/^\d{4}-/),
+        features: ['peers'],
       },
     ]);
+  });
+
+  it('names the editors’ hubs of this machine to Piwi Picker as its peers, never with their tokens', async () => {
+    const picker = await paired();
+    const raw: string[] = [];
+    picker.socket.on('message', (data) => void raw.push(String(data)));
+    picker.send({ type: 'subscribe', id: 1 });
+    expect(await waitFor(() => picker.messages.find((m) => m.type === 'peers'))).toEqual({ type: 'peers', hubs: [] });
+    writeDiscovery(editors, {
+      pid: process.pid,
+      host: os.hostname(),
+      version: '0.67.0',
+      client: 'Visual Studio Code',
+      startedAt: '2026-11-05T10:00:00.000Z',
+      roots: ['/work/shop'],
+      hub: { url: 'ws://127.0.0.1:54001/piwi/hub', token: 'token-of-the-editor-hub' },
+      runChannel: null,
+      recorderBundle: null,
+    });
+    const named = await waitFor(() => picker.messages.find((m) => m.type === 'peers' && m.hubs.length === 1));
+    expect(named).toEqual({
+      type: 'peers',
+      hubs: [
+        {
+          url: 'ws://127.0.0.1:54001/piwi/hub',
+          pid: process.pid,
+          version: '0.67.0',
+          client: 'Visual Studio Code',
+          roots: ['/work/shop'],
+          startedAt: '2026-11-05T10:00:00.000Z',
+        },
+      ],
+    });
+    // What the hub sends names no token: the reader would drop one anyway.
+    expect(raw.join('\n')).not.toContain('token-of-the-editor-hub');
+    for (const file of fs.readdirSync(editors)) fs.rmSync(path.join(editors, file));
+    picker.socket.close();
   });
 
   it('opens only for an extension that names it as this machine, and after hello with the desktop token', async () => {
@@ -397,6 +443,7 @@ describe('the hub Piwi Picker reaches', () => {
       client: DESKTOP_HUB_CLIENT,
       roots: [folder],
       keepaliveMs: 200,
+      features: ['peers'],
     });
     // Its keepalive, and its closed set of commands.
     await waitFor(() => picker.messages.find((m) => m.type === 'keepalive'));
@@ -554,6 +601,28 @@ describe('a failure no pause bar shows', () => {
 });
 
 describe('the window', () => {
+  it('hears how many runs the hub has live, as a run starts and once it ended, with no stream of its own', async () => {
+    // The runs of the tests before end once they lingered.
+    await waitFor(() => runs.liveRunCount() === 0);
+    const heard: number[] = [];
+    const off = runs.onLiveRunCount((live) => heard.push(live));
+    const worker = new Worker(folder).attach('desktop-21');
+    worker.begin();
+    await waitFor(() => heard.length === 1);
+    expect(runs.liveRunCount()).toBe(1);
+    // Its workers gone, the run ends once it lingered.
+    worker.socket.destroy();
+    await waitFor(() => heard.length === 2);
+    expect(heard).toEqual([1, 0]);
+    off();
+    const again = new Worker(folder).attach('desktop-22');
+    again.begin();
+    await waitFor(() => runs.liveRunCount() === 1);
+    again.socket.destroy();
+    await waitFor(() => runs.liveRunCount() === 0);
+    expect(heard).toEqual([1, 0]);
+  });
+
   it('names its stream, and refuses a command of a stream that is not open or that is no command', async () => {
     const window = await openWindow();
     expect(window.events[0]).toEqual({ type: 'hello', viewer: window.viewer });

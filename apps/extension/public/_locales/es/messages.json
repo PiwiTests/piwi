@@ -779,7 +779,7 @@
     "message": "Aplicación de escritorio"
   },
   "options_desktopHint": {
-    "message": "Opcional. Vinculado a la aplicación de escritorio Piwi Dashboard, Reproducir puede pedirle que ejecute un informe de error con Playwright en tu proyecto."
+    "message": "Opcional. Vinculado a la aplicación de escritorio Piwi Dashboard, Reproducir puede pedirle que ejecute un informe de error con Playwright en tu proyecto. Las ejecuciones que inicia también aparecen en la ventana Ejecuciones (Ejecuciones, en el menú de la extensión)."
   },
   "options_desktopUrl": {
     "message": "Dirección de la aplicación de escritorio"
@@ -1201,7 +1201,7 @@
     "message": "Enviar al editor"
   },
   "options_editorHint": {
-    "message": "En VS Code o un IDE de JetBrains con la extensión Piwi, ejecuta «Piwi: Pair with Piwi Picker» y pega aquí la dirección que copia. Los locators elegidos y los pasos grabados se pueden enviar entonces a ese editor, solo en este equipo, y se insertan en su cursor."
+    "message": "En VS Code o un IDE de JetBrains con la extensión Piwi, ejecuta «Piwi: Pair with Piwi Picker» y pega aquí la dirección que copia. Los locators elegidos y los pasos grabados se pueden enviar entonces a ese editor, solo en este equipo, y se insertan en su cursor. Las ejecuciones que inicia aparecen entonces en la ventana Ejecuciones (Ejecuciones, en el menú de la extensión), donde puedes pausarlas, avanzarlas paso a paso y verlas."
   },
   "options_editorAddress": {
     "message": "Dirección de emparejamiento"
@@ -6231,6 +6231,9 @@
   "popup_runsHintNone": {
     "message": "Pausar, paso, reanudar"
   },
+  "popup_runsHintAway": {
+    "message": "Sin conexión: ver por qué"
+  },
   "popup_runsHint_one": {
     "message": "$count$ ejecución en el editor",
     "placeholders": {
@@ -6325,6 +6328,15 @@
       }
     }
   },
+  "runs_runAway": {
+    "message": "Como se vio por última vez: los controles vuelven cuando $editor$ responda de nuevo.",
+    "placeholders": {
+      "editor": {
+        "content": "$1",
+        "example": "Visual Studio Code"
+      }
+    }
+  },
   "runs_editor": {
     "message": "tu editor"
   },
@@ -6371,7 +6383,10 @@
     "message": "La extensión de Piwi de tu editor no puede compartir sus ejecuciones: actualízala."
   },
   "runs_statusUnproven": {
-    "message": "El programa del puerto emparejado no es este editor: Piwi Picker no le envió nada y vuelve a preguntar en un momento. Si tu editor pasó a otro puerto, vuelve a emparejar Piwi Picker con él en la configuración."
+    "message": "El programa del puerto emparejado no es este editor: Piwi Picker no le envió nada y vuelve a preguntar cada minuto mientras esta ventana esté abierta. Si tu editor pasó a otro puerto, vuelve a emparejar Piwi Picker con él en la configuración."
+  },
+  "runs_statusNotEditor": {
+    "message": "El programa del puerto emparejado no es la extensión de Piwi de tu editor, o es una demasiado antigua para demostrarlo: Piwi Picker no le envió nada. Abre tu editor, vuelve a ejecutar «Piwi: Pair with Piwi Picker» y pega en la configuración la dirección que copia."
   },
   "runs_statusNoHub": {
     "message": "Tu editor responde, pero ninguna de sus ventanas comparte sus ejecuciones: actualiza allí la extensión de Piwi."
@@ -6393,24 +6408,6 @@
   },
   "runs_followingDesktop": {
     "message": "Siguiendo la aplicación de escritorio"
-  },
-  "runs_followingWithDesktop_one": {
-    "message": "Siguiendo $count$ ventana del editor y la aplicación de escritorio",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "1"
-      }
-    }
-  },
-  "runs_followingWithDesktop_other": {
-    "message": "Siguiendo $count$ ventanas del editor y la aplicación de escritorio",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "2"
-      }
-    }
   },
   "runs_statusDesktopSearching": {
     "message": "Buscando las ejecuciones de la aplicación de escritorio…"
@@ -6678,7 +6675,7 @@
     "message": "Iniciando la vista en directo…"
   },
   "runs_liveLost": {
-    "message": "La vista en directo terminó: se perdió la conexión con el editor. Vuelve a usar Ver en directo cuando regrese."
+    "message": "Se perdió la conexión con el editor: la vista en directo vuelve a empezar cuando regrese."
   },
   "runs_liveHint": {
     "message": "Tus clics, la rueda y tus teclas sobre la vista van a la página del test. Esc devuelve las teclas a esta ventana; Mayús+clic elige un locator."

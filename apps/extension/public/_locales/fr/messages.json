@@ -779,7 +779,7 @@
     "message": "Application de bureau"
   },
   "options_desktopHint": {
-    "message": "Facultatif. Associé à l’application de bureau Piwi Dashboard, Rejouer peut lui demander de lancer un rapport de bug avec Playwright dans votre projet."
+    "message": "Facultatif. Associé à l’application de bureau Piwi Dashboard, Rejouer peut lui demander de lancer un rapport de bug avec Playwright dans votre projet. Les exécutions qu’elle lance s’affichent aussi dans la fenêtre Exécutions (Exécutions, dans le menu de l’extension)."
   },
   "options_desktopUrl": {
     "message": "Adresse de l’application de bureau"
@@ -1201,7 +1201,7 @@
     "message": "Envoyer à l’éditeur"
   },
   "options_editorHint": {
-    "message": "Dans VS Code ou un IDE JetBrains avec l’extension Piwi, lancez la commande Piwi « Pair with Piwi Picker » et collez ici l’adresse copiée. Les locators choisis et les étapes enregistrées peuvent alors être envoyés à cet éditeur, sur cet ordinateur uniquement, et sont insérés à son curseur."
+    "message": "Dans VS Code ou un IDE JetBrains avec l’extension Piwi, lancez la commande Piwi « Pair with Piwi Picker » et collez ici l’adresse copiée. Les locators choisis et les étapes enregistrées peuvent alors être envoyés à cet éditeur, sur cet ordinateur uniquement, et sont insérés à son curseur. Les exécutions qu’il lance s’affichent alors dans la fenêtre Exécutions (Exécutions, dans le menu de l’extension), où vous les mettez en pause, les avancez pas à pas et les regardez."
   },
   "options_editorAddress": {
     "message": "Adresse d’association"
@@ -6231,6 +6231,9 @@
   "popup_runsHintNone": {
     "message": "Pause, pas à pas, reprise"
   },
+  "popup_runsHintAway": {
+    "message": "Non connecté : voir pourquoi"
+  },
   "popup_runsHint_one": {
     "message": "$count$ exécution dans l’éditeur",
     "placeholders": {
@@ -6325,6 +6328,15 @@
       }
     }
   },
+  "runs_runAway": {
+    "message": "Tel que vu en dernier : les commandes reviennent dès que $editor$ répond à nouveau.",
+    "placeholders": {
+      "editor": {
+        "content": "$1",
+        "example": "Visual Studio Code"
+      }
+    }
+  },
   "runs_editor": {
     "message": "votre éditeur"
   },
@@ -6371,7 +6383,10 @@
     "message": "L’extension Piwi de votre éditeur ne partage pas ses exécutions : mettez-la à jour."
   },
   "runs_statusUnproven": {
-    "message": "Le programme sur le port associé n’est pas cet éditeur : Piwi Picker ne lui a rien envoyé, et redemande dans un instant. Si votre éditeur a changé de port, associez à nouveau Piwi Picker à votre éditeur dans les réglages."
+    "message": "Le programme sur le port associé n’est pas cet éditeur : Piwi Picker ne lui a rien envoyé, et redemande chaque minute tant que cette fenêtre est ouverte. Si votre éditeur a changé de port, associez à nouveau Piwi Picker à votre éditeur dans les réglages."
+  },
+  "runs_statusNotEditor": {
+    "message": "Le programme sur le port associé n’est pas l’extension Piwi de votre éditeur, ou une trop ancienne pour le prouver : Piwi Picker ne lui a rien envoyé. Ouvrez votre éditeur, relancez la commande Piwi « Pair with Piwi Picker » et collez dans les réglages l’adresse copiée."
   },
   "runs_statusNoHub": {
     "message": "Votre éditeur répond, mais aucune de ses fenêtres ne partage ses exécutions : mettez à jour l’extension Piwi."
@@ -6393,24 +6408,6 @@
   },
   "runs_followingDesktop": {
     "message": "Application de bureau suivie"
-  },
-  "runs_followingWithDesktop_one": {
-    "message": "$count$ fenêtre d’éditeur et l’application de bureau suivies",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "1"
-      }
-    }
-  },
-  "runs_followingWithDesktop_other": {
-    "message": "$count$ fenêtres d’éditeur et l’application de bureau suivies",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "2"
-      }
-    }
   },
   "runs_statusDesktopSearching": {
     "message": "Recherche des exécutions de l’application de bureau…"
@@ -6678,7 +6675,7 @@
     "message": "Démarrage de la vue en direct…"
   },
   "runs_liveLost": {
-    "message": "La vue en direct s’est arrêtée : la connexion à l’éditeur a été perdue. Activez de nouveau Voir en direct une fois la connexion revenue."
+    "message": "La connexion à l’éditeur a été perdue : la vue en direct reprend une fois la connexion revenue."
   },
   "runs_liveHint": {
     "message": "Vos clics, la molette et vos touches sur la vue vont à la page du test. Échap rend les touches à cette fenêtre ; Maj+clic choisit un locator."

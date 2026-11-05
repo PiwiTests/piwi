@@ -9,8 +9,9 @@ import {
   type DiscoveryFolder,
   type EditorDiscovery,
 } from '@piwitests/core/editor-discovery';
-import { formatRecordChannel } from '@piwitests/core/ide-recorder';
+import { formatRecordChannel, parseRecordChannel } from '@piwitests/core/ide-recorder';
 import { RUN_CHANNEL_ENV, RUN_REF_ENV, TERMINAL_REF_PREFIX } from '@piwitests/core/run-channel';
+import { isRunOriginKind, type RunInteractive } from '@piwitests/core/wire';
 import { detectCi } from '../support/ci.js';
 import { isMergeReports } from '../support/run-mode.js';
 import { PIWI_ORIGIN_ENV } from './env.js';
@@ -198,4 +199,28 @@ export function followEditor(
   } catch {
     return null;
   }
+}
+
+/**
+ * The name a run's workers give the hub of its run channel (`PIWI_RUN_REF`, else `PIWI_ORIGIN_REF`) when the run names
+ * a channel (`PIWI_RUN_CHANNEL`) and the name is one a hub takes; null when its workers connect to no hub.
+ */
+export function runChannelRef(env: NodeJS.ProcessEnv): string | null {
+  if (!parseRecordChannel(env[RUN_CHANNEL_ENV])) return null;
+  const ref = env[RUN_REF_ENV] ?? env[PIWI_ORIGIN_ENV.ref];
+  return ref && /^[\w-]{1,64}$/.test(ref) ? ref : null;
+}
+
+/**
+ * The hub that steers the run, as the run's `piwiInteractive` metadata names it: a run whose workers connect to a hub
+ * (`runChannelRef`) is interactive. Its client is the editor the run follows, by its discovery file's name (`editor`
+ * when the file gives none), else the launcher `PIWI_ORIGIN` names, null when nothing names one. Null for a run that
+ * follows no hub.
+ */
+export function runInteractive(env: NodeJS.ProcessEnv, followed: FollowedEditor | null): RunInteractive | null {
+  const ref = runChannelRef(env);
+  if (!ref) return null;
+  const origin = env[PIWI_ORIGIN_ENV.kind]?.trim();
+  const client = followed ? (followed.editor.client ?? 'editor') : isRunOriginKind(origin) ? origin : null;
+  return { client, ref };
 }

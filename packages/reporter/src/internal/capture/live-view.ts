@@ -649,6 +649,7 @@ function startView(): void {
   const mask = maskSecretFields(page, {
     masks: () => own.masks,
     quality: LIVE_FRAME_QUALITY,
+    lightQuality: LIGHT_QUALITY,
     maxBytes: MAX_LIVE_FRAME,
   });
   const opened = openPageView(page, {

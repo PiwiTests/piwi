@@ -1,5 +1,5 @@
 import type { BrowserConfig } from '#shared/types';
-import type { RunOrigin } from '@piwitests/core/wire';
+import type { RunInteractive, RunOrigin } from '@piwitests/core/wire';
 import type { ServerLogEntry, ServerSpanEntry } from '~~/types/api';
 
 /**
@@ -79,6 +79,8 @@ export interface RunMetadata {
   piwiOrigin?: RunOrigin | null;
   /** The launcher's name for the run (`PIWI_RUN_REF`); read through `runLauncherRef` in `#shared/run-eligibility`. */
   piwiRunRef?: string | null;
+  /** The local hub that steers the run (`RunInteractive`), kept as `parseRunInteractive` reads it. */
+  piwiInteractive?: RunInteractive | null;
   htmlReport?: {
     projects?: Array<{
       name?: string | null;

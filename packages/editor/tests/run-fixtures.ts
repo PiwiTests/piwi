@@ -5,6 +5,7 @@
  */
 import * as fs from 'node:fs';
 import * as net from 'node:net';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { pathToFileURL } from 'node:url';
@@ -79,6 +80,8 @@ export async function service(
   const stop = startServer(createConnection(toServer, toClient), {
     env: { PIWI_DESKTOP_CONFIG: '/nonexistent' },
     publish: (discovery) => void published.push(discovery),
+    // No editor of this machine is a peer of the service under test.
+    editorsDir: path.join(os.tmpdir(), 'piwi-no-editors-here'),
     ...options,
   });
   const client = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));

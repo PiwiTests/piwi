@@ -785,9 +785,11 @@ and the popup's Runs tile only ask the worker, and the worker handles the run sh
    IDE's `…/send` takes a POST alone). The answer must carry `editorTokenProof` for the port the request was sent to,
    compared in constant time.
    - An endpoint without the proof, or with a wrong one, gets nothing, and no hub kept is connected (`unproven`,
-     asked again later).
-   - One answering 404 without it predates the proof (`outdated`). Send to editor then asks to update the editor's
-     Piwi extension or plugin (`common_editorOutdated`).
+     asked again on the backoff `UNPROVEN_RETRIES` times in a row at most, then only as a window asks, the pairing
+     changes or the minute's look again comes).
+   - One answering 404 without it is no editor's Piwi extension of this age (`not-editor` in the Runs window, which
+     drops the hubs kept). Send to editor asks to update the editor's Piwi extension or plugin
+     (`common_editorOutdated`).
 4. Then `GET …/live` with the pairing's token as a bearer token. `parseLiveAnswer` reads the answer: each hub's
    address and token, the address on 127.0.0.1 whatever loopback name the editor gave it (a remote VS Code window
    lists its hub at the port it forwards). The token goes in `hello` before the hub proves anything, so a hub named
@@ -818,9 +820,16 @@ The hubs are found again:
 - when a hub's connection fails, after a wait of 1 s that doubles up to 30 s. The count of failures starts again only
   once a connection opens, never because another hub's runs change. With no Runs window open the worker tries four
   times in a row, then waits to be asked; while a Runs window is open it tries without end;
+- when a hub names a peer no hub found holds (`peers`, an editor window opened since), once for each such peer: a
+  peer carries no token, which the editor's `…/live` gives;
+- every minute (`REFIND_MS`) while a Runs window is open;
 - when the popup, the Runs window or the run shortcut asks.
 
-An unreachable editor leaves the hubs found last to try.
+An unreachable editor leaves the hubs found last to try. A hub whose connection was lost keeps its runs as last heard
+(`away`), which `state` lists with the hub not connected, until it tells its runs again, it refuses its token, or it is
+no longer named; ten minutes at most, and none for a hub whose service said it stopped (1001), which starts again at
+another address. The run shortcut and the popup's count read the runs of the hubs that answer alone (`answeringRuns`). The Runs window shows such a run grayed, its controls held, and its Watch live
+starts again once the hub answers.
 
 ### A connection per hub
 
@@ -875,8 +884,9 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
 - The popup's **Runs** tile opens it (`piwi-open-runs`). An open one is brought to the front, found from its port or
   `runtime.getContexts`. Otherwise the worker opens it in a small window of its own
   (`windows.create({ type: 'popup' })`).
-- The tile asks `piwi-runs-summary`, and shows only while a hub answers. Both messages are the extension pages' alone
-  (`EXTENSION_PAGE_MESSAGES`).
+- The tile asks `piwi-runs-summary`, and shows while an editor or the desktop app is paired: muted while none of its
+  hubs answers, its line saying the window tells why (`popup_runsHintAway`). Both messages are the extension pages'
+  alone (`EXTENSION_PAGE_MESSAGES`).
 - The window talks only to the worker, through the port `RUNS_PORT`. The worker takes that port from `runs.html` alone
   (`fromRunsPage`: the extension's id and the page's address), and reads its messages with `parseRunsRequest`. The
   state the worker posts (`RunsState`) carries no token, and the window makes no network call.
@@ -920,9 +930,10 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
   the image's place once one is decoded (aside first, the latest one waiting meanwhile, the others dropped), at the
   window's width, its aspect kept, with a still **Live** badge. Neither the frames nor the badge are read out: the
   view's name says it is live. The view ends with its stop, as the window hides (`visibilitychange`) or closes, and
-  when the person turns it off. While it stays on (`watchLive`), each next stop of the worker is watched too, and the
-  window watches again as it shows. A view whose hub's connection was lost shows as ended, with why, and is not asked
-  again at that stop. When the hub says why the view sends no frame (`refused`: the page is too heavy for it), its
+  when the person turns it off. While it stays on (`watchLive`, kept by run and slot, `slotKey`), each next stop of the
+  worker is watched too, a worker Playwright starts in its place after a failure included, and the window watches
+  again as it shows. A view whose hub's connection was lost shows as ended, with why, and starts again at its stop once
+  the hub answers. When the hub says why the view sends no frame (`refused`: the page is too heavy for it), its
   sentence shows under the stop's image in place of the view's start, and is read out, until a frame comes.
 - Where the stop takes `input` from the window (only while it watches), the view takes `tabindex=0`, a focus ring and
   the name that says keys and clicks go to the page, and plays them there (`ViewInputBatcher`,
@@ -955,8 +966,12 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
   again (Step, at the next stop); meanwhile another control of the same worker holds it.
 - `#announce` (a polite live region) says when a test stops, goes on, or a run ends, and what a command answered
   under the test.
-- The line under the heading says the window follows the editor while any of its hubs is connected, and the desktop
-  app while its hub is. A run of the app's hub is marked **Desktop app** beside its name. The app holds no editor: it
+- The lines under the heading say how each paired tool stands, one each: the editor's windows it follows, the desktop
+  app's hub, or why one follows none (the empty box's sentence, which the box leaves to the line while there are runs),
+  a broken pairing included. A run of a hub not connected now shows grayed and as last heard (`.run.away`), its
+  controls held (`aria-disabled`, and `send` sends nothing) until the hub answers. A command the worker does not answer
+  within `COMMAND_TIMEOUT_MS` answers `timeout` and frees its buttons. A run of the app's hub is marked **Desktop app**
+  beside its name. The app holds no editor: it
   declines Pick, Record and Assert, which its stops never offer, and the code a stop makes goes to the app's window to
   copy, the hub's sentence saying so (`…: copy it in the desktop app's window.`). With no editor paired, the empty box
   says what the app answered.

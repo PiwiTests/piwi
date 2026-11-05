@@ -413,6 +413,8 @@ let startingSteps = 0;
 let pendingEvents: LocalRunEventPayload[] = [];
 const runByShellId = new Map<number, LocalRun>();
 const exitResolvers = new Map<number, (code: number | null) => void>();
+/** Who hears each run's end (`onRunEnded`), before the tray can drop it. */
+const endListeners = new Set<(run: LocalRun) => void>();
 let toastApi: ReturnType<typeof useToast> | null = null;
 let routerApi: ReturnType<typeof useRouter> | null = null;
 let optionsLoaded = false;
@@ -430,6 +432,10 @@ export function useDesktopLocalRuns() {
   /** A worker of a hub's run the tray is asked to show (`showWorker`), until the tray has shown it. */
   const shownWorker = useState<{ ref: string; worker: number } | null>('desktop-local-runs-shown-worker', () => null);
   const optionsByProject = useState<Record<string, SavedLocalRunOptions>>('desktop-local-run-options', () => ({}));
+  /** Each run's Hold failures choice, by its key; unset falls back to its kind's (`desktopHoldsByDefault`). */
+  const holds = useState<Record<number, boolean>>('desktop-local-runs-holds', () => ({}));
+  /** How many Local runs trays are mounted: none on a page without the default layout (TV mode, an error page). */
+  const trayMounts = useState<number>('desktop-local-runs-tray-mounts', () => 0);
   if (import.meta.client) {
     toastApi = useToast();
     routerApi = useRouter();
@@ -592,6 +598,13 @@ export function useDesktopLocalRuns() {
       if (run.kind === 'repro') await finishRepro(run);
       if (run.jobRequestId) await finishJob(run);
       run.finishedAt = Date.now();
+      for (const listener of endListeners) {
+        try {
+          listener(run);
+        } catch {
+          // One listener failing must not keep the run from ending.
+        }
+      }
       notifyFinished(run);
       trimFinished();
     }
@@ -995,7 +1008,12 @@ export function useDesktopLocalRuns() {
     const tracked = runs.value[0]!;
     trayOpen.value = true;
     if (localRunOriginKind(tracked.kind)) void captureBaseline(tracked).then(() => drive(tracked));
-    else void drive(tracked);
+    else {
+      // A Flake Lab session, which no Piwi run is linked to, starts at once: its lab runs begin once its worktree is
+      // checked out and installed, and the baseline its stop takes them off the OS progress by is taken meanwhile.
+      void captureBaseline(tracked);
+      void drive(tracked);
+    }
     return tracked;
   }
 
@@ -1113,9 +1131,10 @@ export function useDesktopLocalRuns() {
   /**
    * Record the project's newest Piwi run id. `spawn` awaits it before starting
    * the process, so the run this local process produces (the reporter finds the
-   * app via `~/.piwi/desktop.json`) is newer than the baseline. A lookup that
-   * fails or takes longer than `BASELINE_TIMEOUT_MS` leaves no baseline: the run
-   * starts, without a Piwi link.
+   * app via `~/.piwi/desktop.json`) is newer than the baseline; a Flake Lab
+   * session does not wait for it. A lookup that fails or takes longer than
+   * `BASELINE_TIMEOUT_MS` leaves no baseline: the run starts, without a Piwi
+   * link.
    */
   async function captureBaseline(run: LocalRun) {
     try {
@@ -1358,6 +1377,13 @@ export function useDesktopLocalRuns() {
     runs,
     trayOpen,
     shownWorker,
+    holds,
+    trayMounts,
+    /** Hears each run's end, its status, exit code and verdict set, before the tray can drop it; returns the unsubscribe. */
+    onRunEnded(listener: (run: LocalRun) => void): () => void {
+      endListeners.add(listener);
+      return () => endListeners.delete(listener);
+    },
     showWorker,
     activeCount,
     startRun,

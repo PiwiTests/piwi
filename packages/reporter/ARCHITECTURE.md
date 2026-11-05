@@ -116,6 +116,10 @@ What the package does to a user's run, process by process.
 - The run's name on it, its `run-attach`'s `ref`, is `PIWI_RUN_REF` when set, else `PIWI_ORIGIN_REF`. The desktop app
   sets `PIWI_RUN_REF` (`desktop-<its run id>`) on the runs it starts, whose `PIWI_ORIGIN_REF` names the failure cluster
   or bug report they were started for; its bundled server is their hub.
+- A run whose workers connect to a hub (`runChannelRef` in `internal/config/editors.ts`, which `openRunChannel` reads
+  too) says so in its metadata from `onBegin`: `piwiInteractive`, `{ client, ref }` (`runInteractive`), the hub's
+  client being the editor it follows by its discovery file's name, else the launcher `PIWI_ORIGIN` names. The
+  dashboard sends no `test.stuck` for such a run.
 - `PIWI_RUN_CHANNEL` names the same local socket as `PIWI_RECORD_CHANNEL`. Each worker
   connects to it in the `piwiResources` worker fixture, before its first test (it waits
   2 seconds at most), and stays connected until the worker ends. The messages are defined
@@ -158,8 +162,13 @@ What the package does to a user's run, process by process.
   or, for a stop whose page the worker cannot tell, any page of its context closed) ends
   the same way with or without a bar, and the editor gets `running`.
 - The editor can ask for an image of the stopped page: a JPEG screenshot without the
-  pause bar, taken through an internal call. It gets none for a stop whose page the
-  worker cannot tell (a navigation or a key press in a context with several pages).
+  pause bar, at the viewport's size in CSS pixels, its secret fields painted over
+  (`maskedImage`), taken through an internal call. It gets none for a stop whose page the
+  worker cannot tell (a navigation or a key press in a context with several pages), and
+  none of another shape than the viewport's. The live view's frames are painted over as
+  the instance's are (`maskSecretFields`). The titles of the stops and calls the run
+  channel tells, and the call the pause bar and the terminal name, go through
+  `hideTypedText` and `hideSecretsInText`.
 - At a stop the bar shows, the editor can start the bar's **Pick a locator** or **Record
   here** (an intent: a `request` with `what: 'pick' | 'record'` that names the stop).
   `BarIntents` (`pause-at.ts`) hands it to the bar, which takes it as a click on its own

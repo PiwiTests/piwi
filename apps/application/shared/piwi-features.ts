@@ -535,6 +535,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/runs-window',
       },
       {
+        title: 'Piwi Picker and your editor',
+        summary:
+          'One pairing reaches every VS Code and JetBrains window on your machine: the editor proves it holds the token before Piwi Picker sends it, a window opened later is found within seconds, and the Runs window says how each paired tool stands.',
+        needs: ['extension'],
+        where: 'Browser extension → Settings → Send to editor',
+        doc: 'features/editor-pairing',
+      },
+      {
         title: 'Breakpoints in the browser',
         summary:
           "Set a breakpoint in VS Code or a JetBrains IDE: the next run Piwi starts pauses there in a headed browser, with Piwi's bar to resume, step, or pick a locator that replaces the one on that line.",

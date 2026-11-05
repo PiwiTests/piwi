@@ -1490,7 +1490,8 @@ test.describe('the desktop app’s runs', () => {
       await expect(popup.getByRole('button', { name: /Runs/ })).toBeVisible();
       await popup.close();
       const runs = await openRuns(context, extensionId);
-      await expect(runs.getByText('Following 1 editor window and the desktop app')).toBeVisible();
+      // A line for each paired tool.
+      await expect(runs.locator('#hubs > p')).toHaveText(['Following 1 editor window', 'Following the desktop app']);
 
       const run = new FakeWorker(desktop.channel.path, editor.dir).attach(desktop.channel.token, 'desktop-7', 0, [
         ...RUN_TAKES,
@@ -1551,6 +1552,26 @@ test.describe('the desktop app’s runs', () => {
     } finally {
       await context.close();
       await desktop.close();
+    }
+  });
+
+  test('say when the desktop app stops answering, on a line of its own beside the editor’s', async () => {
+    const desktop = await startDesktop(editor.dir);
+    const { context, extensionId } = await pairedExtension(editor, { desktop });
+    try {
+      const runs = await openRuns(context, extensionId);
+      await expect(runs.locator('#hubs > p')).toHaveText(['Following 1 editor window', 'Following the desktop app']);
+      await desktop.close();
+      await expect(runs.locator('#hubs > p').nth(1)).toHaveText('Connecting to the desktop app again…');
+      // Found again, the app answers nothing: its line says so, with the button it names, the editor's stays.
+      const line = runs.locator('#hubs > p').nth(1);
+      await expect(line).toContainText('The desktop app does not answer: open it to follow the runs it starts.', {
+        timeout: 15_000,
+      });
+      await expect(line.getByRole('button', { name: 'Look again' })).toBeVisible();
+      await expect(runs.locator('#hubs > p').first()).toHaveText('Following 1 editor window');
+    } finally {
+      await context.close();
     }
   });
 

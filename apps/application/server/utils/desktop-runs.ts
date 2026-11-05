@@ -35,7 +35,8 @@ import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { parseHubCommand, type HubAnswer, type LiveHub } from '@piwitests/core/run-hub';
+import { HUB_FEATURES, parseHubCommand, type HubAnswer, type LiveHub } from '@piwitests/core/run-hub';
+import { editorsDir, readLiveHubs } from '@piwitests/editor/discovery';
 import type { RunIntent } from '@piwitests/core/run-channel';
 import {
   MAX_HUB_BUFFERED,
@@ -169,6 +170,9 @@ export interface DesktopRunsOptions {
   log?(message: string): void;
   keepaliveMs?: number;
   helloMs?: number;
+  /** The editors' discovery folder the hub names its peers from; `editorsDir()` by default. */
+  editorsDir?: string;
+  peersMs?: number;
   lingerMs?: number;
   requestMs?: number;
   /** How long an agent follows a run after its last call on it (`RunAgent`'s `followIdleMs`). */
@@ -254,10 +258,15 @@ export class DesktopRuns {
   private channel: RecordChannel | null = null;
   private hub: RunHub | null = null;
   private readonly startedAt = new Date().toISOString();
+  private readonly liveCountListeners = new Set<(live: number) => void>();
+  private liveCount = 0;
 
   private constructor(private readonly options: DesktopRunsOptions) {
     this.sessions = new DesktopRunSessions({
-      notify: (session) => this.hub?.push(session),
+      notify: (session) => {
+        this.hub?.push(session);
+        this.liveCountChanged();
+      },
       // The window's stream and Piwi Picker's subscribed connections are the hub's peers alike.
       answersStops: () => !!this.hub?.answersStops(),
       notice: (root, severity, message) => this.notice(root, severity, message),
@@ -354,6 +363,8 @@ export class DesktopRuns {
           roots: runs.links().map((link) => link.path),
         }),
         surfacesChanged: () => runs.sessions.surfacesChanged(),
+        peers: () => readLiveHubs(options.editorsDir ?? editorsDir()),
+        peersMs: options.peersMs,
         token: options.token,
         closing: 'The desktop app stopped.',
         keepaliveMs: options.keepaliveMs,
@@ -387,6 +398,17 @@ export class DesktopRuns {
     this.keep({ type: 'pick', pick });
   }
 
+  /** How many runs the hub has live: the runs a window shows, which hold its stream (`GET /api/desktop/events`). */
+  liveRunCount(): number {
+    return this.sessions.current().length;
+  }
+
+  /** Hears the number of live runs each time it changes; returns the unsubscribe. */
+  onLiveRunCount(listener: (live: number) => void): () => void {
+    this.liveCountListeners.add(listener);
+    return () => this.liveCountListeners.delete(listener);
+  }
+
   /** The hub as `GET /api/desktop/live` names it, in the shape an editor's `GET …/live` gives (`LiveAnswer`). */
   live(): LiveHub[] {
     if (!this.hub) return [];
@@ -399,6 +421,7 @@ export class DesktopRuns {
         client: DESKTOP_HUB_CLIENT,
         roots: this.links().map((link) => link.path),
         startedAt: this.startedAt,
+        features: [...HUB_FEATURES],
       },
     ];
   }
@@ -487,6 +510,13 @@ export class DesktopRuns {
     this.windows.delete(viewer);
     window.peer.leave();
     if (window.shows.size) this.sessions.surfacesChanged();
+  }
+
+  private liveCountChanged(): void {
+    const live = this.liveRunCount();
+    if (live === this.liveCount) return;
+    this.liveCount = live;
+    for (const listener of this.liveCountListeners) listener(live);
   }
 
   private links(): DesktopLink[] {
