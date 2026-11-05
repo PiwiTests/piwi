@@ -3967,7 +3967,6 @@ export const piwiFixtures: Fixtures<
         await endShownStops(sink, 'ended');
         await awaitReleasedCalls(sink);
         await liveViewTestEnded(liveOutcomeStatus(testInfo));
-        await laneTestEnded();
         showRunChannel();
         currentSink = null;
         // A pause the editor asked that no call of this test took stops the next test's first call.
@@ -4011,6 +4010,8 @@ export const piwiFixtures: Fixtures<
           await flushSink(sink, testInfo);
         } finally {
           stopKeeping();
+          // The lane shows the test until it ended for the editor, a failure it held while flushing included.
+          await laneTestEnded();
           if (runChannelOpen()) tellHub(testEnd(sink, testInfo));
         }
         // Last: the test-scoped fixtures have torn down, so what is still open

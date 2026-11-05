@@ -472,8 +472,9 @@ export type RunToHub =
    */
   | { type: 'lane-frame'; test: string; stop: number | null; width: number; height: number; data: string }
   /**
-   * The lane view sends no frame now, and why (`refused`, at most 500 characters): its test has no page to show, or
-   * each image of the page is too long. Sent once until a frame goes again.
+   * The lane view sends no frame now, and why (`refused`, at most 500 characters): each image of the page is too long,
+   * a lighter one included, or the page shows what masks this reporter cannot read hide. Sent once until a frame goes
+   * again; nothing is said of a test with no page to show.
    */
   | { type: 'lane-frame'; test: string | null; stop: number | null; refused: string }
   /**

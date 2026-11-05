@@ -6680,6 +6680,30 @@
   "runs_liveHint": {
     "message": "Seus cliques, a roda do mouse e suas teclas na visualização vão para a página do teste. Esc devolve as teclas a esta janela; Shift+clique escolhe um locator."
   },
+  "runs_watch": {
+    "message": "Assistir"
+  },
+  "runs_watchTitle": {
+    "message": "Mostrar a página do teste enquanto ele é executado, por suas paradas e seus próximos testes: em uma parada, seus cliques e teclas nela vão para a página"
+  },
+  "runs_pauseWatch": {
+    "message": "Pausar e assistir"
+  },
+  "runs_pauseWatchTitle": {
+    "message": "Parar o teste antes da próxima chamada e mostrar a página dele"
+  },
+  "runs_watchOutdated": {
+    "message": "Atualize o reporter para assistir a um teste em execução"
+  },
+  "runs_watchToUse": {
+    "message": "Assista para usar"
+  },
+  "runs_laneRunning": {
+    "message": "Em execução…"
+  },
+  "runs_laneAltLast": {
+    "message": "A página do teste, como vista por último"
+  },
   "runs_pickAt": {
     "message": "Escolher na imagem"
   },

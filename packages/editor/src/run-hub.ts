@@ -335,11 +335,13 @@ export class RunHub {
   }
 
   /**
-   * A frame of a lane a connection watches: paced as a stop's frames are, and sent only while it watches the lane.
+   * A frame of a lane a connection watches: paced as a stop's frames are, and sent only while it watches the lane and
+   * its worker stands where the frame shows.
    */
   private laneFrame(connection: Connection, frame: LaneViewFrame): void {
     this.pace(connection, `${frame.ref} lane ${frame.lane}`, frame, (latest) => {
-      if (this.options.sessions.watchingLane(connection.viewer, latest.ref, latest.lane)) {
+      // A frame of a stop that ended, of a worker that left, or of a lane no longer watched waits no more.
+      if (this.options.sessions.laneFrameGoes(connection.viewer, latest)) {
         this.send(connection, { type: 'lane-frame', ...latest });
       }
     });

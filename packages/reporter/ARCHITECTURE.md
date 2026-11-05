@@ -401,9 +401,11 @@ What the package does to a user's run, process by process.
 - On it the instance says how many people watch the worker (`viewers`). While anyone does,
   the test's `page` goes out as its screencast (the lane's one view, `lane-feed.ts`, which
   the editor's views share), through internal calls: at most 640 by 400 at quality 50 unless the
-  test's trace or video came first (their size and quality, 800 wide at 90), four frames a
-  second and about 256 KB a second (a heavier frame holds the next one back longer), a
-  frame over 192 KB replaced by an image at quality 30. One post is in flight at a time,
+  test's trace or video came first (their size and quality, 800 wide at 90), or an editor's
+  view of the run is on too (the largest size and quality the views ask, 1280 by 800 at 60,
+  and the stop's page while the worker stands at one), four frames a
+  second and about 256 KB a second (a heavier frame holds the next one back longer, before it
+  is masked), a frame over 192 KB replaced by an image at quality 30. One post is in flight at a time,
   the latest frame alone waiting; each frame carries the call the runner's steps say the
   test is on (`callInProgress`, its title through `hideSecretsInText`) and the test's
   title. Nobody watching, no screencast runs and no frame goes.

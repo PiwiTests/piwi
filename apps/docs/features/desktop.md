@@ -96,7 +96,7 @@ A run, an execution, a cluster or a test runs again here, with the folder's own 
   with **Compare with run #N**. A [bug report](/features/bug-reports#running-it-with-playwright-in-the-desktop-app)
   from Piwi Picker runs there too.
 - **Wrong folder?** With none of the tests in it, the button opens the link's dialog.
-- **Pause, step and watch** each worker from the tray, at a `page.pause()` or a failure: [Desktop app
+- **Watch, pause and step** each worker from the tray, running or at a stop: [Desktop app
   runs](/features/desktop-runs).
 
 ### Reproducing a failure and finding the breaking commit

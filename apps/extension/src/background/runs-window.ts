@@ -1,8 +1,9 @@
 /**
  * The worker's side of the Runs window: the one `RunHubs` of the worker, wired to the paired editor, the paired
- * desktop app, the secret area and the browser's WebSocket; the window's port (`RUNS_PORT`, taken from `runs.html` alone), which gets the state at
- * each change, what each code written at a stop came to and the frames of the live views it watches, and passes the
- * window's commands on, its views stopped as it closes; the popup's Runs tile; and the global shortcut.
+ * desktop app, the secret area and the browser's WebSocket; the window's port (`RUNS_PORT`, taken from `runs.html`
+ * alone), which gets the state at each change, what each code written at a stop came to and the frames of the live
+ * views and lanes it watches, and passes the window's commands on, its views and lanes stopped as it closes; the
+ * popup's Runs tile; and the global shortcut.
  */
 import { parseLiveAnswer } from '@piwitests/core/run-hub';
 import {
@@ -65,10 +66,12 @@ function serveRunsPort(port: chrome.runtime.Port): void {
       // The window closed meanwhile.
     }
   };
-  // The window as a viewer of the live views it watches: their frames, and the word that one ended.
+  // The window as a viewer of the live views and lanes it watches: their frames, and the word that one ended.
   const viewer: RunsViewer = {
     frame: (frame) => post({ type: 'frame', ...frame }),
     ended: (view) => post({ type: 'view-ended', ...view }),
+    laneFrame: (frame) => post({ type: 'lane-frame', ...frame }),
+    laneEnded: (lane) => post({ type: 'lane-ended', ...lane }),
   };
   const unlisten = runHubs.listen(
     () => post({ type: 'state', state: runHubs.state(viewer) }),

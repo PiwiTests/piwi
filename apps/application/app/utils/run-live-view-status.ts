@@ -23,7 +23,7 @@ export const NO_WORKER_GRACE_MS = 10_000;
  * else the stream said last, then the project's setting, the run's key, and whether the run is one a developer shares.
  */
 export function runLiveViewStatus(run: RunLiveViewReadiness) {
-  if (run.desktop) return { kind: 'desktop', label: 'Local preview at a pause' };
+  if (run.desktop) return { kind: 'desktop', label: 'Local preview' };
   if (run.demo) return { kind: 'demo', label: 'Demo progress' };
   if (!run.connected && run.stalled) return { kind: 'stalled', label: 'Live updates stalled' };
   if (!run.connected || !run.state) return { kind: 'checking', label: 'Live view connecting' };

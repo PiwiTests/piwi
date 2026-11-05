@@ -548,9 +548,15 @@ export function viewEnded(stop: number): AbortSignal {
   return ended.signal;
 }
 
-/** Whether a viewer watches the stop `stop`: its own view, or the lane view while the worker stands at it. */
+/**
+ * Whether a viewer watches the stop `stop`: its own view, or the lane view while the worker stands at it in a test,
+ * whose frames show it.
+ */
 function watched(stop: number): boolean {
-  return held?.stop === stop && (view?.stop === stop || (laneView !== null && laneAt().stop === stop));
+  const lane = laneAt();
+  return (
+    held?.stop === stop && (view?.stop === stop || (laneView !== null && lane.stop === stop && lane.test !== null))
+  );
 }
 
 /** What was driven through a view ends, unless a viewer still watches the stop held. */
@@ -613,6 +619,8 @@ async function stopView(): Promise<void> {
  * stops, each frame going as `lane-frame`; asked again while on, the latest frame goes again.
  */
 function startLaneView(): IntentAnswer {
+  // A connection that closed while the request waited its turn has nobody to show the lane to.
+  if (!runChannelOpen()) return { ok: false, message: 'The connection closed.' };
   if (laneView) {
     laneView.resend();
     return { ok: true, message: 'The live view is on.' };
@@ -620,7 +628,9 @@ function startLaneView(): IntentAnswer {
   laneView = subscribeLane({
     ...VIEW_FRAMES,
     busy: framesBackedUp,
-    send: (frame) =>
+    send: (frame) => {
+      // A frame of the lane names its test: a stop held outside one shows on its own view alone.
+      if (frame.test === null) return;
       tellHub({
         type: 'lane-frame',
         test: frame.test,
@@ -628,7 +638,8 @@ function startLaneView(): IntentAnswer {
         width: frame.width,
         height: frame.height,
         data: frame.data.toString('base64'),
-      }),
+      });
+    },
     refuse: (why, at) => tellHub({ type: 'lane-frame', test: at.test, stop: at.stop, refused: why ?? TOO_HEAVY }),
   });
   return { ok: true, message: 'The live view is on.' };

@@ -5,10 +5,11 @@
  * stops at `page.pause()`, is paused from outside, stepped, clicked through the live view and picked on its image, and
  * a failure is held at its line while the window shows the run. Then the window alone steers a run: it pauses it,
  * watches its live view, picks on its image, the locator coming to it to copy, mocks a request the page made, the code
- * coming to it to copy, and clicks the page through the view. Then an agent steers a run through the run tools `/mcp`
- * serves: it pauses it, reads the page's snapshot, clicks the button by its ref and has the step made into code, which
- * comes to the window to copy and back to the agent. Headless, as the shell runs a reproduction. Skipped when the
- * reporter is not built (`npm run reporter:build`) or Chromium is not installed.
+ * coming to it to copy, and clicks the page through the view. Then the window watches a worker's lane as its test
+ * runs, pauses it and clicks the page through the lane at the stop. Then an agent steers a run through the run tools
+ * `/mcp` serves: it pauses it, reads the page's snapshot, clicks the button by its ref and has the step made into
+ * code, which comes to the window to copy and back to the agent. Headless, as the shell runs a reproduction. Skipped
+ * when the reporter is not built (`npm run reporter:build`) or Chromium is not installed.
  */
 import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
@@ -156,6 +157,10 @@ beforeAll(async () => {
   fs.writeFileSync(
     path.join(project, 'tests', 'agent.spec.cjs'),
     WINDOW_SPEC(base).replace('steered from the window', 'steered by an agent'),
+  );
+  fs.writeFileSync(
+    path.join(project, 'tests', 'lane.spec.cjs'),
+    WINDOW_SPEC(base).replace('steered from the window', 'watched as it runs'),
   );
   fs.writeFileSync(
     path.join(project, 'fixture.cjs'),
@@ -412,6 +417,78 @@ describe.skipIf(!runnable)('a run the desktop shell starts', () => {
       opened.close();
     }
   }, 120_000);
+  it('is watched from the window as its test runs, then paused and clicked through its lane', async () => {
+    const events: DesktopRunEvent[] = [];
+    const opened = (await runs.openWindow({ send: (e) => void events.push(e), buffered: () => 0, close: () => {} }))!;
+    let id = 0;
+    const send = (body: Record<string, unknown>) => runs.command({ viewer: opened.viewer, id: ++id, ...body });
+    const lastWorker = () =>
+      events
+        .filter(
+          (e): e is Extract<DesktopRunEvent, { type: 'session' }> => e.type === 'session' && e.session.ref === REF,
+        )
+        .pop()?.session.workers[0];
+    const laneFrames = () =>
+      events.filter((e): e is Extract<DesktopRunEvent, { type: 'lane-frame'; data: string }> => {
+        return e.type === 'lane-frame' && 'data' in e;
+      });
+
+    const { exited, output } = runPlaywright('tests/lane.spec.cjs', {});
+    try {
+      const running = await waitFor(() => {
+        const worker = lastWorker();
+        return worker?.test?.title.at(-1) === 'watched as it runs' && worker.state === 'running' ? worker : undefined;
+      });
+      // The reporter shows its lane while the test runs: the window watches it, frames of the running test coming.
+      expect(running.intents).toContain('watch');
+      expect(await send({ type: 'watch', ref: REF, lane: running.parallelIndex, on: true })).toMatchObject({
+        ok: true,
+      });
+      const frame = await waitFor(() => laneFrames()[0]);
+      expect(frame).toMatchObject({
+        ref: REF,
+        lane: running.parallelIndex,
+        worker: running.worker,
+        test: running.test!.id,
+        since: null,
+        width: 800,
+        height: 600,
+      });
+      expect(Buffer.from(frame.data, 'base64').subarray(0, 2)).toEqual(Buffer.from([0xff, 0xd8]));
+
+      // Paused: the window watches the stop through its lane, so the stop takes its input with no view of its own.
+      expect(await send({ type: 'runControl', ref: REF, worker: null, action: 'pause', since: null })).toMatchObject({
+        ok: true,
+      });
+      const stop = await waitFor(() => (lastWorker()?.state === 'stopped' ? lastWorker()?.stop : undefined));
+      await waitFor(() => lastWorker()?.stop?.intents?.includes('input'));
+      // A frame of the stop comes though the page paints nothing new: the window shows the stop from the lane alone.
+      expect(await waitFor(() => laneFrames().find((e) => e.since === stop.since))).toMatchObject({
+        test: running.test!.id,
+      });
+      expect(
+        await send({
+          type: 'input',
+          ref: REF,
+          worker: running.worker,
+          since: stop.since,
+          events: [
+            { type: 'mouse', action: 'move', x: 160, y: 120 },
+            { type: 'mouse', action: 'click', x: 160, y: 120, button: 'left', clickCount: 1 },
+          ],
+        }),
+      ).toMatchObject({ ok: true });
+      expect(
+        await send({ type: 'runControl', ref: REF, worker: running.worker, action: 'resume', since: stop.since }),
+      ).toMatchObject({ ok: true });
+      expect(await exited).toBe(0);
+    } catch (error) {
+      throw new Error(`${(error as Error).message}\n${output()}`);
+    } finally {
+      opened.close();
+    }
+  }, 120_000);
+
   it('is paused, read, clicked by a ref and made into code by an agent, the code there to copy', async () => {
     const events: DesktopRunEvent[] = [];
     const opened = (await runs.openWindow({ send: (e) => void events.push(e), buffered: () => 0, close: () => {} }))!;

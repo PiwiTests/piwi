@@ -69,10 +69,19 @@ CSS scale and of the viewport's shape, every call's and stop's title through `hi
 terminal's included, so the bar itself carries nothing to paint over.
 In the desktop app, a client plugin holds the hub stream from the window's start, through the TV layout and again after
 a reload while the hub says runs go on (`hub-runs`); stopping a local run takes its own progress alone off the OS bar;
-and a bisect's, a reproduction's or a Flake Lab's steps flash nothing, the job's verdict once. `features` stays out of
-`run-attach`, whose `takes` already lists what a worker does: P4's lane view is one more entry there. P3 is built;
+and a bisect's, a reproduction's or a Flake Lab's steps flash nothing, the job's verdict once. P3 is built;
 the tray's own runs and its Hold failures choices are still lost on a reload, and its separate output windows still
-close with it. The later phases are proposed. The bugs the analysis
+close with it. Built from P4: a worker keeps one live view of its lane's page (`lane-feed.ts`: the running test's page,
+the stop's while it stands at one), which the editor's stop view, its lane view and the instance's live view share,
+each at its own pace, masked once with every sink's masks; `run-attach` lists `view-lane` in a new `features`, `takes`
+being at its 16 entries. A hub whose `welcome` lists `lanes` takes `watch` on a lane and sends its `lane-frame`s to its
+viewers alone, through its tests, its stops and the worker Playwright starts in its place; at a stop of the running
+test a viewer of the lane drives it as that stop's viewer, and an older reporter is told to update. Piwi Picker's Runs
+window offers **Watch** and **Pause and watch** on a running worker, keeps the last image dimmed across a Step, a
+Resume and between tests, brings a watched lane that stops into view with its controls above the image, and holds
+Pick, Record and Assert with **Watch to use** at a headless stop nobody watches; the desktop app watches its own
+running rows the same way, from the run page's rows and the tray. P4's run progress from the run's own process, the
+editors' worker panels, the lane's states and the showcase beat are not built yet. The later phases are proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app

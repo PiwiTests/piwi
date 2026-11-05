@@ -42,7 +42,7 @@ function fakeSocket() {
 }
 
 /** The run `ed-1` in sessions of its own, and how each of its workers joins, talks and hears. */
-function harness() {
+function harness(requestMs = 2000) {
   const sent: RunSession[] = [];
   const sessions = new RunSessions({
     notify: (session) => void sent.push(session),
@@ -51,7 +51,7 @@ function harness() {
     rootOf: () => '/work/shop',
     paceMs: 5,
     burstMs: 0,
-    requestMs: 2000,
+    requestMs,
     lingerMs: 60_000,
   });
   const join = (workerIndex: number, parallelIndex: number, features: RunFeature[] = ['view-lane']) => {
@@ -84,6 +84,17 @@ function harness() {
         read({ type: 'answer', request: request.request, what: 'view-lane', value: { ok: true, message: 'On.' } });
       }
     };
+    const begin = () =>
+      read({
+        type: 'test-begin',
+        testId: `t${workerIndex}`,
+        title: ['a'],
+        file: 'tests/a.spec.ts',
+        line: 1,
+        project: '',
+        retry: 0,
+        cannotPause: null,
+      });
     read({
       type: 'test-begin',
       testId: `t${workerIndex}`,
@@ -94,7 +105,7 @@ function harness() {
       retry: 0,
       cannotPause: null,
     });
-    return { socket, read, heard, asked, answerAll };
+    return { socket, read, heard, asked, answerAll, begin };
   };
   return { sessions, sent, join };
 }
@@ -140,8 +151,9 @@ describe('a lane watched in the run sessions', () => {
     ]);
     expect(b.lanes).toHaveLength(1);
     expect(other.lanes).toEqual([]);
-    expect(sessions.watchingLane(a, 'ed-1', 0)).toBe(true);
-    expect(sessions.watchingLane(other, 'ed-1', 0)).toBe(false);
+    const running = { ref: 'ed-1', lane: 0, worker: 0, since: null };
+    expect(sessions.laneFrameGoes(a, running)).toBe(true);
+    expect(sessions.laneFrameGoes(other, running)).toBe(false);
 
     expect(await sessions.watchLane({ ref: 'ed-1', lane: 0, on: false }, b)).toMatchObject({ ok: true });
     expect(w.asked(false)).toHaveLength(0);
@@ -217,6 +229,109 @@ describe('a lane watched in the run sessions', () => {
     expect(sessions.intentsOf('ed-1', 0)).not.toContain('watch');
     expect(sessions.intentsOf('ed-1', 1)).toContain('watch');
     expect(await sessions.watchLane({ ref: 'ed-9', lane: 0, on: true }, viewer())).toMatchObject({ ok: false });
+  });
+});
+
+describe('a lane view the worker answers late, or never', () => {
+  const stopAt = (w: { read(message: RunToHub): void }, stop: number) =>
+    w.read({
+      type: 'stopped',
+      stop,
+      reason: 'pause',
+      title: 'Click',
+      place: { file: 'tests/a.spec.ts', line: 4 },
+      locator: null,
+      bar: false,
+    });
+
+  test('is turned off again once its start was given up, and an answer that comes too late starts nothing', async () => {
+    const { sessions, join } = harness(80);
+    const w = join(0, 0);
+    const a = viewer();
+    expect(await sessions.watchLane({ ref: 'ed-1', lane: 0, on: true }, a)).toEqual({
+      ok: false,
+      message: 'The test did not answer.',
+    });
+    expect(w.asked(false)).toHaveLength(1);
+    // The late answer, and a frame after it, reach nobody.
+    w.answerAll();
+    w.read(laneFrame('t0', null));
+    expect(a.lanes).toEqual([]);
+  });
+
+  test('keeps a lane on for its viewers when a later viewer’s resend goes unanswered', async () => {
+    const { sessions, join } = harness(80);
+    const w = join(0, 0);
+    const [a, b] = [viewer(), viewer()];
+    await watch(w, sessions.watchLane({ ref: 'ed-1', lane: 0, on: true }, a));
+    expect(await sessions.watchLane({ ref: 'ed-1', lane: 0, on: true }, b)).toMatchObject({ ok: true });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    w.read(laneFrame('t0', null));
+    expect(a.lanes).toHaveLength(1);
+    expect(b.lanes).toHaveLength(1);
+    expect(w.asked(false)).toEqual([]);
+  });
+
+  test('answers a viewer that asks twice once the worker answered, and the start is asked once', async () => {
+    const { sessions, join } = harness();
+    const w = join(0, 0);
+    const a = viewer();
+    const first = sessions.watchLane({ ref: 'ed-1', lane: 0, on: true }, a);
+    const second = sessions.watchLane({ ref: 'ed-1', lane: 0, on: true }, a);
+    w.answerAll();
+    expect(await Promise.all([first, second])).toEqual([
+      { ok: true, message: 'On.' },
+      { ok: true, message: 'On.' },
+    ]);
+    expect(w.asked(true)).toHaveLength(1);
+  });
+
+  test('watches the next worker of the lane when its worker left before it answered', async () => {
+    const { sessions, join } = harness();
+    const first = join(0, 0);
+    const a = viewer();
+    const asked = sessions.watchLane({ ref: 'ed-1', lane: 0, on: true }, a);
+    first.socket.destroy();
+    expect(await asked).toEqual({ ok: true, message: 'You watch worker 1 from its next test.' });
+    const next = join(1, 0);
+    await waitFor(() => (next.asked(true).length ? true : undefined));
+  });
+
+  test('asks no worker that does not show its lane, though its lane is watched', async () => {
+    const { sessions, join } = harness();
+    const a = viewer();
+    await sessions.watchLane({ ref: 'ed-1', lane: 0, on: true }, a);
+    const old = join(0, 0, []);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(old.asked()).toEqual([]);
+  });
+
+  test('grants a lane viewer no input at a stop outside a test, which the lane does not show', async () => {
+    const { sessions, sent, join } = harness();
+    const w = join(0, 0);
+    const a = viewer();
+    await watch(w, sessions.watchLane({ ref: 'ed-1', lane: 0, on: true }, a));
+    w.read({ type: 'test-end', testId: 't0', status: 'failed', pausedMs: 0 });
+    stopAt(w, 1);
+    await waitFor(() => last(sent)?.workers[0]?.stop ?? undefined);
+    expect(sessions.stopIntentsOf('ed-1', 0, a)).not.toContain('input');
+    expect(sessions.stopIntentsOf('ed-1', 0, a)).not.toContain('watch');
+  });
+
+  test('lets no paced frame of a stop that ended, or of a worker that left, go', async () => {
+    const { sessions, sent, join } = harness();
+    const w = join(0, 0);
+    const a = viewer();
+    await watch(w, sessions.watchLane({ ref: 'ed-1', lane: 0, on: true }, a));
+    stopAt(w, 1);
+    const since = await waitFor(() => last(sent)?.workers[0]?.stop?.since);
+    const atStop = { ref: 'ed-1', lane: 0, worker: 0, since };
+    expect(sessions.laneFrameGoes(a, atStop)).toBe(true);
+    w.read({ type: 'running', stop: 1 });
+    expect(sessions.laneFrameGoes(a, atStop)).toBe(false);
+    expect(sessions.laneFrameGoes(a, { ...atStop, since: null })).toBe(true);
+    w.socket.destroy();
+    await waitFor(() => (sessions.laneFrameGoes(a, { ...atStop, since: null }) ? undefined : true));
   });
 });
 
@@ -318,6 +433,11 @@ describe('a lane watched on the hub', () => {
       });
       await new Promise((r) => setTimeout(r, 150));
       expect(b.lanes()).toEqual([]);
+      // The last viewer's connection closes: the worker turns its lane view off.
+      a.socket.close();
+      await waitFor(() =>
+        worker.heard.some((m) => m.type === 'request' && m.what === 'view-lane' && !m.on) ? true : undefined,
+      );
     } finally {
       worker.socket.destroy();
       a.socket.close();

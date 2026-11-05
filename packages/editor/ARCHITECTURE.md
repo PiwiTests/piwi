@@ -806,8 +806,11 @@ A hub connection also watches a lane while its tests run (`watch`, with the lane
 lane's first viewer and stops it with the last; a worker Playwright starts in that lane is asked at once, and a lane
 with no worker connected now is watched from the next one. A reporter without the feature is refused: its stops alone
 can be watched. Each `lane-frame` names the test it shows and, at a stop, the stop's `since`; it goes to the lane's
-viewers alone, paced as a stop's frames are (`RunSessions.watchingLane`). At the stop a lane frame shows, a viewer of
-the lane is a viewer of that stop: input, the intents in the window and `pick-at` are its, with no `view` of its own.
+viewers alone, paced as a stop's frames are, and none once its stop ended or its worker left
+(`RunSessions.laneFrameGoes`). The viewers waiting for a lane share one start; a start the worker answers too late, or
+refuses, is turned off again, and a worker that leaves before it answered leaves its viewers watching the next one. At a
+stop of its running test, which the lane's frames show, a viewer of the lane is a viewer of that stop: input, the
+intents in the window and `pick-at` are its, with no `view` of its own. At most 64 lanes of a run are watched at once.
 
 The frames carry whatever the page shows: they reach only the editor panel or paired, authenticated connections that
 asked for them, never an instance or a file.
