@@ -20,7 +20,7 @@ outside the repository then drove the sample shop through Parts 1, 2, 4 and 5 an
 defect listed under [Defects found while researching this plan](#defects-found-while-researching-this-plan), fixed
 before PR 1. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. The contracts it would add are entry D62
 of [`1.0-stabilization.md`](1.0-stabilization.md). [`live-runs.md`](live-runs.md) proposes its P0 to P3 before PR 4
-here, and revises D1, D2 and Parts 1 and 5 to 7 (its section "Changes to other plans").
+here, and revises D1, D2, D10 and Parts 1 and 5 to 7 (its section "Changes to other plans").
 
 **Summary.** What the plan delivers, in the order it should be built:
 

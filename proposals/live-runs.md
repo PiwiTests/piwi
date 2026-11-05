@@ -12,7 +12,9 @@ proposes one model of a live run that every tool renders, and adds ways to watch
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app
-shell slips) and #1112 (the default trace's ARIA snapshots slow large pages); P0 to P3 below are their fixes. Nothing
+shell slips) and #1112 (the default trace's ARIA snapshots slow large pages). The phases below fix the first six: P0
+to P3 most of them, and the rest later (#1108's run links and #1109's Stuck? mark in P5, #1110's editor focus in P4,
+#1111's stopped state and thumbnail in P6). #1112 is left to its own fix. Nothing
 here is on [`ROADMAP.md`](../ROADMAP.md) yet. It revises parts of [`live-view-next.md`](live-view-next.md) and extends
 decisions of [`run-control.md`](../adr/run-control.md); [Changes to other plans](#changes-to-other-plans) lists them.
 The contracts it adds are entry D63 of [`1.0-stabilization.md`](1.0-stabilization.md).
@@ -26,13 +28,14 @@ The contracts it adds are entry D63 of [`1.0-stabilization.md`](1.0-stabilizatio
   the run's end, with an outcome card at each test's end. "Worker 2" means the same slot on every surface.
 - **Watch your own running test on your machine.** The run channel already reaches every local tool; it carries the
   running page's frames, not only a stopped one's, and nothing leaves the machine.
-- **One run, one name, one link.** Every run gets one ref, bound to the instance's run number; every surface shows
+- **One run, one name, one link.** Every local run gets one ref, bound to the instance's run number; every surface shows
   `Run #77 · Open`, its origin and the tool that steers it.
 - **Several windows on one run.** Presence (who watches, who drives), one Hold failures policy with who set it, one
   input model, and each moment that needs the person told once.
-- **Text first, pixels on demand.** The call the test is in and Playwright's log of it, the page's errors and pending
-  requests, a text (ARIA) view, a filmstrip of the test's calls, a crop of the element it waits on, and Playwright's
-  own trace viewer on the growing trace. Pixels stay the base of the view, as one layer of it.
+- **The call first, pixels as one layer.** The call the test is in and Playwright's log of it, the page's errors and
+  pending requests, a text (ARIA) view, a filmstrip of the test's calls, a crop of the element it waits on, and
+  Playwright's own trace viewer on the growing trace. Pixels stay on by default in a focused view, and a tap away on a
+  phone.
 - **The team instance still never steers a run** ([run-control D8](../adr/run-control.md)). It shows CI and shared
   runs, carries a teammate's request to watch, and learns that a local test is stopped as text, never as frames.
 
@@ -44,8 +47,9 @@ The contracts it adds are entry D63 of [`1.0-stabilization.md`](1.0-stabilizatio
 - **Watch**: open a lane's view and keep it open.
 - **Hub**: the local process that steers a run's workers over the run channel: the editor service of an IDE window, or
   the desktop app's server. Every other local tool is a **window** onto that hub.
-- **Attended**: a run a person or an agent started or follows, which may stop on its own (breakpoints, held failures).
-  A run a script started is **unattended**: listed and pausable, never waiting for someone who is not there.
+- **Attended**: a run started from a tool that shows its stops (an editor, the desktop app, an agent's `run_start`), or
+  one a person or an agent follows; it may stop on its own (breakpoints, held failures). A run a script started, or
+  whose output is piped, is **unattended**: listed and pausable, never waiting for someone who is not there.
 - **Layer**: one kind of thing a view shows (the call, the log, the image, the text view, the requests…).
 
 ## How a run is watched today
@@ -60,7 +64,8 @@ Piwi has two live views, built at different times for different people, and a pe
 | When | **Only while the test is stopped** | **Only while the test runs, one test at a time** |
 | Where | VS Code's and JetBrains' paused page, the Runs window, the desktop tray | The run page's **Watch** |
 | Transport | Run channel → hub → client (`packages/core/src/run-view.ts`) | Worker → instance relay → viewer (`packages/core/src/live-view.ts`) |
-| Image | Up to 1280×800, quality 60, 10 a second | Up to 640×400, quality 50, 4 a second, 256 KB/s |
+| Image | Asks up to 1280×800, quality 60, 10 a second | Asks up to 640×400, quality 50, 4 a second, 256 KB/s |
+| Under `wrapConfig`'s default trace | The trace's screencast: up to 800 px, quality 90 (RT18) | The same |
 | Input | Yes, after **Interact** (editors) or at once (Runs window, tray) | Never |
 | Call log, action point | No | In CI runs |
 | Masking | None | In the worker |
@@ -128,8 +133,9 @@ Appendix A lists them. They come down to nine causes.
 - **A short outage ends the run's live life** (RT3, RT4, RT14, #1108). One failed `/begin` sends the whole run as a
   batch at its end; a CI worker gives up its live view after 31 s of errors and the log still says "Live view on";
   after a restart a shared run can never be shared again.
-- **A developer's breakpoint pages the team** (IO11, #1109). The instance never learns of a local stop, marks the test
-  **Stuck?** and sends `test.stuck` to the project's channels for a full local run.
+- **A developer's breakpoint pages the team** (IO11, #1109). The instance learns of a local stop only when the run is
+  shared live, and Stuck? ignores even those: it marks the test **Stuck?** and sends `test.stuck` to the project's
+  channels for a full local run.
 - **The Runs window never finds an editor window opened after it connected** (IO4, #1110).
 
 ### 2. A view lives for one test
@@ -144,10 +150,11 @@ the run's end is not said (LV-9).
 ### 3. Your own running test cannot be seen without broadcasting it
 
 The local view needs a stop: the reporter's `view` needs `stop` and the hub's needs `since`
-(`packages/core/src/run-hub.ts:302-306`). Every local surface shows "Running" and nothing more until a test stops
-(IO1, E1, RW1, DK1, RT1, F11). The editor never shows which call or line a running test is at (E2), though agents get
-every call with its place (IO14, IO23). Stepping blanks the image and restarts the stream at each step (E9, DK7), and a
-second worker's stop takes the focus and the single paused page, ending the view in use (E8).
+(`packages/core/src/run-hub.ts:302-306`). Every local surface shows a running test's title and "Running", but neither
+its page nor its current call, until it stops (IO1, E1, RW1, DK1, RT1, F11). The editor never shows which call or line a
+running test is at (E2), though agents get every call with its place (IO14). Stepping blanks the image and restarts the
+stream at each step (E9, DK7), and a second worker's stop takes the focus and the single paused page, ending the view in
+use (E8).
 
 ### 4. One run, five names, no links
 
@@ -208,16 +215,18 @@ bytes, worker time and privacy, and produced only while a viewer subscribes to i
 | Pixels | The page as it paints, with the action point and the element's box drawn by the viewer | `page.screencast` through `page-view.ts` | 15 to 40 KB an image; 10/s local, 4/s team; 2/s while a masked field shows | A focused lane view |
 | Crop to the target | The element the call waits on, sharp, with a margin | The viewer crops the frame around the box the worker already sends | Free | Phones, narrow windows, hovers |
 | Text (ARIA) | The page as roles and names: searchable, copyable, the target node marked, change since the last call | The trace's `aria/<callId>-<phase>.json` (written by `wrapConfig`'s trace), else `ariaSnapshot` on request | A few KB; 120 to 300 ms on a heavy page if taken | Phones, agents, screen readers |
-| Filmstrip | One thumbnail per finished call of the current test, for a late joiner | Locally the trace's `screencast/*.jpeg`; for the team the view's own masked frames, kept in the worker's memory | No capture locally | A strip under the view |
+| Filmstrip | One thumbnail per finished call of the current test, for a late joiner | Locally the trace's `screencast/*.jpeg`; for the team the view's own masked frames, taken only while someone watches, kept in the worker's memory | No capture locally | A strip under the view |
 | Lanes at a glance | A bar per attempt per lane, the usual duration as a ghost, Stuck?, tiles of every lane at 1 fps | Lane state, the last ten passes per test | One query a run; tiles at 1/s | The run page, the desktop run page |
-| The DOM at each call | Inspect and pick a locator on a running test | Locally Playwright's trace viewer on the growing `<testId>.json`; for the team [live-view-next Part 4](live-view-next.md) | File reads | A hand-off locally |
+| The DOM at each call | Inspect and pick a locator on a running test | Locally Playwright's trace viewer on the test's growing trace; for the team [live-view-next Part 4](live-view-next.md) | File reads | A hand-off locally |
 | Presence | Who watches, who drives, who paused, who set Hold failures | The hub's clients; the instance's viewer count | Bytes | Every surface |
 | Terminal | One start line with the link, stop and stuck lines, OSC 8 links, OSC 9;4 progress (error after a failure, warning while a test waits) | The reporter's main process | None | Terminals, CI logs |
 | OS presence | Running, failing or waiting for you on the taskbar, Dock and tray; one flash per job | The desktop app, fed from every local run | None | The desktop app |
 
 Two of these come free from what Playwright already records under `wrapConfig`'s trace (the ARIA files and the
 screencast JPEGs), and Playwright's trace viewer opens a test's growing trace as a live view
-(`npx playwright show-trace <outputDir>/.playwright-artifacts-<n>/traces/<testId>.json`). Others were weighed and left
+(`npx playwright show-trace <outputDir>/.playwright-artifacts-<workerIndex>/traces/<name>.json`, where `<name>` is the
+test's id, with `-retry<k>` for a retry and `-recording<N>` for each recording after the worker's first; the viewer
+builds that `.json` over the growing `<name>.trace`). Others were weighed and left
 out ([Not in this plan](#not-in-this-plan)): WebRTC and VNC, a recorder in the page, following Playwright's video file,
 images in the terminal.
 
@@ -225,15 +234,17 @@ images in the terminal.
 
 A person learns one model, and every surface renders it.
 
-- **A run** has one ref from its start (from its launcher, or set by the reporter), bound once to the instance's
-  number. Every surface names it **Run #77**, or by its target before the instance answers, with its origin (CI on
-  main, VS Code, a terminal, the desktop app, Claude Code) and, for a local run, the tool that steers it.
+- **A run** started on a developer's machine has one ref from its start (from its launcher, or set by the reporter),
+  bound once to the instance's number; a CI run is known by its number. Every surface names it **Run #77**, or by its
+  target before the instance answers, with its origin (CI on main, VS Code, a terminal, the desktop app, Claude Code)
+  and, for a local run, the tool that steers it.
 - **A lane** is in one state: starting, between tests, running a test at a call, waiting (a call past 3 s, with why),
   pausing (still showing its call), stopped at a reason by someone (a breakpoint, a step, Pause, `page.pause()`, a
   held failure, the agent), done.
-- **Watch** opens a lane and keeps it until you close it or the run ends. Each test's end leaves an outcome card
-  (**Passed in 4.2 s**, or **Failed** with its error, **Open the failure** and **Watch the retry**) and the view rolls
-  on. **This test only** and **Follow what needs attention** are modes; a manual choice pins the view.
+- **Watch** opens a lane and keeps it until you close it, the run ends, or the view has been hidden for 10 minutes. Each
+  test's end leaves an outcome card (**Passed in 4.2 s**, or **Failed** with its error, **Open the failure** and **Watch
+  the retry**) and the view rolls on. **This test only** and **Follow what needs attention** are modes; a manual choice
+  pins the view.
 - **Local or team.** Your own run is watched through your hub, and nothing leaves the machine. A CI run, or a run its
   developer shares, is watched on the team instance. The view, its layers and its words are the same.
 - **Roles.** Everyone watches. One person or agent at a time drives a stopped page, shown to everyone; **Interact**
@@ -249,17 +260,17 @@ A person learns one model, and every surface renders it.
 
 | | Decision | Why |
 |---|---|---|
-| D1 | **A view follows a lane**, not a test or a stop. Lanes are `parallelIndex + 1` per shard on every surface and in every agent tool; `workerIndex` is never shown. | A view that dies at each test is the most visible failure (F1, LV-2, LV-4). `workerIndex` grows at each restart; the slot is what the Timeline already draws. |
+| D1 | **A view follows a lane**, not a test or a stop. Lanes are `parallelIndex + 1` per shard on every surface and in every agent tool; `workerIndex` is never shown. | A view that dies at each test is the most visible failure (F1, LV-2, LV-4). `workerIndex` grows at each restart. The Timeline approximates the slot from timing today; the reporter starts sending `parallelIndex` with each test, so every surface uses the real slot. |
 | D2 | **One page source per lane in the worker, two sinks.** The run channel (hub) and the live-view link (team) subscribe to one feed: one `page-view.ts` source, masked once. One size per sink: the hub at its largest viewer, the team at 640×400. | Today the stop view and the team view are two capture paths with two sets of rules. Per-viewer re-encoding would run on the test's thread. |
-| D3 | **Mask every sink, the local one included.** Frames through `live-mask.ts`, the pause bar's box painted too; every text through `hideTypedText` and `hideSecretsInText`. | Today the local stop view is unmasked and run-channel titles skip `hideTypedText` (`run-channel.ts:4`). One rule is simpler to trust. Whether a field the developer types into at an Interact stop stays grey is an open question. |
+| D3 | **Mask every sink, the local one included.** Frames through `live-mask.ts`, the pause bar's box painted too; every text through `hideTypedText` and `hideSecretsInText`. | Today the local stop view is unmasked, and the titles of run-channel calls and stops skip `hideTypedText` (`packages/reporter/src/internal/capture/run-events.ts:69`, `run-channel.ts:496-505`). One rule is simpler to trust. Whether a field the developer types into at an Interact stop stays gray is an open question. |
 | D4 | **The call is the unit, and pixels one layer of it.** Each layer is keyed by the call's id and produced only while subscribed, reusing what the trace already writes. | Revises live-view-next D1's first half; keeps its second. Generalizes "no image while nobody watches" to every layer. |
-| D5 | **The lane model lives in `@piwitests/core/live-lane` (MIT, written anew): ids, states, a reducer.** The hub and the instance reduce; surfaces receive ready lane state. | The Kotlin plugin and the extension cannot run a TypeScript reducer; one reducer per producer side keeps them in step. |
+| D5 | **The lane model lives in `@piwitests/core/live-lane` (MIT, written anew): ids, states, a reducer.** The hub and the instance reduce; surfaces receive ready lane state. | The Kotlin plugin cannot run a TypeScript reducer, and a window that reduces on its own can drift from its hub: one reducer per producer side keeps every surface in step. |
 | D6 | **Words stay in the FSL surfaces; core carries enums.** A drift test holds the dashboard's, the desktop's and the extension's words for each enum together. | The root guide forbids moving FSL code into MIT packages; enums are new code. |
 | D7 | **The team instance never steers** ([run-control D8](../adr/run-control.md) stands). It may carry a request (**Ask to watch**) that a local tool shows for the developer to accept, and it receives a local stop as text. It never learns a hub's address. | Consent stays local. A stop as text is the same class of data as a live step and travels the same way: only while someone has the run open. |
 | D8 | **Hubs accept a native client without an `Origin` that holds the discovery token**, so the desktop server can read an editor's sessions and `npx @piwitests/reporter mcp` can reach every hub. This widens run-control's D8 ("a WebSocket only from the extension's origin") and is recorded as superseding that point when it ships. | Web pages still always send an `Origin` and stay refused. The token is the user's own, in an owner-only folder; the Windows check of that folder needs the same review. |
-| D9 | **One owner per run, and no daemon.** The hub is picked in order: the launcher's channel, the editor whose workspace holds the folder, the desktop app whose linked folder holds it, none. A piped run attaches unattended. | Extends run-control D5. A new daemon is one more process to install and secure; the editor service and the desktop server already are hubs. |
+| D9 | **One owner per run, and no daemon.** The hub is picked in order: the launcher's channel, the editor whose workspace holds the folder, the desktop app whose linked folder holds it, none. A piped run attaches unattended by default (open question 3). | Extends run-control D5. A new daemon is one more process to install and secure; the editor service and the desktop server already are hubs. |
 | D10 | **Peers name hubs, never their tokens.** A hub tells its clients of the other hubs in `~/.piwi/editors`; the desktop hub is named without the desktop token, and Piwi Picker pairs with the desktop app through its own **Allow**. | The desktop token opens the app's whole API; handing it on would skip the user's consent. |
-| D11 | **Features, not versions.** `run-attach`, the hub's `welcome` and the desktop's live answer carry `features: string[]`; readers treat an unknown state as `other`. Lenient readers ship a release before any new state. | Six release trains (two marketplaces, a browser store, the desktop updater, npm, the instance) update independently, and `RUN_TAKES` is at its 16-entry cap (`run-channel.ts:126-146`). |
+| D11 | **Features, not versions.** `run-attach`, the hub's `welcome` and the desktop's live answer carry `features: string[]`; readers treat an unknown state as `other`. Lenient readers ship a release before any new state. | Six release trains (two marketplaces, a browser store, the desktop updater, npm, the instance) update independently, and `RUN_TAKES` is at its 16-entry cap (`packages/core/src/run-channel.ts:127-146`). |
 | D12 | **`follow` splits into `presence` and `hold`.** `presence` says a window shows the run and turns events on; `hold` is the run's policy with who set it. The desktop hub's `show`, which means Hold failures today, keeps that meaning. | A hidden Runs window holding every failure (RW19) comes from one word meaning two things. |
 | D13 | **A run that a hub steers is `interactive` at `/begin`.** Its stops reach the instance as text; Stuck? leaves stopped time out; `test.stuck` and the run's outbound effects follow one stated policy for local runs. | A developer's pause is not a hang (IO11), applying run-control D10. |
 | D14 | **Pixels relayed by the instance stay for CI and shared runs only**; local watching never needs a key or a team instance. | Watching your own run must work offline and with the desktop app. |
@@ -274,8 +285,9 @@ aspect checked. Later layers join the same feed: the call log from the in-proces
 the trace's files, thumbnails from its screencast.
 
 **Run channel** (MIT, `packages/core/src/run-channel.ts`). `run-attach` gains `features`, `slot` and `attend`;
-`request view` takes a lane scope that needs no stop, input still needing one; `layers {on, size}` replaces `events`;
-events gain `call-begin` and `test-end {status, ms}`; `hold {on, by}` can come at any time. A main-process connection
+`request view` takes a lane scope that needs no stop, input still needing one; `layers {on, size}` joins `events`,
+which the hub still sends to a worker whose `features` lack `layers`; events gain `call-begin`, and the worker's
+`test-end` gains the test's duration (`ms`); `hold {on, by}` can come at any time. A main-process connection
 opens in `onBegin` when the run has a hub: `run-begin {ref, launcher, run {id, page}, total, workers, shard,
 attended}`, `run-end {status, counts, first failure}`, and asks from the instance.
 
@@ -307,10 +319,10 @@ terminal gets lines from the reporter's main process.
 
 - **Dashboard run page.** Goes live whatever other tabs are open, or says why within 5 s. Rows are shard-aware and get
   their step within 5 s, at once for later viewers. **Watch** opens a docked, resizable lane view beside the list (a
-  sheet on phones) that follows the lane with outcome cards; `?watch=<shard>.<slot>` opens it; **Watch** sits in a
-  fixed slot at each row's end; grouping holds still while the run is live. The header names the origin and the
-  steering tool; a local stop reads by its reason ("Stopped at a breakpoint · in VS Code"); your own runs are always
-  listed; "Not shared live" shows once, with **Ask to watch**. Later: the Lanes view, the Text, Trail and Requests tabs.
+  sheet on phones) that follows the lane with outcome cards; `?watch=<shard>.<slot>` opens it; **Watch** sits in a fixed
+  slot at each row's end; grouping holds still while the run is live. The header names the origin and the steering tool;
+  a local stop reads by its reason ("Stopped at a breakpoint · in VS Code"); your own runs are always listed; "Not
+  shared live" shows once, with **Ask to watch**. Later: the Lanes view, the filmstrip, the Text and Requests tabs.
 - **Home and the runs lists.** A running run shows done of total, failed so far, elapsed against the usual, a Stuck?
   count and **Watch**.
 - **VS Code.** "Piwi: worker N" replaces the paused page: it watches running or stopped, carries Resume, Step, Run to
@@ -321,7 +333,7 @@ terminal gets lines from the reporter's main process.
 - **JetBrains IDEs.** The same answers in the Piwi tool window (a Runs tab, a worker tab), an inlay for the running
   line, a status bar that composes progress with the stop or the share, and Run tabs named after their target with
   Pause and Step.
-- **Piwi Picker's Runs window.** A window opened later appears within seconds; a lost hub's runs stay greyed and their
+- **Piwi Picker's Runs window.** A window opened later appears within seconds; a lost hub's runs stay grayed and their
   views come back; one status line per paired tool. Compact lanes with the now-line, **Watch** on running lanes, the
   controls above the image, the stopped lane scrolled into view, `#77 · Open`, progress and the outcome; run-level
   Pause all, Resume all and Stop; presence chips, the agent's stops labeled. It holds failures only when asked.
@@ -380,7 +392,7 @@ survives, and a local test watched while it runs.
 
 ### P0. The run page goes live, on time, on the right row
 
-The fixes of #1106 and #1107.
+The fixes of #1106 and of #1107's first three items (the rest in P1).
 
 - `/api/stream` carries the notifications and the tab's run and live-view subscriptions; per-tab streams close while
   the tab is hidden, unless a view or a picture-in-picture window shows; a stream not open after 5 s says why, with
@@ -412,6 +424,7 @@ The fixes of #1106 and #1107.
   limit, signed out).
 - The list holds still: grouping decided once per page view, auto-scroll only in run order; `test-completed` carries
   the failure cluster; `test-begin` carries the retry, tags, metadata and locks; a retry shows as **Retry 1 of 2**.
+- The header's primary action is decided once per page view, not by when the page was opened.
 - A view hidden for 10 minutes closes, so lasting views do not exhaust the bound of four per person and 16 per run.
 - **Verification**: the showcase's `back-on-the-team` beat asserts images keep coming until the run is green; an E2E
   of a failing test's card and its retry.
@@ -419,7 +432,7 @@ The fixes of #1106 and #1107.
 
 ### P2. A CI live view that survives outages and says so
 
-The fixes of #1108.
+The fixes of #1108 but its run links (P5).
 
 - The reporter retries a failed `/begin` or `/start` with backoff for the run's life, the queue kept within the
   on-disk buffer's cap, and prints one "streaming started late" line.
@@ -436,13 +449,16 @@ The fixes of #1108.
 
 ### P3. Local tools that tolerate each other and never page the team
 
-The fixes of #1109 and #1110, and of most of #1111.
+The fixes of #1109's notification, of #1110 but its editor focus (P4), and of most of #1111.
 
 - An unknown worker state reads as `other`; an unreadable field is dropped, not the session. `features` in
   `run-attach`, `welcome` and the desktop's live answer. This ships a release before any new state.
 - Hubs push peers from `~/.piwi/editors` (D10); the Runs window connects to a new window within seconds, re-reads
   `GET …/live` every 60 s as a fallback and keeps **Look again**. Any live service answers `…/live` from the folder.
-  A lost hub's runs stay greyed and their views restart; views are keyed by run and slot.
+  A lost hub's runs stay grayed and their views restart; views are keyed by run and slot.
+- The Runs window shows one status line per paired tool, a broken pairing included; an unproven pairing stops
+  retrying after a bounded backoff, and a 404 reads as "not an editor"; the popup's Runs tile names the window; a
+  request the worker drops times out and frees its buttons.
 - A run that follows a hub sends `interactive {client, ref}` at `/begin`: Stuck? never notifies for it, and
   `run-eligibility.ts` states and tests the policy for complete local runs.
 - The local stop view is masked like the team's, the pause bar's box included (D3); the stop image is taken at CSS
@@ -461,13 +477,17 @@ The fixes of #1109 and #1110, and of most of #1111.
   stop no longer restarts the view. A hub facing an older reporter says "Update the reporter to watch a running test".
 - `@piwitests/core/live-lane` (D5); the hub reduces events to lane state, counts done and failed locally, and replays
   it to a newcomer; events are on while any window shows the run.
+- The main-process hub link opens in `onBegin` when the run has a hub: `run-begin` (ref, launcher, total, workers,
+  shard, attended, and the run's number and page once the instance answers) and `run-end` (status, counts, first
+  failure); `RunSession` gains them, so progress reads "3 of 9" from local events.
 - Every viewer keeps the last image across a Step or Resume, dimmed and marked "running…"; **Pausing…** shows the
   call it waits in and for how long, and offers **End the test** where the reporter can give up a waiting call.
 - VS Code's "Piwi: worker N" and JetBrains' worker tab (as above), the running line marked, a Page output, per-worker
   Pause and **Pause and watch**. The status bar and the Testing view count from the hub's events, so they work offline
   and with the desktop app.
-- The Runs window: **Watch** on running lanes, compact rows, controls above the image, the stopped lane in view, Pick,
-  Record and Assert shown disabled with "Watch to use". The desktop app: **Watch** on its own running rows.
+- The Runs window: **Watch** and **Pause and watch** on running lanes, compact rows, controls above the image, the
+  stopped lane in view, Pick, Record and Assert shown disabled with "Watch to use". The desktop app: **Watch** on its
+  own running rows, and the tray brings the stopped lane into view.
 - **Verification**: reporter tests with a fake hub that one request receives images across two tests, a password
   field is painted, nothing is captured with no view, and a watched test's CPU stays within budget; a showcase beat
   watches a running test in the Runs window for 5 s.
@@ -479,11 +499,12 @@ The fixes of #1109 and #1110, and of most of #1111.
 - The reporter sets a ref for every run outside CI (`PIWI_RUN_REF` from the launcher, else one of its own) and records
   `ref` and `launcher` for every origin. `/setup`, `/begin`, `/start` and `/finish` answer the public `runUrl`; the
   reporter prints and shares only that URL, falling back to its own address.
-- The main-process hub link (`run-begin`, `run-end`); `RunSession` gains run, origin, launcher, total and verdict.
 - `#77 · Open` beside every Copy: the Runs window card with its progress and outcome (passed, failed, ended at a stop),
   both status bars ("Open run #78 (running)", your run first), the tray. The Live item opens a menu.
 - A local stop reaches the instance as text (`test-stopped`, `test-resumed`: reason, call through `hideTypedText`,
-  place, the kind of tool), only while someone has the run open. Rows word it by reason; Stuck? leaves it out. The
+  place, the kind of tool, and the attempt's stopped time so far), only while someone has the run open; the reporter
+  sends the open stop and the stopped time when the run gets a watcher. Rows word it by reason; Stuck? leaves the
+  stopped time out. The
   header names the origin and the steering tool; your own runs are always listed; **Debug in my editor** becomes
   "Following run #81 in VS Code · Open".
 - One start line, the plumbing at `PIWI_VERBOSE`; a piped run that skips its editor says why; the stop line names the
@@ -515,7 +536,10 @@ The fixes of #1109 and #1110, and of most of #1111.
   bars, the Runs window's title and badge, the desktop's taskbar, Dock, tray dot and tray menu (**Show the stopped
   test**). The Windows thumbnail's Open restores a minimized window; its Stop acts on one run.
 - Editors: Verify ×3, the fix plan's verification and Flake Lab lines get the run channel, unattended; JetBrains Run
-  tabs named after their target; the Testing view gets output and a stop message.
+  tabs named after their target; the Testing view gets output and a stop message; each editor lists what each worker
+  runs now.
+- The Runs window: run-level Pause all, Resume all and Stop; keys for Resume, Step and Finish; it keeps its place on
+  screen; the run shortcut and **Look again** answer, and the shortcut leaves unattended runs alone.
 - **Verification**: a hub test of two windows and an agent on one stop; an E2E of the per-run hold.
 - Addresses IO7, IO8, IO19, RW2, RW5, RW8, RW13, RW16, RW17, RW19, RW20, RW22, RW24, E6, E10, E11, E12, E15, E18,
   E21, E23, DK3, DK4, DK9, DK19.
@@ -532,6 +556,7 @@ The fixes of #1109 and #1110, and of most of #1111.
   page and OS surfaces ("Paused in VS Code") and steers none of them.
 - The desktop run page becomes the run's home; **Open in a window** gives an always-on-top lane window; stop places
   open in the IDE.
+- The desktop page documents the taskbar, Dock, title, tray dot and thumbnail buttons.
 - **Verification**: a reporter test of the hub pick in each case; a desktop E2E of a terminal run steered by the app.
 - Addresses IO5, IO6, DK5, DK6, DK11, DK12, DK16, DK22, F9.
 
@@ -561,15 +586,15 @@ The fixes of #1109 and #1110, and of most of #1111.
 
 ### P10. The run at a glance, wherever people look
 
-- Binary images and sizes from the viewer for the team (live-view-next Part 7).
+- Watch all builds on live-view-next PR 4 (binary images and sizes from the viewer), which ships after P3.
 - **Watch all**: one watch connection per page carries a 320 px tile per lane at 1 image a second and full images for
   the focused lane; the bound becomes 16 page connections and a byte rate. **Follow what needs attention** moves to a
   lane that failed, got stuck or stopped, and says why.
 - A Lanes view from the live Timeline: lanes by shard, a bar per attempt, the usual duration as a ghost bar, amber by
   the Stuck? rule (one rule, not a second threshold); `is:stuck`, `worker:` and `shard:` filters.
 - Home and the runs lists show progress from the global `run-progress` event.
-- A `::notice` with the live link; an opt-in pending commit status for CI runs that are not interactive, updated at most
-  once a minute.
+- A `::notice` with the live link; a pending commit status for CI runs that are not interactive, opt-in until open
+  question 7 is answered, updated at most once a minute.
 - OSC 8 links and OSC 9;4 progress in a terminal outside CI; `PIWI_TERMINAL_PROGRESS=off` turns them off.
 - CI runs of the branch as read-only sessions in the editors and the Runs window, from the stream the editor already
   holds; their **Watch** opens the same lane view over the instance.
@@ -584,8 +609,9 @@ The fixes of #1109 and #1110, and of most of #1111.
   writes field values into ARIA snapshots, and the existing maskers read the live page, not a snapshot file: the layer
   ships with a masker of its own for ARIA trees, proven by tests that feed a password, a card number and a short code.
 - **Requests and console**, with pending requests and the backend's logged errors (live-view-next Part 3).
-- **Filmstrip**: locally from the trace's JPEGs; for the team from the view's own masked images, kept in the worker's
-  memory for late joiners (live-view-next D10's rule).
+- **Filmstrip**: locally from the trace's JPEGs; for the team from the view's own masked images, taken only while
+  someone watches and kept in the worker's memory for late joiners (this widens live-view-next D10, which allows only
+  the trace's or the video's images).
 - **Inspect**: locally, **Open the trace so far** in Playwright's trace viewer, its path never leaving the hub, and the
   desktop app's snapshot view on the same file; for the team, live-view-next Part 4.
 - Addresses LV-5, and the layers of [Beyond video](#beyond-video-what-a-live-view-can-show).
@@ -601,20 +627,22 @@ runs the performance check.
 
 - **[live-view-next.md](live-view-next.md)** (its PRs 1 to 3 are built): P0 to P3 here come before its PR 4. Its D1 is
   revised (the call is the base, pixels a layer); its D2 amended (pausable runs get their call log from the in-process
-  listener); Part 1's Stuck? reads stop state; Part 5's Follow becomes the default lane view, with **Follow what needs
-  attention** a mode, Watch all built on lane watches (answering its open question 6), and "the last 30 seconds"
-  becoming the call-indexed filmstrip; Part 6 is rewritten onto the lane view and the local hub; Part 7 also applies to
-  the local sink. D12, VP9 and holding a failing CI test (Part 8) stay as written, after P11.
+  listener); its D10 widened (a team filmstrip from the view's own masked images); Part 1's Stuck? reads stop state;
+  Part 5's Follow becomes the default lane view, with **Follow what needs attention** a mode, Watch all built on lane
+  watches (answering its open question 6), and "the last 30 seconds" becoming the call-indexed filmstrip; Part 6 is
+  rewritten onto the lane view and the local hub; Part 7 also applies to the local sink. D12, VP9 and holding a failing
+  CI test (Part 8) stay as written, after P11.
 - **[run-control.md](../adr/run-control.md)** (shipped): this plan's ADR supersedes what it extends. Parts 2 and 6: a
   lane-scoped view needs no stop. D5: the desktop app is the fallback hub, piped runs attach unattended. D7: every
   image hides the pause bar and the local stop view is masked. D8: a hub accepts native clients that hold its token.
-  D10: an interactive run's stops reach the instance as text. Its Status's "left out" items are delivered: the Runs
-  window naming an agent's stop (P6), the last call ticking and the verdict (P4, P5), code from a desktop run reaching
-  an editor (P7).
+  D10: an interactive run's stops reach the instance as text. Of its Status's left-out items, the Runs window naming an
+  agent's stop is delivered (P6); so are two limits its Status records for the built PRs: the last call ticking and
+  the verdict (P4, P5), and code from a desktop run reaching an editor (P7).
 - **[desktop-run-progress.md](desktop-run-progress.md)**: the OS surfaces are fed from every local run; the amber
   state comes from stops; app jobs flash once; the thumbnail's buttons act on one run.
-- **[developer-loop-audit.md](developer-loop-audit.md)**: §9's one vocabulary is carried out by D6; V1 and V2 close
-  with P0, V4 with P6, V6 with P3 and P6, R5 with P3, S6 and S7 with P3, R13 with P5, D9, D11 and D12 with P5 and P6.
+- **[developer-loop-audit.md](developer-loop-audit.md)**: §9's one vocabulary is carried out by D6; V1 and V2 are built
+  and P0 closes what they left (RT2, DB2), V4 closes with P6, V6 with P6 and P7, R5 with P3, S6 and S7 with P3, R13 with
+  P5, D9, D11 and D12 with P5 and P6.
 - **Reporter contracts**: contract 3 changes (the stop text of an interactive run while someone has it open; the local
   stop view masked); contract 4 changes (`desktop.json` gains `runChannel` and `hub`).
 
@@ -636,12 +664,15 @@ runs the performance check.
   folder's layout, the screencast's first-client rule. Each is feature-checked with a named fallback and covered by
   the reporter's floor job, and the view says which layers are unavailable.
 - **Piped runs that now appear** in an IDE may surprise people; the start line says why and how to opt out.
+- **#1112 may remove a free layer.** If the default trace stops taking ARIA snapshots, the Text layer takes
+  `ariaSnapshot` on request (120 to 300 ms on a heavy page), and only the screencast JPEGs come free.
 - **Scope.** Twelve phases across every app. Each later phase is usable alone.
 
 ## Open questions
 
 1. At an **Interact** stop, should the developer's own local images stay masked, or show the field they type into?
-2. Should an interactive run's stop text reach the instance by default, or be opt-out per developer?
+2. Should an interactive run's stop text reach the instance by default, with an opt-out per developer, or only when the
+   developer opts in?
 3. Should piped runs attach unattended by default, or only with `PIWI_EDITOR=on`?
 4. Is the in-process instrumentation listener, Playwright's deepest internal, acceptable for the call log of pausable
    runs, or should those show the call and the element's state only?
@@ -679,8 +710,8 @@ runs the performance check.
 - **A recorder in the page (rrweb and the like).** Contract 6: nothing of Piwi in the page. Playwright's own snapshots
   are taken without it.
 - **Following Playwright's video file.** It is written in 256 KiB blocks, the first about 15 s in.
-- **Images in the terminal** (kitty, iTerm2, sixel). They break under tmux and in CI logs; the text view serves the
-  terminal.
+- **Images in the terminal** (kitty, iTerm2, sixel). They break under tmux and in CI logs; the terminal gets the start,
+  stop, stuck and end lines and a link to the view.
 - **A dormant live-view key for every CI run**, so an admin could turn the view on mid-run. Every CI worker of every
   project would hold a stream while the view is off.
 - **A shared custom-element renderer** for five hosts (a VS Code webview, JCEF, an MV3 page, Nuxt, Tauri). One Vue
@@ -705,7 +736,7 @@ plan named in parentheses already lists the finding. Lines are at `e82b429f`.
 | DB6 | A retrying test looks like a first run and links to its failed attempt | medium | `apps/application/app/pages/test-runs/[id].vue:127-130, 253-273` |
 | DB7 | Search qualifiers miss every row that streamed in | medium | `apps/application/server/api/test-runs/[id]/events.post.ts:106-117, 182-210` |
 | DB8 | The Watch view is a modal that hides the run, one worker at a time (live-view-next Part 5) | medium | `apps/application/app/pages/test-runs/[id].vue:114-124, 1166-1176` |
-| DB9 | Every Watch refusal reads the same guess | low | `apps/application/server/api/test-runs/[id]/live-view/watch.get.ts:31-38` |
+| DB9 | Every Watch refusal reads the same guess | low | `apps/application/server/api/test-runs/[id]/live-view/watch.get.ts:31-36` |
 | DB10 | A shared run's caption shows the previous call while the page holds the current step (live-view-next Part 1 / D2) | low | `packages/reporter/src/internal/capture/live-view.ts:540-575, 608-627` |
 | DB11 | Before the first test, the run page says 'No tests recorded for this run.' | low, in part | `apps/application/app/components/run/TestCasesList.vue:1089` |
 | DB12 | Turning the live view on cannot help the run that prompted it | low, in part | `apps/application/server/api/test-runs/setup.post.ts:78-82` |
@@ -867,7 +898,7 @@ plan named in parentheses already lists the finding. Lines are at `e82b429f`.
 | LV-4 | A view never follows its worker: every test needs close, find the row, Watch again | medium |
 | LV-5 | Phone and laptop: the image is unreadable at 390 px, and at 1366x720 the call log falls below the fold | medium |
 | LV-6 | Watch buttons move under the pointer while steps stream | low |
-| LV-7 | The modal re-centres as the call log grows, so the image jumps up and down | low |
+| LV-7 | The modal re-centers as the call log grows, so the image jumps up and down | low |
 | LV-8 | Worker names disagree: the live view uses Playwright's workerIndex ('Worker 3' in a 1-worker run) and the timeline its lanes ('Worker 0–3') | low |
 | LV-9 | The run ending with a view open is not said: the view still reads '· live' and 'The test ended.' | low |
 | LV-10 | A terminal run cannot be shared, and its terminal says nothing; the viewer only sees 'Not shared live' twice | medium |
@@ -926,7 +957,7 @@ As the code stood at `e82b429f`. "Steps" are the run page's live steps; a "stop"
 | CI → Team dashboard run page | Live steps; Watch (live view on and wrapConfig) with the call log, action point and match count; Stuck? plus test.stuck. | Never stops. | None. | The page URL; share links cover executions only. | `apps/docs/features/live-view.md:47-58` |
 | CI → Desktop app window and tray | Nothing. | n/a | None. | No. | `apps/application/server/utils/desktop-runs.ts:1-5` |
 | CI → Editor | The branch's running CI run as progress counts in the status bar. | n/a; failures after. | None. | No. | `packages/editor/src/run-watch.ts:3-4` |
-| CI → Runs window (Piwi Picker) | Nothing (Part 6 proposes a read-only list). | n/a | None. | No. |  |
+| CI → Runs window (Piwi Picker) | Nothing (live-view-next Part 6 proposes a read-only list). | n/a | None. | No. |  |
 | CI → Agent over MCP (instance) | `list_runs` with status running, `get_run` counts; no current call, no image. | n/a | None (`rerun_cluster_in_ci` afterwards). | No. | `apps/application/shared/mcp-tools.ts:188` |
 | CI → The terminal itself | The CI log: '[Piwi Dashboard] Live view on: …' or why not; View live progress. | n/a | Cancel the job. | No. | `apps/docs/features/live-view.md:30-36` |
 | Agent (shell tool, piped output) → Team dashboard run page | Steps; origin 'local' with no ref; 'Not shared live' when keyed. | With PIWI_EDITOR=on and an editor open: a stop the instance does not know about, then Stuck?. | None. | Cannot be shared (no hub). | `packages/reporter/src/internal/collect/metadata-collector.ts:139-146` |
