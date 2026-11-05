@@ -779,7 +779,7 @@
     "message": "Aplicación de escritorio"
   },
   "options_desktopHint": {
-    "message": "Opcional. Vinculado a la aplicación de escritorio Piwi Dashboard, Reproducir puede pedirle que ejecute un informe de error con Playwright en tu proyecto. Las ejecuciones que inicia también aparecen en la ventana Ejecuciones (Ejecuciones, en la ventana emergente)."
+    "message": "Opcional. Vinculado a la aplicación de escritorio Piwi Dashboard, Reproducir puede pedirle que ejecute un informe de error con Playwright en tu proyecto. Las ejecuciones que inicia también aparecen en la ventana Ejecuciones (Ejecuciones, en el menú de la extensión)."
   },
   "options_desktopUrl": {
     "message": "Dirección de la aplicación de escritorio"
@@ -1201,7 +1201,7 @@
     "message": "Enviar al editor"
   },
   "options_editorHint": {
-    "message": "En VS Code o un IDE de JetBrains con la extensión Piwi, ejecuta «Piwi: Pair with Piwi Picker» y pega aquí la dirección que copia. Los locators elegidos y los pasos grabados se pueden enviar entonces a ese editor, solo en este equipo, y se insertan en su cursor. Las ejecuciones que inicia aparecen entonces en la ventana Ejecuciones (Ejecuciones, en la ventana emergente), donde puedes pausarlas, avanzarlas paso a paso y verlas."
+    "message": "En VS Code o un IDE de JetBrains con la extensión Piwi, ejecuta «Piwi: Pair with Piwi Picker» y pega aquí la dirección que copia. Los locators elegidos y los pasos grabados se pueden enviar entonces a ese editor, solo en este equipo, y se insertan en su cursor. Las ejecuciones que inicia aparecen entonces en la ventana Ejecuciones (Ejecuciones, en el menú de la extensión), donde puedes pausarlas, avanzarlas paso a paso y verlas."
   },
   "options_editorAddress": {
     "message": "Dirección de emparejamiento"
@@ -6383,7 +6383,7 @@
     "message": "La extensión de Piwi de tu editor no puede compartir sus ejecuciones: actualízala."
   },
   "runs_statusUnproven": {
-    "message": "El programa del puerto emparejado no es este editor: Piwi Picker no le envió nada y deja de preguntar tras unos intentos. Usa Buscar de nuevo cuando tu editor esté abierto; si pasó a otro puerto, vuelve a emparejar Piwi Picker con él en la configuración."
+    "message": "El programa del puerto emparejado no es este editor: Piwi Picker no le envió nada y vuelve a preguntar cada minuto mientras esta ventana esté abierta. Si tu editor pasó a otro puerto, vuelve a emparejar Piwi Picker con él en la configuración."
   },
   "runs_statusNotEditor": {
     "message": "El programa del puerto emparejado no es la extensión de Piwi de tu editor, o es una demasiado antigua para demostrarlo: Piwi Picker no le envió nada. Abre tu editor, vuelve a ejecutar «Piwi: Pair with Piwi Picker» y pega en la configuración la dirección que copia."

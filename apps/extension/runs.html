@@ -142,12 +142,16 @@
       .run.ended .test {
         color: var(--muted);
       }
-      /* A run of a hub whose connection was lost, as last heard: grayed until the hub answers again. */
+      /* A run of a hub whose connection was lost, as last heard: dashed, its names muted, until the hub answers. */
       .run.away {
         border-style: dashed;
       }
-      .run.away .workers {
-        opacity: 0.6;
+      .run.away h2,
+      .run.away .test {
+        color: var(--muted);
+      }
+      .hubs > p > .piwi-btn {
+        margin-left: 4px;
       }
       .run-head {
         padding: 9px 12px 8px;
@@ -589,7 +593,9 @@
           <p id="shortcut-text" class="note"></p>
           <div id="shortcut-actions" class="piwi-actions"></div>
         </div>
-        <p class="note" data-i18n="runs_runToCursor" data-icon="info">Run to Cursor is in the editor, which has the file.</p>
+        <p class="note" data-i18n="runs_runToCursor" data-icon="info">
+          Run to Cursor is in the editor, which has the file.
+        </p>
       </footer>
     </main>
     <script type="module" src="src/runs/main.ts"></script>

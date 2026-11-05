@@ -95,6 +95,8 @@ const images = new Map<
     img: HTMLImageElement | null;
     note: string;
     viewport: { width: number; height: number } | null;
+    /** Its hub's connection was lost before it answered: it is asked again once the hub answers. */
+    lost?: string;
   }
 >();
 /**
@@ -402,7 +404,14 @@ function wantImage(run: RunsRun, worker: HubWorker, stop: HubStop): void {
       });
       img = made;
     }
-    images.set(key, { since: stop.since, loading: false, img, note: img ? '' : failureText(answer), viewport });
+    images.set(key, {
+      since: stop.since,
+      loading: false,
+      img,
+      note: img ? '' : failureText(answer),
+      viewport,
+      ...(answer.failure === 'offline' ? { lost: run.hub } : {}),
+    });
     render();
   });
 }
@@ -488,16 +497,15 @@ function toggleLive(run: RunsRun, worker: number, stop: HubStop): void {
   const key = workerKey(run.hub, run.session.ref, { worker });
   const lane = run.session.workers.find((w) => w.worker === worker)?.parallelIndex ?? worker;
   const slot = slotKey(run.hub, run.session.ref, lane);
+  // The run of a hub not connected now is shown as last heard: its Watch live waits for the hub.
+  if (!hubAnswers(run.hub)) return;
   const view = views.get(key);
   if (view?.since === stop.since && isLive(view)) {
     watchLive.delete(slot);
     endView(key, true);
-  } else if (watchLive.has(slot) && !hubAnswers(run.hub)) {
-    watchLive.delete(slot);
   } else {
     watchLive.set(slot, { hub: run.hub, run: run.session.ref });
-    // A lost hub's view starts once it answers again.
-    if (hubAnswers(run.hub)) startView(run, worker, stop);
+    startView(run, worker, stop);
   }
   render();
 }
@@ -535,8 +543,10 @@ function startView(run: RunsRun, worker: number, stop: HubStop): void {
       view.status = 'on';
     } else {
       stopInput(view);
-      view.status = 'refused';
-      view.note = failureText(answer);
+      // A view asked as its hub's connection was lost ends as the loss does, to start again once it answers.
+      const lost = answer.failure === 'offline';
+      view.status = lost ? 'ended' : 'refused';
+      view.note = lost ? t('runs_liveLost') : failureText(answer);
       view.next = null;
       announce(view.note);
     }
@@ -898,6 +908,8 @@ function place(parent: HTMLElement, children: readonly HTMLElement[]): void {
 
 function showState(next: RunsState): void {
   state = next;
+  // An image its hub's lost connection answered is asked again once the hub answers.
+  for (const [key, image] of images) if (image.lost && hubAnswers(image.lost)) images.delete(key);
   announceChanges(next);
   render();
   document.documentElement.dataset.ready = '';
@@ -1000,58 +1012,76 @@ function forgetGone(current: RunsState): void {
 
 /**
  * One line for each paired tool: the editor's windows it follows, or why it follows none, then the desktop app's, so a
- * broken pairing of one shows beside the other's runs. A tool whose state the empty box says already has no line.
+ * broken pairing of one shows beside the other's runs, with the buttons its sentence names. A tool whose state the
+ * empty box says already has no line.
  */
 function renderHubs(current: RunsState): void {
-  const lines: Array<[IconName, string, boolean]> = [];
+  const lines: HubLine[] = [];
   const editorPaired = current.discovery !== 'unpaired';
   const desktopPaired = current.desktop !== 'unpaired';
   // With no run, the empty box says the editor's state, else, with no editor paired, the desktop app's.
   const boxSays = current.runs.length === 0 ? (editorPaired ? 'editor' : 'desktop') : null;
   if (editorPaired) {
     const line = editorLine(current);
-    if (!(boxSays === 'editor' && line[2])) lines.push(line);
+    if (!(boxSays === 'editor' && line.boxed)) lines.push(line);
   }
   if (desktopPaired) {
     const line = desktopLine(current);
-    if (!(boxSays === 'desktop' && line[2])) lines.push(line);
+    if (!(boxSays === 'desktop' && line.boxed)) lines.push(line);
   }
   hubsLine.hidden = lines.length === 0;
   const shown = JSON.stringify(lines);
   if (shown === hubsShown) return;
   hubsShown = shown;
   hubsLine.replaceChildren(
-    ...lines.map(([icon, text, problem]) => {
+    ...lines.map(({ icon, text, actions }, index) => {
       const line = iconText(element('p'), icon, text);
       line.classList.toggle('waiting', icon !== 'check-circle');
-      line.toggleAttribute('data-problem', problem);
+      for (const action of actions) line.append(emptyActionButton(action, `hubs|${index}|${action}`));
       return line;
     }),
   );
 }
 
+/** A status line: its icon and sentence, whether the empty box says the same, and the buttons the sentence names. */
+interface HubLine {
+  icon: IconName;
+  text: string;
+  boxed: boolean;
+  actions: EmptyAction[];
+}
+
 /** The status lines as last drawn. */
 let hubsShown = '';
 
-/** The editor's line: its icon, its text, and whether it says what to fix (the empty box's sentence). */
-function editorLine(current: RunsState): [IconName, string, boolean] {
+/** The editor's line. */
+function editorLine(current: RunsState): HubLine {
   const hubs = current.hubs.filter((hub) => !hub.desktop);
   const connected = hubs.filter((hub) => hub.connected).length;
-  if (connected > 0) return ['check-circle', tn('runs_following', connected), false];
-  if (current.discovery === 'searching') return ['clock', t('runs_statusSearching'), false];
+  if (connected > 0) return { icon: 'check-circle', text: tn('runs_following', connected), boxed: false, actions: [] };
   // The window follows the editor while any of its windows answers: one that does not is found again meanwhile.
-  if (hubs.length > 0) return ['clock', t('runs_reconnecting', { editor: hubs[0]!.client ?? t('runs_editor') }), false];
-  const [icon, text] = editorEmptyOf(current);
-  return [icon, text, true];
+  if (hubs.length > 0 && current.discovery !== 'searching') {
+    const editor = hubs[0]!.client ?? t('runs_editor');
+    return { icon: 'clock', text: t('runs_reconnecting', { editor }), boxed: false, actions: [] };
+  }
+  const [icon, text, actions] = editorEmptyOf(current);
+  return { icon, text, boxed: true, actions };
 }
 
 /** The desktop app's line, as the editor's. */
-function desktopLine(current: RunsState): [IconName, string, boolean] {
+function desktopLine(current: RunsState): HubLine {
   const hub = current.hubs.find((h) => h.desktop);
-  if (hub?.connected) return ['check-circle', t('runs_followingDesktop'), false];
-  if (hub) return ['clock', t('runs_reconnecting', { editor: t('runs_desktopName') }), false];
-  const [icon, text] = desktopEmptyOf(current);
-  return [icon, text, current.desktop !== 'found'];
+  if (hub?.connected) return { icon: 'check-circle', text: t('runs_followingDesktop'), boxed: false, actions: [] };
+  if (hub) {
+    return {
+      icon: 'clock',
+      text: t('runs_reconnecting', { editor: t('runs_desktopName') }),
+      boxed: false,
+      actions: [],
+    };
+  }
+  const [icon, text, actions] = desktopEmptyOf(current);
+  return { icon, text, boxed: true, actions };
 }
 
 type EmptyAction = 'settings' | 'again';
@@ -1123,16 +1153,17 @@ function renderEmpty(current: RunsState): void {
   if (shown === emptyShown) return;
   emptyShown = shown;
   iconText(emptyText, icon, text);
-  emptyActions.replaceChildren(
-    ...actions.map((action) => {
-      const button =
-        action === 'settings'
-          ? makeButton(t('runs_openSettings'), () => void chrome.runtime.openOptionsPage(), { icon: 'settings' })
-          : makeButton(t('runs_findAgain'), () => post({ type: 'find' }), { icon: 'refresh' });
-      button.dataset.focus = `empty|${action}`;
-      return button;
-    }),
-  );
+  emptyActions.replaceChildren(...actions.map((action) => emptyActionButton(action, `empty|${action}`)));
+}
+
+/** Open the settings, or Look again: a button the empty box or a status line shows, named for the focus by `focus`. */
+function emptyActionButton(action: EmptyAction, focus: string): HTMLButtonElement {
+  const button =
+    action === 'settings'
+      ? makeButton(t('runs_openSettings'), () => void chrome.runtime.openOptionsPage(), { icon: 'settings' })
+      : makeButton(t('runs_findAgain'), () => post({ type: 'find' }), { icon: 'refresh' });
+  button.dataset.focus = focus;
+  return button;
 }
 
 /** The ids of the runs' headings, one per run drawn. */
@@ -1187,7 +1218,7 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
       part(`${runKey}|ended`, null, () => iconText(element('p', 'run-ended'), 'check-circle', t('runs_ended'))),
     );
   } else if (away) {
-    const editor = client ?? t('runs_editor');
+    const editor = hub?.desktop ? t('runs_desktopName') : (hub?.client ?? t('runs_editor'));
     children.push(
       part(`${runKey}|away`, editor, () =>
         iconText(element('p', 'note run-note run-away'), 'clock', t('runs_runAway', { editor })),
@@ -1666,7 +1697,8 @@ function renderPage(run: RunsRun, worker: HubWorker, stop: HubStop, away: boolea
   figure.toggleAttribute('data-picking', picking.has(key));
   const children: HTMLElement[] = [];
   if (canView || pickable) {
-    const tools = { canView, live, pickable, picking: picking.has(key) };
+    // While its hub is away, Watch live shows as the person left it, for when the hub answers.
+    const tools = { canView, live: live || (away && watched), pickable, picking: picking.has(key) };
     const row = part(`${key}|page-tools`, tools, () => pageTools(run, worker.worker, stop, tools));
     const pickAt = `[data-focus="${CSS.escape(`${key}|pick-at`)}"]`;
     for (const button of row.querySelectorAll('button')) {

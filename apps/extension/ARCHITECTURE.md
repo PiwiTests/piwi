@@ -785,7 +785,8 @@ and the popup's Runs tile only ask the worker, and the worker handles the run sh
    IDE's `…/send` takes a POST alone). The answer must carry `editorTokenProof` for the port the request was sent to,
    compared in constant time.
    - An endpoint without the proof, or with a wrong one, gets nothing, and no hub kept is connected (`unproven`,
-     asked again `UNPROVEN_RETRIES` times in a row at most, then only as a window asks or the pairing changes).
+     asked again on the backoff `UNPROVEN_RETRIES` times in a row at most, then only as a window asks, the pairing
+     changes or the minute's look again comes).
    - One answering 404 without it is no editor's Piwi extension of this age (`not-editor` in the Runs window, which
      drops the hubs kept). Send to editor asks to update the editor's Piwi extension or plugin
      (`common_editorOutdated`).
@@ -821,12 +822,13 @@ The hubs are found again:
   times in a row, then waits to be asked; while a Runs window is open it tries without end;
 - when a hub names a peer no hub found holds (`peers`, an editor window opened since), once for each such peer: a
   peer carries no token, which the editor's `…/live` gives;
-- every minute (`REFIND_MS`) while a Runs window is open, for a hub of a service that names no peer;
+- every minute (`REFIND_MS`) while a Runs window is open;
 - when the popup, the Runs window or the run shortcut asks.
 
 An unreachable editor leaves the hubs found last to try. A hub whose connection was lost keeps its runs as last heard
 (`away`), which `state` lists with the hub not connected, until it tells its runs again, it refuses its token, or it is
-no longer named; ten minutes at most. The Runs window shows such a run grayed, its controls held, and its Watch live
+no longer named; ten minutes at most, and none for a hub whose service said it stopped (1001), which starts again at
+another address. The run shortcut and the popup's count read the runs of the hubs that answer alone (`answeringRuns`). The Runs window shows such a run grayed, its controls held, and its Watch live
 starts again once the hub answers.
 
 ### A connection per hub

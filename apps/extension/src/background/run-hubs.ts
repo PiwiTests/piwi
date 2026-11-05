@@ -3,12 +3,13 @@
  * the hubs of every editor service through the Send to editor pairing (`GET …/live` beside `…/send`, the pairing's
  * token as a bearer credential), keeps a connection to each (`hub-connection.ts`) and the runs they push. The token
  * goes to the paired port only once the program there proved it holds it (`proveEditor`); a program that does not is
- * asked again `UNPROVEN_RETRIES` times in a row at most, until the pairing changes or a window asks. The hubs'
- * addresses and tokens go to the secret area beside the editor's pairing, never to `chrome.storage.local`, and are
- * found again whenever a hub's connection fails, with a backoff, whenever a hub names a peer this side holds no token
- * for (`peers`: a window opened since), and every `REFIND_MS` while a Runs window is open. A hub whose connection was
- * lost keeps its runs as last heard, which a window shows grayed, until it answers again or is no longer named. What each code written at a stop came to goes to the listeners,
- * with the hub that said it. While a listener (a Runs window) is there, each connection says the runs are followed
+ * asked again on the backoff `UNPROVEN_RETRIES` times in a row at most, then only as the pairing changes, a window asks,
+ * or the minute's look again comes. The hubs' addresses and tokens go to the secret area beside the editor's pairing,
+ * never to `chrome.storage.local`, and are found again whenever a hub's connection fails, with a backoff, whenever a
+ * hub names a peer this side holds no token for (`peers`: a window opened since), and every `REFIND_MS` while a Runs
+ * window is open. A hub whose connection was lost keeps its runs as last heard, which a window shows grayed, until it
+ * answers again or is no longer named; the run shortcut and the popup's count leave them out. What each code written
+ * at a stop came to goes to the listeners, with the hub that said it. While a listener (a Runs window) is there, each connection says the runs are followed
  * (`follow`), which holds a failure no pause bar shows for the person watching: as the first window opens, on each
  * connection that opens while one is, and `on: false` as the last one closes.
  *
@@ -89,7 +90,7 @@ const ENDED_KEPT_MS = 10 * 60_000;
 const ENDED_KEPT = 5;
 /** How long `ready` waits for the hubs to answer `subscribe`. */
 const READY_MS = 3000;
-/** How often the hubs are found again while a Runs window is open, for a hub that names no peer. */
+/** How often the hubs are found again while a Runs window is open. */
 const REFIND_MS = 60_000;
 /** How many times in a row a program on the paired port that does not prove it holds the token is asked again. */
 const UNPROVEN_RETRIES = 4;
@@ -411,12 +412,21 @@ export class RunHubs {
     }
   }
 
-  /** The global shortcut: resumes every stopped test, else pauses every run (`shortcutCommands`). */
+  /**
+   * The global shortcut: resumes every stopped test, else pauses every run (`shortcutCommands`), of the hubs that
+   * answer now: a run kept as last heard takes no command.
+   */
   async shortcut(): Promise<RunsAnswer[]> {
     await this.ready();
     return Promise.all(
-      shortcutCommands(this.state().runs).map(({ action, ...run }) => this.command({ ...run, what: action })),
+      shortcutCommands(this.answeringRuns()).map(({ action, ...run }) => this.command({ ...run, what: action })),
     );
+  }
+
+  /** The runs of the hubs whose connection answers now. */
+  answeringRuns(): RunsRun[] {
+    const state = this.state();
+    return state.runs.filter((run) => state.hubs.some((hub) => hub.id === run.hub && hub.connected));
   }
 
   /** The editor's hubs, through its pairing, or why there are none. */
@@ -543,8 +553,9 @@ export class RunHubs {
     if (this.connections.get(hub.url) === connection) {
       this.connections.delete(hub.url);
       this.endViews(hub.url);
-      // Its runs stay as last heard, a window showing them grayed, until it answers again.
-      if (connection.heardRuns && why !== 'refused') {
+      // Its runs stay as last heard, a window showing them grayed, until it answers again: a hub that refused its
+      // token, or whose service stopped (it starts again at another address), keeps none.
+      if (connection.heardRuns && why !== 'refused' && why !== 'stopped') {
         this.away.set(hub.url, { sessions: [...connection.sessions.values()], at: this.now() });
       }
     }

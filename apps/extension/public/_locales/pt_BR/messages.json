@@ -779,7 +779,7 @@
     "message": "Aplicativo de desktop"
   },
   "options_desktopHint": {
-    "message": "Opcional. Pareado com o aplicativo de desktop Piwi Dashboard, Reproduzir pode pedir que ele execute um relatório de bug com o Playwright no seu projeto. As execuções que ele inicia também aparecem na janela Execuções (Execuções, no pop-up)."
+    "message": "Opcional. Pareado com o aplicativo de desktop Piwi Dashboard, Reproduzir pode pedir que ele execute um relatório de bug com o Playwright no seu projeto. As execuções que ele inicia também aparecem na janela Execuções (Execuções, no menu da extensão)."
   },
   "options_desktopUrl": {
     "message": "Endereço do aplicativo de desktop"
@@ -1201,7 +1201,7 @@
     "message": "Enviar ao editor"
   },
   "options_editorHint": {
-    "message": "No VS Code ou em um IDE JetBrains com a extensão Piwi, execute “Piwi: Pair with Piwi Picker” e cole aqui o endereço copiado. Os locators escolhidos e os passos gravados podem então ser enviados a esse editor, somente neste computador, e são inseridos no cursor. As execuções que ele inicia aparecem então na janela Execuções (Execuções, no pop-up), onde você as pausa, avança passo a passo e assiste."
+    "message": "No VS Code ou em um IDE JetBrains com a extensão Piwi, execute “Piwi: Pair with Piwi Picker” e cole aqui o endereço copiado. Os locators escolhidos e os passos gravados podem então ser enviados a esse editor, somente neste computador, e são inseridos no cursor. As execuções que ele inicia aparecem então na janela Execuções (Execuções, no menu da extensão), onde você as pausa, avança passo a passo e assiste."
   },
   "options_editorAddress": {
     "message": "Endereço de pareamento"
@@ -6383,7 +6383,7 @@
     "message": "A extensão do Piwi no seu editor não compartilha as execuções: atualize-a."
   },
   "runs_statusUnproven": {
-    "message": "O programa na porta pareada não é este editor: o Piwi Picker não enviou nada a ele e para de perguntar depois de algumas tentativas. Use Procurar de novo quando o seu editor estiver aberto; se ele mudou de porta, pareie o Piwi Picker com ele de novo nas configurações."
+    "message": "O programa na porta pareada não é este editor: o Piwi Picker não enviou nada a ele e pergunta de novo a cada minuto enquanto esta janela estiver aberta. Se o seu editor mudou de porta, pareie o Piwi Picker com ele de novo nas configurações."
   },
   "runs_statusNotEditor": {
     "message": "O programa na porta pareada não é a extensão do Piwi do seu editor, ou é uma antiga demais para comprovar isso: o Piwi Picker não enviou nada a ele. Abra o seu editor, execute de novo “Piwi: Pair with Piwi Picker” e cole nas configurações o endereço copiado."

@@ -315,24 +315,25 @@ describe('finding the hubs through the pairing', () => {
     expect(fetches).toEqual([]);
   });
 
-  it('asks a program that cannot prove it holds the token again a few times in a row, then waits to be asked', async () => {
+  it('asks a program that cannot prove it holds the token again a few times in a row, then once a minute', async () => {
     const { hubs, prove, challenges } = setup();
+    /** Whether a look for the hubs is under way: its proof runs outside the fake timers. */
+    const finding = () => (hubs as unknown as { finding: Promise<void> | null }).finding !== null;
     hubs.listen(() => {});
     prove('wrong');
     await hubs.find();
-    for (let i = 0; i < 10; i++) {
-      await vi.advanceTimersByTimeAsync(30_000);
-      await settle();
+    // The backoff asks again at 1, 3, 7 and 15 s, then no more: the minute's look again alone.
+    for (let second = 1; second <= 55; second++) {
+      await vi.advanceTimersByTimeAsync(1000);
+      await until(() => !finding());
     }
-    // The first ask, then four more; the minute's look again asks once more.
-    expect(challenges.length).toBeGreaterThanOrEqual(5);
-    expect(challenges.length).toBeLessThanOrEqual(10);
-    const asked = challenges.length;
-    await vi.advanceTimersByTimeAsync(59_000);
-    await settle();
-    expect(challenges.length).toBeLessThanOrEqual(asked + 1);
-    // Proven again, the count starts again.
+    expect(challenges).toHaveLength(5);
+    await vi.advanceTimersByTimeAsync(5000);
+    await until(() => challenges.length === 6);
+    expect(challenges).toHaveLength(6);
+    // Proven again, it is found.
     prove('editor');
+    await until(() => !finding());
     await hubs.find();
     await until(() => hubs.state().discovery === 'found');
     expect(hubs.state().discovery).toBe('found');
@@ -898,7 +899,7 @@ describe('the hubs of windows opened since', () => {
     expect(fetches).toHaveLength(2);
   });
 
-  it('are asked of the editor once while it does not name them, and again once a hub names them anew', async () => {
+  it('are asked of the editor once while it does not name them, however often a hub names them', async () => {
     const { hubs, sockets, fetches } = setup();
     hubs.listen(() => {});
     await hubs.find();
@@ -950,6 +951,28 @@ describe('a hub whose connection was lost', () => {
       hubs: [{ id: HUB.url, connected: true }],
       runs: [{ hub: HUB.url, session: session([RUNNING]) }],
     });
+  });
+
+  it('takes no command from the run shortcut, and keeps none once its service said it stopped', async () => {
+    const { hubs, sockets, answer } = setup();
+    hubs.listen(() => {});
+    answer(async () => Response.json({ hubs: [HUB, OTHER_HUB] }));
+    await hubs.find();
+    await welcome(sockets[0]!, [session([STOPPED])]);
+    await welcome(sockets[1]!, [session([RUNNING], { ref: 'r2' })]);
+    sockets[0]!.hangUp(1006);
+    expect(hubs.state().runs).toHaveLength(2);
+    // The stopped test of the lost hub is no reason to resume: the shortcut pauses the run that answers.
+    const sent = hubs.shortcut();
+    await vi.advanceTimersByTimeAsync(10);
+    const pause = sockets[1]!.last('runControl')!;
+    expect(pause).toMatchObject({ ref: 'r2', action: 'pause' });
+    sockets[1]!.hear({ type: 'answer', id: pause.id, ok: true, message: 'Pausing.' });
+    expect(await sent).toEqual([{ ok: true, message: 'Pausing.' }]);
+    expect(hubs.answeringRuns().map((run) => run.session.ref)).toEqual(['r2']);
+    // A hub whose service stopped starts again elsewhere: its runs go.
+    sockets[1]!.hangUp(HUB_CLOSE.goingAway);
+    expect(hubs.state().runs.map((run) => run.session.ref)).toEqual(['r1']);
   });
 
   it('drops them once the hub refuses its token, or the editor no longer names it', async () => {

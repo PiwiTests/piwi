@@ -135,7 +135,7 @@ export async function runsSummary(): Promise<{ connected: boolean; paired: boole
   return {
     connected: runHubs.connected(),
     paired: state.discovery !== 'unpaired' || state.desktop !== 'unpaired',
-    runs: liveRuns(state).length,
+    runs: liveRuns({ runs: runHubs.answeringRuns() }).length,
   };
 }
 

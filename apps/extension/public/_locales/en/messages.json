@@ -7562,7 +7562,7 @@
     "description": "Runs window, when the paired editor’s Piwi extension is older than the Runs window."
   },
   "runs_statusUnproven": {
-    "message": "The program on the paired port is not this editor: Piwi Picker sent it nothing, and stops asking after a few tries. Look again once your editor is open; if it moved to another port, pair Piwi Picker with it again in the settings.",
+    "message": "The program on the paired port is not this editor: Piwi Picker sent it nothing, and asks again every minute while this window is open. If your editor moved to another port, pair Piwi Picker with it again in the settings.",
     "description": "Runs window, when the program on the paired editor’s port does not prove it holds the pairing’s token: another program took the port, or the editor moved to another one. Nothing was sent to it."
   },
   "runs_statusNotEditor": {
