@@ -18,7 +18,7 @@ execution pages, the demo's Jenkins project, the [Re-run in CI](../apps/docs/fea
 topic. PR 5 is built: **Check the jobs** in the form reads each Jenkins job the target names, without starting it,
 with the credential a dispatch would carry, and names the parameters it does not declare
 (`ciServerCheckPlans` in `shared/ci-server.ts`, `checkCiServerTarget` in `server/utils/ci-server-dispatch.ts`). PR 4
-(the other presets) remains.
+(the other presets) is deferred until a team asks for a preset: each one is a registry entry and its request test.
 
 **Summary.** Today a dispatch goes through the repository host: the project's SCM token starts a GitHub workflow, a
 GitLab pipeline or a Bitbucket custom pipeline, and the host of the run's repository picks which one. A team whose CI
@@ -275,7 +275,7 @@ The question was whether a per-project base URL is safe. It is with D5 and D6; w
    (seed, handlers), the docs and the help topic. The feature is usable from here.
 4. **PR 4, `feat(app)`: TeamCity, Buildkite, CircleCI and Azure Pipelines presets**, each with its request test, and
    `collectCiInfo` recording Buildkite's and TeamCity's build number and URL (`feat(reporter)`), so their links and
-   build-number match work.
+   build-number match work. Deferred until a team asks for one of these presets.
 5. **PR 5, optional, `feat(ui)`: Check.** A read-only request per preset. For Jenkins,
    `GET <job>/api/json?tree=property[parameterDefinitions[name]]` lists the declared parameters, so the form can warn
    when `PIWI_RERUN_ARGS` or `PIWI_ORIGIN_REF` is missing.

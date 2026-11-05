@@ -88,8 +88,8 @@ function customize() {
 const checking = ref(false);
 const checkResults = ref<CheckResponse['results'] | null>(null);
 const checkError = ref<string | null>(null);
-/** The token typed in the field goes only once saved: Check sends the stored credentials. */
-const checkedWithoutTypedToken = ref(false);
+/** True when a token was typed but not saved: Check sent the stored credentials without it. */
+const typedTokenNotUsed = ref(false);
 /** Moves on every edit and every check, so an answer to an older form is dropped. */
 let checkGeneration = 0;
 watch(
@@ -109,7 +109,7 @@ async function check() {
   checkError.value = resolved.error;
   if (!resolved.target) return;
   checking.value = true;
-  checkedWithoutTypedToken.value = Boolean(token.value.trim());
+  typedTokenNotUsed.value = Boolean(token.value.trim());
   try {
     const answer = await $fetch<CheckResponse>(`/api/projects/${props.projectId}/ci-server-check`, {
       method: 'POST',
@@ -268,7 +268,7 @@ const CHECK_LABELS = { rerun: 'Re-run job', flakeLab: 'Flake Lab job' } as const
             <dd :class="result.ok ? 'text-muted' : 'text-error'">{{ result.message }}</dd>
           </template>
         </dl>
-        <p v-if="checkResults && checkedWithoutTypedToken" class="text-muted">
+        <p v-if="checkResults && typedTokenNotUsed" class="text-muted">
           Checked with the stored credentials: save to check with the token you entered.
         </p>
       </div>
