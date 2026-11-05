@@ -2,19 +2,22 @@
 /**
  * Desktop shell only: the "Local runs" tray — a fixed bottom-right panel
  * listing this session's local test runs with their streaming consoles, the
- * desktop cousin of a browser's downloads tray. Mounted once in the default
- * layout; runs keep going while it is closed, and closing it never stops
- * anything. Renders nothing without the IPC bridge.
+ * desktop cousin of a browser's downloads tray. Mounted once in the app, outside
+ * the layouts, so a layout change (an analytics dashboard's TV mode) keeps it;
+ * runs keep going while it is closed, and closing it never stops anything.
+ * Renders nothing without the IPC bridge.
  *
  * Each run shows its workers live, as the bundled server, the hub of the runs
  * the shell starts, tells them (`useDesktopRunHub`): the test each one runs
  * and, at a stop, the page, the controls and the code a stop can make, to copy
- * (`DesktopRunCopyList`). The window holds the hub's stream only while a run
- * of the tray runs or the hub still has a live run: while it does, a headless
+ * (`DesktopRunCopyList`). The window holds the hub's stream while it has a run
+ * to show (`plugins/desktop-run-hub.client.ts`): while it does, a headless
  * stop waits for the window, so the tray opens on every stop it hears, and a
  * notification says so of a failure or a `page.pause()` when the window is in
- * the background. It also opens on the worker the run page's **Show its page**
- * names (`showWorker`), its run expanded and the focus on that worker. A
+ * the background. A run the hub has that no run of the tray names (one a reload
+ * left going) shows among the other runs of the app. It also opens on the
+ * worker the run page's **Show its page** names (`showWorker`), its run
+ * expanded and the focus on that worker. A
  * running run's **Hold failures** switch, off by default
  * and on from the start for a reproduction, makes a failure no pause bar shows
  * wait at its line (`show`); a run nobody attends (a Flake Lab, a bisect, a
@@ -67,15 +70,8 @@ function sessionsOf(run: LocalRun): HubSession[] {
   return liveSessions.value.filter((session) => run.hubRefs.includes(desktopRunOf(session.ref)));
 }
 
-/** The hub's live runs no run of the tray names: another window of the app started them. */
+/** The hub's live runs no run of the tray names: another window's, or this window's before a reload. */
 const otherSessions = computed(() => liveSessions.value.filter((session) => !runOf(session)));
-
-// The stream, only while it has something to show: a run of the tray runs, or the hub still has a live one.
-watch(
-  () => available.value && (activeCount.value > 0 || liveSessions.value.length > 0),
-  (on) => hub.want(on),
-  { immediate: true },
-);
 
 /** What the live region reads out: a test stopped, what a command answered. */
 const announcement = ref('');
@@ -119,10 +115,9 @@ onMounted(() => {
 });
 onBeforeUnmount(() => {
   stopListening?.();
-  hub.want(false);
 });
 
-// This component is mounted once in the layout, which makes it the natural
+// This component is mounted once in the app, which makes it the natural
 // owner of the store's Piwi-run correlation: every server run event (the
 // reporter checking in counts) re-checks pending local runs.
 useRunStream(() => store.correlatePiwiRuns());

@@ -76,6 +76,7 @@ async function installBridge(page: Page) {
             return () => {};
           },
         },
+        window: { getCurrentWindow: () => ({ label: 'main' }) },
       },
     });
   });

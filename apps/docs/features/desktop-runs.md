@@ -27,7 +27,8 @@ end without stopping again, and [**End the test**](./end-the-test) skips the res
 it, and **Resume** to let it end as it failed. It is off for a run you start, and on from the start for **Reproduce**,
 which runs to show you the failure; while [Piwi Picker's Runs window](./runs-window) is open, failures are held too. A
 run nobody attends never holds one, and its switch says so: a Flake Lab run, a bisect, a lab job, a run with
-`--repeat-each` above 1 and UI mode go on past each failure.
+`--repeat-each` above 1 and UI mode go on past each failure. Their failures never bounce the Dock icon or flash the
+taskbar button.
 
 <figure>
   <img src="/screenshots/desktop-run-live.png" alt="The Local runs tray of the desktop app: a running run with its Hold failures switch, and its checkout test stopped at its page.pause() before its click on Pay now, its page watched live, with Resume, Step, Finish, Assert a region and Mock a request">
@@ -35,8 +36,9 @@ run nobody attends never holds one, and its switch says so: a Flake Lab run, a b
 </figure>
 
 The tray opens at each stop: a headless test waits for you there. While the window is in the background, the system
-tells you of a failure or a `page.pause()`, never of a step or a pause you asked for. When no run of the app is going
-on, the window stops listening, and a stop goes on at once.
+tells you of a failure or a `page.pause()`, never of a step or a pause you asked for. The window listens from its
+start, on every page: after a reload, the tray shows the runs still going. When no run of the app is going on, the
+window stops listening, and a stop goes on at once.
 
 ## Its output
 
