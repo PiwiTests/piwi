@@ -184,9 +184,11 @@ Each entry names folders under `server/api/`.
     `projects.live_view` on: `[id]/live-view` (a test worker's event stream, `GET`, and its frames, stops and the end of
     its sharing, `POST`, on the run's live view key, `@piwitests/core/live-view`), `[id]/live-view/watch` (a view of one
     worker's test, or of its lane, which follows the lane's tests and the worker started in it again, to a person who
-    may open the run) and `[id]/live-view/workers`. All of it is relayed in memory by
+    may open the run) and `[id]/live-view/workers` (its workers and how many views are open, which `LanePanel` reads to
+    say why a view did not open). All of it is relayed in memory by
     `server/utils/live-view.ts`, written straight to the response by `server/utils/event-stream.ts` so a slow reader
-    gets the latest frame alone; `setup` mints the key.
+    gets the latest frame alone; `setup` mints the key and stores its digest with the run
+    (`test_runs.live_view_key_digests`), by which a restarted instance takes a running worker's key back.
   - Run detail: `[id]` (read, update, delete), `recent`, the SSE `[id]/stream`, network requests, failure groups,
     `[id]/insights` (the comparison with a baseline that the Changes tab shows), coverage, the Perfetto export.
   - `[id]/resources`: the report each reporter sent (one `test_run_resource_reports` row per shard, rebuilt on ingest

@@ -49,7 +49,7 @@ What the package does to a user's run, process by process.
   and read back only when this user owns them, a check Windows skips: `internal/support/private-file.ts`,
   or a `fs.mkdtempSync` folder), and `[Piwi Dashboard]`-prefixed logs (`internal/support/logger.ts`).
   On Windows the private files (the setup file, the stream buffer, the recovery file, the
-  workers' resource census, the ARIA sample set) live in `%LOCALAPPDATA%\piwi\tmp` instead
+  workers' resource census, the run's log, the ARIA sample set) live in `%LOCALAPPDATA%\piwi\tmp` instead
   (`privateTempDir`), a folder of this user's alone, whatever account runs the tests; a
   recovery file an older reporter left in `os.tmpdir()` is moved there on the next run.
 
@@ -335,11 +335,17 @@ What the package does to a user's run, process by process.
   file keeps it. In `onBegin` the reporter names it in `PIWI_LIVE_VIEW`
   (`<instance>/api/test-runs/<id>/live-view#<key>`, `@piwitests/core/live-view`), which
   Playwright hands the workers it starts after: a CI run (`detectCi`, which the run's origin
-  reads too) says so in its `Live view on` line, a run outside CI that a run channel follows
-  in its `Live view ready` line. A run outside CI with no key names why instead
-  (`none:no-instance`, `none:unregistered`, `none:off`, and `none:local` for the desktop
-  app, which gives none: `liveView.refused: 'local'`); a run the reporter registers itself,
-  without the global setup, has none.
+  reads too) says so in its `Live view on for the specs that use Piwi's fixtures` line, and
+  names the first spec file whose test made Playwright calls without the capture fixtures
+  (`noteUncaptured`: no `piwiCapture` step, so its worker holds no live view stream); a run
+  outside CI that a run channel follows says so in its `Live view ready` line. A run with no
+  key names why, outside CI in `PIWI_LIVE_VIEW` (`none:no-instance`, `none:streaming-off`,
+  `none:unregistered` when the global setup did not register the run, `none:setup-failed` when the
+  instance did not take its registration, which the setup file then holds with the error,
+  `none:off`, and `none:local` for the desktop app, which gives none:
+  `liveView.refused: 'local'`), in CI in its log (`ciLiveViewNote`, the setup's error
+  included); a run the reporter registers itself, without the global setup, has none. A run
+  of `merge-reports` says nothing of the live view.
 - In a CI run, each worker opens an event stream to that URL in the `piwiResources` worker
   fixture, without waiting for it, and keeps it until the worker ends. It names its shard,
   its worker index and its lane (`slot`, Playwright's `parallelIndex`, which a worker
@@ -351,11 +357,16 @@ What the package does to a user's run, process by process.
   `live`) after its attach and as that changes, and a sharing that connection asked for
   stops as it closes. Nothing goes to the instance while the run is not shared, its stops
   included. The stream never keeps the worker alive; a failed one is opened again after 1,
-  2, 4, 8 and 16 seconds, 20 times at most over the worker's life (a 409 while the run is
-  interrupted included), then given up and closed until the run is shared again, saying
-  what the instance last answered, and a 401, 403, 404 or 410 gives the key up at once,
-  the run channel hearing why. A stream replaced by another (shared again at once) or
-  closed for good is done with: nothing is tried again for it.
+  2, 4, 8 and 16 seconds (a 409 while the run is interrupted included), counted afresh
+  once a stream stays open 30 s. Past them, a CI run's worker opens it again every 30 to
+  60 seconds while it lasts, and says once in the run's log that its view is lost
+  (`Worker 2: live view lost: <cause>`) and once that it is back; outside CI, the sharing
+  stops, saying what the instance last answered, until the run is shared again. A 401 (an
+  instance started again that does not take the key) or a 404 (the project's live view
+  off) skips the quick retries: the instance may take the key back. A 403 or 410 gives the
+  key up at once, for the worker's life, the run channel hearing why. A stream replaced by
+  another (shared again at once) or closed for good is done with: nothing is tried again
+  for it.
 - The same fixture takes `PIWI_LIVE_VIEW` out of the worker's `process.env` until its
   teardown, so no process the worker's fixtures, hooks or tests start gets the key. A
   listener put before Playwright's own on the worker's IPC puts it back for the
@@ -416,6 +427,13 @@ What the package does to a user's run, process by process.
   seconds (`internal/streaming/live-resources.ts`).
 - `onBegin` writes `PIWI_RESOURCES_RESULTS` (see below) and, with coverage on,
   `PIWI_COVERAGE_BROWSER` / `PIWI_COVERAGE_SERVER` / `PIWI_COVERAGE_CSS` for the workers.
+- **The run's log** (`internal/support/run-log.ts`). Playwright hands what a worker writes
+  while a test runs to that test, as its own output, raw writes to the worker's file
+  descriptors included: only the runner's process reaches the run's log alone. The global
+  setup, which runs there, names a private file in `PIWI_RUN_LOG` for the workers of a CI
+  run whose setup got a live view key; each worker appends its lines to it
+  (`printRunLine`), and an unref'd timer prints the whole lines every second as
+  `[Piwi Dashboard]` lines, the rest as the process exits, then removes the file.
 - **A run started in a terminal** (`internal/config/editors.ts`, `followEditor`). With
   no `PIWI_RUN_CHANNEL` and no launcher (`PIWI_ORIGIN`), its output going to a terminal
   or an editor's test runner having started it (`startedByTestRunner`: `PW_TEST_REPORTER`
@@ -495,6 +513,14 @@ On `onEnd`, the collected run is handed to `RunSubmitter`, which tries, in order
 4. **crash recovery**: on total failure, persist the payload to disk for the next run: one owner-only file per
    dashboard and project, replayed to that dashboard only and deleted once it took the run (or refused it as
    invalid).
+
+The stream itself opens in the background from `onBegin` (`StreamManager.start`): `/begin`
+for the run the global setup registered (a 409 sets it aside for a `/start`), else `/start`.
+A try that gets no answer, a server error, a 408 or a 429 is asked again after 1, 2, 4…
+seconds, 30 at most, for the run's life, the events queued meanwhile within
+`maxStreamBufferBytes`, and a stream that opens late says how late, once; any other refusal
+gives it up. As the run ends, the drain tries a stream not open yet once more, at once, and
+leaves the run to the batch rungs when that fails too.
 
 The ladder, including the stream drain and the remaining file uploads, runs within
 the `submitTimeout` budget: when it runs out, `HttpClient.close` fails every request

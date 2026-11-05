@@ -73,7 +73,7 @@ describe('the live view address', () => {
   });
 
   test('a run outside CI without a key names why, which no address reads as one', () => {
-    for (const why of ['no-instance', 'unregistered', 'off'] as const) {
+    for (const why of ['no-instance', 'streaming-off', 'unregistered', 'setup-failed', 'off', 'local'] as const) {
       const value = formatLiveViewMissing(why);
       expect(value).toBe(`none:${why}`);
       expect(parseLiveViewMissing(value)).toBe(why);
@@ -87,7 +87,9 @@ describe('the live view address', () => {
 
   test('says why a shared stream was given up, by the instance’s answer', () => {
     expect(liveShareRefusal(404)).toMatch(/live view was turned off/);
-    expect(liveShareRefusal(401)).toBe(liveShareRefusal(403));
+    expect(liveShareRefusal(404)).toMatch(/Share the run again once it is back on/);
+    expect(liveShareRefusal(401)).toMatch(/Share the run again to try once more/);
+    expect(liveShareRefusal(403)).not.toMatch(/Share the run again/);
     expect(liveShareRefusal(410)).toMatch(/no longer live/);
     expect(liveShareRefusal(409)).toMatch(/holds the run as interrupted/);
     expect(liveShareRefusal(null)).toMatch(/did not answer/);
@@ -188,6 +190,13 @@ describe('the messages', () => {
       call: null,
       test: null,
     });
+    // When the page looked so, in the worker's clock, kept when it is a time and left out when not.
+    expect(readWorkerToInstance({ type: 'frame', worker: 1, data: '/9j/', at: 1_760_000_000_000.4 })).toMatchObject({
+      at: 1_760_000_000_000,
+    });
+    for (const at of ['soon', -1, 5, Number.NaN, null]) {
+      expect(readWorkerToInstance({ type: 'frame', worker: 1, data: '/9j/', at })).not.toHaveProperty('at');
+    }
     expect(readWorkerToInstance({ type: 'frame', worker: 1, refused: 'Too heavy.' })).toEqual({
       type: 'frame',
       shard: null,

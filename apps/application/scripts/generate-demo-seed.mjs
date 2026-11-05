@@ -6545,6 +6545,12 @@ const ASSISTANT_MESSAGES = [
   }
 }
 
+// ── Worker lanes (rng-free) ────────────────────────────────────────────────
+// Each execution stores its worker's lane (`parallel_index`), as the reporter
+// sends Playwright's `parallelIndex`. A seeded worker runs its shard's lane
+// from start to end, never started again, so its lane is its index.
+for (const row of TEST_RUNS_CASES) row.parallel_index = row.worker_index ?? null;
+
 // ── Assemble SQL ───────────────────────────────────────────────────────────
 const lines = [
   '-- Piwi Dashboard demo seed',

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isUiMode, isListMode } from '../src/internal/support/run-mode.js';
+import { isUiMode, isListMode, isMergeReports } from '../src/internal/support/run-mode.js';
 
 const NODE = ['/usr/bin/node', '/path/to/playwright'];
 
@@ -51,5 +51,17 @@ describe('isListMode', () => {
   it('only considers tokens after the `test` subcommand', () => {
     // A `--list` token sitting before `test` is not part of the test invocation.
     expect(isListMode([...NODE, '--list', 'test'])).toBe(false);
+  });
+});
+
+describe('isMergeReports', () => {
+  it('detects the merge-reports command', () => {
+    expect(isMergeReports([...NODE, 'merge-reports', './blob-report'])).toBe(true);
+    expect(isMergeReports([...NODE, 'merge-reports', '--reporter', '@piwitests/reporter', './blobs'])).toBe(true);
+  });
+
+  it('is false for a test run, one that filters on a spec named merge-reports included', () => {
+    expect(isMergeReports([...NODE, 'test'])).toBe(false);
+    expect(isMergeReports([...NODE, 'test', 'merge-reports'])).toBe(false);
   });
 });

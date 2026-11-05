@@ -9,7 +9,8 @@ const logger = new Logger();
 const warnedFiles = new Set<string>();
 
 /**
- * The temp file the global setup hands its registration to the reporter through, per project and per process.
+ * The temp file the global setup hands its registration to the reporter through, or why it has none, per project and
+ * per process.
  * Playwright runs the global setup and the reporters in one process, its runner's, so a run reads its own
  * registration alone, whatever other run of the project the machine runs meanwhile.
  */
@@ -31,16 +32,36 @@ export interface SetupInfo {
   liveViewLocal?: true;
 }
 
+/** What the global setup leaves in the file when it could not register the run: why, in its error's words. */
+interface SetupFailure {
+  projectName: string;
+  failed: string;
+}
+
 /** Write this process's setup info file, readable by its owner alone, replacing whatever was at its path. */
 export function writeSetupInfo(info: SetupInfo): void {
   writePrivateFile(getSetupFilePath(info.projectName), JSON.stringify(info));
 }
 
 /**
- * Read this process's setup info file for the given project, and leave it in place. `null` when there is none, and
- * when it is not a regular file this user owns that no one else may write (`readPrivateFile`), which one warning names.
+ * Write in this process's setup file that the global setup could not register the run, and why, for the reporter to
+ * say. Never throws.
  */
-export function peekSetupInfo(projectName: string): SetupInfo | null {
+export function writeSetupFailure(projectName: string, failed: string): void {
+  const failure: SetupFailure = { projectName, failed };
+  try {
+    writePrivateFile(getSetupFilePath(projectName), JSON.stringify(failure));
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * This process's setup file for the given project, left in place: a registration or a failure. `null` when there is
+ * none, and when it is not a regular file this user owns that no one else may write (`readPrivateFile`), which one
+ * warning names.
+ */
+function peekSetupFile(projectName: string): Partial<SetupInfo & SetupFailure> | null {
   const setupFile = getSetupFilePath(projectName);
   try {
     const read = readPrivateFile(setupFile);
@@ -59,7 +80,19 @@ export function peekSetupInfo(projectName: string): SetupInfo | null {
   return null;
 }
 
-/** Read and delete this process's setup info file for the given project. `null` when there is none. */
+/** Read this process's registration of the given project, and leave it in place. `null` when the file holds none. */
+export function peekSetupInfo(projectName: string): SetupInfo | null {
+  const info = peekSetupFile(projectName);
+  return info?.runId && info.setupToken ? (info as SetupInfo) : null;
+}
+
+/** Why the global setup of this process could not register the given project's run; `null` when it said nothing so. */
+export function peekSetupFailure(projectName: string): string | null {
+  const failed = peekSetupFile(projectName)?.failed;
+  return typeof failed === 'string' ? failed : null;
+}
+
+/** Read and delete this process's setup file for the given project: its registration, `null` when it holds none. */
 export function readSetupInfo(projectName: string): SetupInfo | null {
   const info = peekSetupInfo(projectName);
   try {

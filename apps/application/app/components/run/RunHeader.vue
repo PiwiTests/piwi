@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { TestRunDetails, ReportInfo } from '~~/types/api';
+import type { TestRunDetails, ReportInfo, TestCaseResult } from '~~/types/api';
 import type { RetryMode } from '~/utils/retry-command';
 import { highlightCode } from '#shared/highlight';
 import { safeHttpUrl } from '#shared/utils/safe-url';
@@ -36,6 +36,8 @@ const props = defineProps<{
   /** The active status filters: the count bar sets them and the Tests list applies them. */
   activeStatuses: string[];
   finalizing?: boolean;
+  /** The run's tests as the page shows them while it is live, the streamed ones included. */
+  liveCases?: TestCaseResult[] | null;
 }>();
 
 const emit = defineEmits<{
@@ -112,10 +114,36 @@ const {
   copyCommand: copyRetryCommand,
   copied: retryCopied,
   title: retryTitle,
-} = useRunRetryCommand(() => props.testRun?.testCases);
+} = useRunRetryCommand(() =>
+  runEnded.value ? props.testRun?.testCases : (props.liveCases ?? props.testRun?.testCases),
+);
 
-// A red run leads with Copy retry command; a green run leads with its report.
-const retryIsPrimary = computed(() => failedCases.value.length > 0);
+/**
+ * Whether Copy retry command leads (a red run) or the report (a green one): decided once the run has ended, from its
+ * failed tests, and kept for the page view, until the run goes on again. A run still going leads with neither: Copy
+ * retry command stays a secondary action for the tests that failed so far.
+ */
+const retryIsPrimary = ref(false);
+const runEnded = computed(
+  () =>
+    !!props.testRun && !['running', 'initializing', 'finalizing'].includes(props.testRun.status) && !props.finalizing,
+);
+let primaryDecided = false;
+watch(
+  runEnded,
+  (ended) => {
+    if (!ended) {
+      primaryDecided = false;
+      retryIsPrimary.value = false;
+    } else if (!primaryDecided) {
+      primaryDecided = true;
+      retryIsPrimary.value = failedCases.value.length > 0;
+    }
+  },
+  { immediate: true },
+);
+/** Whether Copy retry command shows: on a red run, and on a live one once a test failed. */
+const retryShown = computed(() => retryIsPrimary.value || (!runEnded.value && failedCases.value.length > 0));
 
 /** Past this many tests, a re-run of the whole run runs their files rather than naming every test. */
 const MAX_TESTS_IN_A_WHOLE_RUN = 200;
@@ -270,11 +298,11 @@ function onLabelKeydown(e: KeyboardEvent) {
       <!-- Copy retry command (with a mode picker) leads on a red run, Re-run N failed
            tests in the desktop app; the report leads on a green one, where the desktop
            app offers to re-run the flaky tests, else all of them. -->
-      <UPopover v-if="retryIsPrimary && !desktopBridge">
+      <UPopover v-if="retryShown && !desktopBridge">
         <UButton
           size="xs"
-          color="primary"
-          variant="solid"
+          :color="retryIsPrimary ? 'primary' : 'neutral'"
+          :variant="retryIsPrimary ? 'solid' : 'outline'"
           :icon="retryCopied ? 'i-lucide-check' : 'i-lucide-clipboard'"
           :title="retryTitle"
           aria-label="Copy retry command"

@@ -140,17 +140,13 @@ same `projectName`. `runLabel` is the manual override when your CI isn't detecte
 By default, the reporter streams results as tests complete: the run appears when the suite starts, each test's trace and
 attachments upload when it finishes (`liveFileUploads`), and the run's page shows the step each running test is on. When a test's final attempt fails, the reporter prints its headline and a link right away;
 at the end it prints `View run: <url>` (see [CI → Getting the run URL back out](./ci#getting-the-run-url-back-out-of-ci)).
-A server that does not support streaming gets the batch upload instead.
+A server that does not support streaming gets the batch upload instead. `streamingBatchSize` and `streamingBatchDelay`
+set how often results are sent.
 
 ### Disabling streaming
 
 `streaming: false` sends all results at the end of the run, then each test's files and each report in a request of
 their own.
-
-### Tuning batch parameters
-
-`streamingBatchSize` (default 20 queued events) and `streamingBatchDelay` (default
-2000 ms) set how often results are sent while streaming.
 
 ## Global setup phase
 
@@ -221,7 +217,9 @@ through [`wrapConfig`](#installing-via-wrapconfig).
 **Connection errors.** Check that `serverUrl` answers from where the tests run; `PIWI_VERBOSE=true` logs every
 request. A run the reporter could not deliver (dashboard down, no credential, a sign-in page answering in its place)
 is saved locally, owner-only, and sent to the same `serverUrl` on the project's next run, without traces or
-attachments; it never fails the Playwright run. An interrupted stream is retried until it catches up. Live events the
+attachments; it never fails the Playwright run. A stream that cannot start while the dashboard is down or busy retries
+for the run's life, its events kept within
+[`maxStreamBufferBytes`](/reference/reporter-options#maxstreambufferbytes); one that starts late says how late. Live events the
 dashboard refuses, or has not taken two and a half minutes after they first failed, leave the live view so the later
 ones flow; when test results are among the events the dashboard never took, the run is sent again as a batch at its
 end. [`submitTimeout`](/reference/reporter-options#submittimeout) (15 minutes by default) bounds that end-of-run work,

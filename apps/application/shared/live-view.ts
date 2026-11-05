@@ -4,6 +4,7 @@
  * side of the protocol is `@piwitests/core/live-view`.
  */
 import {
+  isEpochMs,
   readLiveCall,
   readLiveCallLog,
   readLiveTestOutcome,
@@ -55,6 +56,31 @@ export function liveWorkerName(id: LiveWorkerId): string {
   return id.shard === null ? name : `${name} of shard ${id.shard}`;
 }
 
+/** A worker's lane in a run: its shard (null when the run is not sharded) and its slot, Playwright's `parallelIndex`. */
+export interface LiveLane {
+  shard: number | null;
+  slot: number;
+}
+
+/**
+ * The `?watch=` value of the run page's address that opens the live view of a lane: the worker's number as the page
+ * names it (`2` for worker 2), after its shard in a sharded run (`3.2` for worker 2 of shard 3).
+ */
+export function liveWatchAddress(lane: LiveLane): string {
+  return lane.shard === null ? String(lane.slot + 1) : `${lane.shard}.${lane.slot + 1}`;
+}
+
+/** The lane a `?watch=` value names, or null when it names none. */
+export function parseLiveWatchAddress(value: unknown): LiveLane | null {
+  if (typeof value !== 'string') return null;
+  const match = /^(?:(\d{1,4})\.)?(\d{1,5})$/.exec(value.trim());
+  if (!match) return null;
+  const shard = match[1] === undefined ? null : Number(match[1]);
+  const number = Number(match[2]);
+  if (number < 1 || number > 10_000 || (shard !== null && shard < 1)) return null;
+  return { shard, slot: number - 1 };
+}
+
 /**
  * Why a view ended: its test ended, its worker left, the run ended, the project's live view was turned off, the person
  * who watched it opened a further one of the run, past their share, in its place (`replaced`), or the developer who
@@ -64,8 +90,12 @@ export type LiveViewEnd = 'test-ended' | 'worker-left' | 'run-ended' | 'off' | '
 
 /** A message of one worker's view, to the person watching it. */
 export type LiveViewerMessage =
-  /** A frame of the test's page, a JPEG in base64, the call it was taken at and the title of its test. */
-  | { type: 'frame'; data: string; call: LiveCall | null; test: string | null }
+  /**
+   * A frame of the test's page, a JPEG in base64, the call it was taken at, the title of its test and, from a reporter
+   * that says it, when the page looked so, in epoch milliseconds (`at`): the browser's paint time, at most the worker's
+   * clock.
+   */
+  | { type: 'frame'; data: string; call: LiveCall | null; test: string | null; at?: number }
   /** The call the test is in, as Playwright logs it, in a CI run, and the title of its test. */
   | { type: 'call-log'; log: LiveCallLog; test: string | null }
   /** Why no frame shows now. */
@@ -95,6 +125,7 @@ export function parseLiveViewerMessage(data: string): LiveViewerMessage | null {
         data: message.data,
         call: message.call ? readLiveCall(message.call) : null,
         test: readLiveTestTitle(message.test),
+        ...(isEpochMs(message.at) ? { at: message.at } : {}),
       };
     case 'call-log': {
       const log = readLiveCallLog(message.log);

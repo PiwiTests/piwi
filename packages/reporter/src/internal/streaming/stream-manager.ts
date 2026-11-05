@@ -10,8 +10,9 @@ import { uploadCaseFilesInTurn, type Uploader } from '../submit/uploader.js';
 import type { FileHandler } from '../files/file-handler.js';
 import { Logger } from '../support/logger.js';
 import { createLimiter } from '../support/limiter.js';
-import { readSetupInfo } from '../support/setup-file.js';
+import { readSetupInfo, type SetupInfo } from '../support/setup-file.js';
 import { runUrl } from '../support/run-url.js';
+import { formatDuration } from '../flake/lab.js';
 import type { CollectedTestCase, StreamEvent, FilterDetails } from '../../types.js';
 
 /**
@@ -29,26 +30,39 @@ const MAX_EVENT_REQUEST_BYTES = 4 * 1024 * 1024;
  * back-off. An outage shorter than that sets nothing aside, however many sends fail in it.
  */
 const EVENT_FAILURE_GRACE_MS = 150_000;
+/** The first wait before a failed `/begin` or `/start` is asked again: each next one doubles, up to `maxRetryDelay`. */
+const START_RETRY_DELAY_MS = 1000;
 /** The least a heartbeat waits once activity put it off: pending events flush first. */
 const MIN_HEARTBEAT_WAIT_MS = 250;
 /** Longest delay `setTimeout` supports; a larger one fires at once. */
 const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
 
+/** What the run's `/begin` or `/start` says of it. */
+interface RunStart {
+  startTime: string;
+  metadata: Record<string, any>;
+  instanceId: string;
+  playwrightVersion?: string | null;
+  reporterVersion?: string | null;
+  shardInfo?: ShardInfo | null;
+  isFullRun?: boolean;
+  filterDetails?: FilterDetails | null;
+  plannedTotal?: number;
+}
+
 /**
- * Manages the streaming protocol: queues events (begin / complete), flushes
- * them in batches, schedules retries on failure, and handles per-test-case
- * live file uploads.
+ * Manages the streaming protocol: opens the run's stream, asked again while the dashboard does not answer, queues
+ * events (begin / complete), flushes them in batches, schedules retries on failure, and handles per-test-case live
+ * file uploads.
  */
 export class StreamManager {
   /**
-   * Bounded queue of events waiting to reach the server. Capped at
-   * `options.maxStreamBufferBytes` so a stalled server or an oversized suite
-   * cannot grow the reporter's memory without bound; the queue sheds live
-   * progress before it ever sheds a test result (see `BoundedEventQueue`).
+   * Bounded queue of events waiting to reach the server, those queued before the stream opens included. Capped at
+   * `options.maxStreamBufferBytes` so a stalled server, a stream that opens late or an oversized suite cannot grow the
+   * reporter's memory without bound; the queue sheds live progress before it ever sheds a test result (see
+   * `BoundedEventQueue`).
    */
   private readonly pendingEvents: BoundedEventQueue;
-  /** Begin events buffered before the stream opens; capped the same way. */
-  private readonly pendingBeginEvents: BoundedEventQueue;
   /** Guards `reportBufferPressure` so its summary is logged at most once. */
   private bufferPressureReported = false;
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -103,6 +117,18 @@ export class StreamManager {
   private _token: string | null = null;
   private _auth: string | null = null;
   private _startPromise: Promise<void> | null = null;
+  /** The run the global setup registered, which the stream begins; null without one, and once it cannot begin. */
+  private setupInfo: SetupInfo | null = null;
+  /** When `start` was called (ms since the epoch), from which a stream that opens after a failed try is late. */
+  private startedAt = 0;
+  /** Set as the run ends: a stream not open yet is tried once more at once, and given up when that fails too. */
+  private startEnding = false;
+  /** Which request the latest try to open the stream made: `/begin` of the registered run, or `/start`. */
+  private asked: 'begin' | 'start' | null = null;
+  /** Set once the stream will never open: the dashboard refused it, or the run ended first. Nothing is queued then. */
+  private startGivenUp = false;
+  /** Ends the wait before the next try at opening the stream, while one waits. */
+  private wakeStart: (() => void) | null = null;
 
   /** Whether the streaming session is active */
   get enabled(): boolean {
@@ -128,7 +154,7 @@ export class StreamManager {
   get auth(): string | null {
     return this._auth;
   }
-  /** Promise that resolves when the stream has been fully initialised */
+  /** Promise that resolves once the stream opened, or will never open: `drain` settles it as the run ends. */
   get startPromise(): Promise<void> | null {
     return this._startPromise;
   }
@@ -157,9 +183,7 @@ export class StreamManager {
     private readonly options: PiwiDashboardOptions,
     private readonly logger: Logger = new Logger(),
   ) {
-    const maxBytes = this.options.maxStreamBufferBytes ?? 0;
-    this.pendingEvents = new BoundedEventQueue(maxBytes);
-    this.pendingBeginEvents = new BoundedEventQueue(maxBytes);
+    this.pendingEvents = new BoundedEventQueue(this.options.maxStreamBufferBytes ?? 0);
   }
 
   /**
@@ -171,10 +195,14 @@ export class StreamManager {
    * results are not lost.
    */
   get lostResults(): boolean {
-    return this.resultsUndelivered || this.pendingEvents.lostResults || this.pendingBeginEvents.lostResults;
+    return this.resultsUndelivered || this.pendingEvents.lostResults;
   }
 
-  /** Begin the streaming session after `onBegin` fires. Non-blocking — the actual handshake runs asynchronously. */
+  /**
+   * Begin the streaming session after `onBegin` fires. Non-blocking: the stream opens in the background, asked again
+   * with a growing wait while the dashboard does not answer, until the run ends (`drain`). Events queue meanwhile,
+   * within `maxStreamBufferBytes`, and go once it opens.
+   */
   start(
     startTime: string,
     metadata: Record<string, any>,
@@ -186,7 +214,8 @@ export class StreamManager {
     filterDetails?: FilterDetails | null,
     plannedTotal?: number,
   ): void {
-    this._startPromise = this._doStart(
+    this.startedAt = Date.now();
+    this._startPromise = this._doStart({
       startTime,
       metadata,
       instanceId,
@@ -196,156 +225,183 @@ export class StreamManager {
       isFullRun,
       filterDetails,
       plannedTotal,
-    );
+    });
   }
 
-  private async _doStart(
-    startTime: string,
-    metadata: Record<string, any>,
-    instanceId: string,
-    playwrightVersion?: string | null,
-    reporterVersion?: string | null,
-    shardInfo?: ShardInfo | null,
-    isFullRun?: boolean,
-    filterDetails?: FilterDetails | null,
-    plannedTotal?: number,
-  ): Promise<void> {
-    const setupInfo = readSetupInfo(this.options.projectName!);
-
-    try {
-      this._auth = await this.httpClient.resolveAuth(this.options);
-      await this.recovery.tryUpload(this.httpClient, this._auth);
-
-      let response: any;
-      const shardIndex = shardInfo?.current;
-      const shardTotal = shardInfo?.total;
-
-      if (setupInfo) {
-        try {
-          response = await this.httpClient.postJSON(
-            `/api/test-runs/${setupInfo.runId}/begin`,
-            {
-              setupToken: setupInfo.setupToken,
-              totalTests: plannedTotal ?? 0,
-              metadata,
-              playwrightVersion,
-              reporterVersion,
-              shardIndex,
-              shardTotal,
-              isFullRun,
-              filterDetails,
-            },
-            this._auth,
-            undefined,
-            { headers: runTokenHeaders(setupInfo.setupToken) },
+  // Open the stream, asking again after a failure a later try may not meet (no answer, a server error, a timeout or
+  // a rate limit) until the run ends. A refusal that stays (another client error) gives it up at once.
+  private async _doStart(run: RunStart): Promise<void> {
+    this.setupInfo = readSetupInfo(this.options.projectName!);
+    let authResolved = false;
+    let failures = 0;
+    for (;;) {
+      try {
+        if (!authResolved) {
+          this._auth = await this.httpClient.resolveAuth(this.options);
+          authResolved = true;
+          await this.recovery.tryUpload(this.httpClient, this._auth);
+        }
+        const response = await this.openRun(run);
+        if (!response?.runId || !response?.streamToken) {
+          this.giveUpStart(new Error('the answer names no run'));
+          return;
+        }
+        this.streamOpened(response.runId, response.streamToken, failures > 0);
+        return;
+      } catch (error) {
+        // A `/start` the instance may have taken creates a run each time it is asked again.
+        const unsure = this.asked === 'start' && !notTaken(error);
+        if (refuses(error) || unsure || this.startEnding || this.httpClient.closed) {
+          this.giveUpStart(
+            failures > 0 && this.asked === 'begin' && isStatus(error, 403) ? new Error(SPENT_SETUP) : error,
           );
-        } catch (error) {
-          // Stale setupInfo — the run was cancelled (e.g. by crash recovery submit).
-          // Fall back to creating a fresh run instead of silently disabling streaming.
-          if (!(error instanceof HttpError && error.status === 409)) throw error;
-          this.logger.debug(`Setup info expired, creating fresh run...`);
-          response = await this.httpClient.postJSON(
-            '/api/test-runs/start',
-            {
-              projectName: this.options.projectName,
-              projectDescription: this.options.projectDescription,
-              startTime,
-              environment: this.options.environment || null,
-              label: this.options.label || null,
-              keep: this.options.keep === true,
-              metadata,
-              instanceId,
-              playwrightVersion,
-              reporterVersion,
-              shardIndex,
-              shardTotal,
-              isFullRun,
-              filterDetails,
-              totalTests: plannedTotal ?? 0,
-            },
-            this._auth,
+          return;
+        }
+        failures++;
+        if (failures === 1) {
+          this.logger.warn(
+            `Live streaming could not start (${errorMessage(error)}) — asking again while the run goes on, its events kept until the dashboard answers.`,
           );
+        } else {
+          this.logger.debug(`Live streaming could not start yet (try ${failures}): ${errorMessage(error)}`);
         }
-      } else {
-        response = await this.httpClient.postJSON(
-          '/api/test-runs/start',
-          {
-            projectName: this.options.projectName,
-            projectDescription: this.options.projectDescription,
-            startTime,
-            environment: this.options.environment || null,
-            label: this.options.label || null,
-            keep: this.options.keep === true,
-            metadata,
-            instanceId,
-            playwrightVersion,
-            reporterVersion,
-            shardIndex,
-            shardTotal,
-            isFullRun,
-            filterDetails,
-            totalTests: plannedTotal ?? 0,
-          },
-          this._auth,
-        );
+        await this.waitToStartAgain(Math.min(START_RETRY_DELAY_MS * 2 ** (failures - 1), this.maxRetryDelay));
       }
-
-      if (response?.runId && response?.streamToken) {
-        this._runId = response.runId;
-        this._token = response.streamToken;
-        this._enabled = true;
-        this.streamBuffer.bindRun(response.runId);
-        this.logger.info(`Streaming enabled. Run ID: ${response.runId}`);
-        if (this.options.serverUrl) {
-          this.logger.info(`View live progress: ${runUrl(this.options.serverUrl, response.runId)}`);
-        }
-        this.lastActivityAt = Date.now();
-        this.scheduleHeartbeat();
-
-        if (this.pendingBeginEvents.length > 0) {
-          this.pendingEvents.prepend(this.pendingBeginEvents.takeAll());
-        }
-        // Flush whatever queued while `/start` was in flight — step-end events
-        // land in `pendingEvents` directly, so keying this off begin events
-        // alone would leave them sitting until the next event or the finalize.
-        if (this.pendingEvents.length > 0) this.flush();
-      }
-    } catch (error) {
-      if (error instanceof HttpError && error.status === 401) {
-        this.logger.warn(
-          `Live streaming could not start: the dashboard at ${this.options.serverUrl} requires authentication. ` +
-            `Set the reporter's \`apiKey\` option, or PIWI_API_KEY in the environment or in the .env file next to ` +
-            `the Playwright config — create a key under Settings → Users on the dashboard. ` +
-            `Falling back to batch upload at the end of the run.`,
-        );
-      } else {
-        this.logger.warn(
-          `Live streaming is unavailable (${errorMessage(error)}) — results will be submitted in one batch when the run finishes.`,
-        );
-      }
-      this._enabled = false;
-    }
-  }
-
-  // Queues a begin event; held in a pre-start buffer until the stream is open,
-  // then prepended to the main queue so it arrives before the matching complete event.
-  /** Queue a test-case `begin` event. Held in a pre-start buffer if the stream is not yet open, then prepended so it arrives before the matching `complete` event. */
-  queueBeginEvent(event: StreamEvent): void {
-    if (this.ended) return;
-    if (this._enabled && this._runId) {
-      this.queueEvent(event);
-    } else {
-      this.pendingBeginEvents.enqueue(event);
     }
   }
 
   /**
-   * Queue a test-case event. Triggers an immediate flush when the batch size is
-   * reached, otherwise schedules a timer-based flush. A step event is dropped
-   * while nobody watches the run, and every event once the dashboard ended it.
+   * Ask the dashboard for the run's stream: `/begin` the run the global setup registered, else `/start` one. A run
+   * the dashboard no longer begins (409: it was cancelled, e.g. by a crash-recovery submit) is set aside for a fresh
+   * one.
+   */
+  private async openRun(run: RunStart): Promise<{ runId?: number; streamToken?: string } | null> {
+    const shardIndex = run.shardInfo?.current;
+    const shardTotal = run.shardInfo?.total;
+    const setup = this.setupInfo;
+    if (setup) {
+      this.asked = 'begin';
+      try {
+        return await this.httpClient.postJSON(
+          `/api/test-runs/${setup.runId}/begin`,
+          {
+            setupToken: setup.setupToken,
+            totalTests: run.plannedTotal ?? 0,
+            metadata: run.metadata,
+            playwrightVersion: run.playwrightVersion,
+            reporterVersion: run.reporterVersion,
+            shardIndex,
+            shardTotal,
+            isFullRun: run.isFullRun,
+            filterDetails: run.filterDetails,
+          },
+          this._auth,
+          undefined,
+          { headers: runTokenHeaders(setup.setupToken) },
+        );
+      } catch (error) {
+        if (!(error instanceof HttpError && error.status === 409)) throw error;
+        this.logger.debug(`Setup info expired, creating fresh run...`);
+        this.setupInfo = null;
+      }
+    }
+    this.asked = 'start';
+    return this.httpClient.postJSON(
+      '/api/test-runs/start',
+      {
+        projectName: this.options.projectName,
+        projectDescription: this.options.projectDescription,
+        startTime: run.startTime,
+        environment: this.options.environment || null,
+        label: this.options.label || null,
+        keep: this.options.keep === true,
+        metadata: run.metadata,
+        instanceId: run.instanceId,
+        playwrightVersion: run.playwrightVersion,
+        reporterVersion: run.reporterVersion,
+        shardIndex,
+        shardTotal,
+        isFullRun: run.isFullRun,
+        filterDetails: run.filterDetails,
+        totalTests: run.plannedTotal ?? 0,
+      },
+      this._auth,
+    );
+  }
+
+  // The stream is open: send what queued while it opened, and say so, with how late when a try failed first.
+  private streamOpened(runId: number, token: string, late: boolean): void {
+    this._runId = runId;
+    this._token = token;
+    this._enabled = true;
+    this.streamBuffer.bindRun(runId);
+    this.logger.info(
+      late
+        ? `Streaming started ${formatDuration(Date.now() - this.startedAt)} late, once the dashboard answered. Run ID: ${runId}`
+        : `Streaming enabled. Run ID: ${runId}`,
+    );
+    if (this.options.serverUrl) {
+      this.logger.info(`View live progress: ${runUrl(this.options.serverUrl, runId)}`);
+    }
+    this.lastActivityAt = Date.now();
+    this.scheduleHeartbeat();
+    // Whatever queued while the stream opened goes now, not at the next event or the finalize.
+    if (this.pendingEvents.length > 0) this.flush();
+  }
+
+  // The stream will never open: say why, and keep no event for it. The end-of-run batch carries the whole run.
+  private giveUpStart(error: unknown): void {
+    if (error instanceof HttpError && error.status === 401) {
+      this.logger.warn(
+        `Live streaming could not start: the dashboard at ${this.options.serverUrl} requires authentication. ` +
+          `Set the reporter's \`apiKey\` option, or PIWI_API_KEY in the environment or in the .env file next to ` +
+          `the Playwright config — create a key under Settings → Users on the dashboard. ` +
+          `Falling back to batch upload at the end of the run.`,
+      );
+    } else if (this.startEnding && !refuses(error)) {
+      this.logger.warn(
+        `Live streaming did not start before the run ended (${errorMessage(error)}) — results are submitted in one batch.`,
+      );
+    } else {
+      this.logger.warn(
+        `Live streaming is unavailable (${errorMessage(error)}) — results will be submitted in one batch when the run finishes.`,
+      );
+    }
+    this._enabled = false;
+    this.startGivenUp = true;
+    this.pendingEvents.clear();
+  }
+
+  // Wait `ms` before the next try at opening the stream, or less when the run ends meanwhile (`settleStart`).
+  private waitToStartAgain(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const wake = () => {
+        if (timer) clearTimeout(timer);
+        this.wakeStart = null;
+        resolve();
+      };
+      this.wakeStart = wake;
+      timer = setTimeout(wake, ms);
+      // The wait never keeps the process alive: the run's end wakes it.
+      timer.unref?.();
+    });
+  }
+
+  /** As the run ends: a stream not open yet is tried once more at once, then given up. Resolves once it settled. */
+  private async settleStart(): Promise<void> {
+    this.startEnding = true;
+    this.wakeStart?.();
+    await this._startPromise;
+  }
+
+  /**
+   * Queue a test-case event, held until the stream opens. Triggers an immediate flush when the batch size is
+   * reached, otherwise schedules a timer-based flush. A step event is dropped while nobody watches the run, and every
+   * event once the dashboard ended it or the stream will never open.
    */
   queueEvent(event: StreamEvent): void {
-    if (this.ended) return;
+    if (this.ended || this.startGivenUp) return;
     if (this.watched === false && (event.type === 'step-begin' || event.type === 'step-end')) return;
     this.pendingEvents.enqueue(event);
 
@@ -362,7 +418,7 @@ export class StreamManager {
    * `queueEvent` drops them.
    */
   queueEventsNow(events: StreamEvent[]): void {
-    if (this.ended) return;
+    if (this.ended || this.startGivenUp) return;
     for (const event of events) {
       if (this.watched === false && (event.type === 'step-begin' || event.type === 'step-end')) continue;
       this.pendingEvents.enqueue(event);
@@ -424,7 +480,7 @@ export class StreamManager {
           continue;
         }
         // Once the time budget closed the client, the drain stops: no failure counts.
-        if (refusesEvents(error) || (!this.httpClient.closed && this.failingPastGrace())) {
+        if (refuses(error) || (!this.httpClient.closed && this.failingPastGrace())) {
           this.setAside(chunk, error);
           continue;
         }
@@ -614,7 +670,6 @@ export class StreamManager {
       this.flushTimer = null;
     }
     this.pendingEvents.clear();
-    this.pendingBeginEvents.clear();
     this.streamBuffer.clear();
   }
 
@@ -635,7 +690,10 @@ export class StreamManager {
     }
   }
 
-  /** Drain all pending and buffered events before the run finishes. Retries up to 10 times with exponential back-off, until the HTTP client is closed. */
+  /**
+   * Drain all pending and buffered events before the run finishes, once the stream opened or was given up
+   * (`settleStart`). Retries up to 10 times with exponential back-off, until the HTTP client is closed.
+   */
   async drain(): Promise<void> {
     try {
       await this._drain();
@@ -648,6 +706,7 @@ export class StreamManager {
   private async _drain(): Promise<void> {
     this.stopHeartbeat();
     this.clearRetryTimer();
+    await this.settleStart();
     if (!this._enabled) {
       this.pendingEvents.clear();
       this.flushPromises = [];
@@ -707,13 +766,12 @@ export class StreamManager {
   // stalled server does not silently swallow data. Reported once per drain.
   private reportBufferPressure(): void {
     if (this.bufferPressureReported) return;
-    const dropped = this.pendingEvents.droppedCount + this.pendingBeginEvents.droppedCount;
+    const dropped = this.pendingEvents.droppedCount;
     if (dropped === 0) return;
     this.bufferPressureReported = true;
 
     const byType = this.pendingEvents.droppedByType;
-    const beginByType = this.pendingBeginEvents.droppedByType;
-    const count = (type: StreamEvent['type']): number => (byType[type] ?? 0) + (beginByType[type] ?? 0);
+    const count = (type: StreamEvent['type']): number => byType[type] ?? 0;
     const steps = count('step-begin') + count('step-end');
     const begins = count('begin');
     const results = count('complete');
@@ -838,11 +896,33 @@ function endsRun(error: unknown): boolean {
   return error instanceof HttpError && error.status === 409;
 }
 
+/** Node's codes for a connection that never opened: the request reached no instance. */
+const NOT_CONNECTED = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH', 'ETIMEDOUT']);
+
+/** Why a `/begin` asked again is refused: an earlier try, whose answer was lost, began the run. */
+const SPENT_SETUP =
+  'the dashboard began the run on an earlier try whose answer was lost; the run is sent whole at its end';
+
 /**
- * A refusal of a request of events that no retry changes: a client error other than a timeout (408) or a rate
- * limit (429).
+ * Whether a failed request certainly took no effect: no connection opened, or the instance or its proxy answered
+ * that it took nothing (408, 429, 502, 503). A timeout, a gateway timeout or a connection closed before the answer
+ * may follow a request the instance took.
  */
-function refusesEvents(error: unknown): boolean {
+function notTaken(error: unknown): boolean {
+  if (error instanceof HttpError) return [408, 429, 502, 503].includes(error.status);
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && NOT_CONNECTED.has(code);
+}
+
+function isStatus(error: unknown, status: number): boolean {
+  return error instanceof HttpError && error.status === status;
+}
+
+/**
+ * A refusal of a stream's request that no retry changes: a client error other than a timeout (408) or a rate limit
+ * (429).
+ */
+function refuses(error: unknown): boolean {
   return error instanceof HttpError && error.status >= 400 && error.status < 500 && ![408, 429].includes(error.status);
 }
 

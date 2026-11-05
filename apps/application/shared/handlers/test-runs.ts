@@ -184,6 +184,7 @@ export async function getTestRun(
       wastedTimeMs: testRunsCases.wastedTimeMs,
       stepEvents: testRunsCases.stepEvents,
       workerIndex: testRunsCases.workerIndex,
+      parallelIndex: testRunsCases.parallelIndex,
       shardIndex: testRunsCases.shardIndex,
       startedAt: testRunsCases.startedAt,
       browser: testRunsCases.browser,
@@ -256,6 +257,7 @@ export async function getTestRun(
           : null)),
     stepEvents: (tc as { stepEvents?: unknown }).stepEvents ?? null,
     workerIndex: tc.workerIndex,
+    parallelIndex: tc.parallelIndex ?? null,
     shardIndex: tc.shardIndex,
     startedAt: tc.startedAt,
     browser: tc.browser,
@@ -285,7 +287,7 @@ export async function getTestRun(
     }
   }
 
-  const { streamToken: _streamToken, ...testRunPublic } = testRun;
+  const { streamToken: _streamToken, liveViewKeyDigests: _liveViewKeyDigests, ...testRunPublic } = testRun;
 
   let keptByName: string | null = null;
   if (testRun.keptBy) {

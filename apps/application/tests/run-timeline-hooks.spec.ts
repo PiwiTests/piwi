@@ -150,3 +150,55 @@ test.describe('Run timeline hooks and gaps', () => {
     await expect(page.getByTestId('timeline-tooltip-attempts')).toHaveCount(0);
   });
 });
+
+test.describe('Run timeline lanes the reporter names', () => {
+  let runId = 0;
+  const t0 = Date.now() - 60_000;
+  /** A test run by worker process `workerIndex` on lane `parallelIndex`. */
+  const ran = (title: string, status: string, workerIndex: number, parallelIndex: number, start: number) => ({
+    title,
+    status,
+    duration: 500,
+    location: `tests/${title.replace(/ /g, '-')}.spec.ts:3:5`,
+    workerIndex,
+    parallelIndex,
+    startedAt: t0 + start,
+  });
+
+  test.beforeAll(async ({ request }) => {
+    // Process 0 fails on lane 0 and Playwright starts process 2 there, after lane 1 freed up: timing alone puts it on
+    // lane 1.
+    const response = await retryPost(request, '/api/test-runs/submit', {
+      data: {
+        projectName: PROJECT.RUN_TIMELINE_HOOKS,
+        status: 'failed',
+        startTime: new Date(t0).toISOString(),
+        duration: 2500,
+        totalTests: 3,
+        passedTests: 2,
+        failedTests: 1,
+        skippedTests: 0,
+        testCases: [
+          ran('pays by card', 'failed', 0, 0, 0),
+          ran('refunds an order', 'passed', 1, 1, 100),
+          ran('ships an order', 'passed', 2, 0, 1500),
+        ],
+      },
+      timeout: 20000,
+    });
+    expect(response.ok()).toBeTruthy();
+    runId = ((await response.json()) as { runId: number }).runId;
+  });
+
+  test('keeps a restarted worker on its lane and counts the lanes', async ({ page }) => {
+    await page.goto(`/test-runs/${runId}?tab=workers`);
+    await waitForHydration(page);
+
+    await expect(page.getByRole('button', { name: 'Timeline (2)' })).toBeVisible();
+    const timeline = page.locator('[data-shot="run-timeline"]');
+    await expect(timeline.getByText('2 workers · 3 tests · 1 worker restart')).toBeVisible();
+    const restartBox = (await page.locator('[data-timeline-gap][data-kind="restart"]').boundingBox())!;
+    await page.mouse.move(restartBox.x + restartBox.width / 2, restartBox.y + restartBox.height / 2);
+    await expect(page.getByText('Process 0 ended after “pays by card” failed')).toBeVisible();
+  });
+});

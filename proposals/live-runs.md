@@ -35,8 +35,25 @@ per page view and the list follows the newest row only in run order. Built from 
 sends its lane (`parallelIndex`), and how its test ended; a view opened on it follows the lane through its next tests and
 the worker Playwright starts in it again, waiting 30 s for it, says how each test ended, and **Follow the worker's next
 test** off keeps it to its test, and a view hidden for 10 minutes closes; the view, the rows and the Timeline name a
-worker by its lane from 1. The rest of P1 (the docked panel, **Worker N** in MCP, the deep link, the refusals, the
-header's primary action, the caption's step) and the later phases are proposed. The bugs the analysis
+worker by its lane from 1. Built from the rest of P1: **Watch** sits at each row's end and opens the view docked
+beside the run page (a sheet below 1024 px), resizable, full screen, with a click to zoom and **Zoom to the element**;
+the view lists the lane's earlier tests, keeps a failed call's error with its outcome and says the run's verdict as the
+run ends; `?watch=<shard>.<worker>` opens it and names the lane while it is open, and `test.stuck` links to it; a
+view that does not open says why; the reporter sends each test's lane, which the dashboard stores, so the Timeline
+places each worker on its real lane and every MCP tool says `worker: N`;
+the header's primary action is decided once the run has ended; frames carry the worker's time, so the caption names
+the step begun after the image. Built from P2: the reporter asks again for a `/begin` or `/start` that got no answer, a
+server error, a 408 or a 429, with backoff for the run's life, keeps the run's events meanwhile within
+`maxStreamBufferBytes`, sends them once the stream opens and says once how late it started; a CI run's log says the
+live view is on for the specs that use Piwi's fixtures and names the first spec file that runs without them; a run
+without a key names its real cause (`streaming: false`, a global setup that did not run, an instance that did not
+take its registration, with its error, or the setting off), outside CI in `PIWI_LIVE_VIEW` too; and `merge-reports`
+says nothing of the live view. A CI worker's live view retries every 30 to 60 s for the run's life after its fast
+retries, its count reset by a steady stream, and the run's log says once when it is lost and once when it is back,
+relayed through the global setup's process; each key's digest is stored with its run, so a restarted instance takes a
+running run's key back, and the setting turned off and on again; **Share live** works again after either; a Project
+admin turns the live view on from a running run's status, which then says it starts with the next run. P2 is built;
+its run links stay with P5. The later phases are proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app

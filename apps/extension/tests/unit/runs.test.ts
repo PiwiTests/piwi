@@ -237,6 +237,14 @@ describe('Share live, as the worker reads it', () => {
     expect(shareRefusalOf(LIVE_SHARE_MISSING.local)).toBe('local');
     expect(shareRefusalOf(LIVE_SHARE_MISSING.off)).toBe('off');
     expect(shareRefusalOf(LIVE_SHARE_MISSING.unregistered)).toBe('unregistered');
+    // A reporter of 0.66.0 and earlier says it in its own words.
+    expect(
+      shareRefusalOf(
+        "This run cannot be shared live: the reporter's global setup did not register it with the instance as it started (wrapConfig adds it).",
+      ),
+    ).toBe('unregistered');
+    expect(shareRefusalOf(LIVE_SHARE_MISSING['streaming-off'])).toBe('streaming-off');
+    expect(shareRefusalOf(LIVE_SHARE_MISSING['setup-failed'])).toBe('setup-failed');
     expect(shareRefusalOf(LIVE_SHARE_MISSING['no-instance'])).toBe('no-instance');
     expect(shareRefusalOf(LIVE_SHARE_UNKNOWN)).toBe('unknown');
     expect(shareRefusalOf('Sharing stopped: the instance restarted.')).toBeNull();

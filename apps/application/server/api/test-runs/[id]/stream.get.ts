@@ -80,7 +80,10 @@ export default eventHandler(async (event) => {
     }
     // Whether the project's live view is on and the run holds a key, then the workers in its view now and their stops:
     // the live events that follow change them.
-    const viewState: LiveViewRunState = { keyed: liveViewRelay.holdsKey(id), enabled: project?.liveView === true };
+    const viewState: LiveViewRunState = {
+      keyed: liveViewRelay.holdsKey(id, { digests: testRun.liveViewKeyDigests, createdAt: testRun.createdAt }),
+      enabled: project?.liveView === true,
+    };
     const viewEvent = { type: 'live-view', data: viewState, seq: 0, timestamp: Date.now() };
     controller.enqueue(encoder.encode(`data: ${JSON.stringify(viewEvent)}\n\n`));
     for (const worker of liveViewRelay.workersOf(id)) {

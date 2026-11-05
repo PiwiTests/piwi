@@ -14,11 +14,9 @@ import { ASSISTANT_DOCK_WIDTH } from '~/composables/useAssistantDock';
 const { open, view, available, loadStatus, openPanel } = useAssistant();
 const { docked, width } = useAssistantDock();
 const config = useRuntimeConfig();
-const { width: windowWidth } = useWindowSize();
 
 const nuxtApp = useNuxtApp();
 const input = useTemplateRef<{ focus: () => void; focused: () => boolean }>('input');
-const aside = useTemplateRef<HTMLElement>('aside');
 
 /**
  * The panel's content props over the page: a click or focus on the page
@@ -38,49 +36,7 @@ const contentClass = config.public.demoMode
   ? 'max-w-none sm:max-w-lg top-(--demo-banner-height)'
   : 'max-w-none sm:max-w-lg';
 
-const rootPx = () => Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-
-/** The widest the docked panel goes, in rem: the range's top, and never more than half the window. */
-const maxWidth = computed(() =>
-  import.meta.client ? Math.min(ASSISTANT_DOCK_WIDTH.max, windowWidth.value / 2 / rootPx()) : ASSISTANT_DOCK_WIDTH.max,
-);
-
-function clampWidth(rem: number): number {
-  return Math.round(Math.min(maxWidth.value, Math.max(ASSISTANT_DOCK_WIDTH.min, rem)) * 4) / 4;
-}
-
-const dockedWidth = computed(() => clampWidth(width.value));
-
-/** Dragging the handle on the docked panel's edge sets its width; the handle sits on its left, so left widens it. */
-function startResize(event: PointerEvent): void {
-  const el = aside.value;
-  const handle = event.currentTarget as HTMLElement;
-  if (!el || event.button !== 0) return;
-  event.preventDefault();
-  handle.setPointerCapture(event.pointerId);
-  const startX = event.clientX;
-  const startWidth = el.getBoundingClientRect().width;
-  const px = rootPx();
-  const move = (e: PointerEvent) => {
-    width.value = clampWidth((startWidth + startX - e.clientX) / px);
-  };
-  const end = () => {
-    handle.removeEventListener('pointermove', move);
-    handle.removeEventListener('pointerup', end);
-    handle.removeEventListener('pointercancel', end);
-  };
-  handle.addEventListener('pointermove', move);
-  handle.addEventListener('pointerup', end);
-  handle.addEventListener('pointercancel', end);
-}
-
-/** The arrow keys resize from the keyboard: Left widens, Right narrows. */
-function resizeByKey(event: KeyboardEvent): void {
-  const step = { ArrowLeft: 1, ArrowRight: -1 }[event.key];
-  if (!step) return;
-  event.preventDefault();
-  width.value = clampWidth(dockedWidth.value + step);
-}
+const { shown: dockedWidth, maxWidth } = useDockedPanelWidth(width, ASSISTANT_DOCK_WIDTH);
 
 /** Below this width a docked panel needs the room of the expanded sidebar. */
 const FOLD_QUERY = '(max-width: 1535px)';
@@ -141,27 +97,20 @@ watch(open, (isOpen) => {
 <template>
   <aside
     v-if="open && docked"
-    ref="aside"
     class="relative flex h-full max-w-[50vw] shrink-0 flex-col border-l border-default bg-default"
     :style="{ width: `${dockedWidth}rem` }"
     aria-label="Ask Piwi"
     data-shot="assistant-panel"
     data-assistant-docked
   >
-    <div
-      role="separator"
-      aria-orientation="vertical"
-      aria-label="Resize the assistant panel"
-      :aria-valuenow="dockedWidth"
-      :aria-valuemin="ASSISTANT_DOCK_WIDTH.min"
-      :aria-valuemax="maxWidth"
-      tabindex="0"
-      title="Drag to resize; double-click to reset"
-      class="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize touch-none outline-none transition-colors hover:bg-primary/30 focus-visible:bg-primary/40"
+    <DockedPanelHandle
+      :width="dockedWidth"
+      :min="ASSISTANT_DOCK_WIDTH.min"
+      :max="maxWidth"
+      :initial="ASSISTANT_DOCK_WIDTH.initial"
+      label="Resize the assistant panel"
       data-assistant-resize
-      @pointerdown="startResize"
-      @keydown="resizeByKey"
-      @dblclick="width = ASSISTANT_DOCK_WIDTH.initial"
+      @update:width="width = $event"
     />
     <div class="flex h-(--ui-header-height) shrink-0 items-center gap-1.5 border-b border-default px-4 sm:px-6">
       <h2 class="font-semibold text-highlighted">Ask Piwi</h2>

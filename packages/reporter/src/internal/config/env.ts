@@ -227,6 +227,12 @@ export const PIWI_FLAKE_ENV = {
  */
 export const PIWI_RESOURCES_RESULTS_ENV = 'PIWI_RESOURCES_RESULTS';
 
+/**
+ * The file each worker of a CI run appends the lines it prints to the run's log to, outside any test's output: the
+ * global setup names it as it relays them (`internal/support/run-log.ts`), before any worker starts. Not an option.
+ */
+export const PIWI_RUN_LOG_ENV = 'PIWI_RUN_LOG';
+
 /** A boolean variable's value: `true`, `1`, `yes` or `on`, in any case, is true; anything else is false. */
 export function readBool(val: string | undefined): boolean | undefined {
   if (val === undefined) return undefined;

@@ -588,7 +588,7 @@ export async function getTestRunCase(
     }
   }
 
-  const { streamToken: _streamToken, ...testRunPublic } = testRun ?? {};
+  const { streamToken: _streamToken, liveViewKeyDigests: _liveViewKeyDigests, ...testRunPublic } = testRun ?? {};
 
   // The one-line verdict on a failing execution — headline, why, since when,
   // cluster and owner — built from what is already loaded above, and for a retry
@@ -802,6 +802,7 @@ export async function getTestRunCase(
     ariaSnapshot: evidence.ariaSnapshot,
     evidenceSources: trc.evidenceSources,
     workerIndex: trc.workerIndex,
+    parallelIndex: trc.parallelIndex ?? null,
     shardIndex: trc.shardIndex,
     browser: trc.browser,
     isNewRegression: trc.isNewRegression ?? null,

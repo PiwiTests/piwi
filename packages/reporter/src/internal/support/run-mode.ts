@@ -55,3 +55,13 @@ export function isListMode(argv: string[] = process.argv): boolean {
 
   return rest.some((tok) => PW_LIST_FLAGS.some((flag) => tok === flag || tok.startsWith(`${flag}=`)));
 }
+
+/**
+ * Detect Playwright's **merge-reports** command (`playwright merge-reports`),
+ * which replays blob reports through the reporters: no test runs, no worker
+ * starts and nothing of the run is live. The command is the first argument
+ * that is not an option, so a spec filter that reads `merge-reports` is not it.
+ */
+export function isMergeReports(argv: readonly string[] = process.argv): boolean {
+  return argv.slice(2).find((arg) => !arg.startsWith('-')) === 'merge-reports';
+}

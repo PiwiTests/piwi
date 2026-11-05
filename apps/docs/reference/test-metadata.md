@@ -325,6 +325,18 @@ executions wrote it, and shows it on the execution's **Output** tab ([Failure ev
 [offline export](/features/offline-export) and through the MCP `get_test_run_case` tool. An
 [imported blob report](/guide/importing-runs) keeps each attempt's output the same way.
 
+### Worker lanes
+
+The reporter sends each attempt's worker twice: Playwright's `workerIndex`, the worker process, which is new every time
+Playwright starts one (after a failed test, or for a test that needs another project or other worker options), and
+its `parallelIndex`, the lane the process runs in, which the process started in its place keeps. The dashboard names a
+worker by its lane, from 1 in each shard: **Worker 2** on the run's Timeline, in the Tests list's **Worker** sort, on
+the execution page, in its [offline export](/features/offline-export) and in a `test.stuck`
+[notification](/reference/notification-events), and `worker: 2` in the MCP `get_run` and `get_test_run_case` tools.
+A [blob report you import](/guide/importing-runs) keeps both. A run from a reporter that sends no lane names a worker
+by its process, and its Timeline works the lanes out from when each process ran; the MCP tools then give its
+`workerIndex` in place of `worker`.
+
 ### Hooks
 
 Playwright 1.59 and later give every hook step to a test: a `beforeAll` or `afterAll` hook and the setup of a worker

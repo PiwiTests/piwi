@@ -31,6 +31,7 @@ import type { WireRunError } from '@piwitests/core/wire';
 import { joinErrorMessages, appendErrorLocation, locatedError } from '#shared/error-text';
 import type { TestAnnotation } from '#shared/types';
 import type { RunCaseInput } from './persist-run-cases';
+import { workerLane } from '#shared/worker-lane';
 
 /**
  * Reads one entry out of the archive, or null when it is absent or unreadable.
@@ -147,6 +148,8 @@ interface ResultAccumulator {
   testId: string;
   retry: number;
   workerIndex: number | null;
+  /** The worker's lane (Playwright's `parallelIndex`). */
+  parallelIndex: number | null;
   startedAt: number | null;
   rootSteps: StepNode[];
   stepsById: Map<string, StepNode>;
@@ -476,6 +479,7 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
         testId,
         retry: typeof result.retry === 'number' ? result.retry : 0,
         workerIndex: typeof result.workerIndex === 'number' ? result.workerIndex : null,
+        parallelIndex: workerLane(result.parallelIndex),
         startedAt: typeof result.startTime === 'number' ? result.startTime : null,
         rootSteps: [],
         stepsById: new Map(),
@@ -587,6 +591,7 @@ export async function parseBlobReport(readEntry: ArchiveEntryReader): Promise<Pa
           slowestStepDuration: metrics.slowestStep?.duration ?? null,
           wastedTimeMs: metrics.waitTotalDuration,
           workerIndex: acc?.workerIndex ?? null,
+          parallelIndex: acc?.parallelIndex ?? null,
           startedAt: acc?.startedAt ?? null,
           browser: plan?.browser ?? null,
           stdout: testOutputOf(acc?.stdout ?? []),

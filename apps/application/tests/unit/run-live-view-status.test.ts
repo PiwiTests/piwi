@@ -58,4 +58,15 @@ describe('live-view readiness', () => {
     expect(runLiveViewStatus(run({ workers: 1 })).kind).toBe('available');
     expect(runLiveViewStatus(run({ workers: 1, ci: false })).kind).toBe('available');
   });
+
+  test('says a live view turned on from the page starts with the next run, which the running one is not', () => {
+    expect(runLiveViewStatus(run({ state: { enabled: true, keyed: false }, turnedOn: true }))).toEqual({
+      kind: 'next-run',
+      label: 'Live view on from the next run',
+    });
+    // Turned off again by someone else, it reads off.
+    expect(runLiveViewStatus(run({ state: { enabled: false, keyed: false }, turnedOn: true })).kind).toBe('disabled');
+    // A run that holds a key, the setting having been off only for a moment, keeps its own status.
+    expect(runLiveViewStatus(run({ state: { enabled: true, keyed: true }, turnedOn: true })).kind).toBe('waiting');
+  });
 });

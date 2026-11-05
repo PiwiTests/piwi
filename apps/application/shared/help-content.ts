@@ -535,7 +535,7 @@ export const HELP_TOPICS = {
       '- **Masked** — before an image leaves the worker: password fields, fields whose `autocomplete` asks for a one-time code or a card’s number or security code, and the **Masked elements** listed here (Playwright locators), by `@piwitests/reporter` 0.64.0 or later: an older one masks nothing. A secret in the page’s own text is not masked.',
       '- **Kept** — nothing: relayed and dropped, never in the database, the logs or an export.',
       '',
-      'Enable it before starting the run. The reporter’s global setup (`wrapConfig`) must register it, streaming must be on, and its specs must import `test` from the capture fixtures. A local run sends nothing unless its developer chooses Share live. Turning it off ends every view at once; turning it back on needs a new run.',
+      'Enable it before starting the run. The reporter’s global setup (`wrapConfig`) must register it, streaming must be on, and its specs must import `test` from the capture fixtures. A local run sends nothing unless its developer chooses Share live. Turning it off ends every view at once; turned back on, a run still going gets its view back.',
     ].join('\n'),
     doc: 'features/live-view',
   },
@@ -578,7 +578,7 @@ export const HELP_TOPICS = {
     text: [
       'Live result counts do not by themselves mean a browser can be watched. The status beside the search field reports what this instance can establish.',
       '',
-      '- **Project setting** — a Project admin enables Live view before the run starts. Enabling it later, or restarting the instance, needs a new run.',
+      '- **Project setting** — a Project admin enables Live view before the run starts, in the project settings or from here. A run that started without it gets none: the next run does. A run that had a view gets it back after the instance restarts, or the setting is turned off and on again.',
       '- **Run setup** — register the run at startup with `wrapConfig` and keep result streaming enabled.',
       '- **Capture fixtures** — import `test` from your capture fixtures in the specs you run; creating the fixtures file alone does not activate them.',
       '- **Worker connection** — waiting can mean startup, reconnection or missing fixtures. Once available, choose **Watch** beside a running test. Images go only to viewers; the view is read-only.',
@@ -611,7 +611,7 @@ export const HELP_TOPICS = {
       '- **Piwi Picker** — **Share live** under the run’s name, in the Runs window.',
       '- **Desktop app** — **Share live** above the run’s workers, in the Local runs tray.',
     ].join('\n'),
-    doc: 'features/live-view#share-a-run-from-your-machine',
+    doc: 'features/share-live',
   },
   'run.live-stalled': {
     title: 'Live updates stalled',

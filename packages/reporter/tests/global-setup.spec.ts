@@ -4,14 +4,21 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { createGlobalSetup } from '../src/public/global-setup.js';
+import { relayRunLog } from '../src/internal/support/run-log.js';
+import type * as RunLog from '../src/internal/support/run-log.js';
 import { PiwiDashboardReporter } from '../src/public/reporter.js';
-import { getSetupFilePath, readSetupInfo } from '../src/internal/support/setup-file.js';
+import { getSetupFilePath, peekSetupFailure, readSetupInfo } from '../src/internal/support/setup-file.js';
 import {
   ariaSampleIdentity,
   clearAriaSampleFile,
   loadAriaSampleSet,
   resetAriaSampleCache,
 } from '../src/internal/support/aria-sampling.js';
+
+vi.mock('../src/internal/support/run-log.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof RunLog>();
+  return { ...actual, relayRunLog: vi.fn(actual.relayRunLog) };
+});
 
 interface RecordedReq {
   method: string;
@@ -196,6 +203,28 @@ describe('createGlobalSetup', () => {
     }
   });
 
+  it("keeps a CI run's registration and its live view key when the workers' log relay cannot start", async () => {
+    const key = `pdl_${'k'.repeat(43)}`;
+    const { server, url } = await startServer((_req, res) =>
+      jsonRes(res, 200, { runId: 43, setupToken: 'tok', liveView: { key } }),
+    );
+    const projectName = 'global-setup-relay-fails';
+    cleanupNames.push(projectName);
+    vi.mocked(relayRunLog).mockImplementationOnce(() => {
+      throw new Error('EPERM: operation not permitted');
+    });
+    vi.stubEnv('CI', 'true');
+    try {
+      await createGlobalSetup({ serverUrl: url, projectName })({ reporter: [PIWI_REPORTER_ENTRY] });
+      expect(relayRunLog).toHaveBeenCalled();
+      expect(readSetupInfo(projectName)).toMatchObject({ runId: 43, setupToken: 'tok', liveViewKey: key });
+      expect(peekSetupFailure(projectName)).toBeNull();
+    } finally {
+      vi.unstubAllEnvs();
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
   it('leaves no registration behind when the run stops before its tests', async () => {
     const { server, url } = await startServer((_req, res) => jsonRes(res, 200, { runId: 9, setupToken: 't' }));
     const projectName = 'global-setup-stopped';
@@ -331,7 +360,8 @@ describe('createGlobalSetup', () => {
   });
 
   it('swallows HTTP failures without throwing, and still chains userSetup', async () => {
-    const { server, url } = await startServer((_req, res) => jsonRes(res, 500, { error: 'boom' }));
+    const { server, url } = await startServer((_req, res) => jsonRes(res, 500, { message: 'boom' }));
+    cleanupNames.push('global-setup-http-fail');
     try {
       let userSetupCalled = false;
       const setupFn = createGlobalSetup({ serverUrl: url, projectName: 'global-setup-http-fail' }, async () => {
@@ -339,7 +369,10 @@ describe('createGlobalSetup', () => {
       });
       await expect(setupFn({ reporter: [PIWI_REPORTER_ENTRY] })).resolves.not.toThrow();
       expect(userSetupCalled).toBe(true);
+      // The reporter says why the run has no live view.
+      expect(peekSetupFailure('global-setup-http-fail')).toBe('Request failed with status 500: boom');
       expect(readSetupInfo('global-setup-http-fail')).toBeNull();
+      expect(peekSetupFailure('global-setup-http-fail')).toBeNull();
     } finally {
       await new Promise<void>((r) => server.close(() => r()));
     }

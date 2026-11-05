@@ -119,6 +119,10 @@ export function toolParameters(tool: Pick<McpToolDef, 'inputSchema'>): McpToolPa
   });
 }
 
+/** How an execution's worker reads, in the descriptions of the tools that report it. */
+const EXECUTION_WORKER =
+  '`worker` is the lane the execution ran on, from 1 as the run page names it (**Worker 2**), the same for a worker Playwright started again after a failure; in a sharded run it counts within the shard `shardIndex` names. `workerIndex` is Playwright’s worker process, new at every start, so two executions of one lane with different processes ran across a restart. A result from a reporter that sends no lane has no `worker`.';
+
 /** The analytics scope, as the report and metric tools take it (the analytics page's URL keys). */
 const ANALYTICS_SCOPE_PROPERTIES = {
   projectIds: {
@@ -201,6 +205,7 @@ export const MCP_TOOL_DEFS = [
     description: md(
       'Get a test run’s summary and its test cases (by default only the failed ones), each with its status, truncated error and failure cluster.',
       'A case’s `executionId` is what `explain_failure` and the other execution tools take, and `passedAfterFailure: true` marks a case that passed after an earlier attempt failed or timed out (a flaky result; a retry that passed again after a pass is not one). `runErrors` lists the errors Playwright reported outside any test, each with its truncated `message` and `stack` and its `filePath`, `line` and `column`: a global setup that threw, a spec file that did not load (`No tests found` too), a web server that did not start, a worker fixture whose teardown threw. They explain a failed run with no failed test.',
+      EXECUTION_WORKER,
     ),
     inputSchema: {
       type: 'object',
@@ -455,6 +460,7 @@ export const MCP_TOOL_DEFS = [
     description: md(
       'Get one execution in full: a one-line failure headline, the untruncated error, steps, console logs, web vitals, the ARIA snapshot and the test’s stdout and stderr.',
       '`include` fetches only the heavy parts you need; the error, status and summary always come back. `stdout` and `stderr` (`include: output`) hold the first and last lines the test printed, at most 8,000 characters each, with a line naming what was cut between them. For a failure, `explain_failure` adds the locator fix, the diagnosis context and the situation, with a shorter error and ARIA snapshot.',
+      EXECUTION_WORKER,
     ),
     inputSchema: {
       type: 'object',

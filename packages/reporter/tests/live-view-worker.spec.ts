@@ -1,4 +1,7 @@
+import * as fs from 'node:fs';
 import type * as http from 'node:http';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import type { Page, WorkerInfo } from '@playwright/test';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -7,9 +10,11 @@ import {
   LIVE_VIEW_ENV,
   formatLiveViewEnv,
   formatLiveViewMissing,
+  liveShareRefusal,
   readWorkerToInstance,
   type WorkerToInstance,
 } from '@piwitests/core/live-view';
+import { PIWI_RUN_LOG_ENV } from '../src/internal/config/env.js';
 import {
   closeLiveView,
   liveViewPage,
@@ -30,6 +35,9 @@ import { jsonRes, startServer, type FakeServer } from './_helpers.js';
  * shows; and the key is out of the worker's environment while its connection is open. Outside CI, the worker holds
  * the key and sends nothing until the run is shared (Share live): then it opens its stream, with the stop it holds,
  * and as the sharing stops it tells the viewers why and closes it; a run without a key says why it cannot be shared.
+ * A CI run's worker opens its stream again while the run lasts, through an outage, an instance started again and a
+ * stream cut at a fixed age, the run's log saying once that its view is lost and once that it is back; a run shared
+ * from a developer's machine may be shared again after the instance took no key, never after it refused it for good.
  */
 
 const KEY = `pdl_${'k'.repeat(43)}`;
@@ -93,6 +101,18 @@ async function open(env: NodeJS.ProcessEnv = {}): Promise<NodeJS.ProcessEnv> {
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Wait for `check` without timers, which a test fakes: the worker's requests and their answers go on meanwhile. */
+async function until(check: () => boolean, ms = 5000): Promise<void> {
+  const start = performance.now();
+  while (!check()) {
+    if (performance.now() - start > ms) throw new Error('timed out');
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+}
+
+/** How many times a worker opened its stream, answered or not. */
+const gets = (): number => server.requests.filter((request) => request.method === 'GET').length;
 
 function sayViewers(count: number): void {
   streams[0]!.write(`data: ${JSON.stringify({ type: 'viewers', count })}\n\n`);
@@ -196,6 +216,7 @@ describe("the worker's live view connection", () => {
     });
     const framed = posts.find((p) => p.type === 'frame' && 'data' in p);
     // No read of the secret fields came before the first frame: an image taken between two reads goes in its place.
+    // It says when the page looked so, in the worker's clock.
     expect(framed).toEqual({
       type: 'frame',
       shard: null,
@@ -203,6 +224,7 @@ describe("the worker's live view connection", () => {
       data: Buffer.from('shot').toString('base64'),
       call: HIDDEN_CALL,
       test: 'pays',
+      at: expect.any(Number),
     });
 
     await liveViewTestEnded();
@@ -218,6 +240,142 @@ describe("the worker's live view connection", () => {
     expect(env.OTHER).toBe('kept');
     closeLiveView();
     expect(env[LIVE_VIEW_ENV]).toBe(formatLiveViewEnv(server.url, RUN, KEY));
+  });
+});
+
+describe("a CI run's live view, as the instance stops answering and answers again", () => {
+  const laneWorker = { ...worker, parallelIndex: 1 } as Parameters<typeof openLiveView>[0];
+  let logDir: string;
+  /** The file the run's log reads the worker's lines from, as the global setup names it. */
+  let runLog: string;
+  const logLines = (): string[] =>
+    fs.existsSync(runLog) ? fs.readFileSync(runLog, 'utf8').split('\n').filter(Boolean) : [];
+
+  beforeEach(() => {
+    logDir = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-live-log-'));
+    runLog = path.join(logDir, 'run.log');
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    fs.rmSync(logDir, { recursive: true, force: true });
+  });
+
+  /** Open the worker's connection as a CI run's worker does, its lines going to the run's log; wait for its stream. */
+  async function openInCi(): Promise<void> {
+    const env = { [LIVE_VIEW_ENV]: formatLiveViewEnv(server.url, RUN, KEY), [PIWI_RUN_LOG_ENV]: runLog };
+    expect(openLiveView(laneWorker, env, true)).toBe(true);
+    await waitFor(() => streams.length === 1);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  }
+
+  /** The instance closes the worker's stream: the worker waits to open it again. */
+  async function cut(stream: http.ServerResponse): Promise<void> {
+    stream.end();
+    await until(() => vi.getTimerCount() === 1);
+  }
+
+  it('comes back after the instance answered 503 for 40 s, its log saying once it was lost and once it is back', async () => {
+    await openInCi();
+    streamStatus = 503;
+    await cut(streams[0]!);
+    // Tried again after 1, 2, 4, 8 and 16 s, each answered 503: then every 30 to 60 s, the log saying it once.
+    for (const [tried, wait] of [1000, 2000, 4000, 8000, 16_000].entries()) {
+      await vi.advanceTimersByTimeAsync(wait);
+      await until(() => gets() === tried + 2 && vi.getTimerCount() === 1);
+    }
+    await until(() => logLines().length === 1);
+    expect(logLines()).toEqual([
+      'Worker 2: live view lost: the instance answered 503. Trying again every 30 to 60 s while the run lasts.',
+    ]);
+    // 40 s into the outage, the instance answers again; nothing was tried meanwhile.
+    await vi.advanceTimersByTimeAsync(9000);
+    expect(gets()).toBe(6);
+    streamStatus = 200;
+    await vi.advanceTimersByTimeAsync(51_000);
+    await until(() => streams.length === 2);
+    expect(gets()).toBe(7);
+    // Back once the stream it opened again has stayed open 30 s.
+    expect(logLines()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await until(() => logLines().length === 2);
+    expect(logLines()[1]).toBe('Worker 2: live view back.');
+    expect(liveViewState()).toMatchObject({ can: true, on: true });
+    // It hears its viewers on the stream it opened again.
+    streams[1]!.write(`data: ${JSON.stringify({ type: 'viewers', count: 1 })}\n\n`);
+    await until(() => liveViewState().viewers === 1);
+  });
+
+  it('tries again after an instance started again did not take its key, and comes back once one takes it', async () => {
+    await openInCi();
+    streamStatus = 401;
+    await cut(streams[0]!);
+    await vi.advanceTimersByTimeAsync(1000);
+    // A key the instance does not take skips the quick retries.
+    await until(() => logLines().length === 1 && vi.getTimerCount() === 1);
+    expect(logLines()).toEqual([
+      "Worker 2: live view lost: the instance does not take the run's live view key now. Trying again every 30 to 60 s while the run lasts.",
+    ]);
+    expect(gets()).toBe(2);
+    expect(liveViewState()).toMatchObject({ can: true });
+    await vi.advanceTimersByTimeAsync(60_000);
+    await until(() => gets() === 3 && vi.getTimerCount() === 1);
+    expect(logLines()).toHaveLength(1);
+    streamStatus = 200;
+    await vi.advanceTimersByTimeAsync(60_000);
+    await until(() => streams.length === 2);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await until(() => logLines().length === 2);
+    expect(logLines()[1]).toBe('Worker 2: live view back.');
+  });
+
+  it('says once that its view is lost while the instance cuts each stream it opens again before 30 s', async () => {
+    await openInCi();
+    streamStatus = 503;
+    await cut(streams[0]!);
+    for (const wait of [1000, 2000, 4000, 8000, 16_000]) await vi.advanceTimersByTimeAsync(wait);
+    await until(() => logLines().length === 1 && vi.getTimerCount() === 1);
+    streamStatus = 200;
+    // Each stream it opens again is cut after 20 s: no stream stays open long enough to say the view is back.
+    for (let opened = 2; opened <= 4; opened++) {
+      await vi.advanceTimersByTimeAsync(60_000);
+      await until(() => streams.length === opened);
+      await vi.advanceTimersByTimeAsync(20_000);
+      await cut(streams[opened - 1]!);
+    }
+    expect(logLines()).toHaveLength(1);
+    // One stays open: the view is back, said once.
+    await vi.advanceTimersByTimeAsync(60_000);
+    await until(() => streams.length === 5);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await until(() => logLines().length === 2);
+    expect(logLines()[1]).toBe('Worker 2: live view back.');
+  }, 30_000);
+
+  it('opens a stream the instance cuts at a fixed age again each time, however often, the log saying nothing', async () => {
+    await openInCi();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    for (let cuts = 1; cuts <= 25; cuts++) {
+      await vi.advanceTimersByTimeAsync(31_000);
+      await cut(streams[cuts - 1]!);
+      await vi.advanceTimersByTimeAsync(1000);
+      await until(() => streams.length === cuts + 1);
+    }
+    expect(gets()).toBe(26);
+    expect(logLines()).toEqual([]);
+  }, 30_000);
+
+  it('gives up for good a run the instance no longer holds live, saying so once', async () => {
+    await openInCi();
+    streamStatus = 410;
+    await cut(streams[0]!);
+    await vi.advanceTimersByTimeAsync(1000);
+    await until(() => logLines().length === 1);
+    expect(logLines()).toEqual([
+      'Worker 2: live view lost: the run is no longer live on the instance. It stays off for this worker.',
+    ]);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(gets()).toBe(2);
   });
 });
 
@@ -337,12 +495,37 @@ describe('Share live, in a run outside CI', () => {
     }
   });
 
-  it('cannot be shared once the instance refused its key, and says why', async () => {
+  it('may be shared again once the instance took no key, the live view off or the instance started again', async () => {
     streamStatus = 404;
     openHere();
     await shareLiveView(true);
+    await waitFor(() => !liveViewState().on);
+    expect(liveViewState()).toMatchObject({ can: true, on: false, why: liveShareRefusal(404) });
+    expect(gets()).toBe(1);
+    // Shared again while the instance does not take the key: it says so, and may be shared again.
+    streamStatus = 401;
+    await shareLiveView(true);
+    await waitFor(() => gets() === 2 && !liveViewState().on);
+    expect(liveViewState()).toMatchObject({ can: true, on: false, why: liveShareRefusal(401) });
+    // Shared again once the instance takes it: it streams.
+    streamStatus = 200;
+    await shareLiveView(true);
+    await waitFor(() => streams.length === 1);
+    expect(liveViewState()).toEqual({
+      can: true,
+      on: true,
+      viewers: 0,
+      page: `${server.url}/test-runs/${RUN}`,
+      why: null,
+    });
+  });
+
+  it('cannot be shared once the instance refused its key for good, and says why', async () => {
+    streamStatus = 410;
+    openHere();
+    await shareLiveView(true);
     await waitFor(() => !liveViewState().can);
-    expect(liveViewState()).toMatchObject({ can: false, on: false, why: expect.stringMatching(/turned off/) });
+    expect(liveViewState()).toMatchObject({ can: false, on: false, why: liveShareRefusal(410) });
     const asked = server.requests.length;
     await shareLiveView(true);
     await sleep(200);

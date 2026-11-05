@@ -66,11 +66,15 @@ responsibilities.
    - with `PIWI_LIVE_VIEW` (set in `onBegin` from the key the global setup's `/setup` gave, asked in any run, for a
      project with the live view on; outside CI, `none:<why>` for a run without one), each worker's event stream to
      the instance (`internal/capture/live-view.ts`, framed as `@piwitests/core/live-view`): in a CI run (`detectCi`,
-     as the run's origin) opened in the background by the `piwiResources` worker fixture, outside CI only while the
-     run channel shares the run (`share`, **Share live**, the state told back as `live`), and dropped quietly after
-     bounded retries: only while the instance says someone watches does it post frames of the test's page, through
-     the screencast helper the editor's view shares (`page-view.ts`), each with its call (through `hideSecretsInText`)
-     and its test, and the call's log while the test is of a CI run and nothing may pause it (`mayPause`;
+     as the run's origin) opened in the background by the `piwiResources` worker fixture and tried again while the
+     worker lasts (every 30 to 60 s past the quick retries, after a 401 or 404 too; a 403 or 410 ends it), the run's
+     log saying once when it is lost and once when it is back, through the file the global setup relays from the
+     runner's process (`PIWI_RUN_LOG`, `internal/support/run-log.ts`: what a worker writes goes to its running test's
+     output); outside CI only while the run channel shares the run (`share`, **Share live**, the state told back as
+     `live`), given up after the quick retries or a 401 or 404 until shared again: only while the instance says
+     someone watches does it post frames of the test's page, through
+     the screencast helper the editor's view shares (`page-view.ts`), each with its call (through `hideSecretsInText`),
+     its test and when its page looked so, and the call's log while the test is of a CI run and nothing may pause it (`mayPause`;
      `live-call-log.ts`: the context's call stream turned on through `context.debugger._enable()`, which stays on, and a
      listener on the worker's Playwright instrumentation); it always posts its test's stops (`showStop`). Each frame
      has the page's secret fields (`SECRET_FIELD_SELECTOR`) and the project's `masks` painted over before it goes, read

@@ -7,7 +7,8 @@ const begin: StreamEventPayload = {
   type: 'begin',
   title: 'pays by card',
   location: 'tests/checkout.spec.ts:12:3',
-  workerIndex: 1,
+  workerIndex: 4,
+  parallelIndex: 1,
   shardIndex: 2,
   startedAt: 1_000,
   retries: 1,
@@ -22,7 +23,8 @@ describe('testBeginData', () => {
     expect(testBeginData(begin, 5_000)).toMatchObject({
       title: 'pays by card',
       filePath: 'tests/checkout.spec.ts',
-      workerIndex: 1,
+      workerIndex: 4,
+      parallelIndex: 1,
       shardIndex: 2,
       startedAt: 1_000,
       retries: 1,
@@ -41,12 +43,21 @@ describe('testBeginData', () => {
         location: 'tests/search.spec.ts:3:1',
         retries: -1,
         maxRetries: 'two' as unknown as number,
+        parallelIndex: -1,
         tags: 'smoke' as unknown as string[],
         testMeta: { owner: 42 } as unknown as StreamEventPayload['testMeta'],
       },
       5_000,
     );
-    expect(data).toMatchObject({ startedAt: 5_000, retries: null, maxRetries: null, tags: null, locks: null });
+    expect(data).toMatchObject({
+      startedAt: 5_000,
+      workerIndex: null,
+      parallelIndex: null,
+      retries: null,
+      maxRetries: null,
+      tags: null,
+      locks: null,
+    });
     expect(data.testMeta).toBeNull();
   });
 });
@@ -65,6 +76,8 @@ describe('testCompletedData', () => {
       retries: 1,
       executionId: 41,
       testCaseId: 7,
+      workerIndex: 4,
+      parallelIndex: 1,
       shardIndex: 2,
       tags: ['smoke', 'checkout'],
       locks: ['db'],

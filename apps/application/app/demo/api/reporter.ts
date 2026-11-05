@@ -66,6 +66,7 @@ import { hideTypedText } from '@piwitests/core/mask';
 import { sanitizeTestOutput } from '@piwitests/core/test-output';
 import { upsertCasePayloads } from '~~/server/utils/case-payloads';
 import { int32, int64, storableRunCase, storableRunErrors } from '~~/server/utils/storable-values';
+import { workerLane } from '#shared/worker-lane';
 import { resolveRunBranch } from '~~/server/utils/run-branch';
 import { isEligibleRun, runCommit, runOrigin } from '#shared/run-eligibility';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
@@ -542,6 +543,8 @@ export interface RunCaseInput {
   ariaSnapshot?: string | null;
   ariaSnapshotJson?: string | null;
   workerIndex?: number | null;
+  /** The worker's lane (Playwright's `parallelIndex`), stored only as a non-negative integer (server behavior). */
+  parallelIndex?: number | null;
   shardIndex?: number | null;
   startedAt?: number | null;
   browser?: unknown;
@@ -817,6 +820,7 @@ export async function persistRunCases(
       wastedTimeMs: int32(c.wastedTimeMs),
       resources: sanitizeExecutionResources(c.resources),
       workerIndex: int32(c.workerIndex),
+      parallelIndex: workerLane(c.parallelIndex),
       shardIndex: int32(c.shardIndex),
       startedAt: int64(c.startedAt),
       didNotRunReason: c.didNotRunReason ?? null,

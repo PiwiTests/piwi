@@ -76,6 +76,10 @@ the offline export are written once in `shared/` and differ only in the port eac
   a test's, analytics', a report's, MCP's): `passRate` / `passRatePercent` (`shared/utils/pass-rate.ts`) in memory,
   `passRateSql` and its counts (`shared/utils/pass-rate-sql.ts`) in a query. A test's or a file's flaky rate divides
   its flaky results by the same results: `flakyRate`, beside `passRate`. `tests/unit/pass-rate-rule.test.ts`.
+- **A page, a message or a tool names a worker by its lane, from 1 in each shard** (`Worker 2`, `worker: 2` in an MCP
+  tool): Playwright's `parallelIndex`, stored as `test_runs_cases.parallel_index` and read through
+  `#shared/worker-lane` (`workerNumber`, `shownWorkerNumber`, `compareWorkers`). `workerIndex`, the worker process,
+  names one only for a result without a lane, from an older reporter (`tests/unit/worker-lane.test.ts`).
 - **The demo mirrors every feature.** A new database column, API response field or visible UI change updates the seed
   generator, the demo handlers (`app/demo/api/`), the simulator, the docs and, when a tour stop shows the screen, the
   tour; then run `npm run app:seed:demo`. The five places and their checks:

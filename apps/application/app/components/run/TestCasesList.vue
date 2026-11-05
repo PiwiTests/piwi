@@ -10,6 +10,7 @@ import type { LiveRowNote } from '~/utils/live-row-note';
 import type { HubSession } from '@piwitests/core/run-hub';
 import { desktopRowWorker, type DesktopRowWorker } from '~/utils/desktop-run-view';
 import { isFlakyExecution, summarizeRunCases } from '#shared/utils/test-counts';
+import { compareWorkers } from '#shared/worker-lane';
 import { isFixmeSkip } from '#shared/utils/skip-kind';
 import { stripAnsi } from '#shared/error-parse';
 import { parseLocation } from '#shared/parse-location';
@@ -317,8 +318,6 @@ function sortValue(tc: TestCaseResult, key: SortKey): string | number {
       return isFailedStatus(tc.status) ? 'failed' : (tc.status ?? '');
     case 'duration':
       return tc.duration ?? 0;
-    case 'workerIndex':
-      return tc.workerIndex ?? -1;
     case 'retries':
       return tc.retries ?? 0;
     case 'wastedTimeMs':
@@ -341,6 +340,8 @@ const compareCases = computed<(a: TestCaseResult, b: TestCaseResult) => number>(
       return (a, b) => (compareFileOrder(positionOf(a), positionOf(b)) || runOrder(a, b)) * dir;
     case 'failures':
       return (a, b) => failureFirstCompare(a.status, b.status) || runOrder(a, b);
+    case 'workerIndex':
+      return (a, b) => compareWorkers(a, b) * dir || runOrder(a, b);
     default:
       return (a, b) => {
         const va = sortValue(a, key);

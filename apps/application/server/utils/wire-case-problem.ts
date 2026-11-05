@@ -24,6 +24,7 @@ export const wireCaseSchema = z.object({
   retries: optionalNumber,
   repeatEachIndex: optionalNumber,
   workerIndex: optionalNumber,
+  parallelIndex: optionalNumber,
   shardIndex: optionalNumber,
   startedAt: optionalNumber,
   slowestStepDuration: optionalNumber,

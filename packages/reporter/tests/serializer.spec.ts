@@ -213,6 +213,12 @@ describe('toWireTestCase', () => {
     expect(out.workerIndex).toBe(0);
   });
 
+  it("carries the worker's lane, 0 included, and null without one", () => {
+    expect(toWireTestCase({ type: 'begin', title: 't', location: 'l', parallelIndex: 0 }).parallelIndex).toBe(0);
+    expect(toWireTestCase({ type: 'complete', title: 't', location: 'l', parallelIndex: 3 }).parallelIndex).toBe(3);
+    expect(toWireTestCase({ type: 'complete', title: 't', location: 'l' }).parallelIndex).toBe(null);
+  });
+
   it('preserves startedAt=0', () => {
     const out = toWireTestCase({ type: 'begin', title: 't', location: 'l', startedAt: 0 });
     expect(out.startedAt).toBe(0);
@@ -339,6 +345,7 @@ describe('toWireTestCase', () => {
       'networkRequests',
       'pageInventory',
       'pageState',
+      'parallelIndex',
       'repeatEachIndex',
       'resources',
       'retries',

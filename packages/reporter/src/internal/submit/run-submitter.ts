@@ -197,8 +197,8 @@ export class RunSubmitter {
       run.metadata.performance = computePerformanceSummary(run.testCases);
     }
 
+    // The drain settles a stream that has not opened yet first: it is tried once more, or given up for the batch.
     const sm = this.streamManager;
-    if (sm?.startPromise) await sm.startPromise;
     await sm?.drain();
 
     let auth: string | null;
