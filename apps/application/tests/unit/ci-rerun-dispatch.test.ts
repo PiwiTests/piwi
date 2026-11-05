@@ -33,8 +33,13 @@ const {
   flakeLabCiAvailability,
   ciRerunAvailability,
 } = await import('../../server/utils/ci-rerun');
-const { flakeLabRerunSettings, matchRerunDispatch, resolveCiRerunSettings, RERUN_MATCH_WINDOW_MS } =
-  await import('#shared/ci-rerun');
+const {
+  flakeLabRerunSettings,
+  matchRerunDispatch,
+  resolveCiRerunSettings,
+  RERUN_CLOCK_SLACK_MS,
+  RERUN_MATCH_WINDOW_MS,
+} = await import('#shared/ci-rerun');
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 let db: Db;
@@ -216,13 +221,54 @@ describe('matchRerunDispatch', () => {
     expect(matchRerunDispatch({ ...run, buildNumber: '41' }, [d])).toBeNull();
   });
 
-  test("matches a CI server's build number on its branch, and its branch, time and files without one", () => {
-    const numbered = { ...base, provider: 'ci-server' as const, id: 'x', at: 0, ref: 'main', buildNumber: '42' };
-    expect(matchRerunDispatch({ ...run, files: [], buildNumber: '42' }, [numbered])).toBe(numbered);
-    expect(matchRerunDispatch({ ...run, files: [], branch: 'release', buildNumber: '42' }, [numbered])).toBeNull();
+  test("matches a CI server's build number with its branch and files, and its branch, time and files without one", () => {
+    const numbered = {
+      ...base,
+      provider: 'ci-server' as const,
+      id: 'x',
+      at: 0,
+      ref: 'main',
+      buildNumber: '42',
+      files: run.files,
+    };
+    expect(matchRerunDispatch({ ...run, buildNumber: '42' }, [numbered])).toBe(numbered);
+    expect(matchRerunDispatch({ ...run, branch: 'release', buildNumber: '42' }, [numbered])).toBeNull();
     const unnumbered = { ...base, provider: 'ci-server' as const, id: 'y', at: 999_000, ref: 'main', files: run.files };
     expect(matchRerunDispatch(run, [unnumbered])).toBe(unnumbered);
     expect(matchRerunDispatch({ ...run, branch: 'other' }, [unnumbered])).toBeNull();
+  });
+
+  test("leaves another job's build of the same number, and a build started before the dispatch", () => {
+    const d = {
+      ...base,
+      provider: 'ci-server' as const,
+      id: 'x',
+      at: 1_000_000,
+      ref: 'main',
+      buildNumber: '57',
+      files: ['tests/a.spec.ts'],
+    };
+    const nightly = { ...run, files: ['tests/a.spec.ts', 'tests/b.spec.ts'], buildNumber: '57' };
+    expect(matchRerunDispatch(nightly, [d])).toBeNull();
+    const early = { ...run, buildNumber: '57', startedAt: 1_000_000 - RERUN_CLOCK_SLACK_MS - 1 };
+    expect(matchRerunDispatch(early, [d])).toBeNull();
+  });
+
+  test('picks, by its build number, the dispatch a run answers among those of the same branch and files', () => {
+    const older = {
+      ...base,
+      provider: 'ci-server' as const,
+      id: 'older',
+      at: 900_000,
+      ref: 'main',
+      buildNumber: '57',
+      files: ['tests/a.spec.ts'],
+    };
+    const newer = { ...older, id: 'newer', at: 950_000, buildNumber: '58' };
+    expect(matchRerunDispatch({ ...run, buildNumber: '57' }, [older, newer])).toBe(older);
+    expect(matchRerunDispatch({ ...run, buildNumber: null }, [older, newer])).toBe(newer);
+    // A CI clock a few seconds behind Piwi's still matches the build.
+    expect(matchRerunDispatch({ ...run, buildNumber: '57', startedAt: 895_000 }, [older])).toBe(older);
   });
 
   test('leaves a run started outside the window or before the dispatch', () => {

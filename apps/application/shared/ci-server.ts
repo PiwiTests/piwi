@@ -280,6 +280,35 @@ export function resolveCiServerTarget(input: unknown): CiServerTarget | null {
   };
 }
 
+/**
+ * Why a CI server target from a request cannot be saved, or null when it can:
+ * a base URL that is not an http(s) URL, or a target that cannot dispatch.
+ */
+export function ciServerTargetProblem(input: unknown): string | null {
+  const rawBaseUrl = isRecord(input) ? input.baseUrl : undefined;
+  const badBaseUrl =
+    typeof rawBaseUrl === 'string'
+      ? rawBaseUrl.trim() !== '' && !normalizeCiServerBaseUrl(rawBaseUrl)
+      : rawBaseUrl != null;
+  if (badBaseUrl) return 'The CI server base URL must be an http(s) URL';
+  const target = resolveCiServerTarget(input);
+  if (!target) {
+    return 'The CI server target cannot dispatch: it needs a known preset and its required fields';
+  }
+  if (sendsFlakeLab(input) && !ciServerRequestTemplate(target, 'flakeLab')) {
+    return 'The CI server Flake Lab request cannot dispatch: it needs its required fields';
+  }
+  return null;
+}
+
+/** Whether a payload names a Flake Lab request: a Custom one, or a preset part with a field filled in. */
+function sendsFlakeLab(input: unknown): boolean {
+  if (!isRecord(input)) return false;
+  if (input.preset === 'custom') return isRecord(input.custom) && input.custom.flakeLab != null;
+  const part = input.flakeLab;
+  return isRecord(part) && Object.values(part).some((value) => typeof value === 'string' && value.trim() !== '');
+}
+
 /** The request a target sends for a re-run or a Flake Lab dispatch, and its credential's place; null when it has none. */
 export function ciServerRequestTemplate(
   target: CiServerTarget,

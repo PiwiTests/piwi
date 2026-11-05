@@ -65,7 +65,7 @@ Taken with the maintainer on 2026-11-04; the shape is to be confirmed with the i
 | D3  | **Presets in the first cut: Jenkins and Custom.** TeamCity, Buildkite, CircleCI and Azure Pipelines follow as one registry entry and one test each.                                                                                                                                         |
 | D4  | **The base URL and credential are the instance's by default, and a project may override both.** Instance: `PIWI_CI_SERVER_URL`, `PIWI_CI_SERVER_USER`, `PIWI_CI_SERVER_TOKEN`. Project: a base URL in `ciRerun.ciServer.baseUrl`, a user name beside it, a token in a new encrypted column. |
 | D5  | **A credential is sent only to URLs under the base URL it was saved with** (see [Security](#security)).                                                                                                                                                                                     |
-| D6  | **A private address is reached only on a place the operator named**: the host and port of `PIWI_CI_SERVER_URL`, and the entries of `PIWI_CI_SERVER_HOSTS` (a host, any port, or `host:port`). Any other host goes through the public-only lookup.                                          |
+| D6  | **A private address is reached only on a place the operator named**: the host and port of `PIWI_CI_SERVER_URL`, and the entries of `PIWI_CI_SERVER_HOSTS` (a host, any port, or `host:port`). Any other host goes through the public-only lookup.                                           |
 | D7  | **The job reads the arguments from an environment variable, through the Piwi CLI**: `npx @piwitests/reporter rerun` runs `playwright test` with the arguments of `PIWI_RERUN_ARGS`, parsed without a shell. No `eval`, no Groovy interpolation of a parameter into `sh`.                    |
 | D8  | **Parameter names default to the environment variables the reporter reads**: `PIWI_RERUN_ARGS` and `PIWI_ORIGIN_REF`. Jenkins, TeamCity, Buildkite and Azure Pipelines expose a build parameter as an environment variable, so the job only declares them.                                  |
 | D9  | **A matched dispatch links to the build the run recorded** (`ci.buildUrl`), for every provider. Before the match it links to what the CI answered, or to the job's page.                                                                                                                    |
@@ -207,7 +207,9 @@ token to the `qa` folder, whatever base URL a project sets under it.
   has one, for every provider (D9). Jenkins answers with a queue item, not a build, so the build link comes from the
   match rather than from polling the queue.
 - **Match.** By `PIWI_ORIGIN_REF` first. Then by build number when the preset reads one and the run's `ci.buildNumber`
-  holds it. Then by branch, start time and files, the heuristic GitHub uses today, extended to `ci-server`.
+  holds it: a CI server numbers builds per job, so the number counts only for a run of the dispatch's branch, started
+  after it (a minute of clock difference allowed), that ran exactly its spec files. Then by branch, start time and files, the heuristic GitHub uses today,
+  extended to `ci-server`.
 
 ### 6. Settings
 
