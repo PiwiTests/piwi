@@ -193,6 +193,40 @@ export function sendPairing(options: {
   };
 }
 
+/** How often a window with no listener tries the saved port, which another window may hold. */
+export const SAVED_PORT_RETRY_MS = 10_000;
+
+/**
+ * Takes the saved port once the window holding it lets it go: while this window has no listener and a pairing is
+ * saved, it tries that port now and every `everyMs`, so Piwi Picker's pairing reaches a window of this machine, and
+ * every window's hub through it, as long as one is open. A window listening on another port for a run's pairing keeps
+ * that listener. `started` hears each listener it starts.
+ */
+export function takeSavedPort(options: {
+  store: Pick<PairingStore, 'port' | 'token'>;
+  listener(): SendListener | null;
+  listen(port: number): Promise<SendListener>;
+  started?(listener: SendListener): void;
+  everyMs?: number;
+}): { ready: Promise<void>; dispose(): void } {
+  let trying = false;
+  const attempt = async (): Promise<void> => {
+    const { port, token } = options.store;
+    if (trying || options.listener() || !port || !token) return;
+    trying = true;
+    try {
+      options.started?.(await options.listen(port));
+    } catch {
+      // Another window holds it still.
+    } finally {
+      trying = false;
+    }
+  };
+  const timer = setInterval(() => void attempt(), options.everyMs ?? SAVED_PORT_RETRY_MS);
+  timer.unref?.();
+  return { ready: attempt(), dispose: () => clearInterval(timer) };
+}
+
 /** The port of an `http:` address on `127.0.0.1` or `localhost`; null for any other address. */
 export function loopbackPort(address: string): number | null {
   try {

@@ -693,8 +693,9 @@ free port: `ws://127.0.0.1:<port>/piwi/hub` (`HUB_PATH`).
 
 **Hello.** The first message must be `{ type: 'hello', token }` with the hub's token within 5 s (`HUB_HELLO_MS`), else
 the connection closes (4001, 4002). The token is random per start, compared in constant time (`sameToken` in
-`recorder/handoff.ts`). The hub answers `welcome`: its pid, version, client, the workspace's first 64 folders and
-`keepaliveMs`.
+`recorder/handoff.ts`). The hub answers `welcome`: its pid, version, client, the workspace's first 64 folders,
+`keepaliveMs`, and what it does beyond every hub (`features`: `peers`). A reader keeps the features it knows; a hub that
+predates the list reads as having none.
 
 **Who holds the token.** The token is in the discovery file ([The discovery file](#the-discovery-file)), which only
 this user reads. The editor's Send to editor endpoint lists it to whoever holds the pairing's token, which the runs the
@@ -744,6 +745,14 @@ client hears, so both show the same. Each run goes as a `session` with:
   watches the stop's live view; Pick, Record, Assert and Assert a region where the bar shows or while it watches.
 
 What the hub sends fits what `parseHubMessage` reads.
+
+**Peers.** A subscribed WebSocket connection hears the other live hubs of the machine after its runs (`peers`), and
+again each time the list changes: the hub reads the editors' discovery folder (`RunHubOptions.peers`,
+`readLiveHubs`) every 5 s (`PEERS_MS`) while such a connection is subscribed, and each connection hears a list only
+when it differs from the one it heard last. Each hub is named by its address, pid, version, client, folders and start,
+never its token (`hubPeersOf`, 64 at most): a client that holds no token for one asks the editor's `GET …/live`, which
+names it with its token to the pairing's holder alone. A peer the host joined (the desktop app's window) hears none.
+The desktop app's server names the editors' hubs the same way, and its live answer lists its hub's `features`.
 
 **Code.** A subscribed connection also hears, once, what each action that writes code came to, whichever surface
 started it (`RunHub.code`, from `StopActions`' `outcome`): `{ type: 'code', ref, worker, since, action, ok, message,

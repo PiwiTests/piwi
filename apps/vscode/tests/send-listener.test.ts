@@ -21,6 +21,7 @@ import {
   onLoopback,
   sendPairing,
   startSendListener,
+  takeSavedPort,
   type PairingStore,
   type SendListener,
 } from '../src/send-listener';
@@ -315,6 +316,64 @@ describe('the window’s pairing', () => {
     } finally {
       await close();
     }
+  });
+});
+
+describe('the saved port, held by another window', () => {
+  test('is taken once that window lets it go, by a window with no listener alone', async () => {
+    const other = http.createServer();
+    await new Promise<void>((resolve) => other.listen(0, '127.0.0.1', resolve));
+    const port = (other.address() as AddressInfo).port;
+    let running: SendListener | null = null;
+    const started: number[] = [];
+    const take = takeSavedPort({
+      store: { port, token: TOKEN },
+      listener: () => running,
+      listen: async (p) => {
+        running = await startSendListener({
+          port: p,
+          token: () => TOKEN,
+          onPayload: async () => ({ inserted: false, file: null }),
+          live: () => [],
+        });
+        return running;
+      },
+      started: (l) => void started.push(l.port),
+      everyMs: 50,
+    });
+    try {
+      await take.ready;
+      expect(running).toBeNull();
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      expect(running).toBeNull();
+      // The window holding it closes: this one takes the port within a try.
+      await new Promise((resolve) => other.close(resolve));
+      for (let i = 0; i < 40 && !running; i++) await new Promise((resolve) => setTimeout(resolve, 25));
+      expect((running as SendListener | null)?.port).toBe(port);
+      expect(started).toEqual([port]);
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      expect(started).toEqual([port]);
+    } finally {
+      take.dispose();
+      await (running as SendListener | null)?.close();
+    }
+  });
+
+  test('is never tried without a pairing saved', async () => {
+    let asked = 0;
+    const take = takeSavedPort({
+      store: { port: undefined, token: '' },
+      listener: () => null,
+      listen: async () => {
+        asked++;
+        throw new Error('no');
+      },
+      everyMs: 20,
+    });
+    await take.ready;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    take.dispose();
+    expect(asked).toBe(0);
   });
 });
 

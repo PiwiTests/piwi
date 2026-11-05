@@ -187,6 +187,7 @@ import {
   onLoopback,
   sendPairing,
   startSendListener,
+  takeSavedPort,
   type PairingStore,
   type SendListener,
   type SendResult,
@@ -873,11 +874,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     });
     return sendListener;
   };
-  // Another window may hold the port: that window keeps the pairing. A remote window forwards it again, as it was.
-  if (sendStore.port && sendStore.token) {
-    const started = await listen(sendStore.port).catch(() => null);
-    if (started && vscode.env.remoteName) void forwardListener(started.url).catch(() => undefined);
-  }
+  // Another window may hold the port: that window keeps the pairing, and this one takes the port once it lets it go.
+  // A remote window forwards it again, as it was.
+  const savedPort = takeSavedPort({
+    store: sendStore,
+    listener: () => sendListener,
+    listen,
+    started: (started) => {
+      if (vscode.env.remoteName) void forwardListener(started.url).catch(() => undefined);
+    },
+  });
+  context.subscriptions.push(savedPort);
+  await savedPort.ready;
   const pairing = sendPairing({
     store: sendStore,
     listener: () => sendListener,

@@ -6,8 +6,10 @@
  * (`127.0.0.1:<port>` or `localhost:<port>`) and an extension's `Origin` (`chrome-extension://<id>`,
  * `moz-extension://<uuid>`); the first message must be `hello` with the token, within `HUB_HELLO_MS`. Every later
  * message is a command with an `id`, answered once with that `id` (`HubAnswer`); `subscribe` has the hub push each run
- * as it changes (`HubSessionMessage`), and what each action that writes code at a stop came to, whichever surface
- * started it (`HubCodeMessage`: its sentence, never the code); `follow` says whether a person watches the runs there
+ * as it changes (`HubSessionMessage`), what each action that writes code at a stop came to, whichever surface
+ * started it (`HubCodeMessage`: its sentence, never the code), and the other live hubs of the machine as they come and
+ * go (`HubPeersMessage`: their addresses, never their tokens); `welcome` and the desktop app's live answer list what
+ * the hub does beyond every hub (`features`); `follow` says whether a person watches the runs there
  * (a Runs window is open), which holds a failure no pause bar shows; `view` has it push the frames of a stopped page's
  * live view to that connection alone (`HubFrameMessage`), and `input` plays the connection's input on the page it
  * views; `share` shares a run live on the team instance its reporter reports to (**Share live**), or stops, as a person
@@ -41,6 +43,18 @@ export const MAX_HUB_CLIENT = 200;
 export const MAX_HUB_MESSAGE = 1000;
 /** The most warnings a `code` carries: the hub sends the first ones. */
 export const MAX_HUB_WARNINGS = 16;
+/** The most hubs a `peers` names: the hub names the first ones. */
+export const MAX_HUB_PEERS = 64;
+
+/**
+ * What a hub does beyond what every hub does, as `welcome` and the desktop app's live answer list it: it names the
+ * other live hubs of the machine as they come and go (`peers`). A reader keeps those it knows; a hub that predates the
+ * list does none of them.
+ */
+export type HubFeature = 'peers';
+
+/** The features of a hub of this version. */
+export const HUB_FEATURES: readonly HubFeature[] = ['peers'];
 
 /** Why the hub closed a connection, as the WebSocket's close code. */
 export const HUB_CLOSE = {
@@ -353,6 +367,8 @@ export interface HubWelcome {
   client: string | null;
   roots: string[];
   keepaliveMs: number;
+  /** What it does beyond every hub; read as none from a hub that predates the list. */
+  features: HubFeature[];
 }
 
 /** A run that changed, or every run live as `subscribe` is answered. */
@@ -411,6 +427,19 @@ export interface HubFrameRefusal {
   refused: string;
 }
 
+/** A live hub as another one names it (`peers`): where it listens and whose it is, never its token. */
+export type PeerHub = Omit<LiveHub, 'token' | 'features'>;
+
+/**
+ * The other live hubs of the machine, as the hub reads them from the editors' discovery folder: sent to a subscribed
+ * connection after the runs `subscribe` answers with, then each time the list changes, the whole list each time. A
+ * client that holds no token for one asks the editor's `GET …/live` again, which names it with its token.
+ */
+export interface HubPeersMessage {
+  type: 'peers';
+  hubs: PeerHub[];
+}
+
 /** What the hub sends. */
 export type HubMessage =
   | HubWelcome
@@ -419,6 +448,7 @@ export type HubMessage =
   | HubCodeMessage
   | HubFrameMessage
   | HubFrameRefusal
+  | HubPeersMessage
   | { type: 'keepalive' };
 
 /** A live hub, as the Send to editor endpoint's `GET …/live` lists it. */
@@ -428,6 +458,8 @@ export interface LiveHub extends HubAddress {
   client: string | null;
   roots: string[];
   startedAt: string;
+  /** What it does beyond every hub, where the answer says (the desktop app's); a hub's `welcome` says it too. */
+  features?: HubFeature[];
 }
 
 /** The body of `GET /piwi/live` and `GET /api/piwi/live`. */
@@ -452,6 +484,26 @@ export function liveHubsOf(editors: readonly EditorDiscovery[]): LiveHub[] {
         ]
       : [],
   );
+}
+
+/** The hubs a hub names to its clients as its peers: the others, without their tokens, at most `MAX_HUB_PEERS`. */
+export function hubPeersOf(hubs: readonly LiveHub[], self: string): PeerHub[] {
+  return hubs
+    .filter((hub) => hub.url !== self)
+    .slice(0, MAX_HUB_PEERS)
+    .map(({ url, pid, version, client, roots, startedAt }) => ({
+      url,
+      pid,
+      version,
+      client: cutName(client),
+      roots: roots.slice(0, MAX_HUB_ROOTS),
+      startedAt,
+    }));
+}
+
+/** A client name cut to `MAX_HUB_CLIENT`. */
+function cutName(client: string | null): string | null {
+  return client === null || client.length <= MAX_HUB_CLIENT ? client : client.slice(0, MAX_HUB_CLIENT);
 }
 
 /** The live endpoint beside a Send to editor endpoint: `…/piwi/send` → `…/piwi/live`; null for another address. */
@@ -801,6 +853,7 @@ export function parseHubMessage(text: string): HubMessage | null {
         client: client as string | null,
         roots: roots as string[],
         keepaliveMs,
+        features: readFeatures(value.features),
       };
     }
     case 'answer': {
@@ -829,6 +882,10 @@ export function parseHubMessage(text: string): HubMessage | null {
     }
     case 'code':
       return readCode(value);
+    case 'peers':
+      return Array.isArray(value.hubs) && value.hubs.length <= MAX_HUB_PEERS
+        ? { type: 'peers', hubs: value.hubs.flatMap((hub) => readPeer(hub) ?? []) }
+        : null;
     case 'keepalive':
       return { type: 'keepalive' };
     default:
@@ -844,25 +901,34 @@ export function parseHubMessage(text: string): HubMessage | null {
 export function parseLiveAnswer(body: unknown): LiveHub[] | null {
   if (!isObject(body) || !Array.isArray(body.hubs)) return null;
   return body.hubs.flatMap((hub): LiveHub[] => {
-    if (!isObject(hub)) return [];
-    const { token, pid, version, client, roots, startedAt } = hub;
-    const named = typeof hub.url === 'string' ? HUB_URL.exec(hub.url) : null;
-    if (!named) return [];
-    const url = `ws://127.0.0.1:${named[1]}${named[2]}`;
-    if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{16,256}$/.test(token) || !isInt(pid, 1)) return [];
-    if (str(version, 64) === null || str(startedAt, 64) === null) return [];
-    if (client !== null && str(client, 200) === null) return [];
-    if (!Array.isArray(roots) || !roots.every((r) => str(r, 4096) !== null)) return [];
-    return [
-      {
-        url,
-        token,
-        pid,
-        version: version as string,
-        client: client as string | null,
-        roots: roots as string[],
-        startedAt: startedAt as string,
-      },
-    ];
+    const peer = readPeer(hub);
+    if (!peer || !isObject(hub)) return [];
+    const { token } = hub;
+    if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{16,256}$/.test(token)) return [];
+    return [hub.features === undefined ? { ...peer, token } : { ...peer, token, features: readFeatures(hub.features) }];
   });
+}
+
+/** A hub as a live answer or `peers` names it, but its token, field by field, on `127.0.0.1`; null when it is not one. */
+function readPeer(hub: unknown): PeerHub | null {
+  if (!isObject(hub)) return null;
+  const { pid, version, client, roots, startedAt } = hub;
+  const named = typeof hub.url === 'string' ? HUB_URL.exec(hub.url) : null;
+  if (!named || !isInt(pid, 1)) return null;
+  if (str(version, 64) === null || str(startedAt, 64) === null) return null;
+  if (client !== null && str(client, 200) === null) return null;
+  if (!Array.isArray(roots) || !roots.every((r) => str(r, 4096) !== null)) return null;
+  return {
+    url: `ws://127.0.0.1:${named[1]}${named[2]}`,
+    pid,
+    version: version as string,
+    client: client as string | null,
+    roots: roots as string[],
+    startedAt: startedAt as string,
+  };
+}
+
+/** The features of a list, those this version knows, in its order; none for anything but a list. */
+function readFeatures(value: unknown): HubFeature[] {
+  return Array.isArray(value) ? HUB_FEATURES.filter((feature) => value.includes(feature)) : [];
 }

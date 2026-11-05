@@ -505,6 +505,9 @@ state (`piwi.sendPort`), with the token from `SecretStorage` (`piwi.sendToken`).
   Code gives it (`onLoopback`): `localhost` may resolve to `[::1]`, where another program could listen.
 - A run's `PIWI_EDITOR_SEND` keeps the loopback address (`runPairing`), since the reporter runs where the extension
   does. Which port it takes: [Breakpoints](#breakpoints).
+- One window holds the saved port. A window with no listener tries it as it starts and every 10 s after
+  (`takeSavedPort`, `SAVED_PORT_RETRY_MS`), so it takes the port once the window holding it closes, and Piwi Picker's
+  pairing reaches every window's hub through it. A window listening on another port for a run's pairing keeps it.
 
 **Who gets an answer.** The listener answers only a request whose `Host` is `127.0.0.1` or `localhost` at its port, or
 at the port of the browser's machine a remote window forwards to it (`forwarded`, set as the pairing address goes

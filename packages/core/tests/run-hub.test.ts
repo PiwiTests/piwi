@@ -9,12 +9,14 @@ import {
   MAX_HUB_COMMAND,
   MAX_HUB_FRAME,
   MAX_HUB_MESSAGE,
+  MAX_HUB_PEERS,
   MAX_HUB_PROJECT,
   MAX_HUB_ROOTS,
   MAX_FORWARDED_PORTS,
   MAX_HUB_WARNINGS,
   forwardedPorts,
   hubHostPort,
+  hubPeersOf,
   isExtensionOrigin,
   isHubHost,
   liveHubsOf,
@@ -251,7 +253,15 @@ describe('the hub’s WebSocket', () => {
 
   test('has the extension read every message the hub sends, field by field', () => {
     const messages: HubMessage[] = [
-      { type: 'welcome', pid: 4242, version: '0.60.0', client: 'WebStorm', roots: ['/work/shop'], keepaliveMs: 20_000 },
+      {
+        type: 'welcome',
+        pid: 4242,
+        version: '0.60.0',
+        client: 'WebStorm',
+        roots: ['/work/shop'],
+        keepaliveMs: 20_000,
+        features: ['peers'],
+      },
       { type: 'answer', id: 1, ok: true, message: 'Pausing at the next call.' },
       {
         type: 'answer',
@@ -750,5 +760,79 @@ describe('the live endpoint', () => {
         ].map((url) => ({ ...hubs[0], url })),
       }),
     ).toEqual([]);
+  });
+
+  test('names the desktop app’s features beside its hub, those this version knows', () => {
+    const hub = {
+      url: 'ws://127.0.0.1:43123/piwi/hub',
+      token: 'h'.repeat(32),
+      pid: 4242,
+      version: '0.67.0',
+      client: 'Piwi desktop app',
+      roots: [],
+      startedAt: '2026-10-25T10:00:00.000Z',
+    };
+    expect(parseLiveAnswer({ hubs: [{ ...hub, features: ['view-lane', 'peers'] }] })).toEqual([
+      { ...hub, features: ['peers'] },
+    ]);
+    expect(parseLiveAnswer({ hubs: [{ ...hub, features: 'peers' }] })).toEqual([{ ...hub, features: [] }]);
+    expect(parseLiveAnswer({ hubs: [hub] })).toEqual([hub]);
+  });
+});
+
+describe('the other live hubs a hub names', () => {
+  const live = (port: number, client: string | null = 'Visual Studio Code') => ({
+    url: `ws://127.0.0.1:${port}/piwi/hub`,
+    token: `${'t'.repeat(30)}${port}`,
+    pid: port,
+    version: '0.67.0',
+    client,
+    roots: [`/work/${port}`],
+    startedAt: '2026-10-25T10:00:00.000Z',
+  });
+
+  test('are the others, without their tokens, their names and folders cut to what a reader takes', () => {
+    const own = live(43_001);
+    const long = {
+      ...live(43_002, 'C'.repeat(MAX_HUB_CLIENT + 50)),
+      roots: Array.from({ length: 80 }, (_, i) => `/r${i}`),
+    };
+    const peers = hubPeersOf([own, long, live(43_003)], own.url);
+    expect(peers.map((p) => p.url)).toEqual(['ws://127.0.0.1:43002/piwi/hub', 'ws://127.0.0.1:43003/piwi/hub']);
+    expect(JSON.stringify(peers)).not.toContain('t'.repeat(30));
+    expect(peers[0]!.client).toHaveLength(MAX_HUB_CLIENT);
+    expect(peers[0]!.roots).toHaveLength(MAX_HUB_ROOTS);
+    const many = Array.from({ length: MAX_HUB_PEERS + 5 }, (_, i) => live(44_000 + i));
+    expect(hubPeersOf(many, own.url)).toHaveLength(MAX_HUB_PEERS);
+  });
+
+  test('are read by the extension field by field, on 127.0.0.1, leaving out an entry it cannot read', () => {
+    const { token: _token, ...peer } = live(43_002);
+    const message = { type: 'peers', hubs: [peer] };
+    expect(parseHubMessage(json(message))).toEqual(message);
+    expect(parseHubMessage(json({ type: 'peers', hubs: [{ ...peer, url: 'ws://localhost:43002/piwi/hub' }] }))).toEqual(
+      message,
+    );
+    expect(
+      parseHubMessage(
+        json({ type: 'peers', hubs: [peer, { ...peer, url: 'ws://evil.test:1/piwi/hub' }, { ...peer, pid: 0 }, 'x'] }),
+      ),
+    ).toEqual(message);
+    // A token a hub sends anyway is not kept.
+    expect(parseHubMessage(json({ type: 'peers', hubs: [{ ...peer, token: 'h'.repeat(32) }] }))).toEqual(message);
+    expect(parseHubMessage(json({ type: 'peers', hubs: [] }))).toEqual({ type: 'peers', hubs: [] });
+    expect(parseHubMessage(json({ type: 'peers' }))).toBeNull();
+    expect(
+      parseHubMessage(json({ type: 'peers', hubs: Array.from({ length: MAX_HUB_PEERS + 1 }, () => peer) })),
+    ).toBeNull();
+  });
+
+  test('come from a hub whose welcome lists them; a hub that predates the list lists none', () => {
+    const welcome = { type: 'welcome', pid: 1, version: '1', client: null, roots: [], keepaliveMs: 1 };
+    expect(parseHubMessage(json(welcome))).toEqual({ ...welcome, features: [] });
+    expect(parseHubMessage(json({ ...welcome, features: ['dance', 'peers'] }))).toEqual({
+      ...welcome,
+      features: ['peers'],
+    });
   });
 });
