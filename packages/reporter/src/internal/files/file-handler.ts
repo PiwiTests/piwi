@@ -199,7 +199,7 @@ export class FileHandler {
       name: a.name || 'attachment',
       path: path.resolve(a.path),
       contentType: a.contentType || 'application/octet-stream',
-      originalName: path.basename(a.path),
+      originalName: path.basename(a.path).replace(/\.{2,}/g, '.'),
     };
   }
 
@@ -385,17 +385,17 @@ export class FileHandler {
 const MAX_BASE_NAME_LENGTH = 200;
 
 /**
- * Attachment name reduced to characters safe in a file name, holding no `..` and neither starting nor ending in `.`
- * or `-`, so the extension the caller appends never forms `..` (`expired one.` gives `expired-one`). A name longer
- * than `MAX_BASE_NAME_LENGTH` keeps its head, then the first 8 hex digits of the full name's SHA-256, so two long
- * names stay apart, then its own extension (`.gif`), which the dashboard serves the file by.
+ * Attachment name reduced to characters safe in a file name, holding no `..`, not starting with `-` and not ending in
+ * `.` or `-`, so the extension the caller appends never forms `..` (`expired one.` gives `expired-one`); a leading dot
+ * stays (`.env`). A name longer than `MAX_BASE_NAME_LENGTH` keeps its head, then the first 8 hex digits of the full
+ * name's SHA-256, so two long names stay apart, then its own extension (`.gif`), which the dashboard serves the file by.
  */
 function safeFileName(name: string): string {
   const safe =
     name
       .replace(/[^\w.-]+/g, '-')
       .replace(/\.{2,}/g, '.')
-      .replace(/^[-.]+|[-.]+$/g, '') || 'attachment';
+      .replace(/^-+|[-.]+$/g, '') || 'attachment';
   if (safe.length <= MAX_BASE_NAME_LENGTH) return safe;
   const extension = /\.[A-Za-z0-9]{1,8}$/.exec(safe)?.[0] ?? '';
   const hash = crypto.createHash('sha256').update(name).digest('hex').slice(0, 8);
