@@ -48,7 +48,12 @@ server error, a 408 or a 429, with backoff for the run's life, keeps the run's e
 live view is on for the specs that use Piwi's fixtures and names the first spec file that runs without them; a run
 without a key names its real cause (`streaming: false`, a global setup that did not run, an instance that did not
 take its registration, with its error, or the setting off), outside CI in `PIWI_LIVE_VIEW` too; and `merge-reports`
-says nothing of the live view. The later phases are proposed. The bugs the analysis
+says nothing of the live view. A CI worker's live view retries every 30 to 60 s for the run's life after its fast
+retries, its count reset by a steady stream, and the run's log says once when it is lost and once when it is back,
+relayed through the global setup's process; each key's digest is stored with its run, so a restarted instance takes a
+running run's key back, and the setting turned off and on again; **Share live** works again after either; a Project
+admin turns the live view on from a running run's status, which then says it starts with the next run. P2 is built;
+its run links stay with P5. The later phases are proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app
