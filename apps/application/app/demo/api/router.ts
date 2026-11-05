@@ -41,6 +41,7 @@ import { NOTIFICATION_EVENTS } from '#shared/notification-events';
 import { digestAtSchema, subscriptionFiltersError, subscriptionFiltersSchema } from '#shared/subscription-filters';
 import { MARKER_CATEGORY_IDS } from '#shared/marker-categories';
 import { getUserAccess } from '#shared/handlers/role-bindings';
+import { accountPictureVersion } from '#shared/user-avatar';
 import { createGroup, deleteGroup, setGroupMembers, updateGroup } from '#shared/handlers/groups';
 import {
   accessRefusal,
@@ -3968,6 +3969,8 @@ routes.push(
           role: ctx.access.instanceRole,
           name: user.name,
           avatarUrl: user.avatarUrl,
+          avatarVersion: accountPictureVersion(user),
+          avatarUploaded: Boolean(user.avatarKey),
           email: user.email,
           emailVerified: user.emailVerified,
           oauthProvider: user.oauthProvider,
@@ -3997,8 +4000,20 @@ routes.push(
     handler: () => Promise.resolve({ success: true, username: '' }),
   },
   { method: 'POST', pattern: /^\/api\/auth\/change-password$/, handler: () => Promise.resolve({ success: true }) },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/auth\/avatar$/,
+    handler: () => Promise.reject(demoHttpError(403, 'Uploading a profile picture is not available in the demo')),
+  },
+  { method: 'DELETE', pattern: /^\/api\/auth\/avatar$/, handler: () => Promise.resolve({ removed: false }) },
   { method: 'POST', pattern: /^\/api\/auth\/send-verify-email$/, handler: () => Promise.resolve({ success: true }) },
   { method: 'GET', pattern: /^\/api\/auth\/verify-email$/, handler: () => Promise.resolve({ success: true }) },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/users\/(\d+)\/avatar$/,
+    permission: 'users:manage',
+    handler: () => Promise.resolve({ removed: false }),
+  },
   {
     method: 'POST',
     pattern: /^\/api\/users\/(\d+)\/invite$/,

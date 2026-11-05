@@ -52,6 +52,16 @@ export class LocalStorageAdapter implements StorageAdapter {
     return await readFileAsync(fullPath);
   }
 
+  async readFileIfExists(path: string): Promise<Buffer | null> {
+    try {
+      return await readFileAsync(this.resolvePath(path));
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT' || code === 'ENOTDIR') return null;
+      throw error;
+    }
+  }
+
   async readStream(path: string, range?: { start: number; end: number }): Promise<Readable> {
     const stream = createReadStream(this.resolvePath(path), range && { start: range.start, end: range.end });
     // A missing file fails here, before the caller has answered anything.

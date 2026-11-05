@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { isOAuthAvatarUrl, oauthAvatar } from '../../server/utils/user-avatar';
 import { profilePictureSrc } from '../../app/utils/user-avatar';
-import { profilePictureVersion } from '../../shared/user-avatar';
+import { accountPictureVersion, profilePictureVersion, uploadedPictureVersion } from '../../shared/user-avatar';
 
 const GITHUB = 'https://avatars.githubusercontent.com/u/583231?v=4';
 const GOOGLE = 'https://lh3.googleusercontent.com/a/ACg8ocJ=s96-c';
@@ -95,18 +95,22 @@ describe('oauthAvatar', () => {
 });
 
 describe('profilePictureSrc', () => {
-  test("points at the instance's own route under its base URL", () => {
-    expect(profilePictureSrc('/', GITHUB)).toMatch(/^\/api\/auth\/avatar\?v=[0-9a-z]+$/);
-    expect(profilePictureSrc('/demo/', GITHUB)).toMatch(/^\/demo\/api\/auth\/avatar\?v=[0-9a-z]+$/);
-    expect(profilePictureSrc('/', GITHUB)).not.toContain('githubusercontent');
+  test("points at the instance's own route under its base URL, carrying the version", () => {
+    expect(profilePictureSrc('/', '1xgtbvx')).toBe('/api/auth/avatar?v=1xgtbvx');
+    expect(profilePictureSrc('/demo/', '1xgtbvx')).toBe('/demo/api/auth/avatar?v=1xgtbvx');
+  });
+});
+
+describe('accountPictureVersion', () => {
+  const KEY = `avatars/7/${'0a'.repeat(32)}-1122334455667788.webp`;
+
+  test("is the uploaded picture's file name, else the provider's version, else null", () => {
+    expect(accountPictureVersion({ avatarKey: KEY, avatarUrl: GITHUB })).toBe(`${'0a'.repeat(32)}-1122334455667788`);
+    expect(accountPictureVersion({ avatarKey: null, avatarUrl: GITHUB })).toBe(profilePictureVersion(GITHUB));
+    expect(accountPictureVersion({ avatarKey: null, avatarUrl: null })).toBeNull();
   });
 
-  test('carries the version the route compares, so a cached picture never shows for another account', () => {
-    expect(profilePictureSrc('/', GITHUB)).toBe(`/api/auth/avatar?v=${profilePictureVersion(GITHUB)}`);
-    expect(profilePictureSrc('/', GITHUB)).toBe(profilePictureSrc('/', GITHUB));
-    expect(profilePictureSrc('/', GITHUB)).not.toBe(profilePictureSrc('/', GOOGLE));
-    expect(profilePictureSrc('/', GITHUB)).not.toBe(
-      profilePictureSrc('/', 'https://avatars.githubusercontent.com/u/9919?v=4'),
-    );
+  test('matches the version the upload route answers', () => {
+    expect(accountPictureVersion({ avatarKey: KEY, avatarUrl: null })).toBe(uploadedPictureVersion(KEY));
   });
 });

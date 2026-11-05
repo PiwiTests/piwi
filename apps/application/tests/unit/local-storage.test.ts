@@ -22,3 +22,17 @@ describe('LocalStorageAdapter.exists', () => {
     expect(await storage.exists('project-1/run-2/trace.zip/inside')).toBe(false);
   });
 });
+
+describe('LocalStorageAdapter.readFileIfExists', () => {
+  test('reads a stored file, and is null for a missing path', async () => {
+    await storage.writeFile('avatars/1/a.webp', Buffer.from('webp'));
+    expect((await storage.readFileIfExists('avatars/1/a.webp'))?.toString()).toBe('webp');
+    expect(await storage.readFileIfExists('avatars/1/missing.webp')).toBeNull();
+    expect(await storage.readFileIfExists('avatars/1/a.webp/inside')).toBeNull();
+  });
+
+  test('throws when the path cannot be read for another reason', async () => {
+    await storage.writeFile('avatars/1/a.webp', Buffer.from('webp'));
+    await expect(storage.readFileIfExists('avatars/1')).rejects.toMatchObject({ code: 'EISDIR' });
+  });
+});

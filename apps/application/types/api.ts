@@ -1335,6 +1335,10 @@ export interface AuthUser {
   name?: string | null;
   email?: string | null;
   avatarUrl?: string | null;
+  /** The `v` of the user's profile picture address: its uploaded picture's, else its provider's; null with neither. */
+  avatarVersion?: string | null;
+  /** Whether the user uploaded a picture, which an upload replaces and Remove deletes. */
+  avatarUploaded?: boolean;
   /** The instance role and the project roles held, own and through groups; `can()` in `#shared/permissions` reads it. */
   access: AccessSummary;
 }

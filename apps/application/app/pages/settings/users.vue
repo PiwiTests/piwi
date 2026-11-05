@@ -16,7 +16,7 @@ import type { ApiResponse, ProjectMenuItem } from '~~/types/api';
 const { data: usersData, refresh } = await useFetch<UsersListResponse>('/api/users');
 const { data: groupsData, refresh: refreshGroups } = await useFetch<GroupsListResponse>('/api/groups');
 const toast = useToast();
-const { authState, can, refreshDemoAccess } = useAuth();
+const { authState, can, fetchUser, refreshDemoAccess } = useAuth();
 
 /** An administrator gets the full rows; anyone else reaching this page would get summaries. */
 const isListItem = (user: UserListItem | UserSummary): user is UserListItem => 'instanceRole' in user;
@@ -78,7 +78,7 @@ const columns: TableColumn<UserListItem>[] = [
     header: createSortHeader<UserListItem>('Created'),
     meta: { class: { th: 'w-24', td: 'w-24' } },
   },
-  { id: 'actions', header: 'Actions', meta: { class: { th: 'w-36', td: 'w-36' } } },
+  { id: 'actions', header: 'Actions', meta: { class: { th: 'w-44', td: 'w-44' } } },
 ];
 
 // ── Add user ────────────────────────────────────────────────────────────────
@@ -317,6 +317,42 @@ async function handleInviteUser(user: UserListItem) {
     invitingUserId.value = null;
   }
 }
+
+// ── Profile picture ─────────────────────────────────────────────────────────
+const removingPictureUserId = ref<number | null>(null);
+const pictureToRemove = ref<UserListItem | null>(null);
+
+async function confirmRemovePicture() {
+  const user = pictureToRemove.value;
+  pictureToRemove.value = null;
+  if (!user) return;
+  removingPictureUserId.value = user.id;
+  try {
+    const { removed } = await $fetch<ApiResponse<typeof import('~~/server/api/users/[id]/avatar.delete').default>>(
+      `/api/users/${user.id}/avatar`,
+      { method: 'DELETE' },
+    );
+    if (removed) {
+      patchUserRow(user.id, { avatarUploaded: false });
+      toast.add({ title: 'Profile picture removed', color: 'success' });
+    } else {
+      await refresh();
+      toast.add({
+        title: `Nothing removed: the profile picture of ${user.username} had already changed`,
+        color: 'neutral',
+      });
+    }
+    if (user.id === authState.value.user?.id) await fetchUser();
+  } catch (e) {
+    toast.add({
+      title: 'Failed to remove profile picture',
+      description: errorMessage(e, 'An error occurred'),
+      color: 'error',
+    });
+  } finally {
+    removingPictureUserId.value = null;
+  }
+}
 </script>
 
 <template>
@@ -364,10 +400,12 @@ async function handleInviteUser(user: UserListItem) {
               :can-manage="isAdmin"
               :can-manage-keys="canManageApiKeys(user)"
               :inviting="invitingUserId === user.id"
+              :removing-picture="removingPictureUserId === user.id"
               class="shrink-0"
               @invite="handleInviteUser(user)"
               @project-roles="openRolesModal(user)"
               @api-keys="openApiKeysModal(user)"
+              @remove-picture="pictureToRemove = user"
               @delete="handleDeleteUser(user)"
             />
           </div>
@@ -461,9 +499,11 @@ async function handleInviteUser(user: UserListItem) {
               data-tour="user-row-actions"
               :can-manage-keys="canManageApiKeys(row.original)"
               :inviting="invitingUserId === row.original.id"
+              :removing-picture="removingPictureUserId === row.original.id"
               @invite="handleInviteUser(row.original)"
               @project-roles="openRolesModal(row.original)"
               @api-keys="openApiKeysModal(row.original)"
+              @remove-picture="pictureToRemove = row.original"
               @delete="handleDeleteUser(row.original)"
             />
           </template>
@@ -575,6 +615,27 @@ async function handleInviteUser(user: UserListItem) {
       <template #footer>
         <UButton color="neutral" variant="ghost" label="Cancel" @click="isDeleteUserConfirmOpen = false" />
         <UButton color="error" label="Delete user" icon="i-lucide-trash-2" @click="confirmDeleteUser" />
+      </template>
+    </UModal>
+  </ClientOnly>
+
+  <!-- Profile picture removal confirmation -->
+  <ClientOnly>
+    <UModal
+      :open="pictureToRemove !== null"
+      title="Remove profile picture"
+      @update:open="(open: boolean) => !open && (pictureToRemove = null)"
+    >
+      <template #body>
+        <p>
+          Remove the picture <strong>{{ pictureToRemove?.username }}</strong> uploaded? It is deleted from this server,
+          so showing it again means they upload it again.
+        </p>
+      </template>
+
+      <template #footer>
+        <UButton color="neutral" variant="ghost" label="Cancel" @click="pictureToRemove = null" />
+        <UButton color="error" label="Remove picture" icon="i-lucide-image-off" @click="confirmRemovePicture" />
       </template>
     </UModal>
   </ClientOnly>
