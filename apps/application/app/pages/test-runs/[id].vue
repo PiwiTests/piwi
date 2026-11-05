@@ -9,7 +9,7 @@ import type {
   FailureGroup,
   RunClusterMeta,
 } from '~~/types/api';
-import { liveStepOf, type LiveStepsByWorker } from '~/utils/live-steps';
+import type { LiveStepsByWorker } from '~/utils/live-steps';
 import { liveRowNote } from '~/utils/live-row-note';
 import { runSummaryText } from '~/utils/run-summary';
 import { NO_WORKER_GRACE_MS } from '~/utils/run-live-view-status';
@@ -134,8 +134,6 @@ function watchWorker(worker: LiveWorkerState, testCase: TestCaseResult) {
   };
   watchOpen.value = true;
 }
-/** The step the watched worker is on in the watched test, for the live view's caption. */
-const watchingStep = computed(() => (watching.value ? liveStepOf(liveSteps.value, watching.value) : null));
 let eventSource: EventSource | null = null;
 
 // Combined test cases: from server data + live stream. Includes every attempt
@@ -1134,10 +1132,9 @@ const moreMenuItems = computed(() => {
             :is-live="isLive"
             :total="displayProgress?.totalTests"
             :waiting-since="
-              testRun?.status === 'initializing' || (testRun?.status === 'running' && liveViewConnected)
-                ? testRun?.startTime
-                : null
+              testRun?.status === 'initializing' || testRun?.status === 'running' ? testRun?.startTime : null
             "
+            :hears-run="liveViewConnected || isDemoMode"
             :live-steps="liveSteps"
             :live-resources="liveResources"
             :live-workers="liveWorkers"
@@ -1234,7 +1231,6 @@ const moreMenuItems = computed(() => {
       :worker="watching.worker"
       :shard="watching.shard"
       :test="watching.test"
-      :step="watchingStep"
       :project-key="testRun?.projectId"
       :project-name="testRun?.project?.name"
     />
