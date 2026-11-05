@@ -1,4 +1,5 @@
 import type { BrowserConfig } from './types';
+import { shownWorkerNumber } from './worker-lane';
 
 /**
  * Pure environment-diff helpers: flatten a whitelisted set of run/browser
@@ -21,7 +22,10 @@ export interface EnvironmentSnapshotSource {
   scmBranch?: string | null;
   /** Per-execution browser/context configuration. */
   browser?: BrowserConfig | null;
+  /** Playwright's worker process, which names the worker only for a result without a lane. */
   workerIndex?: number | null;
+  /** The worker's lane (Playwright's `parallelIndex`), which names it from 1. */
+  parallelIndex?: number | null;
   shardIndex?: number | null;
 }
 
@@ -37,7 +41,7 @@ export interface EnvironmentDiffEntry {
   informational?: boolean;
 }
 
-const INFORMATIONAL_KEYS = new Set(['workerIndex', 'shardIndex']);
+const INFORMATIONAL_KEYS = new Set(['worker', 'shardIndex']);
 
 /**
  * Keys whose null means not recorded rather than unset. The baseline is the same Playwright project, so a browser
@@ -67,7 +71,7 @@ const KEY_LABELS: Record<string, string> = {
   javaScriptEnabled: 'JavaScript enabled',
   serviceWorkers: 'Service workers',
   userAgent: 'User agent',
-  workerIndex: 'Worker index',
+  worker: 'Worker',
   shardIndex: 'Shard index',
 };
 
@@ -108,7 +112,7 @@ export function buildEnvironmentSnapshot(source: EnvironmentSnapshotSource): Rec
     javaScriptEnabled: str(b?.javaScriptEnabled),
     serviceWorkers: str(b?.serviceWorkers),
     userAgent: str(b?.userAgent),
-    workerIndex: str(source.workerIndex),
+    worker: str(shownWorkerNumber(source)),
     shardIndex: str(source.shardIndex),
   };
 }

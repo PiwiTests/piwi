@@ -77,6 +77,7 @@ import { getStorage } from '../storage';
 import type { DbClient } from '../database';
 import { flakyResultSql } from '#shared/handlers/test-case-aggregates';
 import { shownWorkerNumber } from '#shared/worker-lane';
+import { liveWorkerName } from '#shared/live-view';
 
 type ScmCoverage = NonNullable<DiagnosisContextCoverage['scm']>;
 
@@ -528,7 +529,6 @@ function ciRunHeaderLines(rep: RepresentativeRow): string[] {
   }
   if (meta?.scm?.branch) lines.push(`- Branch: ${meta.scm.branch}`);
   if (meta?.ci?.provider) lines.push(`- CI: ${meta.ci.provider}`);
-  if (env?.workerIndex != null) lines.push(`- Worker: ${env.workerIndex}`);
   if (env?.os) lines.push(`- OS: ${env.os}`);
   if (env?.hostname) lines.push(`- Hostname: ${env.hostname}`);
   return lines;
@@ -605,8 +605,8 @@ export function runContextSection(rep: RepresentativeRow): string | null {
 
   const worker = shownWorkerNumber(rep);
   if (worker != null) {
-    const shard = rep.shardIndex != null ? `, shard ${rep.shardIndex}` : '';
-    lines.push(`- Parallel worker ${worker}${shard} — consider a race if peers on the same worker also failed`);
+    const name = liveWorkerName({ shard: rep.shardIndex ?? null, worker });
+    lines.push(`- Ran on ${name} — consider a race if peers on the same worker also failed`);
   }
 
   if (rep.flakyRootCause) {
