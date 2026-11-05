@@ -1,5 +1,5 @@
 {
-  "id": "76c5469c-0f68-49ac-820e-e6b7a5ad7c8f",
+  "id": "80aa4199-78a3-44ec-be79-44e5c0b5873f",
   "prevId": "418eab25-e993-4f21-b7c1-1775cfacf359",
   "version": "7",
   "dialect": "postgresql",
@@ -12727,12 +12727,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "parallel_index": {
-          "name": "parallel_index",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
         "shard_index": {
           "name": "shard_index",
           "type": "integer",
@@ -13763,6 +13757,12 @@
         },
         "avatar_url": {
           "name": "avatar_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "avatar_key": {
+          "name": "avatar_key",
           "type": "text",
           "primaryKey": false,
           "notNull": false

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "4b264f2f-6b9f-4b95-8bd2-f45625338236",
+  "id": "3faec0ba-7c85-416e-b949-ff722138b4a8",
   "prevId": "85482ca8-4c69-4e76-8254-73a1933ab302",
   "tables": {
     "account_tokens": {
@@ -10452,13 +10452,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "parallel_index": {
-          "name": "parallel_index",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
         "shard_index": {
           "name": "shard_index",
           "type": "integer",
@@ -11211,6 +11204,13 @@
         },
         "avatar_url": {
           "name": "avatar_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "avatar_key": {
+          "name": "avatar_key",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
