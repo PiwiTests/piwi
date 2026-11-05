@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EDITOR_CHALLENGE_HEADER, EDITOR_PROOF_HEADER, editorTokenProof } from '@piwitests/core/editor-send';
 import { HUB_CLOSE, type HubSession, type HubWorker, type LiveHub } from '@piwitests/core/run-hub';
 import type { HubSocket } from '../../src/background/hub-connection.js';
-import { RunHubs, type RunHubsDeps, type RunsViewer } from '../../src/background/run-hubs.js';
+import { RunHubs, type DesktopHubs, type RunHubsDeps, type RunsViewer } from '../../src/background/run-hubs.js';
 import { liveRuns, type RunsFrame, type RunsView } from '../../src/shared/runs.js';
 
 /**
@@ -27,6 +27,9 @@ const OTHER_HUB: LiveHub = {
   token: 'other_token_abcdefghijkl',
   pid: 4243,
 };
+
+/** How a run lost with its hub's connection names the hub: as the hub's welcome named it. */
+const LOST = { client: 'Visual Studio Code', desktop: false };
 
 /** The paired desktop app's hub, which its server is, with the app's token. */
 const DESKTOP_HUB: LiveHub = {
@@ -349,6 +352,47 @@ describe('finding the hubs through the pairing', () => {
     await vi.advanceTimersByTimeAsync(5 * 60_000);
     await settle();
     expect(fetches).toHaveLength(2);
+  });
+
+  it('keeps the hubs that answer through a minute look a side fails once, and their runs', async () => {
+    let desktop = async (): Promise<DesktopHubs> => ({ discovery: 'found', hubs: [DESKTOP_HUB] });
+    const { hubs, sockets, prove } = setup({ desktopHubs: () => desktop() });
+    let changes = 0;
+    hubs.listen(() => changes++);
+    await hubs.find();
+    const [editorSocket, desktopSocket] = sockets;
+    await welcome(editorSocket!, [session([RUNNING])], 3_600_000);
+    await welcome(desktopSocket!, [session([STOPPED], { ref: 'desktop-1' })], 3_600_000);
+    const runs = () => hubs.state().runs.map((run) => [run.session.ref, !!run.lost]);
+    expect(runs()).toEqual([
+      ['r1', false],
+      ['desktop-1', false],
+    ]);
+    /** The next minute look, until it settled. */
+    const look = async () => {
+      const before = changes;
+      await vi.advanceTimersByTimeAsync(60_000);
+      await until(() => changes > before);
+    };
+    // The desktop app does not answer in time once.
+    desktop = async () => ({ discovery: 'unreachable', hubs: [] });
+    await look();
+    // Then the program on the editor's port does not prove itself once.
+    desktop = async () => ({ discovery: 'found', hubs: [DESKTOP_HUB] });
+    prove('wrong');
+    await look();
+    expect(editorSocket!.closedWith).toBeNull();
+    expect(desktopSocket!.closedWith).toBeNull();
+    expect(sockets).toHaveLength(2);
+    expect(runs()).toEqual([
+      ['r1', false],
+      ['desktop-1', false],
+    ]);
+    expect(hubs.state()).toMatchObject({ discovery: 'found', desktop: 'found' });
+    // Asked as Look again asks, the editor that does not prove itself has its hubs let go.
+    await hubs.find();
+    expect(editorSocket!.closedWith).toBe(1000);
+    expect(hubs.state().discovery).toBe('unproven');
   });
 });
 
@@ -755,7 +799,7 @@ describe('connections that fail', () => {
     await hubs.find();
     await welcome(sockets[0]!, [session([RUNNING])]);
     sockets[0]!.hangUp(1006);
-    expect(hubs.state().runs).toEqual([{ hub: HUB.url, session: session([RUNNING]), lost: true }]);
+    expect(hubs.state().runs).toEqual([{ hub: HUB.url, session: session([RUNNING]), lost: LOST }]);
     expect(hubs.state().hubs).toEqual([
       { id: HUB.url, connected: false, client: 'Visual Studio Code', desktop: false },
     ]);
@@ -1119,7 +1163,7 @@ describe('a stop’s live view', () => {
     // The run stays as it was, at its stop, marked lost: neither the popup's tile nor the shortcut counts it.
     expect(hubs.state(a)).toMatchObject({
       hubs: [{ id: HUB.url, connected: false }],
-      runs: [{ hub: HUB.url, lost: true, session: { ref: 'r1', workers: [{ worker: 1, stop: { since: 's7' } }] } }],
+      runs: [{ hub: HUB.url, lost: LOST, session: { ref: 'r1', workers: [{ worker: 1, stop: { since: 's7' } }] } }],
     });
     expect(liveRuns(hubs.state())).toEqual([]);
     // The hub answers again at the same stop: the run is the one it tells, and the window watches it there again.
@@ -1138,6 +1182,65 @@ describe('a stop’s live view', () => {
     expect(Math.max(...counts)).toBe(1);
   });
 
+  it('lets a lost hub’s runs go as soon as it tells its runs again, nothing reading the state meanwhile', async () => {
+    const { hubs, sockets } = setup();
+    await hubs.find();
+    await welcome(sockets[0]!, [session([RUNNING]), session([STOPPED], { ref: 'r2' })]);
+    sockets[0]!.hangUp(1006);
+    await vi.advanceTimersByTimeAsync(1000);
+    await until(() => sockets.length === 2);
+    // The hub answers again without r2, which ended meanwhile; r1 ends there, and the connection is lost again.
+    await welcome(sockets[1]!, [session([RUNNING])]);
+    sockets[1]!.hear({ type: 'session', session: session([], { ended: true }) });
+    sockets[1]!.hangUp(1006);
+    // Each run shows once at most: r1 ended, r2 not at all.
+    expect(hubs.state().runs).toEqual([{ hub: HUB.url, session: session([RUNNING], { ended: true }) }]);
+  });
+
+  it('shows a lost run once as it ends on the hub’s next connection, before that one told all its runs', async () => {
+    const { hubs, sockets } = setup();
+    await hubs.find();
+    await welcome(sockets[0]!, [session([RUNNING])]);
+    sockets[0]!.hangUp(1006);
+    await vi.advanceTimersByTimeAsync(1000);
+    await until(() => sockets.length === 2);
+    const socket = sockets[1]!;
+    socket.open();
+    socket.hear({
+      type: 'welcome',
+      pid: 4242,
+      version: '0.60.0',
+      client: 'Visual Studio Code',
+      roots: [],
+      keepaliveMs: 20_000,
+    });
+    socket.hear({ type: 'answer', id: socket.last('subscribe')!.id, ok: true, message: 'Following 0 runs.' });
+    socket.hear({ type: 'session', session: session([], { ended: true }) });
+    expect(hubs.state().runs).toEqual([{ hub: HUB.url, session: session([], { ended: true }) }]);
+  });
+
+  it('keeps a lost hub’s runs through a connection that tells none, and lets them go as another process answers', async () => {
+    const { hubs, sockets } = setup();
+    await hubs.find();
+    await welcome(sockets[0]!, [session([RUNNING], { ref: 'desktop-1' })]);
+    sockets[0]!.hangUp(HUB_CLOSE.goingAway);
+    const hello = { type: 'welcome', version: '0.60.0', client: 'Visual Studio Code', roots: [], keepaliveMs: 20_000 };
+    // The same process welcomes the next connection, which is lost before it tells its runs: the run stays lost.
+    await vi.advanceTimersByTimeAsync(1000);
+    await until(() => sockets.length === 2);
+    sockets[1]!.open();
+    sockets[1]!.hear({ ...hello, pid: 4242 });
+    expect(hubs.state().runs).toMatchObject([{ session: { ref: 'desktop-1' }, lost: LOST }]);
+    sockets[1]!.hangUp(1006);
+    expect(hubs.state().runs).toMatchObject([{ session: { ref: 'desktop-1' }, lost: LOST }]);
+    // Another process answers at the address (the app started again): its runs are its own, of the same refs or not.
+    await vi.advanceTimersByTimeAsync(2000);
+    await until(() => sockets.length === 3);
+    sockets[2]!.open();
+    sockets[2]!.hear({ ...hello, pid: 5151 });
+    expect(hubs.state().runs).toEqual([]);
+  });
+
   it('lets a lost hub’s runs go ten minutes later, or as soon as the editor names the hub no more', async () => {
     const closed = setup();
     await closed.hubs.find();
@@ -1146,7 +1249,7 @@ describe('a stop’s live view', () => {
     closed.prove('unreachable');
     closed.sockets[0]!.hangUp(1006);
     await vi.advanceTimersByTimeAsync(10 * 60_000 - 1000);
-    expect(closed.hubs.state().runs).toMatchObject([{ lost: true }]);
+    expect(closed.hubs.state().runs).toMatchObject([{ lost: LOST }]);
     await vi.advanceTimersByTimeAsync(1001);
     expect(closed.hubs.state().runs).toEqual([]);
 
@@ -1156,7 +1259,7 @@ describe('a stop’s live view', () => {
     await welcome(moved.sockets[0]!, [session([HEADLESS])]);
     moved.answer(async () => Response.json({ hubs: [OTHER_HUB] }));
     moved.sockets[0]!.hangUp(HUB_CLOSE.goingAway);
-    expect(moved.hubs.state().runs).toMatchObject([{ lost: true }]);
+    expect(moved.hubs.state().runs).toMatchObject([{ lost: LOST }]);
     await vi.advanceTimersByTimeAsync(1000);
     await until(() => moved.sockets.length === 2);
     expect(moved.sockets[1]!.url).toBe(OTHER_HUB.url);

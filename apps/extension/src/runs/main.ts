@@ -18,6 +18,7 @@ import {
   RUNS_PING_MS,
   RUNS_PORT,
   RUN_COMMAND,
+  isLiveRun,
   pageHintOf,
   pagePoint,
   shareRefusalOf,
@@ -172,8 +173,10 @@ function connect(): void {
     if (port === opened) port = null;
     for (const resolve of waiting.values()) resolve({ ok: false, message: '', failure: 'offline' });
     waiting.clear();
-    // The worker that relayed the views is gone: the next one watches each again that Watch live left on.
-    for (const [key, view] of views) if (isLive(view)) endView(key, false);
+    // The worker that relayed the views is gone: the next one watches each again that Watch live left on, once the
+    // run's hub answers it.
+    for (const key of views.keys()) endView(key, false);
+    for (const entry of watchLive.values()) entry.rejoining = true;
     // The worker stopped (it is started again by the connection) or restarted.
     setTimeout(connect, 500);
   });
@@ -216,9 +219,12 @@ function failureText(answer: RunsAnswer): string {
 
 // ── Commands ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** The stop a worker stands at in the state shown last: its `since`, null while it is not stopped, or is gone. */
+/**
+ * The stop a worker stands at in the state shown last: its `since`, null while it is not stopped, or is gone, its run
+ * ended or lost with its hub's connection.
+ */
 function stopNow(run: RunsRun, worker: number): string | null {
-  const shown = state?.runs.find((r) => r.hub === run.hub && r.session.ref === run.session.ref && !r.session.ended);
+  const shown = state?.runs.find((r) => r.hub === run.hub && r.session.ref === run.session.ref && isLiveRun(r));
   const found = shown?.session.workers.find((w) => w.worker === worker);
   return found?.state === 'stopped' ? (found.stop?.since ?? null) : null;
 }
@@ -270,7 +276,7 @@ function say(
  * refused, shown under the test and read out while its worker stands at that stop; dropped otherwise.
  */
 function heardCode(code: RunsCode): void {
-  const run = state?.runs.find((r) => r.hub === code.hub && r.session.ref === code.ref && !r.session.ended);
+  const run = state?.runs.find((r) => r.hub === code.hub && r.session.ref === code.ref && isLiveRun(r));
   if (!run || stopNow(run, code.worker) !== code.since) return;
   const key = workerKey(code.hub, code.ref, { worker: code.worker });
   say(key, { ok: code.ok, message: code.message }, code.since, { sent: true, warnings: code.warnings });
@@ -439,9 +445,10 @@ interface LiveView extends RunsView {
 const views = new Map<string, LiveView>();
 /**
  * The workers' slots (`slotKey`) whose Watch live the person left on, each with its run: each new stop in the slot is
- * watched too, whichever worker stands there.
+ * watched too, whichever worker stands there. `rejoining` once the background worker started again, until the run's
+ * hub answers it (`watchLiveHolds`).
  */
-const watchLive = new Map<string, { hub: string; ref: string }>();
+const watchLive = new Map<string, { hub: string; ref: string; rejoining: boolean }>();
 /** The workers whose Pick on the image waits for a click on the image. */
 const picking = new Set<string>();
 /** The view (worker and stop) the hint on its input shows under: the first one this window gave input to. */
@@ -465,10 +472,10 @@ function isLive(view: LiveView | undefined): view is LiveView {
   return !!view && (view.status === 'starting' || view.status === 'on');
 }
 
-/** The run, the worker and the stop a worker of the state stands at, while it does. */
+/** The run, the worker and the stop a worker of a live run stands at, while it does. */
 function stoppedAt(key: string): { run: RunsRun; worker: HubWorker; stop: HubStop } | null {
   for (const run of state?.runs ?? []) {
-    if (run.session.ended) continue;
+    if (!isLiveRun(run)) continue;
     for (const worker of run.session.workers) {
       if (workerKey(run.hub, run.session.ref, worker) !== key) continue;
       return worker.state === 'stopped' && worker.stop ? { run, worker, stop: worker.stop } : null;
@@ -486,7 +493,7 @@ function toggleLive(run: RunsRun, worker: HubWorker, stop: HubStop): void {
     watchLive.delete(slot);
     endView(key, true);
   } else {
-    watchLive.set(slot, { hub: run.hub, ref: run.session.ref });
+    watchLive.set(slot, { hub: run.hub, ref: run.session.ref, rejoining: false });
     startView(run, worker.worker, stop);
   }
   render();
@@ -952,30 +959,34 @@ function render(): void {
 
 /**
  * Drops what is kept for a stop a worker no longer stands at: its image, its live view, its list of requests, an
- * answer for it; and Watch live for a slot whose run ended (`watchLiveHolds`). A view whose hub's connection was lost
- * is kept, ended, while the hub is away, so it is asked again as the run comes back at the same stop.
+ * answer for it; and Watch live for a slot whose run is gone or ended (`watchLiveHolds`). A run lost with its hub's
+ * connection keeps its image and its view, ended, so the view is asked again as the run comes back at the same stop;
+ * an answer, a list and Pick on the image go with the loss, as its commands reach no hub.
  */
 function forgetGone(current: RunsState): void {
-  /** Each live worker's stop, null while it is not stopped. */
+  /** Each worker's stop, null while it is not stopped: of the live runs, and of those lost with their hub. */
   const at = new Map<string, string | null>();
+  const lostAt = new Map<string, string | null>();
   for (const run of current.runs) {
     if (run.session.ended) continue;
     for (const worker of run.session.workers) {
-      at.set(
+      (run.lost ? lostAt : at).set(
         workerKey(run.hub, run.session.ref, worker),
         worker.state === 'stopped' ? (worker.stop?.since ?? null) : null,
       );
     }
   }
-  for (const key of images.keys()) if (!at.get(key)) images.delete(key);
+  const kept = (key: string) => at.get(key) ?? lostAt.get(key) ?? null;
+  for (const key of images.keys()) if (!kept(key)) images.delete(key);
   const connected = (hub: string) => current.hubs.some((h) => h.id === hub && h.connected);
   for (const [key, view] of views) {
-    const away = view.status === 'ended' && !connected(view.hub);
-    if (away) view.away = true;
-    if (at.get(key) === view.since || (away && !at.has(key))) continue;
-    endView(key, false);
+    if (view.status === 'ended' && !connected(view.hub)) view.away = true;
+    if (kept(key) !== view.since) endView(key, false);
   }
-  for (const [slot, run] of watchLive) if (!watchLiveHolds(current, run)) watchLive.delete(slot);
+  for (const [slot, entry] of watchLive) {
+    if (connected(entry.hub)) entry.rejoining = false;
+    if (!watchLiveHolds(current, entry)) watchLive.delete(slot);
+  }
   for (const key of picking) if (!at.get(key)) picking.delete(key);
   for (const [key, list] of requestLists) if (at.get(key) !== list.since) requestLists.delete(key);
   for (const [key, answer] of answers) if (!at.has(key) || at.get(key) !== answer.since) answers.delete(key);
@@ -1087,7 +1098,9 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
   const headingId = section.getAttribute('aria-labelledby') ?? '';
   const name = runName(session);
   const hub = current.hubs.find((h) => h.id === run.hub);
-  const client = hub?.desktop ? t('runs_desktopApp') : (hub?.client ?? null);
+  // A lost run names its hub as it was: one that refused its token is gone from the hubs.
+  const named = run.lost ?? hub;
+  const client = named?.desktop ? t('runs_desktopApp') : (named?.client ?? null);
   const children = [
     part(
       `${runKey}|head`,
@@ -1121,7 +1134,7 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
       part(`${runKey}|ended`, null, () => iconText(element('p', 'run-ended'), 'check-circle', t('runs_ended'))),
     );
   } else if (run.lost) {
-    const editor = hub?.desktop ? t('runs_desktopName') : (hub?.client ?? t('runs_editor'));
+    const editor = run.lost.desktop ? t('runs_desktopName') : (run.lost.client ?? t('runs_editor'));
     children.push(
       part(`${runKey}|lost`, editor, () =>
         iconText(element('p', 'run-ended run-lost'), 'plug', t('runs_lost', { editor })),

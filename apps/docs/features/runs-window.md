@@ -61,8 +61,7 @@ background worker, on your machine or through the port your IDE forwards from a 
 window](/guide/remote-development).
 
 The view ends with the stop, when you turn **Watch live** off, minimize the window, or close it. Left on, it starts
-again at the next stop in that worker's place, even once Playwright replaces the worker, as the window shows
-again, and once the editor answers again.
+again at that worker's next stop, or its replacement's, as the window shows again, and once the editor answers again.
 
 At a headless stop, nobody sees the test's page: **Pick**, **Record**, **Assert** and **Assert a region** show once you
 watch it. The picker, the recorder's panel and the check panel appear in the view, and you answer them there as in a
@@ -117,8 +116,9 @@ pairing's token ([how the pieces connect](./editor-run-control#how-it-works)), a
 own. The window talks to that worker alone, and makes no network call of its own. An older editor extension gives the
 image and the controls alone.
 
-While open, the window asks the editor for its windows every minute, so an editor window opened later shows its runs;
-**Look again** asks at once. A run whose editor stops answering stays grayed until it answers again.
+Every minute, the window asks the editor for its windows, so one opened later shows its runs; **Look again** asks at
+once. A run whose editor stops answering stays grayed for up to ten minutes, until the editor answers or no longer
+names that window.
 
 ## Limits
 

@@ -38,6 +38,9 @@ const run = (ref: string, workers: HubWorker[], ended = false) => ({
   session: { ref, root: null, label: null, command: null, project: null, workers, ended } satisfies HubSession,
 });
 
+/** A run lost with its hub's connection names the hub as it was. */
+const LOST = { client: 'Visual Studio Code', desktop: false };
+
 const stop = (since: string) => ({
   reason: 'pause' as const,
   title: 'Click',
@@ -141,7 +144,7 @@ describe('the global shortcut’s rule', () => {
   });
 
   it('leaves the runs of a hub whose connection was lost alone, as the popup’s tile does', () => {
-    const lost = { ...run('a', [worker({ state: 'stopped', stop: stop('s1') })]), lost: true };
+    const lost = { ...run('a', [worker({ state: 'stopped', stop: stop('s1') })]), lost: LOST };
     expect(shortcutCommands([lost, run('b', [worker({})])]).map((c) => [c.ref, c.action])).toEqual([['b', 'pause']]);
     expect(liveRuns({ runs: [lost, run('b', [])] }).map((r) => r.session.ref)).toEqual(['b']);
   });
@@ -278,7 +281,7 @@ describe('where a run says its tests’ pages show', () => {
     const stopped = worker({ ...viewing, worker: 1, state: 'stopped', stop: stop('s1') });
     expect(pageHintOf(run('r1', [worker(viewing), stopped]), editorHub)).toBeNull();
     expect(pageHintOf(run('r1', [worker(viewing)], true), editorHub)).toBeNull();
-    expect(pageHintOf({ ...run('r1', [worker(viewing)]), lost: true }, editorHub)).toBeNull();
+    expect(pageHintOf({ ...run('r1', [worker(viewing)]), lost: LOST }, editorHub)).toBeNull();
     expect(pageHintOf(run('r1', []), editorHub)).toBeNull();
     // A reporter that predates the live view.
     expect(pageHintOf(run('r1', [worker({ intents: ['pick', 'record'] })]), editorHub)).toBeNull();
@@ -380,7 +383,9 @@ describe('a point on an image of a stopped page', () => {
 
 describe('Watch live, left on for a worker', () => {
   const hub = 'ws://127.0.0.1:50123/piwi/hub';
-  const state = (runs: RunsState['runs'], connected = true): Pick<RunsState, 'hubs' | 'runs'> => ({
+  const state = (runs: RunsState['runs'], connected = true): RunsState => ({
+    discovery: 'found',
+    desktop: 'unpaired',
     hubs: [{ id: hub, connected, client: null, desktop: false }],
     runs,
   });
@@ -395,21 +400,32 @@ describe('Watch live, left on for a worker', () => {
     expect(slotKey(hub, 'r2', failed)).not.toBe(slotKey(hub, 'r1', failed));
   });
 
-  it('stays on while its run is live, its slot empty a moment included, and while the hub does not answer', () => {
+  it('stays on while its run is live, its slot empty a moment included, or lost with its hub’s connection', () => {
     const at = { hub, ref: 'r1' };
     expect(watchLiveHolds(state([run('r1', [worker({ worker: 4, parallelIndex: 1 })])]), at)).toBe(true);
     // Playwright starts the next worker: the slot has none for a moment.
     expect(watchLiveHolds(state([run('r1', [worker({})])]), at)).toBe(true);
     expect(watchLiveHolds(state([run('r1', [])]), at)).toBe(true);
-    // The hub's connection was lost: the run shows as it was, or not at all, until the hub answers again.
-    expect(watchLiveHolds(state([{ ...run('r1', [worker({})]), lost: true }], false), at)).toBe(true);
-    expect(watchLiveHolds(state([], false), at)).toBe(true);
-    expect(watchLiveHolds({ hubs: [], runs: [] }, at)).toBe(true);
+    // The hub's connection was lost: the run shows as it was until the hub answers again.
+    expect(watchLiveHolds(state([{ ...run('r1', [worker({})]), lost: LOST }], false), at)).toBe(true);
   });
 
-  it('goes once its run ended, or is gone from a hub that answers', () => {
+  it('goes once its run ended or is gone, its hub answering or not, so a later run of the same ref starts without it', () => {
     const at = { hub, ref: 'r1' };
     expect(watchLiveHolds(state([run('r1', [worker({})], true)]), at)).toBe(false);
     expect(watchLiveHolds(state([run('r2', [worker({})])]), at)).toBe(false);
+    // The lost run went (ten minutes passed, or the editor names its hub no more), or the hub itself is gone.
+    expect(watchLiveHolds(state([], false), at)).toBe(false);
+    expect(watchLiveHolds({ ...state([]), hubs: [] }, at)).toBe(false);
+  });
+
+  it('waits, once the background worker started again, for the run’s hub to answer it', () => {
+    const at = { hub, ref: 'r1', rejoining: true };
+    // The new worker finds the hubs, then connects: no run yet.
+    expect(watchLiveHolds({ ...state([]), discovery: 'searching', hubs: [] }, at)).toBe(true);
+    expect(watchLiveHolds(state([], false), at)).toBe(true);
+    expect(watchLiveHolds(state([run('r1', [worker({})])]), at)).toBe(true);
+    // A hub no longer named does not come back.
+    expect(watchLiveHolds({ ...state([]), hubs: [] }, at)).toBe(false);
   });
 });

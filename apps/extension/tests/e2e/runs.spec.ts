@@ -74,9 +74,10 @@ test('pauses, steps and resumes a run from the Runs window, with the image of th
     expect(windows).toContainEqual({ type: 'popup', urls: [expect.stringMatching(/\/runs\.html$/)] });
     await expect(runs.getByText('Following 1 editor window')).toBeVisible();
     await expect(runs.getByText('No run right now.', { exact: false })).toBeVisible();
-    // A window of the editor opened since: Look again asks for its hubs at once.
+    // A window of the editor opened since: Look again asks the editor for its hubs at once.
+    const asked = editor.liveAsked;
     await runs.getByRole('button', { name: 'Look again' }).click();
-    await expect(runs.getByText('Following 1 editor window')).toBeVisible();
+    await expect.poll(() => editor.liveAsked).toBeGreaterThan(asked);
 
     const run = await startRun(editor);
     try {

@@ -68,12 +68,14 @@ export interface RunsHub {
 
 /**
  * A run of a hub; `session.ended` for one that ended, kept a while with its last workers; `lost` for one whose hub's
- * connection was lost, as the hub told it last, kept until the hub answers again or as long as an ended run.
+ * connection was lost, as the hub told it last, kept until the hub answers again, the editor or the desktop app names
+ * it no more, another process answers at its address, or as long as an ended run.
  */
 export interface RunsRun {
   hub: string;
   session: HubSession;
-  lost?: boolean;
+  /** The hub's name as it was when its connection was lost: a hub that refused its token is gone from `hubs`. */
+  lost?: Pick<RunsHub, 'client' | 'desktop'>;
 }
 
 export interface RunsState {
@@ -81,7 +83,10 @@ export interface RunsState {
   /** What the paired desktop app answered; `unpaired` while none is. */
   desktop: RunsDesktopDiscovery;
   hubs: RunsHub[];
-  /** The live runs first, in the order the hubs told them, then the ended ones, the latest first. */
+  /**
+   * The live runs first, in the order the hubs told them, then those lost with their hub's connection, then the ended
+   * ones, the latest first.
+   */
   runs: RunsRun[];
 }
 
@@ -344,9 +349,14 @@ export function pagePoint(
   return { x: at(offset.x, shown.width, viewport.width), y: at(offset.y, shown.height, viewport.height) };
 }
 
-/** The live runs of a state: neither ended nor lost with their hub's connection. */
+/** Whether a run is live: neither ended nor lost with its hub's connection. Commands and answers are for it alone. */
+export function isLiveRun(run: RunsRun): boolean {
+  return !run.session.ended && !run.lost;
+}
+
+/** The live runs of a state. */
 export function liveRuns(state: { runs: readonly RunsRun[] }): RunsRun[] {
-  return state.runs.filter((run) => !run.session.ended && !run.lost);
+  return state.runs.filter(isLiveRun);
 }
 
 /** How a reporter of 0.66.0 and earlier says its run was not registered. */
@@ -459,11 +469,16 @@ export function slotKey(hub: string, ref: string, worker: Pick<HubWorker, 'paral
 }
 
 /**
- * Whether Watch live, left on for a slot of a run, stays on: while the run is live, whichever worker stands in the
- * slot, none for a moment as Playwright starts another; and while the run's hub does not answer, the run lost with its
- * connection included, so it comes back with the hub.
+ * Whether Watch live, left on for a slot of a run, stays on: while the run is in the state, live or lost with its
+ * hub's connection, whichever worker stands in the slot, none for a moment as Playwright starts another. A window whose
+ * background worker started again (`rejoining`) keeps it until the run's hub answers, while the hubs are found again
+ * or the hub is named but not connected yet: until then, the new worker has no run to tell.
  */
-export function watchLiveHolds(state: Pick<RunsState, 'hubs' | 'runs'>, run: { hub: string; ref: string }): boolean {
-  if (!state.hubs.some((hub) => hub.id === run.hub && hub.connected)) return true;
-  return liveRuns(state).some((r) => r.hub === run.hub && r.session.ref === run.ref);
+export function watchLiveHolds(
+  state: Pick<RunsState, 'discovery' | 'hubs' | 'runs'>,
+  run: { hub: string; ref: string; rejoining?: boolean },
+): boolean {
+  if (state.runs.some((r) => r.hub === run.hub && r.session.ref === run.ref && !r.session.ended)) return true;
+  if (!run.rejoining) return false;
+  return state.discovery === 'searching' || state.hubs.some((hub) => hub.id === run.hub && !hub.connected);
 }
