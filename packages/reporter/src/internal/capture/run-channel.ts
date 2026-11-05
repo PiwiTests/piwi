@@ -49,7 +49,7 @@ import { bindBrowser } from './agent-page.js';
 import { locatorOn } from './chain-locator.js';
 import { keptRequests, keptResponse } from './kept-responses.js';
 import { liveViewState, onLiveViewChange, shareLiveView } from './live-view.js';
-import { openPageView, viewportOf } from './page-view.js';
+import { openPageView, pauseBarUp, viewportOf } from './page-view.js';
 import { PICK_AT_SINCE } from './pick-at.js';
 import { highlightAtStop, type PauseAnswer } from './pause-at.js';
 import { internalCall } from './quiet-capture.js';
@@ -669,8 +669,9 @@ async function stopViewOf(holding: HeldStop): Promise<IntentAnswer> {
 /**
  * Play a viewer's input at the stop held, in order, after the input sent before it: refused while the stop's view is
  * not watched, past `MAX_VIEW_EVENT_RATE` events a second and with `MAX_INPUT_WAITING` messages waiting. The events
- * of a stop that ends meanwhile are not played, nor any that would reach the pause bar the view paints over: a press on
- * its band (`onPauseBar`), and Escape, while the bar is inert to the message's keys (`barTakesKeys`).
+ * of a stop that ends meanwhile are not played. None reaches the pause bar the view paints over: a press on its band is
+ * not played (`onPauseBar`), and the answer says how many were not; before a key, each draw of the bar the message
+ * meets is held inert until the message ends (`holdBarFrom`), Escape then left to the page.
  */
 function playInput(holding: HeldStop, events: ViewInput[]): Promise<IntentAnswer> {
   const page = holding.page;
@@ -685,23 +686,19 @@ function playInput(holding: HeldStop, events: ViewInput[]): Promise<IntentAnswer
   own.waiting++;
   const played = own.playing
     .then(async (): Promise<IntentAnswer> => {
-      // The view paints the pause bar over: a press there would reach a button the viewer cannot see, as would a key.
       const band = view?.stop === holding.stop ? await view.barBand() : null;
-      // A page that does not answer may still show the bar: its Escape is not played then either.
-      const keyed = holding.bar && events.some((event) => event.type === 'key');
-      const barKeys =
-        keyed &&
-        (await answerWithin(
-          internalCall(page, () => page.evaluate(barTakesKeys, false)),
-          PAGE_ANSWER_MS,
-          true,
-        ));
+      const keys: BarHold = { token: ++barHolds, drawn: null };
+      let skipped = 0;
       try {
         for (const [i, event] of events.entries()) {
           if (held !== holding || input !== own || view?.stop !== holding.stop || page.isClosed()) {
             return { ok: false, message: i ? `The stop ended after ${i} of the events.` : WENT_ON };
           }
-          if (onPauseBar(event, band, own) || (barKeys && resumesAtBar(event))) continue;
+          if (onPauseBar(event, band, own)) {
+            skipped++;
+            continue;
+          }
+          if (event.type === 'key' && holding.bar) await holdBar(page, keys);
           try {
             await internalCall(page, () => playEvent(page, event, own));
           } catch (error) {
@@ -712,11 +709,12 @@ function playInput(holding: HeldStop, events: ViewInput[]): Promise<IntentAnswer
             };
           }
         }
-        return { ok: true, message: events.length === 1 ? 'Played 1 event.' : `Played ${events.length} events.` };
+        return { ok: true, message: playedAnswer(events.length, skipped) };
       } finally {
-        if (barKeys && !page.isClosed()) {
+        if (keys.drawn && !page.isClosed()) {
+          const release = { token: keys.token, hold: false };
           await within(
-            internalCall(page, () => page.evaluate(barTakesKeys, true)).catch(() => undefined),
+            internalCall(page, () => page.evaluate(holdBarFrom, release)).catch(() => undefined),
             VIEW_END_MS,
           );
         }
@@ -727,25 +725,54 @@ function playInput(holding: HeldStop, events: ViewInput[]): Promise<IntentAnswer
   return played;
 }
 
-/**
- * Runs in the page: while a viewer's keys play (`on` false), the pause bar is inert, so Tab passes it by, the focus
- * leaves it and no key presses its buttons; after them (`on`), it is as it was. Whether it shows. Must stay
- * self-contained.
- */
-function barTakesKeys(on: boolean): boolean {
-  type Element = { inert: boolean; contains(other: unknown): boolean };
-  type Document = { activeElement: { blur(): void } | null; getElementById(id: string): Element | null };
-  const doc = (globalThis as unknown as { document?: Document }).document;
-  const bar = doc?.getElementById('__piwi-pause-bar');
-  if (!doc || !bar) return false;
-  bar.inert = !on;
-  if (!on && bar.contains(doc.activeElement)) doc.activeElement?.blur();
-  return true;
+/** What a message of `count` events answers, `skipped` of them not played: the pause bar would take them. */
+function playedAnswer(count: number, skipped: number): string {
+  if (!skipped) return count === 1 ? 'Played 1 event.' : `Played ${count} events.`;
+  return (
+    `Played ${count - skipped} of ${count} ${count === 1 ? 'event' : 'events'}: ${skipped} not played, as the pause ` +
+    `bar the view paints over would take ${skipped === 1 ? 'it' : 'them'}.`
+  );
 }
 
-/** Whether a key event is Escape, with or without modifiers: the pause bar takes it as Resume from anywhere in the page. */
-function resumesAtBar(event: ViewInput): boolean {
-  return event.type === 'key' && /(^|\+)Escape$/.test(event.key);
+/** A message of a viewer's input, by its token, and the draw of the pause bar it holds inert. */
+interface BarHold {
+  token: number;
+  drawn: object | null;
+}
+
+/** The messages of a viewer's input so far: each holds the pause bar by its own token. */
+let barHolds = 0;
+
+/** Hold the pause bar `page` shows inert for the message `hold`, once for each draw of it the message meets. */
+async function holdBar(page: Page, hold: BarHold): Promise<void> {
+  const bar = pauseBarUp(page);
+  if (!bar || bar === hold.drawn) return;
+  hold.drawn = bar;
+  await answerWithin(bar.drawn, PAGE_ANSWER_MS, undefined);
+  const held = { token: hold.token, hold: true };
+  await answerWithin(
+    internalCall(page, () => page.evaluate(holdBarFrom, held)),
+    PAGE_ANSWER_MS,
+    undefined,
+  );
+}
+
+/**
+ * Runs in the page: the pause bar is inert while a message of a viewer's input holds it (`token`, `hold`), so Tab passes
+ * it by, the focus leaves it, no key presses its buttons and it leaves Escape to the page; once none holds it, it is as
+ * it was. A message that lets go of a bar another holds leaves it inert. Must stay self-contained.
+ */
+function holdBarFrom({ token, hold }: { token: number; hold: boolean }): void {
+  type Bar = { inert: boolean; contains(other: unknown): boolean; __piwiKeyHolds?: number[] };
+  type Document = { activeElement: { blur(): void } | null; getElementById(id: string): Bar | null };
+  const doc = (globalThis as unknown as { document?: Document }).document;
+  const bar = doc?.getElementById('__piwi-pause-bar');
+  if (!doc || !bar) return;
+  const holds = (bar.__piwiKeyHolds ?? []).filter((other) => other !== token);
+  if (hold) holds.push(token);
+  bar.__piwiKeyHolds = holds;
+  bar.inert = holds.length > 0;
+  if (bar.inert && bar.contains(doc.activeElement)) doc.activeElement?.blur();
 }
 
 /**

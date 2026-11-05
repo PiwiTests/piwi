@@ -232,16 +232,19 @@ What the package does to a user's run, process by process.
   runs its own), an image of the page goes twice a second.
 - At a headed stop, every view of its page, this one and the instance's live view, paints the pause bar over in each
   frame, as the image of the stop leaves it out (`page-view.ts`): `pauseHere` tells the page's views as it draws the
-  bar and once it is down (`pauseBarShows`). The bar's bottom edge and the viewport's size are read through an internal
-  call as soon as it is drawn, and again when a frame names another viewport than the frames read for (the bar wraps
-  onto a second row on a narrower one); a frame the page painted before the bar came down keeps the last read that
-  found it. The band from the viewport's top to that edge, scaled to the viewport the frame names (a page zoomed in
-  names more pixels than CSS ones), is painted gray across the frame with the `jpeg-js` of `live-mask.ts`
-  (`paintBoxes`), in the instance's view in the same pass as its masks, outside their rest. A frame the page painted
-  after the bar came down goes as it is (one that names no time, before Playwright 1.61, once the bar has been down a
-  second), and so does one whose bar is not read within a second, or with no `jpeg-js`. A painted frame holds the next
-  one back as long again as its paint took. An image of the page taken in place of a frame names the viewport it shows,
-  its own size at CSS scale. A browser zoom changed while the bar shows is read only when the bar is drawn again.
+  bar and once it is down (`pauseBarShows`). The bar's bottom edge and the viewport's size, in CSS pixels, are read
+  through an internal call as soon as it is drawn, and again for a frame that names another viewport than that read,
+  each view's first included, unless a read was made for that viewport already (the bar wraps onto a second row on a
+  narrower one); a frame the page painted before the bar came down keeps the last read that found it. A read made for
+  the frame's viewport that still names another size, at one scale on both axes, is of a page zoomed in, whose
+  screencast names its viewport in more pixels than CSS ones: the band is scaled to it; a size change never is. The
+  band from the viewport's top to that edge is painted gray across the frame with the `jpeg-js` of `live-mask.ts`
+  (`paintBoxes`), in the instance's view in the same pass as its masks, outside their rest, at the lighter quality when
+  too long at the view's. A frame the page painted after the bar came down goes as it is (one that names no time,
+  before Playwright 1.61, once the bar has been down a second), and so does one whose bar is not read within a second,
+  or with no `jpeg-js`. A painted frame holds the next one back as long again as its paint took. An image of the page
+  taken in place of a frame names the viewport as the screencast does, the page's own (`page.viewportSize()`), else,
+  for a page without one, the image's size at CSS scale, which Playwright gives in no other pixels.
 - `input` plays a viewer's mouse, wheel, key and text events (`@piwitests/core/run-view`:
   Playwright's key names alone, nothing evaluated) with `page.mouse` and `page.keyboard`
   through internal calls: trusted input that reaches whatever is at the point, Piwi's
@@ -249,9 +252,11 @@ What the package does to a user's run, process by process.
   200 events a second at most, and what it holds down is let go before the test goes on.
   None reaches the pause bar the view paints over: a press or a click on its band, while it
   shows and the view paints it (`barBand`), is not played, nor the release of a button
-  pressed there; while a message with keys plays, the bar is inert (`barTakesKeys`), so Tab
-  passes it by and no key presses its buttons, and Escape, which the bar takes as Resume, is
-  not played.
+  pressed there, and the answer says how many were not. Before a key, each draw of the bar
+  the message meets, one drawn again after a navigation included, is held inert by that
+  message's token until it ends (`holdBarFrom`), so Tab passes it by, no key presses its
+  buttons, and Escape, which an inert bar leaves to the page, closes the page's own dialog
+  and resumes nothing; a message that ends late lets go of its own hold alone.
 - At a stop no bar shows, Pick a locator, Record here, Assert and Assert a region run in
   the page while its view is watched (`viewHere` in `pause-at.ts`), driven through that
   input. They end with the view or the stop, leaving nothing of theirs in the page (the

@@ -13,10 +13,20 @@ import { jpegBand } from './_helpers.js';
 
 /**
  * The pause bar painted over in a live view's frames, in a real page (`page-view.ts`): its band read again as the
- * viewport changes, the bar wrapping on a narrower one, for the paint and for the band a viewer's presses keep from;
- * a frame held back until the bar came down painted from the read made as it was drawn; and the band painted in the
- * same pass as the secret fields' masks. Each frame is decoded and its pixels checked.
+ * viewport changes, the bar wrapping on a narrower one, for the paint and for the band a viewer's presses keep from,
+ * whether the view watched it change or opened after; a frame held back until the bar came down painted from the read
+ * made as it was drawn; the band painted in the same pass as the secret fields' masks, and at the lighter quality
+ * when the frame is too long at the view's. Each frame is decoded and its pixels checked.
  */
+
+/** A page of noise below where the bar shows, which no JPEG makes small. */
+const NOISY = `<!doctype html><style>body { margin: 0; background: white }</style><canvas id="c" width="1000" height="560" style="position:absolute;top:80px"></canvas>
+<script>
+const context = document.getElementById('c').getContext('2d');
+const noise = context.createImageData(1000, 560);
+for (let i = 0; i < noise.data.length; i++) noise.data[i] = i % 4 === 3 ? 255 : Math.random() * 255;
+context.putImageData(noise, 0, 0);
+</script>`;
 
 /** A white page, its content and a password field below where the bar shows. */
 const PAGE = `<!doctype html><meta charset="utf-8"><style>body { margin: 0; padding: 200px 20px 20px; background: white }
@@ -115,6 +125,34 @@ describe('the pause bar in a live view of its page', () => {
     }
   });
 
+  it('reads the bar again for a view opened after the viewport changed, narrower or wider', async () => {
+    for (const [drawnAt, viewedAt] of [
+      [1000, 600],
+      [600, 1000],
+    ] as const) {
+      page = await browser.newPage({ viewport: { width: drawnAt, height: 640 } });
+      await page.setContent(PAGE);
+      const takeDown = await drawBar();
+      await page.setViewportSize({ width: viewedAt, height: 640 });
+      const bottom = await barBottom();
+      const { view, sent } = await watch();
+      try {
+        const [first] = await waitFor(() => sent.length > 0 && sent);
+        expect(first!.width).toBe(viewedAt);
+        const band = jpegBand(first!.data, first!.height, 2, bottom - 2);
+        expect(band.violet).toBe(0);
+        expect(gray(band.mean), `drawn at ${drawnAt}, viewed at ${viewedAt}: ${band.mean.join(', ')}`).toBe(true);
+        // The page below the bar is left as it is.
+        expect(jpegBand(first!.data, first!.height, bottom + 30, bottom + 60).mean.every((c) => c > 235)).toBe(true);
+        expect(await view.barBand()).toBeCloseTo(bottom, 0);
+      } finally {
+        await view.close();
+        await takeDown();
+        await page.close();
+      }
+    }
+  });
+
   it('paints a frame held back until the bar came down from the read made as it was drawn', async () => {
     page = await browser.newPage({ viewport: { width: 1000, height: 640 } });
     await page.setContent(PAGE);
@@ -157,7 +195,7 @@ describe('the pause bar in a live view of its page', () => {
       encoded++;
       return encode.call(jpeg, image, quality);
     };
-    const mask = maskSecretFields(page, { masks: () => [], quality: 50, maxBytes: 192 * 1024 });
+    const mask = maskSecretFields(page, { masks: () => [], quality: 50, lightQuality: 30, maxBytes: 192 * 1024 });
     const { view, sent } = await watch((frame, also) => mask.screen(frame, also));
     try {
       const [frame] = await waitFor(() => sent.length > 0 && sent);
@@ -167,6 +205,30 @@ describe('the pause bar in a live view of its page', () => {
       expect(gray(jpegBand(frame!.data, frame!.height, 310, 350, 50, 330).mean)).toBe(true);
     } finally {
       jpeg.encode = encode;
+      await view.close();
+      await takeDown();
+      await page.close();
+    }
+  });
+
+  it('encodes a frame with the bar alone at the lighter quality when it is too long at the view’s', async () => {
+    page = await browser.newPage({ viewport: { width: 1000, height: 640 } });
+    await page.setContent(NOISY);
+    const takeDown = await drawBar();
+    // Between the page's image at the view's quality and at the lighter one, the bar painted over in both.
+    const jpeg = jpegCodec()!;
+    const image = jpeg.decode(await page.screenshot({ type: 'jpeg', quality: 90 }), {
+      useTArray: true,
+      formatAsRGBA: true,
+    });
+    const maxBytes = (jpeg.encode(image, 95).data.length + jpeg.encode(image, 10).data.length) / 2;
+    const mask = maskSecretFields(page, { masks: () => [], quality: 95, lightQuality: 10, maxBytes });
+    const { view, sent } = await watch((frame, also) => mask.screen(frame, also));
+    try {
+      const [frame] = await waitFor(() => sent.length > 0 && sent);
+      expect(frame!.data.length).toBeLessThanOrEqual(maxBytes);
+      expect(jpegBand(frame!.data, frame!.height, 2, 40).violet).toBe(0);
+    } finally {
       await view.close();
       await takeDown();
       await page.close();
