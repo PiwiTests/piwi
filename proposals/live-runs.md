@@ -24,7 +24,8 @@ the instance keeps each worker's latest step until its test completes, or until 
 nobody watches, and replays it to whoever opens the run later; the demo keeps them the same way. `parallelIndex` and
 the retry on step events come with P1, which reads them. Built from P0's step hygiene: Piwi's own fixtures
 (`piwiCapture`, `piwiResources`) and the steps inside them stay out of the stream, `test.step` streams, the live view's
-caption names its call with the call's target and follows the worker's step when it is newer than the image, and a
+caption names its call with the call's target and, on a page that stays still past the reporter's batch delay,
+follows the worker's step, and a
 run's Tests tab says **Global setup** (then **Starting N tests**) with the time since the run began, until its first
 test. The caption shows a step without its place, and a `test.step` streams as a step of its own, not as the parent of
 the calls inside it. The rest is proposed. The bugs the analysis

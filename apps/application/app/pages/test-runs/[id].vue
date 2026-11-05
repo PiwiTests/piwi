@@ -1130,7 +1130,11 @@ const moreMenuItems = computed(() => {
             :test-cases="dedupedDisplayCases"
             :is-live="isLive"
             :total="displayProgress?.totalTests"
-            :waiting-since="isLive || testRun?.status === 'initializing' ? testRun?.startTime : null"
+            :waiting-since="
+              testRun?.status === 'initializing' || (testRun?.status === 'running' && liveViewConnected)
+                ? testRun?.startTime
+                : null
+            "
             :live-steps="liveSteps"
             :live-resources="liveResources"
             :live-workers="liveWorkers"

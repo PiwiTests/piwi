@@ -54,12 +54,12 @@ A running run's **Tests** tab says **Live view available**, or what is missing, 
 ## Watch a worker
 
 On the run page's **Tests** tab, **Watch** beside a running test opens its worker's view: the test's page as the
-browser paints it, headless or not, and under it the call the image was taken at (`Click getByRole('button', { name: 'Pay' }) · checkout.spec.ts:30`). A still page sends no new image.
+browser paints it, headless or not, under it the call the image was taken at (`Click getByRole('button', { name: 'Pay' }) · checkout.spec.ts:30`). A still page sends no new image: the caption follows its steps.
 
-In a CI run, the view also follows that call: how long it has run, Playwright's log of it as a failed call's error
+In a CI run, the view follows that call: how long it has run, Playwright's log of it as a failed call's error
 prints it, and while it waits, what its locator matches (no element yet, several, or one not enabled), outlined on the
 image, with the point a click acts on. A shared run shows the call alone. Following the call needs Playwright 1.64:
-1.63 shows its log without the matches, and an older one the call alone.
+1.63 shows its log without the matches, an older one the call alone.
 
 A view belongs to the test whose row opened it. Opened between two tests or in a `beforeAll`, it says so and shows the
 next test's page. It ends with its test, its worker or the run, when the live view is turned off, or when you close it.
