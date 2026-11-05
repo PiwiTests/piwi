@@ -696,7 +696,7 @@ function playInput(holding: HeldStop, events: ViewInput[]): Promise<IntentAnswer
   const played = own.playing
     .then(async (): Promise<IntentAnswer> => {
       const band = view?.stop === holding.stop ? await view.barBand() : null;
-      const keys: BarHold = { token: ++barHolds, drawn: null };
+      const keys: BarHold = { token: ++barHolds, drawn: null, held: true };
       let skipped = 0;
       try {
         for (const [i, event] of events.entries()) {
@@ -707,7 +707,17 @@ function playInput(holding: HeldStop, events: ViewInput[]): Promise<IntentAnswer
             skipped++;
             continue;
           }
-          if (event.type === 'key' && holding.bar) await holdBar(page, keys);
+          if (event.type === 'key' && holding.bar) {
+            // A key goes only to a page that held its bar inert, and only while the stop still waits.
+            await holdBar(page, keys);
+            if (held !== holding || input !== own || view?.stop !== holding.stop || page.isClosed()) {
+              return { ok: false, message: i ? `The stop ended after ${i} of the events.` : WENT_ON };
+            }
+            if (!keys.held) {
+              skipped++;
+              continue;
+            }
+          }
           try {
             await internalCall(page, () => playEvent(page, event, own));
           } catch (error) {
@@ -743,27 +753,40 @@ function playedAnswer(count: number, skipped: number): string {
   );
 }
 
-/** A message of a viewer's input, by its token, and the draw of the pause bar it holds inert. */
+/**
+ * A message of a viewer's input, by its token, the draw of the pause bar it holds inert, and whether the page answered
+ * that hold: while it has not, the message's keys are not played.
+ */
 interface BarHold {
   token: number;
   drawn: object | null;
+  held: boolean;
 }
 
 /** The messages of a viewer's input so far: each holds the pause bar by its own token. */
 let barHolds = 0;
 
-/** Hold the pause bar `page` shows inert for the message `hold`, once for each draw of it the message meets. */
+/**
+ * Hold the pause bar `page` shows inert for the message `hold`, once for each draw of it the message meets: `hold.held`
+ * says whether the page answered within `PAGE_ANSWER_MS`.
+ */
 async function holdBar(page: Page, hold: BarHold): Promise<void> {
   const bar = pauseBarUp(page);
   if (!bar || bar === hold.drawn) return;
   hold.drawn = bar;
-  await answerWithin(bar.drawn, PAGE_ANSWER_MS, undefined);
-  const held = { token: hold.token, hold: true };
-  await answerWithin(
-    internalCall(page, () => page.evaluate(holdBarFrom, held)),
+  const drawn = await answerWithin(
+    Promise.resolve(bar.drawn).then(() => true),
     PAGE_ANSWER_MS,
-    undefined,
+    false,
   );
+  const request = { token: hold.token, hold: true };
+  hold.held =
+    drawn &&
+    (await answerWithin(
+      internalCall(page, () => page.evaluate(holdBarFrom, request)).then(() => true),
+      PAGE_ANSWER_MS,
+      false,
+    ));
 }
 
 /**
