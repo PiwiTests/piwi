@@ -73,30 +73,6 @@ export function desktopHoldsByDefault(run: Pick<DesktopHoldRun, 'kind'>): boolea
   return run.kind === 'reproduce';
 }
 
-/** How long the window holds the hub's stream at its start, waiting for it to open, before it gives up. */
-export const HUB_ATTACH_MS = 15_000;
-/** How long after the stream opens the window waits for the hub to tell the runs it has. */
-export const HUB_SETTLE_MS = 3_000;
-
-/** What the window holds the hub's stream for (`holdsDesktopRunHub`). */
-export interface DesktopHubNeeds {
-  /** The window started a moment ago: the hub has not told it its runs yet (`HUB_ATTACH_MS`, `HUB_SETTLE_MS`). */
-  attaching: boolean;
-  /** The local runs of the window that run. */
-  activeRuns: number;
-  /** The hub's live runs, the window's or another's (one a reload left going). */
-  liveRuns: number;
-}
-
-/**
- * Whether the window holds the stream of its runs' hub: as it starts, so a reload attaches again to the runs still
- * going, then while a local run of its own runs or the hub has a live run. Never otherwise: while the stream is open,
- * every headless stop waits for the window.
- */
-export function holdsDesktopRunHub(needs: DesktopHubNeeds): boolean {
-  return needs.attaching || needs.activeRuns > 0 || needs.liveRuns > 0;
-}
-
 /** Names a worker of a run, for what the window keeps of it (its answer, its image, its view). */
 export function desktopWorkerKey(ref: string, worker: number): string {
   return `${ref}|${worker}`;

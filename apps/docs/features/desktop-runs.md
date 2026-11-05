@@ -37,8 +37,8 @@ taskbar button.
 
 The tray opens at each stop: a headless test waits for you there. While the window is in the background, the system
 tells you of a failure or a `page.pause()`, never of a step or a pause you asked for. The window listens from its
-start, on every page: after a reload, the tray shows the runs still going. When no run of the app is going on, the
-window stops listening, and a stop goes on at once.
+start, on every page (error pages too): after a reload, the tray shows the runs still going, their workers and
+stops. When no run of the app is going on, the window stops listening, and a stop goes on at once.
 
 ## Its output
 

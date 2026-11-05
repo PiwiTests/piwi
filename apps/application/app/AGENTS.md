@@ -268,12 +268,12 @@ views are exempt only where a rule says so.
   on a check). Its fields are read by `apps/vscode/src/debug-link.ts` and `Glue.parseOpenRequest` in `apps/jetbrains`:
   a change to one changes the others. Checked by `tests/unit/ide-links.test.ts` and `tests/debug-in-editor.spec.ts`.
 - **The desktop window holds the stream of its runs' hub only while it has a run to show** (`useDesktopRunHub.want`,
-  from `plugins/desktop-run-hub.client.ts`, the main window alone): from its start, so a reload attaches again, then
-  while a local run runs or the hub has a live run (`holdsDesktopRunHub`). While it is open every headless stop waits
-  for the window, so the Local runs tray, mounted in `app.vue` for every layout, opens on each stop it hears, once,
-  and says `show` only for the running runs whose **Hold failures** switch is on (off by default, on for a
-  reproduction, `desktopHoldsByDefault`; never for a run nobody attends, `desktopHoldRefusal`), each by its steps'
-  names (`hubRefs`); expanding a run, closing the tray or changing layout changes none (`tests/desktop-run-view.spec.ts`).
+  from `plugins/desktop-run-hub.client.ts`, the main window alone): as it opens, then while a local run runs, in the
+  window or the shell, or the hub has a live run (`holdsDesktopRunHub`). While it is open every headless stop waits for
+  the window, so the Local runs tray, in `app.vue` and `error.vue`, opens on each stop once, one heard before it
+  mounted included, and says `show` only for the running runs whose **Hold failures** switch is on (off by default, on
+  for a reproduction, `desktopHoldsByDefault`; never for a run nobody attends, `desktopHoldRefusal`), each by its
+  steps' names (`hubRefs`); expanding a run, closing the tray or TV mode changes none (`tests/desktop-run-view.spec.ts`).
 - **Every raw `<form>` carries `method="post"`**, so a submit before hydration sends its fields in the body to the
   page's own URL, never in the query string (`UForm` renders it itself). `tests/unit/form-method-post.test.ts` names any
   `<form>` without it.

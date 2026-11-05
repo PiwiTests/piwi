@@ -173,15 +173,23 @@ describe('runsOfStoppedLocalRun', () => {
     expect(runsOfStoppedLocalRun(active, stopped(), false)).toEqual([7]);
   });
 
-  test('picks the run it is linked to, and a lab run named by its step', () => {
+  test('picks the run it is linked to', () => {
     const active = new Map<number, LiveRun>([
       [6, live(1)],
+      [7, live(1, { origin: 'desktop', originRef: 'desktop:xyz' })],
+    ]);
+    expect(runsOfStoppedLocalRun(active, stopped({ piwiRunId: 6 }), false)).toEqual([6]);
+  });
+
+  test("picks a Flake Lab session's runs by the name of its step, with no baseline nor link", () => {
+    // As `startFlakeLab` leaves it: no origin, so no baseline, no reference and no Piwi run linked.
+    const session = stopped({ kind: 'flake', originRef: null, piwiRunId: null, piwiRunBaseline: null });
+    const active = new Map<number, LiveRun>([
       [7, live(1, { origin: 'flake-lab', runName: 'desktop-3-unattended' })],
-      [8, live(1, { origin: 'flake-lab', runName: 'desktop-4-unattended' })],
+      [8, live(1, { origin: 'flake-lab', runName: 'desktop-4-unattended' })], // another session's
+      [9, live(1, { origin: 'flake-lab' })], // a reporter that recorded no name
     ]);
-    expect(runsOfStoppedLocalRun(active, stopped({ kind: 'flake', originRef: null, piwiRunId: 6 }), false)).toEqual([
-      6, 7,
-    ]);
+    expect(runsOfStoppedLocalRun(active, session, false)).toEqual([7]);
   });
 
   test('picks a run with no name by its origin and reference, unless another local run shares the reference', () => {
@@ -194,10 +202,11 @@ describe('runsOfStoppedLocalRun', () => {
     expect(runsOfStoppedLocalRun(active, bisect, true)).toEqual([]);
   });
 
-  test('picks nothing newer than no baseline, nor when no run is newer than the baseline', () => {
+  test('picks no run older than its baseline, and no run without a name when it has no baseline', () => {
     const named = live(1, { origin: 'desktop', originRef: 'desktop:abc', runName: 'desktop-3' });
     expect(runsOfStoppedLocalRun(new Map([[3, named]]), stopped({ piwiRunBaseline: 3 }), false)).toEqual([]);
-    expect(runsOfStoppedLocalRun(new Map([[9, named]]), stopped({ piwiRunBaseline: null }), false)).toEqual([]);
+    const nameless = live(1, { origin: 'desktop', originRef: 'desktop:abc' });
+    expect(runsOfStoppedLocalRun(new Map([[9, nameless]]), stopped({ piwiRunBaseline: null }), false)).toEqual([]);
   });
 });
 
@@ -211,28 +220,46 @@ interface Shown {
 
 /**
  * The OS progress plugin with its Nuxt auto-imports and the desktop bridge stubbed: `emit` plays the desktop event
- * stream, `shown` holds what the plugin asked the shell to show, and `localRuns` is the window's local runs store.
+ * stream, `shown` holds what the plugin asked the shell to show, `invoked` every other command it sent the shell,
+ * `shellEvent` plays an event of the shell's, `localRuns` is the window's local runs store and `stopped` the runs its
+ * `stopRun` was called with.
  */
 async function progressPlugin() {
   const shown: Shown[] = [];
+  const invoked: Array<{ cmd: string; args: unknown }> = [];
+  const stopped: unknown[] = [];
   let emit: (message: Record<string, unknown>) => void = () => {};
+  const shellListeners = new Map<string, (event: { payload: unknown }) => void>();
   const localRuns = ref<Array<Record<string, unknown>>>([]);
   vi.stubGlobal('defineNuxtPlugin', (setup: () => void) => setup);
   vi.stubGlobal('watch', watch);
   vi.stubGlobal('tauriCore', () => ({
-    invoke: async (_cmd: string, args: Shown) => {
-      shown.push(args);
+    invoke: async (cmd: string, args: Shown) => {
+      if (cmd === 'desktop_set_run_progress') shown.push(args);
+      else invoked.push({ cmd, args });
     },
   }));
-  vi.stubGlobal('tauriEvent', () => ({ listen: async () => () => {} }));
+  vi.stubGlobal('tauriEvent', () => ({
+    listen: async (name: string, handler: (event: { payload: unknown }) => void) => {
+      shellListeners.set(name, handler);
+      return () => {};
+    },
+  }));
   vi.stubGlobal('subscribeDesktopEvents', (listener: typeof emit) => {
     emit = listener;
     return () => {};
   });
-  vi.stubGlobal('useDesktopLocalRuns', () => ({ runs: localRuns, stopRun: () => {} }));
+  vi.stubGlobal('useDesktopLocalRuns', () => ({ runs: localRuns, stopRun: (run: unknown) => stopped.push(run) }));
   const { default: setup } = await import('../../app/plugins/desktop-run-progress.client');
   (setup as unknown as () => void)();
-  return { shown, emit: (message: Record<string, unknown>) => emit(message), localRuns };
+  return {
+    shown,
+    invoked,
+    stopped,
+    emit: (message: Record<string, unknown>) => emit(message),
+    shellEvent: (name: string, payload: unknown) => shellListeners.get(name)?.({ payload }),
+    localRuns,
+  };
 }
 
 afterEach(() => {
@@ -295,5 +322,15 @@ describe('the OS progress of the runs in flight', () => {
     localRuns.value = [{ ...run, status: 'stopped', finishedAt: 1 }];
     await nextTick();
     expect(shown.at(-1)?.label).toBe('Running 5/20…');
+  });
+
+  test("the taskbar's Stop stops the window's runs, and the shell's processes none of them owns", async () => {
+    const { invoked, stopped: stoppedRuns, shellEvent, localRuns } = await progressPlugin();
+    const own = { key: 1, ...stopped(), shellId: 3, status: 'running' };
+    localRuns.value = [own];
+    // Shell run 9 is a process a reload left: no window run owns it.
+    shellEvent('piwi:taskbar-stop', [3, 9]);
+    expect(stoppedRuns).toEqual([own]);
+    expect(invoked).toEqual([{ cmd: 'desktop_stop_local_tests', args: { runId: 9 } }]);
   });
 });

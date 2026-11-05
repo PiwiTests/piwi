@@ -204,27 +204,35 @@ export default defineNuxtPlugin(() => {
   try {
     const { runs, stopRun } = useDesktopLocalRuns();
 
-    // The Windows taskbar thumbnail toolbar's "Stop" button reaches the
-    // dashboard as this event.
+    /**
+     * Stop the process the shell runs under `shellId` as the window run that owns it stops (`stopRun`), so a run of
+     * several steps ends as stopped; a process no window run owns (left by a reload) is stopped by the shell directly.
+     */
+    const stopShellRun = (shellId: number) => {
+      const run = runs.value.find((r) => r.shellId === shellId);
+      if (run) void stopRun(run);
+      else
+        void tauriCore()
+          ?.invoke('desktop_stop_local_tests', { runId: shellId })
+          .catch(() => {});
+    };
+
+    // The Windows taskbar thumbnail toolbar's "Stop" button reaches the dashboard with the ids of the processes the
+    // shell runs: every running run of the window stops, and each of those processes.
     tauriEvent()
-      ?.listen('piwi:taskbar-stop', () => {
+      ?.listen<number[] | null>('piwi:taskbar-stop', ({ payload }) => {
         for (const run of runs.value) {
           if (run.status === 'running') void stopRun(run);
+        }
+        for (const shellId of Array.isArray(payload) ? payload : []) {
+          if (!runs.value.some((r) => r.shellId === shellId)) stopShellRun(shellId);
         }
       })
       .catch(() => {});
 
-    // The tray's Stop item of one run reaches the dashboard with the shell id of the run's current step, so the run
-    // stops as with its own Stop. A process no window run owns (left by a reload) is stopped by the shell directly.
+    // The tray's Stop item of one run reaches the dashboard with the shell id of the run's current step.
     tauriEvent()
-      ?.listen<number>('piwi:tray-stop', ({ payload }) => {
-        const run = runs.value.find((r) => r.shellId === payload);
-        if (run) void stopRun(run);
-        else
-          void tauriCore()
-            ?.invoke('desktop_stop_local_tests', { runId: payload })
-            .catch(() => {});
-      })
+      ?.listen<number>('piwi:tray-stop', ({ payload }) => stopShellRun(payload))
       .catch(() => {});
 
     // A stopped local process the shell had to kill never reports its end, and

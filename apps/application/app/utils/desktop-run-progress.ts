@@ -151,10 +151,11 @@ export type StoppedLocalRun = Pick<
 
 /**
  * The tracked runs a stopped local run produced, which a process the shell had to kill never reported the end of: the
- * Piwi run it is linked to, and each run of its project newer than its baseline that is its own as the lookup linking
- * it reads them (`correlatePiwiRuns`): named by one of its steps (`hubRefs`), or, for a run the reporter recorded no
- * name for, stamped with its origin and reference while no other local run shares that reference (`sharedReference`).
- * Every other run, another local run's, an editor's or a CI run, stays.
+ * Piwi run it is linked to, and each run of its project its steps named (`hubRefs`, names only the shell's own runs
+ * carry), newer than its baseline when it has one (a Flake Lab session has none). A run the reporter recorded no name
+ * for is its own when it is newer than its baseline and stamped with its origin and reference, as the lookup linking it
+ * reads them (`correlatePiwiRuns`), while no other local run shares that reference (`sharedReference`). Every other
+ * run, another local run's, an editor's or a CI run, stays.
  */
 export function runsOfStoppedLocalRun(
   active: ReadonlyMap<number, LiveRun>,
@@ -165,10 +166,11 @@ export function runsOfStoppedLocalRun(
   const names = new Set(run.hubRefs.flatMap((ref) => [ref, `${ref}${UNATTENDED_RUN_SUFFIX}`]));
   const owns = (id: number, live: LiveRun): boolean => {
     if (id === run.piwiRunId) return true;
-    if (run.piwiRunBaseline == null || id <= run.piwiRunBaseline) return false;
+    if (run.piwiRunBaseline != null && id <= run.piwiRunBaseline) return false;
     if (live.projectId == null || String(live.projectId) !== run.projectId) return false;
     if (live.runName != null) return names.has(live.runName);
     return (
+      run.piwiRunBaseline != null &&
       !sharedReference &&
       origin != null &&
       live.origin === origin &&

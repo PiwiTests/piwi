@@ -2,10 +2,10 @@
 /**
  * Desktop shell only: the "Local runs" tray — a fixed bottom-right panel
  * listing this session's local test runs with their streaming consoles, the
- * desktop cousin of a browser's downloads tray. Mounted once in the app, outside
- * the layouts, so a layout change (an analytics dashboard's TV mode) keeps it;
- * runs keep going while it is closed, and closing it never stops anything.
- * Renders nothing without the IPC bridge.
+ * desktop cousin of a browser's downloads tray. Mounted in `app.vue`, outside
+ * the layouts, so a layout change (an analytics dashboard's TV mode) keeps it,
+ * and in `error.vue`, loaded only where the IPC bridge is; runs keep going while
+ * it is closed, and closing it never stops anything.
  *
  * Each run shows its workers live, as the bundled server, the hub of the runs
  * the shell starts, tells them (`useDesktopRunHub`): the test each one runs
@@ -117,9 +117,9 @@ onBeforeUnmount(() => {
   stopListening?.();
 });
 
-// This component is mounted once in the app, which makes it the natural
-// owner of the store's Piwi-run correlation: every server run event (the
-// reporter checking in counts) re-checks pending local runs.
+// This component is mounted once, in the app or on its error page, which makes
+// it the natural owner of the store's Piwi-run correlation: every server run
+// event (the reporter checking in counts) re-checks pending local runs.
 useRunStream(() => store.correlatePiwiRuns());
 
 /** Manual expand/collapse choices; unset falls back to the default below. */

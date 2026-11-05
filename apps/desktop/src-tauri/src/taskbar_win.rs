@@ -10,9 +10,9 @@
 //! with `THBN_CLICKED`, which Tauri does not surface). Clicks are turned into
 //! app actions: **Open** restores, shows and focuses the window here in the
 //! shell (`bring_to_front`); **Stop**, enabled only while a local run is running
-//! (`set_stop_enabled`), emits `piwi:taskbar-stop`, which the dashboard's run
-//! store listens for and stops its active runs (the shell does not own which
-//! run is "current").
+//! (`set_stop_enabled`), emits `piwi:taskbar-stop` with the ids of the runs the
+//! shell is running, which the dashboard stops: its own runs as their Stop does,
+//! and the processes none of its runs owns (left by a reload) directly.
 //!
 //! NOTE: this module is compile-verified (native build + a Windows cross-check)
 //! but its COM / subclass / GDI behaviour has not been exercised on a real
@@ -110,7 +110,11 @@ unsafe extern "system" fn subclass_proc(
         let app = &*(ref_data as *const AppHandle);
         match command {
             ID_STOP => {
-                let _ = app.emit("piwi:taskbar-stop", ());
+                let running = app
+                    .try_state::<crate::runner::LocalRuns>()
+                    .map(|runs| runs.running_ids())
+                    .unwrap_or_default();
+                let _ = app.emit("piwi:taskbar-stop", running);
             }
             ID_OPEN => {
                 if let Some(window) = app.get_webview_window("main") {

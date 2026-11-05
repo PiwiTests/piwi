@@ -6,6 +6,11 @@ const props = defineProps<{
 }>();
 
 const route = useRoute();
+// Desktop shell only: the Local runs tray, which an error page keeps, so a run's stops still show.
+const desktopBridge = ref(false);
+onMounted(() => {
+  desktopBridge.value = !!tauriCore();
+});
 
 const statusCode = computed(() => props.error.statusCode || 500);
 // A refusal or a missing page keeps the dashboard around it, so the sidebar
@@ -72,5 +77,7 @@ useHead({
         </template>
       </UDashboardPanel>
     </NuxtLayout>
+
+    <LazyDesktopLocalRunsTray v-if="desktopBridge" />
   </UApp>
 </template>
