@@ -12,6 +12,7 @@ import {
   configuredCodeReachRoots,
   errorPlace,
   failureError,
+  runningCall,
 } from '../src/internal/capture/capture-fixtures.js';
 import {
   ARIA_SNAPSHOT_CONTENT_TYPE,
@@ -2145,6 +2146,35 @@ describe('failureError', () => {
     expect(failureError(`Error: ${'x'.repeat(5000)}`)).toHaveLength(1000);
     expect(failureError('Test timeout of 5000ms exceeded.')).toBe('Test timeout of 5000ms exceeded.');
     for (const none of [undefined, '', '  \n ', 'Error: ']) expect(failureError(none)).toBeNull();
+  });
+});
+
+describe('runningCall', () => {
+  const at = (line: number) => ({ file: path.join(process.cwd(), 'tests/cart.spec.ts'), line, column: 5 });
+  const info = (steps: unknown[]) => ({ _steps: steps }) as unknown as Parameters<typeof runningCall>[0];
+
+  it('names the innermost call not ended with its target, where the test makes it', () => {
+    const steps = [
+      {
+        category: 'test.step',
+        title: 'Pay',
+        location: at(10),
+        steps: [
+          { category: 'pw:api', title: 'Fill', subtitle: "getByLabel('Card')", location: at(11), endWallTime: 1 },
+          { category: 'pw:api', title: 'Click', subtitle: "getByRole('button', { name: 'Pay' })", location: at(12) },
+        ],
+      },
+    ];
+    expect(runningCall(info(steps))).toEqual({
+      title: "Click getByRole('button', { name: 'Pay' })",
+      file: 'tests/cart.spec.ts',
+      line: 12,
+    });
+  });
+
+  it('names a step of the test by its title, and nothing once every call ended', () => {
+    expect(runningCall(info([{ category: 'test.step', title: 'Pay', location: at(10) }]))?.title).toBe('Pay');
+    expect(runningCall(info([{ category: 'pw:api', title: 'Click', location: at(12), endWallTime: 1 }]))).toBeNull();
   });
 });
 

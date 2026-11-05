@@ -32,12 +32,20 @@ export function liveStepForCase(
   steps: LiveStepsByWorker | null | undefined,
   testCase: TestCaseResult,
 ): LiveStepInfo | null {
-  if (!steps || testCase.status !== 'running' || testCase.workerIndex == null) return null;
-  const worker = testCase.workerIndex;
+  if (testCase.status !== 'running' || testCase.workerIndex == null) return null;
+  return liveStepOf(steps, { shard: testCase.shardIndex ?? null, worker: testCase.workerIndex, test: testCase.title });
+}
+
+/** The step a worker is on in its test `test`, by shard and worker, else by worker alone. Null for none. */
+export function liveStepOf(
+  steps: LiveStepsByWorker | null | undefined,
+  at: { shard: number | null; worker: number; test: string },
+): LiveStepInfo | null {
+  if (!steps) return null;
   const step =
-    steps[liveWorkerKey({ shard: testCase.shardIndex ?? null, worker })] ??
-    steps[liveWorkerKey({ shard: null, worker })];
+    steps[liveWorkerKey({ shard: at.shard, worker: at.worker })] ??
+    steps[liveWorkerKey({ shard: null, worker: at.worker })];
   if (!step) return null;
-  if (step.parentTitle && step.parentTitle !== testCase.title) return null;
+  if (step.parentTitle && step.parentTitle !== at.test) return null;
   return step;
 }

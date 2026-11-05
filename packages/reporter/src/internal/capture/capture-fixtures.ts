@@ -166,6 +166,7 @@ import {
 import { trackCalls } from './live-call-log.js';
 import { guardScreencast } from './page-view.js';
 import type { LiveCall } from '@piwitests/core/live-view';
+import { stepLabel } from '@piwitests/core/step-analysis';
 import {
   closeRunChannel,
   editorSendAddress,
@@ -2350,6 +2351,7 @@ export function errorPlace(error: unknown, windows: boolean = process.platform =
 type RunnerStep = {
   category?: unknown;
   title?: unknown;
+  subtitle?: unknown;
   endWallTime?: unknown;
   steps?: unknown;
   stack?: Array<{ file?: unknown; line?: unknown; column?: unknown }>;
@@ -2357,9 +2359,9 @@ type RunnerStep = {
 };
 
 /**
- * The call still running in the test, its title and where the runner placed it in the test's code: the innermost step
- * not ended of a Playwright call, an assertion or a `test.step` (the runner's steps, a Playwright internal,
- * feature-checked). Null for none.
+ * The call still running in the test, its title with its target (`stepLabel`: `Click getByRole('button')`) and where
+ * the runner placed it in the test's code: the innermost step not ended of a Playwright call, an assertion or a
+ * `test.step` (the runner's steps, a Playwright internal, feature-checked). Null for none.
  */
 function callInProgress(testInfo: TestInfo): { title: string | null; place: CodePlace } | null {
   let found: { title: string | null; place: CodePlace } | null = null;
@@ -2371,7 +2373,7 @@ function callInProgress(testInfo: TestInfo): { title: string | null; place: Code
       const called = step.category === 'pw:api' || step.category === 'expect' || step.category === 'test.step';
       if (called && typeof at?.file === 'string' && typeof at.line === 'number') {
         found = {
-          title: typeof step.title === 'string' ? step.title : null,
+          title: typeof step.title === 'string' ? stepLabel(step) : null,
           place: { file: at.file, line: at.line, column: typeof at.column === 'number' ? at.column : 0 },
         };
       }
@@ -2391,7 +2393,7 @@ function stepInProgress(testInfo: TestInfo): CodePlace | null {
  * The call the test is on, as the run page's live view names it beside each frame, its file relative to the working
  * directory. Null for none.
  */
-function runningCall(testInfo: TestInfo): LiveCall | null {
+export function runningCall(testInfo: TestInfo): LiveCall | null {
   const call = callInProgress(testInfo);
   if (!call?.title) return null;
   const file = path.relative(process.cwd(), call.place.file).split(path.sep).join('/');

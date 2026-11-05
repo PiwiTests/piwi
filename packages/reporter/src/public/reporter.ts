@@ -39,6 +39,7 @@ import {
   extractWaitEvents,
   hideTypedStepTitle,
 } from '@piwitests/core/step-analysis';
+import { isCaptureStep } from '@piwitests/core/step-tree';
 import { pauseStepEvents, readPauses } from '../internal/collect/pause-events.js';
 import { computeInstanceId } from '../internal/support/instance-id.js';
 import { getReporterVersion } from '../internal/support/reporter-version.js';
@@ -672,20 +673,29 @@ export class PiwiDashboardReporter {
   private setupSteps: SetupStep[] = [];
 
   /** Step categories streamed live while the run executes. */
-  private static readonly LIVE_STEP_CATEGORIES = new Set(['hook', 'fixture', 'pw:api', 'expect']);
+  private static readonly LIVE_STEP_CATEGORIES = new Set(['hook', 'fixture', 'pw:api', 'expect', 'test.step']);
 
   /**
-   * Whether a step streams live: its category is in `LIVE_STEP_CATEGORIES`
-   * and no ancestor is an `expect` step. The steps inside an assertion are its
-   * polling — every `expect.poll` attempt and `toPass` retry — not a step a
-   * human watches; the meaningful readout is the assertion around them.
+   * Whether a step streams live: its category is in `LIVE_STEP_CATEGORIES`,
+   * no ancestor is an `expect` step, and neither it nor an ancestor is Piwi's
+   * own (`isCaptureStep`: its fixtures, its attachments, its page reads). The
+   * steps inside an assertion are its polling — every `expect.poll` attempt and
+   * `toPass` retry — not a step a human watches; the meaningful readout is the
+   * assertion around them.
    */
   private static isLiveStep(step: TestStep): boolean {
     if (!PiwiDashboardReporter.LIVE_STEP_CATEGORIES.has(step.category)) return false;
+    if (PiwiDashboardReporter.isOwnStep(step)) return false;
     for (let parent = step.parent; parent; parent = parent.parent) {
-      if (parent.category === 'expect') return false;
+      if (parent.category === 'expect' || PiwiDashboardReporter.isOwnStep(parent)) return false;
     }
     return true;
+  }
+
+  /** Whether a step is Piwi's own, by core's rule for a stored step. */
+  private static isOwnStep(step: TestStep): boolean {
+    const at = step.location;
+    return isCaptureStep({ title: step.title, location: at ? `${at.file}:${at.line}:${at.column}` : '' });
   }
 
   /**

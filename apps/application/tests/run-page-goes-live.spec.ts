@@ -82,6 +82,8 @@ async function openInitializingRun(page: Page, runId: number) {
   await waitForHydration(page);
   const header = page.locator('[data-shot="run-header"]');
   await expect(header).toContainText(/initializing/i);
+  // The Tests tab says the run is in its global setup, not that it recorded no test.
+  await expect(page.getByTestId('before-first-test')).toContainText(/^Global setup · /);
   await page.evaluate(() => ((window as unknown as { sameDocument: boolean }).sameDocument = true));
   return header;
 }

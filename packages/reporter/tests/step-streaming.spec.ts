@@ -74,7 +74,7 @@ describe('PiwiDashboardReporter live step streaming', () => {
     return { reporter, eventsBodies };
   }
 
-  it('streams pw:api and expect steps and skips test.step', async () => {
+  it('streams pw:api, expect and test.step steps, and leaves out Piwi’s own', async () => {
     const { reporter, eventsBodies } = await startStreaming();
     const suite = fakeSuite();
     const test = fakeTestCase({ title: 'the test', parent: suite });
@@ -84,31 +84,29 @@ describe('PiwiDashboardReporter live step streaming', () => {
     // than drop them, which is what real fixtures/hooks do at run start.
     reporter.onBegin(fakeConfig(), suite);
 
-    reporter.onStepBegin(test, result, makeStep('pw:api'));
-    reporter.onStepBegin(test, result, makeStep('test.step', 'no-step-begin'));
-    reporter.onStepBegin(test, result, makeStep('expect'));
-    const waitForBegins = async () =>
-      waitFor(() => streamed(eventsBodies).filter((e) => e.type === 'step-begin').length >= 2).catch((e) => {
-        throw new Error(
-          `${(e as Error).message} — bodies=${JSON.stringify(eventsBodies)} urls=${server.requests.map((r) => r.url).join(',')}`,
-        );
-      });
-    await waitForBegins();
-
-    reporter.onStepEnd(test, result, makeStep('pw:api', 'ended-api'));
-    reporter.onStepEnd(test, result, makeStep('test.step', 'no-step-end'));
-    reporter.onStepEnd(test, result, makeStep('expect', 'ended-expect'));
-    await waitFor(() => streamed(eventsBodies).filter((e) => e.type === 'step-end').length >= 2);
+    const capture = makeStep('fixture', 'Fixture "piwiCapture"');
+    const resources = makeStep('fixture', 'Fixture "piwiResources"');
+    const captureCall = { ...makeStep('pw:api', 'Add init script'), parent: capture };
+    const steps = [
+      makeStep('fixture', 'Fixture "page"'),
+      capture,
+      captureCall,
+      resources,
+      makeStep('test.step', 'Log in'),
+      makeStep('pw:api', 'Click'),
+      makeStep('expect', 'Expect "toBeVisible"'),
+    ];
+    for (const step of steps) reporter.onStepBegin(test, result, step);
+    await waitFor(() => streamed(eventsBodies).filter((e) => e.type === 'step-begin').length >= 4);
+    for (const step of steps) reporter.onStepEnd(test, result, step);
+    await waitFor(() => streamed(eventsBodies).filter((e) => e.type === 'step-end').length >= 4);
 
     const all = streamed(eventsBodies);
-    const begins = all.filter((e) => e.type === 'step-begin');
-    const ends = all.filter((e) => e.type === 'step-end');
-
-    expect(begins.map((e) => e.stepCategory).sort()).toEqual(['expect', 'pw:api']);
-    expect(begins.every((e) => e.parentTitle === 'the test')).toBeTruthy();
-    expect(ends.map((e) => e.stepCategory).sort()).toEqual(['expect', 'pw:api']);
-    expect(all.some((e) => e.title === 'no-step-begin')).toBeFalsy();
-    expect(all.some((e) => e.title === 'no-step-end')).toBeFalsy();
+    const titles = (type: string) => all.filter((e) => e.type === type).map((e) => e.title);
+    const shown = ['Fixture "page"', 'Log in', 'Click', 'Expect "toBeVisible"'];
+    expect(titles('step-begin')).toEqual(shown);
+    expect(titles('step-end')).toEqual(shown);
+    expect(all.every((e) => e.parentTitle === 'the test')).toBeTruthy();
   });
 
   it.each([

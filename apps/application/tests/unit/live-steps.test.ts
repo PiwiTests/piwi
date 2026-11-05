@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest';
 import { stepLabel } from '@piwitests/core/step-analysis';
-import { liveStepForCase, type LiveStepsByWorker } from '../../app/utils/live-steps';
+import { liveStepForCase, liveStepOf, type LiveStepsByWorker } from '../../app/utils/live-steps';
 import type { TestCaseResult } from '../../types/api';
 
 function makeCase(overrides: Partial<TestCaseResult>): TestCaseResult {
@@ -77,4 +77,15 @@ test('a live step keeps its subtitle, and the label composes both', () => {
   const live = liveStepForCase(withSubtitle, makeCase({}));
   expect(live?.subtitle).toBe("getByRole('button', { name: 'Pay' })");
   expect(stepLabel(live!)).toBe("Click getByRole('button', { name: 'Pay' })");
+});
+
+test('finds a watched worker’s step in its test, by shard and worker, else by worker alone', () => {
+  const sharded: LiveStepsByWorker = {
+    '2:0': { title: 'Fill', category: 'pw:api', parentTitle: 'pays by card' },
+    ':1': { title: 'Click', category: 'pw:api', parentTitle: 'searches' },
+  };
+  expect(liveStepOf(sharded, { shard: 2, worker: 0, test: 'pays by card' })?.title).toBe('Fill');
+  expect(liveStepOf(sharded, { shard: 1, worker: 0, test: 'pays by card' })).toBeNull();
+  expect(liveStepOf(sharded, { shard: 3, worker: 1, test: 'searches' })?.title).toBe('Click');
+  expect(liveStepOf(sharded, { shard: 2, worker: 0, test: 'another test' })).toBeNull();
 });

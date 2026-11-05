@@ -158,7 +158,7 @@ onBeforeUnmount(() => {
 
 /**
  * Whether an image's call is the call log's: the same place in the code, or for a call placed nowhere, a title the
- * log's begins with (the runner titles a call without its locator).
+ * log's begins with (an older reporter titles an image's call without its locator).
  */
 function sameCall(framed: LiveCall, logged: LiveCall): boolean {
   if (framed.file && logged.file) return framed.file === logged.file && framed.line === logged.line;
