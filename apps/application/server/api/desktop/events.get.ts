@@ -1,7 +1,10 @@
+import { eq } from 'drizzle-orm';
 import { requireAuth } from '../../utils/auth';
 import { getDatabase } from '../../database';
+import { testRuns } from '../../database/schema';
 import { getProjectScope, scopeAllows } from '../../utils/project-access';
-import { runEventBus } from '../../utils/run-events';
+import { runEventBus, type GlobalRunEvent } from '../../utils/run-events';
+import { desktopRunFactsReader } from '../../utils/desktop-run-facts';
 import { createSSEEndpoint } from '../../utils/sse';
 import { subscribeDesktopOpenRequests } from '../../utils/desktop-handoff';
 import { subscribeReproRequests, waitingReproRequests } from '../../utils/desktop-repro';
@@ -13,7 +16,7 @@ defineRouteMeta({
     tags: ['Stream'],
     summary: 'Desktop window event stream (desktop shell)',
     description:
-      'Server-sent events for the desktop app window. Run progress, for the OS-level display (taskbar/Dock/tray): on connect a `snapshot` of the currently-active runs with their counts, then run lifecycle events and live progress tallies for every run in the caller scope — so a run the user is only watching (reported from CI or a terminal), not just one launched from the app, drives the progress. Page requests: an `open-page` message with the app-relative `path` of a dashboard link the user opened in the system browser, which the window shows. Repro requests: a `repro-request` message with the `request` Piwi Picker or an editor sent, which the window asks the developer to run or decline; the ones still waiting are sent again on connect. Pairings: a `picker-pairing` message with the `pairing` Piwi Picker asked for, which the window asks the developer to allow or deny, and again whenever it is answered or expires; the ones still waiting are sent again on connect. Run events are scoped to the caller like the global run stream; in the desktop build (auth off) that is the whole instance.',
+      'Server-sent events for the desktop app window. Run progress, for the OS-level display (taskbar/Dock/tray): on connect a `snapshot` of the currently-active runs with their counts, then run lifecycle events and live progress tallies for every run in the caller scope — so a run the user is only watching (reported from CI or a terminal), not just one launched from the app, drives the progress. Once a run has begun, its messages and its entry in the snapshot also carry what launched it (`origin`, `originRef`), the name its launcher gave it (`name`, `PIWI_RUN_REF`, or null) and whether it is a step of a job (`job`: a reproduction, a bisect step, a Flake Lab or probe run). Page requests: an `open-page` message with the app-relative `path` of a dashboard link the user opened in the system browser, which the window shows. Repro requests: a `repro-request` message with the `request` Piwi Picker or an editor sent, which the window asks the developer to run or decline; the ones still waiting are sent again on connect. Pairings: a `picker-pairing` message with the `pairing` Piwi Picker asked for, which the window asks the developer to allow or deny, and again whenever it is answered or expires; the ones still waiting are sent again on connect. Run events are scoped to the caller like the global run stream; in the desktop build (auth off) that is the whole instance.',
     'x-required-permission': 'project:read',
   },
 });
@@ -32,15 +35,28 @@ export default eventHandler(async (event) => {
       }
     };
 
+    // Each message of a run that has begun waits on the one read of its facts, so a run's messages keep their order.
+    const factsOf = desktopRunFactsReader(async (runId) => {
+      const [row] = await db
+        .select({ status: testRuns.status, metadata: testRuns.metadata })
+        .from(testRuns)
+        .where(eq(testRuns.id, runId));
+      return row;
+    });
+    const sendRun = (runId: number, payload: Record<string, unknown>) => {
+      void factsOf(runId).then((facts) => send(facts ? { ...payload, ...facts } : payload));
+    };
+
     // Subscribe first so no event is missed while the snapshot query runs; the
     // client upserts by run id, so a run appearing in both reconciles cleanly.
-    const unsubscribeLifecycle = runEventBus.subscribeGlobal((globalEvent) => {
+    const unsubscribeLifecycle = runEventBus.subscribeGlobal((globalEvent: GlobalRunEvent) => {
       if (!scopeAllows(scope, globalEvent.projectId)) return;
-      send(globalEvent);
+      if (globalEvent.type === 'run-initializing' || globalEvent.type === 'rollup-updated') send(globalEvent);
+      else sendRun(globalEvent.runId, { ...globalEvent });
     });
     const unsubscribeProgress = runEventBus.subscribeRunProgress((progress) => {
       if (!scopeAllows(scope, progress.projectId)) return;
-      send({ type: 'run-progress', ...progress });
+      sendRun(progress.runId, { type: 'run-progress', ...progress });
     });
     const unsubscribeOpenRequests = subscribeDesktopOpenRequests((path) => {
       send({ type: 'open-page', path });
@@ -58,7 +74,13 @@ export default eventHandler(async (event) => {
     void (async () => {
       try {
         const runs = await getActiveTestRuns(db, scope);
-        send({ type: 'snapshot', runs });
+        const told = await Promise.all(
+          runs.map(async (run) => {
+            const facts = run.status === 'initializing' ? null : await factsOf(run.id);
+            return facts ? { ...run, ...facts } : run;
+          }),
+        );
+        send({ type: 'snapshot', runs: told });
       } catch {
         // A failed snapshot just means no initial runs; deltas still stream.
       }
