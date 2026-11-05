@@ -83,10 +83,13 @@ interface LaneTest {
   seen: Page[];
 }
 
+/** The latest frame given, or why none goes. */
+type Kept = LaneFrame | { refused: string | undefined; at: LaneAt };
+
 interface Subscriber {
   sink: LaneSink;
   pacer: LatestPacer<LaneFrame>;
-  last: LaneFrame | { refused: string | undefined; at: LaneAt } | null;
+  last: Kept | null;
 }
 
 interface Source {
@@ -96,59 +99,80 @@ interface Source {
   view: Promise<PageView | null>;
   mask: SecretFieldMask;
   onClose: () => void;
+  /** The latest frame it gave the sinks, or why none goes: a sink that comes later is given it. */
+  latest: Kept | null;
 }
 
 let test: LaneTest | null = null;
 let stop: { id: number; page: Page | null } | null = null;
 const subscribers = new Set<Subscriber>();
 let source: Source | null = null;
-/** The source closing, until it closed. */
-let closing: Promise<void> = Promise.resolve();
+/** The close of each page's views still settling: a view of that page opens once it settled. */
+const closingOf = new WeakMap<Page, Promise<void>>();
 
 /** A test with Playwright's id `id` begins: its page shows once known. */
 export function laneTestBegan(id: string): void {
   test = { id, fixture: null, seen: [] };
-  sync();
+  void sync();
 }
 
 /** The running test's `page` fixture: the page it shows. */
 export function lanePage(page: Page): void {
   if (!test || test.fixture === page) return;
   test.fixture = page;
-  sync();
+  void sync();
 }
 
 /** A page the browser opened: the running test shows it while it shows no other. */
 export function laneSawPage(page: Page): void {
   if (!test || test.seen.includes(page)) return;
   test.seen.push(page);
-  if (!source) sync();
+  if (!source) void sync();
 }
 
 /** The running test ended: its view closes, `CLOSE_MS` at most. */
 export async function laneTestEnded(): Promise<void> {
   test = null;
   stop = null;
-  sync();
-  await within(closing, CLOSE_MS);
+  await within(sync(), CLOSE_MS);
 }
 
 /** The worker stands at the stop `id` from now on, on `page` (null when the stop names none). */
 export function laneStopped(id: number, page: Page | null): void {
   stop = { id, page };
-  sync();
+  void sync();
+  restamp();
 }
 
 /** The stop `id` ended: the running test's page shows again. */
 export function laneWentOn(id: number): void {
   if (stop?.id !== id) return;
   stop = null;
-  sync();
+  void sync();
+  restamp();
+}
+
+/**
+ * The view goes on showing the same page as the worker stops or goes on: the latest frame it gave, which a still page
+ * paints no other after, names where the lane stands now, and goes to every sink again.
+ */
+function restamp(): void {
+  const kept = source?.latest;
+  if (!source || !kept || 'refused' in kept || kept.test !== (test?.id ?? null)) return;
+  const framed: LaneFrame = { ...kept, stop: stop?.id ?? null };
+  source.latest = framed;
+  for (const subscriber of subscribers) subscriber.pacer.offer(framed);
 }
 
 /** Where the lane stands now: its test and its stop. */
 export function laneAt(): LaneAt {
   return { test: test?.id ?? null, stop: stop?.id ?? null };
+}
+
+/** Whether `kept` shows where the lane stands now: a frame of a test or a stop it left goes nowhere. */
+function current(kept: Kept): boolean {
+  const at = 'refused' in kept ? kept.at : kept;
+  return at.test === (test?.id ?? null) && at.stop === (stop?.id ?? null);
 }
 
 /** The page shown now: the stop's, else the running test's; null between two tests or with none open. */
@@ -160,41 +184,64 @@ function lanePageShown(): Page | null {
   return open(test.fixture) ?? test.seen.find((page) => !page.isClosed()) ?? null;
 }
 
+/** A subscriber's pace: the latest frame alone waits, and one of where the lane no longer stands never goes. */
+function pacerOf(own: Subscriber): LatestPacer<LaneFrame> {
+  return new LatestPacer<LaneFrame>({
+    intervalMs: 1000 / own.sink.fps,
+    ...(own.sink.spacing ? { spacing: own.sink.spacing } : {}),
+    busy: () => own.sink.busy(),
+    send: (frame) => {
+      if (!subscribers.has(own) || !current(frame)) return;
+      own.last = frame;
+      own.sink.send(frame);
+    },
+  });
+}
+
+/** Give a subscriber a frame at its pace, or why none goes at once. */
+function give(own: Subscriber, kept: Kept): void {
+  if (!('refused' in kept)) return own.pacer.offer(kept);
+  own.last = kept;
+  own.sink.refuse(kept.refused, kept.at);
+}
+
 /** Feed `sink` the lane's frames from now on, until the subscription closes. */
 export function subscribeLane(sink: LaneSink): LaneSubscription {
-  const own: Subscriber = {
-    sink,
-    last: null,
-    pacer: new LatestPacer<LaneFrame>({
-      intervalMs: 1000 / sink.fps,
-      ...(sink.spacing ? { spacing: sink.spacing } : {}),
-      busy: () => sink.busy(),
-      send: (frame) => {
-        if (!subscribers.has(own)) return;
-        own.last = frame;
-        sink.send(frame);
-      },
-    }),
-  };
+  const own = { sink, last: null } as Subscriber;
+  own.pacer = pacerOf(own);
   subscribers.add(own);
-  sync();
+  void sync();
+  // A view already open gives the latest frame it gave: a still page paints no other.
+  if (source?.latest && current(source.latest)) give(own, source.latest);
   return {
-    ready: () => source?.view ?? Promise.resolve(null),
+    ready: async () => {
+      // The view the sink is fed from once the page shown and what the sinks ask settled.
+      for (;;) {
+        const shown = source;
+        const view = await (shown ? shown.view : Promise.resolve(null));
+        if (shown === source) return view;
+      }
+    },
     resend: () => {
-      const last = own.last;
-      if (!subscribers.has(own) || !last) return;
-      if ('refused' in last) sink.refuse(last.refused, last.at);
-      else sink.send(last);
+      const kept = own.last ?? source?.latest ?? null;
+      if (!subscribers.has(own) || !kept || !current(kept)) return;
+      if ('refused' in kept) sink.refuse(kept.refused, kept.at);
+      else sink.send(kept);
     },
     refresh: () => {
-      for (const subscriber of subscribers) subscriber.last = null;
+      // No frame masked before goes: the ones waiting are dropped with the latest kept.
+      for (const subscriber of subscribers) {
+        subscriber.last = null;
+        subscriber.pacer.close();
+        subscriber.pacer = pacerOf(subscriber);
+      }
+      if (source) source.latest = null;
       void source?.view.then((view) => view?.refresh());
     },
     close: async () => {
       if (!subscribers.delete(own)) return;
       own.pacer.close();
-      sync();
-      await within(closing, CLOSE_MS);
+      await within(sync(), CLOSE_MS);
     },
   };
 }
@@ -216,21 +263,35 @@ function asked(): Asked {
   };
 }
 
-/** Open the view of the page shown for the sinks, close it with none, open it again on another page or ask. */
-function sync(): void {
+/**
+ * Open the view of the page shown for the sinks, close it with none, open it again on another page or ask; settles
+ * once the view it closed did.
+ */
+function sync(): Promise<void> {
   const page = subscribers.size ? lanePageShown() : null;
   const options = page ? asked() : null;
   const key = options ? JSON.stringify(options) : '';
-  if (source && source.page === page && source.asked === key) return;
-  if (source) close(source);
+  if (source && source.page === page && source.asked === key) return Promise.resolve();
+  const closed = source ? close(source) : Promise.resolve();
   source = page && options ? open(page, options, key) : null;
+  return closed;
 }
 
-function close(shown: Source): void {
+function close(shown: Source): Promise<void> {
   if (source === shown) source = null;
   shown.page.off('close', shown.onClose);
-  const closed = shown.view.then((view) => view?.close()).catch(() => undefined);
-  closing = Promise.all([closing, closed]).then(() => undefined);
+  const closed = shown.view
+    .then((view) => view?.close())
+    .then(
+      () => undefined,
+      () => undefined,
+    );
+  const settling = Promise.all([closingOf.get(shown.page), closed]).then(() => undefined);
+  closingOf.set(shown.page, settling);
+  void settling.then(() => {
+    if (closingOf.get(shown.page) === settling) closingOf.delete(shown.page);
+  });
+  return closed;
 }
 
 function open(page: Page, options: Asked, key: string): Source {
@@ -256,40 +317,47 @@ function open(page: Page, options: Asked, key: string): Source {
     asked: key,
     mask,
     view: Promise.resolve(null),
+    latest: null,
     onClose: () => {
-      if (source === shown) sync();
+      if (source === shown) void sync();
     },
   };
-  const live = (): boolean => source === shown;
-  // The page's screencast is free once the views closing now let it go.
-  shown.view = within(closing, CLOSE_MS).then(() => (live() ? openView(page, options, mask, live) : null));
+  // The page's screencast is free once the views of the page closing now let it go.
+  const free = closingOf.get(page) ?? Promise.resolve();
+  shown.view = within(free, CLOSE_MS).then(() => (source === shown ? openView(shown, options) : null));
   page.once('close', shown.onClose);
   return shown;
 }
 
-function openView(page: Page, options: Asked, mask: SecretFieldMask, live: () => boolean): Promise<PageView | null> {
-  return openPageView(page, {
+function openView(shown: Source, options: Asked): Promise<PageView | null> {
+  const live = (): boolean => source === shown;
+  const sinks = () => [...subscribers].map((subscriber) => subscriber.sink);
+  return openPageView(shown.page, {
     size: (viewport) => fitViewSize(viewport, options.maxWidth, options.maxHeight),
     quality: options.quality,
     fps: options.fps,
+    // A frame no sink takes yet is not masked: the view waits as long as the sink that waits least.
+    spacing: (frame) => {
+      const all = sinks();
+      return all.every((sink) => sink.spacing) ? Math.min(...all.map((sink) => sink.spacing!(frame))) : 0;
+    },
     maxFrameBytes: options.maxFrameBytes,
     lightQuality: options.lightQuality,
     shotMs: options.shotMs,
-    busy: () => mask.resting || [...subscribers].every((subscriber) => subscriber.sink.busy()),
+    busy: () => shown.mask.resting || sinks().every((sink) => sink.busy()),
     live,
-    screen: (frame) => mask.screen(frame),
+    screen: (frame) => shown.mask.screen(frame),
     send: (frame) => {
       if (!live()) return;
       const framed: LaneFrame = { ...frame, test: test?.id ?? null, stop: stop?.id ?? null };
+      shown.latest = framed;
       for (const subscriber of subscribers) subscriber.pacer.offer(framed);
     },
     refuse: (why) => {
       if (!live()) return;
-      const at = laneAt();
-      for (const subscriber of subscribers) {
-        subscriber.last = { refused: why, at };
-        subscriber.sink.refuse(why, at);
-      }
+      const kept = { refused: why, at: laneAt() };
+      shown.latest = kept;
+      for (const subscriber of subscribers) give(subscriber, kept);
     },
   }).catch(() => null);
 }

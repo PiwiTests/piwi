@@ -619,6 +619,8 @@ async function stopView(): Promise<void> {
  * stops, each frame going as `lane-frame`; asked again while on, the latest frame goes again.
  */
 function startLaneView(): IntentAnswer {
+  // A connection that closed while the request waited its turn has nobody to show the lane to.
+  if (!runChannelOpen()) return { ok: false, message: 'The connection closed.' };
   if (laneView) {
     laneView.resend();
     return { ok: true, message: 'The live view is on.' };

@@ -456,8 +456,8 @@ export interface HubLaneFrameMessage {
 }
 
 /**
- * The lane `lane` sends no frame now, and why (`refused`, at most `MAX_HUB_MESSAGE` characters): its test has no page to
- * show, or each image of the page is too long. Sent once until a frame comes again.
+ * The lane `lane` sends no frame now, and why (`refused`, at most `MAX_HUB_MESSAGE` characters): each image of the page
+ * is too long, or masks the reporter cannot read hide it. Sent once until a frame comes again.
  */
 export interface HubLaneFrameRefusal {
   type: 'lane-frame';

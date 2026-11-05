@@ -42,6 +42,8 @@ const ANIMATED = `<!doctype html><meta charset="utf-8"><style>body { margin: 0; 
 #go { position: absolute; left: 40px; top: 40px; width: 100px; height: 40px }
 #spin { position: absolute; left: 300px; top: 200px; width: 80px; height: 80px; background: linear-gradient(red, blue); animation: s 1s linear infinite } @keyframes s { to { transform: rotate(360deg) } }</style>
 <h1 style="position:absolute;left:40px;top:100px">Shop</h1><button id="go" onclick="document.querySelector('h1').textContent = 'Clicked'">Go</button><div id="spin"></div>`;
+/** A page that paints nothing once loaded. */
+const STILL = `<!doctype html><meta charset="utf-8"><style>body { margin: 0 }</style><h1>Still</h1>`;
 /** A page with a password field at `SECRET_BOX`, its value typed in. */
 const SECRET_BOX = { x: 40, y: 200, width: 300, height: 60 };
 const SECRET = `<!doctype html><meta charset="utf-8"><style>body { margin: 0; background: #fff }
@@ -57,6 +59,10 @@ test('stopped', async ({ page }) => {
   await page.goto('${base}/animated');
   await expect(page.locator('#go')).toBeVisible(); // bp
   await expect(page.locator('h1')).toHaveText('Clicked');
+});
+test('still', async ({ page }) => {
+  await page.goto('${base}/still');
+  await expect(page.locator('h1')).toHaveText('Still'); // bp
 });
 test('second', async ({ page }) => {
   await page.goto('${base}/secret');
@@ -90,6 +96,8 @@ const ids: Record<string, string> = {};
 const answers: Record<string, unknown[]> = {};
 /** When the editor heard the lane view off. */
 let offAt = Infinity;
+/** What the stop of the still page sent: its own view's frames, and the lane's frames naming it. */
+const still: { viewFrames: number; laneFrames: number } = { viewFrames: 0, laneFrames: 0 };
 let tests: Array<{ title: string; status: string; errors: string[] }> = [];
 let output = '';
 
@@ -115,6 +123,16 @@ async function ask(message: Record<string, unknown> & { what: string }): Promise
   return value;
 }
 
+/** The test the worker runs now, as the editor heard it. */
+const connectionTest = (): string | null => {
+  for (let i = heard.length - 1; i >= 0; i--) {
+    const m = heard[i]!.message;
+    if (m.type === 'test-begin') return m.testId;
+    if (m.type === 'test-end') return null;
+  }
+  return null;
+};
+
 const laneFrames = (test?: string) =>
   heard.filter(
     ({ message: m }) => m.type === 'lane-frame' && 'data' in m && (test === undefined || m.test === test),
@@ -123,6 +141,11 @@ const laneFrames = (test?: string) =>
 /** The editor's side: the lane view on from the worker's attach, a click at the stop, and the view off at `third`. */
 async function onMessage(message: RunToHub): Promise<void> {
   if (message.type === 'run-attach') {
+    await ask({ what: 'view-lane', on: true });
+    return;
+  }
+  if (message.type === 'test-end' && message.testId === ids.first) {
+    // Asked again once the test ended: nothing of the ended test goes.
     await ask({ what: 'view-lane', on: true });
     return;
   }
@@ -136,6 +159,22 @@ async function onMessage(message: RunToHub): Promise<void> {
   }
   if (message.type !== 'stopped' || message.reason === 'failure') return;
   const stop = message.stop;
+  if (connectionTest() === ids.still) {
+    try {
+      // On a page that paints nothing, the lane's latest frame names the stop, and a view of it starts with it.
+      await waitFor(() => laneFrames(ids.still).some(({ message: m }) => m.stop === stop), 3000).catch(() => null);
+      await ask({ what: 'view', stop, on: true });
+      await waitFor(
+        () => heard.some(({ message: m }) => m.type === 'frame' && m.stop === stop && 'data' in m),
+        3000,
+      ).catch(() => null);
+      still.viewFrames = heard.filter(({ message: m }) => m.type === 'frame' && m.stop === stop).length;
+      still.laneFrames = laneFrames(ids.still).filter(({ message: m }) => m.stop === stop).length;
+    } finally {
+      socket!.write(`${JSON.stringify({ type: 'control', action: 'resume', stop })}\n`);
+    }
+    return;
+  }
   try {
     // The lane view shows the stop: its frames name it, and a click through them reaches the page.
     await waitFor(() => laneFrames().some(({ message: m }) => m.stop === stop));
@@ -181,7 +220,8 @@ beforeAll(async () => {
   await new Promise<void>((resolve) => hub.listen(socketPath, resolve));
   server = await startServer((req, res) => {
     res.writeHead(200, { 'content-type': 'text/html' });
-    res.end(new URL(req.url, 'http://x').pathname === '/secret' ? SECRET : ANIMATED);
+    const route = new URL(req.url, 'http://x').pathname;
+    res.end(route === '/secret' ? SECRET : route === '/still' ? STILL : ANIMATED);
   });
   const spec = SPEC(server.url);
   write('tests/lane.spec.cjs', spec);
@@ -207,13 +247,16 @@ module.exports = defineConfig({
 });
 `,
   );
-  const line = spec.split('\n').findIndex((text) => text.endsWith('// bp')) + 1;
+  const lines = spec
+    .split('\n')
+    .flatMap((text, i) => (text.endsWith('// bp') ? [`tests/lane.spec.cjs:${i + 1}`] : []))
+    .join(';');
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     PIWI_RUN_CHANNEL: formatRecordChannel({ path: socketPath, token: TOKEN }),
     PIWI_ORIGIN: 'editor',
     PIWI_ORIGIN_REF: REF,
-    PIWI_PAUSE_AT: `tests/lane.spec.cjs:${line}`,
+    PIWI_PAUSE_AT: lines,
   };
   for (const name of ['PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_EDITOR_SEND', 'PIWI_RECORD_CHANNEL']) delete env[name];
   withoutCi(env);
@@ -248,6 +291,7 @@ describe('the lane view of a worker', () => {
     ).toEqual([
       ['first', 'passed'],
       ['stopped', 'passed'],
+      ['still', 'passed'],
       ['second', 'passed'],
       ['third', 'passed'],
     ]);
@@ -267,12 +311,28 @@ describe('the lane view of a worker', () => {
     for (const { message } of first) expect(message).toMatchObject({ stop: null, width: 1000, height: 640 });
   });
 
+  it('sends no frame between two tests, asked again or not, nor one of a test that ended', () => {
+    let running: string | null = null;
+    for (const { message } of heard) {
+      if (message.type === 'test-begin') running = message.testId;
+      if (message.type === 'test-end') running = null;
+      if (message.type === 'lane-frame' && 'data' in message) expect(message.test).toBe(running);
+    }
+    expect(answers['view-lane']?.[1]).toEqual({ ok: true, message: 'The live view is on.' });
+  });
+
+  it('names a stop on a still page in its latest frame, which a view of the stop starts with', () => {
+    expect(still.laneFrames).toBeGreaterThan(0);
+    expect(still.viewFrames).toBeGreaterThan(0);
+  });
+
   it('goes on through a stop, its frames naming it, and takes a click there through them', () => {
     const stop = heard.find(({ message: m }) => m.type === 'stopped')?.message as { stop: number };
     expect(laneFrames(ids.stopped).some(({ message: m }) => m.stop === stop.stop)).toBe(true);
     expect(answers.input?.[0]).toMatchObject({ ok: true });
-    // No other view was asked: the lane's showed the stop.
-    expect(heard.some(({ message: m }) => m.type === 'answer' && m.what === 'view')).toBe(false);
+    // No other view of that stop was asked: the lane's showed it.
+    const viewOf = (m: RunToHub) => m.type === 'answer' && m.what === 'view';
+    expect(heard.filter(({ message: m }) => viewOf(m))).toHaveLength(1);
   });
 
   it('paints a secret field over in every frame', () => {
@@ -293,7 +353,7 @@ describe('the lane view of a worker', () => {
   });
 
   it('sends no frame once the view is off', () => {
-    expect(answers['view-lane']?.[1]).toEqual({ ok: true, message: 'The live view is off.' });
+    expect(answers['view-lane']?.[2]).toEqual({ ok: true, message: 'The live view is off.' });
     expect(laneFrames().filter(({ at }) => at > offAt + 200)).toEqual([]);
     expect(laneFrames(ids.third)).toEqual([]);
   });
