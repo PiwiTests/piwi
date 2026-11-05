@@ -330,9 +330,22 @@ function earliestStart(processes: WorkerProcess[]): number {
 
 /**
  * How many lanes the workers timeline lays these test cases out on: the workers its header counts, and the count the
- * run page's Timeline tab shows. A run whose results name no lane has fewer lanes than worker processes.
+ * run page's Timeline tab shows. A run whose results name no lane has fewer lanes than worker processes. When every
+ * process names its lane, as `layOutLanes` then places them, the count is the shards' distinct lanes, without the
+ * layout.
  */
 export function timelineLaneCount(testCases: TestCaseResult[]): number {
+  const laneOfProcess = new Map<string, string | null>();
+  for (const tc of testCases) {
+    if (tc.workerIndex == null || tc.workerIndex < 0) continue;
+    const shard = tc.shardIndex ?? 'null';
+    const key = `${shard}|${tc.workerIndex}`;
+    if (laneOfProcess.get(key) != null) continue;
+    const lane = workerLane(tc.parallelIndex);
+    laneOfProcess.set(key, lane === null ? null : `${shard}|${lane}`);
+  }
+  const lanes = [...laneOfProcess.values()];
+  if (lanes.every((lane) => lane !== null)) return new Set(lanes).size;
   const processes = groupByProcess(testCases);
   return layOutLanes(processes, Number.isFinite(earliestStart(processes))).length;
 }

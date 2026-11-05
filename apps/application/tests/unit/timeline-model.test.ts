@@ -607,6 +607,7 @@ describe('the lanes a reporter names', () => {
     ];
     const count = (list: CaseLike[]) => timelineLaneCount(list as unknown as TestCaseResult[]);
     expect(count(cases)).toBe(2);
+    expect(model(cases).workerRows.value).toHaveLength(2);
     // Results that name no lane: the timeline works the same two lanes out from the timing.
     const unnamed = cases.map(({ parallelIndex: _lane, ...rest }) => rest);
     expect(count(unnamed)).toBe(2);
