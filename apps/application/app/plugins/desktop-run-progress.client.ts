@@ -12,13 +12,38 @@
  * lifecycle + progress deltas. The active runs are aggregated
  * (`aggregateRunProgress`) and fed to the shell's `desktop_set_run_progress`
  * command; when the last run finishes the outcome flashes (green pass / amber
- * interrupted / red fail) briefly before clearing. A local run stopped from the
- * app leaves the bar once its process is gone.
+ * interrupted / red fail) briefly before clearing, and a red one asks for the
+ * user's attention. A step of a job of the Local runs tray (a reproduction, a
+ * bisect, a Flake Lab session, as the stream names it: `job`) shows as progress
+ * alone: its end flashes nothing, and the job's verdict flashes once its process
+ * ends (`finishedJobFlash`). A local run stopped from the app, and a job once it
+ * ends, leave the bar with their own runs alone (`runsOfLocalRun`).
  *
  * Activates only inside the shell (the IPC bridge is present); the shared web
  * build has no bridge and this no-ops.
  */
-interface LiveRunMessage {
+import {
+  ACTIVE_RUN_STATUSES,
+  NO_LIVE_RUN_FACTS,
+  aggregateRunProgress,
+  finishedJobFlash,
+  finishedRunFlash,
+  liveRunFacts,
+  runsOfLocalRun,
+  type FinishedRunFlash,
+  type LiveRun,
+  type RunProgressState,
+} from '~/utils/desktop-run-progress';
+
+/** What a run's message names of what launched it, once the run has begun (`server/utils/desktop-run-facts.ts`). */
+interface RunFactsFields {
+  origin?: string;
+  originRef?: string | null;
+  name?: string | null;
+  job?: boolean;
+}
+
+interface LiveRunMessage extends RunFactsFields {
   type:
     | 'snapshot'
     | 'run-progress'
@@ -36,16 +61,18 @@ interface LiveRunMessage {
   failedTests?: number;
   skippedTests?: number;
   didNotRunTests?: number;
-  runs?: Array<{
-    id: number;
-    projectId?: number;
-    status: string;
-    totalTests?: number;
-    passedTests?: number;
-    failedTests?: number;
-    skippedTests?: number;
-    didNotRunTests?: number;
-  }>;
+  runs?: Array<
+    RunFactsFields & {
+      id: number;
+      projectId?: number;
+      status: string;
+      totalTests?: number;
+      passedTests?: number;
+      failedTests?: number;
+      skippedTests?: number;
+      didNotRunTests?: number;
+    }
+  >;
 }
 
 type Counts = Pick<LiveRunMessage, 'totalTests' | 'passedTests' | 'failedTests' | 'skippedTests' | 'didNotRunTests'>;
@@ -63,7 +90,8 @@ export default defineNuxtPlugin(() => {
   const active = new Map<number, LiveRun>();
   let clearTimer: ReturnType<typeof setTimeout> | null = null;
   let lastSent = '';
-  let lastFinishedStatus: string | null = null;
+  /** What shows once nothing is in flight: the outcome of the run or the job that ended last. */
+  let lastFinished: FinishedRunFlash | null = null;
 
   function send(state: RunProgressState, fraction: number | null, label: string | null, failing = false) {
     // Collapse identical updates — progress events are frequent but the shell
@@ -81,19 +109,30 @@ export default defineNuxtPlugin(() => {
     }
     const agg = aggregateRunProgress([...active.values()]);
     if (agg.state !== 'none') {
-      lastFinishedStatus = null;
+      lastFinished = null;
       send(agg.state, agg.fraction, agg.label, agg.failing);
       return;
     }
-    // Nothing in flight — flash the last finished run's outcome, then clear.
-    const flash = lastFinishedStatus ? finishedRunFlash(lastFinishedStatus) : null;
+    // Nothing in flight — flash the last outcome, then clear.
+    const flash = lastFinished;
+    lastFinished = null;
     if (flash) {
       send(flash.progress.state, flash.progress.fraction, flash.progress.label, flash.progress.failing);
       clearTimer = setTimeout(() => send('none', null, null), flash.durationMs);
     } else {
       send('none', null, null);
     }
-    lastFinishedStatus = null;
+  }
+
+  /** Tracks a run in flight with these counts, keeping what launched it once a message of it said so. */
+  function track(
+    runId: number,
+    counts: Pick<LiveRun, 'status' | 'done' | 'total' | 'failed'>,
+    msg: RunFactsFields & { projectId?: number },
+  ) {
+    const known = active.get(runId);
+    const facts = liveRunFacts(msg) ?? (known ? liveRunFacts(known) : null) ?? NO_LIVE_RUN_FACTS;
+    active.set(runId, { ...counts, ...facts, projectId: msg.projectId ?? known?.projectId ?? null });
   }
 
   function handle(msg: LiveRunMessage) {
@@ -102,13 +141,7 @@ export default defineNuxtPlugin(() => {
         active.clear();
         for (const r of msg.runs ?? []) {
           if (ACTIVE_RUN_STATUSES.has(r.status)) {
-            active.set(r.id, {
-              status: r.status,
-              done: doneOf(r),
-              total: r.totalTests ?? 0,
-              failed: r.failedTests ?? 0,
-              projectId: r.projectId ?? null,
-            });
+            track(r.id, { status: r.status, done: doneOf(r), total: r.totalTests ?? 0, failed: r.failedTests ?? 0 }, r);
           }
         }
         pushUpdate();
@@ -116,23 +149,26 @@ export default defineNuxtPlugin(() => {
       }
       case 'run-progress': {
         if (msg.runId == null) break;
-        active.set(msg.runId, {
+        const counts = {
           status: 'running',
           done: doneOf(msg),
           total: msg.totalTests ?? 0,
           failed: msg.failedTests ?? 0,
-          projectId: msg.projectId ?? null,
-        });
+        };
+        track(msg.runId, counts, msg);
         pushUpdate();
         break;
       }
       case 'run-started':
       case 'run-initializing': {
+        if (msg.runId == null) break;
+        const known = active.get(msg.runId);
         // Known to be in flight but no counts yet → indeterminate until progress.
-        if (msg.runId != null && !active.has(msg.runId)) {
-          active.set(msg.runId, { status: 'running', done: 0, total: 0, failed: 0, projectId: msg.projectId ?? null });
-          pushUpdate();
-        }
+        if (!known) track(msg.runId, { status: 'running', done: 0, total: 0, failed: 0 }, msg);
+        // A run that began says what launched it.
+        else if (liveRunFacts(msg)) track(msg.runId, known, msg);
+        else break;
+        pushUpdate();
         break;
       }
       case 'run-finished':
@@ -140,8 +176,12 @@ export default defineNuxtPlugin(() => {
       case 'run-submitted': {
         // Only a run still on the bar has an outcome to show — one already
         // dropped (a stopped local run the server reaps later) changes nothing.
-        if (msg.runId == null || !active.delete(msg.runId)) break;
-        lastFinishedStatus = msg.type === 'run-finished' ? (msg.status ?? 'passed') : 'cancelled';
+        const run = msg.runId == null ? undefined : active.get(msg.runId);
+        if (!run) break;
+        active.delete(msg.runId!);
+        // A job's step has no outcome of its own: its job's verdict flashes once the job ends.
+        const job = liveRunFacts(msg)?.job ?? run.job;
+        if (!job) lastFinished = finishedRunFlash(msg.type === 'run-finished' ? (msg.status ?? 'passed') : 'cancelled');
         pushUpdate();
         break;
       }
@@ -183,19 +223,23 @@ export default defineNuxtPlugin(() => {
       .catch(() => {});
 
     // A stopped local process the shell had to kill never reports its end, and
-    // the server marks its runs interrupted only after the stale timeout, so
-    // drop them from the bar once the process is gone. After a clean stop the
-    // run has already ended and there is nothing left to drop.
-    const dropped = new Set<number>();
+    // the server marks its runs interrupted only after the stale timeout, so its
+    // own runs leave the bar once the process is gone; so do a job's, whose
+    // verdict then flashes. Every other run stays: an editor's, CI's, another
+    // local run's.
+    const ended = new Set<number>();
     watch(
-      () => runs.value.map((run) => run.status),
+      () => runs.value.map((run) => run.finishedAt),
       () => {
         let changed = false;
         for (const run of runs.value) {
-          if (run.status !== 'stopped' || run.piwiRunBaseline == null || dropped.has(run.key)) continue;
-          dropped.add(run.key);
-          for (const id of runsOfStoppedLocalRun(active, run.projectId, run.piwiRunBaseline)) {
-            active.delete(id);
+          if (run.finishedAt == null || ended.has(run.key)) continue;
+          ended.add(run.key);
+          if (run.status !== 'stopped' && run.kind === 'tests') continue;
+          for (const id of runsOfLocalRun(active, run)) changed = active.delete(id) || changed;
+          const flash = run.kind === 'tests' ? null : finishedJobFlash({ ...run, kind: run.kind });
+          if (flash) {
+            lastFinished = flash;
             changed = true;
           }
         }

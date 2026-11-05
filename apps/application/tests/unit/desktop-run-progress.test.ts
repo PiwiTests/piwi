@@ -1,12 +1,17 @@
 import { describe, test, expect } from 'vitest';
 import {
   aggregateRunProgress,
+  finishedJobFlash,
   finishedRunFlash,
-  runsOfStoppedLocalRun,
+  liveRunFacts,
+  runsOfLocalRun,
   FAIL_FLASH_MS,
+  NO_LIVE_RUN_FACTS,
   NO_RUN_PROGRESS,
   PASS_FLASH_MS,
+  type FinishedJob,
   type LiveRun,
+  type LocalRunOwner,
   type RunCounts,
 } from '../../app/utils/desktop-run-progress';
 
@@ -87,6 +92,38 @@ describe('aggregateRunProgress', () => {
   test('a finished run with failures does not make the active ones failing', () => {
     expect(aggregateRunProgress([run('failed', 10, 10, 4), run('running', 2, 10)]).failing).toBe(false);
   });
+
+  test('a step of a job counts its tests, never its failures, which its verdict judges', () => {
+    const step = { ...run('running', 3, 4, 2), job: true };
+    expect(aggregateRunProgress([step])).toEqual({
+      state: 'normal',
+      fraction: 0.75,
+      label: 'Running 3/4…',
+      failing: false,
+    });
+    // Another run's failure still shows beside it.
+    expect(aggregateRunProgress([step, run('running', 1, 4, 1)])).toMatchObject({
+      state: 'error',
+      failing: true,
+      label: 'Running 4/8 · 2 runs · 1 failed',
+    });
+  });
+});
+
+describe('liveRunFacts', () => {
+  test('reads what launched a run from a message of the desktop event stream, none before it began', () => {
+    expect(liveRunFacts({ origin: 'bisect', originRef: '37', name: 'desktop-8-unattended', job: true })).toEqual({
+      origin: 'bisect',
+      originRef: '37',
+      name: 'desktop-8-unattended',
+      job: true,
+    });
+    expect(liveRunFacts({ origin: 'ci', originRef: null, name: null, job: false })).toEqual({
+      ...NO_LIVE_RUN_FACTS,
+      origin: 'ci',
+    });
+    expect(liveRunFacts({})).toBeNull();
+  });
 });
 
 describe('finishedRunFlash', () => {
@@ -117,21 +154,128 @@ describe('finishedRunFlash', () => {
   });
 });
 
-describe('runsOfStoppedLocalRun', () => {
-  const live = (projectId: number | null): LiveRun => ({ status: 'running', done: 1, total: 10, failed: 0, projectId });
+describe('finishedJobFlash', () => {
+  const job = (over: Partial<FinishedJob>): FinishedJob => ({
+    kind: 'bisect',
+    status: 'passed',
+    exitCode: 0,
+    phase: null,
+    bisect: null,
+    repro: null,
+    ...over,
+  });
+  const flash = (over: Partial<FinishedJob>) => {
+    const shown = finishedJobFlash(job(over));
+    return shown && { state: shown.progress.state, label: shown.progress.label, failing: shown.progress.failing };
+  };
 
-  test('picks the runs of the project numbered above the baseline', () => {
-    const active = new Map<number, LiveRun>([
-      [4, live(1)], // before the local process was spawned
-      [7, live(1)],
-      [8, live(2)], // another project
-      [9, live(1)],
-      [10, live(null)],
-    ]);
-    expect(runsOfStoppedLocalRun(active, '1', 4)).toEqual([7, 9]);
+  test('a bisect flashes the commit it found, or that it did not finish', () => {
+    expect(finishedJobFlash(job({ bisect: { firstBad: { sha: 'abcdef1234567' } } }))).toEqual({
+      progress: { state: 'normal', fraction: 1, label: 'Bisect found abcdef1', failing: false },
+      durationMs: PASS_FLASH_MS,
+    });
+    expect(finishedJobFlash(job({ status: 'failed', exitCode: 1, bisect: { firstBad: null } }))).toEqual({
+      progress: { state: 'error', fraction: 1, label: 'Bisect did not finish', failing: false },
+      durationMs: FAIL_FLASH_MS,
+    });
   });
 
-  test('picks nothing when no run is newer than the baseline', () => {
-    expect(runsOfStoppedLocalRun(new Map([[3, live(1)]]), '1', 3)).toEqual([]);
+  test('a reproduction flashes red when it reproduced, green when it did not', () => {
+    expect(flash({ kind: 'reproduce', status: 'failed', exitCode: 1, phase: 'test' })).toEqual({
+      state: 'error',
+      label: 'Reproduced',
+      failing: false,
+    });
+    expect(flash({ kind: 'reproduce', phase: 'test' })).toMatchObject({ state: 'normal', label: 'Not reproduced' });
+    expect(flash({ kind: 'reproduce', status: 'failed', exitCode: 1, phase: 'install' })).toMatchObject({
+      state: 'error',
+      label: 'Reproduction could not run',
+    });
+  });
+
+  test('a bug report’s steps flash their verdict', () => {
+    const verdict = { kind: 'reproduced', step: 1, found: null } as const;
+    expect(flash({ kind: 'repro', status: 'failed', exitCode: 1, repro: { verdict } })).toMatchObject({
+      state: 'error',
+      label: 'Bug reproduced',
+    });
+    expect(flash({ kind: 'repro', repro: { verdict: { kind: 'not-reproduced' } } })).toMatchObject({
+      state: 'normal',
+      label: 'Not reproduced',
+    });
+  });
+
+  test('a Flake Lab session flashes whether it reproduced the flake, red when it could not run', () => {
+    expect(flash({ kind: 'flake' })).toMatchObject({ state: 'normal', label: 'Flake reproduced' });
+    expect(flash({ kind: 'flake', exitCode: 1 })).toMatchObject({ state: 'normal', label: 'Flake not reproduced' });
+    expect(flash({ kind: 'flake', status: 'failed', exitCode: 2 })).toMatchObject({
+      state: 'error',
+      label: 'Flake Lab could not run',
+    });
+  });
+
+  test('a job that could not start flashes red, one stopped or still running flashes nothing', () => {
+    expect(flash({ status: 'error', exitCode: null })).toMatchObject({ state: 'error', label: 'Bisect could not run' });
+    expect(flash({ status: 'stopped' })).toBeNull();
+    expect(flash({ status: 'running' })).toBeNull();
+  });
+});
+
+describe('runsOfLocalRun', () => {
+  const live = (over: Partial<LiveRun> = {}): LiveRun => ({
+    status: 'running',
+    done: 1,
+    total: 10,
+    failed: 0,
+    projectId: 1,
+    origin: 'desktop',
+    originRef: 'desktop:a1',
+    name: 'desktop-7',
+    job: false,
+    ...over,
+  });
+  const owner = (over: Partial<LocalRunOwner> = {}): LocalRunOwner => ({
+    kind: 'tests',
+    projectId: '1',
+    originRef: 'desktop:a1',
+    hubRefs: ['desktop-7', 'desktop-8'],
+    piwiRunBaseline: 4,
+    ...over,
+  });
+
+  test('picks the runs its own steps reported, leaving every other run of the project', () => {
+    const active = new Map<number, LiveRun>([
+      [4, live()], // before the local process was spawned
+      [7, live()],
+      [8, live({ name: 'desktop-8' })],
+      [9, live({ origin: 'editor', originRef: 'editor:x', name: null })], // an editor's run
+      [10, live({ origin: 'ci', originRef: null, name: null })], // a CI run
+      [11, live({ originRef: 'desktop:b2', name: 'desktop-9' })], // another local run of the window
+      [12, live({ projectId: 2 })], // another project
+      [13, live({ ...NO_LIVE_RUN_FACTS })], // not begun yet: nothing says whose it is
+    ]);
+    expect(runsOfLocalRun(active, owner())).toEqual([7, 8]);
+  });
+
+  test('tells two runs of one reference apart by the names their steps gave them', () => {
+    const active = new Map<number, LiveRun>([
+      [7, live({ origin: 'reproduce', originRef: '42', name: 'desktop-7' })],
+      [8, live({ origin: 'reproduce', originRef: '42', name: 'desktop-9' })],
+      // A reporter that recorded no name: its origin and reference alone.
+      [9, live({ origin: 'reproduce', originRef: '42', name: null })],
+      // A step nobody attends carries the mark the shell gives it.
+      [10, live({ origin: 'bisect', originRef: '42', name: 'desktop-6-unattended', job: true })],
+    ]);
+    expect(runsOfLocalRun(active, owner({ kind: 'reproduce', originRef: '42', hubRefs: ['desktop-7'] }))).toEqual([
+      7, 9,
+    ]);
+    expect(runsOfLocalRun(active, owner({ kind: 'bisect', originRef: '42', hubRefs: ['desktop-6'] }))).toEqual([10]);
+  });
+
+  test('picks nothing without a baseline, or for a run whose runs record no origin of its own', () => {
+    const active = new Map<number, LiveRun>([[7, live()]]);
+    expect(runsOfLocalRun(active, owner({ piwiRunBaseline: null }))).toEqual([]);
+    expect(runsOfLocalRun(active, owner({ kind: 'flake' }))).toEqual([]);
+    expect(runsOfLocalRun(active, owner({ piwiRunBaseline: 7 }))).toEqual([]);
   });
 });

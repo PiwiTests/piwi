@@ -597,6 +597,28 @@ describe('a failure no pause bar shows', () => {
 });
 
 describe('the window', () => {
+  it('hears how many runs the hub has live, as a run starts and once it ended, with no stream of its own', async () => {
+    // The runs of the tests before end once they lingered.
+    await waitFor(() => runs.liveRunCount() === 0);
+    const heard: number[] = [];
+    const off = runs.onLiveRunCount((live) => heard.push(live));
+    const worker = new Worker(folder).attach('desktop-21');
+    worker.begin();
+    await waitFor(() => heard.length === 1);
+    expect(runs.liveRunCount()).toBe(1);
+    // Its workers gone, the run ends once it lingered.
+    worker.socket.destroy();
+    await waitFor(() => heard.length === 2);
+    expect(heard).toEqual([1, 0]);
+    off();
+    const again = new Worker(folder).attach('desktop-22');
+    again.begin();
+    await waitFor(() => runs.liveRunCount() === 1);
+    again.socket.destroy();
+    await waitFor(() => runs.liveRunCount() === 0);
+    expect(heard).toEqual([1, 0]);
+  });
+
   it('names its stream, and refuses a command of a stream that is not open or that is no command', async () => {
     const window = await openWindow();
     expect(window.events[0]).toEqual({ type: 'hello', viewer: window.viewer });

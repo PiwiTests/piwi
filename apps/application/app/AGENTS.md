@@ -268,10 +268,12 @@ views are exempt only where a rule says so.
   on a check). Its fields are read by `apps/vscode/src/debug-link.ts` and `Glue.parseOpenRequest` in `apps/jetbrains`:
   a change to one changes the others. Checked by `tests/unit/ide-links.test.ts` and `tests/debug-in-editor.spec.ts`.
 - **The desktop window holds the stream of its runs' hub only while it has a run to show** (`useDesktopRunHub.want`,
-  from the Local runs tray): while it is open every headless stop waits for the window, so the tray opens on each stop
-  it hears, once, and it says `show` only for the running runs whose **Hold failures** switch is on (off by default,
-  on for a reproduction, `desktopHoldsByDefault`; never for a run nobody attends, `desktopHoldRefusal`), each by its
-  steps' names (`hubRefs`); expanding a run or closing the tray changes none (`tests/desktop-run-view.spec.ts`).
+  from `plugins/desktop-run-hub.client.ts`, whatever the layout: a run of the Local runs tray runs, or the hub says it
+  has a live one, `hub-runs`, which a reload hears at once): while it is open every headless stop waits for the
+  window, so the tray opens on each stop it hears, once, and the window says `show` only for the running runs whose
+  **Hold failures** switch is on (off by default, on for a reproduction, `desktopHoldsByDefault`; never for a run
+  nobody attends, `desktopHoldRefusal`), each by its steps' names (`hubRefs`); expanding a run or closing the tray
+  changes none (`tests/desktop-run-view.spec.ts`, `tests/unit/desktop-run-hub-plugin.test.ts`).
 - **Every raw `<form>` carries `method="post"`**, so a submit before hydration sends its fields in the body to the
   page's own URL, never in the query string (`UForm` renders it itself). `tests/unit/form-method-post.test.ts` names any
   `<form>` without it.

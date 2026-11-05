@@ -430,6 +430,8 @@ export function useDesktopLocalRuns() {
   /** A worker of a hub's run the tray is asked to show (`showWorker`), until the tray has shown it. */
   const shownWorker = useState<{ ref: string; worker: number } | null>('desktop-local-runs-shown-worker', () => null);
   const optionsByProject = useState<Record<string, SavedLocalRunOptions>>('desktop-local-run-options', () => ({}));
+  /** Each run's Hold failures choice, by its key; unset falls back to its kind's (`desktopHoldsByDefault`). */
+  const holds = useState<Record<number, boolean>>('desktop-local-runs-holds', () => ({}));
   if (import.meta.client) {
     toastApi = useToast();
     routerApi = useRouter();
@@ -1358,6 +1360,7 @@ export function useDesktopLocalRuns() {
     runs,
     trayOpen,
     shownWorker,
+    holds,
     showWorker,
     activeCount,
     startRun,
