@@ -343,6 +343,12 @@ export const RUNS_EXEMPTIONS = [
   },
   {
     rule: 'help',
+    key: 'run.live-stalled',
+    reason:
+      'Live updates stalled shows only while a live run’s stream does not open, and the seed has no run in progress.',
+  },
+  {
+    rule: 'help',
     key: 'run.live-unshared',
     reason:
       'Not shared live shows only on a live run outside CI that holds a live view key, and the demo runs no test worker.',
