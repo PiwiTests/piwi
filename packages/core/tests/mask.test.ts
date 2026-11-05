@@ -339,6 +339,33 @@ describe('the text a fill, a typing or an insert types', () => {
     expect(hideTypedText('Fill "a long secret cut')).toBe(`Fill "${HIDDEN_VALUE}"`);
   });
 
+  test('ends before a locator that holds a quote and a space, which stays whole', () => {
+    for (const locator of [
+      `getByRole('textbox', { name: "Card \\"main\\" number" })`,
+      `getByRole('textbox', { name: 'Card "main" number' })`,
+      `locator('form[name="pay"] input')`,
+    ]) {
+      expect(hideTypedText(`Fill "4242 4242" ${locator}`), locator).toBe(`Fill "${HIDDEN_VALUE}" ${locator}`);
+    }
+  });
+
+  test('goes whole when it holds a quote, a space and a locator of its own', () => {
+    expect(hideTypedText(`Fill "abc" getByLabel('x')" getByLabel('Password')`)).toBe(
+      `Fill "${HIDDEN_VALUE}" getByLabel('Password')`,
+    );
+  });
+
+  test('runs to the last quote and space before a describe() label or a locator cut short', () => {
+    expect(hideTypedText('Fill "4242 4242" Card number')).toBe(`Fill "${HIDDEN_VALUE}" Card number`);
+    expect(hideTypedText('Fill "4242 4242" the "main" card')).toBe(`Fill "${HIDDEN_VALUE}" card`);
+    expect(hideTypedText(`Fill "4242 4242" getByRole('textbox', { name: 'Card numb…`)).toBe(
+      `Fill "${HIDDEN_VALUE}" getByRole('textbox', { name: 'Card numb…`,
+    );
+    expect(hideTypedText(`Fill "4242 4242" getByRole('textbox', { name: 'Card "main" numb…`)).toBe(
+      `Fill "${HIDDEN_VALUE}" numb…`,
+    );
+  });
+
   test('leaves every other title as it is', () => {
     for (const title of [
       'Press "Enter"',
