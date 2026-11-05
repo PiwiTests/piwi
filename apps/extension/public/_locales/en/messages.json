@@ -8040,8 +8040,16 @@
     "description": "Runs window, under a run’s heading in place of Share live: the run’s project has its live view off on the Piwi instance. Project admin and Project → Settings → Live view are the dashboard’s English words: never translated."
   },
   "runs_shareRefusedUnregistered": {
-    "message": "This run cannot be shared live: the reporter’s global setup did not register it with the instance as it started (wrapConfig adds it).",
-    "description": "Runs window, under a run’s heading in place of Share live: the reporter’s global setup, which asks the instance for a live view key, did not register the run. wrapConfig is code: never translated."
+    "message": "This run cannot be shared live: the reporter’s global setup did not run as it started (wrapConfig adds it).",
+    "description": "Runs window, under a run’s heading in place of Share live: the reporter’s global setup, which asks the instance for a live view key, did not run. wrapConfig is code: never translated."
+  },
+  "runs_shareRefusedStreamingOff": {
+    "message": "This run cannot be shared live: it sends its results at its end alone (streaming: false), so it has no live run on the instance.",
+    "description": "Runs window, under a run’s heading in place of Share live: the run does not stream its results, so the Piwi instance has no live run to share. streaming: false is code: never translated."
+  },
+  "runs_shareRefusedSetupFailed": {
+    "message": "This run cannot be shared live: the instance did not register it as it started (the reporter’s global setup could not reach it, or was refused: its warning says why).",
+    "description": "Runs window, under a run’s heading in place of Share live: the reporter’s global setup could not register the run with the Piwi instance, which did not answer or refused it; the warning the setup printed in the run’s output names the error."
   },
   "runs_shareRefusedNoInstance": {
     "message": "This run cannot be shared live: it reports to no Piwi instance. Name your team’s instance in PIWI_DASHBOARD_URL.",

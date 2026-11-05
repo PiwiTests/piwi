@@ -107,15 +107,16 @@ export function liveRunPage(address: LiveViewAddress): string {
 }
 
 /**
- * Why a run outside CI holds no live view key: it reports to no Piwi instance (`no-instance`), the reporter's global
- * setup did not register it as it started (`unregistered`: the reporter entry without `wrapConfig`, a run that reports
- * at its end alone, or an instance the setup could not reach), the instance gave none (`off`: its project has the
- * live view off, or the instance predates it), or it reports to the desktop app on this machine, which gives none
- * since no teammate reaches it (`local`: its setup answers `liveView.refused: 'local'`).
+ * Why a run holds no live view key: it reports to no Piwi instance (`no-instance`), it reports at its end alone
+ * (`streaming-off`: `streaming: false`, so it has no live run), the reporter's global setup did not run as it started
+ * (`unregistered`: the reporter entry without `wrapConfig`), that setup could not register it (`setup-failed`: the
+ * instance did not answer, or refused it), the instance gave none (`off`: its project has the live view off, or the
+ * instance predates it), or it reports to the desktop app on this machine, which gives none since no teammate reaches
+ * it (`local`: its setup answers `liveView.refused: 'local'`).
  */
-export type LiveViewMissing = 'no-instance' | 'unregistered' | 'off' | 'local';
+export type LiveViewMissing = 'no-instance' | 'streaming-off' | 'unregistered' | 'setup-failed' | 'off' | 'local';
 
-const MISSING: readonly string[] = ['no-instance', 'unregistered', 'off', 'local'];
+const MISSING: readonly string[] = ['no-instance', 'streaming-off', 'unregistered', 'setup-failed', 'off', 'local'];
 
 /** The value of `PIWI_LIVE_VIEW` for a run outside CI that holds no key: why. */
 export function formatLiveViewMissing(why: LiveViewMissing): string {
@@ -132,8 +133,12 @@ export function parseLiveViewMissing(value: string | undefined): LiveViewMissing
 export const LIVE_SHARE_MISSING: Record<LiveViewMissing, string> = {
   'no-instance':
     "This run cannot be shared live: it reports to no Piwi instance. Name your team's instance in PIWI_DASHBOARD_URL.",
+  'streaming-off':
+    'This run cannot be shared live: it sends its results at its end alone (streaming: false), so it has no live run on the instance.',
   unregistered:
-    "This run cannot be shared live: the reporter's global setup did not register it with the instance as it started (wrapConfig adds it).",
+    "This run cannot be shared live: the reporter's global setup did not run as it started (wrapConfig adds it).",
+  'setup-failed':
+    "This run cannot be shared live: the instance did not register it as it started (the reporter's global setup could not reach it, or was refused: its warning says why).",
   off: "This run cannot be shared live: its project's live view is off on the instance. A Project admin turns it on in Project → Settings → Live view.",
   local:
     "This run cannot be shared live: it reports to the Piwi desktop app on this machine, which no teammate reaches. Name your team's instance in PIWI_DASHBOARD_URL to share a run there.",

@@ -237,6 +237,8 @@ describe('Share live, as the worker reads it', () => {
     expect(shareRefusalOf(LIVE_SHARE_MISSING.local)).toBe('local');
     expect(shareRefusalOf(LIVE_SHARE_MISSING.off)).toBe('off');
     expect(shareRefusalOf(LIVE_SHARE_MISSING.unregistered)).toBe('unregistered');
+    expect(shareRefusalOf(LIVE_SHARE_MISSING['streaming-off'])).toBe('streaming-off');
+    expect(shareRefusalOf(LIVE_SHARE_MISSING['setup-failed'])).toBe('setup-failed');
     expect(shareRefusalOf(LIVE_SHARE_MISSING['no-instance'])).toBe('no-instance');
     expect(shareRefusalOf(LIVE_SHARE_UNKNOWN)).toBe('unknown');
     expect(shareRefusalOf('Sharing stopped: the instance restarted.')).toBeNull();

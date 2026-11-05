@@ -31,8 +31,9 @@ shared, its stops (the call, its file and line, the test's title) reach everyone
 only those watching. **Stop sharing** closes the views within seconds and clears **Paused** from the rows. Closing the
 editor or the desktop app stops it too.
 
-A run that cannot be shared says why: it reports to no instance or to the desktop app, its project has the live view
-off, or the reporter's global setup did not register it. A sharing that stops on its own says why (the live view turned
+A run that cannot be shared says why: it reports to no instance or to the desktop app, it does not stream its results,
+its project has the live view off, the reporter's global setup did not run, or the instance did not register the run
+as it started. A sharing that stops on its own says why (the live view turned
 off, the instance restarted or stopped answering), and **Share live** shows again.
 
 ## Related

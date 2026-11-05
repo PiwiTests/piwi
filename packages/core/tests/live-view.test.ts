@@ -73,7 +73,7 @@ describe('the live view address', () => {
   });
 
   test('a run outside CI without a key names why, which no address reads as one', () => {
-    for (const why of ['no-instance', 'unregistered', 'off'] as const) {
+    for (const why of ['no-instance', 'streaming-off', 'unregistered', 'setup-failed', 'off', 'local'] as const) {
       const value = formatLiveViewMissing(why);
       expect(value).toBe(`none:${why}`);
       expect(parseLiveViewMissing(value)).toBe(why);

@@ -6765,7 +6765,13 @@
     "message": "Cette exécution ne peut pas être partagée en direct : la vue en direct de son projet est désactivée sur l’instance. Un Project admin l’active dans Project → Settings → Live view."
   },
   "runs_shareRefusedUnregistered": {
-    "message": "Cette exécution ne peut pas être partagée en direct : le global setup du reporter ne l’a pas enregistrée auprès de l’instance à son démarrage (wrapConfig l’ajoute)."
+    "message": "Cette exécution ne peut pas être partagée en direct : le global setup du reporter ne s’est pas exécuté à son démarrage (wrapConfig l’ajoute)."
+  },
+  "runs_shareRefusedStreamingOff": {
+    "message": "Cette exécution ne peut pas être partagée en direct : elle n’envoie ses résultats qu’à la fin (streaming désactivé), elle n’a donc pas d’exécution en direct sur l’instance."
+  },
+  "runs_shareRefusedSetupFailed": {
+    "message": "Cette exécution ne peut pas être partagée en direct : l’instance ne l’a pas enregistrée à son démarrage (le global setup du reporter n’a pas pu la joindre, ou a été refusé : son avertissement dit pourquoi)."
   },
   "runs_shareRefusedNoInstance": {
     "message": "Cette exécution ne peut pas être partagée en direct : elle ne rend compte à aucune instance Piwi. Indiquez l’instance de votre équipe dans PIWI_DASHBOARD_URL."
