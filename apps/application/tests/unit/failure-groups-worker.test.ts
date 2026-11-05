@@ -2,6 +2,7 @@ import { describe, test, expect, beforeAll } from 'vitest';
 import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
+import { ADMIN_ACCESS } from '#shared/permissions';
 import { migrateToLatest } from './temp-db';
 
 /**
@@ -12,6 +13,7 @@ import { migrateToLatest } from './temp-db';
 // The schema barrel picks PostgreSQL at import time when PIWI_DATABASE_URL is set.
 delete process.env.PIWI_DATABASE_URL;
 const { getFailureGroups } = await import('#shared/handlers/test-runs');
+const { MCP_TOOLS } = await import('../../server/utils/mcp/tools');
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 let db: Db;
@@ -74,6 +76,18 @@ describe('a failure group', () => {
     expect(group!.cases.map((c) => [c.workerIndex, c.parallelIndex, c.shardIndex])).toEqual([
       [0, 0, null],
       [2, 0, null],
+    ]);
+
+    // MCP names each case's worker by its lane from 1, as the run page does, beside its process.
+    const tool = MCP_TOOLS.find((t) => t.name === 'get_failure_groups')!;
+    const ctx = { user: null, access: ADMIN_ACCESS, scope: 'all' as const };
+    const answer = (await tool.handler(db as never, { runId: 1 }, ctx)) as {
+      groups: Array<{ workerCorrelated?: boolean; cases: Array<{ worker?: number; workerIndex?: number }> }>;
+    };
+    expect(answer.groups[0]!.workerCorrelated).toBe(true);
+    expect(answer.groups[0]!.cases.map((c) => [c.worker, c.workerIndex])).toEqual([
+      [1, 0],
+      [1, 2],
     ]);
   });
 

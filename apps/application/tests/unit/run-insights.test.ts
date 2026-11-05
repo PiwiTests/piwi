@@ -129,8 +129,8 @@ describe('computeRunInsights', () => {
     const insights = await computeRunInsights(db as never, 11);
 
     expect(insights.workerImbalance).toEqual([
-      { worker: 1, shardIndex: null, count: 2 },
-      { worker: 2, shardIndex: null, count: 2 },
+      { worker: 1, workerIndex: null, shardIndex: null, count: 2 },
+      { worker: 2, workerIndex: null, shardIndex: null, count: 2 },
     ]);
     expect(insights.workerImbalanceWarning).toBeNull();
   });
@@ -158,9 +158,9 @@ describe('computeRunInsights', () => {
     const insights = await computeRunInsights(db as never, 11);
 
     expect(insights.workerImbalance).toEqual([
-      { worker: 1, shardIndex: 1, count: 3 },
-      { worker: 1, shardIndex: 2, count: 1 },
-      { worker: 2, shardIndex: 2, count: 2 },
+      { worker: 1, workerIndex: null, shardIndex: 1, count: 3 },
+      { worker: 1, workerIndex: null, shardIndex: 2, count: 1 },
+      { worker: 2, workerIndex: null, shardIndex: 2, count: 2 },
     ]);
     expect(insights.workerImbalanceWarning).toBe('Worker 1 of shard 1 ran 3\u00d7 more tests than worker 1 of shard 2');
   });
@@ -176,8 +176,8 @@ describe('computeRunInsights', () => {
     const insights = await computeRunInsights(db as never, 11);
 
     expect(insights.workerImbalance).toEqual([
-      { worker: 0, shardIndex: null, count: 1 },
-      { worker: 1, shardIndex: null, count: 2 },
+      { worker: null, workerIndex: 0, shardIndex: null, count: 1 },
+      { worker: null, workerIndex: 1, shardIndex: null, count: 2 },
     ]);
     expect(insights.workerImbalanceWarning).toBe('Worker 1 ran 2\u00d7 more tests than worker 0');
   });

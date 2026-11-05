@@ -31,7 +31,8 @@ from `get_failure_groups` over MCP or from the REST API; the dashboard doesn't s
 
 - **Worker correlated** — two or more of the cluster's failures, all on one worker (one lane of one shard,
   whichever processes Playwright started in it), in a run that used several: you're looking at a misbehaving
-  worker, or something it holds such as an account picked by its `parallelIndex`, not forty broken tests.
+  worker, or state a worker-scoped fixture holds, not forty broken tests. An account picked by `parallelIndex` is
+  shared by that lane in every shard, which the flag doesn't join.
 - **Flaky** — a test in the cluster passed on retry in this run: part of the cluster is noise riding on a
   bad run.
 

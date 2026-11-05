@@ -1129,7 +1129,7 @@ export interface FailureGroup {
   firstSeenAt: string | null;
   occurrences: number;
   flaky: boolean;
-  /** Two or more of the group's tests failed on one worker (a lane in its shard), in a run that used several. */
+  /** All of the group's tests, two or more, failed on one worker (a lane in its shard), in a run that used several. */
   workerCorrelated: boolean;
   cases: FailureGroupCase[];
   diagnosis: DiagnosisCompact | null;

@@ -158,6 +158,19 @@ describe('buildPerfettoTrace', () => {
     expect(byName(traceEvents, 'thread_name').map((e) => (e.args as { name: string }).name)).toEqual(['Worker 3']);
   });
 
+  test('keeps a test that never ran on a thread of its own, apart from every worker', () => {
+    const input: PerfettoRunInput = {
+      run: { id: 5, startTime: 0 },
+      executions: [
+        { executionId: 1, title: 'ran', status: 'passed', workerIndex: 0, parallelIndex: 0, startedAt: 0 },
+        { executionId: 2, title: 'never ran', status: 'skipped', workerIndex: -1, startedAt: 0 },
+      ],
+    };
+    const { traceEvents } = buildPerfettoTrace(input, { scope: 'run' });
+    expect(traceEvents.find((e) => e.name === 'ran')!.tid).toBe(1);
+    expect(traceEvents.find((e) => e.name === 'never ran')!.tid).toBe(-1);
+  });
+
   test('emits a complete slice per execution with rich args', () => {
     const { traceEvents } = buildPerfettoTrace(sampleRun(), { scope: 'run', baseUrl: 'https://piwi.test/' });
     const cart = traceEvents.find((e) => e.name === 'adds an item to the cart')!;

@@ -1853,6 +1853,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
                   testCaseId: c.testCaseId,
                   title: c.title,
                   filePath: c.filePath,
+                  ...executionWorker(c),
                 }),
               )
             : null,

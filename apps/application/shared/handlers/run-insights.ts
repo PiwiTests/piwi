@@ -13,7 +13,7 @@ import { notLabRun } from './probes';
 import { TERMINAL_STATUSES } from './projects';
 import { describeRunBaseline, type RunBaselineFallback, type RunBaselineMatch } from '#shared/run-baseline';
 import { liveWorkerName } from '#shared/live-view';
-import { shownWorkerNumber, workerKey } from '#shared/worker-lane';
+import { workerKey, workerNumber } from '#shared/worker-lane';
 
 interface TestCaseEntry {
   executionId: number;
@@ -56,12 +56,13 @@ export interface InsightsEarlierRun {
 export type InsightsBaselineSource = 'auto' | 'run' | 'branch';
 
 /**
- * How many test results one worker ran: `worker` is its lane from 1 as the run page names it (`Worker 2`), within the
- * shard `shardIndex` names in a sharded run (null otherwise), whichever processes Playwright started in it; a result
- * without a lane counts under its worker process.
+ * How many test results one worker ran, within the shard `shardIndex` names in a sharded run (null otherwise):
+ * `worker` is its lane from 1 as the run page names it (`Worker 2`), whichever processes Playwright started in it; a
+ * result without a lane, from an older reporter, counts under its worker process, `workerIndex`, and `worker` is null.
  */
 export interface WorkerTestCount {
-  worker: number;
+  worker: number | null;
+  workerIndex: number | null;
   shardIndex: number | null;
   count: number;
 }
@@ -411,10 +412,22 @@ export async function computeRunInsights(
     if (key === null) continue;
     const known = workerCounts.get(key);
     if (known) known.count++;
-    else workerCounts.set(key, { worker: shownWorkerNumber(cc)!, shardIndex: cc.shardIndex ?? null, count: 1 });
+    else {
+      const worker = workerNumber(cc.parallelIndex);
+      workerCounts.set(key, {
+        worker,
+        workerIndex: worker === null ? (cc.workerIndex ?? null) : null,
+        shardIndex: cc.shardIndex ?? null,
+        count: 1,
+      });
+    }
   }
+  const shown = (w: WorkerTestCount) => w.worker ?? w.workerIndex ?? 0;
   const workerImbalance = [...workerCounts.values()].sort(
-    (a, b) => (a.shardIndex ?? -1) - (b.shardIndex ?? -1) || a.worker - b.worker,
+    (a, b) =>
+      (a.shardIndex ?? -1) - (b.shardIndex ?? -1) ||
+      Number(a.worker === null) - Number(b.worker === null) ||
+      shown(a) - shown(b),
   );
 
   let workerImbalanceWarning: string | null = null;
@@ -422,7 +435,7 @@ export async function computeRunInsights(
     const busiest = workerImbalance.reduce((max, w) => (w.count > max.count ? w : max));
     const idlest = workerImbalance.reduce((min, w) => (w.count < min.count ? w : min));
     if (busiest.count >= idlest.count * 1.5) {
-      const name = (w: WorkerTestCount) => liveWorkerName({ shard: w.shardIndex, worker: w.worker });
+      const name = (w: WorkerTestCount) => liveWorkerName({ shard: w.shardIndex, worker: shown(w) });
       const ratio = Math.round((busiest.count / idlest.count) * 10) / 10;
       const sentence = `${name(busiest)} ran ${ratio}\u00d7 more tests than ${name(idlest)}`;
       workerImbalanceWarning = sentence.charAt(0).toUpperCase() + sentence.slice(1);

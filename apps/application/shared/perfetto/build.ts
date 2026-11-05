@@ -55,10 +55,13 @@ function pidOf(ex: { shardIndex?: number | null }): number {
 
 /**
  * The thread id for a worker within its process: the number the run page names it by (`Worker 2`), its lane from 1,
- * else the worker process of a result without a lane; 0 with neither.
+ * else the worker process of a result without a lane; a test that never ran keeps the worker index Playwright gives
+ * it (-1), on a thread of its own, and one with none is on 0.
  */
 function tidOf(ex: { parallelIndex?: number | null; workerIndex?: number | null }): number {
-  return shownWorkerNumber(ex) ?? 0;
+  const shown = shownWorkerNumber(ex);
+  if (shown !== null) return shown;
+  return ex.workerIndex != null && Number.isFinite(ex.workerIndex) ? ex.workerIndex : 0;
 }
 
 /** Map the `stepEvents` fallback into the richer step shape used for slices. */
