@@ -69,6 +69,11 @@ run it starts with `PIWI_RUN_REF`, so two runs started for the same cluster each
 [re-run dispatched from the dashboard](/features/ci-rerun) is recorded as `ci-rerun` once
 Piwi recognizes it, and an imported report as `import`. You rarely set them yourself.
 
+A run whose workers connect to an editor or the desktop app, which steer it at their breakpoints (a run either of them
+started, or one [started in a terminal](/features/terminal-runs) that follows an editor), also records
+`piwiInteractive`: the editor's name (else the `PIWI_ORIGIN` its launcher set) as `client`, and the run's name there
+as `ref`.
+
 What each origin feeds:
 
 - **Flake Lab and probe runs** feed nothing: they replay tests under conditions Piwi injected.
@@ -86,6 +91,8 @@ What each origin feeds:
   performance [notification](/features/notifications#events), posts no
   [pull-request comment or commit status](/features/pr-feedback), starts no automatic AI diagnosis or auto-heal, and
   writes nothing to an [issue tracker](/features/issue-automation#the-runs-that-write) on its own.
+- **Interactive runs** (`piwiInteractive`) send no [`test.stuck`](/features/stuck-tests#the-notification), whatever
+  their origin: their tests stop at someone's breakpoints. Everything else follows their origin.
 - **Partial runs** (a `--grep`, a file filter, a selection, `--last-failed`, `--only-changed` or `--test-list`) never count for change
   coverage, which asks whether a file was reached in the recent runs, nor as a commit's end-to-end coverage.
 

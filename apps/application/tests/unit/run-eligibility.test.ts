@@ -15,6 +15,7 @@ const {
   eligibleExecutionInProject,
   eligibleRunSql,
   isEligibleRun,
+  isInteractiveRun,
   isLabRun,
   notLabRun,
   runOrigin,
@@ -41,6 +42,7 @@ const EXCLUDED: Record<RunUse, string[]> = {
   'auto-heal': ['flake-lab', 'probe', 'bisect', 'reproduce'],
   'bug-lifecycle': ['bug', 'flake-lab', 'probe', 'bisect', 'reproduce'],
   notifications: ['flake-lab', 'probe', 'bisect', 'reproduce', 'editor'],
+  'test-stuck': ['flake-lab', 'probe', 'bisect', 'reproduce', 'editor'],
   tracker: ['flake-lab', 'probe', 'bisect', 'reproduce', 'editor'],
   'cluster-occurrences': ['flake-lab', 'probe', 'bisect', 'reproduce', 'editor'],
   'run-health': ['flake-lab', 'probe'],
@@ -58,6 +60,7 @@ const EXCLUDES_INCIDENTS: RunUse[] = [
   'test-map',
   'auto-heal',
   'notifications',
+  'test-stuck',
   'tracker',
 ];
 
@@ -67,6 +70,7 @@ const COMPLETE_ONLY: RunUse[] = ['run-baseline', 'branch-failures', 'change-cove
 /** The uses that read the runs of some origins only when complete, and those origins. */
 const COMPLETE_ONLY_FOR: Partial<Record<RunUse, string[]>> = {
   notifications: ['local', 'desktop'],
+  'test-stuck': ['local', 'desktop'],
   tracker: ['local', 'desktop'],
 };
 
@@ -130,7 +134,7 @@ describe('the run eligibility table', () => {
   });
 
   test('a complete local run counts wherever a CI run does, but an editor run never notifies, writes to a tracker or makes a cluster recur', () => {
-    const outbound: RunUse[] = ['notifications', 'tracker', 'cluster-occurrences'];
+    const outbound: RunUse[] = ['notifications', 'test-stuck', 'tracker', 'cluster-occurrences'];
     for (const use of USES) {
       for (const kind of ['local', 'desktop', 'editor']) {
         const eligible = isEligibleRun({ metadata: { piwiOrigin: { kind } } }, use);
@@ -174,6 +178,56 @@ describe('a developer’s runs and notifications', () => {
       expect(isEligibleRun({ metadata, ...partial }, 'editor-overlay'), kind).toBe(true);
     }
     expect(isEligibleRun({ metadata: { piwiOrigin: { kind: 'flake-lab' } }, ...full }, 'editor-overlay')).toBe(false);
+  });
+});
+
+/** A run steered from an editor, as the reporter stamps it. */
+const STEERED = { piwiInteractive: { client: 'Visual Studio Code', ref: 'terminal-4242-1762340000000' } };
+
+describe('the outbound effects of a developer’s runs', () => {
+  /**
+   * What a run sends: its notifications with the rest of a finished run's outbound effects (the pull-request
+   * feedback, AI diagnosis, auto-heal), the tracker's own writes, and `test.stuck` while it runs.
+   */
+  const OUTBOUND: RunUse[] = ['notifications', 'tracker', 'test-stuck'];
+  const ALL_BUT_STUCK: RunUse[] = ['notifications', 'tracker'];
+
+  test.each([
+    { kind: 'local', complete: true, interactive: false, sends: OUTBOUND },
+    { kind: 'local', complete: true, interactive: true, sends: ALL_BUT_STUCK },
+    { kind: 'local', complete: false, interactive: false, sends: [] },
+    { kind: 'local', complete: false, interactive: true, sends: [] },
+    { kind: 'desktop', complete: true, interactive: false, sends: OUTBOUND },
+    { kind: 'desktop', complete: true, interactive: true, sends: ALL_BUT_STUCK },
+    { kind: 'desktop', complete: false, interactive: false, sends: [] },
+    { kind: 'desktop', complete: false, interactive: true, sends: [] },
+    { kind: 'editor', complete: true, interactive: false, sends: [] },
+    { kind: 'editor', complete: true, interactive: true, sends: [] },
+    { kind: 'editor', complete: false, interactive: false, sends: [] },
+    { kind: 'editor', complete: false, interactive: true, sends: [] },
+  ])('a $kind run, complete: $complete, interactive: $interactive, sends $sends', (row) => {
+    const metadata = { piwiOrigin: { kind: row.kind }, ...(row.interactive ? STEERED : {}) };
+    const shape = row.complete ? { isFullRun: 1, status: 'passed' } : { isFullRun: 0, status: 'failed' };
+    expect(OUTBOUND.filter((use) => isEligibleRun({ metadata, ...shape }, use))).toEqual(row.sends);
+  });
+
+  test('an interactive run never sends test.stuck, whatever its origin, and counts as any other run everywhere else', () => {
+    for (const kind of RUN_ORIGIN_KINDS) {
+      for (const shape of [
+        { isFullRun: 1, status: 'passed' },
+        { isFullRun: 0, status: 'failed' },
+      ]) {
+        const plain = { metadata: { piwiOrigin: { kind } }, ...shape };
+        const steered = { metadata: { piwiOrigin: { kind }, ...STEERED }, ...shape };
+        for (const use of USES) {
+          const expected = use === 'test-stuck' ? false : isEligibleRun(plain, use);
+          expect(isEligibleRun(steered, use), `${use} ${kind} ${shape.status}`).toBe(expected);
+        }
+      }
+    }
+    expect(isInteractiveRun(STEERED)).toBe(true);
+    expect(isInteractiveRun({ piwiOrigin: { kind: 'editor' } })).toBe(false);
+    expect(isInteractiveRun(null)).toBe(false);
   });
 });
 
@@ -222,6 +276,14 @@ describe('the SQL form of the rule', () => {
     { piwiOrigin: { kind: 'import' }, import: { source: 'upload' } },
     { piwiOrigin: { kind: 'incident-free' }, incident: { reason: 'host down' } },
     { piwiOrigin: { kind: 'ci' }, incident: { reason: 'host down' } },
+    { piwiOrigin: { kind: 'local' }, ...STEERED },
+    {
+      piwiOrigin: { kind: 'desktop', ref: '42' },
+      piwiRunRef: 'desktop-3',
+      piwiInteractive: { client: null, ref: 'desktop-3' },
+    },
+    { piwiOrigin: { kind: 'editor', ref: 'ed-1' }, piwiInteractive: { client: 'editor', ref: 'ed-1' } },
+    { piwiOrigin: { kind: 'ci' }, incident: { reason: 'host down' }, ...STEERED },
     ...RUN_ORIGIN_KINDS.flatMap((kind) => [{ piwiOrigin: { kind } }, { piwiOrigin: { kind, ref: '214' } }]),
   ];
   const shapes = [

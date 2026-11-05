@@ -53,7 +53,13 @@ retries, its count reset by a steady stream, and the run's log says once when it
 relayed through the global setup's process; each key's digest is stored with its run, so a restarted instance takes a
 running run's key back, and the setting turned off and on again; **Share live** works again after either; a Project
 admin turns the live view on from a running run's status, which then says it starts with the next run. P2 is built;
-its run links stay with P5. The later phases are proposed. The bugs the analysis
+its run links stay with P5. Built from P3's notification of #1109: a run whose workers connect to a hub's run channel
+says so at `/begin` (or `/start`) as `piwiInteractive: { client, ref }` in its metadata, beside `piwiOrigin` (the
+client is the editor's name from its discovery file, else the launcher `PIWI_ORIGIN` names), so its later requests
+carry it too; the instance sends no `test.stuck` for it, by the `test-stuck` use of
+`run-eligibility.ts`, whose comment states the outbound effects of complete `local`, `desktop` and `editor` runs. Its
+long test is still marked **Stuck?**, until Stuck? reads stop state. The rest of P3 and the later phases are
+proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app

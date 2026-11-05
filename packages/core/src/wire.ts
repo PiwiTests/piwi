@@ -537,3 +537,41 @@ export function parseRunOrigin(value: unknown): RunOrigin | null {
   const parsedRef = parseRunOriginRef(ref);
   return parsedRef === undefined ? { kind } : { kind, ref: parsedRef };
 }
+
+/**
+ * A run a local hub steers: the editor service's or the desktop app's, whose run channel the run's workers connect to
+ * (`@piwitests/core/run-channel`), where a person stops its tests at their breakpoints. The reporter stamps the run's
+ * metadata with it under {@link RUN_INTERACTIVE_METADATA_KEY}; a run that follows no hub carries none.
+ */
+export interface RunInteractive {
+  /**
+   * The hub's client as the reporter knows it: the editor's own name from its discovery file, else the launcher the
+   * run's `PIWI_ORIGIN` names (`editor`, `desktop`); null when nothing names it.
+   */
+  client: string | null;
+  /** The run's name on the hub, as its workers give it in `run-attach`: letters, digits, `_` and `-`, 64 at most. */
+  ref: string;
+}
+
+/** The run-metadata key holding the {@link RunInteractive}. */
+export const RUN_INTERACTIVE_METADATA_KEY = 'piwiInteractive';
+
+/** The longest `client` kept. */
+export const RUN_INTERACTIVE_CLIENT_MAX_LENGTH = 200;
+
+const HUB_RUN_REF = /^[\w-]{1,64}$/;
+
+/**
+ * A {@link RunInteractive} read from untrusted input, rebuilt as `{ client, ref }`, or null when its `ref` is not a
+ * hub's name for a run. A `client` that is not text of at most {@link RUN_INTERACTIVE_CLIENT_MAX_LENGTH} characters
+ * without control characters reads as null.
+ */
+export function parseRunInteractive(value: unknown): RunInteractive | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const { client, ref } = value as { client?: unknown; ref?: unknown };
+  if (typeof ref !== 'string' || !HUB_RUN_REF.test(ref)) return null;
+  const name = typeof client === 'string' ? client.trim() : '';
+  const oneLine = ![...name].some((char) => char < ' ' || char === '\u007f');
+  const readable = name.length > 0 && name.length <= RUN_INTERACTIVE_CLIENT_MAX_LENGTH && oneLine;
+  return { client: readable ? name : null, ref };
+}

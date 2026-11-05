@@ -475,13 +475,14 @@ export type StuckTestNotice = Pick<
 
 /**
  * Emit `test.stuck` for a running attempt of a live run, once per attempt (its run, its start and its test key its
- * deliveries): the run must still run and send notifications.
+ * deliveries): the run must still run and send it (the `test-stuck` use of `#shared/run-eligibility`), which a run a
+ * local hub steers never does.
  */
 export async function emitTestStuck(db: DbClient, runId: number, stuck: StuckTestNotice): Promise<void> {
   try {
     const [runRow] = await db.select().from(testRuns).where(eq(testRuns.id, runId));
-    // A run that sends notifications once complete: a full run counts as complete while it runs, a partial one never.
-    if (!runRow || runRow.status !== 'running' || !isEligibleRun({ ...runRow, status: 'passed' }, 'notifications')) {
+    // A full run counts as complete while it runs, a partial one never.
+    if (!runRow || runRow.status !== 'running' || !isEligibleRun({ ...runRow, status: 'passed' }, 'test-stuck')) {
       return;
     }
     const [project] = await db.select().from(projects).where(eq(projects.id, runRow.projectId));
