@@ -341,7 +341,10 @@ What the package does to a user's run, process by process.
   app, which gives none: `liveView.refused: 'local'`); a run the reporter registers itself,
   without the global setup, has none.
 - In a CI run, each worker opens an event stream to that URL in the `piwiResources` worker
-  fixture, without waiting for it, and keeps it until the worker ends. Outside CI, it holds
+  fixture, without waiting for it, and keeps it until the worker ends. It names its shard,
+  its worker index and its lane (`slot`, Playwright's `parallelIndex`, which a worker
+  started again after a failure keeps), and says how each watched test ended (`ended`,
+  with `outcome`: its title, status as its row says it, and time), after its last frame. Outside CI, it holds
   the key and opens nothing until the run channel says `share` with `on: true` (**Share
   live**, `shareLiveView`), and closes the stream as it says `on: false`, posting `unshared`
   first so each viewer hears why; the run channel hears how it stands (`liveViewState`:

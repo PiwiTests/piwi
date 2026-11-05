@@ -1636,7 +1636,7 @@ async function runSingleSimulation(
             type: 'begin',
             title: test.title,
             location: test.location,
-            // The attempt beginning, and the retries the simulated config allows: 2, or as many as the test plans.
+            // The attempt beginning, and the retries allowed: 2, or as many as the test plans.
             retries: attempt,
             maxRetries: Math.max(2, test.attempts.length - 1),
             repeatEachIndex: 0,

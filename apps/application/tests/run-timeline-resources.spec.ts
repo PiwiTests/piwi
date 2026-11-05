@@ -114,7 +114,7 @@ test.describe('Run timeline resource tracks', () => {
     await page.mouse.move(box.x + box.width * 0.5, box.y + box.height / 2);
     const tooltip = page.getByTestId('timeline-resource-tooltip');
     await expect(tooltip).toContainText('90%');
-    await expect(tooltip).toContainText('3 open · Worker 0: 1 · Worker 1: 2');
+    await expect(tooltip).toContainText('3 open · Worker 1: 1 · Worker 2: 2');
     await expect(page.getByTestId('timeline-resource-cursor')).toBeAttached();
 
     await page.mouse.move(0, 0);
@@ -145,17 +145,17 @@ test.describe('Run timeline resource tracks', () => {
     await expect(strips).toHaveCount(2);
     await expect(page.locator('[data-worker-strips="cpu"]')).toContainText('1.5 cores');
 
-    // A quarter into worker 0's strip: its first test, 3 s of CPU over 2 s.
+    // A quarter into the first worker's strip: its first test, 3 s of CPU over 2 s.
     const box = (await strips.first().boundingBox())!;
     await page.mouse.move(box.x + box.width * 0.25, box.y + box.height / 2);
     const tooltip = page.getByTestId('timeline-worker-strip-tooltip');
-    await expect(tooltip).toContainText('Worker 0');
+    await expect(tooltip).toContainText('Worker 1');
     await expect(tooltip).toContainText('1.5 cores for “adds an item”');
 
-    // Worker 1's strip draws the sampler's readings of its processes.
+    // The second worker's strip draws the sampler's readings of its processes.
     const sampled = (await strips.nth(1).boundingBox())!;
     await page.mouse.move(sampled.x + sampled.width * 0.25, sampled.y + sampled.height / 2);
-    await expect(tooltip).toContainText('Worker 1');
+    await expect(tooltip).toContainText('Worker 2');
     await expect(tooltip).toContainText('cores, the worker and its browsers');
 
     await page.mouse.move(0, 0);

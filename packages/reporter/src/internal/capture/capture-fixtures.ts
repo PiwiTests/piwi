@@ -2384,6 +2384,16 @@ function callInProgress(testInfo: TestInfo): { title: string | null; place: Code
   return found;
 }
 
+/**
+ * How a test ended as its row will say it: an expected failure (`test.fail()`) that failed passed, and one that passed
+ * failed; any other status as Playwright tells it.
+ */
+function liveOutcomeStatus(testInfo: TestInfo): TestInfo['status'] {
+  if (testInfo.expectedStatus !== 'failed') return testInfo.status;
+  if (testInfo.status === 'failed') return 'passed';
+  return testInfo.status === 'passed' ? 'failed' : testInfo.status;
+}
+
 /** The call still running in the test, where a test timeout cut it short (`callInProgress`). Null for none. */
 function stepInProgress(testInfo: TestInfo): CodePlace | null {
   return callInProgress(testInfo)?.place ?? null;
@@ -3949,7 +3959,7 @@ export const piwiFixtures: Fixtures<
         sink.ending = true;
         await endShownStops(sink, 'ended');
         await awaitReleasedCalls(sink);
-        await liveViewTestEnded(testInfo.status);
+        await liveViewTestEnded(liveOutcomeStatus(testInfo));
         showRunChannel();
         currentSink = null;
         // A pause the editor asked that no call of this test took stops the next test's first call.

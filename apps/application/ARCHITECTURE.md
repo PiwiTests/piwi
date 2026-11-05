@@ -182,8 +182,9 @@ Each entry names folders under `server/api/`.
     `server/utils/run-events.ts` until the run ends and merged by `shared/live-resources.ts`.
   - The run page's live view of a CI run, or of a run a developer shares (Share live), for a project with
     `projects.live_view` on: `[id]/live-view` (a test worker's event stream, `GET`, and its frames, stops and the end of
-    its sharing, `POST`, on the run's live view key, `@piwitests/core/live-view`), `[id]/live-view/watch` (one worker's
-    view, to a person who may open the run) and `[id]/live-view/workers`. All of it is relayed in memory by
+    its sharing, `POST`, on the run's live view key, `@piwitests/core/live-view`), `[id]/live-view/watch` (a view of one
+    worker's test, or of its lane, which follows the lane's tests and the worker started in it again, to a person who
+    may open the run) and `[id]/live-view/workers`. All of it is relayed in memory by
     `server/utils/live-view.ts`, written straight to the response by `server/utils/event-stream.ts` so a slow reader
     gets the latest frame alone; `setup` mints the key.
   - Run detail: `[id]` (read, update, delete), `recent`, the SSE `[id]/stream`, network requests, failure groups,

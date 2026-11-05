@@ -1,13 +1,15 @@
 <script setup lang="ts">
 /**
- * The live view of one worker of a running run, for the test of the row it was opened from: the images of its page
+ * The live view of one worker of a running run, from the test of the row it was opened from: the images of its page
  * the worker sends while this view is open, a few a second, each with the call it was taken at. In a CI run, the
  * worker also sends the call its test is in as Playwright logs it: the log's last lines under the image, how long the
  * call has run and the elements its locator matches beside it, and over the image the first one outlined and the point
- * an input action acts on. Watching only: nothing here reaches the test. The view ends as its test ends (the worker
- * says so, or an image or a call log of its next test comes), the worker leaves, the run ends or the project turns its
- * live view off, and as it closes. Nothing is kept: the latest image and call log alone are in this page's memory, until the
- * view closes.
+ * an input action acts on. Watching only: nothing here reaches the test. A view of a worker that says its lane
+ * (`slot`) follows the lane: it says how each test ended and goes on with the next, through the worker Playwright
+ * starts in the lane again, unless **Follow the worker's next test** is off; one of an older reporter's worker ends
+ * with its test. A view ends as the worker leaves, the run ends or the project turns its live view off, as it closes,
+ * and after `HIDDEN_CLOSE_MS` in a hidden tab. Nothing is kept: the latest image and call log alone are in this page's
+ * memory, until the view closes.
  */
 import {
   LIVE_VIEW_END_TEXT,
@@ -52,7 +54,7 @@ const notice = ref(WAITING);
 const ended = ref(false);
 /** Whether the view follows the worker's lane, which a reporter that says it lets it. */
 const follows = computed(() => typeof props.slot === 'number');
-/** Whether the view goes on with the lane's next test, else ends with its test (**This test only**). */
+/** Whether the view goes on with the lane's next test, else ends with its test. */
 const followNext = ref(true);
 /** The test the view shows now: the row's, then each next test of the lane. */
 const watchedTest = ref(props.test);
@@ -130,7 +132,7 @@ function connect(): void {
       notice.value = message.message;
     } else if (message.type === 'test-ended') {
       outcome.value = message.outcome;
-      // This test only: the view ends with its test.
+      // Not following the lane: the view ends with its test.
       if (!followNext.value) end(LIVE_VIEW_END_TEXT['test-ended']);
     } else {
       if (message.outcome) outcome.value = message.outcome;
@@ -185,6 +187,26 @@ watch(
 onBeforeUnmount(() => {
   disconnect();
   stopClock();
+  if (hiddenTimer) clearTimeout(hiddenTimer);
+});
+
+// Following stopped while the view waits for the lane's next test: it ends now.
+watch(followNext, (on) => {
+  if (!on && outcome.value && !ended.value) end(LIVE_VIEW_END_TEXT['test-ended']);
+});
+
+/** How long a view stays open in a hidden tab, which would otherwise keep its worker sending images all run. */
+const HIDDEN_CLOSE_MS = 10 * 60_000;
+let hiddenTimer: ReturnType<typeof setTimeout> | null = null;
+const visibility = useDocumentVisibility();
+watch(visibility, (state) => {
+  if (hiddenTimer) clearTimeout(hiddenTimer);
+  hiddenTimer = null;
+  if (state !== 'hidden' || ended.value) return;
+  hiddenTimer = setTimeout(() => {
+    hiddenTimer = null;
+    if (!ended.value) end('The view closed after 10 minutes in a hidden tab.');
+  }, HIDDEN_CLOSE_MS);
 });
 
 /**

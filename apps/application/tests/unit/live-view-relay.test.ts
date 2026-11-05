@@ -569,6 +569,66 @@ describe('the relay', () => {
     expect(lane.closed).toBe(false);
   });
 
+  test('sends a lane’s viewer how its test ended after nothing of that test, a frame still waiting dropped', () => {
+    const { live } = relay();
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    live.connectWorker(entry, { shard: null, worker: 0, slot: 0 }, () => new FakeSink());
+    const lane = new FakeSink();
+    live.addViewer(7, { shard: null, worker: 0, slot: 0 }, () => lane);
+    lane.full = true;
+    live.receive(7, { ...frame(0), slot: 0 } as WorkerToInstance);
+    live.receive(7, { type: 'ended', shard: null, worker: 0, slot: 0 });
+    lane.drain();
+    expect(lane.sent).toEqual([{ type: 'test-ended', outcome: null }]);
+  });
+
+  test('a lane’s viewer that left while it waited is not handed to the lane’s next worker, which hears nobody watches', () => {
+    const { live } = relay();
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    const first = new FakeSink();
+    live.connectWorker(entry, { shard: null, worker: 0, slot: 0 }, () => first);
+    const lane = new FakeSink();
+    live.addViewer(7, { shard: null, worker: 0, slot: 0 }, () => lane);
+    first.close();
+    lane.close();
+    const second = new FakeSink();
+    live.connectWorker(entry, { shard: null, worker: 1, slot: 0 }, () => second);
+    expect(second.sent.at(-1)).toEqual({ type: 'viewers', count: 0 });
+  });
+
+  test('counts a lane’s waiting viewers toward the run’s bound, and ends them as the run ends', () => {
+    const { live } = relay();
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    const first = new FakeSink();
+    live.connectWorker(entry, { shard: null, worker: 0, slot: 0 }, () => first);
+    live.connectWorker(entry, { shard: null, worker: 1, slot: 1 }, () => new FakeSink());
+    const lane = new FakeSink();
+    live.addViewer(7, { shard: null, worker: 0, slot: 0 }, () => lane);
+    first.close();
+    for (let i = 1; i < MAX_LIVE_VIEWERS_PER_RUN; i++) {
+      expect(live.addViewer(7, { shard: null, worker: 1 }, () => new FakeSink())).toBeNull();
+    }
+    expect(live.addViewer(7, { shard: null, worker: 1 }, () => new FakeSink())?.status).toBe(429);
+    live.endRun(7);
+    expect(lane.sent.at(-1)).toEqual({ type: 'end', reason: 'run-ended' });
+  });
+
+  test('keeps a lane with the worker that took it when the one it replaced opens its stream again', () => {
+    const { live } = relay();
+    const entry = live.authorize(7, live.mintKey(7, 1))!;
+    const first = new FakeSink();
+    live.connectWorker(entry, { shard: null, worker: 0, slot: 0 }, () => first);
+    const lane = new FakeSink();
+    live.addViewer(7, { shard: null, worker: 0, slot: 0 }, () => lane);
+    const second = new FakeSink();
+    live.connectWorker(entry, { shard: null, worker: 1, slot: 0 }, () => second);
+    const again = new FakeSink();
+    live.connectWorker(entry, { shard: null, worker: 0, slot: 0 }, () => again);
+    expect(again.sent.at(-1)).toEqual({ type: 'viewers', count: 0 });
+    live.receive(7, { ...frame(1), slot: 0 } as WorkerToInstance);
+    expect(lane.sent.at(-1)).toMatchObject({ type: 'frame' });
+  });
+
   test('ends the views of a run its developer stops sharing, each viewer hearing why, before the worker leaves', () => {
     const { live, published } = relay();
     const entry = live.authorize(8, live.mintKey(8, 1))!;

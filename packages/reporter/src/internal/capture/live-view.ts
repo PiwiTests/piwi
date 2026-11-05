@@ -116,6 +116,8 @@ interface Link {
   stop: LiveStop | null;
   /** Whether a frame's post is in flight. */
   posting: boolean;
+  /** The frame's post in flight, which the test's end waits for, so the end goes after its last frame. */
+  framePost: Promise<unknown> | null;
   /** A CI run's: the call log is followed while someone watches (`live-call-log.ts`). */
   ci: boolean;
   /** The call log shown now, whether one is posting, when the last one went, and the pause before the next goes. */
@@ -275,6 +277,7 @@ export function openLiveView(
     statesWaiting: 0,
     stop: null,
     posting: false,
+    framePost: null,
     log: null,
     logPosting: false,
     logSentAt: 0,
@@ -363,7 +366,9 @@ export async function liveViewTestEnded(status?: LiveTestOutcome['status']): Pro
   const outcome = status ? { test: ended.title, status, ms: Math.max(0, Date.now() - ended.began) } : null;
   await stopView();
   const own = link;
-  if (own && own.viewers > 0 && active(own)) void post(own, { type: 'ended', ...own.id, outcome });
+  if (!own) return;
+  await own.framePost;
+  if (own.viewers > 0 && active(own)) void post(own, { type: 'ended', ...own.id, outcome });
 }
 
 /**
@@ -619,7 +624,7 @@ function postFrame(own: Link, frame: PageFrame): void {
   own.posting = true;
   const call = running?.call() ?? null;
   const data = frame.data.toString('base64');
-  void post(own, {
+  own.framePost = post(own, {
     type: 'frame',
     ...own.id,
     data,
@@ -629,6 +634,7 @@ function postFrame(own: Link, frame: PageFrame): void {
     .catch(() => undefined)
     .finally(() => {
       own.posting = false;
+      own.framePost = null;
     });
 }
 

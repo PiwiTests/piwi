@@ -24,7 +24,9 @@ import { runEventBus, type GlobalRunEvent } from './run-events';
  * turned it on (a CI run's, or one a developer shares from their machine) and the people watching them. Each worker
  * holds one event stream, opened with a key minted for its run (`mintKey`, handed to the run's global setup), on which
  * it hears how many people watch it, and which elements its project masks beside the secret fields (`setMasks` tells
- * the open workers each change); a viewer holds one stream per worker it watches. The frames a worker posts go to
+ * the open workers each change); a viewer holds one stream per worker it watches, of the test it opened on, or of the
+ * worker's lane (`liveLaneKey`), which follows the lane's next tests and the worker started in it again, waiting
+ * `LANE_WAIT_MS` for it, each test's end told with how it ended (`test-ended`). The frames a worker posts go to
  * that worker's viewers and nowhere else: none is kept, written to the database, logged or exported, and a viewer whose
  * stream is backed up gets the latest frame alone once it drains. A CI run's worker posts the call its test is in as
  * Playwright logs it (`call-log`), which goes to the same viewers the same way, the latest kept apart from the frame. The worker's stops go to everyone with the run page
@@ -248,7 +250,9 @@ export class LiveViewRelay {
       before.viewers.clear();
       before.sink.close();
     }
-    if (id.slot !== undefined) this.takeLane(run, link, liveLaneKey({ shard: id.shard, slot: id.slot }));
+    // A new worker in a lane takes it; a worker that opens its stream again keeps the lane only if it still held it.
+    const lane = id.slot === undefined ? null : liveLaneKey({ shard: id.shard, slot: id.slot });
+    if (lane !== null && (!before || run.lanes.get(lane) === before)) this.takeLane(run, link, lane);
     sink.onClose(() => this.disconnectWorker(entry.runId, key, link));
     // The elements to mask go before anyone watches: the latest a project admin set here, else the route's read.
     const locators = this.projectMasks.get(entry.projectId) ?? masks;
@@ -417,7 +421,7 @@ export class LiveViewRelay {
       link.sink.close();
       this.publish(runId, { ...link.id, connected: false, paused: null });
     }
-    for (const lane of run.waiting.keys()) this.stopWaiting(run, lane, reason);
+    for (const lane of run.waiting.keys()) this.stopWaiting(runId, run, lane, reason);
   }
 
   /** A key opens nothing more, remembered with why until it would have expired. */
@@ -492,6 +496,8 @@ export class LiveViewRelay {
   private testEnded(link: WorkerLink, outcome: LiveTestOutcome | null): void {
     if (!link.viewers.size) return;
     for (const viewer of [...link.viewers]) {
+      // What the viewer has waiting is of the test that ended: it goes no later than its end.
+      viewer.pending.clear();
       if (viewer.lane !== null) {
         viewer.sink.send({ type: 'test-ended', outcome } satisfies LiveViewerMessage);
         continue;
@@ -531,7 +537,7 @@ export class LiveViewRelay {
   }
 
   /** The viewers waiting for the lane's worker stop waiting: their view ends with `reason`. */
-  private stopWaiting(run: RunLive, lane: string, reason: LiveViewEnd): void {
+  private stopWaiting(runId: number, run: RunLive, lane: string, reason: LiveViewEnd): void {
     const waiting = run.waiting.get(lane);
     if (!waiting) return;
     clearTimeout(waiting.timer);
@@ -540,6 +546,7 @@ export class LiveViewRelay {
       viewer.sink.send({ type: 'end', reason } satisfies LiveViewerMessage);
       viewer.sink.close();
     }
+    if (!run.workers.size && !run.waiting.size && this.runs.get(runId) === run) this.runs.delete(runId);
   }
 
   /** The worker's viewers hear why their view ended, and their streams close; the worker hears nobody watches. */
@@ -566,9 +573,11 @@ export class LiveViewRelay {
       if (followers.length) {
         for (const viewer of followers) {
           link.viewers.delete(viewer);
+          // What the viewer has waiting is of the worker that left: it goes no later than the wait.
+          viewer.pending.clear();
           viewer.sink.send({ type: 'refused', message: LANE_RESTARTING } satisfies LiveViewerMessage);
         }
-        const timer = setTimeout(() => this.stopWaiting(run, lane, 'worker-left'), LANE_WAIT_MS);
+        const timer = setTimeout(() => this.stopWaiting(runId, run, lane, 'worker-left'), LANE_WAIT_MS);
         timer.unref?.();
         run.waiting.set(lane, { viewers: new Set(followers), timer });
       }
