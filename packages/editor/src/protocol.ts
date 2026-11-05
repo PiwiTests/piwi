@@ -1719,7 +1719,7 @@ export interface LaneViewParams {
 /**
  * `piwi/laneFrame` (notification, server to client): a transient JPEG of the lane the editor watches, of the worker
  * `worker` while its test `test` (Playwright's id) runs, or at the stop `since` names; or why its page has no frame now
- * (`refused`). Never stored; a frame of a test or a stop the lane left is not sent.
+ * (`refused`). Never stored; the worker sends none of a test it left, and the service none of a stop that ended.
  */
 export type LaneFrame = { ref: string; lane: number; worker: number; test: string | null; since: string | null } & (
   | { data: string; width: number; height: number }

@@ -245,7 +245,8 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
         val RUN_ACTIONS = arrayOf(
             "Piwi.ResumeRun", "Piwi.StepRun", "Piwi.RunToCaret", "Piwi.FinishRun", "Piwi.EndTest", "Piwi.ShowPausedPage",
             "Piwi.PickAtStop", "Piwi.RecordAtStop", "Piwi.AssertAtStop", "Piwi.AssertRegionAtStop", "Piwi.MockAtStop",
-            "Piwi.ShareWithPlaywright", "Piwi.PauseRun", "Piwi.ShareRunLive", "Piwi.StopSharingRun", "Piwi.StopRun",
+            "Piwi.ShareWithPlaywright", "Piwi.PauseRun", "Piwi.WatchWorker", "Piwi.PauseAndWatch", "Piwi.ShareRunLive",
+            "Piwi.StopSharingRun", "Piwi.StopRun",
         )
 
         /** The path of the selected editor's file, whose Playwright config the item speaks for; null with none open. */

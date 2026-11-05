@@ -1531,13 +1531,6 @@ object Glue {
         return LaneShown(worker, stop, "$name · ${pausedText(stop.stop, stop.test, stop.terminal, stop.runner)} · ${stopPlace(stop.stop)}")
     }
 
-    /**
-     * Whether a frame of a slot shows what its worker does now: the same worker, its running test, and the stop it
-     * stands at (none while it runs). A frame that does not stays shown, dimmed, until the next one comes.
-     */
-    fun frameIsCurrent(frame: LaneFrame, worker: RunWorker?): Boolean =
-        worker != null && frame.worker == worker.worker && frame.test == worker.test?.id && frame.since == worker.stop?.since
-
     /** The first run of the sessions shared live, as the status bar's tooltip says it; null for none. */
     fun sharedLive(sessions: Map<String, RunSession>): RunLive? = sharedRunsOf(sessions).firstOrNull { it.live.shared }?.live
 

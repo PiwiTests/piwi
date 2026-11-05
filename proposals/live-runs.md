@@ -82,7 +82,7 @@ Resume and between tests, brings a watched lane that stops into view with its co
 Pick, Record and Assert with **Watch to use** at a headless stop nobody watches; the desktop app watches its own
 running rows the same way, from the run page's rows and the tray. The run's own process (the reporter's main process)
 connects to the hub on its own line (`run-begin`, `run-progress`, `run-end`), so the editors' status bars and the Runs
-window say `3 of 9` and how a run ended. `piwi/laneView` gives the editors a lane: VS Code's **Piwi: worker N** watches
+window say `3 of 9`, and the Runs window how a run ended. `piwi/laneView` gives the editors a lane: VS Code's **Piwi: worker N** watches
 it running or stopped, with Interact at its stops, and JetBrains' **Worker N** tab watches it. P4's lane states
 (waiting, pausing) and its showcase beat are not built yet. The later phases are proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the

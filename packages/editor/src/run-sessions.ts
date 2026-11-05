@@ -297,8 +297,8 @@ export interface RunSessionsOptions {
    */
   holdsFailures?(ref: string): boolean;
   /**
-   * A session starts: the first worker of a run connected, the run's command being one the service built or one it did
-   * not, or a run of a ref whose command ended before (`again`: a rerun of that command, its environment and ref as
+   * A session starts: a run's first connection opened, its own process's or a worker's, the run's command being one
+   * the service built or one it did not, or a run of a ref whose command ended before (`again`: a rerun of that command, its environment and ref as
    * they were, whose code is the files as they stand now).
    */
   sessionStarted?(ref: string, again: boolean): void;
@@ -374,8 +374,10 @@ interface Session {
   ended: boolean;
   /** Started in a terminal (`RunSessionsOptions.terminal`). */
   terminal: boolean;
-  /** Of those, one an editor's own test runner started, as its first worker said (`run-attach`'s `runner`). */
+  /** Of those, one an editor's own test runner started, as its process or a worker said (`runner`). */
   runner: boolean;
+  /** A worker of the run connected once: until then, no worker connected means none started a test yet. */
+  workersSeen: boolean;
   /** What the client last heard of it, as sent and as text, and when; null before it heard anything. */
   heard: RunSession | null;
   sent: string;
@@ -506,15 +508,11 @@ export class RunSessions {
   }
 
   /**
-   * Why a run has no worker to answer: none has started a test yet, or its tests run without the capture fixtures,
-   * whose worker fixture opens the run's connection.
-   */
-  /**
-   * Why a control reaches no worker of a run: none ever connected (`session` unknown), which a spec whose tests take
-   * `test` from Playwright explains, or those that did are gone.
+   * Why a control reaches no worker of a run: none ever connected (no session, or one only its own process opened),
+   * which a spec whose tests take `test` from Playwright explains, or those that did are gone.
    */
   private noWorker(session: Session | undefined): string {
-    return session
+    return session?.workersSeen
       ? `No worker of this run is connected to ${this.host} now: the run ended, or Playwright is starting another worker.`
       : `No worker of this run is connected to ${this.host}: none has started a test yet, or its tests import ` +
           "`test` from '@playwright/test' rather than from the file that extends Piwi's capture fixtures.";
@@ -530,6 +528,7 @@ export class RunSessions {
       ended: false,
       terminal,
       runner: terminal && runner,
+      workersSeen: false,
       heard: null,
       sent: '',
       sentAt: 0,
@@ -558,11 +557,12 @@ export class RunSessions {
    * goes on while it is connected, between workers too. A second connection of a run while one is open is closed.
    */
   attachMain(socket: net.Socket, begin: RunBegin): (line: string) => void {
-    const session = this.sessions.get(begin.ref) ?? this.open(begin.ref, begin.cwd, false);
+    const session = this.sessions.get(begin.ref) ?? this.open(begin.ref, begin.cwd, begin.runner === true);
     if (session.main && !session.main.destroyed) {
       socket.destroy();
       return () => {};
     }
+    if (session.terminal && begin.runner === true) session.runner = true;
     session.main = socket;
     if (session.linger) clearTimeout(session.linger);
     session.linger = null;
@@ -578,6 +578,11 @@ export class RunSessions {
     socket.on('close', () => {
       if (session.main !== socket) return;
       session.main = null;
+      // The process left without saying how the run ended: stopped, or killed.
+      if (session.progress?.status === 'running') {
+        session.progress = { ...session.progress, status: 'interrupted' };
+        this.changed(session, true);
+      }
       if (!session.ended && !session.workers.size) this.lingerOn(session);
     });
     this.changed(session, true);
@@ -615,6 +620,7 @@ export class RunSessions {
     session ??= this.open(attach.ref, attach.cwd, attach.runner === true);
     // A run its own process announced first learns from its workers that an editor's test runner started it.
     if (session.terminal && attach.runner === true) session.runner = true;
+    session.workersSeen = true;
     if (session.linger) clearTimeout(session.linger);
     session.linger = null;
     const worker: Worker = {
@@ -1450,6 +1456,8 @@ export class RunSessions {
       if (session.paced) clearTimeout(session.paced);
       if (session.linger) clearTimeout(session.linger);
       for (const worker of session.workers.values()) this.closeWorker(worker);
+      session.main?.destroy();
+      session.main = null;
     }
     this.sessions.clear();
   }
@@ -1639,6 +1647,8 @@ export class RunSessions {
     session.lanes.clear();
     session.main?.destroy();
     session.main = null;
+    // A run that ends before its process said how: its command ended, or nothing connected for a while.
+    if (session.progress?.status === 'running') session.progress = { ...session.progress, status: 'interrupted' };
     for (const worker of workers) this.closeWorker(worker);
     if (this.sessions.get(session.ref) === session) this.sessions.delete(session.ref);
     this.flush(session);

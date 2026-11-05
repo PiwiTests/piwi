@@ -19,7 +19,7 @@ stops it before its next call too. It needs `@piwitests/reporter` newer than 0.6
 | Where | Open it | At a stop |
 |---|---|---|
 | VS Code | **Piwi: Watch a worker's test**, or a click on the run's progress in the status bar: **Piwi: worker 2** beside the editor | A headless stop of the worker shows there, with **Interact** and the pick on a click, instead of the paused page |
-| JetBrains IDEs | **Tools → Piwi → Watch a Worker's Test**: the **Worker 2** tab of the Piwi tool window | The tab only watches: a headless stop opens the **Paused Page** |
+| JetBrains IDEs | **Tools → Piwi → Watch a Worker's Test**: the **Worker 2** tab of the Piwi tool window | The tab only watches: a headless stop opens the **Paused Page** beside it, for **Interact** |
 | Piwi Picker | **Watch** on a worker's row of the [Runs window](./runs-window#watch-live) | The controls show above the view, and the stopped worker scrolls into view |
 | Desktop app | **Watch** on a running row of its own runs, which opens the [Local runs](./desktop-runs#watch-live) tray on it | The tray scrolls the stopped worker into view |
 
@@ -34,8 +34,8 @@ stopped, between tests, or starting. Across a **Step**, a **Resume** or between 
 the next one comes, dimmed in VS Code, the Runs window and the desktop app. A page that does not change sends no new
 image.
 
-In an editor and in the Runs window, watching pauses while the view is hidden (a minimized window, another tab) and
-starts again as it shows. It ends when you turn it off or close the view, or as the run ends.
+Watching pauses while the view is out of sight (another tab in front of an editor's panel or tab, a minimized Runs
+window) and starts again as it shows. It ends when you turn it off or close the view, or as the run ends.
 
 ## What is sent, and what is kept
 
@@ -48,8 +48,8 @@ serves every viewer at once: the editor's, Piwi Picker's and, for a run [shared 
 
 - **One worker per editor.** The panel or tab watches one worker: watching another moves it there.
 - **The test's `page`.** A popup or a second page the test opens is not shown.
-- **An older reporter** shows a stopped test alone: the Runs window's row says to update it, and the editor's
-  command says why it cannot watch.
+- **An older reporter** shows a stopped test alone: the Runs window's row says to update it, and the editors offer no
+  Watch for its workers.
 
 ## Related
 

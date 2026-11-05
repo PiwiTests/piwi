@@ -18,7 +18,7 @@
  *    Lab, a bisect, a lab job, a run repeating its tests or in UI mode: its ref ends in `-unattended`), whose workers
  *    hear that they hold no failure;
  *  - the code from a stop is rendered by the editor's generator from the file as it is on disk, for a file of a
- *    linked folder alone, and refused once the file was written since the run's first worker connected (`RunLines`).
+ *    linked folder alone, and refused once the file was written since the run's first connection opened (`RunLines`).
  * Pick and Record in the test's window, and Assert, end in an editor (its Send to editor pairing, its recorder), which
  * this server has none of: they are refused here, and a pick on an image of the stop (`pick-at`) answers with the
  * locator it found. The runs name this server as where their picks go (`PIWI_EDITOR_SEND`, `DESKTOP_PICKS_PATH`, with
@@ -288,7 +288,7 @@ export class DesktopRuns {
       watched: (ref) => [...this.windows.values()].some((window) => window.shows.has(ref)),
       followed: () => !!this.hub?.follows(),
       holdsFailures: (ref) => !isUnattendedDesktopRun(ref),
-      // A run's code is its files as they stood when its first worker connected.
+      // A run's code is its files as they stood when its first connection opened.
       sessionStarted: (ref, again) => this.lines.started(ref, () => [], !again),
       declines: (what) => DECLINED[what] ?? null,
       host: 'the desktop app',

@@ -227,7 +227,9 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 
         override fun pageInput(params: PageInputParams) = server()?.pageInput(params)?.orNull()
 
-        override fun laneView(params: LaneViewParams) = server()?.laneView(params)?.orNull()
+        override fun laneView(params: LaneViewParams) =
+            (if (project.isDisposed) null else project.getServiceIfCreated(PiwiProjectService::class.java)?.server())
+                ?.laneView(params)?.orNull()
 
         override fun pickAt(params: PickAtParams) = server()?.pickAt(params)?.orNull()
 
@@ -539,7 +541,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             if (file != null && revealed.add(key)) {
                 OpenFileDescriptor(project, file, stop.stop.line, stop.stop.character ?: 0).navigate(true)
             }
-            if (!stop.stop.bar && paged.add(key)) showPage(stop)
+            if (!stop.stop.bar && paged.add(key)) showPage(stop, select = !workerTabShows(stop))
             if (file == null) continue
             val document = FileDocumentManager.getInstance().getDocument(file) ?: continue
             if (stop.stop.line < 0 || stop.stop.line >= document.lineCount) continue
@@ -561,11 +563,12 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         val target = laneTarget
         if (worker != null && target != null) {
             worker.caption(Glue.laneShown(sessions[target.first], target.second, stops).caption)
-            // The service ends the view with the run.
-            if (sessions[target.first] == null && watchingLane != null) {
+            // The service ends the view with the run, and Watch is off for the next.
+            if (sessions[target.first] == null && (watchingLane != null || worker.liveWanted)) {
                 watchingLane = null
                 pendingLaneFrame.set(null)
                 worker.watching(false)
+                worker.liveWanted = false
             }
         }
     }
@@ -610,6 +613,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             panel?.note,
             (liveWorkerTab()?.component as? PausedPagePanel)?.caption,
             liveWorkerTab()?.displayName,
+            (liveWorkerTab()?.component as? PausedPagePanel)?.liveWanted == true,
+            toolWindow()?.contentManager?.selectedContent?.displayName,
         )
     }
 
@@ -623,9 +628,12 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         val pagePicks: Boolean = false,
         /** What the last pick on the image came to. */
         val pageNote: String? = null,
-        /** What the Worker tab says of its slot, and the tab's name. */
+        /** What the Worker tab says of its slot, the tab's name, and whether its Watch is on. */
         val workerCaption: String? = null,
         val workerTab: String? = null,
+        val workerWatch: Boolean = false,
+        /** The tab of the Piwi tool window in sight. */
+        val selectedTab: String? = null,
     )
 
     /** A click at `x`, `y` of the Paused Page tab's image, as a person's click reaches it, which the tests send. */
@@ -633,8 +641,11 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         (livePage()?.component as? PausedPagePanel)?.click(x, y)
     }
 
-    /** The page of a stop in the Paused Page tab of the Piwi tool window, asked of its worker. On the event thread. */
-    fun showPage(stop: Glue.ShownStop) {
+    /**
+     * The page of a stop in the Paused Page tab of the Piwi tool window, asked of its worker, the tab selected unless
+     * `select` is false (the Worker tab shows the stop's slot, and keeps the place). On the event thread.
+     */
+    fun showPage(stop: Glue.ShownStop, select: Boolean = true) {
         stopPageView()
         val key = Glue.stopKey(stop)
         pageStop = key
@@ -646,8 +657,10 @@ class PiwiRunSessions(private val project: Project) : Disposable {
                 window.contentManager.addContent(it)
                 page = it
             }
-        window.contentManager.setSelectedContent(content)
-        window.show(null)
+        if (select) {
+            window.contentManager.setSelectedContent(content)
+            window.show(null)
+        }
         val panel = content.component as PausedPagePanel
         panel.configureLive(stop.takes.contains("view"), stop.takes.contains("input"), stop.takes.contains("input-clicks")) { on -> watchPage(stop, on) }
         panel.viewport = null
@@ -784,6 +797,13 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         }
         panel.liveWanted = true
         if (watchingLane == null) watchLane(true)
+    }
+
+    /** Whether the Worker tab is the one in sight, on the slot of a stop's worker. On the event thread. */
+    private fun workerTabShows(stop: Glue.ShownStop): Boolean {
+        val tab = liveWorkerTab() ?: return false
+        val lane = sessions[stop.ref]?.workers.orEmpty().firstOrNull { it.worker == stop.worker }?.parallelIndex
+        return laneTarget == (stop.ref to lane) && toolWindow()?.contentManager?.selectedContent == tab
     }
 
     /** Pause the worker `worker` of the run `ref` and watch its slot `lane` in the Worker tab. On the event thread. */
@@ -2013,7 +2033,12 @@ class PauseAndWatchAction : RunControlAction() {
 
     override fun actionPerformed(e: AnActionEvent) {
         val sessions = sessions(e) ?: return
-        chooseWorker(e, Glue.watchableWorkers(sessions.sessions, pausable = true)) { sessions.pauseAndWatch(it) }
+        val targets = Glue.watchableWorkers(sessions.sessions, pausable = true)
+        if (targets.isEmpty()) {
+            e.project?.let { PiwiCommands.notify(it, "No running test can be paused and watched.") }
+            return
+        }
+        chooseWorker(e, targets) { sessions.pauseAndWatch(it) }
     }
 }
 

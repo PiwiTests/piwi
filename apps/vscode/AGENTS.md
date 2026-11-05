@@ -108,10 +108,11 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   the window** (`shareLive` in `src/run-view.ts`, `shareLiveWarning`), as the JetBrains plugin does; only a run known
   not to be shareable is asked without it, for the service to say why. Checked by `tests/run-control.test.ts` ("Share live").
 - **The paused page and worker panel webviews run scripts only by the style's nonce, for picking or a live view.**
-  Its document takes images from `data:` only. Live input requires Watch live and the separate Interact opt-in, and
-  messages name the shown stop: checked by `tests/run-control.test.ts` and `tests/e2e/paused-page.spec.mjs`. Only a
-  change of the panel's visibility, its closing or a new stop ends or restarts its watch, never a focus change
-  (`pausedPageViewChange`, checked by `tests/run-control.test.ts`).
+  Their documents take images from `data:` only. Live input requires the view on and the separate Interact opt-in, and
+  messages name the view they were drawn for, a stop's at a stop: checked by `tests/run-control.test.ts`,
+  `tests/e2e/paused-page.spec.mjs` and the integration suite. Only a change of the panel's visibility, its closing or,
+  for the paused page, a new stop ends or restarts its watch, never a focus change (`pausedPageViewChange`, checked by
+  `tests/run-control.test.ts`).
   ([Run control](ARCHITECTURE.md#run-control))
 
 ## Workflow

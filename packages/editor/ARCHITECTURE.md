@@ -561,11 +561,12 @@ A run started in a terminal attaches the same way, its reporter having read the 
 that no command of the service's names (`terminal` in `RunSessionsOptions`; the server's test is the prefix and a ref
 it never built). Its session says so (`RunSession.terminal`, the hub's `HubSession.terminal`), so the clients show it
 as one and offer no Stop, the terminal's to give. A run an editor's own test runner started (a JetBrains IDE's
-Playwright run configuration) is one too, its first worker's `run-attach` saying so (`runner`, kept as
-`RunSession.runner` and `HubSession.runner`): the clients name the runner in place of the terminal. It starts with the editor's breakpoints as the client last sent them
-(`piwi/setBreakpoints`, kept as `setEditorBreakpoints`), as lines of its code: the files as they stand when its first
-worker connects. A worker of it holds a failure only while a Runs window of Piwi Picker follows the runs as it attaches
-(`followed`): nobody may be there to answer it otherwise. It ends 5 s after its last worker left, having no command.
+Playwright run configuration) is one too, its process's `run-begin` or a worker's `run-attach` saying so (`runner`,
+kept as `RunSession.runner` and `HubSession.runner`): the clients name the runner in place of the terminal. It starts
+with the editor's breakpoints as the client last sent them (`piwi/setBreakpoints`, kept as `setEditorBreakpoints`), as
+lines of its code: the files as they stand when its first connection opens. A worker of it holds a failure only while
+a Runs window of Piwi Picker follows the runs as it attaches (`followed`): nobody may be there to answer it otherwise.
+It ends 5 s after its last worker and its process left, having no command.
 
 Each worker of a run keeps a connection to the record channel's socket for its whole life (`run-attach`,
 `@piwitests/core/run-channel`), opened with the channel's token, compared in constant time (`sameToken`). The session
@@ -593,8 +594,9 @@ taken per run; a reporter that predates it opens none, and its run has no progre
 - at most every 300 ms (`SESSION_PACE_MS`) when a worker connects, or starts or ends a test.
 
 The run ends with its command (`piwi/commandEnded`, which closes the connections of its workers still closing), or 5 s
-after its last worker left with none connecting (`SESSION_LINGER_MS`). Its last notification carries `ended`, and a
-later worker of the same ref (a rerun) starts a new session.
+after its last worker and its own process left with none connecting (`SESSION_LINGER_MS`). A run that ends before its
+process said how (`run-end`), or whose process left without saying it, ends `interrupted`. Its last notification
+carries `ended`, and a later worker of the same ref (a rerun) starts a new session.
 
 Each stop is named by the time it happened (`RunStop.since`, ISO 8601). `stamp` makes each stop's `since` later than
 the run's stop before it, so it names that stop alone.
@@ -858,9 +860,9 @@ results take their own paths (Send to editor, then `piwi/applyPick`; `piwi/recor
 `RunLines` keeps the file as the service held it when the run started:
 
 - when it built the run's command (`started`);
-- for a run it did not build, when its first worker connects;
+- for a run it did not build, when its first connection opens (its own process's or a worker's);
 - for a rerun under the ref of a command that ended (a JetBrains IDE's Rerun, Rerun Failed and Debug start the
-  configuration again with its `PIWI_ORIGIN_REF`), when its first worker connects too: `RunSessions` says `again`.
+  configuration again with its `PIWI_ORIGIN_REF`), when its first connection opens too: `RunSessions` says `again`.
 
 It follows every `didChange` since (read before the documents apply it; a whole new text by its line diff,
 `diffLines`), the code of an earlier action included. A file no editor held since is taken from disk while its

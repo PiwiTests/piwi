@@ -1188,7 +1188,8 @@ export const MAX_RUN_FAILURE_TEXT = 500;
  * socket its workers reach (`PIWI_RUN_CHANNEL`), from its `onBegin` to its `onEnd`. `run-begin` is its first line: the
  * channel's token, the run's ref and working directory, the process and the versions as a worker's `run-attach` names
  * them, how many tests the run (or this shard of it) holds (`total`, its repeats included), how many workers it may
- * start, and its shard (null for none). `run-progress` follows each test that ended for good, at most four times a
+ * start, its shard (null for none), and `runner` for a run an editor's own test runner started, as a worker's
+ * `run-attach` says it (absent otherwise). `run-progress` follows each test that ended for good, at most four times a
  * second; `run-end` says how the run ended, its counts, and its first failure (the test's title and the first line of
  * its error, each through `hideSecretsInText`; null for none), before the connection closes. A hub that predates them
  * closes the connection at its first line, and the run goes on as without it.
@@ -1205,6 +1206,7 @@ export type RunMainToHub =
       total: number;
       workers: number;
       shard: { current: number; total: number } | null;
+      runner?: true;
     }
   | ({ type: 'run-progress' } & RunCounts)
   | ({
@@ -1245,6 +1247,7 @@ export function parseRunMainToHub(line: string): RunMainToHub | null {
         total,
         workers,
         shard: shardOf,
+        ...(value.runner === true ? { runner: true as const } : {}),
       };
     }
     case 'run-progress': {

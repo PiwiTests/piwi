@@ -685,7 +685,8 @@ class PiwiRunControlTest : BasePlatformTestCase() {
 
     /**
      * Watch a Worker's Test opens the Worker tab on a worker whose reporter shows its running test, its caption following
-     * the worker through its stop and the run's end.
+     * the worker through its stop and the run's end; a headless stop of its worker opens the Paused Page without taking
+     * the tab's place, and the run's end turns Watch off.
      */
     fun testAWorkersTestIsWatchedInTheWorkerTab() {
         val window = ToolWindowManager.getInstance(project).registerToolWindow(RegisterToolWindowTask.notClosable(PiwiFailuresToolWindowFactory.ID))
@@ -697,11 +698,16 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
             assertEquals("Worker 2", window.contentManager.selectedContent?.displayName)
             assertEquals("Worker 2 · Running · pays", sessions.shown().workerCaption)
-            val stop = RunStop("pause", "Click getByRole('button', { name: 'Apply' })", uri(spec), 5, 4, null, true, "2026-10-25T10:00:07.000Z")
+            assertTrue(sessions.shown().workerWatch)
+            val stop = RunStop("pause", "Click getByRole('button', { name: 'Apply' })", uri(spec), 5, 4, null, false, "2026-10-25T10:00:07.000Z")
             hear(RunSession("ed-7", base.path, listOf(RunWorker(0, 1, "stopped", test(), stop, watchable = true))))
             assertEquals("Worker 2 · Paused · Click getByRole('button', { name: 'Apply' }) · coupon.spec.ts:6", sessions.shown().workerCaption)
+            waitFor("the paused page asked") { pages.lastOrNull()?.takeIf { it.ref == "ed-7" } }
+            assertNotNull(window.contentManager.findContent(PiwiRunSessions.PAUSED_PAGE))
+            assertEquals("Worker 2", sessions.shown().selectedTab)
             hear(RunSession("ed-7", ended = true))
             assertEquals("Worker 2 · the run ended.", sessions.shown().workerCaption)
+            assertFalse(sessions.shown().workerWatch)
         } finally {
             ToolWindowManager.getInstance(project).unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
         }

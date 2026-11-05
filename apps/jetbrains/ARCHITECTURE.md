@@ -450,8 +450,9 @@ VSCode keymaps' `F5`, `Debug`; NetBeans' `F4`, `EditSource`) runs Piwi's while i
 Test** (`PauseAndWatchAction`) open a **Worker N** tab of the Piwi tool window (`PiwiRunSessions.showWorker`) on a
 worker whose reporter shows its running test (`Glue.watchableWorkers`). It watches the worker's lane with
 `piwi/laneView`, decodes `piwi/laneFrame` as the paused page decodes its frames, and says what the worker does
-(`Glue.laneShown`). It only watches: a headless stop of its lane opens the Paused Page, which takes the input. The
-watch ends while the tab is hidden and starts again as it shows.
+(`Glue.laneShown`). It only watches: a headless stop of its lane opens the Paused Page, which takes the input, beside
+it, the Worker tab staying in sight when it was. The watch ends while the tab is hidden and starts again as it shows;
+the run's end turns Watch off.
 
 **The paused page.** A stop with no pause bar asks `piwi/pausedPage` and shows the JPEG (`Glue.pausedImageBytes`, at
 most `Glue.MAX_IMAGE_DATA`, decoded only within `Glue.decodableImage`) in the **Paused Page** tab of the Piwi tool

@@ -14,6 +14,8 @@ import type { RunSession } from '../src/protocol';
 import { RunSessions } from '../src/run-sessions';
 import { last, service, waitFor, writeRunWorkspace, type Service } from './run-fixtures';
 
+type RunBeginLine = Extract<RunMainToHub, { type: 'run-begin' }>;
+
 function fakeSocket() {
   const socket = Object.assign(new EventEmitter(), {
     destroyed: false,
@@ -27,7 +29,7 @@ function fakeSocket() {
   return socket;
 }
 
-const BEGIN = {
+const BEGIN: RunBeginLine = {
   type: 'run-begin',
   token: 't',
   ref: 'ed-1',
@@ -38,22 +40,23 @@ const BEGIN = {
   total: 9,
   workers: 2,
   shard: null,
-} as const;
+};
 
-function harness() {
+function harness(terminal = false) {
   const sent: RunSession[] = [];
   const sessions = new RunSessions({
     notify: (session) => void sent.push(session),
     answersStops: () => true,
     notice: () => {},
     rootOf: () => '/work/shop',
+    terminal: () => terminal,
     paceMs: 5,
     burstMs: 0,
     lingerMs: 50,
   });
-  const main = () => {
+  const main = (begin: Partial<RunBeginLine> = {}) => {
     const socket = fakeSocket();
-    const reader = sessions.attachMain(socket as unknown as net.Socket, BEGIN);
+    const reader = sessions.attachMain(socket as unknown as net.Socket, { ...BEGIN, ...begin });
     return { socket, read: (message: RunMainToHub) => reader(JSON.stringify(message)) };
   };
   const worker = (workerIndex: number) => {
@@ -125,6 +128,43 @@ describe('a run’s own connection, in the run sessions', () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(last(sent)?.progress?.done).toBe(2);
     run.socket.destroy();
+  });
+});
+
+describe('a run’s own connection, as its process leaves or the host stops', () => {
+  test('ends interrupted when its process leaves without saying how it ended', async () => {
+    const { sent, main } = harness();
+    const run = main();
+    run.read({ type: 'run-progress', done: 2, failed: 1, flaky: 0, skipped: 0 });
+    run.socket.destroy();
+    expect(await waitFor(() => (last(sent)?.ended ? last(sent) : undefined))).toMatchObject({
+      progress: { done: 2, failed: 1, status: 'interrupted' },
+    });
+  });
+
+  test('says no worker started a test yet while only the run’s process is connected', async () => {
+    const { sessions, sent, main } = harness();
+    const run = main();
+    await waitFor(() => last(sent));
+    expect(sessions.control({ ref: 'ed-1', action: 'pause' })).toMatchObject({
+      ok: false,
+      message: expect.stringContaining('none has started a test yet'),
+    });
+    run.socket.destroy();
+  });
+
+  test('names a run an editor’s test runner started, from its process alone', async () => {
+    const { sent, main } = harness(true);
+    const run = main({ ref: 'terminal-1', runner: true });
+    expect(await waitFor(() => last(sent))).toMatchObject({ ref: 'terminal-1', terminal: true, runner: true });
+    run.socket.destroy();
+  });
+
+  test('closes the run’s connection as the host stops', () => {
+    const { sessions, main } = harness();
+    const run = main();
+    sessions.dispose();
+    expect(run.socket.destroyed).toBe(true);
   });
 });
 

@@ -731,10 +731,49 @@ function readWhole(data: unknown): HubMessage {
   if (workers.length !== sent.session.workers.length || (sent.session.live !== undefined) !== (live !== undefined)) {
     return unreadable;
   }
+  if ((sent as { session: { progress?: unknown } }).session.progress !== undefined && !message.session.progress) {
+    return unreadable;
+  }
   return workers.some((worker) => worker.state === 'other') ? unreadable : message;
 }
 
 describe('what the hub sends', () => {
+  test('sends how far a run is, which Piwi Picker reads whole', async () => {
+    const progress = {
+      total: 9,
+      done: 4,
+      failed: 1,
+      flaky: 0,
+      skipped: 1,
+      status: 'running' as const,
+      failure: { title: 'cart › pays', error: 'expect(locator).toBeVisible() failed' },
+    };
+    const session: RunSession = { ref: 'ed-1', root: '/work/shop', workers: [], ended: false, progress };
+    const sessions = {
+      current: () => [session],
+      intentsOf: () => [],
+      stopIntentsOf: () => [],
+      unwatchAll: () => {},
+    } as unknown as RunSessions;
+    const own = (await ownHub(() => ({ command: null, label: null, project: null }), undefined, undefined, {
+      sessions,
+    }))!;
+    const socket = new WebSocket(own.url, { origin: ORIGIN });
+    const heard: HubMessage[] = [];
+    socket.on('message', (data) => void heard.push(readWhole(data)));
+    try {
+      await new Promise((resolve) => socket.on('open', resolve));
+      socket.send(JSON.stringify({ type: 'hello', token: own.token }));
+      await waitFor(() => heard.find((m) => m.type === 'welcome'));
+      socket.send(JSON.stringify({ type: 'subscribe', id: 1 }));
+      const sent = await waitFor(() => heard.find((m) => m.type === 'session' || m.type === ('unreadable' as never)));
+      expect(sent).toMatchObject({ type: 'session', session: { ref: 'ed-1', progress } });
+    } finally {
+      socket.close();
+      own.close();
+    }
+  });
+
   test('tells what a code came to to the connections that follow the runs alone, cut to fit what they read', async () => {
     const long = 'Piwi could not write the check: '.padEnd(MAX_HUB_MESSAGE + 200, 'x');
     const own = (await ownHub(() => ({ command: null, label: null, project: null }), undefined, long))!;

@@ -153,6 +153,8 @@ export interface RunControl extends vscode.Disposable {
   pausedPage(): PausedPageView | null;
   /** What the worker panel ("Piwi: worker N") shows; null while it is closed. */
   workerView(): PausedPageView | null;
+  /** A message of the worker panel's script, as it posts it, which the integration suite sends. */
+  workerMessage(message: unknown): Promise<void>;
   /** A click on the paused page's image, as the view's script posts it: the pick there, once answered. */
   pickOnPage(message: unknown): Promise<void>;
   /** Write the code a stop made (`piwi/stopCode`). */
@@ -363,11 +365,21 @@ export function registerRunControl(
     lensesChanged.fire();
   };
 
-  /** Open a stop's file at its line, once per stop. */
+  /** Open a stop's file at its line, once per stop, beside the worker panel rather than over it. */
   const reveal = async (stop: ShownStop) => {
     const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(stop.stop.uri));
     const at = document.validatePosition(new vscode.Position(stop.stop.line, stop.stop.character ?? 0));
-    await vscode.window.showTextDocument(document, { selection: new vscode.Range(at, at), preview: false });
+    const panelColumn = workerPanel.column();
+    const viewColumn =
+      panelColumn !== undefined && vscode.window.tabGroups.activeTabGroup.viewColumn === panelColumn
+        ? (vscode.window.visibleTextEditors.find((e) => e.viewColumn !== panelColumn)?.viewColumn ??
+          vscode.ViewColumn.Beside)
+        : undefined;
+    await vscode.window.showTextDocument(document, {
+      selection: new vscode.Range(at, at),
+      preview: false,
+      ...(viewColumn ? { viewColumn } : {}),
+    });
   };
 
   const showPage = (view: PausedPageView) => {
@@ -567,9 +579,9 @@ export function registerRunControl(
       if (revealed.has(key)) continue;
       revealed.add(key);
       void reveal(stop).catch(() => undefined);
-      // The worker panel shows the stops of the slot it watches.
+      // The worker panel in sight shows the stops of the slot it watches.
       const slot = sessions.get(stop.ref)?.workers.find((w) => w.worker === stop.worker)?.parallelIndex;
-      if (!stop.stop.bar && (slot === undefined || !workerPanel.shows(stop.ref, slot))) void openPage(stop);
+      if (!stop.stop.bar && (slot === undefined || !workerPanel.watches(stop.ref, slot))) void openPage(stop);
     }
     workerPanel.changed(sessions, now);
     if (panel && pageStop && !keys.has(pageStop)) {
@@ -1061,6 +1073,7 @@ export function registerRunControl(
     executionPoints: (uri) => drawn.get(uri) ?? [],
     pausedPage: () => (panel ? page : null),
     workerView: () => workerPanel.view(),
+    workerMessage: (message) => workerPanel.message(message),
     pickOnPage,
     write,
     caretCount: () => caretShown,

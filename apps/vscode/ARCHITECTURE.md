@@ -374,10 +374,12 @@ remembers Watch live until closed, but each watch starts with Interact off.
 open **Piwi: worker N** (`src/worker-panel.ts`) on a worker whose reporter shows its running test
 (`RunWorker.watchable`, `watchableWorkers`). It watches the worker's lane with `piwi/laneView` and draws
 `piwi/laneFrame` with the paused page's HTML and script (`pausedPageHtml` with `lane`), its caption from `laneShown`
-and its image dimmed (`stale`) while it is not of what the worker does now (`frameIsCurrent`). At a stop of its lane,
-Interact and the pick on a click name that stop, as on the paused page, and a headless stop of that lane opens no
-paused page. The watch ends while the panel is hidden and starts again as it shows (`pausedPageViewChange`); a new
-stop starts with Interact off.
+and its image dimmed (`stale`) while it is not of what the worker does now (`frameIsCurrent`). Each stop, and each
+stretch the worker runs between them, is drawn anew (`shown`), so Interact starts off and a message of the view before
+reaches nothing; at a stop, Interact and the pick on a click name that stop, as on the paused page. A headless stop of
+the slot the panel watches, in sight, opens no paused page, and its file opens beside the panel rather than over it.
+Each watch starts with Interact off; the watch ends while the panel is hidden and starts again as it shows
+(`pausedPageViewChange`).
 
 **Breakpoints during a run.** The breakpoints `breakpointsForRun` gives go to each live run as they change
 (`vscode.debug.onDidChangeBreakpoints`, the `piwi.breakpoints` setting) with `piwi/setRunBreakpoints`, as lines of the

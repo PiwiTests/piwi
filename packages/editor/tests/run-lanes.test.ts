@@ -398,6 +398,80 @@ describe('a lane the editor client watches', () => {
   });
 });
 
+describe('a lane the editor client watches, through the language server', () => {
+  let dir = '';
+  let svc: Service;
+  let without: Service;
+
+  beforeAll(async () => {
+    dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-lane-lsp-')));
+    writeRunWorkspace(dir);
+    svc = await service(dir, true);
+    without = await service(dir, false);
+  });
+
+  afterAll(() => {
+    svc?.stop();
+    without?.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('sends a watched lane’s frames, and takes its input at a stop; a client that shows no stop watches none', async () => {
+    const frames: LaneFrame[] = [];
+    svc.client.onNotification('piwi/laneFrame', (frame: LaneFrame) => void frames.push(frame));
+    const { ref, channel } = await svc.command();
+    const worker = new FakeWorker(channel.path, dir);
+    worker.send({
+      type: 'run-attach',
+      token: channel.token,
+      ref,
+      cwd: dir,
+      workerIndex: 0,
+      parallelIndex: 0,
+      pid: process.pid,
+      playwright: '1.64.1',
+      reporter: '0.70.0',
+      takes: [...RUN_TAKES],
+      features: ['view-lane'],
+    });
+    try {
+      worker.begin();
+      expect(await waitFor(() => svc.latest(ref)?.workers[0])).toMatchObject({ watchable: true });
+      const watching = svc.client.sendRequest('piwi/laneView', { ref, lane: 0, on: true });
+      const asked = await worker.next('request');
+      expect(asked).toMatchObject({ what: 'view-lane', on: true });
+      worker.send({ type: 'answer', request: asked.request, what: 'view-lane', value: { ok: true, message: 'On.' } });
+      expect(await watching).toMatchObject({ ok: true });
+      worker.send({ type: 'lane-frame', test: 'id-adds a mug', stop: null, width: 800, height: 600, data: '/9j/AA==' });
+      expect(await waitFor(() => last(frames))).toMatchObject({
+        ref,
+        lane: 0,
+        worker: 0,
+        test: 'id-adds a mug',
+        since: null,
+      });
+      worker.stopAt(1, 4);
+      const since = await waitFor(() => svc.latest(ref)?.workers[0]?.stop?.since);
+      const input = svc.client.sendRequest('piwi/pageInput', {
+        ref,
+        worker: 0,
+        since,
+        events: [{ type: 'mouse', action: 'move', x: 1, y: 1 }],
+      });
+      const played = await worker.next('request', 1);
+      expect(played).toMatchObject({ what: 'input', stop: 1 });
+      worker.send({ type: 'answer', request: played.request, what: 'input', value: { ok: true, message: 'Played.' } });
+      expect(await input).toMatchObject({ ok: true });
+      expect(await without.client.sendRequest('piwi/laneView', { ref, lane: 0, on: true })).toEqual({
+        ok: false,
+        message: 'This client does not show running tests.',
+      });
+    } finally {
+      worker.socket.destroy();
+    }
+  });
+});
+
 describe('a lane watched on the hub', () => {
   let dir = '';
   let svc: Service;

@@ -12,7 +12,8 @@ import { withoutCi } from './_helpers.js';
 /**
  * The run's own connection to the hub, in a real Playwright run through the built package: a fake editor service on
  * the socket the run names hears, on a connection apart from the workers', how many tests the run holds, each that
- * ended for good, and how the run ended with its first failure.
+ * ended for good (a serial group's retry counting its tests once), and how the run ended with its first failure; the
+ * run still ends as it would without it, its exit code and the reporters after Piwi's included.
  */
 
 const pkgRoot = path.join(import.meta.dirname, '..');
@@ -26,10 +27,19 @@ test('passes', async () => {});
 test('passes the second time', async ({}, testInfo) => {
   expect(testInfo.retry, 'the first attempt fails').toBe(1);
 });
-test('fails', async () => {
-  expect(1, 'signed in at https://shop:hunter2@shop.example/').toBe(2);
+test.describe('cart', () => {
+  test('fails', async () => {
+    expect(1, 'signed in at https://shop:hunter2@shop.example/').toBe(2);
+  });
 });
 test.skip('is skipped', async () => {});
+test.describe.serial('checkout', () => {
+  test('opens', async () => {});
+  test('pays', async ({}, testInfo) => {
+    expect(testInfo.retry, 'the first attempt fails').toBe(1);
+  });
+  test('thanks', async () => {});
+});
 `;
 
 /** What each connection said, by the kind of its first line. */
@@ -38,6 +48,7 @@ let workerConnections = 0;
 let hub: net.Server;
 let folder = '';
 let output = '';
+let exitCode: number | string | null = null;
 
 function write(file: string, text: string): void {
   fs.mkdirSync(path.dirname(path.join(project, file)), { recursive: true });
@@ -91,7 +102,7 @@ module.exports = defineConfig({
   outputDir: './test-results',
   retries: 1,
   workers: 1,
-  reporter: [[${JSON.stringify(dist)}, {}]],
+  reporter: [[${JSON.stringify(dist)}, {}], ['list']],
 });
 `,
   );
@@ -110,7 +121,8 @@ module.exports = defineConfig({
       process.execPath,
       [requireHere.resolve('@playwright/test/cli'), 'test'],
       { cwd: project, env, timeout: 90_000 },
-      (_error, stdout, stderr) => {
+      (error, stdout, stderr) => {
+        exitCode = error ? (error.code ?? null) : 0;
         output = `${stdout}\n${stderr}`;
         resolve();
       },
@@ -133,7 +145,7 @@ describe('the run’s own connection to the hub', () => {
       token: TOKEN,
       ref: 'ed-0a1b2c3d',
       cwd: project,
-      total: 4,
+      total: 7,
       workers: 1,
       shard: null,
     });
@@ -149,17 +161,23 @@ describe('the run’s own connection to the hub', () => {
 
   it('says how the run ended, its counts and its first failure, the failure’s credentials hidden', () => {
     const end = runs[0]![runs[0]!.length - 1];
+    // The serial group's retry counts its tests once: `opens` again as passed, `thanks` as passed, not skipped.
     expect(end).toMatchObject({
       type: 'run-end',
       status: 'failed',
-      done: 4,
+      done: 7,
       failed: 1,
-      flaky: 1,
+      flaky: 2,
       skipped: 1,
-      failure: { title: expect.stringContaining('fails') },
+      failure: { title: 'cart › fails' },
     });
     const error = (end as { failure: { error: string } }).failure.error;
     expect(error).toContain('shop.example');
     expect(error).not.toContain('hunter2');
+  });
+
+  it('leaves the run to end as it would without it: its exit code, and the reporters after Piwi’s', () => {
+    expect(exitCode, output).toBe(1);
+    expect(output).toMatch(/1 failed/);
   });
 });

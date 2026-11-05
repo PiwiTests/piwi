@@ -159,7 +159,7 @@ test('Escape cancels queued input and a double click keeps its click count', asy
   expect(await page.evaluate(() => window.messages.filter((m) => m.type === 'input'))).toEqual([]);
 });
 
-test('the worker panel watches its slot, dims an image of what the worker left, and takes input at a stop alone', async ({
+test('the worker panel watches its slot, dims an image of what the worker left, and offers Interact at a stop alone', async ({
   page,
 }) => {
   const image = "The page of the worker's test";

@@ -716,13 +716,6 @@ class GlueTest {
         val stopped = Glue.laneShown(sessions["ed-1"], 1, stops)
         assertEquals(stops.single(), stopped.stop)
         assertEquals("Worker 2 · Paused · Fill \"WELCOME10\" getByLabel('Coupon') · checkout.spec.ts:6", stopped.caption)
-        val running = sessions["ed-1"]!!.workers!![0]
-        assertTrue(Glue.frameIsCurrent(LaneFrame("ed-1", 0, 0, "t1", null), running))
-        assertFalse(Glue.frameIsCurrent(LaneFrame("ed-1", 0, 0, "t2", null), running))
-        assertFalse(Glue.frameIsCurrent(LaneFrame("ed-1", 0, 4, "t1", null), running))
-        val worker = sessions["ed-1"]!!.workers!![1]
-        assertFalse(Glue.frameIsCurrent(LaneFrame("ed-1", 1, 1, "t1", null), worker))
-        assertTrue(Glue.frameIsCurrent(LaneFrame("ed-1", 1, 1, "t1", worker.stop!!.since), worker))
     }
 
     @Test
