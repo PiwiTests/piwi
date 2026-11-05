@@ -1,0 +1,293 @@
+<script setup lang="ts">
+/**
+ * Desktop shell only: the one image element a live view of a worker's page draws into, in the Local runs tray, for a
+ * stop's view (`DesktopRunStopPage`) and a lane's (`DesktopRunLaneView`). Each frame is decoded aside and shown once
+ * whole, the latest alone waiting meanwhile, and is kept nowhere else (`draw`). While the stop it shows takes the
+ * window's input (`input`), the pointer, the wheel and the keys on it go to the page: Tab leaves the image unless a
+ * click took the keyboard, and Escape gives it back (`leave`). A Shift+click, or a click while `picking`, names the
+ * point under the pointer instead (`pick`). The input and the points come from the Runs window's own logic
+ * (`view-input.ts`, `pagePoint`). `dimmed` shows an image that is no longer the page as it is now, and `mark` says
+ * over it what it shows.
+ */
+import type { ViewButton, ViewInput } from '@piwitests/core/run-view';
+import {
+  ViewInputBatcher,
+  keyOnView,
+  pastedText,
+  type ViewModifier,
+} from '../../../../extension/src/shared/view-input';
+import type { DesktopRunAnswer } from '~/composables/useDesktopRunHub';
+import { desktopImagePoint, type DesktopRunInputTarget } from '~/utils/desktop-run-view';
+
+const props = defineProps<{
+  alt: string;
+  /** The stop the clicks and keys on the image go to, while it takes them; null while they go nowhere. */
+  input: DesktopRunInputTarget | null;
+  /** The image is the page as it last showed, not as it is now. */
+  dimmed?: boolean;
+  /** What the mark over the image says: `Live`, with its dot, or `Running…`; none when null. */
+  mark?: 'Live' | 'Running…' | null;
+}>();
+
+const emit = defineEmits<{
+  /** What the input answered when the page did not take it, to show under the test. */
+  said: [answer: DesktopRunAnswer];
+  /** A point of the page to name the element at, in CSS pixels of its viewport. */
+  pick: [point: { x: number; y: number }];
+  /** Escape gave the keyboard back: the view's own control takes it. */
+  leave: [];
+}>();
+
+/** Picking a point: the next click on the image names it. */
+const picking = defineModel<boolean>('picking', { default: false });
+
+const hub = useDesktopRunHub();
+
+/** The buttons that go to the page: the middle one stays the window's, as it opens what it clicks in a new tab. */
+const BUTTONS: Record<number, ViewButton> = { 0: 'left', 2: 'right' };
+const MAC = import.meta.client && /Mac|iPhone|iPad/.test(navigator.platform);
+
+// ── The frames ────────────────────────────────────────────────────────────────────────────────────────────────────
+
+const img = ref<HTMLImageElement | null>(null);
+const viewport = ref<{ width: number; height: number } | null>(null);
+/** A frame waiting while the one before decodes: the latest alone. */
+let next: { frame: { width: number; height: number; data: string }; shown?: () => void } | null = null;
+let decoding = false;
+/** Goes up as the image is cleared: a frame decoding for the image before is not shown. */
+let generation = 0;
+
+function draw(frame: { width: number; height: number; data: string }, shown?: () => void): void {
+  next = { frame, shown };
+  if (!decoding) void drawFrames();
+}
+
+async function drawFrames(): Promise<void> {
+  decoding = true;
+  const at = generation;
+  while (next && at === generation) {
+    const { frame, shown } = next;
+    next = null;
+    const src = `data:image/jpeg;base64,${frame.data}`;
+    // Decoded aside first: the image shows the frame before until this one is whole.
+    const decoded = new Image();
+    decoded.src = src;
+    try {
+      await decoded.decode();
+    } catch {
+      continue;
+    }
+    if (at !== generation) break;
+    viewport.value = { width: frame.width, height: frame.height };
+    await nextTick();
+    if (img.value) img.value.src = src;
+    shown?.();
+  }
+  decoding = false;
+  if (next) void drawFrames();
+}
+
+function clear(): void {
+  generation++;
+  next = null;
+  viewport.value = null;
+  img.value?.removeAttribute('src');
+}
+
+defineExpose({
+  draw,
+  clear,
+  focus: () => img.value?.focus({ preventScroll: true }),
+  viewport,
+});
+
+// ── The input on the image ────────────────────────────────────────────────────────────────────────────────────────
+
+const inputOn = computed(() => !!props.input && !!viewport.value);
+/** Names the stop the input goes to now: a batcher of its own for each. */
+const inputKey = computed(() => {
+  const target = props.input;
+  return target && viewport.value
+    ? `${target.ref}|${target.worker}|${target.since}|${target.clickCounts ? 'counts' : ''}`
+    : null;
+});
+let batcher: ViewInputBatcher | null = null;
+/** A click into the image took the keyboard, Tab included, until Escape gives it back. */
+let captured = false;
+
+function stopInput(): void {
+  batcher?.dispose();
+  batcher = null;
+  captured = false;
+}
+
+watch(
+  inputKey,
+  (key) => {
+    stopInput();
+    const target = props.input;
+    if (!key || !target) return;
+    batcher = new ViewInputBatcher({
+      clickCounts: target.clickCounts,
+      send: async (events: ViewInput[]) => {
+        if (inputKey.value !== key) return false;
+        const { ref, worker, since } = target;
+        const answer = await hub.command({ type: 'input', ref, worker, since, events });
+        if (!answer.ok && inputKey.value === key) emit('said', answer);
+        return answer.ok;
+      },
+    });
+  },
+  { immediate: true },
+);
+
+function modifiersOf(event: MouseEvent): ViewModifier[] {
+  const held: ViewModifier[] = [];
+  if (event.ctrlKey) held.push('Control');
+  if (event.altKey) held.push('Alt');
+  if (event.metaKey) held.push('Meta');
+  return held;
+}
+
+let pointed: { x: number; y: number } | null = null;
+const at = (event: MouseEvent) =>
+  img.value && viewport.value ? desktopImagePoint(img.value, event, viewport.value) : null;
+
+function onPointerDown(event: PointerEvent): void {
+  if (event.shiftKey || picking.value) {
+    event.preventDefault();
+    const point = at(event);
+    if (point) emit('pick', point);
+    return;
+  }
+  pointed = at(event);
+  if (!batcher || !BUTTONS[event.button] || !pointed) return;
+  img.value?.focus({ preventScroll: true });
+  captured = true;
+  img.value?.setPointerCapture?.(event.pointerId);
+}
+
+function onMouseDown(event: MouseEvent): void {
+  if (!batcher) return;
+  event.preventDefault();
+  const button = BUTTONS[event.button];
+  const point = pointed ?? at(event);
+  if (button && point) batcher.down(button, point.x, point.y, { count: event.detail, modifiers: modifiersOf(event) });
+}
+
+function onPointerMove(event: PointerEvent): void {
+  pointed = at(event);
+  if (batcher && pointed) batcher.move(pointed.x, pointed.y);
+}
+
+function onPointerUp(event: PointerEvent): void {
+  pointed = at(event);
+}
+
+function onBlur(): void {
+  captured = false;
+}
+
+function onMouseUp(event: MouseEvent): void {
+  const button = BUTTONS[event.button];
+  const point = pointed ?? at(event);
+  if (batcher && button && point) batcher.up(button, point.x, point.y, { count: event.detail });
+}
+
+function onPointerCancel(event: PointerEvent): void {
+  const point = at(event);
+  if (batcher && point) batcher.cancel(point.x, point.y);
+}
+
+function onWheel(event: WheelEvent): void {
+  const point = at(event);
+  // The wheel scrolls the page once the image has the focus; until then it scrolls the tray.
+  if (!batcher || !point || document.activeElement !== img.value) return;
+  event.preventDefault();
+  const scale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? (viewport.value?.height ?? 600) : 1;
+  batcher.wheel(point.x, point.y, event.deltaX * scale, event.deltaY * scale);
+}
+
+function onKeyDown(event: KeyboardEvent): void {
+  if (!batcher) return;
+  const decided = keyOnView(
+    {
+      key: event.key,
+      ctrlKey: event.ctrlKey,
+      metaKey: event.metaKey,
+      altKey: event.altKey,
+      shiftKey: event.shiftKey,
+      altGraph: event.getModifierState?.('AltGraph') ?? false,
+      isComposing: event.isComposing,
+    },
+    { mac: MAC, captured },
+  );
+  if (decided === 'leave') {
+    // The keyboard back to the tray; Pick on the image, waiting, stops too.
+    event.preventDefault();
+    event.stopPropagation();
+    captured = false;
+    picking.value = false;
+    emit('leave');
+    return;
+  }
+  if (decided === 'window' || decided === 'none') return;
+  // A key sent to the page is the page's alone: the dashboard behind the tray never sees it (its shortcuts, the inbox's
+  // keys).
+  event.preventDefault();
+  event.stopPropagation();
+  batcher.key(decided.send);
+}
+
+function onPaste(event: ClipboardEvent): void {
+  const text = event.clipboardData?.getData('text/plain') ?? '';
+  if (!batcher || !text) return;
+  event.preventDefault();
+  event.stopPropagation();
+  for (const typed of pastedText(text)) batcher.key(typed);
+}
+
+onBeforeUnmount(() => {
+  generation++;
+  next = null;
+  stopInput();
+});
+</script>
+
+<template>
+  <div v-show="viewport" class="space-y-2">
+    <div class="relative">
+      <img
+        ref="img"
+        :alt="alt"
+        :tabindex="inputOn ? 0 : undefined"
+        :data-stale="dimmed || undefined"
+        draggable="false"
+        class="block w-full rounded-md border border-default focus-visible:outline-2 focus-visible:outline-primary select-none transition-opacity"
+        :class="[dimmed ? 'opacity-50' : '', picking ? 'cursor-crosshair' : inputOn ? 'cursor-default' : '']"
+        @pointerdown="onPointerDown"
+        @mousedown="onMouseDown"
+        @pointermove="onPointerMove"
+        @pointerup="onPointerUp"
+        @mouseup="onMouseUp"
+        @pointercancel="onPointerCancel"
+        @contextmenu="inputOn && $event.preventDefault()"
+        @wheel="onWheel"
+        @keydown="onKeyDown"
+        @paste="onPaste"
+        @blur="onBlur"
+      />
+      <span
+        v-if="mark"
+        aria-hidden="true"
+        class="pointer-events-none absolute top-2 left-2 inline-flex items-center gap-1 rounded bg-default/90 px-1.5 py-0.5 text-xs text-highlighted"
+      >
+        <span v-if="mark === 'Live'" class="size-1.5 rounded-full bg-error" />
+        {{ mark }}
+      </span>
+    </div>
+    <p v-if="inputOn" class="text-xs text-muted">
+      Clicks and keys on the view go to the page. Escape gives the keyboard back; Tab leaves unless a click took it.
+    </p>
+  </div>
+</template>

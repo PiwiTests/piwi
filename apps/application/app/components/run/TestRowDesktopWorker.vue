@@ -1,16 +1,20 @@
 <script setup lang="ts">
 /**
  * A running test's worker in a run the desktop shell started, on its row of the run page, as the runs' hub tells it.
- * While the test runs, **Pause and watch** stops it before its next call that acts on or checks the page, with Watch
- * live on for its worker: the Local runs tray, which opens at the stop, shows its page live there. At a stop, where
+ * While the test runs, **Watch**, where its reporter shows its lane while a test runs, opens the Local runs tray on
+ * the worker with its lane watched: its page shows there as it runs, and at each stop. **Pause and watch** stops it
+ * before its next call that acts on or checks the page, its lane watched, or Watch live on for its worker where its
+ * reporter shows a stopped test alone: the tray, which opens at the stop, shows its page live there. At a stop, where
  * the test stands, and **Show its page**, which opens the tray on the worker and moves the focus there. A test that
  * never stops says why. The tray steers the stop; this row only asks for it.
  */
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
 import {
+  DESKTOP_WATCH_NEEDS_UPDATE,
   desktopRunStop,
   desktopStopLink,
   desktopStopPlace,
+  desktopWatchesLane,
   desktopWorkerState,
   desktopWorkerTest,
 } from '~/utils/desktop-run-view';
@@ -41,16 +45,32 @@ const cannotPause = computed(() => props.worker.test?.cannotPause ?? null);
 const busy = ref(false);
 const pausing = computed(() => !stop.value && (busy.value || props.worker.pausing));
 const label = computed(() => (stop.value ? 'Show its page' : pausing.value ? 'Pausing…' : 'Pause and watch'));
-/** The button's name: its label, then the test, so each running row's reads apart. */
-const name = computed(() => {
+/** A button's name: its label, then the test, so each running row's reads apart. */
+function named(text: string): string {
   const test = desktopWorkerTest(props.worker);
-  return test ? `${label.value}: ${test}` : label.value;
-});
+  return test ? `${text}: ${test}` : text;
+}
+/** Its reporter shows its lane while the test runs: Watch shows the page in the tray. */
+const watchable = computed(() => !stop.value && desktopWatchesLane(props.worker));
+const pauseTitle = computed(() =>
+  pausing.value
+    ? 'The test stops before its next call that acts on or checks the page'
+    : 'Stop the test before its next call that acts on or checks the page, and watch its page live in Local runs' +
+      (desktopWatchesLane(props.worker) ? '' : `. ${DESKTOP_WATCH_NEEDS_UPDATE}`),
+);
+
+/** Watches the worker's lane, and opens the tray on it, where its page shows as the test runs. */
+async function watchLane(): Promise<void> {
+  showWorker(props.session.ref, props.worker.worker);
+  const answer = await hub.setLaneWatch(props.session.ref, props.worker.parallelIndex, true);
+  if (!answer.ok) toast.add({ title: 'Watch', description: answer.message, icon: 'i-lucide-info' });
+}
 
 async function pauseAndWatch(): Promise<void> {
   if (pausing.value) return;
-  // Watch live stays on whatever the hub answers: a test that stopped meanwhile is watched at that stop.
-  hub.setWatchLive(props.session.ref, props.worker.worker, true);
+  // The worker stays watched whatever the hub answers: a test that stopped meanwhile is watched at that stop.
+  if (desktopWatchesLane(props.worker)) void hub.setLaneWatch(props.session.ref, props.worker.parallelIndex, true);
+  else hub.setWatchLive(props.session.ref, props.worker.worker, true);
   busy.value = true;
   const answer = await hub.command({
     type: 'runControl',
@@ -97,19 +117,25 @@ function onClick(): void {
         <span v-else class="font-mono text-muted break-all">{{ place }}</span>
       </span>
       <UButton
+        v-if="watchable"
         size="xs"
         color="neutral"
         variant="outline"
-        :icon="pausing ? 'i-lucide-clock' : 'i-lucide-eye'"
+        icon="i-lucide-eye"
+        label="Watch"
+        :aria-label="named('Watch')"
+        title="Open Local runs on this test, where its page shows as it runs, and at each stop"
+        data-testid="desktop-watch-lane"
+        @click="watchLane"
+      />
+      <UButton
+        size="xs"
+        color="neutral"
+        variant="outline"
+        :icon="pausing ? 'i-lucide-clock' : stop ? 'i-lucide-eye' : 'i-lucide-pause'"
         :label="label"
-        :aria-label="name"
-        :title="
-          stop
-            ? 'Open Local runs on this test, where its stopped page shows'
-            : pausing
-              ? 'The test stops before its next call that acts on or checks the page'
-              : 'Stop the test before its next call that acts on or checks the page, and watch its page live in Local runs'
-        "
+        :aria-label="named(label)"
+        :title="stop ? 'Open Local runs on this test, where its stopped page shows' : pauseTitle"
         :aria-disabled="pausing || undefined"
         data-testid="desktop-watch"
         @click="onClick"

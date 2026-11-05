@@ -1,25 +1,29 @@
 <script setup lang="ts">
 /**
  * Desktop shell only: one worker of a run the shell started, as the bundled server, its hub, tells it. Its test and
- * where it stands; at a stop, the call about to run and its place (a failure's error in their place), its page
- * (`DesktopRunStopPage`), **Resume**, **Step**, **Finish** and **End the test**, which ends it there, skipped, where
- * its reporter takes it (Resume alone at a failure), and the code actions the stop takes from the window: **Assert a
- * region** and **Mock a request**, whose code comes to the window to copy; **Pause** while it runs. Every control but
- * Pause names the stop it was drawn for (`since`), so a click made twice never answers the next stop, and while one is
- * on its way the buttons are `aria-disabled`, keeping the focus. A control that goes as the worker runs on gives the
- * keyboard to Pause meanwhile, and takes it back at the next stop (Step, after a step), as the Runs window does. What a
- * command answered, or what a code made at this stop came to, shows under the test, read out, while the worker stands
- * there. Everything the hub sends is shown as text.
+ * where it stands; **Watch**, where its reporter shows its lane while a test runs, which shows its page as it runs and
+ * at each stop until it is turned off (`DesktopRunLaneView`), or why it cannot; at a stop, the call about to run and
+ * its place (a failure's error in their place), its page (`DesktopRunStopPage`, while its lane is not watched),
+ * **Resume**, **Step**, **Finish** and **End the test**, which ends it there, skipped, where its reporter takes it
+ * (Resume alone at a failure), and the code actions the stop takes from the window: **Assert a region** and **Mock a
+ * request**, whose code comes to the window to copy; **Pause** while it runs. Every control but Pause names the stop
+ * it was drawn for (`since`), so a click made twice never answers the next stop, and while one is on its way the
+ * buttons are `aria-disabled`, keeping the focus. A control that goes as the worker runs on gives the keyboard to Pause
+ * meanwhile, and takes it back at the next stop (Step, after a step), as the Runs window does. What a command
+ * answered, or what a code made at this stop came to, shows under the test, read out, while the worker stands there.
+ * Everything the hub sends is shown as text.
  */
 import type { HubKeptRequest, HubSession, HubWorker } from '@piwitests/core/run-hub';
 import type { DesktopRunAnswer } from '~/composables/useDesktopRunHub';
 import {
+  DESKTOP_WATCH_NEEDS_UPDATE,
   desktopCodeActions,
   desktopRunStop,
   desktopSteering,
   desktopStopError,
   desktopStopPlace,
   desktopStopTakes,
+  desktopWatchesLane,
   desktopWorkerKey,
   desktopWorkerMeta,
   desktopWorkerState,
@@ -42,6 +46,12 @@ const stateText = computed(() => desktopWorkerState(props.worker, props.session.
 const testText = computed(() => desktopWorkerTest(props.worker));
 const metaText = computed(() => desktopWorkerMeta(props.worker));
 const failed = computed(() => stop.value?.reason === 'failure');
+/** Its reporter shows its lane while a test runs: Watch shows the page then, and at each stop. */
+const watchable = computed(() => desktopWatchesLane(props.worker));
+/** The lane's page shows, or Watch offers it: while it runs, or at a stop while the window watches the lane. */
+const laneShown = computed(
+  () => watchable.value && (!stop.value || hub.watchesLane(props.session.ref, props.worker.parallelIndex)),
+);
 
 const STEER: Record<DesktopSteer, { label: string; title: string; icon: string }> = {
   resume: { label: 'Resume', title: 'Let the test go on to its next stop or its end', icon: 'i-lucide-play' },
@@ -256,30 +266,40 @@ onBeforeUnmount(() => {
       </p>
     </div>
 
-    <template v-if="stop">
-      <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
-        <template v-if="failed">
-          <dt class="text-muted">Error</dt>
-          <dd><ErrorText :text="desktopStopError(stop)" mode="block" /></dd>
-        </template>
-        <template v-else>
-          <dt class="text-muted">Next</dt>
-          <dd class="font-mono text-xs break-words text-highlighted">{{ stop.title }}</dd>
-          <dt class="text-muted">Where</dt>
-          <dd class="font-mono text-xs break-all text-highlighted">{{ place }}</dd>
-        </template>
-      </dl>
-      <DesktopRunStopPage
-        :run-ref="session.ref"
-        :worker="worker.worker"
-        :stop="stop"
-        :takes="takes"
-        :busy="busy"
-        v-model:watch-live="watchLive"
-        @said="heardPage"
-        @picking="busy = $event"
-      />
-    </template>
+    <dl v-if="stop" class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
+      <template v-if="failed">
+        <dt class="text-muted">Error</dt>
+        <dd><ErrorText :text="desktopStopError(stop)" mode="block" /></dd>
+      </template>
+      <template v-else>
+        <dt class="text-muted">Next</dt>
+        <dd class="font-mono text-xs break-words text-highlighted">{{ stop.title }}</dd>
+        <dt class="text-muted">Where</dt>
+        <dd class="font-mono text-xs break-all text-highlighted">{{ place }}</dd>
+      </template>
+    </dl>
+    <DesktopRunLaneView
+      v-if="laneShown"
+      :session="session"
+      :worker="worker"
+      :busy="busy"
+      @said="heardPage"
+      @picking="busy = $event"
+    />
+    <DesktopRunStopPage
+      v-else-if="stop"
+      :run-ref="session.ref"
+      :worker="worker.worker"
+      :stop="stop"
+      :takes="takes"
+      :busy="busy"
+      v-model:watch-live="watchLive"
+      @said="heardPage"
+      @picking="busy = $event"
+    />
+    <p v-else-if="worker.state !== 'between'" class="text-xs text-muted" data-testid="desktop-watch-needs-update">
+      {{ DESKTOP_WATCH_NEEDS_UPDATE }}
+    </p>
 
     <div v-if="steering.length" class="flex flex-wrap gap-1.5">
       <UButton

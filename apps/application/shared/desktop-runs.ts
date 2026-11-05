@@ -11,6 +11,8 @@ import type {
   HubFrameMessage,
   HubFrameRefusal,
   HubCodeMessage,
+  HubLaneFrameMessage,
+  HubLaneFrameRefusal,
   HubSessionMessage,
 } from '@piwitests/core/run-hub';
 import type { StopCode } from '@piwitests/editor/run-host';
@@ -59,6 +61,9 @@ export type DesktopRunEvent =
   /** A frame of a stop the window watches (`view`), or why its view sends none now. */
   | HubFrameMessage
   | HubFrameRefusal
+  /** A frame of a lane the window watches (`watch`), as its test runs or stands at a stop, or why none comes now. */
+  | HubLaneFrameMessage
+  | HubLaneFrameRefusal
   /** What each code made at a stop came to, whichever surface started it: its sentence. */
   | HubCodeMessage
   /** The code itself, made at a stop of a run, for the window to copy; the latest ones again as the stream opens. */

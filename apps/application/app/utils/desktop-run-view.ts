@@ -14,7 +14,7 @@ import { UNATTENDED_RUN_SUFFIX, isUnattendedDesktopRun, type DesktopRunPick } fr
 import { parseLocation } from '#shared/parse-location';
 import type { LocalRunKind } from '~/composables/useDesktopLocalRuns';
 import { localRunOriginKind } from '~/utils/desktop-job';
-import { runFile, stopError, stopIntents, stopPlace, testName } from '../../../extension/src/shared/runs';
+import { pagePoint, runFile, stopError, stopIntents, stopPlace, testName } from '../../../extension/src/shared/runs';
 
 /** The name a run the shell started gives the bundled server on its run channel (`PIWI_RUN_REF`, `hub_env.rs`). */
 export function desktopRunRef(shellId: number): string {
@@ -125,6 +125,72 @@ export function desktopWorkerKey(ref: string, worker: number): string {
 /** Names a stop's live view: its frames come under this key. */
 export function desktopViewKey(ref: string, worker: number, since: string): string {
   return `${ref}|${worker}|${since}`;
+}
+
+/** Names a lane of a run (Playwright's `parallelIndex`), for the window's watch of it and its frames. */
+export function desktopLaneKey(ref: string, lane: number): string {
+  return `${ref}|lane ${lane}`;
+}
+
+/** What a running worker says in place of **Watch** when its reporter shows a stopped test alone. */
+export const DESKTOP_WATCH_NEEDS_UPDATE = 'Update the reporter to watch a running test.';
+
+/** Whether a worker's lane can be watched while its test runs (`watch` among what its reporter takes). */
+export function desktopWatchesLane(worker: Pick<HubWorker, 'intents'>): boolean {
+  return worker.intents.includes('watch');
+}
+
+/** Where a frame of a lane stands: the worker that sent it, its test and the stop it shows (null while it runs). */
+export interface DesktopLaneAt {
+  worker: number;
+  test: string | null;
+  since: string | null;
+}
+
+/**
+ * Whether a lane's frame shows the worker's page as it is now: the stop it stands at, else the test it runs. A frame of
+ * a stop it went on from, of an earlier test, between two tests or of the worker Playwright ran in the lane before is
+ * the page as it last showed.
+ */
+export function desktopLaneFrameCurrent(frame: DesktopLaneAt, worker: HubWorker): boolean {
+  if (frame.worker !== worker.worker) return false;
+  const stop = desktopRunStop(worker);
+  if (stop) return frame.since === stop.since;
+  return frame.since === null && worker.state !== 'between' && !!worker.test && frame.test === worker.test.id;
+}
+
+/** Where the clicks and keys on a live image go: a stop of a worker, and whether its input carries click counts. */
+export interface DesktopRunInputTarget {
+  ref: string;
+  worker: number;
+  since: string;
+  clickCounts: boolean;
+}
+
+/** The image of a live view as its component exposes it (`DesktopRunLiveImage`). */
+export interface DesktopLiveImageHandle {
+  /** Shows a JPEG frame once decoded, the latest alone waiting meanwhile; `shown` runs as it shows. */
+  draw(frame: { width: number; height: number; data: string }, shown?: () => void): void;
+  /** Shows nothing, and drops the frame waiting. */
+  clear(): void;
+  /** Gives the image the keyboard. */
+  focus(): void;
+  /** The viewport, in CSS pixels, of the frame shown; null before the first. */
+  viewport: { width: number; height: number } | null;
+}
+
+/** Where a pointer event is on an image of a page, in CSS pixels of the viewport it shows; null with no size. */
+export function desktopImagePoint(
+  img: Pick<HTMLElement, 'getBoundingClientRect' | 'clientLeft' | 'clientTop' | 'clientWidth' | 'clientHeight'>,
+  event: Pick<MouseEvent, 'clientX' | 'clientY'>,
+  viewport: { width: number; height: number },
+): { x: number; y: number } | null {
+  const rect = img.getBoundingClientRect();
+  return pagePoint(
+    { x: event.clientX - rect.left - img.clientLeft, y: event.clientY - rect.top - img.clientTop },
+    { width: img.clientWidth, height: img.clientHeight },
+    viewport,
+  );
 }
 
 /** The stopped worker's stop, while it stands there; null otherwise. */

@@ -11,7 +11,9 @@
  * and, at a stop, the page, the controls and the code a stop can make, to copy
  * (`DesktopRunCopyList`). The window holds the hub's stream from a plugin
  * (`desktop-run-hub.client.ts`), which opens the tray on every stop it hears;
- * here, the stop's run expands and the live region reads it out. The tray also
+ * here, the stop's run expands, its worker scrolls into view, and the live
+ * region reads it out. A worker's **Watch** shows its page as its test runs,
+ * and at each stop (`DesktopRunLaneView`). The tray also
  * opens on the worker the run page's **Show its page** names (`showWorker`),
  * its run expanded and the focus on that worker. A running run's **Hold
  * failures** switch, off by default and on from the start for a reproduction,
@@ -76,19 +78,26 @@ function announce(text: string) {
   });
 }
 
-/** Every stop the window hears is shown: the plugin opens the tray, its run expands, and the live region reads it out. */
-function heardStop(session: HubSession, worker: HubWorker) {
+/**
+ * Every stop the window hears is shown: the plugin opens the tray, its run expands, its worker scrolls into view, and
+ * the live region reads it out.
+ */
+async function heardStop(session: HubSession, worker: HubWorker) {
   const stop = worker.stop;
   if (!stop) return;
   const run = runOf(session);
   if (run) expandedByKey.value = { ...expandedByKey.value, [run.key]: true };
   announce(desktopStopSaid(session, worker, stop));
+  await nextTick();
+  document
+    .querySelector<HTMLElement>(`[data-worker="${desktopWorkerKey(session.ref, worker.worker)}"]`)
+    ?.scrollIntoView({ block: 'nearest' });
 }
 
 let stopListening: (() => void) | null = null;
 onMounted(() => {
   trayMounts.value++;
-  stopListening = hub.onStop(heardStop);
+  stopListening = hub.onStop((session, worker) => void heardStop(session, worker));
 });
 onBeforeUnmount(() => {
   trayMounts.value--;

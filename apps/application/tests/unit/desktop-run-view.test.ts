@@ -8,6 +8,9 @@ import {
   desktopCodeItem,
   desktopHoldRefusal,
   desktopHoldsByDefault,
+  desktopImagePoint,
+  desktopLaneFrameCurrent,
+  desktopLaneKey,
   desktopLiveInstance,
   desktopLiveText,
   desktopPickItem,
@@ -25,6 +28,7 @@ import {
   desktopStopLink,
   desktopStopPlace,
   desktopStopSaid,
+  desktopWatchesLane,
   desktopWorkerMeta,
   desktopWorkerState,
   isDesktopRunImage,
@@ -36,7 +40,7 @@ import { LIVE_SHARE_MISSING } from '@piwitests/core/live-view';
  * The desktop window's view of the runs its shell starts: which run of the Local runs tray a hub session is, what a
  * worker says and takes, what a code made at a stop or a locator picked reads as to copy, and the window's stream:
  * opened while it is wanted, the runs and codes it hears, the frames to who watches alone, and the runs it shows live
- * said again on each new stream.
+ * and the lanes it watches said again on each new stream.
  */
 
 const ROOT = '/home/dev/shop';
@@ -218,6 +222,48 @@ describe('a worker of a desktop run', () => {
     expect(desktopCodeActions(at, at.stop!)).toEqual(['assert-region', 'mock']);
     const none = workerOf({ state: 'stopped', stop: stopOf({ intents: ['view'] }) });
     expect(desktopCodeActions(none, none.stop!)).toEqual([]);
+  });
+});
+
+describe('the lane of a worker', () => {
+  test('is watched while its test runs only where its reporter shows it', () => {
+    expect(desktopLaneKey('desktop-7', 1)).toBe('desktop-7|lane 1');
+    expect(desktopWatchesLane(workerOf({ intents: ['view', 'watch'] }))).toBe(true);
+    expect(desktopWatchesLane(workerOf())).toBe(false);
+  });
+
+  test('shows the page as it is now with the frame of its running test or of its stop, else as it last showed', () => {
+    const running = workerOf();
+    const runningFrame = { worker: 0, test: 't', since: null };
+    expect(desktopLaneFrameCurrent(runningFrame, running)).toBe(true);
+    // A frame of the stop it went on from, of another test, or of the worker Playwright ran in the lane before.
+    expect(desktopLaneFrameCurrent({ ...runningFrame, since: 's1' }, running)).toBe(false);
+    expect(desktopLaneFrameCurrent({ ...runningFrame, test: 'u' }, running)).toBe(false);
+    expect(desktopLaneFrameCurrent({ ...runningFrame, worker: 1 }, running)).toBe(false);
+    // Between two tests, no frame is the page now.
+    expect(desktopLaneFrameCurrent(runningFrame, workerOf({ state: 'between', test: null }))).toBe(false);
+    // At a stop, the stop's frame alone.
+    const stopped = workerOf({ state: 'stopped', stop: stopOf({ since: 's2' }) });
+    expect(desktopLaneFrameCurrent({ ...runningFrame, since: 's2' }, stopped)).toBe(true);
+    expect(desktopLaneFrameCurrent(runningFrame, stopped)).toBe(false);
+    expect(desktopLaneFrameCurrent({ ...runningFrame, since: 's1' }, stopped)).toBe(false);
+  });
+
+  test('names a point of its image in CSS pixels of the page it shows', () => {
+    const img = {
+      getBoundingClientRect: () => ({ left: 10, top: 20 }) as DOMRect,
+      clientLeft: 1,
+      clientTop: 1,
+      clientWidth: 400,
+      clientHeight: 250,
+    };
+    expect(desktopImagePoint(img, { clientX: 211, clientY: 146 }, { width: 1280, height: 800 })).toEqual({
+      x: 640,
+      y: 400,
+    });
+    expect(desktopImagePoint({ ...img, clientWidth: 0 }, { clientX: 1, clientY: 1 }, { width: 1, height: 1 })).toBe(
+      null,
+    );
   });
 });
 
@@ -579,6 +625,138 @@ describe('the window’s stream of its runs', () => {
     const again: unknown[] = [];
     runs.onFrame('desktop-7', 0, 's1', (f) => again.push(f))();
     expect(again).toEqual([]);
+    runs.want(false);
+  });
+
+  /** What the window told the server of the lanes it shows, in order. */
+  function lanesSaid() {
+    return posted.filter((body) => body.type === 'watch').map(({ ref, lane, on }) => ({ ref, lane, on }));
+  }
+
+  test('says a lane watched while a listener shows it, none while hidden, and again on each new stream', async () => {
+    const changed: Array<() => void> = [];
+    const page = {
+      hidden: false,
+      addEventListener: (type: string, listener: () => void) => {
+        if (type === 'visibilitychange') changed.push(listener);
+      },
+    };
+    vi.stubGlobal('document', page);
+    const runs = await hub();
+    runs.want(true);
+    const source = FakeSource.last!;
+    source.send({ type: 'hello', viewer: VIEWER });
+    expect(await runs.setLaneWatch('desktop-7', 0, true)).toEqual({ ok: true, message: '' });
+    expect(runs.watchesLane('desktop-7', 0)).toBe(true);
+    // Watched, but shown nowhere: the server hears nothing.
+    expect(lanesSaid()).toEqual([]);
+    const off = runs.onLaneFrame('desktop-7', 0, () => {});
+    await vi.waitFor(() => expect(lanesSaid()).toEqual([{ ref: 'desktop-7', lane: 0, on: true }]));
+
+    // Hidden, the window shows no lane; shown again, it says it again.
+    page.hidden = true;
+    for (const listener of changed) listener();
+    await vi.waitFor(() => expect(lanesSaid()).toHaveLength(2));
+    expect(lanesSaid()[1]).toEqual({ ref: 'desktop-7', lane: 0, on: false });
+    page.hidden = false;
+    for (const listener of changed) listener();
+    await vi.waitFor(() => expect(lanesSaid()).toHaveLength(3));
+    expect(lanesSaid()[2]).toEqual({ ref: 'desktop-7', lane: 0, on: true });
+
+    // A new stream: the lane is said again on it.
+    const other = 'b'.repeat(32);
+    source.send({ type: 'hello', viewer: other });
+    await vi.waitFor(() => expect(lanesSaid()).toHaveLength(4));
+    expect(posted.at(-1)).toMatchObject({ type: 'watch', ref: 'desktop-7', lane: 0, on: true, viewer: other });
+
+    // A listener that leaves as another comes, in one tick, changes nothing; the last one to leave stops the lane.
+    off();
+    const again = runs.onLaneFrame('desktop-7', 0, () => {});
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(lanesSaid()).toHaveLength(4);
+    again();
+    await vi.waitFor(() => expect(lanesSaid()).toHaveLength(5));
+    expect(lanesSaid()[4]).toEqual({ ref: 'desktop-7', lane: 0, on: false });
+    runs.want(false);
+    expect(runs.watchesLane('desktop-7', 0)).toBe(false);
+  });
+
+  test('passes a lane’s frames to who listens, keeping the latest image while the lane is watched', async () => {
+    const runs = await hub();
+    runs.want(true);
+    const source = FakeSource.last!;
+    source.send({ type: 'hello', viewer: VIEWER });
+    source.send({ type: 'session', session: sessionOf('desktop-7', [workerOf({ intents: ['view', 'watch'] })]) });
+    const frame = {
+      type: 'lane-frame',
+      ref: 'desktop-7',
+      lane: 0,
+      worker: 0,
+      test: 't',
+      since: null,
+      width: 800,
+      height: 600,
+      data: '/9j/AA==',
+    };
+    // Not watched: it is kept nowhere.
+    source.send(frame);
+    await runs.setLaneWatch('desktop-7', 0, true);
+    const seen: unknown[] = [];
+    const off = runs.onLaneFrame('desktop-7', 0, (f) => seen.push(f));
+    expect(seen).toEqual([]);
+    source.send(frame);
+    // Another lane's, not watched, goes to nobody.
+    source.send({ ...frame, lane: 1, data: '/9j/AB==' });
+    const { type: _type, ...heard } = frame;
+    expect(seen).toEqual([heard]);
+    // Why none comes goes to the listener, and is not kept in place of the image.
+    const refused = {
+      type: 'lane-frame',
+      ref: 'desktop-7',
+      lane: 0,
+      worker: 0,
+      test: 't',
+      since: null,
+      refused: 'Too long.',
+    };
+    source.send(refused);
+    expect(seen).toHaveLength(2);
+    off();
+    // A listener that comes later, as the tray opens again, gets the latest image at once.
+    const later: unknown[] = [];
+    const offLater = runs.onLaneFrame('desktop-7', 0, (f) => later.push(f));
+    expect(later).toEqual([expect.objectContaining({ data: '/9j/AA==' })]);
+    offLater();
+    // The run ends: its lanes are watched no more, and their images go.
+    source.send({ type: 'session', session: sessionOf('desktop-7', [], { ended: true }) });
+    expect(runs.watchesLane('desktop-7', 0)).toBe(false);
+    const after: unknown[] = [];
+    runs.onLaneFrame('desktop-7', 0, (f) => after.push(f))();
+    expect(after).toEqual([]);
+    runs.want(false);
+  });
+
+  test('watches no more a lane the hub would not show, and says why until it is asked again', async () => {
+    answer = (body) =>
+      body.type === 'watch' && body.on
+        ? {
+            type: 'answer',
+            ok: false,
+            message: 'Update the reporter to watch a running test: this one shows a stopped test alone.',
+          }
+        : { type: 'answer', ok: true, message: '' };
+    const runs = await hub();
+    runs.want(true);
+    FakeSource.last!.send({ type: 'hello', viewer: VIEWER });
+    runs.onLaneFrame('desktop-7', 0, () => {});
+    const said = await runs.setLaneWatch('desktop-7', 0, true);
+    expect(said).toMatchObject({ ok: false, message: expect.stringMatching(/^Update the reporter/) });
+    expect(runs.watchesLane('desktop-7', 0)).toBe(false);
+    expect(runs.state.laneRefusals['desktop-7|lane 0']).toMatch(/^Update the reporter/);
+    answer = () => ({ type: 'answer', ok: true, message: '' });
+    expect(await runs.setLaneWatch('desktop-7', 0, true)).toMatchObject({ ok: true });
+    expect(runs.state.laneRefusals['desktop-7|lane 0']).toBeUndefined();
+    expect(runs.watchesLane('desktop-7', 0)).toBe(true);
     runs.want(false);
   });
 

@@ -7,12 +7,15 @@
  * stop waits there; closed, nobody here answers and such a stop goes on at once, unless Piwi Picker follows the runs.
  *
  * What it keeps: each live run as the hub last told it, what each code made at a stop came to, the codes and the
- * locators picked, to copy, and the workers whose **Watch live** is on, which the tray and the run page both turn on.
- * The frames of a stop's live view go to whoever listens for that view (`onFrame`): none is reactive state, and only
- * the latest one of each view is kept, in memory, until the view ends. Commands go to
- * `POST /api/desktop/runs/commands`, naming the stream (`viewer`); `show` says which runs hold their failures (the
- * tray's **Hold failures**), so a failure no pause bar shows is held in them, and is said again as the stream opens
- * again. **Share live** asks what it sends the first time in this session of the app (`shareAsks`).
+ * locators picked, to copy, the workers whose **Watch live** is on, and the lanes the window watches (**Watch**: the
+ * page of a worker's running test, and of its stops), which the tray and the run page both turn on. The frames of a
+ * stop's live view go to whoever listens for that view (`onFrame`), and those of a lane to whoever listens for that
+ * lane (`onLaneFrame`): none is reactive state, and only the latest one of each view and of each lane watched is kept,
+ * in memory, until the view ends or the lane is no longer watched. Commands go to `POST /api/desktop/runs/commands`,
+ * naming the stream (`viewer`); `show` says which runs hold their failures (the tray's **Hold failures**), so a failure
+ * no pause bar shows is held in them, and is said again as the stream opens again; `watch` says which lanes the window
+ * shows now: those watched that a listener shows while the window is not hidden, said again as the stream opens again.
+ * **Share live** asks what it sends the first time in this session of the app (`shareAsks`).
  */
 import {
   parseHubMessage,
@@ -20,6 +23,8 @@ import {
   type HubCodeMessage,
   type HubFrameMessage,
   type HubFrameRefusal,
+  type HubLaneFrameMessage,
+  type HubLaneFrameRefusal,
   type HubSession,
   type HubWorker,
 } from '@piwitests/core/run-hub';
@@ -31,7 +36,7 @@ import {
   type DesktopRunPick,
 } from '#shared/desktop-runs';
 import { errorMessage } from '~/utils';
-import { desktopViewKey, desktopWorkerKey } from '~/utils/desktop-run-view';
+import { desktopLaneKey, desktopViewKey, desktopWorkerKey } from '~/utils/desktop-run-view';
 
 /** A code made at a stop, or a locator picked, in the order they came, each with the number it came as. */
 export type DesktopKept =
@@ -45,6 +50,8 @@ export type DesktopRunAnswer = Pick<HubAnswer, 'ok' | 'message' | 'image' | 'req
 export type DesktopCodeOutcome = Omit<HubCodeMessage, 'type'>;
 
 export type DesktopFrame = Omit<HubFrameMessage, 'type'> | Omit<HubFrameRefusal, 'type'>;
+
+export type DesktopLaneFrame = Omit<HubLaneFrameMessage, 'type'> | Omit<HubLaneFrameRefusal, 'type'>;
 
 interface HubState {
   /** The stream is open and the server named it (`hello`). */
@@ -63,6 +70,13 @@ interface HubState {
    * their run ends. A stream that opens again keeps them.
    */
   watchLive: Record<string, number[]>;
+  /**
+   * The lanes the window watches (Playwright's `parallelIndex`), by run (ref): the page of each one's running test and
+   * of its stops shows, until it is turned off or their run ends. A stream that opens again keeps them.
+   */
+  lanes: Record<string, number[]>;
+  /** Why the hub would not show a lane the window asked to watch, by `desktopLaneKey`, until it is asked again. */
+  laneRefusals: Record<string, string>;
 }
 
 /** How long the window waits before it opens a stream the server refused (no hub, too many windows) again. */
@@ -76,6 +90,8 @@ const state = reactive<HubState>({
   kept: [],
   epoch: 0,
   watchLive: {},
+  lanes: {},
+  laneRefusals: {},
 });
 
 let source: EventSource | null = null;
@@ -90,6 +106,15 @@ let told = new Set<string>();
 const frameListeners = new Map<string, Set<(frame: DesktopFrame) => void>>();
 /** The latest frame of each view a listener asked for, in memory alone, until the view ends. */
 const latestFrames = new Map<string, DesktopFrame>();
+const laneListeners = new Map<string, Set<(frame: DesktopLaneFrame) => void>>();
+/** The latest frame of each lane the window watches, in memory alone, until the lane is no longer watched. */
+const latestLaneFrames = new Map<string, Extract<DesktopLaneFrame, { data: string }>>();
+/** The lanes the server was told the window watches, on this stream, by `desktopLaneKey`. */
+let lanesTold = new Map<string, { ref: string; lane: number }>();
+/** A change of the lanes the window shows waits for the end of the tick: a listener that comes back changes none. */
+let lanesQueued: Promise<Map<string, DesktopRunAnswer>> | null = null;
+/** The window hears whether it is hidden: it shows no lane meanwhile. */
+let hearsVisibility = false;
 const stopListeners = new Set<(session: HubSession, worker: HubWorker) => void>();
 /**
  * The stop each worker of each live run was last heard at (its `since`, by ref and worker), kept while a stream opens
@@ -118,7 +143,9 @@ function heard(text: string): void {
       state.epoch++;
       latestFrames.clear();
       told = new Set();
+      lanesTold = new Map();
       void tellShown();
+      void tellLanesSoon();
       return;
     case 'stop-code':
       if (typeof value.code === 'object' && value.code) keep({ type: 'stop-code', code: value.code as StopCode });
@@ -155,6 +182,12 @@ function heard(text: string): void {
     if (!listeners?.size) return;
     latestFrames.set(key, frame);
     for (const listener of listeners) listener(frame);
+  } else if (message.type === 'lane-frame') {
+    const { type: _type, ...frame } = message;
+    if (!watchesLane(frame.ref, frame.lane)) return;
+    const key = desktopLaneKey(frame.ref, frame.lane);
+    if ('data' in frame) latestLaneFrames.set(key, frame);
+    for (const listener of laneListeners.get(key) ?? []) listener(frame);
   }
 }
 
@@ -164,6 +197,8 @@ function heardSession(session: HubSession): void {
     delete state.sessions[session.ref];
     heardAt.delete(session.ref);
     delete state.watchLive[session.ref];
+    for (const lane of state.lanes[session.ref] ?? []) forgetLane(session.ref, lane);
+    delete state.lanes[session.ref];
     return;
   }
   state.sessions[session.ref] = session;
@@ -184,6 +219,10 @@ function keep(item: Extract<DesktopRunEvent, { type: 'stop-code' | 'pick' }>): v
 function open(): void {
   // No EventSource on the server render: the stream is the window's.
   if (source || typeof EventSource === 'undefined') return;
+  if (!hearsVisibility && typeof document !== 'undefined') {
+    hearsVisibility = true;
+    document.addEventListener('visibilitychange', () => void tellLanesSoon());
+  }
   const opened = new EventSource('/api/desktop/runs/events');
   source = opened;
   opened.onmessage = (event) => heard(String(event.data));
@@ -212,9 +251,19 @@ function close(): void {
   source = null;
   viewer = null;
   told = new Set();
+  lanesTold = new Map();
   latestFrames.clear();
+  latestLaneFrames.clear();
   heardAt.clear();
-  Object.assign(state, { connected: false, sessions: {}, outcomes: {}, epoch: state.epoch + 1, watchLive: {} });
+  Object.assign(state, {
+    connected: false,
+    sessions: {},
+    outcomes: {},
+    epoch: state.epoch + 1,
+    watchLive: {},
+    lanes: {},
+    laneRefusals: {},
+  });
 }
 
 /** Tells the server which runs the window shows live, what changed since it was told last. */
@@ -228,6 +277,75 @@ async function tellShown(): Promise<void> {
     else told.delete(ref);
     await command({ type: 'show', ref, on });
   }
+}
+
+function watchesLane(ref: string, lane: number): boolean {
+  return state.lanes[ref]?.includes(lane) ?? false;
+}
+
+/** The lane is no longer watched: its latest frame goes. */
+function forgetLane(ref: string, lane: number): void {
+  latestLaneFrames.delete(desktopLaneKey(ref, lane));
+}
+
+/** Watches a lane, or stops, for the window. */
+function setLane(ref: string, lane: number, on: boolean): void {
+  const others = (state.lanes[ref] ?? []).filter((l) => l !== lane);
+  if (on) state.lanes[ref] = [...others, lane];
+  else if (others.length) state.lanes[ref] = others;
+  else delete state.lanes[ref];
+  if (!on) forgetLane(ref, lane);
+}
+
+/** The lanes the window shows now: those it watches that a listener shows, none while the window is hidden. */
+function shownLanes(): Map<string, { ref: string; lane: number }> {
+  const shown = new Map<string, { ref: string; lane: number }>();
+  if (typeof document !== 'undefined' && document.hidden) return shown;
+  for (const [ref, lanes] of Object.entries(state.lanes)) {
+    for (const lane of lanes) {
+      const key = desktopLaneKey(ref, lane);
+      if (laneListeners.get(key)?.size) shown.set(key, { ref, lane });
+    }
+  }
+  return shown;
+}
+
+/**
+ * Tells the server which lanes the window shows, what changed since it was told last, once this tick ends; answers
+ * what the hub said of each lane it was told of. A lane the hub would not show is watched no more, and says why.
+ */
+function tellLanesSoon(): Promise<Map<string, DesktopRunAnswer>> {
+  lanesQueued ??= Promise.resolve().then(() => {
+    lanesQueued = null;
+    return tellLanes();
+  });
+  return lanesQueued;
+}
+
+async function tellLanes(): Promise<Map<string, DesktopRunAnswer>> {
+  const answers = new Map<string, DesktopRunAnswer>();
+  const stream = viewer;
+  if (!stream) return answers;
+  const shown = shownLanes();
+  const changes = [
+    ...[...shown].filter(([key]) => !lanesTold.has(key)).map(([key, at]) => ({ key, ...at, on: true })),
+    ...[...lanesTold].filter(([key]) => !shown.has(key)).map(([key, at]) => ({ key, ...at, on: false })),
+  ];
+  for (const { key, ref, lane, on } of changes) {
+    if (on) lanesTold.set(key, { ref, lane });
+    else lanesTold.delete(key);
+  }
+  await Promise.all(
+    changes.map(async ({ key, ref, lane, on }) => {
+      const answer = await command({ type: 'watch', ref, lane, on });
+      answers.set(key, answer);
+      if (!on || answer.ok || viewer !== stream) return;
+      lanesTold.delete(key);
+      setLane(ref, lane, false);
+      state.laneRefusals[key] = answer.message;
+    }),
+  );
+  return answers;
 }
 
 /** A command of the window's, answered as the hub answers it; one that never reached the hub says why. */
@@ -279,6 +397,36 @@ export function useDesktopRunHub() {
       if (on) state.watchLive[ref] = [...others, worker];
       else if (others.length) state.watchLive[ref] = others;
       else delete state.watchLive[ref];
+    },
+    /** Whether the window watches a lane of a run (Playwright's `parallelIndex`): its page shows as its test runs. */
+    watchesLane,
+    /**
+     * Watches a lane of a run, or stops, for the window, until its run ends: the hub hears it while a listener shows
+     * the lane (`onLaneFrame`). Answers what the hub said, once it was told.
+     */
+    async setLaneWatch(ref: string, lane: number, on: boolean): Promise<DesktopRunAnswer> {
+      const key = desktopLaneKey(ref, lane);
+      delete state.laneRefusals[key];
+      setLane(ref, lane, on);
+      return (await tellLanesSoon()).get(key) ?? { ok: true, message: '' };
+    },
+    /**
+     * Hears the frames of a lane the window watches, the latest one at once when one came; returns the unsubscribe.
+     * While a listener hears it, the window shows the lane, and the hub sends its frames.
+     */
+    onLaneFrame(ref: string, lane: number, listener: (frame: DesktopLaneFrame) => void): () => void {
+      const key = desktopLaneKey(ref, lane);
+      const listeners = laneListeners.get(key) ?? new Set();
+      laneListeners.set(key, listeners);
+      listeners.add(listener);
+      void tellLanesSoon();
+      const latest = latestLaneFrames.get(key);
+      if (latest) listener(latest);
+      return () => {
+        listeners.delete(listener);
+        if (listeners.size === 0) laneListeners.delete(key);
+        void tellLanesSoon();
+      };
     },
     /** Hears each stop as a worker comes to it; returns the unsubscribe. */
     onStop(listener: (session: HubSession, worker: HubWorker) => void): () => void {
