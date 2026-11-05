@@ -649,11 +649,11 @@ describe('stops at the pause bar', () => {
     expect(isHookKind(band.kind)).toBe(false);
   });
 
-  test('says why each stop stopped, a Pause or a line run to from the editor included', () => {
+  test('says why each stop stopped, and names no origin for a Pause, which any tool sends', () => {
     expect(['breakpoint', 'step', 'pause', 'run-to', 'page-pause', 'other', null].map(pauseReasonText)).toEqual([
       'Paused at a breakpoint',
       'Paused after Step',
-      'Paused from the editor',
+      'Paused',
       'Paused at the line run to',
       'Paused at page.pause()',
       'Paused at a breakpoint',
