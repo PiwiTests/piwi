@@ -19,6 +19,14 @@ import { normalizeGitUrl } from './scm/git-url';
 import { buildRetryArgs, toPosixPath, type RetryCase } from '#shared/retry-command';
 import { clusterRerunCases } from '#shared/handlers/cluster-rerun-cases';
 import {
+  ciServerValues,
+  clusterLastDispatch,
+  executionRerunTarget,
+  recordClusterDispatch,
+  rerunFiles,
+  rerunRefAndCommit,
+} from '#shared/handlers/ci-rerun-target';
+import {
   flakeLabCiArgs,
   flakeLabRerunSettings,
   resolveCiRerunSettings,
@@ -29,7 +37,7 @@ import {
   type CiRerunSettings,
   type ClusterRerunDispatch,
 } from '#shared/ci-rerun';
-import { ciServerRequestTemplate, type CiServerTarget, type CiTemplateValues } from '#shared/ci-server';
+import { ciServerRequestTemplate } from '#shared/ci-server';
 import { safeHttpUrl } from '#shared/utils/safe-url';
 import {
   ciServerBaseUrl,
@@ -165,32 +173,6 @@ async function rerunRef(db: DbClient, runId: number): Promise<string | null> {
   return (await rerunRefAndCommit(db, runId)).ref;
 }
 
-/** The branch and the commit of the run a dispatch re-runs. */
-async function rerunRefAndCommit(
-  db: DbClient,
-  runId: number | null,
-): Promise<{ ref: string | null; commit: string | null }> {
-  if (runId == null) return { ref: null, commit: null };
-  const [run] = await db
-    .select({ branch: testRuns.branch, metadata: testRuns.metadata })
-    .from(testRuns)
-    .where(eq(testRuns.id, runId));
-  if (!run) return { ref: null, commit: null };
-  return { ref: run.branch ?? resolveRunBranch(run.metadata) ?? null, commit: runCommit(run.metadata) ?? null };
-}
-
-/** The values a CI server template is filled with: the run's branch, else the target's `ref` field. */
-async function ciServerValues(
-  db: DbClient,
-  runId: number | null,
-  target: CiServerTarget,
-  args: string,
-  dispatchId: string,
-): Promise<CiTemplateValues> {
-  const { ref, commit } = await rerunRefAndCommit(db, runId);
-  return { args, dispatchId, ref: ref ?? target.rerun.ref ?? '', commit: commit ?? '' };
-}
-
 /** A dispatch as `dispatchClusterRerun` sent it. */
 export type DispatchedRerun = Omit<ClusterRerunDispatch, 'at' | 'byName' | 'byUserId'>;
 
@@ -223,7 +205,7 @@ async function dispatchRerunOf(
   const settings = await getCiRerunSettings(db, input.projectId);
   const cases = input.cases;
   const args = buildRetryArgs(cases);
-  const files = [...new Set(cases.map((c) => toPosixPath(c.filePath)))].sort();
+  const files = rerunFiles(cases);
   const id = randomBytes(8).toString('hex');
 
   if (settings.via === 'ci-server') {
@@ -322,30 +304,8 @@ export async function rerunClusterInCi(
     byName: actor.name,
     byUserId: actor.id,
   };
-  await db
-    .update(failureClusters)
-    .set({ lastRerunDispatch: dispatch, updatedAt: new Date() })
-    .where(eq(failureClusters.id, cluster.id));
+  await recordClusterDispatch(db, cluster.id, dispatch);
   return { ok: true, dispatch };
-}
-
-/** An execution's run, cluster and the one case a re-run of it runs. */
-async function executionRerunTarget(db: DbClient, executionId: number) {
-  const [row] = await db
-    .select({
-      projectId: testRuns.projectId,
-      runId: testRunsCases.testRunId,
-      clusterId: testRunsCases.failureClusterId,
-      line: testRunsCases.line,
-      projectName: testRunsCases.browserName,
-      title: testCases.title,
-      filePath: testCases.filePath,
-    })
-    .from(testRunsCases)
-    .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
-    .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-    .where(eq(testRunsCases.id, executionId));
-  return row ?? null;
 }
 
 /** Whether an execution's test can be re-run in CI, and its cluster's last re-run, when it has a cluster. */
@@ -353,15 +313,7 @@ export async function executionRerunInfo(db: DbClient, executionId: number) {
   const target = await executionRerunTarget(db, executionId);
   if (!target) return null;
   const availability = await ciRerunAvailability(db, target.projectId, target.runId);
-  let lastDispatch: ClusterRerunDispatch | null = null;
-  if (target.clusterId != null) {
-    const [cluster] = await db
-      .select({ lastRerunDispatch: failureClusters.lastRerunDispatch })
-      .from(failureClusters)
-      .where(eq(failureClusters.id, target.clusterId));
-    lastDispatch = (cluster?.lastRerunDispatch as ClusterRerunDispatch | null) ?? null;
-  }
-  return { ...availability, lastDispatch };
+  return { ...availability, lastDispatch: await clusterLastDispatch(db, target.clusterId) };
 }
 
 /**
@@ -392,9 +344,7 @@ export async function rerunExecutionInCi(
     dispatched = await dispatchRerunOf(db, {
       projectId: target.projectId,
       runId: target.runId,
-      cases: [
-        { filePath: target.filePath, title: target.title, line: target.line, projectName: target.projectName || null },
-      ],
+      cases: [target.rerunCase],
     });
   } catch (e) {
     return {
@@ -405,12 +355,7 @@ export async function rerunExecutionInCi(
   }
 
   const dispatch: ClusterRerunDispatch = { ...dispatched, at: Date.now(), byName: actor.name, byUserId: actor.id };
-  if (target.clusterId != null) {
-    await db
-      .update(failureClusters)
-      .set({ lastRerunDispatch: dispatch, updatedAt: new Date() })
-      .where(eq(failureClusters.id, target.clusterId));
-  }
+  if (target.clusterId != null) await recordClusterDispatch(db, target.clusterId, dispatch);
   return { ok: true, dispatch };
 }
 
