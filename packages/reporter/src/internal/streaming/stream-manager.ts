@@ -358,7 +358,8 @@ export class StreamManager {
 
   /**
    * Queue several events and send them at once, in one flush: none of them triggers a batch-size flush of its own, so
-   * they go out in order, in requests sent one after the other. Step events are dropped as `queueEvent` drops them.
+   * within that flush they go out in order, in requests sent one after the other. Step events are dropped as
+   * `queueEvent` drops them.
    */
   queueEventsNow(events: StreamEvent[]): void {
     if (this.ended) return;

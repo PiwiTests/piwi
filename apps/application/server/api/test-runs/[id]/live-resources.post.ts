@@ -67,6 +67,6 @@ export default eventHandler(async (event): Promise<WireLiveResourcesAnswer> => {
 
   const applied = runEventBus.applyLiveResources(id, post);
   if (applied) runEventBus.publish(id, { type: 'resources', data: post });
-  const watched = runEventBus.answerWatched(id);
+  const watched = runEventBus.answerWatched(id, body.streamToken);
   return applied ? { watched } : { watched, resync: true };
 });
