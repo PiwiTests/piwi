@@ -215,6 +215,7 @@ export function finishedJobFlash(job: FinishedJob): FinishedRunFlash | null {
 
 /** A run of the Local runs tray (`LocalRun`), as far as finding the runs its process reported goes. */
 export interface LocalRunOwner {
+  key: number;
   kind: FinishedJob['kind'] | 'tests';
   projectId: string;
   /** The reference its runs record as their origin's (`PIWI_ORIGIN_REF`). */
@@ -223,24 +224,67 @@ export interface LocalRunOwner {
   hubRefs: readonly string[];
   /** The project's newest run id when it was spawned; null when the lookup failed. */
   piwiRunBaseline: number | null;
+  /** A bisect that runs this test's Flake Lab arm at each step: its steps' runs are lab runs. */
+  flakeTestCaseId: number | null;
+  startedAt: number;
+  finishedAt: number | null;
 }
 
 /**
- * The tracked runs a local process produced, once it is gone: the runs of its project numbered above its baseline
- * that record its origin and reference, under one of the names its steps gave them when the reporter recorded one, as
- * the run it links to is found (`correlatePiwiRuns`). An editor's, CI's or a terminal's run is never one of them, nor
- * another local run's that its reporter named. None for a process whose runs record no origin of its own (a Flake Lab
- * session's).
+ * The origin its process's runs record, with their reference: a Flake Lab session's, and a bisect's that runs a Flake
+ * Lab arm at each step, are lab runs, whose reference names the lab's experiment (null: any).
  */
-export function runsOfLocalRun(active: ReadonlyMap<number, LiveRun>, owner: LocalRunOwner): number[] {
+function recordedOrigin(owner: LocalRunOwner): { origin: string; ref: string | null } | null {
+  if (owner.kind === 'flake' || (owner.kind === 'bisect' && owner.flakeTestCaseId != null)) {
+    return { origin: 'flake-lab', ref: null };
+  }
   const origin = localRunOriginKind(owner.kind);
-  if (!origin || owner.originRef == null || owner.piwiRunBaseline == null) return [];
+  return origin && owner.originRef != null ? { origin, ref: owner.originRef } : null;
+}
+
+/** Whether two runs of the tray go on at once in one project under the same origin and reference. */
+function sharesOrigin(a: LocalRunOwner, b: LocalRunOwner): boolean {
+  const [ours, theirs] = [recordedOrigin(a), recordedOrigin(b)];
+  return (
+    a.key !== b.key &&
+    a.projectId === b.projectId &&
+    !!ours &&
+    !!theirs &&
+    ours.origin === theirs.origin &&
+    ours.ref === theirs.ref &&
+    a.startedAt <= (b.finishedAt ?? Infinity) &&
+    b.startedAt <= (a.finishedAt ?? Infinity)
+  );
+}
+
+/**
+ * The tracked runs a local process produced, once it is gone, among the runs of its project numbered above its
+ * baseline: those that record its origin and reference, under one of the names its steps gave them, as the run it
+ * links to is found (`correlatePiwiRuns`). A run whose reporter recorded no name is its own only while no other run of
+ * the tray (`runs`) goes on under the same origin and reference. A run that has not begun names no origin yet: it goes
+ * too, and comes back with its next message if it was another's. An editor's, CI's or a terminal's run that has begun
+ * is never one of them.
+ */
+export function runsOfLocalRun(
+  active: ReadonlyMap<number, LiveRun>,
+  owner: LocalRunOwner,
+  runs: readonly LocalRunOwner[],
+): number[] {
+  const baseline = owner.piwiRunBaseline;
+  if (baseline == null) return [];
+  const recorded = recordedOrigin(owner);
   const names = new Set(owner.hubRefs.flatMap((ref) => [ref, `${ref}${UNATTENDED_RUN_SUFFIX}`]));
+  const shared = runs.some((other) => sharesOrigin(owner, other));
   const ids: number[] = [];
   for (const [id, run] of active) {
-    if (id <= owner.piwiRunBaseline || run.projectId == null || String(run.projectId) !== owner.projectId) continue;
-    if (run.origin !== origin || run.originRef !== owner.originRef) continue;
-    if (run.name !== null && !names.has(run.name)) continue;
+    if (id <= baseline || run.projectId == null || String(run.projectId) !== owner.projectId) continue;
+    if (run.origin === null) {
+      ids.push(id);
+      continue;
+    }
+    if (!recorded || run.origin !== recorded.origin) continue;
+    if (recorded.ref !== null && run.originRef !== recorded.ref) continue;
+    if (run.name === null ? shared : !names.has(run.name)) continue;
     ids.push(id);
   }
   return ids;

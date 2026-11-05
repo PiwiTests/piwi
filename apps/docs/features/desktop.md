@@ -45,7 +45,8 @@ it hidden into the tray. The windows open where you left them, and Cmd or Ctrl w
 holds Settings (⌘,), Import Playwright report (⌘O), Back and Forward (⌘[ and ⌘]) and the docs; Windows and Linux
 take the same keys with Ctrl. The tray lists the tests running from the app, each with Stop. While tests run from
 the app, the machine stays awake, and a failed run bounces the Dock icon or flashes the taskbar button while you look
-away, a bisect or a lab only at its verdict. In the background, [notifications](/features/notifications#browser) arrive as OS notifications,
+away, a bisect or a lab only at its verdict; one the window's tray does not list (a `piwi flake` from a terminal or an
+editor, a probe, another window's, or one from before a reload) never does. In the background, [notifications](/features/notifications#browser) arrive as OS notifications,
 with no setup, and an unread count on the dock icon or the tray tooltip.
 
 It listens on port 3000, or the one set in the `.exe` installer or in **Settings → Desktop app** (`serverPort` in
@@ -110,9 +111,6 @@ linked folder, **without touching your checkout**:
 - **Find the breaking commit here** bisects between the last green commit and the failing one, with live
   progress and a **Stop** that kills the test and what it started, resets the bisect and removes the worktree. The
   first bad commit is linked to your SCM host and recorded on the failure cluster.
-
-The application under test has to build from the same checkout, started at each commit by a Playwright `webServer`; without one, a reproduction or
-bisect exercises test changes only.
 
 ### Jobs from your editor
 

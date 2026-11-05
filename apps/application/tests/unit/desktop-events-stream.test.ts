@@ -15,11 +15,15 @@ const state = vi.hoisted(() => ({
   db: null as unknown,
   live: 0,
   listeners: new Set<(live: number) => void>(),
+  scope: 'all' as 'all' | Set<number>,
 }));
 
 vi.mock('../../server/utils/auth', () => ({ requireAuth: async () => ({}) }));
 vi.mock('../../server/database', () => ({ getDatabase: async () => state.db }));
-vi.mock('../../server/utils/project-access', () => ({ getProjectScope: async () => 'all', scopeAllows: () => true }));
+vi.mock('../../server/utils/project-access', () => ({
+  getProjectScope: async () => state.scope,
+  scopeAllows: (scope: 'all' | Set<number>, projectId: number) => scope === 'all' || scope.has(projectId),
+}));
 vi.mock('../../server/utils/desktop-runs', () => ({
   desktopRuns: () =>
     Promise.resolve({
@@ -66,16 +70,32 @@ beforeAll(async () => {
   vi.stubGlobal('eventHandler', (handler: unknown) => handler);
   route = (await import('../../server/api/desktop/events.get')).default as unknown as typeof route;
   ({ runEventBus } = await import('../../server/utils/run-events'));
-  await db.insert(schema.projects).values({ id: 1, name: 'shop' });
+  await db.insert(schema.projects).values([
+    { id: 1, name: 'shop' },
+    { id: 2, name: 'admin' },
+  ]);
   await db.insert(schema.testRuns).values([
     { id: 5, projectId: 1, status: 'running', startTime: new Date(), metadata: BISECT, origin: 'bisect' },
     { id: 6, projectId: 1, status: 'initializing', startTime: new Date(), metadata: null },
+    { id: 7, projectId: 1, status: 'running', startTime: new Date(), metadata: CI, origin: 'ci' },
+    { id: 8, projectId: 2, status: 'running', startTime: new Date(), metadata: BISECT, origin: 'bisect' },
+    { id: 9, projectId: 1, status: 'interrupted', startTime: new Date(), metadata: null },
   ]);
 });
 
 afterEach(() => {
   state.live = 0;
+  state.scope = 'all';
 });
+
+/** The stream's snapshot, once it came. */
+function snapshotOf(messages: Array<Record<string, unknown>>) {
+  return vi.waitFor(() => {
+    const found = messages.find((m) => m.type === 'snapshot');
+    if (!found) throw new Error('no snapshot yet');
+    return found as { runs: Array<Record<string, unknown>> };
+  });
+}
 
 afterAll(async () => {
   vi.unstubAllGlobals();
@@ -123,6 +143,46 @@ describe('the desktop event stream', () => {
     ]);
   });
 
+  test('sends a run’s messages heard while it reads the snapshot after it, so a run that ended stays ended', async () => {
+    const stream = await openStream();
+    runEventBus.publishGlobal({ type: 'run-finished', runId: 7, projectId: 1, status: 'passed' });
+    await vi.waitFor(() => expect(stream.messages.some((m) => m.type === 'run-finished')).toBe(true));
+    stream.end();
+    const order = stream.messages.filter((m) => m.type !== 'hub-runs').map((m) => m.type);
+    expect(order).toEqual(['snapshot', 'run-finished']);
+    expect((await snapshotOf(stream.messages)).runs.map((run) => run.id)).toContain(7);
+  });
+
+  test('sends nothing of a run outside the caller’s scope, its facts included', async () => {
+    state.scope = new Set([1]);
+    const stream = await openStream();
+    runEventBus.publishGlobal({ type: 'run-started', runId: 8, projectId: 2 });
+    runEventBus.publishRunProgress({
+      runId: 8,
+      projectId: 2,
+      totalTests: 1,
+      passedTests: 0,
+      failedTests: 1,
+      skippedTests: 0,
+      didNotRunTests: 0,
+    });
+    runEventBus.publishGlobal({ type: 'run-started', runId: 7, projectId: 1 });
+    await vi.waitFor(() => expect(stream.messages.some((m) => m.runId === 7)).toBe(true));
+    stream.end();
+    expect((await snapshotOf(stream.messages)).runs.map((run) => run.id)).not.toContain(8);
+    expect(stream.messages.filter((m) => m.runId === 8)).toEqual([]);
+  });
+
+  test('names nothing of a run that never began, which the server ended', async () => {
+    const stream = await openStream();
+    runEventBus.publishGlobal({ type: 'run-finished', runId: 9, projectId: 1, status: 'interrupted' });
+    await vi.waitFor(() => expect(stream.messages.some((m) => m.runId === 9)).toBe(true));
+    stream.end();
+    expect(stream.messages.filter((m) => m.runId === 9)).toEqual([
+      { type: 'run-finished', runId: 9, projectId: 1, status: 'interrupted' },
+    ]);
+  });
+
   test('says how many runs the hub has live as it opens, then each time it changes, until it ends', async () => {
     state.live = 2;
     const stream = await openStream();
@@ -140,6 +200,7 @@ describe('desktopRunFactsReader', () => {
       [5, { status: 'running', metadata: BISECT }],
       [6, { status: 'initializing', metadata: null }],
       [7, new Error('database busy')],
+      [9, { status: 'interrupted', metadata: null }],
     ]);
     const reads: number[] = [];
     const factsOf = desktopRunFactsReader(async (runId) => {
@@ -154,9 +215,11 @@ describe('desktopRunFactsReader', () => {
     expect(await factsOf(6)).toBeNull();
     expect(await factsOf(7)).toBeNull();
     expect(await factsOf(8)).toBeNull();
+    // A run that never began, which the server ended: its reporter wrote no metadata.
+    expect(await factsOf(9)).toBeNull();
     rows.set(6, { status: 'running', metadata: CI });
     expect(await factsOf(6)).toEqual({ origin: 'ci', originRef: null, name: null, job: false });
-    expect(reads).toEqual([5, 6, 7, 8, 6]);
+    expect(reads).toEqual([5, 6, 7, 8, 9, 6]);
   });
 
   test('tells a job’s step by the origins the notifications leave out', () => {

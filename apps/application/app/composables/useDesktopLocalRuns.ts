@@ -413,6 +413,8 @@ let startingSteps = 0;
 let pendingEvents: LocalRunEventPayload[] = [];
 const runByShellId = new Map<number, LocalRun>();
 const exitResolvers = new Map<number, (code: number | null) => void>();
+/** Who hears each run's end (`onRunEnded`), before the tray can drop it. */
+const endListeners = new Set<(run: LocalRun) => void>();
 let toastApi: ReturnType<typeof useToast> | null = null;
 let routerApi: ReturnType<typeof useRouter> | null = null;
 let optionsLoaded = false;
@@ -594,6 +596,13 @@ export function useDesktopLocalRuns() {
       if (run.kind === 'repro') await finishRepro(run);
       if (run.jobRequestId) await finishJob(run);
       run.finishedAt = Date.now();
+      for (const listener of endListeners) {
+        try {
+          listener(run);
+        } catch {
+          // One listener failing must not keep the run from ending.
+        }
+      }
       notifyFinished(run);
       trimFinished();
     }
@@ -1361,6 +1370,11 @@ export function useDesktopLocalRuns() {
     trayOpen,
     shownWorker,
     holds,
+    /** Hears each run's end, its status, exit code and verdict set, before the tray can drop it; returns the unsubscribe. */
+    onRunEnded(listener: (run: LocalRun) => void): () => void {
+      endListeners.add(listener);
+      return () => endListeners.delete(listener);
+    },
     showWorker,
     activeCount,
     startRun,

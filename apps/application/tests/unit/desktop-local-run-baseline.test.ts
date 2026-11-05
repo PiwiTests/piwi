@@ -8,16 +8,21 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+/** What the shell sends the window of a process it started (`piwi:local-run`). */
+type ShellEvent = { payload: { id: number; kind: string; line: string | null; code: number | null } };
+
 /**
  * The local runs store with its Nuxt auto-imports and the desktop bridge stubbed. `latestRun` answers the project's
  * baseline lookup (no query), `linkedRun` the lookup by origin and reference, and `onSpawn` runs when the shell
- * starts a process. With `shellIds`, the shell answers each start with the next id, and the process never exits.
+ * starts a process. With `shellIds`, the shell answers each start with the next id, and the process runs until
+ * `onListen`'s listener hears its exit.
  */
 async function storeWith(input: {
   latestRun: () => Promise<{ id: number } | null>;
   linkedRun: (query: Record<string, string | string[]>) => { id: number; name?: string | null } | null;
   onSpawn?: () => void;
   shellIds?: boolean;
+  onListen?: (listener: (event: ShellEvent) => void) => void;
 }) {
   let shellId = 0;
   const invoked: string[] = [];
@@ -32,7 +37,12 @@ async function storeWith(input: {
       return input.shellIds ? Promise.resolve(++shellId) : new Promise(() => {});
     },
   }));
-  vi.stubGlobal('tauriEvent', () => ({ listen: async () => () => {} }));
+  vi.stubGlobal('tauriEvent', () => ({
+    listen: async (_name: string, listener: (event: ShellEvent) => void) => {
+      input.onListen?.(listener);
+      return () => {};
+    },
+  }));
   vi.stubGlobal('$fetch', (url: string, options?: { query?: Record<string, string | string[]> }) => {
     if (!url.endsWith('/latest-run')) throw new Error(`unexpected request ${url}`);
     return options?.query ? Promise.resolve(input.linkedRun(options.query)) : input.latestRun();
@@ -161,5 +171,39 @@ describe('two local runs with the same origin reference', () => {
 
     expect(first.piwiRunId).toBeNull();
     expect(second.piwiRunId).toBeNull();
+  });
+});
+
+describe('the end of a local run', () => {
+  test('is heard before the tray drops it, when the fifteen runs it keeps ended after it started', async () => {
+    let shell: (event: ShellEvent) => void = () => {};
+    const { store } = await storeWith({
+      latestRun: async () => ({ id: 7 }),
+      linkedRun: () => null,
+      shellIds: true,
+      onListen: (listener) => (shell = listener),
+    });
+    const heard: string[] = [];
+    store.onRunEnded((run) => heard.push(`${run.kind}:${run.status}`));
+    const exit = (id: number | null, code: number) => shell({ payload: { id: id!, kind: 'exit', line: null, code } });
+
+    const bisect = store.startBisect({
+      projectId: 3,
+      cases: [{ filePath: 'cart.spec.ts' }],
+      good: 'a'.repeat(40),
+      bad: 'b'.repeat(40),
+    })!;
+    await until(() => bisect.shellId != null);
+    const newer = Array.from({ length: 15 }, () =>
+      store.startRun({ projectId: 3, cases: [{ filePath: 'cart.spec.ts' }] })!,
+    );
+    await until(() => newer.every((run) => run.shellId != null));
+    for (const run of newer) exit(run.shellId, 0);
+    await until(() => newer.every((run) => run.status === 'passed'));
+    expect(heard).toHaveLength(15);
+
+    exit(bisect.shellId, 1);
+    await until(() => heard.includes('bisect:failed'));
+    expect(store.runs.value.includes(bisect)).toBe(false);
   });
 });
