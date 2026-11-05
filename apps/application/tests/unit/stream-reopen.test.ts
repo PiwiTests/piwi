@@ -89,5 +89,14 @@ describe('streamReopener', () => {
     answer(false);
     await vi.advanceTimersByTimeAsync(STREAM_REOPEN_MAX_MS);
     expect([reads, opens]).toEqual([1, []]);
+
+    // A read that answers after the reset opens no stream either.
+    reopener.schedule();
+    await vi.advanceTimersByTimeAsync(STREAM_REOPEN_MIN_MS);
+    expect(reads).toBe(2);
+    reopener.reset();
+    answer(true);
+    await vi.advanceTimersByTimeAsync(STREAM_REOPEN_MAX_MS);
+    expect([reads, opens]).toEqual([2, []]);
   });
 });

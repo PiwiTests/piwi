@@ -304,21 +304,37 @@ export function useRunEvents(listener: (event: RunLifecycleEvent) => void, onOpe
   });
 }
 
+/** How long a run page waits before it reads an initializing run again after a read that failed. */
+export const RUN_START_RETRY_MS = 5_000;
+
 /**
  * Refetch a run the page shows as initializing once it moves on, so the page
  * goes live without a reload: on each lifecycle event of the run (its
  * `run-started`, or a cancel or an end before it began), and each time the
  * shared connection opens, for an event sent while it was closed. A refetch
  * while the app hydrates answers with the data it loaded with, so the page
- * reads the run once hydration ends.
+ * reads the run once hydration ends. A refetch that resolves to `false` (the
+ * read failed) is tried again after `RUN_START_RETRY_MS` while the run still
+ * initializes and the page is open.
  */
 export function useRunStart(runId: number, status: () => string | null | undefined, refresh: () => Promise<unknown>) {
   const nuxtApp = useNuxtApp();
   let waitingForHydration = false;
+  let retry: ReturnType<typeof setTimeout> | null = null;
+  let left = false;
+  const read = () => {
+    void refresh().then((answered) => {
+      if (answered !== false || retry || left) return;
+      retry = setTimeout(() => {
+        retry = null;
+        refreshWhileInitializing();
+      }, RUN_START_RETRY_MS);
+    });
+  };
   const refreshWhileInitializing = () => {
     if (status() !== 'initializing') return;
     if (!nuxtApp.isHydrating) {
-      refresh();
+      read();
     } else if (!waitingForHydration) {
       waitingForHydration = true;
       nuxtApp.hooks.hookOnce('app:suspense:resolve', () => {
@@ -330,4 +346,9 @@ export function useRunStart(runId: number, status: () => string | null | undefin
   useRunEvents((event) => {
     if (event.runId === runId) refreshWhileInitializing();
   }, refreshWhileInitializing);
+  onUnmounted(() => {
+    left = true;
+    if (retry) clearTimeout(retry);
+    retry = null;
+  });
 }

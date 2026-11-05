@@ -177,6 +177,60 @@ describe('useRunStart', () => {
     expect(live.run.refetches).toBe(0);
   });
 
+  test('reads the run again after a read that failed, while it initializes and the page is open', async () => {
+    vi.useFakeTimers();
+    try {
+      stubBrowser();
+      const { useRunStart, RUN_START_RETRY_MS } = await composables();
+      const run = { status: 'initializing', refetches: 0, answers: [false, false, true] };
+      const refresh = async () => run.answers[run.refetches++] ?? true;
+      useRunStart(7, () => run.status, refresh);
+      FakeSource.all[0]!.open();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(run.refetches).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(RUN_START_RETRY_MS);
+      expect(run.refetches).toBe(2);
+      await vi.advanceTimersByTimeAsync(RUN_START_RETRY_MS);
+      expect(run.refetches).toBe(3);
+      // The third read answered: nothing more is read.
+      await vi.advanceTimersByTimeAsync(RUN_START_RETRY_MS * 3);
+      expect(run.refetches).toBe(3);
+
+      // A run read as started is not read again, and a page that left reads nothing.
+      const started = { status: 'initializing', refetches: 0 };
+      useRunStart(
+        8,
+        () => started.status,
+        async () => {
+          started.refetches++;
+          return false;
+        },
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      expect(started.refetches).toBe(1);
+      started.status = 'running';
+      await vi.advanceTimersByTimeAsync(RUN_START_RETRY_MS);
+      expect(started.refetches).toBe(1);
+
+      const leaving = { refetches: 0 };
+      useRunStart(
+        9,
+        () => 'initializing',
+        async () => {
+          leaving.refetches++;
+          return false;
+        },
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      for (const unmount of unmounts) unmount();
+      await vi.advanceTimersByTimeAsync(RUN_START_RETRY_MS * 2);
+      expect(leaving.refetches).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test('stops refetching when the page leaves, and closes the stream when nothing listens', async () => {
     stubBrowser();
     const { useRunStart } = await composables();
