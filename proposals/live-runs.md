@@ -262,7 +262,7 @@ bytes, worker time and privacy, and produced only while a viewer subscribes to i
 | Page events | Console errors, uncaught errors, failed requests, requests pending long ("POST /api/checkout pending 17 s"), the backend's logged errors | `run-events.ts` listeners, turned on for any watcher | Small, capped | Lane view, the editors' output, a Runs window ticker |
 | Pixels | The page as it paints, with the action point and the element's box drawn by the viewer | `page.screencast` through `page-view.ts` | 15 to 40 KB an image; 10/s local, 4/s team; 2/s while a masked field shows | A focused lane view |
 | Crop to the target | The element the call waits on, sharp, with a margin | The viewer crops the frame around the box the worker already sends | Free | Phones, narrow windows, hovers |
-| Text (ARIA) | The page as roles and names: searchable, copyable, the target node marked, change since the last call | The trace's `aria/<callId>-<phase>.json` (written when the project's trace sets `snapshots.aria`; `wrapConfig`'s does not), else `ariaSnapshot` on request | A few KB; 120 to 300 ms on a heavy page if taken | Phones, agents, screen readers |
+| Text (ARIA) | The page as roles and names: searchable, copyable, the target node marked, change since the last call | The trace's `aria/<callId>-<phase>.json` (written when the project's trace sets `snapshots.aria`; `wrapConfig`'s does not), else `ariaSnapshot` on request | A few KB, hundreds of KB on a heavy page; 120 to 300 ms there if taken | Phones, agents, screen readers |
 | Filmstrip | One thumbnail per finished call of the current test, for a late joiner | Locally the trace's `screencast/*.jpeg`; for the team the view's own masked frames, taken only while someone watches, kept in the worker's memory | No capture locally | A strip under the view |
 | Lanes at a glance | A bar per attempt per lane, the usual duration as a ghost, Stuck?, tiles of every lane at 1 fps | Lane state, the last ten passes per test | One query a run; tiles at 1/s | The run page, the desktop run page |
 | The DOM at each call | Inspect and pick a locator on a running test | Locally Playwright's trace viewer on the test's growing trace; for the team [live-view-next Part 4](live-view-next.md) | File reads | A hand-off locally |
@@ -270,8 +270,8 @@ bytes, worker time and privacy, and produced only while a viewer subscribes to i
 | Terminal | One start line with the link, stop and stuck lines, OSC 8 links, OSC 9;4 progress (error after a failure, warning while a test waits) | The reporter's main process | None | Terminals, CI logs |
 | OS presence | Running, failing or waiting for you on the taskbar, Dock and tray; one flash per job | The desktop app, fed from every local run | None | The desktop app |
 
-Two of these come free from what Playwright already records under `wrapConfig`'s trace (the ARIA files and the
-screencast JPEGs), and Playwright's trace viewer opens a test's growing trace as a live view
+The screencast JPEGs come free from what Playwright already records under `wrapConfig`'s trace, the ARIA files only
+under a trace that sets `snapshots.aria`, and Playwright's trace viewer opens a test's growing trace as a live view
 (`npx playwright show-trace <outputDir>/.playwright-artifacts-<workerIndex>/traces/<name>.json`, where `<name>` is the
 test's id, with `-retry<k>` for a retry and `-recording<N>` for each recording after the worker's first; the viewer
 builds that `.json` over the growing `<name>.trace`). Others were weighed and left

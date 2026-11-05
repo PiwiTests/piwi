@@ -277,8 +277,8 @@ export interface PiwiDashboardOptions {
    * without the capture fixtures — the trace alone unlocks the DOM snapshot,
    * full call stack, full network with bodies and the visual diff. The trace
    * records DOM snapshots, not ARIA snapshots. To record those too (Playwright
-   * 1.63+), for the in-execution page diff and the accessibility tree at each
-   * action, set the trace yourself: `use: { trace: { mode: 'retain-on-failure',
+   * 1.63+), for the in-execution page diff and the accessibility tree at the
+   * failing action, set the trace yourself: `use: { trace: { mode: 'retain-on-failure',
    * snapshots: { dom: true, aria: true } } }`. They cost run time on every
    * attempt, passing ones included: Playwright waits for up to three ARIA
    * snapshots per input action, each hundreds of milliseconds on a large page
