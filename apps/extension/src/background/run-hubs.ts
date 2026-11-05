@@ -5,13 +5,13 @@
  * goes to the paired port only once the program there proved it holds it (`proveEditor`). The hubs' addresses and
  * tokens go to the secret area beside the editor's pairing, never to `chrome.storage.local`, and are found again
  * whenever a hub's connection fails, with a backoff, and every minute while a listener (a Runs window) is there and the
- * editor answered, so a window of the editor opened since is found. That minute look only adds: a side that does not
- * answer `found` keeps what it had, and a hub connected already stays unless its side answers `found` without it. A
- * lost connection's runs stay, as the hub told them last and marked `lost`, until the hub tells its runs again, another
- * process answers at its address, the editor no longer names it, or as long as an ended run. What each code written at
- * a stop came to goes to the listeners, with the hub that said it. While a listener is there, each connection says the
- * runs are followed (`follow`), which holds a failure no pause bar shows for the person watching: as the first window
- * opens, on each connection that opens while one is, and `on: false` as the last one closes.
+ * editor answered, so a window of the editor opened since is found. What each side (the editor, the desktop app)
+ * answers decides its connections (`held`), and the state shows its latest answer. A lost connection's runs stay, as
+ * the hub told them last and marked `lost`, until the hub tells its runs again, another process answers at its
+ * address, the editor no longer names it, or as long as an ended run. What each code written at a stop came to goes to
+ * the listeners, with the hub that said it. While a listener is there, each connection says the runs are followed
+ * (`follow`), which holds a failure no pause bar shows for the person watching: as the first window opens, on each
+ * connection that opens while one is, and `on: false` as the last one closes.
  *
  * The paired desktop app is asked for the hub of the runs its shell starts, which its server is, beside the editor
  * (`desktopHubs`: `GET /api/desktop/live` with the app's token, once the app proved it holds it): its hub is connected
@@ -250,14 +250,14 @@ export class RunHubs {
     return this.search(false);
   }
 
-  /** `find`, or with `look` the minute look, which only adds (`settle`); a call meanwhile runs once more, as `find`. */
+  /** `find`, or with `look` the minute look (`held`); a call meanwhile runs once more, as `find`. */
   private search(look: boolean): Promise<void> {
     if (this.finding) {
       this.findAgain = true;
       return this.finding;
     }
     this.finding = (async () => {
-      let adding = look;
+      let looking = look;
       do {
         this.findAgain = false;
         const [editor, desktop] = await Promise.all([
@@ -267,8 +267,8 @@ export class RunHubs {
           })),
           this.findDesktop(),
         ]);
-        this.settle(editor, desktop, adding);
-        adding = false;
+        this.settle(editor, desktop, looking);
+        looking = false;
       } while (this.findAgain);
     })().finally(() => {
       this.finding = null;
@@ -478,21 +478,17 @@ export class RunHubs {
   }
 
   /**
-   * Keeps a connection to each hub the editor and the desktop app named, and to nothing else. For the minute look
-   * (`adding`), a side that does not answer `found` (one that failed once, timed out, or did not prove itself) keeps
-   * what it had, its connections included.
+   * Keeps a connection to each hub the editor and the desktop app named, and to nothing else, but for a side that did
+   * not answer (`held`). `look` for the minute look.
    */
-  private settle(found: EditorHubs, foundDesktop: DesktopHubs, adding = false): void {
-    const kept = (desktop: boolean) => this.hubs.filter((hub) => this.desktopUrls.has(hub.url) === desktop);
-    const editor = !adding || found.discovery === 'found' ? found : { discovery: this.discovery, hubs: kept(false) };
-    const desktop =
-      !adding || foundDesktop.discovery === 'found' ? foundDesktop : { discovery: this.desktop, hubs: kept(true) };
+  private settle(editor: EditorHubs, desktop: DesktopHubs, look = false): void {
     this.discovery = editor.discovery;
     this.desktop = desktop.discovery;
+    const editorHubs = this.held(editor, false, look);
     // An address the editor and the desktop app both name is the editor's.
-    const desktopHubs = desktop.hubs.filter((hub) => !editor.hubs.some((h) => h.url === hub.url));
+    const desktopHubs = this.held(desktop, true, look).filter((hub) => !editorHubs.some((h) => h.url === hub.url));
     this.desktopUrls = new Set(desktopHubs.map((hub) => hub.url));
-    const hubs = [...editor.hubs, ...desktopHubs];
+    const hubs = [...editorHubs, ...desktopHubs];
     this.hubs = hubs;
     if (pairingGone(editor.discovery)) void this.deps.writeHubs([]).catch(() => undefined);
     // The runs kept of a pairing gone go with it; a lost hub's runs, also once the side that named it names it no more.
@@ -513,6 +509,22 @@ export class RunHubs {
     // An editor or a desktop app not open yet, or open with no hub, may be soon; a pairing to fix waits for it.
     if (findsAgain(editor) || findsAgain(desktop)) this.retryLater();
     this.changed();
+  }
+
+  /**
+   * The hubs a side's answer leaves: those it named, when `found`. A side that did not answer (`unreachable`; in the
+   * minute look `unproven` too, which a full find asks again at once) keeps its connections that answer, and a full
+   * find tries the editor's hubs found last beside them (`findEditor`); the minute look connects none without a proof.
+   * Any other answer leaves none: the side's connections close.
+   */
+  private held(answer: EditorHubs | DesktopHubs, desktop: boolean, look: boolean): LiveHub[] {
+    const { discovery } = answer;
+    if (discovery !== 'unreachable' && !(look && discovery === 'unproven')) return answer.hubs;
+    const open = [...this.connections.values()]
+      .filter((connection) => connection.state === 'open' && this.desktopUrls.has(connection.hub.url) === desktop)
+      .map((connection) => connection.hub);
+    const tried = look ? [] : answer.hubs;
+    return [...open, ...tried.filter((hub) => !open.some((h) => h.url === hub.url))];
   }
 
   private connect(hub: LiveHub): void {

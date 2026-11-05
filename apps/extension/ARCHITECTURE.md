@@ -819,12 +819,20 @@ The hubs are found again:
   once a connection opens, never because another hub's runs change. With no Runs window open the worker tries four
   times in a row, then waits to be asked; while a Runs window is open it tries without end;
 - every minute while a Runs window is open and the editor answered with its hubs, so a window of the editor opened
-  since (a second VS Code window, WebStorm beside it) is found. This look only adds: a side (the editor, the desktop
-  app) that does not answer `found` keeps what it had, its connections included, and a hub connected already is
-  closed only when its side answers `found` without it;
+  since (a second VS Code window, WebStorm beside it) is found;
 - when the popup, the Runs window or the run shortcut asks, the window's **Look again** included.
 
-An unreachable editor leaves the hubs found last to try.
+What each side (the editor, the desktop app) answers decides its connections (`held`), and the state shows each
+side's latest answer:
+
+- `found`: its hubs are those it names. A hub connected already stays; one it no longer names is closed.
+- `unreachable` (closed, a timeout, a server error, an answer it could not read): its connections that answer stay.
+  An unreachable editor also leaves the hubs found last to try, but not at the minute look, which connects nothing
+  without a proof.
+- `unproven` at the minute look: its connections that answer stay, and none is connected. The full find that follows
+  at once asks again, and closes them if the program on the port still does not prove itself, as any full find does.
+- Any other answer (`refused`: the pairing was revoked; a pairing gone) closes the side's connections, its runs going
+  with them.
 
 ### A connection per hub
 
@@ -933,7 +941,8 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
   next stop in the worker's slot is watched too, whichever worker Playwright runs there (one it starts in place of a
   worker that failed has another index), and the window watches again as it shows. It goes once its run ended or is
   gone from the state, lost runs counting as there (`watchLiveHolds`), so a later run of the same ref starts without
-  it; after the background worker started again, it waits for the run's hub to answer (`rejoining`). The commands
+  it; after the background worker started again, it waits for the run's hub to answer (`rejoining`): the window
+  draws nothing from the gone worker's state, and asks for no view while it has no worker. The commands
   still name the worker's index. A view whose hub's connection was lost ends, and why is read out (`runs_liveLost`);
   its run then shows lost, without its page, and the view is asked again at that stop once a state showed the hub
   away and the run comes back (`away`). When the hub says why the view sends no frame (`refused`: the page is too
@@ -1006,8 +1015,9 @@ The run shortcut is the command `run-pause-resume` (`RUN_COMMAND` in `src/shared
   first window asks and the last one leaves, the frames to the windows that watch alone, the latest one at ten a
   second, input refused to a window that does not watch, a stop that ended, a connection lost (its runs kept `lost`
   until the hub tells its runs again, another process answers there, ten minutes pass or the editor names it no more,
-  each shown once, and the view asked again on the next connection), a minute look a side fails once keeping the
-  hubs that answer, and the state narrowed to each window.
+  each shown once, and the view asked again on the next connection); a side's passing failure keeping its
+  connections that answer, the minute look connecting no hub without a fresh proof, and a refused pairing closing its
+  side's connections; and the state narrowed to each window.
 - `view-input.test.ts` covers which keys go to the page and as what, and the input's batches: coalesced moves, double
   and triple clicks, drags, the wheel, texts joined, the bound, the rate, a refusal and `dispose`.
 - `editor-pairing.test.ts` checks Send to editor's proof against a JetBrains IDE's routes, and the pairing's address

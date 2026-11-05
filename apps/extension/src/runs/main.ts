@@ -171,12 +171,15 @@ function connect(): void {
   });
   opened.onDisconnect.addListener(() => {
     if (port === opened) port = null;
+    // Nothing is drawn from the state of a worker that is gone: the next worker's first state draws the window again.
+    state = null;
     for (const resolve of waiting.values()) resolve({ ok: false, message: '', failure: 'offline' });
     waiting.clear();
     // The worker that relayed the views is gone: the next one watches each again that Watch live left on, once the
-    // run's hub answers it.
+    // run's hub answers it, and is asked again for an image on its way.
     for (const key of views.keys()) endView(key, false);
     for (const entry of watchLive.values()) entry.rejoining = true;
+    for (const [key, image] of images) if (image.loading) images.delete(key);
     // The worker stopped (it is started again by the connection) or restarted.
     setTimeout(connect, 500);
   });
@@ -499,8 +502,12 @@ function toggleLive(run: RunsRun, worker: HubWorker, stop: HubStop): void {
   render();
 }
 
-/** Asks the hub for a stop's live view; its frames take the image's place once the first one is drawn. */
+/**
+ * Asks the hub for a stop's live view; its frames take the image's place once the first one is drawn. Nothing is asked
+ * while the window has no worker: Watch live, left on, asks once the next one draws the window.
+ */
 function startView(run: RunsRun, worker: number, stop: HubStop): void {
+  if (!port) return;
   const key = workerKey(run.hub, run.session.ref, { worker });
   endView(key, false);
   const view: LiveView = {

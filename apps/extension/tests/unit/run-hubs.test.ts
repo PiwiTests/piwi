@@ -354,7 +354,7 @@ describe('finding the hubs through the pairing', () => {
     expect(fetches).toHaveLength(2);
   });
 
-  it('keeps the hubs that answer through a minute look a side fails once, and their runs', async () => {
+  it('keeps the connections that answer through a side’s passing failure, and shows its answer', async () => {
     let desktop = async (): Promise<DesktopHubs> => ({ discovery: 'found', hubs: [DESKTOP_HUB] });
     const { hubs, sockets, prove } = setup({ desktopHubs: () => desktop() });
     let changes = 0;
@@ -364,35 +364,98 @@ describe('finding the hubs through the pairing', () => {
     await welcome(editorSocket!, [session([RUNNING])], 3_600_000);
     await welcome(desktopSocket!, [session([STOPPED], { ref: 'desktop-1' })], 3_600_000);
     const runs = () => hubs.state().runs.map((run) => [run.session.ref, !!run.lost]);
-    expect(runs()).toEqual([
+    const both = [
       ['r1', false],
       ['desktop-1', false],
-    ]);
-    /** The next minute look, until it settled. */
-    const look = async () => {
+    ];
+    /** Time passes until the hubs are settled once more: a minute look, or a retry. */
+    const after = async (ms: number) => {
       const before = changes;
-      await vi.advanceTimersByTimeAsync(60_000);
+      await vi.advanceTimersByTimeAsync(ms);
       await until(() => changes > before);
     };
-    // The desktop app does not answer in time once.
+    // The desktop app does not answer, at the minute look and at the full find that follows it.
     desktop = async () => ({ discovery: 'unreachable', hubs: [] });
-    await look();
-    // Then the program on the editor's port does not prove itself once.
+    await after(60_000);
+    expect(hubs.state()).toMatchObject({ discovery: 'found', desktop: 'unreachable' });
+    await after(1000);
+    expect(desktopSocket!.closedWith).toBeNull();
+    expect(runs()).toEqual(both);
     desktop = async () => ({ discovery: 'found', hubs: [DESKTOP_HUB] });
+    await after(2000);
+    expect(hubs.state().desktop).toBe('found');
+    // The program on the editor's port does not prove itself at a minute look: the full find right after asks again.
     prove('wrong');
-    await look();
+    await after(57_000);
+    expect(hubs.state().discovery).toBe('unproven');
+    expect(editorSocket!.closedWith).toBeNull();
+    expect(runs()).toEqual(both);
+    prove('editor');
+    await after(4000);
+    expect(hubs.state()).toMatchObject({ discovery: 'found', desktop: 'found' });
     expect(editorSocket!.closedWith).toBeNull();
     expect(desktopSocket!.closedWith).toBeNull();
     expect(sockets).toHaveLength(2);
-    expect(runs()).toEqual([
-      ['r1', false],
-      ['desktop-1', false],
-    ]);
-    expect(hubs.state()).toMatchObject({ discovery: 'found', desktop: 'found' });
-    // Asked as Look again asks, the editor that does not prove itself has its hubs let go.
+    // A full find the editor does not prove itself to lets its hubs go.
+    prove('wrong');
     await hubs.find();
     expect(editorSocket!.closedWith).toBe(1000);
     expect(hubs.state().discovery).toBe('unproven');
+  });
+
+  it('connects no hub again at a minute look without a fresh proof, the desktop app’s included', async () => {
+    let desktop = async (): Promise<DesktopHubs> => ({ discovery: 'found', hubs: [DESKTOP_HUB] });
+    const { hubs, sockets, prove } = setup({ desktopHubs: () => desktop() });
+    let changes = 0;
+    hubs.listen(() => changes++);
+    await hubs.find();
+    await welcome(sockets[0]!, [session([RUNNING])], 3_600_000);
+    await welcome(sockets[1]!, [session([STOPPED], { ref: 'desktop-1' })], 3_600_000);
+    // Both connections drop just before the minute look, as neither side proves itself or answers any more.
+    await vi.advanceTimersByTimeAsync(59_500);
+    prove('wrong');
+    desktop = async () => ({ discovery: 'unreachable', hubs: [] });
+    sockets[0]!.hangUp(1006);
+    sockets[1]!.hangUp(1006);
+    const before = changes;
+    await vi.advanceTimersByTimeAsync(500);
+    await until(() => changes > before);
+    expect(sockets).toHaveLength(2);
+    expect(hubs.state().runs.map((run) => [run.session.ref, !!run.lost])).toEqual([
+      ['desktop-1', true],
+      ['r1', true],
+    ]);
+    // Nor does the full find that follows.
+    const again = changes;
+    await vi.advanceTimersByTimeAsync(1000);
+    await until(() => changes > again);
+    expect(sockets).toHaveLength(2);
+  });
+
+  it('closes a side’s connections when its pairing is refused at a minute look, and says so', async () => {
+    for (const side of ['editor', 'desktop'] as const) {
+      let desktop = async (): Promise<DesktopHubs> => ({ discovery: 'found', hubs: [DESKTOP_HUB] });
+      const { hubs, sockets, answer } = setup({ desktopHubs: () => desktop() });
+      let changes = 0;
+      hubs.listen(() => changes++);
+      await hubs.find();
+      const [editorSocket, desktopSocket] = sockets;
+      await welcome(editorSocket!, [session([RUNNING])], 3_600_000);
+      await welcome(desktopSocket!, [session([STOPPED], { ref: 'desktop-1' })], 3_600_000);
+      if (side === 'editor') answer(async () => Response.json({ error: 'not paired' }, { status: 401 }));
+      else desktop = async () => ({ discovery: 'refused', hubs: [] });
+      const before = changes;
+      await vi.advanceTimersByTimeAsync(60_000);
+      await until(() => changes > before);
+      const [refused, kept] = side === 'editor' ? [editorSocket, desktopSocket] : [desktopSocket, editorSocket];
+      expect(refused!.closedWith, side).toBe(1000);
+      expect(kept!.closedWith, side).toBeNull();
+      expect(hubs.state()).toMatchObject(
+        side === 'editor' ? { discovery: 'refused', desktop: 'found' } : { discovery: 'found', desktop: 'refused' },
+      );
+      // Its runs go with the pairing, not kept as lost.
+      expect(hubs.state().runs.map((run) => run.session.ref)).toEqual([side === 'editor' ? 'desktop-1' : 'r1']);
+    }
   });
 });
 
