@@ -552,6 +552,21 @@ describe('evidence rules', () => {
     expect(rows[0]!.n).toBe(0);
   });
 
+  test("every run lists the Playwright projects its executions ran, and only those, as the run's config", () => {
+    const runs = q('select id, metadata from test_runs order by id');
+    expect(runs.length).toBeGreaterThan(0);
+    for (const run of runs) {
+      const executed = q(
+        `select distinct browser_name from test_runs_cases where test_run_id = ${run.id as number} order by browser_name`,
+      ).map((r) => r.browser_name);
+      const metadata = JSON.parse((run.metadata as string) ?? 'null') as {
+        htmlReport?: { projects?: Array<{ name?: string }> };
+      } | null;
+      const listed = (metadata?.htmlReport?.projects ?? []).map((p) => p.name);
+      expect([...listed].sort(), `run ${run.id as number}`).toEqual(executed);
+    }
+  });
+
   test('server logs only appear on requests a story declares as failing, or the Test Map model logs on purpose', () => {
     const rows = q(`
       select nr.id, nr.test_runs_case_id, nr.method, nr.url, nr.server_logs, trc.failure_cluster_id,

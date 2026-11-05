@@ -55,6 +55,7 @@ import {
 import { demoTestMeta, demoTags, demoLocks, demoExternalId, buildAiUsage } from '../shared/demo/demo-test-meta.mjs';
 import { computeDemoFingerprint } from '../shared/demo/demo-fingerprint.mjs';
 import { demoExecutionResources, demoResourceReport } from '../shared/demo/demo-resources.mjs';
+import { demoHtmlReport } from '../shared/demo/demo-run-projects.mjs';
 import { resourceFingerprint } from '../shared/resource-fingerprint.mjs';
 import {
   WEB_DASHBOARD_PROJECT_ID,
@@ -735,6 +736,8 @@ const CHECKOUT_BASE_URLS = {
   integration: ['https://integration.checkout.example.com'],
   development: ['http://localhost:3000', 'http://localhost:5173'],
 };
+/** The `use.baseURL` of each run's Playwright projects, by run id, for the runs that record one. */
+const RUN_BASE_URLS = new Map();
 const RUN_GREPS = {
   1: 'checkout|cart',
   2: 'auth|orders',
@@ -1223,6 +1226,7 @@ for (const proj of DEMO_PROJECTS) {
 
     const environment = ENVIRONMENTS[i % ENVIRONMENTS.length];
     const baseUrls = proj.id === 1 ? CHECKOUT_BASE_URLS[environment] : null;
+    if (baseUrls) RUN_BASE_URLS.set(runId, baseUrls[Math.floor(i / ENVIRONMENTS.length) % baseUrls.length]);
     const metadata = {
       ci: {
         provider: 'GitHub Actions',
@@ -1237,15 +1241,6 @@ for (const proj of DEMO_PROJECTS) {
         author: commit.author,
         commitMessage: commit.message,
       },
-      ...(baseUrls
-        ? {
-            htmlReport: {
-              projects: [
-                { name: 'chromium', use: { baseURL: baseUrls[Math.floor(i / ENVIRONMENTS.length) % baseUrls.length] } },
-              ],
-            },
-          }
-        : {}),
       // One run that came in over the ingest caps through the batch upload,
       // so the run page shows what ingest left out.
       ...(proj.id === 1 && i === 3
@@ -2324,7 +2319,7 @@ const INCIDENT_MARKERS = [];
   target.failed_tests = failing.length;
   target.passed_tests = executed - failing.length;
   target.label = null;
-  target.metadata.htmlReport = { projects: [{ name: 'chromium', use: { baseURL: `https://${INCIDENT_HOST}` } }] };
+  RUN_BASE_URLS.set(target.id, `https://${INCIDENT_HOST}`);
   const reason =
     `${failing.length} of ${executed} tests failed, ${failing.length} of them navigating or connecting to ` +
     `${INCIDENT_HOST} (connection refused).`;
@@ -6556,6 +6551,23 @@ const ASSISTANT_MESSAGES = [
 // sends Playwright's `parallelIndex`. A seeded worker runs its shard's lane
 // from start to end, never started again, so its lane is its index.
 for (const row of TEST_RUNS_CASES) row.parallel_index = row.worker_index ?? null;
+
+// ── Configured projects (rng-free) ─────────────────────────────────────────
+// Each run's metadata lists the Playwright projects its executions ran
+// (`htmlReport.projects`, as the reporter records the config's projects), with
+// the run's baseURL, so the list and the executions' `browser_name` agree.
+{
+  const projectNamesByRun = new Map();
+  for (const row of [...TEST_RUNS_CASES].sort((a, b) => a.id - b.id)) {
+    if (!projectNamesByRun.has(row.test_run_id)) projectNamesByRun.set(row.test_run_id, []);
+    projectNamesByRun.get(row.test_run_id).push(row.browser_name);
+  }
+  for (const run of TEST_RUNS) {
+    const names = projectNamesByRun.get(run.id);
+    if (!names) continue;
+    run.metadata = { ...run.metadata, htmlReport: demoHtmlReport(names, RUN_BASE_URLS.get(run.id) ?? null) };
+  }
+}
 
 // ── Assemble SQL ───────────────────────────────────────────────────────────
 const lines = [

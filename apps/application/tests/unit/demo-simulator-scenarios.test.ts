@@ -76,6 +76,21 @@ describe('every scenario', () => {
   });
 });
 
+describe('every simulated run', () => {
+  test("lists the Playwright projects its tests ran, and only those, as the run's config", async () => {
+    for (const scenario of simulator.DEMO_SCENARIOS) {
+      const run = await streamSimulation(simulator, scenario.id);
+      const ran = new Set(
+        run.events
+          .filter((e) => e.type === 'complete')
+          .map((e) => (e.browser as { projectName?: string } | null)?.projectName),
+      );
+      const metadata = run.finish!.metadata as { htmlReport: { projects: Array<{ name: string }> } };
+      expect(metadata.htmlReport.projects.map((p) => p.name).sort(), scenario.id).toEqual([...ran].sort());
+    }
+  });
+});
+
 describe('every attempt', () => {
   test('carries a fixme annotation only when skipped, as Playwright adds it only to a test it skips', () => {
     for (const scenario of simulator.DEMO_SCENARIOS) {
@@ -115,8 +130,8 @@ describe("the 'staging-down' scenario", () => {
 
   test("names the staging host as the run's baseURL, which the incident rule reads", async () => {
     const run = await streamSimulation(simulator, 'staging-down');
-    const metadata = run.finish!.metadata as { htmlReport: { projects: Array<{ use: { baseURL?: string } }> } };
-    expect(metadata.htmlReport.projects.map((p) => p.use.baseURL)).toEqual([`https://${INCIDENT_HOST}`]);
+    const metadata = run.finish!.metadata as { htmlReport: { projects: Array<{ use?: { baseURL?: string } }> } };
+    expect(metadata.htmlReport.projects.map((p) => p.use?.baseURL)).toEqual([`https://${INCIDENT_HOST}`]);
   });
 });
 
