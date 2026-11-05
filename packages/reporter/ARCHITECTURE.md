@@ -241,18 +241,26 @@ What the package does to a user's run, process by process.
   runs its own), an image of the page goes twice a second.
 - At a headed stop, every view of its page, this one and the instance's live view, paints the pause bar over in each
   frame, as the image of the stop leaves it out (`page-view.ts`): `pauseHere` tells the page's views as it draws the
-  bar and once it is down (`pauseBarShows`), and the first frame that may show it has the bar's bottom edge read, once,
-  through an internal call. The band from the viewport's top to that edge is painted gray across the frame, after the
-  instance's masks, with the `jpeg-js` of `live-mask.ts` (`paintBoxes`). A frame the page painted after the bar came
-  down goes as it is (one that names no time, before Playwright 1.61, once the bar has been down a second), and so
-  does one whose bar is not read within a second, or with no `jpeg-js`. A painted frame holds the next one back as long
-  again as its paint took.
+  bar and once it is down (`pauseBarShows`). The bar's bottom edge and the viewport's size are read through an internal
+  call as soon as it is drawn, and again when a frame names another viewport than the frames read for (the bar wraps
+  onto a second row on a narrower one); a frame the page painted before the bar came down keeps the last read that
+  found it. The band from the viewport's top to that edge, scaled to the viewport the frame names (a page zoomed in
+  names more pixels than CSS ones), is painted gray across the frame with the `jpeg-js` of `live-mask.ts`
+  (`paintBoxes`), in the instance's view in the same pass as its masks, outside their rest. A frame the page painted
+  after the bar came down goes as it is (one that names no time, before Playwright 1.61, once the bar has been down a
+  second), and so does one whose bar is not read within a second, or with no `jpeg-js`. A painted frame holds the next
+  one back as long again as its paint took. An image of the page taken in place of a frame names the viewport it shows,
+  its own size at CSS scale. A browser zoom changed while the bar shows is read only when the bar is drawn again.
 - `input` plays a viewer's mouse, wheel, key and text events (`@piwitests/core/run-view`:
   Playwright's key names alone, nothing evaluated) with `page.mouse` and `page.keyboard`
   through internal calls: trusted input that reaches whatever is at the point, Piwi's
-  overlays included (the picker, the recorder, a headed stop's pause bar, whose buttons
-  answer the stop as a click in the window does). Only while that stop's view is watched,
+  overlays included (the picker, the recorder). Only while that stop's view is watched,
   200 events a second at most, and what it holds down is let go before the test goes on.
+  None reaches the pause bar the view paints over: a press or a click on its band, while it
+  shows and the view paints it (`barBand`), is not played, nor the release of a button
+  pressed there; while a message with keys plays, the bar is inert (`barTakesKeys`), so Tab
+  passes it by and no key presses its buttons, and Escape, which the bar takes as Resume, is
+  not played.
 - At a stop no bar shows, Pick a locator, Record here, Assert and Assert a region run in
   the page while its view is watched (`viewHere` in `pause-at.ts`), driven through that
   input. They end with the view or the stop, leaving nothing of theirs in the page (the

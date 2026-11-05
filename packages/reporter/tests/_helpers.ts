@@ -249,14 +249,16 @@ export function withoutCi(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 
 /**
  * The band of a JPEG image of a viewport `viewportHeight` CSS pixels high, from `top` to `bottom` in CSS pixels, across
- * its width: its mean color, and how many of its pixels are violet (far more blue than green), as the pause bar's
- * Resume and border are. Decoded with the `jpeg-js` Playwright bundles.
+ * its width or from `left` to `right`: its mean color, and how many of its pixels are violet (far more blue than
+ * green), as the pause bar's Resume and border are. Decoded with the `jpeg-js` Playwright bundles.
  */
 export function jpegBand(
   data: Buffer,
   viewportHeight: number,
   top: number,
   bottom: number,
+  left = 0,
+  right = Infinity,
 ): { mean: number[]; violet: number } {
   const playwright = createRequire(createRequire(__filename).resolve('playwright-core/package.json'));
   const { jpegjs } = playwright('playwright-core/lib/utilsBundle') as {
@@ -273,7 +275,7 @@ export function jpegBand(
   let violet = 0;
   let count = 0;
   for (let y = Math.ceil(top * scale); y < Math.floor(bottom * scale); y++) {
-    for (let x = 0; x < image.width; x++) {
+    for (let x = Math.ceil(left * scale); x < Math.min(image.width, Math.floor(right * scale)); x++) {
       const i = (y * image.width + x) * 4;
       const [r, g, b] = [image.data[i]!, image.data[i + 1]!, image.data[i + 2]!];
       sum[0] += r;

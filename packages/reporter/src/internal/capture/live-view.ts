@@ -49,8 +49,8 @@ import { openPageView, type PageFrame, type PageView } from './page-view.js';
  * `LIVE_FRAME_WIDTH` by `LIVE_FRAME_HEIGHT` at `LIVE_FRAME_QUALITY`, `LIVE_FRAME_FPS` frames a second and
  * `LIVE_FRAME_BYTE_RATE` bytes, each frame posted with the call it was taken at, one post in flight, the latest frame
  * alone waiting. Before a frame goes, the page's secret fields and the elements its project masks (`masks`, which the
- * instance sends on the stream) are painted over in it, or it does not go (`live-mask.ts`), and then a headed stop's
- * pause bar (`page-view.ts`). Nobody watching, no screencast runs and no frame goes. The view stops as nobody watches any more, as
+ * instance sends on the stream) are painted over in it, or it does not go (`live-mask.ts`), and a headed stop's pause
+ * bar in the same pass (`page-view.ts`). Nobody watching, no screencast runs and no frame goes. The view stops as nobody watches any more, as
  * the test ends (the viewers hear it, `ended`) and as its page closes; someone who watches while no test runs hears
  * why no image shows. Each frame names its test, so a view opened from one test's row ends at the next test's first
  * frame. The worker also posts when its test stops and goes on (`stop`), and the stop it holds again on each stream
@@ -663,7 +663,7 @@ function startView(): void {
     shotMs: SHOT_MS,
     busy: () => own.posting || mask.resting,
     live,
-    screen: (frame) => mask.screen(frame),
+    screen: (frame, also) => mask.screen(frame, also),
     send: (frame) => postFrame(own, frame),
     refuse: (why) => void post(own, { type: 'frame', ...own.id, refused: why ?? TOO_HEAVY }),
   }).catch(() => null);

@@ -49,7 +49,7 @@ import { locatorOn } from './chain-locator.js';
 import { keptRequests, keptResponse } from './kept-responses.js';
 import { jpegSize, maskSecretFields, maskedImage } from './live-mask.js';
 import { liveViewState, onLiveViewChange, shareLiveView } from './live-view.js';
-import { openPageView, pauseBarBand, viewportOf } from './page-view.js';
+import { openPageView, viewportOf } from './page-view.js';
 import { PICK_AT_SINCE } from './pick-at.js';
 import { highlightAtStop, type PauseAnswer } from './pause-at.js';
 import { internalCall } from './quiet-capture.js';
@@ -199,6 +199,8 @@ interface View {
   screencast: boolean;
   /** Send the latest frame sent again, or why none goes, for a viewer that came since: a still page paints no other. */
   resend(): void;
+  /** The bottom edge of the pause bar's band in the latest frame sent, while the bar shows painted over; else null. */
+  barBand(): Promise<number | null>;
   close(): Promise<void>;
 }
 
@@ -658,6 +660,7 @@ async function openView(page: Page, stop: number): Promise<View | null> {
     stop,
     screencast: opened.screencast,
     resend: opened.resend,
+    barBand: opened.barBand,
     close: async () => {
       page.off('close', onClose);
       await opened.close();
@@ -675,7 +678,8 @@ async function stopViewOf(holding: HeldStop): Promise<IntentAnswer> {
 /**
  * Play a viewer's input at the stop held, in order, after the input sent before it: refused while the stop's view is
  * not watched, past `MAX_VIEW_EVENT_RATE` events a second and with `MAX_INPUT_WAITING` messages waiting. The events
- * of a stop that ends meanwhile are not played.
+ * of a stop that ends meanwhile are not played, nor any that would reach the pause bar the view paints over: a press on
+ * its band (`onPauseBar`), and Escape, while the bar is inert to the message's keys (`barTakesKeys`).
  */
 function playInput(holding: HeldStop, events: ViewInput[]): Promise<IntentAnswer> {
   const page = holding.page;
@@ -690,28 +694,67 @@ function playInput(holding: HeldStop, events: ViewInput[]): Promise<IntentAnswer
   own.waiting++;
   const played = own.playing
     .then(async (): Promise<IntentAnswer> => {
-      // The views paint the pause bar over: a press there would reach a button the viewer cannot see.
-      const band = await pauseBarBand(page);
-      for (const [i, event] of events.entries()) {
-        if (held !== holding || input !== own || view?.stop !== holding.stop || page.isClosed()) {
-          return { ok: false, message: i ? `The stop ended after ${i} of the events.` : WENT_ON };
+      // The view paints the pause bar over: a press there would reach a button the viewer cannot see, as would a key.
+      const band = view?.stop === holding.stop ? await view.barBand() : null;
+      // A page that does not answer may still show the bar: its Escape is not played then either.
+      const keyed = holding.bar && events.some((event) => event.type === 'key');
+      const barKeys =
+        keyed &&
+        (await answerWithin(
+          internalCall(page, () => page.evaluate(barTakesKeys, false)),
+          PAGE_ANSWER_MS,
+          true,
+        ));
+      try {
+        for (const [i, event] of events.entries()) {
+          if (held !== holding || input !== own || view?.stop !== holding.stop || page.isClosed()) {
+            return { ok: false, message: i ? `The stop ended after ${i} of the events.` : WENT_ON };
+          }
+          if (onPauseBar(event, band, own) || (barKeys && resumesAtBar(event))) continue;
+          try {
+            await internalCall(page, () => playEvent(page, event, own));
+          } catch (error) {
+            // A page's error may name the address it was at: its credentials stay in the worker.
+            return {
+              ok: false,
+              message: hideSecretsInText(`Event ${i + 1} could not be played: ${errorMessage(error)}`),
+            };
+          }
         }
-        if (onPauseBar(event, band, own)) continue;
-        try {
-          await internalCall(page, () => playEvent(page, event, own));
-        } catch (error) {
-          // A page's error may name the address it was at: its credentials stay in the worker.
-          return {
-            ok: false,
-            message: hideSecretsInText(`Event ${i + 1} could not be played: ${errorMessage(error)}`),
-          };
+        return { ok: true, message: events.length === 1 ? 'Played 1 event.' : `Played ${events.length} events.` };
+      } finally {
+        if (barKeys && !page.isClosed()) {
+          await within(
+            internalCall(page, () => page.evaluate(barTakesKeys, true)).catch(() => undefined),
+            VIEW_END_MS,
+          );
         }
       }
-      return { ok: true, message: events.length === 1 ? 'Played 1 event.' : `Played ${events.length} events.` };
     })
     .finally(() => own.waiting--);
   own.playing = played.catch(() => undefined);
   return played;
+}
+
+/**
+ * Runs in the page: while a viewer's keys play (`on` false), the pause bar is inert, so Tab passes it by, the focus
+ * leaves it and no key presses its buttons; after them (`on`), it is as it was. Whether it shows. Must stay
+ * self-contained.
+ */
+function barTakesKeys(on: boolean): boolean {
+  type Element = { inert: boolean; contains(other: unknown): boolean };
+  type Document = { activeElement: { blur(): void } | null; getElementById(id: string): Element | null };
+  const doc = (globalThis as unknown as { document?: Document }).document;
+  const bar = doc?.getElementById('__piwi-pause-bar');
+  if (!doc || !bar) return false;
+  bar.inert = !on;
+  if (!on && bar.contains(doc.activeElement)) doc.activeElement?.blur();
+  return true;
+}
+
+/** Whether a key event is Escape, with or without modifiers: the pause bar takes it as Resume from anywhere in the page. */
+function resumesAtBar(event: ViewInput): boolean {
+  return event.type === 'key' && /(^|\+)Escape$/.test(event.key);
 }
 
 /**
