@@ -275,16 +275,20 @@ export interface PiwiDashboardOptions {
    * `trace` options on the top-level `use` block so a failing test keeps a
    * screenshot (`'only-on-failure'`) and a trace (`'retain-on-failure'`) even
    * without the capture fixtures — the trace alone unlocks the DOM snapshot,
-   * full call stack, full network with bodies and the visual diff. On Playwright
-   * 1.63 or later the trace default also turns on the per-action aria tree
-   * (`snapshots: { dom: true, aria: true }`), which adds the accessibility tree
-   * before and after each action at negligible size. The `screen` snapshot kind
-   * (a PNG per action, the trace's biggest cost) stays opt-in — set it yourself
-   * with `use: { trace: { mode: 'retain-on-failure', snapshots: { dom: true,
-   * aria: true, screen: true } } }`. Only fills options the config leaves unset;
-   * an explicit value (including `'off'`) and per-project `use` blocks are never
-   * touched. Defaults to `true`. Set to `false` (or `PIWI_DEFAULT_CAPTURE=false`)
-   * to opt out and let Playwright's own defaults stand.
+   * full call stack, full network with bodies and the visual diff. The trace
+   * records DOM snapshots, not ARIA snapshots. To record those too (Playwright
+   * 1.63+), for the in-execution page diff and the accessibility tree at each
+   * action, set the trace yourself: `use: { trace: { mode: 'retain-on-failure',
+   * snapshots: { dom: true, aria: true } } }`. They cost run time on every
+   * attempt, passing ones included: Playwright waits for up to three ARIA
+   * snapshots per input action, each hundreds of milliseconds on a large page
+   * (ten clicks on a 1,000-row table took 8,967 ms with them against 1,021 ms
+   * without, on Playwright 1.64.1 and Chromium). Add `screen: true` for a PNG
+   * per action, the trace's biggest storage cost. Only fills options the config
+   * leaves unset; an explicit value (including `'off'`) and per-project `use`
+   * blocks are never touched. Defaults to `true`. Set to `false` (or
+   * `PIWI_DEFAULT_CAPTURE=false`) to opt out and let Playwright's own defaults
+   * stand.
    */
   defaultCapture?: boolean;
 

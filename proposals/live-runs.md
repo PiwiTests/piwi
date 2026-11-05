@@ -61,7 +61,8 @@ shell slips) and #1112 (the default trace's ARIA snapshots slow large pages). Th
 to P3 most of them, and the rest later (#1108's run links and #1109's Stuck? mark in P5, #1110's editor focus in P4,
 #1111's stopped state and thumbnail in P6). #1109's notification is fixed already: no run started on a developer's
 machine (a terminal, the desktop app, an editor, `piwi preflight --run`, `piwi bug --write`) sends `test.stuck`, the
-`stuck-notifications` use of `run-eligibility.ts`. #1112 is left to its own fix. Nothing
+`stuck-notifications` use of `run-eligibility.ts`. #1112 is fixed on its own: the default trace takes no ARIA
+snapshots. Nothing
 here is on [`ROADMAP.md`](../ROADMAP.md) yet. It revises parts of [`live-view-next.md`](live-view-next.md) and extends
 decisions of [`run-control.md`](../adr/run-control.md); [Changes to other plans](#changes-to-other-plans) lists them.
 The contracts it adds are entry D63 of [`1.0-stabilization.md`](1.0-stabilization.md).
@@ -261,7 +262,7 @@ bytes, worker time and privacy, and produced only while a viewer subscribes to i
 | Page events | Console errors, uncaught errors, failed requests, requests pending long ("POST /api/checkout pending 17 s"), the backend's logged errors | `run-events.ts` listeners, turned on for any watcher | Small, capped | Lane view, the editors' output, a Runs window ticker |
 | Pixels | The page as it paints, with the action point and the element's box drawn by the viewer | `page.screencast` through `page-view.ts` | 15 to 40 KB an image; 10/s local, 4/s team; 2/s while a masked field shows | A focused lane view |
 | Crop to the target | The element the call waits on, sharp, with a margin | The viewer crops the frame around the box the worker already sends | Free | Phones, narrow windows, hovers |
-| Text (ARIA) | The page as roles and names: searchable, copyable, the target node marked, change since the last call | The trace's `aria/<callId>-<phase>.json` (written by `wrapConfig`'s trace), else `ariaSnapshot` on request | A few KB; 120 to 300 ms on a heavy page if taken | Phones, agents, screen readers |
+| Text (ARIA) | The page as roles and names: searchable, copyable, the target node marked, change since the last call | The trace's `aria/<callId>-<phase>.json` (written when the project's trace sets `snapshots.aria`; `wrapConfig`'s does not), else `ariaSnapshot` on request | A few KB; 120 to 300 ms on a heavy page if taken | Phones, agents, screen readers |
 | Filmstrip | One thumbnail per finished call of the current test, for a late joiner | Locally the trace's `screencast/*.jpeg`; for the team the view's own masked frames, taken only while someone watches, kept in the worker's memory | No capture locally | A strip under the view |
 | Lanes at a glance | A bar per attempt per lane, the usual duration as a ghost, Stuck?, tiles of every lane at 1 fps | Lane state, the last ten passes per test | One query a run; tiles at 1/s | The run page, the desktop run page |
 | The DOM at each call | Inspect and pick a locator on a running test | Locally Playwright's trace viewer on the test's growing trace; for the team [live-view-next Part 4](live-view-next.md) | File reads | A hand-off locally |
@@ -710,8 +711,8 @@ runs the performance check.
   folder's layout, the screencast's first-client rule. Each is feature-checked with a named fallback and covered by
   the reporter's floor job, and the view says which layers are unavailable.
 - **Piped runs that now appear** in an IDE may surprise people; the start line says why and how to opt out.
-- **#1112 may remove a free layer.** If the default trace stops taking ARIA snapshots, the Text layer takes
-  `ariaSnapshot` on request (120 to 300 ms on a heavy page), and only the screencast JPEGs come free.
+- **The default trace takes no ARIA snapshots** (#1112). Unless a project's trace sets `snapshots.aria`, the Text
+  layer takes `ariaSnapshot` on request (120 to 300 ms on a heavy page), and only the screencast JPEGs come free.
 - **Scope.** Twelve phases across every app. Each later phase is usable alone.
 
 ## Open questions
