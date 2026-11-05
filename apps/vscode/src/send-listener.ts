@@ -198,12 +198,14 @@ export const SAVED_PORT_RETRY_MS = 10_000;
 
 /**
  * Takes the saved port once the window holding it lets it go: while this window has no listener and a pairing is
- * saved, it tries that port now and every `everyMs`, so Piwi Picker's pairing reaches a window of this machine, and
+ * saved (`saved`, read again at each try, since another window may pair meanwhile), it tries that port now and every
+ * `everyMs`, so Piwi Picker's pairing reaches a window of this machine, and
  * every window's hub through it, as long as one is open. A window listening on another port for a run's pairing keeps
  * that listener. `started` hears each listener it starts.
  */
 export function takeSavedPort(options: {
-  store: Pick<PairingStore, 'port' | 'token'>;
+  /** The saved pairing as it stands now, read again at each try. */
+  saved(): Promise<Pick<PairingStore, 'port' | 'token'>> | Pick<PairingStore, 'port' | 'token'>;
   listener(): SendListener | null;
   listen(port: number): Promise<SendListener>;
   started?(listener: SendListener): void;
@@ -211,11 +213,13 @@ export function takeSavedPort(options: {
 }): { ready: Promise<void>; dispose(): void } {
   let trying = false;
   const attempt = async (): Promise<void> => {
-    const { port, token } = options.store;
-    if (trying || options.listener() || !port || !token) return;
+    if (trying || options.listener()) return;
     trying = true;
     try {
-      options.started?.(await options.listen(port));
+      const { port, token } = await options.saved();
+      if (!port || !token || options.listener()) return;
+      const listener = await options.listen(port);
+      options.started?.(listener);
     } catch {
       // Another window holds it still.
     } finally {

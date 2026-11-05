@@ -327,7 +327,7 @@ describe('the saved port, held by another window', () => {
     let running: SendListener | null = null;
     const started: number[] = [];
     const take = takeSavedPort({
-      store: { port, token: TOKEN },
+      saved: () => ({ port, token: TOKEN }),
       listener: () => running,
       listen: async (p) => {
         running = await startSendListener({
@@ -359,10 +359,43 @@ describe('the saved port, held by another window', () => {
     }
   });
 
+  test('is read again at each try, so a pairing made in another window since is taken', async () => {
+    const free = http.createServer();
+    await new Promise<void>((resolve) => free.listen(0, '127.0.0.1', resolve));
+    const port = (free.address() as AddressInfo).port;
+    await new Promise((resolve) => free.close(resolve));
+    let saved: { port: number | undefined; token: string } = { port: undefined, token: '' };
+    let running: SendListener | null = null;
+    const take = takeSavedPort({
+      saved: async () => saved,
+      listener: () => running,
+      listen: async (p) => {
+        running = await startSendListener({
+          port: p,
+          token: () => TOKEN,
+          onPayload: async () => ({ inserted: false, file: null }),
+          live: () => [],
+        });
+        return running;
+      },
+      everyMs: 30,
+    });
+    try {
+      await take.ready;
+      expect(running).toBeNull();
+      saved = { port, token: TOKEN };
+      for (let i = 0; i < 40 && !running; i++) await new Promise((resolve) => setTimeout(resolve, 25));
+      expect((running as SendListener | null)?.port).toBe(port);
+    } finally {
+      take.dispose();
+      await (running as SendListener | null)?.close();
+    }
+  });
+
   test('is never tried without a pairing saved', async () => {
     let asked = 0;
     const take = takeSavedPort({
-      store: { port: undefined, token: '' },
+      saved: () => ({ port: undefined, token: '' }),
       listener: () => null,
       listen: async () => {
         asked++;

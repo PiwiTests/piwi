@@ -858,7 +858,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     return address;
   };
   const hubOf = (params: HubParams) => lc.sendRequest<HubResult>(HUB_REQUEST, params);
-  const listen = async (port: number) => {
+  /** The listener starting now: a pairing asked while another start is on its way waits for that one. */
+  let listening: Promise<SendListener> | null = null;
+  const listen = (port: number): Promise<SendListener> => {
+    listening ??= startListener(port).finally(() => {
+      listening = null;
+    });
+    return listening;
+  };
+  const startListener = async (port: number) => {
     sendListener = await startSendListener({
       port,
       token: () => sendStore.token,
@@ -877,7 +885,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   // Another window may hold the port: that window keeps the pairing, and this one takes the port once it lets it go.
   // A remote window forwards it again, as it was.
   const savedPort = takeSavedPort({
-    store: sendStore,
+    // Another window may have paired since this one started: the port and the token are read again each time.
+    saved: async () => {
+      sendStore.port = context.globalState.get<number>(SEND_PORT);
+      sendStore.token = (await context.secrets.get(SEND_TOKEN)) ?? '';
+      return sendStore;
+    },
     listener: () => sendListener,
     listen,
     started: (started) => {
@@ -885,6 +898,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     },
   });
   context.subscriptions.push(savedPort);
+  // A pairing another window makes is this window's too: a run's pairing here never mints another token over it.
+  context.subscriptions.push(
+    context.secrets.onDidChange((change) => {
+      if (change.key !== SEND_TOKEN) return;
+      void context.secrets.get(SEND_TOKEN).then((token) => {
+        sendStore.token = token ?? '';
+      });
+    }),
+  );
   await savedPort.ready;
   const pairing = sendPairing({
     store: sendStore,

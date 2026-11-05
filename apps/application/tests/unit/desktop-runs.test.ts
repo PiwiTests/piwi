@@ -383,6 +383,8 @@ describe('the hub Piwi Picker reaches', () => {
 
   it('names the editors’ hubs of this machine to Piwi Picker as its peers, never with their tokens', async () => {
     const picker = await paired();
+    const raw: string[] = [];
+    picker.socket.on('message', (data) => void raw.push(String(data)));
     picker.send({ type: 'subscribe', id: 1 });
     expect(await waitFor(() => picker.messages.find((m) => m.type === 'peers'))).toEqual({ type: 'peers', hubs: [] });
     writeDiscovery(editors, {
@@ -410,6 +412,8 @@ describe('the hub Piwi Picker reaches', () => {
         },
       ],
     });
+    // What the hub sends names no token: the reader would drop one anyway.
+    expect(raw.join('\n')).not.toContain('token-of-the-editor-hub');
     for (const file of fs.readdirSync(editors)) fs.rmSync(path.join(editors, file));
     picker.socket.close();
   });
