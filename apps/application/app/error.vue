@@ -79,6 +79,6 @@ useHead({
       </UDashboardPanel>
     </NuxtLayout>
 
-    <LazyDesktopLocalRunsTray v-if="desktopWindow && route.meta.layout !== false" />
+    <LazyDesktopLocalRunsTray v-if="desktopWindow" />
   </UApp>
 </template>
