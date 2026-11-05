@@ -829,8 +829,9 @@ side's latest answer:
 - `unreachable` (closed, a timeout, a server error, an answer it could not read): its connections that answer stay.
   An unreachable editor also leaves the hubs found last to try, but not at the minute look, which connects nothing
   without a proof.
-- `unproven` at the minute look: its connections that answer stay, and none is connected. The full find that follows
-  at once asks again, and closes them if the program on the port still does not prove itself, as any full find does.
+- `unproven` at the minute look: its connections that answer stay, and none is connected. The full find that follows,
+  after the retry's wait (1 s, doubling to 30 s), asks again, and closes them if the program on the port still does not
+  prove itself, as any full find does.
 - Any other answer (`refused`: the pairing was revoked; a pairing gone) closes the side's connections, its runs going
   with them.
 
