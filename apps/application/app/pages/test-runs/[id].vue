@@ -14,6 +14,8 @@ import { liveRowNote } from '~/utils/live-row-note';
 import { runSummaryText, runVerdictText } from '~/utils/run-summary';
 import { NO_WORKER_GRACE_MS } from '~/utils/run-live-view-status';
 import { stallWatch, STREAM_RECONNECT_STALL_MS } from '~/utils/stream-stall';
+import { streamReopener } from '~/utils/stream-reopen';
+import { refetchKeeping } from '~/utils/refetch-keeping';
 import { subscribeDemoEvents } from '~/demo/run-events';
 import { useRunEvents, useRunStart, useRunStream } from '~/composables/useRunStream';
 import { useReportsPoll } from '~/composables/useReportsPoll';
@@ -41,8 +43,11 @@ const baseURL = useRuntimeConfig().app.baseURL.replace(/\/$/, '');
 const isDesktop = useIsDesktop();
 const { can } = useAuth();
 
-const { data: testRun, error: testRunError, refresh } = await useFetch<TestRunDetails>(`/api/test-runs/${runId}`);
+const { data: testRun, error: testRunError } = await useFetch<TestRunDetails>(`/api/test-runs/${runId}`);
 if (testRunError.value) showPageLoadError(testRunError.value, 'test run');
+// Every later read of the run goes through `reloadRun`: a read that fails (a proxy's 502 while the instance restarts)
+// leaves the run the page shows, and resolves to false.
+const reloadRun = refetchKeeping(testRun, () => $fetch<TestRunDetails>(`/api/test-runs/${runId}`));
 
 // Lightweight poll for latest run info — avoids reloading full page data on run events
 const projectId = testRun.value?.projectId;
@@ -655,7 +660,7 @@ function onRunEnded(): void {
   liveViewState.value = null;
   disconnectStream();
   // A run read running again (one its reporter revived) is live again, and its next end runs as the first did.
-  void refresh().then(() => {
+  void reloadRun().then(() => {
     if (testRun.value?.status === 'running') liveRunEnded.value = false;
   });
   // Nudge the Changes tab to refetch — it keeps its own fetch state and
@@ -667,7 +672,7 @@ function onRunEnded(): void {
 // The reporter may upload HTML/Monocart reports and traces after the run
 // finishes: the page reads the run again a few times so they appear without a
 // manual refresh, and stops when it leaves.
-const reportsPoll = useReportsPoll(refresh);
+const reportsPoll = useReportsPoll(reloadRun);
 
 function pollForReports(): void {
   if (isDemoMode) return; // demo mode has no file uploads
@@ -740,7 +745,7 @@ function connectToStream() {
     liveViewConnected.value = true;
     stopWatchingForStall();
     liveViewState.value = null;
-    reopenDelay = STREAM_REOPEN_MIN_MS;
+    reopener.reset();
   };
 
   source.onmessage = (event) => {
@@ -760,29 +765,22 @@ function connectToStream() {
 }
 
 // The browser gives up on a stream whose reconnection gets an error answer (a proxy's 502 while the instance restarts,
-// an expired session): the page refetches the run and opens the stream again, waiting longer each time.
-const STREAM_REOPEN_MIN_MS = 2_000;
-const STREAM_REOPEN_MAX_MS = 30_000;
-let reopenDelay = STREAM_REOPEN_MIN_MS;
-let reopenTimer: ReturnType<typeof setTimeout> | null = null;
+// an expired session): the page reads the run again and opens the stream again, waiting longer each time. While the
+// run cannot be read, the page keeps the run it shows, says the stream stalled, and tries again later.
+const reopener = streamReopener(reloadRun, () => {
+  if (shouldStream.value) connectToStream();
+});
 
 function reopenStream() {
   eventSource?.close();
   eventSource = null;
-  if (reopenTimer) return;
-  reopenTimer = setTimeout(async () => {
-    reopenTimer = null;
-    await refresh();
-    if (shouldStream.value && !unmounted) connectToStream();
-  }, reopenDelay);
-  reopenDelay = Math.min(reopenDelay * 2, STREAM_REOPEN_MAX_MS);
+  reopener.schedule();
 }
 
 function disconnectStream() {
   liveViewConnected.value = false;
   stopWatchingForStall();
-  if (reopenTimer) clearTimeout(reopenTimer);
-  reopenTimer = null;
+  reopener.reset();
   if (eventSource) {
     eventSource.close();
     eventSource = null;
@@ -796,14 +794,13 @@ function disconnectStream() {
 // Retry, from the toolbar of a stalled stream: a new stream, whose catch-up brings the run's state.
 function retryStream() {
   disconnectStream();
-  reopenDelay = STREAM_REOPEN_MIN_MS;
   connectToStream();
 }
 
 // A run shown as initializing is refetched once it starts, and then streams.
 // In demo mode the page already listens while the run initializes, for the
 // tests that begin before the refetch lands.
-useRunStart(Number(runId), () => testRun.value?.status, refresh);
+useRunStart(Number(runId), () => testRun.value?.status, reloadRun);
 const shouldStream = computed(() => isLive.value || (isDemoMode && testRun.value?.status === 'initializing'));
 
 watch(
@@ -818,10 +815,8 @@ watch(
   { immediate: true },
 );
 
-// A reopening that awaits its refetch as the page leaves opens no stream after.
-let unmounted = false;
+// Leaving drops a reopening that waits or reads the run: it opens no stream after.
 onUnmounted(() => {
-  unmounted = true;
   if (testsRanTimer) clearTimeout(testsRanTimer);
   disconnectStream();
 });
@@ -910,14 +905,14 @@ useRunEvents((event) => {
   if (event.runId !== Number(runId) || !isLive.value) return;
   // A cancel comes on the global stream alone; an end, on it too while the run's own stream is not open. The demo's
   // own stream always hears the end.
-  if (event.type === 'run-cancelled') refresh();
+  if (event.type === 'run-cancelled') reloadRun();
   else if (isDemoMode || liveViewConnected.value) return;
   else if (event.type === 'run-finished' || event.type === 'run-submitted') onRunEnded();
-  else if (event.type === 'run-finalizing') refresh();
+  else if (event.type === 'run-finalizing') reloadRun();
 });
 const visibility = useDocumentVisibility();
 watch(visibility, (state) => {
-  if (state === 'visible' && isLive.value) refresh();
+  if (state === 'visible' && isLive.value) reloadRun();
 });
 
 useHead(
@@ -1191,7 +1186,7 @@ const moreMenuItems = computed(() => {
     icon: 'i-lucide-clipboard',
     onSelect: () => copy(buildRunSummary(), { toast: 'Run summary copied' }),
   });
-  items.push({ label: 'Refresh', icon: 'i-lucide-refresh-cw', onSelect: () => refresh() });
+  items.push({ label: 'Refresh', icon: 'i-lucide-refresh-cw', onSelect: () => reloadRun() });
   const kept = !!testRun.value?.keptAt;
   if (!kept) {
     items.push({
@@ -1205,7 +1200,7 @@ const moreMenuItems = computed(() => {
       label: 'Release keep',
       icon: 'i-lucide-lock-open',
       onSelect: async () => {
-        if (await releaseKeep(Number(runId))) refresh();
+        if (await releaseKeep(Number(runId))) reloadRun();
       },
     });
   }
@@ -1301,7 +1296,7 @@ const moreMenuItems = computed(() => {
               :active-statuses="testCaseActiveStatuses"
               :total-wasted-time="totalWastedTime"
               @toggle-status="handleFilterStatus"
-              @label-updated="refresh"
+              @label-updated="reloadRun"
             />
           </template>
 
@@ -1421,7 +1416,7 @@ const moreMenuItems = computed(() => {
   </div>
 
   <ClientOnly>
-    <RunKeepModal v-model:open="isKeepOpen" :run-id="Number(runId)" @kept="refresh" />
+    <RunKeepModal v-model:open="isKeepOpen" :run-id="Number(runId)" @kept="reloadRun" />
   </ClientOnly>
 
   <ClientOnly>
