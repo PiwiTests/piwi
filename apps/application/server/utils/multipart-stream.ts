@@ -15,7 +15,10 @@ import { pipeline } from 'node:stream/promises';
 export interface StreamedFile {
   /** Multipart field name (e.g. `trace`, `attach_file`). */
   field: string;
-  /** Filename as sent by the client — unsanitized; sanitize before using it in a storage path. */
+  /**
+   * Filename as sent by the client — unsanitized; sanitize before using it in a storage path. Empty for a name busboy
+   * reads no file name from (`.`, `..`, a path ending in a separator): the part keeps its place in arrival order.
+   */
   filename: string;
   /** Absolute path of the temp file the part was streamed to. */
   path: string;
@@ -145,11 +148,6 @@ export async function streamMultipart(event: H3Event, options: StreamMultipartOp
 
       bb.on('file', (field: string, stream: NodeJS.ReadableStream, info: busboy.FileInfo) => {
         const { filename } = info;
-        // A part with no filename is not a file upload — drain it so busboy can proceed.
-        if (!filename) {
-          stream.resume();
-          return;
-        }
         // Reserve this part's arrival slot now; writes flush out of order, so
         // filling the slot on completion keeps `files` in the order parts arrived.
         const index = fileWrites.length;

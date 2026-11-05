@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
@@ -102,6 +103,37 @@ describe('POST /api/test-runs/:id/case-files', () => {
     const answer = await uploadScreenshot({ title, location: 'tests/receipt.spec.ts:3:1', retries: 0 });
 
     expect(answer).toMatchObject({ executionId: execution!.id, attachments: 1 });
+  });
+
+  test('stores an attachment named only dots as attachment, each attachment with its own name and bytes', async () => {
+    const [execution] = await stream([
+      { title: 'pays', filePath: 'tests/pay.spec.ts', status: 'failed', line: 3, column: 1, retries: 0 },
+    ]);
+
+    const answer = await route({
+      params: { id: String(runId) },
+      ...multipartEvent([
+        field('streamToken', STREAM_TOKEN),
+        field('testCase', { title: 'pays', location: 'tests/pay.spec.ts:3:1', retries: 0 }),
+        field('attach_meta', [
+          { name: '..', contentType: 'application/octet-stream', originalName: '..' },
+          { name: 'screenshot', contentType: 'image/png', originalName: 'shot.png' },
+        ]),
+        { name: 'attach_file', filename: '..', data: Buffer.from('dots') },
+        { name: 'attach_file', filename: 'shot.png', data: Buffer.from('png') },
+      ]),
+    });
+
+    expect(answer).toMatchObject({ executionId: execution!.id, attachments: 2 });
+    const stored = await db
+      .select({ subtype: schema.files.subtype, path: schema.files.path })
+      .from(schema.files)
+      .where(eq(schema.files.testRunsCaseId, execution!.id));
+    const byName = Object.fromEntries(stored.map((row) => [row.subtype, row.path]));
+    expect(byName['..']).toMatch(/\/attachment$/);
+    expect(byName.screenshot).toMatch(/\/shot\.png$/);
+    expect(state.written.get(byName['..']!)?.toString()).toBe('dots');
+    expect(state.written.get(byName.screenshot!)?.toString()).toBe('png');
   });
 
   test.each([
