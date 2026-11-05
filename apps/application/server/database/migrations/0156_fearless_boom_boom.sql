@@ -1,0 +1,1 @@
+ALTER TABLE `test_runs` ADD `live_view_key_digests` text;

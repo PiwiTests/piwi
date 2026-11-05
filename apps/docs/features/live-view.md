@@ -46,7 +46,7 @@ A running run's **Tests** tab says **Live view available**, or what is missing, 
 | It says | Why, and what to do |
 |---|---|
 | **Live view off** | A Project admin turns it on for the next runs. |
-| **Live view unavailable** | The run has no key: it started before the setting was on, without `wrapConfig`'s global setup, with `streaming` off, or before the instance restarted. Start a new run. |
+| **Live view unavailable** | The run has no key: it started before the setting was on, without `wrapConfig`'s global setup, or with `streaming` off. Start a new run. |
 | **Live view waiting** | No worker is connected yet: they are starting. |
 | **No worker connected** | Tests run without one: the specs import `test` from `@playwright/test`, not the [capture fixtures](/guide/capture-fixtures). |
 | **Not shared live** | The run is on a developer's machine: they [share it](./share-live). |
@@ -94,7 +94,9 @@ leaves it, the worker paints over password fields, fields whose `autocomplete` a
 number or code, and the project's **Masked elements** (Playwright locators). While one shows, two images a second go at
 most. A zoomed-in page sends no image. A secret in the page's own text still shows; the caption and the log hide credentials and typed text. The workers reach the dashboard with a key
 the run got as it registered: it opens this run's live view and nothing else, ends with the run, and is never in the
-environment of the tests, their hooks or their fixtures, so a process they start does not get it.
+environment of the tests, their hooks or their fixtures, so a process they start does not get it. The dashboard keeps
+the key's SHA-256 digest with the run, never the key, so a dashboard that restarts takes the key back from the
+workers that present it while the run lasts.
 
 ## Limits
 

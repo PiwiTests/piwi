@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, test, vi } from 'vitest';
 import { LIVE_VIEW_KEY_PREFIX, type WorkerToInstance } from '@piwitests/core/live-view';
 import type { LiveWorkerState } from '#shared/live-view';
@@ -20,7 +21,8 @@ import { runEventBus } from '../../server/utils/run-events';
  * The relay between a live run's workers and the people watching them: a key opens its own run's view alone and not
  * after it expired or the run ended, survives the run's interruption, and no project's keys push another's out;
  * frames reach the viewers of their worker and nobody else, are kept nowhere, the latest alone while a viewer reads
- * slowly; workers, viewers (per run and per person) and frames a second are bounded; a stop reaches the run page and
+ * slowly; a key whose digest its run stores is taken back by a relay that does not hold it, as one started again;
+ * workers, viewers (per run and per person) and frames a second are bounded; a stop reaches the run page and
  * survives the worker's new stream; and the run page hears each worker leave, whatever ends it.
  */
 
@@ -123,6 +125,50 @@ describe('the live view key', () => {
     expect(live.holdsKey(9)).toBe(true);
     now += LIVE_KEY_TTL_MS;
     expect(live.holdsKey(9)).toBe(false);
+  });
+
+  test('is taken back from the digest its run stores by a relay that does not hold it, until a day after the run began', () => {
+    let now = 1_000_000;
+    const { live } = relay(() => now);
+    const key = `${LIVE_VIEW_KEY_PREFIX}${'a'.repeat(43)}`;
+    const digest = createHash('sha256').update(key).digest('hex');
+    const stored = { digests: [`${digest.slice(0, -1)}0`, digest], createdAt: new Date(now - 1000) };
+    expect(live.authorize(7, key)).toBeNull();
+    expect(live.holdsKey(7)).toBe(false);
+    expect(live.holdsKey(7, stored)).toBe(true);
+    expect(live.holdsKey(7, { digests: null, createdAt: stored.createdAt })).toBe(false);
+    // A wrong key, the digest itself, or a run that stores none take nothing back.
+    expect(live.restoreKey(7, 1, `${key.slice(0, -1)}b`, stored)).toBeNull();
+    expect(live.restoreKey(7, 1, digest, stored)).toBeNull();
+    expect(live.restoreKey(7, 1, key, { digests: 'nothing', createdAt: stored.createdAt })).toBeNull();
+    expect(live.restoreKey(7, 1, key, stored)).toMatchObject({ runId: 7, projectId: 1, streamed: false });
+    // Taken back, it opens its own run alone, as long as a key minted with the run would.
+    expect(live.authorize(7, key)).not.toBeNull();
+    expect(live.authorize(8, key)).toBeNull();
+    now += LIVE_KEY_TTL_MS - 1000;
+    expect(live.authorize(7, key)).toBeNull();
+    expect(live.restoreKey(7, 1, key, stored)).toBeNull();
+    expect(live.holdsKey(7, stored)).toBe(false);
+  });
+
+  test('ended as the project turned its view off, is taken back once it is on again, and its end is forgotten', () => {
+    const { live } = relay();
+    const key = live.mintKey(7, 1)!;
+    const stored = { digests: [createHash('sha256').update(key).digest('hex')], createdAt: new Date(1_000_000) };
+    live.endProject(1);
+    expect(live.endedWhy(7, key)).toBe('off');
+    expect(live.restoreKey(7, 1, key, stored)).not.toBeNull();
+    expect(live.endedWhy(7, key)).toBeNull();
+    expect(live.authorize(7, key)).not.toBeNull();
+  });
+
+  test('is taken back within its run’s bound', () => {
+    const { live } = relay();
+    for (let i = 0; i < 64; i++) live.mintKey(3, 2);
+    const key = `${LIVE_VIEW_KEY_PREFIX}${'c'.repeat(43)}`;
+    const stored = { digests: [createHash('sha256').update(key).digest('hex')], createdAt: new Date(1_000_000) };
+    expect(live.restoreKey(3, 2, key, stored)).toBeNull();
+    expect(live.authorize(3, key)).toBeNull();
   });
 
   test('ends with its run, as the run finishes or is cancelled', () => {

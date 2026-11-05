@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { eq } from 'drizzle-orm';
 import { getRequestHeader, type H3Event } from 'h3';
 import {
   LIVE_CALL_LOGS_PER_SECOND,
@@ -15,9 +16,12 @@ import {
 } from '@piwitests/core/live-view';
 import { RateWindow } from '@piwitests/core/run-view';
 import type { LiveViewEnd, LiveViewerMessage, LiveWorkerState } from '#shared/live-view';
+import type { DbClient } from '../database';
+import { projects, testRuns } from '../database/schema';
 import { apiError } from './api-error';
 import type { EventStreamSink } from './event-stream';
 import { runEventBus, type GlobalRunEvent } from './run-events';
+import { timingSafeEqualStr } from './timing-safe';
 
 /**
  * The run page's live view on this instance: a relay, in memory alone, between the workers of a live run whose project
@@ -35,7 +39,11 @@ import { runEventBus, type GlobalRunEvent } from './run-events';
  * run's keys, workers and viewers end with the run (its finish or cancel), with the project's setting turned off
  * (`endProject`), and a key after `LIVE_KEY_TTL_MS` at most; an interrupted run's workers and viewers end, the keys
  * that opened a stream stay for the run to go on (`interruptRun`). A key that ended with its run or with the setting
- * is remembered, as long as it would have lived, for the routes to tell its worker why (`endedWhy`). Bounded
+ * is remembered, as long as it would have lived, for the routes to tell its worker why (`endedWhy`). The run keeps
+ * each key's digest (`storeLiveViewKey`), never the key: a key this relay does not hold (the instance started again,
+ * the setting turned off and on, the key given up at a bound) is taken back as its worker presents it while the run
+ * still runs, or may go on, in a project with the live view on, within `LIVE_KEY_TTL_MS` of the run's creation
+ * (`authorizeLiveViewKey`). Bounded
  * throughout: keys per project and in all (the expired ones go first, then those that never opened a stream: a run on
  * a developer's machine nobody shares), workers and viewers per run, viewers per person (the oldest replaced), frames
  * and call logs a second per worker, and each message's bytes (the route's).
@@ -61,7 +69,7 @@ export const LANE_RESTARTING = 'Waiting for the next test of this worker’s lan
 export const MAX_LIVE_KEYS = 5000;
 /** The most keys of one project: its expired go first, then its oldest. */
 export const MAX_LIVE_KEYS_PER_PROJECT = 500;
-/** The most keys of one run: one per shard that set it up. */
+/** The most keys of one run, held and stored: one per shard that set it up. */
 const MAX_KEYS_PER_RUN = 64;
 /** The runs whose counts are kept after they ended, the latest. */
 const MAX_COUNTED_RUNS = 512;
@@ -129,9 +137,28 @@ export interface LiveViewCounts {
 /** Why a relay refused. */
 export type LiveViewRefusal = { status: 404 | 409 | 429; message: string };
 
-/** The SHA-256 of a key, as it is held. */
+/** The SHA-256 of a key, as it is held, and stored with its run. */
 function digest(key: string): string {
   return createHash('sha256').update(key).digest('hex');
+}
+
+/** The key digests a run stores (`test_runs.live_view_key_digests`), as they are read: none for anything else. */
+function storedDigests(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+/** Whether `presented` is a key whose digest the run stores (`stored`), each digest compared in constant time. */
+function storesKey(stored: unknown, presented: string): boolean {
+  const presentedDigest = digest(presented);
+  let found = false;
+  for (const kept of storedDigests(stored)) if (timingSafeEqualStr(kept, presentedDigest)) found = true;
+  return found;
+}
+
+/** The digests a run stores of its keys, and when it was created, which bounds how long they open its view. */
+export interface StoredLiveViewKeys {
+  digests: unknown;
+  createdAt: Date;
 }
 
 export class LiveViewRelay {
@@ -152,15 +179,41 @@ export class LiveViewRelay {
   ) {}
 
   /**
-   * A key that opens the live view of `runId` alone; null when the run holds as many as it may. A project at its
-   * bound gives up its expired keys, then its oldest that never opened a stream, then its oldest; the instance at its
-   * bound gives up every expired key, then the oldest that never opened a stream of the project that holds the most
-   * of them, then the oldest of the project that holds the most, so no project takes another's place and a run that
-   * streams keeps its key.
+   * A key that opens the live view of `runId` alone; null when the run holds as many as it may. Held within the
+   * bounds `hold` keeps, so no project takes another's place and a run that streams keeps its key.
    */
   mintKey(runId: number, projectId: number): string | null {
-    const ofRun = [...this.keys.values()].filter((entry) => entry.runId === runId).length;
-    if (ofRun >= MAX_KEYS_PER_RUN) return null;
+    const key = `${LIVE_VIEW_KEY_PREFIX}${randomBytes(32).toString('base64url')}`;
+    const entry = { runId, projectId, expiresAt: this.now() + LIVE_KEY_TTL_MS, streamed: false };
+    return this.hold(digest(key), entry) ? key : null;
+  }
+
+  /**
+   * Take back the key `presented` of the run `runId`, which this relay does not hold, when the run stores its digest
+   * (`stored`): it opens the run's view again until `LIVE_KEY_TTL_MS` after the run was created, held within the same
+   * bounds as a key minted. Null for a key the run does not store, past that time, or past the run's bound. The caller
+   * checks first that the run still runs, or may go on, and that its project's live view is on.
+   */
+  restoreKey(runId: number, projectId: number, presented: string, stored: StoredLiveViewKeys): KeyEntry | null {
+    const expiresAt = stored.createdAt.getTime() + LIVE_KEY_TTL_MS;
+    if (!isLiveViewKey(presented) || expiresAt <= this.now() || !storesKey(stored.digests, presented)) return null;
+    const id = digest(presented);
+    const entry = { runId, projectId, expiresAt, streamed: false };
+    if (!this.hold(id, entry)) return null;
+    this.ended.delete(id);
+    return entry;
+  }
+
+  /**
+   * Hold a key's entry by its digest (`id`); false when its run holds as many as it may. A project at its bound gives
+   * up its expired keys, then its oldest that never opened a stream, then its oldest; the instance at its bound gives
+   * up every expired key, then the oldest that never opened a stream of the project that holds the most of them, then
+   * the oldest of the project that holds the most.
+   */
+  private hold(id: string, entry: KeyEntry): boolean {
+    const { runId, projectId } = entry;
+    const ofRun = [...this.keys.values()].filter((held) => held.runId === runId).length;
+    if (ofRun >= MAX_KEYS_PER_RUN) return false;
     if (this.keysOf(projectId).length >= MAX_LIVE_KEYS_PER_PROJECT) this.dropExpired(projectId);
     if (this.keysOf(projectId).length >= MAX_LIVE_KEYS_PER_PROJECT) {
       this.keys.delete(this.keysOf(projectId, false)[0] ?? this.keysOf(projectId)[0]!);
@@ -170,9 +223,8 @@ export class LiveViewRelay {
       const idle = this.largestProject(false);
       this.keys.delete(idle === null ? this.keysOf(this.largestProject(null)!)[0]! : this.keysOf(idle, false)[0]!);
     }
-    const key = `${LIVE_VIEW_KEY_PREFIX}${randomBytes(32).toString('base64url')}`;
-    this.keys.set(digest(key), { runId, projectId, expiresAt: this.now() + LIVE_KEY_TTL_MS, streamed: false });
-    return key;
+    this.keys.set(id, entry);
+    return true;
   }
 
   /** The run's key entry the presented key opens: null for another run's, an expired one, or none. */
@@ -353,11 +405,14 @@ export class LiveViewRelay {
     return null;
   }
 
-  /** Whether the run holds a key that opens its live view, for a run page that opens its stream. */
-  holdsKey(runId: number): boolean {
+  /**
+   * Whether the run holds a key that opens its live view, for a run page that opens its stream: one this relay holds,
+   * or one the run stores (`stored`) that `restoreKey` would take back as its worker presents it.
+   */
+  holdsKey(runId: number, stored: StoredLiveViewKeys | null = null): boolean {
     const now = this.now();
     for (const entry of this.keys.values()) if (entry.runId === runId && entry.expiresAt > now) return true;
-    return false;
+    return !!stored && storedDigests(stored.digests).length > 0 && stored.createdAt.getTime() + LIVE_KEY_TTL_MS > now;
   }
 
   /** How many views of the run are open, those waiting for a lane's next worker included. */
@@ -612,6 +667,52 @@ export class LiveViewRelay {
     }
     return counts;
   }
+}
+
+/** The statuses of a run whose stored key a worker presents again: its workers run tests, or it may go on. */
+const KEYED_STATUSES: readonly string[] = ['initializing', 'running', 'interrupted'];
+
+/**
+ * Keep the digest of `key`, which `setup` just minted for the run, with the run, beside those of its other shards and
+ * `MAX_KEYS_PER_RUN` at most, the latest: never the key itself. The setup of a shard runs under its instance's lock.
+ */
+export async function storeLiveViewKey(db: DbClient, runId: number, key: string): Promise<void> {
+  const [run] = await db.select({ digests: testRuns.liveViewKeyDigests }).from(testRuns).where(eq(testRuns.id, runId));
+  if (!run) return;
+  const digests = [...storedDigests(run.digests), digest(key)].slice(-MAX_KEYS_PER_RUN);
+  await db.update(testRuns).set({ liveViewKeyDigests: digests }).where(eq(testRuns.id, runId));
+}
+
+/**
+ * The run's key entry a worker's request opens (`presented`): one the relay holds, else one the run stores, taken
+ * back (`restoreKey`) while the run still runs or may go on and its project's live view is on. A key the run stores
+ * answers 404 while that setting is off and 410 once the run ended; any other key is refused as `refuseLiveViewKey`
+ * says.
+ */
+export async function authorizeLiveViewKey(db: DbClient, runId: number, presented: string | null): Promise<KeyEntry> {
+  const held = liveViewRelay.authorize(runId, presented);
+  if (held) return held;
+  if (isLiveViewKey(presented)) {
+    const [run] = await db
+      .select({
+        projectId: testRuns.projectId,
+        status: testRuns.status,
+        createdAt: testRuns.createdAt,
+        digests: testRuns.liveViewKeyDigests,
+        liveView: projects.liveView,
+      })
+      .from(testRuns)
+      .innerJoin(projects, eq(projects.id, testRuns.projectId))
+      .where(eq(testRuns.id, runId));
+    if (run && storesKey(run.digests, presented)) {
+      if (!run.liveView) throw apiError({ statusCode: 404, message: 'The live view is off for this project' });
+      if (!KEYED_STATUSES.includes(run.status))
+        throw apiError({ statusCode: 410, message: 'The run is no longer live' });
+      const restored = liveViewRelay.restoreKey(runId, run.projectId, presented, run);
+      if (restored) return restored;
+    }
+  }
+  return refuseLiveViewKey(runId, presented);
 }
 
 /**

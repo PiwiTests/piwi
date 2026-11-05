@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
@@ -838,5 +839,20 @@ describe("a run's live view key", () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+
+  test('is kept with its run as its digest alone, one for each shard that set the run up', async () => {
+    await db.update(schema.projects).set({ liveView: true }).where(eq(schema.projects.name, PROJECT));
+    const one = await setup({ body: { projectName: PROJECT, ...SHARDS, shardIndex: 1, liveView: true } });
+    const two = await setup({ body: { projectName: PROJECT, ...SHARDS, shardIndex: 2, liveView: true } });
+    expect(two.runId).toBe(one.runId);
+    const digestOf = (key: string) => createHash('sha256').update(key).digest('hex');
+    const run = await readRun(one.runId);
+    expect(run.liveViewKeyDigests).toEqual([digestOf(one.liveView.key), digestOf(two.liveView.key)]);
+    expect(JSON.stringify(run)).not.toContain(one.liveView.key);
+    expect(JSON.stringify(run)).not.toContain(two.liveView.key);
+    // A run that asked for none keeps none.
+    const plain = await setup({ body: { projectName: PROJECT, instanceId: 'dev-4' } });
+    expect((await readRun(plain.runId)).liveViewKeyDigests).toBeNull();
   });
 });

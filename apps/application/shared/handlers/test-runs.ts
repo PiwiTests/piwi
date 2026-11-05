@@ -287,7 +287,7 @@ export async function getTestRun(
     }
   }
 
-  const { streamToken: _streamToken, ...testRunPublic } = testRun;
+  const { streamToken: _streamToken, liveViewKeyDigests: _liveViewKeyDigests, ...testRunPublic } = testRun;
 
   let keptByName: string | null = null;
   if (testRun.keptBy) {
