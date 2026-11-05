@@ -3201,6 +3201,32 @@ const SCENES = [
     },
   })),
   ...[
+    { name: 'letter-avatars', width: 1280, height: 900, colorScheme: 'light' },
+    { name: 'letter-avatars-dark', width: 1280, height: 900, colorScheme: 'dark' },
+    { name: 'letter-avatars-mobile', width: 390, height: 1400, colorScheme: 'light' },
+  ].map(({ name, width, height, colorScheme }) => ({
+    name,
+    description: `Letter avatars: each account's initials on its own color in Settings → Users, the user menu and the group member picker, ${colorScheme}, at ${width} px. It exists with authentication on: pass --url of an auth-enabled server and PIWI_SCREENS_LOGIN=<username>:<password> of an administrator`,
+    prepare: signInForScene,
+    route: '/settings/users',
+    viewport: { width, height },
+    colorScheme,
+    async run({ page, goto, shoot, settle }) {
+      await page.locator('[data-shot="users-table"]').waitFor({ timeout: 90000 });
+      await settle();
+      await shoot('users', { of: '[data-shot="users-table"]' });
+      if (width >= 1024) await shoot('menu', { of: '[data-shot="user-menu"]', pad: 8 });
+      await goto('/settings/groups');
+      await page.locator('[data-shot="groups-table"]').waitFor({ timeout: 90000 });
+      await page.getByRole('button', { name: 'Edit QA' }).filter({ visible: true }).click();
+      await page.locator('[data-shot="group-form"]').waitFor({ timeout: 15000 });
+      await page.getByRole('dialog').getByRole('button', { name: 'Members', exact: true }).click();
+      await page.getByRole('listbox').waitFor();
+      await settle();
+      await shoot('members');
+    },
+  })),
+  ...[
     { name: 'settings-account-picture', width: 1280 },
     { name: 'settings-account-picture-mobile', width: 390 },
   ].map(({ name, width }) => ({

@@ -447,7 +447,7 @@ async function confirmRemovePicture() {
         >
           <template #username-cell="{ row }">
             <div class="flex min-w-0 items-center gap-2">
-              <UserAvatar :account="row.original" size="md" />
+              <UserAvatar :account="row.original" size="xs" />
               <div class="min-w-0">
                 <span class="block truncate text-highlighted" :title="displayName(row.original)">{{
                   displayName(row.original)
