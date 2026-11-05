@@ -849,7 +849,11 @@ const routes: RouteEntry[] = [
       // rows carry it); do the same so a demo visitor's stored token never comes
       // back over the wire.
       const items = rows.map((p) => {
-        const { scmToken: _scm, ...rest } = p as { scmToken?: string | null } & typeof p;
+        const {
+          scmToken: _scm,
+          ciServerToken: _ciServerToken,
+          ...rest
+        } = p as { scmToken?: string | null; ciServerToken?: string | null } & typeof p;
         return rest;
       });
       return { items };
@@ -883,7 +887,11 @@ const routes: RouteEntry[] = [
       const runLimit = Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : undefined;
       const project = await getProject(await getDemoDb(), +m[1]!, { runLimit, scope: parseProjectRunScope(q) });
       if (!project) return project;
-      const { scmToken: _scm, ...rest } = project as { scmToken?: string | null } & typeof project;
+      const {
+        scmToken: _scm,
+        ciServerToken: _ciServerToken,
+        ...rest
+      } = project as { scmToken?: string | null; ciServerToken?: string | null } & typeof project;
       return rest;
     },
   },

@@ -59,7 +59,8 @@ async function submit() {
       defaultBranch: state.value.defaultBranch || null,
       quarantineFailsStatus: state.value.quarantineFailsStatus,
       gateStatus: state.value.gateStatus,
-      ciRerun: state.value.ciRerun,
+      // The form does not edit the CI server target: it is sent back as stored.
+      ciRerun: { ...state.value.ciRerun, via: props.project.ciRerun?.via, ciServer: props.project.ciRerun?.ciServer },
       generatedSpecs: {
         testImport: state.value.generatedSpecs.testImport.trim() || null,
         bugsFolder: state.value.generatedSpecs.bugsFolder.trim() || null,

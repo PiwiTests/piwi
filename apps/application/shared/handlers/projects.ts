@@ -487,6 +487,7 @@ export async function getProject(
     ...project,
     effectiveDefaultBranch,
     hasScmToken: !!project.scmToken,
+    hasCiServerToken: !!project.ciServerToken,
     // Validated per-project capability decisions, so the edit form preselects a
     // stored "declined"/"enabled" rather than always reading "instance default".
     capabilities: parseProjectDecisions(project.capabilities ?? null),
@@ -598,6 +599,8 @@ export async function updateProject(
     diagnosisInstructions?: string | null;
     aiLanguage?: string | null;
     scmToken?: string | null;
+    /** The CI server token, already sealed with its base URL; null removes it. */
+    ciServerToken?: string | null;
     /** The repository the project's SCM calls read; null or '' clears it, and the next run that names one pins it. */
     repositoryUrl?: string | null;
     defaultBranch?: string | null;
@@ -636,6 +639,7 @@ export async function updateProject(
     diagnosisInstructions,
     aiLanguage,
     scmToken,
+    ciServerToken,
     repositoryUrl,
     defaultBranch,
     openApiUrl,
@@ -685,6 +689,7 @@ export async function updateProject(
         diagnosisInstructions: diagnosisInstructions !== undefined ? diagnosisInstructions || null : undefined,
         aiLanguage: aiLanguage !== undefined ? aiLanguage?.trim() || null : undefined,
         scmToken: scmToken !== undefined ? scmToken : undefined,
+        ciServerToken,
         repositoryUrl: repository,
         defaultBranch: defaultBranch !== undefined ? defaultBranch : undefined,
         openApiUrl: openApiUrl !== undefined ? openApiUrl : undefined,
@@ -738,7 +743,7 @@ export async function updateProject(
     .innerJoin(tags, eq(projectTags.tagId, tags.id))
     .where(eq(projectTags.projectId, id));
 
-  const { scmToken: _scmToken, ...updatedProjectPublic } = updatedProject[0];
+  const { scmToken: _scmToken, ciServerToken: _ciServerToken, ...updatedProjectPublic } = updatedProject[0];
 
   return {
     success: true,

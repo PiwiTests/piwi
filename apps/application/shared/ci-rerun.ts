@@ -3,10 +3,12 @@
  * and the tests.
  *
  * From a failure cluster's page, a reporter or admin can ask CI to re-run
- * exactly the affected tests, using the SCM token already configured for the
- * project. The target is provider-specific — a GitHub workflow, a GitLab
- * pipeline, a Bitbucket custom pipeline — so the settings hold one block per
- * provider; the project's repository URL decides which one is used.
+ * exactly the affected tests. `via` says where the dispatch goes. Through the
+ * repository host (the default), it uses the project's SCM token, and the
+ * target is provider-specific (a GitHub workflow, a GitLab pipeline, a
+ * Bitbucket custom pipeline), so the settings hold one block per provider and
+ * the project's repository URL decides which one is used. Through a CI server,
+ * it sends one HTTP request a preset builds (`shared/ci-server.ts`).
  *
  * Off by default: dispatching a pipeline spends CI minutes and needs a token
  * with write scope, so it stays an explicit per-project opt-in.
@@ -16,6 +18,13 @@
  */
 
 import type { ScmProviderName } from '#shared/scm-urls';
+import { resolveCiServerTarget, type CiServerPreset, type CiServerTarget } from '#shared/ci-server';
+
+/** Where a dispatch goes: the repository host's CI (the default) or a CI server. */
+export type CiRerunVia = 'repository' | 'ci-server';
+
+/** What a dispatch went to: a repository host, or a CI server. */
+export type CiRerunProvider = ScmProviderName | 'ci-server';
 
 /** GitHub `workflow_dispatch` target. */
 export interface GitHubRerunTarget {
@@ -68,6 +77,10 @@ export interface FlakeLabCiTarget {
 export interface CiRerunSettings {
   /** Master switch. Off by default — dispatching CI needs an explicit opt-in. */
   enabled: boolean;
+  /** Where a dispatch goes; absent means `repository`. */
+  via?: CiRerunVia;
+  /** The CI server a `ci-server` dispatch goes to. */
+  ciServer?: CiServerTarget;
   github?: GitHubRerunTarget;
   gitlab?: GitLabRerunTarget;
   bitbucket?: BitbucketRerunTarget;
@@ -79,6 +92,9 @@ const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
 /** Merge a partial (possibly untrusted) payload onto the defaults, dropping empties. */
 export function resolveCiRerunSettings(input?: Partial<CiRerunSettings> | null): CiRerunSettings {
   const out: CiRerunSettings = { enabled: input?.enabled === true };
+  if (input?.via === 'ci-server') out.via = 'ci-server';
+  const ciServer = resolveCiServerTarget(input?.ciServer);
+  if (ciServer) out.ciServer = ciServer;
 
   const gh = input?.github;
   if (gh) {
@@ -167,8 +183,10 @@ export interface ClusterRerunDispatch {
   /** The dispatch's own id, which the run it starts carries as `PIWI_ORIGIN_REF` when the pipeline passes it on. */
   id?: string;
   /** Provider the dispatch went to. */
-  provider: ScmProviderName;
-  /** The provider's runs/pipeline URL to watch the re-run. */
+  provider: CiRerunProvider;
+  /** The CI server preset, for a `ci-server` dispatch. */
+  preset?: CiServerPreset;
+  /** The provider's runs/pipeline URL to watch the re-run; once matched, the build the run recorded. */
   url: string;
   /** The Playwright arguments handed to CI. */
   args: string;
@@ -180,7 +198,7 @@ export interface ClusterRerunDispatch {
   tests?: number;
   /** GitLab's id of the pipeline it created. */
   pipelineId?: string | null;
-  /** Bitbucket's build number of the pipeline it created. */
+  /** The build number Bitbucket, or the CI server, answered for the build it started. */
   buildNumber?: string | null;
   /** The run the dispatch was matched to, once it finished. */
   runId?: number | null;
@@ -194,6 +212,9 @@ export interface ClusterRerunDispatch {
 
 /** How long after a dispatch a finished run may still be the run it started. */
 export const RERUN_MATCH_WINDOW_MS = 6 * 60 * 60 * 1000;
+
+/** How far before its dispatch a CI server build may say it started: the CI's clock and Piwi's may differ. */
+export const RERUN_CLOCK_SLACK_MS = 60_000;
 
 /** What a finished run tells about the dispatch that may have started it. */
 export interface RerunCandidateRun {
@@ -210,14 +231,30 @@ export interface RerunCandidateRun {
 }
 
 /**
+ * Whether a run is the build a CI server answered for a dispatch. A CI server
+ * numbers builds per job, and a project may run several jobs, so the number
+ * counts only for a run of the dispatch's branch, started after it (within
+ * {@link RERUN_CLOCK_SLACK_MS}), that ran exactly its spec files. Among open
+ * dispatches of the same branch and files, the number picks the one the run
+ * answers.
+ */
+function ciServerBuildMatches(d: ClusterRerunDispatch, run: RerunCandidateRun, runFiles: string): boolean {
+  if (d.buildNumber == null || d.buildNumber !== run.buildNumber) return false;
+  if (d.ref == null || d.ref !== run.branch || run.startedAt < d.at - RERUN_CLOCK_SLACK_MS) return false;
+  return !!d.files?.length && d.files.join('\n') === runFiles;
+}
+
+/**
  * The dispatch a finished run answers, or null: the one whose id the run
- * carries, else the GitLab pipeline or Bitbucket build it ran in, else (for
- * GitHub, which returns no run id) the newest dispatch on the run's branch,
- * started within {@link RERUN_MATCH_WINDOW_MS} before it, whose files the run
- * executed exactly. A dispatch already matched to a run is never matched again.
+ * carries, else the GitLab pipeline, Bitbucket build or CI server build it ran
+ * in, else (for GitHub and a CI server, which may return no build) the newest
+ * dispatch on the run's branch, started within {@link RERUN_MATCH_WINDOW_MS}
+ * before it, whose files the run executed exactly. A dispatch already matched
+ * to a run is never matched again.
  */
 export function matchRerunDispatch<T extends ClusterRerunDispatch>(run: RerunCandidateRun, dispatches: T[]): T | null {
   const open = dispatches.filter((d) => d.runId == null);
+  const runFiles = [...new Set(run.files)].sort().join('\n');
   if (run.originRef) {
     const byId = open.find((d) => d.id === run.originRef);
     if (byId) return byId;
@@ -225,14 +262,14 @@ export function matchRerunDispatch<T extends ClusterRerunDispatch>(run: RerunCan
   const byPipeline = open.find(
     (d) =>
       (d.provider === 'gitlab' && d.pipelineId != null && d.pipelineId === run.pipelineId) ||
-      (d.provider === 'bitbucket' && d.buildNumber != null && d.buildNumber === run.buildNumber),
+      (d.provider === 'bitbucket' && d.buildNumber != null && d.buildNumber === run.buildNumber) ||
+      (d.provider === 'ci-server' && ciServerBuildMatches(d, run, runFiles)),
   );
   if (byPipeline) return byPipeline;
-  const runFiles = [...new Set(run.files)].sort().join('\n');
   const candidates = open
     .filter(
       (d) =>
-        d.provider === 'github' &&
+        (d.provider === 'github' || d.provider === 'ci-server') &&
         d.ref != null &&
         d.ref === run.branch &&
         run.startedAt >= d.at &&

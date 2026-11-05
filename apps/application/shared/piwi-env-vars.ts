@@ -1329,6 +1329,40 @@ export const PIWI_ENV_VARS = {
     since: '0.43.0',
     docs: 'guide/source-control#which-repository',
   },
+  PIWI_CI_SERVER_URL: {
+    description:
+      "Base URL of the instance's CI server (e.g. https://jenkins.example.com/), where a project's CI re-run goes when it dispatches through a CI server and sets no base URL of its own. The instance token is sent only to URLs under it, so a path confines it (https://jenkins.example.com/job/qa/ sends it only to the jobs of the qa folder). It goes only with a preset's request, never a Custom one.",
+    category: 'integrations',
+    type: 'url',
+    example: 'https://jenkins.example.com/',
+    since: '0.67.0',
+    docs: 'features/pr-feedback#re-run-from-the-dashboard',
+  },
+  PIWI_CI_SERVER_USER: {
+    description:
+      'User name the instance CI server token belongs to, paired with it as an HTTP Basic credential (Jenkins).',
+    category: 'integrations',
+    example: 'piwi-bot',
+    since: '0.67.0',
+    relevantWhen: { PIWI_CI_SERVER_URL: '*' },
+  },
+  PIWI_CI_SERVER_TOKEN: {
+    description:
+      "API token of the instance's CI server, sent only to URLs under PIWI_CI_SERVER_URL. Give it to a CI user allowed to build only the jobs Piwi should start. Never returned by the API.",
+    category: 'integrations',
+    secret: true,
+    since: '0.67.0',
+    relevantWhen: { PIWI_CI_SERVER_URL: '*' },
+  },
+  PIWI_CI_SERVER_HOSTS: {
+    description:
+      'CI server hosts (comma-separated, e.g. jenkins.internal:8080) a CI re-run may reach on a private address, besides the host and port of PIWI_CI_SERVER_URL. A name without a port allows every port of that host. Any other host must resolve to public addresses only. A listed host may also be reached over http.',
+    category: 'integrations',
+    type: 'list',
+    example: 'jenkins.internal:8080',
+    since: '0.67.0',
+    docs: 'features/pr-feedback#re-run-from-the-dashboard',
+  },
   PIWI_JIRA_BASE_URL: {
     description: 'Base URL of the Jira Cloud site to connect (e.g. https://your-team.atlassian.net).',
     category: 'integrations',

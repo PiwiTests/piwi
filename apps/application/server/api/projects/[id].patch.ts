@@ -12,6 +12,8 @@ import {
 } from '#shared/handlers/projects';
 import { recountProjectCoverage } from '../../utils/coverage-summary';
 import { encryptSecret, getEncryptionKey } from '../../utils/crypto';
+import { instanceCiServer, sealCiServerToken } from '../../utils/ci-server-dispatch';
+import { ciServerTargetProblem, normalizeCiServerBaseUrl } from '#shared/ci-server';
 import { resolveCiRerunSettings, type CiRerunSettings } from '#shared/ci-rerun';
 import { resolveServerProbeSettings } from '#shared/server-probes';
 import { projectTargetsSchema } from '#shared/analytics/targets';
@@ -31,7 +33,7 @@ defineRouteMeta({
     tags: ['Projects'],
     summary: 'Update a project',
     description:
-      "Updates project metadata including label, description, diagnosis instructions, SCM token, whether quarantined failures turn the commit status red, whether gate evaluations post the `<statusContext>/gate` commit status (`gateStatus`, off by default), whether people who may open a live run of the project can watch its workers’ pages from the run page (`liveView`, off by default; turning it off ends every view of the project’s runs at once), the elements the live view paints over in each image beside the secret fields (`liveViewMasks`: up to 20 Playwright locators such as `getByLabel('IBAN')`; null or `[]` removes them; the workers of the project’s live runs mask them from their next image on), targets, the coverage scope (`coverageScope`: `include` and `exclude` lists of gitignore-style patterns over repository-relative paths, the files coverage totals count; null restores the default excludes), the coverage areas (`coverageAreas`: up to 20 `{ name, include }`, named areas of the code such as `front` and `back`, each counted apart; a file belongs to the first whose patterns match it; null or `[]` removes them), the status filter (`statusFilter`: `{ environments, branches, allBranches, fullRunsOnly }`, all four required, the run scope of the project page, which picks the runs that set the project’s status, its `latestRun` in the project list; null, or a scope every run passes, for every run), and tags. A change of the scope or the areas recounts the commits whose totals are kept, the newest on the default branch a few seconds later and the others after it, 200 at most, and an area no longer named leaves the coverage trend. Omitting `scmToken` keeps the stored token; `null` or an empty string removes it. `repositoryUrl` is the repository every SCM call of the project reads with its token (`https://host/owner/repo`; an SSH remote is accepted and stored in that form): the first run that names a remote sets it, a run naming another repository is ignored for SCM calls, and `null` or an empty string clears it so the next run that names one sets it again. A new SCM token answers HTTP 409 while `PIWI_SECRET_KEY` is unset, since it cannot be encrypted. Requires `project:manage` (Project admin on the project).",
+      "Updates project metadata including label, description, diagnosis instructions, SCM token, whether quarantined failures turn the commit status red, whether gate evaluations post the `<statusContext>/gate` commit status (`gateStatus`, off by default), whether people who may open a live run of the project can watch its workers’ pages from the run page (`liveView`, off by default; turning it off ends every view of the project’s runs at once), the elements the live view paints over in each image beside the secret fields (`liveViewMasks`: up to 20 Playwright locators such as `getByLabel('IBAN')`; null or `[]` removes them; the workers of the project’s live runs mask them from their next image on), targets, the coverage scope (`coverageScope`: `include` and `exclude` lists of gitignore-style patterns over repository-relative paths, the files coverage totals count; null restores the default excludes), the coverage areas (`coverageAreas`: up to 20 `{ name, include }`, named areas of the code such as `front` and `back`, each counted apart; a file belongs to the first whose patterns match it; null or `[]` removes them), the status filter (`statusFilter`: `{ environments, branches, allBranches, fullRunsOnly }`, all four required, the run scope of the project page, which picks the runs that set the project’s status, its `latestRun` in the project list; null, or a scope every run passes, for every run), and tags. A change of the scope or the areas recounts the commits whose totals are kept, the newest on the default branch a few seconds later and the others after it, 200 at most, and an area no longer named leaves the coverage trend. Omitting `scmToken` keeps the stored token; `null` or an empty string removes it. `repositoryUrl` is the repository every SCM call of the project reads with its token (`https://host/owner/repo`; an SSH remote is accepted and stored in that form): the first run that names a remote sets it, a run naming another repository is ignored for SCM calls, and `null` or an empty string clears it so the next run that names one sets it again. A new SCM token answers HTTP 409 while `PIWI_SECRET_KEY` is unset, since it cannot be encrypted. `ciRerun.via` is `repository` (the default: the repository host's CI, with the SCM token) or `ci-server` (one HTTP request to `ciRerun.ciServer`, a preset such as `jenkins` with its fields, or `custom` with its request templates). `ciServerToken` is the CI server credential: it is stored with the base URL in effect when it is saved (the project's `ciRerun.ciServer.baseUrl`, else the instance's `PIWI_CI_SERVER_URL`) and sent only to URLs under it; omitting it keeps the stored token, `null` or an empty string removes it, a new one answers HTTP 409 while `PIWI_SECRET_KEY` is unset and 400 when no base URL is set. A `ciRerun.ciServer` that cannot dispatch (an unknown preset, a missing required field, a base URL that is not an http(s) URL, a Flake Lab request it names that cannot dispatch) answers 400 and leaves the stored target as it is, whatever `via` and `enabled` say. Requires `project:manage` (Project admin on the project).",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:manage',
   },
@@ -39,6 +41,9 @@ defineRouteMeta({
 
 const ciRerunSchema = z.object({
   enabled: z.boolean().optional(),
+  via: z.enum(['repository', 'ci-server']).optional(),
+  /** Checked by `ciServerTargetProblem`: a target that cannot dispatch answers 400. */
+  ciServer: z.unknown().optional(),
   github: z
     .object({ workflow: z.string(), ref: z.string(), inputName: z.string(), dispatchIdInput: z.string() })
     .partial()
@@ -60,6 +65,7 @@ const updateProjectSchema = z.object({
   diagnosisInstructions: z.string().optional().nullable(),
   aiLanguage: z.string().max(60).optional().nullable(),
   scmToken: z.string().optional().nullable(),
+  ciServerToken: z.string().max(8192).optional().nullable(),
   repositoryUrl: z.string().max(2000).optional().nullable(),
   defaultBranch: z.string().optional().nullable(),
   openApiUrl: z.string().url().max(2000).optional().nullable().or(z.literal('')),
@@ -129,6 +135,7 @@ export default eventHandler(async (event) => {
     diagnosisInstructions,
     aiLanguage,
     scmToken,
+    ciServerToken,
     repositoryUrl,
     defaultBranch,
     openApiUrl,
@@ -151,6 +158,13 @@ export default eventHandler(async (event) => {
   const encryptedScmToken =
     scmToken === undefined ? undefined : scmToken?.trim() ? encryptSecret(scmToken.trim(), getEncryptionKey()) : null;
 
+  // A CI server target that cannot dispatch answers 400.
+  const sentCiServer = (ciRerun as { ciServer?: unknown } | null | undefined)?.ciServer;
+  if (sentCiServer != null) {
+    const problem = ciServerTargetProblem(sentCiServer);
+    if (problem) throw apiError({ statusCode: 400, message: problem });
+  }
+
   // Normalize the CI re-run config (drops empty targets); null clears it.
   const resolvedCiRerun =
     ciRerun === undefined
@@ -158,6 +172,24 @@ export default eventHandler(async (event) => {
       : ciRerun === null
         ? null
         : resolveCiRerunSettings(ciRerun as Partial<CiRerunSettings>);
+
+  // The CI server token is sealed with the base URL in effect once saved, the only URL it is sent under.
+  let sealedCiServerToken: string | null | undefined = ciServerToken === undefined ? undefined : null;
+  if (ciServerToken?.trim()) {
+    // The base URL the request names, valid target or not; else the stored target's; else the instance's.
+    const [stored] = await db.select({ ciRerun: projects.ciRerun }).from(projects).where(eq(projects.id, id));
+    const sent = ciRerun === undefined ? (stored?.ciRerun as { ciServer?: unknown } | null) : ciRerun;
+    const rawBaseUrl = (sent?.ciServer as { baseUrl?: unknown } | undefined)?.baseUrl;
+    const projectBaseUrl = normalizeCiServerBaseUrl(rawBaseUrl);
+    if (typeof rawBaseUrl === 'string' && rawBaseUrl.trim() && !projectBaseUrl) {
+      throw apiError({ statusCode: 400, message: 'The CI server base URL must be an http(s) URL' });
+    }
+    const baseUrl = projectBaseUrl ?? instanceCiServer().url;
+    if (!baseUrl) {
+      throw apiError({ statusCode: 400, message: 'Set the CI server base URL before saving its token' });
+    }
+    sealedCiServerToken = sealCiServerToken(baseUrl, ciServerToken.trim());
+  }
 
   // The OpenAPI URL before the save: the declared surface is read again only when it changes.
   const [before] =
@@ -174,6 +206,7 @@ export default eventHandler(async (event) => {
       diagnosisInstructions,
       aiLanguage,
       scmToken: encryptedScmToken,
+      ciServerToken: sealedCiServerToken,
       repositoryUrl,
       defaultBranch: defaultBranch != null ? defaultBranch.trim() || null : defaultBranch,
       openApiUrl: openApiUrl != null ? openApiUrl.trim() || null : openApiUrl,
