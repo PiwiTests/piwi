@@ -708,6 +708,22 @@ describe('a failure held at its line', () => {
   });
 });
 
+/**
+ * A hub message as Piwi Picker reads it, `unreadable` when it reads less than the hub sent: the message, or one of a
+ * session's workers or its `live`, which the reader leaves out, or a worker state it reads as `other`.
+ */
+function readWhole(data: unknown): HubMessage {
+  const unreadable = { type: 'unreadable' } as unknown as HubMessage;
+  const message = parseHubMessage(String(data));
+  if (message?.type !== 'session') return message ?? unreadable;
+  const sent = JSON.parse(String(data)) as { session: { workers: unknown[]; live?: unknown } };
+  const { workers, live } = message.session;
+  if (workers.length !== sent.session.workers.length || (sent.session.live !== undefined) !== (live !== undefined)) {
+    return unreadable;
+  }
+  return workers.some((worker) => worker.state === 'other') ? unreadable : message;
+}
+
 describe('what the hub sends', () => {
   test('tells what a code came to to the connections that follow the runs alone, cut to fit what they read', async () => {
     const long = 'Piwi could not write the check: '.padEnd(MAX_HUB_MESSAGE + 200, 'x');
@@ -716,7 +732,7 @@ describe('what the hub sends', () => {
       const socket = new WebSocket(own.url, { origin: ORIGIN });
       const heard: HubMessage[] = [];
       socket.on('message', (data) => {
-        heard.push(parseHubMessage(String(data)) ?? ({ type: 'unreadable' } as unknown as HubMessage));
+        heard.push(readWhole(data));
       });
       await new Promise((resolve) => socket.on('open', resolve));
       socket.send(JSON.stringify({ type: 'hello', token: own.token }));
@@ -770,8 +786,7 @@ describe('what the hub sends', () => {
       const socket = new WebSocket(small.url, { origin: ORIGIN });
       const heard: HubMessage[] = [];
       socket.on('message', (data) => {
-        const message = parseHubMessage(String(data));
-        heard.push(message ?? ({ type: 'unreadable' } as unknown as HubMessage));
+        heard.push(readWhole(data));
       });
       await new Promise((resolve) => socket.on('open', resolve));
       socket.send(JSON.stringify({ type: 'hello', token: small.token }));
