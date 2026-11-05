@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { FrameAcks, LatestPacer, isViewSize } from '@piwitests/core/run-view';
-import { jpegCodec, jpegSize, paintBoxes, within } from './live-mask.js';
+import { jpegCodec, jpegSize, paintBoxes, within, type JpegJs } from './live-mask.js';
 import { callMethod, internalCall } from './quiet-capture.js';
 
 /**
@@ -19,9 +19,9 @@ import { callMethod, internalCall } from './quiet-capture.js';
  * second (fewer when `spacing` holds a heavy one back), the latest one alone while the way out is `busy`. A view
  * with a `screen` passes each frame through it before it goes: the frame goes as it returns it, or none goes, or the
  * viewers hear why none goes, the latest frame alone waiting meanwhile. Piwi's pause bar, which a headed stop shows in
- * the page, is painted over in each frame that may show it, after `screen` (`pauseBarShows`). The latest sent is kept in
- * memory until the view ends, and sent again on `resend`, for a viewer that came since (a still page paints no other).
- * Nothing here stores a frame.
+ * the page, is painted over in each frame that may show it (`pauseBarShows`), by `screen` in the same pass as its own
+ * boxes, else here. The latest sent is kept in memory until the view ends, and sent again on `resend`, for a viewer that
+ * came since (a still page paints no other). Nothing here stores a frame.
  */
 
 /** How much earlier than the time Playwright names (its paint, or its dispatch) a screencast frame may show the page. */
@@ -98,25 +98,68 @@ export function guardScreencast(page: Page): void {
   }
 }
 
-/** Piwi's pause bar as a page last drew it: its bottom edge, read on first need, and when it came down. */
+/** A box of a frame, in the pixels it names its viewport in (`PageFrame`'s `width` and `height`). */
+export interface FrameBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** A read of the pause bar: its bottom edge in the viewport, and the viewport's size, in CSS pixels. */
+interface BarRead {
+  bottom: number;
+  width: number;
+  height: number;
+}
+
+/** Piwi's pause bar as a page last drew it. */
 interface PauseBar {
-  drawn: Promise<unknown>;
-  /** The bar's bottom edge in the viewport, in CSS pixels; null when it cannot be read. */
-  bottom: Promise<number | null> | null;
+  /** The latest read of the bar, and the viewport of the frames it is for: the first frame's, for the read at its draw. */
+  read: Promise<BarRead | null>;
+  readFor: { width: number; height: number } | null;
+  /** The latest read that found the bar, for a frame the page painted before the bar came down. */
+  found: BarRead | null;
   goneAt: number | null;
 }
 
 /** The pause bar each page drew last. */
 const PAUSE_BARS = new WeakMap<Page, PauseBar>();
 
+/** Read the bar's bottom edge and the viewport's size in the page, through an internal call; null without a bar. */
+function readBar(page: Page, bar: PauseBar): Promise<BarRead | null> {
+  type Document = { getElementById(id: string): { getBoundingClientRect(): { bottom: number } } | null };
+  type Window = { document?: Document; innerWidth: number; innerHeight: number };
+  return internalCall(page, () =>
+    page.evaluate(() => {
+      const view = globalThis as unknown as Window;
+      const shown = view.document?.getElementById('__piwi-pause-bar');
+      return shown
+        ? { bottom: shown.getBoundingClientRect().bottom, width: view.innerWidth, height: view.innerHeight }
+        : null;
+    }),
+  ).then(
+    (read) => {
+      if (read && read.bottom > 0 && read.width > 0) bar.found = read;
+      return read;
+    },
+    () => null,
+  );
+}
+
 /**
  * Piwi's pause bar shows in `page` from now on, drawn once `drawn` settles: each view of the page paints it over, from
  * the viewport's top to the bar's bottom edge, across the viewport, as the bar is fixed there. Its bottom edge is read
- * once, through an internal call, as a frame first needs it. Returns what tells that it came down: from then on, a frame
- * the page painted later shows it no more.
+ * through an internal call as soon as it is drawn, and again as a frame names another viewport than the frames it was
+ * read for (the bar wraps on a narrower one). Returns what tells that it came down: from then on, a frame the page
+ * painted later shows it no more.
  */
 export function pauseBarShows(page: Page, drawn: Promise<unknown>): () => void {
-  const bar: PauseBar = { drawn, bottom: null, goneAt: null };
+  const bar: PauseBar = { read: Promise.resolve(null), readFor: null, found: null, goneAt: null };
+  bar.read = drawn.then(
+    () => readBar(page, bar),
+    () => null,
+  );
   PAUSE_BARS.set(page, bar);
   return () => {
     bar.goneAt ??= Date.now();
@@ -124,51 +167,35 @@ export function pauseBarShows(page: Page, drawn: Promise<unknown>): () => void {
 }
 
 /**
- * The bottom edge of the pause bar `frame` may show, in CSS pixels: the bar shows, or the page painted the frame before
- * it came down (a frame that names no time taken as `UNDATED_MS` old). Null when the frame shows none, or the bar is not
- * read within `BAR_READ_MS`.
+ * The band of the pause bar `frame` may show, in its own pixels: the bar shows, or the page painted the frame before it
+ * came down (a frame that names no time taken as `UNDATED_MS` old). The bar's bottom edge is read in CSS pixels and
+ * scaled to the viewport the frame names, which a page zoomed in names in more pixels than CSS ones. None when the frame
+ * shows no bar, or the bar is not read within `BAR_READ_MS`.
  */
-async function pauseBarIn(page: Page, frame: PageFrame): Promise<number | null> {
+async function pauseBarBoxes(page: Page, frame: PageFrame): Promise<FrameBox[]> {
   const bar = PAUSE_BARS.get(page);
-  if (!bar) return null;
-  if (bar.goneAt !== null && (Number.isFinite(frame.at) ? frame.at : Date.now() - UNDATED_MS) > bar.goneAt) return null;
-  type Document = { getElementById(id: string): { getBoundingClientRect(): { bottom: number } } | null };
-  bar.bottom ??= bar.drawn
-    .then(() =>
-      internalCall(page, () =>
-        page.evaluate(() => {
-          const doc = (globalThis as unknown as { document?: Document }).document;
-          return doc?.getElementById('__piwi-pause-bar')?.getBoundingClientRect().bottom ?? null;
-        }),
-      ),
-    )
-    .catch(() => null);
-  const bottom = await within(bar.bottom, BAR_READ_MS);
-  return bottom && bottom > 0 ? bottom : null;
+  if (!bar) return [];
+  if (bar.goneAt !== null && (Number.isFinite(frame.at) ? frame.at : Date.now() - UNDATED_MS) > bar.goneAt) return [];
+  const viewport = { width: frame.width, height: frame.height };
+  if (!bar.readFor) bar.readFor = viewport;
+  else if (bar.goneAt === null && (bar.readFor.width !== viewport.width || bar.readFor.height !== viewport.height)) {
+    bar.readFor = viewport;
+    bar.read = readBar(page, bar);
+  }
+  const read = (await within(bar.read, BAR_READ_MS)) ?? bar.found;
+  if (!read || read.bottom <= 0 || read.width <= 0) return [];
+  return [{ x: 0, y: 0, width: frame.width, height: (read.bottom * frame.width) / read.width }];
 }
 
 /**
- * The bottom edge of the pause bar `page` shows now, in CSS pixels: the band a view paints over, where a viewer's
- * presses do not reach the bar's buttons. Null while it shows none, or it is not read within `BAR_READ_MS`.
+ * `frame` with `boxes` painted over, at the view's quality, else its lighter one; null when it cannot be decoded, or is
+ * too long at either.
  */
-export function pauseBarBand(page: Page): Promise<number | null> {
-  const bar = PAUSE_BARS.get(page);
-  if (!bar || bar.goneAt !== null) return Promise.resolve(null);
-  return pauseBarIn(page, { data: Buffer.alloc(0), width: 0, height: 0, at: Date.now() });
-}
-
-/**
- * `frame` with the pause bar painted over down to `bottom`, at the view's quality, else its lighter one: as it is
- * without `jpeg-js`; null when it cannot be decoded, or is too long at either.
- */
-function withoutPauseBar(frame: PageFrame, bottom: number, options: PageViewOptions): PageFrame | null {
-  const jpeg = jpegCodec();
-  if (!jpeg) return frame;
+function paintFrame(jpeg: JpegJs, frame: PageFrame, boxes: FrameBox[], options: PageViewOptions): PageFrame | null {
   const size = jpegSize(frame.data) ?? frame;
-  const bar = [{ x: 0, y: 0, width: frame.width, height: bottom }];
   try {
     for (const quality of [options.quality, options.lightQuality]) {
-      const data = paintBoxes(jpeg, frame, bar, size, quality);
+      const data = paintBoxes(jpeg, frame, boxes, size, quality);
       if (data.length <= options.maxFrameBytes) return { ...frame, data };
     }
   } catch {
@@ -211,9 +238,10 @@ export interface PageViewOptions {
   live(): boolean;
   /**
    * What a frame becomes before it goes, one frame at a time: the frame to send, null to send none, or why none goes,
-   * for the viewers.
+   * for the viewers. The image it sends has the boxes `also` names for it (the pause bar's band) painted over too, in
+   * the same pass as its own, where there is `jpeg-js`.
    */
-  screen?(frame: PageFrame): Promise<PageFrame | string | null>;
+  screen?(frame: PageFrame, also: (image: PageFrame) => Promise<FrameBox[]>): Promise<PageFrame | string | null>;
   send(frame: PageFrame): void;
   /** Why no image goes: `why`, or each image of the page is too long to send, the lighter one included. */
   refuse(why?: string): void;
@@ -226,6 +254,11 @@ export interface PageView {
   resend(): void;
   /** Forget the latest frame sent, which went through `screen` as it was, and send an image of the page taken now. */
   refresh(): void;
+  /**
+   * The bottom edge of the pause bar's band, in the pixels the latest frame sent names its viewport in, while the bar
+   * shows and the view paints it over; null otherwise.
+   */
+  barBand(): Promise<number | null>;
   close(): Promise<void>;
 }
 
@@ -271,18 +304,25 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
     sent = { refused: why };
     options.refuse(why);
   };
-  /** The frame that goes for `frame`: through `screen`, then with the pause bar painted over where it may show. */
+  /** The frame that goes for `frame`, the pause bar painted over where it may show: by `screen`, else here. */
   const show = async (frame: PageFrame): Promise<void> => {
-    const shown = options.screen ? await options.screen(frame) : frame;
-    if (typeof shown === 'string') return refuse(shown);
-    if (!shown) return;
-    const bottom = await pauseBarIn(page, shown);
-    if (bottom === null) {
+    let bar: FrameBox[] = [];
+    if (options.screen) {
+      const began = Date.now();
+      const shown = await options.screen(frame, async (image) => (bar = await pauseBarBoxes(page, image)));
+      paintMs = bar.length && jpegCodec() ? Date.now() - began : 0;
+      if (typeof shown === 'string') return refuse(shown);
+      if (shown) deliver(shown);
+      return;
+    }
+    bar = await pauseBarBoxes(page, frame);
+    const jpeg = bar.length ? jpegCodec() : null;
+    if (!jpeg) {
       paintMs = 0;
-      return deliver(shown);
+      return deliver(frame);
     }
     const began = Date.now();
-    const painted = withoutPauseBar(shown, bottom, options);
+    const painted = paintFrame(jpeg, frame, bar, options);
     paintMs = Date.now() - began;
     if (painted) deliver(painted);
   };
@@ -302,6 +342,8 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
         });
     },
   });
+  /** The viewport an image of the page taken at CSS scale shows, in CSS pixels: its own size. */
+  const shownSize = (shot: Buffer): { width: number; height: number } => jpegSize(shot) ?? viewport;
   /** The lighter image on its way, and when the last one was asked. */
   let lighter: Promise<void> | null = null;
   let lighterAt = -Infinity;
@@ -316,7 +358,7 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
       .then(
         (shot) => {
           if (closed) return;
-          if (shot.length <= options.maxFrameBytes) return pacer.offer({ data: shot, ...viewport, at: now });
+          if (shot.length <= options.maxFrameBytes) return pacer.offer({ data: shot, ...shownSize(shot), at: now });
           refuse();
         },
         () => undefined,
@@ -343,7 +385,10 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
     const shot = await internalCall(page, () =>
       page.screenshot({ type: 'jpeg', quality: options.quality, scale: 'css', caret: 'initial', timeout: 5000 }),
     ).catch(() => null);
-    if (shot) onFrame(shot, viewport.width, viewport.height, at);
+    if (shot) {
+      const size = shownSize(shot);
+      onFrame(shot, size.width, size.height, at);
+    }
     if (!closed) {
       shots = setTimeout(() => void shoot(), options.shotMs);
       shots.unref?.();
@@ -412,6 +457,13 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
       if ('refused' in sent) options.refuse(sent.refused);
       else options.send(sent);
     },
+    barBand: async () => {
+      const bar = PAUSE_BARS.get(page);
+      if (closed || !bar || bar.goneAt !== null || !jpegCodec()) return null;
+      const seen = sent && !('refused' in sent) ? sent : { data: Buffer.alloc(0), ...viewport };
+      const [box] = await pauseBarBoxes(page, { ...seen, at: Date.now() });
+      return box ? box.height : null;
+    },
     refresh: () => {
       if (closed) return;
       sent = null;
@@ -420,7 +472,10 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
       void internalCall(page, () =>
         page.screenshot({ type: 'jpeg', quality: options.quality, scale: 'css', caret: 'initial', timeout: 5000 }),
       ).then(
-        (shot) => onFrame(shot, viewport.width, viewport.height, at),
+        (shot) => {
+          const size = shownSize(shot);
+          onFrame(shot, size.width, size.height, at);
+        },
         () => undefined,
       );
     },

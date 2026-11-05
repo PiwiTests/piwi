@@ -79,9 +79,14 @@ setInterval(() => {
     recorder: !!document.getElementById('piwi-record-hud-host'),
     heading: document.querySelector('h1').textContent,
     bar: document.getElementById('__piwi-pause-bar')?.getBoundingClientRect().bottom ?? null,
+    field: center(document.getElementById('field')),
+    barFocused: !!document.getElementById('__piwi-pause-bar')?.contains(document.activeElement),
     dblclicked,
     ctrlClicked,
-  }) }).catch(() => {});
+  }) }).then((r) => r.json()).then((asked) => {
+    // The test's window focuses the bar's first button, as a person who tabs into it there.
+    if (asked.focusBar) document.querySelector('#__piwi-pause-bar button')?.focus();
+  }).catch(() => {});
 }, 100);
 </script>`;
 
@@ -248,6 +253,9 @@ interface Where {
   heading: string;
   /** The pause bar's bottom edge, in CSS pixels; null while it does not show. */
   bar: number | null;
+  field: Point | null;
+  /** Whether the focus is on one of the pause bar's buttons. */
+  barFocused: boolean;
   dblclicked: boolean;
   ctrlClicked: boolean;
 }
@@ -287,8 +295,18 @@ const watched: Record<
 const resent: boolean[] = [];
 /** What the view of a page too heavy for a lighter image said, each time. */
 const heavy: { refusals?: string[] } = {};
-/** The pause bar's bottom edge at the headed stop, and the frames its view sent until the page was clicked. */
-const headed: { bar?: number; frames?: FrameHeard[] } = {};
+/**
+ * The pause bar's bottom edge at the headed stop, the frames its view sent until the page was clicked, whether a Tab
+ * played from the page's last field focused the bar, and the bar and its focus once the keys played.
+ */
+const headed: {
+  bar?: number;
+  frames?: FrameHeard[];
+  tabbed?: boolean;
+  afterKeys?: { bar: number | null; focused: boolean };
+} = {};
+/** Whether the page focuses the pause bar's first button on its next report. */
+let focusBar = false;
 interface DumpedStep {
   title: string;
   steps: DumpedStep[];
@@ -394,6 +412,24 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
         // Clicks across the bar's band, which the frames paint over, reach none of its buttons: the stop stays held, and
         // the click on the page below still plays.
         for (let x = 20; x < 1000; x += 40) await play(click({ x, y: Math.floor(headed.bar / 2) }));
+        // Keys reach none of its buttons either: a Tab from the page's last field passes the bar by, Enter and Space on
+        // a button of it the test's window focused press nothing, and Escape, which the bar takes as Resume, is not
+        // played. The stop stays held.
+        answers.push(await play(click(await waitFor(() => where?.field ?? undefined))));
+        answers.push(await play([{ type: 'key', action: 'press', key: 'Tab' }]));
+        await sleep(300);
+        headed.tabbed = (await waitFor(() => (where ? { focused: where.barFocused } : undefined))).focused;
+        focusBar = true;
+        await waitFor(() => where?.barFocused);
+        answers.push(
+          await play([
+            { type: 'key', action: 'press', key: 'Enter' },
+            { type: 'key', action: 'press', key: ' ' },
+          ]),
+        );
+        answers.push(await play([{ type: 'key', action: 'press', key: 'Escape' }]));
+        await sleep(300);
+        headed.afterKeys = await waitFor(() => (where ? { bar: where.bar, focused: where.barFocused } : undefined));
       }
       const at = await waitFor(() => where?.go ?? undefined);
       answers.push(await play(click(at)));
@@ -582,7 +618,9 @@ beforeAll(async () => {
     const url = new URL(req.url, 'http://x');
     if (url.pathname === '/where') {
       where = JSON.parse(req.body) as Where;
-      return res.end();
+      const asked = { focusBar };
+      focusBar = false;
+      return jsonRes(res, 200, asked);
     }
     if (url.pathname === '/piwi/send') {
       picks.push({ authorization: req.headers.authorization, body: JSON.parse(req.body) });
@@ -686,6 +724,7 @@ const NEEDS_BAR =
   "Pick a locator needs the pause bar in the test's window, and this stop shows none: run the test headed.";
 const ON = { ok: true, message: 'The live view is on.' };
 const OFF = { ok: true, message: 'The live view is off.' };
+const PLAYED_1 = { ok: true, message: 'Played 1 event.' };
 const PLAYED_2 = { ok: true, message: 'Played 2 events.' };
 const GO = "getByRole('button', { name: 'Go' })";
 /** Pick on the image needs Playwright 1.60 (the snapshot's boxes): below it, it is refused, saying so. */
@@ -843,8 +882,22 @@ describe('the live view of a stopped page', () => {
   });
 
   it('shows a headed stop too, and plays its input there', () => {
-    expect(said['watched at a headed stop']).toEqual([ON, PLAYED_2, PICKED_AT, OFF]);
+    expect(said['watched at a headed stop']).toEqual([
+      ON,
+      PLAYED_2,
+      PLAYED_1,
+      PLAYED_2,
+      PLAYED_1,
+      PLAYED_2,
+      PICKED_AT,
+      OFF,
+    ]);
     expect(stops['watched at a headed stop']).toMatchObject({ bar: true });
+  });
+
+  it('keeps a viewer’s keys from the hidden bar: Tab passes it by, Enter and Space press nothing, Escape is not played', () => {
+    expect(headed.tabbed).toBe(false);
+    expect(headed.afterKeys).toEqual({ bar: headed.bar, focused: false });
   });
 
   it('paints the pause bar over in each frame of a headed stop, and none of the page below it', () => {

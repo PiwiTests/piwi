@@ -3,7 +3,7 @@ import type { Frame, Locator, Page } from '@playwright/test';
 import { SECRET_FIELD_SELECTOR } from '@piwitests/core/mask';
 import { fitViewSize } from '@piwitests/core/run-view';
 import { locatorOn } from './chain-locator.js';
-import type { PageFrame } from './page-view.js';
+import type { FrameBox, PageFrame } from './page-view.js';
 import { internalCall, resolvePlaywrightPackageJson } from './quiet-capture.js';
 
 /**
@@ -85,7 +85,7 @@ const UNREADABLE_MASKS =
   'The project masks elements this reporter cannot read: no image goes. Update @piwitests/reporter.';
 
 type Image = { width: number; height: number; data: Uint8Array };
-type JpegJs = {
+export type JpegJs = {
   decode(data: Buffer, options: { useTArray: true; formatAsRGBA: true }): Image;
   encode(image: Image, quality: number): { data: Buffer };
 };
@@ -479,10 +479,14 @@ export interface SecretFieldMaskOptions {
 }
 
 export interface SecretFieldMask {
-  /** Whether an image painted over went less than `MASKED_SPACING_MS` ago: the next one waits. */
+  /** Whether an image that shows a masked element went less than `MASKED_SPACING_MS` ago: the next one waits. */
   readonly resting: boolean;
-  /** The image that may go for `frame`: itself, painted over, a screenshot in its place, none, or why none goes. */
-  screen(frame: PageFrame): Promise<PageFrame | string | null>;
+  /**
+   * The image that may go for `frame`: itself, painted over, a screenshot in its place, none, or why none goes. The
+   * boxes `also` names for that image (the pause bar's band) are painted over in the same pass where there is
+   * `jpeg-js`; without it, an image that shows no masked element goes without them.
+   */
+  screen(frame: PageFrame, also?: (image: PageFrame) => Promise<FrameBox[]>): Promise<PageFrame | string | null>;
 }
 
 /** Mask the secret fields and the project's locators in each image of `page` the view would send. */
@@ -511,21 +515,24 @@ export function maskSecretFields(page: Page, options: SecretFieldMaskOptions): S
 
   /**
    * The image to send for a frame its reads agree on, at `size` at most (the size of the frame it stands for): as it
-   * is, or painted over.
+   * is, or with the masked elements' `boxes` and the `also` boxes painted over.
    */
   const shown = (
     frame: PageFrame,
     boxes: Box[],
+    also: FrameBox[],
     size: { width: number; height: number },
   ): PageFrame | string | null => {
     const own = jpegSize(frame.data);
     const fits = own === null || (own.width <= size.width && own.height <= size.height);
     const jpeg = jpegCodec();
-    if (!boxes.length && (fits || !jpeg)) return frame.data.length <= options.maxBytes ? frame : null;
+    if (!boxes.length && (!jpeg || (fits && !also.length))) {
+      return frame.data.length <= options.maxBytes ? frame : null;
+    }
     if (!jpeg) return NO_CODEC;
     let data: Buffer;
     try {
-      data = paintBoxes(jpeg, frame, boxes, size, options.quality);
+      data = paintBoxes(jpeg, frame, [...boxes, ...also], size, options.quality);
     } catch {
       return null;
     }
@@ -539,7 +546,7 @@ export function maskSecretFields(page: Page, options: SecretFieldMaskOptions): S
     get resting() {
       return Date.now() - maskedAt < MASKED_SPACING_MS;
     },
-    async screen(frame) {
+    async screen(frame, also) {
       const before = [...reads].reverse().find((r) => r.ended <= frame.at && r.ended >= frame.at - FRESH_MS) ?? null;
       const after = await read();
       if (typeof after === 'string' || !after) return after;
@@ -550,7 +557,7 @@ export function maskSecretFields(page: Page, options: SecretFieldMaskOptions): S
         showsViewportOf(frame, before) &&
         showsViewportOf(frame, after)
       ) {
-        return shown(frame, after.boxes, size);
+        return shown(frame, after.boxes, (await also?.(frame)) ?? [], size);
       }
       // No read brackets the frame: a screenshot taken between two reads goes in its place.
       if (page.isClosed()) return null;
@@ -565,9 +572,11 @@ export function maskSecretFields(page: Page, options: SecretFieldMaskOptions): S
       const { width, height } = again.viewport;
       if (!near(width, after.viewport.width) || !near(height, after.viewport.height)) return null;
       // The screenshot shows the viewport the reads measured, whatever size the frame it stands for named.
+      const taken = { data: shot, width, height, at };
       return shown(
-        { data: shot, width, height, at },
+        taken,
         again.boxes,
+        (await also?.(taken)) ?? [],
         fitViewSize({ width, height }, size.width, size.height),
       );
     },
