@@ -101,8 +101,7 @@ function connectDemo() {
 
 /**
  * Open the stream in one tab of the browser, the one holding the lease of `piwi-notification-stream` (`holdInOneTab`),
- * and close it in a tab that lost it. Every tab would show the same notifications (each notification's tag replaces
- * the last), and each stream holds one of the six connections a browser opens to an address over HTTP/1.1.
+ * and close it in a tab that lost the lease.
  */
 function connectInOneTab() {
   holdInOneTab({ key: 'piwi-notification-stream', held: connectLive, lost: disconnectLive });

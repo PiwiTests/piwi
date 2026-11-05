@@ -13,7 +13,7 @@ import type { LiveStepsByWorker } from '~/utils/live-steps';
 import { liveRowNote } from '~/utils/live-row-note';
 import { runSummaryText } from '~/utils/run-summary';
 import { NO_WORKER_GRACE_MS } from '~/utils/run-live-view-status';
-import { onStreamStall } from '~/utils/stream-stall';
+import { stallWatch, STREAM_RECONNECT_STALL_MS } from '~/utils/stream-stall';
 import { subscribeDemoEvents } from '~/demo/run-events';
 import { useRunEvents, useRunStart, useRunStream } from '~/composables/useRunStream';
 import { useReportsPoll } from '~/composables/useReportsPoll';
@@ -88,20 +88,12 @@ const liveViewConnected = ref(false);
 // The stream has not been open for `STREAM_STALL_MS`, through its reconnections and reopenings: the toolbar says so,
 // with Retry.
 const liveStreamStalled = ref(false);
-let cancelStallCheck: (() => void) | null = null;
-function watchForStall() {
-  if (cancelStallCheck || liveViewConnected.value) return;
-  cancelStallCheck = onStreamStall(
-    () => liveViewConnected.value,
-    () => {
-      cancelStallCheck = null;
-      liveStreamStalled.value = true;
-    },
-  );
-}
+const streamStall = stallWatch(
+  () => liveViewConnected.value,
+  () => (liveStreamStalled.value = true),
+);
 function stopWatchingForStall() {
-  cancelStallCheck?.();
-  cancelStallCheck = null;
+  streamStall.disarm();
   liveStreamStalled.value = false;
 }
 // The run finished on the stream: its status leaves the toolbar before the refetched run says so.
@@ -546,7 +538,7 @@ function connectToStream() {
 
   const source = new EventSource(`${baseURL}/api/test-runs/${runId}/stream`);
   eventSource = source;
-  watchForStall();
+  streamStall.arm();
 
   source.onopen = () => {
     liveViewConnected.value = true;
@@ -565,7 +557,7 @@ function connectToStream() {
 
   source.onerror = () => {
     liveViewConnected.value = false;
-    if (eventSource === source) watchForStall();
+    if (eventSource === source) streamStall.arm(STREAM_RECONNECT_STALL_MS);
     // EventSource reconnects by itself, unless an error answer closed it for good.
     if (source.readyState === EventSource.CLOSED && eventSource === source) reopenStream();
   };
@@ -605,8 +597,7 @@ function disconnectStream() {
   }
 }
 
-// Retry, from the toolbar of a stalled stream: a new stream, whose catch-up brings the run's state. The run is not
-// refetched first: a refetch that fails would empty the page.
+// Retry, from the toolbar of a stalled stream: a new stream, whose catch-up brings the run's state.
 function retryStream() {
   disconnectStream();
   reopenDelay = STREAM_REOPEN_MIN_MS;
@@ -717,7 +708,10 @@ const tabIndicator = useTabRunIndicator(() => {
 // leave the live state. The global stream is closed while the tab is hidden, so
 // a live run is also refetched when the tab comes back.
 useRunEvents((event) => {
-  if (event.type === 'run-cancelled' && event.runId === Number(runId) && isLive.value) refresh();
+  if (event.runId !== Number(runId) || !isLive.value) return;
+  // A cancel comes on the global stream alone; an end, on it too while the run's own stream is not open.
+  const ended = event.type === 'run-finished' || event.type === 'run-finalizing';
+  if (event.type === 'run-cancelled' || (ended && !liveViewConnected.value)) refresh();
 });
 const visibility = useDocumentVisibility();
 watch(visibility, (state) => {

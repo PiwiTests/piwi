@@ -71,3 +71,12 @@ describe('runEventBus running cases', () => {
     expect(runEventBus.getRunningCases(runId)).toEqual([]);
   });
 });
+
+describe('runEventBus last global event', () => {
+  test('says when the last run event of a project the caller may read went out', () => {
+    runEventBus.publishGlobal({ type: 'run-started', runId: 9201, projectId: 9201 });
+    const readable = runEventBus.lastGlobalEvent((projectId) => projectId === 9201);
+    expect(readable).toEqual(expect.any(Number));
+    expect(runEventBus.lastGlobalEvent((projectId) => projectId === 9202)).toBeNull();
+  });
+});

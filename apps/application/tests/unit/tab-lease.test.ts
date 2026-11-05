@@ -127,7 +127,9 @@ describe('holdInOneTab', () => {
       getItem: () => {
         throw new Error('SecurityError');
       },
-      setItem: () => {},
+      setItem: () => {
+        throw new Error('SecurityError');
+      },
       removeItem: () => {},
     };
     holdInOneTab({ key: 'lease', held, lost: () => {} }, host);

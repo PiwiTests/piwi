@@ -3,7 +3,7 @@
  * time every `renewMs`, and another tab takes the lease once the holder released it (as its page goes away) or has not
  * renewed it for `staleMs`. A tab that writes the lease waits `settleMs` and holds it only if its own id is still
  * there, so two tabs that take it at once agree on one. `localStorage` works in every context, a page served over
- * plain HTTP included, which Web Locks do not.
+ * plain HTTP included.
  *
  * `staleMs` outlasts the minute a browser may wait between two timers of a tab hidden for a while, so a hidden holder
  * keeps its lease. A holder that finds another tab's id in the lease lost it, and is told so (`lost`).
@@ -43,8 +43,8 @@ interface Lease {
 }
 
 /**
- * Hold the lease of `options.key` in one tab of the browser. Without `localStorage` (a browser that refuses it), every
- * tab holds it. Returns a function that gives the lease up.
+ * Hold the lease of `options.key` in one tab of the browser. Without a `localStorage` this page may write (a browser
+ * that refuses it, or one whose storage is full), every tab holds it. Returns a function that gives the lease up.
  */
 export function holdInOneTab(options: TabLeaseOptions, host: TabLeaseHost = browserHost()): () => void {
   const renewMs = options.renewMs ?? TAB_LEASE_RENEW_MS;
@@ -63,10 +63,18 @@ export function holdInOneTab(options: TabLeaseOptions, host: TabLeaseHost = brow
       return null;
     }
   };
-  const write = (): void => host.storage.setItem(options.key, JSON.stringify({ id, at: host.now() }));
+  const write = (): void => {
+    try {
+      host.storage.setItem(options.key, JSON.stringify({ id, at: host.now() }));
+    } catch {
+      // A write the storage refuses leaves the lease to go stale: another tab takes it.
+    }
+  };
 
   try {
-    host.storage.getItem(options.key);
+    const probe = `${options.key}:probe`;
+    host.storage.setItem(probe, id);
+    host.storage.removeItem(probe);
   } catch {
     options.held();
     return () => {};
@@ -97,7 +105,11 @@ export function holdInOneTab(options: TabLeaseOptions, host: TabLeaseHost = brow
   };
 
   const release = (): void => {
-    if (holding && read()?.id === id) host.storage.removeItem(options.key);
+    try {
+      if (holding && read()?.id === id) host.storage.removeItem(options.key);
+    } catch {
+      // The lease goes stale instead.
+    }
   };
 
   host.on('storage', (event) => {
@@ -120,7 +132,12 @@ export function holdInOneTab(options: TabLeaseOptions, host: TabLeaseHost = brow
 
 function browserHost(): TabLeaseHost {
   return {
-    storage: window.localStorage,
+    // Read at each call: a browser that refuses storage throws as `localStorage` is read.
+    storage: {
+      getItem: (key) => window.localStorage.getItem(key),
+      setItem: (key, value) => window.localStorage.setItem(key, value),
+      removeItem: (key) => window.localStorage.removeItem(key),
+    },
     now: () => Date.now(),
     setTimeout: (fn, ms) => window.setTimeout(fn, ms),
     setInterval: (fn, ms) => window.setInterval(fn, ms),
