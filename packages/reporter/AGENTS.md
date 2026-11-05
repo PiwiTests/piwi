@@ -55,14 +55,16 @@ responsibilities.
      `ENDED_REASON`, `tests/run-channel-end.spec.ts`), shares the run live as asked (`share`, below), keeps the test's
      text responses in memory for Mock a request (`kept-responses.ts`), holds a failing test's page for an editor that
      answered its `holds` with `attached` (`holdFailure`, `editorShows`), and makes a headless run stop too; for a
-     viewer outside the page, it streams a stopped page's screencast (`view`), plays trusted input there only while that
-     stop's view is watched (`input`, let go before the test goes on), runs the bar's actions in a headless page through
+     viewer outside the page, it streams a stopped page's screencast (`view`), and its lane while asked (`view-lane`, in
+     `features`: the running test's page, the stop's while it stands at one, through its tests), both sinks of the one
+     view of the lane's page (`lane-feed.ts`, the instance's live view a third), plays trusted input only while that
+     stop's view, or the lane view showing it, is watched (`input`, let go before the test goes on), runs the bar's actions in a headless page through
      it (`viewHere`), and picks under a point of an image (`pick-at.ts`); a frame goes to the editor service alone,
      never stored nor attached, the latest one sent kept in memory until the view ends, for a viewer that comes later,
      each frame and the stop's image (at the viewport's size in CSS pixels, of its shape or none) with the page's
      secret fields painted over as the instance's are (`live-mask.ts`), and every call's and stop's title, the pause
      bar's and the terminal's included, through `hideTypedText` and `hideSecretsInText`
-     (`tests/run-channel-view.spec.ts`); for an agent, at the stop
+     (`tests/run-channel-view.spec.ts`, `tests/run-channel-lane.spec.ts`); for an agent, at the stop
      held alone, it reads the page's AI snapshot, acts on an element by its ref with Playwright's own action and ranks its locators (`agent-page.ts`), tells the test's calls
      and page events while asked (`events`, `run-events.ts`, Playwright's `_instrumentation`, feature-checked), and
      binds the browser for Playwright's tools on request until the test ends (`tests/run-channel-agent.spec.ts`);

@@ -139,7 +139,7 @@ describe('the handshake', () => {
       client: 'Test Editor',
       roots: [dir],
       keepaliveMs: KEEPALIVE_MS,
-      features: ['peers'],
+      features: ['peers', 'lanes'],
     });
     client.socket.close();
   });

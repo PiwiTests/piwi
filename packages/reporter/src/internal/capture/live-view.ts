@@ -27,14 +27,13 @@ import {
 } from '@piwitests/core/live-view';
 import { hideSecretsInText, hideTypedText } from '@piwitests/core/mask';
 import type { RunLiveState } from '@piwitests/core/run-channel';
-import { fitViewSize } from '@piwitests/core/run-view';
 import { PIWI_RUN_LOG_ENV } from '../config/env.js';
 import { detectCi } from '../support/ci.js';
 import { printRunLine } from '../support/run-log.js';
 import { resolveShardInfo } from '../support/shard-info.js';
 import { followCallLog } from './live-call-log.js';
-import { maskSecretFields } from './live-mask.js';
-import { openPageView, type PageFrame, type PageView } from './page-view.js';
+import { subscribeLane, type LaneSubscription } from './lane-feed.js';
+import type { PageFrame } from './page-view.js';
 
 /**
  * The worker's connection to the team instance for the run page's live view (`@piwitests/core/live-view`), when the
@@ -171,10 +170,10 @@ interface RunningTest {
 }
 
 let running: RunningTest | null = null;
-/** The view of the running test's page, while someone watches. */
+/** The view of the running test's page, while someone watches: its hold on the lane's frames. */
 let view: {
   page: Page;
-  opened: Promise<PageView | null>;
+  frames: LaneSubscription;
   onClose: () => void;
   /** What stops following the page's call log, in a CI run. */
   following: Promise<(() => void) | null> | null;
@@ -618,7 +617,7 @@ function setViewers(own: Link, count: number): void {
   }
   if (view) {
     if (count > before) {
-      void view.opened.then((opened) => opened?.resend());
+      view.frames.resend();
       if (own.log) postLog(own, own.log);
     }
     return;
@@ -633,7 +632,7 @@ function setViewers(own: Link, count: number): void {
 function setMasks(own: Link, locators: string[] | null): void {
   if (JSON.stringify(locators) === JSON.stringify(own.masks)) return;
   own.masks = locators;
-  if (own === link) void view?.opened.then((opened) => opened?.refresh());
+  if (own === link) view?.frames.refresh();
 }
 
 /** Start the view of the running test's page; say why there is none while it has no page. */
@@ -646,26 +645,25 @@ function startView(): void {
     return;
   }
   const live = (): boolean => view?.page === page && link === own && active(own) && own.viewers > 0;
-  const mask = maskSecretFields(page, {
-    masks: () => own.masks,
-    quality: LIVE_FRAME_QUALITY,
-    lightQuality: LIGHT_QUALITY,
-    maxBytes: MAX_LIVE_FRAME,
-  });
-  const opened = openPageView(page, {
-    size: (viewport) => fitViewSize(viewport, LIVE_FRAME_WIDTH, LIVE_FRAME_HEIGHT),
+  // The lane's frames, masked with the project's masks and the page's secret fields.
+  const frames = subscribeLane({
+    maxWidth: LIVE_FRAME_WIDTH,
+    maxHeight: LIVE_FRAME_HEIGHT,
     quality: LIVE_FRAME_QUALITY,
     fps: LIVE_FRAME_FPS,
     spacing: (frame) => (frame.data.length * 1000) / LIVE_FRAME_BYTE_RATE,
     maxFrameBytes: MAX_LIVE_FRAME,
     lightQuality: LIGHT_QUALITY,
     shotMs: SHOT_MS,
-    busy: () => own.posting || mask.resting,
-    live,
-    screen: (frame) => mask.screen(frame),
-    send: (frame) => postFrame(own, frame),
-    refuse: (why) => void post(own, { type: 'frame', ...own.id, refused: why ?? TOO_HEAVY }),
-  }).catch(() => null);
+    masks: () => own.masks,
+    busy: () => own.posting,
+    send: (frame) => {
+      if (live()) postFrame(own, frame);
+    },
+    refuse: (why) => {
+      if (live()) void post(own, { type: 'frame', ...own.id, refused: why ?? TOO_HEAVY });
+    },
+  });
   const onClose = (): void => {
     if (view?.page === page) void stopView();
   };
@@ -677,7 +675,7 @@ function startView(): void {
           if (live()) postLog(own, log);
         }).catch(() => null)
       : null;
-  view = { page, opened, onClose, following };
+  view = { page, frames, onClose, following };
 }
 
 /** Stop the view, `VIEW_END_MS` at most; one still opening is closed once it opened. */
@@ -693,7 +691,7 @@ async function stopView(): Promise<void> {
     if (own.logTimer) clearTimeout(own.logTimer);
     own.logTimer = null;
   }
-  const closed = shown.opened.then((opened) => opened?.close());
+  const closed = shown.frames.close();
   let timer: ReturnType<typeof setTimeout> | undefined;
   await Promise.race([
     closed.catch(() => undefined),

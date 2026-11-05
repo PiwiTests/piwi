@@ -164,6 +164,7 @@ import {
   openLiveView,
 } from './live-view.js';
 import { trackCalls } from './live-call-log.js';
+import { laneSawPage, lanePage, laneTestBegan, laneTestEnded } from './lane-feed.js';
 import { guardScreencast } from './page-view.js';
 import type { LiveCall } from '@piwitests/core/live-view';
 import { stepLabel } from '@piwitests/core/step-analysis';
@@ -2861,6 +2862,8 @@ function instrumentPage(page: Page): void {
   void maybeStartCodeReach(page);
   observeOwnApiRequests(page);
   watchPageEvents(page);
+  // A page the running test opens shows on its lane while it shows no other.
+  laneSawPage(page);
 
   // Probe mode: install the fault interception for this test's plan item on the
   // first page, before the test navigates. Fire-and-forget — page.route
@@ -3886,7 +3889,8 @@ export const piwiFixtures: Fixtures<
     await armStops([pageContext(page)]);
     await awaitFlakeConditions();
     await maybeStartCodeReach(page);
-    // The page the run page's live view shows, while someone watches this worker.
+    // The page the lane shows, and the run page's live view, while someone watches this worker.
+    lanePage(page);
     liveViewPage(page);
     await use(page);
     // The test function and its hooks are done, every fixture built on the page torn down: a failure holds its page
@@ -3948,6 +3952,7 @@ export const piwiFixtures: Fixtures<
         });
       activeResourceLedger()?.testStarted(testInfo);
       currentSink = sink;
+      laneTestBegan(testInfo.testId);
       liveViewTestBegan(testInfo.title, () => runningCall(testInfo), mayPause(pauseGateFromTestInfo(testInfo)));
       const showRunChannel = hideRunChannel();
       try {
@@ -3962,6 +3967,7 @@ export const piwiFixtures: Fixtures<
         await endShownStops(sink, 'ended');
         await awaitReleasedCalls(sink);
         await liveViewTestEnded(liveOutcomeStatus(testInfo));
+        await laneTestEnded();
         showRunChannel();
         currentSink = null;
         // A pause the editor asked that no call of this test took stops the next test's first call.

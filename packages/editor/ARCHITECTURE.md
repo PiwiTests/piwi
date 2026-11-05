@@ -712,7 +712,8 @@ not a boundary.
 - `pausedPage`;
 - the intents `pick`, `record`, `assert` and `assert-region` (`RunSessions.intent`), with `since` too;
 - `requests` and `mock` (`request`, a kept response's id), with `since` too;
-- `view` (`on`), `input` (`events`) and `pick-at` (`x`, `y`), with `since` too ([The live view](#the-live-view)).
+- `view` (`on`), `input` (`events`) and `pick-at` (`x`, `y`), with `since` too ([The live view](#the-live-view));
+- `watch` (`lane`, `on`): a lane while its tests run, with no stop ([The live view](#the-live-view)).
 
 The intents, `requests` and `mock` go through the same `StopActions` as the client's `piwi/stopAction`
 ([Code from a stop](#code-from-a-stop)); the code goes to the client alone.
@@ -791,6 +792,15 @@ view is on asks the worker again, which sends the frame it sent last again: a st
 - **Intents.** At a stop no pause bar shows, Pick, Record, Assert and Assert a region start for a connection that
   watches its view alone, which drives them through it. A connection that starts or stops watching hears the run
   again, with what its stops take now.
+
+A hub connection also watches a lane while its tests run (`watch`, with the lane, the worker's `parallelIndex`, and
+`on`; `RunSessions.watchLane`), at a hub whose `welcome` lists `lanes`. The lane's worker starts its lane view
+(`view-lane`, a worker whose `run-attach` lists it in `features`, which `HubWorker.intents` names as `watch`) with the
+lane's first viewer and stops it with the last; a worker Playwright starts in that lane is asked at once, and a lane
+with no worker connected now is watched from the next one. A reporter without the feature is refused: its stops alone
+can be watched. Each `lane-frame` names the test it shows and, at a stop, the stop's `since`; it goes to the lane's
+viewers alone, paced as a stop's frames are (`RunSessions.watchingLane`). At the stop a lane frame shows, a viewer of
+the lane is a viewer of that stop: input, the intents in the window and `pick-at` are its, with no `view` of its own.
 
 The frames carry whatever the page shows: they reach only the editor panel or paired, authenticated connections that
 asked for them, never an instance or a file.

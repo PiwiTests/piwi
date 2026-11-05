@@ -26,6 +26,7 @@ import {
   openLiveView,
   shareLiveView,
 } from '../src/internal/capture/live-view.js';
+import { lanePage, laneTestBegan, laneTestEnded } from '../src/internal/capture/lane-feed.js';
 import { jsonRes, startServer, type FakeServer } from './_helpers.js';
 
 /**
@@ -206,8 +207,11 @@ describe("the worker's live view connection", () => {
       refused: expect.stringMatching(/^No test runs on this worker now/),
     });
 
+    // The capture fixtures tell the lane and the live view of each test and its page.
+    laneTestBegan('pays-1');
     liveViewTestBegan('pays', () => SECRET_CALL);
     const { page, paint } = fakePage();
+    lanePage(page);
     liveViewPage(page);
     // The page paints once its screencast started.
     await waitFor(() => {
@@ -228,6 +232,7 @@ describe("the worker's live view connection", () => {
     });
 
     await liveViewTestEnded();
+    await laneTestEnded();
     await waitFor(() => posts.some((p) => p.type === 'ended'));
     // A second viewer between two tests hears it too.
     sayViewers(2);

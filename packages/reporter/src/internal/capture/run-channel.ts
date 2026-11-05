@@ -5,6 +5,7 @@ import { hideSecretsInText, hideTypedText } from '@piwitests/core/mask';
 import {
   MAX_RUN_EVENT_RATE,
   RUN_CHANNEL_ENV,
+  RUN_FEATURES,
   RUN_HOLDS,
   RUN_INTENT_NAMES,
   RUN_TAKES,
@@ -33,9 +34,10 @@ import {
   MAX_VIEW_EVENT_RATE,
   MAX_VIEW_FPS,
   MAX_VIEW_FRAME,
+  MAX_VIEW_HEIGHT,
+  MAX_VIEW_WIDTH,
   RateWindow,
   VIEW_QUALITY,
-  viewSize,
   type ViewButton,
   type ViewInput,
 } from '@piwitests/core/run-view';
@@ -47,9 +49,10 @@ import { getReporterVersion } from '../support/reporter-version.js';
 import { bindBrowser } from './agent-page.js';
 import { locatorOn } from './chain-locator.js';
 import { keptRequests, keptResponse } from './kept-responses.js';
-import { jpegSize, maskSecretFields, maskedImage } from './live-mask.js';
+import { laneAt, laneStopped, laneWentOn, subscribeLane, type LaneSink, type LaneSubscription } from './lane-feed.js';
+import { jpegSize, maskedImage } from './live-mask.js';
 import { liveViewState, onLiveViewChange, shareLiveView } from './live-view.js';
-import { openPageView, viewportOf } from './page-view.js';
+import { viewportOf } from './page-view.js';
 import { PICK_AT_SINCE } from './pick-at.js';
 import { highlightAtStop, type PauseAnswer } from './pause-at.js';
 import { internalCall } from './quiet-capture.js';
@@ -115,6 +118,16 @@ const LATE_ACT = 'The page did not answer in time: the action may still take eff
 const MAX_INPUT_WAITING = 4;
 /** Why the input of a stop nobody watches is refused. */
 const NEEDS_VIEW = 'The input needs the live view of this stop: watch it first.';
+/** What the editor's views ask of the lane's frames, where they go aside. */
+const VIEW_FRAMES: Omit<LaneSink, 'busy' | 'send' | 'refuse'> = {
+  maxWidth: MAX_VIEW_WIDTH,
+  maxHeight: MAX_VIEW_HEIGHT,
+  quality: VIEW_QUALITY,
+  fps: MAX_VIEW_FPS,
+  maxFrameBytes: MAX_VIEW_FRAME,
+  lightQuality: LIGHT_QUALITY,
+  shotMs: SHOT_MS,
+};
 /** Why a stop whose page is not known has no view. */
 const NO_PAGE =
   "This stop has no page to show: its call does not name one among its context's pages. Use the pause bar in the test's window.";
@@ -202,6 +215,8 @@ interface View {
 }
 
 let view: View | null = null;
+/** The lane view, while the editor's viewers watch the worker's lane (`view-lane`). */
+let laneView: LaneSubscription | null = null;
 /** A view on its way, for the stop it is of. */
 let viewStarting: { stop: number; started: Promise<IntentAnswer> } | null = null;
 /** The editor's requests to start and stop a view, one after the other, in the order they came. */
@@ -319,8 +334,9 @@ export async function openRunChannel(
     // Nobody can stop the sharing any more: it stops.
     if (sharedHere) void shareLiveView(false);
     sharedHere = false;
-    // Nobody hears the view any more.
+    // Nobody hears the views any more.
     if (view) void stopView();
+    if (laneView) void stopLaneView();
     if (!held || held.bar) return;
     // A stop no bar can answer goes on: nobody else can.
     console.log(`[piwi] The connection to ${runHost()} closed: the test goes on.`);
@@ -338,6 +354,7 @@ export async function openRunChannel(
     reporter: getReporterVersion(),
     takes: workerTakes(env, worker.config.version),
     holds: [...RUN_HOLDS],
+    features: [...RUN_FEATURES],
     // A run the reporter follows from outside the editor, which its own test runner started.
     ...(ref.startsWith(TERMINAL_REF_PREFIX) && startedByTestRunner(env) ? { runner: true as const } : {}),
   });
@@ -485,7 +502,7 @@ export function holdStop(
       answered
         ? { ok: false, message: WENT_ON }
         : // A stop no bar shows takes an intent only while its live view is watched, which drives it.
-          !stop.bar && view?.stop !== id
+          !stop.bar && !watched(id)
           ? needsBar(what)
           : (stop.intent?.(what) ?? needsBar(what)),
     ...(stop.pickAt ? { pickAt: stop.pickAt } : {}),
@@ -493,6 +510,7 @@ export function holdStop(
     browser: stop.browser ?? null,
   };
   held = holding;
+  laneStopped(id, stop.page);
   tellHub({
     type: 'stopped',
     stop: id,
@@ -513,17 +531,33 @@ export function holdStop(
       await counting;
       if (outline?.stop === id) await removeOutline();
       await endView(id, stop.page);
+      laneWentOn(id);
       tellHub({ type: 'running', stop: id });
     },
   };
 }
 
-/** A signal that aborts once the live view of the stop `stop` ends; aborted already when it is not watched. */
+/**
+ * A signal that aborts once nobody watches the stop `stop` any more (its view, or the lane view showing it), or the stop
+ * ends; aborted already when it is not watched.
+ */
 export function viewEnded(stop: number): AbortSignal {
   const ended = new AbortController();
-  if (view?.stop !== stop) ended.abort();
+  if (!watched(stop)) ended.abort();
   else viewEnds.add(() => ended.abort());
   return ended.signal;
+}
+
+/** Whether a viewer watches the stop `stop`: its own view, or the lane view while the worker stands at it. */
+function watched(stop: number): boolean {
+  return held?.stop === stop && (view?.stop === stop || (laneView !== null && laneAt().stop === stop));
+}
+
+/** What was driven through a view ends, unless a viewer still watches the stop held. */
+function endDriven(): void {
+  if (held && watched(held.stop)) return;
+  for (const end of viewEnds) end();
+  viewEnds.clear();
 }
 
 /** `run`, for `ms` at most: settles once it did or they passed, never throwing. */
@@ -551,6 +585,7 @@ async function answerWithin<T, L>(run: Promise<T>, ms: number, late: L): Promise
 async function endView(stop: number, page: Page | null): Promise<void> {
   if (viewStarting?.stop === stop) await within(viewStarting.started, VIEW_END_MS);
   if (view?.stop === stop) await stopView();
+  endDriven();
   const own = input;
   input = freshInput();
   await within(own.playing, VIEW_END_MS);
@@ -569,9 +604,48 @@ async function endView(stop: number, page: Page | null): Promise<void> {
 async function stopView(): Promise<void> {
   const shown = view;
   view = null;
-  for (const end of viewEnds) end();
-  viewEnds.clear();
+  endDriven();
   if (shown) await within(shown.close(), VIEW_END_MS);
+}
+
+/**
+ * Start the lane view the editor asked for: the page of the stop held, else of the running test, through its tests and
+ * stops, each frame going as `lane-frame`; asked again while on, the latest frame goes again.
+ */
+function startLaneView(): IntentAnswer {
+  if (laneView) {
+    laneView.resend();
+    return { ok: true, message: 'The live view is on.' };
+  }
+  laneView = subscribeLane({
+    ...VIEW_FRAMES,
+    busy: framesBackedUp,
+    send: (frame) =>
+      tellHub({
+        type: 'lane-frame',
+        test: frame.test,
+        stop: frame.stop,
+        width: frame.width,
+        height: frame.height,
+        data: frame.data.toString('base64'),
+      }),
+    refuse: (why, at) => tellHub({ type: 'lane-frame', test: at.test, stop: at.stop, refused: why ?? TOO_HEAVY }),
+  });
+  return { ok: true, message: 'The live view is on.' };
+}
+
+/** Stop the lane view, and end what was driven through it unless the stop's own view still shows it. */
+async function stopLaneView(): Promise<IntentAnswer> {
+  const shown = laneView;
+  laneView = null;
+  endDriven();
+  if (shown) await within(shown.close(), VIEW_END_MS);
+  return { ok: true, message: 'The live view is off.' };
+}
+
+/** Whether the run connection is backed up: the latest frame alone waits. */
+function framesBackedUp(): boolean {
+  return !!socket && socket.writableLength > MAX_FRAME_BACKLOG;
 }
 
 /**
@@ -615,37 +689,32 @@ function startView(holding: HeldStop): Promise<IntentAnswer> {
 }
 
 /**
- * Open the live view of a page at the stop `stop` (`openPageView`): at the size of its viewport scaled down to fit
- * `MAX_VIEW_WIDTH` by `MAX_VIEW_HEIGHT` and `VIEW_QUALITY`, `MAX_VIEW_FPS` frames a second at most, each frame going
- * to the editor as `frame` with the viewport in CSS pixels, one longer than `MAX_VIEW_FRAME` replaced by an image of
- * the page at `LIGHT_QUALITY`, and when that one is too long as well, `frame` with `refused` once, until a frame goes
- * again. The latest alone waits while the connection is backed up; none goes once its stop began to end. The view
- * stops as its page closes. Null when the page cannot be read.
+ * Open the live view of the stop `stop`, on its page: the lane's frames (`lane-feed.ts`, which shows the stop's page
+ * while the worker stands at it) at the size of its viewport scaled down to fit `MAX_VIEW_WIDTH` by `MAX_VIEW_HEIGHT`
+ * and `VIEW_QUALITY`, `MAX_VIEW_FPS` a second at most, each going to the editor as `frame` with the viewport in CSS
+ * pixels, and `frame` with `refused` once when each image is too long, until a frame goes again. The latest alone waits
+ * while the connection is backed up; none goes once its stop began to end. The view stops as its page closes. Null when
+ * the page cannot be read.
  */
 async function openView(page: Page, stop: number): Promise<View | null> {
-  // The page's secret fields and the pause bar are painted over in each frame, or the frame does not go.
-  const mask = maskSecretFields(page, {
-    masks: () => [],
-    quality: VIEW_QUALITY,
-    lightQuality: LIGHT_QUALITY,
-    maxBytes: MAX_VIEW_FRAME,
+  // Once its stop began to end, no frame of it goes.
+  const ours = (at: { stop: number | null }): boolean => held?.stop === stop && at.stop === stop;
+  const subscription = subscribeLane({
+    ...VIEW_FRAMES,
+    busy: framesBackedUp,
+    send: (frame) => {
+      if (!ours(frame)) return;
+      tellHub({ type: 'frame', stop, width: frame.width, height: frame.height, data: frame.data.toString('base64') });
+    },
+    refuse: (why, at) => {
+      if (ours(at)) tellHub({ type: 'frame', stop, refused: why ?? TOO_HEAVY });
+    },
   });
-  const opened = await openPageView(page, {
-    size: viewSize,
-    quality: VIEW_QUALITY,
-    fps: MAX_VIEW_FPS,
-    maxFrameBytes: MAX_VIEW_FRAME,
-    lightQuality: LIGHT_QUALITY,
-    shotMs: SHOT_MS,
-    busy: () => (!!socket && socket.writableLength > MAX_FRAME_BACKLOG) || mask.resting,
-    // Once its stop began to end, no frame of it goes.
-    live: () => held?.stop === stop,
-    screen: (frame) => mask.screen(frame),
-    send: (frame) =>
-      tellHub({ type: 'frame', stop, width: frame.width, height: frame.height, data: frame.data.toString('base64') }),
-    refuse: (why) => tellHub({ type: 'frame', stop, refused: why ?? TOO_HEAVY }),
-  });
-  if (!opened) return null;
+  const opened = await subscription.ready();
+  if (!opened) {
+    await subscription.close();
+    return null;
+  }
   const onClose = () => {
     if (view?.stop === stop) void stopView();
   };
@@ -653,10 +722,10 @@ async function openView(page: Page, stop: number): Promise<View | null> {
   return {
     stop,
     screencast: opened.screencast,
-    resend: opened.resend,
+    resend: subscription.resend,
     close: async () => {
       page.off('close', onClose);
-      await opened.close();
+      await subscription.close();
     },
   };
 }
@@ -675,7 +744,7 @@ async function stopViewOf(holding: HeldStop): Promise<IntentAnswer> {
  */
 function playInput(holding: HeldStop, events: ViewInput[]): Promise<IntentAnswer> {
   const page = holding.page;
-  if (!page || view?.stop !== holding.stop) return Promise.resolve({ ok: false, message: NEEDS_VIEW });
+  if (!page || !watched(holding.stop)) return Promise.resolve({ ok: false, message: NEEDS_VIEW });
   const own = input;
   if (own.waiting >= MAX_INPUT_WAITING) {
     return Promise.resolve({ ok: false, message: 'The page still plays the input sent before: send less at once.' });
@@ -687,7 +756,7 @@ function playInput(holding: HeldStop, events: ViewInput[]): Promise<IntentAnswer
   const played = own.playing
     .then(async (): Promise<IntentAnswer> => {
       for (const [i, event] of events.entries()) {
-        if (held !== holding || input !== own || view?.stop !== holding.stop || page.isClosed()) {
+        if (held !== holding || input !== own || !watched(holding.stop) || page.isClosed()) {
           return { ok: false, message: i ? `The stop ended after ${i} of the events.` : WENT_ON };
         }
         try {
@@ -825,6 +894,13 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
       return;
     case 'request': {
       const { request } = message;
+      if (message.what === 'view-lane') {
+        const on = message.on;
+        const answered = viewTurn.then(() => (on ? startLaneView() : stopLaneView()));
+        viewTurn = answered.catch(() => undefined);
+        void answered.then((value) => tellHub({ type: 'answer', request, what: 'view-lane', value }));
+        return;
+      }
       const at = message.what !== 'image' && held?.stop === message.stop ? held : null;
       switch (message.what) {
         case 'image':
