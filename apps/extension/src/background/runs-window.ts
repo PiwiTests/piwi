@@ -129,9 +129,14 @@ export async function openRunsWindow(): Promise<{ ok: boolean }> {
 }
 
 /** What the popup's Runs tile shows: whether a hub answers, and how many runs are live. */
-export async function runsSummary(): Promise<{ connected: boolean; runs: number }> {
+export async function runsSummary(): Promise<{ connected: boolean; paired: boolean; runs: number }> {
   await runHubs.ready();
-  return { connected: runHubs.connected(), runs: liveRuns(runHubs.state()).length };
+  const state = runHubs.state();
+  return {
+    connected: runHubs.connected(),
+    paired: state.discovery !== 'unpaired' || state.desktop !== 'unpaired',
+    runs: liveRuns(state).length,
+  };
 }
 
 /** Starts finding the hubs, and follows the pairings and their grants. */

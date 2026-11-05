@@ -17,6 +17,7 @@ import {
   type HubSession,
   type HubWelcome,
   type LiveHub,
+  type PeerHub,
 } from '@piwitests/core/run-hub';
 import type { RunsAnswer } from '../shared/runs.js';
 
@@ -70,7 +71,9 @@ export interface HubConnectionEvents {
   code(code: HubCodeMessage): void;
   /** A frame of a stop's live view the connection watches, or why none comes. */
   frame(frame: HubFrameMessage | HubFrameRefusal): void;
-  /** The connection closed by itself. */
+  /** The other live hubs of the machine, as the hub names them each time they change: no token. */
+  peers(hubs: PeerHub[]): void;
+  /** The connection closed by itself; `sessions` still holds the runs it had. */
   lost(why: HubLoss): void;
 }
 
@@ -196,6 +199,8 @@ export class HubConnection {
         return this.events.code(message);
       case 'frame':
         return this.events.frame(message);
+      case 'peers':
+        return this.events.peers(message.hubs);
       case 'session': {
         const { session } = message;
         if (session.ended) {
@@ -258,12 +263,16 @@ export class HubConnection {
       resolve({ ok: false, message: '', failure: 'offline' });
     }
     this.pending.clear();
-    this.sessions.clear();
     this.markReady();
-    if (this.disposed) return;
+    if (this.disposed) {
+      this.sessions.clear();
+      return;
+    }
     const why: HubLoss =
       this.loss ?? (code === HUB_CLOSE.unauthorized ? 'refused' : code === HUB_CLOSE.goingAway ? 'stopped' : 'closed');
+    // `lost` still reads the runs it held, which a window shows as last heard.
     this.events.lost(why);
+    this.sessions.clear();
     this.events.changed();
   }
 }

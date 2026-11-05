@@ -44,6 +44,11 @@ export type RunsDiscovery =
   | 'refused'
   /** The editor's Piwi extension has no live endpoint: it predates the Runs window. */
   | 'outdated'
+  /**
+   * The program on the paired port answered with no proof and no such page: no editor's Piwi extension, or one too old
+   * to prove it holds the pairing's token. It was sent nothing.
+   */
+  | 'not-editor'
   /** The program on the paired port did not prove it holds the pairing's token: it was sent nothing. */
   | 'unproven'
   /** The editor answered with its hubs. */
@@ -438,6 +443,14 @@ export function stopError(stop: Pick<HubStop, 'error' | 'title'>): string {
 /** A test's name: its `describe` blocks' titles, then its own. */
 export function testName(test: Pick<HubTest, 'title'>): string {
   return test.title.join(' › ');
+}
+
+/**
+ * Names a worker's slot within a run (Playwright's `parallelIndex`), which a worker started in its place after a failure
+ * takes: what the window keeps Watch live by.
+ */
+export function slotKey(hub: string, ref: string, parallelIndex: number): string {
+  return `${hub}|${ref}|slot-${parallelIndex}`;
 }
 
 /** Names a worker within the state, for the window's focus and its images. */
