@@ -12,6 +12,10 @@
  * them from `/api/desktop/events` and feeds the result to the shell's
  * `desktop_set_run_progress` command. Pure and framework-free so it is unit-tested.
  */
+import type { RunOriginKind } from '@piwitests/core/wire';
+import { UNATTENDED_RUN_SUFFIX, isUnattendedDesktopRun } from '#shared/desktop-runs';
+import type { LocalRun } from '~/composables/useDesktopLocalRuns';
+import { localRunOriginKind } from '~/utils/desktop-job';
 
 /** Mirrors the shell's `desktop_set_run_progress` `state` argument. */
 export type RunProgressState = 'none' | 'indeterminate' | 'normal' | 'error' | 'paused';
@@ -37,9 +41,32 @@ export interface RunCounts {
   failed: number;
 }
 
-/** An in-flight run as the desktop plugin tracks it: its counts and its project. */
-export interface LiveRun extends RunCounts {
+/** What launched a run, as the desktop event stream sends it with each run's lifecycle; null where it named none. */
+export interface LiveRunOrigin {
+  /** What launched the run (`desktop`, `bisect`, `ci`…). */
+  origin: string | null;
+  /** What the run was launched for (`PIWI_ORIGIN_REF`). */
+  originRef: string | null;
+  /** The launcher's name for the run (`PIWI_RUN_REF`): `desktop-<id>` for a run the shell started. */
+  runName: string | null;
+}
+
+/** An in-flight run as the desktop plugin tracks it: its counts, its project and what launched it. */
+export interface LiveRun extends RunCounts, LiveRunOrigin {
   projectId: number | null;
+}
+
+/** The origins of runs nobody attends: a bisect's steps, and a Flake Lab's and a probe's runs. */
+const UNATTENDED_RUN_ORIGINS: ReadonlySet<string> = new Set<RunOriginKind>(['bisect', 'flake-lab', 'probe']);
+
+/**
+ * Whether nobody attends a run: a bisect's step or a lab run, or one the shell names so (`isUnattendedDesktopRun`, a
+ * run that repeats its tests or runs in UI mode). Its end flashes nothing on the shell, so a bisect's bad steps neither
+ * show "Run failed" nor ask for the user's attention.
+ */
+export function isUnattendedLiveRun(run: Pick<LiveRunOrigin, 'origin' | 'runName'>): boolean {
+  if (run.origin != null && UNATTENDED_RUN_ORIGINS.has(run.origin)) return true;
+  return run.runName != null && isUnattendedDesktopRun(run.runName);
 }
 
 /** The cleared state — no active runs, nothing on the shell. */
@@ -116,19 +143,38 @@ export function finishedRunFlash(status: string): FinishedRunFlash | null {
   }
 }
 
+/** A stopped local run, as far as finding the runs it produced goes. */
+export type StoppedLocalRun = Pick<
+  LocalRun,
+  'kind' | 'projectId' | 'originRef' | 'hubRefs' | 'piwiRunId' | 'piwiRunBaseline'
+>;
+
 /**
- * The tracked runs a stopped local process produced: the runs of its project
- * numbered above `baseline`, the project's newest run id when the process was
- * spawned. A process the shell had to kill never reported its runs' end.
+ * The tracked runs a stopped local run produced, which a process the shell had to kill never reported the end of: the
+ * Piwi run it is linked to, and each run of its project newer than its baseline that is its own as the lookup linking
+ * it reads them (`correlatePiwiRuns`): named by one of its steps (`hubRefs`), or, for a run the reporter recorded no
+ * name for, stamped with its origin and reference while no other local run shares that reference (`sharedReference`).
+ * Every other run, another local run's, an editor's or a CI run, stays.
  */
 export function runsOfStoppedLocalRun(
   active: ReadonlyMap<number, LiveRun>,
-  projectId: string,
-  baseline: number,
+  run: StoppedLocalRun,
+  sharedReference: boolean,
 ): number[] {
-  const ids: number[] = [];
-  for (const [id, run] of active) {
-    if (id > baseline && run.projectId != null && String(run.projectId) === projectId) ids.push(id);
-  }
-  return ids;
+  const origin = localRunOriginKind(run.kind);
+  const names = new Set(run.hubRefs.flatMap((ref) => [ref, `${ref}${UNATTENDED_RUN_SUFFIX}`]));
+  const owns = (id: number, live: LiveRun): boolean => {
+    if (id === run.piwiRunId) return true;
+    if (run.piwiRunBaseline == null || id <= run.piwiRunBaseline) return false;
+    if (live.projectId == null || String(live.projectId) !== run.projectId) return false;
+    if (live.runName != null) return names.has(live.runName);
+    return (
+      !sharedReference &&
+      origin != null &&
+      live.origin === origin &&
+      run.originRef != null &&
+      live.originRef === run.originRef
+    );
+  };
+  return [...active].filter(([id, live]) => owns(id, live)).map(([id]) => id);
 }

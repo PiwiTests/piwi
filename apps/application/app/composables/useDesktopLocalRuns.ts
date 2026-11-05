@@ -321,6 +321,26 @@ export function localRunCompareTo(run: Pick<LocalRun, 'piwiRunId' | 'sourceRunId
   return `/test-runs/${run.piwiRunId}?tab=changes&baseline=${run.sourceRunId}`;
 }
 
+/**
+ * Whether another local run shares the origin reference of `run` while both go: the same project, origin and reference,
+ * at overlapping times. A Piwi run the reporter recorded no name for is then neither's to claim.
+ */
+export function localRunReferenceShared(
+  runs: readonly LocalRun[],
+  run: Pick<LocalRun, 'projectId' | 'originRef' | 'kind' | 'startedAt' | 'finishedAt'>,
+): boolean {
+  const until = (r: Pick<LocalRun, 'finishedAt'>) => r.finishedAt ?? Date.now();
+  return runs.some(
+    (other) =>
+      other !== run &&
+      other.projectId === run.projectId &&
+      other.originRef === run.originRef &&
+      localRunOriginKind(other.kind) === localRunOriginKind(run.kind) &&
+      other.startedAt <= until(run) &&
+      run.startedAt <= until(other),
+  );
+}
+
 /** One key per set of cases, whatever their order: a button finds the runs of its own tests by it. */
 function localRunCasesKey(cases: readonly RetryCase[]): string {
   return cases
@@ -1140,13 +1160,6 @@ export function useDesktopLocalRuns() {
    * as soon as the reporter checks in.
    */
   async function correlatePiwiRuns() {
-    const until = (run: LocalRun) => run.finishedAt ?? Date.now();
-    const sharesReference = (a: LocalRun, b: LocalRun) =>
-      a.projectId === b.projectId &&
-      a.originRef === b.originRef &&
-      localRunOriginKind(a.kind) === localRunOriginKind(b.kind) &&
-      a.startedAt <= until(b) &&
-      b.startedAt <= until(a);
     const cutoff = Date.now() - 2 * 60_000;
     for (const run of runs.value) {
       if (run.piwiRunId != null || run.piwiRunBaseline == null) continue;
@@ -1162,7 +1175,7 @@ export function useDesktopLocalRuns() {
           },
         );
         if (!latest || latest.id <= run.piwiRunBaseline) continue;
-        if (latest.name == null && runs.value.some((other) => other !== run && sharesReference(other, run))) continue;
+        if (latest.name == null && localRunReferenceShared(runs.value, run)) continue;
         run.piwiRunId = latest.id;
       } catch {
         // Server briefly unavailable — the next stream event retries.
