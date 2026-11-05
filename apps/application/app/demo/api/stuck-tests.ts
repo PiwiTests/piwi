@@ -4,6 +4,8 @@ import { runningTestHistory, type RunningTestHistory } from '#shared/handlers/st
 import { STUCK_FLOOR_MS, stuckAttempt, testStuckEventData, type StuckAttempt } from '#shared/stuck-tests';
 import { projects } from '~~/server/database/schema';
 import { runningCaseKey } from '~~/server/utils/inserted-run-cases';
+import { keepBatchSteps, type KeptLiveStep, type StepRunEvent } from '~~/server/utils/map-step-events';
+import type { StreamEventPayload } from '#shared/types';
 import type { getDemoDb } from '../db.client';
 import { publishDemoNotificationEvent, publishDemoRunEvent } from '../run-events';
 
@@ -23,10 +25,14 @@ interface DemoAttempt {
   stuck: StuckAttempt | null;
 }
 
-/** Each live demo run's running tests, the latest time its events reached, and whether a check of it is under way. */
+/**
+ * Each live demo run's running tests, the step each worker is in (`liveStepKey`), the latest time its events reached,
+ * and whether a check of it is under way.
+ */
 interface DemoRun {
   now: number;
   attempts: Map<string, DemoAttempt>;
+  steps: Map<string, KeptLiveStep>;
   checking: boolean;
 }
 const runs = new Map<number, DemoRun>();
@@ -34,7 +40,7 @@ const runs = new Map<number, DemoRun>();
 function runOf(runId: number): DemoRun {
   let run = runs.get(runId);
   if (!run) {
-    run = { now: 0, attempts: new Map(), checking: false };
+    run = { now: 0, attempts: new Map(), steps: new Map(), checking: false };
     runs.set(runId, run);
   }
   return run;
@@ -65,6 +71,16 @@ export function demoRunningCases(runId: number): Record<string, unknown>[] {
   return [...run.attempts.values()].map(({ begin, startedAt, stuck }) =>
     stuck ? { ...begin, stuck: { ...stuck, elapsedMs: Math.max(stuck.elapsedMs, run.now - startedAt) } } : begin,
   );
+}
+
+/** A batch of the run's events: the step each worker is in is kept for a page that connects mid-run, as the server keeps it. */
+export function noteDemoSteps(runId: number, events: StreamEventPayload[]): void {
+  keepBatchSteps(runOf(runId).steps, events, null);
+}
+
+/** The step each worker of the run is in, as the server's stream replays them. */
+export function demoLiveSteps(runId: number): StepRunEvent[] {
+  return [...(runs.get(runId)?.steps.values() ?? [])].map((kept) => kept.event);
 }
 
 /** The run ended: its running tests are forgotten. */

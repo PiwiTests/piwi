@@ -1673,6 +1673,7 @@ async function runSingleSimulation(
                 stepCategory: s.category,
                 parentTitle: test.title,
                 workerIndex,
+                shardIndex: shardOverride?.shardIndex ?? null,
                 startedAt: stepCursor,
               },
             ]);
@@ -1707,6 +1708,7 @@ async function runSingleSimulation(
                 stepCategory: s.category,
                 parentTitle: test.title,
                 workerIndex,
+                shardIndex: shardOverride?.shardIndex ?? null,
                 startedAt: stepCursor,
               },
             ]);

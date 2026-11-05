@@ -1,8 +1,13 @@
 import { describe, test, expect } from 'vitest';
 import type { TestCasePayload, StreamEventPayload } from '#shared/types';
+import { mapStepEventsToRunEvents } from '../../server/utils/map-step-events';
 // Imported from the reporter's *source* (vitest transpiles it), not dist/ —
 // `npm run app:test:unit` must pass without a prior `npm run reporter:build`.
-import type { WireTestCase } from '../../../../packages/reporter/src/types/wire';
+import type {
+  StepBeginStreamEvent,
+  StepEndStreamEvent,
+  WireTestCase,
+} from '../../../../packages/reporter/src/types/wire';
 
 /**
  * Drift guard for the per-test-case wire contract.
@@ -165,6 +170,33 @@ const wireTestCaseFixture = {
   stderr: null,
 } satisfies WireTestCase;
 
+// Every field of the reporter's step events, each also a `StreamEventPayload`, so a field renamed or removed on
+// either side fails the typecheck.
+const stepBeginFixture = {
+  type: 'step-begin',
+  title: 'Click',
+  subtitle: "getByRole('button')",
+  location: 'a.spec.ts:1:1',
+  stepCategory: 'pw:api',
+  parentTitle: 't',
+  workerIndex: 0,
+  shardIndex: 2,
+  startedAt: 0,
+} satisfies StepBeginStreamEvent satisfies StreamEventPayload;
+const stepEndFixture = {
+  type: 'step-end',
+  title: 'Click',
+  subtitle: "getByRole('button')",
+  location: 'a.spec.ts:1:1',
+  status: 'passed',
+  duration: 5,
+  stepCategory: 'pw:api',
+  parentTitle: 't',
+  workerIndex: 0,
+  shardIndex: 2,
+  startedAt: 0,
+} satisfies StepEndStreamEvent satisfies StreamEventPayload;
+
 describe('wire ↔ shared per-case contract drift guard', () => {
   test('WireTestCase carries every TestCasePayload field', () => {
     const missing = Object.keys(testCasePayloadFixture).filter((k) => !(k in wireTestCaseFixture));
@@ -174,6 +206,14 @@ describe('wire ↔ shared per-case contract drift guard', () => {
   test('WireTestCase carries every StreamEventPayload field', () => {
     const missing = Object.keys(streamEventPayloadFixture).filter((k) => !(k in wireTestCaseFixture));
     expect(missing, 'fields present in StreamEventPayload but missing from WireTestCase').toEqual([]);
+  });
+
+  test("the reporter's step events reach the run stream with their shard and worker", () => {
+    const published = mapStepEventsToRunEvents([stepBeginFixture, stepEndFixture]);
+    expect(published.map((e) => [e.type, e.data.shardIndex, e.data.workerIndex])).toEqual([
+      ['step-begin', 2, 0],
+      ['step-end', 2, 0],
+    ]);
   });
 
   test('WireTestCase has no fields unaccounted for by either shared contract', () => {

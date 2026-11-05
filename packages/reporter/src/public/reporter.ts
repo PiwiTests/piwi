@@ -539,10 +539,10 @@ export class PiwiDashboardReporter {
       this.plannedTests.length,
     );
     if (this.streamManager) {
-      // A person who opens the run sees the step each test is in now, not only the steps that begin after.
+      // A person who opens the run sees the step each test is in now, not only the steps that begin after, at once.
       this.streamManager.onWatched = () => {
         void this.liveResources?.tick();
-        for (const event of this.openSteps.values()) this.streamManager?.queueEvent(event);
+        if (this.openSteps.size > 0) this.streamManager?.queueEventsNow([...this.openSteps.values()]);
       };
     }
     if (this.streamManager && this.options.captureResources !== false) {
@@ -736,6 +736,7 @@ export class PiwiDashboardReporter {
       stepCategory: cat,
       parentTitle: test?.title || null,
       workerIndex: workerIndexOf(_result),
+      shardIndex: this.shardInfo?.current ?? null,
       startedAt: step.startTime instanceof Date ? step.startTime.getTime() : null,
     };
     this.openSteps.set(step, event);
@@ -762,6 +763,7 @@ export class PiwiDashboardReporter {
       stepCategory: cat,
       parentTitle: test?.title || null,
       workerIndex,
+      shardIndex: this.shardInfo?.current ?? null,
       startedAt,
     };
     this.streamManager?.queueEvent(event);

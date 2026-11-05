@@ -69,8 +69,8 @@ const isLive = computed(() => testRun.value?.status === 'running' || testRun.val
 const isFinalizing = ref(false);
 const liveTestCases = ref<TestCaseResult[]>([]);
 const liveTestCaseKeys = new Map<string, true>();
-// Worker index → the step the worker is currently on (from transient SSE step
-// events; nothing is persisted from them). Rendered inline on the matching
+// The step each worker is on, by its shard and its worker (`liveWorkerKey`), from transient SSE step
+// events; nothing is persisted from them. Rendered inline on the matching
 // running rows in the test-case views.
 const liveSteps = ref<LiveStepsByWorker>({});
 // What the run's reporters measured so far (CPU, memory, open pages), one part
@@ -313,6 +313,7 @@ function flushPendingEvents() {
         stepEvents?: TestStepEvent[] | null;
         wastedTimeMs?: number | null;
         workerIndex?: number;
+        shardIndex?: number | null;
         startedAt?: number;
         browser?: { projectName?: string } | null;
         stepCategory?: string | null;
@@ -350,6 +351,7 @@ function flushPendingEvents() {
             stepEvents: d.stepEvents ?? existing.stepEvents,
             wastedTimeMs: d.wastedTimeMs ?? existing.wastedTimeMs,
             workerIndex: d.workerIndex ?? existing.workerIndex,
+            shardIndex: d.shardIndex ?? existing.shardIndex,
             startedAt: d.startedAt ? d.startedAt : existing.startedAt,
             browser: d.browser ?? existing.browser,
             // A later attempt's retry count and attempt history win, so a
@@ -383,6 +385,7 @@ function flushPendingEvents() {
             stepEvents: d.stepEvents ?? null,
             wastedTimeMs: d.wastedTimeMs ?? null,
             workerIndex: d.workerIndex ?? null,
+            shardIndex: d.shardIndex ?? null,
             startedAt: d.startedAt ?? undefined,
             browser: d.browser ?? null,
             retries: d.retries ?? null,
@@ -399,12 +402,13 @@ function flushPendingEvents() {
         stepCategory?: string | null;
         parentTitle?: string | null;
         workerIndex?: number;
+        shardIndex?: number | null;
       };
       // Suite-level hooks (no worker) keep flowing to the timeline instead.
       if (d.workerIndex == null) continue;
       liveSteps.value = {
         ...liveSteps.value,
-        [d.workerIndex]: {
+        [liveWorkerKey({ shard: d.shardIndex ?? null, worker: d.workerIndex })]: {
           title: d.title,
           subtitle: d.subtitle ?? null,
           category: d.stepCategory ?? null,
@@ -420,13 +424,14 @@ function flushPendingEvents() {
         parentTitle?: string | null;
         status?: string;
         workerIndex?: number;
+        shardIndex?: number | null;
       };
       if (d.workerIndex == null) continue;
       // Keep the ended step visible (with its outcome) until the next step
       // begins, so the readout shows "last thing this worker did".
       liveSteps.value = {
         ...liveSteps.value,
-        [d.workerIndex]: {
+        [liveWorkerKey({ shard: d.shardIndex ?? null, worker: d.workerIndex })]: {
           title: d.title,
           subtitle: d.subtitle ?? null,
           category: d.stepCategory ?? null,
@@ -865,9 +870,11 @@ watch(runRefreshKey, () => {
 const uniqueWorkerCount = computed(() => {
   const cases = isLive.value ? displayTestCases.value : testRun.value?.testCases;
   if (!cases || cases.length === 0) return 0;
-  const workers = new Set<number>();
+  const workers = new Set<string>();
   for (const tc of cases) {
-    if (tc.workerIndex != null && tc.workerIndex >= 0) workers.add(tc.workerIndex);
+    if (tc.workerIndex != null && tc.workerIndex >= 0) {
+      workers.add(liveWorkerKey({ shard: tc.shardIndex ?? null, worker: tc.workerIndex }));
+    }
   }
   return workers.size;
 });

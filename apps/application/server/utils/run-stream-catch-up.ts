@@ -71,6 +71,7 @@ export async function storedCaseEventData(db: DrizzleDB, runId: number): Promise
     duration: tc.duration,
     location: tc.line && tc.column ? `${tc.filePath}:${tc.line}:${tc.column}` : tc.filePath,
     workerIndex: tc.workerIndex ?? null,
+    shardIndex: tc.shardIndex ?? null,
     browser: tc.browser ?? null,
     retries: tc.retries ?? null,
     attempts: tc.attempts ?? null,

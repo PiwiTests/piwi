@@ -66,6 +66,7 @@ function stepBeginEvent(title: string): StepBeginStreamEvent {
     stepCategory: 'pw:api',
     parentTitle: 'the test',
     workerIndex: 0,
+    shardIndex: null,
     startedAt: null,
   };
 }
@@ -502,6 +503,25 @@ describe('StreamManager live steps', () => {
     sm.queueEvent(stepEndEvent('s'));
     await sm.drain();
     expect(sent(requests)).toEqual(['complete a', 'step-end s']);
+  });
+
+  it('brings its first heartbeat forward once the dashboard first says nobody watches', async () => {
+    vi.useFakeTimers();
+    try {
+      const { sm, requests } = makeEnabledManager(() => ({ success: true, watched: false }));
+      // The stream just opened: whether anyone watches is not known, so the first heartbeat is a watched run's.
+      (sm as any).heartbeatInterval = 15_000;
+      (sm as any).unwatchedHeartbeatInterval = 5_000;
+      (sm as any).lastActivityAt = Date.now();
+      (sm as any).scheduleHeartbeat();
+      sm.queueEvent(completeEvent('a'));
+      await sm.flush();
+      expect((sm as any).watched).toBe(false);
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(requests.some((r) => r.url.endsWith('/heartbeat'))).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('heartbeats sooner while nobody watches, and a heartbeat answer turns the steps back on', async () => {
@@ -1013,7 +1033,8 @@ describe('StreamManager start refused', () => {
   });
 
   it("prints the dashboard's own reason for a 403, not the API key advice", async () => {
-    const refusal = 'Request failed with status 403: With authentication off, this dashboard answers only on its local addresses.';
+    const refusal =
+      'Request failed with status 403: With authentication off, this dashboard answers only on its local addresses.';
     const warning = await warningFor(new HttpError(403, refusal));
     expect(warning).toContain(refusal);
     expect(warning).not.toContain('apiKey');

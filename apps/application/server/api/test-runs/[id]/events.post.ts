@@ -122,16 +122,16 @@ export default eventHandler(async (event) => {
   }
 
   // --- Handle step events (live step readout + suite-level hooks), in batch order ---
-  for (const stepEvent of stepRunEvents) {
-    runEventBus.publish(id, stepEvent);
-  }
+  for (const stepEvent of stepRunEvents) runEventBus.publish(id, stepEvent);
+  // The step each worker is in, for the stream's catch-up: steps and completions in batch order.
+  runEventBus.noteLiveSteps(id, validEvents, body.streamToken);
 
   // --- Handle complete events (test finished, persist to DB) ---
   if (completeEvents.length === 0) {
     return {
       success: true,
       processed: beginEvents.length + stepRunEvents.length,
-      watched: runEventBus.isWatched(id),
+      watched: runEventBus.answerWatched(id, body.streamToken),
     };
   }
 
@@ -238,6 +238,6 @@ export default eventHandler(async (event) => {
   return {
     success: true,
     processed: insertedRunCases.length + beginEvents.length,
-    watched: runEventBus.isWatched(id),
+    watched: runEventBus.answerWatched(id, body.streamToken),
   };
 });
