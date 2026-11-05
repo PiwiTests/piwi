@@ -23,7 +23,7 @@ export function liveStepKey(data: { shardIndex?: unknown; workerIndex?: unknown 
   return liveWorkerKey({ shard, worker: data.workerIndex });
 }
 
-/** The most workers a run keeps a live step for, the latest to step first: its worker processes, restarts included. */
+/** The most workers a run keeps a live step for (its worker processes, restarts included); past it, the one that stepped longest ago goes. */
 export const MAX_KEPT_LIVE_STEPS = 512;
 
 /** A worker's latest step event, kept for a page that opens the run mid-test, and the reporter that sent it. */
@@ -35,8 +35,8 @@ export interface KeptLiveStep {
 
 /**
  * Apply one streamed batch to a run's kept steps, by `liveStepKey`, in the batch's order: a step event becomes its
- * worker's kept step, and a test's `complete` drops its worker's step that is of that test (a step a reporter sent
- * without its shard included). Past `MAX_KEPT_LIVE_STEPS`, the worker that stepped longest ago goes.
+ * worker's kept step, and a test's `complete` drops its worker's step that is of that test and from the same reporter
+ * (a step it sent without its shard included). Past `MAX_KEPT_LIVE_STEPS`, the worker that stepped longest ago goes.
  */
 export function keepBatchSteps(
   steps: Map<string, KeptLiveStep>,
@@ -46,7 +46,8 @@ export function keepBatchSteps(
   for (const tc of events) {
     if (tc.type === 'complete') {
       for (const key of new Set([liveStepKey(tc), liveStepKey({ workerIndex: tc.workerIndex })])) {
-        if (key !== null && steps.get(key)?.event.data.parentTitle === tc.title) steps.delete(key);
+        const kept = key === null ? undefined : steps.get(key);
+        if (kept && kept.reporter === reporter && kept.event.data.parentTitle === tc.title) steps.delete(key!);
       }
     } else if (tc.type === 'step-begin' || tc.type === 'step-end') {
       const [event] = mapStepEventsToRunEvents([tc]);
