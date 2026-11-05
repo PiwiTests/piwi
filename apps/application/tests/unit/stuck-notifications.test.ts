@@ -5,8 +5,9 @@ import * as schema from '../../server/database/schema.sqlite';
 import { migrateToLatest } from './temp-db';
 
 /**
- * Which runs send `test.stuck` for a running attempt: the `test-stuck` use of `#shared/run-eligibility`, read by
- * `emitTestStuck`. A run a local hub steers sends none, while the stuck check still marks its attempt on the run page.
+ * Which runs send `test.stuck` for a running attempt: the `stuck-notifications` use of `#shared/run-eligibility`, read
+ * by `emitTestStuck`. A run started on a developer's machine sends none, a local hub steering it or not, while the stuck
+ * check still marks its attempt on the run page.
  */
 
 delete process.env.PIWI_DATABASE_URL;
@@ -64,12 +65,13 @@ describe('test.stuck', () => {
 
   test.each([
     { name: 'a partial CI run', run: { metadata: { piwiOrigin: { kind: 'ci' } }, isFullRun: false }, sends: true },
+    { name: 'a full CI run', run: { metadata: { piwiOrigin: { kind: 'ci' } } }, sends: true },
     {
       name: 'a full run from a developer’s machine',
       run: { metadata: { piwiOrigin: { kind: 'local' } } },
-      sends: true,
+      sends: false,
     },
-    { name: 'a full run from the desktop app', run: { metadata: { piwiOrigin: { kind: 'desktop' } } }, sends: true },
+    { name: 'a full run from the desktop app', run: { metadata: { piwiOrigin: { kind: 'desktop' } } }, sends: false },
     {
       name: 'a partial run from a developer’s machine',
       run: { metadata: { piwiOrigin: { kind: 'local' } }, isFullRun: false },
@@ -86,7 +88,8 @@ describe('test.stuck', () => {
       run: { metadata: { piwiOrigin: { kind: 'desktop' }, ...STEERED } },
       sends: false,
     },
-    { name: 'a CI run a hub steers', run: { metadata: { piwiOrigin: { kind: 'ci' }, ...STEERED } }, sends: false },
+    // The stamp of a hub that steers a run changes nothing: its origin decides.
+    { name: 'a CI run a hub steers', run: { metadata: { piwiOrigin: { kind: 'ci' }, ...STEERED } }, sends: true },
     {
       name: 'a run that no longer runs',
       run: { metadata: { piwiOrigin: { kind: 'ci' } }, status: 'passed' },
@@ -151,8 +154,8 @@ describe('the stuck check of a run a local hub steers', () => {
     expect(runEventBus.getRunningCases(LIVE_RUN)[0]).toMatchObject({ stuck: { elapsedMs: 5 * 60_000 } });
   });
 
-  test('sends test.stuck for the same run when no hub steers it', async () => {
-    await liveRun({ metadata: { piwiOrigin: { kind: 'local' } } });
+  test('marks the attempt of a CI run Stuck? and sends test.stuck', async () => {
+    await liveRun({ metadata: { piwiOrigin: { kind: 'ci' } } });
     expect(await check()).toEqual({ marked: 1, notified: ['test.stuck'] });
   });
 });

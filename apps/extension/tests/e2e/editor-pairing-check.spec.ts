@@ -109,7 +109,7 @@ test.describe('the paired editor’s proof, checked where the pairing shows', ()
       await runs.goto(`chrome-extension://${paired.extensionId}/runs.html`);
       await expect(
         runs.getByText(
-          'The program on the paired port is not this editor: Piwi Picker sent it nothing, and asks again in a moment. If your editor moved to another port, pair Piwi Picker with it again in the settings.',
+          'The program on the paired port is not this editor: Piwi Picker sent it nothing, and asks again every minute while this window is open. If your editor moved to another port, pair Piwi Picker with it again in the settings.',
         ),
       ).toBeVisible();
       await expect(runs.getByRole('button', { name: 'Open the settings' })).toBeVisible();
