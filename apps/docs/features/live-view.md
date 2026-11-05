@@ -26,7 +26,7 @@ app hands out no live view key.
 
 ## Turn it on
 
-The live view is off in every project. A Project admin turns it on in **Project → Settings → Live view**. It applies to
+The live view is off in every project. A Project admin turns it on in **Project → Settings → Live view**, or from a running run's status. It applies to
 each CI run that starts after, as the reporter's global setup registers it: [`wrapConfig`](/guide/reporter) adds that
 setup. A CI job is told by its provider's variable (`GITHUB_ACTIONS`, `GITLAB_CI`, …) or by `CI` set to anything but
 `false` or `0`. Such a run's log then says:
@@ -45,7 +45,7 @@ A running run's **Tests** tab says **Live view available**, or what is missing, 
 
 | It says | Why, and what to do |
 |---|---|
-| **Live view off** | A Project admin turns it on for the next runs. |
+| **Live view off** | A Project admin turns it on for the next runs, from its help. |
 | **Live view unavailable** | The run has no key: it started before the setting was on, without `wrapConfig`'s global setup, with `streaming` off, or before the instance restarted. Start a new run. |
 | **Live view waiting** | No worker is connected yet: they are starting. |
 | **No worker connected** | Tests run without one: the specs import `test` from `@playwright/test`, not the [capture fixtures](/guide/capture-fixtures). |

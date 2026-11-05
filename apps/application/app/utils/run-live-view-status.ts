@@ -11,6 +11,8 @@ export interface RunLiveViewReadiness {
   workers: number;
   /** Tests ran for `NO_WORKER_GRACE_MS` and no worker of the run's view connected since the page opened. */
   testsWithoutWorkers: boolean;
+  /** Someone turned the project's live view on from this page, after the run had started without it. */
+  turnedOn?: boolean;
 }
 
 /** How long tests run before the page says no worker opened the view: workers open it before their first test. */
@@ -25,6 +27,8 @@ export function runLiveViewStatus(run: RunLiveViewReadiness) {
   if (run.demo) return { kind: 'demo', label: 'Demo progress' };
   if (!run.connected && run.stalled) return { kind: 'stalled', label: 'Live updates stalled' };
   if (!run.connected || !run.state) return { kind: 'checking', label: 'Live view connecting' };
+  // A run registers for the live view as it starts: one that started without it gets none.
+  if (run.turnedOn && !run.state.keyed) return { kind: 'next-run', label: 'Live view on from the next run' };
   if (!run.state.enabled) return { kind: 'disabled', label: 'Live view off' };
   if (run.workers > 0) return { kind: 'available', label: 'Live view available' };
   if (!run.state.keyed) return { kind: 'unavailable', label: 'Live view unavailable' };

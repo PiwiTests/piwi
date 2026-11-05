@@ -32,10 +32,14 @@ test('explains each readiness gate and updates when the project changes', async 
       'href',
       `/projects/${projectId}?tab=settings&section=live-view`,
     );
+    // A Project admin turns it on from here: the run, started without it, gets none, and the status says so.
+    await help.getByRole('button', { name: 'Turn the live view on for the next runs' }).click();
+    await expect(readiness).toHaveAttribute('data-state', 'next-run');
+    await expect(readiness).toContainText('Live view on from the next run');
     await page.keyboard.press('Escape');
 
-    await setting(true);
-    await expect(readiness).toHaveAttribute('data-state', 'unavailable');
+    await page.reload();
+    await expect(readiness).toHaveAttribute('data-state', 'unavailable', { timeout: 30_000 });
     await expect(help).toHaveCount(0);
     await readiness.getByRole('button', { name: 'Help: Live view prerequisites' }).click();
     await expect(help).toContainText('capture fixtures');
