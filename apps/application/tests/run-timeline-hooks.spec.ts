@@ -88,10 +88,11 @@ test.describe('Run timeline hooks and gaps', () => {
     await expect(hookBars).toHaveCount(4);
     await expect(page.getByTestId('timeline-hook-failures')).toHaveText('1 hook failure');
 
-    // The replacement process continues worker 0's lane, and the stretch before it says so.
+    // The replacement process continues the first worker's lane, and the stretch before it says so.
     const timeline = page.locator('[data-shot="run-timeline"]');
     await expect(timeline.getByText('1 worker restart')).toBeVisible();
-    await expect(timeline.locator('svg text', { hasText: /^Worker 1$/ })).toHaveCount(0);
+    await expect(timeline.locator('svg text', { hasText: /^Worker 1$/ })).toHaveCount(1);
+    await expect(timeline.locator('svg text', { hasText: /^Worker 2$/ })).toHaveCount(0);
     const restartBox = (await page.locator('[data-timeline-gap][data-kind="restart"]').boundingBox())!;
     await page.mouse.move(restartBox.x + restartBox.width / 2, restartBox.y + restartBox.height / 2);
     await expect(page.getByText('Process 0 ended after “removes the catalog” failed')).toBeVisible();
