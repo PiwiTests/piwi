@@ -74,6 +74,28 @@ describe('a private address', () => {
     expect(mayReachPrivateAddress('http://[::1]:8082/')).toBe(false);
   });
 
+  test('a listed host:80 is reached on port 80 only', () => {
+    process.env.PIWI_CI_SERVER_HOSTS = 'jenkins.internal:80, [fd00::1]:80, 10.0.0.5:443';
+    expect(ciServerHosts()).toEqual([
+      { host: 'jenkins.internal', port: '80' },
+      { host: 'fd00::1', port: '80' },
+      { host: '10.0.0.5', port: '443' },
+    ]);
+    expect(mayReachPrivateAddress('http://jenkins.internal/job/e2e/')).toBe(true);
+    expect(mayReachPrivateAddress('http://jenkins.internal:6379/')).toBe(false);
+    expect(mayReachPrivateAddress('https://jenkins.internal/')).toBe(false);
+    expect(mayReachPrivateAddress('http://[fd00::1]:22/')).toBe(false);
+    expect(mayReachPrivateAddress('https://10.0.0.5/')).toBe(true);
+    expect(mayReachPrivateAddress('http://10.0.0.5/')).toBe(false);
+  });
+
+  test('an entry with anything besides a host and a port allows nothing', () => {
+    process.env.PIWI_CI_SERVER_HOSTS =
+      'jenkins.internal:8080/, jenkins.internal:8080?, jenkins.internal:8080#x, jenkins.internal:8080\\, jenkins.internal:, me@jenkins.internal';
+    expect(ciServerHosts()).toEqual([]);
+    expect(mayReachPrivateAddress('http://jenkins.internal:6379/')).toBe(false);
+  });
+
   test('is reached from the desktop app', async () => {
     process.env.PIWI_DESKTOP_TOKEN = 'desktop';
     expect(mayReachPrivateAddress(base)).toBe(true);

@@ -98,14 +98,14 @@ export const JENKINS_BRANCH_SEGMENT = '{branch}';
 /**
  * A Jenkins job as Jenkins shows it (`polaris/e2e`, `polaris/e2e/{branch}`) as
  * the path of its job page (`job/polaris/job/e2e`), each name percent-encoded,
- * or null when a name is `.` or `..`.
+ * or null when a name climbs once decoded (`..`, `%2e%2e`, `..;`).
  */
 export function jenkinsJobPath(job: string): string | null {
   const names = job
     .split('/')
     .map((name) => name.trim())
     .filter(Boolean);
-  if (names.length === 0 || names.some((name) => name === '.' || name === '..')) return null;
+  if (names.length === 0 || names.some(segmentClimbsWhenDecoded)) return null;
   return names
     .map((name) => `job/${name === JENKINS_BRANCH_SEGMENT ? '{{branchJob}}' : encodeURIComponent(name)}`)
     .join('/');
@@ -147,9 +147,55 @@ export const CI_SERVER_PRESET_REGISTRY: Record<Exclude<CiServerPreset, 'custom'>
 const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
+/** How many times a segment is decoded to check it: a Jenkins branch job is encoded twice (`feature%252Fx`). */
+const SEGMENT_DECODING_PASSES = 3;
+
+/**
+ * Whether a path segment climbs once a server decodes it, as a proxy or a
+ * servlet container may before routing: decoded up to
+ * {@link SEGMENT_DECODING_PASSES} times (`%XX` and `%uXXXX`), it holds a `.` or
+ * `..` part between `/`, `\`, `?` or `#`, each part read up to its first `;` or
+ * NUL (`..;x` is `..` to Tomcat). A segment still encoded after that many
+ * passes counts as climbing. `..%2F..%2Fjob%2Fprod`, `%252e%252e`, `..;` and
+ * `%u002e%u002e` climb; `feature%252Fx` does not.
+ */
+export function segmentClimbsWhenDecoded(segment: string): boolean {
+  let text = segment;
+  for (let pass = 0; ; pass++) {
+    const parts = text.split(/[/\\?#]/).map((part) => part.split(/[;\0]/)[0]);
+    if (parts.some((part) => part === '.' || part === '..')) return true;
+    const decoded = text
+      .replace(/%u([0-9A-Fa-f]{4})/g, (_, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)))
+      .replace(/%([0-9A-Fa-f]{2})/g, (_, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)));
+    if (decoded === text) return false;
+    if (pass === SEGMENT_DECODING_PASSES) return true;
+    text = decoded;
+  }
+}
+
+/** Whether a URL path holds a segment that climbs once decoded ({@link segmentClimbsWhenDecoded}). */
+function pathClimbsWhenDecoded(pathname: string): boolean {
+  return pathname.split('/').some(segmentClimbsWhenDecoded);
+}
+
+/** Whether a target names a base URL that cannot be used: not a string, or a string that is not a base URL. */
+function unusableBaseUrl(raw: unknown): boolean {
+  return typeof raw === 'string' ? raw.trim() !== '' && !normalizeCiServerBaseUrl(raw) : raw != null;
+}
+
+/** Whether a URL parses and its path holds a segment that climbs once decoded. */
+export function urlPathClimbs(raw: string): boolean {
+  try {
+    return pathClimbsWhenDecoded(new URL(raw.trim()).pathname);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * A base URL as a dispatch uses it: an absolute `http(s)` URL without a user,
- * a query or a fragment, its path ending in `/`. Null when it is not one.
+ * a query, a fragment or a path segment that climbs once decoded, its path
+ * ending in `/`. Null when it is not one.
  */
 export function normalizeCiServerBaseUrl(raw: unknown): string | null {
   const value = str(raw);
@@ -162,14 +208,16 @@ export function normalizeCiServerBaseUrl(raw: unknown): string | null {
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
   if (url.username || url.password || url.search || url.hash || !url.hostname) return null;
+  if (pathClimbsWhenDecoded(url.pathname)) return null;
   if (!url.pathname.endsWith('/')) url.pathname = `${url.pathname}/`;
   return url.href;
 }
 
 /**
  * Whether `target` lies under `base`: the same scheme, host and port, no user
- * in the URL, and a path inside the base path (`/job/qa/` holds `/job/qa/x`,
- * never `/job/qa-other`).
+ * in the URL, no path segment that climbs once decoded, and a path inside the
+ * base path (`/job/qa/` holds `/job/qa/x`, never `/job/qa-other` or
+ * `/job/qa/..%2Fprod`).
  */
 export function isUnderBaseUrl(base: string, target: string): boolean {
   let b: URL;
@@ -181,6 +229,7 @@ export function isUnderBaseUrl(base: string, target: string): boolean {
     return false;
   }
   if (t.username || t.password || b.protocol !== t.protocol || b.host !== t.host) return false;
+  if (pathClimbsWhenDecoded(b.pathname) || pathClimbsWhenDecoded(t.pathname)) return false;
   const basePath = b.pathname.endsWith('/') ? b.pathname : `${b.pathname}/`;
   return t.pathname.startsWith(basePath) || `${t.pathname}/` === basePath;
 }
@@ -239,15 +288,16 @@ export function resolveCiRequestTemplate(input: unknown): CiRequestTemplate | nu
 
 /**
  * A CI server target from an untrusted payload, or null when it cannot dispatch:
- * an unknown preset, a missing required field, or a Custom target without a
- * re-run request. A Flake Lab part that cannot dispatch is dropped.
+ * an unknown preset, a base URL that cannot be used, a missing required field,
+ * or a Custom target without a re-run request. A Flake Lab part that cannot
+ * dispatch is dropped.
  */
 export function resolveCiServerTarget(input: unknown): CiServerTarget | null {
   if (!isRecord(input)) return null;
   const preset = (CI_SERVER_PRESETS as readonly unknown[]).includes(input.preset)
     ? (input.preset as CiServerPreset)
     : null;
-  if (!preset) return null;
+  if (!preset || unusableBaseUrl(input.baseUrl)) return null;
   const base: Pick<CiServerTarget, 'baseUrl' | 'user'> = {};
   const baseUrl = normalizeCiServerBaseUrl(input.baseUrl);
   if (baseUrl) base.baseUrl = baseUrl;
@@ -286,11 +336,11 @@ export function resolveCiServerTarget(input: unknown): CiServerTarget | null {
  */
 export function ciServerTargetProblem(input: unknown): string | null {
   const rawBaseUrl = isRecord(input) ? input.baseUrl : undefined;
-  const badBaseUrl =
-    typeof rawBaseUrl === 'string'
-      ? rawBaseUrl.trim() !== '' && !normalizeCiServerBaseUrl(rawBaseUrl)
-      : rawBaseUrl != null;
-  if (badBaseUrl) return 'The CI server base URL must be an http(s) URL';
+  if (unusableBaseUrl(rawBaseUrl)) {
+    return typeof rawBaseUrl === 'string' && urlPathClimbs(rawBaseUrl)
+      ? 'The CI server base URL path cannot hold a segment that climbs once decoded, such as ..%2F'
+      : 'The CI server base URL must be an http(s) URL';
+  }
   const target = resolveCiServerTarget(input);
   if (!target) {
     return 'The CI server target cannot dispatch: it needs a known preset and its required fields';
@@ -393,7 +443,8 @@ function fillText(text: string, vars: Record<string, string>): string {
 /**
  * A template path filled with these values, relative and without a leading
  * `/`: each placeholder is percent-encoded inside its segment, so `/` cannot
- * add one, and a segment that is empty, `.` or `..` (once decoded) is refused.
+ * add one, and a segment that is empty or climbs once decoded
+ * ({@link segmentClimbsWhenDecoded}) is refused.
  */
 function renderPath(path: string, vars: Record<string, string>): string {
   const trimmed = path.replace(/^\/+/, '');
@@ -412,13 +463,14 @@ function renderPath(path: string, vars: Record<string, string>): string {
         return encodeURIComponent(value);
       });
       if (!rendered || /[?#\\]/.test(rendered)) throw new CiTemplateError(`Invalid path segment "${segment}"`);
-      let decoded: string;
       try {
-        decoded = decodeURIComponent(rendered);
+        decodeURIComponent(rendered);
       } catch {
         throw new CiTemplateError(`Invalid percent-encoding in path segment "${segment}"`);
       }
-      if (decoded === '.' || decoded === '..') throw new CiTemplateError('A path segment cannot be "." or ".."');
+      if (segmentClimbsWhenDecoded(rendered)) {
+        throw new CiTemplateError(`The path segment "${segment}" climbs once decoded: it holds a "." or ".." part`);
+      }
       return rendered;
     })
     .join('/');

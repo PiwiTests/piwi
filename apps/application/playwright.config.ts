@@ -168,6 +168,8 @@ const baseConfig = defineConfig({
                   PIWI_STORAGE_PATH: join(process.cwd(), '.test-temp', 'auth-test-storage'),
                   NITRO_PORT: '3099',
                   PIWI_BUILD_DIR: join(process.cwd(), '.test-temp', 'nuxt-build-auth'),
+                  // reporter-with-auth.spec.ts checks who is told the instance's CI server.
+                  PIWI_CI_SERVER_URL: 'https://jenkins.example.com/',
                   // Pin to isolated SQLite + local storage so the CI storage/db matrix
                   // (inherited via process.env) can't repoint this server's backend.
                   PIWI_DATABASE_URL: '',
