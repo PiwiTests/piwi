@@ -103,11 +103,9 @@ describe('a desktop local run and the Piwi run it produces', () => {
     expect(invoked).toEqual([]);
   });
 
-  test('starts a run no Piwi run is linked to without waiting for a lookup', async () => {
-    const { store, invoked } = await storeWith({
-      latestRun: () => new Promise(() => {}),
-      linkedRun: () => ({ id: 8 }),
-    });
+  test('starts a run no Piwi run is linked to without waiting for a lookup, and takes its baseline meanwhile', async () => {
+    const lookup = deferred<{ id: number } | null>();
+    const { store, invoked } = await storeWith({ latestRun: () => lookup.promise, linkedRun: () => ({ id: 8 }) });
 
     const run = store.startFlakeLab({
       projectId: 3,
@@ -117,6 +115,9 @@ describe('a desktop local run and the Piwi run it produces', () => {
 
     await until(() => invoked.length === 1);
     expect(run.piwiRunBaseline).toBeNull();
+    // The baseline its stop takes its lab runs off the OS progress by.
+    lookup.resolve({ id: 7 });
+    await until(() => run.piwiRunBaseline === 7);
   });
 });
 

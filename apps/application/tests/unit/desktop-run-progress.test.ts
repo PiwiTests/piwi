@@ -5,6 +5,7 @@ import {
   finishedRunFlash,
   liveRunFacts,
   runsOfLocalRun,
+  unbegunRunsOf,
   FAIL_FLASH_MS,
   NO_LIVE_RUN_FACTS,
   NO_RUN_PROGRESS,
@@ -272,6 +273,21 @@ describe('runsOfLocalRun', () => {
     expect(runsOfLocalRun(active, owner({ kind: 'bisect', originRef: '42', hubRefs: ['desktop-6'] }), [])).toEqual([7]);
   });
 
+  test('leaves a run that never began above the baseline of another run of the tray still going in the project', () => {
+    const unbegun = { ...NO_LIVE_RUN_FACTS, status: 'initializing', total: 0, done: 0 };
+    const active = new Map<number, LiveRun>([
+      [6, live(unbegun)],
+      [9, live(unbegun)],
+      [10, live({ origin: 'desktop', originRef: 'desktop:a1', name: 'desktop-7' })],
+    ]);
+    const ended = owner();
+    const going = owner({ key: 2, originRef: 'desktop:b2', piwiRunBaseline: 8, finishedAt: null });
+    expect(unbegunRunsOf(active, ended, [ended, going])).toEqual([6]);
+    expect(runsOfLocalRun(active, ended, [ended, going])).toEqual([6, 10]);
+    // Once that one ended too, both are its.
+    expect(unbegunRunsOf(active, ended, [ended, { ...going, finishedAt: 6000 }])).toEqual([6, 9]);
+  });
+
   test('tells two runs of one reference apart by the names their steps gave them', () => {
     const active = new Map<number, LiveRun>([
       [7, live({ origin: 'reproduce', originRef: '42', name: 'desktop-7' })],
@@ -298,6 +314,16 @@ describe('runsOfLocalRun', () => {
     // One that ended before the other started shares nothing with it.
     const earlier = owner({ key: 3, kind: 'reproduce', originRef: '42', startedAt: 0, finishedAt: 900 });
     expect(runsOfLocalRun(active, first, [first, earlier])).toEqual([7, 8]);
+  });
+
+  test('takes the lab runs of a Flake Lab session, any experiment’s', () => {
+    const active = new Map<number, LiveRun>([
+      [7, live({ origin: 'flake-lab', originRef: 'local-4242', name: null, job: true })],
+      [8, live({ origin: 'flake-lab', originRef: '31', name: null, job: true })],
+      [9, live({ origin: 'ci', originRef: null, name: null })],
+    ]);
+    const session = owner({ kind: 'flake', originRef: 'flake:x' });
+    expect(runsOfLocalRun(active, session, [session])).toEqual([7, 8]);
   });
 
   test('takes the lab runs of a bisect that runs a Flake Lab arm at each step', () => {

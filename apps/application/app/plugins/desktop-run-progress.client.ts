@@ -17,9 +17,13 @@
  * bisect, a Flake Lab session, as the stream names it: `job`) shows as progress
  * alone: its end flashes nothing, and the job's verdict flashes once its process
  * ends (`finishedJobFlash`); so does a run whose stream names nothing of what
- * launched it. A local run stopped from the app, and a job once it ends, leave
- * the bar with their own runs alone (`runsOfLocalRun`), heard from the store as
- * each one ends (`onRunEnded`), before the tray can drop it.
+ * launched it. A local run stopped from the app, and a job (a Flake Lab session
+ * included) once it ends, leave the bar with their own runs alone
+ * (`runsOfLocalRun`); any other local run, with the runs of its project that
+ * never began (`unbegunRunsOf`), as one whose global setup failed. The plugin
+ * hears each end from the store (`onRunEnded`), before the tray can drop it, and
+ * keeps the runs an end took off for a minute (`SWEPT_MS`): a late message of
+ * theirs brings none back.
  *
  * Activates only inside the shell (the IPC bridge is present); the shared web
  * build has no bridge and this no-ops.
@@ -32,6 +36,7 @@ import {
   finishedRunFlash,
   liveRunFacts,
   runsOfLocalRun,
+  unbegunRunsOf,
   type FinishedRunFlash,
   type LiveRun,
   type RunProgressState,
@@ -77,6 +82,9 @@ interface LiveRunMessage extends RunFactsFields {
   >;
 }
 
+/** How long the runs a local run's end took off the bar stay off whatever their messages say. */
+const SWEPT_MS = 60_000;
+
 type Counts = Pick<LiveRunMessage, 'totalTests' | 'passedTests' | 'failedTests' | 'skippedTests' | 'didNotRunTests'>;
 
 /** Tests finished so far — passed + failed + skipped + did-not-run. */
@@ -94,6 +102,17 @@ export default defineNuxtPlugin(() => {
   let lastSent = '';
   /** What shows once nothing is in flight: the outcome of the run or the job that ended last. */
   let lastFinished: FinishedRunFlash | null = null;
+  /** The runs a local run's end took off the bar, and when. */
+  const swept = new Map<number, number>();
+
+  /** Whether a local run's end took the run off the bar less than `SWEPT_MS` ago. */
+  function wasSwept(runId: number): boolean {
+    const at = swept.get(runId);
+    if (at === undefined) return false;
+    if (Date.now() - at < SWEPT_MS) return true;
+    swept.delete(runId);
+    return false;
+  }
 
   function send(state: RunProgressState, fraction: number | null, label: string | null, failing = false) {
     // Collapse identical updates — progress events are frequent but the shell
@@ -142,7 +161,7 @@ export default defineNuxtPlugin(() => {
       case 'snapshot': {
         active.clear();
         for (const r of msg.runs ?? []) {
-          if (ACTIVE_RUN_STATUSES.has(r.status)) {
+          if (ACTIVE_RUN_STATUSES.has(r.status) && !wasSwept(r.id)) {
             track(r.id, { status: r.status, done: doneOf(r), total: r.totalTests ?? 0, failed: r.failedTests ?? 0 }, r);
           }
         }
@@ -150,7 +169,7 @@ export default defineNuxtPlugin(() => {
         break;
       }
       case 'run-progress': {
-        if (msg.runId == null) break;
+        if (msg.runId == null || wasSwept(msg.runId)) break;
         const counts = {
           status: 'running',
           done: doneOf(msg),
@@ -163,7 +182,7 @@ export default defineNuxtPlugin(() => {
       }
       case 'run-started':
       case 'run-initializing': {
-        if (msg.runId == null) break;
+        if (msg.runId == null || wasSwept(msg.runId)) break;
         const known = active.get(msg.runId);
         // Known to be in flight but no counts yet → indeterminate until progress.
         if (!known) track(msg.runId, { status: 'running', done: 0, total: 0, failed: 0 }, msg);
@@ -230,12 +249,21 @@ export default defineNuxtPlugin(() => {
     // A stopped local process the shell had to kill never reports its end, and
     // the server marks its runs interrupted only after the stale timeout, so its
     // own runs leave the bar once the process is gone; so do a job's, whose
-    // verdict then flashes. Every other run stays: an editor's, CI's, another
-    // local run's.
+    // verdict then flashes. A run that ended on its own reported the end of each
+    // run that began: only those that never began leave. Every other run stays:
+    // an editor's, CI's, another local run's.
     onRunEnded((run) => {
-      if (run.status !== 'stopped' && run.kind === 'tests') return;
+      const gone =
+        run.status === 'stopped' || run.kind !== 'tests'
+          ? runsOfLocalRun(active, run, runs.value)
+          : unbegunRunsOf(active, run, runs.value);
+      const now = Date.now();
+      for (const [id, at] of swept) if (now - at >= SWEPT_MS) swept.delete(id);
       let changed = false;
-      for (const id of runsOfLocalRun(active, run, runs.value)) changed = active.delete(id) || changed;
+      for (const id of gone) {
+        swept.set(id, now);
+        changed = active.delete(id) || changed;
+      }
       const flash = run.kind === 'tests' ? null : finishedJobFlash({ ...run, kind: run.kind });
       if (flash) {
         lastFinished = flash;

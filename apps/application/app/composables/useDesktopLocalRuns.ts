@@ -1008,7 +1008,12 @@ export function useDesktopLocalRuns() {
     const tracked = runs.value[0]!;
     trayOpen.value = true;
     if (localRunOriginKind(tracked.kind)) void captureBaseline(tracked).then(() => drive(tracked));
-    else void drive(tracked);
+    else {
+      // A Flake Lab session, which no Piwi run is linked to, starts at once: its lab runs begin once its worktree is
+      // checked out and installed, and the baseline its stop takes them off the OS progress by is taken meanwhile.
+      void captureBaseline(tracked);
+      void drive(tracked);
+    }
     return tracked;
   }
 
@@ -1126,9 +1131,10 @@ export function useDesktopLocalRuns() {
   /**
    * Record the project's newest Piwi run id. `spawn` awaits it before starting
    * the process, so the run this local process produces (the reporter finds the
-   * app via `~/.piwi/desktop.json`) is newer than the baseline. A lookup that
-   * fails or takes longer than `BASELINE_TIMEOUT_MS` leaves no baseline: the run
-   * starts, without a Piwi link.
+   * app via `~/.piwi/desktop.json`) is newer than the baseline; a Flake Lab
+   * session does not wait for it. A lookup that fails or takes longer than
+   * `BASELINE_TIMEOUT_MS` leaves no baseline: the run starts, without a Piwi
+   * link.
    */
   async function captureBaseline(run: LocalRun) {
     try {
