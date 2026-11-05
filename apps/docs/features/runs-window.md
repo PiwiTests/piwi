@@ -55,7 +55,7 @@ code went to the editor, with what to review in it, or why not.
 
 ## Watch a test {#watch-live}
 
-**Watch**, on a worker's row with a reporter newer than 0.66.0, shows its test's page as it paints, running or
+**Watch**, on a worker's row with a reporter newer than 0.67.0, shows its test's page as it paints, running or
 stopped, through its next tests and the worker Playwright starts in its place after a failure. **Pause and watch**
 pauses it too. Across a **Step**, a **Resume** or between two tests, the last frame stays, dimmed and marked
 **Running…**, until the next one comes. A watched test that stops is scrolled into view. An older reporter's row says
