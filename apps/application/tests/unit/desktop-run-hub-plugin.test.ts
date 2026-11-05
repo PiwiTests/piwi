@@ -5,8 +5,37 @@ import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
 /**
  * The desktop window's hold on the stream of its runs' hub (`plugins/desktop-run-hub.client.ts`), whatever page and
  * layout show: what it asks of the hub (`want`, `show`) as the Local runs tray's runs, the hub's own count of its live
- * runs (`hub-runs` on the desktop event stream) and the stream's runs change, and what a stop it hears opens.
+ * runs (`hub-runs` on the desktop event stream), the stream's runs and the trays mounted change, what a stop it hears
+ * opens, and which window tells the system of it.
  */
+
+/** The app's windows' `BroadcastChannel`, in memory: a message reaches every other channel of its name. */
+class FakeChannel {
+  static open: FakeChannel[] = [];
+  onmessage: ((event: { data: unknown }) => void) | null = null;
+  constructor(readonly name: string) {
+    FakeChannel.open.push(this);
+  }
+  postMessage(data: unknown) {
+    const copy = JSON.parse(JSON.stringify(data)) as unknown;
+    for (const other of FakeChannel.open) {
+      if (other !== this && other.name === this.name) queueMicrotask(() => other.onmessage?.({ data: copy }));
+    }
+  }
+}
+
+/** The system notifications shown, each with the window that showed it. */
+const notes: string[] = [];
+/** The window whose plugin hears a stop now. */
+let hearing = '';
+
+/** Lets the windows' messages and watchers run. */
+async function settle() {
+  for (let i = 0; i < 3; i++) {
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+}
 
 interface TrayRun {
   key: number;
@@ -16,15 +45,15 @@ interface TrayRun {
   hubRefs: string[];
 }
 
-async function plugin(label: string | null = 'main') {
+async function plugin(label: string | null = 'main', trays = 1) {
   const wants: boolean[] = [];
   const shows: string[][] = [];
-  const notes: string[] = [];
   let stopListener: ((session: HubSession, worker: HubWorker) => void) | null = null;
   let emit: (message: Record<string, unknown>) => void = () => {};
   const runs = ref<TrayRun[]>([]);
   const holds = ref<Record<number, boolean>>({});
   const trayOpen = ref(false);
+  const trayMounts = ref(trays);
   const state = reactive<{ sessions: Record<string, HubSession> }>({ sessions: {} });
   vi.stubGlobal('defineNuxtPlugin', (setup: unknown) => setup);
   for (const [name, value] of Object.entries({ computed, ref, watch })) vi.stubGlobal(name, value);
@@ -38,6 +67,7 @@ async function plugin(label: string | null = 'main') {
     runs,
     holds,
     trayOpen,
+    trayMounts,
     activeCount: computed(() => runs.value.filter((run) => run.status === 'running').length),
   }));
   const hub = {
@@ -52,12 +82,13 @@ async function plugin(label: string | null = 'main') {
   const useHub = vi.fn(() => hub);
   vi.stubGlobal('useDesktopRunHub', useHub);
   vi.stubGlobal('document', { hidden: true, hasFocus: () => false });
+  vi.stubGlobal('BroadcastChannel', FakeChannel);
   vi.stubGlobal(
     'Notification',
     class {
       static permission = 'granted';
       constructor(title: string, init: { body: string }) {
-        notes.push(`${title} | ${init.body}`);
+        notes.push(`${hearing}: ${title} | ${init.body}`);
       }
     },
   );
@@ -66,14 +97,17 @@ async function plugin(label: string | null = 'main') {
   return {
     wants,
     shows,
-    notes,
     runs,
     holds,
     trayOpen,
+    trayMounts,
     state,
     useHub,
     emit: (message: Record<string, unknown>) => emit(message),
-    stop: (session: HubSession, worker: HubWorker) => stopListener?.(session, worker),
+    stop: (session: HubSession, worker: HubWorker) => {
+      hearing = label ?? 'main';
+      stopListener?.(session, worker);
+    },
   };
 }
 
@@ -114,7 +148,13 @@ function stopped(reason: 'failure' | 'page-pause' | 'step'): HubWorker {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.resetModules();
+  FakeChannel.open = [];
+  notes.length = 0;
 });
+
+function running(key: number, kind: TrayRun['kind'], hubRef: string): TrayRun {
+  return { key, kind, status: 'running', steps: [{ args: [] }], hubRefs: [hubRef] };
+}
 
 describe('the window’s hold on its runs’ hub', () => {
   test('re-attaches after a reload while the hub still has runs going, and lets go once it has none', async () => {
@@ -174,25 +214,68 @@ describe('the window’s hold on its runs’ hub', () => {
   });
 
   test('opens the tray on each stop it hears, telling the system of a failure or a page.pause() alone', async () => {
-    const { trayOpen, notes, stop } = await plugin();
+    const { trayOpen, stop } = await plugin();
     stop(session('desktop-3'), stopped('step'));
     expect(trayOpen.value).toBe(true);
     expect(notes).toEqual([]);
     trayOpen.value = false;
     stop(session('desktop-3'), stopped('failure'));
     expect(trayOpen.value).toBe(true);
-    expect(notes).toEqual(['A test failed and waits | checkout › pays failed at tests/checkout.spec.ts:5.']);
+    expect(notes).toEqual(['main: A test failed and waits | checkout › pays failed at tests/checkout.spec.ts:5.']);
+  });
+
+  test('with no tray on the page, shows no run live and tells the system of every stop, whatever the focus', async () => {
+    // An analytics dashboard in TV mode, or an error page: no layout mounts the tray.
+    const { shows, runs, trayMounts, trayOpen, stop } = await plugin('main', 0);
+    runs.value = [running(1, 'reproduce', 'desktop-5')];
+    await settle();
+    expect(shows).toEqual([[]]);
+    vi.stubGlobal('document', { hidden: false, hasFocus: () => true });
+    stop(session('desktop-5'), stopped('step'));
+    stop(session('desktop-5'), stopped('failure'));
+    expect(notes).toEqual([
+      'main: A test stopped and waits | checkout › pays stopped at tests/checkout.spec.ts:5.',
+      'main: A test failed and waits | checkout › pays failed at tests/checkout.spec.ts:5.',
+    ]);
+    expect(trayOpen.value).toBe(true);
+    // Back on a page with the tray: its run is shown live again, and a stop is said in the window alone.
+    trayMounts.value = 1;
+    await settle();
+    expect(shows.at(-1)).toEqual(['desktop-5']);
+    stop(session('desktop-5'), stopped('failure'));
+    expect(notes).toHaveLength(2);
   });
 
   test('in another window, holds for that window’s own runs alone; in a run’s output window, nothing', async () => {
     const other = await plugin('aux-1');
     other.emit({ type: 'hub-runs', live: 1 });
-    await nextTick();
+    await settle();
     expect(other.wants).toEqual([false]);
+    other.runs.value = [running(1, 'tests', 'desktop-9')];
+    await settle();
+    expect(other.wants.at(-1)).toBe(true);
     vi.unstubAllGlobals();
     vi.resetModules();
     const output = await plugin('output-run_1');
     expect(output.useHub).not.toHaveBeenCalled();
     expect(output.wants).toEqual([]);
+  });
+
+  test('tells the system of a stop once: from the window whose tray owns its run, else the dashboard window', async () => {
+    const aux = await plugin('aux-1');
+    aux.runs.value = [running(1, 'tests', 'desktop-9')];
+    await settle();
+    // The dashboard window opens after it, as after a reload: it asks the others what their trays own.
+    const main = await plugin('main');
+    main.runs.value = [running(1, 'tests', 'desktop-4')];
+    await settle();
+    for (const ref of ['desktop-9-unattended', 'desktop-4', 'desktop-3']) {
+      for (const window of [aux, main]) window.stop(session(ref), stopped('failure'));
+    }
+    expect(notes.map((note) => note.split(' | ')[0])).toEqual([
+      'aux-1: A test failed and waits',
+      'main: A test failed and waits',
+      'main: A test failed and waits',
+    ]);
   });
 });

@@ -434,6 +434,8 @@ export function useDesktopLocalRuns() {
   const optionsByProject = useState<Record<string, SavedLocalRunOptions>>('desktop-local-run-options', () => ({}));
   /** Each run's Hold failures choice, by its key; unset falls back to its kind's (`desktopHoldsByDefault`). */
   const holds = useState<Record<number, boolean>>('desktop-local-runs-holds', () => ({}));
+  /** How many Local runs trays are mounted: none on a page without the default layout (TV mode, an error page). */
+  const trayMounts = useState<number>('desktop-local-runs-tray-mounts', () => 0);
   if (import.meta.client) {
     toastApi = useToast();
     routerApi = useRouter();
@@ -1370,6 +1372,7 @@ export function useDesktopLocalRuns() {
     trayOpen,
     shownWorker,
     holds,
+    trayMounts,
     /** Hears each run's end, its status, exit code and verdict set, before the tray can drop it; returns the unsubscribe. */
     onRunEnded(listener: (run: LocalRun) => void): () => void {
       endListeners.add(listener);
