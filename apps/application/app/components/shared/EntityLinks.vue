@@ -115,7 +115,7 @@ watch(
       />
 
       <template #content>
-        <form class="p-3 space-y-3 min-w-72" @submit.prevent="addLink">
+        <form class="p-3 space-y-3 min-w-72" method="post" @submit.prevent="addLink">
           <p class="text-sm font-medium">Add link</p>
 
           <div class="relative">

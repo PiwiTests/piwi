@@ -404,7 +404,6 @@ describe('the hub’s WebSocket', () => {
   });
 
   test('has the extension refuse a message it cannot read', () => {
-    const worker = session.workers[0]!;
     for (const broken of [
       { type: 'answer', id: 1, ok: 'yes', message: '' },
       { type: 'answer', id: 1, ok: true, message: 'x', image: { mime: 'image/svg+xml', data: 'PHN2Zz4=' } },
@@ -414,19 +413,9 @@ describe('the hub’s WebSocket', () => {
       { type: 'welcome', pid: 0, version: '1', client: null, roots: [], keepaliveMs: 1 },
       { type: 'session', session: { ...session, ref: 'ed 1' } },
       { type: 'session', session: { ...session, command: 5 } },
-      { type: 'session', session: { ...session, workers: [{ ...worker, state: 'gone' }] } },
-      { type: 'session', session: { ...session, workers: [{ ...worker, stop: { ...worker.stop, line: -1 } }] } },
-      { type: 'session', session: { ...session, workers: [{ ...worker, test: { ...worker.test, title: [1] } }] } },
+      { type: 'session', session: { ...session, workers: 'all' } },
       { type: 'session', session: { ...session, command: 'x'.repeat(MAX_HUB_COMMAND + 1) } },
       { type: 'session', session: { ...session, project: 'x'.repeat(MAX_HUB_PROJECT + 1) } },
-      { type: 'session', session: { ...session, workers: [{ ...worker, stop: { ...worker.stop, error: 5 } }] } },
-      {
-        type: 'session',
-        session: {
-          ...session,
-          workers: [{ ...worker, stop: { ...worker.stop, error: 'x'.repeat(MAX_STOP_ERROR + 1) } }],
-        },
-      },
       { type: 'answer', id: 1, ok: true, message: 'x'.repeat(MAX_HUB_MESSAGE + 1) },
       {
         type: 'welcome',
@@ -442,6 +431,38 @@ describe('the hub’s WebSocket', () => {
       expect(parseHubMessage(json(broken)), JSON.stringify(broken)).toBeNull();
     }
     expect(parseHubMessage('not json')).toBeNull();
+  });
+
+  test('has the extension read a worker state of a newer service as other, and keep the run', () => {
+    const worker = session.workers[0]!;
+    const read = parseHubMessage(
+      json({ type: 'session', session: { ...session, workers: [{ ...worker, state: 'waiting-for-you' }] } }),
+    );
+    expect(read).toEqual({ type: 'session', session: { ...session, workers: [{ ...worker, state: 'other' }] } });
+    for (const state of [5, null, 'x'.repeat(65)]) {
+      expect(
+        parseHubMessage(json({ type: 'session', session: { ...session, workers: [{ ...worker, state }] } })),
+        JSON.stringify(state),
+      ).toEqual({ type: 'session', session: { ...session, workers: [] } });
+    }
+  });
+
+  test('has the extension leave out a worker it cannot read, and keep the run and its other workers', () => {
+    const worker = session.workers[0]!;
+    const next = { ...worker, worker: 1, parallelIndex: 1, state: 'running', stop: null };
+    for (const broken of [
+      { ...worker, worker: -1 },
+      { ...worker, stop: { ...worker.stop, line: -1 } },
+      { ...worker, test: { ...worker.test, title: [1] } },
+      { ...worker, stop: { ...worker.stop, error: 5 } },
+      { ...worker, stop: { ...worker.stop, error: 'x'.repeat(MAX_STOP_ERROR + 1) } },
+      'worker',
+    ]) {
+      expect(
+        parseHubMessage(json({ type: 'session', session: { ...session, workers: [broken, next] } })),
+        JSON.stringify(broken),
+      ).toEqual({ type: 'session', session: { ...session, workers: [next] } });
+    }
   });
 });
 
@@ -462,7 +483,7 @@ describe('Share live on the hub', () => {
     });
   });
 
-  test('has the extension read how a run stands on the instance, and refuse what it cannot read', () => {
+  test('has the extension read how a run stands on the instance, and leave out what it cannot read', () => {
     const live = {
       shared: true,
       refused: null,
@@ -494,10 +515,10 @@ describe('Share live on the hub', () => {
       { ...live, page: 'javascript:alert(1)' },
       'shared',
     ]) {
-      expect(
-        parseHubMessage(json({ type: 'session', session: { ...session, live: broken } })),
-        json(broken),
-      ).toBeNull();
+      expect(parseHubMessage(json({ type: 'session', session: { ...session, live: broken } })), json(broken)).toEqual({
+        type: 'session',
+        session,
+      });
     }
   });
 });

@@ -4,6 +4,13 @@ export function sanitizeFilename(filename: string): string {
   return filename.replace(/[^a-zA-Z0-9._-]/g, '_');
 }
 
+/** An uploaded attachment's file name as a storage path segment: {@link sanitizeFilename}'s name, or `attachment` for
+ * one made of dots alone (empty, `.`, `..`, `...`), so the same upload is always stored at the same path. */
+export function attachmentFileName(filename: string): string {
+  const name = sanitizeFilename(filename);
+  return /^\.*$/.test(name) ? 'attachment' : name;
+}
+
 /** Return `name` when it is a single, traversal-free path segment that is safe
  * to append to a storage prefix, or `null` when it is not (empty, `.`/`..`, or
  * containing a path separator or NUL). The name is preserved exactly — content

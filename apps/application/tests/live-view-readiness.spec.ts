@@ -135,3 +135,38 @@ test('opens the run stream again after an error answer closed it', async ({ page
     });
   }
 });
+
+test('keeps the run it shows and opens its stream once the run reads again', async ({ page, request }) => {
+  test.skip(resolveE2ETarget().desktop, 'Dashboard live view is served by a team instance.');
+  test.setTimeout(60_000);
+  const started = await request.post('/api/test-runs/start', {
+    data: { projectName: PROJECT.LIVE_VIEW_STREAM, startTime: new Date().toISOString() },
+  });
+  expect(started.ok()).toBeTruthy();
+  const run = await started.json();
+  let streams = 0;
+  let reads = 0;
+  // The first stream and the page's first read of the run answer as a proxy does while the instance restarts.
+  await page.route(`**/api/test-runs/${run.runId}/stream`, async (route) => {
+    if (streams++ === 0) await route.fulfill({ status: 502, body: 'Bad gateway' });
+    else await route.continue();
+  });
+  await page.route(`**/api/test-runs/${run.runId}`, async (route) => {
+    if (reads++ === 0) await route.fulfill({ status: 502, body: 'Bad gateway' });
+    else await route.continue();
+  });
+  try {
+    await page.goto(`/test-runs/${run.runId}`);
+    const readiness = page.getByTestId('live-view-readiness');
+    await expect.poll(() => reads, { timeout: 20_000 }).toBeGreaterThanOrEqual(1);
+    await expect(readiness).toBeVisible();
+    // The page reads the run again later, then opens the stream.
+    await expect(readiness).toHaveAttribute('data-state', 'disabled', { timeout: 30_000 });
+    expect(reads).toBeGreaterThanOrEqual(2);
+    expect(streams).toBeGreaterThanOrEqual(2);
+  } finally {
+    await request.post(`/api/test-runs/${run.runId}/finish`, {
+      data: { streamToken: run.streamToken, status: 'passed', totalTests: 0 },
+    });
+  }
+});
