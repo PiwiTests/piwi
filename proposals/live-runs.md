@@ -24,11 +24,19 @@ the instance keeps each worker's latest step until its test completes, or until 
 nobody watches, and replays it to whoever opens the run later; the demo keeps them the same way. `parallelIndex` and
 the retry on step events come with P1, which reads them. Built from P0's step hygiene: Piwi's own fixtures
 (`piwiCapture`, `piwiResources`) and the steps inside them stay out of the stream, `test.step` streams, the live view's
-caption names its call with the call's target, and a
-run's Tests tab says **Global setup** (then **Starting N tests** while the page hears the run) with the time since the run began, until its first
-test. A `test.step` streams as a step of its own, not as the parent of
-the calls inside it. The caption following the worker's step on a still page waits for P1, where an image carries
-the worker's time to compare it with the step's. The rest is proposed. The bugs the analysis
+caption names its call with the call's target, and a run's Tests tab says **Global setup** (then **Starting N tests**
+while the page hears the run) with the time since the run began, until its first test. A `test.step` streams as a step
+of its own, not as the parent of the calls inside it. The caption following the worker's step on a still page waits
+for P1, where an image carries the worker's time to compare it with the step's. Built from P1's list that holds still
+(the rest of #1107): `test-begin` carries the attempt, the retries allowed, the tags, the locks and the metadata, and
+`test-completed` the last three, so a retry reads **Retry 1 of 2** while it runs, unlinked, the attempt it followed
+keeps its bar on the timeline, and the search's qualifiers find a row that streamed in; the grouping is decided once
+per page view and the list follows the newest row only in run order. Built from P1's watch of a lane: a worker
+sends its lane (`parallelIndex`), and how its test ended; a view opened on it follows the lane through its next tests and
+the worker Playwright starts in it again, waiting 30 s for it, says how each test ended, and **Follow the worker's next
+test** off keeps it to its test, and a view hidden for 10 minutes closes; the view, the rows and the Timeline name a
+worker by its lane from 1. The rest of P1 (the docked panel, **Worker N** in MCP, the deep link, the refusals, the
+header's primary action, the caption's step) and the later phases are proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app

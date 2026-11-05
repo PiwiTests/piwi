@@ -636,16 +636,25 @@ export class PiwiDashboardReporter {
   onTestBegin(test: TestCase, result: TestResult): void {
     this.lastTestWatch?.begin(test.id);
     const { suitePath, suiteConfig } = this.metadataCollector.getSuiteInfo(test);
+    const tags = collectTestTags(test);
+    const locks = collectTestLocks(test);
     const beginEvent: CollectedTestCase = {
       type: 'begin',
       title: test.title,
       location: testLocation(test, this.testPathBase),
+      // The attempt beginning, and how many retries the test has, so a retry reads as one while it runs.
+      retries: result?.retry ?? 0,
+      maxRetries: test.retries ?? 0,
       repeatEachIndex: test.repeatEachIndex,
       workerIndex: workerIndexOf(result),
       shardIndex: this.shardInfo?.current ?? null,
       browser: this.metadataCollector.getBrowserConfig(test) || undefined,
       suitePath,
       suiteConfig,
+      // What the run page's search reads, known before the test runs.
+      tags: tags.length ? tags : null,
+      locks: locks.length ? locks : null,
+      testMeta: collectTestMetadata((test.annotations ?? []) as TestAnnotation[]),
     };
 
     if (this.streamManager) {

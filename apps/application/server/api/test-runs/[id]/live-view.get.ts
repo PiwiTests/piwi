@@ -16,6 +16,7 @@ defineRouteMeta({
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { name: 'worker', in: 'query', required: true, schema: { type: 'integer', minimum: 0 } },
       { name: 'shard', in: 'query', required: false, schema: { type: 'integer', minimum: 1 } },
+      { name: 'slot', in: 'query', required: false, schema: { type: 'integer', minimum: 0 } },
     ],
   },
 });
@@ -30,7 +31,7 @@ export default eventHandler(async (event) => {
   const entry = liveViewRelay.authorize(id, key);
   if (!entry) refuseLiveViewKey(id, key);
   const query = getQuery(event);
-  const worker = readLiveWorkerId(query.shard, query.worker);
+  const worker = readLiveWorkerId(query.shard, query.worker, query.slot);
   if (!worker)
     throw apiError({ statusCode: 400, message: 'Name the worker: worker from 0, and shard from 1 when sharded' });
 

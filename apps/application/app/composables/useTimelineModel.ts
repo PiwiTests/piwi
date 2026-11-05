@@ -46,7 +46,7 @@ export interface TimelineItem {
   status: string;
   /** Playwright's `workerIndex`: the worker process, which is new after every restart. */
   workerIndex: number;
-  /** The lane's worker number (Playwright's parallel slot), shown as `Worker N`. */
+  /** The lane's worker number (Playwright's parallel slot, from 0), shown from 1 as `Worker N`, as Watch names it. */
   slot?: number;
   start: number;
   duration: number;

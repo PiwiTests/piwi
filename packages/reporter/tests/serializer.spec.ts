@@ -335,6 +335,7 @@ describe('toWireTestCase', () => {
       'locatorPages',
       'locatorSnapshots',
       'locks',
+      'maxRetries',
       'networkRequests',
       'pageInventory',
       'pageState',

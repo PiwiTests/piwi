@@ -282,9 +282,10 @@ test.describe('Live view of a run', () => {
       expect(frames).toBeGreaterThan(1);
       expect(frames / seconds).toBeLessThanOrEqual(4.5);
 
-      // The test ends: so does its view.
+      // The test ends: the view says how, and follows the worker's lane until the run ends.
       run.release();
-      await expect(view.getByTestId('live-status')).toHaveText('The test ended.', { timeout: 20_000 });
+      await expect(view.getByTestId('live-outcome')).toContainText('passed', { timeout: 20_000 });
+      await expect(view.getByTestId('live-status')).toHaveText('The run ended.', { timeout: 40_000 });
       await page.keyboard.press('Escape');
       await expect(view).toBeHidden();
 

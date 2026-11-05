@@ -54,6 +54,7 @@ export function toWireTestCase(tc: CollectedTestCase): WireTestCase {
     timeout: rest.timeout ?? null,
     error: rest.error,
     retries: rest.retries,
+    maxRetries: rest.maxRetries,
     repeatEachIndex: rest.repeatEachIndex ?? 0,
     attempts: rest.attempts || null,
     workerIndex: rest.workerIndex ?? null,

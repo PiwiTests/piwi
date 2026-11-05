@@ -52,7 +52,7 @@ const workerCounts = computed(() => {
   const sharded = new Set(workerRows.value.map((row) => row.shardIndex)).size > 1;
   return workerRows.value.map((row) => ({
     key: row.baseLane,
-    label: sharded && row.shardIndex != null ? `S${row.shardIndex} W${row.slot}` : `W${row.slot}`,
+    label: sharded && row.shardIndex != null ? `S${row.shardIndex} W${row.slot + 1}` : `W${row.slot + 1}`,
     count: counts.get(row.baseLane) ?? 0,
   }));
 });

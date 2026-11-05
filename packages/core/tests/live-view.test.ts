@@ -19,6 +19,8 @@ import {
   parseLiveViewEnv,
   parseLiveViewMissing,
   readLiveCall,
+  liveLaneKey,
+  readLiveTestOutcome,
   readLiveWorkerId,
   readWorkerToInstance,
   compressCallLog,
@@ -119,6 +121,14 @@ describe('the messages', () => {
     }
     expect(liveWorkerKey({ shard: null, worker: 3 })).toBe(':3');
     expect(liveWorkerKey({ shard: 2, worker: 3 })).toBe('2:3');
+  });
+
+  test('a worker names its lane, from 0, which the instance keys apart from the worker', () => {
+    expect(readLiveWorkerId('2', '5', '1')).toEqual({ shard: 2, worker: 5, slot: 1 });
+    expect(readLiveWorkerId(null, 5, -1)).toEqual({ shard: null, worker: 5 });
+    expect(readLiveWorkerId(null, 5, 'one')).toEqual({ shard: null, worker: 5 });
+    expect(liveLaneKey({ shard: null, slot: 1 })).toBe('#1');
+    expect(liveLaneKey({ shard: 2, slot: 0 })).toBe('2#0');
   });
 
   test('a call names no text a fill or a typing typed, from a reporter that hid it or not', () => {
@@ -227,6 +237,21 @@ describe('the messages', () => {
       expect(typeof readWorkerToInstance(value), JSON.stringify(value)).toBe('string');
     }
     expect(readWorkerToInstance({ type: 'ended', worker: 4 })).toEqual({ type: 'ended', shard: null, worker: 4 });
+    const outcome = { test: 'pays', status: 'failed', ms: 1200 };
+    expect(readWorkerToInstance({ type: 'ended', worker: 4, slot: 0, outcome })).toEqual({
+      type: 'ended',
+      shard: null,
+      worker: 4,
+      slot: 0,
+      outcome,
+    });
+    // An outcome this version cannot read leaves the end alone.
+    expect(readWorkerToInstance({ type: 'ended', worker: 4, outcome: { status: 'done', ms: 1 } })).toEqual({
+      type: 'ended',
+      shard: null,
+      worker: 4,
+    });
+    expect(readLiveTestOutcome({ test: 'pays', status: 'passed', ms: -1 })).toBeNull();
     expect(readWorkerToInstance({ type: 'unshared', shard: 2, worker: 1 })).toEqual({
       type: 'unshared',
       shard: 2,

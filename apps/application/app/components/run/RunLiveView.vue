@@ -1,13 +1,15 @@
 <script setup lang="ts">
 /**
- * The live view of one worker of a running run, for the test of the row it was opened from: the images of its page
+ * The live view of one worker of a running run, from the test of the row it was opened from: the images of its page
  * the worker sends while this view is open, a few a second, each with the call it was taken at. In a CI run, the
  * worker also sends the call its test is in as Playwright logs it: the log's last lines under the image, how long the
  * call has run and the elements its locator matches beside it, and over the image the first one outlined and the point
- * an input action acts on. Watching only: nothing here reaches the test. The view ends as its test ends (the worker
- * says so, or an image or a call log of its next test comes), the worker leaves, the run ends or the project turns its
- * live view off, and as it closes. Nothing is kept: the latest image and call log alone are in this page's memory, until the
- * view closes.
+ * an input action acts on. Watching only: nothing here reaches the test. A view of a worker that says its lane
+ * (`slot`) follows the lane: it says how each test ended and goes on with the next, through the worker Playwright
+ * starts in the lane again, unless **Follow the worker's next test** is off; one of an older reporter's worker ends
+ * with its test. A view ends as the worker leaves, the run ends or the project turns its live view off, as it closes,
+ * and after `HIDDEN_CLOSE_MS` in a hidden tab. Nothing is kept: the latest image and call log alone are in this page's
+ * memory, until the view closes.
  */
 import {
   LIVE_VIEW_END_TEXT,
@@ -15,6 +17,7 @@ import {
   parseLiveViewerMessage,
   type LiveCall,
   type LiveCallLog,
+  type LiveTestOutcome,
 } from '#shared/live-view';
 import { stallWatch, STREAM_RECONNECT_STALL_MS } from '~/utils/stream-stall';
 
@@ -22,6 +25,8 @@ const props = defineProps<{
   runId: number;
   worker: number;
   shard: number | null;
+  /** The worker's lane, from a reporter that says it: the view then follows the lane through its next tests. */
+  slot?: number | null;
   /** The title of the test whose row the view was opened from. */
   test: string;
   /** Piwi project id + name, for the IDE opener of each call's place. */
@@ -47,6 +52,22 @@ const callAt = ref(0);
 const now = ref(Date.now());
 const notice = ref(WAITING);
 const ended = ref(false);
+/** Whether the view follows the worker's lane, which a reporter that says it lets it. */
+const follows = computed(() => typeof props.slot === 'number');
+/** Whether the view goes on with the lane's next test, else ends with its test. */
+const followNext = ref(true);
+/** The test the view shows now: the row's, then each next test of the lane. */
+const watchedTest = ref(props.test);
+/** How the test the view showed last ended, while the lane's next test has not begun. */
+const outcome = ref<LiveTestOutcome | null>(null);
+/** The view goes on with `test`, the lane's next one, when it follows the lane; false when it does not. */
+function nextTest(test: string): boolean {
+  if (!follows.value || !followNext.value) return false;
+  watchedTest.value = test;
+  outcome.value = null;
+  log.value = null;
+  return true;
+}
 let source: EventSource | null = null;
 let viewOpen = false;
 /** Says so when the view's stream has not been open for a while, through its reconnections. */
@@ -70,6 +91,7 @@ function connect(): void {
   ended.value = false;
   const query = new URLSearchParams({ worker: String(props.worker) });
   if (props.shard !== null) query.set('shard', String(props.shard));
+  if (follows.value) query.set('slot', String(props.slot));
   const opening = new EventSource(
     `${baseURL.replace(/\/$/, '')}/api/test-runs/${props.runId}/live-view/watch?${query}`,
   );
@@ -85,14 +107,20 @@ function connect(): void {
     const message = parseLiveViewerMessage(String(event.data));
     if (!message) return;
     if (message.type === 'frame') {
-      // The worker went on to its next test: the one watched ended.
-      if (message.test !== null && message.test !== props.test) return end(LIVE_VIEW_END_TEXT['test-ended']);
+      // The worker went on to its next test: a view of its lane goes on with it, a view of one test ends.
+      if (message.test !== null && message.test !== watchedTest.value && !nextTest(message.test)) {
+        return end(LIVE_VIEW_END_TEXT['test-ended']);
+      }
+      // A frame after the test ended is of the lane's next test, of the same title.
+      if (outcome.value && follows.value) outcome.value = null;
       image.value = `data:image/jpeg;base64,${message.data}`;
       call.value = message.call;
       callAt.value = Date.now();
       notice.value = '';
     } else if (message.type === 'call-log') {
-      if (message.test !== null && message.test !== props.test) return end(LIVE_VIEW_END_TEXT['test-ended']);
+      if (message.test !== null && message.test !== watchedTest.value && !nextTest(message.test)) {
+        return end(LIVE_VIEW_END_TEXT['test-ended']);
+      }
       const before = log.value;
       log.value = message.log;
       logAt.value = Date.now();
@@ -102,7 +130,12 @@ function connect(): void {
       }
     } else if (message.type === 'refused') {
       notice.value = message.message;
+    } else if (message.type === 'test-ended') {
+      outcome.value = message.outcome;
+      // Not following the lane: the view ends with its test.
+      if (!followNext.value) end(LIVE_VIEW_END_TEXT['test-ended']);
     } else {
+      if (message.outcome) outcome.value = message.outcome;
       end(LIVE_VIEW_END_TEXT[message.reason]);
     }
   };
@@ -154,6 +187,26 @@ watch(
 onBeforeUnmount(() => {
   disconnect();
   stopClock();
+  if (hiddenTimer) clearTimeout(hiddenTimer);
+});
+
+// Following stopped while the view waits for the lane's next test: it ends now.
+watch(followNext, (on) => {
+  if (!on && outcome.value && !ended.value) end(LIVE_VIEW_END_TEXT['test-ended']);
+});
+
+/** How long a view stays open in a hidden tab, which would otherwise keep its worker sending images all run. */
+const HIDDEN_CLOSE_MS = 10 * 60_000;
+let hiddenTimer: ReturnType<typeof setTimeout> | null = null;
+const visibility = useDocumentVisibility();
+watch(visibility, (state) => {
+  if (hiddenTimer) clearTimeout(hiddenTimer);
+  hiddenTimer = null;
+  if (state !== 'hidden' || ended.value) return;
+  hiddenTimer = setTimeout(() => {
+    hiddenTimer = null;
+    if (!ended.value) end('The view closed after 10 minutes in a hidden tab.');
+  }, HIDDEN_CLOSE_MS);
 });
 
 /**
@@ -228,7 +281,22 @@ const overlay = computed(() => {
   return { viewport: shown.viewport, box, point, radius: Math.max(6, width / 120) };
 });
 
-const name = computed(() => liveWorkerName({ shard: props.shard, worker: props.worker }));
+const name = computed(() =>
+  liveWorkerName({ shard: props.shard, worker: props.worker, ...(follows.value ? { slot: props.slot! } : {}) }),
+);
+const OUTCOME_VERBS: Record<LiveTestOutcome['status'], string> = {
+  passed: 'passed',
+  failed: 'failed',
+  timedOut: 'timed out',
+  skipped: 'was skipped',
+  interrupted: 'was interrupted',
+};
+/** How the test the view showed ended, in words. */
+const outcomeText = computed(() => {
+  const shown = outcome.value;
+  if (!shown) return '';
+  return `${shown.test ?? watchedTest.value} ${OUTCOME_VERBS[shown.status]} in ${formatLongDuration(shown.ms)}`;
+});
 const title = computed(() => `${name.value.charAt(0).toUpperCase()}${name.value.slice(1)} · live`);
 const alt = computed(
   () => `The page ${name.value} is on${shownCall.value ? `, at ${shownCall.value.title}` : ''}, as the test sees it`,
@@ -236,8 +304,16 @@ const alt = computed(
 </script>
 
 <template>
-  <UModal v-model:open="open" :title="title" :description="test" :ui="{ content: 'sm:max-w-3xl' }">
+  <UModal v-model:open="open" :title="title" :description="watchedTest" :ui="{ content: 'sm:max-w-3xl' }">
     <template #body>
+      <UCheckbox
+        v-if="follows && !ended"
+        v-model="followNext"
+        label="Follow the worker's next test"
+        size="sm"
+        class="mb-2"
+        data-testid="live-follow"
+      />
       <figure class="space-y-2" data-testid="live-view">
         <div class="relative aspect-[16/10] w-full overflow-hidden rounded-md border border-default bg-elevated">
           <img
@@ -290,6 +366,16 @@ const alt = computed(
             {{ notice }}
           </p>
         </div>
+        <p v-if="outcome" class="text-sm text-highlighted" data-testid="live-outcome">
+          <UIcon
+            :name="getStatusIcon(outcome.status === 'timedOut' ? 'timedout' : outcome.status)"
+            :class="getStatusTextClass(outcome.status === 'timedOut' ? 'timedout' : outcome.status)"
+            class="mr-1 size-4 align-text-bottom"
+          />{{ outcomeText
+          }}<template v-if="follows && followNext && !ended"
+            ><span class="text-muted"> · waiting for the worker's next test</span></template
+          >
+        </p>
         <figcaption class="min-h-4 text-xs text-muted" data-testid="live-call">
           <template v-if="shownCall">
             At <span class="font-mono">{{ shownCall.title }}</span

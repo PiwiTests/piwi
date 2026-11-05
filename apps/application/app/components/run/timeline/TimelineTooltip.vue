@@ -77,7 +77,7 @@ const attemptRows = computed(() =>
       status: formatStatusLabel(attempt.status),
       // A retried attempt's dot is an outline, like its bar.
       dot: attempt.retried ? { borderColor: color, borderWidth: '1.5px' } : { backgroundColor: color },
-      facts: `at ${formatTimelineTime(attempt.start)} · ${formatTimelineTime(attempt.duration)} · Worker ${attempt.slot ?? attempt.workerIndex}`,
+      facts: `at ${formatTimelineTime(attempt.start)} · ${formatTimelineTime(attempt.duration)} · Worker ${attempt.slot != null ? attempt.slot + 1 : attempt.workerIndex}`,
       current: attempt.key === item.value?.key,
     };
   }),
@@ -189,7 +189,8 @@ const positionStyle = computed(() => {
         <span v-else-if="!isGap">{{ statusChipLabel(item.status, item.flaky) }}</span>
         <span>{{ formatTimelineTime(item.duration) }}</span>
         <span>
-          Worker {{ item.slot ?? item.workerIndex }}<template v-if="processLabel"> · {{ processLabel }}</template>
+          Worker {{ item.slot != null ? item.slot + 1 : item.workerIndex
+          }}<template v-if="processLabel"> · {{ processLabel }}</template>
         </span>
         <span v-if="item.parentTitle" class="italic truncate max-w-48"> for {{ item.parentTitle }} </span>
       </div>

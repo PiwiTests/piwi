@@ -90,7 +90,7 @@ fallback the reporter took to send the run. When Playwright reported
 [errors outside the tests](/reference/test-metadata#errors-outside-the-tests) (a global setup that threw, a spec that did
 not load), the header shows them under the facts line. The tabs:
 
-- **Tests**: every execution with its failure headline, in run order, grouped by cluster (the default on a red run),
+- **Tests**: every execution with its failure headline, in run order, grouped by cluster (the default when opened red),
   file, describe block or [lock](/reference/test-metadata#test-locks), with the same
   [test search](/reference/test-search) as a project's Tests tab and bulk triage.
 - **Changes**: what differs against one baseline run. See [What changed in a run](./run-changes).

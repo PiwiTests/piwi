@@ -23,10 +23,10 @@ import {
   testSuites,
   networkRequests,
 } from '~~/server/database/schema.sqlite';
-import { parseLocation } from '#shared/parse-location';
 import { mapWireCaseToRunCase } from '~~/server/utils/map-wire-case';
 import { wireCaseProblem } from '~~/server/utils/wire-case-problem';
 import { mapStepEventsToRunEvents } from '~~/server/utils/map-step-events';
+import { testBeginData, testCompletedData } from '~~/server/utils/live-case-events';
 import {
   buildNetworkRequestItems,
   buildNetworkRequestInsertValues,
@@ -958,19 +958,7 @@ export async function apiPostRunEvents(
   const stepRunEvents = mapStepEventsToRunEvents(validEvents);
 
   for (const tc of beginEvents) {
-    const loc = tc.location ? parseLocation(tc.location) : { filePath: 'unknown', line: null, column: null };
-    const filePath = loc.filePath;
-    const beginData = {
-      title: tc.title,
-      filePath,
-      suitePath: (tc as { suitePath?: string[] | null }).suitePath ?? null,
-      location: tc.location,
-      workerIndex: tc.workerIndex ?? null,
-      shardIndex: tc.shardIndex ?? null,
-      startedAt: typeof tc.startedAt === 'number' ? tc.startedAt : Date.now(),
-      browser: tc.browser ?? null,
-      repeatEachIndex: resolveRepeatEachIndex(tc.repeatEachIndex),
-    };
+    const beginData = testBeginData(tc, Date.now());
     publishDemoRunEvent(id, { type: 'test-begin', data: beginData });
     noteDemoBegin(id, beginData);
   }
@@ -1029,34 +1017,7 @@ export async function apiPostRunEvents(
 
   for (const [index, tc] of completeEvents.entries()) {
     const persisted = persistedByInputIndex.get(index);
-    publishDemoRunEvent(id, {
-      type: 'test-completed',
-      data: {
-        title: tc.title,
-        externalId: externalIdOf(cases[index]!) ?? null,
-        displayTitle: displayTitleOf(cases[index]!, externalIdOf(cases[index]!)),
-        filePath: cases[index]!.filePath,
-        suitePath: tc.suitePath ?? null,
-        status: tc.status,
-        duration: tc.duration,
-        location: tc.location,
-        error: hiddenErrorText(tc.error),
-        stepEvents: hiddenStepEventErrors(tc.stepEvents),
-        wastedTimeMs: tc.wastedTimeMs ?? null,
-        workerIndex: tc.workerIndex ?? null,
-        shardIndex: tc.shardIndex ?? null,
-        startedAt: tc.startedAt ?? null,
-        browser: tc.browser ?? null,
-        // Mirrors the server: the attempt number and the attempt history up to it let
-        // the live page tell a flaky pass (an earlier attempt failed) from another pass.
-        retries: tc.retries ?? null,
-        attempts: persisted ? persisted.attempts : (tc.attempts ?? null),
-        repeatEachIndex: resolveRepeatEachIndex(tc.repeatEachIndex),
-        executionId: persisted?.id ?? null,
-        testCaseId: persisted?.testCaseId ?? null,
-        passedAfterFailure: persisted?.passedAfterFailure ?? null,
-      },
-    });
+    publishDemoRunEvent(id, { type: 'test-completed', data: testCompletedData(tc, cases[index]!, persisted) });
   }
 
   publishDemoRunEvent(id, {

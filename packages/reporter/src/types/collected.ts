@@ -75,6 +75,8 @@ export interface CollectedTestCase {
   timeout?: number | null;
   error?: string | null;
   retries?: number;
+  /** On a `begin` event: the retries the test is allowed (`TestCase.retries`). */
+  maxRetries?: number;
   /** Playwright's `TestCase.repeatEachIndex`: which `--repeat-each` repetition this is (0 without repeats). */
   repeatEachIndex?: number;
   /** One entry per attempt up to and including this one: `{ retry, status, duration, startedAt }`. */

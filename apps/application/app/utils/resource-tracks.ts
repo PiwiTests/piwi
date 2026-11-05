@@ -78,7 +78,7 @@ function peak(points: SeriesPoint[]): number {
 }
 
 function rowName(row: WorkerRow, sharded: boolean): string {
-  return row.shardIndex != null && sharded ? `S${row.shardIndex} W${row.slot}` : `Worker ${row.slot}`;
+  return row.shardIndex != null && sharded ? `S${row.shardIndex} W${row.slot + 1}` : `Worker ${row.slot + 1}`;
 }
 
 /**

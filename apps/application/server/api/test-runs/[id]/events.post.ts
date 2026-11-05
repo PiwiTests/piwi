@@ -1,16 +1,15 @@
-import { displayTitleOf, externalIdOf } from '../../../utils/test-case-match';
 import { getDatabase } from '../../../database';
 import { testRuns } from '../../../database/schema';
 import { eq, sql } from 'drizzle-orm';
 import { runEventBus } from '../../../utils/run-events';
-import { parseLocation } from '#shared/parse-location';
 import { persistRunCases, type RunCaseInput } from '../../../utils/persist-run-cases';
 import { mapWireCaseToRunCase } from '../../../utils/map-wire-case';
-import { resolveRepeatEachIndex, runningCaseKey } from '../../../utils/inserted-run-cases';
+import { runningCaseKey } from '../../../utils/inserted-run-cases';
 import { mapStepEventsToRunEvents } from '../../../utils/map-step-events';
+import { testBeginData, testCompletedData } from '../../../utils/live-case-events';
+import { resolveIngestLimits } from '../../../utils/ingest-limits';
 import { authorizeStreamToken, requireStreamingRun } from '../../../utils/stream-auth';
 import { RUN_TOKEN_HEADER } from '@piwitests/core/wire';
-import { hiddenErrorText, hiddenStepEventErrors } from '../../../utils/sanitize';
 import { wireCaseProblem } from '../../../utils/wire-case-problem';
 import type { StreamEventPayload } from '#shared/types';
 import { countFailedFromTally } from '#shared/utils/test-counts';
@@ -101,20 +100,8 @@ export default eventHandler(async (event) => {
 
   // --- Handle begin events (test started, no DB persistence needed) ---
   for (const tc of beginEvents) {
-    const loc = tc.location ? parseLocation(tc.location) : { filePath: 'unknown', line: null, column: null };
-    const filePath = loc.filePath;
-    const beginData = {
-      title: tc.title,
-      filePath,
-      suitePath: (tc as { suitePath?: string[] | null }).suitePath ?? null,
-      location: tc.location,
-      workerIndex: tc.workerIndex ?? null,
-      shardIndex: tc.shardIndex ?? null,
-      // When the reporter sent no start, when the begin came: the run page and the stuck check count from it.
-      startedAt: typeof tc.startedAt === 'number' ? tc.startedAt : Date.now(),
-      browser: tc.browser ?? null,
-      repeatEachIndex: resolveRepeatEachIndex(tc.repeatEachIndex),
-    };
+    // When the reporter sent no start, when the begin came: the run page and the stuck check count from it.
+    const beginData = testBeginData(tc, Date.now(), resolveIngestLimits().locks);
     runEventBus.publish(id, { type: 'test-begin', data: beginData });
     // A running case has no DB row until it completes, so remember its begin
     // payload for the stream catch-up; the matching complete event clears it.
@@ -181,32 +168,7 @@ export default eventHandler(async (event) => {
     if (lastOf.get(runningCaseKey(tc)) === 'complete') runEventBus.clearRunningCase(id, runningCaseKey(tc));
     runEventBus.publish(id, {
       type: 'test-completed',
-      data: {
-        title: tc.title,
-        externalId: externalIdOf(cases[index]!) ?? null,
-        displayTitle: displayTitleOf(cases[index]!, externalIdOf(cases[index]!)),
-        filePath: cases[index]!.filePath,
-        suitePath: tc.suitePath ?? null,
-        status: tc.status,
-        duration: tc.duration,
-        location: tc.location,
-        error: hiddenErrorText(tc.error),
-        stepEvents: hiddenStepEventErrors(tc.stepEvents),
-        wastedTimeMs: tc.wastedTimeMs ?? null,
-        workerIndex: tc.workerIndex ?? null,
-        shardIndex: tc.shardIndex ?? null,
-        startedAt: tc.startedAt ?? null,
-        browser: tc.browser ?? null,
-        // The attempt number and the attempt history up to it, as stored, ride along so
-        // the live page can tell a flaky pass (an earlier attempt failed) from another pass.
-        retries: tc.retries ?? null,
-        attempts: persisted ? persisted.attempts : (tc.attempts ?? null),
-        repeatEachIndex: resolveRepeatEachIndex(tc.repeatEachIndex),
-        executionId: persisted?.id ?? null,
-        testCaseId: persisted?.testCaseId ?? null,
-        // Its verdict as stored: it passed after an earlier attempt failed or timed out.
-        passedAfterFailure: persisted?.passedAfterFailure ?? null,
-      },
+      data: testCompletedData(tc, cases[index]!, persisted, resolveIngestLimits().locks),
     });
   }
 

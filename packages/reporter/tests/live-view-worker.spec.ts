@@ -39,6 +39,8 @@ const worker = { workerIndex: 0, config: { shard: null } } as unknown as Pick<Wo
 let server: FakeServer;
 let posts: WorkerToInstance[];
 let streams: http.ServerResponse[];
+/** The address of each stream a worker opened. */
+let streamUrls: string[];
 /** What the instance answers a stream: 200, or a refusal. */
 let streamStatus = 200;
 /** Whether a worker's new stream closes the one it held, as the instance's relay does. */
@@ -47,6 +49,7 @@ let replaceStreams = false;
 beforeEach(async () => {
   posts = [];
   streams = [];
+  streamUrls = [];
   streamStatus = 200;
   replaceStreams = false;
   server = await startServer((req, res) => {
@@ -54,6 +57,7 @@ beforeEach(async () => {
     if (req.method === 'GET' && streamStatus !== 200) return jsonRes(res, streamStatus, {});
     if (req.headers.authorization !== `Bearer ${KEY}`) return jsonRes(res, 401, {});
     if (req.method === 'GET') {
+      streamUrls.push(req.url);
       if (replaceStreams) for (const earlier of streams) earlier.end();
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       res.write(`data: ${JSON.stringify({ type: 'viewers', count: 0 })}\n\n`);
@@ -125,6 +129,28 @@ const SECRET_CALL = { title: 'Navigate to "/reset?token=abc123def456"', file: 't
 const HIDDEN_CALL = { ...SECRET_CALL, title: 'Navigate to "/reset?token=<hidden>"' };
 
 describe("the worker's live view connection", () => {
+  it('names its lane on its stream and in each message, and says how its test ended', async () => {
+    const env: NodeJS.ProcessEnv = { [LIVE_VIEW_ENV]: formatLiveViewEnv(server.url, RUN, KEY) };
+    const laneWorker = { ...worker, workerIndex: 3, parallelIndex: 1 } as Parameters<typeof openLiveView>[0];
+    expect(openLiveView(laneWorker, env, true)).toBe(true);
+    await waitFor(() => streams.length === 1);
+    expect(new URL(streamUrls[0]!, server.url).searchParams.get('slot')).toBe('1');
+    sayViewers(1);
+    // The viewer between two tests hears why no image shows: the worker read that someone watches.
+    await waitFor(() => posts.length === 1);
+    expect(posts[0]).toMatchObject({ type: 'frame', worker: 3, slot: 1 });
+    liveViewTestBegan('pays', () => null);
+    await liveViewTestEnded('failed');
+    await waitFor(() => posts.some((p) => p.type === 'ended'));
+    expect(posts.find((p) => p.type === 'ended')).toEqual({
+      type: 'ended',
+      shard: null,
+      worker: 3,
+      slot: 1,
+      outcome: { test: 'pays', status: 'failed', ms: expect.any(Number) },
+    });
+  });
+
   it('posts a stop as it starts and as it ends, the secrets of its call hidden', async () => {
     await open();
     const goneOn = liveViewStopped({ reason: 'breakpoint', call: SECRET_CALL, test: 'pays' });

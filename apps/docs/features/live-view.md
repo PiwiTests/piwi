@@ -61,8 +61,9 @@ prints it, and while it waits, what its locator matches (no element yet, several
 image, with the point a click acts on. A shared run shows the call alone. Following the call needs Playwright 1.64:
 1.63 shows its log without the matches, an older one the call alone.
 
-A view belongs to the test whose row opened it. Opened between two tests or in a `beforeAll`, it says so and shows the
-next test's page. It ends with its test, its worker or the run, when the live view is turned off, or when you close it.
+A view follows its worker's lane: it says how each test ended and goes on, across worker restarts; untick **Follow
+the worker's next test** to end it with its test. It ends with the run, 30 s after its lane's worker left, as the live
+view turns off, or as you close it.
 
 A CI run never stops at a breakpoint or a `page.pause()`; a shared run does, and its row then says **Paused** at the
 stopped call, which opens in your editor.
