@@ -46,11 +46,26 @@ class FakeSource {
 
 const documentListeners: Record<string, () => void> = {};
 const page = { visibilityState: 'visible' as DocumentVisibilityState };
+/** When the server rendered the page, as its payload says. */
+const RENDERED_AT = 1_000_000;
+
+/** The Nuxt app: hydrating until the test ends it, as its first Suspense resolving does. */
+const nuxtApp = {
+  isHydrating: false,
+  resolved: [] as Array<() => void>,
+  hooks: { hookOnce: (name: string, fn: () => void) => name === 'app:suspense:resolve' && nuxtApp.resolved.push(fn) },
+  endHydration() {
+    nuxtApp.isHydrating = false;
+    for (const fn of nuxtApp.resolved.splice(0)) fn();
+  },
+};
 
 function stubBrowser() {
   vi.stubGlobal('__IMPORT_META_CLIENT__', true);
   vi.stubGlobal('EventSource', FakeSource);
   vi.stubGlobal('useRuntimeConfig', () => ({ public: { demoMode: false } }));
+  vi.stubGlobal('useNuxtApp', () => nuxtApp);
+  vi.stubGlobal('useRenderedAt', () => ({ value: RENDERED_AT }));
   vi.stubGlobal('window', { addEventListener: () => {} });
   vi.stubGlobal('document', {
     get visibilityState() {
@@ -74,6 +89,8 @@ beforeEach(() => {
   FakeSource.all = [];
   unmounts.length = 0;
   page.visibilityState = 'visible';
+  nuxtApp.isHydrating = false;
+  nuxtApp.resolved.length = 0;
   vi.useFakeTimers();
   stubBrowser();
 });
@@ -81,6 +98,52 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+});
+
+/** The first event of `/api/stream`: when the server last published a run event. */
+function streamOpened(source: FakeSource, lastEventAt: number | null) {
+  source.onmessage?.({ data: JSON.stringify({ type: 'stream-open', lastEventAt }) });
+}
+
+describe('the shared run stream’s first connection', () => {
+  test('reads again when the server published a run event after it rendered the page', async () => {
+    const reads = await subscribe();
+    FakeSource.all[0]!.open();
+    streamOpened(FakeSource.all[0]!, RENDERED_AT + 500);
+    expect(reads.count).toBe(1);
+  });
+
+  test('reads nothing again when the last run event came before the page, or none came', async () => {
+    const reads = await subscribe();
+    FakeSource.all[0]!.open();
+    streamOpened(FakeSource.all[0]!, RENDERED_AT - 500);
+    expect(reads.count).toBe(0);
+
+    const later = await subscribe();
+    FakeSource.all[1]!.open();
+    streamOpened(FakeSource.all[1]!, null);
+    expect(later.count).toBe(0);
+  });
+
+  test('reads again once hydration ends, when it opens while the app hydrates', async () => {
+    nuxtApp.isHydrating = true;
+    const reads = await subscribe();
+    FakeSource.all[0]!.open();
+    streamOpened(FakeSource.all[0]!, RENDERED_AT + 500);
+    expect(reads.count).toBe(0);
+    nuxtApp.endHydration();
+    expect(reads.count).toBe(1);
+  });
+
+  test('reads again only for its first connection: a reconnection hears the events it missed', async () => {
+    const reads = await subscribe();
+    FakeSource.all[0]!.open();
+    streamOpened(FakeSource.all[0]!, RENDERED_AT - 500);
+    FakeSource.all[0]!.drop();
+    FakeSource.all[0]!.open();
+    streamOpened(FakeSource.all[0]!, RENDERED_AT + 500);
+    expect(reads.count).toBe(0);
+  });
 });
 
 describe('the shared run stream', () => {
