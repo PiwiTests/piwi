@@ -110,6 +110,11 @@ export interface TestCasePayload {
   ariaSnapshot?: unknown;
   ariaSnapshotJson?: unknown;
   workerIndex?: number | null;
+  /**
+   * The worker's lane: Playwright's `parallelIndex`, which a worker Playwright starts again in the same slot keeps
+   * (`workerIndex` is new for each worker process). Absent from older reporters (`#shared/worker-lane`).
+   */
+  parallelIndex?: number | null;
   shardIndex?: number | null;
   startedAt?: number | null;
   browser?: BrowserConfig | null;
@@ -222,6 +227,11 @@ export interface StreamEventPayload {
   /** One entry per attempt up to and including this one: `{ retry, status, duration, startedAt }`. */
   attempts?: Array<{ retry: number; status: string; duration: number; startedAt: number | null }> | null;
   workerIndex?: number | null;
+  /**
+   * The worker's lane: Playwright's `parallelIndex`, which a worker Playwright starts again in the same slot keeps
+   * (`workerIndex` is new for each worker process). Absent from older reporters (`#shared/worker-lane`).
+   */
+  parallelIndex?: number | null;
   shardIndex?: number | null;
   startedAt?: number | null;
   steps?: unknown;

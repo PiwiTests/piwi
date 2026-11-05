@@ -9,6 +9,7 @@ import {
 } from '#shared/handlers/projects';
 import { parseLockFilter, parseTagFilter } from '#shared/utils/tag-filter';
 import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
+import { workerNumber } from '#shared/worker-lane';
 import { describeProjectRunScope } from '#shared/project-run-scope';
 import { buildFixPlan } from '../fix-plan';
 import { codeownersOwnerResolver, enrichFixPlanOwnership } from '../scm/ownership';
@@ -256,6 +257,23 @@ function compactBrowser(browser: unknown): string | null {
   const b = browser as BrowserConfig | null;
   if (!b) return null;
   return [b.projectName, b.browserName].filter(Boolean).join('/') || null;
+}
+
+/**
+ * The worker an execution ran on, as a tool reports it: `worker`, its lane from 1 (`Worker 2` on the run page), and
+ * its shard in a sharded run. A result that carries no lane (an older reporter's) gives Playwright's `workerIndex`, the
+ * worker process, in place of `worker`.
+ */
+function executionWorker(row: {
+  workerIndex: number | null;
+  parallelIndex: number | null;
+  shardIndex: number | null;
+}): { worker?: number; workerIndex?: number | null; shardIndex: number | null } {
+  const worker = workerNumber(row.parallelIndex);
+  return {
+    ...(worker !== null ? { worker } : { workerIndex: row.workerIndex ?? null }),
+    shardIndex: row.shardIndex ?? null,
+  };
 }
 
 /** Project the deterministic clues into the compact shape MCP tools return. */
@@ -700,6 +718,8 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         clusterId: testRunsCases.failureClusterId,
         browser: testRunsCases.browser,
         workerIndex: testRunsCases.workerIndex,
+        parallelIndex: testRunsCases.parallelIndex,
+        shardIndex: testRunsCases.shardIndex,
         line: testRunsCases.line,
       })
       .from(testRunsCases)
@@ -722,7 +742,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         error: trunc(c.error, 400),
         clusterId: c.clusterId || null,
         browser: compactBrowser(c.browser),
-        worker: c.workerIndex ?? null,
+        ...executionWorker(c),
         line: c.line || null,
       }),
     );
@@ -1379,7 +1399,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       clusterId: row.failureClusterId || null,
       line: row.line || null,
       column: row.column || null,
-      workerIndex: row.workerIndex ?? null,
+      ...executionWorker(row),
       browser: compactBrowser(row.browser),
       steps: want('steps') ? row.steps : null,
       stepEvents: want('steps') ? row.stepEvents : null,

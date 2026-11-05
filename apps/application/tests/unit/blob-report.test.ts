@@ -86,6 +86,12 @@ describe('parseBlobReport', () => {
     const failed = parsed.cases[1]!.case;
     expect(failed.error).toContain('Error: boom');
     expect(parsed.cases[2]!.case.retries).toBe(1);
+    // Each result's worker process and lane, as Playwright recorded them.
+    expect(parsed.cases.map(({ case: c }) => [c.workerIndex, c.parallelIndex])).toEqual([
+      [0, 0],
+      [0, 0],
+      [1, 1],
+    ]);
   });
 
   test('records spec paths relative to the config directory, as the reporter does', async () => {

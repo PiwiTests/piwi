@@ -102,10 +102,10 @@ not load), the header shows them under the facts line. The tabs:
     click it to open the test's steps on that hook. Playwright leaves `beforeAll` / `afterAll` hooks and worker
     fixtures out of a test's duration; the bar spans them anyway, and its tooltip gives the duration Playwright
     reported. Runs sent by an older reporter show the sections without their hook list.
-  - **Gaps**: a lane is one worker. Playwright replaces a worker process after a failed test, so a lane can hold
-    several processes one after another: **↻** marks where a new one took over, and the stretch before it is the old
-    process shutting down and the new one starting. A dashed line is time the worker ran no test; hover either for
-    details.
+  - **Gaps**: a lane is one [worker](/reference/test-metadata#worker-lanes). Playwright replaces a worker process
+    after a failed test, so a lane can hold several processes one after another: **↻** marks where a new one took
+    over, and the stretch before it is the old process stopping and the new one starting. A dashed line is time the
+    worker ran no test; hover either for details.
   - **Retries**: a retried test has one bar per attempt, the last solid, the earlier ones pale. Hover one to join
     them with arrows.
   - **Resources**: the run's CPU, memory and open pages, above the worker rows and under each of them

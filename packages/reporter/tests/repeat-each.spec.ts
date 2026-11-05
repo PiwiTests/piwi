@@ -180,4 +180,80 @@ describe('a --repeat-each run on the wire', () => {
     ]);
     expect(begins[1]).toMatchObject({ tags: ['smoke'], testMeta: { owner: 'checkout' } });
   });
+
+  it("names the worker's lane with each begin and complete, the same after Playwright starts the worker again", async () => {
+    const events: Array<Record<string, any>> = [];
+    server = await startServer((req, res) => {
+      if (req.url === '/api/test-runs/start') {
+        jsonRes(res, 200, { runId: 1, streamToken: 'tok' });
+      } else if (req.url === '/api/test-runs/1/events') {
+        events.push(...(JSON.parse(req.body).testCases ?? []));
+        jsonRes(res, 200, {});
+      } else if (req.url === '/api/auth/me') {
+        jsonRes(res, 200, {});
+      } else {
+        textRes(res, 404, 'nope');
+      }
+    });
+    const reporter = new PiwiDashboardReporter({
+      serverUrl: server.url,
+      projectName: 'piwi-lane-stream-' + process.pid,
+      streaming: true,
+      uploadReport: false,
+      uploadTraces: false,
+      liveFileUploads: false,
+      streamingBatchDelay: 30,
+      streamingBatchSize: 1,
+    });
+    const suite = fakeSuite();
+    const test = { ...fakeTestCase({ title: 'pays by card', parent: suite }), retries: 1 };
+    reporter.onBegin(fakeConfig(), suite);
+    reporter.onTestBegin(test, fakeResult({ workerIndex: 1, parallelIndex: 1, retry: 0 }));
+    reporter.onTestEnd(test, fakeResult({ status: 'failed', workerIndex: 1, parallelIndex: 1, retry: 0 }));
+    reporter.onTestBegin(test, fakeResult({ workerIndex: 4, parallelIndex: 1, retry: 1 }));
+    reporter.onTestEnd(test, fakeResult({ status: 'passed', workerIndex: 4, parallelIndex: 1, retry: 1 }));
+    await waitFor(() => events.filter((e) => e.type === 'complete').length === 2);
+
+    const lanes = (type: string) => events.filter((e) => e.type === type).map((e) => [e.workerIndex, e.parallelIndex]);
+    expect(lanes('begin')).toEqual([
+      [1, 1],
+      [4, 1],
+    ]);
+    expect(lanes('complete')).toEqual([
+      [1, 1],
+      [4, 1],
+    ]);
+  });
+
+  it('sends no lane for a result that carries none, in the batch body', async () => {
+    let submitBody: any;
+    server = await startServer((req, res) => {
+      if (req.url === '/api/test-runs/submit') {
+        submitBody = JSON.parse(req.body);
+        jsonRes(res, 200, { runId: 1, projectId: 1 });
+      } else {
+        textRes(res, 404, 'nope');
+      }
+    });
+    const reporter = new PiwiDashboardReporter({
+      serverUrl: server.url,
+      projectName: 'piwi-lane-batch-' + process.pid,
+      streaming: false,
+      uploadReport: false,
+      uploadTraces: false,
+      liveFileUploads: false,
+    });
+    const suite = fakeSuite();
+    const tests = ['pays', 'refunds'].map((title, i) => fakeTestCase({ id: title, title, line: i + 1, parent: suite }));
+    suite.allTests = () => tests;
+    reporter.onBegin(fakeConfig(), suite);
+    reporter.onTestEnd(tests[0], fakeResult({ workerIndex: 2, parallelIndex: 0 }));
+    reporter.onTestEnd(tests[1], fakeResult({ workerIndex: 3 }));
+    await reporter.onEnd({ status: 'passed' } as any);
+
+    expect(submitBody.testCases.map((tc: any) => [tc.title, tc.workerIndex, tc.parallelIndex])).toEqual([
+      ['pays', 2, 0],
+      ['refunds', 3, null],
+    ]);
+  });
 });
