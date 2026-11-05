@@ -13,10 +13,13 @@ import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
 class FakeChannel {
   static open: FakeChannel[] = [];
   onmessage: ((event: { data: unknown }) => void) | null = null;
+  /** Its window closed: it sends nothing more. */
+  gone = false;
   constructor(readonly name: string) {
     FakeChannel.open.push(this);
   }
   postMessage(data: unknown) {
+    if (this.gone) return;
     const copy = JSON.parse(JSON.stringify(data)) as unknown;
     for (const other of FakeChannel.open) {
       if (other !== this && other.name === this.name) queueMicrotask(() => other.onmessage?.({ data: copy }));
@@ -55,6 +58,8 @@ async function plugin(label: string | null = 'main', trays = 1) {
   const trayOpen = ref(false);
   const trayMounts = ref(trays);
   const state = reactive<{ sessions: Record<string, HubSession> }>({ sessions: {} });
+  // The windows' claims are said again on an interval, which only a test that needs it moves on.
+  if (!vi.isFakeTimers()) vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
   vi.stubGlobal('defineNuxtPlugin', (setup: unknown) => setup);
   for (const [name, value] of Object.entries({ computed, ref, watch })) vi.stubGlobal(name, value);
   vi.stubGlobal('tauriCore', () => ({ invoke: async () => null }));
@@ -115,7 +120,7 @@ function session(ref: string, workers: HubWorker[] = []): HubSession {
   return { ref, root: '/home/dev/shop', label: 'shop', command: null, project: 'Shop', workers, ended: false };
 }
 
-function stopped(reason: 'failure' | 'page-pause' | 'step'): HubWorker {
+function stopped(reason: 'failure' | 'page-pause' | 'step', since = 's1'): HubWorker {
   return {
     worker: 0,
     parallelIndex: 0,
@@ -137,7 +142,7 @@ function stopped(reason: 'failure' | 'page-pause' | 'step'): HubWorker {
       character: 2,
       locator: null,
       bar: false,
-      since: 's1',
+      since,
       intents: [],
     },
     pausing: false,
@@ -146,6 +151,7 @@ function stopped(reason: 'failure' | 'page-pause' | 'step'): HubWorker {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.resetModules();
   FakeChannel.open = [];
@@ -277,5 +283,33 @@ describe('the window’s hold on its runs’ hub', () => {
       'main: A test failed and waits',
       'main: A test failed and waits',
     ]);
+  });
+
+  test('lets a window’s claim on its runs lapse once it stops saying it, as a window that closed unheard', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    const aux = await plugin('aux-1');
+    aux.runs.value = [running(1, 'tests', 'desktop-9')];
+    const main = await plugin('main');
+    await settle();
+    // Said again every few seconds, the claim holds.
+    vi.advanceTimersByTime(30_000);
+    await settle();
+    main.stop(session('desktop-9'), stopped('failure'));
+    expect(notes).toEqual([]);
+    // The window closes without a word: its claim lapses, and the dashboard window tells of the run's stops.
+    FakeChannel.open[0]!.gone = true;
+    vi.advanceTimersByTime(20_000);
+    await settle();
+    main.stop(session('desktop-9'), stopped('failure'));
+    expect(notes.map((note) => note.split(' | ')[0])).toEqual(['main: A test failed and waits']);
+  });
+
+  test('after a reload, opens the tray on a stop from before it but does not tell the system again', async () => {
+    const { trayOpen, stop } = await plugin();
+    stop(session('desktop-3'), stopped('page-pause', new Date(Date.now() - 60_000).toISOString()));
+    expect(trayOpen.value).toBe(true);
+    expect(notes).toEqual([]);
+    stop(session('desktop-3'), stopped('failure', new Date(Date.now() + 1000).toISOString()));
+    expect(notes.map((note) => note.split(' | ')[0])).toEqual(['main: A test failed and waits']);
   });
 });

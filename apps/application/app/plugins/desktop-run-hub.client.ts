@@ -11,10 +11,14 @@
  * While a tray is mounted (`trayMounts`), the window says `show` for the running runs whose Hold failures is on
  * (`desktopShownRefs`), and a failure or a `page.pause()` is told to the system while the window is in the background.
  * While none is, nothing on the page shows a stop: the window shows no run live, so no failure no pause bar shows is
- * held, and every stop is told to the system, whatever the focus.
+ * held, and every stop is told to the system, whatever the focus. A `page.pause()`, a step or a breakpoint still
+ * waits there until something answers it: the tray once a page shows it again, Piwi Picker's Runs window, an agent.
  *
  * One window tells the system of a stop: the one whose tray owns the run, else the dashboard window. The windows say
- * which runs their trays own on a `BroadcastChannel`. A run's output window shows no runs of its own and holds nothing.
+ * which runs their trays own on a `BroadcastChannel`, again every `CLAIM_BEAT_MS`; a claim not renewed for
+ * `CLAIM_MS` lapses, as a window that closed without saying so. A stop from before the page loaded (`since`), heard
+ * again after a reload, opens the tray but is not told again. A run's output window shows no runs of its own and holds
+ * nothing.
  */
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
 import { desktopRunOf, desktopShownRefs, desktopStopSaid } from '~/utils/desktop-run-view';
@@ -24,6 +28,11 @@ const OWNERS_CHANNEL = 'piwi-desktop-run-owners';
 
 type OwnersMessage = { type: 'ask' } | { type: 'owned'; window: string; refs: string[] };
 
+/** How often a window says again which runs its tray owns. */
+const CLAIM_BEAT_MS = 5000;
+/** How long a window's claim holds without being said again. */
+const CLAIM_MS = 3 * CLAIM_BEAT_MS;
+
 const STOP_TITLES: Partial<Record<string, string>> = {
   failure: 'A test failed and waits',
   'page-pause': 'A test waits at page.pause()',
@@ -32,6 +41,7 @@ const STOP_TITLES: Partial<Record<string, string>> = {
 export default defineNuxtPlugin(() => {
   const label = tauriWindowLabel();
   if (!tauriCore() || label?.startsWith('output-')) return;
+  const loadedAt = Date.now();
   // Another window holds the stream for the runs it started itself alone.
   const main = label === null || label === 'main';
   const self = label ?? 'main';
@@ -61,9 +71,9 @@ export default defineNuxtPlugin(() => {
     { immediate: true },
   );
 
-  // The runs each other window's tray owns, by the window's label.
+  // The runs each other window's tray owns, by the window's label, and when it last said so.
   const ownRefs = computed(() => [...new Set(store.runs.value.flatMap((run) => run.hubRefs))].sort());
-  const others = new Map<string, Set<string>>();
+  const others = new Map<string, { refs: Set<string>; at: number }>();
   const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(OWNERS_CHANNEL);
   const post = (message: OwnersMessage) => channel?.postMessage(message);
   const tellOwned = () => post({ type: 'owned', window: self, refs: ownRefs.value });
@@ -71,11 +81,12 @@ export default defineNuxtPlugin(() => {
     channel.onmessage = ({ data }: MessageEvent<OwnersMessage>) => {
       if (data?.type === 'ask') tellOwned();
       else if (data?.type === 'owned' && typeof data.window === 'string' && Array.isArray(data.refs)) {
-        if (data.refs.length) others.set(data.window, new Set(data.refs));
+        if (data.refs.length) others.set(data.window, { refs: new Set(data.refs), at: Date.now() });
         else others.delete(data.window);
       }
     };
     watch(() => ownRefs.value.join(' '), tellOwned, { immediate: true });
+    setInterval(tellOwned, CLAIM_BEAT_MS);
     post({ type: 'ask' });
     if (typeof window !== 'undefined') {
       window.addEventListener('pagehide', () => post({ type: 'owned', window: self, refs: [] }));
@@ -86,13 +97,15 @@ export default defineNuxtPlugin(() => {
   function tellsSystem(ref: string): boolean {
     const run = desktopRunOf(ref);
     if (ownRefs.value.includes(run)) return true;
-    return main && ![...others.values()].some((refs) => refs.has(run));
+    const now = Date.now();
+    return main && ![...others.values()].some((claim) => now - claim.at < CLAIM_MS && claim.refs.has(run));
   }
 
   hub.onStop((session: HubSession, worker: HubWorker) => {
     const stop = worker.stop;
     if (!stop) return;
     store.trayOpen.value = true;
+    if (Date.parse(stop.since) < loadedAt) return;
     const title = STOP_TITLES[stop.reason];
     // With a tray, a step, a pause or a line run to, which the person's own controls asked for here or in Piwi Picker,
     // is not said, and nothing is said while the window has the focus.
