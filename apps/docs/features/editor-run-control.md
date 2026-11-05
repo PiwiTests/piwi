@@ -63,7 +63,7 @@ stopped at**. The mark goes when the test goes on (from the editor or the bar), 
   <figcaption>A run paused before it types the coupon.</figcaption>
 </figure>
 
-With several workers stopped, each has its own mark, the first alone taking focus, and the controls above a line
+With several workers stopped, each has its own mark, the worker you step keeping focus, and the controls above a line
 act on its worker; a key or command acts on the one at the cursor's line, else asks which. A control answers the stop
 it was shown for: when the test went on meanwhile, it says so and asks nothing.
 
@@ -75,7 +75,7 @@ has none.
 
 A run Piwi starts with breakpoints is headed, with a pause bar. Without breakpoints it follows your config, headless
 by default. A headless stop opens **Piwi: paused page** beside VS Code's editor, or **Paused Page** in the JetBrains
-Piwi tool window, unless the tab shows another held stop. **Piwi: Show the paused page** (**Tools → Piwi → Show the
+Piwi tool window, unless the tab follows another worker. **Piwi: Show the paused page** (**Tools → Piwi → Show the
 Paused Page**) opens it at any stop.
 
 <figure>

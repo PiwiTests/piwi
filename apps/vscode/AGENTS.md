@@ -60,9 +60,10 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **A run's controls are the exception: they take the debugger's keys, only while they apply and no debug session
   runs** (`!inDebugMode` in `contributes.keybindings`). **Pause** has no default key: a key bound for as long as a
   test runs takes one from the workbench. ([Keybindings](ARCHITECTURE.md#keybindings))
-- **A new stop takes the focus only while no other stop is shown, and never takes the paused page view from a stop
-  still held** (`stopsToShow`), as in the JetBrains plugin: another worker's stop opens its file with `preserveFocus`,
-  never over the view. Checked by `tests/run-control.test.ts` ("what a change of the stops shows").
+- **A new stop takes the focus only while no other stop's file is open, or as a stop of the worker the person is on;
+  any other leaves the editor in use, its selection and the paused page view alone, and the view follows one worker
+  until it leaves the run** (`StopsShown`, `asideColumn`), as in the JetBrains plugin. Checked by
+  `tests/run-control.test.ts` ("what the editor shows of the stops"), fed the pushes the service sends.
   ([Run control](ARCHITECTURE.md#run-control))
 - **One undo step per recording.** The first write of the block opens an undo stop and the later ones join it
   (`undoStopBefore: false`), so one Undo after Stop removes the block and its imports.

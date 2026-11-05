@@ -1418,35 +1418,73 @@ object Glue {
     /** What tells a stop from another: its run, its worker and when it stopped. */
     fun stopKey(stop: ShownStop): String = "${stop.ref}\u0000${stop.worker}\u0000${stop.stop.since}"
 
-    /** A new stop whose file opens at its line, with the focus or without it. */
-    data class StopReveal(val stop: ShownStop, val focus: Boolean)
+    /** What tells a worker from another: its run and its index. */
+    private fun workerKey(stop: ShownStop): String = "${stop.ref}\u0000${stop.worker}"
 
     /**
-     * What the IDE shows of the stops after a change: the new stops' files, in the order to open them, and the stop
-     * whose page the Paused Page tab opens (null leaves the tab as it is).
+     * What a change of the sessions shows: the stops new to the IDE, in order, each opening its file at its line in its
+     * turn (`StopsShown.focusFor`, `StopsShown.opened`), and the stop whose page the Paused Page tab opens (null leaves
+     * the tab as it is).
      */
-    data class StopsToShow(val reveal: List<StopReveal>, val page: ShownStop?)
+    data class StopsChange(val open: List<ShownStop>, val page: ShownStop?)
 
     /**
-     * What the IDE shows of the stops held after a change (`stops`, in order), each stop once (`revealed`: the keys of
-     * those shown before). A new stop opens its file at its line without the focus, but for one: while no stop shown
-     * before is held, the first new stop takes it, opened last so its file is in front. A stop of another worker thus
-     * never takes the focus from the one in use. The Paused Page tab keeps the stop it shows (`pageStop`, null while it
-     * is closed or shows none) while that stop is held; else it opens the page of the first new stop no pause bar
-     * shows, or, once its own stop went on, of the first such stop held.
+     * What the IDE shows of the stops as the sessions change, each stop once.
+     *
+     * - A new stop opens its file at its line. It takes the focus, decided as it opens (`focusFor`), only while no other
+     *   stop held has its file open (`opened`), or as a stop of the worker the person is on: the one whose stop last
+     *   took the focus, or whose stop a control answered last (`answered`).
+     * - The Paused Page tab belongs to the worker of the stop it shows or showed last (`view`). While that worker is in
+     *   the sessions, running or between tests, the tab opens that worker's next stop no pause bar shows, and no other.
+     *   Once the worker left, the tab opens the first new such stop, else the first such stop held; a tab that is closed
+     *   or shows none opens the first new such stop.
      */
-    fun stopsToShow(stops: List<ShownStop>, revealed: Set<String>, pageStop: String?): StopsToShow {
-        val held = stops.map(::stopKey).toSet()
-        val shown = revealed.any { it in held }
-        val fresh = stops.filter { stopKey(it) !in revealed }
-        val headless = { s: ShownStop -> !s.stop.bar }
-        val page = when {
-            pageStop != null && pageStop in held -> null
-            else -> fresh.firstOrNull(headless) ?: stops.firstOrNull(headless)?.takeIf { pageStop != null }
+    class StopsShown {
+        /** The stops heard, and those whose file opened, by `stopKey`. */
+        private val heard = HashSet<String>()
+        private val files = HashSet<String>()
+        private var held: Set<String> = emptySet()
+        private var viewed: ShownStop? = null
+
+        /** The worker the person is on, by `workerKey`. */
+        private var followed: String? = null
+
+        /** The sessions changed, with their stops at the lines they stand on now (`stops`, in order). */
+        fun changed(sessions: Map<String, RunSession>, stops: List<ShownStop>): StopsChange {
+            held = stops.map(::stopKey).toSet()
+            heard.retainAll(held)
+            files.retainAll(held)
+            val open = stops.filter { stopKey(it) !in heard }
+            open.forEach { heard.add(stopKey(it)) }
+            val shown = viewed
+            if (shown != null && sessions[shown.ref]?.workers.orEmpty().any { it.worker == shown.worker }) {
+                val next = stops.firstOrNull { workerKey(it) == workerKey(shown) }
+                return StopsChange(open, next?.takeIf { !it.stop.bar && stopKey(it) != stopKey(shown) })
+            }
+            viewed = null
+            val page = open.firstOrNull { !it.stop.bar } ?: stops.firstOrNull { !it.stop.bar }?.takeIf { shown != null }
+            return StopsChange(open, page)
         }
-        val reveal = fresh.map { StopReveal(it, false) }
-        if (shown || reveal.isEmpty()) return StopsToShow(reveal, page)
-        return StopsToShow(reveal.drop(1) + reveal.first().copy(focus = true), page)
+
+        /** The Paused Page tab shows `stop`'s page; null once it is closed. */
+        fun view(stop: ShownStop?) {
+            viewed = stop
+        }
+
+        /** Whether `stop`'s file, opening now, takes the focus. */
+        fun focusFor(stop: ShownStop): Boolean = workerKey(stop) == followed || files.all { it == stopKey(stop) }
+
+        /** `stop`'s file opened, with the focus or without it. */
+        fun opened(stop: ShownStop, focus: Boolean) {
+            if (stopKey(stop) !in held) return
+            files.add(stopKey(stop))
+            if (focus) followed = workerKey(stop)
+        }
+
+        /** A control answered `stop`: the person is on its worker. */
+        fun answered(stop: ShownStop) {
+            followed = workerKey(stop)
+        }
     }
 
     /**

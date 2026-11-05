@@ -14,6 +14,8 @@ import {
   CaretCounts,
   EditLog,
   MAX_IMAGE_DATA,
+  StopsShown,
+  asideColumn,
   breakpointUpdates,
   canEnd,
   canShare,
@@ -50,7 +52,6 @@ import {
   stopPick,
   stopsFor,
   stopsOf,
-  stopsToShow,
   targetStop,
   timeText,
   withSession,
@@ -60,7 +61,6 @@ import {
   type RunBreakpoint,
   type RunBreakpoints,
   type ShownStop,
-  type StopsToShow,
   type TextChange,
 } from '../src/run-control';
 
@@ -410,65 +410,99 @@ describe('a stop', () => {
   });
 });
 
-describe('what a change of the stops shows', () => {
-  /** Worker `worker` of `ed-1` stopped at `line`, headless unless `bar`. */
-  const at = (worker: number, line: number, bar = false): ShownStop => ({
-    ref: 'ed-1',
-    worker,
-    stop: stopAt(spec, line, bar),
-    test: runTest(),
-    takes: [],
-  });
-  const keys = (...stops: ShownStop[]) => new Set(stops.map(stopKey));
-  const opened = (show: StopsToShow) => show.reveal.map((r) => [r.stop.worker, r.focus]);
-  const one = at(0, 5);
-  const two = at(1, 6);
+describe('what the editor shows of the stops', () => {
+  /** Worker `index` of `ed-1` stopped headless at `line`. */
+  const at = (index: number, line: number, extra: Partial<RunStop> = {}) =>
+    worker(index, 'stopped', { stop: { ...stopAt(spec, line, false), ...extra } });
+  /**
+   * The pushes of run `ed-1` as the service sends them, through `StopsShown` as the extension takes them: each new
+   * stop's file opened in its turn (none for a line in `unopened`), and the page the view opens shown there. Each push
+   * says which workers' files opened with the focus or without, and the page opened, as `[worker, line]`.
+   */
+  const editor = (unopened: number[] = []) => {
+    const shown = new StopsShown();
+    const push = (...workers: RunWorker[]) => {
+      const sessions = sessionsOf(session('ed-1', workers));
+      const change = shown.changed(sessions, stopsOf(sessions));
+      const opened = change.open
+        .filter((stop) => !unopened.includes(stop.stop.line))
+        .map((stop) => {
+          const focus = shown.focusFor(stop);
+          shown.opened(stop, focus);
+          return [stop.worker, focus];
+        });
+      if (change.page) shown.view(change.page);
+      return { opened, page: change.page && [change.page.worker, change.page.stop.line] };
+    };
+    return { shown, push };
+  };
 
   test('opens the first stop with the focus, and its page', () => {
-    const show = stopsToShow([one], new Set(), null);
-    expect(opened(show)).toEqual([[0, true]]);
-    expect(show.page).toBe(one);
+    const { push } = editor();
+    expect(push(at(0, 3), worker(1, 'running'))).toEqual({ opened: [[0, true]], page: [0, 3] });
   });
 
-  test('opens a stop of another worker without the focus, and leaves the page of a stop still held', () => {
-    const show = stopsToShow([one, two], keys(one), stopKey(one));
-    expect(opened(show)).toEqual([[1, false]]);
-    expect(show.page).toBeNull();
-    expect(stopsToShow([one, two], keys(one, two), stopKey(one))).toEqual({ reveal: [], page: null });
+  test('opens another worker’s stop without the focus, and keeps the view on the worker it shows', () => {
+    const { push } = editor();
+    push(at(0, 3), worker(1, 'running'));
+    expect(push(at(0, 3), at(1, 5))).toEqual({ opened: [[1, false]], page: null });
   });
 
-  test('gives the focus to the first stop a Pause brings, opened last, and the page to the first headless one', () => {
-    const headed = at(2, 7, true);
-    const show = stopsToShow([headed, one, two], new Set(), null);
-    expect(opened(show)).toEqual([
-      [0, false],
-      [1, false],
-      [2, true],
-    ]);
-    expect(show.page).toBe(one);
+  test('keeps the view and the focus on a worker stepped while another is held, through the push where it runs', () => {
+    const { push } = editor();
+    push(at(0, 3), worker(1, 'running'));
+    push(at(0, 3), at(1, 5));
+    // The Step: the worker runs, in a push of its own, then stops at the next call.
+    expect(push(worker(0, 'running'), at(1, 5))).toEqual({ opened: [], page: null });
+    expect(push(at(0, 4), at(1, 5))).toEqual({ opened: [[0, true]], page: [0, 4] });
   });
 
-  test('takes the focus again once no stop shown is held, as at the next stop of a worker stepped alone', () => {
-    const stepped = at(0, 8);
-    expect(stopsToShow([stepped], keys(one), stopKey(one))).toEqual({
-      reveal: [{ stop: stepped, focus: true }],
-      page: stepped,
-    });
-    // Another worker held: the stepped worker's stop opens without the focus, and takes the page its last stop had.
-    expect(stopsToShow([two, stepped], keys(one, two), stopKey(one))).toEqual({
-      reveal: [{ stop: stepped, focus: false }],
-      page: stepped,
-    });
+  test('gives the focus to the first stop a Pause brings, its other stops coming in later pushes', () => {
+    const { push } = editor();
+    expect(push(at(0, 3), worker(1, 'running'), worker(2, 'running'))).toEqual({ opened: [[0, true]], page: [0, 3] });
+    expect(push(at(0, 3), at(1, 5), worker(2, 'running'))).toEqual({ opened: [[1, false]], page: null });
+    expect(push(at(0, 3), at(1, 5), at(2, 7))).toEqual({ opened: [[2, false]], page: null });
   });
 
-  test('opens the page of a stop held once the stop the view showed went on, and none of a stop with a bar', () => {
-    expect(stopsToShow([two], keys(two), stopKey(one))).toEqual({ reveal: [], page: two });
-    expect(stopsToShow([at(1, 6, true)], keys(at(1, 6, true)), stopKey(one)).page).toBeNull();
+  test('moves the focus to the worker a control answered', () => {
+    const { shown, push } = editor();
+    push(at(0, 3), worker(1, 'running'));
+    push(at(0, 3), at(1, 5));
+    shown.answered({ ref: 'ed-1', worker: 1, stop: stopAt(spec, 5, false), test: runTest(), takes: [] });
+    push(at(0, 3), worker(1, 'running'));
+    expect(push(at(0, 3), at(1, 6))).toEqual({ opened: [[1, true]], page: null });
   });
 
-  test('opens a new stop’s page in a view that is closed or shows none, and no page without a new stop', () => {
-    expect(stopsToShow([one, two], keys(one), null).page).toBe(two);
-    expect(stopsToShow([one, two], keys(one, two), null).page).toBeNull();
+  test('counts a stop whose file never opened as none shown', () => {
+    const { push } = editor([3]);
+    push(at(0, 3), worker(1, 'running'));
+    expect(push(at(0, 3), at(1, 5)).opened).toEqual([[1, true]]);
+  });
+
+  test('hands the view to the first stop held once its worker left the run', () => {
+    const { push } = editor();
+    push(at(0, 3), worker(1, 'running'));
+    push(at(0, 3), at(1, 5));
+    expect(push(at(1, 5))).toEqual({ opened: [], page: [1, 5] });
+  });
+
+  test('opens no page at a stop with a pause bar, and a new stop’s page in a view that is closed', () => {
+    const { shown, push } = editor();
+    expect(push(at(0, 3, { bar: true }), worker(1, 'running')).page).toBeNull();
+    push(at(0, 3, { bar: true }), at(1, 5));
+    shown.view(null);
+    expect(push(at(0, 3, { bar: true }), at(1, 5), at(2, 7)).page).toEqual([2, 7]);
+  });
+
+  test('opens a file aside in a group neither active nor the paused page view’s, else in a new one at the right', () => {
+    const groups = (active: number, count: number) =>
+      Array.from({ length: count }, (_, i) => ({ viewColumn: i + 1, isActive: i + 1 === active }));
+    expect(asideColumn(groups(1, 1))).toBe(2);
+    expect(asideColumn(groups(1, 2), 2)).toBe(3);
+    expect(asideColumn(groups(1, 3), 2)).toBe(3);
+    expect(asideColumn(groups(2, 2), 2)).toBe(1);
+    expect(asideColumn(groups(9, 9), 8)).toBe(1);
+    expect(asideColumn([{ viewColumn: 9, isActive: true }])).toBe(9);
   });
 });
 
