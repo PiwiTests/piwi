@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import {
   CiTemplateError,
   ciServerRequestTemplate,
+  ciServerTargetProblem,
   customizeCiServerTarget,
   jenkinsJobPath,
   readCiServerAnswer,
@@ -209,5 +210,48 @@ describe('a Custom request', () => {
   test('a Custom target without a re-run request does not resolve', () => {
     expect(resolveCiServerTarget({ preset: 'custom', custom: { auth: 'none' } })).toBeNull();
     expect(resolveCiServerTarget({ preset: 'custom', custom: { rerun: { method: 'GET', path: 'x' } } })).toBeNull();
+  });
+});
+
+describe('a target sent to be saved', () => {
+  test('is refused when its base URL is not an http(s) URL', () => {
+    const rerun = { job: 'e2e' };
+    for (const baseUrl of [
+      'jenkins-team-b.corp',
+      'https://me:pw@jenkins.example.com/',
+      'https://jenkins.example.com/?a=1',
+    ]) {
+      expect(ciServerTargetProblem({ preset: 'jenkins', baseUrl, rerun })).toBe(
+        'The CI server base URL must be an http(s) URL',
+      );
+    }
+    expect(ciServerTargetProblem({ preset: 'jenkins', baseUrl: 'https://jenkins.example.com', rerun })).toBeNull();
+    expect(ciServerTargetProblem({ preset: 'jenkins', baseUrl: '  ', rerun })).toBeNull();
+    expect(ciServerTargetProblem({ preset: 'jenkins', baseUrl: 42, rerun })).toMatch(/http\(s\)/);
+    expect(ciServerTargetProblem({ preset: 'jenkins', baseUrl: null, rerun })).toBeNull();
+  });
+
+  test('is refused when the Flake Lab request it names cannot dispatch', () => {
+    const rerun = { job: 'e2e' };
+    expect(ciServerTargetProblem({ preset: 'jenkins', rerun, flakeLab: { argsParameter: 'X' } })).toMatch(/Flake Lab/);
+    expect(ciServerTargetProblem({ preset: 'jenkins', rerun, flakeLab: { job: '..' } })).toMatch(/Flake Lab/);
+    expect(ciServerTargetProblem({ preset: 'jenkins', rerun, flakeLab: { job: '', argsParameter: ' ' } })).toBeNull();
+    expect(ciServerTargetProblem({ preset: 'jenkins', rerun, flakeLab: { job: 'flake' } })).toBeNull();
+    const custom = { preset: 'custom', custom: { rerun: { method: 'POST', path: 'build' } } };
+    expect(ciServerTargetProblem(custom)).toBeNull();
+    expect(
+      ciServerTargetProblem({ ...custom, custom: { ...custom.custom, flakeLab: { method: 'GET', path: 'flake' } } }),
+    ).toMatch(/Flake Lab/);
+  });
+
+  test('is refused when it cannot dispatch', () => {
+    const cannot = [
+      { preset: 'jenkins', rerun: {} },
+      { preset: 'gitea', rerun: { job: 'e2e' } },
+      { preset: 'custom', custom: { rerun: { method: 'GET', path: 'build' } } },
+      'jenkins',
+    ];
+    for (const target of cannot) expect(ciServerTargetProblem(target)).toMatch(/cannot dispatch/);
+    expect(ciServerTargetProblem({ preset: 'jenkins', rerun: { job: 'e2e' } })).toBeNull();
   });
 });

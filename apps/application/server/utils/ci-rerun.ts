@@ -32,6 +32,7 @@ import {
   resolveCiRerunSettings,
   hasRerunTarget,
   matchRerunDispatch,
+  RERUN_CLOCK_SLACK_MS,
   RERUN_MATCH_WINDOW_MS,
   type CiRerunProvider,
   type CiRerunSettings,
@@ -385,7 +386,7 @@ export async function matchCiRerunRun(db: DbClient, runId: number): Promise<numb
     .where(and(eq(failureClusters.projectId, run.projectId), isNotNull(failureClusters.lastRerunDispatch)));
   const dispatches = clusters
     .map((c) => ({ ...(c.dispatch as ClusterRerunDispatch), clusterId: c.id }))
-    .filter((d) => d.id && startedAt >= d.at - 60_000 && startedAt - d.at <= RERUN_MATCH_WINDOW_MS);
+    .filter((d) => d.id && startedAt >= d.at - RERUN_CLOCK_SLACK_MS && startedAt - d.at <= RERUN_MATCH_WINDOW_MS);
   if (dispatches.length === 0) return null;
 
   const executed = await db
