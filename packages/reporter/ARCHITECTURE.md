@@ -496,6 +496,14 @@ On `onEnd`, the collected run is handed to `RunSubmitter`, which tries, in order
    dashboard and project, replayed to that dashboard only and deleted once it took the run (or refused it as
    invalid).
 
+The stream itself opens in the background from `onBegin` (`StreamManager.start`): `/begin`
+for the run the global setup registered (a 409 sets it aside for a `/start`), else `/start`.
+A try that gets no answer, a server error, a 408 or a 429 is asked again after 1, 2, 4…
+seconds, 30 at most, for the run's life, the events queued meanwhile within
+`maxStreamBufferBytes`, and a stream that opens late says how late, once; any other refusal
+gives it up. As the run ends, the drain tries a stream not open yet once more, at once, and
+leaves the run to the batch rungs when that fails too.
+
 The ladder, including the stream drain and the remaining file uploads, runs within
 the `submitTimeout` budget: when it runs out, `HttpClient.close` fails every request
 in flight and every later one, so the ladder falls through to crash recovery. The

@@ -42,7 +42,10 @@ run ends; `?watch=<shard>.<worker>` opens it and names the lane while it is open
 view that does not open says why; the reporter sends each test's lane, which the dashboard stores, so the Timeline
 places each worker on its real lane and every MCP tool says `worker: N`;
 the header's primary action is decided once the run has ended; frames carry the worker's time, so the caption names
-the step begun after the image. The later phases are proposed. The bugs the analysis
+the step begun after the image. Built from P2: the reporter asks again for a `/begin` or `/start` that got no answer, a
+server error, a 408 or a 429, with backoff for the run's life, keeps the run's events meanwhile within
+`maxStreamBufferBytes`, sends them once the stream opens and says once how late it started. The later phases are
+proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app

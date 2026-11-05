@@ -659,7 +659,7 @@ export class PiwiDashboardReporter {
     };
 
     if (this.streamManager) {
-      this.streamManager.queueBeginEvent(toWireTestCase(beginEvent) as StreamEvent);
+      this.streamManager.queueEvent(toWireTestCase(beginEvent) as StreamEvent);
     }
   }
 
@@ -743,7 +743,7 @@ export class PiwiDashboardReporter {
   onStepBegin(test: TestCase | undefined, _result: TestResult | undefined, step: any): void {
     // Gate on the stream manager *existing*, not on it being live yet: the
     // first fixtures and hooks run while `/start` is still in flight, and
-    // `queueBeginEvent` buffers until the run id lands (same as `onTestBegin`).
+    // `queueEvent` holds the events until the stream opens (same as `onTestBegin`).
     if (!this.enabled || !this.streamManager) return;
     if (!PiwiDashboardReporter.isLiveStep(step)) return;
     const cat = step.category;
@@ -760,7 +760,7 @@ export class PiwiDashboardReporter {
       startedAt: step.startTime instanceof Date ? step.startTime.getTime() : null,
     };
     this.openSteps.set(step, event);
-    this.streamManager?.queueBeginEvent(event);
+    this.streamManager?.queueEvent(event);
   }
 
   /** Playwright reporter hook: called when a step (including hook/fixture) ends */
