@@ -6765,7 +6765,7 @@
     "message": "Esta ejecución no puede compartirse en directo: la vista en directo de su proyecto está desactivada en la instancia. Un Project admin la activa en Project → Settings → Live view."
   },
   "runs_shareRefusedUnregistered": {
-    "message": "Esta ejecución no puede compartirse en directo: el global setup del reporter no se ejecutó al empezar (wrapConfig lo añade)."
+    "message": "Esta ejecución no puede compartirse en directo: el global setup del reporter no la registró al empezar (wrapConfig lo añade, y registra una ejecución cuya configuración nombra el reporter de Piwi)."
   },
   "runs_shareRefusedStreamingOff": {
     "message": "Esta ejecución no puede compartirse en directo: envía sus resultados solo al terminar (streaming: false), así que no tiene ejecución en directo en la instancia."

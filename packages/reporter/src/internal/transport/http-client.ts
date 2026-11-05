@@ -205,6 +205,8 @@ export class HttpClient {
     this.inFlight.clear();
   }
 
+  private loginAnnounced = false;
+
   /**
    * Resolve an auth credential: prefer `apiKey`, fall back to `username`/`password` login,
    * or return `null` when neither is configured.
@@ -216,7 +218,10 @@ export class HttpClient {
   }): Promise<string | null> {
     if (options.apiKey) return options.apiKey;
     if (options.username && options.password) {
-      this.logger.info(`Authenticating as ${options.username}...`);
+      // Said once: a stream that asks again while the dashboard is down signs in again each time.
+      if (this.loginAnnounced) this.logger.debug(`Authenticating as ${options.username} again...`);
+      else this.logger.info(`Authenticating as ${options.username}...`);
+      this.loginAnnounced = true;
       return this.login(options.username, options.password);
     }
     return null;

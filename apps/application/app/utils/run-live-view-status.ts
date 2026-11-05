@@ -27,10 +27,10 @@ export function runLiveViewStatus(run: RunLiveViewReadiness) {
   if (run.demo) return { kind: 'demo', label: 'Demo progress' };
   if (!run.connected && run.stalled) return { kind: 'stalled', label: 'Live updates stalled' };
   if (!run.connected || !run.state) return { kind: 'checking', label: 'Live view connecting' };
-  // A run registers for the live view as it starts: one that started without it gets none.
-  if (run.turnedOn && !run.state.keyed) return { kind: 'next-run', label: 'Live view on from the next run' };
   if (!run.state.enabled) return { kind: 'disabled', label: 'Live view off' };
   if (run.workers > 0) return { kind: 'available', label: 'Live view available' };
+  // A run registers for the live view as it starts: one that started without it gets none, the next run does.
+  if (!run.state.keyed && run.turnedOn) return { kind: 'next-run', label: 'Live view on from the next run' };
   if (!run.state.keyed) return { kind: 'unavailable', label: 'Live view unavailable' };
   if (!run.ci) return { kind: 'unshared', label: 'Not shared live' };
   // A worker opens the view from the capture fixtures, before its first test: tests without one mean none did.

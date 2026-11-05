@@ -232,10 +232,15 @@ async function registerRun(
     ...(response.liveView?.refused === 'local' ? { liveViewLocal: true as const } : {}),
   });
   logger.debug(`Global setup: initializing run #${response.runId}`);
-  // A CI run's workers say in its log when their live view is lost and when it is back, outside any test's output.
+  // A CI run's workers say in its log when their live view is lost and when it is back, outside any test's output;
+  // without the relay's file the run goes on without those lines.
   if (isLiveViewKey(liveViewKey) && detectCi(process.env) && !relaying) {
-    relaying = true;
-    const stopRelay = relayRunLog((line) => logger.info(line));
-    process.once('exit', stopRelay);
+    try {
+      const stopRelay = relayRunLog((line) => logger.info(line));
+      relaying = true;
+      process.once('exit', stopRelay);
+    } catch (error) {
+      logger.debug(`Global setup: the live view's lines go to no file (${errorMessage(error)})`);
+    }
   }
 }

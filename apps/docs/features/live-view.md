@@ -31,26 +31,20 @@ each CI run that starts after, as the reporter's global setup registers it: [`wr
 setup. A CI job is told by its provider's variable (`GITHUB_ACTIONS`, `GITLAB_CI`, …) or by `CI` set to anything but
 `false` or `0`. Such a run's log then says:
 
-```text
-[Piwi Dashboard] Live view on for the specs that use Piwi's fixtures: people who may open this run can watch their tests' pages on the dashboard while it runs. Nothing is stored.
-```
+<<< @/snippets/live-view-on.txt
 
 A spec file that imports `test` from `@playwright/test` instead of your [capture fixtures](/guide/capture-fixtures)
 has no view: the log names the first one. A CI run without a view logs why instead: the setting is off, the run does
-not stream (`streaming: false`), `wrapConfig`'s global setup did not run, or the instance did not register the run as
+not stream (`streaming: false`), `wrapConfig`'s global setup did not register it, or the instance did not register the run as
 it started, with the error it answered.
 
 Turning it off ends every view at once; a run that started while it was off stays without one. Turned on again, a
-run that had a view and still runs gets it back.
+run that had a view and still runs gets it back within a minute.
 
 A CI run's workers keep their view through an outage of the dashboard or its restart: each tries again after 1, 2, 4,
-8 and 16 seconds, then every 30 to 60 seconds while the run lasts. A worker whose view stays out that long says so
-once in the run's log, and once more as it is back, outside any test's output:
-
-```text
-[Piwi Dashboard] Worker 2: live view lost: the instance answered 503. Trying again every 30 to 60 s while the run lasts.
-[Piwi Dashboard] Worker 2: live view back.
-```
+8 and 16 seconds, then every 30 to 60 seconds while the run lasts; one the instance refuses waits that long at once. A
+worker whose view stays out says so once in the run's log, with the cause, and once more as it is back, outside any
+test's output.
 
 ## Check availability
 

@@ -157,6 +157,11 @@ function uncapturedCalls(steps: readonly TestStep[]): boolean {
   return !captured(steps, false) && calls;
 }
 
+/** Whether a test's steps set up Playwright's `page` fixture: a test without one has no page to watch. */
+function usesPage(steps: readonly TestStep[]): boolean {
+  return steps.some((step) => (step.category === 'fixture' && /"page"/.test(step.title)) || usesPage(step.steps));
+}
+
 /** How many of the other spec files that ran without the capture fixtures the run's last line names. */
 const MAX_UNCAPTURED_NAMED = 5;
 
@@ -741,7 +746,7 @@ export class PiwiDashboardReporter {
    * (`noteOtherUncaptured`).
    */
   private noteUncaptured(test: TestCase, result: TestResult): void {
-    const missed = this.uncapturedCosts();
+    const missed = this.uncapturedCosts(usesPage(result.steps));
     if (!missed.length) return;
     if (!uncapturedCalls(result.steps)) return;
     const file = testFile(test, this.testPathBase);
@@ -760,15 +765,18 @@ export class PiwiDashboardReporter {
     if (!others.length) return;
     const named = others.slice(0, MAX_UNCAPTURED_NAMED).join(', ');
     const more = others.length > MAX_UNCAPTURED_NAMED ? `, and ${others.length - MAX_UNCAPTURED_NAMED} more` : '';
-    const missed = this.uncapturedCosts().map((cost) => cost.their);
+    const missed = this.uncapturedCosts(true).map((cost) => cost.their);
     this.logger.warn(
       `${others.length} more spec file${others.length === 1 ? '' : 's'} ran without Piwi's capture fixtures, ` +
         `so ${missed.join(', and ')}: ${named}${more}.`,
     );
   }
 
-  /** What a spec file that runs without the capture fixtures misses in this run, said of one file and of several. */
-  private uncapturedCosts(): Array<{ its: string; their: string }> {
+  /**
+   * What a spec file that runs without the capture fixtures misses in this run, said of one file and of several: the
+   * live view only for a test with a page (`page`).
+   */
+  private uncapturedCosts(page: boolean): Array<{ its: string; their: string }> {
     const costs: Array<{ its: string; their: string }> = [];
     if (this.mergingReports) return costs;
     if (process.env.PIWI_PAUSE_AT || process.env[RUN_CHANNEL_ENV]) {
@@ -777,7 +785,7 @@ export class PiwiDashboardReporter {
         their: 'their tests never stop at a breakpoint or at Pause either',
       });
     }
-    if (this.liveViewOn) {
+    if (this.liveViewOn && page) {
       costs.push({
         its: 'nobody can watch its tests live on the dashboard',
         their: 'nobody can watch their tests live either',

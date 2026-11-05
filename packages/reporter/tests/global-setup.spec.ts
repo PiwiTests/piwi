@@ -4,6 +4,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { createGlobalSetup } from '../src/public/global-setup.js';
+import { relayRunLog } from '../src/internal/support/run-log.js';
+import type * as RunLog from '../src/internal/support/run-log.js';
 import { PiwiDashboardReporter } from '../src/public/reporter.js';
 import { getSetupFilePath, peekSetupFailure, readSetupInfo } from '../src/internal/support/setup-file.js';
 import {
@@ -12,6 +14,11 @@ import {
   loadAriaSampleSet,
   resetAriaSampleCache,
 } from '../src/internal/support/aria-sampling.js';
+
+vi.mock('../src/internal/support/run-log.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof RunLog>();
+  return { ...actual, relayRunLog: vi.fn(actual.relayRunLog) };
+});
 
 interface RecordedReq {
   method: string;
@@ -192,6 +199,28 @@ describe('createGlobalSetup', () => {
       const info = readSetupInfo('global-setup-register');
       expect(info).toEqual({ runId: 42, setupToken: 'tok-abc', projectName: 'global-setup-register' });
     } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+
+  it("keeps a CI run's registration and its live view key when the workers' log relay cannot start", async () => {
+    const key = `pdl_${'k'.repeat(43)}`;
+    const { server, url } = await startServer((_req, res) =>
+      jsonRes(res, 200, { runId: 43, setupToken: 'tok', liveView: { key } }),
+    );
+    const projectName = 'global-setup-relay-fails';
+    cleanupNames.push(projectName);
+    vi.mocked(relayRunLog).mockImplementationOnce(() => {
+      throw new Error('EPERM: operation not permitted');
+    });
+    vi.stubEnv('CI', 'true');
+    try {
+      await createGlobalSetup({ serverUrl: url, projectName })({ reporter: [PIWI_REPORTER_ENTRY] });
+      expect(relayRunLog).toHaveBeenCalled();
+      expect(readSetupInfo(projectName)).toMatchObject({ runId: 43, setupToken: 'tok', liveViewKey: key });
+      expect(peekSetupFailure(projectName)).toBeNull();
+    } finally {
+      vi.unstubAllEnvs();
       await new Promise<void>((r) => server.close(() => r()));
     }
   });

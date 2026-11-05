@@ -1,0 +1,1 @@
+[Piwi Dashboard] Live view on for the specs that use Piwi's fixtures: people who may open this run can watch their tests' pages on the dashboard while it runs. Nothing is stored.

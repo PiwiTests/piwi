@@ -293,8 +293,12 @@ describe("a CI run's live view, as the instance stops answering and answers agai
     expect(gets()).toBe(6);
     streamStatus = 200;
     await vi.advanceTimersByTimeAsync(51_000);
-    await until(() => streams.length === 2 && logLines().length === 2);
+    await until(() => streams.length === 2);
     expect(gets()).toBe(7);
+    // Back once the stream it opened again has stayed open 30 s.
+    expect(logLines()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await until(() => logLines().length === 2);
     expect(logLines()[1]).toBe('Worker 2: live view back.');
     expect(liveViewState()).toMatchObject({ can: true, on: true });
     // It hears its viewers on the stream it opened again.
@@ -319,9 +323,34 @@ describe("a CI run's live view, as the instance stops answering and answers agai
     expect(logLines()).toHaveLength(1);
     streamStatus = 200;
     await vi.advanceTimersByTimeAsync(60_000);
-    await until(() => streams.length === 2 && logLines().length === 2);
+    await until(() => streams.length === 2);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await until(() => logLines().length === 2);
     expect(logLines()[1]).toBe('Worker 2: live view back.');
   });
+
+  it('says once that its view is lost while the instance cuts each stream it opens again before 30 s', async () => {
+    await openInCi();
+    streamStatus = 503;
+    await cut(streams[0]!);
+    for (const wait of [1000, 2000, 4000, 8000, 16_000]) await vi.advanceTimersByTimeAsync(wait);
+    await until(() => logLines().length === 1 && vi.getTimerCount() === 1);
+    streamStatus = 200;
+    // Each stream it opens again is cut after 20 s: no stream stays open long enough to say the view is back.
+    for (let opened = 2; opened <= 4; opened++) {
+      await vi.advanceTimersByTimeAsync(60_000);
+      await until(() => streams.length === opened);
+      await vi.advanceTimersByTimeAsync(20_000);
+      await cut(streams[opened - 1]!);
+    }
+    expect(logLines()).toHaveLength(1);
+    // One stays open: the view is back, said once.
+    await vi.advanceTimersByTimeAsync(60_000);
+    await until(() => streams.length === 5);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await until(() => logLines().length === 2);
+    expect(logLines()[1]).toBe('Worker 2: live view back.');
+  }, 30_000);
 
   it('opens a stream the instance cuts at a fixed age again each time, however often, the log saying nothing', async () => {
     await openInCi();

@@ -32,9 +32,8 @@ only those watching. **Stop sharing** closes the views within seconds and clears
 editor or the desktop app stops it too.
 
 A run that cannot be shared says why: it reports to no instance or to the desktop app, it does not stream its results,
-its project has the live view off, the reporter's global setup did not run, or the instance did not register the run
-as it started. A sharing that stops on its own says why (the live view turned off, the instance restarted or stopped
-answering), and **Share live** shows again: shared again, the run streams once the instance answers with its live view
+its project has the live view off, the reporter's global setup did not register it, or the instance did not register the run
+as it started. A sharing that stops on its own says why (the live view turned off, or the instance stopped answering), and **Share live** shows again: shared again, the run streams once the instance answers with its live view
 on, a restarted instance taking the run's key back. A run the instance no longer holds live cannot be shared again.
 
 ## Related

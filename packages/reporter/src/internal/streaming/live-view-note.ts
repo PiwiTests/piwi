@@ -16,7 +16,7 @@ export function ciLiveViewNote(why: CiLiveViewMissing, failure: string | null = 
     case 'off':
       return "Live view off: nobody can watch this run's tests on the dashboard while it runs. A Project admin turns it on in Project → Settings → Live view, for the runs that start after.";
     case 'unregistered':
-      return "Live view unavailable: the reporter's global setup did not run as this run started (wrapConfig adds it), so nobody can watch its tests on the dashboard while it runs.";
+      return "Live view unavailable: the reporter's global setup did not register this run as it started (wrapConfig adds it, and it registers a run whose config lists Piwi's reporter), so nobody can watch its tests on the dashboard while it runs.";
     case 'setup-failed':
       return `Live view unavailable: the instance did not register this run as it started${failure ? ` (${failure})` : ''}, so nobody can watch its tests on the dashboard while it runs.`;
     case 'streaming-off':
