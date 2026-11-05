@@ -1,24 +1,31 @@
 # CI re-run on any CI server
 
+- Status: accepted
+- Date: 2026-11-05
+
 A proposal to let **Re-run in CI** and Flake Lab's **Reproduce in CI** start a build on the team's CI server through
 one generic HTTP request, filled from a preset (Jenkins, TeamCity, Buildkite, CircleCI, Azure Pipelines) or written by
 hand, whatever hosts the code. It answers [PiwiTests/piwi#1062](https://github.com/PiwiTests/piwi/issues/1062), a team
 on Bitbucket and Jenkins, and adopts the issue's alternative (a generic trigger) with the Jenkins-specific advantages
 kept in the Jenkins preset.
 
-**Status.** Proposed 2026-11-04. PR 1 of the [Delivery](#delivery), `npx @piwitests/reporter rerun`, shipped in
+**Status.** Shipped. Proposed 2026-11-04. PR 1 of the [Delivery](#delivery), `npx @piwitests/reporter rerun`, shipped in
 [#1092](https://github.com/PiwiTests/piwi/pull/1092) and fixes the [quoting
-defect](#defects-found-while-researching-this-plan). PR 2, the engine, is built: the `ci-server` target with the
-Jenkins and Custom presets and the renderer (`shared/ci-server.ts`), the credential binding, the private-host rule and
-the send (`server/utils/ci-server-dispatch.ts`), the `ci_server_token` column with `ciServerToken` on
-`PATCH /api/projects/:id`, the four `PIWI_CI_SERVER_*` variables, and availability, dispatch, record and matching in
-`server/utils/ci-rerun.ts`, with the link to the recorded build for every provider. PR 3 is built: the CI server form
-in the project's Source control settings with its request preview, the _dispatched to Jenkins_ line on the cluster and
-execution pages, the demo's Jenkins project, the [Re-run in CI](../apps/docs/features/ci-rerun.md) page and the help
-topic. PR 5 is built: **Check the jobs** in the form reads each Jenkins job the target names, without starting it,
-with the credential a dispatch would carry, and names the parameters it does not declare
-(`ciServerCheckPlans` in `shared/ci-server.ts`, `checkCiServerTarget` in `server/utils/ci-server-dispatch.ts`). PR 4
-(the other presets) is deferred until a team asks for a preset: each one is a registry entry and its request test.
+defect](#defects-found-while-researching-this-plan). PR 2, the engine, shipped in
+[#1114](https://github.com/PiwiTests/piwi/pull/1114): the `ci-server` target with the Jenkins and Custom presets and the
+renderer (`shared/ci-server.ts`), the credential binding, the private-host rule and the send
+(`server/utils/ci-server-dispatch.ts`), the `ci_server_token` column with `ciServerToken` on `PATCH /api/projects/:id`,
+the four `PIWI_CI_SERVER_*` variables, and availability, dispatch, record and matching in `server/utils/ci-rerun.ts`,
+with the link to the recorded build for every provider. PR 3 shipped in
+[#1131](https://github.com/PiwiTests/piwi/pull/1131): the CI server form in the project's Source control settings with
+its request preview, the _dispatched to Jenkins_ line on the cluster and execution pages, the demo's Jenkins project,
+the [Re-run in CI](../apps/docs/features/ci-rerun.md) page and the help topic.
+[#1143](https://github.com/PiwiTests/piwi/pull/1143) keeps every request to the ports, paths and readers it is meant
+for. PR 5 shipped in [#1144](https://github.com/PiwiTests/piwi/pull/1144): **Check the jobs** in the form reads each
+Jenkins job the target names, without starting it, with the credential a dispatch would carry, and names the parameters
+it does not declare (`ciServerCheckPlans` in `shared/ci-server.ts`, `checkCiServerTarget` in
+`server/utils/ci-server-dispatch.ts`). PR 4 (the other presets) is left out until a team asks for a preset: each one is
+a registry entry and its request test.
 
 **Summary.** Today a dispatch goes through the repository host: the project's SCM token starts a GitHub workflow, a
 GitLab pipeline or a Bitbucket custom pipeline, and the host of the run's repository picks which one. A team whose CI
