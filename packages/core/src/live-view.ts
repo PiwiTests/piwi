@@ -108,9 +108,9 @@ export function liveRunPage(address: LiveViewAddress): string {
 
 /**
  * Why a run holds no live view key: it reports to no Piwi instance (`no-instance`), it reports at its end alone
- * (`streaming-off`: `streaming: false`, so it has no live run), the reporter's global setup did not run as it started
- * (`unregistered`: the reporter entry without `wrapConfig`), that setup could not register it (`setup-failed`: the
- * instance did not answer, or refused it), the instance gave none (`off`: its project has the live view off, or the
+ * (`streaming-off`: `streaming: false`, so it has no live run), the reporter's global setup did not register it as it
+ * started (`unregistered`: the reporter entry without `wrapConfig`, or a config that does not list Piwi's reporter),
+ * that setup could not register it (`setup-failed`: the instance did not answer, or refused it), the instance gave none (`off`: its project has the live view off, or the
  * instance predates it), or it reports to the desktop app on this machine, which gives none since no teammate reaches
  * it (`local`: its setup answers `liveView.refused: 'local'`).
  */
@@ -136,7 +136,7 @@ export const LIVE_SHARE_MISSING: Record<LiveViewMissing, string> = {
   'streaming-off':
     'This run cannot be shared live: it sends its results at its end alone (streaming: false), so it has no live run on the instance.',
   unregistered:
-    "This run cannot be shared live: the reporter's global setup did not run as it started (wrapConfig adds it).",
+    "This run cannot be shared live: the reporter's global setup did not register it as it started (wrapConfig adds it, and it registers a run whose config lists Piwi's reporter).",
   'setup-failed':
     "This run cannot be shared live: the instance did not register it as it started (the reporter's global setup could not reach it, or was refused: its warning says why).",
   off: "This run cannot be shared live: its project's live view is off on the instance. A Project admin turns it on in Project → Settings → Live view.",

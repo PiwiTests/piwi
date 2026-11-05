@@ -340,7 +340,7 @@ What the package does to a user's run, process by process.
   (`noteUncaptured`: no `piwiCapture` step, so its worker holds no live view stream); a run
   outside CI that a run channel follows says so in its `Live view ready` line. A run with no
   key names why, outside CI in `PIWI_LIVE_VIEW` (`none:no-instance`, `none:streaming-off`,
-  `none:unregistered` when the global setup did not run, `none:setup-failed` when the
+  `none:unregistered` when the global setup did not register the run, `none:setup-failed` when the
   instance did not take its registration, which the setup file then holds with the error,
   `none:off`, and `none:local` for the desktop app, which gives none:
   `liveView.refused: 'local'`), in CI in its log (`ciLiveViewNote`, the setup's error

@@ -16,6 +16,11 @@ const projectName = 'piwi-stream-test-' + process.pid;
 const projectHash = hashForProject(projectName);
 const RECOVERY_SERVER = 'http://localhost:3000';
 
+/** The error Node raises for a connection the instance refused: the request reached no instance. */
+function refusedConnection(): Error {
+  return Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
+}
+
 function cleanup(): void {
   const tmp = privateTempDir();
   for (const f of fs.readdirSync(tmp)) {
@@ -747,7 +752,7 @@ describe('StreamManager request sizing', () => {
       const buffer = new StreamBuffer(projectName);
       buffer.bindRun(1);
       const sm = makeManager(async () => {
-        throw new Error('connect ECONNREFUSED');
+        throw refusedConnection();
       }, buffer);
       for (const event of events) sm.queueEvent(event);
       const drained = sm.drain();
@@ -861,7 +866,7 @@ describe('StreamManager events the dashboard does not take', () => {
     let down = true;
     const sm = makeManager(
       async (_url, body) => {
-        if (down) throw new Error('connect ECONNREFUSED');
+        if (down) throw refusedConnection();
         sent.push(...body.testCases.map((e: any) => e.title));
         return {};
       },
@@ -910,7 +915,7 @@ describe('StreamManager events the dashboard does not take', () => {
     let attempts = 0;
     const sm = makeManager(async () => {
       attempts++;
-      throw new Error('connect ECONNREFUSED');
+      throw refusedConnection();
     });
     sm.queueEvent({ type: 'step-end', title: 'step' } as any);
     void sm.flush();
@@ -953,7 +958,7 @@ describe('StreamManager end-of-run bounds', () => {
 
   it('uploadRemaining stops after three uploads in a row get no response', async () => {
     const uploadCaseFiles = vi.fn(async () => {
-      throw new Error('connect ECONNREFUSED');
+      throw refusedConnection();
     });
     const sm = makeManager({}, { uploadCaseFiles });
     await sm.uploadRemaining(cases(10));
@@ -1134,6 +1139,34 @@ describe('StreamManager start asked again', () => {
     await drain(sm);
   });
 
+  it('does not ask again for a /start the dashboard may have taken, its answer lost', async () => {
+    const requests: string[] = [];
+    const sm = makeManager(async (url) => {
+      requests.push(url);
+      throw new Error('Request to /api/test-runs/start timed out after 30000ms');
+    });
+    sm.start(new Date().toISOString(), {}, 'instance');
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(requests).toEqual(['/api/test-runs/start']);
+    expect(sm.enabled).toBe(false);
+    await drain(sm);
+  });
+
+  it('says an earlier try began the registered run when a /begin asked again is refused', async () => {
+    writeSetupInfo({ runId: 5, setupToken: 'setup', projectName });
+    const requests: string[] = [];
+    const sm = makeManager(async (url) => {
+      requests.push(url);
+      if (requests.length === 1) throw new Error('Request to /api/test-runs/5/begin timed out after 30000ms');
+      throw new HttpError(403, 'Invalid setup token');
+    });
+    sm.start(new Date().toISOString(), {}, 'instance');
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(requests).toEqual(['/api/test-runs/5/begin', '/api/test-runs/5/begin']);
+    expect(linesWith('began the run on an earlier try whose answer was lost')).toHaveLength(1);
+    await drain(sm);
+  });
+
   it.each([400, 403, 404])('gives the stream up at once on a %i, keeping no event for it', async (status) => {
     const requests: string[] = [];
     const sm = makeManager(async (url) => {
@@ -1155,7 +1188,7 @@ describe('StreamManager start asked again', () => {
   it('keeps what queues while the stream opens within maxStreamBufferBytes, shedding progress before results', async () => {
     const sm = makeManager(
       async () => {
-        throw new Error('connect ECONNREFUSED');
+        throw refusedConnection();
       },
       { maxStreamBufferBytes: 20_000 },
     );
@@ -1177,7 +1210,7 @@ describe('StreamManager start asked again', () => {
     const requests: string[] = [];
     const sm = makeManager(async (url) => {
       requests.push(url);
-      throw new Error('connect ECONNREFUSED');
+      throw refusedConnection();
     });
     sm.start(new Date().toISOString(), {}, 'instance');
     // Tries at 0 and 1 s; the next one waits until 3 s.

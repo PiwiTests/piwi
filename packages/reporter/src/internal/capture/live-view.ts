@@ -120,8 +120,10 @@ interface Link {
   lost: string | null;
   /** A CI run's: the file the global setup reads the worker's lines from for the run's log (`PIWI_RUN_LOG`). */
   runLog: string | null;
-  /** The run's log says the view is lost: the next stream that opens says it is back. */
+  /** The run's log says the view is lost: the next stream that stays open `STEADY_MS` says it is back. */
   dark: boolean;
+  /** Says the view is back once the stream that opened while it was lost has stayed open `STEADY_MS`. */
+  backTimer: ReturnType<typeof setTimeout> | null;
   /** The instance's latest answer that opened no stream, since one last opened: what the retries end on. */
   answered: number | null;
   viewers: number;
@@ -288,6 +290,7 @@ export function openLiveView(
     lost: null,
     runLog: ci ? env[PIWI_RUN_LOG_ENV] || null : null,
     dark: false,
+    backTimer: null,
     answered: null,
     viewers: 0,
     states: Promise.resolve(),
@@ -318,6 +321,7 @@ export function closeLiveView(): void {
   if (!own) return;
   own.ended = true;
   if (own.timer) clearTimeout(own.timer);
+  stopBackTimer(own);
   own.stream?.destroy();
   own.agent.destroy();
 }
@@ -441,6 +445,7 @@ function connect(own: Link): void {
     dropped = true;
     if (own.stream !== request) return;
     own.stream = null;
+    stopBackTimer(own);
     setViewers(own, 0);
     if (!active(own)) return;
     if (openedAt !== null && Date.now() - openedAt >= STEADY_MS) own.retries = 0;
@@ -471,8 +476,13 @@ function connect(own: Link): void {
     openedAt = Date.now();
     own.answered = null;
     if (own.dark) {
-      own.dark = false;
-      printRunLine(own.runLog, `${workerName(own.id)}: live view back.`);
+      own.backTimer = setTimeout(() => {
+        own.backTimer = null;
+        if (own.stream !== request || !own.dark) return;
+        own.dark = false;
+        printRunLine(own.runLog, `${workerName(own.id)}: live view back.`);
+      }, STEADY_MS);
+      own.backTimer.unref?.();
     }
     // The instance forgets a stream's stop as it closes: a stream opened again hears it again.
     if (own.stop) postState(own, { type: 'stop', ...own.id, stop: own.stop });
@@ -518,6 +528,11 @@ function goDark(own: Link, next: string): void {
   if (own.dark) return;
   own.dark = true;
   printRunLine(own.runLog, `${workerName(own.id)}: live view lost: ${lostCause(own.answered)}. ${next}`);
+}
+
+function stopBackTimer(own: Link): void {
+  if (own.backTimer) clearTimeout(own.backTimer);
+  own.backTimer = null;
 }
 
 /** Open the stream `wait` milliseconds from now. */

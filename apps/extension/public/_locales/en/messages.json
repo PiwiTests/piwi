@@ -8040,7 +8040,7 @@
     "description": "Runs window, under a run’s heading in place of Share live: the run’s project has its live view off on the Piwi instance. Project admin and Project → Settings → Live view are the dashboard’s English words: never translated."
   },
   "runs_shareRefusedUnregistered": {
-    "message": "This run cannot be shared live: the reporter’s global setup did not run as it started (wrapConfig adds it).",
+    "message": "This run cannot be shared live: the reporter’s global setup did not register it as it started (wrapConfig adds it, and it registers a run whose config lists Piwi’s reporter).",
     "description": "Runs window, under a run’s heading in place of Share live: the reporter’s global setup, which asks the instance for a live view key, did not run. wrapConfig is code: never translated."
   },
   "runs_shareRefusedStreamingOff": {

@@ -123,6 +123,8 @@ export class StreamManager {
   private startedAt = 0;
   /** Set as the run ends: a stream not open yet is tried once more at once, and given up when that fails too. */
   private startEnding = false;
+  /** Which request the latest try to open the stream made: `/begin` of the registered run, or `/start`. */
+  private asked: 'begin' | 'start' | null = null;
   /** Set once the stream will never open: the dashboard refused it, or the run ended first. Nothing is queued then. */
   private startGivenUp = false;
   /** Ends the wait before the next try at opening the stream, while one waits. */
@@ -247,8 +249,12 @@ export class StreamManager {
         this.streamOpened(response.runId, response.streamToken, failures > 0);
         return;
       } catch (error) {
-        if (refuses(error) || this.startEnding || this.httpClient.closed) {
-          this.giveUpStart(error);
+        // A `/start` the instance may have taken creates a run each time it is asked again.
+        const unsure = this.asked === 'start' && !notTaken(error);
+        if (refuses(error) || unsure || this.startEnding || this.httpClient.closed) {
+          this.giveUpStart(
+            failures > 0 && this.asked === 'begin' && isStatus(error, 403) ? new Error(SPENT_SETUP) : error,
+          );
           return;
         }
         failures++;
@@ -274,6 +280,7 @@ export class StreamManager {
     const shardTotal = run.shardInfo?.total;
     const setup = this.setupInfo;
     if (setup) {
+      this.asked = 'begin';
       try {
         return await this.httpClient.postJSON(
           `/api/test-runs/${setup.runId}/begin`,
@@ -298,6 +305,7 @@ export class StreamManager {
         this.setupInfo = null;
       }
     }
+    this.asked = 'start';
     return this.httpClient.postJSON(
       '/api/test-runs/start',
       {
@@ -886,6 +894,28 @@ export class StreamManager {
 /** The dashboard's answer for a run that is no longer running: it was cancelled, or it ended otherwise. */
 function endsRun(error: unknown): boolean {
   return error instanceof HttpError && error.status === 409;
+}
+
+/** Node's codes for a connection that never opened: the request reached no instance. */
+const NOT_CONNECTED = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH', 'ETIMEDOUT']);
+
+/** Why a `/begin` asked again is refused: an earlier try, whose answer was lost, began the run. */
+const SPENT_SETUP =
+  'the dashboard began the run on an earlier try whose answer was lost; the run is sent whole at its end';
+
+/**
+ * Whether a failed request certainly took no effect: no connection opened, or the instance or its proxy answered
+ * that it took nothing (408, 429, 502, 503). A timeout, a gateway timeout or a connection closed before the answer
+ * may follow a request the instance took.
+ */
+function notTaken(error: unknown): boolean {
+  if (error instanceof HttpError) return [408, 429, 502, 503].includes(error.status);
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && NOT_CONNECTED.has(code);
+}
+
+function isStatus(error: unknown, status: number): boolean {
+  return error instanceof HttpError && error.status === status;
 }
 
 /**

@@ -33,6 +33,8 @@ const calls = [step('pw:api', 'Navigate to "/shop"'), step('pw:api', "Click getB
 const captured = [step('hook', 'Before Hooks', [step('fixture', 'Fixture "piwiCapture"')]), ...calls];
 /** The steps of a test that imports `test` from `@playwright/test`. */
 const uncaptured = [step('hook', 'Before Hooks', [step('fixture', 'Fixture "page"')]), ...calls];
+/** The steps of a test of an API alone, from `@playwright/test`: no page to watch. */
+const apiOnly = [step('hook', 'Before Hooks', [step('fixture', 'Fixture "request"')]), step('pw:api', 'GET "/api/cart"')];
 
 /** How the instance answers the global setup's `/setup`. */
 type Setup = 'key' | 'no-key' | 'down' | 'no-setup';
@@ -66,9 +68,10 @@ describe('the live view lines of a run', () => {
    */
   async function run(
     setup: Setup,
-    opts: { ci: boolean; streaming?: boolean; uncapturedFiles?: string[] },
+    opts: { ci: boolean; streaming?: boolean; uncapturedFiles?: string[]; apiFiles?: string[] },
   ): Promise<Heard> {
     const uncapturedFiles = opts.uncapturedFiles ?? ['plain', 'other'];
+    const apiFiles = opts.apiFiles ?? [];
     process.env = withoutCi({ ...env });
     delete process.env[LIVE_VIEW_ENV];
     delete process.env.PIWI_PAUSE_AT;
@@ -110,7 +113,8 @@ describe('the live view lines of a run', () => {
     const liveView = process.env[LIVE_VIEW_ENV];
     for (const [i, test] of tests.entries()) {
       reporter.onTestBegin(test, fakeResult({}));
-      reporter.onTestEnd(test, fakeResult({ steps: uncapturedFiles.includes(names[i]!) ? uncaptured : captured }));
+      const steps = apiFiles.includes(names[i]!) ? apiOnly : uncapturedFiles.includes(names[i]!) ? uncaptured : captured;
+      reporter.onTestEnd(test, fakeResult({ steps }));
     }
     await reporter.onEnd({ status: 'passed' } as never);
     return { lines: lines.filter((line) => /Live view|capture fixtures/.test(line)), liveView };
@@ -130,6 +134,12 @@ describe('the live view lines of a run', () => {
       ]);
     });
 
+    it('names no spec of an API alone, which has no page to watch', async () => {
+      const { lines } = await run('key', { ci: true, uncapturedFiles: [], apiFiles: ['plain'] });
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain("Live view on for the specs that use Piwi's fixtures");
+    });
+
     it('names no spec when every one uses the fixtures', async () => {
       const { lines } = await run('key', { ci: true, uncapturedFiles: [] });
       expect(lines).toHaveLength(1);
@@ -138,7 +148,7 @@ describe('the live view lines of a run', () => {
 
     it.each([
       ['no-key', /^\[Piwi Dashboard\] Live view off: .*Project → Settings → Live view/],
-      ['no-setup', /^\[Piwi Dashboard\] Live view unavailable: the reporter's global setup did not run as this run started \(wrapConfig adds it\)/],
+      ['no-setup', /^\[Piwi Dashboard\] Live view unavailable: the reporter's global setup did not register this run as it started \(wrapConfig adds it/],
       ['down', /^\[Piwi Dashboard\] Live view unavailable: the instance did not register this run as it started \(Request failed with status 503: Service Unavailable\)/],
     ] as const)('says why it has no live view when the global setup is %s, and names no spec', async (setup, line) => {
       const { lines, liveView } = await run(setup, { ci: true });

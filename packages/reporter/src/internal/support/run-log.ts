@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { PIWI_RUN_LOG_ENV } from '../config/env.js';
@@ -29,7 +30,7 @@ export function printRunLine(file: string | null, line: string): void {
  * in `env` for them, read every `READ_MS`. Returns what prints the lines left and removes the file.
  */
 export function relayRunLog(print: (line: string) => void, env: NodeJS.ProcessEnv = process.env): () => void {
-  const file = path.join(privateTempDir(), `piwi-run-log-${process.pid}-${Date.now()}.txt`);
+  const file = path.join(privateTempDir(), `piwi-run-log-${randomBytes(12).toString('hex')}.txt`);
   writePrivateFile(file, '');
   env[PIWI_RUN_LOG_ENV] = file;
   let printed = 0;

@@ -344,12 +344,17 @@ export function liveRuns(state: Pick<RunsState, 'runs'>): RunsRun[] {
   return state.runs.filter((run) => !run.session.ended);
 }
 
+/** How a reporter of 0.66.0 and earlier says its run was not registered. */
+const EARLIER_UNREGISTERED =
+  "This run cannot be shared live: the reporter's global setup did not register it with the instance as it started (wrapConfig adds it).";
+
 /**
  * Why a run cannot be shared live, as the reporter says it (`LIVE_SHARE_MISSING`, and `unknown` for workers given no
  * key at all), which the window says in its own words; null for any other sentence of the hub's, shown as it came.
  */
 export function shareRefusalOf(refused: string): LiveViewMissing | 'unknown' | null {
   if (refused === LIVE_SHARE_UNKNOWN) return 'unknown';
+  if (refused === EARLIER_UNREGISTERED) return 'unregistered';
   const reasons = Object.keys(LIVE_SHARE_MISSING) as LiveViewMissing[];
   return reasons.find((why) => LIVE_SHARE_MISSING[why] === refused) ?? null;
 }
