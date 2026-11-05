@@ -55,6 +55,7 @@ const testCasePayloadFixture = {
   ariaSnapshot: null,
   ariaSnapshotJson: null,
   workerIndex: 0,
+  parallelIndex: 0,
   shardIndex: null,
   startedAt: 0,
   browser: null,
@@ -87,6 +88,7 @@ const streamEventPayloadFixture = {
   repeatEachIndex: 0,
   attempts: null,
   workerIndex: 0,
+  parallelIndex: 0,
   shardIndex: null,
   startedAt: 0,
   steps: null,
@@ -137,6 +139,7 @@ const wireTestCaseFixture = {
   repeatEachIndex: 0,
   attempts: null,
   workerIndex: 0,
+  parallelIndex: 0,
   shardIndex: null,
   startedAt: 0,
   steps: null,
@@ -187,7 +190,8 @@ const beginFixture = {
   locks: ['db'],
   testMeta: { owner: 'checkout' },
   repeatEachIndex: 0,
-  workerIndex: 0,
+  workerIndex: 3,
+  parallelIndex: 1,
   shardIndex: null,
   browser: null,
   suitePath: null,
@@ -230,8 +234,15 @@ describe('wire ↔ shared per-case contract drift guard', () => {
     expect(missing, 'fields present in StreamEventPayload but missing from WireTestCase').toEqual([]);
   });
 
-  test("the reporter's begin event reaches the run stream with its attempt and what search reads", () => {
-    expect(testBeginData(beginFixture, 0)).toMatchObject({ retries: 1, maxRetries: 2, tags: ['smoke'], locks: ['db'] });
+  test("the reporter's begin event reaches the run stream with its attempt, its worker and what search reads", () => {
+    expect(testBeginData(beginFixture, 0)).toMatchObject({
+      retries: 1,
+      maxRetries: 2,
+      workerIndex: 3,
+      parallelIndex: 1,
+      tags: ['smoke'],
+      locks: ['db'],
+    });
   });
 
   test("the reporter's step events reach the run stream with their shard and worker", () => {

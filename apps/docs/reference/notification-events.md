@@ -157,9 +157,10 @@ Every event that comes from a run carries that run's `branch` and `environment` 
   A fix landed by an [auto-heal PR](/features/auto-heal#after-the-pr-opens) carries `healPr` (`{ number, url, actionId }`).
 - **`diagnosis.completed`**: the cluster, and the diagnosis's `summary`, `rootCause`, `category` and `confidence`. A
   diagnosis of one failure in the cluster adds its `executionId`, and the notification opens that failure.
-- **`test.stuck`**: the run, the test's `testTitle`, `suitePath` and `location`, the `browserName`, `workerIndex` and
-  `shardIndex` it runs in, the attempt's `startedAt` (epoch ms), `elapsedMs` (how long it had run) and `usualMs` (its
-  longest passing duration), and the test's `owners`.
+- **`test.stuck`**: the run, the test's `testTitle`, `suitePath` and `location`, the `browserName`, `shardIndex` and
+  worker it runs in (`parallelIndex`, its lane from 0, which the message shows from 1 as `worker 2`, absent from an
+  older reporter; `workerIndex`, Playwright's worker process), the attempt's `startedAt` (epoch ms), `elapsedMs` (how
+  long it had run) and `usualMs` (its longest passing duration), and the test's `owners`.
 
 A `cluster.*` event also carries `knownIssue` (`{ key, url }`) when the cluster is linked to a tracker issue.
 

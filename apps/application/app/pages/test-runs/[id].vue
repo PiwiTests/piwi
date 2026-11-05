@@ -30,6 +30,7 @@ import {
 } from '#shared/live-view';
 import { runOrigin, runOriginRef } from '#shared/run-eligibility';
 import type { StuckAttempt } from '#shared/stuck-tests';
+import { workerLane } from '#shared/worker-lane';
 
 const route = useRoute();
 const router = useRouter();
@@ -302,6 +303,7 @@ function flushPendingEvents() {
         suitePath?: string[] | null;
         location: string;
         workerIndex?: number;
+        parallelIndex?: number | null;
         startedAt?: number;
         browser?: { projectName?: string } | null;
         repeatEachIndex?: number;
@@ -339,6 +341,7 @@ function flushPendingEvents() {
             status: 'running',
             location: d.location,
             workerIndex: d.workerIndex ?? null,
+            parallelIndex: d.parallelIndex ?? null,
             shardIndex: d.shardIndex ?? null,
             startedAt: d.startedAt ?? Date.now(),
             browser: d.browser ?? null,
@@ -377,6 +380,7 @@ function flushPendingEvents() {
             retries: retry,
             maxRetries: d.maxRetries ?? existing.maxRetries ?? null,
             workerIndex: d.workerIndex ?? existing.workerIndex,
+            parallelIndex: d.parallelIndex ?? existing.parallelIndex,
             shardIndex: d.shardIndex ?? existing.shardIndex,
             startedAt: d.startedAt ?? Date.now(),
             stuck: d.stuck ?? null,
@@ -416,6 +420,7 @@ function flushPendingEvents() {
         stepEvents?: TestStepEvent[] | null;
         wastedTimeMs?: number | null;
         workerIndex?: number;
+        parallelIndex?: number | null;
         shardIndex?: number | null;
         startedAt?: number;
         browser?: { projectName?: string } | null;
@@ -450,6 +455,7 @@ function flushPendingEvents() {
         stepEvents: d.stepEvents ?? null,
         wastedTimeMs: d.wastedTimeMs ?? null,
         workerIndex: d.workerIndex ?? null,
+        parallelIndex: d.parallelIndex ?? null,
         shardIndex: d.shardIndex ?? null,
         startedAt: d.startedAt ?? undefined,
         browser: d.browser ?? null,
@@ -497,6 +503,7 @@ function flushPendingEvents() {
             stepEvents: d.stepEvents ?? existing.stepEvents,
             wastedTimeMs: d.wastedTimeMs ?? existing.wastedTimeMs,
             workerIndex: d.workerIndex ?? existing.workerIndex,
+            parallelIndex: d.parallelIndex ?? existing.parallelIndex,
             shardIndex: d.shardIndex ?? existing.shardIndex,
             startedAt: d.startedAt ? d.startedAt : existing.startedAt,
             browser: d.browser ?? existing.browser,
@@ -996,14 +1003,19 @@ watch(runRefreshKey, () => {
   if (showFailureTabs.value) fetchClusterMeta();
 });
 
+/** The run's workers, each counted once: by its lane, or by its worker process from a reporter that sends no lane. */
 const uniqueWorkerCount = computed(() => {
   const cases = isLive.value ? displayTestCases.value : testRun.value?.testCases;
   if (!cases || cases.length === 0) return 0;
   const workers = new Set<string>();
   for (const tc of cases) {
-    if (tc.workerIndex != null && tc.workerIndex >= 0) {
-      workers.add(liveWorkerKey({ shard: tc.shardIndex ?? null, worker: tc.workerIndex }));
-    }
+    if (tc.workerIndex == null || tc.workerIndex < 0) continue;
+    const lane = workerLane(tc.parallelIndex);
+    workers.add(
+      lane !== null
+        ? `lane:${tc.shardIndex ?? ''}#${lane}`
+        : liveWorkerKey({ shard: tc.shardIndex ?? null, worker: tc.workerIndex }),
+    );
   }
   return workers.size;
 });

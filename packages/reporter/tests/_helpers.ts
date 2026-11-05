@@ -180,6 +180,7 @@ export function fakeResult(opts: {
   error?: Error | null;
   retry?: number;
   workerIndex?: number | null;
+  parallelIndex?: number | null;
   startTime?: Date;
   attachments?: any[];
   steps?: any[];
@@ -190,6 +191,7 @@ export function fakeResult(opts: {
     error: opts.error ?? null,
     retry: opts.retry ?? 0,
     workerIndex: opts.workerIndex ?? 0,
+    ...(opts.parallelIndex !== undefined ? { parallelIndex: opts.parallelIndex } : {}),
     startTime: opts.startTime ?? new Date('2024-01-01T00:00:00.000Z'),
     attachments: opts.attachments ?? [],
     steps: opts.steps ?? [],

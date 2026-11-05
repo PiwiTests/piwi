@@ -67,6 +67,11 @@ export interface WireTestCase {
   /** One entry per attempt up to and including this one: `{ retry, status, duration, startedAt }`. */
   attempts?: Array<{ retry: number; status: string; duration: number; startedAt: number | null }> | null;
   workerIndex?: number | null;
+  /**
+   * The worker's lane: Playwright's `parallelIndex`, which a worker Playwright starts again in the same slot keeps
+   * (`workerIndex` is new for each worker process). Absent from older reporters.
+   */
+  parallelIndex?: number | null;
   shardIndex?: number | null;
   startedAt?: number | null;
   steps?: unknown;
@@ -151,6 +156,8 @@ export interface BeginStreamEvent {
   /** Playwright's `repeatEachIndex`: which `--repeat-each` repetition is starting (0 without repeats). */
   repeatEachIndex?: number;
   workerIndex: number | null;
+  /** The worker's lane: Playwright's `parallelIndex`. */
+  parallelIndex?: number | null;
   shardIndex: number | null;
   browser?: BrowserConfig | null;
   suitePath?: string[] | null;
@@ -171,6 +178,8 @@ export interface CompleteStreamEvent {
   /** One entry per attempt up to and including this one: `{ retry, status, duration, startedAt }`. */
   attempts?: Array<{ retry: number; status: string; duration: number; startedAt: number | null }> | null;
   workerIndex: number | null;
+  /** The worker's lane: Playwright's `parallelIndex`. */
+  parallelIndex?: number | null;
   shardIndex: number | null;
   startedAt: number | null;
   browser?: BrowserConfig | null;

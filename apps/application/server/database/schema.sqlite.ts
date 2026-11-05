@@ -547,6 +547,7 @@ export const testRunsCases = sqliteTable(
     locks: text('locks', { mode: 'json' }), // string[] — lock names this execution held (best effort; none from blob imports)
     testMeta: text('test_meta', { mode: 'json' }), // { owner?, priority?, feature?, link? } from `piwi:` annotations
     workerIndex: integer('worker_index'), // Worker process index (Playwright's workerIndex, new after each worker restart; parallelIndex only when workerIndex is absent)
+    parallelIndex: integer('parallel_index'), // The worker's lane (Playwright's parallelIndex, kept by a worker restarted in the same slot); null from an older reporter
     shardIndex: integer('shard_index'), // Shard index (1-based) for sharded runs; null = not sharded
     startedAt: integer('started_at'), // Unix timestamp in ms when the test started (stored/read as a plain number)
     isNewRegression: integer('is_new_regression'), // boolean: passed in baseline, failed in this run

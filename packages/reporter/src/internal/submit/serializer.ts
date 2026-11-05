@@ -38,7 +38,7 @@ export function resolveOverallStatus(
  * - `status`/`duration`/`error`/`retries` pass through unchanged (no `null`
  *   default), so a `begin` event yields `undefined` for those fields.
  * - Numeric/array fields use `|| null` (so `0` and `''` collapse to `null`),
- *   while `workerIndex`/`shardIndex`/`startedAt`/`suitePath`/`suiteConfig`/
+ *   while `workerIndex`/`parallelIndex`/`shardIndex`/`startedAt`/`suitePath`/`suiteConfig`/
  *   `testAnnotations`/`tags`/`testMeta` use `?? null` (so `0` survives). Note:
  *   an empty array is truthy, so `steps: []` is preserved as `[]`, not `null`.
  * - `repeatEachIndex` is `0` for a case collected without one.
@@ -58,6 +58,7 @@ export function toWireTestCase(tc: CollectedTestCase): WireTestCase {
     repeatEachIndex: rest.repeatEachIndex ?? 0,
     attempts: rest.attempts || null,
     workerIndex: rest.workerIndex ?? null,
+    parallelIndex: rest.parallelIndex ?? null,
     shardIndex: rest.shardIndex ?? null,
     startedAt: rest.startedAt ?? null,
     steps: rest.performanceMetrics?.steps || null,

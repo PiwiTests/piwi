@@ -466,6 +466,7 @@ export type StuckTestNotice = Pick<
   | 'browserName'
   | 'repeatEachIndex'
   | 'workerIndex'
+  | 'parallelIndex'
   | 'shardIndex'
   | 'startedAt'
   | 'elapsedMs'
