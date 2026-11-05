@@ -16,9 +16,8 @@ import { internalCall, resolvePlaywrightPackageJson } from './quiet-capture.js';
  * them painted over, two a second at most (`MASKED_SPACING_MS`); any other is replaced by a screenshot taken between two
  * reads, which goes, painted over, when those agree, and no image goes when they do not (the page moved). A child
  * frame's boxes are placed from its iframe's content box; an iframe drawn at another size than its own (a transform),
- * or whose frame does not answer within `FRAME_READ_MS` (a lazy frame, a busy one), is painted over whole. A read
- * fails, and no image goes on it, when such a frame shows a masked element or does not answer and its iframe has no
- * box to place it by. Each image keeps the size of the frame it stands for. The paint is `jpeg-js` as Playwright
+ * or whose frame does not answer within `FRAME_READ_MS` (a lazy frame, a busy one), is painted over whole. Each image
+ * keeps the size of the frame it stands for. The paint is `jpeg-js` as Playwright
  * bundles it: an image is decoded, its boxes filled, scaled down to that size and encoded again. No image goes, and the
  * viewers hear why, while an image shows a masked element and there is no `jpeg-js` to paint with, while the page is
  * zoomed in (its visual viewport smaller than its layout viewport, which an image shows and the boxes are read in),
@@ -167,8 +166,7 @@ function readFrameRects(page: Page, frame: Frame, masks: readonly string[]): Pro
 /**
  * Where a child frame's viewport is in the page's, from its iframe: the iframe's box in the page's viewport (which
  * Playwright measures through every frame and transform) less its border and padding; the iframe's whole box instead
- * when it is drawn at another size than its own, or its content is not the child's viewport; null when the iframe has
- * no box.
+ * when it is drawn at another size than its own, or its content is not the child's viewport.
  */
 async function childOrigin(
   page: Page,
@@ -230,8 +228,8 @@ async function within<T>(run: Promise<T>, ms: number): Promise<T | undefined> {
 }
 
 /**
- * A child frame that did not answer, painted over whole: its iframe's box in the page's viewport; null when its parent
- * does not say where it is, or has no box for it.
+ * A child frame that did not answer, painted over whole: its iframe's box in the page's viewport, none for an iframe
+ * the page does not draw; null when its parent does not say where it is either.
  */
 async function wholeFrame(page: Page, frame: Frame): Promise<FrameRead | null> {
   const box = await within(
@@ -245,14 +243,13 @@ async function wholeFrame(page: Page, frame: Frame): Promise<FrameRead | null> {
     }),
     FRAME_READ_MS,
   ).catch(() => undefined);
-  if (!box) return null;
-  return { rects: [[box.x, box.y, box.width, box.height]], width: 0, height: 0 };
+  if (box === undefined) return null;
+  return { rects: box ? [[box.x, box.y, box.width, box.height]] : [], width: 0, height: 0 };
 }
 
 /**
- * The boxes of the masked elements `frame` shows, in the page's viewport; null when they cannot be read, or cannot be
- * placed: a child frame whose iframe has no box. A child frame that does not answer within `FRAME_READ_MS` is painted
- * over whole (`wholeFrame`).
+ * The boxes of the masked elements `frame` shows, in the page's viewport; null when they cannot be read. A child frame
+ * that does not answer within `FRAME_READ_MS` is painted over whole (`wholeFrame`).
  */
 async function readFrame(page: Page, frame: Frame, masks: readonly string[]): Promise<FrameRead | null> {
   try {
@@ -260,7 +257,7 @@ async function readFrame(page: Page, frame: Frame, masks: readonly string[]): Pr
     if (!read) return frame === page.mainFrame() ? null : await wholeFrame(page, frame);
     if (!read.rects.length || frame === page.mainFrame()) return read;
     const origin = await childOrigin(page, frame, read);
-    if (!origin) return null;
+    if (!origin) return { ...read, rects: [] };
     if ('whole' in origin) {
       const { x, y, width, height } = origin.whole;
       return { ...read, rects: [[x, y, width, height]] };
