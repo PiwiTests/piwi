@@ -63,12 +63,12 @@ administrator first. The [one-click deploy templates](./one-click-deploy) genera
 
 ## Logging in
 
-Sign in at `/login`. A session is an encrypted cookie that lasts 7 days. It is marked `Secure`, so browser sign-in needs HTTPS, except on `localhost`. Signing out ends every session of the account, in every browser.
+Sign in at `/login`. A session is an encrypted cookie that lasts 7 days. It is marked `Secure`, so browser sign-in needs HTTPS, except on `localhost`. Signing out ends the account's sessions in every browser.
 
 ## OAuth (Google, GitHub)
 
-Users can sign in with Google or GitHub instead of a username and password. These are the two providers: there is no
-generic OpenID Connect or SAML sign-in.
+Users can sign in with Google or GitHub instead of a username and password. There is no other provider, nor generic OpenID
+Connect or SAML sign-in.
 
 ### Configuring OAuth
 
@@ -102,7 +102,7 @@ By default any account at a configured provider can sign in. To restrict access:
 - **`PIWI_OAUTH_ALLOWED_DOMAINS`** — comma-separated email domains (e.g. `example.com,acme.org`). Only **verified** provider emails in these domains may sign in. Applies to all providers.
 - **`PIWI_OAUTH_GITHUB_ALLOWED_ORGS`** — comma-separated GitHub org logins. The user must belong to at least one; it requests the `read:org` scope to check membership, private included.
 
-Rejected sign-ins are returned to the login page with an explanatory message.
+A rejected sign-in returns to the login page, saying why.
 
 ### Account linking
 
@@ -117,7 +117,7 @@ The new account stores the provider's email, unverified unless the provider veri
 
 Each later sign-in updates the account's name, avatar and email from the provider. The email stays as it is when the provider sends none, or one another account already uses.
 
-The dashboard does not keep the provider's tokens: the access token is used once to read the profile, then discarded. OAuth is not available in demo mode.
+Piwi keeps no provider token: the access token serves the sign-in only, then is discarded. OAuth is not available in demo mode.
 
 ### Connecting / disconnecting a provider
 
@@ -134,7 +134,7 @@ button mails the user a link to set their own. Each row shows the user's instanc
 [groups](./project-access#groups).
 
 **Settings → Account** takes a profile picture: PNG, JPEG or WebP, under 1 MB, at most 1000×1000 pixels. It replaces
-the provider's; administrators can remove it.
+the provider's; administrators can remove it. Only its owner sees it; others see the account's initials.
 
 An email address belongs to one account, ignoring letter case: creating or editing an account with an address another
 account already uses is refused, and **Forgot password?** finds the account whatever the case typed. An upgrade that

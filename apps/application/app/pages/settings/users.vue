@@ -389,11 +389,14 @@ async function confirmRemovePicture() {
       <ul class="space-y-2 md:hidden">
         <li v-for="user in users" :key="user.id" class="rounded-lg border border-default p-3 space-y-3">
           <div class="flex items-start justify-between gap-2">
-            <div class="min-w-0">
-              <p class="text-sm font-semibold text-highlighted break-words">{{ displayName(user) }}</p>
-              <p class="text-xs text-muted break-words">
-                @{{ user.username }}<template v-if="user.email"> · {{ user.email }}</template>
-              </p>
+            <div class="flex min-w-0 items-start gap-2">
+              <UserAvatar :account="user" size="md" />
+              <div class="min-w-0">
+                <p class="text-sm font-semibold text-highlighted break-words">{{ displayName(user) }}</p>
+                <p class="text-xs text-muted break-words">
+                  @{{ user.username }}<template v-if="user.email"> · {{ user.email }}</template>
+                </p>
+              </div>
             </div>
             <UserRowActions
               :user="user"
@@ -443,18 +446,23 @@ async function confirmRemovePicture() {
           :ui="{ base: 'lg:table-fixed lg:w-full' }"
         >
           <template #username-cell="{ row }">
-            <span class="block truncate text-highlighted" :title="displayName(row.original)">{{
-              displayName(row.original)
-            }}</span>
-            <span class="flex items-center gap-1 min-w-0 text-xs text-muted">
-              <span class="truncate" :title="handleLine(row.original)">{{ handleLine(row.original) }}</span>
-              <UIcon
-                v-if="row.original.email && row.original.emailVerified"
-                name="i-lucide-circle-check-big"
-                class="size-3.5 shrink-0 text-success-500"
-                title="Email verified"
-              />
-            </span>
+            <div class="flex min-w-0 items-center gap-2">
+              <UserAvatar :account="row.original" size="xs" />
+              <div class="min-w-0">
+                <span class="block truncate text-highlighted" :title="displayName(row.original)">{{
+                  displayName(row.original)
+                }}</span>
+                <span class="flex items-center gap-1 min-w-0 text-xs text-muted">
+                  <span class="truncate" :title="handleLine(row.original)">{{ handleLine(row.original) }}</span>
+                  <UIcon
+                    v-if="row.original.email && row.original.emailVerified"
+                    name="i-lucide-circle-check-big"
+                    class="size-3.5 shrink-0 text-success-500"
+                    title="Email verified"
+                  />
+                </span>
+              </div>
+            </div>
           </template>
 
           <template #instanceRole-cell="{ row }">
