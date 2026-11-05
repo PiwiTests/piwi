@@ -478,7 +478,10 @@ function onRunEnded(): void {
   liveViewKeyed.value = false;
   liveViewState.value = null;
   disconnectStream();
-  refresh();
+  // A run read running again (one its reporter revived) is live again, and its next end runs as the first did.
+  void refresh().then(() => {
+    if (testRun.value?.status === 'running') liveRunEnded.value = false;
+  });
   // Nudge the Changes tab to refetch — it keeps its own fetch state and
   // would otherwise show stale/partial data from before the run finalized.
   runRefreshKey.value++;

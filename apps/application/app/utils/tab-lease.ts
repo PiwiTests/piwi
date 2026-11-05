@@ -6,7 +6,7 @@
  * plain HTTP included.
  *
  * `staleMs` outlasts the minute a browser may wait between two timers of a tab hidden for a while, so a hidden holder
- * keeps its lease. A holder that finds another tab's id in the lease lost it, and is told so (`lost`).
+ * keeps its lease. A holder that finds another tab's fresh lease lost it, and is told so (`lost`).
  */
 export interface TabLeaseOptions {
   key: string;
@@ -86,7 +86,7 @@ export function holdInOneTab(options: TabLeaseOptions, host: TabLeaseHost = brow
     if (stopped || claiming) return;
     const lease = read();
     if (holding) {
-      // Another tab's lease that has gone stale is no claim: this tab took it, or holds over a storage that refused it.
+      // Another tab's stale lease is no claim on a holder, as when the storage refused this tab's own write over it.
       if (lease && lease.id !== id && host.now() - lease.at < staleMs) {
         holding = false;
         options.lost();
