@@ -66,10 +66,14 @@ export interface RunsHub {
   desktop: boolean;
 }
 
-/** A run of a hub; `session.ended` for one that ended, kept a while with its last workers. */
+/**
+ * A run of a hub; `session.ended` for one that ended, kept a while with its last workers; `lost` for one whose hub's
+ * connection was lost, as the hub told it last, kept until the hub answers again or as long as an ended run.
+ */
 export interface RunsRun {
   hub: string;
   session: HubSession;
+  lost?: boolean;
 }
 
 export interface RunsState {
@@ -296,7 +300,8 @@ export function stopIntents(worker: Pick<HubWorker, 'intents'>, stop: Pick<HubSt
 export function stateForViewer(state: RunsState, watches: (view: RunsView) => boolean): RunsState {
   return {
     ...state,
-    runs: state.runs.map(({ hub, session }) => ({
+    runs: state.runs.map(({ hub, session, ...run }) => ({
+      ...run,
       hub,
       session: {
         ...session,
@@ -339,9 +344,9 @@ export function pagePoint(
   return { x: at(offset.x, shown.width, viewport.width), y: at(offset.y, shown.height, viewport.height) };
 }
 
-/** The live runs of a state. */
-export function liveRuns(state: Pick<RunsState, 'runs'>): RunsRun[] {
-  return state.runs.filter((run) => !run.session.ended);
+/** The live runs of a state: neither ended nor lost with their hub's connection. */
+export function liveRuns(state: { runs: readonly RunsRun[] }): RunsRun[] {
+  return state.runs.filter((run) => !run.session.ended && !run.lost);
 }
 
 /** How a reporter of 0.66.0 and earlier says its run was not registered. */
@@ -366,7 +371,7 @@ export function shareRefusalOf(refused: string): LiveViewMissing | 'unknown' | n
  */
 export function pageHintOf(run: RunsRun, hub: Pick<RunsHub, 'desktop'> | undefined): 'editor' | 'desktop' | null {
   const { session } = run;
-  if (session.ended || session.workers.some((worker) => worker.state === 'stopped')) return null;
+  if (session.ended || run.lost || session.workers.some((worker) => worker.state === 'stopped')) return null;
   const stops = session.workers.some((worker) => worker.intents.includes('view') && !worker.test?.cannotPause);
   if (!stops) return null;
   return hub?.desktop ? 'desktop' : 'editor';
@@ -386,7 +391,7 @@ export interface ShortcutCommand {
  * every run with a worker, each worker before its next call. Nothing when no run is live.
  */
 export function shortcutCommands(runs: readonly RunsRun[]): ShortcutCommand[] {
-  const live = runs.filter((run) => !run.session.ended);
+  const live = liveRuns({ runs });
   const stopped = live.flatMap(({ hub, session }) =>
     session.workers.flatMap((worker): ShortcutCommand[] =>
       worker.state === 'stopped' && worker.stop
@@ -443,4 +448,22 @@ export function testName(test: Pick<HubTest, 'title'>): string {
 /** Names a worker within the state, for the window's focus and its images. */
 export function workerKey(hub: string, ref: string, worker: Pick<HubWorker, 'worker'>): string {
   return `${hub}|${ref}|${worker.worker}`;
+}
+
+/**
+ * Names a worker's slot within its run (`parallelIndex`), for Watch live: a worker Playwright starts in place of one
+ * that failed takes its slot under another worker index, and its stops are watched as the one before was.
+ */
+export function slotKey(hub: string, ref: string, worker: Pick<HubWorker, 'parallelIndex'>): string {
+  return `${hub}|${ref}|${worker.parallelIndex}`;
+}
+
+/**
+ * Whether Watch live, left on for a slot of a run, stays on: while the run is live, whichever worker stands in the
+ * slot, none for a moment as Playwright starts another; and while the run's hub does not answer, the run lost with its
+ * connection included, so it comes back with the hub.
+ */
+export function watchLiveHolds(state: Pick<RunsState, 'hubs' | 'runs'>, run: { hub: string; ref: string }): boolean {
+  if (!state.hubs.some((hub) => hub.id === run.hub && hub.connected)) return true;
+  return liveRuns(state).some((r) => r.hub === run.hub && r.session.ref === run.ref);
 }

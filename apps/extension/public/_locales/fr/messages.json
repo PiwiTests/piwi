@@ -6436,6 +6436,15 @@
   "runs_ended": {
     "message": "L’exécution est terminée."
   },
+  "runs_lost": {
+    "message": "La connexion à $editor$ a été perdue : voici l’exécution telle qu’elle était en dernier. Nouvelle connexion en cours…",
+    "placeholders": {
+      "editor": {
+        "content": "$1",
+        "example": "Visual Studio Code"
+      }
+    }
+  },
   "runs_stoppedBreakpoint": {
     "message": "Arrêté à un point d’arrêt"
   },
@@ -6678,7 +6687,7 @@
     "message": "Démarrage de la vue en direct…"
   },
   "runs_liveLost": {
-    "message": "La vue en direct s’est arrêtée : la connexion à l’éditeur a été perdue. Activez de nouveau Voir en direct une fois la connexion revenue."
+    "message": "La vue en direct s’est arrêtée : la connexion à l’éditeur a été perdue. Elle reprend une fois la connexion revenue."
   },
   "runs_liveHint": {
     "message": "Vos clics, la molette et vos touches sur la vue vont à la page du test. Échap rend les touches à cette fenêtre ; Maj+clic choisit un locator."

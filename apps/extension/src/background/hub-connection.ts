@@ -70,8 +70,8 @@ export interface HubConnectionEvents {
   code(code: HubCodeMessage): void;
   /** A frame of a stop's live view the connection watches, or why none comes. */
   frame(frame: HubFrameMessage | HubFrameRefusal): void;
-  /** The connection closed by itself. */
-  lost(why: HubLoss): void;
+  /** The connection closed by itself, with the runs it held last, as the hub told them. */
+  lost(why: HubLoss, sessions: HubSession[]): void;
 }
 
 export interface HubTimings {
@@ -258,12 +258,13 @@ export class HubConnection {
       resolve({ ok: false, message: '', failure: 'offline' });
     }
     this.pending.clear();
+    const sessions = [...this.sessions.values()];
     this.sessions.clear();
     this.markReady();
     if (this.disposed) return;
     const why: HubLoss =
       this.loss ?? (code === HUB_CLOSE.unauthorized ? 'refused' : code === HUB_CLOSE.goingAway ? 'stopped' : 'closed');
-    this.events.lost(why);
+    this.events.lost(why, sessions);
     this.events.changed();
   }
 }

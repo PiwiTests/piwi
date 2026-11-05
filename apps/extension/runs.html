@@ -130,12 +130,15 @@
         background: var(--surface);
         overflow: hidden;
       }
-      /* An ended run: its frame dashed and its names muted, each in a color that keeps its contrast. */
-      .run.ended {
+      /* An ended or lost run: its frame dashed and its names muted, each in a color that keeps its contrast. */
+      .run.ended,
+      .run.lost {
         border-style: dashed;
       }
       .run.ended h2,
-      .run.ended .test {
+      .run.ended .test,
+      .run.lost h2,
+      .run.lost .test {
         color: var(--muted);
       }
       .run-head {
@@ -210,6 +213,9 @@
         width: 14px;
         height: 14px;
         color: var(--ok);
+      }
+      .run-lost > .piwi-icon {
+        color: var(--warn);
       }
       .workers {
         list-style: none;

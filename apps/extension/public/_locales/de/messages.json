@@ -6436,6 +6436,15 @@
   "runs_ended": {
     "message": "Der Lauf ist beendet."
   },
+  "runs_lost": {
+    "message": "Die Verbindung mit $editor$ ging verloren: Der Lauf ist so zu sehen, wie er zuletzt stand. Neue Verbindung…",
+    "placeholders": {
+      "editor": {
+        "content": "$1",
+        "example": "Visual Studio Code"
+      }
+    }
+  },
   "runs_stoppedBreakpoint": {
     "message": "An einem Haltepunkt angehalten"
   },
@@ -6678,7 +6687,7 @@
     "message": "Die Live-Ansicht startet…"
   },
   "runs_liveLost": {
-    "message": "Die Live-Ansicht ist beendet: Die Verbindung zum Editor ging verloren. Wählen Sie wieder „Live ansehen“, sobald sie zurück ist."
+    "message": "Die Live-Ansicht ist beendet: Die Verbindung zum Editor ging verloren. Sie startet wieder, sobald die Verbindung zurück ist."
   },
   "runs_liveHint": {
     "message": "Ihre Klicks, das Mausrad und Ihre Tasten auf der Ansicht gehen an die Seite des Tests. Esc gibt die Tasten diesem Fenster zurück; Umschalt+Klick wählt einen Locator."

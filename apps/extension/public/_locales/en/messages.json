@@ -7493,7 +7493,7 @@
   },
   "runs_editor": {
     "message": "your editor",
-    "description": "Runs window, in runs_reconnecting when the editor does not say its name. Lower case."
+    "description": "Runs window, in runs_reconnecting and runs_lost when the editor does not say its name. Lower case."
   },
   "runs_following_one": {
     "message": "Following $count$ editor window",
@@ -7573,7 +7573,7 @@
   },
   "runs_desktopName": {
     "message": "the desktop app",
-    "description": "Runs window, in runs_reconnecting for the Piwi desktop app’s hub. Lower case, inside a sentence."
+    "description": "Runs window, in runs_reconnecting and runs_lost for the Piwi desktop app’s hub. Lower case, inside a sentence."
   },
   "runs_followingDesktop": {
     "message": "Following the desktop app",
@@ -7630,6 +7630,16 @@
   "runs_ended": {
     "message": "The run ended.",
     "description": "Runs window, on a run that ended. The editor does not say whether its tests passed."
+  },
+  "runs_lost": {
+    "message": "The connection to $editor$ was lost: this is the run as it stood last. Connecting again…",
+    "description": "Runs window, on a run whose editor connection was lost, in place of its controls: the run is grayed, as the editor told it last. $editor$ is the editor’s name (Visual Studio Code), runs_editor or runs_desktopName.",
+    "placeholders": {
+      "editor": {
+        "content": "$1",
+        "example": "Visual Studio Code"
+      }
+    }
   },
   "runs_stoppedBreakpoint": {
     "message": "Stopped at a breakpoint",
@@ -7932,8 +7942,8 @@
     "description": "Runs window, under the image while the live view starts."
   },
   "runs_liveLost": {
-    "message": "The live view ended: the connection to the editor was lost. Watch live again once it is back.",
-    "description": "Runs window, under the image when the live view ended because the connection to the editor was lost. Watch live is the button’s name (runs_live)."
+    "message": "The live view ended: the connection to the editor was lost. It starts again once the connection is back.",
+    "description": "Runs window, under the image when the live view ended because the connection to the editor was lost. While Watch live stays on, the view starts again by itself once the connection is back."
   },
   "runs_liveHint": {
     "message": "Your clicks, the wheel and your keys on the view go to the test’s page. Esc gives the keys back to this window; Shift+click picks a locator.",

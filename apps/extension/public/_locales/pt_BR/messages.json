@@ -6436,6 +6436,15 @@
   "runs_ended": {
     "message": "A execução terminou."
   },
+  "runs_lost": {
+    "message": "A conexão com $editor$ foi perdida: esta é a execução como estava da última vez. Conectando de novo…",
+    "placeholders": {
+      "editor": {
+        "content": "$1",
+        "example": "Visual Studio Code"
+      }
+    }
+  },
   "runs_stoppedBreakpoint": {
     "message": "Parado em um ponto de interrupção"
   },
@@ -6678,7 +6687,7 @@
     "message": "Iniciando a visualização ao vivo…"
   },
   "runs_liveLost": {
-    "message": "A visualização ao vivo terminou: a conexão com o editor foi perdida. Use Ver ao vivo de novo quando ela voltar."
+    "message": "A visualização ao vivo terminou: a conexão com o editor foi perdida. Ela recomeça quando a conexão voltar."
   },
   "runs_liveHint": {
     "message": "Seus cliques, a roda do mouse e suas teclas na visualização vão para a página do teste. Esc devolve as teclas a esta janela; Shift+clique escolhe um locator."

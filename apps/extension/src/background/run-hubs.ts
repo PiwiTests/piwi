@@ -4,10 +4,13 @@
  * token as a bearer credential), keeps a connection to each (`hub-connection.ts`) and the runs they push. The token
  * goes to the paired port only once the program there proved it holds it (`proveEditor`). The hubs' addresses and
  * tokens go to the secret area beside the editor's pairing, never to `chrome.storage.local`, and are found again
- * whenever a hub's connection fails, with a backoff. What each code written at a stop came to goes to the listeners,
- * with the hub that said it. While a listener (a Runs window) is there, each connection says the runs are followed
- * (`follow`), which holds a failure no pause bar shows for the person watching: as the first window opens, on each
- * connection that opens while one is, and `on: false` as the last one closes.
+ * whenever a hub's connection fails, with a backoff, and every minute while a listener (a Runs window) is there and the
+ * editor answered, so a window of the editor opened since is found: a hub connected already is left as it is. A lost
+ * connection's runs stay, as the hub told them last and marked `lost`, until the hub answers again, the editor no
+ * longer names it, or as long as an ended run. What each code written at a stop came to goes to the listeners, with the
+ * hub that said it. While a listener is there, each connection says the runs are followed (`follow`), which holds a
+ * failure no pause bar shows for the person watching: as the first window opens, on each connection that opens while
+ * one is, and `on: false` as the last one closes.
  *
  * The paired desktop app is asked for the hub of the runs its shell starts, which its server is, beside the editor
  * (`desktopHubs`: `GET /api/desktop/live` with the app's token, once the app proved it holds it): its hub is connected
@@ -80,13 +83,23 @@ const FIRST_RETRY_MS = 1000;
 const MAX_RETRY_MS = 30_000;
 /** With no Runs window open, how many times in a row the hubs are found again before the worker waits to be asked. */
 const UNWATCHED_RETRIES = 4;
-/** How long an ended run stays in the window, and how many do. */
+/** How long an ended run stays in the window, and how many do; a lost hub's runs stay as long. */
 const ENDED_KEPT_MS = 10 * 60_000;
 const ENDED_KEPT = 5;
+/** While a Runs window is open and the editor answered, how often it is asked for its hubs again. */
+const LOOK_AGAIN_MS = 60_000;
 /** How long `ready` waits for the hubs to answer `subscribe`. */
 const READY_MS = 3000;
 
 type CommandRequest = Extract<RunsRequest, { type: 'command' }>;
+
+/** A run kept once its hub no longer tells it: ended, or lost with the hub's connection. */
+interface KeptRun {
+  hub: string;
+  desktop: boolean;
+  session: HubSession;
+  at: number;
+}
 
 /** Who follows the runs: it hears each change, and what each code written at a stop came to. */
 interface RunsListener {
@@ -126,11 +139,14 @@ export class RunHubs {
   /** The addresses of the desktop app's hubs among them. */
   private desktopUrls = new Set<string>();
   private readonly connections = new Map<string, HubConnection>();
-  private ended: Array<{ hub: string; desktop: boolean; session: HubSession; at: number }> = [];
+  private ended: KeptRun[] = [];
+  /** The runs of the hubs whose connection was lost, as each told them last. */
+  private lostRuns: KeptRun[] = [];
   private finding: Promise<void> | null = null;
   private findAgain = false;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private retries = 0;
+  private lookTimer: ReturnType<typeof setInterval> | null = null;
   private readonly listeners = new Set<RunsListener>();
   /** The live views some window watches, by `viewKey`. */
   private readonly watches = new Map<string, Watch>();
@@ -142,14 +158,23 @@ export class RunHubs {
 
   /**
    * Hears every change, and what each code written at a stop came to; while a listener (a Runs window) is there,
-   * failures are retried without end, and each hub hears that the runs are followed.
+   * failures are retried without end, each hub hears that the runs are followed, and an editor that answered is asked
+   * for its hubs every minute.
    */
   listen(changed: () => void, code: (code: RunsCode) => void = () => {}): () => void {
     const listener: RunsListener = { changed, code };
     this.listeners.add(listener);
-    if (this.listeners.size === 1) this.follow(true);
+    if (this.listeners.size === 1) {
+      this.follow(true);
+      this.lookTimer = setInterval(() => {
+        if (this.discovery === 'found' && !this.finding) void this.find();
+      }, LOOK_AGAIN_MS);
+    }
     return () => {
-      if (this.listeners.delete(listener) && this.listeners.size === 0) this.follow(false);
+      if (!this.listeners.delete(listener) || this.listeners.size > 0) return;
+      this.follow(false);
+      if (this.lookTimer) clearInterval(this.lookTimer);
+      this.lookTimer = null;
     };
   }
 
@@ -178,21 +203,30 @@ export class RunHubs {
     const cutoff = this.now() - ENDED_KEPT_MS;
     this.ended = this.ended.filter((run) => run.at >= cutoff);
     const ended = this.ended.map(({ hub, session }) => ({ hub, session }));
+    this.lostRuns = this.lostRuns.filter((run) => run.at >= cutoff && !this.answers(run.hub));
+    const lost = this.lostRuns
+      .filter((run) => !live.some((r) => r.hub === run.hub && r.session.ref === run.session.ref))
+      .map(({ hub, session }) => ({ hub, session, lost: true }));
     return {
       discovery: this.discovery,
       desktop: this.desktop,
-      hubs: this.hubs.map((hub) => {
-        const connection = this.connections.get(hub.url);
-        return {
-          id: hub.url,
-          // Connected once its runs were heard: a window forgets what it keeps for a run gone from a connected hub.
-          connected: connection?.state === 'open' && connection.heardRuns,
-          client: connection?.welcome?.client ?? hub.client,
-          desktop: this.desktopUrls.has(hub.url),
-        };
-      }),
-      runs: [...live, ...ended],
+      hubs: this.hubs.map((hub) => ({
+        id: hub.url,
+        connected: this.answers(hub.url),
+        client: this.connections.get(hub.url)?.welcome?.client ?? hub.client,
+        desktop: this.desktopUrls.has(hub.url),
+      })),
+      runs: [...live, ...lost, ...ended],
     };
+  }
+
+  /**
+   * Whether a hub answers for its runs: connected, and its runs heard. A window forgets what it keeps for a run gone
+   * from a hub that answers.
+   */
+  private answers(url: string): boolean {
+    const connection = this.connections.get(url);
+    return connection?.state === 'open' && connection.heardRuns;
   }
 
   /** Whether a hub answers now. */
@@ -438,8 +472,13 @@ export class RunHubs {
     const hubs = [...editor.hubs, ...desktopHubs];
     this.hubs = hubs;
     if (pairingGone(editor.discovery)) void this.deps.writeHubs([]).catch(() => undefined);
-    // The runs kept of a pairing gone go with it.
-    this.ended = this.ended.filter((run) => !pairingGone(run.desktop ? desktop.discovery : editor.discovery));
+    // The runs kept of a pairing gone go with it; a lost hub's runs, also once the side that named it names it no more.
+    const side = (run: KeptRun) => (run.desktop ? desktop : editor);
+    this.ended = this.ended.filter((run) => !pairingGone(side(run).discovery));
+    this.lostRuns = this.lostRuns.filter((run) => {
+      const { discovery, hubs: named } = side(run);
+      return !pairingGone(discovery) && (discovery !== 'found' || named.some((hub) => hub.url === run.hub));
+    });
     for (const [url, connection] of this.connections) {
       if (!hubs.some((hub) => hub.url === url && hub.token === connection.hub.token)) {
         this.connections.delete(url);
@@ -472,7 +511,7 @@ export class RunHubs {
           for (const listener of this.listeners) listener.code({ hub: hub.url, ...code, warnings });
         },
         frame: (frame) => this.frame(hub.url, connection, frame),
-        lost: (why) => this.lost(hub, connection, why),
+        lost: (why, sessions) => this.lost(hub, connection, why, sessions),
       },
       this.deps.timings,
     );
@@ -488,9 +527,20 @@ export class RunHubs {
     ].slice(0, ENDED_KEPT);
   }
 
-  private lost(hub: LiveHub, connection: HubConnection, why: HubLoss): void {
+  /** The runs a lost connection held stay, as the hub told them last, beside those of a loss before it. */
+  private keepLost(hub: string, sessions: HubSession[]): void {
+    const at = this.now();
+    const desktop = this.desktopUrls.has(hub);
+    this.lostRuns = [
+      ...sessions.map((session) => ({ hub, desktop, session, at })),
+      ...this.lostRuns.filter((run) => !(run.hub === hub && sessions.some((s) => s.ref === run.session.ref))),
+    ];
+  }
+
+  private lost(hub: LiveHub, connection: HubConnection, why: HubLoss, sessions: HubSession[]): void {
     if (this.connections.get(hub.url) === connection) {
       this.connections.delete(hub.url);
+      this.keepLost(hub.url, sessions);
       this.endViews(hub.url);
     }
     if (why === 'refused') {

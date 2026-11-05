@@ -6436,6 +6436,15 @@
   "runs_ended": {
     "message": "La ejecución terminó."
   },
+  "runs_lost": {
+    "message": "Se perdió la conexión con $editor$: esta es la ejecución tal como estaba por última vez. Conectando de nuevo…",
+    "placeholders": {
+      "editor": {
+        "content": "$1",
+        "example": "Visual Studio Code"
+      }
+    }
+  },
   "runs_stoppedBreakpoint": {
     "message": "Detenido en un punto de interrupción"
   },
@@ -6678,7 +6687,7 @@
     "message": "Iniciando la vista en directo…"
   },
   "runs_liveLost": {
-    "message": "La vista en directo terminó: se perdió la conexión con el editor. Vuelve a usar Ver en directo cuando regrese."
+    "message": "La vista en directo terminó: se perdió la conexión con el editor. Vuelve a empezar cuando regrese la conexión."
   },
   "runs_liveHint": {
     "message": "Tus clics, la rueda y tus teclas sobre la vista van a la página del test. Esc devuelve las teclas a esta ventana; Mayús+clic elige un locator."
