@@ -198,7 +198,7 @@ definePageMeta({
 
       <UAlert v-if="setupError" color="error" :title="setupError" variant="subtle" class="mb-4" />
 
-      <form class="space-y-4" @submit.prevent="handleSetup">
+      <form class="space-y-4" method="post" @submit.prevent="handleSetup">
         <UFormField
           v-if="setupTokenRequired"
           label="Setup token"
@@ -303,7 +303,7 @@ definePageMeta({
       </div>
 
       <!-- Password login form -->
-      <form class="space-y-4" @submit.prevent="handleLogin">
+      <form class="space-y-4" method="post" @submit.prevent="handleLogin">
         <UFormField label="Username" name="username" required>
           <UInput
             v-model="state.username"
