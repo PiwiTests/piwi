@@ -44,8 +44,11 @@ places each worker on its real lane and every MCP tool says `worker: N`;
 the header's primary action is decided once the run has ended; frames carry the worker's time, so the caption names
 the step begun after the image. Built from P2: the reporter asks again for a `/begin` or `/start` that got no answer, a
 server error, a 408 or a 429, with backoff for the run's life, keeps the run's events meanwhile within
-`maxStreamBufferBytes`, sends them once the stream opens and says once how late it started. The later phases are
-proposed. The bugs the analysis
+`maxStreamBufferBytes`, sends them once the stream opens and says once how late it started; a CI run's log says the
+live view is on for the specs that use Piwi's fixtures and names the first spec file that runs without them; a run
+without a key names its real cause (`streaming: false`, a global setup that did not run, an instance that did not
+take its registration, with its error, or the setting off), outside CI in `PIWI_LIVE_VIEW` too; and `merge-reports`
+says nothing of the live view. The later phases are proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app

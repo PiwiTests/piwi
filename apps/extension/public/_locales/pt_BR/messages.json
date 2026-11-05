@@ -6765,7 +6765,13 @@
     "message": "Esta execução não pode ser compartilhada ao vivo: a visualização ao vivo do projeto dela está desligada na instância. Um Project admin a liga em Project → Settings → Live view."
   },
   "runs_shareRefusedUnregistered": {
-    "message": "Esta execução não pode ser compartilhada ao vivo: o global setup do reporter não a registrou na instância ao começar (o wrapConfig o adiciona)."
+    "message": "Esta execução não pode ser compartilhada ao vivo: o global setup do reporter não rodou ao começar (o wrapConfig o adiciona)."
+  },
+  "runs_shareRefusedStreamingOff": {
+    "message": "Esta execução não pode ser compartilhada ao vivo: ela envia seus resultados só ao terminar (streaming: false), então não tem execução ao vivo na instância."
+  },
+  "runs_shareRefusedSetupFailed": {
+    "message": "Esta execução não pode ser compartilhada ao vivo: a instância não a registrou ao começar (o global setup do reporter não conseguiu alcançá-la ou foi recusado: o aviso dele diz por quê)."
   },
   "runs_shareRefusedNoInstance": {
     "message": "Esta execução não pode ser compartilhada ao vivo: ela não reporta a nenhuma instância do Piwi. Informe a instância da sua equipe em PIWI_DASHBOARD_URL."

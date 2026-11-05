@@ -8,7 +8,7 @@ import { resolveRunLabel } from '../internal/support/ci.js';
 import { resolveShardInfo } from '../internal/support/shard-info.js';
 import { resolveScmBranch } from '../internal/collect/metadata-collector.js';
 import { isLiveViewKey } from '@piwitests/core/live-view';
-import { writeSetupInfo } from '../internal/support/setup-file.js';
+import { writeSetupFailure, writeSetupInfo } from '../internal/support/setup-file.js';
 import { ariaSampleIdentity, clearAriaSampleFile, writeAriaSampleFile } from '../internal/support/aria-sampling.js';
 import { isUiMode, isListMode } from '../internal/support/run-mode.js';
 import { checkBaseUrls, remoteBrowserNote } from '../internal/support/base-url-check.js';
@@ -101,13 +101,18 @@ export function createGlobalSetup(
     }
 
     const httpClient = new HttpClient(opts.serverUrl, logger);
+    // The run registered here is the one the reporter streams into. A run sent in one batch at its end creates its
+    // own, so with streaming off nothing is registered: no run waits for a stream that never comes.
+    const registers = opts.streaming !== false;
+    let registered = false;
 
     try {
       const auth = await httpClient.resolveAuth(opts);
 
-      // The run registered here is the one the reporter streams into. A run sent in one batch at its end creates its
-      // own, so with streaming off nothing is registered: no run waits for a stream that never comes.
-      if (opts.streaming !== false) await registerRun(httpClient, auth, opts, config, logger);
+      if (registers) {
+        await registerRun(httpClient, auth, opts, config, logger);
+        registered = true;
+      }
 
       // A prior run's ARIA sample set is always cleared first so a stale file
       // never leaks in — even when sampling is off this run.
@@ -167,6 +172,8 @@ export function createGlobalSetup(
       }
     } catch (error) {
       logger.warn(`Could not register global setup: ${errorMessage(error)}`);
+      // The reporter says why the run has no live view: the instance did not take its registration.
+      if (registers && !registered && opts.projectName) writeSetupFailure(opts.projectName, errorMessage(error));
     }
 
     if (userSetup) return userSetup(config);
@@ -209,15 +216,16 @@ async function registerRun(
     auth,
   );
 
-  if (response?.runId && response?.setupToken) {
-    const liveViewKey = response.liveView?.key;
-    writeSetupInfo({
-      runId: response.runId,
-      setupToken: response.setupToken,
-      projectName: opts.projectName!,
-      ...(isLiveViewKey(liveViewKey) ? { liveViewKey } : {}),
-      ...(response.liveView?.refused === 'local' ? { liveViewLocal: true as const } : {}),
-    });
-    logger.debug(`Global setup: initializing run #${response.runId}`);
+  if (!response?.runId || !response?.setupToken) {
+    throw new Error('the answer to /api/test-runs/setup names no run');
   }
+  const liveViewKey = response.liveView?.key;
+  writeSetupInfo({
+    runId: response.runId,
+    setupToken: response.setupToken,
+    projectName: opts.projectName!,
+    ...(isLiveViewKey(liveViewKey) ? { liveViewKey } : {}),
+    ...(response.liveView?.refused === 'local' ? { liveViewLocal: true as const } : {}),
+  });
+  logger.debug(`Global setup: initializing run #${response.runId}`);
 }

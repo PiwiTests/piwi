@@ -5,7 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { createGlobalSetup } from '../src/public/global-setup.js';
 import { PiwiDashboardReporter } from '../src/public/reporter.js';
-import { getSetupFilePath, readSetupInfo } from '../src/internal/support/setup-file.js';
+import { getSetupFilePath, peekSetupFailure, readSetupInfo } from '../src/internal/support/setup-file.js';
 import {
   ariaSampleIdentity,
   clearAriaSampleFile,
@@ -331,7 +331,8 @@ describe('createGlobalSetup', () => {
   });
 
   it('swallows HTTP failures without throwing, and still chains userSetup', async () => {
-    const { server, url } = await startServer((_req, res) => jsonRes(res, 500, { error: 'boom' }));
+    const { server, url } = await startServer((_req, res) => jsonRes(res, 500, { message: 'boom' }));
+    cleanupNames.push('global-setup-http-fail');
     try {
       let userSetupCalled = false;
       const setupFn = createGlobalSetup({ serverUrl: url, projectName: 'global-setup-http-fail' }, async () => {
@@ -339,7 +340,10 @@ describe('createGlobalSetup', () => {
       });
       await expect(setupFn({ reporter: [PIWI_REPORTER_ENTRY] })).resolves.not.toThrow();
       expect(userSetupCalled).toBe(true);
+      // The reporter says why the run has no live view.
+      expect(peekSetupFailure('global-setup-http-fail')).toBe('Request failed with status 500: boom');
       expect(readSetupInfo('global-setup-http-fail')).toBeNull();
+      expect(peekSetupFailure('global-setup-http-fail')).toBeNull();
     } finally {
       await new Promise<void>((r) => server.close(() => r()));
     }

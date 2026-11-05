@@ -12,6 +12,7 @@ import {
 import { formatRecordChannel } from '@piwitests/core/ide-recorder';
 import { RUN_CHANNEL_ENV, RUN_REF_ENV, TERMINAL_REF_PREFIX } from '@piwitests/core/run-channel';
 import { detectCi } from '../support/ci.js';
+import { isMergeReports } from '../support/run-mode.js';
 import { PIWI_ORIGIN_ENV } from './env.js';
 
 /**
@@ -67,7 +68,7 @@ export function terminalRunSkip(gate: TerminalRunGate): string | null {
   if (flag('--debug') || flag('--ui') || flag('--ui-host') || flag('--ui-port')) {
     return "Playwright's debugger or UI mode runs it";
   }
-  if (argv.slice(2).includes('merge-reports')) return 'it merges reports, running no test';
+  if (isMergeReports(argv)) return 'it merges reports, running no test';
   const forced = !!editor && ['on', 'true', '1', 'yes'].includes(editor);
   if (!gate.terminal && !forced && !startedByTestRunner(env)) return 'its output goes to no terminal';
   return null;

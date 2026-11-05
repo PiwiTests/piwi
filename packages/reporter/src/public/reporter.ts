@@ -49,10 +49,15 @@ import { parallelIndexOf, workerIndexOf } from '../internal/support/worker-index
 import { detectCliFileFilters, detectCliGrep, detectCliNarrowingFlags } from '../internal/support/cli-filters.js';
 import { readSelectionStamp } from '../internal/support/selection-env.js';
 import { resolveShardInfo } from '../internal/support/shard-info.js';
-import { isListMode } from '../internal/support/run-mode.js';
-import { peekSetupInfo, readSetupInfo } from '../internal/support/setup-file.js';
+import { isListMode, isMergeReports } from '../internal/support/run-mode.js';
+import { peekSetupFailure, peekSetupInfo, readSetupInfo, type SetupInfo } from '../internal/support/setup-file.js';
 import { privateTempDir, readPrivateFile } from '../internal/support/private-file.js';
-import { LIVE_VIEW_ENV, formatLiveViewEnv, formatLiveViewMissing } from '@piwitests/core/live-view';
+import {
+  LIVE_VIEW_ENV,
+  formatLiveViewEnv,
+  formatLiveViewMissing,
+  type LiveViewMissing,
+} from '@piwitests/core/live-view';
 import { ciLiveViewNote } from '../internal/streaming/live-view-note.js';
 import { RUN_CHANNEL_ENV } from '@piwitests/core/run-channel';
 import { createGlobalSetup } from './global-setup.js';
@@ -203,8 +208,13 @@ export class PiwiDashboardReporter {
   private plannedTests: TestCase[] = [];
   /** Ids of tests that actually reported via `onTestEnd`, to find the ones that never ran. */
   private reportedTestIds = new Set<string>();
-  /** The spec files said to have run without the capture fixtures in a run that can stop (`noteUncaptured`). */
+  /**
+   * The spec files said to have run without the capture fixtures in a run that can stop, or whose workers stream to
+   * the instance's live view (`noteUncaptured`).
+   */
   private uncapturedSpecs = new Set<string>();
+  /** Whether the run is a CI run whose workers stream to the instance's live view, set in `onBegin`. */
+  private liveViewOn = false;
   /** The live steps begun and not ended, by step, sent again when someone opens the run (`onWatched`). */
   private openSteps = new Map<unknown, StreamEvent>();
   /**
@@ -236,6 +246,8 @@ export class PiwiDashboardReporter {
    * finalizing a run would create an empty phantom run and upload an empty report.
    */
   private readonly listMode: boolean;
+  /** True under `playwright merge-reports`, which replays blob reports: no test runs and nothing of the run is live. */
+  private readonly mergingReports = isMergeReports();
   /** True when the server URL and API key came from the desktop app, not from config. */
   private viaDesktopApp: boolean;
   /** The configured server `desktopApp: 'prefer'` set aside for the desktop app, if any. */
@@ -568,28 +580,41 @@ export class PiwiDashboardReporter {
    * environment: the key the instance gave the global setup, for a project that turned its live view on, for this run
    * alone. A CI run's workers stream with it at once; a run outside CI's hold it until a person shares the run (Share
    * live), and such a run without a key names why instead, for the surfaces that would share it; a CI run without one
-   * says why in its log (`ciLiveViewNote`). Read before the stream starts, which takes the setup file.
+   * says why in its log (`ciLiveViewNote`). Read before the stream starts, which takes the setup file. A run that
+   * merges blob reports starts no worker and is not live: it says nothing of the live view.
    */
   private shareLiveView(): void {
+    if (this.mergingReports) return;
     const ci = detectCi(process.env);
     const setup = this.streamManager ? peekSetupInfo(this.options.projectName!) : null;
     if (!setup?.liveViewKey) {
-      const why = setup?.liveViewLocal ? 'local' : setup ? 'off' : 'unregistered';
+      const why = this.liveViewMissing(setup);
       if (!ci) process.env[LIVE_VIEW_ENV] = formatLiveViewMissing(why);
       // A CI run says why nobody can watch it, for the person who reads its log to know what to change.
-      else if (why !== 'local') this.logger.info(ciLiveViewNote(this.streamManager ? why : 'streaming-off'));
+      else if (why !== 'local') {
+        const failure = why === 'setup-failed' ? peekSetupFailure(this.options.projectName!) : null;
+        this.logger.info(ciLiveViewNote(why, failure));
+      }
       return;
     }
     process.env[LIVE_VIEW_ENV] = formatLiveViewEnv(this.httpClient.baseUrl, setup.runId, setup.liveViewKey);
     if (ci) {
+      this.liveViewOn = true;
       this.logger.info(
-        "Live view on: people who may open this run can watch its tests' pages on the dashboard while it runs. Nothing is stored.",
+        "Live view on for the specs that use Piwi's fixtures: people who may open this run can watch their tests' pages on the dashboard while it runs. Nothing is stored.",
       );
     } else if (process.env[RUN_CHANNEL_ENV]) {
       this.logger.info(
         'Live view ready: this run can be shared live from the editor or Piwi Picker. Nothing is sent until it is.',
       );
     }
+  }
+
+  /** Why the run holds no live view key, from what its global setup left (`setup`, its registration, if any). */
+  private liveViewMissing(setup: SetupInfo | null): Exclude<LiveViewMissing, 'no-instance'> {
+    if (!this.streamManager) return 'streaming-off';
+    if (setup) return setup.liveViewLocal ? 'local' : 'off';
+    return peekSetupFailure(this.options.projectName!) !== null ? 'setup-failed' : 'unregistered';
   }
 
   /**
@@ -709,20 +734,22 @@ export class PiwiDashboardReporter {
   }
 
   /**
-   * In a run that can stop (breakpoints, or a run channel to an editor or the desktop app), say of the first spec file
-   * whose test made Playwright calls without the capture fixtures, where the stops happen, that it never stops at a
-   * breakpoint nor at Pause, which nothing else says; the others are named in one line as the run ends
+   * Say of the first spec file whose test made Playwright calls without the capture fixtures what it misses in this
+   * run, which nothing else says: in a run that can stop (breakpoints, or a run channel to an editor or the desktop
+   * app, where the stops happen), its tests never stop at a breakpoint nor at Pause; in a CI run whose workers stream
+   * to the instance's live view, nobody can watch them. The others are named in one line as the run ends
    * (`noteOtherUncaptured`).
    */
   private noteUncaptured(test: TestCase, result: TestResult): void {
-    if (!process.env.PIWI_PAUSE_AT && !process.env[RUN_CHANNEL_ENV]) return;
+    const missed = this.uncapturedCosts();
+    if (!missed.length) return;
     if (!uncapturedCalls(result.steps)) return;
     const file = testFile(test, this.testPathBase);
     if (this.uncapturedSpecs.has(file)) return;
     this.uncapturedSpecs.add(file);
     if (this.uncapturedSpecs.size > 1) return;
     this.logger.warn(
-      `${file} ran without Piwi's capture fixtures, so its tests never stop at a breakpoint or at Pause: ` +
+      `${file} ran without Piwi's capture fixtures, so ${missed.map((cost) => cost.its).join(', and ')}: ` +
         "import `test` from your fixtures file (the one that extends piwiFixtures) instead of '@playwright/test'.",
     );
   }
@@ -733,10 +760,30 @@ export class PiwiDashboardReporter {
     if (!others.length) return;
     const named = others.slice(0, MAX_UNCAPTURED_NAMED).join(', ');
     const more = others.length > MAX_UNCAPTURED_NAMED ? `, and ${others.length - MAX_UNCAPTURED_NAMED} more` : '';
+    const missed = this.uncapturedCosts().map((cost) => cost.their);
     this.logger.warn(
       `${others.length} more spec file${others.length === 1 ? '' : 's'} ran without Piwi's capture fixtures, ` +
-        `so their tests never stop at a breakpoint or at Pause either: ${named}${more}.`,
+        `so ${missed.join(', and ')}: ${named}${more}.`,
     );
+  }
+
+  /** What a spec file that runs without the capture fixtures misses in this run, said of one file and of several. */
+  private uncapturedCosts(): Array<{ its: string; their: string }> {
+    const costs: Array<{ its: string; their: string }> = [];
+    if (this.mergingReports) return costs;
+    if (process.env.PIWI_PAUSE_AT || process.env[RUN_CHANNEL_ENV]) {
+      costs.push({
+        its: 'its tests never stop at a breakpoint or at Pause',
+        their: 'their tests never stop at a breakpoint or at Pause either',
+      });
+    }
+    if (this.liveViewOn) {
+      costs.push({
+        its: 'nobody can watch its tests live on the dashboard',
+        their: 'nobody can watch their tests live either',
+      });
+    }
+    return costs;
   }
 
   /** Playwright reporter hook: called when a step (including hook/fixture) begins */

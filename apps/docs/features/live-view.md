@@ -32,10 +32,13 @@ setup. A CI job is told by its provider's variable (`GITHUB_ACTIONS`, `GITLAB_CI
 `false` or `0`. Such a run's log then says:
 
 ```text
-[Piwi Dashboard] Live view on: people who may open this run can watch its tests' pages on the dashboard while it runs. Nothing is stored.
+[Piwi Dashboard] Live view on for the specs that use Piwi's fixtures: people who may open this run can watch their tests' pages on the dashboard while it runs. Nothing is stored.
 ```
 
-A CI run without a view logs why instead.
+A spec file that imports `test` from `@playwright/test` instead of your [capture fixtures](/guide/capture-fixtures)
+has no view: the log names the first one. A CI run without a view logs why instead: the setting is off, the run does
+not stream (`streaming: false`), `wrapConfig`'s global setup did not run, or the instance did not register the run as
+it started, with the error it answered.
 
 Turning it off ends every view at once; a run that started while it was off stays without one.
 
@@ -46,7 +49,7 @@ A running run's **Tests** tab says **Live view available**, or what is missing, 
 | It says | Why, and what to do |
 |---|---|
 | **Live view off** | A Project admin turns it on for the next runs. |
-| **Live view unavailable** | The run has no key: it started before the setting was on, without `wrapConfig`'s global setup, with `streaming` off, or before the instance restarted. Start a new run. |
+| **Live view unavailable** | The run has no key: it started before the setting was on, without `wrapConfig`'s global setup, while the instance did not answer that setup, with `streaming` off, or before the instance restarted. Start a new run. |
 | **Live view waiting** | No worker is connected yet: they are starting. |
 | **No worker connected** | Tests run without one: the specs import `test` from `@playwright/test`, not the [capture fixtures](/guide/capture-fixtures). |
 | **Not shared live** | The run is on a developer's machine: they [share it](./share-live). |

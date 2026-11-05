@@ -6765,7 +6765,13 @@
     "message": "Dieser Lauf kann nicht live geteilt werden: Die Live-Ansicht seines Projekts ist auf der Instanz ausgeschaltet. Ein Project admin schaltet sie unter Project → Settings → Live view ein."
   },
   "runs_shareRefusedUnregistered": {
-    "message": "Dieser Lauf kann nicht live geteilt werden: Das globale Setup des Reporters hat ihn beim Start nicht bei der Instanz angemeldet (wrapConfig fügt es hinzu)."
+    "message": "Dieser Lauf kann nicht live geteilt werden: Das globale Setup des Reporters lief beim Start nicht (wrapConfig fügt es hinzu)."
+  },
+  "runs_shareRefusedStreamingOff": {
+    "message": "Dieser Lauf kann nicht live geteilt werden: Er sendet seine Ergebnisse erst an seinem Ende (streaming: false) und hat daher keinen Live-Lauf auf der Instanz."
+  },
+  "runs_shareRefusedSetupFailed": {
+    "message": "Dieser Lauf kann nicht live geteilt werden: Die Instanz hat ihn beim Start nicht angemeldet (das globale Setup des Reporters hat sie nicht erreicht oder wurde abgewiesen: Seine Warnung nennt den Grund)."
   },
   "runs_shareRefusedNoInstance": {
     "message": "Dieser Lauf kann nicht live geteilt werden: Er berichtet an keine Piwi-Instanz. Tragen Sie die Instanz Ihres Teams in PIWI_DASHBOARD_URL ein."

@@ -1136,7 +1136,9 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
 /** What the window says of a run that cannot be shared live, by why the reporter gave it no key. */
 const SHARE_REFUSALS = {
   'no-instance': 'runs_shareRefusedNoInstance',
+  'streaming-off': 'runs_shareRefusedStreamingOff',
   unregistered: 'runs_shareRefusedUnregistered',
+  'setup-failed': 'runs_shareRefusedSetupFailed',
   off: 'runs_shareRefusedOff',
   local: 'runs_shareRefusedLocal',
   unknown: 'runs_shareRefusedUnknown',
