@@ -60,6 +60,8 @@ export interface WireTestCase {
   timeout?: number | null;
   error?: string | null;
   retries?: number;
+  /** On a `begin` event: the retries the test is allowed (`TestCase.retries`). */
+  maxRetries?: number;
   /** Playwright's `repeatEachIndex`: which `--repeat-each` repetition the result belongs to (0 without repeats). */
   repeatEachIndex?: number;
   /** One entry per attempt up to and including this one: `{ retry, status, duration, startedAt }`. */
@@ -139,6 +141,13 @@ export interface BeginStreamEvent {
   type: 'begin';
   title: string;
   location: string;
+  /** The attempt beginning: 0 for the first, 1 for the first retry. */
+  retries?: number;
+  /** The retries the test is allowed. */
+  maxRetries?: number;
+  tags?: string[] | null;
+  locks?: string[] | null;
+  testMeta?: TestMetadata | null;
   /** Playwright's `repeatEachIndex`: which `--repeat-each` repetition is starting (0 without repeats). */
   repeatEachIndex?: number;
   workerIndex: number | null;

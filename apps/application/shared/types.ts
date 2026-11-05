@@ -212,6 +212,8 @@ export interface StreamEventPayload {
   timeout?: number | null;
   error?: string | null;
   retries?: number | null;
+  /** On a `begin` event: the retries the test is allowed. */
+  maxRetries?: number | null;
   /**
    * Playwright's `repeatEachIndex`: which `--repeat-each` repetition the result belongs to, each its own test result.
    * Absent from older reporters, read as 0.

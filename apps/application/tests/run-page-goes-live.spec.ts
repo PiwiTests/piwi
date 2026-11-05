@@ -272,3 +272,59 @@ test('shows each shard’s step on its own row, though both shards run worker 0'
     }
   }
 });
+
+test('a retry reads as one while it runs, the list stays put, and its tags are searchable', async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(60_000);
+  const started = await request.post('/api/test-runs/start', {
+    data: {
+      projectName: PROJECT.RUN_GOES_LIVE,
+      startTime: new Date().toISOString(),
+      instanceId: 'run-goes-live-retry',
+      totalTests: 2,
+    },
+  });
+  expect(started.ok()).toBeTruthy();
+  const { runId, streamToken } = (await started.json()) as { runId: number; streamToken: string };
+  const send = async (event: Record<string, unknown>) => {
+    const sent = await request.post(`/api/test-runs/${runId}/events`, {
+      data: { streamToken, testCases: [{ location: 'tests/checkout.spec.ts:3:1', startedAt: Date.now(), ...event }] },
+    });
+    expect(sent.ok()).toBeTruthy();
+  };
+  const first = { title: 'pays by card', tags: ['smoke'], maxRetries: 2 };
+  try {
+    await send({ ...first, type: 'begin', retries: 0, workerIndex: 0 });
+    await send({ type: 'begin', title: 'searches', location: 'tests/search.spec.ts:3:1', retries: 0, workerIndex: 1 });
+    const stream = page.waitForResponse((response) => new URL(response.url()).pathname.endsWith(`/${runId}/stream`));
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await stream;
+
+    // The first attempt fails and the retry begins on another worker.
+    await send({
+      ...first,
+      type: 'complete',
+      status: 'failed',
+      duration: 50,
+      error: 'Error: boom',
+      retries: 0,
+      workerIndex: 0,
+    });
+    await send({ ...first, type: 'begin', retries: 1, workerIndex: 2 });
+    const row = page.getByTestId('live-retry');
+    await expect(row).toHaveText('Retry 1 of 2');
+    // The list opened green, flat in run order: a failure does not regroup it under the reader.
+    await expect(page.locator('[data-tour="run-tests-group-by"]')).toContainText('None');
+
+    // A row that streamed in answers the search's qualifiers.
+    await page.getByRole('combobox', { name: 'Search tests' }).fill('tag:smoke');
+    await expect(page.getByRole('option', { name: 'tag:smoke 1' })).toBeVisible();
+    await expect(page.locator('[data-testid="live-retry"]:visible')).toHaveText(['Retry 1 of 2']);
+    await expect(page.locator('span[title="searches"]:visible')).toHaveCount(0);
+  } finally {
+    await request.post(`/api/test-runs/${runId}/finish`, { data: { streamToken, status: 'failed', totalTests: 2 } });
+  }
+});

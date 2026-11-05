@@ -132,4 +132,52 @@ describe('a --repeat-each run on the wire', () => {
       [2, 'passed'],
     ]);
   });
+
+  it('says with each begin which attempt it is, of how many, and the test’s tags and owner', async () => {
+    const events: Array<Record<string, any>> = [];
+    server = await startServer((req, res) => {
+      if (req.url === '/api/test-runs/start') {
+        jsonRes(res, 200, { runId: 1, streamToken: 'tok' });
+      } else if (req.url === '/api/test-runs/1/events') {
+        events.push(...(JSON.parse(req.body).testCases ?? []));
+        jsonRes(res, 200, {});
+      } else if (req.url === '/api/auth/me') {
+        jsonRes(res, 200, {});
+      } else {
+        textRes(res, 404, 'nope');
+      }
+    });
+    const reporter = new PiwiDashboardReporter({
+      serverUrl: server.url,
+      projectName: 'piwi-retry-begin-stream-' + process.pid,
+      streaming: true,
+      uploadReport: false,
+      uploadTraces: false,
+      liveFileUploads: false,
+      streamingBatchDelay: 30,
+      streamingBatchSize: 1,
+    });
+    const suite = fakeSuite();
+    const test = {
+      ...fakeTestCase({
+        title: 'pays by card',
+        parent: suite,
+        annotations: [{ type: 'piwi:owner', description: 'checkout' }],
+      }),
+      tags: ['@smoke'],
+      retries: 2,
+    };
+    reporter.onBegin(fakeConfig(), suite);
+    reporter.onTestBegin(test, fakeResult({ workerIndex: 0, retry: 0 }));
+    reporter.onTestEnd(test, fakeResult({ status: 'failed', workerIndex: 0, retry: 0 }));
+    reporter.onTestBegin(test, fakeResult({ workerIndex: 1, retry: 1 }));
+    await waitFor(() => events.filter((e) => e.type === 'begin').length === 2);
+
+    const begins = events.filter((e) => e.type === 'begin');
+    expect(begins.map((e) => [e.retries, e.maxRetries])).toEqual([
+      [0, 2],
+      [1, 2],
+    ]);
+    expect(begins[1]).toMatchObject({ tags: ['smoke'], testMeta: { owner: 'checkout' } });
+  });
 });

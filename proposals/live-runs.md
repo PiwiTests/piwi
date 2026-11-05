@@ -28,7 +28,12 @@ caption names its call with the call's target and, on a page that stays still pa
 follows the worker's step, and a
 run's Tests tab says **Global setup** (then **Starting N tests**) with the time since the run began, until its first
 test. The caption shows a step without its place, and a `test.step` streams as a step of its own, not as the parent of
-the calls inside it. The rest is proposed. The bugs the analysis
+the calls inside it. Built from P1's list that holds still (the rest of #1107): `test-begin` carries the attempt,
+the retries allowed, the tags, the locks and the metadata, and `test-completed` the last three, so a retry reads
+**Retry 1 of 2** while it runs, unlinked, the attempt it followed keeps its bar on the timeline, and the search's
+qualifiers find a row that streamed in; the grouping is decided once per page view and the list follows the newest
+row only in run order. The rest of P1 (the lane, the outcome card, **Worker N**, the deep link, the header's primary
+action) and the later phases are proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app

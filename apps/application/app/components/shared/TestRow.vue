@@ -278,6 +278,9 @@ const clusterLabel = computed(() =>
             <slot name="metrics">
               <template v-if="tc">
                 <template v-if="tc.status === 'running'">
+                  <span v-if="(tc.retries ?? 0) > 0" class="text-info" data-testid="live-retry">
+                    Retry {{ tc.retries }}<template v-if="tc.maxRetries"> of {{ tc.maxRetries }}</template>
+                  </span>
                   <TestRowStuck v-if="tc.stuck" :stuck="tc.stuck" />
                   <span v-else-if="!liveStep && !stopped" class="text-info">In progress…</span>
                   <span
@@ -293,7 +296,7 @@ const clusterLabel = computed(() =>
                 <DurationValue v-else-if="tc.duration" :ms="tc.duration" />
                 <BrowserBadge :browser="tc.browser" size="sm" />
                 <UBadge
-                  v-if="(tc.retries ?? 0) > 0"
+                  v-if="(tc.retries ?? 0) > 0 && tc.status !== 'running'"
                   color="warning"
                   variant="soft"
                   size="xs"

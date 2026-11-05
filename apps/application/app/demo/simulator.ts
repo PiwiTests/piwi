@@ -1636,6 +1636,9 @@ async function runSingleSimulation(
             type: 'begin',
             title: test.title,
             location: test.location,
+            // The attempt beginning, of the retries its scenario plans, as the reporter says them.
+            retries: attempt,
+            maxRetries: test.attempts.length - 1,
             repeatEachIndex: 0,
             workerIndex,
             shardIndex: shardOverride?.shardIndex ?? null,
@@ -1643,6 +1646,9 @@ async function runSingleSimulation(
             browser: test.browser ?? null,
             suitePath: test.suitePath ?? null,
             suiteConfig: test.suiteConfig ?? null,
+            tags: test.tags,
+            locks: test.locks,
+            testMeta: test.testMeta,
           },
         ]);
 

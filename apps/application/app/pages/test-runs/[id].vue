@@ -67,8 +67,17 @@ const { release: releaseKeep, canRelease } = useRunKeep();
 // Live streaming state
 const isLive = computed(() => testRun.value?.status === 'running' || testRun.value?.status === 'finalizing');
 const isFinalizing = ref(false);
+// Each test's latest attempt, while the run is live: the row the list shows.
 const liveTestCases = ref<TestCaseResult[]>([]);
 const liveTestCaseKeys = new Map<string, true>();
+// The attempts a retry followed, by `liveCaseKey` and retry: the timeline keeps their bars while the run is live.
+const liveEarlierAttempts = ref<Record<string, TestCaseResult>>({});
+function keepEarlierAttempt(tc: TestCaseResult): void {
+  liveEarlierAttempts.value = { ...liveEarlierAttempts.value, [`${liveCaseKey(tc)}#${tc.retries ?? 0}`]: tc };
+}
+// A row the database holds no execution for yet gets a unique negative id, unlinked until its test completes.
+let placeholderIds = 0;
+const placeholderId = () => -++placeholderIds;
 // The step each worker is on, by its shard and its worker (`liveWorkerKey`), from transient SSE step
 // events; nothing is persisted from them. Rendered inline on the matching
 // running rows in the test-case views.
@@ -164,11 +173,16 @@ function dedupeFinalAttempts(cases: TestCaseResult[]): TestCaseResult[] {
 
 const dedupedDisplayCases = computed(() => dedupeFinalAttempts(displayTestCases.value));
 
+/** What the page shows while live: the attempts a retry followed, then each test's latest attempt. */
+function showLive(): void {
+  displayTestCases.value = [...Object.values(liveEarlierAttempts.value), ...liveTestCases.value];
+}
+
 watch(
   [isLive, testRun],
   () => {
     if (isLive.value && liveTestCases.value.length > 0) {
-      displayTestCases.value = [...liveTestCases.value];
+      showLive();
     } else if (testRun.value?.testCases) {
       displayTestCases.value = testRun.value.testCases;
     } else {
@@ -187,7 +201,9 @@ function seedLiveFromPersisted(cases: TestCaseResult[]) {
     const key = liveCaseKey(tc);
     const idx = seeded.get(key);
     if (idx !== undefined) {
-      if ((tc.retries ?? 0) > (rows[idx]!.retries ?? 0)) rows[idx] = tc;
+      const [earlier, later] = (tc.retries ?? 0) > (rows[idx]!.retries ?? 0) ? [rows[idx]!, tc] : [tc, rows[idx]!];
+      keepEarlierAttempt(earlier);
+      rows[idx] = later;
     } else if (!liveTestCaseKeys.has(key)) {
       liveTestCaseKeys.set(key, true);
       seeded.set(key, rows.length);
@@ -195,7 +211,7 @@ function seedLiveFromPersisted(cases: TestCaseResult[]) {
     }
   }
   liveTestCases.value = rows;
-  displayTestCases.value = [...liveTestCases.value];
+  showLive();
 }
 
 // The planned suite size as the run's stream last reported it: it grows as each
@@ -230,6 +246,11 @@ function flushPendingEvents() {
         stepCategory?: string | null;
         shardIndex?: number | null;
         stuck?: StuckAttempt | null;
+        retries?: number | null;
+        maxRetries?: number | null;
+        tags?: string[] | null;
+        locks?: string[] | null;
+        testMeta?: TestCaseResult['testMeta'];
       };
       // Hook/fixture step-begin events are published as `test-begin` with a
       // `stepCategory`. They are not test cases — ignore them so they don't
@@ -248,7 +269,7 @@ function flushPendingEvents() {
             // The persisted execution row only exists once the test completes —
             // a unique negative placeholder keeps the row keyed (and unlinked)
             // until test-completed delivers the real id.
-            executionId: -(liveTestCases.value.length + 1),
+            executionId: placeholderId(),
             testCaseId: 0,
             title: d.title,
             filePath: d.filePath,
@@ -261,30 +282,46 @@ function flushPendingEvents() {
             browser: d.browser ?? null,
             repeatEachIndex: d.repeatEachIndex ?? 0,
             stuck: d.stuck ?? null,
+            retries: d.retries ?? 0,
+            maxRetries: d.maxRetries ?? null,
+            tags: d.tags ?? null,
+            locks: d.locks ?? null,
+            testMeta: d.testMeta ?? null,
           },
         ];
-        displayTestCases.value = [...liveTestCases.value];
+        showLive();
       } else {
-        // A known test begins again: a retry starts (its row runs again, unmarked), or a
-        // reconnected stream catches up on a running attempt (its row takes the mark it carries).
+        // A known test begins again: a retry starts, or a reconnected stream catches up on a running
+        // attempt (its row takes the mark it carries). A reporter that does not say which attempt begins
+        // starts a retry when the row's attempt ended.
         const idx = liveTestCases.value.findIndex((tc) => liveCaseKey(tc) === key);
         const existing = idx >= 0 ? liveTestCases.value[idx]! : null;
-        if (existing && (existing.status !== 'running' || d.stuck)) {
-          const copy = [...liveTestCases.value];
-          copy[idx] =
-            existing.status === 'running'
-              ? { ...existing, stuck: d.stuck ?? existing.stuck }
-              : {
-                  ...existing,
-                  status: 'running',
-                  workerIndex: d.workerIndex ?? existing.workerIndex,
-                  shardIndex: d.shardIndex ?? existing.shardIndex,
-                  startedAt: d.startedAt ?? Date.now(),
-                  stuck: d.stuck ?? null,
-                };
-          liveTestCases.value = copy;
-          displayTestCases.value = [...copy];
-        }
+        if (!existing) continue;
+        const retry =
+          d.retries ?? (existing.status === 'running' ? (existing.retries ?? 0) : (existing.retries ?? 0) + 1);
+        const copy = [...liveTestCases.value];
+        if (retry > (existing.retries ?? 0)) {
+          // The attempt that ended keeps its bar on the timeline; the row runs as the retry, unlinked until it ends.
+          if (existing.status !== 'running') keepEarlierAttempt(existing);
+          copy[idx] = {
+            ...existing,
+            executionId: placeholderId(),
+            status: 'running',
+            duration: null,
+            error: null,
+            stepEvents: null,
+            retries: retry,
+            maxRetries: d.maxRetries ?? existing.maxRetries ?? null,
+            workerIndex: d.workerIndex ?? existing.workerIndex,
+            shardIndex: d.shardIndex ?? existing.shardIndex,
+            startedAt: d.startedAt ?? Date.now(),
+            stuck: d.stuck ?? null,
+          };
+        } else if (existing.status === 'running' && d.stuck) {
+          copy[idx] = { ...existing, stuck: d.stuck };
+        } else continue;
+        liveTestCases.value = copy;
+        showLive();
       }
     } else if (parsed.type === 'test-stuck') {
       // A running test has run far longer than it usually does: its row says so until it completes.
@@ -299,7 +336,7 @@ function flushPendingEvents() {
       if (row) {
         row.stuck = { elapsedMs: d.elapsedMs, usualMs: d.usualMs };
         liveTestCases.value = [...liveTestCases.value];
-        displayTestCases.value = [...liveTestCases.value];
+        showLive();
       }
     } else if (parsed.type === 'test-completed') {
       const d = data as {
@@ -324,18 +361,54 @@ function flushPendingEvents() {
         repeatEachIndex?: number;
         executionId?: number | null;
         testCaseId?: number | null;
+        tags?: string[] | null;
+        locks?: string[] | null;
+        testMeta?: TestCaseResult['testMeta'];
       };
       // Ignore hook/fixture step-end events (published as `test-completed`
       // with a `stepCategory`) — they are not test cases. The hook segments
       // arrive via the owning test's `stepEvents` below.
       if (d.stepCategory) continue;
       const key = liveCaseKey(d);
+      /** The attempt as the event tells it, for a row the list has not shown yet. */
+      const completedRow = (): TestCaseResult => ({
+        executionId: d.executionId ?? placeholderId(),
+        testCaseId: d.testCaseId ?? 0,
+        title: d.title,
+        externalId: d.externalId ?? null,
+        displayTitle: d.displayTitle ?? null,
+        filePath: d.filePath,
+        suitePath: d.suitePath ?? undefined,
+        status: d.status,
+        duration: d.duration,
+        location: d.location,
+        error: d.error,
+        stepEvents: d.stepEvents ?? null,
+        wastedTimeMs: d.wastedTimeMs ?? null,
+        workerIndex: d.workerIndex ?? null,
+        shardIndex: d.shardIndex ?? null,
+        startedAt: d.startedAt ?? undefined,
+        browser: d.browser ?? null,
+        retries: d.retries ?? null,
+        attempts: d.attempts ?? null,
+        repeatEachIndex: d.repeatEachIndex ?? 0,
+        tags: d.tags ?? null,
+        locks: d.locks ?? null,
+        testMeta: d.testMeta ?? null,
+      });
       if (liveTestCaseKeys.has(key)) {
         const idx = liveTestCases.value.findIndex((tc) => liveCaseKey(tc) === key);
         if (idx >= 0) {
           const existing = liveTestCases.value[idx]!;
-          // A replayed earlier attempt of a test whose later attempt the row shows changes nothing.
-          if (existing.status !== 'running' && (d.retries ?? 0) < (existing.retries ?? 0)) continue;
+          // An earlier attempt of a test whose later attempt the row shows keeps its bar on the timeline, and leaves
+          // the row as it is.
+          if ((d.retries ?? 0) < (existing.retries ?? 0)) {
+            keepEarlierAttempt(completedRow());
+            showLive();
+            continue;
+          }
+          // A later attempt whose begin the page missed: the one the row showed keeps its bar.
+          if ((d.retries ?? 0) > (existing.retries ?? 0) && existing.status !== 'running') keepEarlierAttempt(existing);
           const copy = [...liveTestCases.value];
           copy[idx] = {
             ...existing,
@@ -364,38 +437,17 @@ function flushPendingEvents() {
             // a duplicate event without ids keeps whatever the row already has.
             executionId: d.executionId ?? existing.executionId,
             testCaseId: d.testCaseId ?? existing.testCaseId,
+            tags: d.tags ?? existing.tags,
+            locks: d.locks ?? existing.locks,
+            testMeta: d.testMeta ?? existing.testMeta,
           };
           liveTestCases.value = copy;
-          displayTestCases.value = [...copy];
+          showLive();
         }
       } else {
         liveTestCaseKeys.set(key, true);
-        liveTestCases.value = [
-          ...liveTestCases.value,
-          {
-            executionId: d.executionId ?? -(liveTestCases.value.length + 1),
-            testCaseId: d.testCaseId ?? 0,
-            title: d.title,
-            externalId: d.externalId ?? null,
-            displayTitle: d.displayTitle ?? null,
-            filePath: d.filePath,
-            suitePath: d.suitePath ?? undefined,
-            status: d.status,
-            duration: d.duration,
-            location: d.location,
-            error: d.error,
-            stepEvents: d.stepEvents ?? null,
-            wastedTimeMs: d.wastedTimeMs ?? null,
-            workerIndex: d.workerIndex ?? null,
-            shardIndex: d.shardIndex ?? null,
-            startedAt: d.startedAt ?? undefined,
-            browser: d.browser ?? null,
-            retries: d.retries ?? null,
-            attempts: d.attempts ?? null,
-            repeatEachIndex: d.repeatEachIndex ?? 0,
-          },
-        ];
-        displayTestCases.value = [...liveTestCases.value];
+        liveTestCases.value = [...liveTestCases.value, completedRow()];
+        showLive();
       }
     } else if (parsed.type === 'step-begin') {
       const d = parsed.data as {
