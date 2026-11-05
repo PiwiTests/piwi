@@ -276,7 +276,13 @@ export class LiveViewRelay {
         const counts = this.countsOf(runId);
         counts.frames++;
         counts.bytes += Math.floor((message.data.length * 3) / 4);
-        this.deliver(link, { type: 'frame', data: message.data, call: message.call, test: message.test });
+        this.deliver(link, {
+          type: 'frame',
+          data: message.data,
+          call: message.call,
+          test: message.test,
+          ...(message.at === undefined ? {} : { at: message.at }),
+        });
         return null;
       }
       case 'call-log':
@@ -352,6 +358,16 @@ export class LiveViewRelay {
     const now = this.now();
     for (const entry of this.keys.values()) if (entry.runId === runId && entry.expiresAt > now) return true;
     return false;
+  }
+
+  /** How many views of the run are open, those waiting for a lane's next worker included. */
+  viewersOf(runId: number): number {
+    const run = this.runs.get(runId);
+    if (!run) return 0;
+    let count = 0;
+    for (const link of run.workers.values()) count += link.viewers.size;
+    for (const { viewers } of run.waiting.values()) count += viewers.size;
+    return count;
   }
 
   /** The run's connected workers, for a run page that opens its stream. */

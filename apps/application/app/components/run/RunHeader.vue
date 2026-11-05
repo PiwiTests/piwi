@@ -114,8 +114,25 @@ const {
   title: retryTitle,
 } = useRunRetryCommand(() => props.testRun?.testCases);
 
-// A red run leads with Copy retry command; a green run leads with its report.
-const retryIsPrimary = computed(() => failedCases.value.length > 0);
+/**
+ * Whether Copy retry command leads (a red run) or the report (a green one): decided once the run has ended, from its
+ * failed tests, and kept for the page view. A run still going names neither, its failures being partial.
+ */
+const retryIsPrimary = ref(false);
+const runEnded = computed(
+  () =>
+    !!props.testRun && !['running', 'initializing', 'finalizing'].includes(props.testRun.status) && !props.finalizing,
+);
+let primaryDecided = false;
+watch(
+  runEnded,
+  (ended) => {
+    if (!ended || primaryDecided) return;
+    primaryDecided = true;
+    retryIsPrimary.value = failedCases.value.length > 0;
+  },
+  { immediate: true },
+);
 
 /** Past this many tests, a re-run of the whole run runs their files rather than naming every test. */
 const MAX_TESTS_IN_A_WHOLE_RUN = 200;
