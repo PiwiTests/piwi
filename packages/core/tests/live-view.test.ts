@@ -87,7 +87,9 @@ describe('the live view address', () => {
 
   test('says why a shared stream was given up, by the instance’s answer', () => {
     expect(liveShareRefusal(404)).toMatch(/live view was turned off/);
-    expect(liveShareRefusal(401)).toBe(liveShareRefusal(403));
+    expect(liveShareRefusal(404)).toMatch(/Share the run again once it is back on/);
+    expect(liveShareRefusal(401)).toMatch(/Share the run again to try once more/);
+    expect(liveShareRefusal(403)).not.toMatch(/Share the run again/);
     expect(liveShareRefusal(410)).toMatch(/no longer live/);
     expect(liveShareRefusal(409)).toMatch(/holds the run as interrupted/);
     expect(liveShareRefusal(null)).toMatch(/did not answer/);

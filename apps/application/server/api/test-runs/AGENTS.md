@@ -109,6 +109,10 @@ How the server merges shards:
   or cancel; an interruption closes the streams and keeps it once it streamed) or the setting, a key that ended
   answering 410 or 404 rather than 401 (`refuseLiveViewKey`; `tests/unit/live-view-routes.test.ts`). At their bounds
   the keys that never opened a stream go first (`tests/unit/live-view-relay.test.ts`).
+- **A run keeps its live view keys' digests, never a key** (`live_view_key_digests`, `storeLiveViewKey` in `setup`),
+  and no response carries them. Both routes authorize through `authorizeLiveViewKey`: a key the relay does not hold
+  (a restart, the setting turned off and on) is taken back only for that run, compared in constant time, while it is
+  initializing, running or interrupted, its project's setting on, within a day of its creation.
 - **A live view frame is relayed, never kept**: no frame reaches the database, a log line, an error message or an
   export, and the relay holds one waiting frame per viewer at most (`tests/unit/live-view-relay.test.ts`).
 - **A run's shard tokens are merged, never replaced**, in the cache and in `metadata`. Every shard's setup token stays

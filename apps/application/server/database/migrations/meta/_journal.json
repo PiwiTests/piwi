@@ -1093,6 +1093,13 @@
       "when": 1793865202153,
       "tag": "0155_lonely_metal_master",
       "breakpoints": true
+    },
+    {
+      "idx": 156,
+      "version": "6",
+      "when": 1793879755980,
+      "tag": "0156_fearless_boom_boom",
+      "breakpoints": true
     }
   ]
 }

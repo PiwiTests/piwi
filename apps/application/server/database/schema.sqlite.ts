@@ -77,6 +77,7 @@ export const testRuns = sqliteTable(
     runErrors: text('run_errors', { mode: 'json' }), // WireRunError[]: errors Playwright reported outside any test (global setup, a spec that did not load, a worker's teardown), at most 20; null when none
     label: text('label'), // Optional human-readable label (e.g. "v2.3.1 release")
     streamToken: text('stream_token'), // Token for authenticating streaming updates
+    liveViewKeyDigests: text('live_view_key_digests', { mode: 'json' }).$type<string[]>(), // SHA-256 digests of the run's live view keys, one per shard that set it up, never a key: an instance started again takes a running worker's key back by them
     instanceId: text('instance_id'), // Unique identifier for the reporter instance that created this run
     playwrightVersion: text('playwright_version'), // Playwright framework version used for this run
     reporterVersion: text('reporter_version'), // Piwi reporter package version that produced this run

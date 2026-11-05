@@ -40,7 +40,17 @@ has no view: the log names the first one. A CI run without a view logs why inste
 not stream (`streaming: false`), `wrapConfig`'s global setup did not run, or the instance did not register the run as
 it started, with the error it answered.
 
-Turning it off ends every view at once; a run that started while it was off stays without one.
+Turning it off ends every view at once; a run that started while it was off stays without one. Turned on again, a
+run that had a view and still runs gets it back.
+
+A CI run's workers keep their view through an outage of the dashboard or its restart: each tries again after 1, 2, 4,
+8 and 16 seconds, then every 30 to 60 seconds while the run lasts. A worker whose view stays out that long says so
+once in the run's log, and once more as it is back, outside any test's output:
+
+```text
+[Piwi Dashboard] Worker 2: live view lost: the instance answered 503. Trying again every 30 to 60 s while the run lasts.
+[Piwi Dashboard] Worker 2: live view back.
+```
 
 ## Check availability
 
@@ -49,7 +59,7 @@ A running run's **Tests** tab says **Live view available**, or what is missing, 
 | It says | Why, and what to do |
 |---|---|
 | **Live view off** | A Project admin turns it on for the next runs, from its help. |
-| **Live view unavailable** | The run has no key: it started before the setting was on, without `wrapConfig`'s global setup, while the instance did not answer that setup, with `streaming` off, or before the instance restarted. Start a new run. |
+| **Live view unavailable** | The run has no key: it started before the setting was on, without `wrapConfig`'s global setup, while the instance did not answer that setup, or with `streaming` off. Start a new run. |
 | **Live view waiting** | No worker is connected yet: they are starting. |
 | **No worker connected** | Tests run without one: the specs import `test` from `@playwright/test`, not the [capture fixtures](/guide/capture-fixtures). |
 | **Not shared live** | The run is on a developer's machine: they [share it](./share-live). |
@@ -97,7 +107,9 @@ leaves it, the worker paints over password fields, fields whose `autocomplete` a
 number or code, and the project's **Masked elements** (Playwright locators). While one shows, two images a second go at
 most. A zoomed-in page sends no image. A secret in the page's own text still shows; the caption and the log hide credentials and typed text. The workers reach the dashboard with a key
 the run got as it registered: it opens this run's live view and nothing else, ends with the run, and is never in the
-environment of the tests, their hooks or their fixtures, so a process they start does not get it.
+environment of the tests, their hooks or their fixtures, so a process they start does not get it. The dashboard keeps
+the key's SHA-256 digest with the run, never the key, so a dashboard that restarts takes the key back from the
+workers that present it while the run lasts.
 
 ## Limits
 

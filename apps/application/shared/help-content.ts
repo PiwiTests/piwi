@@ -576,7 +576,7 @@ export const HELP_TOPICS = {
     text: [
       'Live result counts do not by themselves mean a browser can be watched. The status beside the search field reports what this instance can establish.',
       '',
-      '- **Project setting** — a Project admin enables Live view before the run starts, in the project settings or from here. A run that started without it gets none: the next run does.',
+      '- **Project setting** — a Project admin enables Live view before the run starts, in the project settings or from here. A run that started without it gets none: the next run does. A run that had a view gets it back after the instance restarts, or the setting is turned off and on again.',
       '- **Run setup** — register the run at startup with `wrapConfig` and keep result streaming enabled.',
       '- **Capture fixtures** — import `test` from your capture fixtures in the specs you run; creating the fixtures file alone does not activate them.',
       '- **Worker connection** — waiting can mean startup, reconnection or missing fixtures. Once available, choose **Watch** beside a running test. Images go only to viewers; the view is read-only.',

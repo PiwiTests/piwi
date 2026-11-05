@@ -4,7 +4,7 @@ import { resolveOptions } from '../internal/config/env.js';
 import { HttpClient } from '../internal/transport/http-client.js';
 import { Logger } from '../internal/support/logger.js';
 import { computeInstanceId } from '../internal/support/instance-id.js';
-import { resolveRunLabel } from '../internal/support/ci.js';
+import { detectCi, resolveRunLabel } from '../internal/support/ci.js';
 import { resolveShardInfo } from '../internal/support/shard-info.js';
 import { resolveScmBranch } from '../internal/collect/metadata-collector.js';
 import { isLiveViewKey } from '@piwitests/core/live-view';
@@ -18,6 +18,10 @@ import { lookupProjectId, uploadManifest } from '../internal/manifest/run-manife
 import { baseUrlsFromConfig } from '../internal/collect/server-coverage.js';
 import { isPiwiReporterModule } from '../internal/support/reporter-entry.js';
 import { getReporterVersion } from '../internal/support/reporter-version.js';
+import { relayRunLog } from '../internal/support/run-log.js';
+
+/** Whether this process relays its workers' lines to the run's log already. */
+let relaying = false;
 
 /**
  * Create a Playwright `globalSetup` function that registers a test run on the
@@ -228,4 +232,10 @@ async function registerRun(
     ...(response.liveView?.refused === 'local' ? { liveViewLocal: true as const } : {}),
   });
   logger.debug(`Global setup: initializing run #${response.runId}`);
+  // A CI run's workers say in its log when their live view is lost and when it is back, outside any test's output.
+  if (isLiveViewKey(liveViewKey) && detectCi(process.env) && !relaying) {
+    relaying = true;
+    const stopRelay = relayRunLog((line) => logger.info(line));
+    process.once('exit', stopRelay);
+  }
 }
