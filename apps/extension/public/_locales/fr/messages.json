@@ -6433,6 +6433,89 @@
   "runs_ended": {
     "message": "L’exécution est terminée."
   },
+  "runs_progress_one": {
+    "message": "$done$ sur $count$ test",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "done": {
+        "content": "$2",
+        "example": "0"
+      }
+    }
+  },
+  "runs_progress_other": {
+    "message": "$done$ sur $count$ tests",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "9"
+      },
+      "done": {
+        "content": "$2",
+        "example": "3"
+      }
+    }
+  },
+  "runs_progressFailed_one": {
+    "message": "$count$ en échec",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_progressFailed_other": {
+    "message": "$count$ en échec",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_progressFlaky_one": {
+    "message": "$count$ instable",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_progressFlaky_other": {
+    "message": "$count$ instables",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_endedPassed": {
+    "message": "L’exécution a réussi."
+  },
+  "runs_endedFailed": {
+    "message": "L’exécution est en échec."
+  },
+  "runs_firstFailure": {
+    "message": "Premier échec : $title$",
+    "placeholders": {
+      "title": {
+        "content": "$1",
+        "example": "cart › adds a mug"
+      }
+    }
+  },
+  "runs_endedTimedOut": {
+    "message": "L’exécution a atteint son délai."
+  },
+  "runs_endedInterrupted": {
+    "message": "L’exécution a été interrompue."
+  },
   "runs_stoppedBreakpoint": {
     "message": "Arrêté à un point d’arrêt"
   },

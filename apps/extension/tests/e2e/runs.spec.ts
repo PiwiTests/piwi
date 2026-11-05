@@ -14,6 +14,7 @@ import {
   olderEditor,
   pairedExtension,
   playInput,
+  runMain,
   sendFrame,
   sendLaneFrame,
   startDesktop,
@@ -276,6 +277,40 @@ test('End the test ends a stopped test there, and a run started in a terminal or
       runner.socket.destroy();
       await waitFor(() => (editor.svc.latest(runnerRef)?.ended ? true : undefined), 10_000);
     }
+  } finally {
+    await context.close();
+  }
+});
+
+test('a run says how far it is and how it ended, as its own process says', async () => {
+  const { context, extensionId } = await pairedExtension(editor);
+  try {
+    const runs = await openRuns(context, extensionId);
+    const run = await startRun(editor, 'pays');
+    const main = runMain(editor, run.channel, run.ref, 3);
+    try {
+      const card = liveRun(runs);
+      await expect(card.locator('.run-progress')).toHaveText('0 of 3 tests');
+      main.send({ type: 'run-progress', done: 2, failed: 1, flaky: 1, skipped: 0 });
+      await expect(card.locator('.run-progress')).toHaveText('2 of 3 tests · 1 failed · 1 flaky');
+      main.send({
+        type: 'run-end',
+        status: 'failed',
+        failure: { title: 'cart › pays', error: 'expect(locator).toBeVisible() failed' },
+        done: 3,
+        failed: 1,
+        flaky: 1,
+        skipped: 0,
+      });
+    } finally {
+      main.socket.destroy();
+      await endRun(run);
+    }
+    // The run that ended says how, with its first failure, its error as the tip.
+    const ended = runs.locator('.run.ended', { has: runs.locator('.run-progress') });
+    await expect(ended.locator('.run-progress')).toHaveText('3 of 3 tests · 1 failed · 1 flaky');
+    await expect(ended.locator('.run-ended')).toHaveText('The run failed. First failure: cart › pays');
+    await expect(ended.locator('.first-failure')).toHaveAttribute('title', 'expect(locator).toBeVisible() failed');
   } finally {
     await context.close();
   }
