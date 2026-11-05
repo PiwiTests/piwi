@@ -172,7 +172,8 @@ export interface HubWorker {
   /** Playwright's worker index, which the commands name. */
   worker: number;
   parallelIndex: number;
-  state: 'running' | 'stopped' | 'between';
+  /** `other` for a state of a newer service, which a reader shows as running. */
+  state: 'running' | 'stopped' | 'between' | 'other';
   test: HubTest | null;
   stop: HubStop | null;
   /** A Pause reached it and it has not stopped yet. */
@@ -613,6 +614,7 @@ function nullableStr(value: unknown, max: number): string | null | undefined {
 }
 
 const STOP_REASONS: readonly string[] = ['breakpoint', 'step', 'pause', 'run-to', 'page-pause', 'failure'];
+const WORKER_STATES: readonly string[] = ['running', 'stopped', 'between'];
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
 
 /** A kept request as an answer lists it, field by field; null when it is not one. */
@@ -729,13 +731,22 @@ function readWorker(value: unknown): HubWorker | null {
   if (!isObject(value)) return null;
   const { worker, parallelIndex, state, pausing } = value;
   if (!isInt(worker, 0) || !isInt(parallelIndex, 0) || typeof pausing !== 'boolean') return null;
-  if (state !== 'running' && state !== 'stopped' && state !== 'between') return null;
+  if (typeof state !== 'string' || state.length > 64) return null;
   const test = readTest(value.test);
   const stop = readStop(value.stop);
   if (test === undefined || stop === undefined) return null;
-  return { worker, parallelIndex, state, test, stop, pausing, intents: readActions(value.intents) };
+  return {
+    worker,
+    parallelIndex,
+    state: WORKER_STATES.includes(state) ? (state as HubWorker['state']) : 'other',
+    test,
+    stop,
+    pausing,
+    intents: readActions(value.intents),
+  };
 }
 
+/** A run and those of its workers this version reads; null when the run itself is not one. */
 function readSession(value: unknown): HubSession | null {
   if (!isObject(value) || typeof value.ref !== 'string' || !REF.test(value.ref) || typeof value.ended !== 'boolean') {
     return null;
@@ -746,14 +757,12 @@ function readSession(value: unknown): HubSession | null {
   const project = nullableStr(value.project, MAX_HUB_PROJECT);
   if (root === undefined || label === undefined || command === undefined || project === undefined) return null;
   if (!Array.isArray(value.workers) || value.workers.length > 1000) return null;
-  const workers = value.workers.map(readWorker);
-  if (!workers.every((w): w is HubWorker => w !== null)) return null;
+  const workers = value.workers.map(readWorker).filter((w): w is HubWorker => w !== null);
   const session: HubSession = { ref: value.ref, root, label, command, project, workers, ended: value.ended };
   if (value.terminal === true) session.terminal = true;
   if (value.terminal === true && value.runner === true) session.runner = true;
-  if (value.live === undefined) return session;
-  const live = readLive(value.live);
-  return live ? { ...session, live } : null;
+  const live = value.live === undefined ? null : readLive(value.live);
+  return live ? { ...session, live } : session;
 }
 
 /** A run's live view on the team instance, field by field; null when it is not one. */
