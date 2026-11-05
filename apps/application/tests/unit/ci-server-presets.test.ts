@@ -5,9 +5,12 @@ import {
   ciServerTargetProblem,
   customizeCiServerTarget,
   jenkinsJobPath,
+  isUnderBaseUrl,
+  normalizeCiServerBaseUrl,
   readCiServerAnswer,
   renderCiRequest,
   resolveCiServerTarget,
+  segmentClimbsWhenDecoded,
   type CiServerTarget,
   type CiTemplateValues,
 } from '#shared/ci-server';
@@ -213,6 +216,57 @@ describe('a Custom request', () => {
   });
 });
 
+describe('a path segment that climbs once decoded', () => {
+  test('is one whose decoded parts hold "." or "..", whatever the decoding passes or a ";" parameter', () => {
+    for (const segment of [
+      '..',
+      '.',
+      '%2e%2e',
+      '%2E.',
+      '..%2F..%2Fjob%2Fprod',
+      '%252e%252e',
+      '..%5Cx',
+      '..;',
+      '..;x=1',
+      'a%2F..%2Fb',
+    ]) {
+      expect(segmentClimbsWhenDecoded(segment), segment).toBe(true);
+    }
+    for (const segment of ['job', 'feature%252Fx', 'feature%2Fx', '...', '..x', 'a;..', '%zz', 'a%2Fb']) {
+      expect(segmentClimbsWhenDecoded(segment), segment).toBe(false);
+    }
+  });
+
+  test('is refused in a base URL', () => {
+    expect(normalizeCiServerBaseUrl('https://jenkins.example.com/job/qa/..%2F..%2Fjob%2Fprod/')).toBeNull();
+    expect(normalizeCiServerBaseUrl('https://jenkins.example.com/job/qa/..;/..;/job/prod')).toBeNull();
+    expect(normalizeCiServerBaseUrl('https://jenkins.example.com/job/feature%252Fx')).toBe(
+      'https://jenkins.example.com/job/feature%252Fx/',
+    );
+  });
+
+  test('is never under a base URL', () => {
+    expect(isUnderBaseUrl(`${BASE}job/qa/`, `${BASE}job/qa/..%2F..%2Fjob%2Fprod/job/deploy/build`)).toBe(false);
+    expect(isUnderBaseUrl(`${BASE}job/qa/`, `${BASE}job/qa/..;/x`)).toBe(false);
+    expect(isUnderBaseUrl(`${BASE}job/qa/`, `${BASE}job/qa/job/e2e/build`)).toBe(true);
+  });
+
+  test('is refused in a Custom request path and a Jenkins job name', () => {
+    for (const path of ['..%2F..%2FscriptText', 'job/..;/scriptText', '%252e%252e/x']) {
+      const target = resolveCiServerTarget({ preset: 'custom', custom: { rerun: { method: 'POST', path } } })!;
+      expect(() => render(target), path).toThrow(CiTemplateError);
+    }
+    expect(jenkinsJobPath('polaris/%2e%2e')).toBeNull();
+    expect(jenkinsJobPath('..;')).toBeNull();
+    expect(ciServerTargetProblem({ preset: 'jenkins', rerun: { job: '%2e%2e/prod' } })).toMatch(/cannot dispatch/);
+  });
+
+  test("keeps a Jenkins branch job's double encoding", () => {
+    const { url } = render(jenkins({ job: 'polaris/e2e/{branch}' }));
+    expect(url).toBe(`${BASE}job/polaris/job/e2e/job/feature%252Fx/buildWithParameters`);
+  });
+});
+
 describe('a target sent to be saved', () => {
   test('is refused when its base URL is not an http(s) URL', () => {
     const rerun = { job: 'e2e' };
@@ -229,6 +283,16 @@ describe('a target sent to be saved', () => {
     expect(ciServerTargetProblem({ preset: 'jenkins', baseUrl: '  ', rerun })).toBeNull();
     expect(ciServerTargetProblem({ preset: 'jenkins', baseUrl: 42, rerun })).toMatch(/http\(s\)/);
     expect(ciServerTargetProblem({ preset: 'jenkins', baseUrl: null, rerun })).toBeNull();
+  });
+
+  test('is refused when its base URL path climbs once decoded', () => {
+    expect(
+      ciServerTargetProblem({
+        preset: 'jenkins',
+        baseUrl: 'https://jenkins.example.com/job/qa/..%2Fprod/',
+        rerun: { job: 'e2e' },
+      }),
+    ).toMatch(/climbs once decoded/);
   });
 
   test('is refused when the Flake Lab request it names cannot dispatch', () => {

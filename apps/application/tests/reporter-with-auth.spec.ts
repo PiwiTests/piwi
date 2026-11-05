@@ -261,6 +261,23 @@ test.describe.serial('Reporter with authentication enabled', () => {
     expect(anyAuth.ok()).toBeTruthy();
   });
 
+  // The server sets PIWI_CI_SERVER_URL (playwright.config.ts): the CI server URLs
+  // are the settings form's, so a project reader without project:manage gets null.
+  test('the CI server URLs of a project go only to a project admin', async ({ request }) => {
+    await loginAs(request, 'ci-reporter', 'reporterpassword123');
+    const { items } = (await (await request.get(`${AUTH_SERVER_URL}/api/projects`)).json()) as {
+      items: { id: number; name: string }[];
+    };
+    const projectId = items.find((p) => p.name === PROJECT.REPORTER_AUTH)!.id;
+    const asUploader = await request.get(`${AUTH_SERVER_URL}/api/projects/${projectId}`);
+    expect(asUploader.ok()).toBeTruthy();
+    expect(await asUploader.json()).toMatchObject({ ciServerInstanceUrl: null, ciServerTokenUrl: null });
+
+    await loginAs(request, 'admin', 'adminpassword123');
+    const asAdmin = await request.get(`${AUTH_SERVER_URL}/api/projects/${projectId}`);
+    expect(await asAdmin.json()).toMatchObject({ ciServerInstanceUrl: 'https://jenkins.example.com/' });
+  });
+
   // ---------------------------------------------------------------------------
   // Reporter module – login + submit flow (verified via direct HTTP calls)
   // The reporter's upload helpers are CommonJS and cannot be imported from an

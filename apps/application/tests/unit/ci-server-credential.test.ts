@@ -134,9 +134,9 @@ describe('a placeholder value stays inside the base URL', () => {
     custom: { auth: 'bearer', rerun: { method: 'POST', path: 'job/{{ref}}/build' } },
   });
 
-  test('a slash or an encoded dot segment stays one segment', () => {
+  test('a slash stays inside one segment', () => {
     const projectToken = { url: 'https://jenkins.example.com/job/qa/', token: 'project-secret' };
-    for (const ref of ['a/b', '%2e%2e', '%2E%2E/x']) {
+    for (const ref of ['a/b', 'feature/x/y']) {
       const request = prepare(custom, 'https://jenkins.example.com/job/qa/', projectToken, { ...VALUES, ref });
       const url = new URL(request.url);
       expect(url.pathname.startsWith('/job/qa/job/')).toBe(true);
@@ -146,13 +146,32 @@ describe('a placeholder value stays inside the base URL', () => {
   });
 
   test('a dot segment is refused', () => {
-    for (const ref of ['..', '.', '../../admin', 'a/../b']) {
+    for (const ref of ['..', '.', '../../admin', 'a/../b', '%2e%2e', '%2E%2E/x', '..;x']) {
       expect(() => prepare(custom, 'https://jenkins.example.com/job/qa/', null, { ...VALUES, ref })).toThrow(
         '"." or ".."',
       );
     }
     const literal = target({ preset: 'custom', custom: { auth: 'none', rerun: { method: 'POST', path: '%2e%2e/x' } } });
     expect(() => prepare(literal, 'https://jenkins.example.com/job/qa/')).toThrow('"." or ".."');
+  });
+});
+
+describe('a path that climbs once decoded', () => {
+  test('never carries a credential out of the folder it is bound to', () => {
+    useInstance('https://jenkins.example.com/job/qa/');
+    const jenkins = target({ preset: 'jenkins', rerun: { job: 'deploy' } });
+    for (const baseUrl of [
+      'https://jenkins.example.com/job/qa/..%2F..%2Fjob%2Fprod/',
+      'https://jenkins.example.com/job/qa/..;/..;/job/prod/',
+    ]) {
+      expect(() => prepare(jenkins, baseUrl), baseUrl).toThrow(/base URL/);
+    }
+    const projectToken = { url: 'https://jenkins.example.com/job/qa/', token: 'project-secret' };
+    const custom = target({
+      preset: 'custom',
+      custom: { auth: 'bearer', rerun: { method: 'POST', path: '..%2F..%2FscriptText' } },
+    });
+    expect(() => prepare(custom, 'https://jenkins.example.com/job/qa/', projectToken)).toThrow('"." or ".."');
   });
 });
 

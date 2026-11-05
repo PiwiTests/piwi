@@ -239,11 +239,14 @@ The question was whether a per-project base URL is safe. It is with D5 and D6; w
    it. The instance token also goes only with a preset's request, whose shape the preset fixes, so a Custom template
    cannot use it for any other request under its URL. The request URL cannot leave the base URL: templates fill
    encoded segments and values only, a path value whose slashes would hold a `.` or `..` segment is refused, the check
-   runs on the URL after normalization, and no redirect is followed.
+   runs on the URL after normalization, and no redirect is followed. A base URL or a path segment that climbs once a
+   server decodes it, any number of times (`..%2F`, `%252e%252e`, `..;` as Tomcat reads it), is refused too: a proxy
+   that decodes before routing would otherwise take a token bound to `/job/qa/` to `/job/prod/`.
 2. **Reaching the internal network (SSRF).** A CI server usually lives on a private network, so the webhook rule
    (public addresses only) would refuse the main use case, and allowing any private address would let a project admin
    use Piwi to send requests into the network. D6 allows a private address only on a place the operator named, port
-   included for the host of `PIWI_CI_SERVER_URL`; any other host goes through the public-only lookup, which checks
+   included for the host of `PIWI_CI_SERVER_URL` and for a `host:port` entry (`:80` too, which `URL` drops as the
+   default); any other host goes through the public-only lookup, which checks
    every resolved address at connect. The desktop app is the exception
    (D10): its server binds 127.0.0.1 only, and its one user is both the operator and the only project admin.
 3. **Reading answers.** An answer is never echoed. The dispatch keeps the status and the fields the preset reads: a
@@ -257,7 +260,8 @@ The question was whether a per-project base URL is safe. It is with D5 and D6; w
    to a CI user whose build permission covers only the jobs Piwi should start, or `PIWI_CI_SERVER_URL` should name
    their folder.
 7. **Permissions and secrets.** Configuring is `project:manage`, dispatching is `run:control`, the instance values are
-   the operator's. Tokens are encrypted with `PIWI_SECRET_KEY` (409 without it) and never returned.
+   the operator's: the instance URL and a token's bound URL are returned only to a project admin. Tokens are encrypted
+   with `PIWI_SECRET_KEY` (409 without it) and never returned.
 
 ## Delivery
 

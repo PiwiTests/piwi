@@ -68,6 +68,15 @@ describe('ciServerTargetFromForm', () => {
     );
   });
 
+  test('a base URL whose path climbs once decoded is refused', () => {
+    for (const baseUrl of [
+      'https://jenkins.example.com/job/qa/..%2Fprod/',
+      'https://jenkins.example.com/job/qa/..;/',
+    ]) {
+      expect(ciServerTargetFromForm(jenkinsForm({ baseUrl })).error).toMatch(/climbs once decoded/);
+    }
+  });
+
   test('Jenkins without a job is refused', () => {
     const state = jenkinsForm();
     expect(ciServerTargetFromForm({ ...state, rerun: { ...state.rerun, job: '' } }).error).toBe(

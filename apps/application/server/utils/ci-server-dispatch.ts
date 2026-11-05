@@ -67,7 +67,7 @@ function hostAndPort(url: URL): { host: string; port: string } {
 /**
  * The places a CI server dispatch may reach on a private address: the host and
  * port of `PIWI_CI_SERVER_URL`, and each `PIWI_CI_SERVER_HOSTS` entry, a host
- * name (any port) or `host:port`.
+ * name (any port) or `host:port` (that port only, `:80` included).
  */
 export function ciServerHosts(): Array<{ host: string; port: string | null }> {
   const places: Array<{ host: string; port: string | null }> = [];
@@ -79,7 +79,9 @@ export function ciServerHosts(): Array<{ host: string; port: string | null }> {
     try {
       const url = new URL(`http://${name}`);
       if (url.pathname !== '/' || url.username || url.search) continue;
-      places.push({ host: hostAndPort(url).host, port: url.port || null });
+      // `URL` drops a port equal to the scheme's default, so `host:80` reads its port from the entry.
+      const place = hostAndPort(url);
+      places.push({ host: place.host, port: /:\d+$/.test(name) ? place.port : null });
     } catch {
       // An entry that is not a host name allows nothing.
     }
