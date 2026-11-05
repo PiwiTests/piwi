@@ -6,7 +6,7 @@ defineRouteMeta({
     tags: ['Test Cases'],
     summary: 'Run a test’s Flake Lab experiment in CI',
     description:
-      "Dispatches the project's Flake Lab CI target (`ciRerun.flakeLab` in the project's settings) with the `piwi flake` arguments for this test: `flake <id>` to reproduce it, `flake verify <id>` to verify its fix. It runs on the branch of the test's newest run, with the project's SCM token, through the same dispatch as a cluster's CI re-run, and the experiment `piwi flake` records is saved on the test as usual. Returns the dispatch and the provider's runs URL.",
+      "Dispatches the project's Flake Lab CI target (`ciRerun.flakeLab`, or the Flake Lab request of `ciRerun.ciServer` when `ciRerun.via` is `ci-server`) with the `piwi flake` arguments for this test: `flake <id>` to reproduce it, `flake verify <id>` to verify its fix. It runs on the branch of the test's newest run, with the project's SCM token or its CI server credential, through the same dispatch as a cluster's CI re-run, and the experiment `piwi flake` records is saved on the test as usual. Returns the dispatch and the provider's runs URL.",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     requestBody: {
       required: false,

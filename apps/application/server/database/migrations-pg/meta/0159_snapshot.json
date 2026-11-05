@@ -1,6 +1,6 @@
 {
-  "id": "04a254e7-8d06-47d3-878b-398df6b19a77",
-  "prevId": "13a322d2-5b8c-44b3-af19-85f8f7f53223",
+  "id": "d8314fa5-7643-4990-9b46-f3e7295c7ac4",
+  "prevId": "391edecb-5799-4fe0-8112-ba6806dcf75a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -9049,6 +9049,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "ci_server_token": {
+          "name": "ci_server_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "repository_url": {
           "name": "repository_url",
           "type": "text",
@@ -12177,12 +12183,6 @@
         "stream_token": {
           "name": "stream_token",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "live_view_key_digests": {
-          "name": "live_view_key_digests",
-          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },

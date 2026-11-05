@@ -381,7 +381,7 @@ export async function getTestRunCase(
   if (testRun) {
     const [projectResult] = await db.select().from(projects).where(eq(projects.id, testRun.projectId));
     if (projectResult) {
-      const { scmToken: _scmToken, ...projectPublic } = projectResult;
+      const { scmToken: _scmToken, ciServerToken: _ciServerToken, ...projectPublic } = projectResult;
       project = projectPublic;
     }
   }

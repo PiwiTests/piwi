@@ -476,6 +476,15 @@ import {
 } from '#shared/handlers/bug-reports';
 import { apiCheckDemoImport, apiDemoImport } from './import';
 import {
+  assertDemoCiServerTarget,
+  demoCiServerTokenMarker,
+  demoCiServerTokenUrl,
+  demoClusterRerunInfo,
+  demoExecutionRerunInfo,
+  demoRerunCluster,
+  demoRerunExecution,
+} from './ci-rerun';
+import {
   apiGetWastedWaits,
   apiPutWastedWaits,
   apiGetTimeoutHygiene,
@@ -849,7 +858,11 @@ const routes: RouteEntry[] = [
       // rows carry it); do the same so a demo visitor's stored token never comes
       // back over the wire.
       const items = rows.map((p) => {
-        const { scmToken: _scm, ...rest } = p as { scmToken?: string | null } & typeof p;
+        const {
+          scmToken: _scm,
+          ciServerToken: _ciServerToken,
+          ...rest
+        } = p as { scmToken?: string | null; ciServerToken?: string | null } & typeof p;
         return rest;
       });
       return { items };
@@ -883,8 +896,12 @@ const routes: RouteEntry[] = [
       const runLimit = Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : undefined;
       const project = await getProject(await getDemoDb(), +m[1]!, { runLimit, scope: parseProjectRunScope(q) });
       if (!project) return project;
-      const { scmToken: _scm, ...rest } = project as { scmToken?: string | null } & typeof project;
-      return rest;
+      const {
+        scmToken: _scm,
+        ciServerToken,
+        ...rest
+      } = project as { scmToken?: string | null; ciServerToken?: string | null } & typeof project;
+      return { ...rest, ciServerTokenUrl: demoCiServerTokenUrl(ciServerToken), ciServerInstanceUrl: null };
     },
   },
   {
@@ -894,11 +911,15 @@ const routes: RouteEntry[] = [
     handler: async (m, body, _, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       // A browser demo has no server secret to encrypt with (the server uses
-      // encryptSecret with PIWI_SECRET_KEY), so the token is stored as-is —
-      // but every GET strips it, so it never leaves the browser's own DB.
+      // encryptSecret with PIWI_SECRET_KEY), so the SCM token is stored as-is,
+      // and every GET strips it. A CI server token is never stored: only the
+      // base URL it would be bound to.
       try {
+        const db = await getDemoDb();
         const update = body as Parameters<typeof updateProject>[2];
-        const project = await updateProject(await getDemoDb(), +m[1]!, update);
+        assertDemoCiServerTarget(update);
+        const ciServerToken = await demoCiServerTokenMarker(db, +m[1]!, update);
+        const project = await updateProject(db, +m[1]!, { ...update, ciServerToken });
         if (update?.coverageScope !== undefined || update?.coverageAreas !== undefined) {
           await recountProjectCoverage(await getDemoDb(), +m[1]!);
         }
@@ -1760,29 +1781,22 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'GET',
-    // CI re-run availability — always off in the browser demo (no server, token
-    // or CI to dispatch to), so the button renders disabled with a clear reason.
+    // CI re-run availability: on for a project that dispatches to a CI server,
+    // off with a clear reason for every other project.
     pattern: /^\/api\/failure-clusters\/(\d+)\/rerun$/,
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
-      return {
-        available: false,
-        reason: 'CI re-run is not available in the demo.',
-        provider: null,
-        enabled: false,
-        hasToken: false,
-        lastDispatch: null,
-      };
+      return demoClusterRerunInfo(await getDemoDb(), +m[1]!);
     },
   },
   {
     method: 'POST',
-    // No-op dispatch: the demo has no CI to trigger.
+    // A CI server dispatch is recorded without sending anything; other projects answer not available.
     pattern: /^\/api\/failure-clusters\/(\d+)\/rerun$/,
     permission: 'run:control',
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
-      return { ok: false, demo: true, message: 'CI re-run is not available in the demo.' };
+      return demoRerunCluster(await getDemoDb(), +m[1]!, ctx?.actingUserId ?? null);
     },
   },
   {
@@ -2353,28 +2367,21 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'GET',
-    // CI re-run of one execution's test — always off in the browser demo, like a cluster's.
+    // CI re-run of one execution's test, available as a cluster's is.
     pattern: /^\/api\/test-run-cases\/(\d+)\/rerun$/,
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'execution', +m[1]!);
-      return {
-        available: false,
-        reason: 'CI re-run is not available in the demo.',
-        provider: null,
-        enabled: false,
-        hasToken: false,
-        lastDispatch: null,
-      };
+      return demoExecutionRerunInfo(await getDemoDb(), +m[1]!);
     },
   },
   {
     method: 'POST',
-    // No-op dispatch: the demo has no CI to trigger.
+    // A CI server dispatch is recorded without sending anything; other projects answer not available.
     pattern: /^\/api\/test-run-cases\/(\d+)\/rerun$/,
     permission: 'run:control',
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'execution', +m[1]!);
-      return { ok: false, demo: true, message: 'CI re-run is not available in the demo.' };
+      return demoRerunExecution(await getDemoDb(), +m[1]!, ctx?.actingUserId ?? null);
     },
   },
   {

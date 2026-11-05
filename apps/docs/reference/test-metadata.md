@@ -66,7 +66,7 @@ Piwi's own launchers set them: the desktop app (`desktop`, and `reproduce` or `b
 editors (`editor`, with a ref of their own on each test run, which they find the run by), `piwi preflight --run`
 (`preflight`), `piwi bug --write` (`bug` with the report id), Flake Lab and probes. The desktop app also names each
 run it starts with `PIWI_RUN_REF`, so two runs started for the same cluster each find their own Piwi run. A
-[re-run dispatched from the dashboard](/features/pr-feedback#re-run-from-the-dashboard) is recorded as `ci-rerun` once
+[re-run dispatched from the dashboard](/features/ci-rerun) is recorded as `ci-rerun` once
 Piwi recognizes it, and an imported report as `import`. You rarely set them yourself.
 
 What each origin feeds:

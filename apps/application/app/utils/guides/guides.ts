@@ -198,7 +198,7 @@ export const AUTHORED_GUIDES: readonly AuthoredGuide[] = [
         anchor: 'project-ci-rerun',
         resolve: 'project',
         title: 'Re-run a cluster’s tests in CI',
-        body: '**CI re-run** lets a failure cluster’s page start its affected tests in CI: a GitHub workflow, a GitLab pipeline or a Bitbucket custom pipeline, dispatched with the project’s SCM token, which then needs write access. It is off by default.',
+        body: '**CI re-run** lets a failure cluster’s page start its affected tests in CI: a GitHub workflow, a GitLab pipeline or a Bitbucket custom pipeline, dispatched with the project’s SCM token, which then needs write access, or a Jenkins job or another CI server, with its own token. It is off by default.',
         side: 'top',
         align: 'start',
       },

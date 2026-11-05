@@ -21,7 +21,7 @@ failure, or writes back to a pull request, goes through it.
 | [Notifications](/features/notifications) | Names the author of the fixing commit on `cluster.fixed` and `cluster.regressed` | read |
 | Ownership and the default branch | Reads `CODEOWNERS` for test owners, and the repository's default branch when the project sets none | read |
 | [Pull-request feedback](/features/pr-feedback) | Posts a summary comment and a commit status | write |
-| [Re-run in CI](/features/pr-feedback#re-run-from-the-dashboard) | Dispatches a workflow or pipeline | write |
+| [Re-run in CI](/features/ci-rerun) | Dispatches a workflow or pipeline (a CI server takes its own token) | write |
 | [Auto-heal PRs](/features/auto-heal) | Opens a pull request with a locator fix | write |
 
 Every call is best-effort: a missing token, a private repository the token cannot see or an unreachable host is
@@ -97,5 +97,5 @@ section is absent, it says why.
 ## Related
 
 - [AI provider](./ai-provider): the model that reads this context
-- [Pull-request feedback & re-run](/features/pr-feedback): what gets posted on a pull request
+- [Pull-request feedback](/features/pr-feedback): what gets posted on a pull request
 - [Privacy & data flow](./privacy): what Piwi sends to your Git host

@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "2e01e2d0-1453-4b10-bad5-067449dad0f2",
-  "prevId": "3a696ec3-275c-4fa7-be30-9478fd3a4793",
+  "id": "da60ad8f-da5e-450b-ae56-989353755b8a",
+  "prevId": "ece728c1-5f69-4f45-849e-62551d18d58c",
   "tables": {
     "account_tokens": {
       "name": "account_tokens",
@@ -7313,6 +7313,13 @@
           "notNull": false,
           "autoincrement": false
         },
+        "ci_server_token": {
+          "name": "ci_server_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "repository_url": {
           "name": "repository_url",
           "type": "text",
@@ -9960,13 +9967,6 @@
         },
         "stream_token": {
           "name": "stream_token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "live_view_key_digests": {
-          "name": "live_view_key_digests",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

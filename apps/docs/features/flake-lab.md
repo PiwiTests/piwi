@@ -172,7 +172,7 @@ The experiment is recorded with the source `ci`. Exit code 1 (nothing reproduced
 
 To start it from a failure's next step (**Reproduce in CI**, **Verify in CI**), make the input the command's arguments
 (<code v-pre>npx @piwitests/reporter ${{ inputs.piwi_flake }}</code>) and name the workflow as the **Flake Lab** target in the project's
-[CI re-run](./pr-feedback#re-run-from-the-dashboard) settings. It receives `flake 1842` or `flake verify 1842`.
+[CI re-run](./ci-rerun) settings. It receives `flake 1842` or `flake verify 1842`.
 
 ## Without the dashboard
 
