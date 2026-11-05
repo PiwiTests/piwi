@@ -215,7 +215,7 @@ async function childOrigin(
 }
 
 /** `run`'s answer, or undefined once `ms` passed, `run` left to settle on its own. */
-async function within<T>(run: Promise<T>, ms: number): Promise<T | undefined> {
+export async function within<T>(run: Promise<T>, ms: number): Promise<T | undefined> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
@@ -314,7 +314,7 @@ function sameBoxes(a: Box[], b: Box[]): boolean {
 }
 
 /** A JPEG's size in pixels, from its frame header; null when it has none. */
-function jpegSize(data: Buffer): { width: number; height: number } | null {
+export function jpegSize(data: Buffer): { width: number; height: number } | null {
   for (let i = 2; i + 9 < data.length;) {
     if (data[i] !== 0xff) return null;
     const marker = data[i + 1]!;
@@ -358,7 +358,7 @@ function shrink(image: Image, width: number, height: number): Image {
 }
 
 /** `frame` with `boxes` painted over, at most `size` and at `quality`. */
-function paintBoxes(
+export function paintBoxes(
   jpeg: JpegJs,
   frame: PageFrame,
   boxes: Box[],

@@ -16,7 +16,7 @@ import {
 import { parseRunToHub, type HubToRun, type RunToHub } from '@piwitests/core/run-channel';
 import { MAX_VIEW_FPS, MAX_VIEW_FRAME, type ViewInput } from '@piwitests/core/run-view';
 import { PICK_AT_NEEDS } from '../src/internal/capture/pick-at.js';
-import { jsonRes, playwrightAtLeast, startServer, type FakeServer, withoutCi } from './_helpers.js';
+import { jpegBand, jsonRes, playwrightAtLeast, startServer, type FakeServer, withoutCi } from './_helpers.js';
 
 /**
  * The live view of a stopped page, the input played on it and Pick on the image, in a real Playwright run through the
@@ -25,7 +25,8 @@ import { jsonRes, playwrightAtLeast, startServer, type FakeServer, withoutCi } f
  * alone. The page tells the fake editor where its elements and Piwi's overlays are, as a person sees them on the
  * view. Headless, the view shows a page nobody else sees: input clicks a button, a pick on the image names its
  * locator, Pick and Record run in the page through the view, and nothing of Piwi is left in it once the test goes on.
- * Headed, the view shows the page beside its pause bar. With a video recorded, the view leaves the video whole. Under
+ * Headed, the view shows the page with its pause bar painted over, each frame decoded and its pixels checked. With a
+ * video recorded, the view leaves the video whole. Under
  * `xvfb-run -a` the headed project opens a window; without a display, Chromium runs it without one
  * (`--headless=new`). Firefox runs where it is installed.
  */
@@ -77,6 +78,7 @@ setInterval(() => {
     choice: center(buttons.find((b) => /^getBy|^locator\\(/.test(b.textContent))),
     recorder: !!document.getElementById('piwi-record-hud-host'),
     heading: document.querySelector('h1').textContent,
+    bar: document.getElementById('__piwi-pause-bar')?.getBoundingClientRect().bottom ?? null,
     dblclicked,
     ctrlClicked,
   }) }).catch(() => {});
@@ -244,6 +246,8 @@ interface Where {
   choice: Point | null;
   recorder: boolean;
   heading: string;
+  /** The pause bar's bottom edge, in CSS pixels; null while it does not show. */
+  bar: number | null;
   dblclicked: boolean;
   ctrlClicked: boolean;
 }
@@ -283,6 +287,8 @@ const watched: Record<
 const resent: boolean[] = [];
 /** What the view of a page too heavy for a lighter image said, each time. */
 const heavy: { refusals?: string[] } = {};
+/** The pause bar's bottom edge at the headed stop, and the frames its view sent until the page was clicked. */
+const headed: { bar?: number; frames?: FrameHeard[] } = {};
 interface DumpedStep {
   title: string;
   steps: DumpedStep[];
@@ -383,9 +389,20 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
         resent.push(again.message.data === seen[seen.length - 1]!.message.data);
       }
       if (test === 'watched in Firefox') await watch(WATCH_MS);
+      if (test === 'watched at a headed stop') {
+        headed.bar = await waitFor(() => where?.bar ?? undefined);
+        // Clicks across the bar's band, which the frames paint over, reach none of its buttons: the stop stays held, and
+        // the click on the page below still plays.
+        for (let x = 20; x < 1000; x += 40) await play(click({ x, y: Math.floor(headed.bar / 2) }));
+      }
       const at = await waitFor(() => where?.go ?? undefined);
       answers.push(await play(click(at)));
       await waitFor(() => where?.heading === 'Clicked');
+      if (test === 'watched at a headed stop') {
+        // The frame of the page clicked, under the bar drawn before, comes a few frames later at most.
+        await sleep(500);
+        headed.frames = frames(connection, stop.stop).map(({ message }) => message);
+      }
       if (test === 'clicked through the view') {
         // A double click as a viewer's browser counted it, 320 ms apart, and a click with Control held.
         const note = await waitFor(() => where?.note ?? undefined);
@@ -828,6 +845,25 @@ describe('the live view of a stopped page', () => {
   it('shows a headed stop too, and plays its input there', () => {
     expect(said['watched at a headed stop']).toEqual([ON, PLAYED_2, PICKED_AT, OFF]);
     expect(stops['watched at a headed stop']).toMatchObject({ bar: true });
+  });
+
+  it('paints the pause bar over in each frame of a headed stop, and none of the page below it', () => {
+    const bar = headed.bar!;
+    expect(bar).toBeGreaterThan(10);
+    const seen = headed.frames!;
+    expect(seen.length).toBeGreaterThan(0);
+    const gray = (mean: number[]) => mean.every((channel) => Math.abs(channel - 96) < 16);
+    const white = (mean: number[]) => mean.every((channel) => channel > 235);
+    const strips = seen.map((frame) => jpegBand(Buffer.from(frame.data, 'base64'), frame.height, 2, bar - 2));
+    for (const strip of strips) {
+      // Gray where the bar is, or the page's white in a frame from before the bar was drawn: never the bar itself.
+      expect(strip.violet).toBe(0);
+      expect(gray(strip.mean) || white(strip.mean), `the band of the bar: ${strip.mean.join(', ')}`).toBe(true);
+    }
+    // The page clicked through the view, the bar drawn: painted over, the page under its shadow left as it is.
+    expect(gray(strips[strips.length - 1]!.mean)).toBe(true);
+    const last = seen[seen.length - 1]!;
+    expect(white(jpegBand(Buffer.from(last.data, 'base64'), last.height, bar + 40, bar + 70).mean)).toBe(true);
   });
 
   it('leaves the test’s video whole, its first client’s size the view’s', () => {
