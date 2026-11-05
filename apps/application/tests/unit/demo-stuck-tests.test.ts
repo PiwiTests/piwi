@@ -80,6 +80,15 @@ describe('the demo’s stuck check', () => {
     expect(messages[1]).toMatchObject({ event: { projectName: 'E2E Checkout', testTitle: begin.title } });
   });
 
+  test('marks a stuck test of a run a local hub steers, as the server does, and sends no notification', async () => {
+    const steered = { ...RUN, metadata: { piwiInteractive: { client: 'Visual Studio Code', ref: 'terminal-1-2' } } };
+    noteDemoBegin(RUN.id, begin);
+    await checkDemoStuckTests(db as never, steered, [{ startedAt: begin.startedAt + 3 * 60_000 }]);
+    await delivered();
+    expect(messages.map((m) => m.scope)).toEqual(['run']);
+    expect(messages[0]).toMatchObject({ event: { type: 'test-stuck', data: { title: begin.title } } });
+  });
+
   test('leaves a test that completed', async () => {
     noteDemoBegin(RUN.id, begin);
     noteDemoComplete(RUN.id, begin);

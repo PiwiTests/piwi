@@ -116,6 +116,10 @@ What the package does to a user's run, process by process.
 - The run's name on it, its `run-attach`'s `ref`, is `PIWI_RUN_REF` when set, else `PIWI_ORIGIN_REF`. The desktop app
   sets `PIWI_RUN_REF` (`desktop-<its run id>`) on the runs it starts, whose `PIWI_ORIGIN_REF` names the failure cluster
   or bug report they were started for; its bundled server is their hub.
+- A run whose workers connect to a hub (`runChannelRef` in `internal/config/editors.ts`, which `openRunChannel` reads
+  too) says so in its metadata from `onBegin`: `piwiInteractive`, `{ client, ref }` (`runInteractive`), the hub's
+  client being the editor it follows by its discovery file's name, else the launcher `PIWI_ORIGIN` names. The
+  dashboard sends no `test.stuck` for such a run.
 - `PIWI_RUN_CHANNEL` names the same local socket as `PIWI_RECORD_CHANNEL`. Each worker
   connects to it in the `piwiResources` worker fixture, before its first test (it waits
   2 seconds at most), and stays connected until the worker ends. The messages are defined

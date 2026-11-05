@@ -18,13 +18,31 @@
  *
  * Local runs (a developer's machine, the desktop app, an editor) count like CI
  * runs, except as the editor's CI failures while a CI run exists on the branch,
- * and for a finished run's outbound effects (its notifications, pull-request
- * comment and commit status, AI diagnosis and auto-heal): a run from an editor
- * never sends them, and a run from a developer's machine or the desktop app
- * sends them only when it ran the whole suite. A finished run's analysis (fix
- * verification, change coverage, the hand-back outcomes) does not follow that
- * rule: each step reads the run under its own use. A run from an editor does
- * not make a failure cluster recur either (`cluster-occurrences`).
+ * and for their outbound effects, which follow this policy:
+ *
+ * - A complete run (the whole suite, finished) from a developer's machine
+ *   (`local`) or the desktop app (`desktop`) sends what a CI run sends
+ *   (`notifications`, `tracker`): the run events (`run.finished`, `run.failed`,
+ *   `run.failed.default_branch`, and `run.interrupted` for one the stale-run
+ *   sweep ended), the cluster events, `flakiness.spike`, `perf.regression` and
+ *   `bug.looks_fixed`, or one `environment.incident` in their place; the
+ *   pull-request comment and commit status; AI diagnosis
+ *   (`diagnosis.completed`) and auto-heal (`auto_heal.pr_opened`); the
+ *   tracker's own writes; and, while it runs, `test.stuck` (`test-stuck`, for
+ *   which a full run counts as complete before it finishes). Such a run of
+ *   part of the suite sends none of them.
+ * - A run from an editor (`editor`) sends none of them, complete or not.
+ * - An interactive run, one a local hub steers (an editor service's or the
+ *   desktop app's, whose run channel its workers connect to; the reporter
+ *   stamps it `piwiInteractive`), never sends `test.stuck`, its tests stopping
+ *   at a person's breakpoints. Its other effects follow its origin, so a
+ *   complete `local` or `desktop` run a hub steers still sends its run's
+ *   notifications.
+ *
+ * A finished run's analysis (fix verification, change coverage, the hand-back
+ * outcomes) does not follow that policy: each step reads the run under its own
+ * use. A run from an editor does not make a failure cluster recur either
+ * (`cluster-occurrences`).
  */
 
 import { and, eq, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
@@ -32,6 +50,7 @@ import { FLAKE_LAB_RUN_METADATA_KEY } from '@piwitests/core/flake-plan';
 import {
   parseRunOrigin,
   parseRunOriginRef,
+  RUN_INTERACTIVE_METADATA_KEY,
   RUN_ORIGIN_KINDS,
   RUN_ORIGIN_METADATA_KEY,
   RUN_REF_METADATA_KEY,
@@ -79,6 +98,7 @@ export type RunUse =
   | 'auto-heal'
   | 'bug-lifecycle'
   | 'notifications'
+  | 'test-stuck'
   | 'tracker'
   | 'cluster-occurrences'
   | 'run-health';
@@ -94,6 +114,8 @@ export interface RunUseRule {
   completeOnlyFor?: readonly RunOriginKind[];
   /** Leave out a historical import: a report imported after newer runs were stored. */
   excludesHistoricalImports: boolean;
+  /** Leave out an interactive run, one a local hub steers (`isInteractiveRun`); false when absent. */
+  excludesInteractive?: boolean;
 }
 
 /**
@@ -107,6 +129,8 @@ export interface RunUseRule {
  * reproduction, and for a run from a developer's machine or the desktop app
  * only when it ran the whole suite
  * (`completeOnlyFor`); the analysis behind them follows its own uses.
+ * `test-stuck` decides a running attempt's `test.stuck` by the same rule, and
+ * never for an interactive run.
  */
 export const RUN_USES: Record<RunUse, RunUseRule> = {
   /** Execution baselines: the environment, visual and page diffs, the AI's baseline comparison, the last pass. */
@@ -208,6 +232,19 @@ export const RUN_USES: Record<RunUse, RunUseRule> = {
     excludesHistoricalImports: false,
   },
   /**
+   * A running attempt's `test.stuck`: the rule of `notifications`, read while
+   * the run runs (its caller counts a full run as complete), and never for an
+   * interactive run, whose tests stop at a person's breakpoints.
+   */
+  'test-stuck': {
+    excludes: [...LAB_AND_INVESTIGATION, 'editor'],
+    excludesIncidents: true,
+    completeOnly: false,
+    completeOnlyFor: ['local', 'desktop'],
+    excludesHistoricalImports: false,
+    excludesInteractive: true,
+  },
+  /**
    * The writes Piwi makes to an issue tracker on its own: automatic creation,
    * and the comments, transitions and description updates a run's verdicts
    * trigger. The rule of `notifications`.
@@ -267,6 +304,14 @@ export function isFlakeLabRun(metadata: unknown): boolean {
 /** True when a run is flagged as an environment incident. */
 export function isIncidentRun(metadata: unknown): boolean {
   return isObject(record(metadata)?.[INCIDENT_RUN_METADATA_KEY]);
+}
+
+/**
+ * True for an interactive run: one a local hub steers (an editor service's or the desktop app's), which the reporter
+ * stamps with the hub's client and the run's ref there (`RunInteractive`).
+ */
+export function isInteractiveRun(metadata: unknown): boolean {
+  return isObject(record(metadata)?.[RUN_INTERACTIVE_METADATA_KEY]);
 }
 
 /** What launched a run, read from its metadata. */
@@ -342,6 +387,7 @@ export function isEligibleRun(run: EligibleRunInput, use: RunUse): boolean {
   if (rule.completeOnly && !isCompleteRun(run)) return false;
   if (((rule.completeOnlyFor ?? []) as readonly string[]).includes(origin) && !isCompleteRun(run)) return false;
   if (rule.excludesHistoricalImports && run.historicalImport) return false;
+  if (rule.excludesInteractive && isInteractiveRun(run.metadata)) return false;
   return true;
 }
 
@@ -349,13 +395,14 @@ export function isEligibleRun(run: EligibleRunInput, use: RunUse): boolean {
 //
 // A run's origin is stored in `test_runs.origin`: every write of a run's
 // metadata writes `runOrigin` of that metadata beside it, so the SQL form reads
-// one column. The incident flag and an origin's ref are read from the metadata
-// itself. Metadata is JSON text on SQLite and `jsonb` on PostgreSQL, and the
-// demo's database is SQLite in the browser, so those keys are matched in the
-// serialized text, in both spellings: SQLite keeps the text as written
-// (`"k":v`), and `jsonb` puts a space after each colon and comma and sorts an
-// object's keys shortest first (`{"ref": "…", "kind": "…"}`). The server writes
-// the origin as `{ kind, ref? }`, kind first, and its ref holds no quote.
+// one column. The incident flag, the interactive stamp and an origin's ref are
+// read from the metadata itself. Metadata is JSON text on SQLite and `jsonb` on
+// PostgreSQL, and the demo's database is SQLite in the browser, so those keys
+// are matched in the serialized text, in both spellings: SQLite keeps the text
+// as written (`"k":v`), and `jsonb` puts a space after each colon and comma and
+// sorts an object's keys shortest first (`{"ref": "…", "kind": "…"}`). The
+// server writes the origin as `{ kind, ref? }`, kind first, and its ref holds
+// no quote.
 
 function text(metadata: SQLWrapper): SQL {
   return sql`COALESCE(CAST(${metadata} AS TEXT), '')`;
@@ -407,6 +454,11 @@ export function incidentRunSql(metadata: SQLWrapper): SQL {
   return hasKey(text(metadata), INCIDENT_RUN_METADATA_KEY, '{');
 }
 
+/** SQL predicate: the run is interactive (`isInteractiveRun`). */
+function interactiveRunSql(metadata: SQLWrapper): SQL {
+  return hasKey(text(metadata), RUN_INTERACTIVE_METADATA_KEY, '{');
+}
+
 /** The run columns `eligibleRunSql` reads; `test_runs`' own by default. */
 export interface EligibleRunColumns {
   origin: SQLWrapper;
@@ -441,6 +493,7 @@ export function eligibleRunSql(use: RunUse, columns: EligibleRunColumns = TEST_R
   if (completeOnlyFor.length) {
     parts.push(sql`NOT (${runOriginIn(columns.origin, completeOnlyFor)} AND NOT ${completeRunSql(columns)})`);
   }
+  if (rule.excludesInteractive) parts.push(sql`NOT ${interactiveRunSql(columns.metadata)}`);
   return sql`(${sql.join(parts, sql` AND `)})`;
 }
 

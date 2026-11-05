@@ -50,7 +50,9 @@ where the project has it on. The payload is on
 
 The branch, environment, owner and **Default branch only** filters apply to it. A run that sends no notification sends
 none: a run from an editor, a bisect step, a reproduction, or a partial run from a developer's machine or the desktop
-app.
+app. Nor does a run an editor or the desktop app steers, whose tests stop at someone's breakpoints: one either of them
+started, or one [started in a terminal](./terminal-runs) that follows an editor. Its long test is still marked
+**Stuck?** on the run page.
 
 ## Limits
 

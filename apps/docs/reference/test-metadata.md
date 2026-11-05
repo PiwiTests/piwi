@@ -91,6 +91,8 @@ What each origin feeds:
   performance [notification](/features/notifications#events), posts no
   [pull-request comment or commit status](/features/pr-feedback), starts no automatic AI diagnosis or auto-heal, and
   writes nothing to an [issue tracker](/features/issue-automation#the-runs-that-write) on its own.
+- **Interactive runs** (`piwiInteractive`) send no [`test.stuck`](/features/stuck-tests#the-notification), whatever
+  their origin: their tests stop at someone's breakpoints. Everything else follows their origin.
 - **Partial runs** (a `--grep`, a file filter, a selection, `--last-failed`, `--only-changed` or `--test-list`) never count for change
   coverage, which asks whether a file was reached in the recent runs, nor as a commit's end-to-end coverage.
 
