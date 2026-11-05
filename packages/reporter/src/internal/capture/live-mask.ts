@@ -498,7 +498,7 @@ export interface SecretFieldMask {
 /** Mask the secret fields and the project's locators in each image of `page` the view would send. */
 export function maskSecretFields(page: Page, options: SecretFieldMaskOptions): SecretFieldMask {
   const reads: Read[] = [];
-  /** When the latest image painted over was given to send. */
+  /** When the latest image that shows a masked element was given to send. */
   let maskedAt = -Infinity;
   /** How many reads failed in a row. */
   let failed = 0;
@@ -546,9 +546,8 @@ export function maskSecretFields(page: Page, options: SecretFieldMaskOptions): S
     } catch {
       return null;
     }
-    if (!boxes.length) return data.length <= options.maxBytes ? { ...frame, data } : null;
     if (data.length > options.maxBytes) return null;
-    maskedAt = Date.now();
+    if (boxes.length) maskedAt = Date.now();
     return { ...frame, data };
   };
 

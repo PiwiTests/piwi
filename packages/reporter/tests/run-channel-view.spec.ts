@@ -72,7 +72,7 @@ const PAGE = (animated: boolean) => `<!doctype html><meta charset="utf-8"><title
 <style>body { margin: 0; padding: 120px 20px 20px; font: 16px sans-serif } button { all: unset; display: inline-block; padding: 8px 16px; background: #ddd }
 #spin { width: 80px; height: 80px; background: linear-gradient(red, blue); animation: s 1s linear infinite } @keyframes s { to { transform: rotate(360deg) } }</style>
 <h1>Shop</h1><section data-testid="cart" aria-label="Cart"><button id="go" onclick="document.querySelector('h1').textContent = 'Clicked'">Go</button></section>
-<p id="note">A note to click on.</p><input id="field">${animated ? '<div id="spin"></div>' : ''}
+<p id="note">A note to click on.</p><input id="field">${animated ? '<div id="spin"></div>' : ''}<dialog id="modal"><button>OK</button></dialog>
 <script>
 const center = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; };
 let dblclicked = false;
@@ -92,11 +92,14 @@ setInterval(() => {
     bar: document.getElementById('__piwi-pause-bar')?.getBoundingClientRect().bottom ?? null,
     field: center(document.getElementById('field')),
     barFocused: !!document.getElementById('__piwi-pause-bar')?.contains(document.activeElement),
+    dialog: document.getElementById('modal').open,
     dblclicked,
     ctrlClicked,
   }) }).then((r) => r.json()).then((asked) => {
     // The test's window focuses the bar's first button, as a person who tabs into it there.
     if (asked.focusBar) document.querySelector('#__piwi-pause-bar button')?.focus();
+    // The app opens a modal dialog of its own.
+    if (asked.openDialog) document.getElementById('modal').showModal();
   }).catch(() => {});
 }, 100);
 </script>`;
@@ -278,6 +281,8 @@ interface Where {
   field: Point | null;
   /** Whether the focus is on one of the pause bar's buttons. */
   barFocused: boolean;
+  /** Whether the page's modal dialog is open. */
+  dialog: boolean;
   dblclicked: boolean;
   ctrlClicked: boolean;
 }
@@ -324,11 +329,16 @@ const heavy: { refusals?: string[] } = {};
 const headed: {
   bar?: number;
   frames?: FrameHeard[];
+  /** What the clicks across the bar's band were answered. */
+  bandClicks?: string[];
   tabbed?: boolean;
   afterKeys?: { bar: number | null; focused: boolean };
+  /** Whether the page's dialog closed on the viewer's Escape. */
+  dialogClosed?: boolean;
 } = {};
-/** Whether the page focuses the pause bar's first button on its next report. */
+/** Whether the page focuses the pause bar's first button, or opens its dialog, on its next report. */
 let focusBar = false;
+let openDialog = false;
 interface DumpedStep {
   title: string;
   steps: DumpedStep[];
@@ -431,12 +441,15 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
       if (test === 'watched in Firefox') await watch(WATCH_MS);
       if (test === 'watched at a headed stop') {
         headed.bar = await waitFor(() => where?.bar ?? undefined);
-        // Clicks across the bar's band, which the frames paint over, reach none of its buttons: the stop stays held, and
-        // the click on the page below still plays.
-        for (let x = 20; x < 1000; x += 40) await play(click({ x, y: Math.floor(headed.bar / 2) }));
+        // Clicks across the bar's band, which the frames paint over, reach none of its buttons: the stop stays held, the
+        // answer says the click was not played, and the click on the page below still plays.
+        headed.bandClicks = [];
+        for (let x = 20; x < 1000; x += 40) {
+          headed.bandClicks.push((await play(click({ x, y: Math.floor(headed.bar / 2) }))).message);
+        }
         // Keys reach none of its buttons either: a Tab from the page's last field passes the bar by, Enter and Space on
-        // a button of it the test's window focused press nothing, and Escape, which the bar takes as Resume, is not
-        // played. The stop stays held.
+        // a button of it the test's window focused press nothing, and Escape, which the bar takes as Resume, goes to the
+        // page alone: the stop stays held, and the page's own dialog closes on it.
         answers.push(await play(click(await waitFor(() => where?.field ?? undefined))));
         answers.push(await play([{ type: 'key', action: 'press', key: 'Tab' }]));
         await sleep(300);
@@ -452,6 +465,10 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
         answers.push(await play([{ type: 'key', action: 'press', key: 'Escape' }]));
         await sleep(300);
         headed.afterKeys = await waitFor(() => (where ? { bar: where.bar, focused: where.barFocused } : undefined));
+        openDialog = true;
+        await waitFor(() => where?.dialog);
+        answers.push(await play([{ type: 'key', action: 'press', key: 'Escape' }]));
+        headed.dialogClosed = await waitFor(() => (where && !where.dialog) || undefined, 3000).catch(() => false);
       }
       const at = await waitFor(() => where?.go ?? undefined);
       answers.push(await play(click(at)));
@@ -645,8 +662,9 @@ beforeAll(async () => {
     const url = new URL(req.url, 'http://x');
     if (url.pathname === '/where') {
       where = JSON.parse(req.body) as Where;
-      const asked = { focusBar };
+      const asked = { focusBar, openDialog };
       focusBar = false;
+      openDialog = false;
       return jsonRes(res, 200, asked);
     }
     if (url.pathname === '/piwi/send') {
@@ -917,6 +935,7 @@ describe('the live view of a stopped page', () => {
       PLAYED_1,
       PLAYED_2,
       PLAYED_1,
+      PLAYED_1,
       PLAYED_2,
       PICKED_AT,
       OFF,
@@ -924,9 +943,16 @@ describe('the live view of a stopped page', () => {
     expect(stops['watched at a headed stop']).toMatchObject({ bar: true });
   });
 
-  it('keeps a viewer’s keys from the hidden bar: Tab passes it by, Enter and Space press nothing, Escape is not played', () => {
+  it('plays no click on the hidden bar’s band, and says so', () => {
+    expect(new Set(headed.bandClicks)).toEqual(
+      new Set(['Played 1 of 2 events: 1 not played, as the pause bar the view paints over would take it.']),
+    );
+  });
+
+  it('keeps a viewer’s keys from the hidden bar: Tab passes it by, Enter and Space press nothing, Escape is the page’s', () => {
     expect(headed.tabbed).toBe(false);
     expect(headed.afterKeys).toEqual({ bar: headed.bar, focused: false });
+    expect(headed.dialogClosed).toBe(true);
   });
 
   it('paints the pause bar over in each frame of a headed stop, and none of the page below it', () => {

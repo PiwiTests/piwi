@@ -113,11 +113,19 @@ interface BarRead {
   height: number;
 }
 
+/** A viewport's size, in the pixels a frame or a read names it in. */
+interface Size {
+  width: number;
+  height: number;
+}
+
 /** Piwi's pause bar as a page last drew it. */
 interface PauseBar {
-  /** The latest read of the bar, and the viewport of the frames it is for: the first frame's, for the read at its draw. */
+  /** Settles once the bar is drawn. */
+  drawn: Promise<unknown>;
+  /** The latest read of the bar, and the viewport of the frames it was made for: none for the read made at its draw. */
   read: Promise<BarRead | null>;
-  readFor: { width: number; height: number } | null;
+  readFor: Size | null;
   /** The latest read that found the bar, for a frame the page painted before the bar came down. */
   found: BarRead | null;
   goneAt: number | null;
@@ -150,12 +158,12 @@ function readBar(page: Page, bar: PauseBar): Promise<BarRead | null> {
 /**
  * Piwi's pause bar shows in `page` from now on, drawn once `drawn` settles: each view of the page paints it over, from
  * the viewport's top to the bar's bottom edge, across the viewport, as the bar is fixed there. Its bottom edge is read
- * through an internal call as soon as it is drawn, and again as a frame names another viewport than the frames it was
- * read for (the bar wraps on a narrower one). Returns what tells that it came down: from then on, a frame the page
- * painted later shows it no more.
+ * through an internal call as soon as it is drawn, and again for a frame that names another viewport than the read
+ * found, unless it was made for that viewport already (the bar wraps on a narrower one). Returns what tells that it came
+ * down: from then on, a frame the page painted later shows it no more.
  */
 export function pauseBarShows(page: Page, drawn: Promise<unknown>): () => void {
-  const bar: PauseBar = { read: Promise.resolve(null), readFor: null, found: null, goneAt: null };
+  const bar: PauseBar = { drawn, read: Promise.resolve(null), readFor: null, found: null, goneAt: null };
   bar.read = drawn.then(
     () => readBar(page, bar),
     () => null,
@@ -166,25 +174,41 @@ export function pauseBarShows(page: Page, drawn: Promise<unknown>): () => void {
   };
 }
 
+/** Whether two viewports are the same size, within a pixel. */
+const sameSize = (a: Size, b: Size): boolean => Math.abs(a.width - b.width) <= 1 && Math.abs(a.height - b.height) <= 1;
+
+/** Whether `frame` names the viewport `read` measured at one scale on both axes, within a hundredth. */
+const scaledAlike = (read: Size, frame: Size): boolean =>
+  Math.abs(frame.width / read.width - frame.height / read.height) < 0.01;
+
 /**
  * The band of the pause bar `frame` may show, in its own pixels: the bar shows, or the page painted the frame before it
- * came down (a frame that names no time taken as `UNDATED_MS` old). The bar's bottom edge is read in CSS pixels and
- * scaled to the viewport the frame names, which a page zoomed in names in more pixels than CSS ones. None when the frame
- * shows no bar, or the bar is not read within `BAR_READ_MS`.
+ * came down (a frame that names no time taken as `UNDATED_MS` old). The bar's bottom edge is read in CSS pixels with
+ * the viewport's size, read again while the bar shows for a frame that names another size, unless that read was made
+ * for it already: a read made for the frame's viewport that still names another size at one scale on both axes is of
+ * a page zoomed in, whose frame names its viewport in more pixels than CSS ones, and is scaled to it. None when the
+ * frame shows no bar, or the bar is not read within `BAR_READ_MS`.
  */
 async function pauseBarBoxes(page: Page, frame: PageFrame): Promise<FrameBox[]> {
   const bar = PAUSE_BARS.get(page);
   if (!bar) return [];
   if (bar.goneAt !== null && (Number.isFinite(frame.at) ? frame.at : Date.now() - UNDATED_MS) > bar.goneAt) return [];
   const viewport = { width: frame.width, height: frame.height };
-  if (!bar.readFor) bar.readFor = viewport;
-  else if (bar.goneAt === null && (bar.readFor.width !== viewport.width || bar.readFor.height !== viewport.height)) {
+  if (bar.goneAt === null && !(bar.readFor && sameSize(bar.readFor, viewport))) {
+    const current = await within(bar.read, BAR_READ_MS);
+    if (!current || !sameSize(current, viewport)) bar.read = readBar(page, bar);
     bar.readFor = viewport;
-    bar.read = readBar(page, bar);
   }
   const read = (await within(bar.read, BAR_READ_MS)) ?? bar.found;
   if (!read || read.bottom <= 0 || read.width <= 0) return [];
-  return [{ x: 0, y: 0, width: frame.width, height: (read.bottom * frame.width) / read.width }];
+  const scale = !sameSize(read, viewport) && scaledAlike(read, viewport) ? viewport.width / read.width : 1;
+  return [{ x: 0, y: 0, width: frame.width, height: read.bottom * scale }];
+}
+
+/** The pause bar `page` shows now, drawn or being drawn, as one draw of it: null while it shows none. */
+export function pauseBarUp(page: Page): { drawn: Promise<unknown> } | null {
+  const bar = PAUSE_BARS.get(page);
+  return bar && bar.goneAt === null ? bar : null;
 }
 
 /**
@@ -342,8 +366,11 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
         });
     },
   });
-  /** The viewport an image of the page taken at CSS scale shows, in CSS pixels: its own size. */
-  const shownSize = (shot: Buffer): { width: number; height: number } => jpegSize(shot) ?? viewport;
+  /**
+   * The viewport an image of the page shows, named as the screencast names it: the page's own viewport, else the
+   * image's size at CSS scale (a page without one, whose viewport Playwright names in no other pixels).
+   */
+  const shownSize = (shot: Buffer): Size => page.viewportSize() ?? jpegSize(shot) ?? viewport;
   /** The lighter image on its way, and when the last one was asked. */
   let lighter: Promise<void> | null = null;
   let lighterAt = -Infinity;
