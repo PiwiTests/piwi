@@ -1233,7 +1233,7 @@ function stateLine(worker: HubWorker, count: number, place: string | null): HTML
   if (stop?.reason === 'failure') iconText(line, 'x-circle', t('runs_failedAt', { place: place ?? '' }));
   else if (stop) iconText(line, 'pause', t(STOP_WORDS[stop.reason]));
   else if (worker.pausing) iconText(line, 'clock', t('runs_statePausing'));
-  else if (worker.state === 'running') iconText(line, 'play', t('runs_stateRunning'));
+  else if (worker.state === 'running' || worker.state === 'other') iconText(line, 'play', t('runs_stateRunning'));
   else iconText(line, 'dot', t('runs_stateBetween'));
   if (count > 1) line.append(element('span', 'worker-number', t('runs_worker', { number: worker.parallelIndex + 1 })));
   return line;

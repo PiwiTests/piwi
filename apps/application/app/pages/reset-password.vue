@@ -63,7 +63,7 @@ definePageMeta({ layout: false });
       <template v-else>
         <UAlert v-if="error" color="error" :title="error" variant="subtle" class="mb-4" />
 
-        <form class="space-y-4" @submit.prevent="submit">
+        <form class="space-y-4" method="post" @submit.prevent="submit">
           <UFormField label="New password" name="password" required>
             <UInput
               v-model="password"

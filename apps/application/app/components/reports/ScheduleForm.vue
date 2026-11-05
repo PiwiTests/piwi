@@ -374,7 +374,14 @@ async function save() {
           :include-share-link="includeShareLink && offersShareLinks"
           :include-narrative="includeNarrative"
         />
-        <form v-else class="space-y-4" data-testid="schedule-form" data-tour="schedule-form" @submit.prevent="save">
+        <form
+          v-else
+          class="space-y-4"
+          data-testid="schedule-form"
+          data-tour="schedule-form"
+          method="post"
+          @submit.prevent="save"
+        >
           <UAlert
             v-if="demoMode"
             icon="i-lucide-info"

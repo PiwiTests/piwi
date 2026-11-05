@@ -855,7 +855,8 @@ An unreachable editor leaves the hubs found last to try.
 - The state each window gets is the hub's as one connection hears it, narrowed to the window (`stateForViewer`): the
   worker's one connection watches every stop a window does, so a stop another window watches takes from this one no
   input and, headless, none of the actions in the test's window.
-- Every message goes through `parseHubMessage`; one it cannot read is ignored.
+- Every message goes through `parseHubMessage`; one it cannot read is ignored. A run is read without a worker or a
+  `live` it cannot read, and a worker state of a newer service reads as `other`, shown as running.
 - A command gets the next `id` and waits for the answer of that `id`. When the connection is closed, or the answer
   does not come in time, the connection answers the command itself (`offline` or `timeout`). The hub's own `id` never
   leaves the connection; the answer's `image` and `requests` (50 at most, each field bounded by `parseHubMessage`) go

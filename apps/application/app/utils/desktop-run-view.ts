@@ -111,7 +111,7 @@ export function desktopWorkerState(worker: HubWorker, root: string | null): stri
   if (stop?.reason === 'failure') return `Failed at ${stopPlace(stop, root)}`;
   if (stop) return (stop.by === 'agent' ? AGENT_STOP_WORDS[stop.reason] : undefined) ?? STOP_WORDS[stop.reason];
   if (worker.pausing) return 'Pausing before its next call…';
-  if (worker.state === 'running') return 'Running';
+  if (worker.state === 'running' || worker.state === 'other') return 'Running';
   return 'Between tests';
 }
 

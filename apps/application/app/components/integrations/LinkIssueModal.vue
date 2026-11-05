@@ -58,7 +58,7 @@ async function link() {
 <template>
   <UModal v-model:open="open" :title="`Link an issue to cluster #${clusterId}`" :description="description">
     <template #body>
-      <form class="space-y-2" @submit.prevent="link">
+      <form class="space-y-2" method="post" @submit.prevent="link">
         <UFormField label="Issue URL">
           <UInput
             v-model="url"

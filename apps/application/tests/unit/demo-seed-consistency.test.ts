@@ -57,11 +57,11 @@ function q(sql: string): Row[] {
 // tracked public/demo/seed.sql — another test file's beforeAll regenerates
 // concurrently (vitest runs files in parallel) and would otherwise race on
 // the same path, producing a torn read and a SQL parse error.
-function regenerate(outDir: string): string {
+function regenerate(outDir: string, env: NodeJS.ProcessEnv = {}): string {
   execFileSync('node', ['scripts/generate-demo-seed.mjs'], {
     cwd: rootDir,
     stdio: 'ignore',
-    env: { ...process.env, PIWI_DEMO_SEED_OUTPUT_DIR: outDir },
+    env: { ...process.env, ...env, PIWI_DEMO_SEED_OUTPUT_DIR: outDir },
   });
   return readFileSync(join(outDir, 'seed.sql'), 'utf-8');
 }
@@ -88,9 +88,9 @@ afterAll(() => {
 });
 
 describe('demo seed generation is deterministic', () => {
-  test('regenerating without source changes produces the same content hash', () => {
-    const before = regenerate(tempOutDir());
-    const after = regenerate(tempOutDir());
+  test('regenerating without source changes produces the same content, in any time zone', () => {
+    const before = regenerate(tempOutDir(), { TZ: 'Pacific/Kiritimati' });
+    const after = regenerate(tempOutDir(), { TZ: 'America/Los_Angeles' });
     // Compare content only, excluding the timestamp comment line (see the
     // generator's own hash-stability comment).
     const strip = (s: string) =>
@@ -550,6 +550,21 @@ describe('evidence rules', () => {
   test('every executed test_runs_cases row has a browser_name', () => {
     const rows = q(`select count(*) as n from test_runs_cases where browser_name is null`);
     expect(rows[0]!.n).toBe(0);
+  });
+
+  test("every run lists the Playwright projects its executions ran, and only those, as the run's config", () => {
+    const runs = q('select id, metadata from test_runs order by id');
+    expect(runs.length).toBeGreaterThan(0);
+    for (const run of runs) {
+      const executed = q(
+        `select distinct browser_name from test_runs_cases where test_run_id = ${run.id as number} order by browser_name`,
+      ).map((r) => r.browser_name);
+      const metadata = JSON.parse((run.metadata as string) ?? 'null') as {
+        htmlReport?: { projects?: Array<{ name?: string }> };
+      } | null;
+      const listed = (metadata?.htmlReport?.projects ?? []).map((p) => p.name);
+      expect([...listed].sort(), `run ${run.id as number}`).toEqual(executed);
+    }
   });
 
   test('server logs only appear on requests a story declares as failing, or the Test Map model logs on purpose', () => {
