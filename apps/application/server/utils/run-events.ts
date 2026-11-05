@@ -2,7 +2,8 @@ import { EventEmitter } from 'node:events';
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
 import { applyLiveResourcesToParts } from '#shared/live-resources';
 import type { WireLiveResources } from '#shared/types';
-import { forgetCompletedStep, keepLiveStep, type StepRunEvent } from './map-step-events';
+import { keepBatchSteps, type KeptLiveStep, type StepRunEvent } from './map-step-events';
+import type { StreamEventPayload } from '#shared/types';
 import { matchesShardToken, shardTokenDigest } from './shard-tokens';
 
 /**
@@ -113,7 +114,7 @@ class RunEventBus {
    * sees it, as the first person to open it does. A worker's next step replaces it, its test's end or an answer that
    * nobody watches drops it, and the run's go on cleanup.
    */
-  private liveSteps = new Map<number, Map<string, StepRunEvent>>();
+  private liveSteps = new Map<number, Map<string, KeptLiveStep>>();
   /** When each project's last global run lifecycle event was published: `/api/stream` tells each new connection. */
   private lastGlobalEventAt = new Map<number, number>();
 
@@ -219,34 +220,33 @@ class RunEventBus {
     this.runningCases.get(runId)?.delete(key);
   }
 
-  /** Keep a worker's latest step event for the stream's catch-up. */
-  recordLiveStep(runId: number, event: StepRunEvent): void {
+  /** Apply a reporter's streamed batch to the run's kept steps (`keepBatchSteps`), `token` the stream token it sent. */
+  noteLiveSteps(runId: number, events: StreamEventPayload[], token: string | null): void {
     let steps = this.liveSteps.get(runId);
     if (!steps) {
       steps = new Map();
       this.liveSteps.set(runId, steps);
     }
-    keepLiveStep(steps, event);
-  }
-
-  /** Drop a worker's kept step once its test completes. */
-  clearLiveStep(runId: number, tc: { title?: unknown; workerIndex?: unknown; shardIndex?: unknown }): void {
-    forgetCompletedStep(this.liveSteps.get(runId), tc);
+    keepBatchSteps(steps, events, token ? shardTokenDigest(token) : null);
   }
 
   /**
-   * Whether anyone watches the run, as the reporter's answers say it. A run nobody watches drops its kept steps: its
-   * reporter sends none until someone does, then sends again the step each test is in.
+   * Whether anyone watches the run, as the answer to the reporter that sent `token`. Told nobody does, that reporter
+   * sends no step until someone does, then sends again the step each of its tests is in: the steps it sent are dropped.
    */
-  answerWatched(runId: number): boolean {
+  answerWatched(runId: number, token: string | null): boolean {
     const watched = this.isWatched(runId);
-    if (!watched) this.liveSteps.delete(runId);
+    const steps = this.liveSteps.get(runId);
+    if (!watched && steps) {
+      const reporter = token ? shardTokenDigest(token) : null;
+      for (const [key, kept] of steps) if (kept.reporter === reporter) steps.delete(key);
+    }
     return watched;
   }
 
-  /** The latest step event of each worker of a run, as `recordLiveStep` kept them. */
+  /** The latest step event of each worker of a run, as `noteLiveSteps` kept them. */
   getLiveSteps(runId: number): StepRunEvent[] {
-    return [...(this.liveSteps.get(runId)?.values() ?? [])];
+    return [...(this.liveSteps.get(runId)?.values() ?? [])].map((kept) => kept.event);
   }
 
   /** The begin payloads of every case still running for a run. */

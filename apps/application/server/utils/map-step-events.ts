@@ -23,25 +23,40 @@ export function liveStepKey(data: { shardIndex?: unknown; workerIndex?: unknown 
   return liveWorkerKey({ shard, worker: data.workerIndex });
 }
 
-/** The most workers a run keeps a live step for: a run's worker processes, its restarts after failures included. */
+/** The most workers a run keeps a live step for, the latest to step first: its worker processes, restarts included. */
 export const MAX_KEPT_LIVE_STEPS = 512;
 
-/** Keep a worker's latest step event in `steps`, by `liveStepKey`, for a page that opens the run mid-test. */
-export function keepLiveStep(steps: Map<string, StepRunEvent>, event: StepRunEvent): void {
-  if (event.type !== 'step-begin' && event.type !== 'step-end') return;
-  const key = liveStepKey(event.data);
-  if (key === null || (steps.size >= MAX_KEPT_LIVE_STEPS && !steps.has(key))) return;
-  steps.set(key, event);
+/** A worker's latest step event, kept for a page that opens the run mid-test, and the reporter that sent it. */
+export interface KeptLiveStep {
+  event: StepRunEvent;
+  /** Who sent it: a digest of the reporter's stream token, null where no token tells reporters apart. */
+  reporter: string | null;
 }
 
-/** Drop a worker's kept step once its test completes: the step kept for its worker that is of that test. */
-export function forgetCompletedStep(
-  steps: Map<string, StepRunEvent> | undefined,
-  tc: { title?: unknown; workerIndex?: unknown; shardIndex?: unknown },
+/**
+ * Apply one streamed batch to a run's kept steps, by `liveStepKey`, in the batch's order: a step event becomes its
+ * worker's kept step, and a test's `complete` drops its worker's step that is of that test (a step a reporter sent
+ * without its shard included). Past `MAX_KEPT_LIVE_STEPS`, the worker that stepped longest ago goes.
+ */
+export function keepBatchSteps(
+  steps: Map<string, KeptLiveStep>,
+  events: StreamEventPayload[],
+  reporter: string | null,
 ): void {
-  const key = liveStepKey(tc);
-  if (!steps || key === null) return;
-  if (steps.get(key)?.data.parentTitle === tc.title) steps.delete(key);
+  for (const tc of events) {
+    if (tc.type === 'complete') {
+      for (const key of new Set([liveStepKey(tc), liveStepKey({ workerIndex: tc.workerIndex })])) {
+        if (key !== null && steps.get(key)?.event.data.parentTitle === tc.title) steps.delete(key);
+      }
+    } else if (tc.type === 'step-begin' || tc.type === 'step-end') {
+      const [event] = mapStepEventsToRunEvents([tc]);
+      const key = event ? liveStepKey(event.data) : null;
+      if (!event || key === null || (event.type !== 'step-begin' && event.type !== 'step-end')) continue;
+      steps.delete(key);
+      steps.set(key, { event, reporter });
+      if (steps.size > MAX_KEPT_LIVE_STEPS) steps.delete(steps.keys().next().value!);
+    }
+  }
 }
 
 /**

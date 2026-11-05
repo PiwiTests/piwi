@@ -13,8 +13,8 @@ type Listener = (event: { key?: string | null; persisted?: boolean }) => void;
 class Browser {
   values = new Map<string, string>();
   tabs: Tab[] = [];
-  /** A full storage refuses every write, and still reads and removes. */
-  full = false;
+  /** The keys a full storage refuses to write; it still reads and removes. */
+  refuses: (key: string) => boolean = () => false;
   changed(by: Tab, key: string) {
     for (const tab of this.tabs) if (tab !== by) tab.fire('storage', { key });
   }
@@ -36,7 +36,7 @@ class Tab {
       storage: {
         getItem: (key) => browser.values.get(key) ?? null,
         setItem: (key, value) => {
-          if (browser.full) throw new Error('QuotaExceededError');
+          if (browser.refuses(key)) throw new Error('QuotaExceededError');
           browser.values.set(key, value);
           browser.changed(this, key);
         },
@@ -123,13 +123,23 @@ describe('holdInOneTab', () => {
     expect(first.lost).not.toHaveBeenCalled();
   });
 
-  test('every tab holds it when the storage is full as the page opens', () => {
+  test('every tab holds it when the storage takes the probe but refuses the lease', () => {
     const browser = new Browser();
-    browser.full = true;
+    browser.refuses = (key) => key === 'lease';
     const first = new Tab(browser).open();
     const second = new Tab(browser).open();
     expect(first.held).toHaveBeenCalledOnce();
     expect(second.held).toHaveBeenCalledOnce();
+  });
+
+  test('a tab holding over a refused claim keeps it beside another tab’s stale lease', () => {
+    const browser = new Browser();
+    browser.values.set('lease', JSON.stringify({ id: 'a crashed tab', at: Date.now() - TAB_LEASE_STALE_MS - 1 }));
+    browser.refuses = (key) => key === 'lease';
+    const tab = new Tab(browser).open();
+    vi.advanceTimersByTime(TAB_LEASE_RENEW_MS * 6);
+    expect(tab.held).toHaveBeenCalledOnce();
+    expect(tab.lost).not.toHaveBeenCalled();
   });
 
   test('the next tab holds it when the holder leaves a storage that has filled up since', () => {
@@ -137,7 +147,7 @@ describe('holdInOneTab', () => {
     const first = new Tab(browser).open();
     vi.advanceTimersByTime(TAB_LEASE_SETTLE_MS);
     const second = new Tab(browser).open();
-    browser.full = true;
+    browser.refuses = () => true;
     first.fire('pagehide', {});
     vi.advanceTimersByTime(TAB_LEASE_SETTLE_MS);
     expect(second.held).toHaveBeenCalledOnce();
@@ -148,10 +158,13 @@ describe('holdInOneTab', () => {
     const host = tab.host();
     holdInOneTab({ key: 'lease', held: tab.held, lost: tab.lost }, host);
     vi.advanceTimersByTime(TAB_LEASE_SETTLE_MS);
-    host.storage.removeItem = () => {
+    expect(tab.held).toHaveBeenCalledOnce();
+    const removeItem = vi.fn(() => {
       throw new Error('SecurityError');
-    };
+    });
+    host.storage.removeItem = removeItem;
     expect(() => tab.fire('pagehide', {})).not.toThrow();
+    expect(removeItem).toHaveBeenCalledWith('lease');
   });
 
   test('every tab holds it when the browser refuses localStorage', () => {
