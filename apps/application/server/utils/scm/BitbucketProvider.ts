@@ -19,6 +19,8 @@ import type {
   ScmEntityState,
   ScmPullRequest,
   ScmFileEdit,
+  ScmCommitStatus,
+  ScmPostedComment,
   CreatePullRequestInput,
 } from './ScmProvider';
 import { TtlCache } from '../ttl-cache';
@@ -61,6 +63,27 @@ function parseAuthorRaw(raw: string): ScmCommitAuthor | null {
   const bare = raw.trim();
   return /^[^\s@]+@[^\s@]+$/.test(bare) ? { name: bare, email: bare } : null;
 }
+
+/** The most pages of a pull request's comments read to find Piwi's own. */
+const MAX_COMMENT_PAGES = 5;
+
+/**
+ * Piwi's comment marker as Bitbucket keeps it: an HTML comment
+ * (`<!-- piwi-dashboard:run-summary -->`) becomes a CommonMark link reference
+ * definition (`[//]: # (piwi-dashboard:run-summary)`), which Markdown does not render.
+ */
+export function bitbucketCommentMarker(marker: string): string {
+  const name = /^<!--\s*(.*?)\s*-->$/.exec(marker.trim())?.[1];
+  return name ? `[//]: # (${name})` : marker;
+}
+
+/** A commit status's state as Bitbucket names it. */
+const BITBUCKET_STATUS_STATE: Record<ScmCommitStatus['state'], string> = {
+  success: 'SUCCESSFUL',
+  failure: 'FAILED',
+  error: 'FAILED',
+  pending: 'INPROGRESS',
+};
 
 /** Each file's hunks in a raw diff, by its path on the new side (the old side for a removed file). */
 function parsePatchesByFile(rawDiff: string): Map<string, string> {
@@ -473,6 +496,113 @@ export class BitbucketProvider extends ScmProvider {
       };
     } catch {
       return null;
+    }
+  }
+
+  // ── Pull-request feedback ─────────────────────────────────────────────────
+
+  override async upsertPullRequestComment(prNumber: number, marker: string, body: string): Promise<boolean> {
+    return (await this.postPullRequestComment(prNumber, marker, body)) !== null;
+  }
+
+  override async postPullRequestComment(
+    prNumber: number,
+    marker: string,
+    body: string,
+  ): Promise<ScmPostedComment | null> {
+    if (!this.token || !Number.isSafeInteger(prNumber) || prNumber <= 0) return null;
+    const hidden = bitbucketCommentMarker(marker);
+    try {
+      // Only a comment carrying the marker is ever edited, so a human comment is never overwritten.
+      const existingId = await this.findMarkedComment(prNumber, hidden);
+      // Comments that could not all be read may hold Piwi's: posting another would duplicate it.
+      if (existingId === undefined) return null;
+      const comments = `${this.base}/pullrequests/${prNumber}/comments`;
+      const res = await fetch(existingId != null ? `${comments}/${existingId}` : comments, {
+        method: existingId != null ? 'PUT' : 'POST',
+        headers: { ...this.makeHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: { raw: body.split(marker).join(hidden) } }),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (!res.ok) return null;
+      const posted = (await res.json().catch(() => null)) as { id?: number } | null;
+      const id = posted?.id ?? existingId;
+      return { id: id != null ? String(id) : null };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * The id of the pull request's top-level comment that carries the marker,
+   * null when it has none, or undefined when its comments could not all be
+   * read (an error, or more than {@link MAX_COMMENT_PAGES} pages).
+   */
+  private async findMarkedComment(prNumber: number, marker: string): Promise<number | null | undefined> {
+    let url: string | null = `${this.base}/pullrequests/${prNumber}/comments?pagelen=${HOST_MAX_PAGE_SIZE}`;
+    for (let page = 0; url; page++) {
+      if (page === MAX_COMMENT_PAGES) return undefined;
+      const res = await fetch(url, { headers: this.makeHeaders(), signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+      if (!res.ok) return undefined;
+      const data = (await res.json()) as {
+        values?: Array<{
+          id?: unknown;
+          deleted?: boolean;
+          inline?: unknown;
+          parent?: unknown;
+          content?: { raw?: unknown };
+        }>;
+        next?: unknown;
+      };
+      const mine = (data.values ?? []).find(
+        (c) =>
+          typeof c.id === 'number' &&
+          !c.deleted &&
+          !c.inline &&
+          !c.parent &&
+          typeof c.content?.raw === 'string' &&
+          c.content.raw.includes(marker),
+      );
+      if (mine) return mine.id as number;
+      if (data.next === undefined || data.next === null) return null;
+      url = this.ownApiUrl(data.next);
+      if (!url) return undefined;
+    }
+    return null;
+  }
+
+  /** A link the API answered with, when it stays in this repository's API; the token follows no other. */
+  private ownApiUrl(link: unknown): string | null {
+    if (typeof link !== 'string') return null;
+    try {
+      const url = new URL(link);
+      const base = new URL(`${this.base}/`);
+      return url.origin === base.origin && url.pathname.startsWith(base.pathname) ? url.href : null;
+    } catch {
+      return null;
+    }
+  }
+
+  override async postCommitStatus(sha: string, status: ScmCommitStatus): Promise<boolean> {
+    if (!this.token || !isValidGitRef(sha)) return false;
+    try {
+      // Posting a key again replaces that status, so each run updates its own.
+      const res = await fetch(`${this.base}/commit/${encodeGitRef(sha)}/statuses/build`, {
+        method: 'POST',
+        headers: { ...this.makeHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          key: status.context,
+          name: status.context,
+          state: BITBUCKET_STATUS_STATE[status.state],
+          description: status.description,
+          url: status.targetUrl,
+          ...(status.ref ? { refname: status.ref } : {}),
+        }),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      return res.ok;
+    } catch {
+      return false;
     }
   }
 

@@ -165,10 +165,10 @@ export async function postGateCommitStatus(
     if (!provider) return false;
 
     const context = `${settings.statusContext}/gate`;
-    const posted = await provider.postCommitStatus(
-      commit,
-      buildGateStatus({ verdict: input.result.verdict, violations: input.result.violations }, input.runUrl, context),
-    );
+    const posted = await provider.postCommitStatus(commit, {
+      ...buildGateStatus({ verdict: input.result.verdict, violations: input.result.violations }, input.runUrl, context),
+      ref: meta?.scm?.branch?.trim() || null,
+    });
     if (posted) {
       await recordPrFeedbackPost(db, {
         projectId: input.projectId,
