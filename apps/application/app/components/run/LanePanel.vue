@@ -438,7 +438,7 @@ function outcomeStatus(shown: LiveTestOutcome): string {
 /** The lane's tests that ended before the one the view shows or waits after, the latest first. */
 const earlier = computed(() => (outcome.value ? history.value.slice(0, -1) : [...history.value]).reverse());
 /** What the view says over its image: why it ended, with the run's verdict once the run's end ended it. */
-const status = computed(() => (endReason.value === 'run-ended' && props.verdict ? props.verdict : notice.value));
+const statusLine = computed(() => (endReason.value === 'run-ended' && props.verdict ? props.verdict : notice.value));
 const title = computed(() => `${capitalized(name.value)}${ended.value ? '' : ' · live'}`);
 const alt = computed(
   () => `The page ${name.value} is on${shownCall.value ? `, at ${shownCall.value.title}` : ''}, as the test sees it`,
@@ -549,7 +549,7 @@ const [DefineBody, ReuseBody] = createReusableTemplate();
               class="pointer-events-none absolute inset-0 flex items-center justify-center p-4 text-center text-sm text-highlighted"
               data-testid="live-status"
             >
-              {{ status }}
+              {{ statusLine }}
             </p>
           </div>
           <div

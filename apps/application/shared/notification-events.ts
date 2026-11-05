@@ -3,6 +3,7 @@ import { describeFailureText } from '#shared/describe-failure';
 import { parseSourceSnippet } from '#shared/source-snippet';
 import { splitSuitePath } from '#shared/utils/suites';
 import { formatTestSearchValue } from '#shared/test-search';
+import { liveWatchAddress } from '#shared/live-view';
 import { globMatcher } from '@piwitests/core/glob';
 
 /** All notification event keys supported by the subscription system. */
@@ -740,9 +741,12 @@ export function computePerfBaseline(
 /** Dashboard path the notification links to, or null when it has no target. */
 export function notificationTargetPath(event: NotificationEvent, payload: NotificationPayload): string | null {
   if (event === 'test.stuck') {
-    // The run's Tests tab, searched for the stuck test's title: its row is the one left.
+    // The run's Tests tab, searched for the stuck test's title: its row is the one left. With the worker's lane, the
+    // live view of that lane opens beside it, where the project has it on.
     const p = payload as TestStuckPayload;
-    return `/test-runs/${p.runId}?search=${encodeURIComponent(formatTestSearchValue(p.testTitle))}`;
+    const search = `/test-runs/${p.runId}?search=${encodeURIComponent(formatTestSearchValue(p.testTitle))}`;
+    if (typeof p.parallelIndex !== 'number') return search;
+    return `${search}&watch=${liveWatchAddress({ shard: p.shardIndex ?? null, slot: p.parallelIndex })}`;
   }
   if (event === 'diagnosis.completed' && (payload as DiagnosisCompletedPayload).executionId) {
     return `/test-run-cases/${(payload as DiagnosisCompletedPayload).executionId}`;
