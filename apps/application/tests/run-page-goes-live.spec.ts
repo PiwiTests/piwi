@@ -211,3 +211,62 @@ test.describe('Run page of an initializing run', () => {
     }
   });
 });
+
+test('shows each shard’s step on its own row, though both shards run worker 0', async ({ page, request }) => {
+  test.setTimeout(60_000);
+  const start = async (shardIndex: number) => {
+    const started = await request.post('/api/test-runs/start', {
+      data: {
+        projectName: PROJECT.RUN_GOES_LIVE,
+        startTime: new Date().toISOString(),
+        instanceId: 'run-goes-live-two-shards',
+        shardIndex,
+        shardTotal: 2,
+        totalTests: 1,
+      },
+    });
+    expect(started.ok()).toBeTruthy();
+    return (await started.json()) as { runId: number; streamToken: string };
+  };
+  const shards = [await start(1), await start(2)];
+  const runId = shards[0]!.runId;
+  expect(shards[1]!.runId).toBe(runId);
+  /** Worker 0 of the shard sends an event. */
+  const send = async (shard: number, event: Record<string, unknown>) => {
+    const sent = await request.post(`/api/test-runs/${runId}/events`, {
+      data: {
+        streamToken: shards[shard - 1]!.streamToken,
+        testCases: [{ workerIndex: 0, shardIndex: shard, startedAt: Date.now(), ...event }],
+      },
+    });
+    expect(sent.ok()).toBeTruthy();
+  };
+  try {
+    await send(1, { type: 'begin', title: 'pays by card', location: 'tests/checkout.spec.ts:3:1' });
+    await send(2, { type: 'begin', title: 'searches', location: 'tests/search.spec.ts:3:1' });
+    const stream = page.waitForResponse((response) => new URL(response.url()).pathname.endsWith(`/${runId}/stream`));
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await stream;
+    const step = { stepCategory: 'pw:api', location: 'tests/x.spec.ts:5:3' };
+    await send(1, { ...step, type: 'step-begin', title: 'Click', parentTitle: 'pays by card' });
+    await send(2, { ...step, type: 'step-begin', title: 'Fill', parentTitle: 'searches' });
+
+    // The page that heard the steps, and one that opens after them, show each on its own shard's row.
+    const later = await page.context().newPage();
+    await later.goto(`/test-runs/${runId}`);
+    await waitForHydration(later);
+    for (const viewer of [page, later]) {
+      await expect
+        .poll(async () => (await viewer.getByTestId('live-step').allInnerTexts()).map((text) => text.trim()).sort())
+        .toEqual(['Click', 'Fill']);
+    }
+    await later.close();
+  } finally {
+    for (const [index, shard] of shards.entries()) {
+      await request.post(`/api/test-runs/${runId}/finish`, {
+        data: { streamToken: shard.streamToken, status: 'passed', totalTests: 1, shardIndex: index + 1, shardTotal: 2 },
+      });
+    }
+  }
+});

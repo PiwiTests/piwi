@@ -4,7 +4,7 @@ import { runningTestHistory, type RunningTestHistory } from '#shared/handlers/st
 import { STUCK_FLOOR_MS, stuckAttempt, testStuckEventData, type StuckAttempt } from '#shared/stuck-tests';
 import { projects } from '~~/server/database/schema';
 import { runningCaseKey } from '~~/server/utils/inserted-run-cases';
-import { liveStepKey, type StepRunEvent } from '~~/server/utils/map-step-events';
+import { forgetCompletedStep, keepLiveStep, type StepRunEvent } from '~~/server/utils/map-step-events';
 import type { getDemoDb } from '../db.client';
 import { publishDemoNotificationEvent, publishDemoRunEvent } from '../run-events';
 
@@ -56,8 +56,13 @@ export function noteDemoBegin(runId: number, begin: Record<string, unknown>): vo
 }
 
 /** A test of the run completed. */
-export function noteDemoComplete(runId: number, tc: Parameters<typeof runningCaseKey>[0]): void {
-  runs.get(runId)?.attempts.delete(runningCaseKey(tc));
+export function noteDemoComplete(
+  runId: number,
+  tc: Parameters<typeof runningCaseKey>[0] & { workerIndex?: unknown; shardIndex?: unknown },
+): void {
+  const run = runs.get(runId);
+  run?.attempts.delete(runningCaseKey(tc));
+  forgetCompletedStep(run?.steps, tc);
 }
 
 /**
@@ -74,9 +79,7 @@ export function demoRunningCases(runId: number): Record<string, unknown>[] {
 
 /** A worker of the run took a step: the latest one is kept for a page that connects mid-run, as the server keeps it. */
 export function noteDemoStep(runId: number, event: StepRunEvent): void {
-  if (event.type !== 'step-begin' && event.type !== 'step-end') return;
-  const key = liveStepKey(event.data);
-  if (key !== null) runOf(runId).steps.set(key, event);
+  keepLiveStep(runOf(runId).steps, event);
 }
 
 /** The step each worker of the run is in, as the server's stream replays them. */

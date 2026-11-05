@@ -23,6 +23,27 @@ export function liveStepKey(data: { shardIndex?: unknown; workerIndex?: unknown 
   return liveWorkerKey({ shard, worker: data.workerIndex });
 }
 
+/** The most workers a run keeps a live step for: a run's worker processes, its restarts after failures included. */
+export const MAX_KEPT_LIVE_STEPS = 512;
+
+/** Keep a worker's latest step event in `steps`, by `liveStepKey`, for a page that opens the run mid-test. */
+export function keepLiveStep(steps: Map<string, StepRunEvent>, event: StepRunEvent): void {
+  if (event.type !== 'step-begin' && event.type !== 'step-end') return;
+  const key = liveStepKey(event.data);
+  if (key === null || (steps.size >= MAX_KEPT_LIVE_STEPS && !steps.has(key))) return;
+  steps.set(key, event);
+}
+
+/** Drop a worker's kept step once its test completes: the step kept for its worker that is of that test. */
+export function forgetCompletedStep(
+  steps: Map<string, StepRunEvent> | undefined,
+  tc: { title?: unknown; workerIndex?: unknown; shardIndex?: unknown },
+): void {
+  const key = liveStepKey(tc);
+  if (!steps || key === null) return;
+  if (steps.get(key)?.data.parentTitle === tc.title) steps.delete(key);
+}
+
 /**
  * Map the step events of one streamed batch to the run-stream events to
  * publish, in the order the reporter sent them — the run page shows whichever

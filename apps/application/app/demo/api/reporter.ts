@@ -974,7 +974,6 @@ export async function apiPostRunEvents(
     publishDemoRunEvent(id, { type: 'test-begin', data: beginData });
     noteDemoBegin(id, beginData);
   }
-  for (const tc of results) noteDemoComplete(id, tc);
 
   // Step events publish in batch order through the helper the server's events
   // handler (server/api/test-runs/[id]/events.post.ts) uses.
@@ -982,6 +981,7 @@ export async function apiPostRunEvents(
     publishDemoRunEvent(id, stepEvent);
     noteDemoStep(id, stepEvent);
   }
+  for (const tc of results) noteDemoComplete(id, tc);
 
   // Mirrors the server's stuck check, on the time the run's events reached (`./stuck-tests`).
   await checkDemoStuckTests(db, testRun, validEvents);

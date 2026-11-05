@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
 import { applyLiveResourcesToParts } from '#shared/live-resources';
 import type { WireLiveResources } from '#shared/types';
-import { liveStepKey, type StepRunEvent } from './map-step-events';
+import { forgetCompletedStep, keepLiveStep, type StepRunEvent } from './map-step-events';
 import { matchesShardToken, shardTokenDigest } from './shard-tokens';
 
 /**
@@ -220,15 +220,27 @@ class RunEventBus {
 
   /** Keep a worker's latest step event for the stream's catch-up. */
   recordLiveStep(runId: number, event: StepRunEvent): void {
-    if (event.type !== 'step-begin' && event.type !== 'step-end') return;
-    const key = liveStepKey(event.data);
-    if (key === null) return;
     let steps = this.liveSteps.get(runId);
     if (!steps) {
       steps = new Map();
       this.liveSteps.set(runId, steps);
     }
-    steps.set(key, event);
+    keepLiveStep(steps, event);
+  }
+
+  /** Drop a worker's kept step once its test completes. */
+  clearLiveStep(runId: number, tc: { title?: unknown; workerIndex?: unknown; shardIndex?: unknown }): void {
+    forgetCompletedStep(this.liveSteps.get(runId), tc);
+  }
+
+  /**
+   * Whether anyone watches the run, as the reporter's answers say it. A run nobody watches drops its kept steps: its
+   * reporter sends none until someone does, then sends again the step each test is in.
+   */
+  answerWatched(runId: number): boolean {
+    const watched = this.isWatched(runId);
+    if (!watched) this.liveSteps.delete(runId);
+    return watched;
   }
 
   /** The latest step event of each worker of a run, as `recordLiveStep` kept them. */

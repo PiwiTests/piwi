@@ -542,8 +542,7 @@ export class PiwiDashboardReporter {
       // A person who opens the run sees the step each test is in now, not only the steps that begin after, at once.
       this.streamManager.onWatched = () => {
         void this.liveResources?.tick();
-        for (const event of this.openSteps.values()) this.streamManager?.queueEvent(event);
-        if (this.openSteps.size > 0) void this.streamManager?.flush();
+        if (this.openSteps.size > 0) this.streamManager?.queueEventsNow([...this.openSteps.values()]);
       };
     }
     if (this.streamManager && this.options.captureResources !== false) {

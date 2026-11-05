@@ -356,6 +356,19 @@ export class StreamManager {
     }
   }
 
+  /**
+   * Queue several events and send them at once, in one flush: none of them triggers a batch-size flush of its own, so
+   * they go out in order, in requests sent one after the other. Step events are dropped as `queueEvent` drops them.
+   */
+  queueEventsNow(events: StreamEvent[]): void {
+    if (this.ended) return;
+    for (const event of events) {
+      if (this.watched === false && (event.type === 'step-begin' || event.type === 'step-end')) continue;
+      this.pendingEvents.enqueue(event);
+    }
+    void this.flush();
+  }
+
   /** Flush all pending events to the server. Returns a promise that resolves to `true` on success or `false` on failure (events are re-queued for retry). */
   flush(): Promise<boolean> | null {
     if (this.flushTimer) {

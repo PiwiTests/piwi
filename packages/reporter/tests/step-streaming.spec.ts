@@ -284,6 +284,62 @@ describe('PiwiDashboardReporter live step streaming', () => {
     ]);
   });
 
+  it('sends the open steps in one request when someone opens the run, more of them than a batch holds', async () => {
+    const eventsBodies: EventsBody[] = [];
+    let answers = 0;
+    let inFlight = 0;
+    let mostInFlight = 0;
+    server = await startServer((req, res) => {
+      if (req.url === '/api/test-runs/start') {
+        jsonRes(res, 200, { runId: 1, streamToken: 'tok' });
+      } else if (req.url === '/api/test-runs/1/events') {
+        eventsBodies.push(JSON.parse(req.body));
+        inFlight++;
+        mostInFlight = Math.max(mostInFlight, inFlight);
+        // Nobody watches at first; the run is open by the next request.
+        const watched = answers++ > 0;
+        setTimeout(() => {
+          inFlight--;
+          jsonRes(res, 200, { success: true, processed: 1, watched });
+        }, 30);
+      } else if (req.url === '/api/auth/me') {
+        jsonRes(res, 200, {});
+      } else {
+        textRes(res, 404, 'nope');
+      }
+    });
+    const reporter = new PiwiDashboardReporter({
+      serverUrl: server.url,
+      projectName,
+      streaming: true,
+      uploadReport: false,
+      uploadTraces: false,
+      liveFileUploads: false,
+      streamingBatchDelay: 60_000,
+      streamingBatchSize: 2,
+    });
+    const suite = fakeSuite();
+    const test = fakeTestCase({ title: 'the test', parent: suite });
+    reporter.onBegin(fakeConfig(), suite);
+    await waitFor(() => (reporter as any).streamManager?._runId === 1);
+
+    // Three workers each begin a step: the first two fill a batch, the third waits for the next request.
+    for (const [worker, title] of ['Navigate', 'Fill', 'Click'].entries()) {
+      reporter.onStepBegin(test, fakeResult({ workerIndex: worker }), makeStep('pw:api', title));
+    }
+    await waitFor(() => (reporter as any).streamManager?.watched === false);
+    void (reporter as any).streamManager.flush();
+    await waitFor(() => eventsBodies.length >= 3);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(eventsBodies.map((body) => body.testCases.map((e) => e.title))).toEqual([
+      ['Navigate', 'Fill'],
+      ['Click'],
+      ['Navigate', 'Fill', 'Click'],
+    ]);
+    expect(mostInFlight).toBe(1);
+  });
+
   it('suite-level hooks keep parentTitle null and land in setupSteps', async () => {
     let finishBody = null as { setupSteps?: unknown[] } | null;
     server = await startServer((req, res) => {

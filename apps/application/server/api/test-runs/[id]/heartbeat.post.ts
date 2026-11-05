@@ -43,5 +43,5 @@ export default eventHandler(async (event) => {
   // Advance the activity timestamp so the stale-run reaper leaves this run alone.
   await db.update(testRuns).set({ updatedAt: new Date() }).where(eq(testRuns.id, id));
 
-  return { success: true, watched: runEventBus.isWatched(id) };
+  return { success: true, watched: runEventBus.answerWatched(id) };
 });

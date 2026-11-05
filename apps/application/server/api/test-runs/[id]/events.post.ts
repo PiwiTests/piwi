@@ -132,7 +132,7 @@ export default eventHandler(async (event) => {
     return {
       success: true,
       processed: beginEvents.length + stepRunEvents.length,
-      watched: runEventBus.isWatched(id),
+      watched: runEventBus.answerWatched(id),
     };
   }
 
@@ -180,6 +180,7 @@ export default eventHandler(async (event) => {
     // The case now has a DB row, so the catch-up will replay it as
     // `test-completed` — drop the running-case entry that stood in for it.
     if (lastOf.get(runningCaseKey(tc)) === 'complete') runEventBus.clearRunningCase(id, runningCaseKey(tc));
+    runEventBus.clearLiveStep(id, tc);
     runEventBus.publish(id, {
       type: 'test-completed',
       data: {
@@ -239,6 +240,6 @@ export default eventHandler(async (event) => {
   return {
     success: true,
     processed: insertedRunCases.length + beginEvents.length,
-    watched: runEventBus.isWatched(id),
+    watched: runEventBus.answerWatched(id),
   };
 });

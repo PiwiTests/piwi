@@ -1,4 +1,5 @@
 import { describe, test, expect, afterEach } from 'vitest';
+import { MAX_KEPT_LIVE_STEPS } from '../../server/utils/map-step-events';
 import { runEventBus } from '../../server/utils/run-events';
 
 // The singleton bus is shared across tests, so each test uses its own run IDs
@@ -100,6 +101,38 @@ describe('runEventBus live steps', () => {
     runEventBus.recordLiveStep(runId, step('step-begin', 'Click', null, null));
     runEventBus.recordLiveStep(runId, { type: 'test-begin', data: { title: 'beforeAll', workerIndex: 0 } });
     expect(runEventBus.getLiveSteps(runId)).toEqual([]);
+  });
+
+  test('forgets a worker’s step once its test completes, and only that test’s', () => {
+    const runId = track(9104);
+    runEventBus.recordLiveStep(runId, step('step-begin', 'Click', 0, 1));
+    runEventBus.recordLiveStep(runId, step('step-begin', 'Fill', 1, 1));
+    runEventBus.clearLiveStep(runId, { title: 'another test', workerIndex: 1, shardIndex: 1 });
+    runEventBus.clearLiveStep(runId, { title: 'the test', workerIndex: 0, shardIndex: 2 });
+    runEventBus.clearLiveStep(runId, { title: 'the test', workerIndex: 0, shardIndex: 1 });
+    expect(runEventBus.getLiveSteps(runId).map((s) => s.data.title)).toEqual(['Fill']);
+  });
+
+  test('forgets a run’s steps when it answers that nobody watches, and keeps them while someone does', () => {
+    const runId = track(9105);
+    runEventBus.recordLiveStep(runId, step('step-begin', 'Click', 0, null));
+    const unsubscribe = runEventBus.subscribe(runId, () => {});
+    expect(runEventBus.answerWatched(runId)).toBe(true);
+    expect(runEventBus.getLiveSteps(runId)).toHaveLength(1);
+    unsubscribe();
+    expect(runEventBus.answerWatched(runId)).toBe(false);
+    expect(runEventBus.getLiveSteps(runId)).toEqual([]);
+  });
+
+  test('keeps a step for at most MAX_KEPT_LIVE_STEPS workers of a run, and the latest of each', () => {
+    const runId = track(9106);
+    for (let worker = 0; worker <= MAX_KEPT_LIVE_STEPS; worker++) {
+      runEventBus.recordLiveStep(runId, step('step-begin', 'Click', worker, null));
+    }
+    runEventBus.recordLiveStep(runId, step('step-begin', 'Fill', 0, null));
+    const steps = runEventBus.getLiveSteps(runId);
+    expect(steps).toHaveLength(MAX_KEPT_LIVE_STEPS);
+    expect(steps[0]!.data.title).toBe('Fill');
   });
 
   test('forgets a run’s steps on its cleanup', () => {
