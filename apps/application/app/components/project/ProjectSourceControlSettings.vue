@@ -72,8 +72,13 @@ const ciServerActive = computed(() => state.value.ciRerun.enabled && state.value
 async function submit() {
   const { ciServer: ciServerForm, via, ...repositoryTargets } = state.value.ciRerun;
   const ciServer = ciServerTargetFromForm(ciServerForm, { instanceUrl: props.project.ciServerInstanceUrl ?? null });
+  // A CI server form that cannot be saved stops the whole save: nothing in the section is sent.
   if (ciServerActive.value && ciServer.error) {
-    toast.add({ title: 'CI server not saved', description: ciServer.error, color: 'warning' });
+    toast.add({
+      title: 'Source control not saved',
+      description: `${ciServer.error} Nothing in this section was saved.`,
+      color: 'warning',
+    });
     return;
   }
   // A hidden form that cannot be saved keeps the stored target.

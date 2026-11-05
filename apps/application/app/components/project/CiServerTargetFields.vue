@@ -6,9 +6,8 @@
  * write-only: a blank field keeps the stored one, which is sent only under the
  * base URL it was saved with.
  */
-import { CI_SERVER_PRESET_REGISTRY, normalizeCiServerBaseUrl } from '#shared/ci-server';
+import { CI_SERVER_PRESET_REGISTRY, DEFAULT_ARGS_PARAMETER, normalizeCiServerBaseUrl } from '#shared/ci-server';
 import {
-  ciServerPreviewCredential,
   ciServerRequestPreview,
   ciServerTokenState,
   customizeCiServerForm,
@@ -32,31 +31,35 @@ const presetItems = [
   { label: 'Custom request', value: 'custom' },
 ];
 
+const previewOpts = computed(() => ({
+  instanceUrl: props.instanceUrl,
+  typedToken: Boolean(token.value.trim()),
+  tokenUrl: props.hasToken ? props.tokenUrl : null,
+}));
+const preview = computed(() => ciServerRequestPreview(state.value, 'rerun', previewOpts.value));
+
+/** The stored token is judged on the re-run request's URL, as the server judges it; else on the base URL. */
 const effectiveBaseUrl = computed(() => normalizeCiServerBaseUrl(state.value.baseUrl) ?? props.instanceUrl);
 const tokenState = computed(() =>
-  props.hasToken ? ciServerTokenState(effectiveBaseUrl.value, props.tokenUrl) : 'none',
+  props.hasToken ? ciServerTokenState(preview.value.url ?? effectiveBaseUrl.value, props.tokenUrl) : 'none',
 );
 const tokenDescription = computed(() => {
   if (tokenState.value === 'bound') {
     return `A token is stored for ${props.tokenUrl} and sent only under it. Leave empty to keep it.`;
   }
   if (tokenState.value === 'elsewhere') {
-    return `The stored token is bound to ${props.tokenUrl}, so it is not sent to this base URL: enter it again.`;
+    return `The stored token is bound to ${props.tokenUrl}, so a re-run request outside it goes without it: enter it again.`;
   }
-  return state.value.preset === 'custom'
-    ? 'Sent with every request. A Custom request never carries the instance token.'
-    : 'Leave empty to use the instance token, sent only under the instance CI server URL.';
+  if (state.value.preset === 'custom') {
+    return 'Sent with every request. A Custom request never carries the instance token.';
+  }
+  return props.instanceUrl
+    ? 'Leave empty to use the instance token, sent only under the instance CI server URL.'
+    : 'The instance has no CI server, so no token is sent unless one is entered here.';
 });
 
-const previewOpts = computed(() => ({
-  instanceUrl: props.instanceUrl,
-  credential: ciServerPreviewCredential(state.value, {
-    instanceUrl: props.instanceUrl,
-    typedToken: Boolean(token.value.trim()),
-    tokenUrl: props.hasToken ? props.tokenUrl : null,
-  }),
-}));
-const preview = computed(() => ciServerRequestPreview(state.value, 'rerun', previewOpts.value));
+/** The parameter the Flake Lab job reads its arguments from, as the hint names it. */
+const flakeLabArgsParameter = computed(() => state.value.flakeLab.argsParameter.trim() || DEFAULT_ARGS_PARAMETER);
 const flakeLabPreview = computed(() =>
   state.value.preset === 'custom' || state.value.flakeLab.job.trim()
     ? ciServerRequestPreview(state.value, 'flakeLab', previewOpts.value)
@@ -159,8 +162,12 @@ function customize() {
       </div>
       <div class="space-y-2" data-testid="ci-server-flake-lab">
         <p class="text-xs text-muted">
-          Flake Lab job (optional): runs <code class="font-mono">npx @piwitests/reporter $PIWI_RERUN_ARGS</code>, which
-          receives <code class="font-mono">flake 12</code> or <code class="font-mono">flake verify 12</code>
+          Flake Lab job (optional): its <code class="font-mono">{{ flakeLabArgsParameter }}</code> parameter receives
+          <code class="font-mono">flake 12</code> or <code class="font-mono">flake verify 12</code>, which it passes to
+          <code class="font-mono">npx @piwitests/reporter</code>.
+          <DocLink to="features/ci-rerun#flake-lab-on-jenkins" no-icon :class="SENTENCE_LINK_CLASS"
+            >The Jenkinsfile</DocLink
+          >
         </p>
         <div class="grid gap-2 sm:grid-cols-2">
           <UInput
@@ -173,6 +180,12 @@ function customize() {
             v-model="state.flakeLab.argsParameter"
             placeholder="arguments parameter: PIWI_RERUN_ARGS"
             aria-label="Jenkins Flake Lab arguments parameter"
+            class="font-mono"
+          />
+          <UInput
+            v-model="state.flakeLab.dispatchParameter"
+            placeholder="dispatch id parameter: PIWI_ORIGIN_REF"
+            aria-label="Jenkins Flake Lab dispatch id parameter"
             class="font-mono"
           />
         </div>

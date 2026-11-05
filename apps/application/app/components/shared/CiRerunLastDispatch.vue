@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * A failure page's line about its cluster's last CI re-run: what it re-ran,
- * where it was dispatched, when and by whom, and a link to it in CI (the
+ * where it was dispatched, when (the full date and time on hover) and by whom, and a link to it in CI (the
  * build the run recorded, once it finished; before, what the CI answered).
  */
 import { safeHttpUrl } from '#shared/utils/safe-url';
@@ -15,7 +15,10 @@ const link = computed(() => safeHttpUrl(props.dispatch.url));
 <template>
   <span class="text-xs text-muted" data-testid="ci-rerun-last-dispatch">
     Last re-run{{ lastRerunScope(dispatch) }}, dispatched to {{ rerunDispatchTarget(dispatch) }}
-    {{ formatRelativeTime(dispatch.at) }}
+    <ClientOnly>
+      <span :title="prettyDateFormat(dispatch.at)">{{ formatRelativeTime(dispatch.at) }}</span>
+      <template #fallback>{{ formatRelativeTime(dispatch.at) }}</template>
+    </ClientOnly>
     <template v-if="dispatch.byName">by {{ dispatch.byName }}</template>
     <template v-if="link">
       ·

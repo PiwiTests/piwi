@@ -121,41 +121,57 @@ export const CI_SERVER_PREVIEW_VALUES = {
 
 /**
  * Whether the request a dispatch sends carries a credential: `project` for a
- * token typed or stored for this base URL, `instance` for the instance's token
- * (a preset's request under the instance URL, when the instance sets one), or
- * `none`.
+ * token typed or stored for a URL the request lies under, `instance` for the
+ * instance's token (a preset's request under the instance URL, when the
+ * instance sets one), or `none`. Decided on the rendered request URL, as the
+ * server's `credentialFor` decides it.
  */
 export type CiServerPreviewCredential = 'project' | 'instance' | 'none';
 
+export interface CiServerPreviewOptions {
+  /** The instance's `PIWI_CI_SERVER_URL`, or null when it sets none. */
+  instanceUrl: string | null;
+  /** The branch the preview fills the request with. */
+  branch?: string;
+  /** Whether a new token is typed: it is saved with the base URL in effect. */
+  typedToken?: boolean;
+  /** The base URL the stored token is bound to, or null without one. */
+  tokenUrl?: string | null;
+}
+
 export function ciServerPreviewCredential(
-  state: CiServerFormState,
-  opts: { instanceUrl: string | null; typedToken: boolean; tokenUrl: string | null | undefined },
+  preset: CiServerPreset,
+  requestUrl: string,
+  baseUrl: string,
+  opts: CiServerPreviewOptions,
 ): CiServerPreviewCredential {
-  const baseUrl = normalizeCiServerBaseUrl(state.baseUrl) ?? opts.instanceUrl;
-  if (opts.typedToken || ciServerTokenState(baseUrl, opts.tokenUrl) === 'bound') return 'project';
-  if (state.preset !== 'custom' && baseUrl && opts.instanceUrl && isUnderBaseUrl(opts.instanceUrl, baseUrl)) {
-    return 'instance';
-  }
+  if (opts.typedToken && isUnderBaseUrl(baseUrl, requestUrl)) return 'project';
+  if (!opts.typedToken && opts.tokenUrl && isUnderBaseUrl(opts.tokenUrl, requestUrl)) return 'project';
+  if (preset !== 'custom' && opts.instanceUrl && isUnderBaseUrl(opts.instanceUrl, requestUrl)) return 'instance';
   return 'none';
 }
 
 /**
- * The request a dispatch would send, as text with the credential masked, or
- * why it cannot be built. Its headers are set as the server sets them: `Accept`,
- * the body's `Content-Type`, the template's headers, then the credential, each
- * replacing an earlier one of the same name.
+ * The request a dispatch would send, as text with the credential masked, its
+ * URL and the credential it carries, or why it cannot be built. Its headers are
+ * set as the server sets them: `Accept`, the body's `Content-Type`, the
+ * template's headers, then the credential, each replacing an earlier one of the
+ * same name.
  */
 export function ciServerRequestPreview(
   state: CiServerFormState,
   kind: 'rerun' | 'flakeLab',
-  opts: { instanceUrl: string | null; branch?: string; credential?: CiServerPreviewCredential },
-): { text: string; error: null } | { text: null; error: string } {
+  opts: CiServerPreviewOptions,
+):
+  | { text: string; url: string; credential: CiServerPreviewCredential; error: null }
+  | { text: null; url: null; credential: null; error: string } {
+  const fail = (error: string) => ({ text: null, url: null, credential: null, error }) as const;
   const resolved = ciServerTargetFromForm(state, { instanceUrl: opts.instanceUrl });
-  if (!resolved.target) return { text: null, error: resolved.error };
+  if (!resolved.target) return fail(resolved.error);
   const spec = ciServerRequestTemplate(resolved.target, kind);
-  if (!spec) return { text: null, error: 'No Flake Lab request is configured.' };
+  if (!spec) return fail('No Flake Lab request is configured.');
   const baseUrl = resolved.target.baseUrl ?? opts.instanceUrl;
-  if (!baseUrl) return { text: null, error: 'Set a base URL: the instance has no CI server.' };
+  if (!baseUrl) return fail('Set a base URL: the instance has no CI server.');
   const values = {
     ...CI_SERVER_PREVIEW_VALUES,
     args: kind === 'flakeLab' ? 'flake 12' : CI_SERVER_PREVIEW_VALUES.args,
@@ -172,27 +188,28 @@ export function ciServerRequestPreview(
     setHeader('Accept', 'application/json');
     if (request.body) setHeader('Content-Type', request.body.contentType);
     for (const [name, value] of request.headers) setHeader(name, value);
-    const credential = opts.credential ?? 'project';
+    const credential = ciServerPreviewCredential(resolved.target.preset, request.url, baseUrl, opts);
     const authName = spec.auth === 'none' ? null : typeof spec.auth === 'object' ? spec.auth.header : 'Authorization';
     if (authName && credential !== 'none') {
       setHeader(authName, credential === 'instance' ? '•••••••• (the instance token, when it sets one)' : '••••••••');
     }
     const lines = [`${request.method} ${request.url}`, ...headers.map(([name, value]) => `${name}: ${value}`)];
     if (request.body) lines.push('', request.body.text);
-    return { text: lines.join('\n'), error: null };
+    return { text: lines.join('\n'), url: request.url, credential, error: null };
   } catch (e) {
-    return { text: null, error: e instanceof CiTemplateError ? e.message : 'The request cannot be built.' };
+    return fail(e instanceof CiTemplateError ? e.message : 'The request cannot be built.');
   }
 }
 
 /**
- * What the stored token says about this base URL: none stored, stored for it,
- * or stored for another URL and so not sent.
+ * What the stored token says about a request URL (else the base URL, when no
+ * request can be built yet): none stored, stored for a URL it lies under, or
+ * stored for another URL and so not sent.
  */
 export function ciServerTokenState(
-  baseUrl: string | null,
+  url: string | null,
   tokenUrl: string | null | undefined,
 ): 'none' | 'bound' | 'elsewhere' {
   if (!tokenUrl) return 'none';
-  return baseUrl && isUnderBaseUrl(tokenUrl, baseUrl) ? 'bound' : 'elsewhere';
+  return url && isUnderBaseUrl(tokenUrl, url) ? 'bound' : 'elsewhere';
 }

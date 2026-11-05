@@ -10,6 +10,7 @@ import { failureClusters, projects, users } from '~~/server/database/schema.sqli
 import { resolveCiRerunSettings, type CiRerunSettings, type ClusterRerunDispatch } from '#shared/ci-rerun';
 import {
   ciServerRequestTemplate,
+  ciServerTargetProblem,
   isUnderBaseUrl,
   normalizeCiServerBaseUrl,
   readCiServerAnswer,
@@ -60,7 +61,7 @@ async function projectCiRerun(db: DemoDB, projectId: number) {
 function prepare(
   settings: CiRerunSettings,
   values: CiTemplateValues,
-): { link: string; url: string } | { error: string } {
+): { link: string; url: string; sendsCredential: boolean } | { error: string } {
   const target = settings.ciServer;
   const spec = target ? ciServerRequestTemplate(target, 'rerun') : null;
   if (!target || !spec || !target.baseUrl) return { error: NO_TARGET };
@@ -70,7 +71,7 @@ function prepare(
   try {
     const { url } = renderCiRequest(target.baseUrl, spec.template, values);
     const { link } = readCiServerAnswer(target.baseUrl, spec.template, values, { header: () => null, json: null });
-    return { link, url };
+    return { link, url, sendsCredential: spec.auth !== 'none' };
   } catch (e) {
     return { error: e instanceof Error ? e.message : 'The CI server request cannot be built.' };
   }
@@ -85,7 +86,9 @@ async function availability(db: DemoDB, projectId: number, runId: number): Promi
   const prepared = target
     ? prepare(settings, await ciServerValues(db, runId, target, 'args', 'dispatch'))
     : { error: NO_TARGET };
-  const hasToken = 'url' in prepared && !!tokenUrl && isUnderBaseUrl(tokenUrl, prepared.url);
+  // As the server: a request whose auth is `none` carries no credential, token or not.
+  const hasToken =
+    'url' in prepared && prepared.sendsCredential && !!tokenUrl && isUnderBaseUrl(tokenUrl, prepared.url);
   const reason = !settings.enabled ? OFF_REASON : 'error' in prepared ? prepared.error : null;
   return { available: !reason, reason, provider: 'ci-server', enabled: settings.enabled, hasToken };
 }
@@ -175,6 +178,14 @@ export async function demoRerunExecution(db: DemoDB, executionId: number, userId
   if (!target) throw demoHttpError(404, 'Test run case not found');
   const { projectId, runId, clusterId, rerunCase } = target;
   return dispatch(db, { projectId, runId, clusterId, cases: [rerunCase] }, userId);
+}
+
+/** Refuse, as the server does, a CI server target a save sends that cannot dispatch. */
+export function assertDemoCiServerTarget(body: { ciRerun?: unknown } | null): void {
+  const sent = (body?.ciRerun as { ciServer?: unknown } | null | undefined)?.ciServer;
+  if (sent == null) return;
+  const problem = ciServerTargetProblem(sent);
+  if (problem) throw demoHttpError(400, problem);
 }
 
 /**

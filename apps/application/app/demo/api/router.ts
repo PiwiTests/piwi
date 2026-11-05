@@ -476,6 +476,7 @@ import {
 } from '#shared/handlers/bug-reports';
 import { apiCheckDemoImport, apiDemoImport } from './import';
 import {
+  assertDemoCiServerTarget,
   demoCiServerTokenMarker,
   demoCiServerTokenUrl,
   demoClusterRerunInfo,
@@ -916,6 +917,7 @@ const routes: RouteEntry[] = [
       try {
         const db = await getDemoDb();
         const update = body as Parameters<typeof updateProject>[2];
+        assertDemoCiServerTarget(update);
         const ciServerToken = await demoCiServerTokenMarker(db, +m[1]!, update);
         const project = await updateProject(db, +m[1]!, { ...update, ciServerToken });
         if (update?.coverageScope !== undefined || update?.coverageAreas !== undefined) {

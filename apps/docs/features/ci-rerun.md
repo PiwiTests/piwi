@@ -14,13 +14,13 @@ trigger that run in CI: **Re-run in CI**, next to *Copy retry command*, dispatch
 the cluster's retry arguments (each affected test's `file:line` from its latest failure, and the projects it failed
 in) on the branch of the cluster's latest run, and links to the run it started. The configured ref is used only when
 that run recorded no branch. An execution's Verify section offers **Re-run this test in CI**, for that test at its
-line and in its project, beside **Re-run the cluster in CI**; both are recorded as the cluster's last re-run. Under
-Test evidence, the last dispatch says where it went (_dispatched to Jenkins_), when, by whom, and links to the build.
+line and in its project, beside **Re-run the cluster in CI**; both are recorded as the cluster's last re-run. In the
+Verify section, the last dispatch says where it went (_dispatched to Jenkins_), when, by whom, and links to the build.
 
 It is **off by default** and configured per project in the **Source control** section of the project's **Settings** tab,
 under **CI re-run**. Turn it on and pick what it dispatches through:
 
-- **Repository CI**: the CI of the repository host, with the project's SCM token.
+- **Repository host**: the CI of the repository host, with the project's SCM token.
 - **CI server**: one HTTP request to a CI server, such as Jenkins, with its own credential.
 
 Its buttons, and a next step that runs in CI, show to people with
@@ -28,9 +28,10 @@ Its buttons, and a next step that runs in CI, show to people with
 repository, an SCM token must be set too. A CI server request goes without a credential when none applies.
 
 An optional **Flake Lab** target names a second workflow, pipeline or job that runs `piwi flake` for one flaky test,
-started from that test's next step: [Run it in CI](./flake-lab#run-it-in-ci) shows the workflow.
+started from that test's next step: [Run it in CI](./flake-lab#run-it-in-ci) shows the GitHub workflow, and
+[Flake Lab on Jenkins](#flake-lab-on-jenkins) the Jenkins job.
 
-## Repository CI
+## Repository host
 
 Fill in the block for your provider:
 
@@ -121,6 +122,38 @@ pipeline {
 }
 ```
 
+### Flake Lab on Jenkins
+
+The preset's Flake Lab job receives `flake 12` or `flake verify 12` in its arguments parameter and hands it to the
+reporter, which reads `PIWI_DASHBOARD_URL` and `PIWI_API_KEY`:
+
+```groovy
+pipeline {
+  agent any
+  parameters {
+    string(name: 'PIWI_RERUN_ARGS', defaultValue: '', description: 'flake 12, or flake verify 12')
+    string(name: 'PIWI_ORIGIN_REF', defaultValue: '', description: 'The dispatch Piwi started')
+  }
+  environment {
+    PIWI_DASHBOARD_URL = 'https://piwi.example.com'
+    PIWI_API_KEY = credentials('piwi-api-key')
+  }
+  stages {
+    stage('flake') {
+      steps {
+        sh 'npm ci'
+        sh 'npx playwright install --with-deps chromium'
+        sh 'npx @piwitests/reporter $PIWI_RERUN_ARGS'
+      }
+    }
+  }
+}
+```
+
+On a Windows agent the steps are `bat` steps, and the last reads `%PIWI_RERUN_ARGS%`.
+
+### Custom requests
+
 **Customize the request** turns the preset into a Custom request that sends the same thing, to edit from there. A
 Custom request is JSON: `auth` (`none`, `basic`, `bearer`, or `{ "header": "X-Token" }`), a `rerun` request and an
 optional `flakeLab` one, each with a `method` (`POST` or `PUT`), a `path` relative to the base URL, and optional
@@ -157,7 +190,8 @@ variables are in the [configuration reference](/reference/configuration).
 
 When the re-run finishes, Piwi recognizes it and records its [origin](/reference/test-metadata#run-origin) as `ci-rerun`.
 A Jenkins job matches by the dispatch id it passes on as `PIWI_ORIGIN_REF`; a Custom request by that id too, or by the
-build number its `buildNumber` pointer reads from the answer, on the same branch. GitLab matches by its pipeline id and
+build number its `buildNumber` pointer reads from the answer, for a run of the same branch and spec files that started
+after the dispatch. GitLab matches by its pipeline id and
 Bitbucket by its build number, which the dispatch answered with; GitHub by the dispatch id when the workflow passes it
 on. Once matched, the last dispatch links to the build the
 run recorded.

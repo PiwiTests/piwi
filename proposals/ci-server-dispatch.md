@@ -297,7 +297,7 @@ PR 2 and PR 3 are the size a contributor can take; the issue's author offered to
 - `features/ci-rerun.md`: the re-run section of `features/pr-feedback.md` becomes its own page, _Re-run in CI_, with
   the CI server, the Jenkinsfile, the placeholders and the credential and host rules. Both pages stay within the
   1,500-word budget, and `guide/ci.md` is at it.
-- `features/flake-lab.md#run-it-in-ci`: the Flake Lab fields.
+- `features/ci-rerun.md#flake-lab-on-jenkins`: the Jenkins Flake Lab job, its `sh` and `bat` steps.
 - The configuration reference is generated from the four new variables.
 - `HELP_TOPICS['project.ci-rerun']`: the CI server option.
 
