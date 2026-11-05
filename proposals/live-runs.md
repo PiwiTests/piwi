@@ -11,10 +11,11 @@ proposes one model of a live run that every tool renders, and adds ways to watch
 **Status.** Proposed 2026-11-05, against `main` at v0.66.0 (`e82b429f`). Built from P0: the connection budget of
 #1106. One tab of the browser holds the notification stream, through a lease in `localStorage` (Web Locks exist only
 on secure origins, and the limit bites on plain HTTP), and that stream opens at once with a comment. A run page or a
-live view whose stream has not been open for 5 s says so, through its reconnections, with **Retry** on the run page,
-which opens a new stream without refetching the run. A list whose first connection opens after a run event it missed
+live view whose stream has not opened within 5 s, or within 10 s of a drop, says so, with **Retry** on the run page,
+which opens a new stream without refetching the run; a run page whose own stream is not open when its run ends hears
+the end on the instance's stream. A list whose first connection opens after a run event it missed
 (`/api/stream` says when the last went out, read against the server's render time) refreshes once hydrated. The
-execution page closes its stream while its tab is hidden. The run page keeps its stream while hidden, since its tab
+execution page closes its stream while its tab is hidden, and reads the execution again when shown. The run page keeps its stream while hidden, since its tab
 shows the run's progress; carrying the run's and the view's streams on one connection is left until a measurement asks
 for it. The rest is proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the

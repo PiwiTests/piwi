@@ -64,6 +64,24 @@ describe('stallWatch', () => {
     expect(stalled).toHaveBeenCalledTimes(2);
   });
 
+  test('starts no check while the stream is open, and checks again after one that found it open', () => {
+    const stalled = vi.fn();
+    let open = true;
+    const watch = stallWatch(() => open, stalled);
+    watch.arm();
+    open = false;
+    vi.advanceTimersByTime(STREAM_RECONNECT_STALL_MS);
+    expect(stalled).not.toHaveBeenCalled();
+    // A check that ends while the stream is open leaves the watch ready for the next drop.
+    watch.arm();
+    open = true;
+    vi.advanceTimersByTime(STREAM_STALL_MS);
+    open = false;
+    watch.arm();
+    vi.advanceTimersByTime(STREAM_STALL_MS);
+    expect(stalled).toHaveBeenCalledOnce();
+  });
+
   test('says nothing once disarmed', () => {
     const stalled = vi.fn();
     const watch = stallWatch(() => false, stalled);

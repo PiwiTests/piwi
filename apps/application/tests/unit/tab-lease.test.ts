@@ -13,6 +13,8 @@ type Listener = (event: { key?: string | null; persisted?: boolean }) => void;
 class Browser {
   values = new Map<string, string>();
   tabs: Tab[] = [];
+  /** A full storage refuses every write, and still reads and removes. */
+  full = false;
   changed(by: Tab, key: string) {
     for (const tab of this.tabs) if (tab !== by) tab.fire('storage', { key });
   }
@@ -34,6 +36,7 @@ class Tab {
       storage: {
         getItem: (key) => browser.values.get(key) ?? null,
         setItem: (key, value) => {
+          if (browser.full) throw new Error('QuotaExceededError');
           browser.values.set(key, value);
           browser.changed(this, key);
         },
@@ -118,6 +121,37 @@ describe('holdInOneTab', () => {
     }
     expect(second.held).not.toHaveBeenCalled();
     expect(first.lost).not.toHaveBeenCalled();
+  });
+
+  test('every tab holds it when the storage is full as the page opens', () => {
+    const browser = new Browser();
+    browser.full = true;
+    const first = new Tab(browser).open();
+    const second = new Tab(browser).open();
+    expect(first.held).toHaveBeenCalledOnce();
+    expect(second.held).toHaveBeenCalledOnce();
+  });
+
+  test('the next tab holds it when the holder leaves a storage that has filled up since', () => {
+    const browser = new Browser();
+    const first = new Tab(browser).open();
+    vi.advanceTimersByTime(TAB_LEASE_SETTLE_MS);
+    const second = new Tab(browser).open();
+    browser.full = true;
+    first.fire('pagehide', {});
+    vi.advanceTimersByTime(TAB_LEASE_SETTLE_MS);
+    expect(second.held).toHaveBeenCalledOnce();
+  });
+
+  test('a holder whose storage refuses the release gives it up quietly', () => {
+    const tab = new Tab(new Browser());
+    const host = tab.host();
+    holdInOneTab({ key: 'lease', held: tab.held, lost: tab.lost }, host);
+    vi.advanceTimersByTime(TAB_LEASE_SETTLE_MS);
+    host.storage.removeItem = () => {
+      throw new Error('SecurityError');
+    };
+    expect(() => tab.fire('pagehide', {})).not.toThrow();
   });
 
   test('every tab holds it when the browser refuses localStorage', () => {

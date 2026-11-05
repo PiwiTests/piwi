@@ -4,7 +4,7 @@ export interface RunLiveViewReadiness {
   desktop: boolean;
   demo: boolean;
   connected: boolean;
-  /** The run's stream has stayed unopened for `STREAM_STALL_MS`. */
+  /** The run's stream has not opened for `STREAM_STALL_MS`, or opened again for `STREAM_RECONNECT_STALL_MS` after a drop. */
   stalled?: boolean;
   state: LiveViewRunState | null;
   ci: boolean;

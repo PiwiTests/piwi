@@ -63,11 +63,13 @@ export function holdInOneTab(options: TabLeaseOptions, host: TabLeaseHost = brow
       return null;
     }
   };
-  const write = (): void => {
+  /** Write this tab's lease; false when the storage refuses it. */
+  const write = (): boolean => {
     try {
       host.storage.setItem(options.key, JSON.stringify({ id, at: host.now() }));
+      return true;
     } catch {
-      // A write the storage refuses leaves the lease to go stale: another tab takes it.
+      return false;
     }
   };
 
@@ -93,7 +95,12 @@ export function holdInOneTab(options: TabLeaseOptions, host: TabLeaseHost = brow
       return;
     }
     if (lease && lease.id !== id && host.now() - lease.at < staleMs) return;
-    write();
+    // A storage that refuses the claim refuses every tab's: each holds the lease, as without a storage.
+    if (!write()) {
+      holding = true;
+      options.held();
+      return;
+    }
     claiming = true;
     host.setTimeout(() => {
       claiming = false;

@@ -85,8 +85,8 @@ const liveViewKeyed = ref(false);
 // The stream's last `live-view` state, and whether the stream is open: the toolbar's status reads both.
 const liveViewState = ref<LiveViewRunState | null>(null);
 const liveViewConnected = ref(false);
-// The stream has not been open for `STREAM_STALL_MS`, through its reconnections and reopenings: the toolbar says so,
-// with Retry.
+// The stream has not opened for `STREAM_STALL_MS`, or opened again within `STREAM_RECONNECT_STALL_MS` of a drop: the
+// toolbar says so, with Retry.
 const liveStreamStalled = ref(false);
 const streamStall = stallWatch(
   () => liveViewConnected.value,
@@ -454,20 +454,25 @@ function flushPendingEvents() {
       // Tests are done, reports/traces are uploading — show progress bar
       isFinalizing.value = true;
     } else if (parsed.type === 'run-finished') {
-      isFinalizing.value = false;
-      liveRunEnded.value = true;
-      liveSteps.value = {};
-      liveWorkers.value = {};
-      liveViewKeyed.value = false;
-      liveViewState.value = null;
-      disconnectStream();
-      refresh();
-      // Nudge the Changes tab to refetch — it keeps its own fetch state and
-      // would otherwise show stale/partial data from before the run finalized.
-      runRefreshKey.value++;
-      pollForReports();
+      onRunEnded();
     }
   }
+}
+
+/** The run ended: the page leaves its live state, reads the run again and waits for its reports. */
+function onRunEnded(): void {
+  isFinalizing.value = false;
+  liveRunEnded.value = true;
+  liveSteps.value = {};
+  liveWorkers.value = {};
+  liveViewKeyed.value = false;
+  liveViewState.value = null;
+  disconnectStream();
+  refresh();
+  // Nudge the Changes tab to refetch — it keeps its own fetch state and
+  // would otherwise show stale/partial data from before the run finalized.
+  runRefreshKey.value++;
+  pollForReports();
 }
 
 // The reporter may upload HTML/Monocart reports and traces after the run
@@ -577,7 +582,7 @@ function reopenStream() {
   reopenTimer = setTimeout(async () => {
     reopenTimer = null;
     await refresh();
-    if (shouldStream.value) connectToStream();
+    if (shouldStream.value && !unmounted) connectToStream();
   }, reopenDelay);
   reopenDelay = Math.min(reopenDelay * 2, STREAM_REOPEN_MAX_MS);
 }
@@ -622,7 +627,10 @@ watch(
   { immediate: true },
 );
 
+// A reopening that awaits its refetch as the page leaves opens no stream after.
+let unmounted = false;
 onUnmounted(() => {
+  unmounted = true;
   if (testsRanTimer) clearTimeout(testsRanTimer);
   disconnectStream();
 });
@@ -709,9 +717,12 @@ const tabIndicator = useTabRunIndicator(() => {
 // a live run is also refetched when the tab comes back.
 useRunEvents((event) => {
   if (event.runId !== Number(runId) || !isLive.value) return;
-  // A cancel comes on the global stream alone; an end, on it too while the run's own stream is not open.
-  const ended = event.type === 'run-finished' || event.type === 'run-finalizing';
-  if (event.type === 'run-cancelled' || (ended && !liveViewConnected.value)) refresh();
+  // A cancel comes on the global stream alone; an end, on it too while the run's own stream is not open. The demo's
+  // own stream always hears the end.
+  if (event.type === 'run-cancelled') refresh();
+  else if (isDemoMode || liveViewConnected.value) return;
+  else if (event.type === 'run-finished') onRunEnded();
+  else if (event.type === 'run-finalizing') refresh();
 });
 const visibility = useDocumentVisibility();
 watch(visibility, (state) => {

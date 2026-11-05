@@ -677,13 +677,15 @@ watch(
   { immediate: true },
 );
 onUnmounted(disconnectRunStream);
-// A hidden tab holds no stream. Shown again, the page listens again: the stream says at once when the run ended
-// meanwhile, and the page then reads the execution and its traces.
+// A hidden tab holds no stream. Shown again, the page reads the execution and its traces, whose files may have come
+// meanwhile, and listens again: the stream says at once when the run ended meanwhile.
 const visibility = useDocumentVisibility();
 watch(visibility, (state) => {
   if (!runIsActive.value) return;
-  if (state === 'hidden') disconnectRunStream();
-  else connectToRunStream();
+  if (state === 'hidden') return disconnectRunStream();
+  refresh();
+  refreshTraces();
+  connectToRunStream();
 });
 
 // ── Section locator ─────────────────────────────────────────────────────────

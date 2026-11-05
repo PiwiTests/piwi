@@ -24,22 +24,18 @@ export function onStreamStall(isOpen: () => boolean, stalled: () => void, ms: nu
  * `stalled` once if it still is not after `ms`; `disarm` cancels it.
  */
 export function stallWatch(isOpen: () => boolean, stalled: () => void) {
-  let cancel: (() => void) | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
   return {
     arm(ms: number = STREAM_STALL_MS): void {
-      if (cancel || isOpen()) return;
-      cancel = onStreamStall(
-        isOpen,
-        () => {
-          cancel = null;
-          stalled();
-        },
-        ms,
-      );
+      if (timer || isOpen()) return;
+      timer = setTimeout(() => {
+        timer = null;
+        if (!isOpen()) stalled();
+      }, ms);
     },
     disarm(): void {
-      cancel?.();
-      cancel = null;
+      if (timer) clearTimeout(timer);
+      timer = null;
     },
   };
 }
