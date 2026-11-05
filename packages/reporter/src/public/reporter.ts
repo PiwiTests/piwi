@@ -22,7 +22,7 @@ import {
   type DotEnvUse,
   type IgnoredEnvValue,
 } from '../internal/config/env.js';
-import { PIWI_EDITOR_ENV, followEditor } from '../internal/config/editors.js';
+import { PIWI_EDITOR_ENV, followEditor, runInteractive } from '../internal/config/editors.js';
 import type { PiwiDashboardOptions, ShardInfo } from './options.js';
 import { HttpClient, serverUrlProblem } from '../internal/transport/http-client.js';
 import { Uploader } from '../internal/submit/uploader.js';
@@ -60,6 +60,7 @@ import {
 } from '@piwitests/core/live-view';
 import { ciLiveViewNote } from '../internal/streaming/live-view-note.js';
 import { RUN_CHANNEL_ENV } from '@piwitests/core/run-channel';
+import { RUN_INTERACTIVE_METADATA_KEY } from '@piwitests/core/wire';
 import { createGlobalSetup } from './global-setup.js';
 import { wrapConfig } from './config-wrapper.js';
 import { toWireTestCase } from '../internal/submit/serializer.js';
@@ -475,6 +476,9 @@ export class PiwiDashboardReporter {
     }
 
     this.metadata = this.metadataCollector.collect(config, suite, this.options);
+    // A run a hub steers names it: its stops are a person's, at the editor's or the desktop app's breakpoints.
+    const interactive = runInteractive(process.env, followed);
+    if (interactive) this.metadata[RUN_INTERACTIVE_METADATA_KEY] = interactive;
 
     // Stamp a probe run at the source, before any run body is sent. The
     // streaming start/begin and finish calls carry this same metadata object, so

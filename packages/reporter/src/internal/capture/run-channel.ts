@@ -7,7 +7,6 @@ import {
   RUN_CHANNEL_ENV,
   RUN_HOLDS,
   RUN_INTENT_NAMES,
-  RUN_REF_ENV,
   RUN_TAKES,
   TERMINAL_REF_PREFIX,
   parseHubToRun,
@@ -40,8 +39,8 @@ import {
   type ViewButton,
   type ViewInput,
 } from '@piwitests/core/run-view';
-import { startedByTestRunner } from '../config/editors.js';
-import { PIWI_LOCAL_DEBUG_ENV, PIWI_ORIGIN_ENV } from '../config/env.js';
+import { runChannelRef, startedByTestRunner } from '../config/editors.js';
+import { PIWI_LOCAL_DEBUG_ENV } from '../config/env.js';
 import { errorMessage } from '../support/errors.js';
 import { playwrightVersionAtLeast } from '../support/playwright-version.js';
 import { getReporterVersion } from '../support/reporter-version.js';
@@ -278,8 +277,8 @@ export async function openRunChannel(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<boolean> {
   const channel = parseRecordChannel(env[RUN_CHANNEL_ENV]);
-  const ref = env[RUN_REF_ENV] ?? env[PIWI_ORIGIN_ENV.ref];
-  if (socket || !channel || !ref || !/^[\w-]{1,64}$/.test(ref)) return false;
+  const ref = runChannelRef(env);
+  if (socket || !channel || !ref) return false;
   const opening = net.connect(channel.path);
   opening.setEncoding('utf8');
   const opened = await new Promise<boolean>((resolve) => {
