@@ -198,7 +198,28 @@ describe('accountInitials', () => {
 
 describe('letterAvatarColor', () => {
   test('gives an account the same color on every screen and every visit', () => {
-    expect([1, 2, 4, 6].map((id) => letterAvatarColor(id).hue)).toEqual(['teal', 'orange', 'sky', 'lime']);
+    expect([1, 2, 3, 4, 5, 6, 42].map((id) => letterAvatarColor(id).hue)).toEqual([
+      'orange',
+      'lime',
+      'teal',
+      'cyan',
+      'sky',
+      'orange',
+      'lime',
+    ]);
+  });
+
+  test('gives a color to any id, whole or not', () => {
+    for (const id of [0, -3, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(LETTER_AVATAR_COLORS).toContain(letterAvatarColor(id));
+    }
+  });
+
+  test('gives consecutive ids different colors', () => {
+    for (const first of [1, 2, 3, 17, 1000]) {
+      const hues = Array.from({ length: LETTER_AVATAR_COLORS.length }, (_, i) => letterAvatarColor(first + i).hue);
+      expect(new Set(hues).size, `ids ${first} and on`).toBe(LETTER_AVATAR_COLORS.length);
+    }
   });
 
   test('spreads accounts over every color', () => {

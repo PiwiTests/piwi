@@ -74,12 +74,14 @@ export const LETTER_AVATAR_COLORS: readonly LetterAvatarColor[] = [
 ];
 
 /**
- * An account's letter avatar color, picked from its id: the same account gets
- * the same color on every screen and every visit.
+ * An account's letter avatar color, picked from its id in turn: the same
+ * account gets the same color on every screen and every visit, and five
+ * consecutive ids get five different colors.
  */
 export function letterAvatarColor(accountId: number): LetterAvatarColor {
-  const hash = Number.parseInt(fnv1a32(String(accountId)), 16);
-  return LETTER_AVATAR_COLORS[((hash ^ (hash >>> 16)) >>> 0) % LETTER_AVATAR_COLORS.length]!;
+  const count = LETTER_AVATAR_COLORS.length;
+  const id = Number.isFinite(accountId) ? Math.trunc(accountId) : 0;
+  return LETTER_AVATAR_COLORS[(((id - 1) % count) + count) % count]!;
 }
 
 /** The first letter or digit of a word: one code point, its accent composed by NFC. */
