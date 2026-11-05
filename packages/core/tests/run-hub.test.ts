@@ -778,6 +778,42 @@ describe('a lane watched on the hub', () => {
   });
 });
 
+describe('how far a run is, on the hub', () => {
+  const progress = {
+    total: 9,
+    done: 3,
+    failed: 1,
+    flaky: 0,
+    skipped: 0,
+    status: 'running',
+    failure: null,
+  } as const;
+
+  test('has the extension read it, a status of a newer service as other, and leave out what it cannot read', () => {
+    const read = (value: unknown) =>
+      (parseHubMessage(json({ type: 'session', session: { ...session, progress: value } })) as { session: HubSession })
+        .session.progress;
+    expect(read(progress)).toEqual(progress);
+    expect(read({ ...progress, status: 'exploded' })).toEqual({ ...progress, status: 'other' });
+    const ended = { ...progress, done: 9, status: 'failed', failure: { title: 'cart › adds', error: null } };
+    expect(read(ended)).toEqual(ended);
+    for (const broken of [
+      { ...progress, done: 10 },
+      { ...progress, failed: 4 },
+      { ...progress, total: -1 },
+      { ...progress, failure: { title: '', error: null } },
+      { ...progress, status: 3 },
+      'nine',
+    ]) {
+      expect(read(broken), JSON.stringify(broken)).toBeUndefined();
+    }
+    // A session without it reads as one from a service that predates it.
+    expect((parseHubMessage(json({ type: 'session', session })) as { session: HubSession }).session).not.toHaveProperty(
+      'progress',
+    );
+  });
+});
+
 describe('the live endpoint', () => {
   test('sits beside the Send to editor endpoint, in both editors', () => {
     expect(liveUrlOf('http://127.0.0.1:43123/piwi/send')).toBe('http://127.0.0.1:43123/piwi/live');

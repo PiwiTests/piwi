@@ -735,7 +735,8 @@ data class RunWorker(
  * `piwi/runSessionChanged`: a run the IDE started, by the ref of its command, with the folder of its Playwright config
  * and its workers connected now; the last one has `ended`, and a later worker of the ref starts a new session.
  * `terminal` marks a run started in a terminal, which found the service through its discovery file. `live` says how
- * the run stands on the team instance's live view (Share live), for a run whose reporter shares it.
+ * the run stands on the team instance's live view (Share live), for a run whose reporter shares it, and `progress`
+ * how far it is, as its own process says.
  */
 data class RunSession(
     val ref: String? = null,
@@ -745,6 +746,29 @@ data class RunSession(
     val terminal: Boolean = false,
     val runner: Boolean = false,
     val live: RunLive? = null,
+    val progress: RunProgress? = null,
+)
+
+/**
+ * How far a run is, as its own process says: how many tests it holds (`total`), how many ended, each once by the
+ * outcome of its last attempt (`done`, and of them `failed`, `flaky` and `skipped`), whether it still runs or how it
+ * ended (`status`: `running`, `passed`, `failed`, `timedout`, `interrupted` or `other`), and its first failure once it
+ * ended (null for none). Null for a run whose reporter predates it.
+ */
+data class RunProgress(
+    val total: Int = 0,
+    val done: Int = 0,
+    val failed: Int = 0,
+    val flaky: Int = 0,
+    val skipped: Int = 0,
+    val status: String = "running",
+    val failure: RunFailure? = null,
+)
+
+/** A run's first failure: its test's title and its error's first line (null for none). */
+data class RunFailure(
+    val title: String = "",
+    val error: String? = null,
 )
 
 /**

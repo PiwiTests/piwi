@@ -395,7 +395,9 @@ have not said anything of yet included; a run known not to be shareable is asked
 Shared, the answer offers **Copy the run page's link** and **Stop sharing**. The status bar's item (`liveItem`) offers
 Share live to a run that can be shared (`$(broadcast)`, with why its sharing stopped when it stopped unasked) and
 counts the views open of every shared run (`$(broadcast) Live · 3 views`), whose click stops sharing one
-(`piwi.stopSharingRun`, the `piwi.runSharedLive` context key).
+(`piwi.stopSharingRun`, the `piwi.runSharedLive` context key). Beside it, `progressItem` counts the tests the runs ran
+out of the tests they hold, and their failures (`$(beaker) 3 of 9 · $(error) 1`), from `RunSession.progress`, which the
+run's own process tells the service: so it counts offline and with the desktop app.
 
 `src/run-control.ts` is the pure half, tested without an editor (`tests/run-control.test.ts`). The API `activate`
 returns gives the sessions (`runSessions`), the lines drawn as the execution point (`executionPoints`), what the

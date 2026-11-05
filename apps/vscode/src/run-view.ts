@@ -78,6 +78,7 @@ import {
   lineEditOf,
   linesAbove,
   liveItem,
+  progressItem,
   liveTarget,
   pagePoint,
   pausedPageHtml,
@@ -164,6 +165,7 @@ const ITEM_ORDER = [
   'pausing',
   RUN_COMMANDS.stop,
   'live',
+  'progress',
 ];
 
 /** The commands the lens's and the hover's links run. */
@@ -290,7 +292,12 @@ export function registerRunControl(
     void vscode.commands.executeCommand('setContext', 'piwi.runSharedLive', state.liveShared);
     const shown = new Set<string>();
     const live = liveItem(sessions);
-    for (const control of [...controlItems(state), ...(live ? [{ ...live, key: 'live' }] : [])]) {
+    const progress = progressItem(sessions);
+    for (const control of [
+      ...controlItems(state),
+      ...(live ? [{ ...live, key: 'live' }] : []),
+      ...(progress ? [{ ...progress, key: 'progress' }] : []),
+    ]) {
       const key = 'key' in control ? control.key : (control.command ?? 'pausing');
       shown.add(key);
       const i = item(key);

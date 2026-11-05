@@ -34,9 +34,11 @@ runs to the cursor in VS Code. **Pause** and **End the test** have no key in VS 
 waits for the next stop rather than start a debug session.
 
 - **In VS Code**, the controls sit in the status bar beside the run's progress while they apply (`Pausing…` until a
-  paused test stops), and in the palette (**Piwi: Pause the run** and its kin, **Piwi: Show the paused page**).
+  paused test stops), and in the palette (**Piwi: Pause the run** and its kin, **Piwi: Show the paused page**). The
+  progress (`3 of 9`, and how many failed) comes from the run itself, so it counts offline and with the desktop app.
 - **In a JetBrains IDE**, they are under **Tools → Piwi**, enabled while they apply, and first in the status bar
-  item's menu, which reads `Piwi: paused · checkout.page.ts:12` while a test is stopped.
+  item's menu, which reads `Piwi: paused · checkout.page.ts:12` while a test is stopped, and `Piwi: 3 of 9` while the
+  run goes on.
 
 **Pause** stops every run Piwi started in this window (in a JetBrains IDE, this project), each worker before its next
 call that Playwright's debugger stops at ([which calls](./editor-breakpoints#limits)): a long call or a `waitForTimeout`

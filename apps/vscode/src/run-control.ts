@@ -328,6 +328,32 @@ export function liveText(live: RunLive): string {
 }
 
 /**
+ * The status bar item of how far the runs are, as their own processes say: how many of their tests ended out of how
+ * many they hold, and how many of them failed, for every run kept that says so (none from a reporter that predates
+ * it). None while no run says.
+ */
+export function progressItem(sessions: Sessions): ControlItem | null {
+  const told = [...sessions.values()].flatMap((s) => (s.progress ? [s.progress] : []));
+  if (!told.length) return null;
+  const sum = (count: (p: NonNullable<RunSession['progress']>) => number) => told.reduce((n, p) => n + count(p), 0);
+  const [done, total, failed, flaky] = [
+    sum((p) => p.done),
+    sum((p) => p.total),
+    sum((p) => p.failed),
+    sum((p) => p.flaky),
+  ];
+  const tests = total === 1 ? 'test' : 'tests';
+  const outcomes = [failed ? `${failed} failed` : '', flaky ? `${flaky} flaky` : ''].filter(Boolean).join(', ');
+  return {
+    text: `$(beaker) ${done} of ${total}${failed ? ` · $(error) ${failed}` : ''}`,
+    tooltip:
+      `Piwi: ${told.length === 1 ? 'the run' : `${told.length} runs`} ran ${done} of ${total} ${tests}` +
+      `${outcomes ? `: ${outcomes}` : ''}.`,
+    command: null,
+  };
+}
+
+/**
  * The status bar item of Share live while a run is live: the shared runs say where and the views open of them all,
  * and stop being shared on a click; else a run that can be shared offers it, saying why its sharing stopped when it
  * stopped though nobody asked. None while no run can be shared: the command says why.

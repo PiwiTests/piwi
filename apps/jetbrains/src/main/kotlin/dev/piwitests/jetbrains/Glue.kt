@@ -1476,6 +1476,17 @@ object Glue {
             "Nothing is stored, and Stop Sharing ends it within seconds."
     }
 
+    /**
+     * How far the runs are, as their own processes say and as the status bar says it: how many of their tests ended out
+     * of how many they hold, and how many failed; null while no run says.
+     */
+    fun runProgressText(sessions: Map<String, RunSession>): String? {
+        val told = sessions.values.mapNotNull { it.progress }
+        if (told.isEmpty()) return null
+        val failed = told.sumOf { it.failed }
+        return "Piwi: ${told.sumOf { it.done }} of ${told.sumOf { it.total }}" + if (failed > 0) " · $failed failed" else ""
+    }
+
     /** The first run of the sessions shared live, as the status bar's tooltip says it; null for none. */
     fun sharedLive(sessions: Map<String, RunSession>): RunLive? = sharedRunsOf(sessions).firstOrNull { it.live.shared }?.live
 

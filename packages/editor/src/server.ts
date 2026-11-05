@@ -2264,6 +2264,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         onAttach: recordRequested,
         onCheck: (handoff) => stopActions.check(handoff),
         onRun: (socket, attach) => runSessions.attach(socket, attach),
+        onRunMain: (socket, begin) => runSessions.attachMain(socket, begin),
       }),
       RunHub.open({
         sessions: runSessions,

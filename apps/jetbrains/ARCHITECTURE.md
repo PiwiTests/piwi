@@ -296,7 +296,8 @@ the disabled actions are left out). First comes what the state calls for (`Glue.
 - the service has not started yet: **Settings**;
 - while a recording runs: going to its block, and its controls;
 - while a run is live: its controls ([Run control](#run-control)). The item reads `Piwi: paused · checkout.page.ts:12`
-  while a test is stopped (`Glue.runControlStatus`).
+  while a test is stopped (`Glue.runControlStatus`), and `Piwi: 3 of 9 · 1 failed` while the run goes on, from the
+  progress its own process tells the service (`Glue.runProgressText`, `RunSession.progress`).
 
 Then come the registered actions, by id: Re-run the Failing Tests, Open the Failures (the tool window), Open the Latest
 Run in the Dashboard, Open in Dashboard, Compare With…, Run the Test at the Caret, Record Here, Refresh, Connect and

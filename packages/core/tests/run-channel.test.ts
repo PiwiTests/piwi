@@ -19,6 +19,7 @@ import {
   RUN_TAKES,
   parseHubToRun,
   isSnapshotRef,
+  parseRunMainToHub,
   parseRunToHub,
   type HubToRun,
   type KeptRequest,
@@ -742,6 +743,68 @@ describe('the run channel', () => {
       ]) {
         expect(parseRunToHub(line(broken)), JSON.stringify(broken)).toBeNull();
       }
+    });
+  });
+
+  describe('what the run’s own process sends', () => {
+    const begin = {
+      type: 'run-begin',
+      token: 't'.repeat(32),
+      ref: 'terminal-41-1730000000000',
+      cwd: '/work/shop',
+      pid: 41,
+      playwright: '1.64.1',
+      reporter: '0.70.0',
+      total: 9,
+      workers: 2,
+      shard: { current: 1, total: 3 },
+    } as const;
+
+    test('reads its begin, and refuses one without a ref, a folder, a count or a shard it can read', () => {
+      expect(parseRunMainToHub(line(begin))).toEqual(begin);
+      expect(parseRunMainToHub(line({ ...begin, shard: null }))).toEqual({ ...begin, shard: null });
+      expect(parseRunMainToHub(line({ ...begin, playwright: 3 }))).toEqual({ ...begin, playwright: '' });
+      for (const broken of [
+        { ...begin, ref: 'a ref' },
+        { ...begin, cwd: '' },
+        { ...begin, total: -1 },
+        { ...begin, workers: 0 },
+        { ...begin, shard: { current: 4, total: 3 } },
+        { ...begin, shard: 'one' },
+        { ...begin, token: 7 },
+      ]) {
+        expect(parseRunMainToHub(line(broken)), JSON.stringify(broken)).toBeNull();
+      }
+      // A worker's reader takes none of them, nor the run's reader a worker's attach.
+      expect(parseRunToHub(line(begin))).toBeNull();
+      expect(parseRunMainToHub(line({ type: 'run-attach' }))).toBeNull();
+    });
+
+    test('reads its counts, none above what ended', () => {
+      const progress = { type: 'run-progress', done: 4, failed: 1, flaky: 1, skipped: 1 };
+      expect(parseRunMainToHub(line(progress))).toEqual(progress);
+      expect(parseRunMainToHub(line({ ...progress, failed: 3 }))).toBeNull();
+      expect(parseRunMainToHub(line({ ...progress, done: 1.5 }))).toBeNull();
+    });
+
+    test('reads how the run ended, a status of a newer Playwright as other, its failure cut short', () => {
+      const end = {
+        type: 'run-end',
+        status: 'failed',
+        failure: { title: 'cart › adds a mug', error: 'expect(locator).toBeVisible() failed' },
+        done: 9,
+        failed: 1,
+        flaky: 0,
+        skipped: 0,
+      };
+      expect(parseRunMainToHub(line(end))).toEqual(end);
+      expect(parseRunMainToHub(line({ ...end, status: 'crashed' }))).toMatchObject({ status: 'other' });
+      expect(parseRunMainToHub(line({ ...end, failure: null }))).toMatchObject({ failure: null });
+      expect(parseRunMainToHub(line({ ...end, failure: { title: 'x'.repeat(900), error: null } }))).toMatchObject({
+        failure: { title: 'x'.repeat(500), error: null },
+      });
+      expect(parseRunMainToHub(line({ ...end, failure: { title: ' ', error: null } }))).toBeNull();
+      expect(parseRunMainToHub(line({ ...end, status: 4 }))).toBeNull();
     });
   });
 

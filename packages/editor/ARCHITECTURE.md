@@ -579,6 +579,13 @@ files it by Playwright's worker index, with:
 A connection naming the index of a worker connected now is closed: another process the run's environment reached (a
 test running Playwright itself) takes no worker's place.
 
+The run's own process (the reporter in Playwright's runner) keeps a connection of its own from its `onBegin` to its
+`onEnd` (`run-begin`, `RunSessions.attachMain`): how many tests the run holds, then each that ended for good
+(`run-progress`) and how the run ended with its first failure (`run-end`), which the session keeps as
+`RunSession.progress` (`HubSession.progress`): the status bars count from it. While it is connected the run goes on
+between its workers, and once it closed with no worker left the run ends after the same 5 s. One such connection is
+taken per run; a reporter that predates it opens none, and its run has no progress.
+
 `piwi/runSessionChanged` carries the whole session, and only when it differs from the last one sent:
 
 - at once when a worker stops, goes on or leaves, or a Pause reaches it, in a burst at most every 50 ms

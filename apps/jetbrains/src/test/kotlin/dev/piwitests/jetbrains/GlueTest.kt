@@ -677,6 +677,12 @@ class GlueTest {
         assertEquals(null, Glue.sharedLive(mapOf("ed-1" to ready)))
         assertEquals("Shared live on piwi.example.com: 2 views open", Glue.sharedLiveText(shared.live!!))
         assertEquals("Shared live: nobody watches yet", Glue.sharedLiveText(RunLive(true, null, null, 0)))
+        // How far the runs are, as their own processes say: none from a reporter that predates it.
+        assertEquals(null, Glue.runProgressText(mapOf("ed-1" to ready)))
+        val counted = ready.copy(progress = RunProgress(total = 9, done = 3))
+        assertEquals("Piwi: 3 of 9", Glue.runProgressText(mapOf("ed-1" to counted)))
+        val failing = ready.copy(ref = "ed-2", progress = RunProgress(total = 1, done = 1, failed = 1, status = "failed"))
+        assertEquals("Piwi: 4 of 10 · 1 failed", Glue.runProgressText(mapOf("ed-1" to counted, "ed-2" to failing)))
         val stoppedShared = mapOf("ed-1" to shared.copy(workers = listOf(RunWorker(0, 0, "stopped", runTest(), stopAt(pageUri, 4)))))
         assertEquals(
             "Piwi: paused · checkout.page.ts:5 · shared live · 2 views",

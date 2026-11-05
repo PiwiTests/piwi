@@ -33,6 +33,7 @@ import type * as net from 'node:net';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   RUN_INTENT_NAMES,
+  parseRunMainToHub,
   parseRunToHub,
   type ActAnswer,
   type BindAnswer,
@@ -48,6 +49,7 @@ import {
   type RunEvent,
   type RunFeature,
   type RunHold,
+  type RunMainToHub,
   type RunIntent,
   type RunLiveState,
   type RunQuery,
@@ -65,6 +67,7 @@ import type {
   RunControlParams,
   RunControlResult,
   RunLive,
+  RunProgress,
   RunSession,
   RunStop,
   RunTest,
@@ -90,6 +93,7 @@ const MAX_KEPT_RUNS = 50;
 const SHOWN_HOLDS: readonly RunHold[] = ['failure'];
 
 type RunAttach = Extract<RunToHub, { type: 'run-attach' }>;
+type RunBegin = Extract<RunMainToHub, { type: 'run-begin' }>;
 
 /** What a worker's answer to a request carries: an image, whether an intent started, or a query's answer. */
 type Answered =
@@ -389,6 +393,10 @@ interface Session {
   live: RunLive | null;
   /** Who watches each lane (`parallelIndex`), through its tests and the workers Playwright starts in it. */
   lanes: Map<number, Set<Viewer>>;
+  /** The run's own connection (`run-begin`), while it is open: the run goes on between its workers. */
+  main: net.Socket | null;
+  /** How far the run is, as its own process said; null before it said, and from a reporter that predates it. */
+  progress: RunProgress | null;
 }
 
 /**
@@ -507,6 +515,83 @@ export class RunSessions {
           "`test` from '@playwright/test' rather than from the file that extends Piwi's capture fixtures.";
   }
 
+  /** A new session of the run `ref`, whose working directory is `cwd`. */
+  private open(ref: string, cwd: string, runner: boolean): Session {
+    const terminal = !!this.options.terminal?.(ref);
+    const session: Session = {
+      ref,
+      root: this.options.rootOf(cwd),
+      workers: new Map(),
+      ended: false,
+      terminal,
+      runner: terminal && runner,
+      heard: null,
+      sent: '',
+      sentAt: 0,
+      paced: null,
+      pacedAt: 0,
+      linger: null,
+      stoppedAt: 0,
+      resumedSaid: false,
+      share: null,
+      stopped: null,
+      live: null,
+      lanes: new Map(),
+      main: null,
+      progress: null,
+    };
+    this.sessions.set(ref, session);
+    // A terminal's run starts with the editor's breakpoints, as lines of its code: the files as they stand now.
+    if (terminal && !this.breakpoints.has(ref)) this.keepBreakpoints(ref, this.editorBreakpoints);
+    this.options.sessionStarted?.(ref, this.endedCommands.delete(ref));
+    return session;
+  }
+
+  /**
+   * The run's own process connected with `begin` (the reporter in Playwright's runner): its session, a new one when
+   * none runs, holds how many tests the run has, then how many ended (`run-progress`) and how it ended (`run-end`), and
+   * goes on while it is connected, between workers too. A second connection of a run while one is open is closed.
+   */
+  attachMain(socket: net.Socket, begin: RunBegin): (line: string) => void {
+    const session = this.sessions.get(begin.ref) ?? this.open(begin.ref, begin.cwd, false);
+    if (session.main && !session.main.destroyed) {
+      socket.destroy();
+      return () => {};
+    }
+    session.main = socket;
+    if (session.linger) clearTimeout(session.linger);
+    session.linger = null;
+    session.progress = {
+      total: begin.total,
+      done: 0,
+      failed: 0,
+      flaky: 0,
+      skipped: 0,
+      status: 'running',
+      failure: null,
+    };
+    socket.on('close', () => {
+      if (session.main !== socket) return;
+      session.main = null;
+      if (!session.ended && !session.workers.size) this.lingerOn(session);
+    });
+    this.changed(session, true);
+    return (line) => {
+      const message = parseRunMainToHub(line);
+      if (!message || message.type === 'run-begin' || session.main !== socket || !session.progress) return;
+      const { type: _type, ...said } = message;
+      session.progress = { ...session.progress, ...said, total: Math.max(session.progress.total, said.done) };
+      this.changed(session, message.type === 'run-end');
+    };
+  }
+
+  /** The run ends once `SESSION_LINGER_MS` passed with no worker and no run process connected. */
+  private lingerOn(session: Session): void {
+    if (session.linger) clearTimeout(session.linger);
+    session.linger = setTimeout(() => this.end(session), this.options.lingerMs ?? SESSION_LINGER_MS);
+    session.linger.unref?.();
+  }
+
   /**
    * A worker connected with `attach`: it joins its run's session, a new one when none runs, hears which of the stops it
    * holds only then the service shows (`attached`, to a worker that lists them: a failure's, unless its run holds none),
@@ -522,33 +607,9 @@ export class RunSessions {
       socket.destroy();
       return () => {};
     }
-    if (!session) {
-      const terminal = !!this.options.terminal?.(attach.ref);
-      session = {
-        ref: attach.ref,
-        root: this.options.rootOf(attach.cwd),
-        workers: new Map(),
-        ended: false,
-        terminal,
-        runner: terminal && attach.runner === true,
-        heard: null,
-        sent: '',
-        sentAt: 0,
-        paced: null,
-        pacedAt: 0,
-        linger: null,
-        stoppedAt: 0,
-        resumedSaid: false,
-        share: null,
-        stopped: null,
-        live: null,
-        lanes: new Map(),
-      };
-      this.sessions.set(attach.ref, session);
-      // A terminal's run starts with the editor's breakpoints, as lines of its code: the files as they stand now.
-      if (terminal && !this.breakpoints.has(attach.ref)) this.keepBreakpoints(attach.ref, this.editorBreakpoints);
-      this.options.sessionStarted?.(attach.ref, this.endedCommands.delete(attach.ref));
-    }
+    session ??= this.open(attach.ref, attach.cwd, attach.runner === true);
+    // A run its own process announced first learns from its workers that an editor's test runner started it.
+    if (session.terminal && attach.runner === true) session.runner = true;
     if (session.linger) clearTimeout(session.linger);
     session.linger = null;
     const worker: Worker = {
@@ -1517,9 +1578,8 @@ export class RunSessions {
     if (session.ended) return;
     this.changed(session, true);
     this.options.heard?.(session.ref, worker.index, { type: 'left' }, session.root);
-    if (session.workers.size) return;
-    session.linger = setTimeout(() => this.end(session), this.options.lingerMs ?? SESSION_LINGER_MS);
-    session.linger.unref?.();
+    if (session.workers.size || (session.main && !session.main.destroyed)) return;
+    this.lingerOn(session);
   }
 
   /** The run ended: the client hears it last, and a later worker of its ref starts a new session. */
@@ -1531,6 +1591,8 @@ export class RunSessions {
     const workers = [...session.workers.values()];
     session.workers.clear();
     session.lanes.clear();
+    session.main?.destroy();
+    session.main = null;
     for (const worker of workers) this.closeWorker(worker);
     if (this.sessions.get(session.ref) === session) this.sessions.delete(session.ref);
     this.flush(session);
@@ -1574,7 +1636,9 @@ export class RunSessions {
       ...(session.runner ? { runner: true } : {}),
     };
     const live = this.liveOf(session);
-    return live ? { ...view, live } : view;
+    if (live) view.live = live;
+    if (session.progress) view.progress = { ...session.progress };
+    return view;
   }
 
   private flush(session: Session): void {

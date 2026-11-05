@@ -346,6 +346,7 @@ export class DesktopRuns {
       RecordChannel.open({
         onAttach: (handoff) => runs.channel?.refuse(handoff.id, DECLINED.record!),
         onRun: (socket, attach) => runs.sessions.attach(socket, attach),
+        onRunMain: (socket, begin) => runs.sessions.attachMain(socket, begin),
         folderPrefix: RUN_CHANNEL_FOLDER_PREFIX,
       }),
       RunHub.open({

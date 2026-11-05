@@ -26,6 +26,7 @@ import {
   linesAbove,
   liveInstance,
   liveItem,
+  progressItem,
   liveTarget,
   liveText,
   PICK_HINT,
@@ -322,6 +323,24 @@ describe('Share live', () => {
     expect(shareLiveWarning({ page: null })).toContain('the Piwi instance it reports to');
     // A run whose workers have not said yet how it stands is warned of too.
     expect(shareLiveWarning(undefined)).toBe(shareLiveWarning({ page: null }));
+  });
+
+  test('counts in the status bar the tests the runs ran, as their own processes say, and their failures', () => {
+    expect(progressItem(sessionsOf(session('ed-1', [worker(0, 'running')])))).toBeNull();
+    const counted = (ref: string, done: number, total: number, failed = 0, flaky = 0): RunSession => ({
+      ...session(ref, [worker(0, 'running')]),
+      progress: { total, done, failed, flaky, skipped: 0, status: 'running', failure: null },
+    });
+    expect(progressItem(sessionsOf(counted('ed-1', 3, 9)))).toEqual({
+      text: '$(beaker) 3 of 9',
+      tooltip: 'Piwi: the run ran 3 of 9 tests.',
+      command: null,
+    });
+    expect(progressItem(sessionsOf(counted('ed-1', 3, 9, 1), counted('ed-2', 1, 1, 0, 1)))).toEqual({
+      text: '$(beaker) 4 of 10 · $(error) 1',
+      tooltip: 'Piwi: 2 runs ran 4 of 10 tests: 1 failed, 1 flaky.',
+      command: null,
+    });
   });
 
   test('offers a run that can be shared in the status bar, and none that cannot, whose command says why', () => {
