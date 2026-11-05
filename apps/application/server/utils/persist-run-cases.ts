@@ -77,6 +77,7 @@ import type { LocatorSnapshot } from '#shared/locator-healing.types';
 import { sanitizeExecutionResources } from '#shared/resource-report';
 import { resolveStoredDefaultBranch } from './scm/stored-default-branch';
 import { int32, int64, storableRunCase } from './storable-values';
+import { workerLane } from '#shared/worker-lane';
 import type { DbClient as DB } from '../database';
 
 /**
@@ -161,6 +162,8 @@ export interface RunCaseInput {
   testSource?: string | null;
   testSourceFrames?: unknown;
   workerIndex?: number | null;
+  /** The worker's lane (Playwright's `parallelIndex`), stored only as a non-negative integer (`workerLane`). */
+  parallelIndex?: number | null;
   shardIndex?: number | null;
   startedAt?: number | null;
   browser?: unknown;
@@ -574,6 +577,7 @@ export async function persistRunCases(
       browser: c.browser ?? null,
       browserName: resolveBrowserName(c.browser),
       workerIndex: int32(c.workerIndex),
+      parallelIndex: workerLane(c.parallelIndex),
       shardIndex: int32(c.shardIndex),
       startedAt: int64(c.startedAt),
       didNotRunReason: c.didNotRunReason ?? null,

@@ -502,7 +502,10 @@ export interface TestStuckPayload extends RunScope {
   browserName?: string;
   /** The `--repeat-each` repetition it is. */
   repeatEachIndex?: number;
+  /** Playwright's `workerIndex`: the worker process, new at every start. */
   workerIndex?: number;
+  /** The worker's lane (Playwright's `parallelIndex`), read from 1 as `worker N`; absent from an older reporter. */
+  parallelIndex?: number;
   shardIndex?: number;
   /** When the attempt began, in epoch milliseconds: one notification per attempt. */
   startedAt: number;

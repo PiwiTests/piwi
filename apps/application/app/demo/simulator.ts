@@ -1611,8 +1611,9 @@ async function runSingleSimulation(
   // Each simulated worker pulls tests from a shared queue, mirroring how
   // Playwright distributes tests across parallel workers. Timestamps and
   // durations are reported on a virtual clock so the persisted data stays
-  // realistic even though events stream `speed`× faster.
-  async function workerLoop(workerIndex: number): Promise<void> {
+  // realistic even though events stream `speed`× faster. A worker holds its
+  // shard's lane `parallelIndex` from start to end.
+  async function workerLoop(workerIndex: number, parallelIndex: number): Promise<void> {
     let virtualNow = virtualStart + INIT_DELAY_MS;
     // The executions this worker ran so far: in a leaky run each left its page open.
     let ranInWorker = 0;
@@ -1641,6 +1642,7 @@ async function runSingleSimulation(
             maxRetries: Math.max(2, test.attempts.length - 1),
             repeatEachIndex: 0,
             workerIndex,
+            parallelIndex,
             shardIndex: shardOverride?.shardIndex ?? null,
             startedAt,
             browser: test.browser ?? null,
@@ -1788,6 +1790,7 @@ async function runSingleSimulation(
             stderr: a.stderr ?? null,
             browser: test.browser ?? null,
             workerIndex,
+            parallelIndex,
             shardIndex: shardOverride?.shardIndex ?? null,
             startedAt,
             suitePath: test.suitePath ?? null,
@@ -1827,7 +1830,7 @@ async function runSingleSimulation(
   }
 
   await Promise.all(
-    Array.from({ length: scenario.workers }, (_, i) => workerLoop(i + (shardOverride?.workerOffset ?? 0))),
+    Array.from({ length: scenario.workers }, (_, i) => workerLoop(i + (shardOverride?.workerOffset ?? 0), i)),
   );
 
   const interrupted = ctl.stopped || completed < tests.length;

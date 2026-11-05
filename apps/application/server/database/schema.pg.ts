@@ -580,6 +580,7 @@ export const testRunsCases = pgTable(
     locks: jsonb('locks'), // string[] — lock names this execution held (best effort; none from blob imports)
     testMeta: jsonb('test_meta'), // { owner?, priority?, feature?, link? } from `piwi:` annotations
     workerIndex: integer('worker_index'), // Worker process index (Playwright's workerIndex, new after each worker restart; parallelIndex only when workerIndex is absent)
+    parallelIndex: integer('parallel_index'), // The worker's lane (Playwright's parallelIndex, kept by a worker restarted in the same slot); null from an older reporter
     shardIndex: integer('shard_index'), // Shard index (1-based) for sharded runs; null = not sharded
     startedAt: bigint('started_at', { mode: 'number' }), // Unix timestamp in ms when the test started (exceeds 32-bit int range)
     isNewRegression: integer('is_new_regression'), // boolean: passed in baseline, failed in this run

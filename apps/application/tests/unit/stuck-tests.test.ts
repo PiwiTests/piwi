@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/libsql';
 import { migrate } from 'drizzle-orm/libsql/migrator';
@@ -7,6 +7,14 @@ import * as schema from '../../server/database/schema.sqlite';
 import { STUCK_FLOOR_MS, stuckAttempt, stuckThresholdMs } from '../../shared/stuck-tests';
 
 delete process.env.PIWI_DATABASE_URL;
+/** What each `test.stuck` notification the check sent says of its attempt. */
+const notices = vi.hoisted(() => [] as Array<Record<string, unknown>>);
+vi.mock('../../server/utils/notifications/run-notifications', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  emitTestStuck: async (_db: unknown, _runId: number, notice: Record<string, unknown>) => {
+    notices.push(notice);
+  },
+}));
 const { checkStuckTests } = await import('../../server/utils/stuck-tests');
 const { runEventBus } = await import('../../server/utils/run-events');
 
@@ -71,6 +79,7 @@ beforeEach(async () => {
   }
   await db.insert(schema.testRuns).values({ id: LIVE_RUN, projectId: 1, status: 'running', startTime: new Date(now) });
   runEventBus.cleanup(LIVE_RUN);
+  notices.length = 0;
 });
 
 /** The `test-stuck` events the run's stream gets while `body` runs. */
@@ -109,6 +118,28 @@ describe('the stuck check of a live run', () => {
     expect(runEventBus.getRunningCases(LIVE_RUN)[0]).toMatchObject({
       stuck: { elapsedMs: 5 * 60_000 + 30_000, usualMs: 8000 },
     });
+  });
+
+  test("names the attempt's worker process and lane in its notification", async () => {
+    runEventBus.recordRunningCase(LIVE_RUN, 'k', begin({ workerIndex: 4, parallelIndex: 1, shardIndex: 2 }));
+    runEventBus.recordRunningCase(LIVE_RUN, 'old', begin({ title: 'pays with a gift card', workerIndex: 3 }));
+    await db.insert(schema.testCases).values({
+      id: 2,
+      projectId: 1,
+      filePath: 'tests/checkout.spec.ts',
+      suitePath: 'Checkout',
+      title: 'pays with a gift card',
+    });
+    for (const runId of [1, 2]) {
+      await db
+        .insert(schema.testRunsCases)
+        .values({ testRunId: runId, testCaseId: 2, status: 'passed', duration: 6000, browserName: 'chromium' });
+    }
+    await checkStuckTests(db as never, now);
+    expect(notices.map((n) => [n.testTitle, n.workerIndex, n.parallelIndex, n.shardIndex])).toEqual([
+      ['pays with PayPal', 4, 1, 2],
+      ['pays with a gift card', 3, undefined, undefined],
+    ]);
   });
 
   test('tells a retry, another attempt, again', async () => {

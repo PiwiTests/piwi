@@ -30,6 +30,7 @@ import type { KnownIssueRef } from '#shared/handlers/known-issues';
 import type { TestSearchHighlights } from '#shared/test-search';
 import { badgesFromTestCase } from '~/utils/test-row-badges';
 import { testLabel } from '#shared/utils/test-label';
+import { shownWorkerNumber } from '#shared/worker-lane';
 
 const props = withDefaults(
   defineProps<{
@@ -150,7 +151,8 @@ const stopped = computed(() => !!props.liveWorker?.paused || props.desktopWorker
 const liveResourcesText = computed(() => (props.liveResources ? liveResourcesLabel(props.liveResources) : ''));
 const liveResourcesTitle = computed(() => {
   const kind = props.liveResources?.memoryKind ? ` (memory as ${props.liveResources.memoryKind.toUpperCase()})` : '';
-  return `What worker ${tc.value?.workerIndex ?? ''} and the browsers it started use right now, as last measured${kind}, and the pages open in it`;
+  const worker = tc.value ? shownWorkerNumber(tc.value) : null;
+  return `What worker ${worker ?? ''} and the browsers it started use right now, as last measured${kind}, and the pages open in it`;
 });
 
 const title = computed(() => props.title ?? tc.value?.title ?? '');
