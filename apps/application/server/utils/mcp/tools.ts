@@ -1579,7 +1579,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       slowestTests: cap(r.slowestTests),
       mostImproved: cap(r.mostImproved),
       mostRegressed: cap(r.mostRegressed),
-      workerImbalance: r.workerImbalance,
+      workerImbalance: r.workerImbalance.map((w) => dropNulls(w)),
       workerImbalanceWarning: r.workerImbalanceWarning || null,
       flakyOnRetry: cap(r.flakyOnRetry),
       clusterNew: cap(r.clusterNew),

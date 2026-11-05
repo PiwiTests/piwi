@@ -29,8 +29,9 @@ grouped](/features/failure-clusters#how-failures-are-grouped) explains what the 
 Before treating any cluster as a product bug, check the two flags on the run's failure groups. They come
 from `get_failure_groups` over MCP or from the REST API; the dashboard doesn't show them.
 
-- **Worker correlated** — two or more of the cluster's failures, all on one worker, in a run that used
-  several: you're looking at a misbehaving worker, not forty broken tests.
+- **Worker correlated** — two or more of the cluster's failures, all on one worker (one lane of one shard,
+  whichever processes Playwright started in it), in a run that used several: you're looking at a misbehaving
+  worker, or something it holds such as an account picked by its `parallelIndex`, not forty broken tests.
 - **Flaky** — a test in the cluster passed on retry in this run: part of the cluster is noise riding on a
   bad run.
 

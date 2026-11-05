@@ -30,7 +30,16 @@ beforeEach(async () => {
   ]);
 });
 
-type Attempt = { testCaseId: number; browserName: string; status: string; retries: number; repeatEachIndex?: number };
+type Attempt = {
+  testCaseId: number;
+  browserName: string;
+  status: string;
+  retries: number;
+  repeatEachIndex?: number;
+  workerIndex?: number;
+  parallelIndex?: number;
+  shardIndex?: number;
+};
 
 async function attempts(testRunId: number, rows: Attempt[]) {
   await db.insert(schema.testRunsCases).values(withStoredVerdicts(rows.map((row) => ({ testRunId, ...row }))));
@@ -104,6 +113,73 @@ describe('computeRunInsights', () => {
     const insights = await computeRunInsights(db as never, 11);
 
     expect(insights.flakyOnRetry).toEqual([expect.objectContaining({ title: 'login', retries: 2 })]);
+  });
+
+  test('counts the tests of each worker by its lane, a worker Playwright started again once', async () => {
+    await attempts(10, [{ testCaseId: 1, browserName: 'chromium', status: 'passed', retries: 0 }]);
+    await attempts(11, [
+      // Lane 0: its first process failed, and its retry ran in the process Playwright started in its place.
+      { testCaseId: 1, browserName: 'chromium', status: 'failed', retries: 0, workerIndex: 0, parallelIndex: 0 },
+      { testCaseId: 1, browserName: 'chromium', status: 'passed', retries: 1, workerIndex: 2, parallelIndex: 0 },
+      { testCaseId: 1, browserName: 'firefox', status: 'passed', retries: 0, workerIndex: 0, parallelIndex: 0 },
+      { testCaseId: 2, browserName: 'chromium', status: 'passed', retries: 0, workerIndex: 1, parallelIndex: 1 },
+      { testCaseId: 3, browserName: 'chromium', status: 'passed', retries: 0, workerIndex: 1, parallelIndex: 1 },
+    ]);
+
+    const insights = await computeRunInsights(db as never, 11);
+
+    expect(insights.workerImbalance).toEqual([
+      { worker: 1, shardIndex: null, count: 2 },
+      { worker: 2, shardIndex: null, count: 2 },
+    ]);
+    expect(insights.workerImbalanceWarning).toBeNull();
+  });
+
+  test('counts the workers of each shard apart, and names them as the run page does', async () => {
+    await attempts(10, [{ testCaseId: 1, browserName: 'chromium', status: 'passed', retries: 0 }]);
+    const ran = (testCaseId: number, browserName: string, shardIndex: number, parallelIndex: number): Attempt => ({
+      testCaseId,
+      browserName,
+      status: 'passed',
+      retries: 0,
+      workerIndex: parallelIndex,
+      parallelIndex,
+      shardIndex,
+    });
+    await attempts(11, [
+      ran(1, 'chromium', 1, 0),
+      ran(1, 'firefox', 1, 0),
+      ran(1, 'webkit', 1, 0),
+      ran(2, 'chromium', 2, 0),
+      ran(3, 'chromium', 2, 1),
+      ran(3, 'firefox', 2, 1),
+    ]);
+
+    const insights = await computeRunInsights(db as never, 11);
+
+    expect(insights.workerImbalance).toEqual([
+      { worker: 1, shardIndex: 1, count: 3 },
+      { worker: 1, shardIndex: 2, count: 1 },
+      { worker: 2, shardIndex: 2, count: 2 },
+    ]);
+    expect(insights.workerImbalanceWarning).toBe('Worker 1 of shard 1 ran 3\u00d7 more tests than worker 1 of shard 2');
+  });
+
+  test('counts the results of a reporter that sends no lane by their worker process', async () => {
+    await attempts(10, [{ testCaseId: 1, browserName: 'chromium', status: 'passed', retries: 0 }]);
+    await attempts(11, [
+      { testCaseId: 1, browserName: 'chromium', status: 'passed', retries: 0, workerIndex: 0 },
+      { testCaseId: 2, browserName: 'chromium', status: 'passed', retries: 0, workerIndex: 1 },
+      { testCaseId: 3, browserName: 'chromium', status: 'passed', retries: 0, workerIndex: 1 },
+    ]);
+
+    const insights = await computeRunInsights(db as never, 11);
+
+    expect(insights.workerImbalance).toEqual([
+      { worker: 0, shardIndex: null, count: 1 },
+      { worker: 1, shardIndex: null, count: 2 },
+    ]);
+    expect(insights.workerImbalanceWarning).toBe('Worker 1 ran 2\u00d7 more tests than worker 0');
   });
 
   test('without a passing run, failedFallback compares with the last failed one', async () => {
