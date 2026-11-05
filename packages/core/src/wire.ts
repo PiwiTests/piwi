@@ -564,14 +564,14 @@ const HUB_RUN_REF = /^[\w-]{1,64}$/;
 /**
  * A {@link RunInteractive} read from untrusted input, rebuilt as `{ client, ref }`, or null when its `ref` is not a
  * hub's name for a run. A `client` that is not text of at most {@link RUN_INTERACTIVE_CLIENT_MAX_LENGTH} characters
- * without control characters reads as null.
+ * without control characters (C0, DEL, C1) and bidirectional marks reads as null.
  */
 export function parseRunInteractive(value: unknown): RunInteractive | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const { client, ref } = value as { client?: unknown; ref?: unknown };
   if (typeof ref !== 'string' || !HUB_RUN_REF.test(ref)) return null;
   const name = typeof client === 'string' ? client.trim() : '';
-  const oneLine = ![...name].some((char) => char < ' ' || char === '\u007f');
+  const oneLine = !/[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/.test(name);
   const readable = name.length > 0 && name.length <= RUN_INTERACTIVE_CLIENT_MAX_LENGTH && oneLine;
   return { client: readable ? name : null, ref };
 }

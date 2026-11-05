@@ -9,7 +9,7 @@ import { internalCall, resolvePlaywrightPackageJson } from './quiet-capture.js';
 /**
  * The live view's images with the page's secret fields painted over, in the worker, before an image leaves it: the
  * fields of `SECRET_FIELD_SELECTOR` (a password field, and a one-time code or a card's number or security code by its
- * `autocomplete`), Piwi's pause bar at a stop, and the project's own locators (`masks`), in every frame of the page. Each image the view would send
+ * `autocomplete`) and the project's own locators (`masks`), in every frame of the page. Each image the view would send
  * comes here first (`page-view.ts`'s `screen`). The boxes of those elements, and the viewport's size, are read through
  * `internalCall` just after it, and compared with a read made just before the page showed it: a frame whose two reads
  * find no element, and the viewport the frame names, goes as it is; one whose two reads find the same boxes goes with
@@ -111,11 +111,8 @@ export function jpegCodec(): JpegJs | null {
 }
 
 /** The masked elements of `frame`: its secret fields and the project's locators, as one locator. */
-/** The elements every live view paints over: the secret fields, and Piwi's pause bar at a stop. */
-const MASKED_SELECTOR = `${SECRET_FIELD_SELECTOR}, #__piwi-pause-bar`;
-
 function maskedIn(frame: Frame, masks: readonly string[]): Locator {
-  let locator = frame.locator(MASKED_SELECTOR);
+  let locator = frame.locator(SECRET_FIELD_SELECTOR);
   for (const source of masks) {
     const own = locatorOn(frame, source);
     if (!own) throw new Error(`The locator ${source} cannot be built.`);
@@ -532,6 +529,10 @@ export function maskSecretFields(page: Page, options: SecretFieldMaskOptions): S
     let data: Buffer;
     try {
       data = paintBoxes(jpeg, frame, boxes, size, options.quality);
+      // A page too heavy for an image at the view's quality is painted at the lighter one.
+      if (data.length > options.maxBytes && options.lightQuality !== undefined) {
+        data = paintBoxes(jpeg, frame, boxes, size, options.lightQuality);
+      }
     } catch {
       return null;
     }

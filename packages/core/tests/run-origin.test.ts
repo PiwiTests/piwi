@@ -40,7 +40,17 @@ describe('parseRunInteractive', () => {
   });
 
   test('reads a client that is not short text on one line as none', () => {
-    for (const client of [undefined, 7, '', '   ', 'x'.repeat(201), 'Code\nInjected', 'Code\u0000']) {
+    for (const client of [
+      undefined,
+      7,
+      '',
+      '   ',
+      'x'.repeat(201),
+      'Code\nInjected',
+      'Code\u0000',
+      'Code\u0085',
+      'Code\u202eedoC',
+    ]) {
       expect(parseRunInteractive({ client, ref: 'ed-1' }), JSON.stringify(client)).toEqual({
         client: null,
         ref: 'ed-1',

@@ -1,3 +1,4 @@
+import { hideSecretsInText, hideTypedText } from '@piwitests/core/mask';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { BrowserContext, Frame, Locator, Page, TestInfo } from '@playwright/test';
@@ -907,10 +908,12 @@ export async function pauseHere(
       highlight = point.target.highlight();
       await within(highlight.shown, HIGHLIGHT_MS);
     }
+    // The bar and the terminal name the call without the text it types: a video, a trace or a log keeps both.
+    const call = hideSecretsInText(hideTypedText(point.call));
     const arg: PauseBarArg = {
       place: pausePlace(point.location),
       attempt: point.attempt,
-      action: point.call,
+      action: call,
       locator: null,
       record: !!onRecord,
       ...(point.failure ? { failure: true } : {}),
@@ -920,7 +923,7 @@ export async function pauseHere(
       point.failure
         ? `[piwi] The test failed at ${callSiteLine(point.location)}: Resume, Pick a locator` +
             `${onRecord ? ' or Record here' : ''} in the browser (Esc resumes, and the test ends as it failed).`
-        : `[piwi] Paused at ${callSiteLine(point.location)} before ${point.call}` +
+        : `[piwi] Paused at ${callSiteLine(point.location)} before ${call}` +
             `: Resume, Step, Pick a locator${onRecord ? ', Record here' : ''}, Finish` +
             `${point.end ? ' or End the test' : ''} in the browser (Esc resumes).`,
     );

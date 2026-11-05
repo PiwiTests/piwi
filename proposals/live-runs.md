@@ -65,8 +65,9 @@ again for one it holds no token for, and every minute while it is open; a VS Cod
 the window holding it closes; a lost hub's runs stay grayed, as last heard, and Watch live, kept by run and slot,
 starts again once it answers; the Runs window says how each paired tool stands, retries an unproven pairing four
 times, reads a proofless 404 as no editor, and frees a command's buttons after 25 s; the popup keeps a muted Runs tile
-while a paired tool does not answer; and the local live view and stop image are masked as the team's, the pause bar
-included, the image at CSS scale and of the viewport's shape, every call's and stop's title through `hideTypedText`.
+while a paired tool does not answer; and the local live view and stop image are masked as the team's, the image at
+CSS scale and of the viewport's shape, every call's and stop's title through `hideTypedText`, the pause bar's and the
+terminal's included, so the bar itself carries nothing to paint over.
 In the desktop app, a client plugin holds the hub stream from the window's start, through the TV layout and again after
 a reload while the hub says runs go on (`hub-runs`); stopping a local run takes its own progress alone off the OS bar;
 and a bisect's, a reproduction's or a Flake Lab's steps flash nothing, the job's verdict once. `features` stays out of
