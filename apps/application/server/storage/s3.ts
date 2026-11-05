@@ -56,26 +56,42 @@ export class S3StorageAdapter implements StorageAdapter {
 
   async readFile(path: string): Promise<Buffer> {
     try {
-      const { s3, s3Client } = await this.sdk();
-      const command = new s3.GetObjectCommand({
-        Bucket: this.config.bucket,
-        Key: path,
-      });
-
-      const response = await s3Client.send(command);
-
-      // Convert stream to buffer
-      const chunks: Buffer[] = [];
-      // Response.Body is a readable stream from AWS SDK
-      const body = response.Body as AsyncIterable<Uint8Array>;
-      for await (const chunk of body) {
-        chunks.push(Buffer.from(chunk));
-      }
-      return Buffer.concat(chunks);
+      return await this.getObjectBytes(path);
     } catch (error) {
       console.error(`Failed to read file from S3: ${path}`, error);
       throw error;
     }
+  }
+
+  async readFileIfExists(path: string): Promise<Buffer | null> {
+    try {
+      return await this.getObjectBytes(path);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (error: any) {
+      if (isMissingObject(error)) return null;
+      console.error(`Failed to read file from S3: ${path}`, error);
+      throw error;
+    }
+  }
+
+  /** The whole object at `path`, read into memory. */
+  private async getObjectBytes(path: string): Promise<Buffer> {
+    const { s3, s3Client } = await this.sdk();
+    const command = new s3.GetObjectCommand({
+      Bucket: this.config.bucket,
+      Key: path,
+    });
+
+    const response = await s3Client.send(command);
+
+    // Convert stream to buffer
+    const chunks: Buffer[] = [];
+    // Response.Body is a readable stream from AWS SDK
+    const body = response.Body as AsyncIterable<Uint8Array>;
+    for await (const chunk of body) {
+      chunks.push(Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
   }
 
   async readStream(path: string, range?: { start: number; end: number }): Promise<Readable> {
@@ -111,9 +127,7 @@ export class S3StorageAdapter implements StorageAdapter {
       return head.ContentLength ?? 0;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
-      if (error.name === 'NotFound' || error.$metadata?.httpStatusCode === 404) {
-        return null;
-      }
+      if (isMissingObject(error)) return null;
       console.error(`Failed to read file metadata from S3: ${path}`, error);
       throw error;
     }
@@ -183,4 +197,10 @@ export class S3StorageAdapter implements StorageAdapter {
       throw error;
     }
   }
+}
+
+/** Whether an S3 call failed because no object is stored at the key: a GET's `NoSuchKey`, a HEAD's `NotFound`, or any 404. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function isMissingObject(error: any): boolean {
+  return error?.name === 'NoSuchKey' || error?.name === 'NotFound' || error?.$metadata?.httpStatusCode === 404;
 }

@@ -17,6 +17,7 @@ import {
 } from '#shared/permissions';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { getUserAccess } from '#shared/handlers/role-bindings';
+import { accountPictureVersion } from '#shared/user-avatar';
 import { getRouteRequiredPermissions } from './route-required-permission';
 import { hashToken } from './token-hash';
 import { bearerToken } from './bearer';
@@ -584,6 +585,7 @@ function virtualAdministrator(): User {
     role: InstanceRole.ADMINISTRATOR,
     name: 'System',
     avatarUrl: null,
+    avatarKey: null,
     oauthProvider: null,
     oauthProviderId: null,
     email: null,
@@ -713,6 +715,8 @@ export async function authUserView(db: DrizzleDB, user: User) {
     role: access.instanceRole,
     name: user.name,
     avatarUrl: user.avatarUrl,
+    avatarVersion: accountPictureVersion(user),
+    avatarUploaded: Boolean(user.avatarKey),
     email: user.email,
     emailVerified: user.emailVerified,
     oauthProvider: user.oauthProvider,
