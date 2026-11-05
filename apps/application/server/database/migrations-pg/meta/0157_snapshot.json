@@ -1,5 +1,5 @@
 {
-  "id": "80d64e82-7287-42cd-8bd5-b78e9f897e1a",
+  "id": "80aa4199-78a3-44ec-be79-44e5c0b5873f",
   "prevId": "418eab25-e993-4f21-b7c1-1775cfacf359",
   "version": "7",
   "dialect": "postgresql",
@@ -9049,12 +9049,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "ci_server_token": {
-          "name": "ci_server_token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "repository_url": {
           "name": "repository_url",
           "type": "text",
@@ -13763,6 +13757,12 @@
         },
         "avatar_url": {
           "name": "avatar_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "avatar_key": {
+          "name": "avatar_key",
           "type": "text",
           "primaryKey": false,
           "notNull": false

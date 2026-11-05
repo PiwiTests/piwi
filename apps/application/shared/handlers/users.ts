@@ -24,6 +24,7 @@ export async function listUsers(db: DrizzleDB) {
       email: users.email,
       emailVerified: users.emailVerified,
       oauthProvider: users.oauthProvider,
+      avatarKey: users.avatarKey,
       createdAt: users.createdAt,
       updatedAt: users.updatedAt,
     })

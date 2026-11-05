@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "c47076fd-e57a-4174-ae72-29e4711bf8c1",
+  "id": "3faec0ba-7c85-416e-b949-ff722138b4a8",
   "prevId": "85482ca8-4c69-4e76-8254-73a1933ab302",
   "tables": {
     "account_tokens": {
@@ -7313,13 +7313,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "ci_server_token": {
-          "name": "ci_server_token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
         "repository_url": {
           "name": "repository_url",
           "type": "text",
@@ -11211,6 +11204,13 @@
         },
         "avatar_url": {
           "name": "avatar_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "avatar_key": {
+          "name": "avatar_key",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

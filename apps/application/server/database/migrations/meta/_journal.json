@@ -1090,8 +1090,15 @@
     {
       "idx": 155,
       "version": "6",
-      "when": 1793853416829,
-      "tag": "0155_ci_server_token",
+      "when": 1793827384379,
+      "tag": "0155_user_avatar_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 156,
+      "version": "6",
+      "when": 1793861376454,
+      "tag": "0156_ci_server_token",
       "breakpoints": true
     }
   ]
