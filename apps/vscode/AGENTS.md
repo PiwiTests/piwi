@@ -62,9 +62,10 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   test runs takes one from the workbench. ([Keybindings](ARCHITECTURE.md#keybindings))
 - **A new stop takes the focus only while no other stop's file is open, or as a stop of the worker slot the person is
   on; any other leaves the editor in use, its selection and the paused page view alone. The view keeps its stop while
-  held, then waits `RESERVED_MS` at most for a slot stepped or run to the cursor from the editor** (`StopsShown`,
-  `asideColumn`), as in the JetBrains plugin. Checked by `tests/run-control.test.ts` ("what the editor shows of the
-  stops"), fed the pushes the service sends. ([Run control](ARCHITECTURE.md#run-control))
+  held, then waits for a slot stepped or run to the cursor from the editor while a worker holds it, `RESERVED_MS` at
+  most, a timer asking again then** (`StopsShown`, `waitsUntil`, `asideColumn`), as in the JetBrains plugin. Checked by
+  `tests/run-control.test.ts` ("what the editor shows of the stops"), fed the pushes the service sends.
+  ([Run control](ARCHITECTURE.md#run-control))
 - **One undo step per recording.** The first write of the block opens an undo stop and the later ones join it
   (`undoStopBefore: false`), so one Undo after Stop removes the block and its imports.
   ([Undo during a recording](ARCHITECTURE.md#undo-during-a-recording))

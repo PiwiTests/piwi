@@ -360,18 +360,17 @@ the line it stands on now (the mark, the lens, the caret's match), and the caret
 the cursor, which is refused on a line written since. An event of several changes (the code a stop made, its undo) is
 read change by change in the document after them all (`linesAbove`), so the mark follows it.
 
-**The paused page.** A stop with no pause bar (`bar: false`) asks `piwi/pausedPage` and shows the JPEG in the
-**Piwi: paused page** webview beside the editor, again at each such stop and on **Piwi: Show the paused page**
-(`piwi.showPausedPage`). The view keeps the stop it shows while that stop is held (`StopsShown`). Once it went on
-after a Step or a Run to the cursor from the editor, the view says so and waits for that slot's next stop,
-`RESERVED_MS` at most; otherwise it opens the first new stop no pause bar shows, else the first such stop held. A view
-already shown stays in its group. The webview takes images from
-`data:` only (`img-src data:`) and its one style by nonce (`pausedPageHtml`). Where its worker takes `pick-at` and the
-image names its viewport (`picksOnImage`), a click on the image picks the element under it: a script by the same
-nonce, the webview's only one, posts the click's offset and the size the image is shown at, with which image it was on
-(`imageClickOf`); the extension maps it to the page's CSS pixels (`pagePoint`) and asks `piwi/pickAt`, the locator
-going where a pick goes and the answer said under the caption. A click on an image the view no longer shows picks
-nothing.
+**The paused page.** A stop with no pause bar (`bar: false`) asks `piwi/pausedPage` and shows the JPEG in the **Piwi:
+paused page** webview beside the editor, again at each such stop and on **Piwi: Show the paused page**
+(`piwi.showPausedPage`). The view keeps the stop it shows while that stop is held (`StopsShown`). Once it went on after
+a Step or a Run to the cursor from the editor, the view says so and waits for that slot's next stop while a worker holds
+the slot, `RESERVED_MS` at most (`waitsUntil`: a timer asks again then); otherwise it opens the first new stop no pause
+bar shows, else the first such stop held. A view already shown stays in its group. The webview takes images from `data:`
+only (`img-src data:`) and its one style by nonce (`pausedPageHtml`). Where its worker takes `pick-at` and the image
+names its viewport (`picksOnImage`), a click on the image picks the element under it: a script by the same nonce, the
+webview's only one, posts the click's offset and the size the image is shown at, with which image it was on
+(`imageClickOf`); the extension maps it to the page's CSS pixels (`pagePoint`) and asks `piwi/pickAt`, the locator going
+where a pick goes and the answer said under the caption. A click on an image the view no longer shows picks nothing.
 
 When the stop takes `view`, the compact **Watch live** checkbox starts `piwi/pageView`; the service delivers
 `piwi/pageFrame` through the existing language-client connection. `paused-page-client.ts` is bundled into

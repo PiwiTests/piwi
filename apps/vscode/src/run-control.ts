@@ -232,7 +232,7 @@ export function stopKey(stop: ShownStop): string {
 }
 
 /** What tells a worker's slot from another: its run and its slot. */
-function slotKey(stop: ShownStop): string {
+function slotKey(stop: { ref: string; slot: number }): string {
   return `${stop.ref}\0${stop.slot}`;
 }
 
@@ -254,9 +254,9 @@ export interface StopsChange {
  *   stop held has its file open (`opened`), or as a stop of the slot the person is on: the one whose stop last took
  *   the focus, or whose stop a control answered last (`answered`).
  * - The paused page view keeps the stop it shows (`view`) while that stop is held. Once it went on after a Step or a
- *   Run to the cursor from the editor, the view waits for that slot's next stop, `RESERVED_MS` at most; otherwise it
- *   opens the first new stop no pause bar shows, else the first such stop held. A view that is closed opens the first
- *   new such stop.
+ *   Run to the cursor from the editor, the view waits for that slot's next stop while a worker holds the slot,
+ *   `RESERVED_MS` at most (`waitsUntil`, when the editor asks again); otherwise it opens the first new stop no pause
+ *   bar shows, else the first such stop held. A view that is closed opens the first new such stop.
  */
 export class StopsShown {
   /** The stops heard, and those whose file opened, by `stopKey`. */
@@ -270,8 +270,12 @@ export class StopsShown {
   /** The slot the person is on, by `slotKey`. */
   private followed: string | null = null;
 
-  /** The stops changed: those held now, at the lines they stand on (`stops`, in order). */
-  changed(stops: readonly ShownStop[], now = Date.now()): StopsChange {
+  /** The sessions changed, with their stops held now at the lines they stand on (`stops`, in order). */
+  changed(sessions: Sessions, stops: readonly ShownStop[], now = Date.now()): StopsChange {
+    const slots = new Set(
+      [...sessions.values()].flatMap((s) => s.workers.map((w) => slotKey({ ref: s.ref, slot: w.parallelIndex }))),
+    );
+    if (this.reserved && (this.reserved.until <= now || !slots.has(this.reserved.slot))) this.reserved = null;
     this.held = new Set(stops.map(stopKey));
     for (const key of [...this.heard]) if (!this.held.has(key)) this.heard.delete(key);
     for (const key of [...this.files]) if (!this.held.has(key)) this.files.delete(key);
@@ -281,7 +285,6 @@ export class StopsShown {
     const viewed = this.viewed;
     if (!viewed) return { open, page: open.find(headless) ?? null };
     if (this.held.has(stopKey(viewed))) return { open, page: null };
-    if (this.reserved && this.reserved.until <= now) this.reserved = null;
     const slot = this.reserved?.slot === slotKey(viewed) ? this.reserved.slot : null;
     if (slot) {
       const next = stops.find((s) => slotKey(s) === slot);
@@ -295,6 +298,11 @@ export class StopsShown {
   /** The paused page view shows `stop`'s page; null once it is closed. */
   view(stop: ShownStop | null): void {
     this.viewed = stop;
+  }
+
+  /** When the view stops waiting for a slot's next stop, for `changed` to run then; null while it waits for none. */
+  waitsUntil(): number | null {
+    return this.reserved?.until ?? null;
   }
 
   /** Whether `stop`'s file, opening now, takes the focus. */

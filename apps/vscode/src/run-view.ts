@@ -584,9 +584,17 @@ export function registerRunControl(
     });
   };
 
+  /** The stops shown once the paused page view stops waiting for a slot's next stop (`StopsShown.waitsUntil`). */
+  let waking: ReturnType<typeof setTimeout> | null = null;
+  const wakeWhenWaited = () => {
+    if (waking) clearTimeout(waking);
+    const until = stopsShown.waitsUntil();
+    waking = until === null ? null : setTimeout(changed, Math.max(0, until - Date.now()));
+  };
+
   /**
-   * The stops changed: each new stop opens its file at its line in its turn (`openStop`), and the paused page view opens
-   * the page `StopsShown` gives, else says its stop went on.
+   * The stops changed, or the paused page view's wait is over: each new stop opens its file at its line in its turn
+   * (`openStop`), and the view opens the page `StopsShown` gives, else says its stop went on.
    */
   const changed = () => {
     const now = stops();
@@ -594,7 +602,8 @@ export function registerRunControl(
     drawControls();
     drawStops();
     caretMoved();
-    const show = stopsShown.changed(now);
+    const show = stopsShown.changed(sessions, now);
+    wakeWhenWaited();
     for (const stop of show.open) revealing = revealing.then(() => openStop(stop)).catch(() => undefined);
     if (show.page) void openPage(show.page);
     else if (panel && pageStop && !keys.has(pageStop)) {
@@ -668,6 +677,7 @@ export function registerRunControl(
     if (!(await control(place ? { ...params, place } : params))) return;
     answered();
     stopsShown.answered(stop, action);
+    wakeWhenWaited();
   };
 
   /**
@@ -1018,6 +1028,7 @@ export function registerRunControl(
         items.forEach((i) => i.dispose());
         panel?.dispose();
         if (resumed) clearTimeout(resumed);
+        if (waking) clearTimeout(waking);
         starting.forEach((timer) => clearTimeout(timer));
       },
     },

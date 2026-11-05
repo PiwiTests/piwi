@@ -722,7 +722,8 @@ class GlueTest {
 
         fun push(vararg workers: RunWorker): Pair<List<Pair<Int, Boolean>>, Pair<Int, Int>?> {
             now += 100
-            val change = shown.changed(Glue.stopsOf(mapOf("ed-1" to RunSession("ed-1", "/work/shop", workers.toList()))), now)
+            val sessions = mapOf("ed-1" to RunSession("ed-1", "/work/shop", workers.toList()))
+            val change = shown.changed(sessions, Glue.stopsOf(sessions), now)
             val opened = change.open.filter { it.stop.line !in unopened }.map { stop ->
                 val focus = shown.focusFor(stop)
                 shown.opened(stop, focus)
@@ -787,14 +788,28 @@ class GlueTest {
     }
 
     @Test
-    fun `the IDE waits for a stepped worker's next stop no longer than RESERVED_MILLIS`() {
+    fun `the IDE stops waiting for a stepped worker's next stop once its worker left the run`() {
         val pushes = Pushes()
-        pushes.push(stoppedAt(0, 3), runningWorker(1), runningWorker(2))
-        pushes.push(stoppedAt(0, 3), stoppedAt(1, 5), runningWorker(2))
+        pushes.push(stoppedAt(0, 3), runningWorker(1))
+        pushes.push(stoppedAt(0, 3), stoppedAt(1, 5))
         pushes.answer("step", stoppedAt(0, 3))
-        assertNull(pushes.push(runningWorker(0), stoppedAt(1, 5), runningWorker(2)).second)
+        assertNull(pushes.push(runningWorker(0), stoppedAt(1, 5)).second)
+        assertEquals(none to (1 to 5), pushes.push(stoppedAt(1, 5)))
+    }
+
+    @Test
+    fun `the IDE waits for a stepped worker's next stop RESERVED_MILLIS at most, saying when to ask again`() {
+        val pushes = Pushes()
+        pushes.push(stoppedAt(0, 3), runningWorker(1))
+        pushes.push(stoppedAt(0, 3), stoppedAt(1, 5))
+        assertNull(pushes.shown.waitsUntil())
+        pushes.answer("step", stoppedAt(0, 3))
+        assertEquals(pushes.now + Glue.RESERVED_MILLIS, pushes.shown.waitsUntil())
+        assertNull(pushes.push(runningWorker(0), stoppedAt(1, 5)).second)
+        // Asked again when the wait is over, with no push since: the stop held takes the tab.
         pushes.now += Glue.RESERVED_MILLIS
-        assertEquals(2 to 7, pushes.push(runningWorker(0), stoppedAt(1, 5), stoppedAt(2, 7)).second)
+        assertEquals(1 to 5, pushes.push(runningWorker(0), stoppedAt(1, 5)).second)
+        assertNull(pushes.shown.waitsUntil())
     }
 
     @Test
