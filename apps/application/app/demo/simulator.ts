@@ -1636,9 +1636,9 @@ async function runSingleSimulation(
             type: 'begin',
             title: test.title,
             location: test.location,
-            // The attempt beginning, of the retries its scenario plans, as the reporter says them.
+            // The attempt beginning, and the retries the simulated config allows: 2, or as many as the test plans.
             retries: attempt,
-            maxRetries: test.attempts.length - 1,
+            maxRetries: Math.max(2, test.attempts.length - 1),
             repeatEachIndex: 0,
             workerIndex,
             shardIndex: shardOverride?.shardIndex ?? null,

@@ -303,21 +303,49 @@ test('a retry reads as one while it runs, the list stays put, and its tags are s
     await waitForHydration(page);
     await stream;
 
-    // The first attempt fails and the retry begins on another worker.
+    // The first attempt fails: the list opened green stays flat in run order.
     await send({
-      ...first,
       type: 'complete',
+      title: 'searches',
+      location: 'tests/search.spec.ts:3:1',
       status: 'failed',
-      duration: 50,
-      error: 'Error: boom',
+      duration: 40,
+      error: 'Error: no results',
       retries: 0,
-      workerIndex: 0,
+      workerIndex: 1,
     });
-    await send({ ...first, type: 'begin', retries: 1, workerIndex: 2 });
-    const row = page.getByTestId('live-retry');
-    await expect(row).toHaveText('Retry 1 of 2');
-    // The list opened green, flat in run order: a failure does not regroup it under the reader.
+    await expect(page.locator('span[title="searches"]:visible')).toHaveCount(1);
     await expect(page.locator('[data-tour="run-tests-group-by"]')).toContainText('None');
+    // One batch of the reporter carries a test's failed attempt and its retry's begin: one row, the retry's.
+    const batch = await request.post(`/api/test-runs/${runId}/events`, {
+      data: {
+        streamToken,
+        testCases: [
+          {
+            ...first,
+            type: 'complete',
+            location: 'tests/checkout.spec.ts:3:1',
+            status: 'failed',
+            duration: 50,
+            error: 'Error: boom',
+            retries: 0,
+            workerIndex: 0,
+            startedAt: Date.now() - 100,
+          },
+          {
+            ...first,
+            type: 'begin',
+            location: 'tests/checkout.spec.ts:3:1',
+            retries: 1,
+            workerIndex: 2,
+            startedAt: Date.now(),
+          },
+        ],
+      },
+    });
+    expect(batch.ok()).toBeTruthy();
+    await expect(page.locator('[data-testid="live-retry"]:visible')).toHaveText(['Retry 1 of 2']);
+    await expect(page.locator('span[title="pays by card"]:visible')).toHaveCount(1);
 
     // A row that streamed in answers the search's qualifiers.
     await page.getByRole('combobox', { name: 'Search tests' }).fill('tag:smoke');

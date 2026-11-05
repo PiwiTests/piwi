@@ -53,8 +53,8 @@ export const LIVE_KEY_TTL_MS = 24 * 60 * 60 * 1000;
 export const MAX_LIVE_VIEWERS_PER_PERSON = 4;
 /** How long a viewer who follows a lane waits for its worker to start again, as Playwright does after a failure. */
 export const LANE_WAIT_MS = 30_000;
-/** What a viewer who follows a lane sees while its worker starts again. */
-export const LANE_RESTARTING = 'The worker is starting again after its test failed.';
+/** What a viewer who follows a lane sees while it waits for the lane's next worker. */
+export const LANE_RESTARTING = 'Waiting for the next test of this worker’s lane.';
 /** The most keys held, of every run: the expired go first, then the oldest of the project that holds the most. */
 export const MAX_LIVE_KEYS = 5000;
 /** The most keys of one project: its expired go first, then its oldest. */

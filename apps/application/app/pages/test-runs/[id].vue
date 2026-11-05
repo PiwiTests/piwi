@@ -73,7 +73,22 @@ const liveTestCaseKeys = new Map<string, true>();
 // The attempts a retry followed, by `liveCaseKey` and retry: the timeline keeps their bars while the run is live.
 const liveEarlierAttempts = ref<Record<string, TestCaseResult>>({});
 function keepEarlierAttempt(tc: TestCaseResult): void {
-  liveEarlierAttempts.value = { ...liveEarlierAttempts.value, [`${liveCaseKey(tc)}#${tc.retries ?? 0}`]: tc };
+  const key = `${liveCaseKey(tc)}#${tc.retries ?? 0}`;
+  liveEarlierAttempts.value = { ...liveEarlierAttempts.value, [key]: mergeAttempt(liveEarlierAttempts.value[key], tc) };
+}
+/**
+ * An attempt as one more event tells it: what the event leaves out (a replay of the stream's catch-up sends no start,
+ * error or steps; a resent batch's no ids) stays as the attempt kept it.
+ */
+function mergeAttempt(kept: TestCaseResult | undefined, tc: TestCaseResult): TestCaseResult {
+  if (!kept) return tc;
+  const merged = { ...kept };
+  for (const [field, value] of Object.entries(tc) as Array<[keyof TestCaseResult, unknown]>) {
+    if (value !== undefined && value !== null) (merged as Record<string, unknown>)[field] = value;
+  }
+  if (tc.executionId < 0 && kept.executionId > 0) merged.executionId = kept.executionId;
+  if (!tc.testCaseId && kept.testCaseId) merged.testCaseId = kept.testCaseId;
+  return merged;
 }
 // A row the database holds no execution for yet gets a unique negative id, unlinked until its test completes.
 let placeholderIds = 0;
@@ -136,7 +151,7 @@ const desktopSessions = useDesktopRunSessions(() => ({
 const watching = ref<{
   worker: number;
   shard: number | null;
-  slot: number | null;
+  slot?: number;
   test: string;
   executionId: number;
 } | null>(null);
@@ -145,7 +160,7 @@ function watchWorker(worker: LiveWorkerState, testCase: TestCaseResult) {
   watching.value = {
     worker: worker.worker,
     shard: worker.shard,
-    slot: worker.slot ?? null,
+    ...(worker.slot !== undefined ? { slot: worker.slot } : {}),
     test: testCase.title,
     executionId: testCase.executionId,
   };
@@ -316,6 +331,8 @@ function flushPendingEvents() {
             duration: null,
             error: null,
             stepEvents: null,
+            wastedTimeMs: null,
+            failureClusterId: null,
             retries: retry,
             maxRetries: d.maxRetries ?? existing.maxRetries ?? null,
             workerIndex: d.workerIndex ?? existing.workerIndex,
@@ -410,6 +427,13 @@ function flushPendingEvents() {
           // the row as it is.
           if ((d.retries ?? 0) < (existing.retries ?? 0)) {
             keepEarlierAttempt(completedRow());
+            // The row of a retry that began before its earlier attempt's end came takes the test's id and history, so
+            // the two are one test's attempts.
+            if (!existing.testCaseId && d.testCaseId) {
+              const copy = [...liveTestCases.value];
+              copy[idx] = { ...existing, testCaseId: d.testCaseId, attempts: existing.attempts ?? d.attempts ?? null };
+              liveTestCases.value = copy;
+            }
             showLive();
             continue;
           }

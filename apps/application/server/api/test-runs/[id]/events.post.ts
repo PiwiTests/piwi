@@ -7,6 +7,7 @@ import { mapWireCaseToRunCase } from '../../../utils/map-wire-case';
 import { runningCaseKey } from '../../../utils/inserted-run-cases';
 import { mapStepEventsToRunEvents } from '../../../utils/map-step-events';
 import { testBeginData, testCompletedData } from '../../../utils/live-case-events';
+import { resolveIngestLimits } from '../../../utils/ingest-limits';
 import { authorizeStreamToken, requireStreamingRun } from '../../../utils/stream-auth';
 import { RUN_TOKEN_HEADER } from '@piwitests/core/wire';
 import { wireCaseProblem } from '../../../utils/wire-case-problem';
@@ -100,7 +101,7 @@ export default eventHandler(async (event) => {
   // --- Handle begin events (test started, no DB persistence needed) ---
   for (const tc of beginEvents) {
     // When the reporter sent no start, when the begin came: the run page and the stuck check count from it.
-    const beginData = testBeginData(tc, Date.now());
+    const beginData = testBeginData(tc, Date.now(), resolveIngestLimits().locks);
     runEventBus.publish(id, { type: 'test-begin', data: beginData });
     // A running case has no DB row until it completes, so remember its begin
     // payload for the stream catch-up; the matching complete event clears it.
@@ -165,7 +166,10 @@ export default eventHandler(async (event) => {
     // The case now has a DB row, so the catch-up will replay it as
     // `test-completed` — drop the running-case entry that stood in for it.
     if (lastOf.get(runningCaseKey(tc)) === 'complete') runEventBus.clearRunningCase(id, runningCaseKey(tc));
-    runEventBus.publish(id, { type: 'test-completed', data: testCompletedData(tc, cases[index]!, persisted) });
+    runEventBus.publish(id, {
+      type: 'test-completed',
+      data: testCompletedData(tc, cases[index]!, persisted, resolveIngestLimits().locks),
+    });
   }
 
   // Publish progress update

@@ -2,11 +2,16 @@
  * The run events a streamed test's `begin` and `complete` publish to the run page, built once for the server's events
  * route and the demo's ingest.
  */
-import { normalizeTestLocks, normalizeTestTags, sanitizeTestMetadata } from '@piwitests/core/test-meta';
+import {
+  normalizeTestLocks,
+  normalizeTestTags,
+  parseTestMetadata,
+  sanitizeTestMetadata,
+} from '@piwitests/core/test-meta';
+import { DEFAULT_INGEST_LIMITS } from '#shared/ingest-limits';
 import { parseLocation } from '#shared/parse-location';
 import type { StreamEventPayload } from '#shared/types';
 import { resolveRepeatEachIndex } from './inserted-run-cases';
-import type { RunCaseInput } from './persist-run-cases';
 import { hiddenErrorText, hiddenStepEventErrors } from './sanitize';
 import { displayTitleOf, externalIdOf } from './test-case-match';
 
@@ -21,7 +26,11 @@ function count(value: unknown): number | null {
  * allowed, and what the run page's search reads (tags, locks, metadata). Pure, so the server's events route and the
  * demo's ingest share it; `now` stands in for a start the reporter did not send.
  */
-export function testBeginData(tc: StreamEventPayload, now: number): Record<string, unknown> {
+export function testBeginData(
+  tc: StreamEventPayload,
+  now: number,
+  maxLocks: number = DEFAULT_INGEST_LIMITS.locks,
+): Record<string, unknown> {
   return {
     title: tc.title,
     filePath: tc.location ? parseLocation(tc.location).filePath : 'unknown',
@@ -34,18 +43,21 @@ export function testBeginData(tc: StreamEventPayload, now: number): Record<strin
     repeatEachIndex: resolveRepeatEachIndex(tc.repeatEachIndex),
     retries: count(tc.retries),
     maxRetries: count(tc.maxRetries),
-    ...searchFields(tc),
+    ...searchFields(tc, maxLocks),
   };
 }
 
-/** What the run page's search reads of a test: its tags, its locks and its `piwi:` metadata. */
-function searchFields(tc: StreamEventPayload) {
+/**
+ * What the run page's search reads of a test, as its run case stores it: its tags, its locks up to `maxLocks`, and its
+ * `piwi:` metadata, read from its annotations when it sent them.
+ */
+function searchFields(tc: StreamEventPayload, maxLocks: number) {
   const tags = normalizeTestTags(tc.tags);
-  const locks = normalizeTestLocks(tc.locks);
+  const locks = normalizeTestLocks(tc.locks).slice(0, maxLocks);
   return {
     tags: tags.length ? tags : null,
     locks: locks.length ? locks : null,
-    testMeta: sanitizeTestMetadata(tc.testMeta),
+    testMeta: parseTestMetadata(tc.testAnnotations) ?? sanitizeTestMetadata(tc.testMeta),
   };
 }
 
@@ -63,8 +75,9 @@ interface PersistedAttempt {
  */
 export function testCompletedData(
   tc: StreamEventPayload,
-  input: RunCaseInput,
+  input: { title: string; filePath: string; externalId?: unknown; displayTitle?: unknown; testAnnotations?: unknown },
   persisted: PersistedAttempt | undefined,
+  maxLocks: number = DEFAULT_INGEST_LIMITS.locks,
 ): Record<string, unknown> {
   return {
     title: tc.title,
@@ -91,6 +104,6 @@ export function testCompletedData(
     testCaseId: persisted?.testCaseId ?? null,
     // Its verdict as stored: it passed after an earlier attempt failed or timed out.
     passedAfterFailure: persisted?.passedAfterFailure ?? null,
-    ...searchFields(tc),
+    ...searchFields(tc, maxLocks),
   };
 }

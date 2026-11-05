@@ -236,16 +236,15 @@ const { raw: storedGroup, set: setGroup } = useGroupByCookie('run-tests', [
   'lock',
   'none',
 ]);
-// A run red when the list opens opens on the cluster grouping; one green then opens flat, and stays so while it runs:
-// the grouping is decided once per page view, so rows do not move under the reader as tests fail and retry. A saved
-// choice always wins.
-const openedGroup: GroupBy = failedCount.value > 0 ? 'cluster' : 'none';
+// A run red when the page opens shows its tests by cluster, one green then flat, for the whole page view, a tab
+// switch included, whatever fails or retries meanwhile. A saved choice always wins.
+const openedGroup = useViewState<GroupBy>('run-tests:opened-group', () => (failedCount.value > 0 ? 'cluster' : 'none'));
 const groupBy = computed<GroupBy>({
   get: () => {
     const stored = storedGroup.value as GroupBy | null;
     // A saved "lock" choice is meaningless on a run with no locks — fall back.
-    if (stored === 'lock' && !hasAnyLocks.value) return openedGroup;
-    return stored ?? openedGroup;
+    if (stored === 'lock' && !hasAnyLocks.value) return openedGroup.value;
+    return stored ?? openedGroup.value;
   },
   set: (v) => setGroup(v),
 });
@@ -800,7 +799,8 @@ watch(
 watch(
   () => rows.value.length,
   () => {
-    if (!props.isLive || userScrolledAway.value || groupBy.value !== 'none' || sortKey.value !== 'run') return;
+    if (!props.isLive || userScrolledAway.value || groupBy.value !== 'none') return;
+    if (sortKey.value !== 'run' || sortDir.value !== 'asc') return;
     nextTick(() => scrollerRef.value?.scrollToBottom());
   },
 );
