@@ -434,6 +434,8 @@ export interface ProjectWithTestRuns {
   hasCiServerToken?: boolean;
   /** The base URL the stored CI server token may be sent under; the token goes nowhere else. */
   ciServerTokenUrl?: string | null;
+  /** The instance's CI server (`PIWI_CI_SERVER_URL`), which a project without a base URL of its own dispatches to. */
+  ciServerInstanceUrl?: string | null;
   /** The repository the project's SCM calls read: pinned by its first run that names one, or set by a project admin. */
   repositoryUrl?: string | null;
   defaultBranch?: string | null;
@@ -482,6 +484,8 @@ export interface ProjectDetails {
   hasCiServerToken?: boolean;
   /** The base URL the stored CI server token may be sent under; the token goes nowhere else. */
   ciServerTokenUrl?: string | null;
+  /** The instance's CI server (`PIWI_CI_SERVER_URL`), which a project without a base URL of its own dispatches to. */
+  ciServerInstanceUrl?: string | null;
   defaultBranch?: string | null;
   /** Provider-specific "re-run from the dashboard" config (secrets excluded). */
   ciRerun?: import('#shared/ci-rerun').CiRerunSettings | null;

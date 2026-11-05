@@ -295,6 +295,8 @@ export function ciServerTargetProblem(input: unknown): string | null {
   if (!target) {
     return 'The CI server target cannot dispatch: it needs a known preset and its required fields';
   }
+  const authProblem = target.custom ? ciAuthHeaderProblem(target.custom.auth) : null;
+  if (authProblem) return `${authProblem}.`;
   if (sendsFlakeLab(input) && !ciServerRequestTemplate(target, 'flakeLab')) {
     return 'The CI server Flake Lab request cannot dispatch: it needs its required fields';
   }
@@ -362,6 +364,16 @@ const FORBIDDEN_HEADERS = new Set([
   'cookie',
   'authorization',
 ]);
+
+/** Why a credential header cannot carry the token, or null when it can: a valid name, not one of the transport's. */
+export function ciAuthHeaderProblem(auth: CiServerAuth): string | null {
+  if (typeof auth !== 'object') return null;
+  const name = auth.header.toLowerCase();
+  if (!HEADER_NAME.test(auth.header) || (name !== 'authorization' && FORBIDDEN_HEADERS.has(name))) {
+    return `The credential header ${auth.header} cannot be set`;
+  }
+  return null;
+}
 
 function placeholderValues(values: CiTemplateValues): Record<CiTemplatePlaceholder, string> {
   return { ...values, branchJob: values.ref ? encodeURIComponent(values.ref) : '' };

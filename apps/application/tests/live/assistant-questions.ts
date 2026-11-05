@@ -814,7 +814,7 @@ const setting: LiveQuestion[] = [
     topic: 'setting',
     question: 'What is the CI re-run setting of a project for?',
     tools: SETTING_TOOLS,
-    facts: [docs('features/pr-feedback', /re-run/i), docs('features/pr-feedback', /workflow|pipeline/i)],
+    facts: [docs('features/ci-rerun', /re-run/i), docs('features/ci-rerun', /workflow|pipeline/i)],
     blocks: ['guide'],
     anchors: ['project-ci-rerun'],
   },

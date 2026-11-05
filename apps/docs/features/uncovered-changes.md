@@ -138,6 +138,6 @@ Either warns too when the run has no source control diff to count. Without them,
 
 - [Scenario gaps & the Test Map](/features/scenario-gaps): the other gaps, and triage
 - [Combined coverage](/features/combined-coverage): the coverage the changed lines are counted on
-- [Pull-request feedback & re-run](/features/pr-feedback): the comment this section joins
+- [Pull-request feedback](/features/pr-feedback): the comment this section joins
 - [Source control](/guide/source-control): the token that provides the diff
 - [Piwi CLI: gate](/reference/cli#gate): every gate flag

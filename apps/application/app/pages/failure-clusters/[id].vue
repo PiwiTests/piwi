@@ -960,11 +960,7 @@ const breadcrumbItems = computed(() => [
                   :source-run-id="cluster.lastSeenRunId"
                 />
                 <ClientOnly>
-                  <span v-if="rerunInfo?.lastDispatch" class="text-xs text-muted">
-                    Last re-run{{ lastRerunScope(rerunInfo.lastDispatch) }}
-                    {{ formatRelativeTime(rerunInfo.lastDispatch.at) }}
-                    <template v-if="rerunInfo.lastDispatch.byName">by {{ rerunInfo.lastDispatch.byName }}</template>
-                  </span>
+                  <CiRerunLastDispatch v-if="rerunInfo?.lastDispatch" :dispatch="rerunInfo.lastDispatch" />
                 </ClientOnly>
               </div>
             </div>

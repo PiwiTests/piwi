@@ -27,7 +27,7 @@ npx @piwitests/reporter <command> [options]
 | [`coverage`](#coverage) | Upload another tool's coverage report of a commit, for [combined coverage](/features/combined-coverage) |
 | [`select`](#select-run) | Print the Playwright args for a saved test selection |
 | [`run`](#select-run) | Run a saved test selection with `playwright test` |
-| [`rerun`](#rerun) | Run the tests a [CI re-run](/features/pr-feedback#re-run-from-the-dashboard) from the dashboard asked for |
+| [`rerun`](#rerun) | Run the tests a [CI re-run](/features/ci-rerun) from the dashboard asked for |
 | [`probe`](#probe) | Run the dashboard's probe plan and record what the suite noticed |
 | [`flake`](#flake) | Make a flaky test fail on demand under its suspects' conditions, then verify the fix |
 | [`ai`](#ai) | Manage committed natural-language AI-step artifacts |
@@ -238,8 +238,8 @@ When `run` spawns Playwright and the target config has **no Piwi reporter**, it 
 
 ## `rerun`
 
-Run the tests a [CI re-run](/features/pr-feedback#re-run-from-the-dashboard) dispatched from the dashboard asked for,
-in a GitLab or Bitbucket job. The dashboard hands the job its Playwright arguments in the `PIWI_RERUN_ARGS` variable,
+Run the tests a [CI re-run](/features/ci-rerun) dispatched from the dashboard asked for,
+in a GitLab, Bitbucket or Jenkins job. The dashboard hands the job its Playwright arguments in the `PIWI_RERUN_ARGS` variable,
 each one double-quoted (`"tests/login.spec.ts:10" --project="chromium"`). `rerun` splits them as they were quoted,
 without reading them through a shell, and starts `playwright test` with them, followed by any arguments given on its
 own command line, after an optional `--`. The same command works on Linux, macOS and Windows runners.
