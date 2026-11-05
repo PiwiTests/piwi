@@ -13,7 +13,7 @@ import { resolveBrowserName } from '#shared/browser-name';
 import { eq, and, or, sql, inArray } from 'drizzle-orm';
 import { DEMO_SIMULATOR_INSTANCE_ID, liveSimulatorPages, simulatorPageOf } from '../simulator-instance';
 import { getDemoDb } from '../db.client';
-import { checkDemoStuckTests, forgetDemoRun, noteDemoBegin, noteDemoComplete } from './stuck-tests';
+import { checkDemoStuckTests, forgetDemoRun, noteDemoBegin, noteDemoComplete, noteDemoStep } from './stuck-tests';
 import { publishDemoGlobalEvent, publishDemoRunEvent } from '../run-events';
 import {
   projects,
@@ -980,6 +980,7 @@ export async function apiPostRunEvents(
   // handler (server/api/test-runs/[id]/events.post.ts) uses.
   for (const stepEvent of stepRunEvents) {
     publishDemoRunEvent(id, stepEvent);
+    noteDemoStep(id, stepEvent);
   }
 
   // Mirrors the server's stuck check, on the time the run's events reached (`./stuck-tests`).

@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
 import { applyLiveResourcesToParts } from '#shared/live-resources';
 import type { WireLiveResources } from '#shared/types';
+import { liveStepKey, type StepRunEvent } from './map-step-events';
 import { matchesShardToken, shardTokenDigest } from './shard-tokens';
 
 /**
@@ -107,6 +108,11 @@ class RunEventBus {
   private liveResources = new Map<number, RunResourceTimelinePart[]>();
   /** Whether each live run's project declined the resources capability, read once per run. */
   private liveResourcesDeclined = new Map<number, boolean>();
+  /**
+   * Each live run's latest step event per worker (`liveStepKey`), so whoever opens the run while a test is in a step
+   * sees it, as the first person to open it does. A worker's next step replaces it; the run's go on cleanup.
+   */
+  private liveSteps = new Map<number, Map<string, StepRunEvent>>();
   /** When the last global run lifecycle event was published: `/api/stream` tells each new connection. */
   private lastGlobalEventAt: number | null = null;
 
@@ -212,6 +218,24 @@ class RunEventBus {
     this.runningCases.get(runId)?.delete(key);
   }
 
+  /** Keep a worker's latest step event for the stream's catch-up. */
+  recordLiveStep(runId: number, event: StepRunEvent): void {
+    if (event.type !== 'step-begin' && event.type !== 'step-end') return;
+    const key = liveStepKey(event.data);
+    if (key === null) return;
+    let steps = this.liveSteps.get(runId);
+    if (!steps) {
+      steps = new Map();
+      this.liveSteps.set(runId, steps);
+    }
+    steps.set(key, event);
+  }
+
+  /** The latest step event of each worker of a run, as `recordLiveStep` kept them. */
+  getLiveSteps(runId: number): StepRunEvent[] {
+    return [...(this.liveSteps.get(runId)?.values() ?? [])];
+  }
+
   /** The begin payloads of every case still running for a run. */
   getRunningCases(runId: number): Record<string, unknown>[] {
     const cases = this.runningCases.get(runId);
@@ -257,6 +281,7 @@ class RunEventBus {
     this.sequences.delete(runId);
     this.runStates.delete(runId);
     this.runningCases.delete(runId);
+    this.liveSteps.delete(runId);
     this.liveResources.delete(runId);
     this.liveResourcesDeclined.delete(runId);
   }

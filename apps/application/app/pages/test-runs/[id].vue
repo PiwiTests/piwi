@@ -407,12 +407,13 @@ function flushPendingEvents() {
         stepCategory?: string | null;
         parentTitle?: string | null;
         workerIndex?: number;
+        shardIndex?: number | null;
       };
       // Suite-level hooks (no worker) keep flowing to the timeline instead.
       if (d.workerIndex == null) continue;
       liveSteps.value = {
         ...liveSteps.value,
-        [d.workerIndex]: {
+        [liveWorkerKey({ shard: d.shardIndex ?? null, worker: d.workerIndex })]: {
           title: d.title,
           subtitle: d.subtitle ?? null,
           category: d.stepCategory ?? null,
@@ -428,13 +429,14 @@ function flushPendingEvents() {
         parentTitle?: string | null;
         status?: string;
         workerIndex?: number;
+        shardIndex?: number | null;
       };
       if (d.workerIndex == null) continue;
       // Keep the ended step visible (with its outcome) until the next step
       // begins, so the readout shows "last thing this worker did".
       liveSteps.value = {
         ...liveSteps.value,
-        [d.workerIndex]: {
+        [liveWorkerKey({ shard: d.shardIndex ?? null, worker: d.workerIndex })]: {
           title: d.title,
           subtitle: d.subtitle ?? null,
           category: d.stepCategory ?? null,
@@ -850,9 +852,11 @@ watch(runRefreshKey, () => {
 const uniqueWorkerCount = computed(() => {
   const cases = isLive.value ? displayTestCases.value : testRun.value?.testCases;
   if (!cases || cases.length === 0) return 0;
-  const workers = new Set<number>();
+  const workers = new Set<string>();
   for (const tc of cases) {
-    if (tc.workerIndex != null && tc.workerIndex >= 0) workers.add(tc.workerIndex);
+    if (tc.workerIndex != null && tc.workerIndex >= 0) {
+      workers.add(liveWorkerKey({ shard: tc.shardIndex ?? null, worker: tc.workerIndex }));
+    }
   }
   return workers.size;
 });

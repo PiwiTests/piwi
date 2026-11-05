@@ -522,8 +522,16 @@ export class StreamManager {
       );
     }
     const opened = next === true && this.watched !== true;
+    const unwatched = next === false && this.watched !== false;
     this.watched = next;
     if (opened) this.onWatched?.();
+    // The next heartbeat was set for a watched run's interval: it comes at the shorter one, so the run learns within
+    // that one that someone opened it.
+    if (unwatched && this.heartbeatTimer) {
+      clearTimeout(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+      this.scheduleHeartbeat();
+    }
   }
 
   // Idle time after which a heartbeat goes out.

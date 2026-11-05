@@ -124,6 +124,7 @@ export default eventHandler(async (event) => {
   // --- Handle step events (live step readout + suite-level hooks), in batch order ---
   for (const stepEvent of stepRunEvents) {
     runEventBus.publish(id, stepEvent);
+    runEventBus.recordLiveStep(id, stepEvent);
   }
 
   // --- Handle complete events (test finished, persist to DB) ---

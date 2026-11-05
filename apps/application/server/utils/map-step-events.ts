@@ -1,4 +1,5 @@
 import { hideTypedStepTitle } from '@piwitests/core/step-analysis';
+import { liveWorkerKey } from '#shared/live-view';
 import type { StreamEventPayload } from '#shared/types';
 
 /**
@@ -10,6 +11,16 @@ import type { StreamEventPayload } from '#shared/types';
 export interface StepRunEvent {
   type: 'step-begin' | 'step-end' | 'test-begin' | 'test-completed';
   data: Record<string, unknown>;
+}
+
+/**
+ * The key a worker's live step is kept under: its shard and its worker, as the live view keys workers. Null for a step
+ * with no worker (a suite-level hook).
+ */
+export function liveStepKey(data: { shardIndex?: unknown; workerIndex?: unknown }): string | null {
+  if (typeof data.workerIndex !== 'number') return null;
+  const shard = typeof data.shardIndex === 'number' ? data.shardIndex : null;
+  return liveWorkerKey({ shard, worker: data.workerIndex });
 }
 
 /**
@@ -41,6 +52,7 @@ function stepBeginRunEvent(tc: StreamEventPayload): StepRunEvent {
         stepCategory: tc.stepCategory ?? null,
         location: tc.location,
         workerIndex: tc.workerIndex ?? null,
+        shardIndex: tc.shardIndex ?? null,
         startedAt: tc.startedAt ?? null,
       },
     };
@@ -72,6 +84,7 @@ function stepEndRunEvent(tc: StreamEventPayload): StepRunEvent {
         duration: tc.duration,
         location: tc.location,
         workerIndex: tc.workerIndex ?? null,
+        shardIndex: tc.shardIndex ?? null,
         startedAt: tc.startedAt ?? null,
       },
     };

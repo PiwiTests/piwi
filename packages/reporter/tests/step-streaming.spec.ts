@@ -111,6 +111,22 @@ describe('PiwiDashboardReporter live step streaming', () => {
     expect(all.some((e) => e.title === 'no-step-end')).toBeFalsy();
   });
 
+  it.each([
+    { shard: { current: 2, total: 3 }, shardIndex: 2 },
+    { shard: null, shardIndex: null },
+  ])('names the shard of each step ($shardIndex)', async ({ shard, shardIndex }) => {
+    const { reporter, eventsBodies } = await startStreaming();
+    const suite = fakeSuite();
+    const test = fakeTestCase({ title: 'the test', parent: suite });
+    const result = fakeResult({ workerIndex: 0 });
+    reporter.onBegin(fakeConfig({ shard }), suite);
+    reporter.onStepBegin(test, result, makeStep('pw:api', 'Click'));
+    reporter.onStepEnd(test, result, makeStep('pw:api', 'Click'));
+    await waitFor(() => streamed(eventsBodies).filter((e) => String(e.type).startsWith('step-')).length >= 2);
+    const steps = streamed(eventsBodies).filter((e) => String(e.type).startsWith('step-'));
+    expect(steps.map((e) => e.shardIndex)).toEqual([shardIndex, shardIndex]);
+  });
+
   it('streams an assertion step under the expect category Playwright reports', async () => {
     const { reporter, eventsBodies } = await startStreaming();
     const suite = fakeSuite();

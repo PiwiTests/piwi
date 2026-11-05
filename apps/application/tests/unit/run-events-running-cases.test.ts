@@ -71,3 +71,41 @@ describe('runEventBus running cases', () => {
     expect(runEventBus.getRunningCases(runId)).toEqual([]);
   });
 });
+
+describe('runEventBus live steps', () => {
+  const step = (
+    type: 'step-begin' | 'step-end',
+    title: string,
+    workerIndex: number | null,
+    shardIndex: number | null,
+  ) => ({
+    type,
+    data: { title, parentTitle: 'the test', workerIndex, shardIndex },
+  });
+
+  test('keeps the latest step of each worker, by shard and worker, for the catch-up', () => {
+    const runId = track(9101);
+    runEventBus.recordLiveStep(runId, step('step-begin', 'Navigate', 0, 1));
+    runEventBus.recordLiveStep(runId, step('step-end', 'Navigate', 0, 1));
+    runEventBus.recordLiveStep(runId, step('step-begin', 'Click', 0, 1));
+    runEventBus.recordLiveStep(runId, step('step-begin', 'Fill', 0, 2));
+    expect(runEventBus.getLiveSteps(runId).map((s) => `${s.data.shardIndex}:${s.data.title}`)).toEqual([
+      '1:Click',
+      '2:Fill',
+    ]);
+  });
+
+  test('keeps no step without a worker, nor a suite-level hook', () => {
+    const runId = track(9102);
+    runEventBus.recordLiveStep(runId, step('step-begin', 'Click', null, null));
+    runEventBus.recordLiveStep(runId, { type: 'test-begin', data: { title: 'beforeAll', workerIndex: 0 } });
+    expect(runEventBus.getLiveSteps(runId)).toEqual([]);
+  });
+
+  test('forgets a run’s steps on its cleanup', () => {
+    const runId = track(9103);
+    runEventBus.recordLiveStep(runId, step('step-begin', 'Click', 0, null));
+    runEventBus.cleanup(runId);
+    expect(runEventBus.getLiveSteps(runId)).toEqual([]);
+  });
+});

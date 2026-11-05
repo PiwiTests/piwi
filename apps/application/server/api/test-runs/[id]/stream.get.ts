@@ -110,6 +110,11 @@ export default eventHandler(async (event) => {
           };
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(beginEvent)}\n\n`));
         }
+        // Then the step each worker is in, after the running cases it belongs to.
+        for (const step of runEventBus.getLiveSteps(id)) {
+          const stepEvent = { type: step.type, data: step.data, seq: 0, timestamp: Date.now() };
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(stepEvent)}\n\n`));
+        }
       } catch {
         // Ignore errors during catch-up
       }

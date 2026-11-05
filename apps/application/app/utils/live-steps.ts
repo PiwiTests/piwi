@@ -1,4 +1,5 @@
 import type { TestCaseResult } from '~~/types/api';
+import { liveWorkerKey } from '#shared/live-view';
 
 /**
  * The step a worker is currently on, from the run stream's transient
@@ -16,21 +17,26 @@ export interface LiveStepInfo {
   parentTitle?: string | null;
 }
 
-/** Worker index → the step that worker is currently on. */
-export type LiveStepsByWorker = Record<number, LiveStepInfo | undefined>;
+/** The step each worker is currently on, by `liveWorkerKey` (its shard and its worker). */
+export type LiveStepsByWorker = Record<string, LiveStepInfo | undefined>;
 
 /**
  * The live step to show on a test row: only rows still running, matched by
- * worker. The `parentTitle` guard drops a stale readout during a worker's
- * test handoff — the previous test's last step lingers in the map until the
- * next test's first step begins, and it must not surface on the new row.
+ * shard and worker, else by worker alone for a reporter that sends no shard
+ * with its steps. The `parentTitle` guard drops a stale readout during a
+ * worker's test handoff — the previous test's last step lingers in the map
+ * until the next test's first step begins, and it must not surface on the new
+ * row.
  */
 export function liveStepForCase(
   steps: LiveStepsByWorker | null | undefined,
   testCase: TestCaseResult,
 ): LiveStepInfo | null {
   if (!steps || testCase.status !== 'running' || testCase.workerIndex == null) return null;
-  const step = steps[testCase.workerIndex];
+  const worker = testCase.workerIndex;
+  const step =
+    steps[liveWorkerKey({ shard: testCase.shardIndex ?? null, worker })] ??
+    steps[liveWorkerKey({ shard: null, worker })];
   if (!step) return null;
   if (step.parentTitle && step.parentTitle !== testCase.title) return null;
   return step;

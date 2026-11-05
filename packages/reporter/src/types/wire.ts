@@ -226,6 +226,8 @@ export interface StepBeginStreamEvent {
   stepCategory: string;
   parentTitle: string | null;
   workerIndex: number | null;
+  /** The shard that ran the step's test, 1-based; null in a run that is not sharded. */
+  shardIndex: number | null;
   startedAt: number | null;
 }
 
@@ -241,6 +243,8 @@ export interface StepEndStreamEvent {
   stepCategory: string;
   parentTitle: string | null;
   workerIndex: number | null;
+  /** The shard that ran the step's test, 1-based; null in a run that is not sharded. */
+  shardIndex: number | null;
   startedAt: number | null;
 }
 

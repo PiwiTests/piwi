@@ -409,7 +409,7 @@ import {
   apiHeartbeatTestRun,
   apiLiveResourcesTestRun,
 } from './reporter';
-import { demoRunningCases } from './stuck-tests';
+import { demoLiveSteps, demoRunningCases } from './stuck-tests';
 import { UNFINISHED_RUN_STATUSES } from '#shared/run-eligibility';
 import { runFinishedEventData, storedCaseEventData } from '~~/server/utils/run-stream-catch-up';
 import { apiCreateUserApiKey } from './users';
@@ -1987,6 +1987,7 @@ const routes: RouteEntry[] = [
         events: [
           ...(await storedCaseEventData(db, id)).map((data) => event('test-completed', data)),
           ...demoRunningCases(id).map((data) => event('test-begin', data)),
+          ...demoLiveSteps(id).map((step) => event(step.type, step.data)),
         ],
       };
     },

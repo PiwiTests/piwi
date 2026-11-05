@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { mapStepEventsToRunEvents } from '../../server/utils/map-step-events';
+import { liveStepKey, mapStepEventsToRunEvents } from '../../server/utils/map-step-events';
 import type { StreamEventPayload } from '#shared/types';
 
 // One worker, one running test: every step below belongs to it.
@@ -104,6 +104,7 @@ describe('mapStepEventsToRunEvents', () => {
         stepCategory: 'expect',
         location: 'tests/signup.spec.ts:9:5',
         workerIndex: 0,
+        shardIndex: null,
         startedAt: 1700000000500,
       },
     });
@@ -118,6 +119,7 @@ describe('mapStepEventsToRunEvents', () => {
         duration: 18000,
         location: 'tests/signup.spec.ts:9:5',
         workerIndex: 0,
+        shardIndex: null,
         startedAt: 1700000000500,
       },
     });
@@ -162,6 +164,20 @@ describe('mapStepEventsToRunEvents', () => {
         parentTitle: 'signup keeps the email',
       },
     ]);
-    expect(step!.data).toMatchObject({ subtitle: null, stepCategory: null, workerIndex: null, startedAt: null });
+    expect(step!.data).toMatchObject({
+      subtitle: null,
+      stepCategory: null,
+      workerIndex: null,
+      shardIndex: null,
+      startedAt: null,
+    });
+  });
+
+  test('a test-attached step names its shard, the key its worker’s live step is kept under', () => {
+    const [step] = mapStepEventsToRunEvents([{ ...expectBegin, shardIndex: 2 }]);
+    expect(step!.data).toMatchObject({ workerIndex: 0, shardIndex: 2 });
+    expect(liveStepKey(step!.data)).toBe('2:0');
+    expect(liveStepKey({ workerIndex: 0, shardIndex: null })).toBe(':0');
+    expect(liveStepKey({ workerIndex: null })).toBeNull();
   });
 });

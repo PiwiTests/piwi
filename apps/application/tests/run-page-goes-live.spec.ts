@@ -163,6 +163,12 @@ test.describe('Run page of an initializing run', () => {
       });
       expect(step.ok()).toBeTruthy();
       await expect(page.getByTestId('live-step')).toContainText('Click');
+      // Whoever opens the run after sees the step the worker is in, though it began before they listened.
+      const later = await page.context().newPage();
+      await later.goto(`/test-runs/${runId}`);
+      await waitForHydration(later);
+      await expect(later.getByTestId('live-step')).toContainText('Click');
+      await later.close();
       await expect(page.getByRole('button', { name: 'Watch worker 0 live' })).toBeVisible({ timeout: 15_000 });
 
       expect(await sameDocument(page)).toBe(true);
