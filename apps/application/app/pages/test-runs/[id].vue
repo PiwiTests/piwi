@@ -16,6 +16,7 @@ import { NO_WORKER_GRACE_MS } from '~/utils/run-live-view-status';
 import { stallWatch, STREAM_RECONNECT_STALL_MS } from '~/utils/stream-stall';
 import { streamReopener } from '~/utils/stream-reopen';
 import { refetchKeeping } from '~/utils/refetch-keeping';
+import { timelineLaneCount } from '~/composables/useTimelineModel';
 import { subscribeDemoEvents } from '~/demo/run-events';
 import { useRunEvents, useRunStart, useRunStream } from '~/composables/useRunStream';
 import { useReportsPoll } from '~/composables/useReportsPoll';
@@ -33,7 +34,6 @@ import {
 } from '#shared/live-view';
 import { runOrigin, runOriginRef } from '#shared/run-eligibility';
 import type { StuckAttempt } from '#shared/stuck-tests';
-import { workerLane } from '#shared/worker-lane';
 
 const route = useRoute();
 const router = useRouter();
@@ -1038,22 +1038,10 @@ watch(runRefreshKey, () => {
   if (showFailureTabs.value) fetchClusterMeta();
 });
 
-/** The run's workers, each counted once: by its lane, or by its worker process from a reporter that sends no lane. */
-const uniqueWorkerCount = computed(() => {
-  const cases = isLive.value ? displayTestCases.value : testRun.value?.testCases;
-  if (!cases || cases.length === 0) return 0;
-  const workers = new Set<string>();
-  for (const tc of cases) {
-    if (tc.workerIndex == null || tc.workerIndex < 0) continue;
-    const lane = workerLane(tc.parallelIndex);
-    workers.add(
-      lane !== null
-        ? `lane:${tc.shardIndex ?? ''}#${lane}`
-        : liveWorkerKey({ shard: tc.shardIndex ?? null, worker: tc.workerIndex }),
-    );
-  }
-  return workers.size;
-});
+/** The cases the workers timeline draws: while the run is live, the latest list once per frame. */
+const timelineCases = computed(() => (isLive.value ? throttledTestCases.value : displayTestCases.value));
+/** The Timeline tab's count: the lanes the timeline lays out, the workers its header counts. */
+const timelineLanes = computed(() => timelineLaneCount(timelineCases.value));
 
 const tabItems = computed(() => [
   {
@@ -1071,7 +1059,7 @@ const tabItems = computed(() => [
     disabledReason: isLive.value ? 'available once the run finishes' : undefined,
   },
   {
-    label: `Timeline${uniqueWorkerCount.value > 0 ? ` (${uniqueWorkerCount.value})` : ''}`,
+    label: `Timeline${timelineLanes.value > 0 ? ` (${timelineLanes.value})` : ''}`,
     icon: 'i-lucide-timeline',
     value: 'workers',
     slot: 'workers',
@@ -1363,7 +1351,7 @@ const moreMenuItems = computed(() => {
           <template #tab-workers>
             <div class="space-y-6" data-tour="run-workers">
               <WorkersTimeline
-                :test-cases="isLive ? throttledTestCases : displayTestCases"
+                :test-cases="timelineCases"
                 :setup-steps="testRun?.setupSteps ?? null"
                 :shard-total="testRun?.shardTotal ?? null"
                 :live="isLive"

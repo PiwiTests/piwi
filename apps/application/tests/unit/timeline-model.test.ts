@@ -4,6 +4,7 @@ import {
   computeLockSummary,
   isHookKind,
   testTimeNotes,
+  timelineLaneCount,
   type TimelineItem,
   type TimelineModelInput,
 } from '../../app/composables/useTimelineModel';
@@ -592,6 +593,35 @@ describe('the lanes a reporter names', () => {
       [null, 0, [0]],
       [null, 1, [1]],
     ]);
+  });
+
+  test('counts the lanes it lays out, which the Timeline tab shows, not the worker processes', () => {
+    // One shard, two workers, three failures: Playwright starts a new process after each, five on two lanes.
+    const failed = { status: 'failed' };
+    const cases = [
+      ran(1, 0, 0, 1000, 500, failed),
+      ran(2, 1, 1, 1000, 500, failed),
+      ran(3, 2, 0, 1600, 500, failed),
+      ran(4, 3, 1, 1600, 500),
+      ran(5, 4, 0, 2200, 500),
+    ];
+    const count = (list: CaseLike[]) => timelineLaneCount(list as unknown as TestCaseResult[]);
+    expect(count(cases)).toBe(2);
+    // Results that name no lane: the timeline works the same two lanes out from the timing.
+    const unnamed = cases.map(({ parallelIndex: _lane, ...rest }) => rest);
+    expect(count(unnamed)).toBe(2);
+    expect(model(unnamed).workerRows.value).toHaveLength(2);
+    // A shard where one process names no lane is laid out from the timing as a whole.
+    const mixed = [...cases.slice(0, 4), ran(5, 4, undefined, 2200, 500)];
+    expect([count(mixed), model(mixed).workerRows.value.length]).toEqual([2, 2]);
+    // Each shard's lanes, a test without a worker left out.
+    const sharded = [
+      ran(1, 0, 0, 1000, 500, { shardIndex: 1 }),
+      ran(2, 0, 0, 1000, 500, { shardIndex: 2 }),
+      { executionId: 3, title: 'never ran', status: 'skipped', workerIndex: null },
+    ];
+    expect(count(sharded)).toBe(2);
+    expect(count([])).toBe(0);
   });
 
   test("packs a lane's processes one after another when no test carries a start", () => {

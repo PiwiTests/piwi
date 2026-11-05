@@ -316,6 +316,27 @@ function layOutLanes(processes: WorkerProcess[], timed: boolean): WorkerLane[] {
   return lanes;
 }
 
+/** The earliest start of the processes' cases, in epoch ms: the timeline's zero. Infinity when no case carries one. */
+function earliestStart(processes: WorkerProcess[]): number {
+  let min = Infinity;
+  for (const process of processes) {
+    for (const tc of process.cases) {
+      const sa = toMs(tc.startedAt);
+      if (sa != null && sa > 0) min = Math.min(min, sa);
+    }
+  }
+  return min;
+}
+
+/**
+ * How many lanes the workers timeline lays these test cases out on: the workers its header counts, and the count the
+ * run page's Timeline tab shows. A run whose results name no lane has fewer lanes than worker processes.
+ */
+export function timelineLaneCount(testCases: TestCaseResult[]): number {
+  const processes = groupByProcess(testCases);
+  return layOutLanes(processes, Number.isFinite(earliestStart(processes))).length;
+}
+
 /** The order processes ran in: by their first start, then by `workerIndex` (Playwright numbers them as it starts them). */
 function byStart(a: WorkerProcess, b: WorkerProcess): number {
   return (a.span?.start ?? Infinity) - (b.span?.start ?? Infinity) || a.workerIndex - b.workerIndex;
@@ -526,16 +547,7 @@ export function useTimelineModel(props: TimelineModelInput): {
 
   // The earliest startedAt in the run anchors absolute positioning; when no case
   // carries a usable timestamp we fall back to packing cases sequentially.
-  const minStartedAt = computed(() => {
-    let min = Infinity;
-    for (const process of processes.value) {
-      for (const tc of process.cases) {
-        const sa = toMs(tc.startedAt);
-        if (sa != null && sa > 0) min = Math.min(min, sa);
-      }
-    }
-    return min;
-  });
+  const minStartedAt = computed(() => earliestStart(processes.value));
   const hasStartedAt = computed(() => Number.isFinite(minStartedAt.value));
 
   const lanes = computed(() => layOutLanes(processes.value, hasStartedAt.value));
