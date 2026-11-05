@@ -58,11 +58,37 @@ interface Run {
   release: () => void;
 }
 
-/** Start the suite as a project's run against this server, in a CI job or outside one, `extra` in its environment. */
-async function startRun(projectName: string, ci: boolean, extra: NodeJS.ProcessEnv = {}): Promise<Run> {
+/**
+ * A test that fails on its first attempt and passes on its retry, each attempt waiting on its slow page until its file
+ * (`attempt-0`, `attempt-1`) is written.
+ */
+const RETRY_SPEC = (folder: string) => `const fs = require('node:fs');
+const { test, expect } = require('./fixture.cjs');
+test('pays on its second try', async ({ page }, testInfo) => {
+  await page.setContent(${JSON.stringify(SLOW_PAGE)});
+  const released = () => fs.existsSync(require('node:path').join(${JSON.stringify(folder)}, 'attempt-' + testInfo.retry));
+  const until = Date.now() + 90000;
+  while (!released() && Date.now() < until) {
+    await page.getByRole('button', { name: 'Pay' }).click({ timeout: 2500 }).catch(() => {});
+  }
+  expect(released()).toBe(true);
+  expect(testInfo.retry, 'the first attempt fails').toBe(1);
+});
+`;
+
+/**
+ * Start a suite (`SPEC` unless `options.spec` names another, retried `options.retries` times) as a project's run
+ * against this server, in a CI job or outside one, `extra` in its environment.
+ */
+async function startRun(
+  projectName: string,
+  ci: boolean,
+  extra: NodeJS.ProcessEnv = {},
+  options: { spec?: (folder: string) => string; retries?: number } = {},
+): Promise<Run> {
   fs.mkdirSync(join(process.cwd(), '.test-temp'), { recursive: true });
   const folder = fs.mkdtempSync(join(process.cwd(), '.test-temp', 'live-view-'));
-  fs.writeFileSync(join(folder, 'live.spec.cjs'), SPEC(folder));
+  fs.writeFileSync(join(folder, 'live.spec.cjs'), (options.spec ?? SPEC)(folder));
   fs.writeFileSync(
     join(folder, 'fixture.cjs'),
     `const { test: base, expect } = require('@playwright/test');
@@ -80,6 +106,7 @@ module.exports = wrapConfig(defineConfig({
   outputDir: './test-results',
   timeout: 120000,
   workers: 1,
+  retries: ${options.retries ?? 0},
   reporter: 'line',
   use: { headless: true, viewport: { width: 1000, height: 625 } },
 }), { serverUrl: ${JSON.stringify(target.baseUrl)}, projectName: ${JSON.stringify(projectName)}, uploadTraces: false, uploadReport: false });
@@ -239,7 +266,7 @@ test.describe('Live view of a run', () => {
       await expect(page.getByTestId('live-unshared')).toHaveCount(0);
       await page.screenshot({ path: testInfo.outputPath('live-view-row.png') });
       await watch.click();
-      const view = page.getByRole('dialog');
+      const view = page.getByTestId('lane-panel');
       await expect(view).toContainText('pays on a slow page');
       await expect(view.getByRole('heading', { name: /^Worker \d+ · live$/ })).toBeVisible();
       const frame = view.getByTestId('live-frame');
@@ -255,6 +282,14 @@ test.describe('Live view of a run', () => {
       await expect(view.getByTestId('live-call-target')).toHaveText('Its element is not enabled', { timeout: 20_000 });
       await expect(view.getByTestId('live-call-state')).toContainText('Running for');
       await expect(view.getByTestId('live-target-box')).toBeAttached();
+      // The page's address names the lane the view follows.
+      await expect(page).toHaveURL(/[?&]watch=1(&|$)/);
+      // Zoom to the element crops the image around the element the test waits on, and a click on it shows it whole.
+      await view.getByRole('button', { name: 'Zoom to the element' }).click();
+      await expect(view.getByTestId('live-stage')).toHaveAttribute('style', /scale\((?!1\))/);
+      await page.screenshot({ path: testInfo.outputPath('live-view-zoomed.png') });
+      await view.getByTestId('live-stage').click();
+      await expect(view.getByTestId('live-stage')).not.toHaveAttribute('style', /scale/);
       // The status region stays in the page, empty while images show.
       await expect(view.getByRole('status')).toHaveText('');
       // The image is the page as it paints: a spinner turns, so the image changes.
@@ -285,12 +320,57 @@ test.describe('Live view of a run', () => {
       // The test ends: the view says how, and follows the worker's lane until the run ends.
       run.release();
       await expect(view.getByTestId('live-outcome')).toContainText('passed', { timeout: 20_000 });
-      await expect(view.getByTestId('live-status')).toHaveText('The run ended.', { timeout: 40_000 });
+      // The run's end ends the view, which says the run's verdict and drops "live".
+      await expect(view.getByTestId('live-status')).toHaveText('The run passed: 1 test.', { timeout: 40_000 });
+      await expect(view.getByRole('heading', { name: /^Worker \d+$/ })).toBeVisible();
       await page.keyboard.press('Escape');
       await expect(view).toBeHidden();
+      await expect(page).not.toHaveURL(/[?&]watch=/);
 
       expect(await run.exited, run.output()).toBe(0);
       expect(run.output()).toContain('Live view on');
+    } finally {
+      await endRun(run);
+    }
+  });
+
+  test('a view follows its lane through a failing test and its retry, and the page’s address opens it', async ({
+    page,
+    request,
+  }, testInfo) => {
+    test.setTimeout(240_000);
+    const project = await projectId(request, PROJECT.LIVE_VIEW_ON);
+    expect((await request.patch(`/api/projects/${project}`, { data: { liveView: true } })).ok()).toBeTruthy();
+    const before = await latestRunId(request, project);
+
+    const run = await startRun(PROJECT.LIVE_VIEW_ON, true, {}, { spec: RETRY_SPEC, retries: 1 });
+    try {
+      const runId = await liveRunId(request, project, before);
+      // The address of a lane opens its view as its worker joins the run's live view.
+      await page.goto(`/test-runs/${runId}?watch=1`);
+      const view = page.getByTestId('lane-panel');
+      await expect(view.getByRole('heading', { name: 'Worker 1 · live' })).toBeVisible({ timeout: 60_000 });
+      await expect(view.getByTestId('live-frame')).toBeVisible({ timeout: 20_000 });
+      await expect(view).toContainText('pays on its second try');
+
+      // The first attempt fails: the view says so and waits for the lane's next test, which is its retry.
+      fs.writeFileSync(join(run.folder, 'attempt-0'), '');
+      await expect(view.getByTestId('live-outcome')).toContainText('pays on its second try failed', {
+        timeout: 20_000,
+      });
+      await expect(view.getByTestId('live-outcome')).toContainText("waiting for the worker's next test");
+      await page.screenshot({ path: testInfo.outputPath('live-view-failed.png') });
+      // Playwright starts the lane's worker again for the retry: the view goes on with it, the failure kept below.
+      await expect(view.getByTestId('live-outcome')).toHaveCount(0, { timeout: 40_000 });
+      await expect(view.getByTestId('live-frame')).toBeVisible({ timeout: 20_000 });
+      await expect(view.getByTestId('live-earlier')).toContainText('pays on its second try failed');
+
+      fs.writeFileSync(join(run.folder, 'attempt-1'), '');
+      await expect(view.getByTestId('live-outcome')).toContainText('pays on its second try passed', {
+        timeout: 20_000,
+      });
+      await expect(view.getByTestId('live-status')).toHaveText('The run passed: 1 test.', { timeout: 40_000 });
+      expect(await run.exited, run.output()).toBe(0);
     } finally {
       await endRun(run);
     }
@@ -429,7 +509,7 @@ test.describe('Live view of a run', () => {
       await expect(watch).toBeVisible({ timeout: 60_000 });
       await expect(page.getByTestId('live-unshared')).toHaveCount(0);
       await watch.click();
-      const view = page.getByRole('dialog');
+      const view = page.getByTestId('lane-panel');
       await expect(view.getByTestId('live-frame')).toBeVisible({ timeout: 20_000 });
       // The editor hears someone watches.
       await expect.poll(() => hub.heard().at(-1)?.viewers, { timeout: 10_000 }).toBe(1);

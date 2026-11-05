@@ -37,7 +37,7 @@ setup. A CI job is told by its provider's variable (`GITHUB_ACTIONS`, `GITLAB_CI
 
 A CI run without a view logs why instead.
 
-Turning it off ends every view at once; a run that started while it was off stays without one.
+Turning it off ends every view at once.
 
 ## Check availability
 
@@ -53,17 +53,20 @@ A running run's **Tests** tab says **Live view available**, or what is missing, 
 
 ## Watch a worker
 
-On the run page's **Tests** tab, **Watch** beside a running test opens its worker's view: the test's page as the
-browser paints it, headless or not, under it the call the image was taken at (`Click getByRole('button', { name: 'Pay' }) · checkout.spec.ts:30`). A still page sends no new image.
+On the run page's **Tests** tab, **Watch** at the end of a running test's row opens its worker's view, docked beside
+the page (a sheet on a phone): the test's page as the browser paints it, under it the call the image was taken at
+(`Click getByRole('button', { name: 'Pay' }) · checkout.spec.ts:30`). A still page sends no new image, so the caption
+names the step the test began since. Widen the panel by its edge or open it full screen; a click on the image zooms.
 
-In a CI run, the view follows that call: how long it has run, Playwright's log of it as a failed call's error
-prints it, and while it waits, what its locator matches (no element yet, several, or one not enabled), outlined on the
-image, with the point a click acts on. A shared run shows the call alone. Following the call needs Playwright 1.64:
-1.63 shows its log without the matches, an older one the call alone.
+In a CI run, the view follows that call: how long it has run, Playwright's log of it, and while it waits, what its
+locator matches (no element yet, several, or one not enabled), outlined on the image, with the point a click acts on;
+**Zoom to the element** crops the image around it. A shared run shows the call alone. Following the call needs
+Playwright 1.64: 1.63 shows its log without the matches, an older one the call alone.
 
-A view follows its worker's lane: it says how each test ended and goes on, across worker restarts; untick **Follow
-the worker's next test** to end it with its test. It ends with the run, 30 s after its lane's worker left, as the live
-view turns off, or as you close it.
+A view follows its worker's lane: it says how each test ended, lists the lane's earlier tests and goes on, across
+worker restarts; untick **Follow the worker's next test** to end it with its test. The page's address names the lane
+(`?watch=2`; `?watch=3.2` for worker 2 of shard 3) for a link. It ends with the run, saying how it went, 30 s after
+its lane's worker left, as the live view turns off, or as you close it. A view that cannot open says why.
 
 A CI run never stops at a breakpoint or a `page.pause()`; a shared run does, and its row then says **Paused** at the
 stopped call, which opens in your editor.
@@ -80,16 +83,15 @@ whose project enables live view, and connect to an editor or the desktop app for
 | Piwi Picker's [Runs window](./runs-window) | **Share live** under the run's name | **Stop sharing** |
 | The desktop app's [Local runs tray](./desktop-runs) | **Share live** above the run's workers | **Stop sharing** |
 
-The first share in a window asks for confirmation. The shared run shows its destination, viewer count and a link to copy.
+The first share in a window asks to confirm. The run then shows where it goes, its viewers and a link to copy.
 
-Until then, its workers send nothing, and its running tests say **Not shared live** where **Watch** would be. Once
+Until then, its running tests say **Not shared live**. Once
 shared, its stops (the call, its file and line, the test's title) reach everyone with the run's page open, and images
 only those watching. **Stop sharing** closes the views within seconds and clears **Paused** from the rows. Closing the
 editor or the desktop app stops it too.
 
-A run that cannot be shared says why: it reports to no instance or to the desktop app, its project has the live view
-off, or the reporter's global setup did not register it. A sharing that stops on its own says why (the live view turned
-off, the instance restarted or stopped answering), and **Share live** shows again.
+A run that cannot be shared says why (no instance, the desktop app, the live view off, no global setup), as does a
+sharing that stops on its own, and **Share live** shows again.
 
 ## What is sent, to whom, and what is kept
 
@@ -98,14 +100,13 @@ off, the instance restarted or stopped answering), and **Share live** shows agai
   only when its test stops and goes on. No image is taken.
 - **While someone watches a worker**, that worker sends JPEG images of its test's page, at most 640 by 400 pixels at
   quality 50, four a second at most and about 256 KB a second: a heavier image holds the next one back longer. A test
-  whose trace or video already films the page shares that recording's images, 800 pixels wide at quality 90, and so
-  sends fewer of them. The recording stays whole. A test that starts its own `page.screencast` gets it, and the view
-  goes on with an image a second. A CI run's worker also sends the call's log. Nothing of the view is a step of the
+  whose trace or video already films the page shares that recording's images (800 pixels wide, quality 90), fewer of
+  them. A test that starts its own `page.screencast` gets it, the view going on with an image a second. A CI run's worker also sends the call's log. Nothing of the view is a step of the
   test or an action of its trace.
 - **Only to people who may open the run**: watching needs what opening the run needs, the project's
   [roles](/operate/project-access). On an instance with authentication off, that is anyone who can reach it.
 - **Nothing is kept.** The dashboard relays each image to the people watching that worker and drops it: never written
-  to the database, the logs or an export. A viewer that reads slowly gets the latest image alone. The run's trace stays
+  to the database, the logs or an export. The run's trace stays
   the record.
 
 **Masked in the worker**, with `@piwitests/reporter` 0.64.0 or later (an older one masks nothing): before an image
@@ -123,8 +124,8 @@ environment of the tests, their hooks or their fixtures, so a process they start
 - **Sixteen views of a run at a time**, four of them one person's with authentication on: a fifth closes that
   person's oldest.
 - **One dashboard server.** The view is relayed in the memory of one server, as the run's live events are, so it needs
-  a deployment of one server ([Resource requirements](/operate/deployment#resource-requirements)). Sticky sessions do
-  not make up for it: the run's setup, its CI workers and the people watching are separate clients.
+  a deployment of one server ([Resource requirements](/operate/deployment#resource-requirements)); sticky sessions do
+  not make up for it.
 
 ## Related
 

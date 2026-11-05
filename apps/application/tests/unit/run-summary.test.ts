@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { runSummaryText } from '../../app/utils/run-summary';
+import { runSummaryText, runVerdictText } from '../../app/utils/run-summary';
 
 const run = {
   id: 42,
@@ -50,5 +50,15 @@ describe('runSummaryText', () => {
       "Tests: 3 total · 1 passed · 0 failed · 0 skipped · 1 didn't run · 1 interrupted",
     );
     expect(runSummaryText(run)).not.toContain('interrupted');
+  });
+});
+
+describe('runVerdictText', () => {
+  test('says how a run that ended came out, with its failures out of its tests', () => {
+    expect(runVerdictText({ status: 'passed', total: 1, failed: 0 })).toBe('The run passed: 1 test.');
+    expect(runVerdictText({ status: 'failed', total: 12, failed: 3 })).toBe('The run failed: 3 of 12 tests failed.');
+    expect(runVerdictText({ status: 'failed', total: 12, failed: 0 })).toBe('The run failed.');
+    expect(runVerdictText({ status: 'interrupted', total: 4, failed: 0 })).toBe('The run was interrupted.');
+    expect(runVerdictText({ status: 'something-new', total: 4, failed: 0 })).toBe('The run ended.');
   });
 });

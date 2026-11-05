@@ -11,7 +11,7 @@ import type {
 } from '~~/types/api';
 import type { LiveStepsByWorker } from '~/utils/live-steps';
 import { liveRowNote } from '~/utils/live-row-note';
-import { runSummaryText } from '~/utils/run-summary';
+import { runSummaryText, runVerdictText } from '~/utils/run-summary';
 import { NO_WORKER_GRACE_MS } from '~/utils/run-live-view-status';
 import { stallWatch, STREAM_RECONNECT_STALL_MS } from '~/utils/stream-stall';
 import { subscribeDemoEvents } from '~/demo/run-events';
@@ -21,7 +21,13 @@ import { summarizeRunCases } from '#shared/utils/test-counts';
 import { applyLiveResourcesToParts } from '#shared/live-resources';
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
 import type { WireLiveResources } from '#shared/types';
-import { liveWorkerKey, type LiveViewRunState, type LiveWorkerState } from '#shared/live-view';
+import {
+  liveWatchAddress,
+  liveWorkerKey,
+  parseLiveWatchAddress,
+  type LiveViewRunState,
+  type LiveWorkerState,
+} from '#shared/live-view';
 import { runOrigin, runOriginRef } from '#shared/run-eligibility';
 import type { StuckAttempt } from '#shared/stuck-tests';
 
@@ -122,6 +128,12 @@ function stopWatchingForStall() {
 }
 // The run finished on the stream: its status leaves the toolbar before the refetched run says so.
 const liveRunEnded = ref(false);
+/** How the run ended, in a sentence, once the page read it ended: an open live view says it. */
+const runVerdict = computed(() => {
+  const run = testRun.value;
+  if (!liveRunEnded.value || !run || ['running', 'initializing', 'finalizing'].includes(run.status)) return null;
+  return runVerdictText({ status: run.status, total: run.totalTests ?? 0, failed: run.failedTests ?? 0 });
+});
 // Whether a worker of the run's view connected since the page opened, and whether tests have run for
 // `NO_WORKER_GRACE_MS` since the page first heard of one: both, the status says no worker opened the view.
 const liveWorkerSeen = ref(false);
@@ -146,26 +158,55 @@ const desktopSessions = useDesktopRunSessions(() => ({
   kind: runOrigin(testRun.value?.metadata),
   ref: runOriginRef(testRun.value?.metadata),
 }));
-// The worker someone opened Watch on, its lane, and the execution of the row they opened it from: the view starts
-// on that test, and follows the lane's next tests when the worker says its lane.
+// The worker someone opened Watch on, its lane, and the execution of the row they opened it from (null when the
+// page's address opened it): the view starts on that test, and follows the lane's next tests when the worker says
+// its lane.
 const watching = ref<{
   worker: number;
   shard: number | null;
   slot?: number;
   test: string;
-  executionId: number;
+  executionId: number | null;
 } | null>(null);
 const watchOpen = ref(false);
-function watchWorker(worker: LiveWorkerState, testCase: TestCaseResult) {
+function watchWorker(worker: LiveWorkerState, testCase: TestCaseResult | null) {
   watching.value = {
     worker: worker.worker,
     shard: worker.shard,
     ...(worker.slot !== undefined ? { slot: worker.slot } : {}),
-    test: testCase.title,
-    executionId: testCase.executionId,
+    test: testCase?.title ?? '',
+    executionId: testCase?.executionId ?? null,
   };
   watchOpen.value = true;
 }
+/** The step the watched worker is on: of the worker now in the view's lane, which a restart changes. */
+const watchedStep = computed(() => {
+  const shown = watching.value;
+  if (!shown) return null;
+  const now =
+    shown.slot === undefined
+      ? null
+      : Object.values(liveWorkers.value).find((w) => w.shard === shown.shard && w.slot === shown.slot);
+  return liveSteps.value[liveWorkerKey(now ?? shown)] ?? null;
+});
+// The lane a `?watch=` address names, until a worker of it joins the run's live view: the view then opens on it.
+const watchAddress = ref(parseLiveWatchAddress(route.query.watch));
+watch(liveWorkers, (workers) => {
+  const lane = watchAddress.value;
+  if (!lane) return;
+  const worker = Object.values(workers).find((w) => w.shard === lane.shard && w.slot === lane.slot);
+  if (!worker) return;
+  watchAddress.value = null;
+  watchWorker(worker, null);
+});
+// The page's address names the lane the view follows while it is open, so it can be shared; one that waits for its
+// lane stays.
+watch([watchOpen, watching], ([isOpen, shown]) => {
+  if (!import.meta.client || watchAddress.value) return;
+  const address =
+    isOpen && shown?.slot !== undefined ? liveWatchAddress({ shard: shown.shard, slot: shown.slot }) : undefined;
+  if (route.query.watch !== address) void replaceQuery(router, { watch: address });
+});
 let eventSource: EventSource | null = null;
 
 // Combined test cases: from server data + live stream. Includes every attempt
@@ -487,6 +528,7 @@ function flushPendingEvents() {
         parentTitle?: string | null;
         workerIndex?: number;
         shardIndex?: number | null;
+        startedAt?: number | null;
       };
       // Suite-level hooks (no worker) keep flowing to the timeline instead.
       if (d.workerIndex == null) continue;
@@ -498,6 +540,7 @@ function flushPendingEvents() {
           category: d.stepCategory ?? null,
           status: undefined,
           parentTitle: d.parentTitle ?? null,
+          startedAt: d.startedAt ?? null,
         },
       };
     } else if (parsed.type === 'step-end') {
@@ -509,6 +552,7 @@ function flushPendingEvents() {
         status?: string;
         workerIndex?: number;
         shardIndex?: number | null;
+        startedAt?: number | null;
       };
       if (d.workerIndex == null) continue;
       // Keep the ended step visible (with its outcome) until the next step
@@ -521,6 +565,7 @@ function flushPendingEvents() {
           category: d.stepCategory ?? null,
           status: d.status ?? 'passed',
           parentTitle: d.parentTitle ?? null,
+          startedAt: d.startedAt ?? null,
         },
       };
     } else if (parsed.type === 'live-worker') {
@@ -1127,198 +1172,202 @@ const moreMenuItems = computed(() => {
 </script>
 
 <template>
-  <UDashboardPanel id="test-run-detail">
-    <template #header>
-      <!-- The breadcrumb's current crumb is the page title; a navbar title would repeat it. -->
-      <UDashboardNavbar>
-        <template #leading>
-          <UDashboardSidebarCollapse />
-          <BreadcrumbNav
-            :items="[
-              { label: 'Home', icon: 'i-lucide-house', to: '/' },
-              { label: 'Projects', to: '/projects' },
-              ...(testRun?.project?.id
-                ? [
-                    {
-                      label: testRun.project.label || testRun.project.name || 'Project',
-                      to: `/projects/${testRun.project.id}`,
-                      slot: 'project',
-                    },
-                  ]
-                : [{ label: 'Project' }]),
-              { label: `Run #${runId}` + (testRun?.label ? ` — ${testRun.label}` : '') },
-            ]"
-          >
-            <template #project="{ item }">
-              <NuxtLink
-                :to="item?.to"
-                class="text-sm font-medium text-[var(--ui-text-muted)] hover:text-[var(--ui-text)] transition-colors"
-              >
-                {{ item?.label }}
-              </NuxtLink>
-              <RunFreshnessPill
-                class="ml-1"
-                :latest-run-id="latestRunId"
-                :current-run-id="Number(runId)"
-                :is-active="isLatestRunActive"
+  <!-- The run page, and the live view docked beside it while someone watches a worker. -->
+  <div class="flex min-h-0 min-w-0 flex-1">
+    <UDashboardPanel id="test-run-detail">
+      <template #header>
+        <!-- The breadcrumb's current crumb is the page title; a navbar title would repeat it. -->
+        <UDashboardNavbar>
+          <template #leading>
+            <UDashboardSidebarCollapse />
+            <BreadcrumbNav
+              :items="[
+                { label: 'Home', icon: 'i-lucide-house', to: '/' },
+                { label: 'Projects', to: '/projects' },
+                ...(testRun?.project?.id
+                  ? [
+                      {
+                        label: testRun.project.label || testRun.project.name || 'Project',
+                        to: `/projects/${testRun.project.id}`,
+                        slot: 'project',
+                      },
+                    ]
+                  : [{ label: 'Project' }]),
+                { label: `Run #${runId}` + (testRun?.label ? ` — ${testRun.label}` : '') },
+              ]"
+            >
+              <template #project="{ item }">
+                <NuxtLink
+                  :to="item?.to"
+                  class="text-sm font-medium text-[var(--ui-text-muted)] hover:text-[var(--ui-text)] transition-colors"
+                >
+                  {{ item?.label }}
+                </NuxtLink>
+                <RunFreshnessPill
+                  class="ml-1"
+                  :latest-run-id="latestRunId"
+                  :current-run-id="Number(runId)"
+                  :is-active="isLatestRunActive"
+                />
+              </template>
+            </BreadcrumbNav>
+          </template>
+          <template #right>
+            <div class="flex items-center shrink-0 min-w-0">
+              <ExportMenu
+                :endpoint="`/api/test-runs/${runId}/export`"
+                :perfetto-endpoint="`/api/test-runs/${runId}/perfetto`"
+                :base-name="`piwi-run-${runId}`"
+                class="mr-1"
               />
-            </template>
-          </BreadcrumbNav>
-        </template>
-        <template #right>
-          <div class="flex items-center shrink-0 min-w-0">
-            <ExportMenu
-              :endpoint="`/api/test-runs/${runId}/export`"
-              :perfetto-endpoint="`/api/test-runs/${runId}/perfetto`"
-              :base-name="`piwi-run-${runId}`"
-              class="mr-1"
+              <UDropdownMenu :items="moreMenuItems">
+                <UButton
+                  size="sm"
+                  color="neutral"
+                  variant="ghost"
+                  icon="i-lucide-ellipsis-vertical"
+                  aria-label="More actions"
+                  title="More actions"
+                  data-tour="run-more-actions"
+                />
+              </UDropdownMenu>
+            </div>
+          </template>
+        </UDashboardNavbar>
+      </template>
+
+      <template #body>
+        <DetailPageLayout v-model="activeTab" :tab-items="tabItems" :tab-panel-class="tabPanelClass">
+          <template #summary>
+            <RunHeader
+              v-if="testRun"
+              :test-run="testRun"
+              :display-progress="displayProgress"
+              :all-reports="allReports"
+              :finalizing="isFinalizing"
+              :active-statuses="testCaseActiveStatuses"
+              :total-wasted-time="totalWastedTime"
+              @toggle-status="handleFilterStatus"
+              @label-updated="refresh"
             />
-            <UDropdownMenu :items="moreMenuItems">
-              <UButton
-                size="sm"
-                color="neutral"
-                variant="ghost"
-                icon="i-lucide-ellipsis-vertical"
-                aria-label="More actions"
-                title="More actions"
-                data-tour="run-more-actions"
-              />
-            </UDropdownMenu>
-          </div>
-        </template>
-      </UDashboardNavbar>
-    </template>
+          </template>
 
-    <template #body>
-      <DetailPageLayout v-model="activeTab" :tab-items="tabItems" :tab-panel-class="tabPanelClass">
-        <template #summary>
-          <RunHeader
-            v-if="testRun"
-            :test-run="testRun"
-            :display-progress="displayProgress"
-            :all-reports="allReports"
-            :finalizing="isFinalizing"
-            :active-statuses="testCaseActiveStatuses"
-            :total-wasted-time="totalWastedTime"
-            @toggle-status="handleFilterStatus"
-            @label-updated="refresh"
-          />
-        </template>
-
-        <template #tab-test-cases>
-          <TestCasesList
-            ref="testCasesListRef"
-            data-shot="failure-clusters"
-            data-tour="run-tests"
-            v-model:search="testCaseSearch"
-            v-model:active-statuses="testCaseActiveStatuses"
-            :test-cases="dedupedDisplayCases"
-            :is-live="isLive"
-            :total="displayProgress?.totalTests"
-            :waiting-since="
-              testRun?.status === 'initializing' || testRun?.status === 'running' ? testRun?.startTime : null
-            "
-            :hears-run="liveViewConnected || isDemoMode"
-            :live-steps="liveSteps"
-            :live-resources="liveResources"
-            :live-workers="liveWorkers"
-            :live-note="liveNote"
-            :desktop-sessions="isLive ? desktopSessions : null"
-            :cluster-meta="clusterMeta"
-            :quarantined-case-ids="quarantinedCaseIds"
-            :project-key="testRun?.projectId"
-            :project-name="testRun?.project?.name"
-            :run-id="Number(runId)"
-            class="flex-1 min-h-0"
-            @quarantine-changed="refreshQuarantine"
-            @watch="watchWorker"
-          >
-            <template #toolbar-extra>
-              <RunLiveViewStatus
-                v-if="testRun?.status === 'running' && !isFinalizing && !liveRunEnded"
-                :project-id="testRun.projectId"
-                :readiness="{
-                  desktop: isDesktop,
-                  demo: isDemoMode,
-                  connected: liveViewConnected,
-                  stalled: liveStreamStalled,
-                  state: liveViewState,
-                  ci: !!testRun.metadata?.ci,
-                  workers: Object.keys(liveWorkers).length,
-                  testsWithoutWorkers: testsRanLong && !liveWorkerSeen,
-                }"
-                @retry="retryStream"
-              />
-            </template>
-          </TestCasesList>
-        </template>
-
-        <template #tab-changes>
-          <ChangesView
-            data-tour="run-changes"
-            :test-run="testRun"
-            :test-cases="displayTestCases"
-            :cluster-meta="clusterMeta"
-            :project-key="testRun?.projectId"
-            :project-name="testRun?.project?.name"
-            :refresh-key="runRefreshKey"
-          />
-        </template>
-
-        <template #tab-workers>
-          <div class="space-y-6" data-tour="run-workers">
-            <WorkersTimeline
-              :test-cases="isLive ? throttledTestCases : displayTestCases"
-              :setup-steps="testRun?.setupSteps ?? null"
-              :shard-total="testRun?.shardTotal ?? null"
-              :live="isLive"
-              :wasted-patterns="testRun?.wastedWaitPatterns ?? null"
-              :run-id="Number(runId)"
-              :has-resources="testRun?.hasResources ?? false"
+          <template #tab-test-cases>
+            <TestCasesList
+              ref="testCasesListRef"
+              data-shot="failure-clusters"
+              data-tour="run-tests"
+              v-model:search="testCaseSearch"
+              v-model:active-statuses="testCaseActiveStatuses"
+              :test-cases="dedupedDisplayCases"
+              :is-live="isLive"
+              :total="displayProgress?.totalTests"
+              :waiting-since="
+                testRun?.status === 'initializing' || testRun?.status === 'running' ? testRun?.startTime : null
+              "
+              :hears-run="liveViewConnected || isDemoMode"
+              :live-steps="liveSteps"
               :live-resources="liveResources"
-              @select-test-case="handleSelectTestCase"
-            />
-            <RunTimelineExtras
-              v-if="!isLive"
+              :live-workers="liveWorkers"
+              :live-note="liveNote"
+              :desktop-sessions="isLive ? desktopSessions : null"
+              :cluster-meta="clusterMeta"
+              :quarantined-case-ids="quarantinedCaseIds"
+              :project-key="testRun?.projectId"
+              :project-name="testRun?.project?.name"
+              :run-id="Number(runId)"
+              class="flex-1 min-h-0"
+              @quarantine-changed="refreshQuarantine"
+              @watch="watchWorker"
+            >
+              <template #toolbar-extra>
+                <RunLiveViewStatus
+                  v-if="testRun?.status === 'running' && !isFinalizing && !liveRunEnded"
+                  :project-id="testRun.projectId"
+                  :readiness="{
+                    desktop: isDesktop,
+                    demo: isDemoMode,
+                    connected: liveViewConnected,
+                    stalled: liveStreamStalled,
+                    state: liveViewState,
+                    ci: !!testRun.metadata?.ci,
+                    workers: Object.keys(liveWorkers).length,
+                    testsWithoutWorkers: testsRanLong && !liveWorkerSeen,
+                  }"
+                  @retry="retryStream"
+                />
+              </template>
+            </TestCasesList>
+          </template>
+
+          <template #tab-changes>
+            <ChangesView
+              data-tour="run-changes"
+              :test-run="testRun"
               :test-cases="displayTestCases"
               :cluster-meta="clusterMeta"
               :project-key="testRun?.projectId"
               :project-name="testRun?.project?.name"
+              :refresh-key="runRefreshKey"
             />
-          </div>
-        </template>
+          </template>
 
-        <template #tab-resources>
-          <RunResources
-            data-tour="run-resources"
-            :run-id="Number(runId)"
-            :project-key="testRun?.projectId"
-            :project-name="testRun?.project?.name"
-            :refresh-key="runRefreshKey"
-            @open-timeline="activeTab = 'workers'"
-          />
-        </template>
-      </DetailPageLayout>
-    </template>
-  </UDashboardPanel>
+          <template #tab-workers>
+            <div class="space-y-6" data-tour="run-workers">
+              <WorkersTimeline
+                :test-cases="isLive ? throttledTestCases : displayTestCases"
+                :setup-steps="testRun?.setupSteps ?? null"
+                :shard-total="testRun?.shardTotal ?? null"
+                :live="isLive"
+                :wasted-patterns="testRun?.wastedWaitPatterns ?? null"
+                :run-id="Number(runId)"
+                :has-resources="testRun?.hasResources ?? false"
+                :live-resources="liveResources"
+                @select-test-case="handleSelectTestCase"
+              />
+              <RunTimelineExtras
+                v-if="!isLive"
+                :test-cases="displayTestCases"
+                :cluster-meta="clusterMeta"
+                :project-key="testRun?.projectId"
+                :project-name="testRun?.project?.name"
+              />
+            </div>
+          </template>
+
+          <template #tab-resources>
+            <RunResources
+              data-tour="run-resources"
+              :run-id="Number(runId)"
+              :project-key="testRun?.projectId"
+              :project-name="testRun?.project?.name"
+              :refresh-key="runRefreshKey"
+              @open-timeline="activeTab = 'workers'"
+            />
+          </template>
+        </DetailPageLayout>
+      </template>
+    </UDashboardPanel>
+    <ClientOnly>
+      <LanePanel
+        v-if="watching"
+        :key="`${liveWorkerKey(watching)}:${watching.executionId}`"
+        v-model:open="watchOpen"
+        :run-id="Number(runId)"
+        :worker="watching.worker"
+        :shard="watching.shard"
+        :slot="watching.slot"
+        :test="watching.test"
+        :verdict="runVerdict"
+        :step="watchedStep"
+        :project-key="testRun?.projectId"
+        :project-name="testRun?.project?.name"
+      />
+    </ClientOnly>
+  </div>
 
   <ClientOnly>
     <RunKeepModal v-model:open="isKeepOpen" :run-id="Number(runId)" @kept="refresh" />
-  </ClientOnly>
-
-  <ClientOnly>
-    <RunLiveView
-      v-if="watching"
-      :key="`${liveWorkerKey(watching)}:${watching.executionId}`"
-      v-model:open="watchOpen"
-      :run-id="Number(runId)"
-      :worker="watching.worker"
-      :shard="watching.shard"
-      :slot="watching.slot"
-      :test="watching.test"
-      :project-key="testRun?.projectId"
-      :project-name="testRun?.project?.name"
-    />
   </ClientOnly>
 
   <ClientOnly>

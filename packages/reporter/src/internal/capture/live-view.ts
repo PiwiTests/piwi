@@ -630,6 +630,7 @@ function postFrame(own: Link, frame: PageFrame): void {
     data,
     call: call && hideCallSecrets(call),
     test: running?.title ?? null,
+    ...(Number.isFinite(frame.at) ? { at: Math.round(frame.at) } : {}),
   })
     .catch(() => undefined)
     .finally(() => {

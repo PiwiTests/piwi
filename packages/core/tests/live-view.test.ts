@@ -188,6 +188,13 @@ describe('the messages', () => {
       call: null,
       test: null,
     });
+    // When the page looked so, in the worker's clock, kept when it is a time and left out when not.
+    expect(readWorkerToInstance({ type: 'frame', worker: 1, data: '/9j/', at: 1_760_000_000_000.4 })).toMatchObject({
+      at: 1_760_000_000_000,
+    });
+    for (const at of ['soon', -1, 5, Number.NaN, null]) {
+      expect(readWorkerToInstance({ type: 'frame', worker: 1, data: '/9j/', at })).not.toHaveProperty('at');
+    }
     expect(readWorkerToInstance({ type: 'frame', worker: 1, refused: 'Too heavy.' })).toEqual({
       type: 'frame',
       shard: null,

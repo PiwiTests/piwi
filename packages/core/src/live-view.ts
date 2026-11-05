@@ -297,8 +297,11 @@ export type InstanceToWorker = { type: 'viewers'; count: number } | { type: 'mas
 
 /** What a worker posts to the instance. */
 export type WorkerToInstance =
-  /** A frame of the test's page, a JPEG in base64, the call it was taken at and the test's title. */
-  | (LiveWorkerId & { type: 'frame'; data: string; call: LiveCall | null; test: string | null })
+  /**
+   * A frame of the test's page, a JPEG in base64, the call it was taken at, the test's title and, from a reporter that
+   * says it, when the page looked so, in epoch milliseconds of the worker's clock (`at`).
+   */
+  | (LiveWorkerId & { type: 'frame'; data: string; call: LiveCall | null; test: string | null; at?: number })
   /** Why no frame goes: the sentence the viewers see in place of the view. */
   | (LiveWorkerId & { type: 'frame'; refused: string })
   /** The worker's test stopped (its call), or went on (null). */
@@ -467,6 +470,11 @@ export function readLiveCallLog(value: unknown): LiveCallLog | null {
 /** Base64, as a frame's data is written. */
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
 
+/** Whether `value` is a time in epoch milliseconds: a finite number after 2001. */
+export function isEpochMs(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 1e12;
+}
+
 /** Whether `data` is a live frame's data: base64, not empty, at most `MAX_LIVE_FRAME_BASE64` characters. */
 export function isLiveFrameData(data: unknown): data is string {
   return typeof data === 'string' && data.length > 0 && data.length <= MAX_LIVE_FRAME_BASE64 && BASE64.test(data);
@@ -484,7 +492,8 @@ export function readWorkerToInstance(value: unknown): WorkerToInstance | string 
       }
       if (!isLiveFrameData(value.data)) return `A frame is a JPEG in base64, ${MAX_LIVE_FRAME / 1024} KB at most.`;
       const call = value.call === null || value.call === undefined ? null : readLiveCall(value.call);
-      return { type: 'frame', ...id, data: value.data, call, test: readLiveTestTitle(value.test) };
+      const frame = { type: 'frame' as const, ...id, data: value.data, call, test: readLiveTestTitle(value.test) };
+      return isEpochMs(value.at) ? { ...frame, at: Math.round(value.at) } : frame;
     }
     case 'stop': {
       if (value.stop === null) return { type: 'stop', ...id, stop: null };

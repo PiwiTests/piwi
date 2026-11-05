@@ -21,7 +21,7 @@
  */
 import type { TestCaseResult } from '~~/types/api';
 import type { LiveStepInfo } from '~/utils/live-steps';
-import type { LiveWorkerState } from '#shared/live-view';
+import { liveWorkerName, type LiveWorkerState } from '#shared/live-view';
 import { liveRowShows, type LiveRowNote } from '~/utils/live-row-note';
 import type { DesktopRowWorker } from '~/utils/desktop-run-view';
 import { liveResourcesLabel, type LiveWorkerResources } from '~/utils/live-worker-resources';
@@ -147,6 +147,12 @@ const liveShows = computed(() =>
 );
 /** The row's test stands at a stop: in the run's live view, or in a run the desktop app started. */
 const stopped = computed(() => !!props.liveWorker?.paused || props.desktopWorker?.worker.state === 'stopped');
+/** Whether the row has a live line under its title: the step, where it is paused, or the run's note. */
+const liveLine = computed(
+  () =>
+    (!!props.liveStep && !stopped.value) ||
+    (liveShows.value === 'watch' ? !!props.liveWorker?.paused : !!liveShows.value),
+);
 const liveResourcesText = computed(() => (props.liveResources ? liveResourcesLabel(props.liveResources) : ''));
 const liveResourcesTitle = computed(() => {
   const kind = props.liveResources?.memoryKind ? ` (memory as ${props.liveResources.memoryKind.toUpperCase()})` : '';
@@ -352,15 +358,14 @@ const clusterLabel = computed(() =>
 
         <slot name="subline" />
 
-        <div v-if="liveStep || liveShows" class="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
+        <div v-if="liveLine" class="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
           <!-- A stopped test shows where it is paused in place of its last step. -->
           <TestRowLiveStep v-if="liveStep && !stopped" :step="liveStep" class="max-w-full" />
-          <TestRowLiveWorker
-            v-if="liveWorker && liveShows === 'watch'"
-            :worker="liveWorker"
+          <TestRowLivePause
+            v-if="liveWorker?.paused && liveShows === 'watch'"
+            :paused="liveWorker.paused"
             :project-key="projectKey"
             :project-name="projectName"
-            @watch="emit('watch')"
           />
           <TestRowDesktopWorker
             v-else-if="desktopWorker && liveShows === 'pause-and-watch'"
@@ -391,6 +396,20 @@ const clusterLabel = computed(() =>
           </span>
         </div>
       </div>
+      <!-- Watch keeps one place at the row's end, whatever the live step beside it says. -->
+      <UButton
+        v-if="liveWorker && liveShows === 'watch'"
+        size="xs"
+        color="neutral"
+        variant="outline"
+        icon="i-lucide-eye"
+        class="shrink-0"
+        :aria-label="`Watch ${liveWorkerName(liveWorker)} live`"
+        :title="`Watch the page ${liveWorkerName(liveWorker)} is on, live`"
+        data-testid="live-watch"
+        @click.stop="emit('watch')"
+        ><span class="hidden sm:inline">Watch</span></UButton
+      >
     </div>
   </div>
 </template>

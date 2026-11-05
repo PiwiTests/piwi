@@ -268,10 +268,18 @@ describe('the relay', () => {
 
     live.receive(7, frame(0, 'BBBB'));
     live.receive(7, frame(1, 'CCCC'));
+    live.receive(7, { ...frame(0, 'DDDD'), at: 1_760_000_000_000 } as WorkerToInstance);
     expect(viewer.sent).toEqual([
       { type: 'frame', data: 'BBBB', call: { title: 'Click', file: 'tests/a.spec.ts', line: 4 }, test: 'pays' },
+      {
+        type: 'frame',
+        data: 'DDDD',
+        call: { title: 'Click', file: 'tests/a.spec.ts', line: 4 },
+        test: 'pays',
+        at: 1_760_000_000_000,
+      },
     ]);
-    expect(live.countsFor(7)).toMatchObject({ frames: 3 });
+    expect(live.countsFor(7)).toMatchObject({ frames: 4 });
 
     viewer.close();
     expect(workers[0]!.sent.at(-1)).toEqual({ type: 'viewers', count: 0 });
@@ -605,12 +613,15 @@ describe('the relay', () => {
     const lane = new FakeSink();
     live.addViewer(7, { shard: null, worker: 0, slot: 0 }, () => lane);
     first.close();
+    expect(live.viewersOf(7)).toBe(1);
     for (let i = 1; i < MAX_LIVE_VIEWERS_PER_RUN; i++) {
       expect(live.addViewer(7, { shard: null, worker: 1 }, () => new FakeSink())).toBeNull();
     }
+    expect(live.viewersOf(7)).toBe(MAX_LIVE_VIEWERS_PER_RUN);
     expect(live.addViewer(7, { shard: null, worker: 1 }, () => new FakeSink())?.status).toBe(429);
     live.endRun(7);
     expect(lane.sent.at(-1)).toEqual({ type: 'end', reason: 'run-ended' });
+    expect(live.viewersOf(7)).toBe(0);
   });
 
   test('keeps a lane with the worker that took it when the one it replaced opens its stream again', () => {
