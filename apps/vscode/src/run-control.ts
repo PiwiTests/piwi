@@ -244,8 +244,8 @@ function slotKey(stop: { ref: string; slot: number }): string {
 export const RESERVED_MS = 10_000;
 
 /**
- * How long after a control from the editor answered a stop, until another stop of that slot opens, a run key acts on no
- * other slot's stop, nor starts a debug session (`piwi.runResumed`).
+ * How long after a control from the editor answered a stop, until another stop of that slot opens or no worker of the
+ * run holds the slot, a run key acts on no other slot's stop, nor starts a debug session (`piwi.runResumed`).
  */
 export const RESUMED_KEY_MS = 2_000;
 
@@ -354,6 +354,7 @@ export class StopsShown {
       [...sessions.values()].flatMap((s) => s.workers.map((w) => slotKey({ ref: s.ref, slot: w.parallelIndex }))),
     );
     if (this.reserved && (this.reserved.until <= now || !slots.has(this.reserved.slot))) this.reserved = null;
+    if (this.answer && !slots.has(this.answer.slot)) this.answer = null;
     this.held = new Set(stops.map(stopKey));
     for (const set of [this.heard, this.files, this.seen, this.panel])
       for (const key of set) if (!this.held.has(key)) set.delete(key);

@@ -129,10 +129,10 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   wait, as in the VS Code extension; checked by `GlueTest`, fed the pushes the service sends.
   ([Run control](ARCHITECTURE.md#run-control))
 - **An action at a stop from a key or a menu acts, for a control within `Glue.RESUMED_MILLIS` of an answer, until
-  another stop of that slot opens, on a stop of the answered slot or on none, whatever the caret says; else on the stop
-  at the caret's line; else on the only stop whose file or page the person was shown; else it asks**
-  (`Glue.StopsShown.choose`, `PiwiRunSessions.atCaret`), as in the VS Code extension. Checked by `GlueTest`.
-  ([Run control](ARCHITECTURE.md#run-control))
+  another stop of that slot opens or its run holds the slot no more, on a stop of the answered slot or on none, whatever
+  the caret says; else on the stop at the caret's line; else on the only stop whose file or page the person was shown;
+  else it asks** (`Glue.StopsShown.choose`, `PiwiRunSessions.atCaret`), as in the VS Code extension. Checked by
+  `GlueTest`. ([Run control](ARCHITECTURE.md#run-control))
 - **The code a stop makes is written in one `WriteCommandAction` in an editor, once the service knows the document,
   and only into the version the service placed it in.** A file no editor shows is opened first and written once its
   `LspServer.getDocumentVersion` is known (`whenOpened`, an `Alarm` on the event thread, three seconds at most), so the

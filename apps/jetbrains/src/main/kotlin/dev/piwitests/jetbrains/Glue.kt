@@ -1430,8 +1430,8 @@ object Glue {
     const val RESERVED_MILLIS = 10_000L
 
     /**
-     * How long after a control from the IDE answered a stop, until another stop of that slot opens, a run action acts
-     * on no other slot's stop.
+     * How long after a control from the IDE answered a stop, until another stop of that slot opens or no worker of the
+     * run holds the slot, a run action acts on no other slot's stop.
      */
     const val RESUMED_MILLIS = 2_000L
 
@@ -1539,6 +1539,7 @@ object Glue {
         ): StopsChange {
             val slots = sessions.values.flatMap { s -> s.workers.orEmpty().map { slotKey(s.ref ?: "", it.parallelIndex) } }.toSet()
             if (reserved?.let { it.until <= now || it.slot !in slots } == true) reserved = null
+            if (answer?.let { it.slot !in slots } == true) answer = null
             held = stops.map(::stopKey).toSet()
             heard.retainAll(held)
             files.retainAll(held)

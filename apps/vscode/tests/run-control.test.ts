@@ -862,6 +862,21 @@ describe('what the editor shows of the stops', () => {
     expect(shown.choose([], caret(3), true)).toBeNull();
   });
 
+  test('ends the moments after an answer once no worker of its run holds the slot', () => {
+    const shown = new StopsShown();
+    const first = sessionsOf(session('ed-1', [at(0, 3)]));
+    shown.changed(first, stopsOf(first), { now: 100 });
+    const a = stopsOf(first)[0]!;
+    shown.opened(a, true);
+    shown.answered(a, 'resume', 100);
+    // The run ends, and another run's worker stops within the moments after the answer.
+    const second = sessionsOf(session('ed-2', [at(0, 5)]));
+    shown.changed(second, stopsOf(second), { now: 200 });
+    const b = stopsOf(second)[0]!;
+    shown.opened(b, true);
+    expect(shown.choose([b], { uri: spec, line: 5 }, true, 300)).toEqual(b);
+  });
+
   test('ends the moments after an answer at the next stop', () => {
     const { shown, push, answer, stopOf } = editor();
     push(at(0, 3), at(1, 5));

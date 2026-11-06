@@ -1067,6 +1067,22 @@ class GlueTest {
     }
 
     @Test
+    fun `the IDE ends the moments after an answer once no worker of its run holds the slot`() {
+        val shown = Glue.StopsShown()
+        val first = mapOf("ed-1" to RunSession("ed-1", "/work/shop", listOf(stoppedAt(0, 3))))
+        shown.changed(first, Glue.stopsOf(first), 100)
+        val a = Glue.stopsOf(first).single()
+        shown.opened(a, true)
+        shown.answered(a, "resume", 100)
+        // The run ends, and another run's worker stops within the moments after the answer.
+        val second = mapOf("ed-2" to RunSession("ed-2", "/work/shop", listOf(stoppedAt(0, 5))))
+        shown.changed(second, Glue.stopsOf(second), 200)
+        val b = Glue.stopsOf(second).single()
+        shown.opened(b, true)
+        assertEquals(Glue.StopChoice.One(b), shown.choose(listOf(b), specUri, 5, true, 300))
+    }
+
+    @Test
     fun `the IDE ends the moments after an answer at the next stop`() {
         val pushes = Pushes()
         pushes.push(stoppedAt(0, 3), stoppedAt(1, 5))
