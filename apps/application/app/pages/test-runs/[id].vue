@@ -41,6 +41,7 @@ import {
 } from '#shared/live-view';
 import { runOrigin, runOriginRef } from '#shared/run-eligibility';
 import type { StuckAttempt } from '#shared/stuck-tests';
+import type { TestStop } from '@piwitests/core/wire';
 
 const route = useRoute();
 const router = useRouter();
@@ -429,6 +430,7 @@ function flushPendingEvents() {
         stepCategory?: string | null;
         shardIndex?: number | null;
         stuck?: StuckAttempt | null;
+        stop?: TestStop | null;
         retries?: number | null;
         maxRetries?: number | null;
         tags?: string[] | null;
@@ -466,6 +468,7 @@ function flushPendingEvents() {
             browser: d.browser ?? null,
             repeatEachIndex: d.repeatEachIndex ?? 0,
             stuck: d.stuck ?? null,
+            liveStop: d.stop ?? null,
             retries: d.retries ?? 0,
             maxRetries: d.maxRetries ?? null,
             tags: d.tags ?? null,
@@ -503,9 +506,11 @@ function flushPendingEvents() {
             shardIndex: d.shardIndex ?? existing.shardIndex,
             startedAt: d.startedAt ?? Date.now(),
             stuck: d.stuck ?? null,
+            liveStop: d.stop ?? null,
           };
-        } else if (existing.status === 'running' && d.stuck) {
-          copy[idx] = { ...existing, stuck: d.stuck };
+        } else if (existing.status === 'running' && (d.stuck || d.stop !== undefined)) {
+          // A reconnected stream catches up on the mark and the stop the attempt carries.
+          copy[idx] = { ...existing, stuck: d.stuck ?? existing.stuck ?? null, liveStop: d.stop ?? null };
         } else continue;
         liveTestCases.value = copy;
         showLive();
@@ -522,6 +527,26 @@ function flushPendingEvents() {
       const row = liveTestCases.value.find((tc) => tc.status === 'running' && liveCaseKey(tc) === key);
       if (row) {
         row.stuck = { elapsedMs: d.elapsedMs, usualMs: d.usualMs };
+        liveTestCases.value = [...liveTestCases.value];
+        showLive();
+      }
+    } else if (parsed.type === 'test-stopped' || parsed.type === 'test-resumed') {
+      // A running test of a run outside CI stopped, or went on: its row says where it stands until then.
+      const d = data as unknown as {
+        title: string;
+        location: string;
+        browser?: { projectName?: string } | null;
+        repeatEachIndex?: number;
+        retries?: number | null;
+        stop?: TestStop;
+      };
+      const key = liveCaseKey(d);
+      const row = liveTestCases.value.find(
+        (tc) =>
+          tc.status === 'running' && liveCaseKey(tc) === key && (d.retries == null || (tc.retries ?? 0) === d.retries),
+      );
+      if (row) {
+        row.liveStop = parsed.type === 'test-stopped' ? (d.stop ?? null) : null;
         liveTestCases.value = [...liveTestCases.value];
         showLive();
       }
@@ -613,8 +638,9 @@ function flushPendingEvents() {
             filePath: d.filePath ?? existing.filePath,
             suitePath: d.suitePath ?? existing.suitePath,
             status: d.status,
-            // The attempt said to be stuck ended.
+            // The attempt said to be stuck, or stopped, ended.
             stuck: null,
+            liveStop: null,
             duration: d.duration,
             // A live event always carries the attempt's error, null on a pass; the stream's catch-up of the persisted
             // cases leaves it out, so the error the page loaded stays.

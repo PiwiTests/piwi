@@ -260,7 +260,8 @@ export const PIWI_ENV_CATEGORIES: Record<PiwiEnvVarCategory, PiwiEnvVarCategoryM
 export const PIWI_ENV_VARS = {
   // ── General ──────────────────────────────────────────────────────────────
   PIWI_SITE_URL: {
-    description: 'Public base URL of the instance (e.g. https://piwi.example.com). Used to build links in emails.',
+    description:
+      'Public base URL of the instance (e.g. https://piwi.example.com). Used to build links in emails, and the run links the reporter prints and writes to its output.',
     category: 'general',
     type: 'url',
     example: 'https://piwi.example.com',

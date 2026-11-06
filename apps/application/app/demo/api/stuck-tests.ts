@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { resolveBrowserName } from '#shared/browser-name';
 import { runningTestHistory, type RunningTestHistory } from '#shared/handlers/stuck-tests';
-import { STUCK_FLOOR_MS, stuckAttempt, testStuckEventData, type StuckAttempt } from '#shared/stuck-tests';
+import { STUCK_FLOOR_MS, runningMs, stuckAttempt, testStuckEventData, type StuckAttempt } from '#shared/stuck-tests';
 import { isEligibleRun } from '#shared/run-eligibility';
 import { projects, testRuns } from '~~/server/database/schema';
 import { runningCaseKey } from '~~/server/utils/inserted-run-cases';
@@ -57,6 +57,14 @@ export function noteDemoBegin(runId: number, begin: Record<string, unknown>): vo
   });
 }
 
+/** The begin payload of the run's running attempt `tc` names, as `noteDemoBegin` kept it, for its stop to go on. */
+export function demoRunningCase(
+  runId: number,
+  tc: Parameters<typeof runningCaseKey>[0],
+): Record<string, unknown> | null {
+  return runs.get(runId)?.attempts.get(runningCaseKey(tc))?.begin ?? null;
+}
+
 /** A test of the run completed. */
 export function noteDemoComplete(runId: number, tc: Parameters<typeof runningCaseKey>[0]): void {
   runs.get(runId)?.attempts.delete(runningCaseKey(tc));
@@ -70,7 +78,12 @@ export function demoRunningCases(runId: number): Record<string, unknown>[] {
   const run = runs.get(runId);
   if (!run) return [];
   return [...run.attempts.values()].map(({ begin, startedAt, stuck }) =>
-    stuck ? { ...begin, stuck: { ...stuck, elapsedMs: Math.max(stuck.elapsedMs, run.now - startedAt) } } : begin,
+    stuck
+      ? {
+          ...begin,
+          stuck: { ...stuck, elapsedMs: Math.max(stuck.elapsedMs, runningMs(begin, startedAt, run.now) ?? 0) },
+        }
+      : begin,
   );
 }
 
@@ -116,8 +129,9 @@ export async function checkDemoStuckTests(
 
 async function checkAttempts(db: DemoDb, run: { id: number; projectId: number }, state: DemoRun): Promise<void> {
   for (const attempt of state.attempts.values()) {
-    const elapsedMs = state.now - attempt.startedAt;
-    if (attempt.stuck || elapsedMs < STUCK_FLOOR_MS) continue;
+    // How long it has run, its stops left out; none while it stands stopped.
+    const elapsedMs = runningMs(attempt.begin, attempt.startedAt, state.now);
+    if (attempt.stuck || elapsedMs === null || elapsedMs < STUCK_FLOOR_MS) continue;
     const { begin } = attempt;
     const title = typeof begin.title === 'string' ? begin.title : '';
     const browserName = resolveBrowserName(begin.browser);

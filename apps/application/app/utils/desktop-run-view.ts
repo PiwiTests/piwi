@@ -15,6 +15,7 @@ import { parseLocation } from '#shared/parse-location';
 import type { LocalRunKind } from '~/composables/useDesktopLocalRuns';
 import { localRunOriginKind } from '~/utils/desktop-job';
 import { pagePoint, runFile, stopError, stopIntents, stopPlace, testName } from '../../../extension/src/shared/runs';
+import { stopWords } from '~/utils/stop-words';
 
 /** The name a run the shell started gives the bundled server on its run channel (`PIWI_RUN_REF`, `hub_env.rs`). */
 export function desktopRunRef(shellId: number): string {
@@ -205,16 +206,6 @@ export function desktopRunStop(worker: HubWorker): HubStop | null {
   return worker.state === 'stopped' ? worker.stop : null;
 }
 
-/** What a stop's state line says, by its reason; a failure's names where it failed. */
-const STOP_WORDS: Record<Exclude<HubStop['reason'], 'failure'>, string> = {
-  breakpoint: 'Stopped at a breakpoint',
-  step: 'Stopped after a step',
-  pause: 'Paused',
-  'run-to': 'Stopped at the line it ran to',
-  'page-pause': 'Stopped at page.pause()',
-  other: 'Stopped',
-};
-
 /** What the state line says of a stop an agent asked for (its Pause, Step or Run to), for the person watching. */
 const AGENT_STOP_WORDS: Partial<Record<HubStop['reason'], string>> = {
   pause: 'Paused by the agent',
@@ -226,7 +217,7 @@ const AGENT_STOP_WORDS: Partial<Record<HubStop['reason'], string>> = {
 export function desktopWorkerState(worker: HubWorker, root: string | null): string {
   const stop = desktopRunStop(worker);
   if (stop?.reason === 'failure') return `Failed at ${stopPlace(stop, root)}`;
-  if (stop) return (stop.by === 'agent' ? AGENT_STOP_WORDS[stop.reason] : undefined) ?? STOP_WORDS[stop.reason];
+  if (stop) return (stop.by === 'agent' ? AGENT_STOP_WORDS[stop.reason] : undefined) ?? stopWords(stop.reason);
   if (worker.pausing && worker.waiting) return `Pausing: waits in ${worker.waiting.title}`;
   if (worker.pausing) return 'Pausing before its next call…';
   if (worker.state === 'running' || worker.state === 'other') return 'Running';

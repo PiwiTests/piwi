@@ -46,13 +46,14 @@ import { sanitizeResourceReport } from '#shared/resource-report';
 import { saveResourceReportPart } from '#shared/handlers/resource-reports';
 import type { TestCasePayload, TestRunSubmitPayload } from '#shared/types';
 import { storableRunErrors } from '../../utils/storable-values';
+import { publicRunUrl } from '#shared/run-url';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Runs'],
     summary: 'Upload test results with reports, traces, and attachments',
     description:
-      'Upload Playwright test run results as multipart form data, including HTML reports, trace files, and other attachments. Supports both new runs and attaching files to existing streaming runs. For a new run, a `testRun` or `testCases` field of the wrong type answers 400 naming the first such field.',
+      'Upload Playwright test run results as multipart form data, including HTML reports, trace files, and other attachments. Supports both new runs and attaching files to existing streaming runs. The answer names the run’s page (`runUrl`): under `PIWI_SITE_URL` when it is set, else as a path under the address the client reached. For a new run, a `testRun` or `testCases` field of the wrong type answers 400 naming the first such field.',
     'x-required-permission': 'run:submit',
     requestBody: {
       content: {
@@ -588,6 +589,7 @@ async function handleUpload(user: Awaited<ReturnType<typeof requireAuth>>, multi
     return {
       success: true,
       runId: testRun.id,
+      runUrl: publicRunUrl(testRun.id),
       projectId: project.id,
       reports: storedReports.map((r) => ({ type: r.type, label: r.label, path: r.path })),
     };

@@ -9,11 +9,13 @@ import { STUCK_FLOOR_MS } from '../../shared/stuck-tests';
 import type { DemoEventMessage } from '../../app/demo/run-events';
 import {
   checkDemoStuckTests,
+  demoRunningCase,
   demoRunningCases,
   forgetDemoRun,
   noteDemoBegin,
   noteDemoComplete,
 } from '../../app/demo/api/stuck-tests';
+import { testStopRunEvent } from '../../server/utils/live-case-events';
 
 /**
  * The demo's stuck check: the server's rule and history, run on the time a demo run's events reached, since the
@@ -100,6 +102,29 @@ describe('the demo’s stuck check', () => {
       event: { data: { title: begin.title, elapsedMs: 3 * 60_000, usualMs: 7000 } },
     });
     expect(messages[1]).toMatchObject({ event: { projectName: 'E2E Checkout', testTitle: begin.title } });
+  });
+
+  test('leaves a test while it stands stopped, and leaves the time it stood stopped out', async () => {
+    // The kept payload is the one the stops update: a copy, as each streamed begin is its own.
+    noteDemoBegin(RUN.id, { ...begin });
+    const running = demoRunningCase(RUN.id, begin);
+    const stop = { reason: 'breakpoint', title: 'Click', file: 'tests/checkout/checkout.spec.ts', line: 24, bar: true };
+    testStopRunEvent(
+      { type: 'test-stopped', ...begin, stop: { ...stop, since: begin.startedAt + 60_000, pausedMs: 0 } } as never,
+      running,
+    );
+    await checkDemoStuckTests(db as never, RUN, [{ startedAt: begin.startedAt + 6 * 60_000 }]);
+    await delivered();
+    expect(messages).toEqual([]);
+
+    // It went on after five minutes stopped: it has run one minute, then four.
+    testStopRunEvent({ type: 'test-resumed', ...begin, pausedMs: 5 * 60_000 } as never, running);
+    await checkDemoStuckTests(db as never, RUN, [{ startedAt: begin.startedAt + 6 * 60_000 }]);
+    await delivered();
+    expect(messages).toEqual([]);
+    await checkDemoStuckTests(db as never, RUN, [{ startedAt: begin.startedAt + 9 * 60_000 }]);
+    await delivered();
+    expect(messages[0]).toMatchObject({ scope: 'run', event: { type: 'test-stuck', data: { elapsedMs: 4 * 60_000 } } });
   });
 
   test('leaves a test that completed', async () => {

@@ -6,7 +6,7 @@ import { persistRunCases, type RunCaseInput } from '../../../utils/persist-run-c
 import { mapWireCaseToRunCase } from '../../../utils/map-wire-case';
 import { runningCaseKey } from '../../../utils/inserted-run-cases';
 import { mapStepEventsToRunEvents } from '../../../utils/map-step-events';
-import { testBeginData, testCompletedData } from '../../../utils/live-case-events';
+import { testBeginData, testStopRunEvent, testCompletedData } from '../../../utils/live-case-events';
 import { resolveIngestLimits } from '../../../utils/ingest-limits';
 import { authorizeStreamToken, requireStreamingRun } from '../../../utils/stream-auth';
 import { RUN_TOKEN_HEADER } from '@piwitests/core/wire';
@@ -20,7 +20,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: 'Submit test case events for a streaming run',
     description:
-      "Submit test case begin, complete and step lifecycle events for an active streaming test run. Requires the stream token. Supports both single and batch event submission for real-time progress updates. Test-attached step events (step-begin/step-end) are streamed to subscribers in the order submitted, without persistence; suite-level hook events keep the timeline shape. The response's `watched` is true while anyone has the run's live stream open; the reporter sends step events only then. A `complete` event with a field of the wrong type is left out, and the rest of the batch stored. The body takes up to 10 MB (413 past it); a run that does not exist answers 404, and one that is neither running nor interrupted 409, before it is read.",
+      "Submit test case begin, complete and step lifecycle events, and a test's stops (`test-stopped`, with its `stop`, and `test-resumed`, with `pausedMs`, from a run outside CI), for an active streaming test run. Requires the stream token. Supports both single and batch event submission for real-time progress updates. Test-attached step events (step-begin/step-end) are streamed to subscribers in the order submitted, without persistence; suite-level hook events keep the timeline shape. The response's `watched` is true while anyone has the run's live stream open; the reporter sends step events only then, and stop events whoever watches. A stop stays on its running test, for the stream's catch-up, until the test goes on or completes, and the time it stood stopped is left out of the run page's **Stuck?** mark. A `complete` event with a field of the wrong type is left out, and the rest of the batch stored. The body takes up to 10 MB (413 past it); a run that does not exist answers 404, and one that is neither running nor interrupted 409, before it is read.",
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       {
@@ -106,6 +106,12 @@ export default eventHandler(async (event) => {
     // A running case has no DB row until it completes, so remember its begin
     // payload for the stream catch-up; the matching complete event clears it.
     if (lastOf.get(runningCaseKey(tc)) === 'begin') runEventBus.recordRunningCase(id, runningCaseKey(tc), beginData);
+  }
+
+  // --- Handle stop events (a test outside CI stopped, or went on), in batch order, after the begins ---
+  for (const tc of validEvents as StreamEventPayload[]) {
+    const stopEvent = testStopRunEvent(tc, runEventBus.getRunningCase(id, runningCaseKey(tc)));
+    if (stopEvent) runEventBus.publish(id, stopEvent);
   }
 
   // --- Handle step events (live step readout + suite-level hooks), in batch order ---

@@ -20,6 +20,7 @@ import {
   postGateCommitStatus,
   recordGateEvaluation,
 } from '../../../utils/gate-evaluations';
+import { publicRunUrl } from '#shared/run-url';
 
 defineRouteMeta({
   openAPI: {
@@ -227,8 +228,6 @@ export default eventHandler(async (event) => {
     .from(failureClusters)
     .where(and(eq(failureClusters.firstSeenRunId, id), eq(failureClusters.projectId, run.projectId)));
 
-  const siteUrl = (process.env.PIWI_SITE_URL || '').replace(/\/$/, '');
-
   let resourceFacts: GateFacts['resources'];
   if (policy.maxLeaks != null || policy.maxNewLeaks != null) {
     const novelty = await runFindingsNovelty(db, id);
@@ -248,7 +247,7 @@ export default eventHandler(async (event) => {
 
   const facts: GateFacts = {
     runId: id,
-    runUrl: siteUrl ? `${siteUrl}/test-runs/${id}` : `/test-runs/${id}`,
+    runUrl: publicRunUrl(id),
     projectName: project?.label || project?.name || 'unknown',
     status: run.status,
     totalTests: run.totalTests,

@@ -13,13 +13,14 @@ import { applyReporterKeep } from '#shared/handlers/run-keep';
 import { resolveRunBranch } from '../../utils/run-branch';
 import { runCommit, runOrigin } from '#shared/run-eligibility';
 import { liveViewRelay, storeLiveViewKey } from '../../utils/live-view';
+import { publicRunUrl } from '#shared/run-url';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Runs'],
     summary: 'Initialize a streaming test run in setup phase',
     description:
-      'Initialize a new streaming test run in "initializing" status. Returns a setup token to be used by the begin endpoint to transition the run to "running" status. Cancels the runs of the same instance still initializing or running; a finalizing one settles on its own. Supports sharded runs: when shardTotal > 1, a shard joins the initializing or running run of its instanceId and shardTotal. With `liveView: true`, a project that turned its live view on also gets `liveView.key`, a key of this run alone that its test workers hold their live view stream with: the workers of a CI run at once, those of a run outside CI only once its developer shares it. It opens nothing else and ends with the run; the run keeps its digest, never the key, so an instance started again takes it back while the run lasts. The desktop app, which no teammate reaches, gives none and answers `liveView.refused: local` instead.',
+      'Initialize a new streaming test run in "initializing" status. Returns a setup token to be used by the begin endpoint to transition the run to "running" status. The answer names the run’s page (`runUrl`): under `PIWI_SITE_URL` when it is set, else as a path under the address the client reached. Cancels the runs of the same instance still initializing or running; a finalizing one settles on its own. Supports sharded runs: when shardTotal > 1, a shard joins the initializing or running run of its instanceId and shardTotal. With `liveView: true`, a project that turned its live view on also gets `liveView.key`, a key of this run alone that its test workers hold their live view stream with: the workers of a CI run at once, those of a run outside CI only once its developer shares it. It opens nothing else and ends with the run; the run keeps its digest, never the key, so an instance started again takes it back while the run lasts. The desktop app, which no teammate reaches, gives none and answers `liveView.refused: local` instead.',
     'x-required-permission': 'run:submit',
     requestBody: {
       content: {
@@ -102,6 +103,7 @@ export default eventHandler(async (event) => {
         return {
           success: true,
           runId: existingShardedRun.id,
+          runUrl: publicRunUrl(existingShardedRun.id),
           projectId: project.id,
           setupToken,
           ...(await liveViewOf(existingShardedRun.id)),
@@ -166,6 +168,7 @@ export default eventHandler(async (event) => {
       return {
         success: true,
         runId: testRun.id,
+        runUrl: publicRunUrl(testRun.id),
         projectId: project.id,
         setupToken,
         ...(await liveViewOf(testRun.id)),
@@ -219,6 +222,7 @@ export default eventHandler(async (event) => {
     return {
       success: true,
       runId: testRun.id,
+      runUrl: publicRunUrl(testRun.id),
       projectId: project.id,
       setupToken,
       ...(await liveViewOf(testRun.id)),

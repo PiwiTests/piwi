@@ -27,6 +27,10 @@ incident. The time counts from the start the attempt's begin event names, else f
 reporter's begin events name none.
 Each attempt is said to be stuck once; a retry is a new attempt.
 
+A test of a run on a developer's machine may stand stopped at a breakpoint or a `page.pause()`. With
+`@piwitests/reporter` 0.68.0 or later its run tells the dashboard so: the test is never said to be stuck while it
+stands stopped, and the time it stood stopped is left out of how long it ran.
+
 The question mark is meant: a test can be slow for a good reason, a large import or a cold cache. The rule says only
 that this attempt is far outside what its passing runs took.
 
@@ -35,7 +39,8 @@ that this attempt is far outside what its passing runs took.
 A stuck test's row on the run page's **Tests** tab carries a **Stuck?** badge, how long it has run and the longest
 its last passing runs took: `Running for 7 minutes, usually 41.2s at most`. The row's live step names the step it is
 in. With the project's [live view](./live-view) on, **Watch** shows its page and, in a CI run, what its current call
-waits for. The badge leaves the row when the attempt ends.
+waits for. The badge leaves the row when the attempt ends. A test that stands stopped says where in its place:
+`Stopped at a breakpoint · Click getByRole('button') · tests/checkout.spec.ts:18 · for 3 minutes`.
 
 A page opened after the test was said to be stuck shows it too: the dashboard keeps it with the running test.
 
@@ -66,6 +71,8 @@ runs as `local`: set `PIWI_ORIGIN=ci` on it ([run origin](/reference/test-metada
 
 In the [live demo](https://piwitests.dev/demo/), pick **Stuck test** in **Simulate a test run**: the PayPal checkout
 waits on a payment that never answers, and its row carries the **Stuck?** badge once it runs past its usual time.
+**Stopped at a breakpoint** plays a run from VS Code whose PayPal test stands at a breakpoint for five minutes: its row
+says where, and never reads **Stuck?**.
 
 ## Related
 

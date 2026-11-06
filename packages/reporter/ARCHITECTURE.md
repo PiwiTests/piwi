@@ -499,6 +499,12 @@ What the package does to a user's run, process by process.
   run whose setup got a live view key; each worker appends its lines to it
   (`printRunLine`), and an unref'd timer prints the whole lines every second as
   `[Piwi Dashboard]` lines, the rest as the process exits, then removes the file.
+- **A test's stops, as text** (`internal/support/stop-notes.ts`). Outside CI, `onBegin`
+  names a private file in `PIWI_STOP_NOTES`; a worker appends a line as a stop shows
+  (`showStop`: its reason, call, place, since when and the time its test stood stopped
+  before) and as it ends, and an unref'd timer reads the new lines every 500 ms. The
+  reporter sends each as `test-stopped` or `test-resumed` on the run's stream, whoever
+  watches: the dashboard's stuck check reads them too.
 - **A run started in a terminal** (`internal/config/editors.ts`, `followEditor`). With
   no `PIWI_RUN_CHANNEL` and no launcher (`PIWI_ORIGIN`), its output going to a terminal
   or an editor's test runner having started it (`startedByTestRunner`: `PW_TEST_REPORTER`

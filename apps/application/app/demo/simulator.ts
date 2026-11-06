@@ -34,6 +34,7 @@ import { demoExternalId, demoLocks, demoTags, demoTestMeta, buildAiUsage } from 
 import { demoExecutionResources, demoResourceReport } from '#shared/demo/demo-resources.mjs';
 import { demoHtmlReport } from '#shared/demo/demo-run-projects.mjs';
 import { isFlakyResult } from '#shared/status-classify';
+import { parseLocation } from '#shared/parse-location';
 import type { TestRunDetails } from '~~/types/api';
 import { simulatorInstanceId } from './simulator-instance';
 
@@ -82,6 +83,12 @@ interface SimAttempt {
    * virtual time every `HANG_TICK_MS` meanwhile, so the demo checks it for a stuck test (`app/demo/api/stuck-tests.ts`).
    */
   hangMs?: number;
+  /**
+   * How long the attempt stands stopped at a breakpoint on its last live step, within its duration, in a run outside CI:
+   * the simulator tells the stop and its end as that run's reporter does (`test-stopped`, `test-resumed`), its
+   * heartbeat telling the time meanwhile, so the stuck check leaves it be.
+   */
+  stopMs?: number;
   error?: string;
   consoleLogs?: Array<Record<string, unknown>>;
   dialogs?: Array<Record<string, unknown>>;
@@ -593,7 +600,12 @@ interface BaseTestOptions {
    * story's error: a failure, so it never becomes one of the passes a later stuck check reads.
    */
   stuck?: boolean;
+  /** The PayPal checkout test stands stopped at a breakpoint `BREAKPOINT_STOP_MS`, then goes on and passes. */
+  breakpoint?: boolean;
 }
+
+/** How long the breakpoint scenario's PayPal test stands stopped: past the stuck threshold of its seeded passes. */
+const BREAKPOINT_STOP_MS = 5 * 60_000;
 
 /** How long the stuck scenario's PayPal test waits: past the stuck threshold of its seeded passes. */
 const STUCK_HANG_MS = 6 * 60_000;
@@ -836,6 +848,13 @@ function baseTests(opts: BaseTestOptions = {}): SimTest[] {
                 hangMs: STUCK_HANG_MS,
                 error: CLUSTER1_STORY.failingCases[1]!.error,
               },
+            ],
+          }
+        : {}),
+      ...(opts.breakpoint && t.title === STUCK_TEST_TITLE
+        ? {
+            attempts: [
+              { status: 'passed' as const, duration: duration + BREAKPOINT_STOP_MS, stopMs: BREAKPOINT_STOP_MS },
             ],
           }
         : {}),
@@ -1272,6 +1291,35 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
         commitMessage: 'feat(checkout): call the PayPal sandbox through the new payment gateway',
       }),
     tests: () => baseTests({ stuck: true }),
+  },
+  {
+    id: 'breakpoint',
+    label: 'Stopped at a breakpoint',
+    description:
+      'A run from VS Code: the PayPal checkout stands at a breakpoint, and its row says where instead of Stuck?',
+    icon: 'i-lucide-circle-pause',
+    group: 'causes',
+    result: {
+      text: 'The PayPal test stood at its breakpoint for five minutes: its row said where, and the stop never counted as stuck.',
+    },
+    speed: 15,
+    workers: 3,
+    environment: 'local',
+    metadata: () => {
+      const { ci: _ci, ...metadata } = buildMetadata({
+        branch: 'feature/paypal-gateway',
+        author: 'Priya Natarajan',
+        commitMessage: 'wip(checkout): debug the PayPal gateway answer',
+      });
+      const ref = `terminal-4242-${Date.now()}`;
+      return {
+        ...metadata,
+        piwiOrigin: { kind: 'editor' },
+        piwiRunRef: ref,
+        piwiInteractive: { client: 'VS Code', ref },
+      };
+    },
+    tests: () => baseTests({ breakpoint: true }),
   },
   {
     id: 'healing',
@@ -1735,16 +1783,40 @@ async function runSingleSimulation(
             await sleep(seg / scenario.speed);
             virtualNow += seg;
             attemptRemaining -= seg;
-            // A hanging attempt waits on its last live step, its heartbeat telling the time.
+            // A hanging attempt waits on its last live step, its heartbeat telling the time; a stopped one stands
+            // stopped there, told as its reporter tells it.
             let hung = 0;
-            if (a.hangMs && s === liveSteps[liveSteps.length - 1]) {
-              while (hung < a.hangMs && !ctl.stopped) {
-                const tick = Math.min(HANG_TICK_MS, a.hangMs - hung);
+            const holdMs = a.hangMs ?? a.stopMs ?? 0;
+            const of = {
+              title: test.title,
+              location: test.location,
+              workerIndex,
+              shardIndex: shardOverride?.shardIndex ?? null,
+              browser: test.browser ?? null,
+            };
+            if (holdMs && s === liveSteps[liveSteps.length - 1]) {
+              if (a.stopMs) {
+                const at = parseLocation(s.location ?? test.location);
+                const stop = {
+                  reason: 'breakpoint',
+                  title: s.subtitle ? `${s.title} ${s.subtitle}` : s.title,
+                  file: at.filePath,
+                  line: at.line,
+                  bar: true,
+                  // The page reads how long it has stood against its own clock.
+                  since: Date.now(),
+                  pausedMs: 0,
+                };
+                await postEvents([{ type: 'test-stopped', ...of, stop }]);
+              }
+              while (hung < holdMs && !ctl.stopped) {
+                const tick = Math.min(HANG_TICK_MS, holdMs - hung);
                 await sleep(tick / scenario.speed);
                 virtualNow += tick;
                 hung += tick;
                 await postHeartbeat(virtualNow);
               }
+              if (a.stopMs) await postEvents([{ type: 'test-resumed', ...of, pausedMs: hung }]);
               attemptRemaining -= hung;
               // A stop ends the wait, and the attempt with it.
               if (ctl.stopped) {

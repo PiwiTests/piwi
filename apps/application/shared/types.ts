@@ -208,7 +208,11 @@ export interface TestRunSubmitPayload {
 // ── Streaming event payload ───────────────────────────────────────────────────
 
 export interface StreamEventPayload {
-  type: 'begin' | 'complete' | 'step-begin' | 'step-end';
+  type: 'begin' | 'complete' | 'step-begin' | 'step-end' | 'test-stopped' | 'test-resumed';
+  /** On a `test-stopped` event: the stop the attempt stands at (`TestStop`, `@piwitests/core/wire`). */
+  stop?: unknown;
+  /** On a `test-resumed` event: how long the attempt has stood stopped in all, in ms. */
+  pausedMs?: number | null;
   title: string;
   location: string;
   status?: string;

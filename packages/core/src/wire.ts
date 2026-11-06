@@ -590,3 +590,59 @@ export function parseRunInteractive(value: unknown): RunInteractive | null {
   const readable = name.length > 0 && name.length <= RUN_INTERACTIVE_CLIENT_MAX_LENGTH && oneLine;
   return { client: readable ? name : null, ref };
 }
+
+/** Why a test stopped on a developer's machine; `other` for a reason of a newer reporter. */
+export type TestStopReason = 'breakpoint' | 'step' | 'pause' | 'run-to' | 'page-pause' | 'failure' | 'other';
+
+const TEST_STOP_REASONS: readonly string[] = ['breakpoint', 'step', 'pause', 'run-to', 'page-pause', 'failure'];
+
+/** The longest call title a {@link TestStop} carries, in characters: a longer one is cut. */
+export const MAX_TEST_STOP_TITLE = 500;
+
+/**
+ * A test stopped on a developer's machine, as its reporter tells the instance (`test-stopped`) while someone has the
+ * run open: why, the call it stands before (its title, without the text it types, and its place in the test's code,
+ * relative to the run's folder), whether the test's browser shows Piwi's pause bar, when it stopped (`since`, epoch
+ * ms), and how long its attempt stood stopped before this stop (`pausedMs`).
+ */
+export interface TestStop {
+  reason: TestStopReason;
+  title: string;
+  file: string | null;
+  line: number | null;
+  bar: boolean;
+  since: number;
+  pausedMs: number;
+}
+
+/** A whole number of milliseconds, 0 or more, within a year. */
+function ms(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 31_536_000_000;
+}
+
+/**
+ * A {@link TestStop} read from untrusted input, rebuilt field by field, or null when it does not read: an unknown
+ * reason reads as `other`, a title is cut to {@link MAX_TEST_STOP_TITLE} characters, a place that does not read as
+ * none.
+ */
+export function parseTestStop(value: unknown): TestStop | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const { reason, title, file, line, bar, since, pausedMs } = value as Record<string, unknown>;
+  if (typeof reason !== 'string' || typeof title !== 'string' || typeof bar !== 'boolean') return null;
+  if (typeof since !== 'number' || !Number.isInteger(since) || since <= 0 || !ms(pausedMs)) return null;
+  const placed = typeof file === 'string' && file.length > 0 && file.length <= 1000;
+  return {
+    reason: TEST_STOP_REASONS.includes(reason) ? (reason as TestStopReason) : 'other',
+    title: title.slice(0, MAX_TEST_STOP_TITLE),
+    file: placed ? file : null,
+    line: placed && typeof line === 'number' && Number.isInteger(line) && line > 0 ? line : null,
+    bar,
+    since,
+    pausedMs,
+  };
+}
+
+/** How long an attempt stood stopped, in ms, as a `test-resumed` says it; null when it does not read. */
+export function parsePausedMs(value: unknown): number | null {
+  return ms(value) ? value : null;
+}
