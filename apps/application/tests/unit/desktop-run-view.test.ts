@@ -25,6 +25,7 @@ import {
   desktopShareWarning,
   desktopShownRefs,
   desktopSteering,
+  desktopWaitedFor,
   desktopStopLink,
   desktopStopPlace,
   desktopStopSaid,
@@ -197,6 +198,28 @@ describe('a worker of a desktop run', () => {
     // End the test, where the stop takes it: its reporter ends the test there, skipped.
     const endable = workerOf({ state: 'stopped', stop: stopOf({ intents: ['view', 'end'] }) });
     expect(desktopSteering(endable)).toEqual(['resume', 'step', 'finish', 'end']);
+  });
+
+  test('says the call a Pause waits in and how long it has run, with End the test where its worker takes it', () => {
+    const waiting = {
+      title: "Click getByRole('button', { name: 'Pay' })",
+      uri: `file://${ROOT}/tests/checkout.spec.ts`,
+      line: 3,
+      since: '2026-11-05T10:00:00.000Z',
+      endable: true,
+    };
+    const at = Date.parse(waiting.since);
+    const pausing = workerOf({ pausing: true, waiting, intents: ['give-up'] });
+    expect(desktopWorkerState(pausing, ROOT)).toBe("Pausing: waits in Click getByRole('button', { name: 'Pay' })");
+    expect(desktopWaitedFor(pausing, at + 12_400)).toBe('for 12 s');
+    expect(desktopWaitedFor(pausing, at + 125_000)).toBe('for 2 min 5 s');
+    expect(desktopSteering(pausing)).toEqual(['give-up']);
+    // A worker that cannot tell when the call began, or whose reporter does not end a test there.
+    expect(desktopWaitedFor(workerOf({ pausing: true, waiting: { ...waiting, since: null } }), at)).toBeNull();
+    expect(desktopSteering(workerOf({ pausing: true, waiting, intents: [] }))).toEqual([]);
+    // No Pause waits: the call is not said.
+    expect(desktopWaitedFor(workerOf({ waiting }), at + 12_400)).toBeNull();
+    expect(desktopWorkerState(workerOf({ pausing: true }), ROOT)).toBe('Pausing before its next call…');
   });
 
   test('says a stop an agent asked for is the agent’s', () => {

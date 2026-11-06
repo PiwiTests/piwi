@@ -222,14 +222,27 @@ const AGENT_STOP_WORDS: Partial<Record<HubStop['reason'], string>> = {
   'run-to': 'Stopped at the line the agent ran it to',
 };
 
-/** A worker's state line: where it stopped and why, or whether it runs. */
+/** A worker's state line: where it stopped and why, the call a Pause waits in, or whether it runs. */
 export function desktopWorkerState(worker: HubWorker, root: string | null): string {
   const stop = desktopRunStop(worker);
   if (stop?.reason === 'failure') return `Failed at ${stopPlace(stop, root)}`;
   if (stop) return (stop.by === 'agent' ? AGENT_STOP_WORDS[stop.reason] : undefined) ?? STOP_WORDS[stop.reason];
+  if (worker.pausing && worker.waiting) return `Pausing: waits in ${worker.waiting.title}`;
   if (worker.pausing) return 'Pausing before its next call…';
   if (worker.state === 'running' || worker.state === 'other') return 'Running';
   return 'Between tests';
+}
+
+/**
+ * How long the call a Pause waits in has run at `now` (`for 12 s`, `for 2 min 5 s`); null while no Pause waits in a
+ * call, or its worker cannot tell when the call began.
+ */
+export function desktopWaitedFor(worker: HubWorker, now: number): string | null {
+  const since = worker.pausing && !desktopRunStop(worker) ? worker.waiting?.since : null;
+  const ms = since ? now - Date.parse(since) : Number.NaN;
+  if (!Number.isFinite(ms)) return null;
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  return seconds < 60 ? `for ${seconds} s` : `for ${Math.floor(seconds / 60)} min ${seconds % 60} s`;
 }
 
 /** A Local runs entry, as far as finding the runs it reports goes. */
@@ -356,13 +369,15 @@ export function desktopStopError(stop: Pick<HubStop, 'error' | 'title'>): string
 
 /**
  * The controls that steer a worker: Pause while it runs, Resume, Step and Finish at a stop, and End the test where the
- * stop takes it (`stop.intents`); Resume alone at a failure, which it ends as it failed.
+ * stop takes it (`stop.intents`); Resume alone at a failure, which it ends as it failed. While a Pause waits for the
+ * call the test runs, End the test there (`give-up`), where its worker takes it.
  */
-export type DesktopSteer = 'pause' | 'resume' | 'step' | 'finish' | 'end';
+export type DesktopSteer = 'pause' | 'resume' | 'step' | 'finish' | 'end' | 'give-up';
 
 export function desktopSteering(worker: HubWorker): DesktopSteer[] {
   const stop = desktopRunStop(worker);
-  if (!stop) return worker.pausing || worker.state === 'between' ? [] : ['pause'];
+  if (!stop && worker.pausing) return worker.waiting && worker.intents.includes('give-up') ? ['give-up'] : [];
+  if (!stop) return worker.state === 'between' ? [] : ['pause'];
   if (stop.reason === 'failure') return ['resume'];
   const steering: DesktopSteer[] = ['resume', 'step', 'finish'];
   if (stopIntents(worker, stop).includes('end')) steering.push('end');
