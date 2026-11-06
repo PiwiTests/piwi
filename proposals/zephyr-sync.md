@@ -9,7 +9,9 @@ integration layer of [issue-tracker-integrations.md](issue-tracker-integrations.
 
 **Status.** Proposed; nothing built. Revised after the review on #1161: provider dispatch in the outbox and the
 connection endpoints, a provider-neutral interface and tables, one binding table per integration kind, and a warning
-when tags are cut.
+when tags are cut. Revised again after the second review: an upload marker so a reclaimed outbox row never uploads
+twice, the tag-key helper in the app's `shared/`, the demo built with each rollout step, `tagsTruncated` through the
+run-data checklist, a `zephyr-scale` link provider, and the remedy for cut tags matched to Playwright's tag order.
 
 **Summary.** A test declares the test cases it covers with a Playwright tag (`@SHOP-T123`), which the reporter already
 sends, or with its external ID. When a CI run on a branch in scope has finished, Piwi collapses its executions to one
@@ -216,7 +218,8 @@ test.describe('checkout', { tag: '@SHOP-T200' }, () => {
 - **One reader of keys in tags.** Three settings read meaning from test names: the reporter's `externalId.pattern`
   (titles), the issue-key pattern of [#1153](https://github.com/PiwiTests/piwi/issues/1153) (tags naming the bug a
   failure is tracked in) and this key pattern (tags naming the case a test covers). The two tag patterns use one helper
-  (`matchTagKeys(tags, pattern)` in `@piwitests/core`, beside `normalizeTestTags`) and are edited in one place, a
+  (`matchTagKeys(tags, pattern)` in `apps/application/shared/integrations/tag-keys.ts`; no reporter or extension code
+  reads these patterns, so it stays out of the MIT `@piwitests/core`) and are edited in one place, a
   *Keys in test tags* section of the project's Integrations tab. The defaults do not collide (`SHOP-T123` fails
   `^[A-Z][A-Z0-9]+-\d+$`); custom ones can, so the section warns when a tag of the last complete run matches both
   patterns, naming the tag and a test that carries it.
@@ -233,13 +236,21 @@ filter); the loss becomes visible:
 - `normalizeTestTags` reports how many tags it dropped (a second return value from a sibling,
   `normalizeTestTagsWithDropped`, so existing callers do not change).
 - **The reporter** warns once, in `onBegin`, listing the tests whose tags were cut (capped at 20 lines), and sends
-  `metadata.tagsTruncated: { tests, examples }` with the run, the way `externalIdDuplicates` travels.
+  `metadata.tagsTruncated: { tests, examples }` with the run, the way `externalIdDuplicates` travels. The field follows
+  the checklist in `server/api/test-runs/AGENTS.md` (*Adding a field to test run data*): the wire types, the `/begin`
+  and `/finish` bodies, the submit path, `serializeRun`, `types/api.ts`, `getTestRun`, and the demo's `reporter.ts`,
+  simulator and seed.
 - **The server** computes the same from the raw `tags` of a payload sent without the reporter, through the same helper,
   and merges it with `updateRunMetadata`.
 - **The run page** shows "Tags cut at 20 on N tests" in the facts line, with the tests in the Details popover; the
   binding form shows the same count for the last complete run (see the mockups on #1161).
-- **The docs** state the limit on `reference/test-metadata.md` and on the test management page, with the remedy: put
-  the keys first in the tag list, or use the external ID for the one key that matters most.
+- **The docs** state the limit on `reference/test-metadata.md` and on the test management page, with the order that
+  decides which tags are cut. Playwright 1.64 builds `TestCase.tags` as: config tags, then the tags of each
+  `describe` (title @-words and the `tag` option, outer to inner), then the @-words of the test title, then the test's
+  own `tag` option last. So a key in the test's own `tag` option is the first to go. The remedy: keep config and
+  describe tags few, put case keys in the test title (`test('checkout @SHOP-T123', …)`), or use the external ID for
+  the one key that matters most. The docs page names the Playwright version the order was read from, and a reporter
+  test pins it.
 
 ### 5. Results
 
@@ -307,8 +318,9 @@ result       { runKey, runUrl, sent } | { dryRun: true }
 
 Sending, stage 1:
 
-1. Send the results of the payload. Keys the catalog did not know at enqueue (see [9](#9-the-key-catalog)) are in
-   `unknownKeys`, reported on the run, never sent.
+1. Write an *upload started* marker (`{ uploadStartedAt }`) to the row's `result` and commit it before any call to
+   the tool. Then send the results of the payload. Keys the catalog did not know at enqueue (see
+   [9](#9-the-key-catalog)) are in `unknownKeys`, reported on the run, never sent.
 2. No result in the payload: mark the action `skipped` (`no mapped test cases`). Nothing is sent.
 3. `uploadRun`. For Zephyr: the custom-format JSON, zipped with `fflate` (already a dependency) and checked under
    10 MB, to `POST /automations/executions/custom?projectKey=SHOP&autoCreateTestCases=false` with the `file` and
@@ -316,7 +328,8 @@ Sending, stage 1:
    mistake stays forever.
 4. `linkRun` with the run URL.
 5. Write the run's entity link (`provider: 'zephyr-scale'`, `origin: 'created'`, the cycle key and URL) in the same
-   transaction as the action's result.
+   transaction as the action's result. `'zephyr-scale'` joins the `LinkProvider` union in `shared/link-detect.ts`,
+   with its icon in the link chip.
 
 Retries and idempotency:
 
@@ -324,6 +337,11 @@ Retries and idempotency:
   network error, 502/503/504), the action does not retry blind: it fails with *Outcome unknown: check the tool for a
   cycle named "… Piwi #<runId>", then use Sync again*, and waits for a person. *Sync again* first asks `findRun`; a
   found run is recorded and only the link step runs.
+- **A reclaimed row never uploads twice.** The outbox lease (`OUTBOX_LEASE_MS`, 10 minutes) lets a later sweep claim
+  a `processing` row whose worker died or ran past the lease. A claim that finds the *upload started* marker and no
+  `runKey` treats the attempt as an outcome unknown, the same failure as above, and waits for *Sync again*. The
+  client's request timeout stays well under the lease (2 minutes), so a live upload ends before its row can be
+  reclaimed.
 - `findRun` for Zephyr reads `GET /testexecutions?projectKey=&testCase=<first key>&actualEndDateAfter=<run start>
   &onlyLastExecutions=true`, then the cycle of each hit, matched on `Piwi #<runId>` in its name. It depends on the
   upload setting `actualEndDate` (assumption 3). Once that is confirmed, the outbox may call `findRun` itself before a
@@ -421,7 +439,8 @@ test_management_results
 
 **Unchanged**: `integration_connections` (a `zephyr-scale` row, `config: { region }`, credentials `{ apiToken }`),
 `integration_actions` (new `kind` value; the column is free text), `entity_links` (a run row with
-`provider: 'zephyr-scale'`), `test_cases` and `test_runs_cases` (the mapping is read from tags at sync time).
+`provider: 'zephyr-scale'`, a new `LinkProvider` value), `test_cases` and `test_runs_cases` (the mapping is read from
+tags at sync time).
 
 Retention: `test_management_results` rows of runs not written for 90 days go with the existing sweep;
 `pruneIntegrationActions` already covers the actions.
@@ -461,7 +480,8 @@ Environment variables, registered in `PIWI_ENV_VARS` with `since`: `PIWI_ZEPHYR_
   when enabled) the first line of the error. Not traces, screenshots, videos or test code. The docs page lists it.
 - **Writes cannot be undone.** Zephyr's API deletes attachments and links, never a test case, a cycle or an
   execution, so: dry run by default, `autoCreateTestCases=false` always, no blind retry of an upload whose outcome is
-  unknown, and a sync never writes to a test run it was not configured for.
+  unknown (a row reclaimed after its lease expired included, see [8](#8-the-sync-action)), and a sync never writes to
+  a test run it was not configured for.
 - **Roles**: connection and binding, `administrator`; *Sync again* and *Refresh catalog*, `administrator` and
   `reporter`; reading the activity and the hover cards, any project member. Each endpoint declares `x-required-roles`.
 
@@ -490,7 +510,11 @@ If (1) or (2) turn out badly, stage 1 uses the call-per-result path of stage 2 w
 
 ## Rollout
 
-Each step is a pull request that leaves the app working.
+Each step is a pull request that leaves the app working, and ships its demo with it (`app/demo/AGENTS.md`): the
+`app/demo/api/` handlers for any new endpoint, the data in `scripts/generate-demo-seed.mjs` and the simulator, the
+guided tour when the step touches a page it visits, and `npm run app:seed:demo`. From step 4 the demo has a canned
+Zephyr Scale connection whose uploads are recorded in the in-browser database, so dry run, the activity list and the
+run page's test run link all work there.
 
 1. **Dispatch by provider and binding per kind** (`refactor(app)`). The action-kind to integration-kind map;
    `runAction` checking the kind's binding and building the kind's client; `boundConnectionId(db, projectId, kind)`;
@@ -500,8 +524,9 @@ Each step is a pull request that leaves the app working.
 2. **Tags cut at 20** (`feat(reporter)`, `feat(app)`). `normalizeTestTagsWithDropped`, the reporter warning and
    `metadata.tagsTruncated`, the server's check for payloads sent without the reporter, the run page note, the docs.
    Useful on its own, before any sync.
-3. **Shared tag-key helper and settings** (`feat(app)`). `matchTagKeys` in `@piwitests/core`, the *Keys in test tags*
-   section shared with #1153, the overlap warning. Lands with or before #1153, whichever comes first.
+3. **Shared tag-key helper and settings** (`feat(app)`). `matchTagKeys` in `apps/application/shared/integrations/`,
+   the *Keys in test tags* section shared with #1153, the overlap warning. Lands with or before #1153, whichever comes
+   first.
 4. **Test management kind and the Zephyr Scale client** (`feat(app)`). The interface, the registry entry, the client
    (`whoAmI`, `listProjects`, `listCases`, `listStatuses`), the connection card with Provider and Region, the
    env-managed connection, the assumptions above checked and recorded here.
@@ -513,9 +538,8 @@ Each step is a pull request that leaves the app working.
    test run link on the run page, docs page.
 7. **Reused test runs** (`feat(app)`). Run policy `reuse`, `test_management_results`, `addResults` with one result per
    changed case, the comment and links, `ci-rerun` updating its original run's results.
-8. **Later**: QA's coverage view (catalog cases no test claims), `testCaseKeys` on the MCP test case tools, a demo
-   connection that records uploads in the in-browser database, more providers (Xray, TestRail, Qase, Zephyr Scale Data
-   Center).
+8. **Later**: QA's coverage view (catalog cases no test claims), `testCaseKeys` on the MCP test case tools, more
+   providers (Xray, TestRail, Qase, Zephyr Scale Data Center).
 
 **With the first pull request**: an entry in `ROADMAP.md` (test management sync, results only), a link to this
 proposal from `issue-tracker-integrations.md` (done on this branch), and, if the MCP tools gain `testCaseKeys`, an entry
@@ -529,9 +553,11 @@ in `proposals/1.0-stabilization.md`.
   key pattern against story keys; `matchTagKeys` and the overlap warning; `normalizeTestTagsWithDropped`; run name
   rendering and the required `{runId}`; the Zephyr payload and zip size check; `Retry-After` parsing and the cap; the
   connection pause; the `test-management` run use (partial runs, local runs, incidents, `ci-rerun`); the Zephyr client
-  with `vi.stubGlobal('fetch')`, including 401, 429 and a timeout that ends in *outcome unknown*; diffing against
-  `test_management_results`; `migration-history.test.ts`.
-- **Reporter** (`packages/reporter/tests`): the tags-cut warning and `metadata.tagsTruncated`.
+  with `vi.stubGlobal('fetch')`, including 401, 429 and a timeout that ends in *outcome unknown*; a `sync-results` row
+  reclaimed after its lease expired, with the *upload started* marker and no result, fails as outcome unknown and never
+  calls `uploadRun` again; diffing against `test_management_results`; `migration-history.test.ts`.
+- **Reporter** (`packages/reporter/tests`): the tags-cut warning and `metadata.tagsTruncated`; Playwright's tag order
+  (config, describe outer to inner, title, the test's own `tag` option), so an upgrade that changes it fails a test.
 - **E2E** (`apps/application/tests`): a mock Zephyr HTTP server in `tests/utils/`, as the Jira specs use; a finished run
   produces one upload with the expected keys and statuses; a sharded run produces one; a partial run and a branch out
   of scope produce none; dry run sends nothing and shows the payload; an unknown key shows its warning; a tracker
