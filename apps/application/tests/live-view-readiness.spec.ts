@@ -170,3 +170,46 @@ test('keeps the run it shows and opens its stream once the run reads again', asy
     });
   }
 });
+
+test('stops following a run it can no longer read, and says why', async ({ page, request }) => {
+  test.skip(resolveE2ETarget().desktop, 'Dashboard live view is served by a team instance.');
+  test.setTimeout(90_000);
+  const started = await request.post('/api/test-runs/start', {
+    data: { projectName: PROJECT.LIVE_VIEW_STREAM, startTime: new Date().toISOString() },
+  });
+  expect(started.ok()).toBeTruthy();
+  const run = await started.json();
+  const cases = [
+    { status: 404, state: 'gone', title: 'This run no longer exists', signIn: false },
+    { status: 401, state: 'signed-out', title: 'Your session has ended', signIn: true },
+    { status: 403, state: 'forbidden', title: 'Your access to this run was removed', signIn: true },
+  ];
+  try {
+    for (const { status, state, title, signIn } of cases) {
+      let reads = 0;
+      // The stream answers with an error, and the run's read with the final status: deleted, signed out, no access.
+      await page.route(`**/api/test-runs/${run.runId}/stream`, (route) =>
+        route.fulfill({ status, body: JSON.stringify({ statusCode: status }) }),
+      );
+      await page.route(`**/api/test-runs/${run.runId}`, (route) => {
+        reads++;
+        return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ statusCode: status }) });
+      });
+      await page.goto(`/test-runs/${run.runId}`);
+      const notice = page.getByTestId('run-read-ended');
+      await expect(notice).toHaveAttribute('data-state', state, { timeout: 20_000 });
+      await expect(notice).toContainText(title);
+      await expect(notice.getByRole('link', { name: 'Sign in again' })).toHaveCount(signIn ? 1 : 0);
+      await expect(page.getByTestId('live-view-readiness')).toHaveCount(0);
+      // No more tries: the next would come after 4 s, then 8 s.
+      const tried = reads;
+      await page.waitForTimeout(6_000);
+      expect(reads, state).toBe(tried);
+      await page.unrouteAll();
+    }
+  } finally {
+    await request.post(`/api/test-runs/${run.runId}/finish`, {
+      data: { streamToken: run.streamToken, status: 'passed', totalTests: 0 },
+    });
+  }
+});

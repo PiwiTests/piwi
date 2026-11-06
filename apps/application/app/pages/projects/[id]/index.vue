@@ -88,7 +88,8 @@ async function handleDeleteProject() {
   try {
     await deleteProject();
     toast.add({ title: 'Project deleted', color: 'success' });
-    await refreshNuxtData();
+    // The project list of the sidebar and of the projects page.
+    await refreshNuxtData('projects');
     await router.push('/');
   } catch (error: unknown) {
     const message =

@@ -28,6 +28,7 @@ import { assistantPageContext, renderedAnchors } from '~/utils/assistant/page-co
 import { answerableMessageId, assistantKnownEntities, type AssistantReplyQuestion } from '~/utils/assistant/replies';
 import { rememberAssistantQuestion } from '~/utils/assistant/history';
 import { assistantSuggestionsFor, nextAssistantQuestion } from '~/utils/assistant/suggestions';
+import { reloadPage } from '~/composables/usePageReload';
 
 /** A question being asked, and the answer it is getting. */
 export interface AssistantExchange {
@@ -525,8 +526,8 @@ export function useAssistant() {
   /**
    * **Apply**: calls the proposed change's own route with the user's session,
    * as the dashboard's button for it does, records the outcome (applied, or
-   * failed with what the route answered) and, once applied, refreshes the
-   * page's data so it shows the change.
+   * failed with what the route answered) and, once applied, reads the page's
+   * data again the page's own way (`reloadPage`) so it shows the change.
    */
   async function applyProposal(messageId: number, block: ProposalBlock): Promise<void> {
     if (messageId <= 0) return;
@@ -539,7 +540,7 @@ export function useAssistant() {
       outcome = { status: 'failed', result: errorMessage(error, 'The change could not be applied.').slice(0, 300) };
     }
     await recordProposal(messageId, block, outcome);
-    if (outcome.status === 'applied') await refreshNuxtData();
+    if (outcome.status === 'applied') await reloadPage();
   }
 
   /** **Dismiss**: records that the user declined the proposed change; nothing is called. */

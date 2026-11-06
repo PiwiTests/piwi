@@ -1,5 +1,6 @@
 import { onUnmounted } from 'vue';
 import { subscribeDemoEvents } from '~/demo/run-events';
+import type { RefetchResult } from '~/utils/refetch-keeping';
 
 /**
  * Shared SSE connection and subscriber list.
@@ -313,18 +314,24 @@ export const RUN_START_RETRY_MS = 5_000;
  * `run-started`, or a cancel or an end before it began), and each time the
  * shared connection opens, for an event sent while it was closed. A refetch
  * while the app hydrates answers with the data it loaded with, so the page
- * reads the run once hydration ends. A refetch that resolves to `false` (the
- * read failed) is tried again after `RUN_START_RETRY_MS` while the run still
- * initializes and the page is open.
+ * reads the run once hydration ends. A refetch that resolves to `failed` (the
+ * read failed, and a later one may not) is tried again after
+ * `RUN_START_RETRY_MS` while the run still initializes and the page is open; a
+ * final failure (`isFinalRefetch`: the run is gone, or the viewer cannot read
+ * it) is not.
  */
-export function useRunStart(runId: number, status: () => string | null | undefined, refresh: () => Promise<unknown>) {
+export function useRunStart(
+  runId: number,
+  status: () => string | null | undefined,
+  refresh: () => Promise<RefetchResult>,
+) {
   const nuxtApp = useNuxtApp();
   let waitingForHydration = false;
   let retry: ReturnType<typeof setTimeout> | null = null;
   let left = false;
   const read = () => {
-    void refresh().then((answered) => {
-      if (answered !== false || retry || left) return;
+    void refresh().then((result) => {
+      if (result !== 'failed' || retry || left) return;
       retry = setTimeout(() => {
         retry = null;
         refreshWhileInitializing();
