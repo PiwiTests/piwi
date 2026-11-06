@@ -15,8 +15,8 @@ import { jpegBand, startServer, type FakeServer, withoutCi } from './_helpers.js
  * the run names asks the worker's lane once, as Piwi Picker's Runs window does when a person clicks Watch on a running
  * row, and hears its frames through the worker's tests and its stop, plays a click at the stop through them, sees the
  * page's secret field painted over, and hears no frame once it turned the view off. A worker of a headed project then
- * stops with its pause bar drawn: the lane's frames have the bar painted over, no click on its band is played, and a
- * button's release always plays, none of the bar's buttons answering a release alone.
+ * stops with its pause bar drawn: the lane's frames have the bar painted over, no click on its band is played, aimed
+ * at the bar's buttons, and a button's release always plays, none of the bar's buttons answering a release alone.
  * Under `xvfb-run -a` the headed project opens a window; without a display, Chromium runs it without one
  * (`--headless=new`).
  */
@@ -31,6 +31,11 @@ const LOOK_MS = 1200;
 const requireHere = createRequire(import.meta.url);
 const WINDOWS = process.platform === 'linux' && !!process.env.DISPLAY;
 const VIEWPORT = { width: 1000, height: 640 };
+/**
+ * The row of the pause bar's buttons, inside its band: 8 to 36 px from the top at this viewport, its buttons on the
+ * right half of the bar (x 680 on one of them, End the test offered or not); above 8 px is the bar's own padding.
+ */
+const BUTTONS_Y = 22;
 const jpeg = (
   createRequire(requireHere.resolve('playwright-core/package.json'))('playwright-core/lib/utilsBundle') as {
     jpegjs: {
@@ -199,7 +204,7 @@ async function onMessage(message: RunToHub): Promise<void> {
     // Each worker numbers its own stops: what this one says from its stop on.
     const since = heard.length;
     try {
-      // The lane's frames show the bar painted over once it is drawn: clicks across its band play nothing there.
+      // The lane's frames show the bar painted over once it is drawn: clicks across its buttons' row play nothing there.
       const barBand = ({ message: m }: { message: LaneFrame }) =>
         m.stop === stop && gray(jpegBand(Buffer.from(m.data, 'base64'), m.height, 2, 30).mean);
       await waitFor(() => laneFrames(ids.headed).some(barBand));
@@ -208,41 +213,44 @@ async function onMessage(message: RunToHub): Promise<void> {
           what: 'input',
           stop,
           events: [
-            { type: 'mouse', action: 'move', x, y: 6 },
-            { type: 'mouse', action: 'click', x, y: 6, button: 'left', clickCount: 1 },
+            { type: 'mouse', action: 'move', x, y: BUTTONS_Y },
+            { type: 'mouse', action: 'click', x, y: BUTTONS_Y, button: 'left', clickCount: 1 },
           ],
         })) as { message: string };
         headed.clicks.push(answer.message);
       }
       // A press on the band, never let go there, then a press and its release on the page below the band.
       const play = async (events: unknown[]) => ((await ask({ what: 'input', stop, events })) as { message: string });
-      headed.pressOnBand = (await play([{ type: 'mouse', action: 'down', x: 500, y: 6, button: 'left' }])).message;
+      headed.pressOnBand = (
+        await play([{ type: 'mouse', action: 'down', x: 680, y: BUTTONS_Y, button: 'left' }])
+      ).message;
       headed.pressElsewhere = (
         await play([
           { type: 'mouse', action: 'down', x: 500, y: 400, button: 'left' },
           { type: 'mouse', action: 'up', x: 500, y: 400, button: 'left' },
         ])
       ).message;
-      // A press below the band whose release is lost, a press on the band, then a release there: it lets go of the
-      // button the page holds down.
+      // A press below the band whose release is lost, a press on a button of the bar, then a release there: it lets go
+      // of the button the page holds down.
       for (const event of [
         { type: 'mouse', action: 'down', x: 500, y: 400, button: 'left' },
-        { type: 'mouse', action: 'down', x: 500, y: 6, button: 'left' },
-        { type: 'mouse', action: 'up', x: 500, y: 6, button: 'left' },
+        { type: 'mouse', action: 'down', x: 680, y: BUTTONS_Y, button: 'left' },
+        { type: 'mouse', action: 'up', x: 680, y: BUTTONS_Y, button: 'left' },
       ]) {
         headed.lostRelease.push((await play([event])).message);
       }
-      // A press below the band let go on each of the bar's buttons in turn: none of them answers a release alone.
-      for (let x = 20; x < VIEWPORT.width; x += 40) {
+      // A press below the band let go along the row of the bar's buttons, every 20 px, so on each of them in turn: none
+      // of them answers a release alone.
+      for (let x = 20; x < VIEWPORT.width; x += 20) {
         const answer = await play([
           { type: 'mouse', action: 'down', x: 500, y: 400, button: 'left' },
-          { type: 'mouse', action: 'up', x, y: 6, button: 'left' },
+          { type: 'mouse', action: 'up', x, y: BUTTONS_Y, button: 'left' },
         ]);
         headed.releasesOnBand.push(answer.message);
       }
-      // The bar still shows: a click on its band is still not played.
+      // The bar still shows: a click on one of its buttons is still not played.
       headed.clickAfter = (
-        await play([{ type: 'mouse', action: 'click', x: 500, y: 6, button: 'left', clickCount: 1 }])
+        await play([{ type: 'mouse', action: 'click', x: 680, y: BUTTONS_Y, button: 'left', clickCount: 1 }])
       ).message;
       await sleep(300);
       headed.heldAfter = !heard.slice(since).some(({ message: m }) => m.type === 'running' && m.stop === stop);

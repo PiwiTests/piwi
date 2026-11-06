@@ -287,11 +287,11 @@ What the package does to a user's run, process by process.
   overlays included (the picker, the recorder). Only while that stop's view, or the lane
   view showing it, is watched,
   200 events a second at most, and what it holds down is let go before the test goes on.
-  None reaches the pause bar the view paints over: a press or a click on its band, read as
-  each is played (`laneBarBand`), is not played, and the answer says how many were not
-  played. A release, of a button or a key, always plays: the bar's buttons answer a click
-  alone, which needs its press on the same button, and the bar listens to key presses
-  alone. A key's press plays while no
+  No press reaches the pause bar the view paints over: a press or a click on its band, read
+  as each is played (`laneBarBand`), is not played, and the answer says how many were not
+  played. A release, of a button or a key, always plays, and may reach the bar, where it
+  activates nothing: the bar's buttons answer a click alone, which needs its press on the
+  same button, and the bar listens to key presses alone. A key's press plays while no
   bar shows, or once the draw of the bar that shows is held inert by the message's token
   (`keyMayPlay`: the bar's `inert`, and its `__piwiKeyHolds`), each draw the message meets
   held once, one drawn again after a navigation included, so Tab passes it by, no key

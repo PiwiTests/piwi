@@ -80,7 +80,7 @@ import { internalCall } from './quiet-capture.js';
  * most `MAX_VIEW_FPS` a second, a headed stop's pause bar painted over in them, the latest one when the connection is
  * backed up, the latest sent kept in memory for a viewer that comes later until the view ends, never stored), plays
  * the viewer's input on it as trusted input (`input`: `page.mouse`, `page.keyboard`, at most `MAX_VIEW_EVENT_RATE`
- * events a second, none on the pause bar the view paints over, what it holds down let go before the test goes on),
+ * events a second, no press on the pause bar the view paints over, what it holds down let go before the test goes on),
  * and sends the locator of the element under a point of an image of
  * the page where a pick goes (`pick-at`, `pick-at.ts`). The view ends with its stop, before the test goes on, and as
  * its page or the connection closes. For an agent (the editor's MCP server), it reads the stopped page's ARIA snapshot
@@ -769,10 +769,10 @@ async function stopViewOf(holding: HeldStop): Promise<IntentAnswer> {
 /**
  * Play a viewer's input at the stop held, in order, after the input sent before it: refused while the stop's view is
  * not watched, past `MAX_VIEW_EVENT_RATE` events a second and with `MAX_INPUT_WAITING` messages waiting. The events
- * of a stop that ends meanwhile are not played. None reaches the pause bar the view paints over: a press on its band,
- * read as each press is played, is not played (`offPauseBar`), and a key's press only once the bar that shows is held
- * inert for the message (`keyMayPlay`), which lets go of it as it ends; a release, of a button or a key, always plays.
- * The answer says how many were not played.
+ * of a stop that ends meanwhile are not played. No press reaches the pause bar the view paints over: a press or a click
+ * on its band, read as each is played, is not played (`offPauseBar`), and a key's press only once the bar that shows
+ * is held inert for the message (`keyMayPlay`), which lets go of it as it ends. A release, of a button or a key, always
+ * plays: it may reach the bar, and activates nothing there. The answer says how many were not played.
  */
 function playInput(holding: HeldStop, events: ViewInput[]): Promise<IntentAnswer> {
   const page = holding.page;
