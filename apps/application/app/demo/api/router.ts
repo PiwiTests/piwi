@@ -446,6 +446,7 @@ import {
   apiUndoAssistantNudgeDismissal,
 } from './assistant-nudges';
 import { apiGetAdminStats, apiGetStorageAnalysis } from './admin';
+import { apiListProjectStars, apiStarProject, apiUnstarProject } from './project-stars';
 import { demoHttpError } from './http-error';
 import {
   addProjectUrlPattern,
@@ -881,6 +882,27 @@ const routes: RouteEntry[] = [
         const message = e instanceof Error ? e.message : 'Failed to create project';
         throw demoHttpError(message === 'A project with this name already exists' ? 409 : 400, message);
       }
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/stars$/,
+    handler: async (_, __, ___, ctx) => apiListProjectStars(ctx?.actingUserId ?? null, ctx?.scope ?? 'all'),
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/projects\/(\d+)\/star$/,
+    handler: async (m, _, __, ctx) => {
+      assertDemoScope(ctx, +m[1]!);
+      return apiStarProject(ctx?.actingUserId ?? null, +m[1]!);
+    },
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/projects\/(\d+)\/star$/,
+    handler: async (m, _, __, ctx) => {
+      assertDemoScope(ctx, +m[1]!);
+      return apiUnstarProject(ctx?.actingUserId ?? null, +m[1]!);
     },
   },
   {

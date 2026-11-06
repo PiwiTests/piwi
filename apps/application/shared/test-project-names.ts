@@ -200,6 +200,7 @@ export const PROJECT = {
   SETUP_CONNECT: 'setup-connect-test',
   SHARDING_TEST: 'sharding-test',
   SHARE_LINKS: 'share-links-e2e-test',
+  STARRED_PROJECTS: 'starred-projects-test',
   STATS_TEST: 'stats-test-project',
   STORAGE_TEST: 'storage-test-project',
   STREAMING_DURATION: 'streaming-duration-test',

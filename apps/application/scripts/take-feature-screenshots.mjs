@@ -4314,6 +4314,50 @@ const SCENES = [
     },
   },
   {
+    name: 'starred-projects',
+    description:
+      "Starred projects: the star beside a name in Home's Project health puts the project first there, under a Starred divider, and in the sidebar's Starred group",
+    route: '/',
+    viewport: { width: 1280, height: 1000 },
+    async run({ page, shoot, settle }) {
+      const includePartial = page.getByRole('button', { name: 'Include partial runs' });
+      if (await includePartial.count()) {
+        await includePartial.first().click();
+        await settle();
+      }
+      await shoot('before');
+      const health = page.locator('[data-tour="project-health"]');
+      // Two projects lower in the table, so their move to the top shows.
+      for (const nth of [4, 2]) {
+        await health
+          .getByRole('button', { name: /^Star / })
+          .nth(nth)
+          .click();
+        await settle();
+      }
+      await shoot('after');
+      await shoot('sidebar', { of: '#dashboard-sidebar-default' });
+    },
+  },
+  {
+    name: 'starred-projects-phone',
+    description: 'Starred projects at phone width: the Starred label and divider in the card list of Project health',
+    route: '/',
+    viewport: { width: 390, height: 1900 },
+    async run({ page, shoot, settle }) {
+      const health = page.locator('[data-tour="project-health"]');
+      for (const nth of [4, 2]) {
+        await health
+          .getByRole('button', { name: /^Star / })
+          .filter({ visible: true })
+          .nth(nth)
+          .click();
+        await settle();
+      }
+      await shoot(undefined, { of: '[data-tour="project-health"]', pad: 8 });
+    },
+  },
+  {
     name: 'failure-clusters-tab',
     description:
       'Failures tab: the failure inbox, one row per cluster of tests that failed for the same reason (docs gallery)',

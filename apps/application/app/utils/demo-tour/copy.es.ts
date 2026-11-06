@@ -114,7 +114,7 @@ export const ES_COPY = {
       stops: {
         health: {
           title: 'Todos los proyectos de un vistazo',
-          body: '**Project health** muestra de cada proyecto sus últimos 20 runs, su tendencia y la tasa de éxito de su último run, con los proyectos que fallan primero. Abre uno para ver qué falló.',
+          body: '**Project health** muestra de cada proyecto sus últimos 20 runs, su tendencia y la tasa de éxito de su último run: primero los proyectos con estrella, luego los que fallan. Abre uno para ver qué falló.',
         },
         analytics: {
           title: 'La calidad a lo largo del tiempo',

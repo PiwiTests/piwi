@@ -74,7 +74,7 @@ export const HELP_TOPICS = {
   // ── Home ──────────────────────────────────────────────────────────────
   'home.project-health': {
     title: 'Project health',
-    text: 'Every project at a glance — run history bars and a tendency badge so you can immediately see which project needs attention. Only full runs count, and a run in progress counts once it ran to its end: an interrupted or cancelled run shows in the bars and counts nowhere else.',
+    text: 'Every project at a glance — run history bars and a tendency badge, starred projects first (the star beside a name), so you can immediately see which project needs attention. Only full runs count, and a run in progress counts once it ran to its end: an interrupted or cancelled run shows in the bars and counts nowhere else.',
     doc: 'features/ui-overview#home',
   },
   'home.get-started': {

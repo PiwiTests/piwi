@@ -2872,3 +2872,26 @@ export const assistantNudgeDismissals = sqliteTable(
       .where(sql`owner_id IS NULL`),
   }),
 );
+
+// The projects a user starred: they lead that user's sidebar and Home. A star
+// changes order only, never what the user may read. With authentication off
+// there is no user to keep one on, and the browser keeps the stars instead.
+export const projectStars = sqliteTable(
+  'project_stars',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    userProjectIdx: uniqueIndex('idx_project_stars_user_project').on(t.userId, t.projectId),
+    projectIdx: index('idx_project_stars_project').on(t.projectId),
+  }),
+);

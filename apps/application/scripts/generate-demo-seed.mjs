@@ -3467,6 +3467,14 @@ const GROUP_MEMBERS = DEMO_GROUPS.flatMap((g) =>
   g.memberIds.map((userId) => ({ group_id: g.id, user_id: userId, added_by: null, created_at: accessCreatedAt })),
 );
 
+// The default demo identity starred two projects, so they lead its sidebar and Home's Project health.
+const PROJECT_STARS = [5, 2].map((projectId, i) => ({
+  id: i + 1,
+  user_id: DEFAULT_DEMO_USER.id,
+  project_id: projectId,
+  created_at: accessCreatedAt + i,
+}));
+
 const ROLE_BINDINGS = [];
 let roleBindingId = 1;
 function bindRole(subject, binding) {
@@ -5420,6 +5428,7 @@ const REBASE_SQL = [
   `UPDATE groups SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE group_members SET created_at = created_at + ${D_MS};`,
   `UPDATE role_bindings SET created_at = created_at + ${D_MS};`,
+  `UPDATE project_stars SET created_at = created_at + ${D_MS};`,
   `UPDATE analytics_dashboards SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS}, last_viewed_at = last_viewed_at + ${D_MS};`,
   `UPDATE assistant_conversations SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE assistant_messages SET created_at = created_at + ${D_MS};`,
@@ -6594,6 +6603,9 @@ const lines = [
   insert('groups', GROUPS),
   insert('group_members', GROUP_MEMBERS),
   insert('role_bindings', ROLE_BINDINGS),
+  '',
+  '-- Starred projects (of the identity the demo opens as)',
+  insert('project_stars', PROJECT_STARS),
   '',
   '-- App settings (the `ai` key marks the demo provider as configured)',
   insert('app_settings', APP_SETTINGS),

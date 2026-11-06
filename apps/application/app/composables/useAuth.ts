@@ -13,6 +13,7 @@ import {
   demoAccessFor,
   findDemoUser,
 } from '~/demo/demo-users';
+import { STARRED_PROJECTS_STATE } from '~/utils/project-stars';
 
 export { type AuthUser, type AuthState };
 
@@ -123,6 +124,8 @@ export const useAuth = () => {
       method: 'POST',
     });
     clearApiConsoleToken();
+    // The next user to sign in in this tab never sees these stars.
+    useState<number[]>(STARRED_PROJECTS_STATE, () => []).value = [];
 
     authState.value = {
       authenticated: false,

@@ -15,8 +15,9 @@ path [opens in your IDE](./ide-integration).
 ## Home
 
 `/`: a health check across all projects. A **Filters** block (environment, full runs only), a **stat strip** whose every number but the average [pass rate](/guide/concepts#pass-rate) is a link, a **Project health** table with run-history bars and a tendency badge
-beside the recent activity, then the **failure inbox** of open clusters, triaged from the row or the keyboard
-([Failure clusters & the inbox](./failure-clusters#the-failure-inbox)).
+beside the recent activity, then the **failure inbox** of open clusters, triaged from the row or keyboard
+([Failure clusters & the inbox](./failure-clusters#the-failure-inbox)). **Starred projects** lead Project health and the
+sidebar.
 
 <figure>
   <img src="/screenshots/home.png" alt="Home in the light and dark themes: filters, stat strip, project health and recent activity">

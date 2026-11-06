@@ -115,7 +115,7 @@ export const FR_COPY = {
       stops: {
         health: {
           title: 'Tous les projets d’un coup d’œil',
-          body: '**Project health** montre pour chaque projet ses 20 derniers runs, sa tendance et le taux de réussite de son dernier run, les projets en échec en premier. Ouvrez-en un pour voir ce qui a échoué.',
+          body: '**Project health** montre pour chaque projet ses 20 derniers runs, sa tendance et le taux de réussite de son dernier run : les projets marqués d’une étoile d’abord, puis ceux en échec. Ouvrez-en un pour voir ce qui a échoué.',
         },
         analytics: {
           title: 'La qualité au fil du temps',
