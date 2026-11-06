@@ -6680,6 +6680,30 @@
   "runs_liveHint": {
     "message": "Ihre Klicks, das Mausrad und Ihre Tasten auf der Ansicht gehen an die Seite des Tests. Esc gibt die Tasten diesem Fenster zurück; Umschalt+Klick wählt einen Locator."
   },
+  "runs_watch": {
+    "message": "Ansehen"
+  },
+  "runs_watchTitle": {
+    "message": "Die Seite des Tests zeigen, während er läuft, über seine Halte und seine nächsten Tests hinweg: Bei einem Halt gehen Ihre Klicks und Tasten an die Seite"
+  },
+  "runs_pauseWatch": {
+    "message": "Anhalten und ansehen"
+  },
+  "runs_pauseWatchTitle": {
+    "message": "Den Test vor seinem nächsten Aufruf anhalten und seine Seite zeigen"
+  },
+  "runs_watchOutdated": {
+    "message": "Aktualisieren Sie den Reporter, um einen laufenden Test anzusehen"
+  },
+  "runs_watchToUse": {
+    "message": "Zum Verwenden ansehen"
+  },
+  "runs_laneRunning": {
+    "message": "Läuft…"
+  },
+  "runs_laneAltLast": {
+    "message": "Die Seite des Tests, wie zuletzt gesehen"
+  },
   "runs_pickAt": {
     "message": "Im Bild wählen"
   },

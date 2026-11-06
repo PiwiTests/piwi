@@ -1035,6 +1035,90 @@ async function shopPageJpeg(context) {
   return data;
 }
 
+/**
+ * A desktop scene's local run, live on the run page: the run page's Re-run starts it, the played hub names its one
+ * worker running `intents` (`playDesktopRunHub` first), the run reports to the app with the reference the app gave it,
+ * its test begun on that worker, and **Live in Piwi** opens its page. Answers the tray, the spec's URI, the running
+ * worker, a session message of a worker, and `finish`, which ends the live run.
+ */
+async function openDesktopLiveRun({ page, base, goto, intents }) {
+  await goto('/test-runs/2');
+  await page
+    .getByRole('button', { name: /^Re-run \d+ failed tests?/ })
+    .first()
+    .click();
+  const tray = page.getByRole('region', { name: 'Local runs' });
+  await tray.waitFor();
+  await page.waitForFunction(() => window.__hub?.open() === 1);
+  const root = '/home/dev/code/acme-checkout';
+  const uri = `file://${root}/tests/checkout.spec.ts`;
+  const running = {
+    worker: 0,
+    parallelIndex: 0,
+    state: 'running',
+    pausing: false,
+    intents,
+    stop: null,
+    test: {
+      id: 't1',
+      title: ['checkout', 'pays with a saved card'],
+      uri,
+      line: 10,
+      project: 'chromium',
+      retry: 0,
+      cannotPause: null,
+    },
+  };
+  const session = (worker) => ({
+    type: 'session',
+    session: {
+      ref: 'desktop-41',
+      root,
+      label: 'acme-checkout',
+      command: null,
+      project: 'checkout-web',
+      workers: [worker],
+      ended: false,
+    },
+  });
+  await page.evaluate(() => window.__hub.send({ type: 'hello', viewer: 'f'.repeat(32) }));
+  await page.evaluate((event) => window.__hub.send(event), session(running));
+
+  const source = await (await page.request.get(`${base}/api/test-runs/2`)).json();
+  await page.waitForFunction(() => window.__runArgs?.originRef);
+  const originRef = await page.evaluate(() => window.__runArgs?.originRef);
+  const post = async (path, data) => {
+    const res = await page.request.post(`${base}${path}`, { data });
+    if (!res.ok()) throw new Error(`POST ${path} answered ${res.status()}`);
+    return res.json();
+  };
+  const started = await post('/api/test-runs/start', {
+    projectName: source.project.name,
+    startTime: new Date().toISOString(),
+    metadata: { piwiOrigin: { kind: 'desktop', ref: originRef } },
+  });
+  const finish = () =>
+    page.request.post(`${base}/api/test-runs/${started.runId}/finish`, {
+      data: { streamToken: started.streamToken, status: 'passed', totalTests: 1 },
+    });
+  try {
+    const begin = {
+      type: 'begin',
+      title: 'pays with a saved card',
+      location: 'tests/checkout.spec.ts:11:3',
+      workerIndex: 0,
+      startedAt: Date.now(),
+      browser: { projectName: 'chromium' },
+    };
+    await post(`/api/test-runs/${started.runId}/events`, { streamToken: started.streamToken, testCases: [begin] });
+    await tray.getByRole('link', { name: `Live in Piwi — Run #${started.runId}` }).click({ timeout: 60_000 });
+  } catch (error) {
+    await finish();
+    throw error;
+  }
+  return { tray, uri, running, session, started, post, finish };
+}
+
 const ESC = '\u001b';
 
 /** Playwright's list reporter output with `FORCE_COLOR=1`, one line per entry, as the desktop shell streams a run. */
@@ -5307,74 +5391,14 @@ const SCENES = [
       await playDesktopRunHub(page, (command) =>
         command.type === 'pausedPage' ? { image: { mime: 'image/jpeg', data: image, width: 1280, height: 800 } } : {},
       );
-      await goto('/test-runs/2');
-      await page
-        .getByRole('button', { name: /^Re-run \d+ failed tests?/ })
-        .first()
-        .click();
-      const tray = page.getByRole('region', { name: 'Local runs' });
-      await tray.waitFor();
-      await page.waitForFunction(() => window.__hub?.open() === 1);
-      const root = '/home/dev/code/acme-checkout';
-      const uri = `file://${root}/tests/checkout.spec.ts`;
       const intents = ['assert-region', 'mock', 'view', 'input', 'pick-at'];
-      const running = {
-        worker: 0,
-        parallelIndex: 0,
-        state: 'running',
-        pausing: false,
+      const { tray, uri, running, session, started, post, finish } = await openDesktopLiveRun({
+        page,
+        base,
+        goto,
         intents,
-        stop: null,
-        test: {
-          id: 't1',
-          title: ['checkout', 'pays with a saved card'],
-          uri,
-          line: 10,
-          project: 'chromium',
-          retry: 0,
-          cannotPause: null,
-        },
-      };
-      const session = (worker) => ({
-        type: 'session',
-        session: {
-          ref: 'desktop-41',
-          root,
-          label: 'acme-checkout',
-          command: null,
-          project: 'checkout-web',
-          workers: [worker],
-          ended: false,
-        },
-      });
-      await page.evaluate(() => window.__hub.send({ type: 'hello', viewer: 'f'.repeat(32) }));
-      await page.evaluate((event) => window.__hub.send(event), session(running));
-
-      // The run reports to the app with the reference the app gave it, and its test begins.
-      const source = await (await page.request.get(`${base}/api/test-runs/2`)).json();
-      await page.waitForFunction(() => window.__runArgs?.originRef);
-      const originRef = await page.evaluate(() => window.__runArgs?.originRef);
-      const post = async (path, data) => {
-        const res = await page.request.post(`${base}${path}`, { data });
-        if (!res.ok()) throw new Error(`POST ${path} answered ${res.status()}`);
-        return res.json();
-      };
-      const started = await post('/api/test-runs/start', {
-        projectName: source.project.name,
-        startTime: new Date().toISOString(),
-        metadata: { piwiOrigin: { kind: 'desktop', ref: originRef } },
       });
       try {
-        const begin = {
-          type: 'begin',
-          title: 'pays with a saved card',
-          location: 'tests/checkout.spec.ts:11:3',
-          workerIndex: 0,
-          startedAt: Date.now(),
-          browser: { projectName: 'chromium' },
-        };
-        await post(`/api/test-runs/${started.runId}/events`, { streamToken: started.streamToken, testCases: [begin] });
-        await tray.getByRole('link', { name: `Live in Piwi — Run #${started.runId}` }).click({ timeout: 60_000 });
         const watch = page.getByRole('button', { name: 'Pause and watch' });
         await watch.waitFor({ timeout: 60_000 });
         // Its step reaches the pages open as it streams: the run's page, now.
@@ -5437,9 +5461,102 @@ const SCENES = [
         await settle();
         await shoot('closed');
       } finally {
-        await page.request.post(`${base}/api/test-runs/${started.runId}/finish`, {
-          data: { streamToken: started.streamToken, status: 'passed', totalTests: 1 },
+        await finish();
+      }
+    },
+  },
+  {
+    name: 'run-live-desktop-watch',
+    description:
+      'Run page in the desktop app while a run it started goes on: a running test’s Watch beside Pause and watch, also at 390 px, then its page in the Local runs tray, live as it runs (also at 390 px), at a stop that takes the clicks on it, dimmed and marked running after Resume, and a worker of an older reporter, which says to update it',
+    mode: 'desktop',
+    link: { path: '/home/dev/code/acme-checkout', exists: true },
+    localRunId: 41,
+    route: '/test-runs/2',
+    viewport: { width: 1280, height: 900 },
+    outputs: [
+      'run-live-desktop-watch.png',
+      'run-live-desktop-watch-narrow.png',
+      'run-live-desktop-watch-tray.png',
+      'run-live-desktop-watch-tray-narrow.png',
+      'run-live-desktop-watch-stop.png',
+      'run-live-desktop-watch-running.png',
+      'run-live-desktop-watch-outdated.png',
+    ],
+    async run({ page, base, goto, settle, shoot }) {
+      const image = await shopPageJpeg(page.context());
+      await playDesktopRunHub(page, (command) =>
+        command.type === 'pausedPage' ? { image: { mime: 'image/jpeg', data: image, width: 1280, height: 800 } } : {},
+      );
+      const intents = ['assert-region', 'mock', 'view', 'input', 'pick-at', 'watch'];
+      const { tray, uri, running, session, finish } = await openDesktopLiveRun({ page, base, goto, intents });
+      const send = (event) => page.evaluate((e) => window.__hub.send(e), event);
+      const laneFrame = (since) =>
+        send({
+          type: 'lane-frame',
+          ref: 'desktop-41',
+          lane: 0,
+          worker: 0,
+          test: 't1',
+          since,
+          width: 1280,
+          height: 800,
+          data: image,
         });
+      try {
+        // The running row: Watch beside Pause and watch.
+        const watch = page.getByRole('button', { name: 'Watch: checkout › pays with a saved card', exact: true });
+        await watch.waitFor({ timeout: 60_000 });
+        await settle();
+        await shoot();
+        await page.setViewportSize({ width: 390, height: 844 });
+        await settle();
+        await shoot('narrow');
+        await page.setViewportSize({ width: 1280, height: 900 });
+
+        // Watched: the tray opens on the worker, its page live as the test runs.
+        await watch.click();
+        const worker = tray.locator('[data-shot="desktop-run-worker"]');
+        await worker.locator('[data-shot="desktop-run-lane"][data-watching]').waitFor();
+        await laneFrame(null);
+        await worker.getByRole('img', { name: 'The page, live', exact: true }).waitFor();
+        await settle();
+        await shoot('tray', { of: '[aria-label="Local runs"]', pad: 0 });
+        await page.setViewportSize({ width: 390, height: 844 });
+        await settle();
+        await shoot('tray-narrow');
+        await page.setViewportSize({ width: 1280, height: 900 });
+
+        // At a stop, the lane shows the stopped page, which takes the clicks and keys on it.
+        const stop = {
+          reason: 'pause',
+          title: "Click getByRole('button', { name: 'Pay now' })",
+          uri,
+          line: 17,
+          character: 4,
+          locator: "getByRole('button', { name: 'Pay now' })",
+          bar: false,
+          since: 's1',
+          intents: ['assert-region', 'mock', 'view', 'input', 'pick-at'],
+        };
+        await send(session({ ...running, state: 'stopped', stop }));
+        await worker.getByRole('img', { name: 'The page, live: clicks and keys go to it' }).waitFor();
+        await settle();
+        await shoot('stop', { of: '[aria-label="Local runs"]', pad: 0 });
+
+        // Resumed: the last image stays, dimmed and marked as running, until the next frame.
+        await send(session(running));
+        await worker.locator('img[data-stale]').waitFor();
+        await settle();
+        await shoot('running', { of: '[aria-label="Local runs"]', pad: 0 });
+
+        // A worker of an older reporter offers no Watch, and says what would.
+        await send(session({ ...running, intents: intents.filter((what) => what !== 'watch') }));
+        await worker.getByTestId('desktop-watch-needs-update').waitFor();
+        await settle();
+        await shoot('outdated', { of: '[data-shot="desktop-run-worker"]', pad: 8 });
+      } finally {
+        await finish();
       }
     },
   },

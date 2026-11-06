@@ -35,7 +35,7 @@ import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { HUB_FEATURES, parseHubCommand, type HubAnswer, type LiveHub } from '@piwitests/core/run-hub';
+import { HUB_FEATURES, parseHubCommand, type HubAnswer, type HubMessage, type LiveHub } from '@piwitests/core/run-hub';
 import { editorsDir, readLiveHubs } from '@piwitests/editor/discovery';
 import type { RunIntent } from '@piwitests/core/run-channel';
 import {
@@ -69,6 +69,15 @@ export const DESKTOP_HUB_CLIENT = 'Piwi desktop app';
 
 /** The window streams open at once; one more is refused. */
 const MAX_WINDOWS = 16;
+
+/**
+ * Whether the hub's message to a window goes on to its stream: the runs, what each code came to, and the frames of the
+ * stops (`frame`) and the lanes (`lane-frame`) it watches. A joined peer hears no `welcome`, and its answers come back
+ * to the command that asked.
+ */
+function relayed(message: HubMessage): message is Extract<HubMessage, DesktopRunEvent> {
+  return ['session', 'code', 'frame', 'lane-frame'].includes(message.type);
+}
 
 /** What the run channel's socket folder is named from, in the temporary directory: this server's alone. */
 export const RUN_CHANNEL_FOLDER_PREFIX = 'piwi-desktop-run-';
@@ -428,7 +437,8 @@ export class DesktopRuns {
 
   /**
    * A window's stream opens: it is a peer of the hub, subscribed at once, and hears first the id its commands name
-   * it by, then the codes and the picks kept, then each run. Null while the hub does not listen, or past `MAX_WINDOWS`.
+   * it by, then the codes and the picks kept, then each run, then that every run live was listed (`listed`). Null while
+   * the hub does not listen, or past `MAX_WINDOWS`.
    */
   async openWindow(sink: DesktopRunSink): Promise<{ viewer: string; close(): void } | null> {
     if (!this.hub || this.windows.size >= MAX_WINDOWS) return null;
@@ -444,8 +454,7 @@ export class DesktopRuns {
         send: (message) => {
           // A stream that left as much unread as a WebSocket may is let go, as the hub lets that one go.
           if (sink.buffered() > MAX_HUB_BUFFERED) return close();
-          // A joined peer hears no `welcome`, and its answers come back to the command that asked.
-          if (message.type === 'session' || message.type === 'code' || message.type === 'frame') sink.send(message);
+          if (relayed(message)) sink.send(message);
         },
         buffered: () => sink.buffered(),
         close,
@@ -455,6 +464,7 @@ export class DesktopRuns {
     sink.send({ type: 'hello', viewer });
     for (const kept of this.kept) sink.send(kept);
     await window.peer.command({ type: 'subscribe', id: 1 });
+    if (this.windows.get(viewer) === window) sink.send({ type: 'listed' });
     return { viewer, close: () => this.closeWindow(viewer) };
   }
 

@@ -48,13 +48,14 @@ export const MAX_HUB_PEERS = 64;
 
 /**
  * What a hub does beyond what every hub does, as `welcome` and the desktop app's live answer list it: it names the
- * other live hubs of the machine as they come and go (`peers`). A reader keeps those it knows; a hub that predates the
- * list does none of them.
+ * other live hubs of the machine as they come and go (`peers`), and shows a lane of a run while it runs (`lanes`: the
+ * command `watch`, its frames `lane-frame`). A reader keeps those it knows; a hub that predates the list does none of
+ * them.
  */
-export type HubFeature = 'peers';
+export type HubFeature = 'peers' | 'lanes';
 
 /** The features of a hub of this version. */
-export const HUB_FEATURES: readonly HubFeature[] = ['peers'];
+export const HUB_FEATURES: readonly HubFeature[] = ['peers', 'lanes'];
 
 /** Why the hub closed a connection, as the WebSocket's close code. */
 export const HUB_CLOSE = {
@@ -147,9 +148,10 @@ export type HubViewAction = 'view' | 'input' | 'input-clicks' | 'pick-at';
 /**
  * What a stop can take from the Runs page: the intents, Mock a request (`mock`, with the `requests` it lists), the
  * live view's actions, and End the test (`end`, the `runControl` that skips the rest of the test), which a stop at a
- * failure leaves out: Resume ends it as it failed.
+ * failure leaves out: Resume ends it as it failed. `watch` is the worker's, stopped or not: its lane can be watched
+ * while it runs (`watch`, at a hub whose features list `lanes`).
  */
-export type HubAction = HubIntent | HubCodeIntent | 'mock' | HubViewAction | 'end';
+export type HubAction = HubIntent | HubCodeIntent | 'mock' | HubViewAction | 'end' | 'watch';
 
 /**
  * The actions that write code at a stop, in the editor: the intents', Mock a request, and an agent's (the editor's MCP
@@ -173,6 +175,7 @@ export const HUB_ACTIONS: readonly HubAction[] = [
   'input-clicks',
   'pick-at',
   'end',
+  'watch',
 ];
 
 /**
@@ -335,7 +338,15 @@ export type HubCommand =
    * sharing it: a person's own choice, asked after the surface's warning. Refused, with why, for a run that cannot be
    * shared.
    */
-  | { type: 'share'; id: number; ref: string; on: boolean };
+  | { type: 'share'; id: number; ref: string; on: boolean }
+  /**
+   * Start (`on`) or stop watching the lane `lane` (Playwright's `parallelIndex`) of the run: the page of its running
+   * test, of its stop while it stands at one, through its tests, its stops and a worker Playwright starts in its place,
+   * its frames coming to this connection alone (`HubLaneFrameMessage`) until it stops watching, the run ends or the
+   * connection closes. Refused for a lane whose worker's `intents` lack `watch`, saying why. At a stop the frames
+   * show, input, `pick-at` and the actions a viewer may start are this connection's as with `view`.
+   */
+  | { type: 'watch'; id: number; ref: string; lane: number; on: boolean };
 
 /** What `parseHubCommand` reads: a command, or one answered as refused. */
 export type ParsedHubCommand =
@@ -427,6 +438,37 @@ export interface HubFrameRefusal {
   refused: string;
 }
 
+/**
+ * A frame of the lane `lane` of the run, while this connection watches it (`watch`), as `frame` carries one: the page of
+ * the worker `worker` at the stop `since` names, null while the test it shows (`test`, Playwright's id) runs. At most
+ * `MAX_VIEW_FPS` a second, the latest alone while the connection is backed up; the hub keeps none.
+ */
+export interface HubLaneFrameMessage {
+  type: 'lane-frame';
+  ref: string;
+  lane: number;
+  worker: number;
+  test: string;
+  since: string | null;
+  width: number;
+  height: number;
+  data: string;
+}
+
+/**
+ * The lane `lane` sends no frame now, and why (`refused`, at most `MAX_HUB_MESSAGE` characters): each image of the page
+ * is too long, or masks the reporter cannot read hide it. Sent once until a frame comes again.
+ */
+export interface HubLaneFrameRefusal {
+  type: 'lane-frame';
+  ref: string;
+  lane: number;
+  worker: number;
+  test: string | null;
+  since: string | null;
+  refused: string;
+}
+
 /** A live hub as another one names it (`peers`): where it listens and whose it is, never its token. */
 export type PeerHub = Omit<LiveHub, 'token' | 'features'>;
 
@@ -448,6 +490,8 @@ export type HubMessage =
   | HubCodeMessage
   | HubFrameMessage
   | HubFrameRefusal
+  | HubLaneFrameMessage
+  | HubLaneFrameRefusal
   | HubPeersMessage
   | { type: 'keepalive' };
 
@@ -598,6 +642,13 @@ export function parseHubCommand(text: string): ParsedHubCommand | null {
       ? { type: 'share', id, ref: value.ref, on: value.on }
       : invalid('share needs on: true to share the run live, false to stop.');
   }
+  if (value.type === 'watch') {
+    if (typeof value.ref !== 'string' || !REF.test(value.ref)) return invalid('The command needs the ref of a run.');
+    if (!isInt(value.lane, 0)) return invalid('watch needs the lane: a parallelIndex, from 0.');
+    return typeof value.on === 'boolean'
+      ? { type: 'watch', id, ref: value.ref, lane: value.lane, on: value.on }
+      : invalid('watch needs on: true to watch the lane, false to stop watching it.');
+  }
   if (
     !['runControl', 'pausedPage', 'requests', 'mock', 'view', 'input', 'pick-at', ...HUB_INTENTS].includes(value.type)
   ) {
@@ -703,6 +754,29 @@ function readFrame(value: Record<string, unknown>): HubFrameMessage | HubFrameRe
     ref,
     worker,
     since: since as string,
+    width: width as number,
+    height: height as number,
+    data,
+  };
+}
+
+/** A frame of a lane, or why none comes, field by field; null when it is neither. */
+function readLaneFrame(value: Record<string, unknown>): HubLaneFrameMessage | HubLaneFrameRefusal | null {
+  const { ref, lane, worker, test, since, width, height, data, refused } = value;
+  if (typeof ref !== 'string' || !REF.test(ref) || !isInt(lane, 0) || !isInt(worker, 0)) return null;
+  if (since !== null && (str(since, 64) === null || !since)) return null;
+  if (test !== null && (str(test, 256) === null || !test)) return null;
+  const at = { ref, lane, worker, test: test as string | null, since: since as string | null };
+  if (refused !== undefined) {
+    return typeof refused === 'string' && refused.trim() && refused.length <= MAX_HUB_MESSAGE
+      ? { type: 'lane-frame', ...at, refused }
+      : null;
+  }
+  if (at.test === null || !isViewSize(width, height) || !isViewFrameData(data)) return null;
+  return {
+    type: 'lane-frame',
+    ...at,
+    test: at.test,
     width: width as number,
     height: height as number,
     data,
@@ -876,6 +950,8 @@ export function parseHubMessage(text: string): HubMessage | null {
     }
     case 'frame':
       return readFrame(value);
+    case 'lane-frame':
+      return readLaneFrame(value);
     case 'session': {
       const session = readSession(value.session);
       return session ? { type: 'session', session } : null;

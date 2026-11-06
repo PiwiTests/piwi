@@ -9,7 +9,9 @@
  * element** and a region's ARIA snapshot, started from outside the page; at any stop, the responses the test kept (an
  * interactive run keeps the text bodies of its pages' fetch and XHR answers), one of them to mock, and a locator's
  * matches; and, for a viewer outside the page, the stopped page's live view (`@piwitests/core/run-view`: its frames,
- * the input played on it) and the locator of the element under a point of an image of it; and, for an agent (the
+ * the input played on it) and the locator of the element under a point of an image of it; for a viewer of the
+ * worker's lane, its running test's page live, through its tests and stops (`view-lane`, a feature beyond `takes`);
+ * and, for an agent (the
  * editor's MCP server), the stopped page's ARIA snapshot in AI mode, an action on one of its elements by its ref, that
  * element's ranked locators, what the run does as it goes (`events`), and its browser bound for Playwright's own tools
  * on request (`bind`). A worker holds a failure for the editor only once the service said it shows and answers one
@@ -120,6 +122,16 @@ export type RunShareTake = 'share';
 
 /** What a worker's `run-attach` lists in `takes`. */
 export type RunTake = RunIntent | RunQuery | RunViewTake | RunAgentTake | RunControlTake | RunShareTake;
+
+/**
+ * What a worker does beyond `takes`, which holds 16 entries at most, as its `run-attach` lists it in `features`: show
+ * its lane to a viewer outside the page for as long as asked (`view-lane`), the page of its running test, of its stop
+ * while it stands at one, through its tests and stops.
+ */
+export type RunFeature = 'view-lane';
+
+/** Everything a worker does beyond `takes`: a worker of an older reporter lists fewer, or none. */
+export const RUN_FEATURES: readonly RunFeature[] = ['view-lane'];
 
 /** The intents a worker takes. */
 export const RUN_INTENTS: readonly RunIntent[] = ['pick', 'record', 'assert', 'assert-region'];
@@ -358,7 +370,8 @@ export type RunToHub =
    * says it shows them (`holds`), which the service answers with `attached`; absent from a reporter that predates them.
    * `runner` says an editor's own test runner started the run (the run of a JetBrains IDE's Playwright run
    * configuration, its gutter's Run included), rather than a terminal or the editor's command; absent otherwise, and
-   * from a reporter that predates it.
+   * from a reporter that predates it. `features` lists what the worker does beyond `takes`; absent from a reporter that
+   * predates it.
    */
   | {
       type: 'run-attach';
@@ -373,6 +386,7 @@ export type RunToHub =
       takes?: RunTake[];
       holds?: RunHold[];
       runner?: true;
+      features?: RunFeature[];
     }
   /**
    * A test starts: Playwright's id, its describe blocks' titles and its own, its file and 1-based line, its project,
@@ -420,8 +434,11 @@ export type RunToHub =
   | { type: 'answer'; request: number; what: 'mock'; value: MockAnswer }
   /** The answer to `locator`. */
   | { type: 'answer'; request: number; what: 'locator'; value: LocatorAnswer }
-  /** The answer to `view` and to `input`: whether the view started or stopped, the input was played, or why not. */
-  | { type: 'answer'; request: number; what: 'view' | 'input'; value: IntentAnswer }
+  /**
+   * The answer to `view`, `view-lane` and `input`: whether the view started or stopped, the input was played, or why
+   * not.
+   */
+  | { type: 'answer'; request: number; what: 'view' | 'view-lane' | 'input'; value: IntentAnswer }
   /** The answer to `pick-at`. */
   | { type: 'answer'; request: number; what: 'pick-at'; value: PickAtAnswer }
   /** The answer to `snapshot`. */
@@ -447,6 +464,19 @@ export type RunToHub =
    * predates it reads none, and its viewers wait for a frame.
    */
   | { type: 'frame'; stop: number; refused: string }
+  /**
+   * A frame of the worker's lane view, while a `view-lane` asked for it, as `frame` carries one: the page of the stop
+   * `stop` while the worker stands at one, else of its running test (`test`, Playwright's id of the test the frame
+   * shows). None goes between two tests. Sent at most `MAX_VIEW_FPS` a second, never stored; the latest one is sent
+   * again as `view-lane` asks again for a view on.
+   */
+  | { type: 'lane-frame'; test: string; stop: number | null; width: number; height: number; data: string }
+  /**
+   * The lane view sends no frame now, and why (`refused`, at most 500 characters): each image of the page is too long,
+   * a lighter one included, or the page shows what masks this reporter cannot read hide. Sent once until a frame goes
+   * again; nothing is said of a test with no page to show.
+   */
+  | { type: 'lane-frame'; test: string | null; stop: number | null; refused: string }
   /**
    * At the stop `stop`, after `assert-region`: the region picked in the test's window, as the locator the person
    * confirmed, and its ARIA snapshot (`locator.ariaSnapshot()`), at most `MAX_REGION_SNAPSHOT` characters; or why no
@@ -506,7 +536,14 @@ export type HubToRun =
    */
   | { type: 'request'; request: number; what: 'view'; stop: number; on: boolean }
   /**
-   * At the stop `stop`, while its view is on: play a viewer's input on its page, in order, as trusted input
+   * Start the lane view (`on`), to a worker whose `run-attach` lists `view-lane` in `features`: the page of its stop
+   * while it stands at one, else of its running test, its frames sent as `lane-frame` through its tests and stops until
+   * a `view-lane` turns it off or the connection closes; or stop it. Asked on again while on, the worker sends its
+   * latest frame again.
+   */
+  | { type: 'request'; request: number; what: 'view-lane'; on: boolean }
+  /**
+   * At the stop `stop`, while its view or the lane view shows its page: play a viewer's input on its page, in order, as trusted input
    * (`page.mouse`, `page.keyboard`), at most `MAX_VIEW_EVENT_RATE` events a second; answered once it was played.
    */
   | { type: 'request'; request: number; what: 'input'; stop: number; events: ViewInput[] }
@@ -598,6 +635,12 @@ function isIntent(value: unknown): value is RunIntent {
 function readTakes(value: unknown): RunTake[] {
   if (!Array.isArray(value) || value.length > MAX_TAKES) return [];
   return RUN_TAKES.filter((take) => value.includes(take));
+}
+
+/** The features a `run-attach` lists, those this side knows; none for anything but a list, or one too long. */
+function readFeatures(value: unknown): RunFeature[] {
+  if (!Array.isArray(value) || value.length > MAX_TAKES) return [];
+  return RUN_FEATURES.filter((feature) => value.includes(feature));
 }
 
 /** The stops a message lists in `holds`, those this side knows; none for a list too long, undefined for no list. */
@@ -827,6 +870,7 @@ export function parseRunToHub(line: string): RunToHub | null {
         takes: readTakes(value.takes),
         ...(holds === undefined ? {} : { holds }),
         ...(value.runner === true ? { runner: true as const } : {}),
+        ...(Array.isArray(value.features) ? { features: readFeatures(value.features) } : {}),
       };
     }
     case 'test-begin': {
@@ -910,7 +954,7 @@ export function parseRunToHub(line: string): RunToHub | null {
         if (outlined !== undefined) value.outlined = outlined;
         return { type: 'answer', request, what, value };
       }
-      if (what === 'view' || what === 'input') {
+      if (what === 'view' || what === 'view-lane' || what === 'input') {
         const said = readAnswer(answered);
         return said ? { type: 'answer', request, what, value: said } : null;
       }
@@ -953,6 +997,17 @@ export function parseRunToHub(line: string): RunToHub | null {
       }
       if (!isInt(stop, 1) || !isViewSize(width, height) || !isViewFrameData(data)) return null;
       return { type: 'frame', stop, width: width as number, height: height as number, data };
+    }
+    case 'lane-frame': {
+      const { test, stop, width, height, data, refused } = value;
+      if (stop !== null && !isInt(stop, 1)) return null;
+      const shown = typeof test === 'string' && test && test.length <= 256 ? test : null;
+      if (typeof refused === 'string' && refused.trim()) {
+        if (test !== null && !shown) return null;
+        return { type: 'lane-frame', test: shown, stop, refused: refused.slice(0, 500) };
+      }
+      if (!shown || !isViewSize(width, height) || !isViewFrameData(data)) return null;
+      return { type: 'lane-frame', test: shown, stop, width: width as number, height: height as number, data };
     }
     case 'region': {
       const { stop, locator, snapshot, refused } = value;
@@ -1032,6 +1087,9 @@ export function parseHubToRun(line: string): HubToRun | UnknownMessage | null {
       const { request, what, stop } = value;
       if (!isInt(request, 1)) return null;
       if (what === 'image') return { type: 'request', request, what: 'image' };
+      if (what === 'view-lane') {
+        return typeof value.on === 'boolean' ? { type: 'request', request, what, on: value.on } : null;
+      }
       if (typeof what !== 'string') return null;
       if (!isIntent(what) && !(QUERIES as readonly string[]).includes(what)) return unknown(`request ${what}`);
       if (!isInt(stop, 1)) return null;

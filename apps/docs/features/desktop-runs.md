@@ -1,6 +1,6 @@
 ---
 title: Desktop app runs
-description: "Pause, step and watch the Playwright runs the desktop app starts, from its Local runs tray: each worker's test, the page at a stop, live, a pick on its image, the code a stop makes, to copy, a run shared live with your team, and the same runs for a coding agent."
+description: "Pause, step and watch the Playwright runs the desktop app starts, from its Local runs tray: each worker's test, its page live as it runs and at a stop, a pick on its image, the code a stop makes, to copy, a run shared live with your team, and the same runs for a coding agent."
 lang: en-US
 ---
 
@@ -51,13 +51,18 @@ the output here**, brings the output back; the window closes with the app.
 
 ## Watch live
 
+**Watch**, on a running worker in the tray or its test on the run's page, shows its page as the test runs and at each
+stop, until you turn it off; at a stop, the image takes your input as **Watch live** does. After **Step**, **Resume**
+or a test's end, the last image stays dimmed, marked **Running…**, until the next. An older reporter offers none:
+update it.
+
 **Watch live** shows the stopped page as it paints, in place of its image, and stays on for the worker's next stops
 until you turn it off. Your clicks, the wheel and your keys on the view go to the page. `Esc` gives the keyboard back
 to the tray, and `Tab` leaves the view unless a click into it took the keyboard. The frames go from the test's worker
 to the windows that watch that stop, the app's and Piwi Picker's Runs window, and nothing keeps them.
 
 **Pause and watch**, on a running test of the run's page in the app (**Live in Piwi** on the run in the tray), pauses
-the test as **Pause** does, with **Watch live** on for its worker: the tray opens at the stop, the page live. The row
+the test as **Pause** does, watching its worker: the tray opens at the stop, the page live. The row
 then says where the test stopped, with **Show its page** to open the tray on it again.
 
 **Pick on the image** (Playwright 1.60 or later), or a `Shift`+click on the image or the view, names the element under
@@ -86,10 +91,8 @@ as it is on disk, in the folder linked to the project.
 ## Share live
 
 A run that reports to your team's Piwi instance, as a **Re-run** in a folder whose `.env` or Playwright config
-names it does, can be shared there for a teammate to watch from its page, in a project whose live view is on: **Share
-live**, above the run's workers, any time while it runs. The first time since the app started, it says what goes out and
-to whom, and waits for your yes. Shared, the run says where and how many views are open, with **Copy the run page's
-link** and **Stop sharing**. A run that cannot be shared, as one that reports to the app itself, says why: [Share a
+names it does, can be shared there for a teammate to watch: **Share live**, above the run's workers, asks first the
+first time since the app started. Who sees what, and why a run cannot be shared: [Share a
 run live](./share-live#from-the-desktop-app).
 
 ## From Piwi Picker

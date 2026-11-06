@@ -14,6 +14,7 @@ import {
   MAX_STOP_ERROR,
   RUN_ACT_ACTIONS,
   RUN_CHANNEL_ENV,
+  RUN_FEATURES,
   RUN_HOLDS,
   RUN_TAKES,
   parseHubToRun,
@@ -741,6 +742,79 @@ describe('the run channel', () => {
       ]) {
         expect(parseRunToHub(line(broken)), JSON.stringify(broken)).toBeNull();
       }
+    });
+  });
+
+  describe('the lane view', () => {
+    test('reads what a worker does beyond its takes, those this side knows, as none from an older reporter', () => {
+      const attach = {
+        type: 'run-attach',
+        token: 't'.repeat(32),
+        ref: 'ed-0a1b2c3d',
+        cwd: '/work/shop',
+        workerIndex: 2,
+        parallelIndex: 1,
+        pid: 4242,
+        playwright: '1.64.1',
+        reporter: '0.70.0',
+        takes: ['view'],
+        features: ['view-lane'],
+      } satisfies RunToHub;
+      expect(parseRunToHub(line(attach))).toEqual(attach);
+      expect(RUN_FEATURES).toEqual(['view-lane']);
+      expect(parseRunToHub(line({ ...attach, features: ['fly', 'view-lane'] }))).toMatchObject({
+        features: ['view-lane'],
+      });
+      expect(parseRunToHub(line({ ...attach, features: 'view-lane' }))).not.toHaveProperty('features');
+      expect(parseRunToHub(line({ ...attach, features: Array(65).fill('view-lane') }))).toMatchObject({
+        features: [],
+      });
+    });
+
+    test('reads a request to turn the lane view on or off, which names no stop', () => {
+      for (const on of [true, false]) {
+        const asked = { type: 'request', request: 7, what: 'view-lane', on } satisfies HubToRun;
+        expect(parseHubToRun(line(asked))).toEqual(asked);
+      }
+      expect(parseHubToRun(line({ type: 'request', request: 7, what: 'view-lane' }))).toBeNull();
+      expect(parseHubToRun(line({ type: 'request', request: 0, what: 'view-lane', on: true }))).toBeNull();
+      const answer = { type: 'answer', request: 7, what: 'view-lane', value: { ok: true, message: 'On.' } };
+      expect(parseRunToHub(line(answer))).toEqual(answer);
+    });
+
+    test('reads a frame of the lane, of its test and of the stop it stands at, and why none goes', () => {
+      const frame = {
+        type: 'lane-frame',
+        test: 'a1b2-c3',
+        stop: null,
+        width: 1280,
+        height: 720,
+        data: '/9j/4AAQ',
+      } satisfies RunToHub;
+      expect(parseRunToHub(line(frame))).toEqual(frame);
+      expect(parseRunToHub(line({ ...frame, stop: 3 }))).toEqual({ ...frame, stop: 3 });
+      for (const broken of [
+        { ...frame, stop: 0 },
+        { ...frame, stop: undefined },
+        { ...frame, test: null },
+        { ...frame, test: '' },
+        { ...frame, test: 'x'.repeat(257) },
+        { ...frame, width: 0 },
+        { ...frame, data: 'not base64' },
+        { ...frame, data: 'A'.repeat(MAX_VIEW_FRAME_BASE64 + 4) },
+      ]) {
+        expect(parseRunToHub(line(broken)), JSON.stringify(broken).slice(0, 80)).toBeNull();
+      }
+      const refused = { type: 'lane-frame', test: null, stop: null, refused: 'No page.' } satisfies RunToHub;
+      expect(parseRunToHub(line(refused))).toEqual(refused);
+      expect(parseRunToHub(line({ ...refused, test: 'a1', stop: 2, refused: 'x'.repeat(600) }))).toEqual({
+        ...refused,
+        test: 'a1',
+        stop: 2,
+        refused: 'x'.repeat(500),
+      });
+      expect(parseRunToHub(line({ ...refused, refused: ' ' }))).toBeNull();
+      expect(parseRunToHub(line({ ...refused, test: 4 }))).toBeNull();
     });
   });
 

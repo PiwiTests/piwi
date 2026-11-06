@@ -6680,6 +6680,30 @@
   "runs_liveHint": {
     "message": "Vos clics, la molette et vos touches sur la vue vont à la page du test. Échap rend les touches à cette fenêtre ; Maj+clic choisit un locator."
   },
+  "runs_watch": {
+    "message": "Regarder"
+  },
+  "runs_watchTitle": {
+    "message": "Afficher la page du test pendant qu’il s’exécute, à travers ses arrêts et ses tests suivants : à un arrêt, vos clics et vos touches y vont"
+  },
+  "runs_pauseWatch": {
+    "message": "Pause et regarder"
+  },
+  "runs_pauseWatchTitle": {
+    "message": "Arrêter le test avant son prochain appel, et afficher sa page"
+  },
+  "runs_watchOutdated": {
+    "message": "Mettez à jour le reporter pour regarder un test en cours"
+  },
+  "runs_watchToUse": {
+    "message": "Regardez le test pour l’utiliser"
+  },
+  "runs_laneRunning": {
+    "message": "En cours…"
+  },
+  "runs_laneAltLast": {
+    "message": "La page du test, telle que vue en dernier"
+  },
   "runs_pickAt": {
     "message": "Choisir sur l’image"
   },

@@ -709,6 +709,75 @@ describe('the live view on the hub', () => {
   });
 });
 
+describe('a lane watched on the hub', () => {
+  test('reads watch, naming the run and its lane, and refuses one without either', () => {
+    const watch = { type: 'watch', id: 3, ref: 'ed-1', lane: 2, on: true };
+    expect(parseHubCommand(json(watch))).toEqual(watch);
+    expect(parseHubCommand(json({ ...watch, on: false }))).toEqual({ ...watch, on: false });
+    for (const broken of [
+      { ...watch, ref: 'ed 1' },
+      { ...watch, lane: -1 },
+      { ...watch, lane: 1.5 },
+      { ...watch, lane: undefined },
+      { ...watch, on: 'yes' },
+    ]) {
+      expect(parseHubCommand(json(broken))).toMatchObject({ type: 'invalid', id: 3 });
+    }
+  });
+
+  test('has the extension read a frame of a lane, of its test and its stop, and why none comes', () => {
+    const frame: HubMessage = {
+      type: 'lane-frame',
+      ref: 'ed-1',
+      lane: 1,
+      worker: 4,
+      test: 'abc',
+      since: null,
+      width: 1280,
+      height: 720,
+      data: '/9j/4A==',
+    };
+    expect(parseHubMessage(json(frame))).toEqual(frame);
+    const atStop = { ...frame, since: '2026-10-25T10:00:00.000Z' };
+    expect(parseHubMessage(json(atStop))).toEqual(atStop);
+    for (const broken of [
+      { ...frame, lane: -1 },
+      { ...frame, worker: undefined },
+      { ...frame, test: null },
+      { ...frame, test: '' },
+      { ...frame, since: '' },
+      { ...frame, since: undefined },
+      { ...frame, data: '<svg>' },
+    ]) {
+      expect(parseHubMessage(json(broken)), JSON.stringify(broken).slice(0, 80)).toBeNull();
+    }
+    const refused: HubMessage = {
+      type: 'lane-frame',
+      ref: 'ed-1',
+      lane: 1,
+      worker: 4,
+      test: null,
+      since: null,
+      refused: 'No page to show.',
+    };
+    expect(parseHubMessage(json(refused))).toEqual(refused);
+    expect(parseHubMessage(json({ ...refused, refused: 'x'.repeat(MAX_HUB_MESSAGE + 1) }))).toBeNull();
+  });
+
+  test('is offered by a hub whose welcome lists lanes, for a worker whose intents list watch', () => {
+    const welcome = { type: 'welcome', pid: 1, version: '1', client: null, roots: [], keepaliveMs: 1 };
+    expect(parseHubMessage(json({ ...welcome, features: ['lanes', 'peers'] }))).toEqual({
+      ...welcome,
+      features: ['peers', 'lanes'],
+    });
+    const watched = { ...session, workers: [{ ...session.workers[0]!, intents: ['pick', 'watch'] }] };
+    expect(parseHubMessage(json({ type: 'session', session: watched }))).toEqual({
+      type: 'session',
+      session: watched,
+    });
+  });
+});
+
 describe('the live endpoint', () => {
   test('sits beside the Send to editor endpoint, in both editors', () => {
     expect(liveUrlOf('http://127.0.0.1:43123/piwi/send')).toBe('http://127.0.0.1:43123/piwi/live');
