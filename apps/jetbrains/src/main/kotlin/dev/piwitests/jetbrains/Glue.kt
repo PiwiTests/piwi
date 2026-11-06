@@ -1476,6 +1476,61 @@ object Glue {
             "Nothing is stored, and Stop Sharing ends it within seconds."
     }
 
+    /**
+     * How far the runs are, as their own processes say and as the status bar says it: how many of their tests ended out
+     * of how many they hold, and how many failed; null while no run says.
+     */
+    fun runProgressText(sessions: Map<String, RunSession>): String? {
+        val told = sessions.values.mapNotNull { it.progress }
+        if (told.isEmpty()) return null
+        val failed = told.sumOf { it.failed }
+        return "Piwi: ${told.sumOf { it.done }} of ${told.sumOf { it.total }}" + if (failed > 0) " · $failed failed" else ""
+    }
+
+    /** A worker a Worker tab can watch while its test runs: its run, its worker and slot (`lane`), and its words. */
+    data class WatchTarget(val ref: String, val worker: Int, val lane: Int, val label: String)
+
+    /** What the worker in a slot is called: `Worker 2` for parallel index 1, as the service says it. */
+    fun workerName(lane: Int): String = "Worker ${lane + 1}"
+
+    /**
+     * The workers of the live runs whose reporter shows their page while their test runs (`RunWorker.watchable`), in
+     * their order; `pausable` keeps those a Pause can stop now (Pause and Watch).
+     */
+    fun watchableWorkers(sessions: Map<String, RunSession>, pausable: Boolean = false): List<WatchTarget> =
+        sessions.values.flatMap { session ->
+            session.workers.orEmpty()
+                .filter { it.watchable && (!pausable || (it.state != "stopped" && !it.pausing && it.test?.cannotPause == null)) }
+                .map { w ->
+                    val title = w.test?.title.orEmpty().joinToString(" › ")
+                    val doing = when {
+                        w.test == null -> "between tests"
+                        w.state == "stopped" -> "stopped in $title"
+                        else -> "running $title"
+                    }
+                    WatchTarget(session.ref ?: "", w.worker, w.parallelIndex, "${workerName(w.parallelIndex)} · $doing")
+                }
+        }
+
+    /** What a Worker tab says of its slot: the worker there now, its stop, and the caption above the image. */
+    data class LaneShown(val worker: RunWorker?, val stop: ShownStop?, val caption: String)
+
+    /**
+     * What the Worker tab watching the slot `lane` of a run shows above the image: the run ended, the slot's worker is
+     * starting or between tests, its test runs (or a Pause reached it), or where it stopped, from `stops`.
+     */
+    fun laneShown(session: RunSession?, lane: Int, stops: List<ShownStop>): LaneShown {
+        val name = workerName(lane)
+        if (session == null || session.ended) return LaneShown(null, null, "$name · the run ended.")
+        val worker = session.workers.orEmpty().firstOrNull { it.parallelIndex == lane }
+            ?: return LaneShown(null, null, "$name · starting…")
+        val test = worker.test ?: return LaneShown(worker, null, "$name · between tests")
+        val title = test.title.orEmpty().joinToString(" › ")
+        val stop = stops.firstOrNull { it.ref == session.ref && it.worker == worker.worker }
+            ?: return LaneShown(worker, null, "$name · ${if (worker.pausing) "Pausing" else "Running"} · $title")
+        return LaneShown(worker, stop, "$name · ${pausedText(stop.stop, stop.test, stop.terminal, stop.runner)} · ${stopPlace(stop.stop)}")
+    }
+
     /** The first run of the sessions shared live, as the status bar's tooltip says it; null for none. */
     fun sharedLive(sessions: Map<String, RunSession>): RunLive? = sharedRunsOf(sessions).firstOrNull { it.live.shared }?.live
 
@@ -1544,6 +1599,8 @@ object Glue {
         val endable: Boolean = false,
         /** A run is shared live (Stop Sharing), and the views open of the shared runs; null for none. */
         val liveViewers: Int? = null,
+        /** A worker's reporter shows its page while its test runs: Watch a Worker's Test. */
+        val watchable: Boolean = false,
     ) {
         val liveShared: Boolean get() = liveViewers != null
     }
@@ -1560,6 +1617,7 @@ object Glue {
             stoppable = sessions.values.any { !it.terminal },
             endable = stopsOf(sessions).any(::canEnd),
             liveViewers = sharedRunsOf(sessions).filter { it.live.shared }.takeIf { it.isNotEmpty() }?.sumOf { it.live.viewers },
+            watchable = workers.any { it.watchable },
         )
     }
 

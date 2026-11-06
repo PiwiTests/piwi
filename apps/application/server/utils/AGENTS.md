@@ -233,7 +233,7 @@ runs (`@piwitests/editor/run-host`), plus these:
   (`isBrowserRequest`); `GET /api/desktop/live` names the hub to Piwi Picker, never the channel.
 - **Code from a stop goes to the window, never over the hub.** `StopActions` keeps it for the window's stream
   (`stop-code`); the hub's peers hear only its sentence (`code`). It is made only for a file of a linked folder, from
-  its disk text, and refused once the file was written since the run's first worker connected.
+  its disk text, and refused once the file was written since the run's first connection opened.
 - **Pick and Record in the test's window, and Assert, are declined**: they end in an editor (its Send to editor pairing,
   its recorder), which this server has none of. A failure no pause bar shows is held only in a run a window `show`s (its
   **Hold failures** switch is on), or while Piwi Picker `follow`s the runs, and never in a run nobody attends: its ref

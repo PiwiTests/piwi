@@ -4,6 +4,7 @@ import type {
   HubImage,
   HubKeptRequest,
   HubLive,
+  HubProgress,
   HubSession,
   HubStop,
   HubWorker,
@@ -1539,11 +1540,19 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
       },
     ),
   ];
+  if (session.progress) {
+    const { total, done, failed, flaky } = session.progress;
+    children.push(part(`${runKey}|progress`, [total, done, failed, flaky], () => renderProgress(session.progress!)));
+  }
   // A run that cannot be shared says why under its workers, after what steers it.
   const refused = session.ended ? null : (session.live?.refused ?? null);
   if (session.ended) {
+    const progress = session.progress ?? null;
+    const failure = progress?.status === 'failed' ? progress.failure : null;
     children.push(
-      part(`${runKey}|ended`, null, () => iconText(element('p', 'run-ended'), 'check-circle', t('runs_ended'))),
+      part(`${runKey}|ended`, [progress?.status ?? null, failure?.title ?? null, failure?.error ?? null], () =>
+        renderEnded(progress),
+      ),
     );
   } else if (away) {
     const editor = hub?.desktop ? t('runs_desktopName') : (hub?.client ?? t('runs_editor'));
@@ -1580,6 +1589,37 @@ function renderRun(current: RunsState, run: RunsRun): HTMLElement {
   }
   place(section, children);
   return section;
+}
+
+/** How far a run is, under its name: how many of its tests ended, of all it holds, and how many failed or were flaky. */
+function renderProgress(progress: HubProgress): HTMLElement {
+  const line = element('p', 'run-progress', tn('runs_progress', progress.total, { done: progress.done }));
+  if (progress.failed > 0) line.append(' · ', element('span', 'failed', tn('runs_progressFailed', progress.failed)));
+  if (progress.flaky > 0) line.append(' · ', element('span', 'flaky', tn('runs_progressFlaky', progress.flaky)));
+  return line;
+}
+
+/** How a run ended, with the icon and words of its status: just that it ended when its reporter does not say. */
+const ENDINGS = {
+  passed: ['check-circle', 'runs_endedPassed'],
+  failed: ['x-circle', 'runs_endedFailed'],
+  timedout: ['clock', 'runs_endedTimedOut'],
+  interrupted: ['stop', 'runs_endedInterrupted'],
+} as const satisfies Partial<Record<HubProgress['status'], readonly [IconName, string]>>;
+
+/** The line of a run that ended: how, as its own process said, and its first failure's title, its error as the tip. */
+function renderEnded(progress: HubProgress | null): HTMLElement {
+  const status = progress?.status ?? 'other';
+  const [mark, words] =
+    status in ENDINGS ? ENDINGS[status as keyof typeof ENDINGS] : (['check-circle', 'runs_ended'] as const);
+  const note = iconText(element('p', `run-ended ${status}`), mark, t(words));
+  const failure = status === 'failed' ? (progress?.failure ?? null) : null;
+  if (failure) {
+    const first = element('span', 'first-failure', t('runs_firstFailure', { title: failure.title }));
+    if (failure.error) first.title = failure.error;
+    note.lastElementChild?.append(' ', first);
+  }
+  return note;
 }
 
 /** What the window says of a run that cannot be shared live, by why the reporter gave it no key. */

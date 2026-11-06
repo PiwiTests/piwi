@@ -686,6 +686,7 @@ export class RunHub {
             },
           }
         : {}),
+      ...(session.progress ? { progress: session.progress } : {}),
     };
   }
 

@@ -38,9 +38,10 @@ function readLines(socket, heard, onMessage = () => {}) {
 
 /**
  * Worker 0 of the run `ref` on the run channel `channel` names, as the capture fixtures play it, its reporter taking
- * `takes`: what it heard, what it sends, and the requests it answers at once (`answers`, by what they ask).
+ * `takes` and doing `features`: what it heard, what it sends, and the requests it answers at once (`answers`, by what
+ * they ask).
  */
-function runWorker(channel, ref, takes) {
+function runWorker(channel, ref, takes, features) {
   const net = require('node:net');
   const hash = channel.lastIndexOf('#');
   const socket = net.connect(channel.slice(0, hash));
@@ -62,6 +63,7 @@ function runWorker(channel, ref, takes) {
     playwright: '1.64.1',
     reporter: '0.60.0',
     ...(takes ? { takes } : {}),
+    ...(features ? { features } : {}),
   });
   return {
     socket,
@@ -992,6 +994,101 @@ const tests = {
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
   },
 
+  async 'Pause and watch a worker’s test opens its slot beside the editor, and its stop shows there, input and pick included'() {
+    const api = vscode.extensions.getExtension('piwitests.piwi').exports;
+    const run = api.lastRun();
+    const ref = 'ed-0000c0d5';
+    const worker = runWorker(
+      run.env.PIWI_RUN_CHANNEL,
+      ref,
+      ['pick', 'record', 'locator', 'view', 'input', 'pick-at'],
+      ['view-lane'],
+    );
+    const { send, heardOne, answers } = worker;
+    answers['view-lane'] = { ok: true, message: 'The live view is on.' };
+    answers.input = { ok: true, message: 'Played.' };
+    answers['pick-at'] = { ok: true, message: 'Picked on the page.', locator: null };
+    send({
+      type: 'test-begin',
+      testId: 't4',
+      title: ['applies a coupon'],
+      file: 'tests/coupon.spec.ts',
+      line: 3,
+      project: 'chromium',
+      retry: 0,
+      cannotPause: null,
+    });
+    try {
+      await waitFor(
+        () => api.runSessions().find((s) => s.ref === ref)?.workers[0]?.watchable,
+        'a worker whose test can be watched',
+      );
+      // The panel opens beside the spec, where the stop's line is revealed.
+      await vscode.window.showTextDocument(vscode.Uri.file(path.join(workspace, 'tests', 'coupon.spec.ts')));
+      await vscode.commands.executeCommand('piwi.pauseAndWatch', { ref });
+      await heardOne('the lane view asked', (m) => m.type === 'request' && m.what === 'view-lane' && m.on === true);
+      await heardOne('the pause', (m) => m.type === 'control' && m.action === 'pause');
+      send({ type: 'lane-frame', test: 't4', stop: null, width: 1280, height: 800, data: '/9j/4AAQ' });
+      const running = await waitFor(() => (api.workerView()?.image ? api.workerView() : null), 'the running page');
+      assert.equal(running.caption, 'Worker 1 · Pausing · applies a coupon');
+      assert.equal(running.stale, false);
+      assert.equal(running.live.on, true);
+      assert.equal(running.live.input, false);
+      // A headless stop of the slot shows in the panel, the image of the test running kept, dimmed, until the next.
+      send({
+        type: 'stopped',
+        stop: 1,
+        reason: 'pause',
+        title: 'Fill "MORNING10" getByLabel(\'Coupon code\')',
+        place: { file: 'tests/coupon.spec.ts', line: 5, column: 34 },
+        locator: "getByLabel('Coupon code')",
+        bar: false,
+      });
+      const stopped = await waitFor(
+        () => (api.workerView()?.caption.includes('Paused') ? api.workerView() : null),
+        'the stop in the worker panel',
+      );
+      assert.equal(
+        stopped.caption,
+        'Worker 1 · Paused · Fill "MORNING10" getByLabel(\'Coupon code\') · coupon.spec.ts:5',
+      );
+      assert.equal(stopped.stale, true);
+      assert.equal(stopped.live.input, true);
+      assert.notEqual(stopped.live.shown, running.live.shown, 'the stop is a view of its own');
+      send({ type: 'lane-frame', test: 't4', stop: 1, width: 1280, height: 800, data: '/9j/4AAR' });
+      await waitFor(
+        () => api.workerView()?.image?.data === '/9j/4AAR' && !api.workerView().stale,
+        'the image of the stop',
+      );
+      const { shown } = api.workerView().live;
+      assert.equal(api.workerView().pick?.shown, shown, 'a click on the image picks at the stop');
+      // Interact, then input: it goes to the stop, through the lane the panel watches.
+      await api.workerMessage({ type: 'interact', on: true, shown });
+      assert.equal(api.workerView().live.interacting, true);
+      await api.workerMessage({ type: 'input', id: 1, shown, events: [{ type: 'mouse', action: 'move', x: 5, y: 5 }] });
+      await heardOne('the input at the stop', (m) => m.type === 'request' && m.what === 'input' && m.stop === 1);
+      // A pick on the image: the point in CSS pixels of the page, the answer under the caption.
+      await api.workerMessage({ type: 'pick', shown, x: 320, y: 100, width: 640, height: 400 });
+      const pick = await heardOne('the pick on the image', (m) => m.type === 'request' && m.what === 'pick-at');
+      assert.deepEqual([pick.stop, pick.x, pick.y], [1, 640, 200]);
+      assert.equal(api.workerView().note, 'Picked on the page.');
+      // No paused page of its own: the image was never asked.
+      assert.equal(api.pausedPage(), null);
+      assert.equal(worker.heard.filter((m) => m.what === 'image').length, 0);
+      // The worker goes on: a message of the stop's view reaches nothing.
+      send({ type: 'running', stop: 1 });
+      await waitFor(() => api.workerView()?.live.shown !== shown, 'the view of the running test');
+      assert.equal(api.workerView().live.interacting, false);
+      await api.workerMessage({ type: 'pick', shown, x: 320, y: 100, width: 640, height: 400 });
+      assert.equal(worker.heard.filter((m) => m.what === 'pick-at').length, 1);
+    } finally {
+      worker.socket.destroy();
+    }
+    await waitFor(() => !api.runSessions().some((s) => s.ref === ref), 'the end of the run');
+    assert.equal(api.workerView()?.caption, 'Worker 1 · the run ended.');
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+  },
+
   async 'a C# file shows the lines its tests ran, its functions’ tests, and the marks hide and show again'() {
     const api = vscode.extensions.getExtension('piwitests.piwi').exports;
     const basket = vscode.Uri.file(path.join(workspace, 'src', 'Web', 'Services', 'BasketService.cs'));
@@ -1086,6 +1183,8 @@ const tests = {
       'piwi.finishRun',
       'piwi.endTest',
       'piwi.showPausedPage',
+      'piwi.watchWorker',
+      'piwi.pauseAndWatch',
       'piwi.pickAtStop',
       'piwi.recordAtStop',
       'piwi.assertAtStop',

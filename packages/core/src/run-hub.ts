@@ -18,7 +18,13 @@
  * code, reads a file or reaches an instance.
  */
 import type { EditorDiscovery, HubAddress } from './editor-discovery';
-import { MAX_STOP_ERROR, type KeptRequest } from './run-channel';
+import {
+  MAX_RUN_FAILURE_TEXT,
+  MAX_STOP_ERROR,
+  type KeptRequest,
+  type RunCounts,
+  type RunEndStatus,
+} from './run-channel';
 import { isViewFrameData, isViewPoint, isViewSize, readViewInput, type ViewInput } from './run-view';
 
 /** The WebSocket's path. */
@@ -250,6 +256,22 @@ export interface HubSession {
    * or a reporter that predates **Share live**.
    */
   live?: HubLive;
+  /**
+   * How far the run is, as its own process says (`run-begin`, `run-progress`, `run-end` of
+   * `@piwitests/core/run-channel`): absent from a service or a reporter that predates it.
+   */
+  progress?: HubProgress;
+}
+
+/**
+ * How far a run is: how many tests it holds (`total`), how many ended and with what outcome (`RunCounts`), whether it
+ * still runs or how it ended (`status`), and its first failure, once it ended (the test's title and its error's first
+ * line, null for none).
+ */
+export interface HubProgress extends RunCounts {
+  total: number;
+  status: 'running' | RunEndStatus;
+  failure: { title: string; error: string | null } | null;
 }
 
 /**
@@ -888,7 +910,42 @@ function readSession(value: unknown): HubSession | null {
   if (value.terminal === true) session.terminal = true;
   if (value.terminal === true && value.runner === true) session.runner = true;
   const live = value.live === undefined ? null : readLive(value.live);
-  return live ? { ...session, live } : session;
+  if (live) session.live = live;
+  const progress = value.progress === undefined ? null : readProgress(value.progress);
+  if (progress) session.progress = progress;
+  return session;
+}
+
+const PROGRESS_STATUSES: readonly string[] = ['running', 'passed', 'failed', 'timedout', 'interrupted', 'other'];
+
+/** How far a run is, field by field: a status of a newer service reads as `other`; null when it is not one. */
+function readProgress(value: unknown): HubProgress | null {
+  if (!isObject(value)) return null;
+  const { total, done, failed, flaky, skipped, status, failure } = value;
+  if (![total, done, failed, flaky, skipped].every((n) => isInt(n, 0))) return null;
+  if (
+    (done as number) > (total as number) ||
+    (failed as number) + (flaky as number) + (skipped as number) > (done as number)
+  ) {
+    return null;
+  }
+  if (typeof status !== 'string') return null;
+  let first: HubProgress['failure'] = null;
+  if (failure !== null) {
+    if (!isObject(failure) || str(failure.title, MAX_RUN_FAILURE_TEXT) === null || !failure.title) return null;
+    const error = nullableStr(failure.error, MAX_RUN_FAILURE_TEXT);
+    if (error === undefined) return null;
+    first = { title: failure.title as string, error };
+  }
+  return {
+    total: total as number,
+    done: done as number,
+    failed: failed as number,
+    flaky: flaky as number,
+    skipped: skipped as number,
+    status: (PROGRESS_STATUSES.includes(status) ? status : 'other') as HubProgress['status'],
+    failure: first,
+  };
 }
 
 /** A run's live view on the team instance, field by field; null when it is not one. */

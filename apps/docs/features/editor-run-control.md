@@ -34,9 +34,11 @@ runs to the cursor in VS Code. **Pause** and **End the test** have no key in VS 
 waits for the next stop rather than start a debug session.
 
 - **In VS Code**, the controls sit in the status bar beside the run's progress while they apply (`Pausing…` until a
-  paused test stops), and in the palette (**Piwi: Pause the run** and its kin, **Piwi: Show the paused page**).
+  paused test stops), and in the palette (**Piwi: Pause the run** and its kin, **Piwi: Show the paused page**). The
+  progress (`3 of 9`, and how many failed) comes from the run itself, so it counts offline and with the desktop app.
 - **In a JetBrains IDE**, they are under **Tools → Piwi**, enabled while they apply, and first in the status bar
-  item's menu, which reads `Piwi: paused · checkout.page.ts:12` while a test is stopped.
+  item's menu, which reads `Piwi: paused · checkout.page.ts:12` while a test is stopped, and `Piwi: 3 of 9` while the
+  run goes on.
 
 **Pause** stops every run Piwi started in this window (in a JetBrains IDE, this project), each worker before its next
 call that Playwright's debugger stops at ([which calls](./editor-breakpoints#limits)): a long call or a `waitForTimeout`
@@ -89,7 +91,8 @@ the one on the stopped line, and the tab shows the result or refusal.
 the page; **Escape** releases the keyboard, and **Shift+click** picks a locator. Watching stops when you hide or close
 the tab, resume the test or switch stops. Interact starts off at each stop. No Picker installation, pairing, project
 live-view setting or extra port forwarding is needed: the preview uses the editor's existing connection. Reporters
-without live-view support keep the still image.
+without live-view support keep the still image. To watch a test before it stops, while it runs:
+[Watch a running test](./watch-running-test).
 
 ## Breakpoints while the run goes on
 
@@ -99,13 +102,6 @@ edited file applies to that line of the run's code. The breakpoints that count a
 breakpoints in script files under a Playwright config's folder, while `piwi.breakpoints` (**Pause the runs Piwi starts
 at the editor's breakpoints** in a JetBrains IDE) is on. A logpoint, or a breakpoint that does not suspend, never stops
 the test; a condition is not read, so a conditional breakpoint stops at each pass.
-
-## Share live
-
-**Share live** lets a teammate watch the run from its page on your team's instance: **Piwi: Share the run live on the
-team instance** in VS Code, **Tools → Piwi → Share the Run Live** in a JetBrains IDE, any time. It first says what goes
-out and to whom (once a VS Code window, once a JetBrains project); shared, the status bar counts its views, until
-**Stop sharing**: [Share a run live](./share-live).
 
 ## How it works
 
@@ -134,6 +130,8 @@ answers. Closing the IDE closes the connections: a stop with no pause bar then g
 
 - [Breakpoints in the browser](./editor-breakpoints): the breakpoints a run starts with, and the pause bar.
 - [Runs from the editor](./editor-runs): the commands that start a run, and how the editor follows it.
+- [Watch a running test](./watch-running-test): a worker's page while its test runs.
+- [Share a run live](./share-live): let a teammate watch a run Piwi started, from the editor.
 - [Debug in my editor](./debug-in-editor): such a run, started from a failure's page.
 - [Editor extensions](./editors): what the editor shows from your suite, in both editors.
 - [Remote development](/guide/remote-development): remote windows and JetBrains Gateway.

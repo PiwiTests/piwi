@@ -1475,6 +1475,8 @@ export interface RunWorker {
   stop: RunStop | null;
   /** What its reporter takes at a stop. */
   takes: RunTake[];
+  /** Its reporter shows its page while its test runs: `piwi/laneView` watches its slot. */
+  watchable: boolean;
   /**
    * A Pause reached it and it has not stopped yet: it stops before its test's next call that Playwright's debugger
    * stops at (a long call, a `waitForTimeout`, finishes first), or the next test's first one. A client shows
@@ -1523,6 +1525,25 @@ export interface RunSession {
    * `share`; absent for one whose reporter predates it.
    */
   live?: RunLive;
+  /** How far the run is, as its own process says; absent for a run whose reporter predates it. */
+  progress?: RunProgress;
+}
+
+/**
+ * How far a run is (`run-begin`, `run-progress` and `run-end` of `@piwitests/core/run-channel`): how many tests it
+ * holds (`total`, its repeats included), how many ended, each once by the outcome of its last attempt (`done`, and of
+ * them `failed`, `flaky` and `skipped`; the others passed), whether it still runs or how it ended (`status`, `other`
+ * for a status of a newer Playwright), and its first failure once it ended (the test's title and the first line of its
+ * error; null for none).
+ */
+export interface RunProgress {
+  total: number;
+  done: number;
+  failed: number;
+  flaky: number;
+  skipped: number;
+  status: 'running' | 'passed' | 'failed' | 'timedout' | 'interrupted' | 'other';
+  failure: { title: string; error: string | null } | null;
 }
 
 /**
@@ -1680,6 +1701,33 @@ export type PageFrame = Omit<PageViewParams, 'on'> &
 export const PAGE_VIEW_REQUEST = 'piwi/pageView';
 export const PAGE_INPUT_REQUEST = 'piwi/pageInput';
 export const PAGE_FRAME_NOTIFICATION = 'piwi/pageFrame';
+
+/**
+ * `piwi/laneView`: the editor watches a worker's slot of a run (`lane`, its `RunWorker.parallelIndex`), running or
+ * stopped, through its existing connection: the page of the test the worker there runs, of its stop while it stands at
+ * one, through its tests and the worker Playwright starts in its place, until it stops watching (`on: false`) or the
+ * run ends. One lane at a time: watching another stops the first. Refused for a worker whose reporter does not show it
+ * (`RunWorker.watchable`). At a stop of the lane's running test, `piwi/pageInput` takes the editor's input as from a
+ * viewer of that stop.
+ */
+export interface LaneViewParams {
+  ref: string;
+  lane: number;
+  on: boolean;
+}
+
+/**
+ * `piwi/laneFrame` (notification, server to client): a transient JPEG of the lane the editor watches, of the worker
+ * `worker` while its test `test` (Playwright's id) runs, or at the stop `since` names; or why its page has no frame now
+ * (`refused`). Never stored; the worker sends none of a test it left, and the service none of a stop that ended.
+ */
+export type LaneFrame = { ref: string; lane: number; worker: number; test: string | null; since: string | null } & (
+  | { data: string; width: number; height: number }
+  | { refused: string }
+);
+
+export const LANE_VIEW_REQUEST = 'piwi/laneView';
+export const LANE_FRAME_NOTIFICATION = 'piwi/laneFrame';
 
 /**
  * `piwi/pickAt`: Pick on the image, at the stop `since` names, of the run's one stopped worker or `worker`: the element

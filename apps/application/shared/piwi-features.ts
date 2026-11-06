@@ -560,6 +560,15 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/editor-run-control',
       },
       {
+        title: 'Watch a running test',
+        summary:
+          "The page of a test running on your machine, up to ten images a second, through its next tests and stops: from VS Code, a JetBrains IDE, Piwi Picker's Runs window or the desktop app, with Pause and watch to stop it there.",
+        needs: ['fixtures'],
+        where:
+          "Piwi: Watch a worker's test; Tools → Piwi → Watch a Worker's Test in a JetBrains IDE; Watch on a worker of the Runs window or the desktop app",
+        doc: 'features/watch-running-test',
+      },
+      {
         title: 'Code from a pause',
         summary:
           "At a test paused or failed in a run Piwi started, an assertion, a region's ARIA snapshot or a mock of a request the page made written above the stopped line, a locator picked or steps recorded there, and the count of the locator at the cursor on the stopped page.",

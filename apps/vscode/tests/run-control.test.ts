@@ -26,9 +26,15 @@ import {
   linesAbove,
   liveInstance,
   liveItem,
+  progressItem,
+  frameIsCurrent,
+  laneShown,
+  watchTargetsFor,
+  watchableWorkers,
   liveTarget,
   liveText,
   PICK_HINT,
+  RUN_COMMANDS,
   pagePoint,
   pausedPageHtml,
   pausedPageViewChange,
@@ -94,6 +100,7 @@ const worker = (index: number, state: RunWorker['state'], extra: Partial<RunWork
   stop: null,
   pausing: false,
   takes: [],
+  watchable: false,
   ...extra,
 });
 
@@ -165,6 +172,7 @@ describe('what the controls offer', () => {
       actions: [],
       shareable: false,
       liveShared: false,
+      watchable: false,
     });
     expect(controlItems(controlState(new Map()))).toEqual([]);
     expect(liveItem(new Map())).toBeNull();
@@ -202,6 +210,7 @@ describe('what the controls offer', () => {
         actions: [],
         shareable: false,
         liveShared: false,
+        watchable: false,
       });
       expect(controlItems(shown).map((i) => i.command)).toEqual(['piwi.pauseRun', 'piwi.stopRun']);
     }
@@ -219,6 +228,7 @@ describe('what the controls offer', () => {
       actions: [],
       shareable: false,
       liveShared: false,
+      watchable: false,
     });
     expect(controlItems(pausing).map((i) => [i.text, i.command])).toEqual([
       ['$(loading~spin) Pausing…', null],
@@ -245,6 +255,7 @@ describe('what the controls offer', () => {
       actions: [],
       shareable: false,
       liveShared: false,
+      watchable: false,
     });
     expect(controlItems(shown).map((i) => [i.command, i.tooltip])).toEqual([
       ['piwi.resumeRun', 'Piwi: Resume (F5)'],
@@ -322,6 +333,79 @@ describe('Share live', () => {
     expect(shareLiveWarning({ page: null })).toContain('the Piwi instance it reports to');
     // A run whose workers have not said yet how it stands is warned of too.
     expect(shareLiveWarning(undefined)).toBe(shareLiveWarning({ page: null }));
+  });
+
+  test('counts in the status bar the tests the runs ran, as their own processes say, and their failures', () => {
+    expect(progressItem(sessionsOf(session('ed-1', [worker(0, 'running')])))).toBeNull();
+    const counted = (ref: string, done: number, total: number, failed = 0, flaky = 0): RunSession => ({
+      ...session(ref, [worker(0, 'running')]),
+      progress: { total, done, failed, flaky, skipped: 0, status: 'running', failure: null },
+    });
+    expect(progressItem(sessionsOf(counted('ed-1', 3, 9)))).toEqual({
+      text: '$(beaker) 3 of 9',
+      tooltip: 'Piwi: the run ran 3 of 9 tests.',
+      command: null,
+    });
+    expect(progressItem(sessionsOf(counted('ed-1', 3, 9, 1), counted('ed-2', 1, 1, 0, 1)))).toEqual({
+      text: '$(beaker) 4 of 10 · $(error) 1',
+      tooltip: 'Piwi: 2 runs ran 4 of 10 tests: 1 failed, 1 flaky.',
+      command: null,
+    });
+    // A worker whose reporter shows its running test: a click watches it.
+    const watched = { ...counted('ed-1', 3, 9), workers: [worker(0, 'running', { watchable: true })] };
+    expect(progressItem(sessionsOf(watched))).toEqual({
+      text: '$(beaker) 3 of 9',
+      tooltip: "Piwi: the run ran 3 of 9 tests. Click to watch a worker's test.",
+      command: RUN_COMMANDS.watch,
+    });
+  });
+
+  test('lists the workers a panel can watch, and those Pause and watch can pause', () => {
+    const sessions = sessionsOf(
+      session('ed-1', [
+        worker(0, 'running', { watchable: true }),
+        worker(1, 'stopped', { watchable: true, parallelIndex: 1 }),
+        worker(2, 'running', { parallelIndex: 2 }),
+        worker(3, 'between', { watchable: true, parallelIndex: 3 }),
+      ]),
+    );
+    expect(watchableWorkers(sessions)).toEqual([
+      { ref: 'ed-1', worker: 0, lane: 0, label: 'Worker 1', description: 'running checkout › pays' },
+      { ref: 'ed-1', worker: 1, lane: 1, label: 'Worker 2', description: 'stopped in checkout › pays' },
+      { ref: 'ed-1', worker: 3, lane: 3, label: 'Worker 4', description: 'between tests' },
+    ]);
+    expect(watchableWorkers(sessions, true).map((t) => t.worker)).toEqual([0, 3]);
+    expect(controlState(sessions).watchable).toBe(true);
+    const all = watchableWorkers(sessions);
+    expect(watchTargetsFor(all, null)).toHaveLength(3);
+    expect(watchTargetsFor(all, { ref: 'ed-1', worker: 1 }).map((t) => t.lane)).toEqual([1]);
+    expect(watchTargetsFor(all, { ref: 'ed-2' })).toEqual([]);
+  });
+
+  test('says what the worker panel’s slot does, and whether its image is of now', () => {
+    const uri = 'file:///work/shop/tests/cart.spec.ts';
+    const running = worker(5, 'running', { parallelIndex: 1 });
+    const stopped = worker(5, 'stopped', { parallelIndex: 1, stop: stopAt(uri, 7, false), takes: ['input'] });
+    expect(laneShown(undefined, 1, []).caption).toBe('Worker 2 · the run ended.');
+    expect(laneShown(session('ed-1', []), 1, []).caption).toBe('Worker 2 · starting…');
+    expect(laneShown(session('ed-1', [worker(5, 'between', { parallelIndex: 1 })]), 1, []).caption).toBe(
+      'Worker 2 · between tests',
+    );
+    expect(laneShown(session('ed-1', [running]), 1, []).caption).toBe('Worker 2 · Running · checkout › pays');
+    expect(laneShown(session('ed-1', [{ ...running, pausing: true }]), 1, []).caption).toBe(
+      'Worker 2 · Pausing · checkout › pays',
+    );
+    const at = stopsOf(sessionsOf(session('ed-1', [stopped])));
+    const shown = laneShown(session('ed-1', [stopped]), 1, at);
+    expect(shown.stop).toEqual(at[0]);
+    expect(shown.caption).toBe('Worker 2 · Paused · Fill "WELCOME10" getByLabel(\'Coupon\') · cart.spec.ts:8');
+    const test = running.test!.id;
+    expect(frameIsCurrent({ worker: 5, test, since: null }, running)).toBe(true);
+    expect(frameIsCurrent({ worker: 5, test, since: null }, stopped)).toBe(false);
+    expect(frameIsCurrent({ worker: 5, test, since: stopped.stop!.since }, stopped)).toBe(true);
+    expect(frameIsCurrent({ worker: 4, test, since: null }, running)).toBe(false);
+    expect(frameIsCurrent({ worker: 5, test: 'other', since: null }, running)).toBe(false);
+    expect(frameIsCurrent({ worker: 5, test, since: null }, null)).toBe(false);
   });
 
   test('offers a run that can be shared in the status bar, and none that cannot, whose command says why', () => {

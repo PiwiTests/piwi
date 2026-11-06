@@ -677,11 +677,45 @@ class GlueTest {
         assertEquals(null, Glue.sharedLive(mapOf("ed-1" to ready)))
         assertEquals("Shared live on piwi.example.com: 2 views open", Glue.sharedLiveText(shared.live!!))
         assertEquals("Shared live: nobody watches yet", Glue.sharedLiveText(RunLive(true, null, null, 0)))
+        // How far the runs are, as their own processes say: none from a reporter that predates it.
+        assertEquals(null, Glue.runProgressText(mapOf("ed-1" to ready)))
+        val counted = ready.copy(progress = RunProgress(total = 9, done = 3))
+        assertEquals("Piwi: 3 of 9", Glue.runProgressText(mapOf("ed-1" to counted)))
+        val failing = ready.copy(ref = "ed-2", progress = RunProgress(total = 1, done = 1, failed = 1, status = "failed"))
+        assertEquals("Piwi: 4 of 10 · 1 failed", Glue.runProgressText(mapOf("ed-1" to counted, "ed-2" to failing)))
         val stoppedShared = mapOf("ed-1" to shared.copy(workers = listOf(RunWorker(0, 0, "stopped", runTest(), stopAt(pageUri, 4)))))
         assertEquals(
             "Piwi: paused · checkout.page.ts:5 · shared live · 2 views",
             Glue.runControlStatus(Glue.runControls(stoppedShared), Glue.stopsOf(stoppedShared)),
         )
+    }
+
+    @Test
+    fun `the workers a Worker tab can watch, and what it says of its slot`() {
+        val sessions = mapOf(
+            "ed-1" to session(
+                "ed-1",
+                RunWorker(0, 0, "running", runTest(), watchable = true),
+                RunWorker(1, 1, "stopped", runTest(), stopAt(specUri, 5), watchable = true),
+                RunWorker(2, 2, "running", runTest()),
+                RunWorker(3, 3, "between", watchable = true),
+            ),
+        )
+        assertEquals(
+            listOf("Worker 1 · running checkout › pays", "Worker 2 · stopped in checkout › pays", "Worker 4 · between tests"),
+            Glue.watchableWorkers(sessions).map { it.label },
+        )
+        assertEquals(listOf(0, 3), Glue.watchableWorkers(sessions, pausable = true).map { it.worker })
+        assertTrue(Glue.runControls(sessions).watchable)
+        assertFalse(Glue.runControls(mapOf("ed-2" to session("ed-2", RunWorker(0, 0, "running", runTest())))).watchable)
+        val stops = Glue.stopsOf(sessions)
+        assertEquals("Worker 1 · the run ended.", Glue.laneShown(null, 0, stops).caption)
+        assertEquals("Worker 6 · starting…", Glue.laneShown(sessions["ed-1"], 5, stops).caption)
+        assertEquals("Worker 4 · between tests", Glue.laneShown(sessions["ed-1"], 3, stops).caption)
+        assertEquals("Worker 1 · Running · checkout › pays", Glue.laneShown(sessions["ed-1"], 0, stops).caption)
+        val stopped = Glue.laneShown(sessions["ed-1"], 1, stops)
+        assertEquals(stops.single(), stopped.stop)
+        assertEquals("Worker 2 · Paused · Fill \"WELCOME10\" getByLabel('Coupon') · checkout.spec.ts:6", stopped.caption)
     }
 
     @Test

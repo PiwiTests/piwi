@@ -214,6 +214,13 @@
             <action id="Piwi.ShowPausedPage" class="dev.piwitests.jetbrains.ShowPausedPageAction" text="Show the Paused Page"
                     icon="AllIcons.Actions.Preview"
                     description="An image of the stopped test's page, in the Piwi tool window"/>
+            <!-- Enabled while a worker's reporter shows its running test, with no shortcut. -->
+            <action id="Piwi.WatchWorker" class="dev.piwitests.jetbrains.WatchWorkerAction" text="Watch a Worker's Test"
+                    icon="AllIcons.Actions.Show"
+                    description="The page of the test a worker runs, a few images a second, in the Piwi tool window"/>
+            <action id="Piwi.PauseAndWatch" class="dev.piwitests.jetbrains.PauseAndWatchAction"
+                    text="Pause and Watch a Worker's Test"
+                    description="Stop a worker before its next call, and watch its page in the Piwi tool window"/>
             <!-- The code actions at a stop: enabled while a stop offers them, with no shortcut. -->
             <action id="Piwi.PickAtStop" class="dev.piwitests.jetbrains.PickAtStopAction" text="Pick a Locator at the Stop"
                     description="Pick an element in the stopped test's window: its locator replaces the one on the stopped line"/>

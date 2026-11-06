@@ -107,11 +107,12 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **A run is shared live on the team instance only from the person's command, after a modal warning the first time in
   the window** (`shareLive` in `src/run-view.ts`, `shareLiveWarning`), as the JetBrains plugin does; only a run known
   not to be shareable is asked without it, for the service to say why. Checked by `tests/run-control.test.ts` ("Share live").
-- **The paused page webview runs scripts only by the style's nonce, for picking or a capable stop's live preview.**
-  Its document takes images from `data:` only. Live input requires Watch live and the separate Interact opt-in, and
-  messages name the shown stop: checked by `tests/run-control.test.ts` and `tests/e2e/paused-page.spec.mjs`. Only a
-  change of the panel's visibility, its closing or a new stop ends or restarts its watch, never a focus change
-  (`pausedPageViewChange`, checked by `tests/run-control.test.ts`).
+- **The paused page and worker panel webviews run scripts only by the style's nonce, for picking or a live view.**
+  Their documents take images from `data:` only. Live input requires the view on and the separate Interact opt-in, and
+  messages name the view they were drawn for, a stop's at a stop: checked by `tests/run-control.test.ts`,
+  `tests/e2e/paused-page.spec.mjs` and the integration suite. Only a change of the panel's visibility, its closing or,
+  for the paused page, a new stop ends or restarts its watch, never a focus change (`pausedPageViewChange`, checked by
+  `tests/run-control.test.ts`).
   ([Run control](ARCHITECTURE.md#run-control))
 
 ## Workflow
@@ -155,8 +156,8 @@ npm run vscode:package            # dist/piwi.vsix
 - `src/send-listener.ts`: the Send to editor endpoint.
 - `src/debug-link.ts`: a debug link read and checked; `src/debug-from-link.ts`: the prompt, then the run.
 - `src/breakpoints.ts`: the breakpoints a test run passes to the service.
-- `src/run-view.ts`: the run controls (the stops, their commands, the paused page); `src/run-control.ts`: their pure
-  half.
+- `src/run-view.ts`: the run controls (the stops, their commands, the paused page); `src/worker-panel.ts`: the worker
+  panel (**Piwi: worker N**); `src/run-control.ts`: their pure half.
 - `walkthrough/`, `media/`: the walkthrough's steps, and the gutter icons and the execution point's arrow.
 - `scripts/`: the screenshots script, and the fixture project it shares with the JetBrains plugin.
 - `tests/`: the unit tests, `tests/integration/` and `tests/e2e/`.

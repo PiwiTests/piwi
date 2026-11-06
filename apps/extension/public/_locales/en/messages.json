@@ -7627,7 +7627,101 @@
   },
   "runs_ended": {
     "message": "The run ended.",
-    "description": "Runs window, on a run that ended. The editor does not say whether its tests passed."
+    "description": "Runs window, on a run that ended, when its reporter does not say how it ended (an older one)."
+  },
+  "runs_progress_one": {
+    "message": "$done$ of $count$ test",
+    "description": "Runs window, under a run’s name: how many of its tests ended (done) of all it holds (count), as the run’s own process says.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "done": {
+        "content": "$2",
+        "example": "0"
+      }
+    }
+  },
+  "runs_progress_other": {
+    "message": "$done$ of $count$ tests",
+    "description": "Runs window, under a run’s name: how many of its tests ended (done) of all it holds (count), as the run’s own process says.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "9"
+      },
+      "done": {
+        "content": "$2",
+        "example": "3"
+      }
+    }
+  },
+  "runs_progressFailed_one": {
+    "message": "$count$ failed",
+    "description": "Runs window, after runs_progress: how many of the run’s tests failed so far.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_progressFailed_other": {
+    "message": "$count$ failed",
+    "description": "Runs window, after runs_progress: how many of the run’s tests failed so far.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_progressFlaky_one": {
+    "message": "$count$ flaky",
+    "description": "Runs window, after runs_progress: how many of the run’s tests passed only on a retry.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_progressFlaky_other": {
+    "message": "$count$ flaky",
+    "description": "Runs window, after runs_progress: how many of the run’s tests passed only on a retry.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_endedPassed": {
+    "message": "The run passed.",
+    "description": "Runs window, on a run that ended with every test passed or skipped."
+  },
+  "runs_endedFailed": {
+    "message": "The run failed.",
+    "description": "Runs window, on a run that ended with a failure."
+  },
+  "runs_firstFailure": {
+    "message": "First failure: $title$",
+    "description": "Runs window, after runs_endedFailed: the title of the run’s first failed test (title), as Playwright names it.",
+    "placeholders": {
+      "title": {
+        "content": "$1",
+        "example": "cart › adds a mug"
+      }
+    }
+  },
+  "runs_endedTimedOut": {
+    "message": "The run timed out.",
+    "description": "Runs window, on a run that ended because it reached its global timeout."
+  },
+  "runs_endedInterrupted": {
+    "message": "The run was interrupted.",
+    "description": "Runs window, on a run that ended because it was stopped (Stop, Ctrl+C, or its maximum of failures)."
   },
   "runs_stoppedBreakpoint": {
     "message": "Stopped at a breakpoint",

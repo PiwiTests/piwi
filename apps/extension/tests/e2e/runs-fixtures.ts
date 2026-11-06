@@ -20,7 +20,13 @@ import {
 } from '@piwitests/core/editor-send';
 import { lineReader, parseHandoffToTest, type HandoffToTest } from '@piwitests/core/ide-recorder';
 import type { RawCaptureEvent } from '@piwitests/core/recording';
-import { RUN_TAKES, type HubToRun, type KeptResponse, type RunTake } from '@piwitests/core/run-channel';
+import {
+  RUN_TAKES,
+  type HubToRun,
+  type KeptResponse,
+  type RunMainToHub,
+  type RunTake,
+} from '@piwitests/core/run-channel';
 import { liveHubsOf, type HubKeptRequest, type HubSession, type LiveHub } from '@piwitests/core/run-hub';
 import type { ViewInput } from '@piwitests/core/run-view';
 import {
@@ -332,6 +338,33 @@ export async function startRun(
   const worker = new FakeWorker(channel.path, editor.dir).attach(channel.token, ref, 0, takes);
   worker.begin(title);
   return { ref, worker, channel };
+}
+
+/**
+ * The run `ref`'s own process on its run channel, as its reporter connects from its `onBegin`: it says the run holds
+ * `total` tests in one worker, then sends what it is given (`run-progress`, `run-end`).
+ */
+export function runMain(
+  editor: Editor,
+  channel: Channel,
+  ref: string,
+  total: number,
+): { send(message: RunMainToHub): void; socket: Socket } {
+  const socket = connect(channel.path);
+  const send = (message: RunMainToHub) => void socket.write(`${JSON.stringify(message)}\n`);
+  send({
+    type: 'run-begin',
+    token: channel.token,
+    ref,
+    cwd: editor.dir,
+    pid: process.pid,
+    playwright: '1.64.1',
+    reporter: '0.68.0',
+    total,
+    workers: 1,
+    shard: null,
+  });
+  return { send, socket };
 }
 
 /**

@@ -1163,3 +1163,114 @@ export function readAct(value: unknown): { ref: string; action: RunActAction; va
         : null;
   }
 }
+
+/** How a run ended, as Playwright's runner says it; `other` for a status of a newer Playwright. */
+export type RunEndStatus = 'passed' | 'failed' | 'timedout' | 'interrupted' | 'other';
+
+const RUN_END_STATUSES: readonly string[] = ['passed', 'failed', 'timedout', 'interrupted'];
+
+/**
+ * How many of a run's tests ended, each once, by the outcome of its last attempt: `done` counts them all, `failed`,
+ * `flaky` (passed after a failed attempt) and `skipped` those of each outcome; the others passed.
+ */
+export interface RunCounts {
+  done: number;
+  failed: number;
+  flaky: number;
+  skipped: number;
+}
+
+/** The longest title and error a `run-end`'s first failure carries, in characters: a longer one is cut. */
+export const MAX_RUN_FAILURE_TEXT = 500;
+
+/**
+ * What the run's own process (the reporter in Playwright's runner) sends the hub, on a connection of its own to the
+ * socket its workers reach (`PIWI_RUN_CHANNEL`), from its `onBegin` to its `onEnd`. `run-begin` is its first line: the
+ * channel's token, the run's ref and working directory, the process and the versions as a worker's `run-attach` names
+ * them, how many tests the run (or this shard of it) holds (`total`, its repeats included), how many workers it may
+ * start, its shard (null for none), and `runner` for a run an editor's own test runner started, as a worker's
+ * `run-attach` says it (absent otherwise). `run-progress` follows each test that ended for good, at most four times a
+ * second; `run-end` says how the run ended, its counts, and its first failure (the test's title and the first line of
+ * its error, each through `hideSecretsInText`; null for none), before the connection closes. A hub that predates them
+ * closes the connection at its first line, and the run goes on as without it.
+ */
+export type RunMainToHub =
+  | {
+      type: 'run-begin';
+      token: string;
+      ref: string;
+      cwd: string;
+      pid: number;
+      playwright: string;
+      reporter: string;
+      total: number;
+      workers: number;
+      shard: { current: number; total: number } | null;
+      runner?: true;
+    }
+  | ({ type: 'run-progress' } & RunCounts)
+  | ({
+      type: 'run-end';
+      status: RunEndStatus;
+      failure: { title: string; error: string | null } | null;
+    } & RunCounts);
+
+/** The counts of a message, checked: each a whole number, none above `done`; null when one is not. */
+function readCounts(value: Record<string, unknown>): RunCounts | null {
+  const { done, failed, flaky, skipped } = value;
+  if (!isInt(done, 0) || !isInt(failed, 0) || !isInt(flaky, 0) || !isInt(skipped, 0)) return null;
+  return failed + flaky + skipped <= done ? { done, failed, flaky, skipped } : null;
+}
+
+/** A line the run's own process sent, checked field by field; null when it is not one. */
+export function parseRunMainToHub(line: string): RunMainToHub | null {
+  const value = readJson(line);
+  if (!value) return null;
+  switch (value.type) {
+    case 'run-begin': {
+      const { token, ref, cwd, pid, total, workers, shard } = value;
+      if (typeof token !== 'string' || typeof ref !== 'string' || !/^[\w-]{1,64}$/.test(ref)) return null;
+      if (!filePath(cwd) || !isInt(pid, 0) || !isInt(total, 0) || !isInt(workers, 1)) return null;
+      const shardOf =
+        isObject(shard) && isInt(shard.current, 1) && isInt(shard.total, 1) && shard.current <= shard.total
+          ? { current: shard.current, total: shard.total }
+          : null;
+      if (shard !== null && !shardOf) return null;
+      return {
+        type: 'run-begin',
+        token,
+        ref,
+        cwd,
+        pid,
+        playwright: text(value.playwright, 64) ?? '',
+        reporter: text(value.reporter, 64) ?? '',
+        total,
+        workers,
+        shard: shardOf,
+        ...(value.runner === true ? { runner: true as const } : {}),
+      };
+    }
+    case 'run-progress': {
+      const counts = readCounts(value);
+      return counts ? { type: 'run-progress', ...counts } : null;
+    }
+    case 'run-end': {
+      const counts = readCounts(value);
+      if (!counts || typeof value.status !== 'string') return null;
+      const { failure } = value;
+      let first: { title: string; error: string | null } | null = null;
+      if (failure !== null) {
+        if (!isObject(failure) || typeof failure.title !== 'string' || !failure.title.trim()) return null;
+        if (failure.error !== null && typeof failure.error !== 'string') return null;
+        first = {
+          title: failure.title.slice(0, MAX_RUN_FAILURE_TEXT),
+          error: failure.error === null ? null : failure.error.slice(0, MAX_RUN_FAILURE_TEXT),
+        };
+      }
+      const status = RUN_END_STATUSES.includes(value.status) ? (value.status as RunEndStatus) : 'other';
+      return { type: 'run-end', status, failure: first, ...counts };
+    }
+    default:
+      return null;
+  }
+}

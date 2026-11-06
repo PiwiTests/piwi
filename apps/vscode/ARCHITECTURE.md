@@ -369,6 +369,18 @@ and typing, batched through the Runs window's input helper. Escape releases held
 Shift+click still picks. Help is collapsed. Hiding, closing, switching stops or resuming ends the watch. The panel
 remembers Watch live until closed, but each watch starts with Interact off.
 
+**The worker panel.** **Piwi: Watch a worker's test** (`piwi.watchWorker`), **Piwi: Pause and watch a worker's test**
+(`piwi.pauseAndWatch`, which then sends `pause` to that worker) and a click on the run's progress in the status bar
+open **Piwi: worker N** (`src/worker-panel.ts`) on a worker whose reporter shows its running test
+(`RunWorker.watchable`, `watchableWorkers`). It watches the worker's lane with `piwi/laneView` and draws
+`piwi/laneFrame` with the paused page's HTML and script (`pausedPageHtml` with `lane`), its caption from `laneShown`
+and its image dimmed (`stale`) while it is not of what the worker does now (`frameIsCurrent`). Each stop, and each
+stretch the worker runs between them, is drawn anew (`shown`), so Interact starts off and a message of the view before
+reaches nothing; at a stop, Interact and the pick on a click name that stop, as on the paused page. A headless stop of
+the slot the panel watches, in sight, opens no paused page, and its file opens beside the panel rather than over it.
+Each watch starts with Interact off; the watch ends while the panel is hidden and starts again as it shows
+(`pausedPageViewChange`).
+
 **Breakpoints during a run.** The breakpoints `breakpointsForRun` gives go to each live run as they change
 (`vscode.debug.onDidChangeBreakpoints`, the `piwi.breakpoints` setting) with `piwi/setRunBreakpoints`, as lines of the
 run's code (`runPlaces`). A breakpoint the run was given, known by `vscode.Breakpoint.id`, keeps its line while it only
@@ -395,7 +407,9 @@ have not said anything of yet included; a run known not to be shareable is asked
 Shared, the answer offers **Copy the run page's link** and **Stop sharing**. The status bar's item (`liveItem`) offers
 Share live to a run that can be shared (`$(broadcast)`, with why its sharing stopped when it stopped unasked) and
 counts the views open of every shared run (`$(broadcast) Live · 3 views`), whose click stops sharing one
-(`piwi.stopSharingRun`, the `piwi.runSharedLive` context key).
+(`piwi.stopSharingRun`, the `piwi.runSharedLive` context key). Beside it, `progressItem` counts the tests the runs ran
+out of the tests they hold, and their failures (`$(beaker) 3 of 9 · $(error) 1`), from `RunSession.progress`, which the
+run's own process tells the service: so it counts offline and with the desktop app.
 
 `src/run-control.ts` is the pure half, tested without an editor (`tests/run-control.test.ts`). The API `activate`
 returns gives the sessions (`runSessions`), the lines drawn as the execution point (`executionPoints`), what the
