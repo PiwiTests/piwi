@@ -13,8 +13,6 @@ const ONE_YEAR_S = 60 * 60 * 24 * 365;
 const ownCookieWrites: string[] = [];
 /** Whether this tab follows the cookie's changes: once, so each change event is read once. */
 let followingCookie = false;
-/** Counts the loads, so an older answer never replaces a newer one. */
-let loadRequest = 0;
 
 /**
  * The projects the viewer starred, which lead the sidebar, Home's Project
@@ -40,6 +38,8 @@ export function useStarredProjects() {
   const list = useState<number[]>(STARRED_PROJECTS_STATE, () => (cookie ? parseStarredIds(cookie.value) : []));
   // Whether the signed-in user's stars were read; a server render that could not read them leaves it false.
   const loaded = useState('starred-projects-loaded', () => false);
+  // Counts this page's loads, so an older answer never replaces a newer one.
+  const loads = useState('starred-projects-loads', () => 0);
   // The stars a request is changing, with the state each asks for.
   const pending = useState<Record<number, boolean>>('starred-projects-pending', () => ({}));
 
@@ -71,17 +71,17 @@ export function useStarredProjects() {
     if (!onServer || !authState.value.authenticated) return;
     // The server render already read them into the page's state.
     if (nuxtApp.isHydrating && nuxtApp.payload.serverRendered && loaded.value) return;
-    const asked = ++loadRequest;
+    const asked = ++loads.value;
     try {
       const answer = await requestFetch<{ projectIds: number[] }>('/api/projects/stars');
-      if (asked !== loadRequest) return;
+      if (asked !== loads.value) return;
       // A star still being changed keeps the state its request asks for.
       let ids = answer.projectIds;
       for (const [id, star] of Object.entries(pending.value)) ids = withStar(ids, Number(id), star);
       list.value = ids;
       loaded.value = true;
     } catch {
-      if (asked !== loadRequest) return;
+      if (asked !== loads.value) return;
       // The pages keep their own order, never another user's stars.
       list.value = [];
       loaded.value = false;
