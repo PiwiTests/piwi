@@ -1,5 +1,12 @@
 import { describe, test, expect } from 'vitest';
-import { buildBisectArgs, buildLocalRunPlan, buildReproduceArgs } from '../../app/utils/local-run-args';
+import {
+  buildBisectArgs,
+  buildLocalRunPlan,
+  buildReproduceArgs,
+  localRunCopyOptions,
+} from '../../app/utils/local-run-args';
+import { buildRetryCommand } from '#shared/retry-command';
+import { splitRerunArgs } from '@piwitests/core/rerun-args';
 
 const CASE = {
   filePath: 'tests/checkout.spec.ts',
@@ -143,5 +150,19 @@ describe('a spec whose path holds a character a regular expression reads', () =>
     expect(buildBisectArgs([{ ...cases[0]!, filePath: 'tests/checkout (guest).spec.ts' }])[0]).toBe(
       'tests/checkout [(]guest[)].spec.ts',
     );
+  });
+});
+
+describe('Copy as command', () => {
+  test('the copied command runs what the local run runs', () => {
+    const options = { runMode: 'headed' as const, trace: true, repeatEach: 25 };
+    const copied = buildRetryCommand([CASE], { options: localRunCopyOptions(options) });
+    const plan = buildLocalRunPlan([CASE], options);
+    expect(splitRerunArgs(copied)).toEqual(['npx', 'playwright', 'test', ...plan[0]!.args]);
+  });
+
+  test('a debug run copies its flag, a plain one copies none', () => {
+    expect(buildRetryCommand([CASE], { options: localRunCopyOptions({ runMode: 'debug' }) })).toContain(' --debug');
+    expect(buildRetryCommand([CASE], { options: localRunCopyOptions({}) })).toBe(buildRetryCommand([CASE]));
   });
 });

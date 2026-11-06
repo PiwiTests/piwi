@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { TestRunDetails, ReportInfo, TestCaseResult } from '~~/types/api';
-import type { RetryMode } from '~/utils/retry-command';
 import { highlightCode } from '#shared/highlight';
 import { safeHttpUrl } from '#shared/utils/safe-url';
 import { readIncidentReview, readRunIncident } from '#shared/run-incident';
@@ -112,10 +111,10 @@ const interrupted = computed(() => props.displayProgress?.interruptedTests ?? 0)
 const primaryReport = computed(() => props.allReports[0] ?? null);
 
 const {
-  mode: retryMode,
   failedCases,
   flakyCases,
   allCases,
+  projects: retryProjects,
   copyCommand: copyRetryCommand,
   copied: retryCopied,
   title: retryTitle,
@@ -312,23 +311,13 @@ function onLabelKeydown(e: KeyboardEvent) {
           :icon="retryCopied ? 'i-lucide-check' : 'i-lucide-clipboard'"
           :title="retryTitle"
           aria-label="Copy retry command"
+          data-tour="run-retry-command"
           @click="copyRetryCommand()"
         >
           <span class="hidden sm:inline">Copy retry command</span>
         </UButton>
         <template #content>
-          <div class="p-2 space-y-1 min-w-32">
-            <p class="text-xs font-medium text-zinc-500 px-2 py-1">Mode</p>
-            <button
-              v-for="m in ['file-line', 'grep', 'file'] as RetryMode[]"
-              :key="m"
-              class="w-full text-left px-2 py-1 text-sm rounded hover:bg-zinc-100 dark:hover:bg-zinc-800"
-              :class="retryMode === m ? 'bg-primary/10 text-primary' : ''"
-              @click="retryMode = m"
-            >
-              {{ m === 'file-line' ? 'File:line' : m === 'grep' ? 'Title (grep)' : 'File only' }}
-            </button>
-          </div>
+          <RetryCommandOptions :projects="retryProjects" />
         </template>
       </UPopover>
 

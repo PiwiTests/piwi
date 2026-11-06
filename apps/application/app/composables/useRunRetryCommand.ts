@@ -1,5 +1,5 @@
 import type { TestCaseResult } from '~~/types/api';
-import type { RetryCase, RetryMode } from '~/utils/retry-command';
+import type { RetryCase } from '~/utils/retry-command';
 import { buildRetryCommand, retryCaseOf } from '~/utils/retry-command';
 import { isFlakyExecution } from '#shared/utils/test-counts';
 
@@ -14,10 +14,11 @@ import { isFlakyExecution } from '#shared/utils/test-counts';
  * rows the Tests list selects, so a test that passed on retry is never re-run; the
  * flaky set the ones that passed after an earlier attempt failed (`isFlakyExecution`); the
  * whole set every test that was not skipped. File, line and project come from the row
- * itself, which makes the command exact.
+ * itself, which makes the command exact. The naming mode and the run options are the
+ * page's shared choices (`useRetryOptions`).
  */
 export function useRunRetryCommand(testCases: MaybeRefOrGetter<TestCaseResult[] | null | undefined>) {
-  const mode = useState<RetryMode>('run-retry-mode', () => 'file-line');
+  const { mode, optionsFor } = useRetryOptions();
 
   const testKeyOf = (tc: TestCaseResult) =>
     `${tc.testCaseId ?? tc.location ?? tc.title}|${(tc.browser as { projectName?: string } | null)?.projectName ?? ''}`;
@@ -45,7 +46,14 @@ export function useRunRetryCommand(testCases: MaybeRefOrGetter<TestCaseResult[] 
     casesWhere((tc) => !['skipped', 'fixme'].includes(statusPaletteKey(tc.status))),
   );
 
-  const command = computed(() => buildRetryCommand(failedCases.value, { mode: mode.value }));
+  /** The Playwright projects the run's tests ran in, in their order. */
+  const projects = computed(() => [
+    ...new Set(allCases.value.map((c) => c.projectName).filter((p): p is string => Boolean(p))),
+  ]);
+
+  const command = computed(() =>
+    buildRetryCommand(failedCases.value, { mode: mode.value, options: optionsFor(projects.value) }),
+  );
 
   const { copy, copied } = useCopy();
   function copyCommand() {
@@ -54,5 +62,5 @@ export function useRunRetryCommand(testCases: MaybeRefOrGetter<TestCaseResult[] 
 
   const title = computed(() => (copied.value ? 'Copied!' : copyPreview(command.value)));
 
-  return { mode, failedCases, flakyCases, allCases, command, copyCommand, copied, title };
+  return { mode, failedCases, flakyCases, allCases, projects, command, copyCommand, copied, title };
 }

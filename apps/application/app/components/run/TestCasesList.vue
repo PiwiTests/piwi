@@ -666,10 +666,20 @@ const selectedRetryCases = computed(() => {
 const selectedTestsLabel = computed(
   () => `${selectedRetryCases.value.length} selected test${selectedRetryCases.value.length === 1 ? '' : 's'}`,
 );
+const { mode: retryMode, optionsFor: retryOptionsFor } = useRetryOptions();
+/** The Playwright projects the selected tests ran in. */
+const selectedProjects = computed(() => [
+  ...new Set(selectedRetryCases.value.map((c) => c.projectName).filter((p): p is string => Boolean(p))),
+]);
+const selectionCommand = computed(() =>
+  buildRetryCommand(selectedRetryCases.value, {
+    mode: retryMode.value,
+    options: retryOptionsFor(selectedProjects.value),
+  }),
+);
 const { copy: copySelection } = useCopy();
 function copySelectionCommand() {
-  const command = buildRetryCommand(selectedRetryCases.value);
-  if (command) copySelection(command, { toast: 'Retry command copied' });
+  if (selectionCommand.value) copySelection(selectionCommand.value, { toast: 'Retry command copied' });
 }
 const selectedClusterIds = computed(() => [
   ...new Set(selectedRows.value.map((tc) => tc.failureClusterId).filter((id): id is number => id != null)),
@@ -886,17 +896,21 @@ defineExpose({ scrollToCase });
           :run-title="`${selectedTestsLabel} of run #${runId}`"
           :source-run-id="runId"
         />
-        <UButton
-          v-else
-          size="xs"
-          color="neutral"
-          variant="outline"
-          icon="i-lucide-clipboard"
-          :title="buildRetryCommand(selectedRetryCases)"
-          @click="copySelectionCommand"
-        >
-          Copy retry command
-        </UButton>
+        <UPopover v-else>
+          <UButton
+            size="xs"
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-clipboard"
+            :title="selectionCommand"
+            @click="copySelectionCommand"
+          >
+            Copy retry command
+          </UButton>
+          <template #content>
+            <RetryCommandOptions :projects="selectedProjects" />
+          </template>
+        </UPopover>
         <CoverageLossPopover
           v-if="canQuarantine"
           :project-id="projectKey ?? 0"

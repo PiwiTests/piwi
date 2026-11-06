@@ -35,6 +35,28 @@ export const RUNS_ANCHORS = [
     sample: { route: '/test-runs/63', expect: { run: { id: 63, project: 'web-dashboard' } } },
   },
   {
+    id: 'run-retry-command',
+    kind: 'action',
+    pages: ['/test-runs/[id]'],
+    describes:
+      'The header’s Copy retry command: the Playwright command that runs the run’s failed tests again, with the options its menu sets.',
+    shownWhen: 'On a run with failed tests, outside the desktop app, which re-runs them itself.',
+    doc: 'features/ui-overview#test-run-detail',
+    sample: { route: '/test-runs/63', expect: { run: { id: 63, project: 'web-dashboard' } } },
+  },
+  {
+    id: 'retry-command-options',
+    kind: 'block',
+    pages: ['/test-runs/[id]'],
+    reveal: [{ open: 'run-retry-command' }],
+    describes:
+      'The options of Copy retry command: how the tests are named, headed, trace, repeat each, workers and the Playwright project.',
+    shownWhen: 'On a run with failed tests, outside the desktop app.',
+    help: 'run.retryOptions',
+    doc: 'features/ui-overview#test-run-detail',
+    sample: { route: '/test-runs/63', expect: { run: { id: 63, project: 'web-dashboard' } } },
+  },
+  {
     id: 'run-retention',
     kind: 'block',
     pages: ['/test-runs/[id]'],

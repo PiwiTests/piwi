@@ -458,7 +458,11 @@ const retryCases = computed(() => [
     projectName: (testCase.value?.browser as { projectName?: string } | null)?.projectName ?? null,
   },
 ]);
-const retryCommand = computed(() => buildRetryCommand(retryCases.value));
+// The naming mode and the run options the browser remembers from the run page's Copy retry command.
+const { mode: retryMode, optionsFor: retryOptionsFor } = useRetryOptions();
+const retryCommand = computed(() =>
+  buildRetryCommand(retryCases.value, { mode: retryMode.value, options: retryOptionsFor() }),
+);
 const { copy: copyRetry } = useCopy();
 
 onMounted(() => {
