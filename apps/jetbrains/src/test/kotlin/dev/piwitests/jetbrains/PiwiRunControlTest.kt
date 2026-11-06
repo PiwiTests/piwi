@@ -685,8 +685,8 @@ class PiwiRunControlTest : BasePlatformTestCase() {
 
     /**
      * Watch a Worker's Test opens the Worker tab on a worker whose reporter shows its running test, its caption following
-     * the worker through its stop and the run's end; a headless stop of its worker opens the Paused Page without taking
-     * the tab's place while the tool window shows, and the run's end turns Watch off.
+     * the worker through its stop and the run's end; a headless stop of its worker opens the Paused Page, selected
+     * while the tool window does not show, and the run's end turns Watch off.
      */
     fun testAWorkersTestIsWatchedInTheWorkerTab() {
         val window = ToolWindowManager.getInstance(project).registerToolWindow(RegisterToolWindowTask.notClosable(PiwiFailuresToolWindowFactory.ID))
@@ -704,8 +704,10 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             assertEquals("Worker 2 · Paused · Click getByRole('button', { name: 'Apply' }) · coupon.spec.ts:6", sessions.shown().workerCaption)
             waitFor("the paused page asked") { pages.lastOrNull()?.takeIf { it.ref == "ed-7" } }
             assertNotNull(window.contentManager.findContent(PiwiRunSessions.PAUSED_PAGE))
-            // A tool window out of sight shows the Worker tab to nobody: the Paused Page is selected then.
-            assertEquals(if (window.isVisible) "Worker 2" else PiwiRunSessions.PAUSED_PAGE, sessions.shown().selectedTab)
+            // The headless tool window never shows, so nobody sees the Worker tab: the Paused Page is selected. The
+            // Worker tab in sight keeps its place (`Glue.selectsPausedPage`, checked by `GlueTest`).
+            assertFalse(window.isVisible)
+            assertEquals(PiwiRunSessions.PAUSED_PAGE, sessions.shown().selectedTab)
             hear(RunSession("ed-7", ended = true))
             assertEquals("Worker 2 · the run ended.", sessions.shown().workerCaption)
             assertFalse(sessions.shown().workerWatch)

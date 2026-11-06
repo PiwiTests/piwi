@@ -27,10 +27,10 @@ code from the page: [Code from a pause](./editor-stop-code).
 | **End the test** | [Skips the rest of the test](./end-the-test), and a stopped locator call from Playwright 1.62 | none | none |
 | **Stop** | Ends the run's process | `Shift+F5` | **Stop the Run**, or the Run tool window's Stop |
 
-The keys are the IDE's own debugger keys (in a JetBrains IDE, [your keymap's](./jetbrains)), Piwi's only while their
+The keys are the IDE's debugger keys (in a JetBrains IDE, [your keymap's](./jetbrains)), Piwi's only while their
 control applies and no debug session runs. On macOS, `Cmd+F10` runs to the cursor in VS Code. **Pause** and **End the
-test** have no key in VS Code: bind one in **Preferences: Open Keyboard Shortcuts** (search `piwi`). Pressed again
-within two seconds of an answer, a key answers no other stop nor starts a debug session.
+test** have no key in VS Code: bind one in **Preferences: Open Keyboard Shortcuts** (search `piwi`). Within two seconds
+of an answer, until that worker stops, a key answers no other worker and starts no debug session.
 
 - **In VS Code**, the controls sit in the status bar beside the run's progress while they apply (`Pausing…` until a
   paused test stops), and in the palette (**Piwi: Pause the run** and its kin, **Piwi: Show the paused page**). The
@@ -122,7 +122,7 @@ answers. Closing the IDE closes the connections: a stop with no pause bar then g
 - **No mark on a breakpoint that never stops.** One on a line with no call Playwright's debugger stops at looks like
   any other and does nothing.
 - **Playwright calls, not JavaScript.** **Step** goes from one Playwright call to the next; stepping through the
-  test's own code stays with the IDE's debugger.
+  test's code stays with the IDE's debugger.
 - **No image when the page is unknown.** A stop at a call other than a locator's (a navigation, a key press) in a
   browser context with several pages has no image, and refuses Piwi Picker's **Pick** and **Record**: the worker
   cannot tell its page. Any page of that context closing ends it.

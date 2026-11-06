@@ -17,6 +17,7 @@ import {
   RESERVED_MS,
   RESUMED_KEY_MS,
   StopsShown,
+  actsOnPage,
   asideColumn,
   breakpointUpdates,
   canEnd,
@@ -854,6 +855,92 @@ describe('what the editor shows of the stops', () => {
     expect(shown.choose([stopOf(1, 5)], null, true, 400)).toBeNull();
     push(at(0, 4), at(1, 5));
     expect(shown.choose([stopOf(1, 5)], null, true, 500)).toEqual(stopOf(1, 5));
+  });
+
+  test('keeps a run key on the answered worker until its next stop, whatever the caret and other stops say', () => {
+    const { shown, push, answer, stopOf } = editor();
+    // Two workers stopped at the same line: a key asks which, and the person steps worker 0.
+    push(at(0, 3), at(1, 3), running(2));
+    const line = (n: number) => ({ uri: spec, line: n });
+    expect(shown.choose([stopOf(0, 3), stopOf(1, 3)], line(3), true)).toBe('ask');
+    answer('step', 0, 3);
+    expect(shown.choose([stopOf(0, 3), stopOf(1, 3)], line(3), true, 150)).toEqual(stopOf(0, 3));
+    // Worker 0 runs and worker 2 stops: a key pressed again answers neither worker 1 nor worker 2.
+    push(running(0), at(1, 3), at(2, 7));
+    expect(shown.choose([stopOf(1, 3)], line(3), true, 250)).toBeNull();
+    expect(shown.choose([stopOf(2, 7)], line(7), true, 250)).toBeNull();
+    // Worker 0's next stop ends the moments after the answer.
+    push(at(0, 4), at(1, 3), at(2, 7));
+    expect(shown.choose([stopOf(1, 3)], line(3), true, 350)).toEqual(stopOf(1, 3));
+  });
+
+  test('offers a held stop the worker panel showed to a closed paused page once the panel no longer shows it', () => {
+    const { shown, watched, push } = editor();
+    watched.add(1);
+    expect(push(running(0), at(1, 5))).toEqual({ opened: [[1, true]], page: null });
+    watched.clear();
+    expect(push(running(0), at(1, 5)).page).toEqual([1, 5]);
+    // Offered once: closed again, the view opens no more.
+    shown.view(null);
+    expect(push(running(0), at(1, 5)).page).toBeNull();
+  });
+
+  test('says when acting ended a wait, for the page to be shown again, as after a refusal', () => {
+    const { shown, push, answer, stopOf } = editor();
+    push(at(0, 3), running(1));
+    push(at(0, 3), at(1, 5));
+    answer('step', 0, 3);
+    expect(push(running(0), at(1, 5)).page).toBeNull();
+    expect(shown.acted(stopOf(1, 5))).toBe(true);
+    expect(push(running(0), at(1, 5)).page).toEqual([1, 5]);
+    expect(shown.acted(stopOf(1, 5))).toBe(false);
+    // A refused Step: the page shown again opens the stop held.
+    const refused = editor();
+    refused.push(at(0, 3), running(1));
+    refused.push(at(0, 3), at(1, 5));
+    refused.answer('step', 0, 3);
+    expect(refused.push(running(0), at(1, 5)).page).toBeNull();
+    refused.shown.refused(refused.stopOf(0, 3));
+    expect(refused.push(running(0), at(1, 5)).page).toEqual([1, 5]);
+  });
+
+  test('undoes of a refused answer only what nothing changed since', () => {
+    const { shown, push, answer, stopOf } = editor();
+    push(at(0, 3), at(1, 5));
+    answer('step', 0, 3);
+    // The person types on worker 1's page before the refusal comes.
+    shown.acted(stopOf(1, 5));
+    shown.refused(stopOf(0, 3));
+    push(at(0, 3), running(1));
+    expect(push(at(0, 3), at(1, 6)).opened).toEqual([[1, true]]);
+  });
+
+  test('keeps waiting when the stepped stop’s own file opens after the Step', () => {
+    const { shown, push, answer, stopOf } = editor([3]);
+    push(at(0, 3), running(1));
+    answer('step', 0, 3);
+    shown.opened(stopOf(0, 3), false);
+    expect(shown.waitsUntil()).not.toBeNull();
+  });
+
+  test('counts a press, a click, a key, text or the wheel on a page as acting, not a pointer moving or a release', () => {
+    const at = { x: 1, y: 2 };
+    expect(actsOnPage([{ type: 'mouse', action: 'move', ...at }])).toBe(false);
+    expect(actsOnPage([{ type: 'mouse', action: 'up', ...at, button: 'left' }])).toBe(false);
+    expect(actsOnPage([{ type: 'key', action: 'up', key: 'a' }])).toBe(false);
+    expect(actsOnPage([])).toBe(false);
+    expect(actsOnPage([{ type: 'mouse', action: 'down', ...at, button: 'left' }])).toBe(true);
+    expect(actsOnPage([{ type: 'mouse', action: 'click', ...at, button: 'left', clickCount: 1 }])).toBe(true);
+    expect(actsOnPage([{ type: 'key', action: 'press', key: 'Enter' }])).toBe(true);
+    expect(actsOnPage([{ type: 'key', action: 'down', key: 'a' }])).toBe(true);
+    expect(actsOnPage([{ type: 'text', text: 'MORNING10' }])).toBe(true);
+    expect(actsOnPage([{ type: 'wheel', ...at, deltaX: 0, deltaY: 40 }])).toBe(true);
+    expect(
+      actsOnPage([
+        { type: 'mouse', action: 'move', ...at },
+        { type: 'key', action: 'press', key: 'Tab' },
+      ]),
+    ).toBe(true);
   });
 
   test('opens a file aside in a group neither active nor a panel’s, else in a new one at the right', () => {

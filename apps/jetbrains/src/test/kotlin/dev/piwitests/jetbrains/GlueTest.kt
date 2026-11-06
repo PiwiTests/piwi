@@ -1067,6 +1067,89 @@ class GlueTest {
     }
 
     @Test
+    fun `the IDE keeps a run action on the answered worker until its next stop, whatever the caret and other stops say`() {
+        val pushes = Pushes()
+        // Two workers stopped at the same line: an action asks which, and the person steps worker 0.
+        pushes.push(stoppedAt(0, 3), stoppedAt(1, 3), runningWorker(2))
+        val a = pushes.stopOf(stoppedAt(0, 3))
+        val b = pushes.stopOf(stoppedAt(1, 3))
+        assertEquals(Glue.StopChoice.Ask, pushes.shown.choose(listOf(a, b), specUri, 3, true))
+        pushes.answer("step", stoppedAt(0, 3))
+        assertEquals(Glue.StopChoice.One(a), pushes.shown.choose(listOf(a, b), specUri, 3, true, 150))
+        // Worker 0 runs and worker 2 stops: an action pressed again answers neither worker 1 nor worker 2.
+        pushes.push(runningWorker(0), stoppedAt(1, 3), stoppedAt(2, 7))
+        assertEquals(Glue.StopChoice.None, pushes.shown.choose(listOf(b), specUri, 3, true, 250))
+        assertEquals(Glue.StopChoice.None, pushes.shown.choose(listOf(pushes.stopOf(stoppedAt(2, 7))), specUri, 7, true, 250))
+        // Worker 0's next stop ends the moments after the answer.
+        pushes.push(stoppedAt(0, 4), stoppedAt(1, 3), stoppedAt(2, 7))
+        assertEquals(Glue.StopChoice.One(b), pushes.shown.choose(listOf(b), specUri, 3, true, 350))
+    }
+
+    @Test
+    fun `the IDE says when acting ended a wait, for the tab to be drawn again, as after a refusal`() {
+        val pushes = Pushes()
+        pushes.push(stoppedAt(0, 3), runningWorker(1))
+        pushes.push(stoppedAt(0, 3), stoppedAt(1, 5))
+        pushes.answer("step", stoppedAt(0, 3))
+        assertNull(pushes.push(runningWorker(0), stoppedAt(1, 5)).second)
+        assertTrue(pushes.shown.acted(pushes.stopOf(stoppedAt(1, 5))))
+        assertEquals(1 to 5, pushes.push(runningWorker(0), stoppedAt(1, 5)).second)
+        assertFalse(pushes.shown.acted(pushes.stopOf(stoppedAt(1, 5))))
+        // A refused Step: the tab drawn again opens the stop held.
+        val refused = Pushes()
+        refused.push(stoppedAt(0, 3), runningWorker(1))
+        refused.push(stoppedAt(0, 3), stoppedAt(1, 5))
+        refused.answer("step", stoppedAt(0, 3))
+        assertNull(refused.push(runningWorker(0), stoppedAt(1, 5)).second)
+        refused.shown.refused(refused.stopOf(stoppedAt(0, 3)))
+        assertEquals(1 to 5, refused.push(runningWorker(0), stoppedAt(1, 5)).second)
+    }
+
+    @Test
+    fun `the IDE undoes of a refused answer only what nothing changed since`() {
+        val pushes = Pushes()
+        pushes.push(stoppedAt(0, 3), stoppedAt(1, 5))
+        pushes.answer("step", stoppedAt(0, 3))
+        // The person types on worker 1's page before the refusal comes.
+        pushes.shown.acted(pushes.stopOf(stoppedAt(1, 5)))
+        pushes.shown.refused(pushes.stopOf(stoppedAt(0, 3)))
+        pushes.push(stoppedAt(0, 3), runningWorker(1))
+        assertEquals(listOf(1 to true), pushes.push(stoppedAt(0, 3), stoppedAt(1, 6)).first)
+    }
+
+    @Test
+    fun `the IDE keeps waiting when the stepped stop's own file opens after the Step`() {
+        val pushes = Pushes(unopened = setOf(3))
+        pushes.push(stoppedAt(0, 3), runningWorker(1))
+        pushes.answer("step", stoppedAt(0, 3))
+        pushes.shown.opened(pushes.stopOf(stoppedAt(0, 3)), false)
+        assertTrue(pushes.shown.waitsUntil() != null)
+    }
+
+    @Test
+    fun `the IDE counts a press, a click, a key, text or the wheel on a page as acting, not a pointer moving or a release`() {
+        assertFalse(Glue.actsOnPage(listOf(PageInput("mouse", "move", 1.0, 2.0))))
+        assertFalse(Glue.actsOnPage(listOf(PageInput("mouse", "up", 1.0, 2.0, "left"))))
+        assertFalse(Glue.actsOnPage(listOf(PageInput("key", "up", key = "a"))))
+        assertFalse(Glue.actsOnPage(emptyList()))
+        assertTrue(Glue.actsOnPage(listOf(PageInput("mouse", "down", 1.0, 2.0, "left"))))
+        assertTrue(Glue.actsOnPage(listOf(PageInput("mouse", "click", 1.0, 2.0, "left", 1))))
+        assertTrue(Glue.actsOnPage(listOf(PageInput("key", "press", key = "Enter"))))
+        assertTrue(Glue.actsOnPage(listOf(PageInput("key", "down", key = "a"))))
+        assertTrue(Glue.actsOnPage(listOf(PageInput("text", text = "MORNING10"))))
+        assertTrue(Glue.actsOnPage(listOf(PageInput("wheel", x = 1.0, y = 2.0, deltaX = 0.0, deltaY = 40.0))))
+        assertTrue(Glue.actsOnPage(listOf(PageInput("mouse", "move", 1.0, 2.0), PageInput("key", "press", key = "Tab"))))
+    }
+
+    @Test
+    fun `a new page selects the Paused Page tab unless the Worker tab is selected in a tool window that shows`() {
+        assertFalse(Glue.selectsPausedPage(workerTabSelected = true, windowVisible = true))
+        assertTrue(Glue.selectsPausedPage(workerTabSelected = true, windowVisible = false))
+        assertTrue(Glue.selectsPausedPage(workerTabSelected = false, windowVisible = true))
+        assertTrue(Glue.selectsPausedPage(workerTabSelected = false, windowVisible = false))
+    }
+
+    @Test
     fun `a control at the caret acts on the stop at its line, else on the only one, else asks`() {
         val one = Glue.ShownStop("ed-1", 0, stopAt(specUri, 5), runTest())
         val two = Glue.ShownStop("ed-1", 1, stopAt(pageUri, 8), runTest())

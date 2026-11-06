@@ -567,7 +567,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             }
         }
         if (show.page != null) {
-            showPage(show.page, select = !workerTabInSight())
+            showPage(show.page, select = selectsPage())
         } else if (shownPage != null && pageStop != null && pageStop !in keys) {
             stopPageView()
             pageStop = null
@@ -720,8 +720,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         panel.configureLive(stop.takes.contains("view"), stop.takes.contains("input"), stop.takes.contains("input-clicks")) { on -> watchPage(stop, on) }
         panel.viewport = null
         panel.input = { events ->
-            shownStops.acted(stop)
-            wakeWhenWaited()
+            if (Glue.actsOnPage(events) && shownStops.acted(stop)) draw()
             pageInput(stop, events)
         }
         panel.releaseInput = {
@@ -768,8 +767,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     private fun pickOnImage(stop: Glue.ShownStop, image: PausedImage, panel: PausedPagePanel, picture: BufferedImage, x: Int, y: Int) {
         val (pageX, pageY) = Glue.pagePoint(x, y, picture.width, picture.height, image) ?: return
         panel.note("Picking the element under the click…")
-        shownStops.acted(stop)
-        wakeWhenWaited()
+        if (shownStops.acted(stop)) draw()
         ApplicationManager.getApplication().executeOnPooledThread {
             val answer = remote.pickAt(PickAtParams(stop.ref, stop.worker, stop.stop.since ?: "", pageX, pageY))
             ApplicationManager.getApplication().invokeLater({
@@ -860,11 +858,11 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         if (watchingLane == null) watchLane(true)
     }
 
-    /** Whether the Worker tab is in sight: the Piwi tool window shows, with it selected. On the event thread. */
-    private fun workerTabInSight(): Boolean {
-        val tab = liveWorkerTab() ?: return false
-        val window = toolWindow() ?: return false
-        return window.isVisible && window.contentManager.selectedContent == tab
+    /** Whether a new page selects the Paused Page tab (`Glue.selectsPausedPage`). On the event thread. */
+    private fun selectsPage(): Boolean {
+        val window = toolWindow() ?: return true
+        val tab = liveWorkerTab()
+        return Glue.selectsPausedPage(tab != null && window.contentManager.selectedContent == tab, window.isVisible)
     }
 
     /** End the test a Pause waits for, where it waits in a call (`give-up`): the call given up where it can be. */
@@ -1013,14 +1011,15 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 
     /**
      * Answer a stop (`resume`, `step`, `finish`, or `run-to` the `place`, a line of the run's code), naming it, off the
-     * event thread, saying why not: what `Glue.StopsShown` recorded of it goes then. On the event thread.
+     * event thread, saying why not: a refusal undoes what `Glue.StopsShown` recorded of it, and the stops are drawn
+     * again. On the event thread.
      */
     fun answer(stop: Glue.ShownStop, action: String, place: EditorBreakpoint? = null) {
         shownStops.answered(stop, action)
         wakeWhenWaited()
         control(RunControlParams(stop.ref, stop.worker, action, place, stop.stop.since)) {
             shownStops.refused(stop)
-            wakeWhenWaited()
+            draw()
         }
     }
 
@@ -1029,15 +1028,20 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         sessions.keys.forEach { control(RunControlParams(it, action = "pause")) }
     }
 
-    /** Send a control off the event thread, saying why not; `refused` runs on the event thread then. */
+    /**
+     * Send a control off the event thread, saying why not; `refused` runs on the event thread when the run refuses it
+     * (`ok: false`), and not when the service does not answer.
+     */
     private fun control(params: RunControlParams, refused: () -> Unit = {}) {
         ApplicationManager.getApplication().executeOnPooledThread {
             val result = remote.control(params)
             when {
                 result == null -> PiwiCommands.notify(project, "The editor service did not answer.", NotificationType.WARNING)
-                !result.ok -> PiwiCommands.notify(project, result.message ?: "The run did not take it.")
+                !result.ok -> {
+                    PiwiCommands.notify(project, result.message ?: "The run did not take it.")
+                    ApplicationManager.getApplication().invokeLater({ refused() }, gone)
+                }
             }
-            if (result?.ok != true) ApplicationManager.getApplication().invokeLater({ refused() }, gone)
         }
     }
 
@@ -1231,8 +1235,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
      */
     fun start(stop: Glue.ShownStop, action: Glue.StopAction, request: Int? = null) {
         val since = stop.stop.since ?: return PiwiCommands.notify(project, "The test went on.")
-        shownStops.acted(stop)
-        wakeWhenWaited()
+        if (shownStops.acted(stop)) draw()
         ApplicationManager.getApplication().executeOnPooledThread {
             if (action == Glue.StopAction.MOCK && request == null) {
                 val listed = remote.requests(StopRequestsParams(stop.ref, stop.worker, since))

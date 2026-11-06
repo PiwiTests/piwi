@@ -5,9 +5,9 @@
  * Interact sends clicks and keys to the page (`piwi/pageInput`) and Shift+click picks the element under it
  * (`piwi/pickAt`), as on the paused page; each stop, and each stretch the worker runs between them, is drawn anew, so a
  * message of the panel names the stop it was drawn for, and Interact starts off. One slot at a time; a stop elsewhere
- * never takes it over. The view ends while the panel is hidden and starts again as it shows. Input and a pick at a stop
- * make its slot the person's, and the panel hidden or closed hands its stops back to the paused page (`hooks`). The pure
- * half is `run-control.ts`.
+ * never takes it over. The view ends while the panel is hidden and starts again as it shows. A press, a key, text, the
+ * wheel or a pick at a stop make its slot the person's, and the panel hidden or closed offers its held stops to the
+ * paused page as new ones (`hooks`). The pure half is `run-control.ts`.
  */
 import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
@@ -27,6 +27,7 @@ import {
   type RunSession,
 } from '@piwitests/editor/protocol';
 import {
+  actsOnPage,
   frameIsCurrent,
   imageClickOf,
   laneShown,
@@ -187,7 +188,7 @@ export function createWorkerPanel(
     const events =
       m.type === 'release' ? [] : m.type === 'input' && view.live?.interacting ? readViewInput(m.events) : null;
     if (!events || typeof events === 'string') return refused();
-    if (m.type === 'input') hooks.acted(stop);
+    if (m.type === 'input' && actsOnPage(events)) hooks.acted(stop);
     const at = { ref: stop.ref, worker: stop.worker, since: stop.stop.since };
     const answer = await lc
       .sendRequest<RunControlResult>(PAGE_INPUT_REQUEST, { ...at, events, release: m.type === 'release' })

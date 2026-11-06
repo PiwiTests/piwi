@@ -339,29 +339,30 @@ palette and on keys while they apply: the context keys `piwi.runActive`, `piwi.r
 `piwi.runResumed` for two seconds after an answer (`RESUMED_KEY_MS`). The keys: [Keybindings](#keybindings).
 
 **A stop.** A stop opens its file at its line once (`stopKey`, `StopsShown`), one after the other, each waited for
-`OPEN_MS` at most (a file that shows later takes no focus), and none that went on before its turn. It takes the
-focus, decided as it opens, only as a stop of the worker slot (`parallelIndex`, which a worker restarted after a
-failure keeps) the person is on, or while no other stop held had its file opened by the extension (its tab closed
-since or not) and no Step or Run to the cursor from the editor waits for its slot's next stop (`RESERVED_MS` at most,
-while a worker of the run holds the slot; that next stop opening ends the wait). The slot the person is on is the one
-whose stop last took the focus, or that they last acted on: a control from the editor (counted as it is sent, and
-forgotten if the run refuses it: `refused`), a code action (`piwi/stopAction`), or input or a pick on the paused page
-or the worker panel (`acted`). A slot the worker panel watches is not the person's for that: the panel shows its page
-whatever the focus, while the focus chooses the stop the keys and the cursor act on. A file that never opened counts
-as none. It never opens over a panel in sight (the paused page view, the worker panel). With the focus,
-it opens as a debugger's does, where the file shows already, else in the active group. Without it, the editor in use
-is left alone: a file that shows already keeps its selection, so the keys still act on the stop at the cursor, and
-another opens with `preserveFocus` in a group that is neither the active one nor a panel's, else in a new one at the
-right (`asideColumn`). It is drawn as the execution point:
-`media/execution-point.svg` in the gutter, and the line's background in `piwi.executionPointBackground` (the debugger's
-stack frame color by default), with a hover that holds the controls. A CodeLens above it reads `pausedText`
-(`Paused · <title> · attempt N`, the attempt on a retry only) after `$(debug-pause)`, then Resume, Step, Run to cursor,
-Finish and, where `canEnd`, End test, each naming its worker and its stop; one whose stop went on says `the test went
-on.` (`targetStop`). The choice among several stops shows the same text after `$(debug-pause)`; the hover and the paused
-page's caption show it as plain text. A key or a palette command acts on the stop at the caret's line; else, for a
-control within `RESUMED_KEY_MS` of an answer and before the next stop, on none but the stop answered, so a key pressed
-again answers no other stop; else on the only stop whose file or page the person was shown; else it asks (`stopsFor`,
-`StopsShown.choose`).
+`OPEN_MS` at most (a file that shows later takes no focus), and none that went on before its turn. It takes the focus,
+decided as it opens, only as a stop of the worker slot (`parallelIndex`, which a worker restarted after a failure keeps)
+the person is on, or while no other stop held had its file opened by the extension (its tab closed since or not) and no
+Step or Run to the cursor from the editor waits for its slot's next stop (`RESERVED_MS` at most, while a worker of the
+run holds the slot; another stop of that slot opening ends the wait, the stepped one not). The slot the person is on is
+the one whose stop last took the focus, or that they last acted on: a control from the editor (counted as it is sent; a
+refusal, `ok: false`, undoes what nothing changed since, and no answer undoes nothing: `refused`), a code action
+(`piwi/stopAction`), or a press, a key, text, the wheel or a pick on the paused page or the worker panel (`acted`,
+`actsOnPage`; a pointer moving or a release is not acting). Acting that ends a wait, and a refusal, show the stops again
+(`changed`). A slot the worker panel watches is not the person's for that: the panel shows its page whatever the focus,
+while the focus chooses the stop the keys and the cursor act on. A file that never opened counts as none. It never opens
+over a panel in sight (the paused page view, the worker panel). With the focus, it opens as a debugger's does, where the
+file shows already, else in the active group. Without it, the editor in use is left alone: a file that shows already
+keeps its selection, so the keys still act on the stop at the cursor, and another opens with `preserveFocus` in a group
+that is neither the active one nor a panel's, else in a new one at the right (`asideColumn`). It is drawn as the
+execution point: `media/execution-point.svg` in the gutter, and the line's background in `piwi.executionPointBackground`
+(the debugger's stack frame color by default), with a hover that holds the controls. A CodeLens above it reads
+`pausedText` (`Paused · <title> · attempt N`, the attempt on a retry only) after `$(debug-pause)`, then Resume, Step,
+Run to cursor, Finish and, where `canEnd`, End test, each naming its worker and its stop; one whose stop went on says
+`the test went on.` (`targetStop`). The choice among several stops shows the same text after `$(debug-pause)`; the hover
+and the paused page's caption show it as plain text. A key or a palette command, for a control within `RESUMED_KEY_MS`
+of an answer and before that slot's next stop comes, acts on a stop of the answered slot or on none, whatever the caret
+or another worker's new stop say, so a key pressed again answers no other worker; else on the stop at the caret's line;
+else on the only stop whose file or page the person was shown; else it asks (`stopsFor`, `StopsShown.choose`).
 
 **Edits since the run started.** A run's lines are the documents as they stood when it started (`started`, else when it
 is first heard, a rerun under the ref of a run that ended included: `heardSession`). `EditLog` keeps the edits that
@@ -392,18 +393,17 @@ Shift+click still picks. Help is collapsed. Hiding, closing, showing another sto
 worker's new stop does not. The panel remembers Watch live until closed, but each watch starts with Interact off.
 
 **The worker panel.** **Piwi: Watch a worker's test** (`piwi.watchWorker`), **Piwi: Pause and watch a worker's test**
-(`piwi.pauseAndWatch`, which then sends `pause` to that worker) and a click on the run's progress in the status bar
-open **Piwi: worker N** (`src/worker-panel.ts`) on a worker whose reporter shows its running test
-(`RunWorker.watchable`, `watchableWorkers`). It watches the worker's lane with `piwi/laneView` and draws
-`piwi/laneFrame` with the paused page's HTML and script (`pausedPageHtml` with `lane`), its caption from `laneShown`
-and its image dimmed (`stale`) while it is not of what the worker does now (`frameIsCurrent`). Each stop, and each
-stretch the worker runs between them, is drawn anew (`shown`), so Interact starts off and a message of the view before
-reaches nothing; at a stop, Interact and the pick on a click name that stop, as on the paused page. A headless stop of
-the slot the panel watches, in sight, opens no paused page, and no stop's file opens over the panel. Input and a pick
-there make the slot the person's; hiding or closing the panel shows the stops again (`WorkerPanelHooks`), so a held
-stop it showed gets the paused page at once.
-Each watch starts with Interact off; the watch ends while the panel is hidden and starts again as it shows
-(`pausedPageViewChange`).
+(`piwi.pauseAndWatch`, which then sends `pause` to that worker) and a click on the run's progress in the status bar open
+**Piwi: worker N** (`src/worker-panel.ts`) on a worker whose reporter shows its running test (`RunWorker.watchable`,
+`watchableWorkers`). It watches the worker's lane with `piwi/laneView` and draws `piwi/laneFrame` with the paused page's
+HTML and script (`pausedPageHtml` with `lane`), its caption from `laneShown` and its image dimmed (`stale`) while it is
+not of what the worker does now (`frameIsCurrent`). Each stop, and each stretch the worker runs between them, is drawn
+anew (`shown`), so Interact starts off and a message of the view before reaches nothing; at a stop, Interact and the
+pick on a click name that stop, as on the paused page. A headless stop of the slot the panel watches, in sight, opens no
+paused page, and no stop's file opens over the panel. A press, a key, text, the wheel or a pick there make the slot the
+person's; hiding or closing the panel shows the stops again (`WorkerPanelHooks`), a held headless stop it showed offered
+to the paused page as a new stop is, the view closed or not. Each watch starts with Interact off; the watch ends while
+the panel is hidden and starts again as it shows (`pausedPageViewChange`).
 
 **Breakpoints during a run.** The breakpoints `breakpointsForRun` gives go to each live run as they change
 (`vscode.debug.onDidChangeBreakpoints`, the `piwi.breakpoints` setting) with `piwi/setRunBreakpoints`, as lines of the

@@ -63,16 +63,21 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   runs** (`!inDebugMode` in `contributes.keybindings`). **Pause** has no default key: a key bound for as long as a
   test runs takes one from the workbench. ([Keybindings](ARCHITECTURE.md#keybindings))
 - **A new stop takes the focus only on the worker slot the person is on (the last to take the focus, or acted on: a
-  control, a code action, input or a pick on a page; never one only watched), or while no other held stop's file was
-  opened and no Step or Run to the cursor from the editor waits, `RESERVED_MS` at most; any other opens beside the
-  editor in use, never over a panel. The paused page keeps a held stop, then waits as long for the stepped slot.**
-  `StopsShown` decides, an answer the run refuses recording nothing, and `run-view.ts` opens, as in the JetBrains
-  plugin; checked by `tests/run-control.test.ts` ("what the editor shows of the stops"), fed the pushes the service
-  sends. ([Run control](ARCHITECTURE.md#run-control))
-- **A key, or a command naming no stop, acts on the stop at the caret's line; else, for a control within
-  `RESUMED_KEY_MS` of an answer and before the next stop, on none but the stop answered; else on the only stop whose
-  file or page the person was shown; else it asks** (`StopsShown.choose`, as the JetBrains plugin's
-  `Glue.StopsShown.choose`). Checked by `tests/run-control.test.ts`. ([Run control](ARCHITECTURE.md#run-control))
+  control, a code action, a press, key or pick on a page, never a pointer moving; never one only watched), or while no
+  other held stop's file was opened and no Step or Run to the cursor from the editor waits, `RESERVED_MS` at most; any
+  other opens beside the editor in use, never over a panel. The paused page keeps a held stop, then waits as long for
+  the stepped slot.** `StopsShown` decides (a refusal, `ok: false`, undoing what nothing changed since, and the stops
+  shown again after it or after acting ends a wait) and `run-view.ts` opens, as in the JetBrains plugin; checked by
+  `tests/run-control.test.ts` ("what the editor shows of the stops"), fed the pushes the service sends.
+  ([Run control](ARCHITECTURE.md#run-control))
+- **A key, or a command naming no stop, acts for a control within `RESUMED_KEY_MS` of an answer, until that slot's next
+  stop, on a stop of the answered slot or on none, whatever the caret says; else on the stop at the caret's line; else
+  on the only stop whose file or page the person was shown; else it asks** (`StopsShown.choose`, as the JetBrains
+  plugin's `Glue.StopsShown.choose`). Checked by `tests/run-control.test.ts`.
+  ([Run control](ARCHITECTURE.md#run-control))
+- **A held headless stop the worker panel showed is offered to the paused page as a new stop once the panel hides or
+  closes, the page closed or not** (`StopsShown.changed`, `WorkerPanelHooks.changed`). Checked by
+  `tests/run-control.test.ts`.
 - **One undo step per recording.** The first write of the block opens an undo stop and the later ones join it
   (`undoStopBefore: false`), so one Undo after Stop removes the block and its imports.
   ([Undo during a recording](ARCHITECTURE.md#undo-during-a-recording))

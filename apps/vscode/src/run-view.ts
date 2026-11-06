@@ -74,6 +74,7 @@ import {
   RESUMED_KEY_MS,
   STOP_ACTIONS,
   StopsShown,
+  actsOnPage,
   asideColumn,
   breakpointUpdates,
   canEnd,
@@ -227,10 +228,12 @@ export function registerRunControl(
     gutterIconSize: 'contain',
   });
   let panel: vscode.WebviewPanel | null = null;
-  /** The person acted on a stop: a code action, input or a pick on its page (`StopsShown.acted`). */
+  /**
+   * The person acted on a stop: a code action, input or a pick on its page (`StopsShown.acted`). A wait it ended shows
+   * the stops again.
+   */
   const acted = (stop: ShownStop) => {
-    stopsShown.acted(stop);
-    wakeWhenWaited();
+    if (stopsShown.acted(stop)) changed();
   };
   const workerPanel = createWorkerPanel(context, lc, { acted, changed: () => changed() });
   let page: PausedPageView | null = null;
@@ -485,7 +488,7 @@ export function registerRunControl(
     const events =
       m.type === 'release' ? [] : m.type === 'input' && page.live.interacting ? readViewInput(m.events) : null;
     if (!events || typeof events === 'string') return refused();
-    if (m.type === 'input' && pageShows) acted(pageShows);
+    if (m.type === 'input' && pageShows && actsOnPage(events)) acted(pageShows);
     const answer = await lc
       .sendRequest<RunControlResult>(PAGE_INPUT_REQUEST, { ...watchingPage, events, release: m.type === 'release' })
       .catch(() => null);
@@ -678,11 +681,12 @@ export function registerRunControl(
     return picked?.s ?? null;
   };
 
+  /** Send a control, saying why it was not taken; the run's answer, null when the service did not answer. */
   const control = async (params: RunControlParams) => {
     const answer = await lc.sendRequest<RunControlResult>(RUN_CONTROL_REQUEST, params).catch(() => null);
     if (!answer) say('the editor service did not answer.');
     else if (!answer.ok) say(answer.message);
-    return answer?.ok === true;
+    return answer;
   };
 
   /** `F5` stays Piwi's for a moment after a stop was answered (`piwi.runResumed`). */
@@ -716,9 +720,12 @@ export function registerRunControl(
     const params: RunControlParams = { ref: stop.ref, worker: stop.worker, action, since: stop.stop.since };
     stopsShown.answered(stop, action);
     wakeWhenWaited();
-    if (await control(place ? { ...params, place } : params)) return answered();
+    const answer = await control(place ? { ...params, place } : params);
+    if (answer?.ok) return answered();
+    // With no answer the run may have taken it: what the answer recorded stays.
+    if (!answer) return;
     stopsShown.refused(stop);
-    wakeWhenWaited();
+    changed();
   };
 
   /**

@@ -28,6 +28,7 @@ import type {
   StopCode,
   StopRequest,
 } from '@piwitests/editor/protocol';
+import type { ViewInput } from '@piwitests/core/run-view';
 
 /**
  * A change of a document's lines: its old lines `start` to `oldEnd` became the lines `start` to `newEnd`. `first`
@@ -243,8 +244,8 @@ function slotKey(stop: { ref: string; slot: number }): string {
 export const RESERVED_MS = 10_000;
 
 /**
- * How long after a control from the editor answered a stop, the next stop not come yet, a run key with the caret on no
- * stop answers no other stop, nor starts a debug session (`piwi.runResumed`).
+ * How long after a control from the editor answered a stop, until that slot's next stop comes, a run key acts on no
+ * other slot's stop, nor starts a debug session (`piwi.runResumed`).
  */
 export const RESUMED_KEY_MS = 2_000;
 
@@ -257,6 +258,21 @@ export interface StopsChange {
 }
 
 /**
+ * Whether input sent to a stop's page is the person acting on it: a press, a click, a key, text or the wheel; a pointer
+ * moving, or a button or key let go, is not.
+ */
+export function actsOnPage(events: readonly ViewInput[]): boolean {
+  return events.some((e) => e.type === 'text' || e.type === 'wheel' || (e.action !== 'move' && e.action !== 'up'));
+}
+
+/** What a control from the editor records: the slot the person is on, a wait for a slot's next stop, and the answer. */
+interface Recorded {
+  followed: string | null;
+  reserved: { slot: string; key: string; until: number } | null;
+  answer: { slot: string; at: number } | null;
+}
+
+/**
  * What the editor shows of the stops as they change, each stop once, and which stop a run key acts on.
  *
  * - A new stop opens its file at its line. It takes the focus, decided as it opens (`focusFor`), only as a stop of the
@@ -264,35 +280,38 @@ export interface StopsChange {
  *   The slot the person is on is the one whose stop last took the focus, or that they last acted on: a control from
  *   the editor (`answered`), a code action, input or a pick on a page (`acted`). Watching a slot in the worker panel
  *   does not make it theirs.
- * - After a Step or a Run to the cursor from the editor, until that slot's next stop opens, `RESERVED_MS` at most and
- *   while a worker of the run holds the slot, no stop of another slot takes the focus, and the paused page view, once
- *   its own stop of that slot went on, waits for it (`waitsUntil`, when the editor asks again). An answer the run
+ * - After a Step or a Run to the cursor from the editor, until another stop of that slot opens, `RESERVED_MS` at most
+ *   and while a worker of the run holds the slot, no stop of another slot takes the focus, and the paused page view,
+ *   once its own stop of that slot went on, waits for it (`waitsUntil`, when the editor asks again). An answer the run
  *   refuses records nothing (`refused`).
- * - The paused page view shows the stops the worker panel does not (`watched`). It keeps the stop it shows (`view`)
- *   while that stop is held; otherwise it opens the first new stop no pause bar shows, else the first such stop held. A
- *   view that is closed opens the first new such stop.
+ * - The paused page view shows the stops the worker panel does not (`watched`); a held stop the panel showed is offered
+ *   again as a new one once the panel no longer shows it. The view keeps the stop it shows (`view`) while that stop is
+ *   held; otherwise it opens the first new stop no pause bar shows, else the first such stop held. A view that is
+ *   closed opens the first new such stop.
  */
 export class StopsShown {
-  /** The stops heard, those whose file opened, and those the person was shown (their file in sight), by `stopKey`. */
+  /**
+   * The stops heard, those whose file opened, those the person was shown (their file in sight), and the headless ones
+   * the worker panel shows, by `stopKey`.
+   */
   private readonly heard = new Set<string>();
   private readonly files = new Set<string>();
   private readonly seen = new Set<string>();
+  private readonly panel = new Set<string>();
   private held = new Set<string>();
   /** The stop the paused page view shows, or showed last; null while it is closed. */
   private viewed: ShownStop | null = null;
-  /** The slot stepped or run to the cursor, whose next stop the focus and the view wait for, by `slotKey`. */
-  private reserved: { slot: string; until: number } | null = null;
+  /**
+   * The slot stepped or run to the cursor, by `slotKey`, whose next stop (a stop of the slot other than the one
+   * stepped, `key`) the focus and the view wait for, and until when.
+   */
+  private reserved: Recorded['reserved'] = null;
   /** The slot the person is on, by `slotKey`. */
   private followed: string | null = null;
-  /** The stop a control from the editor answered last, and when, until the next stop comes. */
-  private answer: { key: string; at: number } | null = null;
-  /** What the last answer replaced, put back if the run refuses it, with the stop it answered. */
-  private before: {
-    key: string;
-    followed: string | null;
-    reserved: StopsShown['reserved'];
-    answer: StopsShown['answer'];
-  } | null = null;
+  /** The slot a control from the editor answered last, and when, until its next stop comes. */
+  private answer: Recorded['answer'] = null;
+  /** What the last answer replaced, and what it set, with the stop it answered: a refusal undoes what is unchanged. */
+  private before: { key: string; was: Recorded; set: Recorded } | null = null;
 
   /**
    * The sessions changed, with their stops held now at the lines they stand on (`stops`, in order); `watched` tells a
@@ -308,22 +327,28 @@ export class StopsShown {
     );
     if (this.reserved && (this.reserved.until <= now || !slots.has(this.reserved.slot))) this.reserved = null;
     this.held = new Set(stops.map(stopKey));
-    for (const set of [this.heard, this.files, this.seen])
+    for (const set of [this.heard, this.files, this.seen, this.panel])
       for (const key of set) if (!this.held.has(key)) set.delete(key);
     const open = stops.filter((s) => !this.heard.has(stopKey(s)));
     for (const stop of open) this.heard.add(stopKey(stop));
-    if (open.length) this.answer = null;
+    if (this.answer && open.some((s) => slotKey(s) === this.answer!.slot)) this.answer = null;
     const paged = (s: ShownStop) => !s.stop.bar && !watched(s);
+    // The stops new to the page: those heard now, and those the panel showed until now.
+    const offered = stops.filter((s) => open.includes(s) || (this.panel.has(stopKey(s)) && !watched(s)));
+    for (const s of stops) {
+      if (!s.stop.bar && watched(s)) this.panel.add(stopKey(s));
+      else this.panel.delete(stopKey(s));
+    }
     const viewed = this.viewed;
-    if (!viewed) return { open, page: open.find(paged) ?? null };
+    if (!viewed) return { open, page: offered.find(paged) ?? null };
     if (this.held.has(stopKey(viewed))) return { open, page: null };
-    const slot = this.reserved?.slot === slotKey(viewed) ? this.reserved.slot : null;
-    if (slot) {
-      const next = stops.find((s) => slotKey(s) === slot);
+    const reserved = this.reserved?.slot === slotKey(viewed) ? this.reserved : null;
+    if (reserved) {
+      const next = stops.find((s) => slotKey(s) === reserved.slot && stopKey(s) !== reserved.key);
       if (!next) return { open, page: null };
       if (paged(next)) return { open, page: next };
     }
-    return { open, page: open.find(paged) ?? stops.find(paged) ?? null };
+    return { open, page: offered.find(paged) ?? stops.find(paged) ?? null };
   }
 
   /** The paused page view shows `stop`'s page; null once it is closed. */
@@ -344,15 +369,16 @@ export class StopsShown {
   }
 
   /**
-   * `stop`'s file opened, with the focus or without it, in sight (`shown`) or not. The next stop of the slot waited for
-   * ends the wait, as does any stop that took the focus.
+   * `stop`'s file opened, with the focus or without it, in sight (`shown`) or not. Another stop of the slot waited for
+   * ends the wait, as does a stop of another slot that took the focus.
    */
   opened(stop: ShownStop, focus: boolean, shown = true): void {
     const key = stopKey(stop);
     if (!this.held.has(key)) return;
     this.files.add(key);
     if (shown) this.seen.add(key);
-    if (focus || this.reserved?.slot === slotKey(stop)) this.reserved = null;
+    const reserved = this.reserved;
+    if (reserved && reserved.key !== key && (focus || reserved.slot === slotKey(stop))) this.reserved = null;
     if (focus) this.followed = slotKey(stop);
   }
 
@@ -361,37 +387,48 @@ export class StopsShown {
    * a Run to the cursor the focus and the view wait for its next stop.
    */
   answered(stop: ShownStop, action: RunControlAction, now = Date.now()): void {
-    const { followed, reserved, answer } = this;
-    this.before = { key: stopKey(stop), followed, reserved, answer };
-    this.followed = slotKey(stop);
-    this.answer = { key: stopKey(stop), at: now };
-    this.reserved = action === 'step' || action === 'run-to' ? { slot: slotKey(stop), until: now + RESERVED_MS } : null;
+    const slot = slotKey(stop);
+    const was: Recorded = { followed: this.followed, reserved: this.reserved, answer: this.answer };
+    this.followed = slot;
+    this.answer = { slot, at: now };
+    this.reserved =
+      action === 'step' || action === 'run-to' ? { slot, key: stopKey(stop), until: now + RESERVED_MS } : null;
+    this.before = {
+      key: stopKey(stop),
+      was,
+      set: { followed: this.followed, reserved: this.reserved, answer: this.answer },
+    };
   }
 
-  /** The run refused the answer to `stop`, or the service did not answer: what it recorded goes. */
+  /**
+   * The run refused the answer to `stop` (`ok: false`): of what the answer recorded, what nothing changed since goes
+   * back to what it was.
+   */
   refused(stop: ShownStop): void {
     const before = this.before;
     if (before?.key !== stopKey(stop)) return;
     this.before = null;
-    this.followed = before.followed;
-    this.reserved = before.reserved;
-    this.answer = before.answer;
+    if (this.followed === before.set.followed) this.followed = before.was.followed;
+    if (this.reserved === before.set.reserved) this.reserved = before.was.reserved;
+    if (this.answer === before.set.answer) this.answer = before.was.answer;
   }
 
   /**
    * The person acted on `stop` (a code action, input or a pick on its page): they are on its slot, and a wait for
-   * another slot's next stop ends.
+   * another slot's next stop ends. Whether it ended one.
    */
-  acted(stop: ShownStop): void {
+  acted(stop: ShownStop): boolean {
     this.followed = slotKey(stop);
-    if (this.reserved && this.reserved.slot !== slotKey(stop)) this.reserved = null;
+    if (!this.reserved || this.reserved.slot === slotKey(stop)) return false;
+    this.reserved = null;
+    return true;
   }
 
   /**
-   * The stop a key, or a command naming none, acts on among `candidates` (those `stopsFor` gives for `caret`): the one
-   * at the caret's line; for a control (`control`) within `RESUMED_KEY_MS` of an answer before the next stop, none but
-   * the stop answered; else the only one when the person was shown its file or its page. `ask` has the person choose
-   * among them; null acts on none.
+   * The stop a key, or a command naming none, acts on among `candidates` (those `stopsFor` gives for `caret`). For a
+   * control (`control`) within `RESUMED_KEY_MS` of an answer, before that slot's next stop comes, only a stop of that
+   * slot, whatever the caret says. Else the one at the caret's line, else the only one when the person was shown its
+   * file or its page. `ask` has the person choose among them; null acts on none.
    */
   choose(
     candidates: readonly ShownStop[],
@@ -399,12 +436,12 @@ export class StopsShown {
     control: boolean,
     now = Date.now(),
   ): ShownStop | 'ask' | null {
+    const answer = control && this.answer && now - this.answer.at < RESUMED_KEY_MS ? this.answer : null;
+    if (answer) return candidates.find((s) => slotKey(s) === answer.slot) ?? null;
     const here = candidates.filter((s) => caret && s.stop.uri === caret.uri && s.stop.line === caret.line);
     if (here.length) return here.length === 1 ? here[0]! : 'ask';
-    const answer = control && this.answer && now - this.answer.at < RESUMED_KEY_MS ? this.answer : null;
-    const left = answer ? candidates.filter((s) => stopKey(s) === answer.key) : candidates;
-    if (!left.length) return null;
-    const only = left.length === 1 ? left[0]! : null;
+    if (!candidates.length) return null;
+    const only = candidates.length === 1 ? candidates[0]! : null;
     return only && (this.seen.has(stopKey(only)) || (this.viewed && stopKey(this.viewed) === stopKey(only)))
       ? only
       : 'ask';
