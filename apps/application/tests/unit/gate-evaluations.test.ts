@@ -259,6 +259,7 @@ describe('the gate commit status', () => {
           description: '1 new regression (limit 0)',
           targetUrl: `https://piwi.example/test-runs/${run}`,
           context: 'piwi/tests/gate',
+          ref: 'feature/x',
         },
       },
     ]);
