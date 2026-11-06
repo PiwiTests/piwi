@@ -425,7 +425,8 @@ caret's match, `Glue.stopsFor`), and the caret's line back to the run's for Run 
 written since.
 
 **The actions** (`RunControlAction`): `Piwi.PauseRun`, `Piwi.ResumeRun`, `Piwi.StepRun`, `Piwi.RunToCaret`,
-`Piwi.FinishRun`, `Piwi.EndTest` (**End the Test**, `end`, enabled where `Glue.canEnd`), `Piwi.ShowPausedPage` and
+`Piwi.FinishRun`, `Piwi.EndTest` (**End the Test**, `end`, enabled where `Glue.canEnd`, and while a Pause waits for
+the call a test runs, where it sends `give-up`, naming the worker and no stop), `Piwi.ShowPausedPage` and
 `Piwi.StopRun`.
 
 - They are under **Tools → Piwi**, and first in the status bar item's menu while a run is live; the item reads

@@ -6537,6 +6537,27 @@
   "runs_statePausing": {
     "message": "Wird angehalten…"
   },
+  "runs_statePausingIn": {
+    "message": "Wird angehalten: wartet in $call$",
+    "placeholders": {
+      "call": {
+        "content": "$1",
+        "example": "Click getByRole('button', { name: 'Pay' })"
+      }
+    }
+  },
+  "runs_waitedFor": {
+    "message": "seit $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12 s"
+      }
+    }
+  },
+  "runs_giveUpTitle": {
+    "message": "Test jetzt beenden: Der Aufruf, in dem er wartet, wird wo möglich abgebrochen, der Rest des Tests übersprungen"
+  },
   "runs_stateRunning": {
     "message": "Läuft"
   },

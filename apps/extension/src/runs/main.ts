@@ -269,8 +269,8 @@ async function send(
   // A command on its way: the buttons say so (`aria-disabled`) and take no other until it is answered. So do those of
   // a run whose hub's connection was lost, until it answers again.
   if (busy.has(key) || !hubAnswers(run.hub)) return null;
-  // Every control but Pause answers the stop shown.
-  if (what !== 'pause' && since === null) return null;
+  // Every control but Pause answers the stop shown; End the test while a Pause waits for a call names none.
+  if (what !== 'pause' && what !== 'give-up' && since === null) return null;
   busy.add(key);
   answers.delete(key);
   render();
@@ -349,7 +349,7 @@ function answerShare(run: RunsRun, yes: boolean): void {
 
 /** A control of the window, for the stop its button was drawn for (`since`, null for Pause). */
 async function control(run: RunsRun, worker: number, what: Control, since: string | null): Promise<void> {
-  const asked = what === 'pause' ? null : since;
+  const asked = what === 'pause' || what === 'give-up' ? null : since;
   const answer = await send(run, worker, what, asked);
   if (!answer) return;
   // The intents say what to do in the test's window; the other controls show in the state that follows.
@@ -1721,12 +1721,38 @@ function stateLine(worker: HubWorker, count: number, place: string | null): HTML
   const stop = worker.state === 'stopped' ? worker.stop : null;
   if (stop?.reason === 'failure') iconText(line, 'x-circle', t('runs_failedAt', { place: place ?? '' }));
   else if (stop) iconText(line, 'pause', t(STOP_WORDS[stop.reason]));
-  else if (worker.pausing) iconText(line, 'clock', t('runs_statePausing'));
+  else if (worker.pausing && worker.waiting) {
+    // How long it has waited, kept up to date each second (`tickWaits`).
+    const waited = element('span', 'waited');
+    const { since, title } = worker.waiting;
+    if (since) {
+      waited.dataset.since = since;
+      waited.textContent = waitedText(since, Date.now());
+    }
+    const call = element('span', 'call', ...richText(title));
+    iconText(line, 'clock', ...tNodes('runs_statePausingIn', { call }), ' ', waited);
+  } else if (worker.pausing) iconText(line, 'clock', t('runs_statePausing'));
   else if (worker.state === 'running' || worker.state === 'other') iconText(line, 'play', t('runs_stateRunning'));
   else iconText(line, 'dot', t('runs_stateBetween'));
   if (count > 1) line.append(element('span', 'worker-number', t('runs_worker', { number: worker.parallelIndex + 1 })));
   return line;
 }
+
+/** How long a call has run, from `since` to `now` (`for 12 s`); empty for a time that does not read. */
+function waitedText(since: string, now: number): string {
+  const seconds = Math.max(0, Math.floor((now - Date.parse(since)) / 1000));
+  return Number.isFinite(seconds) ? t('runs_waitedFor', { time: formatUnit(seconds, 'second') }) : '';
+}
+
+/** Each `.waited` with a `data-since`: how long since then, as the time goes. */
+function tickWaits(): void {
+  const now = Date.now();
+  for (const waited of document.querySelectorAll<HTMLElement>('.waited[data-since]')) {
+    waited.textContent = waitedText(waited.dataset.since ?? '', now);
+  }
+}
+
+setInterval(tickWaits, 1000);
 
 /** The window's controls: each button's words, tooltip, icon and tone. */
 const CONTROLS = {
@@ -1734,6 +1760,7 @@ const CONTROLS = {
   step: { label: 'runs_step', title: 'runs_stepTitle', icon: 'skip' },
   finish: { label: 'runs_finish', title: 'runs_finishTitle', icon: 'next' },
   end: { label: 'runs_end', title: 'runs_endTitle', icon: 'stop' },
+  'give-up': { label: 'runs_end', title: 'runs_giveUpTitle', icon: 'stop' },
   pick: { label: 'runs_pick', title: 'runs_pickTitle', icon: 'pick' },
   record: { label: 'runs_record', title: 'runs_recordTitle', icon: 'record' },
   assert: { label: 'runs_assert', title: 'runs_assertTitle', icon: 'check-circle' },
@@ -1748,7 +1775,7 @@ const CONTROLS = {
 type Control = keyof typeof CONTROLS;
 
 /** The controls that steer the test, on a row of their own above the code a stop can write. */
-const STEERING: ReadonlySet<Control> = new Set(['resume', 'step', 'finish', 'end', 'pause']);
+const STEERING: ReadonlySet<Control> = new Set(['resume', 'step', 'finish', 'end', 'give-up', 'pause']);
 
 /**
  * The controls a worker takes now: at a stop, Resume, Step and Finish (Resume alone where the test failed, which ends
@@ -1758,7 +1785,9 @@ const STEERING: ReadonlySet<Control> = new Set(['resume', 'step', 'finish', 'end
  * them, and Mock a request.
  */
 function controlsOf(worker: HubWorker, stop: HubStop | null, held: readonly Control[]): Control[] {
-  if (!stop) return worker.pausing ? [] : ['pause'];
+  // While a Pause waits for the call the test runs, End the test there, where its worker takes it.
+  if (!stop)
+    return worker.pausing ? (worker.waiting && worker.intents.includes('give-up') ? ['give-up'] : []) : ['pause'];
   const controls: Control[] = stop.reason === 'failure' ? ['resume'] : ['resume', 'step', 'finish'];
   const intents = stopIntents(worker, stop);
   if (intents.includes('end')) controls.push('end');
@@ -2030,6 +2059,7 @@ function renderWorker(
       reason: stop?.reason ?? null,
       place: stop?.reason === 'failure' ? where : null,
       pausing: worker.pausing,
+      waiting: worker.pausing ? (worker.waiting ?? null) : null,
       number: count > 1 ? worker.parallelIndex : null,
     };
     parts.push(part(`${key}|state`, shown, () => stateLine(worker, count, where)));
@@ -2428,7 +2458,10 @@ function restoreFocus(): void {
     return;
   }
   const owner = focusKey.slice(0, focusKey.lastIndexOf('|') + 1);
-  const near = owner ? document.querySelector<HTMLElement>(`[data-focus^="${CSS.escape(owner)}"]`) : null;
+  // Never End the test, which a key pressed again would answer.
+  const near = owner
+    ? document.querySelector<HTMLElement>(`[data-focus^="${CSS.escape(owner)}"]:not([data-focus$="|give-up"])`)
+    : null;
   if (!near) return;
   lending = true;
   near.focus();

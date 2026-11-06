@@ -382,8 +382,8 @@ export async function startLaneRun(
 }
 
 /**
- * A worker of the run `ref` whose reporter shows its lane, Playwright's worker `workerIndex` in the first lane: the
- * first one, or one Playwright starts in its place.
+ * A worker of the run `ref` whose reporter shows its lane and ends a test a Pause waits for, Playwright's worker
+ * `workerIndex` in the first lane: the first one, or one Playwright starts in its place.
  */
 export function laneWorker(editor: Editor, channel: Channel, ref: string, workerIndex: number): FakeWorker {
   const worker = new FakeWorker(channel.path, editor.dir);
@@ -399,7 +399,7 @@ export function laneWorker(editor: Editor, channel: Channel, ref: string, worker
     reporter: '0.67.0',
     takes: [...RUN_TAKES],
     holds: ['failure'],
-    features: ['view-lane'],
+    features: ['view-lane', 'give-up'],
   });
   return worker;
 }

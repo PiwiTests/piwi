@@ -28,6 +28,9 @@ import {
   liveItem,
   progressItem,
   frameIsCurrent,
+  waitedFor,
+  waitingWorkers,
+  endChoice,
   laneShown,
   watchTargetsFor,
   watchableWorkers,
@@ -99,6 +102,7 @@ const worker = (index: number, state: RunWorker['state'], extra: Partial<RunWork
   test: state === 'between' ? null : runTest(),
   stop: null,
   pausing: false,
+  waiting: null,
   takes: [],
   watchable: false,
   ...extra,
@@ -173,6 +177,7 @@ describe('what the controls offer', () => {
       shareable: false,
       liveShared: false,
       watchable: false,
+      waiting: null,
     });
     expect(controlItems(controlState(new Map()))).toEqual([]);
     expect(liveItem(new Map())).toBeNull();
@@ -211,6 +216,7 @@ describe('what the controls offer', () => {
         shareable: false,
         liveShared: false,
         watchable: false,
+        waiting: null,
       });
       expect(controlItems(shown).map((i) => i.command)).toEqual(['piwi.pauseRun', 'piwi.stopRun']);
     }
@@ -229,11 +235,73 @@ describe('what the controls offer', () => {
       shareable: false,
       liveShared: false,
       watchable: false,
+      waiting: null,
     });
     expect(controlItems(pausing).map((i) => [i.text, i.command])).toEqual([
       ['$(loading~spin) Pausing…', null],
       ['$(debug-stop)', 'piwi.stopRun'],
     ]);
+    // While it waits in a call it can end at: how long it has waited, and End the test.
+    const waiting = {
+      title: "Click getByRole('button', { name: 'Pay' })",
+      uri: spec,
+      line: 4,
+      since: '2026-10-25T10:00:00.000Z',
+      endable: true,
+    };
+    const waits = controlState(sessionsOf(session('ed-1', [worker(0, 'running', { pausing: true, waiting })])));
+    expect(waits.waiting).toEqual({ ref: 'ed-1', worker: 0, waiting });
+    expect(controlItems(waits, Date.parse('2026-10-25T10:01:05.000Z'))).toEqual([
+      {
+        text: '$(loading~spin) Pausing… 1 min 5 s',
+        tooltip:
+          "Piwi: the test waits in Click getByRole('button', { name: 'Pay' }) for 1 min 5 s, and stops once it returns",
+        command: null,
+      },
+      {
+        key: 'give-up',
+        text: '$(circle-slash)',
+        tooltip:
+          "Piwi: End the test now: Click getByRole('button', { name: 'Pay' }) is given up, and the rest of the test skipped",
+        command: 'piwi.endTest',
+      },
+      { text: '$(debug-stop)', tooltip: 'Piwi: Stop the run (Shift+F5)', command: 'piwi.stopRun' },
+    ]);
+    const unknown = controlState(
+      sessionsOf(
+        session('ed-1', [
+          worker(0, 'running', { pausing: true, waiting: { ...waiting, since: null, endable: false } }),
+        ]),
+      ),
+    );
+    expect(controlItems(unknown).map((i) => i.tooltip)).toEqual([
+      "Piwi: the test waits in Click getByRole('button', { name: 'Pay' }), and stops once it returns",
+      "Piwi: End the test as Click getByRole('button', { name: 'Pay' }) returns: the rest of it is skipped",
+      'Piwi: Stop the run (Shift+F5)',
+    ]);
+    // Beside Pause for another worker, and in place of End at a stop that cannot end.
+    const keys = (sessions: ReturnType<typeof sessionsOf>) =>
+      controlItems(controlState(sessions)).map((i) => i.key ?? i.command);
+    expect(
+      keys(sessionsOf(session('ed-1', [worker(0, 'running', { pausing: true, waiting }), worker(1, 'running')]))),
+    ).toEqual(['piwi.pauseRun', null, 'give-up', 'piwi.stopRun']);
+    const failed = worker(1, 'stopped', { stop: { ...stopAt(spec, 5), reason: 'failure' } });
+    expect(keys(sessionsOf(session('ed-1', [worker(0, 'running', { pausing: true, waiting }), failed])))).toContain(
+      'give-up',
+    );
+    const waitingSessions = sessionsOf(session('ed-1', [worker(0, 'running', { pausing: true, waiting })]));
+    expect(waitingWorkers(waitingSessions, { ref: 'ed-1', worker: 0 })).toHaveLength(1);
+    expect(waitingWorkers(waitingSessions, { ref: 'ed-2' })).toEqual([]);
+    // End the test answers a stop a lens or a hover names, even one that went on, and never a waiting test then.
+    expect(endChoice(waitingSessions, false, { ref: 'ed-1', worker: 1, since: 's1' })).toBe('stop');
+    expect(endChoice(waitingSessions, true, null)).toBe('stop');
+    expect(endChoice(waitingSessions, false, null)).toEqual([{ ref: 'ed-1', worker: 0, waiting }]);
+    expect(endChoice(waitingSessions, false, { ref: 'ed-1', worker: 1 })).toEqual([]);
+    expect(waitedFor(null, 0)).toBeNull();
+    expect(waitedFor('2026-10-25T10:00:00.000Z', Date.parse('2026-10-25T10:00:12.900Z'))).toBe('12 s');
+    expect(laneShown(session('ed-1', [worker(0, 'running', { pausing: true, waiting })]), 0, []).caption).toBe(
+      "Worker 1 · Pausing · waits in Click getByRole('button', { name: 'Pay' }) · checkout › pays",
+    );
     const ci = controlState(
       sessionsOf(session('ed-1', [worker(0, 'running', { test: runTest(0, 'running under CI') })])),
     );
@@ -256,6 +324,7 @@ describe('what the controls offer', () => {
       shareable: false,
       liveShared: false,
       watchable: false,
+      waiting: null,
     });
     expect(controlItems(shown).map((i) => [i.command, i.tooltip])).toEqual([
       ['piwi.resumeRun', 'Piwi: Resume (F5)'],

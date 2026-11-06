@@ -12,6 +12,7 @@ import {
   MAX_RUN_EVENT_TEXT,
   MAX_SNAPSHOT_DEPTH,
   MAX_STOP_ERROR,
+  MAX_WAITING_TITLE,
   RUN_ACT_ACTIONS,
   RUN_CHANNEL_ENV,
   RUN_FEATURES,
@@ -809,6 +810,41 @@ describe('the run channel', () => {
   });
 
   describe('the lane view', () => {
+    test('reads the call a pausing worker waits in, and End the test there', () => {
+      const waiting = {
+        type: 'waiting',
+        title: "Click getByRole('button', { name: 'Pay' })",
+        place: { file: 'tests/pages/checkout.page.ts', line: 12, column: 5 },
+        ms: 4200,
+        endable: true,
+      } satisfies RunToHub;
+      expect(parseRunToHub(line(waiting))).toEqual(waiting);
+      expect(parseRunToHub(line({ ...waiting, place: null }))).toEqual({ ...waiting, place: null });
+      expect(parseRunToHub(line({ ...waiting, ms: null }))).toEqual({ ...waiting, ms: null });
+      expect(parseRunToHub(line({ ...waiting, title: 'x'.repeat(MAX_WAITING_TITLE + 10) }))).toMatchObject({
+        title: 'x'.repeat(MAX_WAITING_TITLE),
+      });
+      for (const wrong of [{ title: '' }, { ms: -1 }, { endable: 'yes' }, { place: { file: '', line: 0 } }]) {
+        expect(parseRunToHub(line({ ...waiting, ...wrong }))).toBeNull();
+      }
+      // Once it waits in no call, a null title, whatever else the line says.
+      expect(parseRunToHub(line({ ...waiting, title: null }))).toEqual({
+        type: 'waiting',
+        title: null,
+        place: null,
+        ms: null,
+        endable: false,
+      });
+      // End the test names the test the call was waited in.
+      expect(parseHubToRun(line({ type: 'control', action: 'give-up', testId: 't1' }))).toEqual({
+        type: 'control',
+        action: 'give-up',
+        testId: 't1',
+      });
+      expect(parseHubToRun(line({ type: 'control', action: 'give-up' }))).toBeNull();
+      expect(parseHubToRun(line({ type: 'control', action: 'give-up', testId: '' }))).toBeNull();
+    });
+
     test('reads what a worker does beyond its takes, those this side knows, as none from an older reporter', () => {
       const attach = {
         type: 'run-attach',
@@ -824,7 +860,7 @@ describe('the run channel', () => {
         features: ['view-lane'],
       } satisfies RunToHub;
       expect(parseRunToHub(line(attach))).toEqual(attach);
-      expect(RUN_FEATURES).toEqual(['view-lane']);
+      expect(RUN_FEATURES).toEqual(['view-lane', 'give-up']);
       expect(parseRunToHub(line({ ...attach, features: ['fly', 'view-lane'] }))).toMatchObject({
         features: ['view-lane'],
       });

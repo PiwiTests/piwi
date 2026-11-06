@@ -904,7 +904,8 @@ The Runs window is `runs.html` and `src/runs/main.ts`, with its pure half in `sr
 - The window talks only to the worker, through the port `RUNS_PORT`. The worker takes that port from `runs.html` alone
   (`fromRunsPage`: the extension's id and the page's address), and reads its messages with `parseRunsRequest`. The
   state the worker posts (`RunsState`) carries no token, and the window makes no network call.
-- Every control but Pause names the stop shown (`since`), so a click made twice never answers the next stop.
+- Every control but Pause, Share live and End the test while a Pause waits for a call (`give-up`, naming the worker)
+  names the stop shown (`since`), so a click made twice never answers the next stop.
 - At a stop, the test's controls are Resume, Step and Finish, and End the test where the stop's `intents` list `end`
   (the hub's `runControl` `end`: the test ends there, skipped); Resume alone where it failed (`reason: 'failure'`, its
   state line **Failed at** and the place, the error under it: the stop's `error`, its lines kept, else, from a service

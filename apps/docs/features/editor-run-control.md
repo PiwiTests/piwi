@@ -42,7 +42,8 @@ waits for the next stop rather than start a debug session.
 
 **Pause** stops every run Piwi started in this window (in a JetBrains IDE, this project), each worker before its next
 call that Playwright's debugger stops at ([which calls](./editor-breakpoints#limits)): a long call or a `waitForTimeout`
-finishes first, and a worker between tests stops at the next test's first call. A test that never stops, under CI or
+finishes first, unless you [end the test there](./end-the-test#while-a-pause-waits-for-a-call), and a worker between
+tests stops at the next test's first call. A test that never stops, under CI or
 Playwright's own debugger, says why.
 
 ## Where the test stands

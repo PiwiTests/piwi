@@ -83,8 +83,11 @@ Pick, Record and Assert with **Watch to use** at a headless stop nobody watches;
 running rows the same way, from the run page's rows and the tray. The run's own process (the reporter's main process)
 connects to the hub on its own line (`run-begin`, `run-progress`, `run-end`), so the editors' status bars and the Runs
 window say `3 of 9`, and the Runs window how a run ended. `piwi/laneView` gives the editors a lane: VS Code's **Piwi: worker N** watches
-it running or stopped, with Interact at its stops, and JetBrains' **Worker N** tab watches it. P4's lane states
-(waiting, pausing) and its showcase beat are not built yet. The later phases are proposed. The bugs the analysis
+it running or stopped, with Interact at its stops, and JetBrains' **Worker N** tab watches it. While a Pause waits for
+the call a test runs, the worker says which (`waiting`, from a reporter that lists `give-up` in its `features`), and the
+editors' status bars and lane views, the Runs window and the desktop app's tray say it with how long it has run, and
+offer **End the test** there (`give-up`): a locator call is given up through its end signal, and after any other call
+the test is skipped at its next locator call. P4's showcase beat is not built yet. The later phases are proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app

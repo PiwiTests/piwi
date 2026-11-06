@@ -5468,7 +5468,7 @@ const SCENES = [
   {
     name: 'run-live-desktop-watch',
     description:
-      'Run page in the desktop app while a run it started goes on: a running test’s Watch beside Pause and watch, also at 390 px, then its page in the Local runs tray, live as it runs (also at 390 px), at a stop that takes the clicks on it, dimmed and marked running after Resume, and a worker of an older reporter, which says to update it',
+      'Run page in the desktop app while a run it started goes on: a running test’s Watch beside Pause and watch, also at 390 px, then its page in the Local runs tray, live as it runs (also at 390 px), at a stop that takes the clicks on it, dimmed and marked running after Resume, paused while the test waits in a long call (the call, how long it has run, and End the test), and a worker of an older reporter, which says to update it',
     mode: 'desktop',
     link: { path: '/home/dev/code/acme-checkout', exists: true },
     localRunId: 41,
@@ -5481,6 +5481,7 @@ const SCENES = [
       'run-live-desktop-watch-tray-narrow.png',
       'run-live-desktop-watch-stop.png',
       'run-live-desktop-watch-running.png',
+      'run-live-desktop-watch-waiting.png',
       'run-live-desktop-watch-outdated.png',
     ],
     async run({ page, base, goto, settle, shoot }) {
@@ -5540,6 +5541,7 @@ const SCENES = [
           intents: ['assert-region', 'mock', 'view', 'input', 'pick-at'],
         };
         await send(session({ ...running, state: 'stopped', stop }));
+        await laneFrame('s1');
         await worker.getByRole('img', { name: 'The page, live: clicks and keys go to it' }).waitFor();
         await settle();
         await shoot('stop', { of: '[aria-label="Local runs"]', pad: 0 });
@@ -5549,6 +5551,19 @@ const SCENES = [
         await worker.locator('img[data-stale]').waitFor();
         await settle();
         await shoot('running', { of: '[aria-label="Local runs"]', pad: 0 });
+
+        // Paused while the test waits in a long call: the call, how long it has run, and End the test there.
+        const waiting = {
+          title: "Click getByRole('button', { name: 'Pay now' })",
+          uri,
+          line: 17,
+          since: new Date(Date.now() - 12_000).toISOString(),
+          endable: true,
+        };
+        await send(session({ ...running, pausing: true, waiting, intents: [...intents, 'give-up'] }));
+        await worker.getByTestId('desktop-waited').waitFor();
+        await settle();
+        await shoot('waiting', { of: '[data-shot="desktop-run-worker"]', pad: 8 });
 
         // A worker of an older reporter offers no Watch, and says what would.
         await send(session({ ...running, intents: intents.filter((what) => what !== 'watch') }));

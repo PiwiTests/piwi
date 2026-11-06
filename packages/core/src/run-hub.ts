@@ -155,9 +155,10 @@ export type HubViewAction = 'view' | 'input' | 'input-clicks' | 'pick-at';
  * What a stop can take from the Runs page: the intents, Mock a request (`mock`, with the `requests` it lists), the
  * live view's actions, and End the test (`end`, the `runControl` that skips the rest of the test), which a stop at a
  * failure leaves out: Resume ends it as it failed. `watch` is the worker's, stopped or not: its lane can be watched
- * while it runs (`watch`, at a hub whose features list `lanes`).
+ * while it runs (`watch`, at a hub whose features list `lanes`); `give-up` too, while a Pause waits for the call its
+ * test runs: End the test there (`runControl` `give-up`).
  */
-export type HubAction = HubIntent | HubCodeIntent | 'mock' | HubViewAction | 'end' | 'watch';
+export type HubAction = HubIntent | HubCodeIntent | 'mock' | HubViewAction | 'end' | 'watch' | 'give-up';
 
 /**
  * The actions that write code at a stop, in the editor: the intents', Mock a request, and an agent's (the editor's MCP
@@ -182,6 +183,7 @@ export const HUB_ACTIONS: readonly HubAction[] = [
   'pick-at',
   'end',
   'watch',
+  'give-up',
 ];
 
 /**
@@ -202,10 +204,28 @@ export interface HubWorker {
   /** A Pause reached it and it has not stopped yet. */
   pausing: boolean;
   /**
+   * While pausing, the call its test waits in before it can stop, as its reporter says it; absent otherwise, and from
+   * a service or a reporter that predates it.
+   */
+  waiting?: HubWaiting;
+  /**
    * The actions its reporter takes, Assert, Assert a region and Mock a request only while the editor writes the code
    * from a stop: none for a reporter that predates them, whose stops every action is refused at.
    */
   intents: HubAction[];
+}
+
+/**
+ * The call a pausing worker's test waits in: its title (`Click getByRole('button', { name: 'Pay' })`), its file as a
+ * `file:` URI and 0-based line (null when the worker names none), when it began by the hub's clock (`since`, ISO 8601;
+ * null when the worker cannot tell), and whether End the test gives it up (`endable`), else lets it finish first.
+ */
+export interface HubWaiting {
+  title: string;
+  uri: string | null;
+  line: number | null;
+  since: string | null;
+  endable: boolean;
 }
 
 /**
@@ -287,9 +307,10 @@ export interface HubImage {
 
 /**
  * The controls the extension sends; Run to a line stays in the editor, which has the file. `end` ends the test at the
- * stop, for a worker whose `intents` list it.
+ * stop, for a worker whose `intents` list it; `give-up` ends it while a Pause waits for its call, for a pausing worker
+ * whose `intents` list it, naming no stop.
  */
-export type HubControlAction = 'pause' | 'step' | 'resume' | 'finish' | 'end';
+export type HubControlAction = 'pause' | 'step' | 'resume' | 'finish' | 'end' | 'give-up';
 
 /** The first message: the token of the hub's discovery file. */
 export interface HubHello {
@@ -637,7 +658,7 @@ function isInt(value: unknown, min: number, max = 2_147_483_647): value is numbe
 }
 
 const REF = /^[\w-]{1,64}$/;
-const ACTIONS: readonly string[] = ['pause', 'step', 'resume', 'finish', 'end'];
+const ACTIONS: readonly string[] = ['pause', 'step', 'resume', 'finish', 'end', 'give-up'];
 /** Why a command that answers a stop and names none is refused. */
 const NEEDS_STOP = 'The command needs the stop it answers.';
 
@@ -689,9 +710,9 @@ export function parseHubCommand(text: string): ParsedHubCommand | null {
       const { action } = value;
       if (action === 'run-to') return invalid('Run to a line stays in the editor: use Run to Cursor there.');
       if (typeof action !== 'string' || !ACTIONS.includes(action)) {
-        return invalid('action must be pause, step, resume, finish or end.');
+        return invalid('action must be pause, step, resume, finish, end or give-up.');
       }
-      if (action !== 'pause' && since === null) return invalid(NEEDS_STOP);
+      if (action !== 'pause' && action !== 'give-up' && since === null) return invalid(NEEDS_STOP);
       return { type: 'runControl', id, ref, worker, action: action as HubControlAction, since };
     }
     case 'pausedPage':
@@ -883,6 +904,7 @@ function readWorker(value: unknown): HubWorker | null {
   const test = readTest(value.test);
   const stop = readStop(value.stop);
   if (test === undefined || stop === undefined) return null;
+  const waiting = pausing && value.waiting !== undefined ? readWaiting(value.waiting) : null;
   return {
     worker,
     parallelIndex,
@@ -891,6 +913,25 @@ function readWorker(value: unknown): HubWorker | null {
     stop,
     pausing,
     intents: readActions(value.intents),
+    ...(waiting ? { waiting } : {}),
+  };
+}
+
+/** The call a pausing worker waits in, field by field; null when it is not one. */
+function readWaiting(value: unknown): HubWaiting | null {
+  if (!isObject(value)) return null;
+  const { title, uri, line, since, endable } = value;
+  if (str(title, MAX_HUB_MESSAGE) === null || !title || typeof endable !== 'boolean') return null;
+  if (since !== null && (typeof since !== 'string' || since.length > 64 || Number.isNaN(Date.parse(since))))
+    return null;
+  if (uri !== null && (typeof uri !== 'string' || !uri.startsWith('file:') || uri.length > 4096)) return null;
+  if (line !== null && !isInt(line, 0)) return null;
+  return {
+    title: title as string,
+    uri: uri as string | null,
+    line: line as number | null,
+    since: since as string | null,
+    endable,
   };
 }
 

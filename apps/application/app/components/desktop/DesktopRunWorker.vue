@@ -7,7 +7,9 @@
  * or the stop is outside a test, with why the hub would not show the lane),
  * **Resume**, **Step**, **Finish** and **End the test**, which ends it there, skipped, where its reporter takes it
  * (Resume alone at a failure), and the code actions the stop takes from the window: **Assert a region** and **Mock a
- * request**, whose code comes to the window to copy; **Pause** while it runs. Every control but Pause names the stop
+ * request**, whose code comes to the window to copy; **Pause** while it runs, and while a Pause waits for the call the
+ * test runs, that call, how long it has run, and **End the test**, which gives the call up where its worker takes it.
+ * Every control but Pause and that End the test names the stop
  * it was drawn for (`since`), so a click made twice never answers the next stop, and while one is on its way the
  * buttons are `aria-disabled`, keeping the focus. A control that goes as the worker runs on gives the keyboard to Pause
  * meanwhile, and takes it back at the next stop (Step, after a step), as the Runs window does. What a command
@@ -25,6 +27,7 @@ import {
   desktopStopError,
   desktopStopPlace,
   desktopStopTakes,
+  desktopWaitedFor,
   desktopWatchesLane,
   desktopWorkerKey,
   desktopWorkerMeta,
@@ -45,6 +48,13 @@ const takes = computed(() => (stop.value ? desktopStopTakes(props.worker, stop.v
 const steering = computed(() => desktopSteering(props.worker));
 const codeActions = computed(() => (stop.value ? desktopCodeActions(props.worker, stop.value) : []));
 const stateText = computed(() => desktopWorkerState(props.worker, props.session.root));
+/** The clock that counts how long the call a Pause waits in has run. */
+const now = useTimestamp({ scheduler: (update) => useIntervalFn(update, 1000) });
+const waitedText = computed(() => desktopWaitedFor(props.worker, now.value));
+/** The call a Pause waits in, set in code type after the state line's words. */
+const waitingCall = computed(() =>
+  props.worker.pausing && !stop.value && props.worker.waiting ? props.worker.waiting.title : null,
+);
 const testText = computed(() => desktopWorkerTest(props.worker));
 const metaText = computed(() => desktopWorkerMeta(props.worker));
 const failed = computed(() => stop.value?.reason === 'failure');
@@ -73,6 +83,11 @@ const STEER: Record<DesktopSteer, { label: string; title: string; icon: string }
     icon: 'i-lucide-skip-forward',
   },
   end: { label: 'End the test', title: 'End the test here: the rest of it is skipped', icon: 'i-lucide-square' },
+  'give-up': {
+    label: 'End the test',
+    title: 'End the test now: the call it waits in is given up where it can be, and the rest of the test is skipped',
+    icon: 'i-lucide-square',
+  },
   pause: {
     label: 'Pause',
     title: 'Stop the test before its next call that acts on or checks the page',
@@ -136,7 +151,8 @@ async function send(body: Record<string, unknown>, at: string | null): Promise<D
 }
 
 async function steer(what: DesktopSteer): Promise<void> {
-  const at = what === 'pause' ? null : since.value;
+  // Pause, and End the test while a Pause waits for a call, answer no stop.
+  const at = what === 'pause' || what === 'give-up' ? null : since.value;
   const result = await send({ type: 'runControl', action: what, since: at }, at);
   if (result && !result.ok) say(result, at);
 }
@@ -223,7 +239,8 @@ function restoreFocus(): void {
     same.focus();
     return;
   }
-  const near = root.value.querySelector<HTMLElement>('[data-focus^="steer:"]');
+  // Never End the test, which a key pressed again would answer.
+  const near = root.value.querySelector<HTMLElement>('[data-focus^="steer:"]:not([data-focus="steer:give-up"])');
   if (!near) return;
   lending = true;
   near.focus();
@@ -258,15 +275,21 @@ onBeforeUnmount(() => {
             ? 'i-lucide-circle-x'
             : stop
               ? 'i-lucide-circle-pause'
-              : worker.state === 'running' || worker.state === 'other'
-                ? 'i-lucide-circle-play'
-                : 'i-lucide-circle-dot'
+              : worker.pausing
+                ? 'i-lucide-clock'
+                : worker.state === 'running' || worker.state === 'other'
+                  ? 'i-lucide-circle-play'
+                  : 'i-lucide-circle-dot'
         "
         class="size-4 shrink-0"
         :class="failed ? 'text-error' : stop ? 'text-warning' : 'text-muted'"
         aria-hidden="true"
       />
-      <span class="min-w-0 break-words">{{ stateText }}</span>
+      <span v-if="waitingCall" class="min-w-0 break-words">
+        Pausing: waits in <code class="font-mono text-xs text-highlighted">{{ waitingCall }}</code>
+        <span v-if="waitedText" class="ml-1 text-muted" data-testid="desktop-waited">{{ waitedText }}</span>
+      </span>
+      <span v-else class="min-w-0 break-words">{{ stateText }}</span>
       <span v-if="count > 1" class="ml-auto text-xs text-muted shrink-0">Worker {{ worker.parallelIndex + 1 }}</span>
     </p>
     <div v-if="testText">

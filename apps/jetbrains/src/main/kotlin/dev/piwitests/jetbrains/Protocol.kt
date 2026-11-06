@@ -731,6 +731,20 @@ data class RunWorker(
     val takes: List<String>? = null,
     /** Its reporter shows its page while its test runs: `piwi/laneView` watches its slot. */
     val watchable: Boolean = false,
+    /** While pausing, the call its test waits in, End the Test ending it there (`give-up`); null otherwise. */
+    val waiting: RunWaiting? = null,
+)
+
+/**
+ * The call a pausing worker's test waits in: its title, its file and 0-based line (null when the worker names none),
+ * when it began (`since`, ISO 8601; null when the worker cannot tell), and whether End the Test gives it up at once.
+ */
+data class RunWaiting(
+    val title: String = "",
+    val uri: String? = null,
+    val line: Int? = null,
+    val since: String? = null,
+    val endable: Boolean = false,
 )
 
 /**

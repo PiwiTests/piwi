@@ -103,6 +103,7 @@ import {
   stopsFor,
   stopsOf,
   targetStop,
+  endChoice,
   watchTargetsFor,
   watchableWorkers,
   writtenLines,
@@ -172,6 +173,7 @@ const ITEM_ORDER = [
   RUN_COMMANDS.code,
   RUN_COMMANDS.pause,
   'pausing',
+  'give-up',
   RUN_COMMANDS.stop,
   'live',
   'progress',
@@ -289,12 +291,20 @@ export function registerRunControl(
   };
 
   /** The context keys of the menus and keys, and the status bar items, for the sessions kept. */
+  /** Draws the controls again each second while a pausing test waits in a call, for how long it has. */
+  let ticking: ReturnType<typeof setInterval> | null = null;
+
   const drawControls = () => {
     const state = controlState(sessions);
+    if (state.waiting?.waiting.since && !ticking) ticking = setInterval(drawControls, 1000);
+    if (!state.waiting?.waiting.since && ticking) {
+      clearInterval(ticking);
+      ticking = null;
+    }
     void vscode.commands.executeCommand('setContext', 'piwi.runActive', state.active);
     void vscode.commands.executeCommand('setContext', 'piwi.runPausable', state.pausable);
     void vscode.commands.executeCommand('setContext', 'piwi.runStopped', state.stopped);
-    void vscode.commands.executeCommand('setContext', 'piwi.runCanEnd', state.endable);
+    void vscode.commands.executeCommand('setContext', 'piwi.runCanEnd', state.endable || !!state.waiting);
     for (const a of STOP_ACTIONS) {
       void vscode.commands.executeCommand('setContext', a.key, state.actions.includes(a.action));
     }
@@ -309,7 +319,7 @@ export function registerRunControl(
       ...(live ? [{ ...live, key: 'live' }] : []),
       ...(progress ? [{ ...progress, key: 'progress' }] : []),
     ]) {
-      const key = 'key' in control ? control.key : (control.command ?? 'pausing');
+      const key = control.key ?? control.command ?? 'pausing';
       shown.add(key);
       const i = item(key);
       i.text = control.text;
@@ -656,6 +666,26 @@ export function registerRunControl(
   };
 
   /**
+   * End the test: at a stop (the command's, the caret's or the one chosen), else, while no stop can end and the
+   * command names none, where a Pause waits for the call a test runs (`give-up`): the command's worker, the only one,
+   * or the one chosen.
+   */
+  const endTest = async (arg: unknown) => {
+    const waiting = endChoice(sessions, stops().some(canEnd), runTargetArg(arg));
+    if (waiting === 'stop' || !waiting.length) return answerStop('end', arg);
+    const chosen =
+      waiting.length === 1
+        ? waiting[0]
+        : await vscode.window
+            .showQuickPick(
+              waiting.map((w) => ({ label: w.waiting.title, description: `worker ${w.worker}`, w })),
+              { placeHolder: 'End which waiting test?' },
+            )
+            .then((picked) => picked?.w);
+    if (chosen) await control({ ref: chosen.ref, worker: chosen.worker, action: 'give-up' });
+  };
+
+  /**
    * Start a code action at a stop: the command's, the caret's or the one chosen among those offering it. Mock a
    * request lists the responses the test kept first, to choose the one to mock. The code comes in `piwi/stopCode`,
    * which says what it wrote; the other answers are said here.
@@ -994,7 +1024,7 @@ export function registerRunControl(
       }
       if (!options.terminate(ref)) say('the run was not started in this window: stop it in its terminal.');
     }),
-    vscode.commands.registerCommand(RUN_COMMANDS.end, (arg?: unknown) => answerStop('end', arg)),
+    vscode.commands.registerCommand(RUN_COMMANDS.end, (arg?: unknown) => endTest(arg)),
     vscode.commands.registerCommand(RUN_COMMANDS.resume, (arg?: unknown) => answerStop('resume', arg)),
     vscode.commands.registerCommand(RUN_COMMANDS.step, (arg?: unknown) => answerStop('step', arg)),
     vscode.commands.registerCommand(RUN_COMMANDS.finish, (arg?: unknown) => answerStop('finish', arg)),
@@ -1030,6 +1060,7 @@ export function registerRunControl(
     {
       dispose: () => {
         items.forEach((i) => i.dispose());
+        if (ticking) clearInterval(ticking);
         panel?.dispose();
         if (resumed) clearTimeout(resumed);
         starting.forEach((timer) => clearTimeout(timer));

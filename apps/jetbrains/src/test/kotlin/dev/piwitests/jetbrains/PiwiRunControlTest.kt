@@ -850,6 +850,16 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         }
     }
 
+    /** While a Pause waits for the call a test runs, End the Test ends it there: `give-up`, naming the worker and no stop. */
+    fun testEndTheTestWhileAPauseWaitsGivesUpTheCall() {
+        val spec = file("tests/checkout.spec.ts", "test('pays', async ({ page }) => {\n  await page.goto('/');\n});\n")
+        val waiting = RunWaiting("Click getByRole('button', { name: 'Pay' })", uri(spec), 1, null, true)
+        hear(RunSession("ed-1", base.path, listOf(RunWorker(0, 0, "running", test(), pausing = true, waiting = waiting))))
+        myFixture.openFileInEditor(spec)
+        assertTrue(myFixture.testAction(ActionManager.getInstance().getAction("Piwi.EndTest")).isEnabled)
+        assertEquals(RunControlParams("ed-1", 0, "give-up"), waitFor("End the Test") { controls.firstOrNull() })
+    }
+
     /** A line breakpoint any file takes, as the JavaScript debugger's takes a spec's lines. */
     private class TestLineBreakpointType : XLineBreakpointType<XBreakpointProperties<*>>("piwi-test-line", "Piwi test line") {
         override fun createBreakpointProperties(file: VirtualFile, line: Int): XBreakpointProperties<*>? = null

@@ -29,7 +29,7 @@ workers to choose from, the editor asks which.
 
 ## What you see
 
-Each view names the worker by its slot in the run (`Worker 2`) and says what it does: its running test, where it
+Each view names the worker by its slot in the run (`Worker 2`) and says what it does: its running test, the call a Pause waits in, where it
 stopped, between tests, or starting. Across a **Step**, a **Resume** or between two tests, the last image stays until
 the next one comes, dimmed in VS Code, the Runs window and the desktop app. A page that does not change sends no new
 image.

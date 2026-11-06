@@ -300,6 +300,29 @@ test.describe('Desktop run live view', () => {
         action: 'pause',
         since: null,
       });
+    // The Pause waits for the call the test runs: the call, how long it has run, and End the test, which gives it up.
+    const waiting = {
+      title: "Click getByRole('button', { name: 'Never' })",
+      uri: SPEC_URI,
+      line: 3,
+      since: new Date(Date.now() - 12_000).toISOString(),
+      endable: true,
+    };
+    await page.evaluate(
+      (event) => window.__hub.send(event),
+      session({ ...RUNNING, pausing: true, waiting, intents: ['give-up'] }),
+    );
+    await expect(worker.getByText("Pausing: waits in Click getByRole('button', { name: 'Never' })")).toBeVisible();
+    await expect(worker.getByTestId('desktop-waited')).toHaveText(/^for 1\d s$/);
+    const endTest = worker.getByRole('button', { name: 'End the test' });
+    await expect(endTest).toHaveAttribute('title', /the call it waits in is given up/);
+    // The focus Pause had never goes to End the test, which a key pressed again would answer.
+    await expect(endTest).not.toBeFocused();
+    await expect(worker.locator('code', { hasText: "Click getByRole('button', { name: 'Never' })" })).toBeVisible();
+    await endTest.click();
+    await expect
+      .poll(() => commands.filter((c) => c.type === 'runControl').at(-1))
+      .toMatchObject({ ref: REF, worker: 0, action: 'give-up', since: null });
     await page.evaluate((event) => window.__hub.send(event), session(stopped('s1')));
     await expect(worker.getByText('Paused', { exact: true })).toBeVisible();
     await expect(worker.getByText("Click getByRole('button', { name: 'Pay' })")).toBeVisible();

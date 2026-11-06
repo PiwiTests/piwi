@@ -576,7 +576,7 @@ export class RunHub {
           return;
         }
         case 'runControl':
-          if (command.action !== 'pause' && command.since === null) {
+          if (command.action !== 'pause' && command.action !== 'give-up' && command.since === null) {
             return reply({ ok: false, message: 'The command needs the stop it answers.' });
           }
           return reply(
@@ -670,8 +670,9 @@ export class RunHub {
       label: info.label,
       command: cut(info.command, MAX_HUB_COMMAND),
       project: cut(info.project, MAX_HUB_PROJECT),
-      workers: session.workers.map(({ takes: _takes, ...worker }) => ({
+      workers: session.workers.map(({ takes: _takes, waiting, ...worker }) => ({
         ...worker,
+        ...(waiting ? { waiting: { ...waiting, title: cut(waiting.title, MAX_HUB_MESSAGE) ?? '' } } : {}),
         intents: this.options.sessions.intentsOf(session.ref, worker.worker),
       })),
       ended: session.ended,

@@ -806,6 +806,11 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         return laneTarget == (stop.ref to lane) && toolWindow()?.contentManager?.selectedContent == tab
     }
 
+    /** End the test a Pause waits for, where it waits in a call (`give-up`): the call given up where it can be. */
+    fun giveUp(waiting: Glue.WaitingWorker) {
+        control(RunControlParams(waiting.ref, waiting.worker, "give-up"))
+    }
+
     /** Pause the worker `worker` of the run `ref` and watch its slot `lane` in the Worker tab. On the event thread. */
     fun pauseAndWatch(target: Glue.WatchTarget) {
         showWorker(target.ref, target.lane)
@@ -2001,7 +2006,27 @@ class FinishRunAction : StopControlAction(Glue.StopControl.FINISH)
  * with no shortcut.
  */
 class EndTestAction : StopControlAction(Glue.StopControl.END) {
-    override fun applies(controls: Glue.RunControls, e: AnActionEvent) = controls.endable
+    override fun applies(controls: Glue.RunControls, e: AnActionEvent) = controls.endable || controls.waiting != null
+
+    /** At a stop, as the other controls; else where a Pause waits for the call a test runs. */
+    override fun actionPerformed(e: AnActionEvent) {
+        val sessions = sessions(e) ?: return
+        if (sessions.controls().endable) return super.actionPerformed(e)
+        val waiting = Glue.waitingWorkers(sessions.sessions)
+        if (waiting.size < 2) return waiting.firstOrNull()?.let(sessions::giveUp) ?: Unit
+        JBPopupFactory.getInstance()
+            .createPopupChooserBuilder(waiting)
+            .setTitle("End Which Waiting Test?")
+            .setRenderer(object : ColoredListCellRenderer<Glue.WaitingWorker>() {
+                override fun customizeCellRenderer(list: JList<out Glue.WaitingWorker>, value: Glue.WaitingWorker?, index: Int, selected: Boolean, hasFocus: Boolean) {
+                    append(value?.waiting?.title.orEmpty())
+                    append("   worker ${value?.worker ?: ""}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
+                }
+            })
+            .setItemChosenCallback { sessions.giveUp(it) }
+            .createPopup()
+            .showInBestPositionFor(e.dataContext)
+    }
 }
 
 /** **Show the Paused Page**: the page of the stopped test, in the Piwi tool window. */

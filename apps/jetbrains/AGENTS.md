@@ -114,8 +114,8 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **The run controls use the debugger actions' shortcuts (`use-shortcut-of`), and give way to a debug session.** From
   the keyboard they are enabled only while no debug session runs, and `PiwiRunActionPromoter` puts them first only
   while a run is live. Checked by `PiwiRunControlTest`. ([Run control](ARCHITECTURE.md#run-control))
-- **A control names the stop it answers, and a line sent for a run is a line of the run's code.** Each control passes
-  the stop's `since`; Run to Caret and the breakpoints map the editor's lines back through `Glue.EditLog`
+- **A control names the stop it answers, and a line sent for a run is a line of the run's code.** Each control at a
+  stop passes the stop's `since` (End the Test while a Pause waits, `give-up`, answers none); Run to Caret and the breakpoints map the editor's lines back through `Glue.EditLog`
   (`Glue.runPlaces` for the breakpoints). Checked by `GlueTest` and `PiwiRunControlTest`.
   ([Run control](ARCHITECTURE.md#run-control))
 - **The code a stop makes is written in one `WriteCommandAction` in an editor, once the service knows the document,

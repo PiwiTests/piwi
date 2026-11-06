@@ -282,6 +282,50 @@ test('End the test ends a stopped test there, and a run started in a terminal or
   }
 });
 
+test('a Pause that waits for a call says which and for how long, and End the test ends the test there', async () => {
+  const { context, extensionId } = await pairedExtension(editor);
+  try {
+    const runs = await openRuns(context, extensionId);
+    const run = await startLaneRun(editor, 'pays');
+    try {
+      const card = liveRun(runs);
+      // Paused from the keyboard: the focus it loses goes to another control, never End the test.
+      await card.getByRole('button', { name: 'Pause', exact: true }).focus();
+      await runs.keyboard.press('Enter');
+      expect(await run.worker.next('control')).toEqual({ type: 'control', action: 'pause' });
+      run.worker.send({
+        type: 'waiting',
+        title: "Click getByRole('button', { name: 'Pay' })",
+        place: { file: 'tests/checkout.spec.ts', line: 5, column: 5 },
+        ms: 3000,
+        endable: true,
+      });
+      await expect(card.locator('.state')).toContainText(
+        "Pausing: waits in Click getByRole('button', { name: 'Pay' })",
+      );
+      // The time shows as the line is drawn, and the call as a locator.
+      await expect(card.locator('.waited')).toHaveText(/^for \d+\s?s$/, { timeout: 500 });
+      await expect(card.locator('.state .call .piwi-loc')).toBeVisible();
+      const end = card.getByRole('button', { name: 'End the test' });
+      await expect(end).toHaveAttribute('title', /the call it waits in is given up/);
+      await expect(end).not.toBeFocused();
+      await end.click();
+      expect(await run.worker.next('control', 1)).toEqual({
+        type: 'control',
+        action: 'give-up',
+        testId: expect.any(String),
+      });
+      // The Pause is dropped with the test: the row runs on, with Pause again.
+      await expect(end).toHaveCount(0);
+      await expect(card.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+    } finally {
+      await endRun(run);
+    }
+  } finally {
+    await context.close();
+  }
+});
+
 test('a run says how far it is and how it ended, as its own process says', async () => {
   const { context, extensionId } = await pairedExtension(editor);
   try {

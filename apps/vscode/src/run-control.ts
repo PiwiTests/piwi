@@ -19,6 +19,7 @@ import type {
   RunStop,
   RunTake,
   RunTest,
+  RunWaiting,
   RunWorker,
   SetRunBreakpointsParams,
   StopActionKind,
@@ -353,6 +354,9 @@ export function laneShown(session: RunSession | undefined, lane: number, stops: 
   if (!worker.test) return { worker, stop: null, caption: `${name} · between tests` };
   const title = worker.test.title.join(' › ');
   const stop = stops.find((s) => s.ref === session.ref && s.worker === worker.worker) ?? null;
+  if (!stop && worker.pausing && worker.waiting) {
+    return { worker, stop: null, caption: `${name} · Pausing · waits in ${worker.waiting.title} · ${title}` };
+  }
   if (!stop) return { worker, stop: null, caption: `${name} · ${worker.pausing ? 'Pausing' : 'Running'} · ${title}` };
   const file = decodeURIComponent(stop.stop.uri.slice(stop.stop.uri.lastIndexOf('/') + 1));
   const said = pausedText(stop.stop, stop.test, stop.terminal, stop.runner);
@@ -625,6 +629,45 @@ export interface ControlState {
   liveShared: boolean;
   /** A worker's reporter shows its page while its test runs: Watch a worker. */
   watchable: boolean;
+  /** The call a pausing worker's test waits in before it can stop (the first such worker's): End the test there. */
+  waiting: WaitingWorker | null;
+}
+
+/** A pausing worker whose test waits in a call: its run, its worker, and the call (`RunWorker.waiting`). */
+export interface WaitingWorker {
+  ref: string;
+  worker: number;
+  waiting: RunWaiting;
+}
+
+/** The pausing workers whose test waits in a call, in their order; of the run and worker `target` names, when given. */
+export function waitingWorkers(sessions: Sessions, target: RunTarget | null = null): WaitingWorker[] {
+  return [...sessions.values()].flatMap((s) =>
+    s.workers.flatMap((w) =>
+      w.pausing &&
+      w.waiting &&
+      (!target || (target.ref === s.ref && (target.worker === undefined || target.worker === w.worker)))
+        ? [{ ref: s.ref, worker: w.worker, waiting: w.waiting }]
+        : [],
+    ),
+  );
+}
+
+/**
+ * What End the test answers: a stop, when the command names one (`since`, from a lens or a hover) or a stop can end;
+ * else the pausing workers whose test waits in a call, of the run and worker the command names, to end there.
+ */
+export function endChoice(sessions: Sessions, stopCanEnd: boolean, target: RunTarget | null): 'stop' | WaitingWorker[] {
+  if (stopCanEnd || target?.since !== undefined) return 'stop';
+  return waitingWorkers(sessions, target);
+}
+
+/** How long a call has run, from when it began to `now`: `12 s`, `3 min 5 s`; null when its start is not known. */
+export function waitedFor(since: string | null, now: number): string | null {
+  const began = since === null ? NaN : Date.parse(since);
+  if (Number.isNaN(began)) return null;
+  const seconds = Math.max(0, Math.floor((now - began) / 1000));
+  return seconds < 60 ? `${seconds} s` : `${Math.floor(seconds / 60)} min ${seconds % 60} s`;
 }
 
 export function controlState(sessions: Sessions): ControlState {
@@ -641,11 +684,14 @@ export function controlState(sessions: Sessions): ControlState {
     shareable: stopsOf(sessions).some(canShare),
     liveShared: liveRunsOf(sessions).some((r) => r.live.shared),
     watchable: watchableWorkers(sessions).length > 0,
+    waiting: waitingWorkers(sessions)[0] ?? null,
   };
 }
 
 /** A status bar item of the run controls: its icon, its tooltip with its key, and its command (none while pausing). */
 export interface ControlItem {
+  /** Its place among the items, where its command does not name it (`ITEM_ORDER` in `run-view.ts`). */
+  key?: string;
   text: string;
   tooltip: string;
   command: string | null;
@@ -656,11 +702,32 @@ export interface ControlItem {
  * with the code actions' menu while a stop offers one, else Pause, or `Pausing…` once asked; and Stop while a run this
  * window started is live. None without one.
  */
-export function controlItems(state: ControlState): ControlItem[] {
+export function controlItems(state: ControlState, now: number = Date.now()): ControlItem[] {
   if (!state.active) return [];
   const stop = state.stoppable
     ? [{ text: '$(debug-stop)', tooltip: 'Piwi: Stop the run (Shift+F5)', command: RUN_COMMANDS.stop }]
     : [];
+  // The call a pausing worker's test waits in, how long it has, and End the test there.
+  const waits: ControlItem[] = [];
+  if (state.pausing && state.waiting) {
+    const { title, since, endable } = state.waiting.waiting;
+    const waited = waitedFor(since, now);
+    waits.push(
+      {
+        text: `$(loading~spin) Pausing…${waited ? ` ${waited}` : ''}`,
+        tooltip: `Piwi: the test waits in ${title}${waited ? ` for ${waited}` : ''}, and stops once it returns`,
+        command: null,
+      },
+      {
+        key: 'give-up',
+        text: '$(circle-slash)',
+        tooltip: endable
+          ? `Piwi: End the test now: ${title} is given up, and the rest of the test skipped`
+          : `Piwi: End the test as ${title} returns: the rest of it is skipped`,
+        command: RUN_COMMANDS.end,
+      },
+    );
+  }
   if (state.stopped) {
     const titles = STOP_ACTIONS.filter((a) => state.actions.includes(a.action)).map((a) => a.title);
     return [
@@ -671,6 +738,7 @@ export function controlItems(state: ControlState): ControlItem[] {
         tooltip: 'Piwi: Finish the test without stopping at a breakpoint again (Shift+F11)',
         command: RUN_COMMANDS.finish,
       },
+      // End the test answers a stop that can end, else a call a Pause waits in.
       ...(state.endable
         ? [
             {
@@ -679,7 +747,7 @@ export function controlItems(state: ControlState): ControlItem[] {
               command: RUN_COMMANDS.end,
             },
           ]
-        : []),
+        : waits),
       ...(titles.length
         ? [
             {
@@ -695,9 +763,11 @@ export function controlItems(state: ControlState): ControlItem[] {
   if (state.pausable) {
     return [
       { text: '$(debug-pause)', tooltip: 'Piwi: Pause the run at its next call', command: RUN_COMMANDS.pause },
+      ...waits,
       ...stop,
     ];
   }
+  if (waits.length) return [...waits, ...stop];
   if (state.pausing) {
     return [
       { text: '$(loading~spin) Pausing…', tooltip: 'Piwi: the run stops at its next call', command: null },

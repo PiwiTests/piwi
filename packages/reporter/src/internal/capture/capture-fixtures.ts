@@ -184,6 +184,7 @@ import {
 import {
   MAX_REGION_SNAPSHOT,
   MAX_STOP_ERROR,
+  MAX_WAITING_TITLE,
   RUN_INTENT_NAMES,
   type IntentAnswer,
   type PickAtAnswer,
@@ -442,6 +443,8 @@ interface CaptureSink {
   // signal (`withEndSignal`), which End aborts, so a call the debugger holds never runs. `skip` is the runner's own
   // error that skips the attempt, taken once (`skipOf`).
   ended: boolean;
+  // While a Pause waits for the call the test runs, the timer that reads that call again (`watchWaiting`).
+  waitingWatch: ReturnType<typeof setInterval> | null;
   end: AbortController;
   skip: unknown;
   // The calls a stop let go when the test ended under it, each settling once its call does (at once for a call
@@ -518,6 +521,7 @@ function createSink(): CaptureSink {
     ending: false,
     functionEnded: false,
     ended: false,
+    waitingWatch: null,
     end: new AbortController(),
     skip: undefined,
     released: [],
@@ -1581,6 +1585,8 @@ interface LocatorCall {
   picked: boolean;
   /** The call carries the attempt's end signal (`withEndSignal`): End the test at a stop on it gives it up. */
   endable: boolean;
+  /** When it began (`Date.now()`). */
+  startedAt: number;
   /** Settles once the call did, whatever its outcome (`forgetLocatorCall`). */
   settled: Promise<void>;
   settle: () => void;
@@ -1597,7 +1603,17 @@ function knowLocatorCall(
   if (!sink?.pause || !location) return null;
   let settle = (): void => {};
   const settled = new Promise<void>((resolve) => (settle = resolve));
-  const call: LocatorCall = { page, target, location, origin, picked: false, endable: false, settled, settle };
+  const call: LocatorCall = {
+    page,
+    target,
+    location,
+    origin,
+    picked: false,
+    endable: false,
+    startedAt: Date.now(),
+    settled,
+    settle,
+  };
   sink.locatorCalls.set(callSiteLine(location), call);
   return call;
 }
@@ -3760,6 +3776,35 @@ const runControl: RunControl = {
     }
     sink.pause.pause = true;
     void armStops(OPEN_CONTEXTS);
+    watchWaiting(sink);
+  },
+  giveUp(testId) {
+    const sink = currentSink;
+    const waiting = sink?.testInfo ? callInProgress(sink.testInfo) : null;
+    if (!sink?.testInfo || sink.testInfo.testId !== testId || sink.functionEnded || sink.ended) {
+      // As the editor shows it: no test waits for the Pause any more.
+      if (sink?.pause) sink.pause.pause = false;
+      pauseNextTest = false;
+      tellHub({
+        type: 'notice',
+        message: 'The test left the call it waited in before it could be ended: it goes on, and the Pause is dropped.',
+      });
+      return;
+    }
+    const line = waiting ? `${runFile(waiting.place.file)}:${waiting.place.line}` : null;
+    const endable =
+      !!line && [...sink.locatorCalls.values()].some((c) => c.endable && callSiteLine(c.location) === line);
+    sink.ended = true;
+    // Ended in place of the stop the Pause waited for: the next test does not stop for it.
+    if (sink.pause) sink.pause.pause = false;
+    skipAtFunctionEnd(sink);
+    sink.end.abort(new Error(ENDED_REASON));
+    const title = waiting?.title ? hideSecretsInText(hideTypedText(waiting.title)) : 'its call';
+    const said = endable
+      ? `Ended the test while it waited in ${title}: the call is given up, and the test is skipped.`
+      : `Ended the test while it waited in ${title}: the test is skipped as the call returns.`;
+    console.log(`[piwi] ${said}`);
+    tellHub({ type: 'notice', message: said });
   },
   breakpoints(places) {
     const set = replacePauseSet(places);
@@ -3775,6 +3820,48 @@ const runControl: RunControl = {
     void armStops(OPEN_CONTEXTS);
   },
 };
+
+/** How often the call a Pause waits for is read again, while it waits. */
+const WAITING_WATCH_MS = 250;
+
+/**
+ * Asked to pause, tell the hub the call the test waits in before it can stop (`waiting`), and again each time that
+ * call changes, while the Pause waits and the test's function runs: its title, its place, how long it has run (a
+ * locator call's, which the fixtures know; null for another), and whether End the test gives it up (a locator call on
+ * its line that carries the end signal). A null title once it waits in none.
+ */
+function watchWaiting(sink: CaptureSink): void {
+  if (sink.waitingWatch) return;
+  let said = '';
+  const look = (): void => {
+    const waits = currentSink === sink && !!sink.pause?.pause && !sink.functionEnded && !sink.ended;
+    const call = waits && sink.testInfo ? callInProgress(sink.testInfo) : null;
+    const file = call?.title ? runFile(call.place.file) : '';
+    const key = call?.title ? `${call.title}\n${file}:${call.place.line}` : '';
+    if (key !== said) {
+      said = key;
+      if (!call?.title) tellHub({ type: 'waiting', title: null, place: null, ms: null, endable: false });
+      else {
+        const line = `${file}:${call.place.line}`;
+        const locatorCall = [...sink.locatorCalls.values()].find((c) => callSiteLine(c.location) === line);
+        tellHub({
+          type: 'waiting',
+          title: hideSecretsInText(hideTypedText(call.title)).slice(0, MAX_WAITING_TITLE),
+          place: { file, line: call.place.line, ...(call.place.column > 0 ? { column: call.place.column } : {}) },
+          ms: locatorCall ? Math.max(0, Date.now() - locatorCall.startedAt) : null,
+          endable: !!locatorCall?.endable,
+        });
+      }
+    }
+    if (!waits && sink.waitingWatch) {
+      clearInterval(sink.waitingWatch);
+      sink.waitingWatch = null;
+    }
+  };
+  sink.waitingWatch = setInterval(look, WAITING_WATCH_MS);
+  sink.waitingWatch.unref?.();
+  look();
+}
 
 /** A file of the run as the run channel names it: relative to the working directory, with forward slashes. */
 function runFile(file: string): string {

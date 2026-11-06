@@ -1527,7 +1527,10 @@ object Glue {
         val test = worker.test ?: return LaneShown(worker, null, "$name · between tests")
         val title = test.title.orEmpty().joinToString(" › ")
         val stop = stops.firstOrNull { it.ref == session.ref && it.worker == worker.worker }
-            ?: return LaneShown(worker, null, "$name · ${if (worker.pausing) "Pausing" else "Running"} · $title")
+        if (stop == null && worker.pausing && worker.waiting != null) {
+            return LaneShown(worker, null, "$name · Pausing · waits in ${worker.waiting.title} · $title")
+        }
+        if (stop == null) return LaneShown(worker, null, "$name · ${if (worker.pausing) "Pausing" else "Running"} · $title")
         return LaneShown(worker, stop, "$name · ${pausedText(stop.stop, stop.test, stop.terminal, stop.runner)} · ${stopPlace(stop.stop)}")
     }
 
@@ -1601,6 +1604,8 @@ object Glue {
         val liveViewers: Int? = null,
         /** A worker's reporter shows its page while its test runs: Watch a Worker's Test. */
         val watchable: Boolean = false,
+        /** The call a pausing worker's test waits in (the first such worker's): End the Test ends it there. */
+        val waiting: RunWaiting? = null,
     ) {
         val liveShared: Boolean get() = liveViewers != null
     }
@@ -1618,7 +1623,18 @@ object Glue {
             endable = stopsOf(sessions).any(::canEnd),
             liveViewers = sharedRunsOf(sessions).filter { it.live.shared }.takeIf { it.isNotEmpty() }?.sumOf { it.live.viewers },
             watchable = workers.any { it.watchable },
+            waiting = workers.firstOrNull { it.pausing && it.waiting != null }?.waiting,
         )
+    }
+
+    /** A pausing worker whose test waits in a call: its run, its worker, and the call. */
+    data class WaitingWorker(val ref: String, val worker: Int, val waiting: RunWaiting)
+
+    /** The pausing workers whose test waits in a call, in their order. */
+    fun waitingWorkers(sessions: Map<String, RunSession>): List<WaitingWorker> = sessions.values.flatMap { session ->
+        session.workers.orEmpty().mapNotNull { w ->
+            w.waiting?.takeIf { w.pausing }?.let { WaitingWorker(session.ref ?: "", w.worker, it) }
+        }
     }
 
     /**
@@ -1630,10 +1646,18 @@ object Glue {
         return when {
             stops.size == 1 -> "Piwi: ${if (isFailure(stops.single().stop)) "failed" else "paused"} · ${stopPlace(stops.single().stop)}$shared"
             stops.size > 1 -> "Piwi: ${stops.size} tests paused$shared"
+            controls.pausing && controls.waiting != null -> "Piwi: pausing… · waits in ${clipped(controls.waiting.title)}$shared"
             controls.pausing -> "Piwi: pausing…$shared"
             else -> null
         }
     }
+
+    /** The longest call the status bar names before it cuts it, in characters. */
+    private const val STATUS_CALL_MAX = 60
+
+    /** A call's title as the status bar names it: cut past `STATUS_CALL_MAX` characters, with an ellipsis. */
+    private fun clipped(title: String): String =
+        if (title.length <= STATUS_CALL_MAX) title else title.take(STATUS_CALL_MAX - 1).trimEnd() + "…"
 
     /** The status bar's text while a run is shared live and none is stopped: the views open of the shared runs. */
     fun liveStatus(controls: RunControls): String? = controls.liveViewers?.let { "Piwi: ${liveCount(it)}" }
