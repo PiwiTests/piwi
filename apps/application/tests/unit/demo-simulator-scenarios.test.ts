@@ -89,6 +89,24 @@ describe('every simulated run', () => {
       expect(metadata.htmlReport.projects.map((p) => p.name).sort(), scenario.id).toEqual([...ran].sort());
     }
   });
+
+  test("lists each project with its tests' browser and viewport, as the reporter records the config's", async () => {
+    for (const scenario of simulator.DEMO_SCENARIOS) {
+      const run = await streamSimulation(simulator, scenario.id);
+      const metadata = run.finish!.metadata as {
+        htmlReport: { projects: Array<{ name: string; use: { browserName?: string; viewport?: unknown } }> };
+      };
+      for (const project of metadata.htmlReport.projects) {
+        const browser = run.events.find(
+          (e) => e.type === 'complete' && (e.browser as { projectName?: string } | null)?.projectName === project.name,
+        )!.browser as { browserName: string; viewport: unknown };
+        expect(project.use, `${scenario.id}: ${project.name}`).toMatchObject({
+          browserName: browser.browserName,
+          viewport: browser.viewport,
+        });
+      }
+    }
+  });
 });
 
 describe('every attempt', () => {
@@ -171,6 +189,28 @@ describe('a sharded simulation', () => {
     expect(progress.every(([, t]) => t === total)).toBe(true);
     expect(progress.map(([c]) => c)).toEqual([...progress.map(([c]) => c)].sort((a, b) => a - b));
     expect(progress.at(-1)).toEqual([total, total]);
+  });
+
+  test("lists the run's projects from every shard, though each shard runs one browser", async () => {
+    const begun = new Map<number, string[]>();
+    const run = await streamSimulation(simulator, 'sharded-cross-browser', {
+      onRequest: (url, body) => {
+        if (!url.endsWith('/begin')) return;
+        const metadata = body!.metadata as { htmlReport: { projects: Array<{ name: string }> } };
+        begun.set(body!.shardIndex as number, metadata.htmlReport.projects.map((p) => p.name).sort());
+      },
+    });
+    const ranByShard = new Map<number, Set<string>>();
+    for (const e of run.events.filter((e) => e.type === 'complete')) {
+      const shard = e.shardIndex as number;
+      if (!ranByShard.has(shard)) ranByShard.set(shard, new Set());
+      ranByShard.get(shard)!.add((e.browser as { projectName: string }).projectName);
+    }
+
+    const shards = [...ranByShard.entries()].sort(([a], [b]) => a - b);
+    expect(shards.map(([, names]) => [...names])).toEqual([['Chromium'], ['Firefox']]);
+    expect([...begun.keys()].sort()).toEqual([1, 2]);
+    for (const names of begun.values()) expect(names).toEqual(['Chromium', 'Firefox']);
   });
 });
 

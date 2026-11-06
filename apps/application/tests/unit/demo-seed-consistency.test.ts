@@ -567,6 +567,26 @@ describe('evidence rules', () => {
     }
   });
 
+  test("lists each project with its executions' browser and viewport, as the reporter records the config's", () => {
+    const runs = q('select id, metadata from test_runs order by id');
+    for (const run of runs) {
+      const metadata = JSON.parse((run.metadata as string) ?? 'null') as {
+        htmlReport?: { projects?: Array<{ name: string; use?: { browserName?: string; viewport?: unknown } }> };
+      } | null;
+      for (const project of metadata?.htmlReport?.projects ?? []) {
+        const [execution] = q(
+          `select browser from test_runs_cases where test_run_id = ${run.id as number}
+            and browser_name = '${project.name}' order by id limit 1`,
+        );
+        const browser = JSON.parse(execution!.browser as string) as { browserName: string; viewport: unknown };
+        expect(project.use, `run ${run.id as number}: ${project.name}`).toMatchObject({
+          browserName: browser.browserName,
+          viewport: browser.viewport,
+        });
+      }
+    }
+  });
+
   test('server logs only appear on requests a story declares as failing, or the Test Map model logs on purpose', () => {
     const rows = q(`
       select nr.id, nr.test_runs_case_id, nr.method, nr.url, nr.server_logs, trc.failure_cluster_id,

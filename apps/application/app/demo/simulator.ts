@@ -1200,6 +1200,39 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     tests: () => baseTests({ durationFactor: 0.8 }),
   },
   {
+    id: 'sharded-cross-browser',
+    label: 'Sharded cross-browser run',
+    description: 'Every test in Chromium and Firefox, split across 2 CI shards that each run one browser',
+    icon: 'i-lucide-layers-2',
+    group: 'setups',
+    tab: 'workers',
+    result: {
+      text: 'Each shard ran one browser, and both listed the run’s two projects: against a Chromium-only baseline, the Changes tab shows the browsers that changed.',
+      link: { label: 'Open Changes', to: (runId) => `/test-runs/${runId}?tab=changes` },
+    },
+    speed: 2.5,
+    workers: 4,
+    shardCount: 2,
+    environment: 'staging',
+    metadata: () =>
+      buildMetadata({
+        branch: 'main',
+        author: 'Fiona Mehta',
+        commitMessage: 'ci: run the checkout suite in Firefox too',
+        ciInfo: { provider: 'GitHub Actions', runId: '12345702', workflow: 'ci.yml' },
+      }),
+    // Playwright hands each shard a contiguous slice of the run's tests, project by project, so two projects of the
+    // same size give each shard one browser. Interleaved, the round-robin split does the same: shard 1 runs every
+    // Chromium test and shard 2 every Firefox one.
+    tests: () => {
+      const firefox = baseTests({ durationFactor: 0.8 });
+      return baseTests({ durationFactor: 0.8 }).flatMap((t, i) => [
+        t,
+        { ...firefox[i]!, browser: BROWSER_CONFIGS.firefox },
+      ]);
+    },
+  },
+  {
     id: 'wait-heavy',
     label: 'Wait-heavy run',
     description: 'Tests peppered with explicit waitForTimeout sleeps — wasted-time breakdown per test',
@@ -1518,7 +1551,7 @@ async function runSingleSimulation(
   const metadata = {
     ...scenario.metadata(),
     htmlReport: demoHtmlReport(
-      runTests.map((t) => t.browser?.projectName),
+      runTests.map((t) => t.browser),
       scenario.baseURL,
     ),
   };

@@ -4,10 +4,10 @@
 
 export interface DemoRunProject {
   name: string;
-  use?: { baseURL: string };
+  use: { browserName?: string; baseURL?: string; viewport?: unknown };
 }
 
 export declare function demoHtmlReport(
-  projectNames: Iterable<unknown>,
+  browsers: Iterable<{ projectName?: unknown; browserName?: unknown; viewport?: unknown } | null | undefined>,
   baseURL?: string | null,
 ): { projects: DemoRunProject[] };
