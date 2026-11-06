@@ -1194,8 +1194,7 @@ fn awake_change(running: bool, holding: bool, tried: bool) -> AwakeChange {
 }
 
 /// Watch the local runs, once a second, for the rest of the app's life: list
-/// them in the tray, each with its Stop item (`refresh_tray_runs`), enable the
-/// Windows taskbar thumbnail's Stop while any runs (`set_stop_enabled`), and keep the
+/// them in the tray, each with its Stop item (`refresh_tray_runs`), and keep the
 /// machine from sleeping while one is going: a run, a reproduction, a bisect
 /// or a Flake Lab session can take an hour, and a sleeping machine stops it. Idle sleep only: the display still turns off, and
 /// closing a laptop's lid still puts it to sleep. On Linux it also takes
@@ -1214,11 +1213,7 @@ fn watch_local_runs(app: AppHandle, shutting_down: Arc<AtomicBool>, log_path: Pa
             if runs != listed {
                 listed = runs.clone();
                 let handle = app.clone();
-                let _ = app.run_on_main_thread(move || {
-                    #[cfg(windows)]
-                    taskbar_win::set_stop_enabled(!runs.is_empty());
-                    refresh_tray_runs(&handle, &runs);
-                });
+                let _ = app.run_on_main_thread(move || refresh_tray_runs(&handle, &runs));
             }
             let running = !listed.is_empty();
             match awake_change(running, held.is_some(), tried) {

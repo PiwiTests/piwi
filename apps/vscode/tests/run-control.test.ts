@@ -14,9 +14,6 @@ import {
   CaretCounts,
   EditLog,
   MAX_IMAGE_DATA,
-  RESERVED_MS,
-  StopsShown,
-  asideColumn,
   breakpointUpdates,
   canEnd,
   canShare,
@@ -29,9 +26,18 @@ import {
   linesAbove,
   liveInstance,
   liveItem,
+  progressItem,
+  frameIsCurrent,
+  waitedFor,
+  waitingWorkers,
+  endChoice,
+  laneShown,
+  watchTargetsFor,
+  watchableWorkers,
   liveTarget,
   liveText,
   PICK_HINT,
+  RUN_COMMANDS,
   pagePoint,
   pausedPageHtml,
   pausedPageViewChange,
@@ -96,7 +102,9 @@ const worker = (index: number, state: RunWorker['state'], extra: Partial<RunWork
   test: state === 'between' ? null : runTest(),
   stop: null,
   pausing: false,
+  waiting: null,
   takes: [],
+  watchable: false,
   ...extra,
 });
 
@@ -168,6 +176,8 @@ describe('what the controls offer', () => {
       actions: [],
       shareable: false,
       liveShared: false,
+      watchable: false,
+      waiting: null,
     });
     expect(controlItems(controlState(new Map()))).toEqual([]);
     expect(liveItem(new Map())).toBeNull();
@@ -205,6 +215,8 @@ describe('what the controls offer', () => {
         actions: [],
         shareable: false,
         liveShared: false,
+        watchable: false,
+        waiting: null,
       });
       expect(controlItems(shown).map((i) => i.command)).toEqual(['piwi.pauseRun', 'piwi.stopRun']);
     }
@@ -222,11 +234,74 @@ describe('what the controls offer', () => {
       actions: [],
       shareable: false,
       liveShared: false,
+      watchable: false,
+      waiting: null,
     });
     expect(controlItems(pausing).map((i) => [i.text, i.command])).toEqual([
       ['$(loading~spin) Pausing…', null],
       ['$(debug-stop)', 'piwi.stopRun'],
     ]);
+    // While it waits in a call it can end at: how long it has waited, and End the test.
+    const waiting = {
+      title: "Click getByRole('button', { name: 'Pay' })",
+      uri: spec,
+      line: 4,
+      since: '2026-10-25T10:00:00.000Z',
+      endable: true,
+    };
+    const waits = controlState(sessionsOf(session('ed-1', [worker(0, 'running', { pausing: true, waiting })])));
+    expect(waits.waiting).toEqual({ ref: 'ed-1', worker: 0, waiting });
+    expect(controlItems(waits, Date.parse('2026-10-25T10:01:05.000Z'))).toEqual([
+      {
+        text: '$(loading~spin) Pausing… 1 min 5 s',
+        tooltip:
+          "Piwi: the test waits in Click getByRole('button', { name: 'Pay' }) for 1 min 5 s, and stops once it returns",
+        command: null,
+      },
+      {
+        key: 'give-up',
+        text: '$(circle-slash)',
+        tooltip:
+          "Piwi: End the test now: Click getByRole('button', { name: 'Pay' }) is given up, and the rest of the test skipped",
+        command: 'piwi.endTest',
+      },
+      { text: '$(debug-stop)', tooltip: 'Piwi: Stop the run (Shift+F5)', command: 'piwi.stopRun' },
+    ]);
+    const unknown = controlState(
+      sessionsOf(
+        session('ed-1', [
+          worker(0, 'running', { pausing: true, waiting: { ...waiting, since: null, endable: false } }),
+        ]),
+      ),
+    );
+    expect(controlItems(unknown).map((i) => i.tooltip)).toEqual([
+      "Piwi: the test waits in Click getByRole('button', { name: 'Pay' }), and stops once it returns",
+      "Piwi: End the test as Click getByRole('button', { name: 'Pay' }) returns: the rest of it is skipped",
+      'Piwi: Stop the run (Shift+F5)',
+    ]);
+    // Beside Pause for another worker, and in place of End at a stop that cannot end.
+    const keys = (sessions: ReturnType<typeof sessionsOf>) =>
+      controlItems(controlState(sessions)).map((i) => i.key ?? i.command);
+    expect(
+      keys(sessionsOf(session('ed-1', [worker(0, 'running', { pausing: true, waiting }), worker(1, 'running')]))),
+    ).toEqual(['piwi.pauseRun', null, 'give-up', 'piwi.stopRun']);
+    const failed = worker(1, 'stopped', { stop: { ...stopAt(spec, 5), reason: 'failure' } });
+    expect(keys(sessionsOf(session('ed-1', [worker(0, 'running', { pausing: true, waiting }), failed])))).toContain(
+      'give-up',
+    );
+    const waitingSessions = sessionsOf(session('ed-1', [worker(0, 'running', { pausing: true, waiting })]));
+    expect(waitingWorkers(waitingSessions, { ref: 'ed-1', worker: 0 })).toHaveLength(1);
+    expect(waitingWorkers(waitingSessions, { ref: 'ed-2' })).toEqual([]);
+    // End the test answers a stop a lens or a hover names, even one that went on, and never a waiting test then.
+    expect(endChoice(waitingSessions, false, { ref: 'ed-1', worker: 1, since: 's1' })).toBe('stop');
+    expect(endChoice(waitingSessions, true, null)).toBe('stop');
+    expect(endChoice(waitingSessions, false, null)).toEqual([{ ref: 'ed-1', worker: 0, waiting }]);
+    expect(endChoice(waitingSessions, false, { ref: 'ed-1', worker: 1 })).toEqual([]);
+    expect(waitedFor(null, 0)).toBeNull();
+    expect(waitedFor('2026-10-25T10:00:00.000Z', Date.parse('2026-10-25T10:00:12.900Z'))).toBe('12 s');
+    expect(laneShown(session('ed-1', [worker(0, 'running', { pausing: true, waiting })]), 0, []).caption).toBe(
+      "Worker 1 · Pausing · waits in Click getByRole('button', { name: 'Pay' }) · checkout › pays",
+    );
     const ci = controlState(
       sessionsOf(session('ed-1', [worker(0, 'running', { test: runTest(0, 'running under CI') })])),
     );
@@ -248,6 +323,8 @@ describe('what the controls offer', () => {
       actions: [],
       shareable: false,
       liveShared: false,
+      watchable: false,
+      waiting: null,
     });
     expect(controlItems(shown).map((i) => [i.command, i.tooltip])).toEqual([
       ['piwi.resumeRun', 'Piwi: Resume (F5)'],
@@ -325,6 +402,79 @@ describe('Share live', () => {
     expect(shareLiveWarning({ page: null })).toContain('the Piwi instance it reports to');
     // A run whose workers have not said yet how it stands is warned of too.
     expect(shareLiveWarning(undefined)).toBe(shareLiveWarning({ page: null }));
+  });
+
+  test('counts in the status bar the tests the runs ran, as their own processes say, and their failures', () => {
+    expect(progressItem(sessionsOf(session('ed-1', [worker(0, 'running')])))).toBeNull();
+    const counted = (ref: string, done: number, total: number, failed = 0, flaky = 0): RunSession => ({
+      ...session(ref, [worker(0, 'running')]),
+      progress: { total, done, failed, flaky, skipped: 0, status: 'running', failure: null },
+    });
+    expect(progressItem(sessionsOf(counted('ed-1', 3, 9)))).toEqual({
+      text: '$(beaker) 3 of 9',
+      tooltip: 'Piwi: the run ran 3 of 9 tests.',
+      command: null,
+    });
+    expect(progressItem(sessionsOf(counted('ed-1', 3, 9, 1), counted('ed-2', 1, 1, 0, 1)))).toEqual({
+      text: '$(beaker) 4 of 10 · $(error) 1',
+      tooltip: 'Piwi: 2 runs ran 4 of 10 tests: 1 failed, 1 flaky.',
+      command: null,
+    });
+    // A worker whose reporter shows its running test: a click watches it.
+    const watched = { ...counted('ed-1', 3, 9), workers: [worker(0, 'running', { watchable: true })] };
+    expect(progressItem(sessionsOf(watched))).toEqual({
+      text: '$(beaker) 3 of 9',
+      tooltip: "Piwi: the run ran 3 of 9 tests. Click to watch a worker's test.",
+      command: RUN_COMMANDS.watch,
+    });
+  });
+
+  test('lists the workers a panel can watch, and those Pause and watch can pause', () => {
+    const sessions = sessionsOf(
+      session('ed-1', [
+        worker(0, 'running', { watchable: true }),
+        worker(1, 'stopped', { watchable: true, parallelIndex: 1 }),
+        worker(2, 'running', { parallelIndex: 2 }),
+        worker(3, 'between', { watchable: true, parallelIndex: 3 }),
+      ]),
+    );
+    expect(watchableWorkers(sessions)).toEqual([
+      { ref: 'ed-1', worker: 0, lane: 0, label: 'Worker 1', description: 'running checkout › pays' },
+      { ref: 'ed-1', worker: 1, lane: 1, label: 'Worker 2', description: 'stopped in checkout › pays' },
+      { ref: 'ed-1', worker: 3, lane: 3, label: 'Worker 4', description: 'between tests' },
+    ]);
+    expect(watchableWorkers(sessions, true).map((t) => t.worker)).toEqual([0, 3]);
+    expect(controlState(sessions).watchable).toBe(true);
+    const all = watchableWorkers(sessions);
+    expect(watchTargetsFor(all, null)).toHaveLength(3);
+    expect(watchTargetsFor(all, { ref: 'ed-1', worker: 1 }).map((t) => t.lane)).toEqual([1]);
+    expect(watchTargetsFor(all, { ref: 'ed-2' })).toEqual([]);
+  });
+
+  test('says what the worker panel’s slot does, and whether its image is of now', () => {
+    const uri = 'file:///work/shop/tests/cart.spec.ts';
+    const running = worker(5, 'running', { parallelIndex: 1 });
+    const stopped = worker(5, 'stopped', { parallelIndex: 1, stop: stopAt(uri, 7, false), takes: ['input'] });
+    expect(laneShown(undefined, 1, []).caption).toBe('Worker 2 · the run ended.');
+    expect(laneShown(session('ed-1', []), 1, []).caption).toBe('Worker 2 · starting…');
+    expect(laneShown(session('ed-1', [worker(5, 'between', { parallelIndex: 1 })]), 1, []).caption).toBe(
+      'Worker 2 · between tests',
+    );
+    expect(laneShown(session('ed-1', [running]), 1, []).caption).toBe('Worker 2 · Running · checkout › pays');
+    expect(laneShown(session('ed-1', [{ ...running, pausing: true }]), 1, []).caption).toBe(
+      'Worker 2 · Pausing · checkout › pays',
+    );
+    const at = stopsOf(sessionsOf(session('ed-1', [stopped])));
+    const shown = laneShown(session('ed-1', [stopped]), 1, at);
+    expect(shown.stop).toEqual(at[0]);
+    expect(shown.caption).toBe('Worker 2 · Paused · Fill "WELCOME10" getByLabel(\'Coupon\') · cart.spec.ts:8');
+    const test = running.test!.id;
+    expect(frameIsCurrent({ worker: 5, test, since: null }, running)).toBe(true);
+    expect(frameIsCurrent({ worker: 5, test, since: null }, stopped)).toBe(false);
+    expect(frameIsCurrent({ worker: 5, test, since: stopped.stop!.since }, stopped)).toBe(true);
+    expect(frameIsCurrent({ worker: 4, test, since: null }, running)).toBe(false);
+    expect(frameIsCurrent({ worker: 5, test: 'other', since: null }, running)).toBe(false);
+    expect(frameIsCurrent({ worker: 5, test, since: null }, null)).toBe(false);
   });
 
   test('offers a run that can be shared in the status bar, and none that cannot, whose command says why', () => {
@@ -411,160 +561,9 @@ describe('a stop', () => {
   });
 });
 
-describe('what the editor shows of the stops', () => {
-  /** Worker `index` of `ed-1`, in slot `slot`, stopped headless at `line`. */
-  const at = (index: number, line: number, extra: Partial<RunStop> = {}, slot = index) =>
-    worker(index, 'stopped', { parallelIndex: slot, stop: { ...stopAt(spec, line, false), ...extra } });
-  /**
-   * The pushes of run `ed-1` as the service sends them, 100 ms apart, through `StopsShown` as the extension takes them:
-   * each new stop's file opened in its turn (none for a line in `unopened`), and the page the view opens shown there.
-   * Each push says which workers' files opened with the focus or without, and the page opened, as `[worker, line]`.
-   */
-  const editor = (unopened: number[] = []) => {
-    const shown = new StopsShown();
-    let now = 0;
-    const push = (...workers: RunWorker[]) => {
-      now += 100;
-      const sessions = sessionsOf(session('ed-1', workers));
-      const change = shown.changed(sessions, stopsOf(sessions), now);
-      const opened = change.open
-        .filter((stop) => !unopened.includes(stop.stop.line))
-        .map((stop) => {
-          const focus = shown.focusFor(stop);
-          shown.opened(stop, focus);
-          return [stop.worker, focus];
-        });
-      if (change.page) shown.view(change.page);
-      return { opened, page: change.page && [change.page.worker, change.page.stop.line] };
-    };
-    /** A control from the editor answers the stop of worker `index` at `line`. */
-    const answer = (action: 'resume' | 'step', index: number, line: number) =>
-      shown.answered(stopsOf(sessionsOf(session('ed-1', [at(index, line)])))[0]!, action, now);
-    const wait = (ms: number) => {
-      now += ms;
-    };
-    return { shown, push, answer, wait, now: () => now };
-  };
-
-  test('opens the first stop with the focus, and its page', () => {
-    const { push } = editor();
-    expect(push(at(0, 3), worker(1, 'running'))).toEqual({ opened: [[0, true]], page: [0, 3] });
-  });
-
-  test('opens another worker’s stop without the focus, and keeps the view on the stop it shows', () => {
-    const { push } = editor();
-    push(at(0, 3), worker(1, 'running'));
-    expect(push(at(0, 3), at(1, 5))).toEqual({ opened: [[1, false]], page: null });
-  });
-
-  test('waits for the next stop of a worker stepped from the editor, through the push where it runs', () => {
-    const { push, answer } = editor();
-    push(at(0, 3), worker(1, 'running'));
-    push(at(0, 3), at(1, 5));
-    answer('step', 0, 3);
-    expect(push(worker(0, 'running'), at(1, 5))).toEqual({ opened: [], page: null });
-    expect(push(at(0, 4), at(1, 5))).toEqual({ opened: [[0, true]], page: [0, 4] });
-  });
-
-  test('hands the view to a stop held once the worker it shows is resumed, then follows that one’s Step', () => {
-    const { push, answer } = editor();
-    push(at(0, 3), worker(1, 'running'));
-    push(at(0, 3), at(1, 5));
-    answer('resume', 0, 3);
-    expect(push(worker(0, 'running'), at(1, 5))).toEqual({ opened: [], page: [1, 5] });
-    answer('step', 1, 5);
-    expect(push(worker(0, 'running'), worker(1, 'running'))).toEqual({ opened: [], page: null });
-    expect(push(worker(0, 'running'), at(1, 6))).toEqual({ opened: [[1, true]], page: [1, 6] });
-  });
-
-  test('hands the view on after a control from elsewhere, and opens a lone worker’s next stop', () => {
-    const { push } = editor();
-    push(at(0, 3), worker(1, 'running'));
-    push(at(0, 3), at(1, 5));
-    expect(push(worker(0, 'running'), at(1, 5)).page).toEqual([1, 5]);
-    const lone = editor();
-    lone.push(at(0, 3));
-    expect(lone.push(worker(0, 'running')).page).toBeNull();
-    expect(lone.push(at(0, 4)).page).toEqual([0, 4]);
-  });
-
-  test('stops waiting for a stepped worker’s next stop once its worker left the run', () => {
-    const { push, answer } = editor();
-    push(at(0, 3), worker(1, 'running'));
-    push(at(0, 3), at(1, 5));
-    answer('step', 0, 3);
-    expect(push(worker(0, 'running'), at(1, 5)).page).toBeNull();
-    expect(push(at(1, 5))).toEqual({ opened: [], page: [1, 5] });
-  });
-
-  test('waits for a stepped worker’s next stop RESERVED_MS at most, saying when to ask again', () => {
-    const { shown, push, answer, wait, now } = editor();
-    push(at(0, 3), worker(1, 'running'));
-    push(at(0, 3), at(1, 5));
-    expect(shown.waitsUntil()).toBeNull();
-    answer('step', 0, 3);
-    expect(shown.waitsUntil()).toBe(now() + RESERVED_MS);
-    expect(push(worker(0, 'running'), at(1, 5)).page).toBeNull();
-    // Asked again when the wait is over, with no push since: the stop held takes the view.
-    wait(RESERVED_MS);
-    expect(push(worker(0, 'running'), at(1, 5)).page).toEqual([1, 5]);
-    expect(shown.waitsUntil()).toBeNull();
-  });
-
-  test('gives the focus to the first stop a Pause brings, its other stops coming in later pushes', () => {
-    const { push } = editor();
-    expect(push(at(0, 3), worker(1, 'running'), worker(2, 'running'))).toEqual({ opened: [[0, true]], page: [0, 3] });
-    expect(push(at(0, 3), at(1, 5), worker(2, 'running'))).toEqual({ opened: [[1, false]], page: null });
-    expect(push(at(0, 3), at(1, 5), at(2, 7))).toEqual({ opened: [[2, false]], page: null });
-  });
-
-  test('moves the focus to the worker a control answered', () => {
-    const { push, answer } = editor();
-    push(at(0, 3), worker(1, 'running'));
-    push(at(0, 3), at(1, 5));
-    answer('resume', 1, 5);
-    push(at(0, 3), worker(1, 'running'));
-    expect(push(at(0, 3), at(1, 6))).toEqual({ opened: [[1, true]], page: null });
-  });
-
-  test('keeps the focus on the slot of a worker restarted after a failure', () => {
-    const { push, answer } = editor();
-    push(at(0, 3, { reason: 'failure' }), at(1, 5));
-    answer('resume', 0, 3);
-    push(at(1, 5));
-    expect(push(at(2, 4, {}, 0), at(1, 5))).toEqual({ opened: [[2, true]], page: null });
-  });
-
-  test('counts a stop whose file never opened as none shown', () => {
-    const { push } = editor([3]);
-    push(at(0, 3), worker(1, 'running'));
-    expect(push(at(0, 3), at(1, 5)).opened).toEqual([[1, true]]);
-  });
-
-  test('opens no page at a stop with a pause bar, and a new stop’s page in a view that is closed', () => {
-    const { shown, push } = editor();
-    expect(push(at(0, 3, { bar: true }), worker(1, 'running')).page).toBeNull();
-    expect(push(at(0, 3, { bar: true }), at(1, 5)).page).toEqual([1, 5]);
-    shown.view(null);
-    expect(push(at(0, 3, { bar: true }), at(1, 5)).page).toBeNull();
-    expect(push(at(0, 3, { bar: true }), at(1, 5), at(2, 7)).page).toEqual([2, 7]);
-  });
-
-  test('opens a file aside in a group neither active nor the paused page view’s, else in a new one at the right', () => {
-    const groups = (active: number, count: number) =>
-      Array.from({ length: count }, (_, i) => ({ viewColumn: i + 1, isActive: i + 1 === active }));
-    expect(asideColumn(groups(1, 1))).toBe(2);
-    expect(asideColumn(groups(1, 2), 2)).toBe(3);
-    expect(asideColumn(groups(1, 3), 2)).toBe(3);
-    expect(asideColumn(groups(2, 2), 2)).toBe(1);
-    expect(asideColumn(groups(9, 9), 8)).toBe(1);
-    expect(asideColumn([{ viewColumn: 9, isActive: true }])).toBe(9);
-  });
-});
-
 describe('the stop a control acts on', () => {
-  const one: ShownStop = { ref: 'ed-1', worker: 0, slot: 0, stop: stopAt(spec, 5), test: runTest(), takes: [] };
-  const two: ShownStop = { ref: 'ed-1', worker: 1, slot: 1, stop: stopAt(pageObject, 8), test: runTest(), takes: [] };
+  const one: ShownStop = { ref: 'ed-1', worker: 0, stop: stopAt(spec, 5), test: runTest(), takes: [] };
+  const two: ShownStop = { ref: 'ed-1', worker: 1, stop: stopAt(pageObject, 8), test: runTest(), takes: [] };
 
   test('is the only one, wherever the caret is', () => {
     expect(stopsFor([one], { uri: pageObject, line: 1 })).toEqual([one]);
@@ -882,7 +881,6 @@ const ALL_TAKES: RunTake[] = ['pick', 'record', 'assert', 'assert-region', 'requ
 const shown = (stop: RunStop, takes: RunTake[] = ALL_TAKES, test: RunTest | null = runTest()): ShownStop => ({
   ref: 'ed-1',
   worker: 0,
-  slot: 0,
   stop,
   test,
   takes,

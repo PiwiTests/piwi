@@ -14,7 +14,13 @@ import { WebSocket } from 'ws';
 import { parsePairing } from '@piwitests/core/editor-send';
 import { lineReader, parseRecordChannel } from '@piwitests/core/ide-recorder';
 import { LIVE_SHARE_MISSING } from '@piwitests/core/live-view';
-import { parseHubToRun, type HubToRun, type RunTake, type RunToHub } from '@piwitests/core/run-channel';
+import {
+  parseHubToRun,
+  type HubToRun,
+  type RunFeature,
+  type RunTake,
+  type RunToHub,
+} from '@piwitests/core/run-channel';
 import { writeDiscovery } from '@piwitests/editor/discovery';
 import type { ToolResult } from '@piwitests/editor/run-host';
 import {
@@ -91,7 +97,7 @@ class Worker {
     this.socket.write(`${JSON.stringify(message)}\n`);
   }
 
-  attach(ref: string, token = channel.token, workerIndex = 0, more: RunTake[] = []): this {
+  attach(ref: string, token = channel.token, workerIndex = 0, more: RunTake[] = [], features: RunFeature[] = []): this {
     this.send({
       type: 'run-attach',
       token,
@@ -104,6 +110,7 @@ class Worker {
       reporter: '0.62.0',
       takes: ['pick', 'record', 'assert', 'assert-region', 'requests', 'mock', 'view', 'input', 'pick-at', ...more],
       holds: ['failure'],
+      ...(features.length ? { features } : {}),
     });
     return this;
   }
@@ -376,7 +383,7 @@ describe('the hub Piwi Picker reaches', () => {
         client: DESKTOP_HUB_CLIENT,
         roots: [folder],
         startedAt: expect.stringMatching(/^\d{4}-/),
-        features: ['peers'],
+        features: ['peers', 'lanes'],
       },
     ]);
   });
@@ -443,7 +450,7 @@ describe('the hub Piwi Picker reaches', () => {
       client: DESKTOP_HUB_CLIENT,
       roots: [folder],
       keepaliveMs: 200,
-      features: ['peers'],
+      features: ['peers', 'lanes'],
     });
     // Its keepalive, and its closed set of commands.
     await waitFor(() => picker.messages.find((m) => m.type === 'keepalive'));
@@ -623,6 +630,20 @@ describe('the window', () => {
     expect(heard).toEqual([1, 0]);
   });
 
+  it('hears that every run live as its stream opened was sent, after them', async () => {
+    const worker = new Worker(folder).attach('desktop-17');
+    worker.begin();
+    await waitFor(() => runs.sessions.current().some((s) => s.ref === 'desktop-17'));
+    const window = await openWindow();
+    const listed = window.events.findIndex((e) => e.type === 'listed');
+    const run = window.events.findIndex((e) => e.type === 'session' && e.session.ref === 'desktop-17');
+    expect(run).toBeGreaterThan(0);
+    expect(listed).toBeGreaterThan(run);
+    expect(window.events.filter((e) => e.type === 'listed')).toHaveLength(1);
+    window.close();
+    worker.socket.destroy();
+  });
+
   it('names its stream, and refuses a command of a stream that is not open or that is no command', async () => {
     const window = await openWindow();
     expect(window.events[0]).toEqual({ type: 'hello', viewer: window.viewer });
@@ -704,6 +725,95 @@ describe('the window', () => {
     const stopped = await worker.request('view', 1);
     expect(stopped).toMatchObject({ on: false });
     other.close();
+    worker.socket.destroy();
+  });
+  it('watches a worker’s lane as its test runs and at its stop, its frames to that window alone', async () => {
+    const window = await openWindow();
+    const other = await openWindow();
+    const worker = new Worker(folder).attach('desktop-15', channel.token, 0, [], ['view-lane']);
+    worker.begin();
+    // Its reporter shows its lane while a test runs: the worker says so among what it takes.
+    const running = await waitFor(() => window.session('desktop-15')?.workers[0]?.test && window.session('desktop-15'));
+    expect(running.workers[0]!.intents).toContain('watch');
+    const lane = { ref: 'desktop-15', lane: 0 };
+
+    const watching = window.command({ type: 'watch', id: 2, ...lane, on: true });
+    const asked = await worker.request('view-lane');
+    expect(asked).toMatchObject({ on: true });
+    worker.send({
+      type: 'answer',
+      request: asked.request,
+      what: 'view-lane',
+      value: { ok: true, message: 'The live view is on.' },
+    });
+    expect(await watching).toMatchObject({ ok: true });
+    worker.send({ type: 'lane-frame', test: 'id-pays', stop: null, width: 800, height: 600, data: '/9j/AA==' });
+    await waitFor(() => window.events.find((e) => e.type === 'lane-frame'));
+    expect(window.events.find((e) => e.type === 'lane-frame')).toEqual({
+      type: 'lane-frame',
+      ...lane,
+      worker: 0,
+      test: 'id-pays',
+      since: null,
+      width: 800,
+      height: 600,
+      data: '/9j/AA==',
+    });
+    // Another window that does not watch the lane gets none of its frames.
+    expect(other.events.some((e) => e.type === 'lane-frame')).toBe(false);
+
+    // At a stop, the lane shows the stop: the window watches it through the lane, its input included, as with `view`.
+    worker.stop(1);
+    const stop = await waitFor(() => window.session('desktop-15')?.workers[0]?.stop ?? undefined);
+    expect(stop.intents).toEqual(['assert-region', 'mock', 'view', 'input', 'pick-at']);
+    expect(other.session('desktop-15')!.workers[0]!.stop!.intents).toEqual(['mock', 'view', 'pick-at']);
+    worker.send({ type: 'lane-frame', test: 'id-pays', stop: 1, width: 800, height: 600, data: '/9j/AB==' });
+    const framed = await waitFor(() =>
+      window.events.find((e) => e.type === 'lane-frame' && 'data' in e && e.data === '/9j/AB=='),
+    );
+    expect(framed).toMatchObject({ since: stop.since, worker: 0 });
+    const played = window.command({
+      type: 'input',
+      id: 3,
+      ref: 'desktop-15',
+      worker: 0,
+      since: stop.since,
+      events: [{ type: 'mouse', action: 'click', x: 10, y: 20, button: 'left', clickCount: 1 }],
+    });
+    const input = await worker.request('input');
+    worker.send({ type: 'answer', request: input.request, what: 'input', value: { ok: true, message: 'Played.' } });
+    expect(await played).toMatchObject({ ok: true });
+    // Why the lane sends no frame comes too.
+    worker.send({ type: 'lane-frame', test: 'id-pays', stop: 1, refused: 'Each image of the page is too long.' });
+    expect(await waitFor(() => window.events.find((e) => e.type === 'lane-frame' && 'refused' in e))).toMatchObject({
+      ...lane,
+      since: stop.since,
+      refused: 'Each image of the page is too long.',
+    });
+
+    // Watched no more: the worker stops its lane view.
+    expect(await window.command({ type: 'watch', id: 4, ...lane, on: false })).toMatchObject({ ok: true });
+    expect(await worker.request('view-lane', 1)).toMatchObject({ on: false });
+    window.close();
+    other.close();
+    worker.socket.destroy();
+  });
+
+  it('refuses to watch the lane of a worker whose reporter shows a stopped test alone, saying why', async () => {
+    const window = await openWindow();
+    const worker = new Worker(folder).attach('desktop-16');
+    worker.begin();
+    const running = await waitFor(() => window.session('desktop-16')?.workers[0]?.test && window.session('desktop-16'));
+    expect(running.workers[0]!.intents).not.toContain('watch');
+    expect(await window.command({ type: 'watch', id: 2, ref: 'desktop-16', lane: 0, on: true })).toMatchObject({
+      ok: false,
+      message: 'Update the reporter to watch a running test: this one shows a stopped test alone.',
+    });
+    expect(await window.command({ type: 'watch', id: 3, ref: 'desktop-16', lane: -1, on: true })).toMatchObject({
+      ok: false,
+    });
+    expect(worker.heard.some((m) => m.type === 'request' && m.what === 'view-lane')).toBe(false);
+    window.close();
     worker.socket.destroy();
   });
 });

@@ -159,6 +159,15 @@ describe('the hub’s WebSocket', () => {
     expect(
       parseHubCommand(json({ type: 'runControl', id: 4, ref: 'ed-1', worker: null, action: 'end', since: 'S' })),
     ).toEqual({ type: 'runControl', id: 4, ref: 'ed-1', worker: null, action: 'end', since: 'S' });
+    // End the test while a Pause waits for the call: no stop to name.
+    expect(parseHubCommand(json({ type: 'runControl', id: 5, ref: 'ed-1', worker: 1, action: 'give-up' }))).toEqual({
+      type: 'runControl',
+      id: 5,
+      ref: 'ed-1',
+      worker: 1,
+      action: 'give-up',
+      since: null,
+    });
     expect(parseHubCommand(json({ type: 'pausedPage', id: 4, ref: 'ed-1', worker: 0 }))).toEqual({
       type: 'pausedPage',
       id: 4,
@@ -327,6 +336,30 @@ describe('the hub’s WebSocket', () => {
       { type: 'keepalive' },
     ];
     for (const message of messages) expect(parseHubMessage(json(message))).toEqual(message);
+    // A pausing worker's call it waits in; none read of a worker not pausing, nor one this version cannot read.
+    const waiting = {
+      title: "Click getByRole('button', { name: 'Pay' })",
+      uri: 'file:///work/shop/tests/pages/checkout.page.ts',
+      line: 11,
+      since: '2026-10-25T10:00:00.000Z',
+      endable: true,
+    };
+    const pausing = { ...session.workers[0]!, state: 'running' as const, stop: null, pausing: true, waiting };
+    const withWaiting = { ...session, workers: [pausing] };
+    expect(parseHubMessage(json({ type: 'session', session: withWaiting }))).toEqual({
+      type: 'session',
+      session: withWaiting,
+    });
+    for (const worker of [
+      { ...pausing, pausing: false },
+      { ...pausing, waiting: { ...waiting, uri: 'https://x' } },
+    ]) {
+      const read = parseHubMessage(json({ type: 'session', session: { ...session, workers: [worker] } }));
+      expect(read).toMatchObject({ type: 'session' });
+      expect((read as { session: { workers: Array<{ waiting?: unknown }> } }).session.workers[0]).not.toHaveProperty(
+        'waiting',
+      );
+    }
     const worker = session.workers[0]!;
     expect(
       parseHubMessage(
@@ -706,6 +739,111 @@ describe('the live view on the hub', () => {
         else expect(heard.refused.length).toBeLessThanOrEqual(MAX_HUB_MESSAGE);
       }
     }
+  });
+});
+
+describe('a lane watched on the hub', () => {
+  test('reads watch, naming the run and its lane, and refuses one without either', () => {
+    const watch = { type: 'watch', id: 3, ref: 'ed-1', lane: 2, on: true };
+    expect(parseHubCommand(json(watch))).toEqual(watch);
+    expect(parseHubCommand(json({ ...watch, on: false }))).toEqual({ ...watch, on: false });
+    for (const broken of [
+      { ...watch, ref: 'ed 1' },
+      { ...watch, lane: -1 },
+      { ...watch, lane: 1.5 },
+      { ...watch, lane: undefined },
+      { ...watch, on: 'yes' },
+    ]) {
+      expect(parseHubCommand(json(broken))).toMatchObject({ type: 'invalid', id: 3 });
+    }
+  });
+
+  test('has the extension read a frame of a lane, of its test and its stop, and why none comes', () => {
+    const frame: HubMessage = {
+      type: 'lane-frame',
+      ref: 'ed-1',
+      lane: 1,
+      worker: 4,
+      test: 'abc',
+      since: null,
+      width: 1280,
+      height: 720,
+      data: '/9j/4A==',
+    };
+    expect(parseHubMessage(json(frame))).toEqual(frame);
+    const atStop = { ...frame, since: '2026-10-25T10:00:00.000Z' };
+    expect(parseHubMessage(json(atStop))).toEqual(atStop);
+    for (const broken of [
+      { ...frame, lane: -1 },
+      { ...frame, worker: undefined },
+      { ...frame, test: null },
+      { ...frame, test: '' },
+      { ...frame, since: '' },
+      { ...frame, since: undefined },
+      { ...frame, data: '<svg>' },
+    ]) {
+      expect(parseHubMessage(json(broken)), JSON.stringify(broken).slice(0, 80)).toBeNull();
+    }
+    const refused: HubMessage = {
+      type: 'lane-frame',
+      ref: 'ed-1',
+      lane: 1,
+      worker: 4,
+      test: null,
+      since: null,
+      refused: 'No page to show.',
+    };
+    expect(parseHubMessage(json(refused))).toEqual(refused);
+    expect(parseHubMessage(json({ ...refused, refused: 'x'.repeat(MAX_HUB_MESSAGE + 1) }))).toBeNull();
+  });
+
+  test('is offered by a hub whose welcome lists lanes, for a worker whose intents list watch', () => {
+    const welcome = { type: 'welcome', pid: 1, version: '1', client: null, roots: [], keepaliveMs: 1 };
+    expect(parseHubMessage(json({ ...welcome, features: ['lanes', 'peers'] }))).toEqual({
+      ...welcome,
+      features: ['peers', 'lanes'],
+    });
+    const watched = { ...session, workers: [{ ...session.workers[0]!, intents: ['pick', 'watch'] }] };
+    expect(parseHubMessage(json({ type: 'session', session: watched }))).toEqual({
+      type: 'session',
+      session: watched,
+    });
+  });
+});
+
+describe('how far a run is, on the hub', () => {
+  const progress = {
+    total: 9,
+    done: 3,
+    failed: 1,
+    flaky: 0,
+    skipped: 0,
+    status: 'running',
+    failure: null,
+  } as const;
+
+  test('has the extension read it, a status of a newer service as other, and leave out what it cannot read', () => {
+    const read = (value: unknown) =>
+      (parseHubMessage(json({ type: 'session', session: { ...session, progress: value } })) as { session: HubSession })
+        .session.progress;
+    expect(read(progress)).toEqual(progress);
+    expect(read({ ...progress, status: 'exploded' })).toEqual({ ...progress, status: 'other' });
+    const ended = { ...progress, done: 9, status: 'failed', failure: { title: 'cart › adds', error: null } };
+    expect(read(ended)).toEqual(ended);
+    for (const broken of [
+      { ...progress, done: 10 },
+      { ...progress, failed: 4 },
+      { ...progress, total: -1 },
+      { ...progress, failure: { title: '', error: null } },
+      { ...progress, status: 3 },
+      'nine',
+    ]) {
+      expect(read(broken), JSON.stringify(broken)).toBeUndefined();
+    }
+    // A session without it reads as one from a service that predates it.
+    expect((parseHubMessage(json({ type: 'session', session })) as { session: HubSession }).session).not.toHaveProperty(
+      'progress',
+    );
   });
 });
 

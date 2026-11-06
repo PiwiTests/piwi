@@ -81,12 +81,15 @@ Turn it on in **Settings → Pull requests** (off by default). It needs:
 - **`PIWI_SITE_URL`** set on the dashboard. Every link in the comment is built from it; without it nothing is posted,
   because a comment full of unreachable links is worse than no comment.
 - **An SCM token with write access** to the repository, set instance-wide or per project: `repo` on GitHub, `api` on
-  GitLab. [Source control](/guide/source-control) explains where to set it and what else uses it.
+  GitLab, `repository` and `pullrequest` on Bitbucket. [Source control](/guide/source-control) explains where to set
+  it and what else uses it.
 - **Branch and commit metadata on the run**, which the reporter [detects automatically](/guide/ci#what-gets-detected).
 
 ## Limits
 
-- Pull-request feedback posts on GitHub and GitLab. On Bitbucket the settings page saves, but nothing is posted.
+- Pull-request feedback posts on GitHub, GitLab and Bitbucket Cloud, not on Bitbucket Server or Data Center. On
+  Bitbucket the commit status is a build status keyed by the status context, shown on the pull request of the run's
+  branch, and the comment's marker is a link reference definition, which Markdown does not render.
 - Piwi only ever edits a comment it wrote itself (identified by a hidden marker), so a human comment is never
   overwritten.
 - Everything here is best-effort: the run is already stored by the time it runs, and a missing token or an unreachable

@@ -65,7 +65,7 @@ import {
 import { LatestPacer, MAX_VIEW_EVENT_RATE, MAX_VIEW_FPS, RateWindow } from '@piwitests/core/run-view';
 import type { RunControlResult, RunSession } from './protocol.js';
 import { sameToken } from './recorder/handoff.js';
-import type { RunSessions, ViewFrame, Viewer } from './run-sessions.js';
+import type { LaneViewFrame, RunSessions, ViewFrame, Viewer } from './run-sessions.js';
 import type { StopActions, StopOutcome } from './stop-actions.js';
 
 /** The connections a hub holds at once, and those among them that did not say `hello` yet. */
@@ -161,8 +161,8 @@ interface Connection {
   pending: number;
   /** It, as a viewer of the live views it watches. */
   viewer: Viewer;
-  /** The pace of the frames it is sent, by run and worker: the latest one waits, no other. */
-  frames: Map<string, LatestPacer<ViewFrame>>;
+  /** The pace of the frames it is sent, by run and worker (or lane): the latest one waits, no other. */
+  frames: Map<string, LatestPacer<ViewFrame> | LatestPacer<LaneViewFrame>>;
   /** The input it sends, in events a second. */
   input: RateWindow;
   /** It left: its WebSocket closed, or the host let its peer go. */
@@ -326,20 +326,40 @@ export class RunHub {
    * stop it shows.
    */
   private frame(connection: Connection, frame: ViewFrame): void {
-    const key = `${frame.ref} ${frame.worker}`;
-    let pacer = connection.frames.get(key);
+    this.pace(connection, `${frame.ref} ${frame.worker}`, frame, (latest) => {
+      // A frame of a stop that ended, or that the connection stopped watching, waits no more.
+      if (this.options.sessions.viewing(connection.viewer, latest.ref, latest.worker, latest.since)) {
+        this.send(connection, { type: 'frame', ...latest });
+      }
+    });
+  }
+
+  /**
+   * A frame of a lane a connection watches: paced as a stop's frames are, and sent only while it watches the lane and
+   * its worker stands where the frame shows.
+   */
+  private laneFrame(connection: Connection, frame: LaneViewFrame): void {
+    this.pace(connection, `${frame.ref} lane ${frame.lane}`, frame, (latest) => {
+      // A frame of a stop that ended, of a worker that left, or of a lane no longer watched waits no more.
+      if (this.options.sessions.laneFrameGoes(connection.viewer, latest)) {
+        this.send(connection, { type: 'lane-frame', ...latest });
+      }
+    });
+  }
+
+  /**
+   * Send `frame` at most `MAX_VIEW_FPS` a second for its `key`, the latest one once the connection's socket left less
+   * than `MAX_VIEW_BUFFERED` unread; `MAX_VIEW_PACERS` keys at most, the oldest let go.
+   */
+  private pace<T>(connection: Connection, key: string, frame: T, send: (latest: T) => void): void {
+    let pacer = connection.frames.get(key) as LatestPacer<T> | undefined;
     if (!pacer) {
-      pacer = new LatestPacer<ViewFrame>({
+      pacer = new LatestPacer<T>({
         intervalMs: 1000 / MAX_VIEW_FPS,
         busy: () => connection.transport.buffered() > MAX_VIEW_BUFFERED,
-        send: (latest) => {
-          // A frame of a stop that ended, or that the connection stopped watching, waits no more.
-          if (this.options.sessions.viewing(connection.viewer, latest.ref, latest.worker, latest.since)) {
-            this.send(connection, { type: 'frame', ...latest });
-          }
-        },
+        send,
       });
-      connection.frames.set(key, pacer);
+      connection.frames.set(key, pacer as LatestPacer<ViewFrame> | LatestPacer<LaneViewFrame>);
       for (const [oldest, old] of connection.frames) {
         if (connection.frames.size <= MAX_VIEW_PACERS) break;
         old.close();
@@ -412,7 +432,10 @@ export class RunHub {
       subscribed: false,
       following: false,
       pending: 0,
-      viewer: { frame: (frame) => this.frame(connection, frame) },
+      viewer: {
+        frame: (frame) => this.frame(connection, frame),
+        laneFrame: (frame) => this.laneFrame(connection, frame),
+      },
       frames: new Map(),
       input: new RateWindow(MAX_VIEW_EVENT_RATE),
       left: false,
@@ -553,7 +576,7 @@ export class RunHub {
           return;
         }
         case 'runControl':
-          if (command.action !== 'pause' && command.since === null) {
+          if (command.action !== 'pause' && command.action !== 'give-up' && command.since === null) {
             return reply({ ok: false, message: 'The command needs the stop it answers.' });
           }
           return reply(
@@ -615,6 +638,11 @@ export class RunHub {
         }
         case 'share':
           return reply(sessions.share({ ref: command.ref, on: command.on }));
+        case 'watch': {
+          const { ref, lane, on } = command;
+          reply(await sessions.watchLane({ ref, lane, on }, connection.viewer));
+          return this.resend(connection, ref);
+        }
         default:
           return reply(
             await this.options.actions.action(
@@ -642,8 +670,9 @@ export class RunHub {
       label: info.label,
       command: cut(info.command, MAX_HUB_COMMAND),
       project: cut(info.project, MAX_HUB_PROJECT),
-      workers: session.workers.map(({ takes: _takes, ...worker }) => ({
+      workers: session.workers.map(({ takes: _takes, waiting, ...worker }) => ({
         ...worker,
+        ...(waiting ? { waiting: { ...waiting, title: cut(waiting.title, MAX_HUB_MESSAGE) ?? '' } } : {}),
         intents: this.options.sessions.intentsOf(session.ref, worker.worker),
       })),
       ended: session.ended,
@@ -658,6 +687,7 @@ export class RunHub {
             },
           }
         : {}),
+      ...(session.progress ? { progress: session.progress } : {}),
     };
   }
 

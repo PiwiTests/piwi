@@ -18,7 +18,7 @@
  *    Lab, a bisect, a lab job, a run repeating its tests or in UI mode: its ref ends in `-unattended`), whose workers
  *    hear that they hold no failure;
  *  - the code from a stop is rendered by the editor's generator from the file as it is on disk, for a file of a
- *    linked folder alone, and refused once the file was written since the run's first worker connected (`RunLines`).
+ *    linked folder alone, and refused once the file was written since the run's first connection opened (`RunLines`).
  * Pick and Record in the test's window, and Assert, end in an editor (its Send to editor pairing, its recorder), which
  * this server has none of: they are refused here, and a pick on an image of the stop (`pick-at`) answers with the
  * locator it found. The runs name this server as where their picks go (`PIWI_EDITOR_SEND`, `DESKTOP_PICKS_PATH`, with
@@ -35,7 +35,7 @@ import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { HUB_FEATURES, parseHubCommand, type HubAnswer, type LiveHub } from '@piwitests/core/run-hub';
+import { HUB_FEATURES, parseHubCommand, type HubAnswer, type HubMessage, type LiveHub } from '@piwitests/core/run-hub';
 import { editorsDir, readLiveHubs } from '@piwitests/editor/discovery';
 import type { RunIntent } from '@piwitests/core/run-channel';
 import {
@@ -69,6 +69,15 @@ export const DESKTOP_HUB_CLIENT = 'Piwi desktop app';
 
 /** The window streams open at once; one more is refused. */
 const MAX_WINDOWS = 16;
+
+/**
+ * Whether the hub's message to a window goes on to its stream: the runs, what each code came to, and the frames of the
+ * stops (`frame`) and the lanes (`lane-frame`) it watches. A joined peer hears no `welcome`, and its answers come back
+ * to the command that asked.
+ */
+function relayed(message: HubMessage): message is Extract<HubMessage, DesktopRunEvent> {
+  return ['session', 'code', 'frame', 'lane-frame'].includes(message.type);
+}
 
 /** What the run channel's socket folder is named from, in the temporary directory: this server's alone. */
 export const RUN_CHANNEL_FOLDER_PREFIX = 'piwi-desktop-run-';
@@ -279,7 +288,7 @@ export class DesktopRuns {
       watched: (ref) => [...this.windows.values()].some((window) => window.shows.has(ref)),
       followed: () => !!this.hub?.follows(),
       holdsFailures: (ref) => !isUnattendedDesktopRun(ref),
-      // A run's code is its files as they stood when its first worker connected.
+      // A run's code is its files as they stood when its first connection opened.
       sessionStarted: (ref, again) => this.lines.started(ref, () => [], !again),
       declines: (what) => DECLINED[what] ?? null,
       host: 'the desktop app',
@@ -346,6 +355,7 @@ export class DesktopRuns {
       RecordChannel.open({
         onAttach: (handoff) => runs.channel?.refuse(handoff.id, DECLINED.record!),
         onRun: (socket, attach) => runs.sessions.attach(socket, attach),
+        onRunMain: (socket, begin) => runs.sessions.attachMain(socket, begin),
         folderPrefix: RUN_CHANNEL_FOLDER_PREFIX,
       }),
       RunHub.open({
@@ -428,7 +438,8 @@ export class DesktopRuns {
 
   /**
    * A window's stream opens: it is a peer of the hub, subscribed at once, and hears first the id its commands name
-   * it by, then the codes and the picks kept, then each run. Null while the hub does not listen, or past `MAX_WINDOWS`.
+   * it by, then the codes and the picks kept, then each run, then that every run live was listed (`listed`). Null while
+   * the hub does not listen, or past `MAX_WINDOWS`.
    */
   async openWindow(sink: DesktopRunSink): Promise<{ viewer: string; close(): void } | null> {
     if (!this.hub || this.windows.size >= MAX_WINDOWS) return null;
@@ -444,8 +455,7 @@ export class DesktopRuns {
         send: (message) => {
           // A stream that left as much unread as a WebSocket may is let go, as the hub lets that one go.
           if (sink.buffered() > MAX_HUB_BUFFERED) return close();
-          // A joined peer hears no `welcome`, and its answers come back to the command that asked.
-          if (message.type === 'session' || message.type === 'code' || message.type === 'frame') sink.send(message);
+          if (relayed(message)) sink.send(message);
         },
         buffered: () => sink.buffered(),
         close,
@@ -455,6 +465,7 @@ export class DesktopRuns {
     sink.send({ type: 'hello', viewer });
     for (const kept of this.kept) sink.send(kept);
     await window.peer.command({ type: 'subscribe', id: 1 });
+    if (this.windows.get(viewer) === window) sink.send({ type: 'listed' });
     return { viewer, close: () => this.closeWindow(viewer) };
   }
 

@@ -9,7 +9,9 @@
  * element** and a region's ARIA snapshot, started from outside the page; at any stop, the responses the test kept (an
  * interactive run keeps the text bodies of its pages' fetch and XHR answers), one of them to mock, and a locator's
  * matches; and, for a viewer outside the page, the stopped page's live view (`@piwitests/core/run-view`: its frames,
- * the input played on it) and the locator of the element under a point of an image of it; and, for an agent (the
+ * the input played on it) and the locator of the element under a point of an image of it; for a viewer of the
+ * worker's lane, its running test's page live, through its tests and stops (`view-lane`, a feature beyond `takes`);
+ * and, for an agent (the
  * editor's MCP server), the stopped page's ARIA snapshot in AI mode, an action on one of its elements by its ref, that
  * element's ranked locators, what the run does as it goes (`events`), and its browser bound for Playwright's own tools
  * on request (`bind`). A worker holds a failure for the editor only once the service said it shows and answers one
@@ -120,6 +122,20 @@ export type RunShareTake = 'share';
 
 /** What a worker's `run-attach` lists in `takes`. */
 export type RunTake = RunIntent | RunQuery | RunViewTake | RunAgentTake | RunControlTake | RunShareTake;
+
+/**
+ * What a worker does beyond `takes`, which holds 16 entries at most, as its `run-attach` lists it in `features`: show
+ * its lane to a viewer outside the page for as long as asked (`view-lane`), the page of its running test, of its stop
+ * while it stands at one, through its tests and stops; and, asked to pause while its test waits in a call, say which
+ * (`waiting`) and end the test there as asked (`give-up`).
+ */
+export type RunFeature = 'view-lane' | 'give-up';
+
+/** Everything a worker does beyond `takes`: a worker of an older reporter lists fewer, or none. */
+export const RUN_FEATURES: readonly RunFeature[] = ['view-lane', 'give-up'];
+
+/** The longest title a `waiting` carries, in characters: a longer one is cut. */
+export const MAX_WAITING_TITLE = 500;
 
 /** The intents a worker takes. */
 export const RUN_INTENTS: readonly RunIntent[] = ['pick', 'record', 'assert', 'assert-region'];
@@ -358,7 +374,8 @@ export type RunToHub =
    * says it shows them (`holds`), which the service answers with `attached`; absent from a reporter that predates them.
    * `runner` says an editor's own test runner started the run (the run of a JetBrains IDE's Playwright run
    * configuration, its gutter's Run included), rather than a terminal or the editor's command; absent otherwise, and
-   * from a reporter that predates it.
+   * from a reporter that predates it. `features` lists what the worker does beyond `takes`; absent from a reporter that
+   * predates it.
    */
   | {
       type: 'run-attach';
@@ -373,6 +390,7 @@ export type RunToHub =
       takes?: RunTake[];
       holds?: RunHold[];
       runner?: true;
+      features?: RunFeature[];
     }
   /**
    * A test starts: Playwright's id, its describe blocks' titles and its own, its file and 1-based line, its project,
@@ -408,6 +426,14 @@ export type RunToHub =
     }
   /** The stop ended, whoever answered it: the bar, the editor, or the test ending under it. */
   | { type: 'running'; stop: number }
+  /**
+   * Asked to pause (`give-up` among its `features`), the test waits in a call before it can stop: the call's title
+   * (through `hideTypedText` and `hideSecretsInText`), its place, how long it has waited (`ms`, null when the worker
+   * cannot tell), and whether ending the test there gives it up (`endable`, a locator call that carries the attempt's
+   * end signal) or lets it finish first. Said again as the call it waits in changes, with a null `title` (and no
+   * place, time or end signal) once it waits in none: between calls, or past the test's function.
+   */
+  | { type: 'waiting'; title: string | null; place: Place | null; ms: number | null; endable: boolean }
   /** The test ended: its status as Playwright gives it, and how long it stood stopped. */
   | { type: 'test-end'; testId: string; status: string; pausedMs: number }
   /** The answer to a `request`: an image of the stopped page, null when there is none. */
@@ -420,8 +446,11 @@ export type RunToHub =
   | { type: 'answer'; request: number; what: 'mock'; value: MockAnswer }
   /** The answer to `locator`. */
   | { type: 'answer'; request: number; what: 'locator'; value: LocatorAnswer }
-  /** The answer to `view` and to `input`: whether the view started or stopped, the input was played, or why not. */
-  | { type: 'answer'; request: number; what: 'view' | 'input'; value: IntentAnswer }
+  /**
+   * The answer to `view`, `view-lane` and `input`: whether the view started or stopped, the input was played, or why
+   * not.
+   */
+  | { type: 'answer'; request: number; what: 'view' | 'view-lane' | 'input'; value: IntentAnswer }
   /** The answer to `pick-at`. */
   | { type: 'answer'; request: number; what: 'pick-at'; value: PickAtAnswer }
   /** The answer to `snapshot`. */
@@ -447,6 +476,19 @@ export type RunToHub =
    * predates it reads none, and its viewers wait for a frame.
    */
   | { type: 'frame'; stop: number; refused: string }
+  /**
+   * A frame of the worker's lane view, while a `view-lane` asked for it, as `frame` carries one: the page of the stop
+   * `stop` while the worker stands at one, else of its running test (`test`, Playwright's id of the test the frame
+   * shows). None goes between two tests. Sent at most `MAX_VIEW_FPS` a second, never stored; the latest one is sent
+   * again as `view-lane` asks again for a view on.
+   */
+  | { type: 'lane-frame'; test: string; stop: number | null; width: number; height: number; data: string }
+  /**
+   * The lane view sends no frame now, and why (`refused`, at most 500 characters): each image of the page is too long,
+   * a lighter one included, or the page shows what masks this reporter cannot read hide. Sent once until a frame goes
+   * again; nothing is said of a test with no page to show.
+   */
+  | { type: 'lane-frame'; test: string | null; stop: number | null; refused: string }
   /**
    * At the stop `stop`, after `assert-region`: the region picked in the test's window, as the locator the person
    * confirmed, and its ARIA snapshot (`locator.ariaSnapshot()`), at most `MAX_REGION_SNAPSHOT` characters; or why no
@@ -475,6 +517,12 @@ export type HubToRun =
   | { type: 'breakpoints'; places: Place[] }
   /** Stop before the next call of the running test, or of the next test. */
   | { type: 'control'; action: 'pause' }
+  /**
+   * End the test `testId` while a Pause waits for the call it runs (to a worker that lists `give-up`): the call is
+   * given up where it carries the attempt's end signal, else the test is skipped at its next locator call; the rest of
+   * it never runs. A worker running another test, or past the test's function, leaves it running and drops the Pause.
+   */
+  | { type: 'control'; action: 'give-up'; testId: string }
   /**
    * Answer the stop `stop`: go on and stop before the next call, go on to the next breakpoint, go on with no
    * breakpoint more in this attempt, or end the test (`end`, to a worker that takes it): the rest of it is skipped,
@@ -506,7 +554,14 @@ export type HubToRun =
    */
   | { type: 'request'; request: number; what: 'view'; stop: number; on: boolean }
   /**
-   * At the stop `stop`, while its view is on: play a viewer's input on its page, in order, as trusted input
+   * Start the lane view (`on`), to a worker whose `run-attach` lists `view-lane` in `features`: the page of its stop
+   * while it stands at one, else of its running test, its frames sent as `lane-frame` through its tests and stops until
+   * a `view-lane` turns it off or the connection closes; or stop it. Asked on again while on, the worker sends its
+   * latest frame again.
+   */
+  | { type: 'request'; request: number; what: 'view-lane'; on: boolean }
+  /**
+   * At the stop `stop`, while its view or the lane view shows its page: play a viewer's input on its page, in order, as trusted input
    * (`page.mouse`, `page.keyboard`), at most `MAX_VIEW_EVENT_RATE` events a second; answered once it was played.
    */
   | { type: 'request'; request: number; what: 'input'; stop: number; events: ViewInput[] }
@@ -598,6 +653,12 @@ function isIntent(value: unknown): value is RunIntent {
 function readTakes(value: unknown): RunTake[] {
   if (!Array.isArray(value) || value.length > MAX_TAKES) return [];
   return RUN_TAKES.filter((take) => value.includes(take));
+}
+
+/** The features a `run-attach` lists, those this side knows; none for anything but a list, or one too long. */
+function readFeatures(value: unknown): RunFeature[] {
+  if (!Array.isArray(value) || value.length > MAX_TAKES) return [];
+  return RUN_FEATURES.filter((feature) => value.includes(feature));
 }
 
 /** The stops a message lists in `holds`, those this side knows; none for a list too long, undefined for no list. */
@@ -827,6 +888,7 @@ export function parseRunToHub(line: string): RunToHub | null {
         takes: readTakes(value.takes),
         ...(holds === undefined ? {} : { holds }),
         ...(value.runner === true ? { runner: true as const } : {}),
+        ...(Array.isArray(value.features) ? { features: readFeatures(value.features) } : {}),
       };
     }
     case 'test-begin': {
@@ -870,6 +932,16 @@ export function parseRunToHub(line: string): RunToHub | null {
     }
     case 'running':
       return isInt(value.stop, 1) ? { type: 'running', stop: value.stop } : null;
+    case 'waiting': {
+      const { title, ms, endable } = value;
+      if (title === null) return { type: 'waiting', title: null, place: null, ms: null, endable: false };
+      const place = value.place === null ? null : readPlace(value.place);
+      if (typeof title !== 'string' || !title || (ms !== null && !isInt(ms, 0)) || typeof endable !== 'boolean') {
+        return null;
+      }
+      if (value.place !== null && !place) return null;
+      return { type: 'waiting', title: title.slice(0, MAX_WAITING_TITLE), place, ms, endable };
+    }
     case 'test-end': {
       const { testId, status, pausedMs } = value;
       if (typeof testId !== 'string' || !testId || typeof status !== 'string' || !/^[a-zA-Z]{1,32}$/.test(status)) {
@@ -910,7 +982,7 @@ export function parseRunToHub(line: string): RunToHub | null {
         if (outlined !== undefined) value.outlined = outlined;
         return { type: 'answer', request, what, value };
       }
-      if (what === 'view' || what === 'input') {
+      if (what === 'view' || what === 'view-lane' || what === 'input') {
         const said = readAnswer(answered);
         return said ? { type: 'answer', request, what, value: said } : null;
       }
@@ -953,6 +1025,17 @@ export function parseRunToHub(line: string): RunToHub | null {
       }
       if (!isInt(stop, 1) || !isViewSize(width, height) || !isViewFrameData(data)) return null;
       return { type: 'frame', stop, width: width as number, height: height as number, data };
+    }
+    case 'lane-frame': {
+      const { test, stop, width, height, data, refused } = value;
+      if (stop !== null && !isInt(stop, 1)) return null;
+      const shown = typeof test === 'string' && test && test.length <= 256 ? test : null;
+      if (typeof refused === 'string' && refused.trim()) {
+        if (test !== null && !shown) return null;
+        return { type: 'lane-frame', test: shown, stop, refused: refused.slice(0, 500) };
+      }
+      if (!shown || !isViewSize(width, height) || !isViewFrameData(data)) return null;
+      return { type: 'lane-frame', test: shown, stop, width: width as number, height: height as number, data };
     }
     case 'region': {
       const { stop, locator, snapshot, refused } = value;
@@ -1019,6 +1102,10 @@ export function parseHubToRun(line: string): HubToRun | UnknownMessage | null {
     case 'control': {
       const { action, stop } = value;
       if (action === 'pause') return { type: 'control', action };
+      if (action === 'give-up') {
+        const { testId } = value;
+        return typeof testId === 'string' && testId ? { type: 'control', action, testId } : null;
+      }
       if (action === 'step' || action === 'resume' || action === 'finish' || action === 'end') {
         return isInt(stop, 1) ? { type: 'control', action, stop } : null;
       }
@@ -1032,6 +1119,9 @@ export function parseHubToRun(line: string): HubToRun | UnknownMessage | null {
       const { request, what, stop } = value;
       if (!isInt(request, 1)) return null;
       if (what === 'image') return { type: 'request', request, what: 'image' };
+      if (what === 'view-lane') {
+        return typeof value.on === 'boolean' ? { type: 'request', request, what, on: value.on } : null;
+      }
       if (typeof what !== 'string') return null;
       if (!isIntent(what) && !(QUERIES as readonly string[]).includes(what)) return unknown(`request ${what}`);
       if (!isInt(stop, 1)) return null;
@@ -1103,5 +1193,116 @@ export function readAct(value: unknown): { ref: string; action: RunActAction; va
       return given === null || given === undefined
         ? { ref: value.ref, action: action as RunActAction, value: null }
         : null;
+  }
+}
+
+/** How a run ended, as Playwright's runner says it; `other` for a status of a newer Playwright. */
+export type RunEndStatus = 'passed' | 'failed' | 'timedout' | 'interrupted' | 'other';
+
+const RUN_END_STATUSES: readonly string[] = ['passed', 'failed', 'timedout', 'interrupted'];
+
+/**
+ * How many of a run's tests ended, each once, by the outcome of its last attempt: `done` counts them all, `failed`,
+ * `flaky` (passed after a failed attempt) and `skipped` those of each outcome; the others passed.
+ */
+export interface RunCounts {
+  done: number;
+  failed: number;
+  flaky: number;
+  skipped: number;
+}
+
+/** The longest title and error a `run-end`'s first failure carries, in characters: a longer one is cut. */
+export const MAX_RUN_FAILURE_TEXT = 500;
+
+/**
+ * What the run's own process (the reporter in Playwright's runner) sends the hub, on a connection of its own to the
+ * socket its workers reach (`PIWI_RUN_CHANNEL`), from its `onBegin` to its `onEnd`. `run-begin` is its first line: the
+ * channel's token, the run's ref and working directory, the process and the versions as a worker's `run-attach` names
+ * them, how many tests the run (or this shard of it) holds (`total`, its repeats included), how many workers it may
+ * start, its shard (null for none), and `runner` for a run an editor's own test runner started, as a worker's
+ * `run-attach` says it (absent otherwise). `run-progress` follows each test that ended for good, at most four times a
+ * second; `run-end` says how the run ended, its counts, and its first failure (the test's title and the first line of
+ * its error, each through `hideSecretsInText`; null for none), before the connection closes. A hub that predates them
+ * closes the connection at its first line, and the run goes on as without it.
+ */
+export type RunMainToHub =
+  | {
+      type: 'run-begin';
+      token: string;
+      ref: string;
+      cwd: string;
+      pid: number;
+      playwright: string;
+      reporter: string;
+      total: number;
+      workers: number;
+      shard: { current: number; total: number } | null;
+      runner?: true;
+    }
+  | ({ type: 'run-progress' } & RunCounts)
+  | ({
+      type: 'run-end';
+      status: RunEndStatus;
+      failure: { title: string; error: string | null } | null;
+    } & RunCounts);
+
+/** The counts of a message, checked: each a whole number, none above `done`; null when one is not. */
+function readCounts(value: Record<string, unknown>): RunCounts | null {
+  const { done, failed, flaky, skipped } = value;
+  if (!isInt(done, 0) || !isInt(failed, 0) || !isInt(flaky, 0) || !isInt(skipped, 0)) return null;
+  return failed + flaky + skipped <= done ? { done, failed, flaky, skipped } : null;
+}
+
+/** A line the run's own process sent, checked field by field; null when it is not one. */
+export function parseRunMainToHub(line: string): RunMainToHub | null {
+  const value = readJson(line);
+  if (!value) return null;
+  switch (value.type) {
+    case 'run-begin': {
+      const { token, ref, cwd, pid, total, workers, shard } = value;
+      if (typeof token !== 'string' || typeof ref !== 'string' || !/^[\w-]{1,64}$/.test(ref)) return null;
+      if (!filePath(cwd) || !isInt(pid, 0) || !isInt(total, 0) || !isInt(workers, 1)) return null;
+      const shardOf =
+        isObject(shard) && isInt(shard.current, 1) && isInt(shard.total, 1) && shard.current <= shard.total
+          ? { current: shard.current, total: shard.total }
+          : null;
+      if (shard !== null && !shardOf) return null;
+      return {
+        type: 'run-begin',
+        token,
+        ref,
+        cwd,
+        pid,
+        playwright: text(value.playwright, 64) ?? '',
+        reporter: text(value.reporter, 64) ?? '',
+        total,
+        workers,
+        shard: shardOf,
+        ...(value.runner === true ? { runner: true as const } : {}),
+      };
+    }
+    case 'run-progress': {
+      const counts = readCounts(value);
+      return counts ? { type: 'run-progress', ...counts } : null;
+    }
+    case 'run-end': {
+      const counts = readCounts(value);
+      if (!counts || typeof value.status !== 'string') return null;
+      const { failure } = value;
+      let first: { title: string; error: string | null } | null = null;
+      if (failure !== null) {
+        if (!isObject(failure) || typeof failure.title !== 'string' || !failure.title.trim()) return null;
+        if (failure.error !== null && typeof failure.error !== 'string') return null;
+        first = {
+          title: failure.title.slice(0, MAX_RUN_FAILURE_TEXT),
+          error: failure.error === null ? null : failure.error.slice(0, MAX_RUN_FAILURE_TEXT),
+        };
+      }
+      const status = RUN_END_STATUSES.includes(value.status) ? (value.status as RunEndStatus) : 'other';
+      return { type: 'run-end', status, failure: first, ...counts };
+    }
+    default:
+      return null;
   }
 }

@@ -10,17 +10,16 @@ import { formatRecordChannel, lineReader } from '@piwitests/core/ide-recorder';
 import { LIVE_SHARE_MISSING, readWorkerToInstance, type WorkerToInstance } from '@piwitests/core/live-view';
 import { parseRunToHub, type HubToRun, type RunToHub } from '@piwitests/core/run-channel';
 import { detectCi } from '../src/internal/support/ci.js';
-import { jpegBand, jsonRes, startServer, type FakeServer } from './_helpers.js';
+import { jsonRes, startServer, type FakeServer } from './_helpers.js';
 
 /**
  * Share live in real Playwright runs outside CI, through the built package, against a fake instance and a fake editor
  * on the run channel. The global setup asks for a key in any run; outside CI the workers hold it and send the instance
  * nothing, and tell the editor the run can be shared, with its page there. The editor shares the run while its test
- * runs: the worker opens its stream, sends frames while someone watches, and the stop it holds shows as paused, its
- * page watched with the pause bar painted over, each frame decoded and its pixels checked. The editor stops sharing at
- * that stop: the viewers hear why, the stream closes, and nothing more goes to the instance, the stop's end included.
- * A run whose project has the live view off tells the editor why it cannot be shared, and a share asked anyway sends
- * nothing; so does a run that reports to the desktop app, which gives no key.
+ * runs: the worker opens its stream, sends frames while someone watches, and the stop it holds shows as paused. The
+ * editor stops sharing at that stop: the viewers hear why, the stream closes, and nothing more goes to the instance,
+ * the stop's end included. A run whose project has the live view off tells the editor why it cannot be shared, and a
+ * share asked anyway sends nothing; so does a run that reports to the desktop app, which gives no key.
  */
 
 const pkgRoot = path.join(import.meta.dirname, '..');
@@ -31,13 +30,10 @@ const KEY = `pdl_${'s'.repeat(43)}`;
 const REF = 'ed-5a1e5a1e';
 const TOKEN = 'live-view-share-token-0123456789';
 const requireHere = createRequire(import.meta.url);
-const WINDOWS = process.platform === 'linux' && !!process.env.DISPLAY;
-/** The viewport of the run's page, in CSS pixels. */
-const VIEWPORT = { width: 1280, height: 720 };
 
-/** A page that paints all the time, its content below where the pause bar shows. */
+/** A page that paints all the time. */
 const PAGE = `<!doctype html><meta charset="utf-8"><title>shop</title>
-<style>body { margin: 0; padding: 120px 20px 20px } #spin { width: 120px; height: 120px; background: linear-gradient(red, blue); animation: s 1s linear infinite } @keyframes s { to { transform: rotate(360deg) } }</style>
+<style>#spin { width: 120px; height: 120px; background: linear-gradient(red, blue); animation: s 1s linear infinite } @keyframes s { to { transform: rotate(360deg) } }</style>
 <h1>Shop</h1><div id="spin"></div>`;
 
 /** The test: its page shows, the editor shares the run meanwhile, then the test stops at its breakpoint (`bp`). */
@@ -68,8 +64,6 @@ interface Heard {
   beforeShare: number | null;
   afterUnshare: number | null;
   watched: boolean;
-  /** The frames sent while someone watched the stopped page. */
-  atStop: string[];
 }
 
 const fresh = (): Heard => ({
@@ -81,7 +75,6 @@ const fresh = (): Heard => ({
   beforeShare: null,
   afterUnshare: null,
   watched: false,
-  atStop: [],
 });
 
 /** A run of a project with the live view on, one of a project with it off, and one that reports to the desktop app. */
@@ -142,15 +135,6 @@ async function onReady(): Promise<void> {
 async function onStopped(stop: number): Promise<void> {
   if (mode === 'on') {
     await waitFor(() => heard.posts.some((p) => p.message.type === 'stop' && p.message.stop !== null));
-    // Someone watches the stopped page a while, its pause bar drawn in the test's window meanwhile.
-    const from = heard.posts.length;
-    sayViewers(1);
-    await sleep(2500);
-    sayViewers(0);
-    await sleep(500);
-    heard.atStop = heard.posts
-      .slice(from)
-      .flatMap((p) => (p.message.type === 'frame' && 'data' in p.message ? [p.message.data] : []));
     tell({ type: 'share', on: false });
     await waitFor(() => heard.posts.some((p) => p.message.type === 'unshared'));
     await waitFor(() => heard.streams.every((s) => s.closed));
@@ -172,12 +156,6 @@ async function runSuite(which: Mode, socketPath: string): Promise<void> {
   const spec = SPEC(server.url);
   const line = spec.split('\n').findIndex((l) => l.endsWith('// bp')) + 1;
   write(project, 'tests/share.spec.cjs', spec);
-  // The shared run stops headed, its pause bar drawn in the test's window; the others run headless. Without a display,
-  // Chromium runs it without a window (`--headless=new`).
-  const browser =
-    which === 'on'
-      ? `headless: false, launchOptions: { args: ${WINDOWS ? '[]' : "['--headless=new']"} }`
-      : 'headless: true';
   write(
     project,
     'fixture.cjs',
@@ -198,7 +176,7 @@ module.exports = wrapConfig(defineConfig({
   timeout: 60000,
   workers: 1,
   reporter: 'line',
-  use: { ${browser}, viewport: ${JSON.stringify(VIEWPORT)}, trace: 'off' },
+  use: { headless: true, viewport: { width: 1280, height: 720 }, trace: 'off' },
 }), { serverUrl: ${JSON.stringify(server.url)}, projectName: 'live-view-share-spec', streamingBatchDelay: 50 });
 `,
   );
@@ -353,21 +331,6 @@ describe('Share live of a run outside CI', () => {
     expect(run.posts.slice(unshared + 1)).toEqual([]);
     expect(run.liveRequests).toBe(run.afterUnshare);
     expect(run.lives[run.lives.length - 1]).toMatchObject({ can: true, on: false, viewers: 0 });
-  });
-
-  it('paints the pause bar over in each frame of the headed stop its viewers watch', () => {
-    const { heard: run } = runs.on;
-    expect(run.atStop.length).toBeGreaterThan(1);
-    // The bar's band, inside its bottom edge: gray where the bar is, or the page's white in a frame from before the bar
-    // was drawn, never the bar's violet.
-    const strips = run.atStop.map((data) => jpegBand(Buffer.from(data, 'base64'), VIEWPORT.height, 2, 30));
-    const gray = (mean: number[]) => mean.every((channel) => Math.abs(channel - 96) < 16);
-    const white = (mean: number[]) => mean.every((channel) => channel > 235);
-    for (const strip of strips) {
-      expect(strip.violet).toBe(0);
-      expect(gray(strip.mean) || white(strip.mean), `the band of the bar: ${strip.mean.join(', ')}`).toBe(true);
-    }
-    expect(gray(strips[strips.length - 1]!.mean)).toBe(true);
   });
 
   it('says why a run of a project with the live view off cannot be shared, and sends nothing when asked anyway', () => {

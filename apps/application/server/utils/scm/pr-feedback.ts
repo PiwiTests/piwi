@@ -489,20 +489,23 @@ export async function postRunPrFeedback(
   let statusPosted = false;
   const statuses: string[] = [];
   if (settings.status && commit) {
-    statusPosted = await provider.postCommitStatus(commit, buildCommitStatus(summary, settings.statusContext));
+    statusPosted = await provider.postCommitStatus(commit, {
+      ...buildCommitStatus(summary, settings.statusContext),
+      ref: branch,
+    });
     if (statusPosted) statuses.push(settings.statusContext);
     // A second, informational status for change coverage — warn-only.
     if (effectiveChangeCoverage && hasChangeCoverage(effectiveChangeCoverage)) {
       const coverageContext = `${settings.statusContext}/change-coverage`;
       const coveragePosted = await provider
-        .postCommitStatus(
-          commit,
-          buildChangeCoverageStatus(
+        .postCommitStatus(commit, {
+          ...buildChangeCoverageStatus(
             effectiveChangeCoverage,
             changeCoverageStatusUrl(effectiveChangeCoverage, summary.runUrl),
             coverageContext,
           ),
-        )
+          ref: branch,
+        })
         .catch(() => false);
       if (coveragePosted) statuses.push(coverageContext);
     }

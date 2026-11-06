@@ -239,33 +239,28 @@ What the package does to a user's run, process by process.
   memory until the view ends, and sent again as the view is asked again (a viewer that
   comes later, which a still page paints no other frame for); none is stored nor attached. Where the screencast cannot start (the test
   runs its own), an image of the page goes twice a second.
-- At a headed stop, every view of its page, this one and the instance's live view, paints the pause bar over in each
-  frame, as the image of the stop leaves it out (`page-view.ts`): `pauseHere` tells the page's views as it draws the
-  bar and once it is down (`pauseBarShows`). The bar's bottom edge and the viewport's size, in CSS pixels, are read
-  through an internal call as soon as it is drawn, and again for a frame that names another viewport than that read,
-  each view's first included, unless a read was made for that viewport already (the bar wraps onto a second row on a
-  narrower one); a frame the page painted before the bar came down keeps the last read that found it. A read made for
-  the frame's viewport that still names another size, at one scale on both axes, is of a page zoomed in, whose
-  screencast names its viewport in more pixels than CSS ones: the band is scaled to it; a size change never is. The
-  band from the viewport's top to that edge is painted gray across the frame with the `jpeg-js` of `live-mask.ts`
-  (`paintBoxes`), in the instance's view in the same pass as its masks, outside their rest, at the lighter quality when
-  too long at the view's. A frame the page painted after the bar came down goes as it is (one that names no time,
-  before Playwright 1.61, once the bar has been down a second), and so does one whose bar is not read within a second,
-  or with no `jpeg-js`. A painted frame holds the next one back as long again as its paint took. An image of the page
-  taken in place of a frame names the viewport as the screencast does, the page's own (`page.viewportSize()`), else,
-  for a page without one, the image's size at CSS scale, which Playwright gives in no other pixels.
+- **The lane** (`lane-feed.ts`): the test the worker runs, the page it shows (its `page`
+  fixture's, else the first page the browser opened during it, else the next one still
+  open once that one closes), and the stop it stands at, whose page shows while it stands
+  there. Every view outside the page is a sink of one live view of the page shown: the
+  editor's view of a stop (`view`), its view of the lane (`view-lane`) and the instance's
+  live view, each at its own pace (`LatestPacer`), each frame masked once with the masks
+  every sink names. That view asks the page for the largest size and quality and the
+  highest pace a sink asks, keeps each frame within the smallest size in bytes a sink takes,
+  and opens again, once the one before let the page's screencast go, as the page shown or
+  what the sinks ask changes. Nothing runs while no sink subscribes.
+- `view-lane`, to a worker whose `run-attach` lists it in `features` (`takes` holds 16
+  entries at most), shows the lane until it is turned off or the connection closes, through
+  the worker's tests and stops: each frame goes as `lane-frame` with the test it shows and
+  the stop the worker stands at (none while it runs), and none goes between two tests. At a
+  stop the lane view shows, `input` and the actions in the page take it as that stop's view.
 - `input` plays a viewer's mouse, wheel, key and text events (`@piwitests/core/run-view`:
   Playwright's key names alone, nothing evaluated) with `page.mouse` and `page.keyboard`
   through internal calls: trusted input that reaches whatever is at the point, Piwi's
-  overlays included (the picker, the recorder). Only while that stop's view is watched,
+  overlays included (the picker, the recorder, a headed stop's pause bar, whose buttons
+  answer the stop as a click in the window does). Only while that stop's view, or the lane
+  view showing it, is watched,
   200 events a second at most, and what it holds down is let go before the test goes on.
-  None reaches the pause bar the view paints over: a press or a click on its band, while it
-  shows and the view paints it (`barBand`), is not played, nor the release of a button
-  pressed there, and the answer says how many were not. Before a key, each draw of the bar
-  the message meets, one drawn again after a navigation included, is held inert by that
-  message's token until it ends (`holdBarFrom`), so Tab passes it by, no key presses its
-  buttons, and Escape, which an inert bar leaves to the page, closes the page's own dialog
-  and resumes nothing; a message that ends late lets go of its own hold alone.
 - At a stop no bar shows, Pick a locator, Record here, Assert and Assert a region run in
   the page while its view is watched (`viewHere` in `pause-at.ts`), driven through that
   input. They end with the view or the stop, leaving nothing of theirs in the page (the
@@ -404,15 +399,16 @@ What the package does to a user's run, process by process.
   worker started with and hands what changed to the projects that depend on its own,
   and takes it out again on the next tick.
 - On it the instance says how many people watch the worker (`viewers`). While anyone does,
-  the test's `page` goes out as its screencast (`page-view.ts`, the helper the editor's view
-  of a stop uses too), through internal calls: at most 640 by 400 at quality 50 unless the
-  test's trace or video came first (their size and quality, 800 wide at 90), four frames a
-  second and about 256 KB a second (a heavier frame holds the next one back longer), a
-  frame over 192 KB replaced by an image at quality 30. One post is in flight at a time,
+  the test's `page` goes out as its screencast (the lane's one view, `lane-feed.ts`, which
+  the editor's views share), through internal calls: at most 640 by 400 at quality 50 unless the
+  test's trace or video came first (their size and quality, 800 wide at 90), or an editor's
+  view of the run is on too (the largest size and quality the views ask, 1280 by 800 at 60,
+  and the stop's page while the worker stands at one), four frames a
+  second and about 256 KB a second (a heavier frame holds the next one back longer, before it
+  is masked), a frame over 192 KB replaced by an image at quality 30. One post is in flight at a time,
   the latest frame alone waiting; each frame carries the call the runner's steps say the
   test is on (`callInProgress`, its title through `hideSecretsInText`) and the test's
-  title, a headed stop's pause bar painted over as in the editor's view. Nobody watching, no screencast runs and no
-  frame goes.
+  title. Nobody watching, no screencast runs and no frame goes.
 - In a CI run alone, while anyone watches a test nothing may pause (`mayPause`: no
   `PIWI_PAUSE_AT`, `PWDEBUG` or `--debug`), the worker also follows the call its test is in
   (`live-call-log.ts`): it listens to the context's call stream, then turns it on
@@ -438,8 +434,7 @@ What the package does to a user's run, process by process.
   connection or a live view connection), `instrumentPage` hands the test `page.screencast`
   behind a proxy (`guardScreencast`): the test's `start` or `stop` first ends the client a
   view holds, and that view goes on with an image of the page every second, its caret as
-  the page shows it, as does any later view of that page and a second view of a page
-  another view holds.
+  the page shows it, as does any later view of that page.
 - The view stops as nobody watches, as the test ends (the worker posts `ended`) and as its
   page closes; a viewer that joins gets the latest frame again, and one that joins while no
   test runs (a `beforeAll`, between tests) hears why no image shows. Each stop the

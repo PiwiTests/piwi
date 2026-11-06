@@ -66,24 +66,34 @@ starts again once it answers; the Runs window says how each paired tool stands, 
 times on its backoff, then once a minute while it is open, reads a proofless 404 as no editor, and frees a command's buttons after 25 s; the popup keeps a muted Runs tile
 while a paired tool does not answer; and the local live view and stop image are masked as the team's, the image at
 CSS scale and of the viewport's shape, every call's and stop's title through `hideTypedText`, the pause bar's and the
-terminal's included. Built ahead of their phases from #1110 and #1111: the pause bar's band is painted over in every
-live frame of a headed stop, the editor's view and the team's, read again for each view and viewport; a viewer's press
-on it is not played, and while a viewer's keys play the bar is inert and leaves Escape to the page; in both editors, a
-new stop takes the focus only while no other held stop's file is open or as a stop of the slot the person is on, and
-the paused page keeps its stop while held, the stopgap before P4's lane view; the Windows thumbnail's Open restores a
-minimized window, and its Stop is disabled while no local run runs.
+terminal's included, so the bar itself carries nothing to paint over.
 In the desktop app, a client plugin holds the hub stream from the window's start, through the TV layout and again after
 a reload while the hub says runs go on (`hub-runs`); stopping a local run takes its own progress alone off the OS bar;
-and a bisect's, a reproduction's or a Flake Lab's steps flash nothing, the job's verdict once. `features` stays out of
-`run-attach`, whose `takes` already lists what a worker does: P4's lane view is one more entry there. P3 is built;
+and a bisect's, a reproduction's or a Flake Lab's steps flash nothing, the job's verdict once. P3 is built;
 the tray's own runs and its Hold failures choices are still lost on a reload, and its separate output windows still
-close with it. The later phases are proposed. The bugs the analysis
+close with it. Built from P4: a worker keeps one live view of its lane's page (`lane-feed.ts`: the running test's page,
+the stop's while it stands at one), which the editor's stop view, its lane view and the instance's live view share,
+each at its own pace, masked once with every sink's masks; `run-attach` lists `view-lane` in a new `features`, `takes`
+being at its 16 entries. A hub whose `welcome` lists `lanes` takes `watch` on a lane and sends its `lane-frame`s to its
+viewers alone, through its tests, its stops and the worker Playwright starts in its place; at a stop of the running
+test a viewer of the lane drives it as that stop's viewer, and an older reporter is told to update. Piwi Picker's Runs
+window offers **Watch** and **Pause and watch** on a running worker, keeps the last image dimmed across a Step, a
+Resume and between tests, brings a watched lane that stops into view with its controls above the image, and holds
+Pick, Record and Assert with **Watch to use** at a headless stop nobody watches; the desktop app watches its own
+running rows the same way, from the run page's rows and the tray. The run's own process (the reporter's main process)
+connects to the hub on its own line (`run-begin`, `run-progress`, `run-end`), so the editors' status bars and the Runs
+window say `3 of 9`, and the Runs window how a run ended. `piwi/laneView` gives the editors a lane: VS Code's **Piwi: worker N** watches
+it running or stopped, with Interact at its stops, and JetBrains' **Worker N** tab watches it. While a Pause waits for
+the call a test runs, the worker says which (`waiting`, from a reporter that lists `give-up` in its `features`), and the
+editors' status bars and lane views, the Runs window and the desktop app's tray say it with how long it has run, and
+offer **End the test** there (`give-up`): a locator call is given up through its end signal, and after any other call
+the test is skipped at its next locator call. P4's showcase beat is not built yet. The later phases are proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app
 shell slips) and #1112 (the default trace's ARIA snapshots slow large pages). The phases below fix the first six: P0
-to P3 most of them, and the rest later (#1108's run links and #1109's Stuck? mark in P5, #1110's lane view in P4,
-#1111's stopped state and the thumbnail's Stop on one run in P6). #1109's notification is fixed already: no run started on a developer's
+to P3 most of them, and the rest later (#1108's run links and #1109's Stuck? mark in P5, #1110's editor focus in P4,
+#1111's stopped state and thumbnail in P6). #1109's notification is fixed already: no run started on a developer's
 machine (a terminal, the desktop app, an editor, `piwi preflight --run`, `piwi bug --write`) sends `test.stuck`, the
 `stuck-notifications` use of `run-eligibility.ts`. #1112 is fixed on its own: the default trace takes no ARIA
 snapshots. Nothing

@@ -32,8 +32,10 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   `src/debug-link.ts` use no VS Code API.** Put logic that needs no editor there, so the unit tests (`npm run vscode:test`) cover it.
   ([The pure half](ARCHITECTURE.md#the-pure-half))
 - **A run control names the stop it answers, and a line sent for a run is a line of the run's code.** Resume, Step, Run
-  to the cursor, Finish and End the test pass the stop's `since`; Run to the cursor and `piwi/setRunBreakpoints` map the
-  editor's lines back through `EditLog` (`runPlaces` for the breakpoints). Checked by `tests/run-control.test.ts`.
+  to the cursor, Finish and End the test at a stop pass the stop's `since` (End the test while a Pause waits, `give-up`,
+  answers no stop, and a command naming one never reaches it: `endChoice`); Run to the cursor and
+  `piwi/setRunBreakpoints` map the editor's lines back through `EditLog` (`runPlaces` for the breakpoints). Checked by
+  `tests/run-control.test.ts`.
   ([Run control](ARCHITECTURE.md#run-control); the service's side: [Controls, breakpoints and the paused
   page](../../packages/editor/ARCHITECTURE.md#controls-breakpoints-and-the-paused-page))
 - **The code a stop makes is one workspace edit, made only in the version of its document the service placed it in**
@@ -60,12 +62,6 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **A run's controls are the exception: they take the debugger's keys, only while they apply and no debug session
   runs** (`!inDebugMode` in `contributes.keybindings`). **Pause** has no default key: a key bound for as long as a
   test runs takes one from the workbench. ([Keybindings](ARCHITECTURE.md#keybindings))
-- **A new stop takes the focus only while no other stop's file is open, or as a stop of the worker slot the person is
-  on; any other leaves the editor in use, its selection and the paused page view alone. The view keeps its stop while
-  held, then waits for a slot stepped or run to the cursor from the editor while a worker holds it, `RESERVED_MS` at
-  most, a timer asking again then** (`StopsShown`, `waitsUntil`, `asideColumn`), as in the JetBrains plugin. Checked by
-  `tests/run-control.test.ts` ("what the editor shows of the stops"), fed the pushes the service sends.
-  ([Run control](ARCHITECTURE.md#run-control))
 - **One undo step per recording.** The first write of the block opens an undo stop and the later ones join it
   (`undoStopBefore: false`), so one Undo after Stop removes the block and its imports.
   ([Undo during a recording](ARCHITECTURE.md#undo-during-a-recording))
@@ -113,11 +109,12 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **A run is shared live on the team instance only from the person's command, after a modal warning the first time in
   the window** (`shareLive` in `src/run-view.ts`, `shareLiveWarning`), as the JetBrains plugin does; only a run known
   not to be shareable is asked without it, for the service to say why. Checked by `tests/run-control.test.ts` ("Share live").
-- **The paused page webview runs scripts only by the style's nonce, for picking or a capable stop's live preview.**
-  Its document takes images from `data:` only. Live input requires Watch live and the separate Interact opt-in, and
-  messages name the shown stop: checked by `tests/run-control.test.ts` and `tests/e2e/paused-page.spec.mjs`. Only a
-  change of the panel's visibility, its closing or another stop shown in it ends or restarts its watch, never a focus
-  change (`pausedPageViewChange`, checked by `tests/run-control.test.ts`).
+- **The paused page and worker panel webviews run scripts only by the style's nonce, for picking or a live view.**
+  Their documents take images from `data:` only. Live input requires the view on and the separate Interact opt-in, and
+  messages name the view they were drawn for, a stop's at a stop: checked by `tests/run-control.test.ts`,
+  `tests/e2e/paused-page.spec.mjs` and the integration suite. Only a change of the panel's visibility, its closing or,
+  for the paused page, a new stop ends or restarts its watch, never a focus change (`pausedPageViewChange`, checked by
+  `tests/run-control.test.ts`).
   ([Run control](ARCHITECTURE.md#run-control))
 
 ## Workflow
@@ -161,8 +158,8 @@ npm run vscode:package            # dist/piwi.vsix
 - `src/send-listener.ts`: the Send to editor endpoint.
 - `src/debug-link.ts`: a debug link read and checked; `src/debug-from-link.ts`: the prompt, then the run.
 - `src/breakpoints.ts`: the breakpoints a test run passes to the service.
-- `src/run-view.ts`: the run controls (the stops, their commands, the paused page); `src/run-control.ts`: their pure
-  half.
+- `src/run-view.ts`: the run controls (the stops, their commands, the paused page); `src/worker-panel.ts`: the worker
+  panel (**Piwi: worker N**); `src/run-control.ts`: their pure half.
 - `walkthrough/`, `media/`: the walkthrough's steps, and the gutter icons and the execution point's arrow.
 - `scripts/`: the screenshots script, and the fixture project it shares with the JetBrains plugin.
 - `tests/`: the unit tests, `tests/integration/` and `tests/e2e/`.

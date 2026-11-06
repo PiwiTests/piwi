@@ -114,15 +114,10 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **The run controls use the debugger actions' shortcuts (`use-shortcut-of`), and give way to a debug session.** From
   the keyboard they are enabled only while no debug session runs, and `PiwiRunActionPromoter` puts them first only
   while a run is live. Checked by `PiwiRunControlTest`. ([Run control](ARCHITECTURE.md#run-control))
-- **A control names the stop it answers, and a line sent for a run is a line of the run's code.** Each control passes
-  the stop's `since`; Run to Caret and the breakpoints map the editor's lines back through `Glue.EditLog`
+- **A control names the stop it answers, and a line sent for a run is a line of the run's code.** Each control at a
+  stop passes the stop's `since` (End the Test while a Pause waits, `give-up`, answers none); Run to Caret and the breakpoints map the editor's lines back through `Glue.EditLog`
   (`Glue.runPlaces` for the breakpoints). Checked by `GlueTest` and `PiwiRunControlTest`.
   ([Run control](ARCHITECTURE.md#run-control))
-- **A new stop takes the focus only while no other stop's file is open, or as a stop of the worker slot the person is
-  on; any other leaves the editor in use, its caret and the Paused Page tab alone. The tab keeps its stop while held,
-  then waits for a slot stepped or run to the caret from the IDE while a worker holds it, `Glue.RESERVED_MILLIS` at
-  most, an `Alarm` drawing again then** (`Glue.StopsShown`, `waitsUntil`), as in the VS Code extension. Checked by
-  `GlueTest`, fed the pushes the service sends. ([Run control](ARCHITECTURE.md#run-control))
 - **The code a stop makes is written in one `WriteCommandAction` in an editor, once the service knows the document,
   and only into the version the service placed it in.** A file no editor shows is opened first and written once its
   `LspServer.getDocumentVersion` is known (`whenOpened`, an `Alarm` on the event thread, three seconds at most), so the
@@ -179,7 +174,8 @@ All under `src/main/kotlin/dev/piwitests/jetbrains/` unless noted.
 - `PiwiCommands.kt`, `PiwiActions.kt`, `PiwiPlaywrightRunner.kt`: the commands, the actions under **Tools → Piwi**, the
   IDE's Playwright runner.
 - `PiwiRunControl.kt`: the run controls (`PiwiRunSessions`: the stops, the execution point, the inlay, the paused
-  page, the actions and `PiwiRunActionPromoter`), and the code from a stop (`StopCodeAction`, `CaretCountInlay`).
+  page, the Worker tab, the actions and `PiwiRunActionPromoter`), and the code from a stop (`StopCodeAction`,
+  `CaretCountInlay`).
 - `PiwiRecordingActions.kt`, `PiwiRecording.kt`, `PiwiRecordingViews.kt`, `RecordHereIntention.kt`: recording.
 - `PiwiSendHandler.kt`, `PiwiOpenHandler.kt`, `OpenOrigins.kt`: the built-in server's endpoints.
 - `PiwiConnect.kt`, `PiwiConfigurable.kt`, `PiwiColorSettingsPage.kt`: Connect and the settings pages.

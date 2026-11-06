@@ -26,7 +26,7 @@ import {
   type HandoffToTest,
   type IdeRecorderPaused,
 } from '@piwitests/core/ide-recorder';
-import { parseRunToHub, type RunToHub } from '@piwitests/core/run-channel';
+import { parseRunMainToHub, parseRunToHub, type RunMainToHub, type RunToHub } from '@piwitests/core/run-channel';
 import { RecorderHost } from './host-state.js';
 import type { LauncherEvents, LauncherFactory } from './sessions.js';
 
@@ -60,6 +60,8 @@ export interface RecordChannelOptions {
   onCheck?(handoff: Handoff): void;
   /** A worker opened its run connection: returns where its next lines go. Without it, the connection is closed. */
   onRun?(socket: net.Socket, attach: Extract<RunToHub, { type: 'run-attach' }>): (line: string) => void;
+  /** A run's own process opened its connection (`run-begin`): returns where its next lines go. Without it, it is closed. */
+  onRunMain?(socket: net.Socket, begin: Extract<RunMainToHub, { type: 'run-begin' }>): (line: string) => void;
   /** How long a hand-off waits for the editor; {@link HANDOFF_WAIT_MS} by default. */
   waitMs?: number;
   /**
@@ -154,8 +156,8 @@ export class RecordChannel {
   }
 
   /**
-   * A test connected: its first line must be an attach or a worker's run-attach, with the token; anything else closes
-   * it.
+   * A test connected: its first line must be an attach, a worker's run-attach or the run's own `run-begin`, with the
+   * token; anything else closes it.
    */
   private accept(socket: net.Socket): void {
     socket.setEncoding('utf8');
@@ -173,8 +175,11 @@ export class RecordChannel {
         const message = parseHandoffToEditor(line);
         if (message?.type !== 'attach') {
           const attach = parseRunToHub(line);
+          const begin = attach ? null : parseRunMainToHub(line);
           if (attach?.type === 'run-attach' && sameToken(attach.token, this.token) && this.options.onRun) {
             run = this.options.onRun(socket, attach);
+          } else if (begin?.type === 'run-begin' && sameToken(begin.token, this.token) && this.options.onRunMain) {
+            run = this.options.onRunMain(socket, begin);
           } else socket.destroy();
           return;
         }

@@ -7627,7 +7627,101 @@
   },
   "runs_ended": {
     "message": "The run ended.",
-    "description": "Runs window, on a run that ended. The editor does not say whether its tests passed."
+    "description": "Runs window, on a run that ended, when its reporter does not say how it ended (an older one)."
+  },
+  "runs_progress_one": {
+    "message": "$done$ of $count$ test",
+    "description": "Runs window, under a run’s name: how many of its tests ended (done) of all it holds (count), as the run’s own process says.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "done": {
+        "content": "$2",
+        "example": "0"
+      }
+    }
+  },
+  "runs_progress_other": {
+    "message": "$done$ of $count$ tests",
+    "description": "Runs window, under a run’s name: how many of its tests ended (done) of all it holds (count), as the run’s own process says.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "9"
+      },
+      "done": {
+        "content": "$2",
+        "example": "3"
+      }
+    }
+  },
+  "runs_progressFailed_one": {
+    "message": "$count$ failed",
+    "description": "Runs window, after runs_progress: how many of the run’s tests failed so far.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_progressFailed_other": {
+    "message": "$count$ failed",
+    "description": "Runs window, after runs_progress: how many of the run’s tests failed so far.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_progressFlaky_one": {
+    "message": "$count$ flaky",
+    "description": "Runs window, after runs_progress: how many of the run’s tests passed only on a retry.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_progressFlaky_other": {
+    "message": "$count$ flaky",
+    "description": "Runs window, after runs_progress: how many of the run’s tests passed only on a retry.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_endedPassed": {
+    "message": "The run passed.",
+    "description": "Runs window, on a run that ended with every test passed or skipped."
+  },
+  "runs_endedFailed": {
+    "message": "The run failed.",
+    "description": "Runs window, on a run that ended with a failure."
+  },
+  "runs_firstFailure": {
+    "message": "First failure: $title$",
+    "description": "Runs window, after runs_endedFailed: the title of the run’s first failed test (title), as Playwright names it.",
+    "placeholders": {
+      "title": {
+        "content": "$1",
+        "example": "cart › adds a mug"
+      }
+    }
+  },
+  "runs_endedTimedOut": {
+    "message": "The run timed out.",
+    "description": "Runs window, on a run that ended because it reached its global timeout."
+  },
+  "runs_endedInterrupted": {
+    "message": "The run was interrupted.",
+    "description": "Runs window, on a run that ended because it was stopped (Stop, Ctrl+C, or its maximum of failures)."
   },
   "runs_stoppedBreakpoint": {
     "message": "Stopped at a breakpoint",
@@ -7656,6 +7750,30 @@
   "runs_statePausing": {
     "message": "Pausing…",
     "description": "Runs window, the state of a test a Pause reached, until it stops before its next call."
+  },
+  "runs_statePausingIn": {
+    "message": "Pausing: waits in $call$",
+    "description": "Runs window, the state of a test a Pause reached while it waits in a call (call, as Playwright titles it): it stops once the call returns.",
+    "placeholders": {
+      "call": {
+        "content": "$1",
+        "example": "Click getByRole('button', { name: 'Pay' })"
+      }
+    }
+  },
+  "runs_waitedFor": {
+    "message": "for $time$",
+    "description": "Runs window, after runs_statePausingIn: how long the call has run so far (time, a number of seconds).",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12 s"
+      }
+    }
+  },
+  "runs_giveUpTitle": {
+    "message": "End the test now: the call it waits in is given up where it can be, and the rest of the test is skipped",
+    "description": "Runs window, the tooltip of End the test while a Pause waits for the call the test runs: the call is given up, or the test is skipped as it returns."
   },
   "runs_stateRunning": {
     "message": "Running",
@@ -7936,6 +8054,38 @@
   "runs_liveHint": {
     "message": "Your clicks, the wheel and your keys on the view go to the test’s page. Esc gives the keys back to this window; Shift+click picks a locator.",
     "description": "Runs window, a hint under the live view the first time the clicks and keys on it go to the page. Esc is the Escape key; Shift+click a click with Shift held."
+  },
+  "runs_watch": {
+    "message": "Watch",
+    "description": "Runs window, the toggle button on a worker’s row that shows its test’s page while it runs, through its stops and its next tests. A button: keep it short."
+  },
+  "runs_watchTitle": {
+    "message": "Show the test’s page as it runs, through its stops and its next tests: at a stop, your clicks and keys on it go to the page",
+    "description": "Runs window, the Watch button’s tooltip."
+  },
+  "runs_pauseWatch": {
+    "message": "Pause and watch",
+    "description": "Runs window, the button on a running worker’s row that pauses its test before its next call and shows its page (Watch, runs_watch). A button: keep it short."
+  },
+  "runs_pauseWatchTitle": {
+    "message": "Stop the test before its next call, and show its page",
+    "description": "Runs window, the Pause and watch button’s tooltip."
+  },
+  "runs_watchOutdated": {
+    "message": "Update the reporter to watch a running test",
+    "description": "Runs window, the tooltip of the Watch button, held, on the row of a worker whose Piwi reporter cannot show its page while it runs. The reporter is the Piwi Playwright reporter package."
+  },
+  "runs_watchToUse": {
+    "message": "Watch to use",
+    "description": "Runs window, the tooltip of Pick, Record and Assert, held, at a stop no pause bar shows (a headless test) that this window does not watch: they work once the person turns on Watch (runs_watch) or Watch live (runs_live). Short."
+  },
+  "runs_laneRunning": {
+    "message": "Running…",
+    "description": "Runs window, the mark on a watched test’s last image, dimmed, while the test runs on and no newer image came yet. One or two short words."
+  },
+  "runs_laneAltLast": {
+    "message": "The test’s page, as last seen",
+    "description": "Runs window, the name of a watched test’s last image, dimmed, while it no longer shows where the test stands."
   },
   "runs_pickAt": {
     "message": "Pick on the image",

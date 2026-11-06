@@ -222,9 +222,34 @@
         color: var(--muted);
       }
       .run-ended > .piwi-icon {
+        flex-shrink: 0;
         width: 14px;
         height: 14px;
         color: var(--ok);
+      }
+      .run-ended.failed > .piwi-icon {
+        color: var(--error);
+      }
+      .run-ended.timedout > .piwi-icon,
+      .run-ended.interrupted > .piwi-icon {
+        color: var(--warn);
+      }
+      .run-ended .first-failure {
+        overflow-wrap: anywhere;
+      }
+      /* How far a run is, under its name, as its own process says. */
+      .run-progress {
+        margin: 0;
+        padding: 6px 12px;
+        border-bottom: 1px solid var(--border);
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .run-progress .failed {
+        color: var(--error);
+      }
+      .run-progress .flaky {
+        color: var(--warn);
       }
       .workers {
         list-style: none;
@@ -307,9 +332,9 @@
         font-family: var(--mono);
         font-size: 11.5px;
       }
-      /* The stopped page: an image the hub took, never a page of its own. */
+      /* The stopped page, or a watched lane's, under the controls: an image the hub took, never a page of its own. */
       .page {
-        margin: 0 0 8px;
+        margin: 8px 0 0;
       }
       .page img {
         display: block;
@@ -350,6 +375,10 @@
         outline: 2px solid var(--accent-fg);
         outline-offset: 2px;
       }
+      /* A watched lane's last frame, while it no longer shows where the test stands: dimmed until the next one comes. */
+      .page img.stale {
+        opacity: 0.5;
+      }
       /* Pick on the image waits for a click. */
       .page[data-picking] img {
         cursor: crosshair;
@@ -374,6 +403,11 @@
       .live-badge > .piwi-icon {
         width: 10px;
         height: 10px;
+      }
+      /* On a watched lane's last frame while its test runs on: a gray that keeps its white text's contrast. */
+      .live-badge.running {
+        padding-left: 6px;
+        background: #374151;
       }
       /* The controls that steer the test, then the code a stop can write, on a row of their own. */
       .controls {

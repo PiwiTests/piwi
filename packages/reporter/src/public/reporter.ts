@@ -33,6 +33,7 @@ import { htmlReportFolder } from '../internal/files/html-report.js';
 import { ATTACHMENT_NAMES, INTERNAL_ATTACHMENT_NAMES, findPiwiAttachment } from '../internal/capture/attachments.js';
 import { MetadataCollector, resolveScmBranch } from '../internal/collect/metadata-collector.js';
 import { StreamManager } from '../internal/streaming/stream-manager.js';
+import { RunHubLink } from '../internal/streaming/run-hub-link.js';
 import {
   collectStepMetrics,
   extractTestStepEvents,
@@ -221,6 +222,8 @@ export class PiwiDashboardReporter {
   private uncapturedSpecs = new Set<string>();
   /** Whether the run is a CI run whose workers stream to the instance's live view, set in `onBegin`. */
   private liveViewOn = false;
+  /** The run's own connection to the hub its workers reach, from `onBegin` to `onEnd`; null for a run without one. */
+  private hubLink: RunHubLink | null = null;
   /** The live steps begun and not ended, by step, sent again when someone opens the run (`onWatched`). */
   private openSteps = new Map<unknown, StreamEvent>();
   /**
@@ -391,6 +394,8 @@ export class PiwiDashboardReporter {
           `${PIWI_EDITOR_ENV}=off runs it alone.`,
       );
     }
+    // The hub its workers reach hears how far the run is, from its own process.
+    this.hubLink = RunHubLink.open(process.env, config, suite.allTests().length, getReporterVersion());
     if (!this.enabled) {
       if (this.serverUrlProblem) this.logger.warn(`${this.serverUrlProblem} Nothing is sent to the dashboard.`);
       else this.logger.info('Not enabled — set PIWI_DASHBOARD_URL or serverUrl to enable.');
@@ -863,6 +868,7 @@ export class PiwiDashboardReporter {
 
   /** Playwright reporter hook: called when an individual test finishes */
   onTestEnd(test: TestCase, result: TestResult): void {
+    this.hubLink?.testEnded(test, result);
     this.totalTests++;
     // A worker runs one test at a time: a step of its still open once the test ended (a worker that crashed) never ends.
     const worker = workerIndexOf(result);
@@ -1247,6 +1253,7 @@ export class PiwiDashboardReporter {
    * ID and `externalId.onDuplicate` is `'fail'`.
    */
   async onEnd(result: FullResult): Promise<{ status?: FullResult['status'] } | void> {
+    await this.hubLink?.end(result?.status ?? 'other');
     this.noteOtherUncaptured();
     const duplicates = this.externalIds?.duplicates.length ?? 0;
     const failsOnDuplicates =

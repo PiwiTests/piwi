@@ -677,11 +677,71 @@ class GlueTest {
         assertEquals(null, Glue.sharedLive(mapOf("ed-1" to ready)))
         assertEquals("Shared live on piwi.example.com: 2 views open", Glue.sharedLiveText(shared.live!!))
         assertEquals("Shared live: nobody watches yet", Glue.sharedLiveText(RunLive(true, null, null, 0)))
+        // How far the runs are, as their own processes say: none from a reporter that predates it.
+        assertEquals(null, Glue.runProgressText(mapOf("ed-1" to ready)))
+        val counted = ready.copy(progress = RunProgress(total = 9, done = 3))
+        assertEquals("Piwi: 3 of 9", Glue.runProgressText(mapOf("ed-1" to counted)))
+        val failing = ready.copy(ref = "ed-2", progress = RunProgress(total = 1, done = 1, failed = 1, status = "failed"))
+        assertEquals("Piwi: 4 of 10 · 1 failed", Glue.runProgressText(mapOf("ed-1" to counted, "ed-2" to failing)))
         val stoppedShared = mapOf("ed-1" to shared.copy(workers = listOf(RunWorker(0, 0, "stopped", runTest(), stopAt(pageUri, 4)))))
         assertEquals(
             "Piwi: paused · checkout.page.ts:5 · shared live · 2 views",
             Glue.runControlStatus(Glue.runControls(stoppedShared), Glue.stopsOf(stoppedShared)),
         )
+    }
+
+    @Test
+    fun `the workers a Worker tab can watch, and what it says of its slot`() {
+        val sessions = mapOf(
+            "ed-1" to session(
+                "ed-1",
+                RunWorker(0, 0, "running", runTest(), watchable = true),
+                RunWorker(1, 1, "stopped", runTest(), stopAt(specUri, 5), watchable = true),
+                RunWorker(2, 2, "running", runTest()),
+                RunWorker(3, 3, "between", watchable = true),
+            ),
+        )
+        assertEquals(
+            listOf("Worker 1 · running checkout › pays", "Worker 2 · stopped in checkout › pays", "Worker 4 · between tests"),
+            Glue.watchableWorkers(sessions).map { it.label },
+        )
+        assertEquals(listOf(0, 3), Glue.watchableWorkers(sessions, pausable = true).map { it.worker })
+        assertTrue(Glue.runControls(sessions).watchable)
+        assertFalse(Glue.runControls(mapOf("ed-2" to session("ed-2", RunWorker(0, 0, "running", runTest())))).watchable)
+        val stops = Glue.stopsOf(sessions)
+        assertEquals("Worker 1 · the run ended.", Glue.laneShown(null, 0, stops).caption)
+        assertEquals("Worker 6 · starting…", Glue.laneShown(sessions["ed-1"], 5, stops).caption)
+        assertEquals("Worker 4 · between tests", Glue.laneShown(sessions["ed-1"], 3, stops).caption)
+        assertEquals("Worker 1 · Running · checkout › pays", Glue.laneShown(sessions["ed-1"], 0, stops).caption)
+        val stopped = Glue.laneShown(sessions["ed-1"], 1, stops)
+        assertEquals(stops.single(), stopped.stop)
+        assertEquals("Worker 2 · Paused · Fill \"WELCOME10\" getByLabel('Coupon') · checkout.spec.ts:6", stopped.caption)
+    }
+
+    @Test
+    fun `a Pause that waits for a call says which, and End the Test ends the test there`() {
+        val waiting = RunWaiting("Click getByRole('button', { name: 'Pay' })", specUri, 4, "2026-10-25T10:00:00.000Z", true)
+        val sessions = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "running", runTest(), pausing = true, waiting = waiting)))
+        val controls = Glue.runControls(sessions)
+        assertEquals(waiting, controls.waiting)
+        assertEquals(
+            "Piwi: pausing… · waits in Click getByRole('button', { name: 'Pay' })",
+            Glue.runControlStatus(controls, Glue.stopsOf(sessions)),
+        )
+        assertEquals(listOf(Glue.WaitingWorker("ed-1", 0, waiting)), Glue.waitingWorkers(sessions))
+        assertEquals(
+            "Worker 1 · Pausing · waits in Click getByRole('button', { name: 'Pay' }) · checkout › pays",
+            Glue.laneShown(sessions["ed-1"], 0, emptyList()).caption,
+        )
+        // A long call is cut in the status bar.
+        val long = waiting.copy(title = "Click " + "getByRole('row').".repeat(10))
+        val longSessions = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "running", runTest(), pausing = true, waiting = long)))
+        val status = Glue.runControlStatus(Glue.runControls(longSessions), emptyList())!!
+        assertEquals("Piwi: pausing… · waits in " + long.title.take(59).trimEnd() + "…", status)
+        // A worker no Pause reached waits in nothing.
+        val going = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "running", runTest(), waiting = waiting)))
+        assertNull(Glue.runControls(going).waiting)
+        assertEquals(emptyList<Glue.WaitingWorker>(), Glue.waitingWorkers(going))
     }
 
     @Test
@@ -702,158 +762,6 @@ class GlueTest {
         assertEquals(2, stops.map(Glue::stopKey).toSet().size)
         assertEquals("Paused · Fill \"WELCOME10\" getByLabel('Coupon') · checkout › pays · checkout.page.ts:9 · worker 3", Glue.stopLabel(stops[1]))
         assertEquals("Piwi: 2 tests paused", Glue.runControlStatus(Glue.runControls(sessions), stops))
-    }
-
-    /** Worker `index` of `ed-1`, in slot `slot`, stopped headless at `line`, or with the pause bar for `bar`. */
-    private fun stoppedAt(index: Int, line: Int, bar: Boolean = false, slot: Int = index, reason: String = "breakpoint") =
-        RunWorker(index, slot, "stopped", runTest(), stopAt(specUri, line, bar).copy(reason = reason))
-
-    private fun runningWorker(index: Int) = RunWorker(index, index, "running", runTest())
-
-    /**
-     * The pushes of run `ed-1` as the service sends them, 100 ms apart, through `Glue.StopsShown` as the plugin takes
-     * them: each new stop's file opened in its turn (none for a line in `unopened`), and the page the tab opens shown
-     * there. Each push says which workers' files opened with the focus or without, and the page opened, as
-     * `worker to line`.
-     */
-    private class Pushes(private val unopened: Set<Int> = emptySet()) {
-        val shown = Glue.StopsShown()
-        var now = 0L
-
-        fun push(vararg workers: RunWorker): Pair<List<Pair<Int, Boolean>>, Pair<Int, Int>?> {
-            now += 100
-            val sessions = mapOf("ed-1" to RunSession("ed-1", "/work/shop", workers.toList()))
-            val change = shown.changed(sessions, Glue.stopsOf(sessions), now)
-            val opened = change.open.filter { it.stop.line !in unopened }.map { stop ->
-                val focus = shown.focusFor(stop)
-                shown.opened(stop, focus)
-                stop.worker to focus
-            }
-            change.page?.let(shown::view)
-            return opened to change.page?.let { it.worker to it.stop.line }
-        }
-
-        /** A control from the IDE answers `stop`. */
-        fun answer(action: String, stop: RunWorker) {
-            shown.answered(Glue.stopsOf(mapOf("ed-1" to RunSession("ed-1", "/work/shop", listOf(stop)))).single(), action, now)
-        }
-    }
-
-    private val none = emptyList<Pair<Int, Boolean>>()
-
-    @Test
-    fun `the IDE opens the first stop with the focus, and its page`() {
-        assertEquals(listOf(0 to true) to (0 to 3), Pushes().push(stoppedAt(0, 3), runningWorker(1)))
-    }
-
-    @Test
-    fun `the IDE opens another worker's stop without the focus, and keeps the tab on the stop it shows`() {
-        val pushes = Pushes()
-        pushes.push(stoppedAt(0, 3), runningWorker(1))
-        assertEquals(listOf(1 to false) to null, pushes.push(stoppedAt(0, 3), stoppedAt(1, 5)))
-    }
-
-    @Test
-    fun `the IDE waits for the next stop of a worker stepped from the IDE, through the push where it runs`() {
-        val pushes = Pushes()
-        pushes.push(stoppedAt(0, 3), runningWorker(1))
-        pushes.push(stoppedAt(0, 3), stoppedAt(1, 5))
-        pushes.answer("step", stoppedAt(0, 3))
-        assertEquals(none to null, pushes.push(runningWorker(0), stoppedAt(1, 5)))
-        assertEquals(listOf(0 to true) to (0 to 4), pushes.push(stoppedAt(0, 4), stoppedAt(1, 5)))
-    }
-
-    @Test
-    fun `the IDE hands the tab to a stop held once the worker it shows is resumed, then follows that one's Step`() {
-        val pushes = Pushes()
-        pushes.push(stoppedAt(0, 3), runningWorker(1))
-        pushes.push(stoppedAt(0, 3), stoppedAt(1, 5))
-        pushes.answer("resume", stoppedAt(0, 3))
-        assertEquals(none to (1 to 5), pushes.push(runningWorker(0), stoppedAt(1, 5)))
-        pushes.answer("step", stoppedAt(1, 5))
-        assertEquals(none to null, pushes.push(runningWorker(0), runningWorker(1)))
-        assertEquals(listOf(1 to true) to (1 to 6), pushes.push(runningWorker(0), stoppedAt(1, 6)))
-    }
-
-    @Test
-    fun `the IDE hands the tab on after a control from elsewhere, and opens a lone worker's next stop`() {
-        val pushes = Pushes()
-        pushes.push(stoppedAt(0, 3), runningWorker(1))
-        pushes.push(stoppedAt(0, 3), stoppedAt(1, 5))
-        assertEquals(1 to 5, pushes.push(runningWorker(0), stoppedAt(1, 5)).second)
-        val lone = Pushes()
-        lone.push(stoppedAt(0, 3))
-        assertNull(lone.push(runningWorker(0)).second)
-        assertEquals(0 to 4, lone.push(stoppedAt(0, 4)).second)
-    }
-
-    @Test
-    fun `the IDE stops waiting for a stepped worker's next stop once its worker left the run`() {
-        val pushes = Pushes()
-        pushes.push(stoppedAt(0, 3), runningWorker(1))
-        pushes.push(stoppedAt(0, 3), stoppedAt(1, 5))
-        pushes.answer("step", stoppedAt(0, 3))
-        assertNull(pushes.push(runningWorker(0), stoppedAt(1, 5)).second)
-        assertEquals(none to (1 to 5), pushes.push(stoppedAt(1, 5)))
-    }
-
-    @Test
-    fun `the IDE waits for a stepped worker's next stop RESERVED_MILLIS at most, saying when to ask again`() {
-        val pushes = Pushes()
-        pushes.push(stoppedAt(0, 3), runningWorker(1))
-        pushes.push(stoppedAt(0, 3), stoppedAt(1, 5))
-        assertNull(pushes.shown.waitsUntil())
-        pushes.answer("step", stoppedAt(0, 3))
-        assertEquals(pushes.now + Glue.RESERVED_MILLIS, pushes.shown.waitsUntil())
-        assertNull(pushes.push(runningWorker(0), stoppedAt(1, 5)).second)
-        // Asked again when the wait is over, with no push since: the stop held takes the tab.
-        pushes.now += Glue.RESERVED_MILLIS
-        assertEquals(1 to 5, pushes.push(runningWorker(0), stoppedAt(1, 5)).second)
-        assertNull(pushes.shown.waitsUntil())
-    }
-
-    @Test
-    fun `the IDE gives the focus to the first stop a Pause brings, its other stops coming in later pushes`() {
-        val pushes = Pushes()
-        assertEquals(listOf(0 to true) to (0 to 3), pushes.push(stoppedAt(0, 3), runningWorker(1), runningWorker(2)))
-        assertEquals(listOf(1 to false) to null, pushes.push(stoppedAt(0, 3), stoppedAt(1, 5), runningWorker(2)))
-        assertEquals(listOf(2 to false) to null, pushes.push(stoppedAt(0, 3), stoppedAt(1, 5), stoppedAt(2, 7)))
-    }
-
-    @Test
-    fun `the IDE moves the focus to the worker a control answered`() {
-        val pushes = Pushes()
-        pushes.push(stoppedAt(0, 3), runningWorker(1))
-        pushes.push(stoppedAt(0, 3), stoppedAt(1, 5))
-        pushes.answer("resume", stoppedAt(1, 5))
-        pushes.push(stoppedAt(0, 3), runningWorker(1))
-        assertEquals(listOf(1 to true) to null, pushes.push(stoppedAt(0, 3), stoppedAt(1, 6)))
-    }
-
-    @Test
-    fun `the IDE keeps the focus on the slot of a worker restarted after a failure`() {
-        val pushes = Pushes()
-        pushes.push(stoppedAt(0, 3, reason = "failure"), stoppedAt(1, 5))
-        pushes.answer("resume", stoppedAt(0, 3, reason = "failure"))
-        pushes.push(stoppedAt(1, 5))
-        assertEquals(listOf(2 to true) to null, pushes.push(stoppedAt(2, 4, slot = 0), stoppedAt(1, 5)))
-    }
-
-    @Test
-    fun `the IDE counts a stop whose file never opened as none shown`() {
-        val pushes = Pushes(unopened = setOf(3))
-        pushes.push(stoppedAt(0, 3), runningWorker(1))
-        assertEquals(listOf(1 to true), pushes.push(stoppedAt(0, 3), stoppedAt(1, 5)).first)
-    }
-
-    @Test
-    fun `the IDE opens no page at a stop with a pause bar, and a new stop's page in a tab that is closed`() {
-        val pushes = Pushes()
-        assertNull(pushes.push(stoppedAt(0, 3, bar = true), runningWorker(1)).second)
-        assertEquals(1 to 5, pushes.push(stoppedAt(0, 3, bar = true), stoppedAt(1, 5)).second)
-        pushes.shown.view(null)
-        assertNull(pushes.push(stoppedAt(0, 3, bar = true), stoppedAt(1, 5)).second)
-        assertEquals(2 to 7, pushes.push(stoppedAt(0, 3, bar = true), stoppedAt(1, 5), stoppedAt(2, 7)).second)
     }
 
     @Test

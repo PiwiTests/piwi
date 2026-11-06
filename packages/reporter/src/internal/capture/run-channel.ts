@@ -5,6 +5,7 @@ import { hideSecretsInText, hideTypedText } from '@piwitests/core/mask';
 import {
   MAX_RUN_EVENT_RATE,
   RUN_CHANNEL_ENV,
+  RUN_FEATURES,
   RUN_HOLDS,
   RUN_INTENT_NAMES,
   RUN_TAKES,
@@ -33,9 +34,10 @@ import {
   MAX_VIEW_EVENT_RATE,
   MAX_VIEW_FPS,
   MAX_VIEW_FRAME,
+  MAX_VIEW_HEIGHT,
+  MAX_VIEW_WIDTH,
   RateWindow,
   VIEW_QUALITY,
-  viewSize,
   type ViewButton,
   type ViewInput,
 } from '@piwitests/core/run-view';
@@ -47,9 +49,10 @@ import { getReporterVersion } from '../support/reporter-version.js';
 import { bindBrowser } from './agent-page.js';
 import { locatorOn } from './chain-locator.js';
 import { keptRequests, keptResponse } from './kept-responses.js';
-import { jpegSize, maskSecretFields, maskedImage } from './live-mask.js';
+import { laneAt, laneStopped, laneWentOn, subscribeLane, type LaneSink, type LaneSubscription } from './lane-feed.js';
+import { jpegSize, maskedImage } from './live-mask.js';
 import { liveViewState, onLiveViewChange, shareLiveView } from './live-view.js';
-import { openPageView, pauseBarUp, viewportOf } from './page-view.js';
+import { viewportOf } from './page-view.js';
 import { PICK_AT_SINCE } from './pick-at.js';
 import { highlightAtStop, type PauseAnswer } from './pause-at.js';
 import { internalCall } from './quiet-capture.js';
@@ -66,9 +69,8 @@ import { internalCall } from './quiet-capture.js';
  * the editor answers with `attached`, naming the service when it is not the editor (`host`: the desktop app, which the
  * worker's lines name then, `runHost`); an editor that predates it says nothing, and no failure is held for it. For a
  * viewer outside the page, it shows the stopped page's live view (`view`: the page's screencast, its frames sent at
- * most `MAX_VIEW_FPS` a second, a headed stop's pause bar painted over in them, the latest one when the connection is
- * backed up, the latest sent kept in memory for a viewer that comes later until the view ends, never stored), plays
- * the viewer's input
+ * most `MAX_VIEW_FPS` a second, the latest one when the connection is backed up, the latest sent kept in memory for a
+ * viewer that comes later until the view ends, never stored), plays the viewer's input
  * on it as trusted input (`input`: `page.mouse`, `page.keyboard`, at most `MAX_VIEW_EVENT_RATE` events a second, what
  * it holds down let go before the test goes on), and sends the locator of the element under a point of an image of
  * the page where a pick goes (`pick-at`, `pick-at.ts`). The view ends with its stop, before the test goes on, and as
@@ -116,14 +118,26 @@ const LATE_ACT = 'The page did not answer in time: the action may still take eff
 const MAX_INPUT_WAITING = 4;
 /** Why the input of a stop nobody watches is refused. */
 const NEEDS_VIEW = 'The input needs the live view of this stop: watch it first.';
+/** What the editor's views ask of the lane's frames, where they go aside. */
+const VIEW_FRAMES: Omit<LaneSink, 'busy' | 'send' | 'refuse'> = {
+  maxWidth: MAX_VIEW_WIDTH,
+  maxHeight: MAX_VIEW_HEIGHT,
+  quality: VIEW_QUALITY,
+  fps: MAX_VIEW_FPS,
+  maxFrameBytes: MAX_VIEW_FRAME,
+  lightQuality: LIGHT_QUALITY,
+  shotMs: SHOT_MS,
+};
 /** Why a stop whose page is not known has no view. */
 const NO_PAGE =
   "This stop has no page to show: its call does not name one among its context's pages. Use the pause bar in the test's window.";
 
 /** What the editor asks that the capture fixtures apply to the running test's stops. */
 export interface RunControl {
-  /** Stop before the next call: of the running test, else of the next one. */
+  /** Stop before the next call: of the running test, else of the next one; and say the call it waits in. */
   pause(): void;
+  /** End the test `testId` while a Pause waits for its call: the call given up where it carries the end signal. */
+  giveUp(testId: string): void;
   /** The run's breakpoints from now on. */
   breakpoints(places: Place[]): void;
   /** Stop at the first call on this place's line. */
@@ -199,12 +213,12 @@ interface View {
   screencast: boolean;
   /** Send the latest frame sent again, or why none goes, for a viewer that came since: a still page paints no other. */
   resend(): void;
-  /** The bottom edge of the pause bar's band in the latest frame sent, while the bar shows painted over; else null. */
-  barBand(): Promise<number | null>;
   close(): Promise<void>;
 }
 
 let view: View | null = null;
+/** The lane view, while the editor's viewers watch the worker's lane (`view-lane`). */
+let laneView: LaneSubscription | null = null;
 /** A view on its way, for the stop it is of. */
 let viewStarting: { stop: number; started: Promise<IntentAnswer> } | null = null;
 /** The editor's requests to start and stop a view, one after the other, in the order they came. */
@@ -218,8 +232,6 @@ interface InputState {
   playing: Promise<unknown>;
   waiting: number;
   buttons: Set<ViewButton>;
-  /** The buttons pressed on the pause bar's band, whose presses and releases are not played. */
-  barButtons: Set<ViewButton>;
   keys: Set<string>;
 }
 
@@ -229,7 +241,6 @@ function freshInput(): InputState {
     playing: Promise.resolve(),
     waiting: 0,
     buttons: new Set(),
-    barButtons: new Set(),
     keys: new Set(),
   };
 }
@@ -325,8 +336,9 @@ export async function openRunChannel(
     // Nobody can stop the sharing any more: it stops.
     if (sharedHere) void shareLiveView(false);
     sharedHere = false;
-    // Nobody hears the view any more.
+    // Nobody hears the views any more.
     if (view) void stopView();
+    if (laneView) void stopLaneView();
     if (!held || held.bar) return;
     // A stop no bar can answer goes on: nobody else can.
     console.log(`[piwi] The connection to ${runHost()} closed: the test goes on.`);
@@ -344,6 +356,7 @@ export async function openRunChannel(
     reporter: getReporterVersion(),
     takes: workerTakes(env, worker.config.version),
     holds: [...RUN_HOLDS],
+    features: [...RUN_FEATURES],
     // A run the reporter follows from outside the editor, which its own test runner started.
     ...(ref.startsWith(TERMINAL_REF_PREFIX) && startedByTestRunner(env) ? { runner: true as const } : {}),
   });
@@ -491,7 +504,7 @@ export function holdStop(
       answered
         ? { ok: false, message: WENT_ON }
         : // A stop no bar shows takes an intent only while its live view is watched, which drives it.
-          !stop.bar && view?.stop !== id
+          !stop.bar && !watched(id)
           ? needsBar(what)
           : (stop.intent?.(what) ?? needsBar(what)),
     ...(stop.pickAt ? { pickAt: stop.pickAt } : {}),
@@ -499,6 +512,7 @@ export function holdStop(
     browser: stop.browser ?? null,
   };
   held = holding;
+  laneStopped(id, stop.page);
   tellHub({
     type: 'stopped',
     stop: id,
@@ -519,17 +533,39 @@ export function holdStop(
       await counting;
       if (outline?.stop === id) await removeOutline();
       await endView(id, stop.page);
+      laneWentOn(id);
       tellHub({ type: 'running', stop: id });
     },
   };
 }
 
-/** A signal that aborts once the live view of the stop `stop` ends; aborted already when it is not watched. */
+/**
+ * A signal that aborts once nobody watches the stop `stop` any more (its view, or the lane view showing it), or the stop
+ * ends; aborted already when it is not watched.
+ */
 export function viewEnded(stop: number): AbortSignal {
   const ended = new AbortController();
-  if (view?.stop !== stop) ended.abort();
+  if (!watched(stop)) ended.abort();
   else viewEnds.add(() => ended.abort());
   return ended.signal;
+}
+
+/**
+ * Whether a viewer watches the stop `stop`: its own view, or the lane view while the worker stands at it in a test,
+ * whose frames show it.
+ */
+function watched(stop: number): boolean {
+  const lane = laneAt();
+  return (
+    held?.stop === stop && (view?.stop === stop || (laneView !== null && lane.stop === stop && lane.test !== null))
+  );
+}
+
+/** What was driven through a view ends, unless a viewer still watches the stop held. */
+function endDriven(): void {
+  if (held && watched(held.stop)) return;
+  for (const end of viewEnds) end();
+  viewEnds.clear();
 }
 
 /** `run`, for `ms` at most: settles once it did or they passed, never throwing. */
@@ -557,6 +593,7 @@ async function answerWithin<T, L>(run: Promise<T>, ms: number, late: L): Promise
 async function endView(stop: number, page: Page | null): Promise<void> {
   if (viewStarting?.stop === stop) await within(viewStarting.started, VIEW_END_MS);
   if (view?.stop === stop) await stopView();
+  endDriven();
   const own = input;
   input = freshInput();
   await within(own.playing, VIEW_END_MS);
@@ -575,9 +612,53 @@ async function endView(stop: number, page: Page | null): Promise<void> {
 async function stopView(): Promise<void> {
   const shown = view;
   view = null;
-  for (const end of viewEnds) end();
-  viewEnds.clear();
+  endDriven();
   if (shown) await within(shown.close(), VIEW_END_MS);
+}
+
+/**
+ * Start the lane view the editor asked for: the page of the stop held, else of the running test, through its tests and
+ * stops, each frame going as `lane-frame`; asked again while on, the latest frame goes again.
+ */
+function startLaneView(): IntentAnswer {
+  // A connection that closed while the request waited its turn has nobody to show the lane to.
+  if (!runChannelOpen()) return { ok: false, message: 'The connection closed.' };
+  if (laneView) {
+    laneView.resend();
+    return { ok: true, message: 'The live view is on.' };
+  }
+  laneView = subscribeLane({
+    ...VIEW_FRAMES,
+    busy: framesBackedUp,
+    send: (frame) => {
+      // A frame of the lane names its test: a stop held outside one shows on its own view alone.
+      if (frame.test === null) return;
+      tellHub({
+        type: 'lane-frame',
+        test: frame.test,
+        stop: frame.stop,
+        width: frame.width,
+        height: frame.height,
+        data: frame.data.toString('base64'),
+      });
+    },
+    refuse: (why, at) => tellHub({ type: 'lane-frame', test: at.test, stop: at.stop, refused: why ?? TOO_HEAVY }),
+  });
+  return { ok: true, message: 'The live view is on.' };
+}
+
+/** Stop the lane view, and end what was driven through it unless the stop's own view still shows it. */
+async function stopLaneView(): Promise<IntentAnswer> {
+  const shown = laneView;
+  laneView = null;
+  endDriven();
+  if (shown) await within(shown.close(), VIEW_END_MS);
+  return { ok: true, message: 'The live view is off.' };
+}
+
+/** Whether the run connection is backed up: the latest frame alone waits. */
+function framesBackedUp(): boolean {
+  return !!socket && socket.writableLength > MAX_FRAME_BACKLOG;
 }
 
 /**
@@ -621,37 +702,32 @@ function startView(holding: HeldStop): Promise<IntentAnswer> {
 }
 
 /**
- * Open the live view of a page at the stop `stop` (`openPageView`): at the size of its viewport scaled down to fit
- * `MAX_VIEW_WIDTH` by `MAX_VIEW_HEIGHT` and `VIEW_QUALITY`, `MAX_VIEW_FPS` frames a second at most, each frame going
- * to the editor as `frame` with the viewport in CSS pixels, one longer than `MAX_VIEW_FRAME` replaced by an image of
- * the page at `LIGHT_QUALITY`, and when that one is too long as well, `frame` with `refused` once, until a frame goes
- * again. The latest alone waits while the connection is backed up; none goes once its stop began to end. The view
- * stops as its page closes. Null when the page cannot be read.
+ * Open the live view of the stop `stop`, on its page: the lane's frames (`lane-feed.ts`, which shows the stop's page
+ * while the worker stands at it) at the size of its viewport scaled down to fit `MAX_VIEW_WIDTH` by `MAX_VIEW_HEIGHT`
+ * and `VIEW_QUALITY`, `MAX_VIEW_FPS` a second at most, each going to the editor as `frame` with the viewport in CSS
+ * pixels, and `frame` with `refused` once when each image is too long, until a frame goes again. The latest alone waits
+ * while the connection is backed up; none goes once its stop began to end. The view stops as its page closes. Null when
+ * the page cannot be read.
  */
 async function openView(page: Page, stop: number): Promise<View | null> {
-  // The page's secret fields and the pause bar are painted over in each frame, or the frame does not go.
-  const mask = maskSecretFields(page, {
-    masks: () => [],
-    quality: VIEW_QUALITY,
-    lightQuality: LIGHT_QUALITY,
-    maxBytes: MAX_VIEW_FRAME,
+  // Once its stop began to end, no frame of it goes.
+  const ours = (at: { stop: number | null }): boolean => held?.stop === stop && at.stop === stop;
+  const subscription = subscribeLane({
+    ...VIEW_FRAMES,
+    busy: framesBackedUp,
+    send: (frame) => {
+      if (!ours(frame)) return;
+      tellHub({ type: 'frame', stop, width: frame.width, height: frame.height, data: frame.data.toString('base64') });
+    },
+    refuse: (why, at) => {
+      if (ours(at)) tellHub({ type: 'frame', stop, refused: why ?? TOO_HEAVY });
+    },
   });
-  const opened = await openPageView(page, {
-    size: viewSize,
-    quality: VIEW_QUALITY,
-    fps: MAX_VIEW_FPS,
-    maxFrameBytes: MAX_VIEW_FRAME,
-    lightQuality: LIGHT_QUALITY,
-    shotMs: SHOT_MS,
-    busy: () => (!!socket && socket.writableLength > MAX_FRAME_BACKLOG) || mask.resting,
-    // Once its stop began to end, no frame of it goes.
-    live: () => held?.stop === stop,
-    screen: (frame, also) => mask.screen(frame, also),
-    send: (frame) =>
-      tellHub({ type: 'frame', stop, width: frame.width, height: frame.height, data: frame.data.toString('base64') }),
-    refuse: (why) => tellHub({ type: 'frame', stop, refused: why ?? TOO_HEAVY }),
-  });
-  if (!opened) return null;
+  const opened = await subscription.ready();
+  if (!opened) {
+    await subscription.close();
+    return null;
+  }
   const onClose = () => {
     if (view?.stop === stop) void stopView();
   };
@@ -659,11 +735,10 @@ async function openView(page: Page, stop: number): Promise<View | null> {
   return {
     stop,
     screencast: opened.screencast,
-    resend: opened.resend,
-    barBand: opened.barBand,
+    resend: subscription.resend,
     close: async () => {
       page.off('close', onClose);
-      await opened.close();
+      await subscription.close();
     },
   };
 }
@@ -678,13 +753,11 @@ async function stopViewOf(holding: HeldStop): Promise<IntentAnswer> {
 /**
  * Play a viewer's input at the stop held, in order, after the input sent before it: refused while the stop's view is
  * not watched, past `MAX_VIEW_EVENT_RATE` events a second and with `MAX_INPUT_WAITING` messages waiting. The events
- * of a stop that ends meanwhile are not played. None reaches the pause bar the view paints over: a press on its band is
- * not played (`onPauseBar`), and the answer says how many were not; before a key, each draw of the bar the message
- * meets is held inert until the message ends (`holdBarFrom`), Escape then left to the page.
+ * of a stop that ends meanwhile are not played.
  */
 function playInput(holding: HeldStop, events: ViewInput[]): Promise<IntentAnswer> {
   const page = holding.page;
-  if (!page || view?.stop !== holding.stop) return Promise.resolve({ ok: false, message: NEEDS_VIEW });
+  if (!page || !watched(holding.stop)) return Promise.resolve({ ok: false, message: NEEDS_VIEW });
   const own = input;
   if (own.waiting >= MAX_INPUT_WAITING) {
     return Promise.resolve({ ok: false, message: 'The page still plays the input sent before: send less at once.' });
@@ -695,128 +768,25 @@ function playInput(holding: HeldStop, events: ViewInput[]): Promise<IntentAnswer
   own.waiting++;
   const played = own.playing
     .then(async (): Promise<IntentAnswer> => {
-      const band = view?.stop === holding.stop ? await view.barBand() : null;
-      const keys: BarHold = { token: ++barHolds, drawn: null, held: true };
-      let skipped = 0;
-      try {
-        for (const [i, event] of events.entries()) {
-          if (held !== holding || input !== own || view?.stop !== holding.stop || page.isClosed()) {
-            return { ok: false, message: i ? `The stop ended after ${i} of the events.` : WENT_ON };
-          }
-          if (onPauseBar(event, band, own)) {
-            skipped++;
-            continue;
-          }
-          if (event.type === 'key' && holding.bar) {
-            // A key goes only to a page that held its bar inert, and only while the stop still waits.
-            await holdBar(page, keys);
-            if (held !== holding || input !== own || view?.stop !== holding.stop || page.isClosed()) {
-              return { ok: false, message: i ? `The stop ended after ${i} of the events.` : WENT_ON };
-            }
-            if (!keys.held) {
-              skipped++;
-              continue;
-            }
-          }
-          try {
-            await internalCall(page, () => playEvent(page, event, own));
-          } catch (error) {
-            // A page's error may name the address it was at: its credentials stay in the worker.
-            return {
-              ok: false,
-              message: hideSecretsInText(`Event ${i + 1} could not be played: ${errorMessage(error)}`),
-            };
-          }
+      for (const [i, event] of events.entries()) {
+        if (held !== holding || input !== own || !watched(holding.stop) || page.isClosed()) {
+          return { ok: false, message: i ? `The stop ended after ${i} of the events.` : WENT_ON };
         }
-        return { ok: true, message: playedAnswer(events.length, skipped) };
-      } finally {
-        if (keys.drawn && !page.isClosed()) {
-          const release = { token: keys.token, hold: false };
-          await within(
-            internalCall(page, () => page.evaluate(holdBarFrom, release)).catch(() => undefined),
-            VIEW_END_MS,
-          );
+        try {
+          await internalCall(page, () => playEvent(page, event, own));
+        } catch (error) {
+          // A page's error may name the address it was at: its credentials stay in the worker.
+          return {
+            ok: false,
+            message: hideSecretsInText(`Event ${i + 1} could not be played: ${errorMessage(error)}`),
+          };
         }
       }
+      return { ok: true, message: events.length === 1 ? 'Played 1 event.' : `Played ${events.length} events.` };
     })
     .finally(() => own.waiting--);
   own.playing = played.catch(() => undefined);
   return played;
-}
-
-/** What a message of `count` events answers, `skipped` of them not played: the pause bar would take them. */
-function playedAnswer(count: number, skipped: number): string {
-  if (!skipped) return count === 1 ? 'Played 1 event.' : `Played ${count} events.`;
-  return (
-    `Played ${count - skipped} of ${count} ${count === 1 ? 'event' : 'events'}: ${skipped} not played, as the pause ` +
-    `bar the view paints over would take ${skipped === 1 ? 'it' : 'them'}.`
-  );
-}
-
-/**
- * A message of a viewer's input, by its token, the draw of the pause bar it holds inert, and whether the page answered
- * that hold: while it has not, the message's keys are not played.
- */
-interface BarHold {
-  token: number;
-  drawn: object | null;
-  held: boolean;
-}
-
-/** The messages of a viewer's input so far: each holds the pause bar by its own token. */
-let barHolds = 0;
-
-/**
- * Hold the pause bar `page` shows inert for the message `hold`, once for each draw of it the message meets: `hold.held`
- * says whether the page answered within `PAGE_ANSWER_MS`.
- */
-async function holdBar(page: Page, hold: BarHold): Promise<void> {
-  const bar = pauseBarUp(page);
-  if (!bar || bar === hold.drawn) return;
-  hold.drawn = bar;
-  const drawn = await answerWithin(
-    Promise.resolve(bar.drawn).then(() => true),
-    PAGE_ANSWER_MS,
-    false,
-  );
-  const request = { token: hold.token, hold: true };
-  hold.held =
-    drawn &&
-    (await answerWithin(
-      internalCall(page, () => page.evaluate(holdBarFrom, request)).then(() => true),
-      PAGE_ANSWER_MS,
-      false,
-    ));
-}
-
-/**
- * Runs in the page: the pause bar is inert while a message of a viewer's input holds it (`token`, `hold`), so Tab passes
- * it by, the focus leaves it, no key presses its buttons and it leaves Escape to the page; once none holds it, it is as
- * it was. A message that lets go of a bar another holds leaves it inert. Must stay self-contained.
- */
-function holdBarFrom({ token, hold }: { token: number; hold: boolean }): void {
-  type Bar = { inert: boolean; contains(other: unknown): boolean; __piwiKeyHolds?: number[] };
-  type Document = { activeElement: { blur(): void } | null; getElementById(id: string): Bar | null };
-  const doc = (globalThis as unknown as { document?: Document }).document;
-  const bar = doc?.getElementById('__piwi-pause-bar');
-  if (!doc || !bar) return;
-  const holds = (bar.__piwiKeyHolds ?? []).filter((other) => other !== token);
-  if (hold) holds.push(token);
-  bar.__piwiKeyHolds = holds;
-  bar.inert = holds.length > 0;
-  if (bar.inert && bar.contains(doc.activeElement)) doc.activeElement?.blur();
-}
-
-/**
- * Whether `event` presses or clicks within the pause bar's band (`band`, its bottom edge), or releases a button pressed
- * there: such an event is not played.
- */
-function onPauseBar(event: ViewInput, band: number | null, own: InputState): boolean {
-  if (event.type !== 'mouse') return false;
-  if (event.action === 'up') return own.barButtons.delete(event.button);
-  if (band === null || event.y >= band || (event.action !== 'down' && event.action !== 'click')) return false;
-  if (event.action === 'down') own.barButtons.add(event.button);
-  return true;
 }
 
 /** Play one event on the page as trusted input, keeping what it holds down. */
@@ -928,6 +898,13 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
       // A pause that reaches a stopped worker has nothing to do.
       if (message.action === 'pause') {
         if (!held) control?.pause();
+      } else if (message.action === 'give-up') {
+        if (!held) control?.giveUp(message.testId);
+        else
+          tellHub({
+            type: 'notice',
+            message: 'The test stopped before it could be ended: End the test answers its stop.',
+          });
       } else if (held?.stop === message.stop) held.answer(message.action);
       return;
     case 'run-to':
@@ -937,6 +914,13 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
       return;
     case 'request': {
       const { request } = message;
+      if (message.what === 'view-lane') {
+        const on = message.on;
+        const answered = viewTurn.then(() => (on ? startLaneView() : stopLaneView()));
+        viewTurn = answered.catch(() => undefined);
+        void answered.then((value) => tellHub({ type: 'answer', request, what: 'view-lane', value }));
+        return;
+      }
       const at = message.what !== 'image' && held?.stop === message.stop ? held : null;
       switch (message.what) {
         case 'image':

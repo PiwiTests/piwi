@@ -127,9 +127,10 @@ each rule below ends with the section to read there.
 - **The Runs window talks only to the worker, through the port `RUNS_PORT`:** the worker takes the port from
   `runs.html` alone (`fromRunsPage`) and reads its messages with `parseRunsRequest`. The state the worker posts
   (`RunsState`) carries no token. (see "The Runs window")
-- **Every Runs window control but Pause and Share live names the stop shown (`since`),** so a click made twice never
-  answers the next stop; `parseRunsRequest` refuses one without it, and Share live with one (`runs.test.ts`). Share
-  live asks first, the first time in a window (`runs.spec.ts`). (see "The Runs window")
+- **Every Runs window control but Pause, Share live and End the test while a Pause waits (`give-up`) names the stop
+  shown (`since`),** so a click made twice never answers the next stop; `parseRunsRequest` refuses one without it, and
+  Share live and `give-up` with one (`runs.test.ts`). Share live asks first, the first time in a window (`runs.spec.ts`).
+  (see "The Runs window")
 - **What a hub sends is shown as text (a call's title through `richText`), and its image only as a `data:` JPEG whose
   base64 is checked again.** (see "The Runs window")
 - **The Runs window draws a part again only when what it shows changes (`part`, `place`); a button waiting for its
@@ -140,8 +141,9 @@ each rule below ends with the section to read there.
   meanwhile, and `on: false` as the last leaves (`run-hubs.test.ts`, `runs.spec.ts`). (see "A connection per hub")
 - **A stop's buttons follow what it takes from this window (`stopIntents`: `stop.intents`, else, from an older service,
   the worker's where the bar shows and no live view); a frame is kept in memory, the latest one alone, never stored;
-  input goes to the hub only for a stop the window watches itself** (`RunHubs.view`, `stateForViewer`,
-  `run-hubs.test.ts`, `runs.spec.ts`). (see "The Runs window" and "A connection per hub")
+  input goes to the hub only for a stop the window watches itself, through its view or its lane** (`RunHubs.view`,
+  `RunHubs.watchLane`, `stateForViewer`, `run-hubs.test.ts`, `runs.spec.ts`). (see "The Runs window" and "A
+  connection per hub")
 - **Escape, the function keys and the browser's shortcuts never reach a stopped page through the live view, and Tab
   leaves it unless a click took the keyboard** (`keyOnView`, `view-input.test.ts`). (see "The Runs window")
 - **No code from a stop comes to the Runs window:** it goes to the editor, which writes it, or to the desktop app's

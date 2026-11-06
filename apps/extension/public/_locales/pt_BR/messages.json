@@ -6433,6 +6433,89 @@
   "runs_ended": {
     "message": "A execução terminou."
   },
+  "runs_progress_one": {
+    "message": "$done$ de $count$ teste",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "done": {
+        "content": "$2",
+        "example": "0"
+      }
+    }
+  },
+  "runs_progress_other": {
+    "message": "$done$ de $count$ testes",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "9"
+      },
+      "done": {
+        "content": "$2",
+        "example": "3"
+      }
+    }
+  },
+  "runs_progressFailed_one": {
+    "message": "$count$ com falha",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_progressFailed_other": {
+    "message": "$count$ com falha",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_progressFlaky_one": {
+    "message": "$count$ instável",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runs_progressFlaky_other": {
+    "message": "$count$ instáveis",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runs_endedPassed": {
+    "message": "A execução foi aprovada."
+  },
+  "runs_endedFailed": {
+    "message": "A execução falhou."
+  },
+  "runs_firstFailure": {
+    "message": "Primeira falha: $title$",
+    "placeholders": {
+      "title": {
+        "content": "$1",
+        "example": "cart › adds a mug"
+      }
+    }
+  },
+  "runs_endedTimedOut": {
+    "message": "A execução esgotou o tempo."
+  },
+  "runs_endedInterrupted": {
+    "message": "A execução foi interrompida."
+  },
   "runs_stoppedBreakpoint": {
     "message": "Parado em um ponto de interrupção"
   },
@@ -6453,6 +6536,27 @@
   },
   "runs_statePausing": {
     "message": "Pausando…"
+  },
+  "runs_statePausingIn": {
+    "message": "Pausando: espera em $call$",
+    "placeholders": {
+      "call": {
+        "content": "$1",
+        "example": "Click getByRole('button', { name: 'Pay' })"
+      }
+    }
+  },
+  "runs_waitedFor": {
+    "message": "há $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12 s"
+      }
+    }
+  },
+  "runs_giveUpTitle": {
+    "message": "Encerrar o teste agora: a chamada em que ele espera é abandonada quando possível, e o resto do teste é ignorado"
   },
   "runs_stateRunning": {
     "message": "Em execução"
@@ -6679,6 +6783,30 @@
   },
   "runs_liveHint": {
     "message": "Seus cliques, a roda do mouse e suas teclas na visualização vão para a página do teste. Esc devolve as teclas a esta janela; Shift+clique escolhe um locator."
+  },
+  "runs_watch": {
+    "message": "Assistir"
+  },
+  "runs_watchTitle": {
+    "message": "Mostrar a página do teste enquanto ele é executado, por suas paradas e seus próximos testes: em uma parada, seus cliques e teclas nela vão para a página"
+  },
+  "runs_pauseWatch": {
+    "message": "Pausar e assistir"
+  },
+  "runs_pauseWatchTitle": {
+    "message": "Parar o teste antes da próxima chamada e mostrar a página dele"
+  },
+  "runs_watchOutdated": {
+    "message": "Atualize o reporter para assistir a um teste em execução"
+  },
+  "runs_watchToUse": {
+    "message": "Assista para usar"
+  },
+  "runs_laneRunning": {
+    "message": "Em execução…"
+  },
+  "runs_laneAltLast": {
+    "message": "A página do teste, como vista por último"
   },
   "runs_pickAt": {
     "message": "Escolher na imagem"

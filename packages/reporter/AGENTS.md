@@ -50,19 +50,25 @@ responsibilities.
      the desktop app, which names its runs by `PIWI_RUN_REF` and keeps `PIWI_ORIGIN_REF` for what they were for)
      (`internal/capture/run-channel.ts`, framed as `@piwitests/core/run-channel`), open from the `piwiResources` worker
      fixture's setup to the worker's end: it reports each test and stop, takes the editor's controls, breakpoints,
-     intents and queries (`takes` in its `run-attach`), ends the test at a stop (`end`: the held locator call given up
+     intents and queries (`takes` in its `run-attach`), with the run's own connection from `onBegin` to `onEnd`
+     (`internal/streaming/run-hub-link.ts`: how many tests, each that ended for good, how the run ended and its first
+     failure through `hideSecretsInText`, `tests/run-hub-link.spec.ts`), ends the test at a stop (`end`: the held locator call given up
      through Playwright's own `signal` option (1.62), `withEndSignal`, and the attempt skipped by `testInfo.skip` with
-     `ENDED_REASON`, `tests/run-channel-end.spec.ts`), shares the run live as asked (`share`, below), keeps the test's
+     `ENDED_REASON`, `tests/run-channel-end.spec.ts`), says the call a Pause waits in (`waiting`) and ends the test there
+     as asked (`give-up`, in `features`: the call given up through its `signal` where it carries one, else the attempt
+     skipped at its next locator call, `tests/run-channel-give-up.spec.ts`), shares the run live as asked (`share`, below), keeps the test's
      text responses in memory for Mock a request (`kept-responses.ts`), holds a failing test's page for an editor that
      answered its `holds` with `attached` (`holdFailure`, `editorShows`), and makes a headless run stop too; for a
-     viewer outside the page, it streams a stopped page's screencast (`view`), plays trusted input there only while that
-     stop's view is watched (`input`, let go before the test goes on), runs the bar's actions in a headless page through
+     viewer outside the page, it streams a stopped page's screencast (`view`), and its lane while asked (`view-lane`, in
+     `features`: the running test's page, the stop's while it stands at one, through its tests), both sinks of the one
+     view of the lane's page (`lane-feed.ts`, the instance's live view a third), plays trusted input only while that
+     stop's view, or the lane view showing it, is watched (`input`, let go before the test goes on), runs the bar's actions in a headless page through
      it (`viewHere`), and picks under a point of an image (`pick-at.ts`); a frame goes to the editor service alone,
      never stored nor attached, the latest one sent kept in memory until the view ends, for a viewer that comes later,
      each frame and the stop's image (at the viewport's size in CSS pixels, of its shape or none) with the page's
      secret fields painted over as the instance's are (`live-mask.ts`), and every call's and stop's title, the pause
      bar's and the terminal's included, through `hideTypedText` and `hideSecretsInText`
-     (`tests/run-channel-view.spec.ts`); for an agent, at the stop
+     (`tests/run-channel-view.spec.ts`, `tests/run-channel-lane.spec.ts`); for an agent, at the stop
      held alone, it reads the page's AI snapshot, acts on an element by its ref with Playwright's own action and ranks its locators (`agent-page.ts`), tells the test's calls
      and page events while asked (`events`, `run-events.ts`, Playwright's `_instrumentation`, feature-checked), and
      binds the browser for Playwright's tools on request until the test ends (`tests/run-channel-agent.spec.ts`);
@@ -76,7 +82,7 @@ responsibilities.
      output); outside CI only while the run channel shares the run (`share`, **Share live**, the state told back as
      `live`), given up after the quick retries or a 401 or 404 until shared again: only while the instance says
      someone watches does it post frames of the test's page, through
-     the screencast helper the editor's view shares (`page-view.ts`), each with its call (through `hideSecretsInText`),
+     the lane's one view, which the editor's views share (`lane-feed.ts`), each with its call (through `hideSecretsInText`),
      its test and when its page looked so, and the call's log while the test is of a CI run and nothing may pause it (`mayPause`;
      `live-call-log.ts`: the context's call stream turned on through `context.debugger._enable()`, which stays on, and a
      listener on the worker's Playwright instrumentation); it always posts its test's stops (`showStop`). Each frame

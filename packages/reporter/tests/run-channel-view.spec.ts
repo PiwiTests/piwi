@@ -16,7 +16,7 @@ import {
 import { parseRunToHub, type HubToRun, type RunToHub } from '@piwitests/core/run-channel';
 import { MAX_VIEW_FPS, MAX_VIEW_FRAME, type ViewInput } from '@piwitests/core/run-view';
 import { PICK_AT_NEEDS } from '../src/internal/capture/pick-at.js';
-import { jpegBand, jsonRes, playwrightAtLeast, startServer, type FakeServer, withoutCi } from './_helpers.js';
+import { jsonRes, playwrightAtLeast, startServer, type FakeServer, withoutCi } from './_helpers.js';
 
 /**
  * The live view of a stopped page, the input played on it and Pick on the image, in a real Playwright run through the
@@ -25,8 +25,7 @@ import { jpegBand, jsonRes, playwrightAtLeast, startServer, type FakeServer, wit
  * alone. The page tells the fake editor where its elements and Piwi's overlays are, as a person sees them on the
  * view. Headless, the view shows a page nobody else sees: input clicks a button, a pick on the image names its
  * locator, Pick and Record run in the page through the view, and nothing of Piwi is left in it once the test goes on.
- * Headed, the view shows the page with its pause bar painted over, each frame decoded and its pixels checked. With a
- * video recorded, the view leaves the video whole. Under
+ * Headed, the view shows the page beside its pause bar. With a video recorded, the view leaves the video whole. Under
  * `xvfb-run -a` the headed project opens a window; without a display, Chromium runs it without one
  * (`--headless=new`). Firefox runs where it is installed.
  */
@@ -72,7 +71,7 @@ const PAGE = (animated: boolean) => `<!doctype html><meta charset="utf-8"><title
 <style>body { margin: 0; padding: 120px 20px 20px; font: 16px sans-serif } button { all: unset; display: inline-block; padding: 8px 16px; background: #ddd }
 #spin { width: 80px; height: 80px; background: linear-gradient(red, blue); animation: s 1s linear infinite } @keyframes s { to { transform: rotate(360deg) } }</style>
 <h1>Shop</h1><section data-testid="cart" aria-label="Cart"><button id="go" onclick="document.querySelector('h1').textContent = 'Clicked'">Go</button></section>
-<p id="note">A note to click on.</p><input id="field">${animated ? '<div id="spin"></div>' : ''}<dialog id="modal"><button>OK</button></dialog>
+<p id="note">A note to click on.</p><input id="field">${animated ? '<div id="spin"></div>' : ''}
 <script>
 const center = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; };
 let dblclicked = false;
@@ -89,18 +88,9 @@ setInterval(() => {
     choice: center(buttons.find((b) => /^getBy|^locator\\(/.test(b.textContent))),
     recorder: !!document.getElementById('piwi-record-hud-host'),
     heading: document.querySelector('h1').textContent,
-    bar: document.getElementById('__piwi-pause-bar')?.getBoundingClientRect().bottom ?? null,
-    field: center(document.getElementById('field')),
-    barFocused: !!document.getElementById('__piwi-pause-bar')?.contains(document.activeElement),
-    dialog: document.getElementById('modal').open,
     dblclicked,
     ctrlClicked,
-  }) }).then((r) => r.json()).then((asked) => {
-    // The test's window focuses the bar's first button, as a person who tabs into it there.
-    if (asked.focusBar) document.querySelector('#__piwi-pause-bar button')?.focus();
-    // The app opens a modal dialog of its own.
-    if (asked.openDialog) document.getElementById('modal').showModal();
-  }).catch(() => {});
+  }) }).catch(() => {});
 }, 100);
 </script>`;
 
@@ -276,13 +266,6 @@ interface Where {
   choice: Point | null;
   recorder: boolean;
   heading: string;
-  /** The pause bar's bottom edge, in CSS pixels; null while it does not show. */
-  bar: number | null;
-  field: Point | null;
-  /** Whether the focus is on one of the pause bar's buttons. */
-  barFocused: boolean;
-  /** Whether the page's modal dialog is open. */
-  dialog: boolean;
   dblclicked: boolean;
   ctrlClicked: boolean;
 }
@@ -322,23 +305,6 @@ const watched: Record<
 const resent: boolean[] = [];
 /** What the view of a page too heavy for a lighter image said, each time. */
 const heavy: { refusals?: string[] } = {};
-/**
- * The pause bar's bottom edge at the headed stop, the frames its view sent until the page was clicked, whether a Tab
- * played from the page's last field focused the bar, and the bar and its focus once the keys played.
- */
-const headed: {
-  bar?: number;
-  frames?: FrameHeard[];
-  /** What the clicks across the bar's band were answered. */
-  bandClicks?: string[];
-  tabbed?: boolean;
-  afterKeys?: { bar: number | null; focused: boolean };
-  /** Whether the page's dialog closed on the viewer's Escape. */
-  dialogClosed?: boolean;
-} = {};
-/** Whether the page focuses the pause bar's first button, or opens its dialog, on its next report. */
-let focusBar = false;
-let openDialog = false;
 interface DumpedStep {
   title: string;
   steps: DumpedStep[];
@@ -439,45 +405,9 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
         resent.push(again.message.data === seen[seen.length - 1]!.message.data);
       }
       if (test === 'watched in Firefox') await watch(WATCH_MS);
-      if (test === 'watched at a headed stop') {
-        headed.bar = await waitFor(() => where?.bar ?? undefined);
-        // Clicks across the bar's band, which the frames paint over, reach none of its buttons: the stop stays held, the
-        // answer says the click was not played, and the click on the page below still plays.
-        headed.bandClicks = [];
-        for (let x = 20; x < 1000; x += 40) {
-          headed.bandClicks.push((await play(click({ x, y: Math.floor(headed.bar / 2) }))).message);
-        }
-        // Keys reach none of its buttons either: a Tab from the page's last field passes the bar by, Enter and Space on
-        // a button of it the test's window focused press nothing, and Escape, which the bar takes as Resume, goes to the
-        // page alone: the stop stays held, and the page's own dialog closes on it.
-        answers.push(await play(click(await waitFor(() => where?.field ?? undefined))));
-        answers.push(await play([{ type: 'key', action: 'press', key: 'Tab' }]));
-        await sleep(300);
-        headed.tabbed = (await waitFor(() => (where ? { focused: where.barFocused } : undefined))).focused;
-        focusBar = true;
-        await waitFor(() => where?.barFocused);
-        answers.push(
-          await play([
-            { type: 'key', action: 'press', key: 'Enter' },
-            { type: 'key', action: 'press', key: ' ' },
-          ]),
-        );
-        answers.push(await play([{ type: 'key', action: 'press', key: 'Escape' }]));
-        await sleep(300);
-        headed.afterKeys = await waitFor(() => (where ? { bar: where.bar, focused: where.barFocused } : undefined));
-        openDialog = true;
-        await waitFor(() => where?.dialog);
-        answers.push(await play([{ type: 'key', action: 'press', key: 'Escape' }]));
-        headed.dialogClosed = await waitFor(() => (where && !where.dialog) || undefined, 3000).catch(() => false);
-      }
       const at = await waitFor(() => where?.go ?? undefined);
       answers.push(await play(click(at)));
       await waitFor(() => where?.heading === 'Clicked');
-      if (test === 'watched at a headed stop') {
-        // The frame of the page clicked, under the bar drawn before, comes a few frames later at most.
-        await sleep(500);
-        headed.frames = frames(connection, stop.stop).map(({ message }) => message);
-      }
       if (test === 'clicked through the view') {
         // A double click as a viewer's browser counted it, 320 ms apart, and a click with Control held.
         const note = await waitFor(() => where?.note ?? undefined);
@@ -662,10 +592,7 @@ beforeAll(async () => {
     const url = new URL(req.url, 'http://x');
     if (url.pathname === '/where') {
       where = JSON.parse(req.body) as Where;
-      const asked = { focusBar, openDialog };
-      focusBar = false;
-      openDialog = false;
-      return jsonRes(res, 200, asked);
+      return res.end();
     }
     if (url.pathname === '/piwi/send') {
       picks.push({ authorization: req.headers.authorization, body: JSON.parse(req.body) });
@@ -770,7 +697,6 @@ const NEEDS_BAR =
   "Pick a locator needs the pause bar in the test's window, and this stop shows none: run the test headed.";
 const ON = { ok: true, message: 'The live view is on.' };
 const OFF = { ok: true, message: 'The live view is off.' };
-const PLAYED_1 = { ok: true, message: 'Played 1 event.' };
 const PLAYED_2 = { ok: true, message: 'Played 2 events.' };
 const GO = "getByRole('button', { name: 'Go' })";
 /** Pick on the image needs Playwright 1.60 (the snapshot's boxes): below it, it is refused, saying so. */
@@ -929,49 +855,8 @@ describe('the live view of a stopped page', () => {
   });
 
   it('shows a headed stop too, and plays its input there', () => {
-    expect(said['watched at a headed stop']).toEqual([
-      ON,
-      PLAYED_2,
-      PLAYED_1,
-      PLAYED_2,
-      PLAYED_1,
-      PLAYED_1,
-      PLAYED_2,
-      PICKED_AT,
-      OFF,
-    ]);
+    expect(said['watched at a headed stop']).toEqual([ON, PLAYED_2, PICKED_AT, OFF]);
     expect(stops['watched at a headed stop']).toMatchObject({ bar: true });
-  });
-
-  it('plays no click on the hidden bar’s band, and says so', () => {
-    expect(new Set(headed.bandClicks)).toEqual(
-      new Set(['Played 1 of 2 events: 1 not played, as the pause bar the view paints over would take it.']),
-    );
-  });
-
-  it('keeps a viewer’s keys from the hidden bar: Tab passes it by, Enter and Space press nothing, Escape is the page’s', () => {
-    expect(headed.tabbed).toBe(false);
-    expect(headed.afterKeys).toEqual({ bar: headed.bar, focused: false });
-    expect(headed.dialogClosed).toBe(true);
-  });
-
-  it('paints the pause bar over in each frame of a headed stop, and none of the page below it', () => {
-    const bar = headed.bar!;
-    expect(bar).toBeGreaterThan(10);
-    const seen = headed.frames!;
-    expect(seen.length).toBeGreaterThan(0);
-    const gray = (mean: number[]) => mean.every((channel) => Math.abs(channel - 96) < 16);
-    const white = (mean: number[]) => mean.every((channel) => channel > 235);
-    const strips = seen.map((frame) => jpegBand(Buffer.from(frame.data, 'base64'), frame.height, 2, bar - 2));
-    for (const strip of strips) {
-      // Gray where the bar is, or the page's white in a frame from before the bar was drawn: never the bar itself.
-      expect(strip.violet).toBe(0);
-      expect(gray(strip.mean) || white(strip.mean), `the band of the bar: ${strip.mean.join(', ')}`).toBe(true);
-    }
-    // The page clicked through the view, the bar drawn: painted over, the page under its shadow left as it is.
-    expect(gray(strips[strips.length - 1]!.mean)).toBe(true);
-    const last = seen[seen.length - 1]!;
-    expect(white(jpegBand(Buffer.from(last.data, 'base64'), last.height, bar + 40, bar + 70).mean)).toBe(true);
   });
 
   it('leaves the test’s video whole, its first client’s size the view’s', () => {
