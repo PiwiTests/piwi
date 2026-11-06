@@ -8,6 +8,7 @@ import {
   parseTestMetadata,
   sanitizeTestMetadata,
 } from '@piwitests/core/test-meta';
+import { parsePausedMs, parseTestStop } from '@piwitests/core/wire';
 import { DEFAULT_INGEST_LIMITS } from '#shared/ingest-limits';
 import { parseLocation } from '#shared/parse-location';
 import type { StreamEventPayload } from '#shared/types';
@@ -48,6 +49,49 @@ export function testBeginData(
     maxRetries: count(tc.maxRetries),
     ...searchFields(tc, maxLocks),
   };
+}
+
+/**
+ * The run event a streamed stop publishes (`test-stopped`, `test-resumed`), naming the attempt it is about as its
+ * `begin` named it; and, on that attempt's begin payload (`running`, kept for the stream's catch-up and the stuck
+ * check), the stop it stands at (`stop`, null once it ended) and how long it has stood stopped before (`pausedMs`).
+ * Null for an event of another type, or one whose stop does not read. Pure but for `running`, which it updates, so
+ * the server's events route and the demo's ingest share it.
+ */
+export function testStopRunEvent(
+  tc: StreamEventPayload,
+  running?: Record<string, unknown> | null,
+): { type: 'test-stopped' | 'test-resumed'; data: Record<string, unknown> } | null {
+  const of = {
+    title: tc.title,
+    location: tc.location,
+    // The run page keys a test's row by its browser too, which its begin named.
+    browser: running?.browser ?? tc.browser ?? null,
+    retries: count(tc.retries),
+    repeatEachIndex: resolveRepeatEachIndex(tc.repeatEachIndex),
+    workerIndex: tc.workerIndex ?? null,
+    parallelIndex: workerLane(tc.parallelIndex),
+    shardIndex: tc.shardIndex ?? null,
+  };
+  if (tc.type === 'test-stopped') {
+    const stop = parseTestStop(tc.stop);
+    if (!stop) return null;
+    if (running) {
+      running.stop = stop;
+      running.pausedMs = stop.pausedMs;
+    }
+    return { type: 'test-stopped', data: { ...of, stop } };
+  }
+  if (tc.type === 'test-resumed') {
+    const pausedMs = parsePausedMs(tc.pausedMs);
+    if (pausedMs === null) return null;
+    if (running) {
+      running.stop = null;
+      running.pausedMs = pausedMs;
+    }
+    return { type: 'test-resumed', data: { ...of, pausedMs } };
+  }
+  return null;
 }
 
 /**

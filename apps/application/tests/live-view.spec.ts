@@ -20,7 +20,7 @@ import { holdWorkerStream } from './utils/live-view';
  * at. In a project with the live view off, and for a run outside CI nobody shared, the run's workers send this server
  * nothing; a run outside CI its editor shares (Share live, played by this spec on the run channel) shows Watch, and
  * its view ends, saying why, as the sharing stops. A worker of the run's live view, played by this spec, shows
- * **Paused** on the row of the test it stopped, at its call, and Watch on the test it runs alone; both leave every row
+ * where it stopped on the row of the test it stopped, at its call, and Watch on the test it runs alone; both leave every row
  * as the project turns the live view off.
  */
 
@@ -567,7 +567,7 @@ test.describe('Live view of a run', () => {
     }
   });
 
-  test('Paused shows on the stopped test’s row at its call, and leaves every row as the setting turns off', async ({
+  test('the stop shows on the stopped test’s row at its call, and leaves every row as the setting turns off', async ({
     page,
     request,
   }, testInfo) => {
@@ -638,7 +638,7 @@ test.describe('Live view of a run', () => {
       const watch = page.getByRole('button', { name: 'Watch worker 0 live' });
       await expect(watch).toHaveCount(1);
       await expect(rowOf(page.getByTestId('live-watch'))).toContainText('stops to look');
-      await expect(paused).toContainText('Paused');
+      await expect(paused).toContainText('Stopped at page.pause()');
       // The call's place opens in the editor.
       await expect(paused.getByText('tests/live.spec.ts:10', { exact: true })).toBeVisible();
       await page.screenshot({ path: testInfo.outputPath('live-view-paused.png') });
@@ -653,7 +653,7 @@ test.describe('Live view of a run', () => {
       expect((await post({ type: 'stop', stop })).ok()).toBeTruthy();
       await expect(paused).toBeVisible({ timeout: 10_000 });
 
-      // The setting turns off: Paused and Watch leave the open page, and the worker's stream closes.
+      // The setting turns off: the stop and Watch leave the open page, and the worker's stream closes.
       expect((await request.patch(`/api/projects/${project}`, { data: { liveView: false } })).ok()).toBeTruthy();
       await expect(paused).toBeHidden({ timeout: 10_000 });
       await expect(watch).toHaveCount(0);

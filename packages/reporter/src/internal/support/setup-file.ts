@@ -30,6 +30,8 @@ export interface SetupInfo {
   liveViewKey?: string;
   /** The instance gives no key since no teammate reaches it: the desktop app on this machine. */
   liveViewLocal?: true;
+  /** The run's page, as the global setup printed it (`answeredRunUrl`). */
+  runUrl?: string;
 }
 
 /** What the global setup leaves in the file when it could not register the run: why, in its error's words. */

@@ -76,12 +76,13 @@ worker restarts; untick **Follow the worker's next test** to end it with its tes
 (`?watch=2`; `?watch=3.2` for worker 2 of shard 3) for a link. It ends with the run, saying how it went, 30 s after its
 lane's worker left, as the live view turns off, or as you close it. A view that cannot open says why.
 
-A CI run never stops at a breakpoint or a `page.pause()`; a shared run does, and its row then says **Paused** at the
-stopped call, which opens in your editor.
+A CI run never stops at a breakpoint or a `page.pause()`; a run on your machine does, and its row then says where,
+shared or not ([its stops](./share-live#stops-shared-or-not)).
 
 ## What is sent, to whom, and what is kept
 
-- **Nothing from a run on your machine until you share it.** Its workers open no connection.
+- **No image from a run on your machine until you share it.** Its workers open no connection; its
+  [stops](./share-live#stops-shared-or-not) show as text.
 - **Nothing while nobody watches.** Each worker of a CI or shared run keeps one connection to the dashboard and says
   only when its test stops and goes on. No image is taken.
 - **While someone watches a worker**, that worker sends JPEG images of its test's page, at most 640 by 400 pixels at

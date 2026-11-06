@@ -11,7 +11,7 @@ import type { StreamManager } from '../streaming/stream-manager.js';
 import { Logger } from '../support/logger.js';
 import { computePerformanceSummary } from '@piwitests/core/step-analysis';
 import { computeDistinctRunCounts, resolveOverallStatus, serializeRun } from './serializer.js';
-import { runUrl } from '../support/run-url.js';
+import { answeredRunUrl } from '../support/run-url.js';
 import { emitRunOutputs, ciBuildUrlFromMetadata, type RunOutput } from '../support/ci-output.js';
 import type { FailureLinks } from '../support/failure-links.js';
 import type { CollectedTestCase, SetupStep, FilterDetails, WireResourceReport, WireRunError } from '../../types.js';
@@ -260,6 +260,7 @@ export class RunSubmitter {
     if (!outcome.output) return null;
     // Failures that had no run id yet (batch mode, or a stream that never
     // opened) get their link lines now, ahead of the run URL.
+    this.failureLinks?.knowPage(outcome.output.runId, outcome.output.runUrl);
     this.failureLinks?.printPending(outcome.output.runId);
     emitRunOutputs(outcome.output, this.logger, run.options.outputFile);
     return { runId: outcome.output.runId, auth };
@@ -271,10 +272,11 @@ export class RunSubmitter {
     projectId: number | string | undefined,
     run: CollectedRun,
     status: string,
+    answer?: unknown,
   ): RunOutput | null {
     if (runId == null) return null;
     return {
-      runUrl: runUrl(this.httpClient.baseUrl, runId),
+      runUrl: answeredRunUrl(answer, this.httpClient.baseUrl, runId),
       runId,
       projectId,
       projectName: run.options.projectName!,
@@ -392,7 +394,7 @@ export class RunSubmitter {
       if (reports.length > 0) {
         await this.uploader.uploadReportsAndSettle(run.options.projectName!, sm.runId!, reports, run.startTime, auth);
       }
-      return { done: true, output: this.buildOutput(sm.runId!, undefined, run, overallStatus) };
+      return { done: true, output: this.buildOutput(sm.runId!, undefined, run, overallStatus, { runUrl: sm.runUrl }) };
     } catch (error) {
       this.logger.warn(`Failed to finalize streaming run: ${errorMessage(error)}`);
       this.logger.info('Falling back to batch upload...');
@@ -462,7 +464,10 @@ export class RunSubmitter {
         (await this.uploadInParts(run, payload, reports, auth)) ??
         (await this.uploadInOne(run, payload, reports, auth));
       this.dropLocalCopies();
-      return { done: true, output: this.buildOutput(response?.runId, response?.projectId, run, overallStatus) };
+      return {
+        done: true,
+        output: this.buildOutput(response?.runId, response?.projectId, run, overallStatus, response),
+      };
     } catch (error) {
       if (error instanceof HttpError && error.status === 401 && !auth) return this.stopForMissingAuth(run, payload);
       this.logger.warn(`Could not upload the run's files (${errorMessage(error)}): sending its results alone.`);
@@ -591,7 +596,10 @@ export class RunSubmitter {
       const response = await this.uploader.uploadJSON(payload, auth);
       this.dropLocalCopies();
       await this.sendFilesOfHeldRepeat(run, response, reports, auth);
-      return { done: true, output: this.buildOutput(response?.runId, response?.projectId, run, overallStatus) };
+      return {
+        done: true,
+        output: this.buildOutput(response?.runId, response?.projectId, run, overallStatus, response),
+      };
     } catch (error) {
       if (error instanceof HttpError && error.status === 401 && !auth) return this.stopForMissingAuth(run, payload);
       this.logger.error(`All upload methods failed: ${errorMessage(error)}`);

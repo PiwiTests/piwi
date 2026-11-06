@@ -11,7 +11,7 @@ import type { FileHandler } from '../files/file-handler.js';
 import { Logger } from '../support/logger.js';
 import { createLimiter } from '../support/limiter.js';
 import { readSetupInfo, type SetupInfo } from '../support/setup-file.js';
-import { runUrl } from '../support/run-url.js';
+import { answeredRunUrl } from '../support/run-url.js';
 import { formatDuration } from '../flake/lab.js';
 import type { CollectedTestCase, StreamEvent, FilterDetails } from '../../types.js';
 
@@ -48,6 +48,16 @@ interface RunStart {
   isFullRun?: boolean;
   filterDetails?: FilterDetails | null;
   plannedTotal?: number;
+}
+
+/** An event only someone watching the run reads: a step's, a stop's. Nobody watching, it is not sent. */
+function liveOnly(event: StreamEvent): boolean {
+  return (
+    event.type === 'step-begin' ||
+    event.type === 'step-end' ||
+    event.type === 'test-stopped' ||
+    event.type === 'test-resumed'
+  );
 }
 
 /**
@@ -114,6 +124,8 @@ export class StreamManager {
 
   private _enabled = false;
   private _runId: number | null = null;
+  /** The run's page, as the instance named it once the stream opened (`answeredRunUrl`). */
+  private _runUrl: string | null = null;
   private _token: string | null = null;
   private _auth: string | null = null;
   private _startPromise: Promise<void> | null = null;
@@ -135,6 +147,11 @@ export class StreamManager {
     return this._enabled;
   }
   /** Server-assigned run ID (`null` until the stream opens, and once the dashboard ended the run) */
+  /** The run's page once the stream opened: the one the instance named, else under the reporter's address. */
+  get runUrl(): string | null {
+    return this._runUrl;
+  }
+
   get runId(): number | null {
     return this.ended ? null : this._runId;
   }
@@ -246,7 +263,7 @@ export class StreamManager {
           this.giveUpStart(new Error('the answer names no run'));
           return;
         }
-        this.streamOpened(response.runId, response.streamToken, failures > 0);
+        this.streamOpened(response.runId, response.streamToken, failures > 0, response);
         return;
       } catch (error) {
         // A `/start` the instance may have taken creates a run each time it is asked again.
@@ -275,7 +292,7 @@ export class StreamManager {
    * the dashboard no longer begins (409: it was cancelled, e.g. by a crash-recovery submit) is set aside for a fresh
    * one.
    */
-  private async openRun(run: RunStart): Promise<{ runId?: number; streamToken?: string } | null> {
+  private async openRun(run: RunStart): Promise<{ runId?: number; streamToken?: string; runUrl?: unknown } | null> {
     const shardIndex = run.shardInfo?.current;
     const shardTotal = run.shardInfo?.total;
     const setup = this.setupInfo;
@@ -330,7 +347,9 @@ export class StreamManager {
   }
 
   // The stream is open: send what queued while it opened, and say so, with how late when a try failed first.
-  private streamOpened(runId: number, token: string, late: boolean): void {
+  private streamOpened(runId: number, token: string, late: boolean, answer: unknown): void {
+    const shown = this.setupInfo?.runId === runId ? this.setupInfo.runUrl : undefined;
+    this._runUrl = answeredRunUrl(answer, this.options.serverUrl ?? this.httpClient.baseUrl, runId);
     this._runId = runId;
     this._token = token;
     this._enabled = true;
@@ -340,9 +359,8 @@ export class StreamManager {
         ? `Streaming started ${formatDuration(Date.now() - this.startedAt)} late, once the dashboard answered. Run ID: ${runId}`
         : `Streaming enabled. Run ID: ${runId}`,
     );
-    if (this.options.serverUrl) {
-      this.logger.info(`View live progress: ${runUrl(this.options.serverUrl, runId)}`);
-    }
+    // The global setup printed it already for the run it registered.
+    if (this._runUrl !== shown) this.logger.info(`View live progress: ${this._runUrl}`);
     this.lastActivityAt = Date.now();
     this.scheduleHeartbeat();
     // Whatever queued while the stream opened goes now, not at the next event or the finalize.
@@ -397,12 +415,12 @@ export class StreamManager {
 
   /**
    * Queue a test-case event, held until the stream opens. Triggers an immediate flush when the batch size is
-   * reached, otherwise schedules a timer-based flush. A step event is dropped while nobody watches the run, and every
-   * event once the dashboard ended it or the stream will never open.
+   * reached, otherwise schedules a timer-based flush. A step or a stop event is dropped while nobody watches the run
+   * (`liveOnly`), and every event once the dashboard ended it or the stream will never open.
    */
   queueEvent(event: StreamEvent): void {
     if (this.ended || this.startGivenUp) return;
-    if (this.watched === false && (event.type === 'step-begin' || event.type === 'step-end')) return;
+    if (this.watched === false && liveOnly(event)) return;
     this.pendingEvents.enqueue(event);
 
     if (this.pendingEvents.length >= this.options.streamingBatchSize!) {
@@ -414,13 +432,13 @@ export class StreamManager {
 
   /**
    * Queue several events and send them at once, in one flush: none of them triggers a batch-size flush of its own, so
-   * within that flush they go out in order, in requests sent one after the other. Step events are dropped as
+   * within that flush they go out in order, in requests sent one after the other. Step and stop events are dropped as
    * `queueEvent` drops them.
    */
   queueEventsNow(events: StreamEvent[]): void {
     if (this.ended || this.startGivenUp) return;
     for (const event of events) {
-      if (this.watched === false && (event.type === 'step-begin' || event.type === 'step-end')) continue;
+      if (this.watched === false && liveOnly(event)) continue;
       this.pendingEvents.enqueue(event);
     }
     void this.flush();

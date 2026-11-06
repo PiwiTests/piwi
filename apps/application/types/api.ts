@@ -16,6 +16,7 @@ import type {
 } from '#shared/types';
 import type { ScmProviderName } from '#shared/scm-urls';
 import type { StuckAttempt } from '#shared/stuck-tests';
+import type { TestStop } from '@piwitests/core/wire';
 import type { PageDiffSummary, PageDiffHunk } from '#shared/page-diff';
 import type { ClusterState } from '#shared/cluster-state';
 import type { NextStep } from '#shared/next-step';
@@ -1072,6 +1073,8 @@ export interface TestCaseResult {
   blockedBy?: string | null;
   /** A running test that has run far longer than it usually does (`#shared/stuck-tests`). */
   stuck?: StuckAttempt | null;
+  /** Where a running test of a run outside CI stands stopped, as its reporter told it (`test-stopped`); null once it went on. */
+  liveStop?: TestStop | null;
 }
 
 /** Why a `didnotrun` case never executed — mirrors the reporter's taxonomy. */

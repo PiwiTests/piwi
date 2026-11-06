@@ -9,6 +9,7 @@ import { resolveShardInfo } from '../internal/support/shard-info.js';
 import { resolveScmBranch } from '../internal/collect/metadata-collector.js';
 import { isLiveViewKey } from '@piwitests/core/live-view';
 import { writeSetupFailure, writeSetupInfo } from '../internal/support/setup-file.js';
+import { answeredRunUrl } from '../internal/support/run-url.js';
 import { ariaSampleIdentity, clearAriaSampleFile, writeAriaSampleFile } from '../internal/support/aria-sampling.js';
 import { isUiMode, isListMode } from '../internal/support/run-mode.js';
 import { checkBaseUrls, remoteBrowserNote } from '../internal/support/base-url-check.js';
@@ -224,14 +225,17 @@ async function registerRun(
     throw new Error('the answer to /api/test-runs/setup names no run');
   }
   const liveViewKey = response.liveView?.key;
+  const runUrl = answeredRunUrl(response, httpClient.baseUrl, response.runId);
   writeSetupInfo({
     runId: response.runId,
     setupToken: response.setupToken,
     projectName: opts.projectName!,
     ...(isLiveViewKey(liveViewKey) ? { liveViewKey } : {}),
     ...(response.liveView?.refused === 'local' ? { liveViewLocal: true as const } : {}),
+    runUrl,
   });
-  logger.debug(`Global setup: initializing run #${response.runId}`);
+  // The run is on the dashboard from now on, through a long global setup too.
+  logger.info(`View live progress: ${runUrl}`);
   // A CI run's workers say in its log when their live view is lost and when it is back, outside any test's output;
   // without the relay's file the run goes on without those lines.
   if (isLiveViewKey(liveViewKey) && detectCi(process.env) && !relaying) {

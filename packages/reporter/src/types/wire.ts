@@ -21,6 +21,7 @@ import type {
   TestMetadata,
   TestSourceFrame,
   TestStepEvent,
+  TestStop,
   WireExecutionResources,
   WireNetworkRequest,
   WireResourceReport,
@@ -266,8 +267,39 @@ export interface StepEndStreamEvent {
   startedAt: number | null;
 }
 
+/** Who a stop event is about: the attempt of a test running now, named as its `begin` named it. */
+interface StoppedTestOf {
+  title: string;
+  location: string;
+  /** The attempt: 0 for the first, 1 for the first retry. */
+  retries: number;
+  repeatEachIndex?: number;
+  workerIndex: number | null;
+  /** The worker's lane: Playwright's `parallelIndex`. */
+  parallelIndex?: number | null;
+  shardIndex: number | null;
+}
+
+/** A test of a run outside CI stopped (a breakpoint, a step, a Pause, `page.pause()`, a failure held): what and where. */
+export interface TestStoppedStreamEvent extends StoppedTestOf {
+  type: 'test-stopped';
+  stop: TestStop;
+}
+
+/** The stop of a test ended, and how long its attempt has stood stopped in all (`pausedMs`). */
+export interface TestResumedStreamEvent extends StoppedTestOf {
+  type: 'test-resumed';
+  pausedMs: number;
+}
+
 /** Discriminated union of events queued to `StreamManager` and persisted by `StreamBuffer`. */
-export type StreamEvent = BeginStreamEvent | CompleteStreamEvent | StepBeginStreamEvent | StepEndStreamEvent;
+export type StreamEvent =
+  | BeginStreamEvent
+  | CompleteStreamEvent
+  | StepBeginStreamEvent
+  | StepEndStreamEvent
+  | TestStoppedStreamEvent
+  | TestResumedStreamEvent;
 
 // ── Suite-level setup steps (beforeAll/afterAll timeline) ─────────────────────
 

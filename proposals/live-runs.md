@@ -93,7 +93,17 @@ the test is skipped at its next locator call. In both editors, a new stop takes 
 stop's file is open or on the worker slot the person is on, a slot only watched in a lane view not counting, and the
 paused page keeps its stop while held, waiting 10 s at most for a slot stepped from the editor. The Windows
 thumbnail's Open restores a minimized window, and its Stop is disabled while no local run runs. P4's showcase beat is
-not built yet. The later phases are proposed. The bugs the analysis
+not built yet. Built from P5's run name and link: every run outside CI records a `piwiRunRef` (`PIWI_RUN_REF`, else an
+editor's `PIWI_ORIGIN_REF`, else `local-<pid>-<time>`); `/setup`, `/start`, `/begin`, `/finish` and the batch routes
+answer `runUrl` under `PIWI_SITE_URL` when it is set, which the reporter prints (`View live progress`), writes to its
+output and leads its failure links under, falling back to the address it reached; a run outside CI tells each stop as
+text through a private file its workers append to (`PIWI_STOP_NOTES`), as `test-stopped` and `test-resumed` with the
+stop's reason, call, place, start and the time stood stopped, only while someone has the run open, the stops still
+standing again as someone opens it; the instance keeps the stop on the running test for a page that opens later, rows
+word it by reason in one set of words (`stop-words.ts`) with how long it has stood, Stuck? leaves the stopped time out
+and never marks a test while it stands stopped (#1109), and the header names the origin and the steering tool. The
+demo plays it as **Stopped at a breakpoint**. The rest of P5 (`#N · Open`, the start and stop lines, the words, the
+Testing view and the smaller fixes) is not built yet. The later phases are proposed. The bugs the analysis
 confirmed are filed as #1106 (the run page never goes live with a few tabs open), #1107 (live steps missing or on the
 wrong row), #1108 (the reporter does not recover from a short outage), #1109 (a paused local test is marked Stuck? and
 notifies the team), #1110 (the Runs window misses a later editor window and loses its live views), #1111 (desktop app

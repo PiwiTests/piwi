@@ -151,7 +151,8 @@ import { watchCalls, watchPageEvents } from './run-events.js';
 import { errorMessage } from '../support/errors.js';
 import { regionSnapshotWithoutSecrets } from './region-snapshot.js';
 import { keepResponse, startKeeping, stopKeeping } from './kept-responses.js';
-import { PIWI_ORIGIN_ENV } from '../config/env.js';
+import { PIWI_ORIGIN_ENV, PIWI_STOP_NOTES_ENV } from '../config/env.js';
+import { noteStop } from '../support/stop-notes.js';
 import { stripAnsi } from '@piwitests/core/error-parse';
 import { canRecordFromHere, recordFromHere } from './record-handoff.js';
 import {
@@ -1895,6 +1896,8 @@ async function showStop(
   const onRecord = page ? recorderAt(page, testInfo, location, handoffReason) : undefined;
   const intents = page ? new BarIntents() : null;
   const record: PauseRecord = { title, location, reason, startedAt: Date.now(), duration: 0 };
+  // How long the attempt stood stopped before this stop.
+  const pausedBefore = sink.stops.reduce((sum, earlier) => sum + Math.max(0, earlier.duration), 0);
   sink.stops.push(record);
   // The run page's live view says the worker is paused, until the stop ends.
   const stoppedAt = callSitePlace(location);
@@ -1902,6 +1905,21 @@ async function showStop(
     reason,
     call: { title, file: stoppedAt?.file ?? null, line: stoppedAt?.line ?? null },
     test: testInfo.title,
+  });
+  // The reporter's process tells the instance, while someone has the run open (`stop-notes.ts`).
+  const noted = { testId: testInfo.testId, retry: testInfo.retry };
+  noteStop(process.env[PIWI_STOP_NOTES_ENV], {
+    kind: 'stopped',
+    ...noted,
+    stop: {
+      reason,
+      title,
+      file: stoppedAt ? runFile(stoppedAt.file) : null,
+      line: stoppedAt?.line ?? null,
+      bar,
+      since: record.startedAt,
+      pausedMs: Math.round(pausedBefore),
+    },
   });
   // `end`: the stop ends unanswered, why as its reason (`StopEnd`). `over`: that, or the editor answered; the bar
   // comes down then.
@@ -2039,6 +2057,11 @@ async function showStop(
     else if (end.signal.reason === 'ended') releaseCall(sink, call?.settled ?? Promise.resolve());
     sink.shownStops.delete(end);
     goneOn();
+    noteStop(process.env[PIWI_STOP_NOTES_ENV], {
+      kind: 'resumed',
+      ...noted,
+      pausedMs: Math.round(pausedBefore + Math.max(0, record.duration)),
+    });
     await held?.release();
   });
   const heldAt = testTimeSlot(testInfo)?.elapsed ?? null;

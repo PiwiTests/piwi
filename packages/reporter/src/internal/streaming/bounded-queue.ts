@@ -6,7 +6,9 @@ import type { StreamEvent } from '../../types.js';
  *
  *  - `step-begin` / `step-end` (tier 0) are pure live-progress detail and are
  *    also carried inside the matching `complete` event (`stepEvents`), so
- *    shedding them loses nothing final.
+ *    shedding them loses nothing final; so is a stop (`test-stopped`,
+ *    `test-resumed`), which the `complete` ends, and which is sent again to
+ *    whoever opens the run while it stands.
  *  - `begin` (tier 1) marks a test as started; the server can still create the
  *    case from the `complete` that follows, so it is shed after steps.
  *  - `complete` (tier 2) carries the test's result and detail. Shedding it is
@@ -17,6 +19,8 @@ import type { StreamEvent } from '../../types.js';
 const DROP_TIER: Record<StreamEvent['type'], number> = {
   'step-begin': 0,
   'step-end': 0,
+  'test-stopped': 0,
+  'test-resumed': 0,
   begin: 1,
   complete: 2,
 };

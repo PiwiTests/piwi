@@ -13,7 +13,14 @@ import { resolveBrowserName } from '#shared/browser-name';
 import { eq, and, or, sql, inArray } from 'drizzle-orm';
 import { DEMO_SIMULATOR_INSTANCE_ID, liveSimulatorPages, simulatorPageOf } from '../simulator-instance';
 import { getDemoDb } from '../db.client';
-import { checkDemoStuckTests, forgetDemoRun, noteDemoBegin, noteDemoComplete, noteDemoSteps } from './stuck-tests';
+import {
+  checkDemoStuckTests,
+  demoRunningCase,
+  forgetDemoRun,
+  noteDemoBegin,
+  noteDemoComplete,
+  noteDemoSteps,
+} from './stuck-tests';
 import { publishDemoGlobalEvent, publishDemoRunEvent } from '../run-events';
 import {
   projects,
@@ -26,7 +33,7 @@ import {
 import { mapWireCaseToRunCase } from '~~/server/utils/map-wire-case';
 import { wireCaseProblem } from '~~/server/utils/wire-case-problem';
 import { mapStepEventsToRunEvents } from '~~/server/utils/map-step-events';
-import { testBeginData, testCompletedData } from '~~/server/utils/live-case-events';
+import { testBeginData, testCompletedData, testStopRunEvent } from '~~/server/utils/live-case-events';
 import {
   buildNetworkRequestItems,
   buildNetworkRequestInsertValues,
@@ -131,6 +138,7 @@ import {
   withShardDurations,
 } from '~~/server/utils/shard-spans';
 import { updateRunMetadata } from '~~/server/utils/run-metadata';
+import { publicRunUrl } from '#shared/run-url';
 
 type DemoDb = Awaited<ReturnType<typeof getDemoDb>>;
 
@@ -303,7 +311,13 @@ export async function apiSetupTestRun(body: TestRunStartPayload, scope: 'all' | 
       tokens.add(setupToken);
       demoShardTokens.set(existingShardedRun.id, tokens);
       await applyReporterKeep(db, existingShardedRun.id, body.keep);
-      return { success: true, runId: existingShardedRun.id, projectId: project.id, setupToken };
+      return {
+        success: true,
+        runId: existingShardedRun.id,
+        runUrl: publicRunUrl(existingShardedRun.id),
+        projectId: project.id,
+        setupToken,
+      };
     }
 
     await cancelInstanceRuns(db, project.id, instanceId, undefined, true);
@@ -343,7 +357,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload, scope: 'all' | 
     if (!testRun) throw new Error('Failed to create test run');
     await applyReporterKeep(db, testRun.id, body.keep);
     publishDemoGlobalEvent({ type: 'run-initializing', runId: testRun.id, projectId: project.id });
-    return { success: true, runId: testRun.id, projectId: project.id, setupToken };
+    return { success: true, runId: testRun.id, runUrl: publicRunUrl(testRun.id), projectId: project.id, setupToken };
   }
 
   await cancelInstanceRuns(db, project.id, instanceId);
@@ -384,7 +398,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload, scope: 'all' | 
 
   publishDemoGlobalEvent({ type: 'run-initializing', runId: testRun.id, projectId: project.id });
 
-  return { success: true, runId: testRun.id, projectId: project.id, setupToken };
+  return { success: true, runId: testRun.id, runUrl: publicRunUrl(testRun.id), projectId: project.id, setupToken };
 }
 
 /** POST /api/test-runs/:id/begin */
@@ -490,12 +504,19 @@ export async function apiBeginTestRun(
     return {
       success: true,
       runId: testRun.id,
+      runUrl: publicRunUrl(testRun.id),
       projectId: testRun.projectId,
       streamToken: testRun.streamToken ?? streamToken,
     };
   }
 
-  return { success: true, runId: testRun.id, projectId: testRun.projectId, streamToken };
+  return {
+    success: true,
+    runId: testRun.id,
+    runUrl: publicRunUrl(testRun.id),
+    projectId: testRun.projectId,
+    streamToken,
+  };
 }
 
 // ── persistRunCases (mirrors server/utils/persist-run-cases.ts) ────────────
@@ -967,6 +988,12 @@ export async function apiPostRunEvents(
     noteDemoBegin(id, beginData);
   }
 
+  // A test's stop, and its going on, publish as the server's events handler publishes them, on its running attempt.
+  for (const tc of validEvents) {
+    const stopEvent = testStopRunEvent(tc, demoRunningCase(id, tc));
+    if (stopEvent) publishDemoRunEvent(id, stopEvent);
+  }
+
   // Step events publish in batch order through the helper the server's events
   // handler (server/api/test-runs/[id]/events.post.ts) uses.
   for (const stepEvent of stepRunEvents) publishDemoRunEvent(id, stepEvent);
@@ -1215,7 +1242,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
       });
     }
 
-    return { success: true, runId: id, status: finalStatus ?? 'running' };
+    return { success: true, runId: id, runUrl: publicRunUrl(id), status: finalStatus ?? 'running' };
   }
 
   // Non-sharded
@@ -1297,7 +1324,7 @@ export async function apiFinishTestRun(id: number, body: TestRunFinishPayload) {
   forgetDemoRun(id);
   publishDemoGlobalEvent({ type: 'rollup-updated', runId: id, projectId: testRun.projectId });
 
-  return { success: true, runId: id, status };
+  return { success: true, runId: id, runUrl: publicRunUrl(id), status };
 }
 
 /**

@@ -7,6 +7,7 @@ import { readIncidentReview, readRunIncident } from '#shared/run-incident';
 import { describeIngestHealth, readIngestHealth } from '#shared/ingest-health';
 import { mergeExternalIdDuplicates, type ExternalIdDuplicateTest } from '@piwitests/core/test-meta';
 import { readShuffleSeed } from '#shared/utils/run-metadata';
+import { runStartedFrom } from '#shared/run-started-from';
 import { readRunCoverageGaps } from '#shared/run-coverage-gaps';
 import { coverageGapDetail } from '~/utils/combined-coverage';
 import type { LocalRunSet } from '~/composables/useDesktopLocalRuns';
@@ -52,6 +53,8 @@ const { onOpenReport } = useDesktopReportLink();
 const storageStats = computed(() => props.testRun?.storageStats);
 const ci = computed(() => props.testRun?.metadata?.ci);
 const scm = computed(() => props.testRun?.metadata?.scm);
+/** Where the run started and the editor that steers it (`runStartedFrom`). */
+const startedFrom = computed(() => runStartedFrom(props.testRun?.metadata));
 const tags = computed(() => props.testRun?.metadata?.tags as string[] | undefined);
 const customData = computed(() => props.testRun?.metadata?.customData);
 const incident = computed(() => readRunIncident(props.testRun?.metadata));
@@ -361,6 +364,7 @@ function onLabelKeydown(e: KeyboardEvent) {
       <ClientOnly>
         <span :title="prettyDateFormat(testRun?.startTime)">Started {{ formatRelativeTime(testRun?.startTime) }}</span>
       </ClientOnly>
+      <span v-if="startedFrom" data-testid="run-started-from">from {{ startedFrom }}</span>
       <template v-if="testRun?.duration">
         <span class="text-dimmed">·</span>
         <DurationValue :ms="testRun.duration" />

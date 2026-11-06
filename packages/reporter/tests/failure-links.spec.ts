@@ -22,26 +22,28 @@ const TEST = {
 
 describe('caseLocateUrl', () => {
   it('builds the resolver URL from the run id and the test identity', () => {
-    expect(caseLocateUrl('https://dash.example.com/', 42, TEST)).toBe(
+    expect(caseLocateUrl('https://dash.example.com/test-runs/42', TEST)).toBe(
       'https://dash.example.com/test-runs/42/locate?file=tests%2Fcheckout.spec.ts&title=applies%20the%20discount&retry=2&browser=chromium',
     );
   });
 
   it('omits the browser when the test ran under no project', () => {
-    expect(caseLocateUrl('https://dash.example.com', 42, { ...TEST, browser: null })).toBe(
+    expect(caseLocateUrl('https://dash.example.com/test-runs/42', { ...TEST, browser: null })).toBe(
       'https://dash.example.com/test-runs/42/locate?file=tests%2Fcheckout.spec.ts&title=applies%20the%20discount&retry=2',
     );
   });
 
   it('names the `--repeat-each` repetition past the first', () => {
-    expect(caseLocateUrl('https://dash.example.com', 42, { ...TEST, repeatEachIndex: 3 })).toBe(
+    expect(caseLocateUrl('https://dash.example.com/test-runs/42', { ...TEST, repeatEachIndex: 3 })).toBe(
       'https://dash.example.com/test-runs/42/locate?file=tests%2Fcheckout.spec.ts&title=applies%20the%20discount&retry=2&browser=chromium&repeat=3',
     );
-    expect(caseLocateUrl('https://dash.example.com', 42, { ...TEST, repeatEachIndex: 0 })).not.toContain('repeat=');
+    expect(caseLocateUrl('https://dash.example.com/test-runs/42', { ...TEST, repeatEachIndex: 0 })).not.toContain(
+      'repeat=',
+    );
   });
 
   it('encodes characters a title may carry', () => {
-    const url = caseLocateUrl('https://dash.example.com', 1, { ...TEST, title: 'a+b & c=d #1' });
+    const url = caseLocateUrl('https://dash.example.com/test-runs/1', { ...TEST, title: 'a+b & c=d #1' });
     expect(url).toContain('title=a%2Bb%20%26%20c%3Dd%20%231');
   });
 });
@@ -87,9 +89,9 @@ describe('FailureLinks', () => {
     links.printPending(7);
 
     expect(info.mock.calls.map((c) => c[0])).toEqual([
-      formatFailureLine({ ...TEST, url: caseLocateUrl('https://dash.example.com', 7, TEST) }),
-      `✗ second → ${caseLocateUrl('https://dash.example.com', 7, { ...TEST, title: 'second' })}`,
-      `✗ third → ${caseLocateUrl('https://dash.example.com', 7, { ...TEST, title: 'third' })}`,
+      formatFailureLine({ ...TEST, url: caseLocateUrl('https://dash.example.com/test-runs/7', TEST) }),
+      `✗ second → ${caseLocateUrl('https://dash.example.com/test-runs/7', { ...TEST, title: 'second' })}`,
+      `✗ third → ${caseLocateUrl('https://dash.example.com/test-runs/7', { ...TEST, title: 'third' })}`,
     ]);
     expect(links.count).toBe(3);
   });
@@ -97,7 +99,15 @@ describe('FailureLinks', () => {
   it('resolves every failure against the run id it is given', () => {
     const links = new FailureLinks('https://dash.example.com', new Logger(false));
     links.add(TEST);
-    expect(links.resolve(9)).toEqual([{ ...TEST, url: caseLocateUrl('https://dash.example.com', 9, TEST) }]);
+    expect(links.resolve(9)).toEqual([{ ...TEST, url: caseLocateUrl('https://dash.example.com/test-runs/9', TEST) }]);
+  });
+
+  it('leads under the page the instance named for the run, where it named one', () => {
+    const links = new FailureLinks('http://piwi.internal:3000', new Logger(false));
+    links.add(TEST);
+    links.knowPage(9, 'https://piwi.example.com/test-runs/9');
+    expect(links.resolve(9)[0]!.url).toMatch(/^https:\/\/piwi\.example\.com\/test-runs\/9\/locate\?/);
+    expect(links.resolve(10)[0]!.url).toMatch(/^http:\/\/piwi\.internal:3000\/test-runs\/10\/locate\?/);
   });
 });
 

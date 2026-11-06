@@ -146,13 +146,23 @@ export function resolveRunOrigin(env: Env, warn?: (message: string) => void): Ru
 }
 
 /**
- * The launcher's name for the run itself (`PIWI_RUN_REF`), when a launcher started the run (`PIWI_ORIGIN` names a
- * known kind) and the name is a valid ref; undefined otherwise.
+ * The run's own name (`piwiRunRef`): the one it was given (`PIWI_RUN_REF`, by its launcher or, for a terminal run,
+ * `followEditor`; for a run an editor started, its `PIWI_ORIGIN_REF`) when it is a valid ref, else, outside CI, one
+ * of its own (`own`). A CI run no launcher started has none: its number names it.
  */
-export function resolveRunRef(env: Env): string | undefined {
+export function resolveRunRef(env: Env, own: () => string = ownRunRef): string | undefined {
   const kind = env[PIWI_ORIGIN_ENV.kind]?.trim();
-  if (!kind || !isRunOriginKind(kind)) return undefined;
-  return parseRunOriginRef(env[RUN_REF_ENV]);
+  const launched = !!kind && isRunOriginKind(kind);
+  if (!launched && detectCi(env)) return undefined;
+  const given =
+    parseRunOriginRef(env[RUN_REF_ENV]) ??
+    (kind === 'editor' ? parseRunOriginRef(env[PIWI_ORIGIN_ENV.ref]) : undefined);
+  return given ?? (launched ? undefined : own());
+}
+
+/** A name for a run nothing named: `local-<pid>-<time>`. */
+function ownRunRef(): string {
+  return `local-${process.pid}-${Date.now()}`;
 }
 
 /** Strip a leading `refs/heads/` a provider may prefix onto a branch variable. */

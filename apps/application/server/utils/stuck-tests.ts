@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { resolveBrowserName } from '#shared/browser-name';
 import { runningTestHistory, type RunningTestHistory } from '#shared/handlers/stuck-tests';
 import { UNFINISHED_RUN_STATUSES } from '#shared/run-eligibility';
-import { STUCK_FLOOR_MS, stuckAttempt, testStuckEventData, type StuckAttempt } from '#shared/stuck-tests';
+import { STUCK_FLOOR_MS, runningMs, stuckAttempt, testStuckEventData, type StuckAttempt } from '#shared/stuck-tests';
 import type { DbClient } from '../database';
 import { testRuns } from '../database/schema';
 import { emitTestStuck } from './notifications/run-notifications';
@@ -25,11 +25,14 @@ export async function checkStuckTests(db: DbClient, now = Date.now()): Promise<n
   const projectOf = new Map<number, number | null>();
   let found = 0;
   for (const [runId, data] of [...runEventBus.runningCaseEntries()]) {
-    const startedAt = typeof data.startedAt === 'number' ? data.startedAt : null;
-    if (startedAt === null || now - startedAt < STUCK_FLOOR_MS) continue;
+    if (typeof data.startedAt !== 'number') continue;
+    const startedAt = data.startedAt;
+    // How long it has run, its stops left out; none while it stands stopped.
+    const elapsedMs = runningMs(data, startedAt, now);
+    if (elapsedMs === null || elapsedMs < STUCK_FLOOR_MS) continue;
     if (data.stuck) {
       // How long it has run now, for a page that connects later.
-      data.stuck = { ...(data.stuck as StuckAttempt), elapsedMs: now - startedAt };
+      data.stuck = { ...(data.stuck as StuckAttempt), elapsedMs };
       continue;
     }
     let projectId = projectOf.get(runId);
@@ -61,7 +64,7 @@ export async function checkStuckTests(db: DbClient, now = Date.now()): Promise<n
       });
       histories.set(data, history);
     }
-    const stuck = stuckAttempt(now - startedAt, history.passingDurations);
+    const stuck = stuckAttempt(elapsedMs, history.passingDurations);
     if (!stuck) continue;
 
     data.stuck = stuck;

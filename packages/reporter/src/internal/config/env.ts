@@ -233,6 +233,13 @@ export const PIWI_RESOURCES_RESULTS_ENV = 'PIWI_RESOURCES_RESULTS';
  */
 export const PIWI_RUN_LOG_ENV = 'PIWI_RUN_LOG';
 
+/**
+ * The file each worker of a run outside CI appends a line to as a stop shows and as it ends, for the reporter's own
+ * process to tell the instance while someone has the run open: the reporter names it in `onBegin`, before any worker
+ * starts (`internal/support/stop-notes.ts`). Not an option.
+ */
+export const PIWI_STOP_NOTES_ENV = 'PIWI_STOP_NOTES';
+
 /** A boolean variable's value: `true`, `1`, `yes` or `on`, in any case, is true; anything else is false. */
 export function readBool(val: string | undefined): boolean | undefined {
   if (val === undefined) return undefined;

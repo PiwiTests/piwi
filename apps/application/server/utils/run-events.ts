@@ -23,6 +23,9 @@ export interface RunEvent {
     | 'test-begin'
     /** A running test has run far longer than it usually does (`#shared/stuck-tests`): its key and `StuckAttempt`. */
     | 'test-stuck'
+    /** A test outside CI stopped, or its stop ended (`testStopRunEvent`): the attempt, and its `TestStop` or time stopped. */
+    | 'test-stopped'
+    | 'test-resumed'
     | 'test-completed'
     | 'step-begin'
     | 'step-end'
@@ -208,6 +211,11 @@ class RunEventBus {
       this.runningCases.set(runId, cases);
     }
     cases.set(key, data);
+  }
+
+  /** The begin payload of the case `key` of a run while it runs, as `recordRunningCase` kept it. */
+  getRunningCase(runId: number, key: string): Record<string, unknown> | undefined {
+    return this.runningCases.get(runId)?.get(key);
   }
 
   /** Drop every running case of a run that ended without completing them. */

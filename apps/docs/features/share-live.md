@@ -26,15 +26,24 @@ whose project enables live view, and connect to an editor or the desktop app for
 
 The first share in a window asks for confirmation. The shared run shows its destination, viewer count and a link to copy.
 
-Until then, its workers send nothing, and its running tests say **Not shared live** where **Watch** would be. Once
-shared, its stops (the call, its file and line, the test's title) reach everyone with the run's page open, and images
-only those watching. **Stop sharing** closes the views within seconds and clears **Paused** from the rows. Closing the
+Until then, its workers send nothing, and its running tests say **Not shared live** where **Watch** would be, or where
+they [stopped](#stops-shared-or-not). Once shared, images go only to those watching. **Stop sharing** closes the views within seconds. Closing the
 editor or the desktop app stops it too.
 
 A run that cannot be shared says why: it reports to no instance or to the desktop app, it does not stream its results,
 its project has the live view off, the reporter's global setup did not register it, or the instance did not register the run
 as it started. A sharing that stops on its own says why (the live view turned off, or the instance stopped answering), and **Share live** shows again: shared again, the run streams once the instance answers with its live view
 on, a restarted instance taking the run's key back. A run the instance no longer holds live cannot be shared again.
+
+## Stops, shared or not
+
+A test of a run on your machine stops at a breakpoint, a `page.pause()`, a step or **Run to here**, and its row on the
+run's page says why, at the stopped call: **Stopped at a breakpoint**, **Stopped at page.pause()**, **Paused**. The
+call's place opens in your editor, and the row says for how long once the stop has stood a minute. A shared run's row
+tells it from its live view. A run nobody shares tells it as text, with `@piwitests/reporter` 0.68.0 or later: its
+results stream sends the call's title, its file and line, the test's title and since when, only while someone has the
+run's page open, and a stop that began before, once someone opens it. Never an image. A test that stands stopped is
+never marked [**Stuck?**](./stuck-tests).
 
 ## From the desktop app
 

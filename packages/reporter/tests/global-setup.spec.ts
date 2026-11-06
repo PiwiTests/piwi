@@ -138,7 +138,9 @@ describe('createGlobalSetup', () => {
   });
 
   it('does not fetch the sample set when sampleAriaOnPass is off', async () => {
-    const { server, url, requests } = await startServer((_req, res) => jsonRes(res, 200, { runId: 5, setupToken: 't' }));
+    const { server, url, requests } = await startServer((_req, res) =>
+      jsonRes(res, 200, { runId: 5, setupToken: 't' }),
+    );
     cleanupNames.push('sampling-off');
     try {
       const setupFn = createGlobalSetup({ serverUrl: url, projectName: 'sampling-off', sampleAriaOnPass: false });
@@ -175,9 +177,7 @@ describe('createGlobalSetup', () => {
       const patterns = uploads.map((r) => JSON.parse(r.body).manifest.routes[0].pattern).sort();
       expect(patterns).toEqual(['/cart', '/users']);
     } finally {
-      await Promise.all(
-        [server, shop.server, admin.server].map((s) => new Promise<void>((r) => s.close(() => r()))),
-      );
+      await Promise.all([server, shop.server, admin.server].map((s) => new Promise<void>((r) => s.close(() => r()))));
     }
   });
 
@@ -197,7 +197,13 @@ describe('createGlobalSetup', () => {
       expect(body.projectName).toBe('global-setup-register');
 
       const info = readSetupInfo('global-setup-register');
-      expect(info).toEqual({ runId: 42, setupToken: 'tok-abc', projectName: 'global-setup-register' });
+      // An instance that names no page for the run: the run's page under the address the reporter reached.
+      expect(info).toEqual({
+        runId: 42,
+        setupToken: 'tok-abc',
+        projectName: 'global-setup-register',
+        runUrl: `${url}/test-runs/42`,
+      });
     } finally {
       await new Promise<void>((r) => server.close(() => r()));
     }
@@ -233,7 +239,12 @@ describe('createGlobalSetup', () => {
       await createGlobalSetup({ serverUrl: url, projectName })({ reporter: [PIWI_REPORTER_ENTRY] });
       expect(fs.existsSync(getSetupFilePath(projectName))).toBe(true);
       // A spec that does not load: Playwright ends the run without calling `onBegin`.
-      const reporter = new PiwiDashboardReporter({ serverUrl: url, projectName, uploadReport: false, uploadTraces: false });
+      const reporter = new PiwiDashboardReporter({
+        serverUrl: url,
+        projectName,
+        uploadReport: false,
+        uploadTraces: false,
+      });
       await reporter.onEnd({ status: 'failed' } as any);
       expect(fs.existsSync(getSetupFilePath(projectName))).toBe(false);
     } finally {
@@ -338,7 +349,10 @@ describe('createGlobalSetup', () => {
     const project = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-entry-'));
     const pkg = path.join(project, 'node_modules', '@piwitests', 'reporter');
     fs.mkdirSync(path.join(pkg, 'dist'), { recursive: true });
-    fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ name: '@piwitests/reporter', main: 'dist/index.js' }));
+    fs.writeFileSync(
+      path.join(pkg, 'package.json'),
+      JSON.stringify({ name: '@piwitests/reporter', main: 'dist/index.js' }),
+    );
     fs.writeFileSync(path.join(pkg, 'dist', 'index.js'), '');
     const { server, url, requests } = await startServer((_req, res) =>
       jsonRes(res, 200, { runId: 4, setupToken: 't' }),
@@ -349,7 +363,10 @@ describe('createGlobalSetup', () => {
         configFile: path.join(project, 'playwright.config.ts'),
         reporter: [
           ['list', null],
-          [fs.realpathSync(path.join(pkg, 'dist', 'index.js')), { serverUrl: url, projectName: 'global-setup-resolved-entry' }],
+          [
+            fs.realpathSync(path.join(pkg, 'dist', 'index.js')),
+            { serverUrl: url, projectName: 'global-setup-resolved-entry' },
+          ],
         ],
       });
       expect(requests.filter((r) => r.url === '/api/test-runs/setup')).toHaveLength(1);
@@ -499,8 +516,13 @@ describe('createGlobalSetup', () => {
       try {
         const setupFn = createGlobalSetup({ serverUrl: url, projectName: 'base-url-remote', checkBaseUrl: true });
         const connectOptions = { wsEndpoint: 'ws://grid.example.test/' };
-        await setupFn({ reporter: [PIWI_REPORTER_ENTRY], projects: [{ name: 'grid', use: { baseURL: `${url}/`, connectOptions } }] });
-        expect(logs.some((l) => l.startsWith(`[Piwi Dashboard] Base URL answered: ${url}/. The check ran from`))).toBe(true);
+        await setupFn({
+          reporter: [PIWI_REPORTER_ENTRY],
+          projects: [{ name: 'grid', use: { baseURL: `${url}/`, connectOptions } }],
+        });
+        expect(logs.some((l) => l.startsWith(`[Piwi Dashboard] Base URL answered: ${url}/. The check ran from`))).toBe(
+          true,
+        );
       } finally {
         spy.mockRestore();
         await new Promise<void>((r) => server.close(() => r()));

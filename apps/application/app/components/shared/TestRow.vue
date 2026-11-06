@@ -146,12 +146,22 @@ const tc = computed(() => props.testCase);
 const liveShows = computed(() =>
   liveRowShows({ liveWorker: !!props.liveWorker, desktopWorker: !!props.desktopWorker, note: props.liveNote }),
 );
-/** The row's test stands at a stop: in the run's live view, or in a run the desktop app started. */
-const stopped = computed(() => !!props.liveWorker?.paused || props.desktopWorker?.worker.state === 'stopped');
+/**
+ * Where the row's test stands stopped, as text, from a run outside CI whose reporter told it (`test-stopped`): shown
+ * unless the run's live view or the desktop app's own hub shows the stop.
+ */
+const toldStop = computed(() =>
+  tc.value?.liveStop && !props.liveWorker?.paused && liveShows.value !== 'pause-and-watch' ? tc.value.liveStop : null,
+);
+/** The row's test stands at a stop: in the run's live view, in a run the desktop app started, or as its reporter told. */
+const stopped = computed(
+  () => !!props.liveWorker?.paused || props.desktopWorker?.worker.state === 'stopped' || !!tc.value?.liveStop,
+);
 /** Whether the row has a live line under its title: the step, where it is paused, or the run's note. */
 const liveLine = computed(
   () =>
     (!!props.liveStep && !stopped.value) ||
+    !!toldStop.value ||
     (liveShows.value === 'watch' ? !!props.liveWorker?.paused : !!liveShows.value),
 );
 const liveResourcesText = computed(() => (props.liveResources ? liveResourcesLabel(props.liveResources) : ''));
@@ -289,7 +299,7 @@ const clusterLabel = computed(() =>
                   <span v-if="(tc.retries ?? 0) > 0" class="text-info" data-testid="live-retry">
                     Retry {{ tc.retries }}<template v-if="tc.maxRetries"> of {{ tc.maxRetries }}</template>
                   </span>
-                  <TestRowStuck v-if="tc.stuck" :stuck="tc.stuck" />
+                  <TestRowStuck v-if="tc.stuck && !stopped" :stuck="tc.stuck" />
                   <span v-else-if="!liveStep && !stopped" class="text-info">In progress…</span>
                   <span
                     v-if="liveResourcesText"
@@ -365,7 +375,16 @@ const clusterLabel = computed(() =>
           <TestRowLiveStep v-if="liveStep && !stopped" :step="liveStep" class="max-w-full" />
           <TestRowLivePause
             v-if="liveWorker?.paused && liveShows === 'watch'"
-            :paused="liveWorker.paused"
+            :reason="liveWorker.paused.reason"
+            :call="liveWorker.paused.call"
+            :project-key="projectKey"
+            :project-name="projectName"
+          />
+          <TestRowLivePause
+            v-else-if="toldStop"
+            :reason="toldStop.reason"
+            :call="toldStop"
+            :since="toldStop.since"
             :project-key="projectKey"
             :project-name="projectName"
           />

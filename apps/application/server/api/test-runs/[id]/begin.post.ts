@@ -25,13 +25,14 @@ import {
 import { requireRouteId } from '../../../utils/project-access';
 import { requireStreamingRun } from '../../../utils/stream-auth';
 import { RUN_TOKEN_HEADER } from '@piwitests/core/wire';
+import { publicRunUrl } from '#shared/run-url';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Test Runs'],
     summary: 'Transition test run from initializing to running',
     description:
-      'Begins a streaming test run by transitioning it from "initializing" to "running" status. Requires the setup token returned by the setup endpoint, which it accepts once. Supports sharded runs: every shard begins with its own setup token, and a shard beginning a run another shard already began joins it with a stream token of its own, adding what its `metadata` names that the run lacks, such as the branch and commit. A run that does not exist answers 404, and one that cannot begin (neither initializing nor running, nor an interrupted sharded run) 409, before the body is read.',
+      'Begins a streaming test run by transitioning it from "initializing" to "running" status. Requires the setup token returned by the setup endpoint, which it accepts once. The answer names the run’s page (`runUrl`): under `PIWI_SITE_URL` when it is set, else as a path under the address the client reached. Supports sharded runs: every shard begins with its own setup token, and a shard beginning a run another shard already began joins it with a stream token of its own, adding what its `metadata` names that the run lacks, such as the branch and commit. A run that does not exist answers 404, and one that cannot begin (neither initializing nor running, nor an interrupted sharded run) 409, before the body is read.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       {
@@ -215,6 +216,7 @@ async function beginRun(db: DbClient, id: number, body: Record<string, any>) {
     return {
       success: true,
       runId: testRun.id,
+      runUrl: publicRunUrl(testRun.id),
       projectId: testRun.projectId,
       streamToken: body.setupToken,
     };
@@ -223,6 +225,7 @@ async function beginRun(db: DbClient, id: number, body: Record<string, any>) {
   return {
     success: true,
     runId: testRun.id,
+    runUrl: publicRunUrl(testRun.id),
     projectId: testRun.projectId,
     streamToken,
   };

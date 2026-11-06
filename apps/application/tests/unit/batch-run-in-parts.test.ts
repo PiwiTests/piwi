@@ -166,6 +166,7 @@ async function expectHeldRepeat(answers: Array<Record<string, any>>, again: Reco
     runId,
     projectId: answers[0]!.projectId,
     duplicate: true,
+    runUrl: `/test-runs/${runId}`,
     streamToken: expect.any(String),
   });
   expect(answers.map((a) => a.streamToken)).not.toContain(again.streamToken);
@@ -259,6 +260,7 @@ describe('a batch run sent in parts: its results, then its files', () => {
       runId: first.runId,
       projectId: first.projectId,
       duplicate: true,
+      runUrl: `/test-runs/${first.runId}`,
       streamToken: expect.any(String),
     });
     expect(again.streamToken).not.toBe(first.streamToken);
@@ -295,7 +297,13 @@ describe('a batch run sent in parts: its results, then its files', () => {
 
     const again = await results({ body: runResults() });
 
-    expect(again).toEqual({ success: true, runId: first.runId, projectId: first.projectId, duplicate: true });
+    expect(again).toEqual({
+      success: true,
+      runId: first.runId,
+      projectId: first.projectId,
+      duplicate: true,
+      runUrl: `/test-runs/${first.runId}`,
+    });
     expect((await runRow(first.runId)).streamToken).toBeNull();
   });
 
@@ -327,6 +335,7 @@ describe('a batch run sent in parts: its results, then its files', () => {
       runId: held.runId,
       projectId: held.projectId,
       duplicate: true,
+      runUrl: `/test-runs/${held.runId}`,
     });
 
     const own = runResults({ deliveryKey: 'delivery-key-of-the-run-0002', instanceId: 'ci-78' });
@@ -336,6 +345,7 @@ describe('a batch run sent in parts: its results, then its files', () => {
       runId: first.runId,
       projectId: first.projectId,
       duplicate: true,
+      runUrl: `/test-runs/${first.runId}`,
     });
     expect(await db.select().from(schema.testRuns)).toHaveLength(2);
   });
@@ -346,7 +356,13 @@ describe('a batch run sent in parts: its results, then its files', () => {
 
     const again = await sendWholeRun();
 
-    expect(again).toEqual({ success: true, runId: first.runId, projectId: first.projectId, duplicate: true });
+    expect(again).toEqual({
+      success: true,
+      runId: first.runId,
+      projectId: first.projectId,
+      duplicate: true,
+      runUrl: `/test-runs/${first.runId}`,
+    });
     expect((await runRow(first.runId)).streamToken).toBeNull();
     expect(runFinalizeSideEffects).toHaveBeenCalledTimes(1);
   });
@@ -355,7 +371,13 @@ describe('a batch run sent in parts: its results, then its files', () => {
     const first = await sendWholeRun();
     const again = await sendWholeRun();
 
-    expect(again).toEqual({ success: true, runId: first.runId, projectId: first.projectId, duplicate: true });
+    expect(again).toEqual({
+      success: true,
+      runId: first.runId,
+      projectId: first.projectId,
+      duplicate: true,
+      runUrl: `/test-runs/${first.runId}`,
+    });
     expect(await db.select().from(schema.testRuns)).toHaveLength(1);
   });
 

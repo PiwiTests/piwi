@@ -18,6 +18,7 @@ vi.mock('../../server/utils/notifications/emit', async (importOriginal) => ({
 }));
 const { checkStuckTests } = await import('../../server/utils/stuck-tests');
 const { runEventBus } = await import('../../server/utils/run-events');
+const { testStopRunEvent } = await import('../../server/utils/live-case-events');
 
 describe('when a running test is stuck', () => {
   test('past both the floor and three times its longest pass among enough passes', () => {
@@ -163,6 +164,30 @@ describe('the stuck check of a live run', () => {
       ['pays with PayPal', 4, 1, 2],
       ['pays with a gift card', 3, undefined, undefined],
     ]);
+  });
+
+  test('leaves out the time a test stood stopped, and never marks one while it stands stopped', async () => {
+    const data = begin();
+    runEventBus.recordRunningCase(LIVE_RUN, 'k', data);
+    const stop = {
+      reason: 'breakpoint',
+      title: 'Click',
+      file: 'tests/checkout.spec.ts',
+      line: 18,
+      bar: true,
+      since: now - 60_000,
+      pausedMs: 0,
+    };
+    const of = { title: 'pays with PayPal', location: 'tests/checkout.spec.ts:12:3' };
+    testStopRunEvent({ type: 'test-stopped', ...of, stop } as never, data);
+    expect(await stuckEvents(() => checkStuckTests(db as never, now))).toEqual([]);
+
+    // It went on after four of its five minutes stopped: one minute ran, under the floor.
+    testStopRunEvent({ type: 'test-resumed', ...of, pausedMs: 4 * 60_000 } as never, data);
+    expect(await stuckEvents(() => checkStuckTests(db as never, now))).toEqual([]);
+    // Four minutes later it has run five, its stop left out.
+    const later = await stuckEvents(() => checkStuckTests(db as never, now + 4 * 60_000));
+    expect(later.map((e) => e.elapsedMs)).toEqual([5 * 60_000]);
   });
 
   test('tells a retry, another attempt, again', async () => {
