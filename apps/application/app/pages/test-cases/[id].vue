@@ -3,18 +3,18 @@ import { testLabel } from '#shared/utils/test-label';
 import { describeCluster } from '#shared/describe-cluster';
 import type { ApiResponse, TestCaseHistoryPoint, MarkerInfo, MarkersResponse } from '~~/types/api';
 import { CASE_STATUS_SERIES, legendOf } from '~/utils/chart';
+import { refetchKeeping } from '~/utils/refetch-keeping';
 
 const route = useRoute();
 const testCaseId = route.params.id;
 
-const {
-  data: testCase,
-  error: testCaseError,
-  refresh,
-} = await useFetch<ApiResponse<typeof import('~~/server/api/test-cases/[id].get').default>>(
-  `/api/test-cases/${testCaseId}`,
-);
+type TestCaseDetail = ApiResponse<typeof import('~~/server/api/test-cases/[id].get').default>;
+const { data: testCase, error: testCaseError } = await useFetch<TestCaseDetail>(`/api/test-cases/${testCaseId}`);
 if (testCaseError.value) showPageLoadError(testCaseError.value, 'test');
+// Every later read of the test keeps the one the page shows when it fails, a read asked from outside the page (the
+// assistant, once a proposal is applied) included.
+const refresh = refetchKeeping(testCase, () => $fetch<TestCaseDetail>(`/api/test-cases/${testCaseId}`));
+usePageReload(refresh);
 const { data: historyData } = await useFetch(`/api/test-cases/${testCaseId}/history`, {
   transform: (r: { items: TestCaseHistoryPoint[] }) => r.items,
 });

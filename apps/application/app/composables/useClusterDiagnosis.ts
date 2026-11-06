@@ -53,6 +53,8 @@ export interface ClusterDiagnosisStore {
   // Diagnosis state
   diagnosis: Ref<FailureDiagnosis | null>;
   posting: Ref<boolean>;
+  /** Read the stored diagnosis again; a read that fails keeps the one shown. */
+  fetchDiagnosis: () => Promise<void>;
   runDiagnosis: (opts?: { force?: boolean; additionalContext?: string; images?: DiagnoseImage[] }) => Promise<void>;
 }
 
@@ -303,6 +305,7 @@ function createClusterDiagnosisStore(clusterId: number): ClusterDiagnosisStore {
     loadSuspectLines,
     diagnosis,
     posting,
+    fetchDiagnosis,
     runDiagnosis,
   };
 }

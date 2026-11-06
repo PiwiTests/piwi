@@ -69,8 +69,10 @@ const { data, status, error, refresh } = await useFetch<QuarantineResponse>(
 );
 
 watch(data, (d) => emit('count', d?.debt.active ?? 0));
-// A run that starts or ends reads the list again, as it does the project page's counts.
+// A run that starts or ends reads the list again, as it does the project page's counts, and so does a read asked from
+// outside the page (the assistant, once a proposal is applied).
 useRunStream(() => refresh());
+usePageReload(() => refresh());
 
 // What a quarantine leaves uncovered, or a release covers again, beside its button, where the project records coverage.
 const { state: capabilityState } = await useProjectCapabilities(Number(props.projectId));

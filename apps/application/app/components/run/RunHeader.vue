@@ -38,6 +38,8 @@ const props = defineProps<{
   finalizing?: boolean;
   /** The run's tests as the page shows them while it is live, the streamed ones included. */
   liveCases?: TestCaseResult[] | null;
+  /** The page can no longer read the run (deleted, signed out, no access): its status stands still. */
+  stopped?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -240,6 +242,7 @@ function onLabelKeydown(e: KeyboardEvent) {
 <template>
   <DetailHeader
     :status="testRun?.status ?? ''"
+    :status-still="stopped"
     :title="`Run #${testRun?.id}`"
     :badges="incidentBadges"
     data-shot="run-header"

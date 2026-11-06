@@ -2,6 +2,7 @@
 import type { TableColumn } from '@nuxt/ui';
 import type { SortingState } from '@tanstack/vue-table';
 import type {
+  ProjectWithStats,
   ProjectWithTestRuns,
   TestRunSummary,
   PerformanceTrendPoint,
@@ -15,6 +16,7 @@ import { projectRunScopeQuery, runInProjectScope, type ProjectRunScope } from '#
 import { ranToItsEnd } from '#shared/project-health';
 import { passRatePercent } from '#shared/utils/pass-rate';
 import { compareOrder } from '~/utils/run-compare';
+import { refetchKeeping } from '~/utils/refetch-keeping';
 import { sortRows, type SortValue } from '~/utils/table-sort';
 import type { ProjectHeaderTarget } from '~/components/project/ProjectHeader.vue';
 import { COVERAGE_VIEW_KEYS } from '~/utils/coverage-tab';
@@ -41,12 +43,14 @@ const runScopeQuery = computed(() => projectRunScopeQuery(runScope.value));
 
 // === MAIN PROJECT DATA ===
 // Its newest runs within the scope (`testRuns`), and the newest runs of any scope (`unscopedRuns`).
-const {
-  data: project,
-  error: projectError,
-  refresh,
-} = await useFetch<ProjectWithTestRuns>(`/api/projects/${projectId}`, { query: runScopeQuery });
+const { data: project, error: projectError } = await useFetch<ProjectWithTestRuns>(`/api/projects/${projectId}`, {
+  query: runScopeQuery,
+});
 if (projectError.value) showPageLoadError(projectError.value, 'project');
+// Every later read of the project keeps the one the page shows when it fails.
+const refresh = refetchKeeping(project, () =>
+  $fetch<ProjectWithTestRuns>(`/api/projects/${projectId}`, { query: runScopeQuery.value }),
+);
 provideExternalIdUrl(() => project.value?.externalIdUrl);
 
 useHead(computed(() => ({ title: `${project.value?.label || project.value?.name || 'Project'} — Piwi Dashboard` })));
@@ -74,6 +78,8 @@ const canImport = computed(() => can('storage:manage'));
 const canScheduleReport = computed(() => can('report:write', projectId));
 
 const showDeleteProjectModal = ref(false);
+/** The project list the sidebar and the projects page show (`useFetch` key `projects`). */
+const { data: projectList } = useNuxtData<ProjectWithStats[]>('projects');
 const deleteProjectConfirmInput = ref('');
 const deleteProjectConfirmValid = computed(() => deleteProjectConfirmInput.value === project.value?.name);
 const {
@@ -88,8 +94,8 @@ async function handleDeleteProject() {
   try {
     await deleteProject();
     toast.add({ title: 'Project deleted', color: 'success' });
-    // The project list of the sidebar and of the projects page.
-    await refreshNuxtData('projects');
+    // The sidebar's project list drops it at once, with nothing to read.
+    if (projectList.value) projectList.value = projectList.value.filter((p) => p.id !== Number(projectId));
     await router.push('/');
   } catch (error: unknown) {
     const message =
@@ -372,12 +378,20 @@ const headerFailures = computed(() =>
 const testCasesTotal = ref<number | null>(null);
 
 function refreshFailureCounts() {
-  refreshClustersCount();
-  refreshFlakyCount();
-  refreshQuarantineCount();
+  return Promise.all([refreshClustersCount(), refreshFlakyCount(), refreshQuarantineCount()]);
 }
 
 useRunStream(() => Promise.all([refresh(), refreshFailureCounts()]));
+// A read asked from outside the page (the assistant, once a proposal is applied): the project, its kept runs, its
+// failure counts and its capability states; the open failures list adds its own.
+usePageReload(() =>
+  Promise.all([
+    refresh(),
+    refreshKeptRuns(),
+    refreshFailureCounts(),
+    refreshNuxtData(`capabilities-project-${projectId}`),
+  ]),
+);
 
 // === TABS ===
 const TABS = ['runs', 'tests', 'failures', 'flake-lab', 'coverage', 'performance', 'settings'] as const;
