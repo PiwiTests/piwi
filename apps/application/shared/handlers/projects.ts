@@ -67,6 +67,7 @@ import { getHoldingVerifiedFixes } from './flake-verified';
 import { fixmeSkipPredicate } from '../utils/skip-kind';
 import { latestRunStatusSql } from './latest-run-status';
 import { projectHealth } from '../project-health';
+import { deleteProjectStarsOn } from './project-stars';
 import { TEST_PRIORITIES } from '@piwitests/core/test-meta';
 
 import type { DrizzleDB } from './db';
@@ -836,6 +837,8 @@ export async function deleteProjectData(
   await db.delete(handbackOutcomes).where(eq(handbackOutcomes.projectId, projectId));
   await db.delete(handbackOutcomeRollups).where(eq(handbackOutcomeRollups.projectId, projectId));
   await db.delete(mcpToolCalls).where(eq(mcpToolCalls.projectId, projectId));
+  // Deleted explicitly rather than through the foreign key's cascade, which the demo's database does not enforce.
+  await deleteProjectStarsOn(db, projectId);
 
   // Deleting the project row cascades to: projectTags, failureClusters,
   // failureDiagnoses, traceBlobs, traceResources

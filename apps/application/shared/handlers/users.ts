@@ -12,6 +12,7 @@ import { eq, and, isNull, ne, sql } from 'drizzle-orm';
 
 import { deleteAssistantConversationsOf } from './assistant';
 import { deleteAssistantNudgeDismissalsOf } from './assistant-nudges';
+import { deleteProjectStarsOf } from './project-stars';
 import type { DrizzleDB } from './db';
 
 export async function listUsers(db: DrizzleDB) {
@@ -90,9 +91,10 @@ export async function deleteUserRecord(db: DrizzleDB, id: number) {
   // Deleted explicitly rather than through the foreign keys' cascade, which the demo's database does not enforce.
   await db.delete(roleBindings).where(eq(roleBindings.userId, id));
   await db.delete(groupMembers).where(eq(groupMembers.userId, id));
-  // A user's assistant conversations and dismissed nudges are theirs alone, so they go with them.
+  // A user's assistant conversations, dismissed nudges and starred projects are theirs alone, so they go with them.
   await deleteAssistantConversationsOf(db, id);
   await deleteAssistantNudgeDismissalsOf(db, id);
+  await deleteProjectStarsOf(db, id);
   // A share link works only while its minter exists, and the delete clears `created_by`: their links are revoked.
   await db
     .update(shareLinks)

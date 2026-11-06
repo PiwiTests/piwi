@@ -113,7 +113,7 @@ export const DE_COPY = {
       stops: {
         health: {
           title: 'Alle Projekte auf einen Blick',
-          body: '**Project health** zeigt für jedes Projekt die letzten 20 Läufe, seine Tendenz und die Erfolgsquote seines letzten Laufs, fehlschlagende Projekte zuerst. Öffnen Sie eines, um zu sehen, was fehlschlug.',
+          body: '**Project health** zeigt für jedes Projekt die letzten 20 Läufe, seine Tendenz und die Erfolgsquote seines letzten Laufs: mit Stern markierte Projekte zuerst, dann fehlschlagende. Öffnen Sie eines, um zu sehen, was fehlschlug.',
         },
         analytics: {
           title: 'Qualität im Zeitverlauf',

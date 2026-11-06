@@ -3,6 +3,7 @@ import type { BadgeProps, CommandPaletteGroup, CommandPaletteItem, NavigationMen
 import type { ProjectWithStats } from '~~/types/api';
 import { DOCS_BASE_URL } from '#shared/docs';
 import { describeProjectRunScope, resolveProjectRunScope } from '#shared/project-run-scope';
+import { starredFirst } from '~/utils/project-stars';
 
 const route = useRoute();
 const toast = useToast();
@@ -88,6 +89,17 @@ const { data: projects, refresh: refreshProjects } = await useFetch('/api/projec
 });
 
 useRunStream(refreshProjects);
+
+// The viewer's starred projects lead the sidebar and the palette's projects.
+const starredProjects = useStarredProjects();
+await starredProjects.load();
+// A sign-in in this tab, or another user's, reads that user's stars.
+const { authState } = useAuth();
+watch(
+  () => authState.value.user?.id,
+  () => starredProjects.load(),
+);
+
 useNotificationStream();
 
 // Register global "go to" keyboard chords (g h / g p / g a / g s). This is the only
@@ -123,13 +135,16 @@ const projectItems = computed<NavigationMenuItem[]>(() => {
     return labelA.localeCompare(labelB);
   });
 
-  // Split into active and others, by the latest run of any kind: the status filter picks the status, not the activity
+  // Starred projects first, then the rest split into active and others, by the latest run of any kind:
+  // the status filter picks the status, not the activity
+  const isStarred = (p: ProjectWithStats) => starredProjects.isStarred(p.id);
   const isActiveProject = (p: ProjectWithStats) => {
     const lastRunAt = p.lastRunAt ?? p.latestRun?.startTime;
     return !!lastRunAt && new Date(lastRunAt).getTime() > activeThreshold;
   };
-  const active = sorted.filter(isActiveProject);
-  const others = sorted.filter((p) => !isActiveProject(p));
+  const starred = sorted.filter(isStarred);
+  const active = sorted.filter((p) => !isStarred(p) && isActiveProject(p));
+  const others = sorted.filter((p) => !isStarred(p) && !isActiveProject(p));
 
   function buildProjectItem(project: ProjectWithStats): NavigationMenuItem {
     const isActive = currentProjectId.value !== null && currentProjectId.value === project.id;
@@ -147,7 +162,8 @@ const projectItems = computed<NavigationMenuItem[]>(() => {
 
     return {
       label: displayLabel,
-      icon: isRunning ? 'i-lucide-loader-circle' : 'i-lucide-circle',
+      // A starred project's star takes the empty circle's place; a running one shows the spinner.
+      icon: isRunning ? 'i-lucide-loader-circle' : isStarred(project) ? 'i-lucide-star' : 'i-lucide-circle',
       ui: isRunning ? { linkLeadingIcon: 'animate-spin' } : undefined,
       badge: {
         icon: statusIcon,
@@ -164,6 +180,14 @@ const projectItems = computed<NavigationMenuItem[]>(() => {
   }
 
   const items: NavigationMenuItem[] = [];
+
+  if (starred.length > 0) {
+    items.push({
+      label: `Starred (${starred.length})`,
+      type: 'label',
+    });
+    items.push(...starred.map(buildProjectItem));
+  }
 
   if (active.length > 0) {
     items.push({
@@ -382,7 +406,7 @@ const groups = computed<CommandPaletteGroup[]>(() => {
       id: 'search-projects',
       label: 'Projects',
       ignoreFilter: true,
-      items: searchResults.value.projects.map((p) => ({
+      items: starredFirst(searchResults.value.projects, starredProjects.starred.value, (p) => p.id).map((p) => ({
         id: `project-${p.id}`,
         label: p.label || p.name,
         description: p.label && p.label !== p.name ? p.name : undefined,

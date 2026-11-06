@@ -83,23 +83,23 @@ startup: PostgreSQL when it is set, else a SQLite file (`.data/piwi.db` by defau
 
 ### Tables by area
 
-| Area                 | Tables                                                                                                                                                                                      |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Core results         | `projects`, `test_runs`, `test_suites`, `test_cases`, `test_runs_cases`, `network_requests`, `run_deliveries`                                                                               |
-| Failure analysis     | `failure_clusters`, `failure_cluster_aliases`, `failure_cluster_test_routes`, `cluster_merge_suggestions`, `failure_diagnoses`, `failure_diagnosis_versions`                                |
-| Flaky tests          | `quarantined_tests`, `flake_experiments`, `flake_arms`                                                                                                                                      |
-| Evidence & storage   | `files`, `trace_resources`, `trace_blobs`, `trace_blob_resources`, `case_payloads`, `locator_snapshots`, `locator_usages`                                                                   |
-| Coverage             | `code_reach`, `coverage_fragments`, `test_coverage`, `run_coverage`, `coverage_reports`, `coverage_report_files`, `coverage_executable`, `coverage_totals`, `coverage_daily`                |
-| Test Map             | `graph_nodes`, `graph_edges`, `probes`, `scenario_gaps`                                                                                                                                     |
-| CI and pull requests | `gate_evaluations`, `pr_feedback_posts`, `run_locator_breaks`, `heal_actions`                                                                                                               |
-| Metadata             | `tags`, `project_tags`, `markers`, `entity_links`, `app_settings`, `test_functions`, `test_selections`, `project_url_patterns`                                                              |
-| Bug reports          | `bug_reports`, `bug_reproductions`                                                                                                                                                          |
-| Identity             | `users`, `api_keys`, `account_tokens`, `groups`, `group_members`, `role_bindings`, `extension_device_codes`, `oauth_clients`, `oauth_authorization_requests`, `oauth_grants`, `share_links` |
-| Integrations         | `integration_connections`, `project_integrations`, `integration_actions`                                                                                                                    |
-| Notifications        | `notification_channels`, `subscriptions`, `notification_deliveries`                                                                                                                         |
-| Analytics, reports   | `analytics_daily_rollups`, `analytics_dashboards`, `report_schedules`, `report_snapshots`, `handback_outcomes`, `handback_outcome_rollups`                                                  |
-| Assistant and agents | `assistant_conversations`, `assistant_messages`, `assistant_usage`, `assistant_nudge_dismissals`, `mcp_tool_calls`                                                                          |
-| Resources            | `test_run_resource_reports`, `resource_findings`, `resource_occurrences`                                                                                                                    |
+| Area                 | Tables                                                                                                                                                                                                       |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Core results         | `projects`, `test_runs`, `test_suites`, `test_cases`, `test_runs_cases`, `network_requests`, `run_deliveries`                                                                                                |
+| Failure analysis     | `failure_clusters`, `failure_cluster_aliases`, `failure_cluster_test_routes`, `cluster_merge_suggestions`, `failure_diagnoses`, `failure_diagnosis_versions`                                                 |
+| Flaky tests          | `quarantined_tests`, `flake_experiments`, `flake_arms`                                                                                                                                                       |
+| Evidence & storage   | `files`, `trace_resources`, `trace_blobs`, `trace_blob_resources`, `case_payloads`, `locator_snapshots`, `locator_usages`                                                                                    |
+| Coverage             | `code_reach`, `coverage_fragments`, `test_coverage`, `run_coverage`, `coverage_reports`, `coverage_report_files`, `coverage_executable`, `coverage_totals`, `coverage_daily`                                 |
+| Test Map             | `graph_nodes`, `graph_edges`, `probes`, `scenario_gaps`                                                                                                                                                      |
+| CI and pull requests | `gate_evaluations`, `pr_feedback_posts`, `run_locator_breaks`, `heal_actions`                                                                                                                                |
+| Metadata             | `tags`, `project_tags`, `markers`, `entity_links`, `app_settings`, `test_functions`, `test_selections`, `project_url_patterns`                                                                               |
+| Bug reports          | `bug_reports`, `bug_reproductions`                                                                                                                                                                           |
+| Identity             | `users`, `api_keys`, `account_tokens`, `groups`, `group_members`, `role_bindings`, `project_stars`, `extension_device_codes`, `oauth_clients`, `oauth_authorization_requests`, `oauth_grants`, `share_links` |
+| Integrations         | `integration_connections`, `project_integrations`, `integration_actions`                                                                                                                                     |
+| Notifications        | `notification_channels`, `subscriptions`, `notification_deliveries`                                                                                                                                          |
+| Analytics, reports   | `analytics_daily_rollups`, `analytics_dashboards`, `report_schedules`, `report_snapshots`, `handback_outcomes`, `handback_outcome_rollups`                                                                   |
+| Assistant and agents | `assistant_conversations`, `assistant_messages`, `assistant_usage`, `assistant_nudge_dismissals`, `mcp_tool_calls`                                                                                           |
+| Resources            | `test_run_resource_reports`, `resource_findings`, `resource_occurrences`                                                                                                                                     |
 
 Each table's comment in `schema.sqlite.ts` says what a row is.
 
