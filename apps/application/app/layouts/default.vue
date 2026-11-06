@@ -162,7 +162,8 @@ const projectItems = computed<NavigationMenuItem[]>(() => {
 
     return {
       label: displayLabel,
-      icon: isRunning ? 'i-lucide-loader-circle' : 'i-lucide-circle',
+      // A starred project's star takes the empty circle's place; a running one shows the spinner.
+      icon: isRunning ? 'i-lucide-loader-circle' : isStarred(project) ? 'i-lucide-star' : 'i-lucide-circle',
       ui: isRunning ? { linkLeadingIcon: 'animate-spin' } : undefined,
       badge: {
         icon: statusIcon,
