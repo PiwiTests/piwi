@@ -24,6 +24,7 @@ import {
 import { withTypedValue } from '~/utils/text-format';
 import { commentNodes, MAX_ISSUE_COMMENT_LENGTH, normalizeIssueComment } from '#shared/integrations/run-issue';
 import { renderMarkdown } from '#shared/integrations/render-markdown';
+import { isOutcomeUnknownError } from '#shared/integrations/action-keys';
 
 const props = defineProps<{
   entityType: IssueEntityType;
@@ -97,6 +98,8 @@ const commentDescription = computed(() => {
 });
 /** The linked issues with a key, as the per-submission list names them. */
 const linkedKeys = computed(() => existing.value.filter((issue) => issue.key));
+/** Whether this opening sends again the filing an earlier one queued. */
+const resendsQueued = ref(false);
 /** What the held submission ids are kept for. */
 const submissionSubject = computed(() => `${props.entityType}:${props.entityId}`);
 const previewMarkdown = computed(() =>
@@ -384,6 +387,7 @@ watch(open, (isOpen) => {
   if (isOpen) {
     comment.value = '';
     submissionId.value = submissionIdFor(submissionSubject.value);
+    resendsQueued.value = submissionHeld(submissionSubject.value);
     projects.value = [];
     issueTypes.value = [];
     showAllCreate.value = false;
@@ -423,7 +427,18 @@ async function create() {
         submissionId: submissionId.value,
       },
     });
-    if (res.status === 'done' && res.key && res.url) {
+    if (res.status === 'done' && res.key && res.url && resendsQueued.value && !res.alreadyFiled) {
+      // The earlier filing went through in the meantime: what this form holds was not sent.
+      toast.add({
+        title: `${res.key} was filed from your earlier attempt`,
+        description: 'What you changed here was not sent. Open Create issue again to file another issue.',
+        color: 'info',
+        actions: [{ label: 'Open', to: res.url, target: '_blank', color: 'neutral', variant: 'outline' }],
+      });
+      releaseSubmission(submissionSubject.value);
+      emit('created', { key: res.key, url: res.url });
+      open.value = false;
+    } else if (res.status === 'done' && res.key && res.url) {
       toast.add({
         title: res.commentAdded
           ? `Your comment was added to ${res.key}`
@@ -450,6 +465,12 @@ async function create() {
     } else {
       showError(res.error || 'The tracker gave no reason.');
       if (res.actionId) emit('failed');
+      if (isOutcomeUnknownError(res.error)) {
+        // Creating again from here is a new filing, once the person has checked the tracker.
+        releaseSubmission(submissionSubject.value);
+        submissionId.value = newSubmissionId();
+        resendsQueued.value = false;
+      }
       fieldProblems.value = [...(res.missingFields ?? []), ...(res.fieldErrors ?? [])];
       // The screen may have changed since it was read: read it again.
       if (fieldProblems.value.length) void reloadFields();
@@ -561,6 +582,9 @@ async function linkExisting(candidate: ExistingIssueCandidate) {
               :class="SENTENCE_LINK_CLASS"
               >Set the defaults</NuxtLink
             ><template v-else> A project admin can set them in the project settings.</template>
+          </p>
+          <p v-if="resendsQueued" class="text-xs text-muted" data-testid="create-issue-resends">
+            A filing from your earlier attempt is still queued: Create sends it again, with what this form holds.
           </p>
           <UFormField label="Comment" hint="Optional" :description="commentDescription">
             <UTextarea

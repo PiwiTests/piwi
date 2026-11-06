@@ -46,6 +46,8 @@ let failCreatesWith: number | null = null;
 let dropCreateAnswers = false;
 /** Refuses the connection for the next creates, so nothing reaches Jira. */
 let refuseConnections = false;
+/** Times the next creates out, as `AbortSignal.timeout` does, with no answer from Jira. */
+let timeOutCreates = false;
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -56,6 +58,7 @@ async function jira(input: RequestInfo | URL, init?: RequestInit): Promise<Respo
   if (/\/rest\/api\/3\/issue\/createmeta\//.test(url.pathname)) return json({ total: 0, fields: [] });
   if (url.pathname === '/rest/api/3/issue' && init?.method === 'POST') {
     if (refuseConnections) throw new TypeError('fetch failed', { cause: { code: 'ECONNREFUSED' } });
+    if (timeOutCreates) throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
     if (failCreatesWith) return json({ errorMessages: ['Unavailable'] }, failCreatesWith);
     issueSeq += 1;
     creates.push(String(init.body));
@@ -184,6 +187,7 @@ beforeEach(() => {
   failCreatesWith = null;
   dropCreateAnswers = false;
   refuseConnections = false;
+  timeOutCreates = false;
 });
 
 const file = (entityType: 'test_run' | 'test_runs_case' | 'failure_cluster', entityId: number, extra = {}) =>
@@ -295,7 +299,7 @@ describe('a create whose worker stopped during the call', () => {
   });
 
   test('a create Jira answered with an error clears the marker, so the retry files', async () => {
-    failCreatesWith = 503;
+    failCreatesWith = 429;
     const pending = await file('test_run', 7, { submissionId: '00000000-0000-4000-8000-000000000006' });
     expect(pending).toMatchObject({ status: 'pending' });
     const [row] = await db
@@ -327,7 +331,36 @@ describe('a create whose worker stopped during the call', () => {
     dropCreateAnswers = false;
     const again = await file('test_run', 7, { submissionId });
     expect(again).toMatchObject({ status: 'failed', error: expect.stringContaining('Outcome unknown') });
-    expect(creates).toHaveLength(1);
+    // The same submission keeps its answer; a new one, once the person checked Jira, files.
+    expect(await file('test_run', 7, { submissionId })).toMatchObject({ status: 'failed' });
+    const anew = await file('test_run', 7, { submissionId: '00000000-0000-4000-8000-000000000009' });
+    expect(anew).toMatchObject({ status: 'done' });
+    expect(creates).toHaveLength(2);
+  });
+
+  test('a create that timed out keeps the marker, and on its last attempt fails as outcome unknown', async () => {
+    timeOutCreates = true;
+    const action = await enqueueAction(dbc, {
+      connectionId,
+      projectId: 1,
+      kind: 'create-issue',
+      entityType: 'failure_cluster',
+      entityId: 1,
+      dedupeKey: 'create-issue:failure_cluster:1:timed-out',
+      payload: { projectKey: 'PROJ', issueType: 'Bug', title: 'Coupon', document: { nodes: [] }, labels: [] },
+    });
+    expect(await runActionNow(dbc, action.id)).toMatchObject({ status: 'failed', retrying: true });
+    const read = async () =>
+      (await db.select().from(schema.integrationActions).where(eq(schema.integrationActions.id, action.id)))[0]!;
+    expect((await read()).result).toMatchObject({ createStartedAt: expect.any(Number) });
+
+    // Its last attempt, the marker cleared as if a refusal had come before.
+    await db
+      .update(schema.integrationActions)
+      .set({ status: 'pending', attempts: OUTBOX_MAX_ATTEMPTS - 1, result: null })
+      .where(eq(schema.integrationActions.id, action.id));
+    await runActionNow(dbc, action.id);
+    expect(await read()).toMatchObject({ status: 'failed', error: outcomeUnknownMessage('Coupon'), result: null });
   });
 
   test('a create given up on its last attempt while it held the marker fails as outcome unknown', async () => {

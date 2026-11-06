@@ -28,6 +28,16 @@ export function createIssueSubmissionKey(
   return `${createIssueKey(entityType, entityId, connectionId)}:s${submissionId}`;
 }
 
+/** Whether an action's error is an Outcome unknown: the create may have reached the tracker. */
+export function isOutcomeUnknownError(error: string | null | undefined): boolean {
+  return !!error?.startsWith('Outcome unknown:');
+}
+
+/** Whether a dedupe key names one submission of the create dialog (`createIssueSubmissionKey`). */
+export function isSubmissionKey(key: string): boolean {
+  return /:s[0-9a-f-]{36}$/i.test(key);
+}
+
 /** One comment per submission on an issue already filed, where a person's words go instead of a second issue. */
 export function commentOnFiledIssueKey(issueKey: string, submissionId: string): string {
   return `comment:issue:${issueKey}:s${submissionId}`;

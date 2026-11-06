@@ -18,6 +18,11 @@ export function submissionIdFor(subject: string): string {
   return held.get(subject) ?? newSubmissionId();
 }
 
+/** Whether a filing about `subject` is queued with a held id. */
+export function submissionHeld(subject: string): boolean {
+  return held.has(subject);
+}
+
 /** Keep `id` for `subject` while its filing is queued, so the form opened again retries it instead of filing anew. */
 export function holdSubmission(subject: string, id: string): void {
   held.set(subject, id);

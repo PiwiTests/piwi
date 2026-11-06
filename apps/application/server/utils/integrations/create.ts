@@ -312,11 +312,6 @@ interface IssueToFile {
   perSubmission?: boolean;
 }
 
-/**
- * Add the person's comment to the issue already filed for the cluster, so the
- * words they wrote reach it instead of being dropped. Queued once per
- * submission. False when there is no comment.
- */
 /** The dashboard page of each entity an issue is filed from. */
 const ENTITY_PAGES: Record<CreateIssueParams['entityType'], string> = {
   failure_cluster: '/failure-clusters',
@@ -325,6 +320,11 @@ const ENTITY_PAGES: Record<CreateIssueParams['entityType'], string> = {
   bug_report: '/bug-reports',
 };
 
+/**
+ * Add the person's comment to the issue already filed for the cluster, so the
+ * words they wrote reach it instead of being dropped. Queued once per
+ * submission. False when there is no comment.
+ */
 async function commentOnFiledIssue(
   db: DbClient,
   params: CreateIssueParams,
