@@ -3,7 +3,7 @@ import { describe, test, expect } from 'vitest';
 import { mkdtempSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildRetryCommand, buildRetryArgs, buildTitleGrepFlag } from '#shared/retry-command';
+import { buildRetryCommand, buildRetryArgs, buildTitleGrepFlag, quoteShellArg } from '#shared/retry-command';
 
 const sampleCases = [
   { filePath: 'tests/login.spec.ts', title: 'should login', line: 10, projectName: 'chromium' },
@@ -192,6 +192,20 @@ describe('unsafe file paths and project names are left out', () => {
     expect(buildRetryCommand([{ filePath: 'tests/a.spec.ts', title: 't', line: 1, projectName: 'x$(id)' }])).toBe(
       'npx playwright test "tests/a.spec.ts:1"',
     );
+  });
+
+  test('a title or project holding a curly double quote, which PowerShell reads as a quote, never closes the argument', () => {
+    for (const quote of ['“', '”', '„']) {
+      const title = `x${quote} ; Start-Process calc ; #`;
+      const grep = buildRetryCommand([{ filePath: 'tests/a.spec.ts', title, line: 1, projectName: 'chromium' }], {
+        mode: 'grep',
+      });
+      expect(grep).toBe('npx playwright test --grep "x. ; Start-Process calc ; #" --project="chromium"');
+      expect(
+        buildRetryCommand([{ filePath: 'tests/a.spec.ts', title: 't', line: 1, projectName: `x${quote} ; calc ; #` }]),
+      ).toBe('npx playwright test "tests/a.spec.ts:1"');
+      expect(quoteShellArg(`a${quote}b`)).toBeNull();
+    }
   });
 
   test('CI re-run arguments hold nothing a shell expands', () => {
