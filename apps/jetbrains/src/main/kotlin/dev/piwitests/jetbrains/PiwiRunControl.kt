@@ -218,7 +218,11 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     internal var remote: RunRemote = object : RunRemote {
         private fun server() = project.service<PiwiProjectService>().server()
 
-        override fun control(params: RunControlParams) = server()?.runControl(params)?.orNull()
+        /** A control no service runs to take is refused here (`ok: false`): nothing sent it. */
+        override fun control(params: RunControlParams): RunControlResult? {
+            val server = server() ?: return RunControlResult(false, NOT_RUNNING)
+            return server.runControl(params).orNull()
+        }
 
         override fun shareRun(params: ShareRunParams) = server()?.shareRun(params)?.orNull()
 
@@ -618,6 +622,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     fun goTo(stop: Glue.ShownStop) {
         val file = fileOf(stop.stop.uri) ?: return PiwiCommands.notify(project, "${Glue.stopPlace(stop.stop)} could not be opened.")
         shownStops.opened(stop, true, reveal(stop, file, true))
+        draw()
     }
 
     /** Draw again once the Paused Page tab stops waiting for a slot's next stop. On the event thread. */
@@ -1011,15 +1016,15 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 
     /**
      * Answer a stop (`resume`, `step`, `finish`, or `run-to` the `place`, a line of the run's code), naming it, off the
-     * event thread, saying why not: a refusal undoes what `Glue.StopsShown` recorded of it, and the stops are drawn
-     * again. On the event thread.
+     * event thread, saying why not: a refusal undoes what `Glue.StopsShown` recorded of it, the stops drawn again then.
+     * On the event thread.
      */
     fun answer(stop: Glue.ShownStop, action: String, place: EditorBreakpoint? = null) {
-        shownStops.answered(stop, action)
+        val token = shownStops.answered(stop, action)
         wakeWhenWaited()
-        control(RunControlParams(stop.ref, stop.worker, action, place, stop.stop.since)) {
-            shownStops.refused(stop)
-            draw()
+        control(RunControlParams(stop.ref, stop.worker, action, place, stop.stop.since)) { result ->
+            // Taken, or no answer: the run may have taken it, and what the answer recorded stays.
+            if (result == null || result.ok) shownStops.taken(token) else if (shownStops.refused(token)) draw()
         }
     }
 
@@ -1029,19 +1034,17 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     }
 
     /**
-     * Send a control off the event thread, saying why not; `refused` runs on the event thread when the run refuses it
-     * (`ok: false`), and not when the service does not answer.
+     * Send a control off the event thread, saying why not; `settled` runs on the event thread then, with the run's
+     * answer (null when the service did not answer; `ok: false` when it refused it, or was not running to take it).
      */
-    private fun control(params: RunControlParams, refused: () -> Unit = {}) {
+    private fun control(params: RunControlParams, settled: ((RunControlResult?) -> Unit)? = null) {
         ApplicationManager.getApplication().executeOnPooledThread {
             val result = remote.control(params)
             when {
                 result == null -> PiwiCommands.notify(project, "The editor service did not answer.", NotificationType.WARNING)
-                !result.ok -> {
-                    PiwiCommands.notify(project, result.message ?: "The run did not take it.")
-                    ApplicationManager.getApplication().invokeLater({ refused() }, gone)
-                }
+                !result.ok -> PiwiCommands.notify(project, result.message ?: "The run did not take it.")
             }
+            if (settled != null) ApplicationManager.getApplication().invokeLater({ settled(result) }, gone)
         }
     }
 
@@ -1105,9 +1108,9 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     } ?: false
 
     /**
-     * Run `action` on the stop `Glue.StopsShown.choose` gives for the caret of `editor` (none for a `control` in the
-     * moments after an answer), else on the one chosen; among those `offers` keeps, when it keeps any. On the event
-     * thread.
+     * Run `action` on the stop `Glue.StopsShown.choose` gives for the caret of `editor` (for a `control` in the moments
+     * after an answer, one of the slot answered or none), else on the one chosen; among those `offers` keeps, when it
+     * keeps any. On the event thread.
      */
     fun atCaret(
         editor: Editor?,
@@ -1411,6 +1414,9 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         const val PAUSED_PAGE = "Paused Page"
         const val SHOW_PAUSED_PAGE = "Show the Paused Page"
         const val SHARE_WITH_PLAYWRIGHT = "Share with Playwright Tools"
+
+        /** What a control says when no editor service runs to send it to. */
+        private const val NOT_RUNNING = "The Piwi editor service is not running in this project."
 
         /** The pause after a breakpoint changes before the runs are sent them: a burst of changes is sent once. */
         private const val BREAKPOINTS_WAIT_MILLIS = 100L

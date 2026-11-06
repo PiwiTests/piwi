@@ -1430,8 +1430,8 @@ object Glue {
     const val RESERVED_MILLIS = 10_000L
 
     /**
-     * How long after a control from the IDE answered a stop, until that slot's next stop comes, a run action acts on no
-     * other slot's stop.
+     * How long after a control from the IDE answered a stop, until another stop of that slot opens, a run action acts
+     * on no other slot's stop.
      */
     const val RESUMED_MILLIS = 2_000L
 
@@ -1465,10 +1465,16 @@ object Glue {
     fun selectsPausedPage(workerTabSelected: Boolean, windowVisible: Boolean): Boolean = !(workerTabSelected && windowVisible)
 
     /** What a control from the IDE records: the slot the person is on, a wait for a slot's next stop, the answer. */
-    private data class Recorded(val followed: String?, val reserved: Reserved?, val answer: Pair<String, Long>?)
+    private enum class Recorded { FOLLOWED, RESERVED, ANSWER }
 
     /** A slot stepped or run to the caret, by `slotKey`, the stop stepped, by `stopKey`, and until when it waits. */
     private class Reserved(val slot: String, val key: String, val until: Long)
+
+    /** A slot a control answered, by `slotKey`, the stop answered, by `stopKey`, and when. */
+    private class Answer(val slot: String, val key: String, val at: Long)
+
+    /** What an answer replaced, with when each changed, and when what it set changed, for a refusal to undo. */
+    private class Answered(val was: HashMap<Recorded, Any?>, val wasStamps: HashMap<Recorded, Int>, val stamps: Map<Recorded, Int>)
 
     /**
      * What the IDE shows of the stops as they change, each stop once, and which stop a run action acts on.
@@ -1476,15 +1482,15 @@ object Glue {
      * - A new stop opens its file at its line. It takes the focus, decided as it opens (`focusFor`), only as a stop of
      *   the slot the person is on, or while no other stop held had its file opened or left closed (`opened`, a tab
      *   closed since included). The slot the person is on is the one whose stop last took the focus, or that they last
-     *   acted on: a control from the IDE (`answered`), a code action, input or a pick on the Paused Page (`acted`).
-     *   Watching a slot in the Worker tab does not make it theirs.
+     *   acted on: a control from the IDE (`answered`), a code action, or a press, a key, text, the wheel or a pick on
+     *   the Paused Page (`acted`, `actsOnPage`). Watching a slot in the Worker tab does not make it theirs.
      * - After a Step or a Run to Caret from the IDE, until another stop of that slot opens, `RESERVED_MILLIS` at most
      *   and while a worker of the run holds the slot, no stop of another slot takes the focus, and the Paused Page tab,
      *   once its own stop of that slot went on, waits for it (`waitsUntil`, when the IDE asks again). An answer the run
-     *   refuses records nothing (`refused`).
+     *   refuses undoes what it recorded that nothing changed since (`refused`).
      * - The Paused Page tab keeps the stop it shows (`view`) while that stop is held, a stop of the slot the Worker tab
-     *   watches included; otherwise it opens the first new stop no pause bar shows, else the first such stop held. A tab
-     *   that is closed opens the first new such stop.
+     *   watches included; otherwise it opens the first new stop no pause bar shows, else the first such stop held. A
+     *   tab that is closed opens the first new such stop.
      */
     class StopsShown {
         /** The stops heard, those whose file opened or was left closed, and those the person was shown, by `stopKey`. */
@@ -1496,17 +1502,34 @@ object Glue {
         /** The stop the Paused Page tab shows, or showed last; null while it is closed. */
         private var viewed: ShownStop? = null
 
-        /** The slot stepped or run to the caret, whose next stop the focus and the tab wait for. */
-        private var reserved: Reserved? = null
+        /**
+         * What the controls and the person's acts recorded, each stamped as it changes: the slot the person is on
+         * (`followed`, by `slotKey`), the slot stepped or run to the caret whose next stop the focus and the tab wait
+         * for (`reserved`), and the slot a control answered last, until another of its stops opens (`answer`).
+         */
+        private val recorded = HashMap<Recorded, Any?>()
+        private val stamps = HashMap<Recorded, Int>()
+        private var changes = 0
 
-        /** The slot the person is on, by `slotKey`. */
-        private var followed: String? = null
+        /** The answers sent and not settled, by token. */
+        private val answers = LinkedHashMap<Int, Answered>()
 
-        /** The slot a control from the IDE answered last, by `slotKey`, and when, until its next stop comes. */
-        private var answer: Pair<String, Long>? = null
+        private var followed: String?
+            get() = recorded[Recorded.FOLLOWED] as String?
+            set(value) = record(Recorded.FOLLOWED, value)
 
-        /** What the last answer replaced and what it set, with the stop it answered, for a refusal to undo. */
-        private var before: Triple<String, Recorded, Recorded>? = null
+        private var reserved: Reserved?
+            get() = recorded[Recorded.RESERVED] as Reserved?
+            set(value) = record(Recorded.RESERVED, value)
+
+        private var answer: Answer?
+            get() = recorded[Recorded.ANSWER] as Answer?
+            set(value) = record(Recorded.ANSWER, value)
+
+        private fun record(field: Recorded, value: Any?) {
+            recorded[field] = value
+            stamps[field] = ++changes
+        }
 
         /** The sessions changed, with their stops held now at the lines they stand on (`stops`, in order). */
         fun changed(
@@ -1522,7 +1545,6 @@ object Glue {
             seen.retainAll(held)
             val open = stops.filter { stopKey(it) !in heard }
             open.forEach { heard.add(stopKey(it)) }
-            if (answer?.let { a -> open.any { slotKey(it) == a.first } } == true) answer = null
             val shown = viewed ?: return StopsChange(open, open.firstOrNull { !it.stop.bar })
             if (stopKey(shown) in held) return StopsChange(open, null)
             val waited = reserved?.takeIf { it.slot == slotKey(shown) }
@@ -1551,7 +1573,7 @@ object Glue {
         /**
          * `stop`'s file opened, or was left closed while an editor is in use, with the focus or without it, in sight
          * (`shown`) or not. Another stop of the slot waited for ends the wait, as does a stop of another slot that took
-         * the focus.
+         * the focus; another stop of the slot answered ends the moments after the answer.
          */
         fun opened(stop: ShownStop, focus: Boolean, shown: Boolean = true) {
             val key = stopKey(stop)
@@ -1559,37 +1581,59 @@ object Glue {
             files.add(key)
             if (shown) seen.add(key)
             if (reserved?.let { it.key != key && (focus || it.slot == slotKey(stop)) } == true) reserved = null
+            if (answer?.let { it.key != key && it.slot == slotKey(stop) } == true) answer = null
             if (focus) followed = slotKey(stop)
         }
 
         /**
-         * A control from the IDE answers `stop` (`action`), as it is sent: the person is on its slot, and after a Step or
-         * a Run to Caret the focus and the tab wait for its next stop.
+         * A control from the IDE answers `stop` (`action`), as it is sent: the person is on its slot, and after a Step
+         * or a Run to Caret the focus and the tab wait for its next stop. The token to settle the answer with
+         * (`refused`, `taken`).
          */
-        fun answered(stop: ShownStop, action: String, now: Long = System.currentTimeMillis()) {
+        fun answered(stop: ShownStop, action: String, now: Long = System.currentTimeMillis()): Int {
             val slot = slotKey(stop)
-            val was = Recorded(followed, reserved, answer)
+            val was = HashMap(recorded)
+            val wasStamps = HashMap(stamps)
             followed = slot
-            answer = slot to now
+            answer = Answer(slot, stopKey(stop), now)
             reserved = if (action == "step" || action == "run-to") Reserved(slot, stopKey(stop), now + RESERVED_MILLIS) else null
-            before = Triple(stopKey(stop), was, Recorded(followed, reserved, answer))
+            val token = ++changes
+            answers[token] = Answered(was, wasStamps, HashMap(stamps))
+            return token
         }
 
         /**
-         * The run refused the answer to `stop` (`ok: false`): of what the answer recorded, what nothing changed since
-         * goes back to what it was.
+         * The run refused the answer `token` names (`ok: false`): of what it recorded, what nothing changed since goes
+         * back to what it was, and what a later answer replaced is what that one puts back if refused. Whether anything
+         * went back.
          */
-        fun refused(stop: ShownStop) {
-            val (_, was, set) = before?.takeIf { it.first == stopKey(stop) } ?: return
-            before = null
-            if (followed == set.followed) followed = was.followed
-            if (reserved === set.reserved) reserved = was.reserved
-            if (answer === set.answer) answer = was.answer
+        fun refused(token: Int): Boolean {
+            val refused = answers.remove(token) ?: return false
+            var undone = false
+            for (field in Recorded.entries) {
+                if (stamps[field] == refused.stamps[field]) {
+                    recorded[field] = refused.was[field]
+                    stamps[field] = refused.wasStamps[field] ?: 0
+                    undone = true
+                    continue
+                }
+                for (later in answers.values) {
+                    if (later.wasStamps[field] != refused.stamps[field]) continue
+                    later.was[field] = refused.was[field]
+                    later.wasStamps[field] = refused.wasStamps[field] ?: 0
+                }
+            }
+            return undone
+        }
+
+        /** The run took the answer `token` names, or its answer is unknown: what it recorded stays. */
+        fun taken(token: Int) {
+            answers.remove(token)
         }
 
         /**
-         * The person acted on `stop` (a code action, input or a pick on its page): they are on its slot, and a wait for
-         * another slot's next stop ends. Whether it ended one.
+         * The person acted on `stop` (a code action, or a press, a key, text, the wheel or a pick on its page): they
+         * are on its slot, and a wait for another slot's next stop ends. Whether it ended one.
          */
         fun acted(stop: ShownStop): Boolean {
             followed = slotKey(stop)
@@ -1600,13 +1644,13 @@ object Glue {
 
         /**
          * The stop an action naming none acts on among `candidates` (those `stopsFor` gives for the caret at `line` of
-         * `uri`). For a control (`control`) within `RESUMED_MILLIS` of an answer, before that slot's next stop comes,
-         * only a stop of that slot, whatever the caret says. Else the one at the caret's line, else the only one when
-         * the person was shown its file or its page, else the person chooses among them.
+         * `uri`). For a control (`control`) within `RESUMED_MILLIS` of an answer, until another stop of that slot
+         * opens, only a stop of that slot, whatever the caret says. Else the one at the caret's line, else the only one
+         * when the person was shown its file or its page, else the person chooses among them.
          */
         fun choose(candidates: List<ShownStop>, uri: String?, line: Int?, control: Boolean, now: Long = System.currentTimeMillis()): StopChoice {
-            val answered = answer?.takeIf { control && now - it.second < RESUMED_MILLIS }
-            if (answered != null) return candidates.firstOrNull { slotKey(it) == answered.first }?.let { StopChoice.One(it) } ?: StopChoice.None
+            val answered = answer?.takeIf { control && now - it.at < RESUMED_MILLIS }
+            if (answered != null) return candidates.firstOrNull { slotKey(it) == answered.slot }?.let { StopChoice.One(it) } ?: StopChoice.None
             val here = if (line == null) emptyList() else candidates.filter { stopIsAt(it, uri, line) }
             if (here.isNotEmpty()) return if (here.size == 1) StopChoice.One(here.single()) else StopChoice.Ask
             if (candidates.isEmpty()) return StopChoice.None

@@ -60,9 +60,9 @@ const NO_ANSWER = 'The editor service did not answer.';
 
 /** What the run view hears of the panel. */
 interface WorkerPanelHooks {
-  /** The person sent input or a pick to `stop`'s page. */
+  /** The person sent a press, a key, text, the wheel or a pick to `stop`'s page (`actsOnPage`). */
   acted(stop: ShownStop): void;
-  /** The panel was hidden or closed: the stops it showed may go to the paused page. */
+  /** The panel was hidden or closed, or stopped watching: the stops it showed may go to the paused page. */
   changed(): void;
 }
 
@@ -131,6 +131,7 @@ export function createWorkerPanel(
     const slot = target;
     if (!on || !slot || !panel?.visible) {
       draw();
+      hooks.changed();
       return { ok: true, message: 'You no longer watch the worker.' };
     }
     const params: LaneViewParams = { ...slot, on: true };
@@ -146,6 +147,7 @@ export function createWorkerPanel(
       watching = null;
       note = answer?.message ?? NO_ANSWER;
       draw();
+      hooks.changed();
     }
     return answer ?? { ok: false, message: NO_ANSWER };
   };

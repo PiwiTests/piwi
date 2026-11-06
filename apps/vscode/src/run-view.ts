@@ -229,8 +229,8 @@ export function registerRunControl(
   });
   let panel: vscode.WebviewPanel | null = null;
   /**
-   * The person acted on a stop: a code action, input or a pick on its page (`StopsShown.acted`). A wait it ended shows
-   * the stops again.
+   * The person acted on a stop: a code action, or a press, a key, text, the wheel or a pick on its page
+   * (`StopsShown.acted`). A wait it ended shows the stops again.
    */
   const acted = (stop: ShownStop) => {
     if (stopsShown.acted(stop)) changed();
@@ -657,8 +657,8 @@ export function registerRunControl(
 
   /**
    * The stop a command acts on: its own (`went-on` when that stop ended), else the one `StopsShown.choose` gives for the
-   * caret (none for a `control` in the moments after an answer), else the one chosen; among those `offers` keeps, when
-   * it keeps any.
+   * caret (for a `control` in the moments after an answer, one of the slot answered or none), else the one chosen;
+   * among those `offers` keeps, when it keeps any.
    */
   const chooseStop = async (
     arg: unknown,
@@ -718,14 +718,16 @@ export function registerRunControl(
     const place = placeOf?.(stop);
     if (typeof place === 'string') return say(place);
     const params: RunControlParams = { ref: stop.ref, worker: stop.worker, action, since: stop.stop.since };
-    stopsShown.answered(stop, action);
+    const token = stopsShown.answered(stop, action);
     wakeWhenWaited();
     const answer = await control(place ? { ...params, place } : params);
-    if (answer?.ok) return answered();
-    // With no answer the run may have taken it: what the answer recorded stays.
-    if (!answer) return;
-    stopsShown.refused(stop);
-    changed();
+    if (answer && !answer.ok) {
+      if (stopsShown.refused(token)) changed();
+      return;
+    }
+    // Taken, or no answer: the run may have taken it, and what the answer recorded stays.
+    stopsShown.taken(token);
+    if (answer) answered();
   };
 
   /**

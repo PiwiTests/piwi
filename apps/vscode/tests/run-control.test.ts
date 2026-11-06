@@ -808,20 +808,35 @@ describe('what the editor shows of the stops', () => {
   });
 
   test('forgets an answer the run refused: no wait, and the slot the person was on', () => {
-    const { shown, push, answer, stopOf } = editor();
+    const { shown, push, answer } = editor();
     push(at(0, 3), running(1));
     push(at(0, 3), at(1, 5));
-    answer('resume', 1, 5);
+    shown.taken(answer('resume', 1, 5));
     push(at(0, 3), running(1));
     // A Step on worker 0's stop, which went on meanwhile.
-    answer('step', 0, 3);
-    shown.refused(stopOf(0, 3));
+    expect(shown.refused(answer('step', 0, 3))).toBe(true);
     expect(shown.waitsUntil()).toBeNull();
     expect(push(at(0, 3), at(1, 6)).opened).toEqual([[1, true]]);
-    // Another stop's refusal undoes nothing.
-    answer('step', 0, 3);
-    shown.refused(stopOf(1, 6));
+    // An answer taken, or settled already, undoes nothing.
+    const taken = answer('step', 0, 3);
+    shown.taken(taken);
+    expect(shown.refused(taken)).toBe(false);
     expect(shown.waitsUntil()).not.toBeNull();
+  });
+
+  test('undoes each of two refused answers in flight, in either order', () => {
+    for (const order of [
+      [0, 1],
+      [1, 0],
+    ]) {
+      const { shown, push, answer, stopOf, now } = editor();
+      push(at(0, 3), at(1, 5));
+      const tokens = [answer('step', 0, 3), answer('step', 1, 5)];
+      for (const i of order) shown.refused(tokens[i]!);
+      expect(shown.waitsUntil()).toBeNull();
+      // Neither answer holds the run keys: the only stop shown is answered.
+      expect(shown.choose([stopOf(0, 3)], null, true, now())).toEqual(stopOf(0, 3));
+    }
   });
 
   test('gives a run key the stop at the caret, else none but the one just answered, else the only one shown', () => {
@@ -857,8 +872,8 @@ describe('what the editor shows of the stops', () => {
     expect(shown.choose([stopOf(1, 5)], null, true, 500)).toEqual(stopOf(1, 5));
   });
 
-  test('keeps a run key on the answered worker until its next stop, whatever the caret and other stops say', () => {
-    const { shown, push, answer, stopOf } = editor();
+  test('keeps a run key on the answered worker until its next stop opens, whatever the caret and other stops say', () => {
+    const { shown, push, answer, stopOf } = editor([4]);
     // Two workers stopped at the same line: a key asks which, and the person steps worker 0.
     push(at(0, 3), at(1, 3), running(2));
     const line = (n: number) => ({ uri: spec, line: n });
@@ -869,8 +884,11 @@ describe('what the editor shows of the stops', () => {
     push(running(0), at(1, 3), at(2, 7));
     expect(shown.choose([stopOf(1, 3)], line(3), true, 250)).toBeNull();
     expect(shown.choose([stopOf(2, 7)], line(7), true, 250)).toBeNull();
-    // Worker 0's next stop ends the moments after the answer.
+    // Worker 0's next stop, heard but its file not open yet, has not moved the caret: the key still waits for it.
     push(at(0, 4), at(1, 3), at(2, 7));
+    expect(shown.choose([stopOf(1, 3)], line(3), true, 350)).toBeNull();
+    // Its file open, the moments after the answer end.
+    shown.opened(stopOf(0, 4), true);
     expect(shown.choose([stopOf(1, 3)], line(3), true, 350)).toEqual(stopOf(1, 3));
   });
 
@@ -894,25 +912,34 @@ describe('what the editor shows of the stops', () => {
     expect(shown.acted(stopOf(1, 5))).toBe(true);
     expect(push(running(0), at(1, 5)).page).toEqual([1, 5]);
     expect(shown.acted(stopOf(1, 5))).toBe(false);
-    // A refused Step: the page shown again opens the stop held.
+    // A refused Step says it ended the wait: the page shown again opens the stop held.
     const refused = editor();
     refused.push(at(0, 3), running(1));
     refused.push(at(0, 3), at(1, 5));
-    refused.answer('step', 0, 3);
+    const step = refused.answer('step', 0, 3);
     expect(refused.push(running(0), at(1, 5)).page).toBeNull();
-    refused.shown.refused(refused.stopOf(0, 3));
+    expect(refused.shown.refused(step)).toBe(true);
     expect(refused.push(running(0), at(1, 5)).page).toEqual([1, 5]);
   });
 
   test('undoes of a refused answer only what nothing changed since', () => {
     const { shown, push, answer, stopOf } = editor();
     push(at(0, 3), at(1, 5));
-    answer('step', 0, 3);
+    const step = answer('step', 0, 3);
     // The person types on worker 1's page before the refusal comes.
     shown.acted(stopOf(1, 5));
-    shown.refused(stopOf(0, 3));
+    shown.refused(step);
     push(at(0, 3), running(1));
     expect(push(at(0, 3), at(1, 6)).opened).toEqual([[1, true]]);
+    // Worker 1 answered, then worker 0 stepped and typed on: the slot the person is on stays worker 0's.
+    const again = editor();
+    again.push(at(0, 3), at(1, 5));
+    again.shown.taken(again.answer('resume', 1, 5));
+    again.push(at(0, 3), running(1));
+    const stepped = again.answer('step', 0, 3);
+    again.shown.acted(again.stopOf(0, 3));
+    again.shown.refused(stepped);
+    expect(again.push(at(0, 3), at(1, 6)).opened).toEqual([[1, false]]);
   });
 
   test('keeps waiting when the stepped stop’s own file opens after the Step', () => {

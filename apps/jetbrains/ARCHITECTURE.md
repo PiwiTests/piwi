@@ -410,16 +410,17 @@ or not) and no Step or Run to Caret from the IDE waits for its slot's next stop 
 worker of the run holds the slot; another stop of that slot opening ends the wait, the stepped one not). The slot the
 person is on is the one whose stop last took the focus (one chosen in the status bar item's menu included), or that they
 last acted on: a control from the IDE (counted as it is sent; a refusal, `ok: false`, undoes what nothing changed since,
-and no answer undoes nothing: `refused`), a code action (`start`), or a press, a key, text, the wheel or a pick on the
-Paused Page (`acted`, `Glue.actsOnPage`; a pointer moving or a release is not acting). Acting that ends a wait, and a
-refusal, draw the stops again. The slot the Worker tab watches is not the person's for that: the tab shows its page
-whatever the focus, while the focus chooses the stop the actions and the caret act on. A file that never opened counts
-as none. Without the focus, the editor in use is left alone (`PiwiRunSessions.reveal`): a file open in an editor already
-keeps its caret, so the actions still act on the stop at the caret, and while an editor shows a file, another stays
-closed, the stop drawn when it opens, and counts as shown as an open file does; the platform opens no file without
-selecting it (`FileEditorOpenOptions` is internal). With no editor shown, it opens with `navigate(false)`. The status
-bar item's menu lists each stop (`GoToStopAction`, `Glue.stopLabel`), which opens its line with the focus
-(`PiwiRunSessions.goTo`). It is drawn as the execution point:
+each answer by its token, and no answer undoes nothing: `refused`, `taken`; a control no service runs to take is
+refused), a code action (`start`), or a press, a key, text, the wheel or a pick on the Paused Page (`acted`,
+`Glue.actsOnPage`; a pointer moving or a release is not acting). Acting that ends a wait, and a refusal, draw the stops
+again, as going to a stop from the status bar item's menu does. The slot the Worker tab watches is not the person's for
+that: the tab shows its page whatever the focus, while the focus chooses the stop the actions and the caret act on. A
+file that never opened counts as none. Without the focus, the editor in use is left alone (`PiwiRunSessions.reveal`): a
+file open in an editor already keeps its caret, so the actions still act on the stop at the caret, and while an editor
+shows a file, another stays closed, the stop drawn when it opens, and counts as shown as an open file does; the platform
+opens no file without selecting it (`FileEditorOpenOptions` is internal). With no editor shown, it opens with
+`navigate(false)`. The status bar item's menu lists each stop (`GoToStopAction`, `Glue.stopLabel`), which opens its line
+with the focus (`PiwiRunSessions.goTo`). It is drawn as the execution point:
 
 - a range highlighter on the document's markup model in `PIWI_EXECUTION_POINT` (**Line a run is stopped at** in
   `PiwiColorSettingsPage.kt`, falling back on `DebuggerColors.EXECUTIONPOINT_ATTRIBUTES`), with
@@ -448,10 +449,10 @@ the call a test runs, where it sends `give-up`, naming the worker and no stop), 
 
 - They are under **Tools → Piwi**, and in the status bar item's menu while a run is live, after the stops it lists;
   the item reads `Piwi: paused · checkout.page.ts:12` while one is stopped (`Glue.runControlStatus`).
-- They are enabled only while they apply (`Glue.runControls`). Within `Glue.RESUMED_MILLIS` of an answer, until that
-  slot's next stop comes, they act on a stop of the answered slot or on none, whatever the caret or another worker's new
-  stop say, so a key pressed again answers no other worker. Otherwise they act on the stop at the caret's line, else on
-  the only stop whose file or page the person was shown, else on one chosen in a popup (`Glue.stopsFor`,
+- They are enabled only while they apply (`Glue.runControls`). Within `Glue.RESUMED_MILLIS` of an answer, until another
+  stop of that slot opens, they act on a stop of the answered slot or on none, whatever the caret or another worker's
+  new stop say, so a key pressed again answers no other worker. Otherwise they act on the stop at the caret's line, else
+  on the only stop whose file or page the person was shown, else on one chosen in a popup (`Glue.stopsFor`,
   `Glue.StopsShown.choose`). The code actions, Show the Paused Page and Share follow the same rule, the moments after an
   answer aside.
 - They send `piwi/runControl` on a pooled thread, naming the stop they answer (`since`); an answer with `ok: false` is a

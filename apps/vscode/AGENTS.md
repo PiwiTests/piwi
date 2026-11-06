@@ -70,10 +70,10 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   shown again after it or after acting ends a wait) and `run-view.ts` opens, as in the JetBrains plugin; checked by
   `tests/run-control.test.ts` ("what the editor shows of the stops"), fed the pushes the service sends.
   ([Run control](ARCHITECTURE.md#run-control))
-- **A key, or a command naming no stop, acts for a control within `RESUMED_KEY_MS` of an answer, until that slot's next
-  stop, on a stop of the answered slot or on none, whatever the caret says; else on the stop at the caret's line; else
-  on the only stop whose file or page the person was shown; else it asks** (`StopsShown.choose`, as the JetBrains
-  plugin's `Glue.StopsShown.choose`). Checked by `tests/run-control.test.ts`.
+- **A key, or a command naming no stop, acts for a control within `RESUMED_KEY_MS` of an answer, until another stop of
+  that slot opens, on a stop of the answered slot or on none, whatever the caret says; else on the stop at the caret's
+  line; else on the only stop whose file or page the person was shown; else it asks** (`StopsShown.choose`, as the
+  JetBrains plugin's `Glue.StopsShown.choose`). Checked by `tests/run-control.test.ts`.
   ([Run control](ARCHITECTURE.md#run-control))
 - **A held headless stop the worker panel showed is offered to the paused page as a new stop once the panel hides or
   closes, the page closed or not** (`StopsShown.changed`, `WorkerPanelHooks.changed`). Checked by

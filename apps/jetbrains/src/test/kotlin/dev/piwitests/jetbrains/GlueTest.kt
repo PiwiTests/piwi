@@ -796,10 +796,8 @@ class GlueTest {
         fun stopOf(worker: RunWorker): Glue.ShownStop =
             Glue.stopsOf(mapOf("ed-1" to RunSession("ed-1", "/work/shop", listOf(worker)))).single()
 
-        /** A control from the IDE answers `stop`, as it is sent. */
-        fun answer(action: String, stop: RunWorker) {
-            shown.answered(stopOf(stop), action, now)
-        }
+        /** A control from the IDE answers `stop`, as it is sent: the token to settle it with. */
+        fun answer(action: String, stop: RunWorker): Int = shown.answered(stopOf(stop), action, now)
     }
 
     private val none = emptyList<Pair<Int, Boolean>>()
@@ -1017,17 +1015,31 @@ class GlueTest {
         val pushes = Pushes()
         pushes.push(stoppedAt(0, 3), runningWorker(1))
         pushes.push(stoppedAt(0, 3), stoppedAt(1, 5))
-        pushes.answer("resume", stoppedAt(1, 5))
+        pushes.shown.taken(pushes.answer("resume", stoppedAt(1, 5)))
         pushes.push(stoppedAt(0, 3), runningWorker(1))
         // A Step on worker 0's stop, which went on meanwhile.
-        pushes.answer("step", stoppedAt(0, 3))
-        pushes.shown.refused(pushes.stopOf(stoppedAt(0, 3)))
+        assertTrue(pushes.shown.refused(pushes.answer("step", stoppedAt(0, 3))))
         assertNull(pushes.shown.waitsUntil())
         assertEquals(listOf(1 to true), pushes.push(stoppedAt(0, 3), stoppedAt(1, 6)).first)
-        // Another stop's refusal undoes nothing.
-        pushes.answer("step", stoppedAt(0, 3))
-        pushes.shown.refused(pushes.stopOf(stoppedAt(1, 6)))
+        // An answer taken, or settled already, undoes nothing.
+        val taken = pushes.answer("step", stoppedAt(0, 3))
+        pushes.shown.taken(taken)
+        assertFalse(pushes.shown.refused(taken))
         assertEquals(pushes.now + Glue.RESERVED_MILLIS, pushes.shown.waitsUntil())
+    }
+
+    @Test
+    fun `the IDE undoes each of two refused answers in flight, in either order`() {
+        for (order in listOf(listOf(0, 1), listOf(1, 0))) {
+            val pushes = Pushes()
+            pushes.push(stoppedAt(0, 3), stoppedAt(1, 5))
+            val tokens = listOf(pushes.answer("step", stoppedAt(0, 3)), pushes.answer("step", stoppedAt(1, 5)))
+            order.forEach { pushes.shown.refused(tokens[it]) }
+            assertNull(pushes.shown.waitsUntil())
+            // Neither answer holds the run actions: the only stop shown is answered.
+            val a = pushes.stopOf(stoppedAt(0, 3))
+            assertEquals(Glue.StopChoice.One(a), pushes.shown.choose(listOf(a), null, null, true, pushes.now))
+        }
     }
 
     @Test
@@ -1067,8 +1079,8 @@ class GlueTest {
     }
 
     @Test
-    fun `the IDE keeps a run action on the answered worker until its next stop, whatever the caret and other stops say`() {
-        val pushes = Pushes()
+    fun `the IDE keeps a run action on the answered worker until its next stop opens, whatever the caret and other stops say`() {
+        val pushes = Pushes(unopened = setOf(4))
         // Two workers stopped at the same line: an action asks which, and the person steps worker 0.
         pushes.push(stoppedAt(0, 3), stoppedAt(1, 3), runningWorker(2))
         val a = pushes.stopOf(stoppedAt(0, 3))
@@ -1080,8 +1092,11 @@ class GlueTest {
         pushes.push(runningWorker(0), stoppedAt(1, 3), stoppedAt(2, 7))
         assertEquals(Glue.StopChoice.None, pushes.shown.choose(listOf(b), specUri, 3, true, 250))
         assertEquals(Glue.StopChoice.None, pushes.shown.choose(listOf(pushes.stopOf(stoppedAt(2, 7))), specUri, 7, true, 250))
-        // Worker 0's next stop ends the moments after the answer.
+        // Worker 0's next stop, heard but its file not found yet, has not moved the caret: the action waits for it.
         pushes.push(stoppedAt(0, 4), stoppedAt(1, 3), stoppedAt(2, 7))
+        assertEquals(Glue.StopChoice.None, pushes.shown.choose(listOf(b), specUri, 3, true, 350))
+        // Its file open, the moments after the answer end.
+        pushes.shown.opened(pushes.stopOf(stoppedAt(0, 4)), true)
         assertEquals(Glue.StopChoice.One(b), pushes.shown.choose(listOf(b), specUri, 3, true, 350))
     }
 
@@ -1095,13 +1110,13 @@ class GlueTest {
         assertTrue(pushes.shown.acted(pushes.stopOf(stoppedAt(1, 5))))
         assertEquals(1 to 5, pushes.push(runningWorker(0), stoppedAt(1, 5)).second)
         assertFalse(pushes.shown.acted(pushes.stopOf(stoppedAt(1, 5))))
-        // A refused Step: the tab drawn again opens the stop held.
+        // A refused Step says it ended the wait: the tab drawn again opens the stop held.
         val refused = Pushes()
         refused.push(stoppedAt(0, 3), runningWorker(1))
         refused.push(stoppedAt(0, 3), stoppedAt(1, 5))
-        refused.answer("step", stoppedAt(0, 3))
+        val step = refused.answer("step", stoppedAt(0, 3))
         assertNull(refused.push(runningWorker(0), stoppedAt(1, 5)).second)
-        refused.shown.refused(refused.stopOf(stoppedAt(0, 3)))
+        assertTrue(refused.shown.refused(step))
         assertEquals(1 to 5, refused.push(runningWorker(0), stoppedAt(1, 5)).second)
     }
 
@@ -1109,12 +1124,21 @@ class GlueTest {
     fun `the IDE undoes of a refused answer only what nothing changed since`() {
         val pushes = Pushes()
         pushes.push(stoppedAt(0, 3), stoppedAt(1, 5))
-        pushes.answer("step", stoppedAt(0, 3))
+        val step = pushes.answer("step", stoppedAt(0, 3))
         // The person types on worker 1's page before the refusal comes.
         pushes.shown.acted(pushes.stopOf(stoppedAt(1, 5)))
-        pushes.shown.refused(pushes.stopOf(stoppedAt(0, 3)))
+        pushes.shown.refused(step)
         pushes.push(stoppedAt(0, 3), runningWorker(1))
         assertEquals(listOf(1 to true), pushes.push(stoppedAt(0, 3), stoppedAt(1, 6)).first)
+        // Worker 1 answered, then worker 0 stepped and typed on: the slot the person is on stays worker 0's.
+        val again = Pushes()
+        again.push(stoppedAt(0, 3), stoppedAt(1, 5))
+        again.shown.taken(again.answer("resume", stoppedAt(1, 5)))
+        again.push(stoppedAt(0, 3), runningWorker(1))
+        val stepped = again.answer("step", stoppedAt(0, 3))
+        again.shown.acted(again.stopOf(stoppedAt(0, 3)))
+        again.shown.refused(stepped)
+        assertEquals(listOf(1 to false), again.push(stoppedAt(0, 3), stoppedAt(1, 6)).first)
     }
 
     @Test
