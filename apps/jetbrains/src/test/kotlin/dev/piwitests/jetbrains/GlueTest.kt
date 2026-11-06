@@ -719,6 +719,27 @@ class GlueTest {
     }
 
     @Test
+    fun `a Pause that waits for a call says which, and End the Test ends the test there`() {
+        val waiting = RunWaiting("Click getByRole('button', { name: 'Pay' })", specUri, 4, "2026-10-25T10:00:00.000Z", true)
+        val sessions = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "running", runTest(), pausing = true, waiting = waiting)))
+        val controls = Glue.runControls(sessions)
+        assertEquals(waiting, controls.waiting)
+        assertEquals(
+            "Piwi: pausing… · waits in Click getByRole('button', { name: 'Pay' })",
+            Glue.runControlStatus(controls, Glue.stopsOf(sessions)),
+        )
+        assertEquals(listOf(Glue.WaitingWorker("ed-1", 0, waiting)), Glue.waitingWorkers(sessions))
+        assertEquals(
+            "Worker 1 · Pausing · waits in Click getByRole('button', { name: 'Pay' }) · checkout › pays",
+            Glue.laneShown(sessions["ed-1"], 0, emptyList()).caption,
+        )
+        // A worker no Pause reached waits in nothing.
+        val going = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "running", runTest(), waiting = waiting)))
+        assertNull(Glue.runControls(going).waiting)
+        assertEquals(emptyList<Glue.WaitingWorker>(), Glue.waitingWorkers(going))
+    }
+
+    @Test
     fun `a stop says what is about to run, with the attempt after the first`() {
         assertEquals("Paused · Fill \"WELCOME10\" getByLabel('Coupon')", Glue.pausedText(stopAt(specUri, 5), runTest()))
         assertEquals("Paused · Fill \"WELCOME10\" getByLabel('Coupon') · attempt 2", Glue.pausedText(stopAt(specUri, 5), runTest(retry = 1)))

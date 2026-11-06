@@ -159,6 +159,15 @@ describe('the hub’s WebSocket', () => {
     expect(
       parseHubCommand(json({ type: 'runControl', id: 4, ref: 'ed-1', worker: null, action: 'end', since: 'S' })),
     ).toEqual({ type: 'runControl', id: 4, ref: 'ed-1', worker: null, action: 'end', since: 'S' });
+    // End the test while a Pause waits for the call: no stop to name.
+    expect(parseHubCommand(json({ type: 'runControl', id: 5, ref: 'ed-1', worker: 1, action: 'give-up' }))).toEqual({
+      type: 'runControl',
+      id: 5,
+      ref: 'ed-1',
+      worker: 1,
+      action: 'give-up',
+      since: null,
+    });
     expect(parseHubCommand(json({ type: 'pausedPage', id: 4, ref: 'ed-1', worker: 0 }))).toEqual({
       type: 'pausedPage',
       id: 4,
@@ -327,6 +336,30 @@ describe('the hub’s WebSocket', () => {
       { type: 'keepalive' },
     ];
     for (const message of messages) expect(parseHubMessage(json(message))).toEqual(message);
+    // A pausing worker's call it waits in; none read of a worker not pausing, nor one this version cannot read.
+    const waiting = {
+      title: "Click getByRole('button', { name: 'Pay' })",
+      uri: 'file:///work/shop/tests/pages/checkout.page.ts',
+      line: 11,
+      since: '2026-10-25T10:00:00.000Z',
+      endable: true,
+    };
+    const pausing = { ...session.workers[0]!, state: 'running' as const, stop: null, pausing: true, waiting };
+    const withWaiting = { ...session, workers: [pausing] };
+    expect(parseHubMessage(json({ type: 'session', session: withWaiting }))).toEqual({
+      type: 'session',
+      session: withWaiting,
+    });
+    for (const worker of [
+      { ...pausing, pausing: false },
+      { ...pausing, waiting: { ...waiting, uri: 'https://x' } },
+    ]) {
+      const read = parseHubMessage(json({ type: 'session', session: { ...session, workers: [worker] } }));
+      expect(read).toMatchObject({ type: 'session' });
+      expect((read as { session: { workers: Array<{ waiting?: unknown }> } }).session.workers[0]).not.toHaveProperty(
+        'waiting',
+      );
+    }
     const worker = session.workers[0]!;
     expect(
       parseHubMessage(

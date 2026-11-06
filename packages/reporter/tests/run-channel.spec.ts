@@ -93,6 +93,7 @@ function handlers() {
   const asked: string[] = [];
   const control: RunControl = {
     pause: () => void asked.push('pause'),
+    giveUp: () => void asked.push('give-up'),
     breakpoints: (places: Place[]) => void asked.push(`breakpoints ${places.map((p) => p.line).join(',')}`),
     runTo: (place: Place) => void asked.push(`run-to ${place.file}:${place.line}`),
   };
@@ -290,7 +291,7 @@ describe('the worker’s run connection', () => {
           'share',
         ],
         holds: ['failure'],
-        features: ['view-lane'],
+        features: ['view-lane', 'give-up'],
       });
       const answers: string[] = [];
       const held = holdStop(STOP, (answer) => void answers.push(answer));
@@ -305,8 +306,9 @@ describe('the worker’s run connection', () => {
         bar: false,
       });
       const stop = (stopped as { stop: number }).stop;
-      // A pause while stopped, and an answer to another stop, change nothing.
+      // A pause or End the test while a Pause waits, while stopped, and an answer to another stop, change nothing.
       hub.send({ type: 'control', action: 'pause' });
+      hub.send({ type: 'control', action: 'give-up' });
       hub.send({ type: 'control', action: 'resume', stop: stop + 1 });
       hub.send({ type: 'run-to', stop, place: { file: 'tests/a.spec.ts', line: 9 } });
       hub.send({ type: 'control', action: 'step', stop });
@@ -318,9 +320,10 @@ describe('the worker’s run connection', () => {
       expect(await until(() => hub.heard.find((m) => m.type === 'running'))).toEqual({ type: 'running', stop });
 
       hub.send({ type: 'control', action: 'pause' });
+      hub.send({ type: 'control', action: 'give-up' });
       hub.send({ type: 'breakpoints', places: [{ file: 'tests/a.spec.ts', line: 3 }] });
-      await until(() => (asked.length === 3 ? true : undefined));
-      expect(asked.slice(1)).toEqual(['pause', 'breakpoints 3']);
+      await until(() => (asked.length === 4 ? true : undefined));
+      expect(asked.slice(1)).toEqual(['pause', 'give-up', 'breakpoints 3']);
     } finally {
       await hub.close();
     }

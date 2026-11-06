@@ -126,12 +126,16 @@ export type RunTake = RunIntent | RunQuery | RunViewTake | RunAgentTake | RunCon
 /**
  * What a worker does beyond `takes`, which holds 16 entries at most, as its `run-attach` lists it in `features`: show
  * its lane to a viewer outside the page for as long as asked (`view-lane`), the page of its running test, of its stop
- * while it stands at one, through its tests and stops.
+ * while it stands at one, through its tests and stops; and, asked to pause while its test waits in a call, say which
+ * (`waiting`) and end the test there as asked (`give-up`).
  */
-export type RunFeature = 'view-lane';
+export type RunFeature = 'view-lane' | 'give-up';
 
 /** Everything a worker does beyond `takes`: a worker of an older reporter lists fewer, or none. */
-export const RUN_FEATURES: readonly RunFeature[] = ['view-lane'];
+export const RUN_FEATURES: readonly RunFeature[] = ['view-lane', 'give-up'];
+
+/** The longest title a `waiting` carries, in characters: a longer one is cut. */
+export const MAX_WAITING_TITLE = 500;
 
 /** The intents a worker takes. */
 export const RUN_INTENTS: readonly RunIntent[] = ['pick', 'record', 'assert', 'assert-region'];
@@ -422,6 +426,13 @@ export type RunToHub =
     }
   /** The stop ended, whoever answered it: the bar, the editor, or the test ending under it. */
   | { type: 'running'; stop: number }
+  /**
+   * Asked to pause (`give-up` among its `features`), the test waits in a call before it can stop: the call's title
+   * (through `hideTypedText` and `hideSecretsInText`), its place, how long it has waited (`ms`, null when the worker
+   * cannot tell), and whether ending the test there gives it up (`endable`, a locator call that carries the attempt's
+   * end signal) or lets it finish first.
+   */
+  | { type: 'waiting'; title: string; place: Place | null; ms: number | null; endable: boolean }
   /** The test ended: its status as Playwright gives it, and how long it stood stopped. */
   | { type: 'test-end'; testId: string; status: string; pausedMs: number }
   /** The answer to a `request`: an image of the stopped page, null when there is none. */
@@ -505,6 +516,11 @@ export type HubToRun =
   | { type: 'breakpoints'; places: Place[] }
   /** Stop before the next call of the running test, or of the next test. */
   | { type: 'control'; action: 'pause' }
+  /**
+   * End the test while a Pause waits for the call it runs (to a worker that lists `give-up`): the call is given up
+   * where it carries the attempt's end signal, else the test is skipped as it returns; the rest of it never runs.
+   */
+  | { type: 'control'; action: 'give-up' }
   /**
    * Answer the stop `stop`: go on and stop before the next call, go on to the next breakpoint, go on with no
    * breakpoint more in this attempt, or end the test (`end`, to a worker that takes it): the rest of it is skipped,
@@ -914,6 +930,15 @@ export function parseRunToHub(line: string): RunToHub | null {
     }
     case 'running':
       return isInt(value.stop, 1) ? { type: 'running', stop: value.stop } : null;
+    case 'waiting': {
+      const { title, ms, endable } = value;
+      const place = value.place === null ? null : readPlace(value.place);
+      if (typeof title !== 'string' || !title || (ms !== null && !isInt(ms, 0)) || typeof endable !== 'boolean') {
+        return null;
+      }
+      if (value.place !== null && !place) return null;
+      return { type: 'waiting', title: title.slice(0, MAX_WAITING_TITLE), place, ms, endable };
+    }
     case 'test-end': {
       const { testId, status, pausedMs } = value;
       if (typeof testId !== 'string' || !testId || typeof status !== 'string' || !/^[a-zA-Z]{1,32}$/.test(status)) {
@@ -1073,7 +1098,7 @@ export function parseHubToRun(line: string): HubToRun | UnknownMessage | null {
     }
     case 'control': {
       const { action, stop } = value;
-      if (action === 'pause') return { type: 'control', action };
+      if (action === 'pause' || action === 'give-up') return { type: 'control', action };
       if (action === 'step' || action === 'resume' || action === 'finish' || action === 'end') {
         return isInt(stop, 1) ? { type: 'control', action, stop } : null;
       }

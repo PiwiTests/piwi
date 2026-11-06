@@ -1483,6 +1483,25 @@ export interface RunWorker {
    * **Pausing…**.
    */
   pausing: boolean;
+  /**
+   * While `pausing`, the call its test waits in before it can stop, as a reporter that ends a test there says it
+   * (`piwi/runControl` `give-up`: a client offers End the test); null otherwise.
+   */
+  waiting: RunWaiting | null;
+}
+
+/**
+ * The call a pausing worker's test waits in: its title (`Click getByRole('button', { name: 'Pay' })`), its file and
+ * 0-based line (null when the worker names none), when it began (`since`, ISO 8601 by the service's clock; null when the
+ * worker cannot tell), and whether End the test gives it up at once (`endable`, a locator call that carries the
+ * attempt's end signal), else lets it finish first, the test skipped as it returns.
+ */
+export interface RunWaiting {
+  title: string;
+  uri: string | null;
+  line: number | null;
+  since: string | null;
+  endable: boolean;
 }
 
 /**
@@ -1576,9 +1595,11 @@ export const RUN_SESSION_NOTIFICATION = 'piwi/runSessionChanged';
  * line (or at a breakpoint before it), `end` ends the test there, reported as skipped (for a worker that takes `end`):
  * the stopped call never runs where the worker holds it (a locator call, a `page.pause()`), else it runs first and the
  * test ends before its next locator call. At a failure, or once the test function ended (an `afterEach` hook), `end`
- * lets the test end as Resume does, its result kept.
+ * lets the test end as Resume does, its result kept. `give-up` ends a test a Pause waits for, naming no stop: the call
+ * it waits in (`RunWorker.waiting`) is given up where it can be, else the test is skipped as the call returns, and the
+ * Pause is dropped.
  */
-export type RunControlAction = 'pause' | 'step' | 'resume' | 'finish' | 'run-to' | 'end';
+export type RunControlAction = 'pause' | 'step' | 'resume' | 'finish' | 'run-to' | 'end' | 'give-up';
 
 /**
  * `piwi/runControl`: steer a run the editor started. Without `worker`, `pause` goes to every worker that runs or is

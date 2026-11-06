@@ -615,6 +615,11 @@ the run's stop before it, so it names that stop alone.
   skipped, or, at a failure or once the test function ended, lets it end as it is; the answer says which
   (`Ending the test: it is reported as skipped.`, `The test failed already: it ends as it failed.`). The stop's
   `intents` list `end` but at a failure, for every viewer (`stopIntentsOf`).
+- `give-up` (End the test while a Pause waits) goes to the pausing worker whose test waits in a call, which a worker
+  that lists `give-up` in its `features` says (`waiting`, kept as `RunWorker.waiting` until the test stops, goes on or
+  ends, `intentsOf` offering `give-up` meanwhile). It names no stop, and drops the Pause: a locator call that carries
+  the end signal is given up at once, and after any other call the worker skips the test at its next locator call; the
+  answer says which (`Ending the test: <call> is given up.`, `Ending the test as <call> returns.`).
 
 A worker's stop ends with its `running`, whoever ended it: the pause bar, the editor, or the test ending under it or
 closing its page, which the worker sends unanswered. A control naming that stop afterwards is refused the same way.

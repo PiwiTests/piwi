@@ -134,8 +134,10 @@ const NO_PAGE =
 
 /** What the editor asks that the capture fixtures apply to the running test's stops. */
 export interface RunControl {
-  /** Stop before the next call: of the running test, else of the next one. */
+  /** Stop before the next call: of the running test, else of the next one; and say the call it waits in. */
   pause(): void;
+  /** End the test while a Pause waits for its call: the call given up where it carries the end signal. */
+  giveUp(): void;
   /** The run's breakpoints from now on. */
   breakpoints(places: Place[]): void;
   /** Stop at the first call on this place's line. */
@@ -896,6 +898,8 @@ function onMessage(message: HubToRun | UnknownMessage | null): void {
       // A pause that reaches a stopped worker has nothing to do.
       if (message.action === 'pause') {
         if (!held) control?.pause();
+      } else if (message.action === 'give-up') {
+        if (!held) control?.giveUp();
       } else if (held?.stop === message.stop) held.answer(message.action);
       return;
     case 'run-to':

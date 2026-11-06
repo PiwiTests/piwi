@@ -70,6 +70,7 @@ import type {
   RunProgress,
   RunSession,
   RunStop,
+  RunWaiting,
   RunTest,
   SetBreakpointsParams,
   SetRunBreakpointsParams,
@@ -249,6 +250,9 @@ const QUERY_WORDS: Record<Query, string> = {
 /** Why the input of a viewer that does not watch the stop is refused. */
 const NEEDS_VIEW = 'The input needs the live view of this stop: watch it first.';
 
+/** Why End the test while a Pause waits finds no test waiting. */
+const NOT_PAUSING = 'No test waits for a Pause.';
+
 /** Why a run none of whose workers said how it stands on the instance yet is not shared. */
 const NOT_SAID = "The run's workers have not said yet whether it can be shared live: try again in a moment.";
 
@@ -345,6 +349,8 @@ interface Worker {
   /** Where it stands stopped, and the worker's number for that stop and its place. */
   stop: { id: number; place: Place; view: RunStop } | null;
   pausing: boolean;
+  /** While pausing, the call its test waits in, as its reporter said it (`waiting`); null otherwise. */
+  waiting: RunWaiting | null;
   /** What its reporter takes at a stop, what it does beyond that (`features`), and its version. */
   takes: Set<RunTake>;
   features: Set<RunFeature>;
@@ -631,6 +637,7 @@ export class RunSessions {
       test: null,
       stop: null,
       pausing: false,
+      waiting: null,
       takes: new Set(attach.takes),
       features: new Set(attach.features ?? []),
       reporter: attach.reporter,
@@ -781,6 +788,34 @@ export class RunSessions {
           ok: true,
           message:
             asked.length > 1 ? `Pausing ${asked.length} workers at their next call.` : 'Pausing at the next call.',
+        };
+      }
+      case 'give-up': {
+        const waiting = workers.filter((w) => w.pausing && !w.stop && w.test);
+        if (!waiting.length) {
+          return refuse(
+            workers.some((w) => w.stop) ? 'The test is stopped: End the test answers its stop.' : NOT_PAUSING,
+          );
+        }
+        if (waiting.length > 1) return refuse(`${waiting.length} workers wait for a Pause: choose one.`);
+        const worker = waiting[0]!;
+        if (!worker.features.has('give-up')) {
+          return refuse(
+            `@piwitests/reporter ${worker.reporter || ''}`.trimEnd() +
+              ' cannot end a test while it waits for a Pause: update it, or let the call finish.',
+          );
+        }
+        const call = worker.waiting;
+        this.send(worker, { type: 'control', action: 'give-up' });
+        worker.pausing = false;
+        worker.waiting = null;
+        worker.askedBy = null;
+        this.changed(session, true);
+        return {
+          ok: true,
+          message: call?.endable
+            ? `Ending the test: ${call.title} is given up.`
+            : `Ending the test as ${call?.title ?? 'its call'} returns.`,
         };
       }
       case 'step':
@@ -1287,6 +1322,8 @@ export class RunSessions {
       ...intents,
       ...(['view', 'input', 'input-clicks', 'pick-at', 'end'] as const).filter((what) => found.takes.has(what)),
       ...(found.features.has('view-lane') ? (['watch'] as const) : []),
+      // End the test while a Pause waits for its call.
+      ...(found.waiting ? (['give-up'] as const) : []),
     ];
   }
 
@@ -1479,6 +1516,7 @@ export class RunSessions {
         };
         worker.stop = null;
         worker.view = null;
+        worker.waiting = null;
         if (message.cannotPause) worker.pausing = false;
         this.options.heard?.(session.ref, worker.index, { type: 'test-begin', test: worker.test }, session.root);
         return this.changed(session);
@@ -1505,11 +1543,25 @@ export class RunSessions {
           },
         };
         worker.pausing = false;
+        worker.waiting = null;
         worker.askedBy = null;
         this.changed(session, true);
         this.options.heard?.(session.ref, worker.index, { type: 'stopped', stop: worker.stop.view }, session.root);
         if (!message.bar && !this.options.answersStops()) this.resumeUnanswered(session, worker, message.place);
         return;
+      case 'waiting': {
+        // Said while a Pause waits for the call, by a reporter that ends a test there.
+        if (!worker.pausing || worker.stop || !worker.test || !worker.features.has('give-up')) return;
+        const { place, ms } = message;
+        worker.waiting = {
+          title: message.title,
+          uri: place ? this.uri(worker, place.file, session.root) : null,
+          line: place ? place.line - 1 : null,
+          since: ms === null ? null : new Date(Date.now() - ms).toISOString(),
+          endable: message.endable,
+        };
+        return this.changed(session, true);
+      }
       case 'running': {
         if (worker.stop?.id !== message.stop) return;
         const since = worker.stop.view.since;
@@ -1522,6 +1574,7 @@ export class RunSessions {
         if (worker.test?.id === message.testId) worker.test = null;
         worker.stop = null;
         worker.view = null;
+        worker.waiting = null;
         worker.askedBy = null;
         this.changed(session);
         return this.options.heard?.(
@@ -1685,6 +1738,7 @@ export class RunSessions {
           test: worker.test,
           stop: worker.stop?.view ?? null,
           pausing: worker.pausing,
+          waiting: worker.waiting,
           takes: [...worker.takes],
           watchable: worker.features.has('view-lane'),
         })),
