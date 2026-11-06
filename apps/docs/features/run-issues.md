@@ -37,9 +37,9 @@ and [project binding](./issue-tracking#the-project-binding) as an issue about a 
 
 A run, or a test with no cluster, **can have several issues**: the modal lists the ones already linked and files a new
 one. Each opening of the modal files at most one, so a second click on **Create**, or opening it again while a
-filing waits on Jira, never files twice. Any create, a cluster's too, whose attempt stopped during the call to Jira (the server
-restarted) fails with **Outcome unknown** rather than risking a second issue: check Jira for it, then create it again
-if it is not there.
+filing waits on Jira, never files twice. Any create, a cluster's too, that Jira may have received without its answer
+coming back (a timeout, or the server restarted during the call) fails with **Outcome unknown** rather than risking a
+second issue: check Jira for it, then create it again if it is not there.
 
 ## Limits
 

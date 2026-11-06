@@ -44,6 +44,8 @@ let issueSeq = 0;
 let failCreatesWith: number | null = null;
 /** Creates the next issues, then loses the connection before Jira's answer arrives. */
 let dropCreateAnswers = false;
+/** Refuses the connection for the next creates, so nothing reaches Jira. */
+let refuseConnections = false;
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -53,6 +55,7 @@ async function jira(input: RequestInfo | URL, init?: RequestInit): Promise<Respo
   const url = new URL(String(input));
   if (/\/rest\/api\/3\/issue\/createmeta\//.test(url.pathname)) return json({ total: 0, fields: [] });
   if (url.pathname === '/rest/api/3/issue' && init?.method === 'POST') {
+    if (refuseConnections) throw new TypeError('fetch failed', { cause: { code: 'ECONNREFUSED' } });
     if (failCreatesWith) return json({ errorMessages: ['Unavailable'] }, failCreatesWith);
     issueSeq += 1;
     creates.push(String(init.body));
@@ -180,6 +183,7 @@ beforeEach(() => {
   updates = [];
   failCreatesWith = null;
   dropCreateAnswers = false;
+  refuseConnections = false;
 });
 
 const file = (entityType: 'test_run' | 'test_runs_case' | 'failure_cluster', entityId: number, extra = {}) =>
@@ -302,6 +306,16 @@ describe('a create whose worker stopped during the call', () => {
     failCreatesWith = null;
     const retried = await file('test_run', 7, { submissionId: '00000000-0000-4000-8000-000000000006' });
     expect(retried).toMatchObject({ status: 'done' });
+    expect(creates).toHaveLength(1);
+  });
+
+  test('a create Jira never received clears the marker, so the retry files', async () => {
+    refuseConnections = true;
+    const submissionId = '00000000-0000-4000-8000-000000000008';
+    const pending = await file('test_run', 7, { submissionId });
+    expect(pending).toMatchObject({ status: 'pending' });
+    refuseConnections = false;
+    expect(await file('test_run', 7, { submissionId })).toMatchObject({ status: 'done' });
     expect(creates).toHaveLength(1);
   });
 

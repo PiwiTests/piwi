@@ -400,13 +400,23 @@ async function issueShareLink(
   return { id: minted.id, document: withShareToken(payload.document, minted.token) };
 }
 
+/** Connection errors raised before a request is sent: the tracker never saw it. */
+const UNSENT_ERROR_CODES = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'UND_ERR_CONNECT_TIMEOUT']);
+
 /**
- * A tracker answer that says the issue was not created: a refusal, a rate limit or a 503. A timeout, a lost
- * connection or another 5xx may come after the tracker created it.
+ * Whether a create's error says the issue was not created: the tracker answered with a refusal, a rate limit or a
+ * 503, or the request never left (a refused connection, an unknown host). A timeout, a connection lost after
+ * sending or another 5xx may come after the tracker created it.
  */
 function trackerDeclined(err: unknown): boolean {
   const status = (err as { status?: unknown } | null)?.status;
-  return typeof status === 'number' && (status < 500 || status === 503);
+  if (typeof status === 'number') return status < 500 || status === 503;
+  for (let cause: unknown = err, depth = 0; cause && depth < 4; depth++) {
+    const code = (cause as { code?: unknown }).code;
+    if (typeof code === 'string' && UNSENT_ERROR_CODES.has(code)) return true;
+    cause = (cause as { cause?: unknown }).cause;
+  }
+  return false;
 }
 
 /** Perform one create-issue against the tracker and record the link + result. */

@@ -15,7 +15,7 @@ is linked back as the cluster's *known issue*, and the key travels wherever the 
 It is **off until an [administrator connects Jira](/operate/integrations#connecting-jira-cloud)**.
 
 <figure>
-  <img src="/screenshots/create-issue-modal.png" alt="The Create issue modal on a failure cluster: an editable title, the Jira project and issue-type fields, include toggles, and a preview of the fix-plan body">
+  <img src="/screenshots/create-issue-modal.png" alt="The Create issue modal on a failure cluster: an optional comment, an editable title, the Jira project and issue-type fields, include toggles, and a preview of the fix-plan body">
   <figcaption>The Create issue modal on a failure cluster.</figcaption>
 </figure>
 

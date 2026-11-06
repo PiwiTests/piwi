@@ -440,7 +440,8 @@ async function create() {
     } else if (res.status === 'pending') {
       toast.add({
         title: 'Filing queued',
-        description: 'Jira did not answer yet. Piwi retries and links the issue once it is created.',
+        description:
+          'Jira did not answer yet. Piwi retries and links the issue once it is created, or stops at Outcome unknown when Jira may have it already.',
         color: 'info',
       });
       holdSubmission(submissionSubject.value, submissionId.value);
