@@ -646,7 +646,7 @@ async function openView(page: Page, stop: number): Promise<View | null> {
     busy: () => (!!socket && socket.writableLength > MAX_FRAME_BACKLOG) || mask.resting,
     // Once its stop began to end, no frame of it goes.
     live: () => held?.stop === stop,
-    screen: (frame) => mask.screen(frame),
+    screen: (frame, also) => mask.screen(frame, also),
     send: (frame) =>
       tellHub({ type: 'frame', stop, width: frame.width, height: frame.height, data: frame.data.toString('base64') }),
     refuse: (why) => tellHub({ type: 'frame', stop, refused: why ?? TOO_HEAVY }),
